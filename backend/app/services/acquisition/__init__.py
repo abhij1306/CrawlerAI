@@ -1,0 +1,41 @@
+from __future__ import annotations
+
+from app.services.acquisition.browser_runtime import (
+    browser_runtime_snapshot,
+    expand_all_interactive_elements,
+    interactive_candidate_snapshot,
+    shutdown_browser_runtime,
+    shutdown_browser_runtime_sync,
+)
+from app.services.acquisition.cookie_store import validate_cookie_policy_config
+from app.services.acquisition.http_client import (
+    HttpFetchResult,
+    close_shared_http_client as _close_adapter_shared_http_client,
+    request_result,
+)
+from app.services.acquisition.pacing import wait_for_host_slot
+from app.services.acquisition.runtime import (
+    PageFetchResult,
+    close_shared_http_client as _close_runtime_shared_http_client,
+    is_blocked_html,
+)
+
+
+async def close_shared_http_client() -> None:
+    await _close_runtime_shared_http_client()
+    await _close_adapter_shared_http_client()
+
+__all__ = [
+    "browser_runtime_snapshot",
+    "expand_all_interactive_elements",
+    "interactive_candidate_snapshot",
+    "HttpFetchResult",
+    "close_shared_http_client",
+    "PageFetchResult",
+    "request_result",
+    "is_blocked_html",
+    "shutdown_browser_runtime",
+    "shutdown_browser_runtime_sync",
+    "validate_cookie_policy_config",
+    "wait_for_host_slot",
+]

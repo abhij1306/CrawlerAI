@@ -1,0 +1,28 @@
+{
+  "python.defaultInterpreterPath": "${workspaceFolder}/.venv/Scripts/python.exe",
+  "python.terminal.activateEnvironment": true,
+  "python.testing.pytestArgs": [
+    "tests"
+  ],
+  "python.testing.cwd": "${workspaceFolder}/backend",
+  "python.testing.unittestEnabled": false,
+  "python.testing.pytestEnabled": true,
+  "python.analysis.extraPaths": [
+    "./backend"
+  ],
+  "python.autoComplete.extraPaths": [
+    "./backend"
+  ],
+  "python.envFile": "${workspaceFolder}/.env",
+  "snyk.advanced.autoSelectOrganization": true,
+  "snyk.advanced.authenticationMethod": "Personal Access Token",
+  "sonarlint.connectedMode.project": {
+    "connectionId": "http-127-0-0-1-9000",
+    "projectKey": "pre-poc-ai-crawler-local"
+  },
+  "cursorpyright.analysis.extraPaths": [
+    "./backend"
+  ],
+  "kiroAgent.configureMCP": "Disabled",
+  "coderabbit.agentType": "Clipboard"
+}

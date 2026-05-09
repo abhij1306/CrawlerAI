@@ -1,0 +1,384 @@
+# iCIMS ATS board adapter.
+from __future__ import annotations
+
+import asyncio
+import logging
+import re
+from urllib.parse import parse_qsl, urlencode, urljoin, urlparse, urlunparse
+
+import httpx
+from app.services.adapters.base import AdapterResult, BaseAdapter
+from app.services.config.adapter_runtime_settings import adapter_runtime_settings
+from app.services.field_value_core import clean_text
+from bs4 import BeautifulSoup, Tag
+
+try:  # pragma: no cover - optional dependency
+    from aiohttp import ClientError as AioHttpClientError
+except ImportError:  # pragma: no cover - aiohttp is optional
+    _AIOHTTP_CLIENT_ERRORS: tuple[type[BaseException], ...] = ()
+else:  # pragma: no cover - exercised only when aiohttp is installed
+    _AIOHTTP_CLIENT_ERRORS = (AioHttpClientError,)
+
+_ICIMS_PAGINATION_ERRORS: tuple[type[BaseException], ...] = (
+    asyncio.TimeoutError,
+    httpx.RequestError,
+    OSError,
+    RuntimeError,
+    ValueError,
+    TypeError,
+) + _AIOHTTP_CLIENT_ERRORS
+
+
+_ROW_RE = re.compile(
+    r'<(?:tr|div|li)\s[^>]*class=["\'][^"\']*(?:iCIMS_Job|JobListingRow|job-?row|job-?card|listitem|search-result)[^"\']*["\'][^>]*>(.*?)</(?:tr|div|li)>',
+    re.IGNORECASE | re.DOTALL,
+)
+_HTML_TAG_RE = re.compile(r"<[^>]+>")
+logger = logging.getLogger(__name__)
+HTML_PARSER = "html.parser"
+
+
+class ICIMSAdapter(BaseAdapter):
+    name = "icims"
+    platform_family = "icims"
+
+    async def can_handle(self, url: str, html: str) -> bool:
+        return self._matches_platform_family(url, html)
+
+    async def extract(self, url: str, html: str, surface: str) -> AdapterResult:
+        if self._is_detail_surface(surface) or self._looks_like_detail_url(url):
+            html = await self._follow_embedded_content_url(url, html)
+            record = self._extract_detail(url, html)
+            return self._result([record] if record else [])
+
+        records = await self._extract_listing(url, html)
+        return self._result(records)
+
+    async def _extract_listing(self, url: str, html: str) -> list[dict]:
+        current_url = url
+        parsed = urlparse(current_url)
+        base_url = f"{parsed.scheme}://{parsed.netloc}"
+        original_endpoint = self._discover_ajax_endpoint(url, html)
+
+        embedded_board_url = self._discover_embedded_board_url(url, html)
+        if embedded_board_url:
+            html = await self._fetch_embedded_content(
+                url=embedded_board_url, fallback_html=html
+            )
+            current_url = embedded_board_url
+            parsed = urlparse(current_url)
+            base_url = f"{parsed.scheme}://{parsed.netloc}"
+
+        inline_records = self._extract_from_listing_html(html, base_url)
+        if inline_records:
+            return inline_records
+
+        endpoint = original_endpoint or self._discover_ajax_endpoint(current_url, html)
+        if not endpoint:
+            return []
+        endpoint_parsed = urlparse(endpoint)
+        if endpoint_parsed.scheme and endpoint_parsed.netloc:
+            base_url = f"{endpoint_parsed.scheme}://{endpoint_parsed.netloc}"
+
+        records: list[dict] = []
+        seen_urls: set[str] = set()
+        for offset in range(
+            0,
+            adapter_runtime_settings.icims_max_offset,
+            adapter_runtime_settings.icims_page_size,
+        ):
+            page_url = self._paginate_endpoint(endpoint, offset)
+            try:
+                response_text = await self._request_text(
+                    page_url,
+                    timeout_seconds=adapter_runtime_settings.icims_pagination_timeout_seconds,
+                )
+            except _ICIMS_PAGINATION_ERRORS as exc:
+                logger.warning(
+                    "Failed to fetch iCIMS pagination URL %s (offset=%s, endpoint=%s): %s",
+                    page_url,
+                    offset,
+                    endpoint,
+                    exc,
+                )
+                break
+            if not response_text:
+                break
+            batch = self._parse_ajax_rows(response_text, base_url)
+            if not batch:
+                break
+            for record in batch:
+                record_url = str(record.get("url") or "").strip()
+                if not record_url or record_url in seen_urls:
+                    continue
+                seen_urls.add(record_url)
+                records.append(record)
+            if len(batch) < adapter_runtime_settings.icims_page_size:
+                break
+        return records
+
+    def _discover_ajax_endpoint(self, url: str, html: str) -> str | None:
+        parsed = urlparse(url)
+        base_url = f"{parsed.scheme}://{parsed.netloc}"
+        match = re.search(r"(/ajax/joblisting/\?[^\"']+)", html, flags=re.IGNORECASE)
+        if match:
+            endpoint = match.group(1)
+            return endpoint if endpoint.startswith("http") else f"{base_url}{endpoint}"
+        if "/ajax/joblisting/" in str(html or "").lower():
+            return (
+                f"{base_url}/ajax/joblisting/"
+                f"?num_items={adapter_runtime_settings.icims_page_size}&offset=0"
+            )
+        return None
+
+    def _discover_embedded_board_url(self, url: str, html: str) -> str | None:
+        soup = BeautifulSoup(html, HTML_PARSER)
+        iframe = soup.select_one(
+            "iframe[src*='icims.com/jobs/search'], iframe[src*='in_iframe=1']"
+        )
+        if iframe is None:
+            return None
+        src = str(iframe.get("src") or "").strip()
+        if not src:
+            return None
+        return urljoin(url, src)
+
+    async def _follow_embedded_content_url(self, url: str, html: str) -> str:
+        soup = BeautifulSoup(html, HTML_PARSER)
+        iframe = soup.select_one(
+            "iframe[src*='in_iframe=1'], iframe[src*='icims.com/jobs/']"
+        )
+        if iframe is None:
+            return html
+        src = str(iframe.get("src") or "").strip()
+        if not src:
+            return html
+        embedded_url = urljoin(url, src)
+        return await self._fetch_embedded_content(url=embedded_url, fallback_html=html)
+
+    async def _fetch_embedded_content(self, *, url: str, fallback_html: str) -> str:
+        try:
+            response_text = await self._request_text(
+                url,
+                timeout_seconds=adapter_runtime_settings.icims_pagination_timeout_seconds,
+            )
+        except _ICIMS_PAGINATION_ERRORS:
+            logger.exception("Failed to fetch embedded iCIMS content URL: %s", url)
+            return fallback_html
+        return response_text or fallback_html
+
+    def _paginate_endpoint(self, endpoint: str, offset: int) -> str:
+        page_url = (
+            re.sub(r"offset=\d+", f"offset={offset}", endpoint)
+            if "offset=" in endpoint
+            else f"{endpoint}{'&' if '?' in endpoint else '?'}offset={offset}"
+        )
+        if "num_items=" not in page_url:
+            page_url = (
+                f"{page_url}{'&' if '?' in page_url else '?'}"
+                f"num_items={adapter_runtime_settings.icims_page_size}"
+            )
+        return page_url
+
+    def _extract_from_listing_html(self, html: str, base_url: str) -> list[dict]:
+        soup = BeautifulSoup(html, HTML_PARSER)
+        rows = soup.select(
+            ".iCIMS_JobsTable .row, .iCIMS_JobsTable tr, .iCIMS_JobsTable .iCIMS_JobListingRow, .iCIMS_JobListingRow, .iCIMS_Job, [class*='job-card'], [class*='job-listing'], [class*='search-result'], .listitem"
+        )
+        records: list[dict] = []
+        seen_urls: set[str] = set()
+        for row in rows:
+            record = self._extract_row_from_soup(row, base_url)
+            if not record:
+                continue
+            record_url = str(record.get("url") or "").strip()
+            if not record_url or record_url in seen_urls:
+                continue
+            seen_urls.add(record_url)
+            records.append(record)
+        return records
+
+    def _parse_ajax_rows(self, html_fragment: str, base_url: str) -> list[dict]:
+        soup = BeautifulSoup(html_fragment, HTML_PARSER)
+        jobs = self._extract_from_listing_html(str(soup), base_url)
+        if jobs:
+            return jobs
+
+        seen_urls: set[str] = set()
+        fallback_jobs: list[dict] = []
+        rows = _ROW_RE.findall(html_fragment)
+        for row_html in rows:
+            record = self._extract_row_from_html(row_html, base_url)
+            if not record:
+                continue
+            record_url = str(record.get("url") or "").strip()
+            if not record_url or record_url in seen_urls:
+                continue
+            seen_urls.add(record_url)
+            fallback_jobs.append(record)
+        return fallback_jobs
+
+    def _extract_row_from_soup(self, row: Tag, base_url: str) -> dict | None:
+        link = row.select_one("a[href]")
+        if link is None:
+            return None
+        title_node = link.select_one("h1, h2, h3, h4") or link
+        title = clean_text(title_node.get_text(" ", strip=True))
+        title = re.sub(r"(?i)^posting job title\s+", "", title).strip()
+        if not title or len(title) < adapter_runtime_settings.icims_title_min_length:
+            return None
+        metadata = self._extract_header_fields(row)
+        record = {
+            "title": title,
+            "url": self._normalize_job_url(
+                str(link.get("href", "") or ""),
+                base_url=base_url,
+            ),
+        }
+        description = row.select_one(
+            ".description, .iCIMS_JobContent, [class*='description'], [class*='Description']"
+        )
+        location = row.select_one(
+            "[class*='location'], [class*='Location'], .iCIMS_JobLocation"
+        )
+        department = row.select_one(
+            "[class*='category'], [class*='Category'], [class*='department'], [class*='Department'], .iCIMS_JobCategory"
+        )
+        posted = row.select_one(
+            "[class*='date'], [class*='Date'], [class*='posted'], .iCIMS_JobDate"
+        )
+        if location is not None:
+            value = clean_text(location.get_text(" ", strip=True))
+            if value and value != title:
+                record["location"] = value
+        if department is not None:
+            value = clean_text(department.get_text(" ", strip=True))
+            if value and value != title:
+                record["department"] = value
+        if posted is not None:
+            value = clean_text(posted.get_text(" ", strip=True))
+            if value:
+                record["posted_date"] = value
+        if description is not None:
+            value = clean_text(description.get_text(" ", strip=True))
+            if value:
+                record["description"] = value
+        self._apply_metadata_fields(record, metadata)
+        return record
+
+    def _extract_row_from_html(self, row_html: str, base_url: str) -> dict | None:
+        link_match = re.search(
+            r'<a\s[^>]*href=["\']([^"\']+)["\'][^>]*>(.*?)</a>',
+            row_html,
+            re.IGNORECASE | re.DOTALL,
+        )
+        if not link_match:
+            return None
+        title = clean_text(_HTML_TAG_RE.sub("", link_match.group(2)))
+        title = re.sub(r"(?i)^posting job title\s+", "", title).strip()
+        if not title or len(title) < adapter_runtime_settings.icims_title_min_length:
+            return None
+        record: dict[str, str] = {
+            "title": title,
+            "url": self._normalize_job_url(link_match.group(1), base_url=base_url),
+        }
+        for field_name, pattern in {
+            "location": r'(?:class=["\'][^"\']*(?:location|Location|addr)[^"\']*["\'][^>]*>)(.*?)(?:</)',
+            "department": r'(?:class=["\'][^"\']*(?:category|Category|department|Department|team|Type)[^"\']*["\'][^>]*>)(.*?)(?:</)',
+            "posted_date": r'(?:class=["\'][^"\']*(?:date|Date|posted|Posted)[^"\']*["\'][^>]*>)(.*?)(?:</)',
+        }.items():
+            match = re.search(pattern, row_html, re.IGNORECASE | re.DOTALL)
+            if not match:
+                continue
+            value = clean_text(_HTML_TAG_RE.sub("", match.group(1)))
+            if value and value != title:
+                record[field_name] = value
+        return record
+
+    def _extract_detail(self, url: str, html: str) -> dict | None:
+        soup = BeautifulSoup(html, HTML_PARSER)
+        title = soup.select_one(
+            "h1, .iCIMS_JobHeader h1, [class*='jobtitle'], [class*='JobTitle']"
+        )
+        if title is None:
+            return None
+        record = {
+            "title": clean_text(title.get_text(" ", strip=True)),
+            "url": self._normalize_job_url(url),
+        }
+        metadata = self._extract_header_fields(soup)
+        location = soup.select_one(
+            "[class*='location'], [class*='Location'], .iCIMS_JobLocation"
+        )
+        description = soup.select_one(
+            ".iCIMS_JobContent, [class*='jobdescription'], [class*='JobDescription']"
+        )
+        if location is not None:
+            value = clean_text(location.get_text(" ", strip=True))
+            if value:
+                record["location"] = value
+        if description is not None:
+            value = clean_text(description.get_text(" ", strip=True))
+            if value:
+                record["description"] = value
+        self._apply_metadata_fields(record, metadata)
+        return record
+
+    def _extract_header_fields(self, node: BeautifulSoup | Tag) -> dict[str, str]:
+        fields: dict[str, str] = {}
+        for tag in node.select(".iCIMS_JobHeaderTag"):
+            label = tag.select_one(".iCIMS_JobHeaderField, dt")
+            value = tag.select_one(".iCIMS_JobHeaderData, dd")
+            label_text = self._normalize_header_label(
+                label.get_text(" ", strip=True) if label is not None else ""
+            )
+            value_text = clean_text(
+                value.get_text(" ", strip=True) if value is not None else ""
+            )
+            if label_text and value_text and label_text not in fields:
+                fields[label_text] = value_text
+        return fields
+
+    def _apply_metadata_fields(
+        self, record: dict[str, str], fields: dict[str, str]
+    ) -> None:
+        metadata_mapping = {
+            "campus_location": "location",
+            "location": "location",
+            "job_category": "department",
+            "category": "department",
+            "division": "company",
+            "company": "company",
+            "job_type": "job_type",
+            "employment_type": "job_type",
+            "job_number": "job_id",
+            "requisition_number": "job_id",
+        }
+        for source_name, target_name in metadata_mapping.items():
+            value = fields.get(source_name)
+            if value and not record.get(target_name):
+                record[target_name] = value
+
+    def _normalize_header_label(self, value: str) -> str:
+        cleaned = clean_text(value).lower()
+        return re.sub(r"[^a-z0-9]+", "_", cleaned).strip("_")
+
+    def _normalize_job_url(self, value: str, *, base_url: str = "") -> str:
+        resolved = urljoin(base_url, value) if base_url else str(value or "").strip()
+        if not resolved:
+            return ""
+        parsed = urlparse(resolved)
+        params = [
+            (key, item)
+            for key, item in parse_qsl(parsed.query, keep_blank_values=True)
+            if key != "in_iframe"
+        ]
+        return urlunparse(parsed._replace(query=urlencode(params, doseq=True)))
+
+    def _looks_like_detail_url(self, url: str) -> bool:
+        path = urlparse(str(url or "").lower()).path
+        return bool(
+            re.search(r"/[a-f0-9]{20,}/job/?$", path, flags=re.IGNORECASE)
+            or re.search(r"/jobs?/\d+", path, flags=re.IGNORECASE)
+        )
+

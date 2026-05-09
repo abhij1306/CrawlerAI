@@ -1,0 +1,426 @@
+from __future__ import annotations
+
+import asyncio
+from decimal import Decimal
+from typing import Any
+from urllib.parse import urlparse
+
+import httpx
+import logging
+from app.services.config.llm_runtime import (
+    SUPPORTED_LLM_PROVIDERS,
+    llm_runtime_settings,
+)
+from app.services.llm_circuit_breaker import circuit_is_open, record_failure, record_success
+from app.services.llm_config_service import provider_env_key
+from app.services.llm_errors import ERROR_PREFIX, LLMErrorCategory, classify_error
+
+logger = logging.getLogger(__name__)
+JSON_CONTENT_TYPE = "application/json"
+_groq_client: httpx.AsyncClient | None = None
+_groq_client_timeout: float | None = None
+_groq_client_lock = asyncio.Lock()
+_anthropic_client: httpx.AsyncClient | None = None
+_anthropic_client_timeout: float | None = None
+_anthropic_client_lock = asyncio.Lock()
+_nvidia_client: httpx.AsyncClient | None = None
+_nvidia_client_timeout: float | None = None
+_nvidia_client_lock = asyncio.Lock()
+_aws_client: httpx.AsyncClient | None = None
+_aws_client_timeout: float | None = None
+_aws_client_lock = asyncio.Lock()
+
+
+async def close_llm_provider_clients() -> None:
+    """Close shared provider clients on shutdown after all request handlers finish."""
+    global _groq_client, _groq_client_timeout
+    global _anthropic_client, _anthropic_client_timeout
+    global _nvidia_client, _nvidia_client_timeout
+    global _aws_client, _aws_client_timeout
+    async with _groq_client_lock:
+        async with _anthropic_client_lock:
+            async with _nvidia_client_lock:
+                async with _aws_client_lock:
+                    for client_name, client in (
+                        ("groq", _groq_client),
+                        ("anthropic", _anthropic_client),
+                        ("nvidia", _nvidia_client),
+                        ("aws", _aws_client),
+                    ):
+                        if client is not None and not client.is_closed:
+                            try:
+                                await client.aclose()
+                            except Exception:
+                                logger.warning(
+                                    "Failed to close shared %s LLM client",
+                                    client_name,
+                                    exc_info=True,
+                                )
+                    _groq_client = None
+                    _groq_client_timeout = None
+                    _anthropic_client = None
+                    _anthropic_client_timeout = None
+                    _nvidia_client = None
+                    _nvidia_client_timeout = None
+                    _aws_client = None
+                    _aws_client_timeout = None
+
+
+async def _refresh_shared_client(
+    client: httpx.AsyncClient | None,
+    client_timeout: float | None,
+) -> tuple[httpx.AsyncClient, float]:
+    timeout = float(llm_runtime_settings.provider_timeout_seconds)
+    if client is None or client.is_closed or client_timeout != timeout:
+        if client is not None and not client.is_closed:
+            await client.aclose()
+        client = httpx.AsyncClient(timeout=timeout)
+        client_timeout = timeout
+    return client, client_timeout
+
+
+async def _shared_groq_client() -> httpx.AsyncClient:
+    global _groq_client, _groq_client_timeout
+    async with _groq_client_lock:
+        _groq_client, _groq_client_timeout = await _refresh_shared_client(
+            _groq_client,
+            _groq_client_timeout,
+        )
+        return _groq_client
+
+
+async def _shared_anthropic_client() -> httpx.AsyncClient:
+    global _anthropic_client, _anthropic_client_timeout
+    async with _anthropic_client_lock:
+        _anthropic_client, _anthropic_client_timeout = await _refresh_shared_client(
+            _anthropic_client,
+            _anthropic_client_timeout,
+        )
+        return _anthropic_client
+
+
+async def _shared_nvidia_client() -> httpx.AsyncClient:
+    global _nvidia_client, _nvidia_client_timeout
+    async with _nvidia_client_lock:
+        _nvidia_client, _nvidia_client_timeout = await _refresh_shared_client(
+            _nvidia_client,
+            _nvidia_client_timeout,
+        )
+        return _nvidia_client
+
+
+async def _shared_aws_client() -> httpx.AsyncClient:
+    global _aws_client, _aws_client_timeout
+    async with _aws_client_lock:
+        _aws_client, _aws_client_timeout = await _refresh_shared_client(
+            _aws_client,
+            _aws_client_timeout,
+        )
+        return _aws_client
+
+
+async def call_provider(
+    *,
+    provider: str,
+    model: str,
+    api_key: str,
+    system_prompt: str,
+    user_prompt: str,
+) -> tuple[str, int, int]:
+    normalized_provider = str(provider or "").strip().lower()
+    if normalized_provider != "aws" and not api_key:
+        return f"{ERROR_PREFIX} Missing API key", 0, 0
+    if normalized_provider not in SUPPORTED_LLM_PROVIDERS:
+        return f"{ERROR_PREFIX} Unsupported provider: {provider}", 0, 0
+    dispatch = _provider_dispatch(normalized_provider)
+    if dispatch is None:
+        return f"{ERROR_PREFIX} Unsupported provider: {normalized_provider}", 0, 0
+    try:
+        return await dispatch(api_key, model, system_prompt, user_prompt)
+    except (httpx.HTTPError, ValueError) as exc:
+        return f"{ERROR_PREFIX} {type(exc).__name__}: {exc}", 0, 0
+
+
+async def call_provider_with_retry(
+    *,
+    provider: str,
+    model: str,
+    api_key: str,
+    system_prompt: str,
+    user_prompt: str,
+    max_retries: int = llm_runtime_settings.provider_retry_max_retries,
+    base_delay_s: float = llm_runtime_settings.provider_retry_base_delay_seconds,
+) -> tuple[str, int, int]:
+    normalized_provider = str(provider or "").strip().lower()
+    last_error = ""
+    attempts = max(1, int(max_retries) + 1)
+    for _attempt in range(attempts):
+        if await circuit_is_open(normalized_provider):
+            message = (
+                f"{ERROR_PREFIX} Circuit breaker open for provider "
+                f"{provider} (circuit_open)"
+            )
+            return message, 0, 0
+        result, input_tokens, output_tokens = await call_provider(
+            provider=provider,
+            model=model,
+            api_key=api_key,
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+        )
+        if not result.startswith(ERROR_PREFIX):
+            await record_success(normalized_provider)
+            return result, input_tokens, output_tokens
+        category = classify_error(result)
+        await record_failure(normalized_provider, category)
+        if category in {
+            LLMErrorCategory.RATE_LIMITED,
+            LLMErrorCategory.AUTH_FAILURE,
+            LLMErrorCategory.CLIENT_ERROR,
+        }:
+            return result, input_tokens, output_tokens
+        last_error = result
+        if _attempt + 1 < attempts:
+            await asyncio.sleep(max(0.0, float(base_delay_s)) * (2**_attempt))
+    return last_error or f"{ERROR_PREFIX} Provider call failed", 0, 0
+
+
+def estimate_cost_usd(
+    provider: str,
+    model: str,
+    input_tokens: int | None,
+    output_tokens: int | None,
+) -> Decimal:
+    rate = llm_runtime_settings.get_token_pricing().get(
+        (str(provider or "").strip().lower(), str(model or "").strip().lower())
+    )
+    if not rate:
+        return Decimal("0.0000")
+    input_rate, output_rate = rate
+    safe_input_tokens = _safe_token_count(input_tokens)
+    safe_output_tokens = _safe_token_count(output_tokens)
+    cost = (
+        (Decimal(safe_input_tokens) * Decimal(str(input_rate)))
+        + (Decimal(safe_output_tokens) * Decimal(str(output_rate)))
+    ) / Decimal("1000000")
+    return cost.quantize(Decimal("0.0001"))
+
+
+def _safe_token_count(value: int | None) -> int:
+    try:
+        return max(0, int(value or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+async def test_provider_connection(
+    *,
+    provider: str,
+    model: str,
+    api_key: str | None = None,
+) -> tuple[bool, str]:
+    resolved_key = str(api_key or "").strip() or provider_env_key(provider)
+    raw, _input_tokens, _output_tokens = await call_provider_with_retry(
+        provider=provider,
+        model=model,
+        api_key=resolved_key,
+        system_prompt="Reply with valid JSON only.",
+        user_prompt='{"ok":true}',
+    )
+    if raw.startswith(ERROR_PREFIX):
+        return False, raw.removeprefix(f"{ERROR_PREFIX} ").strip()
+    return True, "Connection succeeded."
+
+
+def _provider_dispatch(provider: str):
+    return _PROVIDER_DISPATCH.get(provider)
+
+
+async def _call_groq(
+    api_key: str,
+    model: str,
+    system_prompt: str,
+    user_prompt: str,
+) -> tuple[str, int, int]:
+    client = await _shared_groq_client()
+    return await _call_chat_completions_endpoint(
+        client,
+        url=llm_runtime_settings.groq_chat_completions_url,
+        api_key=api_key,
+        model=model,
+        system_prompt=system_prompt,
+        user_prompt=user_prompt,
+        max_tokens=llm_runtime_settings.groq_max_tokens,
+        temperature=llm_runtime_settings.groq_temperature,
+    )
+
+
+async def _call_chat_completions_endpoint(
+    client: httpx.AsyncClient,
+    *,
+    url: str,
+    api_key: str,
+    model: str,
+    system_prompt: str,
+    user_prompt: str,
+    max_tokens: int,
+    temperature: float,
+) -> tuple[str, int, int]:
+    response = await client.post(
+        url,
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": JSON_CONTENT_TYPE,
+        },
+        json={
+            "model": model,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+        },
+    )
+    if response.status_code != 200:
+        return _http_error(response), 0, 0
+    return _extract_chat_completion_payload(_safe_json_response(response))
+
+
+async def _call_anthropic(
+    api_key: str,
+    model: str,
+    system_prompt: str,
+    user_prompt: str,
+) -> tuple[str, int, int]:
+    client = await _shared_anthropic_client()
+    response = await client.post(
+        llm_runtime_settings.anthropic_messages_url,
+        headers={
+            "x-api-key": api_key,
+            "anthropic-version": "2023-06-01",
+            "content-type": JSON_CONTENT_TYPE,
+        },
+        json={
+            "model": model,
+            "max_tokens": llm_runtime_settings.anthropic_max_tokens,
+            "temperature": llm_runtime_settings.anthropic_temperature,
+            "system": system_prompt,
+            "messages": [{"role": "user", "content": user_prompt}],
+        },
+    )
+    if response.status_code != 200:
+        return _http_error(response), 0, 0
+    data = _safe_json_response(response)
+    content = data.get("content")
+    if not isinstance(content, list):
+        return f"{ERROR_PREFIX} Unexpected anthropic response", 0, 0
+    text = "\n".join(
+        str(part.get("text") or "").strip()
+        for part in content
+        if isinstance(part, dict)
+    ).strip()
+    usage_payload = data.get("usage")
+    usage: dict[str, Any] = usage_payload if isinstance(usage_payload, dict) else {}
+    return (
+        text,
+        int(usage.get("input_tokens", 0) or 0),
+        int(usage.get("output_tokens", 0) or 0),
+    )
+
+
+async def _call_nvidia(
+    api_key: str,
+    model: str,
+    system_prompt: str,
+    user_prompt: str,
+) -> tuple[str, int, int]:
+    client = await _shared_nvidia_client()
+    return await _call_chat_completions_endpoint(
+        client,
+        url=llm_runtime_settings.nvidia_chat_completions_url,
+        api_key=api_key,
+        model=model,
+        system_prompt=system_prompt,
+        user_prompt=user_prompt,
+        max_tokens=llm_runtime_settings.nvidia_max_tokens,
+        temperature=llm_runtime_settings.nvidia_temperature,
+    )
+
+
+async def _call_aws(
+    _api_key: str,
+    model: str,
+    system_prompt: str,
+    user_prompt: str,
+) -> tuple[str, int, int]:
+    proxy_url = str(llm_runtime_settings.aws_proxy_url or "").strip()
+    parsed_proxy_url = urlparse(proxy_url)
+    if parsed_proxy_url.scheme not in {"http", "https"} or not parsed_proxy_url.netloc:
+        return f"{ERROR_PREFIX} Invalid AWS proxy URL", 0, 0
+    client = await _shared_aws_client()
+    response = await client.post(
+        proxy_url,
+        headers={"Content-Type": JSON_CONTENT_TYPE},
+        json={
+            "model": model,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            "max_tokens": llm_runtime_settings.aws_max_tokens,
+            "temperature": llm_runtime_settings.aws_temperature,
+        },
+    )
+    if response.status_code != 200:
+        return _http_error(response), 0, 0
+    return _extract_chat_completion_payload(_safe_json_response(response))
+
+
+_PROVIDER_DISPATCH = {
+    "groq": _call_groq,
+    "anthropic": _call_anthropic,
+    "nvidia": _call_nvidia,
+    "aws": _call_aws,
+}
+
+if frozenset(_PROVIDER_DISPATCH) != SUPPORTED_LLM_PROVIDERS:
+    raise RuntimeError(
+        "SUPPORTED_LLM_PROVIDERS does not match LLM provider dispatch keys"
+    )
+
+
+def _http_error(response: httpx.Response) -> str:
+    return (
+        f"{ERROR_PREFIX} HTTP {response.status_code}: "
+        f"{response.text[: llm_runtime_settings.provider_error_excerpt_chars]}"
+    )
+
+
+def _safe_json_response(response: httpx.Response) -> dict[str, Any]:
+    try:
+        data = response.json()
+    except ValueError as exc:
+        raise ValueError(f"Invalid JSON from LLM provider response: {exc}") from exc
+    if not isinstance(data, dict):
+        raise ValueError("Invalid JSON from LLM provider response: expected object")
+    return data
+
+
+def _extract_chat_completion_payload(data: dict[str, Any]) -> tuple[str, int, int]:
+    choices = data.get("choices")
+    if not isinstance(choices, list) or not choices:
+        return f"{ERROR_PREFIX} Unexpected chat completion response", 0, 0
+    first_choice = choices[0] if isinstance(choices[0], dict) else {}
+    message_payload = first_choice.get("message")
+    message: dict[str, Any] = (
+        message_payload if isinstance(message_payload, dict) else {}
+    )
+    text = str(message.get("content") or "").strip()
+    usage_payload = data.get("usage")
+    usage: dict[str, Any] = usage_payload if isinstance(usage_payload, dict) else {}
+    return (
+        text,
+        int(usage.get("prompt_tokens", 0) or 0),
+        int(usage.get("completion_tokens", 0) or 0),
+    )

@@ -1,0 +1,1085 @@
+{
+  "_export_provenance": {
+    "generator": "app.services.config._export_data",
+    "regenerate": "cd backend; $env:PYTHONPATH='.'; .\\.venv\\Scripts\\python.exe -m app.services.config._export_data app/services/config/field_mappings.exports.json",
+    "invariant": "Static field mapping export. Keep keys loaded by field_mappings.py present and decodeable."
+  },
+  "CANONICAL_SCHEMAS": {
+    "automobile_detail": {
+      "__type__": "list",
+      "items": [
+        "title",
+        "price",
+        "currency",
+        "make",
+        "model",
+        "year",
+        "trim",
+        "mileage",
+        "vin",
+        "condition",
+        "body_style",
+        "fuel_type",
+        "transmission",
+        "drivetrain",
+        "exterior_color",
+        "interior_color",
+        "location",
+        "dealer_name",
+        "image_url",
+        "description"
+      ]
+    },
+    "automobile_listing": {
+      "__type__": "list",
+      "items": [
+        "title",
+        "price",
+        "url",
+        "image_url",
+        "make",
+        "model",
+        "year",
+        "mileage",
+        "location",
+        "dealer_name"
+      ]
+    },
+    "ecommerce_detail": {
+      "__type__": "list",
+      "items": [
+        "title",
+        "canonical_url",
+        "brand",
+        "vendor",
+        "sku",
+        "barcode",
+        "product_id",
+        "part_number",
+        "price",
+        "sale_price",
+        "discount_amount",
+        "discount_percentage",
+        "original_price",
+        "currency",
+        "availability",
+        "image_url",
+        "additional_images",
+        "description",
+        "rating",
+        "review_count",
+        "category",
+        "product_type",
+        "gender",
+        "color",
+        "size",
+        "materials",
+        "care",
+        "features",
+        "specifications",
+        "product_details",
+        "product_attributes",
+        "tags",
+        "image_count",
+        "created_at",
+        "updated_at",
+        "published_at",
+        "variants",
+        "variant_count"
+      ]
+    },
+    "ecommerce_listing": {
+      "__type__": "list",
+      "items": [
+        "title",
+        "brand",
+        "sku",
+        "part_number",
+        "price",
+        "sale_price",
+        "discount_amount",
+        "discount_percentage",
+        "original_price",
+        "currency",
+        "availability",
+        "image_url",
+        "color",
+        "size",
+        "dimensions",
+        "description",
+        "rating",
+        "review_count",
+        "url"
+      ]
+    },
+    "job_detail": {
+      "__type__": "list",
+      "items": [
+        "title",
+        "company",
+        "location",
+        "salary",
+        "job_type",
+        "posted_date",
+        "apply_url",
+        "description",
+        "requirements",
+        "responsibilities",
+        "qualifications",
+        "benefits",
+        "skills",
+        "remote"
+      ]
+    },
+    "job_listing": {
+      "__type__": "list",
+      "items": [
+        "title",
+        "job_id",
+        "company",
+        "location",
+        "salary",
+        "job_type",
+        "posted_date",
+        "department",
+        "description",
+        "url",
+        "apply_url"
+      ]
+    },
+    "tabular": {
+      "__type__": "list",
+      "items": []
+    }
+  },
+  "COLLECTION_KEYS": {
+    "__type__": "list",
+    "items": [
+      "products",
+      "items",
+      "results",
+      "records",
+      "listings",
+      "jobs",
+      "job-list",
+      "job_list",
+      "postings",
+      "positions",
+      "openings",
+      "hits",
+      "nodes",
+      "categories",
+      "collections",
+      "offers",
+      "deals",
+      "events",
+      "properties",
+      "rows"
+    ]
+  },
+  "DATALAYER_ECOMMERCE_FIELD_MAP": {
+    "currencyCode": "currency",
+    "detail.products[0].category": "category",
+    "detail.products[0].price": "price",
+    "items[0].currency": "currency",
+    "items[0].discount": "discount_amount",
+    "items[0].item_category": "category",
+    "items[0].price": "price"
+  },
+  "DOM_HIGH_VALUE_FIELDS": {
+    "ecommerce_detail": {
+      "__type__": "frozenset",
+      "items": [
+        "description",
+        "product_details",
+        "additional_images",
+        "specifications"
+      ]
+    },
+    "job_detail": {
+      "__type__": "frozenset",
+      "items": [
+        "responsibilities",
+        "description",
+        "qualifications"
+      ]
+    }
+  },
+  "DOM_OPTIONAL_CUE_FIELDS": {
+    "ecommerce_detail": {
+      "__type__": "frozenset",
+      "items": [
+        "dimensions",
+        "materials",
+        "care",
+        "features"
+      ]
+    },
+    "job_detail": {
+      "__type__": "frozenset",
+      "items": [
+        "benefits",
+        "skills",
+        "requirements"
+      ]
+    }
+  },
+  "SURFACE_FIELD_REPAIR_TARGETS": {
+    "ecommerce_detail": [
+      "price",
+      "title",
+      "image_url"
+    ]
+  },
+  "SURFACE_BROWSER_RETRY_TARGETS": {
+    "ecommerce_detail": [
+      "price",
+      "currency",
+      "title",
+      "image_url"
+    ]
+  },
+  "ECOMMERCE_DETAIL_JS_STATE_FIELDS": {
+    "__type__": "frozenset",
+    "items": [
+      "variants",
+      "price",
+      "currency",
+      "original_price",
+      "image_count",
+      "sku",
+      "title",
+      "availability",
+      "brand",
+      "image_url",
+      "size",
+      "color",
+      "stock_quantity",
+      "additional_images",
+      "product_id",
+      "variant_count"
+    ]
+  },
+  "ECOMMERCE_ONLY_FIELDS": {
+    "__type__": "frozenset",
+    "items": [
+      "exterior_color",
+      "price",
+      "interior_color",
+      "sale_price",
+      "currency",
+      "original_price",
+      "part_number",
+      "sku",
+      "availability",
+      "brand",
+      "image_url",
+      "review_count",
+      "color_variants",
+      "color",
+      "stock_quantity",
+      "product_attributes",
+      "rating",
+      "additional_images",
+      "condition"
+    ]
+  },
+  "FIELD_ALIASES": {
+    "title": {
+      "__type__": "list",
+      "items": [
+        "title",
+        "name",
+        "job_title",
+        "position",
+        "headline",
+        "productName",
+        "product_name"
+      ]
+    },
+    "url": {
+      "__type__": "list",
+      "items": [
+        "url",
+        "link",
+        "href",
+        "canonical_url",
+        "canonicalUrl",
+        "product_url",
+        "productUrl",
+        "productURL",
+        "pdp_url",
+        "pdpUrl",
+        "pdpURL",
+        "seo_url",
+        "seoUrl",
+        "item_url",
+        "itemUrl",
+        "landingPageUrl",
+        "detailPageLink",
+        "detail_page_link",
+        "detailUrl",
+        "detail_url",
+        "workUrl",
+        "listingUrl",
+        "positionURI"
+      ]
+    },
+    "slug": {
+      "__type__": "list",
+      "items": [
+        "slug"
+      ]
+    },
+    "price": {
+      "__type__": "list",
+      "items": [
+        "price",
+        "amount",
+        "cost",
+        "current_price",
+        "buyNowPrice",
+        "lowPrice"
+      ]
+    },
+    "sale_price": {
+      "__type__": "list",
+      "items": [
+        "sale_price",
+        "saleprice",
+        "sellingprice",
+        "newprice",
+        "discount_price",
+        "discountedPrice"
+      ]
+    },
+    "discount_amount": {
+      "__type__": "list",
+      "items": [
+        "discount_amount",
+        "discount",
+        "discountValue",
+        "discount_value"
+      ]
+    },
+    "discount_percentage": {
+      "__type__": "list",
+      "items": [
+        "discount_percentage",
+        "discount_percent",
+        "percent_off",
+        "off_percentage"
+      ]
+    },
+    "original_price": {
+      "__type__": "list",
+      "items": [
+        "compare_at_price",
+        "list_price",
+        "regular_price",
+        "was_price",
+        "original_price",
+        "price_original",
+        "mrp",
+        "listPrice",
+        "highPrice"
+      ]
+    },
+    "currency": {
+      "__type__": "list",
+      "items": [
+        "currency",
+        "currency_code",
+        "price_currency"
+      ]
+    },
+    "brand": {
+      "__type__": "list",
+      "items": [
+        "brand",
+        "manufacturer",
+        "manufacturer_name",
+        "brand_name",
+        "designer",
+        "brandName"
+      ]
+    },
+    "image_url": {
+      "__type__": "list",
+      "items": [
+        "image",
+        "image_url",
+        "thumbnail",
+        "img",
+        "photo",
+        "logo",
+        "featured_image",
+        "primary_image",
+        "searchImage",
+        "imageUrl"
+      ]
+    },
+    "additional_images": {
+      "__type__": "list",
+      "items": [
+        "images",
+        "gallery",
+        "gallery_images",
+        "product_images",
+        "media",
+        "photos",
+        "assets"
+      ]
+    },
+    "color": {
+      "__type__": "list",
+      "items": [
+        "color",
+        "colors",
+        "color_name",
+        "finish",
+        "frame_color",
+        "colour"
+      ]
+    },
+    "color_variants": {
+      "__type__": "list",
+      "items": [
+        "color_variants",
+        "color variants",
+        "available colors",
+        "swatch",
+        "color_swatch",
+        "color_options"
+      ]
+    },
+    "size": {
+      "__type__": "list",
+      "items": [
+        "size",
+        "sizes",
+        "variant_size"
+      ]
+    },
+    "variants": {
+      "__type__": "list",
+      "items": [
+        "variants",
+        "variant_rows",
+        "variant_matrix"
+      ]
+    },
+    "product_attributes": {
+      "__type__": "list",
+      "items": [
+        "product_attributes",
+        "attributes",
+        "product_attrs",
+        "productAttributes"
+      ]
+    },
+    "materials": {
+      "__type__": "list",
+      "items": [
+        "materials",
+        "material",
+        "fabric",
+        "composition",
+        "fabric_content"
+      ]
+    },
+    "care": {
+      "__type__": "list",
+      "items": [
+        "care",
+        "care_instructions",
+        "product_care"
+      ]
+    },
+    "company": {
+      "__type__": "list",
+      "items": [
+        "company",
+        "company_name",
+        "companyName",
+        "organization",
+        "employer",
+        "hiring_organization",
+        "agency"
+      ]
+    },
+    "location": {
+      "__type__": "list",
+      "items": [
+        "location",
+        "candidate_required_location",
+        "job_location",
+        "city",
+        "region"
+      ]
+    },
+    "salary": {
+      "__type__": "list",
+      "items": [
+        "salary",
+        "compensation",
+        "pay",
+        "salary_range",
+        "salaryDisplay"
+      ]
+    },
+    "salary_currency": {
+      "__type__": "list",
+      "items": [
+        "salary_currency",
+        "salary_currency_code",
+        "pay_currency"
+      ]
+    },
+    "salary_min": {
+      "__type__": "list",
+      "items": [
+        "salary_min",
+        "min_salary",
+        "minimum_salary"
+      ]
+    },
+    "salary_max": {
+      "__type__": "list",
+      "items": [
+        "salary_max",
+        "max_salary",
+        "maximum_salary"
+      ]
+    },
+    "job_id": {
+      "__type__": "list",
+      "items": [
+        "job_id",
+        "jobId",
+        "requisition_id",
+        "requisitionId",
+        "req_id",
+        "opening_id"
+      ]
+    },
+    "category": {
+      "__type__": "list",
+      "items": [
+        "category",
+        "type",
+        "product_type",
+        "breadcrumb",
+        "breadcrumbs",
+        "category_path"
+      ]
+    },
+    "gender": {
+      "__type__": "list",
+      "items": [
+        "gender",
+        "target_gender",
+        "targetGender"
+      ]
+    },
+    "department": {
+      "__type__": "list",
+      "items": [
+        "department",
+        "team",
+        "division",
+        "org_department"
+      ]
+    },
+    "sku": {
+      "__type__": "list",
+      "items": [
+        "sku",
+        "item_id",
+        "id"
+      ]
+    },
+    "part_number": {
+      "__type__": "list",
+      "items": [
+        "part_number",
+        "part",
+        "part_no",
+        "partNumber",
+        "mpn",
+        "manufacturer_part_number"
+      ]
+    },
+    "availability": {
+      "__type__": "list",
+      "items": [
+        "availability",
+        "in_stock",
+        "stock_status",
+        "inStock"
+      ]
+    },
+    "tags": {
+      "__type__": "list",
+      "items": [
+        "tags",
+        "labels",
+        "keywords"
+      ]
+    },
+    "rating": {
+      "__type__": "list",
+      "items": [
+        "rating",
+        "average_rating",
+        "score",
+        "rating_value",
+        "aggregate_rating"
+      ]
+    },
+    "review_count": {
+      "__type__": "list",
+      "items": [
+        "review_count",
+        "total_reviews",
+        "num_reviews",
+        "numberOfReviews"
+      ]
+    },
+    "stock_quantity": {
+      "__type__": "list",
+      "items": [
+        "stock_quantity",
+        "inventory_quantity",
+        "quantity_available"
+      ]
+    },
+    "publication_date": {
+      "__type__": "list",
+      "items": [
+        "publication_date",
+        "date",
+        "created_at",
+        "published_at",
+        "pub_date",
+        "published_date"
+      ]
+    },
+    "posted_date": {
+      "__type__": "list",
+      "items": [
+        "posted_date",
+        "date_posted",
+        "posted_at",
+        "job_posted_date"
+      ]
+    },
+    "apply_url": {
+      "__type__": "list",
+      "items": [
+        "apply_url",
+        "application_url",
+        "job_url",
+        "product_link"
+      ]
+    },
+    "company_logo": {
+      "__type__": "list",
+      "items": [
+        "company_logo",
+        "companyLogo",
+        "employer_logo"
+      ]
+    },
+    "responsibilities": {
+      "__type__": "list",
+      "items": [
+        "responsibilities",
+        "duties",
+        "job_duties",
+        "what_you_ll_do",
+        "what_you_will_do"
+      ]
+    },
+    "qualifications": {
+      "__type__": "list",
+      "items": [
+        "qualifications",
+        "job_qualification",
+        "minimum_requirements",
+        "preferred_qualifications",
+        "who_you_are"
+      ]
+    },
+    "benefits": {
+      "__type__": "list",
+      "items": [
+        "benefits",
+        "job_benefits",
+        "perks",
+        "compensation_benefits",
+        "what_we_offer"
+      ]
+    },
+    "skills": {
+      "__type__": "list",
+      "items": [
+        "skills",
+        "job_skills",
+        "competencies",
+        "abilities",
+        "what_you_ll_bring"
+      ]
+    },
+    "remote": {
+      "__type__": "list",
+      "items": [
+        "remote",
+        "work_from_home",
+        "wfh",
+        "telecommute"
+      ]
+    },
+    "employment_type": {
+      "__type__": "list",
+      "items": [
+        "employment_type",
+        "schedule_type"
+      ]
+    },
+    "experience_level": {
+      "__type__": "list",
+      "items": [
+        "experience_level",
+        "experience",
+        "experienceLevel"
+      ]
+    },
+    "job_function": {
+      "__type__": "list",
+      "items": [
+        "job_function",
+        "function",
+        "jobFunction"
+      ]
+    },
+    "seniority_level": {
+      "__type__": "list",
+      "items": [
+        "seniority_level",
+        "seniority",
+        "seniorityLevel"
+      ]
+    },
+    "work_model": {
+      "__type__": "list",
+      "items": [
+        "work_model",
+        "workplace_type",
+        "workplaceType"
+      ]
+    },
+    "specifications": {
+      "__type__": "list",
+      "items": [
+        "specifications",
+        "details",
+        "technical_details",
+        "the_details"
+      ]
+    },
+    "product_details": {
+      "__type__": "list",
+      "items": [
+        "product_details",
+        "product details"
+      ]
+    },
+    "features": {
+      "__type__": "list",
+      "items": [
+        "features",
+        "highlights",
+        "key_features"
+      ]
+    },
+    "dimensions": {
+      "__type__": "list",
+      "items": [
+        "dimensions",
+        "sizing",
+        "measurements"
+      ]
+    },
+    "summary": {
+      "__type__": "list",
+      "items": [
+        "summary"
+      ]
+    },
+    "requirements": {
+      "__type__": "list",
+      "items": [
+        "requirements",
+        "job_requirements",
+        "prerequisites"
+      ]
+    },
+    "job_type": {
+      "__type__": "list",
+      "items": [
+        "job_type"
+      ]
+    },
+    "make": {
+      "__type__": "list",
+      "items": [
+        "make"
+      ]
+    },
+    "model": {
+      "__type__": "list",
+      "items": [
+        "model"
+      ]
+    },
+    "year": {
+      "__type__": "list",
+      "items": [
+        "year"
+      ]
+    },
+    "trim": {
+      "__type__": "list",
+      "items": [
+        "trim"
+      ]
+    },
+    "mileage": {
+      "__type__": "list",
+      "items": [
+        "mileage",
+        "distance"
+      ]
+    },
+    "vin": {
+      "__type__": "list",
+      "items": [
+        "vin"
+      ]
+    },
+    "condition": {
+      "__type__": "list",
+      "items": [
+        "condition"
+      ]
+    },
+    "body_style": {
+      "__type__": "list",
+      "items": [
+        "body_style",
+        "body type"
+      ]
+    },
+    "fuel_type": {
+      "__type__": "list",
+      "items": [
+        "fuel_type",
+        "fuel"
+      ]
+    },
+    "transmission": {
+      "__type__": "list",
+      "items": [
+        "transmission"
+      ]
+    },
+    "drivetrain": {
+      "__type__": "list",
+      "items": [
+        "drivetrain"
+      ]
+    },
+    "exterior_color": {
+      "__type__": "list",
+      "items": [
+        "exterior_color",
+        "exterior color"
+      ]
+    },
+    "interior_color": {
+      "__type__": "list",
+      "items": [
+        "interior_color"
+      ]
+    },
+    "dealer_name": {
+      "__type__": "list",
+      "items": [
+        "dealer_name",
+        "dealer"
+      ]
+    },
+    "description": {
+      "__type__": "list",
+      "items": [
+        "description",
+        "product description",
+        "product_description"
+      ]
+    }
+  },
+  "INTERNAL_ONLY_FIELDS": {
+    "__type__": "frozenset",
+    "items": [
+      "_source",
+      "_score",
+      "slug",
+      "_raw_item"
+    ]
+  },
+  "JOB_ONLY_FIELDS": {
+    "__type__": "frozenset",
+    "items": [
+      "remote",
+      "apply_url",
+      "company",
+      "salary_max",
+      "posted_date",
+      "job_function",
+      "salary",
+      "work_model",
+      "location",
+      "salary_currency",
+      "job_id",
+      "seniority_level",
+      "salary_min",
+      "employment_type",
+      "experience_level",
+      "company_logo"
+    ]
+  },
+  "PROMPT_REGISTRY": {
+    "direct_record_extraction": {
+      "response_type": "array",
+      "system_file": "direct_record_extraction.system.txt",
+      "user_file": "direct_record_extraction.user.txt"
+    },
+    "field_cleanup_review": {
+      "response_type": "object",
+      "system_file": "field_cleanup_review.system.txt",
+      "user_file": "field_cleanup_review.user.txt"
+    },
+    "missing_field_extraction": {
+      "response_type": "object",
+      "system_file": "missing_field_extraction.system.txt",
+      "user_file": "missing_field_extraction.user.txt"
+    },
+    "page_classification": {
+      "response_type": "object",
+      "system_file": "page_classification.system.txt",
+      "user_file": "page_classification.user.txt"
+    },
+    "schema_inference": {
+      "response_type": "object",
+      "system_file": "schema_inference.system.txt",
+      "user_file": "schema_inference.user.txt"
+    },
+    "xpath_discovery": {
+      "data_key": "selectors",
+      "response_type": "object",
+      "system_file": "xpath_discovery.system.txt",
+      "user_file": "xpath_discovery.user.txt"
+    }
+  },
+  "PUBLIC_RECORD_DEFAULT_EXCLUDED_FIELDS": {
+    "ecommerce_detail": {
+      "__type__": "list",
+      "items": [
+        "canonical_url",
+        "created_at",
+        "image_count",
+        "published_at",
+        "updated_at"
+      ]
+    }
+  },
+  "PUBLIC_RECORD_DETAIL_CANONICAL_QUERY_KEYS": {
+    "__type__": "tuple",
+    "items": [
+      "color",
+      "colour",
+      "productId",
+      "product_id",
+      "productid",
+      "sku",
+      "size",
+      "variant"
+    ]
+  },
+  "PUBLIC_RECORD_DETAIL_CANONICAL_QUERY_PREFIXES": {
+    "__type__": "tuple",
+    "items": [
+      "dwvar_"
+    ]
+  },
+  "PUBLIC_RECORD_URL_BLOCKED_PATH_MARKERS": {
+    "__type__": "tuple",
+    "items": [
+      "/api/",
+      "/event/",
+      "/events/",
+      "/tracking/",
+      "/analytics/",
+      "/beacon/",
+      "/click"
+    ]
+  },
+  "PUBLIC_RECORD_URL_MAX_LENGTH": 2048,
+  "NORMALIZER_DECIMAL_FIELDS": {
+    "__type__": "frozenset",
+    "items": [
+      "discount_amount",
+      "discount_percentage",
+      "original_price",
+      "price",
+      "rating",
+      "sale_price",
+      "salary_max",
+      "salary_min"
+    ]
+  },
+  "NORMALIZER_INTEGER_FIELDS": {
+    "__type__": "frozenset",
+    "items": [
+      "image_count",
+      "job_id",
+      "number_of_keys",
+      "quantity",
+      "rating_count",
+      "review_count",
+      "stock_quantity",
+      "variant_count"
+    ]
+  },
+  "NORMALIZER_LIST_TEXT_FIELDS": {
+    "__type__": "frozenset",
+    "items": [
+      "additional_images",
+      "tags"
+    ]
+  },
+  "NORMALIZER_BOOLEAN_FIELDS": {
+    "__type__": "frozenset",
+    "items": [
+      "remote"
+    ]
+  },
+  "VARIANT_DOM_FIELD_NAMES": {
+    "__type__": "tuple",
+    "items": [
+      "variant_count",
+      "variants"
+    ]
+  }
+}

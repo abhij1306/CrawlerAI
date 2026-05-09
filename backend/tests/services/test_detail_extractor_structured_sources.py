@@ -1,0 +1,6480 @@
+from __future__ import annotations
+
+import json
+
+import pytest
+from bs4 import BeautifulSoup
+
+from app.services.adapters.myntra import MyntraAdapter
+from app.services.extract.detail_materializer import (
+    build_detail_record,
+)
+from app.services.extract.detail_dom_extractor import variant_option_availability
+from app.services.extract.detail_price_extractor import (
+    detail_currency_hint_is_host_level,
+    reconcile_parent_price_against_variant_range,
+    reconcile_detail_currency_with_url,
+)
+from app.services.extract.detail_record_finalizer import (
+    detail_image_matches_primary_family,
+    sanitize_variant_row,
+)
+from app.services.extract import detail_raw_signals
+from app.services.extract import detail_dom_extractor
+from app.services.extract import detail_materializer
+from app.services.extract.variant_record_normalization import normalize_variant_record
+from app.services.extraction_runtime import extract_records
+from tests.fixtures.loader import read_optional_artifact_text
+
+
+def test_detail_currency_hint_host_matching_avoids_partial_word_false_positive() -> None:
+    assert (
+        detail_currency_hint_is_host_level(
+            "https://www.notarget.com/products/widget",
+            expected_currency="USD",
+        )
+        is False
+    )
+    assert (
+        detail_currency_hint_is_host_level(
+            "https://www.target.com/products/widget",
+            expected_currency="USD",
+        )
+        is True
+    )
+
+
+def test_reconcile_detail_currency_with_url_tracks_nested_currency_sources() -> None:
+    record = {
+        "selected_variant": {"price": "10.00"},
+        "variants": [{"price": "10.00"}],
+    }
+
+    reconcile_detail_currency_with_url(
+        record,
+        page_url="https://www.target.com/p/widget",
+    )
+
+    assert record["variants"][0]["currency"] == "USD"
+    assert "url_currency_hint" in record["_field_sources"]["selected_variant.currency"]
+    assert "url_currency_hint" in record["_field_sources"]["variants[0].currency"]
+
+
+def test_extract_ecommerce_detail_jsonld_skips_currency_only_offer() -> None:
+    html = """
+    <html>
+      <head>
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "Product",
+          "name": "Trail Runner",
+          "offers": [
+            {"@type": "Offer", "priceCurrency": "USD"},
+            {"@type": "Offer", "price": "129.95", "priceCurrency": "USD"}
+          ]
+        }
+        </script>
+      </head>
+      <body><h1>Trail Runner</h1></body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        "https://example.com/products/trail-runner",
+        "ecommerce_detail",
+        max_records=5,
+    )
+
+    assert len(rows) == 1
+    assert rows[0]["price"] == "129.95"
+    assert rows[0]["currency"] == "USD"
+
+
+def test_extract_ecommerce_detail_rejects_url_like_structured_brand() -> None:
+    html = """
+    <html>
+      <head>
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "Product",
+          "name": "Vitamin D3 Mini Gels",
+          "brand": "https://www.vitacost.com/brand/vitacost",
+          "offers": {"price": "10.99", "priceCurrency": "USD"}
+        }
+        </script>
+      </head>
+      <body><h1>Vitamin D3 Mini Gels</h1></body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        "https://www.vitacost.com/vitacost-vitamin-d3-mini-gels",
+        "ecommerce_detail",
+        max_records=5,
+    )
+
+    assert len(rows) == 1
+    assert "brand" not in rows[0]
+
+
+def test_extract_ecommerce_detail_from_microdata() -> None:
+    html = """
+    <html>
+      <body>
+        <main itemscope itemtype="https://schema.org/Product">
+          <h1 itemprop="name">Microdata Widget</h1>
+          <div itemprop="brand" itemscope itemtype="https://schema.org/Brand">
+            <span itemprop="name">Acme</span>
+          </div>
+          <div itemprop="offers" itemscope itemtype="https://schema.org/Offer">
+            <meta itemprop="priceCurrency" content="USD">
+            <span itemprop="price">29.99</span>
+            <link itemprop="availability" href="https://schema.org/InStock">
+          </div>
+        </main>
+      </body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        "https://example.com/products/microdata-widget",
+        "ecommerce_detail",
+        max_records=5,
+    )
+
+    assert len(rows) == 1
+    record = rows[0]
+    assert record["title"] == "Microdata Widget"
+    assert record["brand"] == "Acme"
+    assert record["price"] == "29.99"
+    assert record["currency"] == "USD"
+    assert record["availability"] == "in_stock"
+    assert record["_source"] == "microdata"
+
+def test_extract_ecommerce_detail_merges_shopify_available_sizes_over_single_jsonld_variant() -> None:
+    html = """
+    <html>
+      <head>
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "Product",
+          "name": "Arrival 5\\" Shorts",
+          "brand": {"@type": "Brand", "name": "Gymshark"},
+          "hasVariant": [
+            {
+              "@type": "Product",
+              "sku": "A2A1M-BBBB",
+              "size": "xs",
+              "offers": {
+                "@type": "Offer",
+                "price": "26.00",
+                "priceCurrency": "USD"
+              }
+            }
+          ]
+        }
+        </script>
+        <script id="__NEXT_DATA__" type="application/json">
+        {
+          "props": {
+            "pageProps": {
+              "productData": {
+                "product": {
+                  "id": 6804846346442,
+                  "title": "Arrival 5\\" Shorts",
+                  "handle": "gymshark-arrival-5-shorts-black-ss22",
+                  "colour": "Black",
+                  "price": 26,
+                  "currencyCode": "USD",
+                  "availableSizes": [
+                    {
+                      "id": 39786362568906,
+                      "inStock": true,
+                      "inventoryQuantity": 9170,
+                      "price": 26,
+                      "size": "xs",
+                      "sku": "A2A1M-BBBB-XS"
+                    },
+                    {
+                      "id": 39786362601674,
+                      "inStock": true,
+                      "inventoryQuantity": 22988,
+                      "price": 26,
+                      "size": "s",
+                      "sku": "A2A1M-BBBB-S"
+                    },
+                    {
+                      "id": 39786362634442,
+                      "inStock": false,
+                      "inventoryQuantity": 0,
+                      "price": 26,
+                      "size": "m",
+                      "sku": "A2A1M-BBBB-M"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+        </script>
+      </head>
+      <body><main><h1>Arrival 5&quot; Shorts</h1></main></body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        "https://www.gymshark.com/products/gymshark-arrival-5-shorts-black-ss22",
+        "ecommerce_detail",
+        max_records=1,
+        requested_fields=["variants", "title", "price", "currency"],
+    )
+
+    assert rows
+    record = rows[0]
+    assert record["title"] == 'Arrival 5" Shorts'
+    assert record["variant_count"] == 3
+    assert [variant["size"] for variant in record["variants"]] == ["xs", "s", "m"]
+    assert [variant["sku"] for variant in record["variants"]] == [
+        "A2A1M-BBBB-XS",
+        "A2A1M-BBBB-S",
+        "A2A1M-BBBB-M",
+    ]
+
+
+def test_detail_record_runs_dom_tier_when_variant_dom_cues_exist() -> None:
+    html = """
+    <html>
+      <body>
+        <main>
+          <h1>Trail Shoe</h1>
+          <select name="color">
+            <option>Black</option>
+            <option>Blue</option>
+          </select>
+        </main>
+      </body>
+    </html>
+    """
+
+    record = build_detail_record(
+        html,
+        "https://example.com/products/trail-shoe",
+        "ecommerce_detail",
+        requested_fields=[
+            "title",
+            "price",
+            "variants",
+            "variant_axes",
+            "selected_variant",
+        ],
+        adapter_records=[
+            {
+                "title": "Trail Shoe",
+                "price": "49.99",
+                "variant_axes": {"color": ["Black"]},
+                "variants": [
+                    {
+                        "title": "Trail Shoe Black",
+                        "option_values": {"color": "Black"},
+                    }
+                ],
+                "selected_variant": {
+                    "title": "Trail Shoe Black",
+                    "option_values": {"color": "Black"},
+                },
+            }
+        ],
+        extraction_runtime_snapshot={
+            "selector_self_heal": {"enabled": True, "min_confidence": 0.0}
+        },
+    )
+
+    assert record["_extraction_tiers"]["current"] == "dom"
+    assert record["_extraction_tiers"]["early_exit"] is None
+
+
+def test_sanitize_variant_row_keeps_option_label_titles_with_variant_signals() -> None:
+    variant = {"title": "Large", "sku": "TRAIL-L", "price": "8.99"}
+
+    assert sanitize_variant_row(
+        variant,
+        identity_url="https://example.com/products/trail-mix",
+    )
+    assert variant["title"] == "Large"
+
+
+def test_sanitize_variant_row_keeps_same_site_variant_url_with_axis_signal() -> None:
+    variant = {
+        "color": "Deep Pink",
+        "url": "https://www.amazon.com/dp/B09LD8VFS1/ref=twister_B0CZ8ZQL8C?_encoding=UTF8&psc=1",
+    }
+
+    assert sanitize_variant_row(
+        variant,
+        identity_url="https://www.amazon.com/Philips-Sonicare-Toothbrush-Rechargeable-HX3681/dp/B09LD7WRVS?th=1",
+    )
+    assert variant["color"] == "Deep Pink"
+
+
+def test_detail_image_family_requires_full_media_code_match() -> None:
+    assert not detail_image_matches_primary_family(
+        "https://cdn.example.com/a999999/image.jpg",
+        primary_image="https://cdn.example.com/a123456/image.jpg",
+        title="",
+    )
+
+
+def test_extract_ecommerce_detail_from_opengraph() -> None:
+    html = """
+    <html>
+      <head>
+        <meta property="og:title" content="OG Widget">
+        <meta property="og:type" content="product">
+        <meta property="og:image" content="https://example.com/images/og-widget.jpg">
+        <meta property="og:url" content="https://example.com/products/og-widget">
+        <meta property="product:price:amount" content="19.99">
+        <meta property="product:price:currency" content="USD">
+        <meta property="product:availability" content="in stock">
+      </head>
+      <body></body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        "https://example.com/products/og-widget",
+        "ecommerce_detail",
+        max_records=5,
+    )
+
+    assert len(rows) == 1
+    record = rows[0]
+    assert record["title"] == "OG Widget"
+    assert record["price"] == "19.99"
+    assert record["currency"] == "USD"
+    assert record["availability"] == "in_stock"
+    assert record["image_url"] == "https://example.com/images/og-widget.jpg"
+    assert record["url"] == "https://example.com/products/og-widget"
+    assert record["_source"] == "opengraph"
+
+
+def test_extract_ecommerce_detail_keeps_page_url_when_opengraph_url_is_site_root() -> None:
+    html = """
+    <html>
+      <head>
+        <meta property="og:title" content="Personal Blender">
+        <meta property="og:type" content="product">
+        <meta property="og:image" content="https://demo.spreecommerce.org/images/personal-blender.jpg">
+        <meta property="og:url" content="https://demo.spreecommerce.org">
+        <meta property="product:price:amount" content="149.99">
+        <meta property="product:price:currency" content="USD">
+        <meta property="product:availability" content="in stock">
+      </head>
+      <body></body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        "https://demo.spreecommerce.org/us/en/products/personal-blender",
+        "ecommerce_detail",
+        max_records=5,
+    )
+
+    assert len(rows) == 1
+    record = rows[0]
+    assert record["title"] == "Personal Blender"
+    assert (
+        record["url"]
+        == "https://demo.spreecommerce.org/us/en/products/personal-blender"
+    )
+    assert record["_source"] == "opengraph"
+
+
+def test_extract_ecommerce_detail_ignores_placeholder_same_site_json_ld_url() -> None:
+    html = """
+    <html>
+      <head>
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "Product",
+          "name": "Biltmore Egyptian Collection Medium/Firm Support Pillow, White, King, Cotton",
+          "url": "https://www.joinhoney.com/shop/undefined/p/undefined/",
+          "priceCurrency": "USD"
+        }
+        </script>
+      </head>
+      <body>
+        <h1>Biltmore Egyptian Collection Medium/Firm Support Pillow, White, King, Cotton</h1>
+      </body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        "https://www.joinhoney.com/it/shop/belk/p/7367171691114074156_8bce8b8cc8892988fb42b26670ceaa09_7121c9215dcc3274f45b6a172cf8e8a8",
+        "ecommerce_detail",
+        max_records=1,
+        requested_page_url="https://www.joinhoney.com/it/shop/belk/p/7367171691114074156_8bce8b8cc8892988fb42b26670ceaa09_7121c9215dcc3274f45b6a172cf8e8a8",
+    )
+
+    assert len(rows) == 1
+    assert (
+        rows[0]["title"]
+        == "Biltmore Egyptian Collection Medium/Firm Support Pillow, White, King, Cotton"
+    )
+    assert (
+        rows[0]["url"]
+        == "https://www.joinhoney.com/it/shop/belk/p/7367171691114074156_8bce8b8cc8892988fb42b26670ceaa09_7121c9215dcc3274f45b6a172cf8e8a8"
+    )
+
+
+def test_extract_ecommerce_detail_ignores_review_json_ld_title_description_and_images() -> None:
+    html = """
+    <html>
+      <head>
+        <meta property="og:description" content="Weather resistant pack for daily commuting.">
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "Product",
+          "name": "Commuter Backpack",
+          "image": "https://example.com/images/product.jpg",
+          "sku": "CB-001"
+        }
+        </script>
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "Review",
+          "name": "Best choice I ever made",
+          "description": "normal",
+          "image": "https://example.com/images/review-photo.jpg"
+        }
+        </script>
+      </head>
+      <body>
+        <h1>Commuter Backpack</h1>
+      </body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        "https://example.com/products/commuter-backpack",
+        "ecommerce_detail",
+        max_records=5,
+        requested_fields=["description"],
+    )
+
+    assert len(rows) == 1
+    record = rows[0]
+    assert record["title"] == "Commuter Backpack"
+    assert record["description"] == "Weather resistant pack for daily commuting."
+    assert record["image_url"] == "https://example.com/images/product.jpg"
+
+
+def test_extract_ecommerce_detail_ignores_nested_person_name_inside_product_json_ld() -> None:
+    html = """
+    <html>
+      <head>
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "Product",
+          "name": "Skechers Max Cushioning Elite",
+          "brand": {
+            "@type": "Brand",
+            "name": "Skechers"
+          },
+          "manufacturer": {
+            "@type": "Organization",
+            "name": "Skechers",
+            "founder": {
+              "@type": "Person",
+              "name": "Robert Greenberg"
+            }
+          },
+          "offers": {
+            "@type": "Offer",
+            "priceCurrency": "USD",
+            "price": "130.00",
+            "availability": "https://schema.org/InStock"
+          }
+        }
+        </script>
+      </head>
+      <body>
+        <h1>Skechers Max Cushioning Elite</h1>
+      </body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        "https://www.skechers.com/max-cushioning-elite/220000.html",
+        "ecommerce_detail",
+        max_records=5,
+    )
+
+    assert len(rows) == 1
+    record = rows[0]
+    assert record["title"] == "Skechers Max Cushioning Elite"
+    assert record["brand"] == "Skechers"
+    assert "Robert Greenberg" not in record.values()
+
+
+def test_extract_ecommerce_detail_ignores_noisy_h1_and_uses_page_title() -> None:
+    html = """
+    <html>
+      <head>
+        <title>Widget Prime</title>
+      </head>
+      <body>
+        <main>
+          <h1>Save 20% With Code SPRING</h1>
+          <div class="price">$19.99</div>
+        </main>
+      </body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        "https://example.com/products/widget-prime",
+        "ecommerce_detail",
+        max_records=5,
+    )
+
+    assert len(rows) == 1
+    record = rows[0]
+    assert record["title"] == "Widget Prime"
+    assert record["price"] == "19.99"
+
+
+def test_extract_ecommerce_detail_from_array_style_nuxt_payload() -> None:
+    html = """
+    <html>
+      <head>
+        <script id="__NUXT_DATA__" type="application/json">
+          [
+            {"data":1},
+            ["Reactive",2],
+            {"product":3},
+            {"title":4,"vendor":5,"handle":6,"id":7,"product_type":8},
+            "Nuxt Payload Widget",
+            "Acme",
+            "nuxt-payload-widget",
+            4242,
+            "Gadgets"
+          ]
+        </script>
+      </head>
+      <body></body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        "https://example.com/products/nuxt-payload-widget",
+        "ecommerce_detail",
+        max_records=5,
+    )
+
+    assert len(rows) == 1
+    record = rows[0]
+    assert record["title"] == "Nuxt Payload Widget"
+    assert record["brand"] == "Acme"
+    assert "vendor" not in record
+    assert record["product_id"] == "4242"
+    assert record["category"] == "Gadgets"
+    assert record["_source"] == "js_state"
+
+
+def test_extract_ecommerce_detail_gender_from_explicit_structured_attribute() -> None:
+    html = """
+    <html>
+      <head>
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "Product",
+          "name": "Linen Midi Dress",
+          "additionalProperty": [
+            {"@type": "PropertyValue", "name": "Gender", "value": "Women"}
+          ]
+        }
+        </script>
+      </head>
+      <body><h1>Linen Midi Dress</h1></body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        "https://example.com/products/linen-midi-dress",
+        "ecommerce_detail",
+        max_records=5,
+    )
+
+    assert len(rows) == 1
+    assert rows[0]["gender"] == "Women"
+
+
+def test_extract_ecommerce_detail_uses_breadcrumblist_json_ld_category() -> None:
+    html = """
+    <html>
+      <head>
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "BreadcrumbList",
+          "itemListElement": [
+            {"@type": "ListItem", "position": 1, "name": "Home"},
+            {"@type": "ListItem", "position": 2, "name": "Women"},
+            {"@type": "ListItem", "position": 3, "name": "Dresses"},
+            {"@type": "ListItem", "position": 4, "name": "Linen Midi Dress"}
+          ]
+        }
+        </script>
+        <script type="application/ld+json">
+        {"@context": "https://schema.org", "@type": "Product", "name": "Linen Midi Dress"}
+        </script>
+      </head>
+      <body><h1>Linen Midi Dress</h1></body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        "https://example.com/products/linen-midi-dress",
+        "ecommerce_detail",
+        max_records=5,
+    )
+
+    assert len(rows) == 1
+    assert rows[0]["category"] == "Women > Dresses"
+
+
+def test_extract_ecommerce_detail_category_from_dom_breadcrumb() -> None:
+    html = """
+    <html>
+      <head>
+        <script type="application/ld+json">
+        {"@context": "https://schema.org", "@type": "Product", "name": "Linen Midi Dress"}
+        </script>
+      </head>
+      <body>
+        <nav aria-label="Breadcrumb">
+          <ol>
+            <li><a href="/">Home</a></li>
+            <li><a href="/women">Women</a></li>
+            <li><a href="/women/dresses">Dresses</a></li>
+            <li><span>Linen Midi Dress</span></li>
+          </ol>
+        </nav>
+        <h1>Linen Midi Dress</h1>
+      </body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        "https://example.com/products/linen-midi-dress",
+        "ecommerce_detail",
+        max_records=5,
+    )
+
+    assert len(rows) == 1
+    assert rows[0]["category"] == "Women > Dresses"
+    assert rows[0]["gender"] == "women"
+
+
+def test_extract_ecommerce_detail_dom_breadcrumb_drops_ui_tokens_and_title_suffix() -> None:
+    html = """
+    <html>
+      <head>
+        <script type="application/ld+json">
+        {"@context": "https://schema.org", "@type": "Product", "name": "Trail Shoe Pro"}
+        </script>
+      </head>
+      <body>
+        <nav class="breadcrumbs">
+          <a>Back</a>
+          <a>Home</a>
+          <a>Men</a>
+          <a>Shoes</a>
+          <span>Trail-Shoe Pro</span>
+        </nav>
+        <h1>Trail Shoe Pro</h1>
+      </body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        "https://example.com/products/trail-shoe-pro",
+        "ecommerce_detail",
+        max_records=5,
+    )
+
+    assert len(rows) == 1
+    assert rows[0]["category"] == "Men > Shoes"
+
+
+def test_breadcrumb_noise_icon_regex_logs_once_when_invalid(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    monkeypatch.setattr(detail_raw_signals, "_BREADCRUMB_NOISE_ICON_PATTERNS", (r"[",))
+    detail_raw_signals._compiled_breadcrumb_noise_icon_patterns.cache_clear()
+    caplog.set_level("WARNING")
+    soup = BeautifulSoup(
+        """
+        <nav class="breadcrumbs">
+          <a>Home</a>
+          <a>Women</a>
+          <a>Dresses</a>
+          <span>Trail Dress</span>
+        </nav>
+        """,
+        "html.parser",
+    )
+
+    try:
+        labels = detail_raw_signals.breadcrumb_labels_from_dom(
+            soup,
+            current_title="Trail Dress",
+        )
+        detail_raw_signals.breadcrumb_labels_from_dom(
+            soup,
+            current_title="Trail Dress",
+        )
+    finally:
+        detail_raw_signals._compiled_breadcrumb_noise_icon_patterns.cache_clear()
+
+    assert labels == ["Women", "Dresses"]
+    assert (
+        len(
+            [
+                record
+                for record in caplog.records
+                if record.message == "Invalid breadcrumb noise icon regex"
+            ]
+        )
+        == 1
+    )
+
+
+def test_extract_ecommerce_detail_json_ld_breadcrumb_beats_noisy_dom() -> None:
+    html = """
+    <html>
+      <head>
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "BreadcrumbList",
+          "itemListElement": [
+            {"@type": "ListItem", "position": 1, "name": "Home"},
+            {"@type": "ListItem", "position": 2, "name": "Women"},
+            {"@type": "ListItem", "position": 3, "name": "Dresses"},
+            {"@type": "ListItem", "position": 4, "name": "Trail Dress"}
+          ]
+        }
+        </script>
+      </head>
+      <body>
+        <nav class="breadcrumbs">
+          <a>Home</a>
+          <a>Best Sellers</a>
+          <a>Shop by Occasion</a>
+          <span>Trail Dress</span>
+        </nav>
+        <h1>Trail Dress</h1>
+      </body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        "https://example.com/products/trail-dress",
+        "ecommerce_detail",
+        max_records=5,
+    )
+
+    assert len(rows) == 1
+    assert rows[0]["category"] == "Women > Dresses"
+
+
+def test_reconcile_parent_price_against_variant_range_repairs_lower_parent_price() -> None:
+    record = {
+        "price": "89.00",
+        "variants": [
+            {"price": "310.00", "currency": "USD"},
+            {"price": "310.00", "currency": "USD"},
+        ],
+        "_field_sources": {"price": ["dom_text"]},
+    }
+
+    reconcile_parent_price_against_variant_range(record)
+
+    assert record["price"] == "310.00"
+    assert "variant_price_range" in record["_field_sources"]["price"]
+
+
+def test_extract_ecommerce_detail_category_drops_terminal_sku() -> None:
+    html = """
+    <html>
+      <body>
+        <nav class="breadcrumbs">
+          <a>Home</a>
+          <a>Tools</a>
+          <a>Drills</a>
+          <span>SKU-7788</span>
+        </nav>
+        <h1>Hammer Drill</h1>
+      </body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        "https://example.com/products/hammer-drill",
+        "ecommerce_detail",
+        max_records=5,
+        adapter_records=[{"sku": "SKU-7788"}],
+    )
+
+    assert len(rows) == 1
+    assert rows[0]["category"] == "Tools > Drills"
+
+
+def test_extract_ecommerce_detail_from_nuxt_payload_with_self_referential_wrapper() -> None:
+    html = """
+    <html>
+      <head>
+        <script id="__NUXT_DATA__" type="application/json">
+          [
+            {"data":1,"meta":2},
+            {"product":3},
+            ["Reactive",2],
+            {"title":4,"vendor":5,"handle":6,"id":7,"product_type":8},
+            "Nuxt Payload Widget",
+            "Acme",
+            "nuxt-payload-widget",
+            4242,
+            "Gadgets"
+          ]
+        </script>
+      </head>
+      <body></body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        "https://example.com/products/nuxt-payload-widget",
+        "ecommerce_detail",
+        max_records=5,
+    )
+
+    assert len(rows) == 1
+    record = rows[0]
+    assert record["title"] == "Nuxt Payload Widget"
+    assert record["brand"] == "Acme"
+    assert record["_source"] == "js_state"
+
+
+def test_extract_ecommerce_detail_resolves_json_ld_graph_node_references() -> None:
+    html = """
+    <html>
+      <head>
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@graph": [
+            {
+              "@id": "#brand",
+              "@type": "Brand",
+              "name": "Acme"
+            },
+            {
+              "@id": "#offer",
+              "@type": "Offer",
+              "price": "29.99",
+              "priceCurrency": "USD",
+              "availability": "https://schema.org/InStock"
+            },
+            {
+              "@id": "#product",
+              "@type": "Product",
+              "name": "Graph Widget",
+              "brand": {"@id": "#brand"},
+              "offers": {"@id": "#offer"}
+            }
+          ]
+        }
+        </script>
+      </head>
+      <body></body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        "https://example.com/products/graph-widget",
+        "ecommerce_detail",
+        max_records=5,
+    )
+
+    assert len(rows) == 1
+    record = rows[0]
+    assert record["title"] == "Graph Widget"
+    assert record["brand"] == "Acme"
+    assert record["price"] == "29.99"
+    assert record["currency"] == "USD"
+    assert record["availability"] == "in_stock"
+    assert record["_source"] == "json_ld"
+
+
+def test_extract_ecommerce_detail_prefers_json_ld_title_over_noisy_dom_h1() -> None:
+    html = """
+    <html>
+      <head>
+        <title>Products</title>
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "Product",
+          "name": "Graph Widget",
+          "offers": {
+            "@type": "Offer",
+            "price": "29.99",
+            "priceCurrency": "USD"
+          }
+        }
+        </script>
+      </head>
+      <body>
+        <main>
+          <h1>Products</h1>
+        </main>
+      </body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        "https://example.com/products/graph-widget",
+        "ecommerce_detail",
+        max_records=5,
+    )
+
+    assert len(rows) == 1
+    record = rows[0]
+    assert record["title"] == "Graph Widget"
+    assert record["_source"] == "json_ld"
+
+
+def test_extract_ecommerce_detail_keeps_adapter_title_over_longer_dom_h1() -> None:
+    html = """
+    <html>
+      <body>
+        <main>
+          <h1>Widget Prime Deluxe Mega SEO Edition With Free Shipping And Bonus Copy</h1>
+        </main>
+      </body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        "https://example.com/products/widget-prime",
+        "ecommerce_detail",
+        max_records=5,
+        adapter_records=[
+            {
+                "title": "Widget Prime",
+                "url": "https://example.com/products/widget-prime",
+            }
+        ],
+    )
+
+    assert len(rows) == 1
+    assert rows[0]["title"] == "Widget Prime"
+    assert "SEO Edition" not in rows[0]["title"]
+
+
+def test_extract_ecommerce_detail_resolves_top_level_json_ld_array_references() -> None:
+    html = """
+    <html>
+      <head>
+        <script type="application/ld+json">
+        [
+          {
+            "@context": "https://schema.org",
+            "@id": "#brand",
+            "@type": "Brand",
+            "name": "Acme"
+          },
+          {
+            "@context": "https://schema.org",
+            "@id": "#offer",
+            "@type": "Offer",
+            "price": "39.99",
+            "priceCurrency": "USD",
+            "availability": "https://schema.org/InStock"
+          },
+          {
+            "@context": "https://schema.org",
+            "@id": "#product",
+            "@type": "Product",
+            "name": "Array Widget",
+            "brand": {"@id": "#brand"},
+            "offers": [{"@id": "#offer"}]
+          }
+        ]
+        </script>
+      </head>
+      <body></body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        "https://example.com/products/array-widget",
+        "ecommerce_detail",
+        max_records=5,
+    )
+
+    assert len(rows) == 1
+    record = rows[0]
+    assert record["title"] == "Array Widget"
+    assert record["brand"] == "Acme"
+    assert record["price"] == "39.99"
+    assert record["currency"] == "USD"
+    assert record["availability"] == "in_stock"
+    assert record["_source"] == "json_ld"
+
+
+def test_extract_ecommerce_detail_flattens_json_ld_size_specifications() -> None:
+    html = """
+    <html>
+      <head>
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "Product",
+          "name": "Size Spec Widget",
+          "size": {
+            "@type": "SizeSpecification",
+            "name": "XS",
+            "sizeSystem": "https://schema.org/WearableSizeSystemUS",
+            "sizeGroup": "https://schema.org/WearableSizeGroupRegular"
+          },
+          "hasVariant": [
+            {
+              "@type": "Product",
+              "name": "Size Spec Widget",
+              "sku": "W-XS",
+              "size": {
+                "@type": "SizeSpecification",
+                "name": "XS",
+                "sizeSystem": "https://schema.org/WearableSizeSystemUS",
+                "sizeGroup": "https://schema.org/WearableSizeGroupRegular"
+              },
+              "offers": {
+                "@type": "Offer",
+                "availability": "https://schema.org/InStock"
+              }
+            },
+            {
+              "@type": "Product",
+              "name": "Size Spec Widget",
+              "sku": "W-XL",
+              "size": {
+                "@type": "SizeSpecification",
+                "name": "XL",
+                "sizeSystem": "https://schema.org/WearableSizeSystemUS",
+                "sizeGroup": "https://schema.org/WearableSizeGroupRegular"
+              },
+              "offers": {
+                "@type": "Offer",
+                "availability": "https://schema.org/OutOfStock"
+              }
+            }
+          ]
+        }
+        </script>
+      </head>
+      <body></body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        "https://example.com/products/size-spec-widget",
+        "ecommerce_detail",
+        max_records=5,
+    )
+
+    assert len(rows) == 1
+    record = rows[0]
+    assert record["size"] == "XS"
+    assert record["variants"][0]["size"] == "XS"
+    assert record["variants"][1]["size"] == "XL"
+    assert record["variants"][1]["availability"] == "out_of_stock"
+
+
+def test_extract_ecommerce_detail_backfills_visible_display_price() -> None:
+    html = """
+    <html>
+      <head>
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "Product",
+          "name": "Men's Flex Pants | 327 | 34 | 30",
+          "brand": {"@type": "Brand", "name": "Columbia"},
+          "image": "https://example.com/flex-pants.jpg",
+          "description": "Trail pants with stretch fabric."
+        }
+        </script>
+      </head>
+      <body>
+        <h1>Men's Flex Pants | 327 | 34 | 30</h1>
+        <div data-component-id="display-price">
+          <span aria-label="current price $42.00">$42.00</span>
+          <s aria-label="original price $60.00">$60.00</s>
+        </div>
+        <p>Trail pants with stretch fabric.</p>
+      </body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        "https://example.com/products/flex-pants",
+        "ecommerce_detail",
+        max_records=5,
+    )
+
+    assert len(rows) == 1
+    assert rows[0]["price"] == "42.00"
+    assert rows[0]["original_price"] == "60.00"
+
+
+def test_extract_detail_json_ld_offer_price_beats_bad_dom_price() -> None:
+    html = """
+    <html>
+      <head>
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "Product",
+          "name": "Cotton Shirt",
+          "offers": {
+            "@type": "Offer",
+            "price": "49.00",
+            "priceCurrency": "USD"
+          }
+        }
+        </script>
+      </head>
+      <body>
+        <main>
+          <h1>Cotton Shirt</h1>
+          <div data-testid="price">Related picks from $999.00</div>
+        </main>
+      </body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        "https://example.com/products/cotton-shirt",
+        "ecommerce_detail",
+        max_records=5,
+    )
+
+    assert len(rows) == 1
+    assert rows[0]["price"] == "49.00"
+    assert rows[0]["currency"] == "USD"
+
+
+def test_extract_detail_json_ld_sale_and_regular_prices() -> None:
+    html = """
+    <html>
+      <head>
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "Product",
+          "name": "Stand Mixer",
+          "offers": {
+            "@type": "Offer",
+            "price": "249.99",
+            "highPrice": "329.99",
+            "priceCurrency": "USD"
+          }
+        }
+        </script>
+      </head>
+      <body><main><h1>Stand Mixer</h1></main></body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        "https://example.com/products/stand-mixer",
+        "ecommerce_detail",
+        max_records=5,
+    )
+
+    assert len(rows) == 1
+    assert rows[0]["price"] == "249.99"
+    assert rows[0]["original_price"] == "329.99"
+
+
+def test_extract_detail_parses_locale_decimal_price_text() -> None:
+    html = """
+    <html lang="fr-FR">
+      <body>
+        <main>
+          <h1>Leather Tote</h1>
+          <div data-testid="price">€1.234,56</div>
+        </main>
+      </body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        "https://example.com/products/leather-tote",
+        "ecommerce_detail",
+        max_records=5,
+    )
+
+    assert len(rows) == 1
+    assert rows[0]["price"] == "1234.56"
+    assert rows[0]["currency"] == "EUR"
+
+
+def test_extract_ecommerce_detail_drops_low_signal_zero_display_price() -> None:
+    html = """
+    <html>
+      <head>
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "Product",
+          "name": "Classic Straight Jeans",
+          "brand": {"@type": "Brand", "name": "Acme Denim"},
+          "image": "https://example.com/jeans.jpg",
+          "description": "Everyday jeans."
+        }
+        </script>
+      </head>
+      <body>
+        <h1>Classic Straight Jeans</h1>
+        <div data-component-id="display-price">
+          <span aria-label="current price $0.00">$0.00</span>
+        </div>
+      </body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        "https://example.com/products/classic-straight-jeans",
+        "ecommerce_detail",
+        max_records=5,
+    )
+
+    assert len(rows) == 1
+    record = rows[0]
+    assert "price" not in record
+
+
+def test_extract_ecommerce_detail_keeps_structured_zero_price_with_authoritative_offer() -> None:
+    html = """
+    <html>
+      <head>
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "Product",
+          "name": "Starter Guide Download",
+          "sku": "GUIDE-001",
+          "brand": {"@type": "Brand", "name": "Acme"},
+          "offers": {
+            "@type": "Offer",
+            "priceCurrency": "USD",
+            "price": "0.00",
+            "availability": "https://schema.org/InStock"
+          }
+        }
+        </script>
+      </head>
+      <body>
+        <h1>Starter Guide Download</h1>
+      </body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        "https://example.com/products/starter-guide-download",
+        "ecommerce_detail",
+        max_records=5,
+    )
+
+    assert len(rows) == 1
+    record = rows[0]
+    assert record["price"] == "0.00"
+    assert record["currency"] == "USD"
+    assert record["_source"] == "json_ld"
+
+
+def test_extract_ecommerce_detail_keeps_raw_json_zero_price() -> None:
+    rows = extract_records(
+        '{"title":"Free Sample","price":"0.00","currency":"USD","url":"https://example.com/products/free-sample"}',
+        "https://example.com/products/free-sample",
+        "ecommerce_detail",
+        max_records=5,
+        content_type="application/json",
+    )
+
+    assert len(rows) == 1
+    record = rows[0]
+    assert record["price"] == "0.00"
+    assert record["currency"] == "USD"
+    assert record["_source"] == "raw_json"
+
+
+def test_extract_ecommerce_detail_rejects_collection_url_with_visible_tile_prices() -> None:
+    html = """
+    <html>
+      <body>
+        <h1>Short Sleeve</h1>
+        <div data-component-id="product-tile">
+          <a href="/p/trail-shirt-123.html">Trail Shirt</a>
+          <div data-component-id="display-price">
+            <span aria-label="current price $27.00">$27.00</span>
+          </div>
+        </div>
+      </body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        "https://example.com/c/mens-short-sleeve-shirts/",
+        "ecommerce_detail",
+        max_records=5,
+    )
+
+    assert rows == []
+
+
+@pytest.mark.asyncio
+async def test_myntra_adapter_extracts_detail_media_and_variants() -> None:
+    html = """
+    <html>
+      <head>
+        <title>Myntra</title>
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "Product",
+          "name": "Myntra",
+          "image": "https://constant.myntassets.com/web/assets/img/logo_2021.png"
+        }
+        </script>
+        <script>
+          window.__myx = {
+            "pdpData": {
+              "id": 30721580,
+              "name": "KALINI Floral Embroidered Kurta",
+              "brand": "KALINI",
+              "baseColour": "pink and white",
+              "mrp": 3196,
+              "selectedSeller": {"discountedPrice": 735},
+              "media": {
+                "albums": [
+                  {
+                    "name": "default",
+                    "images": [
+                      {"secureSrc": "https://assets.myntassets.com/assets/images/30721580/image-1.jpg"},
+                      {"secureSrc": "https://assets.myntassets.com/assets/images/30721580/image-2.jpg"},
+                      {"secureSrc": "https://assets.myntassets.com/assets/images/30721580/image-3.jpg"}
+                    ]
+                  }
+                ]
+              },
+              "colours": [
+                {"label": "pink and white", "url": "/products/30721580"},
+                {"label": "peach", "url": "/products/29861551"}
+              ],
+              "sizes": [
+                {
+                  "skuId": 98872105,
+                  "label": "S",
+                  "available": true,
+                  "selectedSeller": {"discountedPrice": 735, "availableCount": 8}
+                },
+                {
+                  "skuId": 98872106,
+                  "label": "M",
+                  "available": false,
+                  "selectedSeller": {"discountedPrice": 735, "availableCount": 0}
+                }
+              ]
+            }
+          };
+        </script>
+      </head>
+      <body>
+        <h1>KALINI Floral Embroidered Kurta</h1>
+      </body>
+    </html>
+    """
+
+    adapter = MyntraAdapter()
+    result = await adapter.extract(
+        "https://www.myntra.com/kurtas/kalini/example/30721580/buy",
+        html,
+        "ecommerce_detail",
+    )
+
+    rows = extract_records(
+        html,
+        "https://www.myntra.com/kurtas/kalini/example/30721580/buy",
+        "ecommerce_detail",
+        max_records=5,
+        adapter_records=result.records,
+    )
+
+    assert len(rows) == 1
+    record = rows[0]
+    assert record["title"] == "KALINI Floral Embroidered Kurta"
+    assert (
+        record["image_url"]
+        == "https://assets.myntassets.com/assets/images/30721580/image-1.jpg"
+    )
+    assert record["additional_images"] == [
+        "https://assets.myntassets.com/assets/images/30721580/image-2.jpg",
+        "https://assets.myntassets.com/assets/images/30721580/image-3.jpg",
+    ]
+    assert record["variant_count"] == 2
+
+
+@pytest.mark.asyncio
+async def test_myntra_adapter_allows_dom_description_fill_when_detail_payload_is_sparse() -> None:
+    html = """
+    <html>
+      <head>
+        <script>
+          window.__myx = {
+            "pdpData": {
+              "id": 30721580,
+              "name": "KALINI Floral Embroidered Kurta",
+              "brand": "KALINI",
+              "mrp": 3196,
+              "selectedSeller": {"discountedPrice": 735},
+              "media": {"albums": []},
+              "sizes": []
+            }
+          };
+        </script>
+      </head>
+      <body>
+        <h1>KALINI Floral Embroidered Kurta</h1>
+        <h2>Description</h2>
+        <p>Soft cotton fabric with embroidered floral detailing.</p>
+      </body>
+    </html>
+    """
+
+    adapter = MyntraAdapter()
+    result = await adapter.extract(
+        "https://www.myntra.com/kurtas/kalini/example/30721580/buy",
+        html,
+        "ecommerce_detail",
+    )
+
+    rows = extract_records(
+        html,
+        "https://www.myntra.com/kurtas/kalini/example/30721580/buy",
+        "ecommerce_detail",
+        max_records=5,
+        adapter_records=result.records,
+    )
+
+    assert len(rows) == 1
+    record = rows[0]
+    assert record["title"] == "KALINI Floral Embroidered Kurta"
+    assert (
+        record["description"] == "Soft cotton fabric with embroidered floral detailing."
+    )
+
+
+def test_extract_ecommerce_detail_recovers_variant_axes_from_dom_controls_when_js_state_is_absent() -> None:
+    html = """
+    <html>
+      <body>
+        <h1>Trail Runner</h1>
+        <label>
+          Size
+          <select name="size">
+            <option value="">Choose size</option>
+            <option value="s">S</option>
+            <option value="m">M</option>
+            <option value="l">L</option>
+          </select>
+        </label>
+        <div class="color-swatch-group" aria-label="Color">
+          <button type="button" aria-label="Black"></button>
+          <button type="button" aria-label="Olive"></button>
+        </div>
+      </body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        "https://example.com/products/trail-runner",
+        "ecommerce_detail",
+        max_records=5,
+    )
+
+    assert len(rows) == 1
+    record = rows[0]
+    assert record["variant_count"] == 6
+    assert isinstance(record["variants"], list)
+    assert len(record["variants"]) == 6
+    assert record["variants"][0]["size"] == "S"
+    assert record["variants"][0]["color"] == "Black"
+
+
+def test_extract_ecommerce_detail_recovers_dicks_like_size_variants_from_button_grid() -> None:
+    html = """
+    <html>
+      <body>
+        <h1>Birkenstock Women's Arizona Big Buckle Soft Footbed Sandals</h1>
+        <div class="image-viewer-swatch-col hmf-span-3">
+          <button
+            id="alt-image-viewer-wrapper-123"
+            class="image-wrapper-padding image-wrapper-height image-viewer-swatch-wrapper"
+            aria-label="View Image in Full Screen"
+            type="button"
+          ></button>
+        </div>
+        <section id="pdp-selector-attributes" class="selector-attributes-container">
+          <pdp-attributes-components-label>
+            <p><pdp-attributes-components-base-attribute-label><span>Shoe Size:</span></pdp-attributes-components-base-attribute-label></p>
+          </pdp-attributes-components-label>
+          <div class="hmf-grid selector-attribute-outer overflow-scroll">
+            <hmf-selectable>
+              <div class="hmf-selectable-container hmf-display-flex hmf-body-m hmf-flex-wrap">
+                <div class="hmf-option-container">
+                  <button class="hmf-selectable-base hmf-selectable-unselected" aria-label="5.0/5.5 US (36 EU)" type="button">
+                    <span>5.0/5.5 US (36 EU)</span>
+                  </button>
+                </div>
+                <div class="hmf-option-container">
+                  <button class="hmf-selectable-base hmf-selectable-unselected" aria-label="6.0/6.5 US (37 EU)" type="button">
+                    <span>6.0/6.5 US (37 EU)</span>
+                  </button>
+                </div>
+                <div class="hmf-option-container">
+                  <button class="hmf-selectable-base hmf-selectable-unselected" aria-label="7.0/7.5 US (38 EU)" type="button">
+                    <span>7.0/7.5 US (38 EU)</span>
+                  </button>
+                </div>
+              </div>
+            </hmf-selectable>
+          </div>
+        </section>
+      </body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        "https://www.dickssportinggoods.com/p/example/product",
+        "ecommerce_detail",
+        max_records=5,
+        requested_fields=["variants", "size"],
+    )
+
+    assert len(rows) == 1
+    record = rows[0]
+    assert record["variant_count"] == 3
+    assert [row["size"] for row in record["variants"]] == [
+        "5.0/5.5 US (36 EU)",
+        "6.0/6.5 US (37 EU)",
+        "7.0/7.5 US (38 EU)",
+    ]
+
+
+def test_extract_ecommerce_detail_requires_cartesian_color_size_dom_variants() -> None:
+    html = """
+    <html>
+      <body>
+        <main class="product-detail">
+          <h1>Suede Runner</h1>
+          <form class="product-form" action="/cart/add">
+            <fieldset class="size-selector">
+              <legend>Size</legend>
+              <button type="button">8</button>
+              <button type="button">9</button>
+              <button type="button">10</button>
+            </fieldset>
+            <div class="color-swatch-group" aria-label="Color">
+              <button type="button" aria-label="Black"></button>
+              <button type="button" aria-label="Red"></button>
+            </div>
+          </form>
+        </main>
+      </body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        "https://example.com/products/suede-runner",
+        "ecommerce_detail",
+        max_records=5,
+    )
+
+    assert len(rows) == 1
+    record = rows[0]
+    assert record["variant_count"] == 6
+    assert all(row.get("size") and row.get("color") for row in record["variants"])
+
+
+def test_extract_ecommerce_detail_guarded_dom_cartesian_keeps_axis_rows(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(detail_dom_extractor, "DOM_VARIANT_CARTESIAN_COMBO_LIMIT", 4)
+    html = """
+    <html>
+      <body>
+        <main class="product-detail">
+          <h1>Suede Runner</h1>
+          <form class="product-form" action="/cart/add">
+            <fieldset class="size-selector">
+              <legend>Size</legend>
+              <button type="button">8</button>
+              <button type="button">9</button>
+              <button type="button">10</button>
+            </fieldset>
+            <div class="color-swatch-group" aria-label="Color">
+              <button type="button" aria-label="Black"></button>
+              <button type="button" aria-label="Red"></button>
+              <button type="button" aria-label="White"></button>
+            </div>
+          </form>
+        </main>
+      </body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        "https://example.com/products/suede-runner",
+        "ecommerce_detail",
+        max_records=5,
+    )
+
+    assert len(rows) == 1
+    record = rows[0]
+    assert record["variant_count"] == 6
+    size_rows = [row for row in record["variants"] if row.get("size")]
+    color_rows = [row for row in record["variants"] if row.get("color")]
+    assert {row.get("size") for row in size_rows} == {"8", "9", "10"}
+    assert {row.get("color") for row in color_rows} == {"Black", "Red", "White"}
+    assert all(not row.get("color") for row in size_rows)
+    assert all(not row.get("size") for row in color_rows)
+
+
+def test_extract_ecommerce_detail_ignores_related_product_carousel_variants() -> None:
+    html = """
+    <html>
+      <body>
+        <main class="product-detail">
+          <h1>Going Coconuts</h1>
+          <p>Neutral coconut shades only.</p>
+        </main>
+        <section class="related-products carousel">
+          <div class="color-swatch-group" aria-label="Color">
+            <button type="button" aria-label="Blowin Smoke"></button>
+            <button type="button" aria-label="Forever Yours"></button>
+          </div>
+        </section>
+      </body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        "https://colourpop.com/products/going-coconuts-eyeshadow-palette",
+        "ecommerce_detail",
+        max_records=5,
+    )
+
+    assert len(rows) == 1
+    assert "variants" not in rows[0]
+
+
+def test_extract_ecommerce_detail_recovers_structured_variants_with_axes() -> None:
+    variants = []
+    for color in ("Black", "Ivory", "Red"):
+        for size in ("6", "8", "10", "12"):
+            variants.append(
+                {
+                    "id": f"{color.lower()}-{size}",
+                    "sku": f"KM-{color[:1].upper()}{size}",
+                    "selectedOptions": [
+                        {"name": "Color", "value": color},
+                        {"name": "Size", "value": size},
+                    ],
+                }
+            )
+    html = f"""
+    <html>
+      <head>
+        <script id="__NEXT_DATA__" type="application/json">
+        {{
+          "props": {{
+            "pageProps": {{
+              "product": {{
+                "id": "dress-1",
+                "title": "Tailored Midi Dress",
+                "currency": "GBP",
+                "variants": {json.dumps(variants)}
+              }}
+            }}
+          }}
+        }}
+        </script>
+      </head>
+      <body><main><h1>Tailored Midi Dress</h1></main></body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        "https://example.com/products/tailored-midi-dress",
+        "ecommerce_detail",
+        max_records=5,
+    )
+
+    assert len(rows) == 1
+    record = rows[0]
+    assert record["variant_count"] == 12
+    assert all(row.get("color") and row.get("size") for row in record["variants"])
+
+
+def test_extract_ecommerce_detail_rejects_foreign_currency_variants() -> None:
+    rows = extract_records(
+        "<html><body><main><h1>Leather Jacket</h1></main></body></html>",
+        "https://example.com/products/leather-jacket",
+        "ecommerce_detail",
+        max_records=5,
+        adapter_records=[
+            {
+                "title": "Leather Jacket",
+                "currency": "GBP",
+                "price": "420.00",
+                "variants": [
+                    {"color": "Black", "price": "420.00", "currency": "GBP"},
+                    {"color": "Black", "price": "490.00", "currency": "EUR"},
+                ],
+            }
+        ],
+    )
+
+    assert len(rows) == 1
+    assert rows[0]["variants"] == [
+        {"color": "Black", "price": "420.00", "currency": "GBP"}
+    ]
+
+
+def test_extract_ecommerce_detail_ignores_newsletter_fields_inside_size_container() -> None:
+    html = """
+    <html>
+      <body>
+        <h1>Soft Rock Crewneck</h1>
+        <div class="size-selector" aria-label="Size">
+          <button type="button" aria-label="S"></button>
+          <button type="button" aria-label="M" class="selected"></button>
+          <button type="button" aria-label="L"></button>
+          <button type="button" aria-label="XL"></button>
+          <input type="email" value="Email" />
+          <button aria-label="Sign up for updates and promotions">Join</button>
+        </div>
+      </body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        "https://www.sneakersnstuff.com/products/dime-soft-rock-crewneck-dime2sp2542blk",
+        "ecommerce_detail",
+        max_records=5,
+    )
+
+    assert len(rows) == 1
+    record = rows[0]
+    assert record["title"] == "Soft Rock Crewneck"
+    assert "Email" not in str(record.get("size", ""))
+    assert "Sign up" not in json.dumps(record)
+
+
+def test_extract_ecommerce_detail_rejects_promo_and_hex_only_dom_variant_values() -> None:
+    html = """
+    <html>
+      <body>
+        <h1>Everyday Tee</h1>
+        <div class="promo-swatch-group" aria-label="Discount">
+          <button type="button" aria-label="20% off"></button>
+          <button type="button" aria-label="30% off"></button>
+        </div>
+        <div class="color-swatch-group" aria-label="Color">
+          <button type="button" data-value="#ffffff"></button>
+          <button type="button" data-value="#000000"></button>
+        </div>
+        <div class="color-swatch-group" aria-label="Color">
+          <button type="button" aria-label="Black" style="background:#000"></button>
+          <button type="button" aria-label="White" style="background:#fff"></button>
+        </div>
+      </body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        "https://example.com/products/everyday-tee",
+        "ecommerce_detail",
+        max_records=5,
+    )
+
+    assert len(rows) == 1
+    record = rows[0]
+    assert "20% off" not in json.dumps(record)
+    assert "#ffffff" not in json.dumps(record)
+    assert record["variants"] == [
+        {"color": "Black"},
+        {"color": "White"},
+    ]
+
+
+def test_extract_ecommerce_detail_rejects_cookie_disclosure_title_and_description() -> None:
+    html = """
+    <html>
+      <head><title>Barrow Short-sleeved T-shirt</title></head>
+      <body>
+        <div id="onetrust-preference-center">
+          <h1>_clck</h1>
+          <section>
+            <h2>Description</h2>
+            <p>
+              This cookie name is associated with software from Dynatrace.
+              Used by Microsoft Clarity to connect multiple page views.
+              Cookie descriptions are displayed in the Cookie List on the Preference Center.
+            </p>
+          </section>
+        </div>
+        <main class="product-detail">
+          <div class="brand">Barrow</div>
+          <span class="price">INR 7217.00</span>
+        </main>
+      </body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        "https://www.luisaviaroma.com/en-in/p/barrow/kids-boys/83I-UKD027",
+        "ecommerce_detail",
+        max_records=5,
+    )
+
+    assert len(rows) == 1
+    record = rows[0]
+    assert record["title"] == "Barrow Short-sleeved T-shirt"
+    assert record.get("description") in (None, "")
+    assert "_clck" not in json.dumps(record)
+    assert "Microsoft Clarity" not in json.dumps(record)
+
+
+def test_extract_ecommerce_detail_recovers_radio_size_variants_with_stock_availability() -> None:
+    html = """
+    <html>
+      <body>
+        <h1>Bear Minimum Oversized T-Shirt</h1>
+        <div class="product-varient-section">
+          <p>Please select a size.</p>
+          <ul class="sizelist">
+            <li class="oval outstock">
+              <input id="size_0_0" disabled type="radio" name="sub_prod_0" />
+              <label for="size_0_0"><span>XXS</span></label>
+              <section class="total-stock">0 Left</section>
+            </li>
+            <li class="oval selected">
+              <input id="size_0_1" checked type="radio" name="sub_prod_0" />
+              <label for="size_0_1"><span>XS</span></label>
+              <section class="total-stock">17 Left</section>
+            </li>
+            <li class="oval">
+              <input id="size_0_2" type="radio" name="sub_prod_0" />
+              <label for="size_0_2"><span>S</span></label>
+              <section class="total-stock">75 Left</section>
+            </li>
+          </ul>
+        </div>
+      </body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        "https://www.thesouledstore.com/product/oversized-tshirts-bear-minimum",
+        "ecommerce_detail",
+        max_records=5,
+    )
+
+    assert len(rows) == 1
+    record = rows[0]
+    assert record["availability"] == "in_stock"
+    assert record["variants"][0]["availability"] == "out_of_stock"
+    assert record["variants"][0]["stock_quantity"] == 0
+    assert record["variants"][1]["availability"] == "in_stock"
+    assert record["variants"][1]["stock_quantity"] == 17
+
+
+def test_extract_ecommerce_detail_keeps_supported_dom_variant_axes_and_drops_unknown_axes() -> None:
+    html = """
+    <html>
+      <body>
+        <h1>MuscleBlaze Biozyme Performance Whey</h1>
+        <fieldset class="weight-options">
+          <legend>Weight</legend>
+          <label><input checked type="radio" name="weight" value="4.4 Lb" />4.4 Lb</label>
+          <label><input type="radio" name="weight" value="0.4 Lb" />0.4 Lb</label>
+        </fieldset>
+        <fieldset class="flavour-options">
+          <legend>Flavour</legend>
+          <label><input checked type="radio" name="flavour" value="Rich Chocolate" />Rich Chocolate</label>
+          <label><input type="radio" name="flavour" value="Blue Tokai Coffee" />Blue Tokai Coffee</label>
+        </fieldset>
+        <fieldset class="shipping-options">
+          <legend>Shipping</legend>
+          <label><input checked type="radio" name="shipping" value="Standard" />Standard</label>
+          <label><input type="radio" name="shipping" value="Express" />Express</label>
+        </fieldset>
+      </body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        "https://example.com/products/whey",
+        "ecommerce_detail",
+        max_records=5,
+    )
+
+    assert len(rows) == 1
+    record = rows[0]
+    assert record["variant_count"] == 4
+    assert isinstance(record["variants"], list)
+    assert len(record["variants"]) == 4
+    assert {variant.get("flavor") for variant in record["variants"]} == {
+        "Rich Chocolate",
+        "Blue Tokai Coffee",
+    }
+    assert {variant.get("weight") for variant in record["variants"]} == {
+        "4.4 Lb",
+        "0.4 Lb",
+    }
+    assert all("color" not in variant for variant in record["variants"])
+    assert all("shipping" not in variant for variant in record["variants"])
+
+
+def test_extract_ecommerce_detail_keeps_fit_dom_variants() -> None:
+    html = """
+    <html>
+      <body>
+        <main class="product-detail">
+          <h1>Nordstrom Rack Solid Notch Lapel Linen Sport Coat</h1>
+          <fieldset>
+            <legend>Fit</legend>
+            <label><input checked type="radio" name="fit" value="Short" />Short</label>
+            <label><input type="radio" name="fit" value="Regular" />Regular</label>
+            <label><input type="radio" name="fit" value="Long" />Long</label>
+          </fieldset>
+        </main>
+      </body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        "https://www.nordstromrack.com/s/example/8050407",
+        "ecommerce_detail",
+        max_records=1,
+        requested_fields=["variants"],
+    )
+
+    assert len(rows) == 1
+    record = rows[0]
+    assert record["variant_count"] == 3
+    assert [row["fit"] for row in record["variants"]] == ["Short", "Regular", "Long"]
+
+
+def test_extract_ecommerce_detail_drops_addon_variant_noise_and_keeps_real_axes() -> None:
+    html = """
+    <html>
+      <body>
+        <main class="product-detail">
+          <h1>Keychron V1 Max QMK/VIA Wireless Custom Mechanical Keyboard</h1>
+          <form class="product-form">
+            <fieldset>
+              <legend>Type</legend>
+              <label><input checked type="radio" name="type" value="Fully Assembled Knob" />Fully Assembled Knob</label>
+              <label><input type="radio" name="type" value="Barebone Knob" />Barebone Knob</label>
+            </fieldset>
+            <fieldset>
+              <legend>Color</legend>
+              <label><input checked type="radio" name="color" value="Carbon Black" />Carbon Black</label>
+            </fieldset>
+            <fieldset>
+              <legend>Switches</legend>
+              <label><input checked type="radio" name="switches" value="Gateron Jupiter Red" />Gateron Jupiter Red</label>
+              <label><input type="radio" name="switches" value="Gateron Jupiter Brown" />Gateron Jupiter Brown</label>
+              <label><input type="radio" name="switches" value="Gateron Jupiter Banana" />Gateron Jupiter Banana</label>
+            </fieldset>
+          </form>
+          <div class="convx__addons-panel" data-addon-title="Palm Rest">
+            <label class="addons-option">
+              <input type="checkbox" value="1" />
+              <span class="addons-title">Keychron Resin Palm Rest</span>
+              <span class="addons-variant">Resin / Q1 / V1 Max / Black Myth Wukong</span>
+            </label>
+            <label class="addons-option">
+              <input type="checkbox" value="2" />
+              <span class="addons-title">Keychron Silicone Palm Rest</span>
+              <span class="addons-variant">Black / 75%/65% / 317mm</span>
+            </label>
+          </div>
+        </main>
+      </body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        "https://www.keychron.com/products/keychron-v1-max-qmk-via-wireless-custom-mechanical-keyboard",
+        "ecommerce_detail",
+        max_records=1,
+    )
+
+    assert len(rows) == 1
+    record = rows[0]
+    assert record["variant_count"] == 6
+    assert {row["type"] for row in record["variants"]} == {
+        "Fully Assembled Knob",
+        "Barebone Knob",
+    }
+    assert {row["switches"] for row in record["variants"]} == {
+        "Gateron Jupiter Red",
+        "Gateron Jupiter Brown",
+        "Gateron Jupiter Banana",
+    }
+    assert all("Palm Rest" not in str(row) for row in record["variants"])
+
+
+def test_extract_ecommerce_detail_prefers_priced_adapter_variants_over_dom_cartesian_guess() -> None:
+    html = """
+    <html>
+      <body>
+        <main class="product-detail">
+          <h1>Keychron V1 Max QMK/VIA Wireless Custom Mechanical Keyboard</h1>
+          <form class="product-form">
+            <fieldset>
+              <legend>Type</legend>
+              <label><input checked type="radio" name="type" value="Fully Assembled Knob" />Fully Assembled Knob</label>
+              <label><input type="radio" name="type" value="Barebone Knob" />Barebone Knob</label>
+            </fieldset>
+            <fieldset>
+              <legend>Color</legend>
+              <label><input checked type="radio" name="color" value="Carbon Black" />Carbon Black</label>
+            </fieldset>
+            <fieldset>
+              <legend>Switches</legend>
+              <label><input checked type="radio" name="switches" value="Gateron Jupiter Red" />Gateron Jupiter Red</label>
+              <label><input type="radio" name="switches" value="Gateron Jupiter Brown" />Gateron Jupiter Brown</label>
+              <label><input type="radio" name="switches" value="Gateron Jupiter Banana" />Gateron Jupiter Banana</label>
+            </fieldset>
+          </form>
+        </main>
+      </body>
+    </html>
+    """
+
+    adapter_records = [
+        {
+            "title": "Keychron V1 Max QMK/VIA Wireless Custom Mechanical Keyboard",
+            "price": "104.99",
+            "currency": "USD",
+            "color": "Carbon Black",
+            "variants": [
+                {
+                    "type": "Fully Assembled Knob",
+                    "color": "Carbon Black",
+                    "switches": "Gateron Jupiter Red",
+                    "sku": "V1M-D1",
+                    "price": "104.99",
+                    "currency": "USD",
+                },
+                {
+                    "type": "Fully Assembled Knob",
+                    "color": "Carbon Black",
+                    "switches": "Gateron Jupiter Brown",
+                    "sku": "V1M-D2",
+                    "price": "104.99",
+                    "currency": "USD",
+                },
+                {
+                    "type": "Fully Assembled Knob",
+                    "color": "Carbon Black",
+                    "switches": "Gateron Jupiter Banana",
+                    "sku": "V1M-D3",
+                    "price": "104.99",
+                    "currency": "USD",
+                },
+                {
+                    "type": "Barebone Knob",
+                    "color": "Carbon Black",
+                    "switches": "Barebone",
+                    "sku": "V1M-B1",
+                    "price": "94.99",
+                    "currency": "USD",
+                },
+            ],
+            "variant_count": 4,
+        }
+    ]
+
+    rows = extract_records(
+        html,
+        "https://www.keychron.com/products/keychron-v1-max-qmk-via-wireless-custom-mechanical-keyboard",
+        "ecommerce_detail",
+        max_records=1,
+        adapter_records=adapter_records,
+    )
+
+    assert len(rows) == 1
+    record = rows[0]
+    assert record["variant_count"] == 4
+    assert record["color"] == "Carbon Black"
+    assert {
+        (row["type"], row["switches"], row["price"])
+        for row in record["variants"]
+    } == {
+        ("Fully Assembled Knob", "Gateron Jupiter Red", "104.99"),
+        ("Fully Assembled Knob", "Gateron Jupiter Brown", "104.99"),
+        ("Fully Assembled Knob", "Gateron Jupiter Banana", "104.99"),
+        ("Barebone Knob", "Barebone", "94.99"),
+    }
+
+
+def test_extract_ecommerce_detail_prefers_structured_shopify_variants_over_dom_guess() -> None:
+    html = """
+    <html>
+      <head>
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "Product",
+          "name": "Keychron V1 Max QMK/VIA Wireless Custom Mechanical Keyboard",
+          "offers": {"priceCurrency": "USD"},
+          "options": [
+            {"name": "Type"},
+            {"name": "Color"},
+            {"name": "Switches"}
+          ],
+          "variants": [
+            {
+              "id": "40637899669593",
+              "sku": "V1M-D1",
+              "price": "10499",
+              "option1": "Fully Assembled Knob",
+              "option2": "Carbon Black",
+              "option3": "Gateron Jupiter Red",
+              "url": "https://www.keychron.com/products/keychron-v1-max-qmk-via-wireless-custom-mechanical-keyboard?variant=40637899669593"
+            },
+            {
+              "id": "40637899735129",
+              "sku": "V1M-D3",
+              "price": "10499",
+              "option1": "Fully Assembled Knob",
+              "option2": "Carbon Black",
+              "option3": "Gateron Jupiter Brown",
+              "url": "https://www.keychron.com/products/keychron-v1-max-qmk-via-wireless-custom-mechanical-keyboard?variant=40637899735129"
+            },
+            {
+              "id": "40637899800665",
+              "sku": "V1M-D4",
+              "price": "10499",
+              "option1": "Fully Assembled Knob",
+              "option2": "Carbon Black",
+              "option3": "Gateron Jupiter Banana",
+              "url": "https://www.keychron.com/products/keychron-v1-max-qmk-via-wireless-custom-mechanical-keyboard?variant=40637899800665"
+            },
+            {
+              "id": "40637966221401",
+              "sku": "V1M-Z4",
+              "price": "9499",
+              "option1": "Barebone Knob",
+              "option2": "Carbon Black",
+              "option3": "Barebone",
+              "url": "https://www.keychron.com/products/keychron-v1-max-qmk-via-wireless-custom-mechanical-keyboard?variant=40637966221401"
+            }
+          ]
+        }
+        </script>
+      </head>
+      <body>
+        <main class="product-detail">
+          <h1>Keychron V1 Max QMK/VIA Wireless Custom Mechanical Keyboard</h1>
+          <form class="product-form">
+            <fieldset>
+              <legend>Type</legend>
+              <label><input checked type="radio" name="type" value="Fully Assembled Knob" />Fully Assembled Knob</label>
+              <label><input type="radio" name="type" value="Barebone Knob" />Barebone Knob</label>
+            </fieldset>
+            <fieldset>
+              <legend>Color</legend>
+              <label><input checked type="radio" name="color" value="Carbon Black" />Carbon Black</label>
+            </fieldset>
+            <fieldset>
+              <legend>Switches</legend>
+              <label><input checked type="radio" name="switches" value="Gateron Jupiter Red" />Gateron Jupiter Red</label>
+              <label><input type="radio" name="switches" value="Gateron Jupiter Brown" />Gateron Jupiter Brown</label>
+              <label><input type="radio" name="switches" value="Gateron Jupiter Banana" />Gateron Jupiter Banana</label>
+              <label><input type="radio" name="switches" value="Barebone" />Barebone</label>
+            </fieldset>
+          </form>
+          <div class="convx__addons-panel">
+            <label class="addons-option">
+              <input type="checkbox" value="1" />
+              <span class="addons-title">Keychron Resin Palm Rest</span>
+              <span class="addons-variant">Resin / Q1 / V1 Max / Black Myth Wukong</span>
+            </label>
+            <label class="addons-option">
+              <input type="checkbox" value="2" />
+              <span class="addons-title">Keychron Silicone Palm Rest</span>
+              <span class="addons-variant">Black / 75%/65% / 317mm</span>
+            </label>
+          </div>
+        </main>
+      </body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        "https://www.keychron.com/products/keychron-v1-max-qmk-via-wireless-custom-mechanical-keyboard",
+        "ecommerce_detail",
+        max_records=1,
+    )
+
+    assert len(rows) == 1
+    record = rows[0]
+    assert record["variant_count"] == 4
+    assert record["color"] == "Carbon Black"
+    assert {
+        (row["type"], row["switches"], row["price"])
+        for row in record["variants"]
+    } == {
+        ("Fully Assembled Knob", "Gateron Jupiter Red", "104.99"),
+        ("Fully Assembled Knob", "Gateron Jupiter Brown", "104.99"),
+        ("Fully Assembled Knob", "Gateron Jupiter Banana", "104.99"),
+        ("Barebone Knob", "Barebone", "94.99"),
+    }
+
+
+def test_should_collect_dom_variants_keeps_priced_shopify_rows_over_unpriced_dom_guess() -> None:
+    candidates = {
+        "variants": [
+            [
+                {
+                    "sku": "V1M-D1",
+                    "price": "10499",
+                    "option1": "Fully Assembled Knob",
+                    "option2": "Carbon Black",
+                    "option3": "Gateron Jupiter Red",
+                    "url": "https://example.com/products/keychron?variant=1",
+                },
+                {
+                    "sku": "V1M-D2",
+                    "price": "10499",
+                    "option1": "Fully Assembled Knob",
+                    "option2": "Carbon Black",
+                    "option3": "Gateron Jupiter Brown",
+                    "url": "https://example.com/products/keychron?variant=2",
+                },
+                {
+                    "sku": "V1M-D3",
+                    "price": "10499",
+                    "option1": "Fully Assembled Knob",
+                    "option2": "Carbon Black",
+                    "option3": "Gateron Jupiter Banana",
+                    "url": "https://example.com/products/keychron?variant=3",
+                },
+                {
+                    "sku": "V1M-B1",
+                    "price": "9499",
+                    "option1": "Barebone Knob",
+                    "option2": "Carbon Black",
+                    "option3": "Barebone",
+                    "url": "https://example.com/products/keychron?variant=4",
+                },
+            ]
+        ]
+    }
+    dom_variants = {
+        "variants": [
+            {"type": "Fully Assembled Knob", "switches": "Gateron Jupiter Red"},
+            {"type": "Fully Assembled Knob", "switches": "Gateron Jupiter Brown"},
+            {"type": "Fully Assembled Knob", "switches": "Gateron Jupiter Banana"},
+            {"type": "Fully Assembled Knob", "switches": "Barebone"},
+            {"type": "Barebone Knob", "switches": "Gateron Jupiter Red"},
+            {"type": "Barebone Knob", "switches": "Gateron Jupiter Brown"},
+            {"type": "Barebone Knob", "switches": "Gateron Jupiter Banana"},
+            {"type": "Barebone Knob", "switches": "Barebone"},
+        ]
+    }
+
+    assert (
+        detail_materializer._should_collect_dom_variants(candidates, dom_variants)
+        is False
+    )
+
+
+def test_build_detail_record_keeps_raw_priced_variant_rows_over_dom_backfill_guess() -> None:
+    html = """
+    <html>
+      <body>
+        <main class="product-detail">
+          <h1>Keychron V1 Max QMK/VIA Wireless Custom Mechanical Keyboard</h1>
+          <form class="product-form">
+            <fieldset>
+              <legend>Type</legend>
+              <label><input checked type="radio" name="type" value="Fully Assembled Knob" />Fully Assembled Knob</label>
+              <label><input type="radio" name="type" value="Barebone Knob" />Barebone Knob</label>
+            </fieldset>
+            <fieldset>
+              <legend>Color</legend>
+              <label><input checked type="radio" name="color" value="Carbon Black" />Carbon Black</label>
+            </fieldset>
+            <fieldset>
+              <legend>Switches</legend>
+              <label><input checked type="radio" name="switches" value="Gateron Jupiter Red" />Gateron Jupiter Red</label>
+              <label><input type="radio" name="switches" value="Gateron Jupiter Brown" />Gateron Jupiter Brown</label>
+              <label><input type="radio" name="switches" value="Gateron Jupiter Banana" />Gateron Jupiter Banana</label>
+              <label><input type="radio" name="switches" value="Barebone" />Barebone</label>
+            </fieldset>
+          </form>
+          <div class="convx__addons-panel">
+            <label class="addons-option">
+              <input type="checkbox" value="1" />
+              <span class="addons-title">Keychron Resin Palm Rest</span>
+              <span class="addons-variant">Resin / Q1 / V1 Max / Black Myth Wukong</span>
+            </label>
+            <label class="addons-option">
+              <input type="checkbox" value="2" />
+              <span class="addons-title">Keychron Silicone Palm Rest</span>
+              <span class="addons-variant">Black / 75%/65% / 317mm</span>
+            </label>
+          </div>
+        </main>
+      </body>
+    </html>
+    """
+
+    record = build_detail_record(
+        html,
+        "https://www.keychron.com/products/keychron-v1-max-qmk-via-wireless-custom-mechanical-keyboard",
+        "ecommerce_detail",
+        None,
+        adapter_records=[
+            {
+                "title": "Keychron V1 Max QMK/VIA Wireless Custom Mechanical Keyboard",
+                "variants": [
+                    {
+                        "sku": "V1M-D1",
+                        "price": "10499",
+                        "option1": "Fully Assembled Knob",
+                        "option2": "Carbon Black",
+                        "option3": "Gateron Jupiter Red",
+                        "url": "https://example.com/products/keychron?variant=1",
+                    },
+                    {
+                        "sku": "V1M-D2",
+                        "price": "10499",
+                        "option1": "Fully Assembled Knob",
+                        "option2": "Carbon Black",
+                        "option3": "Gateron Jupiter Brown",
+                        "url": "https://example.com/products/keychron?variant=2",
+                    },
+                    {
+                        "sku": "V1M-D3",
+                        "price": "10499",
+                        "option1": "Fully Assembled Knob",
+                        "option2": "Carbon Black",
+                        "option3": "Gateron Jupiter Banana",
+                        "url": "https://example.com/products/keychron?variant=3",
+                    },
+                    {
+                        "sku": "V1M-B1",
+                        "price": "9499",
+                        "option1": "Barebone Knob",
+                        "option2": "Carbon Black",
+                        "option3": "Barebone",
+                        "url": "https://example.com/products/keychron?variant=4",
+                    },
+                ],
+                "variant_count": 4,
+            }
+        ],
+    )
+
+    assert record["variant_count"] == 4
+    assert record["color"] == "Carbon Black"
+    assert {
+        (row["type"], row["switches"], row["price"])
+        for row in record["variants"]
+    } == {
+        ("Fully Assembled Knob", "Gateron Jupiter Red", "104.99"),
+        ("Fully Assembled Knob", "Gateron Jupiter Brown", "104.99"),
+        ("Fully Assembled Knob", "Gateron Jupiter Banana", "104.99"),
+        ("Barebone Knob", "Barebone", "94.99"),
+    }
+
+
+def test_extract_ecommerce_detail_keeps_ifixit_variant_group_local_and_drops_pdp_chrome() -> None:
+    html = """
+    <html>
+      <body>
+        <section id="product-overview">
+          <div class="flex">
+            <div class="relative text-sm w-full" data-testid="product-info-section">
+              <h1>iPhone 16 Plus Battery</h1>
+              <div class="chakra-stack css-37za6y">
+                <div class="chakra-stack css-24ivmg">
+                  <p>Condition: New</p>
+                </div>
+                <div class="chakra-stack css-24ivmg">
+                  <p>Part or Kit</p>
+                  <div data-testid="product-variants-selector">
+                    <div data-testid="IF494-001-1" data-selected="false">
+                      <p><span>Option</span>Part Only<span>not selected</span></p>
+                    </div>
+                    <div data-testid="IF494-001-2" data-selected="true">
+                      <p><span>Option</span>Fix Kit<span>selected</span></p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div>
+                <span>Shipping restrictions apply</span>
+                <button aria-label="Learn more about shipping restrictions" data-state="closed">i</button>
+              </div>
+              <button aria-label="Learn more about our return policy" data-state="closed">i</button>
+              <div data-state="open">
+                <h3><button type="button" data-state="open">Compatibility</button></h3>
+                <div data-state="open">
+                  <a href="#compatibility">iPhone 16 Plus A3082</a>
+                </div>
+              </div>
+              <div data-state="closed">
+                <h3><button type="button" data-state="closed">Kit Contents</button></h3>
+              </div>
+            </div>
+          </div>
+        </section>
+      </body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        "https://www.ifixit.com/products/iphone-16-plus-battery",
+        "ecommerce_detail",
+        max_records=1,
+    )
+
+    assert len(rows) == 1
+    record = rows[0]
+    assert record["variant_count"] == 2
+    assert [variant.get("bundle_type") for variant in record["variants"]] == [
+        "Part Only",
+        "Fix Kit",
+    ]
+    assert all(
+        "shipping restrictions" not in str(variant).lower()
+        for variant in record["variants"]
+    )
+    assert all(
+        "return policy" not in str(variant).lower() for variant in record["variants"]
+    )
+
+
+def test_extract_ecommerce_detail_recovers_variant_urls_from_dom_choice_links() -> None:
+    html = """
+    <html>
+      <body>
+        <h1>Norton Velvet Recliner</h1>
+        <div class="color-selector" role="radiogroup" aria-label="Colour">
+          <a href="/product/norton-velvet-recliner-in-grey-2207513.html">
+            <button type="button" aria-label="Grey" class="selected"></button>
+          </a>
+          <a href="/product/norton-velvet-recliner-in-beige-2207512.html">
+            <button type="button" aria-label="Beige"></button>
+          </a>
+          <a href="/product/norton-velvet-recliner-in-brown-2268528.html">
+            <button type="button" aria-label="Brown"></button>
+          </a>
+        </div>
+      </body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        "https://www.pepperfry.com/product/norton-velvet-recliner-in-grey-2207513.html",
+        "ecommerce_detail",
+        max_records=5,
+    )
+
+    assert len(rows) == 1
+    record = rows[0]
+    assert record["variant_count"] == 3
+    assert record["variants"][0]["url"] == (
+        "https://www.pepperfry.com/product/norton-velvet-recliner-in-grey-2207513.html"
+    )
+    assert record["variants"][1]["url"] == (
+        "https://www.pepperfry.com/product/norton-velvet-recliner-in-beige-2207512.html"
+    )
+    assert record["variants"][2]["url"] == (
+        "https://www.pepperfry.com/product/norton-velvet-recliner-in-brown-2268528.html"
+    )
+
+
+def test_extract_ecommerce_detail_recovers_anchor_only_color_swatches() -> None:
+    html = """
+    <html>
+      <body>
+        <h1>Arrival 5&quot; Shorts</h1>
+        <div class="color-selector" role="radiogroup" aria-label="Colour">
+          <a
+            href="/products/gymshark-arrival-5-shorts-black-ss22"
+            aria-label='Arrival 5" Shorts in Black'
+          ></a>
+          <a
+            href="/products/gymshark-arrival-5-shorts-white-ss22"
+            aria-label='Arrival 5" Shorts in White'
+          ></a>
+        </div>
+      </body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        "https://www.gymshark.com/products/gymshark-arrival-5-shorts-black-ss22",
+        "ecommerce_detail",
+        max_records=5,
+    )
+
+    assert len(rows) == 1
+    record = rows[0]
+    assert record["variant_count"] == 2
+    assert [(variant["color"], variant["url"]) for variant in record["variants"]] == [
+        (
+            "Black",
+            "https://www.gymshark.com/products/gymshark-arrival-5-shorts-black-ss22",
+        ),
+        (
+            "White",
+            "https://www.gymshark.com/products/gymshark-arrival-5-shorts-white-ss22",
+        ),
+    ]
+
+
+def test_extract_ecommerce_detail_recovers_variant_urls_from_js_state_option_mapping() -> None:
+    html = """
+    <html>
+      <head>
+        <script id="__NEXT_DATA__" type="application/json">
+        {
+          "props": {
+            "pageProps": {
+              "data": {
+                "productDetailData": {
+                  "result": [
+                    {
+                      "data": {
+                        "id": "140632",
+                        "options": [
+                          {
+                            "id": "color",
+                            "label": "Frame Color",
+                            "optionList": [
+                              {
+                                "id": "14417_27737_23249_26121_23251",
+                                "title": "Transparent Grey"
+                              },
+                              {
+                                "id": "14417_27663_23245_26121_23252",
+                                "title": "Transparent Pink"
+                              }
+                            ]
+                          }
+                        ],
+                        "clarityOptionsMapping": [
+                          {
+                            "color": "14417_27737_23249_26121_23251",
+                            "productId": "140632"
+                          },
+                          {
+                            "color": "14417_27663_23245_26121_23252",
+                            "productId": "208303"
+                          }
+                        ]
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+        </script>
+      </head>
+      <body>
+        <h1>John Jacobs JJ S13313</h1>
+        <div class="color-selector" role="radiogroup" aria-label="Frame Color">
+          <button
+            id="14417_27737_23249_26121_23251"
+            type="button"
+            aria-label="Transparent Grey"
+            class="selected"
+          ></button>
+          <button
+            id="14417_27663_23245_26121_23252"
+            type="button"
+            aria-label="Transparent Pink"
+          ></button>
+        </div>
+      </body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        "https://www.lenskart.com/john-jacobs-jj-s13313-c1-sunglasses.html?productId=140632",
+        "ecommerce_detail",
+        max_records=5,
+    )
+
+    assert len(rows) == 1
+    record = rows[0]
+    assert record["variant_count"] == 2
+    assert record["variants"][0]["url"] == (
+        "https://www.lenskart.com/john-jacobs-jj-s13313-c1-sunglasses.html?productId=140632"
+    )
+    assert record["variants"][1]["url"] == (
+        "https://www.lenskart.com/john-jacobs-jj-s13313-c1-sunglasses.html?productId=208303"
+    )
+
+
+def test_extract_ecommerce_detail_skips_unnamed_dom_variant_groups() -> None:
+    html = """
+    <html>
+      <body>
+        <h1>Trail Runner</h1>
+        <div class="swatch-group">
+          <button type="button" aria-label="Black"></button>
+          <button type="button" aria-label="Olive"></button>
+        </div>
+      </body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        "https://example.com/products/trail-runner",
+        "ecommerce_detail",
+        max_records=5,
+    )
+
+    assert len(rows) == 1
+    record = rows[0]
+    assert "variants" not in record
+
+
+def test_extract_ecommerce_detail_ignores_review_qa_controls_and_payment_icons() -> None:
+    html = """
+    <html>
+      <body>
+        <section class="secure-payment">
+          <img src="https://cdn.example.com/assets/amex.svg" alt="American Express" />
+          <img src="https://cdn.example.com/assets/paypal.svg" alt="PayPal" />
+        </section>
+        <main>
+          <h1>7 Cup Food Processor</h1>
+          <section class="product-gallery">
+            <img src="https://cdn.example.com/products/food-processor.jpg?width=1200" alt="7 Cup Food Processor front view" />
+          </section>
+          <button aria-controls="specifications-panel">Specifications</button>
+          <section id="specifications-panel">
+            <p>7 cup work bowl with high, low, and pulse speed controls.</p>
+          </section>
+          <section class="product-questions">
+            <div role="radiogroup" aria-label="1 Answers to Question: Will this shred cooked pork?">
+              <button type="button">See KASA Review profile.</button>
+              <button type="button">Content helpfulness</button>
+              <button type="button">Report this answer by KASA Review as inappropriate.</button>
+            </div>
+          </section>
+        </main>
+      </body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        "https://example.com/products/food-processor",
+        "ecommerce_detail",
+        max_records=5,
+        requested_fields=["specifications"],
+    )
+
+    assert len(rows) == 1
+    record = rows[0]
+    assert (
+        record["image_url"]
+        == "https://cdn.example.com/products/food-processor.jpg?width=1200"
+    )
+    assert (
+        record["specifications"]
+        == "7 cup work bowl with high, low, and pulse speed controls."
+    )
+    assert "additional_images" not in record
+    assert "variants" not in record
+
+
+def test_extract_ecommerce_detail_does_not_use_bundle_upsell_as_title() -> None:
+    html = """
+    <html>
+      <head>
+        <title>Rockler Table Saw Crosscut Sled</title>
+      </head>
+      <body>
+        <main>
+          <h1>Frequently Bought Together</h1>
+          <div class="price">$249.99</div>
+          <img src="https://cdn.example.com/products/table-saw-sled.jpg" alt="Table saw crosscut sled" />
+        </main>
+      </body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        "https://example.com/products/rockler-table-saw-crosscut-sled",
+        "ecommerce_detail",
+        max_records=5,
+    )
+
+    assert len(rows) == 1
+    record = rows[0]
+    assert record["title"] == "Rockler Table Saw Crosscut Sled"
+    assert record["title"] != "Frequently Bought Together"
+
+
+def test_extract_ecommerce_detail_ignores_sort_filter_and_availability_controls_as_variants() -> None:
+    html = """
+    <html>
+      <body>
+        <main>
+          <h1>Performance Crew Socks</h1>
+          <div class="price">$18.00</div>
+          <label for="sort-by">Sort By</label>
+          <select id="sort-by">
+            <option>Featured</option>
+            <option>Newest</option>
+          </select>
+          <label for="filter-by">Filter By</label>
+          <select id="filter-by">
+            <option>All Reviews</option>
+            <option>Most Helpful</option>
+          </select>
+          <fieldset>
+            <legend>Availability</legend>
+            <label><input type="checkbox" checked> In Stock</label>
+            <label><input type="checkbox"> Out of Stock</label>
+          </fieldset>
+        </main>
+      </body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        "https://example.com/products/performance-crew-socks",
+        "ecommerce_detail",
+        max_records=5,
+    )
+
+    assert len(rows) == 1
+    record = rows[0]
+    assert "variants" not in record
+
+
+def test_extract_ecommerce_detail_does_not_treat_etsy_report_radios_as_variants() -> None:
+    html = """
+    <html>
+      <body>
+        <main>
+          <h1>Black Popular And In Demand Unisex T-Shirt</h1>
+          <div class="price">INR 2476.00</div>
+          <div class="listing-report-modal">
+            <ul>
+              <li>
+                <input id="flag_1" type="radio" name="flag_type_mnemonic" value="LISTING_GRT_T1" />
+                <label for="flag_1">It's not handmade, vintage, or craft supplies</label>
+              </li>
+              <li>
+                <input id="flag_2" type="radio" name="flag_type_mnemonic" value="OC_PORNOGRAPHY" />
+                <label for="flag_2">It's pornographic</label>
+              </li>
+              <li>
+                <input id="flag_3" type="radio" name="flag_type_mnemonic" value="LISTING_MINOR_SAFETY" />
+                <label for="flag_3">It's a threat to minor safety</label>
+              </li>
+            </ul>
+          </div>
+        </main>
+      </body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        "https://www.etsy.com/listing/1210769675/example",
+        "ecommerce_detail",
+        max_records=5,
+    )
+
+    assert len(rows) == 1
+    record = rows[0]
+    assert record["title"] == "Black Popular And In Demand Unisex T-Shirt"
+    assert record["price"] == "2476.00"
+    assert "variants" not in record
+    assert "variant_count" not in record
+
+
+def test_extract_ecommerce_detail_does_not_treat_shipping_country_selector_as_variant_axis() -> None:
+    html = """
+    <html>
+      <body>
+        <main>
+          <h1>Custom Embroidered Mom Picture Sweatshirt</h1>
+          <div class="price">INR 3121.00</div>
+          <label for="variation-selector-1">Color</label>
+          <select id="variation-selector-1">
+            <option>Select an option</option>
+            <option>Heather Dark Green</option>
+            <option>White</option>
+          </select>
+          <label for="estimated-shipping-country">Country</label>
+          <select
+            id="estimated-shipping-country"
+            name="estimated-shipping-country"
+            aria-label="Choose country"
+          >
+            <option>----------</option>
+            <option>Australia</option>
+            <option>Canada</option>
+            <option>France</option>
+          </select>
+        </main>
+      </body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        "https://www.etsy.com/listing/1210769675/example",
+        "ecommerce_detail",
+        max_records=5,
+    )
+
+    assert len(rows) == 1
+    record = rows[0]
+    assert record["title"] == "Custom Embroidered Mom Picture Sweatshirt"
+    assert record["variant_count"] == 2
+    assert "choose_country" not in str(record.get("variants") or "")
+
+
+def test_extract_ecommerce_detail_splits_style_and_size_from_compound_select_before_color() -> None:
+    html = """
+    <html>
+      <body>
+        <main>
+          <h1>Custom Sweatshirt</h1>
+          <div class="price">$10.00</div>
+          <label for="variation-selector-0">Style &amp; Size</label>
+          <select id="variation-selector-0">
+            <option value="">Select an option</option>
+            <option value="1">Sweatshirt S ($10.00)</option>
+            <option value="2">Sweatshirt M ($10.00)</option>
+            <option value="3">Hoodie S ($12.00)</option>
+            <option value="4">Hoodie M ($12.00)</option>
+          </select>
+          <label for="variation-selector-1">Colors</label>
+          <select id="variation-selector-1">
+            <option value="">Select an option</option>
+            <option value="10">Black</option>
+            <option value="11">White</option>
+          </select>
+        </main>
+      </body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        "https://www.etsy.com/listing/1210769675/example",
+        "ecommerce_detail",
+        max_records=5,
+    )
+
+    assert len(rows) == 1
+    record = rows[0]
+    assert record["variant_count"] == 8
+
+
+def test_extract_ecommerce_detail_does_not_treat_question_radiogroup_as_size_variants() -> None:
+    html = """
+    <html>
+      <body>
+        <main>
+          <h1>7 Cup Food Processor</h1>
+          <section class="product-questions">
+            <div role="radiogroup" aria-label="Will the 7 cup model chop cooked pork into a small size">
+              <button type="button">Yes</button>
+              <button type="button">No</button>
+            </div>
+          </section>
+        </main>
+      </body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        "https://example.com/products/food-processor",
+        "ecommerce_detail",
+        max_records=5,
+    )
+
+    assert len(rows) == 1
+    record = rows[0]
+    assert "variants" not in record
+
+
+def test_extract_ecommerce_detail_keeps_stronger_js_state_variants_over_dom_fallback() -> None:
+    html = """
+    <html>
+      <body>
+        <h1>Trail Runner</h1>
+        <label>
+          Size
+          <select name="size">
+            <option value="">Choose size</option>
+            <option value="s">S</option>
+            <option value="m">M</option>
+          </select>
+        </label>
+      </body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        "https://example.com/products/trail-runner",
+        "ecommerce_detail",
+        max_records=5,
+        adapter_records=[
+            {
+                "variant_axes": {"size": ["S", "M", "L"]},
+                "selected_variant": {"sku": "TRAIL-S", "option_values": {"size": "S"}},
+            }
+        ],
+    )
+
+    assert len(rows) == 1
+
+
+def test_extract_ecommerce_detail_skips_dom_variant_scan_for_rich_structured_variants() -> None:
+    html = """
+    <html>
+      <body>
+        <h1>Trail Runner</h1>
+        <label>
+          Size
+          <select name="size">
+            <option value="">Choose size</option>
+            <option value="s">S</option>
+            <option value="m">M</option>
+          </select>
+        </label>
+      </body>
+    </html>
+    """
+
+    record = build_detail_record(
+        html,
+        "https://example.com/products/trail-runner",
+        "ecommerce_detail",
+        None,
+        adapter_records=[
+            {
+                "title": "Trail Runner",
+                "price": "99.00",
+                "currency": "USD",
+                "image_url": "https://example.com/trail-runner.jpg",
+                "variants": [
+                    {
+                        "sku": "TRAIL-S",
+                        "size": "S",
+                        "image_url": "https://example.com/s.jpg",
+                    },
+                    {
+                        "sku": "TRAIL-M",
+                        "size": "M",
+                        "image_url": "https://example.com/m.jpg",
+                    },
+                ],
+            }
+        ],
+        extraction_runtime_snapshot={
+            "selector_self_heal": {"enabled": True, "min_confidence": 0.55}
+        },
+    )
+
+    assert record["_extraction_tiers"]["early_exit"] == "js_state"
+    assert record["variants"] == [
+        {"size": "S", "sku": "TRAIL-S", "image_url": "https://example.com/s.jpg"},
+        {"size": "M", "sku": "TRAIL-M", "image_url": "https://example.com/m.jpg"},
+    ]
+
+
+def test_extract_ecommerce_detail_backfills_selected_variant_price_from_record_when_dom_variants_are_sparse() -> None:
+    html = """
+    <html>
+      <body>
+        <main>
+          <h1>Trail Runner</h1>
+          <div class="price">$99.00</div>
+          <label>
+            Size
+            <select name="size">
+              <option value="s" selected>S</option>
+              <option value="m">M</option>
+            </select>
+          </label>
+        </main>
+      </body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        "https://example.com/products/trail-runner",
+        "ecommerce_detail",
+        max_records=5,
+    )
+
+    assert len(rows) == 1
+    record = rows[0]
+    assert record["price"] == "99.00"
+
+
+def test_extract_ecommerce_detail_prunes_single_value_marketing_axes_from_final_variant_record() -> None:
+    html = """
+    <html>
+      <head>
+        <script id="__NEXT_DATA__" type="application/json">
+        {
+          "props": {
+            "pageProps": {
+              "product": {
+                "id": "leggings-1",
+                "title": "Everyday Seamless Leggings",
+                "price": "58.00",
+                "currency": "USD",
+                "variants": [
+                  {
+                    "id": "leggings-s",
+                    "available": true,
+                    "selectedOptions": [
+                      {"name": "Size", "value": "S"},
+                      {"name": "Soft Fabric", "value": "Second-skin feel"},
+                      {"name": "High Waisted", "value": "Snatched waist"}
+                    ]
+                  },
+                  {
+                    "id": "leggings-m",
+                    "available": true,
+                    "selectedOptions": [
+                      {"name": "Size", "value": "M"},
+                      {"name": "Soft Fabric", "value": "Second-skin feel"},
+                      {"name": "High Waisted", "value": "Snatched waist"}
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+        }
+        </script>
+      </head>
+      <body><main><h1>Everyday Seamless Leggings</h1></main></body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        "https://example.com/products/everyday-seamless-leggings?variant=leggings-s",
+        "ecommerce_detail",
+        max_records=5,
+    )
+
+    assert len(rows) == 1
+
+
+def test_extract_ecommerce_detail_does_not_duplicate_parent_price_into_variants_when_uniform() -> None:
+    html = """
+    <html>
+      <head>
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "Product",
+          "name": "Tree Runner",
+          "offers": {
+            "@type": "Offer",
+            "price": "100",
+            "priceCurrency": "USD"
+          }
+        }
+        </script>
+        <script id="__NEXT_DATA__" type="application/json">
+        {
+          "props": {
+            "pageProps": {
+              "product": {
+                "id": "tree-runner-1",
+                "title": "Tree Runner",
+                "currency": "USD",
+                "variants": [
+                  {
+                    "id": "tree-runner-8",
+                    "available": true,
+                    "selectedOptions": [
+                      {"name": "Size", "value": "8"}
+                    ]
+                  },
+                  {
+                    "id": "tree-runner-9",
+                    "available": true,
+                    "selectedOptions": [
+                      {"name": "Size", "value": "9"}
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+        }
+        </script>
+      </head>
+      <body><main><h1>Tree Runner</h1></main></body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        "https://example.com/products/tree-runner?variant=tree-runner-8",
+        "ecommerce_detail",
+        max_records=5,
+    )
+
+    assert len(rows) == 1
+    record = rows[0]
+    assert record["price"] == "100.00"
+    assert "price" not in record["variants"][0]
+
+
+def test_extract_ecommerce_detail_ignores_generic_selector_axis_names_without_semantic_labels() -> None:
+    html = """
+    <html>
+      <body>
+        <main>
+          <h1>Camera Lens</h1>
+          <div class="price">$399.00</div>
+          <select id="variation_selector_0">
+            <option value="">Choose</option>
+            <option value="1">Leica L</option>
+            <option value="2">Sony E</option>
+          </select>
+        </main>
+      </body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        "https://example.com/products/camera-lens",
+        "ecommerce_detail",
+        max_records=5,
+    )
+
+    assert len(rows) == 1
+
+
+def test_extract_ecommerce_detail_infers_unlabeled_select_variants_and_ignores_translate_widget() -> None:
+    html = """
+    <html>
+      <body>
+        <main>
+          <h1>JARIX 1.5 ดีไซน์ใหม่ (จาริกซ์) VEPRO Foam</h1>
+          <div class="price">฿1997.00</div>
+          <select>
+            <option>-- คลิกเพื่อเลือก สี --</option>
+            <option>Sand Beige</option>
+            <option>Sirrocco Nude</option>
+            <option>Machine Grey</option>
+            <option>1.5 Pearl White</option>
+          </select>
+          <select>
+            <option>-- คลิกเพื่อเลือก ขนาด --</option>
+            <option>EU-36</option>
+            <option>EU-37</option>
+            <option>EU-38</option>
+          </select>
+          <select aria-label="Language Translate Widget">
+            <option>English</option>
+            <option>Thai</option>
+          </select>
+        </main>
+      </body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        "https://www.shop.ving.run/product/jarix-1-5-vepro-foam/11000742818002471",
+        "ecommerce_detail",
+        max_records=5,
+    )
+
+    assert len(rows) == 1
+    record = rows[0]
+    assert "language_translate_widget" not in str(record.get("variant_axes") or "")
+
+
+def test_extract_ecommerce_detail_keeps_size_axis_when_bad_dom_label_says_color() -> None:
+    html = """
+    <html>
+      <head>
+        <script type="application/json">
+        {
+          "@type": "Product",
+          "name": "Montecito 2.0 Hard Side Graphite Carry On Suitcase",
+          "brand": "Ricardo Beverly Hills",
+          "attributes": {
+            "GTIN14": {"Id": "GTIN14", "Values": [{"Value": "00018982111874"}]},
+            "AVAILABILITY": {"Id": "AVAILABILITY", "Values": [{"Value": "True"}]}
+          }
+        }
+        </script>
+      </head>
+      <body>
+        <main>
+          <h1>Montecito 2.0 Hard Side Graphite Carry On Suitcase</h1>
+          <div class="price">$136.00</div>
+          <select aria-label="Color">
+            <option>Graphite</option>
+            <option>Hunter</option>
+          </select>
+          <select aria-label="Color">
+            <option>21 in.</option>
+            <option>25 in.</option>
+            <option>29 in.</option>
+          </select>
+        </main>
+      </body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        "https://www.belk.com/p/ricardo-beverly-hills-montecito-2.0-hard-side-graphite-carry-on-suitcase/620017811756553.html",
+        "ecommerce_detail",
+        max_records=5,
+    )
+
+    assert len(rows) == 1
+    record = rows[0]
+    assert record.get("sku") != "AVAILABILITY"
+    assert "GTIN14" not in record.get("product_attributes", {})
+    assert "AVAILABILITY" not in record.get("product_attributes", {})
+
+
+def test_variant_option_availability_does_not_treat_disabled_control_as_out_of_stock() -> None:
+    soup = BeautifulSoup(
+        """
+        <li class="size disabled selected">
+          <input checked disabled type="radio" name="size" value="2" />
+          <label>2</label>
+        </li>
+        """,
+        "html.parser",
+    )
+
+    node = soup.select_one("input")
+    label = soup.select_one("label")
+
+    assert node is not None
+    availability, stock_quantity = variant_option_availability(
+        node=node,
+        label_node=label,
+    )
+
+    assert availability is None
+    assert stock_quantity is None
+
+
+def test_extract_detail_variants_from_plain_buttons_without_data_attributes() -> None:
+    html = """
+    <html>
+      <body>
+        <main>
+          <h1>Widget Prime</h1>
+          <div role="radiogroup" aria-label="Size">
+            <button type="button" aria-pressed="true">S</button>
+            <button type="button">M</button>
+            <button type="button">L</button>
+          </div>
+        </main>
+      </body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        "https://example.com/products/widget-prime",
+        "ecommerce_detail",
+        max_records=5,
+    )
+
+    assert len(rows) == 1
+    record = rows[0]
+    assert record["variants"] == [{"size": "S"}, {"size": "M"}, {"size": "L"}]
+    assert record["variant_count"] == 3
+
+
+def test_extract_automobile_detail_ignores_irrelevant_video_json_ld_when_dom_title_exists() -> None:
+    html = """
+    <html>
+      <head>
+        <link rel="canonical" href="https://www.autotrader.co.uk/cars/leasing/product/202402287036788" />
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "VideoObject",
+          "name": "NEW Abarth 500E: The LOUDEST Electric Car! 4K",
+          "description": "Promo video copy that is not the vehicle detail.",
+          "thumbnailUrl": "https://m.atcdn.co.uk/a/media/w800/b75b88d781b647dcb7f8a802e7b6fa8e.jpg",
+          "publisher": {
+            "@type": "Organization",
+            "name": "Auto Trader",
+            "logo": {
+              "@type": "ImageObject",
+              "url": "https://m.atcdn.co.uk/static/media/logos/autotrader-logo.png"
+            }
+          }
+        }
+        </script>
+      </head>
+      <body>
+        <main>
+          <h1>Abarth 500e 42kWh Turismo Auto 3dr</h1>
+          <p>Lease deal available now.</p>
+          <img src="https://m.atcdn.co.uk/a/media/w800/b75b88d781b647dcb7f8a802e7b6fa8e.jpg" alt="Abarth 500e 42kWh Turismo Auto 3dr" />
+        </main>
+      </body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        "https://www.autotrader.co.uk/cars/leasing/product/202402287036788",
+        "automobile_detail",
+        max_records=5,
+    )
+
+    assert len(rows) == 1
+    record = rows[0]
+    assert record["title"] == "Abarth 500e 42kWh Turismo Auto 3dr"
+    assert (
+        record["url"]
+        == "https://www.autotrader.co.uk/cars/leasing/product/202402287036788"
+    )
+    assert record["_source"] == "dom_h1"
+
+
+def test_extract_automobile_detail_accepts_vehicle_json_ld_title_and_image() -> None:
+    html = """
+    <html>
+      <head>
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "Vehicle",
+          "name": "Roadster GT",
+          "image": "https://example.com/roadster.jpg",
+          "url": "https://example.com/cars/roadster-gt"
+        }
+        </script>
+      </head>
+      <body></body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        "https://example.com/cars/roadster-gt",
+        "automobile_detail",
+        max_records=5,
+    )
+
+    assert len(rows) == 1
+    record = rows[0]
+    assert record["title"] == "Roadster GT"
+    assert record["image_url"] == "https://example.com/roadster.jpg"
+    assert record["url"] == "https://example.com/cars/roadster-gt"
+    assert record["_source"] == "json_ld"
+
+
+def test_extract_ecommerce_detail_allows_dom_variants_to_fill_weak_js_state_variants() -> None:
+    html = """
+    <html>
+      <head>
+        <script id="__NEXT_DATA__" type="application/json">
+        {
+          "props": {
+            "pageProps": {
+              "product": {
+                "id": 9001,
+                "title": "Trail Runner",
+                "variants": [
+                  {
+                    "id": "weak-1",
+                    "sku": "TRAIL-WEAK"
+                  }
+                ]
+              }
+            }
+          }
+        }
+        </script>
+      </head>
+      <body>
+        <h1>Trail Runner</h1>
+        <label>
+          Size
+          <select name="size">
+            <option value="">Choose size</option>
+            <option value="s">S</option>
+            <option value="m">M</option>
+          </select>
+        </label>
+        <div class="color-swatch-group" aria-label="Color">
+          <button type="button" aria-label="Black"></button>
+          <button type="button" aria-label="Olive"></button>
+        </div>
+      </body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        "https://example.com/products/trail-runner",
+        "ecommerce_detail",
+        max_records=5,
+    )
+
+    assert len(rows) == 1
+    record = rows[0]
+    assert len(record["variants"]) == 4
+
+
+def test_extract_ecommerce_detail_merges_deduped_additional_images_across_js_state_and_dom() -> None:
+    html = """
+    <html>
+      <head>
+        <script id="__NEXT_DATA__" type="application/json">
+        {
+          "props": {
+            "pageProps": {
+              "product": {
+                "id": 9001,
+                "title": "Trail Runner",
+                "images": [
+                  {"src": "https://cdn.example.com/products/trail-runner-1.jpg?width=400"},
+                  {"src": "https://cdn.example.com/products/trail-runner-2.jpg?width=400"},
+                  {"src": "https://cdn.example.com/assets/payment-badge.svg"}
+                ],
+                "variants": []
+              }
+            }
+          }
+        }
+        </script>
+      </head>
+      <body>
+        <main class="pdp-main">
+          <h1>Trail Runner</h1>
+          <section class="hero-media">
+            <img src="https://cdn.example.com/products/trail-runner-1.jpg?width=1200" alt="Trail Runner front view" />
+            <img src="https://cdn.example.com/products/trail-runner-2.jpg?width=1200" alt="Trail Runner side view" />
+            <img src="https://cdn.example.com/products/trail-runner-3.jpg?width=1200" alt="Trail Runner outsole" />
+          </section>
+        </main>
+      </body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        "https://example.com/products/trail-runner",
+        "ecommerce_detail",
+        max_records=5,
+    )
+
+    assert len(rows) == 1
+    record = rows[0]
+    assert (
+        record["image_url"]
+        == "https://cdn.example.com/products/trail-runner-1.jpg?width=1200"
+    )
+    assert record["additional_images"] == [
+        "https://cdn.example.com/products/trail-runner-2.jpg?width=1200",
+        "https://cdn.example.com/products/trail-runner-3.jpg?width=1200",
+    ]
+
+
+def test_extract_detail_keeps_dom_images_live_when_structured_data_only_has_primary_image() -> None:
+    html = """
+    <html>
+      <head>
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "Product",
+          "name": "Trail Runner",
+          "image": "https://cdn.example.com/products/trail-runner-1.jpg",
+          "offers": {
+            "price": "99.00",
+            "priceCurrency": "USD",
+            "availability": "https://schema.org/InStock"
+          }
+        }
+        </script>
+      </head>
+      <body>
+        <main>
+          <h1>Trail Runner</h1>
+          <section class="gallery">
+            <img src="https://cdn.example.com/products/trail-runner-1.jpg" alt="Trail Runner front view" />
+            <a href="https://cdn.example.com/products/trail-runner-2.jpg">
+              <img src="https://cdn.example.com/products/trail-runner-2-thumb.jpg" alt="Trail Runner side view" />
+            </a>
+            <a href="https://cdn.example.com/products/trail-runner-3.jpg">
+              <img src="https://cdn.example.com/products/trail-runner-3-thumb.jpg" alt="Trail Runner outsole" />
+            </a>
+          </section>
+        </main>
+      </body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        "https://example.com/products/trail-runner",
+        "ecommerce_detail",
+        max_records=5,
+        extraction_runtime_snapshot={
+            "selector_self_heal": {"enabled": True, "min_confidence": 0.55}
+        },
+    )
+
+    assert len(rows) == 1
+    record = rows[0]
+    assert record["_extraction_tiers"]["current"] == "dom"
+    assert record["_extraction_tiers"]["early_exit"] is None
+    assert record["additional_images"] == [
+        "https://cdn.example.com/products/trail-runner-2-thumb.jpg",
+        "https://cdn.example.com/products/trail-runner-3-thumb.jpg",
+    ]
+
+
+def test_extract_ecommerce_detail_prefers_full_dom_description_and_keeps_product_details_separate() -> None:
+    html = """
+    <html>
+      <head>
+        <meta property="og:title" content="Headless + Omnichannel in a pill">
+        <meta property="og:description" content="Launch new markets fast">
+        <meta property="og:image" content="https://storefront1.saleor.cloud/media/thumbnails/products/saleor-headless-omnichannel-book_thumbnail_1024.webp">
+      </head>
+      <body>
+        <main>
+          <h1>Headless + Omnichannel in a pill</h1>
+          <section>
+            <h2>Description</h2>
+            <p><strong>Launch new markets fast</strong></p>
+            <p>Compact, actionable insights for modern retail.</p>
+            <p>Headless + Omnichannel in a Pill explains how businesses can:</p>
+            <ul>
+              <li>Rapidly launch new markets</li>
+              <li>Localize content efficiently</li>
+              <li>Deliver seamless omnichannel experiences</li>
+            </ul>
+            <p>It also covers:</p>
+            <ul>
+              <li>Mobile, web, and in-store integration</li>
+              <li>Emerging channels and technologies</li>
+              <li>Headless architecture benefits</li>
+            </ul>
+          </section>
+          <section>
+            <button aria-controls="product-details-panel">Product Details</button>
+            <section id="product-details-panel">
+              <dl>
+                <div><dt>Publisher</dt><dd>Digital Audio</dd></div>
+                <div><dt>Description Summary</dt><dd>A fast-paced guide to launching new markets with headless and omnichannel strategies.</dd></div>
+                <div><dt>Lector</dt><dd>Sophia Keller</dd></div>
+                <div><dt>Release Date</dt><dd>2022-06-15</dd></div>
+              </dl>
+            </section>
+          </section>
+        </main>
+      </body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        "https://demo.saleor.io/default-channel/products/headless-omnichannel-commerce",
+        "ecommerce_detail",
+        max_records=5,
+        requested_fields=["description", "product_details"],
+    )
+
+    assert len(rows) == 1
+    record = rows[0]
+    assert record["description"].startswith(
+        "Launch new markets fast Compact, actionable insights for modern retail."
+    )
+    assert "Rapidly launch new markets" in record["description"]
+    assert "Headless architecture benefits" in record["description"]
+    assert record["product_details"] == (
+        "Publisher Digital Audio Description Summary A fast-paced guide to launching new markets "
+        "with headless and omnichannel strategies. Lector Sophia Keller Release Date 2022-06-15"
+    )
+    assert "specifications" not in record
+
+
+def test_extract_ecommerce_detail_keeps_dom_tier_live_for_product_details_without_requested_fields() -> None:
+    html = """
+    <html>
+      <head>
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "Product",
+          "name": "Headless + Omnichannel in a pill",
+          "brand": {"name": "Audiobooks"},
+          "description": "Launch new markets fast",
+          "image": "https://storefront1.saleor.cloud/media/thumbnails/products/saleor-headless-omnichannel-book_thumbnail_1024.webp",
+          "offers": {
+            "priceCurrency": "USD",
+            "availability": "https://schema.org/InStock"
+          }
+        }
+        </script>
+      </head>
+      <body>
+        <main>
+          <h1>Headless + Omnichannel in a pill</h1>
+          <section>
+            <h2>Description</h2>
+            <p><strong>Launch new markets fast</strong></p>
+            <p>Compact, actionable insights for modern retail.</p>
+            <p>Headless architecture benefits.</p>
+          </section>
+          <section>
+            <button aria-controls="product-details-panel">Product Details</button>
+            <section id="product-details-panel">
+              <dl>
+                <div><dt>Publisher</dt><dd>Digital Audio</dd></div>
+                <div><dt>Description Summary</dt><dd>A fast-paced guide to launching new markets with headless and omnichannel strategies.</dd></div>
+              </dl>
+            </section>
+          </section>
+        </main>
+      </body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        "https://demo.saleor.io/default-channel/products/headless-omnichannel-commerce",
+        "ecommerce_detail",
+        max_records=5,
+        extraction_runtime_snapshot={
+            "selector_self_heal": {"enabled": True, "min_confidence": 0.55}
+        },
+    )
+
+    assert len(rows) == 1
+    record = rows[0]
+    assert "Headless architecture benefits" in record["description"]
+    assert record["product_details"] == (
+        "Publisher Digital Audio Description Summary A fast-paced guide to launching new markets "
+        "with headless and omnichannel strategies."
+    )
+    assert record["_extraction_tiers"]["current"] == "dom"
+    assert record["_extraction_tiers"]["early_exit"] is None
+
+
+def test_extract_ecommerce_detail_dedupes_next_image_proxy_duplicates() -> None:
+    html = """
+    <html>
+      <head>
+        <meta property="og:title" content="Headless + Omnichannel in a pill">
+        <meta property="og:image" content="https://storefront1.saleor.cloud/media/thumbnails/products/saleor-headless-omnichannel-book_thumbnail_1024.webp">
+      </head>
+      <body>
+        <main>
+          <h1>Headless + Omnichannel in a pill</h1>
+          <section class="gallery">
+            <img src="https://storefront1.saleor.cloud/media/thumbnails/products/saleor-headless-omnichannel-book_thumbnail_1024.webp" alt="Book cover">
+            <img src="https://demo.saleor.io/_next/image?url=https%3A%2F%2Fstorefront1.saleor.cloud%2Fmedia%2Fthumbnails%2Fproducts%2Fsaleor-headless-omnichannel-book_thumbnail_1024.webp&w=1080&q=75" alt="Book cover transformed">
+          </section>
+        </main>
+      </body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        "https://demo.saleor.io/default-channel/products/headless-omnichannel-commerce",
+        "ecommerce_detail",
+        max_records=5,
+    )
+
+    assert len(rows) == 1
+    record = rows[0]
+    assert record["image_url"] == (
+        "https://storefront1.saleor.cloud/media/thumbnails/products/saleor-headless-omnichannel-book_thumbnail_1024.webp"
+    )
+    assert "additional_images" not in record
+
+
+def test_extract_ecommerce_detail_keeps_real_description_when_dom_sections_only_see_tabs() -> None:
+    html = """
+    <html>
+      <head>
+        <meta property="og:title" content="Airdopes Supreme Long Playback Earbuds">
+        <meta property="og:description" content="Experience superior sound with boAt Airdopes Supreme — 50H playback, AI ENx, Cinematic Spatial Audio and BEAST Mode.">
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "Product",
+          "name": "Airdopes Supreme Long Playback Earbuds",
+          "brand": {"name": "boAt"},
+          "offers": {
+            "price": "1399",
+            "priceCurrency": "INR",
+            "availability": "https://schema.org/InStock"
+          }
+        }
+        </script>
+      </head>
+      <body>
+        <main>
+          <h1>Airdopes Supreme Long Playback Earbuds</h1>
+          <div class="product-description">
+            Experience superior sound with boAt Airdopes Supreme — 50H playback, AI ENx, Cinematic Spatial Audio and BEAST Mode.
+          </div>
+          <section>
+            <h2>Description</h2>
+            <div>
+              <button>Description</button>
+              <button>specifications</button>
+              <button>Reviews (192)</button>
+            </div>
+          </section>
+        </main>
+      </body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        "https://www.boat-lifestyle.com/products/airdopes-supreme-long-playback-earbuds",
+        "ecommerce_detail",
+        max_records=5,
+    )
+
+    assert len(rows) == 1
+    record = rows[0]
+    assert record["description"] == (
+        "Experience superior sound with boAt Airdopes Supreme — 50H playback, AI ENx, "
+        "Cinematic Spatial Audio and BEAST Mode."
+    )
+    assert "handle" not in record
+
+
+def test_extract_ecommerce_detail_maps_anchor_hash_product_description_upstream() -> None:
+    html = """
+    <html>
+      <head>
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "Product",
+          "name": "Superman: Krypto The Superdog Oversized T-Shirts By DC Comics™",
+          "description": "Shop for Superman: Crypto Men Oversized Fit T-shirts Online",
+          "brand": {"name": "DC Comics™"},
+          "offers": {
+            "price": "899",
+            "priceCurrency": "INR",
+            "availability": "https://schema.org/InStock"
+          }
+        }
+        </script>
+      </head>
+      <body>
+        <main>
+          <h1>Superman: Krypto The Superdog</h1>
+          <div id="accordion">
+            <div class="card">
+              <div role="tab" id="headingOne" class="card-header">
+                <h5 class="mb-0 accordianheading">
+                  <a data-toggle="collapse" data-parent="#accordion" href="#collapseOne" aria-expanded="true" aria-controls="collapseOne">
+                    Product Details
+                  </a>
+                </h5>
+              </div>
+              <div id="collapseOne" role="tabpanel" aria-labelledby="headingOne" class="collapse show">
+                <div class="card-block">
+                  <p><b>Material &amp; Care:</b><br>Premium Heavy Gauge Fabric<br>100% Cotton<br>Machine Wash</p>
+                </div>
+              </div>
+            </div>
+            <div class="card">
+              <div role="tab" id="headingTwo" class="card-header">
+                <h5 class="mb-0 accordianheading">
+                  <a data-toggle="collapse" data-parent="#accordion" href="#collapseTwo" aria-expanded="false" aria-controls="collapseTwo">
+                    Product Description
+                  </a>
+                </h5>
+              </div>
+              <div id="collapseTwo" role="tabpanel" aria-labelledby="headingTwo" class="collapse">
+                <div class="card-block">
+                  <p><b>Official Licensed Superman Oversized T-Shirt.</b></p>
+                  <p>Shop for Superman: Krypto The Superdog Oversized T-Shirts at The Souled Store.</p>
+                </div>
+              </div>
+            </div>
+            <div class="card">
+              <div role="tab" id="headingArtist" class="card-header">
+                <h5 class="mb-0 accordianheading">
+                  <a data-toggle="collapse" data-parent="#accordion" href="#collapseArtist" aria-expanded="false" aria-controls="collapseArtist">
+                    Artist's Details
+                  </a>
+                </h5>
+              </div>
+              <div id="collapseArtist" role="tabpanel" aria-labelledby="headingArtist" class="collapse">
+                <div class="card-block">
+                  <p>Suit up with Justice League merchandise.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </main>
+      </body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        "https://www.thesouledstore.com/product/men-oversized-fit-superman-crypto?gte=1",
+        "ecommerce_detail",
+        max_records=5,
+    )
+
+    assert len(rows) == 1
+    record = rows[0]
+    assert record["description"] == (
+        "Official Licensed Superman Oversized T-Shirt. "
+        "Shop for Superman: Krypto The Superdog Oversized T-Shirts at The Souled Store."
+    )
+    assert record["product_details"] == (
+        "Material & Care: Premium Heavy Gauge Fabric 100% Cotton Machine Wash"
+    )
+    assert record["_field_sources"]["description"] == ["json_ld", "dom_sections"]
+    assert "dom_sections" in record["_field_sources"]["product_details"]
+
+
+def test_extract_ecommerce_detail_filters_zara_copy_code_from_dom_variants() -> None:
+    html = """
+    <html>
+      <body>
+        <main>
+          <h1>Regular Fit Shirt</h1>
+          <fieldset>
+            <legend>Color</legend>
+            <div class="product-detail-color-selector">
+              <button type="button" aria-label="Black"></button>
+              <button type="button" aria-label="Blue/White"></button>
+              <button type="button" aria-label="White"></button>
+              <button type="button" aria-label="Sky blue"></button>
+              <button type="button" aria-label="Ecru / Blue"></button>
+              <button type="button" aria-label="White / Sky blue"></button>
+              <button type="button" aria-label="4493/144/800"></button>
+            </div>
+          </fieldset>
+        </main>
+      </body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        "https://www.zara.com/in/en/regular-fit-shirt-p04493144.html",
+        "ecommerce_detail",
+        max_records=5,
+    )
+
+    assert len(rows) == 1
+    record = rows[0]
+    assert "4493/144/800" not in str(record.get("option1_values") or "")
+    assert record["variant_count"] == 6
+
+
+def test_extract_ecommerce_detail_maps_zara_composition_block_to_materials() -> None:
+    html = """
+    <html>
+      <body>
+        <main>
+          <h1>CONTRAST RIBBED T-SHIRT WITH RUFFLES</h1>
+          <div class="product-detail-description">
+            <p>SLIM FIT - ROUND NECK - REGULAR LENGTH - SHORT SLEEVES</p>
+          </div>
+          <ul class="product-detail-actions product-detail-info__product-actions">
+            <li class="product-detail-actions__action">
+              <button class="product-detail-size-guide-action product-detail-actions__action-button">
+                <span>Product Measurements</span>
+              </button>
+            </li>
+            <li class="product-detail-actions__action product-detail-actions__clevercare">
+              <button class="product-detail-actions__action-button">
+                Composition, care &amp; origin
+              </button>
+            </li>
+          </ul>
+        </main>
+        <div class="product-detail-view__secondary-content">
+          <div class="product-detail-composition product-detail-view__detailed-composition">
+            <ul>
+              <li class="product-detail-composition__item product-detail-composition__part">
+                <span class="product-detail-composition__part-name">OUTER SHELL</span>
+                <ul>
+                  <li class="product-detail-composition__item product-detail-composition__area">
+                    <span class="product-detail-composition__part-name">MAIN FABRIC</span>
+                    <ul><li>96% cotton</li><li>4% elastane</li></ul>
+                  </li>
+                  <li class="product-detail-composition__item product-detail-composition__area">
+                    <span class="product-detail-composition__part-name">SECONDARY FABRIC</span>
+                    <ul><li>100% cotton</li></ul>
+                  </li>
+                </ul>
+              </li>
+            </ul>
+          </div>
+        </div>
+      </body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        "https://www.zara.com/in/en/contrast-ribbed-t-shirt-with-ruffles-p01044154.html",
+        "ecommerce_detail",
+        max_records=5,
+        requested_fields=["materials", "dimensions"],
+    )
+
+    assert len(rows) == 1
+    record = rows[0]
+    assert record["materials"] == (
+        "OUTER SHELL: MAIN FABRIC: 96% cotton; 4% elastane "
+        "SECONDARY FABRIC: 100% cotton"
+    )
+    assert record["_field_sources"]["materials"] == ["dom_sections"]
+    assert "dimensions" not in record
+
+
+def test_extract_detail_keeps_requested_custom_dom_sections_live_past_structured_early_exit() -> None:
+    html = """
+    <html>
+      <head>
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "Product",
+          "name": "Darter Pro",
+          "description": "Instant cushioning for everyday road runs.",
+          "brand": {"name": "PUMA"},
+          "image": "https://example.com/darter-pro.jpg",
+          "offers": {
+            "price": "99.00",
+            "priceCurrency": "USD",
+            "availability": "https://schema.org/InStock"
+          }
+        }
+        </script>
+      </head>
+      <body>
+        <main>
+          <h1>Darter Pro</h1>
+          <section>
+            <h2>Product Story</h2>
+            <p>
+              Hit new strides in the Darter Pro with a lightweight mesh upper and
+              responsive cushioning built for daily miles.
+            </p>
+          </section>
+        </main>
+      </body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        "https://example.com/products/darter-pro",
+        "ecommerce_detail",
+        max_records=5,
+        requested_fields=["product story"],
+        extraction_runtime_snapshot={
+            "selector_self_heal": {"enabled": True, "min_confidence": 0.55}
+        },
+    )
+
+    assert len(rows) == 1
+    record = rows[0]
+    assert "lightweight mesh upper" in record["product_story"]
+    assert record["_field_sources"]["product_story"] == ["dom_sections"]
+    assert record["_extraction_tiers"]["current"] == "dom"
+    assert record["_extraction_tiers"]["early_exit"] is None
+
+
+def test_extract_detail_matches_exact_requested_section_label_without_collapsing_it() -> None:
+    html = """
+    <html>
+      <head>
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "Product",
+          "name": "Deviate Nitro Elite 4",
+          "description": "Race-ready road running shoes.",
+          "brand": {"name": "PUMA"},
+          "offers": {
+            "price": "230.00",
+            "priceCurrency": "USD",
+            "availability": "https://schema.org/InStock"
+          }
+        }
+        </script>
+      </head>
+      <body>
+        <main>
+          <h1>Deviate Nitro Elite 4</h1>
+          <section>
+            <h2>FEATURES &amp; BENEFITS</h2>
+            <ul>
+              <li>NITROFOAM Elite delivers lightweight responsiveness.</li>
+              <li>PWRPLATE drives energy transfer through toe-off.</li>
+            </ul>
+          </section>
+        </main>
+      </body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        "https://in.puma.com/in/en/pd/deviate-nitro-elite-4-run-club-mens-road-running-shoes/312907?swatch=01",
+        "ecommerce_detail",
+        max_records=5,
+        requested_fields=["Features & Benefits"],
+        extraction_runtime_snapshot={
+            "selector_self_heal": {"enabled": True, "min_confidence": 0.55}
+        },
+    )
+
+    assert len(rows) == 1
+    record = rows[0]
+    assert "NITROFOAM Elite" in record["features_benefits"]
+    assert "PWRPLATE drives energy transfer" in record["features_benefits"]
+    assert record["_field_sources"]["features_benefits"] == ["dom_sections"]
+    assert record["_extraction_tiers"]["current"] == "dom"
+    assert record["_extraction_tiers"]["early_exit"] is None
+    assert "benefits" not in record
+
+
+def test_extract_detail_keeps_company_details_body_for_requested_custom_field() -> None:
+    html = read_optional_artifact_text("artifacts/runs/8/pages/dc80e38b20c25b9b.html")
+
+    rows = extract_records(
+        html,
+        "https://www.tradeindia.com/products/calcium-carbonate-powder-c10587655.html",
+        "ecommerce_detail",
+        max_records=5,
+        requested_fields=["company_details"],
+        extraction_runtime_snapshot={
+            "selector_self_heal": {"enabled": True, "min_confidence": 0.55}
+        },
+    )
+
+    assert len(rows) == 1
+    record = rows[0]
+    assert record["company_details"].startswith(
+        "Lyotex Lifesciences Private Limited is a reliable name in the manufacturing"
+    )
+    assert (
+        "Business Type Manufacturer, Supplier, Trading Company"
+        in record["company_details"]
+    )
+    assert "GST NO 27AAECL9071B1ZK" in record["company_details"]
+    assert record["_field_sources"]["company_details"] == ["dom_sections"]
+
+
+def test_extract_detail_keeps_slug_match_when_identity_codes_disagree() -> None:
+    requested_url = (
+        "https://example.com/products/widget-premium?dwvar_ABCD1234_color=red"
+    )
+    html = """
+    <html>
+      <head>
+        <link rel="canonical" href="https://example.com/products/widget-premium?dwvar_EFGH5678_color=red" />
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "Product",
+          "name": "Widget Premium",
+          "description": "Widget Premium for everyday use.",
+          "offers": {
+            "price": "19.99",
+            "priceCurrency": "USD"
+          }
+        }
+        </script>
+      </head>
+      <body>
+        <main><h1>Widget Premium</h1></main>
+      </body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        "https://example.com/products/widget-premium?dwvar_EFGH5678_color=red",
+        "ecommerce_detail",
+        max_records=5,
+        requested_page_url=requested_url,
+    )
+
+    assert len(rows) == 1
+    assert rows[0]["title"] == "Widget Premium"
+
+
+def test_extract_detail_accepts_same_url_with_code_mismatch() -> None:
+    requested_url = "https://izod.com/products/ss-adv-polo-46izagb03r-440"
+    html = """
+    <html>
+      <head>
+        <link rel="canonical" href="https://izod.com/products/ss-adv-polo-46izagb03r-440">
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org/",
+          "@type": "Product",
+          "name": "Short Sleeve Advantage Polo",
+          "image": "https://example.com/polo.jpg",
+          "sku": "196407820454",
+          "offers": {
+            "@type": "Offer",
+            "price": "44.00",
+            "priceCurrency": "USD",
+            "availability": "https://schema.org/InStock"
+          }
+        }
+        </script>
+      </head>
+      <body>
+        <main>
+          <h1>Short Sleeve Advantage Polo</h1>
+        </main>
+      </body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        requested_url,
+        "ecommerce_detail",
+        max_records=5,
+        requested_page_url=requested_url,
+    )
+
+    assert len(rows) == 1
+    assert rows[0]["title"] == "Short Sleeve Advantage Polo"
+    assert rows[0]["price"] == "44.00"
+
+
+def test_extract_detail_keeps_nike_record_when_canonical_drops_style_code() -> None:
+    requested_url = "https://www.nike.com/t/air-force-1-07-mens-shoes-jBrhbr/CW2288-111"
+    html = """
+    <html>
+      <head>
+        <link rel="canonical" href="https://www.nike.com/t/air-force-1-07-mens-shoes-jBrhbr">
+        <meta property="og:title" content="Nike Air Force 1 '07 Men's Shoes">
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "Product",
+          "name": "Nike Air Force 1 '07 Men's Shoes",
+          "brand": {"@type": "Brand", "name": "Nike"},
+          "sku": "CW2288-111",
+          "mpn": "CW2288-111",
+          "image": "https://static.nike.com/af1.png",
+          "description": "Comfortable, durable and timeless.",
+          "offers": {
+            "@type": "Offer",
+            "price": "115",
+            "priceCurrency": "USD"
+          }
+        }
+        </script>
+      </head>
+      <body><main><h1>Nike Air Force 1 '07 Men's Shoes</h1></main></body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        requested_url,
+        "ecommerce_detail",
+        max_records=5,
+        requested_page_url=requested_url,
+    )
+
+    assert len(rows) == 1
+    assert rows[0]["title"] == "Nike Air Force 1 '07 Men's Shoes"
+    assert rows[0]["part_number"] == "CW2288-111"
+
+
+def test_extract_detail_keeps_shopify_collection_detail_when_canonical_collapses_path() -> None:
+    requested_url = (
+        "https://kith.com/collections/mens-footwear-sneakers/products/st40002-02000"
+    )
+    html = """
+    <html>
+      <head>
+        <link rel="canonical" href="https://kith.com/products/st40002-02000">
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "Product",
+          "name": "SATISFY TheROCKER - Jet Black",
+          "brand": {"@type": "Brand", "name": "SATISFY"},
+          "sku": "13876003",
+          "image": "https://kith.com/files/therocker.jpg",
+          "description": "TheROCKER silhouette.",
+          "offers": {
+            "@type": "Offer",
+            "price": "28200",
+            "priceCurrency": "INR",
+            "availability": "https://schema.org/OutOfStock"
+          }
+        }
+        </script>
+      </head>
+      <body><main><h1>SATISFY TheROCKER - Jet Black</h1></main></body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        requested_url,
+        "ecommerce_detail",
+        max_records=5,
+        requested_page_url=requested_url,
+    )
+
+    assert len(rows) == 1
+    assert rows[0]["title"] == "SATISFY TheROCKER - Jet Black"
+    assert rows[0]["currency"] == "USD"
+    assert rows[0]["price"] == "282.00"
+
+
+def test_extract_detail_corrects_host_currency_hint_integer_cent_price() -> None:
+    html = """
+    <html>
+      <head>
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "Product",
+          "name": "SATISFY TheROCKER - Jet Black",
+          "offers": {"price": "28200", "priceCurrency": "INR"}
+        }
+        </script>
+      </head>
+      <body><main><h1>SATISFY TheROCKER - Jet Black</h1></main></body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        "https://kith.com/collections/mens-footwear-sneakers/products/st40002-02000",
+        "ecommerce_detail",
+        max_records=5,
+    )
+
+    assert len(rows) == 1
+    assert rows[0]["currency"] == "USD"
+    assert rows[0]["price"] == "282.00"
+
+
+def test_extract_detail_drops_decimal_price_when_currency_conflicts_with_host_hint() -> None:
+    html = """
+    <html>
+      <head>
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "Product",
+          "name": "EVGA GeForce RTX 3090",
+          "offers": {"price": "260650.21", "priceCurrency": "INR"}
+        }
+        </script>
+      </head>
+      <body><main><h1>EVGA GeForce RTX 3090</h1></main></body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        "https://www.amazon.com/dp/B08J5F3G18",
+        "ecommerce_detail",
+        max_records=5,
+    )
+
+    assert len(rows) == 1
+    assert "currency" not in rows[0]
+    assert "price" not in rows[0]
+
+
+def test_extract_detail_does_not_backfill_low_signal_price_after_currency_conflict() -> None:
+    html = """
+    <html>
+      <head>
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "Product",
+          "name": "Poppi Soda",
+          "offers": {"price": "2153.05", "priceCurrency": "INR"}
+        }
+        </script>
+      </head>
+      <body>
+        <main>
+          <h1>Poppi Soda</h1>
+          <span class="a-price"><span class="a-offscreen">$1.00</span></span>
+        </main>
+      </body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        "https://www.amazon.com/dp/B0F5Y3X8PP",
+        "ecommerce_detail",
+        max_records=5,
+    )
+
+    assert len(rows) == 1
+    assert "price" not in rows[0]
+
+
+def test_currency_reconcile_keeps_adapter_localized_price_over_host_hint() -> None:
+    record = {
+        "price": "INR 2,153.05",
+        "currency": "INR",
+        "variants": [{"price": "INR 2,153.05", "currency": "INR", "size": "12 pack"}],
+        "_field_sources": {"price": ["adapter"], "variants": ["adapter"]},
+    }
+
+    reconcile_detail_currency_with_url(
+        record,
+        page_url="https://www.amazon.com/dp/B0F5Y3X8PP",
+    )
+
+    assert record["price"] == "INR 2,153.05"
+    assert record["currency"] == "INR"
+    assert record["variants"][0]["currency"] == "INR"
+
+
+def test_extract_detail_cleans_tracking_pixels_and_video_thumbs_from_images() -> None:
+    html = """
+    <html>
+      <body>
+        <main>
+          <h1>Yellow Pebbles Tile</h1>
+          <section class="product-gallery">
+            <img src="/images/yellow-pebbles.jpg" alt="Yellow Pebbles Tile">
+            <img src="https://securemetrics.apple.com/b/ss/pixel.gif">
+            <img src="https://www.facebook.com/tr?id=123">
+            <img src="https://players.boltdns.net/thumb.jpg">
+            <img src="https://site.qualtrics.com/intercept/pixel.png">
+          </section>
+        </main>
+      </body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        "https://www.homedepot.com/p/yellow-pebbles/202515091",
+        "ecommerce_detail",
+        max_records=5,
+    )
+
+    assert len(rows) == 1
+    assert rows[0]["image_url"] == "https://www.homedepot.com/images/yellow-pebbles.jpg"
+    assert "additional_images" not in rows[0]
+
+
+def test_build_detail_record_runs_dom_tier_when_authoritative_record_has_no_images() -> None:
+    html = """
+    <html>
+      <body>
+        <main>
+          <h1>Cozyla 32&quot; 4K Calendar+ 2 (White)</h1>
+          <img src="https://cdn.example.com/products/cozyla-calendar-main.jpg" />
+        </main>
+      </body>
+    </html>
+    """
+
+    record = build_detail_record(
+        html,
+        "https://www.bhphotovideo.com/c/product/1882297-REG/cozyla_cd_8v543f0_white_us_32_4k_calendar_gen2_white.html",
+        "ecommerce_detail",
+        None,
+        adapter_records=[
+            {
+                "title": 'Cozyla 32" 4K Calendar+ 2 (White)',
+                "price": "989.99",
+                "currency": "USD",
+                "sku": "COCD8V543F0W",
+            }
+        ],
+    )
+
+    assert (
+        record["image_url"]
+        == "https://cdn.example.com/products/cozyla-calendar-main.jpg"
+    )
+
+
+def test_extract_ecommerce_detail_prunes_irrelevant_nested_related_products_from_structured_data() -> None:
+    html = """
+    <html>
+      <head>
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "Product",
+          "name": "Going Coconuts",
+          "description": "Neutral coconut shades only.",
+          "image": [
+            "https://cdn.shopify.com/s/files/1/1338/0845/files/EyePalette-GoingCoconuts-Closed-PDP.jpg",
+            "https://cdn.shopify.com/s/files/1/1338/0845/files/EyePalette-GoingCoconuts-MacroCrush.jpg"
+          ],
+          "offers": {"price": "14.00", "priceCurrency": "USD"},
+          "relatedProducts": [
+            {
+              "@type": "Product",
+              "name": "Pink Dreams",
+              "url": "https://colourpop.com/products/pink-dreams-shadow-palette",
+              "description": "Pink Dreams should not leak into the parent PDP.",
+              "image": [
+                "https://cdn.shopify.com/s/files/1/1338/0845/files/PPBlushCompact-ForeverYours-editorial-square_4980.jpg"
+              ]
+            }
+          ]
+        }
+        </script>
+      </head>
+      <body><main><h1>Going Coconuts</h1></main></body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        "https://colourpop.com/products/going-coconuts-eyeshadow-palette",
+        "ecommerce_detail",
+        max_records=5,
+    )
+
+    assert len(rows) == 1
+    record = rows[0]
+    assert record["description"] == "Neutral coconut shades only."
+    assert record["image_url"].endswith("EyePalette-GoingCoconuts-Closed-PDP.jpg")
+    assert all(
+        "ForeverYours" not in image for image in record.get("additional_images", [])
+    )
+
+
+def test_build_detail_record_drops_related_rows_and_keeps_canonicalized_variant_axes() -> None:
+    record = build_detail_record(
+        "<html><body><main><h1>Going Coconuts</h1></main></body></html>",
+        "https://colourpop.com/products/going-coconuts-eyeshadow-palette",
+        "ecommerce_detail",
+        None,
+        adapter_records=[
+            {
+                "title": "Going Coconuts",
+                "price": "14.00",
+                "currency": "USD",
+                "variants": [
+                    {
+                        "title": "Blowin' Smoke",
+                        "price": "14.00",
+                        "currency": "USD",
+                        "image_url": "https://cdn.example.com/blowin-smoke.jpg",
+                    },
+                    {
+                        "title": "Going Coconuts - Light",
+                        "option_values": {"shade": "Light"},
+                        "price": "14.00",
+                        "currency": "USD",
+                    },
+                ],
+            }
+        ],
+    )
+
+    assert record["variant_count"] == 1
+    assert record["variants"] == [
+        {"color": "Light", "price": "14.00", "currency": "USD"}
+    ]
+
+
+def test_build_detail_record_sanitizes_cross_sell_images_placeholder_variants_and_legal_tail() -> None:
+    html = "<html><body><main><h1>Black Seascape Stretch Bracelet</h1></main></body></html>"
+
+    record = build_detail_record(
+        html,
+        "https://www.puravidabracelets.com/products/black-seascape-stretch-bracelet",
+        "ecommerce_detail",
+        None,
+        adapter_records=[
+            {
+                "title": "Black Seascape Stretch Bracelet",
+                "description": (
+                    "These sleek joggers feature our ABC technology. "
+                    "Black Seascape Stretch Bracelet - Black - One Size. "
+                    "These sleek joggers feature our ABC technology."
+                ),
+                "specifications": (
+                    "Main material rubber. "
+                    "EU product safety contact. "
+                    "Customer service DECATHLON SE 4, boulevard de Mons 59665."
+                ),
+                "materials": "DECATHLON SE",
+                "image_url": "http://www.puravidabracelets.com/cdn/shop/files/50907BLCK_1-min.jpg?v=1717477241",
+                "additional_images": [
+                    "https://cdn.shopify.com/s/files/1/0297/6313/files/50907BLCK_3-min.jpg?v=1717609172",
+                    "https://www.puravidabracelets.com/cdn/shop/files/square-image_3_1.jpg?crop=center&height=600&v=1774914906&width=600",
+                    "https://www.puravidabracelets.com/cdn/shop/products/Solid_Black_ed35d7f8-dc76-4e8a-9e2b-821126dbb895.jpg?v=1718918266&width=1200",
+                    "https://www.macys.com/shop/product/1&fmt=webp",
+                    "https://www.fashionnova.com/products/R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==",
+                ],
+                "variants": [
+                    {
+                        "price": "8.00",
+                        "currency": "USD",
+                        "option_values": {"size": "Please select"},
+                    },
+                    {
+                        "price": "8.00",
+                        "currency": "USD",
+                        "option_values": {
+                            "toggle_color_swatches": "Swatch",
+                            "color": "Black",
+                        },
+                    },
+                ],
+                "selected_variant": {
+                    "price": "8.00",
+                    "currency": "USD",
+                    "option_values": {"size": "Please select"},
+                },
+                "product_attributes": {"title": "Default Title"},
+            }
+        ],
+    )
+
+    assert record["description"] == "These sleek joggers feature our ABC technology."
+    assert record["specifications"] == "Main material rubber."
+    assert "materials" not in record
+    assert "product_attributes" not in record
+    assert "50907BLCK" in record["image_url"]
+    assert all(
+        bad_token not in " ".join(record.get("additional_images", []))
+        for bad_token in (
+            "square-image",
+            "Solid_Black",
+            "macys.com/shop/product",
+            "R0lGODlhAQAB",
+        )
+    )
+    assert record["variants"] == [
+        {
+            "price": "8.00",
+            "currency": "USD",
+            "color": "Black",
+            "image_url": "https://www.puravidabracelets.com/cdn/shop/files/50907BLCK_1-min.jpg?v=1717477241",
+        }
+    ]
+
+
+def test_build_detail_record_drops_v6_widget_fulfillment_and_variant_scalar_noise() -> None:
+    record = build_detail_record(
+        "<html><body><main><h1>V6 Test Sneaker</h1></main></body></html>",
+        "https://www.example.com/products/v6-test-sneaker",
+        "ecommerce_detail",
+        None,
+        adapter_records=[
+            {
+                "title": "V6 Test Sneaker",
+                "features": "1 2 3 4 5 6 7 8 9 10",
+                "description": "Shipping, pickup, and delivery options available at checkout.",
+                "size": "Size Guide Please select a size",
+                "color": "Black",
+            }
+        ],
+    )
+
+    assert "features" not in record
+    assert "description" not in record
+    assert "size" not in record
+    assert record["color"] == "Black"
+
+
+def test_build_detail_record_drops_v6_generic_title_cross_product_text_and_ad_product_type() -> None:
+    record = build_detail_record(
+        "<html><body><main><h1>Calvin Klein Bernard Lace-Up Oxfords</h1></main></body></html>",
+        "https://www.macys.com/shop/product/calvin-klein-mens-bernard-lace-up-oxfords?ID=12345",
+        "ecommerce_detail",
+        None,
+        adapter_records=[
+            {
+                "title": "MENS SHOES",
+                "description": (
+                    "The Hiser men's lace up oxford. "
+                    "Calvin Klein Adeso dress shoe. "
+                    "Club Room casual dress shoes. "
+                    "Calvin Klein Bernard lace-up oxford."
+                ),
+                "product_type": "CriteoProductRail",
+            }
+        ],
+    )
+
+    assert record["title"] == "calvin klein mens bernard lace up oxfords"
+    assert record["description"] == "Calvin Klein Bernard lace-up oxford."
+    assert "product_type" not in record
+
+
+def test_build_detail_record_drops_v6_target_fulfillment_description() -> None:
+    record = build_detail_record(
+        "<html><body><main><h1>Apple AirPods Pro 2nd Generation</h1></main></body></html>",
+        "https://www.target.com/p/apple-airpods-pro-2nd-generation-with-magsafe-case-usb-c/-/A-89791402",
+        "ecommerce_detail",
+        None,
+        adapter_records=[
+            {
+                "title": "Apple AirPods Pro 2nd Generation",
+                "description": "Get it today with Target delivery, pickup, or shipping options available at checkout.",
+            }
+        ],
+    )
+
+    assert "description" not in record
+
+def test_build_detail_record_rejects_audit_artifact_candidates_before_selection() -> None:
+    record = build_detail_record(
+        "<html><body><main><h1>Audit Widget</h1><img src='/widget.jpg'></main></body></html>",
+        "https://example.com/products/audit-widget",
+        "ecommerce_detail",
+        None,
+        adapter_records=[
+            {
+                "title": "Audit Widget",
+                "category": "Back > Home > Men > Shoes",
+                "sku": "COPY-1720644688978",
+                "product_type": "inline",
+                "price": "unavailable",
+                "description": "Useful product copy Show More",
+                "variants": [{"name": "off", "value": False}],
+            }
+        ],
+    )
+
+    assert record["title"] == "Audit Widget"
+    assert "category" not in record
+    assert "sku" not in record
+    assert "product_type" not in record
+    assert "price" not in record
+    assert "description" not in record
+    assert "variants" not in record
+
+
+def test_build_detail_record_rejects_structural_identity_artifacts() -> None:
+    record = build_detail_record(
+        "<html><body><main><h1>Stand Mixer</h1></main></body></html>",
+        "https://www.example.com/products/stand-mixer",
+        "ecommerce_detail",
+        None,
+        adapter_records=[
+            {
+                "title": "plp",
+                "product_id": "specifications",
+                "product_type": "BRIGHTCOVE VIDEO",
+                "price": "449",
+                "currency": "USD",
+            }
+        ],
+    )
+
+    assert record["title"] == "Stand Mixer"
+    assert "product_id" not in record
+    assert "product_type" not in record
+
+
+def test_build_detail_record_trims_long_text_ui_tail_when_product_copy_remains() -> None:
+    record = build_detail_record(
+        "<html><body><main><h1>Cotton Shirt</h1></main></body></html>",
+        "https://example.com/products/cotton-shirt",
+        "ecommerce_detail",
+        None,
+        adapter_records=[
+            {
+                "title": "Cotton Shirt",
+                "description": "Soft cotton shirt with relaxed fit and reinforced seams Show More",
+            }
+        ],
+    )
+
+    assert (
+        record["description"]
+        == "Soft cotton shirt with relaxed fit and reinforced seams"
+    )
+
+
+def test_build_detail_record_drops_duplicate_specifications_and_materials_ui_labels() -> None:
+    record = build_detail_record(
+        "<html><body><main><h1>Linen Jacket</h1></main></body></html>",
+        "https://example.com/products/linen-jacket",
+        "ecommerce_detail",
+        None,
+        adapter_records=[
+            {
+                "title": "Linen Jacket",
+                "description": "Lightweight linen jacket with horn buttons.",
+                "specifications": "Lightweight linen jacket with horn buttons.",
+                "materials": "Reviews\nCare\nLinen shell",
+            }
+        ],
+    )
+
+    assert record["description"] == "Lightweight linen jacket with horn buttons."
+    assert "specifications" not in record
+    assert record["materials"] == "Linen shell"
+
+
+def test_build_detail_record_drops_global_guide_and_glossary_text() -> None:
+    record = build_detail_record(
+        "<html><body><main><h1>Oxford Shirt</h1></main></body></html>",
+        "https://example.com/products/oxford-shirt",
+        "ecommerce_detail",
+        None,
+        adapter_records=[
+            {
+                "title": "Oxford Shirt",
+                "description": (
+                    "Regular Fit - Our classic cut. Slim Fit - Two inches less. "
+                    "Relaxed Fit - Roomier through the body."
+                ),
+                "materials": (
+                    "Fabric glossary. The word 'seersucker' originates from Persian. "
+                    "Oxford cloth is a basket weave."
+                ),
+            }
+        ],
+    )
+
+    assert "description" not in record
+    assert "materials" not in record
+
+
+def test_build_detail_record_keeps_valid_candidates_after_candidate_gate() -> None:
+    record = build_detail_record(
+        "<html><body><main><h1>Trail Shoe</h1><img src='/shoe.jpg'></main></body></html>",
+        "https://example.com/products/trail-shoe",
+        "ecommerce_detail",
+        None,
+        adapter_records=[
+            {
+                "title": "Trail Shoe",
+                "category": "Men > Shoes",
+                "sku": "TRAIL-100",
+                "product_type": "Running Shoes",
+                "price": "129.95",
+                "description": "Lightweight trail shoe with grippy outsole.",
+                "variant_axes": {"size": ["8", "9"]},
+                "variants": [{"sku": "TRAIL-100-8", "option_values": {"size": "8"}}],
+            }
+        ],
+    )
+
+    assert record["category"] == "Men > Shoes"
+    assert record["sku"] == "TRAIL-100"
+    assert record["product_type"] == "Running Shoes"
+    assert record["price"] == "129.95"
+    assert record["description"] == "Lightweight trail shoe with grippy outsole."
+
+
+def test_build_detail_record_preserves_integral_price_magnitude_without_cent_context() -> None:
+    cases = [
+        (
+            "https://in.puma.com/in/en/pd/deviate-nitro-elite-4-run-club-mens-road-running-shoes/312907",
+            "9999",
+            "9999.00",
+            "INR",
+        ),
+        (
+            "https://www.farfetch.com/shopping/men/designer-sneakers-item-123.aspx",
+            "13880",
+            "13880.00",
+            "USD",
+        ),
+        (
+            "https://www.ssense.com/en-us/men/product/willy-chavarria/brown-ruff-rider-leather-jacket/19072301",
+            "3890",
+            "3890.00",
+            "USD",
+        ),
+    ]
+
+    for url, raw_price, expected_price, currency in cases:
+        record = build_detail_record(
+            "<html><body><main><h1>V6 Price Product</h1></main></body></html>",
+            url,
+            "ecommerce_detail",
+            None,
+            adapter_records=[
+                {
+                    "title": "V6 Price Product",
+                    "price": raw_price,
+                    "currency": currency,
+                    "variants": [
+                        {
+                            "price": raw_price,
+                            "currency": currency,
+                            "option_values": {"size": "M"},
+                        }
+                    ],
+                }
+            ],
+        )
+
+        assert record["price"] == expected_price
+        assert record["variants"][0]["price"] == expected_price
+
+
+def test_extract_detail_preserves_visible_integer_price_magnitude() -> None:
+    rows = extract_records(
+        """
+        <html><body><main>
+          <h1>Archive Jacket</h1>
+          <div data-testid="price">$1012</div>
+          <p class="description">Archive jacket starting at $1012.</p>
+        </main></body></html>
+        """,
+        "https://www.grailed.com/listings/archive-jacket",
+        "ecommerce_detail",
+        max_records=5,
+    )
+
+    assert len(rows) == 1
+    assert rows[0]["price"] == "1012.00"
+
+
+def test_build_detail_record_rejects_broken_extensionless_transformed_image_urls() -> None:
+    record = build_detail_record(
+        "<html><body><main><h1>Adidas Samba OG Shoes</h1></main></body></html>",
+        "https://www.zappos.com/p/adidas-samba-og/product/12345",
+        "ecommerce_detail",
+        None,
+        adapter_records=[
+            {
+                "title": "Adidas Samba OG Shoes",
+                "image_url": "https://m.media-amazon.com/images/I/adidas-samba-og-shoes._AC_UL1500_.jpg",
+                "additional_images": [
+                    "https://m.media-amazon.com/images/I/adidas-samba-og-shoes._AC_SR1224",
+                    "https://m.media-amazon.com/images/I/adidas-samba-og-shoes-alt._AC_UL1500_.jpg",
+                ],
+            }
+        ],
+    )
+
+    images = " ".join([record["image_url"], *record.get("additional_images", [])])
+    assert "_AC_SR1224" not in images
+    assert record["additional_images"] == [
+        "https://m.media-amazon.com/images/I/adidas-samba-og-shoes-alt._AC_UL1500_.jpg"
+    ]
+
+
+def test_build_detail_record_keeps_product_image_when_identity_code_is_in_url() -> None:
+    record = build_detail_record(
+        "<html><body><main><h1>Old Skool Shoe</h1></main></body></html>",
+        "https://www.vans.com/en-us/p/old-skool-VN000E9TBPG",
+        "ecommerce_detail",
+        None,
+        adapter_records=[
+            {
+                "title": "Old Skool Shoe",
+                "image_url": "https://assets.vans.com/images/t_Thumbnail/v1/VN000E9TBPG-HERO/Old-Skool-Shoe-VANS-HERO.png",
+            }
+        ],
+    )
+
+    assert "VN000E9TBPG-HERO" in record["image_url"]
+
+
+def test_build_detail_record_rejects_cross_sell_images_by_filename_identity() -> None:
+    html = "<html><body><main><h1>Nike Dunk Low Retro White Black Panda</h1></main></body></html>"
+
+    record = build_detail_record(
+        html,
+        "https://stockx.com/nike-dunk-low-retro-white-black-2021",
+        "ecommerce_detail",
+        None,
+        adapter_records=[
+            {
+                "title": "Nike Dunk Low Retro White Black Panda",
+                "image_url": "https://images.stockx.com/images/Nike-Dunk-Low-Retro-White-Black-2021-Product.jpg",
+                "additional_images": [
+                    "https://images.stockx.com/360/Nike-Dunk-Low-Retro-White-Black-2021/Images/Nike-Dunk-Low-Retro-White-Black-2021/Lv2/img01.jpg",
+                    "https://images.stockx.com/images/Nike-Dunk-Low-Grey-Fog-Product.jpg",
+                    "https://images.stockx.com/images/Nike-Dunk-Low-Court-Purple-Product.jpg",
+                ],
+            }
+        ],
+    )
+
+    assert record["image_url"].endswith(
+        "Nike-Dunk-Low-Retro-White-Black-2021-Product.jpg"
+    )
+    assert record["additional_images"] == [
+        "https://images.stockx.com/360/Nike-Dunk-Low-Retro-White-Black-2021/Images/Nike-Dunk-Low-Retro-White-Black-2021/Lv2/img01.jpg"
+    ]
+
+
+def test_build_detail_record_rejects_same_cdn_different_product_image() -> None:
+    record = build_detail_record(
+        "<html><body><main><h1>RUSTIC COTTON T-SHIRT</h1></main></body></html>",
+        "https://www.zara.com/us/en/rustic-cotton-t-shirt-p04424306.html",
+        "ecommerce_detail",
+        None,
+        adapter_records=[
+            {
+                "title": "RUSTIC COTTON T-SHIRT",
+                "image_url": "https://static.zara.net/assets/public/5326/04424306104-p/04424306104-p.jpg",
+                "additional_images": [
+                    "https://static.zara.net/assets/public/c95f/04424306104-a1/04424306104-a1.jpg",
+                    "https://static.zara.net/assets/public/db43/07223038250-f1/07223038250-f1.jpg",
+                ],
+            }
+        ],
+    )
+
+    assert record["additional_images"] == [
+        "https://static.zara.net/assets/public/c95f/04424306104-a1/04424306104-a1.jpg"
+    ]
+
+
+def test_build_detail_record_formats_currency_prices_and_drops_bad_discounts() -> None:
+    record = build_detail_record(
+        "<html><body><main><h1>Jogger</h1></main></body></html>",
+        "https://shop.lululemon.com/p/men-joggers/Abc-Jogger/_/prod8530240",
+        "ecommerce_detail",
+        None,
+        adapter_records=[
+            {
+                "title": "Jogger",
+                "price": "128.000000",
+                "original_price": "128.000000",
+                "currency": "USD",
+                "discount_amount": "223",
+                "discount_percentage": "225",
+            }
+        ],
+    )
+
+    assert record["price"] == "128.00"
+    assert record["original_price"] == "128.00"
+    assert "discount_amount" not in record
+    assert "discount_percentage" not in record
+
+
+def test_build_detail_record_backfills_low_signal_one_dollar_prices_from_dom() -> None:
+    html = """
+    <html><body><main>
+      <h1>Stan Smith Shoes</h1>
+      <div data-testid="price">$100.00</div>
+    </main></body></html>
+    """
+
+    record = build_detail_record(
+        html,
+        "https://www.adidas.com/us/stan-smith-shoes/M20324.html",
+        "ecommerce_detail",
+        None,
+        adapter_records=[
+            {
+                "title": "Stan Smith Shoes",
+                "price": "1",
+                "currency": "USD",
+                "variants": [
+                    {
+                        "variant_id": "M20324-9",
+                        "sku": "M20324-9",
+                        "price": "1",
+                        "currency": "USD",
+                        "option_values": {"size": "9"},
+                    }
+                ],
+                "selected_variant": {
+                    "variant_id": "M20324-9",
+                    "sku": "M20324-9",
+                    "price": "1",
+                    "currency": "USD",
+                    "option_values": {"size": "9"},
+                },
+            }
+        ],
+    )
+
+    assert record["price"] == "100.00"
+    assert record["variants"][0]["price"] == "100.00"
+
+
+def test_extract_detail_corrects_100x_structured_price_from_visible_dom_price() -> None:
+    html = """
+    <html>
+      <head>
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "Product",
+          "name": "Kitchen Mixer",
+          "offers": {"price": "22999.00", "priceCurrency": "USD"}
+        }
+        </script>
+      </head>
+      <body>
+        <main>
+          <h1>Kitchen Mixer</h1>
+          <div data-testid="price">$229.99</div>
+        </main>
+      </body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        "https://example.com/products/kitchen-mixer",
+        "ecommerce_detail",
+        max_records=5,
+    )
+
+    assert len(rows) == 1
+    assert rows[0]["price"] == "229.99"
+
+
+def test_build_detail_record_corrects_parent_price_from_variant_magnitude_match() -> None:
+    record = build_detail_record(
+        "<html><body><main><h1>Road Running Shoes</h1></main></body></html>",
+        "https://example.com/products/road-running-shoes",
+        "ecommerce_detail",
+        None,
+        adapter_records=[
+            {
+                "title": "Road Running Shoes",
+                "price": "9999.00",
+                "currency": "USD",
+                "variants": [
+                    {
+                        "variant_id": "ROAD-9",
+                        "price": "99.99",
+                        "currency": "USD",
+                        "option_values": {"size": "9"},
+                    }
+                ],
+            }
+        ],
+    )
+
+    assert record["price"] == "99.99"
+    assert record["variants"][0]["price"] == "99.99"
+
+
+def test_extract_detail_skips_installment_price_when_total_price_exists() -> None:
+    html = """
+    <html><body><main>
+      <h1>Sectional Sofa</h1>
+      <div class="price financing">Pay in 4 payments of $50.00 with Klarna</div>
+      <div class="price total">$200.00</div>
+    </main></body></html>
+    """
+
+    rows = extract_records(
+        html,
+        "https://example.com/products/sectional-sofa",
+        "ecommerce_detail",
+        max_records=5,
+    )
+
+    assert len(rows) == 1
+    assert rows[0]["price"] == "200.00"
+
+
+def test_build_detail_record_replaces_uuid_sku_with_merch_code() -> None:
+    record = build_detail_record(
+        "<html><body><main><h1>Nike Dunk Low Retro White Black Panda</h1></main></body></html>",
+        "https://stockx.com/nike-dunk-low-retro-white-black-2021",
+        "ecommerce_detail",
+        None,
+        adapter_records=[
+            {
+                "sku": "5e6a1e57-1c7d-435a-82bd-5666a13560fe",
+                "title": "Nike Dunk Low Retro White Black Panda",
+                "product_details": "Style DD1391-100 Colorway White/Black Retail Price $115",
+            }
+        ],
+    )
+
+    assert record["sku"] == "DD1391-100"
+    assert record["part_number"] == "DD1391-100"
+
+
+def test_build_detail_record_drops_stockx_market_cta_variant_labels() -> None:
+    record = build_detail_record(
+        "<html><body><main><h1>Nike Dunk Low Retro White Black Panda</h1></main></body></html>",
+        "https://stockx.com/nike-dunk-low-retro-white-black-2021",
+        "ecommerce_detail",
+        None,
+        adapter_records=[
+            {
+                "title": "Nike Dunk Low Retro White Black Panda",
+                "variants": [
+                    {
+                        "url": "https://stockx.com/buy/nike-dunk-low-retro-white-black-2021?defaultBid=true",
+                        "color": "See All",
+                    },
+                    {
+                        "url": "https://stockx.com/buy/nike-dunk-low-retro-white-black-2021?defaultBid=true",
+                        "color": "View Market Data",
+                    },
+                    {
+                        "url": "https://stockx.com/buy/nike-dunk-low-retro-white-black-2021?defaultBid=true",
+                        "color": "Sell Now for",
+                    },
+                ],
+            }
+        ],
+    )
+
+    assert "variants" not in record
+    assert "variant_count" not in record
+
+
+def test_build_detail_record_strips_numeric_size_tail_from_stockx_description() -> None:
+    record = build_detail_record(
+        "<html><body><main><h1>Nike Dunk Low Retro White Black Panda</h1></main></body></html>",
+        "https://stockx.com/nike-dunk-low-retro-white-black-2021",
+        "ecommerce_detail",
+        None,
+        adapter_records=[
+            {
+                "title": "Nike Dunk Low Retro White Black Panda",
+                "description": (
+                    "Nike put its timeless color-blocking to work with the Nike Dunk "
+                    "Low Retro White Black. The Nike Dunk Low Retro White Black "
+                    "released in January of 2021 and retailed for $100. To shop "
+                    "all Nike Dunks, click here. 5 6 6.5 7 7.5 8 8.5 9 9.5 "
+                    "10 10.5 11 11.5 12 12.5 13 14 15"
+                ),
+            }
+        ],
+    )
+
+    assert record["description"].endswith("To shop all Nike Dunks, click here.")
+    assert " 5 6 6.5" not in record["description"]
+
+
+def test_build_detail_record_drops_costco_shell_long_text_labels() -> None:
+    record = build_detail_record(
+        "<html><body><main><h1>Sleep Number Ultimate 12&quot; Mattress</h1></main></body></html>",
+        "https://www.costco.com/p/-/sleep-number-ultimate-12-mattress/4201005351?langId=-1",
+        "ecommerce_detail",
+        None,
+        adapter_records=[
+            {
+                "title": 'Sleep Number Ultimate 12" Mattress',
+                "description": "Product Label",
+                "specifications": "Specifications",
+                "product_details": (
+                    "Product Label Powered by Product details have been supplied by the manufacturer "
+                    "and are hosted by a third party. View More"
+                ),
+            }
+        ],
+    )
+
+    assert "description" not in record
+    assert "specifications" not in record
+    assert "product_details" not in record
+
+
+def test_raw_json_detail_postprocess_drops_costco_shell_long_text_labels() -> None:
+    rows = extract_records(
+        """
+        {
+          "title": "Sleep Number Ultimate 12\\" Mattress",
+          "description": "Product Label",
+          "specifications": "Specifications",
+          "product_details": "Product Label Powered by Product details have been supplied by the manufacturer View More",
+          "price": "2299.99"
+        }
+        """,
+        "https://www.costco.com/p/-/sleep-number-ultimate-12-mattress/4201005351?langId=-1",
+        "ecommerce_detail",
+        max_records=5,
+        content_type="application/json",
+    )
+
+    assert rows[0]["title"] == 'Sleep Number Ultimate 12" Mattress'
+    assert "description" not in rows[0]
+    assert "specifications" not in rows[0]
+    assert "product_details" not in rows[0]
+
+
+def test_extract_detail_infers_costco_textual_variant_sizes_from_titles() -> None:
+    detail = build_detail_record(
+        "<html><body><main><h1>Sleep Number Ultimate 12&quot; Mattress</h1></main></body></html>",
+        "https://www.costco.com/p/-/sleep-number-ultimate-12-mattress/4201005351?langId=-1",
+        "ecommerce_detail",
+        None,
+        adapter_records=[
+            {
+                "title": 'Sleep Number Ultimate 12" Mattress',
+                "variants": [
+                    {
+                        "sku": "1981348",
+                        "title": 'Sleep Number Ultimate 12" Mattress Only, Queen',
+                        "price": "2299.99",
+                        "currency": "USD",
+                        "availability": "in_stock",
+                    },
+                    {
+                        "sku": "1981349",
+                        "title": 'Sleep Number Ultimate 12" Mattress Only, King',
+                        "price": "2299.99",
+                        "currency": "USD",
+                        "availability": "in_stock",
+                    },
+                ],
+                "selected_variant": {
+                    "sku": "1981348",
+                    "title": 'Sleep Number Ultimate 12" Mattress Only, Queen',
+                    "price": "2299.99",
+                    "currency": "USD",
+                    "availability": "in_stock",
+                },
+            }
+        ],
+    )
+
+    assert detail is not None
+    assert detail["title"] == 'Sleep Number Ultimate 12" Mattress'
+    assert '12"' in detail["title"]
+    assert len(detail["variants"]) == 2
+    assert detail["variants"][0]["sku"] == "1981348"
+    assert {variant["size"] for variant in detail["variants"]} == {"Queen", "King"}
+
+
+def test_build_detail_record_strips_review_copy_from_color_scalar() -> None:
+    record = build_detail_record(
+        "<html><body><main><h1>Blouson Twill Utility Jacket</h1></main></body></html>",
+        "https://www.nordstrom.com/s/treasure-and-bond-blouson-twill-utility-jacket/8045019",
+        "ecommerce_detail",
+        None,
+        adapter_records=[
+            {
+                "title": "Blouson Twill Utility Jacket",
+                "color": "Ivory Dove Customers say the fit runs true to size",
+            }
+        ],
+    )
+
+    assert record["color"] == "Ivory Dove"
+
+
+def test_build_detail_record_drops_polluted_parent_color_dump_when_variants_are_cleaner() -> None:
+    record = build_detail_record(
+        "<html><body><main><h1>Rambler 8 oz Stackable Cup</h1></main></body></html>",
+        "https://www.yeti.com/drinkware/tumblers/21071507376.html",
+        "ecommerce_detail",
+        None,
+        adapter_records=[
+            {
+                "title": "Rambler 8 oz Stackable Cup",
+                "color": (
+                    "Desert Bloom Trio 1 2 3 4 5 6 7 8 9 10 - + "
+                    "Rescue Red/White/Navy Big Sky Blue"
+                ),
+                "variants": [
+                    {"color": "Desert Bloom Trio"},
+                    {"color": "Rescue Red/White/Navy"},
+                    {"color": "Big Sky Blue"},
+                ],
+            }
+        ],
+    )
+
+    assert "color" not in record
+    assert {variant.get("color") for variant in record["variants"]} == {
+        "Desert Bloom Trio",
+        "Rescue Red/White/Navy",
+        "Big Sky Blue",
+    }
+
+
+def test_build_detail_record_prefers_dom_sizes_over_existing_color_only_variants() -> None:
+    html = """
+    <html>
+      <body>
+        <main class="product-detail">
+          <h1>Speedcat Sneakers</h1>
+          <form class="product-form" action="/cart/add">
+            <label>
+              Size
+              <select name="size">
+                <option value="">Choose size</option>
+                <option value="uk-7">UK 7</option>
+                <option value="uk-8">UK 8</option>
+                <option value="uk-9">UK 9</option>
+              </select>
+            </label>
+          </form>
+        </main>
+      </body>
+    </html>
+    """
+
+    record = build_detail_record(
+        html,
+        "https://in.puma.com/in/en/pd/speedcat-sneakers/406329?swatch=02",
+        "ecommerce_detail",
+        None,
+        adapter_records=[
+            {
+                "title": "Speedcat Sneakers",
+                "color": "For All Time Red-PUMA White",
+                "variants": [
+                    {"color": "PUMA Black-PUMA White"},
+                    {"color": "For All Time Red-PUMA White"},
+                    {"color": "Strawberry Burst-PUMA Black"},
+                ],
+            }
+        ],
+    )
+
+    assert record["variants"] == [
+        {"size": "UK 7"},
+        {"size": "UK 8"},
+        {"size": "UK 9"},
+    ]
+    assert record["color"] == "For All Time Red-PUMA White"
+
+
+def test_build_detail_record_drops_document_link_only_description() -> None:
+    record = build_detail_record(
+        "<html><body><main><h1>Lansdale Sand Black Transitional Opal Glass Lantern Pendant Light</h1></main></body></html>",
+        "https://www.lowes.com/pd/Minka-Lavery-Lansdale-Sand-Black-Transitional-Opal-Glass-Lantern-Pendant-Light/1001420790",
+        "ecommerce_detail",
+        None,
+        adapter_records=[
+            {
+                "title": "Lansdale Sand Black Transitional Opal Glass Lantern Pendant Light",
+                "description": "Warranty Guide Prop65 Warning Label Use and Care Manual Installation Manual Dimensions Guide",
+            }
+        ],
+    )
+
+    assert "description" not in record
+
+
+def test_build_detail_record_backfills_shared_variant_image_and_availability() -> None:
+    record = build_detail_record(
+        "<html><body><main><h1>Brown Ruff Rider Leather Jacket</h1></main></body></html>",
+        "https://www.ssense.com/en-us/men/product/willy-chavarria/brown-ruff-rider-leather-jacket/19072301",
+        "ecommerce_detail",
+        None,
+        adapter_records=[
+            {
+                "title": "Brown Ruff Rider Leather Jacket",
+                "image_url": "https://res.cloudinary.com/ssenseweb/image/upload/item.jpg",
+                "availability": "out_of_stock",
+                "variants": [
+                    {
+                        "size": "S",
+                        "price": "3890",
+                        "currency": "USD",
+                        "option_values": {"size": "S"},
+                    },
+                    {
+                        "size": "M",
+                        "price": "3890",
+                        "currency": "USD",
+                        "option_values": {"size": "M"},
+                    },
+                ],
+            }
+        ],
+    )
+
+    assert "image_url" not in record["variants"][0]
+    assert record["variants"][1]["availability"] == "out_of_stock"
+
+def test_build_detail_record_repairs_nike_uuid_variant_skus_and_empty_prices() -> None:
+    record = build_detail_record(
+        "<html><body><main><h1>Nike Air Force 1 '07 Men's Shoes</h1></main></body></html>",
+        "https://www.nike.com/t/air-force-1-07-mens-shoes-jBrhbr/CW2288-111",
+        "ecommerce_detail",
+        None,
+        adapter_records=[
+            {
+                "sku": "CW2288-111",
+                "title": "Nike Air Force 1 '07 Men's Shoes",
+                "price": "115.00",
+                "currency": "USD",
+                "variants": [
+                    {
+                        "sku": "3c95b6cf-42e7-567c-8bf2-2ee9c9398f9d",
+                        "variant_id": "3c95b6cf-42e7-567c-8bf2-2ee9c9398f9d",
+                        "size": "6",
+                        "price": "",
+                        "currency": "USD",
+                        "availability": "in_stock",
+                        "option_values": {"size": "6"},
+                    }
+                ],
+            }
+        ],
+    )
+
+    assert record["variants"][0]["price"] == "115.00"
+    assert "sku" not in record["variants"][0]
+    assert record["sku"] == "CW2288-111"
+
+
+def test_build_detail_record_replaces_feature_duplicate_description_with_details() -> None:
+    record = build_detail_record(
+        "<html><body><main><h1>Scotch Heavy Duty Shipping Packaging Tape</h1></main></body></html>",
+        "https://www.samsclub.com/ip/scotch-heavy-duty-shipping-packaging-tape-dispensers-6-pack/5113185138",
+        "ecommerce_detail",
+        None,
+        adapter_records=[
+            {
+                "title": "Scotch Heavy Duty Shipping Packaging Tape",
+                "description": "Guaranteed to Stay Sealed. Provides excellent holding power.",
+                "features": [
+                    "Guaranteed to Stay Sealed.",
+                    "Provides excellent holding power.",
+                ],
+                "product_details": (
+                    "Now even the heaviest packages can withstand rough handling. "
+                    "This packaging tape holds strong on recycled boxes."
+                ),
+            }
+        ],
+    )
+
+    assert (
+        record["description"]
+        == "Now even the heaviest packages can withstand rough handling. This packaging tape holds strong on recycled boxes."
+    )
+    assert record["features"] == [
+        "Guaranteed to Stay Sealed.",
+        "Provides excellent holding power.",
+    ]
+    assert (
+        record["product_details"]
+        == "Now even the heaviest packages can withstand rough handling. This packaging tape holds strong on recycled boxes."
+    )
+
+
+def test_build_detail_record_backfills_price_from_buy_button_aria_label() -> None:
+    record = build_detail_record(
+        """
+        <html>
+          <body>
+            <main>
+              <h1>Nike Dunk Low 'Black White'</h1>
+              <button aria-label="Buy New for $99">Buy New</button>
+            </main>
+          </body>
+        </html>
+        """,
+        "https://www.goat.com/sneakers/dunk-low-black-white-dd1391-100",
+        "ecommerce_detail",
+        None,
+        adapter_records=[
+            {
+                "title": "Nike Dunk Low 'Black White'",
+                "description": "Shop the Nike Dunk Low 'Black White' and other curated styles from Nike on GOAT.",
+            }
+        ],
+    )
+
+    assert record["price"] == "99.00"
+    assert record["currency"] == "USD"
+    assert record["_field_sources"]["price"] == ["dom_text"]
+
+
+def test_build_detail_record_repairs_shopify_cent_variant_prices_and_numeric_titles() -> None:
+    record = build_detail_record(
+        "<html><body><main><h1>SATISFY TheROCKER - Jet Black</h1></main></body></html>",
+        "https://kith.com/collections/mens-footwear-sneakers/products/st40002-02000",
+        "ecommerce_detail",
+        None,
+        adapter_records=[
+            {
+                "title": "SATISFY TheROCKER - Jet Black",
+                "price": "282.00",
+                "currency": "USD",
+                "variants": [
+                    {
+                        "sku": "13875993",
+                        "price": "28200",
+                        "title": "3",
+                        "currency": "USD",
+                        "availability": "in_stock",
+                        "option_values": {"size": "3"},
+                    }
+                ],
+                "selected_variant": {
+                    "sku": "13875993",
+                    "price": "28200",
+                    "title": "3",
+                    "currency": "USD",
+                    "availability": "in_stock",
+                    "option_values": {"size": "3"},
+                },
+            }
+        ],
+    )
+
+    assert record["variants"][0]["price"] == "282.00"
+
+
+def test_build_detail_record_drops_shopify_internal_numeric_variant_weight() -> None:
+    record = build_detail_record(
+        "<html><body><main><h1>SATISFY TheROCKER - Jet Black</h1></main></body></html>",
+        "https://kith.com/collections/mens-footwear-sneakers/products/st40002-02000",
+        "ecommerce_detail",
+        None,
+        adapter_records=[
+            {
+                "title": "SATISFY TheROCKER - Jet Black",
+                "price": "285.00",
+                "currency": "USD",
+                "variants": [
+                    {
+                        "sku": "13875993",
+                        "size": "3",
+                        "weight": "1361",
+                        "availability": "out_of_stock",
+                    },
+                    {
+                        "sku": "13875994",
+                        "size": "3.5",
+                        "weight": 1361,
+                        "availability": "out_of_stock",
+                    },
+                ],
+            }
+        ],
+    )
+
+    assert len(record["variants"]) == 2
+    assert all("weight" not in variant for variant in record["variants"])
+
+
+def test_build_detail_record_replaces_ai_outfit_title_from_url() -> None:
+    record = build_detail_record(
+        "<html><body><main><h1>Your AI-Generated Outfit</h1></main></body></html>",
+        "https://www.nordstrom.com/s/treasure-and-bond-blouson-twill-utility-jacket/8045019",
+        "ecommerce_detail",
+        None,
+        adapter_records=[
+            {
+                "title": "Your AI-Generated Outfit",
+                "sku": "9656609",
+                "price": "59.99",
+            }
+        ],
+    )
+
+    assert record["title"] == "Treasure And Bond Blouson Twill Utility Jacket"
+
+
+def test_build_detail_record_drops_low_signal_numeric_only_variants() -> None:
+    html = "<html><body><main><h1>Cozyla 32&quot; 4K Calendar+ 2 (White)</h1></main></body></html>"
+
+    record = build_detail_record(
+        html,
+        "https://www.bhphotovideo.com/c/product/1882297-REG/cozyla_cd_8v543f0_white_us_32_4k_calendar_gen2_white.html",
+        "ecommerce_detail",
+        None,
+        adapter_records=[
+            {
+                "title": 'Cozyla 32" 4K Calendar+ 2 (White)',
+                "price": "989.99",
+                "currency": "USD",
+                "variants": [
+                    {
+                        "price": "989.99",
+                        "currency": "USD",
+                        "option_values": {"size": "1"},
+                    },
+                    {
+                        "price": "989.99",
+                        "currency": "USD",
+                        "option_values": {"size": "2"},
+                    },
+                    {
+                        "price": "989.99",
+                        "currency": "USD",
+                        "option_values": {"size": "3"},
+                    },
+                ],
+                "selected_variant": {
+                    "price": "989.99",
+                    "currency": "USD",
+                    "option_values": {"size": "1"},
+                },
+            }
+        ],
+    )
+
+    assert "variants" not in record
+
+
+def test_extract_hm_productgroup_detail_from_code_only_url() -> None:
+    html = """
+    <html>
+      <head>
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "ProductGroup",
+          "name": "Canvas espadrilles",
+          "description": "Espadrilles in canvas with a braided jute trim around the soles.",
+          "brand": {"@type": "Brand", "name": "H&M"},
+          "image": "https://image.hm.com/assets/hm/9e/92/main.jpg",
+          "hasVariant": [
+            {
+              "@type": "Product",
+              "sku": "1317259001003",
+              "name": "Canvas espadrilles - Black",
+              "color": "Black",
+              "size": "6",
+              "image": "https://image.hm.com/assets/hm/9e/92/black.jpg",
+              "offers": {
+                "@type": "Offer",
+                "url": "https://www2.hm.com/en_in/productpage.1317259001.html",
+                "priceCurrency": "INR",
+                "price": 1499
+              }
+            },
+            {
+              "@type": "Product",
+              "sku": "1317259002003",
+              "name": "Canvas espadrilles - Beige",
+              "color": "Beige",
+              "size": "6",
+              "image": "https://image.hm.com/assets/hm/fb/81/beige.jpg",
+              "offers": {
+                "@type": "Offer",
+                "url": "https://www2.hm.com/en_in/productpage.1317259002.html",
+                "priceCurrency": "INR",
+                "price": 1499
+              }
+            }
+          ]
+        }
+        </script>
+      </head>
+      <body>
+        <main>
+          <h1>Black</h1>
+          <div class="price">Rs. 1,499.00</div>
+        </main>
+      </body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        "https://www2.hm.com/en_in/productpage.1317259001.html",
+        "ecommerce_detail",
+        max_records=5,
+    )
+
+    assert len(rows) == 1
+    record = rows[0]
+    assert record["title"] == "Canvas espadrilles"
+    assert record["price"] == "1499.00"
+    assert record["brand"] == "H&M"
+    assert record["currency"] == "INR"
+    assert record["_source"] == "json_ld"
+    assert record["url"] == "https://www2.hm.com/en_in/productpage.1317259001.html"
+    assert record["image_url"] == "https://image.hm.com/assets/hm/9e/92/main.jpg"
+    assert "size" not in record
+
+
+def test_extract_detail_ignores_variant_leaf_jsonld_scalars_for_base_request() -> None:
+    html = """
+    <html>
+      <head>
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "Product",
+          "name": "Widget Prime - Black",
+          "sku": "11111111",
+          "url": [
+            "https://example.com/products/widget-prime?variant=11111111",
+            "https://example.com/products/widget-prime"
+          ],
+          "offers": {
+            "@type": "Offer",
+            "price": "10.00",
+            "priceCurrency": "USD"
+          },
+          "seller": {
+            "@type": "Organization",
+            "name": "Acme",
+            "url": "https://example.com"
+          }
+        }
+        </script>
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "ProductGroup",
+          "name": "Widget Prime",
+          "url": "https://example.com/products/widget-prime",
+          "offers": {
+            "@type": "Offer",
+            "price": "10.00",
+            "priceCurrency": "USD"
+          },
+          "hasVariant": [
+            {
+              "@type": "Product",
+              "name": "Widget Prime - Black",
+              "sku": "11111111",
+              "offers": {
+                "@type": "Offer",
+                "url": "https://example.com/products/widget-prime?variant=11111111",
+                "price": "10.00",
+                "priceCurrency": "USD"
+              }
+            },
+            {
+              "@type": "Product",
+              "name": "Widget Prime - Tan",
+              "sku": "22222222",
+              "offers": {
+                "@type": "Offer",
+                "url": "https://example.com/products/widget-prime?variant=22222222",
+                "price": "10.00",
+                "priceCurrency": "USD"
+              }
+            }
+          ]
+        }
+        </script>
+      </head>
+      <body>
+        <main>
+          <h1>Widget Prime</h1>
+        </main>
+      </body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        "https://example.com/products/widget-prime",
+        "ecommerce_detail",
+        max_records=5,
+    )
+
+    assert len(rows) == 1
+    record = rows[0]
+    assert record["title"] == "Widget Prime"
+    assert record["url"] == "https://example.com/products/widget-prime"
+    assert record["price"] == "10.00"
+    assert record["currency"] == "USD"
+    assert "sku" not in record
+
+
+def test_extract_detail_backfills_current_price_variants_and_strips_unavailable_suffixes() -> None:
+    html = """
+    <html>
+      <body>
+        <script id="__NEXT_DATA__" type="application/json">
+        {
+          "props": {
+            "pageProps": {
+              "product": {
+                "id": "stan-smith-1",
+                "title": "Stan Smith Shoes",
+                "brand": "adidas",
+                "prices": {
+                  "currency": "USD",
+                  "currentPrice": 100
+                },
+                "options": [{"name": "Size"}],
+                "variants": [
+                  {
+                    "id": "size-12.5",
+                    "availability": "out_of_stock",
+                    "selectedOptions": [
+                      {"name": "Size", "value": "12.5 is currently unavailable."}
+                    ]
+                  },
+                  {
+                    "id": "size-13",
+                    "availability": "in_stock",
+                    "selectedOptions": [
+                      {"name": "Size", "value": "13"}
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+        }
+        </script>
+      </body>
+    </html>
+    """
+
+    record = extract_records(
+        html,
+        "https://www.adidas.com/us/stan-smith-shoes/M20324.html",
+        "ecommerce_detail",
+        max_records=5,
+    )[0]
+
+    assert record["price"] == "100.00"
+    assert record["variants"][0]["size"] == "12.5"
+    assert "price" not in record["variants"][0]
+
+def test_extract_detail_rejects_asos_mixed_product_identity_record() -> None:
+    html = """
+    <html>
+      <head>
+        <meta property="og:title" content="ASOS DESIGN Curve lightweight pull on barrel pants in darkwash">
+        <meta property="og:description" content="Shop the latest ASOS DESIGN Curve lightweight pull on barrel pants in darkwash trends with ASOS!">
+      </head>
+      <body>
+        <main>
+          <h1>ASOS DESIGN oversized t-shirt with lace hem in light blue</h1>
+          <img src="https://images.asos-media.com/products/asos-design-oversized-t-shirt-with-lace-hem-in-light-blue/210817202-1-lightblue">
+        </main>
+      </body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        "https://www.asos.com/us/prd/210397084/asos-design-curve-lightweight-pull-on-barrel-pants-in-darkwash/prd/210817202",
+        "ecommerce_detail",
+        max_records=5,
+    )
+
+    assert rows == []
+
+
+def test_extract_detail_rejects_known_error_page_titles() -> None:
+    html = """
+    <html>
+      <body>
+        <main><h1>Oops, Something Went Wrong.</h1></main>
+      </body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        "https://www.dickssportinggoods.com/p/birkenstock-womens-arizona-big-buckle-soft-footbed-sandals-25birwcasuwrznbgbcegp/25birwcasuwrznbgbcegp",
+        "ecommerce_detail",
+        max_records=5,
+    )
+
+    assert rows == []
+
+
+def test_build_detail_record_prefers_dom_description_over_truncated_og_copy() -> None:
+    html = """
+    <html>
+      <head>
+        <meta property="og:title" content="NXT 5 Battery Charger &amp; Maintainer">
+        <meta property="og:description" content="Performance, safety, ease. Drivers can count on all three with CTEK's NXT 5 Battery Charger &amp; Maintainer, which is built both to charge and actively restore battery life. This is a fully automatic 4.3A charger that just needs...">
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "Product",
+          "name": "NXT 5 Battery Charger & Maintainer",
+          "brand": "CTEK",
+          "image": "https://example.com/images/charger.jpg",
+          "offers": {
+            "@type": "Offer",
+            "price": "124.99",
+            "priceCurrency": "USD"
+          }
+        }
+        </script>
+      </head>
+      <body>
+        <main>
+          <h1>NXT 5 Battery Charger &amp; Maintainer</h1>
+          <section>
+            <h2>Description</h2>
+            <p>
+              Performance, safety, ease. Drivers can count on all three with CTEK's
+              NXT 5 Battery Charger &amp; Maintainer, which is built both to charge
+              and actively restore battery life with the help of patented
+              desulphation and reconditioning modes. This is a fully automatic
+              4.3A charger that just needs a power outlet and can restore deeply
+              discharged batteries.
+            </p>
+          </section>
+        </main>
+      </body>
+    </html>
+    """
+
+    record = build_detail_record(
+        html,
+        "https://www.tirerack.com/accessories/ctek-nxt-5-battery-charger-maintainer",
+        "ecommerce_detail",
+        None,
+    )
+
+    assert record["description"].endswith("restore deeply discharged batteries.")
+    assert record["description"].endswith(("...", "…")) is False
+
+
+def test_build_detail_record_prefers_dom_description_over_cut_off_meta_copy() -> None:
+    html = """
+    <html>
+      <head>
+        <meta property="og:title" content="Dime Soft Rock Crewneck">
+        <meta property="og:description" content="Arriving as part of the second drop from its Spring '25 collection, Montreal-based streetwear and skatewear brand Dime pays homage to one of its favorite music subgenres with this Soft Rock Crewneck. Crafted from heavyweight cotton for a comfortable, durable feel, this crewneck features an eye-catching Dime logo on the">
+      </head>
+      <body>
+        <main>
+          <h1>Dime Soft Rock Crewneck</h1>
+          <section>
+            <h2>Description</h2>
+            <p>
+              Arriving as part of the second drop from its Spring '25 collection,
+              Montreal-based streetwear and skatewear brand Dime pays homage to
+              one of its favorite music subgenres with this Soft Rock Crewneck.
+              Crafted from heavyweight cotton for a comfortable, durable feel,
+              this crewneck features an eye-catching Dime logo on the chest.
+            </p>
+          </section>
+        </main>
+      </body>
+    </html>
+    """
+
+    record = build_detail_record(
+        html,
+        "https://www.sneakersnstuff.com/products/dime-soft-rock-crewneck-dime2sp2542blk",
+        "ecommerce_detail",
+        None,
+    )
+
+    assert record["description"].endswith("logo on the chest.")
+
+
+def test_build_detail_record_drops_cut_off_description_without_complete_source() -> None:
+    record = build_detail_record(
+        """
+        <html>
+          <head>
+            <meta property="og:title" content="Dime Soft Rock Crewneck">
+            <meta property="og:description" content="Arriving as part of the second drop from its Spring '25 collection, Montreal-based streetwear and skatewear brand Dime pays homage to one of its favorite music subgenres with this Soft Rock Crewneck. Crafted from heavyweight cotton for a comfortable, durable feel, this crewneck features an eye-catching Dime logo on the">
+          </head>
+          <body><main><h1>Dime Soft Rock Crewneck</h1></main></body>
+        </html>
+        """,
+        "https://www.sneakersnstuff.com/products/dime-soft-rock-crewneck-dime2sp2542blk",
+        "ecommerce_detail",
+        None,
+    )
+
+    assert record.get("description") == (
+        "Arriving as part of the second drop from its Spring '25 collection, "
+        "Montreal-based streetwear and skatewear brand Dime pays homage to one "
+        "of its favorite music subgenres with this Soft Rock Crewneck."
+    )
+
+
+def test_build_detail_record_prefers_js_state_html_description_over_truncated_json_ld() -> None:
+    html = """
+    <html>
+      <head>
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "Product",
+          "name": "Technics SL-1200MK7",
+          "description": "Item ships out in 15 working days.The SL-1200 – A New Chapter BeginsAs the go-to choice o...",
+          "brand": "Technics",
+          "image": "https://example.com/images/turntable.jpg",
+          "offers": {
+            "@type": "Offer",
+            "price": "175000",
+            "priceCurrency": "INR"
+          }
+        }
+        </script>
+        <script>
+          var BspdCurrentProduct = {
+            "id": 6569597796470,
+            "title": "Technics SL-1200MK7",
+            "handle": "technics-sl-1200mk7",
+            "description": "<h3><em><span>Item ships out in 15 working days.</span></em></h3><h2>The SL-1200 – A New Chapter Begins</h2><p>As the go-to choice of DJs the world over, the SL-1200 Series has long been a dominant presence on the global music scene. Today the brand continues to set the industry standard as the direct drive turntable par excellence.</p><h2>Features</h2><p>Coreless Direct-Drive Motor</p>",
+            "vendor": "Technics",
+            "price": "175000",
+            "available": true,
+            "variants": [
+              {
+                "id": 42982754549878,
+                "sku": "TT-TS-SL1200MK7-SILVER-N",
+                "available": true,
+                "price": "175000"
+              }
+            ],
+            "images": ["https://example.com/images/turntable.jpg"]
+          };
+        </script>
+      </head>
+      <body>
+        <main><h1>Technics SL-1200MK7</h1></main>
+      </body>
+    </html>
+    """
+
+    record = build_detail_record(
+        html,
+        "https://www.therevolverclub.com/products/technics-sl-1200mk7",
+        "ecommerce_detail",
+        None,
+    )
+
+    assert record["description"] == (
+        "Item ships out in 15 working days. The SL-1200 – A New Chapter Begins "
+        "As the go-to choice of DJs the world over, the SL-1200 Series has long "
+        "been a dominant presence on the global music scene. Today the brand "
+        "continues to set the industry standard as the direct drive turntable par excellence."
+    )
+    assert record["_field_sources"]["description"] == ["json_ld", "js_state"]
+    assert record["features"] == ["Coreless Direct-Drive Motor"]
+
+
+def test_extract_ecommerce_detail_uses_dom_description_when_authoritative_copy_is_thin() -> (
+    None
+):
+    html = """
+    <html>
+      <body>
+        <main>
+          <h1>ABC Warpstreme Jogger</h1>
+          <section>
+            <h2>Description</h2>
+            <p>Designed for office commutes and long-haul travel.</p>
+            <ul>
+              <li>Warpstreme fabric feels sleek and dries fast.</li>
+              <li>Secure pockets keep cards and keys close.</li>
+              <li>Streamlined taper pairs easily with sneakers or loafers.</li>
+            </ul>
+          </section>
+        </main>
+      </body>
+    </html>
+    """
+
+    record = build_detail_record(
+        html,
+        "https://shop.lululemon.com/p/men-joggers/Abc-Jogger/_/prod8530240",
+        "ecommerce_detail",
+        None,
+        adapter_records=[
+            {
+                "title": "ABC Warpstreme Jogger",
+                "description": (
+                    "These sleek joggers feature our ABC technology for travel."
+                ),
+            }
+        ],
+    )
+
+    assert record["description"].startswith(
+        "Designed for office commutes and long-haul travel."
+    )
+    assert "Warpstreme fabric feels sleek and dries fast." in record["description"]
+    assert record["_extraction_tiers"]["current"] == "dom"
+
+
+def test_extract_ecommerce_detail_prefers_displayvalue_for_variant_sizes() -> None:
+    html = """
+    <html>
+      <body>
+        <main>
+          <h1>Aeron Chair</h1>
+          <fieldset class="attr-group-items">
+            <input
+              type="radio"
+              id="size-size_a_small"
+              name="size"
+              data-attr-displayvalue="Size A - Small"
+              value="https://store.hermanmiller.com/variation?dwvar_size=size_a_small"
+            />
+            <label for="size-size_a_small">
+              <span class="sr-only">View this product in: Size</span>
+              <span class="size-value swatch-text swatch-value">
+                Size A - Small
+                <svg aria-labelledby="disable-danger" role="img">
+                  <title id="disable-danger">disable-danger</title>
+                  <use xlink:href="#disable-danger"></use>
+                </svg>
+              </span>
+            </label>
+            <input
+              type="radio"
+              id="size-size_b_medium"
+              name="size"
+              data-attr-displayvalue="Size B - Medium"
+              value="https://store.hermanmiller.com/variation?dwvar_size=size_b_medium"
+              checked
+            />
+            <label for="size-size_b_medium">
+              <span class="sr-only">View this product in: Size</span>
+              <span class="size-value swatch-text swatch-value">
+                Size B - Medium
+                <svg aria-labelledby="disable-danger" role="img">
+                  <title id="disable-danger-2">disable-danger</title>
+                  <use xlink:href="#disable-danger"></use>
+                </svg>
+              </span>
+            </label>
+          </fieldset>
+        </main>
+      </body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        "https://store.hermanmiller.com/office-chairs-aeron/aeron-chair/100073872.html?lang=en_US",
+        "ecommerce_detail",
+        max_records=1,
+        requested_fields=["size"],
+    )
+
+    assert rows
+    assert [variant["size"] for variant in rows[0]["variants"]] == [
+        "Size A - Small",
+        "Size B - Medium",
+    ]
+    assert "View this product in" not in json.dumps(rows[0]["variants"])
+    assert "disable-danger" not in json.dumps(rows[0]["variants"])
+
+
+def test_extract_ecommerce_detail_keeps_public_size_color_axes_only_for_herman_style_fieldsets() -> None:
+    html = read_optional_artifact_text("tests/fixtures/herman_miller_aeron.html")
+
+    rows = extract_records(
+        html,
+        "https://store.hermanmiller.com/office-chairs-aeron/aeron-chair/100073872.html?lang=en_US",
+        "ecommerce_detail",
+        max_records=1,
+        requested_fields=["variants", "size", "color"],
+    )
+
+    assert rows
+    variants = rows[0]["variants"]
+    assert rows[0]["variant_count"] == 4
+    assert {(variant["size"], variant["color"]) for variant in variants} == {
+        ("Size A - Small", "Graphite / Graphite"),
+        ("Size A - Small", "Black / Onyx Ultra Matte"),
+        ("Size B - Medium", "Graphite / Graphite"),
+        ("Size B - Medium", "Black / Onyx Ultra Matte"),
+    }
+    serialized = json.dumps(variants)
+    assert "Basic Back Support" not in serialized
+    assert "Height-Adjustable Arms" not in serialized
+    assert "Leather" not in serialized
+
+
+def test_extract_ecommerce_detail_ignores_embedded_json_feature_flags_and_size_rows() -> None:
+    html = """
+    <html>
+      <head>
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "Product",
+          "name": "Classic Four Prong Solitaire Engagement Ring in Platinum",
+          "description": "Let your diamond shine brilliantly in this classic platinum four-prong solitaire engagement ring.",
+          "image": "https://example.com/images/ring.jpg",
+          "offers": {
+            "@type": "Offer",
+            "price": "1025",
+            "priceCurrency": "USD"
+          }
+        }
+        </script>
+        <script type="application/json">
+        {
+          "env": "green",
+          "appData": {
+            "jaData": {
+              "features": {
+                "activeCampaign": "Mday26FR",
+                "essentialGridCampaign": "QualityNValue",
+                "payPalEnvironment": "prod",
+                "topMesseg": "Happy New Year!"
+              }
+            }
+          },
+          "ssrPageData": {
+            "ringSize": {
+              "sizesInfo": [
+                {
+                  "size": 3,
+                  "isAvailable": true,
+                  "shippingDate": "2026-05-21",
+                  "specialDays": {"byValentines": true}
+                },
+                {
+                  "size": 3.5,
+                  "isAvailable": true,
+                  "shippingDate": "2026-05-21",
+                  "specialDays": {"byValentines": true}
+                }
+              ]
+            }
+          }
+        }
+        </script>
+      </head>
+      <body>
+        <main><h1>Classic Four Prong Solitaire Engagement Ring in Platinum</h1></main>
+      </body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        "https://www.bluenile.com/engagement-rings/design-your-own-ring/classic-four-prong-solitaire-engagement-ring-in-platinum-item-194156",
+        "ecommerce_detail",
+        max_records=1,
+    )
+
+    assert rows
+    record = rows[0]
+    assert "features" not in record
+    assert "size" not in record
+
+
+def test_normalize_variant_record_infers_single_variant_color_from_title_slug() -> None:
+    record = {
+        "title": "Men's Wool Runners - Natural Black",
+        "url": "https://www.allbirds.com/products/mens-wool-runners-natural-black",
+        "variants": [
+            {
+                "url": "https://www.allbirds.com/products/mens-wool-runners-natural-black",
+            }
+        ],
+    }
+
+    normalize_variant_record(record)
+
+    assert record["variants"] == [
+        {
+            "url": "https://www.allbirds.com/products/mens-wool-runners-natural-black",
+            "color": "Natural Black",
+        }
+    ]
+
+
+def test_normalize_variant_record_does_not_fold_size_token_into_color() -> None:
+    record = {
+        "title": "Runner Tee XS Blue",
+        "variants": [
+            {
+                "url": "https://example.com/products/runner-tee-xs-blue",
+            }
+        ],
+    }
+
+    normalize_variant_record(record)
+
+    assert record["variants"] == [
+        {
+            "url": "https://example.com/products/runner-tee-xs-blue",
+            "size": "XS",
+            "color": "Blue",
+        }
+    ]
+
+
+def test_normalize_variant_record_infers_single_variant_size_from_title_tokens() -> None:
+    record = {
+        "title": "Arizona Sandal - EU 42",
+        "url": "https://www.birkenstock.com/us/arizona-birko-flor/arizona-core-birkoflor-0-eva-u_1.html",
+        "variants": [
+            {
+                "url": "https://www.birkenstock.com/us/arizona-birko-flor/arizona-core-birkoflor-0-eva-u_1.html",
+            }
+        ],
+    }
+
+    normalize_variant_record(record)
+
+    assert record["variants"] == [
+        {
+            "url": "https://www.birkenstock.com/us/arizona-birko-flor/arizona-core-birkoflor-0-eva-u_1.html",
+            "size": "EU 42",
+        }
+    ]
+
+
+def test_extract_ecommerce_detail_reads_scalar_size_from_two_span_label_value_row() -> None:
+    html = """
+    <html>
+      <body>
+        <main>
+          <h1>Colorful Eyeshadow</h1>
+          <div><span>Color</span><span>209 Mocha Latte - soft mocha brown matte</span></div>
+          <div><span>Size</span><span>0.035 oz / 0.99 g</span></div>
+          <div data-testid="price">$8.00</div>
+        </main>
+      </body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        "https://www.sephora.com/product/colorful-eyeshadow-P515026",
+        "ecommerce_detail",
+        max_records=1,
+        requested_fields=["size", "title", "price", "color"],
+    )
+
+    assert rows
+    assert rows[0]["title"] == "Colorful Eyeshadow"
+    assert rows[0]["price"] == "8.00"
+    assert rows[0]["color"] == "209 Mocha Latte - soft mocha brown matte"
+    assert rows[0]["size"] == "0.035 oz / 0.99 g"

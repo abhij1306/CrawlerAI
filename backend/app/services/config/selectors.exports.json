@@ -1,0 +1,439 @@
+{
+  "_export_provenance": {
+    "generator": "app.services.config._export_data",
+    "regenerate": "cd backend; $env:PYTHONPATH='.'; .\\.venv\\Scripts\\python.exe -m app.services.config._export_data app/services/config/selectors.exports.json",
+    "invariant": "Static selector export. Public keys must not start with underscore; selectors.py filters metadata keys."
+  },
+  "ANCHOR_SELECTOR": "a[href]",
+  "LISTING_CAPTURE_STRUCTURAL_ANCESTOR_SELECTORS": {
+    "__type__": "list",
+    "items": [
+      "header",
+      "footer",
+      "nav",
+      "[role=\"navigation\"]",
+      "[role=\"banner\"]",
+      "[role=\"contentinfo\"]",
+      "dialog",
+      "[role=\"dialog\"]",
+      "aside"
+    ]
+  },
+  "LISTING_VISUAL_CANDIDATE_CONTAINER_SELECTORS": {
+    "__type__": "list",
+    "items": [
+      "article",
+      "li",
+      "section",
+      "[role=\"listitem\"]",
+      "[data-testid*=\"product\" i]",
+      "[class*=\"product\" i]",
+      "[class*=\"card\" i]",
+      "[class*=\"tile\" i]",
+      "[class*=\"item\" i]",
+      "[class*=\"result\" i]"
+    ]
+  },
+  "LISTING_VISUAL_CAPTURE_SELECTORS": {
+    "__type__": "list",
+    "items": [
+      "a[href]",
+      "img[src]",
+      "h1",
+      "h2",
+      "h3",
+      "h4",
+      "[itemprop=\"name\"]",
+      "[class*=\"price\" i]",
+      "[data-testid*=\"price\" i]",
+      "[aria-label*=\"price\" i]",
+      "[class*=\"title\" i]",
+      "[data-testid*=\"title\" i]",
+      "[data-testid*=\"name\" i]"
+    ]
+  },
+  "CARD_SELECTORS": {
+    "__type__": "dict",
+    "items": [
+      {
+        "key": "ecommerce",
+        "value": {
+          "__type__": "list",
+          "items": [
+            "[data-component-type='s-search-result']",
+            ".s-item",
+            "a[href*='/products/']",
+            "a[href*='/product/']",
+            "a.card[data-test^='product-']",
+            "a.card[href*='/product/']",
+            ".product-card",
+            ".product-item",
+            ".product-tile",
+            ".product-grid-item",
+            "li.product-grid-product",
+            "[data-testid='product-card']",
+            "[data-test-id='product-card']",
+            ".grid-item[data-product-id]",
+            ".product_pod",
+            ".collection-product-card",
+            "[data-testid='grid-view-products'] > article",
+            "[data-testid='list-view-products'] > article",
+            "[data-testid*='product-list-item']",
+            "[data-test-id*='product-list-item']",
+            "li.grid__item",
+            "li.product-base",
+            ".plp-card",
+            ".search-result-gridview-item",
+            ".product",
+            "article.product",
+            "[itemscope][itemtype*='Product']",
+            ".thumbnail[itemscope]",
+            "[class*='productcard' i]",
+            "[class*='product-tile']",
+            "[class*='SearchResultTile']",
+            "[class*='AllEditionsItem-tile']",
+            "[class*='search-result-item']",
+            "[data-testid*='product' i]",
+            "[data-test*='product' i]",
+            "[data-component*='product' i]",
+            "[data-automation*='product' i]",
+            "[class*='product-brief' i]",
+            "[class*='ProductPod' i]",
+            "[class*='item-tile' i]",
+            "[class*='product-card--loaded']",
+            "[class*='product-card--hydrated']",
+            "[class*='product-item--loaded']",
+            "[class*='product-item--hydrated']",
+            "[class*='grid-item--loaded']",
+            "[data-hydrated='true'][class*='product' i]",
+            "[data-loaded='true'][class*='product' i]",
+            "[data-lazy-loaded][class*='product' i]"
+          ]
+        }
+      },
+      {
+        "key": "jobs",
+        "value": {
+          "__type__": "list",
+          "items": [
+            "[data-qa-id='search-result']",
+            "#search-results > div.border.border-gray-lighter.bg-white.p-4",
+            ".job_seen_beacon",
+            ".base-card",
+            ".job-card",
+            ".job-listing",
+            ".job-result",
+            ".posting",
+            "[data-testid='job-card']",
+            ".jobsearch-ResultsList > div",
+            "li.jobs-search__results-list-item",
+            "article.elementor-post",
+            "article[class*='category-jobs']",
+            ".elementor-post",
+            "li[data-testid='careers-search-result-listing']",
+            ".pp-content-post.job_listing",
+            ".pp-content-grid-post.job_listing",
+            "div.job_listing",
+            "tr.job-row",
+            "div[data-job-id]",
+            ".opening"
+          ]
+        }
+      }
+    ]
+  },
+  "LOCATION_INTERSTITIAL_CONTAINER_SELECTORS": {
+    "__type__": "list",
+    "items": [
+      "[aria-modal='true'][class*='location' i]",
+      "[aria-modal='true'][id*='location' i]",
+      "[aria-modal='true'][class*='postal' i]",
+      "[aria-modal='true'][id*='postal' i]",
+      "[aria-modal='true'][class*='zip' i]",
+      "[aria-modal='true'][id*='zip' i]",
+      "[role='dialog'][class*='location' i]",
+      "[role='dialog'][id*='location' i]",
+      "[role='dialog'][class*='postal' i]",
+      "[role='dialog'][id*='postal' i]",
+      "[role='dialog'][class*='zip' i]",
+      "[role='dialog'][id*='zip' i]",
+      ".modal[class*='location' i]",
+      ".modal[id*='location' i]",
+      ".overlay[class*='location' i]",
+      ".overlay[id*='location' i]"
+    ]
+  },
+  "LOCATION_INTERSTITIAL_DISMISS_SELECTORS": {
+    "__type__": "list",
+    "items": [
+      "button[aria-label='Close']",
+      "button[aria-label='close']",
+      "[role='button'][aria-label='Close']",
+      "[role='button'][aria-label='close']"
+    ]
+  },
+  "LOCATION_INTERSTITIAL_DISMISS_TEXT_TOKENS": {
+    "__type__": "list",
+    "items": [
+      "Not now",
+      "Maybe later",
+      "Continue",
+      "Continue without location",
+      "Skip",
+      "No thanks",
+      "Ahora no",
+      "Quiz\u00e1s luego",
+      "No gracias",
+      "Pas maintenant",
+      "Peut-\u00eatre plus tard",
+      "Non merci",
+      "Nicht jetzt",
+      "Vielleicht sp\u00e4ter",
+      "Nein danke",
+      "Agora n\u00e3o",
+      "Talvez mais tarde",
+      "N\u00e3o obrigado",
+      "Quizas luego",
+      "Peut-etre plus tard",
+      "Vielleicht spaeter",
+      "Agora nao",
+      "Nao obrigado"
+    ]
+  },
+  "LOCATION_INTERSTITIAL_TEXT_TOKENS": {
+    "__type__": "list",
+    "items": [
+      "choose your location",
+      "select your location",
+      "set your location",
+      "enter your zip",
+      "enter zip code",
+      "zip code",
+      "postal code",
+      "use my location",
+      "deliver to",
+      "store location",
+      "elige tu ubicaci\u00f3n",
+      "selecciona tu ubicaci\u00f3n",
+      "c\u00f3digo postal",
+      "usar mi ubicaci\u00f3n",
+      "entregar a",
+      "choisissez votre emplacement",
+      "s\u00e9lectionnez votre emplacement",
+      "code postal",
+      "utiliser ma position",
+      "livrer \u00e0",
+      "w\u00e4hlen sie ihren standort",
+      "standort ausw\u00e4hlen",
+      "postleitzahl",
+      "meinen standort verwenden",
+      "liefern nach",
+      "escolha sua localiza\u00e7\u00e3o",
+      "selecionar localiza\u00e7\u00e3o",
+      "usar minha localiza\u00e7\u00e3o",
+      "entregar em",
+      "elige tu ubicacion",
+      "selecciona tu ubicacion",
+      "codigo postal",
+      "usar mi ubicacion",
+      "selectionnez votre emplacement",
+      "livrer a",
+      "waehlen sie ihren standort",
+      "standort auswaehlen",
+      "escolha sua localizacao",
+      "selecionar localizacao",
+      "usar minha localizacao"
+    ]
+  },
+  "COOKIE_CONSENT_SELECTORS": {
+    "__type__": "list",
+    "items": [
+      "button#onetrust-accept-btn-handler",
+      "button#CybotCookiebotDialogBodyLevelButtonLevelOptinAllowAll",
+      "button#CybotCookiebotDialogBodyUnderlayAccept",
+      "#truste-consent-button",
+      "[data-consent='accept']",
+      "[data-consent-action='accept']",
+      "[data-accept='true']",
+      "[data-testid='cookie-accept']",
+      "[data-testid='consent-accept']",
+      ".cookie-banner [data-consent='accept']",
+      ".cookie-banner [data-accept='true']",
+      ".cookie-consent-accept",
+      "#cookieConsentAccept",
+      ".fc-button.fc-cta-consent",
+      ".fc-button.fc-cta-accept",
+      ".fc-primary-button",
+      "[id*='accept' i][id*='cookie' i]",
+      "[class*='accept' i][class*='cookie' i]",
+      "[id*='consent' i][id*='accept' i]",
+      "[class*='consent' i][class*='accept' i]",
+      "[aria-label='Accept Cookies']",
+      "[aria-label='Accept all']",
+      "[aria-label='Accept All']",
+      "[aria-label='Accept cookie policy']",
+      "[aria-label='Aceptar cookies']",
+      "[aria-label='Aceptar todo']",
+      "[aria-label='Tout accepter']",
+      "[aria-label='Accepter les cookies']",
+      "[aria-label='Alle akzeptieren']",
+      "[aria-label='Akzeptieren']",
+      "[aria-label='Aceitar cookies']",
+      "[aria-label='Aceitar tudo']",
+      "button:has-text('Accept All')",
+      "button:has-text('Accept Cookies')",
+      "button:has-text('I Accept')",
+      "button:has-text('Agree')",
+      "button:has-text('Aceptar todo')",
+      "button:has-text('Aceptar cookies')",
+      "button:has-text('Acepto')",
+      "button:has-text('Tout accepter')",
+      "button:has-text('Accepter')",
+      "button:has-text('Accepter les cookies')",
+      "button:has-text('Alle akzeptieren')",
+      "button:has-text('Akzeptieren')",
+      "button:has-text('Ich akzeptiere')",
+      "button:has-text('Aceitar tudo')",
+      "button:has-text('Aceitar cookies')",
+      "button:has-text('Concordo')"
+    ]
+  },
+  "DOM_PATTERNS": {
+    "__type__": "dict",
+    "items": [
+      {
+        "key": "apply_url",
+        "value": "a[data-apply-url], a.apply-button"
+      },
+      {
+        "key": "availability",
+        "value": "[itemprop='availability'], .availability, [data-stock], [data-availability]"
+      },
+      {
+        "key": "benefits",
+        "value": "[data-section='benefits'], .benefits, #benefits"
+      },
+      {
+        "key": "brand",
+        "value": "[itemprop='brand'], .brand, .product-brand, [data-testid*='brand'], [aria-label*='brand'], [class*='Brand']"
+      },
+      {
+        "key": "category",
+        "value": "[itemprop='category'], nav.breadcrumb li:last-child"
+      },
+      {
+        "key": "company",
+        "value": ".company-name, [itemprop='hiringOrganization'] [itemprop='name']"
+      },
+      {
+        "key": "description",
+        "value": "[itemprop='description'], .product-description, [data-description], meta[name='description'], meta[property='og:description']"
+      },
+      {
+        "key": "features",
+        "value": "[data-section='features'], .features, .product-features, #features"
+      },
+      {
+        "key": "image_url",
+        "value": "[itemprop='image'], meta[property='og:image'], [data-testid*='image'], [class*='product-image'], [class*='ProductImage'], img[itemprop='image']"
+      },
+      {
+        "key": "job_type",
+        "value": "[itemprop='employmentType']"
+      },
+      {
+        "key": "location",
+        "value": ".job-location, [itemprop='jobLocation'] [itemprop='name']"
+      },
+      {
+        "key": "original_price",
+        "value": ".original-price, .compare-price, [data-original-price], [data-testid*='original-price'], [class*='OriginalPrice'], [class*='compare-price'], [aria-label*='original price']"
+      },
+      {
+        "key": "price",
+        "value": "[itemprop='price'], .price, .product-price, [data-testid*='price'], [data-test*='price'], [class*='Price'], [class*='price-'], [aria-label*='price'], [data-price]"
+      },
+      {
+        "key": "qualifications",
+        "value": "[data-section='qualifications'], .qualifications, #qualifications"
+      },
+      {
+        "key": "rating",
+        "value": "[itemprop='ratingValue'], [data-testid*='rating'], [class*='Rating'], [class*='rating'], [aria-label*='rating'], [class*='stars']"
+      },
+      {
+        "key": "responsibilities",
+        "value": "[data-section='responsibilities'], .responsibilities, #responsibilities"
+      },
+      {
+        "key": "review_count",
+        "value": "[itemprop='reviewCount'], [data-testid*='review'], [class*='review-count'], [class*='ReviewCount'], [aria-label*='review']"
+      },
+      {
+        "key": "salary",
+        "value": ".salary, [itemprop='baseSalary']"
+      },
+      {
+        "key": "sale_price",
+        "value": ".sale-price, .discount-price, [data-sale-price], [data-testid*='sale-price'], [class*='SalePrice'], [class*='sale-price'], [aria-label*='sale price']"
+      },
+      {
+        "key": "skills",
+        "value": "[data-section='skills'], .skills, #skills"
+      },
+      {
+        "key": "sku",
+        "value": "[itemprop='sku']"
+      },
+      {
+        "key": "specifications",
+        "value": "[data-section='specifications'], .specifications, .product-specifications, #specifications"
+      },
+      {
+        "key": "title",
+        "value": "h1, [itemprop='name'], meta[property='og:title'], title, [data-testid*='title'], [data-testid*='product-name'], [class*='ProductTitle'], [class*='product-title'], [aria-label*='product name']"
+      }
+    ]
+  },
+  "PAGINATION_SELECTORS": {
+    "__type__": "dict",
+    "items": [
+      {
+        "key": "load_more",
+        "value": {
+          "__type__": "list",
+          "items": [
+            "button:has-text('Load More')",
+            "button:has-text('Show More')",
+            "button:has-text('View All')",
+            "button:has-text('Load more')",
+            "button:has-text('Show more')",
+            "button:has-text('View all')",
+            "button:has-text('See more')",
+            "a:has-text('Load More')",
+            "a:has-text('Show More')",
+            "a:has-text('View All')",
+            "[data-testid='load-more']",
+            "[data-testid*='load-more' i]",
+            "[data-test-id*='load-more' i]",
+            ".load-more"
+          ]
+        }
+      },
+      {
+        "key": "next_page",
+        "value": {
+          "__type__": "list",
+          "items": [
+            "a[rel='next']",
+            "a[aria-label*='next' i]",
+            "a[title*='next' i]",
+            "a:has-text('Next')",
+            "button[aria-label*='next' i]"
+          ]
+        }
+      }
+    ]
+  },
+  "TITLE_SELECTOR": "h1 a, h2 a, h3 a, h4 a, h5 a, h1, h2, h3, h4, h5"
+}

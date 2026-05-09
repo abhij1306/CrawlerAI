@@ -1,0 +1,1903 @@
+from __future__ import annotations
+
+import asyncio
+import hashlib
+from dataclasses import dataclass, field
+import logging
+import re
+import time
+from urllib.parse import urljoin, urlsplit
+
+from app.services.acquisition.dom_runtime import get_page_html, wait_for_dom_mutation_settle
+from app.services.acquisition.runtime import classify_blocked_page_async
+
+try:
+    from patchright.async_api import Error as PlaywrightError
+except ImportError:  # pragma: no cover
+    class PlaywrightError(Exception):  # type: ignore[no-redef]
+        pass
+
+from app.services.config.extraction_rules import (
+    LISTING_CARD_URL_ATTRS,
+    TRAVERSAL_LISTING_RECOVERY_ACTIONS,
+    TRAVERSAL_STRUCTURED_SCRIPT_IDS,
+    TRAVERSAL_STRUCTURED_SCRIPT_TEXT_MARKERS,
+    TRAVERSAL_STRUCTURED_SCRIPT_TYPES,
+)
+from app.services.platform_policy import (
+    path_tenant_boundary_family,
+    requires_path_tenant_boundary,
+    url_host_matches_platform_family,
+)
+from app.services.config.runtime_settings import crawler_runtime_settings
+from app.services.config.selectors import CARD_SELECTORS, PAGINATION_SELECTORS
+from app.services.extract.listing_card_fragments import (
+    base_listing_fragment_score,
+    collect_listing_fragment_html,
+    heuristic_listing_card_count_from_html,
+    listing_node_attr,
+    listing_node_css,
+    listing_selector_is_weak,
+    select_listing_fragment_nodes,
+)
+from selectolax.lexbor import LexborHTMLParser
+
+logger = logging.getLogger(__name__)
+
+@dataclass(slots=True)
+class TraversalResult:
+    requested_mode: str | None
+    selected_mode: str | None = None
+    activated: bool = False
+    stop_reason: str = "not_requested"
+    iterations: int = 0
+    scroll_iterations: int = 0
+    load_more_clicks: int = 0
+    pages_advanced: int = 0
+    progress_events: int = 0
+    card_count: int = 0
+    overlays_dismissed: bool = False
+    click_retries: int = 0
+    html_fragments: list[tuple[str, bool]] = field(default_factory=list)
+    events: list[tuple[str, str]] = field(default_factory=list)
+    _seen_card_fragments: set[str] = field(default_factory=set, repr=False)
+    _seen_structured_fragments: set[str] = field(default_factory=set, repr=False)
+
+    def html_bytes(self) -> int:
+        return sum(
+            len(fragment.encode("utf-8"))
+            for fragment, _is_fallback in self.html_fragments
+            if fragment
+        )
+
+    def compose_html(self) -> str:
+        texts = [str(fragment or "").strip() for fragment, _is_fallback in self.html_fragments if str(fragment or "").strip()]
+        if not texts:
+            return ""
+        if not self.activated:
+            return "\n".join(texts)
+        sections = [
+            (
+                f'<section data-traversal-fragment="{index}">\n'
+                f"{text}\n"
+                "</section>"
+            )
+            for index, text in enumerate(texts, start=1)
+        ]
+        return "<html><body>\n" + "\n".join(sections) + "\n</body></html>"
+
+    def diagnostics(self) -> dict[str, object]:
+        return {
+            "requested_traversal_mode": self.requested_mode,
+            "selected_traversal_mode": self.selected_mode,
+            "traversal_activated": self.activated,
+            "traversal_stop_reason": self.stop_reason,
+            "traversal_iterations": self.iterations,
+            "scroll_iterations": self.scroll_iterations,
+            "load_more_clicks": self.load_more_clicks,
+            "pages_advanced": self.pages_advanced,
+            "traversal_progress_events": self.progress_events,
+            "listing_card_count": self.card_count,
+            "traversal_fragment_count": len(self.html_fragments),
+            "traversal_html_bytes": self.html_bytes(),
+            "overlays_dismissed": self.overlays_dismissed,
+            "click_retries": self.click_retries,
+            "traversal_events": self.events,
+        }
+
+
+def _format_traversal_detection_message(
+    *,
+    mode: str,
+    max_iterations: int,
+    max_records: int | None,
+) -> str:
+    target_suffix = f", target_records={int(max_records)}" if max_records is not None else ""
+    safety_suffix = f", safety_cap={max_iterations}"
+    return f"Detected listing layout, traversal={mode}{target_suffix}{safety_suffix}"
+
+
+def _format_traversal_progress_message(
+    *,
+    label: str,
+    step: int,
+    step_limit: int,
+    previous_count: int,
+    current_count: int,
+    max_records: int | None,
+) -> str:
+    target_suffix = f", target_records={int(max_records)}" if max_records is not None else ""
+    return (
+        f"{label} {step} - "
+        f"page_cards={current_count} (prev_page_cards={previous_count})"
+        f"{target_suffix}"
+    )
+
+
+def _set_stop_reason(
+    result: TraversalResult,
+    reason: str,
+    *,
+    surface: str,
+    traversal_mode: str | None = None,
+) -> None:
+    result.stop_reason = reason
+    logger.info(
+        "Traversal stop_reason=%s surface=%s requested_mode=%s selected_mode=%s iterations=%s progress_events=%s",
+        reason,
+        surface,
+        traversal_mode or result.requested_mode,
+        result.selected_mode,
+        result.iterations,
+        result.progress_events,
+    )
+
+
+def should_run_traversal(surface: str | None, traversal_mode: str | None) -> bool:
+    normalized_mode = str(traversal_mode or "").strip().lower()
+    return normalized_mode in {"scroll", "load_more", "paginate"}
+
+
+async def execute_listing_traversal(
+    page,
+    *,
+    surface: str,
+    traversal_mode: str,
+    max_pages: int,
+    max_scrolls: int,
+    max_records: int | None = None,
+    timeout_seconds: float | None = None,
+    on_event=None,
+) -> TraversalResult:
+    normalized_mode = str(traversal_mode or "").strip().lower()
+    normalized_surface = str(surface or "").strip().lower()
+    result = TraversalResult(requested_mode=normalized_mode)
+    if not should_run_traversal(surface, normalized_mode):
+        _set_stop_reason(
+            result,
+            (
+                "unsupported_mode"
+                if "listing" in normalized_surface and normalized_mode
+                else "not_listing_or_disabled"
+            ),
+            surface=surface,
+            traversal_mode=normalized_mode,
+        )
+        result.html_fragments = [
+            (await get_page_html(page, flatten_shadow=False), True)
+        ]
+        return result
+
+    selected_mode = normalized_mode
+    result.selected_mode = selected_mode
+
+    timeout_value: float | None = None
+    if timeout_seconds is not None:
+        try:
+            timeout_value = float(timeout_seconds)
+        except (TypeError, ValueError):
+            timeout_value = None
+    deadline_at = (
+        time.monotonic() + timeout_value
+        if timeout_value is not None and timeout_value > 0
+        else None
+    )
+    result.activated = True
+    if selected_mode == "scroll":
+        await _run_scroll_traversal(
+            page,
+            surface=surface,
+            max_scrolls=max_scrolls,
+            max_records=max_records,
+            result=result,
+            deadline_at=deadline_at,
+            on_event=on_event,
+        )
+    elif selected_mode == "load_more":
+        await _run_load_more_traversal(
+            page,
+            surface=surface,
+            max_clicks=max(1, int(max_pages)),
+            max_records=max_records,
+            result=result,
+            deadline_at=deadline_at,
+            on_event=on_event,
+        )
+    elif selected_mode == "paginate":
+        await _run_paginate_traversal(
+            page,
+            surface=surface,
+            max_pages=max_pages,
+            max_records=max_records,
+            result=result,
+            deadline_at=deadline_at,
+            on_event=on_event,
+        )
+    else:
+        _set_stop_reason(result, "unsupported_mode", surface=surface, traversal_mode=normalized_mode)
+
+    if not result.html_fragments:
+        result.html_fragments = [
+            (await get_page_html(page, flatten_shadow=False), True)
+        ]
+    return result
+
+
+async def _run_scroll_traversal(
+    page,
+    *,
+    surface: str,
+    max_scrolls: int,
+    max_records: int | None,
+    result: TraversalResult,
+    deadline_at: float | None,
+    on_event,
+) -> None:
+    max_iterations = int(crawler_runtime_settings.traversal_max_iterations_cap)
+    effective_max = max_iterations
+    try:
+        local_max_scrolls = int(max_scrolls)
+    except (TypeError, ValueError):
+        local_max_scrolls = 0
+    if local_max_scrolls > 0:
+        effective_max = min(max_iterations, local_max_scrolls)
+    weak_progress_streak = 0
+    best_card_gain = 0
+    marginal_gain_streak = 0
+    await _append_html_fragment(page, result, surface=surface)
+    previous = await _page_snapshot(page, surface=surface)
+    result.card_count = int(previous.get("card_count", 0))
+    await _emit_event(
+        on_event,
+        "info",
+        _format_traversal_detection_message(
+            mode="scroll",
+            max_iterations=max_iterations,
+            max_records=max_records,
+        ),
+    )
+    if _target_record_limit_reached(max_records=max_records, current_count=result.card_count):
+        _set_stop_reason(result, "target_records_reached", surface=surface)
+        return
+    for _ in range(effective_max):
+        if _deadline_reached(deadline_at):
+            _set_stop_reason(result, "budget_exceeded", surface=surface)
+            break
+        result.iterations += 1
+        result.scroll_iterations += 1
+        await page.evaluate(
+            """
+            () => {
+              const root = document.scrollingElement || document.documentElement || document.body;
+              root.scrollTo({ top: root.scrollHeight, behavior: "auto" });
+            }
+            """
+        )
+        wait_ms = _remaining_timeout_ms(
+            deadline_at,
+            int(crawler_runtime_settings.scroll_wait_min_ms),
+        )
+        if wait_ms <= 0:
+            _set_stop_reason(result, "budget_exceeded", surface=surface)
+            break
+        await _settle_after_action(page, deadline_at=deadline_at, timeout_ms=wait_ms)
+        current = await _page_snapshot(page, surface=surface)
+        current_count = int(current.get("card_count", 0))
+        previous_count = int(previous.get("card_count", 0))
+        card_gain = max(
+            0,
+            current_count - previous_count,
+        )
+        if card_gain > 0:
+            best_card_gain = max(best_card_gain, card_gain)
+        if _snapshot_progressed(previous, current):
+            result.progress_events += 1
+            message = _format_traversal_progress_message(
+                label="Scroll",
+                step=result.iterations,
+                step_limit=effective_max,
+                previous_count=previous_count,
+                current_count=current_count,
+                max_records=max_records,
+            )
+            result.events.append(("info", message))
+            await _emit_event(on_event, "info", message)
+            await _append_html_fragment(page, result, surface=surface)
+            weak_progress_streak = 0
+            if _is_marginal_card_gain(
+                card_gain=card_gain,
+                best_gain=best_card_gain,
+                current_count=int(current.get("card_count", 0)),
+            ):
+                marginal_gain_streak += 1
+            else:
+                marginal_gain_streak = 0
+        else:
+            weak_progress_streak += 1
+            marginal_gain_streak = 0
+        previous = current
+        result.card_count = current["card_count"]
+        if _target_record_limit_reached(max_records=max_records, current_count=result.card_count):
+            _set_stop_reason(result, "target_records_reached", surface=surface)
+            break
+        if marginal_gain_streak > int(crawler_runtime_settings.traversal_weak_progress_streak_max):
+            _set_stop_reason(result, "marginal_scroll_gain", surface=surface)
+            break
+        if weak_progress_streak > int(crawler_runtime_settings.traversal_weak_progress_streak_max):
+            _set_stop_reason(result, "no_scroll_progress", surface=surface)
+            break
+    else:
+        _set_stop_reason(result, "scroll_limit_reached", surface=surface)
+    result.card_count = previous["card_count"]
+
+
+async def _run_load_more_traversal(
+    page,
+    *,
+    surface: str,
+    max_clicks: int,
+    max_records: int | None,
+    result: TraversalResult,
+    deadline_at: float | None,
+    on_event,
+) -> None:
+    max_iterations = int(crawler_runtime_settings.traversal_max_iterations_cap)
+    best_card_gain = 0
+    marginal_gain_streak = 0
+    await _append_html_fragment(page, result, surface=surface)
+    previous = await _page_snapshot(page, surface=surface)
+    result.card_count = int(previous.get("card_count", 0))
+    await _emit_event(
+        on_event,
+        "info",
+        _format_traversal_detection_message(
+            mode="load_more",
+            max_iterations=max_iterations,
+            max_records=max_records,
+        ),
+    )
+    if _target_record_limit_reached(max_records=max_records, current_count=result.card_count):
+        _set_stop_reason(result, "target_records_reached", surface=surface)
+        return
+    for _ in range(max_iterations):
+        if _deadline_reached(deadline_at):
+            _set_stop_reason(result, "budget_exceeded", surface=surface)
+            break
+        locator = await _find_actionable_locator(page, "load_more")
+        if locator is None:
+            settled = await wait_for_load_more_card_gain(
+                page,
+                previous=previous,
+                surface=surface,
+                max_records=max_records,
+                deadline_at=deadline_at,
+            )
+            if settled is not None:
+                previous = settled
+                result.card_count = int(settled.get("card_count", result.card_count))
+                await _append_html_fragment(page, result, surface=surface)
+                if _target_record_limit_reached(
+                    max_records=max_records,
+                    current_count=result.card_count,
+                ):
+                    _set_stop_reason(result, "target_records_reached", surface=surface)
+                    break
+            _set_stop_reason(result, "load_more_not_found", surface=surface)
+            break
+        result.iterations += 1
+        result.load_more_clicks += 1
+        current_url = page.url
+        clicked = await click_with_retry(
+            page,
+            locator,
+            result=result,
+            deadline_at=deadline_at,
+        )
+        if not clicked:
+            _set_stop_reason(result, "load_more_click_failed", surface=surface)
+            break
+        wait_ms = _remaining_timeout_ms(
+            deadline_at,
+            int(crawler_runtime_settings.load_more_wait_min_ms),
+        )
+        if wait_ms <= 0:
+            _set_stop_reason(result, "budget_exceeded", surface=surface)
+            break
+        await _wait_for_transition(
+            page,
+            previous_url=current_url,
+            deadline_at=deadline_at,
+            timeout_ms=wait_ms,
+        )
+        current = await _page_snapshot(page, surface=surface)
+        if not _snapshot_progressed(previous, current):
+            progressed = await wait_for_load_more_card_gain(
+                page,
+                previous=previous,
+                surface=surface,
+                max_records=max_records,
+                deadline_at=deadline_at,
+            )
+            if progressed is not None:
+                current = progressed
+        current_count = int(current.get("card_count", 0))
+        previous_count = int(previous.get("card_count", 0))
+        card_gain = max(
+            0,
+            current_count - previous_count,
+        )
+        if card_gain > 0:
+            best_card_gain = max(best_card_gain, card_gain)
+        if _snapshot_progressed(previous, current):
+            result.progress_events += 1
+            message = _format_traversal_progress_message(
+                label="Load more",
+                step=result.iterations,
+                step_limit=max_iterations,
+                previous_count=previous_count,
+                current_count=current_count,
+                max_records=max_records,
+            )
+            result.events.append(("info", message))
+            await _emit_event(on_event, "info", message)
+            await _append_html_fragment(page, result, surface=surface)
+            if _target_record_limit_reached(
+                max_records=max_records,
+                current_count=current_count,
+            ):
+                _set_stop_reason(result, "target_records_reached", surface=surface)
+                previous = current
+                break
+            if _is_marginal_card_gain(
+                card_gain=card_gain,
+                best_gain=best_card_gain,
+                current_count=current_count,
+            ):
+                marginal_gain_streak += 1
+            else:
+                marginal_gain_streak = 0
+                previous = current
+                continue
+            if marginal_gain_streak > int(crawler_runtime_settings.traversal_weak_progress_streak_max):
+                _set_stop_reason(result, "marginal_load_more_gain", surface=surface)
+                previous = current
+                break
+            previous = current
+            continue
+        _set_stop_reason(result, "load_more_no_progress", surface=surface)
+        previous = current
+        break
+    else:
+        _set_stop_reason(result, "load_more_limit_reached", surface=surface)
+    result.card_count = previous["card_count"]
+
+
+async def wait_for_load_more_card_gain(
+    page,
+    *,
+    previous: dict[str, int],
+    surface: str,
+    max_records: int | None,
+    deadline_at: float | None,
+) -> dict[str, int] | None:
+    previous_count = int(previous.get("card_count", 0))
+    timeout_ms = _remaining_timeout_ms(
+        deadline_at,
+        int(crawler_runtime_settings.browser_navigation_domcontentloaded_timeout_ms),
+    )
+    if timeout_ms <= 0:
+        return None
+    poll_ms = max(1, int(crawler_runtime_settings.pagination_post_click_poll_ms))
+    waited_ms = 0
+    best: dict[str, int] | None = None
+    while waited_ms < timeout_ms:
+        step_ms = min(poll_ms, max(1, timeout_ms - waited_ms))
+        await page.wait_for_timeout(step_ms)
+        waited_ms += step_ms
+        current = await _page_snapshot(page, surface=surface)
+        current_count = int(current.get("card_count", 0))
+        if current_count > previous_count and (
+            best is None
+            or current_count > int(best.get("card_count", 0))
+        ):
+            best = current
+            if _target_record_limit_reached(
+                max_records=max_records,
+                current_count=current_count,
+            ):
+                return best
+    return best
+
+
+async def _run_paginate_traversal(
+    page,
+    *,
+    surface: str,
+    max_pages: int,
+    max_records: int | None,
+    result: TraversalResult,
+    deadline_at: float | None,
+    on_event,
+) -> None:
+    previous = await _page_snapshot(page, surface=surface)
+    best_card_gain = 0
+    marginal_gain_streak = 0
+    page_limit = int(crawler_runtime_settings.traversal_max_iterations_cap)
+    result.card_count = int(previous["card_count"])
+    await _append_html_fragment(page, result, surface=surface)
+    await _emit_event(
+        on_event,
+        "info",
+        _format_traversal_detection_message(
+            mode="paginate",
+            max_iterations=page_limit,
+            max_records=max_records,
+        ),
+    )
+    visited_urls: set[str] = {page.url}
+    if _target_record_limit_reached(max_records=max_records, current_count=result.card_count):
+        _set_stop_reason(result, "target_records_reached", surface=surface)
+        return
+    for _ in range(max(0, page_limit - 1)):
+        if _deadline_reached(deadline_at):
+            _set_stop_reason(result, "budget_exceeded", surface=surface)
+            break
+        locator = await _find_actionable_locator(page, "next_page")
+        if locator is None:
+            settled = await _settle_thin_initial_listing(
+                page,
+                previous=previous,
+                result=result,
+                surface=surface,
+                deadline_at=deadline_at,
+                on_event=on_event,
+            )
+            if settled:
+                previous = settled
+                result.card_count = int(settled.get("card_count", result.card_count))
+                continue
+            _set_stop_reason(result, "next_page_not_found", surface=surface)
+            break
+        result.iterations += 1
+        current_url = page.url
+        intended_url: str | None = None
+        href = await locator.get_attribute("href")
+        normalized_href = str(href or "").strip().lower()
+        if href and not normalized_href.startswith(("#", "javascript:")):
+            next_url = urljoin(current_url, href)
+            if not is_same_origin(current_url, next_url):
+                _set_stop_reason(result, "paginate_off_domain", surface=surface)
+                break
+            if next_url in visited_urls:
+                _set_stop_reason(result, "paginate_cycle_detected", surface=surface)
+                break
+            intended_url = next_url
+            goto_timeout_ms = _remaining_timeout_ms(
+                deadline_at,
+                int(crawler_runtime_settings.pagination_navigation_timeout_ms),
+                min_ms=5000,
+            )
+            if goto_timeout_ms <= 0:
+                _set_stop_reason(result, "budget_exceeded", surface=surface)
+                break
+            await page.goto(
+                next_url,
+                wait_until="domcontentloaded",
+                timeout=goto_timeout_ms,
+            )
+            await _wait_for_transition(
+                page,
+                previous_url=current_url,
+                navigation_expected=True,
+                deadline_at=deadline_at,
+            )
+        else:
+            clicked = await click_with_retry(
+                page,
+                locator,
+                result=result,
+                deadline_at=deadline_at,
+            )
+            if not clicked:
+                _set_stop_reason(result, "paginate_click_failed", surface=surface)
+                break
+            await _wait_for_transition(
+                page,
+                previous_url=current_url,
+                deadline_at=deadline_at,
+                timeout_ms=int(crawler_runtime_settings.traversal_settle_networkidle_timeout_ms),
+            )
+        if await _page_matches_block_challenge(page):
+            _set_stop_reason(result, "paginate_blocked", surface=surface)
+            break
+        resolved_url = page.url
+        # Cycle detection: if the resolved URL is already visited, we've looped.
+        # For href-based nav: a server redirect may send us back to a visited URL
+        # (resolved_url != intended_url signals the redirect happened).
+        # For click-based nav: only flag if the URL actually changed to a visited one
+        # (SPAs often keep the same URL, which is not a cycle).
+        if resolved_url in visited_urls:
+            if intended_url is not None and resolved_url != intended_url:
+                _set_stop_reason(result, "paginate_cycle_detected", surface=surface)
+                break
+            if intended_url is None and resolved_url != current_url:
+                _set_stop_reason(result, "paginate_cycle_detected", surface=surface)
+                break
+        visited_urls.add(resolved_url)
+        current = await _page_snapshot(page, surface=surface)
+        current_count = int(current.get("card_count", 0))
+        previous_count = int(previous.get("card_count", 0))
+        card_gain = max(0, current_count - previous_count)
+        if card_gain > 0:
+            best_card_gain = max(best_card_gain, card_gain)
+        if _paginate_snapshot_progressed(previous, current):
+            await _append_html_fragment(page, result, surface=surface)
+            result.progress_events += 1
+            message = _format_traversal_progress_message(
+                label="Page",
+                step=result.iterations + 1,
+                step_limit=page_limit,
+                previous_count=previous_count,
+                current_count=current_count,
+                max_records=max_records,
+            )
+            result.events.append(("info", message))
+            await _emit_event(on_event, "info", message)
+            result.pages_advanced += 1
+            if _is_marginal_card_gain(
+                card_gain=card_gain,
+                best_gain=best_card_gain,
+                current_count=current_count,
+            ):
+                marginal_gain_streak += 1
+            else:
+                marginal_gain_streak = 0
+            previous = current
+            result.card_count += current_count
+            if _target_record_limit_reached(max_records=max_records, current_count=result.card_count):
+                _set_stop_reason(result, "target_records_reached", surface=surface)
+                break
+            if _paginate_fragment_budget_reached(
+                result,
+                target_records=max_records,
+                current_count=result.card_count,
+            ):
+                _set_stop_reason(
+                    result,
+                    "paginate_fragment_budget_reached",
+                    surface=surface,
+                )
+                break
+            if marginal_gain_streak > int(crawler_runtime_settings.traversal_weak_progress_streak_max):
+                _set_stop_reason(result, "marginal_paginate_gain", surface=surface)
+                break
+            continue
+        _set_stop_reason(result, "paginate_no_progress", surface=surface)
+        break
+    else:
+        _set_stop_reason(result, "paginate_limit_reached", surface=surface)
+
+async def _settle_thin_initial_listing(
+    page,
+    *,
+    previous: dict[str, int],
+    result: TraversalResult,
+    surface: str,
+    deadline_at: float | None,
+    on_event,
+) -> dict[str, int] | None:
+    if result.progress_events > 0 or result.iterations > 0:
+        return None
+    current_count = int(previous.get("card_count", 0))
+    if current_count >= max(6, int(crawler_runtime_settings.listing_min_items) * 3):
+        return None
+    await _settle_after_action(
+        page,
+        deadline_at=deadline_at,
+        timeout_ms=int(crawler_runtime_settings.traversal_settle_networkidle_timeout_ms),
+    )
+    current = await _page_snapshot(page, surface=surface)
+    if not _snapshot_progressed(previous, current):
+        return None
+    await _append_html_fragment(page, result, surface=surface)
+    result.progress_events += 1
+    message = (
+        "Initial listing settled - "
+        f"{previous.get('card_count', 0)} -> {current.get('card_count', 0)} records"
+    )
+    result.events.append(("info", message))
+    await _emit_event(on_event, "info", message)
+    return current
+
+
+async def _find_actionable_locator(page, selector_group: str):
+    selectors = PAGINATION_SELECTORS.get(selector_group) if isinstance(PAGINATION_SELECTORS, dict) else []
+    for selector in list(selectors or []):
+        locator = page.locator(str(selector)).first
+        try:
+            if await locator.count() == 0:
+                continue
+            if not await locator.is_visible(
+                timeout=int(crawler_runtime_settings.traversal_locator_visible_timeout_ms)
+            ):
+                continue
+            if await locator.is_disabled():
+                continue
+            return locator
+        except Exception:
+            logger.debug(
+                "Traversal locator check failed for selector_group=%s selector=%s",
+                selector_group,
+                selector,
+                exc_info=True,
+            )
+            continue
+    if selector_group == "next_page":
+        generic_locator = await _find_generic_next_page_locator(page)
+        if generic_locator is not None:
+            return generic_locator
+        return await _find_aom_actionable_locator(
+            page,
+            selector_group=selector_group,
+            name_pattern=r"(next|older|›|»|>)",
+        )
+    if selector_group == "load_more":
+        return await _find_aom_actionable_locator(
+            page,
+            selector_group=selector_group,
+            name_pattern=r"(load more|show more|see more|view more)",
+        )
+    return None
+
+
+async def _find_generic_next_page_locator(page):
+    for selector in (
+        "a[rel='next']",
+        "link[rel='next']",
+        ".pagination-next a",
+        ".pagination-next",
+        ".pagination-container a[rel='next']",
+        ".pagination-container a[href*='?p=']",
+        ".pagination-container a[href*='&p=']",
+        "[aria-label*='pagination' i] a",
+        "[aria-label*='pagination' i] button",
+        "[class*='pagination' i] a",
+        "[class*='pagination' i] button",
+        "[aria-current='page'] + a",
+        "[aria-current='page'] + button",
+    ):
+        locator = page.locator(selector).first
+        try:
+            if await locator.count() == 0:
+                continue
+            if selector == "link[rel='next']":
+                continue
+            if not await locator.is_visible(
+                timeout=int(crawler_runtime_settings.traversal_locator_visible_timeout_ms)
+            ):
+                continue
+            if await locator.is_disabled():
+                continue
+            if not (
+                await looks_like_paginate_control(locator)
+                or await _looks_like_next_page_control(locator)
+            ):
+                continue
+            logger.info("Traversal generic next-page selector=%s url=%s", selector, page.url)
+            return locator
+        except Exception:
+            logger.debug(
+                "Traversal generic next-page lookup failed selector=%s url=%s",
+                selector,
+                page.url,
+                exc_info=True,
+            )
+            continue
+    return None
+
+
+async def recover_listing_page_content(
+    page,
+    *,
+    on_event=None,
+) -> dict[str, object]:
+    diagnostics: dict[str, object] = {
+        "status": "attempted",
+        "limit": int(crawler_runtime_settings.listing_recovery_max_actions),
+    }
+    clicked_count = 0
+    actions_taken: list[str] = []
+    max_actions = max(0, int(crawler_runtime_settings.listing_recovery_max_actions))
+    if max_actions == 0:
+        diagnostics["clicked_count"] = clicked_count
+        diagnostics["actions_taken"] = actions_taken
+        diagnostics["status"] = "disabled"
+        return diagnostics
+
+    helper_result = TraversalResult(requested_mode="recovery")
+    wait_ms = max(0, int(crawler_runtime_settings.listing_recovery_post_action_wait_ms))
+    for action_name, pattern, message in TRAVERSAL_LISTING_RECOVERY_ACTIONS:
+        if clicked_count >= max_actions:
+            diagnostics["status"] = "interaction_limit_reached"
+            break
+        locator = (
+            await _find_actionable_locator(page, "next_page")
+            if action_name == "next_page"
+            else await _find_aom_actionable_locator(
+                page,
+                selector_group=action_name,
+                name_pattern=pattern,
+            )
+        )
+        if locator is None:
+            continue
+        await _emit_event(on_event, "info", f"{message}...")
+        if not await click_with_retry(page, locator, result=helper_result):
+            continue
+        clicked_count += 1
+        actions_taken.append(action_name)
+        if wait_ms > 0:
+            await page.wait_for_timeout(wait_ms)
+        try:
+            await page.wait_for_load_state(
+                "networkidle",
+                timeout=int(
+                    crawler_runtime_settings.traversal_settle_networkidle_timeout_ms
+                ),
+            )
+        except Exception:
+            logger.debug(
+                "Listing recovery networkidle wait timed out for action=%s url=%s",
+                action_name,
+                getattr(page, "url", ""),
+                exc_info=True,
+            )
+    if diagnostics["status"] == "attempted":
+        diagnostics["status"] = (
+            "recovered"
+            if clicked_count > 0
+            else "no_actionable_elements"
+        )
+    diagnostics["clicked_count"] = clicked_count
+    diagnostics["actions_taken"] = actions_taken
+    diagnostics["click_retries"] = helper_result.click_retries
+    return diagnostics
+
+
+async def _find_aom_actionable_locator(
+    page,
+    *,
+    selector_group: str,
+    name_pattern: str,
+):
+    compiled = re.compile(name_pattern, re.IGNORECASE)
+    for role in ("button", "link"):
+        locator = page.get_by_role(role, name=compiled)
+        try:
+            count = min(await locator.count(), 10)
+        except Exception:
+            logger.debug(
+                "Traversal AOM locator count failed selector_group=%s role=%s url=%s",
+                selector_group,
+                role,
+                page.url,
+                exc_info=True,
+            )
+            continue
+        for index in range(count):
+            candidate = locator.nth(index)
+            try:
+                if not await candidate.is_visible(
+                    timeout=int(crawler_runtime_settings.traversal_locator_visible_timeout_ms)
+                ):
+                    continue
+                if await candidate.is_disabled():
+                    continue
+                logger.info(
+                    "Traversal AOM fallback selector_group=%s role=%s index=%s url=%s",
+                    selector_group,
+                    role,
+                    index,
+                    page.url,
+                )
+                return candidate
+            except Exception:
+                logger.debug(
+                    "Traversal AOM candidate probe failed selector_group=%s role=%s index=%s url=%s",
+                    selector_group,
+                    role,
+                    index,
+                    page.url,
+                    exc_info=True,
+                )
+                continue
+    return None
+
+
+
+async def click_with_retry(
+    page,
+    locator,
+    *,
+    result: TraversalResult,
+    deadline_at: float | None = None,
+) -> bool:
+    """Attempt to click a locator with progressive fallbacks.
+
+    Strategy:
+    1. Scroll element to viewport center to escape sticky headers/footers.
+    2. Normal click with configurable timeout.
+    3. On interception/timeout: dismiss overlays and retry with force=True.
+    4. Final fallback: JavaScript node.click().
+    """
+    click_timeout_ms = _remaining_timeout_ms(
+        deadline_at,
+        int(crawler_runtime_settings.traversal_click_timeout_ms),
+    )
+    if click_timeout_ms <= 0:
+        return False
+    # Step 1: Scroll element to center viewport to avoid sticky header overlap
+    try:
+        await locator.scroll_into_view_if_needed(
+            timeout=int(crawler_runtime_settings.traversal_scroll_into_view_timeout_ms)
+        )
+    except Exception:
+        logger.debug("Traversal scroll_into_view failed", exc_info=True)
+        if not await locator_still_resolves(locator):
+            return False
+    try:
+        await locator.evaluate(
+            """(node) => {
+                if (node instanceof Element) {
+                    node.scrollIntoView({ block: 'center', behavior: 'instant' });
+                }
+            }"""
+        )
+    except Exception:
+        logger.debug(
+            "Traversal center-scroll evaluate failed url=%s",
+            page.url,
+            exc_info=True,
+        )
+        if not await locator_still_resolves(locator):
+            return False
+
+    # Step 2: Normal click
+    first_exc = None
+    try:
+        await locator.click(timeout=click_timeout_ms)
+        return True
+    except Exception as exc:
+        first_exc = exc
+        if not await locator_still_resolves(locator):
+            return False
+        logger.debug(
+            "Traversal normal click failed (%s); trying overlay dismissal + force",
+            type(exc).__name__,
+        )
+        result.click_retries += 1
+
+    # Step 3: Dismiss overlays then force-click (overlays are restored after)
+    await dismiss_overlays_if_needed(page, locator=locator, result=result)
+    force_exc = None
+    try:
+        await locator.click(timeout=click_timeout_ms, force=True)
+        await _restore_overlays(page)
+        return True
+    except Exception as exc:
+        force_exc = exc
+        if not await locator_still_resolves(locator):
+            return False
+        logger.debug(
+            "Traversal force click failed (%s); trying JS click",
+            type(exc).__name__,
+        )
+        result.click_retries += 1
+    await _restore_overlays(page)
+
+    # Step 4: JavaScript fallback
+    try:
+        await locator.evaluate(
+            "(node) => node instanceof HTMLElement && node.click()"
+        )
+        await wait_for_dom_mutation_settle(
+            page,
+            quiet_window_ms=min(500, max(100, click_timeout_ms // 5)),
+            timeout_ms=min(2000, click_timeout_ms),
+        )
+        return True
+    except Exception as js_exc:
+        logger.warning(
+            "Traversal all click strategies failed: normal=%s force=%s js=%s",
+            type(first_exc).__name__,
+            type(force_exc).__name__,
+            type(js_exc).__name__,
+        )
+        return False
+
+
+async def locator_still_resolves(locator) -> bool:
+    counter = getattr(locator, "count", None)
+    if not callable(counter):
+        return True
+    for attempt in range(2):
+        try:
+            if bool(await counter()):
+                return True
+        except asyncio.CancelledError:
+            raise
+        except PlaywrightError:
+            logger.debug(
+                "Traversal locator resolution probe failed",
+                exc_info=True,
+            )
+        except Exception:
+            logger.debug(
+                "Traversal locator resolution probe raised non-Playwright error",
+                exc_info=True,
+            )
+        if attempt == 0:
+            await asyncio.sleep(0)
+    return False
+
+
+async def dismiss_overlays_if_needed(
+    page,
+    *,
+    locator,
+    result: TraversalResult,
+) -> None:
+    """Temporarily hide intercepting overlays and dismiss cookie banners.
+
+    Only elements that actually sit above the click target are muted. This
+    avoids the previous broad mutation of structural tags like `header` /
+    `nav`, which can interfere with delegated SPA event handling.
+    """
+    dismissed_any = False
+    try:
+        muted_count = await locator.evaluate(
+            """
+            (target) => {
+                if (!(target instanceof Element)) {
+                    return 0;
+                }
+                const rect = target.getBoundingClientRect();
+                if (!rect.width || !rect.height) {
+                    return 0;
+                }
+                const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+                const cx = clamp(rect.left + (rect.width / 2), 1, Math.max(1, window.innerWidth - 1));
+                const cy = clamp(rect.top + Math.min(rect.height / 2, 24), 1, Math.max(1, window.innerHeight - 1));
+                const hints = ['cookie', 'consent', 'modal', 'overlay', 'dialog', 'popup', 'banner', 'interstitial', 'backdrop'];
+                let muted = 0;
+                for (const node of document.elementsFromPoint(cx, cy)) {
+                    if (!(node instanceof Element)) {
+                        continue;
+                    }
+                    if (node === target || node.contains(target)) {
+                        break;
+                    }
+                    const style = window.getComputedStyle(node);
+                    const rect = node.getBoundingClientRect();
+                    const zIndex = Number.parseInt(style.zIndex || '0', 10);
+                    const signature = [
+                        node.id || '',
+                        node.className || '',
+                        node.getAttribute('role') || '',
+                        node.getAttribute('aria-label') || '',
+                        node.getAttribute('aria-modal') || '',
+                    ].join(' ').toLowerCase();
+                    const overlayLike =
+                        node.getAttribute('aria-modal') === 'true' ||
+                        style.position === 'fixed' ||
+                        style.position === 'sticky' ||
+                        zIndex >= 100 ||
+                        hints.some((hint) => signature.includes(hint));
+                    const coversPoint =
+                        rect.width > 0 &&
+                        rect.height > 0 &&
+                        cx >= rect.left &&
+                        cx <= rect.right &&
+                        cy >= rect.top &&
+                        cy <= rect.bottom;
+                    if (!overlayLike || !coversPoint) {
+                        continue;
+                    }
+                    node.setAttribute('data-crawlwise-orig-pointer-events', node.style.pointerEvents || '');
+                    node.setAttribute('data-crawlwise-orig-z-index', node.style.zIndex || '');
+                    node.style.setProperty('pointer-events', 'none', 'important');
+                    node.style.setProperty('z-index', '-1', 'important');
+                    muted += 1;
+                }
+                return muted;
+            }
+            """
+        )
+        dismissed_any = int(muted_count or 0) > 0
+    except Exception:
+        logger.debug("Traversal overlay dismissal JS failed", exc_info=True)
+    # Dismiss cookie consent banners
+    from app.services.config.selectors import COOKIE_CONSENT_SELECTORS
+    consent_selectors = (
+        list(COOKIE_CONSENT_SELECTORS)
+        if isinstance(COOKIE_CONSENT_SELECTORS, (list, tuple))
+        else []
+    )
+    for selector in consent_selectors[:5]:
+        try:
+            btn = page.locator(str(selector)).first
+            if await btn.count() > 0 and await btn.is_visible(
+                timeout=int(crawler_runtime_settings.traversal_cookie_consent_visible_timeout_ms)
+            ):
+                await btn.click(
+                    timeout=int(crawler_runtime_settings.traversal_cookie_consent_click_timeout_ms),
+                    force=True,
+                )
+                await wait_for_dom_mutation_settle(
+                    page,
+                    quiet_window_ms=150,
+                    timeout_ms=750,
+                )
+                dismissed_any = True
+                logger.info("Traversal dismissed cookie consent via %s", selector)
+                break
+        except Exception:
+            logger.debug(
+                "Traversal cookie consent dismissal probe failed selector=%s url=%s",
+                selector,
+                page.url,
+                exc_info=True,
+            )
+            continue
+    if dismissed_any:
+        result.overlays_dismissed = True
+
+
+async def _restore_overlays(page) -> None:
+    """Restore overlay elements to their original inline styles after a click."""
+    try:
+        await page.evaluate(
+            """
+            () => {
+                const all = document.querySelectorAll('[data-crawlwise-orig-pointer-events], [data-crawlwise-orig-z-index]');
+                for (const node of all) {
+                    try {
+                        const origPE = node.getAttribute('data-crawlwise-orig-pointer-events');
+                        const origZI = node.getAttribute('data-crawlwise-orig-z-index');
+                        if (origPE !== undefined) {
+                            if (origPE === '') {
+                                node.style.removeProperty('pointer-events');
+                            } else {
+                                node.style.pointerEvents = origPE;
+                            }
+                            node.removeAttribute('data-crawlwise-orig-pointer-events');
+                        }
+                        if (origZI !== undefined) {
+                            if (origZI === '') {
+                                node.style.removeProperty('z-index');
+                            } else {
+                                node.style.zIndex = origZI;
+                            }
+                            node.removeAttribute('data-crawlwise-orig-z-index');
+                        }
+                    } catch (e) {
+                        continue;
+                    }
+                }
+            }
+            """
+        )
+    except Exception:
+        logger.debug("Traversal overlay restore JS failed", exc_info=True)
+
+
+async def _append_html_fragment(
+    page,
+    result: TraversalResult,
+    *,
+    surface: str,
+) -> None:
+    html = await get_page_html(page, flatten_shadow=False)
+    if not html:
+        return
+    fragment = _bounded_traversal_fragment_html(
+        html,
+        surface=surface,
+        seen_cards=result._seen_card_fragments,
+        seen_structured=result._seen_structured_fragments,
+    )
+    is_fallback = not fragment
+    value = html if is_fallback else fragment
+    # Dedup: compare against the last fragment of the same type
+    for prev_value, prev_is_fallback in reversed(result.html_fragments):
+        if prev_is_fallback == is_fallback:
+            if prev_value == value:
+                return
+            break
+    result.html_fragments.append((value, is_fallback))
+
+
+async def looks_like_paginate_control(locator) -> bool:
+    try:
+        inspection = await locator.evaluate(
+            """
+            (node) => {
+              if (!(node instanceof Element)) {
+                return {};
+              }
+              const rawHref = String(node.getAttribute('href') || '').trim().toLowerCase();
+              const label = [
+                node.getAttribute('aria-label'),
+                node.getAttribute('title'),
+                node.textContent,
+              ]
+                .filter(Boolean)
+                .join(' ')
+                .replace(/\\s+/g, ' ')
+                .trim()
+                .toLowerCase();
+              const container = node.closest(
+                "[aria-label*='pagination' i], [data-testid*='pagination' i], [class*='pagination' i], nav, [role='navigation']"
+              );
+              const containerText = String(container?.textContent || '')
+                .replace(/\\s+/g, ' ')
+                .trim()
+                .toLowerCase();
+              const datasetKeys = Object.keys(node.dataset || {});
+              const currentPage = container?.querySelector?.(
+                "[aria-current='page'], [aria-current='true'], [class*='current' i], [class*='active' i]"
+              );
+              const pageNodes = container
+                ? Array.from(container.querySelectorAll('a, button, [role=\"button\"]'))
+                : [];
+              const currentIndex = currentPage
+                ? pageNodes.findIndex(
+                    (candidate) => candidate === currentPage || candidate.contains(currentPage)
+                  )
+                : -1;
+              const nodeIndex = pageNodes.findIndex((candidate) => candidate === node);
+              return {
+                raw_href: rawHref,
+                has_click_handler:
+                  typeof node.onclick === 'function' ||
+                  node.hasAttribute('onclick') ||
+                  datasetKeys.some((key) => /(page|paginate|next|cursor)/i.test(key)),
+                pagination_container: Boolean(container),
+                pagination_text:
+                  /\\b(next|previous|prev|page|older|newer)\\b/.test(label) ||
+                  /\\b(next|previous|prev|page|older|newer)\\b/.test(containerText),
+                sibling_page_numbers: /(?:^|\\s)\\d+(?:\\s|$)/.test(containerText),
+                follows_current_page:
+                  currentIndex >= 0 && nodeIndex === currentIndex + 1,
+                arrow_only: /^(>|›|»)$/.test(label),
+                is_button_like:
+                  String(node.tagName || '').toLowerCase() === 'button' ||
+                  String(node.getAttribute('role') || '').trim().toLowerCase() === 'button',
+              };
+            }
+            """
+        )
+    except Exception:
+        logger.debug("Traversal next_page control inspection failed", exc_info=True)
+        return False
+    if not isinstance(inspection, dict):
+        return False
+    if bool(inspection.get("pagination_container")) and (
+        bool(inspection.get("has_click_handler"))
+        or bool(inspection.get("is_button_like"))
+    ):
+        return True
+    if bool(inspection.get("pagination_container")) and bool(
+        inspection.get("follows_current_page")
+    ) and (
+        bool(inspection.get("arrow_only"))
+        or bool(inspection.get("raw_href"))
+        or bool(inspection.get("is_button_like"))
+        or bool(inspection.get("has_click_handler"))
+    ):
+        return True
+    if bool(inspection.get("pagination_container")) and bool(
+        inspection.get("sibling_page_numbers")
+    ) and bool(inspection.get("arrow_only")):
+        return True
+    if bool(inspection.get("pagination_text")) and (
+        bool(inspection.get("has_click_handler"))
+        or bool(inspection.get("sibling_page_numbers"))
+        or bool(inspection.get("is_button_like"))
+    ):
+        return True
+    return False
+
+
+async def _looks_like_next_page_control(locator) -> bool:
+    try:
+        inspection = await locator.evaluate(
+            """
+            (node) => {
+              if (!(node instanceof Element)) {
+                return {};
+              }
+              const text = [
+                node.textContent,
+                node.getAttribute('aria-label'),
+                node.getAttribute('title'),
+                node.getAttribute('rel'),
+                node.className,
+              ]
+                .filter(Boolean)
+                .join(' ')
+                .replace(/\\s+/g, ' ')
+                .trim()
+                .toLowerCase();
+              const disabled =
+                node.hasAttribute('disabled') ||
+                node.getAttribute('aria-disabled') === 'true' ||
+                /disabled/.test(String(node.className || '').toLowerCase());
+              return { text, disabled };
+            }
+            """
+        )
+    except Exception:
+        return False
+    if not isinstance(inspection, dict):
+        return False
+    if bool(inspection.get("disabled")):
+        return False
+    text = str(inspection.get("text") or "").strip().lower()
+    if not text:
+        return False
+    return any(token in text for token in ("next", "older", "more", ">", "›", "»"))
+
+
+async def _page_matches_block_challenge(page) -> bool:
+    html = await get_page_html(page, flatten_shadow=False)
+    if not html:
+        return False
+    classification = await classify_blocked_page_async(html, 200)
+    return bool(classification.blocked)
+
+
+def _bounded_traversal_fragment_html(
+    html: str,
+    *,
+    surface: str,
+    seen_cards: set[str],
+    seen_structured: set[str],
+) -> str:
+    parser = LexborHTMLParser(html)
+    max_bytes = max(8_192, int(crawler_runtime_settings.traversal_fragment_max_bytes))
+    script_budget = max_bytes // 3
+    structured_fragments = _collect_structured_script_fragments(
+        parser,
+        seen=seen_structured,
+        byte_budget=script_budget,
+    )
+    card_budget = max_bytes - _fragments_bytes(structured_fragments)
+    card_fragments = _collect_listing_card_fragments(
+        parser,
+        surface=surface,
+        seen=seen_cards,
+        byte_budget=card_budget,
+    )
+    if not card_fragments and not structured_fragments:
+        return ""
+    parts: list[str] = []
+    if structured_fragments:
+        parts.append('<div data-traversal-structured="true">')
+        parts.extend(structured_fragments)
+        parts.append("</div>")
+    if card_fragments:
+        parts.append('<div data-traversal-cards="true">')
+        parts.extend(card_fragments)
+        parts.append("</div>")
+    return "\n".join(parts)
+
+
+def _collect_structured_script_fragments(
+    parser: LexborHTMLParser,
+    *,
+    seen: set[str],
+    byte_budget: int,
+) -> list[str]:
+    if byte_budget <= 0:
+        return []
+    fragments: list[str] = []
+    used_bytes = 0
+    for node in parser.css("script"):
+        attrs = getattr(node, "attributes", {}) or {}
+        script_id = str(attrs.get("id") or "").strip().lower()
+        script_type = str(attrs.get("type") or "").strip().lower()
+        text = str(node.text(strip=True) or "")
+        if not text:
+            continue
+        if not (
+            script_type in TRAVERSAL_STRUCTURED_SCRIPT_TYPES
+            or script_id in TRAVERSAL_STRUCTURED_SCRIPT_IDS
+            or any(
+                marker in text.lower()
+                for marker in TRAVERSAL_STRUCTURED_SCRIPT_TEXT_MARKERS
+            )
+        ):
+            continue
+        fragment = str(node.html or "").strip()
+        if not fragment or fragment in seen:
+            continue
+        fragment_bytes = len(fragment.encode("utf-8"))
+        if used_bytes + fragment_bytes > byte_budget:
+            continue
+        seen.add(fragment)
+        fragments.append(fragment)
+        used_bytes += fragment_bytes
+    return fragments
+
+
+def _collect_listing_card_fragments(
+    parser: LexborHTMLParser,
+    *,
+    surface: str,
+    seen: set[str],
+    byte_budget: int,
+) -> list[str]:
+    return collect_listing_fragment_html(
+        parser,
+        surface=surface,
+        seen=seen,
+        byte_budget=byte_budget,
+        score_node=base_listing_fragment_score,
+        limit=max(1, int(crawler_runtime_settings.listing_fallback_fragment_limit)),
+    )
+
+
+def _fragments_bytes(fragments: list[str]) -> int:
+    return sum(len(fragment.encode("utf-8")) for fragment in fragments if fragment)
+
+
+async def _page_snapshot(page, *, surface: str) -> dict[str, int]:
+    snapshot = await page.evaluate(
+        """
+        () => {
+          const root = document.scrollingElement || document.documentElement || document.body;
+          const normalize = (text, limit) =>
+            String(text || '')
+              .replace(/\\s+/g, ' ')
+              .trim()
+              .slice(0, limit);
+          const visibleText = normalize(document.body?.innerText || '', 1600);
+          const anchorSummary = Array.from(
+            document.querySelectorAll('main a[href], article a[href], li a[href], tr a[href], section a[href], [role=\"row\"] a[href]')
+          )
+            .slice(0, 24)
+            .map((node) =>
+              `${normalize(node.getAttribute('href'), 140)}|${normalize(node.textContent, 80)}`
+            )
+            .join('||');
+          const overflowContainers = Array.from(document.querySelectorAll('*')).filter((node) => {
+            const style = window.getComputedStyle(node);
+            return ['auto', 'scroll'].includes(style.overflowY) && node.scrollHeight - node.clientHeight > 150;
+          }).length;
+          return {
+            scroll_height: Number(root?.scrollHeight || 0),
+            client_height: Number(root?.clientHeight || window.innerHeight || 0),
+            overflow_containers: overflowContainers,
+            content_signature_source: `${location.href}::${visibleText}::${anchorSummary}`,
+          };
+        }
+        """
+    )
+    if not isinstance(snapshot, dict):
+        snapshot = {}
+    raw_card_count = await _card_count(page, surface=surface)
+    try:
+        html = await get_page_html(page, flatten_shadow=False)
+    except AttributeError:
+        html = ""
+    unique_card_count = _unique_listing_card_identity_count_from_html(
+        html,
+        page_url=str(getattr(page, "url", "") or ""),
+        surface=surface,
+    )
+    card_count = (
+        unique_card_count
+        if unique_card_count >= int(crawler_runtime_settings.listing_min_items)
+        and unique_card_count < raw_card_count
+        else raw_card_count
+    )
+    return {
+        "card_count": card_count,
+        "content_signature": _content_signature(snapshot.pop("content_signature_source", "")),
+        **snapshot,
+    }
+
+
+def _unique_listing_card_identity_count_from_html(
+    html: str,
+    *,
+    page_url: str,
+    surface: str,
+) -> int:
+    if not html:
+        return 0
+    parser = LexborHTMLParser(html)
+    identities: set[str] = set()
+    for card in select_listing_fragment_nodes(
+        parser,
+        surface=surface,
+        limit=max(1, int(crawler_runtime_settings.listing_fallback_fragment_limit)),
+    ):
+        identity = _listing_card_identity(card, page_url=page_url)
+        if identity:
+            identities.add(identity)
+    return len(identities)
+
+
+def _listing_card_identity(card, *, page_url: str) -> str:
+    selectors = ",".join(f"[{attr_name}]" for attr_name in LISTING_CARD_URL_ATTRS)
+    candidates = [card, *listing_node_css(card, selectors)]
+    page_path = str(urlsplit(page_url).path or "").rstrip("/").lower()
+    for candidate in candidates:
+        for attr_name in LISTING_CARD_URL_ATTRS:
+            raw_value = listing_node_attr(candidate, str(attr_name))
+            if not raw_value:
+                continue
+            resolved = urljoin(page_url, raw_value)
+            parsed = urlsplit(resolved)
+            scheme = str(parsed.scheme or "").lower()
+            path = str(parsed.path or "").rstrip("/").lower()
+            if scheme not in {"http", "https"} or path in {"", "/"}:
+                continue
+            if page_path and path == page_path:
+                continue
+            host = str(parsed.hostname or "").lower()
+            if not host:
+                continue
+            return f"{host}{path}"
+    return ""
+
+
+async def count_listing_cards(page, *, surface: str, allow_heuristic: bool = True) -> int:
+    selector_group = "jobs" if str(surface or "").strip().lower().startswith("job_") else "ecommerce"
+    selectors = CARD_SELECTORS.get(selector_group) if isinstance(CARD_SELECTORS, dict) else []
+    normalized_selectors = [
+        str(selector).strip() for selector in list(selectors or []) if str(selector).strip()
+    ]
+    if not normalized_selectors:
+        return await _heuristic_card_count(page, surface=surface) if allow_heuristic else 0
+    try:
+        selector_counts = await page.evaluate(
+            """
+            (selectors) => {
+              const counts = {};
+              for (const selector of selectors) {
+                try {
+                  counts[selector] = document.querySelectorAll(selector).length;
+                } catch (error) {
+                  continue;
+                }
+              }
+              return counts;
+            }
+            """,
+            normalized_selectors,
+        )
+    except PlaywrightError:
+        raise
+    except Exception:
+        logger.debug(
+            "Traversal card counting via evaluate failed for surface=%s; falling back to locator counts",
+            surface,
+            exc_info=True,
+        )
+        highest = 0
+        for selector in normalized_selectors:
+            try:
+                highest = max(highest, await page.locator(selector).count())
+            except PlaywrightError:
+                raise
+            except Exception:
+                logger.debug(
+                    "Traversal locator fallback failed for surface=%s selector=%s",
+                    surface,
+                    selector,
+                    exc_info=True,
+                )
+                continue
+        return highest
+    if isinstance(selector_counts, dict):
+        strong_count = 0
+        weak_count = 0
+        for selector, raw_count in selector_counts.items():
+            try:
+                count = max(0, int(raw_count or 0))
+            except (TypeError, ValueError):
+                count = 0
+            if listing_selector_is_weak(str(selector or "")):
+                weak_count = max(weak_count, count)
+            else:
+                strong_count = max(strong_count, count)
+        if strong_count > 0:
+            if allow_heuristic and strong_count < max(
+                3,
+                int(crawler_runtime_settings.listing_min_items) + 1,
+            ):
+                heuristic_count = await _heuristic_card_count(page, surface=surface)
+                if heuristic_count <= 0:
+                    return 0
+                return max(strong_count, heuristic_count)
+            return strong_count
+        if weak_count > 0 and allow_heuristic:
+            return await _heuristic_card_count(page, surface=surface)
+        resolved = weak_count
+    else:
+        try:
+            resolved = max(0, int(selector_counts or 0))
+        except (TypeError, ValueError):
+            resolved = 0
+    if resolved > 0:
+        return resolved
+    if allow_heuristic:
+        return await _heuristic_card_count(page, surface=surface)
+    return 0
+
+async def _card_count(page, *, surface: str) -> int:
+    return await count_listing_cards(page, surface=surface)
+
+
+async def _heuristic_card_count(page, *, surface: str) -> int:
+    return heuristic_listing_card_count_from_html(
+        await get_page_html(page, flatten_shadow=False),
+        surface=surface,
+    )
+
+
+def _snapshot_progressed(previous: dict[str, int], current: dict[str, int]) -> bool:
+    if int(current.get("card_count", 0)) > int(previous.get("card_count", 0)):
+        return True
+    if str(current.get("content_signature") or "") != str(
+        previous.get("content_signature") or ""
+    ):
+        return True
+    if int(current.get("scroll_height", 0)) >= int(previous.get("scroll_height", 0)) + int(
+        crawler_runtime_settings.traversal_force_probe_min_advance_px
+    ):
+        return True
+    return False
+
+
+def _paginate_snapshot_progressed(previous: dict[str, int], current: dict[str, int]) -> bool:
+    previous_count = int(previous.get("card_count", 0))
+    current_count = int(current.get("card_count", 0))
+    if current_count > previous_count:
+        return True
+    if previous_count <= 0 and current_count <= 0:
+        return False
+    return _snapshot_progressed(previous, current)
+
+
+def _is_marginal_card_gain(*, card_gain: int, best_gain: int, current_count: int) -> bool:
+    if card_gain <= 0:
+        return False
+    if current_count < max(6, int(crawler_runtime_settings.listing_min_items) * 3):
+        return False
+    if best_gain < max(2, int(crawler_runtime_settings.listing_min_items) * 2):
+        return False
+    return card_gain <= max(1, best_gain // 5)
+
+
+def _paginate_fragment_budget_reached(
+    result: TraversalResult,
+    *,
+    target_records: int | None = None,
+    current_count: int | None = None,
+) -> bool:
+    if int(result.pages_advanced or 0) < 1:
+        return False
+    if target_records is not None:
+        try:
+            target = int(target_records)
+        except (TypeError, ValueError):
+            target = 0
+        if target > 0 and int(current_count if current_count is not None else result.card_count) < target:
+            return False
+    fragment_budget = max(
+        8_192,
+        int(crawler_runtime_settings.traversal_fragment_max_bytes),
+    )
+    return result.html_bytes() >= fragment_budget
+
+
+def _target_record_limit_reached(*, max_records: int | None, current_count: int) -> bool:
+    try:
+        target = int(max_records or 0)
+    except (TypeError, ValueError):
+        return False
+    return target > 0 and int(current_count) >= target
+
+
+def _content_signature(html: str) -> str:
+    text = str(html or "").strip()
+    if not text:
+        return ""
+    return hashlib.sha1(
+        text.encode("utf-8"),
+        usedforsecurity=False,
+    ).hexdigest()
+
+
+async def _settle_after_action(
+    page,
+    *,
+    deadline_at: float | None,
+    timeout_ms: int | None = None,
+) -> None:
+    wait_ms = _remaining_timeout_ms(
+        deadline_at,
+        int(timeout_ms or crawler_runtime_settings.traversal_min_settle_wait_ms),
+    )
+    if wait_ms <= 0:
+        return
+    try:
+        await page.wait_for_load_state("networkidle", timeout=min(1500, wait_ms * 2))
+    except Exception:
+        logger.debug(
+            "Traversal networkidle settle wait failed url=%s",
+            page.url,
+            exc_info=True,
+        )
+    try:
+        await page.wait_for_load_state("domcontentloaded", timeout=min(1500, wait_ms * 2))
+    except Exception:
+        logger.debug(
+            "Traversal domcontentloaded settle wait failed url=%s",
+            page.url,
+            exc_info=True,
+        )
+    await wait_for_dom_mutation_settle(
+        page,
+        quiet_window_ms=min(500, max(100, wait_ms // 4)),
+        timeout_ms=wait_ms,
+    )
+
+
+async def _wait_for_transition(
+    page,
+    *,
+    previous_url: str,
+    navigation_expected: bool = False,
+    deadline_at: float | None = None,
+    timeout_ms: int | None = None,
+) -> None:
+    await _wait_for_navigation_if_changed(
+        page,
+        previous_url=previous_url,
+        navigation_expected=navigation_expected,
+        deadline_at=deadline_at,
+    )
+    await _settle_after_action(page, deadline_at=deadline_at, timeout_ms=timeout_ms)
+
+
+async def _wait_for_navigation_if_changed(
+    page,
+    *,
+    previous_url: str,
+    navigation_expected: bool,
+    deadline_at: float | None,
+) -> None:
+    if navigation_expected or page.url != previous_url:
+        await _wait_for_domcontentloaded(page, deadline_at=deadline_at)
+        return
+    poll_ms = max(1, int(crawler_runtime_settings.pagination_post_click_poll_ms))
+    timeout_ms = _remaining_timeout_ms(
+        deadline_at,
+        int(crawler_runtime_settings.pagination_post_click_timeout_ms),
+    )
+    if timeout_ms <= 0:
+        return
+    waited_ms = 0
+    while waited_ms < timeout_ms:
+        step_ms = min(poll_ms, max(1, timeout_ms - waited_ms))
+        await page.wait_for_timeout(step_ms)
+        waited_ms += step_ms
+        if page.url != previous_url:
+            await _wait_for_domcontentloaded(page, deadline_at=deadline_at)
+            return
+
+
+async def _wait_for_domcontentloaded(page, *, deadline_at: float | None) -> None:
+    timeout_ms = _remaining_timeout_ms(
+        deadline_at,
+        int(crawler_runtime_settings.pagination_post_click_domcontentloaded_timeout_ms),
+    )
+    if timeout_ms <= 0:
+        return
+    try:
+        await page.wait_for_load_state(
+            "domcontentloaded",
+            timeout=timeout_ms,
+        )
+    except Exception:
+        logger.debug("Traversal domcontentloaded wait failed", exc_info=True)
+        return
+
+
+def _deadline_reached(deadline_at: float | None) -> bool:
+    return deadline_at is not None and time.monotonic() >= deadline_at
+
+
+def _remaining_timeout_ms(deadline_at: float | None, default_ms: int, *, min_ms: int = 500) -> int:
+    if deadline_at is None:
+        return max(min_ms, int(default_ms))
+    remaining_ms = int((deadline_at - time.monotonic()) * 1000)
+    if remaining_ms <= 0:
+        return 0
+    return max(min_ms, min(int(default_ms), remaining_ms))
+
+
+async def _emit_event(on_event, level: str, message: str) -> None:
+    if on_event is None:
+        return
+    try:
+        await on_event(level, message)
+    except Exception:
+        logger.debug("Traversal event callback failed", exc_info=True)
+
+
+def is_same_origin(current_url: str, next_url: str) -> bool:
+    current = urlsplit(str(current_url or ""))
+    next_value = urlsplit(str(next_url or ""))
+    if (
+        str(current.scheme or "").lower(),
+        str(current.netloc or "").lower(),
+    ) != (
+        str(next_value.scheme or "").lower(),
+        str(next_value.netloc or "").lower(),
+    ):
+        return False
+    current_host = _host_without_port(current.netloc)
+    next_host = _host_without_port(next_value.netloc)
+    if current_host != next_host:
+        return False
+    # Also compare the first path segment to prevent cross-tenant bleed
+    # on path-based multi-tenant architectures (e.g. myworkdayjobs.com/TenantA).
+    if _requires_path_tenant_boundary(current_url, next_url):
+        current_first = (str(current.path or "").strip("/").split("/") + [""])[0].lower()
+        next_first = (str(next_value.path or "").strip("/").split("/") + [""])[0].lower()
+        if current_first and next_first and current_first != next_first:
+            return False
+    return True
+
+
+def _host_without_port(netloc: str) -> str:
+    return str(netloc or "").split(":", 1)[0].lower()
+
+
+def _requires_path_tenant_boundary(current_url: str, next_url: str) -> bool:
+    current_family = path_tenant_boundary_family(current_url)
+    next_family = path_tenant_boundary_family(next_url)
+    if not current_family or current_family != next_family:
+        return False
+    return (
+        requires_path_tenant_boundary(current_url)
+        and requires_path_tenant_boundary(next_url)
+        and url_host_matches_platform_family(current_url, current_family)
+        and url_host_matches_platform_family(next_url, next_family)
+    )

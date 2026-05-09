@@ -1,0 +1,215 @@
+# Jibe careers adapter.
+from __future__ import annotations
+
+import json
+import re
+import ast
+from html import unescape
+from urllib.parse import parse_qsl, urlencode, urljoin, urlparse
+
+from app.services.adapters.base import PublicEndpointAdapter
+from app.services.config.adapter_runtime_settings import adapter_runtime_settings
+from app.services.extraction_html_helpers import html_to_text
+from app.services.field_value_core import clean_text
+
+
+_SEARCH_CONFIG_RE = re.compile(r"window\.searchConfig\s*=", re.DOTALL)
+
+
+class JibeAdapter(PublicEndpointAdapter):
+    name = "jibe"
+    platform_family = "jibe"
+
+    async def _try_public_endpoint(
+        self,
+        url: str,
+        html: str,
+        surface: str,
+        *,
+        proxy: str | None = None,
+    ) -> list[dict]:
+        parsed = urlparse(url)
+        api_url = f"{parsed.scheme}://{parsed.netloc}/api/jobs"
+        query = self._build_query(url, html, surface)
+        request_url = (
+            api_url if not query else f"{api_url}?{urlencode(query, doseq=True)}"
+        )
+        try:
+            payload = await self._request_json(
+                request_url,
+                proxy=proxy,
+                timeout_seconds=adapter_runtime_settings.ats_request_timeout_seconds,
+            )
+            if not isinstance(payload, dict):
+                return []
+        except (
+            OSError,
+            RuntimeError,
+            ValueError,
+            TypeError,
+        ):
+            return []
+        jobs = payload.get("jobs", [])
+        if not isinstance(jobs, list):
+            return []
+        normalized = [
+            self._normalize_job(row, base_url=f"{parsed.scheme}://{parsed.netloc}")
+            for row in jobs
+        ]
+        records = [row for row in normalized if row]
+        if "detail" in str(surface or "").lower():
+            target_id = self._normalize_job_id(self._extract_job_id_from_url(url))
+            if target_id:
+                records = [
+                    row
+                    for row in records
+                    if self._normalize_job_id(row.get("job_id")) == target_id
+                ]
+        return records
+
+    def _build_query(self, url: str, html: str, surface: str) -> list[tuple[str, str]]:
+        parsed = urlparse(url)
+        query_params = parse_qsl(parsed.query, keep_blank_values=False)
+        merged: dict[str, str] = {}
+        for key, value in query_params:
+            if value:
+                merged[key] = value
+        search_config = self._extract_search_config(html)
+        raw_query = search_config.get("query")
+        config_query = raw_query if isinstance(raw_query, dict) else {}
+        for key, value in config_query.items():
+            normalized = self._normalize_query_value(value)
+            if normalized and key not in merged:
+                merged[key] = normalized
+        if "listing" in str(surface or "").lower():
+            merged.setdefault(
+                "limit",
+                merged.get("limit") or adapter_runtime_settings.jibe_listing_default_limit,
+            )
+            merged.setdefault(
+                "page",
+                merged.get("page") or adapter_runtime_settings.jibe_listing_default_page,
+            )
+        return [(key, value) for key, value in merged.items() if value]
+
+    def _extract_search_config(self, html: str) -> dict:
+        match = _SEARCH_CONFIG_RE.search(str(html or ""))
+        if not match:
+            return {}
+        raw = self._extract_object_literal(str(html or ""), match.end())
+        if not raw:
+            return {}
+        for parser in (json.loads, ast.literal_eval):
+            try:
+                parsed = parser(raw)
+            except (ValueError, SyntaxError, TypeError, json.JSONDecodeError):
+                continue
+            return parsed if isinstance(parsed, dict) else {}
+        return {}
+
+    def _extract_object_literal(self, html: str, start: int) -> str:
+        object_start = html.find("{", start)
+        if object_start < 0:
+            return ""
+        depth = 0
+        in_string = ""
+        escaped = False
+        for index in range(object_start, len(html)):
+            char = html[index]
+            if escaped:
+                escaped = False
+                continue
+            if char == "\\":
+                escaped = True
+                continue
+            if in_string:
+                if char == in_string:
+                    in_string = ""
+                continue
+            if char in {"'", '"'}:
+                in_string = char
+                continue
+            if char == "{":
+                depth += 1
+            elif char == "}":
+                depth -= 1
+                if depth == 0:
+                    return html[object_start : index + 1]
+        return ""
+
+    def _normalize_query_value(self, value: object) -> str:
+        text = "" if value is None else str(value).strip()
+        return unescape(text)
+
+    def _normalize_job(self, row: object, *, base_url: str) -> dict | None:
+        payload = row.get("data") if isinstance(row, dict) else None
+        if not isinstance(payload, dict):
+            return None
+        title = clean_text(payload.get("title"))
+        if not title:
+            return None
+        canonical_url = ""
+        meta = payload.get("meta_data")
+        if isinstance(meta, dict):
+            canonical_url = clean_text(meta.get("canonical_url"))
+        job_id = clean_text(payload.get("req_id") or payload.get("slug"))
+        url = canonical_url or (urljoin(base_url, f"/jobs/{job_id}") if job_id else "")
+        categories = (
+            payload.get("categories")
+            if isinstance(payload.get("categories"), list)
+            else []
+        )
+        tags7 = payload.get("tags7")
+        description_html = str(payload.get("description") or "")
+        description = html_to_text(description_html)
+        full_location = clean_text(payload.get("full_location"))
+        if not full_location:
+            full_location = ", ".join(
+                part
+                for part in [
+                    clean_text(payload.get("location_name") or payload.get("city")),
+                    clean_text(payload.get("state")),
+                ]
+                if part
+            )
+        record = {
+            "title": title,
+            "url": url,
+            "apply_url": clean_text(payload.get("apply_url")),
+            "job_id": job_id,
+            "location": full_location or None,
+            "company": clean_text(payload.get("hiring_organization")),
+            "department": clean_text(payload.get("department"))
+            or self._join_names(categories),
+            "job_type": clean_text(payload.get("employment_type")),
+            "posted_date": clean_text(payload.get("posted_date")),
+            "description": description or None,
+            "salary": clean_text(tags7),
+            "category": self._join_names(categories),
+        }
+        return {
+            key: value
+            for key, value in record.items()
+            if value not in (None, "", [], {})
+        }
+
+    def _join_names(self, values: object) -> str:
+        if not isinstance(values, list):
+            return ""
+        names: list[str] = []
+        for item in values:
+            if isinstance(item, dict):
+                cleaned = clean_text(item.get("name"))
+            else:
+                cleaned = clean_text(item)
+            if cleaned and cleaned not in names:
+                names.append(cleaned)
+        return " | ".join(names)
+
+    def _extract_job_id_from_url(self, url: str) -> str:
+        path = urlparse(url).path
+        match = re.search(r"/jobs/([^/?#]+)", path, re.IGNORECASE)
+        return match.group(1) if match else ""
+
+    def _normalize_job_id(self, value: object) -> str:
+        return clean_text(value).strip().lower()

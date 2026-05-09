@@ -1,0 +1,548 @@
+from __future__ import annotations
+
+import importlib
+import json
+from collections import Counter
+from pathlib import Path
+
+import pytest
+
+from app.models.crawl_settings import CrawlRunSettings
+from app.schemas.crawl import (
+    DomainRunAcquisitionContract,
+    DomainRunAcquisitionContractSuccess,
+)
+from app.services.acquisition_plan import AcquisitionPlan
+from app.services.config._export_data import (
+    EXPORT_PROVENANCE_KEY,
+    load_export_data,
+    main,
+    validate_export_file,
+)
+from app.services.config.runtime_settings import crawler_runtime_settings
+from app.services.config.runtime_settings import CrawlerRuntimeSettings
+from app.services.exceptions import CrawlerConfigurationError
+from app.services.platform_policy import resolve_platform_runtime_policy
+
+
+def test_static_config_exports_remain_import_stable() -> None:
+    selectors = importlib.import_module("app.services.config.selectors")
+    field_mappings = importlib.import_module("app.services.config.field_mappings")
+    network_payload_specs = importlib.import_module(
+        "app.services.config.network_payload_specs"
+    )
+    original_card_selectors = selectors.CARD_SELECTORS
+    original_canonical_schemas = field_mappings.CANONICAL_SCHEMAS
+    original_payload_specs = network_payload_specs.NETWORK_PAYLOAD_SPECS
+
+    selectors_reloaded = importlib.reload(selectors)
+    field_mappings_reloaded = importlib.reload(field_mappings)
+    network_payload_specs_reloaded = importlib.reload(network_payload_specs)
+
+    assert "CARD_SELECTORS" in selectors_reloaded.__all__
+    assert selectors_reloaded.CARD_SELECTORS == original_card_selectors
+    assert selectors_reloaded.CARD_SELECTORS
+
+    assert "CANONICAL_SCHEMAS" in field_mappings_reloaded.__all__
+    assert field_mappings_reloaded.CANONICAL_SCHEMAS == original_canonical_schemas
+    assert "job_detail" in field_mappings_reloaded.CANONICAL_SCHEMAS
+
+    assert "NETWORK_PAYLOAD_SPECS" in network_payload_specs_reloaded.__all__
+    assert (
+        network_payload_specs_reloaded.NETWORK_PAYLOAD_SPECS == original_payload_specs
+    )
+    assert "ecommerce_detail" in network_payload_specs_reloaded.NETWORK_PAYLOAD_SPECS
+
+
+def test_static_config_exports_have_provenance() -> None:
+    config_dir = Path(__file__).parents[2] / "app" / "services" / "config"
+    for path in sorted(config_dir.glob("*.exports.json")):
+        exports = load_export_data(str(path))
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        assert EXPORT_PROVENANCE_KEY in payload
+        assert EXPORT_PROVENANCE_KEY not in exports
+        validate_export_file(path)
+
+
+def test_export_validator_main_returns_clean_error_for_bad_payload(
+    tmp_path, capsys
+) -> None:
+    bad_export = tmp_path / "broken.exports.json"
+    bad_export.write_text(json.dumps({"CARD_SELECTORS": []}), encoding="utf-8")
+
+    assert main([str(bad_export)]) == 1
+    assert "_export_provenance" in capsys.readouterr().err
+
+
+def test_location_interstitial_tokens_are_unique() -> None:
+    config_dir = Path(__file__).parents[2] / "app" / "services" / "config"
+    exports = load_export_data(str(config_dir / "selectors.exports.json"))
+
+    for key in (
+        "LOCATION_INTERSTITIAL_DISMISS_TEXT_TOKENS",
+        "LOCATION_INTERSTITIAL_TEXT_TOKENS",
+    ):
+        values = [str(item) for item in list(exports[key] or [])]
+        duplicates = {
+            value: count for value, count in Counter(values).items() if count > 1
+        }
+        assert duplicates == {}
+
+
+def test_extraction_rules_export_keys_cover_module_references() -> None:
+    extraction_rules = importlib.import_module("app.services.config.extraction_rules")
+    exports = load_export_data(
+        str(
+            Path(__file__).parents[2]
+            / "app"
+            / "services"
+            / "config"
+            / "extraction_rules.exports.json"
+        )
+    )
+
+    assert "TRACKING_DETAIL_CONTEXT_EXACT_KEYS" in extraction_rules.__all__
+    assert "TRACKING_PRESERVED_SHORT_QUERY_KEYS" in extraction_rules.__all__
+    assert "LISTING_EDITORIAL_URL_TOKENS" in extraction_rules.__all__
+    assert "LISTING_EDITORIAL_PATH_SEGMENTS" in extraction_rules.__all__
+    assert set(exports) <= set(extraction_rules.__all__)
+    assert "SOURCE_TIERS" in vars(extraction_rules)
+    assert (
+        extraction_rules.AVAILABILITY_OUT_OF_STOCK
+        in extraction_rules.NOISY_PRODUCT_ATTRIBUTE_KEYS
+    )
+
+
+def test_extraction_rules_exports_document_link_patterns_via___all__() -> None:
+    extraction_rules = importlib.import_module("app.services.config.extraction_rules")
+
+    assert "DETAIL_DOCUMENT_LINK_LABEL_PATTERNS" in extraction_rules.__all__
+
+
+def test_crawl_run_settings_exposes_normalized_acquisition_plan() -> None:
+    settings = CrawlRunSettings.from_value(
+        {
+            "proxy_list": ["http://proxy-1", "http://proxy-2"],
+            "advanced_enabled": True,
+            "fetch_profile": {
+                "traversal_mode": "paginate",
+                "max_pages": "4",
+                "max_scrolls": "2",
+                "request_delay_ms": "500",
+            },
+        }
+    )
+
+    plan = settings.acquisition_plan(surface="job_listing", max_records=9)
+
+    assert plan.surface == "job_listing"
+    assert plan.proxy_list == ("http://proxy-1", "http://proxy-2")
+    assert plan.traversal_mode == "paginate"
+    assert plan.max_pages == 4
+    assert plan.max_scrolls == 2
+    assert plan.max_records == 9
+    assert plan.sleep_ms == 500
+
+
+def test_runtime_backed_defaults_remain_single_source_of_truth() -> None:
+    plan = AcquisitionPlan(surface="job_listing")
+    settings = CrawlRunSettings.from_value({})
+
+    assert plan.max_pages == crawler_runtime_settings.default_max_pages
+    assert plan.max_scrolls == crawler_runtime_settings.default_max_scrolls
+    assert plan.max_records == crawler_runtime_settings.default_max_records
+    assert plan.sleep_ms == crawler_runtime_settings.min_request_delay_ms
+    assert settings.max_records() == crawler_runtime_settings.default_max_records
+
+
+def test_runtime_settings_allow_zero_accessibility_snapshot_timeout() -> None:
+    settings = CrawlerRuntimeSettings(browser_accessibility_snapshot_timeout_seconds=0)
+
+    assert settings.browser_accessibility_snapshot_timeout_seconds == 0
+
+
+def test_runtime_settings_reject_invalid_page_bounds() -> None:
+    with pytest.raises(ValueError, match="min_max_pages must be >= 1"):
+        CrawlerRuntimeSettings(min_max_pages=-3)
+
+    with pytest.raises(ValueError, match="max_max_pages must be >= min_max_pages"):
+        CrawlerRuntimeSettings(min_max_pages=5, max_max_pages=4)
+
+
+def test_runtime_settings_reject_invalid_scroll_bounds() -> None:
+    with pytest.raises(
+        ValueError,
+        match="browser_behavior_scroll_max_px must be >= browser_behavior_scroll_min_px",
+    ):
+        CrawlerRuntimeSettings(
+            browser_behavior_scroll_min_px=200,
+            browser_behavior_scroll_max_px=100,
+        )
+
+
+def test_runtime_settings_reject_inverted_quality_thresholds() -> None:
+    with pytest.raises(
+        ValueError,
+        match="run_quality_threshold_high must be >= run_quality_threshold_medium",
+    ):
+        CrawlerRuntimeSettings(
+            run_quality_threshold_high=0.4,
+            run_quality_threshold_medium=0.5,
+        )
+
+
+def test_runtime_settings_reject_invalid_run_health_thresholds() -> None:
+    with pytest.raises(
+        ValueError,
+        match="run_health_failed_error_rate must be >= run_health_degraded_error_rate",
+    ):
+        CrawlerRuntimeSettings(
+            run_health_degraded_error_rate=0.4,
+            run_health_failed_error_rate=0.2,
+        )
+
+
+def test_selectors_export_does_not_drive_keep_worthy_tags() -> None:
+    selectors = importlib.import_module("app.services.config.selectors")
+    exports = load_export_data(
+        str(
+            Path(__file__).parents[2]
+            / "app"
+            / "services"
+            / "config"
+            / "selectors.exports.json"
+        )
+    )
+
+    assert "SELECTOR_SYNTHESIS_KEEP_WORTHY_TAGS" not in exports
+    assert selectors.SELECTOR_SYNTHESIS_KEEP_WORTHY_TAGS == frozenset(
+        {"button", "input", "select"}
+    )
+
+
+def test_crawl_run_settings_preserves_modeled_acquisition_contract_success() -> None:
+    settings = CrawlRunSettings.from_value(
+        {
+            "acquisition_contract": {
+                "last_quality_success": DomainRunAcquisitionContractSuccess(
+                    method="browser",
+                    record_count=2,
+                    field_coverage={"price": True},
+                )
+            }
+        }
+    )
+
+    assert settings.acquisition_contract()["last_quality_success"] == {
+        "method": "browser",
+        "browser_engine": None,
+        "record_count": 2,
+        "field_coverage": {"price": True},
+        "source_run_id": None,
+        "timestamp": None,
+    }
+
+
+def test_crawl_run_settings_normalizes_zero_source_run_id_to_unset() -> None:
+    settings = CrawlRunSettings.from_value(
+        {
+            "acquisition_contract": {
+                "last_quality_success": {
+                    "method": "browser",
+                    "record_count": 0,
+                    "field_coverage": {},
+                    "source_run_id": 0,
+                }
+            }
+        }
+    )
+
+    assert (
+        settings.acquisition_contract()["last_quality_success"]["source_run_id"] is None
+    )
+
+
+def test_crawl_run_settings_accepts_legacy_handoff_flag() -> None:
+    settings = CrawlRunSettings.from_value(
+        {
+            "acquisition_contract": {
+                "prefer_curl_handoff": True,
+            }
+        }
+    )
+
+    assert settings.acquisition_contract()["handoff_eligible"] is True
+
+
+def test_domain_run_acquisition_contract_accepts_legacy_handoff_flag() -> None:
+    contract = DomainRunAcquisitionContract.model_validate(
+        {"prefer_curl_handoff": True}
+    )
+
+    assert contract.handoff_eligible is True
+
+
+def test_invalid_traversal_mode_raises_configuration_error() -> None:
+    settings = CrawlRunSettings.from_value(
+        {
+            "advanced_enabled": True,
+            "traversal_mode": "totally_invalid_mode",
+        }
+    )
+
+    with pytest.raises(CrawlerConfigurationError, match="Unsupported traversal_mode"):
+        settings.traversal_mode()
+
+
+def test_fetch_profile_invalid_traversal_mode_raises_configuration_error() -> None:
+    settings = CrawlRunSettings.from_value(
+        {
+            "advanced_enabled": True,
+            "fetch_profile": {
+                "traversal_mode": "unsupported_mode",
+            },
+        }
+    )
+
+    with pytest.raises(CrawlerConfigurationError, match="Unsupported traversal_mode"):
+        settings.traversal_mode()
+    with pytest.raises(CrawlerConfigurationError, match="Unsupported traversal_mode"):
+        settings.normalized_for_storage()
+
+
+def test_auto_traversal_mode_raises_configuration_error() -> None:
+    fetch_profile_settings = CrawlRunSettings.from_value(
+        {
+            "advanced_enabled": True,
+            "fetch_profile": {
+                "traversal_mode": "auto",
+            },
+        }
+    )
+    top_level_settings = CrawlRunSettings.from_value(
+        {
+            "advanced_enabled": True,
+            "traversal_mode": "auto",
+        }
+    )
+
+    with pytest.raises(CrawlerConfigurationError, match="Unsupported traversal_mode"):
+        fetch_profile_settings.traversal_mode()
+    with pytest.raises(CrawlerConfigurationError, match="Unsupported traversal_mode"):
+        fetch_profile_settings.normalized_for_storage()
+    with pytest.raises(CrawlerConfigurationError, match="Unsupported traversal_mode"):
+        top_level_settings.traversal_mode()
+    with pytest.raises(CrawlerConfigurationError, match="Unsupported traversal_mode"):
+        top_level_settings.normalized_for_storage()
+
+
+def test_top_level_invalid_traversal_mode_raises_configuration_error() -> None:
+    settings = CrawlRunSettings.from_value(
+        {
+            "advanced_enabled": True,
+            "traversal_mode": "unsupported_mode",
+        }
+    )
+
+    with pytest.raises(CrawlerConfigurationError, match="Unsupported traversal_mode"):
+        settings.traversal_mode()
+    with pytest.raises(CrawlerConfigurationError, match="Unsupported traversal_mode"):
+        settings.normalized_for_storage()
+
+
+def test_crawl_run_settings_preserves_advanced_mode_storage_contract() -> None:
+    settings = CrawlRunSettings.from_value(
+        {
+            "advanced_enabled": True,
+            "advanced_mode": "view_all",
+            "traversal_mode": "load_more",
+        }
+    )
+
+    normalized = settings.normalized_for_storage()
+
+    assert normalized["advanced_mode"] == "view_all"
+    assert normalized["traversal_mode"] == "load_more"
+    assert normalized["fetch_profile"]["traversal_mode"] == "load_more"
+
+
+def test_crawl_run_settings_preserves_extra_proxy_profile_fields() -> None:
+    settings = CrawlRunSettings.from_value(
+        {
+            "proxy_profile": {
+                "enabled": True,
+                "proxy_list": ["http://proxy-1"],
+                "rotation": "sticky",
+                "region": "in",
+            }
+        }
+    )
+
+    normalized = settings.normalized_for_storage()
+
+    assert normalized["proxy_profile"] == {
+        "enabled": True,
+        "proxy_list": ["http://proxy-1"],
+        "rotation": "sticky",
+        "region": "in",
+    }
+
+
+def test_crawl_run_settings_acquisition_profile_preserves_proxy_profile() -> None:
+    settings = CrawlRunSettings.from_value(
+        {
+            "proxy_profile": {
+                "enabled": True,
+                "proxy_list": ["http://proxy-1"],
+                "rotation": "rotating",
+                "region": "in",
+            }
+        }
+    )
+
+    profile = settings.acquisition_profile()
+
+    assert profile["proxy_profile"] == {
+        "enabled": True,
+        "proxy_list": ["http://proxy-1"],
+        "rotation": "rotating",
+        "region": "in",
+    }
+
+
+def test_crawl_run_settings_acquisition_profile_keeps_disabled_proxy_profile() -> None:
+    settings = CrawlRunSettings.from_value({})
+
+    profile = settings.acquisition_profile()
+
+    assert profile["proxy_profile"] == {
+        "enabled": False,
+        "proxy_list": [],
+    }
+    assert profile["locality_profile"] == {
+        "geo_country": "auto",
+        "language_hint": None,
+        "currency_hint": None,
+    }
+
+
+def test_crawl_run_settings_acquisition_profile_exposes_host_memory_ttl() -> None:
+    settings = CrawlRunSettings.from_value(
+        {"fetch_profile": {"host_memory_ttl_seconds": 1800}}
+    )
+
+    profile = settings.acquisition_profile()
+
+    assert profile["host_memory_ttl_seconds"] == 1800
+
+
+def test_crawl_run_settings_fetch_profile_keeps_legacy_top_level_host_memory_ttl() -> (
+    None
+):
+    settings = CrawlRunSettings.from_value({"host_memory_ttl_seconds": 1800})
+
+    acquisition_profile = settings.acquisition_profile()
+    profile = settings.fetch_profile()
+    normalized = settings.normalized_for_storage()
+
+    assert acquisition_profile["host_memory_ttl_seconds"] == 1800
+    assert profile["host_memory_ttl_seconds"] == 1800
+    assert normalized["fetch_profile"]["host_memory_ttl_seconds"] == 1800
+    assert normalized["host_memory_ttl_seconds"] == 1800
+
+
+def test_crawl_run_settings_fetch_profile_clamps_low_host_memory_ttl() -> None:
+    settings = CrawlRunSettings.from_value({"host_memory_ttl_seconds": 0})
+
+    profile = settings.fetch_profile()
+    normalized = settings.normalized_for_storage()
+
+    assert (
+        profile["host_memory_ttl_seconds"]
+        == crawler_runtime_settings.host_memory_ttl_min_seconds
+    )
+    assert (
+        normalized["fetch_profile"]["host_memory_ttl_seconds"]
+        == crawler_runtime_settings.host_memory_ttl_min_seconds
+    )
+    assert (
+        normalized["host_memory_ttl_seconds"]
+        == crawler_runtime_settings.host_memory_ttl_min_seconds
+    )
+
+    nested_settings = CrawlRunSettings.from_value(
+        {"fetch_profile": {"host_memory_ttl_seconds": 0}}
+    )
+    nested_profile = nested_settings.fetch_profile()
+    nested_normalized = nested_settings.normalized_for_storage()
+
+    assert (
+        nested_profile["host_memory_ttl_seconds"]
+        == crawler_runtime_settings.host_memory_ttl_min_seconds
+    )
+    assert (
+        nested_normalized["fetch_profile"]["host_memory_ttl_seconds"]
+        == crawler_runtime_settings.host_memory_ttl_min_seconds
+    )
+    assert (
+        nested_normalized["host_memory_ttl_seconds"]
+        == crawler_runtime_settings.host_memory_ttl_min_seconds
+    )
+
+
+def test_crawl_run_settings_ignores_blank_or_invalid_host_memory_ttl() -> None:
+    for value in ("   ", "abc"):
+        settings = CrawlRunSettings.from_value({"host_memory_ttl_seconds": value})
+        profile = settings.fetch_profile()
+        normalized = settings.normalized_for_storage()
+
+        assert profile["host_memory_ttl_seconds"] is None
+        assert normalized["fetch_profile"]["host_memory_ttl_seconds"] is None
+        assert "host_memory_ttl_seconds" not in normalized
+
+
+def test_crawl_run_settings_infers_sticky_rotation_from_sessionized_proxy_username() -> (
+    None
+):
+    settings = CrawlRunSettings.from_value(
+        {
+            "proxy_profile": {
+                "enabled": True,
+                "proxy_list": [
+                    "http://user-session-autozone123:pass@rp.scrapegw.com:6060"
+                ],
+            }
+        }
+    )
+
+    profile = settings.proxy_profile()
+
+    assert profile["rotation"] == "sticky"
+
+
+def test_crawl_run_settings_does_not_store_inferred_proxy_rotation() -> None:
+    settings = CrawlRunSettings.from_value(
+        {
+            "proxy_profile": {
+                "enabled": True,
+                "proxy_list": [
+                    "http://user-session-autozone123:pass@rp.scrapegw.com:6060"
+                ],
+            }
+        }
+    )
+
+    normalized = settings.normalized_for_storage()
+
+    assert normalized["proxy_profile"] == {
+        "enabled": True,
+        "proxy_list": ["http://user-session-autozone123:pass@rp.scrapegw.com:6060"],
+    }
+
+
+def test_platform_runtime_policy_does_not_force_browser_for_vendor_specific_domains() -> (
+    None
+):
+    policy = resolve_platform_runtime_policy("https://www.autozone.com/")
+
+    assert policy["requires_browser"] is False

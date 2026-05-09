@@ -1,0 +1,116 @@
+from __future__ import annotations
+
+import asyncio
+import logging
+import signal
+from collections.abc import Callable
+from contextlib import contextmanager
+from dataclasses import dataclass
+from types import FrameType
+from typing import Iterator
+
+from app.core.celery_app import celery_app, worker_process_init, worker_process_shutdown
+from app.core.database import SessionLocal
+from app.core.telemetry import install_asyncio_exception_filter
+from app.services.acquisition import shutdown_browser_runtime_sync
+from app.services._batch_runtime import process_run as process_run_async
+from app.services.config.runtime_settings import crawler_runtime_settings
+
+logger = logging.getLogger(__name__)
+_SignalHandler = Callable[[int, FrameType | None], object]
+_SignalPreviousHandler = _SignalHandler | int | None
+
+
+@dataclass
+class _WorkerTaskState:
+    active_task_loop: asyncio.AbstractEventLoop | None = None
+    active_run_task: asyncio.Task[None] | None = None
+    termination_requested: bool = False
+
+
+_WORKER_TASK_STATE = _WorkerTaskState()
+
+
+def _crawl_task_time_limits() -> dict[str, int]:
+    hard_limit = max(1, int(crawler_runtime_settings.job_max_wall_seconds))
+    soft_limit = max(1, hard_limit - 60) if hard_limit > 60 else hard_limit
+    return {"time_limit": hard_limit, "soft_time_limit": soft_limit}
+
+
+@worker_process_init.connect
+def _worker_process_init(**_kwargs) -> None:
+    return None
+
+
+@worker_process_shutdown.connect
+def _worker_process_shutdown(**_kwargs) -> None:
+    shutdown_browser_runtime_sync()
+
+
+async def _run_with_session(run_id: int) -> None:
+    async with SessionLocal() as session:
+        await process_run_async(session, run_id)
+
+
+def _task_termination_handler(signum: int, _frame: FrameType | None) -> None:
+    _WORKER_TASK_STATE.termination_requested = True
+    logger.warning(
+        "Received signal %s while processing crawl task; cancelling async run", signum
+    )
+    loop = _WORKER_TASK_STATE.active_task_loop
+    task = _WORKER_TASK_STATE.active_run_task
+    if loop is None or task is None or loop.is_closed() or task.done():
+        return
+    loop.call_soon_threadsafe(task.cancel)
+
+
+@contextmanager
+def _install_task_signal_handlers() -> Iterator[dict[int, _SignalPreviousHandler]]:
+    previous_handlers: dict[int, _SignalPreviousHandler] = {}
+    for signame in ("SIGTERM", "SIGINT"):
+        signum = getattr(signal, signame, None)
+        if signum is None:
+            continue
+        previous_handlers[int(signum)] = signal.getsignal(signum)
+        signal.signal(signum, _task_termination_handler)
+    try:
+        yield previous_handlers
+    finally:
+        for signum, previous in previous_handlers.items():
+            signal.signal(signum, signal.SIG_DFL if previous is None else previous)
+
+
+def _run_task_in_worker_loop(run_id: int) -> None:
+    _WORKER_TASK_STATE.termination_requested = False
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    install_asyncio_exception_filter(loop)
+    task = loop.create_task(_run_with_session(run_id), name=f"crawl-run-{run_id}")
+    _WORKER_TASK_STATE.active_task_loop = loop
+    _WORKER_TASK_STATE.active_run_task = task
+    try:
+        loop.run_until_complete(task)
+    except asyncio.CancelledError:
+        if _WORKER_TASK_STATE.termination_requested:
+            shutdown_browser_runtime_sync()
+            raise SystemExit(0) from None
+        raise
+    finally:
+        _WORKER_TASK_STATE.active_run_task = None
+        _WORKER_TASK_STATE.active_task_loop = None
+        try:
+            loop.run_until_complete(loop.shutdown_asyncgens())
+        finally:
+            try:
+                loop.run_until_complete(loop.shutdown_default_executor())
+            except RuntimeError:
+                logger.warning("Failed to shutdown default executor", exc_info=True)
+            finally:
+                asyncio.set_event_loop(None)
+                loop.close()
+
+
+@celery_app.task(name="crawl.process_run", **_crawl_task_time_limits())
+def process_run_task(run_id: int) -> None:
+    with _install_task_signal_handlers():
+        _run_task_in_worker_loop(run_id)
