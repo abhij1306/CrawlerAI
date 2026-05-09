@@ -75,7 +75,6 @@ backend/tests/fixtures/artifact_html/
 agent_debug/
 
 # Site crawl artifacts (never track)
-image.png
 screenshots/
 artifacts/
 **/artifacts/
