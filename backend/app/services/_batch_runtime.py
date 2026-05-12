@@ -6,7 +6,7 @@ from contextlib import suppress
 from datetime import UTC, datetime
 
 from app.core.database import SessionLocal
-from app.models.crawl import CrawlRun
+from app.models.crawl_run import CrawlRun
 from app.services.crawl_state import (
     CONTROL_REQUEST_KILL,
     CONTROL_REQUEST_PAUSE,
@@ -20,6 +20,7 @@ from app.services.crawl_utils import normalize_target_url, parse_csv_urls_async
 from app.services.config.runtime_settings import crawler_runtime_settings
 from app.services.domain_utils import normalize_domain
 from app.services.pipeline.extraction_loop import process_single_url
+from app.services.pipeline.run_progress import BatchRunProgressState
 from app.services.pipeline.runtime_helpers import (
     STAGE_ACQUIRE,
     log_event,
@@ -219,7 +220,8 @@ async def process_run(session: AsyncSession, run_id: int) -> None:
         sleep_ms = settings_view.sleep_ms()
         url_timeout_seconds = _url_timeout_seconds(settings_view)
 
-        progress_state = run.build_batch_progress_state(
+        progress_state = BatchRunProgressState.from_run(
+            run,
             total_urls=total_urls,
             url_domain=normalize_domain(url_list[0]) if url_list else "",
             persisted_record_count=as_int(run.get_summary("record_count", 0)),

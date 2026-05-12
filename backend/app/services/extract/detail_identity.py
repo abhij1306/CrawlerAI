@@ -23,6 +23,7 @@ from app.services.config.extraction_rules import (
     LISTING_CATEGORY_PATH_SEGMENTS,
     LISTING_CATEGORY_PATH_PREFIXES,
     LISTING_DETAIL_PATH_MARKERS,
+    LISTING_LOCALE_PATH_SEGMENT_PATTERN,
     LISTING_NON_LISTING_PATH_TOKENS,
     LISTING_PRODUCT_DETAIL_ID_RE,
     PRODUCT_SLUG_MIN_TERMINAL_TOKENS,
@@ -70,6 +71,9 @@ _LISTING_CATEGORY_PATH_SEGMENTS = frozenset(
         for value in tuple(LISTING_CATEGORY_PATH_SEGMENTS or ())
         if str(value).strip()
     }
+)
+_LISTING_LOCALE_PATH_SEGMENT_RE = re.compile(
+    str(LISTING_LOCALE_PATH_SEGMENT_PATTERN or ""), re.IGNORECASE
 )
 
 
@@ -226,6 +230,13 @@ def listing_url_is_structural(url: str, page_url: str) -> bool:
             return True
         if _listing_url_has_product_detail_identity(lowered):
             return False
+        # Detail-like URLs (product pages) are exempt from sibling-category
+        # rejection even when they share a category path prefix with the page.
+        # This covers sites like B&H Photo where product URLs start with /c/product/
+        # and the listing page starts with /c/buy/ — both share /c/ but the
+        # product URL is clearly a detail page, not a sibling category.
+        if listing_detail_like_path(lowered, is_job=False):
+            return False
         # Sibling-category rejection.
         # When both the listing page and the candidate share a known
         # category path prefix (e.g. both /c/<slug>), the candidate is
@@ -239,6 +250,50 @@ def listing_url_is_structural(url: str, page_url: str) -> bool:
         for prefix in LISTING_CATEGORY_PATH_PREFIXES:
             if page_path.startswith(prefix) and candidate_path.startswith(prefix):
                 return True
+        # Locale-aware sibling-category match.
+        # When the leading segment(s) of either URL match the locale pattern
+        # (e.g. "ca", "en", "fr-ca") AND the remaining path after stripping
+        # locale segments shares a Category_Path_Prefix, the candidate is a
+        # sibling category.
+        # Carve-out: a shared locale segment alone (no shared prefix in the
+        # remainder) does NOT classify the candidate as sibling.
+        candidate_segments = [
+            seg for seg in candidate_path.strip("/").split("/") if seg
+        ]
+        page_segments = [seg for seg in page_path.strip("/").split("/") if seg]
+        if candidate_segments and page_segments:
+            # Strip leading locale segments from each URL independently.
+            c_idx = 0
+            while (
+                c_idx < len(candidate_segments)
+                and _LISTING_LOCALE_PATH_SEGMENT_RE.fullmatch(
+                    candidate_segments[c_idx]
+                )
+            ):
+                c_idx += 1
+            p_idx = 0
+            while (
+                p_idx < len(page_segments)
+                and _LISTING_LOCALE_PATH_SEGMENT_RE.fullmatch(
+                    page_segments[p_idx]
+                )
+            ):
+                p_idx += 1
+            # At least one URL must have had locale segments stripped, and
+            # both must have remaining path content after stripping.
+            if (c_idx > 0 or p_idx > 0) and c_idx < len(candidate_segments) and p_idx < len(page_segments):
+                candidate_remainder = "/" + "/".join(candidate_segments[c_idx:])
+                page_remainder = "/" + "/".join(page_segments[p_idx:])
+                for prefix in LISTING_CATEGORY_PATH_PREFIXES:
+                    if candidate_remainder.startswith(
+                        prefix
+                    ) and page_remainder.startswith(prefix):
+                        return True
+                # Also check category path segments on the remainder.
+                if _listing_url_has_category_path_segment(
+                    page_remainder
+                ) and _listing_url_has_category_path_segment(candidate_remainder):
+                    return True
         raw_segments = [
             segment.strip().lower()
             for segment in parsed.path.split("/")

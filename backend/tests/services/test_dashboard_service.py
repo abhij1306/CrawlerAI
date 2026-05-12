@@ -6,21 +6,21 @@ from sqlalchemy.exc import OperationalError
 
 from app.core.dependencies import get_db, require_admin
 from app.main import app
-from app.models.crawl import (
-    CrawlLog,
-    CrawlRecord,
-    CrawlRun,
+from app.models.domain_memory import (
     DomainCookieMemory,
     DomainFieldFeedback,
     DomainMemory,
     DomainRunProfile,
     HostProtectionMemory,
+)
+from app.models.product_intelligence import (
     ProductIntelligenceCandidate,
     ProductIntelligenceJob,
     ProductIntelligenceMatch,
     ProductIntelligenceSourceProduct,
-    ReviewPromotion,
 )
+from app.models.crawl_run import CrawlLog, CrawlRecord, CrawlRun
+from app.models.review import ReviewPromotion
 from app.models.llm import LLMCostLog
 from app.services.acquisition.host_protection_memory import (
     load_host_protection_policy,

@@ -8,9 +8,12 @@ from typing import Callable
 from selectolax.lexbor import LexborHTMLParser, SelectolaxError
 
 from app.services.config.extraction_rules import (
+    LISTING_CATEGORY_PATH_PREFIXES,
     LISTING_CHROME_TEXT_LIMIT,
     LISTING_FALLBACK_CONTAINER_SELECTOR,
     LISTING_NON_LISTING_PATH_TOKENS,
+    LISTING_PRODUCT_DETAIL_ID_RE,
+    LISTING_PROMINENT_TITLE_TAGS,
     LISTING_STRUCTURE_NEGATIVE_HINTS,
     LISTING_STRUCTURE_POSITIVE_HINTS,
     LISTING_UTILITY_TITLE_TOKENS,
@@ -65,6 +68,130 @@ def listing_node_signature(node, *, include_title: bool = True) -> str:
     if include_title:
         values.append(str(attrs.get("title") or ""))
     return " ".join(values).lower()
+
+
+def _listing_count_bucket(count: int) -> str:
+    """Bucket a non-negative integer count into ``{0, 1, 2_5, 6_plus}``."""
+    value = int(count) if count is not None else 0
+    if value <= 0:
+        return "0"
+    if value == 1:
+        return "1"
+    if value <= 5:
+        return "2_5"
+    return "6_plus"
+
+
+def _listing_positive_class_bucket(node) -> str:
+    """
+    Return the first :data:`LISTING_STRUCTURE_POSITIVE_HINTS` token present in
+    the node's class/id/role signature, or the empty string when none hit and
+    the signature does not carry a :data:`LISTING_STRUCTURE_NEGATIVE_HINTS`
+    token. When only negative hints are present the bucket is ``"neg"`` so
+    promo/nav chrome is not collapsed with positive product-card shapes.
+    """
+    signature = listing_node_signature(node, include_title=False)
+    if not signature:
+        return ""
+    for token in LISTING_STRUCTURE_POSITIVE_HINTS:
+        if token and token in signature:
+            return str(token)
+    for token in LISTING_STRUCTURE_NEGATIVE_HINTS:
+        if token and token in signature:
+            return "neg"
+    return ""
+
+
+def _listing_signature_price_signal(node) -> str:
+    """Return ``"price"`` when the fragment text carries a price shape, else ``""``."""
+    text = listing_node_text(node)
+    if not text:
+        return ""
+    return "price" if PRICE_RE.search(text) else ""
+
+
+def _listing_signature_title_tag(node) -> str:
+    """
+    Return the tag name of the first prominent-title descendant (see
+    :data:`LISTING_PROMINENT_TITLE_TAGS`) present in the fragment, else the
+    empty string. Shape-only; no text/content is captured.
+    """
+    descendants = listing_node_css(node, "strong, b, h1, h2, h3, h4, h5, h6")
+    for descendant in descendants:
+        tag = str(getattr(descendant, "tag", "") or "").strip().lower()
+        if tag and tag in LISTING_PROMINENT_TITLE_TAGS:
+            return tag
+    return ""
+
+
+def listing_signature_url_shape(url: str) -> tuple[str, str]:
+    """
+    Return the ``(category_prefix_bucket, has_detail_marker)`` URL-shape pair.
+
+    ``category_prefix_bucket`` is the first matching
+    :data:`LISTING_CATEGORY_PATH_PREFIXES` entry for the candidate URL path
+    (empty string when none match). ``has_detail_marker`` is ``"1"`` when the
+    URL carries a detail identity marker (per
+    :data:`LISTING_PRODUCT_DETAIL_ID_RE`) and ``"0"`` otherwise.
+    """
+    raw = str(url or "")
+    if not raw:
+        return "", "0"
+    try:
+        parsed = urlsplit(raw)
+    except ValueError:
+        return "", "0"
+    path = str(parsed.path or "").lower()
+    prefix_bucket = ""
+    for prefix in LISTING_CATEGORY_PATH_PREFIXES:
+        prefix_text = str(prefix or "")
+        if prefix_text and path.startswith(prefix_text):
+            prefix_bucket = prefix_text
+            break
+    detail_marker = "1" if LISTING_PRODUCT_DETAIL_ID_RE.search(raw) else "0"
+    return prefix_bucket, detail_marker
+
+
+def listing_fragment_structural_signature(node, *, url: str) -> str:
+    """
+    Return a deterministic, fragment-local fingerprint used by the cohort check
+    in :mod:`listing_candidate_ranking`.
+
+    The signature is a ``"|"``-delimited string composed of shape-only inputs:
+
+    1. lowercased tag name
+    2. :data:`LISTING_STRUCTURE_POSITIVE_HINTS` bucket derived from the node's
+       class/id/role/aria-label signature (``"neg"`` when only a negative hint
+       is present, empty otherwise)
+    3. anchor-count bucket (``{0, 1, 2_5, 6_plus}``)
+    4. image-count bucket (``{0, 1, 2_5, 6_plus}``)
+    5. price signal (``"price"`` or ``""``)
+    6. prominent-title descendant tag (``{"h1"..."h6", "strong", "b", ""}``)
+    7. first matching :data:`LISTING_CATEGORY_PATH_PREFIXES` entry for the URL
+       path (empty string when none match)
+    8. has-detail-marker boolean (``"1"`` / ``"0"``) from
+       :data:`LISTING_PRODUCT_DETAIL_ID_RE`
+
+    Pure function: no I/O, no node mutation, no host/domain/brand/CDN/site
+    tokens. Reuses :func:`listing_node_signature` for the class/id/role
+    normalization path so the two helpers stay in sync.
+    """
+    tag = str(getattr(node, "tag", "") or "").strip().lower()
+    positive_bucket = _listing_positive_class_bucket(node)
+    anchor_count = len(_node_listing_links(node))
+    try:
+        image_count = len(list(node.css("img")))
+    except (SelectolaxError, ValueError, AttributeError, TypeError):
+        image_count = 0
+    anchor_bucket = _listing_count_bucket(anchor_count)
+    image_bucket = _listing_count_bucket(image_count)
+    price_signal = _listing_signature_price_signal(node)
+    title_tag = _listing_signature_title_tag(node)
+    url_prefix_bucket, has_detail_marker = listing_signature_url_shape(url)
+    return (
+        f"{tag}|{positive_bucket}|{anchor_bucket}|{image_bucket}|"
+        f"{price_signal}|{title_tag}|{url_prefix_bucket}|{has_detail_marker}"
+    )
 
 
 def listing_node_tag(node) -> str:

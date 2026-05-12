@@ -36,6 +36,7 @@ from app.services.config.field_mappings import (
 )
 from app.services.config.selectors import (
     ANCHOR_SELECTOR,
+    CARD_SELECTORS,
     LOCATION_INTERSTITIAL_CONTAINER_SELECTORS,
     LOCATION_INTERSTITIAL_DISMISS_SELECTORS,
     LOCATION_INTERSTITIAL_DISMISS_TEXT_TOKENS,
@@ -812,6 +813,52 @@ async def settle_browser_page_impl(
         append_readiness_probe(
             readiness_probes, stage="after_platform_readiness", probe=current_probe
         )
+    elif (
+        not current_probe["is_ready"]
+        and is_listing_surface
+        and readiness_override is None
+    ):
+        # Generic listing-card readiness fallback. When no platform override is
+        # configured, wait for any CARD_SELECTORS entry to attach. This covers
+        # SPA-rendered grids (React/Vue/Next.js) where the initial DOM is a
+        # skeleton and the product tiles mount asynchronously. The selector
+        # vocabulary is the same one used by the extractor, so we only wait for
+        # things we can actually parse.
+        selector_group = (
+            "jobs"
+            if str(surface or "").strip().lower().startswith("job_")
+            else "ecommerce"
+        )
+        generic_card_selectors = [
+            str(selector or "").strip()
+            for selector in list(CARD_SELECTORS.get(selector_group) or [])
+            if str(selector or "").strip()
+        ]
+        if generic_card_selectors:
+            generic_override = {
+                "platform": "generic",
+                "selectors": generic_card_selectors,
+                "max_wait_ms": int(
+                    crawler_runtime_settings.listing_readiness_max_wait_ms or 0
+                ),
+            }
+            readiness_started_at = time.perf_counter()
+            readiness_diagnostics = await wait_for_listing_readiness(
+                page,
+                url,
+                override=generic_override,
+            )
+            phase_timings_ms["readiness_wait"] = elapsed_ms(readiness_started_at)
+            current_probe = await _cached_probe(refresh_html=True)
+            append_readiness_probe(
+                readiness_probes, stage="after_generic_readiness", probe=current_probe
+            )
+        else:
+            phase_timings_ms["readiness_wait"] = 0
+            readiness_diagnostics = {
+                "status": "skipped",
+                "reason": "no_card_selectors",
+            }
     else:
         phase_timings_ms["readiness_wait"] = 0
         readiness_diagnostics = {

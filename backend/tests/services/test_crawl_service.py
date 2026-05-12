@@ -9,10 +9,13 @@ import pytest
 
 from app.core import database as database_module
 from app.core.config import settings
-from app.models.crawl import CrawlRecord, CrawlRun, ReviewPromotion
+from app.models.crawl_run import CrawlRecord, CrawlRun
+from app.models.review import ReviewPromotion
 from app.models.crawl_domain import CONTROL_REQUEST_KILL, CONTROL_REQUEST_PAUSE
 from app.models.crawl_settings import normalize_crawl_settings
 from app.services import crawl_service
+from app.services.dispatch import celery_dispatcher as celery_dispatch_module
+from app.services.dispatch import local_dispatcher as local_dispatch_module
 from app.services.crawl_crud import (
     commit_selected_fields,
     create_crawl_run,
@@ -693,7 +696,7 @@ async def test_pause_run_preserves_live_local_task_bookkeeping(
     monkeypatch.setattr(settings, "celery_dispatch_enabled", False)
     run = await _create_running_run(db_session, user_id=test_user.id)
     local_task = asyncio.create_task(asyncio.sleep(60))
-    crawl_service._local_run_tasks[run.id] = local_task
+    local_dispatch_module._local_run_tasks[run.id] = local_task
 
     paused = await crawl_service.pause_run(db_session, run)
     await db_session.refresh(paused)
@@ -701,9 +704,9 @@ async def test_pause_run_preserves_live_local_task_bookkeeping(
     assert paused.status == "running"
     assert get_control_request(paused) == CONTROL_REQUEST_PAUSE
     assert paused.get_summary(crawl_service.CELERY_TASK_ID_KEY) == f"crawl-run-{run.id}"
-    assert crawl_service._local_run_tasks[run.id] is local_task
+    assert local_dispatch_module._local_run_tasks[run.id] is local_task
 
-    crawl_service._local_run_tasks.pop(run.id, None)
+    local_dispatch_module._local_run_tasks.pop(run.id, None)
     local_task.cancel()
     with contextlib.suppress(asyncio.CancelledError):
         await local_task
@@ -718,7 +721,7 @@ async def test_kill_run_clears_local_task_bookkeeping(
     monkeypatch.setattr(settings, "celery_dispatch_enabled", False)
     run = await _create_running_run(db_session, user_id=test_user.id)
     local_task = asyncio.create_task(asyncio.sleep(60))
-    crawl_service._local_run_tasks[run.id] = local_task
+    local_dispatch_module._local_run_tasks[run.id] = local_task
 
     killed = await crawl_service.kill_run(db_session, run)
     await asyncio.sleep(0)
@@ -727,7 +730,7 @@ async def test_kill_run_clears_local_task_bookkeeping(
     assert killed.status == "killed"
     assert get_control_request(killed) == CONTROL_REQUEST_KILL
     assert killed.get_summary(crawl_service.CELERY_TASK_ID_KEY) is None
-    assert run.id not in crawl_service._local_run_tasks
+    assert run.id not in local_dispatch_module._local_run_tasks
     assert local_task.cancelled()
 
 
@@ -771,8 +774,8 @@ async def test_recover_stale_local_runs_clears_task_entries_and_task_ids(
     finished_pending = asyncio.create_task(asyncio.sleep(0))
     finished_running = asyncio.create_task(asyncio.sleep(0))
     await asyncio.sleep(0)
-    crawl_service._local_run_tasks[pending_run.id] = finished_pending
-    crawl_service._local_run_tasks[running_run.id] = finished_running
+    local_dispatch_module._local_run_tasks[pending_run.id] = finished_pending
+    local_dispatch_module._local_run_tasks[running_run.id] = finished_running
 
     recovered = await crawl_service.recover_stale_local_runs(db_session)
     await db_session.refresh(pending_run)
@@ -789,8 +792,8 @@ async def test_recover_stale_local_runs_clears_task_entries_and_task_ids(
     assert "interrupted by backend restart" in str(
         running_run.get_summary("error") or ""
     )
-    assert pending_run.id not in crawl_service._local_run_tasks
-    assert running_run.id not in crawl_service._local_run_tasks
+    assert pending_run.id not in local_dispatch_module._local_run_tasks
+    assert running_run.id not in local_dispatch_module._local_run_tasks
 
 
 @pytest.mark.asyncio
@@ -867,10 +870,10 @@ async def test_dispatch_run_locally_recovers_stale_runs_before_launch(
     def _fake_track(run_id: int) -> asyncio.Task[None]:
         created_tasks.append(run_id)
         task = asyncio.create_task(asyncio.sleep(0))
-        crawl_service._local_run_tasks[run_id] = task
+        local_dispatch_module._local_run_tasks[run_id] = task
         return task
 
-    monkeypatch.setattr(crawl_service, "_track_local_run_task", _fake_track)
+    monkeypatch.setattr(local_dispatch_module, "track_local_run_task", _fake_track)
 
     dispatched = await crawl_service.dispatch_run(db_session, new_run)
     await asyncio.sleep(0)
@@ -882,30 +885,80 @@ async def test_dispatch_run_locally_recovers_stale_runs_before_launch(
     assert dispatched.status == "pending"
     assert dispatched.get_summary(crawl_service.CELERY_TASK_ID_KEY) is not None
 
-    local_task = crawl_service._local_run_tasks.pop(new_run.id, None)
+    local_task = local_dispatch_module._local_run_tasks.pop(new_run.id, None)
     if local_task is not None:
         with contextlib.suppress(asyncio.CancelledError):
             await local_task
 
 
-def test_log_background_task_exception_logs_failures(
-    caplog: pytest.LogCaptureFixture,
+@pytest.mark.asyncio
+async def test_local_dispatch_commits_task_id_before_launching_task(
+    db_session: AsyncSession,
+    test_user,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    async def _boom() -> None:
-        raise RuntimeError("write failed")
+    monkeypatch.setattr(settings, "celery_dispatch_enabled", False)
+    run = await create_crawl_run(
+        db_session,
+        test_user.id,
+        {
+            "run_type": "crawl",
+            "url": "https://example.com/jobs/local-order",
+            "surface": "job_detail",
+        },
+    )
+    events: list[str] = []
+    real_commit = db_session.commit
 
-    async def _exercise() -> None:
-        task = asyncio.create_task(_boom())
-        await asyncio.sleep(0)
-        with caplog.at_level(logging.ERROR):
-            crawl_service._log_background_task_exception(
-                task,
-                "Failed to persist failure state for run 1",
-            )
+    async def _commit() -> None:
+        events.append("commit")
+        await real_commit()
 
-    asyncio.run(_exercise())
+    def _fake_track(run_id: int) -> asyncio.Task[None]:
+        events.append("track")
+        return asyncio.create_task(asyncio.sleep(0))
 
-    assert "Failed to persist failure state for run 1" in caplog.text
+    monkeypatch.setattr(db_session, "commit", _commit)
+    monkeypatch.setattr(local_dispatch_module, "track_local_run_task", _fake_track)
+
+    await crawl_service.dispatch_run(db_session, run)
+
+    assert events[-2:] == ["commit", "track"]
+
+
+@pytest.mark.asyncio
+async def test_celery_dispatch_commits_task_id_before_enqueue(
+    db_session: AsyncSession,
+    test_user,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run = await create_crawl_run(
+        db_session,
+        test_user.id,
+        {
+            "run_type": "crawl",
+            "url": "https://example.com/jobs/celery-order",
+            "surface": "job_detail",
+        },
+    )
+    events: list[str] = []
+    real_commit = db_session.commit
+
+    async def _commit() -> None:
+        events.append("commit")
+        await real_commit()
+
+    class _FakeTask:
+        def apply_async(self, *args, **kwargs):
+            del args, kwargs
+            events.append("enqueue")
+
+    monkeypatch.setattr(db_session, "commit", _commit)
+    monkeypatch.setattr(celery_dispatch_module, "process_run_task", _FakeTask())
+
+    await celery_dispatch_module.CeleryRunDispatcher().dispatch(db_session, run)
+
+    assert events[-2:] == ["commit", "enqueue"]
 
 
 @pytest.mark.asyncio
@@ -935,13 +988,13 @@ async def test_run_with_local_session_preserves_original_process_run_error(
         assert "RuntimeError: process exploded" in message
         raise ValueError("write failed")
 
-    monkeypatch.setattr(crawl_service, "SessionLocal", _FakeSessionLocal)
-    monkeypatch.setattr(crawl_service, "_batch_process_run", _failing_process_run)
-    monkeypatch.setattr(crawl_service, "mark_run_failed", _failing_mark_run_failed)
+    monkeypatch.setattr(local_dispatch_module, "SessionLocal", _FakeSessionLocal)
+    monkeypatch.setattr(local_dispatch_module, "_batch_process_run", _failing_process_run)
+    monkeypatch.setattr(local_dispatch_module, "mark_run_failed", _failing_mark_run_failed)
 
     with caplog.at_level(logging.ERROR):
         with pytest.raises(RuntimeError, match="process exploded") as exc_info:
-            await crawl_service._run_with_local_session(17)
+            await local_dispatch_module._run_with_local_session(17)
 
     assert str(exc_info.value) == "process exploded"
     assert "Local crawl task failed for run 17" in caplog.text

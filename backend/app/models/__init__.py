@@ -1,18 +1,22 @@
 # ORM model exports.
 from app.core.database import Base
-from app.models.crawl import (
-    CrawlLog,
-    CrawlRecord,
-    CrawlRun,
-    DataEnrichmentJob,
-    EnrichedProduct,
+from app.models.data_enrichment import DataEnrichmentJob, EnrichedProduct
+from app.models.crawl_run import CrawlLog, CrawlRecord, CrawlRun
+from app.models.domain_memory import (
+    DomainCookieMemory,
+    DomainFieldFeedback,
+    DomainMemory,
+    DomainRunProfile,
+    HostProtectionMemory,
+)
+from app.models.llm import LLMConfig, LLMCostLog
+from app.models.product_intelligence import (
     ProductIntelligenceCandidate,
     ProductIntelligenceJob,
     ProductIntelligenceMatch,
     ProductIntelligenceSourceProduct,
-    ReviewPromotion,
 )
-from app.models.llm import LLMConfig, LLMCostLog
+from app.models.review import ReviewPromotion
 from app.models.user import User
 
 __all__ = [
@@ -22,7 +26,12 @@ __all__ = [
     "CrawlRecord",
     "CrawlLog",
     "DataEnrichmentJob",
+    "DomainCookieMemory",
+    "DomainFieldFeedback",
+    "DomainMemory",
+    "DomainRunProfile",
     "EnrichedProduct",
+    "HostProtectionMemory",
     "ProductIntelligenceJob",
     "ProductIntelligenceSourceProduct",
     "ProductIntelligenceCandidate",

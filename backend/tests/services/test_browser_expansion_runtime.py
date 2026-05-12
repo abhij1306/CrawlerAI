@@ -1280,6 +1280,18 @@ async def test_browser_fetch_attempts_implicit_networkidle_for_unmatched_spa_lis
                 "matched_listing_selectors": 0,
                 "h1_present": False,
             },
+            {
+                "url": "https://example.com/spa/listing",
+                "surface": "ecommerce_listing",
+                "is_ready": False,
+                "detail_like": False,
+                "structured_data_present": True,
+                "visible_text_length": 260,
+                "detail_hint_count": 0,
+                "listing_card_count": 0,
+                "matched_listing_selectors": 0,
+                "h1_present": False,
+            },
         ]
     )
 
@@ -1305,6 +1317,7 @@ async def test_browser_fetch_attempts_implicit_networkidle_for_unmatched_spa_lis
 
     assert result.browser_diagnostics["phase_timings_ms"]["optimistic_wait"] >= 0
     assert result.browser_diagnostics["phase_timings_ms"]["networkidle_wait"] >= 0
+    assert result.browser_diagnostics["phase_timings_ms"]["readiness_wait"] >= 0
     assert page.wait_timeout_calls == []
     assert page.wait_function_calls == [25]
     assert page.load_state_calls == ["networkidle"]

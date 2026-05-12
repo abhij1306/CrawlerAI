@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 
 from app.core.database import SessionLocal
-from app.models.crawl import CrawlLog, CrawlRun
+from app.models.crawl_run import CrawlLog, CrawlRun
 from app.services.acquisition.acquirer import AcquisitionResult, PageEvidence
 from app.services.crawl_state import TERMINAL_STATUSES, CrawlStatus, update_run_status
 from app.services.db_utils import mapping_or_empty

@@ -3,6 +3,9 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+from app.core.database import Base
+import app.models  # noqa: F401
+
 
 ROOT = Path(__file__).resolve().parents[2]
 SERVICES_ROOT = ROOT / "app" / "services"
@@ -84,9 +87,10 @@ FILE_LOC_BUDGETS = {
     Path("app/services/acquisition/traversal.py"): 1965,
     # Config owners.
     # Config rules own typed extraction constants and category/nav URL rules.
-    Path("app/services/config/extraction_rules.py"): 1765,
-    # Fetch runtime remains the request/browser arbitration owner.
-    Path("app/services/crawl_fetch_runtime.py"): 1260,
+    Path("app/services/config/extraction_rules.py"): 1780,  # +15 for LISTING_INTEGRITY_SUPPORT_FIELDS config
+    # Fetch runtime is now an 8-line sys.modules shim redirecting to
+    # app.services.fetch.fetch_context. Budget stays tight so regrowth is noticed.
+    Path("app/services/crawl_fetch_runtime.py"): 50,
     # Detail DOM extraction owns DOM fallback fields plus DOM variant recovery.
     Path("app/services/extract/detail_dom_extractor.py"): 1448,
     # Detail finalizer owns public-boundary cleanup and record repair.
@@ -119,7 +123,11 @@ FILE_LOC_BUDGETS = {
     Path("app/services/extract/detail_materializer.py"): 1441,
     Path("app/services/fetch/fetch_context.py"): 1375,
     Path("app/services/js_state/state_normalizer.py"): 1386,
-    Path("app/services/pipeline/extraction_loop.py"): 1413,
+    # Grown (+187) for listing-integrity escalation retry wiring (task 10.1).
+    Path("app/services/pipeline/extraction_loop.py"): 1600,
+    # Run progress owns batch-level summary/merge/quality aggregation, evicted
+    # from the ORM layer so business logic does not live in models/crawl.py.
+    Path("app/services/pipeline/run_progress.py"): 500,
     Path("app/services/shared/field_coerce.py"): 1398,
     # Enrichment owns deterministic product normalization and job application.
     Path("app/services/data_enrichment/service.py"): 1455,
@@ -242,6 +250,17 @@ def test_deleted_facades_do_not_return() -> None:
         SERVICES_ROOT / "pipeline" / "core.py",
     ]
     assert [str(path.relative_to(ROOT)) for path in stale_facades if path.exists()] == []
+
+
+def test_model_bootstrap_registers_domain_memory_tables() -> None:
+    expected = {
+        "domain_memory",
+        "domain_run_profiles",
+        "domain_cookie_memory",
+        "domain_field_feedback",
+        "host_protection_memory",
+    }
+    assert expected.issubset(Base.metadata.tables)
 
 
 def test_new_service_level_config_constants_are_not_added_outside_config() -> None:

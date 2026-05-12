@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 
 import pytest
-from app.models.crawl import CrawlRecord
+from app.models.crawl_run import CrawlRecord
 from app.services import record_export_service
 from app.services.extraction_runtime import extract_records
 from app.services.record_export_service import (

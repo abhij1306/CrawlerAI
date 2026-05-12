@@ -9,7 +9,7 @@ from typing import Annotated, Any, NoReturn, cast
 from app.core.database import SessionLocal
 from app.core.dependencies import get_current_user, get_db
 from app.core.security import decode_access_token
-from app.models.crawl import CrawlRun, CrawlLog
+from app.models.crawl_run import CrawlLog, CrawlRun
 from app.models.user import User
 from app.schemas.common import LogEntryResponse, PaginatedResponse, PaginationMeta
 from app.schemas.crawl import (
@@ -219,7 +219,7 @@ async def _mark_run_failed_with_retry(
     session_factory=SessionLocal,
 ) -> None:
     """Best-effort failure marking."""
-    from app.models.crawl import CrawlRun
+    from app.models.crawl_run import CrawlRun
     from app.services.crawl_state import CrawlStatus, update_run_status
 
     async with session_factory() as error_session:

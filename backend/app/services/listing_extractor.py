@@ -31,11 +31,16 @@ from app.services.extract.listing_candidate_ranking import (
     listing_record_supported,
     looks_like_utility_record,
 )
+from app.services.extract.listing_integrity_gate import (
+    IntegrityDecision,
+    evaluate_listing_integrity,
+)
 from app.services.extract.detail_identity import (
     listing_detail_like_path,
     listing_url_is_structural,
 )
 from app.services.extract.listing_card_fragments import (
+    listing_fragment_structural_signature,
     listing_node_attr,
     listing_node_css,
     listing_node_html as _node_html,
@@ -953,6 +958,10 @@ def _listing_record_from_card(
     ):
         if not allow_title_only_dom_candidate:
             return None
+    cleaned["_structural_signature"] = listing_fragment_structural_signature(
+        card,
+        url=cleaned_url,
+    )
     return cleaned
 
 
@@ -976,6 +985,62 @@ def _detail_anchor_count(
         if listing_detail_like_path(url, is_job=is_job):
             count += 1
     return count
+
+
+def _attach_gate_decision_to_artifacts(
+    artifacts: dict[str, object] | None,
+    decision: IntegrityDecision | None,
+) -> None:
+    """Attach the integrity gate decision to the artifacts dict under key ``listing_integrity``."""
+    if artifacts is None:
+        return
+    if decision is None or not hasattr(decision, "outcome"):
+        artifacts["listing_integrity"] = {
+            "outcome": "unknown",
+            "reason": "invalid_decision",
+            "metrics": {},
+        }
+        return
+    artifacts["listing_integrity"] = {
+        "outcome": decision.outcome,
+        "reason": decision.reason,
+        "metrics": decision.metrics,
+    }
+
+
+def apply_listing_integrity_gate(
+    records: list[dict[str, Any]],
+    *,
+    page_url: str,
+    surface: str,
+    artifacts: dict[str, object] | None = None,
+) -> list[dict[str, Any]]:
+    if not records:
+        _attach_gate_decision_to_artifacts(artifacts, None)
+        return []
+    try:
+        decision = evaluate_listing_integrity(records, page_url=page_url, surface=surface)
+    except Exception as exc:
+        logger.warning(
+            "evaluate_listing_integrity failed for page_url=%s surface=%s records=%d: %s",
+            page_url,
+            surface,
+            len(records),
+            exc,
+        )
+        decision = None
+    _attach_gate_decision_to_artifacts(artifacts, decision)
+    if decision is not None and decision.outcome == "promo_only_cluster":
+        return []
+    return [_strip_listing_integrity_internals(record) for record in records]
+
+
+def _strip_listing_integrity_internals(record: dict[str, Any]) -> dict[str, Any]:
+    if "_structural_signature" not in record:
+        return record
+    cleaned = dict(record)
+    cleaned.pop("_structural_signature", None)
+    return cleaned
 
 
 def extract_listing_records(
@@ -1151,6 +1216,9 @@ def extract_listing_records(
             is_job=is_job_surface,
         ),
     )
-    if best_records:
-        return best_records
-    return []
+    return apply_listing_integrity_gate(
+        best_records,
+        page_url=page_url,
+        surface=surface,
+        artifacts=artifacts,
+    )

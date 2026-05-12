@@ -1373,6 +1373,70 @@ def test_extract_records_enriches_generic_listing_rows_from_matching_adapter_row
     assert rows[0]["price"] == "22.50"
 
 
+def test_listing_integrity_gate_sees_cohort_failed_candidate_set(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        extraction_runtime.crawler_runtime_settings,
+        "listing_cohort_homogeneity_min_ratio",
+        1.01,
+    )
+    artifacts: dict[str, object] = {}
+
+    rows = extract_listing_records(
+        """
+        <html><body>
+          <article class="product-card"><a href="/products/alpha-shirt">Alpha Shirt</a><span>$10</span></article>
+          <article class="product-card"><a href="/products/bravo-pants">Bravo Pants</a><span>$20</span></article>
+        </body></html>
+        """,
+        "https://example.com/collections/all",
+        "ecommerce_listing",
+        max_records=10,
+        artifacts=artifacts,
+    )
+
+    assert rows == []
+    assert artifacts["listing_integrity"]["outcome"] == "promo_only_cluster"
+    assert artifacts["listing_integrity"]["reason"] == "cohort_heterogeneous"
+
+
+def test_final_adapter_listing_set_refreshes_listing_integrity_artifact() -> None:
+    artifacts: dict[str, object] = {}
+
+    rows = extract_records(
+        """
+        <html><body>
+          <article class="product-card"><a href="/c/promo-a">Promo A</a></article>
+          <article class="product-card"><a href="/c/promo-b">Promo B</a></article>
+        </body></html>
+        """,
+        "https://example.com/c/main",
+        "ecommerce_listing",
+        max_records=10,
+        adapter_records=[
+            {
+                "title": "Real Product A",
+                "url": "https://example.com/products/real-product-a",
+                "price": "$10.00",
+                "image_url": "https://example.com/a.jpg",
+                "_source": "adapter",
+            },
+            {
+                "title": "Real Product B",
+                "url": "https://example.com/products/real-product-b",
+                "price": "$20.00",
+                "image_url": "https://example.com/b.jpg",
+                "_source": "adapter",
+            },
+        ],
+        artifacts=artifacts,
+    )
+
+    assert [row["title"] for row in rows] == ["Real Product A", "Real Product B"]
+    assert artifacts["listing_integrity"]["outcome"] == "product_grid"
+
+
 @pytest.mark.asyncio
 async def test_belk_adapter_extracts_listing_brand_from_state_and_tiles() -> None:
     html = """

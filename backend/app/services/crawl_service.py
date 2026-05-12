@@ -1,17 +1,12 @@
 from __future__ import annotations
 
-import asyncio
 import logging
-import weakref
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
-from uuid import uuid4
 
 from app.core.config import settings
-from app.core.database import SessionLocal
-from app.models.crawl import CrawlRun
-from app.tasks import process_run_task
-from app.services._batch_runtime import process_run as _batch_process_run
+from app.core.dependencies import get_run_dispatcher
+from app.models.crawl_run import CrawlRun
 from app.services.config.runtime_settings import (
     CELERY_TASK_ID_KEY,
     crawler_runtime_settings,
@@ -24,22 +19,20 @@ from app.services.crawl_state import (
     set_control_request,
     update_run_status,
 )
-from app.services.pipeline.runtime_helpers import log_event, mark_run_failed
+from app.services.dispatch.local_dispatcher import (
+    clear_local_run_task,
+    get_live_local_run_task,
+)
+from app.services.pipeline.runtime_helpers import log_event
 from app.services.publish import (
     VERDICT_BLOCKED,
     VERDICT_ERROR,
 )
+from app.tasks import process_run_task
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
-_local_run_tasks: weakref.WeakValueDictionary[int, asyncio.Task[None]] = (
-    weakref.WeakValueDictionary()
-)
-
-
-def _new_task_id(run_id: int) -> str:
-    return f"crawl-run-{run_id}-{uuid4().hex}"
 
 
 def _get_task_id(run: CrawlRun) -> str | None:
@@ -52,27 +45,6 @@ def _set_task_id(run: CrawlRun, task_id: str | None) -> None:
         run.update_summary(**{CELERY_TASK_ID_KEY: task_id})
     else:
         run.remove_summary_keys(CELERY_TASK_ID_KEY)
-
-
-def _get_live_local_run_task(run_id: int) -> asyncio.Task[None] | None:
-    task = _local_run_tasks.get(run_id)
-    if task is None:
-        return None
-    if task.done():
-        _local_run_tasks.pop(run_id, None)
-        return None
-    return task
-
-
-def _clear_local_run_task(
-    run_id: int, *, expected_task: asyncio.Task[None] | None = None
-) -> None:
-    task = _local_run_tasks.get(run_id)
-    if task is None:
-        return
-    if expected_task is not None and task is not expected_task:
-        return
-    _local_run_tasks.pop(run_id, None)
 
 
 def _as_utc_datetime(value: datetime | None) -> datetime | None:
@@ -182,99 +154,9 @@ async def _run_control_update(
     return run
 
 
-async def _run_with_local_session(run_id: int) -> None:
-    async with SessionLocal() as session:
-        try:
-            await _batch_process_run(session, run_id)
-        except Exception as exc:
-            logger.error(
-                "Local crawl task failed for run %s",
-                run_id,
-                exc_info=(type(exc), exc, exc.__traceback__),
-            )
-            try:
-                await mark_run_failed(session, run_id, f"{type(exc).__name__}: {exc}")
-            except Exception:
-                logger.exception(
-                    "Failed to persist failed status for run %s after process_run error",
-                    run_id,
-                )
-            raise
-
-
-def _track_local_run_task(run_id: int) -> asyncio.Task[None]:
-    _clear_local_run_task(run_id)
-    task = asyncio.create_task(_run_with_local_session(run_id))
-    _local_run_tasks[run_id] = task
-
-    def _cleanup(completed_task: asyncio.Task[None]) -> None:
-        try:
-            exc = completed_task.exception()
-        except asyncio.CancelledError:
-            exc = None
-        except Exception:
-            logger.exception(
-                "Failed to inspect local crawl task completion for run %s", run_id
-            )
-            exc = None
-        if exc is not None:
-            logger.debug(
-                "Local crawl task failure already persisted for run %s", run_id
-            )
-        _clear_local_run_task(run_id, expected_task=completed_task)
-
-    task.add_done_callback(_cleanup)
-    return task
-
-
-def _log_background_task_exception(
-    task: asyncio.Task[None],
-    message: str,
-) -> None:
-    try:
-        task.result()
-    except asyncio.CancelledError:
-        logger.warning("%s: cancelled", message)
-    except Exception:
-        logger.exception(message)
-
-
-async def _dispatch_run_locally(session: AsyncSession, run: CrawlRun) -> CrawlRun:
-    await recover_stale_local_runs(session)
-    loaded_run, current = await _load_run_with_normalized_status(session, int(run.id))
-    if current not in {CrawlStatus.PENDING, CrawlStatus.RUNNING}:
-        raise ValueError(f"Cannot dispatch run in state: {loaded_run.status}")
-    task_id = _new_task_id(int(loaded_run.id))
-    _set_task_id(loaded_run, task_id)
-    await session.commit()
-    _track_local_run_task(int(loaded_run.id))
-    await session.refresh(run)
-    return run
-
-
 async def dispatch_run(session: AsyncSession, run: CrawlRun) -> CrawlRun:
-    if not settings.celery_dispatch_enabled:
-        return await _dispatch_run_locally(session, run)
-
-    loaded_run, current = await _load_run_with_normalized_status(session, int(run.id))
-    if current not in {CrawlStatus.PENDING, CrawlStatus.RUNNING}:
-        raise ValueError(f"Cannot dispatch run in state: {loaded_run.status}")
-    task_id = _new_task_id(int(loaded_run.id))
-    _set_task_id(loaded_run, task_id)
-    await session.commit()
-    try:
-        process_run_task.apply_async(args=[loaded_run.id], task_id=task_id)
-    except Exception as exc:
-        if not settings.legacy_inprocess_runner_enabled:
-            raise
-        logger.warning(
-            "Celery enqueue failed for run %s; falling back to in-process execution: %s",
-            loaded_run.id,
-            exc,
-        )
-        _track_local_run_task(int(loaded_run.id))
-    await session.refresh(run)
-    return run
+    dispatcher = get_run_dispatcher()
+    return await dispatcher.dispatch(session, run)
 
 
 async def pause_run(session: AsyncSession, run: CrawlRun) -> CrawlRun:
@@ -286,7 +168,7 @@ async def pause_run(session: AsyncSession, run: CrawlRun) -> CrawlRun:
         if current != CrawlStatus.RUNNING:
             raise ValueError(f"Cannot pause run in state: {retry_run.status}")
         task_id = _get_task_id(retry_run)
-        local_task = _get_live_local_run_task(run_id)
+        local_task = get_live_local_run_task(run_id)
         if local_task is not None:
             set_control_request(retry_run, CONTROL_REQUEST_PAUSE)
             await log_event(
@@ -336,10 +218,10 @@ async def kill_run(session: AsyncSession, run: CrawlRun) -> CrawlRun:
         if current in TERMINAL_STATUSES:
             raise ValueError(f"Cannot kill run in terminal state: {retry_run.status}")
         task_id = _get_task_id(retry_run)
-        local_task = _get_live_local_run_task(run_id)
+        local_task = get_live_local_run_task(run_id)
         if local_task is not None:
             set_control_request(retry_run, CONTROL_REQUEST_KILL)
-            _clear_local_run_task(run_id, expected_task=local_task)
+            clear_local_run_task(run_id, expected_task=local_task)
             local_task.cancel()
             update_run_status(retry_run, CrawlStatus.KILLED)
             _set_task_id(retry_run, None)
@@ -407,7 +289,7 @@ async def recover_stale_local_runs(session: AsyncSession) -> int:
             created_at=created_at,
         ):
             continue
-        _clear_local_run_task(int(run_id))
+        clear_local_run_task(int(run_id))
         if status == CrawlStatus.PENDING:
             recovered += int(
                 await _recover_stale_local_run(

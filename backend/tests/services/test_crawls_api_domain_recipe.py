@@ -6,7 +6,7 @@ from sqlalchemy import select
 
 from app.core.dependencies import get_current_user, get_db
 from app.main import app
-from app.models.crawl import DomainFieldFeedback
+from app.models.domain_memory import DomainFieldFeedback
 from app.services._batch_runtime import process_run
 from app.services.acquisition.cookie_store import persist_storage_state_for_domain
 from app.services.acquisition.acquirer import AcquisitionResult

@@ -4,13 +4,13 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.crawl import (
-    CrawlRecord,
+from app.models.product_intelligence import (
     ProductIntelligenceCandidate,
     ProductIntelligenceJob,
     ProductIntelligenceMatch,
     ProductIntelligenceSourceProduct,
 )
+from app.models.crawl_run import CrawlRecord
 from app.schemas.product_intelligence import ProductIntelligenceDiscoveryRequest
 from app.services.config.product_intelligence import (
     GOOGLE_NATIVE_HOME_URL,

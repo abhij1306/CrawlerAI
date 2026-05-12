@@ -6,7 +6,7 @@ import json
 import logging
 import time
 
-from app.models.crawl import CrawlRun
+from app.models.crawl_run import CrawlRun
 from app.models.crawl_settings import CrawlRunSettings
 from app.services.acquisition.acquirer import AcquisitionRequest
 from app.services.acquisition.acquirer import AcquisitionResult
@@ -70,6 +70,9 @@ from .extraction_retry_decision import (
     annotate_field_repair as _annotate_field_repair,
     empty_extraction_browser_retry_decision as _empty_extraction_browser_retry_decision,
     low_quality_extraction_browser_retry_decision as _low_quality_extraction_browser_retry_decision,
+)
+from .listing_escalation_decision import (
+    listing_integrity_escalation_decision as _listing_integrity_escalation_decision,
 )
 from .persistence import persist_acquisition_artifacts, persist_extracted_records
 from .runtime_helpers import (
@@ -395,6 +398,12 @@ async def _run_extraction_stage(
         selector_rules=selector_rules,
     )
     records, selector_rules = await _retry_low_quality_extraction_with_browser(
+        context,
+        fetched,
+        records=records,
+        selector_rules=selector_rules,
+    )
+    records, selector_rules = await _retry_listing_integrity_with_stronger_tier(
         context,
         fetched,
         records=records,
@@ -819,6 +828,208 @@ async def _retry_low_quality_extraction_with_browser(
     return await _extract_records_for_acquisition(context, fetched)
 
 
+async def _retry_listing_integrity_with_stronger_tier(
+    context: _URLProcessingContext,
+    fetched: _FetchedURLStage,
+    *,
+    records: list[dict[str, object]],
+    selector_rules: list[dict[str, object]],
+) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
+    """Retry at a stronger acquisition tier when the Listing_Integrity_Gate
+    flags a promo_only_cluster. Applies only to listing surfaces.
+
+    Mirrors the contract shape of _retry_low_quality_extraction_with_browser.
+    """
+    if "listing" not in context.surface:
+        return records, selector_rules
+
+    acquisition_result = fetched.acquisition_result
+
+    # Retrieve the gate decision from artifacts (attached by listing_extractor
+    # via _attach_gate_decision_to_artifacts during extract_listing_records).
+    artifacts = mapping_or_empty(
+        getattr(acquisition_result, "artifacts", {})
+    )
+    gate_payload = artifacts.get("listing_integrity")
+    if not isinstance(gate_payload, dict):
+        return records, selector_rules
+
+    # Build a lightweight gate_decision-like object for the escalation decision.
+    raw_outcome = gate_payload.get("outcome", "")
+    outcome = raw_outcome if isinstance(raw_outcome, str) else ""
+    gate_decision = _ListingIntegritySnapshot(
+        outcome=outcome,
+        reason=str(gate_payload.get("reason", "")),
+        metrics=gate_payload.get("metrics") if isinstance(gate_payload.get("metrics"), dict) else {},
+    )
+
+    # Build policy snapshot from the current acquisition request profile.
+    policy_snapshot = _build_escalation_policy_snapshot(acquisition_result)
+
+    escalation = _listing_integrity_escalation_decision(
+        acquisition_result,
+        gate_decision=gate_decision,
+        surface=context.surface,
+        retry_state=context,
+        policy_snapshot=policy_snapshot,
+    )
+
+    if not escalation.get("should_retry"):
+        reason = escalation.get("reason", "unknown")
+        await _log_pipeline_event(
+            context,
+            "info",
+            f"listing_escalation_skipped: {reason} for {context.url}",
+        )
+        _merge_browser_diagnostics(
+            acquisition_result,
+            {
+                "listing_escalation_skipped": {
+                    "reason": reason,
+                    "prior_tier": escalation.get("prior_tier"),
+                    "next_tier": escalation.get("next_tier"),
+                    "gate_reason": escalation.get("gate_reason", ""),
+                    "candidate_summary": escalation.get("candidate_summary", {}),
+                },
+            },
+        )
+        # When final gate outcome is promo_only_cluster and records are empty,
+        # set failure_reason on the URL result.
+        if gate_decision.outcome == "promo_only_cluster" and not records:
+            fetched.url_metrics["failure_reason"] = "promo_only_cluster"
+            fetched.url_metrics["listing_integrity"] = gate_payload
+        return records, selector_rules
+
+    # --- Budget guard (reuse existing pattern) ---
+    remaining_budget_seconds = _remaining_url_budget_seconds(context)
+    min_remaining_seconds = _browser_retry_min_remaining_seconds()
+    if remaining_budget_seconds < min_remaining_seconds:
+        await _log_pipeline_event(
+            context,
+            "info",
+            f"listing_escalation_skipped: budget_exhausted for {context.url}"
+            f" (remaining {remaining_budget_seconds:.1f}s < required {min_remaining_seconds:.1f}s)",
+        )
+        _merge_browser_diagnostics(
+            acquisition_result,
+            {
+                "listing_escalation_skipped": {
+                    "reason": "budget_exhausted",
+                    "prior_tier": escalation.get("prior_tier"),
+                    "next_tier": escalation.get("next_tier"),
+                    "gate_reason": escalation.get("gate_reason", ""),
+                    "candidate_summary": escalation.get("candidate_summary", {}),
+                },
+            },
+        )
+        if gate_decision.outcome == "promo_only_cluster" and not records:
+            fetched.url_metrics["failure_reason"] = "promo_only_cluster"
+            fetched.url_metrics["listing_integrity"] = gate_payload
+        return records, selector_rules
+
+    # --- Increment retry count AFTER successful acquisition (at-most-one enforcement) ---
+
+    next_tier = str(escalation.get("next_tier") or "")
+    forced_engine = next_tier.replace("browser:", "") if next_tier.startswith("browser:") else None
+
+    await _log_pipeline_event(
+        context,
+        "info",
+        f"listing_escalation_triggered: {escalation.get('prior_tier')} → {next_tier} for {context.url}"
+        f" (gate_reason={escalation.get('gate_reason')})",
+    )
+    _merge_browser_diagnostics(
+        acquisition_result,
+        {
+            "listing_escalation_triggered": {
+                "prior_tier": escalation.get("prior_tier"),
+                "next_tier": next_tier,
+                "gate_reason": escalation.get("gate_reason", ""),
+                "candidate_summary": escalation.get("candidate_summary", {}),
+            },
+        },
+    )
+
+    # --- Acquire at the stronger tier ---
+    retry_result = await _acquire_browser_retry_result(
+        context,
+        fetched,
+        retry_reason="listing_integrity_promo_cluster",
+        forced_browser_engine=forced_engine,
+    )
+    fetched.acquisition_result = retry_result
+    context.listing_integrity_retry_count += 1
+
+    # --- Re-run extraction (Ranker + Gate re-evaluate on new observation) ---
+    retry_records, retry_selector_rules = await _extract_records_for_acquisition(
+        context,
+        fetched,
+    )
+
+    # Check the new gate decision after re-extraction.
+    retry_artifacts = mapping_or_empty(
+        getattr(retry_result, "artifacts", {})
+    )
+    retry_gate_payload = retry_artifacts.get("listing_integrity")
+    if (
+        isinstance(retry_gate_payload, dict)
+        and retry_gate_payload.get("outcome") == "promo_only_cluster"
+        and not retry_records
+    ):
+        fetched.url_metrics["failure_reason"] = "promo_only_cluster"
+        fetched.url_metrics["listing_integrity"] = retry_gate_payload
+
+    return retry_records, retry_selector_rules
+
+
+class _ListingIntegritySnapshot:
+    """Lightweight stand-in for IntegrityDecision used by the escalation decision."""
+
+    __slots__ = ("outcome", "reason", "metrics")
+
+    def __init__(self, outcome: str, reason: str, metrics: dict[str, object]):
+        self.outcome = outcome
+        self.reason = reason
+        self.metrics = metrics
+
+
+def _build_escalation_policy_snapshot(acquisition_result) -> object:
+    """Build a policy snapshot object for the escalation decision.
+
+    Exposes challenge_state, escalation_disabled, and host_hard_block
+    derived from the acquisition result and runtime settings.
+    """
+    diagnostics = mapping_or_empty(
+        getattr(acquisition_result, "browser_diagnostics", {})
+    )
+    challenge_state = bool(diagnostics.get("challenge_detected"))
+    host_hard_block = bool(diagnostics.get("host_hard_block"))
+    # escalation_disabled is read from runtime settings inside the decision
+    # function itself; expose False here so the policy snapshot doesn't
+    # duplicate that check.
+    return _EscalationPolicySnapshot(
+        challenge_state=challenge_state,
+        escalation_disabled=False,
+        host_hard_block=host_hard_block,
+    )
+
+
+class _EscalationPolicySnapshot:
+    """Minimal policy snapshot for listing_integrity_escalation_decision."""
+
+    __slots__ = ("challenge_state", "escalation_disabled", "host_hard_block")
+
+    def __init__(
+        self,
+        challenge_state: bool,
+        escalation_disabled: bool,
+        host_hard_block: bool,
+    ):
+        self.challenge_state = challenge_state
+        self.escalation_disabled = escalation_disabled
+        self.host_hard_block = host_hard_block
+
+
 def _remaining_url_budget_seconds(context: _URLProcessingContext) -> float:
     return max(
         0.0,
@@ -1141,6 +1352,7 @@ async def _run_record_extraction(
         selector_rules=selector_rules,
         extraction_runtime_snapshot=context.run.settings_view.extraction_runtime_snapshot(),
         content_type=acquisition_result.content_type,
+        browser_diagnostics=getattr(acquisition_result, "browser_diagnostics", None),
     )
 
 

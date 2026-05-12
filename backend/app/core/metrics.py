@@ -16,7 +16,7 @@ from sqlalchemy import func, select, text
 
 from app.core.database import SessionLocal, engine
 from app.core.redis import get_redis, redis_failure_total, redis_is_enabled
-from app.models.crawl import CrawlRun
+from app.models.crawl_run import CrawlRun
 from app.services.acquisition import browser_runtime_snapshot
 
 

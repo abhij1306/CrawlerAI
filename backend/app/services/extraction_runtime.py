@@ -53,11 +53,42 @@ from app.services.field_policy import (
     normalize_field_key,
 )
 from app.services.extract.listing_candidate_ranking import best_listing_candidate_set
-from app.services.listing_extractor import extract_listing_records
+from app.services.listing_extractor import (
+    apply_listing_integrity_gate,
+    extract_listing_records,
+)
 from app.services.config.runtime_settings import crawler_runtime_settings
 from app.services.normalizers import normalize_decimal_price
 
 logger = logging.getLogger(__name__)
+
+
+def _propagate_listing_integrity_to_diagnostics(
+    artifacts: dict[str, object] | None,
+    browser_diagnostics: dict[str, object] | None,
+) -> None:
+    """Thread the IntegrityDecision from artifacts onto browser_diagnostics.
+
+    On a retry that produces a new decision, the prior decision is moved to
+    ``listing_integrity.previous`` so both are auditable.  The decision is
+    attached at the set level (browser_diagnostics), never on individual records
+    (INVARIANTS Rule 8).
+    """
+    if browser_diagnostics is None or artifacts is None:
+        return
+    decision_payload = artifacts.get("listing_integrity")
+    if not isinstance(decision_payload, dict):
+        return
+
+    # Always shallow-copy to avoid mutating the original artifacts entry.
+    decision_copy = dict(decision_payload)
+
+    existing = browser_diagnostics.get("listing_integrity")
+    if isinstance(existing, dict):
+        # Retry produced a new decision — preserve the prior one.
+        decision_copy["previous"] = existing
+
+    browser_diagnostics["listing_integrity"] = decision_copy
 
 
 def extract_records(
@@ -74,6 +105,7 @@ def extract_records(
     selector_rules: list[dict[str, object]] | None = None,
     extraction_runtime_snapshot: dict[str, object] | None = None,
     content_type: str | None = None,
+    browser_diagnostics: dict[str, object] | None = None,
 ) -> list[dict]:
     normalized_surface = str(surface or "").strip().lower()
     if not normalized_surface or normalized_surface == "auto":
@@ -164,11 +196,33 @@ def extract_records(
                     is_job=str(normalized_surface or "").startswith("job_"),
                 ),
             )
-            return candidate_rows
+            gated_rows = apply_listing_integrity_gate(
+                candidate_rows,
+                page_url=page_url,
+                surface=normalized_surface,
+                artifacts=artifacts,
+            )
+            _propagate_listing_integrity_to_diagnostics(artifacts, browser_diagnostics)
+            return gated_rows
         if listing_rows:
-            return listing_rows
+            gated_rows = apply_listing_integrity_gate(
+                listing_rows,
+                page_url=page_url,
+                surface=normalized_surface,
+                artifacts=artifacts,
+            )
+            _propagate_listing_integrity_to_diagnostics(artifacts, browser_diagnostics)
+            return gated_rows
         if adapter_rows:
-            return adapter_rows
+            gated_rows = apply_listing_integrity_gate(
+                adapter_rows,
+                page_url=page_url,
+                surface=normalized_surface,
+                artifacts=artifacts,
+            )
+            _propagate_listing_integrity_to_diagnostics(artifacts, browser_diagnostics)
+            return gated_rows
+        _propagate_listing_integrity_to_diagnostics(artifacts, browser_diagnostics)
         return []
     detail_rows = _postprocess_detail_records(
         extract_detail_records(

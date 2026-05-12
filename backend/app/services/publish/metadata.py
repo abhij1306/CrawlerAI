@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from app.models.crawl import ReviewPromotion
+from app.models.review import ReviewPromotion
 from app.services.domain_utils import normalize_domain
 from app.services.field_policy import canonical_requested_fields
 from sqlalchemy import select

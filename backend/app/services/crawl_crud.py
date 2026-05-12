@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from app.core.telemetry import generate_correlation_id, get_correlation_id
-from app.models.crawl import CrawlLog, CrawlRecord, CrawlRun
+from app.models.crawl_run import CrawlLog, CrawlRecord, CrawlRun
 from app.models.crawl_settings import CrawlRunSettings
 from app.services.crawl_events import append_log_event
 from app.services.config.domain_profiles import (

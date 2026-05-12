@@ -7,7 +7,7 @@ import pytest
 from app.services._batch_runtime import process_run
 from app.services.acquisition.acquirer import AcquisitionResult
 from app.services.crawl_crud import create_crawl_run, get_run_records
-from app.models.crawl import CrawlRecord
+from app.models.crawl_run import CrawlRecord
 from app.services.pipeline.types import URLProcessingResult
 from app.services.robots_policy import (
     ROBOTS_ALLOWED,

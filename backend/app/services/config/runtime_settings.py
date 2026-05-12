@@ -364,6 +364,10 @@ class CrawlerRuntimeSettings(BaseSettings):
     host_memory_ttl_seconds_key: str = "host_memory_ttl_seconds"
     detail_max_variant_matrix_cells: int = 200
     listing_candidate_strong_score_threshold: int = 18
+    listing_cohort_homogeneity_min_ratio: float = 0.6
+    listing_integrity_min_records: int = 2
+    listing_integrity_escalation_enabled: bool = True
+    listing_integrity_escalation_retry_max_per_run: int = 1
     robots_cache_size: int = 512
     robots_cache_ttl: float = 3600.0
     robots_fetch_user_agent: str = "CrawlerAI"
@@ -529,6 +533,17 @@ class CrawlerRuntimeSettings(BaseSettings):
                 raise ValueError(
                     "detail_max_variant_matrix_cells must be >= detail_max_variant_rows * detail_max_variant_axes"
                 )
+        _require_unit_interval(
+            "listing_cohort_homogeneity_min_ratio",
+            self.listing_cohort_homogeneity_min_ratio,
+        )
+        _require_non_negative(
+            "listing_integrity_min_records", self.listing_integrity_min_records
+        )
+        _require_non_negative(
+            "listing_integrity_escalation_retry_max_per_run",
+            self.listing_integrity_escalation_retry_max_per_run,
+        )
         return self
 
     def coerce_url_timeout_seconds(self, value: object) -> float:

@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.crawl import DomainRunProfile
+from app.models.domain_memory import DomainRunProfile
 from app.services.config.domain_profiles import TRAVERSAL_MODE_VALUES
 from app.services.config.runtime_settings import crawler_runtime_settings
 from app.services.domain_utils import normalize_domain

@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from typing import Awaitable, Callable
 
-from app.models.crawl import CrawlRun
+from app.models.crawl_run import CrawlRun
 from app.services.confidence import score_record_confidence
 from app.services.config.llm_runtime import llm_runtime_settings
 from app.services.config.runtime_settings import crawler_runtime_settings

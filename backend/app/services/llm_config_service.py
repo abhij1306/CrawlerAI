@@ -5,7 +5,7 @@ from typing import Any
 
 from app.core.config import settings
 from app.core.security import decrypt_secret
-from app.models.crawl import CrawlRun
+from app.models.crawl_run import CrawlRun
 from app.models.llm import LLMConfig
 from app.services.config.field_mappings import PROMPT_REGISTRY
 from app.services.config.llm_runtime import SUPPORTED_LLM_PROVIDERS

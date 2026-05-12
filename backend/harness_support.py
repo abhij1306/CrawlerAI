@@ -11,7 +11,7 @@ from urllib.parse import unquote, urlsplit
 
 from app.core.database import SessionLocal
 from app.core.security import hash_password, verify_password
-from app.models.crawl import CrawlRun
+from app.models.crawl_run import CrawlRun
 from app.models.user import User
 from app.services._batch_runtime import process_run
 from app.services.adapters.registry import registered_adapters

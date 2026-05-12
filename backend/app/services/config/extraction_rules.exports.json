@@ -4023,6 +4023,27 @@
       "fitment-warning"
     ]
   },
+  "LISTING_INTEGRITY_SUPPORT_FIELDS": {
+    "ecommerce_listing": {
+      "__type__": "frozenset",
+      "items": [
+        "image_url",
+        "price",
+        "rating",
+        "review_count",
+        "brand"
+      ]
+    },
+    "job_listing": {
+      "__type__": "frozenset",
+      "items": [
+        "company",
+        "location",
+        "salary",
+        "job_type"
+      ]
+    }
+  },
   "LISTING_JOB_SIGNAL_FIELDS": {
     "__type__": "frozenset",
     "items": [
@@ -4046,6 +4067,7 @@
       "view"
     ]
   },
+  "LISTING_LOCALE_PATH_SEGMENT_PATTERN": "^[a-zA-Z]{2}(?:[_-][a-zA-Z]{2})?$",
   "LISTING_MATERIALS_SECTION_LABEL": "Materials:",
   "LISTING_MERCHANDISING_TITLE_PREFIXES": {
     "__type__": "tuple",
@@ -4404,7 +4426,10 @@
       "^how posting dates work$",
       "^download(?:\\s+the)?\\s+.+\\s+app$",
       "^shop all categories$",
-      "^(?:customer care|customer service|help|support|faq|about(?: us)?|returns?)$"
+      "^(?:customer care|customer service|help|support|faq|about(?: us)?|returns?)$",
+      "^(?:free\\s+)?(?:fast|same[- ]?day|next[- ]?day|standard|express|overnight|expedited|international)?\\s*(?:free\\s+)?shipping$",
+      "^ships?\\s+(?:in|within|same\\s*day|today)\\s*[\\w\\d\\-\\s/(),%]*$",
+      "^(?:in\\s+stock|out\\s+of\\s+stock|sold\\s+out|available)$"
     ]
   },
   "LISTING_UTILITY_TITLE_TOKENS": {

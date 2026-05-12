@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 
-from app.models.crawl import CrawlRun
+from app.models.crawl_run import CrawlRun
 from app.models.llm import LLMCostLog, LLMCostLogOutcome
 from app.services.llm_errors import LLMErrorCategory
 from app.services.llm_provider_client import estimate_cost_usd

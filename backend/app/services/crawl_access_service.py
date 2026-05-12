@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from app.models.crawl import CrawlRecord, CrawlRun
+from app.models.crawl_run import CrawlRecord, CrawlRun
 from app.models.user import User
 from app.services.crawl_crud import get_run
 from sqlalchemy.ext.asyncio import AsyncSession

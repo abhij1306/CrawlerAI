@@ -9,7 +9,8 @@ from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import SessionLocal
-from app.models.crawl import CrawlRecord, CrawlRun, DataEnrichmentJob, EnrichedProduct
+from app.models.data_enrichment import DataEnrichmentJob, EnrichedProduct
+from app.models.crawl_run import CrawlRecord, CrawlRun
 from app.models.user import User
 from app.services.config.data_enrichment import (
     DATA_ENRICHMENT_BASE_REQUIRED_ATTRIBUTES,

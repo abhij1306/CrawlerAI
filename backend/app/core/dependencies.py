@@ -1,9 +1,13 @@
 # FastAPI dependency helpers.
 from __future__ import annotations
 
+from app.core.config import settings
 from app.core.database import get_session
 from app.core.security import decode_access_token
 from app.models.user import User
+from app.services.dispatch.base import RunDispatcher
+from app.services.dispatch.celery_dispatcher import CeleryRunDispatcher
+from app.services.dispatch.local_dispatcher import LocalRunDispatcher
 from fastapi import Cookie, Depends, Header, HTTPException, status
 from jose import JWTError
 from sqlalchemy import select
@@ -60,3 +64,10 @@ async def require_admin(
             status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required"
         )
     return user
+
+
+def get_run_dispatcher() -> RunDispatcher:
+    """Resolve the run dispatcher based on settings. Called once at startup or per-request."""
+    if settings.celery_dispatch_enabled:
+        return CeleryRunDispatcher()
+    return LocalRunDispatcher()

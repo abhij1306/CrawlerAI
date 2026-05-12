@@ -11,7 +11,7 @@ from sqlalchemy.exc import IntegrityError, OperationalError, ProgrammingError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import SessionLocal
-from app.models.crawl import HostProtectionMemory
+from app.models.domain_memory import HostProtectionMemory
 from app.services.config.runtime_settings import crawler_runtime_settings
 from app.services.domain_utils import normalize_host
 

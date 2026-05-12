@@ -4,7 +4,7 @@ from __future__ import annotations
 from typing import Annotated
 
 from app.core.dependencies import get_current_user, get_db
-from app.models.crawl import CrawlRun
+from app.models.crawl_run import CrawlRun
 from app.models.user import User
 from app.schemas.crawl import (
     CrawlRunResponse,
@@ -46,8 +46,8 @@ async def review_detail(
     session: Annotated[AsyncSession, Depends(get_db)],
     user: Annotated[User, Depends(get_current_user)],
 ) -> ReviewResponse:
-    await _get_review_run_or_404(session, run_id=run_id, user=user)
-    payload = await build_review_payload(session, run_id)
+    run = await _get_review_run_or_404(session, run_id=run_id, user=user)
+    payload = await build_review_payload(session, run.id)
     if payload is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail=RUN_NOT_FOUND_DETAIL
@@ -69,8 +69,8 @@ async def review_artifact_html(
     session: Annotated[AsyncSession, Depends(get_db)],
     user: Annotated[User, Depends(get_current_user)],
 ) -> HTMLResponse:
-    await _get_review_run_or_404(session, run_id=run_id, user=user)
-    html_text = await load_review_html(session, run_id)
+    run = await _get_review_run_or_404(session, run_id=run_id, user=user)
+    html_text = await load_review_html(session, run.id)
     if not html_text:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="No HTML artifact found"

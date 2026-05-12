@@ -8,7 +8,8 @@ from types import SimpleNamespace
 import pytest
 
 from app.services import crawl_fetch_runtime
-from app.models.crawl import DomainCookieMemory
+
+from app.models.domain_memory import DomainCookieMemory
 from app.services.acquisition import browser_identity
 from app.services.acquisition import browser_proxy_bridge
 from app.services.acquisition import cookie_store

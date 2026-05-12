@@ -7,7 +7,7 @@ from bs4 import BeautifulSoup
 from bs4.element import NavigableString, Tag
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.crawl import CrawlRun
+from app.models.crawl_run import CrawlRun
 from app.services.config.selectors import (
     SELECTOR_SYNTHESIS_ALLOWED_ATTRS,
     SELECTOR_SELF_HEAL_DEFAULT_MIN_CONFIDENCE,

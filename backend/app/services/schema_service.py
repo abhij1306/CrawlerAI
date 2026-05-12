@@ -4,7 +4,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
-from app.models.crawl import ReviewPromotion
+from app.models.review import ReviewPromotion
 from app.services.config.runtime_settings import crawler_runtime_settings
 from app.services.domain_utils import normalize_domain
 from app.services.field_policy import canonical_fields_for_surface, field_allowed_for_surface

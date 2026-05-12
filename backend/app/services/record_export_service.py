@@ -6,7 +6,7 @@ from collections.abc import AsyncIterator, Callable
 from io import StringIO
 from urllib.parse import urlparse
 
-from app.models.crawl import CrawlRecord, CrawlRun
+from app.models.crawl_run import CrawlRecord, CrawlRun
 from app.models.user import User
 from app.services.crawl_access_service import (
     RECORD_NOT_FOUND_DETAIL,

@@ -139,16 +139,23 @@ async def record_provenance(
         raise HTTPException(status_code=404, detail=RUN_NOT_FOUND_DETAIL) from exc
 
 
+async def _require_run_access(
+    session: AsyncSession, *, run_id: int, user: User
+) -> None:
+    """Shared access check for export endpoints. Raises 404 if run not found."""
+    try:
+        await require_accessible_run(session, run_id=run_id, user=user)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=RUN_NOT_FOUND_DETAIL) from exc
+
+
 @router.get("/api/crawls/{run_id}/export/json", responses=_route_responses(RUN_NOT_FOUND_RESPONSE))
 async def export_json(
     run_id: int,
     session: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> StreamingResponse:
-    try:
-        await require_accessible_run(session, run_id=run_id, user=current_user)
-    except ValueError as exc:
-        raise HTTPException(status_code=404, detail=RUN_NOT_FOUND_DETAIL) from exc
+    await _require_run_access(session, run_id=run_id, user=current_user)
     return await build_json_export_response(session, run_id=run_id)
 
 
@@ -158,10 +165,7 @@ async def export_csv(
     session: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> StreamingResponse:
-    try:
-        await require_accessible_run(session, run_id=run_id, user=current_user)
-    except ValueError as exc:
-        raise HTTPException(status_code=404, detail=RUN_NOT_FOUND_DETAIL) from exc
+    await _require_run_access(session, run_id=run_id, user=current_user)
     return await build_csv_export_response(session, run_id=run_id)
 
 
@@ -174,10 +178,7 @@ async def export_tables_csv(
     session: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> StreamingResponse:
-    try:
-        await require_accessible_run(session, run_id=run_id, user=current_user)
-    except ValueError as exc:
-        raise HTTPException(status_code=404, detail=RUN_NOT_FOUND_DETAIL) from exc
+    await _require_run_access(session, run_id=run_id, user=current_user)
     return await build_tables_csv_export_response(session, run_id=run_id)
 
 
@@ -190,10 +191,7 @@ async def export_artifacts_json(
     session: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> StreamingResponse:
-    try:
-        await require_accessible_run(session, run_id=run_id, user=current_user)
-    except ValueError as exc:
-        raise HTTPException(status_code=404, detail=RUN_NOT_FOUND_DETAIL) from exc
+    await _require_run_access(session, run_id=run_id, user=current_user)
     return await build_artifacts_json_export_response(session, run_id=run_id)
 
 
@@ -206,8 +204,5 @@ async def export_discoverist(
     session: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> StreamingResponse:
-    try:
-        await require_accessible_run(session, run_id=run_id, user=current_user)
-    except ValueError as exc:
-        raise HTTPException(status_code=404, detail=RUN_NOT_FOUND_DETAIL) from exc
+    await _require_run_access(session, run_id=run_id, user=current_user)
     return await build_discoverist_export_response(session, run_id=run_id)

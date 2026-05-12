@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.crawl import CrawlRun
+from app.models.crawl_run import CrawlRun
 from app.services.acquisition.acquirer import AcquisitionResult
 from app.services.acquisition_plan import AcquisitionPlan
 from app.services.config.runtime_settings import crawler_runtime_settings
@@ -21,6 +21,7 @@ class URLProcessingContext:
     started_at_monotonic: float
     requested_fields: list[str] = field(default_factory=list)
     surface: str = ""
+    listing_integrity_retry_count: int = 0
 
 
 @dataclass(slots=True)

@@ -45,16 +45,17 @@ If a file is not listed, assume it is a helper under a listed owner.
 | Model | File | Purpose |
 |---|---|---|
 | `User` | `user.py` | account, role, token version |
-| `CrawlRun` | `crawl.py` | run state, surface, settings, summary |
-| `CrawlRecord` | `crawl.py` | extracted record payload and provenance |
-| `CrawlLog` | `crawl.py` | run logs |
-| `DomainMemory` | `crawl.py` | selector memory scoped by `(domain, surface)` |
-| `DomainRunProfile` | `crawl.py` | reusable execution defaults scoped by `(domain, surface)` |
-| `DomainCookieMemory` | `crawl.py` | reusable browser state scoped by domain |
-| `DomainFieldFeedback` | `crawl.py` | per-field keep/reject learning history |
-| `ReviewPromotion` | `crawl.py` | approved review schema snapshot |
-| `ProductIntelligenceJob`, `ProductIntelligenceSourceProduct`, `ProductIntelligenceCandidate`, `ProductIntelligenceMatch` | `crawl.py` | web product matching and price comparison jobs |
-| `DataEnrichmentJob`, `EnrichedProduct` | `crawl.py` | on-demand ecommerce detail enrichment jobs and derived enriched product rows |
+| `CrawlRun` | `crawl_run.py` | run state, surface, settings, summary |
+| `CrawlRecord` | `crawl_run.py` | extracted record payload and provenance |
+| `CrawlLog` | `crawl_run.py` | run logs |
+| `DomainMemory` | `domain_memory.py` | selector memory scoped by `(domain, surface)` |
+| `DomainRunProfile` | `domain_memory.py` | reusable execution defaults scoped by `(domain, surface)` |
+| `DomainCookieMemory` | `domain_memory.py` | reusable browser state scoped by domain |
+| `DomainFieldFeedback` | `domain_memory.py` | per-field keep/reject learning history |
+| `HostProtectionMemory` | `domain_memory.py` | per-host block/success tracking |
+| `ReviewPromotion` | `review.py` | approved review schema snapshot |
+| `ProductIntelligenceJob`, `ProductIntelligenceSourceProduct`, `ProductIntelligenceCandidate`, `ProductIntelligenceMatch` | `product_intelligence.py` | web product matching and price comparison jobs |
+| `DataEnrichmentJob`, `EnrichedProduct` | `data_enrichment.py` | on-demand ecommerce detail enrichment jobs and derived enriched product rows |
 | `LLMConfig`, `LLMCostLog` | `llm.py` | LLM config and cost tracking |
 
 ### `schemas/` — request and response DTOs
@@ -68,8 +69,9 @@ If a file is not listed, assume it is a helper under a listed owner.
 | File | Purpose |
 |---|---|
 | `crawl_ingestion_service.py` | Validate and normalize `CrawlCreate`, stamp run snapshots |
-| `crawl_service.py` | `dispatch_run()` entry |
+| `crawl_service.py` | `dispatch_run()` entry — delegates to `dispatch/` strategy |
 | `crawl_crud.py` | DB create and state transitions |
+| `dispatch/` | `RunDispatcher` protocol + `LocalRunDispatcher` + `CeleryRunDispatcher` |
 | `domain_run_profile_service.py` | Load/save reusable execution defaults |
 | `crawl_events.py` | WebSocket log emission |
 | `product_intelligence/*` | Product web discovery, candidate crawl orchestration, deterministic match scoring |

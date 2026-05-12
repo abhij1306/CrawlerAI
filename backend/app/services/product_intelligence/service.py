@@ -8,14 +8,13 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import SessionLocal
-from app.models.crawl import (
-    CrawlRecord,
-    CrawlRun,
+from app.models.product_intelligence import (
     ProductIntelligenceCandidate,
     ProductIntelligenceJob,
     ProductIntelligenceMatch,
     ProductIntelligenceSourceProduct,
 )
+from app.models.crawl_run import CrawlRecord, CrawlRun
 from app.models.user import User
 from app.services.config.product_intelligence import (
     ADMIN_ROLE,

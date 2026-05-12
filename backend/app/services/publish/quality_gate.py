@@ -4,7 +4,7 @@ import json
 from collections.abc import Sequence
 from typing import Any
 
-from app.models.crawl import CrawlRecord, CrawlRun
+from app.models.crawl_run import CrawlRecord, CrawlRun
 from app.services.config import export_settings
 from app.services.export.schema import clean_export_data
 from app.services.field_policy import canonical_requested_fields

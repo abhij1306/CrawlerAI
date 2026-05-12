@@ -10,7 +10,7 @@ from typing import Any
 from app.core.config import settings
 from app.core.database import SessionLocal
 from app.core.redis import redis_fail_open, schedule_fail_open
-from app.models.crawl import CrawlLog, CrawlRun
+from app.models.crawl_run import CrawlLog, CrawlRun
 from app.services.config.runtime_settings import crawler_runtime_settings
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession

@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import pytest
 
-from app.models.crawl import CrawlRecord, DomainFieldFeedback, ReviewPromotion
+from app.models.crawl_run import CrawlRecord
+from app.models.domain_memory import DomainFieldFeedback
+from app.models.review import ReviewPromotion
 from app.services.domain_memory_service import load_domain_memory, save_domain_memory
 from app.services.review import (
     apply_domain_recipe_field_action,

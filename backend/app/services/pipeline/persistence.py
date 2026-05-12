@@ -4,7 +4,7 @@ import asyncio
 import hashlib
 import json
 
-from app.models.crawl import CrawlRecord, CrawlRun
+from app.models.crawl_run import CrawlRecord, CrawlRun
 from app.services.db_utils import mapping_or_empty
 from app.services.field_value_core import object_list as _object_list
 from app.services.public_record_firewall import public_record_data_for_surface

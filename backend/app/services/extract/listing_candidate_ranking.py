@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from collections import Counter
 from typing import Any, Callable
 from urllib.parse import urlsplit
 
@@ -19,12 +20,57 @@ from app.services.config.extraction_rules import (
 )
 from app.services.config.surface_hints import detail_path_hints
 from app.services.config.runtime_settings import crawler_runtime_settings
+from app.services.extract.listing_card_fragments import listing_signature_url_shape
 from app.services.field_value_core import LISTING_UTILITY_TITLE_REGEXES, clean_text
 
 
 def _metric_int(metrics: dict[str, object], key: str) -> int:
     value = metrics.get(key)
     return int(value) if isinstance(value, int | bool) else 0
+
+
+def _record_url_signature(url: str) -> str:
+    """Compute a URL-shape signature for cohort homogeneity comparison.
+
+    Uses the same URL-shape dimensions as
+    :func:`listing_fragment_structural_signature`: category-prefix bucket and
+    detail-marker boolean, plus path-depth bucket and path-prefix shape.
+    """
+    raw = str(url or "").strip()
+    if not raw:
+        return "|0|0"
+    try:
+        parsed = urlsplit(raw)
+    except ValueError:
+        return "|0|0"
+    prefix_bucket, detail_marker = listing_signature_url_shape(raw)
+    path = str(parsed.path or "").lower()
+    segments = [s for s in path.split("/") if s]
+    depth = len(segments)
+    if depth <= 1:
+        depth_bucket = "1"
+    elif depth <= 3:
+        depth_bucket = "2_3"
+    else:
+        depth_bucket = "4_plus"
+    return f"{prefix_bucket}|{detail_marker}|{depth_bucket}"
+
+
+def _set_cohort_homogeneity(records: list[dict[str, Any]], *, page_url: str) -> float:
+    """Return dominant_signature_count / len(records). Empty set returns 1.0."""
+    if not records:
+        return 1.0
+    signatures: list[str] = []
+    for record in records:
+        url = str(record.get("url") or "").strip()
+        sig = _record_url_signature(url)
+        signatures.append(sig)
+    if not signatures:
+        return 1.0
+    counts = Counter(signatures)
+    dominant_count = counts.most_common(1)[0][1]
+    return dominant_count / len(signatures)
+
 
 def best_listing_candidate_set(
     candidate_sets: list[tuple[str, list[dict[str, Any]]]],
@@ -35,10 +81,11 @@ def best_listing_candidate_set(
     title_is_noise: Callable[[str], bool],
     url_is_structural: Callable[[str, str], bool],
     detail_like_url: Callable[[str], bool] | None = None,
+    diagnostics_sink: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     best_records: list[dict[str, Any]] = []
-    best_score = (-1, -1, -1, -1, -1, -1, -1)
-    for _name, records in candidate_sets:
+    best_score: tuple[bool, int, int, int, int, int, int, int] | None = None
+    for set_name, records in candidate_sets:
         limited = [
             record
             for record in list(records or [])
@@ -60,7 +107,22 @@ def best_listing_candidate_set(
             url_is_structural=url_is_structural,
             detail_like_url=detail_like_url,
         )
-        if score > best_score:
+        # Emit cohort_penalty_applied diagnostic when penalty is active
+        if diagnostics_sink is not None and prepared and not score[0]:
+            homogeneity = _set_cohort_homogeneity(prepared, page_url=page_url)
+            signatures = Counter(
+                _record_url_signature(str(r.get("url") or "").strip())
+                for r in prepared
+            )
+            dominant_count = signatures.most_common(1)[0][1] if signatures else 0
+            diagnostics_sink.append({
+                "type": "cohort_penalty_applied",
+                "set_name": set_name,
+                "record_count": len(prepared),
+                "dominant_signature_count": dominant_count,
+                "cohort_homogeneity_ratio": homogeneity,
+            })
+        if best_score is None or score > best_score:
             best_score = score
             best_records = prepared
     return best_records
@@ -135,9 +197,9 @@ def _listing_record_set_score(
     title_is_noise: Callable[[str], bool],
     url_is_structural: Callable[[str, str], bool],
     detail_like_url: Callable[[str], bool] | None,
-) -> tuple[int, int, int, int, int, int, int]:
+) -> tuple[bool, int, int, int, int, int, int, int]:
     if not records:
-        return (-1, -1, -1, -1, -1, -1, -1)
+        return (False, -1, -1, -1, -1, -1, -1, -1)
     quality_metrics = [
         _listing_record_quality_metrics(
             record,
@@ -151,7 +213,12 @@ def _listing_record_set_score(
         if isinstance(record, dict)
     ]
     if not quality_metrics:
-        return (-1, -1, -1, -1, -1, -1, -1)
+        return (False, -1, -1, -1, -1, -1, -1, -1)
+    # Cohort homogeneity is a penalty, not a pre-gate drop. The integrity gate
+    # still needs the best available set to explain/retry bad cohorts.
+    threshold = crawler_runtime_settings.listing_cohort_homogeneity_min_ratio
+    homogeneity = _set_cohort_homogeneity(records, page_url=page_url)
+    cohort_pass = homogeneity >= threshold
     quality_scores = [_metric_int(metrics, "score") for metrics in quality_metrics]
     strong_records = sum(
         score >= crawler_runtime_settings.listing_candidate_strong_score_threshold
@@ -163,6 +230,7 @@ def _listing_record_set_score(
     clean_records = len(quality_metrics) - utility_records
     avg_quality = int(round(sum(quality_scores) / max(1, len(quality_scores)) * 100))
     return (
+        cohort_pass,
         strong_records,
         supported_records,
         detail_like_records,

@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 from urllib.parse import urlparse
 
-from app.models.crawl import CrawlRecord
+from app.models.crawl_run import CrawlRecord
 from app.services.config.public_record_policy import (
     PUBLIC_RECORD_FALLBACK_INTERNAL_FIELDS,
 )

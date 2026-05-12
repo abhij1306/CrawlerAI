@@ -11,7 +11,7 @@ from urllib.parse import urlparse
 
 from app.core.database import SessionLocal
 from app.core.config import settings
-from app.models.crawl import DomainCookieMemory
+from app.models.domain_memory import DomainCookieMemory
 from app.services.config.block_signatures import BLOCK_SIGNATURES
 from app.services.config.cookie_settings import (
     COOKIE_FIELDS,

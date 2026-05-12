@@ -7,23 +7,25 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from app.core.config import PROJECT_ROOT, settings
-from app.models.crawl import (
-    CrawlLog,
-    CrawlRecord,
-    CrawlRun,
+from app.models.data_enrichment import (
     DataEnrichmentJob,
+    EnrichedProduct,
+)
+from app.models.crawl_run import CrawlLog, CrawlRecord, CrawlRun
+from app.models.domain_memory import (
     DomainCookieMemory,
     DomainFieldFeedback,
     DomainMemory,
     DomainRunProfile,
-    EnrichedProduct,
     HostProtectionMemory,
+)
+from app.models.product_intelligence import (
     ProductIntelligenceCandidate,
     ProductIntelligenceJob,
     ProductIntelligenceMatch,
     ProductIntelligenceSourceProduct,
-    ReviewPromotion,
 )
+from app.models.review import ReviewPromotion
 from app.models.llm import LLMCostLog
 from app.services.acquisition.cookie_store import clear_cookie_store_cache
 from app.services.acquisition.pacing import reset_pacing_state

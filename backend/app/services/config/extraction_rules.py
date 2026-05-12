@@ -1327,6 +1327,18 @@ NON_PRODUCT_IMAGE_HINTS = tuple(
             "spinner",
             "via.placeholder.com",
             "white.svg",
+            # Shipping badges and delivery-time indicators rendered as sibling
+            # icons inside product cards (generic ecommerce pattern).
+            "shipping",
+            "sameday",
+            "same-day",
+            "shipsintime",
+            "shipstime",
+            # Color/material swatches rendered as sibling SVGs inside product
+            # cards (generic ecommerce pattern; filenames like Yellow_Gold.svg).
+            "swatch",
+            "dyo-",
+            "/static-dyo",
         ]
     )
 )

@@ -26,7 +26,7 @@ from app.services.domain_memory_service import (
 )
 
 if TYPE_CHECKING:
-    from app.models.crawl import DomainMemory
+    from app.models.domain_memory import DomainMemory
 from app.services.extraction_html_helpers import html_to_text
 from app.services.domain_utils import normalize_domain
 from app.services.field_policy import normalize_field_key
@@ -171,7 +171,7 @@ async def list_selector_domain_summaries(
 ) -> list[dict[str, object]]:
     from sqlalchemy import select
 
-    from app.models.crawl import DomainMemory
+    from app.models.domain_memory import DomainMemory
 
     normalized_domain = str(domain or "").strip().lower()
     normalized_surface = str(surface or "").strip().lower()
@@ -519,7 +519,7 @@ async def test_selector(
 async def _all_domain_memories(session: AsyncSession) -> list[Any]:
     from sqlalchemy import select
 
-    from app.models.crawl import DomainMemory
+    from app.models.domain_memory import DomainMemory
 
     result = await session.execute(select(DomainMemory).order_by(DomainMemory.id.asc()))
     return list(result.scalars().all())
