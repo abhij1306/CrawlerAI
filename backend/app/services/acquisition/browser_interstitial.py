@@ -29,7 +29,7 @@ except ImportError:  # pragma: no cover
     class PlaywrightError(Exception):  # type: ignore[no-redef]
         pass
 
-    class PlaywrightTimeoutError(Exception):  # type: ignore[no-redef]
+    class PlaywrightTimeoutError(PlaywrightError):  # type: ignore[no-redef]
         pass
 
 

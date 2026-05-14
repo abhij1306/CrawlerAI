@@ -839,7 +839,10 @@ def collect_structured_candidates(
             add_candidate(
                 candidates,
                 "url",
-                absolute_url(page_url, payload.get("url") or page_url),
+                absolute_url(
+                    page_url,
+                    payload.get("url") or payload.get("@id") or page_url,
+                ),
             )
             add_candidate(
                 candidates, "description", coerce_text(payload.get("description"))

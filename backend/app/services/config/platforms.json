@@ -823,6 +823,79 @@
       ],
       "job_platform": true,
       "requires_browser": false
+    },
+    {
+      "family": "vtex",
+      "domain_patterns": [
+        "india.whirlpool.in",
+        "whirlpool.in",
+        "whirlpool.com.br"
+      ],
+      "html_contains": [
+        "vtex",
+        "render-server"
+      ],
+      "html_regex": [
+        "vtex\\.com|vtexassets\\.com|vteximg\\.com"
+      ],
+      "job_platform": false,
+      "requires_browser": true,
+      "readiness_domains": [
+        "india.whirlpool.in",
+        "whirlpool.in",
+        "whirlpool.com.br"
+      ],
+      "readiness_path_patterns": [
+        "^/[^/]+/p$",
+        "^/[^/]+/p\\?",
+        "/product/",
+        "/products/"
+      ],
+      "readiness_selectors": [
+        "[class*='productSummary' i] a[href]",
+        "[class*='product-summary' i] a[href]",
+        "a[href$='/p']",
+        "a[href*='/p?']",
+        "[class*='shelf' i] a[href]",
+        "[class*='gallery' i] a[href]"
+      ],
+      "readiness_max_wait_ms": 25000,
+      "network_signature_patterns": [
+        "vtex"
+      ]
+    },
+    {
+      "family": "sap_hybris",
+      "html_contains": [
+        "hybris",
+        "acc.common"
+      ],
+      "html_regex": [
+        "/yacceleratorstorefront/|_Hybris_|hybris\\.js|/medias/sys_master/"
+      ],
+      "domain_patterns": [
+        "kitchenaid.com",
+        "whirlpool.com",
+        "maytag.com"
+      ],
+      "job_platform": false,
+      "requires_browser": true,
+      "readiness_domains": [
+        "kitchenaid.com",
+        "whirlpool.com",
+        "maytag.com"
+      ],
+      "readiness_path_patterns": [
+        "^/.*\\.html"
+      ],
+      "readiness_selectors": [
+        "a[href*='/p.']",
+        "[class*='product-tile' i]",
+        "[class*='product-card' i]",
+        "[class*='plp-card' i]",
+        "[data-product-id]"
+      ],
+      "readiness_max_wait_ms": 20000
     }
   ]
 }

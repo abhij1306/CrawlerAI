@@ -366,9 +366,9 @@ def _detail_marker_matches(url: str, marker: str) -> bool:
     Prevents false positives like ``/product`` matching ``/product-care``
     or ``/product-advice``.  When the marker does NOT end with a path
     separator, the character following the match must be a boundary
-    (``/``, ``?``, ``#``, end-of-string, or a digit) — not a hyphen or
-    letter continuation.  Markers ending with ``/`` already encode their
-    own boundary and are matched as plain substrings.
+    (``/``, ``?``, ``.``, ``#``, ``&``, end-of-string, or a digit) — not
+    a hyphen or letter continuation.  Markers ending with ``/`` already
+    encode their own boundary and are matched as plain substrings.
     """
     # Markers that end with '/' already have a built-in boundary.
     if marker.endswith("/"):

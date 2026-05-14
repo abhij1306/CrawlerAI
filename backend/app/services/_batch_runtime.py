@@ -83,7 +83,19 @@ def _url_timeout_seconds(settings_view) -> float:
     configured_timeout = settings_view.get("url_timeout_seconds")
     if configured_timeout not in (None, ""):
         return settings_view.url_timeout_seconds()
-    return crawler_runtime_settings.default_url_process_timeout_seconds()
+    base_timeout = crawler_runtime_settings.default_url_process_timeout_seconds()
+    # Extend timeout when traversal is active — pagination/scroll can take
+    # significantly longer than a single-page fetch+extract cycle.
+    traversal_mode = settings_view.traversal_mode()
+    if traversal_mode:
+        max_pages = int(settings_view.max_pages() or 1)
+        max_scrolls = int(settings_view.max_scrolls() or 1)
+        traversal_pages = max(max_pages, max_scrolls)
+        # Allow ~30s per traversal page on top of the base timeout, capped at max.
+        traversal_budget = traversal_pages * 30.0
+        extended = base_timeout + traversal_budget
+        return min(extended, float(crawler_runtime_settings.max_url_process_timeout_seconds))
+    return base_timeout
 
 
 def _url_failure_metrics(exc: BaseException) -> dict[str, object]:
@@ -403,7 +415,7 @@ async def process_run(session: AsyncSession, run_id: int) -> None:
             # early return, break, or exception.
             if not prewarm_task.done():
                 prewarm_task.cancel()
-            with suppress(Exception):
+            with suppress(BaseException):
                 await prewarm_task
     except (RuntimeError, ValueError, TypeError, SQLAlchemyError) as exc:
         logger.exception("Run-level failure for run=%s", run_id)

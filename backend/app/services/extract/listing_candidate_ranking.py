@@ -175,10 +175,12 @@ def _listing_record_dedupe_key(
     url: str,
     detail_like_url: Callable[[str], bool] | None,
 ) -> str:
-    product_id = clean_text(record.get("product_id") or record.get("productId") or record.get("sku"))
-    if product_id:
-        return f"id:{product_id.lower()}"
     if not url:
+        product_id = clean_text(
+            record.get("product_id") or record.get("productId") or record.get("sku")
+        )
+        if product_id:
+            return f"id:{product_id.lower()}"
         return ""
     if detail_like_url is not None and detail_like_url(url):
         parsed = urlsplit(url)
@@ -296,6 +298,8 @@ def _listing_record_quality_metrics(
         score += 1
     if record.get("_source") == "visual_listing":
         score -= 6
+    elif record.get("_source") == "structured_listing":
+        score += 3
     elif record.get("_source") in {"rendered_listing", "dom_listing"}:
         score += 2
     detail_like_merchandise = False

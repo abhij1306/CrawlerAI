@@ -102,7 +102,8 @@ class CrawlRun(UpdatedAtMixin, CompletedAtMixin, Base):
             if self.completed_at is None:
                 self.completed_at = _utcnow()
         else:
-            self.completed_at = None
+            if self.completed_at is not None:
+                self.completed_at = None
         return next_status
 
     def get_setting(self, key: str, default: object = None) -> object:

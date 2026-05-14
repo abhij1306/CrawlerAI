@@ -848,6 +848,70 @@ def test_listing_extractor_prefers_structured_name_over_item_position_for_title(
     ]
 
 
+def test_listing_extractor_uses_json_ld_product_id_as_url_with_offer_fields() -> None:
+    html = """
+    <html>
+      <head>
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "ItemList",
+          "itemListElement": [
+            {
+              "@type": "ListItem",
+              "position": 1,
+              "item": {
+                "@type": "Product",
+                "@id": "https://shop.example.com/products/merino-shirt/p",
+                "name": "Merino Shirt",
+                "brand": {"@type": "Brand", "name": "Northline"},
+                "image": "https://cdn.example.com/merino-shirt.jpg",
+                "offers": {
+                  "@type": "AggregateOffer",
+                  "lowPrice": 399,
+                  "highPrice": 399,
+                  "priceCurrency": "BRL"
+                }
+              }
+            }
+          ]
+        }
+        </script>
+      </head>
+      <body>
+        <article class="product-card">
+          <a href="https://shop.example.com/products/merino-shirt/p">
+            <img src="https://cdn.example.com/merino-shirt.jpg" alt="Look-front">
+            <span>Look-front</span>
+            <span>$399</span>
+          </a>
+        </article>
+      </body>
+    </html>
+    """
+
+    rows = extract_listing_records(
+        html,
+        "https://shop.example.com/collections/shirts",
+        "ecommerce_listing",
+        max_records=10,
+    )
+
+    assert rows == [
+        {
+            "source_url": "https://shop.example.com/collections/shirts",
+            "_source": "structured_listing",
+            "title": "Merino Shirt",
+            "brand": "Northline",
+            "image_url": "https://cdn.example.com/merino-shirt.jpg",
+            "price": "399",
+            "original_price": "399",
+            "currency": "BRL",
+            "url": "https://shop.example.com/products/merino-shirt/p",
+        }
+    ]
+
+
 def test_xpath_selector_extraction_remains_unchanged() -> None:
     html = """
     <html>

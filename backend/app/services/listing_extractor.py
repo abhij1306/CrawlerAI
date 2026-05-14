@@ -22,6 +22,7 @@ from app.services.config.extraction_rules import (
     TITLE_PROMOTION_PREFIXES,
 )
 from app.services.config.runtime_settings import crawler_runtime_settings
+from app.services.shared.url_utils import extract_urls
 from app.services.extraction_context import (
     collect_structured_source_payloads,
     prepare_extraction_context,
@@ -109,7 +110,6 @@ def _structured_listing_record(
     if not record.get("image_url"):
         raw_image = payload.get("image")
         if raw_image:
-            from app.services.shared.url_utils import extract_urls
             image_urls = extract_urls(raw_image, page_url)
             if image_urls:
                 record["image_url"] = image_urls[0]
@@ -129,7 +129,7 @@ def _structured_listing_record(
 
 
 def _structured_listing_url(payload: dict[str, Any], page_url: str) -> str | None:
-    for key in ("url", "link", "href"):
+    for key in ("url", "link", "href", "@id"):
         resolved = absolute_url(page_url, payload.get(key))
         if resolved and not listing_url_is_structural(resolved, page_url):
             return resolved

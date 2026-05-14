@@ -1228,6 +1228,21 @@ def _default_browser_engine_attempts() -> list[str]:
     return ["patchright"]
 
 
+_VENDOR_BLOCK_REASON_PREFIX = "vendor-block:"
+
+
+def _is_vendor_block_reason(reason: str) -> bool:
+    return str(reason or "").strip().lower().startswith(_VENDOR_BLOCK_REASON_PREFIX)
+
+
+def _extract_vendor_from_reason(reason: str) -> str | None:
+    normalized = str(reason or "").strip().lower()
+    if not normalized.startswith(_VENDOR_BLOCK_REASON_PREFIX):
+        return None
+    vendor = normalized[len(_VENDOR_BLOCK_REASON_PREFIX):].strip()
+    return vendor or None
+
+
 def _append_engine_once(engine_attempts: list[str], engine: str) -> list[str]:
     if engine not in engine_attempts:
         return [*engine_attempts, engine]

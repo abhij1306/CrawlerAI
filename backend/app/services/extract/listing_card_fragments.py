@@ -71,7 +71,10 @@ def listing_node_signature(node, *, include_title: bool = True) -> str:
 
 
 def _listing_count_bucket(count: int | None) -> str:
-    """Bucket a count into ``{0, 1, 2_5, 6_plus}``."""
+    """Bucket a count into ``{0, 1, 2_5, 6_plus}``.
+
+    If *count* is None it is treated as 0.
+    """
     value = int(count) if count is not None else 0
     if value <= 0:
         return "0"
