@@ -26,7 +26,7 @@ from app.services.config.extraction_rules import (
     INLINE_SCALAR_LABEL_MAX_LEN,
     INLINE_SCALAR_VALUE_MAX_LEN,
 )
-from app.services.field_value_core import clean_text
+from app.services.shared.field_coerce import clean_text
 
 _NON_TEXT_STRING_NODES = (
     CData,

@@ -8,7 +8,7 @@ from app.services.config.public_record_policy import (
     PUBLIC_RECORD_FALLBACK_INTERNAL_FIELDS,
 )
 from app.services.db_utils import mapping_or_empty
-from app.services.field_value_core import object_list as _object_list
+from app.services.shared.field_coerce import object_list as _object_list
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 EXPORT_RECORD_VERSION = "1"
@@ -107,7 +107,7 @@ def build_source_trace(
                 "survived_to_final_record": True,
             }
         field_discovery[str(key)] = discovery
-    trace = {
+    trace: dict[str, object] = {
         "acquisition": {
             "method": acquisition_result.method,
             "status_code": acquisition_result.status_code,

@@ -289,7 +289,7 @@ def _merge_run_quality_summary(
     url_metrics: dict[str, object],
 ) -> dict[str, object]:
     current = mapping_or_empty(existing)
-    url_quality = (
+    url_quality: dict[str, object] = (
         mapping_or_empty(url_metrics.get("quality_summary"))
         if isinstance(url_metrics.get("quality_summary"), dict)
         else {}
@@ -312,9 +312,10 @@ def _merge_run_quality_summary(
     average_score = round(next_score_total / next_scored_urls, 4)
 
     listing_incomplete = as_int(current.get("listing_incomplete_urls", 0))
-    listing_completeness = (
-        url_quality.get("listing_completeness")
-        if isinstance(url_quality.get("listing_completeness"), dict)
+    listing_completeness_value = url_quality.get("listing_completeness")
+    listing_completeness: dict[str, object] = (
+        listing_completeness_value
+        if isinstance(listing_completeness_value, dict)
         else {}
     )
     if listing_completeness.get("applicable") and not listing_completeness.get(
@@ -323,9 +324,10 @@ def _merge_run_quality_summary(
         listing_incomplete += 1
 
     variant_incomplete = as_int(current.get("variant_incomplete_urls", 0))
-    variant_completeness = (
-        url_quality.get("variant_completeness")
-        if isinstance(url_quality.get("variant_completeness"), dict)
+    variant_completeness_value = url_quality.get("variant_completeness")
+    variant_completeness: dict[str, object] = (
+        variant_completeness_value
+        if isinstance(variant_completeness_value, dict)
         else {}
     )
     if variant_completeness.get("applicable") and not variant_completeness.get(

@@ -25,7 +25,7 @@ from app.services.config.cookie_settings import (
     SUPPORTED_STORAGE_STATE_ENGINES,
 )
 from app.services.domain_utils import normalize_domain
-from app.services.field_value_core import object_list as _object_list
+from app.services.shared.field_coerce import object_list as _object_list
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 

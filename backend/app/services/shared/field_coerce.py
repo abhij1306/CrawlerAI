@@ -3,21 +3,14 @@ from __future__ import annotations
 
 import ast
 import re
-from decimal import Decimal, InvalidOperation
 from typing import Any, cast
-from urllib.parse import urlparse
 from app.services.extraction_html_helpers import html_to_text
 from app.services.config.extraction_rules import (
     AVAILABILITY_URL_MAP,
-    BARE_HOST_URL_RE,
     CANDIDATE_AVAILABILITY_NOISE_PHRASES,
     COLOR_KEYWORD_PATTERN,
-    CURRENCY_ALIAS_PATTERNS,
-    CURRENCY_CODES,
-    CURRENCY_SYMBOL_MAP,
-    IMAGE_FIELDS,
+    IMAGE_FIELDS as IMAGE_FIELDS,
     INTEGER_VALUE_FIELDS,
-    LISTING_BRAND_MAX_WORDS,
     LISTING_UTILITY_TITLE_PATTERNS,
     LONG_TEXT_FIELDS,
     NOISY_PRODUCT_ATTRIBUTE_KEYS,
@@ -31,7 +24,7 @@ from app.services.config.extraction_rules import (
     STRUCTURED_OBJECT_FIELDS,
     STRUCTURED_OBJECT_LIST_FIELDS,
     TRACKING_PIXEL_PATTERN,
-    URL_FIELDS,
+    URL_FIELDS as URL_FIELDS,
     VARIANT_OPTION_VALUE_SUFFIX_NOISE_PATTERNS,
 )
 from app.services.config.field_mappings import (
@@ -40,22 +33,15 @@ from app.services.config.field_mappings import (
     BRAND_LIKE_FIELDS,
     FIELD_ALIASES,
     PRICE_FIELD,
-    PRICE_DICT_PREFERRED_KEYS,
     TITLE_FIELD,
     TITLE_STRUCTURED_VALUE_KEYS,
     URL_FIELD,
     WEIGHT_FIELD,
 )
 from app.services.config.public_record_policy import (
-    PUBLIC_RECORD_BARCODE_LENGTHS,
-    PUBLIC_RECORD_BRAND_REGION_SUFFIX_TOKENS,
     PUBLIC_RECORD_ECOMMERCE_DROPPED_FIELDS,
-    PUBLIC_RECORD_GENDER_REJECT_TOKENS,
-    PUBLIC_RECORD_GENDER_TAXONOMY,
-    PUBLIC_RECORD_IDENTITY_INTERNAL_TOKENS,
     PUBLIC_RECORD_LEGACY_VARIANT_FIELDS,
     PUBLIC_RECORD_PRODUCT_TYPE_NOISE_TOKENS,
-    PUBLIC_RECORD_SKU_DRAFT_PREFIX_PATTERN,
 )
 from app.services.config.variant_policy import (
     AXIS_NAME_ALIASES,
@@ -66,10 +52,6 @@ from app.services.config.variant_policy import (
     VARIANT_TRANSPORT_FIELDS,
 )
 from app.services.config.surface_hints import detail_path_hints
-from app.services.field_url_normalization import (
-    strip_record_tracking_params,
-    strip_tracking_query_params as _strip_tracking_query_params,
-)
 from app.services.field_policy import (
     exact_requested_field_key,
     expand_requested_fields,
@@ -89,60 +71,46 @@ from app.services.shared.text_coerce import (
     coerce_long_text,
     coerce_text,
     is_title_noise as is_title_noise,
-    slug_tokens,
     strip_html_tags as strip_html_tags,
     text_or_none,
 )
-from app.services.shared.url_utils import (
+from app.services.shared.field_coerce_price import (
+    CURRENCY_CODE_PATTERN,
+    CURRENCY_SYMBOL_PATTERN,
+    PRICE_RE as PRICE_RE,
+    coerce_price_from_dict,
+    decimal_for_shared_price,
+    extract_currency_code,
+    extract_price_text as extract_price_text,
+    price_text_is_negative,
+)
+from app.services.shared.field_coerce_text import (
+    category_value_is_url_path,
+    coerce_barcode,
+    coerce_brand_text,
+    coerce_gender,
+    coerce_identity_token_or_none,
+    coerce_sku,
+    identity_internal_tokens,
+    infer_brand_from_product_url as infer_brand_from_product_url,
+    infer_brand_from_title_marker as infer_brand_from_title_marker,
+)
+from app.services.shared.field_coerce_url import (
     absolute_url as absolute_url,
-    extract_urls,
+    coerce_url_field_value,
+    extract_urls as extract_urls,
+    is_url_field,
     same_host as same_host,
+    strip_record_tracking_params,
+    strip_tracking_query_params as strip_tracking_query_params,
 )
 
-strip_tracking_query_params = _strip_tracking_query_params
 REVIEW_COUNT_RE = _REVIEW_COUNT_RE
+_decimal_for_shared_price = decimal_for_shared_price
 
 PRODUCT_URL_HINTS = detail_path_hints("ecommerce_detail")
 JOB_URL_HINTS = detail_path_hints("job_detail")
 _FIELD_ALIASES = FIELD_ALIASES
-_CURRENCY_SYMBOL_PATTERN = (
-    "|".join(
-        re.escape(str(symbol))
-        for symbol in sorted(
-            (
-                str(symbol)
-                for symbol in dict(CURRENCY_SYMBOL_MAP or {}).keys()
-                if symbol
-            ),
-            key=len,
-            reverse=True,
-        )
-    )
-    or r"(?!)"
-)  # Never-matching pattern if no symbols defined
-_CURRENCY_CODE_PATTERN = (
-    "|".join(
-        re.escape(str(code))
-        for code in sorted(
-            (
-                str(code)
-                for code in tuple(CURRENCY_CODES or ())
-                if isinstance(code, str) and len(str(code)) == 3
-            ),
-            key=len,
-            reverse=True,
-        )
-    )
-    or r"(?!)"
-)
-PRICE_RE = re.compile(
-    rf"(?:(?:{_CURRENCY_SYMBOL_PATTERN})\s*\d[\d.,]*|\d[\d.,]*\s*(?:{_CURRENCY_SYMBOL_PATTERN}))"
-)
-_CODED_PRICE_RE = re.compile(
-    rf"(?:(?:\b(?:{_CURRENCY_CODE_PATTERN})\b)\s*\d[\d.,]*|\d[\d.,]*\s*(?:\b(?:{_CURRENCY_CODE_PATTERN})\b))"
-)
-_UNMARKED_PRICE_RE = re.compile(r"\d[\d.,]*")
-_CURRENCY_CODE_RE = re.compile(rf"\b({_CURRENCY_CODE_PATTERN})\b")
 _OPTION_VALUE_SUFFIX_NOISE_RE = tuple(
     re.compile(str(pattern), re.I)
     for pattern in tuple(VARIANT_OPTION_VALUE_SUFFIX_NOISE_PATTERNS or ())
@@ -168,7 +136,6 @@ _NOISY_PRODUCT_ATTRIBUTE_KEYS = frozenset(
     for key in tuple(NOISY_PRODUCT_ATTRIBUTE_KEYS or ())
     if str(key or "").strip()
 )
-_PUBLIC_RECORD_BARCODE_LENGTHS_SET = frozenset(PUBLIC_RECORD_BARCODE_LENGTHS or ())
 _SMALL_NUMERIC_RE = re.compile(str(SMALL_NUMERIC_PATTERN), re.I)
 _TRACKING_PIXEL_RE = re.compile(str(TRACKING_PIXEL_PATTERN), re.I)
 _COLOR_KEYWORD_RE = re.compile(str(COLOR_KEYWORD_PATTERN), re.I)
@@ -185,67 +152,17 @@ safe_int = _safe_int
 coerce_int = _coerce_int
 
 
-_BARE_HOST_URL_RE = BARE_HOST_URL_RE
 LISTING_UTILITY_TITLE_REGEXES = tuple(
     re.compile(pattern, re.I) for pattern in LISTING_UTILITY_TITLE_PATTERNS
 )
 _AVAILABILITY_CANONICAL_ENUM = frozenset(
     str(v) for v in dict(AVAILABILITY_URL_MAP or {}).values() if v
 )
-
-
-def infer_brand_from_title_marker(title: object) -> str | None:
-    text = clean_text(title)
-    if not text:
-        return None
-    leading_marker = next(
-        (marker for marker in ("\u2122", "\u00ae") if text.startswith(marker)), ""
-    )
-    if leading_marker:
-        leading_token = clean_text(text[len(leading_marker) :]).split(" ", 1)[0].strip()
-        brand = clean_text(f"{leading_marker}{leading_token}") if leading_token else ""
-        if not brand or len(slug_tokens(brand)) > LISTING_BRAND_MAX_WORDS:
-            return None
-        return brand
-    marker_positions = [
-        index for marker in ("\u2122", "\u00ae") if (index := text.find(marker)) >= 0
-    ]
-    if not marker_positions:
-        return None
-    brand = clean_text(text[: min(marker_positions) + 1])
-    if not brand or len(slug_tokens(brand)) > LISTING_BRAND_MAX_WORDS:
-        return None
-    return brand
-
-
-def infer_brand_from_product_url(*, url: str, title: object) -> str | None:
-    title_parts = slug_tokens(title)
-    if len(title_parts) < 2:
-        return None
-    path_parts = [
-        part.split(".", 1)[0]
-        for part in (urlparse(str(url or "")).path or "").split("/")
-        if part
-    ]
-    for path_part in reversed(path_parts):
-        path_tokens = slug_tokens(path_part)
-        if len(path_tokens) <= len(title_parts):
-            continue
-        for start in range(1, len(path_tokens) - len(title_parts) + 1):
-            if path_tokens[start : start + len(title_parts)] != title_parts:
-                continue
-            brand_tokens = path_tokens[:start]
-            if (
-                not brand_tokens
-                or len(brand_tokens) > LISTING_BRAND_MAX_WORDS
-                or not any(re.search(r"[a-z]", token) for token in brand_tokens)
-            ):
-                continue
-            return " ".join(token.capitalize() for token in brand_tokens)
-    return None
-
-
 _HTML_ENTITY_RE = re.compile(r"&(?:#[0-9]+|#x[0-9a-fA-F]+|[A-Za-z][A-Za-z0-9]+);")
+_product_type_noise_tokens = frozenset(
+    str(token).casefold()
+    for token in tuple(PUBLIC_RECORD_PRODUCT_TYPE_NOISE_TOKENS or ())
+)
 
 
 def clean_record(record: dict[str, Any]) -> dict[str, Any]:
@@ -445,77 +362,6 @@ def _coerce_structured_multi_rows(field_name: str, value: object) -> list[str]:
     return [coerced_text] if coerced_text is not None else []
 
 
-def extract_price_text(
-    value: object,
-    *,
-    prefer_last: bool = True,
-    allow_unmarked: bool = False,
-) -> str | None:
-    text = clean_text(value)
-    if not text:
-        return None
-    matches = list(PRICE_RE.finditer(text))
-    if not matches:
-        matches = list(_CODED_PRICE_RE.finditer(text.upper()))
-    if not matches and allow_unmarked:
-        matches = list(_UNMARKED_PRICE_RE.finditer(text))
-    if not matches:
-        return None
-    match = matches[-1] if prefer_last else matches[0]
-    return clean_text(match.group(0))
-
-
-def _price_text_is_negative(value: object) -> bool:
-    text = clean_text(value)
-    if not text:
-        return False
-    marker = rf"(?:{_CURRENCY_SYMBOL_PATTERN}|\b(?:{_CURRENCY_CODE_PATTERN})\b)?"
-    return re.match(rf"^\s*-\s*{marker}\s*\d", text, re.I) is not None
-
-
-def _price_candidate_has_money_signal(value: str) -> bool:
-    text = clean_text(value)
-    return (
-        "." in text
-        or "," in text
-        or extract_currency_code(text) is not None
-        or PRICE_RE.search(text) is not None
-        or _CODED_PRICE_RE.search(text.upper()) is not None
-    )
-
-
-def _coerce_price_from_dict(value: dict[str, object]) -> str | None:
-    fallback: str | None = None
-    for key in PRICE_DICT_PREFERRED_KEYS:
-        candidate = value.get(key)
-        if candidate in (None, "", [], {}):
-            continue
-        text = coerce_text(candidate)
-        if not text or _price_text_is_negative(text):
-            continue
-        if fallback is None:
-            fallback = text
-        if _price_candidate_has_money_signal(text):
-            return text
-    return fallback
-
-
-def extract_currency_code(value: object) -> str | None:
-    text = clean_text(value)
-    if not text:
-        return None
-    for pattern, code in dict(CURRENCY_ALIAS_PATTERNS or {}).items():
-        if re.search(str(pattern), text, flags=re.I):
-            return str(code)
-    for symbol, code in dict(CURRENCY_SYMBOL_MAP or {}).items():
-        if str(symbol) in text:
-            return str(code)
-    code_match = _CURRENCY_CODE_RE.search(text.upper())
-    if code_match:
-        return code_match.group(1)
-    return None
-
-
 def coerce_structured_scalar(
     value: object,
     *,
@@ -560,10 +406,10 @@ def _sanitize_option_scalar(field_name: str, value: object) -> str | None:
         for pattern in _OPTION_VALUE_SUFFIX_NOISE_RE:
             cleaned = clean_text(pattern.sub("", cleaned))
         cleaned = re.sub(
-            rf"\s+(?:{_CURRENCY_SYMBOL_PATTERN})\s*\d[\d.,]*.*$", "", cleaned
+            rf"\s+(?:{CURRENCY_SYMBOL_PATTERN})\s*\d[\d.,]*.*$", "", cleaned
         )
         cleaned = re.sub(
-            rf"\s+\d[\d.,]*\s*(?:{_CURRENCY_CODE_PATTERN})\b.*$",
+            rf"\s+\d[\d.,]*\s*(?:{CURRENCY_CODE_PATTERN})\b.*$",
             "",
             cleaned,
             flags=re.I,
@@ -602,7 +448,7 @@ def _sanitize_option_scalar(field_name: str, value: object) -> str | None:
     elif field_name == "size":
         cleaned = re.sub(r"^size\s*:\s*", "", cleaned, flags=re.I)
         cleaned = re.split(r"\bview as list\b", cleaned, maxsplit=1, flags=re.I)[0]
-        cleaned = re.sub(r"\s*\(size\s+chart\)", "", cleaned, flags=re.I)
+        cleaned = re.sub(r"\s*\(size[\s_-]*chart\)", "", cleaned, flags=re.I)
         cleaned = clean_text(cleaned)
         if re.search(r"\b(?:please\s+)?select(?:\s+size)?\b", cleaned, flags=re.I):
             return None
@@ -823,6 +669,11 @@ def _drop_parent_shared_variant_fields(record: dict[str, Any]) -> None:
     if len(variant_rows) < 2:
         return
     for field_name in VARIANT_PARENT_SHARED_FIELDS:
+        if field_name == "currency" and any(
+            variant.get(PRICE_FIELD) not in (None, "", [], {})
+            for variant in variant_rows
+        ):
+            continue
         parent_value = text_or_none(record.get(field_name))
         if parent_value is None:
             continue
@@ -857,6 +708,11 @@ def _drop_unanimous_variant_transport_fields(
     ):
         return
     for field_name in VARIANT_TRANSPORT_FIELDS:
+        if field_name == "currency" and any(
+            variant.get(PRICE_FIELD) not in (None, "", [], {})
+            for variant in variant_rows
+        ):
+            continue
         values = [variant.get(field_name) for variant in variant_rows]
         if any(value in (None, "", [], {}) for value in values):
             continue
@@ -880,50 +736,14 @@ def _variant_shared_value_matches_parent(
     if variant_text is None or parent_text is None:
         return False
     if field_name == PRICE_FIELD:
-        variant_price = _decimal_for_shared_price(variant_text)
-        parent_price = _decimal_for_shared_price(parent_text)
+        variant_price = decimal_for_shared_price(variant_text)
+        parent_price = decimal_for_shared_price(parent_text)
         return (
             variant_price is not None
             and parent_price is not None
             and variant_price == parent_price
         )
     return variant_text == parent_text
-
-
-def _decimal_for_shared_price(value: object) -> Decimal | None:
-    text = text_or_none(value)
-    if not text:
-        return None
-    normalized = _normalize_shared_price_decimal_text(text)
-    if not normalized:
-        return None
-    try:
-        return Decimal(normalized).quantize(Decimal("0.01"))
-    except (InvalidOperation, ValueError):
-        return None
-
-
-def _normalize_shared_price_decimal_text(value: str) -> str:
-    stripped = re.sub(r"[^\d,.\-]+", "", str(value or "").strip())
-    if not stripped:
-        return ""
-    if "." in stripped and "," in stripped:
-        if stripped.rfind(",") > stripped.rfind("."):
-            return stripped.replace(".", "").replace(",", ".")
-        return stripped.replace(",", "")
-    if "," in stripped:
-        if "." not in stripped and stripped.count(",") > 1:
-            return stripped.replace(",", "")
-        head, _, tail = stripped.rpartition(",")
-        if head and tail.isdigit() and len(tail) == 3 and "," not in head:
-            return f"{head}{tail}"
-        return stripped.replace(",", ".")
-    if "." not in stripped:
-        return stripped
-    parts = stripped.split(".")
-    if len(parts) == 2:
-        return stripped
-    return "".join(parts[:-1]) + f".{parts[-1]}"
 
 
 def enforce_flat_variant_public_contract(
@@ -1075,9 +895,9 @@ def coerce_field_value(field_name: str, value: object, page_url: str) -> object 
             str(index) for index in range(len(value))
         }:
             explicit_value = list(value.values())[0] if value else None
-        return _coerce_brand_text(explicit_value)
+        return coerce_brand_text(explicit_value)
     if field_name in BRAND_LIKE_FIELDS:
-        return _coerce_brand_text(value)
+        return coerce_brand_text(value)
     if field_name == "category":
         if isinstance(value, dict):
             value = (
@@ -1087,21 +907,21 @@ def coerce_field_value(field_name: str, value: object, page_url: str) -> object 
                 or value.get("value")
             )
         category_text = coerce_text(value)
-        if category_text and _category_value_is_url_path(category_text):
+        if category_text and category_value_is_url_path(category_text):
             return None
         return category_text
     if field_name == "product_type":
         return _coerce_product_type_clean(value)
     if field_name == "product_id":
-        return _coerce_identity_token_or_none(value)
+        return coerce_identity_token_or_none(value)
     if field_name == TITLE_FIELD:
         return _coerce_title_text(value)
     if field_name == "barcode":
-        return _coerce_barcode(value)
+        return coerce_barcode(value)
     if field_name == "sku":
-        return _coerce_sku(value)
+        return coerce_sku(value)
     if field_name == "gender":
-        return _coerce_gender(value)
+        return coerce_gender(value)
     if field_name in OPTION_SCALAR_FIELDS:
         return _sanitize_option_scalar(
             field_name,
@@ -1114,7 +934,7 @@ def coerce_field_value(field_name: str, value: object, page_url: str) -> object 
         text = coerce_text(value)
         if text and not re.search(r"\d", text):
             return None
-        if _price_text_is_negative(text):
+        if price_text_is_negative(text):
             return None
         return text or None
     if (
@@ -1140,7 +960,7 @@ def coerce_field_value(field_name: str, value: object, page_url: str) -> object 
         "original_price",
         "discount_amount",
     } and isinstance(value, dict):
-        return _coerce_price_from_dict(value)
+        return coerce_price_from_dict(value)
     if field_name in {"currency", "salary_currency"} and isinstance(value, dict):
         for key in ("currency", "currencyCode", "priceCurrency", "salaryCurrency"):
             if value.get(key) not in (None, "", [], {}):
@@ -1168,14 +988,8 @@ def coerce_field_value(field_name: str, value: object, page_url: str) -> object 
         return coerce_availability_dict(value)
     if field_name == "availability":
         return coerce_availability_value(value)
-    if field_name in URL_FIELDS:
-        urls = extract_urls(value, page_url)
-        return urls[0] if urls else None
-    if field_name in IMAGE_FIELDS:
-        urls = extract_urls(value, page_url)
-        if field_name == ADDITIONAL_IMAGES_FIELD:
-            return urls or None
-        return urls[0] if urls else None
+    if is_url_field(field_name):
+        return coerce_url_field_value(field_name, value, page_url)
     if field_name in STRUCTURED_MULTI_FIELDS:
         rows = _coerce_structured_multi_rows(field_name, value)
         deduped: list[str] = []
@@ -1209,147 +1023,6 @@ def coerce_field_value(field_name: str, value: object, page_url: str) -> object 
     return coerce_text(value)
 
 
-_brand_region_suffix_tokens = tuple(PUBLIC_RECORD_BRAND_REGION_SUFFIX_TOKENS or ())
-_BRAND_REGION_SUFFIX_RE = (
-    re.compile(
-        r"\s*[|\-\u2013\u2014]\s*(?:"
-        + "|".join(
-            re.escape(str(token))
-            for token in sorted(
-                _brand_region_suffix_tokens,
-                key=len,
-                reverse=True,
-            )
-        )
-        + r")\.?\s*$",
-        re.IGNORECASE,
-    )
-    if _brand_region_suffix_tokens
-    else re.compile(r"$^")
-)
-
-
-_CATEGORY_URL_PATH_PATTERN = re.compile(
-    r"""
-    (?:^|\s)                      # start of string or word boundary
-    (?:https?\s*:|www\.|[a-z0-9-]+\.(?:com|net|org|io|co|shop|store))
-    """,
-    flags=re.IGNORECASE | re.VERBOSE,
-)
-
-
-def _category_value_is_url_path(value: str) -> bool:
-    if not value:
-        return False
-    lowered = value.lower()
-    if "://" in lowered:
-        return True
-    if "https:" in lowered or "http:" in lowered:
-        return True
-    return _CATEGORY_URL_PATH_PATTERN.search(lowered) is not None
-
-
-def _coerce_brand_text(value: object) -> str | None:
-    text = coerce_text(value)
-    if not text:
-        return None
-    text = re.sub(r"^\s*\d+\s+(?=[A-Za-z])", "", text).strip()
-    if not text or not re.search(r"[A-Za-z]", text):
-        return None
-    parsed = urlparse(text)
-    if parsed.scheme in {"http", "https", "ftp", "mailto"} or parsed.netloc:
-        return None
-    if _BARE_HOST_URL_RE.fullmatch(text):
-        return None
-    cleaned = _BRAND_REGION_SUFFIX_RE.sub("", text).strip()
-    return cleaned or text
-
-
-_GENDER_TAXONOMY = {
-    str(key).casefold(): str(value)
-    for key, value in dict(PUBLIC_RECORD_GENDER_TAXONOMY or {}).items()
-}
-_gender_reject_tokens = frozenset(
-    str(token).casefold() for token in tuple(PUBLIC_RECORD_GENDER_REJECT_TOKENS or ())
-)
-_identity_internal_tokens = frozenset(
-    str(token).casefold()
-    for token in tuple(PUBLIC_RECORD_IDENTITY_INTERNAL_TOKENS or ())
-)
-_product_type_noise_tokens = frozenset(
-    str(token).casefold()
-    for token in tuple(PUBLIC_RECORD_PRODUCT_TYPE_NOISE_TOKENS or ())
-)
-_SKU_DRAFT_PREFIX_RE = re.compile(
-    str(PUBLIC_RECORD_SKU_DRAFT_PREFIX_PATTERN), re.IGNORECASE
-)
-_BARCODE_SEPARATOR_RE = re.compile(r"[\s-]+")
-
-
-def _coerce_gender(value: object) -> str | None:
-    if isinstance(value, dict):
-        value = (
-            value.get("name")
-            or value.get("title")
-            or value.get("label")
-            or value.get("value")
-        )
-    text = coerce_text(value)
-    if not text:
-        return None
-    folded = text.strip().lower()
-    if folded in _gender_reject_tokens:
-        return None
-    return _GENDER_TAXONOMY.get(folded, text)
-
-
-def _coerce_barcode(value: object) -> str | None:
-    text = coerce_text(value)
-    if not text:
-        return None
-    if not re.fullmatch(r"[\d\s-]+", text):
-        return None
-    digits = _BARCODE_SEPARATOR_RE.sub("", text)
-    if not digits or len(digits) not in _PUBLIC_RECORD_BARCODE_LENGTHS_SET:
-        return None
-    return digits
-
-
-def _coerce_sku(value: object) -> str | None:
-    text = coerce_text(value)
-    if not text:
-        return None
-    had_draft_prefix = bool(_SKU_DRAFT_PREFIX_RE.match(text))
-    cleaned = _SKU_DRAFT_PREFIX_RE.sub("", text).strip()
-    if cleaned.startswith(("{", "[")):
-        return None
-    if had_draft_prefix and re.fullmatch(r"\d{10,}", cleaned):
-        return None
-    if _looks_like_tracking_hash_sku(cleaned):
-        return None
-    return cleaned or None
-
-
-def _looks_like_tracking_hash_sku(value: str) -> bool:
-    if len(value) <= 20 or re.search(r"[-_\s]", value):
-        return False
-    if not re.fullmatch(r"[A-Za-z0-9]+", value):
-        return False
-    has_alpha = bool(re.search(r"[A-Za-z]", value))
-    has_digit = bool(re.search(r"\d", value))
-    return has_alpha and has_digit
-
-
-def _coerce_identity_token_or_none(value: object) -> str | None:
-    text = coerce_text(value)
-    if not text:
-        return None
-    folded = text.strip().lower()
-    if folded in _identity_internal_tokens:
-        return None
-    return text
-
-
 def _coerce_title_text(value: object) -> str | None:
     is_structured_input = isinstance(value, dict) or (
         isinstance(value, str)
@@ -1365,7 +1038,7 @@ def _coerce_title_text(value: object) -> str | None:
             value = structured
         else:
             return None
-    return _coerce_identity_token_or_none(value)
+    return coerce_identity_token_or_none(value)
 
 
 def _coerce_product_type_clean(value: object) -> str | None:
@@ -1379,7 +1052,7 @@ def _coerce_product_type_clean(value: object) -> str | None:
     if text.lstrip().startswith(("{", "[")):
         return None
     folded = text.strip().lower()
-    if folded in _identity_internal_tokens:
+    if folded in identity_internal_tokens():
         return None
     if any(token in folded for token in _product_type_noise_tokens):
         return None

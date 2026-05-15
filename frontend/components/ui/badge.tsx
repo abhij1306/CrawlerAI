@@ -31,7 +31,7 @@ export type BadgeProps = {
 } & React.HTMLAttributes<HTMLSpanElement>;
 
 export const badgeVariants = cva(
-  'inline-flex min-h-[22px] items-center gap-1.5 text-sm leading-[var(--leading-snug)] font-medium whitespace-nowrap',
+  'inline-flex min-h-[22px] items-center gap-1.5 text-sm leading-[var(--leading-snug)] font-semibold whitespace-nowrap',
 );
 
 export function Badge({
@@ -47,7 +47,8 @@ export function Badge({
       className={cn(
         badgeVariants(),
         toneText[tone],
-        !flat && 'rounded-full border px-2.5 py-0.5 shadow-[inset_0_1px_0_color-mix(in_srgb,white_38%,transparent)]',
+        !flat &&
+          'rounded-[var(--radius-md)] border px-2 py-0.5 shadow-[inset_0_1px_0_color-mix(in_srgb,white_28%,transparent)]',
         !flat && toneBox[tone],
         className,
       )}

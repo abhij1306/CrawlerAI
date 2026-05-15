@@ -48,11 +48,11 @@ from app.services.crawl_service import recover_stale_local_runs
 from app.services.llm_provider_client import close_llm_provider_clients
 
 logger = logging.getLogger("app")
-configure_logging()
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    configure_logging()
     try:
         install_asyncio_exception_filter()
     except RuntimeError:

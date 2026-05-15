@@ -8,7 +8,7 @@ from bs4 import BeautifulSoup
 
 from app.services.adapters.base import AdapterResult, BaseAdapter, adapter_host_matches
 from app.services.config.nike_config import NIKE_CURRENCY_BY_HOST
-from app.services.field_value_core import (
+from app.services.shared.field_coerce import (
     absolute_url,
     clean_text,
     finalize_record,
@@ -54,7 +54,7 @@ class NikeAdapter(BaseAdapter):
             or "skuData" in raw_html
         )
 
-    async def extract(self, url: str, html: str, surface: str) -> AdapterResult:
+    async def extract(self, url: str, html: str, surface: str, proxy: str | None = None) -> AdapterResult:
         records: list[dict[str, Any]] = []
         if str(surface or "").strip().lower() == "ecommerce_detail":
             record = _extract_detail_record(url, html)

@@ -8,10 +8,8 @@ from typing import Any
 
 from app.services.config._export_data import load_export_data
 from app.services.config.variant_policy import AXIS_NAME_ALIASES, PUBLIC_VARIANT_AXIS_FIELDS
-from app.services.config.runtime_settings import crawler_runtime_settings
 
 HTML_PARSER = "html.parser"
-AOM_EXPAND_ROLES = frozenset({"button", "tab", "link", "menuitem"})
 DETAIL_AOM_EXPAND_ROLES = frozenset({"button", "tab"})
 AMAZON_PRICE_OFFSCREEN_SELECTOR = ".a-offscreen"
 AMAZON_PRICE_WHOLE_SELECTOR = ".a-price-whole"
@@ -89,10 +87,12 @@ VARIANT_SWATCH_BUTTON_SELECTOR = (
     "button[class*='swatch' i], button[class*='color-option' i],"
     " button[class*='color-selector' i], button[class*='size-option' i],"
     " button[class*='size-selector' i], button[class*='variant' i],"
-    " button[data-option], button[data-value], a[href], a[class*='swatch' i],"
+    " button[data-option], button[data-value], button[data-size], a[href],"
+    " a[class*='swatch' i],"
     " div[class*='swatch' i], div[role='radio'],"
     " [data-testid*='variants-selector' i]"
 )
+VARIANT_COMPONENT_SIZE_STYLE_LABELS = ("jacket", "trouser", "pant", "pants")
 VARIANT_SWATCH_BUTTON_LIMIT = 20
 VARIANT_SWATCH_PARENT_DEPTH = 6
 VARIANT_MATCHING_INPUT_LIMIT = 12
@@ -132,7 +132,6 @@ _BARE_HOST_URL_PATTERN = _STATIC_EXPORTS.get("BARE_HOST_URL_PATTERN", "")
 _IMAGE_FIELDS_RAW = _STATIC_EXPORTS.get("IMAGE_FIELDS", ())
 _INTEGER_VALUE_FIELDS_RAW = _STATIC_EXPORTS.get("INTEGER_VALUE_FIELDS", ())
 _LONG_TEXT_FIELDS_RAW = _STATIC_EXPORTS.get("LONG_TEXT_FIELDS", ())
-_PERCENT_PATTERN = _STATIC_EXPORTS.get("PERCENT_PATTERN", "")
 _PRICE_VALUE_FIELDS_RAW = _STATIC_EXPORTS.get("PRICE_VALUE_FIELDS", ())
 _SEMANTIC_SECTION_NOISE = _STATIC_EXPORTS.get("SEMANTIC_SECTION_NOISE", {})
 _RATING_PATTERN = _STATIC_EXPORTS.get("RATING_PATTERN", "")
@@ -266,6 +265,7 @@ DETAIL_CATEGORY_UI_TOKENS = frozenset(
     }
 )
 DETAIL_CATEGORY_LABEL_PREFIXES = ("shop by ",)
+DETAIL_CATEGORY_BRANCH_STOP_TOKENS = frozenset({"collections"})
 DETAIL_LONG_TEXT_UI_TAIL_PHRASES = (
     "show more",
     "more details",
@@ -561,7 +561,6 @@ DETAIL_PRICE_MAGNITUDE_EPSILON = 0.01
 DETAIL_PRICE_COMPARISON_TOLERANCE = Decimal("0.01")
 DETAIL_LOW_SIGNAL_PRICE_MAX = Decimal("1")
 DETAIL_LOW_SIGNAL_PARENT_MIN = Decimal("10")
-DETAIL_PARENT_VARIANT_PRICE_RATIO_MIN = Decimal("0.5")
 DETAIL_PARENT_VARIANT_PRICE_RATIO_MAX = Decimal("2")
 DETAIL_IMAGE_RAW_SOUP_FALLBACK_MAX_WINNING_IMAGES = 1
 DETAIL_IMAGE_URL_ATTRS = ("src", "data-src", "data-lazy-src", "data-original", "data-image")
@@ -1063,7 +1062,7 @@ VARIANT_CHOICE_OPTION_SELECTOR = (
     "option, [role='radio'], [role='option'], button, a[href], "
     "input[type='radio'], input[type='checkbox']"
 )
-VARIANT_CHOICE_OPTION_LIMIT = 24
+VARIANT_CHOICE_OPTION_LIMIT = 80
 VARIANT_CHOICE_CONTAINER_OPTION_LIMIT = 24
 VARIANT_CHOICE_CONTAINER_SELECT_LIMIT = 8
 VARIANT_CHOICE_CONTAINER_GROUP_LIMIT = 12
@@ -1085,7 +1084,6 @@ DETAIL_BRACKET_PROSE_MIN_WORDS = 5
 PRICE_SOURCE_KEY_FIELDS = frozenset(
     {"price", "sale_price", "original_price", "compare_at_price"}
 )
-CANONICAL_PRICE_FIELDS = frozenset({"price", "sale_price", "original_price"})
 DETAIL_IDENTITY_STOPWORDS = frozenset(
     {
         "and",
@@ -1271,7 +1269,6 @@ JSON_RECORD_LIST_KEYS = (
     "records",
     "results",
 )
-PERCENT_RE = re.compile(str(_PERCENT_PATTERN))
 PRICE_VALUE_FIELDS = frozenset(_PRICE_VALUE_FIELDS_RAW)
 SEMANTIC_SECTION_LABEL_SKIP_TOKENS = tuple(
     sorted(
@@ -1327,18 +1324,17 @@ NON_PRODUCT_IMAGE_HINTS = tuple(
             "spinner",
             "via.placeholder.com",
             "white.svg",
-            # Shipping badges and delivery-time indicators rendered as sibling
-            # icons inside product cards (generic ecommerce pattern).
+            # Shipping badges and delivery-time indicators.
             "shipping",
             "sameday",
             "same-day",
             "shipsintime",
             "shipstime",
-            # Color/material swatches rendered as sibling SVGs inside product
-            # cards (generic ecommerce pattern; filenames like Yellow_Gold.svg).
-            "swatch",
-            "dyo-",
-            "/static-dyo",
+            # Swatch/DYO icons (narrowed to path segments to preserve variant thumbnails).
+            "/swatch/",
+            "_swatch.",
+            "dyo-icon",
+            "/static-dyo/",
         ]
     )
 )
@@ -1364,6 +1360,8 @@ VARIANT_CHOICE_GROUP_SELECTOR = ", ".join(
             ),
             "[data-testid*='variants-selector' i]",
             "[class*='selectable-container' i]",
+            "#productSizeStock",
+            "[class*='sizeOptions' i]",
         )
     )
 )
@@ -1374,8 +1372,8 @@ VARIANT_SIZE_VALUE_PATTERNS = tuple(
             r"^(?:(?:eu|uk|us|cm|mm)[-\s]?)?\d{1,3}(?:\.\d+)?(?:/\d{1,3}(?:\.\d+)?)?$",
             r"^m\s*\d+(?:\.\d+)?\s*/\s*w\s*\d+(?:\.\d+)?$",
             r"^\d+(?:\.\d+)?/\d+(?:\.\d+)?\s+us\s+\(\d+\s+eu\)$",
-            r"^(?:xxxs|xxs|xs|s|m|l|xl|xxl|xxxl|\d+xl)\s*\(?(?:\d{1,3}(?:\s*[-–]\s*\d{1,3})?)\)?$",
-            r"^(?:xxxs|xxs|xs|s|m|l|xl|xxl|xxxl|\d+xl)\s*/\s*(?:xxxs|xxs|xs|s|m|l|xl|xxl|xxxl|\d+xl)$",
+            r"^(?:xxxs|xxs|xs|s|m|l|xl|xxl|xxxl|[2-6]xl)\s*\(?(?:\d{1,3}(?:\s*[-–]\s*\d{1,3})?)\)?$",
+            r"^(?:xxxs|xxs|xs|s|m|l|xl|xxl|xxxl|[2-6]xl)\s*/\s*(?:xxxs|xxs|xs|s|m|l|xl|xxl|xxxl|[2-6]xl)$",
         )
     )
 )
@@ -1530,9 +1528,6 @@ VARIANT_OPTION_TEXT_CHILD_DROP_PATTERNS = (
     r"\b(?:popular|sale|discount|off|sold out|unavailable|left in stock)\b",
 )
 
-DYNAMIC_FIELD_NAME_MAX_TOKENS = crawler_runtime_settings.dynamic_field_name_max_tokens
-MAX_CANDIDATES_PER_FIELD = crawler_runtime_settings.max_candidates_per_field
-
 _EXTRA_EXPORTS = [
     "AVAILABILITY_IN_STOCK",
     "AVAILABILITY_OUT_OF_STOCK",
@@ -1569,16 +1564,12 @@ _EXTRA_EXPORTS = [
     "DETAIL_ARTIFACT_PRODUCT_TYPE_PATTERNS",
     "DETAIL_ARTIFACT_IDENTIFIER_VALUES",
     "DETAIL_ARTIFACT_PRICE_VALUES",
-    "DETAIL_AUTHORITATIVE_PRICE_SOURCES",
     "DETAIL_AUTHORITATIVE_PRICE_SOURCE_SET",
     "DETAIL_LOW_SIGNAL_PRICE_VISIBLE_MIN_DELTA",
     "DETAIL_LOW_SIGNAL_PRICE_VISIBLE_RATIO",
     "DETAIL_LOW_SIGNAL_ZERO_PRICE_SOURCE_SET",
-    "DETAIL_PRICE_CENT_MAGNITUDE_RATIO",
     "DETAIL_PRICE_CENT_MAGNITUDE_RATIO_DECIMAL",
     "DETAIL_PRICE_COMPARISON_TOLERANCE",
-    "DETAIL_PARENT_VARIANT_PRICE_RATIO_MIN",
-    "DETAIL_PARENT_VARIANT_PRICE_RATIO_MAX",
     "DETAIL_PARENT_VARIANT_PRICE_RATIO_MAX_DECIMAL",
     "DETAIL_LOW_SIGNAL_PRICE_MAX",
     "DETAIL_LOW_SIGNAL_PARENT_MIN",
@@ -1589,14 +1580,11 @@ _EXTRA_EXPORTS = [
     "INLINE_SCALAR_ALLOWED_FIELDS",
     "DEFAULT_DECIMAL_PLACES",
     "CURRENCY_DECIMAL_PLACES",
-    "DETAIL_PRICE_MAGNITUDE_EPSILON",
     "DETAIL_PRICE_MAGNITUDE_EPSILON_DECIMAL",
     "DETAIL_CENT_BASED_PRICE_CURRENCY_SET",
-    "DETAIL_STRICT_PARENT_PRICE_SOURCES",
     "DETAIL_STRICT_PARENT_PRICE_SOURCE_SET",
     "VARIANT_OPTION_LABEL_MAX_WORDS",
     "VARIANT_TITLE_STOPWORDS",
-    "DETAIL_INSTALLMENT_PRICE_TEXT_TOKENS",
     "DETAIL_INSTALLMENT_PRICE_TEXT_TOKENS_NORMALIZED",
     "DETAIL_PRICE_JSONLD_TYPE_RE",
     "DETAIL_PRICE_JSONLD_RE",
@@ -1645,6 +1633,7 @@ _EXTRA_EXPORTS = [
     "DETAIL_CATEGORY_SOURCE_RANKS",
     "STRUCTURED_CANDIDATE_LIST_SLICE",
     "STRUCTURED_CANDIDATE_TRAVERSAL_LIMIT",
+    "DETAIL_CATEGORY_BRANCH_STOP_TOKENS",
     "DETAIL_CATEGORY_LABEL_PREFIXES",
     "DETAIL_GENDER_TERMS",
     "DETAIL_GENERIC_TERMINAL_TOKENS",
@@ -1652,7 +1641,6 @@ _EXTRA_EXPORTS = [
     "DETAIL_DOM_SCALAR_SIZE_PATTERN",
     "DETAIL_TITLE_DIMENSION_SIZE_PATTERN",
     "DETAIL_IDENTITY_STOPWORDS",
-    "DYNAMIC_FIELD_NAME_MAX_TOKENS",
     "EXPORT_IMAGE_URL_SUFFIXES",
     "FEATURE_SECTION_SELECTORS",
     "FEATURE_ROW_NOISE_PATTERNS",
@@ -1674,7 +1662,6 @@ _EXTRA_EXPORTS = [
     "LISTING_CATEGORY_PATH_SEGMENTS",
     "LISTING_PRODUCT_DETAIL_ID_RE",
     "LONG_TEXT_FIELDS",
-    "MAX_CANDIDATES_PER_FIELD",
     "MATERIAL_KEYWORDS",
     "ORACLE_HCM_CX_CONFIG_RE",
     "ORACLE_HCM_DEFAULT_FACETS",
@@ -1686,10 +1673,8 @@ _EXTRA_EXPORTS = [
     "ORG_SUFFIXES",
     "REMOTE_BOOLEAN_FALSE_TOKENS",
     "REMOTE_BOOLEAN_TRUE_TOKENS",
-    "PERCENT_RE",
     "PRICE_VALUE_FIELDS",
     "PRICE_SOURCE_KEY_FIELDS",
-    "CANONICAL_PRICE_FIELDS",
     "AMAZON_PRICE_OFFSCREEN_SELECTOR",
     "AMAZON_PRICE_WHOLE_SELECTOR",
     "AMAZON_PRICE_FRACTION_SELECTOR",
@@ -1700,7 +1685,6 @@ _EXTRA_EXPORTS = [
     "AMAZON_IMAGE_LOW_RES_SUFFIX_PATTERN",
     "CDN_IMAGE_QUERY_PARAMS",
     "CDN_IMAGE_PATH_SUFFIX_PATTERN",
-    "CDN_IMAGE_TRANSFORM_SUFFIX_PATTERN",
     "RATING_RE",
     "REVIEW_COUNT_RE",
     "REVIEW_TITLE_RE",
@@ -1757,7 +1741,6 @@ _EXTRA_EXPORTS = [
     "URL_DETECTION_TOKENS",
     "YEAR_SLUG_PATTERN",
     "PRODUCT_SLUG_MIN_TERMINAL_TOKENS",
-    "GENDER_ARTIFACT_WORDS",
     "STANDARD_SIZE_VALUES",
     "UNRESOLVED_TEMPLATE_URL_TOKENS",
     "VARIANT_CONTEXT_NOISE_ANCESTOR_DEPTH_DEFAULT",

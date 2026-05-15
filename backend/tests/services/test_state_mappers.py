@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from app.services import js_state_mapper
-from app.services.js_state_mapper import (
+from app.services.js_state import state_normalizer as js_state_mapper
+from app.services.js_state.state_normalizer import (
     map_configured_state_payload,
     map_js_state_to_fields,
 )
@@ -343,6 +343,107 @@ def test_map_js_state_to_fields_reads_variant_attributes_axes() -> None:
     assert mapped["variants"][0]["size"] == "M8.5 / W10"
     assert mapped["color"] == "True White"
     assert mapped["size"] == "M8.5 / W10"
+
+
+def test_map_js_state_to_fields_reads_variant_traits_axes() -> None:
+    mapped = map_js_state_to_fields(
+        {
+            "__NEXT_DATA__": {
+                "props": {
+                    "pageProps": {
+                        "product": {
+                            "id": "stockx-1",
+                            "title": "Nike Dunk Low Retro White Black Panda",
+                            "brand": "Nike",
+                            "variants": [
+                                {
+                                    "id": "size-35",
+                                    "traits": {"size": "3.5"},
+                                    "sizeChart": {"baseSize": "3.5"},
+                                },
+                                {
+                                    "id": "size-4",
+                                    "traits": {"size": "4"},
+                                    "sizeChart": {"baseSize": "4"},
+                                },
+                            ],
+                        }
+                    }
+                }
+            }
+        },
+        surface="ecommerce_detail",
+        page_url="https://stockx.com/nike-dunk-low-retro-white-black-2021",
+    )
+
+    assert mapped["variant_count"] == 2
+    assert [variant["size"] for variant in mapped["variants"]] == ["3.5", "4"]
+    assert [variant["url"] for variant in mapped["variants"]] == [
+        "https://stockx.com/nike-dunk-low-retro-white-black-2021?variant=size-35",
+        "https://stockx.com/nike-dunk-low-retro-white-black-2021?variant=size-4",
+    ]
+
+
+def test_map_js_state_to_fields_reads_target_variation_hierarchy() -> None:
+    mapped = map_js_state_to_fields(
+        {
+            "__NEXT_DATA__": {
+                "props": {
+                    "dehydratedState": {
+                        "queries": [
+                            {
+                                "state": {
+                                    "data": {
+                                        "data": {
+                                            "product": {
+                                                "tcin": "1002150739",
+                                                "item": {
+                                                    "product_description": {
+                                                        "title": "Tobago Stripe Duvet Cover Set - Levtex Home"
+                                                    },
+                                                    "enrichment": {
+                                                        "buy_url": "https://www.target.com/p/tobago/-/A-1002150739"
+                                                    },
+                                                },
+                                                "variation_hierarchy": [
+                                                    {
+                                                        "name": "size",
+                                                        "value": "full/queen",
+                                                        "tcin": "1002150738",
+                                                        "buy_url": "https://www.target.com/p/tobago-full/-/A-1002150738",
+                                                    },
+                                                    {
+                                                        "name": "size",
+                                                        "value": "twin/twin xl",
+                                                        "tcin": "1002150742",
+                                                        "buy_url": "https://www.target.com/p/tobago-twin/-/A-1002150742",
+                                                    },
+                                                ],
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        ]
+                    }
+                }
+            }
+        },
+        surface="ecommerce_detail",
+        page_url="https://www.target.com/p/tobago/-/A-1002150739?preselect=1002150742",
+    )
+
+    assert mapped["title"] == "Tobago Stripe Duvet Cover Set - Levtex Home"
+    assert mapped["product_id"] == "1002150739"
+    assert mapped["variant_count"] == 2
+    assert [variant["size"] for variant in mapped["variants"]] == [
+        "full/queen",
+        "twin/twin xl",
+    ]
+    assert [variant["url"] for variant in mapped["variants"]] == [
+        "https://www.target.com/p/tobago-full/-/A-1002150738",
+        "https://www.target.com/p/tobago-twin/-/A-1002150742",
+    ]
 
 
 def test_map_js_state_to_fields_uses_variation_attribute_display_names() -> None:

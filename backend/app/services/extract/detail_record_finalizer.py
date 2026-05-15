@@ -13,6 +13,7 @@ from app.services.config.extraction_rules import (
     AVAILABILITY_OUT_OF_STOCK,
     CANDIDATE_PLACEHOLDER_VALUES,
     CATEGORY_PLACEHOLDER_VALUES,
+    DETAIL_CATEGORY_BRANCH_STOP_TOKENS,
     DETAIL_CATEGORY_LABEL_PREFIXES,
     DETAIL_CATEGORY_UI_TOKENS,
     DETAIL_BREADCRUMB_SEPARATOR_LABELS,
@@ -31,13 +32,13 @@ from app.services.config.extraction_rules import (
 from app.services.config.variant_policy import (
     DETAIL_VARIANT_SIZE_MIN_FOR_NUMERIC_PARENT_DROP,
 )
-from app.services.field_value_core import (
+from app.services.shared.field_coerce import (
     clean_text,
     enforce_flat_variant_public_contract,
     text_or_none,
 )
 from app.services.field_url_normalization import same_site
-from app.services.field_value_dom import dedupe_image_urls, upgrade_low_resolution_image_url
+from app.services.dom.selector_engine import dedupe_image_urls, upgrade_low_resolution_image_url
 from app.services.extract.shared_variant_logic import (
     normalized_variant_axis_key,
     variant_axis_allowed_single_tokens,
@@ -58,7 +59,6 @@ from app.services.extract.detail_identity import (
 )
 from app.services.extract.detail_dom_extractor import (
     backfill_variants_from_dom_if_missing,
-    existing_variant_cluster_has_transport_signal,
 )
 from app.services.extract.detail_numbered_options import (
     hydrate_numbered_variant_options_from_dom,
@@ -147,15 +147,12 @@ def _sanitize_ecommerce_detail_record(
     _sanitize_detail_placeholder_scalars(record, identity_url=identity_url)
     _sanitize_detail_identity_scalars(record, identity_url=identity_url)
     hydrate_numbered_variant_options_from_dom(record, soup=soup)
-    existing_variants = [
-        row for row in list(record.get("variants") or []) if isinstance(row, dict)
-    ]
-    if (
-        soup is not None
-        and not existing_variant_cluster_has_transport_signal(existing_variants)
-    ):
+    if soup is not None:
         backfill_variants_from_dom_if_missing(
-            record, soup=soup, page_url=page_url, js_state_objects=js_state_objects
+            record,
+            soup=soup,
+            page_url=page_url,
+            js_state_objects=js_state_objects if isinstance(js_state_objects, dict) else None,
         )
     _sanitize_detail_variant_payload(record, identity_url=identity_url)
     sanitize_detail_long_text_fields(
@@ -344,6 +341,11 @@ def _clean_detail_category_path(
     prefixes = tuple(
         str(prefix).casefold() for prefix in tuple(DETAIL_CATEGORY_LABEL_PREFIXES or ())
     )
+    branch_stop_tokens = {
+        clean_text(token).casefold()
+        for token in tuple(DETAIL_CATEGORY_BRANCH_STOP_TOKENS or ())
+        if clean_text(token)
+    }
     cleaned_parts: list[str] = []
     strip_chars = (
         "".join(map(str, DETAIL_BREADCRUMB_SEPARATOR_LABELS or ())) + " \t\n\r"
@@ -357,6 +359,8 @@ def _clean_detail_category_path(
             or any(lowered.startswith(prefix) for prefix in prefixes)
         ):
             continue
+        if lowered in branch_stop_tokens:
+            break
         cleaned_parts.append(cleaned)
     while cleaned_parts and detail_breadcrumb_is_root_label(
         cleaned_parts[0], page_url=page_url

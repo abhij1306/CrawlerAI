@@ -10,7 +10,7 @@ from urllib.parse import parse_qsl, urlencode, urljoin, urlparse
 from app.services.adapters.base import PublicEndpointAdapter
 from app.services.config.adapter_runtime_settings import adapter_runtime_settings
 from app.services.extraction_html_helpers import html_to_text
-from app.services.field_value_core import clean_text
+from app.services.shared.field_coerce import clean_text
 
 
 _SEARCH_CONFIG_RE = re.compile(r"window\.searchConfig\s*=", re.DOTALL)

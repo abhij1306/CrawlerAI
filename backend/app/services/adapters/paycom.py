@@ -8,7 +8,7 @@ from urllib.parse import urljoin, urlparse
 from curl_cffi import requests as curl_requests
 from app.services.adapters.base import PublicEndpointAdapter
 from app.services.config.adapter_runtime_settings import adapter_runtime_settings
-from app.services.field_value_core import clean_text
+from app.services.shared.field_coerce import clean_text
 
 
 _CONFIG_RE = re.compile(r"var configsFromHost = (\{.*?\});\s*var Mountable", re.DOTALL)

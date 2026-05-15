@@ -466,7 +466,7 @@ def _microdata_node_value(node: Any, page_url: str) -> object:
         value = node.get(attribute)
         if value not in (None, ""):
             if attribute in {"href", "src"}:
-                from app.services.field_value_core import absolute_url
+                from app.services.shared.field_coerce import absolute_url
 
                 return absolute_url(page_url, value)
             return str(value).strip()

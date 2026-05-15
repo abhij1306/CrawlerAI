@@ -1,13 +1,13 @@
 import type { Metadata } from 'next';
 import './globals.css';
 
-import { Inter, JetBrains_Mono } from 'next/font/google';
+import { IBM_Plex_Sans, JetBrains_Mono } from 'next/font/google';
 
 import { AppShell } from '../components/layout/app-shell';
 import { QueryProvider } from '../components/ui/query-provider';
 
-// Primary sans — Inter
-const mainFont = Inter({
+// Primary sans — IBM Plex Sans
+const mainFont = IBM_Plex_Sans({
   subsets: ['latin'],
   variable: '--font-primary-source',
   weight: ['300', '400', '500', '600', '700'],

@@ -77,7 +77,7 @@ def default_request_headers(
     merged_headers = {
         "User-Agent": user_agent,
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-        "Accept-Language": _accept_language_for_locale("en-US"),
+        "Accept-Language": accept_language_for_locale("en-US"),
         "Upgrade-Insecure-Requests": "1",
     }
     merged_headers.update(
@@ -130,7 +130,7 @@ def _platform_label_from_user_agent(user_agent: str) -> str:
     return "Windows"
 
 
-def _accept_language_for_locale(locale: str) -> str:
+def accept_language_for_locale(locale: str) -> str:
     normalized = str(locale or "").strip()
     if not normalized:
         return "en-US,en;q=0.9"

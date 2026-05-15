@@ -35,7 +35,7 @@ from app.services.config.variant_policy import (
     PUBLIC_VARIANT_AXIS_FIELDS,
 )
 from app.services.config.runtime_settings import crawler_runtime_settings
-from app.services.field_value_core import (
+from app.services.shared.field_coerce import (
     clean_text,
     enforce_flat_variant_public_contract,
     extract_currency_code,
@@ -248,6 +248,10 @@ def _remap_generic_variant_axes(record: dict[str, Any]) -> None:
             if isinstance(variant, dict)
         ):
             continue
+        # Check that the parent record does not already have the target axis
+        # populated — remapping would create conflicting parent/variant state.
+        if clean_text(record.get(inferred)):
+            continue
         # Remap: move values from generic axis to the inferred axis.
         for variant in variants:
             if not isinstance(variant, dict):
@@ -424,6 +428,17 @@ def _enforce_variant_currency_context(record: dict[str, Any]) -> None:
     parent_currency = _currency_code(record.get("currency"))
     if not parent_currency:
         return
+    variant_currencies = {
+        currency
+        for variant in variants
+        if isinstance(variant, dict)
+        if (currency := _currency_code(variant.get("currency")))
+    }
+    if len(variant_currencies) == 1:
+        only_variant_currency = next(iter(variant_currencies))
+        if only_variant_currency != parent_currency:
+            record["currency"] = only_variant_currency
+            parent_currency = only_variant_currency
     kept: list[dict[str, Any]] = []
     mismatched: list[dict[str, Any]] = []
     for variant in variants:

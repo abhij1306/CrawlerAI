@@ -38,7 +38,7 @@ from app.services.extract.listing_candidate_ranking import (
     job_listing_url_is_hub as _job_listing_url_is_hub,
     job_listing_url_looks_like_posting as _job_listing_url_looks_like_posting,
 )
-from app.services.field_value_core import (
+from app.services.shared.field_coerce import (
     PRODUCT_URL_HINTS,
     absolute_url,
     clean_text,
@@ -354,10 +354,39 @@ def listing_detail_like_path(url: str, *, is_job: bool) -> bool:
             and not any(re.search(r"\d", segment) for segment in tail_segments[-2:])
         ):
             return False
-    if any(marker in lowered for marker in LISTING_DETAIL_PATH_MARKERS):
+    if any(_detail_marker_matches(lowered, marker) for marker in LISTING_DETAIL_PATH_MARKERS):
         return True
     hints = detail_path_hints("ecommerce_detail")
-    return any(marker in lowered for marker in hints)
+    return any(_detail_marker_matches(lowered, marker) for marker in hints)
+
+
+def _detail_marker_matches(url: str, marker: str) -> bool:
+    """Check if *marker* matches in *url* at a segment boundary.
+
+    Prevents false positives like ``/product`` matching ``/product-care``
+    or ``/product-advice``.  When the marker does NOT end with a path
+    separator, the character following the match must be a boundary
+    (``/``, ``?``, ``.``, ``#``, ``&``, end-of-string, or a digit) — not
+    a hyphen or letter continuation.  Markers ending with ``/`` already
+    encode their own boundary and are matched as plain substrings.
+    """
+    # Markers that end with '/' already have a built-in boundary.
+    if marker.endswith("/"):
+        return marker in url
+    start = 0
+    while True:
+        idx = url.find(marker, start)
+        if idx < 0:
+            return False
+        end = idx + len(marker)
+        if end >= len(url):
+            return True
+        next_char = url[end]
+        # Valid boundary: path separator, query, fragment, or digit (product ID)
+        if next_char in "/?.#&" or next_char.isdigit():
+            return True
+        # Continuation character (hyphen, letter, underscore) → not a boundary
+        start = end
 
 
 def _job_detail_like_path(url: str) -> bool:

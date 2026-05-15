@@ -5,7 +5,7 @@ from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 from app.services.adapters.base import AdapterResult, BaseAdapter
 from app.services.config.adapter_runtime_settings import adapter_runtime_settings
-from app.services.field_value_core import clean_text
+from app.services.shared.field_coerce import clean_text
 
 _DEFAULT_ORDER = "postedDateDesc"
 _SEARCH_FILTERS: tuple[dict[str, object], ...] = (
@@ -22,7 +22,7 @@ class UltiProAdapter(BaseAdapter):
     async def can_handle(self, url: str, html: str) -> bool:
         return self._matches_platform_family(url, html)
 
-    async def extract(self, url: str, html: str, surface: str) -> AdapterResult:
+    async def extract(self, url: str, html: str, surface: str, proxy: str | None = None) -> AdapterResult:
         if self._looks_like_detail(url, surface):
             records = []
         else:

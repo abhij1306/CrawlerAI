@@ -4,7 +4,7 @@ from decimal import Decimal
 
 import pytest
 
-from app.services.field_value_core import (
+from app.services.shared.field_coerce import (
     _decimal_for_shared_price,
     absolute_url,
     clean_text,
@@ -345,7 +345,7 @@ def test_public_record_firewall_preserves_type_switches_fit_and_length_axes() ->
     assert rejected == {}
 
 
-def test_public_record_firewall_drops_parent_shared_variant_fields() -> None:
+def test_public_record_firewall_drops_parent_shared_variant_fields_but_keeps_price_currency() -> None:
     data, rejected = public_record_data_for_surface(
         {
             "title": "Widget",
@@ -386,12 +386,14 @@ def test_public_record_firewall_drops_parent_shared_variant_fields() -> None:
                 "color": "Red",
                 "size": "S",
                 "price": "19.99",
+                "currency": "USD",
                 "url": "https://example.com/products/widget",
             },
             {
                 "color": "Blue",
                 "size": "M",
                 "price": "24.99",
+                "currency": "USD",
                 "url": "https://example.com/products/widget?variant=blue-m",
             },
         ],

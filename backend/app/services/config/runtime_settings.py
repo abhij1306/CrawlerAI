@@ -11,7 +11,7 @@ _BACKEND_DIR = Path(__file__).resolve().parents[3]
 _ENV_FILES = (str(_BACKEND_DIR.parent / ".env"), str(_BACKEND_DIR / ".env"))
 
 
-def _settings_config(*, env_prefix: str) -> SettingsConfigDict:
+def settings_config(*, env_prefix: str) -> SettingsConfigDict:
     return SettingsConfigDict(
         env_file=_ENV_FILES,
         env_file_encoding="utf-8",
@@ -76,7 +76,7 @@ def _require_unit_interval(name: str, value: object) -> None:
 class CrawlerRuntimeSettings(BaseSettings):
     """Typed env-backed runtime settings for acquisition, browser, and crawl flow."""
 
-    model_config = _settings_config(env_prefix="CRAWLER_RUNTIME_")
+    model_config = settings_config(env_prefix="CRAWLER_RUNTIME_")
 
     performance_profile: Literal["ULTRA_FAST", "BALANCED", "STEALTH"] = "BALANCED"
     http_timeout_seconds: int = 10
@@ -204,6 +204,7 @@ class CrawlerRuntimeSettings(BaseSettings):
     browser_capture_max_network_payloads: int = 25
     browser_capture_max_network_payload_bytes: int = 3000000
     browser_capture_total_network_payload_bytes: int = 12000000
+    browser_capture_workers: int = 4
     browser_capture_read_timeout_seconds: float = 5.0
     browser_accessibility_snapshot_timeout_seconds: float = 0.5
     browser_capture_queue_join_timeout_ms: int = 2000
@@ -420,6 +421,7 @@ class CrawlerRuntimeSettings(BaseSettings):
             "browser_capture_max_network_payloads",
             "browser_capture_max_network_payload_bytes",
             "browser_capture_total_network_payload_bytes",
+            "browser_capture_workers",
             "browser_capture_read_timeout_seconds",
             "browser_capture_queue_join_timeout_ms",
             "browser_artifact_capture_timeout_ms",
@@ -586,6 +588,37 @@ class CrawlerRuntimeSettings(BaseSettings):
 
 
 crawler_runtime_settings = CrawlerRuntimeSettings()
+BROWSER_CAPTURE_MAX_NETWORK_PAYLOADS = (
+    crawler_runtime_settings.browser_capture_max_network_payloads
+)
+BROWSER_CAPTURE_MAX_NETWORK_PAYLOAD_BYTES = (
+    crawler_runtime_settings.browser_capture_max_network_payload_bytes
+)
+BROWSER_CAPTURE_TOTAL_NETWORK_PAYLOAD_BYTES = (
+    crawler_runtime_settings.browser_capture_total_network_payload_bytes
+)
+BROWSER_CAPTURE_QUEUE_SIZE = BROWSER_CAPTURE_MAX_NETWORK_PAYLOADS * 2
+BROWSER_CAPTURE_WORKERS = crawler_runtime_settings.browser_capture_workers
+
+
+def browser_capture_max_network_payloads() -> int:
+    return crawler_runtime_settings.browser_capture_max_network_payloads
+
+
+def browser_capture_max_network_payload_bytes() -> int:
+    return crawler_runtime_settings.browser_capture_max_network_payload_bytes
+
+
+def browser_capture_total_network_payload_bytes() -> int:
+    return crawler_runtime_settings.browser_capture_total_network_payload_bytes
+
+
+def browser_capture_queue_size() -> int:
+    return browser_capture_max_network_payloads() * 2
+
+
+def browser_capture_workers() -> int:
+    return crawler_runtime_settings.browser_capture_workers
 
 
 def proxy_rotation_mode(proxy_profile: dict[str, object] | None) -> str | None:

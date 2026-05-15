@@ -30,6 +30,37 @@ def iter_script_text_nodes(html: str) -> list[ScriptTextNode]:
                 text=text,
             )
         )
+    # VTEX and similar frameworks embed state inside
+    # <template data-varname="__STATE__"><script>{...}</script></template>.
+    # HTML spec treats <template> content as an inert document fragment,
+    # so DOM parsers (selectolax/lexbor) cannot traverse inside it.
+    # Extract via regex on the raw HTML string.
+    nodes.extend(_extract_template_script_nodes(html))
+    return nodes
+
+
+_TEMPLATE_SCRIPT_RE = re.compile(
+    r"<template\b[^>]*?\bdata-(?:varname|state|id)=[\"']([^\"']+)[\"'][^>]*>"
+    r"\s*<script[^>]*>(.*?)</script>\s*</template>",
+    re.DOTALL | re.IGNORECASE,
+)
+
+
+def _extract_template_script_nodes(html: str) -> list[ScriptTextNode]:
+    """Extract script content from <template data-varname="..."> elements."""
+    nodes: list[ScriptTextNode] = []
+    for match in _TEMPLATE_SCRIPT_RE.finditer(html):
+        varname = match.group(1).strip()
+        text = match.group(2).strip()
+        if not varname or not text:
+            continue
+        nodes.append(
+            ScriptTextNode(
+                script_id=varname,
+                script_type="",
+                text=text,
+            )
+        )
     return nodes
 
 

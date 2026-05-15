@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.services import crawl_fetch_runtime
+from app.services.fetch import fetch_context as crawl_fetch_runtime
 from app.services import extraction_runtime
 from app.services.acquisition.host_protection_memory import HostProtectionPolicy
 from app.services.adapters.belk import BelkAdapter
@@ -17,7 +17,7 @@ from app.services.extract.detail_price_extractor import backfill_detail_price_fr
 from app.services.extract.variant_record_normalization import normalize_variant_record
 from app.services.extraction_runtime import extract_records
 from app.services.js_state_helpers import select_variant
-from app.services.js_state_mapper import map_js_state_to_fields
+from app.services.js_state.state_normalizer import map_js_state_to_fields
 from app.services.listing_extractor import extract_listing_records
 from tests.fixtures.loader import read_optional_artifact_text
 
@@ -3869,6 +3869,23 @@ def test_extract_ecommerce_detail_recovers_firstcry_static_js_state_price() -> N
         record["image_url"]
         == "https://cdn.fcglcdn.com/brainbees/images/products/438x531/22346676a.webp"
     )
+
+
+def test_extract_ecommerce_detail_recovers_firstcry_keyed_size_variants_from_artifact() -> None:
+    html = read_optional_artifact_text("artifacts/runs/1/pages/911cb20ab9926f3d.html")
+
+    rows = extract_records(
+        html,
+        "https://www.firstcry.com/babyhug/babyhug-denim-woven-sleeveless-top-and-pant-set-with-floral-print-blue/22346676/product-detail",
+        "ecommerce_detail",
+        max_records=1,
+        requested_page_url="https://www.firstcry.com/babyhug/babyhug-denim-woven-sleeveless-top-and-pant-set-with-floral-print-blue/22346676/product-detail",
+        requested_fields=["variants"],
+    )
+
+    assert len(rows) == 1
+    sizes = {row.get("size") for row in rows[0]["variants"]}
+    assert {"2-3Y", "3-4Y", "4-5Y"} <= sizes
 
 
 def test_extract_ecommerce_detail_rejects_brand_shell_with_tracking_pixel_image() -> None:

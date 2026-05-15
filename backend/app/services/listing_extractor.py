@@ -22,6 +22,7 @@ from app.services.config.extraction_rules import (
     TITLE_PROMOTION_PREFIXES,
 )
 from app.services.config.runtime_settings import crawler_runtime_settings
+from app.services.shared.url_utils import extract_urls
 from app.services.extraction_context import (
     collect_structured_source_payloads,
     prepare_extraction_context,
@@ -53,7 +54,7 @@ from app.services.extract.listing_record_finalizer import finalize_listing_price
 from app.services.extract.listing_visual import visual_listing_records
 from app.services.extract.detail_price_extractor import currency_hint_from_page_url
 from app.services.field_policy import normalize_requested_field
-from app.services.field_value_core import (
+from app.services.shared.field_coerce import (
     PRICE_RE,
     RATING_RE,
     REVIEW_COUNT_RE,
@@ -75,7 +76,7 @@ from app.services.field_value_candidates import (
     collect_structured_candidates,
     finalize_candidate_value,
 )
-from app.services.field_value_dom import apply_selector_fallbacks
+from app.services.dom.selector_engine import apply_selector_fallbacks
 
 logger = logging.getLogger(__name__)
 _LISTING_STRUCTURE_NEGATIVE_HINTS = frozenset(LISTING_STRUCTURE_NEGATIVE_HINTS)
@@ -104,6 +105,14 @@ def _structured_listing_record(
         fallback_url = _structured_listing_url(payload, page_url)
         if fallback_url:
             record["url"] = fallback_url
+    # Fallback image extraction for ListItem and other non-Product typed payloads
+    # where collect_structured_candidates may not map the "image" key.
+    if not record.get("image_url"):
+        raw_image = payload.get("image")
+        if raw_image:
+            image_urls = extract_urls(raw_image, page_url)
+            if image_urls:
+                record["image_url"] = image_urls[0]
     url = str(record.get("url") or "")
     if not url:
         return {}
@@ -120,7 +129,7 @@ def _structured_listing_record(
 
 
 def _structured_listing_url(payload: dict[str, Any], page_url: str) -> str | None:
-    for key in ("url", "link", "href"):
+    for key in ("url", "link", "href", "@id"):
         resolved = absolute_url(page_url, payload.get(key))
         if resolved and not listing_url_is_structural(resolved, page_url):
             return resolved
@@ -994,7 +1003,7 @@ def _attach_gate_decision_to_artifacts(
     """Attach the integrity gate decision to the artifacts dict under key ``listing_integrity``."""
     if artifacts is None:
         return
-    if decision is None or not hasattr(decision, "outcome"):
+    if decision is None or not isinstance(decision, IntegrityDecision):
         artifacts["listing_integrity"] = {
             "outcome": "unknown",
             "reason": "invalid_decision",
@@ -1020,13 +1029,13 @@ def apply_listing_integrity_gate(
         return []
     try:
         decision = evaluate_listing_integrity(records, page_url=page_url, surface=surface)
-    except Exception as exc:
-        logger.warning(
-            "evaluate_listing_integrity failed for page_url=%s surface=%s records=%d: %s",
+    except Exception:
+        logger.error(
+            "evaluate_listing_integrity failed for page_url=%s surface=%s records=%d",
             page_url,
             surface,
             len(records),
-            exc,
+            exc_info=True,
         )
         decision = None
     _attach_gate_decision_to_artifacts(artifacts, decision)

@@ -84,7 +84,7 @@ def test_detect_platform_family_ignores_html_marker_matches_on_unrelated_domains
 
     assert (
         detect_platform_family(
-            "https://www.kitchenaid.com/countertop-appliances/food-processors/food-processor-and-chopper-products",
+            "https://www.example-appliances.com/countertop-appliances/food-processors/food-processor-and-chopper-products",
             html,
         )
         is None

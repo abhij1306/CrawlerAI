@@ -74,6 +74,7 @@
             "[data-testid='product-card']",
             "[data-test-id='product-card']",
             ".grid-item[data-product-id]",
+            "[data-product-id]",
             ".product_pod",
             ".collection-product-card",
             "[data-testid='grid-view-products'] > article",

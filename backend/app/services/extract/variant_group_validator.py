@@ -7,7 +7,7 @@ from app.services.config.variant_migration_rules import VARIANT_GROUP_MIN_CONFID
 from app.services.config.variant_policy import PUBLIC_VARIANT_AXIS_FIELDS
 from app.services.extract.variant_dom_cues import variant_context_noise_tokens
 from app.services.extract.variant_value_guards import variant_url_is_product_like
-from app.services.field_value_core import clean_text
+from app.services.shared.field_coerce import clean_text
 
 logger = logging.getLogger(__name__)
 _PUBLIC_AXES = frozenset(str(axis).strip().lower() for axis in PUBLIC_VARIANT_AXIS_FIELDS if str(axis).strip())

@@ -63,7 +63,7 @@ from app.services.config.product_intelligence import (
     GOOGLE_NATIVE_TYPING_EXTRA_WAIT_MS,
     product_intelligence_settings,
 )
-from app.services.field_value_core import clean_text
+from app.services.shared.field_coerce import clean_text
 from app.services.product_intelligence.matching import normalize_brand, source_domain
 
 logger = logging.getLogger(__name__)

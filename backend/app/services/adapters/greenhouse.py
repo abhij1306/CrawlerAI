@@ -15,7 +15,7 @@ from app.services.adapters.base import AdapterResult, BaseAdapter, adapter_host_
 from app.services.config.adapter_runtime_settings import adapter_runtime_settings
 from app.services.domain_utils import normalize_domain
 from app.services.extraction_html_helpers import extract_job_sections, html_to_text
-from app.services.field_value_core import clean_text
+from app.services.shared.field_coerce import clean_text
 from bs4 import BeautifulSoup
 
 _HTML_PARSER = "html.parser"
@@ -31,7 +31,7 @@ class GreenhouseAdapter(BaseAdapter):
     async def can_handle(self, url: str, html: str) -> bool:
         return self._matches_platform_family(url, html)
 
-    async def extract(self, url: str, html: str, surface: str) -> AdapterResult:
+    async def extract(self, url: str, html: str, surface: str, proxy: str | None = None) -> AdapterResult:
         if self._is_detail_surface(surface):
             detail_record = await self._try_detail_api(url, html)
             return self._result([detail_record] if detail_record else [])

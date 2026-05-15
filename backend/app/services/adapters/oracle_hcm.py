@@ -18,7 +18,7 @@ from app.services.config.extraction_rules import (
     ORACLE_HCM_SITE_PATH_RE,
 )
 from app.services.extraction_html_helpers import html_to_text
-from app.services.field_value_core import clean_text
+from app.services.shared.field_coerce import clean_text
 from bs4 import BeautifulSoup
 
 

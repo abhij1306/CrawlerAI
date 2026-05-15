@@ -5,7 +5,7 @@ import json
 from json import loads as parse_json
 
 from app.services.adapters.base import AdapterResult, BaseAdapter
-from app.services.field_value_core import safe_int as _safe_int
+from app.services.shared.field_coerce import safe_int as _safe_int
 
 
 class RemoteOkAdapter(BaseAdapter):
@@ -15,7 +15,7 @@ class RemoteOkAdapter(BaseAdapter):
     async def can_handle(self, url: str, html: str) -> bool:
         return self._matches_platform_family(url, html)
 
-    async def extract(self, url: str, html: str, surface: str) -> AdapterResult:
+    async def extract(self, url: str, html: str, surface: str, proxy: str | None = None) -> AdapterResult:
         return self._result(self._extract_remoteok_from_html(html))
 
     def _extract_remoteok_from_html(self, html: str) -> list[dict]:

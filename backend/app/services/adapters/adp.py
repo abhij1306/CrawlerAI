@@ -13,7 +13,7 @@ from app.services.adapters.base import (
     selectolax_node_attr,
     selectolax_node_text,
 )
-from app.services.field_value_core import clean_text
+from app.services.shared.field_coerce import clean_text
 
 
 class ADPAdapter(BaseAdapter):
@@ -49,7 +49,7 @@ class ADPAdapter(BaseAdapter):
             parsed._replace(query=urlencode(normalized_pairs, doseq=True))
         )
 
-    async def extract(self, url: str, html: str, surface: str) -> AdapterResult:
+    async def extract(self, url: str, html: str, surface: str, proxy: str | None = None) -> AdapterResult:
         records: list[dict] = []
         if self._looks_like_detail(url, html, surface):
             detail = self._extract_detail(url, html) if html else None

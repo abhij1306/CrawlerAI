@@ -7,7 +7,7 @@ from app.services.extract.shared_variant_logic import (
     normalized_variant_axis_key,
     variant_option_value_is_noise,
 )
-from app.services.field_value_core import absolute_url, object_dict, text_or_none
+from app.services.shared.field_coerce import absolute_url, object_dict, text_or_none
 
 
 def state_variant_targets(

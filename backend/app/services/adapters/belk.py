@@ -27,7 +27,7 @@ from app.services.config.extraction_rules import (
     LISTING_BRAND_MAX_WORDS,
 )
 from app.services.extract.listing_candidate_ranking import looks_like_utility_title
-from app.services.field_value_core import (
+from app.services.shared.field_coerce import (
     absolute_url,
     clean_text,
     coerce_field_value,
@@ -48,7 +48,7 @@ class BelkAdapter(BaseAdapter):
         host = (urlparse(str(url or "")).hostname or "").lower()
         return host.endswith("belk.com") or "belk.com" in str(html or "").lower()
 
-    async def extract(self, url: str, html: str, surface: str) -> AdapterResult:
+    async def extract(self, url: str, html: str, surface: str, proxy: str | None = None) -> AdapterResult:
         normalized_surface = str(surface or "").strip().lower()
         records: list[dict[str, Any]] = []
         if normalized_surface == "ecommerce_listing":
@@ -88,6 +88,8 @@ def _extract_listing_records(page_url: str, html: str) -> list[dict[str, Any]]:
             continue
         seen_urls.add(final_url)
         records.append(finalized)
+        if len(records) >= adapter_runtime_settings.belk_max_products:
+            return records
     for url, record in state_index.items():
         if url in seen_urls:
             continue

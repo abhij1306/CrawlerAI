@@ -35,7 +35,7 @@ from app.services.config.extraction_rules import (
     DETAIL_STRICT_PARENT_PRICE_SOURCE_SET,
     PAGE_URL_CURRENCY_HINTS_RAW,
 )
-from app.services.field_value_core import (
+from app.services.shared.field_coerce import (
     extract_currency_code,
     text_or_none,
 )
@@ -96,7 +96,7 @@ def backfill_detail_price_from_html(
 
     if not html_currency_conflicts_with_host and currency != jsonld_price_bundle[2]:
         jsonld_price_bundle = _detail_jsonld_price_bundle(soup, currency=currency)
-    jsonld_price, jsonld_original_price, _jsonld_currency = jsonld_price_bundle
+    jsonld_price, jsonld_original_price, jsonld_currency = jsonld_price_bundle
     if html_currency_conflicts_with_host:
         price = visible_price or text_or_none(record.get("price"))
     else:
@@ -120,6 +120,14 @@ def backfill_detail_price_from_html(
         price_source = "dom_text"
     if price in (None, "", [], {}):
         return
+    if (
+        price_source == "json_ld"
+        and jsonld_currency
+        and text_or_none(record.get("currency")) != jsonld_currency
+    ):
+        record["currency"] = jsonld_currency
+        currency = jsonld_currency
+        append_record_field_source(record, "currency", "json_ld")
     if (
         price_source == "json_ld"
         and price == jsonld_price
@@ -148,6 +156,18 @@ def backfill_detail_price_from_html(
     if isinstance(variants, list):
         for variant in variants:
             if not isinstance(variant, dict):
+                continue
+            if (
+                price_source == "json_ld"
+                and jsonld_currency
+                and _detail_price_is_visible_outlier(variant.get("price"), price)
+                and not (
+                    record_field_sources(record, "variants")
+                    & DETAIL_AUTHORITATIVE_PRICE_SOURCE_SET
+                )
+            ):
+                variant["price"] = price
+                variant["currency"] = jsonld_currency
                 continue
             if (
                 variant.get("price") not in (None, "", [], {})
@@ -229,6 +249,13 @@ def reconcile_detail_currency_with_url(
         page_url,
         expected_currency=expected_currency,
     )
+    variant_currency = _unanimous_variant_currency(record)
+    if (
+        variant_currency
+        and variant_currency != expected_currency
+        and not strong_host_hint
+    ):
+        expected_currency = variant_currency
     before_currency = text_or_none(record.get("currency"))
 
     adapter_price = "adapter" in record_field_sources(record, "price")
@@ -272,6 +299,17 @@ def reconcile_detail_currency_with_url(
                         f"variants[{index}].currency",
                         "url_currency_hint",
                     )
+
+
+def _unanimous_variant_currency(record: dict[str, Any]) -> str:
+    currencies: set[str] = set()
+    for row in list(record.get("variants") or []):
+        if not isinstance(row, dict):
+            continue
+        currency = extract_currency_code(row.get("currency"))
+        if currency:
+            currencies.add(currency)
+    return next(iter(currencies)) if len(currencies) == 1 else ""
 
 
 def reconcile_detail_price_magnitudes(record: dict[str, Any]) -> None:

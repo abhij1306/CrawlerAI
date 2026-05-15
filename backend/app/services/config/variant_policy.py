@@ -85,6 +85,8 @@ VARIANT_AXIS_CANONICAL_MAPPING: dict[frozenset[str], str] = {
         }
     ): "bundle_type",
     frozenset({WEIGHT_FIELD, "weights"}): WEIGHT_FIELD,
+    frozenset({"firmness", "firm"}): "firmness",
+    frozenset({"thickness", "thick"}): "thickness",
     frozenset({"storage capacity", "storage_capacity"}): "storage_capacity",
     frozenset({"material composition", "material_composition", "composition"}): (
         "material_composition"

@@ -22,7 +22,7 @@ from app.services.config.extraction_rules import (
     DETAIL_CATEGORY_UI_TOKENS,
     DETAIL_GENDER_TERMS,
 )
-from app.services.field_value_core import clean_text
+from app.services.shared.field_coerce import clean_text
 
 logger = logging.getLogger(__name__)
 _BREADCRUMB_NOISE_ICON_PATTERNS = tuple(DETAIL_BREADCRUMB_NOISE_ICON_PATTERNS or ())

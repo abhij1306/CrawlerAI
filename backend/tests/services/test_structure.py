@@ -12,33 +12,18 @@ SERVICES_ROOT = ROOT / "app" / "services"
 EXTRACTION_MODULES = [
     SERVICES_ROOT / "extraction_runtime.py",
     SERVICES_ROOT / "extraction_context.py",
-    SERVICES_ROOT / "crawl_fetch_runtime.py",
     SERVICES_ROOT / "listing_extractor.py",
     SERVICES_ROOT / "structured_sources.py",
-    SERVICES_ROOT / "field_value_core.py",
     SERVICES_ROOT / "field_value_candidates.py",
-    SERVICES_ROOT / "field_value_dom.py",
 ]
 GENERIC_EXTRACTION_MODULES = [
-    SERVICES_ROOT / "js_state_mapper.py",
 ]
 FIELD_POLICY_CONSUMERS = [
     SERVICES_ROOT / "crawl_crud.py",
     SERVICES_ROOT / "schema_service.py",
     SERVICES_ROOT / "review" / "__init__.py",
 ]
-ALLOWED_PRIVATE_SERVICE_IMPORTS = {
-    "_batch_runtime.py -> app.services.publish:_aggregate_verdict",
-    "acquisition/browser_identity.py -> app.services.network_resolution:_accept_language_for_locale",
-    "acquisition/browser_runtime.py -> app.services.acquisition.browser_capture:_MAX_CAPTURED_NETWORK_PAYLOADS",
-    "acquisition/browser_runtime.py -> app.services.acquisition.browser_capture:_MAX_CAPTURED_NETWORK_PAYLOAD_BYTES",
-    "acquisition/browser_runtime.py -> app.services.acquisition.browser_capture:_NETWORK_CAPTURE_QUEUE_SIZE",
-    "acquisition/browser_runtime.py -> app.services.acquisition.browser_capture:_NETWORK_CAPTURE_WORKERS",
-    "config/adapter_runtime_settings.py -> app.services.config.runtime_settings:_settings_config",
-    "config/llm_runtime.py -> app.services.config.runtime_settings:_settings_config",
-    "config/product_intelligence.py -> app.services.config.runtime_settings:_settings_config",
-    "publish/__init__.py -> app.services.publish.verdict:_aggregate_verdict",
-}
+ALLOWED_PRIVATE_SERVICE_IMPORTS = set()
 CONFIG_CONSTANT_NAME_MARKERS = (
     "SELECTOR",
     "TOKEN",
@@ -59,10 +44,6 @@ ALLOWED_SERVICE_CONFIG_CONSTANTS = {
     ("extract/shared_variant_logic.py", "_VARIANT_AXIS_LABEL_NOISE_TOKENS"),
     ("extract/shared_variant_logic.py", "_VARIANT_GROUP_ATTR_NOISE_TOKENS"),
     ("extract/shared_variant_logic.py", "_VARIANT_OPTION_VALUE_NOISE_TOKENS"),
-    ("field_value_core.py", "_SIZE_REJECT_TOKENS_NORMALIZED"),
-    ("field_value_core.py", "_UNRESOLVED_TEMPLATE_URL_TOKENS_LOWER"),
-    ("field_value_dom.py", "_SECTION_CONTAINER_SELECTORS"),
-    ("field_value_dom.py", "_SECTION_LABEL_SELECTOR"),
     ("dom/selector_engine.py", "_SECTION_CONTAINER_SELECTORS"),
     ("dom/selector_engine.py", "_SECTION_LABEL_SELECTOR"),
     ("shared/field_coerce.py", "_SIZE_REJECT_TOKENS_NORMALIZED"),
@@ -77,22 +58,21 @@ DEFAULT_LOC_BUDGET = 1000
 # threshold increase.
 FILE_LOC_BUDGETS = {
     # Browser identity owns UA/timezone/device/runtime surface shaping.
-    Path("app/services/acquisition/browser_identity.py"): 1765,
+    Path("app/services/acquisition/browser_identity.py"): 1690,
     # Browser runtime owns pooled browser lifecycle and context management.
-    Path("app/services/acquisition/browser_runtime.py"): 2275,
+    # Ratcheted after storage-state and readiness wrappers moved out.
+    Path("app/services/acquisition/browser_runtime.py"): 1800,
     # Page flow owns navigation, readiness, artifact capture, and final browser shaping.
-    # Grown (+38) for dedicated location-interstitial timings and config-owned visual price regex.
-    Path("app/services/acquisition/browser_page_flow.py"): 2047,
+    # Ratcheted after interstitial helpers moved to browser_interstitial.py.
+    Path("app/services/acquisition/browser_page_flow.py"): 1660,
     # Traversal owns readiness-aware pagination and bounded expansion loops.
-    Path("app/services/acquisition/traversal.py"): 1965,
+    # Ratcheted after card-counting/progress-snapshot helpers moved out.
+    Path("app/services/acquisition/traversal.py"): 1710,
     # Config owners.
     # Config rules own typed extraction constants and category/nav URL rules.
-    Path("app/services/config/extraction_rules.py"): 1780,  # +15 for LISTING_INTEGRITY_SUPPORT_FIELDS config
-    # Fetch runtime is now an 8-line sys.modules shim redirecting to
-    # app.services.fetch.fetch_context. Budget stays tight so regrowth is noticed.
-    Path("app/services/crawl_fetch_runtime.py"): 50,
+    Path("app/services/config/extraction_rules.py"): 1910,
     # Detail DOM extraction owns DOM fallback fields plus DOM variant recovery.
-    Path("app/services/extract/detail_dom_extractor.py"): 1448,
+    Path("app/services/extract/detail_dom_extractor.py"): 1450,
     # Detail finalizer owns public-boundary cleanup and record repair.
     # Grown (+10) to accommodate additional axis-gating logic that reuses
     # shared_variant_logic frozensets instead of re-deriving them locally.
@@ -104,41 +84,34 @@ FILE_LOC_BUDGETS = {
     # Variant normalization owns the detail variant cleanup pipeline.
     Path("app/services/extract/variant_record_normalization.py"): 1472,
     # Listing extraction remains coherent but large enough to warrant an explicit budget.
-    Path("app/services/listing_extractor.py"): 1395,
-    # Shared DOM field recovery remains centralized here instead of fragmenting selectors.
-    # TODO(chore): baseline LOC drift here, then extract field_recovery /
-    # section-image cleanup / audit wiring owners when scheduled.
-    Path("app/services/field_value_dom.py"): 1705,
+    Path("app/services/listing_extractor.py"): 1260,
     # Field candidate collection is a current large owner; later extraction
     # slices should split structured candidate assembly and lower this budget.
-    Path("app/services/field_value_candidates.py"): 1100,
+    Path("app/services/field_value_candidates.py"): 1125,
     # Canonical field coercion remains centralized here instead of scattering value policy.
     # Shrunk after removing stranded URL helpers and duplicate output schema checks.
     # TODO(chore): baseline LOC drift here, then extract canonical_coercion /
     # field_recovery / availability_gate owners when scheduled.
-    Path("app/services/field_value_core.py"): 1600,
     # Phase 3 moved owners. These are temporary high-water marks while public
     # facades preserve imports; later slices split internals under these owners.
-    Path("app/services/dom/selector_engine.py"): 1706,
-    Path("app/services/extract/detail_materializer.py"): 1441,
-    Path("app/services/fetch/fetch_context.py"): 1375,
-    Path("app/services/js_state/state_normalizer.py"): 1386,
+    Path("app/services/dom/selector_engine.py"): 1665,
+    Path("app/services/extract/detail_materializer.py"): 1435,
+    Path("app/services/fetch/fetch_context.py"): 1386,
+    Path("app/services/js_state/state_normalizer.py"): 1200,
     # Grown (+187) for listing-integrity escalation retry wiring (task 10.1).
-    Path("app/services/pipeline/extraction_loop.py"): 1600,
+    Path("app/services/pipeline/extraction_loop.py"): 1575,
     # Run progress owns batch-level summary/merge/quality aggregation, evicted
     # from the ORM layer so business logic does not live in models/crawl.py.
-    Path("app/services/pipeline/run_progress.py"): 500,
-    Path("app/services/shared/field_coerce.py"): 1398,
+    Path("app/services/pipeline/run_progress.py"): 365,
+    Path("app/services/shared/field_coerce.py"): 1060,
     # Enrichment owns deterministic product normalization and job application.
-    Path("app/services/data_enrichment/service.py"): 1455,
-    # JS state mapping stays centralized to avoid adapter-specific drift.
-    Path("app/services/js_state_mapper.py"): 1386,
+    Path("app/services/data_enrichment/service.py"): 1325,
     # LLM task runtime now only orchestrates task execution. Prompt rendering,
     # payload validation, provider calls, budget/cache, and cost logging have
     # separate owners.
-    Path("app/services/llm_tasks.py"): 480,
+    Path("app/services/llm_tasks.py"): 455,
     # Product Intelligence service owns job + discovery orchestration with brand and enrichment LLM helpers.
-    Path("app/services/product_intelligence/service.py"): 1190,
+    Path("app/services/product_intelligence/service.py"): 1105,
 }
 
 

@@ -28,7 +28,7 @@ from app.services.export.schema import (
     clean_export_data as _clean_export_data,
     export_record_from_row,
 )
-from app.services.field_value_core import (
+from app.services.shared.field_coerce import (
     object_dict as _object_dict,
     object_list as _object_list,
 )

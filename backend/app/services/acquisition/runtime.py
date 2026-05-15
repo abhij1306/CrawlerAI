@@ -28,7 +28,7 @@ from app.services.config.extraction_rules import (
 )
 from app.services.config.runtime_settings import crawler_runtime_settings
 from app.services.db_utils import mapping_or_empty
-from app.services.field_value_core import clean_text
+from app.services.shared.field_coerce import clean_text
 from app.services.network_resolution import (
     address_family_preference,
     build_async_http_client,

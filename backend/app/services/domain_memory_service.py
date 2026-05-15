@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.domain_memory import DomainMemory
 from app.services.config.domain_profiles import DEFAULT_FALLBACK_SURFACE
-from app.services.field_value_core import safe_int as _safe_int
+from app.services.shared.field_coerce import safe_int as _safe_int
 
 
 def _normalized_selector_rule(row: dict[str, object]) -> dict[str, object]:

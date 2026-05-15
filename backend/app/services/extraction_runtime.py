@@ -34,7 +34,7 @@ from app.services.extract.detail_identity import (
     listing_url_is_structural,
 )
 from app.services.extract.listing_record_finalizer import finalize_listing_price_fields
-from app.services.field_value_core import (
+from app.services.shared.field_coerce import (
     absolute_url,
     clean_text,
     coerce_text,

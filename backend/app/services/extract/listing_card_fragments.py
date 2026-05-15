@@ -20,7 +20,7 @@ from app.services.config.extraction_rules import (
 )
 from app.services.config.runtime_settings import crawler_runtime_settings
 from app.services.config.selectors import CARD_SELECTORS
-from app.services.field_value_core import PRICE_RE, clean_text
+from app.services.shared.field_coerce import PRICE_RE, clean_text
 
 FragmentScoreFn = Callable[[object], int]
 logger = logging.getLogger(__name__)
@@ -70,8 +70,11 @@ def listing_node_signature(node, *, include_title: bool = True) -> str:
     return " ".join(values).lower()
 
 
-def _listing_count_bucket(count: int) -> str:
-    """Bucket a non-negative integer count into ``{0, 1, 2_5, 6_plus}``."""
+def _listing_count_bucket(count: int | None) -> str:
+    """Bucket a count into ``{0, 1, 2_5, 6_plus}``.
+
+    If *count* is None it is treated as 0.
+    """
     value = int(count) if count is not None else 0
     if value <= 0:
         return "0"

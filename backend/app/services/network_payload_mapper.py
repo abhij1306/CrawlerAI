@@ -31,7 +31,7 @@ from app.services.field_value_candidates import (
     finalize_candidate_value,
 )
 from app.services.field_policy import normalize_field_key
-from app.services.field_value_core import (
+from app.services.shared.field_coerce import (
     STRUCTURED_MULTI_FIELDS,
     coerce_field_value,
     surface_alias_lookup,

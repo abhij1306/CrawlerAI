@@ -6,8 +6,8 @@ from app.services.extract.detail_record_finalizer import (
     repair_ecommerce_detail_record_quality,
 )
 from app.services.extract.variant_record_normalization import normalize_variant_record
-from app.services.field_value_core import coerce_field_value
-from app.services.field_value_dom import extract_node_value
+from app.services.shared.field_coerce import coerce_field_value
+from app.services.dom.selector_engine import extract_node_value
 from app.services.normalizers import normalize_decimal_price, normalize_value
 
 

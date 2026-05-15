@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 HOST_OS_UA_TOKENS: dict[str, str] = {
     "windows": "windows nt",
     "macos": "macintosh",
@@ -156,7 +160,19 @@ def _webgl_profile(
     supported_extensions: tuple[str, ...],
 ) -> dict[str, object]:
     viewport_dims = limits["max_viewport_dims"]
+    if not isinstance(viewport_dims, (list, tuple)):
+        logger.warning(
+            "Invalid WebGL max_viewport_dims=%r; using default",
+            viewport_dims,
+        )
+        viewport_dims = (0, 0)
     line_width_range = limits["aliased_line_width_range"]
+    if not isinstance(line_width_range, (list, tuple)):
+        logger.warning(
+            "Invalid WebGL aliased_line_width_range=%r; using default",
+            line_width_range,
+        )
+        line_width_range = (1, 1)
     return {
         "vendor": vendor,
         "renderer": renderer,

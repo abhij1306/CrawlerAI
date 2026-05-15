@@ -11,7 +11,7 @@ from app.services.config.public_record_policy import (
     PUBLIC_RECORD_DETAIL_CANONICAL_QUERY_KEYS,
     PUBLIC_RECORD_DETAIL_CANONICAL_QUERY_PREFIXES,
 )
-from app.services.field_value_core import clean_text, text_or_none
+from app.services.shared.field_coerce import clean_text, text_or_none
 
 _BLOCKED_SUFFIXES = tuple(clean_text(v).casefold() for v in VARIANT_URL_BLOCKED_PATH_SUFFIXES if clean_text(v))
 _BLOCKED_PREFIXES = tuple(clean_text(v).casefold() for v in VARIANT_URL_BLOCKED_PATH_PREFIXES if clean_text(v))

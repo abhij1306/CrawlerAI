@@ -30,7 +30,9 @@ class ProductIntelligenceJob(UpdatedAtMixin, CompletedAtMixin, Base):
     __tablename__ = "product_intelligence_jobs"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey(USERS_FK), index=True)
+    user_id: Mapped[int | None] = mapped_column(
+        ForeignKey(USERS_FK, ondelete=SET_NULL), nullable=True, index=True
+    )
     source_run_id: Mapped[int | None] = mapped_column(
         ForeignKey(CRAWL_RUN_FK, ondelete=SET_NULL),
         nullable=True,

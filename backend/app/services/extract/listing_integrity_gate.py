@@ -9,26 +9,29 @@ part of the listing-extraction bucket per ``docs/CODEBASE_MAP.md``.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
+
 from collections import Counter
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 from app.services.config.extraction_rules import (
     LISTING_CATEGORY_PATH_PREFIXES,
-    LISTING_CATEGORY_PATH_SEGMENTS,
     LISTING_INTEGRITY_SUPPORT_FIELDS,
-    LISTING_LOCALE_PATH_SEGMENT_PATTERN,
     LISTING_PRODUCT_DETAIL_ID_RE,
 )
 from app.services.config.runtime_settings import crawler_runtime_settings
-from app.services.extract.detail_identity import listing_url_is_structural
+from app.services.extract.detail_identity import (
+    listing_detail_like_path,
+    listing_url_is_structural,
+)
 
 
 @dataclass(frozen=True)
 class IntegrityDecision:
     """Immutable decision record produced by :func:`evaluate_listing_integrity`."""
 
-    outcome: str  # "product_grid" | "promo_only_cluster"
+    outcome: Literal["product_grid", "promo_only_cluster"]
     reason: str  # short identifier for the triggering condition
     metrics: dict[str, int | float]
 
@@ -88,11 +91,22 @@ def evaluate_listing_integrity(
 
     min_ratio = crawler_runtime_settings.listing_cohort_homogeneity_min_ratio
     if cohort_homogeneity_ratio < min_ratio:
-        return IntegrityDecision(
-            outcome="promo_only_cluster",
-            reason="cohort_heterogeneous",
-            metrics=metrics,
+        # Override: when the set is large enough AND a majority of records
+        # carry support signals (price, image, rating, etc.), the set is a
+        # legitimate product grid whose structural signatures vary only due
+        # to cosmetic differences like color-swatch thumbnail counts.
+        # Small sets (< 5 records) are not overridden because low homogeneity
+        # in a tiny set is a stronger signal of a promo cluster.
+        support_override = (
+            record_count >= 5
+            and support_signal_count >= max(1, record_count // 2)
         )
+        if not support_override:
+            return IntegrityDecision(
+                outcome="promo_only_cluster",
+                reason="cohort_heterogeneous",
+                metrics=metrics,
+            )
 
     if record_count > 0 and sibling_category_count == record_count:
         return IntegrityDecision(
@@ -217,8 +231,6 @@ def _has_detail_identity_marker(url: str, *, is_job: bool) -> bool:
     Delegates to listing_detail_like_path which handles both ecommerce
     and job surfaces via its ``is_job`` parameter.
     """
-    from app.services.extract.detail_identity import listing_detail_like_path
-
     return listing_detail_like_path(url, is_job=is_job)
 
 
@@ -240,7 +252,13 @@ def _ensure_frozenset(value: object) -> frozenset[str]:
     """Return value as a frozenset, converting if necessary."""
     if isinstance(value, frozenset):
         return value
-    return frozenset(value) if value else frozenset()
+    if isinstance(value, str):
+        return frozenset({value})
+    if isinstance(value, dict):
+        return frozenset(str(item) for item in value.values())
+    if isinstance(value, Iterable):
+        return frozenset(str(item) for item in value)
+    return frozenset()
 
 
 def _get_support_fields(surface: str) -> frozenset[str]:

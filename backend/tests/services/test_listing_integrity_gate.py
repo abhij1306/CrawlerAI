@@ -15,6 +15,7 @@ from unittest.mock import patch
 
 from app.services.extract.listing_integrity_gate import (
     IntegrityDecision,
+    _ensure_frozenset,
     evaluate_listing_integrity,
 )
 
@@ -35,6 +36,12 @@ def _category_record(idx: int) -> dict:
         "title": f"Category {idx}",
         "url": f"https://example.com/category/cat-{idx}",
     }
+
+
+def test_ensure_frozenset_uses_mapping_values() -> None:
+    assert _ensure_frozenset({"primary": "price", "secondary": "image_url"}) == frozenset(
+        {"price", "image_url"}
+    )
 
 
 class TestEvaluateListingIntegrityProductGrid:
@@ -119,13 +126,14 @@ class TestEvaluateListingIntegrityPromoCluster:
 
     def test_cohort_heterogeneous(self):
         """Low cohort homogeneity → promo_only_cluster / cohort_heterogeneous."""
-        # Mix very different URL shapes to get low homogeneity
+        # Mix very different URL shapes with no support signals (no price,
+        # image, rating, etc.) so the support-signal override does not apply.
         records = [
-            {"title": "A", "url": "https://example.com/a", "price": "$1"},
-            {"title": "B", "url": "https://example.com/cat/sub/deep/b-123", "price": "$2"},
-            {"title": "C", "url": "https://other.com/c", "price": "$3"},
-            {"title": "D", "url": "https://example.com/products/d-SKU0001", "price": "$4"},
-            {"title": "E", "url": "https://example.com/shop/category/e", "price": "$5"},
+            {"title": "A", "url": "https://example.com/a"},
+            {"title": "B", "url": "https://example.com/cat/sub/deep/b-123"},
+            {"title": "C", "url": "https://other.com/c"},
+            {"title": "D", "url": "https://example.com/products/d-SKU0001"},
+            {"title": "E", "url": "https://example.com/shop/category/e"},
         ]
         with patch(
             "app.services.extract.listing_integrity_gate.crawler_runtime_settings"

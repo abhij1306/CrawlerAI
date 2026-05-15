@@ -8,7 +8,7 @@ from app.services.config.js_state_field_specs import (
     JS_STATE_VARIANT_AVAILABILITY_BOOL_KEYS,
     JS_STATE_VARIANT_STOCK_QUANTITY_KEYS,
 )
-from app.services.field_value_core import text_or_none
+from app.services.shared.field_coerce import text_or_none
 from app.services.normalizers import normalize_decimal_price
 
 

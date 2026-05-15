@@ -3,7 +3,11 @@ from __future__ import annotations
 import httpx
 import pytest
 
-from app.services.acquisition.acquirer import AcquisitionRequest, acquire
+from app.services.acquisition.acquirer import (
+    AcquisitionRequest,
+    PageEvidence,
+    acquire,
+)
 from app.services.acquisition.policy import AcquisitionPolicy
 from app.services.acquisition_plan import AcquisitionPlan
 from app.services.crawl_utils import normalize_target_url
@@ -139,6 +143,21 @@ def test_acquisition_policy_profile_maps_are_read_only() -> None:
     assert policy.proxy_profile["rotation"] == "session"
     with pytest.raises(TypeError):
         policy.proxy_profile["rotation"] = "rotating"  # type: ignore[index]
+
+
+def test_page_evidence_keeps_usable_content_with_vendor_block_reason_out_of_challenge_shell() -> None:
+    evidence = PageEvidence.from_browser_diagnostics(
+        {
+            "browser_reason": "vendor-block:akamai",
+            "browser_outcome": "usable_content",
+            "challenge_evidence": ["provider:akamai"],
+            "challenge_provider_hits": ["akamai"],
+            "readiness_probes": [],
+        }
+    )
+
+    assert evidence.indicates_block is False
+    assert evidence.challenge_shell_reason is None
 
 
 @pytest.mark.asyncio

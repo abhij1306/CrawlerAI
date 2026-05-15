@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any, Callable
 
@@ -33,7 +34,7 @@ class DetailTierRuntime:
     materialize_record: Callable[..., dict[str, Any]]
     collect_record_candidates: Callable[..., None]
     map_network_payloads_to_fields: Callable[..., list[dict[str, Any]]]
-    collect_structured_source_payloads: Callable[..., list[tuple[str, list[object]]]]
+    collect_structured_source_payloads: Callable[..., Iterable[tuple[str, Iterable[object]]]]
     collect_structured_payload_candidates: Callable[..., None]
     apply_dom_fallbacks: Callable[..., None]
     extract_variants_from_dom: Callable[..., dict[str, object]]
@@ -67,7 +68,7 @@ class PreparedDetailExtraction:
     raw_soup: Any
     state: DetailTierState
     js_state_record: dict[str, Any]
-    js_state_objects: list[object]
+    js_state_objects: dict[str, Any]
     selector_self_heal: dict[str, object]
 
 

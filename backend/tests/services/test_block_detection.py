@@ -5,7 +5,7 @@ from copy import deepcopy
 import pytest
 
 from app.services.acquisition.runtime import classify_blocked_page
-from app.services.crawl_fetch_runtime import is_blocked_html
+from app.services.fetch.fetch_context import is_blocked_html
 
 
 def test_is_blocked_html_detects_real_challenge_page() -> None:

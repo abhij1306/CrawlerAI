@@ -20,23 +20,17 @@ from app.services.config.network_capture import (
     NETWORK_PAYLOAD_STREAMING_CONTENT_TYPES,
     NETWORK_PAYLOAD_URL_HINTS,
 )
-from app.services.config.runtime_settings import crawler_runtime_settings
+from app.services.config.runtime_settings import (
+    browser_capture_max_network_payload_bytes,
+    browser_capture_max_network_payloads,
+    browser_capture_queue_size,
+    browser_capture_total_network_payload_bytes,
+    browser_capture_workers,
+    crawler_runtime_settings,
+)
 from app.services.platform_policy import classify_network_endpoint_family
 
 logger = logging.getLogger(__name__)
-
-_MAX_CAPTURED_NETWORK_PAYLOADS = (
-    crawler_runtime_settings.browser_capture_max_network_payloads
-)
-_MAX_CAPTURED_NETWORK_PAYLOAD_BYTES = (
-    crawler_runtime_settings.browser_capture_max_network_payload_bytes
-)
-_MAX_TOTAL_CAPTURED_NETWORK_PAYLOAD_BYTES = (
-    crawler_runtime_settings.browser_capture_total_network_payload_bytes
-)
-_NETWORK_CAPTURE_QUEUE_SIZE = _MAX_CAPTURED_NETWORK_PAYLOADS * 2
-_NETWORK_CAPTURE_WORKERS = 4
-
 
 @dataclass(slots=True)
 class BrowserNetworkCaptureSummary:
@@ -68,9 +62,6 @@ class BrowserNetworkCapture:
         self._read_payload_body = read_payload_body or read_network_payload_body
         self._lock = asyncio.Lock()
         self._payloads: list[dict[str, object]] = []
-        self._queue: asyncio.Queue[Any | None] = asyncio.Queue(
-            maxsize=max(1, _NETWORK_CAPTURE_QUEUE_SIZE)
-        )
         self._workers: set[asyncio.Task[None]] = set()
         self._closed = False
         self._closing = False
@@ -85,6 +76,15 @@ class BrowserNetworkCapture:
         self._pending_payloads = 0
         self._reserved_bytes = 0
         self._dropped_payload_events = 0
+        self._max_payloads = max(1, browser_capture_max_network_payloads())
+        self._max_payload_bytes = max(1, browser_capture_max_network_payload_bytes())
+        self._total_payload_bytes = max(
+            1,
+            browser_capture_total_network_payload_bytes(),
+        )
+        self._queue: asyncio.Queue[Any | None] = asyncio.Queue(
+            maxsize=max(1, browser_capture_queue_size())
+        )
 
     def attach(self, page: Any) -> None:
         if (
@@ -98,7 +98,14 @@ class BrowserNetworkCapture:
         self._workers = {
             asyncio.create_task(self._capture_worker())
             for _ in range(
-                max(1, min(_NETWORK_CAPTURE_WORKERS, _MAX_CAPTURED_NETWORK_PAYLOADS))
+                max(
+                    1,
+                    min(
+                        browser_capture_workers(),
+                        self._max_payloads,
+                        self._queue.maxsize,
+                    ),
+                )
             )
         }
         page.on("response", self._schedule_capture)
@@ -168,7 +175,7 @@ class BrowserNetworkCapture:
         self._closed = True
         async with self._lock:
             self._summary = BrowserNetworkCaptureSummary(
-                payloads=list(self._payloads[:_MAX_CAPTURED_NETWORK_PAYLOADS]),
+                payloads=list(self._payloads[: self._max_payloads]),
                 network_payload_count=len(self._payloads),
                 captured_network_payload_bytes=self._captured_bytes,
                 malformed_network_payloads=self._malformed_payloads,
@@ -273,10 +280,7 @@ class BrowserNetworkCapture:
                 endpoint_info=endpoint_info,
             ):
                 return
-            if (
-                self._captured_bytes + len(body_bytes)
-                > _MAX_TOTAL_CAPTURED_NETWORK_PAYLOAD_BYTES
-            ):
+            if self._captured_bytes + len(body_bytes) > self._total_payload_bytes:
                 self._oversized_payloads += 1
                 return
             self._payloads.append(
@@ -341,7 +345,12 @@ def should_capture_network_payload(
         lowered_url=lowered_url,
     ):
         return False
-    if captured_count >= _MAX_CAPTURED_NETWORK_PAYLOADS:
+    max_payloads = max(1, browser_capture_max_network_payloads())
+    total_payload_bytes = max(
+        1,
+        browser_capture_total_network_payload_bytes(),
+    )
+    if captured_count >= max_payloads:
         return False
     if NETWORK_PAYLOAD_NOISE_URL_RE.search(lowered_url):
         return False
@@ -359,10 +368,10 @@ def should_capture_network_payload(
         return False
     if (
         content_length is not None
-        and captured_bytes + content_length > _MAX_TOTAL_CAPTURED_NETWORK_PAYLOAD_BYTES
+        and captured_bytes + content_length > total_payload_bytes
     ):
         return False
-    if captured_bytes >= _MAX_TOTAL_CAPTURED_NETWORK_PAYLOAD_BYTES:
+    if captured_bytes >= total_payload_bytes:
         return False
     return True
 
@@ -588,19 +597,15 @@ def _network_payload_byte_budget(
         response_url=url,
         surface=surface,
     )
-    budget = _MAX_CAPTURED_NETWORK_PAYLOAD_BYTES
+    budget = max(1, browser_capture_max_network_payload_bytes())
     if resolved_endpoint.get("type") in HIGH_VALUE_NETWORK_ENDPOINT_TYPES:
         budget *= HIGH_VALUE_NETWORK_PAYLOAD_BUDGET_MULTIPLIER
-    return min(budget, _MAX_TOTAL_CAPTURED_NETWORK_PAYLOAD_BYTES)
+    return min(budget, browser_capture_total_network_payload_bytes())
 
 
 __all__ = [
     "BrowserNetworkCapture",
     "BrowserNetworkCaptureSummary",
-    "_MAX_CAPTURED_NETWORK_PAYLOADS",
-    "_MAX_CAPTURED_NETWORK_PAYLOAD_BYTES",
-    "_NETWORK_CAPTURE_QUEUE_SIZE",
-    "_NETWORK_CAPTURE_WORKERS",
     "capture_browser_screenshot",
     "classify_network_endpoint",
     "coerce_content_length",

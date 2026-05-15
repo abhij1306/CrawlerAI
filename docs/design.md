@@ -1,420 +1,186 @@
 ---
-version: alpha
-name: CrawlerAI
-description: Deterministic crawl and extraction workspace with a dense, operator-first console UI and dual light/dark themes.
+version: beta
+name: CrawlerAI Console
+description: Operator-first crawl and extraction workspace using PostHog warmth, HashiCorp rigor, and Airtable-style data ergonomics across light and dark themes.
+inspiration:
+  primary: PostHog (warm surfaces, olive text, flat depth)
+  structural: HashiCorp (enterprise grid, whisper shadows, tight headings)
+  dataModel: Airtable (dense tables, field filters, record ergonomics)
 colors:
-  primary: "#B85C38"
-  accentWarm: "#E09A53"
-  canvasLight: "#F6F1EA"
-  canvasAltLight: "#EFE5D8"
-  panelLight: "#FFF9F2"
-  panelStrongLight: "#F4E8DA"
-  borderLight: "#D8C8B8"
-  borderStrongLight: "#CDB7A2"
-  textPrimaryLight: "#2F241D"
-  textSecondaryLight: "#5D4B40"
-  textMutedLight: "#78665B"
-  accentLight: "#B85C38"
-  accentHoverLight: "#964728"
-  accentSubtleLight: "#F5E1D2"
-  onAccentLight: "#FFFFFF"
-  successLight: "#3F7D48"
-  warningLight: "#C67A2B"
-  dangerLight: "#B44A3A"
-  infoLight: "#C9874B"
-  canvasDark: "#16110E"
-  canvasAltDark: "#1F1814"
-  panelDark: "#211A16"
-  panelStrongDark: "#2A221D"
-  borderDark: "#3A2F28"
-  borderStrongDark: "#524137"
-  textPrimaryDark: "#E6D8CB"
-  textSecondaryDark: "#C6B29F"
-  textMutedDark: "#9B8576"
-  accentDark: "#D27A49"
-  accentHoverDark: "#E09A53"
-  accentSubtleDark: "#3B261D"
-  onAccentDark: "#160F0B"
-  successDark: "#62B26B"
-  warningDark: "#E09A53"
-  dangerDark: "#EF4444"
-  infoDark: "#D59A68"
+  light:
+    canvas: "#FAFAFA"
+    canvasAlt: "#F5F5F5"
+    panel: "#FFFFFF"
+    panelStrong: "#F0F0F0"
+    sidebar: "#FAFAFA"
+    border: "#E5E5E5"
+    borderStrong: "#D4D4D4"
+    text: "#111111"
+    textSecondary: "#4E4E4E"
+    textMuted: "#888888"
+    accent: "#111111"
+    accentHover: "#333333"
+    accentSubtle: "#F0F0F0"
+    accentFg: "#FFFFFF"
+    controlDark: "#111111"
+    controlDarkHover: "#333333"
+    success: "#16A34A"
+    warning: "#CA8A04"
+    danger: "#DC2626"
+    info: "#4F46E5"
+  dark:
+    canvas: "#0C0D0E"
+    canvasAlt: "#131416"
+    panel: "#191A1C"
+    panelStrong: "#1F2023"
+    sidebar: "#111214"
+    border: "rgba(255, 255, 255, 0.08)"
+    borderStrong: "rgba(255, 255, 255, 0.14)"
+    text: "#F0F1F3"
+    textSecondary: "#B0B4BC"
+    textMuted: "#6B7080"
+    accent: "#7C8AFF"
+    accentHover: "#9BA5FF"
+    accentSubtle: "rgba(124, 138, 255, 0.12)"
+    accentFg: "#0C0D0E"
+    controlDark: "#F0F1F3"
+    controlDarkHover: "#FFFFFF"
+    success: "#34D058"
+    warning: "#E0A63A"
+    danger: "#F97066"
+    info: "#7C8AFF"
 typography:
-  heading1:
-    fontFamily: Outfit
-    fontSize: 1.5rem
-    fontWeight: 600
+  sans: IBM Plex Sans
+  mono: JetBrains Mono
+  pageTitle:
+    size: 1.5rem
+    weight: 700
     lineHeight: 1.15
-    letterSpacing: -0.02em
-  heading2:
-    fontFamily: Outfit
-    fontSize: 1.25rem
-    fontWeight: 600
-    lineHeight: 1.15
-    letterSpacing: -0.02em
-  heading3:
-    fontFamily: Outfit
-    fontSize: 1.125rem
-    fontWeight: 600
-    lineHeight: 1.35
-    letterSpacing: -0.015em
-  subheading:
-    fontFamily: Outfit
-    fontSize: 1rem
-    fontWeight: 500
-    lineHeight: 1.35
-    letterSpacing: -0.005em
+    letterSpacing: 0
+  sectionTitle:
+    size: 1rem
+    weight: 700
+    lineHeight: 1.3
+    letterSpacing: 0
   body:
-    fontFamily: Outfit
-    fontSize: 0.875rem
-    fontWeight: 400
+    size: 0.875rem
+    weight: 400
     lineHeight: 1.5
-    letterSpacing: 0em
-  bodySm:
-    fontFamily: Outfit
-    fontSize: 0.75rem
-    fontWeight: 400
-    lineHeight: 1.5
-    letterSpacing: 0em
+    letterSpacing: 0
   control:
-    fontFamily: Outfit
-    fontSize: 0.875rem
-    fontWeight: 500
-    lineHeight: 1.35
-    letterSpacing: 0em
+    size: 0.875rem
+    weight: 600
+    lineHeight: 1.25
+    letterSpacing: 0
   label:
-    fontFamily: Outfit
-    fontSize: 0.75rem
-    fontWeight: 600
+    size: 0.75rem
+    weight: 700
     lineHeight: 1.35
-    letterSpacing: 0.05em
-  labelMono:
-    fontFamily: JetBrains Mono
-    fontSize: 0.75rem
-    fontWeight: 600
-    lineHeight: 1.35
-    letterSpacing: 0.05em
-  caption:
-    fontFamily: Outfit
-    fontSize: 0.75rem
-    fontWeight: 400
-    lineHeight: 1.35
-    letterSpacing: 0em
-  captionMono:
-    fontFamily: JetBrains Mono
-    fontSize: 0.75rem
-    fontWeight: 400
-    lineHeight: 1.35
-    letterSpacing: 0em
+    letterSpacing: 0.06em
   metric:
-    fontFamily: JetBrains Mono
-    fontSize: 1.875rem
-    fontWeight: 700
+    family: JetBrains Mono
+    size: 1.875rem
+    weight: 700
     lineHeight: 1
-    letterSpacing: -0.02em
-rounded:
+    letterSpacing: 0
+radii:
   sm: 2px
-  md: 3px
-  lg: 4px
-  xl: 6px
-  xxl: 8px
+  md: 4px
+  lg: 6px
+  xl: 8px
 spacing:
-  xxs: 4px
-  xs: 8px
-  sm: 12px
-  md: 16px
-  lg: 20px
-  xl: 24px
-  xxl: 32px
+  unit: 8px
+  control: 32px
+  topbar: 48px
   sidebar: 224px
   sidebarCollapsed: 72px
-  topbar: 48px
-  control: 32px
-components:
-  sidebarLight:
-    backgroundColor: "{colors.canvasLight}"
-    textColor: "{colors.textSecondaryLight}"
-    rounded: "{rounded.xl}"
-    width: "{spacing.sidebar}"
-  sidebarDark:
-    backgroundColor: "{colors.panelDark}"
-    textColor: "{colors.textSecondaryDark}"
-    rounded: "{rounded.xl}"
-    width: "{spacing.sidebar}"
-  topbarLight:
-    backgroundColor: "{colors.panelLight}"
-    textColor: "{colors.textPrimaryLight}"
-    typography: "{typography.heading3}"
-    height: "{spacing.topbar}"
-    padding: "{spacing.xl}"
-  topbarDark:
-    backgroundColor: "{colors.panelStrongDark}"
-    textColor: "{colors.textPrimaryDark}"
-    typography: "{typography.heading3}"
-    height: "{spacing.topbar}"
-    padding: "{spacing.xl}"
-  pageFrameLight:
-    backgroundColor: "{colors.canvasAltLight}"
-    textColor: "{colors.textPrimaryLight}"
-    padding: "{spacing.xl}"
-  pageFrameDark:
-    backgroundColor: "{colors.canvasDark}"
-    textColor: "{colors.textPrimaryDark}"
-    padding: "{spacing.xl}"
-  cardLight:
-    backgroundColor: "{colors.panelLight}"
-    textColor: "{colors.textPrimaryLight}"
-    rounded: "{rounded.xxl}"
-    padding: "{spacing.lg}"
-  cardHeaderLight:
-    backgroundColor: "{colors.panelStrongLight}"
-    textColor: "{colors.textPrimaryLight}"
-    typography: "{typography.subheading}"
-    padding: "{spacing.md}"
-  cardDark:
-    backgroundColor: "{colors.panelDark}"
-    textColor: "{colors.textPrimaryDark}"
-    rounded: "{rounded.xxl}"
-    padding: "{spacing.lg}"
-  buttonPrimaryLight:
-    backgroundColor: "{colors.primary}"
-    textColor: "{colors.onAccentLight}"
-    typography: "{typography.control}"
-    rounded: "{rounded.md}"
-    height: "{spacing.control}"
-    padding: "{spacing.sm}"
-  buttonPrimaryHoverLight:
-    backgroundColor: "{colors.accentHoverLight}"
-    textColor: "{colors.onAccentLight}"
-    typography: "{typography.control}"
-    rounded: "{rounded.md}"
-    height: "{spacing.control}"
-    padding: "{spacing.sm}"
-  buttonPrimaryDark:
-    backgroundColor: "{colors.accentDark}"
-    textColor: "{colors.onAccentDark}"
-    typography: "{typography.control}"
-    rounded: "{rounded.md}"
-    height: "{spacing.control}"
-    padding: "{spacing.sm}"
-  buttonPrimaryHoverDark:
-    backgroundColor: "{colors.accentWarm}"
-    textColor: "{colors.onAccentDark}"
-    typography: "{typography.control}"
-    rounded: "{rounded.md}"
-    height: "{spacing.control}"
-    padding: "{spacing.sm}"
-  buttonSecondaryLight:
-    backgroundColor: "{colors.panelLight}"
-    textColor: "{colors.textPrimaryLight}"
-    typography: "{typography.control}"
-    rounded: "{rounded.md}"
-    height: "{spacing.control}"
-    padding: "{spacing.sm}"
-  buttonSecondaryDark:
-    backgroundColor: "{colors.panelStrongDark}"
-    textColor: "{colors.textPrimaryDark}"
-    typography: "{typography.control}"
-    rounded: "{rounded.md}"
-    height: "{spacing.control}"
-    padding: "{spacing.sm}"
-  inputLight:
-    backgroundColor: "{colors.panelLight}"
-    textColor: "{colors.textPrimaryLight}"
-    typography: "{typography.body}"
-    rounded: "{rounded.md}"
-    height: "{spacing.control}"
-    padding: "{spacing.sm}"
-  inputDark:
-    backgroundColor: "{colors.panelStrongDark}"
-    textColor: "{colors.textPrimaryDark}"
-    typography: "{typography.body}"
-    rounded: "{rounded.md}"
-    height: "{spacing.control}"
-    padding: "{spacing.sm}"
-  badgeAccentLight:
-    backgroundColor: "{colors.accentSubtleLight}"
-    textColor: "{colors.textPrimaryLight}"
-    typography: "{typography.caption}"
-    rounded: "{rounded.md}"
-    padding: "{spacing.xs}"
-  badgeAccentDark:
-    backgroundColor: "{colors.accentSubtleDark}"
-    textColor: "{colors.textPrimaryDark}"
-    typography: "{typography.caption}"
-    rounded: "{rounded.md}"
-    padding: "{spacing.xs}"
-  tableHeaderLight:
-    backgroundColor: "{colors.canvasLight}"
-    textColor: "{colors.textSecondaryLight}"
-    typography: "{typography.labelMono}"
-    padding: "{spacing.md}"
-  tableHeaderDark:
-    backgroundColor: "{colors.canvasAltDark}"
-    textColor: "{colors.textSecondaryDark}"
-    typography: "{typography.labelMono}"
-    padding: "{spacing.md}"
-  dividerLight:
-    backgroundColor: "{colors.borderLight}"
-    textColor: "{colors.textPrimaryLight}"
-    height: 1px
-    width: 100%
-  dividerStrongLight:
-    backgroundColor: "{colors.borderStrongLight}"
-    textColor: "{colors.textPrimaryLight}"
-    height: 1px
-    width: 100%
-  dividerDark:
-    backgroundColor: "{colors.borderDark}"
-    textColor: "{colors.textPrimaryDark}"
-    height: 1px
-    width: 100%
-  dividerStrongDark:
-    backgroundColor: "{colors.borderStrongDark}"
-    textColor: "{colors.textPrimaryDark}"
-    height: 1px
-    width: 100%
-  alertSuccessLight:
-    backgroundColor: "{colors.successLight}"
-    textColor: "{colors.onAccentLight}"
-    typography: "{typography.bodySm}"
-    rounded: "{rounded.md}"
-    padding: "{spacing.sm}"
-  alertSuccessDark:
-    backgroundColor: "{colors.successDark}"
-    textColor: "{colors.onAccentDark}"
-    typography: "{typography.bodySm}"
-    rounded: "{rounded.md}"
-    padding: "{spacing.sm}"
-  alertWarningLight:
-    backgroundColor: "{colors.warningLight}"
-    textColor: "{colors.onAccentDark}"
-    typography: "{typography.bodySm}"
-    rounded: "{rounded.md}"
-    padding: "{spacing.sm}"
-  alertWarningDark:
-    backgroundColor: "{colors.warningDark}"
-    textColor: "{colors.onAccentDark}"
-    typography: "{typography.bodySm}"
-    rounded: "{rounded.md}"
-    padding: "{spacing.sm}"
-  alertDangerLight:
-    backgroundColor: "{colors.dangerLight}"
-    textColor: "{colors.onAccentLight}"
-    typography: "{typography.bodySm}"
-    rounded: "{rounded.md}"
-    padding: "{spacing.sm}"
-  alertDangerDark:
-    backgroundColor: "{colors.dangerDark}"
-    textColor: "{colors.onAccentDark}"
-    typography: "{typography.bodySm}"
-    rounded: "{rounded.md}"
-    padding: "{spacing.sm}"
-  badgeInfoLight:
-    backgroundColor: "{colors.infoLight}"
-    textColor: "{colors.onAccentDark}"
-    typography: "{typography.caption}"
-    rounded: "{rounded.md}"
-    padding: "{spacing.xs}"
-  badgeInfoDark:
-    backgroundColor: "{colors.infoDark}"
-    textColor: "{colors.onAccentDark}"
-    typography: "{typography.caption}"
-    rounded: "{rounded.md}"
-    padding: "{spacing.xs}"
-  metadataLight:
-    backgroundColor: "{colors.canvasLight}"
-    textColor: "{colors.textMutedLight}"
-    typography: "{typography.captionMono}"
-    rounded: "{rounded.md}"
-    padding: "{spacing.xs}"
-  metadataDark:
-    backgroundColor: "{colors.canvasDark}"
-    textColor: "{colors.textMutedDark}"
-    typography: "{typography.captionMono}"
-    rounded: "{rounded.md}"
-    padding: "{spacing.xs}"
-  metricPulseItemLight:
-    backgroundColor: "{colors.panelLight}"
-    textColor: "{colors.textPrimaryLight}"
-    rounded: "{rounded.xl}"
-    padding: "{spacing.lg}"
-  metricPulseItemDark:
-    backgroundColor: "{colors.panelDark}"
-    textColor: "{colors.textPrimaryDark}"
-    rounded: "{rounded.xl}"
-    padding: "{spacing.lg}"
+shadows:
+  none: "none"
+  xs: "0 1px 2px rgba(35, 37, 29, 0.05)"
+  sm: "0 3px 8px rgba(35, 37, 29, 0.07)"
+  note: "Shadows are structural, not decorative. No glows, no colored shadows, no accent-tinted elevation."
 ---
 
-## Overview
-CrawlerAI is an operator console, not a consumer app. The UI should feel precise, dense, calm, and slightly crafted. Take the scan discipline of an enterprise tool, then warm it up with terracotta accents, cream surfaces, and quieter contrast so long sessions feel less sterile.
+## Visual Thesis
 
-Primary work happens in dashboards, crawl setup forms, tables, logs, and review panels. Interfaces should bias toward scan speed, clear state, and predictable alignment. Warmth should come from palette and depth, not ornament. The UI still serves operators first.
+CrawlerAI is a serious internal data console with refined, minimal aesthetics. ElevenLabs supplies the clean white canvas, subtle multi-layer shadows, and near-black accent. Linear supplies the dark mode: near-black canvas, luminance-stepped surfaces, and cool-neutral palette. Both modes share dense table ergonomics and compact, functional components.
 
-## Colors
-The light theme uses warm mineral neutrals rather than office gray. `canvasLight` and `canvasAltLight` establish a cream-and-parchment shell. `panelLight` and `panelStrongLight` should feel like lifted paper and control trays, not cold white slabs. Text stays in roasted-brown neutrals, not black.
+This is not a marketing system. It is a workspace for operators watching crawls, comparing extraction output, reviewing selectors, and fixing bad data fast.
 
-The primary accent is terracotta. Use `accentLight` or `accentDark` for primary actions, active navigation, focus rings, selected tabs, and thin emphasis lines. `accentWarm` is a support note for glow, progress warmth, or subtle highlight, not a second CTA system.
+## Theme Model
 
-Dark theme stays warm and ember-like, not neon. It uses roasted charcoal surfaces, toasted borders, and copper accents. Dark panels should look fused, matte, and intentional.
+Light mode is ElevenLabs-inspired: clean white surfaces (`#FAFAFA` base, `#FFFFFF` panels), near-black text, subtle neutral borders (`#E5E5E5`), and refined multi-layer shadows at sub-0.1 opacity. The accent is near-black (`#111111`) — buttons are dark, confident, minimal.
 
-Semantic colors are functional only. Success, warning, danger, and info exist to mark execution state, quality, and alerts. They should not become decorative accents.
+Dark mode is Linear-inspired: near-black canvas (`#0C0D0E`), cool-neutral text, semi-transparent white borders, and luminance-stepped surfaces. Accent is a muted indigo-violet (`#7C8AFF`) that provides clear interactive signal without warmth.
 
-## Typography
-Use Outfit for all general UI copy. It gives the product a modern geometric voice without hurting density. Page titles, section headers, form controls, and descriptive text all stay in this family.
+## Palette Rules
 
-Use JetBrains Mono for values that operators compare, scan, or paste: metrics, run IDs, URLs, code blocks, logs, record counts, timestamps, table headers, and other machine-shaped text. Numeric surfaces should feel deliberate and tabular.
+The accent color is dark navy in light mode and steel-blue in dark mode. It is used for: primary buttons, active navigation, focused fields, selected rows, and important state indicators.
 
-The hierarchy is shallow and practical:
-- `heading1`, `heading2`, `heading3` for page and section structure
-- `subheading` for card titles and grouped controls
-- `body` and `caption` for explanation and metadata
-- `label` and `labelMono` for uppercase field labels and table headers
-- `metric` for KPI values and run counters
+Use sage and olive neutrals for most structure: borders, inactive nav, table headers, input backgrounds, toolbars, and passive metadata.
 
-## Layout
-The shell is fixed and operational. Sidebar width is `224px`, collapses to `72px`, and top bar height is `48px`. Main content sits inside a `1440px` frame with `24px` horizontal padding and consistent vertical stacks.
+Use semantic colors only for runtime state. Success, warning, danger, and info must not become decoration.
 
-Default spacing rhythm is tight: `8px`, `12px`, `16px`, `24px`, `32px`. Prefer compact, repeatable spacing over loose hero-style whitespace. Dense does not mean cramped. Every panel should have enough internal air to keep table scans and form edits stable.
+No orange. No amber. No warm accent colors for interactive elements.
 
-Pages are left-aligned and tool-like. Avoid centering whole workflows. The user should feel like they are operating a workspace, not reading a landing page.
+## Typography Rules
 
-## Elevation & Depth
-Light theme uses warm borders first, tinted shadows second. Cards and toolbars get hairline structure plus a faint amber-brown lift only when separation helps. Surfaces should read stacked, not floating.
+Use IBM Plex Sans for UI. Technical enough for developer tools, warmer than Inter. Use 700 weight for section titles, 600 for controls, 400 for body.
 
-Dark theme compresses depth. Use merged surfaces, subtle tonal shifts, and ember-tinted shadows. The system should feel like one continuous workspace with controlled emphasis rather than layered glass.
+Use JetBrains Mono for run IDs, timestamps, URLs, logs, JSON, counts, table headers, and KPI values. Numeric data must align and scan.
 
-Blur, gradients, grain, and motion are supporting effects only. Subtle parchment texture, radial warmth, and controlled glows can add polish, but they must stay background-level.
+Do not use negative tracking. This app is dense; letter spacing should stay calm and legible.
 
-## Shapes
-Radii are intentionally tight: `2px`, `3px`, `4px`, `6px`, `8px`. This is an industrial system. Edges should feel machined, not soft or playful.
+## Layout Rules
 
-Use small radii for controls and chips, larger radii for cards and panel groups. Reserve fully rounded shapes for dots, progress pills, scrollbar thumbs, and similar micro-signals.
+Keep the existing app shell: left sidebar, compact top bar, scrollable main workspace. Main content max width is `1440px`, with `24px` page padding.
 
-## Components
-Buttons are compact and task-driven. Primary buttons carry the terracotta accent and can take a warm glow on hover. Secondary buttons stay neutral and should sit comfortably inside dense toolbars without overpowering nearby data.
+Prefer record-list layouts, split panes, filter rows, compact toolbars, and table-first pages. Avoid hero sections, marketing banners, and decorative dashboard mosaics.
 
-Cards and surface panels are the default containment unit. They usually have border-led separation, warm surface contrast, medium internal padding, and clear header/body structure. A card can carry a thin accent edge or top rule when it improves scan grouping.
+Cards are allowed only when they contain a real tool, repeated record, metric group, or workflow step. Do not nest cards inside cards.
 
-Inputs and textareas should feel like stable data-entry fields: fixed control height, clear border, subtle elevation, strong focus ring, and no decorative fills.
+## Component Rules
 
-Badges, status dots, and inline alerts are semantic instruments. They should communicate execution and review state fast, even in busy rows. Use tone plus wording; never tone alone. Warm neutrals are valid for passive metadata and inactive states.
+Buttons are compact. Primary buttons are dark (`#1E1F23`) in light mode. Secondary buttons use sage surfaces. Accent-variant buttons use the navy accent fill. No glow shadows on any button.
 
-Tables are core product UI. Headers should be uppercase, compact, and often mono. Row hover can pick up a faint terracotta wash or inset edge, but rows should not look clickable unless they actually are.
+Inputs use sage-tinted fill, 1px border, 4px radius, and a clear accent focus ring. Labels stay literal.
 
-Metric pulse panels are the one place where the system can feel slightly more alive. Large mono values, a thin accent reveal, optional pulse behavior, and a warm highlight line are acceptable because they summarize runtime activity.
+Tables are core. Headers are compact, mono or bold sans, sticky where useful, and separated by warm borders. Row hover uses a faint accent wash. Selected rows use a left accent edge.
 
-## Do's and Don'ts
-Do use terracotta accent to mark action, focus, and active state.
-Do use warm neutrals consistently across shell, panels, forms, and table surfaces.
-Do use mono typography for metrics, logs, tables, URLs, and machine data.
-Do keep labels uppercase and compact.
-Do favor border-led separation, tinted shadows, and subtle texture.
-Do preserve strong focus rings and keyboard-visible state.
+Badges are square-ish, not pill-heavy. Status copy must include text, not color alone.
 
-Don't turn this into a marketing site.
-Don't use oversized hero cards, oversized radii, or glossy AI gradients.
-Don't center dashboards or forms that belong in a workspace flow.
-Don't use semantic colors as decoration.
-Don't hide critical state in color alone when text or icon support is available.
-Don't reintroduce cool blue-gray palettes unless the product meaning demands it.
+## Depth & Elevation Rules
+
+No glows. No colored shadows. No radial gradients on backgrounds.
+
+Elevation is communicated through:
+- Border containment (1px sage borders)
+- Surface color shifts (canvas → panel → elevated)
+- Whisper-level shadows at 5-7% opacity maximum
+
+Cards use flat panel backgrounds. No `card-gradient`, no inset highlights, no decorative top-edge lines.
+
+## Motion Rules
+
+Motion is small and functional: 150-200ms transitions, pressed state on active, no decorative bouncing. Use transform and opacity only. No hover translate-y effects.
+
+## Do
+
+- Use warm parchment and sage surfaces in light mode.
+- Use matte charcoal and olive-sage borders in dark mode.
+- Keep accent scarce and meaningful (dark navy / steel-blue).
+- Make data tables, filters, and logs first-class.
+- Preserve keyboard-visible focus.
+- Keep components compact and repeatable.
+- Use flat backgrounds everywhere.
+
+## Don't
+
+- Do not use orange, amber, or warm accent colors.
+- Do not add glows, colored shadows, or radial gradients.
+- Do not add large rounded cards.
+- Do not build a landing page inside the app shell.
+- Do not use gradients as the main identity.
+- Do not make every button accent-colored.
+- Do not hide state in color alone.
+- Do not add hover translate-y ("float up") effects on buttons.

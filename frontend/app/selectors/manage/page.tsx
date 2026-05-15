@@ -21,6 +21,7 @@ import { ConfirmDialog } from '../../../components/ui/dialog';
 import { Badge, Button, Dropdown, Input, Toggle } from '../../../components/ui/primitives';
 import { api } from '../../../lib/api';
 import type {
+  AdvancedCrawlMode,
   CrawlRun,
   DomainCookieMemoryRecord,
   DomainFieldFeedbackRecord,
@@ -290,7 +291,9 @@ export default function DomainMemoryManagePage() {
         ...profileData.map((row) => row.domain),
         ...cookieData.map((row) => row.domain),
         ...feedbackData.map((row) => row.domain),
-        ...crawlData.items.map((run) => String(run.result_summary?.domain || '').trim() || getNormalizedDomain(run.url)),
+        ...crawlData.items.map(
+          (run) => String(run.result_summary?.domain || '').trim() || getNormalizedDomain(run.url),
+        ),
       ]);
       const selectorData = preferredDomain
         ? await api.listSelectors({ domain: preferredDomain })
@@ -1262,8 +1265,9 @@ export default function DomainMemoryManagePage() {
                                                 ...current,
                                                 fetch_profile: {
                                                   ...current.fetch_profile,
-                                                  traversal_mode:
-                                                    value === 'auto' ? 'scroll' : value ? value : null,
+                                                  traversal_mode: value
+                                                    ? (value as AdvancedCrawlMode)
+                                                    : null,
                                                 },
                                               }),
                                             )

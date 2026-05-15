@@ -9,7 +9,7 @@ from urllib.parse import parse_qsl, urlencode, urljoin, urlparse, urlunparse
 import httpx
 from app.services.adapters.base import AdapterResult, BaseAdapter
 from app.services.config.adapter_runtime_settings import adapter_runtime_settings
-from app.services.field_value_core import clean_text
+from app.services.shared.field_coerce import clean_text
 from bs4 import BeautifulSoup, Tag
 
 try:  # pragma: no cover - optional dependency
@@ -45,7 +45,7 @@ class ICIMSAdapter(BaseAdapter):
     async def can_handle(self, url: str, html: str) -> bool:
         return self._matches_platform_family(url, html)
 
-    async def extract(self, url: str, html: str, surface: str) -> AdapterResult:
+    async def extract(self, url: str, html: str, surface: str, proxy: str | None = None) -> AdapterResult:
         if self._is_detail_surface(surface) or self._looks_like_detail_url(url):
             html = await self._follow_embedded_content_url(url, html)
             record = self._extract_detail(url, html)

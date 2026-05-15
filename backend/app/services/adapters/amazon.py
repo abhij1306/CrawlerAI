@@ -27,7 +27,7 @@ from app.services.config.extraction_rules import (
     CURRENCY_DECIMAL_PLACES,
     DEFAULT_DECIMAL_PLACES,
 )
-from app.services.field_value_core import (
+from app.services.shared.field_coerce import (
     extract_currency_code,
     flatten_variants_for_public_output,
 )
@@ -172,7 +172,8 @@ class AmazonAdapter(BaseAdapter):
     async def can_handle(self, url: str, html: str) -> bool:
         return any(d in url for d in self.domains)
 
-    async def extract(self, url: str, html: str, surface: str) -> AdapterResult:
+    async def extract(self, url: str, html: str, surface: str, proxy: str | None = None) -> AdapterResult:
+        del proxy
         parser = LexborHTMLParser(html)
         records = []
         if surface in ("ecommerce_detail",):
@@ -468,6 +469,8 @@ class AmazonAdapter(BaseAdapter):
             raw_variations=raw_variations,
         )
 
+    _MAX_DIM_PERMUTATION = 5
+
     def _best_twister_dimension_order(
         self,
         dim_order: list[str],
@@ -476,6 +479,9 @@ class AmazonAdapter(BaseAdapter):
         raw_variations: list[object],
     ) -> list[str]:
         if len(dim_order) <= 1:
+            return dim_order
+        # Cap permutation search to avoid combinatorial explosion.
+        if len(dim_order) > self._MAX_DIM_PERMUTATION:
             return dim_order
         best_order = dim_order
         best_score = self._score_twister_dimension_order(
@@ -504,26 +510,29 @@ class AmazonAdapter(BaseAdapter):
     ) -> tuple[int, int]:
         valid_rows = 0
         valid_cells = 0
-        axis_lengths = [
-            len(raw_dims.get(dim) or [])
-            if isinstance(raw_dims.get(dim), list)
-            else 0
-            for dim in dim_order
-        ]
+        axis_lengths: list[int] = []
+        for dim in dim_order:
+            raw_dim = raw_dims.get(dim)
+            axis_lengths.append(len(raw_dim) if isinstance(raw_dim, list) else 0)
         for row in raw_variations:
-            if not isinstance(row, list) or len(row) != len(axis_lengths):
+            if not isinstance(row, list):
                 continue
-            row_valid = True
+            row_valid = len(row) == len(axis_lengths)
             row_valid_cells = 0
             for index, axis_length in zip(row, axis_lengths, strict=False):
-                if not isinstance(index, int) or axis_length <= 0 or index < 0 or index >= axis_length:
+                if (
+                    not isinstance(index, int)
+                    or axis_length <= 0
+                    or index < 0
+                    or index >= axis_length
+                ):
                     row_valid = False
                     continue
                 row_valid_cells += 1
             if row_valid:
                 valid_rows += 1
             valid_cells += row_valid_cells
-        return valid_rows, valid_cells
+        return valid_cells, valid_rows
 
     def _twister_variants(
         self,

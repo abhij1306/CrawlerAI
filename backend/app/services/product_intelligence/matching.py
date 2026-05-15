@@ -4,7 +4,7 @@ import re
 from difflib import SequenceMatcher
 from urllib.parse import urlsplit
 
-from app.services.field_value_core import infer_brand_from_product_url, infer_brand_from_title_marker
+from app.services.shared.field_coerce import infer_brand_from_product_url, infer_brand_from_title_marker
 from app.services.config.product_intelligence import (
     BRAND_ALIAS_MAP,
     BRAND_DOMAIN_MAP,

@@ -38,7 +38,7 @@ from app.services.extract.detail_materializer import (
     detail_record_rejection_reason,
     infer_detail_failure_reason,
 )
-from app.services.field_value_core import validate_record_for_surface
+from app.services.shared.field_coerce import validate_record_for_surface
 from app.services.llm_config_service import resolve_run_config
 from app.services.llm_runtime import (
     extract_records_directly as extract_records_directly_with_llm,
@@ -857,10 +857,11 @@ async def _retry_listing_integrity_with_stronger_tier(
     # Build a lightweight gate_decision-like object for the escalation decision.
     raw_outcome = gate_payload.get("outcome", "")
     outcome = raw_outcome if isinstance(raw_outcome, str) else ""
+    raw_metrics = gate_payload.get("metrics")
     gate_decision = _ListingIntegritySnapshot(
         outcome=outcome,
         reason=str(gate_payload.get("reason", "")),
-        metrics=gate_payload.get("metrics") if isinstance(gate_payload.get("metrics"), dict) else {},
+        metrics=raw_metrics if isinstance(raw_metrics, dict) else {},
     )
 
     # Build policy snapshot from the current acquisition request profile.
@@ -876,11 +877,15 @@ async def _retry_listing_integrity_with_stronger_tier(
 
     if not escalation.get("should_retry"):
         reason = escalation.get("reason", "unknown")
-        await _log_pipeline_event(
-            context,
-            "info",
-            f"listing_escalation_skipped: {reason} for {context.url}",
-        )
+        # Only log when the escalation was actually considered but skipped
+        # for a non-trivial reason. "gate_ok" means the integrity gate passed
+        # and no escalation was ever needed — no value in logging that.
+        if reason != "gate_ok":
+            await _log_pipeline_event(
+                context,
+                "info",
+                f"listing_escalation_skipped: {reason} for {context.url}",
+            )
         _merge_browser_diagnostics(
             acquisition_result,
             {

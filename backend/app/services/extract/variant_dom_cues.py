@@ -19,7 +19,7 @@ from app.services.config.variant_migration_rules import (
     DETAIL_VARIANT_SOFT_SCOPE_SELECTOR,
     VARIANT_SOFT_SCOPE_MIN_RADIO_INPUTS,
 )
-from app.services.field_value_core import clean_text
+from app.services.shared.field_coerce import clean_text
 from app.services.runtime_metrics import incr as increment_runtime_metric
 
 variant_context_noise_tokens = frozenset(

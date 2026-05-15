@@ -1,7 +1,5 @@
 # AGENTS.md — CrawlerAI Session Bootstrap
 
-Attach this file at session start. Use it to route into the right canonical doc.
-Do not preload the whole doc stack for small tasks.
 Speak tersely in caveman style: short, direct, low-fluff sentences; keep technical accuracy and full task context.
 
 ---
@@ -90,8 +88,6 @@ Read these only when relevant:
 
 ## Extraction Warning
 
-Do not redesign the detail candidate system in `detail_extractor.py`.
-It is already field-by-field and correct.
 
 If the task is about missing ecommerce variants or price gaps, read `docs/INVARIANTS.md` Rule 3 first.
 Known root causes already documented there:
@@ -140,20 +136,3 @@ $env:PYTHONPATH='.'
 ```
 
 Run the smallest relevant verify step for the slice, then run broader verification when the change affects shared behavior.
-
----
-
-## Canonical Docs
-
-- `AGENTS.md` — session bootstrap only
-- `docs/INVARIANTS.md` — hard runtime contracts
-- `docs/CODEBASE_MAP.md` — file and bucket ownership
-- `docs/BUSINESS_LOGIC.md` — user-visible decision rules
-- `docs/ENGINEERING_STRATEGY.md` — engineering constraints and anti-patterns
-- `docs/backend-architecture.md` — backend reference
-- `docs/frontend-architecture.md` — frontend reference
-- `docs/agent/SKILLS.md` — task recipes
-- `docs/agent/PLAN_PROTOCOL.md` — planning workflow
-- `docs/plans/ACTIVE.md` — current plan pointer
-
-Do not create a new doc unless none of the canonical docs can absorb the information cleanly.

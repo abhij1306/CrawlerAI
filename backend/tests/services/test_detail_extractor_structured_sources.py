@@ -366,6 +366,66 @@ def test_extract_ecommerce_detail_from_opengraph() -> None:
     assert record["_source"] == "opengraph"
 
 
+def test_extract_ecommerce_detail_prefers_localized_jsonld_price_over_state_variants() -> None:
+    html = """
+    <html>
+      <head>
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "Product",
+          "name": "Balm Dotcom",
+          "brand": {"@type": "Brand", "name": "Glossier"},
+          "offers": {
+            "@type": "Offer",
+            "price": "1400",
+            "priceCurrency": "INR",
+            "availability": "https://schema.org/InStock"
+          }
+        }
+        </script>
+        <script id="__NEXT_DATA__" type="application/json">
+        {
+          "props": {
+            "pageProps": {
+              "product": {
+                "title": "Balm Dotcom",
+                "currencyCode": "USD",
+                "variants": [
+                  {"id": 1, "title": "Original", "flavor": "Original", "price": 16, "sku": "balm-original"},
+                  {"id": 2, "title": "Mint", "flavor": "Mint", "price": 16, "sku": "balm-mint"}
+                ]
+              }
+            }
+          }
+        }
+        </script>
+      </head>
+      <body>
+        <main>
+          <h1>Balm Dotcom</h1>
+          <span class="price">Rs. 1,400.00</span>
+        </main>
+      </body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        "https://www.glossier.com/en-in/products/balm-dotcom",
+        "ecommerce_detail",
+        max_records=1,
+        requested_fields=["price", "currency", "variants"],
+    )
+
+    assert len(rows) == 1
+    record = rows[0]
+    assert record["price"] == "1400.00"
+    assert record["currency"] == "INR"
+    assert all(row.get("price") in (None, "1400.00") for row in record["variants"])
+    assert all(row.get("currency") in (None, "INR") for row in record["variants"])
+
+
 def test_extract_ecommerce_detail_keeps_page_url_when_opengraph_url_is_site_root() -> None:
     html = """
     <html>
@@ -663,6 +723,40 @@ def test_extract_ecommerce_detail_uses_breadcrumblist_json_ld_category() -> None
 
     assert len(rows) == 1
     assert rows[0]["category"] == "Women > Dresses"
+
+
+def test_extract_ecommerce_detail_category_drops_collection_branch_noise() -> None:
+    html = """
+    <html>
+      <head>
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "BreadcrumbList",
+          "itemListElement": [
+            {"@type": "ListItem", "position": 1, "name": "Sports"},
+            {"@type": "ListItem", "position": 2, "name": "Padel"},
+            {"@type": "ListItem", "position": 3, "name": "Collections"},
+            {"@type": "ListItem", "position": 4, "name": "Back to the court"}
+          ]
+        }
+        </script>
+        <script type="application/ld+json">
+        {"@context": "https://schema.org", "@type": "Product", "name": "Pressurised Padel Balls PB Speed Tri-Pack"}
+        </script>
+      </head>
+      <body><h1>Pressurised Padel Balls PB Speed Tri-Pack</h1></body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        "https://example.com/p/pressurised-padel-balls-pb-speed-tri-pack/347273/m8804642",
+        "ecommerce_detail",
+        max_records=5,
+    )
+
+    assert rows[0]["category"] == "Sports > Padel"
 
 
 def test_extract_ecommerce_detail_category_from_dom_breadcrumb() -> None:
@@ -1661,6 +1755,133 @@ def test_extract_ecommerce_detail_requires_cartesian_color_size_dom_variants() -
     record = rows[0]
     assert record["variant_count"] == 6
     assert all(row.get("size") and row.get("color") for row in record["variants"])
+
+
+def test_extract_ecommerce_detail_expands_rich_color_variants_with_dom_sizes() -> None:
+    html = """
+    <html>
+      <head>
+        <script id="__NEXT_DATA__" type="application/json">
+        {
+          "props": {
+            "pageProps": {
+              "product": {
+                "title": "Arizona Birko-Flor",
+                "price": 117.95,
+                "currencyCode": "USD",
+                "variants": [
+                  {
+                    "id": "white",
+                    "sku": "552681",
+                    "color": "White",
+                    "price": 117.95,
+                    "image": "https://example.com/552681.jpg"
+                  },
+                  {
+                    "id": "black",
+                    "sku": "51791",
+                    "color": "Black",
+                    "price": 117.95,
+                    "image": "https://example.com/51791.jpg"
+                  },
+                  {
+                    "id": "dark-brown",
+                    "sku": "51703",
+                    "color": "Dark Brown",
+                    "price": 117.95,
+                    "image": "https://example.com/51703.jpg"
+                  }
+                ]
+              }
+            }
+          }
+        }
+        </script>
+      </head>
+      <body>
+        <main class="product-detail">
+          <h1>Arizona Birko-Flor</h1>
+          <form class="product-form" action="/cart/add">
+            <fieldset class="size-selector">
+              <legend>Size</legend>
+              <button type="button">36</button>
+              <button type="button">37</button>
+            </fieldset>
+          </form>
+        </main>
+      </body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        "https://www.birkenstock.com/us/arizona-birko-flor/arizona-core-birkoflor-0-eva-u_1.html",
+        "ecommerce_detail",
+        max_records=1,
+        requested_fields=["variants", "size", "color", "price", "currency"],
+    )
+
+    assert len(rows) == 1
+    record = rows[0]
+    assert record["variant_count"] == 6
+    assert {row["color"] for row in record["variants"]} == {
+        "White",
+        "Black",
+        "Dark Brown",
+    }
+    assert {row["size"] for row in record["variants"]} == {"36", "37"}
+    assert all(row.get("image_url") for row in record["variants"])
+
+
+def test_extract_ecommerce_detail_recovers_labeled_image_color_swatches() -> None:
+    html = """
+    <html>
+      <body>
+        <main class="product-detail">
+          <h1>Boho Bangle Bracelets, Set of 3</h1>
+          <form class="sku-selection">
+            <fieldset data-qa-color>
+              <legend>Color: <span>Cream/Silver</span></legend>
+              <input id="color-012" name="selectedColor" value="012" type="radio" checked>
+              <label for="color-012">
+                <img src="https://images.example/108064080_012_s.jpg" alt="Cream/Silver">
+              </label>
+              <input id="color-001" name="selectedColor" value="001" type="radio">
+              <label for="color-001">
+                <img src="https://images.example/108064080_001_s.jpg" alt="Black/Silver">
+              </label>
+              <input id="color-020" name="selectedColor" value="020" type="radio">
+              <label for="color-020">
+                <img src="https://images.example/108064080_020_s.jpg" alt="Brown / Gold">
+              </label>
+            </fieldset>
+            <fieldset data-qa-size>
+              <legend>Size</legend>
+              <input id="size-one" name="selectedSize" value="0000" type="radio" checked>
+              <label for="size-one">One Size</label>
+            </fieldset>
+          </form>
+        </main>
+      </body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        "https://www.anthropologie.com/shop/boho-bangle-bracelets-set-of-3",
+        "ecommerce_detail",
+        max_records=1,
+        requested_fields=["variants", "color"],
+    )
+
+    record = rows[0]
+    assert record["variant_count"] == 3
+    assert [row["color"] for row in record["variants"]] == [
+        "Cream/Silver",
+        "Black/Silver",
+        "Brown / Gold",
+    ]
+    assert all(row.get("image_url") for row in record["variants"])
 
 
 def test_extract_ecommerce_detail_guarded_dom_cartesian_keeps_axis_rows(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -6008,6 +6229,82 @@ def test_extract_detail_rejects_known_error_page_titles() -> None:
     )
 
     assert rows == []
+
+
+def test_extract_ecommerce_detail_recovers_ulta_swatch_variants_from_artifact() -> None:
+    html = read_optional_artifact_text("artifacts/runs/1/pages/a33c8361651f0e2f.html")
+
+    rows = extract_records(
+        html,
+        "https://www.ulta.com/p/shape-tape-concealer-xlsImpprod14251035?sku=2304917",
+        "ecommerce_detail",
+        max_records=1,
+        requested_fields=["variants"],
+    )
+
+    assert len(rows) == 1
+    variants = rows[0]["variants"]
+    assert len(variants) >= 40
+    assert any(
+        str(row.get("color") or "").startswith("12S Fair")
+        and "sku=2304917" in str(row.get("url") or "")
+        for row in variants
+    )
+
+
+def test_extract_ecommerce_detail_recovers_jd_size_button_variants_from_artifact() -> None:
+    html = read_optional_artifact_text("artifacts/runs/1/pages/c4ab41de0cea1a3a.html")
+
+    rows = extract_records(
+        html,
+        "https://www.jdsports.co.uk/product/pink-adidas-originals-classic-shorts/19741988/",
+        "ecommerce_detail",
+        max_records=1,
+        requested_fields=["variants"],
+    )
+
+    assert len(rows) == 1
+    sizes = [row.get("size") for row in rows[0]["variants"] if row.get("size")]
+    assert sizes[:5] == ["XS", "S", "M", "L", "XL"]
+
+
+def test_extract_ecommerce_detail_preserves_zadig_js_state_variants_from_artifact() -> None:
+    html = read_optional_artifact_text("artifacts/runs/1/pages/0ed7c0adb54a6d56.html")
+
+    rows = extract_records(
+        html,
+        "https://zadig-et-voltaire.com/eu/uk/p/JMTS01771443/t-shirt-teddyx-blue-sixtine",
+        "ecommerce_detail",
+        max_records=1,
+        requested_fields=["variants"],
+    )
+
+    assert len(rows) == 1
+    sizes = [row.get("size") for row in rows[0]["variants"] if row.get("size")]
+    assert sizes[:5] == ["XS", "S", "M", "L", "XL"]
+
+
+def test_extract_ecommerce_detail_recovers_toddsnyder_component_size_variants_from_artifact() -> None:
+    html = read_optional_artifact_text("artifacts/runs/1/pages/3f9356011b5bfe4f.html")
+
+    rows = extract_records(
+        html,
+        "https://www.toddsnyder.com/collections/slim-fit-suits-tuxedos/products/italian-seersucker-sutton-suit-2",
+        "ecommerce_detail",
+        max_records=1,
+        requested_fields=["variants"],
+    )
+
+    assert len(rows) == 1
+    variants = rows[0]["variants"]
+    assert any(
+        row.get("style") == "Jacket" and row.get("size") == "36R"
+        for row in variants
+    )
+    assert any(
+        row.get("style") in {"Trouser", "Pant"} and row.get("size") == "28/32"
+        for row in variants
+    )
 
 
 def test_build_detail_record_prefers_dom_description_over_truncated_og_copy() -> None:

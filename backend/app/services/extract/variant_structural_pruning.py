@@ -17,7 +17,7 @@ from app.services.extract.shared_variant_logic import (
     variant_row_richness,
     variant_semantic_identity,
 )
-from app.services.field_value_core import clean_text, text_or_none
+from app.services.shared.field_coerce import clean_text, text_or_none
 
 _PUBLIC_VARIANT_AXIS_FIELDS = tuple(str(field).strip().lower() for field in PUBLIC_VARIANT_AXIS_FIELDS if str(field).strip())
 _VARIANT_TITLE_STOPWORDS = frozenset(clean_text(token).lower() for token in tuple(VARIANT_TITLE_STOPWORDS or ()) if clean_text(token))

@@ -19,7 +19,7 @@ from app.services.publish.verdict import (
     VERDICT_LISTING_FAILED,
     VERDICT_PARTIAL,
     VERDICT_SUCCESS,
-    _aggregate_verdict,
+    aggregate_verdict,
     compute_verdict,
     run_health_verdict,
 )
@@ -31,7 +31,7 @@ __all__ = [
     "VERDICT_LISTING_FAILED",
     "VERDICT_PARTIAL",
     "VERDICT_SUCCESS",
-    "_aggregate_verdict",
+    "aggregate_verdict",
     "build_acquisition_profile",
     "build_url_metrics",
     "compute_verdict",

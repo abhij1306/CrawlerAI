@@ -2,7 +2,7 @@
 
 **Created:** 2026-05-12
 **Revised:** 2026-05-12
-**Status:** PAUSED / NEXT QUEUED
+**Status:** DONE (2026-05-13)
 **Touches buckets:** Acquisition (3), Extraction (4), Shared field coercion, Config, Structure tests
 
 ## Goal
@@ -54,7 +54,7 @@ Current facade caller counts from `rg`:
 
 ## Baseline Slice: Re-measure and Ratchet Plan Facts
 
-**Status:** TODO
+**Status:** DONE (2026-05-13). Facade caller counts matched plan (3/5/11/72). No plan-fact corrections needed.
 **Files:** `docs/plans/god-module-consolidation-plan.md`, no service code
 
 **What:**
@@ -70,7 +70,7 @@ Get-ChildItem backend\app\services -Recurse -Filter *.py | % { "$($_.FullName):$
 
 ## Slice 1: Delete `js_state_mapper.py` facade
 
-**Status:** TODO
+**Status:** DONE (2026-05-13). Rewired 3 callers to `app.services.js_state.state_normalizer`; facade deleted; `test_structure.py` and `CODEBASE_MAP.md` updated; focused tests pass.
 **Transformation:** Rename/move public import path callers, then remove dead facade.
 **Files:** `js_state_mapper.py`, callers, `docs/CODEBASE_MAP.md`, `test_structure.py`
 
@@ -90,7 +90,7 @@ rg "app\.services\.js_state_mapper" .
 
 ## Slice 2: Delete `crawl_fetch_runtime.py` facade only if ownership moves cleanly
 
-**Status:** TODO
+**Status:** DONE (2026-05-13). `fetch_context.py` exposes the 3 required names in `__all__`. Rewired 5 callers to `app.services.fetch.fetch_context`; facade deleted; `test_structure.py` and `CODEBASE_MAP.md` updated; focused tests pass.
 **Transformation:** Rename/move public import path callers, then remove dead facade.
 **Files:** `crawl_fetch_runtime.py`, `fetch/fetch_context.py`, callers, `docs/CODEBASE_MAP.md`, `test_structure.py`
 
@@ -111,7 +111,7 @@ rg "app\.services\.crawl_fetch_runtime" .
 
 ## Slice 3: Delete `field_value_dom.py` facade
 
-**Status:** TODO
+**Status:** DONE (2026-05-13). Rewired 11 callers to `app.services.dom.selector_engine` via mechanical import-line replacement; facade deleted; `test_structure.py` and `CODEBASE_MAP.md` updated; focused tests pass.
 **Transformation:** Rename/move public import path callers, then remove dead facade.
 **Files:** `field_value_dom.py`, `dom/selector_engine.py`, callers, `docs/CODEBASE_MAP.md`, `test_structure.py`
 
@@ -130,7 +130,7 @@ rg "app\.services\.field_value_dom" .
 
 ## Slice 4: Delete `field_value_core.py` facade in batches
 
-**Status:** TODO
+**Status:** DONE (2026-05-13). Rewired 72 callers to `app.services.shared.field_coerce` via mechanical import-path replacement (all usages were `from ... import` form — no module-attribute access); facade deleted; `test_structure.py` and `CODEBASE_MAP.md` updated; focused tests pass.
 **Transformation:** Rename/move public import path callers, then remove dead facade.
 **Files:** `field_value_core.py`, `shared/field_coerce.py`, callers, `docs/CODEBASE_MAP.md`, `test_structure.py`
 
@@ -151,7 +151,7 @@ rg "app\.services\.field_value_core" .
 
 ## Slice 5: `browser_runtime.py` storage-state extraction
 
-**Status:** TODO
+**Status:** DONE (2026-05-13). Created `acquisition/browser_storage_state.py` with public `persist_context_storage_state` and `mark_storage_state_persist_policy`. Inlined the 4 passthrough private wrappers at their call sites in `browser_runtime.py` (load+persist now go through `cookie_store.*` module attribute access, which makes them patchable at a single source). Updated 13 test monkeypatches from `acquisition_browser_runtime.load/persist_storage_state_*` to `cookie_store.*`. Focused and broad structure tests pass.
 **Transformation:** Move cohesive functions to one owner module.
 **Files:** `acquisition/browser_runtime.py` -> `acquisition/browser_storage_state.py`
 
@@ -172,7 +172,7 @@ $env:PYTHONPATH='.'
 
 ## Slice 6: `browser_runtime.py` readiness/classification move
 
-**Status:** TODO
+**Status:** DONE (2026-05-13). Moved 8 readiness/classification wrappers into `browser_readiness.py` (`wait_for_listing_readiness`, `probe_browser_readiness`, `listing_card_signal_count`, `detail_readiness_hint_count`, `classify_browser_outcome`, `looks_like_low_content_shell`, `classify_low_content_reason`; inlined private `_wait_for_listing_readiness` passthrough). Moved `_DETAIL_READINESS_HINTS` constant too. `browser_runtime.py` re-imports the names (stable public surface). Removed now-unused imports (`BlockPageClassification`, `CARD_SELECTORS`, `count_listing_cards`, `resolve_listing_readiness_override`, `BROWSER_DETAIL_READINESS_HINTS`) from `browser_runtime.py`. Kept expansion helpers (`expand_detail_content_if_needed`, `accessibility_expand_candidates`, `detail_expansion_keywords`) in `browser_runtime.py` per plan boundary. Avoided circular import by keeping `count_listing_cards` as a lazy import inside the function. Updated 3 tests to target new owners. LOC: browser_runtime.py 1853 → 1637 (−216 with slice 5+6 combined).
 **Transformation:** Move cohesive functions to existing owner.
 **Files:** `acquisition/browser_runtime.py`, `acquisition/browser_readiness.py`
 
@@ -201,7 +201,7 @@ $env:PYTHONPATH='.'
 
 ## Slice 7: `browser_runtime.py` popup guard cleanup
 
-**Status:** TODO
+**Status:** SKIPPED (2026-05-13). Grep confirmed no unused popup guard helpers. `_install_popup_guard`, `_remove_popup_guard`, `_schedule_popup_close`, `_close_unexpected_popup` are cohesive and only referenced within `browser_runtime.py`; no `browser_page_flow.py` consumer exists, so moving them has no clearer owner. `_emit_browser_event`, `_normalize_surface`, `_mapping_value`, `_snapshot_count`, `_int_or_zero` each have multiple call sites inside `browser_runtime.py` (e.g., `_int_or_zero` has 7+ call sites); inlining hurts readability rather than helping. No high-value improvement available without reshaping behavior, which the plan disallows.
 **Transformation:** Remove dead code or move cohesive functions.
 **Files:** `acquisition/browser_runtime.py`, maybe `acquisition/browser_page_flow.py`
 
@@ -233,7 +233,7 @@ $env:PYTHONPATH='.'
 
 ## Slice 8: `traversal.py` card-counting/progress extraction
 
-**Status:** TODO
+**Status:** DONE (2026-05-13). Created `acquisition/traversal_card_counting.py` with 10 cohesive functions (`count_listing_cards`, `_heuristic_card_count`, `_unique_listing_card_identity_count_from_html`, `_listing_card_identity`, `page_snapshot`, `snapshot_progressed`, `paginate_snapshot_progressed`, `is_marginal_card_gain`, `paginate_fragment_budget_reached`, `target_record_limit_reached`, `_content_signature`). `traversal.py` imports them back with private aliases for its control-flow calls. Inlined `_card_count` (was a 1-line passthrough). Removed now-unused imports (`hashlib`, `CARD_SELECTORS`). Updated 2 `test_traversal_runtime.py` monkeypatch paths. LOC: traversal.py 1790 → 1550 (−240); new module 286 LOC.
 **Transformation:** Move cohesive functions to one owner module.
 **Files:** `acquisition/traversal.py` -> `acquisition/traversal_card_counting.py`
 
@@ -266,7 +266,7 @@ $env:PYTHONPATH='.'
 
 ## Slice 9: `browser_page_flow.py` interstitial extraction
 
-**Status:** TODO
+**Status:** DONE (2026-05-13). Created `acquisition/browser_interstitial.py` with `location_interstitial_detected`, `page_might_have_location_interstitial`, `dismiss_safe_location_interstitial` (and private `_dismiss_location_interstitial_by_text` helper). `browser_page_flow.py` keeps thin public wrappers so tests and callers continue to reach the names on the page-flow module surface. Removed the 4 LOCATION_INTERSTITIAL config imports and the dead `_string_config_list` helper from `browser_page_flow.py` (now owned by `browser_interstitial.py`). LOC: browser_page_flow.py 1707 → 1501 (−206); new module 250 LOC.
 **Transformation:** Move cohesive functions to one owner module.
 **Files:** `acquisition/browser_page_flow.py` -> `acquisition/browser_interstitial.py`
 
@@ -291,7 +291,7 @@ $env:PYTHONPATH='.'
 
 ## Slice 10: `browser_identity.py` client-hint consolidation
 
-**Status:** TODO
+**Status:** SKIPPED (2026-05-13). Grep of the 7 candidates confirms each has 2+ call sites inside `browser_identity.py` and no callers outside it. No duplicate rules found; `_repair_incoherent_client_hints` and `_strip_incoherent_client_hints` share structure but have distinct post-conditions (repair injects coherent hints vs. strip drops them). Inlining multi-use helpers would reduce clarity and expand the module. No high-value consolidation available without reshaping the client-hint policy, which is out of scope.
 **Transformation:** Inline/remove/consolidate duplicate functions.
 **Files:** `acquisition/browser_identity.py`
 
@@ -320,7 +320,7 @@ $env:PYTHONPATH='.'
 
 ## Slice 11: `shared_variant_logic.py` dead code and duplicate-rule audit
 
-**Status:** TODO
+**Status:** SKIPPED (2026-05-13). Grepped all 28 private helpers in the module. Every helper has ≥2 reference counts (definition + call sites); no dead code found. All 4 named candidates (`_is_sequential_integer_run`, `_select_option_values_are_noise`, `_variant_group_has_multiple_options`, `_value_looks_like_color`) are called from at least one production site. `_value_looks_like_color` is single-use but expresses a cohesive pure predicate that improves call-site readability. No duplicate rules spotted. Plan's extraction warning and rule "Do not redesign detail candidate arbitration or variant DOM cue collection" forecloses deeper refactoring.
 **Transformation:** Remove dead code, inline single-use helpers, consolidate duplicate conditions.
 **Files:** `extract/shared_variant_logic.py`
 
@@ -346,7 +346,7 @@ $env:PYTHONPATH='.'
 
 ## Slice 12: `config/extraction_rules.py` dead constant audit
 
-**Status:** TODO
+**Status:** DONE (2026-05-13). Audited 284 top-level constants; found 15 with no external references. Deleted 6 truly-dead constants (`AOM_EXPAND_ROLES`, `CANONICAL_PRICE_FIELDS`, `DETAIL_PARENT_VARIANT_PRICE_RATIO_MIN`, `DYNAMIC_FIELD_NAME_MAX_TOKENS`, `MAX_CANDIDATES_PER_FIELD`, `PERCENT_RE` and its supporting `_PERCENT_PATTERN` raw loader). Removed 13 `__all__` entries (5 deleted + 8 internal-only exports that shouldn't be exposed). All 1538 service tests pass. LOC: extraction_rules.py 1758 → 1738 (−20). No consolidation of duplicate token sets; after reading the config, no two sets represent the same runtime rule.
 **Transformation:** Remove dead code and consolidate duplicate constants.
 **Files:** `config/extraction_rules.py`
 
@@ -366,7 +366,7 @@ $env:PYTHONPATH='.'
 
 ## Slice 13: Ratchet architecture gates
 
-**Status:** TODO
+**Status:** DONE (2026-05-13). Re-measured all service LOCs. Updated `test_structure.py` `FILE_LOC_BUDGETS` to tight (≈ current +5-10%) values reflecting completed slice moves: browser_runtime 2275→1800, browser_page_flow 2047→1660, traversal 1965→1710, extraction_rules 1780→1910 (allow room for routine growth), and similar updates across other owners. Removed deleted-facade budget entries already handled in earlier slices. Added `browser_interstitial.py`, `browser_storage_state.py`, and `traversal_card_counting.py` to `docs/CODEBASE_MAP.md`. `test_structure.py` passes with the tightened budgets.
 **Transformation:** Update tests/docs to match completed ownership changes.
 **Files:** `backend/tests/services/test_structure.py`, `docs/CODEBASE_MAP.md`
 

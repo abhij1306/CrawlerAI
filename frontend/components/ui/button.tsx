@@ -12,15 +12,15 @@ export const buttonVariants = cva(
     variants: {
       variant: {
         primary:
-          'ui-on-accent-surface border-accent bg-accent shadow-[0_10px_24px_color-mix(in_srgb,var(--accent)_20%,transparent)] hover:border-accent-hover hover:bg-accent-hover hover:-translate-y-px hover:shadow-[0_14px_28px_color-mix(in_srgb,var(--accent)_28%,transparent)] active:translate-y-0 active:scale-[0.985] active:opacity-95 transition-[background-color,border-color,box-shadow,opacity,transform]',
+          'button-primary-surface shadow-xs hover:shadow-sm active:scale-[0.985] active:opacity-95',
         secondary:
-          'border-border-strong bg-background-elevated text-foreground shadow-sm hover:bg-background-alt hover:border-accent/25 hover:-translate-y-px hover:shadow-[0_10px_20px_color-mix(in_srgb,var(--accent)_10%,transparent)] active:translate-y-0 active:shadow-sm transition-[background-color,border-color,box-shadow,transform]',
+          'border-border-strong bg-background-elevated text-foreground shadow-xs hover:bg-background-alt hover:border-accent',
         ghost:
-          'border-transparent bg-transparent text-muted hover:bg-status-neutral-bg hover:text-foreground hover:-translate-y-px active:translate-y-0 transition-[background-color,color,transform]',
+          'border-transparent bg-transparent text-muted hover:bg-status-neutral-bg hover:text-foreground',
         accent:
-          'ui-on-accent-surface border-accent bg-accent shadow-[0_12px_26px_color-mix(in_srgb,var(--accent)_22%,transparent)] hover:border-accent-hover hover:bg-accent-hover hover:-translate-y-px hover:shadow-[0_16px_32px_color-mix(in_srgb,var(--accent)_30%,transparent)] active:opacity-90 active:scale-[0.98] transition-[background-color,border-color,box-shadow,opacity,transform]',
+          'ui-on-accent-surface border-accent bg-accent shadow-xs hover:border-accent-hover hover:bg-accent-hover active:opacity-90 active:scale-[0.98]',
         danger:
-          'border-danger/30 bg-danger/10 text-danger hover:border-danger/45 hover:bg-danger/15 hover:-translate-y-px active:translate-y-0 transition-[background-color,border-color,transform]',
+          'border-danger/30 bg-danger/10 text-danger hover:border-danger/45 hover:bg-danger/15',
       },
       size: {
         sm: 'min-h-[26px] px-[9px]',

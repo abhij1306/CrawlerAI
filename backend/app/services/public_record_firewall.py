@@ -22,7 +22,7 @@ from app.services.config.public_record_policy import (
     PUBLIC_RECORD_URL_MAX_LENGTH,
 )
 from app.services.field_policy import canonical_requested_fields, normalize_field_key
-from app.services.field_value_core import (
+from app.services.shared.field_coerce import (
     IMAGE_FIELDS,
     LONG_TEXT_FIELDS,
     STRUCTURED_MULTI_FIELDS,

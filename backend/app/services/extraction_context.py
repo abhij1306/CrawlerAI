@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 import logging
 from typing import Any
@@ -98,6 +99,16 @@ def collect_structured_source_payloads(
             continue
         if isinstance(payload, list) and payload:
             js_state_payloads.append({"itemListElement": payload})
+    # VTEX __STATE__ contains a normalized product cache. Extract product
+    # items as embedded_json so the listing extractor can consume them.
+    vtex_listing_payloads = _extract_vtex_state_listing_items(
+        js_state_objects, page_url=page_url
+    )
+    embedded_json_payloads = _dict_payloads(
+        parse_embedded_json(context.soup, context.cleaned_html)
+    )
+    if vtex_listing_payloads:
+        embedded_json_payloads.extend(vtex_listing_payloads)
     return (
         ("json_ld", json_ld_payloads),
         (
@@ -116,10 +127,7 @@ def collect_structured_source_payloads(
                 parse_opengraph(context.soup, context.cleaned_html, page_url)
             ),
         ),
-        (
-            "embedded_json",
-            _dict_payloads(parse_embedded_json(context.soup, context.cleaned_html)),
-        ),
+        ("embedded_json", embedded_json_payloads),
         ("js_state", js_state_payloads),
     )
 
@@ -164,3 +172,138 @@ def _payload_has_item_list(payload: dict[str, Any]) -> bool:
         if isinstance(nested_items, list) and nested_items:
             return True
     return False
+
+
+def _extract_vtex_state_listing_items(
+    state_objects: dict[str, Any],
+    *,
+    page_url: str,
+) -> list[dict[str, Any]]:
+    """Extract product listing items from VTEX __STATE__ normalized cache.
+
+    VTEX stores product data as ``"Product:sp-<id>": {productName, linkText, ...}``
+    entries in a flat dict. This function collects them into structured listing
+    payloads that the listing extractor can consume via the embedded_json path.
+    """
+    from urllib.parse import urlsplit
+
+    state = state_objects.get("__STATE__")
+    if not isinstance(state, dict):
+        return []
+    parsed_page = urlsplit(page_url)
+    base_origin = f"{parsed_page.scheme}://{parsed_page.netloc}"
+    items: list[dict[str, Any]] = []
+    for key, value in state.items():
+        if not isinstance(value, dict):
+            continue
+        if not str(key).startswith("Product:"):
+            continue
+        product_name = value.get("productName") or value.get("name")
+        link_text = value.get("linkText") or value.get("slug")
+        if not product_name or not link_text:
+            continue
+        # Normalize slug: strip whitespace, lowercase, replace spaces with hyphens,
+        # percent-encode reserved chars while preserving international characters
+        import unicodedata
+        from urllib.parse import quote as url_quote
+
+        normalized_slug = re.sub(r"\s+", "-", str(link_text).strip().lower())
+        normalized_slug = unicodedata.normalize("NFC", normalized_slug)
+        normalized_slug = url_quote(normalized_slug, safe="-_/")
+        if not normalized_slug:
+            continue
+        url = f"{base_origin}/{normalized_slug}/p"
+        item: dict[str, Any] = {
+            "name": str(product_name),
+            "url": url,
+            "@type": "Product",
+        }
+        brand = value.get("brand")
+        if brand:
+            item["brand"] = str(brand)
+        description = value.get("description") or value.get("metaTagDescription")
+        if description:
+            item["description"] = str(description)
+        # Extract price from items/sellers structure
+        price = _vtex_state_product_price(value, state)
+        if price is not None:
+            item["offers"] = {"price": price}
+        image = _vtex_state_product_image(value, state)
+        if image:
+            item["image"] = image
+        items.append(item)
+    if len(items) < 2:
+        return []
+    return [{"@type": "ItemList", "itemListElement": [{"item": item} for item in items]}]
+
+
+def _vtex_state_product_price(
+    product: dict[str, Any],
+    state: dict[str, Any],
+) -> float | None:
+    """Extract best price from VTEX product state entry.
+
+    VTEX uses Apollo Client normalized cache with ``{type: "id", id: "..."}``
+    references. Prices live at ``$Product:sp-XXX.priceRange.sellingPrice.lowPrice``.
+    """
+    product_id = product.get("productId") or product.get("cacheId")
+    # Try Apollo-style priceRange reference resolution
+    price_range_ref = product.get("priceRange")
+    if isinstance(price_range_ref, dict):
+        # Inline or resolved priceRange
+        selling = price_range_ref.get("sellingPrice")
+        if isinstance(selling, dict):
+            # Could be a reference {type: "id", id: "..."}
+            ref_id = selling.get("id") if selling.get("type") == "id" else None
+            if ref_id:
+                selling = state.get(ref_id, selling)
+            if isinstance(selling, dict):
+                low = selling.get("lowPrice") or selling.get("highPrice")
+                if isinstance(low, (int, float)) and low > 0:
+                    return float(low)
+    # Try resolving via state key pattern: $Product:sp-XXX.priceRange.sellingPrice
+    if product_id:
+        for prefix in (f"$Product:sp-{product_id}", f"$Product:{product_id}"):
+            selling_key = f"{prefix}.priceRange.sellingPrice"
+            selling_obj = state.get(selling_key)
+            if isinstance(selling_obj, dict):
+                low = selling_obj.get("lowPrice") or selling_obj.get("highPrice")
+                if isinstance(low, (int, float)) and low > 0:
+                    return float(low)
+    # Fallback: items[0].sellers[0].commertialOffer
+    if product_id:
+        offer_key = next(
+            (k for k in state if k.startswith(f"$Product:sp-{product_id}.items") and "commertialOffer" in k),
+            None,
+        )
+        if offer_key:
+            offer = state.get(offer_key)
+            if isinstance(offer, dict):
+                price = offer.get("Price") or offer.get("price")
+                if isinstance(price, (int, float)) and price > 0:
+                    return float(price)
+    return None
+
+
+def _vtex_state_product_image(
+    product: dict[str, Any],
+    state: dict[str, Any],
+) -> str | None:
+    """Extract first image URL from VTEX product state entry."""
+    items_ref = product.get("items")
+    if not isinstance(items_ref, list):
+        return None
+    for item_ref in items_ref:
+        item = item_ref if isinstance(item_ref, dict) else state.get(str(item_ref or ""))
+        if not isinstance(item, dict):
+            continue
+        images = item.get("images")
+        if not isinstance(images, list):
+            continue
+        for img_ref in images:
+            img = img_ref if isinstance(img_ref, dict) else state.get(str(img_ref or ""))
+            if isinstance(img, dict):
+                url = img.get("imageUrl") or img.get("url")
+                if url and isinstance(url, str):
+                    return url
+    return None

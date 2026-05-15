@@ -16,6 +16,8 @@ from app.services.config.extraction_rules import (
     DETAIL_DOM_SCALAR_SIZE_PATTERN,
     DETAIL_LONG_TEXT_RANK_FIELDS,
     DETAIL_PRIMARY_DOM_CONTEXT_SELECTOR,
+    VARIANT_CHOICE_OPTION_LIMIT,
+    VARIANT_COMPONENT_SIZE_STYLE_LABELS,
 )
 from app.services.config.variant_migration_rules import (
     VARIANT_STRONG_OPTION_SELECTOR,
@@ -26,7 +28,7 @@ from app.services.config.field_mappings import (
     DOM_OPTIONAL_CUE_FIELDS,
 )
 from app.services.field_policy import exact_requested_field_key, normalize_field_key
-from app.services.field_value_core import (
+from app.services.shared.field_coerce import (
     RATING_RE,
     REVIEW_COUNT_RE,
     absolute_url,
@@ -41,7 +43,7 @@ from app.services.field_value_core import (
     surface_fields,
     text_or_none,
 )
-from app.services.field_value_dom import (
+from app.services.dom.selector_engine import (
     apply_selector_fallbacks,
     extract_feature_rows,
     extract_heading_sections,
@@ -53,6 +55,12 @@ from app.services.extract.detail_raw_signals import (
 )
 from app.services.extract.detail_state_variant_targets import (
     state_variant_targets as _state_variant_targets,
+)
+from app.services.extract.detail_dom_variant_options import (
+    merge_variant_option_state,
+    node_attr_is_truthy,
+    variant_option_availability,
+    variant_option_url,
 )
 from app.services.extract.variant_group_validator import (
     VariantGroupValidator,
@@ -421,15 +429,48 @@ def apply_dom_fallbacks(
 
 
 def _resolve_dom_variant_group_name(node: Any) -> str:
+    attribute_axis = _dom_variant_axis_from_attributes(node)
+    if attribute_axis:
+        return attribute_axis
     resolved = resolve_variant_group_name(node)
-    if resolved:
+    if resolved and _dom_variant_group_name_allowed(resolved):
         return resolved
     if not hasattr(node, "select"):
-        return ""
+        return resolved or ""
     for input_node in node.select("input[type='radio'], input[type='checkbox']")[:24]:
-        resolved = resolve_variant_group_name(input_node)
-        if resolved:
-            return resolved
+        attribute_axis = _dom_variant_axis_from_attributes(input_node)
+        if attribute_axis:
+            return attribute_axis
+        input_resolved = resolve_variant_group_name(input_node)
+        if input_resolved and _dom_variant_group_name_allowed(input_resolved):
+            return input_resolved
+    return resolved or ""
+
+
+def _dom_variant_axis_from_attributes(node: Any) -> str:
+    if node is None or not hasattr(node, "attrs"):
+        return ""
+    attrs = getattr(node, "attrs", {}) or {}
+    parts: list[str] = []
+    for key, value in attrs.items():
+        key_text = str(key)
+        parts.append(key_text)
+        if value not in (None, "", [], {}) and key_text.lower() in {
+            "class",
+            "data-option-name",
+            "data-qa",
+            "data-qa-action",
+            "data-testid",
+            "data-test",
+            "id",
+            "name",
+        }:
+            parts.append(str(value))
+    attr_blob = " ".join(parts).casefold()
+    if "color" in attr_blob or "colour" in attr_blob:
+        return "color"
+    if "size" in attr_blob:
+        return "size"
     return ""
 
 
@@ -483,6 +524,22 @@ def _color_option_value_candidates(value: str) -> list[str]:
             candidates.append(candidate)
     candidates.append(value)
     return list(dict.fromkeys(candidates))
+
+
+def _component_size_style_from_group_name(value: object) -> str:
+    cleaned = clean_text(value)
+    if not cleaned:
+        return ""
+    lowered = cleaned.casefold()
+    if "size" not in re.split(r"[^a-z0-9]+", lowered):
+        return ""
+    for label in tuple(VARIANT_COMPONENT_SIZE_STYLE_LABELS or ()):
+        normalized_label = clean_text(label).casefold()
+        if not normalized_label:
+            continue
+        if normalized_label in re.split(r"[^a-z0-9]+", lowered):
+            return " ".join(part.capitalize() for part in normalized_label.split())
+    return ""
 
 
 def _prefer_axis_inferred_from_values(
@@ -552,165 +609,6 @@ def _visible_node_text(
     return visible_text
 
 
-def _node_state_matches(node: Any, *tokens: str) -> bool:
-    if not hasattr(node, "get"):
-        return False
-    class_attr = node.get("class")
-    probe = (
-        " ".join(str(value) for value in class_attr)
-        if isinstance(class_attr, list)
-        else str(class_attr or "")
-    ).lower()
-    return any(token in probe for token in tokens)
-
-
-def _node_attr_is_truthy(node: Any, *attr_names: str) -> bool:
-    if not hasattr(node, "get"):
-        return False
-    for attr_name in attr_names:
-        value = node.get(attr_name)
-        if value in (None, "", [], {}, False):
-            continue
-        if value is True:
-            return True
-        normalized = str(value).strip().lower()
-        if normalized in {"", "false", "0", "none"}:
-            continue
-        return True
-    return False
-
-
-def variant_option_availability(
-    *, node: Any, label_node: Any | None
-) -> tuple[str | None, int | None]:
-    attr_probe_parts: list[str] = []
-    text_probe_parts: list[str] = []
-    for candidate in (
-        node,
-        label_node,
-        getattr(node, "parent", None),
-        getattr(label_node, "parent", None) if label_node is not None else None,
-    ):
-        if candidate is None or not hasattr(candidate, "get"):
-            continue
-        class_attr = candidate.get("class")
-        if isinstance(class_attr, list):
-            attr_probe_parts.extend(str(value) for value in class_attr if value)
-        elif class_attr not in (None, "", [], {}):
-            attr_probe_parts.append(str(class_attr))
-        for attr_name in ("aria-label", "data-testid", "name", "id"):
-            value = candidate.get(attr_name)
-            if value not in (None, "", [], {}):
-                attr_probe_parts.append(str(value))
-        if hasattr(candidate, "get_text"):
-            text_probe_parts.append(candidate.get_text(" ", strip=True))
-    attr_probe = clean_text(" ".join(attr_probe_parts)).lower()
-    text_probe = clean_text(" ".join(text_probe_parts)).lower()
-    if any(
-        token in attr_probe
-        for token in ("outstock", "out-stock", "soldout", "sold-out", "unavailable")
-    ):
-        return "out_of_stock", 0
-    stock_match = re.search(r"\b(\d+)\s+left\b", text_probe)
-    if stock_match:
-        quantity = int(stock_match.group(1))
-        return ("in_stock" if quantity > 0 else "out_of_stock"), quantity
-    if "out of stock" in text_probe or "sold out" in text_probe:
-        return "out_of_stock", 0
-    if "in stock" in text_probe or "available" in text_probe:
-        return "in_stock", None
-    return None, None
-
-
-def _variant_option_url(
-    *,
-    container: Any,
-    node: Any,
-    label_node: Any | None,
-    page_url: str,
-) -> str | None:
-    attr_names = (
-        "href",
-        "data-href",
-        "data-url",
-        "data-product-url",
-        "data-target-url",
-        "data-link",
-        "data-variant-url",
-    )
-    candidates: list[Any] = [node, label_node]
-    if hasattr(node, "find_parent"):
-        parent_anchor = node.find_parent("a", href=True)
-        if parent_anchor is not None:
-            candidates.append(parent_anchor)
-    if label_node is not None and hasattr(label_node, "find_parent"):
-        parent_anchor = label_node.find_parent("a", href=True)
-        if parent_anchor is not None:
-            candidates.append(parent_anchor)
-    if hasattr(node, "find"):
-        anchor = node.find("a", href=True)
-        if anchor is not None:
-            candidates.append(anchor)
-    if label_node is not None and hasattr(label_node, "find"):
-        anchor = label_node.find("a", href=True)
-        if anchor is not None:
-            candidates.append(anchor)
-    if hasattr(container, "find"):
-        anchor = container.find("a", href=True)
-        if anchor is not None:
-            candidates.append(anchor)
-    for candidate in candidates:
-        if candidate is None or not hasattr(candidate, "get"):
-            continue
-        for attr_name in attr_names:
-            raw = candidate.get(attr_name)
-            url = text_or_none(raw)
-            if url:
-                return absolute_url(page_url, url)
-    return None
-
-
-def _merge_variant_option_state(
-    entry: dict[str, object],
-    *,
-    container: Any,
-    node: Any,
-    page_url: str,
-    label_node: Any | None = None,
-) -> None:
-    selected = (
-        _node_state_matches(
-            node, "selected", "active", "current", "highlight", "checked"
-        )
-        or _node_attr_is_truthy(
-            node,
-            "checked",
-            "aria-checked",
-        )
-        or text_or_none(
-            getattr(node, "get", lambda *_args, **_kwargs: None)("data-state")
-        )
-        == "checked"
-    )
-    if selected:
-        entry["selected"] = True
-    availability, stock_quantity = variant_option_availability(
-        node=node, label_node=label_node
-    )
-    if availability and entry.get("availability") in (None, "", [], {}):
-        entry["availability"] = availability
-    if stock_quantity is not None:
-        entry["stock_quantity"] = stock_quantity
-    variant_url = _variant_option_url(
-        container=container,
-        node=node,
-        label_node=label_node,
-        page_url=page_url,
-    )
-    if variant_url and entry.get("url") in (None, "", [], {}):
-        entry["url"] = variant_url
-
-
 def _collect_variant_choice_entries(
     container: Any, *, page_url: str
 ) -> list[dict[str, object]]:
@@ -724,9 +622,14 @@ def _collect_variant_choice_entries(
     )
     entries_by_value: dict[str, dict[str, object]] = {}
     visible_text_cache: dict[int, str] = {}
-    option_nodes = list(container.select(str(VARIANT_STRONG_OPTION_SELECTOR)))[:24]
+    option_limit = int(VARIANT_CHOICE_OPTION_LIMIT)
+    option_nodes = list(container.select(str(VARIANT_STRONG_OPTION_SELECTOR)))[
+        :option_limit
+    ]
     if len(option_nodes) < 2:
-        option_nodes = list(container.select(str(VARIANT_WEAK_OPTION_SELECTOR)))[:24]
+        option_nodes = list(container.select(str(VARIANT_WEAK_OPTION_SELECTOR)))[
+            :option_limit
+        ]
     for node in option_nodes:
         if not weak_variant_option_node_allowed(
             node,
@@ -748,7 +651,7 @@ def _collect_variant_choice_entries(
         if variant_option_value_is_noise(cleaned):
             continue
         entry = entries_by_value.setdefault(cleaned, {"value": cleaned})
-        _merge_variant_option_state(
+        merge_variant_option_state(
             entry,
             container=container,
             node=node,
@@ -762,7 +665,7 @@ def _collect_variant_choice_entries(
         if variant_id and entry.get("variant_id") in (None, "", [], {}):
             entry["variant_id"] = variant_id
     for input_node in container.select("input[type='radio'], input[type='checkbox']")[
-        :24
+        :option_limit
     ]:
         label_node = _variant_input_label(container, input_node)
         cleaned = _coerce_variant_option_value(
@@ -780,7 +683,7 @@ def _collect_variant_choice_entries(
         if variant_option_value_is_noise(cleaned):
             continue
         entry = entries_by_value.setdefault(cleaned, {"value": cleaned})
-        _merge_variant_option_state(
+        merge_variant_option_state(
             entry,
             container=container,
             node=input_node,
@@ -807,6 +710,8 @@ def _variant_choice_entry_value(
             node.get("data-swatch-sr") if hasattr(node, "get") else None,
             aria_label,
             label_text,
+            _descendant_image_alt_text(resolved_label),
+            _descendant_image_alt_text(node),
             node_text,
         ):
             cleaned = clean_text(raw_value)
@@ -819,6 +724,7 @@ def _variant_choice_entry_value(
         or node.get("data-displayvalue")
         or node.get("data-display-value")
         or node.get("data-swatch-sr")
+        or node.get("data-size")
         or label_text
         or node.get("data-value")
         or node.get("data-option-value")
@@ -826,6 +732,15 @@ def _variant_choice_entry_value(
         or node.get("value")
         or node_text
     )
+
+
+def _descendant_image_alt_text(node: Any) -> str:
+    if not hasattr(node, "find"):
+        return ""
+    image = node.find("img")
+    if image is None or not hasattr(image, "get"):
+        return ""
+    return clean_text(image.get("alt"))
 
 
 def _split_compound_axis_name(name: object) -> list[tuple[str, str]]:
@@ -961,6 +876,11 @@ def extract_variants_from_dom(
         )
         if not cleaned_name:
             continue
+        component_style = _component_size_style_from_group_name(
+            cleaned_name
+        ) or _component_size_style_from_group_name(next(iter(raw_option_values), ""))
+        if component_style:
+            cleaned_name = "size"
         option_entries: list[dict[str, object]] = []
         axis_key = normalized_variant_axis_key(cleaned_name)
         if not _dom_variant_group_name_allowed(cleaned_name):
@@ -984,9 +904,9 @@ def extract_variants_from_dom(
             ):
                 continue
             entry: dict[str, object] = {"value": cleaned_value}
-            if _node_attr_is_truthy(option, "selected", "aria-selected"):
+            if node_attr_is_truthy(option, "selected", "aria-selected"):
                 entry["selected"] = True
-            variant_url = _variant_option_url(
+            variant_url = variant_option_url(
                 container=select,
                 node=option,
                 label_node=None,
@@ -994,6 +914,8 @@ def extract_variants_from_dom(
             )
             if variant_url:
                 entry["url"] = variant_url
+            if component_style:
+                entry["style"] = component_style
             option_entries.append(entry)
         deduped_values = list(
             dict.fromkeys(
@@ -1099,6 +1021,10 @@ def extract_variants_from_dom(
                 existing["availability"] = availability
             if group_entry.get("stock_quantity") not in (None, "", [], {}):
                 existing["stock_quantity"] = group_entry.get("stock_quantity")
+            if group_entry.get("style") not in (None, "", [], {}) and existing.get(
+                "style"
+            ) in (None, "", [], {}):
+                existing["style"] = group_entry.get("style")
             if group_entry.get("selected"):
                 existing["selected"] = True
             if group_entry.get("url") not in (None, "", [], {}) and existing.get(
@@ -1109,6 +1035,10 @@ def extract_variants_from_dom(
                 "variant_id"
             ) in (None, "", [], {}):
                 existing["variant_id"] = group_entry.get("variant_id")
+            if group_entry.get("image_url") not in (None, "", [], {}) and existing.get(
+                "image_url"
+            ) in (None, "", [], {}):
+                existing["image_url"] = group_entry.get("image_url")
             merged_entries[value] = existing
     try:
         group_limit = max(1, int(DOM_VARIANT_GROUP_LIMIT))
@@ -1162,9 +1092,11 @@ def extract_variants_from_dom(
                 for key in (
                     "availability",
                     "selected",
+                    "style",
                     "stock_quantity",
                     "url",
                     "variant_id",
+                    "image_url",
                 )
                 if entry.get(key) not in (None, "", [], {})
             }
@@ -1178,7 +1110,7 @@ def extract_variants_from_dom(
             merged_metadata = axis_option_metadata[axis_key].setdefault(
                 option_value, {}
             )
-            for key in ("url", "variant_id"):
+            for key in ("url", "variant_id", "image_url"):
                 if state_metadata.get(key) not in (
                     None,
                     "",
@@ -1221,7 +1153,7 @@ def extract_variants_from_dom(
             combo_metadata = state_combo_targets.get(
                 tuple(sorted(option_values.items())), {}
             )
-            for key in ("url", "variant_id"):
+            for key in ("url", "variant_id", "image_url"):
                 if combo_metadata.get(key) not in (None, "", [], {}):
                     variant[key] = combo_metadata[key]
             if len(axis_names) == 1:
@@ -1234,7 +1166,9 @@ def extract_variants_from_dom(
                     variant["availability"] = availability
                 if option_metadata.get("stock_quantity") not in (None, "", [], {}):
                     variant["stock_quantity"] = option_metadata.get("stock_quantity")
-                for key in ("url", "variant_id"):
+                if option_metadata.get("style") not in (None, "", [], {}):
+                    variant["style"] = option_metadata.get("style")
+                for key in ("url", "variant_id", "image_url"):
                     if option_metadata.get(key) not in (None, "", [], {}):
                         variant[key] = option_metadata.get(key)
             variants.append(variant)
@@ -1324,9 +1258,11 @@ def _axis_only_dom_variants(
             for key in (
                 "availability",
                 "selected",
+                "style",
                 "stock_quantity",
                 "url",
                 "variant_id",
+                "image_url",
             ):
                 if metadata.get(key) not in (None, "", [], {}):
                     variant[key] = metadata[key]
@@ -1344,10 +1280,6 @@ def backfill_variants_from_dom_if_missing(
     existing_variants = [
         row for row in list(record.get("variants") or []) if isinstance(row, dict)
     ]
-    if record_has_rich_existing_variants(record):
-        return
-    if existing_variant_cluster_has_transport_signal(existing_variants):
-        return
     if not variant_dom_cues_present(soup):
         return
     dom_variants = extract_variants_from_dom(
@@ -1360,29 +1292,44 @@ def backfill_variants_from_dom_if_missing(
         for row in _object_list(dom_variants.get("variants"))
         if isinstance(row, dict)
     ]
+    if not dom_variant_rows:
+        return
+    if (
+        record_has_rich_existing_variants(record)
+        or existing_variant_cluster_has_transport_signal(existing_variants)
+    ) and not _dom_variants_add_missing_existing_axis(existing_variants, dom_variant_rows):
+        return
     if dom_variant_rows:
-        existing_by_key: dict[str, dict[str, Any]] = {}
-        for row in existing_variants:
-            row_key = text_or_none(row.get("variant_id")) or text_or_none(
-                row.get("url")
-            )
-            if row_key:
-                # Preserve the first occurrence so duplicate variant_id/url
-                # keys cannot overwrite earlier rows and merge unrelated variants.
-                existing_by_key.setdefault(row_key, row)
-        merged_rows: list[dict[str, Any]] = []
-        for dom_row in dom_variant_rows:
-            dom_key = text_or_none(dom_row.get("variant_id")) or text_or_none(
-                dom_row.get("url")
-            )
-            existing_row = existing_by_key.get(dom_key or "") if dom_key else None
-            merged_rows.append(
-                merge_variant_pair(existing_row, dom_row)
-                if isinstance(existing_row, dict)
-                else dom_row
-            )
-        record["variants"] = merged_rows
-        record["variant_count"] = len(merged_rows)
+        expanded_rows = _expand_existing_variants_with_dom_axes(
+            existing_variants,
+            dom_variant_rows,
+        )
+        if expanded_rows:
+            record["variants"] = expanded_rows
+            record["variant_count"] = len(expanded_rows)
+        else:
+            existing_by_key: dict[str, dict[str, Any]] = {}
+            for row in existing_variants:
+                row_key = text_or_none(row.get("variant_id")) or text_or_none(
+                    row.get("url")
+                )
+                if row_key:
+                    # Preserve the first occurrence so duplicate variant_id/url
+                    # keys cannot overwrite earlier rows and merge unrelated variants.
+                    existing_by_key.setdefault(row_key, row)
+            merged_rows: list[dict[str, Any]] = []
+            for dom_row in dom_variant_rows:
+                dom_key = text_or_none(dom_row.get("variant_id")) or text_or_none(
+                    dom_row.get("url")
+                )
+                existing_row = existing_by_key.get(dom_key or "") if dom_key else None
+                merged_rows.append(
+                    merge_variant_pair(existing_row, dom_row)
+                    if isinstance(existing_row, dict)
+                    else dom_row
+                )
+            record["variants"] = merged_rows
+            record["variant_count"] = len(merged_rows)
     currency = text_or_none(record.get("currency"))
     price = text_or_none(record.get("price"))
     parent_availability = text_or_none(record.get("availability"))
@@ -1407,6 +1354,80 @@ def backfill_variants_from_dom_if_missing(
             variant["price"] = price
         if currency and variant.get("currency") in (None, "", [], {}):
             variant["currency"] = currency
+
+
+def _variant_axes_present(variants: list[dict[str, Any]]) -> set[str]:
+    return {
+        axis
+        for row in variants
+        if isinstance(row, dict)
+        for axis in public_variant_axis_fields
+        if text_or_none(row.get(axis))
+    }
+
+
+def _dom_variants_add_missing_existing_axis(
+    existing_variants: list[dict[str, Any]],
+    dom_variant_rows: list[dict[str, Any]],
+) -> bool:
+    existing_axes = _variant_axes_present(existing_variants)
+    dom_axes = _variant_axes_present(dom_variant_rows)
+    return bool(existing_axes and dom_axes - existing_axes)
+
+
+def _expand_existing_variants_with_dom_axes(
+    existing_variants: list[dict[str, Any]],
+    dom_variant_rows: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    if not existing_variants or not dom_variant_rows:
+        return []
+    existing_axes = _variant_axes_present(existing_variants)
+    dom_axes = _variant_axes_present(dom_variant_rows)
+    missing_dom_axes = dom_axes - existing_axes
+    if not existing_axes or not missing_dom_axes:
+        return []
+    if not all(
+        any(text_or_none(row.get(field_name)) for field_name in _VARIANT_TRANSPORT_FIELDS)
+        for row in existing_variants
+        if isinstance(row, dict)
+    ):
+        return []
+    try:
+        combo_limit = int(DOM_VARIANT_CARTESIAN_COMBO_LIMIT)
+    except (TypeError, ValueError) as exc:
+        logger.warning(
+            "Invalid DOM_VARIANT_CARTESIAN_COMBO_LIMIT; using 1000",
+            extra={"value": DOM_VARIANT_CARTESIAN_COMBO_LIMIT},
+            exc_info=exc,
+        )
+        combo_limit = 1000
+    if len(existing_variants) * len(dom_variant_rows) > combo_limit:
+        return []
+
+    expanded_rows: list[dict[str, Any]] = []
+    for existing_row, dom_row in product(existing_variants, dom_variant_rows):
+        merged = dict(existing_row)
+        for field_name in ("sku", "variant_id", "barcode"):
+            merged.pop(field_name, None)
+        option_values = {
+            key: value
+            for source in (
+                existing_row.get("option_values"),
+                dom_row.get("option_values"),
+            )
+            if isinstance(source, dict)
+            for key, value in source.items()
+            if text_or_none(value)
+        }
+        for axis in public_variant_axis_fields:
+            dom_value = text_or_none(dom_row.get(axis))
+            if axis in missing_dom_axes and dom_value:
+                merged[axis] = dom_value
+                option_values[axis] = dom_value
+        if option_values:
+            merged["option_values"] = option_values
+        expanded_rows.append(merged)
+    return expanded_rows
 
 
 def existing_variant_cluster_has_transport_signal(

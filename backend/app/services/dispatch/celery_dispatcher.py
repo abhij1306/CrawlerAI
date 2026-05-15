@@ -26,12 +26,18 @@ def _set_task_id(run: CrawlRun, task_id: str | None) -> None:
         run.remove_summary_keys(CELERY_TASK_ID_KEY)
 
 
+async def _clear_task_id(session: AsyncSession, run: CrawlRun) -> None:
+    """Clear a persisted task_id and commit so the run is safe to re-dispatch."""
+    _set_task_id(run, None)
+    await session.commit()
+
+
 async def _load_run_with_normalized_status(
     session: AsyncSession, run_id: int
 ) -> tuple[CrawlRun, CrawlStatus]:
     run = await session.get(CrawlRun, run_id)
     if run is None:
-        raise ValueError("Run not found")
+        raise ValueError(f"Run not found: {run_id}")
     return run, run.status_value
 
 
@@ -51,14 +57,14 @@ class CeleryRunDispatcher:
             process_run_task.apply_async(args=[loaded_run.id], task_id=task_id)
         except Exception as exc:
             if not settings.legacy_inprocess_runner_enabled:
-                _set_task_id(loaded_run, None)
-                await session.commit()
+                await _clear_task_id(session, loaded_run)
                 raise
             logger.warning(
                 "Celery enqueue failed for run %s; falling back to in-process execution: %s",
                 loaded_run.id,
                 exc,
             )
+            await _clear_task_id(session, loaded_run)
             track_local_run_task(int(loaded_run.id))
         await session.refresh(loaded_run)
         return loaded_run

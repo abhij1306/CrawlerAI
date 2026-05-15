@@ -50,6 +50,14 @@ def test_infer_surface_handles_acceptance_critical_hosts() -> None:
         )
         == "ecommerce_detail"
     )
+    assert (
+        infer_surface("https://www.vitacost.com/vitacost-vitamin-d3-mini-gels")
+        == "ecommerce_detail"
+    )
+    assert (
+        infer_surface("https://www.rockler.com/rockler-table-saw-crosscut-sled")
+        == "ecommerce_detail"
+    )
 
 
 def test_parse_test_sites_markdown_reads_urls_from_tail(tmp_path: Path) -> None:

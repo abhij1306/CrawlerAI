@@ -56,7 +56,7 @@ from app.services.extract.variant_dom_cues import (
     variant_context_noise_tokens as _variant_context_noise_tokens,
     variant_node_in_noise_context,
 )
-from app.services.field_value_core import clean_text, text_or_none
+from app.services.shared.field_coerce import clean_text, text_or_none
 
 logger = logging.getLogger(__name__)
 _ALNUM_SPLIT_PATTERN = r"[^a-z0-9]+"

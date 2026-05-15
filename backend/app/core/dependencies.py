@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import inspect
+import logging
+import threading
 
 from app.core.config import settings
 from app.core.database import get_session
@@ -15,7 +17,10 @@ from jose import JWTError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+logger = logging.getLogger(__name__)
+
 _run_dispatchers: dict[bool, RunDispatcher] = {}
+_dispatcher_lock = threading.Lock()
 
 
 async def get_db(
@@ -74,21 +79,37 @@ def get_run_dispatcher() -> RunDispatcher:
     """Resolve one shared run dispatcher per dispatch mode."""
     celery_enabled = bool(settings.celery_dispatch_enabled)
     dispatcher = _run_dispatchers.get(celery_enabled)
-    if dispatcher is None:
-        dispatcher = CeleryRunDispatcher() if celery_enabled else LocalRunDispatcher()
-        _run_dispatchers[celery_enabled] = dispatcher
+    if dispatcher is not None:
+        return dispatcher
+    with _dispatcher_lock:
+        # Double-check after acquiring lock.
+        dispatcher = _run_dispatchers.get(celery_enabled)
+        if dispatcher is None:
+            dispatcher = CeleryRunDispatcher() if celery_enabled else LocalRunDispatcher()
+            _run_dispatchers[celery_enabled] = dispatcher
     return dispatcher
 
 
 async def shutdown_run_dispatchers() -> None:
     """Best-effort cleanup for shared dispatcher instances."""
-    for dispatcher in list(_run_dispatchers.values()):
+    # Hold the lock while copying + clearing so concurrent callers of
+    # get_run_dispatcher cannot create a fresh dispatcher that escapes cleanup.
+    # Release before awaiting to avoid blocking new lookups during async shutdowns.
+    with _dispatcher_lock:
+        dispatchers = list(_run_dispatchers.values())
+        _run_dispatchers.clear()
+    for dispatcher in dispatchers:
         cleanup = getattr(dispatcher, "shutdown", None) or getattr(
             dispatcher, "close", None
         )
         if not callable(cleanup):
             continue
-        result = cleanup()
-        if inspect.isawaitable(result):
-            await result
-    _run_dispatchers.clear()
+        try:
+            result = cleanup()
+            if inspect.isawaitable(result):
+                await result
+        except Exception:
+            logger.warning(
+                "Error shutting down dispatcher %s", type(dispatcher).__name__,
+                exc_info=True,
+            )

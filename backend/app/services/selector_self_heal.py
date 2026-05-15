@@ -32,7 +32,7 @@ from app.services.field_policy import (
     field_allowed_for_surface,
     repair_target_fields_for_surface,
 )
-from app.services.field_value_core import safe_int as _safe_int
+from app.services.shared.field_coerce import safe_int as _safe_int
 from app.services.extraction_html_helpers import prune_html_tree
 from app.services.llm_runtime import discover_xpath_candidates
 from app.services.xpath_service import extract_selector_value, validate_or_convert_xpath

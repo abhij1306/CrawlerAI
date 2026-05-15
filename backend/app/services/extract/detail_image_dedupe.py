@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.services.field_value_core import text_or_none
-from app.services.field_value_dom import dedupe_image_urls
+from app.services.shared.field_coerce import text_or_none
+from app.services.dom.selector_engine import dedupe_image_urls
 
 
 def dedupe_primary_and_additional_images(record: dict[str, Any]) -> None:

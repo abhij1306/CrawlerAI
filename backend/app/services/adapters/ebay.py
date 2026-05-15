@@ -18,7 +18,7 @@ class EbayAdapter(BaseAdapter):
     async def can_handle(self, url: str, html: str) -> bool:
         return any(d in url for d in self.domains)
 
-    async def extract(self, url: str, html: str, surface: str) -> AdapterResult:
+    async def extract(self, url: str, html: str, surface: str, proxy: str | None = None) -> AdapterResult:
         parser = LexborHTMLParser(html)
         records = []
         if surface in ("ecommerce_detail",):

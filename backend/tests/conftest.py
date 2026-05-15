@@ -23,7 +23,7 @@ from app.core.security import hash_password
 from app.models.user import User
 from app.services.config.runtime_settings import crawler_runtime_settings
 from app.services.crawl_crud import create_crawl_run
-from app.services.crawl_fetch_runtime import reset_fetch_runtime_state
+from app.services.fetch.fetch_context import reset_fetch_runtime_state
 from app.services.acquisition.pacing import reset_pacing_state
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -154,6 +154,16 @@ def _redirect_tempfile_root(monkeypatch: pytest.MonkeyPatch, workspace_tmp_path:
     monkeypatch.setattr(tempfile, "tempdir", str(workspace_tmp_path))
     yield
     monkeypatch.setattr(tempfile, "tempdir", None)
+
+
+@pytest.fixture(autouse=True)
+def _isolate_artifact_storage(monkeypatch: pytest.MonkeyPatch, workspace_tmp_path: Path):
+    """Redirect artifact writes to a temp directory so tests never pollute the real artifacts/runs/ tree."""
+    from app.core.config import settings as app_settings
+
+    artifacts_dir = workspace_tmp_path / "artifacts"
+    artifacts_dir.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(app_settings, "artifacts_dir", artifacts_dir)
 
 
 @pytest.fixture(autouse=True)

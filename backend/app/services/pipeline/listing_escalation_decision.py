@@ -11,7 +11,6 @@ as ``promo_only_cluster``.
 
 from __future__ import annotations
 
-from app.services.acquisition.browser_runtime import real_chrome_browser_available
 from app.services.config.runtime_settings import crawler_runtime_settings
 from app.services.pipeline.runtime_helpers import effective_blocked
 
@@ -90,16 +89,18 @@ def listing_integrity_escalation_decision(
     if retry_count >= max_retries:
         return _skip("already_retried")
 
-    # 4. Acquisition is blocked.
+    # 4. Acquisition is blocked (prioritize runtime blocks over feature flag
+    # so logs/metrics always surface the block reason).
     if effective_blocked(acquisition_result):
         return _skip("blocked")
 
-    # 5. Policy-level skip conditions.
-    if getattr(policy_snapshot, "challenge_state", False):
-        return _skip("challenge_state")
-
+    # 5. Escalation must be enabled.
     if not settings.listing_integrity_escalation_enabled:
         return _skip("escalation_disabled")
+
+    # 6. Policy-level skip conditions.
+    if getattr(policy_snapshot, "challenge_state", False):
+        return _skip("challenge_state")
 
     if getattr(policy_snapshot, "host_hard_block", False):
         return _skip("host_hard_block")
@@ -143,16 +144,14 @@ def _compute_next_tier(method: str, browser_engine: str) -> str | None:
     """Return the next stronger tier, or None if no escalation path exists.
 
     Tier escalation map:
-      curl_cffi / httpx → browser:chromium
-      browser:patchright (when real Chrome available) → browser:real_chrome
-      browser:chromium (when real Chrome available) → browser:real_chrome
+      curl_cffi / httpx → browser:patchright
       otherwise → None (no_stronger_tier)
+
+    Real Chrome is reserved for blocked-site escalation only; listing
+    integrity failures do not warrant real_chrome because the issue is
+    extraction quality, not access denial.
     """
     if method in ("curl_cffi", "httpx"):
-        return "browser:chromium"
-
-    if method == "browser":
-        if browser_engine in ("patchright", "chromium") and real_chrome_browser_available():
-            return "browser:real_chrome"
+        return "browser:patchright"
 
     return None

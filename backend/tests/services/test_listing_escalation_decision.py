@@ -137,21 +137,13 @@ class TestSkipReasons:
 
     def test_no_stronger_tier_from_real_chrome(self):
         """Already at real_chrome — no stronger tier available."""
-        with patch(
-            "app.services.pipeline.listing_escalation_decision.real_chrome_browser_available",
-            return_value=True,
-        ):
-            result = _call(method="browser", browser_engine="real_chrome")
+        result = _call(method="browser", browser_engine="real_chrome")
         assert result["should_retry"] is False
         assert result["reason"] == "no_stronger_tier"
 
-    def test_no_stronger_tier_patchright_without_real_chrome(self):
-        """At patchright but real Chrome not available — no stronger tier."""
-        with patch(
-            "app.services.pipeline.listing_escalation_decision.real_chrome_browser_available",
-            return_value=False,
-        ):
-            result = _call(method="browser", browser_engine="patchright")
+    def test_no_stronger_tier_patchright(self):
+        """At patchright — listing escalation does not go to real_chrome."""
+        result = _call(method="browser", browser_engine="patchright")
         assert result["should_retry"] is False
         assert result["reason"] == "no_stronger_tier"
 
@@ -159,43 +151,35 @@ class TestSkipReasons:
 class TestHappyPathRetry:
     """Retry triggers with correct tier computation."""
 
-    def test_curl_cffi_escalates_to_browser_chromium(self):
+    def test_curl_cffi_escalates_to_browser_patchright(self):
         result = _call(method="curl_cffi")
         assert result["should_retry"] is True
         assert result["reason"] == "promo_only_cluster"
         assert result["prior_tier"] == "curl_cffi"
-        assert result["next_tier"] == "browser:chromium"
+        assert result["next_tier"] == "browser:patchright"
 
-    def test_httpx_escalates_to_browser_chromium(self):
+    def test_httpx_escalates_to_browser_patchright(self):
         result = _call(method="httpx")
         assert result["should_retry"] is True
         assert result["prior_tier"] == "httpx"
-        assert result["next_tier"] == "browser:chromium"
+        assert result["next_tier"] == "browser:patchright"
 
-    def test_patchright_escalates_to_real_chrome(self):
-        with patch(
-            "app.services.pipeline.listing_escalation_decision.real_chrome_browser_available",
-            return_value=True,
-        ):
-            result = _call(method="browser", browser_engine="patchright")
-        assert result["should_retry"] is True
-        assert result["prior_tier"] == "browser:patchright"
-        assert result["next_tier"] == "browser:real_chrome"
+    def test_patchright_no_escalation(self):
+        """Listing escalation does not go beyond patchright to real_chrome."""
+        result = _call(method="browser", browser_engine="patchright")
+        assert result["should_retry"] is False
+        assert result["reason"] == "no_stronger_tier"
 
-    def test_chromium_escalates_to_real_chrome(self):
-        with patch(
-            "app.services.pipeline.listing_escalation_decision.real_chrome_browser_available",
-            return_value=True,
-        ):
-            result = _call(method="browser", browser_engine="chromium")
-        assert result["should_retry"] is True
-        assert result["prior_tier"] == "browser:chromium"
-        assert result["next_tier"] == "browser:real_chrome"
+    def test_chromium_no_escalation(self):
+        """Listing escalation does not go beyond chromium to real_chrome."""
+        result = _call(method="browser", browser_engine="chromium")
+        assert result["should_retry"] is False
+        assert result["reason"] == "no_stronger_tier"
 
     def test_job_listing_surface_triggers_retry(self):
         result = _call(surface="job_listing", method="curl_cffi")
         assert result["should_retry"] is True
-        assert result["next_tier"] == "browser:chromium"
+        assert result["next_tier"] == "browser:patchright"
 
 
 class TestCandidateSummary:

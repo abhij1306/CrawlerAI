@@ -1390,7 +1390,7 @@ async def test_count_listing_cards_falls_back_to_heuristics_when_selectors_miss(
             """
 
     monkeypatch.setattr(
-        "app.services.acquisition.traversal.CARD_SELECTORS",
+        "app.services.acquisition.traversal_card_counting.CARD_SELECTORS",
         {"ecommerce": [".product-card"], "jobs": [".job-card"]},
     )
 
@@ -1543,7 +1543,7 @@ async def test_count_listing_cards_heuristic_rejects_detail_sections_with_suppor
             """
 
     monkeypatch.setattr(
-        "app.services.acquisition.traversal.CARD_SELECTORS",
+        "app.services.acquisition.traversal_card_counting.CARD_SELECTORS",
         {"ecommerce": [".product-card"], "jobs": [".job-card"]},
     )
 

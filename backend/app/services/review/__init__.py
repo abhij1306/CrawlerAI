@@ -19,7 +19,7 @@ from app.services.domain_run_profile_service import (
 )
 from app.services.domain_utils import normalize_domain
 from app.services.field_policy import normalize_field_key, normalize_review_target
-from app.services.field_value_core import (
+from app.services.shared.field_coerce import (
     object_list as _object_list,
     safe_int as _safe_int,
 )

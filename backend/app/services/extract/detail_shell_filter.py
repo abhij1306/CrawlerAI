@@ -19,7 +19,7 @@ from app.services.extract.detail_record_finalizer import (
 from app.services.extract.detail_title_scorer import (
     title_needs_promotion,
 )
-from app.services.field_value_core import (
+from app.services.shared.field_coerce import (
     clean_text,
     is_title_noise,
     object_dict,

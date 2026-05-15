@@ -6,7 +6,7 @@ from urllib.parse import urlparse
 from selectolax.lexbor import LexborHTMLParser
 
 from app.services.adapters.base import AdapterResult, BaseAdapter
-from app.services.field_value_core import (
+from app.services.shared.field_coerce import (
     absolute_url,
     clean_text,
     finalize_record,
@@ -36,7 +36,7 @@ class MyntraAdapter(BaseAdapter):
         host = (urlparse(str(url or "")).hostname or "").lower()
         return host.endswith("myntra.com") or "window.__myx" in str(html or "")
 
-    async def extract(self, url: str, html: str, surface: str) -> AdapterResult:
+    async def extract(self, url: str, html: str, surface: str, proxy: str | None = None) -> AdapterResult:
         normalized_surface = str(surface or "").strip().lower()
         records: list[dict[str, Any]] = []
         if normalized_surface == "ecommerce_detail":

@@ -8,7 +8,7 @@ from app.services.acquisition.acquirer import AcquisitionResult, PageEvidence
 from app.services.crawl_state import TERMINAL_STATUSES, CrawlStatus, update_run_status
 from app.services.db_utils import mapping_or_empty
 from app.services.field_policy import normalize_requested_field
-from app.services.field_value_core import LONG_TEXT_FIELDS
+from app.services.shared.field_coerce import LONG_TEXT_FIELDS
 from app.services.publish import VERDICT_ERROR, is_effectively_blocked
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import SQLAlchemyError

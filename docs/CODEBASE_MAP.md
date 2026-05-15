@@ -100,21 +100,25 @@ Flow:
 | `acquisition/runtime.py` | Shared HTTP client pool |
 | `acquisition/http_client.py` | Thin shared-client wrapper |
 | `acquisition/browser_runtime.py` | Shared Playwright runtime and limits |
+| `acquisition/browser_fetch_support.py` | Browser fetch result, diagnostics, and page event assembly helpers |
 | `acquisition/browser_capture.py` | Screenshots and network payload capture |
 | `acquisition/browser_diagnostics.py` | Browser engine labels, profile diagnostics, and failed-fetch diagnostic contracts |
 | `acquisition/browser_identity.py` | Browser fingerprint generation |
+| `acquisition/browser_interstitial.py` | Location-interstitial detection and safe dismissal |
 | `acquisition/browser_page_flow.py` | Page navigation and readiness probing |
 | `acquisition/browser_proxy_config.py` | Browser proxy URL parsing, redaction, and Playwright proxy config |
-| `acquisition/browser_readiness.py` | DOM readiness checks |
+| `acquisition/browser_readiness.py` | DOM readiness checks, listing/detail probes, outcome classification |
 | `acquisition/browser_stage_runner.py` | Bounded browser-stage execution, timeout cancellation, and page/context teardown |
+| `acquisition/browser_storage_state.py` | Browser storage-state capture and persist-policy marking |
 | `acquisition/traversal.py` | Listing pagination and load-more |
+| `acquisition/traversal_card_counting.py` | Card-count and progress-snapshot helpers used by traversal loops |
 | `acquisition/pacing.py` | Host-level rate limiting |
 | `acquisition/cookie_store.py` | Temp storage state plus domain cookie memory helpers |
-| `crawl_fetch_runtime.py` | `fetch_page()` owner: HTTP/browser decision, escalation, block detection |
+| `fetch/fetch_context.py` | `fetch_page()` owner: HTTP/browser decision, escalation, block detection |
 | `robots_policy.py` | robots.txt policy |
 | `url_safety.py` | SSRF and public-target validation |
 
-Import rule: import `fetch_page` from `crawl_fetch_runtime.py` directly.
+Import rule: import `fetch_page` from `app.services.fetch.fetch_context` directly.
 
 Canonical config owner:
 
@@ -134,9 +138,13 @@ Canonical config owner:
 | `detail_extractor.py` | Detail-page preparation and field candidate arbitration |
 | `listing_extractor.py` | Listing-page extraction |
 | `structured_sources.py` | JSON-LD, microdata, OG, Nuxt, harvested JS state |
-| `js_state_mapper.py` | JS state to field mapping |
+| `js_state/state_normalizer.py` | JS state to field mapping (canonical owner) |
+| `js_state/variant_options.py` | JS-state variant axis, option-value, and display-label normalization |
 | `network_payload_mapper.py` | Network payload to field mapping |
-| `field_value_core.py` | Canonical field coercion |
+| `shared/field_coerce.py` | Canonical field coercion dispatch and public-record shaping |
+| `shared/field_coerce_price.py` | Price, currency, and shared-price comparison coercion |
+| `shared/field_coerce_text.py` | Brand, identity, SKU, barcode, gender, and category text coercion |
+| `shared/field_coerce_url.py` | URL/image URL coercion and tracking cleanup exports |
 | `field_url_normalization.py` | Tracking URL cleanup and query stripping |
 | `dom/content_extractability.py` | Visible text/link/image extractability checks used by selector extraction |
 | `dom/selector_engine.py` | DOM selector extraction, image URL ranking, and selector result assembly |
@@ -149,6 +157,7 @@ Canonical config owner:
 | `extract/listing_candidate_ranking.py` | Listing candidate admission, support signals, utility rejection, dedupe, and set ranking |
 | `extract/detail_tiers.py` | Detail tier execution order, DOM skip decision, and finalization transitions |
 | `extract/detail_dom_extractor.py` | Detail DOM context selection, DOM fallback fields, and DOM variant recovery |
+| `extract/detail_dom_variant_options.py` | DOM variant option availability, URL, image, and selected-state helpers |
 | `extract/detail_image_dedupe.py` | Primary/additional detail image merge and dedupe helper |
 | `extract/detail_numbered_options.py` | DOM-axis hydration for raw numbered option variant rows |
 | `extract/detail_raw_signals.py` | Raw detail breadcrumb category and deterministic gender signal helpers |
@@ -243,8 +252,17 @@ All selector memory is scoped by normalized `(domain, surface)`.
 | `components/ui/table.module.css` | compact and commerce table styling |
 | `components/crawl/crawl-config-screen.tsx` | Crawl Studio form and dispatch |
 | `components/crawl/crawl-run-screen.tsx` | Run workspace and Domain Recipe workflow |
+| `components/crawl/form-fields.tsx` | Crawl form field controls and manual selector editor |
+| `components/crawl/log-terminal.tsx` | Crawl run log terminal grouping and rendering |
+| `components/crawl/records-table.tsx` | Crawl records table rendering |
+| `components/crawl/record-thumbnail.tsx` | Crawl record image thumbnail rendering and broken-image cache |
 | `components/crawl/crawl.module.css` | Crawl Studio feature styling |
 | `components/crawl/use-run-polling.ts` | run polling |
+| `lib/crawl/fields.ts` | Crawl field-name parsing and validation helpers |
+| `lib/crawl/format.ts` | Crawl display formatting helpers |
+| `lib/crawl/quality.ts` | Crawl data-quality scoring helpers |
+| `lib/crawl/record-utils.ts` | Crawl record cleanup and value access helpers |
+| `lib/crawl/scroll.ts` | Crawl viewport scroll helper |
 | `lib/api/client.ts` | auth-aware fetch wrapper |
 | `lib/api/index.ts` | only frontend backend-access layer |
 | `lib/api/types.ts` | frontend API types |

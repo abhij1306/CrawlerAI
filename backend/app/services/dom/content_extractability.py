@@ -10,7 +10,7 @@ from app.services.field_policy import (
     normalize_field_key,
     normalize_requested_field,
 )
-from app.services.field_value_core import (
+from app.services.shared.field_coerce import (
     clean_text,
     surface_alias_lookup,
     surface_fields,

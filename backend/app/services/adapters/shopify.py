@@ -13,7 +13,7 @@ from app.services.extract.shared_variant_logic import (
     normalized_variant_axis_key,
     split_variant_axes,
 )
-from app.services.field_value_core import flatten_variants_for_public_output
+from app.services.shared.field_coerce import flatten_variants_for_public_output
 from app.services.normalizers import normalize_decimal_price
 
 _FETCH_ERRORS = (OSError, RuntimeError, ValueError, TypeError, json.JSONDecodeError)

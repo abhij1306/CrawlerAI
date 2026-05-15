@@ -11,7 +11,7 @@ from app.services.extract.shared_variant_logic import (
     resolve_variant_group_name,
     variant_axis_allowed_single_tokens,
 )
-from app.services.field_value_core import clean_text, text_or_none
+from app.services.shared.field_coerce import clean_text, text_or_none
 
 
 def hydrate_numbered_variant_options_from_dom(

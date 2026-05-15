@@ -54,7 +54,7 @@ from app.services.config.browser_init_scripts import (
 from app.services.config.runtime_settings import (
     crawler_runtime_settings,
 )
-from app.services.network_resolution import _accept_language_for_locale
+from app.services.network_resolution import accept_language_for_locale
 
 try:
     from browserforge.fingerprints import Fingerprint as _BrowserforgeFingerprintType
@@ -512,7 +512,7 @@ def create_browser_identity() -> BrowserIdentity:
     if not _accept_language_matches_locale(
         headers.get("Accept-Language"), locale=locale
     ):
-        headers["Accept-Language"] = _accept_language_for_locale(locale)
+        headers["Accept-Language"] = accept_language_for_locale(locale)
     is_mobile = (
         bool(navigator.userAgentData.get("mobile"))
         if isinstance(navigator.userAgentData, dict)
@@ -1093,7 +1093,7 @@ def _align_raw_fingerprint_to_locale(
     setattr(navigator, "language", locale)
     setattr(navigator, "languages", _locale_languages(locale))
     headers = dict(getattr(aligned_fingerprint, "headers", {}) or {})
-    headers["Accept-Language"] = _accept_language_for_locale(locale)
+    headers["Accept-Language"] = accept_language_for_locale(locale)
     setattr(aligned_fingerprint, "headers", headers)
     return aligned_fingerprint
 
@@ -1148,7 +1148,7 @@ def _align_identity_to_locality(
         headers.get("Accept-Language"),
         locale=resolved_locale,
     ):
-        headers["Accept-Language"] = _accept_language_for_locale(resolved_locale)
+        headers["Accept-Language"] = accept_language_for_locale(resolved_locale)
     raw_fingerprint = _align_raw_fingerprint_to_locale(
         identity.raw_fingerprint,
         locale=resolved_locale,

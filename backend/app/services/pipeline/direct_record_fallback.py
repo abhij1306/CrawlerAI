@@ -13,7 +13,7 @@ from app.services.field_policy import (
     repair_target_fields_for_surface,
 )
 from app.services.db_utils import mapping_or_empty
-from app.services.field_value_core import (
+from app.services.shared.field_coerce import (
     IMAGE_FIELDS,
     LONG_TEXT_FIELDS,
     STRUCTURED_MULTI_FIELDS,

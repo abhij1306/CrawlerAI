@@ -4,7 +4,7 @@ import pytest
 from bs4 import BeautifulSoup
 
 from app.services.dom import selector_engine
-from app.services.field_value_dom import (
+from app.services.dom.selector_engine import (
     extract_heading_sections,
     extract_page_images,
     extract_selector_values,

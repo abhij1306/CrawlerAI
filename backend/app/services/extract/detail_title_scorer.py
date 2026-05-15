@@ -10,7 +10,7 @@ from app.services.config.extraction_rules import (
     TITLE_PROMOTION_SEPARATOR,
     TITLE_PROMOTION_SUBSTRINGS,
 )
-from app.services.field_value_core import is_title_noise, text_or_none
+from app.services.shared.field_coerce import is_title_noise, text_or_none
 
 
 def promote_detail_title(

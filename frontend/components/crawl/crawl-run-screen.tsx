@@ -409,12 +409,7 @@ export function CrawlRunScreen({ runId }: Readonly<CrawlRunScreenProps>) {
     ],
   );
 
-  useTerminalSync(run, terminal, [
-    runQuery,
-    tableRecordsQuery,
-    jsonRecordsQuery,
-    logsQuery,
-  ]);
+  useTerminalSync(run, terminal, [runQuery, tableRecordsQuery, jsonRecordsQuery, logsQuery]);
 
   useEffect(() => {
     const isJsdom = typeof navigator !== 'undefined' && /jsdom/i.test(navigator.userAgent);

@@ -51,6 +51,8 @@ def clear_local_run_task(
     if expected_task is not None and task is not expected_task:
         return
     _local_run_tasks.pop(run_id, None)
+    if not task.done():
+        task.cancel()
 
 
 async def _run_with_local_session(run_id: int) -> None:
@@ -103,7 +105,7 @@ async def _load_run_with_normalized_status(
 ) -> tuple[CrawlRun, CrawlStatus]:
     run = await session.get(CrawlRun, run_id)
     if run is None:
-        raise ValueError("Run not found")
+        raise ValueError(f"Run not found: {run_id}")
     return run, run.status_value
 
 

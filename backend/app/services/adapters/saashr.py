@@ -6,7 +6,7 @@ from urllib.parse import parse_qsl, urlencode, urljoin, urlparse
 
 from app.services.adapters.base import PublicEndpointAdapter
 from app.services.config.adapter_runtime_settings import adapter_runtime_settings
-from app.services.field_value_core import clean_text
+from app.services.shared.field_coerce import clean_text
 from bs4 import BeautifulSoup
 
 

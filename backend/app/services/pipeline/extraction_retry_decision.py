@@ -24,7 +24,7 @@ from app.services.field_policy import (
     browser_retry_target_fields_for_surface,
     repair_target_fields_for_surface,
 )
-from app.services.field_value_dom import requested_content_extractability
+from app.services.dom.selector_engine import requested_content_extractability
 from app.services.pipeline.runtime_helpers import effective_blocked
 
 

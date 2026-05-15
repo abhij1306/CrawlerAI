@@ -7,7 +7,11 @@ from glom import Coalesce  # type: ignore[import-untyped]
 JS_STATE_GLOM_SKIP: tuple[object, ...] = ("", [], {})
 JS_STATE_PRODUCT_PAYLOAD_LIMIT = 24
 JS_STATE_LIST_ITERATION_LIMIT = 25
-JS_STATE_PRODUCT_VARIANT_LIST_KEYS: tuple[str, ...] = ("variants", "availableSizes")
+JS_STATE_PRODUCT_VARIANT_LIST_KEYS: tuple[str, ...] = (
+    "variants",
+    "availableSizes",
+    "variation_hierarchy",
+)
 JS_STATE_VARIANT_AVAILABILITY_BOOL_KEYS: tuple[str, ...] = (
     "available",
     "availableForSale",
@@ -37,7 +41,14 @@ VARIANT_AXIS_KEYS = (
     "model",
 )
 JS_STATE_PRODUCT_FIELD_SPEC = {
-    "title": Coalesce("title", "name", "pn", default=None, skip=JS_STATE_GLOM_SKIP),
+    "title": Coalesce(
+        "title",
+        "name",
+        "pn",
+        "item.product_description.title",
+        default=None,
+        skip=JS_STATE_GLOM_SKIP,
+    ),
     "brand": Coalesce(
         "brand.name",
         "brand",
@@ -56,6 +67,7 @@ JS_STATE_PRODUCT_FIELD_SPEC = {
         "product_url",
         "canonicalUrl",
         "canonical_url",
+        "item.enrichment.buy_url",
         default=None,
         skip=JS_STATE_GLOM_SKIP,
     ),
@@ -72,6 +84,7 @@ JS_STATE_PRODUCT_FIELD_SPEC = {
         "id",
         "product_id",
         "productId",
+        "tcin",
         "pid",
         "legacyResourceId",
         default=None,
@@ -171,6 +184,7 @@ JS_STATE_VARIANT_FIELD_SPEC = {
         "product_url",
         "canonicalUrl",
         "canonical_url",
+        "buy_url",
         default=None,
         skip=JS_STATE_GLOM_SKIP,
     ),

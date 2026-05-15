@@ -36,10 +36,9 @@ from app.services.extraction_context import (
     prepare_extraction_context,
 )
 from app.services.structured_sources import harvest_js_state_objects
-from app.services.field_value_core import (
+from app.services.shared.field_coerce import (
     STRUCTURED_OBJECT_FIELDS,
     STRUCTURED_OBJECT_LIST_FIELDS,
-    absolute_url,
     clean_text,
     coerce_field_value,
     extract_urls,
@@ -57,12 +56,12 @@ from app.services.field_value_candidates import (
     finalize_candidate_value,
     record_score,
 )
-from app.services.field_value_dom import (
+from app.services.dom.selector_engine import (
     dedupe_image_urls,
     extract_page_images,
     requested_content_extractability,
 )
-from app.services.js_state_mapper import map_js_state_to_fields
+from app.services.js_state.state_normalizer import map_js_state_to_fields
 from app.services.network_payload_mapper import map_network_payloads_to_fields
 from app.services.extract.detail_dom_extractor import (
     apply_dom_fallbacks,

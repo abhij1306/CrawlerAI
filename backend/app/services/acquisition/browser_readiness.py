@@ -9,9 +9,18 @@ from typing import Any
 from bs4 import BeautifulSoup, Comment
 
 from app.services.acquisition.dom_runtime import get_page_html
-from app.services.config.extraction_rules import LOW_CONTENT_SHELL_PHRASES
+from app.services.config.extraction_rules import (
+    BROWSER_DETAIL_READINESS_HINTS,
+    LOW_CONTENT_SHELL_PHRASES,
+)
 from app.services.config.runtime_settings import crawler_runtime_settings
-from app.services.field_value_core import clean_text, coerce_int as _coerce_int
+from app.services.shared.field_coerce import clean_text, coerce_int as _coerce_int
+
+
+_DETAIL_READINESS_HINTS: dict[str, tuple[str, ...]] = {
+    str(key): tuple(map(str, value or ()))
+    for key, value in (BROWSER_DETAIL_READINESS_HINTS or {}).items()
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -287,3 +296,86 @@ def visible_text_from_soup(soup: BeautifulSoup) -> str:
         if text:
             pieces.append(text)
     return clean_text(" ".join(pieces))
+
+
+
+async def wait_for_listing_readiness(
+    page: Any,
+    page_url: str,
+    *,
+    override: dict[str, object] | None = None,
+) -> dict[str, object]:
+    from app.services.platform_policy import resolve_listing_readiness_override
+
+    override = override or resolve_listing_readiness_override(page_url)
+    return await wait_for_listing_readiness_impl(page, override=override)
+
+
+async def probe_browser_readiness(
+    page: Any,
+    *,
+    url: str,
+    surface: str,
+    listing_override: dict[str, object] | None = None,
+    html: str | None = None,
+) -> dict[str, object]:
+    return await probe_browser_readiness_impl(
+        page,
+        url=url,
+        surface=surface,
+        listing_override=listing_override,
+        html=html,
+        detail_readiness_hint_count=detail_readiness_hint_count,
+    )
+
+
+async def listing_card_signal_count(page: Any, *, surface: str) -> int:
+    from app.services.acquisition.traversal import count_listing_cards
+
+    return await count_listing_cards(
+        page,
+        surface=surface,
+    )
+
+
+def detail_readiness_hint_count(surface: str, visible_text: str) -> int:
+    lowered_surface = str(surface or "").strip().lower()
+    if "ecommerce" in lowered_surface:
+        hints = _DETAIL_READINESS_HINTS.get("ecommerce", ())
+    elif "job" in lowered_surface:
+        hints = _DETAIL_READINESS_HINTS.get("job", ())
+    else:
+        hints = ()
+    return sum(1 for hint in hints if hint in visible_text)
+
+
+def classify_browser_outcome(
+    *,
+    html: str,
+    html_bytes: int,
+    blocked: bool,
+    block_classification: Any = None,
+    traversal_result: Any = None,
+) -> str:
+    from app.services.acquisition.runtime import BlockPageClassification
+
+    classification = block_classification or BlockPageClassification(
+        blocked=blocked,
+        outcome="challenge_page" if blocked else "ok",
+    )
+    return classify_browser_outcome_impl(
+        html=html,
+        html_bytes=html_bytes,
+        blocked=blocked,
+        block_classification=classification,
+        traversal_result=traversal_result,
+        looks_like_low_content_shell=looks_like_low_content_shell,
+    )
+
+
+def looks_like_low_content_shell(html: str, *, html_bytes: int) -> bool:
+    return classify_low_content_reason(html, html_bytes=html_bytes) is not None
+
+
+def classify_low_content_reason(html: str, *, html_bytes: int) -> str | None:
+    return classify_low_content_reason_impl(html, html_bytes=html_bytes)

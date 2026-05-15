@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock
 import httpx
 import pytest
 
-from app.services import crawl_fetch_runtime
+from app.services.fetch import fetch_context as crawl_fetch_runtime
 from app.services.acquisition import (
     browser_capture,
     browser_identity,
@@ -1911,8 +1911,6 @@ async def test_js_disabled_placeholder_shell_escalates_to_browser() -> None:
 async def test_fetch_page_uses_browser_for_js_disabled_placeholder_shell(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from app.services import crawl_fetch_runtime
-
     async def _fake_curl(url: str, timeout: float, *, proxy: str | None = None):
         del timeout, proxy
         return PageFetchResult(
@@ -1965,8 +1963,6 @@ async def test_fetch_page_falls_back_to_httpx_after_curl_transport_errors(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     import httpx
-
-    from app.services import crawl_fetch_runtime
 
     async def _failing_curl(url: str, timeout: float, *, proxy: str | None = None):
         del proxy
@@ -2104,8 +2100,6 @@ async def test_fetch_page_falls_back_to_browser_after_curl_and_httpx_transport_e
 async def test_fetch_page_returns_non_retryable_404_without_browser_fallback(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from app.services import crawl_fetch_runtime
-
     async def _fake_curl(url: str, timeout: float, *, proxy: str | None = None):
         del timeout, proxy
         return PageFetchResult(
@@ -2138,8 +2132,6 @@ async def test_fetch_page_returns_non_retryable_404_without_browser_fallback(
 async def test_fetch_page_escalates_404_shell_to_browser_before_return(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from app.services import crawl_fetch_runtime
-
     async def _fake_curl(url: str, timeout: float, *, proxy: str | None = None):
         del timeout, proxy
         return PageFetchResult(
@@ -2185,8 +2177,6 @@ async def test_fetch_page_escalates_404_shell_to_browser_before_return(
 async def test_fetch_page_stops_http_waterfall_after_vendor_confirmed_block(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from app.services import crawl_fetch_runtime
-
     curl_proxies: list[str | None] = []
     browser_proxies: list[str | None] = []
 
@@ -2692,8 +2682,6 @@ async def test_fetch_page_prefers_browser_after_hard_blocked_fetch(
 async def test_http_fetch_surfaces_dns_failure_without_hidden_ipv4_retry(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from app.services import crawl_fetch_runtime
-
     class _SharedClient:
         async def get(self, url: str, timeout: float):
             del url, timeout
@@ -2716,8 +2704,6 @@ async def test_fetch_page_reraises_latest_transport_error_when_browser_also_fail
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     import httpx
-
-    from app.services import crawl_fetch_runtime
 
     curl_error = httpx.ConnectError("getaddrinfo failed")
     httpx_error = httpx.ReadTimeout("httpx fallback timed out")
@@ -2749,8 +2735,6 @@ async def test_fetch_page_reraises_latest_transport_error_when_browser_also_fail
 async def test_reset_fetch_runtime_state_closes_adapter_and_runtime_http_clients(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from app.services import crawl_fetch_runtime
-
     calls: list[str] = []
 
     async def _fake_shutdown_browser_runtime() -> None:

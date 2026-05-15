@@ -7,16 +7,11 @@ import logging
 import secrets
 from dataclasses import dataclass, field
 from urllib.parse import quote, unquote, urlparse, urlunparse
-
+from typing import Any
 import httpx
 
-from app.services.acquisition.browser_identity import (
-    PlaywrightContextSpec,
-    build_playwright_context_options,
-    build_playwright_context_spec,
-)
 from app.services.acquisition.browser_runtime import (
-    SharedBrowserRuntime as _SharedBrowserRuntime,
+    SharedBrowserRuntime,
     build_failed_browser_diagnostics,
     browser_fetch,
     browser_runtime_snapshot,
@@ -77,8 +72,8 @@ def _attach_exception_browser_diagnostics(
     setattr(exc, "browser_diagnostics", dict(diagnostics))
 
 
-async def _emit_fetch_event(on_event: object | None, level: str, message: str) -> None:
-    if on_event is None:
+async def _emit_fetch_event(on_event: Any | None, level: str, message: str) -> None:
+    if not callable(on_event):
         return
     try:
         await on_event(level, message)
@@ -126,39 +121,6 @@ def _ensure_scheme(url: str) -> str:
     if stripped.startswith(("/", "#", "javascript:")):
         return stripped
     return f"https://{stripped}"
-
-
-class SharedBrowserRuntime(_SharedBrowserRuntime):
-    def _build_context_spec(
-        self,
-        *,
-        run_id: int | None = None,
-        locality_profile: dict[str, object] | None = None,
-        inject_init_script: bool = False,
-    ) -> PlaywrightContextSpec:
-        spec = build_playwright_context_spec(
-            run_id=run_id,
-            locality_profile=locality_profile,
-            browser_engine=self.browser_engine,
-        )
-        if inject_init_script:
-            return spec
-        return PlaywrightContextSpec(
-            context_options=dict(spec.context_options),
-            init_script=None,
-        )
-
-    def _build_context_options(
-        self,
-        *,
-        run_id: int | None = None,
-        locality_profile: dict[str, object] | None = None,
-    ) -> dict[str, object]:
-        return build_playwright_context_options(
-            run_id=run_id,
-            locality_profile=locality_profile,
-            browser_engine=self.browser_engine,
-        )
 
 
 async def _get_shared_http_client(*, proxy: str | None = None):
@@ -683,6 +645,45 @@ async def _run_browser_attempts(
                     browser_engine,
                     exc_info=True,
                 )
+                # When patchright times out on a vendor-block escalation,
+                # treat it like a blocked result for engine rotation purposes.
+                # This allows real_chrome to be tried within the same run
+                # instead of requiring a second run with host memory.
+                if (
+                    isinstance(exc, (TimeoutError, asyncio.TimeoutError))
+                    and _is_vendor_block_reason(reason)
+                    and engine_index <= len(engine_attempts)
+                ):
+                    await note_host_hard_block(
+                        context.url,
+                        method=f"browser:{browser_engine}",
+                        vendor=_extract_vendor_from_reason(reason),
+                        status_code=0,
+                        proxy_used=bool(proxy),
+                        ttl_seconds=context.host_memory_ttl_seconds,
+                    )
+                    active_host_policy = await load_host_protection_policy(
+                        context.url,
+                        ttl_seconds=context.host_memory_ttl_seconds,
+                    )
+                    context.host_policy = active_host_policy
+                    engine_attempts = _extend_browser_engine_attempts_after_block(
+                        engine_attempts=engine_attempts,
+                        attempted_engine=browser_engine,
+                        context=context,
+                        host_policy=active_host_policy,
+                    )
+                    if engine_index < len(engine_attempts):
+                        cooldown_ms = max(
+                            0,
+                            int(
+                                crawler_runtime_settings.browser_post_block_cooldown_ms
+                                or 0
+                            ),
+                        )
+                        if cooldown_ms > 0:
+                            await asyncio.sleep(cooldown_ms / 1000)
+                        continue
     if last_blocked_result is not None:
         return last_blocked_result
     if last_browser_error is not None:
@@ -1092,10 +1093,6 @@ def _retryable_status_for_http_fetch(status_code: int) -> bool:
     return code in retryable_codes
 
 
-async def _sleep_before_retry(attempt: int) -> None:
-    await _sleep_retry_delay(delay_ms=_retry_delay_ms(attempt))
-
-
 def _http_max_attempts() -> int:
     try:
         retries = int(crawler_runtime_settings.http_max_retries or 0)
@@ -1187,6 +1184,21 @@ def _host_policy_snapshot(policy: HostProtectionPolicy) -> dict[str, object]:
 
 def _default_browser_engine_attempts() -> list[str]:
     return ["patchright"]
+
+
+_VENDOR_BLOCK_REASON_PREFIX = "vendor-block:"
+
+
+def _is_vendor_block_reason(reason: str) -> bool:
+    return str(reason or "").strip().lower().startswith(_VENDOR_BLOCK_REASON_PREFIX)
+
+
+def _extract_vendor_from_reason(reason: str) -> str | None:
+    normalized = str(reason or "").strip().lower()
+    if not normalized.startswith(_VENDOR_BLOCK_REASON_PREFIX):
+        return None
+    vendor = normalized[len(_VENDOR_BLOCK_REASON_PREFIX):].strip()
+    return vendor or None
 
 
 def _append_engine_once(engine_attempts: list[str], engine: str) -> list[str]:

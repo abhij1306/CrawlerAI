@@ -573,7 +573,7 @@ async def _create_candidate_crawl(
     }
     run = await create_crawl_run(
         session,
-        job.user_id,
+        int(job.user_id or 0),
         {
             "run_type": RUN_TYPE_CRAWL,
             "url": candidate.url,

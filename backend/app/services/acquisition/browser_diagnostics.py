@@ -92,9 +92,9 @@ def _merge_phase_timings(
                 phase_timings_payload,
             )
         return existing_timings
-    try:
+    if isinstance(phase_timings_ms, Mapping):
         existing_timings.update(dict(phase_timings_ms))
-    except (TypeError, ValueError):
+    else:
         timing_errors.append("incoming")
     if timing_errors:
         payload["phase_timings_error"] = "invalid_phase_timings_ms:" + ",".join(

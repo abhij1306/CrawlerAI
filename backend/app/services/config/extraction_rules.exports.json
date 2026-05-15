@@ -3908,6 +3908,7 @@
       "/jobs/",
       "/jobs/detail/",
       "/opening/",
+      "/p",
       "/p.",
       "/p/",
       "/pdp/",
@@ -4426,9 +4427,11 @@
       "^how posting dates work$",
       "^download(?:\\s+the)?\\s+.+\\s+app$",
       "^shop all categories$",
+      "^(?:all filters|todos os filtros)$",
+      "^aproveite!?$",
       "^(?:customer care|customer service|help|support|faq|about(?: us)?|returns?)$",
       "^(?:free\\s+)?(?:fast|same[- ]?day|next[- ]?day|standard|express|overnight|expedited|international)?\\s*(?:free\\s+)?shipping$",
-      "^ships?\\s+(?:in|within|same\\s*day|today)\\s*[\\w\\d\\-\\s/(),%]*$",
+      "^ships?\\s+(?:in|within|same\\s*day|today)\\s*(?:\\d+(?:\\s*[-–]\\s*\\d+)?\\s*(?:business\\s+)?(?:days?|hours?|weeks?))?$",
       "^(?:in\\s+stock|out\\s+of\\s+stock|sold\\s+out|available)$"
     ]
   },
@@ -6280,6 +6283,7 @@
   "HYDRATED_STATE_SCRIPT_IDS": {
     "__next_data__": "__NEXT_DATA__",
     "__nuxt_data__": "__NUXT_DATA__",
+    "__state__": "__STATE__",
     "mobify-data": "__MOBIFY_DATA__"
   },
   "VARIANT_OPTION_VALUE_NOISE_TOKENS": {

@@ -85,6 +85,10 @@ _DETAIL_HINTS = (
     "showjob=",
     "/release/",
 )
+_PRODUCT_LIKE_TERMINAL_SLUG_RE = re.compile(
+    r"(?=.{16,}$)(?=.*[a-z])(?:[a-z0-9]+-){2,}[a-z0-9]+$",
+    re.I,
+)
 _LISTING_HINTS = (
     "/collections",
     "/shop/",
@@ -232,6 +236,13 @@ def infer_surface(url: str, explicit_surface: object | None = None) -> str:
             if "job" in normalized_url or "career" in normalized_url
             else "ecommerce_listing"
         )
+    if (
+        len(path_segments) == 1
+        and _PRODUCT_LIKE_TERMINAL_SLUG_RE.fullmatch(terminal)
+        and host_label
+        and host_label in terminal
+    ):
+        return "ecommerce_detail"
     return "ecommerce_listing"
 
 

@@ -51,7 +51,7 @@ from app.services.data_enrichment.shopify_catalog import (
     term_dict,
     top_taxonomy_candidates,
 )
-from app.services.field_value_core import (
+from app.services.shared.field_coerce import (
     clean_text,
     extract_currency_code,
     strip_html_tags,

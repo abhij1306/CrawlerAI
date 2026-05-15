@@ -6,7 +6,7 @@ import json
 
 from app.models.crawl_run import CrawlRecord, CrawlRun
 from app.services.db_utils import mapping_or_empty
-from app.services.field_value_core import object_list as _object_list
+from app.services.shared.field_coerce import object_list as _object_list
 from app.services.public_record_firewall import public_record_data_for_surface
 from app.services.export.schema import build_source_trace
 from app.services.artifact_store import (
@@ -271,7 +271,7 @@ async def persist_extracted_records(
                     source_url=record_source_url,
                     data=data,
                     raw_data=raw_record,
-                    discovered_data=discovered_data,
+                    discovered_data=dict(discovered_data),
                     source_trace=source_trace,
                     raw_html_path=raw_html_path,
                     content_fingerprint=content_fingerprint,

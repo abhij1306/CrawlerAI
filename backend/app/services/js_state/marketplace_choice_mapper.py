@@ -7,7 +7,7 @@ from app.services.config.js_state_field_specs import (
     JS_STATE_PRODUCT_PAYLOAD_LIMIT,
 )
 from app.services.extract.shared_variant_logic import merge_variant_rows
-from app.services.field_value_core import text_or_none
+from app.services.shared.field_coerce import text_or_none
 from app.services.js_state_helpers import compact_dict
 
 
@@ -84,20 +84,18 @@ def _marketplace_choice_product(value: dict[str, Any]) -> dict[str, Any]:
                 edge_node = edge.get("node") if isinstance(edge, dict) else None
                 if not isinstance(edge_node, dict):
                     continue
-                choice = (
-                    edge_node.get("choice")
-                    if isinstance(edge_node.get("choice"), dict)
-                    else {}
+                raw_choice = edge_node.get("choice")
+                edge_choice: dict[str, Any] = (
+                    raw_choice if isinstance(raw_choice, dict) else {}
                 )
-                selectable = (
-                    edge_node.get("selectableVariant")
-                    if isinstance(edge_node.get("selectableVariant"), dict)
-                    else {}
+                raw_selectable = edge_node.get("selectableVariant")
+                selectable: dict[str, Any] = (
+                    raw_selectable if isinstance(raw_selectable, dict) else {}
                 )
                 row = _marketplace_choice_variant_row(
                     axis_name=axis_name,
-                    choice_name=choice.get("name"),
-                    choice_id=choice.get("displayId") or choice.get("choiceId"),
+                    choice_name=edge_choice.get("name"),
+                    choice_id=edge_choice.get("displayId") or edge_choice.get("choiceId"),
                     listing_url=selectable.get("listingUrl"),
                     stock_status=_marketplace_stock_status(selectable),
                     price_amount=_marketplace_price_amount(selectable),
@@ -111,10 +109,9 @@ def _marketplace_choice_product(value: dict[str, Any]) -> dict[str, Any]:
             if isinstance(category.get("selectedVariantChoice"), dict)
             else None
         )
-        choice = (
-            selected.get("choice")
-            if isinstance(selected, dict) and isinstance(selected.get("choice"), dict)
-            else {}
+        raw_selected_choice = selected.get("choice") if isinstance(selected, dict) else None
+        choice: dict[str, Any] = (
+            raw_selected_choice if isinstance(raw_selected_choice, dict) else {}
         )
         row = _marketplace_choice_variant_row(
             axis_name=axis_name,

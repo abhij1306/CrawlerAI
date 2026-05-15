@@ -4,7 +4,7 @@ import re
 from typing import Any, Callable
 
 from app.services.extract.listing_candidate_ranking import looks_like_utility_title
-from app.services.field_value_core import (
+from app.services.shared.field_coerce import (
     absolute_url,
     clean_text,
     extract_currency_code,

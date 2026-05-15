@@ -8,8 +8,8 @@ import pytest
 from bs4 import BeautifulSoup
 from bs4.element import Tag
 
-from app.services.field_value_core import coerce_field_value
-from app.services.field_value_dom import (
+from app.services.shared.field_coerce import coerce_field_value
+from app.services.dom.selector_engine import (
     _is_garbage_image_candidate,
     dedupe_image_urls,
     extract_feature_rows,

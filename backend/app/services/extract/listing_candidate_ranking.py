@@ -21,7 +21,7 @@ from app.services.config.extraction_rules import (
 from app.services.config.surface_hints import detail_path_hints
 from app.services.config.runtime_settings import crawler_runtime_settings
 from app.services.extract.listing_card_fragments import listing_signature_url_shape
-from app.services.field_value_core import LISTING_UTILITY_TITLE_REGEXES, clean_text
+from app.services.shared.field_coerce import LISTING_UTILITY_TITLE_REGEXES, clean_text
 
 
 def _metric_int(metrics: dict[str, object], key: str) -> int:
@@ -38,11 +38,11 @@ def _record_url_signature(url: str) -> str:
     """
     raw = str(url or "").strip()
     if not raw:
-        return "|0|0"
+        return "0|0|0"
     try:
         parsed = urlsplit(raw)
     except ValueError:
-        return "|0|0"
+        return "0|0|0"
     prefix_bucket, detail_marker = listing_signature_url_shape(raw)
     path = str(parsed.path or "").lower()
     segments = [s for s in path.split("/") if s]
@@ -175,10 +175,12 @@ def _listing_record_dedupe_key(
     url: str,
     detail_like_url: Callable[[str], bool] | None,
 ) -> str:
-    product_id = clean_text(record.get("product_id") or record.get("productId") or record.get("sku"))
-    if product_id:
-        return f"id:{product_id.lower()}"
     if not url:
+        product_id = clean_text(
+            record.get("product_id") or record.get("productId") or record.get("sku")
+        )
+        if product_id:
+            return f"id:{product_id.lower()}"
         return ""
     if detail_like_url is not None and detail_like_url(url):
         parsed = urlsplit(url)
@@ -225,6 +227,11 @@ def _listing_record_set_score(
         for score in quality_scores
     )
     supported_records = sum(bool(metrics["supported"]) for metrics in quality_metrics)
+    # Support-signal override: when the set is large enough and a majority of
+    # records carry support signals, treat cohort as passing. This prevents a
+    # few navigation links from penalizing an otherwise valid product grid.
+    if not cohort_pass and len(quality_metrics) >= 5 and supported_records >= max(1, len(quality_metrics) // 2):
+        cohort_pass = True
     detail_like_records = sum(bool(metrics["detail_like"]) for metrics in quality_metrics)
     utility_records = sum(bool(metrics["utility"]) for metrics in quality_metrics)
     clean_records = len(quality_metrics) - utility_records
@@ -291,6 +298,8 @@ def _listing_record_quality_metrics(
         score += 1
     if record.get("_source") == "visual_listing":
         score -= 6
+    elif record.get("_source") == "structured_listing":
+        score += 3
     elif record.get("_source") in {"rendered_listing", "dom_listing"}:
         score += 2
     detail_like_merchandise = False
