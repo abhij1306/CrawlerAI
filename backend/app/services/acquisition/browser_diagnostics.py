@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 
 from app.core.config import settings
 from app.services.acquisition.browser_proxy_config import display_proxy, proxy_scheme
@@ -92,9 +92,16 @@ def _merge_phase_timings(
                 phase_timings_payload,
             )
         return existing_timings
-    try:
+    if isinstance(phase_timings_ms, Mapping):
         existing_timings.update(dict(phase_timings_ms))
-    except (TypeError, ValueError):
+    elif isinstance(phase_timings_ms, Iterable) and not isinstance(
+        phase_timings_ms, (str, bytes)
+    ):
+        try:
+            existing_timings.update(dict(phase_timings_ms))
+        except (TypeError, ValueError):
+            timing_errors.append("incoming")
+    else:
         timing_errors.append("incoming")
     if timing_errors:
         payload["phase_timings_error"] = "invalid_phase_timings_ms:" + ",".join(

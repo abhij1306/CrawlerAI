@@ -1616,7 +1616,7 @@ async def test_shared_browser_runtime_passes_generated_context_options(
     runtime._playwright = object()
 
     monkeypatch.setattr(
-        crawl_fetch_runtime,
+        acquisition_browser_runtime,
         "build_playwright_context_spec",
         lambda **_: _context_spec(
             {
@@ -1682,7 +1682,7 @@ async def test_shared_browser_runtime_applies_init_script_without_stealth(
     runtime._playwright = object()
 
     monkeypatch.setattr(
-        crawl_fetch_runtime,
+        acquisition_browser_runtime,
         "build_playwright_context_spec",
         lambda **_: _context_spec(init_script="window.__browserforge = true;"),
     )
@@ -1776,7 +1776,7 @@ async def test_shared_browser_runtime_skips_init_script_by_default(
     runtime._playwright = object()
 
     monkeypatch.setattr(
-        crawl_fetch_runtime,
+        acquisition_browser_runtime,
         "build_playwright_context_spec",
         lambda **_: _context_spec(init_script="window.__browserforge = true;"),
     )
@@ -1843,7 +1843,7 @@ async def test_shared_browser_runtime_uses_socks5_auth_bridge_and_keeps_context_
             bridge_close_calls.append("closed")
 
     monkeypatch.setattr(
-        crawl_fetch_runtime,
+        acquisition_browser_runtime,
         "build_playwright_context_spec",
         lambda **_: _context_spec(),
     )
@@ -1930,7 +1930,7 @@ async def test_shared_browser_runtime_launches_http_proxy_directly(
             return FakePlaywrightInstance()
 
     monkeypatch.setattr(
-        crawl_fetch_runtime,
+        acquisition_browser_runtime,
         "build_playwright_context_spec",
         lambda **_: _context_spec(),
     )
@@ -2014,7 +2014,7 @@ async def test_shared_browser_runtime_launches_real_chrome_headful_for_fallback(
             return FakePlaywrightInstance()
 
     monkeypatch.setattr(
-        crawl_fetch_runtime,
+        acquisition_browser_runtime,
         "build_playwright_context_spec",
         lambda **_: _context_spec(),
     )
@@ -2185,7 +2185,7 @@ async def test_shared_browser_runtime_reuses_run_storage_state(
     runtime._playwright = object()
 
     monkeypatch.setattr(
-        crawl_fetch_runtime,
+        acquisition_browser_runtime,
         "build_playwright_context_spec",
         lambda **_: _context_spec(),
     )
@@ -2315,7 +2315,7 @@ async def test_shared_browser_runtime_skips_storage_state_reuse_when_disallowed(
     runtime._playwright = object()
 
     monkeypatch.setattr(
-        crawl_fetch_runtime,
+        acquisition_browser_runtime,
         "build_playwright_context_spec",
         lambda **_: _context_spec(),
     )
@@ -2382,7 +2382,7 @@ async def test_shared_browser_runtime_skips_domain_storage_for_proxied_runtime_b
     runtime._playwright = object()
 
     monkeypatch.setattr(
-        crawl_fetch_runtime,
+        acquisition_browser_runtime,
         "build_playwright_context_spec",
         lambda **_: _context_spec(),
     )
@@ -2458,7 +2458,7 @@ async def test_shared_browser_runtime_suppresses_storage_state_persist_failures(
     runtime._playwright = object()
 
     monkeypatch.setattr(
-        crawl_fetch_runtime,
+        acquisition_browser_runtime,
         "build_playwright_context_spec",
         lambda **_: _context_spec(),
     )
@@ -2528,7 +2528,7 @@ async def test_shared_browser_runtime_bounds_hung_context_cleanup(
     runtime._playwright = object()
 
     monkeypatch.setattr(
-        crawl_fetch_runtime,
+        acquisition_browser_runtime,
         "build_playwright_context_spec",
         lambda **_: _context_spec(),
     )
@@ -2761,7 +2761,7 @@ async def test_shared_browser_runtime_snapshot_tracks_queue_without_private_sema
     runtime._playwright = object()
 
     monkeypatch.setattr(
-        crawl_fetch_runtime,
+        acquisition_browser_runtime,
         "build_playwright_context_spec",
         lambda **_: _context_spec(),
     )
@@ -2849,7 +2849,7 @@ async def test_shared_browser_runtime_recycles_browser_without_deadlocking(
     runtime._total_contexts_created = 1
 
     monkeypatch.setattr(
-        crawl_fetch_runtime,
+        acquisition_browser_runtime,
         "build_playwright_context_spec",
         lambda **_: _context_spec(),
     )

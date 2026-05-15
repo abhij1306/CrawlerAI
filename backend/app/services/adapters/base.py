@@ -7,7 +7,7 @@ import logging
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Mapping
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, cast
 from urllib.parse import urlparse
 
 from selectolax.lexbor import LexborHTMLParser
@@ -315,9 +315,12 @@ class SelectolaxJobAdapter(BaseAdapter):
             if record:
                 records.append(record)
         elif self._is_job_surface(surface):
-            records = self._extract_listing(parser, url)
-            if inspect.isawaitable(records):
-                records = await records
+            raw_records = self._extract_listing(parser, url)
+            records = (
+                cast(AdapterRecords, await raw_records)
+                if inspect.isawaitable(raw_records)
+                else raw_records
+            )
         else:
             logger.warning(
                 "Adapter %s skipped unsupported surface=%r for url=%s; allowed=%s",

@@ -89,7 +89,7 @@ class AcquisitionContract(BaseModel):
 class DomainProfileV2(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: Literal[DOMAIN_PROFILE_SCHEMA_VERSION] = DOMAIN_PROFILE_SCHEMA_VERSION
+    schema_version: int = DOMAIN_PROFILE_SCHEMA_VERSION
     domain: str = ""
     surface: str = FALLBACK_SURFACE
     created_at: datetime = Field(default_factory=_utc_now)

@@ -14,7 +14,7 @@ class RemotiveAdapter(BaseAdapter):
     async def can_handle(self, url: str, html: str) -> bool:
         return self._matches_platform_family(url, html)
 
-    async def extract(self, url: str, html: str, surface: str) -> AdapterResult:
+    async def extract(self, url: str, html: str, surface: str, proxy: str | None = None) -> AdapterResult:
         return self._result(self._extract_remotive_from_html(html))
 
     def _extract_remotive_from_html(self, html: str) -> list[dict]:

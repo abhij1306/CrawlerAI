@@ -29,7 +29,7 @@ from app.services.pipeline.runtime_helpers import (
     set_stage,
 )
 from app.services.pipeline.types import URLProcessingConfig, URLProcessingResult
-from app.services.publish import VERDICT_ERROR, _aggregate_verdict
+from app.services.publish import VERDICT_ERROR, aggregate_verdict
 from app.services.run_summary import as_int
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -396,18 +396,18 @@ async def process_run(session: AsyncSession, run_id: int) -> None:
             await session.refresh(run)
             if run.status_value in TERMINAL_STATUSES:
                 return
-            aggregate_verdict = _aggregate_verdict(verdicts)
+            aggregate_verdict_value = aggregate_verdict(verdicts)
             update_run_status(run, CrawlStatus.COMPLETED)
             _touch_run_heartbeat(run)
             run.update_summary(
-                **progress_state.build_final_patch(aggregate_verdict),
+                **progress_state.build_final_patch(aggregate_verdict_value),
                 duration_ms=_current_duration_ms(run),
             )
             await log_event(
                 session,
                 run.id,
                 "info",
-                f"Pipeline finished. {record_count} records. verdict={aggregate_verdict}",
+                f"Pipeline finished. {record_count} records. verdict={aggregate_verdict_value}",
             )
             await session.commit()
         finally:

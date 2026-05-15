@@ -13,11 +13,7 @@ from urllib.parse import urlparse
 
 from app.core.config import settings
 from app.services.acquisition.browser_capture import (
-    _MAX_CAPTURED_NETWORK_PAYLOADS,
     BrowserNetworkCapture as _BrowserNetworkCapture,
-    _MAX_CAPTURED_NETWORK_PAYLOAD_BYTES,
-    _NETWORK_CAPTURE_QUEUE_SIZE,
-    _NETWORK_CAPTURE_WORKERS,
     capture_browser_screenshot,
     classify_network_endpoint,
     read_network_payload_body,
@@ -60,7 +56,6 @@ from app.services.acquisition.browser_storage_state import (
 from app.services.acquisition.browser_page_flow import (
     BrowserFinalizeInput,
     append_readiness_probe,
-    dismiss_safe_location_interstitial,
     finalize_browser_fetch,
     navigate_browser_page_impl,
     remaining_timeout_factory,
@@ -77,11 +72,17 @@ from app.services.acquisition.browser_proxy_config import (
     display_proxy as _display_proxy,
     normalized_proxy_value as _normalized_proxy_value,
 )
+from app.services.acquisition.browser_fetch_support import (
+    attach_browser_fetch_exception_context,
+    build_browser_fetch_diagnostics,
+    build_browser_fetch_result,
+    dismiss_browser_interstitial,
+    emit_page_loaded_event,
+)
 from app.services.acquisition.browser_readiness import (
     classify_browser_outcome,
     classify_low_content_reason,
-    detail_readiness_hint_count,
-    listing_card_signal_count,
+    listing_card_signal_count as listing_card_signal_count,
     looks_like_low_content_shell,
     probe_browser_readiness,
     wait_for_listing_readiness,
@@ -97,7 +98,6 @@ from app.services.acquisition.dom_runtime import get_page_html
 from app.services.acquisition.runtime import (
     NetworkPayloadReadResult,
     classify_blocked_page_async,
-    copy_headers,
     PageFetchResult,
     is_blocked_html_async,
 )
@@ -123,11 +123,15 @@ from app.services.config.network_capture import (
     PROTECTED_CHALLENGE_ROUTE_TOKENS,
 )
 from app.services.config.runtime_settings import (
+    # Public compatibility exports for callers that still import these via __all__.
+    BROWSER_CAPTURE_MAX_NETWORK_PAYLOAD_BYTES,
+    BROWSER_CAPTURE_MAX_NETWORK_PAYLOADS,
+    BROWSER_CAPTURE_QUEUE_SIZE,
+    BROWSER_CAPTURE_WORKERS,
     crawler_runtime_settings,
     proxy_rotation_mode,
 )
 from app.services.domain_utils import normalize_domain
-from app.services.shared.field_coerce import clean_text
 
 if TYPE_CHECKING:
     from patchright.async_api import Browser, BrowserContext, Playwright
@@ -1074,8 +1078,7 @@ async def browser_fetch(
     url: str,
     timeout_seconds: float,
     *,
-    run_id: int | None = None,
-    proxy: str | None = None,
+    run_id: int | None = None, proxy: str | None = None,
     browser_engine: str = _CHROMIUM_BROWSER_ENGINE,
     browser_reason: str | None = None,
     escalation_lane: str | None = None,
@@ -1091,8 +1094,7 @@ async def browser_fetch(
     max_scrolls: int = 1,
     max_records: int | None = None,
     on_event=None,
-    runtime_provider=get_browser_runtime,
-    proxied_page_factory=temporary_browser_page,
+    runtime_provider=get_browser_runtime, proxied_page_factory=temporary_browser_page,
     blocked_html_checker=is_blocked_html_async,
 ) -> PageFetchResult:
     normalized_domain = normalize_domain(url)
@@ -1113,83 +1115,32 @@ async def browser_fetch(
     payload_capture = None
     popup_guard_registrations: list[tuple[Any, str, Any]] = []
     try:
-        if proxy:
-            if proxied_page_factory is temporary_browser_page:
-                runtime = await _resolve_runtime_provider(
-                    runtime_provider,
-                    browser_engine=normalized_engine,
-                    proxy=proxy,
-                )
-                page_context = runtime.page(
-                    run_id=run_id,
-                    domain=normalized_domain,
-                    locality_profile=locality_profile,
-                    allow_storage_state=allow_storage_state,
-                )
-            else:
-                page_context = _resolve_proxied_page_factory(
-                    proxied_page_factory,
-                    proxy=proxy,
-                    run_id=run_id,
-                    domain=normalized_domain,
-                    browser_engine=normalized_engine,
-                    locality_profile=locality_profile,
-                    allow_storage_state=allow_storage_state,
-                )
-        else:
-            runtime = await _resolve_runtime_provider(
-                runtime_provider,
-                browser_engine=normalized_engine,
-            )
-            page_context = runtime.page(
-                run_id=run_id,
-                domain=normalized_domain,
-                locality_profile=locality_profile,
-                allow_storage_state=allow_storage_state,
-            )
+        runtime, page_context = await _resolve_browser_fetch_page_context(
+            proxy=proxy,
+            proxied_page_factory=proxied_page_factory,
+            runtime_provider=runtime_provider,
+            normalized_engine=normalized_engine,
+            normalized_domain=normalized_domain,
+            run_id=run_id,
+            locality_profile=locality_profile,
+            allow_storage_state=allow_storage_state,
+        )
         async with page_context as page:
-            runtime_engine = (
-                str(getattr(runtime, "browser_engine", "") or "").strip().lower()
-                if runtime is not None
-                else ""
-            ) or normalized_engine
-            runtime_binary = (
-                str(getattr(runtime, "browser_binary", "") or "").strip()
-                if runtime is not None
-                else ""
-            ) or runtime_engine
-            bridge_flag = (
-                getattr(runtime, "bridge_used", None) if runtime is not None else None
+            (
+                runtime_engine,
+                runtime_binary,
+                launch_bridge_used,
+                skip_origin_warmup,
+            ) = await _prepare_browser_fetch_launch_context(
+                runtime=runtime,
+                normalized_engine=normalized_engine,
+                normalized_domain=normalized_domain,
+                allow_storage_state=allow_storage_state,
+                proxy=proxy,
+                resolved_proxy_rotation_mode=resolved_proxy_rotation_mode,
+                on_event=on_event,
             )
-            runtime_bridge_used = (
-                bool(bridge_flag()) if callable(bridge_flag) else False
-            )
-            if (
-                runtime_engine == _REAL_CHROME_BROWSER_ENGINE
-                and allow_storage_state
-                and normalized_domain
-            ):
-                skip_origin_warmup = bool(
-                    await cookie_store.load_storage_state_for_domain(
-                        normalized_domain,
-                        browser_engine=runtime_engine,
-                    )
-                )
-            await _emit_browser_event(
-                on_event,
-                "info",
-                (
-                    f"Launched {_browser_launch_mode(runtime_engine)} browser "
-                    f"({runtime_engine}, profile: {_browser_profile(runtime_engine)}, "
-                    f"proxy: {_display_proxy(proxy)}, binary: {runtime_binary})"
-                ),
-            )
-            if resolved_proxy_rotation_mode == "rotating":
-                await _emit_browser_event(
-                    on_event,
-                    "info",
-                    "Rotating proxy profile detected; skipping origin warmup",
-                )
+            runtime_bridge_used = runtime_bridge_used or launch_bridge_used
             started_at = time.perf_counter()
             _remaining = remaining_timeout_factory(started_at + float(timeout_seconds))
             normalized_surface = _normalize_surface(surface)
@@ -1243,35 +1194,19 @@ async def browser_fetch(
                         elapsed_ms=_elapsed_ms,
                     ),
                 )
-                page_title = ""
-                try:
-                    page_title = clean_text(await page.title())
-                except Exception:
-                    page_title = ""
-                await _emit_browser_event(
-                    on_event,
-                    "info",
-                    (
-                        f"Page loaded in {phase_timings_ms.get('navigation', 0)}ms"
-                        + (f' - title="{page_title}"' if page_title else "")
-                    ),
+                await emit_page_loaded_event(
+                    page,
+                    phase_timings_ms=phase_timings_ms,
+                    on_event=on_event,
+                    emit_browser_event=_emit_browser_event,
                 )
-                interstitial_started_at = time.perf_counter()
-                interstitial_diagnostics = await dismiss_safe_location_interstitial(
-                    page
+                interstitial_diagnostics = await dismiss_browser_interstitial(
+                    page,
+                    phase_timings_ms=phase_timings_ms,
+                    on_event=on_event,
+                    emit_browser_event=_emit_browser_event,
+                    elapsed_ms=_elapsed_ms,
                 )
-                phase_timings_ms["interstitial_dismissal"] = _elapsed_ms(
-                    interstitial_started_at
-                )
-                if interstitial_diagnostics.get("status") == "dismissed":
-                    await _emit_browser_event(
-                        on_event,
-                        "info",
-                        (
-                            "Dismissed location interstitial via "
-                            f"{interstitial_diagnostics.get('selector')}"
-                        ),
-                    )
                 behavior_diagnostics: dict[str, object] = {}
                 if _should_run_behavior_realism(
                     runtime_engine,
@@ -1393,22 +1328,16 @@ async def browser_fetch(
                     str(finalized.get("platform_family") or "").strip() or None
                 )
                 finalized_diagnostics = _mapping_value(finalized.get("diagnostics"))
-                diagnostics = build_browser_diagnostics_contract(
-                    diagnostics={
-                        **finalized_diagnostics,
-                        "bridge_used": runtime_bridge_used,
-                        "browser_proxy_mode": browser_proxy_mode,
-                        "escalation_lane": str(escalation_lane or "").strip().lower()
-                        or None,
-                        "host_policy_snapshot": dict(host_policy_snapshot or {}),
-                        "proxy_rotation_mode": resolved_proxy_rotation_mode,
-                        "browser_state_reuse_allowed": allow_storage_state,
-                        "behavior_realism": dict(behavior_diagnostics),
-                    },
+                diagnostics = build_browser_fetch_diagnostics(
+                    finalized_diagnostics=finalized_diagnostics,
+                    runtime_bridge_used=runtime_bridge_used,
+                    browser_proxy_mode=browser_proxy_mode,
+                    escalation_lane=escalation_lane,
+                    host_policy_snapshot=host_policy_snapshot,
+                    resolved_proxy_rotation_mode=resolved_proxy_rotation_mode,
+                    allow_storage_state=allow_storage_state,
+                    behavior_diagnostics=behavior_diagnostics,
                     browser_reason=browser_reason,
-                    browser_outcome=str(
-                        finalized_diagnostics.get("browser_outcome") or ""
-                    ),
                     browser_engine=runtime_engine,
                     browser_binary=runtime_binary,
                 )
@@ -1419,48 +1348,120 @@ async def browser_fetch(
                     persist_domain_storage_state=allow_storage_state
                     and not bool(finalized["blocked"]),
                 )
-                return PageFetchResult(
+                return build_browser_fetch_result(
                     url=url,
                     final_url=page.url,
                     html=html,
-                    status_code=int(str(finalized_status_code or 0)),
-                    method="browser",
-                    content_type=str(finalized["content_type"]),
-                    blocked=bool(finalized["blocked"]),
-                    platform_family=finalized_platform_family,
-                    headers=copy_headers(finalized.get("page_headers")),
-                    network_payloads=_network_payload_rows(
-                        finalized.get("network_payloads")
-                    ),
-                    browser_diagnostics=diagnostics,
-                    artifacts=_mapping_value(finalized.get("artifacts")),
+                    finalized=finalized,
+                    finalized_status_code=finalized_status_code,
+                    finalized_platform_family=finalized_platform_family,
+                    diagnostics=diagnostics,
                 )
             finally:
                 _remove_popup_guard(popup_guard_registrations)
                 if payload_capture is not None:
                     await payload_capture.close(page)
     except Exception as exc:
-        setattr(exc, "browser_proxy_mode", browser_proxy_mode)
-        setattr(
+        attach_browser_fetch_exception_context(
             exc,
-            "browser_phase_timings_ms",
-            dict(locals().get("phase_timings_ms") or {}),
-        )
-        setattr(
-            exc,
-            "browser_diagnostics",
-            build_failed_browser_diagnostics(
-                browser_reason=browser_reason,
-                exc=exc,
-                proxy=proxy,
-                browser_engine=runtime_engine,
-                browser_binary=runtime_binary,
-                bridge_used=runtime_bridge_used,
-                escalation_lane=escalation_lane,
-                host_policy_snapshot=host_policy_snapshot,
-            ),
+            browser_proxy_mode=browser_proxy_mode,
+            phase_timings_ms=phase_timings_ms,
+            browser_reason=browser_reason,
+            proxy=proxy,
+            runtime_engine=runtime_engine,
+            runtime_binary=runtime_binary,
+            runtime_bridge_used=runtime_bridge_used,
+            escalation_lane=escalation_lane,
+            host_policy_snapshot=host_policy_snapshot,
         )
         raise
+
+
+async def _resolve_browser_fetch_page_context(
+    *,
+    proxy: str | None,
+    proxied_page_factory,
+    runtime_provider,
+    normalized_engine: str,
+    normalized_domain: str | None,
+    run_id: int | None,
+    locality_profile: dict[str, object] | None,
+    allow_storage_state: bool,
+):
+    if proxy and proxied_page_factory is not temporary_browser_page:
+        page_context = _resolve_proxied_page_factory(
+            proxied_page_factory,
+            proxy=proxy,
+            run_id=run_id,
+            domain=normalized_domain,
+            browser_engine=normalized_engine,
+            locality_profile=locality_profile,
+            allow_storage_state=allow_storage_state,
+        )
+        return None, page_context
+    runtime = await _resolve_runtime_provider(
+        runtime_provider,
+        browser_engine=normalized_engine,
+        proxy=proxy,
+    )
+    return runtime, runtime.page(
+        run_id=run_id,
+        domain=normalized_domain,
+        locality_profile=locality_profile,
+        allow_storage_state=allow_storage_state,
+    )
+
+
+async def _prepare_browser_fetch_launch_context(
+    *,
+    runtime: SharedBrowserRuntime | None,
+    normalized_engine: str,
+    normalized_domain: str | None,
+    allow_storage_state: bool,
+    proxy: str | None,
+    resolved_proxy_rotation_mode: str | None,
+    on_event,
+) -> tuple[str, str, bool, bool]:
+    runtime_engine = (
+        str(getattr(runtime, "browser_engine", "") or "").strip().lower()
+        if runtime is not None
+        else ""
+    ) or normalized_engine
+    runtime_binary = (
+        str(getattr(runtime, "browser_binary", "") or "").strip()
+        if runtime is not None
+        else ""
+    ) or runtime_engine
+    bridge_flag = getattr(runtime, "bridge_used", None) if runtime is not None else None
+    runtime_bridge_used = bool(bridge_flag()) if callable(bridge_flag) else False
+    skip_origin_warmup = False
+    if (
+        runtime_engine == _REAL_CHROME_BROWSER_ENGINE
+        and allow_storage_state
+        and normalized_domain
+    ):
+        skip_origin_warmup = bool(
+            await cookie_store.load_storage_state_for_domain(
+                normalized_domain,
+                browser_engine=runtime_engine,
+            )
+        )
+    await _emit_browser_event(
+        on_event,
+        "info",
+        (
+            f"Launched {_browser_launch_mode(runtime_engine)} browser "
+            f"({runtime_engine}, profile: {_browser_profile(runtime_engine)}, "
+            f"proxy: {_display_proxy(proxy)}, binary: {runtime_binary})"
+        ),
+    )
+    if resolved_proxy_rotation_mode == "rotating":
+        await _emit_browser_event(
+            on_event,
+            "info",
+            "Rotating proxy profile detected; skipping origin warmup",
+        )
+    return runtime_engine, runtime_binary, runtime_bridge_used, skip_origin_warmup
 
 
 async def _maybe_warm_origin_before_navigation(
@@ -1732,10 +1733,10 @@ async def _close_unexpected_popup(page: Any, *, on_event=None) -> None:
 
 __all__ = [
     "SharedBrowserRuntime",
-    "_MAX_CAPTURED_NETWORK_PAYLOADS",
-    "_MAX_CAPTURED_NETWORK_PAYLOAD_BYTES",
-    "_NETWORK_CAPTURE_QUEUE_SIZE",
-    "_NETWORK_CAPTURE_WORKERS",
+    "BROWSER_CAPTURE_MAX_NETWORK_PAYLOADS",
+    "BROWSER_CAPTURE_MAX_NETWORK_PAYLOAD_BYTES",
+    "BROWSER_CAPTURE_QUEUE_SIZE",
+    "BROWSER_CAPTURE_WORKERS",
     "NetworkPayloadReadResult",
     "browser_fetch",
     "build_browser_diagnostics_contract",

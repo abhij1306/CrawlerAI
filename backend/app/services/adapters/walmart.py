@@ -17,7 +17,7 @@ class WalmartAdapter(BaseAdapter):
         host = (urlparse(str(url or "")).hostname or "").lower()
         return any(adapter_host_matches(host, domain) for domain in self.domains)
 
-    async def extract(self, url: str, html: str, surface: str) -> AdapterResult:
+    async def extract(self, url: str, html: str, surface: str, proxy: str | None = None) -> AdapterResult:
         soup = BeautifulSoup(html, "html.parser")
         records = []
         # Walmart embeds __NEXT_DATA__ with product info

@@ -9,15 +9,15 @@ part of the listing-extraction bucket per ``docs/CODEBASE_MAP.md``.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
+
 from collections import Counter
 from dataclasses import dataclass
 from typing import Any, Literal
 
 from app.services.config.extraction_rules import (
     LISTING_CATEGORY_PATH_PREFIXES,
-    LISTING_CATEGORY_PATH_SEGMENTS,
     LISTING_INTEGRITY_SUPPORT_FIELDS,
-    LISTING_LOCALE_PATH_SEGMENT_PATTERN,
     LISTING_PRODUCT_DETAIL_ID_RE,
 )
 from app.services.config.runtime_settings import crawler_runtime_settings
@@ -252,7 +252,11 @@ def _ensure_frozenset(value: object) -> frozenset[str]:
     """Return value as a frozenset, converting if necessary."""
     if isinstance(value, frozenset):
         return value
-    return frozenset(value) if value else frozenset()
+    if isinstance(value, str):
+        return frozenset({value})
+    if isinstance(value, Iterable):
+        return frozenset(str(item) for item in value)
+    return frozenset()
 
 
 def _get_support_fields(surface: str) -> frozenset[str]:

@@ -8,7 +8,6 @@ from typing import Any
 
 from app.services.config._export_data import load_export_data
 from app.services.config.variant_policy import AXIS_NAME_ALIASES, PUBLIC_VARIANT_AXIS_FIELDS
-from app.services.config.runtime_settings import crawler_runtime_settings
 
 HTML_PARSER = "html.parser"
 DETAIL_AOM_EXPAND_ROLES = frozenset({"button", "tab"})

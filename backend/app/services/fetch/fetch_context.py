@@ -7,16 +7,11 @@ import logging
 import secrets
 from dataclasses import dataclass, field
 from urllib.parse import quote, unquote, urlparse, urlunparse
-
+from typing import Any
 import httpx
 
-from app.services.acquisition.browser_identity import (
-    PlaywrightContextSpec,
-    build_playwright_context_options,
-    build_playwright_context_spec,
-)
 from app.services.acquisition.browser_runtime import (
-    SharedBrowserRuntime as _SharedBrowserRuntime,
+    SharedBrowserRuntime,
     build_failed_browser_diagnostics,
     browser_fetch,
     browser_runtime_snapshot,
@@ -77,8 +72,8 @@ def _attach_exception_browser_diagnostics(
     setattr(exc, "browser_diagnostics", dict(diagnostics))
 
 
-async def _emit_fetch_event(on_event: object | None, level: str, message: str) -> None:
-    if on_event is None:
+async def _emit_fetch_event(on_event: Any | None, level: str, message: str) -> None:
+    if not callable(on_event):
         return
     try:
         await on_event(level, message)
@@ -126,39 +121,6 @@ def _ensure_scheme(url: str) -> str:
     if stripped.startswith(("/", "#", "javascript:")):
         return stripped
     return f"https://{stripped}"
-
-
-class SharedBrowserRuntime(_SharedBrowserRuntime):
-    def _build_context_spec(
-        self,
-        *,
-        run_id: int | None = None,
-        locality_profile: dict[str, object] | None = None,
-        inject_init_script: bool = False,
-    ) -> PlaywrightContextSpec:
-        spec = build_playwright_context_spec(
-            run_id=run_id,
-            locality_profile=locality_profile,
-            browser_engine=self.browser_engine,
-        )
-        if inject_init_script:
-            return spec
-        return PlaywrightContextSpec(
-            context_options=dict(spec.context_options),
-            init_script=None,
-        )
-
-    def _build_context_options(
-        self,
-        *,
-        run_id: int | None = None,
-        locality_profile: dict[str, object] | None = None,
-    ) -> dict[str, object]:
-        return build_playwright_context_options(
-            run_id=run_id,
-            locality_profile=locality_profile,
-            browser_engine=self.browser_engine,
-        )
 
 
 async def _get_shared_http_client(*, proxy: str | None = None):
@@ -1129,10 +1091,6 @@ def _retryable_status_for_http_fetch(status_code: int) -> bool:
         except (TypeError, ValueError):
             logger.warning("Ignoring invalid http retry status code: %r", value)
     return code in retryable_codes
-
-
-async def _sleep_before_retry(attempt: int) -> None:
-    await _sleep_retry_delay(delay_ms=_retry_delay_ms(attempt))
 
 
 def _http_max_attempts() -> int:

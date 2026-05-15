@@ -18,7 +18,7 @@ def compute_verdict(*, is_listing: bool, blocked: bool, record_count: int) -> st
     return VERDICT_LISTING_FAILED if bool(is_listing) else VERDICT_EMPTY
 
 
-def _aggregate_verdict(verdicts: list[str]) -> str:
+def aggregate_verdict(verdicts: list[str]) -> str:
     cleaned: list[str] = [
         str(value or "").strip() for value in verdicts if str(value or "").strip()
     ]

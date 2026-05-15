@@ -54,7 +54,7 @@ class NikeAdapter(BaseAdapter):
             or "skuData" in raw_html
         )
 
-    async def extract(self, url: str, html: str, surface: str) -> AdapterResult:
+    async def extract(self, url: str, html: str, surface: str, proxy: str | None = None) -> AdapterResult:
         records: list[dict[str, Any]] = []
         if str(surface or "").strip().lower() == "ecommerce_detail":
             record = _extract_detail_record(url, html)

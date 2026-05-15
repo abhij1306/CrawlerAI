@@ -58,7 +58,6 @@ from app.services.extract.detail_identity import (
 )
 from app.services.extract.detail_dom_extractor import (
     backfill_variants_from_dom_if_missing,
-    existing_variant_cluster_has_transport_signal,
 )
 from app.services.extract.detail_numbered_options import (
     hydrate_numbered_variant_options_from_dom,
@@ -147,12 +146,12 @@ def _sanitize_ecommerce_detail_record(
     _sanitize_detail_placeholder_scalars(record, identity_url=identity_url)
     _sanitize_detail_identity_scalars(record, identity_url=identity_url)
     hydrate_numbered_variant_options_from_dom(record, soup=soup)
-    existing_variants = [
-        row for row in list(record.get("variants") or []) if isinstance(row, dict)
-    ]
     if soup is not None:
         backfill_variants_from_dom_if_missing(
-            record, soup=soup, page_url=page_url, js_state_objects=js_state_objects
+            record,
+            soup=soup,
+            page_url=page_url,
+            js_state_objects=js_state_objects if isinstance(js_state_objects, dict) else None,
         )
     _sanitize_detail_variant_payload(record, identity_url=identity_url)
     sanitize_detail_long_text_fields(

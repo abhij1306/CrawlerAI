@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 from urllib.parse import urljoin, urlsplit
 
 from selectolax.lexbor import LexborHTMLParser
@@ -151,7 +151,7 @@ def _unique_listing_card_identity_count_from_html(
         surface=surface,
         limit=max(1, int(crawler_runtime_settings.listing_fallback_fragment_limit)),
     ):
-        identity = _listing_card_identity(card, page_url=page_url)
+        identity = _listing_card_identity(cast(_SelectolaxNode, card), page_url=page_url)
         if identity:
             identities.add(identity)
     return len(identities)

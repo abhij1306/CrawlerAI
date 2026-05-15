@@ -3,6 +3,7 @@ from __future__ import annotations
 import ast
 import json
 import re
+from collections.abc import Iterable
 from typing import Any
 
 from app.services.config.extraction_rules import (
@@ -147,25 +148,35 @@ _long_text_prefixes = tuple(
     if clean_text(prefix)
 )
 _legal_tail_patterns = DETAIL_LEGAL_TAIL_PATTERNS or {}
-_legal_tail_contains = tuple(_legal_tail_patterns.get("contains", ()))
-_legal_tail_digit_contains = tuple(_legal_tail_patterns.get("digit_contains", ()))
-_legal_tail_exact = frozenset(_legal_tail_patterns.get("exact", ()))
+_legal_tail_contains = tuple(
+    str(value) for value in _legal_tail_patterns.get("contains", ())
+)
+_legal_tail_digit_contains = tuple(
+    str(value) for value in _legal_tail_patterns.get("digit_contains", ())
+)
+_legal_tail_exact = frozenset(
+    str(value) for value in _legal_tail_patterns.get("exact", ())
+)
 
 
 def _normalize_legal_tail_all_contains(value: object) -> tuple[tuple[str, ...], ...]:
     if isinstance(value, str):
         return ((value,),)
+    if not isinstance(value, Iterable):
+        return ()
     groups: list[tuple[str, ...]] = []
-    for group in tuple(value or ()):
+    for group in tuple(value):
         if isinstance(group, str):
             items = (group,)
-        else:
+        elif isinstance(group, Iterable):
             try:
                 items = tuple(group)
             except TypeError as exc:
                 raise ValueError(
                     "DETAIL_LEGAL_TAIL_PATTERNS all_contains must be strings"
                 ) from exc
+        else:
+            raise ValueError("DETAIL_LEGAL_TAIL_PATTERNS all_contains must be strings")
         if not all(isinstance(item, str) for item in items):
             raise ValueError("DETAIL_LEGAL_TAIL_PATTERNS all_contains must be strings")
         groups.append(items)
@@ -400,9 +411,8 @@ def sanitize_detail_long_text_fields(
 
 def _repair_description_feature_duplicate(record: dict[str, Any]) -> None:
     description = clean_text(record.get("description"))
-    raw_features = (
-        record.get("features") if isinstance(record.get("features"), list) else []
-    )
+    raw_features_value = record.get("features")
+    raw_features: list[Any] = raw_features_value if isinstance(raw_features_value, list) else []
     features = []
     for row in raw_features:
         cleaned = clean_text(row)

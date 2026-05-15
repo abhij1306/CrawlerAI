@@ -13,7 +13,7 @@ from typing import Any
 from pydantic import Field
 from pydantic_settings import BaseSettings
 
-from app.services.config.runtime_settings import _settings_config
+from app.services.config.runtime_settings import settings_config
 
 SUPPORTED_LLM_PROVIDERS = frozenset({"groq", "anthropic", "nvidia", "aws"})
 PARSE_PROVIDER_JSON_ERROR = (
@@ -59,7 +59,7 @@ def _parse_provider_model_and_rates(
 class LLMRuntimeSettings(BaseSettings):
     """Runtime LLM settings loaded from ``CRAWLER_LLM_`` environment variables."""
 
-    model_config = _settings_config(env_prefix="CRAWLER_LLM_")
+    model_config = settings_config(env_prefix="CRAWLER_LLM_")
 
     html_snippet_max_chars: int = 40000
     existing_values_max_chars: int = 2400
@@ -131,7 +131,7 @@ class LLMRuntimeSettings(BaseSettings):
             parsed = _parse_provider_model_and_rates(
                 key,
                 value,
-                require_supported_provider=True,
+                require_supported_provider=False,
             )
             if parsed:
                 pricing[parsed[0]] = parsed[1]

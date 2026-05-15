@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 import logging
-from typing import Any
+from typing import Any, cast
 
 import httpx
 from app.services.acquisition_plan import AcquisitionPlan
@@ -39,7 +39,7 @@ class AcquisitionRequest:
     def with_profile_updates(self, **updates: object) -> "AcquisitionRequest":
         policy = (
             self.policy or AcquisitionPolicy.from_profile(self.acquisition_profile)
-        ).with_updates(**updates)
+        ).with_updates(**cast(Any, updates))
         profile = policy.to_profile()
         return replace(self, acquisition_profile=profile, policy=policy)
 
@@ -222,8 +222,12 @@ async def acquire(request: AcquisitionRequest) -> AcquisitionResult:
         effective_url,
         run_id=request.run_id,
         proxy_list=request.proxy_list,
-        proxy_profile=acquisition_policy.proxy_profile or None,
-        locality_profile=acquisition_policy.locality_profile or None,
+        proxy_profile=dict(acquisition_policy.proxy_profile)
+        if acquisition_policy.proxy_profile
+        else None,
+        locality_profile=dict(acquisition_policy.locality_profile)
+        if acquisition_policy.locality_profile
+        else None,
         fetch_mode=acquisition_policy.fetch_mode,
         prefer_browser=acquisition_policy.prefer_browser,
         surface=request.surface,

@@ -110,9 +110,9 @@ def _copy_policy(policy: HostProtectionPolicy) -> HostProtectionPolicy:
 
 
 def _is_browser_method(value: str | None) -> bool:
-    return bool(value) and (
-        value == BROWSER_METHOD or value.startswith(f"{BROWSER_METHOD}:")
-    )
+    if not value:
+        return False
+    return value == BROWSER_METHOD or value.startswith(f"{BROWSER_METHOD}:")
 
 
 def _recent_success_overrides_block(
@@ -125,7 +125,9 @@ def _recent_success_overrides_block(
     if not _is_recent(last_success_at, now=now, ttl_seconds=ttl_seconds):
         return False
     last_blocked_at = row.last_blocked_at
-    return last_blocked_at is None or last_success_at >= last_blocked_at
+    return last_success_at is not None and (
+        last_blocked_at is None or last_success_at >= last_blocked_at
+    )
 
 
 def _recent_block_method(

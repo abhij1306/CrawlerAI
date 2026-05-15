@@ -39,7 +39,6 @@ from app.services.structured_sources import harvest_js_state_objects
 from app.services.shared.field_coerce import (
     STRUCTURED_OBJECT_FIELDS,
     STRUCTURED_OBJECT_LIST_FIELDS,
-    absolute_url,
     clean_text,
     coerce_field_value,
     extract_urls,

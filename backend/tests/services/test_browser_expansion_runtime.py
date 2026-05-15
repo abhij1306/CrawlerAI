@@ -1424,13 +1424,14 @@ async def test_browser_fetch_bounds_response_capture_workers_under_burst_load(
         runtime_provider=_fake_runtime,
     )
 
-    assert create_task_calls == browser_runtime._NETWORK_CAPTURE_WORKERS
+    assert create_task_calls == browser_runtime.BROWSER_CAPTURE_WORKERS
     assert (
-        len(result.network_payloads) == browser_runtime._MAX_CAPTURED_NETWORK_PAYLOADS
+        len(result.network_payloads)
+        == browser_runtime.BROWSER_CAPTURE_MAX_NETWORK_PAYLOADS
     )
     assert (
         result.browser_diagnostics["dropped_network_payload_events"]
-        >= 200 - browser_runtime._NETWORK_CAPTURE_QUEUE_SIZE
+        >= 200 - browser_runtime.BROWSER_CAPTURE_QUEUE_SIZE
     )
 
 

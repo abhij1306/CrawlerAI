@@ -77,8 +77,8 @@ from app.services.xpath_service import validate_xpath_syntax
 logger = logging.getLogger(__name__)
 
 
-_max_section_blocks = _safe_int(DETAIL_LONG_TEXT_MAX_SECTION_BLOCKS, default=8)
-_max_section_chars = _safe_int(DETAIL_LONG_TEXT_MAX_SECTION_CHARS, default=1200)
+_max_section_blocks = _safe_int(DETAIL_LONG_TEXT_MAX_SECTION_BLOCKS, default=8) or 8
+_max_section_chars = _safe_int(DETAIL_LONG_TEXT_MAX_SECTION_CHARS, default=1200) or 1200
 _cross_product_container_tokens = tuple(
     clean_text(token).lower()
     for token in tuple(DETAIL_CROSS_PRODUCT_CONTAINER_TOKENS or ())
@@ -89,12 +89,12 @@ _scope_product_context_tokens = tuple(
     for token in tuple(SCOPE_PRODUCT_CONTEXT_TOKENS or ())
     if clean_text(token)
 )
-_max_selector_matches = _safe_int(MAX_SELECTOR_MATCHES, default=12)
-_scope_score_main_weight = _safe_int(SCOPE_SCORE_MAIN_WEIGHT, default=4000)
-_scope_score_priority_weight = _safe_int(SCOPE_SCORE_PRIORITY_WEIGHT, default=2000)
+_max_selector_matches = _safe_int(MAX_SELECTOR_MATCHES, default=12) or 12
+_scope_score_main_weight = _safe_int(SCOPE_SCORE_MAIN_WEIGHT, default=4000) or 4000
+_scope_score_priority_weight = _safe_int(SCOPE_SCORE_PRIORITY_WEIGHT, default=2000) or 2000
 _scope_score_product_context_weight = _safe_int(
     SCOPE_SCORE_PRODUCT_CONTEXT_WEIGHT, default=1000
-)
+) or 1000
 
 
 def _compile_variant_option_child_drop_patterns() -> tuple[re.Pattern[str], ...]:
@@ -1547,7 +1547,7 @@ def requested_content_extractability(
         requested_fields=requested_fields,
         selector_rules=selector_rules,
         probe_fields=probe_fields,
-        extract_heading_sections=extract_heading_sections,
+        extract_heading_sections=extract_heading_sections,  # type: ignore[arg-type]
         safe_select=safe_select,
         max_selector_matches=_max_selector_matches,
     )

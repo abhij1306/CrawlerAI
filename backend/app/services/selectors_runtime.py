@@ -153,8 +153,8 @@ def _selector_record_from_memory(
     return {
         **dict(row),
         "id": _coerce_int(row.get("id"), default=0),
-        "domain": domain if domain is not None else memory.domain,
-        "surface": surface if surface is not None else memory.surface,
+        "domain": domain if domain is not None else (memory.domain if memory else ""),
+        "surface": surface if surface is not None else (memory.surface if memory else ""),
         "source_run_id": row.get("source_run_id"),
         "created_at": memory.created_at if memory is not None else None,
         "updated_at": memory.updated_at if memory is not None else None,

@@ -195,7 +195,7 @@ def top_taxonomy_candidates(
         )
     scored.sort(
         key=lambda item: (
-            -float(item.get("score") or 0.0),
+            -float(str(item.get("score") or 0.0)),
             len(str(item.get("category_path") or "")),
             str(item.get("category_path") or ""),
         )

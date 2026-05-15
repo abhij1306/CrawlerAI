@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pydantic import AliasChoices, Field, model_validator
 
-from app.services.config.runtime_settings import _settings_config
+from app.services.config.runtime_settings import settings_config
 from pydantic_settings import BaseSettings
 
 PRODUCT_INTELLIGENCE_JOB_STATUS_QUEUED = "queued"
@@ -255,7 +255,7 @@ PRODUCT_INTELLIGENCE_PROMPT_REGISTRY = {
 
 
 class ProductIntelligenceSettings(BaseSettings):
-    model_config = _settings_config(env_prefix="PRODUCT_INTELLIGENCE_")
+    model_config = settings_config(env_prefix="PRODUCT_INTELLIGENCE_")
 
     default_search_provider: str = SEARCH_PROVIDER_SERPAPI
     serpapi_key: str = Field(

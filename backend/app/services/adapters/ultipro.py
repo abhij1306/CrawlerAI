@@ -22,7 +22,7 @@ class UltiProAdapter(BaseAdapter):
     async def can_handle(self, url: str, html: str) -> bool:
         return self._matches_platform_family(url, html)
 
-    async def extract(self, url: str, html: str, surface: str) -> AdapterResult:
+    async def extract(self, url: str, html: str, surface: str, proxy: str | None = None) -> AdapterResult:
         if self._looks_like_detail(url, surface):
             records = []
         else:

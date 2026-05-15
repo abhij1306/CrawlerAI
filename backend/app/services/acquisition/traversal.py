@@ -17,7 +17,6 @@ except ImportError:  # pragma: no cover
         pass
 
 from app.services.config.extraction_rules import (
-    LISTING_CARD_URL_ATTRS,
     TRAVERSAL_LISTING_RECOVERY_ACTIONS,
     TRAVERSAL_STRUCTURED_SCRIPT_IDS,
     TRAVERSAL_STRUCTURED_SCRIPT_TEXT_MARKERS,
@@ -33,16 +32,11 @@ from app.services.config.selectors import PAGINATION_SELECTORS
 from app.services.extract.listing_card_fragments import (
     base_listing_fragment_score,
     collect_listing_fragment_html,
-    heuristic_listing_card_count_from_html,
-    listing_node_attr,
-    listing_node_css,
-    listing_selector_is_weak,
-    select_listing_fragment_nodes,
 )
 from selectolax.lexbor import LexborHTMLParser
 
 from app.services.acquisition.traversal_card_counting import (
-    count_listing_cards,
+    count_listing_cards as count_listing_cards,
     is_marginal_card_gain as _is_marginal_card_gain,
     page_snapshot as _page_snapshot,
     paginate_fragment_budget_reached as _paginate_fragment_budget_reached,

@@ -271,7 +271,7 @@ async def persist_extracted_records(
                     source_url=record_source_url,
                     data=data,
                     raw_data=raw_record,
-                    discovered_data=discovered_data,
+                    discovered_data=dict(discovered_data),
                     source_trace=source_trace,
                     raw_html_path=raw_html_path,
                     content_fingerprint=content_fingerprint,

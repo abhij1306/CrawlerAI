@@ -23,18 +23,7 @@ FIELD_POLICY_CONSUMERS = [
     SERVICES_ROOT / "schema_service.py",
     SERVICES_ROOT / "review" / "__init__.py",
 ]
-ALLOWED_PRIVATE_SERVICE_IMPORTS = {
-    "_batch_runtime.py -> app.services.publish:_aggregate_verdict",
-    "acquisition/browser_identity.py -> app.services.network_resolution:_accept_language_for_locale",
-    "acquisition/browser_runtime.py -> app.services.acquisition.browser_capture:_MAX_CAPTURED_NETWORK_PAYLOADS",
-    "acquisition/browser_runtime.py -> app.services.acquisition.browser_capture:_MAX_CAPTURED_NETWORK_PAYLOAD_BYTES",
-    "acquisition/browser_runtime.py -> app.services.acquisition.browser_capture:_NETWORK_CAPTURE_QUEUE_SIZE",
-    "acquisition/browser_runtime.py -> app.services.acquisition.browser_capture:_NETWORK_CAPTURE_WORKERS",
-    "config/adapter_runtime_settings.py -> app.services.config.runtime_settings:_settings_config",
-    "config/llm_runtime.py -> app.services.config.runtime_settings:_settings_config",
-    "config/product_intelligence.py -> app.services.config.runtime_settings:_settings_config",
-    "publish/__init__.py -> app.services.publish.verdict:_aggregate_verdict",
-}
+ALLOWED_PRIVATE_SERVICE_IMPORTS = set()
 CONFIG_CONSTANT_NAME_MARKERS = (
     "SELECTOR",
     "TOKEN",
@@ -83,7 +72,7 @@ FILE_LOC_BUDGETS = {
     # Config rules own typed extraction constants and category/nav URL rules.
     Path("app/services/config/extraction_rules.py"): 1910,
     # Detail DOM extraction owns DOM fallback fields plus DOM variant recovery.
-    Path("app/services/extract/detail_dom_extractor.py"): 1495,
+    Path("app/services/extract/detail_dom_extractor.py"): 1450,
     # Detail finalizer owns public-boundary cleanup and record repair.
     # Grown (+10) to accommodate additional axis-gating logic that reuses
     # shared_variant_logic frozensets instead of re-deriving them locally.
@@ -107,14 +96,14 @@ FILE_LOC_BUDGETS = {
     # facades preserve imports; later slices split internals under these owners.
     Path("app/services/dom/selector_engine.py"): 1665,
     Path("app/services/extract/detail_materializer.py"): 1435,
-    Path("app/services/fetch/fetch_context.py"): 1390,
-    Path("app/services/js_state/state_normalizer.py"): 1430,
+    Path("app/services/fetch/fetch_context.py"): 1386,
+    Path("app/services/js_state/state_normalizer.py"): 1200,
     # Grown (+187) for listing-integrity escalation retry wiring (task 10.1).
     Path("app/services/pipeline/extraction_loop.py"): 1575,
     # Run progress owns batch-level summary/merge/quality aggregation, evicted
     # from the ORM layer so business logic does not live in models/crawl.py.
     Path("app/services/pipeline/run_progress.py"): 365,
-    Path("app/services/shared/field_coerce.py"): 1410,
+    Path("app/services/shared/field_coerce.py"): 1060,
     # Enrichment owns deterministic product normalization and job application.
     Path("app/services/data_enrichment/service.py"): 1325,
     # LLM task runtime now only orchestrates task execution. Prompt rendering,

@@ -49,7 +49,7 @@ class ADPAdapter(BaseAdapter):
             parsed._replace(query=urlencode(normalized_pairs, doseq=True))
         )
 
-    async def extract(self, url: str, html: str, surface: str) -> AdapterResult:
+    async def extract(self, url: str, html: str, surface: str, proxy: str | None = None) -> AdapterResult:
         records: list[dict] = []
         if self._looks_like_detail(url, html, surface):
             detail = self._extract_detail(url, html) if html else None

@@ -107,7 +107,7 @@ def build_source_trace(
                 "survived_to_final_record": True,
             }
         field_discovery[str(key)] = discovery
-    trace = {
+    trace: dict[str, object] = {
         "acquisition": {
             "method": acquisition_result.method,
             "status_code": acquisition_result.status_code,

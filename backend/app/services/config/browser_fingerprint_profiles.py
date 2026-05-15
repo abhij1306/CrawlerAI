@@ -156,7 +156,11 @@ def _webgl_profile(
     supported_extensions: tuple[str, ...],
 ) -> dict[str, object]:
     viewport_dims = limits["max_viewport_dims"]
+    if not isinstance(viewport_dims, (list, tuple)):
+        viewport_dims = ()
     line_width_range = limits["aliased_line_width_range"]
+    if not isinstance(line_width_range, (list, tuple)):
+        line_width_range = ()
     return {
         "vendor": vendor,
         "renderer": renderer,

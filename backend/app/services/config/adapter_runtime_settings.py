@@ -3,13 +3,13 @@ from __future__ import annotations
 from pydantic import model_validator
 from pydantic_settings import BaseSettings
 
-from app.services.config.runtime_settings import _settings_config
+from app.services.config.runtime_settings import settings_config
 
 
 class AdapterRuntimeSettings(BaseSettings):
     """Typed env-backed runtime settings for adapter-specific heuristics."""
 
-    model_config = _settings_config(env_prefix="ADAPTER_RUNTIME_")
+    model_config = settings_config(env_prefix="ADAPTER_RUNTIME_")
 
     ats_request_timeout_seconds: int = 12
     shopify_request_timeout_seconds: int = 6

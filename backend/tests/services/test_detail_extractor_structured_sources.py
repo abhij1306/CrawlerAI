@@ -418,6 +418,7 @@ def test_extract_ecommerce_detail_prefers_localized_jsonld_price_over_state_vari
         requested_fields=["price", "currency", "variants"],
     )
 
+    assert len(rows) == 1
     record = rows[0]
     assert record["price"] == "1400.00"
     assert record["currency"] == "INR"
