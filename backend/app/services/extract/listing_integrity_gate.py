@@ -254,6 +254,8 @@ def _ensure_frozenset(value: object) -> frozenset[str]:
         return value
     if isinstance(value, str):
         return frozenset({value})
+    if isinstance(value, dict):
+        return frozenset(str(item) for item in value.values())
     if isinstance(value, Iterable):
         return frozenset(str(item) for item in value)
     return frozenset()

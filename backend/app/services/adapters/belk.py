@@ -88,6 +88,8 @@ def _extract_listing_records(page_url: str, html: str) -> list[dict[str, Any]]:
             continue
         seen_urls.add(final_url)
         records.append(finalized)
+        if len(records) >= adapter_runtime_settings.belk_max_products:
+            return records
     for url, record in state_index.items():
         if url in seen_urls:
             continue

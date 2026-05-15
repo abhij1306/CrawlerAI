@@ -122,6 +122,8 @@ def _recent_success_overrides_block(
     ttl_seconds: int | None = None,
 ) -> bool:
     last_success_at = row.last_success_at
+    if last_success_at is None and _coerce_method(row.last_success_method):
+        last_success_at = row.updated_at
     if not _is_recent(last_success_at, now=now, ttl_seconds=ttl_seconds):
         return False
     last_blocked_at = row.last_blocked_at

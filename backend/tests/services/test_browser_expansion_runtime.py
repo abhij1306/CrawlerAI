@@ -26,6 +26,7 @@ from app.services.acquisition import (
     browser_readiness,
     browser_runtime,
 )
+from app.services.acquisition.browser_fetch_support import build_browser_fetch_result
 from app.services.acquisition.traversal import TraversalResult
 from app.services.config.runtime_settings import crawler_runtime_settings
 from app.services.config.selectors import CARD_SELECTORS
@@ -4068,7 +4069,7 @@ def test_browser_diagnostics_preserves_existing_retry_reason_when_unspecified() 
     assert diagnostics["retry_reason"] == "empty_extraction"
 
 
-def test_build_failed_browser_diagnostics_tolerates_non_mapping_phase_timings() -> None:
+def test_build_failed_browser_diagnostics_rejects_non_mapping_phase_timings() -> None:
     exc = RuntimeError("broken timings payload")
     setattr(exc, "browser_phase_timings_ms", [("navigation", 42)])
 
@@ -4077,7 +4078,23 @@ def test_build_failed_browser_diagnostics_tolerates_non_mapping_phase_timings() 
         exc=exc,
     )
 
-    assert diagnostics["phase_timings_ms"] == {"navigation": 42}
+    assert diagnostics["phase_timings_ms"] == {}
+    assert diagnostics["phase_timings_error"] == "invalid_phase_timings_ms:incoming"
+
+
+def test_build_browser_fetch_result_coerces_bad_status_and_none_content_type() -> None:
+    result = build_browser_fetch_result(
+        url="https://example.com",
+        final_url="https://example.com",
+        html="<html></html>",
+        finalized={"content_type": None},
+        finalized_status_code="not-a-status",
+        finalized_platform_family=None,
+        diagnostics={},
+    )
+
+    assert result.status_code == 0
+    assert result.content_type == ""
 
 
 def test_browser_diagnostics_marks_invalid_phase_timing_payload() -> None:

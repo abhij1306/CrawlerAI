@@ -316,11 +316,19 @@ class SelectolaxJobAdapter(BaseAdapter):
                 records.append(record)
         elif self._is_job_surface(surface):
             raw_records = self._extract_listing(parser, url)
-            records = (
+            extracted_records = (
                 cast(AdapterRecords, await raw_records)
                 if inspect.isawaitable(raw_records)
                 else raw_records
             )
+            if isinstance(extracted_records, list):
+                records = extracted_records
+            else:
+                logger.warning(
+                    "Adapter %s returned non-list listing records for url=%s",
+                    self.name,
+                    url,
+                )
         else:
             logger.warning(
                 "Adapter %s skipped unsupported surface=%r for url=%s; allowed=%s",

@@ -173,6 +173,7 @@ class AmazonAdapter(BaseAdapter):
         return any(d in url for d in self.domains)
 
     async def extract(self, url: str, html: str, surface: str, proxy: str | None = None) -> AdapterResult:
+        del proxy
         parser = LexborHTMLParser(html)
         records = []
         if surface in ("ecommerce_detail",):
@@ -514,9 +515,9 @@ class AmazonAdapter(BaseAdapter):
             raw_dim = raw_dims.get(dim)
             axis_lengths.append(len(raw_dim) if isinstance(raw_dim, list) else 0)
         for row in raw_variations:
-            if not isinstance(row, list) or len(row) != len(axis_lengths):
+            if not isinstance(row, list):
                 continue
-            row_valid = True
+            row_valid = len(row) == len(axis_lengths)
             row_valid_cells = 0
             for index, axis_length in zip(row, axis_lengths, strict=False):
                 if (
@@ -531,7 +532,7 @@ class AmazonAdapter(BaseAdapter):
             if row_valid:
                 valid_rows += 1
             valid_cells += row_valid_cells
-        return valid_rows, valid_cells
+        return valid_cells, valid_rows
 
     def _twister_variants(
         self,

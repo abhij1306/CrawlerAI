@@ -59,7 +59,7 @@ from app.services.extract.detail_state_variant_targets import (
 from app.services.extract.detail_dom_variant_options import (
     merge_variant_option_state,
     node_attr_is_truthy,
-    variant_option_availability as variant_option_availability,
+    variant_option_availability,
     variant_option_url,
 )
 from app.services.extract.variant_group_validator import (

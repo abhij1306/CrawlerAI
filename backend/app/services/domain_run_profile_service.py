@@ -343,7 +343,7 @@ def build_success_acquisition_contract(
     extraction_source = str(diagnostics.get("extraction_source") or "").strip().lower()
     required_rendering = extraction_source in {"rendered_dom", "rendered_dom_visual"}
     required_traversal = bool(diagnostics.get("traversal_activated"))
-    required_network_payloads = int(str(diagnostics.get("network_payload_count") or 0)) > 0
+    required_network_payloads = int(float(diagnostics.get("network_payload_count") or 0)) > 0
     handoff_eligible = (
         normalized_method == "browser"
         and preferred_engine != "auto"

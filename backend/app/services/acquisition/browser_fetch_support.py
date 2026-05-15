@@ -65,13 +65,14 @@ def build_browser_fetch_result(
     finalized_platform_family: str | None,
     diagnostics: dict[str, object],
 ) -> PageFetchResult:
+    content_type = finalized.get("content_type")
     return PageFetchResult(
         url=url,
         final_url=final_url,
         html=html,
-        status_code=int(str(finalized_status_code or 0)),
+        status_code=_status_code_or_zero(finalized_status_code),
         method="browser",
-        content_type=str(finalized.get("content_type", "")),
+        content_type=str(content_type or ""),
         blocked=bool(finalized.get("blocked", False)),
         platform_family=finalized_platform_family,
         headers=copy_headers(finalized.get("page_headers")),
@@ -79,6 +80,13 @@ def build_browser_fetch_result(
         browser_diagnostics=diagnostics,
         artifacts=_mapping_value(finalized.get("artifacts")),
     )
+
+
+def _status_code_or_zero(value: object) -> int:
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
 
 
 def build_browser_fetch_diagnostics(

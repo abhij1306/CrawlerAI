@@ -79,7 +79,7 @@ class BrowserNetworkCapture:
         self._max_payloads = max(1, browser_capture_max_network_payloads())
         self._max_payload_bytes = max(1, browser_capture_max_network_payload_bytes())
         self._total_payload_bytes = max(
-            self._max_payload_bytes,
+            1,
             browser_capture_total_network_payload_bytes(),
         )
         self._queue: asyncio.Queue[Any | None] = asyncio.Queue(
@@ -103,6 +103,7 @@ class BrowserNetworkCapture:
                     min(
                         browser_capture_workers(),
                         self._max_payloads,
+                        self._queue.maxsize,
                     ),
                 )
             )
@@ -346,7 +347,7 @@ def should_capture_network_payload(
         return False
     max_payloads = max(1, browser_capture_max_network_payloads())
     total_payload_bytes = max(
-        max(1, browser_capture_max_network_payload_bytes()),
+        1,
         browser_capture_total_network_payload_bytes(),
     )
     if captured_count >= max_payloads:
