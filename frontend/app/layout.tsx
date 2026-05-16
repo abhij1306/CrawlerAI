@@ -1,8 +1,7 @@
 import type { Metadata } from 'next';
 import './globals.css';
 
-import { Outfit } from 'next/font/google';
-import localFont from 'next/font/local';
+import { JetBrains_Mono, Outfit } from 'next/font/google';
 
 import { AppShell } from '../components/layout/app-shell';
 import { QueryProvider } from '../components/ui/query-provider';
@@ -14,14 +13,8 @@ const mainFont = Outfit({
   display: 'swap',
 });
 
-// Mono font. Keep variable name stable so globals.css does not need selector churn.
-const monoFont = localFont({
-  src: [
-    { path: './fonts/adwaita-mono-regular.ttf', weight: '400', style: 'normal' },
-    { path: './fonts/adwaita-mono-italic.ttf', weight: '400', style: 'italic' },
-    { path: './fonts/adwaita-mono-bold.ttf', weight: '700', style: 'normal' },
-    { path: './fonts/adwaita-mono-bold-italic.ttf', weight: '700', style: 'italic' },
-  ],
+const monoFont = JetBrains_Mono({
+  subsets: ['latin'],
   variable: '--font-jetbrains-mono',
   display: 'swap',
 });

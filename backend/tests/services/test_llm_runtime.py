@@ -405,11 +405,21 @@ async def test_run_prompt_task_returns_timeout_when_provider_exceeds_call_timeou
         run_id=None,
         domain="example.com",
         variables={"field": "materials"},
-        timeout_seconds=0.01,
+        timeout_seconds=0.1,
+    )
+    cost_logs = list(
+        (
+            await db_session.execute(select(LLMCostLog).order_by(LLMCostLog.id.asc()))
+        ).scalars()
     )
 
     assert result.payload is None
     assert result.error_category == llm_runtime.LLMErrorCategory.TIMEOUT
+    assert any(
+        log.outcome == "error"
+        and log.error_category == str(llm_runtime.LLMErrorCategory.TIMEOUT)
+        for log in cost_logs
+    )
 
 
 @pytest.mark.asyncio

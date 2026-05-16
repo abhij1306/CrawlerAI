@@ -197,22 +197,18 @@ def extract_records(
         if len(candidate_sets) >= 2 and combined_rows:
             candidate_sets.append(("combined", combined_rows))
         if candidate_sets:
-            candidate_rows = (
-                best_listing_candidate_set(
-                    candidate_sets,
-                    page_url=page_url,
-                    surface=normalized_surface,
-                    max_records=max_records,
-                    title_is_noise=is_title_noise,
-                    url_is_structural=listing_url_is_structural,
-                    detail_like_url=lambda candidate_url: listing_detail_like_path(
-                        candidate_url,
-                        is_job=str(normalized_surface or "").startswith("job_"),
-                    ),
-                )
-                if len(candidate_sets) > 1
-                else candidate_sets[0][1][:max_records]
-            )
+            candidate_rows = best_listing_candidate_set(
+                candidate_sets,
+                page_url=page_url,
+                surface=normalized_surface,
+                max_records=max_records,
+                title_is_noise=is_title_noise,
+                url_is_structural=listing_url_is_structural,
+                detail_like_url=lambda candidate_url: listing_detail_like_path(
+                    candidate_url,
+                    is_job=str(normalized_surface or "").startswith("job_"),
+                ),
+            )[:max_records]
             gated_rows = apply_listing_integrity_gate(
                 candidate_rows,
                 page_url=page_url,

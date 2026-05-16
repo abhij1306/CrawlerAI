@@ -282,9 +282,15 @@ def load_attribute_repository_data(path: Path) -> dict[str, object]:
     audience_attribute = attribute_by_name(
         raw_attributes,
         DATA_ENRICHMENT_SHOPIFY_NORMALIZATION_ATTRIBUTE_NAMES["audience"],
+    ) or attribute_by_name(
+        raw_attributes,
+        DATA_ENRICHMENT_SHOPIFY_NORMALIZATION_ATTRIBUTE_NAMES["gender"],
     )
     size_systems = shopify_size_systems(size_attribute)
-    audience_terms = shopify_attribute_terms(audience_attribute)
+    audience_terms = shopify_attribute_terms(audience_attribute) or {
+        key: list(values)
+        for key, values in DATA_ENRICHMENT_GENDER_ALIASES.items()
+    }
     material_terms = shopify_material_terms(
         raw_attributes,
         DATA_ENRICHMENT_SHOPIFY_NORMALIZATION_ATTRIBUTE_NAMES["fabric"],

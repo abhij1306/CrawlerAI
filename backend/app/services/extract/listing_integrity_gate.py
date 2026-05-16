@@ -9,7 +9,7 @@ part of the listing-extraction bucket per ``docs/CODEBASE_MAP.md``.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 
 from collections import Counter
 from dataclasses import dataclass
@@ -254,8 +254,11 @@ def _ensure_frozenset(value: object) -> frozenset[str]:
         return value
     if isinstance(value, str):
         return frozenset({value})
-    if isinstance(value, dict):
-        return frozenset(str(item) for item in value.values())
+    if isinstance(value, Mapping):
+        exported_items = value.get("items")
+        if isinstance(exported_items, Iterable) and not isinstance(exported_items, (str, bytes)):
+            return frozenset(str(item) for item in exported_items)
+        return frozenset(str(item) for item in value.keys())
     if isinstance(value, Iterable):
         return frozenset(str(item) for item in value)
     return frozenset()

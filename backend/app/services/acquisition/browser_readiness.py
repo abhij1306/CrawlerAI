@@ -246,7 +246,7 @@ async def listing_card_signal_count_impl(page: Any, *, surface: str) -> int:
     from app.services.acquisition.traversal import count_listing_cards
 
     if str(surface or "").strip().lower().startswith("ecommerce"):
-        html = await get_page_html(page, flatten_shadow=False)
+        html = await get_page_html(page)
         return _ecommerce_ready_card_count(analyze_html(html).soup)
     return await count_listing_cards(
         page,
