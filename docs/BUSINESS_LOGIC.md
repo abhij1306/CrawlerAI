@@ -101,6 +101,8 @@ This is intentionally about behavior, not implementation detail.
 | Decision | Owner | Current Rule | If Wrong |
 |---|---|---|---|
 | Listing field scope stays narrow | `field_policy.py`, `config/field_mappings.py`, `listing_extractor.py` | Listing output is limited to high-signal user-facing fields; low-value gallery spillover stays out | Listing rows become bloated and unstable across sites |
+| Content table rows allow open fields | `content_listing_handler.py`, `public_record_firewall.py`, `config/field_mappings.py` | `content_listing` table-row mode emits one record per meaningful table row and allows header-derived fields only when `_extraction_mode == table_rows` and the surface is registered in `OPEN_FIELD_SURFACES` | Arbitrary table columns are dropped, or open-field passthrough leaks into normal listing surfaces |
+| Article listing requires editorial signal | `listing_extractor.py`, `extract/listing_candidate_ranking.py` | `article_listing` rows require title, URL, and at least one of author, publication date, or summary | Navigation/archive links become fake articles |
 
 ---
 
@@ -116,6 +118,8 @@ This is intentionally about behavior, not implementation detail.
 | Utility-page redirects keep or reject detail identity upstream | `detail_extractor.py`, `pipeline/core.py` | Same-site detail runs that land on utility URLs may keep the originally requested PDP identity only when the extracted product still matches that requested slug; otherwise the record is dropped | Batch/detail crawls persist `/faqs` or `/mywishlist` as fake products, or swap in the wrong product under the requested URL |
 | Labeled product option groups are real variants | `detail_extractor.py`, `extract/shared_variant_logic.py` | DOM variant recovery must recognize labeled select/radio/checkbox option groups generically, normalize common aliases, carry per-option stock/availability where present, keep `option_values` as the source of truth for multi-axis variant rows, and avoid emitting duplicate size summaries when `available_sizes` already covers the size axis | Sites with visible product-option chips such as `Weight`, `Flavour`, `Shade`, or `Storage` keep losing `variant_axes`, `variants`, selected availability, or emit duplicated size/color payloads even though the DOM has them |
 | Site-shell rejection | `detail_extractor.py` | Detail extraction must reject records that are really site chrome, stale SPA shells, or generic OG/title blobs | Dead or non-product pages persist as fake product records |
+| Content/article/forum detail surfaces | `extract/content_surface_extractor.py`, `detail_dom_extractor.py`, `structured_sources.py` | `content_detail`, `article_detail`, and `forum_detail` use deterministic structured/DOM candidates for readable text, article metadata, and forum thread metadata; `forum_listing` does not exist and forum indexes use `content_listing` | General pages return empty records, forum indexes become a parallel pipeline, or content extraction pollutes commerce/job behavior |
+| Tables on detail pages | `extract/table_extractor.py`, `detail_materializer.py` | Meaningful tables on detail surfaces are extracted as structured `tables` objects; table DOM is removed before prose extraction on content surfaces to avoid duplicate cell text | Detail records either lose spec/comparison data or repeat table cells inside prose |
 
 ---
 

@@ -100,6 +100,20 @@ def _detail_json_ld_payload_is_irrelevant(payload: object) -> bool:
     return normalized_types <= _NORMALIZED_DETAIL_IRRELEVANT_JSON_LD_TYPES
 
 
+def _structured_payload_allowed_for_surface(payload: object, surface: str) -> bool:
+    if not isinstance(payload, dict):
+        return True
+    raw_types = payload.get("@type")
+    normalized_types = {
+        str(item or "").strip().lower()
+        for item in (raw_types if isinstance(raw_types, list) else [raw_types])
+        if str(item or "").strip()
+    }
+    if "webpage" in normalized_types:
+        return str(surface or "").strip().lower() == "content_detail"
+    return not _detail_json_ld_payload_is_irrelevant(payload)
+
+
 class DetailTierExecutor:
     def __init__(self, runtime: DetailTierRuntime) -> None:
         self._runtime = runtime
@@ -214,7 +228,10 @@ class DetailTierExecutor:
                     source_name == "json_ld"
                     and DETAIL_SURFACE_KEYWORD
                     in str(state.surface or "").strip().lower()
-                    and _detail_json_ld_payload_is_irrelevant(payload)
+                    and not _structured_payload_allowed_for_surface(
+                        payload,
+                        state.surface,
+                    )
                 ):
                     continue
                 self._runtime.collect_structured_payload_candidates(

@@ -258,7 +258,7 @@ def _ensure_frozenset(value: object) -> frozenset[str]:
         exported_items = value.get("items")
         if isinstance(exported_items, Iterable) and not isinstance(exported_items, (str, bytes)):
             return frozenset(str(item) for item in exported_items)
-        return frozenset(str(item) for item in value.keys())
+        return frozenset(str(item) for item in value.values())
     if isinstance(value, Iterable):
         return frozenset(str(item) for item in value)
     return frozenset()

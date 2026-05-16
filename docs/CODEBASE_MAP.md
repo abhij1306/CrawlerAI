@@ -155,6 +155,9 @@ Canonical config owner:
 | `adapters/[platform].py` | Platform-specific extraction |
 | `extract/listing_card_fragments.py` | Canonical listing-fragment discovery, scoring, and listing-card heuristics shared by traversal, browser artifact capture, and listing extraction |
 | `extract/listing_candidate_ranking.py` | Listing candidate admission, support signals, utility rejection, dedupe, and set ranking |
+| `extract/content_listing_handler.py` | Content listing table-row extraction and open-field row tagging |
+| `extract/content_surface_extractor.py` | DOM fallback extraction for content, article, and forum detail surfaces |
+| `extract/table_extractor.py` | Meaningful table detection, filtering, context resolution, and structured table output |
 | `extract/detail_tiers.py` | Detail tier execution order, DOM skip decision, and finalization transitions |
 | `extract/detail_dom_extractor.py` | Detail DOM context selection, DOM fallback fields, and DOM variant recovery |
 | `extract/detail_dom_variant_options.py` | DOM variant option availability, URL, image, and selected-state helpers |

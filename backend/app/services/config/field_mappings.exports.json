@@ -27,7 +27,8 @@
         "location",
         "dealer_name",
         "image_url",
-        "description"
+        "description",
+        "tables"
       ]
     },
     "automobile_listing": {
@@ -85,7 +86,8 @@
         "updated_at",
         "published_at",
         "variants",
-        "variant_count"
+        "variant_count",
+        "tables"
       ]
     },
     "ecommerce_listing": {
@@ -128,7 +130,8 @@
         "qualifications",
         "benefits",
         "skills",
-        "remote"
+        "remote",
+        "tables"
       ]
     },
     "job_listing": {
@@ -150,6 +153,84 @@
     "tabular": {
       "__type__": "list",
       "items": []
+    },
+    "content_detail": {
+      "__type__": "list",
+      "items": [
+        "title",
+        "url",
+        "content",
+        "summary",
+        "headings",
+        "image_url",
+        "additional_images",
+        "tags",
+        "category",
+        "breadcrumbs",
+        "language",
+        "word_count",
+        "tables"
+      ]
+    },
+    "content_listing": {
+      "__type__": "list",
+      "items": [
+        "title",
+        "url",
+        "summary",
+        "image_url",
+        "category"
+      ]
+    },
+    "article_listing": {
+      "__type__": "list",
+      "items": [
+        "title",
+        "author",
+        "publication_date",
+        "url",
+        "image_url",
+        "category",
+        "summary",
+        "source_name"
+      ]
+    },
+    "article_detail": {
+      "__type__": "list",
+      "items": [
+        "title",
+        "url",
+        "author",
+        "publication_date",
+        "content",
+        "summary",
+        "category",
+        "tags",
+        "image_url",
+        "additional_images",
+        "source_name",
+        "language",
+        "word_count",
+        "reading_time",
+        "tables"
+      ]
+    },
+    "forum_detail": {
+      "__type__": "list",
+      "items": [
+        "title",
+        "author",
+        "publication_date",
+        "content",
+        "summary",
+        "url",
+        "category",
+        "tags",
+        "reply_count",
+        "view_count",
+        "last_reply_date",
+        "tables"
+      ]
     }
   },
   "COLLECTION_KEYS": {
@@ -203,6 +284,26 @@
         "description",
         "qualifications"
       ]
+    },
+    "content_detail": {
+      "__type__": "frozenset",
+      "items": [
+        "content",
+        "summary"
+      ]
+    },
+    "article_detail": {
+      "__type__": "frozenset",
+      "items": [
+        "content",
+        "summary"
+      ]
+    },
+    "forum_detail": {
+      "__type__": "frozenset",
+      "items": [
+        "content"
+      ]
     }
   },
   "DOM_OPTIONAL_CUE_FIELDS": {
@@ -222,6 +323,30 @@
         "skills",
         "requirements"
       ]
+    },
+    "content_detail": {
+      "__type__": "frozenset",
+      "items": [
+        "tags",
+        "category",
+        "headings"
+      ]
+    },
+    "article_detail": {
+      "__type__": "frozenset",
+      "items": [
+        "tags",
+        "category",
+        "reading_time"
+      ]
+    },
+    "forum_detail": {
+      "__type__": "frozenset",
+      "items": [
+        "tags",
+        "reply_count",
+        "view_count"
+      ]
     }
   },
   "SURFACE_FIELD_REPAIR_TARGETS": {
@@ -229,6 +354,21 @@
       "price",
       "title",
       "image_url"
+    ],
+    "content_detail": [
+      "title",
+      "content",
+      "url"
+    ],
+    "article_detail": [
+      "title",
+      "content",
+      "url"
+    ],
+    "forum_detail": [
+      "title",
+      "content",
+      "url"
     ]
   },
   "SURFACE_BROWSER_RETRY_TARGETS": {
@@ -237,6 +377,21 @@
       "currency",
       "title",
       "image_url"
+    ],
+    "content_detail": [
+      "title",
+      "content",
+      "url"
+    ],
+    "article_detail": [
+      "title",
+      "content",
+      "url"
+    ],
+    "forum_detail": [
+      "title",
+      "content",
+      "url"
     ]
   },
   "ECOMMERCE_DETAIL_JS_STATE_FIELDS": {
@@ -814,7 +969,13 @@
     "summary": {
       "__type__": "list",
       "items": [
-        "summary"
+        "summary",
+        "excerpt",
+        "abstract",
+        "intro",
+        "lead",
+        "teaser",
+        "meta_description"
       ]
     },
     "requirements": {
@@ -926,6 +1087,122 @@
         "description",
         "product description",
         "product_description"
+      ]
+    },
+    "author": {
+      "__type__": "list",
+      "items": [
+        "author",
+        "byline",
+        "writer",
+        "posted_by",
+        "creator",
+        "contributor",
+        "articleAuthor"
+      ]
+    },
+    "content": {
+      "__type__": "list",
+      "items": [
+        "content",
+        "body",
+        "article_body",
+        "articleBody",
+        "full_text",
+        "post_body",
+        "text",
+        "page_content",
+        "main_content"
+      ]
+    },
+    "headings": {
+      "__type__": "list",
+      "items": [
+        "headings",
+        "sections",
+        "outline",
+        "toc",
+        "table_of_contents"
+      ]
+    },
+    "breadcrumbs": {
+      "__type__": "list",
+      "items": [
+        "breadcrumbs",
+        "breadcrumb",
+        "nav_path",
+        "page_path"
+      ]
+    },
+    "source_name": {
+      "__type__": "list",
+      "items": [
+        "source_name",
+        "publisher",
+        "site_name",
+        "publication"
+      ]
+    },
+    "reply_count": {
+      "__type__": "list",
+      "items": [
+        "reply_count",
+        "comments",
+        "comment_count",
+        "num_replies",
+        "responses"
+      ]
+    },
+    "view_count": {
+      "__type__": "list",
+      "items": [
+        "view_count",
+        "views",
+        "page_views",
+        "read_count"
+      ]
+    },
+    "word_count": {
+      "__type__": "list",
+      "items": [
+        "word_count",
+        "wordCount",
+        "word_length"
+      ]
+    },
+    "reading_time": {
+      "__type__": "list",
+      "items": [
+        "reading_time",
+        "read_time",
+        "readingTime",
+        "time_to_read"
+      ]
+    },
+    "last_reply_date": {
+      "__type__": "list",
+      "items": [
+        "last_reply_date",
+        "last_activity",
+        "last_post_date"
+      ]
+    },
+    "language": {
+      "__type__": "list",
+      "items": [
+        "language",
+        "lang",
+        "locale"
+      ]
+    },
+    "tables": {
+      "__type__": "list",
+      "items": [
+        "tables",
+        "table",
+        "data_tables",
+        "spec_tables",
+        "comparison_tables"
       ]
     }
   },
@@ -1080,6 +1357,12 @@
     "items": [
       "variant_count",
       "variants"
+    ]
+  },
+  "OPEN_FIELD_SURFACES": {
+    "__type__": "list",
+    "items": [
+      "content_listing"
     ]
   }
 }

@@ -72,7 +72,7 @@ def parse_json_ld(soup: BeautifulSoup) -> list[dict[str, Any]]:
             rows.extend(json_ld_candidates(json.loads(raw)))
         except json.JSONDecodeError:
             continue
-    return rows
+    return sorted(rows, key=lambda node: _json_ld_node_priority(node))
 
 
 def json_ld_candidates(value: Any) -> list[dict[str, Any]]:
@@ -156,7 +156,17 @@ def _json_ld_node_priority(node: dict[str, Any]) -> tuple[int, str]:
     else:
         lowered_types = {str(raw_type or "").strip().lower()}
     lowered_types.discard("")
-    if lowered_types & {"product", "productgroup", "jobposting", "itemlist", "listitem"}:
+    if lowered_types & {
+        "product",
+        "productgroup",
+        "jobposting",
+        "article",
+        "newsarticle",
+        "blogposting",
+        "discussionforumposting",
+        "itemlist",
+        "listitem",
+    }:
         return (0, _json_ld_node_id(node))
     if lowered_types & {"offer", "aggregateoffer"}:
         return (1, _json_ld_node_id(node))

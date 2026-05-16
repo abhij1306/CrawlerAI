@@ -91,14 +91,15 @@ This layer is the frontend/backend contract chokepoint.
 Primary files:
 
 - `components/crawl/crawl-config-screen.tsx`
+- `components/crawl/domain-surface-config.ts`
 - `components/crawl/crawl.module.css`
 - `components/crawl/shared.tsx`
 - `lib/constants/crawl-defaults.ts`
 
 Responsibilities:
 
-- choose module/domain/mode
-- derive surface from domain + module
+- choose domain/surface tab/mode
+- derive surface from the domain/tab dispatch map
 - build dispatch payload
 - collect advanced settings and additional fields
 - submit crawl or CSV run
@@ -113,6 +114,8 @@ Current UI settings behavior reflects the backend contract:
 - proxy input
 - additional fields
 - additional fields are dispatched as the operator typed them (trimmed/deduped only); the UI no longer rewrites labels like `Features & Benefits` into snake_case before the backend sees them
+- Crawl Studio domain options live in `domain-surface-config.ts`: Content, Commerce, Jobs, Automobiles, Article, and Forum Thread.
+- Surface tabs adapt by domain. Forum Thread renders one tab and hides the mode picker.
 
 ### 3.4 Run workspace
 

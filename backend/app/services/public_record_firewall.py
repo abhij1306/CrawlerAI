@@ -9,6 +9,7 @@ from app.services.config.field_mappings import (
     BARCODE_FIELD,
     CANONICAL_SCHEMAS,
     NAVIGATION_URL_FIELDS,
+    OPEN_FIELD_SURFACES,
     ROUTE_BARCODE_TO_SKU,
     SKU_FIELD,
     URL_FIELD,
@@ -55,6 +56,14 @@ def public_record_data_for_surface(
         if str(field_name).strip()
     }
     allowed_fields.add(URL_FIELD)
+    open_field_passthrough = (
+        normalized_surface
+        in {
+            normalize_field_key(surface_name)
+            for surface_name in tuple(OPEN_FIELD_SURFACES or ())
+        }
+        and normalize_field_key(record.get("_extraction_mode")) == "table_rows"
+    )
     explicit_fields = {
         normalize_field_key(field_name)
         for field_name in canonical_requested_fields(requested_fields or [])
@@ -88,7 +97,7 @@ def public_record_data_for_surface(
         if field_name in default_excluded and field_name not in explicit_fields:
             rejected[str(raw_field_name)] = "default_public_field_excluded"
             continue
-        if field_name not in allowed_fields:
+        if field_name not in allowed_fields and not open_field_passthrough:
             rejected[str(raw_field_name)] = "field_not_allowed_for_surface"
             continue
         coerced = coerce_field_value(field_name, raw_value, page_url)

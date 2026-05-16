@@ -182,6 +182,10 @@ def extract_records(
         adapter_rows = _finalize_listing_rows(adapter_rows)
         listing_rows = _finalize_listing_rows(listing_rows)
         network_rows = _finalize_listing_rows(network_rows)
+        if normalized_surface == "content_listing" and any(
+            row.get("_extraction_mode") == "table_rows" for row in listing_rows
+        ):
+            return listing_rows[:max_records]
         listing_rows = _backfill_listing_rows_from_adapter(
             listing_rows,
             adapter_rows=adapter_rows,

@@ -52,6 +52,7 @@ from app.services.extract.listing_card_fragments import (
 )
 from app.services.extract.listing_record_finalizer import finalize_listing_price_fields
 from app.services.extract.listing_visual import visual_listing_records
+from app.services.extract.content_listing_handler import table_row_records
 from app.services.extract.detail_price_extractor import currency_hint_from_page_url
 from app.services.field_policy import normalize_requested_field
 from app.services.shared.field_coerce import (
@@ -191,7 +192,8 @@ def _structured_listing_items(
                     items.append(item)
             continue
         is_typed_listing_node = any(
-            token in normalized_type for token in ("product", "jobposting")
+            token in normalized_type
+            for token in ("product", "jobposting", "article", "newsarticle", "blogposting")
         )
         if allow_standalone_typed and is_typed_listing_node:
             items.append(candidate)
@@ -224,7 +226,10 @@ def _typed_listing_payloads(payloads: list[dict[str, Any]]):
             if not isinstance(candidate, dict):
                 continue
             normalized_type = _normalized_payload_type(candidate)
-            if any(token in normalized_type for token in ("product", "jobposting")):
+            if any(
+                token in normalized_type
+                for token in ("product", "jobposting", "article", "newsarticle", "blogposting")
+            ):
                 yield candidate
 
 
@@ -846,6 +851,20 @@ def _listing_record_from_card(
         selector_rules=selector_rules,
         selector_trace_candidates=selector_trace_candidates,
     )
+    if surface == "article_listing":
+        author = _article_card_text(card_soup, [".author", ".byline", "[rel='author']", "[itemprop='author']"])
+        if author:
+            add_candidate(candidates, "author", author)
+        publication_date = _article_card_date(card_soup)
+        if publication_date:
+            add_candidate(candidates, "publication_date", publication_date)
+        summary = _article_card_summary(card_soup, title)
+        if summary:
+            add_candidate(candidates, "summary", summary)
+    elif surface == "content_listing":
+        summary = _article_card_summary(card_soup, title)
+        if summary:
+            add_candidate(candidates, "summary", summary)
     if not is_job and not candidates.get("brand"):
         brand_text = _extract_brand_signal_from_card(card, title)
         if brand_text:
@@ -1044,6 +1063,35 @@ def apply_listing_integrity_gate(
     return [_strip_listing_integrity_internals(record) for record in records]
 
 
+def _article_card_text(card_soup: BeautifulSoup, selectors: list[str]) -> str:
+    for selector in selectors:
+        node = card_soup.select_one(selector)
+        value = clean_text(node.get_text(" ", strip=True) if node else "")
+        if value:
+            return value
+    return ""
+
+
+def _article_card_date(card_soup: BeautifulSoup) -> str:
+    for selector in ("time[datetime]", "[itemprop='datePublished']", ".post-date", ".published"):
+        node = card_soup.select_one(selector)
+        if node is None:
+            continue
+        value = clean_text(node.get("datetime") or node.get("content") or node.get_text(" ", strip=True))
+        if value:
+            return value
+    return ""
+
+
+def _article_card_summary(card_soup: BeautifulSoup, title: str) -> str:
+    for selector in ("p", ".summary", ".excerpt", ".description"):
+        node = card_soup.select_one(selector)
+        value = clean_text(node.get_text(" ", strip=True) if node else "")
+        if value and value != clean_text(title) and len(value) >= 24:
+            return value
+    return ""
+
+
 def _strip_listing_integrity_internals(record: dict[str, Any]) -> dict[str, Any]:
     if "_structural_signature" not in record:
         return record
@@ -1063,6 +1111,10 @@ def extract_listing_records(
     network_payloads: list[dict[str, object]] | None = None,
 ) -> list[dict[str, Any]]:
     del network_payloads
+    if surface == "content_listing":
+        table_records = table_row_records(html, page_url, max_records=max_records)
+        if table_records:
+            return table_records
     context = prepare_extraction_context(html)
     dom_parser = context.dom_parser
     is_job_surface = surface.startswith("job_")

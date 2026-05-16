@@ -95,6 +95,7 @@ from app.services.extract.detail_identity import (
 from app.services.extract.detail_record_finalizer import (
     repair_ecommerce_detail_record_quality,
 )
+from app.services.extract.table_extractor import extract_tables
 from app.services.extract.detail_image_dedupe import dedupe_primary_and_additional_images
 from app.services.extract.detail_text_sanitizer import detail_candidate_is_valid
 from app.services.extract.detail_price_extractor import (
@@ -1069,6 +1070,7 @@ def _finalize_early_detail_record(
     soup: BeautifulSoup,
     js_state_objects: dict[str, Any],
 ) -> dict[str, Any]:
+    _attach_detail_tables(record, soup)
     if str(surface or "").strip().lower() == "ecommerce_detail":
         _reconcile_detail_currency_with_url(record, page_url=page_url)
         repair_ecommerce_detail_record_quality(
@@ -1130,6 +1132,7 @@ def _finalize_dom_detail_record(
     soup: BeautifulSoup,
     js_state_objects: dict[str, Any],
 ) -> dict[str, Any]:
+    _attach_detail_tables(record, soup)
     if str(surface or "").strip().lower() == "ecommerce_detail":
         _reconcile_detail_currency_with_url(record, page_url=page_url)
         repair_ecommerce_detail_record_quality(
@@ -1149,6 +1152,14 @@ def _finalize_dom_detail_record(
     )
     record["_extraction_tiers"]["early_exit"] = None
     return record
+
+
+def _attach_detail_tables(record: dict[str, Any], soup: BeautifulSoup | None) -> None:
+    if record.get("tables") not in (None, "", [], {}) or soup is None:
+        return
+    tables = extract_tables(BeautifulSoup(str(soup), "html.parser"))
+    if tables:
+        record["tables"] = tables
 
 
 def _prepare_detail_extraction(
@@ -1392,6 +1403,21 @@ def extract_detail_records(
         record,
         page_url=page_url,
         requested_page_url=requested_page_url,
+    ):
+        return []
+    if (
+        surface == "ecommerce_detail"
+        and record.get("_irrelevant_detail_structured_product")
+        and len(
+            _detail_identity_tokens(
+                _detail_title_from_url(requested_page_url or page_url)
+            )
+        )
+        >= 2
+        and not _record_matches_requested_detail_identity(
+            record,
+            requested_page_url=requested_page_url or page_url,
+        )
     ):
         return []
     if record_score(record) <= 0:

@@ -135,6 +135,11 @@ class BrowserNetworkCapture:
             await asyncio.sleep(0)
             join_timeout_seconds = _queue_join_timeout_seconds()
             try:
+                for _worker in workers:
+                    await asyncio.wait_for(
+                        self._queue.put(None),
+                        timeout=join_timeout_seconds,
+                    )
                 await asyncio.wait_for(
                     self._queue.join(),
                     timeout=join_timeout_seconds,
@@ -148,10 +153,18 @@ class BrowserNetworkCapture:
                 )
                 for worker in workers:
                     worker.cancel()
-                while not self._queue.empty():
+                queue_empty = getattr(self._queue, "empty", None)
+                queue_get_nowait = getattr(self._queue, "get_nowait", None)
+                queue_task_done = getattr(self._queue, "task_done", None)
+                while (
+                    callable(queue_empty)
+                    and callable(queue_get_nowait)
+                    and not queue_empty()
+                ):
                     try:
-                        self._queue.get_nowait()
-                        self._queue.task_done()
+                        queue_get_nowait()
+                        if callable(queue_task_done):
+                            queue_task_done()
                     except asyncio.QueueEmpty:
                         break
             else:

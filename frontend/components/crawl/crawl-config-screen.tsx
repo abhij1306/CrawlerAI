@@ -38,6 +38,7 @@ import {
   uniqueFields,
   uniqueRequestedFields,
 } from './shared';
+import { DEFAULT_FIELDS, DOMAIN_OPTIONS, DOMAIN_TABS } from './domain-surface-config';
 
 type CrawlConfigScreenProps = {
   requestedTab: CrawlTab | null;
@@ -237,6 +238,12 @@ function normalizeHttpLookupDomain(rawUrl: string) {
 }
 
 function surfaceLabel(surface: string) {
+  if (surface === 'content_listing') {
+    return 'Content Rows';
+  }
+  if (surface === 'content_detail') {
+    return 'Page Content';
+  }
   if (surface === 'ecommerce_listing') {
     return 'Commerce Listing';
   }
@@ -248,6 +255,21 @@ function surfaceLabel(surface: string) {
   }
   if (surface === 'job_detail') {
     return 'Job Detail';
+  }
+  if (surface === 'automobile_listing') {
+    return 'Automobile Listing';
+  }
+  if (surface === 'automobile_detail') {
+    return 'Automobile Detail';
+  }
+  if (surface === 'article_listing') {
+    return 'Article Feed';
+  }
+  if (surface === 'article_detail') {
+    return 'Article Page';
+  }
+  if (surface === 'forum_detail') {
+    return 'Forum Thread';
   }
   return surface;
 }
@@ -306,6 +328,11 @@ export function CrawlConfigScreen({
 
   const activeMode = crawlTab === 'category' ? categoryMode : pdpMode;
   const surface = deriveSurface(crawlDomain, crawlTab);
+  const domainTabs = DOMAIN_TABS[crawlDomain];
+  const activeTabLabel =
+    domainTabs.find((tab) => tab.value === crawlTab)?.label ?? surfaceLabel(surface);
+  const showSurfaceTabs = domainTabs.length > 1;
+  const showModePicker = crawlDomain !== 'forum_thread';
   const singleUrlMode = isSingleUrlMode(crawlTab, activeMode);
   const normalizedTargetDomain = normalizeHttpLookupDomain(targetUrl);
   const profileLookupKey =
@@ -339,6 +366,13 @@ export function CrawlConfigScreen({
   }, [requestedCategoryMode, requestedPdpMode, requestedTab]);
 
   useEffect(() => {
+    if (domainTabs.some((tab) => tab.value === crawlTab)) {
+      return;
+    }
+    setCrawlTab(domainTabs[0]?.value ?? 'category');
+  }, [crawlDomain, crawlTab, domainTabs]);
+
+  useEffect(() => {
     const routeMode = crawlTab === 'category' ? requestedCategoryMode : requestedPdpMode;
     if (requestedTab === crawlTab && routeMode === activeMode) {
       return;
@@ -367,8 +401,9 @@ export function CrawlConfigScreen({
         bulkPrefillRouteSyncGuardRef.current = true;
         setCrawlTab('pdp');
         setPdpMode('batch');
-        if (parsed.domain === 'commerce' || parsed.domain === 'jobs') {
-          setCrawlDomain(parsed.domain);
+        const parsedDomain = parsed.domain;
+        if (parsedDomain && DOMAIN_OPTIONS.some((option) => option.value === parsedDomain)) {
+          setCrawlDomain(parsedDomain);
         }
         setBulkUrls(parsed.urls.join('\n'));
         if (Array.isArray(parsed.additional_fields)) {
@@ -826,27 +861,27 @@ export function CrawlConfigScreen({
           <header className="border-border flex h-10 items-center justify-between border-b bg-[color-mix(in_srgb,var(--bg-alt)_40%,var(--bg-panel))] px-6">
             <span className="type-body-sm font-medium text-secondary">Target URL</span>
             <Badge tone="accent" className="text-2xs h-5 px-1.5 font-medium">
-              {crawlTab === 'category' ? 'Category' : 'PDP'}
+              {activeTabLabel}
             </Badge>
           </header>
           <div className="space-y-5 px-6 pt-6 pb-6">
             <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
               <div className="flex flex-wrap items-center gap-2.5 ml-[-4px]">
-                <TabBar
-                  value={crawlTab}
-                  onChange={(value) => {
-                    const parsed = parseRequestedCrawlTab(value);
-                    if (parsed) {
-                      setCrawlTab(parsed);
-                    }
-                  }}
-                  options={[
-                    { value: 'category', label: 'Category Crawl' },
-                    { value: 'pdp', label: 'PDP Crawl' },
-                  ]}
-                />
-                <div className="flex flex-wrap items-center gap-2.5 ml-[-4px]">
-                  {crawlTab === 'category' ? (
+                {showSurfaceTabs ? (
+                  <TabBar
+                    value={crawlTab}
+                    onChange={(value) => {
+                      const parsed = parseRequestedCrawlTab(value);
+                      if (parsed) {
+                        setCrawlTab(parsed);
+                      }
+                    }}
+                    options={domainTabs}
+                  />
+                ) : null}
+                {showModePicker ? (
+                  <div className="flex flex-wrap items-center gap-2.5 ml-[-4px]">
+                    {crawlTab === 'category' ? (
                     <TabBar
                       value={categoryMode}
                       compact
@@ -862,7 +897,7 @@ export function CrawlConfigScreen({
                         { value: 'bulk', label: 'Bulk' },
                       ]}
                     />
-                  ) : (
+                    ) : (
                     <TabBar
                       value={pdpMode}
                       compact
@@ -878,8 +913,9 @@ export function CrawlConfigScreen({
                         { value: 'csv', label: 'CSV Upload' },
                       ]}
                     />
-                  )}
-                </div>
+                    )}
+                  </div>
+                ) : null}
               </div>
               <Button
                 variant="accent"
@@ -955,8 +991,8 @@ export function CrawlConfigScreen({
                   className="font-mono"
                   placeholder={
                     crawlTab === 'category'
-                      ? 'https://example.com/collections/chairs'
-                      : 'https://example.com/products/oak-chair'
+                      ? 'https://example.com/list'
+                      : 'https://example.com/page'
                   }
                   aria-label="Target URL input"
                 />
@@ -998,19 +1034,16 @@ export function CrawlConfigScreen({
                     <Globe className="text-accent size-4 shrink-0" />
                     <div className="type-control crawl-control-label">Domain</div>
                   </div>
-                  <TabBar
+                  <Dropdown<CrawlDomain>
+                    ariaLabel="Domain"
                     value={crawlDomain}
-                    compact
                     className={RUN_SETUP_CONTROL_CLASS}
                     onChange={(value) => {
-                      if (value === 'commerce' || value === 'jobs') {
+                      if (DOMAIN_OPTIONS.some((option) => option.value === value)) {
                         setCrawlDomain(value);
                       }
                     }}
-                    options={[
-                      { value: 'commerce', label: 'Commerce' },
-                      { value: 'jobs', label: 'Jobs' },
-                    ]}
+                    options={DOMAIN_OPTIONS}
                   />
                 </div>
 
@@ -1800,16 +1833,7 @@ function selectorGenerationFields(
 }
 
 function defaultFieldsForSurface(surface: string) {
-  if (surface === 'job_detail') {
-    return ['title', 'company', 'location', 'salary', 'apply_url'];
-  }
-  if (surface === 'job_listing') {
-    return ['title', 'company', 'location', 'url'];
-  }
-  if (surface === 'ecommerce_listing') {
-    return ['title', 'price', 'image_url', 'url'];
-  }
-  return ['title', 'price', 'brand', 'sku', 'availability', 'image_url'];
+  return DEFAULT_FIELDS[surface as keyof typeof DEFAULT_FIELDS] ?? ['title', 'url'];
 }
 
 function selectRelevantSelectorRecords(

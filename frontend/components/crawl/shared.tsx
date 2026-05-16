@@ -15,6 +15,7 @@ import { LogTerminal, buildLogSiteGroups, getLogStage } from './log-terminal';
 import { RecordThumbnail } from './record-thumbnail';
 import { RecordsTable } from './records-table';
 import type { CrawlDomain, CrawlRun, CrawlSurface } from '../../lib/api/types';
+import { SURFACE_DISPATCH } from './domain-surface-config';
 import { cn } from '../../lib/utils';
 import {
   cleanRequestedField,
@@ -137,10 +138,7 @@ export function parseRequestedPdpMode(value: string | null): PdpMode | null {
 }
 
 export function deriveSurface(domain: CrawlDomain, module: CrawlTab): CrawlSurface {
-  if (domain === 'jobs') {
-    return module === 'category' ? 'job_listing' : 'job_detail';
-  }
-  return module === 'category' ? 'ecommerce_listing' : 'ecommerce_detail';
+  return SURFACE_DISPATCH[`${domain}:${module}`];
 }
 
 export function inferDomainFromSurface(surface: string | null | undefined): CrawlDomain | null {
@@ -150,6 +148,18 @@ export function inferDomainFromSurface(surface: string | null | undefined): Craw
   }
   if (normalizedSurface.startsWith('ecommerce_')) {
     return 'commerce';
+  }
+  if (normalizedSurface.startsWith('automobile_')) {
+    return 'automobiles';
+  }
+  if (normalizedSurface.startsWith('article_')) {
+    return 'article';
+  }
+  if (normalizedSurface.startsWith('content_')) {
+    return 'content';
+  }
+  if (normalizedSurface === 'forum_detail') {
+    return 'forum_thread';
   }
   return null;
 }
