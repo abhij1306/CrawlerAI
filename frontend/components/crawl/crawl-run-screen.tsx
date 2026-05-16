@@ -862,13 +862,13 @@ export function CrawlRunScreen({ runId }: Readonly<CrawlRunScreenProps>) {
       <PageHeader
         title={
           run?.url ? (
-            <span className="flex items-center gap-1.5">
+            <span className="inline-flex items-baseline gap-1.5">
               Run Details:{' '}
               <a
                 href={run.url}
                 target="_blank"
                 rel="noreferrer"
-                className="link-accent type-body underline-offset-2 hover:underline"
+                className="link-accent type-body leading-inherit underline-offset-2 hover:underline"
               >
                 {getDomain(run.url).toLowerCase()}
               </a>
@@ -1127,7 +1127,7 @@ export function CrawlRunScreen({ runId }: Readonly<CrawlRunScreenProps>) {
                             }
                           />
                           {hasMoreTableRecords ? (
-                            <div className="surface-muted text-muted type-body flex items-center justify-between rounded-[var(--radius-md)] px-3 py-2">
+                            <div className="surface-muted text-muted type-body flex items-center justify-between rounded-[var(--radius-md)] px-6 py-2">
                               <span>
                                 Showing {tableRecords.length} of {tableTotal} records
                               </span>
@@ -1174,7 +1174,7 @@ export function CrawlRunScreen({ runId }: Readonly<CrawlRunScreenProps>) {
                         dangerouslySetInnerHTML={{ __html: syntaxHighlightJson(recordsJson) }}
                       />
                       {hasMoreJsonRecords ? (
-                        <div className="surface-muted text-muted type-body mt-2 flex items-center justify-between rounded-[var(--radius-md)] px-3 py-2">
+                        <div className="surface-muted text-muted type-body mt-2 flex items-center justify-between rounded-[var(--radius-md)] px-6 py-2">
                           <span>
                             JSON previewing {jsonRecords.length} of {recordsTotal} records
                           </span>
@@ -1231,7 +1231,7 @@ export function CrawlRunScreen({ runId }: Readonly<CrawlRunScreenProps>) {
                               description={`Review extraction evidence for ${domainRecipe.domain} on ${domainRecipe.surface}. Keep what should compound, reject what should not.`}
                             />
                             <div className="grid gap-3 md:grid-cols-2">
-                              <div className="surface-muted text-secondary type-body rounded-[var(--radius-md)] px-3 py-3 leading-[var(--leading-relaxed)]">
+                              <div className="surface-muted text-secondary type-body rounded-[var(--radius-md)] px-6 py-3 leading-[var(--leading-relaxed)]">
                                 <div className="field-label mb-1">Requested Coverage</div>
                                 Requested:{' '}
                                 {domainRecipe.requested_field_coverage.requested.join(', ') ||
@@ -1243,7 +1243,7 @@ export function CrawlRunScreen({ runId }: Readonly<CrawlRunScreenProps>) {
                                 Missing:{' '}
                                 {domainRecipe.requested_field_coverage.missing.join(', ') || 'None'}
                               </div>
-                              <div className="surface-muted text-secondary type-body rounded-[var(--radius-md)] px-3 py-3 leading-[var(--leading-relaxed)]">
+                              <div className="surface-muted text-secondary type-body rounded-[var(--radius-md)] px-6 py-3 leading-[var(--leading-relaxed)]">
                                 <div className="field-label mb-1">Acquisition Evidence</div>
                                 Method:{' '}
                                 {domainRecipe.acquisition_evidence.actual_fetch_method || '—'}
@@ -1357,7 +1357,7 @@ export function CrawlRunScreen({ runId }: Readonly<CrawlRunScreenProps>) {
                                   })}
                                 </div>
                               ) : (
-                                <div className="surface-muted rounded-[var(--radius-lg)] border border-dashed px-3 py-3">
+                                <div className="surface-muted rounded-[var(--radius-lg)] border border-dashed px-6 py-3">
                                   <p className="type-body text-secondary m-0">
                                     No field learning signals were captured for this run.
                                   </p>

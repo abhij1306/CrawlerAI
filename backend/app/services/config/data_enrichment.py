@@ -24,8 +24,8 @@ DATA_ENRICHMENT_LLM_TASK = "data_enrichment_semantic"
 DATA_ENRICHMENT_TAXONOMY_VERSION = "shopify-2026-02"
 
 DATA_ENRICHMENT_SKIP_RECORD_STATUSES = (
-    DATA_ENRICHMENT_STATUS_ENRICHED,
-    DATA_ENRICHMENT_STATUS_DEGRADED,
+    DATA_ENRICHMENT_STATUS_PENDING,
+    DATA_ENRICHMENT_STATUS_RUNNING,
 )
 DATA_ENRICHMENT_JOB_TERMINAL_STATUSES = (
     DATA_ENRICHMENT_STATUS_ENRICHED,
@@ -61,6 +61,7 @@ DATA_ENRICHMENT_LLM_BACKFILL_FIELDS = (
     "availability_normalized",
 )
 DATA_ENRICHMENT_SHOPIFY_NORMALIZATION_ATTRIBUTE_NAMES = {
+    "audience": "Target audience",
     "color": "Color",
     "size": "Size",
     "gender": "Target gender",
@@ -265,6 +266,7 @@ class DataEnrichmentSettings:
     max_seo_keywords: int = 20
     llm_description_excerpt_chars: int = 300
     llm_taxonomy_hint_count: int = 5
+    llm_call_timeout_seconds: float = 15.0
 
 
 data_enrichment_settings = DataEnrichmentSettings()

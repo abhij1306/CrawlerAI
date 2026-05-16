@@ -141,7 +141,7 @@ export function TabBar({
   return (
     <div
       className={cn(
-        'segmented-root inline-flex h-[36px] items-stretch gap-1 rounded-[8px] p-[4px]',
+        'segmented-root inline-flex h-[36px] items-stretch gap-1 rounded-none p-[4px]',
         className,
       )}
     >
@@ -152,7 +152,7 @@ export function TabBar({
           aria-pressed={value === option.value}
           onClick={() => onChange(option.value)}
           className={cn(
-            'type-control relative z-10 inline-flex min-w-[72px] shrink-0 items-center justify-center rounded-[5px] border px-3 py-0 whitespace-nowrap transition-[background-color,border-color,color,opacity] duration-150',
+            'type-control relative z-10 inline-flex min-w-[72px] shrink-0 items-center justify-center rounded-none border px-3 py-0 whitespace-nowrap transition-colors duration-150',
             padX,
             value === option.value
               ? 'border-border bg-panel text-foreground'
@@ -358,7 +358,7 @@ export function RunWorkspaceShell({
 }>) {
   return (
     <div className="page-stack">
-      <div className="border-border card-gradient shadow-card flex flex-wrap items-center justify-between gap-3 rounded-[var(--radius-xl)] border px-4 py-3">
+      <div className="border-border card-gradient shadow-card flex flex-wrap items-center justify-between gap-3 rounded-[var(--radius-xl)] border px-6 py-3">
         <div className="min-w-0 flex-1">{header}</div>
         {actions ? (
           <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div>
@@ -557,7 +557,7 @@ export function DetailRow({
   return (
     <div
       className={cn(
-        'border-border bg-background rounded-[var(--radius-lg)] border px-3 py-3',
+        'border-border bg-background rounded-[var(--radius-lg)] border px-6 py-3',
         className,
       )}
     >

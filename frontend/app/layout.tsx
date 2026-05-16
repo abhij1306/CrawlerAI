@@ -1,24 +1,28 @@
 import type { Metadata } from 'next';
 import './globals.css';
 
-import { Inter, JetBrains_Mono } from 'next/font/google';
+import { Outfit } from 'next/font/google';
+import localFont from 'next/font/local';
 
 import { AppShell } from '../components/layout/app-shell';
 import { QueryProvider } from '../components/ui/query-provider';
 
-// Primary sans — Inter (OS-feel, optical at small sizes)
-const mainFont = Inter({
+// Primary UI font
+const mainFont = Outfit({
   subsets: ['latin'],
   variable: '--font-primary-source',
-  weight: ['300', '400', '500', '600', '700'],
   display: 'swap',
 });
 
-// Mono — variable name must match globals.css: var(--font-jetbrains-mono, 'JetBrains Mono')
-const monoFont = JetBrains_Mono({
-  subsets: ['latin'],
+// Mono font. Keep variable name stable so globals.css does not need selector churn.
+const monoFont = localFont({
+  src: [
+    { path: './fonts/adwaita-mono-regular.ttf', weight: '400', style: 'normal' },
+    { path: './fonts/adwaita-mono-italic.ttf', weight: '400', style: 'italic' },
+    { path: './fonts/adwaita-mono-bold.ttf', weight: '700', style: 'normal' },
+    { path: './fonts/adwaita-mono-bold-italic.ttf', weight: '700', style: 'italic' },
+  ],
   variable: '--font-jetbrains-mono',
-  weight: ['400', '500', '600', '700'],
   display: 'swap',
 });
 

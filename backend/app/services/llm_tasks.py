@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import time
 from string import Template
@@ -45,6 +46,8 @@ async def run_prompt_task(
     run_id: int | None,
     domain: str,
     variables: dict[str, Any],
+    budget_scope: str | None = None,
+    timeout_seconds: float | None = None,
 ) -> LLMTaskResult:
     started_at = time.monotonic()
 
@@ -117,21 +120,22 @@ async def run_prompt_task(
     if cached_result is not None:
         return _finish(cached_result)
 
-    if not await reserve_run_llm_call(run_id):
+    if not await reserve_run_llm_call(run_id, budget_scope=budget_scope):
+        scope_label = budget_scope or f"crawl run {run_id}"
         return _finish(
             LLMTaskResult(
                 payload=None,
                 provider=provider,
                 model=model,
                 error_message=(
-                    "Error: LLM call budget exceeded for crawl run "
-                    f"{run_id}; max={llm_runtime_settings.llm_max_calls_per_run}"
+                    "Error: LLM call budget exceeded for "
+                    f"{scope_label}; max={llm_runtime_settings.llm_max_calls_per_run}"
                 ),
                 error_category=LLMErrorCategory.BUDGET_EXCEEDED,
             )
         )
 
-    raw, input_tokens, output_tokens = await call_provider_with_retry(
+    provider_call = call_provider_with_retry(
         provider=provider,
         model=model,
         api_key=resolve_provider_api_key(
@@ -141,6 +145,16 @@ async def run_prompt_task(
         system_prompt=system_prompt,
         user_prompt=safe_user_prompt,
     )
+    try:
+        if timeout_seconds and timeout_seconds > 0:
+            raw, input_tokens, output_tokens = await asyncio.wait_for(
+                provider_call,
+                timeout=float(timeout_seconds),
+            )
+        else:
+            raw, input_tokens, output_tokens = await provider_call
+    except TimeoutError:
+        raw, input_tokens, output_tokens = "Error: LLM provider call timed out", 0, 0
     if raw.startswith(ERROR_PREFIX):
         error_category = classify_error(raw)
         await _record_cost(

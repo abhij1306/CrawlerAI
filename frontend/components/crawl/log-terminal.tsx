@@ -887,7 +887,7 @@ export const LogTerminal = memo(function LogTerminal({
 
   return (
     <div
-      className="group/terminal relative flex flex-col overflow-hidden rounded-xl border"
+      className="group/terminal relative flex flex-col overflow-hidden rounded-none border"
       style={{
         borderColor: 'var(--terminal-border)',
         backgroundColor: 'var(--terminal-bg)',
@@ -896,7 +896,7 @@ export const LogTerminal = memo(function LogTerminal({
       }}
     >
       <div
-        className="flex h-9 items-center justify-between border-b bg-[color-mix(in_srgb,var(--text-primary)_5%,transparent)] px-4"
+        className="flex h-9 items-center justify-between border-b bg-[color-mix(in_srgb,var(--text-primary)_5%,transparent)] px-6"
         style={{ borderColor: 'var(--terminal-border)' }}
       >
         <span className="text-muted type-label-mono tracking-[0.25em] uppercase">
@@ -980,7 +980,7 @@ export const LogTerminal = memo(function LogTerminal({
                     }
                   }}
                   className={cn(
-                    'group/row grid w-full cursor-pointer grid-cols-[32px_minmax(280px,2fr)_80px_100px_100px_auto_minmax(200px,1.2fr)_80px_60px] items-center gap-3 px-4 py-2.5 text-left transition-colors outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-inset',
+                    'group/row grid w-full cursor-pointer grid-cols-[32px_minmax(280px,2fr)_80px_100px_100px_auto_minmax(200px,1.2fr)_80px_60px] items-center gap-3 px-6 py-2.5 text-left transition-colors outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-inset',
                     severityTone(group, index),
                   )}
                 >
@@ -1094,7 +1094,7 @@ export const LogTerminal = memo(function LogTerminal({
                             <div
                               key={row.key}
                               className={cn(
-                                'grid grid-cols-[64px_84px_minmax(0,1fr)_auto] items-center gap-4 px-4 py-2 text-xs',
+                                'grid grid-cols-[64px_84px_minmax(0,1fr)_auto] items-center gap-4 px-6 py-2 text-xs',
                                 expandedIndex % 2 === 0
                                   ? 'bg-[color-mix(in_srgb,var(--bg-alt)_35%,transparent)]'
                                   : 'bg-transparent',
@@ -1147,7 +1147,7 @@ export const LogTerminal = memo(function LogTerminal({
             );
           })
         ) : (
-          <div className="px-4 py-8 text-center text-[14px] italic opacity-55">
+          <div className="px-6 py-8 text-center text-[14px] italic opacity-55">
             {live ? 'Waiting for log stream...' : 'No log activity recorded'}
           </div>
         )}
@@ -1166,7 +1166,7 @@ export const LogTerminal = memo(function LogTerminal({
             }}
           >
             <div
-              className="flex items-center justify-between border-b px-4 py-3"
+              className="flex items-center justify-between border-b px-6 py-3"
               style={{
                 borderColor: 'var(--terminal-border)',
                 backgroundColor: 'var(--terminal-bg)',
@@ -1192,7 +1192,7 @@ export const LogTerminal = memo(function LogTerminal({
                 Close
               </button>
             </div>
-            <div className="relative h-[calc(100%-56px)] overflow-hidden p-4">
+            <div className="relative h-[calc(100%-56px)] overflow-hidden p-6">
               <div className="group relative h-full">
                 <div className="absolute top-3 right-3 z-10 opacity-0 transition-all group-hover:opacity-100">
                   <Button

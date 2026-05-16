@@ -83,12 +83,12 @@ export function TableHead({
 }: Readonly<
   { children: ReactNode; className?: string } & React.ThHTMLAttributes<HTMLTableCellElement>
 >) {
-  // Header: primary sans family with text-xs sizing, semibold, uppercase, wide tracking
+  // Data-table headers use the shared CSV-style mono header treatment.
   return (
     <th
       {...props}
       className={cn(
-        'text-muted h-[var(--table-header-height)] bg-background-alt px-4 text-left align-middle [font-family:var(--font-primary-family)] text-[length:var(--text-xs)] font-bold tracking-[var(--tracking-wider)] uppercase',
+        'text-muted h-[var(--table-header-height)] bg-background-alt px-4 text-left align-middle [font-family:var(--table-header-font-family)] text-[length:var(--table-header-font-size)] font-bold tracking-[var(--table-header-tracking)] uppercase',
         className,
       )}
     >

@@ -279,7 +279,12 @@ def load_attribute_repository_data(path: Path) -> dict[str, object]:
         raw_attributes,
         DATA_ENRICHMENT_SHOPIFY_NORMALIZATION_ATTRIBUTE_NAMES["size"],
     )
+    audience_attribute = attribute_by_name(
+        raw_attributes,
+        DATA_ENRICHMENT_SHOPIFY_NORMALIZATION_ATTRIBUTE_NAMES["audience"],
+    )
     size_systems = shopify_size_systems(size_attribute)
+    audience_terms = shopify_attribute_terms(audience_attribute)
     material_terms = shopify_material_terms(
         raw_attributes,
         DATA_ENRICHMENT_SHOPIFY_NORMALIZATION_ATTRIBUTE_NAMES["fabric"],
@@ -292,6 +297,7 @@ def load_attribute_repository_data(path: Path) -> dict[str, object]:
                 key: list(values)
                 for key, values in DATA_ENRICHMENT_AVAILABILITY_TERMS.items()
             },
+            "audience_terms": audience_terms,
             "color_families": color_families,
             "gender_terms": {
                 key: list(values)
@@ -380,6 +386,15 @@ def shopify_material_terms(
             cleaned = clean_text(value).casefold()
             if cleaned:
                 values.setdefault(cleaned, [cleaned])
+    return values
+
+
+def shopify_attribute_terms(attribute: dict[str, object]) -> dict[str, list[str]]:
+    values: dict[str, list[str]] = {}
+    for value in object_list(attribute.get("values")):
+        cleaned = clean_text(value).casefold()
+        if cleaned:
+            values[cleaned] = [cleaned]
     return values
 
 

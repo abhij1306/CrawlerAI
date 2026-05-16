@@ -368,7 +368,7 @@ export default function SelectorsPage() {
             ) : null
           }
         >
-          <div className="bg-panel shadow-card overflow-hidden rounded-xl p-0 backdrop-blur-md">
+          <div className="bg-panel shadow-card overflow-hidden rounded-none p-0 backdrop-blur-md">
             {previewUrl ? (
               <iframe
                 key={previewUrl}

@@ -235,7 +235,7 @@ export function Dropdown<T extends string>({
         disabled={disabled}
         onKeyDown={handleKeyDown}
         className={cn(
-          'focus-ring border-border bg-panel text-foreground hover:border-border-strong focus:border-accent flex h-[34px] w-full items-center gap-2 rounded-[var(--radius-md)] border px-3 text-[length:var(--text-sm)] leading-[1.4] font-normal transition-[background-color,border-color]',
+          'focus-ring border-border bg-panel text-foreground hover:border-border-strong focus:border-accent flex h-[var(--control-height)] w-full items-center gap-2 rounded-[var(--radius-md)] border px-3 text-[length:var(--text-sm)] leading-[1.4] font-normal transition-[background-color,border-color]',
           align === 'center' ? 'justify-center text-center' : 'justify-between text-left',
         )}
       >
@@ -323,14 +323,14 @@ export function Toggle({
       aria-checked={checked}
       onClick={() => onChange(!checked)}
       className={cn(
-        'focus-ring relative inline-flex h-[18px] w-[32px] shrink-0 cursor-pointer items-center rounded-full transition-[background-color]',
+        'focus-ring relative inline-flex h-[20px] w-[36px] shrink-0 cursor-pointer items-center rounded-none transition-[background-color]',
         checked ? 'bg-accent' : 'bg-border-strong',
       )}
     >
       <span
         className={cn(
-          'inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform',
-          checked ? 'translate-x-[16px]' : 'translate-x-[2px]',
+          'inline-block h-[15px] w-[15px] rounded-none bg-white transition-transform',
+          checked ? 'translate-x-[18px]' : 'translate-x-[2px]',
         )}
       />
     </button>

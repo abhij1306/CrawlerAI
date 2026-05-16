@@ -238,7 +238,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: var(--text-xl);
+  font-size: calc(var(--text-xl) - 4px);
   font-weight: var(--weight-bold);
   letter-spacing: var(--tracking-tight);
   line-height: 1.2;

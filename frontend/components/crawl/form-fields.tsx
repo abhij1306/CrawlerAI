@@ -117,7 +117,7 @@ export function SliderRow({
 }>) {
   return (
     <div
-      className={cn('grid w-full gap-2.5 md:grid-cols-[140px_minmax(0,1fr)_112px] md:items-center')}
+      className={cn('grid w-full gap-2.5 md:grid-cols-[160px_minmax(0,1fr)_100px] md:items-center')}
     >
       <div className="flex min-w-0 items-center gap-1.5">
         <span className="type-control crawl-control-label">{label}</span>

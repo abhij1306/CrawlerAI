@@ -242,11 +242,11 @@ export default function AdminLlmPage() {
                       <div className="min-w-0 space-y-1">
                         {/* Task name + active badge */}
                         <div className="flex items-center gap-2">
-                          <span className="type-control text-foreground truncate">
+                          <span className="type-control text-foreground truncate !font-normal">
                             {config.task_type}
                           </span>
                           {config.is_active ? (
-                            <span className="bg-success-bg text-success inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs leading-none font-medium">
+                            <span className="bg-success-bg text-success inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs leading-none font-normal">
                               <CheckCircle2 className="size-3" aria-hidden="true" />
                               active
                             </span>
@@ -328,7 +328,7 @@ export default function AdminLlmPage() {
 
                             {/* Task type */}
                             <TableCell className="px-4 py-4">
-                              <span className="type-control text-foreground">
+                              <span className="type-control text-foreground !font-normal">
                                 {entry.task_type.replace(/_/g, ' ')}
                               </span>
                             </TableCell>
@@ -346,7 +346,7 @@ export default function AdminLlmPage() {
                             {/* Provider + model stacked */}
                             <TableCell className="px-4 py-4">
                               <div className="flex flex-col overflow-hidden">
-                                <span className="type-control text-foreground truncate">
+                                <span className="type-control text-foreground truncate !font-normal">
                                   {entry.provider}
                                 </span>
                                 <span

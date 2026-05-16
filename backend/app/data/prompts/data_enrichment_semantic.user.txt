@@ -14,7 +14,7 @@ Return only this JSON object:
   "materials_normalized": ["1-5 canonical material strings, or null"],
   "availability_normalized": "One canonical value: in_stock, out_of_stock, preorder, backorder, or null",
   "intent_attributes": ["3-8 short product intent phrases"],
-  "audience": ["2-5 audience descriptors"],
+  "audience": ["0-5 canonical target audience values copied exactly from audience_allowed_values, or null when audience_allowed_values is absent"],
   "style_tags": ["2-5 style adjectives"],
   "ai_discovery_tags": ["3-8 hyphenated discovery slugs"],
   "suggested_bundles": ["3-5 complementary product types"]

@@ -14,6 +14,7 @@ from app.services.config.data_enrichment import (
     DATA_ENRICHMENT_STATUS_ENRICHED,
     DATA_ENRICHMENT_STATUS_FAILED,
     DATA_ENRICHMENT_STATUS_PENDING,
+    DATA_ENRICHMENT_STATUS_RUNNING,
     DATA_ENRICHMENT_TAXONOMY_VERSION,
 )
 from app.services.data_enrichment.service import (
@@ -75,7 +76,7 @@ async def test_data_enrichment_job_creates_pending_rows(
 
 
 @pytest.mark.asyncio
-async def test_data_enrichment_skips_already_enriched_records(
+async def test_data_enrichment_allows_already_enriched_records(
     db_session: AsyncSession,
     create_test_run,
     test_user,
@@ -94,9 +95,44 @@ async def test_data_enrichment_skips_already_enriched_records(
     await db_session.commit()
     await db_session.refresh(record)
 
-    with pytest.raises(
-        ValueError, match="No unenriched ecommerce detail records selected"
-    ):
+    job = await create_data_enrichment_job(
+        db_session,
+        user=test_user,
+        payload={"source_record_ids": [record.id]},
+    )
+    product = (
+        await db_session.scalars(
+            select(EnrichedProduct).where(EnrichedProduct.job_id == job.id)
+        )
+    ).one()
+    await db_session.refresh(record)
+
+    assert job.summary["accepted_count"] == 1
+    assert record.enrichment_status == DATA_ENRICHMENT_STATUS_PENDING
+    assert product.source_record_id == record.id
+
+
+@pytest.mark.asyncio
+async def test_data_enrichment_skips_active_records(
+    db_session: AsyncSession,
+    create_test_run,
+    test_user,
+) -> None:
+    run = await create_test_run(
+        url="https://example.com/products/linen-dress",
+        surface="ecommerce_detail",
+    )
+    record = CrawlRecord(
+        run_id=run.id,
+        source_url="https://example.com/products/linen-dress",
+        data={"title": "Linen Dress"},
+        enrichment_status=DATA_ENRICHMENT_STATUS_RUNNING,
+    )
+    db_session.add(record)
+    await db_session.commit()
+    await db_session.refresh(record)
+
+    with pytest.raises(ValueError, match="No eligible ecommerce detail records selected"):
         await create_data_enrichment_job(
             db_session,
             user=test_user,
@@ -124,7 +160,7 @@ async def test_data_enrichment_rejects_non_ecommerce_detail_records(
     await db_session.refresh(record)
 
     with pytest.raises(
-        ValueError, match="No unenriched ecommerce detail records selected"
+        ValueError, match="No eligible ecommerce detail records selected"
     ):
         await create_data_enrichment_job(
             db_session,
@@ -308,8 +344,6 @@ async def test_data_enrichment_reenrichment_clears_taxonomy_version_before_rerun
     ).one()
     assert product.taxonomy_version == DATA_ENRICHMENT_TAXONOMY_VERSION
 
-    record.enrichment_status = "unenriched"
-    await db_session.commit()
     second_job = await create_data_enrichment_job(
         db_session,
         user=test_user,
@@ -374,7 +408,7 @@ def test_data_enrichment_llm_prompt_context_excludes_raw_artifacts() -> None:
         materials_normalized=["linen"],
         availability_normalized="in_stock",
         seo_keywords=["linen", "dress"],
-        category_path="Apparel & Accessories > Clothing > Dresses",
+        category_path="Media > Books",
         taxonomy_version=DATA_ENRICHMENT_TAXONOMY_VERSION,
     )
 
@@ -393,6 +427,13 @@ def test_data_enrichment_llm_prompt_context_excludes_raw_artifacts() -> None:
     assert "_source" not in context
     assert context["description_excerpt"] == "Clean description"
     assert context["taxonomy_version"] == DATA_ENRICHMENT_TAXONOMY_VERSION
+    assert context["audience_allowed_values"] == [
+        "Adults",
+        "Kids",
+        "Suitable for all ages",
+        "Teens & young adults",
+        "Other",
+    ]
 
 
 def test_data_enrichment_variant_dict_values_do_not_pollute_sizes_or_availability() -> None:
@@ -661,8 +702,12 @@ async def test_data_enrichment_llm_enabled_backfills_missing_fields_in_one_call(
 ) -> None:
     captured: dict[str, object] = {}
 
-    async def fake_run_prompt_task(session, *, task_type, run_id, domain, variables):
+    async def fake_run_prompt_task(
+        session, *, task_type, run_id, domain, variables, budget_scope, timeout_seconds
+    ):
         captured["task_type"] = task_type
+        captured["budget_scope"] = budget_scope
+        captured["timeout_seconds"] = timeout_seconds
         captured["variables"] = variables
         return LLMTaskResult(
             payload={
@@ -674,7 +719,7 @@ async def test_data_enrichment_llm_enabled_backfills_missing_fields_in_one_call(
                 "materials_normalized": ["linen"],
                 "availability_normalized": "in_stock",
                 "intent_attributes": ["cocktail"],
-                "audience": ["women"],
+                "audience": ["Adults"],
                 "style_tags": ["classic"],
                 "ai_discovery_tags": ["linen-dress"],
                 "suggested_bundles": ["heels"],
@@ -713,6 +758,8 @@ async def test_data_enrichment_llm_enabled_backfills_missing_fields_in_one_call(
     ).one()
 
     assert captured["task_type"] == "data_enrichment_semantic"
+    assert captured["budget_scope"] == f"data_enrichment_semantic:{job.id}"
+    assert captured["timeout_seconds"] == 15.0
     assert "product_json" in captured["variables"]
     assert product.category_path == "Apparel & Accessories > Clothing > Dresses"
     assert product.color_family == "blue"
@@ -722,6 +769,7 @@ async def test_data_enrichment_llm_enabled_backfills_missing_fields_in_one_call(
     assert product.materials_normalized == ["linen"]
     assert product.availability_normalized == "in_stock"
     assert product.intent_attributes == ["cocktail"]
+    assert product.audience is None
     assert product.ai_discovery_tags == ["linen-dress"]
     assert product.diagnostics["llm"]["applied_fields"]
 
@@ -733,7 +781,9 @@ async def test_data_enrichment_llm_does_not_overwrite_deterministic_fields(
     test_user,
     monkeypatch,
 ) -> None:
-    async def fake_run_prompt_task(session, *, task_type, run_id, domain, variables):
+    async def fake_run_prompt_task(
+        session, *, task_type, run_id, domain, variables, budget_scope, timeout_seconds
+    ):
         return LLMTaskResult(
             payload={
                 "category_path": "Apparel & Accessories > Clothing > Shirts",
@@ -743,7 +793,7 @@ async def test_data_enrichment_llm_does_not_overwrite_deterministic_fields(
                 "materials_normalized": ["wool"],
                 "availability_normalized": "out_of_stock",
                 "intent_attributes": ["useful"],
-                "audience": ["men"],
+                "audience": ["Adults"],
                 "style_tags": ["sharp"],
                 "ai_discovery_tags": ["linen-dress"],
                 "suggested_bundles": ["boots"],
@@ -794,7 +844,115 @@ async def test_data_enrichment_llm_does_not_overwrite_deterministic_fields(
     assert product.materials_normalized == ["linen"]
     assert product.availability_normalized == "in_stock"
     assert product.intent_attributes == ["useful"]
+    assert product.audience is None
     assert product.suggested_bundles == ["boots"]
+
+
+@pytest.mark.asyncio
+async def test_data_enrichment_llm_audience_only_applies_for_categories_with_target_audience(
+    db_session: AsyncSession,
+    create_test_run,
+    test_user,
+    monkeypatch,
+) -> None:
+    async def fake_run_prompt_task(
+        session, *, task_type, run_id, domain, variables, budget_scope, timeout_seconds
+    ):
+        return LLMTaskResult(
+        payload={
+                "gender_normalized": "unisex",
+                "audience": ["Adults", "All skin types", "Kids"],
+            }
+        )
+
+    monkeypatch.setattr(
+        "app.services.data_enrichment.service.run_prompt_task",
+        fake_run_prompt_task,
+    )
+    run = await create_test_run(
+        url="https://example.com/products/body-lotion",
+        surface="ecommerce_detail",
+    )
+    record = CrawlRecord(
+        run_id=run.id,
+        source_url="https://example.com/products/body-lotion",
+        data={
+            "title": "Body Lotion",
+            "category": "Beauty > Haircare & Bodycare",
+            "description": "Hydrating lotion for daily use.",
+        },
+    )
+    db_session.add(record)
+    await db_session.commit()
+    await db_session.refresh(record)
+    job = await create_data_enrichment_job(
+        db_session,
+        user=test_user,
+        payload={"source_record_ids": [record.id], "options": {"llm_enabled": True}},
+    )
+
+    await _run_job(db_session, job)
+    product = (
+        await db_session.scalars(
+            select(EnrichedProduct).where(EnrichedProduct.job_id == job.id)
+        )
+    ).one()
+
+    assert product.audience is None
+
+
+@pytest.mark.asyncio
+async def test_data_enrichment_llm_audience_uses_shopify_target_audience_values_when_supported(
+    db_session: AsyncSession,
+    create_test_run,
+    test_user,
+    monkeypatch,
+) -> None:
+    async def fake_run_prompt_task(
+        session, *, task_type, run_id, domain, variables, budget_scope, timeout_seconds
+    ):
+        return LLMTaskResult(
+            payload={
+                "category_path": "Media > Books",
+                "audience": ["Adults", "Kids", "All skin types"],
+            }
+        )
+
+    monkeypatch.setattr(
+        "app.services.data_enrichment.service.run_prompt_task",
+        fake_run_prompt_task,
+    )
+    run = await create_test_run(
+        url="https://example.com/products/book",
+        surface="ecommerce_detail",
+    )
+    record = CrawlRecord(
+        run_id=run.id,
+        source_url="https://example.com/products/book",
+        data={
+            "title": "Example Book",
+            "category": "Books",
+            "description": "A print book.",
+        },
+    )
+    db_session.add(record)
+    await db_session.commit()
+    await db_session.refresh(record)
+    job = await create_data_enrichment_job(
+        db_session,
+        user=test_user,
+        payload={"source_record_ids": [record.id], "options": {"llm_enabled": True}},
+    )
+
+    await _run_job(db_session, job)
+    product = (
+        await db_session.scalars(
+            select(EnrichedProduct).where(EnrichedProduct.job_id == job.id)
+        )
+    ).one()
+
+    assert product.category_path == "Media > Books"
+    assert product.audience == ["adults", "kids"]
 
 
 @pytest.mark.asyncio
@@ -804,7 +962,9 @@ async def test_data_enrichment_llm_rejects_non_shopify_category_path(
     test_user,
     monkeypatch,
 ) -> None:
-    async def fake_run_prompt_task(session, *, task_type, run_id, domain, variables):
+    async def fake_run_prompt_task(
+        session, *, task_type, run_id, domain, variables, budget_scope, timeout_seconds
+    ):
         return LLMTaskResult(
             payload={
                 "category_path": "Hardware > Plinths",
@@ -853,7 +1013,9 @@ async def test_data_enrichment_llm_ignores_non_dict_payload(
     test_user,
     monkeypatch,
 ) -> None:
-    async def fake_run_prompt_task(session, *, task_type, run_id, domain, variables):
+    async def fake_run_prompt_task(
+        session, *, task_type, run_id, domain, variables, budget_scope, timeout_seconds
+    ):
         return LLMTaskResult(payload="bad-payload")
 
     monkeypatch.setattr(

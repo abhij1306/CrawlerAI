@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { Check, Globe, Info, Plus, Shield, SlidersHorizontal, Sparkles } from 'lucide-react';
 import type { Route } from 'next';
@@ -822,16 +822,16 @@ export function CrawlConfigScreen({
         className="grid gap-5 xl:grid-cols-[minmax(0,1.45fr)_380px] xl:items-stretch"
         onSubmit={(event) => void startCrawl(event)}
       >
-        <Card className="section-card overflow-hidden">
-          <header className="border-border flex h-10 items-center justify-between border-b bg-[color-mix(in_srgb,var(--bg-alt)_40%,var(--bg-panel))] px-5">
+        <Card className="section-card overflow-hidden p-0">
+          <header className="border-border flex h-10 items-center justify-between border-b bg-[color-mix(in_srgb,var(--bg-alt)_40%,var(--bg-panel))] px-6">
             <span className="type-body-sm font-medium text-secondary">Target URL</span>
-            <Badge tone="accent" className="text-2xs h-5 px-1.5">
+            <Badge tone="accent" className="text-2xs h-5 px-1.5 font-medium">
               {crawlTab === 'category' ? 'Category' : 'PDP'}
             </Badge>
           </header>
-          <div className="space-y-5 px-5 pt-5 pb-5">
+          <div className="space-y-5 px-6 pt-6 pb-6">
             <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
-              <div className="flex flex-wrap items-center gap-2.5">
+              <div className="flex flex-wrap items-center gap-2.5 ml-[-4px]">
                 <TabBar
                   value={crawlTab}
                   onChange={(value) => {
@@ -845,39 +845,41 @@ export function CrawlConfigScreen({
                     { value: 'pdp', label: 'PDP Crawl' },
                   ]}
                 />
-                {crawlTab === 'category' ? (
-                  <TabBar
-                    value={categoryMode}
-                    compact
-                    onChange={(value) => {
-                      const parsed = parseRequestedCategoryMode(value);
-                      if (parsed) {
-                        setCategoryMode(parsed);
-                      }
-                    }}
-                    options={[
-                      { value: 'single', label: 'Single' },
-                      { value: 'sitemap', label: 'Sitemap' },
-                      { value: 'bulk', label: 'Bulk' },
-                    ]}
-                  />
-                ) : (
-                  <TabBar
-                    value={pdpMode}
-                    compact
-                    onChange={(value) => {
-                      const parsed = parseRequestedPdpMode(value);
-                      if (parsed) {
-                        setPdpMode(parsed);
-                      }
-                    }}
-                    options={[
-                      { value: 'single', label: 'Single' },
-                      { value: 'batch', label: 'Batch' },
-                      { value: 'csv', label: 'CSV Upload' },
-                    ]}
-                  />
-                )}
+                <div className="flex flex-wrap items-center gap-2.5 ml-[-4px]">
+                  {crawlTab === 'category' ? (
+                    <TabBar
+                      value={categoryMode}
+                      compact
+                      onChange={(value) => {
+                        const parsed = parseRequestedCategoryMode(value);
+                        if (parsed) {
+                          setCategoryMode(parsed);
+                        }
+                      }}
+                      options={[
+                        { value: 'single', label: 'Single' },
+                        { value: 'sitemap', label: 'Sitemap' },
+                        { value: 'bulk', label: 'Bulk' },
+                      ]}
+                    />
+                  ) : (
+                    <TabBar
+                      value={pdpMode}
+                      compact
+                      onChange={(value) => {
+                        const parsed = parseRequestedPdpMode(value);
+                        if (parsed) {
+                          setPdpMode(parsed);
+                        }
+                      }}
+                      options={[
+                        { value: 'single', label: 'Single' },
+                        { value: 'batch', label: 'Batch' },
+                        { value: 'csv', label: 'CSV Upload' },
+                      ]}
+                    />
+                  )}
+                </div>
               </div>
               <Button
                 variant="accent"
@@ -983,14 +985,14 @@ export function CrawlConfigScreen({
 
         <div className="h-full xl:self-stretch">
           <div className="h-full xl:sticky xl:top-[68px]">
-            <Card className="section-card h-full overflow-hidden">
-              <header className="border-border flex h-10 items-center justify-between border-b bg-[color-mix(in_srgb,var(--bg-alt)_40%,var(--bg-panel))] px-5">
+            <Card className="section-card h-full overflow-hidden p-0">
+              <header className="border-border flex h-10 items-center justify-between border-b bg-[color-mix(in_srgb,var(--bg-alt)_40%,var(--bg-panel))] px-6">
                 <span className="type-body-sm font-medium text-secondary">Crawl Settings</span>
-                <Badge tone="accent" className="text-2xs h-5 px-1.5">
+                <Badge tone="accent" className="text-2xs h-5 px-1.5 font-medium">
                   {studioMode === 'advanced' ? 'Advanced' : 'Quick'}
                 </Badge>
               </header>
-              <div className="page-stack px-5 pt-5 pb-5">
+              <div className="page-stack px-6 pt-6 pb-6">
                 <div className={RUN_SETUP_ROW_CLASS}>
                   <div className={RUN_SETUP_LABEL_CLASS}>
                     <Globe className="text-accent size-4 shrink-0" />
@@ -1098,8 +1100,8 @@ export function CrawlConfigScreen({
         </div>
 
         {studioMode === 'advanced' ? (
-          <Card className="section-card overflow-hidden xl:col-span-2">
-            <header className="border-border flex h-10 items-center justify-between border-b bg-[color-mix(in_srgb,var(--bg-alt)_40%,var(--bg-panel))] px-5">
+          <Card className="section-card overflow-hidden xl:col-span-2 p-0">
+            <header className="border-border flex h-10 items-center justify-between border-b bg-[color-mix(in_srgb,var(--bg-alt)_40%,var(--bg-panel))] px-6">
               <span className="type-body-sm font-medium text-secondary">Field Configuration</span>
               <div className="flex items-center gap-2">
                 <Button
@@ -1108,7 +1110,7 @@ export function CrawlConfigScreen({
                   size="sm"
                   onClick={() => void generateFieldSelectors()}
                   disabled={generatingSelectors}
-                  className="h-7 rounded-lg px-2.5 text-xs"
+                  className="rounded-lg"
                 >
                   <Sparkles className="size-3" />
                   {generatingSelectors ? 'Generating...' : 'Generate'}
@@ -1118,7 +1120,7 @@ export function CrawlConfigScreen({
                   type="button"
                   size="sm"
                   onClick={addManualField}
-                  className="h-7 rounded-lg px-2.5 text-xs"
+                  className="rounded-lg"
                 >
                   <Plus className="size-3" />
                   New Field
@@ -1136,13 +1138,13 @@ export function CrawlConfigScreen({
                         (row.cssSelector.trim() || row.xpath.trim() || row.regex.trim()),
                     )
                   }
-                  className="h-7 rounded-[var(--radius-md)] px-3 text-xs"
+                  className="rounded-[var(--radius-md)]"
                 >
                   {savingDomainMemory ? 'Saving...' : 'Save to Memory'}
                 </Button>
               </div>
             </header>
-            <div className="space-y-4 px-5 pt-5 pb-5">
+            <div className="space-y-4 px-6 pt-6 pb-6">
               {fieldConfigMessage ? (
                 <p className="text-success type-body leading-[var(--leading-relaxed)]">
                   {fieldConfigMessage}
@@ -1212,8 +1214,8 @@ export function CrawlConfigScreen({
         ) : null}
 
         {studioMode === 'advanced' ? (
-          <Card className="section-card overflow-visible xl:col-span-2">
-            <header className="border-border flex h-10 items-center justify-between border-b bg-[color-mix(in_srgb,var(--bg-alt)_40%,var(--bg-panel))] px-5">
+          <Card className="section-card overflow-visible xl:col-span-2 p-0">
+            <header className="border-border flex h-10 items-center justify-between border-b bg-[color-mix(in_srgb,var(--bg-alt)_40%,var(--bg-panel))] px-6">
               <span className="type-body-sm font-medium text-secondary flex items-center gap-1.5">
                 <SlidersHorizontal className="size-3.5" /> Advanced Settings
               </span>
@@ -1221,7 +1223,7 @@ export function CrawlConfigScreen({
                 <Info className="text-muted hover:text-secondary size-3.5 cursor-help transition-colors" />
               </Tooltip>
             </header>
-            <div className="grid gap-0 p-5 xl:grid-cols-3 xl:divide-x xl:divide-[var(--border)]">
+            <div className="grid gap-0 p-6 xl:grid-cols-3 xl:divide-x xl:divide-[var(--border)]">
               <section className={cn(ADVANCED_COLUMN_CLASS, 'xl:pr-6')}>
                 <div className={ADVANCED_SECTION_TITLE_CLASS}>
                   <h3>Execution</h3>

@@ -101,7 +101,7 @@ async def create_data_enrichment_job(
             continue
         accepted_records.append(record)
     if not accepted_records:
-        raise ValueError("No unenriched ecommerce detail records selected")
+        raise ValueError("No eligible ecommerce detail records selected")
     job = DataEnrichmentJob(
         user_id=user.id,
         source_run_id=source_run_id,
@@ -410,6 +410,8 @@ async def _run_llm_enrichment(
         task_type=DATA_ENRICHMENT_LLM_TASK,
         run_id=record.run_id,
         domain=source_domain(record.source_url),
+        budget_scope=f"{DATA_ENRICHMENT_LLM_TASK}:{job.id}",
+        timeout_seconds=data_enrichment_settings.llm_call_timeout_seconds,
         variables={
             "product_json": prompt_context,
             "taxonomy_hint": _taxonomy_hint(
@@ -523,7 +525,6 @@ def _apply_llm_payload(
             applied.append("availability_normalized")
     for field_name in (
         "intent_attributes",
-        "audience",
         "style_tags",
         "ai_discovery_tags",
         "suggested_bundles",
@@ -532,6 +533,17 @@ def _apply_llm_payload(
         setattr(product, field_name, values or None)
         if values:
             applied.append(field_name)
+    audience_allowed_values = _category_attribute_values(
+        product.category_path,
+        "target_audience",
+    )
+    audience_values = _normalize_audience_values(
+        payload.get("audience"),
+        allowed_values=audience_allowed_values,
+    )
+    product.audience = audience_values
+    if audience_values:
+        applied.append("audience")
     product.taxonomy_version = DATA_ENRICHMENT_TAXONOMY_VERSION
     return applied
 
@@ -897,6 +909,30 @@ def _semantic_bigrams(tokens: list[str], unigrams: set[str]) -> list[str]:
     return phrases
 
 
+def _normalize_audience_values(
+    value: object, *, allowed_values: list[str]
+) -> list[str] | None:
+    if not allowed_values:
+        return None
+    terms = {
+        clean_text(item).casefold(): [clean_text(item).casefold()]
+        for item in allowed_values
+        if clean_text(item)
+    }
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for item in _split_values(_string_list(value, max_items=10, max_chars=60)):
+        canonical = _normalize_from_terms([item], terms)
+        if not canonical:
+            continue
+        key = canonical.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        normalized.append(canonical)
+    return normalized or None
+
+
 def _llm_prompt_context(
     source_data: dict[str, object],
     *,
@@ -937,6 +973,10 @@ def _llm_prompt_context(
                 ]
             ],
             "category_attributes": _category_attribute_handles(category_anchor),
+            "audience_allowed_values": _category_attribute_values(
+                category_anchor,
+                "target_audience",
+            ),
         }
     )
     if description:
@@ -976,6 +1016,31 @@ def _taxonomy_hint(
         f"Return only real Shopify category paths. "
         f"Only fill missing fields: {', '.join(missing_fields) or 'none'}."
     )
+
+
+def _category_attribute_values(
+    category_path: str | None,
+    attribute_handle: str,
+) -> list[str]:
+    normalized_handle = str(attribute_handle or "").replace("-", "_")
+    if not category_path:
+        return []
+    category_handles = set(
+        category_attribute_handles(
+            category_path,
+            load_taxonomy_index(data_enrichment_settings.taxonomy_path),
+        )
+    )
+    if normalized_handle not in category_handles:
+        return []
+    repository = _load_attribute_repository()
+    attributes_by_handle = _object_dict(repository.get("attributes_by_handle"))
+    attribute = _object_dict(attributes_by_handle.get(normalized_handle))
+    return [
+        clean_text(item)
+        for item in _object_list(attribute.get("values"))
+        if clean_text(item)
+    ]
 
 
 def _source_record_ids(payload: dict[str, object]) -> list[int]:
