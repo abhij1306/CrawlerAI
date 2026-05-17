@@ -14,8 +14,8 @@ from app.schemas.llm import (
     LLMCostLogResponse,
     LLMProviderCatalogResponse,
 )
-from app.services.llm_runtime import llm_provider_catalog, test_provider_connection
-from app.services.llm_config_service import SUPPORTED_LLM_PROVIDERS
+from app.services.llm.runtime import llm_provider_catalog, test_provider_connection
+from app.services.llm.config_service import SUPPORTED_LLM_PROVIDERS
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession

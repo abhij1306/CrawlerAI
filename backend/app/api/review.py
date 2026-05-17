@@ -13,7 +13,7 @@ from app.schemas.crawl import (
     ReviewSaveResponse,
     serialize_crawl_record_responses,
 )
-from app.services.crawl_access_service import (
+from app.services.crawl.access_service import (
     RUN_NOT_FOUND_DETAIL,
     require_accessible_run,
 )

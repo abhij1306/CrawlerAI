@@ -47,8 +47,8 @@ from app.services.acquisition import (
 )
 from app.services.auth_service import bootstrap_admin_user
 from app.services.config.runtime_settings import crawler_runtime_settings
-from app.services.crawl_service import recover_stale_local_runs
-from app.services.llm_provider_client import close_llm_provider_clients
+from app.services.crawl.service import recover_stale_local_runs
+from app.services.llm.provider_client import close_llm_provider_clients
 
 logger = logging.getLogger("app")
 _RATE_LIMIT_BUCKETS: OrderedDict[str, deque[float]] = OrderedDict()

@@ -26,7 +26,7 @@ from app.services.extract.detail_identity import (
     detail_identity_codes_from_url,
 )
 from app.services.extraction_html_helpers import extract_job_sections, html_to_text
-from app.services.field_value_candidates import (
+from app.services.extract.field_candidates import (
     collect_structured_candidates,
     finalize_candidate_value,
 )

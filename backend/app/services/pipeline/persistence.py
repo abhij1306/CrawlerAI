@@ -124,8 +124,23 @@ async def persist_acquisition_artifacts(
         source_url=acquisition_result.final_url,
         html=acquisition_result.html,
     )
-    if not browser_attempted:
-        return raw_html_path
+    if browser_attempted:
+        await _persist_browser_artifacts(
+            run_id=run_id,
+            acquisition_result=acquisition_result,
+            screenshot_required=screenshot_required,
+            raw_html_path=raw_html_path,
+        )
+    return raw_html_path
+
+
+async def _persist_browser_artifacts(
+    *,
+    run_id: int,
+    acquisition_result,
+    screenshot_required: bool,
+    raw_html_path: str,
+) -> None:
 
     diagnostics = mapping_or_empty(getattr(acquisition_result, "browser_diagnostics", {}))
     artifacts = dict(mapping_or_empty(getattr(acquisition_result, "artifacts", {})))
@@ -172,7 +187,6 @@ async def persist_acquisition_artifacts(
             }
         },
     )
-    return raw_html_path
 
 
 async def persist_extracted_records(

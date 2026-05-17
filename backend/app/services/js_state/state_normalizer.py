@@ -43,7 +43,7 @@ from app.services.js_state.variant_options import (
     variant_option_values,
     variant_selection_values,
 )
-from app.services.js_state_helpers import (
+from app.services.js_state.helpers import (
     availability_value,
     compact_dict,
     normalize_price,

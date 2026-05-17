@@ -8,12 +8,12 @@ from urllib.parse import urlparse
 
 from app.models.crawl_run import CrawlRecord, CrawlRun
 from app.models.user import User
-from app.services.crawl_access_service import (
+from app.services.crawl.access_service import (
     RECORD_NOT_FOUND_DETAIL,
     RUN_NOT_FOUND_DETAIL,
     require_accessible_record,
 )
-from app.services.crawl_crud import get_run_records
+from app.services.crawl.crud import get_run_records
 from app.services.config.extraction_rules import (
     DISCOVERIST_SCHEMA,
     EXPORT_IMAGE_URL_SUFFIXES,

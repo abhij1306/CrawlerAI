@@ -28,7 +28,7 @@ from app.services.acquisition.host_protection_memory import (
     note_host_usable_fetch,
     reset_host_protection_memory,
 )
-from app.services.crawl_crud import create_crawl_run
+from app.services.crawl.crud import create_crawl_run
 from app.services.dashboard_service import (
     reset_application_data,
     reset_crawl_data,

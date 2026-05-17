@@ -30,7 +30,7 @@ from app.models.llm import LLMCostLog
 from app.services.acquisition.cookie_store import clear_cookie_store_cache
 from app.services.acquisition.pacing import reset_pacing_state
 from app.services.fetch.fetch_context import reset_fetch_runtime_state
-from app.services.crawl_state import ACTIVE_STATUSES
+from app.services.crawl.state import ACTIVE_STATUSES
 from app.services.robots_policy import reset_robots_policy_cache
 from app.services.config.runtime_settings import crawler_runtime_settings
 from app.services.domain_utils import normalize_domain

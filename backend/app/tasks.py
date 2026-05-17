@@ -13,7 +13,7 @@ from app.core.celery_app import celery_app, worker_process_init, worker_process_
 from app.core.database import SessionLocal
 from app.core.telemetry import install_asyncio_exception_filter
 from app.services.acquisition import shutdown_browser_runtime_sync
-from app.services._batch_runtime import process_run as process_run_async
+from app.services.crawl.batch_runtime import process_run as process_run_async
 from app.services.config.runtime_settings import crawler_runtime_settings
 
 logger = logging.getLogger(__name__)

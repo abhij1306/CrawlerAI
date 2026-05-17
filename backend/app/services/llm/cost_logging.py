@@ -4,8 +4,8 @@ import logging
 
 from app.models.crawl_run import CrawlRun
 from app.models.llm import LLMCostLog, LLMCostLogOutcome
-from app.services.llm_errors import LLMErrorCategory
-from app.services.llm_provider_client import estimate_cost_usd
+from app.services.llm.errors import LLMErrorCategory
+from app.services.llm.provider_client import estimate_cost_usd
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 

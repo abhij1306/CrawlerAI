@@ -68,15 +68,15 @@ If a file is not listed, assume it is a helper under a listed owner.
 
 | File | Purpose |
 |---|---|
-| `crawl_ingestion_service.py` | Validate and normalize `CrawlCreate`, stamp run snapshots |
-| `crawl_service.py` | `dispatch_run()` entry — delegates to `dispatch/` strategy |
-| `crawl_crud.py` | DB create and state transitions |
+| `crawl/ingestion_service.py` | Validate and normalize `CrawlCreate`, stamp run snapshots |
+| `crawl/service.py` | `dispatch_run()` entry — delegates to `dispatch/` strategy |
+| `crawl/crud.py` | DB create and state transitions |
 | `dispatch/` | `RunDispatcher` protocol + `LocalRunDispatcher` + `CeleryRunDispatcher` |
-| `domain_run_profile_service.py` | Load/save reusable execution defaults |
-| `crawl_events.py` | WebSocket log emission |
+| `crawl/profile/*` | Reusable domain run-profile normalization, merge, persistence, and acquisition-contract learning |
+| `crawl/events.py` | WebSocket log emission |
 | `product_intelligence/*` | Product web discovery, candidate crawl orchestration, deterministic match scoring |
 | `data_enrichment/*` | On-demand enrichment job setup for ecommerce detail records |
-| `_batch_runtime.py` | URL loop, progress, pause, kill checks |
+| `crawl/batch_runtime.py` | URL loop, progress, pause, kill checks |
 | `tasks.py` | Celery task entry |
 | `pipeline/extraction_loop.py` | Per-URL orchestration: acquire -> extract -> normalize -> persist |
 | `pipeline/url_processing_context.py` | Per-URL acquisition config and run-context resolution |
@@ -87,7 +87,7 @@ If a file is not listed, assume it is a helper under a listed owner.
 | `pipeline/types.py` | Pipeline typed objects |
 
 Flow:
-`POST /api/crawls -> crawl_ingestion_service -> crawl_crud -> crawl_service -> tasks/_batch_runtime -> pipeline/extraction_loop`
+`POST /api/crawls -> crawl/ingestion_service -> crawl/crud -> crawl/service -> tasks/crawl/batch_runtime -> pipeline/extraction_loop`
 
 ---
 
@@ -138,7 +138,9 @@ Canonical config owner:
 | `detail_extractor.py` | Detail-page preparation and field candidate arbitration |
 | `listing_extractor.py` | Listing-page extraction |
 | `structured_sources.py` | JSON-LD, microdata, OG, Nuxt, harvested JS state |
+| `extract/field_candidates/*` | Field candidate collection, structured payload traversal, structured variant row assembly, finalization, and scoring |
 | `js_state/state_normalizer.py` | JS state to field mapping (canonical owner) |
+| `js_state/helpers.py` | Shared JS-state variant selection, availability, stock, price, and compact-row helpers |
 | `js_state/variant_options.py` | JS-state variant axis, option-value, and display-label normalization |
 | `network_payload_mapper.py` | Network payload to field mapping |
 | `shared/field_coerce.py` | Canonical field coercion dispatch and public-record shaping |
@@ -155,6 +157,9 @@ Canonical config owner:
 | `adapters/[platform].py` | Platform-specific extraction |
 | `extract/listing_card_fragments.py` | Canonical listing-fragment discovery, scoring, and listing-card heuristics shared by traversal, browser artifact capture, and listing extraction |
 | `extract/listing_candidate_ranking.py` | Listing candidate admission, support signals, utility rejection, dedupe, and set ranking |
+| `extract/structured_listing_handler.py` | Structured JSON-LD listing record extraction and typed/untyped listing payload gating |
+| `extract/article_card_parser.py` | Article/content listing card author, date, and summary parsing |
+| `extract/network_listing_mapper.py` | Network listing rows and network-to-listing price/brand/currency backfill |
 | `extract/content_listing_handler.py` | Content listing table-row extraction and open-field row tagging |
 | `extract/content_surface_extractor.py` | DOM fallback extraction for content, article, and forum detail surfaces |
 | `extract/table_extractor.py` | Meaningful table detection, filtering, context resolution, and structured table output |
@@ -228,17 +233,17 @@ All selector memory is scoped by normalized `(domain, surface)`.
 
 | File | Purpose |
 |---|---|
-| `llm_runtime.py` | Pipeline LLM entry |
-| `llm_tasks.py` | Prompt task orchestration and typed task wrappers |
-| `llm_prompt_rendering.py` | Prompt variable rendering, HTML pruning, structured evidence shaping, and prompt truncation |
-| `llm_payloads.py` | Provider JSON parsing and task-specific payload validation |
-| `llm_cost_logging.py` | LLM cost log persistence |
-| `llm_provider_client.py` | Provider HTTP clients |
-| `llm_config_service.py` | Config CRUD and key encryption |
-| `llm_cache.py` | Redis-backed response dedupe |
-| `llm_circuit_breaker.py` | Error classification and cost protection |
-| `llm_budget.py` | Per-run LLM call budget guard |
-| `llm_types.py` | LLM-internal types |
+| `llm/runtime.py` | Pipeline LLM entry |
+| `llm/tasks.py` | Prompt task orchestration and typed task wrappers |
+| `llm/prompt_rendering.py` | Prompt variable rendering, HTML pruning, structured evidence shaping, and prompt truncation |
+| `llm/payloads.py` | Provider JSON parsing and task-specific payload validation |
+| `llm/cost_logging.py` | LLM cost log persistence |
+| `llm/provider_client.py` | Provider HTTP clients |
+| `llm/config_service.py` | Config CRUD and key encryption |
+| `llm/cache.py` | Redis-backed response dedupe |
+| `llm/circuit_breaker.py` | Error classification and cost protection |
+| `llm/budget.py` | Per-run LLM call budget guard |
+| `llm/types.py` | LLM-internal types |
 
 ---
 

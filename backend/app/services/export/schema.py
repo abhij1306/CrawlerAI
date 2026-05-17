@@ -9,7 +9,7 @@ from app.services.config.public_record_policy import (
 )
 from app.services.db_utils import mapping_or_empty
 from app.services.shared.field_coerce import object_list as _object_list
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 EXPORT_RECORD_VERSION = "1"
 
@@ -69,15 +69,13 @@ class ExportRecord(BaseModel):
             raise ValueError("source_url must be an absolute http(s) URL")
         return text
 
-    @model_validator(mode="after")
-    def _record_url_identity(self) -> "ExportRecord":
+    def model_post_init(self, __context: Any) -> None:
         record_url = self.data.get("url")
         if record_url in (None, ""):
-            return self
+            return
         parsed = urlparse(str(record_url))
         if parsed.scheme not in {"http", "https"} or not parsed.netloc:
             raise ValueError("record url must be an absolute http(s) URL")
-        return self
 
 
 def build_source_trace(

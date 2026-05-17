@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import pytest
 
-from app.services._batch_runtime import process_run
+from app.services.crawl.batch_runtime import process_run
 from app.services.acquisition.acquirer import AcquisitionResult
-from app.services.crawl_crud import get_run_records
+from app.services.crawl.crud import get_run_records
 from app.services.domain_memory_service import load_domain_memory, save_domain_memory
 
 

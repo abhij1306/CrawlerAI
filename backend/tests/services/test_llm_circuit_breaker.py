@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.services import llm_circuit_breaker
+from app.services.llm import circuit_breaker as llm_circuit_breaker
 
 
 def test_record_local_failure_uses_default_threshold_when_setting_is_none(

@@ -74,7 +74,7 @@ from app.services.extract.variant_dom_provenance import (
     variant_option_node_types,
     weak_variant_option_node_allowed,
 )
-from app.services.js_state_helpers import select_variant
+from app.services.js_state.helpers import select_variant
 from app.services.extract.shared_variant_logic import (
     infer_variant_group_name_from_values,
     iter_variant_choice_groups,

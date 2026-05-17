@@ -4,9 +4,9 @@ import asyncio
 
 import pytest
 
-from app.services._batch_runtime import process_run
+from app.services.crawl.batch_runtime import process_run
 from app.services.acquisition.acquirer import AcquisitionResult
-from app.services.crawl_crud import create_crawl_run, get_run_records
+from app.services.crawl.crud import create_crawl_run, get_run_records
 from app.models.crawl_run import CrawlRecord
 from app.services.pipeline.types import URLProcessingResult
 from app.services.robots_policy import (
@@ -155,7 +155,7 @@ async def test_process_run_tracks_failure_reason_counts(
         )
 
     monkeypatch.setattr(
-        "app.services._batch_runtime.process_single_url",
+        "app.services.crawl.batch_runtime.process_single_url",
         _fake_process_single_url,
     )
 
@@ -212,7 +212,7 @@ async def test_process_run_starts_with_fresh_batch_progress(
         )
 
     monkeypatch.setattr(
-        "app.services._batch_runtime.process_single_url",
+        "app.services.crawl.batch_runtime.process_single_url",
         _fake_process_single_url,
     )
 
@@ -285,7 +285,7 @@ async def test_process_run_aggregates_quality_summary_from_url_metrics(
         )
 
     monkeypatch.setattr(
-        "app.services._batch_runtime.process_single_url",
+        "app.services.crawl.batch_runtime.process_single_url",
         _fake_process_single_url,
     )
 
@@ -474,7 +474,7 @@ async def test_process_run_enforces_url_timeout_from_settings(
         raise AssertionError("timeout should fire before this returns")
 
     monkeypatch.setattr(
-        "app.services._batch_runtime.process_single_url",
+        "app.services.crawl.batch_runtime.process_single_url",
         _slow_process_single_url,
     )
 
@@ -519,7 +519,7 @@ async def test_process_run_default_timeout_includes_acquisition_slack(
         )
 
     monkeypatch.setattr(
-        "app.services._batch_runtime.process_single_url",
+        "app.services.crawl.batch_runtime.process_single_url",
         _slow_process_single_url,
     )
 
@@ -703,7 +703,7 @@ async def test_process_run_continues_after_sqlalchemy_url_error(
         )
 
     monkeypatch.setattr(
-        "app.services._batch_runtime.process_single_url",
+        "app.services.crawl.batch_runtime.process_single_url",
         _poisoned_process_single_url,
     )
 
@@ -755,11 +755,11 @@ async def test_process_run_continues_when_failure_log_persistence_fails(
         raise PendingRollbackError("failure log flush failed")
 
     monkeypatch.setattr(
-        "app.services._batch_runtime.process_single_url",
+        "app.services.crawl.batch_runtime.process_single_url",
         _failing_process_single_url,
     )
     monkeypatch.setattr(
-        "app.services._batch_runtime._persist_url_failure_log",
+        "app.services.crawl.batch_runtime._persist_url_failure_log",
         _failing_failure_log,
     )
 
@@ -810,7 +810,7 @@ async def test_process_run_records_browser_exception_diagnostics_and_continues(
         )
 
     monkeypatch.setattr(
-        "app.services._batch_runtime.process_single_url",
+        "app.services.crawl.batch_runtime.process_single_url",
         _fake_process_single_url,
     )
 
@@ -869,7 +869,7 @@ async def test_process_run_continues_after_generic_browser_driver_error(
         )
 
     monkeypatch.setattr(
-        "app.services._batch_runtime.process_single_url",
+        "app.services.crawl.batch_runtime.process_single_url",
         _fake_process_single_url,
     )
 

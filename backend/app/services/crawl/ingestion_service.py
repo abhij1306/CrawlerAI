@@ -3,9 +3,9 @@ from __future__ import annotations
 import json
 import logging
 
-from app.services.crawl_crud import create_crawl_run
-from app.services.crawl_service import dispatch_run
-from app.services.crawl_utils import parse_csv_urls
+from app.services.crawl.crud import create_crawl_run
+from app.services.crawl.service import dispatch_run
+from app.services.crawl.utils import parse_csv_urls
 from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)

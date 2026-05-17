@@ -10,7 +10,7 @@ from app.services.acquisition.acquirer import (
 )
 from app.services.acquisition.policy import AcquisitionPolicy
 from app.services.acquisition_plan import AcquisitionPlan
-from app.services.crawl_utils import normalize_target_url
+from app.services.crawl.utils import normalize_target_url
 
 
 @pytest.mark.asyncio

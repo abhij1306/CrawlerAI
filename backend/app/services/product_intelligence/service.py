@@ -41,11 +41,11 @@ from app.services.config.product_intelligence import (
     RUN_TYPE_CRAWL,
     product_intelligence_settings,
 )
-from app.services.crawl_access_service import require_accessible_record, require_accessible_run
-from app.services.crawl_crud import create_crawl_run, get_run_records
-from app.services.crawl_service import dispatch_run
+from app.services.crawl.access_service import require_accessible_record, require_accessible_run
+from app.services.crawl.crud import create_crawl_run, get_run_records
+from app.services.crawl.service import dispatch_run
 from app.services.domain_utils import normalize_domain
-from app.services.llm_runtime import run_prompt_task
+from app.services.llm.runtime import run_prompt_task
 from app.services.product_intelligence.discovery import discover_candidates
 from app.services.product_intelligence.discovery import shared_query_runner
 from app.services.product_intelligence.matching import (

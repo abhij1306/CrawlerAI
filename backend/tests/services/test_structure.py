@@ -14,12 +14,14 @@ EXTRACTION_MODULES = [
     SERVICES_ROOT / "extraction_context.py",
     SERVICES_ROOT / "listing_extractor.py",
     SERVICES_ROOT / "structured_sources.py",
-    SERVICES_ROOT / "field_value_candidates.py",
+    SERVICES_ROOT / "extract" / "field_candidates" / "structured_payloads.py",
+    SERVICES_ROOT / "extract" / "field_candidates" / "structured_values.py",
+    SERVICES_ROOT / "extract" / "field_candidates" / "variant_rows.py",
 ]
 GENERIC_EXTRACTION_MODULES = [
 ]
 FIELD_POLICY_CONSUMERS = [
-    SERVICES_ROOT / "crawl_crud.py",
+    SERVICES_ROOT / "crawl" / "crud.py",
     SERVICES_ROOT / "schema_service.py",
     SERVICES_ROOT / "review" / "__init__.py",
 ]
@@ -72,7 +74,7 @@ FILE_LOC_BUDGETS = {
     # Config owners.
     # Config rules own typed extraction constants and category/nav URL rules.
     Path("app/services/config/extraction_rules.py"): 1910,
-    Path("app/services/extraction_runtime.py"): 1120,
+    Path("app/services/extraction_runtime.py"): 870,
     # Detail DOM extraction owns DOM fallback fields plus DOM variant recovery.
     Path("app/services/extract/detail_dom_extractor.py"): 1480,
     # Detail finalizer owns public-boundary cleanup and record repair.
@@ -87,10 +89,7 @@ FILE_LOC_BUDGETS = {
     Path("app/services/extract/variant_record_normalization.py"): 1472,
     # Listing extraction remains coherent but large enough to warrant an explicit budget.
     # Ratcheted for content table-row fallback paths while this owner awaits a split.
-    Path("app/services/listing_extractor.py"): 1396,
-    # Field candidate collection is a current large owner; later extraction
-    # slices should split structured candidate assembly and lower this budget.
-    Path("app/services/field_value_candidates.py"): 1125,
+    Path("app/services/listing_extractor.py"): 1260,
     # Canonical field coercion remains centralized here instead of scattering value policy.
     # Shrunk after removing stranded URL helpers and duplicate output schema checks.
     # TODO(chore): baseline LOC drift here, then extract canonical_coercion /
@@ -113,7 +112,7 @@ FILE_LOC_BUDGETS = {
     # LLM task runtime now only orchestrates task execution. Prompt rendering,
     # payload validation, provider calls, budget/cache, and cost logging have
     # separate owners.
-    Path("app/services/llm_tasks.py"): 455,
+    Path("app/services/llm/tasks.py"): 455,
     # Product Intelligence service owns job + discovery orchestration with brand and enrichment LLM helpers.
     Path("app/services/product_intelligence/service.py"): 1105,
 }

@@ -13,7 +13,7 @@ from app.services.acquisition.acquirer import (
     acquire,
 )
 from app.services.adapters.base import AdapterResult
-from app.services.crawl_crud import create_crawl_run, get_run_logs, get_run_records
+from app.services.crawl.crud import create_crawl_run, get_run_logs, get_run_records
 from app.services.pipeline.extraction_loop import (
     _URLProcessingContext,
     _best_adapter_result,

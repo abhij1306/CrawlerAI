@@ -27,7 +27,7 @@ from app.services.domain_memory_service import (
 )
 from app.services.db_utils import mapping_or_empty
 from app.services.domain_utils import normalize_domain
-from app.services.domain_run_profile_service import (
+from app.services.crawl.profile import (
     apply_acquisition_contract_to_profile,
     record_acquisition_contract_outcome,
     resolve_url_acquisition_recipe,
@@ -39,8 +39,8 @@ from app.services.extract.detail_materializer import (
     infer_detail_failure_reason,
 )
 from app.services.shared.field_coerce import validate_record_for_surface
-from app.services.llm_config_service import resolve_run_config
-from app.services.llm_runtime import (
+from app.services.llm.config_service import resolve_run_config
+from app.services.llm.runtime import (
     extract_records_directly as extract_records_directly_with_llm,
 )
 from app.services.pipeline.direct_record_fallback import (

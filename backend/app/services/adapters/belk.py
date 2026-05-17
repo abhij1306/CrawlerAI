@@ -36,7 +36,7 @@ from app.services.shared.field_coerce import (
     infer_brand_from_product_url,
     infer_brand_from_title_marker,
 )
-from app.services.js_state_helpers import compact_dict, normalize_price
+from app.services.js_state.helpers import compact_dict, normalize_price
 from app.services.structured_sources import harvest_js_state_objects
 
 

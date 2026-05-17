@@ -22,7 +22,7 @@ from app.core.database import Base
 from app.core.security import hash_password
 from app.models.user import User
 from app.services.config.runtime_settings import crawler_runtime_settings
-from app.services.crawl_crud import create_crawl_run
+from app.services.crawl.crud import create_crawl_run
 from app.services.fetch.fetch_context import reset_fetch_runtime_state
 from app.services.acquisition.pacing import reset_pacing_state
 from sqlalchemy import text

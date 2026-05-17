@@ -28,11 +28,11 @@ from app.schemas.crawl import (
     FieldCommitResponse,
 )
 from app.services.acquisition.cookie_store import list_domain_cookie_memory
-from app.services.crawl_access_service import (
+from app.services.crawl.access_service import (
     RUN_NOT_FOUND_DETAIL,
     require_accessible_run,
 )
-from app.services.crawl_crud import (
+from app.services.crawl.crud import (
     commit_llm_suggestions,
     commit_selected_fields,
     delete_run,
@@ -40,15 +40,15 @@ from app.services.crawl_crud import (
     get_run_logs,
     list_runs,
 )
-from app.services.crawl_events import serialize_log_event
-from app.services.crawl_ingestion_service import (
+from app.services.crawl.events import serialize_log_event
+from app.services.crawl.ingestion_service import (
     create_crawl_run_from_csv,
     create_crawl_run_from_payload,
 )
-from app.services.crawl_service import kill_run, pause_run, resume_run
-from app.services.crawl_state import TERMINAL_STATUSES
+from app.services.crawl.service import kill_run, pause_run, resume_run
+from app.services.crawl.state import TERMINAL_STATUSES
 from app.services.config.runtime_settings import crawler_runtime_settings
-from app.services.domain_run_profile_service import (
+from app.services.crawl.profile import (
     list_domain_run_profiles,
     load_domain_run_profile,
 )
@@ -219,7 +219,7 @@ async def _mark_run_failed_with_retry(
     session_factory=SessionLocal,
 ) -> None:
     """Best-effort failure marking."""
-    from app.services.crawl_state import CrawlStatus, update_run_status
+    from app.services.crawl.state import CrawlStatus, update_run_status
 
     async with session_factory() as error_session:
         failed_run = await error_session.get(CrawlRun, run_id)

@@ -13,7 +13,7 @@ from app.models.review import ReviewPromotion
 from app.services.config.browser_fingerprint_profiles import BROWSER_REQUIRED_REASONS
 from app.services.config.extraction_rules import EXTRACTION_RULES, REVIEW_CONTAINER_KEYS
 from app.services.db_utils import mapping_or_empty
-from app.services.domain_run_profile_service import (
+from app.services.crawl.profile import (
     load_domain_run_profile,
     save_domain_run_profile,
 )

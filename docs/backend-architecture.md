@@ -77,7 +77,7 @@ Domain-recipe routes now live under `api/crawls.py`:
 Current live behavior:
 
 - batch and crawl run creation preserve raw user-entered `requested_fields` / `additional_fields` on the run, while runtime-only canonicalization happens later when extraction and confidence scoring need alias matching
-- batch run settings persist the resolved `urls` list inside `CrawlRunSettings`, so `_batch_runtime.py` fans out the same URL set that the create request submitted
+- batch run settings persist the resolved `urls` list inside `CrawlRunSettings`, so `crawl/batch_runtime.py` fans out the same URL set that the create request submitted
 
 `CrawlRunSettings` normalizes settings for storage/runtime. Important fields include:
 
@@ -109,11 +109,11 @@ Current live behavior:
 
 ```text
 POST /api/crawls
-  -> crawl_ingestion_service
-  -> crawl_crud.create_crawl_run
-  -> crawl_service.dispatch_run
+  -> crawl/ingestion_service
+  -> crawl/crud.create_crawl_run
+  -> crawl/service.dispatch_run
   -> Celery task process_run
-  -> _batch_runtime.process_run
+  -> crawl/batch_runtime.process_run
   -> pipeline/core._process_single_url for each URL
   -> acquire page + diagnostics + artifacts
   -> extract records
@@ -150,11 +150,12 @@ Responsibilities:
 
 Primary files:
 
-- `crawl_ingestion_service.py`
-- `crawl_service.py`
-- `crawl_crud.py`
-- `crawl_events.py`
-- `_batch_runtime.py`
+- `crawl/ingestion_service.py`
+- `crawl/service.py`
+- `crawl/crud.py`
+- `crawl/events.py`
+- `crawl/batch_runtime.py`
+- `crawl/profile/*`
 - `pipeline/core.py`
 - `pipeline/direct_record_fallback.py`
 - `pipeline/extraction_retry_decision.py`
@@ -168,6 +169,7 @@ Responsibilities:
 - stamp run snapshots
 - dispatch and recover runs
 - process URLs
+- load, merge, persist, and learn reusable domain run-profile acquisition settings
 - persist records and summary state
 - create on-demand enrichment jobs from persisted ecommerce detail records
 - emit logs and progress
@@ -289,8 +291,13 @@ Primary files:
 - `detail_extractor.py`
 - `extract/detail_tiers.py`
 - `listing_extractor.py`
+- `extract/structured_listing_handler.py`
+- `extract/article_card_parser.py`
+- `extract/network_listing_mapper.py`
+- `extract/field_candidates/*`
 - `structured_sources.py`
-- `js_state_mapper.py`
+- `js_state/state_normalizer.py`
+- `js_state/helpers.py`
 - `network_payload_mapper.py`
 - `field_value_*`
 - `field_url_normalization.py`
@@ -324,6 +331,7 @@ Important implemented features:
 - detail tier execution lives in `extract/detail_tiers.py`; `detail_extractor.py` prepares state and owns candidate arbitration, while the tier executor owns authoritative -> structured -> JS state -> DOM sequencing, DOM skip decisions, and early/DOM finalization transitions
 - detail extraction now has a DOM variant fallback for `ecommerce_detail` pages when structured data and JS state leave variant axes empty
 - listing candidate quality lives in `extract/listing_candidate_ranking.py`; listing extraction now delegates candidate admission, support-signal checks, utility rejection, dedupe, and set ranking to that owner
+- structured listing JSON-LD handling lives in `extract/structured_listing_handler.py`, article/content card text parsing lives in `extract/article_card_parser.py`, network listing row/backfill mapping lives in `extract/network_listing_mapper.py`, and structured field-candidate responsibilities live in `extract/field_candidates/*`; `listing_extractor.py` and `extraction_runtime.py` keep orchestration
 - extraction config is split by concept: `field_mappings.py` owns schemas/aliases/field-name primitives, `js_state_field_specs.py` owns glom specs, `variant_policy.py` owns variant axes and flat transport fields, and `public_record_policy.py` owns public persisted/exported record policy
 - variant record normalization has its own owner in `extract/variant_record_normalization.py`; `detail_extractor.py` extracts candidates and delegates final variant axis/value cleanup
 - DOM variant recovery now recognizes radio/checkbox-based size and color groups, associates labels via `for`/parent label structure, and carries stock-derived availability (`0 Left`, `17 Left`, etc.) into `variants` and `selected_variant`
@@ -419,13 +427,13 @@ Current storage/runtime model:
 
 Primary files:
 
-- `llm_runtime.py`
-- `llm_provider_client.py`
-- `llm_config_service.py`
-- `llm_cache.py`
-- `llm_circuit_breaker.py`
-- `llm_tasks.py`
-- `llm_types.py`
+- `llm/runtime.py`
+- `llm/provider_client.py`
+- `llm/config_service.py`
+- `llm/cache.py`
+- `llm/circuit_breaker.py`
+- `llm/tasks.py`
+- `llm/types.py`
 - `api/llm.py`
 
 Responsibilities:

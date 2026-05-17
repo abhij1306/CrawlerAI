@@ -39,7 +39,7 @@ def update_run_status(run, target: str | CrawlStatus) -> CrawlStatus:
         run.completed_at = datetime.now(UTC)
         run_id = getattr(run, "id", None)
         if isinstance(run_id, int):
-            from app.services.crawl_events import clear_url_progress_counter
+            from app.services.crawl.events import clear_url_progress_counter
 
             clear_url_progress_counter(run_id)
 

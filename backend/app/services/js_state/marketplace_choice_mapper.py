@@ -8,7 +8,7 @@ from app.services.config.js_state_field_specs import (
 )
 from app.services.extract.shared_variant_logic import merge_variant_rows
 from app.services.shared.field_coerce import text_or_none
-from app.services.js_state_helpers import compact_dict
+from app.services.js_state.helpers import compact_dict
 
 
 def extract_marketplace_choice_products(value: Any) -> list[dict[str, Any]]:

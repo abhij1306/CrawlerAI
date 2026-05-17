@@ -3,13 +3,13 @@ from __future__ import annotations
 from app.core.telemetry import generate_correlation_id, get_correlation_id
 from app.models.crawl_run import CrawlLog, CrawlRecord, CrawlRun
 from app.models.crawl_settings import CrawlRunSettings
-from app.services.crawl_events import append_log_event
+from app.services.crawl.events import append_log_event
 from app.services.config.domain_profiles import (
     INVALID_SURFACE_VALUES,
     SURFACE_VALIDATION_ERROR,
 )
 from app.services.pipeline.runtime_helpers import STAGE_ACQUIRE
-from app.services.domain_run_profile_service import (
+from app.services.crawl.profile import (
     merge_saved_run_profile,
     load_domain_run_profile,
 )
@@ -18,16 +18,16 @@ from app.services.publish import (
     load_domain_requested_fields,
     refresh_record_commit_metadata,
 )
-from app.services.crawl_state import ACTIVE_STATUSES, CrawlStatus
+from app.services.crawl.state import ACTIVE_STATUSES, CrawlStatus
 from app.models.crawl_settings import normalize_crawl_settings
-from app.services.crawl_utils import (
+from app.services.crawl.utils import (
     collect_target_urls,
     normalize_target_url,
     validate_extraction_contract,
 )
 from app.services.db_utils import escape_like_pattern
 from app.services.field_policy import normalize_field_key, preserve_requested_fields
-from app.services.llm_config_service import snapshot_active_configs
+from app.services.llm.config_service import snapshot_active_configs
 from app.services.normalizers import normalize_value
 from app.services.run_config_snapshot import snapshot_extraction_runtime_settings
 from app.services.url_safety import ensure_public_crawl_targets

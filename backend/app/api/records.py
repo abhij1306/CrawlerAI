@@ -14,11 +14,11 @@ from app.schemas.crawl import (
     CrawlRecordResponse,
     serialize_crawl_record_responses,
 )
-from app.services.crawl_access_service import (
+from app.services.crawl.access_service import (
     RUN_NOT_FOUND_DETAIL,
     require_accessible_run,
 )
-from app.services.crawl_crud import get_run_records
+from app.services.crawl.crud import get_run_records
 from app.services.config.runtime_settings import crawler_runtime_settings
 from app.services.record_export_service import (
     MAX_RECORD_PAGE_SIZE,

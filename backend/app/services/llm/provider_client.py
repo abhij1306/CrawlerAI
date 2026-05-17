@@ -11,9 +11,9 @@ from app.services.config.llm_runtime import (
     SUPPORTED_LLM_PROVIDERS,
     llm_runtime_settings,
 )
-from app.services.llm_circuit_breaker import circuit_is_open, record_failure, record_success
-from app.services.llm_config_service import provider_env_key
-from app.services.llm_errors import ERROR_PREFIX, LLMErrorCategory, classify_error
+from app.services.llm.circuit_breaker import circuit_is_open, record_failure, record_success
+from app.services.llm.config_service import provider_env_key
+from app.services.llm.errors import ERROR_PREFIX, LLMErrorCategory, classify_error
 
 logger = logging.getLogger(__name__)
 JSON_CONTENT_TYPE = "application/json"

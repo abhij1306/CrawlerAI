@@ -13,9 +13,9 @@ from app.core.database import SessionLocal
 from app.core.security import hash_password, verify_password
 from app.models.crawl_run import CrawlRun
 from app.models.user import User
-from app.services._batch_runtime import process_run
 from app.services.adapters.registry import registered_adapters
-from app.services.crawl_crud import create_crawl_run, get_run_records
+from app.services.crawl.batch_runtime import process_run
+from app.services.crawl.crud import create_crawl_run, get_run_records
 from app.services.pipeline.extraction_loop import process_single_url
 from app.services.pipeline.types import URLProcessingConfig
 from app.services.platform_policy import (

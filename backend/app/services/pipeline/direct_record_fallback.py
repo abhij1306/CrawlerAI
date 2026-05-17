@@ -24,7 +24,7 @@ from app.services.shared.field_coerce import (
     finalize_record,
     strip_html_tags,
 )
-from app.services.llm_runtime import extract_missing_fields
+from app.services.llm.runtime import extract_missing_fields
 from app.services.shared.coerce_primitives import string_list
 from sqlalchemy.ext.asyncio import AsyncSession
 

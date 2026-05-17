@@ -31,7 +31,7 @@ from app.services.extraction_html_helpers import html_to_text
 from app.services.domain_utils import normalize_domain
 from app.services.field_policy import normalize_field_key
 from app.services.shared.field_coerce import PRICE_RE, clean_text, coerce_int as _coerce_int
-from app.services.llm_runtime import discover_xpath_candidates
+from app.services.llm.runtime import discover_xpath_candidates
 from app.services.platform_policy import detect_platform_family, job_platform_families
 from app.services.xpath_service import (
     build_absolute_xpath,

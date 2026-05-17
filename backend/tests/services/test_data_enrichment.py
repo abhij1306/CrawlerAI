@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.data_enrichment import EnrichedProduct
 from app.models.crawl_run import CrawlRecord
 from app.schemas.data_enrichment import DataEnrichmentJobDetailResponse
-from app.services.llm_types import LLMTaskResult
+from app.services.llm.types import LLMTaskResult
 from app.services.config.data_enrichment import (
     DATA_ENRICHMENT_STATUS_DEGRADED,
     DATA_ENRICHMENT_STATUS_ENRICHED,

@@ -13,7 +13,7 @@ from app.services.shared.field_coerce import (
     flatten_variants_for_public_output,
     text_or_none,
 )
-from app.services.js_state_helpers import (
+from app.services.js_state.helpers import (
     availability_value,
     compact_dict,
     normalize_price,

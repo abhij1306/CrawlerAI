@@ -9,9 +9,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import SessionLocal
 from app.models.crawl_run import CrawlRun
-from app.services._batch_runtime import process_run as _batch_process_run
+from app.services.crawl.batch_runtime import process_run as _batch_process_run
 from app.services.config.runtime_settings import CELERY_TASK_ID_KEY
-from app.services.crawl_state import CrawlStatus
+from app.services.crawl.state import CrawlStatus
 from app.services.pipeline.runtime_helpers import mark_run_failed
 
 logger = logging.getLogger(__name__)
@@ -113,7 +113,7 @@ class LocalRunDispatcher:
     """Dispatches crawl runs as in-process asyncio tasks."""
 
     async def dispatch(self, session: AsyncSession, run: CrawlRun) -> CrawlRun:
-        from app.services.crawl_service import recover_stale_local_runs
+        from app.services.crawl.service import recover_stale_local_runs
 
         await recover_stale_local_runs(session)
         run_id = int(run.id)

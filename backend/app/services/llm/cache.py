@@ -7,8 +7,8 @@ from typing import Any
 
 from app.core.config import settings
 from app.core.redis import redis_fail_open, redis_is_enabled
-from app.services.llm_errors import LLMErrorCategory
-from app.services.llm_types import LLMTaskResult
+from app.services.llm.errors import LLMErrorCategory
+from app.services.llm.types import LLMTaskResult
 
 _LLM_CACHE_KEY_PREFIX = "crawl:llm:result"
 

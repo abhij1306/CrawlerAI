@@ -51,7 +51,7 @@ from app.services.shared.field_coerce import (
     surface_fields,
     text_or_none,
 )
-from app.services.field_value_candidates import (
+from app.services.extract.field_candidates import (
     add_candidate,
     collect_structured_candidates,
     finalize_candidate_value,

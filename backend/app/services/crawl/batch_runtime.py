@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 
 from app.core.database import SessionLocal
 from app.models.crawl_run import CrawlRun
-from app.services.crawl_state import (
+from app.services.crawl.state import (
     CONTROL_REQUEST_KILL,
     CONTROL_REQUEST_PAUSE,
     TERMINAL_STATUSES,
@@ -16,7 +16,7 @@ from app.services.crawl_state import (
     set_control_request,
     update_run_status,
 )
-from app.services.crawl_utils import normalize_target_url, parse_csv_urls_async
+from app.services.crawl.utils import normalize_target_url, parse_csv_urls_async
 from app.services.config.runtime_settings import crawler_runtime_settings
 from app.services.domain_utils import normalize_domain
 from app.services.acquisition.browser_runtime import get_browser_runtime, patchright_browser_available

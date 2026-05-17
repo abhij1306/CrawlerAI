@@ -16,7 +16,7 @@ from app.services.shared.field_coerce import (
     text_or_none,
 )
 from app.services.extraction_html_helpers import html_to_text
-from app.services.js_state_helpers import (
+from app.services.js_state.helpers import (
     compact_dict,
     normalize_price,
     select_variant,

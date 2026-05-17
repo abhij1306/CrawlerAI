@@ -107,7 +107,7 @@ export function useDomainMemoryWorkspace() {
           ...feedback.map((entry) => entry.surface),
           ...completedRuns.map((run) => run.surface),
         ]),
-      ).sort(),
+      ).sort((left, right) => left.localeCompare(right)),
     [completedRuns, feedback, profiles, records, selectorSummaries],
   );
 

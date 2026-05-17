@@ -19,7 +19,7 @@ from app.services.config.product_intelligence import (
     ProductIntelligenceSettings,
     product_intelligence_settings,
 )
-from app.services.llm_config_service import get_prompt_task
+from app.services.llm.config_service import get_prompt_task
 from app.services.product_intelligence.discovery import (
     SearchResult,
     _google_native_blocked,
@@ -36,8 +36,8 @@ from app.services.product_intelligence.matching import (
     normalize_brand,
     score_candidate,
 )
-from app.services.llm_circuit_breaker import LLMErrorCategory
-from app.services.llm_types import LLMTaskResult
+from app.services.llm.circuit_breaker import LLMErrorCategory
+from app.services.llm.types import LLMTaskResult
 from app.services.product_intelligence.service import (
     _backfill_candidate_brand,
     _poll_candidate_and_score,

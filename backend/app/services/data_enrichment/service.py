@@ -37,7 +37,7 @@ from app.services.config.data_enrichment import (
     ECOMMERCE_DETAIL_SURFACE,
     data_enrichment_settings,
 )
-from app.services.crawl_access_service import (
+from app.services.crawl.access_service import (
     require_accessible_record,
     require_accessible_run,
 )
@@ -58,7 +58,7 @@ from app.services.shared.field_coerce import (
     text_or_none,
 )
 from app.services.extract.detail_price_extractor import currency_hint_from_page_url
-from app.services.llm_runtime import run_prompt_task
+from app.services.llm.runtime import run_prompt_task
 from app.services.normalizers import normalize_decimal_price
 from app.services.product_intelligence.matching import source_domain
 

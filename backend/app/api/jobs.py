@@ -5,7 +5,7 @@ from typing import Annotated
 
 from app.core.dependencies import get_current_user, get_db
 from app.models.user import User
-from app.services.crawl_crud import active_jobs
+from app.services.crawl.crud import active_jobs
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 

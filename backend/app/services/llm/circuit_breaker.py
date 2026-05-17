@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 from app.core.redis import redis_fail_open, redis_is_enabled
 from app.services.config.llm_runtime import llm_runtime_settings
-from app.services.llm_errors import ERROR_PREFIX, LLMErrorCategory, classify_error
+from app.services.llm.errors import ERROR_PREFIX, LLMErrorCategory, classify_error
 
 __all__ = [
     "ERROR_PREFIX",

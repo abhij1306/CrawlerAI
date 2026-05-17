@@ -11,7 +11,7 @@ from app.services.config.runtime_settings import (
     CELERY_TASK_ID_KEY,
     crawler_runtime_settings,
 )
-from app.services.crawl_state import (
+from app.services.crawl.state import (
     CONTROL_REQUEST_KILL,
     CONTROL_REQUEST_PAUSE,
     TERMINAL_STATUSES,

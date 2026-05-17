@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.models.crawl_run import CrawlRun
 from app.services.config.runtime_settings import CELERY_TASK_ID_KEY
-from app.services.crawl_state import CrawlStatus
+from app.services.crawl.state import CrawlStatus
 from app.services.dispatch.local_dispatcher import track_local_run_task
 from app.tasks import process_run_task
 

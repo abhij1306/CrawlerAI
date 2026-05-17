@@ -14,15 +14,15 @@ from app.models.crawl_run import CrawlRecord, CrawlRun
 from app.models.review import ReviewPromotion
 from app.models.crawl_domain import CONTROL_REQUEST_KILL, CONTROL_REQUEST_PAUSE
 from app.models.crawl_settings import normalize_crawl_settings
-from app.services import crawl_service
+from app.services.crawl import service as crawl_service
 from app.services.dispatch import celery_dispatcher as celery_dispatch_module
 from app.services.dispatch import local_dispatcher as local_dispatch_module
-from app.services.crawl_crud import (
+from app.services.crawl.crud import (
     commit_selected_fields,
     create_crawl_run,
     delete_run,
 )
-from app.services.domain_run_profile_service import (
+from app.services.crawl.profile import (
     load_domain_run_profile,
     note_acquisition_contract_failure,
     normalize_acquisition_contract,
@@ -32,7 +32,7 @@ from app.services.domain_run_profile_service import (
     save_domain_run_profile,
 )
 from app.services.exceptions import CrawlerConfigurationError
-from app.services.crawl_state import get_control_request, update_run_status
+from app.services.crawl.state import get_control_request, update_run_status
 from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -571,7 +571,7 @@ async def test_save_domain_run_profile_propagates_programming_error_from_profile
         raise ProgrammingError("select 1", {}, Exception("missing table"))
 
     monkeypatch.setattr(
-        "app.services.domain_run_profile_service.load_domain_run_profile",
+        "app.services.crawl.profile.repository.load_domain_run_profile",
         _fake_load_domain_run_profile,
     )
 

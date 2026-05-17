@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from app.models.crawl_run import CrawlRecord, CrawlRun
 from app.models.user import User
-from app.services.crawl_crud import get_run
+from app.services.crawl.crud import get_run
 from sqlalchemy.ext.asyncio import AsyncSession
 
 RUN_NOT_FOUND_DETAIL = "Run not found"

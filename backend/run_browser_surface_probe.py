@@ -57,7 +57,7 @@ from app.services.config.browser_surface_probe import (
     BROWSER_SURFACE_PROBE_VISIBLE_TEXT_LIMIT,
     BROWSER_SURFACE_PROBE_WEBRTC_GATHER_TIMEOUT_MS,
 )
-from app.services.crawl_crud import get_run
+from app.services.crawl.crud import get_run
 
 _BROWSER_VERSION_RE = re.compile(
     r"\b(?:Chrome|Chromium|Edg|Firefox|HeadlessChrome)/(\d+)", re.IGNORECASE

@@ -6,7 +6,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 from app.services.acquisition_plan import AcquisitionPlan
-from app.services.crawl_utils import normalize_target_url, resolve_traversal_mode
+from app.services.crawl.utils import normalize_target_url, resolve_traversal_mode
 from app.services.config.domain_profiles import AUTO_SURFACE
 from app.services.config.runtime_settings import crawler_runtime_settings
 
