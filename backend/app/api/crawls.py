@@ -620,8 +620,8 @@ async def crawls_logs(
     run_id: int,
     session: Annotated[AsyncSession, Depends(get_db)],
     user: Annotated[User, Depends(get_current_user)],
-    after_id: int | None = None,
-    limit: int = 500,
+    after_id: Annotated[int | None, Query(ge=0)] = None,
+    limit: Annotated[int, Query(ge=1, le=2000)] = 500,
 ) -> list[LogEntryResponse]:
     try:
         await require_accessible_run(session, run_id=run_id, user=user)
@@ -629,8 +629,7 @@ async def crawls_logs(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)
         ) from exc
-    safe_limit = max(1, min(limit, 2000))
-    rows = await get_run_logs(session, run_id, after_id=after_id, limit=safe_limit)
+    rows = await get_run_logs(session, run_id, after_id=after_id, limit=limit)
     return [LogEntryResponse.model_validate(row, from_attributes=True) for row in rows]
 
 

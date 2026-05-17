@@ -1,5 +1,6 @@
 import { api } from '../../lib/api';
 
+// Shared by AppShell; orphan scanners can miss this relative import.
 export const AUTH_SESSION_QUERY_KEY = ['me'] as const;
 
 export function isAuthRoute(pathname: string | null) {

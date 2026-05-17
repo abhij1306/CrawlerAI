@@ -1,5 +1,6 @@
 'use client';
 
+// Next.js App Router entrypoint for `/dashboard`; invoked by file-system routing.
 import { useQuery } from '@tanstack/react-query';
 import type { Route } from 'next';
 import Link from 'next/link';

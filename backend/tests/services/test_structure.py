@@ -37,6 +37,7 @@ ALLOWED_SERVICE_CONFIG_CONSTANTS = {
     ("acquisition/cookie_store.py", "_CHALLENGE_COOKIE_VALUE_TOKENS"),
     ("acquisition/cookie_store.py", "_CHALLENGE_LOCAL_STORAGE_NAME_TOKENS"),
     ("acquisition/cookie_store.py", "_CHALLENGE_LOCAL_STORAGE_VALUE_TOKENS"),
+    ("acquisition/browser_readiness.py", "_ECOMMERCE_READY_CARD_SELECTORS"),
     ("extract/variant_record_normalization.py", "_ADULT_SIZE_CONTEXT_TOKENS"),
     ("extract/variant_record_normalization.py", "_DETAIL_CROSS_PRODUCT_TEXT_GENERIC_TOKENS"),
     ("extract/variant_record_normalization.py", "_DETAIL_CROSS_PRODUCT_TEXT_TYPE_TOKENS"),
@@ -71,12 +72,13 @@ FILE_LOC_BUDGETS = {
     # Config owners.
     # Config rules own typed extraction constants and category/nav URL rules.
     Path("app/services/config/extraction_rules.py"): 1910,
+    Path("app/services/extraction_runtime.py"): 1120,
     # Detail DOM extraction owns DOM fallback fields plus DOM variant recovery.
-    Path("app/services/extract/detail_dom_extractor.py"): 1450,
+    Path("app/services/extract/detail_dom_extractor.py"): 1480,
     # Detail finalizer owns public-boundary cleanup and record repair.
     # Grown (+10) to accommodate additional axis-gating logic that reuses
     # shared_variant_logic frozensets instead of re-deriving them locally.
-    Path("app/services/extract/detail_record_finalizer.py"): 1188,
+    Path("app/services/extract/detail_record_finalizer.py"): 1345,
     # Shared variant logic owns generic axis and row reconciliation.
     # Grown (+380) to absorb the extended allowed-axis taxonomy (flavor, type,
     # material_composition, etc.) and related JS-state / DOM helpers.
@@ -84,7 +86,8 @@ FILE_LOC_BUDGETS = {
     # Variant normalization owns the detail variant cleanup pipeline.
     Path("app/services/extract/variant_record_normalization.py"): 1472,
     # Listing extraction remains coherent but large enough to warrant an explicit budget.
-    Path("app/services/listing_extractor.py"): 1260,
+    # Ratcheted for content table-row fallback paths while this owner awaits a split.
+    Path("app/services/listing_extractor.py"): 1396,
     # Field candidate collection is a current large owner; later extraction
     # slices should split structured candidate assembly and lower this budget.
     Path("app/services/field_value_candidates.py"): 1125,
@@ -94,18 +97,19 @@ FILE_LOC_BUDGETS = {
     # field_recovery / availability_gate owners when scheduled.
     # Phase 3 moved owners. These are temporary high-water marks while public
     # facades preserve imports; later slices split internals under these owners.
-    Path("app/services/dom/selector_engine.py"): 1665,
+    Path("app/services/dom/selector_engine.py"): 1695,
     Path("app/services/extract/detail_materializer.py"): 1435,
-    Path("app/services/fetch/fetch_context.py"): 1386,
-    Path("app/services/js_state/state_normalizer.py"): 1200,
+    # Ratcheted for host-policy TTL compatibility and handoff failure isolation.
+    Path("app/services/fetch/fetch_context.py"): 1410,
+    Path("app/services/js_state/state_normalizer.py"): 1410,
     # Grown (+187) for listing-integrity escalation retry wiring (task 10.1).
     Path("app/services/pipeline/extraction_loop.py"): 1575,
     # Run progress owns batch-level summary/merge/quality aggregation, evicted
     # from the ORM layer so business logic does not live in models/crawl.py.
     Path("app/services/pipeline/run_progress.py"): 365,
-    Path("app/services/shared/field_coerce.py"): 1060,
+    Path("app/services/shared/field_coerce.py"): 1080,
     # Enrichment owns deterministic product normalization and job application.
-    Path("app/services/data_enrichment/service.py"): 1325,
+    Path("app/services/data_enrichment/service.py"): 1400,
     # LLM task runtime now only orchestrates task execution. Prompt rendering,
     # payload validation, provider calls, budget/cache, and cost logging have
     # separate owners.

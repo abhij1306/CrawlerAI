@@ -82,7 +82,11 @@ def evaluate_listing_integrity(
         # by the min-records threshold alone — the Arcteryx promo cluster is
         # caught by rules 3 and 4 regardless.
         # Check: all records are sibling-category URLs AND lack support evidence.
-        if sibling_category_count == record_count and detail_marker_count == 0 and support_signal_count == 0:
+        if (
+            sibling_category_count == record_count
+            and detail_marker_count == 0
+            and support_signal_count == 0
+        ):
             return IntegrityDecision(
                 outcome="promo_only_cluster",
                 reason="below_min_records",
@@ -91,16 +95,15 @@ def evaluate_listing_integrity(
 
     min_ratio = crawler_runtime_settings.listing_cohort_homogeneity_min_ratio
     if cohort_homogeneity_ratio < min_ratio:
-        # Override: when the set is large enough AND a majority of records
-        # carry support signals (price, image, rating, etc.), the set is a
-        # legitimate product grid whose structural signatures vary only due
-        # to cosmetic differences like color-swatch thumbnail counts.
-        # Small sets (< 5 records) are not overridden because low homogeneity
-        # in a tiny set is a stronger signal of a promo cluster.
+        # Override: non-article listings still need at least 5 records and
+        # support on at least half the set. Small sets are normally not
+        # overridden, but article listings may override at any size when every
+        # record carries a support signal.
         support_override = (
-            record_count >= 5
-            and support_signal_count >= max(1, record_count // 2)
-        )
+            surface == "article_listing"
+            and record_count > 0
+            and support_signal_count == record_count
+        ) or (record_count >= 5 and support_signal_count >= max(1, record_count // 2))
         if not support_override:
             return IntegrityDecision(
                 outcome="promo_only_cluster",
@@ -182,7 +185,9 @@ def _url_shape_signature(url: str) -> str:
         prefix_bucket = ""
         for prefix in LISTING_CATEGORY_PATH_PREFIXES:
             if path.startswith(prefix) or (
-                f"/{'/'.join(segments[:2])}".startswith(prefix) if len(segments) >= 2 else False
+                f"/{'/'.join(segments[:2])}".startswith(prefix)
+                if len(segments) >= 2
+                else False
             ):
                 prefix_bucket = prefix
                 break
@@ -256,9 +261,11 @@ def _ensure_frozenset(value: object) -> frozenset[str]:
         return frozenset({value})
     if isinstance(value, Mapping):
         exported_items = value.get("items")
-        if isinstance(exported_items, Iterable) and not isinstance(exported_items, (str, bytes)):
+        if isinstance(exported_items, Iterable) and not isinstance(
+            exported_items, (str, bytes)
+        ):
             return frozenset(str(item) for item in exported_items)
-        return frozenset(str(item) for item in value.keys())
+        return frozenset(str(item) for item in value.values())
     if isinstance(value, Iterable):
         return frozenset(str(item) for item in value)
     return frozenset()
@@ -292,7 +299,4 @@ def _record_has_support_signal(
     support_fields: frozenset[str],
 ) -> bool:
     """Return True if *record* has at least one non-empty support signal field."""
-    return any(
-        record.get(field) not in (None, "", [], {})
-        for field in support_fields
-    )
+    return any(record.get(field) not in (None, "", [], {}) for field in support_fields)

@@ -1,5 +1,6 @@
 'use client';
 
+// Next.js App Router entrypoint for `/admin/llm`; invoked by file-system routing.
 import { useEffect, useState } from 'react';
 import { CheckCircle2, PlugZap, Plus, Trash2 } from 'lucide-react';
 

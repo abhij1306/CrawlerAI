@@ -7,7 +7,10 @@ from collections.abc import Iterable, Mapping
 from typing import Any
 
 from app.services.config._export_data import load_export_data
-from app.services.config.variant_policy import AXIS_NAME_ALIASES, PUBLIC_VARIANT_AXIS_FIELDS
+from app.services.config.variant_policy import (
+    AXIS_NAME_ALIASES,
+    PUBLIC_VARIANT_AXIS_FIELDS,
+)
 
 HTML_PARSER = "html.parser"
 DETAIL_AOM_EXPAND_ROLES = frozenset({"button", "tab"})
@@ -132,6 +135,55 @@ _EXTRACTION_RULES_RAW = _STATIC_EXPORTS.get("EXTRACTION_RULES", {})
 EXTRACTION_RULES = (
     dict(_EXTRACTION_RULES_RAW) if isinstance(_EXTRACTION_RULES_RAW, dict) else {}
 )
+CONTENT_SURFACE_SANITIZE_SELECTORS = (
+    "script",
+    "style",
+    "noscript",
+    "nav",
+    "footer",
+    "aside",
+    "form",
+    "[role='navigation']",
+    "[role='complementary']",
+    "[aria-label*='cookie' i]",
+    "[class*='cookie' i]",
+    "[class*='advert' i]",
+    ".sidebar",
+    ".right-sidebar",
+    ".left-sidebar",
+    "[class~='sidebar']",
+)
+CONTENT_SURFACE_CONTAINER_TAGS = frozenset({"html", "body", "main", "article"})
+CONTENT_SURFACE_PROTECTED_DESCENDANT_SELECTORS = (
+    "main",
+    "article",
+    "[role='main']",
+    "[itemprop='articleBody']",
+    ".article-body",
+    ".content",
+    ".entry-content",
+    ".post",
+    ".post-content",
+)
+CONTENT_SURFACE_DATE_SELECTORS = (
+    "time[datetime]",
+    "[itemprop='datePublished']",
+    ".post-date",
+    ".published",
+    ".posted-on",
+    ".date",
+)
+CONTENT_SURFACE_FORUM_BODY_SELECTORS = (
+    ".post-body",
+    ".message-content",
+    ".thread-content",
+    ".bbp-reply-content",
+    "[slot='text-body']",
+    "div[slot='text-body']",
+    ".md",
+    "article",
+)
+CONTENT_DETAIL_MIN_BODY_TEXT_LENGTH = 50
 
 _CANDIDATE_IMAGE_FILE_EXTENSIONS = _STATIC_EXPORTS.get(
     "CANDIDATE_IMAGE_FILE_EXTENSIONS", ()
@@ -188,9 +240,7 @@ CDN_IMAGE_QUERY_PARAMS = _string_frozenset(
         "width",
     }
 )
-CDN_IMAGE_QUERY_KEY_PATTERNS = (
-    r"^\$n_\d+w\$$",
-)
+CDN_IMAGE_QUERY_KEY_PATTERNS = (r"^\$n_\d+w\$$",)
 CDN_IMAGE_TRANSFORM_SUFFIX_PATTERN = r"[._](?:AC_)?(?:US|SR|SL|SX|SY|SS|UL)\d+_?"
 CDN_IMAGE_PATH_SUFFIX_PATTERN = (
     r"(?:"
@@ -248,9 +298,7 @@ DETAIL_LOW_SIGNAL_PRODUCT_TYPE_VALUES = frozenset({"criteoproductrail"})
 DETAIL_ARTIFACT_PRODUCT_TYPE_VALUES = frozenset(
     {"brightcove video", "criteoproductrail", "default", "tag", "inline"}
 )
-DETAIL_ARTIFACT_PRODUCT_TYPE_PATTERNS = (
-    r"^(?=.*\d)[a-z0-9]+(?:_[a-z0-9]+){2,}$",
-)
+DETAIL_ARTIFACT_PRODUCT_TYPE_PATTERNS = (r"^(?=.*\d)[a-z0-9]+(?:_[a-z0-9]+){2,}$",)
 DETAIL_ARTIFACT_IDENTIFIER_VALUES = frozenset(
     {"description", "details", "product details", "specification", "specifications"}
 )
@@ -552,7 +600,9 @@ DETAIL_VARIANT_CONTEXT_NOISE_TOKENS = (
 )
 VARIANT_CONTEXT_NOISE_ANCESTOR_DEPTH = 6
 VARIANT_CONTEXT_NOISE_ANCESTOR_DEPTH_FALLBACK = 3
-VARIANT_CONTEXT_NOISE_ANCESTOR_DEPTH_DEFAULT = VARIANT_CONTEXT_NOISE_ANCESTOR_DEPTH_FALLBACK
+VARIANT_CONTEXT_NOISE_ANCESTOR_DEPTH_DEFAULT = (
+    VARIANT_CONTEXT_NOISE_ANCESTOR_DEPTH_FALLBACK
+)
 DETAIL_VARIANT_SCOPE_SELECTOR = (
     "form[action*='cart' i], "
     "form[id*='product' i], "
@@ -575,13 +625,21 @@ DETAIL_LOW_SIGNAL_PRICE_MAX = Decimal("1")
 DETAIL_LOW_SIGNAL_PARENT_MIN = Decimal("10")
 DETAIL_PARENT_VARIANT_PRICE_RATIO_MAX = Decimal("2")
 DETAIL_IMAGE_RAW_SOUP_FALLBACK_MAX_WINNING_IMAGES = 1
-DETAIL_IMAGE_URL_ATTRS = ("src", "data-src", "data-lazy-src", "data-original", "data-image")
+DETAIL_IMAGE_URL_ATTRS = (
+    "src",
+    "data-src",
+    "data-lazy-src",
+    "data-original",
+    "data-image",
+)
 INLINE_SCALAR_LABEL_MAX_LEN = 40
 INLINE_SCALAR_VALUE_MAX_LEN = 80
 INLINE_SCALAR_ALLOWED_FIELDS = frozenset({"color", "size"})
 SCALAR_FIELD_MAX_OPTION_TOKENS = 1
 SHADE_CODE_COLOR_MIN_TOKENS = 2
-SCALAR_FIELD_POLLUTION_VALUES = frozenset({"size", "color", "colour", "bust", "waist", "hips", "length"})
+SCALAR_FIELD_POLLUTION_VALUES = frozenset(
+    {"size", "color", "colour", "bust", "waist", "hips", "length"}
+)
 DEFAULT_DECIMAL_PLACES = 2
 CURRENCY_DECIMAL_PLACES = {
     "BIF": 0,
@@ -717,9 +775,13 @@ DETAIL_STRICT_PARENT_PRICE_SOURCE_SET = frozenset(DETAIL_STRICT_PARENT_PRICE_SOU
 DETAIL_CENT_BASED_PRICE_CURRENCY_SET = frozenset(
     globals().get("DETAIL_CENT_BASED_PRICE_CURRENCIES", ())
 )
-DETAIL_PRICE_CENT_MAGNITUDE_RATIO_DECIMAL = Decimal(str(DETAIL_PRICE_CENT_MAGNITUDE_RATIO))
+DETAIL_PRICE_CENT_MAGNITUDE_RATIO_DECIMAL = Decimal(
+    str(DETAIL_PRICE_CENT_MAGNITUDE_RATIO)
+)
 DETAIL_PRICE_MAGNITUDE_EPSILON_DECIMAL = Decimal(str(DETAIL_PRICE_MAGNITUDE_EPSILON))
-DETAIL_PARENT_VARIANT_PRICE_RATIO_MAX_DECIMAL = Decimal(str(DETAIL_PARENT_VARIANT_PRICE_RATIO_MAX))
+DETAIL_PARENT_VARIANT_PRICE_RATIO_MAX_DECIMAL = Decimal(
+    str(DETAIL_PARENT_VARIANT_PRICE_RATIO_MAX)
+)
 DETAIL_INSTALLMENT_PRICE_TEXT_TOKENS_NORMALIZED = tuple(
     str(token).strip().lower()
     for token in tuple(DETAIL_INSTALLMENT_PRICE_TEXT_TOKENS or ())
@@ -926,7 +988,15 @@ VARIANT_OPTION_VALUE_NOISE_PATTERNS = {
     "search": (r"\b(?:please\s+)?select\b",),
 }
 VARIANT_PLACEHOLDER_VALUES = frozenset(
-    {"default title", "choose", "option", "select", "swatch", "size chart", "(size chart)"}
+    {
+        "default title",
+        "choose",
+        "option",
+        "select",
+        "swatch",
+        "size chart",
+        "(size chart)",
+    }
 )
 VARIANT_PLACEHOLDER_PREFIXES = ("please select", "open ", "select ")
 VARIANT_SIZE_QUANTITY_CONTROL_VALUES = frozenset({"-", "+"})
@@ -1252,7 +1322,9 @@ LISTING_PRICE_NODE_SELECTORS = (
     "[data-price]",
     "[aria-label*='price']",
 )
-LISTING_PROMINENT_TITLE_TAGS = frozenset({"strong", "b", "h1", "h2", "h3", "h4", "h5", "h6"})
+LISTING_PROMINENT_TITLE_TAGS = frozenset(
+    {"strong", "b", "h1", "h2", "h3", "h4", "h5", "h6"}
+)
 LISTING_CHROME_TEXT_LIMIT = 800
 LISTING_CATEGORY_PATH_PREFIXES = (
     "/c/",
@@ -1455,7 +1527,7 @@ NORMALIZER_AVAILABILITY_TOKENS = {
         "left in stock",
     ),
     "out_of_stock": ("out of stock", "outofstock", "oos", "sold out", "unavailable"),
-    "preorder": ("pre-order", "preorder", "backorder", "back-order"),
+    "pre_order": ("pre-order", "preorder", "backorder", "back-order"),
 }
 VARIANT_OPTION_TEXT_FIELDS = frozenset(PUBLIC_VARIANT_AXIS_FIELDS)
 VARIANT_AXIS_ALLOWED_SINGLE_TOKENS = frozenset(
@@ -1528,9 +1600,24 @@ VARIANT_AXIS_ALLOWED_SINGLE_TOKENS = frozenset(
 )
 VARIANT_AXIS_GENERIC_TOKENS = frozenset(
     {
-        "attribute", "choice", "description", "dropdown", "item", "name", "option",
-        "options", "please", "shoe", "shoes", "select", "selected", "selector",
-        "styledselect", "swatch", "variant", "variation",
+        "attribute",
+        "choice",
+        "description",
+        "dropdown",
+        "item",
+        "name",
+        "option",
+        "options",
+        "please",
+        "shoe",
+        "shoes",
+        "select",
+        "selected",
+        "selector",
+        "styledselect",
+        "swatch",
+        "variant",
+        "variation",
     }
 )
 VARIANT_AXIS_TECHNICAL_PATTERNS = (

@@ -52,6 +52,10 @@ from app.services.extract.listing_card_fragments import (
 )
 from app.services.extract.listing_record_finalizer import finalize_listing_price_fields
 from app.services.extract.listing_visual import visual_listing_records
+from app.services.extract.content_listing_handler import (
+    has_table_row_intent,
+    table_row_records,
+)
 from app.services.extract.detail_price_extractor import currency_hint_from_page_url
 from app.services.field_policy import normalize_requested_field
 from app.services.shared.field_coerce import (
@@ -191,7 +195,14 @@ def _structured_listing_items(
                     items.append(item)
             continue
         is_typed_listing_node = any(
-            token in normalized_type for token in ("product", "jobposting")
+            token in normalized_type
+            for token in (
+                "product",
+                "jobposting",
+                "article",
+                "newsarticle",
+                "blogposting",
+            )
         )
         if allow_standalone_typed and is_typed_listing_node:
             items.append(candidate)
@@ -215,7 +226,9 @@ def _listing_payload_candidates(payload: dict[str, Any]) -> list[dict[str, Any]]
 
 def _normalized_payload_type(payload: dict[str, Any]) -> str:
     raw_type = payload.get("@type")
-    return (" ".join(raw_type) if isinstance(raw_type, list) else str(raw_type or "")).lower()
+    return (
+        " ".join(raw_type) if isinstance(raw_type, list) else str(raw_type or "")
+    ).lower()
 
 
 def _typed_listing_payloads(payloads: list[dict[str, Any]]):
@@ -224,7 +237,16 @@ def _typed_listing_payloads(payloads: list[dict[str, Any]]):
             if not isinstance(candidate, dict):
                 continue
             normalized_type = _normalized_payload_type(candidate)
-            if any(token in normalized_type for token in ("product", "jobposting")):
+            if any(
+                token in normalized_type
+                for token in (
+                    "product",
+                    "jobposting",
+                    "article",
+                    "newsarticle",
+                    "blogposting",
+                )
+            ):
                 yield candidate
 
 
@@ -251,7 +273,9 @@ def _allow_embedded_json_listing_payloads(payloads: list[dict[str, Any]]) -> boo
         normalized_type = _normalized_payload_type(payload)
         if "itemlist" in normalized_type:
             return True
-        if isinstance(payload.get("itemListElement"), list) and payload.get("itemListElement"):
+        if isinstance(payload.get("itemListElement"), list) and payload.get(
+            "itemListElement"
+        ):
             return True
         if _looks_like_untyped_listing_payload(payload):
             listing_like += 1
@@ -261,7 +285,9 @@ def _allow_embedded_json_listing_payloads(payloads: list[dict[str, Any]]) -> boo
         normalized_main_entity_type = _normalized_payload_type(main_entity)
         if "itemlist" in normalized_main_entity_type:
             return True
-        if isinstance(main_entity.get("itemListElement"), list) and main_entity.get("itemListElement"):
+        if isinstance(main_entity.get("itemListElement"), list) and main_entity.get(
+            "itemListElement"
+        ):
             return True
     return listing_like >= max(2, int(crawler_runtime_settings.listing_min_items))
 
@@ -281,9 +307,15 @@ def _looks_like_untyped_listing_payload(payload: dict[str, Any]) -> bool:
     has_url = any(payload.get(key) for key in ("url", "link", "href"))
 
     # Require at least one strong commerce/job signal to avoid scraping menus
-    has_price = bool(payload.get("price") or payload.get("offers") or payload.get("sale_price"))
-    has_image = bool(payload.get("image") or payload.get("image_url") or payload.get("thumbnail"))
-    has_job_data = bool(payload.get("salary") or payload.get("company") or payload.get("location"))
+    has_price = bool(
+        payload.get("price") or payload.get("offers") or payload.get("sale_price")
+    )
+    has_image = bool(
+        payload.get("image") or payload.get("image_url") or payload.get("thumbnail")
+    )
+    has_job_data = bool(
+        payload.get("salary") or payload.get("company") or payload.get("location")
+    )
 
     return has_url and (has_price or has_image or has_job_data)
 
@@ -362,7 +394,9 @@ def _extract_price_signal_from_card(card) -> str | None:
             if "price" in attrs:
                 score += 5
             lowered_raw_text = raw_text.lower()
-            if any(token in attrs or token in lowered_raw_text for token in ("sale", "now")):
+            if any(
+                token in attrs or token in lowered_raw_text for token in ("sale", "now")
+            ):
                 score += 4
             if any(
                 token in attrs or token in lowered_raw_text
@@ -394,13 +428,18 @@ def _extract_price_signal_from_card(card) -> str | None:
 def _card_title_node(card) -> object | None:
     candidates: list[object] = []
     listing_extraction = EXTRACTION_RULES.get("listing_extraction")
-    listing_extraction_map = listing_extraction if isinstance(listing_extraction, dict) else {}
+    listing_extraction_map = (
+        listing_extraction if isinstance(listing_extraction, dict) else {}
+    )
     selectors = listing_extraction_map.get("card_title_selectors")
     selector_values = selectors if isinstance(selectors, list) else []
     for selector in selector_values:
         candidates.extend(listing_node_css(card, str(selector)))
     if candidates:
-        best = max(candidates, key=lambda node: (_card_title_score(node), len(listing_node_text(node))))
+        best = max(
+            candidates,
+            key=lambda node: (_card_title_score(node), len(listing_node_text(node))),
+        )
         if _card_title_score(best) > 0:
             return best
     fallback_candidates = _fallback_card_title_candidates(card)
@@ -438,9 +477,33 @@ def _card_title_score(
     tag_name = str(tag_name or "")
     href_present = bool(href_present)
     score = 0
-    if any(token in attrs for token in ("title", "name", "product", "item", "listing", "result", "job", "record", "release")):
+    if any(
+        token in attrs
+        for token in (
+            "title",
+            "name",
+            "product",
+            "item",
+            "listing",
+            "result",
+            "job",
+            "record",
+            "release",
+        )
+    ):
         score += 6
-    if any(token in attrs for token in ("brand", "seller", "vendor", "rating", "price", "size", "wishlist")):
+    if any(
+        token in attrs
+        for token in (
+            "brand",
+            "seller",
+            "vendor",
+            "rating",
+            "price",
+            "size",
+            "wishlist",
+        )
+    ):
         score -= 6
     if tag_name in {"h1", "h2", "h3", "h4", "h5", "a", "strong", "b"}:
         score += 2
@@ -474,7 +537,9 @@ def _fallback_card_title_candidates(card) -> list[object]:
         lowered_text = text.lower()
         if PRICE_RE.search(text):
             continue
-        if any(token in lowered_text for token in ("add to bag", "add to cart", "wishlist")):
+        if any(
+            token in lowered_text for token in ("add to bag", "add to cart", "wishlist")
+        ):
             continue
         if tag_name in LISTING_PROMINENT_TITLE_TAGS:
             candidates.append(node)
@@ -496,6 +561,7 @@ def _select_primary_anchor(
     title_node=None,
 ) -> tuple[object, str, str, int] | None:
     is_job = surface.startswith("job_")
+    is_article = surface == "article_listing"
     card_html = _node_html(card)
     title_index = -1
     if title_node is not None and _node_tag(title_node) != "a":
@@ -512,9 +578,12 @@ def _select_primary_anchor(
         if not url or (not same_host(page_url, url) and not same_site(page_url, url)):
             continue
         lowered_url = url.lower()
-        if listing_url_is_structural(url, page_url):
+        if not is_article and listing_url_is_structural(url, page_url):
             continue
-        if any(token in lowered_url for token in ("sort=", "filter=", "facet=", "#review", "#details")):
+        if any(
+            token in lowered_url
+            for token in ("sort=", "filter=", "facet=", "#review", "#details")
+        ):
             continue
         text = clean_text(
             listing_node_attr(anchor, "title")
@@ -529,7 +598,10 @@ def _select_primary_anchor(
         )
         if listing_detail_like_path(url, is_job=is_job):
             score += 6
-        if any(token in lowered_url for token in ("/seller/", "/profile/", "/brand/", "/help/", "/search")):
+        if any(
+            token in lowered_url
+            for token in ("/seller/", "/profile/", "/brand/", "/help/", "/search")
+        ):
             score -= 5
         if title_index >= 0 and card_html:
             anchor_html = _node_html(anchor)
@@ -607,7 +679,10 @@ def _listing_image_candidate_is_noise(node, *, candidate_url: str = "") -> bool:
         )
         if part
     )
-    return any(token in context for token in (*NON_PRODUCT_IMAGE_HINTS, *NON_PRODUCT_PROVIDER_HINTS))
+    return any(
+        token in context
+        for token in (*NON_PRODUCT_IMAGE_HINTS, *NON_PRODUCT_PROVIDER_HINTS)
+    )
 
 
 def _extract_image_title_hint(root, *, page_url: str) -> str | None:
@@ -621,7 +696,9 @@ def _extract_image_title_hint(root, *, page_url: str) -> str | None:
         if _listing_image_candidate_is_noise(node, candidate_url=candidate_url):
             continue
         for attr_name in ("alt", "title", "aria-label"):
-            candidate = _normalize_listing_title(clean_text(listing_node_attr(node, attr_name)))
+            candidate = _normalize_listing_title(
+                clean_text(listing_node_attr(node, attr_name))
+            )
             if not candidate or is_title_noise(candidate):
                 continue
             return candidate
@@ -653,7 +730,9 @@ def _title_token_overlap(left: str, right: str) -> int:
     return len(left_tokens & right_tokens)
 
 
-def _should_replace_title_with_image_hint(title: str, image_title_hint: str | None) -> bool:
+def _should_replace_title_with_image_hint(
+    title: str, image_title_hint: str | None
+) -> bool:
     hint = clean_text(image_title_hint)
     current = clean_text(title)
     if not hint or is_title_noise(hint):
@@ -731,7 +810,10 @@ def _extract_brand_signal_from_card(card, title: str) -> str | None:
                 continue
             if PRICE_RE.search(value):
                 continue
-            if len(re.findall(r"[a-z0-9]+", value, flags=re.I)) > LISTING_BRAND_MAX_WORDS:
+            if (
+                len(re.findall(r"[a-z0-9]+", value, flags=re.I))
+                > LISTING_BRAND_MAX_WORDS
+            ):
                 continue
             if is_title_noise(value):
                 continue
@@ -764,9 +846,7 @@ def _listing_record_from_card(
         if not isinstance(trace, dict):
             return None
         return {
-            key: value
-            for key, value in trace.items()
-            if not str(key).startswith("_")
+            key: value for key, value in trace.items() if not str(key).startswith("_")
         }
 
     is_job = surface.startswith("job_")
@@ -829,9 +909,17 @@ def _listing_record_from_card(
     )
     if not listing_detail_like_path(url, is_job=is_job):
         if is_job and anchor_score < 8:
-            if not any(token in card_text.lower() for token in ("salary", "remote", "location", "apply")):
+            if not any(
+                token in card_text.lower()
+                for token in ("salary", "remote", "location", "apply")
+            ):
                 return None
-        if not is_job and anchor_score < 8 and not has_supporting_listing_signals and title_score < 8:
+        if (
+            not is_job
+            and anchor_score < 8
+            and not has_supporting_listing_signals
+            and title_score < 8
+        ):
             return None
     alias_lookup = surface_alias_lookup(surface, None)
     candidates: dict[str, list[object]] = {"title": [title], "url": [url]}
@@ -846,6 +934,22 @@ def _listing_record_from_card(
         selector_rules=selector_rules,
         selector_trace_candidates=selector_trace_candidates,
     )
+    if surface == "article_listing":
+        author = _article_card_text(
+            card_soup, [".author", ".byline", "[rel='author']", "[itemprop='author']"]
+        )
+        if author:
+            add_candidate(candidates, "author", author)
+        publication_date = _article_card_date(card_soup)
+        if publication_date:
+            add_candidate(candidates, "publication_date", publication_date)
+        summary = _article_card_summary(card_soup, title)
+        if summary:
+            add_candidate(candidates, "summary", summary)
+    elif surface == "content_listing":
+        summary = _article_card_summary(card_soup, title)
+        if summary:
+            add_candidate(candidates, "summary", summary)
     if not is_job and not candidates.get("brand"):
         brand_text = _extract_brand_signal_from_card(card, title)
         if brand_text:
@@ -937,7 +1041,9 @@ def _listing_record_from_card(
             title=cleaned_title,
             url=cleaned_url,
         )
-        and not re.match(r"^(?:article|flyer|guide|manual|resource)\s*:", cleaned_title, flags=re.I)
+        and not re.match(
+            r"^(?:article|flyer|guide|manual|resource)\s*:", cleaned_title, flags=re.I
+        )
         and not re.search(r"\.(?:pdf|docx?|pptx?)(?:$|[?#])", cleaned_url, flags=re.I)
         and not any(
             token in cleaned_url.lower()
@@ -1028,7 +1134,9 @@ def apply_listing_integrity_gate(
         _attach_gate_decision_to_artifacts(artifacts, None)
         return []
     try:
-        decision = evaluate_listing_integrity(records, page_url=page_url, surface=surface)
+        decision = evaluate_listing_integrity(
+            records, page_url=page_url, surface=surface
+        )
     except Exception:
         logger.error(
             "evaluate_listing_integrity failed for page_url=%s surface=%s records=%d",
@@ -1042,6 +1150,44 @@ def apply_listing_integrity_gate(
     if decision is not None and decision.outcome == "promo_only_cluster":
         return []
     return [_strip_listing_integrity_internals(record) for record in records]
+
+
+def _article_card_text(card_soup: BeautifulSoup, selectors: list[str]) -> str:
+    for selector in selectors:
+        node = card_soup.select_one(selector)
+        value = clean_text(node.get_text(" ", strip=True) if node else "")
+        if value:
+            return value
+    return ""
+
+
+def _article_card_date(card_soup: BeautifulSoup) -> str:
+    for selector in (
+        "time[datetime]",
+        "[itemprop='datePublished']",
+        ".post-date",
+        ".published",
+    ):
+        node = card_soup.select_one(selector)
+        if node is None:
+            continue
+        value = clean_text(
+            node.get("datetime")
+            or node.get("content")
+            or node.get_text(" ", strip=True)
+        )
+        if value:
+            return value
+    return ""
+
+
+def _article_card_summary(card_soup: BeautifulSoup, title: str) -> str:
+    for selector in ("p", ".summary", ".excerpt", ".description"):
+        node = card_soup.select_one(selector)
+        value = clean_text(node.get_text(" ", strip=True) if node else "")
+        if value and value != clean_text(title) and len(value) >= 24:
+            return value
+    return ""
 
 
 def _strip_listing_integrity_internals(record: dict[str, Any]) -> dict[str, Any]:
@@ -1063,6 +1209,13 @@ def extract_listing_records(
     network_payloads: list[dict[str, object]] | None = None,
 ) -> list[dict[str, Any]]:
     del network_payloads
+    if surface == "content_listing":
+        table_records = table_row_records(html, page_url, max_records=max_records)
+        if table_records:
+            return table_records
+        table_row_intent = has_table_row_intent(html)
+    else:
+        table_row_intent = False
     context = prepare_extraction_context(html)
     dom_parser = context.dom_parser
     is_job_surface = surface.startswith("job_")
@@ -1077,7 +1230,10 @@ def extract_listing_records(
             is_job=is_job_surface,
             limit=max_records,
         ):
-            logger.debug("Using original listing DOM after cleaned DOM lost card fragments for %s", page_url)
+            logger.debug(
+                "Using original listing DOM after cleaned DOM lost card fragments for %s",
+                page_url,
+            )
             dom_parser = original_parser
 
     def _structured_stage() -> list[dict[str, Any]]:
@@ -1090,10 +1246,13 @@ def extract_listing_records(
             if source_name == "js_state":
                 continue
             payload_list = [
-                payload for payload in list(source_payloads) if isinstance(payload, dict)
+                payload
+                for payload in list(source_payloads)
+                if isinstance(payload, dict)
             ]
-            if source_name == "embedded_json" and not _allow_embedded_json_listing_payloads(
-                payload_list
+            if (
+                source_name == "embedded_json"
+                and not _allow_embedded_json_listing_payloads(payload_list)
             ):
                 continue
             payloads.extend(payload_list)
@@ -1156,15 +1315,15 @@ def extract_listing_records(
                 page_url,
             )
     rendered_fragments = (
-        artifacts.get("rendered_listing_fragments") if isinstance(artifacts, dict) else None
+        artifacts.get("rendered_listing_fragments")
+        if isinstance(artifacts, dict)
+        else None
     )
     rendered_dom_records: list[dict[str, Any]] = []
     if isinstance(rendered_fragments, list):
         rendered_fragment_html = "\n".join(
             fragment
-            for fragment in (
-                str(item or "").strip() for item in rendered_fragments
-            )
+            for fragment in (str(item or "").strip() for item in rendered_fragments)
             if fragment
         )
         if rendered_fragment_html:
@@ -1175,7 +1334,9 @@ def extract_listing_records(
                 rendered_parser,
             )
     listing_visual_elements = (
-        artifacts.get("listing_visual_elements") if isinstance(artifacts, dict) else None
+        artifacts.get("listing_visual_elements")
+        if isinstance(artifacts, dict)
+        else None
     )
     visual_records = visual_listing_records(
         listing_visual_elements if isinstance(listing_visual_elements, list) else None,
@@ -1225,6 +1386,8 @@ def extract_listing_records(
             is_job=is_job_surface,
         ),
     )
+    if table_row_intent and not best_records:
+        return []
     return apply_listing_integrity_gate(
         best_records,
         page_url=page_url,

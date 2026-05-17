@@ -1,5 +1,6 @@
 import { Card } from '../../../components/ui/primitives';
 
+// Next.js App Router loading UI for `/runs/[run_id]`; invoked by file-system routing.
 export default function LoadingRunDetailPage() {
   return (
     <div className="page-stack" aria-busy="true">

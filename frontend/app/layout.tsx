@@ -1,6 +1,8 @@
 import type { Metadata } from 'next';
+import Script from 'next/script';
 import './globals.css';
 
+// Next.js App Router root layout; invoked by file-system routing.
 import { JetBrains_Mono, Outfit } from 'next/font/google';
 
 import { AppShell } from '../components/layout/app-shell';
@@ -24,15 +26,11 @@ export const metadata: Metadata = {
   description: 'Web crawling and structured data extraction platform.',
 };
 
-// Runs before first paint — sets data-theme to prevent FOUC
-const themeScript = `(()=>{let d=false;try{const s=localStorage.getItem("crawlerai-theme");d=s==="dark"||(!s&&matchMedia("(prefers-color-scheme:dark)").matches);}catch(e){try{d=matchMedia("(prefers-color-scheme:dark)").matches;}catch(_){d=false;}}document.documentElement.dataset.theme=d?"dark":"light";})();`;
-
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
-        {/* Inline theme script — must be synchronous to block FOUC */}
-        <script dangerouslySetInnerHTML={{ __html: themeScript }} />
+        <Script src="/theme-init.js" strategy="beforeInteractive" />
       </head>
       {/*
         Only apply font variables here, NOT mainFont.className.

@@ -1,5 +1,6 @@
 'use client';
 
+// Next.js App Router entrypoint for `/crawl`; invoked by file-system routing.
 import { useSearchParams } from 'next/navigation';
 
 import { CrawlConfigScreen } from '../../components/crawl/crawl-config-screen';

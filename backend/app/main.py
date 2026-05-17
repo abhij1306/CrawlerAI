@@ -2,9 +2,10 @@
 from __future__ import annotations
 
 import logging
-from contextlib import asynccontextmanager
-
 import re
+from collections import OrderedDict, deque
+from contextlib import asynccontextmanager
+from time import monotonic
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -44,10 +45,12 @@ from app.services.acquisition import (
     validate_cookie_policy_config,
 )
 from app.services.auth_service import bootstrap_admin_user
+from app.services.config.runtime_settings import crawler_runtime_settings
 from app.services.crawl_service import recover_stale_local_runs
 from app.services.llm_provider_client import close_llm_provider_clients
 
 logger = logging.getLogger("app")
+_RATE_LIMIT_BUCKETS: OrderedDict[str, deque[float]] = OrderedDict()
 
 
 @asynccontextmanager
@@ -102,6 +105,81 @@ def _sanitize_header_name(value: str) -> str:
     if sanitized and _HEADER_NAME_RE.fullmatch(sanitized):
         return sanitized
     return "X-Request-ID"
+
+
+@app.middleware("http")
+async def rate_limit_middleware(request: Request, call_next) -> Response:
+    if not crawler_runtime_settings.api_rate_limit_enabled:
+        return await call_next(request)
+    if _rate_limit_exempt_path(request.url.path):
+        return await call_next(request)
+
+    allowed, retry_after = _consume_rate_limit(_client_rate_limit_key(request))
+    if not allowed:
+        return JSONResponse(
+            {"detail": "Rate limit exceeded"},
+            status_code=429,
+            headers={"Retry-After": str(retry_after)},
+        )
+    return await call_next(request)
+
+
+def _rate_limit_exempt_path(path: str) -> bool:
+    return (
+        path == "/health"
+        or path.startswith("/health/")
+        or path.startswith("/api/metrics")
+    )
+
+
+def _client_rate_limit_key(request: Request) -> str:
+    peer_host = request.client.host if request.client and request.client.host else ""
+    forwarded_for = (
+        request.headers.get("x-forwarded-for") if _is_trusted_proxy(peer_host) else None
+    )
+    if forwarded_for:
+        first = forwarded_for.split(",", maxsplit=1)[0].strip()
+        if first:
+            return first
+    if peer_host:
+        return peer_host
+    return "unknown"
+
+
+def _is_trusted_proxy(proxy_ip: str) -> bool:
+    trusted_proxies = {
+        str(value).strip()
+        for value in crawler_runtime_settings.api_rate_limit_trusted_proxies
+        if str(value).strip()
+    }
+    return proxy_ip in trusted_proxies
+
+
+def _consume_rate_limit(identifier: str) -> tuple[bool, int]:
+    now = monotonic()
+    window_seconds = float(crawler_runtime_settings.api_rate_limit_window_seconds)
+    max_requests = int(crawler_runtime_settings.api_rate_limit_max_requests)
+    bucket = _RATE_LIMIT_BUCKETS.get(identifier)
+    if bucket is None:
+        bucket = deque()
+        _RATE_LIMIT_BUCKETS[identifier] = bucket
+    else:
+        _RATE_LIMIT_BUCKETS.move_to_end(identifier)
+
+    cutoff = now - window_seconds
+    while bucket and bucket[0] <= cutoff:
+        bucket.popleft()
+
+    if len(bucket) >= max_requests:
+        retry_after = max(1, int(bucket[0] + window_seconds - now))
+        return False, retry_after
+
+    bucket.append(now)
+    while len(_RATE_LIMIT_BUCKETS) > int(
+        crawler_runtime_settings.api_rate_limit_max_clients
+    ):
+        _RATE_LIMIT_BUCKETS.popitem(last=False)
+    return True, 0
 
 
 @app.middleware("http")

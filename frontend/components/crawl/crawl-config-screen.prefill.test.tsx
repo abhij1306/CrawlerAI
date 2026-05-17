@@ -96,7 +96,7 @@ describe('CrawlConfigScreen bulk prefill', () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: 'Jobs' })).toHaveAttribute('aria-pressed', 'true');
+      expect(screen.getByRole('combobox', { name: 'Domain' })).toHaveTextContent('Jobs');
     });
 
     expect(screen.getByLabelText('Bulk URLs input')).toHaveValue(

@@ -1,7 +1,8 @@
 import { redirect } from 'next/navigation';
 
 /**
- * Legacy run detail route — redirects to the crawl studio which has
+ * Next.js App Router entrypoint for `/runs/[run_id]`; invoked by file-system routing.
+ * Legacy run detail route redirects to the crawl studio which has
  * the full two-column view and review flow.
  */
 export default async function RunDetailRedirect({

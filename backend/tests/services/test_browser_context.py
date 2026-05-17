@@ -14,8 +14,14 @@ from app.services.acquisition import browser_identity
 from app.services.acquisition import browser_proxy_bridge
 from app.services.acquisition import cookie_store
 from app.services.acquisition import host_protection_memory
+from app.services.acquisition.browser_readiness import analyze_html
 from app.services.acquisition.browser_proxy_config import build_browser_proxy_config
 from app.services.acquisition import browser_runtime as acquisition_browser_runtime
+from app.services.acquisition.runtime import (
+    _has_extractable_dom_content_detail_signals,
+    _has_extractable_listing_signals,
+)
+from app.services.config.runtime_settings import crawler_runtime_settings
 from app.services.domain_utils import is_special_use_domain, normalize_domain
 
 
@@ -71,6 +77,85 @@ def _make_fingerprint(
         navigator=SimpleNamespace(**navigator_data),
         headers=header_data,
     )
+
+
+def test_content_detail_signals_accept_meaningful_body_without_paragraph() -> None:
+    analysis = analyze_html(
+        """
+        <html><body><main>
+          <h1>Forum Thread</h1>
+          <div class="post-body">This answer explains the workaround with enough detail to be useful for extraction.</div>
+        </main></body></html>
+        """
+    )
+
+    assert _has_extractable_dom_content_detail_signals(analysis) is True
+
+
+def test_content_detail_signals_reject_empty_and_heading_only_body() -> None:
+    empty_analysis = analyze_html(
+        "<html><body><main><h1>Thread</h1><div></div></main></body></html>"
+    )
+    heading_only_analysis = analyze_html(
+        "<html><body><main><h1>Thread</h1><div>Thread</div></main></body></html>"
+    )
+
+    assert _has_extractable_dom_content_detail_signals(empty_analysis) is False
+    assert _has_extractable_dom_content_detail_signals(heading_only_analysis) is False
+
+
+def test_content_detail_signals_accept_common_content_descendant() -> None:
+    analysis = analyze_html(
+        """
+        <html><body><main>
+          <h1>Thread</h1>
+          <section class="post-body"><span>Useful answer</span></section>
+        </main></body></html>
+        """
+    )
+
+    assert _has_extractable_dom_content_detail_signals(analysis) is True
+
+
+def test_listing_signals_detect_item_list_and_ignore_non_list_type() -> None:
+    item_list_html = """
+    <html><body><script type="application/ld+json">
+      {"@context":"https://schema.org","@type":"ItemList","itemListElement":[]}
+    </script></body></html>
+    """
+    non_list_html = """
+    <html><body><script type="application/ld+json">
+      {"@context":"https://schema.org","@type":"Article","headline":"News"}
+    </script></body></html>
+    """
+
+    assert _has_extractable_listing_signals(item_list_html) is True
+    assert _has_extractable_listing_signals(non_list_html) is False
+
+
+def test_listing_signals_respect_typed_item_threshold(monkeypatch) -> None:
+    monkeypatch.setattr(crawler_runtime_settings, "listing_min_items", 3)
+
+    def typed_products(count: int) -> str:
+        payloads = "\n".join(
+            '<script type="application/ld+json">{"@type":"Product","name":"Item"}</script>'
+            for _ in range(count)
+        )
+        return f"<html><body>{payloads}</body></html>"
+
+    assert _has_extractable_listing_signals(typed_products(2)) is False
+    assert _has_extractable_listing_signals(typed_products(3)) is True
+    assert _has_extractable_listing_signals(typed_products(4)) is True
+
+
+def test_listing_signals_detect_list_item_type() -> None:
+    html = """
+    <html><body><script type="application/ld+json">
+      {"@context":"https://schema.org","@type":"ListItem","name":"Result"}
+    </script></body></html>
+    """
+
+    assert _has_extractable_listing_signals(html) is True
 
 
 def test_build_playwright_context_options_uses_generated_identity(
@@ -715,6 +800,25 @@ async def test_read_client_request_rejects_missing_no_auth_method() -> None:
         await browser_proxy_bridge._read_client_request(reader, writer)
 
     assert bytes(writer.data) == bytes([5, 0xFF])
+
+
+@pytest.mark.asyncio
+async def test_read_client_request_rebuilds_validated_connect_request() -> None:
+    class _Writer:
+        def write(self, _data: bytes) -> None:
+            return None
+
+        async def drain(self) -> None:
+            return None
+
+    raw_request = bytes([5, 1, 0, 5, 1, 0, 3, 11]) + b"example.com" + bytes([1, 187])
+    reader = asyncio.StreamReader()
+    reader.feed_data(raw_request)
+    reader.feed_eof()
+
+    request = await browser_proxy_bridge._read_client_request(reader, _Writer())
+
+    assert request.to_upstream_bytes() == raw_request[3:]
 
 
 @pytest.mark.asyncio

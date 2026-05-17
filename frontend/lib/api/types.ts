@@ -19,8 +19,19 @@ export type RunStatus =
 export type CrawlPhase = 'config' | 'running' | 'complete';
 
 export type CrawlModule = 'category' | 'pdp';
-export type CrawlDomain = 'commerce' | 'jobs';
-export type CrawlSurface = 'ecommerce_listing' | 'ecommerce_detail' | 'job_listing' | 'job_detail';
+export type CrawlDomain = 'content' | 'commerce' | 'jobs' | 'automobiles' | 'article' | 'forum_thread';
+export type CrawlSurface =
+  | 'content_detail'
+  | 'content_listing'
+  | 'ecommerce_listing'
+  | 'ecommerce_detail'
+  | 'job_listing'
+  | 'job_detail'
+  | 'automobile_listing'
+  | 'automobile_detail'
+  | 'article_listing'
+  | 'article_detail'
+  | 'forum_detail';
 
 export type CrawlMode = 'single' | 'sitemap' | 'bulk' | 'batch' | 'csv';
 export type AdvancedCrawlMode = 'scroll' | 'load_more' | 'paginate' | 'view_all';

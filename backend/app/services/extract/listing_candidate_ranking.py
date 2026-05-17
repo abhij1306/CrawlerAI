@@ -266,6 +266,7 @@ def _listing_record_quality_metrics(
         record,
         detail_like=detail_like,
         job_surface=is_job_surface,
+        surface=surface,
     )
     fallback_merchandise = False
     score = 0
@@ -337,7 +338,16 @@ def _record_has_supporting_signals(
     *,
     detail_like: bool,
     job_surface: bool,
+    surface: str,
 ) -> bool:
+    normalized_surface = str(surface or "").strip().lower()
+    if normalized_surface == "content_listing":
+        return True
+    if normalized_surface == "article_listing":
+        return any(
+            record.get(field_name) not in (None, "", [], {})
+            for field_name in ("publication_date", "author", "summary")
+        )
     if detail_like and job_surface:
         return True
     return any(
@@ -365,7 +375,9 @@ def listing_record_supported(
     title = clean_text(record.get("title"))
     url = str(record.get("url") or "").strip()
     source_kind = str(record.get("_source") or "").strip().lower()
-    if not title or not url or title_is_noise(title) or url_is_structural(url, page_url):
+    if not title or not url or title_is_noise(title):
+        return False
+    if url_is_structural(url, page_url):
         return False
     if looks_like_utility_record(title=title, url=url):
         return False
@@ -382,6 +394,13 @@ def listing_record_supported(
         return True
     if _record_has_supporting_listing_signals(record, surface=surface):
         return True
+    if surface == "content_listing":
+        return True
+    if surface == "article_listing":
+        return any(
+            record.get(field_name) not in (None, "", [], {})
+            for field_name in ("publication_date", "author", "summary")
+        )
     if is_job_surface and job_listing_url_looks_like_posting(url):
         return True
     return (

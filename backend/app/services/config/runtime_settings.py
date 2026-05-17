@@ -117,6 +117,11 @@ class CrawlerRuntimeSettings(BaseSettings):
     stalled_run_threshold_seconds: int = 2 * 60
     records_read_retry_attempts: int = 1
     records_read_retry_delay_ms: int = 150
+    api_rate_limit_enabled: bool = True
+    api_rate_limit_max_requests: int = 300
+    api_rate_limit_window_seconds: int = 60
+    api_rate_limit_max_clients: int = 4096
+    api_rate_limit_trusted_proxies: tuple[str, ...] = ()
     max_candidates_per_field: int = 5
     dynamic_field_name_max_tokens: int = 7
     accordion_expand_max: int = 20
@@ -491,7 +496,9 @@ class CrawlerRuntimeSettings(BaseSettings):
             "acquisition_artifact_cleanup_interval_seconds",
         ):
             _require_non_negative(field_name, getattr(self, field_name))
-        _require_positive("host_memory_ttl_min_seconds", self.host_memory_ttl_min_seconds)
+        _require_positive(
+            "host_memory_ttl_min_seconds", self.host_memory_ttl_min_seconds
+        )
         _require_positive(
             "host_memory_ttl_max_seconds",
             self.host_memory_ttl_max_seconds,
@@ -514,8 +521,7 @@ class CrawlerRuntimeSettings(BaseSettings):
             _require_unit_interval(field_name, getattr(self, field_name))
         if self.run_health_failed_error_rate < self.run_health_degraded_error_rate:
             raise ValueError(
-                "run_health_failed_error_rate must be >= "
-                "run_health_degraded_error_rate"
+                "run_health_failed_error_rate must be >= run_health_degraded_error_rate"
             )
         for field_name in (
             "selector_self_heal_min_confidence",
@@ -529,9 +535,7 @@ class CrawlerRuntimeSettings(BaseSettings):
         )
         _require_non_negative("detail_max_variant_rows", self.detail_max_variant_rows)
         if self.detail_max_variant_rows > 0:
-            required_cells = (
-                self.detail_max_variant_rows * self.detail_max_variant_axes
-            )
+            required_cells = self.detail_max_variant_rows * self.detail_max_variant_axes
             if self.detail_max_variant_matrix_cells < required_cells:
                 raise ValueError(
                     "detail_max_variant_matrix_cells must be >= detail_max_variant_rows * detail_max_variant_axes"
@@ -547,6 +551,13 @@ class CrawlerRuntimeSettings(BaseSettings):
             "listing_integrity_escalation_retry_max_per_run",
             self.listing_integrity_escalation_retry_max_per_run,
         )
+        _require_positive(
+            "api_rate_limit_max_requests", self.api_rate_limit_max_requests
+        )
+        _require_positive(
+            "api_rate_limit_window_seconds", self.api_rate_limit_window_seconds
+        )
+        _require_positive("api_rate_limit_max_clients", self.api_rate_limit_max_clients)
         return self
 
     def coerce_url_timeout_seconds(self, value: object) -> float:

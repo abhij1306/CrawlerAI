@@ -143,7 +143,7 @@ class Socks5AuthBridge:
                     crawler_runtime_settings.browser_proxy_bridge_auth_timeout_seconds
                 ),
             )
-            opened_writer.write(request.raw_request)
+            opened_writer.write(request.to_upstream_bytes())
             await opened_writer.drain()
             response = await asyncio.wait_for(
                 _read_socks5_response(opened_reader),
@@ -184,7 +184,12 @@ class Socks5AuthBridge:
 
 @dataclass(frozen=True, slots=True)
 class _Socks5ConnectRequest:
-    raw_request: bytes
+    header: bytes
+    address: bytes
+    port: bytes
+
+    def to_upstream_bytes(self) -> bytes:
+        return self.header + self.address + self.port
 
 
 async def _read_client_request(
@@ -213,7 +218,9 @@ async def _read_client_request(
     address_bytes = await _read_address_bytes(reader, address_type)
     port_bytes = await reader.readexactly(2)
     return _Socks5ConnectRequest(
-        raw_request=request_header + address_bytes + port_bytes
+        header=request_header,
+        address=address_bytes,
+        port=port_bytes,
     )
 
 

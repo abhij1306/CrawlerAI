@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { TopBarProvider, useTopBarHeader } from '../layout/top-bar-context';
-import DomainMemoryManagePage from '../../app/selectors/manage/page';
+import DomainMemoryManagePage from './domain-memory-manage-page';
 
 const apiMock = vi.hoisted(() => ({
   listSelectorSummaries: vi.fn(),

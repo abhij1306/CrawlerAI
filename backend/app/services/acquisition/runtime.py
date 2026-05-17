@@ -18,6 +18,9 @@ from app.services.config.content_types import HTML_CONTENT_TYPE
 from app.services.config.extraction_rules import (
     ACTION_BUY_NOW,
     BROWSER_DETAIL_READINESS_HINTS,
+    CONTENT_SURFACE_FORUM_BODY_SELECTORS,
+    CONTENT_DETAIL_MIN_BODY_TEXT_LENGTH,
+    CONTENT_SURFACE_PROTECTED_DESCENDANT_SELECTORS,
     DETAIL_SHELL_FRAMEWORK_TOKENS,
     DETAIL_SHELL_PRODUCT_DATA_TOKENS,
     DETAIL_SHELL_STATE_TOKENS,
@@ -594,13 +597,23 @@ def _has_extractable_detail_signals(
         ).lower()
         if any(
             token in normalized_type
-            for token in ("product", "productgroup", "jobposting")
+            for token in (
+                "product",
+                "productgroup",
+                "jobposting",
+                "article",
+                "newsarticle",
+                "blogposting",
+                "discussionforumposting",
+            )
         ):
             return True
     js_states = harvest_js_state_objects(parsed.soup, parsed.html)
     if any(_state_payload_has_content(payload) for payload in js_states.values()):
         return True
     if _has_extractable_dom_detail_signals(parsed):
+        return True
+    if _has_extractable_dom_content_detail_signals(parsed):
         return True
     lowered_html = parsed.lowered_html
     if any(token in lowered_html for token in DETAIL_SHELL_STATE_TOKENS):
@@ -651,6 +664,42 @@ def _has_extractable_dom_detail_signals(analysis: HtmlAnalysis) -> bool:
     return detail_hint_hits > 0 and has_product_anchor
 
 
+def _has_extractable_dom_content_detail_signals(analysis: HtmlAnalysis) -> bool:
+    if not analysis.h1_present:
+        return False
+    heading = analysis.soup.select_one("main h1, article h1, [role='main'] h1, h1")
+    heading_text = clean_text(heading.get_text(" ", strip=True)) if heading else ""
+    if not heading_text:
+        return False
+    for selector in (
+        *CONTENT_SURFACE_FORUM_BODY_SELECTORS,
+        *CONTENT_SURFACE_PROTECTED_DESCENDANT_SELECTORS,
+    ):
+        try:
+            nodes = analysis.soup.select(selector)
+        except Exception:
+            continue
+        for node in nodes:
+            body_text = clean_text(node.get_text(" ", strip=True))
+            if not body_text or body_text == heading_text:
+                continue
+            body_without_heading = clean_text(
+                re.sub(re.escape(heading_text), " ", body_text, flags=re.I)
+            )
+            if not body_without_heading:
+                continue
+            if (
+                "load in the app" in body_without_heading.lower()
+                or "loads in the app" in body_without_heading.lower()
+            ):
+                continue
+            if node.find(("p", "div", "li", "article", "section", "span")) is not None:
+                return True
+            if len(body_without_heading) >= CONTENT_DETAIL_MIN_BODY_TEXT_LENGTH:
+                return True
+    return False
+
+
 def _has_extractable_listing_signals(
     html: str,
     *,
@@ -667,7 +716,7 @@ def _has_extractable_listing_signals(
         normalized_type = (
             " ".join(raw_type) if isinstance(raw_type, list) else str(raw_type or "")
         ).lower()
-        if "itemlist" in normalized_type:
+        if "itemlist" in normalized_type or "listitem" in normalized_type:
             return True
         if any(token in normalized_type for token in ("product", "jobposting")):
             typed_listing_count += 1

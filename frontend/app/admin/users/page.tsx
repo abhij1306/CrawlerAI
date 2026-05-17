@@ -1,5 +1,6 @@
 'use client';
 
+// Next.js App Router entrypoint for `/admin/users`; invoked by file-system routing.
 import { useQuery } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 

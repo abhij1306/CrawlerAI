@@ -32,6 +32,18 @@ async def crawls_api_client(db_session, test_user):
 
 
 @pytest.mark.asyncio
+async def test_crawls_logs_query_params_are_validated(
+    crawls_api_client: AsyncClient,
+) -> None:
+    response = await crawls_api_client.get(
+        "/api/crawls/1/logs",
+        params={"after_id": -1, "limit": 2001},
+    )
+
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
 async def test_crawls_domain_recipe_routes_round_trip(
     crawls_api_client: AsyncClient,
     db_session,

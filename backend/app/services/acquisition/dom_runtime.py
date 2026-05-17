@@ -15,9 +15,11 @@ _SHADOW_DOM_FLATTENER_SCRIPT = """
       continue;
     }
     try {
-      const clone = document.createElement('template');
-      clone.innerHTML = el.shadowRoot.innerHTML;
-      el.appendChild(clone.content.cloneNode(true));
+      const fragment = document.createDocumentFragment();
+      for (const node of el.shadowRoot.childNodes) {
+        fragment.appendChild(node.cloneNode(true));
+      }
+      el.appendChild(fragment);
       flattenedRoots += 1;
     } catch (error) {
       continue;

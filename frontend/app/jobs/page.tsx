@@ -1,5 +1,6 @@
 'use client';
 
+// Next.js App Router entrypoint for `/jobs`; invoked by file-system routing.
 import { useQuery } from '@tanstack/react-query';
 import { RefreshCw, XCircle } from 'lucide-react';
 import type { ComponentType } from 'react';

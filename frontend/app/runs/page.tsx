@@ -1,5 +1,6 @@
 'use client';
 
+// Next.js App Router entrypoint for `/runs`; invoked by file-system routing.
 import Link from 'next/link';
 import type { Route } from 'next';
 import { useState } from 'react';

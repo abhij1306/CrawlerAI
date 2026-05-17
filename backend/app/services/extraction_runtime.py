@@ -57,6 +57,7 @@ from app.services.listing_extractor import (
     apply_listing_integrity_gate,
     extract_listing_records,
 )
+from app.services.extract.content_listing_handler import validate_table_rows_quality
 from app.services.config.runtime_settings import crawler_runtime_settings
 from app.services.normalizers import normalize_decimal_price
 
@@ -182,6 +183,13 @@ def extract_records(
         adapter_rows = _finalize_listing_rows(adapter_rows)
         listing_rows = _finalize_listing_rows(listing_rows)
         network_rows = _finalize_listing_rows(network_rows)
+        if (
+            normalized_surface == "content_listing"
+            and listing_rows
+            and all(row.get("_extraction_mode") == "table_rows" for row in listing_rows)
+            and validate_table_rows_quality(listing_rows)
+        ):
+            return listing_rows[:max_records]
         listing_rows = _backfill_listing_rows_from_adapter(
             listing_rows,
             adapter_rows=adapter_rows,

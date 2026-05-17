@@ -4110,6 +4110,11 @@ async def test_get_page_html_outer_html_fallback_preserves_doctype(
     assert html.startswith("<!DOCTYPE html>")
 
 
+def test_shadow_dom_flattener_avoids_inner_html_assignment() -> None:
+    assert ".innerHTML" not in dom_runtime._SHADOW_DOM_FLATTENER_SCRIPT
+    assert "cloneNode(true)" in dom_runtime._SHADOW_DOM_FLATTENER_SCRIPT
+
+
 @pytest.mark.asyncio
 async def test_page_might_have_location_interstitial_uses_live_selector_probe() -> None:
     class _Page:

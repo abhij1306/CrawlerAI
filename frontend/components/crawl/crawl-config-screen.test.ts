@@ -9,6 +9,7 @@ type DomainRunProfileOverrides = {
   fetch_profile?: Partial<DomainRunProfile['fetch_profile']>;
   locality_profile?: Partial<DomainRunProfile['locality_profile']>;
   diagnostics_profile?: Partial<DomainRunProfile['diagnostics_profile']>;
+  acquisition_contract?: Partial<DomainRunProfile['acquisition_contract']>;
   source_run_id?: DomainRunProfile['source_run_id'];
   saved_at?: DomainRunProfile['saved_at'];
 };
@@ -68,6 +69,7 @@ function baseProfile(overrides: DomainRunProfileOverrides = {}): DomainRunProfil
         failure_count: 0,
         stale: false,
       },
+      ...overrides.acquisition_contract,
     },
     source_run_id: overrides.source_run_id ?? null,
     saved_at: overrides.saved_at ?? null,
@@ -159,9 +161,39 @@ describe('buildDispatch', () => {
       capture_response_headers: true,
       capture_browser_diagnostics: true,
     });
+    expect(dispatch.settings.acquisition_contract).toEqual({
+      preferred_browser_engine: 'auto',
+      prefer_browser: false,
+      prefer_curl_handoff: false,
+      handoff_cookie_engine: 'auto',
+      last_quality_success: null,
+      stale_after_failures: {
+        failure_count: 0,
+        stale: false,
+      },
+    });
     expect(dispatch.settings.proxy_profile).toEqual({
       enabled: false,
       proxy_list: [],
+    });
+  });
+
+  it('carries a real Chrome browser engine preference into advanced settings', () => {
+    const dispatch = buildDispatch(baseConfig(), [], {
+      studioMode: 'advanced',
+      runProfile: baseProfile({
+        acquisition_contract: {
+          preferred_browser_engine: 'real_chrome',
+          prefer_browser: true,
+          handoff_cookie_engine: 'real_chrome',
+        },
+      }),
+    });
+
+    expect(dispatch.settings.acquisition_contract).toMatchObject({
+      preferred_browser_engine: 'real_chrome',
+      prefer_browser: true,
+      handoff_cookie_engine: 'real_chrome',
     });
   });
 

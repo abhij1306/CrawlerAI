@@ -278,6 +278,65 @@ def test_classify_blocked_page_preserves_dom_heavy_detail_content_despite_challe
     assert "captcha_titled_iframe" in classification.challenge_element_hits
 
 
+def test_classify_blocked_page_preserves_forum_detail_content_despite_provider_markers() -> None:
+    html = """
+    <html>
+      <head>
+        <title>Python 3.13 released : r/Python</title>
+        <script>window.vendor = "akamai";</script>
+      </head>
+      <body>
+        <iframe title="captcha"></iframe>
+        <main>
+          <h1>Python 3.13 released</h1>
+          <shreddit-post>
+            <div slot="text-body">
+              <p>This is the stable release of Python 3.13.0.</p>
+              <p>Python 3.13.0 is the newest major release of the Python programming language.</p>
+            </div>
+          </shreddit-post>
+        </main>
+      </body>
+    </html>
+    """
+
+    classification = classify_blocked_page(html, 200)
+
+    assert classification.blocked is False
+    assert "akamai" in classification.provider_hits
+    assert "captcha_titled_iframe" in classification.challenge_element_hits
+
+
+def test_classify_blocked_page_preserves_forum_listing_content_despite_provider_markers() -> None:
+    html = """
+    <html>
+      <head>
+        <title>codereview</title>
+        <script>window.vendor = "reddit";</script>
+      </head>
+      <body>
+        <iframe title="captcha"></iframe>
+        <main>
+          <article>
+            <a href="/r/codereview/comments/1/thread-one/">How should I refactor this parser?</a>
+          </article>
+          <article>
+            <a href="/r/codereview/comments/2/thread-two/">Need review for this React component</a>
+          </article>
+          <article>
+            <a href="/r/codereview/comments/3/thread-three/">Python async scraper review request</a>
+          </article>
+        </main>
+      </body>
+    </html>
+    """
+
+    classification = classify_blocked_page(html, 200)
+
+    assert classification.blocked is False
+    assert "captcha_titled_iframe" in classification.challenge_element_hits
+
+
 def test_classify_blocked_page_keeps_captcha_detail_gate_blocked() -> None:
     html = """
     <html>

@@ -1,6 +1,9 @@
 # Active Plan
 
-No active plan.
+**Current:** Article & Forum Thread Surfaces → `docs/plans/article-forum-surfaces-plan.md`
+**Status:** COMPLETE
+**Started:** 2026-05-16
+**Last slice completed:** Slice 9 — Docs And Handoff Cleanup
 
 ## Queue
 1. Product Monitoring Pipeline → `docs/plans/product-monitoring-pipeline-plan.md`

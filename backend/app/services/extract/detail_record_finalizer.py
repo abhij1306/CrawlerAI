@@ -169,12 +169,12 @@ def _sanitize_ecommerce_detail_record(
         )
         _backfill_detail_image_from_html(record, soup=soup, identity_url=identity_url)
     _sanitize_detail_variant_payload(record, identity_url=identity_url)
-    _backfill_parent_image_from_variants(record)
     sanitize_detail_long_text_fields(
         record,
         title_hint=_detail_title_from_url(identity_url),
     )
     _sanitize_detail_images(record, identity_url=identity_url)
+    _backfill_parent_image_from_variants(record)
     _reconcile_detail_availability_from_variants(record)
 
 

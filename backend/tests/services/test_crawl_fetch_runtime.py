@@ -536,6 +536,36 @@ def test_browser_engine_attempts_uses_real_chrome_after_patchright_when_availabl
     assert attempts == ["real_chrome", "patchright"]
 
 
+def test_browser_engine_attempts_uses_real_chrome_for_blocked_forum_detail_when_available(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        crawl_fetch_runtime.crawler_runtime_settings,
+        "browser_real_chrome_enabled",
+        True,
+    )
+    monkeypatch.setattr(
+        crawl_fetch_runtime,
+        "real_chrome_browser_available",
+        lambda: True,
+    )
+    context = _default_fetch_context(
+        url="https://www.reddit.com/r/python/comments/abc123/example/",
+        surface="forum_detail",
+    )
+
+    attempts = crawl_fetch_runtime._browser_engine_attempts(
+        context=context,
+        host_policy=HostProtectionPolicy(
+            host="reddit.com",
+            patchright_blocked=True,
+            prefer_browser=True,
+        ),
+    )
+
+    assert attempts == ["real_chrome", "patchright"]
+
+
 def test_browser_engine_attempts_keeps_forced_patchright_explicit_when_unavailable() -> (
     None
 ):
@@ -1262,6 +1292,66 @@ async def test_fetch_page_browser_only_escalates_to_real_chrome_after_patchright
     result = await crawl_fetch_runtime.fetch_page(
         "https://example.com/products/widget",
         surface="ecommerce_detail",
+        fetch_mode="browser_only",
+    )
+
+    assert attempted_engines == ["real_chrome"]
+    assert result.browser_diagnostics["browser_engine"] == "real_chrome"
+    assert result.browser_diagnostics["escalation_lane"] == "browser_only"
+    assert (
+        result.browser_diagnostics["host_policy_snapshot"]["patchright_blocked"] is True
+    )
+
+
+@pytest.mark.asyncio
+async def test_fetch_page_browser_only_escalates_to_real_chrome_for_forum_detail(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    attempted_engines: list[str] = []
+
+    async def _fake_browser_fetch(url: str, timeout: float, **kwargs):
+        del url, timeout
+        attempted_engines.append(str(kwargs.get("browser_engine")))
+        return PageFetchResult(
+            url="https://www.reddit.com/r/python/comments/abc123/example/",
+            final_url="https://www.reddit.com/r/python/comments/abc123/example/",
+            html="<html><body><main>Thread</main></body></html>",
+            status_code=200,
+            method="browser",
+            browser_diagnostics={
+                "browser_engine": str(kwargs.get("browser_engine")),
+                "bridge_used": False,
+                "escalation_lane": str(kwargs.get("escalation_lane")),
+                "host_policy_snapshot": dict(kwargs.get("host_policy_snapshot") or {}),
+            },
+        )
+
+    monkeypatch.setattr(crawl_fetch_runtime, "_browser_fetch", _fake_browser_fetch)
+    monkeypatch.setattr(
+        crawl_fetch_runtime.crawler_runtime_settings,
+        "browser_real_chrome_enabled",
+        True,
+    )
+    monkeypatch.setattr(
+        crawl_fetch_runtime,
+        "real_chrome_browser_available",
+        lambda: True,
+    )
+    monkeypatch.setattr(
+        crawl_fetch_runtime,
+        "load_host_protection_policy",
+        AsyncMock(
+            return_value=HostProtectionPolicy(
+                host="reddit.com",
+                prefer_browser=True,
+                patchright_blocked=True,
+            )
+        ),
+    )
+
+    result = await crawl_fetch_runtime.fetch_page(
+        "https://www.reddit.com/r/python/comments/abc123/example/",
+        surface="forum_detail",
         fetch_mode="browser_only",
     )
 
