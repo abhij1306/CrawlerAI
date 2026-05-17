@@ -113,6 +113,23 @@
         }
       },
       {
+        "key": "article",
+        "value": {
+          "__type__": "list",
+          "items": [
+            "article",
+            ".post-card",
+            ".post-item",
+            ".blog-entry",
+            ".news-item",
+            "[class*='post-card' i]",
+            "[class*='article-card' i]",
+            "[class*='blog-card' i]",
+            "[class*='news-card' i]"
+          ]
+        }
+      },
+      {
         "key": "jobs",
         "value": {
           "__type__": "list",

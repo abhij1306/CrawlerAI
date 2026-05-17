@@ -132,6 +132,54 @@ _EXTRACTION_RULES_RAW = _STATIC_EXPORTS.get("EXTRACTION_RULES", {})
 EXTRACTION_RULES = (
     dict(_EXTRACTION_RULES_RAW) if isinstance(_EXTRACTION_RULES_RAW, dict) else {}
 )
+CONTENT_SURFACE_SANITIZE_SELECTORS = (
+    "script",
+    "style",
+    "noscript",
+    "nav",
+    "footer",
+    "aside",
+    "form",
+    "[role='navigation']",
+    "[role='complementary']",
+    "[aria-label*='cookie' i]",
+    "[class*='cookie' i]",
+    "[class*='advert' i]",
+    ".sidebar",
+    ".right-sidebar",
+    ".left-sidebar",
+    "[class~='sidebar']",
+)
+CONTENT_SURFACE_CONTAINER_TAGS = frozenset({"html", "body", "main", "article"})
+CONTENT_SURFACE_PROTECTED_DESCENDANT_SELECTORS = (
+    "main",
+    "article",
+    "[role='main']",
+    "[itemprop='articleBody']",
+    ".article-body",
+    ".content",
+    ".entry-content",
+    ".post",
+    ".post-content",
+)
+CONTENT_SURFACE_DATE_SELECTORS = (
+    "time[datetime]",
+    "[itemprop='datePublished']",
+    ".post-date",
+    ".published",
+    ".posted-on",
+    ".date",
+)
+CONTENT_SURFACE_FORUM_BODY_SELECTORS = (
+    ".post-body",
+    ".message-content",
+    ".thread-content",
+    ".bbp-reply-content",
+    "[slot='text-body']",
+    "div[slot='text-body']",
+    ".md",
+    "article",
+)
 
 _CANDIDATE_IMAGE_FILE_EXTENSIONS = _STATIC_EXPORTS.get(
     "CANDIDATE_IMAGE_FILE_EXTENSIONS", ()

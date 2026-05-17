@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+from bs4 import BeautifulSoup
+
+from app.services.extract.table_extractor import extract_tables
 from app.services.extraction_runtime import extract_records
+from app.services.normalizers import normalize_value
 from app.services.public_record_firewall import public_record_data_for_surface
 
 
@@ -52,6 +56,31 @@ def test_content_listing_table_rows_keep_open_fields() -> None:
     assert "country" not in rejected
 
 
+def test_content_listing_table_row_urls_stay_aligned_when_tr_is_skipped() -> None:
+    rows = extract_records(
+        """
+        <html><body><main>
+          <table>
+            <tr><th>Name</th><th>Status</th></tr>
+            <tr><td><a href="/skip">Chrome row</a></td></tr>
+            <tr><td><a href="/alpha">Alpha</a></td><td>Open</td></tr>
+            <tr><td><a href="/beta">Beta</a></td><td>Open</td></tr>
+            <tr><td><a href="/gamma">Gamma</a></td><td>Closed</td></tr>
+          </table>
+        </main></body></html>
+        """,
+        "https://example.com/table",
+        "content_listing",
+        max_records=5,
+    )
+
+    assert [row["url"] for row in rows] == [
+        "https://example.com/alpha",
+        "https://example.com/beta",
+        "https://example.com/gamma",
+    ]
+
+
 def test_content_listing_does_not_treat_spec_table_as_row_listing() -> None:
     rows = extract_records(
         """
@@ -70,6 +99,34 @@ def test_content_listing_does_not_treat_spec_table_as_row_listing() -> None:
     )
 
     assert rows == []
+
+
+def test_table_context_combines_multiple_aria_labelledby_ids() -> None:
+    soup = BeautifulSoup(
+        """
+        <section>
+          <span id="first">Release</span>
+          <span id="second">Schedule</span>
+          <table aria-labelledby="first second">
+            <tr><th>Version</th><th>Date</th></tr>
+            <tr><td>1.0</td><td>May</td></tr>
+            <tr><td>1.1</td><td>June</td></tr>
+          </table>
+        </section>
+        """,
+        "html.parser",
+    )
+
+    tables = extract_tables(soup)
+
+    assert tables[0]["context"] == "Release Schedule"
+
+
+def test_content_numeric_fields_normalize_to_integers() -> None:
+    assert normalize_value("reply_count", "1,234") == 1234
+    assert normalize_value("view_count", "5,678") == 5678
+    assert normalize_value("word_count", "901") == 901
+    assert normalize_value("reading_time", "12") == 12
 
 
 def test_ecommerce_detail_prefers_product_json_ld_over_faq_question_title() -> None:
@@ -103,6 +160,7 @@ def test_ecommerce_detail_prefers_product_json_ld_over_faq_question_title() -> N
         max_records=5,
     )
 
+    assert len(rows) == 1
     assert rows[0]["title"] == "Yamaha R-N800A Network Receiver with Phono and Built-in DAC - Black"
     assert rows[0]["sku"] == "0ZK-01A6-00390"
 
@@ -129,11 +187,13 @@ def test_detail_spec_tables_use_field_value_shape() -> None:
         "ecommerce_detail",
         max_records=5,
     )
-
+    assert len(rows) == 1
     tables = rows[0]["tables"]
+    assert len(tables) >= 2
     assert tables[0]["headers"] == ["field", "value"]
     assert tables[0]["context"] == "Model"
     assert tables[0]["rows"][0] == {"field": "Brand", "value": "Yamaha"}
+    assert tables[1]["rows"][0] == {"field": "Digital Optical Audio", "value": "Yes"}
     assert tables[1]["rows"][0] == {"field": "Digital Optical Audio", "value": "Yes"}
 
 
@@ -167,8 +227,9 @@ def test_forum_detail_extracts_body_and_counts() -> None:
         "forum_detail",
         max_records=5,
     )
-
+    assert len(rows) == 1
     assert rows[0]["title"] == "How do I tune crawls?"
     assert "explicit surfaces" in rows[0]["content"]
     assert rows[0]["reply_count"] == 12
+    assert rows[0]["view_count"] == 140
     assert rows[0]["view_count"] == 140

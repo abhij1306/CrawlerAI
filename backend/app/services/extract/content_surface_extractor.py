@@ -6,6 +6,13 @@ from typing import Any
 
 from bs4 import BeautifulSoup, Tag
 
+from app.services.config.extraction_rules import (
+    CONTENT_SURFACE_CONTAINER_TAGS,
+    CONTENT_SURFACE_DATE_SELECTORS,
+    CONTENT_SURFACE_FORUM_BODY_SELECTORS,
+    CONTENT_SURFACE_PROTECTED_DESCENDANT_SELECTORS,
+    CONTENT_SURFACE_SANITIZE_SELECTORS,
+)
 from app.services.extract.table_extractor import extract_tables
 from app.services.shared.field_coerce import absolute_url, clean_text
 
@@ -44,10 +51,7 @@ def _content_detail(soup: BeautifulSoup, container: Tag, page_url: str) -> dict[
 
 
 def _article_detail(soup: BeautifulSoup, container: Tag, page_url: str) -> dict[str, Any]:
-    content_container = _first_match(
-        soup,
-        ["article", "[itemprop='articleBody']", ".article-body", ".post-content", ".entry-content"],
-    ) or container
+    content_container = _article_body_container(container) or _article_body_container(soup) or container
     content = _container_text(content_container)
     word_count = _word_count(content)
     return {
@@ -69,7 +73,7 @@ def _article_detail(soup: BeautifulSoup, container: Tag, page_url: str) -> dict[
 def _forum_detail(soup: BeautifulSoup, container: Tag, page_url: str) -> dict[str, Any]:
     op_container = _first_match(
         soup,
-        [".post-body", ".message-content", ".thread-content", ".bbp-reply-content", "article"],
+        list(CONTENT_SURFACE_FORUM_BODY_SELECTORS),
     ) or container
     content = _container_text(op_container)
     return {
@@ -87,22 +91,18 @@ def _forum_detail(soup: BeautifulSoup, container: Tag, page_url: str) -> dict[st
 
 
 def _sanitize_dom(soup: BeautifulSoup) -> None:
-    for selector in (
-        "script",
-        "style",
-        "noscript",
-        "nav",
-        "footer",
-        "aside",
-        "form",
-        "[role='navigation']",
-        "[aria-label*='cookie' i]",
-        "[class*='cookie' i]",
-        "[class*='advert' i]",
-        "[class*='sidebar' i]",
-    ):
+    for selector in CONTENT_SURFACE_SANITIZE_SELECTORS:
         for node in soup.select(selector):
+            if _sanitize_node_is_protected_container(node):
+                continue
             node.decompose()
+
+
+def _sanitize_node_is_protected_container(node: Tag) -> bool:
+    name = str(getattr(node, "name", "") or "").strip().lower()
+    if name in CONTENT_SURFACE_CONTAINER_TAGS:
+        return True
+    return any(node.select_one(selector) is not None for selector in CONTENT_SURFACE_PROTECTED_DESCENDANT_SELECTORS)
 
 
 def _main_container(soup: BeautifulSoup, surface: str) -> Tag:
@@ -115,6 +115,27 @@ def _main_container(soup: BeautifulSoup, surface: str) -> Tag:
 def _first_match(soup: BeautifulSoup | Tag, selectors: list[str]) -> Tag | None:
     for selector in selectors:
         match = soup.select_one(selector)
+        if match is not None:
+            return match
+    return None
+
+
+def _largest_text_match(soup: BeautifulSoup | Tag, selectors: list[str]) -> Tag | None:
+    matches: list[Tag] = []
+    for selector in selectors:
+        matches.extend(node for node in soup.select(selector) if isinstance(node, Tag))
+    if not matches:
+        return None
+    return max(matches, key=lambda node: len(_container_text(node)))
+
+
+def _article_body_container(root: BeautifulSoup | Tag) -> Tag | None:
+    for selectors in (
+        ["[itemprop='articleBody']", ".article-body", ".post-content", ".entry-content"],
+        ["article"],
+        [".post"],
+    ):
+        match = _largest_text_match(root, selectors)
         if match is not None:
             return match
     return None
@@ -183,7 +204,7 @@ def _selector_text(soup: BeautifulSoup, selectors: list[str]) -> str:
 
 
 def _date_text(soup: BeautifulSoup) -> str:
-    for selector in ("time[datetime]", "[itemprop='datePublished']", ".post-date", ".published"):
+    for selector in CONTENT_SURFACE_DATE_SELECTORS:
         node = soup.select_one(selector)
         if node is None:
             continue

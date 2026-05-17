@@ -1334,9 +1334,13 @@
       "number_of_keys",
       "quantity",
       "rating_count",
+      "reading_time",
+      "reply_count",
       "review_count",
       "stock_quantity",
-      "variant_count"
+      "variant_count",
+      "view_count",
+      "word_count"
     ]
   },
   "NORMALIZER_LIST_TEXT_FIELDS": {

@@ -27,7 +27,10 @@ logger = logging.getLogger(__name__)
 
 
 def listing_selector_group(surface: str) -> str:
-    return "jobs" if str(surface or "").strip().lower().startswith("job_") else "ecommerce"
+    normalized = str(surface or "").strip().lower()
+    if normalized == "article_listing":
+        return "article"
+    return "jobs" if normalized.startswith("job_") else "ecommerce"
 
 
 def listing_capture_selectors(surface: str) -> list[str]:

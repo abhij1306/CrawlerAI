@@ -52,7 +52,7 @@ from app.services.extract.listing_card_fragments import (
 )
 from app.services.extract.listing_record_finalizer import finalize_listing_price_fields
 from app.services.extract.listing_visual import visual_listing_records
-from app.services.extract.content_listing_handler import table_row_records
+from app.services.extract.content_listing_handler import has_table_row_intent, table_row_records
 from app.services.extract.detail_price_extractor import currency_hint_from_page_url
 from app.services.field_policy import normalize_requested_field
 from app.services.shared.field_coerce import (
@@ -501,6 +501,7 @@ def _select_primary_anchor(
     title_node=None,
 ) -> tuple[object, str, str, int] | None:
     is_job = surface.startswith("job_")
+    is_article = surface == "article_listing"
     card_html = _node_html(card)
     title_index = -1
     if title_node is not None and _node_tag(title_node) != "a":
@@ -517,7 +518,7 @@ def _select_primary_anchor(
         if not url or (not same_host(page_url, url) and not same_site(page_url, url)):
             continue
         lowered_url = url.lower()
-        if listing_url_is_structural(url, page_url):
+        if not is_article and listing_url_is_structural(url, page_url):
             continue
         if any(token in lowered_url for token in ("sort=", "filter=", "facet=", "#review", "#details")):
             continue
@@ -1115,6 +1116,8 @@ def extract_listing_records(
         table_records = table_row_records(html, page_url, max_records=max_records)
         if table_records:
             return table_records
+        if has_table_row_intent(html):
+            return []
     context = prepare_extraction_context(html)
     dom_parser = context.dom_parser
     is_job_surface = surface.startswith("job_")

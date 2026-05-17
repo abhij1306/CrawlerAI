@@ -375,7 +375,9 @@ def listing_record_supported(
     title = clean_text(record.get("title"))
     url = str(record.get("url") or "").strip()
     source_kind = str(record.get("_source") or "").strip().lower()
-    if not title or not url or title_is_noise(title) or url_is_structural(url, page_url):
+    if not title or not url or title_is_noise(title):
+        return False
+    if url_is_structural(url, page_url):
         return False
     if looks_like_utility_record(title=title, url=url):
         return False

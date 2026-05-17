@@ -35,7 +35,9 @@ export const DOMAIN_TABS: Record<CrawlDomain, Array<{ value: DomainCrawlTab; lab
   forum_thread: [{ value: 'pdp', label: 'Forum Thread' }],
 };
 
-export const SURFACE_DISPATCH: Record<`${CrawlDomain}:${DomainCrawlTab}`, CrawlSurface> = {
+type SurfaceDispatchKey = `${Exclude<CrawlDomain, 'forum_thread'>}:${DomainCrawlTab}` | 'forum_thread:pdp';
+
+export const SURFACE_DISPATCH: Record<SurfaceDispatchKey, CrawlSurface> = {
   'content:category': 'content_listing',
   'content:pdp': 'content_detail',
   'commerce:category': 'ecommerce_listing',
@@ -46,7 +48,6 @@ export const SURFACE_DISPATCH: Record<`${CrawlDomain}:${DomainCrawlTab}`, CrawlS
   'automobiles:pdp': 'automobile_detail',
   'article:category': 'article_listing',
   'article:pdp': 'article_detail',
-  'forum_thread:category': 'forum_detail',
   'forum_thread:pdp': 'forum_detail',
 };
 

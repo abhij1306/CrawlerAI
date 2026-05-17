@@ -158,7 +158,13 @@ def _table_context(table: Tag, root: Tag) -> str:
         return aria
     labelled_by = clean_text(table.get("aria-labelledby"))
     if labelled_by:
-        labelled = root.find(id=labelled_by)
-        if labelled:
-            return clean_text(labelled.get_text(" ", strip=True))
+        labels = []
+        for label_id in labelled_by.split():
+            labelled = root.find(id=label_id)
+            if labelled:
+                label_text = clean_text(labelled.get_text(" ", strip=True))
+                if label_text:
+                    labels.append(label_text)
+        if labels:
+            return clean_text(" ".join(labels))
     return ""

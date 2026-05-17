@@ -23,7 +23,7 @@ export function Metric({
       ) : (
         <div
           className="mono-body text-foreground leading-none font-bold tabular-nums"
-          style={{ fontSize: 'var(--text-3xl)' }}
+          style={{ fontSize: 'var(--text-2xl)' }}
         >
           {value}
         </div>
@@ -77,7 +77,7 @@ export function StatCard({
       ) : (
         <div
           className="mono-body text-foreground mt-2 leading-none font-bold tabular-nums"
-          style={{ fontSize: 'var(--text-3xl)' }}
+          style={{ fontSize: 'var(--text-2xl)' }}
         >
           {value}
         </div>

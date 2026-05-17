@@ -860,7 +860,7 @@ export function CrawlConfigScreen({
         <Card className="section-card overflow-hidden p-0">
           <header className="border-border flex h-10 items-center justify-between border-b bg-[color-mix(in_srgb,var(--bg-alt)_40%,var(--bg-panel))] px-6">
             <span className="type-body-sm font-medium text-secondary">Target URL</span>
-            <Badge tone="accent" className="text-2xs h-5 px-1.5 font-medium">
+            <Badge tone="accent" className="text-xs h-5 px-1.5 font-medium">
               {activeTabLabel}
             </Badge>
           </header>
@@ -1024,7 +1024,7 @@ export function CrawlConfigScreen({
             <Card className="section-card h-full overflow-hidden p-0">
               <header className="border-border flex h-10 items-center justify-between border-b bg-[color-mix(in_srgb,var(--bg-alt)_40%,var(--bg-panel))] px-6">
                 <span className="type-body-sm font-medium text-secondary">Crawl Settings</span>
-                <Badge tone="accent" className="text-2xs h-5 px-1.5 font-medium">
+                <Badge tone="accent" className="text-xs h-5 px-1.5 font-medium">
                   {studioMode === 'advanced' ? 'Advanced' : 'Quick'}
                 </Badge>
               </header>

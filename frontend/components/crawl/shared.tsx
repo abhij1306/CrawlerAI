@@ -138,6 +138,9 @@ export function parseRequestedPdpMode(value: string | null): PdpMode | null {
 }
 
 export function deriveSurface(domain: CrawlDomain, module: CrawlTab): CrawlSurface {
+  if (domain === 'forum_thread') {
+    return 'forum_detail';
+  }
   return SURFACE_DISPATCH[`${domain}:${module}`];
 }
 

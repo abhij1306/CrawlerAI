@@ -2486,6 +2486,7 @@
       "location": ".job-location, [itemprop='jobLocation'] [itemprop='name']",
       "original_price": ".original-price, .compare-price, [data-original-price]",
       "price": "[itemprop='price'], .price, .product-price",
+      "publication_date": "time[datetime], [itemprop='datePublished'], .post-date, .published, .posted-on, .date",
       "qualifications": "[data-section='qualifications'], .qualifications, #qualifications",
       "rating": "[itemprop='ratingValue']",
       "responsibilities": "[data-section='responsibilities'], .responsibilities, #responsibilities",
@@ -4043,6 +4044,14 @@
         "brand"
       ]
     },
+    "article_listing": {
+      "__type__": "frozenset",
+      "items": [
+        "publication_date",
+        "author",
+        "summary"
+      ]
+    },
     "job_listing": {
       "__type__": "frozenset",
       "items": [
@@ -4435,6 +4444,7 @@
       "^\\d[\\d,\\s]*\\s+reviews?\\s+given\\s+by\\s+verified\\s+buyers$",
       "^how posting dates work$",
       "^download(?:\\s+the)?\\s+.+\\s+app$",
+      "^\\d+\\s+(?:minutes?|hours?|days?)\\s+ago$",
       "^shop all categories$",
       "^(?:all filters|todos os filtros)$",
       "^aproveite!?$",
@@ -4463,6 +4473,8 @@
       "explore accessories",
       "register your machine",
       "find the right part",
+      "hacker news",
+      "apply to yc",
       "expert support",
       "owner support",
       "most searched for",
