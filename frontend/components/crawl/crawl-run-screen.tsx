@@ -834,10 +834,10 @@ export function CrawlRunScreen({ runId }: Readonly<CrawlRunScreenProps>) {
             <Button
               variant="primary"
               type="button"
-              className="h-[var(--control-height)]"
+              size="sm"
               onClick={resetToConfig}
             >
-              <Plus className="size-3.5" />
+              <Plus className="size-3" />
               New Crawl
             </Button>
           }
@@ -881,10 +881,10 @@ export function CrawlRunScreen({ runId }: Readonly<CrawlRunScreenProps>) {
           <Button
             variant="primary"
             type="button"
-            className="h-[var(--control-height)]"
+            size="sm"
             onClick={resetToConfig}
           >
-            <Plus className="size-3.5" />
+            <Plus className="size-3" />
             New Crawl
           </Button>
         }
@@ -924,7 +924,7 @@ export function CrawlRunScreen({ runId }: Readonly<CrawlRunScreenProps>) {
             <Button
               variant="secondary"
               type="button"
-              className="h-[var(--control-height)]"
+              size="sm"
               onClick={() => void retryFailedPanels()}
             >
               Retry failed panels
@@ -1011,8 +1011,8 @@ export function CrawlRunScreen({ runId }: Readonly<CrawlRunScreenProps>) {
               actions={
                 <>
                   {listingRun && batchFromResultsUrls.length ? (
-                    <Button variant="accent" type="button" onClick={triggerBatchCrawlFromResults}>
-                      <ArrowRightCircle className="size-3.5" />
+                    <Button variant="accent" type="button" size="sm" onClick={triggerBatchCrawlFromResults}>
+                      <ArrowRightCircle className="size-3" />
                       {batchFromResultsLabel}
                     </Button>
                   ) : null}
@@ -1020,9 +1020,10 @@ export function CrawlRunScreen({ runId }: Readonly<CrawlRunScreenProps>) {
                     <Button
                       variant="secondary"
                       type="button"
+                      size="sm"
                       onClick={triggerProductIntelligenceFromResults}
                     >
-                      <Brain className="size-3.5" />
+                      <Brain className="size-3" />
                       {productIntelligenceLabel}
                     </Button>
                   ) : null}
@@ -1030,35 +1031,38 @@ export function CrawlRunScreen({ runId }: Readonly<CrawlRunScreenProps>) {
                     <Button
                       variant="accent"
                       type="button"
+                      size="sm"
                       onClick={triggerDataEnrichmentFromResults}
                     >
-                      <Brain className="size-3.5" />
+                      <Brain className="size-3" />
                       {dataEnrichmentLabel}
                     </Button>
                   ) : null}
                   <Button
                     variant="secondary"
                     type="button"
+                    size="sm"
                     onClick={() => void downloadExport('csv')}
                   >
-                    <Download className="size-3.5" />
+                    <Download className="size-3" />
                     Excel (CSV)
                   </Button>
                   <Button
                     variant="secondary"
                     type="button"
+                    size="sm"
                     onClick={() => void downloadExport('json')}
                   >
-                    <Download className="size-3.5" />
+                    <Download className="size-3" />
                     JSON
                   </Button>
                   <Button
                     variant="secondary"
                     type="button"
+                    size="sm"
                     onClick={() => setHistoryOpen(true)}
-                    className="h-[var(--control-height)] px-3"
                   >
-                    <History className="size-3.5" />
+                    <History className="size-3" />
                     History
                   </Button>
                 </>

@@ -22,10 +22,10 @@ export const buttonVariants = cva(
           'border-transparent bg-danger-bg text-danger hover:border-danger/20 hover:bg-danger-bg',
       },
       size: {
-        sm: 'h-8 px-3',
-        md: 'h-[var(--control-height)] px-[14px]',
+        sm: 'h-7 px-2.5 text-[length:var(--text-xs)]',
+        md: 'h-8 px-3',
         lg: 'h-9 px-4',
-        icon: 'size-[var(--control-height)] p-0',
+        icon: 'size-8 p-0',
       },
     },
     defaultVariants: {

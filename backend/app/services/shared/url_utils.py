@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from urllib.parse import urljoin, urlparse
+from urllib.parse import unquote, urljoin, urlparse
 
 from app.services.config.extraction_rules import (
     BARE_HOST_URL_RE,
@@ -15,8 +15,15 @@ from app.services.shared.text_coerce import clean_text
 
 __all__ = [
     "absolute_url",
+    "clean_color_tokens",
     "extract_urls",
+    "identity_token",
     "same_host",
+    "suffix_after_prefix",
+    "terminal_text",
+    "terminal_tokens",
+    "title_preserving_acronyms",
+    "title_tokens",
     "_ensure_scheme",
     "_is_placeholder_image_url",
 ]
@@ -64,6 +71,66 @@ def same_host(base_url: str, candidate_url: str) -> bool:
     base_host = (urlparse(base_url).hostname or "").lower()
     candidate_host = (urlparse(candidate_url).hostname or "").lower()
     return bool(candidate_host) and candidate_host == base_host
+
+
+def terminal_text(value: object) -> str:
+    text = _clean_url_text(value)
+    if not text:
+        return ""
+    parsed = urlparse(text)
+    parts = [part for part in str(parsed.path or "").split("/") if part]
+    if not parts:
+        return ""
+    return clean_text(unquote(parts[-1]).replace("-", " ").replace("_", " "))
+
+
+def terminal_tokens(value: object) -> list[str]:
+    text = _clean_url_text(value)
+    if not text:
+        return []
+    terminal = unquote(urlparse(text).path.rstrip("/").rsplit("/", 1)[-1])
+    return title_tokens(terminal)
+
+
+def title_tokens(value: object) -> list[str]:
+    return [
+        identity_token(token)
+        for token in re.findall(r"[a-z0-9]+", clean_text(value).casefold())
+        if token and token != "s"
+    ]
+
+
+def suffix_after_prefix(tokens: list[str], prefix: list[str]) -> list[str]:
+    if not prefix or len(tokens) <= len(prefix):
+        return []
+    if tokens[: len(prefix)] == prefix:
+        return tokens[len(prefix) :]
+    for index, (left, right) in enumerate(zip(tokens, prefix, strict=False)):
+        if left != right:
+            return tokens[index:]
+    return tokens[len(prefix) :]
+
+
+def clean_color_tokens(tokens: list[str]) -> list[str]:
+    cleaned = [token for token in tokens if not token.isdigit() and token not in {"html"}]
+    while cleaned and cleaned[0] in {"in", "color", "colour"}:
+        cleaned = cleaned[1:]
+    return cleaned
+
+
+def identity_token(value: str) -> str:
+    if value in {"mens", "womens", "kids"}:
+        return value[:-1]
+    if len(value) > 4 and value.endswith("s"):
+        return value[:-1]
+    return value
+
+
+def title_preserving_acronyms(value: str) -> str:
+    return " ".join(
+        token.upper() if token.isupper() else token.capitalize()
+        for token in clean_text(value).split()
+    )
 
 
 def extract_urls(value: object, page_url: str) -> list[str]:

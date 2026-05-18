@@ -44,3 +44,45 @@ def test_map_js_state_backfills_current_product_color_for_size_variants() -> Non
         ("12", "Tuke River"),
         ("13", "Tuke River"),
     ]
+
+
+def test_map_js_state_backfills_current_product_color_without_size_options() -> None:
+    mapped = map_js_state_to_fields(
+        {
+            "product": {
+                "id": 9003,
+                "title": "Runner",
+                "color": "Blue",
+                "options": [{"name": "Material"}],
+                "variants": [
+                    {"id": 1, "sku": "ABC", "option1": "Wool"},
+                    {"id": 2, "sku": "DEF", "option1": "Canvas"},
+                ],
+            }
+        },
+        surface="ecommerce_detail",
+        page_url="https://example.com/products/runner-blue",
+    )
+
+    assert mapped["color"] == "Blue"
+    assert [variant["color"] for variant in mapped["variants"]] == ["Blue", "Blue"]
+
+
+def test_map_js_state_backfills_current_product_color_no_options() -> None:
+    mapped = map_js_state_to_fields(
+        {
+            "product": {
+                "id": 9004,
+                "title": "Runner",
+                "color": "Blue",
+                "options": [],
+                "variants": [{"id": 1, "sku": "ABC"}],
+            }
+        },
+        surface="ecommerce_detail",
+        page_url="https://example.com/products/runner-blue",
+    )
+
+    assert mapped["color"] == "Blue"
+    variant = mapped["variants"][0]
+    assert variant.get("color") in (None, "")

@@ -31,13 +31,13 @@ from app.services.acquisition.host_protection_memory import (
 )
 from app.services.crawl.crud import create_crawl_run
 from app.services.dashboard_service import (
+    _session_transaction,
     reset_application_data,
     reset_crawl_data,
     reset_domain_memory,
     reset_product_intelligence,
 )
 from sqlalchemy import select
-from app.core.database import SessionLocal
 from sqlalchemy.ext.asyncio import async_sessionmaker
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -334,66 +334,36 @@ async def test_reset_application_data_clears_ucp_audit_rows(
 
 
 @pytest.mark.asyncio
-async def test_resets_commit_when_session_already_has_an_open_transaction(
-    db_session: AsyncSession,
-    test_user,
-) -> None:
-    target_url = "https://reset-commit.example.com/product/widget"
-    target_domain = "reset-commit.example.com"
-    run = await create_crawl_run(
-        db_session,
-        test_user.id,
-        {
-            "run_type": "crawl",
-            "url": target_url,
-            "surface": "ecommerce_detail",
-        },
-    )
-    db_session.add(
-        CrawlRecord(
-            run_id=run.id,
-            source_url=run.url,
-            data={"title": "Widget"},
-            raw_data={},
-            discovered_data={},
-            source_trace={},
-        )
-    )
-    db_session.add(
-        DomainMemory(
-            domain=target_domain,
-            surface="ecommerce_detail",
-            selectors={"rules": [{"id": 1, "field_name": "title"}]},
-        )
-    )
-    await db_session.commit()
+async def test_resets_leave_outer_transaction_control_to_caller() -> None:
+    class _Transaction:
+        async def __aenter__(self):
+            return self
 
-    # Simulate request-scoped auth/dependency work that already opened a transaction.
-    await db_session.execute(select(CrawlRun).limit(1))
-    assert db_session.in_transaction()
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
 
-    await reset_crawl_data(db_session)
-    await reset_domain_memory(db_session)
+    class _Session:
+        nested_started = False
 
-    async with SessionLocal() as verification_session:
-        surviving_run = (
-            await verification_session.execute(
-                select(CrawlRun).where(CrawlRun.url == target_url)
-            )
-        ).scalar_one_or_none()
-        surviving_record = (
-            await verification_session.execute(
-                select(CrawlRecord).where(CrawlRecord.source_url == target_url)
-            )
-        ).scalar_one_or_none()
-        surviving_memory = (
-            await verification_session.execute(
-                select(DomainMemory).where(DomainMemory.domain == target_domain)
-            )
-        ).scalar_one_or_none()
-        assert surviving_run is None
-        assert surviving_record is None
-        assert surviving_memory is None
+        def in_transaction(self) -> bool:
+            return True
+
+        def begin_nested(self) -> _Transaction:
+            self.nested_started = True
+            return _Transaction()
+
+        def begin(self) -> _Transaction:
+            raise AssertionError("outer transaction should already exist")
+
+        async def commit(self) -> None:
+            raise AssertionError("caller owns the outer transaction commit")
+
+    session = _Session()
+
+    async with _session_transaction(session):  # type: ignore[arg-type]
+        pass
+
+    assert session.nested_started is True
 
 
 @pytest.mark.asyncio

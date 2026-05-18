@@ -86,6 +86,7 @@ export function Dropdown<T extends string>({
   className,
   disabled = false,
   align = 'left',
+  size = 'md',
 }: Readonly<{
   value: T;
   onChange: (value: T) => void;
@@ -94,6 +95,7 @@ export function Dropdown<T extends string>({
   className?: string;
   disabled?: boolean;
   align?: 'left' | 'center';
+  size?: 'sm' | 'md';
 }>) {
   const [open, setOpen] = React.useState(false);
   const containerRef = React.useRef<HTMLDivElement>(null);
@@ -235,8 +237,10 @@ export function Dropdown<T extends string>({
         disabled={disabled}
         onKeyDown={handleKeyDown}
         className={cn(
-          'focus-ring border-border bg-panel text-foreground hover:border-border-strong focus:border-accent flex h-[var(--control-height)] w-full items-center gap-2 rounded-[var(--radius-md)] border px-3 text-[length:var(--text-sm)] leading-[1.4] font-normal transition-[background-color,border-color]',
+          'focus-ring border-border bg-panel text-foreground hover:border-border-strong focus:border-accent flex w-full items-center gap-2 rounded-[var(--radius-md)] border px-3 text-[length:var(--text-sm)] leading-[1.4] font-normal transition-[background-color,border-color]',
+          size === 'sm' ? 'h-8 text-xs' : 'h-[var(--control-height)]',
           align === 'center' ? 'justify-center text-center' : 'justify-between text-left',
+          className,
         )}
       >
         <span className="truncate">{selectedLabel}</span>

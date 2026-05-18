@@ -23,7 +23,7 @@ export function ThemeToggle({ compact }: Readonly<{ compact?: boolean }>) {
       onClick={toggleTheme}
       className={cn(
         'focus-ring border-border bg-background-elevated text-foreground hover:border-border-strong hover:bg-background-alt inline-flex items-center justify-center rounded-[var(--radius-md)] border transition-[background-color,color,border-color]',
-        compact ? 'size-[26px]' : 'size-9',
+        compact ? 'size-8' : 'size-9',
       )}
       aria-label="Toggle color theme"
       title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}

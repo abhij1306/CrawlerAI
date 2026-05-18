@@ -217,12 +217,12 @@ export default function RunsPage() {
   }
 
   return (
-    <div className="page-stack h-full">
+    <div className="page-stack-lg h-full">
       <PageHeader
         title="Run History"
         actions={
           <Link href="/crawl" className="no-underline">
-            <Button variant="primary" className="h-[var(--control-height)]">
+            <Button variant="primary" size="sm">
               <Plus className="size-3.5" />
               New Crawl
             </Button>
@@ -231,8 +231,8 @@ export default function RunsPage() {
       />
 
       {/* ── Filters ── */}
-      <SurfacePanel className="p-3">
-        <div className="grid gap-2 md:grid-cols-[minmax(320px,1fr)_180px_auto_auto] md:items-center">
+      <SurfacePanel className="p-5">
+        <div className="grid gap-4 md:grid-cols-[minmax(320px,1fr)_200px_auto_auto] md:items-center">
           <div className="min-w-0">
             <Input
               placeholder="Filter by domain or URL…"
@@ -241,7 +241,7 @@ export default function RunsPage() {
               onKeyDown={(e) => {
                 if (e.key === 'Enter') applyFilters();
               }}
-              className="text-mono-body"
+              className="font-mono"
             />
           </div>
           <Dropdown<StatusFilter>
@@ -258,12 +258,12 @@ export default function RunsPage() {
               { value: 'killed', label: 'Killed' },
               { value: 'proxy_exhausted', label: 'Proxy Exhausted' },
             ]}
-            className="w-full md:w-[180px]"
+            className="w-full md:w-[200px]"
           />
-          <Button onClick={applyFilters} className="h-[var(--control-height)]">
+          <Button onClick={applyFilters} size="sm">
             Filter
           </Button>
-          <Button variant="ghost" onClick={resetFilters} className="h-[var(--control-height)]">
+          <Button variant="ghost" onClick={resetFilters} size="sm">
             Reset
           </Button>
         </div>

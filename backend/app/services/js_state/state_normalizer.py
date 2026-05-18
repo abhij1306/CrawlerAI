@@ -28,6 +28,7 @@ from app.services.extract.variant_identity_merge import (
     merge_variant_rows,
     resolve_variants,
 )
+from app.services.extract.variant_axis import normalized_variant_axis_key
 from app.services.shared.field_coerce import (
     clean_text,
     extract_urls,
@@ -72,10 +73,17 @@ def _product_variant_rows(product: dict[str, Any]) -> list[dict[str, Any]]:
             if not isinstance(item, dict):
                 continue
             row = dict(item)
+            # `variants` rows are authoritative single-axis data, so use
+            # _backfill_single_axis_variant_context to avoid inflating transport
+            # fields. Richer sources use _backfill_nested_variant_context.
             if key != "variants":
                 _backfill_nested_variant_context(row, product)
             else:
-                _backfill_single_axis_variant_context(row, product)
+                _backfill_single_axis_variant_context(
+                    row,
+                    product,
+                    variant_count=len(raw_rows),
+                )
             rows.append(row)
     rows.extend(_nested_choice_item_variant_rows(product))
     if not rows:
@@ -199,7 +207,7 @@ def _backfill_nested_variant_context(
     product: dict[str, Any],
 ) -> None:
     for target_key, product_keys in {
-        "color": ("color", "colour", "colorName", "colourName"),
+        "color": ("color", "colour"),
         "currencyCode": ("currencyCode", "currency", "priceCurrency"),
         "compareAtPrice": ("compareAtPrice", "compare_at_price"),
         "featuredImage": ("featuredMedia", "featured_image", "image"),
@@ -226,9 +234,9 @@ def _backfill_nested_variant_context(
 def _backfill_single_axis_variant_context(
     variant: dict[str, Any],
     product: dict[str, Any],
+    *,
+    variant_count: int | None = None,
 ) -> None:
-    from app.services.extract.variant_axis import normalized_variant_axis_key
-
     if variant.get("color") not in (None, "", [], {}):
         return
     option_names = {
@@ -237,25 +245,15 @@ def _backfill_single_axis_variant_context(
     }
     if "color" in option_names:
         return
-    if "size" not in option_names and _variant_axis_raw_value(variant, "size") in (
-        None,
-        "",
-        [],
-        {},
+    if (
+        "size" not in option_names
+        and _variant_axis_raw_value(variant, "size") in (None, "", [], {})
+        and (variant_count or 1) <= 1
     ):
         return
-    color = _product_color_value(product)
+    color = text_or_none(product.get("color") or product.get("colour"))
     if color:
         variant["color"] = color
-
-
-def _product_color_value(product: dict[str, Any]) -> str | None:
-    return text_or_none(
-        product.get("color")
-        or product.get("colour")
-        or product.get("colorName")
-        or product.get("colourName")
-    )
 
 def map_js_state_to_fields(
     js_state_objects: dict[str, Any],
@@ -702,8 +700,6 @@ def _looks_like_product_payload(value: Any) -> bool:
         for key in (
             "title",
             "name",
-            "fullName",
-            "masterName",
             "nameByLanguage",
             "pn",
             "copyProductTitle",
@@ -920,7 +916,7 @@ def _map_product_payload(
     if color in (None, "", [], {}):
         color = variant_axis_value(
             "color",
-            _product_color_value(product),
+            product.get("color") or product.get("colour"),
             page_url=page_url,
         )
     size = variant_attribute(active_variant, "size")

@@ -265,8 +265,6 @@ async def _session_transaction(session: AsyncSession):
     transaction = session.begin_nested() if had_outer_transaction else session.begin()
     async with transaction:
         yield
-    if had_outer_transaction:
-        await session.commit()
 
 
 async def _count_rows(session: AsyncSession, model: type) -> int:

@@ -166,23 +166,23 @@ export default function DataEnrichmentPage() {
         description={descriptionText}
         actions={
           <div className="flex w-full flex-wrap items-center justify-end gap-2">
-            <label className="border-border bg-background-elevated text-foreground hover:bg-accent/[0.04] type-body inline-flex h-[var(--control-height)] cursor-pointer items-center gap-2 rounded-[var(--radius-md)] border px-3 transition-colors">
+            <label className="border-border bg-background-elevated text-foreground hover:bg-accent/[0.04] inline-flex h-8 cursor-pointer items-center gap-2 rounded-[var(--radius-md)] border px-3 transition-colors text-xs font-normal">
               <input
                 type="checkbox"
                 checked={llmEnabled}
                 onChange={(event) => setLlmEnabled(event.target.checked)}
-                className="border-divider text-accent focus:ring-accent h-3.5 w-3.5 cursor-pointer rounded"
+                className="border-divider text-accent focus:ring-accent h-3 w-3 cursor-pointer rounded"
               />
               LLM Enrichment
             </label>
             <Button
               type="button"
               variant="accent"
-              className="h-[var(--control-height)] px-4"
+              size="sm"
               disabled={!sourceRecordIds.length || createMutation.isPending || isRunning}
               onClick={() => createMutation.mutate()}
             >
-              <Play className="size-3.5" />
+              <Play className="size-3" />
               {createMutation.isPending
                 ? 'Starting...'
                 : isRunning
@@ -219,7 +219,7 @@ export default function DataEnrichmentPage() {
               size="sm"
               onClick={() => void detailQuery.refetch()}
               disabled={!resolvedJobId || detailQuery.isFetching}
-              className="text-muted hover:text-foreground type-label-mono h-8 px-2"
+              className="text-muted hover:text-foreground type-label-mono px-2"
             >
               <RefreshCcw className="mr-1.5 size-3" />
               Refresh
@@ -227,12 +227,12 @@ export default function DataEnrichmentPage() {
             <Button
               type="button"
               variant="ghost"
-              size="icon"
+              size="sm"
               onClick={() => setHistoryOpen(true)}
               aria-label="Enrichment History"
-              className="text-muted hover:text-foreground h-8 w-8"
+              className="text-muted hover:text-foreground w-8 p-0"
             >
-              <History className="size-4" />
+              <History className="size-3.5" />
             </Button>
           </div>
         </header>

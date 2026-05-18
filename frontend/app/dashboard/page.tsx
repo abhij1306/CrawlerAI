@@ -140,11 +140,11 @@ export default function DashboardPage() {
       <PageHeader
         title="Dashboard"
         actions={
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
             <Button
               type="button"
               variant="primary"
-              className="h-[var(--control-height)]"
+              size="sm"
               onClick={() => void handleRefresh()}
               disabled={isRefreshing || isLoading}
             >
@@ -191,7 +191,7 @@ export default function DashboardPage() {
 
       {/* ── Status distribution bar ── */}
       {!isLoading && totalInDistribution > 0 ? (
-        <div className="space-y-2.5">
+        <div className="space-y-4">
           <div className="bg-border flex h-2 w-full gap-px overflow-hidden rounded-full">
             {sortedStatusEntries.map(([status, count]) => (
               <StatusSegment
@@ -202,13 +202,13 @@ export default function DashboardPage() {
               />
             ))}
           </div>
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
             {sortedStatusEntries.map(([status, count]) => (
-              <div key={status} className="type-caption flex items-center gap-1.5">
+              <div key={status} className="type-caption flex items-center gap-2">
                 <Badge tone={statusTone(status)} flat={isSubduedStatus(status)}>
                   {statusLabel(status)}
                 </Badge>
-                <span className="font-mono text-[13px] font-medium tabular-nums">{count}</span>
+                <span className="font-mono text-sm font-semibold tabular-nums text-primary">{count}</span>
               </div>
             ))}
           </div>
@@ -216,7 +216,7 @@ export default function DashboardPage() {
       ) : null}
 
       {/* ── Lower grid ── */}
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.3fr)_minmax(0,0.7fr)]">
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.25fr)_minmax(0,0.75fr)]">
         {/* Recent runs */}
         <SurfaceSection
           title="Recent Runs"
@@ -226,10 +226,10 @@ export default function DashboardPage() {
               View all
             </Link>
           }
-          bodyClassName="p-2"
+          bodyClassName="p-4 space-y-2"
         >
           {isLoading ? (
-            <SkeletonRows count={6} className="p-2" />
+            <SkeletonRows count={6} className="p-4" />
           ) : data?.recent_runs?.length ? (
             data.recent_runs.slice(0, 10).map((run) => <RunActivityRow key={run.id} run={run} />)
           ) : (
@@ -239,11 +239,15 @@ export default function DashboardPage() {
           )}
         </SurfaceSection>
         {/* Top domains */}
-        <SurfaceSection title="Top Domains" description="By run count">
+        <SurfaceSection 
+          title="Top Domains" 
+          description="By run count"
+          bodyClassName="p-4 space-y-3"
+        >
           {isLoading ? (
             <SkeletonRows count={5} />
           ) : data?.top_domains?.length ? (
-            <div>
+            <div className="divide-y divide-border/50">
               {data.top_domains.map((item) => (
                 <DomainBar
                   key={item.domain}

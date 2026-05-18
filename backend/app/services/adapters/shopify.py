@@ -113,6 +113,12 @@ class ShopifyAdapter(BaseAdapter):
                     ),
                     surface=surface,
                 )
+                if not axis_value:
+                    axis_value = self._linked_axis_value_from_product(
+                        data,
+                        axis_key=axis_key,
+                        current_handle=handle,
+                    )
                 self._apply_linked_axis(record, axis_key=axis_key, axis_value=axis_value)
                 product_records.append(record)
             return self._merge_linked_product_records(product_records)
@@ -180,7 +186,8 @@ class ShopifyAdapter(BaseAdapter):
         seen: set[str] = set()
         for group in soup.select(
             "[role='radiogroup'], fieldset, [class*='swatch' i], "
-            "[class*='variant' i], [class*='option' i], [data-testid*='swatch' i]"
+            "[class*='variant' i], [class*='option' i], [data-testid*='swatch' i], "
+            "[role='group'][aria-label]"
         ):
             axis_key = self._linked_group_axis(group)
             if axis_key not in {"color", "scent", "style", "material"}:
@@ -206,7 +213,77 @@ class ShopifyAdapter(BaseAdapter):
                     return rows
         if current_handle and current_handle not in seen and rows:
             rows.insert(0, (current_handle, "", rows[0][2]))
+        if not rows:
+            rows.extend(
+                self._linked_variant_handles_from_raw_html(
+                    html,
+                    current_handle=current_handle,
+                )
+            )
         return rows
+
+    def _linked_variant_handles_from_raw_html(
+        self,
+        html: str,
+        *,
+        current_handle: str,
+    ) -> list[tuple[str, str, str]]:
+        pattern = re.compile(r"/products/([a-z0-9][a-z0-9-]+)", re.I)
+        handles = [match.group(1).strip("-") for match in pattern.finditer(html)]
+        family_prefix = self._linked_handle_family_prefix(current_handle, handles)
+        if not family_prefix:
+            return []
+        axis_key = "scent" if any(
+            token in family_prefix for token in ("mist", "fragrance", "scent")
+        ) else "color"
+        rows: list[tuple[str, str, str]] = []
+        seen: set[str] = set()
+        for handle in handles:
+            if not handle.startswith(f"{family_prefix}-") and handle != current_handle:
+                continue
+            if handle in seen:
+                continue
+            value = self._axis_value_from_handle(handle, family_prefix)
+            rows.append((handle, value, axis_key))
+            seen.add(handle)
+            if len(rows) >= adapter_runtime_settings.shopify_linked_variant_max_handles:
+                break
+        if current_handle and current_handle not in seen and rows:
+            rows.insert(
+                0,
+                (
+                    current_handle,
+                    self._axis_value_from_handle(current_handle, family_prefix),
+                    axis_key,
+                ),
+            )
+        return rows
+
+    def _linked_handle_family_prefix(
+        self,
+        current_handle: str,
+        handles: list[str] | None = None,
+    ) -> str:
+        tokens = [token for token in str(current_handle or "").split("-") if token]
+        if len(tokens) < 3:
+            return ""
+        handle_set = {
+            str(handle or "").strip()
+            for handle in list(handles or [])
+            if str(handle or "").strip()
+        }
+        for prefix_len in range(len(tokens) - 1, 2, -1):
+            prefix = "-".join(tokens[:prefix_len])
+            matches = [
+                handle
+                for handle in handle_set
+                if handle == current_handle or handle.startswith(f"{prefix}-")
+            ]
+            if len(set(matches)) >= 2:
+                return prefix
+        if any(token in tokens for token in ("mist", "fragrance", "scent")) and len(tokens) > 3:
+            return "-".join(tokens[:-2])
+        return "-".join(tokens[:-1])
 
     def _linked_group_axis(self, group: object) -> str:
         if not hasattr(group, "get"):
@@ -264,6 +341,31 @@ class ShopifyAdapter(BaseAdapter):
                 return value
         return self._axis_value_from_handle(handle, current_handle)
 
+    def _linked_axis_value_from_product(
+        self,
+        product: dict,
+        *,
+        axis_key: str,
+        current_handle: str,
+    ) -> str:
+        for field_name in (
+            axis_key,
+            "shade" if axis_key == "scent" else "",
+            "color" if axis_key == "color" else "",
+            "colour" if axis_key == "color" else "",
+        ):
+            value = text_or_none(product.get(field_name)) if field_name else None
+            if value:
+                return value
+        title = text_or_none(product.get("title"))
+        if title:
+            parts = re.split(r"\s[-–—�]\s", title, maxsplit=1)
+            if len(parts) == 2 and text_or_none(parts[1]):
+                return text_or_none(parts[1]) or ""
+        handle = text_or_none(product.get("handle")) or current_handle
+        family_prefix = self._linked_handle_family_prefix(current_handle)
+        return self._axis_value_from_handle(handle, family_prefix or current_handle)
+
     def _clean_linked_axis_label(self, value: object) -> str:
         label = clean_text(value)
         if not label:
@@ -303,14 +405,35 @@ class ShopifyAdapter(BaseAdapter):
     ) -> None:
         if not axis_key or not axis_value:
             return
+        if axis_key == "scent":
+            record.pop("color", None)
         if record.get(axis_key) in (None, "", [], {}):
             record[axis_key] = axis_value
         variants = record.get("variants")
         if not isinstance(variants, list):
+            variant = {
+                field_name: record.get(field_name)
+                for field_name in (
+                    "sku",
+                    "price",
+                    "original_price",
+                    "currency",
+                    "url",
+                    "image_url",
+                    "availability",
+                    "stock_quantity",
+                )
+                if record.get(field_name) not in (None, "", [], {})
+            }
+            variant[axis_key] = axis_value
+            record["variants"] = [variant]
+            record["variant_count"] = 1
             return
         for variant in variants:
             if not isinstance(variant, dict):
                 continue
+            if axis_key == "scent":
+                variant.pop("color", None)
             if variant.get(axis_key) in (None, "", [], {}):
                 variant[axis_key] = axis_value
 

@@ -59,17 +59,17 @@ export default function JobsPage() {
   }
 
   return (
-    <div className="page-stack">
+    <div className="page-stack-lg">
       <PageHeader
         title="Jobs"
         description="Live run state for the local dev runner."
         actions={
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
             <span className="text-muted type-caption">Last refreshed {lastRefreshed}</span>
             <Button
               variant="secondary"
               type="button"
-              className="h-[var(--control-height)]"
+              size="sm"
               onClick={() => void jobsQuery.refetch()}
             >
               <RefreshCw className="size-3.5" />
@@ -91,7 +91,7 @@ export default function JobsPage() {
         ) : jobsQuery.isError ? (
           <DataRegionError message="Failed to load jobs." />
         ) : jobs.length ? (
-          <div className="surface-muted overflow-x-auto rounded-[var(--radius-md)] border">
+          <div className="overflow-x-auto rounded-[var(--radius-md)] border border-border">
             <Table
               // 260px accounts for page header, navigation, filters, and padding.
               wrapperClassName="max-h-[max(200px,calc(100vh-260px))]"
@@ -107,28 +107,28 @@ export default function JobsPage() {
                 <col style={{ width: '10%' }} />
               </colgroup>
               <TableHeader>
-                <TableRow className="border-b border-divider/60 bg-background/5">
-                  <TableHead className="font-mono text-[10.5px] font-bold uppercase tracking-wider text-muted/80 py-3.5">Run ID</TableHead>
-                  <TableHead className="font-mono text-[10.5px] font-bold uppercase tracking-wider text-muted/80 py-3.5">Type</TableHead>
-                  <TableHead className="font-mono text-[10.5px] font-bold uppercase tracking-wider text-muted/80 py-3.5">Target URL</TableHead>
-                  <TableHead className="font-mono text-[10.5px] font-bold uppercase tracking-wider text-muted/80 py-3.5">Progress</TableHead>
-                  <TableHead className="font-mono text-[10.5px] font-bold uppercase tracking-wider text-muted/80 py-3.5">Started</TableHead>
-                  <TableHead className="font-mono text-[10.5px] font-bold uppercase tracking-wider text-muted/80 py-3.5">Status</TableHead>
-                  <TableHead className="font-mono text-[10.5px] font-bold uppercase tracking-wider text-muted/80 py-3.5 text-right pr-4">Actions</TableHead>
+                <TableRow>
+                  <TableHead>Run ID</TableHead>
+                  <TableHead>Type</TableHead>
+                  <TableHead>Target URL</TableHead>
+                  <TableHead>Progress</TableHead>
+                  <TableHead>Started</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="text-right pr-4">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {jobs.map((job) => (
-                  <TableRow key={job.run_id} className="border-b border-divider/40 hover:bg-background/10">
-                    <TableCell className="type-caption-mono font-normal text-foreground/90">{job.run_id}</TableCell>
-                    <TableCell className="type-body-sm font-normal text-foreground">{formatJobType(job.type)}</TableCell>
-                    <TableCell className="type-caption-mono max-w-[320px] truncate font-normal" title={job.url}>
+                  <TableRow key={job.run_id}>
+                    <TableCell className="font-mono text-sm">{job.run_id}</TableCell>
+                    <TableCell className="text-sm">{formatJobType(job.type)}</TableCell>
+                    <TableCell className="font-mono text-sm max-w-[320px] truncate" title={job.url}>
                       {job.url}
                     </TableCell>
                     <TableCell>
                       <ProgressBar percent={job.progress} />
                     </TableCell>
-                    <TableCell className="type-body-sm text-secondary font-normal">
+                    <TableCell className="text-sm text-secondary">
                       {formatTimestamp(job.started_at)}
                     </TableCell>
                     <TableCell>

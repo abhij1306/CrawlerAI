@@ -140,11 +140,15 @@ def _node_has_soft_variant_signal(node: Any, *, min_radio_inputs: int) -> bool:
             )
         )
     role = str(node.get("role") or "").strip().lower() if hasattr(node, "get") else ""
-    if role == "radiogroup" and len(node.select("a[href], button")) >= min_radio_inputs:
+    if role in {"radiogroup", "group"} and len(
+        node.select("a[href], button, [data-testid='swatch' i], [data-testid*='swatch-option' i]")
+    ) >= min_radio_inputs:
         return True
     strong_nodes = node.select(
         "input[type='radio'], input[type='checkbox'], "
-        "[role='radio'], [data-option], [data-option-value], [data-selected], button"
+        "[role='radio'], [role='button'], [data-option], [data-option-value], "
+        "[data-selected], [data-testid='swatch' i], [data-testid*='swatch-option' i], "
+        "button, a[href]"
     )
     clean_nodes = [
         candidate

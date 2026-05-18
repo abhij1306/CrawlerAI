@@ -317,15 +317,15 @@ export default function SelectorsPage() {
   }
 
   return (
-    <div className="page-stack">
+    <div className="page-stack-lg">
       <PageHeader title="CSS / XPath Selector" />
 
       <SectionCard
         title="Selector Inputs"
         description="Enter a page URL and expected column names, then let the LLM suggest selectors for each field."
       >
-        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(280px,0.8fr)_auto] xl:items-end">
-          <label className="grid gap-1.5">
+        <div className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)_auto] xl:items-end">
+          <label className="grid gap-2">
             <span className="field-label">Page URL</span>
             <Input
               value={url}
@@ -334,7 +334,7 @@ export default function SelectorsPage() {
               className="font-mono text-sm leading-[var(--leading-relaxed)]"
             />
           </label>
-          <label className="grid gap-1.5">
+          <label className="grid gap-2">
             <span className="field-label">Expected Columns</span>
             <Textarea
               value={expectedColumns}
@@ -348,15 +348,16 @@ export default function SelectorsPage() {
             variant="accent"
             onClick={() => void loadPageAndSuggestions()}
             disabled={loadingSuggestions}
+            className="w-full xl:w-auto h-[40px] px-6"
           >
             <Sparkles className="size-3.5" />
             {loadingSuggestions ? 'Loading...' : 'Load Page'}
           </Button>
         </div>
-        {loadError ? <InlineAlert message={loadError} /> : null}
+        {loadError ? <div className="mt-4"><InlineAlert message={loadError} /></div> : null}
       </SectionCard>
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.05fr)_minmax(420px,0.95fr)]">
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.05fr)_minmax(420px,0.95fr)]">
         <SectionCard
           title="Page Preview"
           description={loadedUrl || 'Load a page to preview its DOM context.'}
@@ -399,18 +400,18 @@ export default function SelectorsPage() {
           }
         >
           {rows.length ? (
-            <div className="space-y-3">
+            <div className="space-y-5">
               {rows.map((row) => {
                 const message = rowMessages[row.key];
                 const selectorInputId = `selector-value-${row.key}`;
                 return (
                   <div
                     key={row.key}
-                    className="border-border bg-background-elevated rounded-[var(--radius-lg)] border p-4"
+                    className="border-border bg-background-elevated rounded-[var(--radius-lg)] border p-5"
                   >
-                    <div className="grid gap-3">
-                      <div className="grid gap-3 xl:grid-cols-[150px_120px_minmax(0,1fr)_auto]">
-                        <label className="grid gap-1">
+                    <div className="grid gap-4">
+                      <div className="grid gap-4 xl:grid-cols-[160px_130px_minmax(0,1fr)_auto] xl:items-end">
+                        <label className="grid gap-2">
                           <span className="field-label">Field Name</span>
                           <Input
                             value={row.fieldName}
@@ -424,7 +425,7 @@ export default function SelectorsPage() {
                           />
                         </label>
 
-                        <label className="grid gap-1">
+                        <label className="grid gap-2">
                           <span className="field-label">Type</span>
                           <Dropdown<SelectorKind>
                             value={row.kind}
@@ -432,15 +433,15 @@ export default function SelectorsPage() {
                               updateRow(row.key, { kind, state: nextEditedState(row.state) })
                             }
                             options={[
-                              { value: 'xpath', label: 'XPath' },
-                              { value: 'css_selector', label: 'CSS' },
-                              { value: 'regex', label: 'Regex' },
+                                { value: 'xpath', label: 'XPath' },
+                                { value: 'css_selector', label: 'CSS' },
+                                { value: 'regex', label: 'Regex' },
                             ]}
                             ariaLabel="Selector type"
                           />
                         </label>
 
-                        <label className="grid gap-1" htmlFor={selectorInputId}>
+                        <label className="grid gap-2" htmlFor={selectorInputId}>
                           <span className="field-label">XPath / CSS / Regex</span>
                           <div className="relative">
                             <Input
@@ -465,21 +466,21 @@ export default function SelectorsPage() {
                           </div>
                         </label>
 
-                        <div className="flex items-end justify-end">
+                        <div className="flex items-center justify-end xl:h-[40px]">
                           <Button
                             type="button"
                             variant="danger"
                             size="icon"
                             onClick={() => removeFieldRow(row.key)}
-                            className="size-8"
+                            className="size-10"
                             aria-label="Delete field row"
                           >
-                            <Trash2 className="size-3.5" />
+                            <Trash2 className="size-4" />
                           </Button>
                         </div>
                       </div>
 
-                      <label className="grid gap-1">
+                      <label className="grid gap-2">
                         <span className="field-label">Extracted Value Preview</span>
                         <Input
                           value={row.extractedValue}
@@ -491,7 +492,7 @@ export default function SelectorsPage() {
                         />
                       </label>
 
-                      <div className="flex flex-wrap items-center gap-2">
+                      <div className="flex flex-wrap items-center gap-3">
                         <Button
                           type="button"
                           variant="secondary"

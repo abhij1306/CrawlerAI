@@ -9,7 +9,6 @@ __all__ = (
 )
 
 import logging
-import re
 from itertools import product
 from typing import Any
 
@@ -32,6 +31,12 @@ from app.services.shared.field_coerce import (
     object_dict as _object_dict,
     object_list as _object_list,
     text_or_none,
+)
+from app.services.shared.url_utils import (
+    clean_color_tokens,
+    suffix_after_prefix,
+    terminal_tokens,
+    title_tokens,
 )
 from app.services.extract.detail.variants.state_targets import (
     state_variant_targets as _state_variant_targets,
@@ -205,15 +210,24 @@ def _collect_variant_choice_entries(
             page_url=page_url,
         )
         if not clean_text(cleaned) and coercion_axis == "color":
+            original_cleaned = cleaned
+            option_url = variant_option_url(
+                container=container,
+                node=node,
+                label_node=None,
+                page_url=page_url,
+            )
             cleaned = _color_value_from_option_url(
-                variant_option_url(
-                    container=container,
-                    node=node,
-                    label_node=None,
-                    page_url=page_url,
-                ),
+                option_url,
                 page_url=page_url,
                 title_hint=title_hint,
+            )
+            _log_url_color_fallback(
+                cleaned,
+                page_url=page_url,
+                option_url=option_url,
+                title_hint=title_hint,
+                original_value=original_cleaned,
             )
         cleaned = _strip_variant_option_value_suffix_noise(cleaned)
         if variant_option_value_is_noise(cleaned):
@@ -248,15 +262,24 @@ def _collect_variant_choice_entries(
             page_url=page_url,
         )
         if not clean_text(cleaned) and coercion_axis == "color":
+            original_cleaned = cleaned
+            option_url = variant_option_url(
+                container=container,
+                node=input_node,
+                label_node=label_node,
+                page_url=page_url,
+            )
             cleaned = _color_value_from_option_url(
-                variant_option_url(
-                    container=container,
-                    node=input_node,
-                    label_node=label_node,
-                    page_url=page_url,
-                ),
+                option_url,
                 page_url=page_url,
                 title_hint=title_hint,
+            )
+            _log_url_color_fallback(
+                cleaned,
+                page_url=page_url,
+                option_url=option_url,
+                title_hint=title_hint,
+                original_value=original_cleaned,
             )
         cleaned = _strip_variant_option_value_suffix_noise(cleaned)
         if variant_option_value_is_noise(cleaned):
@@ -339,67 +362,41 @@ def _color_value_from_option_url(
     page_url: str,
     title_hint: str = "",
 ) -> str:
-    option_tokens = _url_terminal_tokens(value)
-    page_tokens = _url_terminal_tokens(page_url)
+    option_tokens = terminal_tokens(value)
+    page_tokens = terminal_tokens(page_url)
     if len(option_tokens) < 2:
         return ""
-    suffix_tokens = _url_suffix_after_prefix(option_tokens, _url_title_tokens(title_hint))
+    suffix_tokens = suffix_after_prefix(option_tokens, title_tokens(title_hint))
     if not suffix_tokens:
-        suffix_tokens = _url_suffix_after_prefix(option_tokens, page_tokens)
+        suffix_tokens = suffix_after_prefix(option_tokens, page_tokens)
     if not suffix_tokens or len(suffix_tokens) > 4:
         return ""
-    suffix_tokens = _clean_color_suffix_tokens(suffix_tokens)
+    suffix_tokens = clean_color_tokens(suffix_tokens)
     if not suffix_tokens or len(suffix_tokens) > 4:
         return ""
     return " ".join(token.capitalize() for token in suffix_tokens)
 
 
-def _url_terminal_tokens(value: object) -> list[str]:
-    from urllib.parse import unquote, urlparse
-
-    text = clean_text(value)
-    if not text:
-        return []
-    terminal = unquote(urlparse(text).path.rstrip("/").rsplit("/", 1)[-1])
-    return [
-        _url_identity_token(token)
-        for token in re.findall(r"[a-z0-9]+", terminal.casefold())
-        if token and token != "s"
-    ]
-
-
-def _url_title_tokens(value: object) -> list[str]:
-    return [
-        _url_identity_token(token)
-        for token in re.findall(r"[a-z0-9]+", clean_text(value).casefold())
-        if token and token != "s"
-    ]
-
-
-def _url_suffix_after_prefix(tokens: list[str], prefix: list[str]) -> list[str]:
-    if not prefix or len(tokens) <= len(prefix):
-        return []
-    if tokens[: len(prefix)] == prefix:
-        return tokens[len(prefix) :]
-    for index, (left, right) in enumerate(zip(tokens, prefix, strict=False)):
-        if left != right:
-            return tokens[index:]
-    return tokens[len(prefix) :]
-
-
-def _clean_color_suffix_tokens(tokens: list[str]) -> list[str]:
-    cleaned = [token for token in tokens if not token.isdigit() and token not in {"html"}]
-    while cleaned and cleaned[0] in {"in", "color", "colour"}:
-        cleaned = cleaned[1:]
-    return cleaned
-
-
-def _url_identity_token(value: str) -> str:
-    if value in {"mens", "womens", "kids"}:
-        return value[:-1]
-    if len(value) > 4 and value.endswith("s"):
-        return value[:-1]
-    return value
+def _log_url_color_fallback(
+    color: str,
+    *,
+    page_url: str,
+    option_url: str,
+    title_hint: str,
+    original_value: object,
+) -> None:
+    if not color:
+        return
+    logger.debug(
+        "Extracted DOM variant color from option URL",
+        extra={
+            "color": color,
+            "page_url": page_url,
+            "option_url": option_url,
+            "title_hint": title_hint,
+            "original_value": original_value,
+        },
+    )
 
 
 def extract_variants_from_dom(

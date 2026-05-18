@@ -92,24 +92,24 @@ function domainMemoryActions(controller: DomainMemoryWorkspaceController) {
       <Button
         type="button"
         variant="secondary"
-        className="h-[var(--control-height)]"
+        size="sm"
         onClick={() => {
           controller.setResetError('');
           controller.setResetDialogOpen(true);
         }}
         disabled={controller.resetPending}
       >
-        <Trash2 className="size-3.5" />
+        <Trash2 className="size-3" />
         {controller.resetPending ? 'Resetting...' : 'Reset Domain Memory'}
       </Button>
       <Button
         type="button"
         variant="secondary"
-        className="h-[var(--control-height)]"
+        size="sm"
         onClick={() => void controller.loadWorkspace()}
         disabled={controller.loading || controller.resetPending}
       >
-        <RefreshCcw className="size-3.5" />
+        <RefreshCcw className="size-3" />
         {controller.loading ? 'Refreshing...' : 'Refresh'}
       </Button>
     </div>

@@ -8,7 +8,8 @@ DETAIL_VARIANT_SOFT_SCOPE_SELECTOR = (
     "[class*='variant' i], [class*='option' i], [class*='selector' i], "
     "[class*='swatch' i], [id*='variant' i], [id*='option' i], "
     "[id*='selector' i], [id*='swatch' i], [data-testid*='variant' i], "
-    "[data-component*='variant' i], fieldset, [role='radiogroup'], select"
+    "[data-testid*='swatch' i], [data-component*='variant' i], fieldset, "
+    "[role='radiogroup'], [role='group'][aria-label], select"
 )
 VARIANT_SOFT_SCOPE_MIN_RADIO_INPUTS = 2
 VARIANT_URL_BLOCKED_PATH_SUFFIXES = frozenset({
@@ -35,7 +36,7 @@ VARIANT_STRONG_OPTION_SELECTOR = (
     "[role='radio'], [role='option'], input[type='radio'], input[type='checkbox'], "
     "[data-option-value], [data-value], [data-variant-id], [data-selected], "
     "[aria-pressed][aria-pressed!=''], button[data-option], button[data-value], "
-    "button[data-variant], [data-testid*='swatch-option' i]"
+    "button[data-variant], [data-testid='swatch' i], [data-testid*='swatch-option' i]"
 )
 VARIANT_WEAK_OPTION_SELECTOR = (
     "button:not([data-dismiss]):not([type='submit']):not([type='reset']), "

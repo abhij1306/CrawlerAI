@@ -863,12 +863,12 @@ function FindingsTable({
           <Table className="min-w-[980px]">
             <TableHeader>
               <TableRow className="bg-background/10 hover:bg-background/10 border-b border-divider/60">
-                <TableHead className="w-[110px] text-xs font-bold font-mono py-3.5">Severity</TableHead>
-                <TableHead className="w-[110px] text-xs font-bold font-mono py-3.5">Dimension</TableHead>
-                <TableHead className="text-xs font-bold font-mono py-3.5">Structural Gap</TableHead>
-                <TableHead className="w-[140px] text-xs font-bold font-mono py-3.5 text-left">Affected</TableHead>
-                <TableHead className="w-[120px] text-xs font-bold font-mono py-3.5">Difficulty</TableHead>
-                <TableHead className="text-xs font-bold font-mono py-3.5">Corrective Action Guidance</TableHead>
+                <TableHead className="w-[110px] text-xs font-normal font-mono py-3.5">Severity</TableHead>
+                <TableHead className="w-[110px] text-xs font-normal font-mono py-3.5">Dimension</TableHead>
+                <TableHead className="text-xs font-normal font-mono py-3.5">Structural Gap</TableHead>
+                <TableHead className="w-[140px] text-xs font-normal font-mono py-3.5 text-left">Affected</TableHead>
+                <TableHead className="w-[120px] text-xs font-normal font-mono py-3.5">Difficulty</TableHead>
+                <TableHead className="text-xs font-normal font-mono py-3.5">Corrective Action Guidance</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -936,7 +936,7 @@ function DimensionScoreCard({
     >
       {blocked ? (
         <div className="absolute inset-0 bg-background/10 backdrop-blur-[0.5px] rounded-[var(--radius-md)] flex items-center justify-center z-10">
-          <span className="text-danger rotate-12 font-mono text-xs font-black tracking-widest border border-danger/45 bg-background/90 px-2 py-0.5 rounded shadow">
+          <span className="text-danger rotate-12 font-mono text-xs font-normal tracking-widest border border-danger/45 bg-background/90 px-2 py-0.5 rounded shadow">
             BLOCKED
           </span>
         </div>
@@ -1005,11 +1005,11 @@ function ScoreRing({
       </svg>
 
       <div className="absolute text-center select-none">
-        <div className={cn('font-mono font-bold tabular-nums text-foreground tracking-tighter leading-none', compact ? 'text-sm font-semibold' : 'text-3xl')}>
+        <div className={cn('font-mono font-normal tabular-nums text-foreground tracking-tighter leading-none', compact ? 'text-sm font-normal' : 'text-3xl')}>
           {score}
         </div>
         {!compact && (
-          <div className="text-[9px] font-mono font-bold tracking-wider text-muted mt-0.5 uppercase leading-none">
+          <div className="text-[9px] font-mono font-normal tracking-wider text-muted mt-0.5 uppercase leading-none">
             /100
           </div>
         )}
@@ -1170,8 +1170,8 @@ function MiniStat({
 }: Readonly<{ label: string; value: number | string; tone: 'success' | 'warning' | 'danger' | 'neutral' }>) {
   return (
     <div className="border-border bg-background/25 rounded-[var(--radius-md)] border p-2 flex flex-col justify-between min-w-[70px]">
-      <div className="text-[9px] font-bold font-mono tracking-wider text-muted uppercase leading-none">{label}</div>
-      <div className={cn('mt-1.5 font-mono text-xs font-bold leading-none tabular-nums truncate', toneClass(tone))}>
+      <div className="text-[9px] font-normal font-mono tracking-wider text-muted uppercase leading-none">{label}</div>
+      <div className={cn('mt-1.5 font-mono text-xs font-normal leading-none tabular-nums truncate', toneClass(tone))}>
         {value}
       </div>
     </div>

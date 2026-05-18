@@ -101,6 +101,7 @@ VARIANT_SWATCH_BUTTON_SELECTOR = (
     " button[data-option], button[data-value], button[data-size], a[href],"
     " a[class*='swatch' i],"
     " div[class*='swatch' i], div[role='radio'],"
+    " [data-testid='swatch' i], [data-testid*='swatch-option' i],"
     " [data-testid*='variants-selector' i]"
 )
 VARIANT_COMPONENT_SIZE_STYLE_LABELS = ("jacket", "trouser", "pant", "pants")
@@ -1460,6 +1461,7 @@ VARIANT_CHOICE_GROUP_SELECTOR = ", ".join(
                 if str(value).strip()
             ),
             "[data-testid*='variants-selector' i]",
+            "[role='group'][aria-label]",
             "[class*='selectable-container' i]",
             "#productSizeStock",
             "[class*='sizeOptions' i]",

@@ -53,30 +53,32 @@ export default function UcpAuditPage() {
             <Button
               type="button"
               variant="secondary"
+              size="sm"
               onClick={() => setHistoryOpen(true)}
-              className="h-[var(--control-height)] border-border bg-panel text-foreground hover:bg-background-alt"
+              className="border-border bg-panel text-foreground hover:bg-background-alt"
             >
-              <History className="size-3.5" />
+              <History className="size-3" />
               History
             </Button>
             <Button
               type="button"
               variant="secondary"
+              size="sm"
               onClick={() => void controller.detailQuery.refetch()}
               disabled={!controller.resolvedJobId || controller.detailQuery.isFetching}
-              className="h-[var(--control-height)] border-border bg-panel text-foreground hover:bg-background-alt"
+              className="border-border bg-panel text-foreground hover:bg-background-alt"
             >
-              <RefreshCcw className={cn("size-3.5", controller.detailQuery.isFetching && "animate-spin")} />
+              <RefreshCcw className={cn("size-3", controller.detailQuery.isFetching && "animate-spin")} />
               Refresh
             </Button>
             <Button
               type="button"
               variant="accent"
+              size="sm"
               onClick={controller.startAudit}
               disabled={controller.createPending || controller.isRunning}
-              className="h-[var(--control-height)] px-4"
             >
-              <Play className="size-3.5" />
+              <Play className="size-3" />
               {controller.createPending || controller.isRunning ? 'Auditing...' : 'Start Audit'}
             </Button>
           </div>

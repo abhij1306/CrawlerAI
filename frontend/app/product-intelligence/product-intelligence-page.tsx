@@ -84,21 +84,21 @@ function productIntelligenceActions(controller: ProductIntelligenceController) {
       <Button
         type="button"
         variant="accent"
+        size="sm"
         onClick={() => void controller.discover()}
         disabled={controller.pending || !controller.visibleSourceRecords.length}
-        className="h-[var(--control-height)] px-4"
       >
-        <Search className="size-3.5" />
+        <Search className="size-3" />
         {controller.pending ? 'Discovering...' : 'Discover URLs'}
       </Button>
       <Button
         type="button"
         variant="accent"
+        size="sm"
         onClick={controller.sendSelectedToBatchCrawl}
         disabled={!controller.uniqueSelectedUrls.length}
-        className="h-[var(--control-height)]"
       >
-        <Play className="size-3.5" />
+        <Play className="size-3" />
         Batch Crawl{' '}
         {controller.uniqueSelectedUrls.length ? `(${controller.uniqueSelectedUrls.length})` : ''}
       </Button>

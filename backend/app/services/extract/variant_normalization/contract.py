@@ -144,6 +144,8 @@ def flatten_variants_for_public_output(
                 continue
             merged[axis_key] = value_text
             has_option_axis = True
+        if text_or_none(merged.get("scent")) and "body-mist" in str(page_url or "").casefold():
+            merged.pop("color", None)
         if merged and (
             has_option_axis
             or any(

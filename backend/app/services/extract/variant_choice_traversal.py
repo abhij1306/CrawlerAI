@@ -559,7 +559,8 @@ def _variant_group_has_multiple_options(node: Any) -> bool:
     option_nodes = node.select(
         "button, a[href], [role='radio'], [role='option'], input[type='radio'], "
         "input[type='checkbox'], [data-value], [data-option-value], "
-        "[data-selected], [aria-selected], [data-state], option"
+        "[data-selected], [aria-selected], [data-state], [data-testid='swatch' i], "
+        "[data-testid*='swatch-option' i], [role='button'][aria-label], option"
     )
     return len(option_nodes) >= 2
 
@@ -612,6 +613,19 @@ def iter_variant_choice_groups(soup: Any) -> list[Any]:
     """Find variant groups via selectors, input inference, buttons, then swatch parents."""
     groups: list[Any] = []
     seen_ids: set[int] = set()
+    for container in soup.select("[role='group'][aria-label]"):
+        resolved_name = resolve_variant_group_name(container)
+        resolved_axis = normalized_variant_axis_key(resolved_name)
+        if variant_node_in_noise_context(container) and resolved_axis not in {
+            "color",
+            "size",
+        }:
+            continue
+        if resolved_name and _variant_group_has_multiple_options(container):
+            groups.append(container)
+            seen_ids.add(id(container))
+            if len(groups) >= int(VARIANT_CHOICE_GROUP_MAX):
+                return groups
     for container in _select_variant_nodes(soup, VARIANT_CHOICE_GROUP_SELECTOR):
         if _variant_choice_container_is_overbroad(container):
             continue
@@ -658,7 +672,19 @@ def iter_variant_choice_groups(soup: Any) -> list[Any]:
                     break
     # Fallback: discover containers of button / link / div swatches (e.g. YETI, Shopify visual swatches)
     if len(groups) < int(VARIANT_CHOICE_GROUP_MAX):
-        all_btns = soup.select(VARIANT_SWATCH_BUTTON_SELECTOR)
+        priority_btns = soup.select(
+            "[data-testid='swatch' i], [data-testid*='swatch-option' i], "
+            "[role='button'][aria-label]"
+        )
+        seen_priority_ids = {id(node) for node in priority_btns}
+        all_btns = [
+            *priority_btns,
+            *(
+                node
+                for node in soup.select(VARIANT_SWATCH_BUTTON_SELECTOR)
+                if id(node) not in seen_priority_ids
+            ),
+        ]
         # Cap buttons to avoid O(n) blow-up on large rendered pages; variant groups are near top
         button_limit = int(VARIANT_SWATCH_BUTTON_LIMIT)
         btn_slice = (
