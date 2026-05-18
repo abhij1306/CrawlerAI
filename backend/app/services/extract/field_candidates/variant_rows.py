@@ -113,6 +113,9 @@ def _structured_offer_variant_rows(
             title_size = _offer_title_size(title)
             if title_size:
                 row["size"] = title_size
+            scent = _offer_title_scent(title, item, page_url)
+            if scent:
+                row["scent"] = scent
         sku = coerce_text(item.get("sku") or offered_item.get("sku"))
         if sku:
             row["sku"] = sku
@@ -125,9 +128,23 @@ def _structured_offer_variant_rows(
         availability = coerce_field_value("availability", item, page_url)
         if availability not in (None, "", [], {}):
             row["availability"] = availability
+        image_url = coerce_field_value(
+            "image_url",
+            item.get("image") or offered_item.get("image"),
+            page_url,
+        )
+        if image_url not in (None, "", [], {}):
+            row["image_url"] = image_url
         variant_url = coerce_field_value("url", item, page_url)
         if variant_url not in (None, "", [], {}):
             row["url"] = variant_url
+        option_values: dict[str, object] = {}
+        if row.get("size"):
+            option_values["size"] = row["size"]
+        if row.get("scent"):
+            option_values["scent"] = row["scent"]
+        if option_values:
+            row["option_values"] = option_values
         if row.get("url") or row.get("price"):
             rows.append(row)
     return rows
@@ -138,6 +155,29 @@ def _offer_title_size(title: str) -> str:
     if not match:
         return ""
     return re.sub(r"\s+", "", match.group(1)).lower()
+
+
+def _offer_title_scent(
+    title: str,
+    offer: dict[str, object],
+    page_url: str,
+) -> str:
+    probe = " ".join(
+        text
+        for text in (
+            title,
+            text_or_none(offer.get("url")),
+            page_url,
+        )
+        if text
+    ).casefold()
+    if not any(token in probe for token in ("scent", "fragrance", "body mist", "body-mist")):
+        return ""
+    parts = re.split(r"\s[-–—]\s", title, maxsplit=1)
+    if len(parts) != 2:
+        return ""
+    value = text_or_none(parts[1])
+    return value or ""
 
 
 def _variant_axes_from_rows(variants: list[dict[str, object]]) -> dict[str, list[str]]:
@@ -154,7 +194,7 @@ def _variant_axes_from_rows(variants: list[dict[str, object]]) -> dict[str, list
                 axes.setdefault(str(axis_name), [])
                 if cleaned not in axes[str(axis_name)]:
                     axes[str(axis_name)].append(cleaned)
-        for axis_name in ("color", "size"):
+        for axis_name in ("color", "size", "style", "material", "scent", "flavor"):
             cleaned = text_or_none(row.get(axis_name))
             if not cleaned:
                 continue

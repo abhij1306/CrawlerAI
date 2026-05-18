@@ -159,7 +159,7 @@ FILE_LOC_BUDGETS = {
     Path("app/services/extract/detail_record_assembly.py"): 495,
     # Ratcheted for host-policy TTL compatibility and handoff failure isolation.
     Path("app/services/fetch/fetch_context.py"): 1000,
-    Path("app/services/js_state/state_normalizer.py"): 1410,
+    Path("app/services/js_state/state_normalizer.py"): 1480,
     # Extraction loop owns stage orchestration; retry and record extraction stages are split out.
     Path("app/services/pipeline/extraction_loop.py"): 1000,
     # Run progress owns batch-level summary/merge/quality aggregation, evicted

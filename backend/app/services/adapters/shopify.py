@@ -7,6 +7,8 @@ from json import loads as parse_json
 import math
 from urllib.parse import parse_qsl, urljoin, urlparse, urlsplit
 
+from bs4 import BeautifulSoup
+
 from app.services.adapters.base import AdapterResult, BaseAdapter
 from app.services.config.adapter_runtime_settings import adapter_runtime_settings
 from app.services.extract.variant_axis import normalized_variant_axis_key
@@ -15,6 +17,7 @@ from app.services.extract.variant_normalization.contract import (
     flatten_variants_for_public_output,
 )
 from app.services.normalizers import normalize_decimal_price
+from app.services.shared.field_coerce import clean_text, text_or_none
 
 _FETCH_ERRORS = (OSError, RuntimeError, ValueError, TypeError, json.JSONDecodeError)
 
@@ -80,18 +83,39 @@ class ShopifyAdapter(BaseAdapter):
             handle = self._extract_product_handle(parsed.path)
             if not handle:
                 return []
-            api_url = f"{parsed.scheme}://{parsed.netloc}/products/{handle}.js"
-            try:
-                data = await self._request_json(
-                    api_url,
-                    proxy=proxy,
-                    timeout_seconds=adapter_runtime_settings.shopify_request_timeout_seconds,
+            linked_handles = self._linked_variant_product_handles(
+                html,
+                url,
+                current_handle=handle,
+            )
+            if not linked_handles:
+                linked_handles = [(handle, "", "")]
+            product_records: list[dict] = []
+            for linked_handle, axis_value, axis_key in linked_handles[
+                : adapter_runtime_settings.shopify_linked_variant_max_handles
+            ]:
+                api_url = f"{parsed.scheme}://{parsed.netloc}/products/{linked_handle}.js"
+                try:
+                    data = await self._request_json(
+                        api_url,
+                        proxy=proxy,
+                        timeout_seconds=adapter_runtime_settings.shopify_request_timeout_seconds,
+                    )
+                except _FETCH_ERRORS:
+                    continue
+                if not isinstance(data, dict):
+                    continue
+                record = self._build_product_record(
+                    data,
+                    page_url=urljoin(
+                        url,
+                        self._localized_product_path(parsed.path, linked_handle),
+                    ),
+                    surface=surface,
                 )
-            except _FETCH_ERRORS:
-                return []
-            if not isinstance(data, dict):
-                return []
-            products = [data]
+                self._apply_linked_axis(record, axis_key=axis_key, axis_value=axis_value)
+                product_records.append(record)
+            return self._merge_linked_product_records(product_records)
         else:
             collection_handle = self._extract_collection_handle(parsed.path)
             api_path = (
@@ -138,6 +162,172 @@ class ShopifyAdapter(BaseAdapter):
             for product in products[: adapter_runtime_settings.shopify_max_products]
             if isinstance(product, dict)
         ]
+
+    def _linked_variant_product_handles(
+        self,
+        html: str,
+        page_url: str,
+        *,
+        current_handle: str,
+    ) -> list[tuple[str, str, str]]:
+        if not html:
+            return []
+        soup = BeautifulSoup(html, "html.parser")
+        parsed = urlparse(page_url)
+        current_host = parsed.netloc.lower()
+        current_handle = str(current_handle or "").strip()
+        rows: list[tuple[str, str, str]] = []
+        seen: set[str] = set()
+        for group in soup.select(
+            "[role='radiogroup'], fieldset, [class*='swatch' i], "
+            "[class*='variant' i], [class*='option' i], [data-testid*='swatch' i]"
+        ):
+            axis_key = self._linked_group_axis(group)
+            if axis_key not in {"color", "scent", "style", "material"}:
+                continue
+            anchors = group.select("a[href*='/products/']")
+            if len(anchors) < 2:
+                continue
+            for anchor in anchors:
+                href = text_or_none(anchor.get("href"))
+                if not href:
+                    continue
+                absolute = urljoin(page_url, href)
+                linked_parsed = urlparse(absolute)
+                if linked_parsed.netloc.lower() != current_host:
+                    continue
+                handle = self._extract_product_handle(linked_parsed.path)
+                if not handle or handle in seen:
+                    continue
+                label = self._linked_axis_value(anchor, handle, current_handle)
+                rows.append((handle, label, axis_key))
+                seen.add(handle)
+                if len(rows) >= adapter_runtime_settings.shopify_linked_variant_max_handles:
+                    return rows
+        if current_handle and current_handle not in seen and rows:
+            rows.insert(0, (current_handle, "", rows[0][2]))
+        return rows
+
+    def _linked_group_axis(self, group: object) -> str:
+        if not hasattr(group, "get"):
+            return ""
+        values: list[object] = [
+            group.get("aria-label"),
+            group.get("data-option-name"),
+            group.get("name"),
+            group.get("id"),
+            group.get("data-testid"),
+            group.get("class"),
+        ]
+        legend = group.find("legend") if hasattr(group, "find") else None
+        if legend is not None:
+            values.append(legend.get_text(" ", strip=True))
+        for value in values:
+            if isinstance(value, list):
+                value = " ".join(str(item) for item in value if item)
+            axis_key = normalized_variant_axis_key(value)
+            if axis_key:
+                return axis_key
+        return ""
+
+    def _linked_axis_value(
+        self,
+        anchor: object,
+        handle: str,
+        current_handle: str,
+    ) -> str:
+        candidates: list[object] = []
+        if hasattr(anchor, "get"):
+            candidates.extend(
+                [
+                    anchor.get("aria-label"),
+                    anchor.get("title"),
+                    anchor.get("data-value"),
+                    anchor.get("data-option-value"),
+                    anchor.get_text(" ", strip=True) if hasattr(anchor, "get_text") else "",
+                ]
+            )
+            for parent in (anchor.find_parent("button"), anchor.find_parent("label")):
+                if parent is not None:
+                    candidates.extend(
+                        [
+                            parent.get("aria-label"),
+                            parent.get("title"),
+                            parent.get("data-value"),
+                            parent.get("data-option-value"),
+                            parent.get_text(" ", strip=True),
+                        ]
+                    )
+        for candidate in candidates:
+            value = self._clean_linked_axis_label(candidate)
+            if value:
+                return value
+        return self._axis_value_from_handle(handle, current_handle)
+
+    def _clean_linked_axis_label(self, value: object) -> str:
+        label = clean_text(value)
+        if not label:
+            return ""
+        label = re.sub(
+            r"^(?:choose|select|view|alternate|product|color|variant)\s+",
+            "",
+            label,
+            flags=re.I,
+        )
+        label = re.sub(
+            r"^(?:view\s+)?alternate\s+product\s+color\s+",
+            "",
+            label,
+            flags=re.I,
+        )
+        label = re.sub(r"\s+(?:variant|selected|unselected)$", "", label, flags=re.I)
+        return clean_text(label)
+
+    def _axis_value_from_handle(self, handle: str, current_handle: str) -> str:
+        handle_tokens = [token for token in str(handle or "").split("-") if token]
+        current_tokens = [token for token in str(current_handle or "").split("-") if token]
+        common_prefix = 0
+        for left, right in zip(handle_tokens, current_tokens):
+            if left != right:
+                break
+            common_prefix += 1
+        tail = handle_tokens[common_prefix:] or handle_tokens[-1:]
+        return clean_text(" ".join(token.capitalize() for token in tail))
+
+    def _apply_linked_axis(
+        self,
+        record: dict,
+        *,
+        axis_key: str,
+        axis_value: str,
+    ) -> None:
+        if not axis_key or not axis_value:
+            return
+        if record.get(axis_key) in (None, "", [], {}):
+            record[axis_key] = axis_value
+        variants = record.get("variants")
+        if not isinstance(variants, list):
+            return
+        for variant in variants:
+            if not isinstance(variant, dict):
+                continue
+            if variant.get(axis_key) in (None, "", [], {}):
+                variant[axis_key] = axis_value
+
+    def _merge_linked_product_records(self, records: list[dict]) -> list[dict]:
+        if not records:
+            return []
+        primary = dict(records[0])
+        variants: list[dict] = []
+        for record in records:
+            for variant in record.get("variants") or []:
+                if isinstance(variant, dict):
+                    variants.append(variant)
+        merged_variants = self._dedupe_variants(variants)
+        if merged_variants:
+            primary["variants"] = merged_variants
+            primary["variant_count"] = len(merged_variants)
+        return [primary]
 
     def _extract_product_handle(self, path: str) -> str | None:
         match = re.search(r"/products/([^/?#]+)", path)

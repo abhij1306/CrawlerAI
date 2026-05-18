@@ -79,7 +79,30 @@ def _product_variant_rows(product: dict[str, Any]) -> list[dict[str, Any]]:
             rows.append(row)
     rows.extend(_nested_choice_item_variant_rows(product))
     if not rows:
+        rows.extend(_mapped_size_variant_rows(product))
+    if not rows:
         rows.extend(_option_group_variant_rows(product))
+    return rows
+
+
+def _mapped_size_variant_rows(product: dict[str, Any]) -> list[dict[str, Any]]:
+    raw_sizes = product.get("sizes")
+    if not isinstance(raw_sizes, dict):
+        return []
+    rows: list[dict[str, Any]] = []
+    for size_key, item in raw_sizes.items():
+        if not isinstance(item, dict):
+            continue
+        row = dict(item)
+        if row.get("size") in (None, "", [], {}):
+            row["size"] = (
+                text_or_none(item.get("title"))
+                or text_or_none(item.get("displayName"))
+                or text_or_none(item.get("name"))
+                or text_or_none(size_key)
+            )
+        _backfill_single_axis_variant_context(row, product)
+        rows.append(row)
     return rows
 
 
@@ -176,7 +199,7 @@ def _backfill_nested_variant_context(
     product: dict[str, Any],
 ) -> None:
     for target_key, product_keys in {
-        "color": ("color", "colour"),
+        "color": ("color", "colour", "colorName", "colourName"),
         "currencyCode": ("currencyCode", "currency", "priceCurrency"),
         "compareAtPrice": ("compareAtPrice", "compare_at_price"),
         "featuredImage": ("featuredMedia", "featured_image", "image"),
@@ -221,9 +244,18 @@ def _backfill_single_axis_variant_context(
         {},
     ):
         return
-    color = text_or_none(product.get("color") or product.get("colour"))
+    color = _product_color_value(product)
     if color:
         variant["color"] = color
+
+
+def _product_color_value(product: dict[str, Any]) -> str | None:
+    return text_or_none(
+        product.get("color")
+        or product.get("colour")
+        or product.get("colorName")
+        or product.get("colourName")
+    )
 
 def map_js_state_to_fields(
     js_state_objects: dict[str, Any],
@@ -666,7 +698,16 @@ def _looks_like_product_payload(value: Any) -> bool:
     if _looks_like_stock_price_product_payload(value):
         return True
     has_title = any(
-        key in value for key in ("title", "name", "nameByLanguage", "pn", "copyProductTitle")
+        key in value
+        for key in (
+            "title",
+            "name",
+            "fullName",
+            "masterName",
+            "nameByLanguage",
+            "pn",
+            "copyProductTitle",
+        )
     ) or bool(
         text_or_none(
             ((value.get("item") or {}).get("product_description") or {}).get("title")
@@ -879,7 +920,7 @@ def _map_product_payload(
     if color in (None, "", [], {}):
         color = variant_axis_value(
             "color",
-            product.get("color") or product.get("colour"),
+            _product_color_value(product),
             page_url=page_url,
         )
     size = variant_attribute(active_variant, "size")

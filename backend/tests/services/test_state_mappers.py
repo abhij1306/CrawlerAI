@@ -192,6 +192,56 @@ def test_map_js_state_to_fields_recovers_shopify_available_sizes_rows() -> None:
     assert mapped["variants"][1]["stock_quantity"] == 0
 
 
+def test_map_js_state_to_fields_uses_shopify_color_name_for_size_rows() -> None:
+    mapped = map_js_state_to_fields(
+        {
+            "ALLBIRDS": {
+                "page": {
+                    "productDetailsPage": {
+                        "product": {
+                            "id": 4826188349520,
+                            "handle": "mens-wool-runners-dapple-grey",
+                            "masterId": "MENS_WOOL_RUNNERS",
+                            "fullName": "Men's Wool Runner - Dapple Grey (Cream Sole)",
+                            "masterName": "Men's Wool Runner",
+                            "colorName": "Dapple Grey (Cream Sole)",
+                            "vendor": "Allbirds",
+                            "type": "Shoes",
+                            "price": 11000,
+                            "sizes": {
+                                "8": {
+                                    "id": 32956150054992,
+                                    "title": "8",
+                                    "sku": "WR3MDPG080",
+                                    "url": "/products/mens-wool-runners-dapple-grey?size=8",
+                                },
+                                "9": {
+                                    "id": 32956150087760,
+                                    "title": "9",
+                                    "sku": "WR3MDPG090",
+                                    "url": "/products/mens-wool-runners-dapple-grey?size=9",
+                                },
+                            },
+                        }
+                    }
+                }
+            }
+        },
+        surface="ecommerce_detail",
+        page_url="https://www.allbirds.com/products/mens-wool-runners-dapple-grey",
+    )
+
+    assert mapped["color"] == "Dapple Grey (Cream Sole)"
+    assert mapped["variant_count"] == 2
+    assert {variant["color"] for variant in mapped["variants"]} == {
+        "Dapple Grey (Cream Sole)"
+    }
+    assert all(
+        variant["color"] != "Men's Wool Runner - Dapple Grey (Cream Sole)"
+        for variant in mapped["variants"]
+    )
+
+
 def test_map_js_state_to_fields_merges_same_family_sibling_product_urls() -> None:
     mapped = map_js_state_to_fields(
         {

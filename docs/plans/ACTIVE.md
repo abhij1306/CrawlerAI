@@ -3,7 +3,7 @@
 **Current:** Shopify Linked Variant Family Extraction → `docs/plans/shopify-linked-variant-family-plan.md`
 **Status:** IN PROGRESS
 **Started:** 2026-05-18
-**Last slice completed:** None
+**Last slice completed:** Slice 5 - Candidate Merge And Public Firewall
 
 ## Queue
 1. Product Monitoring Pipeline → `docs/plans/product-monitoring-pipeline-plan.md`

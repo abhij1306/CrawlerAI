@@ -5,6 +5,7 @@ import json
 import pytest
 from bs4 import BeautifulSoup
 
+from app.services.adapters.shopify import ShopifyAdapter
 from app.services.adapters.myntra import MyntraAdapter
 from app.services.extract.detail.assembly.record_assembly import (
     build_detail_record,
@@ -3067,6 +3068,199 @@ def test_extract_ecommerce_detail_recovers_unlabeled_color_swatch_urls() -> None
             "https://www.allbirds.com/products/mens-wool-runners-true-black",
         ),
     ]
+
+
+def test_extract_ecommerce_detail_recovers_hidden_anchor_color_swatch_urls() -> None:
+    html = """
+    <html>
+      <body>
+        <h1>Ballpark Tassel Suede Sneakers - Black</h1>
+        <div class="swatch-options" role="radiogroup" aria-label="Color">
+          <button aria-label="Choose Blush variant" data-testid="swatch-option-ballpark-tassel-suede-sneakers-blush-unselected">
+            <span style="background-color:#C98F9D"></span>
+            <span class="h-0 w-0 opacity-0">
+              <a aria-hidden="true" tabindex="-1" href="/products/ballpark-tassel-suede-sneakers-blush">Blush</a>
+            </span>
+          </button>
+          <button aria-label="Choose Black variant" data-testid="swatch-option-ballpark-tassel-suede-sneakers-black-selected" aria-checked="true">
+            <span style="background-color:#000000"></span>
+            <span class="h-0 w-0 opacity-0">
+              <a aria-hidden="true" tabindex="-1" href="/products/ballpark-tassel-suede-sneakers-black">Black</a>
+            </span>
+          </button>
+        </div>
+      </body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        "https://www.fashionnova.com/products/ballpark-tassel-suede-sneakers-black",
+        "ecommerce_detail",
+        max_records=5,
+    )
+
+    assert len(rows) == 1
+    assert {
+        (variant["color"], variant["url"])
+        for variant in rows[0]["variants"]
+    } == {
+        (
+            "Blush",
+            "https://www.fashionnova.com/products/ballpark-tassel-suede-sneakers-blush",
+        ),
+        (
+            "Black",
+            "https://www.fashionnova.com/products/ballpark-tassel-suede-sneakers-black",
+        ),
+    }
+
+
+def test_extract_ecommerce_detail_recovers_linked_scent_offer_variants() -> None:
+    html = """
+    <html>
+      <head>
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "Product",
+          "name": "Allover Body Mist",
+          "offers": [
+            {
+              "@type": "Offer",
+              "availability": "https://schema.org/InStock",
+              "price": "4700.0",
+              "priceCurrency": "INR",
+              "url": "https://fentybeauty.com/en-in/products/allover-body-mist-green-raspberry?variant=43357324083245",
+              "itemOffered": {
+                "@type": "Product",
+                "name": "Allover Body Mist - Green Raspberry",
+                "sku": "FFS00144",
+                "image": "https://fentybeauty.com/cdn/green.jpg"
+              }
+            },
+            {
+              "@type": "Offer",
+              "availability": "https://schema.org/InStock",
+              "price": "4700.0",
+              "priceCurrency": "INR",
+              "url": "https://fentybeauty.com/en-in/products/allover-body-mist-hey-bouquet?variant=44216944033837",
+              "itemOffered": {
+                "@type": "Product",
+                "name": "Allover Body Mist - Hey, Bouquet",
+                "sku": "FFS00109",
+                "image": "https://fentybeauty.com/cdn/bouquet.jpg"
+              }
+            }
+          ]
+        }
+        </script>
+      </head>
+      <body><h1>Allover Body Mist</h1></body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        "https://fentybeauty.com/en-in/products/allover-body-mist-green-raspberry",
+        "ecommerce_detail",
+        max_records=5,
+    )
+
+    assert len(rows) == 1
+    assert {
+        (variant["scent"], variant["sku"], variant["url"])
+        for variant in rows[0]["variants"]
+    } == {
+        (
+            "Green Raspberry",
+            "FFS00144",
+            "https://fentybeauty.com/en-in/products/allover-body-mist-green-raspberry?variant=43357324083245",
+        ),
+        (
+            "Hey, Bouquet",
+            "FFS00109",
+            "https://fentybeauty.com/en-in/products/allover-body-mist-hey-bouquet?variant=44216944033837",
+        ),
+    }
+    assert all("color" not in variant for variant in rows[0]["variants"])
+
+
+@pytest.mark.asyncio
+async def test_shopify_adapter_expands_linked_product_color_handles(monkeypatch) -> None:
+    html = """
+    <html>
+      <head><script>Shopify.theme = { "name": "test" };</script></head>
+      <body>
+        <h1>Ballpark Tassel Suede Sneakers - Black</h1>
+        <div class="swatch-options" role="radiogroup" aria-label="Color">
+          <a href="/products/ballpark-tassel-suede-sneakers-black" aria-label="Black"></a>
+          <a href="/products/ballpark-tassel-suede-sneakers-blush" aria-label="Blush"></a>
+        </div>
+      </body>
+    </html>
+    """
+    products = {
+        "ballpark-tassel-suede-sneakers-black": {
+            "id": 1,
+            "title": "Ballpark Tassel Suede Sneakers - Black",
+            "vendor": "Fashion Nova",
+            "handle": "ballpark-tassel-suede-sneakers-black",
+            "product_type": "Shoes",
+            "options": [{"name": "Size"}],
+            "images": ["https://cdn.example/black.jpg"],
+            "variants": [
+                {
+                    "id": 101,
+                    "sku": "SPECIALGUEST_Black_6",
+                    "available": True,
+                    "price": 3999,
+                    "option1": "6",
+                }
+            ],
+        },
+        "ballpark-tassel-suede-sneakers-blush": {
+            "id": 2,
+            "title": "Ballpark Tassel Suede Sneakers - Blush",
+            "vendor": "Fashion Nova",
+            "handle": "ballpark-tassel-suede-sneakers-blush",
+            "product_type": "Shoes",
+            "options": [{"name": "Size"}],
+            "images": ["https://cdn.example/blush.jpg"],
+            "variants": [
+                {
+                    "id": 201,
+                    "sku": "SPECIALGUEST_Blush_6",
+                    "available": True,
+                    "price": 3999,
+                    "option1": "6",
+                }
+            ],
+        },
+    }
+
+    async def _fake_request_json(api_url: str, **_kwargs):
+        handle = api_url.rsplit("/products/", 1)[1].removesuffix(".js")
+        return products[handle]
+
+    adapter = ShopifyAdapter()
+    monkeypatch.setattr(adapter, "_request_json", _fake_request_json)
+
+    result = await adapter.extract(
+        "https://www.fashionnova.com/products/ballpark-tassel-suede-sneakers-black",
+        html,
+        "ecommerce_detail",
+    )
+
+    record = result.records[0]
+    assert record["variant_count"] == 2
+    assert {
+        (variant["color"], variant["size"], variant["sku"])
+        for variant in record["variants"]
+    } == {
+        ("Black", "6", "SPECIALGUEST_Black_6"),
+        ("Blush", "6", "SPECIALGUEST_Blush_6"),
+    }
 
 
 def test_extract_ecommerce_detail_recovers_variant_urls_from_js_state_option_mapping() -> None:

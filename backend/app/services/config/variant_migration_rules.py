@@ -35,7 +35,7 @@ VARIANT_STRONG_OPTION_SELECTOR = (
     "[role='radio'], [role='option'], input[type='radio'], input[type='checkbox'], "
     "[data-option-value], [data-value], [data-variant-id], [data-selected], "
     "[aria-pressed][aria-pressed!=''], button[data-option], button[data-value], "
-    "button[data-variant]"
+    "button[data-variant], [data-testid*='swatch-option' i]"
 )
 VARIANT_WEAK_OPTION_SELECTOR = (
     "button:not([data-dismiss]):not([type='submit']):not([type='reset']), "

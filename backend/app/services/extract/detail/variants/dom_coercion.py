@@ -140,6 +140,14 @@ def _coerce_color_option_value(raw_value: object, *, page_url: str) -> str:
 def _color_option_value_candidates(value: str) -> list[str]:
     candidates: list[str] = []
     for pattern in (
+        re.compile(
+            r"^(?:choose|select|view)\s+(?:alternate\s+product\s+)?(?:colour|color)?\s*(.+?)\s+(?:variant|selected|unselected)$",
+            flags=re.I,
+        ),
+        re.compile(
+            r"^(?:choose|select|view)\s+(?:alternate\s+product\s+)?(?:colour|color)\s+(.+)$",
+            flags=re.I,
+        ),
         re.compile(r"\b(?:in|colour|color)\s*[:\-]?\s+(.+)$", flags=re.I),
         re.compile(r"\b(?:colour|color)\s*[:\-]\s*(.+)$", flags=re.I),
     ):
@@ -147,7 +155,7 @@ def _color_option_value_candidates(value: str) -> list[str]:
         if match is None:
             continue
         candidate = clean_text(match.group(1))
-        if candidate:
+        if candidate and candidate.casefold() not in {"an option", "option"}:
             candidates.append(candidate)
     candidates.append(value)
     return list(dict.fromkeys(candidates))
