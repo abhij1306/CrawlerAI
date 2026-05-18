@@ -193,7 +193,16 @@ def prune_irrelevant_detail_dom_nodes(
                 if script_product_name:
                     pruned_product_names.append(script_product_name)
                 script.decompose()
-        except json.JSONDecodeError:
+        except json.JSONDecodeError as exc:
+            logger.debug(
+                "Skipping malformed detail JSON-LD",
+                extra={
+                    "page_url": page_url,
+                    "requested_page_url": requested_page_url,
+                    "error": str(exc),
+                    "snippet": script.get_text()[:200],
+                },
+            )
             continue
 
     if pruned_product_names:

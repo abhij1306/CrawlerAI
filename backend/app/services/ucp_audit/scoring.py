@@ -14,15 +14,17 @@ def build_compliance_report(
     domain: str,
     audit_id: str,
     dimension_scores: list[UCPDimensionScore],
+    agent_view_samples: list[AgentViewDelta] | None = None,
 ) -> UCPComplianceReport:
     weighted = sum(item.score * item.weight for item in dimension_scores)
     overall = int(weighted)
     gate_applied = False
     discovery = next(
-        item
-        for item in dimension_scores
-        if item.dimension_id == config.D_UCP1_ID
+        (item for item in dimension_scores if item.dimension_id == config.D_UCP1_ID),
+        None,
     )
+    if discovery is None:
+        raise ValueError(f"Missing required dimension score: {config.D_UCP1_ID}")
     if discovery.score == 0:
         overall = min(overall, config.D_UCP1_GATE_MAX_SCORE)
         gate_applied = True
@@ -37,6 +39,7 @@ def build_compliance_report(
             for finding in list(dimension.findings or [])
         ],
         d_ucp1_gate_applied=gate_applied,
+        agent_view_samples=list(agent_view_samples or []),
     )
 
 

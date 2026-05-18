@@ -25,6 +25,7 @@ from app.api.records import router as records_router
 from app.api.review import router as review_router
 from app.api.selectors import router as selectors_router
 from app.api.users import router as users_router
+from app.api.ucp_audit import router as ucp_audit_router
 from app.core.config import get_frontend_origins, settings
 from app.core.dependencies import shutdown_run_dispatchers
 from app.core.metrics import (
@@ -154,6 +155,11 @@ sanitize_header_value = _sanitize_header_value
 sanitize_header_name = _sanitize_header_name
 client_rate_limit_key = _client_rate_limit_key
 RATE_LIMIT_BUCKETS = MappingProxyType(_RATE_LIMIT_BUCKETS)
+TRUSTED_PROXIES = {
+    str(value).strip()
+    for value in crawler_runtime_settings.api_rate_limit_trusted_proxies
+    if str(value).strip()
+}
 
 
 def rate_limit_buckets_snapshot() -> OrderedDict[str, deque[float]]:
@@ -174,12 +180,7 @@ def restore_rate_limit_buckets_for_testing(
 
 
 def _is_trusted_proxy(proxy_ip: str) -> bool:
-    trusted_proxies = {
-        str(value).strip()
-        for value in crawler_runtime_settings.api_rate_limit_trusted_proxies
-        if str(value).strip()
-    }
-    return proxy_ip in trusted_proxies
+    return proxy_ip in TRUSTED_PROXIES
 
 
 async def _consume_rate_limit(identifier: str) -> tuple[bool, int]:
@@ -282,5 +283,6 @@ for router in [
     selectors_router,
     llm_router,
     product_intelligence_router,
+    ucp_audit_router,
 ]:
     app.include_router(router)

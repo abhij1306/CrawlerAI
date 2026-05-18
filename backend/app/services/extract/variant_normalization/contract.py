@@ -276,16 +276,17 @@ def enforce_payload_limits(record: dict[str, Any], *, max_rows: int) -> None:
         return
     if len(variants) <= max_rows:
         return
+    candidates = list(variants[:max_rows])
     kept = [
         variant
-        for variant in variants
+        for variant in candidates
         if isinstance(variant, dict)
         and (
             deduplication._variant_primary_key(variant)
             or _variant_has_axis_value(variant)
         )
     ]
-    truncated = kept[:max_rows] if kept else list(variants[:max_rows])
+    truncated = kept if kept else candidates
     if truncated:
         record["variants"] = truncated
         record["variant_count"] = len(truncated)

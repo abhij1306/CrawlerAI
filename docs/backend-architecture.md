@@ -477,6 +477,9 @@ Primary models:
 - `ReviewPromotion`
 - `DataEnrichmentJob`
 - `EnrichedProduct`
+- `UCPAuditJob`
+- `UCPAuditPageResult`
+- `UCPAuditReport`
 - `LLMConfig`
 - `LLMCostLog`
 - `DomainMemory`
@@ -487,6 +490,7 @@ Notable current schema direction:
 - max-records trigger support
 - URL identity keys on records
 - enrichment status metadata on crawl records, with derived enrichment data stored separately in `enriched_products`
+- UCP audit report storage separated from crawl records, with JSON/Markdown artifacts in `ucp_audit_reports`
 - domain-memory storage
 - split crawl-data reset versus domain-memory reset, so destructive cleanup no longer wipes learned selectors/profiles/cookies by default
 

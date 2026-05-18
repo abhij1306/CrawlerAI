@@ -9,6 +9,7 @@ from app.services.adapters.ebay import EbayAdapter
 from app.services.adapters.indeed import IndeedAdapter
 from app.services.adapters.linkedin import LinkedInAdapter
 from app.services.adapters.nike import NikeAdapter
+from app.services.config.runtime_settings import crawler_runtime_settings
 from app.services.extract.detail.assembly.record_assembly import (
     build_detail_record,
     extract_detail_records,
@@ -942,6 +943,23 @@ def test_xpath_selector_extraction_applies_regex_to_xpath_result() -> None:
       </body>
     </html>
     """
+
+    value, count, selector_used = extract_selector_value(
+        html,
+        xpath="//span[@class='rating']/text()",
+        regex=r"star-rating\s+(\w+)",
+    )
+
+    assert value == "Three"
+    assert count == 1
+    assert selector_used == "//span[@class='rating']/text()"
+
+
+def test_xpath_regex_invalid_timeout_falls_back_without_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(crawler_runtime_settings, "selector_regex_timeout_seconds", "bad")
+    html = '<span class="rating">star-rating Three</span>'
 
     value, count, selector_used = extract_selector_value(
         html,

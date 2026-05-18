@@ -60,7 +60,7 @@ export function PageHeader({
   });
   useLayoutEffect(() => {
     syncHeader();
-  }, [pathname, signature]);
+  }, [actions, pathname, signature]);
   return null;
 }
 

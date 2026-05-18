@@ -149,13 +149,23 @@ def _backfill_variant_prices_from_record(record: dict[str, Any]) -> None:
     if not fallback_fields:
         return
 
+    def _value_present(value: object) -> bool:
+        return value not in (None, "", [], {})
+
+    def _comparable_scalar(value: object) -> object:
+        if isinstance(value, (int, float)):
+            return value
+        return text_or_none(value)
+
     def _has_distinct_variant_value(field_name: str) -> bool:
-        fallback_value = text_or_none(fallback_fields.get(field_name))
+        """Distinct means a non-empty variant value differs from the parent fallback."""
+        fallback_value = _comparable_scalar(fallback_fields.get(field_name))
         if fallback_value is None:
             return False
         return any(
             isinstance(variant, dict)
-            and text_or_none(variant.get(field_name)) not in (None, fallback_value)
+            and _value_present(variant.get(field_name))
+            and _comparable_scalar(variant.get(field_name)) != fallback_value
             for variant in variants
         )
 

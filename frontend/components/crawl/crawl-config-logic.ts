@@ -291,12 +291,11 @@ export function buildDispatch(
   },
 ): PendingDispatch {
   const additionalFields = uniqueRequestedFields(config.additional_fields);
-  const invalidAdditionalField = additionalFields.find((field) =>
-    validateAdditionalFieldName(field),
-  );
-  if (invalidAdditionalField) {
-    const reason = validateAdditionalFieldName(invalidAdditionalField);
-    throw new Error(`Invalid additional field "${invalidAdditionalField}": ${reason}`);
+  for (const field of additionalFields) {
+    const reason = validateAdditionalFieldName(field);
+    if (reason) {
+      throw new Error(`Invalid additional field "${field}": ${reason}`);
+    }
   }
   const surface = deriveSurface(config.domain, config.module);
   const runProfile = cloneRunProfile(options?.runProfile);

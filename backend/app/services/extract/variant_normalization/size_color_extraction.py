@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import re
 from typing import Any
 
@@ -30,6 +31,8 @@ from app.services.extract.variant_value_guards import (
 )
 from app.services.shared.field_coerce import clean_text
 
+logger = logging.getLogger(__name__)
+
 __all__ = (
     "_normalize_variant_axis_value",
     "_extract_size_value",
@@ -40,15 +43,29 @@ __all__ = (
     "_extract_color_value",
 )
 
-variant_size_value_extract_patterns = tuple(
-    re.compile(str(pattern), re.I)
-    for pattern in tuple(VARIANT_SIZE_VALUE_EXTRACT_PATTERNS or ())
-    if str(pattern).strip()
+def _safe_compile_patterns(name: str, patterns: object) -> tuple[re.Pattern[str], ...]:
+    compiled: list[re.Pattern[str]] = []
+    for pattern in tuple(patterns or ()):
+        text = str(pattern).strip()
+        if not text:
+            continue
+        try:
+            compiled.append(re.compile(text, re.I))
+        except re.error:
+            logger.warning(
+                "Skipping invalid variant regex pattern",
+                extra={"name": name, "pattern": text},
+            )
+    return tuple(compiled)
+
+
+variant_size_value_extract_patterns = _safe_compile_patterns(
+    "VARIANT_SIZE_VALUE_EXTRACT_PATTERNS",
+    VARIANT_SIZE_VALUE_EXTRACT_PATTERNS,
 )
-variant_size_value_patterns = tuple(
-    re.compile(str(pattern), re.I)
-    for pattern in tuple(VARIANT_SIZE_VALUE_PATTERNS or ())
-    if str(pattern).strip()
+variant_size_value_patterns = _safe_compile_patterns(
+    "VARIANT_SIZE_VALUE_PATTERNS",
+    VARIANT_SIZE_VALUE_PATTERNS,
 )
 variant_color_hint_words = frozenset(
     clean_text(value).lower()
@@ -80,6 +97,7 @@ try:
 except (TypeError, ValueError):
     variant_option_label_max_words = 6
 gender_artifact_pattern = str(GENDER_ARTIFACT_PATTERN or "")
+_gender_artifact_patterns: dict[str, re.Pattern[str]] = {}
 standard_size_values = frozenset(
     str(value).lower() for value in tuple(STANDARD_SIZE_VALUES or ())
 )
@@ -178,10 +196,16 @@ def _extract_size_value(value: object) -> str:
     def _size_candidate_is_gender_artifact(candidate: str) -> bool:
         if len(candidate) != 1 or not gender_artifact_pattern:
             return False
-        pattern = gender_artifact_pattern.format(
-            candidate=re.escape(candidate.lower())
-        )
-        return re.search(pattern, lowered_text) is not None
+        lowered_candidate = candidate.lower()
+        pattern = _gender_artifact_patterns.get(lowered_candidate)
+        if pattern is None:
+            pattern = re.compile(
+                gender_artifact_pattern.format(
+                    candidate=re.escape(lowered_candidate)
+                )
+            )
+            _gender_artifact_patterns[lowered_candidate] = pattern
+        return pattern.search(lowered_text) is not None
 
     for pattern in variant_size_value_extract_patterns:
         match = pattern.search(text)

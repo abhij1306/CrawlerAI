@@ -395,6 +395,65 @@ export type DataEnrichmentJobDetail = {
   enriched_products: EnrichedProduct[];
 };
 
+export type UcpAuditOptions = {
+  sample_size?: number;
+  include_agent_delta?: boolean;
+  llm_enabled?: boolean;
+  report_formats?: string[];
+  jobsPollInterval?: number | false;
+};
+
+export type UcpAuditJobCreatePayload = {
+  domain: string;
+  options?: UcpAuditOptions;
+};
+
+export type UcpAuditJob = {
+  id: number;
+  user_id: number | null;
+  domain: string;
+  status: string;
+  options: Record<string, unknown>;
+  summary: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+  completed_at: string | null;
+};
+
+export type UcpAuditPageResult = {
+  id: number;
+  job_id: number;
+  url: string;
+  acquisition_mode: string;
+  dimension_payloads: Record<string, unknown>;
+  findings: Array<Record<string, unknown>>;
+  created_at: string;
+};
+
+export type UcpAuditReport = {
+  id: number;
+  job_id: number;
+  overall_score: number;
+  dimension_scores: Array<{
+    dimension_id: string;
+    score: number;
+    status: string;
+    findings: Array<Record<string, unknown>>;
+    weight: number;
+  }>;
+  findings: Array<Record<string, unknown>>;
+  report_json: Record<string, unknown>;
+  markdown_report: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type UcpAuditJobDetail = {
+  job: UcpAuditJob;
+  page_results: UcpAuditPageResult[];
+  report: UcpAuditReport | null;
+};
+
 export type DomainRunProfile = {
   version: number;
   fetch_profile: {

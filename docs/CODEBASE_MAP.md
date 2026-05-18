@@ -27,6 +27,7 @@ If a file is not listed, assume it is a helper under a listed owner.
 | `llm.py` | LLM provider catalog, config, connection test, cost log |
 | `product_intelligence.py` | Product matching jobs, source products, candidates, match review |
 | `data_enrichment.py` | On-demand ecommerce detail enrichment jobs and enriched product rows |
+| `ucp_audit.py` | UCP audit job creation, history, detail, and report exports |
 | `auth.py` | Login, register, `/me` |
 | `users.py`, `dashboard.py`, `jobs.py`, `health.py`, `metrics.py` | Named route modules |
 
@@ -57,11 +58,12 @@ If a file is not listed, assume it is a helper under a listed owner.
 | `ReviewPromotion` | `review.py` | approved review schema snapshot |
 | `ProductIntelligenceJob`, `ProductIntelligenceSourceProduct`, `ProductIntelligenceCandidate`, `ProductIntelligenceMatch` | `product_intelligence.py` | web product matching and price comparison jobs |
 | `DataEnrichmentJob`, `EnrichedProduct` | `data_enrichment.py` | on-demand ecommerce detail enrichment jobs and derived enriched product rows |
+| `UCPAuditJob`, `UCPAuditPageResult`, `UCPAuditReport` | `ucp_audit.py` | persisted UCP compliance audit jobs, sampled page payloads, and report artifacts |
 | `LLMConfig`, `LLMCostLog` | `llm.py` | LLM config and cost tracking |
 
 ### `schemas/` — request and response DTOs
 
-`crawl.py`, `user.py`, `llm.py`, `selectors.py`, `data_enrichment.py`, `common.py`
+`crawl.py`, `user.py`, `llm.py`, `selectors.py`, `data_enrichment.py`, `ucp_audit.py`, `common.py`
 
 ---
 
@@ -77,6 +79,7 @@ If a file is not listed, assume it is a helper under a listed owner.
 | `crawl/events.py` | WebSocket log emission |
 | `product_intelligence/*` | Product web discovery, candidate crawl orchestration, deterministic match scoring |
 | `data_enrichment/service.py` | On-demand enrichment job orchestration and persistence for ecommerce detail records |
+| `ucp_audit/*` | UCP compliance audit primitives, scoring, reporting, and job orchestration |
 | `data_enrichment/deterministic.py` | Deterministic enrichment normalization, taxonomy matching, and product attribute diagnostics |
 | `data_enrichment/shopify_catalog.py` | Shopify taxonomy and attribute repository loading/matching |
 | `crawl/batch_runtime.py` | URL loop, progress, pause, kill checks |
@@ -284,6 +287,7 @@ All selector memory is scoped by normalized `(domain, surface)`.
 |---|---|
 | `app/` | Next.js App Router pages |
 | `app/product-intelligence/product-intelligence-components.tsx` | Product Intelligence local UI pieces |
+| `app/ucp-audit/*` | UCP audit operator page, hook, and local report components |
 | `components/layout/` | shell, auth, nav, theme, scoped shell CSS modules |
 | `components/ui/button.tsx`, `badge.tsx`, `input.tsx`, `card.tsx`, `metric.tsx`, `table.tsx`, `alert.tsx`, `dialog.tsx` | typed UI primitive owners |
 | `components/ui/primitives.tsx` | compatibility barrel plus dropdown, toggle, tooltip, skeleton, field helpers |

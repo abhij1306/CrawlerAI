@@ -222,15 +222,24 @@ def _module_level_names(path: Path) -> set[str]:
 def _module_all_names(path: Path) -> tuple[str, ...] | None:
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
     for node in tree.body:
-        if not isinstance(node, ast.Assign):
-            continue
-        if not any(
-            isinstance(target, ast.Name) and target.id == "__all__"
-            for target in node.targets
+        value_node: ast.AST | None = None
+        if isinstance(node, ast.Assign):
+            if any(
+                isinstance(target, ast.Name) and target.id == "__all__"
+                for target in node.targets
+            ):
+                value_node = node.value
+        elif (
+            isinstance(node, ast.AnnAssign)
+            and isinstance(node.target, ast.Name)
+            and node.target.id == "__all__"
+            and node.value is not None
         ):
+            value_node = node.value
+        if value_node is None:
             continue
         try:
-            value = ast.literal_eval(node.value)
+            value = ast.literal_eval(value_node)
         except (TypeError, ValueError, SyntaxError):
             return None
         if not isinstance(value, (tuple, list)):

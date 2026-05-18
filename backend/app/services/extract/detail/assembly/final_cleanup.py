@@ -3,6 +3,8 @@ from __future__ import annotations
 __all__ = (
     "detail_image_matches_primary_family",
     "detail_title_looks_like_placeholder",
+    "detail_title_from_url",
+    "sanitize_variant_payload",
     "sanitize_variant_row",
     "repair_ecommerce_detail_record_quality",
 )
@@ -15,6 +17,9 @@ from app.services.config.extraction_rules import (
     AVAILABILITY_IN_STOCK,
     AVAILABILITY_OUT_OF_STOCK,
     AVAILABILITY_UNKNOWN,
+)
+from app.services.extract.detail.identity.core import (
+    detail_title_from_url,
 )
 from app.services.extract.variant_normalization.contract import (
     enforce_flat_variant_public_contract,
@@ -53,10 +58,6 @@ def sanitize_variant_payload(record: dict[str, Any], *, identity_url: str) -> No
         record,
         identity_url=identity_url,
     )
-
-
-def detail_title_from_url(identity_url: str) -> str | None:
-    return _record_sanitization._detail_title_from_url(identity_url)
 
 
 def repair_ecommerce_detail_record_quality(

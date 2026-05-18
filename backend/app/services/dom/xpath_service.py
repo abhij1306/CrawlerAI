@@ -201,15 +201,20 @@ def _coerce_xpath_matches(results: list[object]) -> list[str]:
 def _apply_regex_filter(pattern: str | None, values: list[str]) -> list[str]:
     if not pattern:
         return values
+    raw_timeout = crawler_runtime_settings.selector_regex_timeout_seconds
+    try:
+        timeout = float(raw_timeout)
+    except (TypeError, ValueError):
+        logger.warning(
+            "Invalid selector regex timeout; disabling timeout",
+            extra={"pattern": pattern[:200], "timeout": raw_timeout},
+        )
+        timeout = None
     filtered: list[str] = []
     for value in values:
         try:
-            match = regex_lib.search(
-                pattern,
-                value,
-                regex_lib.DOTALL,
-                timeout=float(crawler_runtime_settings.selector_regex_timeout_seconds),
-            )
+            kwargs = {"timeout": timeout} if timeout is not None else {}
+            match = regex_lib.search(pattern, value, regex_lib.DOTALL, **kwargs)
         except TimeoutError:
             logger.warning(
                 "Timed out while evaluating selector regex",

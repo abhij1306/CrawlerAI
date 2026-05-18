@@ -1,21 +1,26 @@
 from __future__ import annotations
 
 import json
+from types import SimpleNamespace
 from urllib.parse import urlparse, urlunparse
 
 from app.services.config import ucp_audit as config
-from app.services.fetch.fetch_context import fetch_page
+from app.services.network_resolution import build_async_http_client
 from app.services.ucp_audit.types import UCPManifestResult
 
 
 async def discover_ucp_manifest(domain: str) -> UCPManifestResult:
     target_url = _manifest_url(domain)
-    result = await fetch_page(
-        target_url,
-        timeout_seconds=config.UCP_DISCOVERY_TIMEOUT_SECONDS,
-        fetch_mode=config.UCP_HTTP_ONLY_MODE,
-        surface=config.UCP_AUDIT_SURFACE,
-    )
+    result = await _fetch_manifest_page(target_url)
+    if result is None:
+        return UCPManifestResult(
+            manifest_found=False,
+            capabilities_declared=[],
+            missing_required_capabilities=list(config.UCP_REQUIRED_CAPABILITIES),
+            manifest_valid=False,
+            raw_manifest=None,
+            errors=[f"{config.UCP_MANIFEST_PATH} fetch failed"],
+        )
     if int(getattr(result, "status_code", 0) or 0) == 404:
         return UCPManifestResult(
             manifest_found=False,
@@ -23,7 +28,7 @@ async def discover_ucp_manifest(domain: str) -> UCPManifestResult:
             missing_required_capabilities=list(config.UCP_REQUIRED_CAPABILITIES),
             manifest_valid=False,
             raw_manifest=None,
-            errors=[],
+            errors=[f"{config.UCP_MANIFEST_PATH} returned 404"],
         )
     raw_body = str(getattr(result, "html", "") or "")
     try:
@@ -47,9 +52,7 @@ async def discover_ucp_manifest(domain: str) -> UCPManifestResult:
             errors=[type(payload).__name__],
         )
     declared = _declared_capabilities(payload)
-    missing = [
-        item for item in config.UCP_REQUIRED_CAPABILITIES if item not in set(declared)
-    ]
+    missing = _missing_required_capabilities(payload, declared)
     return UCPManifestResult(
         manifest_found=True,
         capabilities_declared=declared,
@@ -58,6 +61,24 @@ async def discover_ucp_manifest(domain: str) -> UCPManifestResult:
         raw_manifest=payload,
         errors=[],
     )
+
+
+async def _fetch_manifest_page(url: str):
+    try:
+        async with build_async_http_client(
+            follow_redirects=True,
+            timeout=config.UCP_DISCOVERY_TIMEOUT_SECONDS,
+        ) as client:
+            response = await client.get(url)
+        return SimpleNamespace(
+            url=url,
+            final_url=str(response.url),
+            html=response.text,
+            status_code=response.status_code,
+            content_type=response.headers.get("content-type", ""),
+        )
+    except Exception:
+        return None
 
 
 def _manifest_url(value: str) -> str:
@@ -83,5 +104,25 @@ def _declared_capabilities(payload: dict) -> list[str]:
     elif isinstance(raw, list):
         values = raw
     else:
-        values = []
+        services = _service_map(payload)
+        values = services.keys() if services else []
     return sorted({str(item).strip() for item in values if str(item).strip()})
+
+
+def _service_map(payload: dict) -> dict:
+    direct = payload.get("services")
+    if isinstance(direct, dict):
+        return direct
+    nested = payload.get("ucp")
+    if isinstance(nested, dict) and isinstance(nested.get("services"), dict):
+        return nested["services"]
+    return {}
+
+
+def _missing_required_capabilities(payload: dict, declared: list[str]) -> list[str]:
+    declared_set = set(declared)
+    if _service_map(payload):
+        return [
+            item for item in config.UCP_REQUIRED_SERVICE_NAMES if item not in declared_set
+        ]
+    return [item for item in config.UCP_REQUIRED_CAPABILITIES if item not in declared_set]

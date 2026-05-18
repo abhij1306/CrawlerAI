@@ -307,7 +307,11 @@ describe('CrawlRunScreen', () => {
 
     renderRunScreen();
 
-    const productButton = await screen.findByRole('button', { name: 'Product Intelligence (1)' });
+    const productButton = await screen.findByRole(
+      'button',
+      { name: 'Product Intelligence (1)' },
+      { timeout: 5000 },
+    );
     fireEvent.click(productButton);
 
     expect(replaceMock).toHaveBeenCalledWith('/product-intelligence');

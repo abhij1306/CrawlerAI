@@ -7,12 +7,35 @@ UCP_REQUIRED_CAPABILITIES = (
     "checkout",
     "orders",
 )
+UCP_REQUIRED_SERVICE_NAMES = ("dev.ucp.shopping",)
+
+UCP_SAMPLE_DISCOVERY_PATHS = (
+    "/sitemap.xml",
+    "/",
+)
+UCP_SAMPLE_CHILD_SITEMAP_LIMIT = 3
+UCP_SAMPLE_FETCH_CONCURRENCY = 3
+UCP_PRODUCT_URL_MARKERS = (
+    "/products/",
+    "/product/",
+    "/p/",
+    "/dp/",
+)
 
 UCP_HTTP_ONLY_MODE = "http_only"
 UCP_BROWSER_ONLY_MODE = "browser_only"
 UCP_AUDIT_SURFACE = "ecommerce_detail"
-UCP_DISCOVERY_TIMEOUT_SECONDS = 10.0
+UCP_DISCOVERY_TIMEOUT_SECONDS = 5.0
 UCP_AGENT_UA_OVERRIDE: str | None = None
+
+UCP_AUDIT_JOB_STATUS_QUEUED = "queued"
+UCP_AUDIT_JOB_STATUS_RUNNING = "running"
+UCP_AUDIT_JOB_STATUS_COMPLETE = "complete"
+UCP_AUDIT_JOB_STATUS_FAILED = "failed"
+UCP_AUDIT_DEFAULT_SAMPLE_SIZE = 5
+UCP_AUDIT_MAX_SAMPLE_SIZE = 50
+UCP_AUDIT_DEFAULT_INCLUDE_AGENT_DELTA = False
+UCP_AUDIT_DEFAULT_REPORT_FORMATS = ("json", "markdown")
 
 JSON_LD_TYPE_KEY = "@type"
 JSON_LD_PRODUCT_TYPES = frozenset({"Product", "ProductGroup"})
@@ -57,6 +80,7 @@ POLICY_SCORE_PER_SIGNAL = 25
 ISO4217_PATTERN = r"^[A-Z]{3}$"
 
 FINDING_VARIANT_OFFERS_COLLAPSED = "variant_offers_collapsed"
+FINDING_PRICE_INTEGRITY_DISCOUNT_MISMATCH = "price_integrity_discount_mismatch"
 FINDING_VARIANT_SKU_MISSING = "variant_sku_missing"
 FINDING_VARIANT_AVAILABILITY_MISSING = "variant_availability_missing"
 FINDING_POLICY_SHIPPING_MISSING = "policy_shipping_missing"
@@ -64,6 +88,18 @@ FINDING_POLICY_RETURN_PERIOD_MISSING = "policy_return_period_missing"
 FINDING_POLICY_CURRENCY_INVALID = "policy_currency_invalid"
 FINDING_POLICY_PAGE_INACCESSIBLE = "policy_page_inaccessible"
 FINDING_AGENT_DELTA_LOW_FIDELITY = "agent_delta_low_fidelity"
+FINDING_AGENT_DELTA_DISABLED = "agent_delta_disabled"
+FINDING_AGENT_DELTA_UNAVAILABLE = "agent_delta_unavailable"
+FINDING_MANIFEST_MISSING = "manifest_missing"
+FINDING_MANIFEST_INVALID = "manifest_invalid"
+FINDING_DIMENSION_NOT_EVALUATED = "dimension_not_evaluated"
+FINDING_PRODUCT_SAMPLE_MISSING = "product_sample_missing"
+FINDING_PRODUCT_JSONLD_MISSING = "product_jsonld_missing"
+FINDING_PRODUCT_SCHEMA_REQUIRED_MISSING = "product_schema_required_missing"
+FINDING_PRODUCT_SCHEMA_RECOMMENDED_MISSING = "product_schema_recommended_missing"
+FINDING_PRODUCT_ADDITIONAL_PROPERTY_MISSING = "product_additional_property_missing"
+FINDING_METAFIELD_CRITICAL_GAP = "metafield_critical_gap"
+FINDING_TAXONOMY_INCONSISTENT = "taxonomy_inconsistent"
 
 D_UCP1_ID = "D-UCP1"
 D_UCP2_ID = "D-UCP2"

@@ -49,7 +49,7 @@ from app.services.config.detail_extraction_constants import (
 logger = logging.getLogger(__name__)
 
 
-def _sanitize_detail_placeholder_scalars(
+def sanitize_detail_placeholder_scalars(
     record: dict[str, Any], *, identity_url: str = ""
 ) -> None:
     title = clean_text(record.get("title"))
@@ -98,13 +98,6 @@ def _sanitize_detail_placeholder_scalars(
         else:
             record.pop("product_attributes", None)
 
-
-def sanitize_detail_placeholder_scalars(
-    record: dict[str, Any], *, identity_url: str = ""
-) -> None:
-    _sanitize_detail_placeholder_scalars(record, identity_url=identity_url)
-
-
 def _feature_text_is_json_object(value: str) -> bool:
     text = clean_text(value)
     if not (text.startswith("{") and text.endswith("}")):
@@ -115,7 +108,7 @@ def _feature_text_is_json_object(value: str) -> bool:
         return False
 
 
-def _sanitize_detail_identity_scalars(
+def sanitize_detail_identity_scalars(
     record: dict[str, Any],
     *,
     identity_url: str,
@@ -148,15 +141,6 @@ def _sanitize_detail_identity_scalars(
             )
             field_sources = record.setdefault("_field_sources", {})
             field_sources["title"] = ["url_slug"]
-
-
-def sanitize_detail_identity_scalars(
-    record: dict[str, Any],
-    *,
-    identity_url: str,
-) -> None:
-    _sanitize_detail_identity_scalars(record, identity_url=identity_url)
-
 
 def _repair_detail_title_from_requested_identity(
     record: dict[str, Any],

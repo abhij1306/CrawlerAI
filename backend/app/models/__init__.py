@@ -18,6 +18,7 @@ from app.models.product_intelligence import (
     ProductIntelligenceSourceProduct,
 )
 from app.models.review import ReviewPromotion
+from app.models.ucp_audit import UCPAuditJob, UCPAuditPageResult, UCPAuditReport
 
 __all__ = [
     "Base",
@@ -39,4 +40,7 @@ __all__ = [
     "LLMConfig",
     "LLMCostLog",
     "ReviewPromotion",
+    "UCPAuditJob",
+    "UCPAuditPageResult",
+    "UCPAuditReport",
 ]

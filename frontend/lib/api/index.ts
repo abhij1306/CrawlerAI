@@ -10,6 +10,9 @@ import type {
   DataEnrichmentJob,
   DataEnrichmentJobCreatePayload,
   DataEnrichmentJobDetail,
+  UcpAuditJob,
+  UcpAuditJobCreatePayload,
+  UcpAuditJobDetail,
   Dashboard,
   DomainRecipe,
   DomainCookieMemoryRecord,
@@ -146,6 +149,19 @@ export const api = {
   },
   getDataEnrichmentJob: (jobId: number) =>
     apiClient.get<DataEnrichmentJobDetail>(`/api/data-enrichment/jobs/${jobId}`),
+  createUcpAuditJob: (payload: UcpAuditJobCreatePayload) =>
+    apiClient.post<UcpAuditJob>('/api/ucp-audit/jobs', payload),
+  listUcpAuditJobs: (params?: { limit?: number }) => {
+    const query = new URLSearchParams();
+    if (params?.limit !== undefined) query.set('limit', String(params.limit));
+    return apiClient.get<UcpAuditJob[]>(withQuery('/api/ucp-audit/jobs', query));
+  },
+  getUcpAuditJob: (jobId: number) =>
+    apiClient.get<UcpAuditJobDetail>(`/api/ucp-audit/jobs/${jobId}`),
+  exportUcpAuditJson: (jobId: number) =>
+    `${getApiBaseUrl()}/api/ucp-audit/jobs/${jobId}/export.json`,
+  exportUcpAuditMarkdown: (jobId: number) =>
+    `${getApiBaseUrl()}/api/ucp-audit/jobs/${jobId}/export.md`,
   reviewProductIntelligenceMatch: (
     jobId: number,
     matchId: number,

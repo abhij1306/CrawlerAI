@@ -58,7 +58,7 @@ def score_product_schema(url: str, html: str) -> UCPSchemaScore:
             product.get(config.JSON_LD_ADDITIONAL_PROPERTY_FIELD)
         ),
         raw_product_type=_first_text(product, config.JSON_LD_CATEGORY_FIELDS),
-        raw_offers=_offer_rows(product.get(config.JSON_LD_OFFERS_FIELD)),
+        raw_offers=_product_offer_rows(product),
     )
 
 
@@ -90,6 +90,12 @@ def _path_has_value(value: object, path: tuple[str, ...]) -> bool:
         return any(_path_has_value(item, path) for item in value)
     if not isinstance(value, dict):
         return False
+    if key == config.JSON_LD_OFFERS_FIELD and key not in value:
+        variants = value.get("hasVariant")
+        if isinstance(variants, dict):
+            variants = [variants]
+        if isinstance(variants, list):
+            return any(_path_has_value(item, path) for item in variants)
     return _path_has_value(value.get(key), tuple(tail))
 
 
@@ -111,6 +117,28 @@ def _list_of_dicts(value: object) -> list[dict]:
 
 def _offer_rows(value: object) -> list[dict]:
     return _list_of_dicts(value)
+
+
+def _product_offer_rows(product: dict) -> list[dict]:
+    rows = _offer_rows(product.get(config.JSON_LD_OFFERS_FIELD))
+    variants = product.get("hasVariant")
+    if isinstance(variants, dict):
+        variants = [variants]
+    if isinstance(variants, list):
+        for variant in variants:
+            if isinstance(variant, dict):
+                for offer in _offer_rows(variant.get(config.JSON_LD_OFFERS_FIELD)):
+                    rows.append(
+                        {
+                            **{
+                                key: variant.get(key)
+                                for key in ("sku", "gtin", "gtin13", "image", "name")
+                                if variant.get(key) not in (None, "", [], {})
+                            },
+                            **offer,
+                        }
+                    )
+    return rows
 
 
 def _first_text(item: dict, keys: tuple[str, ...]) -> str | None:

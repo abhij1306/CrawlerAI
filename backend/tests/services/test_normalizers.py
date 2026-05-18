@@ -180,6 +180,22 @@ def test_normalize_availability_schema_url() -> None:
     )
 
 
+def test_variant_price_backfill_treats_numeric_zero_as_distinct() -> None:
+    record: dict[str, object] = {
+        "price": "10.00",
+        "currency": "USD",
+        "variants": [
+            {"sku": "FREE", "price": 0},
+            {"sku": "UNKNOWN"},
+        ],
+    }
+
+    backfill._backfill_variant_context(record)
+
+    assert record["variants"][0]["price"] == 0
+    assert "price" not in record["variants"][1]
+
+
 def test_field_coercion_repairs_source_quality_before_enrichment() -> None:
     assert coerce_field_value("brand", {"0": "Apple"}, "") == "Apple"
     assert coerce_field_value("brand", "8552", "") is None

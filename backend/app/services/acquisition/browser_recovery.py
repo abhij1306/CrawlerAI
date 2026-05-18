@@ -129,6 +129,7 @@ def _challenge_has_cleared(
     classification: Any,
     looks_like_low_content_shell,
 ) -> bool:
+    _ = status_code
     if bool(getattr(classification, "blocked", False)):
         return False
     if looks_like_low_content_shell is None:

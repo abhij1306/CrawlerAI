@@ -75,6 +75,7 @@ from app.services.acquisition.browser_stage_runner import (
 from app.services.acquisition import browser_pool as _browser_pool
 from app.services.acquisition.browser_pool import (
     SharedBrowserRuntime,
+    block_unneeded_route as _block_unneeded_route,
     browser_runtime_snapshot as _browser_runtime_snapshot_impl,
     get_browser_runtime as _get_browser_runtime_impl,
     patchright_browser_available,
@@ -94,6 +95,7 @@ from app.services.config.browser_fingerprint_profiles import REAL_CHROME_IGNORE_
 from app.services.acquisition.browser_identity import build_playwright_context_spec
 from app.services.acquisition.browser_pool import (
     browser_pool_state as _BROWSER_POOL,
+    real_chrome_candidate_paths as _real_chrome_candidate_paths,
     resolve_browser_binary as _resolve_browser_binary,
 )
 from app.services.acquisition.browser_storage_state import persist_context_storage_state
@@ -126,7 +128,6 @@ from app.services.config.runtime_settings import (
 from app.services.domain_utils import normalize_domain
 
 logger = logging.getLogger(__name__)
-
 
 def _sync_browser_pool_compatibility() -> None:
     _browser_pool.SharedBrowserRuntime = SharedBrowserRuntime
@@ -461,27 +462,28 @@ async def browser_fetch(
                     on_event=on_event,
                     emit_browser_event=_emit_browser_event,
                 )
-                response = await recover_browser_challenge(
-                    page,
-                    url=url,
-                    response=response,
-                    browser_engine=runtime_engine,
-                    timeout_seconds=_remaining(),
-                    phase_timings_ms=phase_timings_ms,
-                    challenge_wait_max_seconds=float(
-                        crawler_runtime_settings.challenge_wait_max_seconds or 0
-                    ),
-                    challenge_poll_interval_ms=int(
-                        crawler_runtime_settings.challenge_poll_interval_ms
-                    ),
-                    navigation_timeout_ms=int(
-                        crawler_runtime_settings.browser_navigation_domcontentloaded_timeout_ms
-                    ),
-                    elapsed_ms=_elapsed_ms,
-                    classify_blocked_page=classify_blocked_page_async,
-                    get_page_html=get_page_html,
-                    looks_like_low_content_shell=looks_like_low_content_shell,
-                )
+                if int(getattr(response, "status", 0) or 0) >= 400:
+                    response = await recover_browser_challenge(
+                        page,
+                        url=url,
+                        response=response,
+                        browser_engine=runtime_engine,
+                        timeout_seconds=_remaining(),
+                        phase_timings_ms=phase_timings_ms,
+                        challenge_wait_max_seconds=float(
+                            crawler_runtime_settings.challenge_wait_max_seconds or 0
+                        ),
+                        challenge_poll_interval_ms=int(
+                            crawler_runtime_settings.challenge_poll_interval_ms
+                        ),
+                        navigation_timeout_ms=int(
+                            crawler_runtime_settings.browser_navigation_domcontentloaded_timeout_ms
+                        ),
+                        elapsed_ms=_elapsed_ms,
+                        classify_blocked_page=classify_blocked_page_async,
+                        get_page_html=get_page_html,
+                        looks_like_low_content_shell=looks_like_low_content_shell,
+                    )
                 navigation_strategy = str(
                     getattr(response, "browser_navigation_strategy", None)
                     or navigation_strategy

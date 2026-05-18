@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import re
 from typing import Any
 
@@ -33,6 +34,7 @@ __all__ = (
     "_drop_polluted_parent_scalar_axes",
 )
 
+logger = logging.getLogger(__name__)
 _REMAP_ELIGIBLE_AXES = frozenset({"state", "type", "style", "configuration"})
 _CORE_AXES = frozenset({"size", "color"})
 try:
@@ -48,18 +50,28 @@ public_variant_axis_fields = tuple(
     for field_name in tuple(PUBLIC_VARIANT_AXIS_FIELDS or ())
     if str(field_name).strip()
 )
+_VARIANT_REQUIRED_FIELDS = (*FLAT_VARIANT_KEYS, *public_variant_axis_fields)
 scalar_field_pollution_values = frozenset(
     clean_text(value).casefold()
     for value in tuple(SCALAR_FIELD_POLLUTION_VALUES or ())
     if clean_text(value)
 )
-variant_separate_dimension_size_rules = tuple(
-    (re.compile(str(rule.get("pattern")), re.I), clean_text(rule.get("style")))
-    for rule in tuple(VARIANT_SEPARATE_DIMENSION_SIZE_RULES or ())
-    if isinstance(rule, dict)
-    and str(rule.get("pattern") or "").strip()
-    and clean_text(rule.get("style"))
-)
+variant_separate_dimension_size_rules = []
+for rule in tuple(VARIANT_SEPARATE_DIMENSION_SIZE_RULES or ()):
+    if not isinstance(rule, dict):
+        continue
+    pattern = str(rule.get("pattern") or "").strip()
+    style = clean_text(rule.get("style"))
+    if not pattern or not style:
+        continue
+    try:
+        variant_separate_dimension_size_rules.append((re.compile(pattern, re.I), style))
+    except re.error:
+        logger.warning(
+            "Skipping invalid variant separate-dimension size rule",
+            extra={"pattern": pattern},
+        )
+variant_separate_dimension_size_rules = tuple(variant_separate_dimension_size_rules)
 variant_title_stopwords = frozenset(
     clean_text(token).lower()
     for token in tuple(VARIANT_TITLE_STOPWORDS or ())
@@ -84,10 +96,11 @@ def _remap_generic_variant_axes(record: dict[str, Any]) -> None:
     if not generic_axis_values:
         return
     for axis, values in generic_axis_values.items():
-        if len(values) < 2:
+        unique_values = list(dict.fromkeys(values))
+        if len(unique_values) < 2:
             continue
         # Only remap if no variant already has the target axis populated.
-        inferred = infer_variant_group_name_from_values(values)
+        inferred = infer_variant_group_name_from_values(unique_values)
         if not inferred or inferred not in _CORE_AXES:
             continue
         # Check that no variant already has the target axis set.
@@ -191,7 +204,7 @@ def _clean_variant_rows(record: dict[str, Any]) -> None:
             cleaned_variant["url"] = variant.get("url")
         if any(
             cleaned_variant.get(field_name) not in (None, "", [], {})
-            for field_name in (*FLAT_VARIANT_KEYS, *public_variant_axis_fields)
+            for field_name in _VARIANT_REQUIRED_FIELDS
         ):
             cleaned_variants.append(cleaned_variant)
     if cleaned_variants:

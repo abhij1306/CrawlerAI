@@ -13,6 +13,9 @@ from app.services.extract.variant_normalization import (
 
 __all__ = ("normalize_variant_record",)
 
+# Underscore-prefixed stage functions are intentionally imported from sibling
+# modules here. They are stable only for this internal normalization pipeline.
+
 
 def normalize_variant_record(record: dict[str, Any], *, finalize_contract: bool = True) -> None:
     hydration._hydrate_variant_axes(record)

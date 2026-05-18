@@ -53,7 +53,7 @@ def collect_inline_scalar_rows(
 ) -> list[tuple[str, str]]:
     normalized_allowed_fields = {
         str(field_name).strip()
-        for field_name in list(allowed_fields or ())
+        for field_name in allowed_fields or ()
         if str(field_name).strip()
     }
     if normalized_allowed_fields and not (
