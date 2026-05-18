@@ -233,6 +233,37 @@ def test_public_record_firewall_flattens_variants_to_public_shape() -> None:
     }
 
 
+def test_public_record_firewall_preserves_url_query_currency_param() -> None:
+    data, _rejected = public_record_data_for_surface(
+        {
+            "title": "Widget",
+            "variants": [
+                {
+                    "url": "/products/widget?country=IN&currency%3DINR&variant=1",
+                    "color": "Silver",
+                },
+                {
+                    "url": "/products/widget?country=IN&amp;currency%3DINR&amp;variant=2",
+                    "color": "Black",
+                },
+            ],
+        },
+        surface="ecommerce_detail",
+        page_url="https://example.com/products/widget",
+    )
+
+    assert data["variants"] == [
+        {
+            "color": "Silver",
+            "url": "https://example.com/products/widget?country=IN&currency%3DINR&variant=1",
+        },
+        {
+            "color": "Black",
+            "url": "https://example.com/products/widget?country=IN&currency%3DINR&variant=2",
+        },
+    ]
+
+
 def test_public_record_firewall_normalizes_variant_axis_aliases() -> None:
     data, _rejected = public_record_data_for_surface(
         {

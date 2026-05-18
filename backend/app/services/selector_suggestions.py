@@ -5,7 +5,7 @@ from bs4 import BeautifulSoup, Tag
 from app.services.config.extraction_rules import EXTRACTION_RULES, SELECTOR_NOISE_VALUES
 from app.services.config.selectors import CARD_SELECTORS, LISTING_FIELD_SELECTORS
 from app.services.shared.field_coerce import PRICE_RE, clean_text
-from app.services.xpath_service import build_absolute_xpath, extract_selector_value
+from app.services.dom.xpath_service import build_absolute_xpath, extract_selector_value
 
 
 selector_noise_values = frozenset(

@@ -1,5 +1,18 @@
 from __future__ import annotations
 
+__all__ = (
+    "build_variant_candidate_group",
+    "node_class_tokens",
+    "ancestor_class_tokens",
+    "variant_scope_source",
+    "variant_option_node_types",
+    "variant_option_node_type",
+    "node_matches_selector",
+    "weak_variant_option_node_allowed",
+    "anchor_is_variant_candidate",
+    "anchor_has_selected_variant_signal",
+)
+
 from typing import Any
 
 from soupsieve import match as selector_matches

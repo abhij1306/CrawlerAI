@@ -1,5 +1,12 @@
 from __future__ import annotations
 
+__all__ = (
+    "variant_context_noise_tokens",
+    "variant_node_in_noise_context",
+    "variant_scope_roots",
+    "select_variant_nodes",
+)
+
 from typing import Any
 
 from soupsieve import match as selector_matches

@@ -149,6 +149,10 @@ When `llm_enabled=True` and active config allows the relevant LLM workflow, LLM 
 Browser acquisition may use Patchright or real Chrome to produce better observations: rendered HTML, network payloads, visible text, accessibility text, readiness probes, and screenshots when enabled. It may also produce explicit detail-expansion artifacts (HTML/JSON from clicked size/color variant controls, expanded accordion sections, etc.). These are observation artifacts and are allowed inputs to extraction and LLM repair.
 Browser acquisition must not fabricate fields. It must not run hidden page scripts that directly assign `price`, `brand`, `variants`, or other logical fields outside the normal extraction/repair provenance path.
 
+UCP audit is observational and report-only. It may call existing acquisition and extraction primitives to compare manifest, structured data, rendered data, variant fields, taxonomy coverage, and policy-readability signals, but it must store findings in `ucp_audit_*` tables only. It must not mutate `CrawlRun.surface`, `CrawlRecord.data`, publish/export cleanup, selector memory, or enrichment output to make a compliance score look better.
+
+Challenge recovery is part of acquisition, not extraction. Direct browser navigation and origin warmup must both run the bounded challenge wait/activity/retry loop. A provider-marked low-content shell may not be accepted as final just because the blocked-page classifier is not yet `blocked=True`; it must be re-polled until it becomes usable content or the configured challenge budget is exhausted.
+
 Field-aware browser retry is allowed when policy and diagnostics justify it. A non-browser fetch that produces a low-quality ecommerce detail record missing requested/default high-value fields may retry browser. Default ecommerce detail retry targets stay limited to `price`, `title`, and `image_url`; user-requested fields are added explicitly. A Patchright result with usable content may escalate once to real Chrome only when high-value fields remain missing and diagnostics show weak rendered evidence. Every retry must be logged.
 
 Diagnostics controls are user controls. If `diagnostics_profile.capture_screenshot` is `False`, browser acquisition must not capture any screenshots, regardless of outcome.
@@ -178,6 +182,7 @@ is a crawler bug, not stricter security detection.
 - A usable detail page retries from Chromium to real Chrome solely because Akamai/DataDome/Cloudflare provider markers are present
 - Host protection memory records a hard block from a usable browser page with provider markers but no title/strong blocked evidence
 - A retry happens that is not logged and visible in diagnostics
+- Direct navigation challenge recovery runs only during origin warmup, or provider-marked low-content shells skip the bounded recovery loop
 - Browser escalation triggers for a URL that returned 200 with complete requested/default high-value fields
 - Browser-side code writes logical extraction fields directly into the record instead of returning observation artifacts
 - Browser acquisition captures a screenshot when `capture_screenshot=False`

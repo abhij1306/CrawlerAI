@@ -48,7 +48,7 @@ from app.services.extract.listing_integrity_gate import (
     IntegrityDecision,
     evaluate_listing_integrity,
 )
-from app.services.extract.detail_identity_core import (
+from app.services.extract.detail.identity.core import (
     listing_detail_like_path,
     listing_url_is_structural,
 )
@@ -65,7 +65,7 @@ from app.services.extract.listing_card_fragments import (
 )
 from app.services.extract.listing_visual import visual_listing_records
 from app.services.extract.content_listing_handler import has_table_row_intent, table_row_records
-from app.services.extract.detail_price_core import currency_hint_from_page_url
+from app.services.extract.detail.price.core import currency_hint_from_page_url
 from app.services.field_policy import normalize_requested_field
 from app.services.shared.field_coerce import (
     PRICE_RE,

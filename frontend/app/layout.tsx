@@ -3,13 +3,13 @@ import Script from 'next/script';
 import './globals.css';
 
 // Next.js App Router root layout; invoked by file-system routing.
-import { JetBrains_Mono, Outfit } from 'next/font/google';
+import { JetBrains_Mono, Inter } from 'next/font/google';
 
 import { AppShell } from '../components/layout/app-shell';
 import { QueryProvider } from '../components/ui/query-provider';
 
 // Primary UI font
-const mainFont = Outfit({
+const mainFont = Inter({
   subsets: ['latin'],
   variable: '--font-primary-source',
   display: 'swap',

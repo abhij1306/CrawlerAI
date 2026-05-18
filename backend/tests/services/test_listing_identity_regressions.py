@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.services.extract.detail_identity_core import (
+from app.services.extract.detail.identity.core import (
     listing_detail_like_path,
     listing_url_is_structural,
 )

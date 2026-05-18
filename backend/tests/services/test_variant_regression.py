@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from bs4 import BeautifulSoup
 
-from app.services.extract.detail_dom_variant_extraction import extract_variants_from_dom
-from app.services.extract.variant_record_normalization import normalize_variant_record
+from app.services.extract.detail.variants.dom_extraction import extract_variants_from_dom
+from app.services.extract.variant_normalization import normalize_variant_record
 
 
 def _dom_variants(html: str, page_url: str = "https://example.com/pdp/item") -> dict[str, object]:

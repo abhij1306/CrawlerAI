@@ -37,7 +37,7 @@ placeholder_image_url_tokens = tuple(
 
 
 def absolute_url(base_url: str, candidate: object) -> str:
-    text = clean_text(candidate)
+    text = _clean_url_text(candidate)
     if not text:
         return ""
     parsed = urlparse(text)
@@ -48,6 +48,16 @@ def absolute_url(base_url: str, candidate: object) -> str:
     if _BARE_HOST_URL_RE.fullmatch(text):
         return f"https://{text}"
     return urljoin(base_url, text)
+
+
+def _clean_url_text(value: object) -> str:
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+    ampersand_marker = "\0AMPERSAND\0"
+    protected = re.sub(r"&(amp|#38|#x26);", ampersand_marker, raw, flags=re.I)
+    protected = protected.replace("&", ampersand_marker)
+    return clean_text(protected).replace(ampersand_marker, "&")
 
 
 def same_host(base_url: str, candidate_url: str) -> bool:

@@ -1,11 +1,16 @@
 from __future__ import annotations
 
+__all__ = (
+    "extract_structured_listing",
+    "allow_embedded_json_listing_payloads",
+)
+
 import re
 from typing import Any, Iterator
 from urllib.parse import urlsplit
 
 from app.services.config.extraction_rules import LISTING_NAVIGATION_TITLE_HINTS
-from app.services.extract.detail_identity_core import listing_url_is_structural
+from app.services.extract.detail.identity.core import listing_url_is_structural
 from app.services.extract.listing_record_finalizer import finalize_listing_price_fields
 from app.services.extract.field_candidates import (
     collect_structured_candidates,

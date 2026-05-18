@@ -1,5 +1,11 @@
 from __future__ import annotations
 
+__all__ = (
+    "article_card_text",
+    "article_card_date",
+    "article_card_summary",
+)
+
 from bs4 import BeautifulSoup
 
 from app.services.shared.field_coerce import clean_text

@@ -9,13 +9,14 @@ from app.services.adapters.ebay import EbayAdapter
 from app.services.adapters.indeed import IndeedAdapter
 from app.services.adapters.linkedin import LinkedInAdapter
 from app.services.adapters.nike import NikeAdapter
-from app.services.extract.detail_record_assembly import (
+from app.services.config.runtime_settings import crawler_runtime_settings
+from app.services.extract.detail.assembly.record_assembly import (
     build_detail_record,
     extract_detail_records,
 )
 from app.services.extraction_html_helpers import extract_job_sections
 from app.services.listing_extractor import extract_listing_records
-from app.services.xpath_service import extract_selector_value
+from app.services.dom.xpath_service import extract_selector_value
 from tests.fixtures.loader import read_optional_artifact_text
 
 
@@ -954,6 +955,20 @@ def test_xpath_selector_extraction_applies_regex_to_xpath_result() -> None:
     assert selector_used == "//span[@class='rating']/text()"
 
 
+def test_xpath_regex_invalid_timeout_falls_back_without_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(crawler_runtime_settings, "selector_regex_timeout_seconds", "bad")
+    html = '<span class="rating">star-rating Three</span>'
+
+    with pytest.raises(ValueError, match="selector_regex_timeout_seconds"):
+        extract_selector_value(
+            html,
+            xpath="//span[@class='rating']/text()",
+            regex=r"star-rating\s+(\w+)",
+        )
+
+
 @pytest.mark.asyncio
 async def test_amazon_adapter_preserves_css_field_output() -> None:
     result = await AmazonAdapter().extract(
@@ -1321,9 +1336,8 @@ async def test_amazon_adapter_extracts_detail_completeness_fields() -> None:
         "24GB GDDR6X memory Triple-fan cooling "
         "ASIN: B08J5F3G18 Item model number: 24G-P5-3987-KR UPC: 843368067763"
     )
-    assert record["additional_images"] == [
-        "https://m.media-amazon.com/images/I/71tLsSyLUZL._SX900_.jpg"
-    ]
+    assert record["image_url"] == "https://m.media-amazon.com/images/I/71tLsSyLUZL.jpg"
+    assert record["additional_images"] is None
 
 
 @pytest.mark.asyncio

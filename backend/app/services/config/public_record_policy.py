@@ -55,6 +55,7 @@ PUBLIC_RECORD_LEGACY_VARIANT_FIELDS = frozenset(
         "option_2_values",
     }
 )
+PUBLIC_RECORD_LEGACY_OPTION_FIELD_PATTERN = r"option\d+_(?:name|values?)"
 PUBLIC_RECORD_BARCODE_LENGTHS = frozenset({8, 12, 13, 14})
 PUBLIC_RECORD_BRAND_REGION_SUFFIX_TOKENS = frozenset(
     {

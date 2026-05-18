@@ -21,6 +21,7 @@ from app.models.product_intelligence import (
 )
 from app.models.crawl_run import CrawlLog, CrawlRecord, CrawlRun
 from app.models.review import ReviewPromotion
+from app.models.ucp_audit import UCPAuditJob, UCPAuditPageResult, UCPAuditReport
 from app.models.llm import LLMCostLog
 from app.services.acquisition.host_protection_memory import (
     load_host_protection_policy,
@@ -281,6 +282,55 @@ async def test_reset_application_data_rolls_back_when_domain_memory_reset_fails(
     assert (await db_session.execute(select(CrawlRun))).scalars().all() != []
     assert (await db_session.execute(select(CrawlRecord))).scalars().all() != []
     assert (await db_session.execute(select(DomainMemory))).scalars().all() != []
+
+
+@pytest.mark.asyncio
+async def test_reset_application_data_clears_ucp_audit_rows(
+    db_session: AsyncSession,
+    test_user,
+    workspace_tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.services import dashboard_service
+
+    artifacts_dir = workspace_tmp_path / "artifacts"
+    cookies_dir = workspace_tmp_path / "cookies"
+    artifacts_dir.mkdir(parents=True, exist_ok=True)
+    cookies_dir.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(dashboard_service.settings, "artifacts_dir", artifacts_dir)
+    monkeypatch.setattr(dashboard_service.settings, "cookie_store_dir", cookies_dir)
+
+    job = UCPAuditJob(user_id=test_user.id, domain="example.com", options={}, summary={})
+    db_session.add(job)
+    await db_session.flush()
+    db_session.add(
+        UCPAuditPageResult(
+            job_id=job.id,
+            url="https://example.com/products/widget",
+            acquisition_mode="http_only",
+            dimension_payloads={},
+            findings=[],
+        )
+    )
+    db_session.add(
+        UCPAuditReport(
+            job_id=job.id,
+            overall_score=80,
+            dimension_scores=[],
+            findings=[],
+            report_json={"domain": "example.com"},
+            markdown_report="# Report",
+        )
+    )
+    await db_session.commit()
+
+    result = await reset_application_data(db_session)
+
+    assert result["ucp_audit_jobs_deleted"] == 1
+    assert result["ucp_audit_page_results_deleted"] == 1
+    assert result["ucp_audit_reports_deleted"] == 1
+    for model in (UCPAuditReport, UCPAuditPageResult, UCPAuditJob):
+        assert (await db_session.execute(select(model))).scalars().all() == []
 
 
 @pytest.mark.asyncio

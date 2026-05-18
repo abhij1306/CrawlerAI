@@ -22,7 +22,6 @@ from app.services.config.network_payload_specs import (
     SURFACE_ECOMMERCE_DETAIL,
     VARIATION_KEYS,
 )
-from app.services.extract.detail_identity_core import detail_identity_codes_from_url
 from app.services.extraction_html_helpers import extract_job_sections, html_to_text
 from app.services.extract.field_candidates import (
     collect_structured_candidates,
@@ -187,6 +186,8 @@ def _availability_payload_detail_result(
 
 
 def _page_identity_codes(page_url: str) -> set[str]:
+    from app.services.extract.detail.identity.core import detail_identity_codes_from_url
+
     codes = set(detail_identity_codes_from_url(page_url))
     parsed = urlparse(str(page_url or ""))
     terminal = str(parsed.path or "").rstrip("/").split("/")[-1]

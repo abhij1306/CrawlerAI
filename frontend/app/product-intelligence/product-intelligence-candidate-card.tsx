@@ -27,13 +27,13 @@ export function CandidateGroupSection({
   return (
     <details className="group" open={groupIndex === 0}>
       <summary className="hover:bg-background-alt/50 flex cursor-pointer list-none items-center gap-4 px-4 py-3 transition-colors select-none">
-        <div className="border-divider bg-background text-muted group-open:bg-accent group-open:border-accent type-caption-mono flex size-6 shrink-0 items-center justify-center rounded-full border font-bold group-open:text-white">
+        <div className="border-divider bg-background text-muted group-open:bg-accent group-open:border-accent type-caption-mono flex size-6 shrink-0 items-center justify-center rounded-full border font-normal group-open:text-white">
           {group.candidates.length}
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <span
-              className="text-foreground type-body truncate font-medium"
+              className="text-foreground type-body truncate font-normal"
               title={group.sourceTitle}
             >
               {group.sourceTitle}
@@ -53,7 +53,7 @@ export function CandidateGroupSection({
               <span className="bg-divider h-1 w-1 rounded-full" />
             ) : null}
             {group.sourcePrice ? (
-              <span className="text-foreground type-caption-mono font-medium">
+              <span className="text-foreground type-caption-mono font-normal">
                 {formatPrice(group.sourcePrice, group.sourceCurrency)}
               </span>
             ) : null}
@@ -115,7 +115,7 @@ function CandidateCard({
             </div>
             <div className="flex flex-col gap-1">
               {stringField(record.price) && stringField(record.price) !== '--' ? (
-                <div className="text-foreground type-body font-semibold">
+                <div className="text-foreground type-body font-normal">
                   {formatExtractedPrice(record.price, record.currency)}
                 </div>
               ) : null}
@@ -178,7 +178,7 @@ function CandidateImage({
       )}
       <div
         className={cn(
-          'type-caption-mono absolute right-1.5 bottom-1.5 rounded-md border px-1.5 py-0.5 font-bold shadow-sm',
+          'type-caption-mono absolute right-1.5 bottom-1.5 rounded-md border px-1.5 py-0.5 font-normal shadow-sm',
           score >= 0.6
             ? 'bg-success border-success text-white'
             : score >= 0.4

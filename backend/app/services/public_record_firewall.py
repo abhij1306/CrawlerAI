@@ -22,6 +22,10 @@ from app.services.config.public_record_policy import (
     PUBLIC_RECORD_URL_BLOCKED_PATH_MARKERS,
     PUBLIC_RECORD_URL_MAX_LENGTH,
 )
+from app.services.extract.variant_normalization.contract import (
+    enforce_flat_variant_public_contract,
+    flatten_variants_for_public_output,
+)
 from app.services.field_policy import canonical_requested_fields, normalize_field_key
 from app.services.shared.field_coerce import (
     IMAGE_FIELDS,
@@ -31,9 +35,7 @@ from app.services.shared.field_coerce import (
     STRUCTURED_OBJECT_LIST_FIELDS,
     URL_FIELDS,
     coerce_field_value,
-    enforce_flat_variant_public_contract,
     finalize_record,
-    flatten_variants_for_public_output,
     text_or_none,
 )
 from app.services.field_url_normalization import (

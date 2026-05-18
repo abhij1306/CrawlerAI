@@ -8,6 +8,7 @@ import type {
   ProductIntelligenceDiscoveryResponse,
   ProductIntelligenceOptions,
 } from '../../lib/api/types';
+import { decodeUrlsForDisplay } from '../../lib/crawl/format';
 import { cn } from '../../lib/utils';
 import { syntaxHighlightJson } from '../../lib/ui/syntax';
 
@@ -54,7 +55,11 @@ export function JsonModal({
 }>) {
   const intelligence = isRecord(candidate.intelligence) ? candidate.intelligence : {};
   const hasIntelligence = Object.keys(intelligence).length > 0;
-  const text = JSON.stringify(hasIntelligence ? intelligence : (candidate.payload ?? {}), null, 2);
+  const text = JSON.stringify(
+    decodeUrlsForDisplay(hasIntelligence ? intelligence : (candidate.payload ?? {})),
+    null,
+    2,
+  );
 
   return (
     <>

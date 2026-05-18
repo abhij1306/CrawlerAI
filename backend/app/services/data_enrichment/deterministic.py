@@ -19,7 +19,6 @@ from app.services.config.data_enrichment import (
     DATA_ENRICHMENT_SIZE_CANDIDATE_FIELDS,
     DATA_ENRICHMENT_SIZE_CANDIDATE_SOURCES,
     DATA_ENRICHMENT_SIZE_CANDIDATE_TARGETS,
-    DATA_ENRICHMENT_TAXONOMY_VERSION,
     data_enrichment_settings,
 )
 from app.services.data_enrichment.shopify_catalog import (
@@ -31,7 +30,7 @@ from app.services.data_enrichment.shopify_catalog import (
     term_dict,
     top_taxonomy_candidates as shopify_top_taxonomy_candidates,
 )
-from app.services.extract.detail_price_core import currency_hint_from_page_url
+from app.services.extract.detail.price.core import currency_hint_from_page_url
 from app.services.normalizers import normalize_decimal_price
 from app.services.shared.field_coerce import (
     clean_text,
@@ -358,7 +357,9 @@ def build_seo_keywords(
 ) -> list[str] | None:
     stopwords = {
         str(item).casefold()
-        for item in object_list(repository_terms(load_attribute_repository()).get("seo_stopwords"))
+        for item in object_list(
+            repository_terms(load_attribute_repository()).get("seo_stopwords")
+        )
     }
     raw_parts = [
         data.get("title"),

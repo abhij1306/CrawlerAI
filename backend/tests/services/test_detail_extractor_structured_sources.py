@@ -5,28 +5,29 @@ import json
 import pytest
 from bs4 import BeautifulSoup
 
+from app.services.adapters.shopify import ShopifyAdapter
 from app.services.adapters.myntra import MyntraAdapter
-from app.services.extract.detail_record_assembly import (
+from app.services.extract.detail.assembly.record_assembly import (
     build_detail_record,
 )
-from app.services.extract.detail_dom_variant_options import variant_option_availability
-from app.services.extract.detail_price_core import (
+from app.services.extract.detail.variants.dom_options import variant_option_availability
+from app.services.extract.detail.price.core import (
     detail_currency_hint_is_host_level,
     reconcile_parent_price_against_variant_range,
     reconcile_detail_currency_with_url,
 )
-from app.services.extract.detail_image_cleanup import (
+from app.services.extract.detail.images.cleanup import (
     detail_image_matches_primary_family,
 )
-from app.services.extract.detail_final_cleanup import (
+from app.services.extract.detail.assembly.final_cleanup import (
     repair_ecommerce_detail_record_quality,
 )
-from app.services.extract.detail_variant_pruning import (
+from app.services.extract.detail.variants.pruning import (
     sanitize_variant_row,
 )
-from app.services.extract import detail_raw_signals
-from app.services.extract import detail_dom_completion
-from app.services.extract.variant_record_normalization import normalize_variant_record
+from app.services.extract.detail.assembly import raw_signals as detail_raw_signals
+from app.services.extract.detail.assembly import dom_completion as detail_dom_completion
+from app.services.extract.variant_normalization import normalize_variant_record
 from app.services.pipeline.extract_records import extract_records
 from tests.fixtures.loader import read_optional_artifact_text
 
@@ -199,7 +200,7 @@ def test_extract_ecommerce_detail_rejects_access_denied_shell_title() -> None:
     assert rows == []
 
 
-def test_extract_ecommerce_detail_defaults_missing_availability_to_unknown() -> None:
+def test_extract_ecommerce_detail_leaves_missing_availability_unset() -> None:
     html = """
     <html>
       <head>
@@ -225,7 +226,7 @@ def test_extract_ecommerce_detail_defaults_missing_availability_to_unknown() -> 
     )
 
     assert len(rows) == 1
-    assert rows[0]["availability"] == "unknown"
+    assert "availability" not in rows[0]
 
 
 def test_repair_ecommerce_detail_backfills_parent_image_from_variants() -> None:
@@ -2064,7 +2065,7 @@ def test_extract_ecommerce_detail_recovers_labeled_image_color_swatches() -> Non
 
 
 def test_extract_ecommerce_detail_guarded_dom_cartesian_keeps_axis_rows(monkeypatch: pytest.MonkeyPatch) -> None:
-    from app.services.extract import detail_dom_variant_extraction
+    from app.services.extract.detail.variants import dom_extraction as detail_dom_variant_extraction
 
     monkeypatch.setattr(
         detail_dom_variant_extraction,
@@ -3027,6 +3028,239 @@ def test_extract_ecommerce_detail_recovers_anchor_only_color_swatches() -> None:
             "https://www.gymshark.com/products/gymshark-arrival-5-shorts-white-ss22",
         ),
     ]
+
+
+def test_extract_ecommerce_detail_recovers_unlabeled_color_swatch_urls() -> None:
+    html = """
+    <html>
+      <body>
+        <h1>Men's Wool Runner</h1>
+        <div class="color-selector" role="radiogroup" aria-label="Color">
+          <a href="/products/mens-wool-runners-natural-grey"></a>
+          <a href="/products/mens-wool-runners-tuke-river" aria-current="true"></a>
+          <a href="/products/mens-wool-runners-true-black"></a>
+        </div>
+      </body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        "https://www.allbirds.com/products/mens-wool-runners-tuke-river",
+        "ecommerce_detail",
+        max_records=5,
+    )
+
+    assert len(rows) == 1
+    record = rows[0]
+    assert record["variant_count"] == 3
+    assert [(variant["color"], variant["url"]) for variant in record["variants"]] == [
+        (
+            "Natural Grey",
+            "https://www.allbirds.com/products/mens-wool-runners-natural-grey",
+        ),
+        (
+            "Tuke River",
+            "https://www.allbirds.com/products/mens-wool-runners-tuke-river",
+        ),
+        (
+            "True Black",
+            "https://www.allbirds.com/products/mens-wool-runners-true-black",
+        ),
+    ]
+
+
+def test_extract_ecommerce_detail_recovers_hidden_anchor_color_swatch_urls() -> None:
+    html = """
+    <html>
+      <body>
+        <h1>Ballpark Tassel Suede Sneakers - Black</h1>
+        <div class="swatch-options" role="radiogroup" aria-label="Color">
+          <button aria-label="Choose Blush variant" data-testid="swatch-option-ballpark-tassel-suede-sneakers-blush-unselected">
+            <span style="background-color:#C98F9D"></span>
+            <span class="h-0 w-0 opacity-0">
+              <a aria-hidden="true" tabindex="-1" href="/products/ballpark-tassel-suede-sneakers-blush">Blush</a>
+            </span>
+          </button>
+          <button aria-label="Choose Black variant" data-testid="swatch-option-ballpark-tassel-suede-sneakers-black-selected" aria-checked="true">
+            <span style="background-color:#000000"></span>
+            <span class="h-0 w-0 opacity-0">
+              <a aria-hidden="true" tabindex="-1" href="/products/ballpark-tassel-suede-sneakers-black">Black</a>
+            </span>
+          </button>
+        </div>
+      </body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        "https://www.fashionnova.com/products/ballpark-tassel-suede-sneakers-black",
+        "ecommerce_detail",
+        max_records=5,
+    )
+
+    assert len(rows) == 1
+    assert {
+        (variant["color"], variant["url"])
+        for variant in rows[0]["variants"]
+    } == {
+        (
+            "Blush",
+            "https://www.fashionnova.com/products/ballpark-tassel-suede-sneakers-blush",
+        ),
+        (
+            "Black",
+            "https://www.fashionnova.com/products/ballpark-tassel-suede-sneakers-black",
+        ),
+    }
+
+
+def test_extract_ecommerce_detail_recovers_linked_scent_offer_variants() -> None:
+    html = """
+    <html>
+      <head>
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "Product",
+          "name": "Allover Body Mist",
+          "offers": [
+            {
+              "@type": "Offer",
+              "availability": "https://schema.org/InStock",
+              "price": "4700.0",
+              "priceCurrency": "INR",
+              "url": "https://fentybeauty.com/en-in/products/allover-body-mist-green-raspberry?variant=43357324083245",
+              "itemOffered": {
+                "@type": "Product",
+                "name": "Allover Body Mist - Green Raspberry",
+                "sku": "FFS00144",
+                "image": "https://fentybeauty.com/cdn/green.jpg"
+              }
+            },
+            {
+              "@type": "Offer",
+              "availability": "https://schema.org/InStock",
+              "price": "4700.0",
+              "priceCurrency": "INR",
+              "url": "https://fentybeauty.com/en-in/products/allover-body-mist-hey-bouquet?variant=44216944033837",
+              "itemOffered": {
+                "@type": "Product",
+                "name": "Allover Body Mist - Hey, Bouquet",
+                "sku": "FFS00109",
+                "image": "https://fentybeauty.com/cdn/bouquet.jpg"
+              }
+            }
+          ]
+        }
+        </script>
+      </head>
+      <body><h1>Allover Body Mist</h1></body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        "https://fentybeauty.com/en-in/products/allover-body-mist-green-raspberry",
+        "ecommerce_detail",
+        max_records=5,
+    )
+
+    assert len(rows) == 1
+    assert {
+        (variant["scent"], variant["sku"], variant["url"])
+        for variant in rows[0]["variants"]
+    } == {
+        (
+            "Green Raspberry",
+            "FFS00144",
+            "https://fentybeauty.com/en-in/products/allover-body-mist-green-raspberry?variant=43357324083245",
+        ),
+        (
+            "Hey, Bouquet",
+            "FFS00109",
+            "https://fentybeauty.com/en-in/products/allover-body-mist-hey-bouquet?variant=44216944033837",
+        ),
+    }
+    assert all("color" not in variant for variant in rows[0]["variants"])
+
+
+@pytest.mark.asyncio
+async def test_shopify_adapter_expands_linked_product_color_handles(monkeypatch) -> None:
+    html = """
+    <html>
+      <head><script>Shopify.theme = { "name": "test" };</script></head>
+      <body>
+        <h1>Ballpark Tassel Suede Sneakers - Black</h1>
+        <div class="swatch-options" role="radiogroup" aria-label="Color">
+          <a href="/products/ballpark-tassel-suede-sneakers-black" aria-label="Black"></a>
+          <a href="/products/ballpark-tassel-suede-sneakers-blush" aria-label="Blush"></a>
+        </div>
+      </body>
+    </html>
+    """
+    products = {
+        "ballpark-tassel-suede-sneakers-black": {
+            "id": 1,
+            "title": "Ballpark Tassel Suede Sneakers - Black",
+            "vendor": "Fashion Nova",
+            "handle": "ballpark-tassel-suede-sneakers-black",
+            "product_type": "Shoes",
+            "options": [{"name": "Size"}],
+            "images": ["https://cdn.example/black.jpg"],
+            "variants": [
+                {
+                    "id": 101,
+                    "sku": "SPECIALGUEST_Black_6",
+                    "available": True,
+                    "price": 3999,
+                    "option1": "6",
+                }
+            ],
+        },
+        "ballpark-tassel-suede-sneakers-blush": {
+            "id": 2,
+            "title": "Ballpark Tassel Suede Sneakers - Blush",
+            "vendor": "Fashion Nova",
+            "handle": "ballpark-tassel-suede-sneakers-blush",
+            "product_type": "Shoes",
+            "options": [{"name": "Size"}],
+            "images": ["https://cdn.example/blush.jpg"],
+            "variants": [
+                {
+                    "id": 201,
+                    "sku": "SPECIALGUEST_Blush_6",
+                    "available": True,
+                    "price": 3999,
+                    "option1": "6",
+                }
+            ],
+        },
+    }
+
+    async def _fake_request_json(api_url: str, **_kwargs):
+        handle = api_url.rsplit("/products/", 1)[1].removesuffix(".js")
+        return products[handle]
+
+    adapter = ShopifyAdapter()
+    monkeypatch.setattr(adapter, "_request_json", _fake_request_json)
+
+    result = await adapter.extract(
+        "https://www.fashionnova.com/products/ballpark-tassel-suede-sneakers-black",
+        html,
+        "ecommerce_detail",
+    )
+
+    record = result.records[0]
+    assert record["variant_count"] == 2
+    assert {
+        (variant["color"], variant["size"], variant["sku"])
+        for variant in record["variants"]
+    } == {
+        ("Black", "6", "SPECIALGUEST_Black_6"),
+        ("Blush", "6", "SPECIALGUEST_Blush_6"),
+    }
 
 
 def test_extract_ecommerce_detail_recovers_variant_urls_from_js_state_option_mapping() -> None:
@@ -6913,6 +7147,34 @@ def test_normalize_variant_record_infers_single_variant_color_from_title_slug() 
             "url": "https://www.allbirds.com/products/mens-wool-runners-natural-black",
             "color": "Natural Black",
         }
+    ]
+
+
+def test_normalize_variant_record_infers_shared_color_slug_for_size_variants() -> None:
+    record = {
+        "title": "Men's Wool Runner",
+        "url": "https://www.allbirds.com/products/mens-wool-runners-tuke-river",
+        "variants": [
+            {
+                "sku": "WR2MTRV090",
+                "url": "https://www.allbirds.com/products/mens-wool-runners-tuke-river?variant=17874798215237",
+                "size": "9",
+                "availability": "out_of_stock",
+            },
+            {
+                "sku": "WR2MTRV100",
+                "url": "https://www.allbirds.com/products/mens-wool-runners-tuke-river?variant=17874798248005",
+                "size": "10",
+                "availability": "out_of_stock",
+            },
+        ],
+    }
+
+    normalize_variant_record(record)
+
+    assert [(variant["size"], variant["color"]) for variant in record["variants"]] == [
+        ("9", "Tuke River"),
+        ("10", "Tuke River"),
     ]
 
 

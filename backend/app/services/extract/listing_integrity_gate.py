@@ -1,3 +1,11 @@
+from __future__ import annotations
+
+__all__ = (
+    "IntegrityDecision",
+    "evaluate_listing_integrity",
+    "ensure_frozenset",
+)
+
 """Listing Integrity Gate — product-grid vs promo-only-cluster decision.
 
 Single owner for the accept/reject decision on a ranked listing candidate set.
@@ -7,7 +15,6 @@ Placement rationale: lives in ``backend/app/services/extract/`` because it is
 part of the listing-extraction bucket per ``docs/CODEBASE_MAP.md``.
 """
 
-from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
 
@@ -21,7 +28,7 @@ from app.services.config.extraction_rules import (
     LISTING_PRODUCT_DETAIL_ID_RE,
 )
 from app.services.config.runtime_settings import crawler_runtime_settings
-from app.services.extract.detail_identity_core import (
+from app.services.extract.detail.identity.core import (
     listing_detail_like_path,
     listing_url_is_structural,
 )

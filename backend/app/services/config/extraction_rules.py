@@ -253,7 +253,8 @@ AMAZON_IMAGE_CDN_HOSTS = frozenset(
     {"m.media-amazon.com", "images-na.ssl-images-amazon.com"}
 )
 AMAZON_IMAGE_LOW_RES_SUFFIX_PATTERN = (
-    rf"\.?{CDN_IMAGE_TRANSFORM_SUFFIX_PATTERN}(?=\.[a-z0-9]+$)"
+    rf"(?:\.?{CDN_IMAGE_TRANSFORM_SUFFIX_PATTERN}|"
+    r"\._[^/]*?(?:US|SR|SL|SX|SY|SS|UL)\d+[^/]*_)(?=\.[a-z0-9]+$)"
 )
 AMAZON_IMAGE_LOW_RES_MAX_DIMENSION = 999
 VARIANT_UI_NOISE_EXACT_MATCH_MAX_LENGTH = 8

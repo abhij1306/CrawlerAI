@@ -6,11 +6,13 @@ from urllib.parse import urlparse
 from selectolax.lexbor import LexborHTMLParser
 
 from app.services.adapters.base import AdapterResult, BaseAdapter
+from app.services.extract.variant_normalization.contract import (
+    flatten_variants_for_public_output,
+)
 from app.services.shared.field_coerce import (
     absolute_url,
     clean_text,
     finalize_record,
-    flatten_variants_for_public_output,
     text_or_none,
 )
 from app.services.js_state.helpers import (

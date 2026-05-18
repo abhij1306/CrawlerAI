@@ -9,6 +9,7 @@ import type { ComponentType, ReactNode } from 'react';
 import {
   BrainCircuit,
   BriefcaseBusiness,
+  ClipboardCheck,
   ChevronLeft,
   ChevronRight,
   Clock3,
@@ -46,6 +47,7 @@ const navGroups = [
       { href: '/runs', label: 'History', icon: Clock3 },
       { href: '/data-enrichment', label: 'Data Enrichment', icon: FileChartColumn },
       { href: '/product-intelligence', label: 'Product Intelligence', icon: BrainCircuit },
+      { href: '/ucp-audit', label: 'UCP Audit', icon: ClipboardCheck },
       { href: '/selectors', label: 'Selector Tool', icon: SearchCheck, exactMatch: true },
       { href: '/selectors/manage', label: 'Domain Memory', icon: DatabaseZap },
       { href: '/jobs', label: 'Jobs', icon: BriefcaseBusiness },
@@ -83,7 +85,7 @@ const navItemCount = navGroups.reduce((total, group) => total + group.items.leng
 const resetDialogCopy = {
   title: 'Reset workspace data',
   description:
-    'Delete crawl runs, records, logs, artifacts, runtime cookie files, learned domain memory, saved cookie memory, field feedback, host protection memory, and Product Intelligence data.',
+    'Delete crawl runs, records, logs, artifacts, runtime cookie files, learned domain memory, saved cookie memory, field feedback, host protection memory, Product Intelligence data, Data Enrichment data, and UCP Audit reports.',
   confirmLabel: 'Reset Workspace Data',
 } as const;
 
@@ -426,6 +428,11 @@ function getFallbackHeader(pathname: string): TopBarState {
     return {
       title: 'Product Intelligence',
       description: 'Find matching product pages and compare prices.',
+    };
+  if (pathname.startsWith('/ucp-audit'))
+    return {
+      title: 'UCP Audit',
+      description: 'Audit agent-readable commerce compliance for a domain.',
     };
   if (pathname.startsWith('/runs/'))
     return {

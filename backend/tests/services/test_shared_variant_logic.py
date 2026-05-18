@@ -6,7 +6,7 @@ import pytest
 
 from bs4 import BeautifulSoup
 
-from app.services.extract.detail_record_assembly import build_detail_record
+from app.services.extract.detail.assembly.record_assembly import build_detail_record
 from app.services.extract import variant_choice_traversal
 from app.services.extract.variant_choice_traversal import (
     iter_variant_choice_groups,
@@ -23,7 +23,7 @@ from app.services.extract.variant_identity_merge import (
 from app.services.extract.variant_option_value import (
     variant_option_value_is_noise,
 )
-from app.services.extract.detail_dom_variant_extraction import extract_variants_from_dom
+from app.services.extract.detail.variants.dom_extraction import extract_variants_from_dom
 
 variant_choice_container_for_input = (
     variant_choice_traversal._variant_choice_container_for_input

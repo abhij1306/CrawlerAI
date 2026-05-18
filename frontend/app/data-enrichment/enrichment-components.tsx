@@ -17,7 +17,7 @@ export function EnrichmentStatus({
     <div className="border-accent/30 bg-accent-subtle text-foreground animate-in fade-in flex flex-wrap items-center gap-3 rounded-[var(--radius-md)] border px-4 py-3 text-xs duration-300">
       <Loader2 className="text-accent size-4 animate-spin" aria-hidden="true" />
       <div className="min-w-[180px] flex-1">
-        <div className="font-medium">Enrichment running</div>
+        <div className="font-normal">Enrichment running</div>
         <div className="text-muted mt-0.5">
           Processing {sourceCount} record{sourceCount === 1 ? '' : 's'}. Normalizing price, color,
           size, and category. {llmEnabled ? 'LLM refinement active.' : 'Deterministic rules only.'}
@@ -26,11 +26,11 @@ export function EnrichmentStatus({
       <div className="flex items-center gap-2">
         <Badge
           tone={llmEnabled ? 'accent' : 'neutral'}
-          className="h-5 px-1.5 text-xs font-bold tracking-tight uppercase"
+          className="h-5 px-1.5 text-xs font-normal tracking-tight uppercase"
         >
           {llmEnabled ? 'LLM ENABLED' : 'RULES ONLY'}
         </Badge>
-        <Badge tone="info" className="h-5 px-1.5 text-xs font-bold tracking-tight uppercase">
+        <Badge tone="info" className="h-5 px-1.5 text-xs font-normal tracking-tight uppercase">
           {sourceCount} RECORDS
         </Badge>
       </div>
@@ -49,7 +49,7 @@ export function EnrichmentTableLoading({ llmEnabled }: Readonly<{ llmEnabled: bo
         />
       </div>
       <div>
-        <div className="text-foreground text-sm font-medium">
+        <div className="text-foreground text-sm font-normal">
           Analyzing and enriching product records
         </div>
         <div className="text-muted mt-1 max-w-[520px] text-xs leading-5">
@@ -73,7 +73,7 @@ export function EnrichmentTableLoading({ llmEnabled }: Readonly<{ llmEnabled: bo
 function EnrichmentLoadingStep({ label, detail }: Readonly<{ label: string; detail: string }>) {
   return (
     <div className="border-divider bg-background-alt/50 hover:bg-background-alt rounded-[var(--radius-md)] border px-3 py-2 transition-colors">
-      <div className="text-foreground flex items-center gap-2 text-xs font-bold tracking-tight uppercase">
+      <div className="text-foreground flex items-center gap-2 text-xs font-normal tracking-tight uppercase">
         <span className="bg-accent size-1.5 animate-pulse rounded-full" />
         {label}
       </div>

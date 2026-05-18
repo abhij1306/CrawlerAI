@@ -6,15 +6,15 @@ from app.services.fetch import fetch_context as crawl_fetch_runtime
 from app.services.pipeline import raw_json as extraction_runtime
 from app.services.acquisition.host_protection_memory import HostProtectionPolicy
 from app.services.adapters.belk import BelkAdapter
-from app.services.extract import detail_record_assembly as detail_extractor
-from app.services.extract.detail_identity_core import (
+from app.services.extract.detail.assembly import record_assembly as detail_extractor
+from app.services.extract.detail.identity.core import (
     detail_identity_codes_from_url,
     detail_title_from_url,
     detail_url_is_utility,
     listing_detail_like_path,
 )
-from app.services.extract.detail_price_core import backfill_detail_price_from_html
-from app.services.extract.variant_record_normalization import normalize_variant_record
+from app.services.extract.detail.price.core import backfill_detail_price_from_html
+from app.services.extract.variant_normalization import normalize_variant_record
 from app.services.pipeline.extract_records import extract_records
 from app.services.js_state.helpers import select_variant
 from app.services.js_state.state_normalizer import map_js_state_to_fields
@@ -568,7 +568,7 @@ def test_extract_records_visual_listing_orders_top_grid_before_lower_recommendat
 
 
 def test_detail_identity_codes_require_exact_match() -> None:
-    from app.services.extract.detail_identity_core import detail_identity_codes_match
+    from app.services.extract.detail.identity.core import detail_identity_codes_match
 
     assert (
         detail_identity_codes_match(

@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+__all__ = (
+    "VariantCandidateGroup",
+    "VariantGroupValidator",
+)
+
 import logging
 from dataclasses import dataclass, field
 

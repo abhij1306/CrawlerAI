@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { CrawlRecord } from '../../lib/api/types';
 import {
   buildLogSiteGroups,
+  cleanRecordForDisplay,
   decodeUrlsForDisplay,
   estimateDataQuality,
   formatCellDisplay,
@@ -156,6 +157,18 @@ describe('decodeUrlsForDisplay', () => {
     ).toEqual({
       url: 'https://www.shop.ving.run/product/สีดำ',
       images: ['https://cdn.example.com/a.jpg'],
+    });
+  });
+});
+
+describe('cleanRecordForDisplay', () => {
+  it('parses nested JSON strings before raw JSON preview stringifies records', () => {
+    const record = makeRecord(1, {
+      payload: '{"title":"Trail Shoe","price":"$120"}',
+    });
+
+    expect(cleanRecordForDisplay(record)).toEqual({
+      payload: { title: 'Trail Shoe', price: '$120' },
     });
   });
 });

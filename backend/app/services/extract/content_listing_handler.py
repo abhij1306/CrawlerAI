@@ -1,5 +1,11 @@
 from __future__ import annotations
 
+__all__ = (
+    "validate_table_rows_quality",
+    "table_row_records",
+    "has_table_row_intent",
+)
+
 from typing import Any
 
 from bs4 import BeautifulSoup, Tag

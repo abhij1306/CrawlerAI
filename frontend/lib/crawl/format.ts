@@ -43,12 +43,25 @@ export function decodeUrlForDisplay(value: string) {
   }
 }
 
+function parseJsonTextForDisplay(value: string): unknown {
+  const text = value.trim();
+  if (!text || !/^[\[{]/.test(text)) return value;
+  try {
+    const parsed = JSON.parse(text);
+    return parsed && typeof parsed === 'object' ? parsed : value;
+  } catch {
+    return value;
+  }
+}
+
 export function formatCellDisplay(value: unknown) {
   return decodeUrlForDisplay(stringifyCell(value));
 }
 
 export function decodeUrlsForDisplay<T>(value: T): T {
   if (typeof value === 'string') {
+    const parsed = parseJsonTextForDisplay(value);
+    if (parsed !== value) return decodeUrlsForDisplay(parsed) as T;
     return decodeUrlForDisplay(value) as T;
   }
   if (Array.isArray(value)) {

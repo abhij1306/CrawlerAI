@@ -21,8 +21,7 @@ EXTRACTION_MODULES = [
     SERVICES_ROOT / "extract" / "field_candidates" / "structured_values.py",
     SERVICES_ROOT / "extract" / "field_candidates" / "variant_rows.py",
 ]
-GENERIC_EXTRACTION_MODULES = [
-]
+GENERIC_EXTRACTION_MODULES = []
 FIELD_POLICY_CONSUMERS = [
     SERVICES_ROOT / "crawl" / "crud.py",
     SERVICES_ROOT / "schema_service.py",
@@ -54,10 +53,6 @@ ALLOWED_SERVICE_CONFIG_CONSTANTS = {
     ("acquisition/cookie_store.py", "_CHALLENGE_LOCAL_STORAGE_NAME_TOKENS"),
     ("acquisition/cookie_store.py", "_CHALLENGE_LOCAL_STORAGE_VALUE_TOKENS"),
     ("acquisition/browser_readiness.py", "_ECOMMERCE_READY_CARD_SELECTORS"),
-    ("extract/variant_record_normalization.py", "_ADULT_SIZE_CONTEXT_TOKENS"),
-    ("extract/variant_record_normalization.py", "_DETAIL_CROSS_PRODUCT_TEXT_GENERIC_TOKENS"),
-    ("extract/variant_record_normalization.py", "_DETAIL_CROSS_PRODUCT_TEXT_TYPE_TOKENS"),
-    ("extract/variant_record_normalization.py", "_GENDER_KEYWORD_TOKENS_SET"),
     ("dom/section_extraction.py", "_SECTION_CONTAINER_SELECTORS"),
     ("dom/section_extraction.py", "_SECTION_LABEL_SELECTOR"),
     ("shared/field_coerce.py", "_SIZE_REJECT_TOKENS_NORMALIZED"),
@@ -71,10 +66,16 @@ PLAN_TARGET_LOC_BUDGETS = {
     # blanket budgets: each matching slice must make the target enforceable.
     Path("app/services/listing_extractor.py"): 900,  # Slice 2 facade target.
     Path("app/services/pipeline/extract_records.py"): 700,  # Slice 3 target.
-    Path("app/services/extract/detail_candidate_collection.py"): 1000,  # Slice 6 follow-up target.
-    Path("app/services/extract/detail_final_cleanup.py"): 1000,  # Slice 7 follow-up target.
+    Path(
+        "app/services/extract/detail_candidate_collection.py"
+    ): 1000,  # Slice 6 follow-up target.
+    Path(
+        "app/services/extract/detail_final_cleanup.py"
+    ): 1000,  # Slice 7 follow-up target.
     Path("app/services/extract/detail_price_core.py"): 800,  # Slice 8 follow-up target.
-    Path("app/services/extract/detail_identity_core.py"): 800,  # Slice 8 follow-up target.
+    Path(
+        "app/services/extract/detail_identity_core.py"
+    ): 800,  # Slice 8 follow-up target.
     Path("app/services/selectors_runtime.py"): 600,  # Slice 12 target.
     Path("app/services/pipeline/extraction_loop.py"): 1000,  # Slice 12 target.
     Path("app/services/dom/selector_engine.py"): 1000,  # Slice 12 target.
@@ -85,6 +86,24 @@ PLAN_TARGET_LOC_BUDGETS = {
     Path("app/services/data_enrichment/service.py"): 725,  # Slice 12 target.
     Path("app/api/crawls.py"): 500,  # Slice 12 target.
 }
+
+
+def test_detail_package_keeps_public_reexports() -> None:
+    from app.services.extract import detail
+
+    assert callable(detail.backfill_detail_price_from_html)
+    assert callable(detail.repair_ecommerce_detail_record_quality)
+    assert callable(detail.currency_hint_from_page_url)
+    assert callable(detail.drop_low_signal_zero_detail_price)
+
+
+def test_variant_normalization_common_keeps_compatibility_reexports() -> None:
+    from app.services.extract.variant_normalization import common
+    from app.services.extract.variant_normalization.contract import (
+        flatten_variants_for_public_output,
+    )
+
+    assert common.flatten_variants_for_public_output is flatten_variants_for_public_output
 # Keep explicit budgets for coherent large owners. Budgets are set to roughly the
 # current LOC plus 10% so growth requires a conscious update instead of a blanket
 # threshold increase.
@@ -112,12 +131,18 @@ FILE_LOC_BUDGETS = {
     Path("app/services/extract/detail_image_cleanup.py"): 505,
     Path("app/services/extract/detail_price_core.py"): 1000,
     Path("app/services/extract/detail_identity_core.py"): 1000,
+    # Extract decomposition plan Slice 2 follow-up: split stage owners must stay
+    # small after variant_record_normalization.py was removed.
+    Path("app/services/extract/variant_normalization/contract.py"): 400,
+    Path("app/services/extract/variant_normalization/hydration.py"): 400,
+    Path("app/services/extract/variant_normalization/sanitization.py"): 400,
+    Path("app/services/extract/variant_normalization/deduplication.py"): 400,
+    Path("app/services/extract/variant_normalization/backfill.py"): 400,
+    Path("app/services/extract/variant_normalization/size_color_extraction.py"): 400,
     Path("app/services/extract/variant_axis.py"): 295,
     Path("app/services/extract/variant_option_value.py"): 260,
     Path("app/services/extract/variant_choice_traversal.py"): 905,
     Path("app/services/extract/variant_identity_merge.py"): 415,
-    # Variant normalization owns the detail variant cleanup pipeline.
-    Path("app/services/extract/variant_record_normalization.py"): 1472,
     # Listing extraction is the orchestration facade; card/title/image/brand
     # signal ownership lives in extract/listing_signals.py.
     Path("app/services/listing_extractor.py"): 900,
@@ -134,7 +159,7 @@ FILE_LOC_BUDGETS = {
     Path("app/services/extract/detail_record_assembly.py"): 495,
     # Ratcheted for host-policy TTL compatibility and handoff failure isolation.
     Path("app/services/fetch/fetch_context.py"): 1000,
-    Path("app/services/js_state/state_normalizer.py"): 1410,
+    Path("app/services/js_state/state_normalizer.py"): 1480,
     # Extraction loop owns stage orchestration; retry and record extraction stages are split out.
     Path("app/services/pipeline/extraction_loop.py"): 1000,
     # Run progress owns batch-level summary/merge/quality aggregation, evicted
@@ -192,6 +217,37 @@ def _module_level_names(path: Path) -> set[str]:
             if isinstance(target, ast.Name):
                 names.add(target.id)
     return names
+
+
+def _module_all_names(path: Path) -> tuple[str, ...] | None:
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    for node in tree.body:
+        value_node: ast.AST | None = None
+        if isinstance(node, ast.Assign):
+            if any(
+                isinstance(target, ast.Name) and target.id == "__all__"
+                for target in node.targets
+            ):
+                value_node = node.value
+        elif (
+            isinstance(node, ast.AnnAssign)
+            and isinstance(node.target, ast.Name)
+            and node.target.id == "__all__"
+            and node.value is not None
+        ):
+            value_node = node.value
+        if value_node is None:
+            continue
+        try:
+            value = ast.literal_eval(value_node)
+        except (TypeError, ValueError, SyntaxError):
+            return None
+        if not isinstance(value, (tuple, list)):
+            return None
+        if not all(isinstance(name, str) and name for name in value):
+            return None
+        return tuple(value)
+    return None
 
 
 def _private_service_imports(path: Path) -> set[str]:
@@ -266,10 +322,14 @@ def test_root_extraction_services_are_explicitly_owned() -> None:
         path.relative_to(ROOT)
         for path in SERVICES_ROOT.glob("*.py")
         if path.name.endswith("_extractor.py")
-        or path.name
-        in {"extraction_context.py", "structured_sources.py"}
+        or path.name in {"extraction_context.py", "structured_sources.py"}
     }
     assert root_extraction_modules == ALLOWED_ROOT_EXTRACTION_MODULES
+
+
+def test_xpath_service_lives_under_dom_bucket() -> None:
+    assert not (SERVICES_ROOT / "xpath_service.py").exists()
+    assert (SERVICES_ROOT / "dom" / "xpath_service.py").exists()
 
 
 def test_extraction_modules_do_not_import_llm_runtime_layers() -> None:
@@ -329,7 +389,30 @@ def test_deleted_facades_do_not_return() -> None:
         deleted_extract_module("detail", "identity"),
         deleted_extract_module("detail", "price", "extractor"),
     ]
-    assert [str(path.relative_to(ROOT)) for path in stale_facades if path.exists()] == []
+    assert [
+        str(path.relative_to(ROOT)) for path in stale_facades if path.exists()
+    ] == []
+
+
+def test_extract_modules_declare_public_surface() -> None:
+    missing: set[str] = set()
+    for path in (SERVICES_ROOT / "extract").rglob("*.py"):
+        rel = path.relative_to(ROOT).as_posix()
+        if path.name == "__init__.py" or path.name.startswith("_"):
+            continue
+        if "field_candidates" in path.relative_to(SERVICES_ROOT).parts:
+            continue
+        if not _module_all_names(path):
+            missing.add(rel)
+    assert missing == set()
+
+
+def test_flat_detail_modules_are_removed_after_decomposition() -> None:
+    flat_detail_modules = sorted(
+        path.relative_to(ROOT).as_posix()
+        for path in (SERVICES_ROOT / "extract").glob("detail_*.py")
+    )
+    assert flat_detail_modules == []
 
 
 def test_legacy_dispatcher_fallback_flag_is_removed() -> None:

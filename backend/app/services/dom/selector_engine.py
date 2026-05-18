@@ -19,8 +19,6 @@ from app.services.config.extraction_rules import (
     DETAIL_CROSS_PRODUCT_CONTAINER_TOKENS,
     DETAIL_IMAGE_URL_ATTRS,
     DETAIL_LONG_TEXT_RANK_FIELDS,
-    DETAIL_LONG_TEXT_MAX_SECTION_BLOCKS,
-    DETAIL_LONG_TEXT_MAX_SECTION_CHARS,
     DETAIL_PRIMARY_DOM_CONTEXT_SELECTOR,
     DETAIL_TEXT_HIDDEN_STYLE_TOKENS,
     DETAIL_TEXT_SCOPE_EXCLUDE_TOKENS,
@@ -37,19 +35,19 @@ from app.services.config.extraction_rules import (
 )
 from app.services.config.surface_hints import detail_path_hints
 from app.services.dom.image_extraction import (
-    candidate_image_urls_from_node,
-    canonical_image_url,
-    dedupe_image_urls,
+    candidate_image_urls_from_node,  # noqa: F401 - public compatibility export
+    canonical_image_url,  # noqa: F401 - public compatibility export
+    dedupe_image_urls,  # noqa: F401 - public compatibility export
     extract_page_images as extract_page_images_impl,
-    image_candidate_score,
-    is_garbage_image_candidate,
+    image_candidate_score,  # noqa: F401 - public compatibility export
+    is_garbage_image_candidate,  # noqa: F401 - public compatibility export
     is_in_product_gallery_context,
     looks_like_image_asset_url,
     srcset_urls,
-    upgrade_low_resolution_image_url,
+    upgrade_low_resolution_image_url,  # noqa: F401 - public compatibility export
 )
 from app.services.dom.section_extraction import (
-    extract_feature_rows,
+    extract_feature_rows,  # noqa: F401 - public compatibility export
     extract_heading_sections,
     extract_label_value_pairs,
     section_text_is_meaningful,
@@ -77,7 +75,7 @@ from app.services.shared.field_coerce import (
     surface_fields,
 )
 from app.services.shared.coerce_primitives import safe_int as _safe_int
-from app.services.xpath_service import validate_xpath_syntax
+from app.services.dom.xpath_service import validate_xpath_syntax
 
 logger = logging.getLogger(__name__)
 
@@ -94,10 +92,12 @@ _scope_product_context_tokens = tuple(
 )
 _max_selector_matches = _safe_int(MAX_SELECTOR_MATCHES, default=12) or 12
 _scope_score_main_weight = _safe_int(SCOPE_SCORE_MAIN_WEIGHT, default=4000) or 4000
-_scope_score_priority_weight = _safe_int(SCOPE_SCORE_PRIORITY_WEIGHT, default=2000) or 2000
-_scope_score_product_context_weight = _safe_int(
-    SCOPE_SCORE_PRODUCT_CONTEXT_WEIGHT, default=1000
-) or 1000
+_scope_score_priority_weight = (
+    _safe_int(SCOPE_SCORE_PRIORITY_WEIGHT, default=2000) or 2000
+)
+_scope_score_product_context_weight = (
+    _safe_int(SCOPE_SCORE_PRODUCT_CONTEXT_WEIGHT, default=1000) or 1000
+)
 
 
 def _compile_variant_option_child_drop_patterns() -> tuple[re.Pattern[str], ...]:

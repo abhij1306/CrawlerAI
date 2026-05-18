@@ -57,6 +57,8 @@ JS_STATE_PRODUCT_FIELD_SPEC = {
     "title": Coalesce(
         "title",
         "name",
+        "fullName",
+        "masterName",
         "nameByLanguage.en",
         "pn",
         "copyProductTitle",
@@ -118,6 +120,9 @@ JS_STATE_PRODUCT_FIELD_SPEC = {
     ),
     "gender": Coalesce(
         "gender", "target_gender", "targetGender", default=None, skip=JS_STATE_GLOM_SKIP
+    ),
+    "color": Coalesce(
+        "color", "colour", "colorName", "colourName", default=None, skip=JS_STATE_GLOM_SKIP
     ),
     "sku": Coalesce(
         "sku.skuId", "sku", "productCode", default=None, skip=JS_STATE_GLOM_SKIP

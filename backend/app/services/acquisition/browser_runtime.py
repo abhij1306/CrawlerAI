@@ -75,6 +75,7 @@ from app.services.acquisition.browser_stage_runner import (
 from app.services.acquisition import browser_pool as _browser_pool
 from app.services.acquisition.browser_pool import (
     SharedBrowserRuntime,
+    block_unneeded_route as _block_unneeded_route,
     browser_runtime_snapshot as _browser_runtime_snapshot_impl,
     get_browser_runtime as _get_browser_runtime_impl,
     patchright_browser_available,
@@ -93,7 +94,6 @@ from app.services.acquisition import cookie_store
 from app.services.config.browser_fingerprint_profiles import REAL_CHROME_IGNORE_DEFAULT_ARGS
 from app.services.acquisition.browser_identity import build_playwright_context_spec
 from app.services.acquisition.browser_pool import (
-    block_unneeded_route as _block_unneeded_route,
     browser_pool_state as _BROWSER_POOL,
     real_chrome_candidate_paths as _real_chrome_candidate_paths,
     resolve_browser_binary as _resolve_browser_binary,
@@ -129,7 +129,6 @@ from app.services.domain_utils import normalize_domain
 
 logger = logging.getLogger(__name__)
 
-
 def _sync_browser_pool_compatibility() -> None:
     _browser_pool.SharedBrowserRuntime = SharedBrowserRuntime
     if _browser_pool._BROWSER_POOL is not _BROWSER_POOL:
@@ -163,8 +162,6 @@ def _should_run_behavior_realism(engine: str, *, browser_reason: str | None) -> 
     if not bool(crawler_runtime_settings.browser_behavior_realism_enabled):
         return False
     normalized_engine = _normalize_browser_engine(engine)
-    if normalized_engine == _REAL_CHROME_BROWSER_ENGINE:
-        return False
     if normalized_engine != _REAL_CHROME_BROWSER_ENGINE and bool(
         crawler_runtime_settings.browser_behavior_real_chrome_only
     ):
@@ -464,6 +461,32 @@ async def browser_fetch(
                     phase_timings_ms=phase_timings_ms,
                     on_event=on_event,
                     emit_browser_event=_emit_browser_event,
+                )
+                if int(getattr(response, "status", 0) or 0) >= 400:
+                    response = await recover_browser_challenge(
+                        page,
+                        url=url,
+                        response=response,
+                        browser_engine=runtime_engine,
+                        timeout_seconds=_remaining(),
+                        phase_timings_ms=phase_timings_ms,
+                        challenge_wait_max_seconds=float(
+                            crawler_runtime_settings.challenge_wait_max_seconds or 0
+                        ),
+                        challenge_poll_interval_ms=int(
+                            crawler_runtime_settings.challenge_poll_interval_ms
+                        ),
+                        navigation_timeout_ms=int(
+                            crawler_runtime_settings.browser_navigation_domcontentloaded_timeout_ms
+                        ),
+                        elapsed_ms=_elapsed_ms,
+                        classify_blocked_page=classify_blocked_page_async,
+                        get_page_html=get_page_html,
+                        looks_like_low_content_shell=looks_like_low_content_shell,
+                    )
+                navigation_strategy = str(
+                    getattr(response, "browser_navigation_strategy", None)
+                    or navigation_strategy
                 )
                 interstitial_diagnostics = await dismiss_browser_interstitial(
                     page,
@@ -822,6 +845,7 @@ async def _maybe_warm_origin_before_navigation(
             elapsed_ms=_elapsed_ms,
             classify_blocked_page=classify_blocked_page_async,
             get_page_html=get_page_html,
+            looks_like_low_content_shell=looks_like_low_content_shell,
         )
         phase_timings_ms["origin_warmup_behavior"] = 0
         await warm_page.wait_for_timeout(min(warm_pause_ms, warm_budget_ms))

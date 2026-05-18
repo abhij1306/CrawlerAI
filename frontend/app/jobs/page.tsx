@@ -107,28 +107,28 @@ export default function JobsPage() {
                 <col style={{ width: '10%' }} />
               </colgroup>
               <TableHeader>
-                <TableRow>
-                  <TableHead>Run ID</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead>Target URL</TableHead>
-                  <TableHead>Progress</TableHead>
-                  <TableHead>Started</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Actions</TableHead>
+                <TableRow className="border-b border-divider/60 bg-background/5">
+                  <TableHead className="font-mono text-[10.5px] font-bold uppercase tracking-wider text-muted/80 py-3.5">Run ID</TableHead>
+                  <TableHead className="font-mono text-[10.5px] font-bold uppercase tracking-wider text-muted/80 py-3.5">Type</TableHead>
+                  <TableHead className="font-mono text-[10.5px] font-bold uppercase tracking-wider text-muted/80 py-3.5">Target URL</TableHead>
+                  <TableHead className="font-mono text-[10.5px] font-bold uppercase tracking-wider text-muted/80 py-3.5">Progress</TableHead>
+                  <TableHead className="font-mono text-[10.5px] font-bold uppercase tracking-wider text-muted/80 py-3.5">Started</TableHead>
+                  <TableHead className="font-mono text-[10.5px] font-bold uppercase tracking-wider text-muted/80 py-3.5">Status</TableHead>
+                  <TableHead className="font-mono text-[10.5px] font-bold uppercase tracking-wider text-muted/80 py-3.5 text-right pr-4">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {jobs.map((job) => (
-                  <TableRow key={job.run_id}>
-                    <TableCell className="type-caption-mono font-medium">{job.run_id}</TableCell>
-                    <TableCell className="type-body">{formatJobType(job.type)}</TableCell>
-                    <TableCell className="type-caption-mono max-w-[320px] truncate" title={job.url}>
+                  <TableRow key={job.run_id} className="border-b border-divider/40 hover:bg-background/10">
+                    <TableCell className="type-caption-mono font-normal text-foreground/90">{job.run_id}</TableCell>
+                    <TableCell className="type-body-sm font-normal text-foreground">{formatJobType(job.type)}</TableCell>
+                    <TableCell className="type-caption-mono max-w-[320px] truncate font-normal" title={job.url}>
                       {job.url}
                     </TableCell>
                     <TableCell>
                       <ProgressBar percent={job.progress} />
                     </TableCell>
-                    <TableCell className="type-caption-mono text-muted">
+                    <TableCell className="type-body-sm text-secondary font-normal">
                       {formatTimestamp(job.started_at)}
                     </TableCell>
                     <TableCell>

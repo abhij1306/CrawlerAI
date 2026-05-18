@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildDispatch } from './crawl-config-screen';
+import { buildDispatch } from './crawl-config-logic';
 import type { FieldRow } from './shared';
 import type { CrawlConfig, DomainRunProfile } from '../../lib/api/types';
 

@@ -60,8 +60,7 @@ export function useDomainMemoryWorkspace() {
           api.listDomainFieldFeedback({ limit: 100 }),
           api.listCrawls({ status: 'completed', limit: 100 }),
         ]);
-      const preferredDomain = firstUsableDomain([
-        selectedDomain,
+      const loadedDomains = [
         ...selectorSummaryData.map((row) => row.domain),
         ...profileData.map((row) => row.domain),
         ...cookieData.map((row) => row.domain),
@@ -69,7 +68,11 @@ export function useDomainMemoryWorkspace() {
         ...crawlData.items.map(
           (run) => String(run.result_summary?.domain || '').trim() || getNormalizedDomain(run.url),
         ),
-      ]);
+      ];
+      const currentDomainStillAvailable = loadedDomains.includes(selectedDomain)
+        ? selectedDomain
+        : '';
+      const preferredDomain = firstUsableDomain([currentDomainStillAvailable, ...loadedDomains]);
       const selectorData = preferredDomain
         ? await api.listSelectors({ domain: preferredDomain })
         : [];

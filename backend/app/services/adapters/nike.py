@@ -8,11 +8,13 @@ from bs4 import BeautifulSoup
 
 from app.services.adapters.base import AdapterResult, BaseAdapter, adapter_host_matches
 from app.services.config.nike_config import NIKE_CURRENCY_BY_HOST
+from app.services.extract.variant_normalization.contract import (
+    flatten_variants_for_public_output,
+)
 from app.services.shared.field_coerce import (
     absolute_url,
     clean_text,
     finalize_record,
-    flatten_variants_for_public_output,
     text_or_none,
 )
 from app.services.extraction_html_helpers import html_to_text

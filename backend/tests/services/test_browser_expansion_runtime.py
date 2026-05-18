@@ -854,6 +854,7 @@ class _FakeExpansionPage:
         accessibility_snapshot: dict[str, object] | None = None,
         role_targets: set[tuple[str, str]] | None = None,
         goto_failures: dict[str, Exception] | None = None,
+        goto_status: int = 200,
         response_events: list[Any] | None = None,
         wait_for_selector_error: Exception | None = None,
         shadow_html: str | None = None,
@@ -881,6 +882,7 @@ class _FakeExpansionPage:
         self.goto_calls: list[str] = []
         self.goto_timeout_calls: list[int | None] = []
         self.goto_failures = dict(goto_failures or {})
+        self.goto_status = int(goto_status)
         self.response_events = list(response_events or [])
         self.wait_for_selector_error = wait_for_selector_error
         self.wait_for_selector_calls: list[tuple[str, str | None, int | None]] = []
@@ -932,7 +934,10 @@ class _FakeExpansionPage:
         for callback in list(self.listeners.get("response", [])):
             for response in self.response_events:
                 callback(response)
-        return SimpleNamespace(status=200, headers={"content-type": "text/html"})
+        return SimpleNamespace(
+            status=self.goto_status,
+            headers={"content-type": "text/html"},
+        )
 
     async def _cookies(self, *_args, **_kwargs) -> list[dict[str, object]]:
         return list(self.cookie_snapshots[0] if self.cookie_snapshots else [])
@@ -1142,6 +1147,67 @@ async def test_browser_fetch_closes_unexpected_popup_pages() -> None:
 
     assert result.browser_diagnostics["browser_outcome"] == "usable_content"
     assert popup_page.page_close_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_browser_fetch_recovers_direct_navigation_challenge(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    page = _FakeExpansionPage(
+        base_html="<html><head><title>Access Denied</title></head><body>Access Denied</body></html>",
+        wait_html_sequence=[
+            """
+            <html>
+              <head>
+                <script type="application/ld+json">
+                {"@context":"https://schema.org","@type":"Product","name":"Widget Prime","offers":{"price":"12.00"}}
+                </script>
+              </head>
+              <body>
+                <main>
+                  <h1>Widget Prime</h1>
+                  <img src="/widget.jpg" alt="Widget Prime">
+                  <span class="price">$12.00</span>
+                  <button>Add to cart</button>
+                  <p>Durable product description with enough visible detail for extraction.</p>
+                </main>
+              </body>
+            </html>
+            """
+        ],
+        goto_status=403,
+    )
+
+    async def _fake_runtime(**_kwargs):
+        return _FakeRuntime(page)
+
+    async def _classify_blocked_page(html: str, status_code: int):
+        lowered = html.lower()
+        return SimpleNamespace(
+            blocked=int(status_code or 0) == 403 and "access denied" in lowered,
+            evidence=["title:access denied"] if "access denied" in lowered else [],
+            provider_hits=[],
+            challenge_element_hits=[],
+        )
+
+    monkeypatch.setattr(
+        browser_runtime,
+        "classify_blocked_page_async",
+        _classify_blocked_page,
+    )
+
+    result = await browser_runtime.browser_fetch(
+        "https://example.com/products/widget",
+        5,
+        surface="ecommerce_detail",
+        browser_reason="http-escalation",
+        runtime_provider=_fake_runtime,
+    )
+
+    assert result.status_code == 200
+    assert result.browser_diagnostics["browser_outcome"] == "usable_content"
+    assert "Widget Prime" in result.html
+    assert page.wait_timeout_calls
 
 
 @pytest.mark.asyncio
@@ -3817,7 +3883,7 @@ def test_should_run_behavior_realism_skips_vendor_block_for_real_chrome() -> Non
             "real_chrome",
             browser_reason="vendor-block:akamai",
         )
-        is False
+        is True
     )
 
 
@@ -3957,6 +4023,54 @@ async def test_recover_browser_challenge_runs_for_real_chrome() -> None:
     assert result.browser_recovered_status == 200
     assert page.wait_calls == 1
     assert page.goto_calls == 0
+
+
+@pytest.mark.asyncio
+async def test_recover_browser_challenge_waits_on_provider_low_content_shell() -> None:
+    original_response = SimpleNamespace(status=200, headers={"content-type": "text/html"})
+
+    class _Page:
+        def __init__(self) -> None:
+            self.mouse = None
+            self.wait_calls = 0
+            self.html = "<html><body>akamai shell</body></html>"
+
+        async def wait_for_timeout(self, _timeout: int) -> None:
+            self.wait_calls += 1
+            self.html = (
+                "<html><body><h1>Widget Prime</h1><span>$12.00</span>"
+                "<button>Add to cart</button></body></html>"
+            )
+
+        async def goto(self, *_args, **_kwargs):
+            raise AssertionError("wait recovery should clear before retry navigation")
+
+    page = _Page()
+
+    async def _get_page_html(active_page: Any) -> str:
+        return active_page.html
+
+    async def _classify_blocked_page(_html: str, _status_code: int):
+        return SimpleNamespace(blocked=False, provider_hits=["akamai"])
+
+    result = await browser_recovery.recover_browser_challenge(
+        page,
+        url="https://example.com/products/widget",
+        response=original_response,
+        browser_engine="real_chrome",
+        timeout_seconds=5,
+        phase_timings_ms={},
+        challenge_wait_max_seconds=1,
+        challenge_poll_interval_ms=100,
+        navigation_timeout_ms=1000,
+        elapsed_ms=lambda _started_at: 0,
+        classify_blocked_page=_classify_blocked_page,
+        get_page_html=_get_page_html,
+        looks_like_low_content_shell=lambda html, **_kwargs: "akamai shell" in html,
+    )
+
+    assert result is original_response
+    assert page.wait_calls == 1
 
 
 @pytest.mark.asyncio

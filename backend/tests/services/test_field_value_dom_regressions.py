@@ -133,6 +133,11 @@ def test_upgrade_low_resolution_amazon_image_url_strips_thumbnail_transform() ->
             id="ac_ul_transform",
         ),
         pytest.param(
+            "https://m.media-amazon.com/images/I/41HbXXICf6L._SX38_SY50_CR,0,0,38,50_.jpg",
+            "https://m.media-amazon.com/images/I/41HbXXICf6L.jpg",
+            id="multi_token_thumbnail_transform",
+        ),
+        pytest.param(
             "https://cdn.example.com/images/I/51DRLHAa2AS._SL500_.jpg",
             "https://cdn.example.com/images/I/51DRLHAa2AS._SL500_.jpg",
             id="non_amazon_unchanged",

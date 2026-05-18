@@ -15,7 +15,7 @@ from app.services.config.extraction_rules import (
     VARIANT_FIELDS,
 )
 from app.services.config.runtime_settings import crawler_runtime_settings
-from app.services.extract.detail_identity_core import (
+from app.services.extract.detail.identity.core import (
     detail_url_is_collection_like,
     detail_url_is_utility,
 )

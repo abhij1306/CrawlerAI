@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from app.services.confidence import score_record_confidence
-from app.services.extract.detail_record_assembly import build_detail_record
+from app.services.extract.detail.assembly.record_assembly import build_detail_record
 
 
 def test_score_record_confidence_distinguishes_authoritative_sources() -> None:

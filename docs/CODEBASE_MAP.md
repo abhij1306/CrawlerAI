@@ -27,6 +27,7 @@ If a file is not listed, assume it is a helper under a listed owner.
 | `llm.py` | LLM provider catalog, config, connection test, cost log |
 | `product_intelligence.py` | Product matching jobs, source products, candidates, match review |
 | `data_enrichment.py` | On-demand ecommerce detail enrichment jobs and enriched product rows |
+| `ucp_audit.py` | UCP audit job creation, history, detail, and report exports |
 | `auth.py` | Login, register, `/me` |
 | `users.py`, `dashboard.py`, `jobs.py`, `health.py`, `metrics.py` | Named route modules |
 
@@ -57,11 +58,12 @@ If a file is not listed, assume it is a helper under a listed owner.
 | `ReviewPromotion` | `review.py` | approved review schema snapshot |
 | `ProductIntelligenceJob`, `ProductIntelligenceSourceProduct`, `ProductIntelligenceCandidate`, `ProductIntelligenceMatch` | `product_intelligence.py` | web product matching and price comparison jobs |
 | `DataEnrichmentJob`, `EnrichedProduct` | `data_enrichment.py` | on-demand ecommerce detail enrichment jobs and derived enriched product rows |
+| `UCPAuditJob`, `UCPAuditPageResult`, `UCPAuditReport` | `ucp_audit.py` | persisted UCP compliance audit jobs, sampled page payloads, and report artifacts |
 | `LLMConfig`, `LLMCostLog` | `llm.py` | LLM config and cost tracking |
 
 ### `schemas/` — request and response DTOs
 
-`crawl.py`, `user.py`, `llm.py`, `selectors.py`, `data_enrichment.py`, `common.py`
+`crawl.py`, `user.py`, `llm.py`, `selectors.py`, `data_enrichment.py`, `ucp_audit.py`, `common.py`
 
 ---
 
@@ -77,6 +79,7 @@ If a file is not listed, assume it is a helper under a listed owner.
 | `crawl/events.py` | WebSocket log emission |
 | `product_intelligence/*` | Product web discovery, candidate crawl orchestration, deterministic match scoring |
 | `data_enrichment/service.py` | On-demand enrichment job orchestration and persistence for ecommerce detail records |
+| `ucp_audit/*` | UCP compliance audit primitives, scoring, reporting, and job orchestration |
 | `data_enrichment/deterministic.py` | Deterministic enrichment normalization, taxonomy matching, and product attribute diagnostics |
 | `data_enrichment/shopify_catalog.py` | Shopify taxonomy and attribute repository loading/matching |
 | `crawl/batch_runtime.py` | URL loop, progress, pause, kill checks |
@@ -162,6 +165,7 @@ Canonical config owner:
 | `field_url_normalization.py` | Tracking URL cleanup and query stripping |
 | `dom/content_extractability.py` | Visible text/link/image extractability checks used by selector extraction |
 | `dom/selector_engine.py` | DOM selector extraction, image URL ranking, and selector result assembly |
+| `dom/xpath_service.py` | XPath syntax validation, conversion, absolute XPath building, and selector value extraction |
 | `dom/image_extraction.py` | DOM image URL scoring, dedupe, low-resolution upgrade, and page image extraction |
 | `dom/section_extraction.py` | DOM label/value pairs, semantic heading sections, materials sections, and feature rows |
 | `public_record_firewall.py` | Final public persisted-data schema/value firewall |
@@ -177,30 +181,30 @@ Canonical config owner:
 | `extract/content_listing_handler.py` | Content listing table-row extraction and open-field row tagging |
 | `extract/content_surface_extractor.py` | DOM fallback extraction for content, article, and forum detail surfaces |
 | `extract/table_extractor.py` | Meaningful table detection, filtering, context resolution, and structured table output |
-| `extract/detail_tiers.py` | Detail tier execution order, DOM skip decision, and finalization transitions |
-| `extract/detail_dom_section_targets.py` | Detail DOM context selection and section target field discovery |
-| `extract/detail_dom_fallbacks.py` | DOM fallback field assembly for detail records |
-| `extract/detail_dom_variant_coercion.py` | DOM variant axis and option-value coercion helpers |
-| `extract/detail_dom_variant_extraction.py` | DOM variant row extraction, expansion, and backfill |
-| `extract/detail_structured_pruning.py` | Structured detail payload relevance and variant-leaf pruning |
-| `extract/detail_dom_completion.py` | DOM completion gates and DOM variant collection decisions |
-| `extract/detail_image_materialize.py` | Detail image candidate materialization before final cleanup |
-| `extract/detail_record_assembly.py` | Detail record build/extract orchestration and detail rejection/failure reasons |
-| `extract/detail_dom_variant_options.py` | DOM variant option availability, URL, image, and selected-state helpers |
-| `extract/detail_image_dedupe.py` | Primary/additional detail image merge and dedupe helper |
-| `extract/detail_numbered_options.py` | DOM-axis hydration for raw numbered option variant rows |
-| `extract/detail_raw_signals.py` | Raw detail breadcrumb category and deterministic gender signal helpers |
-| `extract/detail_identity_core.py` | Detail/listing URL identity, redirect identity, and requested-detail matching |
-| `extract/detail_price_core.py` | Detail price, currency reconciliation, visible PDP price backfill, and magnitude repair |
-| `extract/detail_final_cleanup.py` | Ecommerce detail final cleanup orchestrator |
-| `extract/detail_record_sanitization.py` | Detail placeholder, identity scalar, category, materials, and title cleanup |
-| `extract/detail_money_repair.py` | Detail price precision, discount, original-price, and variant price repair |
-| `extract/detail_variant_pruning.py` | Detail variant row sanitization and parent-record variant scalar pruning |
-| `extract/detail_image_cleanup.py` | Final detail image cleanup, family matching, and parent image backfill |
-| `extract/detail_shell_filter.py` | Site-shell and utility-page detail rejection helpers |
-| `extract/detail_state_variant_targets.py` | JS-state target maps for DOM variant URL/id enrichment |
-| `extract/detail_text_sanitizer.py` | Detail long-text pollution filters, fulfillment copy cleanup, and low-signal scalar checks |
-| `extract/detail_title_scorer.py` | Detail title promotion and shell-title scoring |
+| `extract/detail/assembly/tiers.py` | Detail tier execution order, DOM skip decision, and finalization transitions |
+| `extract/detail/assembly/dom_section_targets.py` | Detail DOM context selection and section target field discovery |
+| `extract/detail/assembly/dom_fallbacks.py` | DOM fallback field assembly for detail records |
+| `extract/detail/variants/dom_coercion.py` | DOM variant axis and option-value coercion helpers |
+| `extract/detail/variants/dom_extraction.py` | DOM variant row extraction, expansion, and backfill |
+| `extract/detail/identity/structured_pruning.py` | Structured detail payload relevance and variant-leaf pruning |
+| `extract/detail/assembly/dom_completion.py` | DOM completion gates and DOM variant collection decisions |
+| `extract/detail/images/materialize.py` | Detail image candidate materialization before final cleanup |
+| `extract/detail/assembly/record_assembly.py` | Detail record build/extract orchestration and detail rejection/failure reasons |
+| `extract/detail/variants/dom_options.py` | DOM variant option availability, URL, image, and selected-state helpers |
+| `extract/detail/images/dedupe.py` | Primary/additional detail image merge and dedupe helper |
+| `extract/detail/variants/numbered_options.py` | DOM-axis hydration for raw numbered option variant rows |
+| `extract/detail/assembly/raw_signals.py` | Raw detail breadcrumb category and deterministic gender signal helpers |
+| `extract/detail/identity/core.py` | Detail/listing URL identity, redirect identity, and requested-detail matching |
+| `extract/detail/price/core.py` | Detail price, currency reconciliation, visible PDP price backfill, and magnitude repair |
+| `extract/detail/assembly/final_cleanup.py` | Ecommerce detail final cleanup orchestrator |
+| `extract/detail/assembly/record_sanitization.py` | Detail placeholder, identity scalar, category, materials, and title cleanup |
+| `extract/detail/price/money_repair.py` | Detail price precision, discount, original-price, and variant price repair |
+| `extract/detail/variants/pruning.py` | Detail variant row sanitization and parent-record variant scalar pruning |
+| `extract/detail/images/cleanup.py` | Final detail image cleanup, family matching, and parent image backfill |
+| `extract/detail/identity/shell_filter.py` | Site-shell and utility-page detail rejection helpers |
+| `extract/detail/variants/state_targets.py` | JS-state target maps for DOM variant URL/id enrichment |
+| `extract/detail/text/sanitizer.py` | Detail long-text pollution filters, fulfillment copy cleanup, and low-signal scalar checks |
+| `extract/detail/assembly/title_scorer.py` | Detail title promotion and shell-title scoring |
 | `extract/variant_axis.py` | Variant axis key/display normalization and semantic axis-label gates |
 | `extract/variant_option_value.py` | Variant option-value noise, UI-noise, color, and quantity-run gates |
 | `extract/variant_choice_traversal.py` | Variant DOM choice traversal and group-name inference |
@@ -208,7 +212,7 @@ Canonical config owner:
 | `extract/variant_dom_cues.py` | Variant DOM cue and sibling-signal helpers |
 | `extract/variant_dom_provenance.py` | DOM variant provenance capture for validator input |
 | `extract/variant_group_validator.py` | Evidence-based DOM variant group admission and rejection logging |
-| `extract/variant_record_normalization.py` | Variant value normalization delegated by detail record finalization before public variant flattening |
+| `extract/variant_normalization/*` | Stage-keyed variant record normalization, cleanup, backfill, and public flattening contract |
 | `extract/variant_structural_pruning.py` | Structural variant row pruning for non-DOM/raw variant records |
 | `extract/variant_value_guards.py` | Variant value and URL quality gates shared by DOM validation and normalization |
 | `extract/*` | Other extraction helpers |
@@ -283,6 +287,7 @@ All selector memory is scoped by normalized `(domain, surface)`.
 |---|---|
 | `app/` | Next.js App Router pages |
 | `app/product-intelligence/product-intelligence-components.tsx` | Product Intelligence local UI pieces |
+| `app/ucp-audit/*` | UCP audit operator page, hook, and local report components |
 | `components/layout/` | shell, auth, nav, theme, scoped shell CSS modules |
 | `components/ui/button.tsx`, `badge.tsx`, `input.tsx`, `card.tsx`, `metric.tsx`, `table.tsx`, `alert.tsx`, `dialog.tsx` | typed UI primitive owners |
 | `components/ui/primitives.tsx` | compatibility barrel plus dropdown, toggle, tooltip, skeleton, field helpers |

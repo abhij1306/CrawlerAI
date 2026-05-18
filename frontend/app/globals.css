@@ -52,10 +52,10 @@
   color-scheme: light;
 
   /* ── Fonts
-     Primary : Outfit for UI text
+     Primary : Inter for UI text
      Mono     : JetBrains Mono — code clarity */
   --font-primary-family:
-    var(--font-primary-source, 'Outfit'), 'Outfit', 'Inter', ui-sans-serif, system-ui, sans-serif;
+    var(--font-primary-source, 'Inter'), 'Inter', ui-sans-serif, system-ui, sans-serif;
   --font-mono-family:
     var(--font-jetbrains-mono, 'JetBrains Mono'), 'JetBrains Mono', ui-monospace, Consolas,
     monospace;
@@ -286,9 +286,9 @@ html[data-theme='dark'] {
   --border-focus: var(--accent);
 
   /* ── Typography */
-  --text-primary: #9a9a9a;
-  --text-secondary: #999999;
-  --text-muted: #8f8f8f;
+  --text-primary: #f3f4f6;
+  --text-secondary: #a1a1aa;
+  --text-muted: #71717a;
 
   /* ── Accent — Sky Blue (bright for dark mode) */
   --accent: #38bdf8;
@@ -714,6 +714,15 @@ select:focus-visible:not(.focus-ring) {
   color: var(--text-muted);
   font-synthesis: none;
   font-variant-numeric: tabular-nums;
+}
+
+.field-label {
+  font-family: var(--font-mono-family);
+  font-size: 10px;
+  font-weight: var(--weight-bold);
+  letter-spacing: var(--tracking-wider);
+  text-transform: uppercase;
+  color: var(--text-muted);
 }
 
 /* ── Metric — KPI number blocks; inherits display tier but named for semantics */

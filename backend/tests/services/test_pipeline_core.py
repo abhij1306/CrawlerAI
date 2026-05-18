@@ -698,6 +698,83 @@ async def test_post_extraction_detail_shell_retries_real_chrome_when_enabled(
 
 
 @pytest.mark.asyncio
+async def test_post_extraction_identity_mismatch_retries_real_chrome(
+    db_session: AsyncSession,
+    test_user,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run = await create_crawl_run(
+        db_session,
+        test_user.id,
+        {
+            "run_type": "crawl",
+            "url": "https://www.mytheresa.com/int/en/women/valentino-garavani-loco-small-floral-linen-top-handle-bag-beige-p01155657",
+            "surface": "ecommerce_detail",
+            "settings": {"respect_robots_txt": False},
+        },
+    )
+    attempted_engines: list[str] = []
+
+    async def _fake_acquire(request: AcquisitionRequest) -> AcquisitionResult:
+        forced_engine = str(
+            request.acquisition_profile.get("forced_browser_engine") or "patchright"
+        )
+        attempted_engines.append(forced_engine)
+        html = (
+            "<html><body>Women's Luxury Fashion & Designer Shopping</body></html>"
+            if forced_engine == "patchright"
+            else "<html><body>Valentino Garavani Loco Small Floral Linen Top Handle Bag</body></html>"
+        )
+        return _fake_acquire_result(
+            request,
+            html=html,
+            method="browser",
+            blocked=False,
+            browser_diagnostics={
+                "browser_attempted": True,
+                "browser_engine": forced_engine,
+                "browser_outcome": "usable_content",
+            },
+        )
+
+    def _fake_extract_records(html: str, *_args, **_kwargs):
+        if "Valentino Garavani" not in html:
+            return []
+        return [
+            {
+                "title": "Valentino Garavani Loco Small Floral Linen Top Handle Bag",
+                "url": run.url,
+                "price": "2500",
+                "image_url": "https://assets.example.com/bag.jpg",
+            }
+        ]
+
+    monkeypatch.setattr("app.services.pipeline.extraction_loop.acquire", _fake_acquire)
+    monkeypatch.setattr(
+        "app.services.pipeline.extraction_loop.extract_records", _fake_extract_records
+    )
+    monkeypatch.setattr(
+        "app.services.pipeline.extraction_loop.real_chrome_browser_available",
+        lambda: True,
+    )
+    monkeypatch.setattr("app.services.pipeline.extraction_loop.run_adapter", _no_adapter)
+    monkeypatch.setattr(
+        "app.services.pipeline.extraction_loop.infer_detail_failure_reason",
+        lambda html, *_args, **_kwargs: (
+            "detail_identity_mismatch" if "Valentino Garavani" not in html else None
+        ),
+    )
+
+    result = await process_single_url(db_session, run, run.url)
+    rows, total = await get_run_records(db_session, run.id, 1, 20)
+
+    assert attempted_engines == ["patchright", "real_chrome"]
+    assert result.verdict == "success"
+    assert total == 1
+    assert rows[0].data["title"] == "Valentino Garavani Loco Small Floral Linen Top Handle Bag"
+
+
+@pytest.mark.asyncio
 async def test_post_extraction_detail_shell_skips_real_chrome_when_disabled(
     db_session: AsyncSession,
     test_user,

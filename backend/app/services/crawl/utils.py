@@ -12,7 +12,7 @@ from typing import Any, Protocol
 
 import regex as regex_lib
 from app.services.exceptions import CrawlerConfigurationError
-from app.services.xpath_service import validate_xpath_syntax
+from app.services.dom.xpath_service import validate_xpath_syntax
 
 HTTP_URL_PREFIXES = ("http://", "https://")
 logger = logging.getLogger(__name__)

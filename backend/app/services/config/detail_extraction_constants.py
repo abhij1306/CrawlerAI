@@ -13,6 +13,8 @@ from app.services.config.extraction_rules import (
 
 logger = logging.getLogger(__name__)
 
+MAX_STRUCTURED_TEXT_LENGTH = 20_000
+
 UUID_LIKE_PATTERN = re.compile(r"(?i)^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$")
 MERCH_CODE_PATTERN = re.compile(r"\b[A-Z0-9]{2,}(?:-[A-Z0-9]{2,})+\b", re.I)
 PLACEHOLDER_IMAGE_URL_PATTERNS_LOWER = tuple(
@@ -65,7 +67,9 @@ DETAIL_PLACEHOLDER_TITLE_PATTERNS: tuple[re.Pattern[str], ...] = (
 )
 ORG_SUFFIX_PATTERN = (
     re.compile(
-        r"\b(?:" + "|".join(re.escape(token) for token in sorted(ORG_SUFFIXES)) + r")\b",
+        r"\b(?:"
+        + "|".join(re.escape(token) for token in sorted(ORG_SUFFIXES))
+        + r")\b",
         re.I,
     )
     if ORG_SUFFIXES

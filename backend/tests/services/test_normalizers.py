@@ -2,10 +2,12 @@ from __future__ import annotations
 
 from bs4 import BeautifulSoup
 
-from app.services.extract.detail_final_cleanup import (
+from app.services.extract.detail.assembly.final_cleanup import (
     repair_ecommerce_detail_record_quality,
 )
-from app.services.extract.variant_record_normalization import normalize_variant_record
+from app.services.extract.variant_normalization import normalize_variant_record
+from app.services.extract.variant_normalization import backfill, hydration, sanitization
+from app.services.extract.variant_normalization.contract import enforce_payload_limits
 from app.services.shared.field_coerce import coerce_field_value
 from app.services.dom.selector_engine import extract_node_value
 from app.services.normalizers import normalize_decimal_price, normalize_value
@@ -60,6 +62,25 @@ def test_normalize_decimal_price_rejects_negative_values() -> None:
     assert normalize_decimal_price("$-1") is None
     assert normalize_decimal_price("-$1") is None
     assert normalize_decimal_price("-USD100") is None
+
+
+def test_variant_payload_limit_accepts_explicit_max_rows() -> None:
+    record = {
+        "variants": [
+            {"size": "S", "url": "https://example.test/s"},
+            {"size": "M", "url": "https://example.test/m"},
+            {"size": "L", "url": "https://example.test/l"},
+        ],
+        "variant_count": 3,
+    }
+
+    enforce_payload_limits(record, max_rows=2)
+
+    assert record["variants"] == [
+        {"size": "S", "url": "https://example.test/s"},
+        {"size": "M", "url": "https://example.test/m"},
+    ]
+    assert record["variant_count"] == 2
 
 
 def test_repair_ecommerce_detail_reconciles_parent_price_against_unanimous_variants() -> None:
@@ -157,6 +178,38 @@ def test_normalize_availability_schema_url() -> None:
         normalize_value("availability", "https://schema.org/LimitedAvailability")
         == "limited_stock"
     )
+
+
+def test_variant_price_backfill_handles_numeric_string_equivalence() -> None:
+    record: dict[str, object] = {
+        "price": "10.00",
+        "currency": "USD",
+        "variants": [
+            {"sku": "TEN", "price": 10.0},
+            {"sku": "UNKNOWN"},
+        ],
+    }
+
+    backfill._backfill_variant_context(record)
+
+    assert record["variants"][0]["price"] == 10.0
+    assert record["variants"][1]["price"] == "10.00"
+
+
+def test_variant_price_backfill_treats_numeric_zero_as_distinct() -> None:
+    record: dict[str, object] = {
+        "price": "10.00",
+        "currency": "USD",
+        "variants": [
+            {"sku": "FREE", "price": 0},
+            {"sku": "UNKNOWN"},
+        ],
+    }
+
+    backfill._backfill_variant_context(record)
+
+    assert record["variants"][0]["price"] == 0
+    assert "price" not in record["variants"][1]
 
 
 def test_field_coercion_repairs_source_quality_before_enrichment() -> None:
@@ -536,6 +589,77 @@ def test_normalize_variant_record_preserves_separate_suit_sizes_with_dimension_l
         {"size": "34/30", "style": "Pant"},
     ]
     assert record["variant_count"] == 4
+
+
+def test_prune_unrecognized_size_rows_does_not_treat_any_style_as_size_dimension() -> None:
+    record = {
+        "title": "Sneaker",
+        "variants": [
+            {"size": "US 8"},
+            {"size": "US 9"},
+            {"size": "Comfort", "option_values": {"style": "Wide"}},
+        ],
+    }
+
+    normalize_variant_record(record)
+
+    assert record["variants"] == [{"size": "US 8"}, {"size": "US 9"}]
+    assert record["variant_count"] == 2
+
+
+def test_enforce_variant_currency_context_keeps_all_mismatched_variants_for_review() -> None:
+    record = {
+        "currency": "INR",
+        "variants": [
+            {"size": "S", "currency": "USD", "price": "10"},
+            {"size": "M", "currency": "EUR", "price": "12"},
+        ],
+    }
+
+    backfill._enforce_variant_currency_context(record)
+
+    assert record["variants"] == [
+        {"size": "S", "currency": "USD", "price": "10"},
+        {"size": "M", "currency": "EUR", "price": "12"},
+    ]
+    assert record["variant_count"] == 2
+    assert len(record["variants_currency_mismatch"]) == 2
+
+
+def test_hydrate_variant_size_from_precompiled_sku_suffix_pattern(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        hydration,
+        "variant_sku_size_suffix_patterns",
+        (hydration.re.compile(r"-(?P<size>xs|xl)$", hydration.re.I),),
+    )
+    record = {
+        "variants": [
+            {"sku": "WIDGET-XS"},
+            {"sku": "WIDGET-XL"},
+        ],
+    }
+
+    hydration._hydrate_variant_axes(record)
+
+    assert [variant["size"] for variant in record["variants"]] == ["XS", "XL"]
+
+
+def test_sanitize_variant_axes_normalizes_mixed_case_axis_keys() -> None:
+    record = {
+        "variants": [
+            {"Size": "US 8", "Color": "Black", "sku": "A"},
+            {"Size": "US 9", "Color": "Black", "sku": "B"},
+        ],
+    }
+
+    sanitization._sanitize_variant_axes(record)
+
+    assert record["variants"] == [
+        {"sku": "A", "size": "US 8", "color": "Black"},
+        {"sku": "B", "size": "US 9", "color": "Black"},
+    ]
 
 
 def test_normalize_variant_record_keeps_independent_color_rows_without_selected_parent_color() -> None:

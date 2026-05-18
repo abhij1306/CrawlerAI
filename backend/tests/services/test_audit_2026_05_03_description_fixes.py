@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.services.extract.detail_text_sanitizer import (
+from app.services.extract.detail.text.sanitizer import (
     sanitize_detail_features,
     sanitize_detail_long_text,
     sanitize_detail_long_text_fields,

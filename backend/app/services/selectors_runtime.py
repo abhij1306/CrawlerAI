@@ -37,7 +37,7 @@ from app.services.selector_suggestions import (
     selector_suggestion_from_record,
     suggestion_exists,
 )
-from app.services.xpath_service import (
+from app.services.dom.xpath_service import (
     extract_selector_value,
     validate_or_convert_xpath,
 )

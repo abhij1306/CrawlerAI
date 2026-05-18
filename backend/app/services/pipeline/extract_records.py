@@ -5,13 +5,13 @@ from typing import Any
 from app.services.acquisition.runtime import classify_blocked_page
 from app.services.config.runtime_settings import crawler_runtime_settings
 from app.services.extract.content_listing_handler import validate_table_rows_quality
-from app.services.extract.detail_identity_core import (
+from app.services.extract.detail.identity.core import (
     listing_detail_like_path,
     listing_url_is_structural,
 )
-from app.services.extract.detail_record_assembly import extract_detail_records
-from app.services.extract.detail_final_cleanup import repair_ecommerce_detail_record_quality
-from app.services.extract.detail_price_core import drop_low_signal_zero_detail_price
+from app.services.extract.detail.assembly.record_assembly import extract_detail_records
+from app.services.extract.detail.assembly.final_cleanup import repair_ecommerce_detail_record_quality
+from app.services.extract.detail.price.core import drop_low_signal_zero_detail_price
 from app.services.extract.listing_candidate_ranking import best_listing_candidate_set
 from app.services.extract.listing_record_finalizer import finalize_listing_price_fields
 from app.services.extract.network_listing_mapper import (

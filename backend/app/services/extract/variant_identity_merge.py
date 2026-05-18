@@ -1,5 +1,16 @@
 from __future__ import annotations
 
+__all__ = (
+    "split_variant_axes",
+    "resolve_variants",
+    "variant_identity",
+    "variant_semantic_identity",
+    "collapse_duplicate_size_aliases",
+    "variant_row_richness",
+    "merge_variant_pair",
+    "merge_variant_rows",
+)
+
 import itertools
 import logging
 from typing import Any

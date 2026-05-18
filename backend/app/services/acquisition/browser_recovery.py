@@ -27,6 +27,7 @@ async def recover_browser_challenge(
     elapsed_ms: Callable[[float], int],
     classify_blocked_page,
     get_page_html,
+    looks_like_low_content_shell=None,
 ):
     phase_timings_ms.setdefault("challenge_wait", 0)
     phase_timings_ms.setdefault("challenge_retry", 0)
@@ -36,7 +37,12 @@ async def recover_browser_challenge(
     status_code = int(getattr(response, "status", 0) or 0)
     initial_html = await get_page_html(page)
     classification = await classify_blocked_page(initial_html, status_code)
-    if not classification.blocked:
+    if _challenge_has_cleared(
+        initial_html,
+        status_code=status_code,
+        classification=classification,
+        looks_like_low_content_shell=looks_like_low_content_shell,
+    ):
         return response
 
     providers = {
@@ -55,7 +61,12 @@ async def recover_browser_challenge(
                 html,
                 _recovered_html_status_code(status_code),
             )
-            if not classification.blocked:
+            if _challenge_has_cleared(
+                html,
+                status_code=_recovered_html_status_code(status_code),
+                classification=classification,
+                looks_like_low_content_shell=looks_like_low_content_shell,
+            ):
                 phase_timings_ms["challenge_wait"] = elapsed_ms(wait_started_at)
                 return _response_for_recovered_page(response, status_code)
         remaining_ms = max(0, int((deadline - time.perf_counter()) * 1000))
@@ -67,7 +78,12 @@ async def recover_browser_challenge(
             html,
             _recovered_html_status_code(status_code),
         )
-        if not classification.blocked:
+        if _challenge_has_cleared(
+            html,
+            status_code=_recovered_html_status_code(status_code),
+            classification=classification,
+            looks_like_low_content_shell=looks_like_low_content_shell,
+        ):
             phase_timings_ms["challenge_wait"] = elapsed_ms(wait_started_at)
             return _response_for_recovered_page(response, status_code)
     phase_timings_ms["challenge_wait"] = elapsed_ms(wait_started_at)
@@ -92,13 +108,47 @@ async def recover_browser_challenge(
         )
     except Exception:
         return response
-    if retry_classification.blocked:
+    if not _challenge_has_cleared(
+        retry_html,
+        status_code=_recovered_html_status_code(retry_status_code),
+        classification=retry_classification,
+        looks_like_low_content_shell=looks_like_low_content_shell,
+    ):
         return response
     return _response_for_recovered_page(
         retried_response if retried_response is not None else response,
         retry_status_code,
         navigation_strategy="domcontentloaded",
     )
+
+
+def _challenge_has_cleared(
+    html: str,
+    *,
+    status_code: int,
+    classification: Any,
+    looks_like_low_content_shell,
+) -> bool:
+    _ = status_code
+    if bool(getattr(classification, "blocked", False)):
+        return False
+    if looks_like_low_content_shell is None:
+        return True
+    providers = list(getattr(classification, "provider_hits", []) or [])
+    if not providers:
+        return True
+    try:
+        low_content = bool(
+            looks_like_low_content_shell(
+                html,
+                html_bytes=len(str(html or "").encode("utf-8", errors="ignore")),
+            )
+        )
+    except Exception:
+        low_content = False
+    if not low_content:
+        return True
+    return False
 
 
 def _recovered_html_status_code(status_code: int) -> int:

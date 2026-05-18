@@ -13,7 +13,7 @@ from app.services.acquisition.browser_runtime import real_chrome_browser_availab
 from app.services.config.runtime_settings import crawler_runtime_settings
 from app.services.domain_memory_service import load_domain_selector_rules
 from app.services.pipeline.extract_records import extract_records
-from app.services.extract.detail_record_assembly import (
+from app.services.extract.detail.assembly.record_assembly import (
     detail_record_rejection_reason,
     infer_detail_failure_reason,
 )

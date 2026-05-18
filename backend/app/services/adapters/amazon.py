@@ -27,9 +27,12 @@ from app.services.config.extraction_rules import (
     CURRENCY_DECIMAL_PLACES,
     DEFAULT_DECIMAL_PLACES,
 )
+from app.services.dom.image_extraction import upgrade_low_resolution_image_url
+from app.services.extract.variant_normalization.contract import (
+    flatten_variants_for_public_output,
+)
 from app.services.shared.field_coerce import (
     extract_currency_code,
-    flatten_variants_for_public_output,
 )
 from app.services.extract.variant_axis import normalized_variant_axis_key as _normalized_variant_axis_key
 
@@ -263,6 +266,7 @@ class AmazonAdapter(BaseAdapter):
                 if not candidate:
                     continue
                 normalized = candidate.strip()
+                normalized = upgrade_low_resolution_image_url(normalized)
                 if normalized and normalized not in seen:
                     seen.add(normalized)
                     values.append(normalized)
@@ -275,6 +279,7 @@ class AmazonAdapter(BaseAdapter):
                 continue
             for candidate in payload.keys() if isinstance(payload, Mapping) else []:
                 normalized = str(candidate or "").strip()
+                normalized = upgrade_low_resolution_image_url(normalized)
                 if normalized and normalized not in seen:
                     seen.add(normalized)
                     values.append(normalized)
