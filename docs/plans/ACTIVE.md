@@ -1,9 +1,9 @@
 # Active Plan
 
-**Current:** UCP Compliance Audit → `docs/plans/ucp-compliance-audit-plan.md`
-**Status:** COMPLETE
+**Current:** Shopify Linked Variant Family Extraction → `docs/plans/shopify-linked-variant-family-plan.md`
+**Status:** IN PROGRESS
 **Started:** 2026-05-18
-**Last slice completed:** Slice 11 — Docs + Broad Verification
+**Last slice completed:** None
 
 ## Queue
 1. Product Monitoring Pipeline → `docs/plans/product-monitoring-pipeline-plan.md`
@@ -11,6 +11,7 @@
 3. Phase 2 (Webhooks, Email, Multi-Tenant, Job Enrichment, Scale) → `docs/plans/phase-2-plan.md`
 
 ## Previous
+- UCP Compliance Audit (COMPLETE) → `docs/plans/ucp-compliance-audit-plan.md`
 - Extract Decomposition And Public Surface (DONE) → `docs/plans/extract-decomposition-and-public-surface-plan.md`
 - Detail Extraction Second-Pass Decomposition (COMPLETE) → `docs/plans/detail-extraction-second-pass-decomposition-plan.md`
 - Verified Architecture Audit Remediation (COMPLETE) → `docs/plans/verified-architecture-audit-remediation-plan.md`
