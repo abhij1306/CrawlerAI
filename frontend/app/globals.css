@@ -52,89 +52,94 @@
   color-scheme: light;
 
   /* ── Fonts
-     Primary : Geist / Satoshi / Outfit / Inter system fallbacks
+     Primary : Source Sans 3 (Google Fonts — SAP Fiori open-source typeface)
      Mono    : JetBrains Mono */
   --font-primary-family:
-    var(--font-primary-source, 'Geist'), 'Geist', 'Satoshi', 'Outfit', 'Inter', ui-sans-serif, system-ui, sans-serif;
+    var(--font-primary-source, 'Source Sans 3'), 'Source Sans 3', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;
   --font-mono-family:
     var(--font-jetbrains-mono, 'JetBrains Mono'), 'JetBrains Mono', ui-monospace, Consolas,
     monospace;
-  --font-serif: 'IBM Plex Serif', 'Newsreader', Georgia, serif;
+  --font-serif: Georgia, serif;
 
   /* ── Mono size tokens */
-  --font-mono-size: 13.5px;
-  --font-mono-size-sm: 12px;
-  --font-mono-line-height: 1.5;
+  --font-mono-size: 13px;
+  --font-mono-size-sm: 11px;
+  --font-mono-line-height: 1.4;
 
-  /* ── Surfaces — Slate-50 base + pristine white panels */
-  --bg-base: #f8fafc;
-  --bg-alt: #f1f5f9;
+  /* ── Surfaces — SAP Fiori Belize / Horizon Morning grey-blue page base */
+  --bg-base: #eff3f6;
+  --bg-alt: #f3f5f7;
   --bg-panel: #ffffff;
   --bg-elevated: #ffffff;
-  --bg-panel-strong: #e2e8f0;
-  --bg-sidebar: #f8fafc;
+  --bg-panel-strong: #e1e7ec;
+  --bg-sidebar: #ffffff;
 
-  /* ── Borders — crisp, delicate technical lines */
-  --border: #e2e8f0;
-  --border-strong: #cbd5e1;
+  /* ── Borders — crisp SAP Fiori standard borders */
+  --border: #d9d9d9;
+  --border-strong: #b0bac5;
   --border-focus: var(--accent);
 
-  /* ── Typography — high-contrast Slate neutrals */
-  --text-primary: #0f172a;
-  --text-secondary: #475569;
-  --text-muted: #64748b;
+  /* ── Typography — SAP Fiori standard charcoal text */
+  --text-primary: #32363a;
+  --text-secondary: #55616b;
+  --text-muted: #7f8c98;
 
-  /* ── JSON Syntax Highlighting (VS Code Light) */
-  --syntax-key: #0451a5;
-  --syntax-string: #a31515;
-  --syntax-number: #098658;
-  --syntax-boolean: #0451a5;
-  --syntax-null: #0451a5;
-  --syntax-punct: #3b3b3b;
+  /* ── JSON Syntax Highlighting */
+  --syntax-key: #0a6ed1;
+  --syntax-string: #b00000;
+  --syntax-number: #136a13;
+  --syntax-boolean: #0a6ed1;
+  --syntax-null: #7f8c98;
+  --syntax-punct: #55616b;
 
-  /* ── Accent — Deep Indigo */
-  --accent: #4f46e5;
-  --accent-hover: #4338ca;
-  --accent-warm: #4f46e5;
+  /* ── Accent — SAP Fiori Primary Blue */
+  --accent: #0a6ed1;
+  --accent-hover: #0854a0;
+  --accent-warm: #0a6ed1;
   --accent-foreground: #ffffff;
   --accent-fg: #ffffff;
-  --accent-subtle: rgba(79, 70, 229, 0.05);
-  --accent-dim: rgba(79, 70, 229, 0.09);
-  --accent-text: #4f46e5;
+  --accent-subtle: rgba(10, 110, 209, 0.05);
+  --accent-dim: rgba(10, 110, 209, 0.1);
+  --accent-text: #0a6ed1;
+
+  /* ── Shellbar (Classic Belize Deep Navy) */
+  --surface-header: #354a5f;
+  --shell-text: #ffffff;
+  --shell-muted: #d0e0f0;
+  --shell-border: #2c3e53;
 
   /* ── Semantic states */
-  --success: #10b981;
-  --success-bg: #ecfdf5;
-  --warning: #f59e0b;
-  --warning-bg: #fffbeb;
-  --danger: #ef4444;
-  --danger-bg: #fef2f2;
-  --info: #3b82f6;
-  --info-bg: #eff6ff;
+  --success: #2b7c2b;
+  --success-bg: #f0f9f0;
+  --warning: #e06000;
+  --warning-bg: #fff5ed;
+  --danger: #bb0000;
+  --danger-bg: #fff0f0;
+  --info: #0a6ed1;
+  --info-bg: #f0f5fa;
 
   --status-active-bg: var(--success-bg);
   --status-running-bg: var(--accent-subtle);
   --status-killed-bg: var(--danger-bg);
   --status-paused-bg: var(--warning-bg);
-  --status-neutral-bg: #f1f5f9;
+  --status-neutral-bg: #f3f5f7;
 
-  /* ── Shadows — beautiful, soft, professional diffusion shadows */
-  --shadow-xs-value: 0 1px 2px 0 rgba(15, 23, 42, 0.03);
-  --shadow-sm: 0 1px 2px 0 rgba(15, 23, 42, 0.05);
-  --shadow-md: 0 4px 6px -1px rgba(15, 23, 42, 0.05), 0 2px 4px -2px rgba(15, 23, 42, 0.05);
-  --shadow-lg-value: 0 10px 15px -3px rgba(15, 23, 42, 0.04), 0 4px 6px -4px rgba(15, 23, 42, 0.04);
-  --shadow-modal: 0 20px 25px -5px rgba(15, 23, 42, 0.08), 0 8px 10px -6px rgba(15, 23, 42, 0.08);
-  --shadow-card-value: 0 1px 3px 0 rgba(0, 0, 0, 0.02), 0 4px 12px 0 rgba(0, 0, 0, 0.03);
-  --shadow-elevated-value: 0 12px 24px -4px rgba(15, 23, 42, 0.04), 0 4px 12px -2px rgba(15, 23, 42, 0.02);
+  /* ── Shadows — flat, soft diffused Fiori style */
+  --shadow-xs-value: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 8px rgba(0, 0, 0, 0.05);
+  --shadow-lg-value: 0 8px 16px rgba(0, 0, 0, 0.06);
+  --shadow-modal: 0 12px 24px rgba(0, 0, 0, 0.12);
+  --shadow-card-value: 0 2px 4px rgba(0, 0, 0, 0.05), 0 1px 2px rgba(0, 0, 0, 0.03);
+  --shadow-elevated-value: 0 8px 16px rgba(0, 0, 0, 0.08);
 
   /* ── Surface — elegant gradient */
-  --gradient-card: linear-gradient(to bottom, #ffffff 0%, #fafafa 100%);
+  --gradient-card: linear-gradient(to bottom, #ffffff 0%, #fcfdfd 100%);
 
   /* ── Component surface tokens */
   --surface-card: var(--bg-panel);
-  --surface-header: var(--bg-panel);
   --surface-sidebar: var(--bg-sidebar);
-  --surface-card-highlight: rgba(0, 0, 0, 0.015);
+  --surface-card-highlight: rgba(10, 110, 209, 0.015);
   --surface-card-edge: var(--border);
   --subtle-panel-bg: var(--bg-alt);
   --subtle-panel-border: var(--border);
@@ -154,21 +159,21 @@
 
   /* ── Terminal / Code surfaces */
   --terminal-bg: #ffffff;
-  --terminal-fg: #3b3b3b;
-  --terminal-code-bg: #f8fafc;
-  --terminal-border: #cbd5e1;
+  --terminal-fg: #32363a;
+  --terminal-code-bg: #f3f5f7;
+  --terminal-border: var(--border);
   --terminal-shadow: var(--shadow-sm);
 
   /* ── Alert border/text tokens */
   --alert-success-bg: var(--success-bg);
-  --alert-success-border: #a7f3d0;
-  --alert-success-text: #065f46;
+  --alert-success-border: #c8e1c8;
+  --alert-success-text: var(--success);
   --alert-warning-bg: var(--warning-bg);
-  --alert-warning-border: #fde68a;
-  --alert-warning-text: #92400e;
+  --alert-warning-border: #f5d4bd;
+  --alert-warning-text: var(--warning);
   --alert-danger-bg: var(--danger-bg);
-  --alert-danger-border: #fecaca;
-  --alert-danger-text: #991b1b;
+  --alert-danger-border: #f8c8c8;
+  --alert-danger-text: var(--danger);
 
   /* ── Settings panel */
   --setting-surface-active-bg: var(--accent-subtle);
@@ -178,8 +183,8 @@
   --setting-icon-active-shadow: var(--shadow-xs-value);
 
   /* ── Skeleton loader */
-  --skeleton-base: #f1f5f9;
-  --skeleton-highlight: #f8fafc;
+  --skeleton-base: #e1e7ec;
+  --skeleton-highlight: #f3f5f7;
 
   /* ── Logo */
   --logo-mark-bg: var(--accent);
@@ -188,10 +193,10 @@
   /* ══ TYPE SCALE ══════════════════════════════════════════════════════════
      Body = --text-base. Display metrics sit above page titles.
      ════════════════════════════════════════════════════════════════════════ */
-  --text-xs: 0.75rem;
-  /* 12px — badges, timestamps, micro-labels */
-  --text-sm: 0.8125rem;
-  /* 13px — table data, secondary UI chrome */
+  --text-xs: 0.8125rem;
+  /* 13px — badges, timestamps, micro-labels */
+  --text-sm: 0.875rem;
+  /* 14px — table data, secondary UI chrome, sidebar */
   --text-base: 0.9375rem;
   /* 15px — primary body, form fields, buttons */
   --text-lg: 1.0625rem;
@@ -212,20 +217,20 @@
   --leading-none: 1;
   --leading-tight: 1.2;
   /* display / headings */
-  --leading-snug: 1.4;
+  --leading-snug: 1.35;
   /* subheadings / controls */
-  --leading-normal: 1.5;
+  --leading-normal: 1.45;
   /* body reading rhythm */
-  --leading-relaxed: 1.625;
+  --leading-relaxed: 1.55;
   /* long-form reading */
 
   /* ── Letter spacing */
-  --tracking-tighter: -0.025em;
-  --tracking-tight: -0.015em;
+  --tracking-tighter: -0.015em;
+  --tracking-tight: -0.01em;
   --tracking-normal: 0em;
-  --tracking-wide: 0.04em;
-  --tracking-wider: 0.06em;
-  --tracking-widest: 0.1em;
+  --tracking-wide: 0.02em;
+  --tracking-wider: 0.04em;
+  --tracking-widest: 0.08em;
 
   /* ══ SPACING SCALE ═══════════════════════════════════════════════════════ */
   --space-1: 4px;
@@ -240,32 +245,32 @@
   --space-12: 48px;
   --space-16: 64px;
 
-  --content-gutter: var(--space-6);
+  --content-gutter: var(--space-5);
 
-  --control-height: 36px;
+  --control-height: 32px;
   --interactive-border-width: 1px;
 
-  /* ── Border radius — Sharp elegant roundings */
+  /* ── Border radius — Fiori uses clean small roundings (4px/8px) */
   --radius-xs: 2px;
   --radius-sm: 3px;
   --radius-md: 4px;
-  --radius-lg: 8px;
-  --radius-xl: 10px;
-  --radius-2xl: 12px;
+  --radius-lg: 4px;
+  --radius-xl: 6px;
+  --radius-2xl: 8px;
 
   /* ── Table typography */
-  --table-font-size: var(--font-mono-size);
-  --table-header-font-size: var(--font-mono-size-sm);
-  --table-header-font-family: var(--font-mono-family);
+  --table-font-size: var(--text-sm);
+  --table-header-font-size: var(--text-xs);
+  --table-header-font-family: var(--font-primary-family);
   --table-header-weight: var(--weight-bold);
   --table-header-tracking: var(--tracking-wider);
   --table-header-height: 36px;
-  --table-row-height: 40px;
+  --table-row-height: 38px;
 
   /* ── Transitions */
-  --transition-fast: 120ms cubic-bezier(0.4, 0, 0.2, 1);
-  --transition-base: 180ms cubic-bezier(0.4, 0, 0.2, 1);
-  --transition-slow: 280ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-fast: 100ms ease;
+  --transition-base: 150ms ease;
+  --transition-slow: 250ms ease;
 
   /* ── Chart / metric color palette */
   --metric-runs-color: var(--accent);
@@ -275,13 +280,13 @@
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   DARK THEME — CrawlerAI Console · High-Agency Premium
-   Palette: original neutral charcoal base · Sky Blue accent
+   DARK THEME — CrawlerAI Console
+   Palette: neutral charcoal base · Sky Blue accent (original)
    ═══════════════════════════════════════════════════════════════════════════ */
 html[data-theme='dark'] {
   color-scheme: dark;
 
-  /* ── Surfaces — Neutral Charcoal base (original variables) */
+  /* ── Surfaces — Neutral Charcoal base (original) */
   --bg-base: #141414;
   --bg-alt: #1a1a1a;
   --bg-panel: #1e1e1e;
@@ -299,7 +304,7 @@ html[data-theme='dark'] {
   --text-secondary: #a1a1aa;
   --text-muted: #71717a;
 
-  /* ── Accent — Sky Blue (original dark mode accent) */
+  /* ── Accent — Sky Blue (original) */
   --accent: #38bdf8;
   --accent-hover: #7dd3fc;
   --accent-warm: #38bdf8;
@@ -311,7 +316,13 @@ html[data-theme='dark'] {
   --logo-mark-bg: var(--accent);
   --logo-mark-fg: #020617;
 
-  /* ── Semantic states — original desaturated on dark slate */
+  /* ── Shellbar (dark mode — blends with sidebar) */
+  --surface-header: #1e1e1e;
+  --shell-text: #f3f4f6;
+  --shell-muted: #71717a;
+  --shell-border: #333333;
+
+  /* ── Semantic states */
   --success: #00e6a8;
   --success-bg: rgba(0, 230, 168, 0.1);
   --warning: #ffb74d;
@@ -327,7 +338,7 @@ html[data-theme='dark'] {
   --status-paused-bg: var(--warning-bg);
   --status-neutral-bg: #181b21;
 
-  /* ── Shadows — minimal and atmospheric */
+  /* ── Shadows */
   --shadow-xs-value: 0 1px 2px 0 rgba(0, 0, 0, 0.4);
   --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.5);
   --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.5);
@@ -341,7 +352,6 @@ html[data-theme='dark'] {
 
   /* ── Component surface tokens */
   --surface-card: var(--bg-panel);
-  --surface-header: var(--bg-panel);
   --surface-sidebar: var(--bg-sidebar);
   --surface-card-highlight: rgba(255, 255, 255, 0.015);
   --surface-card-edge: var(--border);

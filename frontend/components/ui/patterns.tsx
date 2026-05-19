@@ -148,7 +148,7 @@ export function TabBar({
   return (
     <div
       className={cn(
-        'segmented-root inline-flex h-[36px] items-stretch gap-1 rounded-none p-[4px]',
+        'segmented-root inline-flex h-[36px] items-stretch gap-1 rounded-[4px] p-[4px]',
         className,
       )}
     >
@@ -159,7 +159,7 @@ export function TabBar({
           aria-pressed={value === option.value}
           onClick={() => onChange(option.value)}
           className={cn(
-            'type-control relative z-10 inline-flex min-w-[72px] shrink-0 items-center justify-center rounded-none border px-3 py-0 whitespace-nowrap transition-colors duration-150',
+            'type-control relative z-10 inline-flex min-w-[72px] shrink-0 items-center justify-center rounded-[4px] border px-3 py-0 whitespace-nowrap transition-colors duration-150',
             padX,
             value === option.value
               ? 'border-border bg-panel text-foreground'

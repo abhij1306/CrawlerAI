@@ -3,14 +3,15 @@ import Script from 'next/script';
 import './globals.css';
 
 // Next.js App Router root layout; invoked by file-system routing.
-import { JetBrains_Mono, Inter } from 'next/font/google';
+import { JetBrains_Mono, Source_Sans_3 } from 'next/font/google';
 
 import { AppShell } from '../components/layout/app-shell';
 import { QueryProvider } from '../components/ui/query-provider';
 
-// Primary UI font
-const mainFont = Inter({
+// Primary UI font — Source Sans 3: SAP's open-source Fiori typeface
+const mainFont = Source_Sans_3({
   subsets: ['latin'],
+  weight: ['300', '400', '500', '600', '700'],
   variable: '--font-primary-source',
   display: 'swap',
 });

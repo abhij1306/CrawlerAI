@@ -6,7 +6,7 @@ import logging
 import re
 from dataclasses import dataclass
 from typing import Awaitable, Callable
-from urllib.parse import parse_qs, urlencode, urljoin, urlsplit
+from urllib.parse import parse_qs, unquote, urlencode, urljoin, urlsplit
 
 from bs4 import BeautifulSoup
 import httpx
@@ -18,6 +18,12 @@ from app.services.config.product_intelligence import (
     AGGREGATOR_DOMAINS,
     BRAND_DOMAIN_MAP,
     DISCOVERY_SOURCE_TYPE_PRIORITY,
+    DISCOVERY_GENERIC_PRODUCT_TOKENS,
+    DISCOVERY_LISTING_PATH_SEGMENTS,
+    DISCOVERY_PRODUCT_DETAIL_EXTENSIONS,
+    DISCOVERY_PRODUCT_PATH_HINTS,
+    DISCOVERY_TITLE_MISMATCH_MIN_DISTINCTIVE_TOKENS,
+    DISCOVERY_TITLE_MISMATCH_MIN_OVERLAP_RATIO,
     MARKETPLACE_DOMAINS,
     RETAILER_DOMAINS,
     SEARCH_EXCLUDED_DOMAIN_PREFIX,
@@ -185,6 +191,8 @@ async def _collect_candidates(
                 continue
             domain = source_domain(normalized_url)
             if not _domain_allowed(domain, allowed_domains, excluded_domains, source_domain_value):
+                continue
+            if not _candidate_matches_product(product, normalized_url, result.payload):
                 continue
             if domain_counts.get(domain, 0) >= product_intelligence_settings.max_urls_per_result_domain:
                 continue
@@ -502,6 +510,184 @@ def _clean_result_url(value: object) -> str:
     if parsed.scheme not in {"http", "https"} or not parsed.netloc:
         return ""
     return text
+
+
+def _candidate_matches_product(
+    product: dict[str, object],
+    url: str,
+    payload: dict[str, object] | None,
+) -> bool:
+    if not _looks_like_product_detail_url(url):
+        return False
+    result_text = _search_result_text(payload)
+    candidate_text = " ".join(part for part in (result_text, url) if part)
+    if _identity_token_match(product, candidate_text):
+        return True
+    if _has_conflicting_numeric_identity(product, candidate_text):
+        return False
+    return not _title_mismatch(product, result_text or url)
+
+
+def _looks_like_product_detail_url(value: object) -> bool:
+    try:
+        parsed = urlsplit(str(value or ""))
+    except ValueError:
+        return False
+    path = unquote(parsed.path or "").casefold()
+    if not path or path == "/":
+        return False
+    has_product_hint = any(hint in path for hint in DISCOVERY_PRODUCT_PATH_HINTS)
+    segments = [segment for segment in path.strip("/").split("/") if segment]
+    if not has_product_hint and any(
+        segment in DISCOVERY_LISTING_PATH_SEGMENTS for segment in segments
+    ):
+        return False
+    if has_product_hint:
+        return True
+    terminal = segments[-1] if segments else ""
+    if terminal.endswith(tuple(DISCOVERY_PRODUCT_DETAIL_EXTENSIONS)):
+        return True
+    if _descriptive_product_slug(terminal):
+        return True
+    return _product_id_like(terminal)
+
+
+def _descriptive_product_slug(value: str) -> bool:
+    terminal = str(value or "").casefold()
+    if "-" not in terminal:
+        return False
+    tokens = [
+        _normalize_slug_token(token)
+        for token in re.split(r"[^a-z0-9]+", terminal)
+        if token
+    ]
+    alpha_tokens = [token for token in tokens if re.search(r"[a-z]", token)]
+    distinctive_tokens = [
+        token for token in alpha_tokens if token not in DISCOVERY_GENERIC_PRODUCT_TOKENS
+    ]
+    return len(alpha_tokens) >= 3 and len(set(distinctive_tokens)) >= 2
+
+
+def _normalize_slug_token(value: str) -> str:
+    token = str(value or "").casefold()
+    if token.endswith("ies") and len(token) > 4:
+        return f"{token[:-3]}y"
+    if token.endswith("es") and len(token) > 4:
+        return token[:-2]
+    if token.endswith("s") and len(token) > 3:
+        return token[:-1]
+    return token
+
+
+def _product_id_like(value: str) -> bool:
+    token = re.sub(r"[^a-z0-9]+", "", str(value or "").casefold())
+    if len(token) < 6:
+        return False
+    return any(char.isdigit() for char in token) and any(char.isalpha() for char in token)
+
+
+def _search_result_text(payload: dict[str, object] | None) -> str:
+    data = payload if isinstance(payload, dict) else {}
+    raw_value = data.get("raw")
+    raw = raw_value if isinstance(raw_value, dict) else {}
+    values = [
+        data.get("title"),
+        data.get("snippet"),
+        data.get("source"),
+        raw.get("title"),
+        raw.get("snippet"),
+        raw.get("displayed_link"),
+        raw.get("source"),
+    ]
+    return " ".join(str(value or "") for value in values).strip()
+
+
+def _identity_token_match(product: dict[str, object], candidate_text: object) -> bool:
+    source_tokens = _identity_tokens(
+        product.get("title"),
+        product.get("sku"),
+        product.get("mpn"),
+        product.get("gtin"),
+    )
+    if not source_tokens:
+        return False
+    candidate_tokens = _identity_tokens(candidate_text)
+    return bool(source_tokens & candidate_tokens)
+
+
+def _has_conflicting_numeric_identity(
+    product: dict[str, object],
+    candidate_text: object,
+) -> bool:
+    source_tokens = _identity_tokens(
+        product.get("title"),
+        product.get("sku"),
+        product.get("mpn"),
+        product.get("gtin"),
+    )
+    candidate_tokens = _identity_tokens(candidate_text)
+    return bool(source_tokens and candidate_tokens and not (source_tokens & candidate_tokens))
+
+
+def _identity_tokens(*values: object) -> set[str]:
+    tokens: set[str] = set()
+    for value in values:
+        raw = str(value or "").casefold()
+        parts = [
+            token
+            for token in re.split(r"[^a-z0-9]+", raw)
+            if token
+        ]
+        compact = re.sub(r"[^a-z0-9]+", "", raw)
+        if (
+            1 < len(parts) <= 3
+            and len(compact) >= 5
+            and any(char.isdigit() for char in compact)
+        ):
+            tokens.add(compact)
+        for token in parts:
+            if len(token) >= 3 and any(char.isdigit() for char in token):
+                tokens.add(token)
+    return tokens
+
+
+def _title_mismatch(product: dict[str, object], candidate_text: object) -> bool:
+    source_tokens = _distinctive_title_tokens(
+        product.get("title"),
+        product.get("brand"),
+    )
+    candidate_tokens = _distinctive_title_tokens(
+        candidate_text,
+        product.get("brand"),
+    )
+    minimum = int(DISCOVERY_TITLE_MISMATCH_MIN_DISTINCTIVE_TOKENS)
+    if len(source_tokens) < minimum or len(candidate_tokens) < minimum:
+        return False
+    overlap = len(source_tokens & candidate_tokens) / max(
+        min(len(source_tokens), len(candidate_tokens)),
+        1,
+    )
+    return overlap < float(DISCOVERY_TITLE_MISMATCH_MIN_OVERLAP_RATIO)
+
+
+def _distinctive_title_tokens(title: object, brand: object) -> set[str]:
+    brand_tokens = _text_tokens(normalize_brand(brand))
+    return {
+        token
+        for token in _text_tokens(title)
+        if token not in brand_tokens and token not in DISCOVERY_GENERIC_PRODUCT_TOKENS
+    }
+
+
+def _text_tokens(value: object) -> set[str]:
+    tokens: set[str] = set()
+    for token in re.split(r"[^a-z0-9]+", str(value or "").casefold()):
+        if len(token) <= 1:
+            continue
+        normalized = token[:-1] if token.endswith("s") and len(token) > 3 else token
+        if normalized:
+            tokens.add(normalized)
+    return tokens
 
 
 def _domain_allowed(

@@ -48,6 +48,8 @@ from app.services.config.extraction_rules import (
     LISTING_LOCALE_PATH_SEGMENT_PATTERN,
     LISTING_NON_LISTING_PATH_TOKENS,
     LISTING_PRODUCT_DETAIL_ID_RE,
+    LISTING_STRUCTURAL_QUERY_CATEGORY_TOKENS,
+    LISTING_STRUCTURAL_QUERY_FILTER_TOKENS,
     PRODUCT_SLUG_MIN_TERMINAL_TOKENS,
     YEAR_SLUG_PATTERN,
 )
@@ -244,6 +246,33 @@ def _listing_url_has_category_path_segment(path: str) -> bool:
     return False
 
 
+def _listing_query_looks_structural(query: str) -> bool:
+    pairs = [
+        (
+            str(key or "").strip().lower(),
+            str(value or "").strip().lower(),
+        )
+        for key, value in parse_qsl(str(query or ""), keep_blank_values=True)
+    ]
+    if not pairs:
+        return False
+    generic_filter_keys = {"f", "filter", "filters", "facet", "facets", "rf"}
+    filter_tokens = tuple(
+        str(token or "").strip().lower().rstrip("=")
+        for token in LISTING_STRUCTURAL_QUERY_FILTER_TOKENS
+        if str(token or "").strip()
+    )
+    for key, value in pairs:
+        if key not in generic_filter_keys:
+            continue
+        haystack = " ".join(part for part in (key, value) if part)
+        if any(
+            token in haystack for token in LISTING_STRUCTURAL_QUERY_CATEGORY_TOKENS
+        ) and any(token in haystack for token in filter_tokens):
+            return True
+    return False
+
+
 def listing_url_is_structural(url: str, page_url: str) -> bool:
     lowered = url.lower()
     if lowered.startswith(("javascript:", "#", "mailto:")):
@@ -350,6 +379,11 @@ def listing_url_is_structural(url: str, page_url: str) -> bool:
             and "-" in terminal_raw
             and not year_led_terminal
         )
+        if (
+            not terminal_looks_like_product_slug
+            and _listing_query_looks_structural(parsed.query)
+        ):
+            return True
         if not terminal_looks_like_product_slug and (
             any(tokens & non_listing_tokens for tokens in leading_tokens)
             or any(segment in non_listing_tokens for segment in leading_raw)

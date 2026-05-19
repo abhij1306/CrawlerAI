@@ -327,13 +327,13 @@ export function Toggle({
       aria-checked={checked}
       onClick={() => onChange(!checked)}
       className={cn(
-        'focus-ring relative inline-flex h-[20px] w-[36px] shrink-0 cursor-pointer items-center rounded-none transition-[background-color]',
+        'focus-ring relative inline-flex h-[20px] w-[36px] shrink-0 cursor-pointer items-center rounded-full transition-[background-color]',
         checked ? 'bg-accent' : 'bg-border-strong',
       )}
     >
       <span
         className={cn(
-          'inline-block h-[15px] w-[15px] rounded-none bg-white transition-transform',
+          'inline-block h-[15px] w-[15px] rounded-full bg-white transition-transform',
           checked ? 'translate-x-[19px]' : 'translate-x-[2px]',
         )}
       />

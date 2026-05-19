@@ -50,6 +50,15 @@ def test_product_slug_in_utility_prefix_path_is_not_structural() -> None:
     )
 
 
+def test_product_slug_with_filter_query_is_not_structural() -> None:
+    page = "https://shop.example.com/shop/face-moisturiser"
+    product = (
+        "https://shop.example.com/shop/plum-rice-water-niacinamide-gel-cream"
+        "?f=Categories%3AFace%20Moisturiser&rf=Price%3A200_400"
+    )
+    assert listing_url_is_structural(product, page) is False
+
+
 def test_dell_landing_page_not_rescued_as_merchandise() -> None:
     """`/en-us/lp/dt/<slug>` is a Dell landing page, not a product."""
     from app.services.extract.listing_candidate_ranking import (

@@ -157,7 +157,7 @@ def extract_records(
         if network_rows:
             candidate_sets.append(("network", network_rows))
         combined_rows = [*listing_rows, *adapter_rows, *network_rows]
-        if len(candidate_sets) >= 2 and combined_rows:
+        if len(candidate_sets) >= 2 and combined_rows and not adapter_rows:
             candidate_sets.append(("combined", combined_rows))
         if candidate_sets:
             candidate_rows = best_listing_candidate_set(

@@ -499,7 +499,7 @@ function ShellContent({
                 disabled={resetPending}
                 variant="secondary"
                 size="sm"
-                className="text-[11px] font-semibold"
+                className="app-topbar-button text-[11px] font-semibold"
               >
                 <Trash2 className="size-3" />
                 {resetLabel}

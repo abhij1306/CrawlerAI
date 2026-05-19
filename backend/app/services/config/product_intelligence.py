@@ -64,6 +64,56 @@ SEARCH_STOP_WORDS = {
     "the",
     "with",
 }
+DISCOVERY_PRODUCT_PATH_HINTS = (
+    "/p/",
+    "/product/",
+    "/products/",
+    "/proddetail/",
+    "/dp/",
+    "/gp/product/",
+    "/ip/",
+)
+DISCOVERY_PRODUCT_DETAIL_EXTENSIONS = (".html", ".htm")
+DISCOVERY_LISTING_PATH_SEGMENTS = (
+    "c",
+    "category",
+    "categories",
+    "collection",
+    "collections",
+    "s",
+    "search",
+    "w",
+)
+DISCOVERY_GENERIC_PRODUCT_TOKENS = {
+    "apparel",
+    "buy",
+    "clothing",
+    "denim",
+    "dress",
+    "fit",
+    "for",
+    "jean",
+    "jeans",
+    "kid",
+    "kids",
+    "ladies",
+    "men",
+    "mens",
+    "pant",
+    "pants",
+    "product",
+    "sale",
+    "shirt",
+    "shop",
+    "shoe",
+    "shoes",
+    "style",
+    "the",
+    "women",
+    "womens",
+}
+DISCOVERY_TITLE_MISMATCH_MIN_DISTINCTIVE_TOKENS = 2
+DISCOVERY_TITLE_MISMATCH_MIN_OVERLAP_RATIO = 0.5
 SEARCH_EXCLUDED_DOMAIN_PREFIX = "-site:"
 SEARCH_SITE_PREFIX = "site:"
 SERPAPI_SEARCH_URL = "https://serpapi.com/search.json"

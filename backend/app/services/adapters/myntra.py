@@ -9,6 +9,7 @@ from app.services.adapters.base import AdapterResult, BaseAdapter
 from app.services.extract.variant_normalization.contract import (
     flatten_variants_for_public_output,
 )
+from app.services.extract.detail.price.core import currency_hint_from_page_url
 from app.services.shared.field_coerce import (
     absolute_url,
     clean_text,
@@ -97,6 +98,17 @@ def _extract_listing_records(page_url: str, html: str) -> list[dict[str, Any]]:
             continue
         seen_urls.add(final_url)
         records.append(finalized)
+    for record in state_index.values():
+        url = str(record.get("url") or "")
+        if not url or url in seen_urls:
+            continue
+        record["_source"] = "myntra_adapter"
+        finalized = finalize_record(record, surface="ecommerce_listing")
+        final_url = str(finalized.get("url") or "")
+        if not final_url or final_url in seen_urls:
+            continue
+        seen_urls.add(final_url)
+        records.append(finalized)
     return records
 
 
@@ -146,6 +158,7 @@ def _listing_record_from_state_product(
             "brand": product.get("brand"),
             "price": price,
             "original_price": original_price,
+            "currency": _myntra_currency(product, page_url=page_url),
             "rating": product.get("rating"),
             "review_count": product.get("ratingCount"),
             "sizes": text_or_none(product.get("sizes")),
@@ -188,6 +201,7 @@ def _listing_record_from_card(
                 strike_text,
                 interpret_integral_as_cents=False,
             ),
+            "currency": currency_hint_from_page_url(page_url),
             "sizes": sizes.replace("Sizes:", "").strip() if sizes else None,
             "rating": rating,
             "review_count": review_count,
@@ -228,7 +242,7 @@ def map_myx_product_payload(product: dict[str, Any], *, page_url: str) -> dict[s
             "product_id": product.get("id"),
             "price": _myx_price(product, price_key="discountedPrice"),
             "original_price": _myx_price(product, price_key="mrp"),
-            "currency": text_or_none(product.get("currency")) or text_or_none(product.get("currencyCode")) or text_or_none(product.get("priceCurrency")),
+            "currency": _myntra_currency(product, page_url=page_url),
             "availability": availability_value(active_variant) or None,
             "stock_quantity": stock_quantity(active_variant),
             "sku": variant_attribute(active_variant, "sku"),
@@ -246,6 +260,15 @@ def map_myx_product_payload(product: dict[str, Any], *, page_url: str) -> dict[s
         }
     )
     return record
+
+
+def _myntra_currency(product: dict[str, Any], *, page_url: str) -> str | None:
+    return (
+        text_or_none(product.get("currency"))
+        or text_or_none(product.get("currencyCode"))
+        or text_or_none(product.get("priceCurrency"))
+        or currency_hint_from_page_url(page_url)
+    )
 
 
 def _myx_price(product: dict[str, Any], *, price_key: str) -> str | None:

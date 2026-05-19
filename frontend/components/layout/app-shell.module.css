@@ -72,8 +72,8 @@
   width: 24px;
   height: 24px;
   border-radius: var(--radius-sm);
-  background: var(--text-primary);
-  color: var(--bg-panel);
+  background: var(--logo-mark-bg, var(--text-primary));
+  color: var(--logo-mark-fg, var(--bg-panel));
   display: grid;
   place-items: center;
   flex-shrink: 0;
@@ -173,9 +173,12 @@
 }
 
 :global(.app-nav-item.is-active) {
-  background: var(--accent-subtle);
-  color: var(--text-primary);
+  background: var(--accent-subtle) !important;
+  color: var(--accent) !important;
   font-weight: var(--weight-semibold);
+  box-shadow: inset 3px 0 0 var(--accent);
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
 }
 
 :global(.app-nav-icon) {
@@ -219,9 +222,10 @@
   justify-content: space-between;
   gap: 16px;
   background: var(--surface-header);
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--shell-border, var(--border));
   flex-shrink: 0;
   z-index: 30;
+  color: var(--shell-text, var(--text-primary));
 }
 
 :global(.app-topbar-main),
@@ -242,7 +246,31 @@
   font-weight: var(--weight-semibold);
   letter-spacing: var(--tracking-tight);
   line-height: 1.2;
-  color: var(--text-primary);
+  color: var(--shell-text, var(--text-primary)) !important;
+}
+
+/* Fiori Topbar Element Overrides */
+:global(.app-topbar .app-icon-button) {
+  color: var(--shell-muted, var(--text-muted)) !important;
+}
+
+:global(.app-topbar .app-icon-button:hover) {
+  background: rgba(255, 255, 255, 0.08) !important;
+  color: var(--shell-text, var(--text-primary)) !important;
+}
+
+:global(.app-topbar .app-topbar-button.ui-button) {
+  background: rgba(255, 255, 255, 0.08) !important;
+  border-color: transparent !important;
+  color: var(--shell-text, #ffffff) !important;
+  box-shadow: none !important;
+}
+
+:global(.app-topbar .app-topbar-button.ui-button:hover:not(:disabled)) {
+  background: rgba(255, 255, 255, 0.18) !important;
+  border-color: transparent !important;
+  color: var(--shell-text, #ffffff) !important;
+  transform: none !important;
 }
 
 :global(.app-page-frame) {

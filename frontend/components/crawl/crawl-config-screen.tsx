@@ -680,7 +680,7 @@ export function CrawlConfigScreen({
               {activeTabLabel}
             </Badge>
           </header>
-          <div className="space-y-5 px-6 pt-6 pb-6">
+          <div className="space-y-5 px-6 pt-4 pb-6">
             <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
               <div className="ml-[-4px] flex flex-wrap items-center gap-2.5">
                 {showSurfaceTabs ? (
@@ -844,7 +844,7 @@ export function CrawlConfigScreen({
                   {studioMode === 'advanced' ? 'Advanced' : 'Quick'}
                 </Badge>
               </header>
-              <div className="page-stack px-6 pt-6 pb-6">
+              <div className="page-stack px-6 pt-4 pb-6">
                 <div className={RUN_SETUP_ROW_CLASS}>
                   <div className={RUN_SETUP_LABEL_CLASS}>
                     <Globe className="text-accent size-4 shrink-0" />

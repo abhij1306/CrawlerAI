@@ -1049,6 +1049,167 @@ async def test_product_intelligence_discovery_skips_invalid_result_urls(monkeypa
 
 
 @pytest.mark.asyncio
+async def test_product_intelligence_discovery_rejects_listing_urls_from_serpapi() -> None:
+    async def fake_run_query(query: str, limit: int) -> list[SearchResult]:
+        del query, limit
+        return [
+            SearchResult(
+                url="https://www.ralphlauren.com/men-clothing-jeans/",
+                payload={
+                    "provider": "serpapi",
+                    "title": "Men's Jeans & Denim",
+                    "snippet": "Shop fits, washes and denim styles.",
+                },
+            ),
+            SearchResult(
+                url="https://www.ralphlauren.com/men-clothing-jeans/varick-slim-straight-garment-dyed-jean/123.html",
+                payload={
+                    "provider": "serpapi",
+                    "title": "Polo Ralph Lauren Varick Slim Straight Garment-Dyed Jean",
+                    "snippet": "Product page for Varick garment-dyed jeans.",
+                },
+            ),
+        ]
+
+    candidates = await discover_candidates(
+        {
+            "brand": "Polo Ralph Lauren",
+            "title": "Varick Slim Straight Garment-Dyed Jeans",
+            "url": "https://www.belk.com/p/polo-ralph-lauren-varick-jeans/1.html",
+        },
+        source_domain_value="belk.com",
+        provider="serpapi",
+        allowed_domains=[],
+        excluded_domains=[],
+        max_candidates=1,
+        run_query=fake_run_query,
+    )
+
+    assert [candidate.url for candidate in candidates] == [
+        "https://www.ralphlauren.com/men-clothing-jeans/varick-slim-straight-garment-dyed-jean/123.html"
+    ]
+
+
+@pytest.mark.asyncio
+async def test_product_intelligence_discovery_rejects_html_listing_urls() -> None:
+    async def fake_run_query(query: str, limit: int) -> list[SearchResult]:
+        del query, limit
+        return [
+            SearchResult(
+                url="https://www.ralphlauren.com/men-clothing-jeans.html",
+                payload={
+                    "provider": "serpapi",
+                    "title": "Men's Jeans & Denim",
+                    "snippet": "Shop denim by fit and wash.",
+                },
+            ),
+            SearchResult(
+                url="https://www.ralphlauren.com/men-clothing-jeans/varick-slim-straight-garment-dyed-jean/123.html",
+                payload={
+                    "provider": "serpapi",
+                    "title": "Polo Ralph Lauren Varick Slim Straight Garment-Dyed Jean",
+                    "snippet": "Product page for Varick garment-dyed jeans.",
+                },
+            ),
+        ]
+
+    candidates = await discover_candidates(
+        {
+            "brand": "Polo Ralph Lauren",
+            "title": "Varick Slim Straight Garment-Dyed Jeans",
+            "url": "https://www.belk.com/p/polo-ralph-lauren-varick-jeans/1.html",
+        },
+        source_domain_value="belk.com",
+        provider="serpapi",
+        allowed_domains=[],
+        excluded_domains=[],
+        max_candidates=1,
+        run_query=fake_run_query,
+    )
+
+    assert [candidate.url for candidate in candidates] == [
+        "https://www.ralphlauren.com/men-clothing-jeans/varick-slim-straight-garment-dyed-jean/123.html"
+    ]
+
+
+@pytest.mark.asyncio
+async def test_product_intelligence_discovery_keeps_matching_slug_without_detail_marker() -> None:
+    async def fake_run_query(query: str, limit: int) -> list[SearchResult]:
+        del query, limit
+        return [
+            SearchResult(
+                url="https://www.levi.com/men/jeans/511-slim-fit-stretch-denim",
+                payload={
+                    "provider": "serpapi",
+                    "title": "Levi's 511 Slim Fit Stretch Denim Jeans",
+                    "snippet": "Official Levi's product page.",
+                },
+            )
+        ]
+
+    candidates = await discover_candidates(
+        {
+            "brand": "Levis",
+            "title": "Men 511 Slim Fit Stretch Denim Jeans",
+            "url": "https://www.belk.com/p/levis-511-slim-fit-jeans/1.html",
+        },
+        source_domain_value="belk.com",
+        provider="serpapi",
+        allowed_domains=[],
+        excluded_domains=[],
+        max_candidates=1,
+        run_query=fake_run_query,
+    )
+
+    assert [candidate.url for candidate in candidates] == [
+        "https://www.levi.com/men/jeans/511-slim-fit-stretch-denim"
+    ]
+
+
+@pytest.mark.asyncio
+async def test_product_intelligence_discovery_rejects_unrelated_google_native_products() -> None:
+    async def fake_run_query(query: str, limit: int) -> list[SearchResult]:
+        del query, limit
+        return [
+            SearchResult(
+                url="https://www.levi.com/p/505-regular-fit-mens-jeans/005050260.html",
+                payload={
+                    "provider": "google_native",
+                    "title": "Levi's 505 Regular Fit Men's Jeans",
+                    "snippet": "Classic straight leg jeans.",
+                },
+            ),
+            SearchResult(
+                url="https://www.levi.com/p/511-slim-fit-mens-jeans/045112406.html",
+                payload={
+                    "provider": "google_native",
+                    "title": "Levi's 511 Slim Fit Men's Jeans",
+                    "snippet": "Slim fit jeans, style 04511-2406.",
+                },
+            ),
+        ]
+
+    candidates = await discover_candidates(
+        {
+            "brand": "Levis",
+            "title": "Men 511 Slim Fit Jeans",
+            "sku": "04511-2406",
+            "url": "https://www.belk.com/p/levis-511-slim-fit-jeans/1.html",
+        },
+        source_domain_value="belk.com",
+        provider="google_native",
+        allowed_domains=[],
+        excluded_domains=[],
+        max_candidates=1,
+        run_query=fake_run_query,
+    )
+
+    assert [candidate.url for candidate in candidates] == [
+        "https://www.levi.com/p/511-slim-fit-mens-jeans/045112406.html"
+    ]
+
+
+@pytest.mark.asyncio
 async def test_product_intelligence_discovery_keeps_search_delay_while_filling_pool(monkeypatch) -> None:
     recorded_delays: list[float] = []
 

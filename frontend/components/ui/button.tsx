@@ -8,7 +8,7 @@ import { Slot } from '@radix-ui/react-slot';
 import { cn } from '../../lib/utils';
 
 export const buttonVariants = cva(
-  'ui-button focus-ring inline-flex items-center justify-center gap-1.5 rounded-[var(--radius-md)] border text-sm font-medium leading-none whitespace-nowrap no-underline transition-[background-color,color,border-color,transform] disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 disabled:grayscale',
+  'ui-button focus-ring inline-flex items-center justify-center gap-1.5 rounded-[var(--radius-md)] border text-[length:var(--text-sm)] font-sans font-medium leading-none whitespace-nowrap no-underline transition-[background-color,color,border-color,transform] disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 disabled:grayscale',
   {
     variants: {
       variant: {
@@ -23,9 +23,9 @@ export const buttonVariants = cva(
           'border-transparent bg-danger-bg text-danger hover:border-danger/20 hover:bg-danger-bg',
       },
       size: {
-        sm: 'h-7 px-2.5 text-[11px]',
+        sm: 'h-7 px-2.5',
         md: 'h-[36px] px-4',
-        lg: 'h-10 px-5 text-base',
+        lg: 'h-10 px-5 text-[length:var(--text-base)]',
         icon: 'size-9 p-0',
       },
     },

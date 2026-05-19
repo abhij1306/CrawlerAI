@@ -1373,6 +1373,43 @@ def test_extract_records_enriches_generic_listing_rows_from_matching_adapter_row
     assert rows[0]["price"] == "22.50"
 
 
+def test_extract_records_prefers_myntra_adapter_rows_over_promo_category_dom_rows() -> None:
+    rows = extract_records(
+        "<html><body></body></html>",
+        "https://www.myntra.com/men-jeans",
+        "ecommerce_listing",
+        max_records=10,
+        artifacts={
+            "rendered_listing_fragments": [
+                _rendered_listing_fragment(
+                    title="Dresses Under Rs.599",
+                    url="https://www.myntra.com/fwdgenzcollection?f=Categories%3ADresses&rf=Price%3A0.0_600.0_0.0%20TO%20600.0",
+                    price="Rs. 599",
+                ),
+                _rendered_listing_fragment(
+                    title="Tops Under Rs.399",
+                    url="https://www.myntra.com/fwdgenzcollection?f=Categories%3ATops&rf=Price%3A0.0_400.0_0.0%20TO%20400.0",
+                    price="Rs. 399",
+                ),
+            ]
+        },
+        adapter_records=[
+            {
+                "title": "StyleCast x Revolte Men Wide Leg Mid-Rise Light Fade Jeans",
+                "brand": "StyleCast x Revolte",
+                "price": "1439",
+                "image_url": "https://assets.myntassets.com/jeans.jpg",
+                "url": "https://www.myntra.com/jeans/stylecast+x+revolte/stylecast-x-revolte-men-wide-leg-mid-rise-light-fade-jeans/37943174/buy",
+                "_source": "myntra_adapter",
+            }
+        ],
+    )
+
+    assert len(rows) == 1
+    assert rows[0]["_source"] == "myntra_adapter"
+    assert rows[0]["title"] == "StyleCast x Revolte Men Wide Leg Mid-Rise Light Fade Jeans"
+
+
 def test_listing_integrity_gate_sees_cohort_failed_candidate_set(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

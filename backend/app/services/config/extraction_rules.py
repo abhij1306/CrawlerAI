@@ -1340,6 +1340,8 @@ LISTING_CATEGORY_PATH_PREFIXES = (
     "/clp/",
 )
 LISTING_CATEGORY_PATH_SEGMENTS = frozenset({"productlist"})
+LISTING_STRUCTURAL_QUERY_CATEGORY_TOKENS = ("categor",)
+LISTING_STRUCTURAL_QUERY_FILTER_TOKENS = ("price", "rf=")
 LISTING_PRODUCT_DETAIL_ID_RE = re.compile(
     r"(?:^|[/?#&])(?:id(?:=|%3d))?[a-z0-9_-]*\d{4,}[a-z0-9_-]*-product(?:$|[/?#&])",
     re.I,
@@ -1438,6 +1440,7 @@ PAGE_URL_CURRENCY_HINTS_RAW = {
     "firstcry.com/": "INR",
     "converse.com/": "USD",
     "gymshark.com/": "USD",
+    "myntra.com/": "INR",
     "notre-shop.com/": "USD",
     "onepeloton.com/": "USD",
     "patagonia.com/": "USD",
@@ -1780,6 +1783,8 @@ _EXTRA_EXPORTS = [
     "LISTING_PROMINENT_TITLE_TAGS",
     "LISTING_CATEGORY_PATH_PREFIXES",
     "LISTING_CATEGORY_PATH_SEGMENTS",
+    "LISTING_STRUCTURAL_QUERY_CATEGORY_TOKENS",
+    "LISTING_STRUCTURAL_QUERY_FILTER_TOKENS",
     "LISTING_PRODUCT_DETAIL_ID_RE",
     "LONG_TEXT_FIELDS",
     "MATERIAL_KEYWORDS",
