@@ -28,11 +28,9 @@ from app.services.crawl.access_service import (
 from app.services.data_enrichment.deterministic import (
     build_deterministic_enrichment,
     category_attribute_handles,
-    category_attribute_values,
     load_attribute_repository,
     load_taxonomy_index,
     match_category_path,
-    normalize_audience_values,
     normalize_from_terms,
     normalize_materials,
     normalize_sizes,
@@ -41,6 +39,7 @@ from app.services.data_enrichment.deterministic import (
     string_list,
     without_empty,
 )
+from app.services.data_enrichment.llm_diagnostics import build_llm_diagnostics
 from app.services.data_enrichment.shopify_catalog import (
     repository_terms,
     taxonomy_reference_for_category_path,
@@ -55,7 +54,6 @@ from app.services.llm.runtime import run_prompt_task
 from app.services.product_intelligence.matching import source_domain
 
 logger = logging.getLogger(__name__)
-
 
 async def create_data_enrichment_job(
     session: AsyncSession,
@@ -361,6 +359,7 @@ async def _run_llm_enrichment(
         "applied": bool(applied_fields),
         "category_applied": "category_path" in applied_fields,
         "applied_fields": applied_fields,
+        **build_llm_diagnostics(product, payload, applied_fields),
         "provider": result.provider or "",
         "model": result.model or "",
     }
@@ -447,6 +446,7 @@ def _apply_llm_payload(
             applied.append("availability_normalized")
     for field_name in (
         "intent_attributes",
+        "audience",
         "style_tags",
         "ai_discovery_tags",
         "suggested_bundles",
@@ -455,17 +455,6 @@ def _apply_llm_payload(
         setattr(product, field_name, values or None)
         if values:
             applied.append(field_name)
-    audience_allowed_values = category_attribute_values(
-        product.category_path,
-        "target_audience",
-    )
-    audience_values = normalize_audience_values(
-        payload.get("audience"),
-        allowed_values=audience_allowed_values,
-    )
-    if audience_values:
-        product.audience = audience_values
-        applied.append("audience")
     product.taxonomy_version = DATA_ENRICHMENT_TAXONOMY_VERSION
     return applied
 
@@ -596,10 +585,6 @@ def _llm_prompt_context(
                 ]
             ],
             "category_attributes": category_attribute_handles(category_anchor),
-            "audience_allowed_values": category_attribute_values(
-                category_anchor,
-                "target_audience",
-            ),
         }
     )
     if description:

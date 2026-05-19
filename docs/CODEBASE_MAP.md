@@ -81,6 +81,7 @@ If a file is not listed, assume it is a helper under a listed owner.
 | `data_enrichment/service.py` | On-demand enrichment job orchestration and persistence for ecommerce detail records |
 | `ucp_audit/*` | UCP compliance audit primitives, scoring, reporting, and job orchestration |
 | `data_enrichment/deterministic.py` | Deterministic enrichment normalization, taxonomy matching, and product attribute diagnostics |
+| `data_enrichment/llm_diagnostics.py` | Data enrichment LLM rejection and skip-reason diagnostics |
 | `data_enrichment/shopify_catalog.py` | Shopify taxonomy and attribute repository loading/matching |
 | `crawl/batch_runtime.py` | URL loop, progress, pause, kill checks |
 | `tasks.py` | Celery task entry |
@@ -255,6 +256,7 @@ Verdict set:
 |---|---|
 | `review/__init__.py` | Review payloads and approved field mapping persistence |
 | `selectors_runtime.py` | Selector CRUD and runtime lookup |
+| `selector_auto_learn.py` | Strict DOM-observed selector auto-save into domain memory |
 | `selector_suggestions.py` | Selector suggestion assembly from domain memory, deterministic DOM patterns, listing cards, and LLM candidates |
 | `selector_self_heal.py` | Selector synthesis and validation |
 | `domain_memory_service.py` | Domain memory load/save |

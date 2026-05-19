@@ -207,6 +207,202 @@ async def test_process_run_applies_exact_and_generic_saved_rules_and_run_local_o
 
 
 @pytest.mark.asyncio
+async def test_process_run_auto_saves_dom_observed_selectors_and_reuses_domain_memory(
+    db_session,
+    test_user,
+    monkeypatch: pytest.MonkeyPatch,
+    create_test_run,
+) -> None:
+    first_run = await create_test_run(
+        url="https://example.com/products/dom-observed-widget",
+        surface="ecommerce_detail",
+    )
+    second_run = await create_test_run(
+        url="https://example.com/products/dom-observed-widget",
+        surface="ecommerce_detail",
+    )
+
+    async def _fake_acquire(request):
+        return AcquisitionResult(
+            request=request,
+            final_url=request.url,
+            html="""
+            <html>
+              <body>
+                <main>
+                  <h1>DOM Observed Widget</h1>
+                  <span class="price">$19.99</span>
+                </main>
+              </body>
+            </html>
+            """,
+            method="test",
+            status_code=200,
+        )
+
+    monkeypatch.setattr("app.services.pipeline.extraction_loop.acquire", _fake_acquire)
+
+    await process_run(db_session, first_run.id)
+    first_memory = await load_domain_memory(
+        db_session,
+        domain="example.com",
+        surface="ecommerce_detail",
+    )
+    assert first_memory is not None
+    first_rules = {
+        row["field_name"]: row for row in first_memory.selectors.get("rules", [])
+    }
+    assert first_rules["title"]["source"] == "dom_observed"
+    assert first_rules["title"]["css_selector"] == "h1"
+    assert first_rules["price"]["source"] == "dom_observed"
+    assert (
+        first_rules["price"]["css_selector"]
+        == "[itemprop='price'], .price, .product-price"
+    )
+
+    await process_run(db_session, second_run.id)
+    second_rows, second_total = await get_run_records(db_session, second_run.id, 1, 20)
+
+    assert second_total == 1
+    assert second_rows[0].source_trace["field_discovery"]["price"]["selector_trace"][
+        "selector_record_id"
+    ] == first_rules["price"]["id"]
+
+
+@pytest.mark.asyncio
+async def test_process_run_does_not_auto_save_selectors_for_structured_winners(
+    db_session,
+    test_user,
+    monkeypatch: pytest.MonkeyPatch,
+    create_test_run,
+) -> None:
+    run = await create_test_run(
+        url="https://example.com/products/structured-widget",
+        surface="ecommerce_detail",
+    )
+
+    async def _fake_acquire(request):
+        return AcquisitionResult(
+            request=request,
+            final_url=request.url,
+            html="""
+            <html>
+              <head>
+                <script type="application/ld+json">
+                  {
+                    "@context": "https://schema.org",
+                    "@type": "Product",
+                    "name": "Structured Widget",
+                    "offers": {
+                      "@type": "Offer",
+                      "price": "29.99",
+                      "priceCurrency": "USD"
+                    }
+                  }
+                </script>
+              </head>
+              <body>
+                <h1>Structured Widget</h1>
+                <span class="price">$29.99</span>
+              </body>
+            </html>
+            """,
+            method="test",
+            status_code=200,
+        )
+
+    monkeypatch.setattr("app.services.pipeline.extraction_loop.acquire", _fake_acquire)
+
+    await process_run(db_session, run.id)
+    memory = await load_domain_memory(
+        db_session,
+        domain="example.com",
+        surface="ecommerce_detail",
+    )
+
+    assert memory is None or memory.selectors.get("rules", []) == []
+
+
+@pytest.mark.asyncio
+async def test_process_run_auto_save_does_not_reactivate_inactive_selector(
+    db_session,
+    test_user,
+    monkeypatch: pytest.MonkeyPatch,
+    create_test_run,
+) -> None:
+    await save_domain_memory(
+        db_session,
+        domain="example.com",
+        surface="ecommerce_detail",
+        selectors={
+            "rules": [
+                {
+                    "id": 1,
+                    "field_name": "price",
+                    "css_selector": "[itemprop='price'], .price, .product-price",
+                    "source": "domain_recipe",
+                    "status": "validated",
+                    "is_active": False,
+                }
+            ]
+        },
+    )
+    await db_session.commit()
+    run = await create_test_run(
+        url="https://example.com/products/rejected-selector-widget",
+        surface="ecommerce_detail",
+    )
+
+    async def _fake_acquire(request):
+        return AcquisitionResult(
+            request=request,
+            final_url=request.url,
+            html="""
+            <html>
+              <body>
+                <main>
+                  <h1>Rejected Selector Widget</h1>
+                  <span class="price">$19.99</span>
+                </main>
+              </body>
+            </html>
+            """,
+            method="test",
+            status_code=200,
+        )
+
+    monkeypatch.setattr("app.services.pipeline.extraction_loop.acquire", _fake_acquire)
+
+    await process_run(db_session, run.id)
+    memory = await load_domain_memory(
+        db_session,
+        domain="example.com",
+        surface="ecommerce_detail",
+    )
+    assert memory is not None
+    price_rules = [
+        row
+        for row in memory.selectors.get("rules", [])
+        if row.get("field_name") == "price"
+    ]
+
+    assert price_rules == [
+        {
+            "id": 1,
+            "field_name": "price",
+            "css_selector": "[itemprop='price'], .price, .product-price",
+            "xpath": None,
+            "regex": None,
+            "sample_value": None,
+            "source": "domain_recipe",
+            "status": "validated",
+            "is_active": False,
+            "source_run_id": None,
+        }
+    ]
+
+
+@pytest.mark.asyncio
 async def test_process_run_self_heals_selectors_and_reuses_domain_memory_without_second_llm_call(
     db_session,
     test_user,

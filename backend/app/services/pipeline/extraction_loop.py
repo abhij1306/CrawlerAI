@@ -48,6 +48,7 @@ from app.services.robots_policy import (
     ROBOTS_MISSING,
     check_url_crawlability,
 )
+from app.services.selector_auto_learn import auto_save_dom_observed_selectors
 from app.services.selector_self_heal import apply_selector_self_heal
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -569,6 +570,15 @@ async def _run_persistence_stage(
         acquisition_result=acquisition_result,
         raw_html_path=raw_html_path,
     )
+    if persisted_count > 0:
+        await auto_save_dom_observed_selectors(
+            context.session,
+            domain=normalize_domain(acquisition_result.final_url),
+            surface=context.surface,
+            html=acquisition_result.html,
+            records=extracted.records,
+            source_run_id=context.run.id,
+        )
     verdict = compute_verdict(
         is_listing="listing" in context.surface,
         blocked=_effective_blocked(acquisition_result),

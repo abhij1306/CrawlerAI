@@ -358,29 +358,53 @@ def _validated_xpath_rules(
             continue
         field_name = str(row.get("field_name") or "").strip().lower()
         xpath = str(row.get("xpath") or "").strip()
-        if not field_name or field_name not in allowed_fields or not xpath:
+        css_selector = str(row.get("css_selector") or "").strip()
+        if (
+            not field_name
+            or field_name not in allowed_fields
+            or (not xpath and not css_selector)
+        ):
             continue
-        validated_xpath, _ = validate_or_convert_xpath(xpath)
-        if not validated_xpath:
-            continue
-        sample_value, count, selector_used = extract_selector_value(
-            html,
-            xpath=validated_xpath,
-        )
-        if count <= 0 or sample_value in (None, ""):
-            continue
-        rules.append(
-            {
-                "field_name": field_name,
-                "css_selector": None,
-                "xpath": selector_used or validated_xpath,
-                "regex": None,
-                "sample_value": sample_value,
-                "source": "selector_self_heal",
-                "status": "validated",
-                "is_active": True,
-            }
-        )
+        if xpath:
+            validated_xpath, _ = validate_or_convert_xpath(xpath)
+            if validated_xpath:
+                sample_value, count, selector_used = extract_selector_value(
+                    html,
+                    xpath=validated_xpath,
+                )
+                if count > 0 and sample_value not in (None, ""):
+                    rules.append(
+                        {
+                            "field_name": field_name,
+                            "css_selector": None,
+                            "xpath": selector_used or validated_xpath,
+                            "regex": None,
+                            "sample_value": sample_value,
+                            "source": "selector_self_heal",
+                            "status": "validated",
+                            "is_active": True,
+                        }
+                    )
+                    continue
+        if css_selector:
+            sample_value, count, selector_used = extract_selector_value(
+                html,
+                css_selector=css_selector,
+            )
+            if count <= 0 or sample_value in (None, ""):
+                continue
+            rules.append(
+                {
+                    "field_name": field_name,
+                    "css_selector": selector_used or css_selector,
+                    "xpath": None,
+                    "regex": None,
+                    "sample_value": sample_value,
+                    "source": "selector_self_heal",
+                    "status": "validated",
+                    "is_active": True,
+                }
+            )
     return rules
 
 

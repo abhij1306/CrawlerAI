@@ -15,7 +15,7 @@ from app.services.llm.payloads import SUPPORTED_TASK_TYPES
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-_PROMPTS_DIR = Path(__file__).resolve().parents[1] / "data" / "prompts"
+_PROMPTS_DIR = Path(__file__).resolve().parents[2] / "data" / "prompts"
 _LLM_PROVIDER_DEFINITIONS = (
     {
         "provider": "groq",

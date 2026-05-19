@@ -260,6 +260,7 @@ async def _run_record_extraction(
         extraction_runtime_snapshot=context.run.settings_view.extraction_runtime_snapshot(),
         content_type=acquisition_result.content_type,
         browser_diagnostics=getattr(acquisition_result, "browser_diagnostics", None),
+        record_dom_observed_selectors=True,
     )
 
 async def _extract_records_from_preserved_browser_html(
@@ -295,6 +296,7 @@ async def _extract_records_from_preserved_browser_html(
         selector_rules=selector_rules,
         extraction_runtime_snapshot=context.run.settings_view.extraction_runtime_snapshot(),
         content_type=acquisition_result.content_type,
+        record_dom_observed_selectors=True,
     )
     if not fallback_records:
         await _log_pipeline_event(

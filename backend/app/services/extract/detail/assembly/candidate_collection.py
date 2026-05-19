@@ -508,7 +508,7 @@ def _materialize_record(
             record[field_name] = finalized
             if selected_source:
                 selected_field_sources[field_name] = selected_source
-                if selected_source == "selector_rule":
+                if selected_source in {"selector_rule", "dom_selector", "dom_h1"}:
                     selector_trace = _selected_selector_trace(
                         field_name=field_name,
                         finalized_value=finalized,
@@ -531,7 +531,18 @@ def _materialize_record(
     )
     if promoted:
         selected_field_sources["title"] = promoted[1]
-        selected_selector_traces.pop("title", None)
+        if promoted[1] in {"selector_rule", "dom_selector", "dom_h1"}:
+            selector_trace = _selected_selector_trace(
+                field_name="title",
+                finalized_value=record.get("title"),
+                selector_trace_candidates=selector_trace_candidates,
+            )
+            if selector_trace:
+                selected_selector_traces["title"] = selector_trace
+            else:
+                selected_selector_traces.pop("title", None)
+        else:
+            selected_selector_traces.pop("title", None)
     record["_field_sources"] = {
         field_name: list(source_list)
         for field_name, source_list in field_sources.items()

@@ -172,6 +172,7 @@ def _build_card_candidates(
     best_same_url_text: str | None,
     same_url_texts: list[str],
     card_text: str,
+    record_dom_observed_selectors: bool,
 ) -> tuple[dict[str, list[object]], dict[str, list[dict[str, object]]]]:
     alias_lookup = surface_alias_lookup(surface, None)
     candidates: dict[str, list[object]] = {"title": [title], "url": [url]}
@@ -193,6 +194,7 @@ def _build_card_candidates(
             candidates,
             selector_rules=selector_rules,
             selector_trace_candidates=selector_trace_candidates,
+            record_dom_observed_selectors=record_dom_observed_selectors,
         )
     if surface == "article_listing" and card_soup is not None:
         author = article_card_text(
@@ -281,6 +283,7 @@ def _listing_record_from_card(
     surface: str,
     *,
     selector_rules: list[dict[str, object]] | None = None,
+    record_dom_observed_selectors: bool = False,
 ) -> dict[str, Any] | None:
     is_job = surface.startswith("job_")
     title_node = card_title_node(card)
@@ -366,6 +369,7 @@ def _listing_record_from_card(
         best_same_url_text=best_same_url_text,
         same_url_texts=same_url_texts,
         card_text=card_text,
+        record_dom_observed_selectors=record_dom_observed_selectors,
     )
     record: dict[str, Any] = {
         "source_url": page_url,
@@ -551,6 +555,7 @@ def _dom_listing_stage(
     max_records: int,
     fallback_fragment_limit: int,
     selector_rules: list[dict[str, object]] | None,
+    record_dom_observed_selectors: bool,
     seed_urls: set[str] | None = None,
 ) -> list[dict[str, Any]]:
     records: list[dict[str, Any]] = []
@@ -567,6 +572,7 @@ def _dom_listing_stage(
             page_url,
             surface,
             selector_rules=selector_rules,
+            record_dom_observed_selectors=record_dom_observed_selectors,
         )
         if record is None:
             continue
@@ -596,6 +602,7 @@ def extract_listing_records(
     artifacts: dict[str, object] | None = None,
     selector_rules: list[dict[str, object]] | None = None,
     network_payloads: list[dict[str, object]] | None = None,
+    record_dom_observed_selectors: bool = False,
 ) -> list[dict[str, Any]]:
     del network_payloads
     if surface == "content_listing":
@@ -647,6 +654,7 @@ def extract_listing_records(
         max_records=max_records,
         fallback_fragment_limit=listing_fallback_fragment_limit,
         selector_rules=selector_rules,
+        record_dom_observed_selectors=record_dom_observed_selectors,
     )
     original_dom_records: list[dict[str, Any]] = []
     if context.original_html and context.original_html != context.cleaned_html:
@@ -672,6 +680,7 @@ def extract_listing_records(
                 max_records=max_records,
                 fallback_fragment_limit=listing_fallback_fragment_limit,
                 selector_rules=selector_rules,
+                record_dom_observed_selectors=record_dom_observed_selectors,
             )
             logger.debug(
                 "Using original listing DOM after cleaned DOM lost detail-link evidence for %s",
@@ -701,6 +710,7 @@ def extract_listing_records(
                 max_records=max_records,
                 fallback_fragment_limit=listing_fallback_fragment_limit,
                 selector_rules=selector_rules,
+                record_dom_observed_selectors=record_dom_observed_selectors,
             )
     listing_visual_elements = (
         artifacts.get("listing_visual_elements")

@@ -11,6 +11,7 @@ import {
   DataRegionEmpty,
   DataRegionLoading,
   InlineAlert,
+  KVTile,
   PageHeader,
   TableSurface,
 } from '../../components/ui/patterns';
@@ -23,14 +24,6 @@ import type {
   EnrichedProduct,
 } from '../../lib/api/types';
 import { STORAGE_KEYS } from '../../lib/constants/storage-keys';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '../../components/ui/table';
 import { cn } from '../../lib/utils';
 
 type PrefillPayload = {
@@ -79,6 +72,7 @@ export default function DataEnrichmentPage() {
   const [activeJobId, setActiveJobId] = useState<number | null>(null);
   const [error, setError] = useState('');
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [selectedProductId, setSelectedProductId] = useState<number | null>(null);
 
   const sourceRecords = initialPrefill.records ?? [];
   const sourceRecordIds = sourceRecords
@@ -117,6 +111,8 @@ export default function DataEnrichmentPage() {
   const isRunning = activeJob?.status === 'pending' || activeJob?.status === 'running';
 
   const products = detailQuery.data?.enriched_products ?? [];
+  const resolvedProductId = selectedProductId ?? products[0]?.id ?? null;
+  const selectedProduct = products.find((p) => p.id === resolvedProductId) ?? null;
   const completedCount = products.filter((product) => product.status === 'enriched').length;
   const semanticCount = products.filter((product) =>
     Boolean(product.intent_attributes?.length),
@@ -245,31 +241,212 @@ export default function DataEnrichmentPage() {
         ) : detailQuery.isLoading && !isRunning ? (
           <DataRegionLoading count={8} className="px-0" />
         ) : products.length ? (
-          <div className="commerce-table overflow-x-auto">
-            <Table
-              wrapperClassName="max-h-[calc(100vh-200px)]"
-              className="min-w-[1200px] table-fixed border-separate border-spacing-0"
-            >
-              <TableHeader className="sticky top-0 z-20">
-                <TableRow className="bg-subtle-panel shadow-sm">
-                  <TableHead className="bg-subtle-panel border-border/50 sticky left-0 z-30 w-[180px] border-r">
-                    Record
-                  </TableHead>
-                  {ENRICHED_FIELD_LABELS.map(([key, label]) => (
-                    <TableHead key={String(key)} className="bg-subtle-panel w-[160px]">
-                      <div className="flex min-w-0 items-center gap-1">
-                        <span className="flex-1 truncate">{label}</span>
+          <div className="flex flex-col lg:flex-row h-[600px] divide-y lg:divide-y-0 lg:divide-x divide-divider">
+            {/* Sidebar: List of products */}
+            <div className="w-full lg:w-80 shrink-0 flex flex-col min-h-0 bg-background-alt/10">
+              <div className="border-divider border-b p-3 bg-subtle-panel/30">
+                <span className="type-caption-mono text-muted uppercase">Record Selector ({products.length})</span>
+              </div>
+              <div className="flex-1 overflow-y-auto p-2 space-y-1">
+                {products.map((product) => {
+                  const isActive = product.id === resolvedProductId;
+                  const isProcessing = product.status === 'pending' || product.status === 'running';
+                  const title = product.source_url ? product.source_url.replace(/^https?:\/\/(www\.)?/, '') : `Record #${product.source_record_id}`;
+                  const formattedPrice = formatValue(product.price_normalized);
+
+                  return (
+                    <button
+                      key={product.id}
+                      type="button"
+                      onClick={() => setSelectedProductId(product.id)}
+                      className={cn(
+                        "w-full text-left rounded-[var(--radius-md)] border p-3 transition-colors flex flex-col gap-1.5",
+                        isActive
+                          ? "border-accent bg-accent-subtle/50"
+                          : "border-border bg-background hover:bg-background-elevated"
+                      )}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <Badge tone="neutral" className="h-5 shrink-0 px-1.5 font-mono text-xs opacity-75">
+                          #{product.source_record_id}
+                        </Badge>
+                        {isProcessing ? (
+                          <div className="flex items-center gap-1 opacity-60">
+                            <Loader2 className="text-accent size-3 animate-spin" />
+                            <span className="type-caption-mono text-[10px]">Processing</span>
+                          </div>
+                        ) : null}
                       </div>
-                    </TableHead>
-                  ))}
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {products.map((product) => (
-                  <EnrichedProductRow key={product.id} product={product} />
-                ))}
-              </TableBody>
-            </Table>
+                      <div className="type-body-sm font-medium truncate w-full text-foreground" title={product.source_url}>
+                        {title}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Content: Selected Product Detailed View */}
+            <div className="flex-1 min-w-0 flex flex-col min-h-0 bg-background">
+              {selectedProduct ? (
+                <div className="flex-1 overflow-y-auto p-6 space-y-6">
+                  {/* Header info */}
+                  <div className="border-divider border-b pb-4">
+                    <div className="flex items-center gap-2">
+                      <span className="type-heading-3">Enriched Record Details</span>
+                      <Badge tone="neutral" className="font-mono text-xs">
+                        Record #{selectedProduct.source_record_id}
+                      </Badge>
+                    </div>
+                    {selectedProduct.source_url ? (
+                      <a
+                        href={selectedProduct.source_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-accent type-body-sm flex items-center gap-1 mt-1 hover:underline truncate"
+                      >
+                        {selectedProduct.source_url}
+                        <ExternalLink className="size-3 shrink-0" />
+                      </a>
+                    ) : null}
+                  </div>
+
+                  {/* Detail Groups */}
+                  <div className="space-y-6">
+                    {/* Core Attributes (Row 1: Full width) */}
+                    <div className="border-border bg-subtle-panel/20 rounded-[var(--radius-lg)] border p-4 space-y-4">
+                      <h3 className="type-label-mono text-muted flex items-center gap-1.5 uppercase">
+                        <span className="bg-accent size-1.5 rounded-full" />
+                        Core Attributes
+                      </h3>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                        <KVTile label="Price (Normalized)" mono value={formatValue(selectedProduct.price_normalized) || '--'} />
+                        <KVTile label="Color Family" value={selectedProduct.color_family || '--'} />
+                        <KVTile label="Size Normalized" value={selectedProduct.size_normalized?.join(', ') || '--'} />
+                        <KVTile label="Size System" value={selectedProduct.size_system || '--'} />
+                        <KVTile label="Gender Normalized" value={selectedProduct.gender_normalized || '--'} />
+                        <KVTile label="Materials Normalized" value={selectedProduct.materials_normalized?.join(', ') || '--'} />
+                        <KVTile label="Availability" value={selectedProduct.availability_normalized || '--'} />
+                      </div>
+                    </div>
+
+                    {/* Taxonomy & Context (Row 2: Full width) */}
+                    <div className="border-border bg-subtle-panel/20 rounded-[var(--radius-lg)] border p-4 space-y-4">
+                      <h3 className="type-label-mono text-muted flex items-center gap-1.5 uppercase">
+                        <span className="bg-info size-1.5 rounded-full" />
+                        Taxonomy & Context
+                      </h3>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div className="md:col-span-2">
+                          <KVTile label="Category Path" value={selectedProduct.category_path || '--'} />
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 md:col-span-1">
+                          <KVTile label="Audience" value={selectedProduct.audience?.join(', ') || '--'} />
+                          <KVTile label="Taxonomy Version" value={selectedProduct.taxonomy_version || '--'} />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Semantic & AI Insights (Row 3: Full width) */}
+                    <div className="border-border bg-subtle-panel/20 rounded-[var(--radius-lg)] border p-4 space-y-4">
+                      <h3 className="type-label-mono text-muted flex items-center gap-1.5 uppercase">
+                        <span className="bg-success size-1.5 rounded-full" />
+                        AI & Semantic Enrichment
+                      </h3>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+                        <KVTile
+                          label="Intent Attributes"
+                          value={
+                            selectedProduct.intent_attributes?.length ? (
+                              <div className="flex flex-wrap gap-1.5 pt-1">
+                                {selectedProduct.intent_attributes.map((attr) => (
+                                  <Badge key={attr} tone="accent" className="text-xs font-normal">
+                                    {attr}
+                                  </Badge>
+                                ))}
+                              </div>
+                            ) : (
+                              '--'
+                            )
+                          }
+                        />
+                        <KVTile
+                          label="Style Tags"
+                          value={
+                            selectedProduct.style_tags?.length ? (
+                              <div className="flex flex-wrap gap-1.5 pt-1">
+                                {selectedProduct.style_tags.map((tag) => (
+                                  <Badge key={tag} tone="neutral" className="text-xs font-normal">
+                                    {tag}
+                                  </Badge>
+                                ))}
+                              </div>
+                            ) : (
+                              '--'
+                            )
+                          }
+                        />
+                        <KVTile
+                          label="AI Discovery Tags"
+                          value={
+                            selectedProduct.ai_discovery_tags?.length ? (
+                              <div className="flex flex-wrap gap-1.5 pt-1">
+                                {selectedProduct.ai_discovery_tags.map((tag) => (
+                                  <Badge key={tag} tone="info" className="text-xs font-normal">
+                                    {tag}
+                                  </Badge>
+                                ))}
+                              </div>
+                            ) : (
+                              '--'
+                            )
+                          }
+                        />
+                        <KVTile
+                          label="Suggested Bundles"
+                          value={
+                            selectedProduct.suggested_bundles?.length ? (
+                              <div className="flex flex-wrap gap-1.5 pt-1">
+                                {selectedProduct.suggested_bundles.map((bundle) => (
+                                  <Badge key={bundle} tone="success" className="text-xs font-normal">
+                                    {bundle}
+                                  </Badge>
+                                ))}
+                              </div>
+                            ) : (
+                              '--'
+                            )
+                          }
+                        />
+                      </div>
+
+                      <div className="pt-2">
+                        <KVTile
+                          label="SEO Keywords"
+                          value={
+                            selectedProduct.seo_keywords?.length ? (
+                              <div className="flex flex-wrap gap-1.5 pt-1">
+                                {selectedProduct.seo_keywords.map((kw) => (
+                                  <span key={kw} className="bg-background-elevated border-border text-secondary rounded-full border px-2 py-0.5 text-xs">
+                                    {kw}
+                                  </span>
+                                ))}
+                              </div>
+                            ) : (
+                              '--'
+                            )
+                          }
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex-1 grid place-items-center text-center p-6">
+                  <div className="text-muted type-body">Select a record from the list to view full enrichment details.</div>
+                </div>
+              )}
+            </div>
           </div>
         ) : sourceRecords.length ? (
           <div className="divide-divider divide-y overflow-auto">
@@ -329,53 +506,7 @@ export default function DataEnrichmentPage() {
   );
 }
 
-function EnrichedProductRow({ product }: Readonly<{ product: EnrichedProduct }>) {
-  return (
-    <TableRow className="group/row">
-      <TableCell className="bg-background group-hover/row:bg-accent/[0.04] border-border/50 sticky left-0 z-10 border-r transition-colors">
-        <div className="flex items-center gap-2 py-1.5">
-          <Badge tone="neutral" className="h-5 shrink-0 px-1.5 font-mono text-xs opacity-60">
-            #{product.source_record_id}
-          </Badge>
-          {product.source_url ? (
-            <a
-              href={product.source_url}
-              target="_blank"
-              rel="noreferrer"
-              className="link-accent type-body block max-w-[140px] truncate font-medium transition-colors hover:underline"
-              title={product.source_url}
-            >
-              {product.source_url.replace(/^https?:\/\/(www\.)?/, '')}
-            </a>
-          ) : null}
-        </div>
-      </TableCell>
-      {ENRICHED_FIELD_LABELS.map(([key]) => {
-        const value = product[key];
-        const display = formatValue(value);
-        const isEnriched = product.status === 'enriched' && Boolean(display && display !== '--');
-        const isProcessing = product.status === 'pending' || product.status === 'running';
-
-        return (
-          <TableCell key={String(key)}>
-            {isEnriched ? (
-              <span className="type-body block max-w-[260px] truncate" title={display}>
-                {display}
-              </span>
-            ) : isProcessing ? (
-              <div className="flex items-center gap-1.5 opacity-40">
-                <Loader2 className="text-accent size-3 animate-spin" />
-                <span className="type-label-mono">Processing</span>
-              </div>
-            ) : (
-              <span className="text-muted/40 type-caption-mono">--</span>
-            )}
-          </TableCell>
-        );
-      })}
-    </TableRow>
-  );
-}
+// EnrichedProductRow removed - replaced by split master-detail layout
 
 function recordTitle(record: DataEnrichmentSourceRecordInput) {
   const title = record.data?.title;

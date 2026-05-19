@@ -95,6 +95,7 @@ def apply_dom_fallbacks(
         None,
     )
     if title:
+        before_count = len(candidates.get("title", []))
         add_sourced_candidate(
             candidates,
             candidate_sources,
@@ -103,6 +104,20 @@ def apply_dom_fallbacks(
             title,
             source="dom_h1",
         )
+        if len(candidates.get("title", [])) > before_count:
+            selector_value = "h1" if title == h1_title else "title"
+            selector_trace_candidates.setdefault("title", []).append(
+                {
+                    "selector_kind": "css_selector",
+                    "selector_value": selector_value,
+                    "selector_source": "dom_observed",
+                    "selector_record_id": None,
+                    "source_run_id": None,
+                    "sample_value": title,
+                    "page_url": page_url,
+                    "_candidate_value": title,
+                }
+            )
     apply_selector_fallbacks(
         soup,
         page_url,
@@ -113,6 +128,7 @@ def apply_dom_fallbacks(
         candidate_sources=candidate_sources,
         field_sources=field_sources,
         selector_trace_candidates=selector_trace_candidates,
+        record_dom_observed_selectors=True,
     )
     canonical = soup.find("link", attrs={"rel": re.compile("canonical", re.I)})
     canonical_href = canonical.get("href") if canonical is not None else None

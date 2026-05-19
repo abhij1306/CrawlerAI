@@ -585,11 +585,11 @@ export function KVTile({
 }: Readonly<{ label: string; value: ReactNode; mono?: boolean; className?: string }>) {
   return (
     <div className={cn('bg-background-elevated rounded-[var(--radius-md)] px-2.5 py-2', className)}>
-      <div className="type-label">{label}</div>
+      <div className="text-[10px] font-semibold tracking-wider text-muted uppercase font-sans">{label}</div>
       <div
         className={cn(
           'text-foreground pt-1',
-          mono ? 'type-caption-mono font-medium' : 'type-control',
+          mono ? 'type-caption-mono font-medium !text-foreground' : 'type-control',
         )}
       >
         {value}

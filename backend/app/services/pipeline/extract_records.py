@@ -50,6 +50,7 @@ def extract_records(
     extraction_runtime_snapshot: dict[str, object] | None = None,
     content_type: str | None = None,
     browser_diagnostics: dict[str, object] | None = None,
+    record_dom_observed_selectors: bool = False,
 ) -> list[dict]:
     normalized_surface = str(surface or "").strip().lower()
     if not normalized_surface or normalized_surface == "auto":
@@ -118,6 +119,7 @@ def extract_records(
             artifacts=artifacts,
             selector_rules=selector_rules,
             network_payloads=network_payloads,
+            record_dom_observed_selectors=record_dom_observed_selectors,
         )
         network_rows = extract_listing_rows_from_network(
             network_payloads,

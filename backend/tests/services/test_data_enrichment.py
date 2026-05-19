@@ -428,13 +428,36 @@ def test_data_enrichment_llm_prompt_context_excludes_raw_artifacts() -> None:
     assert "_source" not in context
     assert context["description_excerpt"] == "Clean description"
     assert context["taxonomy_version"] == DATA_ENRICHMENT_TAXONOMY_VERSION
-    assert context["audience_allowed_values"] == [
-        "Adults",
-        "Kids",
-        "Suitable for all ages",
-        "Teens & young adults",
-        "Other",
-    ]
+    assert "audience_allowed_values" not in context
+
+
+def test_data_enrichment_llm_prompt_context_requests_semantic_fields() -> None:
+    product = EnrichedProduct(
+        job_id=1,
+        source_url="https://example.com/products/dress",
+        status=DATA_ENRICHMENT_STATUS_PENDING,
+        price_normalized={"amount": 49.99, "currency": "USD"},
+        color_family="blue",
+        size_normalized=["M"],
+        size_system="alpha",
+        gender_normalized="female",
+        materials_normalized=["linen"],
+        availability_normalized="in_stock",
+        seo_keywords=["linen", "dress"],
+        category_path="Apparel & Accessories > Clothing > Dresses",
+        taxonomy_version=DATA_ENRICHMENT_TAXONOMY_VERSION,
+    )
+
+    context = llm_prompt_context(
+        {"title": "Linen Dress"},
+        product=product,
+        category_candidates=[],
+    )
+
+    assert "intent_attributes" in context["missing_backfill_fields"]
+    assert "style_tags" in context["missing_backfill_fields"]
+    assert "ai_discovery_tags" in context["missing_backfill_fields"]
+    assert "suggested_bundles" in context["missing_backfill_fields"]
 
 
 def test_normalize_price_range_rejects_trailing_noise() -> None:
@@ -560,6 +583,31 @@ def test_data_enrichment_scored_match_maps_category_phrase_to_shopify_path() -> 
 
     assert enrichment["category_path"] == "Apparel & Accessories > Clothing > Dresses"
     assert enrichment["_taxonomy_match"]["source"] == "scored_match"
+
+
+def test_data_enrichment_taxonomy_rejects_gender_only_category_match() -> None:
+    enrichment = build_deterministic_enrichment(
+        {
+            "title": "adidas Originals SL 72 PT",
+            "category": "Men's",
+        },
+        source_url="https://example.com/products/shoe",
+    )
+
+    assert enrichment["category_path"] is None
+
+
+def test_data_enrichment_taxonomy_maps_footwear_to_shopify_shoes() -> None:
+    enrichment = build_deterministic_enrichment(
+        {
+            "title": "adidas Originals SL 72 PT",
+            "category": "Men's > Footwear",
+            "gender": "Men",
+        },
+        source_url="https://example.com/products/shoe",
+    )
+
+    assert enrichment["category_path"] == "Apparel & Accessories > Shoes"
 
 
 def test_data_enrichment_seo_keywords_filter_stopwords_from_all_sources() -> None:
@@ -732,7 +780,7 @@ async def test_data_enrichment_llm_enabled_backfills_missing_fields_in_one_call(
                 "materials_normalized": ["linen"],
                 "availability_normalized": "in_stock",
                 "intent_attributes": ["cocktail"],
-                "audience": ["Adults"],
+                "audience": ["cocktail shoppers", "summer event guests"],
                 "style_tags": ["classic"],
                 "ai_discovery_tags": ["linen-dress"],
                 "suggested_bundles": ["heels"],
@@ -774,6 +822,9 @@ async def test_data_enrichment_llm_enabled_backfills_missing_fields_in_one_call(
     assert captured["budget_scope"] == f"data_enrichment_semantic:{job.id}"
     assert captured["timeout_seconds"] == 15.0
     assert "product_json" in captured["variables"]
+    prompt_product = captured["variables"]["product_json"]
+    assert "intent_attributes" in prompt_product["missing_backfill_fields"]
+    assert "suggested_bundles" in prompt_product["missing_backfill_fields"]
     assert product.category_path == "Apparel & Accessories > Clothing > Dresses"
     assert product.color_family == "blue"
     assert product.size_normalized == ["M"]
@@ -782,7 +833,7 @@ async def test_data_enrichment_llm_enabled_backfills_missing_fields_in_one_call(
     assert product.materials_normalized == ["linen"]
     assert product.availability_normalized == "in_stock"
     assert product.intent_attributes == ["cocktail"]
-    assert product.audience is None
+    assert product.audience == ["cocktail shoppers", "summer event guests"]
     assert product.ai_discovery_tags == ["linen-dress"]
     assert product.diagnostics["llm"]["applied_fields"]
 
@@ -806,7 +857,7 @@ async def test_data_enrichment_llm_does_not_overwrite_deterministic_fields(
                 "materials_normalized": ["wool"],
                 "availability_normalized": "out_of_stock",
                 "intent_attributes": ["useful"],
-                "audience": ["Adults"],
+                "audience": ["linen dress shoppers"],
                 "style_tags": ["sharp"],
                 "ai_discovery_tags": ["linen-dress"],
                 "suggested_bundles": ["boots"],
@@ -857,12 +908,12 @@ async def test_data_enrichment_llm_does_not_overwrite_deterministic_fields(
     assert product.materials_normalized == ["linen"]
     assert product.availability_normalized == "in_stock"
     assert product.intent_attributes == ["useful"]
-    assert product.audience is None
+    assert product.audience == ["linen dress shoppers"]
     assert product.suggested_bundles == ["boots"]
 
 
 @pytest.mark.asyncio
-async def test_data_enrichment_llm_audience_only_applies_for_categories_with_target_audience(
+async def test_data_enrichment_llm_audience_accepts_semantic_descriptors(
     db_session: AsyncSession,
     create_test_run,
     test_user,
@@ -874,7 +925,7 @@ async def test_data_enrichment_llm_audience_only_applies_for_categories_with_tar
         return LLMTaskResult(
         payload={
                 "gender_normalized": "unisex",
-                "audience": ["Adults", "All skin types", "Kids"],
+                "audience": ["coastal home decorators", "guest room refreshers"],
             }
         )
 
@@ -883,16 +934,16 @@ async def test_data_enrichment_llm_audience_only_applies_for_categories_with_tar
         fake_run_prompt_task,
     )
     run = await create_test_run(
-        url="https://example.com/products/body-lotion",
+        url="https://example.com/products/duvet-cover",
         surface="ecommerce_detail",
     )
     record = CrawlRecord(
         run_id=run.id,
-        source_url="https://example.com/products/body-lotion",
+        source_url="https://example.com/products/duvet-cover",
         data={
-            "title": "Body Lotion",
-            "category": "Beauty > Haircare & Bodycare",
-            "description": "Hydrating lotion for daily use.",
+            "title": "Duvet Cover",
+            "category": "Duvet Covers",
+            "description": "Soft bedding for daily use.",
         },
     )
     db_session.add(record)
@@ -911,11 +962,11 @@ async def test_data_enrichment_llm_audience_only_applies_for_categories_with_tar
         )
     ).one()
 
-    assert product.audience is None
+    assert product.audience == ["coastal home decorators", "guest room refreshers"]
 
 
 @pytest.mark.asyncio
-async def test_data_enrichment_llm_audience_uses_shopify_target_audience_values_when_supported(
+async def test_data_enrichment_llm_audience_preserves_semantic_target_tags(
     db_session: AsyncSession,
     create_test_run,
     test_user,
@@ -927,7 +978,7 @@ async def test_data_enrichment_llm_audience_uses_shopify_target_audience_values_
         return LLMTaskResult(
             payload={
                 "category_path": "Media > Books",
-                "audience": ["Adults", "Kids", "All skin types"],
+                "audience": ["gift buyers", "young readers", "classroom libraries"],
             }
         )
 
@@ -965,7 +1016,7 @@ async def test_data_enrichment_llm_audience_uses_shopify_target_audience_values_
     ).one()
 
     assert product.category_path == "Media > Books"
-    assert product.audience == ["adults", "kids"]
+    assert product.audience == ["gift buyers", "young readers", "classroom libraries"]
 
 
 @pytest.mark.asyncio

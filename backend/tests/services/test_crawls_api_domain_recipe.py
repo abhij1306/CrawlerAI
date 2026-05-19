@@ -135,7 +135,11 @@ async def test_crawls_domain_recipe_routes_round_trip(
         "missing": [],
     }
     assert recipe["affordance_candidates"]["browser_required"] is True
-    assert {row["field_name"] for row in recipe["selector_candidates"]} == {"title", "price"}
+    assert {row["field_name"] for row in recipe["selector_candidates"]} == {
+        "brand",
+        "price",
+        "title",
+    }
     assert recipe["acquisition_evidence"]["actual_fetch_method"] == "browser"
     assert recipe["acquisition_evidence"]["browser_reason"] == "http-escalation"
     if recipe["saved_run_profile"] is not None:

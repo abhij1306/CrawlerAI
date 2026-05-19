@@ -709,11 +709,12 @@ def apply_selector_fallbacks(
     candidate_sources: dict[str, list[str]] | None = None,
     field_sources: dict[str, list[str]] | None = None,
     selector_trace_candidates: dict[str, list[dict[str, object]]] | None = None,
+    record_dom_observed_selectors: bool = False,
 ) -> None:
-    def _add(field_name: str, value: object, source: str) -> None:
+    def _add(field_name: str, value: object, source: str) -> int:
         growth = add_candidate(candidates, field_name, value)
         if growth <= 0:
-            return
+            return 0
         if candidate_sources is not None:
             candidate_sources.setdefault(field_name, []).extend([source] * growth)
         if field_sources is not None:
@@ -721,6 +722,7 @@ def apply_selector_fallbacks(
             public_source = "dom_selector" if source == "selector_rule" else source
             if public_source not in bucket:
                 bucket.append(public_source)
+        return growth
 
     def _record_selector_trace(
         field_name: str,
@@ -775,8 +777,11 @@ def apply_selector_fallbacks(
             selector_kind = "regex"
             selector_value = regex
         for value in values:
-            _add(field_name, value, "selector_rule")
-            if selector_kind and selector_value:
+            if (
+                _add(field_name, value, "selector_rule") > 0
+                and selector_kind
+                and selector_value
+            ):
                 _record_selector_trace(
                     field_name,
                     value,
@@ -795,7 +800,17 @@ def apply_selector_fallbacks(
         if not selector:
             continue
         for value in extract_selector_values(root, selector, field_name, page_url):
-            _add(field_name, value, "dom_selector")
+            if (
+                _add(field_name, value, "dom_selector") > 0
+                and record_dom_observed_selectors
+            ):
+                _record_selector_trace(
+                    field_name,
+                    value,
+                    {"source": "dom_observed"},
+                    selector_kind="css_selector",
+                    selector_value=selector,
+                )
     for label, value in extract_label_value_pairs(root):
         normalized_label = normalize_field_key(label)
         canonical = alias_lookup.get(normalized_label)

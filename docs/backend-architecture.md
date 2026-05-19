@@ -409,6 +409,7 @@ Primary files:
 
 - `review/__init__.py`
 - `selectors_runtime.py`
+- `selector_auto_learn.py`
 - `selector_suggestions.py`
 - `selector_self_heal.py`
 - `domain_memory_service.py`
@@ -427,6 +428,7 @@ Current storage/runtime model:
 - selector/domain memory is stored by normalized `(domain, surface)`
 - selectors are persisted inside `DomainMemory`
 - reusable run defaults and learned acquisition contracts are persisted separately in `DomainRunProfile`, keyed by the same normalized `(domain, surface)` scope but never mixed into selector rows or `DomainMemory.selectors`
+- successful DOM-only extraction can auto-save revalidated final-field selectors as `dom_observed` rules; structured, adapter, network, and JS-state winners are intentionally not promoted to selector memory
 - ecommerce-detail setup repair uses the union of explicit user fields and limited defaults (`price`, `title`, `image_url`) for browser retry, selector self-heal, LLM gap fill, and acquisition field-coverage metadata; optional deep fields are not forced unless requested
 - reusable browser cookie/local-storage state is persisted separately in `DomainCookieMemory`, keyed by normalized domain only, because acquisition reuse is host-level rather than surface-level
 - completed-run field keep/reject actions are persisted separately in `DomainFieldFeedback`, keyed by normalized `(domain, surface)` and the field/source that was accepted or rejected

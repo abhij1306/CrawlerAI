@@ -7,6 +7,7 @@ import pytest
 
 from app.services.llm import tasks as llm_tasks
 from app.services.llm import budget as llm_budget
+from app.services.llm.config_service import load_prompt_file
 from app.models.llm import LLMCostLog
 from app.services.llm import runtime as llm_runtime
 from app.services.llm import prompt_rendering as llm_prompt_rendering
@@ -15,6 +16,12 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 MODEL_GROQ = "llama-3.3-70b-versatile"
+
+
+def test_load_prompt_file_reads_canonical_prompt_directory() -> None:
+    assert "You enrich ecommerce product records." in load_prompt_file(
+        "data_enrichment_semantic.system.txt"
+    )
 
 
 def test_estimate_cost_usd_uses_configured_groq_rates() -> None:

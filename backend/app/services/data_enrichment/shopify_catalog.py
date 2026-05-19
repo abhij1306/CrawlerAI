@@ -16,6 +16,7 @@ from app.services.config.data_enrichment import (
     DATA_ENRICHMENT_SHOPIFY_ATTRIBUTE_CRAWL_FIELDS,
     DATA_ENRICHMENT_SHOPIFY_NORMALIZATION_ATTRIBUTE_NAMES,
     DATA_ENRICHMENT_TAXONOMY_CONTEXT_BLOCKS,
+    DATA_ENRICHMENT_TAXONOMY_CONTEXT_ONLY_TOKENS,
     DATA_ENRICHMENT_TAXONOMY_VERSION,
 )
 from app.services.shared.field_coerce import clean_text, strip_html_tags
@@ -50,6 +51,8 @@ def tokenize_text(value: object) -> list[str]:
 
 def normalize_taxonomy_token(value: object) -> str:
     token = str(value or "").strip().casefold()
+    if token == "s":
+        return ""
     if len(token) > 4 and token.endswith("ies"):
         return f"{token[:-3]}y"
     if len(token) > 4 and token.endswith("sses"):
@@ -170,10 +173,16 @@ def top_taxonomy_candidates(
         ):
             continue
         primary_score = weighted_overlap(primary_tokens, category_tokens)
+        if primary_score and not has_product_kind_overlap(primary_tokens, category_tokens):
+            continue
         secondary_score = weighted_overlap(secondary_tokens, category_tokens)
         tertiary_score = weighted_overlap(tertiary_tokens, category_tokens)
         attribute_score = weighted_overlap(
             primary_tokens | secondary_tokens | tertiary_tokens,
+            attribute_tokens,
+        )
+        primary_attribute_score = weighted_product_overlap(
+            primary_tokens,
             attribute_tokens,
         )
         score = (
@@ -181,8 +190,9 @@ def top_taxonomy_candidates(
             + (secondary_score * 0.35)
             + (tertiary_score * 0.15)
             + (attribute_score * 0.3)
+            + (primary_attribute_score * 0.5)
         )
-        if primary_score == 0 and score > 0:
+        if primary_score == 0 and primary_attribute_score == 0 and score > 0:
             score *= 0.6
         if score < category_match_threshold:
             continue
@@ -490,6 +500,24 @@ def weighted_overlap(source_tokens: set[str], category_tokens: set[str]) -> floa
     if not overlap:
         return 0.0
     return len(overlap) / len(source_tokens)
+
+
+def weighted_product_overlap(source_tokens: set[str], category_tokens: set[str]) -> float:
+    product_tokens = {
+        token
+        for token in source_tokens
+        if token not in DATA_ENRICHMENT_TAXONOMY_CONTEXT_ONLY_TOKENS
+    }
+    return weighted_overlap(product_tokens, category_tokens)
+
+
+def has_product_kind_overlap(source_tokens: set[str], category_tokens: set[str]) -> bool:
+    overlap = source_tokens & category_tokens
+    if not overlap:
+        return False
+    return any(
+        token not in DATA_ENRICHMENT_TAXONOMY_CONTEXT_ONLY_TOKENS for token in overlap
+    )
 
 
 def load_json_dict(path: Path) -> dict[str, object]:

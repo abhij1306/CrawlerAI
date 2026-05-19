@@ -59,6 +59,11 @@ DATA_ENRICHMENT_LLM_BACKFILL_FIELDS = (
     "gender_normalized",
     "materials_normalized",
     "availability_normalized",
+    "intent_attributes",
+    "audience",
+    "style_tags",
+    "ai_discovery_tags",
+    "suggested_bundles",
 )
 DATA_ENRICHMENT_SHOPIFY_NORMALIZATION_ATTRIBUTE_NAMES = {
     "audience": "Target audience",
@@ -68,6 +73,21 @@ DATA_ENRICHMENT_SHOPIFY_NORMALIZATION_ATTRIBUTE_NAMES = {
     "fabric": "Fabric",
     "material": "Material",
 }
+DATA_ENRICHMENT_TAXONOMY_CONTEXT_ONLY_TOKENS = frozenset(
+    {
+        "adult",
+        "baby",
+        "boy",
+        "child",
+        "children",
+        "girl",
+        "kid",
+        "men",
+        "toddler",
+        "unisex",
+        "women",
+    }
+)
 DATA_ENRICHMENT_COLOR_FAMILY_ALIASES = {
     "black": ("black",),
     "blue": ("blue", "navy"),

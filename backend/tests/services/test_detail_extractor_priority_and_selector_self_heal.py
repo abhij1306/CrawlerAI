@@ -673,3 +673,64 @@ def test_selector_self_heal_converts_css_candidates_before_persisting_xpath() ->
     assert len(rules) == 1
     assert rules[0]["sample_value"] == "Rubber outsole, reinforced toe cap."
     assert str(rules[0]["xpath"]).startswith("//div")
+
+
+def test_selector_self_heal_persists_valid_css_candidates_as_css_rules() -> None:
+    rules = validated_xpath_rules(
+        html="""
+        <html>
+          <body>
+            <div class="custom-specs">Rubber outsole, reinforced toe cap.</div>
+          </body>
+        </html>
+        """,
+        candidates=[
+            {
+                "field_name": "specifications",
+                "css_selector": ".custom-specs",
+            }
+        ],
+        target_fields=["specifications"],
+    )
+
+    assert rules == [
+        {
+            "field_name": "specifications",
+            "css_selector": ".custom-specs",
+            "xpath": None,
+            "regex": None,
+            "sample_value": "Rubber outsole, reinforced toe cap.",
+            "source": "selector_self_heal",
+            "status": "validated",
+            "is_active": True,
+        }
+    ]
+
+
+def test_extract_records_tracks_dom_observed_selector_traces_for_final_dom_fields() -> None:
+    record = extract_records(
+        """
+        <html>
+          <body>
+            <main>
+              <h1>DOM Observed Widget</h1>
+              <span class="price">$19.99</span>
+            </main>
+          </body>
+        </html>
+        """,
+        "https://example.com/products/dom-observed-widget",
+        "ecommerce_detail",
+        max_records=1,
+    )[0]
+
+    traces = record["_selector_traces"]
+    assert traces["title"]["selector_kind"] == "css_selector"
+    assert traces["title"]["selector_value"] == "h1"
+    assert traces["title"]["selector_source"] == "dom_observed"
+    assert traces["price"]["selector_kind"] == "css_selector"
+    assert (
+        traces["price"]["selector_value"]
+        == "[itemprop='price'], .price, .product-price"
+    )
+    assert traces["price"]["selector_source"] == "dom_observed"
