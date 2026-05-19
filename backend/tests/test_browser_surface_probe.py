@@ -305,7 +305,7 @@ def test_geo_payload_from_text_accepts_alternate_provider_shapes() -> None:
 
 
 @pytest.mark.asyncio
-async def test_build_report_uses_runtime_page_init_script_path(
+async def test_build_report_ignores_runtime_page_init_script_path(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -448,7 +448,7 @@ async def test_build_report_uses_runtime_page_init_script_path(
         runtime_provider=_fake_runtime_provider,
     )
 
-    assert init_scripts == ["window.__fingerprint = true;"]
+    assert init_scripts == []
 
 
 @pytest.mark.asyncio

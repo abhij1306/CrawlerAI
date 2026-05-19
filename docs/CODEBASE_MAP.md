@@ -141,7 +141,7 @@ Canonical config owner:
 | File | Purpose |
 |---|---|
 | `config/runtime_settings.py` | browser runtime tunables and launch args |
-| `config/browser_init_scripts.py` | browser stealth/coherence init-script builders |
+| `config/browser_init_scripts.py` | targeted browser identity init-script builders (`window.chrome.runtime`, canvas/WebGL, audio) |
 | `config/browser_fingerprint_profiles.py` | static browser fingerprint profile data |
 
 ---

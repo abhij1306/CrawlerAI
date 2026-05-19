@@ -7,7 +7,11 @@ from urllib.parse import urlsplit
 from patchright.async_api import Error as PlaywrightError
 from patchright.async_api import TimeoutError as PlaywrightTimeoutError
 
-from app.services.acquisition.browser_readiness import HtmlAnalysis, analyze_html
+from app.services.acquisition.browser_readiness import (
+    HtmlAnalysis,
+    analyze_html,
+    looks_like_low_content_shell,
+)
 from app.services.acquisition.browser_page_helpers import (
     capture_listing_visual_elements,
     detail_expansion_can_skip,
@@ -292,6 +296,7 @@ async def navigate_browser_page_impl(
         elapsed_ms=elapsed_ms,
         classify_blocked_page=classify_blocked_page_async,
         get_page_html=get_page_html,
+        looks_like_low_content_shell=looks_like_low_content_shell,
     )
     if response is not None:
         recovered_strategy = getattr(response, "browser_navigation_strategy", None)

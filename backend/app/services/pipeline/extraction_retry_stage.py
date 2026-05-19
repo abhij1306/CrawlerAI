@@ -719,7 +719,11 @@ def _browser_retry_min_remaining_seconds() -> float:
 remaining_url_budget_seconds = _remaining_url_budget_seconds
 
 def _post_extraction_browser_retry_min_remaining_seconds() -> float:
-    return _browser_retry_min_remaining_seconds()
+    return max(
+        _browser_retry_min_remaining_seconds(),
+        float(crawler_runtime_settings.browser_render_timeout_seconds)
+        + float(crawler_runtime_settings.url_process_timeout_buffer_seconds),
+    )
 
 async def _acquire_browser_retry_result(
     context: _URLProcessingContext,

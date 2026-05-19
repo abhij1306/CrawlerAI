@@ -918,6 +918,73 @@ async def test_post_extraction_detail_shell_skips_real_chrome_when_budget_below_
 
 
 @pytest.mark.asyncio
+async def test_post_extraction_detail_shell_skips_real_chrome_when_budget_below_render_timeout_plus_buffer(
+    db_session: AsyncSession,
+    test_user,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run = await create_crawl_run(
+        db_session,
+        test_user.id,
+        {
+            "run_type": "crawl",
+            "url": "https://www.wayfair.com/pdp/widget",
+            "surface": "ecommerce_detail",
+            "settings": {"respect_robots_txt": False},
+        },
+    )
+    attempted_engines: list[str] = []
+
+    async def _fake_acquire(request: AcquisitionRequest) -> AcquisitionResult:
+        forced_engine = str(
+            request.acquisition_profile.get("forced_browser_engine") or "patchright"
+        )
+        attempted_engines.append(forced_engine)
+        return _fake_acquire_result(
+            request,
+            html=f"<html><body>{forced_engine}</body></html>",
+            method="browser",
+            blocked=False,
+            browser_diagnostics={
+                "browser_attempted": True,
+                "browser_engine": forced_engine,
+                "browser_outcome": "usable_content",
+            },
+        )
+
+    monkeypatch.setattr(
+        crawler_runtime_settings,
+        "post_extraction_detail_shell_real_chrome_retry_enabled",
+        True,
+    )
+    monkeypatch.setattr("app.services.pipeline.extraction_loop.acquire", _fake_acquire)
+    monkeypatch.setattr(
+        "app.services.pipeline.extraction_loop.extract_records",
+        lambda *_args, **_kwargs: [],
+    )
+    monkeypatch.setattr(
+        "app.services.pipeline.extraction_loop.real_chrome_browser_available",
+        lambda: True,
+    )
+    monkeypatch.setattr("app.services.pipeline.extraction_loop.run_adapter", _no_adapter)
+    monkeypatch.setattr(
+        "app.services.pipeline.extraction_loop.infer_detail_failure_reason",
+        lambda *_args, **_kwargs: "detail_shell",
+    )
+    monkeypatch.setattr(
+        "app.services.pipeline.extraction_loop._remaining_url_budget_seconds",
+        lambda _context: 40.0,
+    )
+
+    result = await process_single_url(db_session, run, run.url)
+    logs = await get_run_logs(db_session, run.id)
+
+    assert attempted_engines == ["patchright"]
+    assert result.records == []
+    assert any("Skipping detail_shell Chrome retry" in log.message for log in logs)
+
+
+@pytest.mark.asyncio
 async def test_usable_detail_with_active_provider_evidence_does_not_retry_real_chrome(
     db_session: AsyncSession,
     test_user,

@@ -54,8 +54,6 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_BROWSERFORGE_ACTIVE_ATTR = "_crawler_browserforge_active"
-
 
 def _facade_attr(name: str, default):
     import sys
@@ -291,10 +289,6 @@ class SharedBrowserRuntime:
             context: BrowserContext | None = None
             try:
                 context = await self._browser.new_context(**cast(Any, context_options))
-                init_script = str(context_spec.init_script or "").strip()
-                setattr(context, _BROWSERFORGE_ACTIVE_ATTR, bool(init_script))
-                if init_script:
-                    await context.add_init_script(init_script)
                 await _configure_context_routes(context)
                 async with self._counter_lock:
                     self._total_contexts_created += 1
@@ -354,16 +348,11 @@ class SharedBrowserRuntime:
         *,
         run_id: int | None = None,
         locality_profile: dict[str, object] | None = None,
-        inject_init_script: bool = False,
     ) -> PlaywrightContextSpec:
         if _use_native_real_chrome_context(self.browser_engine):
-            from app.services.acquisition.browser_identity import playwright_masking_init_script
-
             return PlaywrightContextSpec(
                 context_options=dict(NATIVE_REAL_CHROME_CONTEXT_OPTIONS),
-                init_script=playwright_masking_init_script()
-                if inject_init_script
-                else None,
+                init_script=None,
             )
         browser_major_version = None
         if self._browser is not None:
@@ -382,8 +371,6 @@ class SharedBrowserRuntime:
             locality_profile=locality_profile,
             browser_engine=self.browser_engine,
         )
-        if inject_init_script:
-            return spec
         return PlaywrightContextSpec(
             context_options=dict(spec.context_options),
             init_script=None,
@@ -411,7 +398,6 @@ class SharedBrowserRuntime:
         domain: str | None = None,
         locality_profile: dict[str, object] | None = None,
         allow_storage_state: bool = True,
-        inject_init_script: bool = False,
     ):
         normalized_proxy = _normalized_proxy_value(proxy)
         if self.launch_proxy is None:
@@ -439,7 +425,6 @@ class SharedBrowserRuntime:
             context_spec = self._build_context_spec(
                 run_id=run_id,
                 locality_profile=locality_profile,
-                inject_init_script=inject_init_script,
             )
             context_options = dict(context_spec.context_options)
             allow_domain_storage_state = bool(

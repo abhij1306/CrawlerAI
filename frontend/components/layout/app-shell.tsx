@@ -193,7 +193,9 @@ export function AppShell({ children }: Readonly<{ children: ReactNode }>) {
         </a>
         <div className="app-shell-grid">
           <Sidebar pathname={pathname} />
-          <ShellContent pathname={pathname}>{children}</ShellContent>
+          <ShellContent pathname={pathname} canResetWorkspace={authQuery.data.role === 'admin'}>
+            {children}
+          </ShellContent>
         </div>
       </div>
     </TopBarProvider>
@@ -327,7 +329,11 @@ function Sidebar({ pathname }: Readonly<{ pathname: string }>) {
   );
 }
 
-function ShellContent({ children, pathname }: Readonly<{ children: ReactNode; pathname: string }>) {
+function ShellContent({
+  children,
+  pathname,
+  canResetWorkspace,
+}: Readonly<{ children: ReactNode; pathname: string; canResetWorkspace: boolean }>) {
   const header = useTopBarHeader();
   const topBar = header?.pathKey === pathname ? header : getFallbackHeader(pathname);
   const router = useRouter();
@@ -336,6 +342,7 @@ function ShellContent({ children, pathname }: Readonly<{ children: ReactNode; pa
   const [resetError, setResetError] = useState('');
 
   async function executeReset() {
+    if (!canResetWorkspace) return;
     setResetPending(true);
     setResetError('');
     try {
@@ -358,6 +365,7 @@ function ShellContent({ children, pathname }: Readonly<{ children: ReactNode; pa
   }
 
   function handleSelectedReset() {
+    if (!canResetWorkspace) return;
     setResetError('');
     setResetDialogOpen(true);
   }
@@ -374,19 +382,21 @@ function ShellContent({ children, pathname }: Readonly<{ children: ReactNode; pa
           {topBar.actions ? (
             <div className="flex flex-wrap items-center gap-2">{topBar.actions}</div>
           ) : null}
-          <div className="flex items-center gap-2">
-            <Button
-              type="button"
-              onClick={handleSelectedReset}
-              disabled={resetPending}
-              variant="secondary"
-              size="sm"
-              className="text-[11px] font-semibold"
-            >
-              <Trash2 className="size-3" />
-              {resetLabel}
-            </Button>
-          </div>
+          {canResetWorkspace ? (
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                onClick={handleSelectedReset}
+                disabled={resetPending}
+                variant="secondary"
+                size="sm"
+                className="text-[11px] font-semibold"
+              >
+                <Trash2 className="size-3" />
+                {resetLabel}
+              </Button>
+            </div>
+          ) : null}
           <ThemeToggle compact />
         </div>
       </header>
@@ -394,17 +404,19 @@ function ShellContent({ children, pathname }: Readonly<{ children: ReactNode; pa
       <main id="main-content" className="app-page-frame">
         <div className="app-page-inner">{children}</div>
       </main>
-      <ConfirmDialog
-        open={resetDialogOpen}
-        onOpenChange={setResetDialogOpen}
-        title={resetDialogCopy.title}
-        description={resetDialogCopy.description}
-        confirmLabel={resetDialogCopy.confirmLabel}
-        pending={resetPending}
-        danger
-        error={resetError}
-        onConfirm={() => void executeReset()}
-      />
+      {canResetWorkspace ? (
+        <ConfirmDialog
+          open={resetDialogOpen}
+          onOpenChange={setResetDialogOpen}
+          title={resetDialogCopy.title}
+          description={resetDialogCopy.description}
+          confirmLabel={resetDialogCopy.confirmLabel}
+          pending={resetPending}
+          danger
+          error={resetError}
+          onConfirm={() => void executeReset()}
+        />
+      ) : null}
     </div>
   );
 }

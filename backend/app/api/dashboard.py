@@ -41,7 +41,9 @@ async def dashboard_reset_data(
     session: Annotated[AsyncSession, Depends(get_db)],
     _: Annotated[User, Depends(require_admin)],
 ) -> dict:
-    return await reset_application_data(session)
+    result = await reset_application_data(session)
+    await session.commit()
+    return result
 
 
 @router.post("/reset-crawl-data")
@@ -49,7 +51,9 @@ async def dashboard_reset_crawl_data(
     session: Annotated[AsyncSession, Depends(get_db)],
     _: Annotated[User, Depends(require_admin)],
 ) -> dict:
-    return await reset_crawl_data(session)
+    result = await reset_crawl_data(session)
+    await session.commit()
+    return result
 
 
 @router.post("/reset-domain-memory")
@@ -57,7 +61,9 @@ async def dashboard_reset_domain_memory(
     session: Annotated[AsyncSession, Depends(get_db)],
     _: Annotated[User, Depends(require_admin)],
 ) -> dict:
-    return await reset_domain_memory(session)
+    result = await reset_domain_memory(session)
+    await session.commit()
+    return result
 
 
 @router.post("/reset-product-intelligence")
@@ -65,7 +71,9 @@ async def dashboard_reset_product_intelligence(
     session: Annotated[AsyncSession, Depends(get_db)],
     _: Annotated[User, Depends(require_admin)],
 ) -> dict:
-    return await reset_product_intelligence(session)
+    result = await reset_product_intelligence(session)
+    await session.commit()
+    return result
 
 
 @router.post("/reset-data-enrichment")
@@ -79,7 +87,9 @@ async def dashboard_reset_data_enrichment(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="confirm=data-enrichment is required",
         )
-    return await reset_data_enrichment(session)
+    result = await reset_data_enrichment(session)
+    await session.commit()
+    return result
 
 
 @router.get("/metrics")

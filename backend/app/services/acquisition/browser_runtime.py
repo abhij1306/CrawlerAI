@@ -462,28 +462,6 @@ async def browser_fetch(
                     on_event=on_event,
                     emit_browser_event=_emit_browser_event,
                 )
-                if int(getattr(response, "status", 0) or 0) >= 400:
-                    response = await recover_browser_challenge(
-                        page,
-                        url=url,
-                        response=response,
-                        browser_engine=runtime_engine,
-                        timeout_seconds=_remaining(),
-                        phase_timings_ms=phase_timings_ms,
-                        challenge_wait_max_seconds=float(
-                            crawler_runtime_settings.challenge_wait_max_seconds or 0
-                        ),
-                        challenge_poll_interval_ms=int(
-                            crawler_runtime_settings.challenge_poll_interval_ms
-                        ),
-                        navigation_timeout_ms=int(
-                            crawler_runtime_settings.browser_navigation_domcontentloaded_timeout_ms
-                        ),
-                        elapsed_ms=_elapsed_ms,
-                        classify_blocked_page=classify_blocked_page_async,
-                        get_page_html=get_page_html,
-                        looks_like_low_content_shell=looks_like_low_content_shell,
-                    )
                 navigation_strategy = str(
                     getattr(response, "browser_navigation_strategy", None)
                     or navigation_strategy

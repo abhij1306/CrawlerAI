@@ -1211,6 +1211,58 @@ async def test_browser_fetch_recovers_direct_navigation_challenge(
 
 
 @pytest.mark.asyncio
+async def test_browser_fetch_does_not_repeat_challenge_recovery_after_navigation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        browser_runtime.crawler_runtime_settings,
+        "origin_warm_pause_ms",
+        0,
+    )
+    page = _FakeExpansionPage(
+        base_html="<html><head><title>Access Denied</title></head><body>Access Denied</body></html>",
+        goto_status=403,
+    )
+
+    async def _fake_runtime(**_kwargs):
+        return _FakeRuntime(page)
+
+    recover_calls: list[str] = []
+
+    async def _recover_once(*args, **kwargs):
+        del args, kwargs
+        recover_calls.append("recover")
+        return SimpleNamespace(status=403, headers={"content-type": "text/html"})
+
+    async def _classify_blocked_page(_html: str, _status_code: int):
+        return SimpleNamespace(
+            blocked=True,
+            evidence=["title:access denied"],
+            provider_hits=[],
+            challenge_element_hits=[],
+        )
+
+    monkeypatch.setattr(browser_page_flow, "recover_browser_challenge", _recover_once)
+    monkeypatch.setattr(browser_runtime, "recover_browser_challenge", _recover_once)
+    monkeypatch.setattr(
+        browser_runtime,
+        "classify_blocked_page_async",
+        _classify_blocked_page,
+    )
+
+    result = await browser_runtime.browser_fetch(
+        "https://example.com/products/widget",
+        5,
+        surface="ecommerce_detail",
+        runtime_provider=_fake_runtime,
+    )
+
+    assert recover_calls == ["recover"]
+    assert result.status_code == 403
+    assert result.browser_diagnostics["browser_outcome"] == "challenge_page"
+
+
+@pytest.mark.asyncio
 async def test_browser_fetch_fast_paths_ready_listing_cards_without_networkidle() -> (
     None
 ):

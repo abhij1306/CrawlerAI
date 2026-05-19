@@ -41,19 +41,16 @@ This document summarizes advanced technologies used in CrawlerAI for acquisition
 - Run-scoped identity cache with TTL for deterministic behavior per run.
 
 ### 2.2 Surface coherence patching (init scripts)
-- Navigator coherence: language/platform/touch/network info alignment.
-- Intl/timezone coherence and locale-aware patching.
-- Permissions/media devices coherence patching.
-- Chrome runtime object shims (`window.chrome.runtime` behaviors).
-- Performance timing normalization for realistic monotonic navigation entries.
+- Current scope is intentionally narrow after legacy init-script removal.
+- Chrome runtime stub patching (`window.chrome.runtime` behaviors).
+- Deterministic canvas spoofing for image-data/export paths.
+- Deterministic WebGL vendor/renderer/readPixels spoofing.
+- Audio/OfflineAudio analyser/channel noise shaping.
 
 ### 2.3 Anti-fingerprint signal shaping
-- Canvas read/write perturbation script.
-- WebGL vendor/renderer/capability profile alignment by platform.
-- Audio fingerprint perturbation at analyser/buffer level.
-- Font surface allowlist and style rewriting by platform family.
-- WebRTC local IP masking path with safe `RTCPeerConnection` replacement.
-- Playwright global masking and optional worker disabling.
+- Canvas/WebGL shaping stays profile-consistent per identity.
+- Audio fingerprint perturbation stays deterministic per identity.
+- Removed legacy broad Playwright-stealth style patching is not part of the current stack.
 
 ### 2.4 Fingerprint research probes
 - Built-in browser surface probe targets:

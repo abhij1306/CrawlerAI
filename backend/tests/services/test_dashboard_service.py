@@ -23,6 +23,7 @@ from app.models.crawl_run import CrawlLog, CrawlRecord, CrawlRun
 from app.models.review import ReviewPromotion
 from app.models.ucp_audit import UCPAuditJob, UCPAuditPageResult, UCPAuditReport
 from app.models.llm import LLMCostLog
+from app.models.user import User
 from app.services.acquisition.host_protection_memory import (
     load_host_protection_policy,
     note_host_hard_block,
@@ -77,6 +78,55 @@ async def test_dashboard_reset_compatibility_routes(
                 assert response.json() == {"ok": 1}
     finally:
         app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_dashboard_reset_data_route_commits_after_auth_reads_same_session(
+    db_session: AsyncSession,
+    test_user,
+) -> None:
+    async def _override_db():
+        yield db_session
+
+    async def _override_admin():
+        result = await db_session.execute(select(User).where(User.id == test_user.id))
+        return result.scalar_one()
+
+    run = await create_crawl_run(
+        db_session,
+        test_user.id,
+        {
+            "run_type": "crawl",
+            "url": "https://example.com/product/widget",
+            "surface": "ecommerce_detail",
+        },
+    )
+    db_session.add(
+        CrawlRecord(
+            run_id=run.id,
+            source_url=run.url,
+            data={"title": "Widget"},
+            raw_data={},
+            discovered_data={},
+            source_trace={},
+        )
+    )
+    await db_session.commit()
+
+    app.dependency_overrides[get_db] = _override_db
+    app.dependency_overrides[require_admin] = _override_admin
+    try:
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://testserver",
+        ) as client:
+            response = await client.post("/api/dashboard/reset-data")
+        assert response.status_code == 200
+    finally:
+        app.dependency_overrides.clear()
+
+    assert (await db_session.execute(select(CrawlRun))).scalars().all() == []
+    assert (await db_session.execute(select(CrawlRecord))).scalars().all() == []
 
 
 @pytest.mark.asyncio
