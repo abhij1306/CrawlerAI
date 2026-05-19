@@ -50,16 +50,16 @@ from .extraction_retry_decision import (
     annotate_field_repair as _annotate_field_repair,
     empty_extraction_browser_retry_decision as _empty_extraction_browser_retry_decision,
 )
-from .extraction_retry_stage import (
-    _apply_detail_rejection_guard,
-    _build_acquisition_request,
-    _log_extraction_outcome,
-    _remaining_url_budget_seconds,
-    _retry_detail_challenge_shell_with_real_chrome,
-    _retry_empty_extraction_with_browser,
-    _retry_listing_integrity_with_stronger_tier,
-    _retry_low_quality_extraction_with_browser,
-    _retry_patchright_detail_shell_with_real_chrome,
+from .retry import (
+    apply_detail_rejection_guard as _apply_detail_rejection_guard,
+    build_acquisition_request as _build_acquisition_request,
+    log_extraction_outcome as _log_extraction_outcome,
+    remaining_url_budget_seconds as _remaining_url_budget_seconds,
+    retry_detail_challenge_shell_with_real_chrome as _retry_detail_challenge_shell_with_real_chrome,
+    retry_empty_extraction_with_browser as _retry_empty_extraction_with_browser,
+    retry_listing_integrity_with_stronger_tier as _retry_listing_integrity_with_stronger_tier,
+    retry_low_quality_extraction_with_browser as _retry_low_quality_extraction_with_browser,
+    retry_patchright_detail_shell_with_real_chrome as _retry_patchright_detail_shell_with_real_chrome,
 )
 from .persistence import persist_acquisition_artifacts, persist_extracted_records
 from .record_extraction_stage import (

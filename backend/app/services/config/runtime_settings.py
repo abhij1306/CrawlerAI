@@ -230,7 +230,6 @@ class CrawlerRuntimeSettings(BaseSettings):
         "--disable-search-engine-choice-screen",
         "--disable-background-networking",
         "--disable-client-side-phishing-detection",
-        "--disable-component-update",
         "--disable-domain-reliability",
         "--disable-sync",
         "--no-first-run",

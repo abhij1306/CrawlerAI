@@ -269,7 +269,7 @@ class ShopifyAdapter(BaseAdapter):
             return ""
         handle_set = {
             str(handle or "").strip()
-            for handle in list(handles or [])
+            for handle in handles or []
             if str(handle or "").strip()
         }
         for prefix_len in range(len(tokens) - 1, 2, -1):
@@ -360,7 +360,7 @@ class ShopifyAdapter(BaseAdapter):
                 return value
         title = text_or_none(product.get("title"))
         if title:
-            parts = re.split(r"\s[-–—�]\s", title, maxsplit=1)
+            parts = re.split(r"\s[-–—]\s", title, maxsplit=1)
             if len(parts) == 2 and text_or_none(parts[1]):
                 return text_or_none(parts[1]) or ""
         handle = text_or_none(product.get("handle")) or current_handle

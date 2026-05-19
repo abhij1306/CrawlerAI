@@ -516,9 +516,7 @@ def _structured_listing_stage(
     ):
         if source_name == "js_state":
             continue
-        payload_list = [
-            payload for payload in list(source_payloads) if isinstance(payload, dict)
-        ]
+        payload_list = [payload for payload in source_payloads if isinstance(payload, dict)]
         if (
             source_name == "embedded_json"
             and not allow_embedded_json_listing_payloads(

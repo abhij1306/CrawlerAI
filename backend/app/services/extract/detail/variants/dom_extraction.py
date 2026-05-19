@@ -826,7 +826,7 @@ def backfill_variants_from_dom_if_missing(
     js_state_objects: dict[str, Any] | None = None,
 ) -> None:
     existing_variants = [
-        row for row in list(record.get("variants") or []) if isinstance(row, dict)
+        row for row in record.get("variants") or [] if isinstance(row, dict)
     ]
     if not variant_dom_cues_present(soup):
         return

@@ -18,7 +18,7 @@ def register_run_complete_callback(
 
 
 async def on_run_complete(run_id: int) -> None:
-    for cb in list(_run_complete_callbacks.values()):
+    for cb in tuple(_run_complete_callbacks.values()):
         try:
             await cb(run_id)
         except Exception:

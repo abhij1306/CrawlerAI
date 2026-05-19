@@ -226,7 +226,7 @@ class SharedBrowserRuntime:
             self._playwright = await async_playwright().start()
             launch_args = [
                 str(value).strip()
-                for value in list(crawler_runtime_settings.browser_launch_args or ())
+                for value in crawler_runtime_settings.browser_launch_args or ()
                 if str(value).strip()
             ]
             launch_headless = _launch_headless_for_engine(self.browser_engine)
@@ -641,7 +641,7 @@ async def _evict_idle_browser_runtimes_locked() -> None:
     )
     candidates: list[tuple[str, str | tuple[str, str], SharedBrowserRuntime]] = []
     for pool_name, pool in pools:
-        for key, runtime in list(pool.items()):
+        for key, runtime in tuple(pool.items()):
             active_and_queued, _last_used = runtime.eviction_key()
             if active_and_queued > 0:
                 continue
@@ -657,7 +657,7 @@ async def _evict_idle_browser_runtimes_locked() -> None:
         candidate_keys = {(pool_name, key) for pool_name, key, _runtime in candidates}
         remaining: list[tuple[str, str | tuple[str, str], SharedBrowserRuntime]] = []
         for pool_name, pool in pools:
-            for key, runtime in list(pool.items()):
+            for key, runtime in tuple(pool.items()):
                 if runtime.eviction_key()[0] != 0:
                     continue
                 normalized_remaining_key: str | tuple[str, str]

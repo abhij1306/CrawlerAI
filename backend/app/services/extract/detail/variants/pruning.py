@@ -49,7 +49,7 @@ def _sanitize_detail_variant_payload(
 ) -> None:
     cleaned_variants: list[dict[str, Any]] = []
     title_hint = clean_text(record.get("title"))
-    for variant in list(record.get("variants") or []):
+    for variant in record.get("variants") or []:
         if not isinstance(variant, dict):
             continue
         if not sanitize_variant_row(
@@ -68,7 +68,7 @@ def _sanitize_detail_variant_payload(
     record.pop("selected_variant", None)
     record.pop("variant_axes", None)
     record.pop("available_sizes", None)
-    for field_name in list(record):
+    for field_name in tuple(record):
         if re.fullmatch(r"option\d+_(?:name|values?)", str(field_name)):
             record.pop(field_name, None)
     _drop_detail_variant_scalar_noise(record)
@@ -272,7 +272,7 @@ def _variant_title_can_be_option_label(variant: dict[str, Any], *, title: str) -
 
 
 def _drop_detail_variant_scalar_noise(record: dict[str, Any]) -> None:
-    for field_name in list(record.keys()):
+    for field_name in tuple(record):
         if str(field_name).startswith("toggle_"):
             record.pop(field_name, None)
     for field_name in ("size", "color"):
@@ -313,7 +313,7 @@ def _whole_value_pattern(value: str) -> re.Pattern[str]:
 
 def _drop_variant_derived_parent_axis_scalars(record: dict[str, Any]) -> None:
     variants = [
-        row for row in list(record.get("variants") or []) if isinstance(row, dict)
+        row for row in record.get("variants") or [] if isinstance(row, dict)
     ]
     if not variants:
         return

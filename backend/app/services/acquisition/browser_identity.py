@@ -748,12 +748,6 @@ def _coherent_sec_ch_headers(user_agent_data: dict[str, object]) -> dict[str, st
         "sec-ch-ua-mobile": "?1" if bool(user_agent_data.get("mobile")) else "?0",
         "sec-ch-ua-platform": f'"{user_agent_data.get("platform") or HOST_OS_PLATFORM_LABELS[_HOST_OS]}"',
     }
-    platform_version = str(user_agent_data.get("platformVersion") or "").strip()
-    if platform_version:
-        headers["sec-ch-ua-platform-version"] = f'"{platform_version.replace('"', "")}"'
-    bitness = str(user_agent_data.get("bitness") or "").strip()
-    if bitness:
-        headers["sec-ch-ua-bitness"] = f'"{bitness.replace('"', "")}"'
     return headers
 
 
@@ -1157,11 +1151,6 @@ def _playwright_context_options_from_identity(
         options["timezone_id"] = timezone_id
     return options
 
-
-def playwright_masking_init_script() -> str:
-    return ""
-
-
 def _playwright_identity_seed(
     identity: BrowserIdentity,
     *,
@@ -1187,20 +1176,7 @@ def _playwright_identity_seed(
         },
         sort_keys=True,
     )
-    return int(
-        _hashlib.sha256(seed_payload.encode("utf-8")).hexdigest()[:8],
-        16,
-    )
-
-
-def _playwright_init_script_from_identity(
-    identity: BrowserIdentity,
-    *,
-    timezone_id: str | None = None,
-    browser_engine: str = _CHROMIUM_BROWSER_ENGINE,
-) -> str | None:
-    del identity, timezone_id, browser_engine
-    return None
+    return int(_hashlib.sha256(seed_payload.encode("utf-8")).hexdigest()[:8], 16)
 
 
 def build_playwright_context_spec(
@@ -1209,7 +1185,6 @@ def build_playwright_context_spec(
     run_id: int | None = None,
     browser_major_version: int | None = None,
     locality_profile: Mapping[str, object] | None = None,
-    browser_engine: str = _CHROMIUM_BROWSER_ENGINE,
 ) -> PlaywrightContextSpec:
     identity = identity or browser_identity_for_run(run_id)
     identity = _align_identity_to_browser_major(
@@ -1235,12 +1210,10 @@ def build_playwright_context_options(
     run_id: int | None = None,
     browser_major_version: int | None = None,
     locality_profile: Mapping[str, object] | None = None,
-    browser_engine: str = _CHROMIUM_BROWSER_ENGINE,
 ) -> dict[str, Any]:
     return build_playwright_context_spec(
         identity=identity,
         run_id=run_id,
         browser_major_version=browser_major_version,
         locality_profile=locality_profile,
-        browser_engine=browser_engine,
     ).context_options

@@ -151,7 +151,7 @@ def _missing_requested_fields(
     requested_fields: list[str] | None,
 ) -> set[str]:
     missing: set[str] = set()
-    for field_name in list(requested_fields or []):
+    for field_name in requested_fields or []:
         normalized = exact_requested_field_key(str(field_name or ""))
         if normalized and record.get(normalized) in (None, "", [], {}):
             missing.add(normalized)
@@ -326,7 +326,7 @@ def _normalized_category_path(value: object) -> str:
         )
     text = clean_text(value).casefold()
     return " > ".join(
-        part for part in re.split(r"\s*(?:>|/|›|»|→|\|)\s*", text) if part
+        part for part in re.split(r"\s*[>/›»→|]\s*", text) if part
     )
 
 

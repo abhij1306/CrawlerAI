@@ -6,10 +6,8 @@ import logging
 from collections.abc import Callable
 from typing import Annotated, Any, NoReturn, cast
 
-from app.core.database import SessionLocal
 from app.core.dependencies import get_current_user, get_db
-from app.core.security import decode_access_token
-from app.models.crawl_run import CrawlLog, CrawlRun
+from app.models.crawl_run import CrawlRun
 from app.models.user import User
 from app.schemas.common import LogEntryResponse, PaginatedResponse, PaginationMeta
 from app.schemas.crawl import (
@@ -26,7 +24,6 @@ from app.services.crawl.crud import (
     commit_llm_suggestions,
     commit_selected_fields,
     delete_run,
-    get_run,
     get_run_logs,
     list_runs,
 )
@@ -34,6 +31,11 @@ from app.services.crawl.events import serialize_log_event
 from app.services.crawl.ingestion_service import (
     create_crawl_run_from_csv,
     create_crawl_run_from_payload,
+)
+from app.services.crawl.log_stream import (
+    load_accessible_log_run,
+    load_log_stream_snapshot,
+    resolve_log_stream_user,
 )
 from app.services.crawl.service import kill_run, pause_run, resume_run
 from app.services.crawl.state import TERMINAL_STATUSES
@@ -50,7 +52,6 @@ from fastapi import (
     WebSocketDisconnect,
     status,
 )
-from jose import JWTError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter(prefix="/api/crawls", tags=["crawls"])
@@ -83,30 +84,14 @@ def _log_stream_sleep_seconds() -> float:
         return 0.001
 
 
-async def _resolve_websocket_user(websocket: WebSocket) -> User | None:
+def _websocket_token(websocket: WebSocket) -> str | None:
     token = websocket.cookies.get("access_token")
     if not token:
         auth_header = websocket.headers.get("authorization", "")
         scheme, _, credentials = auth_header.partition(" ")
         if scheme.lower() == "bearer" and credentials.strip():
             token = credentials.strip()
-    if not token:
-        return None
-    try:
-        payload = decode_access_token(token)
-        user_id = int(payload["sub"])
-        token_version = int(payload.get("ver", 0))
-    except (JWTError, KeyError, ValueError):
-        return None
-
-    async with SessionLocal() as session:
-        user = await session.get(User, user_id)
-        if user is None or not user.is_active:
-            return None
-        user_token_version = user.token_version if user.token_version is not None else 0
-        if user_token_version != token_version:
-            return None
-        return user
+    return token
 
 
 def _raise_http_from_value_error(*, status_code: int, exc: ValueError) -> NoReturn:
@@ -175,40 +160,6 @@ async def crawls_create(
     return {"run_id": run.id}
 
 
-async def _mark_run_failed_with_retry(
-    *,
-    run_id: int,
-    error_message: str,
-    session_factory=SessionLocal,
-) -> None:
-    """Best-effort failure marking."""
-    from app.services.crawl.state import CrawlStatus, update_run_status
-
-    async with session_factory() as error_session:
-        failed_run = await error_session.get(CrawlRun, run_id)
-        if failed_run is None:
-            return
-        if failed_run.status_value in TERMINAL_STATUSES:
-            return
-        update_run_status(failed_run, CrawlStatus.FAILED)
-        failed_run.update_summary(
-            error=str(error_message or "background_crawl_error"),
-            extraction_verdict="error",
-        )
-        await error_session.commit()
-
-
-async def _load_log_stream_snapshot(
-    *,
-    run_id: int,
-    after_id: int | None,
-) -> tuple[list[CrawlLog], CrawlRun | None]:
-    async with SessionLocal() as session:
-        rows = await get_run_logs(session, run_id, after_id=after_id, limit=500)
-        run = await get_run(session, run_id)
-    return rows, run
-
-
 @router.post(
     "/csv",
     responses={
@@ -254,7 +205,9 @@ async def crawls_list(
     status_value: Annotated[str, Query(alias="status")] = "",
     url_search: str = "",
 ) -> PaginatedResponse[CrawlRunResponse]:
-    user_id = user.id if user.role != "admin" else None
+    user_id = None
+    if user.role != "admin":
+        user_id = user.id
     rows, total = await list_runs(
         session, page, limit, status_value, run_type, url_search, user_id=user_id
     )
@@ -427,63 +380,56 @@ async def crawls_logs(
 async def crawls_logs_ws(
     websocket: WebSocket, run_id: int, after_id: int | None = None
 ) -> None:
-    user = await _resolve_websocket_user(websocket)
+    user = await resolve_log_stream_user(_websocket_token(websocket))
     if user is None:
         await _close_websocket_safely(websocket, code=1008, reason="Not authenticated")
         return
 
-    async with SessionLocal() as session:
-        try:
-            run = await require_accessible_run(session, run_id=run_id, user=user)
-        except ValueError:
-            await _close_websocket_safely(
-                websocket, code=1008, reason=RUN_NOT_FOUND_DETAIL
+    try:
+        run = await load_accessible_log_run(run_id=run_id, user=user)
+    except ValueError:
+        await _close_websocket_safely(websocket, code=1008, reason=RUN_NOT_FOUND_DETAIL)
+        return
+
+    await websocket.accept()
+    cursor = after_id
+    poll_interval_seconds = _log_stream_sleep_seconds()
+    missing_run_snapshots = 0
+    try:
+        while True:
+            rows, next_run = await load_log_stream_snapshot(
+                run_id=run_id,
+                after_id=cursor,
             )
-            return
 
-        await websocket.accept()
-        cursor = after_id
-        poll_interval_seconds = _log_stream_sleep_seconds()
-        missing_run_snapshots = 0
-        try:
-            while True:
-                rows, next_run = await _load_log_stream_snapshot(
-                    run_id=run_id,
-                    after_id=cursor,
+            for row in rows:
+                await websocket.send_json(serialize_log_event(row))
+                cursor = row.id
+
+            if next_run is None:
+                missing_run_snapshots += 1
+                logger.warning(
+                    "Run logs snapshot did not reload run %s; retrying",
+                    run_id,
                 )
-
-                for row in rows:
-                    await websocket.send_json(serialize_log_event(row))
-                    cursor = row.id
-
-                if next_run is None:
-                    missing_run_snapshots += 1
-                    logger.warning(
-                        "Run logs snapshot did not reload run %s; retrying",
-                        run_id,
-                    )
-                    if missing_run_snapshots >= 3:
-                        await websocket.close(
-                            code=1011, reason="Run snapshot unavailable"
-                        )
-                        return
-                else:
-                    missing_run_snapshots = 0
-                    run = next_run
-                if run.status_value in TERMINAL_STATUSES and not rows:
-                    await websocket.close(code=1000, reason="Run completed")
+                if missing_run_snapshots >= 3:
+                    await websocket.close(code=1011, reason="Run snapshot unavailable")
                     return
-                await asyncio.sleep(poll_interval_seconds)
+            else:
+                missing_run_snapshots = 0
+                run = next_run
+            if run.status_value in TERMINAL_STATUSES and not rows:
+                await websocket.close(code=1000, reason="Run completed")
+                return
+            await asyncio.sleep(poll_interval_seconds)
 
-        except WebSocketDisconnect:
-            return
-        except Exception as exc:
-            logger.exception("Run logs websocket stream failed for run %s", run_id)
-            try:
-                await websocket.close(
-                    code=1011, reason=f"stream_error: {type(exc).__name__}"
-                )
-            except Exception:
-                logger.debug(
-                    "Failed to close websocket after stream error", exc_info=True
-                )
+    except WebSocketDisconnect:
+        return
+    except Exception as exc:
+        logger.exception("Run logs websocket stream failed for run %s", run_id)
+        try:
+            await websocket.close(
+                code=1011, reason=f"stream_error: {type(exc).__name__}"
+            )
+        except Exception:
+            logger.debug("Failed to close websocket after stream error", exc_info=True)

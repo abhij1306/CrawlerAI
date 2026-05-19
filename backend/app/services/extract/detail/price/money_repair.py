@@ -44,7 +44,7 @@ def _repair_detail_variant_prices_and_identity(record: dict[str, Any]) -> None:
     parent_availability = text_or_none(record.get("availability"))
     parent_sku = text_or_none(record.get("sku"))
     parent_title = clean_text(record.get("title"))
-    rows = [row for row in list(record.get("variants") or []) if isinstance(row, dict)]
+    rows = [row for row in record.get("variants") or [] if isinstance(row, dict)]
     for row in rows:
         if parent_price:
             row_price = text_or_none(row.get("price"))
@@ -90,7 +90,7 @@ def _repair_detail_variant_prices_and_identity(record: dict[str, Any]) -> None:
             else:
                 row.pop("title", None)
     variant_rows = [
-        row for row in list(record.get("variants") or []) if isinstance(row, dict)
+        row for row in record.get("variants") or [] if isinstance(row, dict)
     ]
     if (
         parent_availability == AVAILABILITY_IN_STOCK

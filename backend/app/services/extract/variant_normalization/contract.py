@@ -299,7 +299,7 @@ def enforce_payload_limits(record: dict[str, Any], *, max_rows: int) -> None:
 
 def _enforce_flat_variant_contract(record: dict[str, Any]) -> None:
     enforce_flat_variant_public_contract(record)
-    for field_name in list(record):
+    for field_name in tuple(record):
         if option_field_pattern.fullmatch(str(field_name)):
             record.pop(field_name, None)
 

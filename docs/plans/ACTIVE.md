@@ -13,7 +13,4 @@
 - Product Monitoring Pipeline (superseded by user for orchestration work; last recorded status IN PROGRESS, Slice 8 - Programmatic Export API) → `docs/plans/product-monitoring-pipeline-plan.md`
 - Shopify Linked Variant Family Extraction (COMPLETE) → `docs/plans/shopify-linked-variant-family-plan.md`
 - UCP Compliance Audit (COMPLETE) → `docs/plans/ucp-compliance-audit-plan.md`
-- Extract Decomposition And Public Surface (DONE) → `docs/plans/extract-decomposition-and-public-surface-plan.md`
-- Detail Extraction Second-Pass Decomposition (COMPLETE) → `docs/plans/detail-extraction-second-pass-decomposition-plan.md`
-- Verified Architecture Audit Remediation (COMPLETE) → `docs/plans/verified-architecture-audit-remediation-plan.md`
 

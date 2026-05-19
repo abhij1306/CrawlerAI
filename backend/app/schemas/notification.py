@@ -9,7 +9,7 @@ class InAppNotificationResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
-    user_id: int | None
+    user_id: int | None = None
     monitor_id: int
     event_count: int
     message: str

@@ -4,7 +4,6 @@ import asyncio
 import logging
 import time
 from collections.abc import Awaitable, Callable
-from typing import TypeVar
 
 from redis.asyncio import ConnectionPool, Redis
 
@@ -17,7 +16,6 @@ _client: Redis | None = None
 _redis_disabled_until: float = 0.0
 _last_disable_log_at: float = 0.0
 _redis_failure_total: int = 0
-_T = TypeVar("_T")
 _DISABLE_COOLDOWN_SECONDS = 30.0
 _BACKGROUND_TASKS: set[asyncio.Task[None]] = set()
 
@@ -76,12 +74,12 @@ async def close_redis() -> None:
         await pool.aclose()
 
 
-async def redis_fail_open(
-    operation: Callable[[Redis], Awaitable[_T]],
+async def redis_fail_open[T](
+    operation: Callable[[Redis], Awaitable[T]],
     *,
-    default: _T,
+    default: T,
     operation_name: str,
-) -> _T:
+) -> T:
     if not redis_is_enabled():
         return default
     try:

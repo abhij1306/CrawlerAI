@@ -6,6 +6,7 @@ import logging
 import re
 from collections import OrderedDict, deque
 from contextlib import asynccontextmanager
+from dataclasses import dataclass, field
 from time import monotonic
 from types import MappingProxyType
 
@@ -64,14 +65,21 @@ from app.services.monitor_change_detection import ensure_monitor_change_detectio
 from app.services.monitor_scheduler_service import MonitorSchedulerService
 
 logger = logging.getLogger("app")
-_RATE_LIMIT_BUCKETS: OrderedDict[str, deque[float]] = OrderedDict()
-_RATE_LIMIT_LOCK = asyncio.Lock()
-_monitor_scheduler_loop: AsyncSchedulerLoop | None = None
+
+
+@dataclass
+class CrawlerAppState:
+    rate_limit_buckets: OrderedDict[str, deque[float]] = field(
+        default_factory=OrderedDict
+    )
+    rate_limit_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    monitor_scheduler_loop: AsyncSchedulerLoop | None = None
+    trusted_proxy_cache_key: tuple[str, ...] = ()
+    trusted_proxy_cache_set: frozenset[str] = frozenset()
 
 
 @asynccontextmanager
-async def lifespan(_: FastAPI):
-    global _monitor_scheduler_loop
+async def lifespan(fastapi_app: FastAPI):
     configure_logging()
     try:
         install_asyncio_exception_filter()
@@ -87,6 +95,7 @@ async def lifespan(_: FastAPI):
                 recovered,
             )
     ensure_monitor_change_detection_registered()
+    crawler_state = _crawler_app_state(fastapi_app)
     if settings.scheduler_driver == SCHEDULER_DRIVER_DEV:
         scheduler_loop = AsyncSchedulerLoop(
             MonitorSchedulerService(),
@@ -97,13 +106,13 @@ async def lifespan(_: FastAPI):
         except Exception:
             await scheduler_loop.stop()
             raise
-        _monitor_scheduler_loop = scheduler_loop
+        crawler_state.monitor_scheduler_loop = scheduler_loop
     try:
         yield
     finally:
-        if _monitor_scheduler_loop is not None:
-            await _monitor_scheduler_loop.stop()
-            _monitor_scheduler_loop = None
+        if crawler_state.monitor_scheduler_loop is not None:
+            await crawler_state.monitor_scheduler_loop.stop()
+            crawler_state.monitor_scheduler_loop = None
         await shutdown_run_dispatchers()
         await shutdown_browser_runtime()
         await close_shared_http_client()
@@ -113,6 +122,7 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title=settings.app_name, lifespan=lifespan)
+app.state.crawler = CrawlerAppState()
 app.add_middleware(
     CORSMiddleware,
     allow_origins=get_frontend_origins(),
@@ -120,6 +130,15 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+def _crawler_app_state(fastapi_app: FastAPI | None = None) -> CrawlerAppState:
+    target = fastapi_app or app
+    state = getattr(target.state, "crawler", None)
+    if not isinstance(state, CrawlerAppState):
+        state = CrawlerAppState()
+        target.state.crawler = state
+    return state
 
 
 def _sanitize_header_value(value: str) -> str:
@@ -146,7 +165,10 @@ async def rate_limit_middleware(request: Request, call_next) -> Response:
     if _rate_limit_exempt_path(request.url.path):
         return await call_next(request)
 
-    allowed, retry_after = await _consume_rate_limit(_client_rate_limit_key(request))
+    allowed, retry_after = await _consume_rate_limit(
+        _client_rate_limit_key(request),
+        state=_crawler_app_state(request.app),
+    )
     if not allowed:
         return JSONResponse(
             {"detail": "Rate limit exceeded"},
@@ -181,30 +203,28 @@ def _client_rate_limit_key(request: Request) -> str:
 sanitize_header_value = _sanitize_header_value
 sanitize_header_name = _sanitize_header_name
 client_rate_limit_key = _client_rate_limit_key
-RATE_LIMIT_BUCKETS = MappingProxyType(_RATE_LIMIT_BUCKETS)
+RATE_LIMIT_BUCKETS = MappingProxyType(_crawler_app_state().rate_limit_buckets)
 def rate_limit_buckets_snapshot() -> OrderedDict[str, deque[float]]:
-    return OrderedDict((key, deque(value)) for key, value in _RATE_LIMIT_BUCKETS.items())
+    buckets = _crawler_app_state().rate_limit_buckets
+    return OrderedDict((key, deque(value)) for key, value in buckets.items())
 
 
 def clear_rate_limit_buckets_for_testing() -> None:
-    _RATE_LIMIT_BUCKETS.clear()
+    _crawler_app_state().rate_limit_buckets.clear()
 
 
 def restore_rate_limit_buckets_for_testing(
     buckets: OrderedDict[str, deque[float]],
 ) -> None:
-    _RATE_LIMIT_BUCKETS.clear()
-    _RATE_LIMIT_BUCKETS.update(
+    rate_limit_buckets = _crawler_app_state().rate_limit_buckets
+    rate_limit_buckets.clear()
+    rate_limit_buckets.update(
         OrderedDict((key, deque(value)) for key, value in buckets.items())
     )
 
 
-_TRUSTED_PROXY_CACHE_KEY: tuple[str, ...] = ()
-_TRUSTED_PROXY_CACHE_SET: frozenset[str] = frozenset()
-
-
 def _trusted_proxy_set() -> frozenset[str]:
-    global _TRUSTED_PROXY_CACHE_KEY, _TRUSTED_PROXY_CACHE_SET
+    crawler_state = _crawler_app_state()
     values = tuple(
         normalized
         for normalized in (
@@ -213,27 +233,32 @@ def _trusted_proxy_set() -> frozenset[str]:
         )
         if normalized
     )
-    if values != _TRUSTED_PROXY_CACHE_KEY:
-        _TRUSTED_PROXY_CACHE_KEY = values
-        _TRUSTED_PROXY_CACHE_SET = frozenset(values)
-    return _TRUSTED_PROXY_CACHE_SET
+    if values != crawler_state.trusted_proxy_cache_key:
+        crawler_state.trusted_proxy_cache_key = values
+        crawler_state.trusted_proxy_cache_set = frozenset(values)
+    return crawler_state.trusted_proxy_cache_set
 
 
 def _is_trusted_proxy(proxy_ip: str) -> bool:
     return proxy_ip in _trusted_proxy_set()
 
 
-async def _consume_rate_limit(identifier: str) -> tuple[bool, int]:
+async def _consume_rate_limit(
+    identifier: str,
+    *,
+    state: CrawlerAppState | None = None,
+) -> tuple[bool, int]:
+    crawler_state = state or _crawler_app_state()
     now = monotonic()
     window_seconds = float(crawler_runtime_settings.api_rate_limit_window_seconds)
     max_requests = int(crawler_runtime_settings.api_rate_limit_max_requests)
-    async with _RATE_LIMIT_LOCK:
-        bucket = _RATE_LIMIT_BUCKETS.get(identifier)
+    async with crawler_state.rate_limit_lock:
+        bucket = crawler_state.rate_limit_buckets.get(identifier)
         if bucket is None:
             bucket = deque()
-            _RATE_LIMIT_BUCKETS[identifier] = bucket
+            crawler_state.rate_limit_buckets[identifier] = bucket
         else:
-            _RATE_LIMIT_BUCKETS.move_to_end(identifier)
+            crawler_state.rate_limit_buckets.move_to_end(identifier)
 
         cutoff = now - window_seconds
         while bucket and bucket[0] <= cutoff:
@@ -244,10 +269,10 @@ async def _consume_rate_limit(identifier: str) -> tuple[bool, int]:
             return False, retry_after
 
         bucket.append(now)
-        while len(_RATE_LIMIT_BUCKETS) > int(
+        while len(crawler_state.rate_limit_buckets) > int(
             crawler_runtime_settings.api_rate_limit_max_clients
         ):
-            _RATE_LIMIT_BUCKETS.popitem(last=False)
+            crawler_state.rate_limit_buckets.popitem(last=False)
         return True, 0
 
 

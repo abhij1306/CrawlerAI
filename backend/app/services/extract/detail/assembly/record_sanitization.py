@@ -165,7 +165,7 @@ def _repair_detail_title_from_requested_identity(
         )
         if clean_text(value)
     )
-    for variant in list(record.get("variants") or []):
+    for variant in record.get("variants") or []:
         if isinstance(variant, dict):
             supporting_text = " ".join(
                 (

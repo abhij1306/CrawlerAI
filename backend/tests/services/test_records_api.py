@@ -78,8 +78,14 @@ async def test_records_api_retries_empty_first_read_when_run_summary_expects_row
     async def _fake_session_local():
         yield db_session
 
-    monkeypatch.setattr("app.api.records.get_run_records", _fake_get_run_records)
-    monkeypatch.setattr("app.api.records.SessionLocal", _fake_session_local)
+    monkeypatch.setattr(
+        "app.services.crawl.record_reconciliation.get_run_records",
+        _fake_get_run_records,
+    )
+    monkeypatch.setattr(
+        "app.services.crawl.record_reconciliation.SessionLocal",
+        _fake_session_local,
+    )
     monkeypatch.setattr(crawler_runtime_settings, "records_read_retry_attempts", 1)
     monkeypatch.setattr(crawler_runtime_settings, "records_read_retry_delay_ms", 0)
 

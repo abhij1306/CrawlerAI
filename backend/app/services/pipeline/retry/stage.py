@@ -38,7 +38,7 @@ from app.services.pipeline.runtime_helpers import (
 )
 from app.services.publish import build_acquisition_profile, build_url_metrics
 
-from .url_processing_context import (
+from app.services.pipeline.url_processing_context import (
     ExtractedURLStage as _ExtractedURLStage,
     FetchedURLStage as _FetchedURLStage,
     URLProcessingContext as _URLProcessingContext,

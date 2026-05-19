@@ -10,17 +10,14 @@ from app.services.dom.selector_engine import dedupe_image_urls
 
 def dedupe_primary_and_additional_images(record: dict[str, Any]) -> None:
     raw_additional_images = record.get("additional_images")
-    additional_images = (
-        sorted(raw_additional_images)
-        if isinstance(raw_additional_images, set)
-        else list(raw_additional_images)
-        if isinstance(raw_additional_images, (list, tuple))
-        else (
-            [raw_additional_images]
-            if raw_additional_images not in (None, "", [], {})
-            else []
-        )
-    )
+    if isinstance(raw_additional_images, set):
+        additional_images = sorted(raw_additional_images)
+    elif isinstance(raw_additional_images, (list, tuple)):
+        additional_images = list(raw_additional_images)
+    elif raw_additional_images in (None, "", [], {}):
+        additional_images = []
+    else:
+        additional_images = [raw_additional_images]
     values: list[str] = []
     for raw_value in (record.get("image_url"), *additional_images):
         image = text_or_none(raw_value)

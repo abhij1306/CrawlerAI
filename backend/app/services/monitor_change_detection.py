@@ -64,7 +64,7 @@ class MonitorChangeDetectionService:
 
             events: list[MonitorEvent] = []
             detected_at = utcnow()
-            tracked_fields = [str(field) for field in list(monitor.tracked_fields or [])]
+            tracked_fields = [str(field) for field in monitor.tracked_fields or []]
 
             for key, record in current.items():
                 if key not in previous:

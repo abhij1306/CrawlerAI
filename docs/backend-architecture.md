@@ -223,7 +223,6 @@ Primary files:
 - `acquisition/traversal_recovery.py`
 - `crawl_fetch_runtime.py`
 - `config/runtime_settings.py`
-- `config/browser_init_scripts.py`
 - `config/browser_fingerprint_profiles.py`
 - `robots_policy.py`
 - `url_safety.py`
@@ -294,8 +293,8 @@ Current live behavior:
 - browser contexts accept a per-fetch `proxy` for rotated-proxy traversal; `temporary_browser_page` is a thin wrapper over `SharedBrowserRuntime.page(proxy=...)`
 - `browser_identity` is host-OS-locked via `browserforge`, with a small regeneration loop to reject fingerprints whose UA tokens disagree with the OS
 - browser identity also normalizes exposed runtime hardware upstream: `hardwareConcurrency` is clamped to host-consistent values, `deviceMemory` is bucketed like Chrome, and page JS sees the same values as the generated context identity.
-- browser identity init scripts now patch `window.chrome.runtime` with a Chrome-like runtime stub, mask Audio/OfflineAudio analyser/channel APIs with deterministic per-identity noise, and apply deterministic canvas/WebGL spoofing (canvas image-data/export noise plus profile-consistent WebGL vendor/renderer/readPixels overrides); the browser-surface probe now emits flattened canvas hash/data-url and WebGL vendor/renderer baseline fields for quick verification
-- browser runtime settings are split by concern: `runtime_settings.py` owns tunables/launch args, `browser_init_scripts.py` owns JS payload builders, and `browser_fingerprint_profiles.py` owns static profile data
+- browser acquisition no longer injects custom init scripts into Patchright contexts; identity shaping is limited to context options, headers, locale/timezone alignment, and engine-native behavior so we do not reintroduce script-surface blockers
+- browser runtime settings are split by concern: `runtime_settings.py` owns tunables/launch args, and `browser_fingerprint_profiles.py` owns static browser identity/profile constants
 - blocked-page escalation is now two-pronged: vendor-specific response headers (DataDome, Cloudflare, Akamai, PerimeterX, Sucuri, ...) classified via `classify_block_from_headers` short-circuit into the browser and mark the host vendor-blocked so sibling fetchers skip further HTTP attempts; HTML heuristics continue to catch vendor-silent blocks
 - `is_non_retryable_http_status` keeps `401` out of browser escalation (auth walls) while still escalating `403`/`429` challenges, and `classify_blocked_page` emits typed `BlockPageClassification` outcomes (`auth_wall`, `rate_limited`, `challenge_page`, ...) distinct from network failures
 - `classify_blocked_page` must keep provider/body evidence even on forced `403` / `429` outcomes; status-only early returns are not enough because recovery, diagnostics, and regression triage need the concrete blocker family

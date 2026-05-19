@@ -166,7 +166,7 @@ def normalize_sizes(
     systems_value = size_config.get("systems")
     systems_dict = systems_value if isinstance(systems_value, dict) else {}
     systems = {
-        str(system): {str(item).casefold() for item in list(values or [])}
+        str(system): {str(item).casefold() for item in values or []}
         for system, values in systems_dict.items()
         if isinstance(values, list)
     }

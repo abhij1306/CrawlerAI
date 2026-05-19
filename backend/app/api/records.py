@@ -5,7 +5,6 @@ import asyncio
 from collections.abc import Mapping
 from typing import Annotated
 
-from app.core.database import SessionLocal
 from app.core.dependencies import get_current_user, get_db
 from app.models.user import User
 from app.schemas.common import PaginatedResponse, PaginationMeta
@@ -19,8 +18,7 @@ from app.services.crawl.access_service import (
     RUN_NOT_FOUND_DETAIL,
     require_accessible_run,
 )
-from app.services.crawl.crud import get_run_records
-from app.services.config.runtime_settings import crawler_runtime_settings
+from app.services.crawl.record_reconciliation import load_records_with_reconciliation
 from app.services.record_export_service import (
     MAX_RECORD_PAGE_SIZE,
     RECORD_PROVENANCE_NOT_FOUND_RESPONSE,
@@ -53,45 +51,6 @@ def _route_responses(
     return normalized
 
 
-def _summary_expects_records(summary: object) -> bool:
-    if not isinstance(summary, dict):
-        return False
-    try:
-        if int(summary.get("record_count", 0) or 0) > 0:
-            return True
-    except (TypeError, ValueError):
-        return False
-    return False
-
-
-async def _load_records_with_reconciliation(
-    session: AsyncSession,
-    *,
-    run_id: int,
-    run_summary: object,
-    page: int,
-    limit: int,
-) -> tuple[list, int]:
-    rows, total = await get_run_records(session, run_id, page, limit)
-    if rows or total or page != 1 or not _summary_expects_records(run_summary):
-        return rows, total
-
-    retry_attempts = max(0, crawler_runtime_settings.records_read_retry_attempts)
-    retry_delay_seconds = max(
-        0.0, crawler_runtime_settings.records_read_retry_delay_ms / 1000
-    )
-    for _ in range(retry_attempts):
-        if retry_delay_seconds > 0:
-            await asyncio.sleep(retry_delay_seconds)
-        async with SessionLocal() as retry_session:
-            retry_rows, retry_total = await get_run_records(
-                retry_session, run_id, page, limit
-            )
-        if retry_rows or retry_total:
-            return retry_rows, retry_total
-    return rows, total
-
-
 @router.get("/api/crawls/{run_id}/records", responses=_route_responses(RUN_NOT_FOUND_RESPONSE))
 async def records_list(
     run_id: int,
@@ -105,7 +64,7 @@ async def records_list(
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=RUN_NOT_FOUND_DETAIL) from exc
 
-    rows, total = await _load_records_with_reconciliation(
+    rows, total = await load_records_with_reconciliation(
         session,
         run_id=run_id,
         run_summary=getattr(run, "result_summary", {}),

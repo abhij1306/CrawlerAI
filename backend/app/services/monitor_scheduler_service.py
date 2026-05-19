@@ -166,7 +166,7 @@ class MonitorSchedulerService:
             ).all()
         }
         changed_urls: list[str] = []
-        for url in list(monitor.urls or []):
+        for url in monitor.urls or []:
             state = state_rows.get(url)
             if state is None:
                 state = MonitorURLState(monitor_id=monitor.id, url=url)

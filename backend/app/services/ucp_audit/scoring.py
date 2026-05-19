@@ -36,7 +36,7 @@ def build_compliance_report(
         all_findings=[
             finding
             for dimension in dimension_scores
-            for finding in list(dimension.findings or [])
+            for finding in dimension.findings or []
         ],
         d_ucp1_gate_applied=gate_applied,
         agent_view_samples=list(agent_view_samples or []),

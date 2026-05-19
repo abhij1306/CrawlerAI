@@ -48,7 +48,7 @@ logger = logging.getLogger(__name__)
 def backfill_parent_image_from_variants(record: dict[str, Any]) -> None:
     if text_or_none(record.get("image_url")):
         return
-    for variant in list(record.get("variants") or []):
+    for variant in record.get("variants") or []:
         if not isinstance(variant, dict):
             continue
         image_url = text_or_none(variant.get("image_url"))
@@ -60,7 +60,7 @@ def backfill_parent_image_from_variants(record: dict[str, Any]) -> None:
 def _sanitize_detail_images(record: dict[str, Any], *, identity_url: str) -> None:
     raw_images = [
         text_or_none(record.get("image_url")),
-        *[text_or_none(value) for value in list(record.get("additional_images") or [])],
+        *[text_or_none(value) for value in record.get("additional_images") or []],
     ]
     images = [upgrade_low_resolution_image_url(image) for image in raw_images if image]
     if not images:

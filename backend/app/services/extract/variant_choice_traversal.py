@@ -461,7 +461,7 @@ def resolve_variant_group_name(node: Any) -> str:
 
 def infer_variant_group_name_from_values(values: Sequence[object]) -> str:
     cleaned_values = [
-        clean_text(value) for value in list(values or []) if clean_text(value)
+        clean_text(value) for value in values or [] if clean_text(value)
     ]
     if len(cleaned_values) < 2:
         return ""

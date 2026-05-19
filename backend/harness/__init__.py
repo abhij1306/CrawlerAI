@@ -1,11 +1,6 @@
 from __future__ import annotations
 
-import sys
-
-from harness import support as _support
-
-if __name__ != "__main__":
-    sys.modules[__name__] = _support
+from . import support as _support
 
 for _name in dir(_support):
     if not (_name.startswith("__") and _name.endswith("__")):

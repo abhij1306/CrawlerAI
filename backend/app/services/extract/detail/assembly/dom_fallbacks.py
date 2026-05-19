@@ -273,7 +273,7 @@ def apply_dom_fallbacks(
                 source="dom_text",
             )
     if "currency" in fields and not candidates.get("currency"):
-        for price_value in list(candidates.get("price") or []):
+        for price_value in candidates.get("price") or []:
             currency_code = extract_currency_code(price_value)
             if not currency_code:
                 continue

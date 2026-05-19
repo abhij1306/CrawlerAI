@@ -189,8 +189,6 @@ def test_build_playwright_context_options_uses_generated_identity(
         ),
         "sec-ch-ua-mobile": "?0",
         "sec-ch-ua-platform": '"Windows"',
-        "sec-ch-ua-platform-version": '"15.0.0"',
-        "sec-ch-ua-bitness": '"64"',
     }
 
 
@@ -327,8 +325,8 @@ def test_create_browser_identity_aligns_platform_to_user_agent(
     assert identity.raw_fingerprint.navigator.platform == "Win32"
     assert identity.raw_fingerprint.navigator.userAgentData["platform"] == "Windows"
     assert identity.extra_http_headers["sec-ch-ua-platform"] == '"Windows"'
-    assert identity.extra_http_headers["sec-ch-ua-platform-version"] == '"15.0.0"'
-    assert identity.extra_http_headers["sec-ch-ua-bitness"] == '"64"'
+    assert "sec-ch-ua-platform-version" not in identity.extra_http_headers
+    assert "sec-ch-ua-bitness" not in identity.extra_http_headers
 
 
 def test_build_playwright_context_options_prefers_available_screen_height(
@@ -510,8 +508,8 @@ def test_build_playwright_context_options_repairs_incoherent_client_hints_after_
     )
     assert options["extra_http_headers"]["sec-ch-ua-mobile"] == "?0"
     assert options["extra_http_headers"]["sec-ch-ua-platform"] == '"Windows"'
-    assert options["extra_http_headers"]["sec-ch-ua-platform-version"] == '"15.0.0"'
-    assert options["extra_http_headers"]["sec-ch-ua-bitness"] == '"64"'
+    assert "sec-ch-ua-platform-version" not in options["extra_http_headers"]
+    assert "sec-ch-ua-bitness" not in options["extra_http_headers"]
 
 
 def test_build_playwright_context_options_replaces_malformed_client_hints_without_rejecting_fingerprint(
@@ -560,8 +558,8 @@ def test_build_playwright_context_options_replaces_malformed_client_hints_withou
     )
     assert options["extra_http_headers"]["sec-ch-ua-mobile"] == "?0"
     assert options["extra_http_headers"]["sec-ch-ua-platform"] == '"Windows"'
-    assert options["extra_http_headers"]["sec-ch-ua-platform-version"] == '"15.0.0"'
-    assert options["extra_http_headers"]["sec-ch-ua-bitness"] == '"64"'
+    assert "sec-ch-ua-platform-version" not in options["extra_http_headers"]
+    assert "sec-ch-ua-bitness" not in options["extra_http_headers"]
 
 
 def test_build_playwright_context_options_uses_configured_min_chrome_version(
@@ -1209,8 +1207,8 @@ def test_coherent_sec_ch_headers_accepts_tuple_brand_entries() -> None:
     assert headers["sec-ch-ua"] == ('"Chromium";v="145", "Google Chrome";v="145"')
     assert headers["sec-ch-ua-mobile"] == "?0"
     assert headers["sec-ch-ua-platform"] == '"Windows"'
-    assert headers["sec-ch-ua-platform-version"] == '"15.0.0"'
-    assert headers["sec-ch-ua-bitness"] == '"64"'
+    assert "sec-ch-ua-platform-version" not in headers
+    assert "sec-ch-ua-bitness" not in headers
 
 
 @pytest.mark.asyncio
@@ -1655,7 +1653,6 @@ async def test_shared_browser_runtime_uses_socks5_auth_bridge_and_keeps_context_
                 "--disable-search-engine-choice-screen",
                 "--disable-background-networking",
                 "--disable-client-side-phishing-detection",
-                "--disable-component-update",
                 "--disable-domain-reliability",
                 "--disable-sync",
                 "--no-first-run",
@@ -1741,7 +1738,6 @@ async def test_shared_browser_runtime_launches_http_proxy_directly(
                 "--disable-search-engine-choice-screen",
                 "--disable-background-networking",
                 "--disable-client-side-phishing-detection",
-                "--disable-component-update",
                 "--disable-domain-reliability",
                 "--disable-sync",
                 "--no-first-run",
@@ -1840,7 +1836,6 @@ async def test_shared_browser_runtime_launches_real_chrome_headful_for_fallback(
                 "--disable-search-engine-choice-screen",
                 "--disable-background-networking",
                 "--disable-client-side-phishing-detection",
-                "--disable-component-update",
                 "--disable-domain-reliability",
                 "--disable-sync",
                 "--no-first-run",

@@ -12,6 +12,10 @@ SERVICES_ROOT = ROOT / "app" / "services"
 APP_ROOT = ROOT / "app"
 API_ROOT = APP_ROOT / "api"
 TESTS_ROOT = ROOT / "tests"
+ROOT_SUPPORT_LOC_BUDGETS = {
+    Path("harness_support.py"): 120,
+    Path("run_browser_surface_probe.py"): 120,
+}
 EXTRACTION_MODULES = [
     SERVICES_ROOT / "extraction_context.py",
     SERVICES_ROOT / "listing_extractor.py",
@@ -27,7 +31,24 @@ FIELD_POLICY_CONSUMERS = [
     SERVICES_ROOT / "schema_service.py",
     SERVICES_ROOT / "review" / "__init__.py",
 ]
-ALLOWED_PRIVATE_SERVICE_IMPORTS = set()
+ALLOWED_PRIVATE_SERVICE_IMPORTS = {
+    # Existing relative private imports made visible by the audit ratchet.
+    # Shrink this set when each owner promotes a real public API.
+    "crawl/profile/acquisition_contract.py -> .normalization:_BROWSER_ENGINE_VALUES",
+    "crawl/profile/acquisition_contract.py -> .normalization:_coerce_optional_choice",
+    "crawl/profile/merge.py -> .normalization:_empty_acquisition_contract",
+    "extract/field_candidates/structured_payloads.py -> .structured_values:_coerce_structured_candidate_value",
+    "extract/field_candidates/structured_payloads.py -> .structured_values:_structured_alias_allowed",
+    "extract/field_candidates/structured_payloads.py -> .structured_values:_structured_alias_value_allowed",
+    "extract/field_candidates/structured_payloads.py -> .variant_rows:_structured_offer_variant_rows",
+    "extract/field_candidates/structured_payloads.py -> .variant_rows:_structured_variant_rows",
+    "extract/field_candidates/structured_payloads.py -> .variant_rows:_structured_variants_from_product_payload",
+    "extract/field_candidates/structured_payloads.py -> .variant_rows:_variant_axes_from_rows",
+    "extract/field_candidates/variant_rows.py -> .structured_values:_coerce_structured_candidate_value",
+    "pipeline/extraction_loop.py -> .record_extraction_stage:_best_adapter_result",
+    "pipeline/extraction_loop.py -> .record_extraction_stage:_extract_records_for_acquisition",
+    "pipeline/extraction_loop.py -> .record_extraction_stage:_update_acquisition_contract_memory",
+}
 ALLOWED_PRIVATE_TEST_IMPORTS: set[str] = set()
 ALLOWED_ROOT_EXTRACTION_MODULES = {
     # Slice 2 keeps this as the public listing orchestration facade.
@@ -257,11 +278,15 @@ def _private_service_imports(path: Path) -> set[str]:
     for node in ast.walk(tree):
         if not isinstance(node, ast.ImportFrom) or not node.module:
             continue
-        if not node.module.startswith("app.services."):
+        if node.module.startswith("app.services."):
+            module_name = node.module
+        elif node.level and node.module:
+            module_name = "." * node.level + node.module
+        else:
             continue
         for alias in node.names:
             if alias.name.startswith("_"):
-                imports.add(f"{rel} -> {node.module}:{alias.name}")
+                imports.add(f"{rel} -> {module_name}:{alias.name}")
     return imports
 
 
@@ -302,6 +327,39 @@ def test_api_files_stay_under_loc_budget() -> None:
         if line_count > budget:
             oversized.append(f"{rel} has {line_count} LOC (budget {budget})")
     assert oversized == []
+
+
+def test_root_support_facades_stay_thin() -> None:
+    oversized: list[str] = []
+    for rel, budget in ROOT_SUPPORT_LOC_BUDGETS.items():
+        path = ROOT / rel
+        assert path.exists()
+        line_count = len(path.read_text(encoding="utf-8").splitlines())
+        if line_count > budget:
+            oversized.append(f"{rel} has {line_count} LOC (budget {budget})")
+    assert oversized == []
+
+
+def test_api_routes_do_not_own_session_factory() -> None:
+    offenders: list[str] = []
+    for path in API_ROOT.rglob("*.py"):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.ImportFrom):
+                continue
+            if node.module != "app.core.database":
+                continue
+            if any(alias.name == "SessionLocal" for alias in node.names):
+                offenders.append(str(path.relative_to(ROOT)))
+    assert offenders == []
+
+
+def test_removed_architecture_audit_files_do_not_return() -> None:
+    forbidden = [
+        SERVICES_ROOT / "config" / "browser_init_scripts.py",
+        SERVICES_ROOT / "pipeline" / "extraction_retry_stage.py",
+    ]
+    assert [str(path.relative_to(ROOT)) for path in forbidden if path.exists()] == []
 
 
 def test_audit_plan_targets_are_tracked_by_current_budgets() -> None:

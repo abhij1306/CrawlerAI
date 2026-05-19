@@ -23,7 +23,7 @@ _run_dispatchers: dict[bool, RunDispatcher] = {}
 _dispatcher_lock = threading.Lock()
 
 
-async def get_db(
+def get_db(
     session: AsyncSession = Depends(get_session),  # noqa: B008 - FastAPI injects dependencies via parameter defaults.
 ) -> AsyncSession:
     return session
@@ -65,7 +65,7 @@ async def get_current_user(
     return user
 
 
-async def require_admin(
+def require_admin(
     user: User = Depends(get_current_user),  # noqa: B008 - FastAPI dependency injection requires Depends defaults.
 ) -> User:
     if user.role != "admin":

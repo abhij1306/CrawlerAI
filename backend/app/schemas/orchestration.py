@@ -35,7 +35,7 @@ class OrchestrationProjectResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
-    user_id: int | None
+    user_id: int | None = None
     name: str
     description: str
     competitors: list[str]
@@ -86,7 +86,7 @@ class OrchestrationWorkflowResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
-    user_id: int | None
+    user_id: int | None = None
     project_id: int
     template_id: str
     template_version: str

@@ -207,7 +207,7 @@ def collapse_duplicate_size_aliases(record: dict[str, Any]) -> None:
         variant_axes["size"] = list(
             dict.fromkeys(value for value in rewritten_values if clean_text(value))
         )
-    for row in [record.get("selected_variant"), *list(record.get("variants") or [])]:
+    for row in [record.get("selected_variant"), *(record.get("variants") or [])]:
         _rewrite_variant_row_size_alias(row, canonical_targets=canonical_targets)
 
 
@@ -215,11 +215,11 @@ def _duplicate_size_alias_targets(record: dict[str, Any]) -> dict[str, str]:
     seen_values: dict[str, str] = {}
     variant_axes = record.get("variant_axes")
     if isinstance(variant_axes, dict):
-        for value in list(variant_axes.get("size") or []):
+        for value in variant_axes.get("size") or []:
             cleaned = clean_text(value)
             if cleaned:
                 seen_values.setdefault(cleaned.casefold(), cleaned)
-    for row in [record.get("selected_variant"), *list(record.get("variants") or [])]:
+    for row in [record.get("selected_variant"), *(record.get("variants") or [])]:
         if not isinstance(row, dict):
             continue
         for value in (

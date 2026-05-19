@@ -160,7 +160,7 @@ def extract_heading_sections(
     seen: set[int] = set()
     normalized_allowed_fields = {
         normalize_field_key(field_name)
-        for field_name in list(allowed_fields or ())
+        for field_name in allowed_fields or ()
         if normalize_field_key(field_name)
     }
     for heading in _safe_select(scoped_root, _SECTION_LABEL_SELECTOR):

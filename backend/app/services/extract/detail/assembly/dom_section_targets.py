@@ -56,7 +56,7 @@ def _dom_section_target_fields(
         if str(field_name).strip()
     }
     canonical_fields = set(surface_fields(surface, None))
-    for raw_field_name in list(requested_fields or []):
+    for raw_field_name in requested_fields or []:
         normalized_field = exact_requested_field_key(
             raw_field_name
         ) or normalize_field_key(raw_field_name)

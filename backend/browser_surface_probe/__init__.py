@@ -1,15 +1,10 @@
 from __future__ import annotations
 
-import sys
+from . import core as _core
 
-from harness import support as _support
-
-if __name__ != "__main__":
-    sys.modules[__name__] = _support
-
-for _name in dir(_support):
+for _name in dir(_core):
     if not (_name.startswith("__") and _name.endswith("__")):
-        globals()[_name] = getattr(_support, _name)
+        globals()[_name] = getattr(_core, _name)
 
 __all__ = [
     _name
