@@ -2,7 +2,7 @@
 
 **Created:** 2026-05-18
 **Agent:** Codex
-**Status:** IN PROGRESS
+**Status:** COMPLETE
 **Touches buckets:** Bucket 4 Extraction, config, tests
 
 ## Goal
@@ -11,13 +11,13 @@ Make Shopify detail extraction treat visible same-product linked PDPs as variant
 
 ## Acceptance Criteria
 
-- [ ] Gymshark artifact `backend/artifacts/runs/2/pages/876ac4c7516038f9.html` still extracts 14 variants with `Black` and `White`, size, SKU, URL, image, availability, and stock.
-- [ ] Fashion Nova artifact `backend/artifacts/runs/3/pages/1ef8d8636bcfced4.html` extracts both `Black` and `Blush` family variants from the swatch-linked Shopify PDPs, not only the selected black sizes.
-- [ ] Fenty artifact `backend/artifacts/runs/4/pages/9da4a0e6ee49da8e.html` extracts the body-mist scent family links (`Green Raspberry`, `Hey, Bouquet`, `Tropic Trip`, `Vanilla Flowers`) as public variants, with selected scent not coerced to wrong `color`.
-- [ ] Allbirds artifact `backend/artifacts/runs/1/pages/00d4b6e0eea56f28.html` includes same-family linked PDP variants when exposed.
-- [ ] Variant output remains flat public contract only: no `selected_variant`, `variant_axes`, nested option containers, or private helper fields persisted/exported.
-- [ ] `cd backend; $env:PYTHONPATH='.'; .\.venv\Scripts\python.exe -m pytest tests/services/test_state_mappers.py tests/services/test_detail_extractor_structured_sources.py -q` exits 0.
-- [ ] `cd backend; $env:PYTHONPATH='.'; .\.venv\Scripts\python.exe -m pytest tests -q` exits 0 before closing plan.
+- [x] Gymshark artifact `backend/artifacts/runs/2/pages/876ac4c7516038f9.html` still extracts 14 variants with `Black` and `White`, size, SKU, URL, image, availability, and stock.
+- [x] Fashion Nova artifact `backend/artifacts/runs/3/pages/1ef8d8636bcfced4.html` extracts both `Black` and `Blush` family variants from the swatch-linked Shopify PDPs, not only the selected black sizes.
+- [x] Fenty artifact `backend/artifacts/runs/4/pages/9da4a0e6ee49da8e.html` extracts the body-mist scent family links (`Green Raspberry`, `Hey, Bouquet`, `Tropic Trip`, `Vanilla Flowers`) as public variants, with selected scent not coerced to wrong `color`.
+- [x] Allbirds artifact `backend/artifacts/runs/1/pages/00d4b6e0eea56f28.html` includes same-family linked PDP variants when exposed.
+- [x] Variant output remains flat public contract only: no `selected_variant`, `variant_axes`, nested option containers, or private helper fields persisted/exported.
+- [x] `cd backend; $env:PYTHONPATH='.'; .\.venv\Scripts\python.exe -m pytest tests/services/test_state_mappers.py tests/services/test_detail_extractor_structured_sources.py -q` exits 0.
+- [x] `cd backend; $env:PYTHONPATH='.'; .\.venv\Scripts\python.exe -m pytest tests -q` exits 0 before closing plan.
 
 ## Do Not Touch
 
@@ -60,19 +60,19 @@ Make Shopify detail extraction treat visible same-product linked PDPs as variant
 **Verify:** All four artifact regressions pass; public rows contain only allowed flat keys.
 
 ### Slice 6: Broad Verification And Docs
-**Status:** BLOCKED
+**Status:** DONE
 **Files:** `docs/INVARIANTS.md`, `docs/backend-architecture.md`, maybe `docs/CODEBASE_MAP.md`
 **What:** Update docs only if owner/contract changes. Record Shopify linked-PDP variant extraction as upstream extraction behavior. Run targeted and broad backend verification.
 **Verify:** Targeted tests, `pytest tests -q`, and `run_extraction_smoke.py` pass.
 
-**Blocker:** `pytest tests -q` still has unrelated failures outside the Shopify plan (`test_health_api`, `test_structure` private-import drift, and UCP markdown escaping). Shopify-required suites pass.
+**Result:** Shopify linked-PDP variant extraction is documented as upstream extraction behavior in `docs/backend-architecture.md`. No public variant contract change was needed.
 
 ## Doc Updates Required
 
-- [ ] `docs/backend-architecture.md` — document Shopify linked-PDP variant family flow if implemented.
-- [ ] `docs/INVARIANTS.md` — update only if public variant contract changes; expected no contract change.
-- [ ] `docs/CODEBASE_MAP.md` — update only if a new file is added; expected no new file.
-- [ ] `docs/ENGINEERING_STRATEGY.md` — update only if a new anti-pattern is discovered; expected no change.
+- [x] `docs/backend-architecture.md` — document Shopify linked-PDP variant family flow if implemented.
+- [x] `docs/INVARIANTS.md` — update only if public variant contract changes; expected no contract change.
+- [x] `docs/CODEBASE_MAP.md` — update only if a new file is added; expected no new file.
+- [x] `docs/ENGINEERING_STRATEGY.md` — update only if a new anti-pattern is discovered; expected no change.
 
 ## Notes
 

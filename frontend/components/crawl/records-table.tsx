@@ -39,7 +39,7 @@ export const RecordsTable = memo(function RecordsTable({
   const hasImageCol = !!imageCol;
   const totalCols = dataColumns.length + (hasImageCol ? 1 : 0) + 1;
 
-  const rowHeightPx = 48;
+  const rowHeightPx = 40;
   const overscanRows = 8;
   const [scrollTop, setScrollTop] = useState(0);
   const [viewportHeight, setViewportHeight] = useState(560);

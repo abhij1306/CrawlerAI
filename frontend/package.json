@@ -37,6 +37,7 @@
     "zustand": "^5.0.8"
   },
   "devDependencies": {
+    "@google/design.md": "^0.1.1",
     "@playwright/test": "^1.59.1",
     "@tailwindcss/postcss": "^4.2.2",
     "@testing-library/jest-dom": "^6.9.1",

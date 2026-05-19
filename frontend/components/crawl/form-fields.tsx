@@ -68,7 +68,7 @@ export function SettingSection({
               {renderedIcon}
             </div>
           ) : null}
-          <div className="type-control crawl-control-label min-w-0">{label}</div>
+          <div className="type-body-sm font-semibold text-foreground min-w-0">{label}</div>
           <Tooltip content={description}>
             <Info className="text-muted hover:text-secondary size-3.5 cursor-help transition-colors" />
           </Tooltip>
@@ -120,7 +120,7 @@ export function SliderRow({
       className={cn('grid w-full gap-2.5 md:grid-cols-[160px_minmax(0,1fr)_100px] md:items-center')}
     >
       <div className="flex min-w-0 items-center gap-1.5">
-        <span className="type-control crawl-control-label">{label}</span>
+        <span className="type-body-sm font-semibold text-foreground">{label}</span>
         {description ? (
           <Tooltip content={description}>
             <Info className="text-muted hover:text-secondary size-3.5 cursor-help transition-colors" />
@@ -206,7 +206,7 @@ export function AdditionalFieldInput({
 
   return (
     <label className="grid gap-1.5">
-      <span className="type-control crawl-control-label">Additional Fields</span>
+      <span className="type-body-sm font-semibold text-foreground">Additional Fields</span>
       <Input
         value={value}
         onChange={(event) => handleChange(event.target.value)}
@@ -223,7 +223,7 @@ export function AdditionalFieldInput({
               type="button"
               onClick={() => onRemove(field)}
               aria-label={`Remove ${field}`}
-              className="border-subtle-panel-border bg-subtle-panel text-secondary type-body inline-flex items-center gap-1 rounded-[var(--radius-sm)] border px-2 py-1"
+              className="border-subtle-panel-border bg-subtle-panel text-secondary type-body-sm inline-flex items-center gap-1 rounded-[var(--radius-sm)] border px-2 py-1"
             >
               <X className="size-3.5 shrink-0" aria-hidden="true" />
               <span className="truncate">{field}</span>
@@ -269,7 +269,7 @@ export function ManualFieldEditor({
             value={row.fieldName}
             onChange={(event) => onChange({ fieldName: event.target.value })}
             placeholder="price"
-            className="type-body h-8"
+            className="type-body-sm h-8"
           />
         </label>
         <ValidatedField
@@ -345,18 +345,18 @@ export function FieldEditorHeader() {
     <div className="hidden items-center gap-2 px-3 py-1.5 xl:grid xl:grid-cols-[24px_minmax(140px,0.8fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,0.8fr)_auto]">
       <div />
       <div className="flex items-center gap-1.5">
-        <span className="type-caption text-muted">Field</span>
+        <span className="field-label">Field</span>
       </div>
       <div className="flex items-center gap-1.5">
-        <span className="type-caption text-muted">CSS</span>
+        <span className="field-label">CSS</span>
       </div>
       <div className="flex items-center gap-1.5">
-        <span className="type-caption text-muted">XPath</span>
+        <span className="field-label">XPath</span>
       </div>
       <div className="flex items-center gap-1.5">
-        <span className="type-caption text-muted">Regex</span>
+        <span className="field-label">Regex</span>
       </div>
-      <span className="type-caption text-muted text-right">Actions</span>
+      <span className="field-label text-right">Actions</span>
     </div>
   );
 }
@@ -388,7 +388,7 @@ function ValidatedField({
           onChange={(event) => onChange(event.target.value)}
           onBlur={(event) => onBlur(event.target.value)}
           placeholder={placeholder}
-          className="type-body h-8 pr-9"
+          className="type-body-sm h-8 pr-9"
         />
         <div className="pointer-events-none absolute inset-y-0 right-2.5 flex items-center">
           {state === 'valid' ? <CheckCircle2 className="text-success/80 size-3.5" /> : null}

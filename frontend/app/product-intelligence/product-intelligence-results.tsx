@@ -68,7 +68,7 @@ function ResultsFilters({ controller }: ProductIntelligenceResultsProps) {
           value={controller.searchText}
           onChange={(event) => controller.setSearchText(event.target.value)}
           placeholder="Filter by title, domain, or brand..."
-          className="bg-background-alt focus:bg-background focus:border-accent/20 type-body h-8 border-transparent pl-8"
+          className="bg-background-alt focus:bg-background focus:border-accent/20 type-body-sm h-8 border-transparent pl-8"
         />
       </div>
       <Dropdown
@@ -95,7 +95,7 @@ function ToolbarActions({ controller }: ProductIntelligenceResultsProps) {
       {controller.selectedDomainSummary ? (
         <>
           <div className="bg-accent border-accent flex items-center gap-2 rounded border px-2 py-1">
-            <span className="type-label-mono font-normal text-white uppercase">
+            <span className="type-label-mono font-normal !text-white uppercase">
               {controller.selectedDomainSummary.count} selected
             </span>
           </div>
@@ -184,7 +184,7 @@ function SourceRecordsPreview({ controller }: ProductIntelligenceResultsProps) {
           >
             <span className="text-muted type-caption-mono w-6 shrink-0">{index + 1}</span>
             <div className="min-w-0 flex-1">
-              <div className="text-foreground type-body truncate font-normal" title={title}>
+              <div className="text-foreground type-body-sm truncate font-medium" title={title}>
                 {title}
               </div>
               <div className="text-muted type-caption flex items-center gap-2">
@@ -218,10 +218,10 @@ function BulkActionBar({ controller }: ProductIntelligenceResultsProps) {
     <div className="animate-fade-in sticky bottom-4 z-20">
       <div className="border-border bg-panel flex items-center gap-3 rounded-[var(--radius-xl)] border px-4 py-2.5 shadow-lg">
         <Layers className="text-accent size-4 shrink-0" />
-        <span className="text-foreground type-body font-normal">
+        <span className="text-foreground type-body-sm font-semibold">
           {controller.uniqueSelectedUrls.length} URLs selected
         </span>
-        <span className="text-muted type-body">
+        <span className="text-muted type-body-sm">
           from {controller.selectedDomainSummary?.domains.length ?? 0} domain
           {(controller.selectedDomainSummary?.domains.length ?? 0) !== 1 ? 's' : ''}
         </span>

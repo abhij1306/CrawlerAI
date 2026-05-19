@@ -21,6 +21,7 @@ from app.services.config.runtime_settings import crawler_runtime_settings
 from app.services.domain_utils import normalize_domain
 from app.services.acquisition.browser_runtime import get_browser_runtime, patchright_browser_available
 from app.services.pipeline.extraction_loop import process_single_url
+from app.services.pipeline.run_complete_callbacks import on_run_complete
 from app.services.pipeline.run_progress import BatchRunProgressState
 from app.services.pipeline.runtime_helpers import (
     STAGE_ACQUIRE,
@@ -412,6 +413,17 @@ async def process_run(session: AsyncSession, run_id: int) -> None:
                 f"Pipeline finished. {record_count} records. verdict={aggregate_verdict_value}",
             )
             await session.commit()
+            try:
+                await on_run_complete(run.id)
+            except Exception as exc:
+                logger.exception("Run-complete callback failed for run=%s", run.id)
+                with suppress(Exception):
+                    await log_event(
+                        session,
+                        run.id,
+                        "error",
+                        f"on_run_complete failure: {exc}",
+                    )
         finally:
             # Ensure the pre-warm task never outlives process_run, even on
             # early return, break, or exception.

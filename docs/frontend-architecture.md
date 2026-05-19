@@ -1,6 +1,6 @@
 # Frontend Architecture
 
-> Last updated: 2026-04-20
+> Last updated: 2026-05-19
 
 This document describes the live frontend structure, what it actually calls in the backend, and the remaining client/backend drift that should stay visible.
 
@@ -35,6 +35,9 @@ App routes under `frontend/app`:
 - `/crawl/bulk`
 - `/runs`
 - `/runs/[run_id]`
+- `/monitors`
+- `/monitors/new`
+- `/monitors/[id]`
 - `/jobs`
 - `/selectors`
 - `/selectors/manage`
@@ -145,6 +148,7 @@ Primary files:
 
 - `app/dashboard/page.tsx`
 - `app/runs/page.tsx`
+- `app/monitors/*`
 - `app/jobs/page.tsx`
 - `app/selectors/page.tsx`
 - `app/admin/users/page.tsx`
@@ -154,6 +158,7 @@ Responsibilities:
 
 - dashboard metrics and recent runs
 - run history
+- monitor list, creation, detail, event, history, and snapshot inspection
 - active jobs view
 - selector picker/test/save workflow
 - domain-memory management across domains and surfaces
@@ -169,6 +174,7 @@ Primary files:
 - `components/ui/patterns.tsx` for shared operator-page patterns
 - `components/ui/table.module.css` for compact and commerce table styling
 - `app/product-intelligence/product-intelligence-components.tsx` for Product Intelligence local UI pieces
+- `components/monitors/*` for Monitor Management list/detail/form/event/history/snapshot components
 - `app/ucp-audit/ucp-audit-components.tsx` for UCP audit report UI pieces
 
 Global CSS policy:
@@ -196,6 +202,8 @@ The frontend currently uses live backend routes for:
 - llm: `/api/llm/providers`, `/api/llm/configs`, `/api/llm/test-connection`, `/api/llm/cost-log`
 - ucp audit: `/api/ucp-audit/jobs`, `/api/ucp-audit/jobs/{id}`, `/api/ucp-audit/jobs/{id}/export.json`, `/api/ucp-audit/jobs/{id}/export.md`
 - jobs: `/api/jobs/active`
+- monitors: `/api/monitors`, `/api/monitors/{id}`, `/api/monitors/{id}/run/now`, `/api/monitors/{id}/events`, `/api/monitors/{id}/history`, `/api/monitors/{id}/snapshot/current`
+- notifications: `/api/notifications`, `/api/notifications/unread-count`, `/api/notifications/{id}/read`, `/api/notifications/monitors/{id}/read`
 
 ## 5. Known Client/Backend Drift
 

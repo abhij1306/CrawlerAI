@@ -263,7 +263,26 @@ Static cleanup advice to persist/reuse more browser state caused a real regressi
 
 ---
 
-## 11. Codebase Shape
+## 11. Product Monitoring — Scheduling and Diffing
+
+**Rule:** Monitors reuse normal crawl runs. They must not introduce a special extraction path or mutate pipeline behavior beyond the single run-complete callback registration point in `app/services/pipeline/run_complete_callbacks.py`.
+
+Monitor scheduling is explicit:
+- Scheduled runs update `last_run_at` and `next_run_at`.
+- On-demand runs must not change `next_run_at`.
+- Retention must purge monitor snapshots/events beyond each monitor's `retention_days` without deleting `CrawlRun` or `CrawlRecord` rows.
+
+HEAD pre-check is conservative. If HEAD, validator comparison, or fallback hashing fails, the monitor must proceed with a full crawl. It must never skip silently on transport failure.
+
+**VIOLATION signatures:**
+- Monitor-specific logic appears inside the per-URL pipeline body instead of the registered callback.
+- A run-now API call delays the next scheduled run by rewriting `next_run_at`.
+- HEAD failure or 405 causes a scheduled monitor to skip a crawl.
+- Retention deletes crawl runs or crawl records instead of only monitor-owned history/event rows.
+
+---
+
+## 12. Codebase Shape
 
 **Rule:** Generic crawler paths stay generic. Pipeline boundaries use typed objects. CPU-bound parsing does not block async hot paths. New architecture must improve reusable coverage across multiple domains or surfaces, not just rescue one site, unless the user explicitly asks for a site-specific path.
 
@@ -276,7 +295,7 @@ Static cleanup advice to persist/reuse more browser state caused a real regressi
 
 ---
 
-## 12. Plans Must Be Verified, Not Just Written
+## 13. Plans Must Be Verified, Not Just Written
 
 **Rule:** A plan slice is not done until its verify step passes. A plan is not closed until `pytest tests -q` passes. Plans that are not verified are not done — they are abandoned, and their changes must be treated as untrusted.
 
@@ -289,7 +308,7 @@ Static cleanup advice to persist/reuse more browser state caused a real regressi
 
 ---
 
-## 13. Google Search Mimicry Footprint
+## 14. Google Search Mimicry Footprint
 
 **Rule:** Google native search discovery must mimic human behavior to avoid immediate blocks. 
 - **No random mouse jitter:** Never call `emit_browser_behavior_activity` on Google Search pages; erratic, high-speed mouse trajectories are a strong bot signal.

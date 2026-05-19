@@ -27,13 +27,13 @@ export function CandidateGroupSection({
   return (
     <details className="group" open={groupIndex === 0}>
       <summary className="hover:bg-background-alt/50 flex cursor-pointer list-none items-center gap-4 px-4 py-3 transition-colors select-none">
-        <div className="border-divider bg-background text-muted group-open:bg-accent group-open:border-accent type-caption-mono flex size-6 shrink-0 items-center justify-center rounded-full border font-normal group-open:text-white">
+        <div className="border-divider bg-background text-muted group-open:bg-accent group-open:border-accent type-caption-mono flex size-6 shrink-0 items-center justify-center rounded-full border font-normal group-open:!text-white">
           {group.candidates.length}
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <span
-              className="text-foreground type-body truncate font-normal"
+              className="text-foreground type-body font-semibold truncate"
               title={group.sourceTitle}
             >
               {group.sourceTitle}
@@ -53,7 +53,7 @@ export function CandidateGroupSection({
               <span className="bg-divider h-1 w-1 rounded-full" />
             ) : null}
             {group.sourcePrice ? (
-              <span className="text-foreground type-caption-mono font-normal">
+              <span className="text-foreground type-caption-mono font-semibold">
                 {formatPrice(group.sourcePrice, group.sourceCurrency)}
               </span>
             ) : null}
@@ -98,7 +98,7 @@ function CandidateCard({
                 href={candidate.url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="group/link text-foreground hover:text-accent type-body line-clamp-2 font-normal transition-colors"
+                className="group/link text-foreground hover:text-accent type-body-sm line-clamp-2 font-medium transition-colors"
               >
                 {stringField(record.title) || candidate.url}
               </a>
@@ -115,18 +115,18 @@ function CandidateCard({
             </div>
             <div className="flex flex-col gap-1">
               {stringField(record.price) && stringField(record.price) !== '--' ? (
-                <div className="text-foreground type-body font-normal">
+                <div className="text-foreground type-body-sm font-semibold">
                   {formatExtractedPrice(record.price, record.currency)}
                 </div>
               ) : null}
               {stringField(record.brand) || candidate.source_brand ? (
-                <div className="text-muted type-label-mono uppercase">
+                <div className="text-muted type-caption uppercase">
                   {stringField(record.brand) || candidate.source_brand}
                 </div>
               ) : null}
             </div>
           </div>
-          <div className="text-muted/80 type-caption-mono mt-2 truncate" title={candidate.domain}>
+          <div className="text-muted/60 type-caption-mono mt-1 truncate" title={candidate.domain}>
             {candidate.domain}
           </div>
         </div>

@@ -11,6 +11,14 @@ from app.models.domain_memory import (
     HostProtectionMemory,
 )
 from app.models.llm import LLMConfig, LLMCostLog
+from app.models.monitor import (
+    MonitorEvent,
+    MonitorJob,
+    MonitorSnapshot,
+    MonitorSnapshotRecord,
+    MonitorURLState,
+)
+from app.models.notification import InAppNotification
 from app.models.product_intelligence import (
     ProductIntelligenceCandidate,
     ProductIntelligenceJob,
@@ -39,6 +47,12 @@ __all__ = [
     "ProductIntelligenceMatch",
     "LLMConfig",
     "LLMCostLog",
+    "MonitorJob",
+    "MonitorEvent",
+    "MonitorSnapshot",
+    "MonitorSnapshotRecord",
+    "MonitorURLState",
+    "InAppNotification",
     "ReviewPromotion",
     "UCPAuditJob",
     "UCPAuditPageResult",

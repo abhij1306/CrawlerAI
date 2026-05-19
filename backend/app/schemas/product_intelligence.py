@@ -59,6 +59,13 @@ class ProductIntelligenceReviewRequest(BaseModel):
     action: Literal["pending", "accepted", "rejected"]
 
 
+class ProductIntelligenceCreateMonitorRequest(BaseModel):
+    name: str | None = Field(default=None, max_length=100)
+    schedule_interval_hours: int | None = Field(default=None, ge=1)
+    tracked_fields: list[str] | None = None
+    priority: Literal["on_demand", "priority", "background"] | None = None
+
+
 class ProductIntelligenceJobResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

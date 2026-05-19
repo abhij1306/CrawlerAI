@@ -1,6 +1,6 @@
 'use client';
 
-import { Play, Search } from 'lucide-react';
+import { Activity, Play, Search } from 'lucide-react';
 
 import { HistoryDrawer } from '../../components/ui/history-drawer';
 import { InlineAlert, PageHeader } from '../../components/ui/patterns';
@@ -81,6 +81,19 @@ function ProductIntelligenceContent({ controller }: { controller: ProductIntelli
 function productIntelligenceActions(controller: ProductIntelligenceController) {
   return (
     <div className="flex w-full flex-wrap items-center justify-end gap-2">
+      {controller.acceptedMatchCount > 0 ? (
+        <Button
+          type="button"
+          variant="secondary"
+          size="sm"
+          onClick={() => void controller.createMonitorFromJob()}
+          disabled={controller.creatingMonitor || controller.resolvedActiveJobId === null}
+          title="Create an automated price monitor from accepted matches"
+        >
+          <Activity className="size-3" />
+          {controller.creatingMonitor ? 'Creating Monitor...' : 'Create Monitor'}
+        </Button>
+      ) : null}
       <Button
         type="button"
         variant="accent"

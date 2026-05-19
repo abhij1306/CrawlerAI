@@ -1,4 +1,5 @@
 import { apiClient, getApiBaseUrl } from './client';
+export { monitorsApi } from './monitors';
 import type {
   ActiveJob,
   CrawlCreatePayload,
@@ -44,6 +45,7 @@ import type {
   LlmProviderCatalogItem,
   LlmConnectionTestResponse,
   LlmCostLogRecord,
+  InAppNotification,
 } from './types';
 
 function withQuery(path: string, query: URLSearchParams) {
@@ -171,6 +173,22 @@ export const api = {
       `/api/product-intelligence/jobs/${jobId}/matches/${matchId}/review`,
       payload,
     ),
+  createMonitorFromProductIntelligenceJob: (jobId: number) =>
+    apiClient.post<{ monitor_id: number; name: string; url_count: number }>(
+      `/api/product-intelligence/jobs/${jobId}/create-monitor`,
+      {},
+    ),
+  listNotifications: (params?: { limit?: number }) => {
+    const query = new URLSearchParams();
+    if (params?.limit !== undefined) query.set('limit', String(params.limit));
+    return apiClient.get<InAppNotification[]>(withQuery('/api/notifications', query));
+  },
+  notificationUnreadCount: () =>
+    apiClient.get<{ count: number }>('/api/notifications/unread-count'),
+  markNotificationRead: (notificationId: number) =>
+    apiClient.post<InAppNotification>(`/api/notifications/${notificationId}/read`, {}),
+  markMonitorNotificationsRead: (monitorId: number) =>
+    apiClient.post<{ updated: number }>(`/api/notifications/monitors/${monitorId}/read`, {}),
   downloadCsv: (runId: number) => apiClient.getBlob(`/api/crawls/${runId}/export/csv`),
   downloadJson: (runId: number) => apiClient.getBlob(`/api/crawls/${runId}/export/json`),
   exportCsv: (runId: number) => `${getApiBaseUrl()}/api/crawls/${runId}/export/csv`,

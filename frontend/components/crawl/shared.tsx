@@ -197,8 +197,8 @@ export function PreviewRow({
       <div className="field-label shrink-0">{label}</div>
       <div
         className={cn(
-          'text-foreground type-body min-w-0 flex-1 text-right',
-          mono && 'type-label-mono',
+          'type-body-sm text-foreground min-w-0 flex-1 text-right font-normal',
+          mono && 'type-caption-mono font-medium !text-foreground',
         )}
       >
         {value || '--'}

@@ -28,6 +28,8 @@ If a file is not listed, assume it is a helper under a listed owner.
 | `product_intelligence.py` | Product matching jobs, source products, candidates, match review |
 | `data_enrichment.py` | On-demand ecommerce detail enrichment jobs and enriched product rows |
 | `ucp_audit.py` | UCP audit job creation, history, detail, and report exports |
+| `monitors.py` | Product monitor CRUD, run-now dispatch, history/events/snapshot, and exports |
+| `notifications.py` | In-app monitor notification listing, unread counts, and read state |
 | `auth.py` | Login, register, `/me` |
 | `users.py`, `dashboard.py`, `jobs.py`, `health.py`, `metrics.py` | Named route modules |
 
@@ -59,6 +61,8 @@ If a file is not listed, assume it is a helper under a listed owner.
 | `ProductIntelligenceJob`, `ProductIntelligenceSourceProduct`, `ProductIntelligenceCandidate`, `ProductIntelligenceMatch` | `product_intelligence.py` | web product matching and price comparison jobs |
 | `DataEnrichmentJob`, `EnrichedProduct` | `data_enrichment.py` | on-demand ecommerce detail enrichment jobs and derived enriched product rows |
 | `UCPAuditJob`, `UCPAuditPageResult`, `UCPAuditReport` | `ucp_audit.py` | persisted UCP compliance audit jobs, sampled page payloads, and report artifacts |
+| `MonitorJob`, `MonitorEvent`, `MonitorSnapshot`, `MonitorSnapshotRecord`, `MonitorURLState` | `monitor.py` | recurring crawl monitors, field-level events, snapshots, and URL pre-check state |
+| `InAppNotification` | `notification.py` | user-visible monitor change alerts and read state |
 | `LLMConfig`, `LLMCostLog` | `llm.py` | LLM config and cost tracking |
 
 ### `schemas/` — request and response DTOs
@@ -80,6 +84,7 @@ If a file is not listed, assume it is a helper under a listed owner.
 | `product_intelligence/*` | Product web discovery, candidate crawl orchestration, deterministic match scoring |
 | `data_enrichment/service.py` | On-demand enrichment job orchestration and persistence for ecommerce detail records |
 | `ucp_audit/*` | UCP compliance audit primitives, scoring, reporting, and job orchestration |
+| `monitor_service.py`, `monitor_scheduler_service.py`, `monitor_async_loop.py`, `monitor_change_detection.py`, `monitor_retention.py`, `monitor_alert_service.py` | Product monitoring CRUD support, due-job scheduling, dev scheduler loop, post-run diffing, retention, and in-app alerts |
 | `data_enrichment/deterministic.py` | Deterministic enrichment normalization, taxonomy matching, and product attribute diagnostics |
 | `data_enrichment/llm_diagnostics.py` | Data enrichment LLM rejection and skip-reason diagnostics |
 | `data_enrichment/shopify_catalog.py` | Shopify taxonomy and attribute repository loading/matching |
@@ -91,6 +96,7 @@ If a file is not listed, assume it is a helper under a listed owner.
 | `pipeline/url_processing_context.py` | Per-URL acquisition config and run-context resolution |
 | `pipeline/persistence.py` | `CrawlRecord` writes, dedupe, summaries |
 | `pipeline/runtime_helpers.py` | Typed stage helpers, browser diagnostics merge, failure-state persistence |
+| `pipeline/run_complete_callbacks.py` | Single run-complete callback registration point for post-run subsystems such as monitors |
 | `pipeline/direct_record_fallback.py` | Direct-record and explicit LLM gap-fill fallback |
 | `pipeline/extraction_retry_decision.py` | Empty-extraction browser retry decisions |
 | `pipeline/types.py` | Pipeline typed objects |
@@ -232,6 +238,7 @@ Canonical config owners:
 | `config/platforms.json` | adapter metadata, signatures, JS mappings, readiness selectors |
 | `config/network_payload_specs.py` | payload specs and endpoint tokens |
 | `config/data_enrichment.py` | data enrichment statuses, limits, and taxonomy file path |
+| `config/monitor_settings.py` | monitor statuses, priorities, scheduler limits, retention limits, and HEAD pre-check constants |
 
 ---
 
@@ -289,6 +296,7 @@ All selector memory is scoped by normalized `(domain, surface)`.
 |---|---|
 | `app/` | Next.js App Router pages |
 | `app/product-intelligence/product-intelligence-components.tsx` | Product Intelligence local UI pieces |
+| `app/monitors/*`, `components/monitors/*` | Monitor list/detail/create UI, monitor form, events, history chart, snapshot table, loading and empty states |
 | `app/ucp-audit/*` | UCP audit operator page, hook, and local report components |
 | `components/layout/` | shell, auth, nav, theme, scoped shell CSS modules |
 | `components/ui/button.tsx`, `badge.tsx`, `input.tsx`, `card.tsx`, `metric.tsx`, `table.tsx`, `alert.tsx`, `dialog.tsx` | typed UI primitive owners |

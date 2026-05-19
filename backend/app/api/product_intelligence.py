@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from typing import Annotated
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
+from fastapi import APIRouter, BackgroundTasks, Body, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_user, get_db
@@ -11,6 +11,7 @@ from app.models.user import User
 from app.schemas.product_intelligence import (
     ProductIntelligenceDiscoveryRequest,
     ProductIntelligenceDiscoveryResponse,
+    ProductIntelligenceCreateMonitorRequest,
     ProductIntelligenceJobCreate,
     ProductIntelligenceJobDetailResponse,
     ProductIntelligenceJobResponse,
@@ -26,6 +27,7 @@ from app.services.product_intelligence.service import (
     review_product_intelligence_match,
     run_product_intelligence_job,
 )
+from app.services.product_intelligence.monitor_bridge import create_monitor_from_job
 
 router = APIRouter(prefix="/api/product-intelligence", tags=["product-intelligence"])
 logger = logging.getLogger(__name__)
@@ -133,4 +135,33 @@ async def product_intelligence_review_match(
     return {
         "match_id": match.id,
         "review_status": match.review_status,
+    }
+
+
+@router.post("/jobs/{job_id}/create-monitor")
+async def product_intelligence_create_monitor(
+    job_id: int,
+    session: Annotated[AsyncSession, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+    payload: Annotated[ProductIntelligenceCreateMonitorRequest | None, Body()] = None,
+) -> dict[str, object]:
+    options = payload or ProductIntelligenceCreateMonitorRequest()
+    try:
+        monitor = await create_monitor_from_job(
+            session,
+            job_id=job_id,
+            user=user,
+            name=options.name,
+            schedule_interval_hours=options.schedule_interval_hours,
+            tracked_fields=options.tracked_fields,
+            priority=options.priority,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return {
+        "monitor_id": monitor.id,
+        "name": monitor.name,
+        "url_count": len(list(monitor.urls or [])),
     }

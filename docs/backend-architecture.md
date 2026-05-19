@@ -42,6 +42,7 @@ Routers registered in `backend/app/main.py`:
 - `/api/selectors`
 - `/api/llm`
 - `/api/data-enrichment`
+- `/api/monitors`
 - `/api/health`
 - `/api/metrics`
 
@@ -54,6 +55,7 @@ Important route groups:
 - `api/selectors.py`: selector CRUD, cross-surface listing by domain, suggestion, test, preview HTML
 - `api/llm.py`: provider catalog, config CRUD, connection test, cost log
 - `api/data_enrichment.py`: on-demand ecommerce detail enrichment jobs and enriched product row lookup
+- `api/monitors.py`: monitor CRUD, run-now dispatch, event/history/current-snapshot lookup, and JSON/CSV exports
 
 Domain-recipe routes live under `api/crawl_domain.py`:
 
@@ -165,6 +167,7 @@ Primary files:
 - `pipeline/types.py`
 - `pipeline/runtime_helpers.py`
 - `data_enrichment/service.py`
+- `monitor_service.py`, `monitor_scheduler_service.py`, `monitor_async_loop.py`, `monitor_change_detection.py`, `monitor_retention.py`
 - `data_enrichment/deterministic.py`
 - `data_enrichment/shopify_catalog.py`
 
@@ -191,6 +194,8 @@ Current live behavior:
 - reusable domain execution defaults are persisted separately from selector memory in `DomainRunProfile`; fetch/locality/diagnostics defaults still merge into single-URL run creation, while acquisition contracts are re-resolved per URL at runtime for every run type
 - `pipeline/extraction_loop.py` stays the per-URL stage orchestrator; record extraction, acquisition-contract memory, retry families, direct-record LLM fallback, browser diagnostics merge, typed result objects, and public failure-state persistence live in dedicated pipeline helper modules
 - Data Enrichment is separate from the crawl pipeline: it reads persisted ecommerce detail `CrawlRecord` rows, writes `EnrichedProduct` rows, and only updates source-record enrichment status metadata.
+- Product Monitoring is a recurring crawl orchestration layer: `MonitorJob` rows store URL sets, schedule interval, priority, tracked fields, retention, and crawl settings; scheduler drivers call `MonitorSchedulerService.check_due_jobs()`; monitor runs are normal `CrawlRun` rows tagged with `settings.monitor_id`; `MonitorChangeDetectionService` diffs completed run records against the latest snapshot; `monitor_alert_service.py` creates in-app notifications for tracked field changes; retention purges monitor snapshots/events only.
+- Scheduler driver split is explicit: `SCHEDULER_DRIVER=dev` starts `AsyncSchedulerLoop` from FastAPI lifespan with no Celery Beat; `SCHEDULER_DRIVER=celery` registers Celery Beat tasks `monitor.check_due_jobs` and `monitor.purge_expired_snapshots`.
 
 ### 6.3 Acquisition and browser runtime
 
@@ -483,6 +488,11 @@ Primary models:
 - `UCPAuditJob`
 - `UCPAuditPageResult`
 - `UCPAuditReport`
+- `MonitorJob`
+- `MonitorEvent`
+- `MonitorSnapshot`
+- `MonitorSnapshotRecord`
+- `MonitorURLState`
 - `LLMConfig`
 - `LLMCostLog`
 - `DomainMemory`

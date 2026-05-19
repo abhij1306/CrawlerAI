@@ -20,6 +20,8 @@ from app.api.data_enrichment import router as data_enrichment_router
 from app.api.dashboard import router as dashboard_router
 from app.api.jobs import router as jobs_router
 from app.api.llm import router as llm_router
+from app.api.monitors import router as monitors_router
+from app.api.notifications import router as notifications_router
 from app.api.product_intelligence import router as product_intelligence_router
 from app.api.records import router as records_router
 from app.api.review import router as review_router
@@ -52,14 +54,23 @@ from app.services.auth_service import bootstrap_admin_user
 from app.services.config.runtime_settings import crawler_runtime_settings
 from app.services.crawl.service import recover_stale_local_runs
 from app.services.llm.provider_client import close_llm_provider_clients
+from app.services.config.monitor_settings import (
+    SCHEDULER_DRIVER_DEV,
+    SCHEDULER_POLL_INTERVAL_SECONDS,
+)
+from app.services.monitor_async_loop import AsyncSchedulerLoop
+from app.services.monitor_change_detection import ensure_monitor_change_detection_registered
+from app.services.monitor_scheduler_service import MonitorSchedulerService
 
 logger = logging.getLogger("app")
 _RATE_LIMIT_BUCKETS: OrderedDict[str, deque[float]] = OrderedDict()
 _RATE_LIMIT_LOCK = asyncio.Lock()
+_monitor_scheduler_loop: AsyncSchedulerLoop | None = None
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    global _monitor_scheduler_loop
     configure_logging()
     try:
         install_asyncio_exception_filter()
@@ -74,9 +85,24 @@ async def lifespan(_: FastAPI):
                 "Recovered %s stale local crawl run(s) after backend restart",
                 recovered,
             )
+    ensure_monitor_change_detection_registered()
+    if settings.scheduler_driver == SCHEDULER_DRIVER_DEV:
+        scheduler_loop = AsyncSchedulerLoop(
+            MonitorSchedulerService(),
+            SCHEDULER_POLL_INTERVAL_SECONDS,
+        )
+        try:
+            scheduler_loop.start_nowait()
+        except Exception:
+            await scheduler_loop.stop()
+            raise
+        _monitor_scheduler_loop = scheduler_loop
     try:
         yield
     finally:
+        if _monitor_scheduler_loop is not None:
+            await _monitor_scheduler_loop.stop()
+            _monitor_scheduler_loop = None
         await shutdown_run_dispatchers()
         await shutdown_browser_runtime()
         await close_shared_http_client()
@@ -283,6 +309,8 @@ for router in [
     selectors_router,
     llm_router,
     product_intelligence_router,
+    monitors_router,
+    notifications_router,
     ucp_audit_router,
 ]:
     app.include_router(router)

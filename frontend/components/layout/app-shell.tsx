@@ -1,6 +1,6 @@
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import type { Route } from 'next';
 import { usePathname, useRouter } from 'next/navigation';
@@ -9,6 +9,8 @@ import type { ComponentType, ReactNode } from 'react';
 import {
   BrainCircuit,
   BriefcaseBusiness,
+  Bell,
+  Check,
   ClipboardCheck,
   ChevronLeft,
   ChevronRight,
@@ -16,6 +18,7 @@ import {
   DatabaseZap,
   FileChartColumn,
   Grid2x2,
+  Radar,
   SearchCheck,
   Settings2,
   Sparkles,
@@ -25,9 +28,10 @@ import {
   Zap,
 } from 'lucide-react';
 
-import { api } from '../../lib/api';
+import { api, monitorsApi } from '../../lib/api';
 import { httpErrorStatus } from '../../lib/api/client';
 import { STORAGE_KEYS } from '../../lib/constants/storage-keys';
+import { formatRelativeTime } from '../../lib/format/date';
 import { cn } from '../../lib/utils';
 import { getAuthSessionQueryOptions, isAuthRoute } from './auth-session-query';
 import { Button } from '../ui/primitives';
@@ -45,6 +49,7 @@ const navGroups = [
       { href: '/dashboard', label: 'Dashboard', icon: Grid2x2 },
       { href: '/crawl', label: 'Crawl Studio', icon: WandSparkles },
       { href: '/runs', label: 'History', icon: Clock3 },
+      { href: '/monitors', label: 'Monitors', icon: Radar },
       { href: '/data-enrichment', label: 'Data Enrichment', icon: FileChartColumn },
       { href: '/product-intelligence', label: 'Product Intelligence', icon: BrainCircuit },
       { href: '/ucp-audit', label: 'UCP Audit', icon: ClipboardCheck },
@@ -271,6 +276,23 @@ function Sidebar({ pathname }: Readonly<{ pathname: string }>) {
     window.localStorage.setItem(STORAGE_KEYS.SIDEBAR_COLLAPSED, String(collapsed));
   }, [collapsed]);
 
+  const monitorLastVisit =
+    typeof window === 'undefined'
+      ? ''
+      : (window.localStorage.getItem(STORAGE_KEYS.MONITORS_LAST_VISIT) ?? '');
+  const monitorsQuery = useQuery({
+    queryKey: ['sidebar-monitors'],
+    queryFn: () => monitorsApi.list({ status: 'active' }),
+    staleTime: 60_000,
+  });
+  const monitorPulse = Boolean(
+    monitorsQuery.data?.some((monitor) => {
+      if (!monitor.change_count) return false;
+      if (!monitorLastVisit) return true;
+      return new Date(monitor.updated_at).getTime() > new Date(monitorLastVisit).getTime();
+    }),
+  );
+
   return (
     <aside className={cn('app-sidebar', collapsed && 'is-collapsed')}>
       <div className="app-sidebar-header">
@@ -299,12 +321,15 @@ function Sidebar({ pathname }: Readonly<{ pathname: string }>) {
                     href={item.href as Route}
                     title={collapsed ? item.label : undefined}
                     className={cn(
-                      'app-nav-item',
+                      'app-nav-item relative',
                       active && 'is-active',
                       collapsed && 'is-collapsed',
                     )}
                   >
                     <Icon className="app-nav-icon" />
+                    {item.href === '/monitors' && monitorPulse ? (
+                      <span className="bg-accent absolute right-2 size-1.5 rounded-full" aria-hidden />
+                    ) : null}
                     {!collapsed && <span className="truncate">{item.label}</span>}
                   </Link>
                 );
@@ -337,9 +362,28 @@ function ShellContent({
   const header = useTopBarHeader();
   const topBar = header?.pathKey === pathname ? header : getFallbackHeader(pathname);
   const router = useRouter();
+  const queryClient = useQueryClient();
   const [resetPending, setResetPending] = useState(false);
   const [resetDialogOpen, setResetDialogOpen] = useState(false);
   const [resetError, setResetError] = useState('');
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const notificationCountQuery = useQuery({
+    queryKey: ['notifications-unread-count'],
+    queryFn: api.notificationUnreadCount,
+    staleTime: 30_000,
+  });
+  const notificationsQuery = useQuery({
+    queryKey: ['notifications-unread'],
+    queryFn: () => api.listNotifications({ limit: 10 }),
+    enabled: notificationsOpen,
+  });
+  const markReadMutation = useMutation({
+    mutationFn: api.markNotificationRead,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['notifications-unread-count'] });
+      queryClient.invalidateQueries({ queryKey: ['notifications-unread'] });
+    },
+  });
 
   async function executeReset() {
     if (!canResetWorkspace) return;
@@ -382,6 +426,71 @@ function ShellContent({
           {topBar.actions ? (
             <div className="flex flex-wrap items-center gap-2">{topBar.actions}</div>
           ) : null}
+          <div className="relative">
+            <button
+              type="button"
+              className="app-icon-button relative"
+              aria-label="Notifications"
+              onClick={() => setNotificationsOpen((value) => !value)}
+            >
+              <Bell className="size-3.5" />
+              {(notificationCountQuery.data?.count ?? 0) > 0 ? (
+                <span className="bg-danger absolute -top-1 -right-1 min-w-4 rounded-full px-1 text-[10px] leading-4 text-white">
+                  {notificationCountQuery.data?.count}
+                </span>
+              ) : null}
+            </button>
+            {notificationsOpen ? (
+              <div className="border-border bg-background-elevated absolute top-9 right-0 z-[250] w-[min(340px,calc(100vw-32px))] rounded-[var(--radius-lg)] border p-2 shadow-lg">
+                <div className="border-divider flex items-center justify-between border-b px-2 py-1.5">
+                  <p className="type-label m-0">Notifications</p>
+                  <span className="text-muted text-[11px]">
+                    {notificationCountQuery.data?.count ?? 0} unread
+                  </span>
+                </div>
+                <div className="max-h-80 overflow-y-auto py-1">
+                  {notificationsQuery.isPending ? (
+                    <div className="space-y-2 p-2">
+                      <div className="skeleton h-12 w-full" />
+                      <div className="skeleton h-12 w-full" />
+                    </div>
+                  ) : notificationsQuery.data?.length ? (
+                    notificationsQuery.data.map((item) => (
+                      <div
+                        key={item.id}
+                        className="hover:bg-background-alt flex items-start gap-2 rounded-[var(--radius-md)] p-2"
+                      >
+                        <Link
+                          href={`/monitors/${item.monitor_id}` as Route}
+                          className="min-w-0 flex-1"
+                          onClick={() => setNotificationsOpen(false)}
+                        >
+                          <p className="text-foreground m-0 truncate text-sm font-medium">
+                            {item.message}
+                          </p>
+                          <p className="text-muted m-0 text-[11px]">
+                            {formatRelativeTime(item.created_at)}
+                          </p>
+                        </Link>
+                        <button
+                          type="button"
+                          className="app-icon-button"
+                          aria-label="Mark notification read"
+                          onClick={() => markReadMutation.mutate(item.id)}
+                        >
+                          <Check className="size-3.5" />
+                        </button>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-muted m-0 px-2 py-4 text-center text-sm">
+                      No unread notifications.
+                    </p>
+                  )}
+                </div>
+              </div>
+            ) : null}
+          </div>
           {canResetWorkspace ? (
             <div className="flex items-center gap-2">
               <Button
@@ -436,6 +545,11 @@ function getFallbackHeader(pathname: string): TopBarState {
     return {
       title: 'Data Enrichment',
       description: 'Normalize ecommerce detail records into discovery fields.',
+    };
+  if (pathname.startsWith('/monitors'))
+    return {
+      title: 'Monitors',
+      description: 'Schedule recurring crawls and inspect changes.',
     };
   if (pathname.startsWith('/product-intelligence'))
     return {

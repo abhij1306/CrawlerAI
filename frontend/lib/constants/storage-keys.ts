@@ -3,4 +3,5 @@ export const STORAGE_KEYS = {
   DATA_ENRICHMENT_PREFILL: 'data-enrichment-prefill-v1',
   PRODUCT_INTELLIGENCE_PREFILL: 'product-intelligence-prefill-v1',
   SIDEBAR_COLLAPSED: 'crawlerai-sidebar-collapsed',
+  MONITORS_LAST_VISIT: 'crawlerai-monitors-last-visit',
 } as const;

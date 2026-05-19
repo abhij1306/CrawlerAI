@@ -729,3 +729,108 @@ export type CrawlConfig = {
   proxy_lines: string[];
   additional_fields: string[];
 };
+
+export type MonitorPriority = 'on_demand' | 'priority' | 'background';
+export type MonitorStatus = 'active' | 'paused' | 'archived';
+export type MonitorEventType = 'field_changed' | 'record_new' | 'record_removed';
+export type NotificationStatus = 'pending' | 'sent' | 'skipped';
+
+export interface MonitorJob {
+  id: number;
+  name: string;
+  urls: string[];
+  domains: string[];
+  surface: string;
+  tracked_fields: string[];
+  schedule_interval_hours: number;
+  priority: MonitorPriority;
+  retention_days: number;
+  status: MonitorStatus;
+  settings: Record<string, unknown>;
+  last_run_at: string | null;
+  next_run_at: string | null;
+  created_at: string;
+  updated_at: string;
+  change_count?: number;
+}
+
+export interface MonitorEvent {
+  id: number;
+  monitor_id: number;
+  run_id: number | null;
+  source_url: string;
+  event_type: MonitorEventType;
+  field_name: string | null;
+  old_value: unknown;
+  new_value: unknown;
+  detected_at: string;
+  notified_at?: string | null;
+  notification_status?: NotificationStatus;
+}
+
+export interface MonitorSnapshotRecord {
+  id: number;
+  snapshot_id: number;
+  monitor_id: number;
+  source_url: string;
+  url_identity_key: string;
+  field_values: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface MonitorSnapshot {
+  id: number;
+  monitor_id: number;
+  run_id: number;
+  snapshot_data?: Record<string, unknown>;
+  record_count: number;
+  change_count: number;
+  created_at: string;
+}
+
+export interface MonitorCreatePayload {
+  name: string;
+  urls: string[];
+  surface: string;
+  tracked_fields: string[];
+  schedule_interval_hours: number;
+  priority: MonitorPriority;
+  retention_days: number;
+  requested_fields: string[];
+  settings?: Record<string, unknown>;
+}
+
+export interface MonitorUpdatePayload {
+  name?: string;
+  tracked_fields?: string[];
+  schedule_interval_hours?: number;
+  priority?: MonitorPriority;
+  retention_days?: number;
+  status?: MonitorStatus;
+  settings?: Record<string, unknown>;
+}
+
+export interface RunNowResponse {
+  run_id: number;
+  dispatched_at: string;
+  url_count: number;
+  run_ids?: number[];
+}
+
+export interface PaginatedResponse<T> {
+  items: T[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
+export interface InAppNotification {
+  id: number;
+  user_id: number | null;
+  monitor_id: number;
+  event_count: number;
+  message: string;
+  read: boolean;
+  read_at: string | null;
+  created_at: string;
+}

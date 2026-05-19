@@ -1,13 +1,14 @@
 'use client';
 
-import type { ComponentPropsWithoutRef } from 'react';
+import { forwardRef } from 'react';
+import type { ComponentPropsWithoutRef, ElementRef } from 'react';
 import { cva, type VariantProps } from 'class-variance-authority';
 
 import { Slot } from '@radix-ui/react-slot';
 import { cn } from '../../lib/utils';
 
 export const buttonVariants = cva(
-  'focus-ring inline-flex items-center justify-center gap-1.5 rounded-[var(--radius-md)] border text-[11px] font-semibold leading-none whitespace-nowrap no-underline transition-[background-color,color,border-color,transform] disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 disabled:grayscale',
+  'ui-button focus-ring inline-flex items-center justify-center gap-1.5 rounded-[var(--radius-md)] border text-sm font-medium leading-none whitespace-nowrap no-underline transition-[background-color,color,border-color,transform] disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 disabled:grayscale',
   {
     variants: {
       variant: {
@@ -23,9 +24,9 @@ export const buttonVariants = cva(
       },
       size: {
         sm: 'h-7 px-2.5 text-[11px]',
-        md: 'h-8 px-3',
-        lg: 'h-9 px-4',
-        icon: 'size-8 p-0',
+        md: 'h-[36px] px-4',
+        lg: 'h-10 px-5 text-base',
+        icon: 'size-9 p-0',
       },
     },
     defaultVariants: {
@@ -40,20 +41,19 @@ export interface ButtonProps
   asChild?: boolean;
 }
 
-export function Button({
+export const Button = forwardRef<ElementRef<'button'>, ButtonProps>(function Button({
   className,
   variant,
   size,
   asChild = false,
-  style,
   ...props
-}: Readonly<ButtonProps>) {
+}: ButtonProps, ref) {
   const Comp = asChild ? Slot : 'button';
   return (
     <Comp
+      ref={ref}
       {...props}
-      style={{ fontSize: '12px', ...style }}
       className={cn(buttonVariants({ variant, size }), className)}
     />
   );
-}
+});

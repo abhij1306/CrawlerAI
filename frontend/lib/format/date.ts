@@ -68,3 +68,30 @@ export function formatTimeHms(value: string) {
 export function formatNowHms() {
   return formatTimeHms(new Date().toISOString());
 }
+
+export function formatRelativeTime(value: string | null | undefined, now = new Date()) {
+  if (!value) return 'never';
+  const date = parseApiDate(value);
+  if (Number.isNaN(date.getTime())) return value;
+  const diffSeconds = Math.round((date.getTime() - now.getTime()) / 1000);
+  const absSeconds = Math.abs(diffSeconds);
+  const minute = 60;
+  const hour = 60 * minute;
+  const day = 24 * hour;
+  const unit =
+    absSeconds >= day
+      ? { value: Math.round(absSeconds / day), label: 'd' }
+      : absSeconds >= hour
+        ? { value: Math.round(absSeconds / hour), label: 'h' }
+        : { value: Math.max(1, Math.round(absSeconds / minute)), label: 'm' };
+  if (diffSeconds < 0) return `${unit.value}${unit.label} ago`;
+  return `in ${unit.value}${unit.label}`;
+}
+
+export function formatNextRun(value: string | null | undefined, now = new Date()) {
+  if (!value) return 'unscheduled';
+  const date = parseApiDate(value);
+  if (Number.isNaN(date.getTime())) return value;
+  if (date.getTime() < now.getTime()) return 'overdue';
+  return `next ${formatRelativeTime(value, now)}`;
+}
