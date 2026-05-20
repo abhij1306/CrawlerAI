@@ -102,7 +102,7 @@
   width: 26px;
   height: 26px;
   border: 0;
-  border-radius: 5px;
+  border-radius: var(--radius-md);
   background: transparent;
   color: var(--text-muted);
   display: inline-flex;

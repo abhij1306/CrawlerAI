@@ -20,7 +20,12 @@ from app.services.config.js_state_field_specs import (
     JS_STATE_VARIANT_FIELD_SPEC,
     VARIANT_AXIS_KEYS,
 )
-from app.services.config.extraction_rules import ECOMMERCE_DESCRIPTION_BLOCK_LIMIT
+from app.services.config.extraction_rules import (
+    DETAIL_ARTIFACT_PRODUCT_TYPE_PATTERNS,
+    DETAIL_ARTIFACT_PRODUCT_TYPE_VALUES,
+    DETAIL_LOW_SIGNAL_PRODUCT_TYPE_VALUES,
+    ECOMMERCE_DESCRIPTION_BLOCK_LIMIT,
+)
 from app.services.extraction_html_helpers import extract_job_sections, html_to_text
 from app.services.field_policy import normalize_field_key
 from app.services.dom.selector_engine import dedupe_image_urls, extract_feature_rows
@@ -693,6 +698,8 @@ def _revive_nuxt_data_array(payload: Any) -> dict[str, Any] | None:
 def _looks_like_product_payload(value: Any) -> bool:
     if not isinstance(value, dict):
         return False
+    if _payload_type_is_non_product(value):
+        return False
     if _looks_like_stock_price_product_payload(value):
         return True
     has_title = any(
@@ -700,6 +707,8 @@ def _looks_like_product_payload(value: Any) -> bool:
         for key in (
             "title",
             "name",
+            "productTitle",
+            "productName",
             "nameByLanguage",
             "pn",
             "copyProductTitle",
@@ -748,6 +757,26 @@ def _looks_like_product_payload(value: Any) -> bool:
             "onlineStoreUrl",
             "webPathAlias",
         )
+    )
+
+
+def _payload_type_is_non_product(value: dict[str, Any]) -> bool:
+    raw_type = clean_text(
+        value.get("type")
+        or value.get("product_type")
+        or value.get("productType")
+        or value.get("@type")
+    ).casefold()
+    if not raw_type:
+        return False
+    if raw_type in DETAIL_LOW_SIGNAL_PRODUCT_TYPE_VALUES:
+        return True
+    if raw_type in DETAIL_ARTIFACT_PRODUCT_TYPE_VALUES:
+        return True
+    return any(
+        re.search(str(pattern), raw_type, re.I)
+        for pattern in tuple(DETAIL_ARTIFACT_PRODUCT_TYPE_PATTERNS or ())
+        if str(pattern).strip()
     )
 
 

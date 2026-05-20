@@ -9,6 +9,7 @@ from app.services.adapters.shopify import ShopifyAdapter
 from app.services.adapters.myntra import MyntraAdapter
 from app.services.extract.detail.assembly.record_assembly import (
     build_detail_record,
+    extract_detail_records,
 )
 from app.services.extract.detail.variants.dom_options import variant_option_availability
 from app.services.extract.detail.price.core import (
@@ -838,6 +839,108 @@ def test_extract_ecommerce_detail_from_array_style_nuxt_payload() -> None:
     assert record["product_id"] == "4242"
     assert record["category"] == "Gadgets"
     assert record["_source"] == "js_state"
+
+
+def test_extract_ecommerce_detail_ignores_js_state_gift_option_price() -> None:
+    html = """
+    <html>
+      <head>
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "Product",
+          "name": "Air Force 1 '07 Basketball Sneaker",
+          "offers": {
+            "@type": "Offer",
+            "price": "0",
+            "priceCurrency": "INR",
+            "availability": "https://schema.org/OutOfStock"
+          }
+        }
+        </script>
+        <script>
+        window.__INITIAL_CONFIG__ = {
+          "product": {
+            "productName": "Air Force 1 '07 Basketball Sneaker",
+            "styleNumber": "10014429",
+            "price": null,
+            "isAvailable": false
+          },
+          "giftServicesAvailable": [
+            {
+              "id": "gift-bag",
+              "type": "giftOption",
+              "title": "Fabric gift bag",
+              "price": 5,
+              "availability": ["delivery"]
+            }
+          ]
+        };
+        </script>
+      </head>
+      <body><h1>Air Force 1 '07 Basketball Sneaker</h1></body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        "https://www.nordstrom.com/s/nike-air-force-1-07-basketball-sneaker-men/7507996",
+        "ecommerce_detail",
+        max_records=1,
+        requested_fields=["title", "price", "currency", "availability"],
+    )
+
+    assert len(rows) == 1
+    record = rows[0]
+    assert record["title"] == "Air Force 1 '07 Basketball Sneaker"
+    assert record["availability"] == "out_of_stock"
+    assert "price" not in record
+    assert "currency" not in record
+
+
+def test_extract_ecommerce_detail_reads_plain_initial_state_variants() -> None:
+    html = """
+    <html>
+      <head>
+        <script>
+        window.INITIAL_STATE = {
+          "pdp": {
+            "product": {
+              "id": "19072301",
+              "name": {"en": "Brown Ruff Rider Leather Jacket"},
+              "price": 3890,
+              "currency": "USD",
+              "variants": [
+                {"sku": "261232M18102300", "size": "S", "inStock": false},
+                {"sku": "261232M18102301", "size": "M", "inStock": false},
+                {"sku": "261232M18102302", "size": "L", "inStock": false},
+                {"sku": "261232M18102303", "size": "XL", "inStock": false}
+              ]
+            }
+          }
+        };
+        </script>
+      </head>
+      <body><h1>Brown Ruff Rider Leather Jacket</h1></body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        "https://www.ssense.com/en-us/men/product/willy-chavarria/brown-ruff-rider-leather-jacket/19072301",
+        "ecommerce_detail",
+        max_records=1,
+        requested_fields=["variants", "price", "currency", "availability"],
+    )
+
+    assert len(rows) == 1
+    record = rows[0]
+    assert record["variant_count"] == 4
+    assert {variant["size"] for variant in record["variants"]} == {"S", "M", "L", "XL"}
+    assert all(
+        variant.get("availability") == "out_of_stock"
+        for variant in record["variants"]
+    )
 
 
 def test_extract_ecommerce_detail_gender_from_explicit_structured_attribute() -> None:
@@ -5760,6 +5863,130 @@ def test_build_detail_record_formats_currency_prices_and_drops_bad_discounts() -
     assert "discount_percentage" not in record
 
 
+def test_build_detail_record_drops_sale_price_when_not_below_current_price() -> None:
+    record = build_detail_record(
+        "<html><body><main><h1>Rambler Ceramic Stackable 8Oz</h1></main></body></html>",
+        "https://www.yeti.com/drinkware/tumblers/rambler-ceramic-stackable-8oz.html",
+        "ecommerce_detail",
+        None,
+        adapter_records=[
+            {
+                "title": "Rambler Ceramic Stackable 8Oz",
+                "price": "25.00",
+                "sale_price": "28",
+                "original_price": "28.00",
+                "currency": "USD",
+            }
+        ],
+    )
+
+    assert record["price"] == "25.00"
+    assert record["original_price"] == "28.00"
+    assert "sale_price" not in record
+
+
+def test_build_detail_record_drops_polluted_parent_size_option_list() -> None:
+    record = build_detail_record(
+        "<html><body><main><h1>Rambler Ceramic Stackable 8Oz</h1></main></body></html>",
+        "https://www.yeti.com/drinkware/tumblers/rambler-ceramic-stackable-8oz.html",
+        "ecommerce_detail",
+        None,
+        adapter_records=[
+            {
+                "title": "Rambler Ceramic Stackable 8Oz",
+                "price": "25.00",
+                "currency": "USD",
+                "size": "8 oz Ceramic 8 oz Ceramic 16 oz 20 oz 30 oz Compare Size",
+            }
+        ],
+    )
+
+    assert "size" not in record
+
+
+def test_build_detail_record_drops_numeric_parent_color_when_variants_have_labels() -> None:
+    record = build_detail_record(
+        "<html><body><main><h1>Tommy Hilfiger Mens Hiday Casualized Hybrid Oxfords</h1></main></body></html>",
+        "https://www.macys.com/shop/product/tommy-hilfiger-mens-hiser-casualized-hybrid-oxfords?ID=19526232",
+        "ecommerce_detail",
+        None,
+        adapter_records=[
+            {
+                "title": "Tommy Hilfiger Mens Hiday Casualized Hybrid Oxfords",
+                "price": "54.50",
+                "currency": "USD",
+                "sku": "19526232",
+                "color": "9501719",
+                "variants": [{"size": "7M", "color": "Dark Brown"}],
+            }
+        ],
+    )
+
+    assert "color" not in record
+    assert record["variants"][0]["size"] == "7M"
+    assert record["variants"][0]["color"] == "Dark Brown"
+
+
+def test_extract_detail_rejects_same_url_model_number_title_mismatch() -> None:
+    rows = extract_detail_records(
+        "<html><body><main><h1>iPhone 16 Plus Unlocked</h1></main></body></html>",
+        "https://www.backmarket.com/en-us/p/iphone-15-plus",
+        "ecommerce_detail",
+        None,
+        adapter_records=[
+            {
+                "title": "iPhone 16 Plus Unlocked",
+                "price": "537",
+                "currency": "USD",
+                "sku": "IPHONE-15-PLUS",
+            }
+        ],
+    )
+
+    assert rows == []
+
+
+def test_build_detail_record_replaces_low_signal_prime_title_from_identity() -> None:
+    record = build_detail_record(
+        "<html><body><main><h1>Stan Smith Shoes</h1></main></body></html>",
+        "https://www.adidas.com/us/stan-smith-shoes/M20324.html",
+        "ecommerce_detail",
+        None,
+        adapter_records=[
+            {
+                "title": "prime",
+                "price": "100",
+                "currency": "USD",
+                "sku": "M20324",
+            }
+        ],
+    )
+
+    assert record["title"] != "prime"
+    assert "Stan Smith Shoes" in record["title"]
+
+
+def test_build_detail_record_drops_redundant_product_details() -> None:
+    record = build_detail_record(
+        "<html><body><main><h1>Italian Seersucker Sutton Suit</h1></main></body></html>",
+        "https://www.toddsnyder.com/collections/slim-fit-suits-tuxedos/products/italian-seersucker-sutton-suit-2",
+        "ecommerce_detail",
+        None,
+        adapter_records=[
+            {
+                "title": "Italian Seersucker Sutton Suit",
+                "price": "996",
+                "currency": "USD",
+                "description": "A lightweight Italian seersucker suit.",
+                "product_details": "A lightweight Italian seersucker suit.",
+            }
+        ],
+    )
+
+    assert record["description"] == "A lightweight Italian seersucker suit."
+    assert "product_details" not in record
+
+
 def test_build_detail_record_backfills_low_signal_one_dollar_prices_from_dom() -> None:
     html = """
     <html><body><main>
@@ -7249,7 +7476,7 @@ def test_extract_ecommerce_detail_reads_scalar_size_from_two_span_label_value_ro
     assert rows[0]["size"] == "0.035 oz / 0.99 g"
 
 
-def test_extract_detail_recovers_nordstrom_initial_config_variants_from_artifact() -> None:
+def test_extract_detail_ignores_nordstrom_sold_out_gift_option_price_from_artifact() -> None:
     html = read_optional_artifact_text(
         "artifacts/runs/1/pages/9192dbfda15a2ac3.html"
     )
@@ -7263,12 +7490,10 @@ def test_extract_detail_recovers_nordstrom_initial_config_variants_from_artifact
 
     record = rows[0]
     assert record["title"] == "Air Force 1 '07 Basketball Sneaker"
-    assert record["variant_count"] >= 20
-    assert any(
-        variant.get("size") == "7.5 M" and variant.get("sku") == "A7293017"
-        for variant in record["variants"]
-    )
-    assert all("option_values" not in variant for variant in record["variants"])
+    assert record["availability"] == "out_of_stock"
+    assert "price" not in record
+    assert "currency" not in record
+    assert "variant_count" not in record
 
 
 def test_extract_detail_recovers_end_option_variants_from_artifact() -> None:

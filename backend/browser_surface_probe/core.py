@@ -80,6 +80,7 @@ _COUNTRY_CODE_BY_NAME.update(
     }
 )
 _BUNDLE_DIRNAME = "browser_surface_probe"
+_BASELINE_PROBE_SCRIPT_PATH = Path(__file__).resolve().with_name("baseline_probe.js")
 logger = logging.getLogger(__name__)
 
 
@@ -283,7 +284,7 @@ def _looks_like_networkish_ipv4(value: str) -> bool:
 
 
 def _clean_ip_values(values: list[str], *, known_versions: list[int] | None = None) -> list[str]:
-    version_set = {int(value) for value in list(known_versions or [])}
+    version_set = {int(value) for value in (known_versions or [])}
     cleaned: list[str] = []
     for value in values:
         if _looks_like_networkish_ipv4(value):
@@ -596,282 +597,12 @@ async def _collect_baseline(
     *,
     behavioral_smoke: dict[str, object] | None = None,
 ) -> dict[str, object]:
+    baseline_probe_script = load_baseline_probe_script()
     return await page.evaluate(
-        """async (input) => {
-            const normalize = (value) => (value == null ? '' : String(value)).replace(/\\s+/g, ' ').trim();
-            const hashBytes = (bytes) => {
-                if (!bytes || typeof bytes.length !== 'number') {
-                    return null;
-                }
-                let hash = 2166136261;
-                for (let index = 0; index < bytes.length; index += 1) {
-                    hash ^= Number(bytes[index]) & 255;
-                    hash = Math.imul(hash, 16777619);
-                }
-                return `fnv1a:${(hash >>> 0).toString(16).padStart(8, '0')}`;
-            };
-            const collectWebGL = () => {
-                try {
-                    const canvas = document.createElement('canvas');
-                    const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
-                    if (!gl) {
-                        return { vendor: null, renderer: null, version: null, shading_language_version: null, supported_extensions: [], read_pixels_hash: null };
-                    }
-                    const extension = gl.getExtension('WEBGL_debug_renderer_info');
-                    const pixels = new Uint8Array(16);
-                    try {
-                        gl.clearColor(0.25, 0.5, 0.75, 1);
-                        gl.clear(gl.COLOR_BUFFER_BIT);
-                        gl.readPixels(0, 0, 2, 2, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
-                    } catch (_pixelError) {}
-                    return {
-                        vendor: extension ? gl.getParameter(extension.UNMASKED_VENDOR_WEBGL) : gl.getParameter(gl.VENDOR),
-                        renderer: extension ? gl.getParameter(extension.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER),
-                        version: gl.getParameter(gl.VERSION),
-                        shading_language_version: gl.getParameter(gl.SHADING_LANGUAGE_VERSION),
-                        supported_extensions: gl.getSupportedExtensions() || [],
-                        read_pixels_hash: hashBytes(pixels),
-                    };
-                } catch (_error) {
-                    return { vendor: null, renderer: null, version: null, shading_language_version: null, supported_extensions: [], read_pixels_hash: null };
-                }
-            };
-            const collectWebRTCIps = async () => {
-                const discovered = new Set();
-                const AnyPeer = window.RTCPeerConnection || window.webkitRTCPeerConnection || window.mozRTCPeerConnection;
-                if (!AnyPeer) {
-                    return [];
-                }
-                let peer;
-                try {
-                    peer = new AnyPeer({ iceServers: [] });
-                    peer.createDataChannel('probe');
-                    peer.onicecandidate = (event) => {
-                        const candidate = event && event.candidate && event.candidate.candidate;
-                        if (!candidate) {
-                            return;
-                        }
-                        const matches = candidate.match(/(\\d{1,3}(?:\\.\\d{1,3}){3})/g) || [];
-                        for (const match of matches) {
-                            discovered.add(match);
-                        }
-                    };
-                    const offer = await peer.createOffer();
-                    await peer.setLocalDescription(offer);
-                    await new Promise((resolve) => setTimeout(resolve, input.webrtcTimeoutMs));
-                } catch (_error) {
-                    return Array.from(discovered);
-                } finally {
-                    if (peer) {
-                        try {
-                            peer.close();
-                        } catch (_error) {}
-                    }
-                }
-                return Array.from(discovered);
-            };
-            const collectCanvas = () => {
-                try {
-                    const canvas = document.createElement('canvas');
-                    canvas.width = 200;
-                    canvas.height = 50;
-                    const ctx = canvas.getContext('2d');
-                    if (!ctx) return { fingerprint: null, text_measure: null };
-                    ctx.textBaseline = 'top';
-                    ctx.font = '14px Arial';
-                    ctx.fillStyle = '#f60';
-                    ctx.fillRect(0, 0, 200, 50);
-                    ctx.fillStyle = '#069';
-                    ctx.fillText('Browser fingerprint probe', 2, 15);
-                    ctx.fillStyle = 'rgba(102, 204, 0, 0.7)';
-                    ctx.fillText('Browser fingerprint probe', 4, 17);
-                    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-                    const dataUrl = canvas.toDataURL();
-                    const textMeasure = ctx.measureText('Browser fingerprint probe').width;
-                    return {
-                        fingerprint: dataUrl.slice(0, 200),
-                        image_data_hash: hashBytes(imageData && imageData.data),
-                        data_url_prefix: dataUrl.slice(0, 64),
-                        text_measure: textMeasure,
-                    };
-                } catch (_e) {
-                    return { fingerprint: null, image_data_hash: null, data_url_prefix: null, text_measure: null, error: _e.message };
-                }
-            };
-            const collectAudio = () => {
-                try {
-                    const ctx = new (window.AudioContext || window.webkitAudioContext)();
-                    const osc = ctx.createOscillator();
-                    const analyser = ctx.createAnalyser();
-                    const gain = ctx.createGain();
-                    gain.gain.value = 0;
-                    osc.connect(analyser);
-                    analyser.connect(gain);
-                    gain.connect(ctx.destination);
-                    osc.start(0);
-                    const buffer = new Float32Array(analyser.frequencyBinCount);
-                    analyser.getFloatFrequencyData(buffer);
-                    osc.stop(0);
-                    const sum = buffer.reduce((a, b) => a + b, 0);
-                    return { fingerprint: sum.toFixed(2), sample_rate: ctx.sampleRate, channel_count: ctx.destination.channelCount };
-                } catch (_e) {
-                    return { fingerprint: null, sample_rate: null, channel_count: null, error: _e.message };
-                }
-            };
-            const collectFonts = () => {
-                const testStrings = input.fontTestStrings || [];
-                const baseFonts = ['monospace', 'sans-serif', 'serif'];
-                const detected = [];
-                const canvas = document.createElement('canvas');
-                const ctx = canvas.getContext('2d');
-                if (!ctx) return [];
-                const getWidth = (font) => {
-                    ctx.font = `72px ${font}, monospace`;
-                    return ctx.measureText('mmmmmmmmmmlli').width;
-                };
-                for (const testFont of testStrings) {
-                    const baseWidths = baseFonts.map(getWidth);
-                    const testWidth = getWidth(testFont);
-                    if (!baseWidths.includes(testWidth)) {
-                        detected.push(testFont);
-                    }
-                }
-                return detected.slice(0, 50);
-            };
-            const collectConnection = () => {
-                const conn = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
-                if (!conn) return null;
-                return {
-                    effective_type: conn.effectiveType || null,
-                    downlink: conn.downlink || null,
-                    rtt: conn.rtt || null,
-                    save_data: conn.saveData || false,
-                };
-            };
-            const collectScreenOrientation = () => {
-                const orient = window.screen.orientation;
-                if (!orient) return null;
-                return {
-                    angle: orient.angle,
-                    type: orient.type,
-                };
-            };
-            const collectAutomationGlobals = () => {
-                const markers = [];
-                if (typeof window.playwright !== 'undefined') markers.push('window.playwright');
-                if (typeof window.__pw_scripts !== 'undefined') markers.push('window.__pw_scripts');
-                if (typeof window.__pw_init !== 'undefined') markers.push('window.__pw_init');
-                if (typeof window.cdc_adoQpoasnfa76pfcZLmcfl_Array !== 'undefined') markers.push('cdc_array');
-                if (typeof window.cdc_adoQpoasnfa76pfcZLmcfl_Promise !== 'undefined') markers.push('cdc_promise');
-                if (document.documentElement && document.documentElement.getAttribute('__playwright_testid_attribute__')) markers.push('__playwright_testid_attribute__');
-                const chromeRoot = typeof window.chrome !== 'undefined' ? window.chrome : undefined;
-                const chromeRuntime = chromeRoot ? chromeRoot.runtime : undefined;
-                if (typeof chromeRuntime !== 'object') {
-                    markers.push(`chrome.runtime.typeof=${typeof chromeRuntime}`);
-                }
-                return markers;
-            };
-            const collectTimingJitter = () => {
-                const deltas = [];
-                let last = performance.now();
-                for (let i = 0; i < 10; i++) {
-                    const now = performance.now();
-                    deltas.push(parseFloat((now - last).toFixed(4)));
-                    last = now;
-                }
-                return deltas;
-            };
-            const collectIframeLeak = () => {
-                try {
-                    const iframe = document.createElement('iframe');
-                    document.body.appendChild(iframe);
-                    const cw = iframe.contentWindow;
-                    const leak = cw[0] === null && cw.length === 0;
-                    document.body.removeChild(iframe);
-                    return { content_window_array_leak: leak };
-                } catch (_e) {
-                    return { content_window_array_leak: null, error: _e.message };
-                }
-            };
-            const collectPermissions = async () => {
-                const results = {};
-                if (!navigator.permissions || !navigator.permissions.query) return results;
-                const names = ['notifications', 'camera', 'microphone', 'geolocation'];
-                for (const name of names) {
-                    try {
-                        const status = await navigator.permissions.query({ name });
-                        results[name] = status.state;
-                    } catch (_e) {
-                        results[name] = `error:${_e.name}`;
-                    }
-                }
-                return results;
-            };
-            const uaData = navigator.userAgentData
-                ? await navigator.userAgentData
-                    .getHighEntropyValues(input.highEntropyHints)
-                    .catch(() => null)
-                : null;
-            const webgl = collectWebGL();
-            const canvas = collectCanvas();
-            const audio = collectAudio();
-            const fonts = collectFonts();
-            const connection = collectConnection();
-            const screen_orientation = collectScreenOrientation();
-            const automation_globals = collectAutomationGlobals();
-            const timing_jitter = collectTimingJitter();
-            const iframe_leak = collectIframeLeak();
-            const permissions = await collectPermissions();
-            const behavioral = input.behavioralSmoke && typeof input.behavioralSmoke === 'object'
-                ? input.behavioralSmoke
-                : null;
-            return {
-                user_agent: normalize(navigator.userAgent),
-                user_agent_data: uaData,
-                webdriver: navigator.webdriver === true,
-                locale: normalize(navigator.language),
-                languages: Array.isArray(navigator.languages) ? navigator.languages.map((value) => normalize(value)).filter(Boolean) : [],
-                timezone: normalize(Intl.DateTimeFormat().resolvedOptions().timeZone),
-                platform: normalize(navigator.platform),
-                vendor: normalize(navigator.vendor),
-                plugins_count: navigator.plugins ? navigator.plugins.length : 0,
-                plugin_names: navigator.plugins ? Array.from(navigator.plugins).map((plugin) => normalize(plugin && plugin.name)).filter(Boolean).slice(0, 10) : [],
-                hardware_concurrency: navigator.hardwareConcurrency || null,
-                device_memory: navigator.deviceMemory ?? null,
-                screen: {
-                    width: window.screen.width,
-                    height: window.screen.height,
-                    avail_width: window.screen.availWidth,
-                    avail_height: window.screen.availHeight,
-                    color_depth: window.screen.colorDepth,
-                    pixel_depth: window.screen.pixelDepth,
-                    device_pixel_ratio: window.devicePixelRatio || 1,
-                },
-                viewport: {
-                    width: window.innerWidth,
-                    height: window.innerHeight,
-                    outer_width: window.outerWidth,
-                    outer_height: window.outerHeight,
-                },
-                webgl,
-                canvas,
-                audio,
-                fonts,
-                connection,
-                screen_orientation,
-                max_touch_points: navigator.maxTouchPoints ?? null,
-                pdf_viewer_enabled: navigator.pdfViewerEnabled ?? null,
-                cookie_enabled: navigator.cookieEnabled ?? null,
-                do_not_track: navigator.doNotTrack ?? null,
-                automation_globals,
-                timing_jitter,
-                iframe_leak,
-                permissions,
-                behavioral_smoke: behavioral,
-                webrtc_ips: await collectWebRTCIps(),
-                timestamp: new Date().toISOString(),
-            };
-        }""",
+        f"""async (input) => {{
+{baseline_probe_script}
+            return await globalThis.__crawlerProbeCollectBaseline(input);
+        }}""",
         {
             "behavioralSmoke": dict(behavioral_smoke or {}),
             "highEntropyHints": list(BROWSER_SURFACE_PROBE_HIGH_ENTROPY_HINTS),
@@ -879,6 +610,10 @@ async def _collect_baseline(
             "fontTestStrings": list(BROWSER_SURFACE_PROBE_FONT_TEST_STRINGS),
         },
     )
+
+
+def load_baseline_probe_script() -> str:
+    return _BASELINE_PROBE_SCRIPT_PATH.read_text(encoding="utf-8")
 
 
 def _sannysoft_signal_rows(rows: list[dict[str, object]]) -> dict[str, object]:
@@ -1554,7 +1289,7 @@ def build_findings(report: dict[str, object]) -> list[dict[str, object]]:
                 "evidence": sorted(set(public_site_ips)),
             }
         )
-    if len({_country_code_from_value(value) for value in site_countries if _country_code_from_value(value)}) > 1:
+    if len({code for value in site_countries if (code := _country_code_from_value(value))}) > 1:
         findings.append(
             {
                 "severity": "warn",
@@ -2044,7 +1779,11 @@ async def _run_target_diagnostic(
 
 
 async def _navigate_probe_target(page, url: str) -> None:
-    await page.goto(url, wait_until="domcontentloaded", timeout=30000)
+    await page.goto(
+        url,
+        wait_until="domcontentloaded",
+        timeout=int(BROWSER_SURFACE_PROBE_TARGET_NAVIGATION_TIMEOUT_MS),
+    )
     for state, timeout_ms in (("load", 10000), ("networkidle", 8000)):
         try:
             await page.wait_for_load_state(state, timeout=timeout_ms)

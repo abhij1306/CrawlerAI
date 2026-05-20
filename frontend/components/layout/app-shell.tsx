@@ -455,7 +455,7 @@ function ShellContent({
             >
               <Bell className="size-3.5" />
               {(notificationCountQuery.data?.count ?? 0) > 0 ? (
-                <span className="bg-danger absolute -top-1 -right-1 min-w-4 rounded-full px-1 text-[10px] leading-4 text-white">
+                <span className="bg-danger absolute -top-1 -right-1 min-w-4 rounded-full px-1 text-xs leading-4 font-semibold text-white text-center">
                   {notificationCountQuery.data?.count}
                 </span>
               ) : null}
@@ -464,7 +464,7 @@ function ShellContent({
               <div className="border-border bg-background-elevated absolute top-9 right-0 z-[250] w-[min(340px,calc(100vw-32px))] rounded-[var(--radius-lg)] border p-2 shadow-lg">
                 <div className="border-divider flex items-center justify-between border-b px-2 py-1.5">
                   <p className="type-label m-0">Notifications</p>
-                  <span className="text-muted text-[11px]">
+                  <span className="type-caption">
                     {notificationCountQuery.data?.count ?? 0} unread
                   </span>
                 </div>
@@ -488,7 +488,7 @@ function ShellContent({
                           <p className="text-foreground m-0 truncate text-sm font-medium">
                             {item.message}
                           </p>
-                          <p className="text-muted m-0 text-[11px]">
+                          <p className="text-muted type-caption m-0">
                             {formatRelativeTime(item.created_at)}
                           </p>
                         </Link>

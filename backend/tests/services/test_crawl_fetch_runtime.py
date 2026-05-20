@@ -2814,13 +2814,14 @@ async def test_http_fetch_surfaces_dns_failure_without_hidden_ipv4_retry(
 
 
 @pytest.mark.asyncio
-async def test_fetch_page_reraises_latest_transport_error_when_browser_also_fails(
+async def test_fetch_page_surfaces_browser_error_when_http_exhausts_and_browser_fails(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     import httpx
 
     curl_error = httpx.ConnectError("getaddrinfo failed")
     httpx_error = httpx.ReadTimeout("httpx fallback timed out")
+    browser_error = RuntimeError("browser launch failed")
 
     async def _failing_curl(url: str, timeout: float, *, proxy: str | None = None):
         del proxy
@@ -2831,15 +2832,16 @@ async def test_fetch_page_reraises_latest_transport_error_when_browser_also_fail
         raise httpx_error
 
     async def _failing_browser(url, timeout, **kwargs):
-        raise RuntimeError("browser launch failed")
+        raise browser_error
 
     monkeypatch.setattr(crawl_fetch_runtime, "_curl_fetch", _failing_curl)
     monkeypatch.setattr(crawl_fetch_runtime, "_http_fetch", _failing_http)
     monkeypatch.setattr(crawl_fetch_runtime, "_browser_fetch", _failing_browser)
 
-    with pytest.raises(httpx.ReadTimeout) as excinfo:
+    with pytest.raises(RuntimeError, match="browser launch failed") as excinfo:
         await crawl_fetch_runtime.fetch_page("https://paycomonline.net/career-page")
 
+    assert excinfo.value.__cause__ is httpx_error
     assert excinfo.value.browser_diagnostics["browser_attempted"] is True
     assert excinfo.value.browser_diagnostics["browser_outcome"] == "navigation_failed"
     assert excinfo.value.browser_diagnostics["failure_kind"] == "navigation_error"

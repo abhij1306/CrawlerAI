@@ -56,7 +56,12 @@ VARIANT_AXIS_KEYS = (
 JS_STATE_PRODUCT_FIELD_SPEC = {
     "title": Coalesce(
         "title",
+        "name.en",
         "name",
+        "productTitle",
+        "productTitle.en",
+        "productName",
+        "productName.en",
         "nameByLanguage.en",
         "pn",
         "copyProductTitle",

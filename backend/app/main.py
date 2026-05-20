@@ -5,6 +5,7 @@ import asyncio
 import logging
 import re
 from collections import OrderedDict, deque
+from collections.abc import Mapping
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from time import monotonic
@@ -133,9 +134,13 @@ app.add_middleware(
 
 
 def _crawler_app_state(fastapi_app: FastAPI | None = None) -> CrawlerAppState:
-    target = fastapi_app or app
+    target = app if fastapi_app is None else fastapi_app
     state = getattr(target.state, "crawler", None)
     if not isinstance(state, CrawlerAppState):
+        if fastapi_app is not None:
+            raise RuntimeError(
+                "FastAPI app state.crawler must be initialized with CrawlerAppState"
+            )
         state = CrawlerAppState()
         target.state.crawler = state
     return state
@@ -203,7 +208,22 @@ def _client_rate_limit_key(request: Request) -> str:
 sanitize_header_value = _sanitize_header_value
 sanitize_header_name = _sanitize_header_name
 client_rate_limit_key = _client_rate_limit_key
-RATE_LIMIT_BUCKETS = MappingProxyType(_crawler_app_state().rate_limit_buckets)
+
+
+class _RateLimitBucketsView(Mapping[str, deque[float]]):
+    def __getitem__(self, key: str) -> deque[float]:
+        return _crawler_app_state().rate_limit_buckets[key]
+
+    def __iter__(self):
+        return iter(_crawler_app_state().rate_limit_buckets)
+
+    def __len__(self) -> int:
+        return len(_crawler_app_state().rate_limit_buckets)
+
+
+RATE_LIMIT_BUCKETS: Mapping[str, deque[float]] = _RateLimitBucketsView()
+
+
 def rate_limit_buckets_snapshot() -> OrderedDict[str, deque[float]]:
     buckets = _crawler_app_state().rate_limit_buckets
     return OrderedDict((key, deque(value)) for key, value in buckets.items())

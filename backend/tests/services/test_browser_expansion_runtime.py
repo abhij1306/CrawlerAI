@@ -3454,6 +3454,38 @@ def test_classify_browser_outcome_marks_site_maintenance_title_as_low_content_sh
     )
 
 
+def test_classify_browser_outcome_marks_error_page_title_as_low_content_shell() -> None:
+    html = """
+    <html>
+      <head><title>Error Page</title></head>
+      <body>
+        <main>
+          <h1>Error Page</h1>
+          <p>
+            The requested page cannot be displayed right now. Please try again
+            later or return to the previous page.
+          </p>
+        </main>
+      </body>
+    </html>
+    """
+
+    outcome = browser_runtime.classify_browser_outcome(
+        html=html,
+        html_bytes=len(html.encode("utf-8")),
+        blocked=False,
+    )
+
+    assert outcome == "low_content_shell"
+    assert (
+        browser_runtime.classify_low_content_reason(
+            html,
+            html_bytes=len(html.encode("utf-8")),
+        )
+        == "empty_terminal_page"
+    )
+
+
 def test_classify_low_content_reason_ignores_empty_phrase_on_contentful_page() -> None:
     html = """
     <html><body>
@@ -4610,6 +4642,32 @@ async def test_origin_warmup_runs_for_real_chrome_without_saved_domain_state() -
     )
 
     assert len(page.spawned_pages) == 1
+
+
+@pytest.mark.asyncio
+async def test_origin_warmup_caps_budget_to_preserve_navigation_time(
+    patch_settings,
+) -> None:
+    patch_settings(
+        origin_warmup_max_budget_ratio=0.4,
+        browser_navigation_domcontentloaded_timeout_ms=15000,
+    )
+    page = _FakeExpansionPage(base_html="<html><body><h1>Widget</h1></body></html>")
+
+    await browser_runtime._maybe_warm_origin_before_navigation(
+        page,
+        url="https://example.com/products/widget",
+        surface="ecommerce_detail",
+        browser_engine="real_chrome",
+        browser_reason="vendor-block:akamai",
+        host_policy_snapshot=None,
+        proxy_profile=None,
+        timeout_seconds=20,
+        phase_timings_ms={},
+    )
+
+    assert len(page.spawned_pages) == 1
+    assert page.spawned_pages[0].goto_timeout_calls == [8000]
 
 
 @pytest.mark.asyncio

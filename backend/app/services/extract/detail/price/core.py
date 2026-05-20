@@ -9,6 +9,7 @@ from urllib.parse import urlparse
 from bs4 import BeautifulSoup
 
 from app.services.config.extraction_rules import (
+    AVAILABILITY_OUT_OF_STOCK,
     DETAIL_CENT_BASED_PRICE_CURRENCY_SET,
     DETAIL_AUTHORITATIVE_PRICE_SOURCE_SET,
     DETAIL_CURRENT_PRICE_SELECTORS,
@@ -97,6 +98,12 @@ def backfill_detail_price_from_html(
     if not html_currency_conflicts_with_host and currency != jsonld_price_bundle[2]:
         jsonld_price_bundle = _detail_jsonld_price_bundle(soup, currency=currency)
     jsonld_price, jsonld_original_price, jsonld_currency = jsonld_price_bundle
+    if _unavailable_record_blocks_dom_price_backfill(
+        record,
+        jsonld_price=jsonld_price,
+    ):
+        _drop_unavailable_dom_backfilled_detail_price(record)
+        return
     if html_currency_conflicts_with_host:
         price = visible_price or text_or_none(record.get("price"))
     else:
@@ -201,18 +208,59 @@ def backfill_detail_price_from_html(
         and selected_variant.get("original_price") in (None, "", [], {})
     ):
         selected_variant["original_price"] = original_price
+    _drop_unavailable_dom_backfilled_detail_price(record)
+
+
+def _unavailable_record_blocks_dom_price_backfill(
+    record: dict[str, Any],
+    *,
+    jsonld_price: object,
+) -> bool:
+    if text_or_none(record.get("availability")) != AVAILABILITY_OUT_OF_STOCK:
+        return False
+    if jsonld_price not in (None, "", [], {}):
+        return False
+    return _price_sources_are_non_authoritative(record)
+
+
+def _drop_unavailable_dom_backfilled_detail_price(record: dict[str, Any]) -> None:
+    if text_or_none(record.get("availability")) != AVAILABILITY_OUT_OF_STOCK:
+        return
+    if not _price_sources_are_non_authoritative(record):
+        return
+    record.pop("price", None)
+    field_sources = record.get("_field_sources")
+    if isinstance(field_sources, dict):
+        field_sources.pop("price", None)
+    currency_sources = record_field_sources(record, "currency")
+    if (
+        record.get("original_price") in (None, "", [], {})
+        and not (currency_sources & DETAIL_AUTHORITATIVE_PRICE_SOURCE_SET)
+    ):
+        record.pop("currency", None)
+        if isinstance(field_sources, dict):
+            field_sources.pop("currency", None)
+
+
+def _price_sources_are_non_authoritative(record: dict[str, Any]) -> bool:
+    return not (
+        record_field_sources(record, "price") & DETAIL_AUTHORITATIVE_PRICE_SOURCE_SET
+    )
 
 
 def drop_low_signal_zero_detail_price(record: dict[str, Any]) -> None:
     if not _price_value_is_zero(record.get("price")):
         return
     price_sources = record_field_sources(record, "price")
-    if not price_sources or not price_sources <= DETAIL_LOW_SIGNAL_ZERO_PRICE_SOURCE_SET:
+    if not _zero_detail_price_is_low_signal(record, price_sources=price_sources):
         return
     if _detail_record_has_positive_price_corroboration(record):
         return
 
     record.pop("price", None)
+    field_sources = record.get("_field_sources")
+    if isinstance(field_sources, dict):
+        field_sources.pop("price", None)
     selected_variant = record.get("selected_variant")
     if isinstance(selected_variant, dict) and _price_value_is_zero(
         selected_variant.get("price")
@@ -231,10 +279,26 @@ def drop_low_signal_zero_detail_price(record: dict[str, Any]) -> None:
             variant.pop("currency", None)
 
     currency_sources = record_field_sources(record, "currency")
+    if record.get("original_price") not in (None, "", [], {}):
+        return
     if (
-        not currency_sources or currency_sources <= DETAIL_LOW_SIGNAL_ZERO_PRICE_SOURCE_SET
-    ) and record.get("original_price") in (None, "", [], {}):
+        text_or_none(record.get("availability")) == AVAILABILITY_OUT_OF_STOCK
+        or not currency_sources
+        or currency_sources <= DETAIL_LOW_SIGNAL_ZERO_PRICE_SOURCE_SET
+    ):
         record.pop("currency", None)
+        if isinstance(field_sources, dict):
+            field_sources.pop("currency", None)
+
+
+def _zero_detail_price_is_low_signal(
+    record: dict[str, Any],
+    *,
+    price_sources: set[str],
+) -> bool:
+    if text_or_none(record.get("availability")) == AVAILABILITY_OUT_OF_STOCK:
+        return True
+    return bool(price_sources) and price_sources <= DETAIL_LOW_SIGNAL_ZERO_PRICE_SOURCE_SET
 
 
 def reconcile_detail_currency_with_url(

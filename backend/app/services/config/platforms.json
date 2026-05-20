@@ -464,6 +464,7 @@
           "state_keys": [
             "__NEXT_DATA__",
             "__INITIAL_STATE__",
+            "INITIAL_STATE",
             "__PRELOADED_STATE__",
             "__NUXT__",
             "__NUXT_DATA__"
@@ -501,6 +502,28 @@
               ]
             ],
             "__INITIAL_STATE__": [
+              [
+                "catalog",
+                "selected",
+                "product"
+              ],
+              [
+                "product",
+                "current"
+              ],
+              [
+                "product"
+              ],
+              [
+                "pdp",
+                "product"
+              ],
+              [
+                "state",
+                "product"
+              ]
+            ],
+            "INITIAL_STATE": [
               [
                 "catalog",
                 "selected",
@@ -576,7 +599,12 @@
           "field_jmespaths": {
             "title": [
               "title",
-              "name"
+              "name.en",
+              "name",
+              "productTitle.en",
+              "productTitle",
+              "productName.en",
+              "productName"
             ],
             "brand": [
               "brand.name",

@@ -583,7 +583,7 @@ def _preferred_detail_identity_url(
 ) -> str:
     if str(surface or "").strip().lower() != "ecommerce_detail":
         return page_url
-    requested = text_or_none(requested_page_url)
+    requested = text_or_none(requested_page_url) or text_or_none(page_url)
     current = text_or_none(page_url)
     if not requested or not current or requested == current:
         return current or requested or page_url
@@ -725,6 +725,36 @@ def _detail_identity_record_tokens(record: dict[str, object]) -> set[str]:
     for field_name in ("title", "brand", "color", "size", "description"):
         tokens.update(_detail_identity_tokens(record.get(field_name)))
     return tokens
+
+
+def _detail_requested_identity_text(page_url: object) -> str:
+    title = _detail_title_from_url(str(page_url or ""))
+    if title:
+        return title
+    return " ".join(_detail_url_path_segments(str(page_url or "")))
+
+
+def _detail_model_numbers_conflict(
+    requested_title: object,
+    candidate_title: object,
+) -> bool:
+    requested_numbers = _detail_model_number_tokens(requested_title)
+    candidate_numbers = _detail_model_number_tokens(candidate_title)
+    if not requested_numbers or not candidate_numbers:
+        return False
+    if requested_numbers & candidate_numbers:
+        return False
+    requested_words = _semantic_detail_identity_tokens(requested_title)
+    candidate_words = _semantic_detail_identity_tokens(candidate_title)
+    shared_words = requested_words & candidate_words
+    return len(shared_words) >= min(2, len(requested_words), len(candidate_words))
+
+
+def _detail_model_number_tokens(value: object) -> set[str]:
+    return {
+        token.lstrip("0") or "0"
+        for token in re.findall(r"(?<![A-Za-z0-9])\d{1,4}(?![A-Za-z0-9])", clean_text(value))
+    }
 
 
 def _detail_url_matches_requested_identity(
@@ -875,7 +905,7 @@ def _detail_redirect_identity_is_mismatched(
     page_url: str,
     requested_page_url: str | None,
 ) -> bool:
-    requested = text_or_none(requested_page_url)
+    requested = text_or_none(requested_page_url) or text_or_none(page_url)
     current = text_or_none(page_url)
     if not requested:
         return False
@@ -894,8 +924,12 @@ def _detail_redirect_identity_is_mismatched(
             )
         ):
             return True
-        requested_tokens = _detail_identity_tokens(_detail_title_from_url(requested))
+        requested_title = _detail_requested_identity_text(requested)
+        requested_tokens = _detail_identity_tokens(requested_title)
+        candidate_title = record.get("title")
         candidate_tokens = _detail_identity_tokens(record.get("title"))
+        if _detail_model_numbers_conflict(requested_title, candidate_title):
+            return True
         has_strong_same_url_product_evidence = any(
             record.get(field_name) not in (None, "", [], {})
             for field_name in (

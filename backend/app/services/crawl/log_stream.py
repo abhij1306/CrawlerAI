@@ -5,7 +5,7 @@ from app.core.security import decode_access_token
 from app.models.crawl_run import CrawlLog, CrawlRun
 from app.models.user import User
 from app.services.crawl.access_service import require_accessible_run
-from app.services.crawl.crud import get_run, get_run_logs
+from app.services.crawl.crud import get_run_and_logs
 from jose import JWTError
 
 
@@ -35,8 +35,9 @@ async def load_log_stream_snapshot(
     after_id: int | None,
 ) -> tuple[list[CrawlLog], CrawlRun | None]:
     async with SessionLocal() as session:
-        rows = await get_run_logs(session, run_id, after_id=after_id, limit=500)
-        run = await get_run(session, run_id)
+        run, rows = await get_run_and_logs(
+            session, run_id, after_id=after_id, limit=500
+        )
     return rows, run
 
 

@@ -81,9 +81,6 @@ Read these only when relevant:
 9. Do not attach stale docs.
    Ignore archived audits and abandoned plans unless the task explicitly asks for historical review.
 
-10. Keep responses terse.
-   Prefer caveman-style brevity: less filler, fewer words, same meaning.
-
 ---
 
 ## Extraction Warning

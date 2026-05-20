@@ -193,6 +193,7 @@ class CrawlerRuntimeSettings(BaseSettings):
     surface_readiness_max_wait_ms: int | None = 6000
     surface_readiness_poll_ms: int = 250
     origin_warm_pause_ms: int | None = 500
+    origin_warmup_max_budget_ratio: float = 0.4
     browser_error_retry_attempts: int = 1
     browser_error_retry_delay_ms: int = 1000
     browser_post_block_cooldown_ms: int = 500
@@ -232,6 +233,7 @@ class CrawlerRuntimeSettings(BaseSettings):
         "--disable-client-side-phishing-detection",
         "--disable-domain-reliability",
         "--disable-sync",
+        "--disable-component-update",
         "--no-first-run",
     )
     browser_use_new_headless: bool = True
@@ -525,6 +527,7 @@ class CrawlerRuntimeSettings(BaseSettings):
         for field_name in (
             "selector_self_heal_min_confidence",
             "browser_navigation_networkidle_primary_budget_ratio",
+            "origin_warmup_max_budget_ratio",
         ):
             _require_unit_interval(field_name, getattr(self, field_name))
         _require_positive("detail_max_variant_axes", self.detail_max_variant_axes)

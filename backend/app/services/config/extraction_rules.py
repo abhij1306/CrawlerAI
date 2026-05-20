@@ -41,11 +41,12 @@ for _name, _value in _STATIC_EXPORTS.items():
 HYDRATED_STATE_PATTERNS = tuple(
     dict.fromkeys(
         [
-            *(
+            *( 
                 value
                 for value in _STATIC_EXPORTS.get("HYDRATED_STATE_PATTERNS", ())
                 if str(value).strip()
             ),
+            "INITIAL_STATE",
             "__INITIAL_CONFIG__",
             "_boldmetrics",
             "asos.pdp.config.product",
@@ -284,6 +285,7 @@ DETAIL_LOW_SIGNAL_TITLE_VALUES = frozenset(
         "mens shoes",
         "men's shoes",
         "plp",
+        "prime",
         "womens shoes",
         "women's shoes",
         "shoes",
@@ -296,7 +298,9 @@ DETAIL_LOW_SIGNAL_TITLE_VALUES = frozenset(
         "girls kids",
     }
 )
-DETAIL_LOW_SIGNAL_PRODUCT_TYPE_VALUES = frozenset({"criteoproductrail"})
+DETAIL_LOW_SIGNAL_PRODUCT_TYPE_VALUES = frozenset(
+    {"criteoproductrail", "giftoption", "promotionalcallout"}
+)
 DETAIL_ARTIFACT_PRODUCT_TYPE_VALUES = frozenset(
     {"brightcove video", "criteoproductrail", "default", "tag", "inline"}
 )

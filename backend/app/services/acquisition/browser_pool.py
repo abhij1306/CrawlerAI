@@ -369,7 +369,6 @@ class SharedBrowserRuntime:
             run_id=run_id,
             browser_major_version=browser_major_version,
             locality_profile=locality_profile,
-            browser_engine=self.browser_engine,
         )
         return PlaywrightContextSpec(
             context_options=dict(spec.context_options),
@@ -639,10 +638,12 @@ async def _evict_idle_browser_runtimes_locked() -> None:
         ("direct", _BROWSER_POOL.direct),
         ("proxied", _BROWSER_POOL.proxied),
     )
-    candidates: list[tuple[str, str | tuple[str, str], SharedBrowserRuntime]] = []
+    candidates: list[
+        tuple[str, str | tuple[str, str], SharedBrowserRuntime, float]
+    ] = []
     for pool_name, pool in pools:
         for key, runtime in tuple(pool.items()):
-            active_and_queued, _last_used = runtime.eviction_key()
+            active_and_queued, last_used = runtime.eviction_key()
             if active_and_queued > 0:
                 continue
             if idle_ttl_seconds > 0 and runtime.idle_seconds() >= idle_ttl_seconds:
@@ -652,13 +653,18 @@ async def _evict_idle_browser_runtimes_locked() -> None:
                     normalized_key = (str(key[0]), str(key[1]))
                 else:
                     continue
-                candidates.append((pool_name, normalized_key, runtime))
+                candidates.append((pool_name, normalized_key, runtime, last_used))
     while sum(len(pool) for _pool_name, pool in pools) - len(candidates) >= max_entries:
-        candidate_keys = {(pool_name, key) for pool_name, key, _runtime in candidates}
-        remaining: list[tuple[str, str | tuple[str, str], SharedBrowserRuntime]] = []
+        candidate_keys = {
+            (pool_name, key) for pool_name, key, _runtime, _last_used in candidates
+        }
+        remaining: list[
+            tuple[str, str | tuple[str, str], SharedBrowserRuntime, float]
+        ] = []
         for pool_name, pool in pools:
             for key, runtime in tuple(pool.items()):
-                if runtime.eviction_key()[0] != 0:
+                active_and_queued, last_used = runtime.eviction_key()
+                if active_and_queued != 0:
                     continue
                 normalized_remaining_key: str | tuple[str, str]
                 if pool_name == "direct":
@@ -669,12 +675,28 @@ async def _evict_idle_browser_runtimes_locked() -> None:
                     continue
                 if (pool_name, normalized_remaining_key) in candidate_keys:
                     continue
-                remaining.append((pool_name, normalized_remaining_key, runtime))
+                remaining.append(
+                    (pool_name, normalized_remaining_key, runtime, last_used)
+                )
         if not remaining:
             break
-        remaining.sort(key=lambda item: item[2].eviction_key())
+        remaining.sort(key=lambda item: (item[2].eviction_key()[0], item[3]))
         candidates.append(remaining[0])
-    for pool_name, key, runtime in candidates:
+    for pool_name, key, runtime, candidate_last_used in candidates:
+        current_runtime = (
+            _BROWSER_POOL.direct.get(str(key))
+            if pool_name == "direct"
+            else (
+                _BROWSER_POOL.proxied.get(key)
+                if isinstance(key, tuple) and len(key) == 2
+                else None
+            )
+        )
+        if current_runtime is not runtime:
+            continue
+        active_and_queued, last_used = runtime.eviction_key()
+        if active_and_queued != 0 or last_used != candidate_last_used:
+            continue
         if pool_name == "direct":
             _BROWSER_POOL.direct.pop(str(key), None)
         else:

@@ -37,7 +37,7 @@ export function Title({
 
 export function Subtitle({ children }: Readonly<{ children: ReactNode }>) {
   return (
-    <p className="text-secondary mt-1.5 max-w-2xl text-[11px] leading-[var(--leading-relaxed)]">
+    <p className="type-caption text-secondary mt-1.5 max-w-2xl leading-[var(--leading-relaxed)]">
       {children}
     </p>
   );
@@ -231,8 +231,8 @@ export function Dropdown<T extends string>({
         disabled={disabled}
         onKeyDown={handleKeyDown}
         className={cn(
-          'focus-ring border-border bg-panel text-foreground hover:border-border-strong focus:border-accent flex w-full items-center gap-2 rounded-[var(--radius-md)] border px-3 text-[length:var(--text-xs)] leading-[1.4] font-normal transition-[background-color,border-color]',
-          size === 'sm' ? 'h-8 text-[11px]' : 'h-[var(--control-height)]',
+          'focus-ring border-border bg-panel text-foreground hover:border-border-strong focus:border-accent flex w-full items-center gap-2 rounded-[var(--radius-md)] border px-3 text-xs leading-[1.4] font-normal transition-[background-color,border-color]',
+          size === 'sm' ? 'h-8 text-xs' : 'h-[var(--control-height)]',
           align === 'center' ? 'justify-center text-center' : 'justify-between text-left',
           className,
         )}
@@ -288,7 +288,7 @@ export function Dropdown<T extends string>({
                     }}
                     onMouseDown={(e) => e.preventDefault()}
                     className={cn(
-                      'flex w-full items-center py-2 text-[length:var(--text-xs)] leading-[var(--leading-snug)] transition-colors',
+                      'flex w-full items-center py-2 text-xs leading-[var(--leading-snug)] transition-colors',
                       align === 'center' ? 'justify-center px-8' : 'justify-start px-3',
                       option.value === value
                         ? 'bg-accent-subtle text-accent font-medium'

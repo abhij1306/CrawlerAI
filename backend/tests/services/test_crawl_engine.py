@@ -162,6 +162,31 @@ def test_detail_price_backfill_reads_data_test_id_price_display() -> None:
     assert "dom_text" in record["_field_sources"]["price"]
 
 
+def test_detail_price_backfill_skips_dom_price_when_product_is_out_of_stock() -> None:
+    record = {
+        "url": "https://www.nordstrom.com/s/nike-air-force-1-07-basketball-sneaker-men/7507996",
+        "availability": "out_of_stock",
+        "_field_sources": {"availability": ["js_state"]},
+    }
+    html = """
+    <html>
+      <body>
+        <main>
+          <h1>Air Force 1 '07 Basketball Sneaker</h1>
+          <div class="shipping-price">$5.00 pickup fee</div>
+          <div data-testid="price">$5.00</div>
+        </main>
+      </body>
+    </html>
+    """
+
+    backfill_detail_price_from_html(record, html=html)
+
+    assert "price" not in record
+    assert "currency" not in record
+    assert "price" not in record.get("_field_sources", {})
+
+
 def test_select_variant_falls_back_to_partial_axis_match() -> None:
     variants = [
         {"size": "M", "availability": "out_of_stock"},

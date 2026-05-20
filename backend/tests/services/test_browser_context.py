@@ -886,6 +886,36 @@ def test_build_playwright_context_spec_does_not_generate_init_script() -> None:
     assert spec.init_script is None
 
 
+def test_shared_browser_runtime_build_context_spec_uses_real_builder(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        browser_identity,
+        "browser_identity_for_run",
+        lambda run_id=None: browser_identity.BrowserIdentity(
+            user_agent=(
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/145.0.0.0 Safari/537.36"
+            ),
+            viewport={"width": 1366, "height": 768},
+            extra_http_headers={"Accept-Language": "en-US,en;q=0.9"},
+            locale="en-US",
+            device_scale_factor=1.0,
+            has_touch=False,
+            is_mobile=False,
+            raw_fingerprint=None,
+        ),
+    )
+
+    runtime = crawl_fetch_runtime.SharedBrowserRuntime(max_contexts=1)
+
+    spec = runtime._build_context_spec(run_id=123)
+
+    assert spec.init_script is None
+    assert spec.context_options["user_agent"].endswith("Chrome/145.0.0.0 Safari/537.36")
+
+
 def test_playwright_identity_seed_is_stable_and_changes_with_identity() -> None:
     base_identity = browser_identity.BrowserIdentity(
         user_agent=(
@@ -1655,6 +1685,7 @@ async def test_shared_browser_runtime_uses_socks5_auth_bridge_and_keeps_context_
                 "--disable-client-side-phishing-detection",
                 "--disable-domain-reliability",
                 "--disable-sync",
+                "--disable-component-update",
                 "--no-first-run",
                 "--headless=new",
             ],
@@ -1740,6 +1771,7 @@ async def test_shared_browser_runtime_launches_http_proxy_directly(
                 "--disable-client-side-phishing-detection",
                 "--disable-domain-reliability",
                 "--disable-sync",
+                "--disable-component-update",
                 "--no-first-run",
                 "--headless=new",
             ],
@@ -1838,6 +1870,7 @@ async def test_shared_browser_runtime_launches_real_chrome_headful_for_fallback(
                 "--disable-client-side-phishing-detection",
                 "--disable-domain-reliability",
                 "--disable-sync",
+                "--disable-component-update",
                 "--no-first-run",
             ],
             "executable_path": "C:/Chrome/chrome.exe",
@@ -2922,6 +2955,63 @@ async def test_get_browser_runtime_evicts_idle_direct_runtime_when_pool_is_full(
     assert created == [(None, "chromium"), (None, "real_chrome")]
     assert closed == [(None, "chromium")]
     await acquisition_browser_runtime.shutdown_browser_runtime()
+
+
+@pytest.mark.asyncio
+async def test_browser_pool_skip_evicts_runtime_reused_after_candidate_snapshot(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    closed: list[str] = []
+
+    class FakeRuntime:
+        def __init__(self, name: str, *, last_used: float, idle_seconds: float) -> None:
+            self.name = name
+            self._last_used_at = last_used
+            self._idle_seconds = idle_seconds
+
+        def touch(self) -> None:
+            self._last_used_at += 100
+
+        def idle_seconds(self) -> float:
+            return self._idle_seconds
+
+        def eviction_key(self) -> tuple[int, float]:
+            if self.name == "second":
+                first.touch()
+            return (0, self._last_used_at)
+
+        async def close(self) -> None:
+            closed.append(self.name)
+
+    monkeypatch.setattr(
+        acquisition_browser_runtime.crawler_runtime_settings,
+        "browser_runtime_pool_max_entries",
+        1,
+    )
+    monkeypatch.setattr(
+        acquisition_browser_runtime.crawler_runtime_settings,
+        "browser_runtime_pool_idle_ttl_seconds",
+        1,
+    )
+
+    await acquisition_browser_runtime.shutdown_browser_runtime()
+    first = FakeRuntime("first", last_used=1.0, idle_seconds=999.0)
+    second = FakeRuntime("second", last_used=2.0, idle_seconds=0.0)
+    acquisition_browser_pool._BROWSER_POOL.direct["chromium"] = first
+    acquisition_browser_pool._BROWSER_POOL.direct["real_chrome"] = second
+
+    try:
+        async with acquisition_browser_pool._BROWSER_POOL.lock:
+            await acquisition_browser_pool._evict_idle_browser_runtimes_locked()
+
+        assert closed == ["second"]
+        assert acquisition_browser_pool._BROWSER_POOL.direct["chromium"] is first
+    finally:
+        await acquisition_browser_runtime.shutdown_browser_runtime()
+
+
+def test_browser_launch_args_keep_component_updates_disabled() -> None:
+    assert "--disable-component-update" in crawler_runtime_settings.browser_launch_args
 
 
 @pytest.mark.asyncio

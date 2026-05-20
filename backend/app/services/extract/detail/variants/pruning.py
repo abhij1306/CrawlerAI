@@ -13,6 +13,7 @@ from urllib.parse import urlparse
 
 
 from app.services.config.extraction_rules import (
+    SCALAR_FIELD_MAX_OPTION_TOKENS,
     VARIANT_OPTION_LABEL_MAX_WORDS,
 )
 from app.services.config.variant_policy import (
@@ -43,6 +44,10 @@ from app.services.extract.detail.text.sanitizer import (
 )
 
 logger = logging.getLogger(__name__)
+try:
+    scalar_field_max_option_tokens = max(1, int(SCALAR_FIELD_MAX_OPTION_TOKENS))
+except (TypeError, ValueError):
+    scalar_field_max_option_tokens = 1
 
 def _sanitize_detail_variant_payload(
     record: dict[str, Any], *, identity_url: str
@@ -277,6 +282,12 @@ def _drop_detail_variant_scalar_noise(record: dict[str, Any]) -> None:
             record.pop(field_name, None)
     for field_name in ("size", "color"):
         cleaned_value = clean_text(record.get(field_name))
+        if field_name == "color" and _scalar_color_is_numeric_swatch_id(cleaned_value):
+            record.pop(field_name, None)
+            continue
+        if field_name == "size" and _scalar_size_looks_like_option_list(cleaned_value):
+            record.pop(field_name, None)
+            continue
         if field_name == "size" and detail_scalar_size_is_low_signal(
             cleaned_value,
             title=record.get("title"),
@@ -294,6 +305,21 @@ def _drop_detail_variant_scalar_noise(record: dict[str, Any]) -> None:
             record[field_name] = cleaned_value
             continue
         record.pop(field_name, None)
+
+
+def _scalar_color_is_numeric_swatch_id(value: str) -> bool:
+    return bool(value and re.fullmatch(r"\d{4,}", value))
+
+
+def _scalar_size_looks_like_option_list(value: str) -> bool:
+    if not value:
+        return False
+    tokens = [token for token in re.split(r"[\s,|/]+", value.casefold()) if token]
+    if len(tokens) <= scalar_field_max_option_tokens + 3:
+        return False
+    numeric_tokens = sum(1 for token in tokens if re.search(r"\d", token))
+    repeated_tokens = len(tokens) - len(set(tokens))
+    return numeric_tokens >= 2 and repeated_tokens >= 1
 
 
 def _option_value_repeats_product_title(value: str, *, title_hint: str) -> bool:

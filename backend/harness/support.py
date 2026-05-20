@@ -253,12 +253,12 @@ def build_explicit_sites(
 ) -> list[dict[str, str]]:
     normalized_urls = [
         str(value or "").strip()
-        for value in list(urls or [])
+        for value in (urls or [])
         if str(value or "").strip()
     ]
     normalized_surfaces = [
         str(value or "").strip()
-        for value in list(explicit_surfaces or [])
+        for value in (explicit_surfaces or [])
         if str(value or "").strip()
     ]
     if normalized_surfaces and len(normalized_surfaces) != len(normalized_urls):
@@ -279,7 +279,10 @@ def build_explicit_sites(
 
 
 def load_site_set(path: Path, *, site_set_name: str) -> list[dict[str, object]]:
-    payload = json.loads(path.read_text(encoding="utf-8"))
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"Invalid JSON in site set file {path}: {exc.msg}") from exc
     defaults: dict[str, object] = {}
     if isinstance(payload, dict) and isinstance(payload.get("site_sets"), dict):
         site_set = payload["site_sets"].get(site_set_name)
@@ -711,7 +714,7 @@ def _populated_field_count(record: dict[str, object]) -> int:
 
 def _sample_records(rows: Sequence[object]) -> list[dict[str, object]]:
     samples: list[dict[str, object]] = []
-    for row in list(rows or [])[:3]:
+    for row in (rows or [])[:3]:
         data = dict(getattr(row, "data", {}) or {})
         samples.append(
             {
@@ -850,7 +853,7 @@ def _listing_contract(rows: Sequence[object]) -> dict[str, object]:
     price_present_count = 0
     numeric_price_count = 0
     sampled = 0
-    for row in list(rows or []):
+    for row in (rows or []):
         data = dict(getattr(row, "data", {}) or {})
         sampled += 1
         row_url = str(data.get("url") or "").strip()
@@ -1166,7 +1169,7 @@ def _quality_variant_artifacts_ok(
     record = _object_dict(result.get("sample_record_data"))
     if any(
         record.get(field_name) not in (None, "", [], {})
-        for field_name in PUBLIC_RECORD_LEGACY_VARIANT_FIELDS
+        for field_name in _PUBLIC_RECORD_LEGACY_VARIANT_FIELDS
     ):
         return False
     values: list[object] = []
@@ -1558,6 +1561,9 @@ async def _ensure_harness_user_id(session) -> int:
     harness_role = (
         str(os.getenv("HARNESS_ROLE") or "harness").strip().lower() or "harness"
     )
+    password_sync_enabled = str(
+        os.getenv("ENABLE_HARNESS_PASSWORD_SYNC") or ""
+    ).strip().lower() in {"1", "true", "yes", "on"}
     user = (
         await session.execute(select(User).where(User.email == harness_email).limit(1))
     ).scalar_one_or_none()
@@ -1572,9 +1578,17 @@ async def _ensure_harness_user_id(session) -> int:
         await session.commit()
         await session.refresh(user)
     elif not verify_password(harness_password, user.hashed_password):
+        if not password_sync_enabled:
+            logger.warning(
+                "Harness password mismatch for user %s; refusing auto-sync because ENABLE_HARNESS_PASSWORD_SYNC is not enabled",
+                int(user.id),
+            )
+            raise RuntimeError(
+                "Harness user password mismatch; update the DB manually or set ENABLE_HARNESS_PASSWORD_SYNC=true"
+            )
         user.hashed_password = hash_password(harness_password)
         logger.info(
-            "Synchronized harness user password hash",
+            "Synchronized harness user password hash with ENABLE_HARNESS_PASSWORD_SYNC",
             extra={"user_id": int(user.id)},
         )
         await session.commit()

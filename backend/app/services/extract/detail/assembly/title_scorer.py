@@ -11,11 +11,18 @@ from urllib.parse import urlparse
 from typing import Any
 
 from app.services.config.extraction_rules import (
+    DETAIL_LOW_SIGNAL_TITLE_VALUES,
     TITLE_PROMOTION_PREFIXES,
     TITLE_PROMOTION_SEPARATOR,
     TITLE_PROMOTION_SUBSTRINGS,
 )
 from app.services.shared.field_coerce import is_title_noise, text_or_none
+
+_low_signal_title_values = frozenset(
+    str(value).strip().lower()
+    for value in tuple(DETAIL_LOW_SIGNAL_TITLE_VALUES or ())
+    if str(value).strip()
+)
 
 
 def promote_detail_title(
@@ -78,6 +85,8 @@ def title_needs_promotion(title: str, *, page_url: str) -> bool:
     if not normalized_title:
         return False
     if is_title_noise(normalized_title):
+        return True
+    if normalized_title in _low_signal_title_values:
         return True
     if any(normalized_title.startswith(prefix) for prefix in TITLE_PROMOTION_PREFIXES):
         return True

@@ -31,7 +31,7 @@ from app.services.llm.config_service import snapshot_active_configs
 from app.services.normalizers import normalize_value
 from app.services.run_config_snapshot import snapshot_extraction_runtime_settings
 from app.services.url_safety import ensure_public_crawl_targets
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 async def create_crawl_run(
@@ -207,6 +207,33 @@ async def get_run_logs(
         query = query.limit(limit)
     result = await session.execute(query)
     return list(result.scalars().all())
+
+
+async def get_run_and_logs(
+    session: AsyncSession,
+    run_id: int,
+    *,
+    after_id: int | None = None,
+    limit: int | None = None,
+) -> tuple[CrawlRun | None, list[CrawlLog]]:
+    join_condition = CrawlLog.run_id == CrawlRun.id
+    if after_id is not None:
+        join_condition = and_(join_condition, CrawlLog.id > after_id)
+    query = (
+        select(CrawlRun, CrawlLog)
+        .outerjoin(CrawlLog, join_condition)
+        .where(CrawlRun.id == run_id)
+        .order_by(CrawlLog.created_at.asc(), CrawlLog.id.asc())
+    )
+    if limit is not None:
+        query = query.limit(limit)
+    result = await session.execute(query)
+    rows = list(result.all())
+    if not rows:
+        return None, []
+    run = rows[0][0]
+    logs = [log for _run, log in rows if log is not None]
+    return run, logs
 
 
 async def commit_selected_fields(

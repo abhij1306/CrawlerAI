@@ -278,7 +278,7 @@ export function MonitorForm({
           <div className="border-border bg-panel flex items-center justify-between gap-3 rounded-[var(--radius-md)] border px-3 py-2">
             <div>
               <p className="type-body-sm m-0 font-medium">Skip HEAD pre-check</p>
-              <p className="text-muted m-0 text-[11px]">
+              <p className="text-muted type-caption m-0">
                 Ecommerce monitors recrawl on schedule instead of trusting CDN validators.
               </p>
             </div>

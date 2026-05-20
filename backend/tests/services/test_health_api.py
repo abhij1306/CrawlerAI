@@ -1,10 +1,16 @@
 from __future__ import annotations
 
+from collections import OrderedDict, deque
+
 import pytest
+from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 from starlette.requests import Request
 
+import app.main as main_module
 from app.main import (
+    CrawlerAppState,
+    RATE_LIMIT_BUCKETS,
     clear_rate_limit_buckets_for_testing,
     client_rate_limit_key,
     rate_limit_buckets_snapshot,
@@ -140,3 +146,23 @@ def test_client_rate_limit_key_honors_forwarded_for_from_trusted_peer(
     )
 
     assert client_rate_limit_key(request) == "203.0.113.10"
+
+
+def test_rate_limit_buckets_view_tracks_replaced_app_state() -> None:
+    previous_state = app.state.crawler
+    try:
+        app.state.crawler = CrawlerAppState(
+            rate_limit_buckets=OrderedDict(
+                [("client-a", deque([1.0])), ("client-b", deque([2.0]))]
+            )
+        )
+
+        assert list(RATE_LIMIT_BUCKETS) == ["client-a", "client-b"]
+        assert list(RATE_LIMIT_BUCKETS["client-a"]) == [1.0]
+    finally:
+        app.state.crawler = previous_state
+
+
+def test_crawler_app_state_rejects_explicit_app_without_crawler_state() -> None:
+    with pytest.raises(RuntimeError, match="state.crawler"):
+        main_module._crawler_app_state(FastAPI())

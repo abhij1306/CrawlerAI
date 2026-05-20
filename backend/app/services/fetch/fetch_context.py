@@ -299,10 +299,10 @@ async def fetch_page(
             )
         except Exception as exc:
             _attach_exception_browser_diagnostics(
-                context.last_error,
+                exc,
                 context.last_browser_attempt_diagnostics,
             )
-            raise context.last_error from exc
+            raise exc from context.last_error
     raise RuntimeError(f"Failed to fetch {url}")
 
 

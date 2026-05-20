@@ -1222,7 +1222,7 @@ export const LogTerminal = memo(function LogTerminal({
             );
           })
         ) : (
-          <div className="px-6 py-8 text-center text-[14px] italic opacity-55">
+          <div className="px-6 py-8 text-center text-sm italic opacity-55">
             {live ? 'Waiting for log stream...' : 'No log activity recorded'}
           </div>
         )}
@@ -1248,7 +1248,7 @@ export const LogTerminal = memo(function LogTerminal({
               }}
             >
               <div className="min-w-0 flex-1">
-                <div className="text-accent type-label-mono text-[10px] font-bold tracking-wider uppercase">
+                <div className="text-accent type-label-mono font-bold uppercase">
                   {TERMINAL_STRINGS.PAYLOAD_PEEK}
                 </div>
                 <div

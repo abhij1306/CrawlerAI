@@ -8,6 +8,7 @@ from sqlalchemy import select
 
 import harness_support
 import run_test_sites_acceptance
+from app.core.security import hash_password, verify_password
 from app.services.acquisition_plan import AcquisitionPlan
 from harness_support import (
     build_explicit_sites,
@@ -173,6 +174,14 @@ def test_load_site_set_preserves_curated_surface_and_bucket(tmp_path: Path) -> N
             "quality_expectations": {"require_price": True},
         }
     ]
+
+
+def test_load_site_set_reports_json_path_on_decode_error(tmp_path: Path) -> None:
+    manifest = tmp_path / "bad-sites.json"
+    manifest.write_text("{ invalid json", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="bad-sites.json"):
+        load_site_set(manifest, site_set_name="commerce")
 
 
 def test_load_site_set_merges_defaults(tmp_path: Path) -> None:
@@ -1089,3 +1098,74 @@ async def test_ensure_harness_user_id_rejects_production_environment(
         match="Harness user access is disabled outside local/test environments",
     ):
         await harness_support._ensure_harness_user_id(db_session)
+
+
+@pytest.mark.asyncio
+async def test_ensure_harness_user_id_rejects_password_sync_without_flag(
+    db_session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("APP_ENV", "development")
+    monkeypatch.setenv("HARNESS_EMAIL", "harness@example.invalid")
+    monkeypatch.setenv("HARNESS_PASSWORD", "NewHarnessSecret123!")
+    monkeypatch.delenv("ENABLE_HARNESS_PASSWORD_SYNC", raising=False)
+
+    user = harness_support.User(
+        email="harness@example.invalid",
+        hashed_password=hash_password("OldHarnessSecret123!"),
+        role="harness",
+        is_active=True,
+    )
+    db_session.add(user)
+    await db_session.commit()
+
+    with pytest.raises(RuntimeError, match="ENABLE_HARNESS_PASSWORD_SYNC=true"):
+        await harness_support._ensure_harness_user_id(db_session)
+
+    persisted = (
+        await db_session.execute(
+            select(harness_support.User).where(
+                harness_support.User.email == "harness@example.invalid"
+            )
+        )
+    ).scalar_one()
+    assert verify_password("OldHarnessSecret123!", persisted.hashed_password)
+    assert not verify_password("NewHarnessSecret123!", persisted.hashed_password)
+
+
+@pytest.mark.asyncio
+async def test_ensure_harness_user_id_allows_password_sync_with_flag(
+    db_session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("APP_ENV", "development")
+    monkeypatch.setenv("HARNESS_EMAIL", "harness@example.invalid")
+    monkeypatch.setenv("HARNESS_PASSWORD", "NewHarnessSecret123!")
+    monkeypatch.setenv("ENABLE_HARNESS_PASSWORD_SYNC", "true")
+
+    user = harness_support.User(
+        email="harness@example.invalid",
+        hashed_password=hash_password("OldHarnessSecret123!"),
+        role="harness",
+        is_active=True,
+    )
+    db_session.add(user)
+    await db_session.commit()
+
+    user_id = await harness_support._ensure_harness_user_id(db_session)
+    persisted = (
+        await db_session.execute(
+            select(harness_support.User).where(
+                harness_support.User.email == "harness@example.invalid"
+            )
+        )
+    ).scalar_one()
+
+    assert user_id == persisted.id
+    assert verify_password("NewHarnessSecret123!", persisted.hashed_password)
+
+
+def test_harness_user_module_does_not_export_private_ensure_helper() -> None:
+    from harness import harness_user
+
+    assert harness_user.__all__ == ["DEFAULT_HARNESS_EMAIL"]

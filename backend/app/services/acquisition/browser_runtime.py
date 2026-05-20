@@ -778,8 +778,11 @@ async def _maybe_warm_origin_before_navigation(
     warm_url = f"{parsed.scheme}://{parsed.netloc}/"
     if warm_url.rstrip("/") == str(url or "").strip().rstrip("/"):
         return
+    warm_budget_ratio = max(
+        0.0, float(crawler_runtime_settings.origin_warmup_max_budget_ratio)
+    )
     warm_budget_ms = min(
-        int(max(0.1, float(timeout_seconds)) * 1000),
+        int(max(0.1, float(timeout_seconds)) * 1000 * warm_budget_ratio),
         int(crawler_runtime_settings.browser_navigation_domcontentloaded_timeout_ms),
     )
     if warm_budget_ms < 750:

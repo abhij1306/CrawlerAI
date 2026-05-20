@@ -45,23 +45,6 @@ def _coerce_optional_int(
         return None
 
 
-def _coerce_optional_clamped_int(
-    value: object, minimum: int, maximum: int | None = None
-) -> int | None:
-    if value is None:
-        return None
-    text = str(value).strip()
-    if not text:
-        return None
-    try:
-        result = max(minimum, int(text))
-        if maximum is not None:
-            result = min(result, maximum)
-        return result
-    except (TypeError, ValueError):
-        return None
-
-
 def _coerce_sequence(value: object) -> list[object]:
     if value is None:
         return []
@@ -182,7 +165,7 @@ class CrawlRunSettings:
         stored = _mapping(self.data.get("fetch_profile"))
         traversal_mode = self.traversal_mode()
         ttl_key = crawler_runtime_settings.host_memory_ttl_seconds_key
-        host_memory_ttl_seconds = _coerce_optional_clamped_int(
+        host_memory_ttl_seconds = _coerce_optional_int(
             stored.get(ttl_key, self.data.get(ttl_key)),
             minimum=crawler_runtime_settings.host_memory_ttl_min_seconds,
             maximum=crawler_runtime_settings.host_memory_ttl_max_seconds,

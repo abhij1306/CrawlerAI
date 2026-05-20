@@ -113,7 +113,7 @@ export function TableCell({
     <td
       {...props}
       className={cn(
-        'text-primary px-4 py-0 align-middle [font-family:var(--font-primary-family)] text-[length:var(--text-sm)] leading-normal font-normal',
+        'text-primary px-4 py-0 align-middle font-sans text-sm leading-normal font-normal',
         className,
       )}
       colSpan={colSpan}

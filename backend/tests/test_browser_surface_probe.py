@@ -170,6 +170,13 @@ def test_build_findings_flags_locale_and_ua_drift() -> None:
     assert "ua_version_drift" in categories
 
 
+def test_load_baseline_probe_script_exposes_js_entrypoint() -> None:
+    script = probe.load_baseline_probe_script()
+
+    assert "__crawlerProbeCollectBaseline" in script
+    assert "getHighEntropyValues" in script
+
+
 def test_build_findings_surfaces_webdriver_headless_and_webrtc() -> None:
     categories = _finding_categories(
         _report(
@@ -606,3 +613,34 @@ async def test_build_report_keeps_partial_target_diagnostics_when_one_target_fai
     assert report["target_diagnostics"][0]["browser"]["status"] == "failed"
     assert "RuntimeError: target fetch failed" in report["target_diagnostics"][0]["browser"]["error"]
     assert report["target_diagnostics"][1]["browser"]["status"] == "ok"
+
+
+@pytest.mark.asyncio
+async def test_navigate_probe_target_uses_shared_navigation_timeout() -> None:
+    calls: list[dict[str, object]] = []
+
+    class FakePage:
+        async def goto(self, url: str, *, wait_until: str, timeout: int) -> None:
+            calls.append(
+                {
+                    "url": url,
+                    "wait_until": wait_until,
+                    "timeout": timeout,
+                }
+            )
+
+        async def wait_for_load_state(self, *_args, **_kwargs) -> None:
+            return None
+
+        async def wait_for_timeout(self, *_args, **_kwargs) -> None:
+            return None
+
+    await probe._navigate_probe_target(FakePage(), "https://example.com")
+
+    assert calls == [
+        {
+            "url": "https://example.com",
+            "wait_until": "domcontentloaded",
+            "timeout": int(probe.BROWSER_SURFACE_PROBE_TARGET_NAVIGATION_TIMEOUT_MS),
+        }
+    ]

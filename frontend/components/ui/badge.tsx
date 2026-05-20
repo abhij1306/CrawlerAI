@@ -31,7 +31,7 @@ export type BadgeProps = {
 } & React.HTMLAttributes<HTMLSpanElement>;
 
 export const badgeVariants = cva(
-  'inline-flex min-h-[22px] items-center gap-1.5 whitespace-nowrap text-[length:var(--text-xs)] leading-[1.35] font-bold tracking-[var(--tracking-wider)]',
+  'inline-flex min-h-[22px] items-center gap-1.5 whitespace-nowrap text-xs leading-[1.35] font-bold tracking-[var(--tracking-wider)]',
 );
 
 export function Badge({

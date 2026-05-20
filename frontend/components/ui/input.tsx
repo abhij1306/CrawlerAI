@@ -6,11 +6,11 @@ import { cva } from 'class-variance-authority';
 import { cn } from '../../lib/utils';
 
 export const inputVariants = cva(
-  'focus-ring h-[var(--control-height)] w-full rounded-[var(--radius-md)] border border-border bg-panel px-3 text-[length:var(--text-sm)] leading-normal text-foreground transition-[border-color] placeholder:text-muted hover:border-border-strong focus:border-accent',
+  'focus-ring h-[var(--control-height)] w-full rounded-[var(--radius-md)] border border-border bg-panel px-3 text-sm leading-normal text-foreground transition-[border-color] placeholder:text-muted hover:border-border-strong focus:border-accent',
 );
 
 export const textareaVariants = cva(
-  'focus-ring min-h-[80px] w-full resize-y rounded-[var(--radius-md)] border border-border bg-panel px-3 py-2 text-[length:var(--text-sm)] leading-[1.5] text-foreground transition-[border-color] placeholder:text-muted hover:border-border-strong focus:border-accent',
+  'focus-ring min-h-[80px] w-full resize-y rounded-[var(--radius-md)] border border-border bg-panel px-3 py-2 text-sm leading-[1.5] text-foreground transition-[border-color] placeholder:text-muted hover:border-border-strong focus:border-accent',
 );
 
 export function Input(props: ComponentPropsWithoutRef<'input'>) {

@@ -136,7 +136,7 @@ def _normalize_detail_money_precision(record: dict[str, Any]) -> None:
             continue
         if not text_or_none(container.get("currency")):
             continue
-        for field_name in ("price", "original_price"):
+        for field_name in ("price", "sale_price", "original_price"):
             normalized = _money_two_decimals(container.get(field_name))
             if normalized is not None:
                 container[field_name] = normalized
@@ -163,9 +163,15 @@ def _money_two_decimals(value: object) -> str | None:
 
 def _drop_invalid_detail_discounts(record: dict[str, Any]) -> None:
     price = detail_price_decimal(record.get("price"))
+    sale_price = detail_price_decimal(record.get("sale_price"))
     original_price = detail_price_decimal(record.get("original_price"))
     discount_amount = detail_price_decimal(record.get("discount_amount"))
     discount_percentage = detail_price_decimal(record.get("discount_percentage"))
+    if sale_price is not None and price is not None and sale_price >= price:
+        record.pop("sale_price", None)
+        field_sources = record.get("_field_sources")
+        if isinstance(field_sources, dict):
+            field_sources.pop("sale_price", None)
     if discount_percentage is not None and not (0 < discount_percentage <= 100):
         record.pop("discount_percentage", None)
     if discount_amount is None:
