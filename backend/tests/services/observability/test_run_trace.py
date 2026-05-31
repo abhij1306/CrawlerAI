@@ -69,7 +69,9 @@ def test_skip_dom_decision_is_captured():
 
 def test_field_candidate_only_records_high_value_fields():
     trace = _trace(requested_fields=["price"])
-    trace.record_field_candidate("price", source="js_state", won=True, value_preview="49.99")
+    trace.record_field_candidate(
+        "price", source="js_state", won=True, value_preview="49.99"
+    )
     trace.record_field_candidate(
         "footer_link", source="dom_selector", won=False, value_preview="noise"
     )
@@ -98,13 +100,29 @@ def test_candidate_losers_are_bounded_per_field():
         if entry["field"] == "price"
     )
     # winner + capped losers
-    assert len(price["candidates"]) <= obs_config.MAX_CANDIDATE_LOSERS_PER_FIELD + 1
+    assert len(price["candidates"]) == obs_config.MAX_CANDIDATE_LOSERS_PER_FIELD + 1
+
+
+def test_repeated_winning_candidates_are_ignored():
+    trace = _trace(requested_fields=["price"])
+    trace.record_field_candidate("price", source="adapter", won=True)
+    trace.record_field_candidate("price", source="dom", won=True)
+
+    price = next(
+        entry
+        for entry in trace.to_dict(flagged=True)["extraction"]["field_provenance"]
+        if entry["field"] == "price"
+    )
+    assert price["winning_source"] == "adapter"
+    assert [candidate["source"] for candidate in price["candidates"]] == ["adapter"]
 
 
 def test_full_tier_on_non_success_verdict():
     trace = _trace(requested_fields=["price"])
     trace.record_field_candidate("price", source="dom", won=True, value_preview="5")
-    trace.record_field_candidate("price", source="js_state", won=False, reject_reason="lost")
+    trace.record_field_candidate(
+        "price", source="js_state", won=False, reject_reason="lost"
+    )
     trace.record_verdict("empty")
     payload = trace.to_dict()
     assert payload["tier"] == obs_config.TRACE_TIER_FULL
@@ -116,7 +134,9 @@ def test_full_tier_on_non_success_verdict():
 def test_light_tier_on_success_drops_losers():
     trace = _trace(requested_fields=["price"])
     trace.record_field_candidate("price", source="dom", won=True, value_preview="5")
-    trace.record_field_candidate("price", source="js_state", won=False, reject_reason="lost")
+    trace.record_field_candidate(
+        "price", source="js_state", won=False, reject_reason="lost"
+    )
     trace.record_verdict("success")
     payload = trace.to_dict()
     assert payload["tier"] == obs_config.TRACE_TIER_LIGHT

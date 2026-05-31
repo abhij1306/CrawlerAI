@@ -56,6 +56,19 @@ def test_missing_artifacts_yield_empty_view(tmp_path):
     assert result["traces"] == []
 
 
+def test_negative_run_id_is_clamped_for_path_and_payload(tmp_path):
+    audit, _pages = _run_dirs(tmp_path, 0)
+    (audit / "flags.json").write_text(
+        json.dumps({"run_id": 0, "flag_count": 0, "flags": []}),
+        encoding="utf-8",
+    )
+
+    result = artifact_reader.read_run_observability(-5)
+
+    assert result["run_id"] == 0
+    assert result["flags"]["run_id"] == 0
+
+
 def test_ignores_malformed_json(tmp_path):
     audit, pages = _run_dirs(tmp_path, 7)
     (audit / "flags.json").write_text("{not json", encoding="utf-8")

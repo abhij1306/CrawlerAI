@@ -168,15 +168,18 @@ def _load_trace(run_id: int, url: str) -> dict[str, Any]:
     )
     if not pages_dir.is_dir():
         return {}
-    for trace_path in sorted(pages_dir.glob("*.trace.json")):
-        payload = _read_json(trace_path)
-        if isinstance(payload, dict) and (not url or payload.get("url") == url):
-            return payload
-    # fall back to the first trace if no exact URL match
-    for trace_path in sorted(pages_dir.glob("*.trace.json")):
+    traces = sorted(pages_dir.glob("*.trace.json"))
+    fallback_payload: dict[str, Any] | None = None
+    for trace_path in traces:
         payload = _read_json(trace_path)
         if isinstance(payload, dict):
-            return payload
+            if not url or payload.get("url") == url:
+                return payload
+            if fallback_payload is None:
+                fallback_payload = payload
+    # fall back to the first trace if no exact URL match
+    if fallback_payload is not None:
+        return fallback_payload
     return {}
 
 

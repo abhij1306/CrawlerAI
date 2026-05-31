@@ -111,14 +111,28 @@ def variant_scope_roots(soup: Any) -> list[Any]:
         seen.add(id(node))
         if max_roots is not None and len(roots) >= max_roots:
             break
+    soft_limit = (
+        None if max_roots is None else max(0, max_roots - len(roots))
+    )
+    soft_roots = (
+        _variant_soft_scope_roots(soup, max_roots=soft_limit)
+        if soft_limit != 0
+        else []
+    )
+    for node in soft_roots:
+        if id(node) in seen or _node_is_within_any_root(node, roots):
+            continue
+        roots.append(node)
+        seen.add(id(node))
+        if max_roots is not None and len(roots) >= max_roots:
+            break
     if roots:
         cache[cache_key] = tuple(roots)
         return roots
-    soft_roots = _variant_soft_scope_roots(soup, max_roots=max_roots)
     if not soft_roots:
         increment_runtime_metric("variant_scope_miss")
-    cache[cache_key] = tuple(soft_roots)
-    return soft_roots
+    cache[cache_key] = tuple(roots)
+    return roots
 
 
 def _variant_soft_scope_roots(soup: Any, *, max_roots: int | None) -> list[Any]:
@@ -166,6 +180,15 @@ def _node_has_soft_variant_signal(node: Any, *, min_radio_inputs: int) -> bool:
     if len(clean_nodes) >= min_radio_inputs:
         return True
     return bool(node.select(VARIANT_SELECT_GROUP_SELECTOR))
+
+
+def _node_is_within_any_root(node: Any, roots: list[Any]) -> bool:
+    current = getattr(node, "parent", None)
+    while current is not None:
+        if any(current is root for root in roots):
+            return True
+        current = getattr(current, "parent", None)
+    return False
 
 
 def select_variant_nodes(soup: Any, selector: str) -> list[Any]:

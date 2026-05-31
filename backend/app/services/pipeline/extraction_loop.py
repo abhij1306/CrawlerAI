@@ -338,6 +338,8 @@ def _record_acquire_timeline(
     events instead of only summed phase timings. No-op when tracing is disabled.
     """
     trace = context.trace
+    if trace is None:
+        return
     method = str(getattr(acquisition_result, "method", "") or "")
     diagnostics = mapping_or_empty(getattr(acquisition_result, "browser_diagnostics", {}))
     timings = mapping_or_empty(diagnostics.get("phase_timings_ms"))
@@ -581,6 +583,7 @@ async def _run_normalization_stage(
 ) -> _ExtractedURLStage:
     await _enter_stage(context, STAGE_NORMALIZE)
     acquisition_result = extracted.fetched.acquisition_result
+    trace = context.trace
     normalized_records: list[dict[str, object]] = []
     for index, record in enumerate(extracted.records, start=1):
         normalized_record, validation_errors = validate_record_for_surface(
@@ -592,10 +595,11 @@ async def _run_normalization_stage(
         normalized_records.append(normalized_record)
         if validation_errors:
             for validation_error in validation_errors:
-                context.trace.record_normalize_edit(
-                    field_name=f"record_{index}",
-                    reason=str(validation_error),
-                )
+                if trace is not None:
+                    trace.record_normalize_edit(
+                        field_name=f"record_{index}",
+                        reason=str(validation_error),
+                    )
             await _log_pipeline_event(
                 context,
                 "warning",
@@ -765,13 +769,15 @@ async def _run_persistence_stage(
         and persisted_count == 0
     ):
         verdict = VERDICT_LISTING_FAILED
-    context.trace.record_verdict(verdict)
-    await persist_run_trace(
-        run_id=context.run.id,
-        source_url=acquisition_result.final_url,
-        trace=context.trace,
-        flagged=verdict not in obs_config.TRACE_SUCCESS_VERDICTS,
-    )
+    trace = context.trace
+    if trace is not None:
+        trace.record_verdict(verdict)
+        await persist_run_trace(
+            run_id=context.run.id,
+            source_url=acquisition_result.final_url,
+            trace=trace,
+            flagged=verdict not in obs_config.TRACE_SUCCESS_VERDICTS,
+        )
     await _update_acquisition_contract_memory(
         context,
         acquisition_result=acquisition_result,

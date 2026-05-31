@@ -296,10 +296,13 @@ def _adapter_network_payload_inputs(
 def _adapter_payload_identity_tokens(page_url: str) -> set[str]:
     from app.services.extract.detail.identity.core import detail_identity_codes_from_url
 
+    min_length = max(
+        0, int(crawler_runtime_settings.adapter_payload_identity_min_token_length)
+    )
     return {
         str(token).casefold()
         for token in detail_identity_codes_from_url(page_url)
-        if len(str(token or "").strip()) >= 6
+        if len(str(token or "").strip()) >= min_length
     }
 
 

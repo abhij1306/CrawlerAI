@@ -21,12 +21,15 @@ wired in later slices.
 
 from __future__ import annotations
 
+import logging
 import time
 from dataclasses import dataclass, field
 from typing import Any
 
 from app.services.config import observability as obs_config
 from app.services.field_policy import repair_target_fields_for_surface
+
+logger = logging.getLogger(__name__)
 
 
 def high_value_fields(surface: str, requested_fields: list[str] | None) -> list[str]:
@@ -103,7 +106,9 @@ class ExtractionTrace:
     completed_tiers: list[str] = field(default_factory=list)
     dom_skipped: bool | None = None
     skip_decision: dict[str, Any] = field(default_factory=dict)
-    field_provenance: dict[str, FieldProvenanceObservation] = field(default_factory=dict)
+    field_provenance: dict[str, FieldProvenanceObservation] = field(
+        default_factory=dict
+    )
 
     def to_dict(self) -> dict[str, Any]:
         payload: dict[str, Any] = {"completed_tiers": list(self.completed_tiers)}
@@ -208,13 +213,26 @@ class RunTrace:
             obs = FieldProvenanceObservation(field_name=normalized)
             self.extraction.field_provenance[normalized] = obs
         if won:
+            if obs.winning_source is not None:
+                logger.warning("Ignoring repeated winning candidate for %s", normalized)
+                return
             obs.winning_source = str(source)
-        if len(obs.candidates) >= obs_config.MAX_CANDIDATE_LOSERS_PER_FIELD and not won:
+            obs.candidates.append(
+                CandidateObservation(
+                    source=str(source),
+                    won=True,
+                    value_preview=_preview(value_preview),
+                    reject_reason=str(reject_reason) if reject_reason else None,
+                )
+            )
+            return
+        loser_count = sum(1 for candidate in obs.candidates if not candidate.won)
+        if loser_count >= obs_config.MAX_CANDIDATE_LOSERS_PER_FIELD:
             return
         obs.candidates.append(
             CandidateObservation(
                 source=str(source),
-                won=bool(won),
+                won=False,
                 value_preview=_preview(value_preview),
                 reject_reason=str(reject_reason) if reject_reason else None,
             )
@@ -222,9 +240,7 @@ class RunTrace:
 
     # -- normalize / verdict --------------------------------------------------
     def record_normalize_edit(self, field_name: str, reason: str) -> None:
-        self.normalize_edits.append(
-            {"field": str(field_name), "reason": str(reason)}
-        )
+        self.normalize_edits.append({"field": str(field_name), "reason": str(reason)})
 
     def record_verdict(self, verdict: str) -> None:
         self.verdict = str(verdict or "")

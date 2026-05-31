@@ -18,8 +18,12 @@ from app.services.config import observability as obs_config
 logger = logging.getLogger(__name__)
 
 
+def _normalize_run_id(run_id: int) -> int:
+    return max(int(run_id or 0), 0)
+
+
 def _run_dir(run_id: int) -> Path:
-    return Path(settings.artifacts_dir) / "runs" / str(max(int(run_id or 0), 0))
+    return Path(settings.artifacts_dir) / "runs" / str(_normalize_run_id(run_id))
 
 
 def _read_json(path: Path) -> Any:
@@ -36,7 +40,8 @@ def read_run_observability(run_id: int) -> dict[str, Any]:
     Missing artifacts yield empty/None values rather than errors so the frontend
     can render a partial view for runs that predate this feature.
     """
-    run_dir = _run_dir(run_id)
+    normalized_run_id = _normalize_run_id(run_id)
+    run_dir = _run_dir(normalized_run_id)
     audit_dir = run_dir / obs_config.AUDIT_ARTIFACT_SUBDIR
     pages_dir = run_dir / "pages"
 
@@ -51,7 +56,7 @@ def read_run_observability(run_id: int) -> dict[str, Any]:
                 traces.append(payload)
 
     return {
-        "run_id": int(run_id or 0),
+        "run_id": normalized_run_id,
         "flags": flags if isinstance(flags, dict) else None,
         "traces": traces,
         "llm_diagnosis": diagnosis if isinstance(diagnosis, dict) else None,

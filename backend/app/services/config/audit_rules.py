@@ -8,7 +8,7 @@ Each rule maps a deterministic symptom (computed from the RunTrace, browser.json
 and persisted record) to:
 - ``code``: stable flag id
 - ``invariant``: the INVARIANT.md rule it violates (for the human/agent reader)
-- ``owner``: the owning file from CODEBASE_MAP (where the fix belongs)
+- ``owner``: the owning file or directory from CODEBASE_MAP (where the fix belongs)
 - ``severity``: high | medium | low
 - ``symptom``: short human description
 """

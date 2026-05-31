@@ -43,7 +43,32 @@ def test_listing_single_metadata_record_flagged():
     flags = run_audit.build_run_flags(run, [record])
     codes = {f["code"] for f in flags}
     assert audit_rules.FLAG_LISTING_SINGLE_METADATA_RECORD in codes
-    flag = next(f for f in flags if f["code"] == audit_rules.FLAG_LISTING_SINGLE_METADATA_RECORD)
+    flag = next(
+        f for f in flags if f["code"] == audit_rules.FLAG_LISTING_SINGLE_METADATA_RECORD
+    )
+    assert flag["owner"] == audit_rules.OWNER_LISTING_EXTRACTOR
+    assert "Rule 7" in flag["invariant"]
+
+
+def test_listing_single_rich_metadata_record_flagged():
+    run = _run(surface="ecommerce_listing", verdict="success")
+    record = _record(
+        data={
+            "title": "Some Page",
+            "description": "Category page",
+            "canonical_url": "https://e.com/c/shoes",
+            "image_url": "https://e.com/og.jpg",
+            "site_name": "Example",
+        }
+    )
+
+    flags = run_audit.build_run_flags(run, [record])
+    codes = {f["code"] for f in flags}
+
+    assert audit_rules.FLAG_LISTING_SINGLE_METADATA_RECORD in codes
+    flag = next(
+        f for f in flags if f["code"] == audit_rules.FLAG_LISTING_SINGLE_METADATA_RECORD
+    )
     assert flag["owner"] == audit_rules.OWNER_LISTING_EXTRACTOR
     assert "Rule 7" in flag["invariant"]
 
@@ -60,16 +85,22 @@ def test_listing_with_real_rows_not_flagged():
 
 
 def test_high_value_field_missing_flagged():
-    run = _run(surface="ecommerce_detail", verdict="partial", requested_fields=["price"])
+    run = _run(
+        surface="ecommerce_detail", verdict="partial", requested_fields=["price"]
+    )
     record = _record(data={"title": "Widget", "image_url": "https://e.com/i.jpg"})
     flags = run_audit.build_run_flags(run, [record])
-    missing = [f for f in flags if f["code"] == audit_rules.FLAG_HIGH_VALUE_FIELD_MISSING]
+    missing = [
+        f for f in flags if f["code"] == audit_rules.FLAG_HIGH_VALUE_FIELD_MISSING
+    ]
     assert missing
     assert "price" in missing[0]["evidence"]["missing_fields"]
 
 
 def test_high_value_field_missing_suppressed_when_diagnosed():
-    run = _run(surface="ecommerce_detail", verdict="partial", requested_fields=["price"])
+    run = _run(
+        surface="ecommerce_detail", verdict="partial", requested_fields=["price"]
+    )
     record = _record(
         data={"title": "Widget", "image_url": "https://e.com/i.jpg"},
         source_trace={"field_discovery_missing": ["price"]},
@@ -80,7 +111,9 @@ def test_high_value_field_missing_suppressed_when_diagnosed():
 
 
 def test_dom_skipped_with_variant_cues_flagged():
-    run = _run(surface="ecommerce_detail", verdict="success", requested_fields=["variants"])
+    run = _run(
+        surface="ecommerce_detail", verdict="success", requested_fields=["variants"]
+    )
     record = _record(
         data={
             "title": "Sneaker",
@@ -100,14 +133,18 @@ def test_dom_skipped_with_variant_cues_flagged():
         },
     )
     flags = run_audit.build_run_flags(run, [record])
-    dom_flags = [f for f in flags if f["code"] == audit_rules.FLAG_DOM_SKIPPED_WITH_VARIANT_CUES]
+    dom_flags = [
+        f for f in flags if f["code"] == audit_rules.FLAG_DOM_SKIPPED_WITH_VARIANT_CUES
+    ]
     assert dom_flags
     assert dom_flags[0]["owner"] == audit_rules.OWNER_DETAIL_TIERS
     assert dom_flags[0]["evidence"]["confidence"] == 0.82
 
 
 def test_dom_skip_not_flagged_when_variants_present():
-    run = _run(surface="ecommerce_detail", verdict="success", requested_fields=["variants"])
+    run = _run(
+        surface="ecommerce_detail", verdict="success", requested_fields=["variants"]
+    )
     record = _record(
         data={
             "title": "Sneaker",
@@ -146,7 +183,9 @@ def test_usable_content_but_blocked_flagged(tmp_path, monkeypatch):
 
 def test_clean_run_produces_no_flags(tmp_path, monkeypatch):
     monkeypatch.setattr(run_audit.settings, "artifacts_dir", tmp_path)
-    run = _run(surface="ecommerce_detail", verdict="success", requested_fields=["price"])
+    run = _run(
+        surface="ecommerce_detail", verdict="success", requested_fields=["price"]
+    )
     record = _record(
         data={
             "title": "Widget",

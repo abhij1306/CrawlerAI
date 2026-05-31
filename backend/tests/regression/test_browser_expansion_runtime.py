@@ -4310,6 +4310,41 @@ async def test_emit_browser_behavior_activity_adds_scroll_physics(
     assert wait_calls
 
 
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_emit_browser_behavior_activity_ignores_scroll_failures(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _Mouse:
+        async def move(self, x: int, y: int) -> None:
+            await _async_checkpoint()
+            del x, y
+
+        async def wheel(self, delta_x: int, delta_y: int) -> None:
+            await _async_checkpoint()
+            del delta_x, delta_y
+
+    class _Page:
+        mouse = _Mouse()
+
+        async def evaluate(self, script: str, arg: Any | None = None) -> dict[str, int]:
+            await _async_checkpoint()
+            del script, arg
+            return {"width": 900, "height": 700}
+
+    async def _raise_scroll_failure(_page: object) -> int:
+        await _async_checkpoint()
+        raise RuntimeError("scroll failed")
+
+    monkeypatch.setattr(browser_recovery.secrets, "randbelow", lambda limit: 0)
+    monkeypatch.setattr(browser_recovery, "_emit_scroll_physics", _raise_scroll_failure)
+
+    diagnostics = await browser_recovery.emit_browser_behavior_activity(_Page())
+
+    assert diagnostics["enabled"] is True
+    assert int(diagnostics["scroll_steps"]) == 0
+
+
 @pytest.mark.regression
 def test_should_run_behavior_realism_skips_detail_shell_retry_for_real_chrome() -> None:
     assert (

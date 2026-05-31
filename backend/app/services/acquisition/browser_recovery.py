@@ -342,7 +342,11 @@ async def emit_browser_behavior_activity(page: Any) -> dict[str, object]:
     except Exception:
         # Best-effort humanization metric; pointer move count is non-critical.
         pass
-    scroll_steps += await _emit_scroll_physics(page)
+    try:
+        scroll_steps += await _emit_scroll_physics(page)
+    except Exception:
+        # Best-effort humanization metric; scroll count is non-critical.
+        pass
     return {
         "enabled": True,
         "pointer_moves": pointer_moves,

@@ -158,7 +158,17 @@ FLAG_SEVERITY_LOW = "low"
 AUDIT_BLOCKED_VERDICTS = frozenset({"blocked"})
 # Page-metadata-ish keys that signal a fake single-row listing result.
 AUDIT_METADATA_ONLY_KEYS = frozenset(
-    {"title", "description", "url", "source_url", "brand"}
+    {
+        "brand",
+        "canonical_url",
+        "description",
+        "image",
+        "image_url",
+        "site_name",
+        "source_url",
+        "title",
+        "url",
+    }
 )
 # Record keys whose presence on a detail record indicates real variant cues
 # (used to flag a DOM-skip that dropped variants — INVARIANT Rule 3).

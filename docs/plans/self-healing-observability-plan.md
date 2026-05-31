@@ -11,7 +11,7 @@ read-only audit subsystem. Frontend deferred to Phase 2.
 
 Make every crawl run self-auditing. Today the agent debugs by the user pasting logs and JSON by
 hand, and there is no record of *where* a field was extracted from. Two blackholes exist:
-(1) browser launch -> page rendered is opaque (only "Launched browser" + "Page loaded in Xms");
+(1) browser launch -> page rendered is opaque (only "Launched browser" + "Page loaded in X ms");
 (2) the extraction pipeline is completely dark — tier execution, the skip-DOM decision, and
 per-field candidate competition are never persisted. The saved `browser.json` is also bloated and
 dishonest (pre-fetch host snapshot read back as a per-run result, listing fields on detail runs,

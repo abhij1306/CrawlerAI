@@ -200,6 +200,9 @@ def update_baseline(
         merged_tiers = list(observation.get("tiers", []))
         merged_fields = list(observation.get("fields", []))
     else:
+        # With samples present, merged_tiers/merged_fields intentionally tighten
+        # to the intersection of existing and observation so regressions show as
+        # missing tiers/fields; the baseline shrinks as more samples are added.
         merged_tiers = sorted(
             set(existing.get("tiers", []) or []) & set(observation.get("tiers", []))
         )

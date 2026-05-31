@@ -185,13 +185,15 @@ def _record_path(record: dict[str, Any]) -> str:
 
 def _belk_state_roots(html: str) -> list[Any]:
     raw = str(html or "").strip()
+    roots: list[Any] = []
     if raw and raw[0] in "[{":
         try:
-            return [json.loads(raw)]
+            roots.append(json.loads(raw))
         except json.JSONDecodeError:
             # Not a raw JSON document; fall back to JS-state harvesting below.
             pass
-    return list(harvest_js_state_objects(None, html).values())
+    roots.extend(harvest_js_state_objects(None, html).values())
+    return roots
 
 
 @dataclass(slots=True)
