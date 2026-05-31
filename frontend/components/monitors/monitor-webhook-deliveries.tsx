@@ -22,13 +22,13 @@ export function MonitorWebhookDeliveries({ monitorId }: Readonly<{ monitorId: nu
     );
   }
   if (query.isPending) {
-    return <Skeleton className="h-40 w-full rounded-[var(--radius-lg)]" />;
+    return <Skeleton className="h-40 w-full rounded-lg" />;
   }
   if (!query.data?.length) {
     return <MonitorEmptyState kind="events" />;
   }
   return (
-    <div className="divide-border border-border rounded-[var(--radius-lg)] border">
+    <div className="divide-border border-border rounded-lg border">
       {query.data.map((delivery) => (
         <div key={delivery.id} className="px-4 py-3">
           <div className="flex flex-wrap items-center gap-2">
@@ -37,9 +37,7 @@ export function MonitorWebhookDeliveries({ monitorId }: Readonly<{ monitorId: nu
             {delivery.response_code ? (
               <span className="text-secondary type-caption">HTTP {delivery.response_code}</span>
             ) : null}
-            <span className="text-muted type-caption">
-              {formatRelativeTime(delivery.created_at)}
-            </span>
+            <span className="type-caption">{formatRelativeTime(delivery.created_at)}</span>
           </div>
           {delivery.error_message ? (
             <p className="text-danger type-caption mt-1">{delivery.error_message}</p>

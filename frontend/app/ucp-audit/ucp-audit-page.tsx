@@ -98,7 +98,7 @@ export default function UcpAuditPage() {
               disabled={controller.createPending || controller.isRunning}
             >
               <Play className="size-3" />
-              {controller.createPending || controller.isRunning ? 'Auditing...' : 'Start Audit'}
+              {controller.createPending || controller.isRunning ? 'Auditing…' : 'Start Audit'}
             </Button>
           </div>
         }
@@ -111,7 +111,7 @@ export default function UcpAuditPage() {
       ) : null}
 
       {/* Horizontal Compact Config Ribbon (Saves huge space) */}
-      <section className="border-border bg-panel border-l-accent relative overflow-hidden rounded-[var(--radius-lg)] border border-l-4 p-4 shadow-sm">
+      <section className="border-border bg-panel before:bg-accent/40 relative overflow-hidden rounded-lg border p-4 shadow-sm before:absolute before:inset-y-0 before:left-0 before:w-px">
         <div className="grid gap-4 lg:grid-cols-[1fr_140px_240px] lg:items-end">
           <Field label="Target Domain" className="w-full">
             <Input
@@ -139,10 +139,10 @@ export default function UcpAuditPage() {
             />
           </Field>
 
-          <div className="border-border bg-background/35 flex h-[var(--control-height)] items-center justify-between gap-3 rounded-[var(--radius-md)] border px-3">
+          <div className="border-border bg-background/35 flex h-[var(--control-height)] items-center justify-between gap-3 rounded-md border px-3">
             <div className="min-w-0">
               <div className="type-label text-secondary">AI reasoning</div>
-              <div className="type-caption text-muted truncate">LLM review per product sample</div>
+              <div className="type-caption truncate">LLM review per product sample</div>
             </div>
             <Toggle
               checked={Boolean(controller.options.llm_enabled)}

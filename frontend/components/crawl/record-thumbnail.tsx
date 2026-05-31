@@ -1,5 +1,6 @@
 'use client';
 
+import Image from 'next/image';
 import { useState } from 'react';
 const BROKEN_THUMBNAIL_STORAGE_KEY = 'crawlerai-broken-thumb-urls-v1';
 const BROKEN_THUMBNAIL_HOSTS_KEY = 'crawlerai-broken-thumb-hosts-v1';
@@ -52,13 +53,13 @@ export function RecordThumbnail({ src }: Readonly<{ src: string }>) {
     return <span className="ct-muted">--</span>;
   }
   return (
-    <div className="ct-image-wrap">
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
+    <div className="ct-image-wrap relative">
+      <Image
         src={src}
         alt=""
-        loading="lazy"
-        decoding="async"
+        fill
+        sizes="64px"
+        unoptimized
         referrerPolicy="no-referrer"
         onError={() => {
           BROKEN_THUMBNAIL_URLS.add(src);

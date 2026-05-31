@@ -9,7 +9,7 @@ import type { HistoryItem } from '../../components/ui/history-drawer';
 import { api } from '../../lib/api';
 import type { ProductIntelligenceDiscoveryResponse } from '../../lib/api/types';
 import { STORAGE_KEYS } from '../../lib/constants/storage-keys';
-import { searchProviderLabel } from './product-intelligence-components';
+import { searchProviderLabel } from './product-intelligence-utils';
 import {
   DEFAULT_OPTIONS,
   candidateConfidence,
@@ -138,13 +138,14 @@ export function useProductIntelligence() {
   }, [discovery]);
   const selectedDomainSummary = useMemo(() => {
     if (!uniqueSelectedUrls.length) return null;
+    const selectedUrlSet = new Set(uniqueSelectedUrls);
     const domains = Array.from(
-      new Set(
-        (discovery?.candidates ?? [])
-          .filter((candidate) => uniqueSelectedUrls.includes(candidate.url))
-          .map((candidate) => candidate.domain)
-          .filter(Boolean),
-      ),
+      (discovery?.candidates ?? []).reduce<Set<string>>((acc, candidate) => {
+        if (selectedUrlSet.has(candidate.url) && candidate.domain) {
+          acc.add(candidate.domain);
+        }
+        return acc;
+      }, new Set<string>()),
     );
     return { count: uniqueSelectedUrls.length, domains };
   }, [discovery, uniqueSelectedUrls]);
@@ -233,10 +234,14 @@ export function useProductIntelligence() {
   }
 
   function toggleAllUrls() {
-    const filteredUrls = filteredCandidates.map((candidate) => candidate.url).filter(Boolean);
-    const allFilteredSelected = filteredUrls.every((url) => selectedUrls.includes(url));
+    const filteredUrls = filteredCandidates.flatMap((candidate) =>
+      candidate.url ? [candidate.url] : [],
+    );
+    const selectedUrlSet = new Set(selectedUrls);
+    const allFilteredSelected = filteredUrls.every((url) => selectedUrlSet.has(url));
     if (allFilteredSelected && filteredUrls.length > 0) {
-      setSelectedUrls((current) => current.filter((url) => !filteredUrls.includes(url)));
+      const filteredUrlSet = new Set(filteredUrls);
+      setSelectedUrls((current) => current.filter((url) => !filteredUrlSet.has(url)));
     } else {
       setSelectedUrls((current) => Array.from(new Set([...current, ...filteredUrls])));
     }

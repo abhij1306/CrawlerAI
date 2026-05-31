@@ -19,7 +19,7 @@ export function ProductIntelligenceResults({ controller }: ProductIntelligenceRe
   return (
     <div>
       <div className="space-y-4">
-        <section className="border-border bg-panel shadow-card overflow-hidden rounded-[var(--radius-xl)] border">
+        <section className="border-border bg-panel shadow-card overflow-hidden rounded-xl border">
           <ResultsToolbar controller={controller} />
           {controller.discovery?.candidates.length ? (
             <ResultsSummary controller={controller} />
@@ -46,14 +46,14 @@ function ResultsToolbar({ controller }: ProductIntelligenceResultsProps) {
         {controller.discovery?.candidates.length ? (
           <input
             type="checkbox"
-            className="focus-ring accent-accent border-border-strong h-3.5 w-3.5 cursor-pointer rounded bg-transparent"
+            className="focus-ring accent-accent border-border-strong size-3.5 cursor-pointer rounded bg-transparent"
             checked={allFilteredSelected}
             onChange={controller.toggleAllUrls}
             aria-label="Select all filtered URLs"
             title="Select all filtered URLs"
           />
         ) : null}
-        <h2 className="type-label text-muted">Discovered candidates</h2>
+        <h2 className="type-label">Discovered candidates</h2>
       </div>
       {controller.discovery?.candidates.length ? <ResultsFilters controller={controller} /> : null}
       <ToolbarActions controller={controller} />
@@ -75,7 +75,7 @@ function ResultsSummary({ controller }: ProductIntelligenceResultsProps) {
 function SummaryMetric({ label, value }: { label: string; value: number }) {
   return (
     <div>
-      <div className="type-label text-muted">{label}</div>
+      <div className="type-label">{label}</div>
       <div className="type-metric mt-1 text-lg">{value}</div>
     </div>
   );
@@ -198,17 +198,18 @@ function SourceRecordsPreview({ controller }: ProductIntelligenceResultsProps) {
           typeof data.currency === 'string' ? data.currency : '',
         );
         const url = (typeof data.url === 'string' && data.url) || record.source_url || '';
+        const rowKey = record.id ?? (url || title || index);
         return (
           <div
-            key={`${record.id ?? 'src'}-${index}`}
+            key={String(rowKey)}
             className="hover:bg-background-alt flex items-center gap-3 px-3 py-2.5"
           >
-            <span className="text-muted type-caption-mono w-6 shrink-0">{index + 1}</span>
+            <span className="type-caption-mono w-6 shrink-0">{index + 1}</span>
             <div className="min-w-0 flex-1">
               <div className="text-foreground type-body-sm truncate font-medium" title={title}>
                 {title}
               </div>
-              <div className="text-muted type-caption flex items-center gap-2">
+              <div className="type-caption flex items-center gap-2">
                 <span>{brand}</span>
                 <span className="type-caption-mono">{price}</span>
                 {url ? (
@@ -237,7 +238,7 @@ function SourceRecordsPreview({ controller }: ProductIntelligenceResultsProps) {
 function BulkActionBar({ controller }: ProductIntelligenceResultsProps) {
   return (
     <div className="animate-fade-in sticky bottom-4 z-20">
-      <div className="border-border bg-panel flex items-center gap-3 rounded-[var(--radius-xl)] border px-4 py-2.5 shadow-lg">
+      <div className="border-border bg-panel flex items-center gap-3 rounded-xl border px-4 py-2.5 shadow-lg">
         <Layers className="text-accent size-4 shrink-0" />
         <span className="text-foreground type-body-sm font-semibold">
           {controller.uniqueSelectedUrls.length} URLs selected

@@ -1,7 +1,7 @@
 'use client';
 
 // Next.js App Router entrypoint for `/admin/llm`; invoked by file-system routing.
-import { startTransition, useEffect, useState } from 'react';
+import { startTransition, useEffect, useReducer, useState } from 'react';
 import { CheckCircle2, PlugZap, Plus, Trash2 } from 'lucide-react';
 
 import { Button, Dropdown, Field, Input } from '../../../components/ui/primitives';
@@ -40,25 +40,139 @@ const TASK_TYPES = [
   'data_enrichment_semantic',
 ];
 
-export default function AdminLlmPage() {
-  const [providers, setProviders] = useState<LlmProviderCatalogItem[]>([]);
-  const [configs, setConfigs] = useState<LlmConfigRecord[]>([]);
-  const [costLog, setCostLog] = useState<LlmCostLogRecord[]>([]);
-  const [customModelSelected, setCustomModelSelected] = useState(false);
-  const [error, setError] = useState('');
-  const [message, setMessage] = useState('');
-  const [saving, setSaving] = useState(false);
-  const [testing, setTesting] = useState(false);
-  const [form, setForm] = useState<LlmConfigCreatePayload>({
-    provider: 'mistral',
-    model: 'mistral-small-latest',
-    task_type: 'xpath_discovery',
-    api_key: '',
-    per_domain_daily_budget_usd: '0',
-    global_session_budget_usd: '0',
-    is_active: true,
-  });
+const INITIAL_LLM_FORM: LlmConfigCreatePayload = {
+  provider: 'mistral',
+  model: 'mistral-small-latest',
+  task_type: 'xpath_discovery',
+  api_key: '',
+  per_domain_daily_budget_usd: '0',
+  global_session_budget_usd: '0',
+  is_active: true,
+};
 
+type AdminLlmState = {
+  providers: LlmProviderCatalogItem[];
+  configs: LlmConfigRecord[];
+  costLog: LlmCostLogRecord[];
+  customModelSelected: boolean;
+  error: string;
+  message: string;
+  saving: boolean;
+  testing: boolean;
+  form: LlmConfigCreatePayload;
+};
+
+type AdminLlmAction =
+  | {
+      type: 'initialLoaded';
+      providers: LlmProviderCatalogItem[];
+      configs: LlmConfigRecord[];
+      costLog: LlmCostLogRecord[];
+    }
+  | { type: 'runtimeLoaded'; configs: LlmConfigRecord[]; costLog: LlmCostLogRecord[] }
+  | { type: 'patchForm'; patch: Partial<LlmConfigCreatePayload> }
+  | { type: 'setCustomModelSelected'; selected: boolean }
+  | { type: 'startSave' }
+  | { type: 'saveSucceeded' }
+  | { type: 'finishSave' }
+  | { type: 'startTest' }
+  | { type: 'testSucceeded'; message: string }
+  | { type: 'finishTest' }
+  | { type: 'deleteStarted' }
+  | { type: 'deleteSucceeded' }
+  | { type: 'failed'; message: string };
+
+const INITIAL_ADMIN_LLM_STATE: AdminLlmState = {
+  providers: [],
+  configs: [],
+  costLog: [],
+  customModelSelected: false,
+  error: '',
+  message: '',
+  saving: false,
+  testing: false,
+  form: INITIAL_LLM_FORM,
+};
+
+function alignFormToProviders(
+  current: LlmConfigCreatePayload,
+  providers: LlmProviderCatalogItem[],
+): LlmConfigCreatePayload {
+  const fallbackProvider = providers[0];
+  const matchingProvider = providers.find((provider) => provider.provider === current.provider);
+  if (matchingProvider) {
+    if (current.model.trim()) {
+      return current;
+    }
+    return {
+      ...current,
+      model: matchingProvider.recommended_models[0] ?? current.model,
+    };
+  }
+  return {
+    ...current,
+    provider: fallbackProvider?.provider ?? current.provider,
+    model: fallbackProvider?.recommended_models[0] ?? current.model,
+  };
+}
+
+function adminLlmReducer(state: AdminLlmState, action: AdminLlmAction): AdminLlmState {
+  switch (action.type) {
+    case 'initialLoaded':
+      return {
+        ...state,
+        providers: action.providers,
+        configs: action.configs,
+        costLog: action.costLog,
+        customModelSelected: false,
+        form: alignFormToProviders(state.form, action.providers),
+      };
+    case 'runtimeLoaded':
+      return { ...state, configs: action.configs, costLog: action.costLog };
+    case 'patchForm':
+      return { ...state, form: { ...state.form, ...action.patch } };
+    case 'setCustomModelSelected':
+      return { ...state, customModelSelected: action.selected };
+    case 'startSave':
+      return { ...state, saving: true, error: '', message: '' };
+    case 'saveSucceeded':
+      return { ...state, message: 'LLM config saved.', form: { ...state.form, api_key: '' } };
+    case 'finishSave':
+      return { ...state, saving: false };
+    case 'startTest':
+      return { ...state, testing: true, error: '', message: '' };
+    case 'testSucceeded':
+      return { ...state, message: action.message };
+    case 'finishTest':
+      return { ...state, testing: false };
+    case 'deleteStarted':
+      return { ...state, error: '', message: '' };
+    case 'deleteSucceeded':
+      return { ...state, message: 'LLM config removed.' };
+    case 'failed':
+      return { ...state, error: action.message };
+  }
+}
+
+export default function AdminLlmPage() {
+  const [state, dispatch] = useReducer(adminLlmReducer, INITIAL_ADMIN_LLM_STATE);
+  const {
+    providers,
+    configs,
+    costLog,
+    customModelSelected,
+    error,
+    message,
+    saving,
+    testing,
+    form,
+  } = state;
+  // Client-only "now" so today/yesterday labels don't differ between server and client render.
+  const [nowMs, setNowMs] = useState<number | null>(null);
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => setNowMs(Date.now()), 0);
+    return () => window.clearTimeout(timeoutId);
+  }, []);
   async function refreshRuntimeState() {
     try {
       const [nextConfigs, nextCostLog] = await Promise.all([
@@ -66,57 +180,62 @@ export default function AdminLlmPage() {
         api.listLlmCostLog(),
       ]);
       startTransition(() => {
-        setConfigs(nextConfigs);
-        setCostLog(nextCostLog);
+        dispatch({ type: 'runtimeLoaded', configs: nextConfigs, costLog: nextCostLog });
       });
     } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : 'Unable to load LLM settings.');
+      dispatch({
+        type: 'failed',
+        message: nextError instanceof Error ? nextError.message : 'Unable to load LLM settings.',
+      });
     }
   }
 
   async function handleSave() {
-    setSaving(true);
-    setError('');
-    setMessage('');
+    dispatch({ type: 'startSave' });
     try {
       await api.createLlmConfig(form);
-      setMessage('LLM config saved.');
-      setForm((current) => ({ ...current, api_key: '' }));
+      dispatch({ type: 'saveSucceeded' });
       await refreshRuntimeState();
     } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : 'Unable to save LLM config.');
+      dispatch({
+        type: 'failed',
+        message: nextError instanceof Error ? nextError.message : 'Unable to save LLM config.',
+      });
     } finally {
-      setSaving(false);
+      dispatch({ type: 'finishSave' });
     }
   }
 
   async function handleTest() {
-    setTesting(true);
-    setError('');
-    setMessage('');
+    dispatch({ type: 'startTest' });
     try {
       const response = await api.testLlmConnection({
         provider: form.provider,
         model: form.model,
         api_key: form.api_key,
       });
-      setMessage(response.message);
+      dispatch({ type: 'testSucceeded', message: response.message });
     } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : 'Connection test failed.');
+      dispatch({
+        type: 'failed',
+        message: nextError instanceof Error ? nextError.message : 'Connection test failed.',
+      });
     } finally {
-      setTesting(false);
+      dispatch({ type: 'finishTest' });
     }
   }
 
   async function handleDelete(configId: number) {
-    setError('');
-    setMessage('');
+    dispatch({ type: 'deleteStarted' });
     try {
       await api.deleteLlmConfig(configId);
-      setMessage('LLM config removed.');
+      dispatch({ type: 'deleteSucceeded' });
       await refreshRuntimeState();
     } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : 'Unable to delete LLM config.');
+      dispatch({
+        type: 'failed',
+        message: nextError instanceof Error ? nextError.message : 'Unable to delete LLM config.',
+      });
     }
   }
 
@@ -132,34 +251,19 @@ export default function AdminLlmPage() {
         ]);
         if (cancelled) return;
         startTransition(() => {
-          setProviders(nextProviders);
-          setConfigs(nextConfigs);
-          setCostLog(nextCostLog);
-          const fallbackProvider = nextProviders[0];
-          setForm((current) => {
-            const matchingProvider = nextProviders.find(
-              (provider) => provider.provider === current.provider,
-            );
-            if (matchingProvider) {
-              if (current.model.trim()) {
-                return current;
-              }
-              return {
-                ...current,
-                model: matchingProvider.recommended_models[0] ?? current.model,
-              };
-            }
-            return {
-              ...current,
-              provider: fallbackProvider?.provider ?? current.provider,
-              model: fallbackProvider?.recommended_models[0] ?? current.model,
-            };
+          dispatch({
+            type: 'initialLoaded',
+            providers: nextProviders,
+            configs: nextConfigs,
+            costLog: nextCostLog,
           });
-          setCustomModelSelected(false);
         });
       } catch (nextError) {
         if (cancelled) return;
-        setError(nextError instanceof Error ? nextError.message : 'Unable to load LLM settings.');
+        dispatch({
+          type: 'failed',
+          message: nextError instanceof Error ? nextError.message : 'Unable to load LLM settings.',
+        });
       }
     }
 
@@ -204,12 +308,14 @@ export default function AdminLlmPage() {
                     const nextModel =
                       providers.find((row) => row.provider === provider)?.recommended_models?.[0] ??
                       '';
-                    setCustomModelSelected(false);
-                    setForm((current) => ({
-                      ...current,
-                      provider,
-                      model: nextModel || current.model,
-                    }));
+                    dispatch({ type: 'setCustomModelSelected', selected: false });
+                    dispatch({
+                      type: 'patchForm',
+                      patch: {
+                        provider,
+                        model: nextModel || form.model,
+                      },
+                    });
                   }}
                   options={providers.map((provider) => ({
                     value: provider.provider,
@@ -221,7 +327,7 @@ export default function AdminLlmPage() {
               <Field label="Task">
                 <Dropdown<string>
                   value={form.task_type}
-                  onChange={(task_type) => setForm((current) => ({ ...current, task_type }))}
+                  onChange={(task_type) => dispatch({ type: 'patchForm', patch: { task_type } })}
                   options={TASK_TYPES.map((taskType) => ({ value: taskType, label: taskType }))}
                 />
               </Field>
@@ -232,11 +338,11 @@ export default function AdminLlmPage() {
                     value={modelDropdownValue}
                     onChange={(model) => {
                       if (model === CUSTOM_MODEL_OPTION) {
-                        setCustomModelSelected(true);
+                        dispatch({ type: 'setCustomModelSelected', selected: true });
                         return;
                       }
-                      setCustomModelSelected(false);
-                      setForm((current) => ({ ...current, model }));
+                      dispatch({ type: 'setCustomModelSelected', selected: false });
+                      dispatch({ type: 'patchForm', patch: { model } });
                     }}
                     options={modelOptions}
                   />
@@ -246,13 +352,15 @@ export default function AdminLlmPage() {
                         value={form.model}
                         list={modelSuggestionsId}
                         onChange={(event) =>
-                          setForm((current) => ({ ...current, model: event.target.value }))
+                          dispatch({ type: 'patchForm', patch: { model: event.target.value } })
                         }
                         placeholder="Enter custom model id"
                       />
                       <datalist id={modelSuggestionsId}>
                         {recommendedModels.map((model) => (
-                          <option key={model} value={model} />
+                          <option key={model} value={model} label={model}>
+                            {model}
+                          </option>
                         ))}
                       </datalist>
                     </>
@@ -265,7 +373,7 @@ export default function AdminLlmPage() {
                   type="password"
                   value={form.api_key ?? ''}
                   onChange={(event) =>
-                    setForm((current) => ({ ...current, api_key: event.target.value }))
+                    dispatch({ type: 'patchForm', patch: { api_key: event.target.value } })
                   }
                   placeholder="Leave blank to rely on environment variables."
                 />
@@ -323,11 +431,11 @@ export default function AdminLlmPage() {
                           ) : null}
                         </div>
                         {/* Provider · model */}
-                        <p className="type-caption text-muted m-0">
+                        <p className="type-caption m-0">
                           {config.provider} · {config.model}
                         </p>
                         {/* API key status */}
-                        <p className="type-caption text-muted m-0">
+                        <p className="type-caption m-0">
                           {config.api_key_set ? config.api_key_masked : 'env-backed or unset'}
                         </p>
                       </div>
@@ -372,11 +480,11 @@ export default function AdminLlmPage() {
                   </TableHeader>
                   <TableBody>
                     {(() => {
-                      const now = new Date();
-                      const todayStr = now.toDateString();
-                      const yesterdayDate = new Date();
-                      yesterdayDate.setDate(now.getDate() - 1);
-                      const yesterdayStr = yesterdayDate.toDateString();
+                      const now = nowMs !== null ? new Date(nowMs) : null;
+                      const todayStr = now?.toDateString();
+                      const yesterdayStr = now
+                        ? new Date(nowMs! - 86_400_000).toDateString()
+                        : undefined;
                       return costLog.slice(0, 40).map((entry) => {
                         const totalTokens = entry.input_tokens + entry.output_tokens;
                         const cost = parseFloat(entry.cost_usd) || 0;
@@ -388,7 +496,7 @@ export default function AdminLlmPage() {
                                   <span className="text-foreground type-caption-mono font-medium tabular-nums">
                                     {totalTokens.toLocaleString()}
                                   </span>
-                                  <span className="text-muted type-caption">tokens</span>
+                                  <span className="type-caption">tokens</span>
                                 </div>
                                 <span className="text-accent type-label-mono mt-1 font-medium">
                                   ${cost > 0 && cost < 0.0001 ? cost.toFixed(6) : cost.toFixed(4)}
@@ -397,7 +505,7 @@ export default function AdminLlmPage() {
                             </TableCell>
 
                             {/* Task type */}
-                            <TableCell className="px-4 py-4">
+                            <TableCell className="p-4">
                               <span className="type-control text-foreground !font-normal">
                                 {entry.task_type.replace(/_/g, ' ')}
                               </span>
@@ -405,7 +513,7 @@ export default function AdminLlmPage() {
 
                             {/* Domain / run target */}
                             <TableCell
-                              className="px-4 py-4"
+                              className="p-4"
                               title={entry.domain || `Run #${entry.run_id}`}
                             >
                               <span className="text-foreground/80 block truncate">
@@ -414,22 +522,19 @@ export default function AdminLlmPage() {
                             </TableCell>
 
                             {/* Provider + model stacked */}
-                            <TableCell className="px-4 py-4">
+                            <TableCell className="p-4">
                               <div className="flex flex-col overflow-hidden">
                                 <span className="type-control text-foreground truncate !font-normal">
                                   {entry.provider}
                                 </span>
-                                <span
-                                  className="type-caption text-muted truncate"
-                                  title={entry.model}
-                                >
+                                <span className="type-caption truncate" title={entry.model}>
                                   {entry.model}
                                 </span>
                               </div>
                             </TableCell>
 
                             <TableCell className="px-0 py-4 text-right">
-                              <span className="type-caption-mono text-muted group-hover:text-foreground transition-colors">
+                              <span className="type-caption-mono group-hover:text-foreground transition-colors">
                                 {(() => {
                                   const d = new Date(entry.created_at);
                                   const dStr = d.toDateString();

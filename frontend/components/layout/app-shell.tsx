@@ -130,7 +130,7 @@ export function AppShell({ children }: Readonly<{ children: ReactNode }>) {
             </div>
             <div className="app-sidebar-nav">
               {Array.from({ length: navItemCount }, (_, index) => (
-                <div key={index} className="skeleton h-8 w-full rounded-[var(--radius-md)]" />
+                <div key={index} className="skeleton h-8 w-full rounded-md" />
               ))}
             </div>
           </aside>
@@ -144,14 +144,14 @@ export function AppShell({ children }: Readonly<{ children: ReactNode }>) {
                   {Array.from({ length: 4 }, (_, index) => (
                     <div
                       key={index}
-                      className="border-border card-gradient space-y-3 rounded-[var(--radius-lg)] border p-4"
+                      className="border-border card-gradient space-y-3 rounded-lg border p-4"
                     >
                       <div className="skeleton h-3 w-20" />
                       <div className="skeleton h-8 w-28" />
                     </div>
                   ))}
                 </div>
-                <div className="skeleton h-72 w-full rounded-[var(--radius-lg)]" />
+                <div className="skeleton h-72 w-full rounded-lg" />
               </div>
             </main>
           </div>
@@ -163,13 +163,9 @@ export function AppShell({ children }: Readonly<{ children: ReactNode }>) {
   if (authQuery.error && httpErrorStatus(authQuery.error) === 401) {
     return (
       <div className="app-shell-feedback">
-        <div className="border-border card-gradient max-w-sm rounded-[var(--radius-lg)] border p-6 text-center">
-          <p className="text-foreground type-heading text-base leading-snug font-semibold">
-            Session expired
-          </p>
-          <p className="text-secondary mt-1.5 text-sm leading-[var(--leading-relaxed)]">
-            Redirecting to login…
-          </p>
+        <div className="border-border card-gradient max-w-sm rounded-lg border p-6 text-center">
+          <p className="type-subheading">Session expired</p>
+          <p className="text-secondary mt-1.5 text-sm leading-relaxed">Redirecting to login…</p>
         </div>
       </div>
     );
@@ -178,11 +174,9 @@ export function AppShell({ children }: Readonly<{ children: ReactNode }>) {
   if (authQuery.error) {
     return (
       <div className="app-shell-feedback">
-        <div className="border-border card-gradient max-w-sm rounded-[var(--radius-lg)] border p-6 text-center">
-          <p className="text-foreground type-heading text-base leading-snug font-semibold">
-            Unable to load session
-          </p>
-          <p className="text-secondary mt-1.5 text-sm leading-[var(--leading-relaxed)]">
+        <div className="border-border card-gradient max-w-sm rounded-lg border p-6 text-center">
+          <p className="type-subheading">Unable to load session</p>
+          <p className="text-secondary mt-1.5 text-sm leading-relaxed">
             Refresh to retry, or sign in again if the session expired.
           </p>
           <div className="mt-4 flex justify-center">
@@ -370,7 +364,7 @@ function ShellContent({
   const [resetError, setResetError] = useState('');
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const resetTriggerRef = useRef<HTMLButtonElement | null>(null);
-  const resetDialogRef = useRef<HTMLDivElement | null>(null);
+  const resetDialogRef = useRef<HTMLDialogElement | null>(null);
   const resetConfirmRef = useRef<HTMLButtonElement | null>(null);
   const resetPreviousFocusRef = useRef<HTMLElement | null>(null);
   const resetPendingRef = useRef(resetPending);
@@ -400,7 +394,9 @@ function ShellContent({
     if (!resetDialogOpen) {
       return;
     }
+    const previousFocusRef = resetPreviousFocusRef;
     const resetTrigger = resetTriggerRef.current;
+    const previousFocus = previousFocusRef.current;
     const previousOverflow = document.body.style.overflow;
     const previousTouchAction = document.body.style.touchAction;
     document.body.style.overflow = 'hidden';
@@ -423,11 +419,9 @@ function ShellContent({
       document.removeEventListener('keydown', handleKeyDown);
       document.body.style.overflow = previousOverflow;
       document.body.style.touchAction = previousTouchAction;
-      const restoreTarget = resetPreviousFocusRef.current?.isConnected
-        ? resetPreviousFocusRef.current
-        : resetTrigger;
+      const restoreTarget = previousFocus?.isConnected ? previousFocus : resetTrigger;
       restoreTarget?.focus();
-      resetPreviousFocusRef.current = null;
+      previousFocusRef.current = null;
     };
   }, [resetDialogOpen]);
 
@@ -464,7 +458,7 @@ function ShellContent({
     setResetDialogOpen(true);
   }
 
-  const resetLabel = resetPending ? 'Resetting Workspace...' : 'Reset Workspace';
+  const resetLabel = resetPending ? 'Resetting Workspace…' : 'Reset Workspace';
 
   return (
     <div className="app-main-col">
@@ -507,7 +501,7 @@ function ShellContent({
               ) : null}
             </button>
             {notificationsOpen ? (
-              <div className="border-border bg-background-elevated absolute top-9 right-0 z-[250] w-[min(340px,calc(100vw-32px))] rounded-[var(--radius-lg)] border p-2 shadow-lg">
+              <div className="border-border bg-background-elevated absolute top-9 right-0 z-[250] w-[min(340px,calc(100vw-32px))] rounded-lg border p-2 shadow-lg">
                 <div className="border-divider flex items-center justify-between border-b px-2 py-1.5">
                   <p className="type-label m-0">Notifications</p>
                   <span className="type-caption">
@@ -524,7 +518,7 @@ function ShellContent({
                     notificationsQuery.data.map((item) => (
                       <div
                         key={item.id}
-                        className="hover:bg-background-alt flex items-start gap-2 rounded-[var(--radius-md)] p-2"
+                        className="hover:bg-background-alt flex items-start gap-2 rounded-md p-2"
                       >
                         <Link
                           href={`/monitors/${item.monitor_id}` as Route}
@@ -563,14 +557,13 @@ function ShellContent({
       </main>
       {canResetWorkspace && resetDialogOpen ? (
         <div className="overlay-scrim fixed inset-0 z-[100] grid place-items-center p-4">
-          <div
+          <dialog
             ref={resetDialogRef}
-            role="dialog"
-            aria-modal="true"
+            open
             aria-labelledby="reset-workspace-title"
             aria-describedby="reset-workspace-description"
             tabIndex={-1}
-            className="border-border card-gradient w-[min(420px,100%)] rounded-[var(--radius-lg)] border p-5"
+            className="border-border card-gradient w-[min(420px,100%)] rounded-lg border p-5"
           >
             <h2
               id="reset-workspace-title"
@@ -580,14 +573,14 @@ function ShellContent({
             </h2>
             <p
               id="reset-workspace-description"
-              className="text-secondary mt-2 text-sm leading-[var(--leading-relaxed)]"
+              className="text-secondary mt-2 text-sm leading-relaxed"
             >
               {resetDialogCopy.description}
             </p>
             {resetError ? (
               <div
                 role="alert"
-                className="border-danger/20 bg-danger/10 text-danger mt-4 rounded-[var(--radius-md)] border px-3 py-2 text-sm leading-[var(--leading-normal)]"
+                className="border-danger/20 bg-danger/10 text-danger mt-4 rounded-md border px-3 py-2 text-sm leading-normal"
               >
                 {resetError}
               </div>
@@ -608,10 +601,10 @@ function ShellContent({
                 disabled={resetPending}
                 onClick={() => void executeReset()}
               >
-                {resetPending ? 'Working...' : resetDialogCopy.confirmLabel}
+                {resetPending ? 'Working…' : resetDialogCopy.confirmLabel}
               </Button>
             </div>
-          </div>
+          </dialog>
         </div>
       ) : null}
     </div>

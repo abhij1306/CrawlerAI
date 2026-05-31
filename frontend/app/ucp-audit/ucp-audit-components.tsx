@@ -1,6 +1,6 @@
 'use client';
 
-import { type ReactNode, useMemo, useState } from 'react';
+import { type ReactNode, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, Check, CheckSquare, Download, ShieldAlert, Sparkles } from 'lucide-react';
 
 import { DataRegionEmpty, DataRegionLoading, TableSurface } from '../../components/ui/patterns';
@@ -404,12 +404,12 @@ export function UcpScoreSummary({
   const dUcp1GateMax = Number(report?.report_json?.d_ucp1_gate_max_score ?? 30);
 
   return (
-    <section className="border-border bg-panel overflow-hidden rounded-[var(--radius-lg)] border shadow-sm">
+    <section className="border-border bg-panel overflow-hidden rounded-lg border shadow-sm">
       <div className="grid gap-0 lg:grid-cols-[300px_1fr]">
         <div className="border-divider bg-background/30 relative flex flex-col items-center justify-center border-b p-6 lg:border-r lg:border-b-0">
           <div className="absolute inset-x-0 top-3 flex items-center justify-center gap-1.5">
             <Sparkles className="text-accent size-3 animate-pulse" />
-            <span className="type-label-mono text-muted">AI DISCOVERABILITY SCORE</span>
+            <span className="type-label-mono">AI DISCOVERABILITY SCORE</span>
           </div>
           {loading && !report ? (
             <LoadingScoreRing size={156} />
@@ -429,7 +429,7 @@ export function UcpScoreSummary({
 
         <div className="flex min-w-0 flex-col justify-center p-5">
           {gateApplied ? (
-            <div className="border-danger/30 bg-danger/5 text-danger mb-4 flex items-center gap-2.5 rounded-[var(--radius-md)] border px-3 py-2.5">
+            <div className="border-danger/30 bg-danger/5 text-danger mb-4 flex items-center gap-2.5 rounded-md border px-3 py-2.5">
               <ShieldAlert className="size-4 shrink-0" />
               <div className="leading-snug">
                 <p className="type-subheading text-danger">
@@ -480,8 +480,8 @@ export function UcpDimensionTable({
     <TableSurface contentClassName="min-h-[280px]">
       <header className="border-divider bg-background/25 flex items-center justify-between gap-3 border-b px-4 py-3">
         <div>
-          <h2 className="type-label-mono text-muted">AI DISCOVERABILITY DIMENSIONS</h2>
-          <p className="type-caption text-muted mt-0.5">
+          <h2 className="type-label-mono">AI DISCOVERABILITY DIMENSIONS</h2>
+          <p className="type-caption mt-0.5">
             Score measured against structured markup, catalog completeness, commerce, freshness,
             trust, and discovery signals.
           </p>
@@ -508,7 +508,7 @@ export function UcpDimensionTable({
             return (
               <article
                 key={dimension.dimension_id}
-                className="hover:bg-background/10 grid gap-6 px-6 py-6 transition-colors lg:grid-cols-[300px_1fr]"
+                className="hover:bg-background/10 grid gap-6 p-6 transition-colors lg:grid-cols-[300px_1fr]"
               >
                 <div className="lg:border-divider/40 flex flex-col justify-start border-b pr-4 pb-4 lg:border-r lg:border-b-0 lg:pb-0">
                   <div className="mb-2 flex items-center gap-2">
@@ -520,7 +520,7 @@ export function UcpDimensionTable({
                     </Badge>
                   </div>
                   <h3 className="type-subheading text-foreground mt-1">{meta.label}</h3>
-                  <p className="type-caption text-muted mt-2 pr-2">{meta.desc}</p>
+                  <p className="type-caption mt-2 pr-2">{meta.desc}</p>
                 </div>
 
                 <div className="flex min-w-0 flex-col justify-center lg:pl-4">
@@ -534,7 +534,7 @@ export function UcpDimensionTable({
                       {findings.map((finding) => (
                         <li
                           key={finding.id}
-                          className="border-border bg-panel flex w-full min-w-0 items-start gap-3 rounded-[var(--radius-md)] border p-4 shadow-sm"
+                          className="border-border bg-panel flex w-full min-w-0 items-start gap-3 rounded-md border p-4 shadow-sm"
                         >
                           <AlertTriangle
                             className={cn(
@@ -546,7 +546,7 @@ export function UcpDimensionTable({
                             <div className="type-body-sm text-foreground">
                               {finding.description}
                             </div>
-                            <div className="type-caption text-muted mt-1">{finding.fix}</div>
+                            <div className="type-caption mt-1">{finding.fix}</div>
                             <div className="mt-2 flex flex-wrap items-center gap-1.5">
                               <Badge tone="neutral" className="font-mono lowercase">
                                 {finding.effort}
@@ -561,7 +561,7 @@ export function UcpDimensionTable({
                       ))}
                     </ul>
                   ) : (
-                    <div className="border-success-border bg-success-bg text-success-text flex w-full max-w-[760px] items-center gap-2.5 rounded-[var(--radius-md)] border p-3.5">
+                    <div className="border-success-border bg-success-bg text-success-text flex w-full max-w-[760px] items-center gap-2.5 rounded-md border p-3.5">
                       <Check className="text-success-text size-4 shrink-0" />
                       <span className="type-subheading text-success-text font-medium">
                         Required AI discoverability signals are present for this dimension.
@@ -600,8 +600,8 @@ export function UcpContractPanel({ report }: Readonly<{ report: UcpAuditReport |
     <TableSurface>
       <header className="border-divider bg-background/25 flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3">
         <div>
-          <h2 className="type-label-mono text-muted">SIGNAL AUDIT</h2>
-          <p className="type-caption text-muted mt-0.5">
+          <h2 className="type-label-mono">SIGNAL AUDIT</h2>
+          <p className="type-caption mt-0.5">
             Catalog crawl, structured markup, and AI crawler discovery signals.
           </p>
         </div>
@@ -699,7 +699,7 @@ export function UcpContractPanel({ report }: Readonly<{ report: UcpAuditReport |
           <AiAssessmentSummary assessment={aiAssessment} />
 
           <div>
-            <h3 className="type-label-mono text-muted mb-2">PRODUCT SAMPLE MATRIX</h3>
+            <h3 className="type-label-mono mb-2">PRODUCT SAMPLE MATRIX</h3>
             {productRecords.length ? (
               <div className="overflow-x-auto">
                 <Table className="min-w-[760px]">
@@ -713,8 +713,14 @@ export function UcpContractPanel({ report }: Readonly<{ report: UcpAuditReport |
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {productRecords.map((record, index) => (
-                      <TableRow key={`${formatUnknownText(record.source_url, 'sample')}-${index}`}>
+                    {productRecords.map((record) => (
+                      <TableRow
+                        key={[
+                          formatUnknownText(record.source_url, 'sample'),
+                          formatUnknownText(record.title ?? record.name, 'untitled'),
+                          formatUnknownText(record.price, 'unpriced'),
+                        ].join(':')}
+                      >
                         <TableCell className="font-mono text-xs">
                           <span title={formatUnknownText(record.source_url, '-')}>
                             {compactUrl(formatUnknownText(record.source_url, '-'))}
@@ -769,9 +775,9 @@ export function UcpFixSequence({ report }: Readonly<{ report: UcpAuditReport | n
   // Re-sync from localStorage when the audit report (and storageKey) changes.
   // Uses the derive-state-from-prop pattern instead of setState-in-effect so
   // we don't cascade an extra render when the storageKey hasn't changed.
-  const [prevStorageKey, setPrevStorageKey] = useState(storageKey);
-  if (storageKey !== prevStorageKey) {
-    setPrevStorageKey(storageKey);
+  const prevStorageKeyRef = useRef(storageKey);
+  if (storageKey !== prevStorageKeyRef.current) {
+    prevStorageKeyRef.current = storageKey;
     if (!storageKey || typeof globalThis.window === 'undefined') {
       setDone({});
     } else {
@@ -818,10 +824,8 @@ export function UcpFixSequence({ report }: Readonly<{ report: UcpAuditReport | n
     <TableSurface>
       <header className="border-divider bg-background/25 flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3">
         <div>
-          <h2 className="type-label-mono text-muted">REPAIR ROADMAP</h2>
-          <p className="type-caption text-muted mt-0.5">
-            Grouped by AI discoverability repair area.
-          </p>
+          <h2 className="type-label-mono">REPAIR ROADMAP</h2>
+          <p className="type-caption mt-0.5">Grouped by AI discoverability repair area.</p>
         </div>
         <Button
           type="button"
@@ -869,7 +873,7 @@ export function UcpFixSequence({ report }: Readonly<{ report: UcpAuditReport | n
                     type="button"
                     onClick={() => toggle(item.id)}
                     className={cn(
-                      'border-border mt-0.5 flex size-5 cursor-pointer items-center justify-center rounded-[var(--radius-sm)] border transition-all',
+                      'border-border mt-0.5 flex size-5 cursor-pointer items-center justify-center rounded-sm border transition-all',
                       isChecked
                         ? 'bg-success border-success text-white'
                         : 'bg-background hover:border-accent',
@@ -892,7 +896,7 @@ export function UcpFixSequence({ report }: Readonly<{ report: UcpAuditReport | n
                       </span>
                       <span>{item.action}</span>
                     </div>
-                    <p className="type-caption text-muted mt-1">Source: {item.source}</p>
+                    <p className="type-caption mt-1">Source: {item.source}</p>
                     <div className="mt-2 flex flex-wrap gap-1.5">
                       <Badge tone="neutral" className="font-mono lowercase">
                         {item.effort}
@@ -949,7 +953,7 @@ function ManifestSummary({
 
   return (
     <div>
-      <h3 className="type-label-mono text-muted mb-2">DISCOVERY PROFILE</h3>
+      <h3 className="type-label-mono mb-2">DISCOVERY PROFILE</h3>
       <div className="grid gap-3 lg:grid-cols-2">
         <ManifestFact
           label="Profile"
@@ -993,7 +997,7 @@ function ManifestFact({
   detail,
 }: Readonly<{ label: string; value: string; tone: string; detail?: string }>) {
   return (
-    <div className="border-border bg-panel rounded-[var(--radius-md)] border p-3">
+    <div className="border-border bg-panel rounded-md border p-3">
       <div className="mb-1 flex items-center justify-between gap-2">
         <span className="type-label text-secondary">{label}</span>
         <Badge tone={badgeTone(tone)}>{value}</Badge>
@@ -1009,7 +1013,7 @@ function TransportSummary({ transports }: Readonly<{ transports: ContractTranspo
   if (!transports.length) {
     return (
       <div>
-        <h3 className="type-label-mono text-muted mb-2">TRANSPORTS</h3>
+        <h3 className="type-label-mono mb-2">TRANSPORTS</h3>
         <DataRegionEmpty
           title="No declared transports"
           description="The manifest did not expose REST, MCP, A2A, or embedded transports."
@@ -1019,7 +1023,7 @@ function TransportSummary({ transports }: Readonly<{ transports: ContractTranspo
   }
   return (
     <div>
-      <h3 className="type-label-mono text-muted mb-2">TRANSPORTS</h3>
+      <h3 className="type-label-mono mb-2">TRANSPORTS</h3>
       <div className="overflow-x-auto">
         <Table className="min-w-[820px]">
           <TableHeader>
@@ -1031,7 +1035,7 @@ function TransportSummary({ transports }: Readonly<{ transports: ContractTranspo
             </TableRow>
           </TableHeader>
           <TableBody>
-            {transports.map((transport, index) => {
+            {transports.map((transport) => {
               const negotiationTone = transportNegotiationTone(transport);
               const negotiationLabel = transportNegotiationLabel(transport);
               let detail = <span className="text-muted">-</span>;
@@ -1044,13 +1048,19 @@ function TransportSummary({ transports }: Readonly<{ transports: ContractTranspo
               }
 
               return (
-                <TableRow key={`${transport.transport ?? 'transport'}-${index}`}>
+                <TableRow
+                  key={[
+                    transport.transport ?? 'transport',
+                    transport.service ?? 'service',
+                    transport.endpoint ?? 'endpoint',
+                  ].join(':')}
+                >
                   <TableCell className="py-3 align-top">
                     <div className="text-foreground font-mono text-xs">
                       {(transport.transport ?? 'unknown').toUpperCase()}
                     </div>
                     {transport.service ? (
-                      <div className="type-caption text-muted mt-1">{transport.service}</div>
+                      <div className="type-caption mt-1">{transport.service}</div>
                     ) : null}
                   </TableCell>
                   <TableCell className="py-3 align-top">
@@ -1084,7 +1094,7 @@ function SchemaCoverageCell({
 }: Readonly<{ schema: NonNullable<UcpContract['schemas']>[number] }>) {
   const groups = activeSchemaGroups(schema);
   if (!groups.length) {
-    return <span className="type-caption-mono text-muted">No UCP payload group detected</span>;
+    return <span className="type-caption-mono">No UCP payload group detected</span>;
   }
   return (
     <div className="grid gap-2 sm:grid-cols-3">
@@ -1131,13 +1141,15 @@ function SchemaGroupSummary({
 function SchemaMissingCell({
   schema,
 }: Readonly<{ schema: NonNullable<UcpContract['schemas']>[number] }>) {
-  const missing = activeSchemaGroups(schema)
-    .flatMap((group) =>
-      Object.entries(schema.field_results?.[group] ?? {})
-        .filter(([, present]) => !present)
-        .map(([field]) => field),
-    )
-    .filter((field, index, fields) => fields.indexOf(field) === index);
+  const missingFields = new Set<string>();
+  for (const group of activeSchemaGroups(schema)) {
+    for (const [field, present] of Object.entries(schema.field_results?.[group] ?? {})) {
+      if (!present) {
+        missingFields.add(field);
+      }
+    }
+  }
+  const missing = Array.from(missingFields);
   if (!missing.length) {
     return <span className="text-success font-mono text-xs font-medium">Complete</span>;
   }
@@ -1155,9 +1167,9 @@ function SchemaMissingCell({
 function activeSchemaGroups(schema: NonNullable<UcpContract['schemas']>[number]) {
   const declared = (schema.groups ?? []).filter((group) => schema.field_results?.[group]);
   if (declared.length) return declared;
-  return Object.entries(schema.field_results ?? {})
-    .filter(([, fields]) => Object.values(fields).some(Boolean))
-    .map(([group]) => group);
+  return Object.entries(schema.field_results ?? {}).flatMap(([group, fields]) =>
+    Object.values(fields).some(Boolean) ? [group] : [],
+  );
 }
 
 function SchemaAnalysisText({
@@ -1200,7 +1212,7 @@ function AiAssessmentSummary({
             queries.slice(0, 6).map((query, index) => (
               <div
                 key={`${query.query}-${index}`}
-                className="border-border bg-panel rounded-[var(--radius-md)] border p-3"
+                className="border-border bg-panel rounded-md border p-3"
               >
                 <div className="flex items-start justify-between gap-2">
                   <p className="type-body-sm text-foreground">{query.query}</p>
@@ -1208,11 +1220,11 @@ function AiAssessmentSummary({
                     {query.answerable ? 'answerable' : 'gap'}
                   </Badge>
                 </div>
-                {query.gap ? <p className="type-caption text-muted mt-1">{query.gap}</p> : null}
+                {query.gap ? <p className="type-caption mt-1">{query.gap}</p> : null}
               </div>
             ))
           ) : (
-            <p className="type-caption text-muted">No simulated queries returned.</p>
+            <p className="type-caption">No simulated queries returned.</p>
           )}
         </div>
 
@@ -1222,22 +1234,22 @@ function AiAssessmentSummary({
             contradictions.map((row, index) => (
               <div
                 key={`${row.url}-${index}`}
-                className="border-warning/40 bg-warning/5 rounded-[var(--radius-md)] border p-3"
+                className="border-warning/40 bg-warning/5 rounded-md border p-3"
               >
-                <div className="type-caption-mono text-muted mb-2">
+                <div className="type-caption-mono mb-2">
                   {compactUrl(formatUnknownText(row.url, '-'))}
                 </div>
                 <EvidenceChips evidence={(row.flags ?? []) as Array<Record<string, unknown>>} />
               </div>
             ))
           ) : (
-            <div className="border-success-border bg-success-bg rounded-[var(--radius-md)] border p-3">
+            <div className="border-success-border bg-success-bg rounded-md border p-3">
               <p className="type-caption text-success-text">No deterministic conflicts found.</p>
             </div>
           )}
           {errorCount ? (
-            <div className="border-warning/40 bg-warning/5 rounded-[var(--radius-md)] border p-3">
-              <p className="type-caption text-muted">
+            <div className="border-warning/40 bg-warning/5 rounded-md border p-3">
+              <p className="type-caption">
                 AI reasoning was unavailable for {errorCount} product sample
                 {errorCount === 1 ? '' : 's'}.
               </p>
@@ -1251,8 +1263,8 @@ function AiAssessmentSummary({
 
 function SignalSection({ title, children }: Readonly<{ title: string; children: ReactNode }>) {
   return (
-    <section className="border-border bg-background/20 rounded-[var(--radius-md)] border p-3.5">
-      <h3 className="type-label-mono text-muted mb-3">{title}</h3>
+    <section className="border-border bg-background/20 rounded-md border p-3.5">
+      <h3 className="type-label-mono mb-3">{title}</h3>
       {children}
     </section>
   );
@@ -1264,7 +1276,7 @@ function SignalMetric({
   tone,
 }: Readonly<{ label: string; value: string; tone: string }>) {
   return (
-    <div className="border-border bg-panel rounded-[var(--radius-md)] border p-3">
+    <div className="border-border bg-panel rounded-md border p-3">
       <div className="type-label text-secondary">{label}</div>
       <div
         className={cn(
@@ -1294,16 +1306,16 @@ function SampledUrlList({ urls }: Readonly<{ urls: string[] }>) {
       {urls.map((url, index) => (
         <li
           key={`${url}-${index}`}
-          className="border-border bg-panel flex min-w-0 items-center gap-2 rounded-[var(--radius-md)] border px-3 py-2.5"
+          className="border-border bg-panel flex min-w-0 items-center gap-2 rounded-md border px-3 py-2.5"
         >
-          <span className="bg-background border-border text-muted grid size-6 shrink-0 place-items-center rounded border font-mono text-[11px]">
+          <span className="bg-background border-border text-muted text-2xs grid size-6 shrink-0 place-items-center rounded border font-mono">
             {index + 1}
           </span>
           <div className="min-w-0 flex-1">
             <div className="text-foreground truncate font-mono text-xs" title={url}>
               {compactUrl(url)}
             </div>
-            <div className="type-caption text-muted mt-0.5">{urlRole(url, index)}</div>
+            <div className="type-caption mt-0.5">{urlRole(url, index)}</div>
           </div>
         </li>
       ))}
@@ -1317,14 +1329,14 @@ function OpenGraphSummary({ tags }: Readonly<{ tags: Record<string, string> }>) 
     .slice(0, 6);
   if (!entries.length) {
     return (
-      <div className="border-border bg-panel rounded-[var(--radius-md)] border p-3">
+      <div className="border-border bg-panel rounded-md border p-3">
         <div className="type-label text-secondary">Open Graph</div>
-        <div className="type-caption text-muted mt-2">No product tags found</div>
+        <div className="type-caption mt-2">No product tags found</div>
       </div>
     );
   }
   return (
-    <div className="border-border bg-panel min-w-0 rounded-[var(--radius-md)] border p-3">
+    <div className="border-border bg-panel min-w-0 rounded-md border p-3">
       <div className="mb-2 flex items-center justify-between gap-2">
         <span className="type-label text-secondary">Open Graph</span>
         <Badge tone="success">{entries.length} tags</Badge>
@@ -1332,7 +1344,7 @@ function OpenGraphSummary({ tags }: Readonly<{ tags: Record<string, string> }>) 
       <div className="grid gap-1.5 sm:grid-cols-2">
         {entries.map(([key, value]) => (
           <div key={key} className="min-w-0">
-            <div className="type-caption-mono text-muted">{key}</div>
+            <div className="type-caption-mono">{key}</div>
             <div className="type-caption text-foreground truncate" title={formatUnknownText(value)}>
               {shortText(formatUnknownText(value), 72)}
             </div>
@@ -1353,20 +1365,17 @@ function RobotsSummary({ directives }: Readonly<{ directives: Record<string, str
   return (
     <div className="grid gap-3 md:grid-cols-[1fr_1fr_180px]">
       {rows.map((row) => (
-        <div
-          key={row.agent}
-          className="border-border bg-panel rounded-[var(--radius-md)] border p-3"
-        >
+        <div key={row.agent} className="border-border bg-panel rounded-md border p-3">
           <div className="mb-2 flex items-center justify-between gap-2">
             <span className="text-foreground font-mono text-xs">{row.agent}</span>
             <Badge tone={row.blocked ? 'danger' : 'success'}>
               {row.blocked ? 'blocked' : 'allowed'}
             </Badge>
           </div>
-          <div className="type-caption text-muted">{row.ruleCount} disallow rules</div>
+          <div className="type-caption">{row.ruleCount} disallow rules</div>
         </div>
       ))}
-      <div className="border-border bg-panel rounded-[var(--radius-md)] border p-3">
+      <div className="border-border bg-panel rounded-md border p-3">
         <div className="type-label text-secondary">Total rules</div>
         <div className="text-foreground mt-2 font-mono text-2xl font-semibold tabular-nums">
           {totalRules}
@@ -1417,20 +1426,63 @@ function EvidenceChips({ evidence }: Readonly<{ evidence: Array<Record<string, u
 }
 
 function evidenceToLines(evidence: Array<Record<string, unknown>> = []): string[] {
-  return evidence
-    .flatMap((entry) =>
-      Object.entries(entry).flatMap(([key, value]) => {
-        if (Array.isArray(value)) {
-          return value.map((item) => `${key}: ${formatEvidenceValue(item)}`);
-        }
-        if (value && typeof value === 'object') {
-          return `${key}: ${JSON.stringify(value)}`;
-        }
-        return `${key}: ${formatEvidenceValue(value)}`;
-      }),
-    )
-    .filter((line) => line.trim().length > 0)
-    .slice(0, 12);
+  const lines = evidence.flatMap((entry) =>
+    Object.entries(entry).flatMap(([key, value]) => {
+      if (Array.isArray(value)) {
+        return value.flatMap((item) => {
+          const line = `${key}: ${formatEvidenceValue(item)}`;
+          return line.trim().length > 0 ? [line] : [];
+        });
+      }
+      const line =
+        value && typeof value === 'object'
+          ? `${key}: ${JSON.stringify(value)}`
+          : `${key}: ${formatEvidenceValue(value)}`;
+      return line.trim().length > 0 ? [line] : [];
+    }),
+  );
+  return lines.slice(0, 12);
+}
+
+function findingsForCodes(findings: Array<Record<string, unknown>>, codes: string[]) {
+  const codeSet = new Set(codes);
+  return findings.flatMap((finding) => {
+    if (!codeSet.has(formatUnknownText(finding.code))) {
+      return [];
+    }
+    return [
+      {
+        ...finding,
+        evidence: Array.isArray(finding.evidence)
+          ? (finding.evidence as Array<Record<string, unknown>>)
+          : [],
+      },
+    ];
+  });
+}
+
+function formatEvidenceValue(value: unknown): string {
+  return formatUnknownText(value, '-');
+}
+
+function formatUnknownText(value: unknown, fallback = ''): string {
+  if (value == null || value === '') return fallback;
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint') {
+    return String(value);
+  }
+  if (Array.isArray(value)) {
+    const items = value.flatMap((item) => {
+      const text = formatUnknownText(item);
+      return text ? [text] : [];
+    });
+    return items.length ? items.join(', ') : fallback;
+  }
+  try {
+    return JSON.stringify(value) ?? fallback;
+  } catch {
+    return fallback;
+  }
 }
 
 function productSampleQuality(records: Array<Record<string, unknown>>) {
@@ -1450,38 +1502,6 @@ function productSampleQuality(records: Array<Record<string, unknown>>) {
     },
     { coreReady: 0, variantReady: 0 },
   );
-}
-
-function findingsForCodes(findings: Array<Record<string, unknown>>, codes: string[]) {
-  return findings
-    .filter((finding) => codes.includes(formatUnknownText(finding.code)))
-    .map((finding) => ({
-      ...finding,
-      evidence: Array.isArray(finding.evidence)
-        ? (finding.evidence as Array<Record<string, unknown>>)
-        : [],
-    }));
-}
-
-function formatEvidenceValue(value: unknown): string {
-  return formatUnknownText(value, '-');
-}
-
-function formatUnknownText(value: unknown, fallback = ''): string {
-  if (value == null || value === '') return fallback;
-  if (typeof value === 'string') return value;
-  if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint') {
-    return String(value);
-  }
-  if (Array.isArray(value)) {
-    const items: string[] = value.map((item) => formatUnknownText(item)).filter(Boolean);
-    return items.length ? items.join(', ') : fallback;
-  }
-  try {
-    return JSON.stringify(value) ?? fallback;
-  } catch {
-    return fallback;
-  }
 }
 
 function compactUrl(value: string): string {
@@ -1520,12 +1540,12 @@ function DimensionScoreCard({
   return (
     <Card
       className={cn(
-        'hover:border-accent/60 bg-panel border-border relative flex min-h-[160px] flex-col justify-between rounded-[var(--radius-lg)] border p-5 duration-300 ease-out hover:scale-[1.02] hover:shadow-md',
+        'hover:border-accent/60 bg-panel border-border relative flex min-h-[160px] flex-col justify-between rounded-lg border p-5 duration-300 ease-out hover:scale-[1.02] hover:shadow-md',
         blocked && 'pointer-events-none opacity-35 select-none',
       )}
     >
       {blocked ? (
-        <div className="bg-background/10 absolute inset-0 z-10 flex items-center justify-center rounded-[var(--radius-lg)] backdrop-blur-[0.5px]">
+        <div className="bg-background/10 absolute inset-0 z-10 flex items-center justify-center rounded-lg backdrop-blur-[0.5px]">
           <span className="type-caption-mono text-danger border-danger/45 bg-background/90 rotate-12 rounded border px-2 py-0.5 shadow">
             BLOCKED
           </span>
@@ -1545,7 +1565,7 @@ function DimensionScoreCard({
       </div>
       <div className="mt-3.5">
         <h4 className="type-subheading text-foreground">{meta.label}</h4>
-        <p className="type-caption text-muted mt-1.5 mb-0">{meta.subtitle}</p>
+        <p className="type-caption mt-1.5 mb-0">{meta.subtitle}</p>
       </div>
     </Card>
   );
@@ -1568,7 +1588,7 @@ function SummaryRow({
 
   return (
     <div className="border-border/40 flex items-center justify-between border-b pb-1.5">
-      <span className="type-label text-muted">{label}</span>
+      <span className="type-label">{label}</span>
       <Badge tone={badgeToneVal} className="font-mono lowercase">
         {value}
       </Badge>
@@ -1641,7 +1661,7 @@ function ScoreRing({
         >
           {score}
         </div>
-        {!compact && <div className="type-caption-mono text-muted mt-0.5 leading-none">/100</div>}
+        {!compact && <div className="type-caption-mono mt-0.5 leading-none">/100</div>}
       </div>
     </div>
   );

@@ -106,7 +106,7 @@ type ToggleRowProps = {
 
 function ToggleRow({ checked, label, onChange }: ToggleRowProps) {
   return (
-    <div className="surface-muted flex h-[var(--control-height)] items-center justify-between rounded-[var(--radius-md)] px-3 py-1.5 shadow-sm">
+    <div className="surface-muted flex h-[var(--control-height)] items-center justify-between rounded-md px-3 py-1.5 shadow-sm">
       <span className="text-sm font-medium">{label}</span>
       <Toggle checked={checked} onChange={onChange} />
     </div>

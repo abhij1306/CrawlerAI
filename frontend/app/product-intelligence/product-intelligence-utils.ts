@@ -8,6 +8,19 @@ import type {
 } from '../../lib/api/types';
 import { STORAGE_KEYS } from '../../lib/constants/storage-keys';
 
+export const SEARCH_PROVIDER_OPTIONS: Array<{
+  value: ProductIntelligenceOptions['search_provider'];
+  label: string;
+}> = [
+  { value: 'serpapi', label: 'SerpAPI' },
+  { value: 'google_native', label: 'Google Native' },
+];
+
+export function searchProviderLabel(provider: string) {
+  const option = SEARCH_PROVIDER_OPTIONS.find((item) => item.value === provider);
+  return option?.label ?? provider;
+}
+
 export type PrefillPayload = {
   source_run_id?: number | null;
   source_domain?: string;
@@ -190,10 +203,10 @@ export function searchProvider(value: unknown): ProductIntelligenceOptions['sear
 }
 
 export function parseDomainLines(value: string) {
-  return value
-    .split(/[\n,]+/)
-    .map((line) => line.trim().toLowerCase())
-    .filter(Boolean);
+  return value.split(/[\n,]+/).flatMap((line) => {
+    const trimmed = line.trim().toLowerCase();
+    return trimmed ? [trimmed] : [];
+  });
 }
 
 export function candidateConfidence(candidate: ProductIntelligenceCandidate) {
@@ -244,13 +257,12 @@ export function formatExtractedPrice(price: unknown, currency: unknown) {
 
 function stringArray(value: unknown) {
   return Array.isArray(value)
-    ? value
-        .map((item) =>
-          String(item || '')
-            .trim()
-            .toLowerCase(),
-        )
-        .filter(Boolean)
+    ? value.flatMap((item) => {
+        const text = String(item || '')
+          .trim()
+          .toLowerCase();
+        return text ? [text] : [];
+      })
     : [];
 }
 

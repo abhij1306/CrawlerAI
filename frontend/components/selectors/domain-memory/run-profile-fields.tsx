@@ -1,6 +1,6 @@
 import type { AdvancedCrawlMode, DomainRunProfile } from '../../../lib/api/types';
 import { CRAWL_DEFAULTS, CRAWL_LIMITS } from '../../../lib/constants/crawl-defaults';
-import { Dropdown, Input } from '../../ui/primitives';
+import { Dropdown, Field, Input } from '../../ui/primitives';
 import type { SurfaceWorkspace } from './types';
 import type { UpdateProfileDraft } from './profile-types';
 import { parseOptionalClampedNumber } from './utils';
@@ -20,8 +20,7 @@ export function RunProfileFields({
 }: RunProfileFieldsProps) {
   return (
     <div className="grid content-start gap-3 md:col-span-2 md:grid-cols-2">
-      <label className="grid gap-1.5">
-        <span className="field-label">Fetch Mode</span>
+      <Field label="Fetch Mode">
         <Dropdown
           value={profile.fetch_profile.fetch_mode}
           onChange={(value) =>
@@ -37,9 +36,8 @@ export function RunProfileFields({
             { value: 'http_then_browser', label: 'HTTP Then Browser' },
           ]}
         />
-      </label>
-      <label className="grid gap-1.5">
-        <span className="field-label">Extraction Source</span>
+      </Field>
+      <Field label="Extraction Source">
         <Dropdown
           value={profile.fetch_profile.extraction_source}
           onChange={(value) =>
@@ -55,9 +53,8 @@ export function RunProfileFields({
             { value: 'network_payload_first', label: 'Network Payload First' },
           ]}
         />
-      </label>
-      <label className="grid gap-1.5">
-        <span className="field-label">JS Mode</span>
+      </Field>
+      <Field label="JS Mode">
         <Dropdown
           value={profile.fetch_profile.js_mode}
           onChange={(value) =>
@@ -72,9 +69,8 @@ export function RunProfileFields({
             { value: 'disabled', label: 'Disabled' },
           ]}
         />
-      </label>
-      <label className="grid gap-1.5">
-        <span className="field-label">Traversal Mode</span>
+      </Field>
+      <Field label="Traversal Mode">
         <Dropdown
           value={profile.fetch_profile.traversal_mode ?? ''}
           onChange={(value) =>
@@ -94,9 +90,8 @@ export function RunProfileFields({
             { value: 'paginate', label: 'Paginate' },
           ]}
         />
-      </label>
-      <label className="grid gap-1.5">
-        <span className="field-label">Host Memory TTL (s)</span>
+      </Field>
+      <Field label="Host Memory TTL (s)">
         <Input
           type="number"
           min={CRAWL_LIMITS.MIN_HOST_MEMORY_TTL_SECONDS}
@@ -117,9 +112,8 @@ export function RunProfileFields({
             }))
           }
         />
-      </label>
-      <label className="grid gap-1.5">
-        <span className="field-label">Geo Country</span>
+      </Field>
+      <Field label="Geo Country">
         <Input
           value={profile.locality_profile.geo_country}
           onChange={(event) =>
@@ -132,9 +126,8 @@ export function RunProfileFields({
             }))
           }
         />
-      </label>
-      <label className="grid gap-1.5">
-        <span className="field-label">Language Hint</span>
+      </Field>
+      <Field label="Language Hint">
         <Input
           value={profile.locality_profile.language_hint ?? ''}
           onChange={(event) =>
@@ -147,9 +140,8 @@ export function RunProfileFields({
             }))
           }
         />
-      </label>
-      <label className="grid gap-1.5">
-        <span className="field-label">Currency Hint</span>
+      </Field>
+      <Field label="Currency Hint">
         <Input
           value={profile.locality_profile.currency_hint ?? ''}
           onChange={(event) =>
@@ -162,9 +154,8 @@ export function RunProfileFields({
             }))
           }
         />
-      </label>
-      <label className="grid gap-1.5">
-        <span className="field-label">Network Capture</span>
+      </Field>
+      <Field label="Network Capture">
         <Dropdown
           value={profile.diagnostics_profile.capture_network}
           onChange={(value) =>
@@ -179,9 +170,8 @@ export function RunProfileFields({
             { value: 'all_small_json', label: 'All Small JSON' },
           ]}
         />
-      </label>
-      <label className="grid gap-1.5">
-        <span className="field-label">Preferred Browser Engine</span>
+      </Field>
+      <Field label="Preferred Browser Engine">
         <Dropdown
           value={profile.acquisition_contract.preferred_browser_engine}
           onChange={(value) =>
@@ -199,9 +189,8 @@ export function RunProfileFields({
             { value: 'real_chrome', label: 'Real Chrome' },
           ]}
         />
-      </label>
-      <label className="grid gap-1.5">
-        <span className="field-label">Handoff Cookie Engine</span>
+      </Field>
+      <Field label="Handoff Cookie Engine">
         <Dropdown
           value={profile.acquisition_contract.handoff_cookie_engine}
           onChange={(value) =>
@@ -219,7 +208,7 @@ export function RunProfileFields({
             { value: 'real_chrome', label: 'Real Chrome' },
           ]}
         />
-      </label>
+      </Field>
     </div>
   );
 }

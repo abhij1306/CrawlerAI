@@ -2,7 +2,7 @@
 import { Check, Globe, Info, Plus, Shield, SlidersHorizontal, Sparkles } from 'lucide-react';
 import type { Route } from 'next';
 import { useRouter } from 'next/navigation';
-import { startTransition, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { startTransition, useEffect, useLayoutEffect, useMemo, useReducer, useRef } from 'react';
 import { cn } from '../../lib/utils';
 import { InlineAlert, PageHeader, SectionHeader, TabBar } from '../ui/patterns';
 import { Badge, Button, Dropdown, Card, Input, Textarea, Toggle, Tooltip } from '../ui/primitives';
@@ -22,7 +22,6 @@ import {
   deriveSurface,
   FieldEditorHeader,
   type FieldRow,
-  type FieldRowMessageTone,
   ManualFieldEditor,
   parseRequestedCategoryMode,
   parseRequestedCrawlTab,
@@ -67,29 +66,28 @@ import {
   type ExtractionSource,
   type FetchMode,
   type JsMode,
-  type StudioMode,
   type TraversalDropdownValue,
 } from './crawl-config-logic';
 import { resolveAutoSurface } from './auto-surface';
 import { CrawlActionButtons } from './crawl-action-buttons';
+import {
+  ADVANCED_COLUMN_CLASS,
+  ADVANCED_CONTROL_ROW_CLASS,
+  ADVANCED_SECTION_TITLE_CLASS,
+  ADVANCED_SUBSECTION_CLASS,
+  bindCrawlConfigLocalDispatch,
+  buildInitialLocalState,
+  crawlConfigLocalReducer,
+  RUN_SETUP_CONTROL_CLASS,
+  RUN_SETUP_LABEL_CLASS,
+  RUN_SETUP_ROW_CLASS,
+  RUN_SETUP_STACK_CLASS,
+  type CrawlConfigScreenProps,
+  useCrawlRouteState,
+} from './crawl-config-state';
 import { createDesignCrawlRun } from './design-crawl-submit';
 import { DOMAIN_OPTIONS, DOMAIN_TABS } from './domain-surface-config';
 import * as crawlConfigForm from './use-crawl-config';
-type CrawlConfigScreenProps = {
-  requestedTab: CrawlTab | null;
-  requestedCategoryMode: CategoryMode | null;
-  requestedPdpMode: PdpMode | null;
-};
-const RUN_SETUP_ROW_CLASS =
-  'grid gap-2 md:grid-cols-[110px_minmax(0,1fr)] md:items-center md:gap-3';
-const RUN_SETUP_CONTROL_CLASS = 'flex md:justify-self-end w-full md:w-auto';
-const RUN_SETUP_LABEL_CLASS = 'flex min-w-0 h-[var(--control-height)] items-center gap-3';
-const RUN_SETUP_STACK_CLASS = 'flex flex-col gap-3';
-const ADVANCED_CONTROL_ROW_CLASS =
-  'grid gap-1.5 md:grid-cols-[140px_minmax(0,1fr)] md:items-center md:gap-3';
-const ADVANCED_COLUMN_CLASS = 'flex flex-col gap-4';
-const ADVANCED_SUBSECTION_CLASS = 'flex flex-col gap-2.5';
-const ADVANCED_SECTION_TITLE_CLASS = 'flex items-center gap-2 type-subheading';
 
 export function CrawlConfigScreen({
   requestedTab,
@@ -97,15 +95,12 @@ export function CrawlConfigScreen({
   requestedPdpMode,
 }: Readonly<CrawlConfigScreenProps>) {
   const router = useRouter();
-  const [crawlTab, setCrawlTab] = useState<CrawlTab>(() => requestedTab ?? 'category');
-  const [crawlDomain, setCrawlDomain] = useState<CrawlDomain>('auto');
-  const [categoryMode, setCategoryMode] = useState<CategoryMode>(
-    () => requestedCategoryMode ?? 'single',
-  );
-  const [pdpMode, setPdpMode] = useState<PdpMode>(() => requestedPdpMode ?? 'single');
-  const [sitemapDomain, setSitemapDomain] = useState('');
-  const [sitemapFilterKeyword, setSitemapFilterKeyword] = useState('collections');
-  const [sitemapMaxUrls, setSitemapMaxUrls] = useState(500);
+  const { routeState, dispatchRoute, bulkPrefillRouteSyncGuardRef } = useCrawlRouteState({
+    requestedTab,
+    requestedCategoryMode,
+    requestedPdpMode,
+  });
+  const { crawlTab, crawlDomain, categoryMode, pdpMode } = routeState;
   const {
     handleSubmit,
     setValue,
@@ -117,30 +112,36 @@ export function CrawlConfigScreen({
     proxyInput,
     isSubmitting,
   } = crawlConfigForm.useCrawlConfig();
-  const [csvFile, setCsvFile] = useState<File | null>(null);
-  const [smartExtraction, setSmartExtraction] = useState(false);
-  const [studioMode, setStudioMode] = useState<StudioMode>('quick');
-  const [runProfile, setRunProfile] = useState<DomainRunProfile>(() => defaultRunProfile());
-  const [respectRobotsTxt, setRespectRobotsTxt] = useState<boolean>(
-    CRAWL_DEFAULTS.RESPECT_ROBOTS_TXT,
+  const [localState, dispatchLocal] = useReducer(
+    crawlConfigLocalReducer,
+    undefined,
+    buildInitialLocalState,
   );
-  const [proxyEnabled, setProxyEnabled] = useState(false);
-  const [savedProfileDomain, setSavedProfileDomain] = useState('');
-  const [savedProfileLoaded, setSavedProfileLoaded] = useState(false);
-  const [savedProfileMessage, setSavedProfileMessage] = useState('');
-  const [additionalDraft, setAdditionalDraft] = useState('');
-  const [additionalFields, setAdditionalFields] = useState<string[]>([]);
-  const [generatingSelectors, setGeneratingSelectors] = useState(false);
-  const [savingDomainMemory, setSavingDomainMemory] = useState(false);
-  const [designSubmitting, setDesignSubmitting] = useState(false);
-  const [fieldConfigMessage, setFieldConfigMessage] = useState('');
-  const [fieldConfigError, setFieldConfigError] = useState('');
-  const [fieldRowMessages, setFieldRowMessages] = useState<
-    Record<string, { tone: FieldRowMessageTone; message: string }>
-  >({});
-  const [activeFieldTestId, setActiveFieldTestId] = useState<string | null>(null);
-  const [configError, setConfigError] = useState('');
-  const bulkPrefillRouteSyncGuardRef = useRef(false);
+  const {
+    sitemapDomain,
+    sitemapFilterKeyword,
+    sitemapMaxUrls,
+    csvFile,
+    smartExtraction,
+    studioMode,
+    runProfile,
+    respectRobotsTxt,
+    proxyEnabled,
+    savedProfileDomain,
+    savedProfileLoaded,
+    savedProfileMessage,
+    additionalDraft,
+    additionalFields,
+    generatingSelectors,
+    savingDomainMemory,
+    designSubmitting,
+    fieldConfigMessage,
+    fieldConfigError,
+    fieldRowMessages,
+    activeFieldTestId,
+    configError,
+  } = localState;
+  const localDispatch = useMemo(() => bindCrawlConfigLocalDispatch(dispatchLocal), [dispatchLocal]);
   const profileLookupRequestRef = useRef(0);
   const domainMemoryLookupRequestRef = useRef(0);
   const profileLookupTargetUrlRef = useRef('');
@@ -148,7 +149,8 @@ export function CrawlConfigScreen({
   const lastProfileKeyRef = useRef('');
   const lastDomainMemoryKeyRef = useRef('');
   const modePickerEnabled = crawlDomain === 'commerce' || crawlDomain === 'jobs';
-  const activeMode = crawlTab === 'category' ? categoryMode : pdpMode;
+  const selectedMode = crawlTab === 'category' ? categoryMode : pdpMode;
+  const activeMode = modePickerEnabled ? selectedMode : 'single';
   const surface = deriveSurface(crawlDomain, crawlTab);
   const autoSurfaceResolution = useMemo(
     () => (surface === 'auto' ? resolveAutoSurface(targetUrl, crawlTab) : null),
@@ -172,30 +174,30 @@ export function CrawlConfigScreen({
       : '';
   const diagnosticsPreset = diagnosticsPresetForProfile(runProfile);
 
+  // Adjust state during render when the lookup key changes, instead of in an
+  // effect. This avoids an extra render with stale UI between commits. See
+  // https://react.dev/learn/you-might-not-need-an-effect#adjusting-some-state-when-a-prop-changes
+  if (lastProfileKeyRef.current !== profileLookupKey) {
+    profileDirtyRef.current = false;
+    lastProfileKeyRef.current = profileLookupKey;
+    if (!profileLookupKey) {
+      localDispatch.setSavedProfileLoaded(false);
+      localDispatch.setSavedProfileDomain('');
+      localDispatch.setSavedProfileMessage('');
+      localDispatch.setRunProfile(defaultRunProfile());
+    }
+  }
+  if (lastDomainMemoryKeyRef.current !== domainMemoryLookupKey) {
+    lastDomainMemoryKeyRef.current = domainMemoryLookupKey;
+    localDispatch.setFieldConfigError('');
+    localDispatch.setFieldConfigMessage('');
+    localDispatch.setFieldRowMessages({});
+    setFieldRows((current) => stripDomainMemoryFieldRows(current));
+  }
+
   useEffect(() => {
     profileLookupTargetUrlRef.current = profileLookupKey ? targetUrl.trim() : '';
   }, [profileLookupKey, targetUrl]);
-  useEffect(() => {
-    if (bulkPrefillRouteSyncGuardRef.current) {
-      if (requestedTab === 'pdp') {
-        bulkPrefillRouteSyncGuardRef.current = false;
-      } else {
-        return;
-      }
-    }
-    const nextTab = requestedTab ?? 'category';
-    const nextCategoryMode = requestedCategoryMode ?? 'single';
-    const nextPdpMode = requestedPdpMode ?? 'single';
-    setCrawlTab((current) => (current === nextTab ? current : nextTab));
-    setCategoryMode((current) => (current === nextCategoryMode ? current : nextCategoryMode));
-    setPdpMode((current) => (current === nextPdpMode ? current : nextPdpMode));
-  }, [requestedCategoryMode, requestedPdpMode, requestedTab]);
-  useEffect(() => {
-    if (domainTabs.some((tab) => tab.value === crawlTab)) {
-      return;
-    }
-    setCrawlTab(domainTabs[0]?.value ?? 'category');
-  }, [crawlDomain, crawlTab, domainTabs]);
   useEffect(() => {
     const routeMode = crawlTab === 'category' ? requestedCategoryMode : requestedPdpMode;
     if (
@@ -211,13 +213,20 @@ export function CrawlConfigScreen({
         window.history.replaceState(null, '', nextUrl);
       }
     }
-  }, [activeMode, crawlTab, requestedCategoryMode, requestedPdpMode, requestedTab]);
+  }, [
+    activeMode,
+    bulkPrefillRouteSyncGuardRef,
+    crawlTab,
+    requestedCategoryMode,
+    requestedPdpMode,
+    requestedTab,
+  ]);
 
   useEffect(() => {
     if (bulkPrefillRouteSyncGuardRef.current && crawlTab === 'pdp' && pdpMode === 'batch') {
       bulkPrefillRouteSyncGuardRef.current = false;
     }
-  }, [crawlTab, pdpMode]);
+  }, [bulkPrefillRouteSyncGuardRef, crawlTab, pdpMode]);
 
   useLayoutEffect(() => {
     const stored = window.sessionStorage.getItem(STORAGE_KEYS.BULK_PREFILL);
@@ -232,15 +241,15 @@ export function CrawlConfigScreen({
       };
       if (Array.isArray(parsed.urls) && parsed.urls.length) {
         bulkPrefillRouteSyncGuardRef.current = true;
-        setCrawlTab('pdp');
-        setPdpMode('batch');
         const parsedDomain = parsed.domain;
-        if (parsedDomain && DOMAIN_OPTIONS.some((option) => option.value === parsedDomain)) {
-          setCrawlDomain(parsedDomain);
-        }
+        const domain =
+          parsedDomain && DOMAIN_OPTIONS.some((option) => option.value === parsedDomain)
+            ? parsedDomain
+            : undefined;
+        dispatchRoute({ type: 'applyBulkPrefill', domain });
         setValue('bulkUrls', parsed.urls.join('\n'));
         if (Array.isArray(parsed.additional_fields)) {
-          setAdditionalFields(uniqueRequestedFields(parsed.additional_fields));
+          localDispatch.setAdditionalFields(uniqueRequestedFields(parsed.additional_fields));
         }
         const nextUrl = '/crawl?module=pdp&mode=batch';
         const currentUrl = `${window.location.pathname}${window.location.search}`;
@@ -252,20 +261,9 @@ export function CrawlConfigScreen({
     } finally {
       window.sessionStorage.removeItem(STORAGE_KEYS.BULK_PREFILL);
     }
-  }, [setValue]);
+  }, [bulkPrefillRouteSyncGuardRef, dispatchRoute, localDispatch, setValue]);
 
   useEffect(() => {
-    if (lastProfileKeyRef.current !== profileLookupKey) {
-      profileDirtyRef.current = false;
-      lastProfileKeyRef.current = profileLookupKey;
-      if (!profileLookupKey) {
-        setSavedProfileLoaded(false);
-        setSavedProfileDomain('');
-        setSavedProfileMessage('');
-        setRunProfile(defaultRunProfile());
-        return;
-      }
-    }
     if (!profileLookupKey) {
       return;
     }
@@ -277,50 +275,39 @@ export function CrawlConfigScreen({
           url: profileLookupTargetUrlRef.current,
           surface: effectiveSurface,
         });
-        if (profileLookupRequestRef.current !== requestId) {
-          return;
-        }
-        const savedProfile = response.saved_run_profile;
-        setSavedProfileDomain(response.domain);
-        if (savedProfile && !profileDirtyRef.current) {
-          setRunProfile(cloneRunProfile(savedProfile));
-          setSavedProfileLoaded(true);
-          setSavedProfileMessage(
-            `Saved domain profile applied for ${response.domain} on ${surfaceLabel(response.surface)}. Explicit edits below override it for this run.`,
-          );
-        } else {
-          setSavedProfileLoaded(Boolean(savedProfile));
-          setSavedProfileMessage(
-            savedProfile
-              ? `Saved domain profile found for ${response.domain}. Your current edits are preserved for this run.`
-              : '',
-          );
-          if (!savedProfile && !profileDirtyRef.current) {
-            setRunProfile(defaultRunProfile());
+        if (profileLookupRequestRef.current === requestId) {
+          const savedProfile = response.saved_run_profile;
+          localDispatch.setSavedProfileDomain(response.domain);
+          if (savedProfile && !profileDirtyRef.current) {
+            localDispatch.setRunProfile(cloneRunProfile(savedProfile));
+            localDispatch.setSavedProfileLoaded(true);
+            localDispatch.setSavedProfileMessage(
+              `Saved domain profile applied for ${response.domain} on ${surfaceLabel(response.surface)}. Explicit edits below override it for this run.`,
+            );
+          } else {
+            localDispatch.setSavedProfileLoaded(Boolean(savedProfile));
+            localDispatch.setSavedProfileMessage(
+              savedProfile
+                ? `Saved domain profile found for ${response.domain}. Your current edits are preserved for this run.`
+                : '',
+            );
+            if (!savedProfile && !profileDirtyRef.current) {
+              localDispatch.setRunProfile(defaultRunProfile());
+            }
           }
         }
       } catch {
         if (profileLookupRequestRef.current === requestId) {
-          setSavedProfileLoaded(false);
-          setSavedProfileDomain('');
-          setSavedProfileMessage('');
+          localDispatch.setSavedProfileLoaded(false);
+          localDispatch.setSavedProfileDomain('');
+          localDispatch.setSavedProfileMessage('');
         }
       }
     }, UI_DELAYS.DEBOUNCE_MS);
     return () => window.clearTimeout(timer);
-  }, [effectiveSurface, profileLookupKey]);
+  }, [effectiveSurface, localDispatch, profileLookupKey]);
 
   useEffect(() => {
-    if (lastDomainMemoryKeyRef.current !== domainMemoryLookupKey) {
-      lastDomainMemoryKeyRef.current = domainMemoryLookupKey;
-      setFieldConfigError('');
-      setFieldConfigMessage('');
-      setFieldRowMessages({});
-      setFieldRows((current) => stripDomainMemoryFieldRows(current));
-      if (!domainMemoryLookupKey) {
-        return;
-      }
-    }
     if (!domainMemoryLookupKey) {
       return;
     }
@@ -328,44 +315,49 @@ export function CrawlConfigScreen({
     domainMemoryLookupRequestRef.current = requestId;
     const lookupDomain = normalizedTargetDomain;
     const timer = window.setTimeout(async () => {
-      setFieldConfigError('');
+      localDispatch.setFieldConfigError('');
       try {
         const records = await api.listSelectors({ domain: lookupDomain });
-        if (domainMemoryLookupRequestRef.current !== requestId) {
-          return;
+        if (domainMemoryLookupRequestRef.current === requestId) {
+          const matchingRecords = selectRelevantSelectorRecords(records, effectiveSurface);
+          if (!matchingRecords.length) {
+            setFieldRows((current) => stripDomainMemoryFieldRows(current));
+            return;
+          }
+          const incomingRows = matchingRecords.map(buildFieldRowFromSelectorRecord);
+          setFieldRows((current) =>
+            mergeFieldRows(stripDomainMemoryFieldRows(current), incomingRows),
+          );
+          localDispatch.setFieldRowMessages({});
         }
-        const matchingRecords = selectRelevantSelectorRecords(records, effectiveSurface);
-        if (!matchingRecords.length) {
-          setFieldRows((current) => stripDomainMemoryFieldRows(current));
-          return;
-        }
-        const incomingRows = matchingRecords.map(buildFieldRowFromSelectorRecord);
-        setFieldRows((current) =>
-          mergeFieldRows(stripDomainMemoryFieldRows(current), incomingRows),
-        );
-        setFieldRowMessages({});
       } catch (error) {
         if (domainMemoryLookupRequestRef.current === requestId) {
-          setFieldConfigError(
+          localDispatch.setFieldConfigError(
             error instanceof Error ? error.message : 'Unable to load domain memory.',
           );
         }
       }
     }, UI_DELAYS.DEBOUNCE_MS);
     return () => window.clearTimeout(timer);
-  }, [domainMemoryLookupKey, effectiveSurface, normalizedTargetDomain, setFieldRows]);
+  }, [
+    domainMemoryLookupKey,
+    effectiveSurface,
+    localDispatch,
+    normalizedTargetDomain,
+    setFieldRows,
+  ]);
 
   const config = useMemo<CrawlConfig>(
     () => ({
       module: crawlTab,
       domain: crawlDomain,
-      mode: crawlTab === 'category' ? categoryMode : pdpMode,
+      mode: activeMode,
       target_url: targetUrl,
       bulk_urls: bulkUrls,
-      sitemap_domain: categoryMode === 'sitemap' ? sitemapDomain.trim() : undefined,
+      sitemap_domain: activeMode === 'sitemap' ? sitemapDomain.trim() : undefined,
       sitemap_filter_keyword:
-        categoryMode === 'sitemap' ? sitemapFilterKeyword.trim() || 'collections' : undefined,
-      sitemap_max_urls: categoryMode === 'sitemap' ? sitemapMaxUrls : undefined,
+        activeMode === 'sitemap' ? sitemapFilterKeyword.trim() || 'collections' : undefined,
+      sitemap_max_urls: activeMode === 'sitemap' ? sitemapMaxUrls : undefined,
       csv_file: csvFile,
       smart_extraction: smartExtraction,
       max_records: clampNumber(
@@ -382,7 +374,7 @@ export function CrawlConfigScreen({
     [
       additionalFields,
       bulkUrls,
-      categoryMode,
+      activeMode,
       crawlDomain,
       crawlTab,
       csvFile,
@@ -395,7 +387,6 @@ export function CrawlConfigScreen({
       sitemapMaxUrls,
       smartExtraction,
       targetUrl,
-      pdpMode,
     ],
   );
 
@@ -407,27 +398,28 @@ export function CrawlConfigScreen({
     }
     const requestId = domainMemoryLookupRequestRef.current + 1;
     domainMemoryLookupRequestRef.current = requestId;
-    setFieldConfigError('');
+    localDispatch.setFieldConfigError('');
     try {
       const records = await api.listSelectors({ domain });
-      if (domainMemoryLookupRequestRef.current !== requestId) {
-        return;
+      if (domainMemoryLookupRequestRef.current === requestId) {
+        const matchingRecords = selectRelevantSelectorRecords(records, effectiveSurface);
+        if (!matchingRecords.length) {
+          localDispatch.setFieldConfigMessage('No saved domain memory found for this URL.');
+          setFieldRows((current) => stripDomainMemoryFieldRows(current));
+          return;
+        }
+        const incomingRows = matchingRecords.map(buildFieldRowFromSelectorRecord);
+        setFieldRows((current) =>
+          mergeFieldRows(stripDomainMemoryFieldRows(current), incomingRows),
+        );
+        localDispatch.setFieldRowMessages({});
+        localDispatch.setFieldConfigMessage(
+          `Loaded ${matchingRecords.length} saved selector${matchingRecords.length === 1 ? '' : 's'} from domain memory.`,
+        );
       }
-      const matchingRecords = selectRelevantSelectorRecords(records, effectiveSurface);
-      if (!matchingRecords.length) {
-        setFieldConfigMessage('No saved domain memory found for this URL.');
-        setFieldRows((current) => stripDomainMemoryFieldRows(current));
-        return;
-      }
-      const incomingRows = matchingRecords.map(buildFieldRowFromSelectorRecord);
-      setFieldRows((current) => mergeFieldRows(stripDomainMemoryFieldRows(current), incomingRows));
-      setFieldRowMessages({});
-      setFieldConfigMessage(
-        `Loaded ${matchingRecords.length} saved selector${matchingRecords.length === 1 ? '' : 's'} from domain memory.`,
-      );
     } catch (error) {
       if (domainMemoryLookupRequestRef.current === requestId) {
-        setFieldConfigError(
+        localDispatch.setFieldConfigError(
           error instanceof Error ? error.message : 'Unable to load domain memory.',
         );
       }
@@ -436,11 +428,11 @@ export function CrawlConfigScreen({
 
   function markProfileDirty(updater: (current: DomainRunProfile) => DomainRunProfile) {
     profileDirtyRef.current = true;
-    setRunProfile((current) => cloneRunProfile(updater(current)));
+    localDispatch.setRunProfile((current) => cloneRunProfile(updater(current)));
   }
 
   async function startCrawl() {
-    setConfigError('');
+    localDispatch.setConfigError('');
     try {
       const parsedConfig = crawlConfigForm.crawlConfigSchema.safeParse(
         crawlConfigForm.transformFormToSubmission({
@@ -502,13 +494,13 @@ export function CrawlConfigScreen({
           run_type_hint: inferRunTypeHint(config),
         }),
       );
-      setConfigError(message);
+      localDispatch.setConfigError(message);
     }
   }
 
   async function startDesignCrawl() {
-    setConfigError('');
-    setDesignSubmitting(true);
+    localDispatch.setConfigError('');
+    localDispatch.setDesignSubmitting(true);
     try {
       const response = await createDesignCrawlRun({ targetUrl, config, runProfile });
       startTransition(() => {
@@ -516,9 +508,11 @@ export function CrawlConfigScreen({
         router.refresh();
       });
     } catch (error) {
-      setConfigError(error instanceof Error ? error.message : 'Unable to launch design crawl.');
+      localDispatch.setConfigError(
+        error instanceof Error ? error.message : 'Unable to launch design crawl.',
+      );
     } finally {
-      setDesignSubmitting(false);
+      localDispatch.setDesignSubmitting(false);
     }
   }
 
@@ -541,18 +535,18 @@ export function CrawlConfigScreen({
   async function generateFieldSelectors() {
     const target = targetUrl.trim();
     if (!target) {
-      setFieldConfigError('Enter a target URL before generating selectors.');
+      localDispatch.setFieldConfigError('Enter a target URL before generating selectors.');
       return;
     }
     const expectedColumns = selectorGenerationFields(effectiveSurface, fieldRows, additionalFields);
     if (!expectedColumns.length) {
-      setFieldConfigError(
+      localDispatch.setFieldConfigError(
         'Add at least one field or additional field before generating selectors.',
       );
       return;
     }
-    setGeneratingSelectors(true);
-    setFieldConfigError('');
+    localDispatch.setGeneratingSelectors(true);
+    localDispatch.setFieldConfigError('');
     try {
       const response = await api.suggestSelectors({
         url: target,
@@ -566,28 +560,30 @@ export function CrawlConfigScreen({
         ),
       );
       setFieldRows((current) => mergeFieldRows(current, incomingRows));
-      setFieldRowMessages({});
-      setFieldConfigMessage(
+      localDispatch.setFieldRowMessages({});
+      localDispatch.setFieldConfigMessage(
         `Generated selector suggestions for ${expectedColumns.length} field${expectedColumns.length === 1 ? '' : 's'}.`,
       );
     } catch (error) {
-      setFieldConfigError(error instanceof Error ? error.message : 'Unable to generate selectors.');
+      localDispatch.setFieldConfigError(
+        error instanceof Error ? error.message : 'Unable to generate selectors.',
+      );
     } finally {
-      setGeneratingSelectors(false);
+      localDispatch.setGeneratingSelectors(false);
     }
   }
 
   async function testFieldRow(row: FieldRow) {
     const target = targetUrl.trim();
     if (!target) {
-      setFieldRowMessages((current) => ({
+      localDispatch.setFieldRowMessages((current) => ({
         ...current,
         [row.id]: { tone: 'warning', message: 'Enter a target URL before testing selectors.' },
       }));
       return;
     }
     if (!row.cssSelector.trim() && !row.xpath.trim() && !row.regex.trim()) {
-      setFieldRowMessages((current) => ({
+      localDispatch.setFieldRowMessages((current) => ({
         ...current,
         [row.id]: {
           tone: 'warning',
@@ -596,7 +592,7 @@ export function CrawlConfigScreen({
       }));
       return;
     }
-    setActiveFieldTestId(row.id);
+    localDispatch.setActiveFieldTestId(row.id);
     try {
       const response = await api.testSelector({
         url: target,
@@ -604,7 +600,7 @@ export function CrawlConfigScreen({
         xpath: row.xpath.trim() || undefined,
         regex: row.regex.trim() || undefined,
       });
-      setFieldRowMessages((current) => ({
+      localDispatch.setFieldRowMessages((current) => ({
         ...current,
         [row.id]: {
           tone: response.count > 0 ? 'success' : 'warning',
@@ -615,7 +611,7 @@ export function CrawlConfigScreen({
         },
       }));
     } catch (error) {
-      setFieldRowMessages((current) => ({
+      localDispatch.setFieldRowMessages((current) => ({
         ...current,
         [row.id]: {
           tone: 'danger',
@@ -623,7 +619,7 @@ export function CrawlConfigScreen({
         },
       }));
     } finally {
-      setActiveFieldTestId(null);
+      localDispatch.setActiveFieldTestId(null);
     }
   }
 
@@ -631,26 +627,25 @@ export function CrawlConfigScreen({
     const target = targetUrl.trim();
     const domain = getNormalizedDomain(target);
     if (!target || !domain) {
-      setFieldConfigError('Enter a target URL before saving domain memory.');
+      localDispatch.setFieldConfigError('Enter a target URL before saving domain memory.');
       return;
     }
-    const dedupedRows = Array.from(
-      new Map(
-        fieldRows
-          .filter(
-            (row) =>
-              normalizeField(row.fieldName) &&
-              (row.cssSelector.trim() || row.xpath.trim() || row.regex.trim()),
-          )
-          .map((row) => [normalizeField(row.fieldName), row] as const),
-      ).values(),
-    );
+    const dedupedMap = new Map<string, FieldRow>();
+    for (const row of fieldRows) {
+      const field = normalizeField(row.fieldName);
+      if (field && (row.cssSelector.trim() || row.xpath.trim() || row.regex.trim())) {
+        dedupedMap.set(field, row);
+      }
+    }
+    const dedupedRows = Array.from(dedupedMap.values());
     if (!dedupedRows.length) {
-      setFieldConfigError('Add at least one selector row before saving domain memory.');
+      localDispatch.setFieldConfigError(
+        'Add at least one selector row before saving domain memory.',
+      );
       return;
     }
-    setSavingDomainMemory(true);
-    setFieldConfigError('');
+    localDispatch.setSavingDomainMemory(true);
+    localDispatch.setFieldConfigError('');
     try {
       const existingRecords = selectRelevantSelectorRecords(
         await api.listSelectors({ domain }),
@@ -686,11 +681,11 @@ export function CrawlConfigScreen({
       const failedCount = settled.filter((result) => result.status === 'rejected').length;
       const savedCount = settled.length - failedCount;
       if (failedCount) {
-        setFieldConfigError(
+        localDispatch.setFieldConfigError(
           `Saved ${savedCount} selector${savedCount === 1 ? '' : 's'}, ${failedCount} failed.`,
         );
       } else {
-        setFieldConfigMessage(
+        localDispatch.setFieldConfigMessage(
           `Saved ${savedCount} selector${savedCount === 1 ? '' : 's'} to domain memory.`,
         );
       }
@@ -698,13 +693,15 @@ export function CrawlConfigScreen({
         await loadDomainMemoryForUrl(target);
       }
     } catch (error) {
-      setFieldConfigError(error instanceof Error ? error.message : 'Unable to save domain memory.');
+      localDispatch.setFieldConfigError(
+        error instanceof Error ? error.message : 'Unable to save domain memory.',
+      );
     } finally {
-      setSavingDomainMemory(false);
+      localDispatch.setSavingDomainMemory(false);
     }
   }
   const hasTarget =
-    crawlTab === 'category' && categoryMode === 'sitemap'
+    crawlTab === 'category' && activeMode === 'sitemap'
       ? sitemapDomain.trim().length > 0
       : singleUrlMode
         ? targetUrl.trim().length > 0
@@ -728,7 +725,7 @@ export function CrawlConfigScreen({
       >
         <Card className="section-card overflow-hidden p-0">
           <header className="border-border flex h-10 items-center justify-between border-b bg-[color-mix(in_srgb,var(--bg-alt)_40%,var(--bg-panel))] px-6">
-            <span className="type-heading-3 text-foreground font-semibold">Target URL</span>
+            <span className="type-heading-3">Target URL</span>
             <Badge tone="accent" className="h-5 px-1.5 text-xs font-medium">
               {activeTabLabel}
             </Badge>
@@ -742,7 +739,7 @@ export function CrawlConfigScreen({
                     onChange={(value) => {
                       const parsed = parseRequestedCrawlTab(value);
                       if (parsed) {
-                        setCrawlTab(parsed);
+                        dispatchRoute({ type: 'setTab', tab: parsed });
                       }
                     }}
                     options={domainTabs}
@@ -757,7 +754,7 @@ export function CrawlConfigScreen({
                         onChange={(value) => {
                           const parsed = parseRequestedCategoryMode(value);
                           if (parsed) {
-                            setCategoryMode(parsed);
+                            dispatchRoute({ type: 'setCategoryMode', mode: parsed });
                           }
                         }}
                         options={[
@@ -773,7 +770,7 @@ export function CrawlConfigScreen({
                         onChange={(value) => {
                           const parsed = parseRequestedPdpMode(value);
                           if (parsed) {
-                            setPdpMode(parsed);
+                            dispatchRoute({ type: 'setPdpMode', mode: parsed });
                           }
                         }}
                         options={[
@@ -808,22 +805,22 @@ export function CrawlConfigScreen({
                     aria-label="Bulk URLs input"
                   />
                   {bulkUrls.trim() ? (
-                    <div className="bg-background/80 text-foreground type-caption absolute right-2 bottom-2 rounded-[var(--radius-sm)] px-2 py-1 backdrop-blur-sm">
+                    <div className="bg-background/80 text-foreground type-caption absolute right-2 bottom-2 rounded-sm px-2 py-1 backdrop-blur-sm">
                       {parseLines(bulkUrls).length} URLs
                     </div>
                   ) : null}
                 </div>
               </label>
             ) : crawlTab === 'pdp' && pdpMode === 'csv' ? (
-              <CsvFileField file={csvFile} onChange={setCsvFile} />
-            ) : crawlTab === 'category' && categoryMode === 'sitemap' ? (
+              <CsvFileField file={csvFile} onChange={localDispatch.setCsvFile} />
+            ) : crawlTab === 'category' && activeMode === 'sitemap' ? (
               <SitemapConfigFields
                 domain={sitemapDomain}
                 filterKeyword={sitemapFilterKeyword}
                 maxUrls={sitemapMaxUrls}
-                onDomainChange={setSitemapDomain}
-                onFilterKeywordChange={setSitemapFilterKeyword}
-                onMaxUrlsChange={setSitemapMaxUrls}
+                onDomainChange={localDispatch.setSitemapDomain}
+                onFilterKeywordChange={localDispatch.setSitemapFilterKeyword}
+                onMaxUrlsChange={localDispatch.setSitemapMaxUrls}
               />
             ) : (
               <TargetUrlField
@@ -836,7 +833,7 @@ export function CrawlConfigScreen({
             )}
 
             {savedProfileMessage ? (
-              <div className="border-subtle-panel-border bg-subtle-panel text-secondary type-body rounded-[var(--radius-md)] border px-3 py-2 leading-[var(--leading-relaxed)]">
+              <div className="border-subtle-panel-border bg-subtle-panel text-secondary type-body rounded-md border px-3 py-2 leading-relaxed">
                 {savedProfileMessage}
               </div>
             ) : null}
@@ -844,12 +841,16 @@ export function CrawlConfigScreen({
             <AdditionalFieldInput
               value={additionalDraft}
               fields={additionalFields}
-              onChange={setAdditionalDraft}
+              onChange={localDispatch.setAdditionalDraft}
               onCommit={(value) =>
-                setAdditionalFields((current) => uniqueRequestedFields([...current, value]))
+                localDispatch.setAdditionalFields((current) =>
+                  uniqueRequestedFields([...current, value]),
+                )
               }
               onRemove={(value) =>
-                setAdditionalFields((current) => current.filter((field) => field !== value))
+                localDispatch.setAdditionalFields((current) =>
+                  current.filter((field) => field !== value),
+                )
               }
             />
           </div>
@@ -859,7 +860,7 @@ export function CrawlConfigScreen({
           <div className="h-full xl:sticky xl:top-[68px]">
             <Card className="section-card h-full overflow-hidden p-0">
               <header className="border-border flex h-10 items-center justify-between border-b bg-[color-mix(in_srgb,var(--bg-alt)_40%,var(--bg-panel))] px-6">
-                <span className="type-heading-3 text-foreground font-semibold">Crawl Settings</span>
+                <span className="type-heading-3">Crawl Settings</span>
                 <Badge tone="accent" className="h-5 px-1.5 text-xs font-medium">
                   {studioMode === 'advanced' ? 'Advanced' : 'Quick'}
                 </Badge>
@@ -876,7 +877,7 @@ export function CrawlConfigScreen({
                     className={RUN_SETUP_CONTROL_CLASS}
                     onChange={(value) => {
                       if (DOMAIN_OPTIONS.some((option) => option.value === value)) {
-                        setCrawlDomain(value);
+                        dispatchRoute({ type: 'setDomain', domain: value });
                       }
                     }}
                     options={DOMAIN_OPTIONS}
@@ -898,7 +899,7 @@ export function CrawlConfigScreen({
                     className={RUN_SETUP_CONTROL_CLASS}
                     onChange={(value) => {
                       if (value === 'quick' || value === 'advanced') {
-                        setStudioMode(value);
+                        localDispatch.setStudioMode(value);
                       }
                     }}
                     options={[
@@ -920,7 +921,7 @@ export function CrawlConfigScreen({
                   </div>
                   <Toggle
                     checked={smartExtraction}
-                    onChange={setSmartExtraction}
+                    onChange={localDispatch.setSmartExtraction}
                     ariaLabel="LLM Processing"
                   />
                 </div>
@@ -936,7 +937,7 @@ export function CrawlConfigScreen({
                     </div>
                     <Toggle
                       checked={proxyEnabled}
-                      onChange={setProxyEnabled}
+                      onChange={localDispatch.setProxyEnabled}
                       ariaLabel="Proxy List enabled"
                     />
                   </div>
@@ -951,14 +952,14 @@ export function CrawlConfigScreen({
                         setValue('proxyInput', event.target.value);
                       }}
                       placeholder={'http://host:port\nhttp://user:pass@host:port'}
-                      className="min-h-[104px] font-mono leading-[var(--leading-relaxed)]"
+                      className="min-h-[104px] font-mono leading-relaxed"
                       aria-label="Proxy pool input"
                     />
                   </div>
                 ) : null}
 
                 {singleUrlMode && savedProfileLoaded ? (
-                  <div className="text-secondary type-body leading-[var(--leading-relaxed)]">
+                  <div className="text-secondary type-body leading-relaxed">
                     Saved domain profile active:{' '}
                     <span className="type-label-mono text-foreground">{savedProfileDomain}</span> ·{' '}
                     {surfaceLabel(effectiveSurface)}
@@ -972,9 +973,7 @@ export function CrawlConfigScreen({
         {studioMode === 'advanced' ? (
           <Card className="section-card overflow-hidden p-0 xl:col-span-2">
             <header className="border-border flex h-10 items-center justify-between border-b bg-[color-mix(in_srgb,var(--bg-alt)_40%,var(--bg-panel))] px-6">
-              <span className="type-heading-3 text-foreground font-semibold">
-                Field Configuration
-              </span>
+              <span className="type-heading-3">Field Configuration</span>
               <div className="flex items-center gap-2">
                 <Button
                   variant="quiet"
@@ -1010,9 +1009,7 @@ export function CrawlConfigScreen({
             </header>
             <div className="space-y-4 px-6 pt-6 pb-6">
               {fieldConfigMessage ? (
-                <p className="text-success type-body leading-[var(--leading-relaxed)]">
-                  {fieldConfigMessage}
-                </p>
+                <p className="text-success type-body leading-relaxed">{fieldConfigMessage}</p>
               ) : null}
               {fieldConfigError ? <InlineAlert message={fieldConfigError} /> : null}
               <div className="flex flex-col gap-2">
@@ -1032,7 +1029,7 @@ export function CrawlConfigScreen({
                               entry.id === row.id ? { ...entry, ...patch } : entry,
                             ),
                           );
-                          setFieldRowMessages((current) => {
+                          localDispatch.setFieldRowMessages((current) => {
                             if (!current[row.id]) {
                               return current;
                             }
@@ -1043,7 +1040,7 @@ export function CrawlConfigScreen({
                         }}
                         onDelete={() => {
                           setFieldRows((current) => current.filter((entry) => entry.id !== row.id));
-                          setFieldRowMessages((current) => {
+                          localDispatch.setFieldRowMessages((current) => {
                             if (!current[row.id]) {
                               return current;
                             }
@@ -1062,7 +1059,7 @@ export function CrawlConfigScreen({
                     ))}
                   </>
                 ) : (
-                  <div className="surface-muted text-secondary type-body rounded-[var(--radius-md)] border-dashed px-4 py-6 leading-[var(--leading-relaxed)]">
+                  <div className="surface-muted text-secondary type-body rounded-md border-dashed px-4 py-6 leading-relaxed">
                     No selector rows yet.
                   </div>
                 )}
@@ -1080,7 +1077,7 @@ export function CrawlConfigScreen({
         {studioMode === 'advanced' ? (
           <Card className="section-card overflow-visible p-0 xl:col-span-2">
             <header className="border-border flex h-10 items-center justify-between border-b bg-[color-mix(in_srgb,var(--bg-alt)_40%,var(--bg-panel))] px-6">
-              <span className="type-heading-3 text-foreground flex items-center gap-1.5 font-semibold">
+              <span className="type-heading-3 flex items-center gap-1.5">
                 <SlidersHorizontal className="size-3.5" /> Advanced Settings
               </span>
               <Tooltip content="Fine-tune fetch, limits, locality, and diagnostics for this exploratory run.">
@@ -1245,7 +1242,7 @@ export function CrawlConfigScreen({
                     label="Respect robots.txt"
                     description="Skip disallowed paths and honor crawl-delay."
                     checked={respectRobotsTxt}
-                    onChange={setRespectRobotsTxt}
+                    onChange={localDispatch.setRespectRobotsTxt}
                   />
                 </div>
               </section>

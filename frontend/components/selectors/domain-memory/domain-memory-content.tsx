@@ -122,9 +122,7 @@ function DomainDetail({ controller }: DomainMemoryContentProps) {
   return (
     <>
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-foreground type-heading text-lg font-semibold">
-          {selectedWorkspace.domain}
-        </h2>
+        <h2 className="type-heading-3 truncate">{selectedWorkspace.domain}</h2>
         {selectedWorkspace.surfaces.some((surface) => surface.selectorCount) ? (
           <Button
             type="button"

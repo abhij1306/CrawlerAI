@@ -1,7 +1,7 @@
 'use client';
 
 import { Award, CheckCircle2, Clock, LucideIcon } from 'lucide-react';
-import { Children, isValidElement, useEffectEvent, useLayoutEffect, useMemo } from 'react';
+import { Children, isValidElement, useEffectEvent, useLayoutEffect } from 'react';
 import type { ReactNode } from 'react';
 import { usePathname } from 'next/navigation';
 
@@ -24,11 +24,12 @@ function stableNodeSignature(value: ReactNode): string {
     const props = (value.props ?? {}) as Record<string, unknown>;
     const typeName = stableElementTypeName(value.type);
     const propEntries = Object.entries(props)
-      .filter(
-        ([key, propValue]) =>
-          key !== 'children' && key !== 'style' && typeof propValue !== 'function',
-      )
-      .map(([key, propValue]) => `${key}:${stableNodeSignature(propValue as ReactNode)}`)
+      .reduce<string[]>((acc, [key, propValue]) => {
+        if (key !== 'children' && key !== 'style' && typeof propValue !== 'function') {
+          acc.push(`${key}:${stableNodeSignature(propValue as ReactNode)}`);
+        }
+        return acc;
+      }, [])
       .sort((left, right) => left.localeCompare(right));
     return `<${typeName}${propEntries.length ? ` ${propEntries.join(',')}` : ''}>${stableNodeSignature(props.children as ReactNode)}</${typeName}>`;
   }
@@ -70,10 +71,7 @@ export function PageHeader({
 }>) {
   const { setHeader } = useTopBarStore();
   const pathname = usePathname();
-  const signature = useMemo(
-    () => `${stableNodeSignature(title)}::${description ?? ''}::${stableNodeSignature(actions)}`,
-    [title, description, actions],
-  );
+  const signature = `${stableNodeSignature(title)}::${description ?? ''}::${stableNodeSignature(actions)}`;
   const syncHeader = useEffectEvent(() => {
     setHeader({ pathKey: pathname, title, description, actions });
   });
@@ -191,7 +189,7 @@ export function TabBar({
   return (
     <div
       className={cn(
-        'border-border bg-background-alt inline-flex items-center gap-0.5 rounded-[var(--radius-md)] border p-0.5 shadow-none transition-all',
+        'border-border bg-background-alt inline-flex items-center gap-0.5 rounded-md border p-0.5 shadow-none transition-all',
         heightClass,
         fullWidth && 'flex w-full',
         className,
@@ -204,7 +202,7 @@ export function TabBar({
           aria-pressed={value === option.value}
           onClick={() => onChange(option.value)}
           className={cn(
-            'type-control relative z-10 inline-flex h-full min-w-[72px] shrink-0 items-center justify-center rounded-[var(--radius-sm)] font-sans text-sm tracking-normal whitespace-nowrap transition-[background-color,color,border-color,box-shadow] duration-150 ease-out select-none',
+            'type-control relative z-10 inline-flex h-full min-w-[72px] shrink-0 items-center justify-center rounded-sm font-sans text-sm tracking-normal whitespace-nowrap transition-[background-color,color,border-color,box-shadow] duration-150 ease-out select-none',
             fullWidth && 'flex-1',
             padX,
             value === option.value
@@ -258,7 +256,7 @@ export function EmptyPanel({
   description,
 }: Readonly<{ title: string; description: string }>) {
   return (
-    <div className="border-border-strong bg-subtle-panel grid min-h-32 place-items-center rounded-[var(--radius-lg)] border border-dashed px-[var(--space-6)] py-[var(--space-8)] text-center">
+    <div className="border-border-strong bg-subtle-panel grid min-h-32 place-items-center rounded-lg border border-dashed px-6 py-8 text-center">
       <div className="space-y-1">
         <p className="type-subheading m-0">{title}</p>
         <p className="type-body m-0">{description}</p>
@@ -309,10 +307,10 @@ export function SurfaceSection({
 }>) {
   return (
     <SurfacePanel className={className}>
-      <div className="border-divider border-b px-[var(--space-5)] py-[var(--space-4)]">
+      <div className="border-divider border-b px-5 py-4">
         <SectionHeader title={title} description={description} icon={Icon} action={action} />
       </div>
-      <div className={cn('p-[var(--space-5)]', bodyClassName)}>{children}</div>
+      <div className={cn('p-5', bodyClassName)}>{children}</div>
     </SurfacePanel>
   );
 }
@@ -328,12 +326,7 @@ export function MutedPanelMessage({
   className?: string;
 }>) {
   return (
-    <div
-      className={cn(
-        'surface-muted rounded-[var(--radius-lg)] border border-dashed px-[var(--space-5)] py-[var(--space-6)]',
-        className,
-      )}
-    >
+    <div className={cn('surface-muted rounded-lg border border-dashed px-5 py-6', className)}>
       <p className="type-subheading m-0">{title}</p>
       <p className="type-body m-0 mt-1.5">{description}</p>
     </div>
@@ -357,7 +350,7 @@ export function SkeletonRows({
 /* ─── MetricSkeleton ─────────────────────────────────────────────────────── */
 export function MetricSkeleton() {
   return (
-    <div className="border-border card-gradient relative space-y-2 overflow-hidden rounded-[var(--radius-lg)] border p-[var(--space-4)]">
+    <div className="border-border card-gradient relative space-y-2 overflow-hidden rounded-lg border p-4">
       <Skeleton className="h-3 w-20" />
       <Skeleton className="mt-2 h-9 w-28" />
       <Skeleton className="h-3 w-16" />
@@ -418,7 +411,7 @@ export function RunWorkspaceShell({
 }>) {
   return (
     <div className="page-stack">
-      <div className="border-border card-gradient flex flex-wrap items-center justify-between gap-3 rounded-[var(--radius-lg)] border px-[var(--space-6)] py-[var(--space-4)]">
+      <div className="border-border card-gradient flex flex-wrap items-center justify-between gap-3 rounded-lg border px-6 py-4">
         <div className="min-w-0 flex-1">{header}</div>
         {actions ? (
           <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div>
@@ -492,7 +485,7 @@ export function RunSummaryChips({
         return (
           <div
             key={chip.key}
-            className="border-border bg-background-alt inline-flex items-center gap-1.5 rounded-[var(--radius-md)] border px-2.5 py-1"
+            className="border-border bg-background-alt inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1"
           >
             <Icon className={cn('size-3.5 shrink-0', chip.tone)} aria-hidden="true" />
             <span className={cn('type-body-sm tabular-nums', chip.tone)}>{chip.value}</span>
@@ -526,7 +519,7 @@ export function DataRegionLoading({
   className,
 }: Readonly<{ count?: number; className?: string }>) {
   return (
-    <div className={cn('p-[var(--space-5)]', className)}>
+    <div className={cn('p-5', className)}>
       <SkeletonRows count={count} />
     </div>
   );
@@ -538,7 +531,7 @@ export function DataRegionEmpty({
   className,
 }: Readonly<{ title: string; description: string; className?: string }>) {
   return (
-    <div className={cn('p-[var(--space-5)]', className)}>
+    <div className={cn('p-5', className)}>
       <EmptyPanel title={title} description={description} />
     </div>
   );
@@ -549,7 +542,7 @@ export function DataRegionError({
   className,
 }: Readonly<{ message: string; className?: string }>) {
   return (
-    <div className={cn('p-[var(--space-5)]', className)}>
+    <div className={cn('p-5', className)}>
       <InlineAlert message={message} />
     </div>
   );
@@ -561,18 +554,18 @@ export function NavList<T>({
   selectedKey,
   onSelect,
   getKey,
-  renderLabel,
-  renderMeta,
-  renderBadge,
+  getLabel,
+  getMeta,
+  getBadge,
   className,
 }: Readonly<{
   items: ReadonlyArray<T>;
   selectedKey: string;
   onSelect: (key: string) => void;
   getKey: (item: T) => string;
-  renderLabel: (item: T) => ReactNode;
-  renderMeta?: (item: T) => ReactNode;
-  renderBadge?: (item: T) => ReactNode;
+  getLabel: (item: T) => ReactNode;
+  getMeta?: (item: T) => ReactNode;
+  getBadge?: (item: T) => ReactNode;
   className?: string;
 }>) {
   return (
@@ -587,7 +580,7 @@ export function NavList<T>({
             aria-pressed={isActive}
             onClick={() => onSelect(key)}
             className={cn(
-              'w-full rounded-[var(--radius-lg)] border px-3 py-3 text-left transition-colors',
+              'w-full rounded-lg border p-3 text-left transition-colors',
               isActive
                 ? 'border-accent bg-accent-subtle'
                 : 'border-border bg-background hover:bg-background-elevated',
@@ -596,14 +589,12 @@ export function NavList<T>({
             <div className="flex items-center justify-between gap-3">
               <div className="min-w-0">
                 {/* type-control: sm, medium weight — interactive labels */}
-                <div className="type-control text-foreground truncate">{renderLabel(item)}</div>
-                {renderMeta ? (
-                  <div className="type-caption text-muted mt-2 flex flex-wrap gap-2">
-                    {renderMeta(item)}
-                  </div>
+                <div className="type-control text-foreground truncate">{getLabel(item)}</div>
+                {getMeta ? (
+                  <div className="type-caption mt-2 flex flex-wrap gap-2">{getMeta(item)}</div>
                 ) : null}
               </div>
-              {renderBadge ? renderBadge(item) : null}
+              {getBadge ? getBadge(item) : null}
             </div>
           </button>
         );
@@ -618,12 +609,7 @@ export function DetailRow({
   className,
 }: Readonly<{ children: ReactNode; className?: string }>) {
   return (
-    <div
-      className={cn(
-        'border-border bg-background rounded-[var(--radius-lg)] border px-[var(--space-6)] py-[var(--space-4)]',
-        className,
-      )}
-    >
+    <div className={cn('border-border bg-background rounded-lg border px-6 py-4', className)}>
       {children}
     </div>
   );
@@ -637,7 +623,7 @@ export function KVTile({
   className,
 }: Readonly<{ label: string; value: ReactNode; mono?: boolean; className?: string }>) {
   return (
-    <div className={cn('bg-background-elevated rounded-[var(--radius-md)] px-2.5 py-2', className)}>
+    <div className={cn('bg-background-elevated rounded-md px-2.5 py-2', className)}>
       <div className="type-micro-label">{label}</div>
       <div
         className={cn(

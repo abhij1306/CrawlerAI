@@ -5,7 +5,7 @@ import {
   mergeSelectorRows,
   selectRelevantSelectorRecords,
   xpathLiteral,
-} from '../app/selectors/page';
+} from '../app/selectors/selector-page-utils';
 
 describe('selectors page helpers', () => {
   it('infers job detail when fields or URL are job-oriented', () => {

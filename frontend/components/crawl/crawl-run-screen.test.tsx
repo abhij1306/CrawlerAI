@@ -5,7 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CrawlLog, CrawlRecord, CrawlRun, DomainRecipe } from '../../lib/api/types';
 import { POLLING_INTERVALS } from '../../lib/constants/timing';
 import { TopBarProvider } from '../layout/top-bar-context';
-import { CrawlRunScreen, storeProductIntelligencePrefill } from './crawl-run-screen';
+import { CrawlRunScreen } from './crawl-run-screen';
+import { storeProductIntelligencePrefill } from './crawl-run-prefill';
 
 const replaceMock = vi.fn();
 const pushMock = vi.fn();

@@ -11,7 +11,7 @@ import {
   X,
 } from 'lucide-react';
 import Link from 'next/link';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useReducer, useRef } from 'react';
 
 import type {
   MonitorJob,
@@ -42,6 +42,59 @@ type MonitorHeaderProps = Readonly<{
   ) => Promise<void>;
 }>;
 
+type MonitorHeaderState = {
+  menuOpen: boolean;
+  editOpen: boolean;
+  deleteOpen: boolean;
+  statusPending: boolean;
+  deletePending: boolean;
+};
+
+type MonitorHeaderAction =
+  | { type: 'menuToggled' }
+  | { type: 'editOpened' }
+  | { type: 'editClosed' }
+  | { type: 'deleteOpened' }
+  | { type: 'deleteClosed' }
+  | { type: 'statusStarted' }
+  | { type: 'statusSettled' }
+  | { type: 'deleteStarted' }
+  | { type: 'deleteSettled' };
+
+const initialMonitorHeaderState: MonitorHeaderState = {
+  menuOpen: false,
+  editOpen: false,
+  deleteOpen: false,
+  statusPending: false,
+  deletePending: false,
+};
+
+function monitorHeaderReducer(
+  state: MonitorHeaderState,
+  action: MonitorHeaderAction,
+): MonitorHeaderState {
+  switch (action.type) {
+    case 'menuToggled':
+      return { ...state, menuOpen: !state.menuOpen };
+    case 'editOpened':
+      return { ...state, menuOpen: false, deleteOpen: false, editOpen: true };
+    case 'editClosed':
+      return { ...state, editOpen: false };
+    case 'deleteOpened':
+      return { ...state, menuOpen: false, editOpen: false, deleteOpen: true };
+    case 'deleteClosed':
+      return { ...state, deleteOpen: false };
+    case 'statusStarted':
+      return { ...state, statusPending: true };
+    case 'statusSettled':
+      return { ...state, statusPending: false };
+    case 'deleteStarted':
+      return { ...state, deletePending: true };
+    case 'deleteSettled':
+      return { ...state, deletePending: false };
+  }
+}
+
 export function MonitorHeader({
   monitor,
   runPending,
@@ -51,13 +104,10 @@ export function MonitorHeader({
   onDelete,
   onSave,
 }: MonitorHeaderProps) {
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [editOpen, setEditOpen] = useState(false);
-  const [deleteOpen, setDeleteOpen] = useState(false);
-  const [statusPending, setStatusPending] = useState(false);
-  const [deletePending, setDeletePending] = useState(false);
+  const [state, dispatch] = useReducer(monitorHeaderReducer, initialMonitorHeaderState);
+  const { menuOpen, editOpen, deleteOpen, statusPending, deletePending } = state;
   const menuTriggerRef = useRef<HTMLButtonElement | null>(null);
-  const deleteDialogRef = useRef<HTMLDivElement | null>(null);
+  const deleteDialogRef = useRef<HTMLDialogElement | null>(null);
   const deleteConfirmRef = useRef<HTMLButtonElement | null>(null);
   const deletePreviousFocusRef = useRef<HTMLElement | null>(null);
   const deletePendingRef = useRef(deletePending);
@@ -76,7 +126,9 @@ export function MonitorHeader({
     if (!deleteOpen) {
       return;
     }
+    const previousFocusRef = deletePreviousFocusRef;
     const menuTrigger = menuTriggerRef.current;
+    const previousFocus = previousFocusRef.current;
     const frame = window.requestAnimationFrame(() => deleteConfirmRef.current?.focus());
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
@@ -84,7 +136,7 @@ export function MonitorHeader({
           return;
         }
         event.preventDefault();
-        setDeleteOpen(false);
+        dispatch({ type: 'deleteClosed' });
         return;
       }
       trapFocus(event, deleteDialogRef.current);
@@ -93,37 +145,33 @@ export function MonitorHeader({
     return () => {
       window.cancelAnimationFrame(frame);
       document.removeEventListener('keydown', handleKeyDown);
-      const restoreTarget = deletePreviousFocusRef.current?.isConnected
-        ? deletePreviousFocusRef.current
-        : menuTrigger;
+      const restoreTarget = previousFocus?.isConnected ? previousFocus : menuTrigger;
       restoreTarget?.focus();
-      deletePreviousFocusRef.current = null;
+      previousFocusRef.current = null;
     };
   }, [deleteOpen]);
 
   async function updateStatus(status: MonitorStatus) {
-    setStatusPending(true);
+    dispatch({ type: 'statusStarted' });
     try {
       await onUpdateStatus(status);
     } finally {
-      setStatusPending(false);
+      dispatch({ type: 'statusSettled' });
     }
   }
 
   async function remove() {
-    setDeletePending(true);
+    dispatch({ type: 'deleteStarted' });
     try {
       await onDelete();
-      setDeleteOpen(false);
+      dispatch({ type: 'deleteClosed' });
     } finally {
-      setDeletePending(false);
+      dispatch({ type: 'deleteSettled' });
     }
   }
 
   function openEditDialog() {
-    setMenuOpen(false);
-    setDeleteOpen(false);
-    setEditOpen(true);
+    dispatch({ type: 'editOpened' });
   }
 
   function openDeleteDialog() {
@@ -131,13 +179,11 @@ export function MonitorHeader({
       document.activeElement instanceof HTMLElement
         ? document.activeElement
         : menuTriggerRef.current;
-    setMenuOpen(false);
-    setEditOpen(false);
-    setDeleteOpen(true);
+    dispatch({ type: 'deleteOpened' });
   }
 
   return (
-    <div className="border-border card-gradient rounded-[var(--radius-lg)] border p-5">
+    <div className="border-border card-gradient rounded-lg border p-5">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0 space-y-2">
           <Link
@@ -189,12 +235,12 @@ export function MonitorHeader({
               variant="quiet"
               size="icon"
               aria-label="More actions"
-              onClick={() => setMenuOpen((value) => !value)}
+              onClick={() => dispatch({ type: 'menuToggled' })}
             >
               <MoreHorizontal className="size-4" />
             </Button>
             {menuOpen ? (
-              <div className="border-border bg-background-elevated shadow-card absolute right-0 z-20 mt-1 w-36 rounded-[var(--radius-md)] border py-1">
+              <div className="border-border bg-background-elevated shadow-card absolute right-0 z-20 mt-1 w-36 rounded-md border py-1">
                 <button
                   type="button"
                   onClick={openDeleteDialog}
@@ -223,9 +269,8 @@ export function MonitorHeader({
       </div>
       {editOpen ? (
         <div className="fixed inset-0 z-[100] bg-[color-mix(in_srgb,var(--bg-base)_34%,black)]">
-          <div
-            role="dialog"
-            aria-modal="true"
+          <dialog
+            open
             aria-labelledby="monitor-edit-title"
             className="border-border bg-background shadow-card fixed top-0 right-0 z-[101] h-dvh w-[min(560px,100vw)] overflow-y-auto border-l p-5"
           >
@@ -238,7 +283,7 @@ export function MonitorHeader({
                 variant="quiet"
                 size="icon"
                 aria-label="Close"
-                onClick={() => setEditOpen(false)}
+                onClick={() => dispatch({ type: 'editClosed' })}
               >
                 <X className="size-4" />
               </Button>
@@ -247,36 +292,35 @@ export function MonitorHeader({
               <AlertForm
                 initial={monitor}
                 submitLabel="Save Changes"
-                onCancel={() => setEditOpen(false)}
+                onCancel={() => dispatch({ type: 'editClosed' })}
                 onSubmit={async (payload) => {
                   await onSave(payload);
-                  setEditOpen(false);
+                  dispatch({ type: 'editClosed' });
                 }}
               />
             ) : (
               <MonitorForm
                 initial={monitor}
                 submitLabel="Save Changes"
-                onCancel={() => setEditOpen(false)}
+                onCancel={() => dispatch({ type: 'editClosed' })}
                 onSubmit={async (payload) => {
                   await onSave(payload);
-                  setEditOpen(false);
+                  dispatch({ type: 'editClosed' });
                 }}
               />
             )}
-          </div>
+          </dialog>
         </div>
       ) : null}
       {deleteOpen ? (
         <div className="fixed inset-0 z-[100] grid place-items-center bg-[color-mix(in_srgb,var(--bg-base)_34%,black)] p-4">
-          <div
+          <dialog
             ref={deleteDialogRef}
-            role="dialog"
-            aria-modal="true"
+            open
             aria-labelledby="monitor-delete-title"
             aria-describedby="monitor-delete-description"
             tabIndex={-1}
-            className="border-border card-gradient w-[min(420px,100%)] rounded-[var(--radius-lg)] border p-5"
+            className="border-border card-gradient w-[min(420px,100%)] rounded-lg border p-5"
           >
             <h2
               id="monitor-delete-title"
@@ -286,7 +330,7 @@ export function MonitorHeader({
             </h2>
             <p
               id="monitor-delete-description"
-              className="text-secondary mt-2 text-sm leading-[var(--leading-relaxed)]"
+              className="text-secondary mt-2 text-sm leading-relaxed"
             >
               This permanently deletes the {isAlert ? 'alert' : 'monitor'}, its snapshots, events,
               URL state, and notifications.
@@ -296,7 +340,7 @@ export function MonitorHeader({
                 type="button"
                 variant="quiet"
                 disabled={deletePending}
-                onClick={() => setDeleteOpen(false)}
+                onClick={() => dispatch({ type: 'deleteClosed' })}
               >
                 Cancel
               </Button>
@@ -310,7 +354,7 @@ export function MonitorHeader({
                 {deletePending ? 'Working...' : `Delete ${isAlert ? 'Alert' : 'Monitor'}`}
               </Button>
             </div>
-          </div>
+          </dialog>
         </div>
       ) : null}
     </div>

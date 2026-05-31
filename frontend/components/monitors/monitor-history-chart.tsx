@@ -2,15 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import {
-  CartesianGrid,
-  Line,
-  LineChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from 'recharts';
+import dynamic from 'next/dynamic';
 
 import { monitorsApi } from '../../lib/api';
 import type { MonitorJob } from '../../lib/api/types';
@@ -18,6 +10,11 @@ import { formatJobsTimestamp } from '../../lib/format/date';
 import { Button } from '../ui/primitives';
 import { DataRegionError } from '../ui/patterns';
 import { MonitorEmptyState } from './monitor-empty-state';
+
+const MonitorHistoryLineChart = dynamic(() => import('./monitor-history-line-chart'), {
+  ssr: false,
+  loading: () => <div className="skeleton size-full rounded-lg" />,
+});
 
 export function MonitorHistoryChart({ monitor }: Readonly<{ monitor: MonitorJob }>) {
   const [expanded, setExpanded] = useState(false);
@@ -47,7 +44,7 @@ export function MonitorHistoryChart({ monitor }: Readonly<{ monitor: MonitorJob 
     return <DataRegionError message={error instanceof Error ? error.message : 'History failed.'} />;
   }
   if (historyQuery.isPending || snapshotQuery.isPending) {
-    return <div className="skeleton h-80 w-full rounded-[var(--radius-lg)]" />;
+    return <div className="skeleton h-80 w-full rounded-lg" />;
   }
   if (!rows.length) {
     return <MonitorEmptyState kind="history" />;
@@ -56,34 +53,7 @@ export function MonitorHistoryChart({ monitor }: Readonly<{ monitor: MonitorJob 
   return (
     <div className="space-y-4">
       <div className="h-72 w-full">
-        <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={rows} margin={{ top: 12, right: 20, bottom: 8, left: 0 }}>
-            <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" />
-            <XAxis dataKey="time" tick={{ fill: 'var(--muted)', fontSize: 11 }} />
-            <YAxis tick={{ fill: 'var(--muted)', fontSize: 11 }} allowDecimals={false} />
-            <Tooltip
-              contentStyle={{
-                background: 'var(--bg-panel)',
-                border: '1px solid var(--border)',
-                borderRadius: 'var(--radius-md)',
-              }}
-            />
-            <Line
-              type="monotone"
-              dataKey="records"
-              stroke="var(--accent)"
-              strokeWidth={2}
-              dot={false}
-            />
-            <Line
-              type="monotone"
-              dataKey="changes"
-              stroke="var(--warning)"
-              strokeWidth={2}
-              dot={false}
-            />
-          </LineChart>
-        </ResponsiveContainer>
+        <MonitorHistoryLineChart rows={rows} />
       </div>
       {currentRecords.length ? (
         <div className="space-y-2">

@@ -43,7 +43,7 @@ export function MonitorSnapshotTable({
         String(cellValue(record, key)).toLowerCase().includes(normalizedQuery),
       );
     });
-    return [...filtered].sort((left, right) => {
+    return filtered.slice().sort((left, right) => {
       const leftValue = cellValue(left, sortKey);
       const rightValue = cellValue(right, sortKey);
       const result = String(leftValue).localeCompare(String(rightValue), undefined, {
@@ -63,7 +63,7 @@ export function MonitorSnapshotTable({
     );
   }
   if (snapshotQuery.isPending) {
-    return <Skeleton className="h-72 w-full rounded-[var(--radius-lg)]" />;
+    return <Skeleton className="h-72 w-full rounded-lg" />;
   }
   if (!snapshotQuery.data?.length) {
     return <MonitorEmptyState kind="snapshot" onRunNow={onRunNow} />;
@@ -126,11 +126,7 @@ export function MonitorSnapshotTable({
 function SortableHead({ label, onClick }: Readonly<{ label: string; onClick: () => void }>) {
   return (
     <TableHead>
-      <button
-        type="button"
-        onClick={onClick}
-        className="type-caption text-muted hover:text-foreground"
-      >
+      <button type="button" onClick={onClick} className="type-caption hover:text-foreground">
         {label}
       </button>
     </TableHead>

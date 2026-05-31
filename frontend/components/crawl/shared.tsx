@@ -14,7 +14,8 @@ import {
   TargetUrlField,
 } from './form-fields';
 import type { FieldRow, FieldRowMessageTone, ValidationState } from './form-fields';
-import { LogTerminal, buildLogSiteGroups, getLogStage } from './log-terminal';
+import { LogTerminal } from './log-terminal';
+import { buildLogSiteGroups, getLogStage } from './log-terminal-utils';
 import { RecordThumbnail } from './record-thumbnail';
 import { RecordsTable } from './records-table';
 import type {
@@ -242,7 +243,7 @@ export function PreviewRow({
   mono,
 }: Readonly<{ label: string; value: ReactNode; mono?: boolean }>) {
   return (
-    <div className="surface-muted flex items-start justify-between gap-4 rounded-[var(--radius-md)] px-3 py-2">
+    <div className="surface-muted flex items-start justify-between gap-4 rounded-md px-3 py-2">
       <div className="field-label shrink-0">{label}</div>
       <div
         className={cn(

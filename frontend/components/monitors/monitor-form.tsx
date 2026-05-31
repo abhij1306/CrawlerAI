@@ -1,7 +1,7 @@
 'use client';
 
 import { Globe2, Info, Shield } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useMemo, useReducer } from 'react';
 
 import type { CrawlSurface, MonitorCreatePayload, MonitorPriority } from '../../lib/api/types';
 import { cn } from '../../lib/utils';
@@ -19,6 +19,89 @@ interface MonitorFormProps {
 }
 
 type IntervalUnit = 'hours' | 'days';
+
+type MonitorFormState = {
+  name: string;
+  urlsText: string;
+  surface: CrawlSurface;
+  trackedFields: string[];
+  intervalUnit: IntervalUnit;
+  intervalValue: string;
+  priority: MonitorPriority;
+  retentionDays: number;
+  advancedOpen: boolean;
+  skipHeadCheck: boolean;
+  proxyEnabled: boolean;
+  jsRendering: boolean;
+  error: string;
+  submitting: boolean;
+};
+
+type MonitorFormAction =
+  | { type: 'nameChanged'; value: string }
+  | { type: 'urlsTextChanged'; value: string }
+  | { type: 'surfaceChanged'; value: CrawlSurface }
+  | { type: 'fieldToggled'; field: string }
+  | { type: 'intervalValueChanged'; value: string }
+  | { type: 'intervalUnitChanged'; value: IntervalUnit }
+  | { type: 'priorityChanged'; value: MonitorPriority }
+  | { type: 'retentionDaysChanged'; value: number }
+  | { type: 'advancedOpenChanged'; value: boolean }
+  | { type: 'proxyEnabledChanged'; value: boolean }
+  | { type: 'jsRenderingChanged'; value: boolean }
+  | { type: 'skipHeadCheckChanged'; value: boolean }
+  | { type: 'submitStarted' }
+  | { type: 'submitFailed'; message: string }
+  | { type: 'submitSettled' }
+  | { type: 'validationFailed'; message: string };
+
+function monitorFormReducer(state: MonitorFormState, action: MonitorFormAction): MonitorFormState {
+  switch (action.type) {
+    case 'nameChanged':
+      return { ...state, name: action.value };
+    case 'urlsTextChanged':
+      return { ...state, urlsText: action.value };
+    case 'surfaceChanged': {
+      const defaultFields = DEFAULT_FIELDS[action.value] ?? [];
+      return {
+        ...state,
+        surface: action.value,
+        trackedFields: defaultFields.includes('price') ? ['price'] : defaultFields.slice(0, 1),
+        skipHeadCheck: skipsHeadByDefault(action.value),
+      };
+    }
+    case 'fieldToggled':
+      return {
+        ...state,
+        trackedFields: state.trackedFields.includes(action.field)
+          ? state.trackedFields.filter((item) => item !== action.field)
+          : [...state.trackedFields, action.field],
+      };
+    case 'intervalValueChanged':
+      return { ...state, intervalValue: action.value };
+    case 'intervalUnitChanged':
+      return { ...state, intervalUnit: action.value };
+    case 'priorityChanged':
+      return { ...state, priority: action.value };
+    case 'retentionDaysChanged':
+      return { ...state, retentionDays: action.value };
+    case 'advancedOpenChanged':
+      return { ...state, advancedOpen: action.value };
+    case 'proxyEnabledChanged':
+      return { ...state, proxyEnabled: action.value };
+    case 'jsRenderingChanged':
+      return { ...state, jsRendering: action.value };
+    case 'skipHeadCheckChanged':
+      return { ...state, skipHeadCheck: action.value };
+    case 'submitStarted':
+      return { ...state, error: '', submitting: true };
+    case 'submitFailed':
+    case 'validationFailed':
+      return { ...state, error: action.message };
+    case 'submitSettled':
+      return { ...state, submitting: false };
+  }
+}
 
 const surfaceOptions = Array.from(new Set(Object.values(SURFACE_DISPATCH))).map((surface) => ({
   value: surface,
@@ -43,43 +126,53 @@ export function MonitorForm({
   layout = 'stack',
 }: Readonly<MonitorFormProps>) {
   const initialHours = initial?.schedule_interval_hours ?? 24;
-  const [name, setName] = useState(initial?.name ?? '');
-  const [urlsText, setUrlsText] = useState((initial?.urls ?? []).join('\n'));
-  const [surface, setSurface] = useState<CrawlSurface>(
-    (initial?.surface as CrawlSurface | undefined) ?? 'ecommerce_detail',
-  );
-  const [trackedFields, setTrackedFields] = useState<string[]>(
-    initial?.tracked_fields?.length ? initial.tracked_fields : ['price'],
-  );
-  const [intervalUnit, setIntervalUnit] = useState<IntervalUnit>(
-    initialHours >= 24 && initialHours % 24 === 0 ? 'days' : 'hours',
-  );
-  const [intervalValue, setIntervalValue] = useState(
-    String(initialHours >= 24 && initialHours % 24 === 0 ? initialHours / 24 : initialHours),
-  );
-  const [priority, setPriority] = useState<MonitorPriority>(initial?.priority ?? 'background');
-  const [retentionDays, setRetentionDays] = useState(initial?.retention_days ?? 30);
-  const [advancedOpen, setAdvancedOpen] = useState(false);
-  const [skipHeadCheck, setSkipHeadCheck] = useState(
-    typeof initial?.settings?.skip_head_check === 'boolean'
-      ? Boolean(initial.settings.skip_head_check)
-      : skipsHeadByDefault((initial?.surface as string | undefined) ?? 'ecommerce_detail'),
-  );
-  const [proxyEnabled, setProxyEnabled] = useState(Boolean(initial?.settings?.proxy_enabled));
-  const [jsRendering, setJsRendering] = useState(
-    String(
-      (initial?.settings?.fetch_profile as { js_mode?: string } | undefined)?.js_mode ?? '',
-    ) === 'enabled',
-  );
-  const [error, setError] = useState('');
-  const [submitting, setSubmitting] = useState(false);
+  const [state, dispatch] = useReducer(monitorFormReducer, {
+    name: initial?.name ?? '',
+    urlsText: (initial?.urls ?? []).join('\n'),
+    surface: (initial?.surface as CrawlSurface | undefined) ?? 'ecommerce_detail',
+    trackedFields: initial?.tracked_fields?.length ? initial.tracked_fields : ['price'],
+    intervalUnit: initialHours >= 24 && initialHours % 24 === 0 ? 'days' : 'hours',
+    intervalValue: String(
+      initialHours >= 24 && initialHours % 24 === 0 ? initialHours / 24 : initialHours,
+    ),
+    priority: initial?.priority ?? 'background',
+    retentionDays: initial?.retention_days ?? 30,
+    advancedOpen: false,
+    skipHeadCheck:
+      typeof initial?.settings?.skip_head_check === 'boolean'
+        ? Boolean(initial.settings.skip_head_check)
+        : skipsHeadByDefault((initial?.surface as string | undefined) ?? 'ecommerce_detail'),
+    proxyEnabled: Boolean(initial?.settings?.proxy_enabled),
+    jsRendering:
+      String(
+        (initial?.settings?.fetch_profile as { js_mode?: string } | undefined)?.js_mode ?? '',
+      ) === 'enabled',
+    error: '',
+    submitting: false,
+  });
+  const {
+    name,
+    urlsText,
+    surface,
+    trackedFields,
+    intervalUnit,
+    intervalValue,
+    priority,
+    retentionDays,
+    advancedOpen,
+    skipHeadCheck,
+    proxyEnabled,
+    jsRendering,
+    error,
+    submitting,
+  } = state;
 
   const urls = useMemo(
     () =>
-      urlsText
-        .split(/\r?\n/)
-        .map((url) => url.trim())
-        .filter(Boolean),
+      urlsText.split(/\r?\n/).flatMap((url) => {
+        const trimmed = url.trim();
+        return trimmed ? [trimmed] : [];
+      }),
     [urlsText],
   );
   const availableFields = DEFAULT_FIELDS[surface] ?? ['price'];
@@ -89,49 +182,46 @@ export function MonitorForm({
     (intervalUnit === 'days' ? 24 : 1);
 
   function handleSurfaceChange(nextSurface: CrawlSurface) {
-    const defaultFields = DEFAULT_FIELDS[nextSurface] ?? [];
-    setSurface(nextSurface);
-    setTrackedFields(defaultFields.includes('price') ? ['price'] : defaultFields.slice(0, 1));
-    setSkipHeadCheck(skipsHeadByDefault(nextSurface));
+    dispatch({ type: 'surfaceChanged', value: nextSurface });
   }
 
   function toggleField(field: string) {
-    setTrackedFields((current) =>
-      current.includes(field) ? current.filter((item) => item !== field) : [...current, field],
-    );
+    dispatch({ type: 'fieldToggled', field });
   }
 
   async function submit() {
-    setError('');
     if (!name.trim()) {
-      setError('Name is required.');
+      dispatch({ type: 'validationFailed', message: 'Name is required.' });
       return;
     }
     if (name.trim().length > 100) {
-      setError('Name must be 100 characters or less.');
+      dispatch({ type: 'validationFailed', message: 'Name must be 100 characters or less.' });
       return;
     }
     if (!urls.length) {
-      setError('At least one URL is required.');
+      dispatch({ type: 'validationFailed', message: 'At least one URL is required.' });
       return;
     }
     if (invalidUrls.length) {
-      setError('Every URL must start with http:// or https://.');
+      dispatch({
+        type: 'validationFailed',
+        message: 'Every URL must start with http:// or https://.',
+      });
       return;
     }
     if (urls.length > 500) {
-      setError('No more than 500 URLs are allowed.');
+      dispatch({ type: 'validationFailed', message: 'No more than 500 URLs are allowed.' });
       return;
     }
     if (!trackedFields.length) {
-      setError('Select at least one tracked field.');
+      dispatch({ type: 'validationFailed', message: 'Select at least one tracked field.' });
       return;
     }
     if (intervalHours < 1) {
-      setError('Schedule interval must be at least 1 hour.');
+      dispatch({ type: 'validationFailed', message: 'Schedule interval must be at least 1 hour.' });
       return;
     }
-    setSubmitting(true);
+    dispatch({ type: 'submitStarted' });
     try {
       await onSubmit({
         name: name.trim(),
@@ -152,9 +242,12 @@ export function MonitorForm({
         },
       });
     } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : 'Unable to save monitor.');
+      dispatch({
+        type: 'submitFailed',
+        message: submitError instanceof Error ? submitError.message : 'Unable to save monitor.',
+      });
     } finally {
-      setSubmitting(false);
+      dispatch({ type: 'submitSettled' });
     }
   }
 
@@ -165,13 +258,17 @@ export function MonitorForm({
       <div className={cn(layout === 'grid' ? 'grid gap-6 lg:grid-cols-2' : 'space-y-4')}>
         <div className="space-y-4">
           <Field label="Name">
-            <Input value={name} maxLength={100} onChange={(event) => setName(event.target.value)} />
+            <Input
+              value={name}
+              maxLength={100}
+              onChange={(event) => dispatch({ type: 'nameChanged', value: event.target.value })}
+            />
           </Field>
 
           <Field label="URLs" hint={`${urls.length} URL${urls.length === 1 ? '' : 's'}`}>
             <Textarea
               value={urlsText}
-              onChange={(event) => setUrlsText(event.target.value)}
+              onChange={(event) => dispatch({ type: 'urlsTextChanged', value: event.target.value })}
               className="h-28 font-mono"
               placeholder="https://example.com/product"
             />
@@ -196,10 +293,13 @@ export function MonitorForm({
               <div className="flex h-[var(--control-height)] items-center">
                 <input
                   type="range"
+                  aria-label="Retention days"
                   min={1}
                   max={90}
                   value={retentionDays}
-                  onChange={(event) => setRetentionDays(Number(event.target.value))}
+                  onChange={(event) =>
+                    dispatch({ type: 'retentionDaysChanged', value: Number(event.target.value) })
+                  }
                   className="slider-control w-full"
                 />
               </div>
@@ -217,7 +317,7 @@ export function MonitorForm({
                     type="button"
                     onClick={() => toggleField(field)}
                     className={cn(
-                      'type-control cursor-pointer rounded-[var(--radius-sm)] border px-2.5 py-1 text-xs font-semibold transition-colors',
+                      'type-control cursor-pointer rounded-sm border px-2.5 py-1 text-xs font-semibold transition-colors',
                       isSelected
                         ? 'border-accent bg-accent-subtle text-accent'
                         : 'border-border bg-panel text-secondary hover:bg-background-alt',
@@ -231,7 +331,7 @@ export function MonitorForm({
           </div>
         </div>
 
-        <div className="flex flex-col justify-between space-y-4">
+        <div className="flex flex-col justify-between gap-4">
           <div className="space-y-4">
             <div className="grid grid-cols-[1fr_120px] gap-4">
               <Field
@@ -242,13 +342,15 @@ export function MonitorForm({
                   type="number"
                   min={1}
                   value={intervalValue}
-                  onChange={(event) => setIntervalValue(event.target.value)}
+                  onChange={(event) =>
+                    dispatch({ type: 'intervalValueChanged', value: event.target.value })
+                  }
                 />
               </Field>
               <Field label="Unit">
                 <Dropdown<IntervalUnit>
                   value={intervalUnit}
-                  onChange={setIntervalUnit}
+                  onChange={(value) => dispatch({ type: 'intervalUnitChanged', value })}
                   options={[
                     { value: 'hours', label: 'Hours' },
                     { value: 'days', label: 'Days' },
@@ -259,14 +361,14 @@ export function MonitorForm({
 
             <div className="space-y-1.5">
               <div className="field-label">Priority</div>
-              <div className="border-border bg-background-alt flex w-max gap-1 rounded-[var(--radius-md)] border p-0.5">
+              <div className="border-border bg-background-alt flex w-max gap-1 rounded-md border p-0.5">
                 {priorityOptions.map((option) => (
                   <Tooltip key={option.value} content={option.hint}>
                     <button
                       type="button"
-                      onClick={() => setPriority(option.value)}
+                      onClick={() => dispatch({ type: 'priorityChanged', value: option.value })}
                       className={cn(
-                        'type-control cursor-pointer rounded-[var(--radius-sm)] px-3 py-1 text-xs font-semibold transition-colors',
+                        'type-control cursor-pointer rounded-sm px-3 py-1 text-xs font-semibold transition-colors',
                         priority === option.value
                           ? 'border-border bg-panel text-foreground border shadow-xs'
                           : 'text-secondary hover:text-foreground border border-transparent',
@@ -279,15 +381,15 @@ export function MonitorForm({
               </div>
             </div>
 
-            <div className="border-border rounded-[var(--radius-lg)] border">
+            <div className="border-border rounded-lg border">
               <SettingSection
                 label="Advanced crawl settings"
                 description="Optional crawl runtime controls reused from Crawl Studio."
                 icon={<Info />}
                 checked={advancedOpen}
-                onChange={setAdvancedOpen}
+                onChange={(value) => dispatch({ type: 'advancedOpenChanged', value })}
                 rowClassName="h-auto min-h-12 px-3 py-2"
-                bodyClassName="space-y-3.5 px-3 py-3"
+                bodyClassName="space-y-3.5 p-3"
               >
                 <div className="space-y-3.5">
                   <SettingSection
@@ -295,16 +397,16 @@ export function MonitorForm({
                     description="Allow proxy settings to be passed with this monitor."
                     icon={<Shield />}
                     checked={proxyEnabled}
-                    onChange={setProxyEnabled}
+                    onChange={(value) => dispatch({ type: 'proxyEnabledChanged', value })}
                   />
                   <SettingSection
                     label="JS rendering"
                     description="Prefer rendered DOM acquisition for monitor runs."
                     icon={<Globe2 />}
                     checked={jsRendering}
-                    onChange={setJsRendering}
+                    onChange={(value) => dispatch({ type: 'jsRenderingChanged', value })}
                   />
-                  <div className="border-border bg-panel flex items-center justify-between gap-3 rounded-[var(--radius-md)] border px-3 py-2">
+                  <div className="border-border bg-panel flex items-center justify-between gap-3 rounded-md border px-3 py-2">
                     <div>
                       <p className="type-body-sm m-0 font-medium">Skip HEAD pre-check</p>
                       <p className="type-caption m-0">
@@ -313,7 +415,7 @@ export function MonitorForm({
                     </div>
                     <Toggle
                       checked={skipHeadCheck}
-                      onChange={setSkipHeadCheck}
+                      onChange={(value) => dispatch({ type: 'skipHeadCheckChanged', value })}
                       ariaLabel="Skip HEAD pre-check"
                     />
                   </div>

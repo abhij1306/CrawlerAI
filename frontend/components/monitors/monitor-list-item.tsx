@@ -3,7 +3,8 @@
 import Link from 'next/link';
 import type { Route } from 'next';
 import { MoreHorizontal, Pause, Play, RotateCw, Trash2 } from 'lucide-react';
-import { forwardRef, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import type { Ref } from 'react';
 
 import type { MonitorJob } from '../../lib/api/types';
 import { formatNextRun, formatRelativeTime } from '../../lib/format/date';
@@ -70,7 +71,7 @@ export function MonitorListItem({
   return (
     <div
       className={cn(
-        'group hover:bg-background-alt grid gap-3 px-4 py-4 transition-colors md:grid-cols-[minmax(0,1fr)_auto]',
+        'group hover:bg-background-alt grid gap-3 p-4 transition-colors md:grid-cols-[minmax(0,1fr)_auto]',
         open && 'relative z-10',
       )}
     >
@@ -109,7 +110,7 @@ export function MonitorListItem({
           {monitor.last_run_at ? <span>last {formatRelativeTime(monitor.last_run_at)}</span> : null}
         </div>
         {isAlert ? (
-          <div className="text-muted type-caption mt-1 flex flex-wrap gap-x-3 gap-y-1">
+          <div className="type-caption mt-1 flex flex-wrap gap-x-3 gap-y-1">
             {monitor.tracked_fields.map((field) => (
               <span key={field}>
                 {field}: {formatValue(currentValues[field])}
@@ -151,7 +152,7 @@ export function MonitorListItem({
               ref={menuRef}
               id={`monitor-actions-${id}`}
               role="menu"
-              className="border-border bg-background-elevated shadow-card absolute right-0 z-20 mt-1 w-36 rounded-[var(--radius-md)] border py-1"
+              className="border-border bg-background-elevated shadow-card absolute right-0 z-20 mt-1 w-36 rounded-md border py-1"
             >
               <ActionButton
                 ref={firstActionRef}
@@ -178,14 +179,17 @@ export function MonitorListItem({
   );
 }
 
-const ActionButton = forwardRef<
-  HTMLButtonElement,
-  {
-    icon: typeof Pause;
-    label: string;
-    onClick: () => void;
-  }
->(function ActionButton({ icon: Icon, label, onClick }, ref) {
+const ActionButton = function ActionButton({
+  icon: Icon,
+  label,
+  onClick,
+  ref,
+}: {
+  icon: typeof Pause;
+  label: string;
+  onClick: () => void;
+  ref?: Ref<HTMLButtonElement>;
+}) {
   return (
     <button
       ref={ref}
@@ -198,7 +202,7 @@ const ActionButton = forwardRef<
       {label}
     </button>
   );
-});
+};
 
 function formatValue(value: unknown) {
   if (value === null || value === undefined || value === '') return 'empty';

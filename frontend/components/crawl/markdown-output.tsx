@@ -4,87 +4,8 @@ import { Copy } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 
-import type { CrawlRecord, CrawlRun } from '../../lib/api/types';
-import { getDomain } from '../../lib/format/domain';
 import { DataRegionEmpty, DataRegionLoading } from '../ui/patterns';
 import { Button } from '../ui/primitives';
-
-const MARKDOWN_OUTPUT_SURFACES = new Set([
-  'auto',
-  'content_detail',
-  'article_detail',
-  'forum_detail',
-  'design_system',
-]);
-
-export function isMarkdownOutputRun(run: CrawlRun | undefined): boolean {
-  if (!run) return false;
-  const surface = String(run.surface || '').toLowerCase();
-  const resolvedSurface =
-    typeof run.result_summary?.resolved_surface === 'string'
-      ? run.result_summary.resolved_surface.toLowerCase()
-      : '';
-  return (
-    MARKDOWN_OUTPUT_SURFACES.has(surface) ||
-    MARKDOWN_OUTPUT_SURFACES.has(resolvedSurface) ||
-    run.requested_fields.some((field) => field.toLowerCase() === 'markdown')
-  );
-}
-
-export function isDesignSystemRun(run: CrawlRun | undefined): boolean {
-  return String(run?.surface || '').toLowerCase() === 'design_system';
-}
-
-function readRecordString(record: CrawlRecord, field: string): string {
-  const dataValue = record.data?.[field];
-  if (typeof dataValue === 'string' && dataValue.trim()) return dataValue.trim();
-  const rawValue = record.raw_data?.[field];
-  if (typeof rawValue === 'string' && rawValue.trim()) return rawValue.trim();
-  return '';
-}
-
-function recordMarkdown(record: CrawlRecord): string {
-  return readRecordString(record, 'markdown') || readRecordString(record, 'content');
-}
-
-export function buildMarkdownDocument(records: CrawlRecord[]): string {
-  const documents = records
-    .map((record) => {
-      const markdown = recordMarkdown(record);
-      if (!markdown) return '';
-      const title = readRecordString(record, 'title');
-      const trimmed = markdown.trimStart();
-      if (!title || trimmed.startsWith('#') || trimmed.startsWith('---')) return markdown;
-      return `# ${title}\n\n${markdown}`;
-    })
-    .filter(Boolean);
-  return documents.join('\n\n---\n\n');
-}
-
-function markdownDownloadName(run: CrawlRun | undefined): string {
-  if (isDesignSystemRun(run)) {
-    return 'design.md';
-  }
-  const host = run?.url
-    ? getDomain(run.url)
-        .replace(/[^a-z0-9.-]+/gi, '-')
-        .replace(/^-+|-+$/g, '')
-    : '';
-  return `${host || `run-${run?.id ?? 'output'}`}.md`;
-}
-
-export function downloadMarkdown(markdown: string, run: CrawlRun | undefined) {
-  if (!markdown) return;
-  const blob = new Blob([markdown], { type: 'text/markdown;charset=utf-8' });
-  const href = URL.createObjectURL(blob);
-  const anchor = document.createElement('a');
-  anchor.href = href;
-  anchor.download = markdownDownloadName(run);
-  document.body.appendChild(anchor);
-  anchor.click();
-  anchor.remove();
-  URL.revokeObjectURL(href);
-}
 
 // Dynamically load KaTeX scripts and stylesheets
 let katexPromise: Promise<any> | null = null;
@@ -119,35 +40,42 @@ export function MathRenderer({
   displayMode,
 }: Readonly<{ math: string; displayMode?: boolean }>) {
   const containerRef = useRef<HTMLSpanElement>(null);
-  const [katex, setKatex] = useState<any>(null);
+  const katexRef = useRef<any>(null);
 
   useEffect(() => {
     let active = true;
+    function renderMath(kt: any | null) {
+      if (!containerRef.current) {
+        return;
+      }
+      if (!kt) {
+        containerRef.current.textContent = displayMode ? `$$\n${math}\n$$` : `$${math}$`;
+        return;
+      }
+      try {
+        kt.render(math, containerRef.current, {
+          displayMode: !!displayMode,
+          throwOnError: false,
+          strict: 'ignore',
+        });
+      } catch {
+        containerRef.current.textContent = math;
+      }
+    }
+
+    renderMath(katexRef.current);
     loadKaTeX()
       .then((kt) => {
-        if (active) setKatex(() => kt);
+        if (active) {
+          katexRef.current = kt;
+          renderMath(kt);
+        }
       })
       .catch((err) => console.error(err));
     return () => {
       active = false;
     };
-  }, []);
-
-  useEffect(() => {
-    if (katex && containerRef.current) {
-      try {
-        katex.render(math, containerRef.current, {
-          displayMode: !!displayMode,
-          throwOnError: false,
-          strict: 'ignore', // Suppress console warnings for unrecognized characters/symbols
-        });
-      } catch (e) {
-        containerRef.current.textContent = math;
-      }
-    } else if (containerRef.current) {
-      containerRef.current.textContent = displayMode ? `$$\n${math}\n$$` : `$${math}$`;
-    }
-  }, [math, displayMode, katex]);
+  }, [math, displayMode]);
 
   return (
     <span
@@ -157,7 +85,7 @@ export function MathRenderer({
   );
 }
 
-function renderInlineMarkdown(text: string): ReactNode[] {
+function parseInlineMarkdownNodes(text: string): ReactNode[] {
   const nodes: ReactNode[] = [];
   const pattern =
     /(\$\$[\s\S]+?\$\$|\$[^$\n]+\$|`[^`]+`|\*\*[^*]+\*\*|\*[^*]+\*|_[^_]+_|\[[^\]]+\]\((?:https?:\/\/|\/|#)[^)]+\))/g;
@@ -180,7 +108,7 @@ function renderInlineMarkdown(text: string): ReactNode[] {
       nodes.push(
         <code
           key={key}
-          className="bg-background-alt rounded-[var(--radius-sm)] px-1 py-0.5 font-mono text-[0.92em]"
+          className="bg-background-alt rounded-sm px-1 py-0.5 font-mono text-[0.92em]"
         >
           {token.slice(1, -1)}
         </code>,
@@ -217,6 +145,10 @@ function renderInlineMarkdown(text: string): ReactNode[] {
   return nodes;
 }
 
+function InlineMarkdown({ text }: Readonly<{ text: string }>) {
+  return <>{parseInlineMarkdownNodes(text)}</>;
+}
+
 function parseTableRow(line: string): string[] {
   return line
     .trim()
@@ -235,6 +167,8 @@ function MarkdownPreview({ markdown }: Readonly<{ markdown: string }>) {
   const lines = markdown.replace(/\r\n/g, '\n').split('\n');
   const blocks: ReactNode[] = [];
   let index = 0;
+  let blockSeq = 0;
+  const nextKey = (prefix: string) => `${prefix}-${(blockSeq += 1)}`;
 
   while (index < lines.length) {
     const line = lines[index];
@@ -255,13 +189,13 @@ function MarkdownPreview({ markdown }: Readonly<{ markdown: string }>) {
       blocks.push(
         <section
           key="frontmatter"
-          className="border-border bg-background-alt/60 my-3 overflow-hidden rounded-[var(--radius-md)] border"
+          className="border-border bg-background-alt/60 my-3 overflow-hidden rounded-md border"
         >
           <div className="border-border bg-panel flex items-center justify-between border-b px-4 py-2">
             <div className="type-label text-secondary">Design Tokens</div>
-            <div className="text-secondary font-mono text-[11px]">YAML</div>
+            <div className="text-secondary text-2xs font-mono">YAML</div>
           </div>
-          <pre className="px-4 py-3 text-[12px] leading-relaxed whitespace-pre-wrap">
+          <pre className="px-4 py-3 text-xs leading-relaxed whitespace-pre-wrap">
             <code className="font-mono">{frontmatter.join('\n')}</code>
           </pre>
         </section>,
@@ -289,10 +223,7 @@ function MarkdownPreview({ markdown }: Readonly<{ markdown: string }>) {
         index += 1;
       }
       blocks.push(
-        <div
-          key={`code-${index}`}
-          className="my-4 overflow-hidden rounded-[var(--radius-md)] border"
-        >
+        <div key={nextKey('code')} className="my-4 overflow-hidden rounded-md border">
           {lang && (
             <div className="bg-background-alt text-secondary border-b px-4 py-1.5 font-mono text-[0.75em]">
               {lang}
@@ -316,8 +247,8 @@ function MarkdownPreview({ markdown }: Readonly<{ markdown: string }>) {
       }
       blocks.push(
         <div
-          key={`table-${index}`}
-          className="border-border my-4 overflow-x-auto rounded-[var(--radius-md)] border"
+          key={nextKey('table')}
+          className="border-border my-4 overflow-x-auto rounded-md border"
         >
           <table className="w-full min-w-[560px] border-collapse text-sm">
             <thead className="bg-background-alt text-secondary">
@@ -325,22 +256,25 @@ function MarkdownPreview({ markdown }: Readonly<{ markdown: string }>) {
                 {headers.map((header, headerIndex) => (
                   <th
                     key={`${header}-${headerIndex}`}
-                    className="border-border border-b px-3 py-2 text-left font-mono text-[11px] font-semibold tracking-[0.04em] uppercase"
+                    className="border-border text-2xs border-b px-3 py-2 text-left font-mono font-semibold tracking-wide uppercase"
                   >
-                    {renderInlineMarkdown(header)}
+                    <InlineMarkdown text={header} />
                   </th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {rows.map((row, rowIndex) => (
-                <tr key={rowIndex} className="odd:bg-background even:bg-background-alt/40">
+                <tr
+                  key={`${rowIndex}-${row.join('|')}`}
+                  className="odd:bg-background even:bg-background-alt/40"
+                >
                   {headers.map((header, cellIndex) => (
                     <td
                       key={`${header}-${cellIndex}`}
                       className="border-border/70 text-foreground border-b px-3 py-2 align-top"
                     >
-                      {renderInlineMarkdown(row[cellIndex] || '')}
+                      <InlineMarkdown text={row[cellIndex] || ''} />
                     </td>
                   ))}
                 </tr>
@@ -357,7 +291,7 @@ function MarkdownPreview({ markdown }: Readonly<{ markdown: string }>) {
       if (trimmed.endsWith('$$') && trimmed.length > 2) {
         const math = trimmed.slice(2, -2);
         blocks.push(
-          <div key={`math-${index}`} className="my-4">
+          <div key={nextKey('math')} className="my-4">
             <MathRenderer math={math} displayMode={true} />
           </div>,
         );
@@ -372,7 +306,7 @@ function MarkdownPreview({ markdown }: Readonly<{ markdown: string }>) {
       }
       index += 1; // skip closing $$
       blocks.push(
-        <div key={`math-${index}`} className="my-4">
+        <div key={nextKey('math')} className="my-4">
           <MathRenderer math={mathLines.join('\n')} displayMode={true} />
         </div>,
       );
@@ -388,22 +322,18 @@ function MarkdownPreview({ markdown }: Readonly<{ markdown: string }>) {
           : level === 2
             ? 'type-section text-foreground mt-6 mb-2'
             : 'type-body text-foreground mt-4 mb-2 font-semibold';
+      const HeadingTag = `h${Math.min(level, 6)}` as 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6';
       blocks.push(
-        <div
-          key={`heading-${index}`}
-          role="heading"
-          aria-level={Math.min(level, 6)}
-          className={className}
-        >
-          {renderInlineMarkdown(heading[2])}
-        </div>,
+        <HeadingTag key={nextKey('heading')} className={className}>
+          <InlineMarkdown text={heading[2]} />
+        </HeadingTag>,
       );
       index += 1;
       continue;
     }
 
     if (/^[-*_]{3,}$/.test(trimmed)) {
-      blocks.push(<hr key={`hr-${index}`} className="border-divider my-6" />);
+      blocks.push(<hr key={nextKey('hr')} className="border-divider my-6" />);
       index += 1;
       continue;
     }
@@ -416,12 +346,12 @@ function MarkdownPreview({ markdown }: Readonly<{ markdown: string }>) {
       }
       blocks.push(
         <blockquote
-          key={`quote-${index}`}
+          key={nextKey('quote')}
           className="border-accent/40 text-secondary border-l-2 pl-4 leading-relaxed"
         >
           {quote.map((item, itemIndex) => (
-            <p key={itemIndex} className="type-body my-1">
-              {renderInlineMarkdown(item)}
+            <p key={`${itemIndex}-${item}`} className="type-body my-1">
+              <InlineMarkdown text={item} />
             </p>
           ))}
         </blockquote>,
@@ -443,12 +373,12 @@ function MarkdownPreview({ markdown }: Readonly<{ markdown: string }>) {
       const ListTag: 'ol' | 'ul' = orderedList ? 'ol' : 'ul';
       blocks.push(
         <ListTag
-          key={`list-${index}`}
+          key={nextKey('list')}
           className="type-body text-foreground my-3 space-y-1 pl-6 leading-relaxed"
         >
           {items.map((item, itemIndex) => (
-            <li key={itemIndex} className={orderedList ? 'list-decimal' : 'list-disc'}>
-              {renderInlineMarkdown(item)}
+            <li key={`${itemIndex}-${item}`} className={orderedList ? 'list-decimal' : 'list-disc'}>
+              <InlineMarkdown text={item} />
             </li>
           ))}
         </ListTag>,
@@ -476,13 +406,24 @@ function MarkdownPreview({ markdown }: Readonly<{ markdown: string }>) {
       index += 1;
     }
     blocks.push(
-      <p key={`p-${index}`} className="type-body text-foreground my-3 leading-[1.72]">
-        {renderInlineMarkdown(paragraph.join(' '))}
+      <p key={nextKey('p')} className="type-body text-foreground my-3 leading-[1.72]">
+        <InlineMarkdown text={paragraph.join(' ')} />
       </p>,
     );
   }
 
   return <div className="px-3 py-5">{blocks}</div>;
+}
+
+function fallbackCopy(text: string) {
+  const textarea = document.createElement('textarea');
+  textarea.value = text;
+  textarea.style.position = 'fixed';
+  textarea.style.opacity = '0';
+  document.body.appendChild(textarea);
+  textarea.select();
+  document.execCommand('copy');
+  document.body.removeChild(textarea);
 }
 
 export function MarkdownOutput({ markdown }: Readonly<{ markdown: string }>) {
@@ -492,29 +433,19 @@ export function MarkdownOutput({ markdown }: Readonly<{ markdown: string }>) {
   const lineCount = markdown ? markdown.replace(/\r\n/g, '\n').split('\n').length : 0;
 
   useEffect(() => {
+    const copyTimeout = copyTimeoutRef;
     return () => {
-      if (copyTimeoutRef.current) window.clearTimeout(copyTimeoutRef.current);
+      if (copyTimeout.current) window.clearTimeout(copyTimeout.current);
     };
   }, []);
-
-  function _fallbackCopy(text: string) {
-    const textarea = document.createElement('textarea');
-    textarea.value = text;
-    textarea.style.position = 'fixed';
-    textarea.style.opacity = '0';
-    document.body.appendChild(textarea);
-    textarea.select();
-    document.execCommand('copy');
-    document.body.removeChild(textarea);
-  }
 
   function copyMarkdown() {
     if (navigator.clipboard) {
       navigator.clipboard.writeText(markdown).catch(() => {
-        _fallbackCopy(markdown);
+        fallbackCopy(markdown);
       });
     } else {
-      _fallbackCopy(markdown);
+      fallbackCopy(markdown);
     }
     setCopied(true);
     if (copyTimeoutRef.current) window.clearTimeout(copyTimeoutRef.current);
@@ -529,7 +460,7 @@ export function MarkdownOutput({ markdown }: Readonly<{ markdown: string }>) {
             type="button"
             aria-pressed={view === 'preview'}
             onClick={() => setView('preview')}
-            className={`rounded-[var(--radius-sm)] px-3 py-1.5 text-sm font-medium transition-colors ${
+            className={`rounded-sm px-3 py-1.5 text-sm font-medium transition-colors ${
               view === 'preview'
                 ? 'bg-accent text-accent-fg'
                 : 'text-secondary hover:bg-background-alt hover:text-foreground'
@@ -541,7 +472,7 @@ export function MarkdownOutput({ markdown }: Readonly<{ markdown: string }>) {
             type="button"
             aria-pressed={view === 'source'}
             onClick={() => setView('source')}
-            className={`rounded-[var(--radius-sm)] px-3 py-1.5 text-sm font-medium transition-colors ${
+            className={`rounded-sm px-3 py-1.5 text-sm font-medium transition-colors ${
               view === 'source'
                 ? 'bg-accent text-accent-fg'
                 : 'text-secondary hover:bg-background-alt hover:text-foreground'
@@ -549,7 +480,7 @@ export function MarkdownOutput({ markdown }: Readonly<{ markdown: string }>) {
           >
             Source
           </button>
-          <span className="text-secondary font-mono text-[11px]">{lineCount} lines</span>
+          <span className="text-secondary text-2xs font-mono">{lineCount} lines</span>
         </div>
         <Button variant="quiet" type="button" onClick={copyMarkdown}>
           <Copy className="size-3.5" />
@@ -560,7 +491,7 @@ export function MarkdownOutput({ markdown }: Readonly<{ markdown: string }>) {
         {view === 'preview' ? (
           <MarkdownPreview markdown={markdown} />
         ) : (
-          <pre className="min-h-[55vh] overflow-auto p-4 text-[12px] leading-relaxed whitespace-pre-wrap">
+          <pre className="min-h-[55vh] overflow-auto p-4 text-xs leading-relaxed whitespace-pre-wrap">
             <code className="font-mono">{markdown}</code>
           </pre>
         )}

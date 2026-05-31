@@ -1,15 +1,12 @@
-/* ═══════════════════════════════════════════════════════════════════════════
-   Invoro — Design System v2
+/* ═══════════════════════════════════════════════════════════════════════
+   Invoro — Design System v3
    Clean token hierarchy · 4px grid · WCAG 2.1 AA
-   Fonts retained: Public Sans · Bricolage Grotesque · Ubuntu Mono
-   ═══════════════════════════════════════════════════════════════════════════ */
+   Fonts: Public Sans · Bricolage Grotesque · Ubuntu Mono
+═══════════════════════════════════════════════════════════════════════ */
 
 @import 'tailwindcss';
 
-/* ─────────────────────────────────────────────────────────────────────────
-   TAILWIND v4 TOKEN BRIDGE
-   Maps CSS custom properties → Tailwind utility classes.
-   ───────────────────────────────────────────────────────────────────────── */
+/* ─── TAILWIND v4 TOKEN BRIDGE ─────────────────────────────────────── */
 @theme inline {
   /* Surfaces */
   --color-background: var(--bg-base);
@@ -21,6 +18,7 @@
   /* Borders */
   --color-border: var(--border);
   --color-border-strong: var(--border-strong);
+  --color-divider: var(--border-subtle);
 
   /* Typography */
   --color-foreground: var(--text-primary);
@@ -50,9 +48,9 @@
   --color-info-bg: var(--info-bg);
   --color-info-border: var(--info-border);
 
-  /* Component */
-  --color-divider: var(--border-subtle);
+  /* Component specifics */
   --color-subtle-panel: var(--bg-alt);
+  --color-subtle-panel-bg: var(--bg-alt);
   --color-subtle-panel-border: var(--border);
   --color-status-neutral-bg: var(--status-neutral-bg);
   --color-tab-active-fg: var(--tab-active-fg);
@@ -70,7 +68,7 @@
   --shadow-xl: var(--shadow-modal);
   --shadow-setting-icon-active: var(--shadow-xs-value);
 
-  /* Typography */
+  /* Typography scale */
   --font-sans: var(--font-primary-family);
   --font-display: var(--font-display-family);
   --font-mono: var(--font-mono-family);
@@ -88,25 +86,34 @@
   --leading-snug: 1.35;
   --leading-normal: 1.5;
   --leading-relaxed: 1.625;
+
+  /* Border radii */
+  --radius-xs: 3px;
+  --radius-sm: 5px;
+  --radius-md: 7px;
+  --radius-lg: 10px;
+  --radius-xl: 14px;
+  --radius-2xl: 20px;
+
+  /* Letter spacing */
+  --tracking-tighter: -0.03em;
+  --tracking-tight: -0.02em;
+  --tracking-normal: 0em;
+  --tracking-wide: 0.025em;
+  --tracking-wider: 0.06em;
+  --tracking-widest: 0.1em;
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════
-   LIGHT THEME — Warm Stone
-   ─────────────────────────────────────────────────────────────────────────
-   Surface hierarchy:
-     L0  bg-base     #f2f0ec  — page canvas (lowest)
-     L1  bg-alt      #e7e4de  — sunken insets, table headers
-     L2  bg-panel    #faf8f4  — raised panels, cards
-     L3  bg-elevated #ffffff  — floating layers (dropdowns, modals)
-     L4  bg-well     #dad6cf  — deeply inset, selected state
-
-   Accent: warm rust family (#c2410c). Surfaces: warm stone mineral.
-   All text contrast values verified ≥ 4.5:1 against their backgrounds.
-   ═══════════════════════════════════════════════════════════════════════════ */
+/* ─── LIGHT THEME — Warm Stone ─────────────────────────────────────────
+   Surface hierarchy (lowest → highest elevation):
+   bg-base #f2f0ec  →  bg-alt #e7e4de  →  bg-panel #faf8f4
+   →  bg-elevated #ffffff  →  bg-well #dad6cf
+   Accent: warm rust #c2410c. All text contrast ≥ 4.5:1 verified.
+──────────────────────────────────────────────────────────────────────── */
 :root {
   color-scheme: light;
 
-  /* ── Fonts */
+  /* Fonts */
   --font-primary-family:
     var(--font-primary-source, 'Public Sans'), 'Public Sans', system-ui, sans-serif;
   --font-display-family:
@@ -114,7 +121,7 @@
   --font-mono-family:
     var(--font-mono-source, 'Ubuntu Mono'), 'Ubuntu Mono', ui-monospace, monospace;
 
-  /* ── Surfaces */
+  /* Surfaces */
   --bg-base: #f2f0ec;
   --bg-alt: #e7e4de;
   --bg-panel: #faf8f4;
@@ -122,28 +129,19 @@
   --bg-well: #dad6cf;
   --surface-overlay: rgba(242, 240, 236, 0.94);
 
-  /* ── Borders */
+  /* Borders */
   --border-subtle: #e2dfd8;
   --border: #cdc8c0;
   --border-strong: #b0a89f;
   --border-focus: var(--accent);
 
-  /* ── Typography */
+  /* Typography */
   --text-primary: #1a1815;
   --text-secondary: #443d36;
-  --text-muted: #68614f; /* minimum for supporting text — 4.8:1 on bg-base ✓ */
-  --text-subtle: #948d7e; /* decorative / disabled only — not for reading text */
+  --text-muted: #68614f; /* 4.8:1 on bg-base ✓ */
+  --text-subtle: #948d7e; /* decorative / disabled only */
 
-  /* ── JSON Syntax (light) */
-  --syntax-key: #174f98;
-  --syntax-string: #047857;
-  --syntax-number: #b45309;
-  --syntax-boolean: #1558ac;
-  --syntax-null: var(--text-muted);
-  --syntax-punct: var(--text-secondary);
-
-  /* ── Accent — warm rust
-     Used as solid bg (accent-fg ≥ 4.5:1) and as inline text (accent-text).   */
+  /* Accent — warm rust */
   --accent: #c2410c;
   --accent-hover: #9a3412;
   --accent-fg: #ffffff;
@@ -152,12 +150,7 @@
   --accent-border: rgba(194, 65, 12, 0.26);
   --accent-text: #9a3412; /* 5.8:1 on bg-panel ✓ */
 
-  /* ── Semantic states
-     Text values verified ≥ 4.5:1 on their bg tokens:
-     success-text  #065f46 on #ecfdf5 → 6.5:1 ✓
-     warning-text  #92400e on #fffbeb → 5.3:1 ✓
-     danger-text   #991b1b on #fef2f2 → 5.7:1 ✓
-     info-text     #1d4ed8 on #eff6ff → 5.1:1 ✓                               */
+  /* Semantic states — all text values verified ≥ 4.5:1 on their bg */
   --success: #059669;
   --success-bg: #ecfdf5;
   --success-border: #a7f3d0;
@@ -176,14 +169,22 @@
   --info-text: #1d4ed8;
   --neutral-bg: rgba(26, 24, 21, 0.04);
 
-  /* ── Status aliases */
+  /* Status aliases */
   --status-active-bg: var(--success-bg);
   --status-running-bg: var(--accent-subtle);
   --status-killed-bg: var(--danger-bg);
   --status-paused-bg: var(--warning-bg);
   --status-neutral-bg: var(--neutral-bg);
 
-  /* ── Shadows — warm-tinted, light */
+  /* JSON Syntax */
+  --syntax-key: #174f98;
+  --syntax-string: #047857;
+  --syntax-number: #b45309;
+  --syntax-boolean: #1558ac;
+  --syntax-null: var(--text-muted);
+  --syntax-punct: var(--text-secondary);
+
+  /* Shadows — warm-tinted */
   --shadow-xs-value: 0 1px 0 rgba(34, 26, 16, 0.06);
   --shadow-sm-value: 0 1px 3px rgba(34, 26, 16, 0.08), 0 1px 2px rgba(34, 26, 16, 0.05);
   --shadow-card-value: 0 1px 4px rgba(34, 26, 16, 0.08);
@@ -193,37 +194,28 @@
   --focus-ring: 0 0 0 3px rgba(194, 65, 12, 0.2);
   --overlay-scrim: color-mix(in srgb, var(--bg-base) 34%, black);
 
-  /* ── Type scale — clean pixel values on 4px rhythm
-     2xs: 11px   xs: 12px   sm: 14px   base: 15px
-     lg: 18px    xl: 22px   2xl: 30px                                          */
-  --text-2xs: 0.6875rem; /* 11px — uppercase labels only     */
-  --text-xs: 0.75rem; /* 12px — captions, timestamps      */
-  --text-sm: 0.875rem; /* 14px — secondary body, controls  */
-  --text-base: 0.9375rem; /* 15px — primary body              */
-  --text-lg: 1.125rem; /* 18px — section headings          */
-  --text-xl: 1.375rem; /* 22px — page headings             */
-  --text-2xl: 1.875rem; /* 30px — hero / display            */
+  /* Type scale — 4px rhythm */
+  --text-2xs: 0.6875rem; /* 11px — uppercase labels only */
+  --text-xs: 0.75rem; /* 12px — captions, timestamps  */
+  --text-sm: 0.875rem; /* 14px — secondary body        */
+  --text-base: 0.9375rem; /* 15px — primary body          */
+  --text-lg: 1.125rem; /* 18px — section headings      */
+  --text-xl: 1.375rem; /* 22px — page headings         */
+  --text-2xl: 1.875rem; /* 30px — hero / display        */
 
-  /* ── Font weights */
+  /* Font weights */
   --weight-light: 300;
   --weight-normal: 400;
   --weight-medium: 500;
   --weight-semibold: 600;
   --weight-bold: 700;
 
-  /* ── Letter spacing */
-  --tracking-tight: -0.02em;
-  --tracking-normal: 0em;
-  --tracking-wide: 0.025em;
-  --tracking-wider: 0.06em;
-  --tracking-widest: 0.1em;
-
-  /* ── Mono type settings */
+  /* Mono type */
   --font-mono-size: 0.875rem; /* 14px */
   --font-mono-size-sm: 0.75rem; /* 12px */
   --font-mono-line-height: 1.55;
 
-  /* ── Spacing — strict 4px grid */
+  /* Spacing — 4px grid */
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 12px;
@@ -237,17 +229,16 @@
   --space-14: 56px;
   --space-16: 64px;
   --space-20: 80px;
-
   --content-gutter: var(--space-8);
   --card-padding: 20px;
 
-  /* ── Controls — three sizes */
+  /* Controls */
   --control-height-sm: 28px;
   --control-height: 32px;
   --control-height-lg: 36px;
   --interactive-border-width: 1px;
 
-  /* ── Border radius */
+  /* Border radii (also bridged in @theme) */
   --radius-xs: 3px;
   --radius-sm: 5px;
   --radius-md: 7px;
@@ -256,12 +247,12 @@
   --radius-2xl: 20px;
   --radius-full: 9999px;
 
-  /* ── Transitions */
+  /* Transitions */
   --transition-fast: 100ms cubic-bezier(0.4, 0, 0.2, 1);
   --transition-base: 180ms cubic-bezier(0.4, 0, 0.2, 1);
   --transition-slow: 280ms cubic-bezier(0.4, 0, 0.2, 1);
 
-  /* ── Table */
+  /* Table */
   --table-font-size: var(--text-sm);
   --table-header-font-size: var(--text-2xs);
   --table-header-font-family: var(--font-primary-family);
@@ -270,55 +261,48 @@
   --table-header-height: 38px;
   --table-row-height: 44px;
 
-  /* ── Buttons — canonical names */
-  --btn-height-sm: var(--control-height-lg);
+  /* Buttons */
   --btn-height: var(--control-height-lg);
-  --btn-height-lg: var(--control-height-lg);
   --btn-font-size: var(--text-sm);
   --btn-padding-x: 13px;
 
-  /* Primary (action) */
+  /* Button surfaces */
   --btn-primary-bg: var(--accent);
   --btn-primary-hover-bg: var(--accent-hover);
   --btn-primary-border: var(--accent);
   --btn-primary-hover-border: var(--accent-hover);
   --btn-primary-fg: var(--accent-fg);
 
-  /* Secondary (download) */
   --btn-secondary-bg: var(--bg-elevated);
   --btn-secondary-hover-bg: #edeae4;
   --btn-secondary-border: var(--border-strong);
   --btn-secondary-hover-border: var(--accent);
   --btn-secondary-fg: var(--accent-text);
 
-  /* Destructive */
   --btn-destructive-bg: var(--bg-elevated);
   --btn-destructive-hover-bg: var(--danger-bg);
   --btn-destructive-border: var(--danger-border);
   --btn-destructive-hover-border: var(--danger);
   --btn-destructive-fg: var(--danger);
 
-  /* Neutral */
   --btn-neutral-bg: color-mix(in srgb, var(--bg-panel) 85%, var(--bg-alt));
   --btn-neutral-hover-bg: var(--bg-panel);
   --btn-neutral-border: var(--border);
   --btn-neutral-hover-border: var(--border-strong);
   --btn-neutral-fg: var(--text-primary);
 
-  /* Ghost (quiet) */
   --btn-ghost-bg: transparent;
   --btn-ghost-hover-bg: var(--accent-subtle);
   --btn-ghost-border: transparent;
   --btn-ghost-fg: var(--text-secondary);
   --btn-ghost-hover-fg: var(--text-primary);
 
-  /* Topbar */
   --btn-topbar-bg: transparent;
   --btn-topbar-hover-bg: var(--accent-subtle);
   --btn-topbar-border: transparent;
   --btn-topbar-fg: var(--text-primary);
 
-  /* ── Form controls */
+  /* Form controls */
   --segmented-bg: color-mix(in srgb, var(--bg-alt) 80%, var(--bg-base));
   --tab-active-fg: var(--accent-fg);
   --slider-thumb-border: var(--bg-panel);
@@ -326,13 +310,13 @@
   --toggle-track-off: var(--border-strong);
   --toggle-thumb: #ffffff;
 
-  /* ── Shellbar */
+  /* Shell */
   --surface-header: var(--surface-overlay);
   --shell-text: var(--text-primary);
   --shell-muted: var(--text-muted);
   --shell-border: var(--border);
 
-  /* ── Terminal / code */
+  /* Terminal / code */
   --terminal-bg: var(--bg-panel);
   --terminal-fg: var(--text-primary);
   --terminal-secondary: var(--text-secondary);
@@ -341,100 +325,35 @@
   --terminal-border: var(--border);
   --terminal-shadow: none;
 
-  /* ── Alert surfaces */
-  --alert-success-bg: var(--success-bg);
-  --alert-success-border: var(--success-border);
-  --alert-success-text: var(--success-text);
-  --alert-warning-bg: var(--warning-bg);
-  --alert-warning-border: var(--warning-border);
-  --alert-warning-text: var(--warning-text);
-  --alert-danger-bg: var(--danger-bg);
-  --alert-danger-border: var(--danger-border);
-  --alert-danger-text: var(--danger-text);
-
-  /* ── Settings panel */
+  /* Settings */
   --setting-body-bg: var(--bg-base);
   --setting-icon-bg: var(--bg-alt);
   --setting-icon-active-bg: var(--accent-subtle);
 
-  /* ── Skeleton */
+  /* Skeleton */
   --skeleton-base: var(--bg-alt);
   --skeleton-highlight: var(--bg-well);
 
-  /* ── Logo */
+  /* Logo */
   --logo-mark-bg: var(--accent);
   --logo-mark-fg: var(--accent-fg);
 
-  /* ── Chart palette */
+  /* Chart palette */
   --chart-primary: var(--accent);
   --chart-success: var(--success);
   --chart-warning: var(--warning);
   --chart-info: var(--info);
-
-  /* ── Backward-compat aliases (deprecated — migrate to canonical names above) */
-  --bg-panel-strong: var(--bg-well);
-  --text-faint: var(--text-subtle);
-  --surface-sunken: var(--bg-alt);
-  --divider: var(--border-subtle);
-  --subtle-panel-bg: var(--bg-alt);
-  --subtle-panel-border: var(--border);
-  --surface-card: var(--bg-panel);
-  --surface-card-edge: var(--border);
-  --accent-dim: rgba(194, 65, 12, 0.17);
-  --button-height: var(--btn-height);
-  --button-font-size: var(--btn-font-size);
-  --button-padding-x: var(--btn-padding-x);
-  --button-action-bg: var(--btn-primary-bg);
-  --button-action-hover-bg: var(--btn-primary-hover-bg);
-  --button-action-border: var(--btn-primary-border);
-  --button-action-hover-border: var(--btn-primary-hover-border);
-  --button-action-fg: var(--btn-primary-fg);
-  --button-download-bg: var(--btn-secondary-bg);
-  --button-download-hover-bg: var(--btn-secondary-hover-bg);
-  --button-download-border: var(--btn-secondary-border);
-  --button-download-hover-border: var(--btn-secondary-hover-border);
-  --button-download-fg: var(--btn-secondary-fg);
-  --button-destructive-bg: var(--btn-destructive-bg);
-  --button-destructive-hover-bg: var(--btn-destructive-hover-bg);
-  --button-destructive-border: var(--btn-destructive-border);
-  --button-destructive-hover-border: var(--btn-destructive-hover-border);
-  --button-destructive-fg: var(--btn-destructive-fg);
-  --button-neutral-bg: var(--btn-neutral-bg);
-  --button-neutral-hover-bg: var(--btn-neutral-hover-bg);
-  --button-neutral-border: var(--btn-neutral-border);
-  --button-neutral-hover-border: var(--btn-neutral-hover-border);
-  --button-neutral-fg: var(--btn-neutral-fg);
-  --button-quiet-bg: var(--btn-ghost-bg);
-  --button-quiet-hover-bg: var(--btn-ghost-hover-bg);
-  --button-quiet-border: var(--btn-ghost-border);
-  --button-quiet-fg: var(--btn-ghost-fg);
-  --button-quiet-hover-fg: var(--btn-ghost-hover-fg);
-  --button-topbar-bg: var(--btn-topbar-bg);
-  --button-topbar-hover-bg: var(--btn-topbar-hover-bg);
-  --button-topbar-border: var(--btn-topbar-border);
-  --button-topbar-fg: var(--btn-topbar-fg);
-  --metric-runs-color: var(--accent);
-  --metric-active-color: var(--success);
-  --metric-records-color: var(--warning);
-  --metric-domains-color: var(--info);
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════
-   DARK THEME — Warm Charcoal Console
-   ─────────────────────────────────────────────────────────────────────────
+/* ─── DARK THEME — Warm Charcoal Console ───────────────────────────────
    Surface hierarchy:
-     L0  bg-base     #0d0c0a  — deepest canvas
-     L1  bg-alt      #131110  — sunken insets
-     L2  bg-panel    #1a1714  — raised panels, cards
-     L3  bg-elevated #222019  — floating (dropdowns, modals)
-     L4  bg-well     #2b2822  — deeply inset, strong panels
-
-   Same rust accent; surfaces become warm developer-console charcoal.
-   ═══════════════════════════════════════════════════════════════════════════ */
+   bg-base #0d0c0a  →  bg-alt #131110  →  bg-panel #1a1714
+   →  bg-elevated #222019  →  bg-well #2b2822
+──────────────────────────────────────────────────────────────────────── */
 html[data-theme='dark'] {
   color-scheme: dark;
 
-  /* ── Surfaces */
+  /* Surfaces */
   --bg-base: #0d0c0a;
   --bg-alt: #131110;
   --bg-panel: #1a1714;
@@ -442,27 +361,18 @@ html[data-theme='dark'] {
   --bg-well: #2b2822;
   --surface-overlay: rgba(13, 12, 10, 0.94);
 
-  /* ── Borders */
+  /* Borders */
   --border-subtle: #201d18;
   --border: #2c2820;
   --border-strong: #413b32;
-  --border-focus: var(--accent);
 
-  /* ── Typography */
+  /* Typography */
   --text-primary: #f0ebe0;
   --text-secondary: #c0b6ab;
   --text-muted: #a5998a;
   --text-subtle: #78706a;
 
-  /* ── JSON Syntax (VS Code Dark) */
-  --syntax-key: #9cdcfe;
-  --syntax-string: #ce9178;
-  --syntax-number: #b5cea8;
-  --syntax-boolean: #569cd6;
-  --syntax-null: #569cd6;
-  --syntax-punct: #d4d4d4;
-
-  /* ── Accent */
+  /* Accent */
   --accent: #c2410c;
   --accent-hover: #d9581e;
   --accent-fg: #ffffff;
@@ -471,7 +381,7 @@ html[data-theme='dark'] {
   --accent-border: rgba(194, 65, 12, 0.36);
   --accent-text: #ffa875;
 
-  /* ── Semantic states — brightened for dark bg */
+  /* Semantic states — brightened for dark backgrounds */
   --success: #34d399;
   --success-bg: rgba(52, 211, 153, 0.09);
   --success-border: rgba(52, 211, 153, 0.22);
@@ -490,14 +400,18 @@ html[data-theme='dark'] {
   --info-text: #60a5fa;
   --neutral-bg: rgba(240, 235, 224, 0.04);
 
-  /* ── Status */
-  --status-active-bg: var(--success-bg);
-  --status-running-bg: var(--accent-subtle);
-  --status-killed-bg: var(--danger-bg);
-  --status-paused-bg: var(--warning-bg);
+  /* Status */
   --status-neutral-bg: var(--bg-panel);
 
-  /* ── Shadows */
+  /* JSON Syntax — VS Code Dark */
+  --syntax-key: #9cdcfe;
+  --syntax-string: #ce9178;
+  --syntax-number: #b5cea8;
+  --syntax-boolean: #569cd6;
+  --syntax-null: #569cd6;
+  --syntax-punct: #d4d4d4;
+
+  /* Shadows */
   --shadow-xs-value: 0 1px 2px rgba(0, 0, 0, 0.52);
   --shadow-sm-value: 0 2px 4px rgba(0, 0, 0, 0.62);
   --shadow-card-value: 0 2px 6px rgba(0, 0, 0, 0.38);
@@ -507,13 +421,7 @@ html[data-theme='dark'] {
   --focus-ring: 0 0 0 3px rgba(194, 65, 12, 0.32);
   --overlay-scrim: color-mix(in srgb, var(--bg-base) 34%, black);
 
-  /* ── Buttons */
-  --btn-primary-bg: var(--accent);
-  --btn-primary-hover-bg: var(--accent-hover);
-  --btn-primary-border: var(--accent);
-  --btn-primary-hover-border: var(--accent-hover);
-  --btn-primary-fg: var(--accent-fg);
-
+  /* Buttons */
   --btn-secondary-bg: color-mix(in srgb, var(--bg-panel) 85%, var(--bg-elevated));
   --btn-secondary-hover-bg: rgba(240, 235, 224, 0.07);
   --btn-secondary-border: rgba(240, 235, 224, 0.16);
@@ -524,118 +432,43 @@ html[data-theme='dark'] {
   --btn-destructive-hover-bg: rgba(248, 113, 113, 0.08);
   --btn-destructive-border: rgba(248, 113, 113, 0.2);
   --btn-destructive-hover-border: var(--danger);
-  --btn-destructive-fg: var(--danger);
 
   --btn-neutral-bg: color-mix(in srgb, var(--bg-panel) 88%, var(--bg-elevated));
   --btn-neutral-hover-bg: var(--bg-elevated);
-  --btn-neutral-border: var(--border);
-  --btn-neutral-hover-border: var(--border-strong);
-  --btn-neutral-fg: var(--text-primary);
 
-  --btn-ghost-bg: transparent;
   --btn-ghost-hover-bg: rgba(240, 235, 224, 0.05);
-  --btn-ghost-border: transparent;
-  --btn-ghost-fg: var(--text-secondary);
-  --btn-ghost-hover-fg: var(--text-primary);
 
   --btn-topbar-bg: rgba(240, 235, 224, 0.04);
   --btn-topbar-hover-bg: rgba(240, 235, 224, 0.08);
-  --btn-topbar-border: transparent;
-  --btn-topbar-fg: var(--text-primary);
 
-  /* ── Form controls */
+  /* Form controls */
   --segmented-bg: rgba(240, 235, 224, 0.04);
   --tab-active-fg: var(--text-primary);
   --slider-thumb-border: var(--bg-base);
   --toggle-track-off: #3d3d44;
 
-  /* ── Shellbar */
+  /* Shell */
   --surface-header: var(--bg-base);
 
-  /* ── Terminal */
+  /* Terminal */
   --terminal-bg: #110f0c;
-  --terminal-fg: var(--text-primary);
   --terminal-secondary: #b0a898;
   --terminal-muted: var(--text-subtle);
   --terminal-row-alt: #181512;
-  --terminal-border: var(--border);
   --terminal-shadow: 0 6px 12px rgba(0, 0, 0, 0.48);
 
-  /* ── Alert surfaces */
-  --alert-success-bg: var(--success-bg);
-  --alert-success-border: rgba(52, 211, 153, 0.22);
-  --alert-success-text: var(--success);
-  --alert-warning-bg: var(--warning-bg);
-  --alert-warning-border: rgba(251, 191, 36, 0.22);
-  --alert-warning-text: var(--warning);
-  --alert-danger-bg: var(--danger-bg);
-  --alert-danger-border: rgba(248, 113, 113, 0.22);
-  --alert-danger-text: var(--danger);
-
-  /* ── Settings */
+  /* Settings */
   --setting-body-bg: var(--bg-alt);
   --setting-icon-bg: var(--bg-base);
-  --setting-icon-active-bg: var(--accent-subtle);
 
-  /* ── Skeleton */
+  /* Skeleton */
   --skeleton-base: var(--bg-panel);
   --skeleton-highlight: var(--bg-elevated);
-
-  /* ── Logo */
-  --logo-mark-bg: var(--accent);
-  --logo-mark-fg: var(--accent-fg);
-
-  /* ── Backward-compat aliases */
-  --bg-panel-strong: var(--bg-well);
-  --text-faint: var(--text-subtle);
-  --surface-sunken: var(--bg-alt);
-  --divider: var(--border);
-  --subtle-panel-bg: var(--bg-alt);
-  --subtle-panel-border: var(--border);
-  --surface-card: var(--bg-panel);
-  --surface-card-edge: var(--border);
-  --accent-dim: rgba(194, 65, 12, 0.3);
-  --accent-text: #ffa875;
-  --button-action-bg: var(--btn-primary-bg);
-  --button-action-hover-bg: var(--btn-primary-hover-bg);
-  --button-action-border: var(--btn-primary-border);
-  --button-action-hover-border: var(--btn-primary-hover-border);
-  --button-action-fg: var(--btn-primary-fg);
-  --button-download-bg: var(--btn-secondary-bg);
-  --button-download-hover-bg: var(--btn-secondary-hover-bg);
-  --button-download-border: var(--btn-secondary-border);
-  --button-download-hover-border: var(--btn-secondary-hover-border);
-  --button-download-fg: var(--btn-secondary-fg);
-  --button-destructive-bg: var(--btn-destructive-bg);
-  --button-destructive-hover-bg: var(--btn-destructive-hover-bg);
-  --button-destructive-border: var(--btn-destructive-border);
-  --button-destructive-hover-border: var(--btn-destructive-hover-border);
-  --button-destructive-fg: var(--btn-destructive-fg);
-  --button-neutral-bg: var(--btn-neutral-bg);
-  --button-neutral-hover-bg: var(--btn-neutral-hover-bg);
-  --button-neutral-border: var(--btn-neutral-border);
-  --button-neutral-hover-border: var(--btn-neutral-hover-border);
-  --button-neutral-fg: var(--btn-neutral-fg);
-  --button-quiet-bg: var(--btn-ghost-bg);
-  --button-quiet-hover-bg: var(--btn-ghost-hover-bg);
-  --button-quiet-border: var(--btn-ghost-border);
-  --button-quiet-fg: var(--btn-ghost-fg);
-  --button-quiet-hover-fg: var(--btn-ghost-hover-fg);
-  --button-topbar-bg: var(--btn-topbar-bg);
-  --button-topbar-hover-bg: var(--btn-topbar-hover-bg);
-  --button-topbar-border: var(--btn-topbar-border);
-  --button-topbar-fg: var(--btn-topbar-fg);
-  --metric-runs-color: var(--accent);
-  --metric-active-color: var(--success);
-  --metric-records-color: var(--warning);
-  --metric-domains-color: var(--info);
-
-  background: var(--bg-base);
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════
+/* ═══════════════════════════════════════════════════════════════════════
    RESET & BASE
-   ═══════════════════════════════════════════════════════════════════════════ */
+═══════════════════════════════════════════════════════════════════════ */
 *,
 *::before,
 *::after {
@@ -646,7 +479,7 @@ html {
   min-height: 100%;
   background: var(--bg-base);
   scrollbar-gutter: stable;
-  font-size: 100%; /* respects user browser font-size (WCAG 1.4.4) */
+  font-size: 100%; /* respects user font-size (WCAG 1.4.4) */
 }
 
 body {
@@ -700,7 +533,7 @@ p:last-child {
   margin-block-end: 0;
 }
 
-/* Theme-toggle transition suppression — prevents flash */
+/* Theme-toggle flash suppression */
 html[data-theme-transition] *,
 html[data-theme-transition] *::before,
 html[data-theme-transition] *::after {
@@ -708,7 +541,7 @@ html[data-theme-transition] *::after {
   animation: none !important;
 }
 
-/* ── Links */
+/* ─── Links ──────────────────────────────────────────────────────────── */
 .no-underline {
   text-decoration: none;
   color: inherit;
@@ -716,7 +549,7 @@ html[data-theme-transition] *::after {
 
 .link-accent {
   color: var(--accent-text);
-  text-decoration: underline; /* WCAG 1.4.1: don't rely on color alone */
+  text-decoration: underline; /* WCAG 1.4.1 */
   text-underline-offset: 0.15em;
   text-decoration-thickness: 1px;
 }
@@ -726,7 +559,7 @@ html[data-theme-transition] *::after {
   text-decoration-thickness: 2px;
 }
 
-/* ── Mono utility */
+/* ─── Mono utility ───────────────────────────────────────────────────── */
 .tabular-nums,
 .font-mono,
 .mono-body,
@@ -744,19 +577,17 @@ samp {
   -webkit-font-smoothing: antialiased;
 }
 
-/* Mono text rendered via Tailwind size utilities tends to look smaller than
-   matching sans-serif at the same px size. Bump mono one notch when paired
-   with text-xs / text-2xs so URLs, timestamps, and JSON keys stay readable. */
+/* Bump mono one notch at small sizes so it stays readable */
 .font-mono.text-xs,
 .font-mono .text-xs {
-  font-size: var(--font-mono-size); /* 14px */
+  font-size: var(--font-mono-size);
 }
 .font-mono.text-2xs,
 .font-mono .text-2xs {
-  font-size: var(--font-mono-size-sm); /* 12px */
+  font-size: var(--font-mono-size-sm);
 }
 
-/* ── Form elements inherit font */
+/* Form elements inherit font */
 button,
 input,
 textarea,
@@ -764,7 +595,7 @@ select {
   font: inherit;
 }
 
-/* ── Button/interactive transitions */
+/* ─── Interactive base ───────────────────────────────────────────────── */
 button,
 [role='button'] {
   transition:
@@ -776,7 +607,6 @@ button,
   -webkit-tap-highlight-color: transparent;
 }
 
-/* ── Disabled state (WCAG 1.4.3) */
 button:disabled,
 [role='button'][aria-disabled='true'],
 input:disabled,
@@ -787,7 +617,7 @@ textarea:disabled {
   pointer-events: none;
 }
 
-/* ── Focus rings — keyboard-only (WCAG 2.4.7 + 2.4.11) */
+/* ─── Focus rings — keyboard-only (WCAG 2.4.7 + 2.4.11) ─────────────── */
 :focus-visible {
   outline: 2.5px solid var(--accent);
   outline-offset: 2px;
@@ -808,13 +638,12 @@ textarea:disabled {
   border-color: var(--border-focus);
 }
 
-/* ── Text selection */
+/* ─── Selection / scrollbar ─────────────────────────────────────────── */
 ::selection {
   background: color-mix(in srgb, var(--accent) 24%, transparent);
   color: var(--text-primary);
 }
 
-/* ── Scrollbar */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -834,18 +663,15 @@ textarea:disabled {
   scrollbar-color: color-mix(in srgb, var(--text-muted) 36%, transparent) transparent;
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════
+/* ═══════════════════════════════════════════════════════════════════════
    TYPE SYSTEM — 4-tier hierarchy
-   ─────────────────────────────────────────────────────────────────────────
-   T1  DISPLAY   Hero numbers, KPI values — bold, tight, tabular
-   T2  HEADING   Page/section titles — display font, semibold/bold
-   T3  BODY      Reading content, control labels — sans, normal/medium
-   T4  LABEL     Column headers, captions — uppercase, tracked
+   T1 DISPLAY  hero numbers, KPIs         — bold, tight, tabular
+   T2 HEADING  page/section titles        — display font, semibold/bold
+   T3 BODY     reading copy, control text — sans, normal/medium
+   T4 LABEL    column headers, captions   — uppercase, tracked
+═══════════════════════════════════════════════════════════════════════ */
 
-   Weights are standard integers (100–900) only.
-   ═══════════════════════════════════════════════════════════════════════════ */
-
-/* ── T1: Display */
+/* T1 — Display */
 .type-display {
   font-family: var(--font-display-family);
   font-size: var(--text-2xl);
@@ -856,7 +682,6 @@ textarea:disabled {
   font-synthesis: none;
   color: var(--text-primary);
 }
-
 .type-display-sm {
   font-family: var(--font-display-family);
   font-size: var(--text-lg);
@@ -868,7 +693,7 @@ textarea:disabled {
   color: var(--text-primary);
 }
 
-/* ── T2: Headings */
+/* T2 — Headings */
 .type-heading-1 {
   font-family: var(--font-display-family);
   font-size: var(--text-2xl);
@@ -878,7 +703,6 @@ textarea:disabled {
   color: var(--text-primary);
   text-wrap: balance;
 }
-
 .type-heading-2 {
   font-family: var(--font-display-family);
   font-size: var(--text-xl);
@@ -887,7 +711,6 @@ textarea:disabled {
   letter-spacing: -0.01em;
   color: var(--text-primary);
 }
-
 .type-heading-3 {
   font-family: var(--font-display-family);
   font-size: var(--text-lg);
@@ -896,8 +719,6 @@ textarea:disabled {
   letter-spacing: var(--tracking-normal);
   color: var(--text-primary);
 }
-
-/* Card titles, drawer headers, named groups */
 .type-subheading {
   font-family: var(--font-display-family);
   font-size: var(--text-sm);
@@ -907,29 +728,26 @@ textarea:disabled {
   color: var(--text-primary);
 }
 
-/* ── T3: Body */
+/* T3 — Body */
 .type-body {
   font-size: var(--text-base);
   font-weight: var(--weight-normal);
   line-height: 1.55;
   color: var(--text-secondary);
 }
-
 .type-body-sm {
   font-size: var(--text-sm);
   font-weight: var(--weight-normal);
   line-height: 1.55;
   color: var(--text-secondary);
 }
-
-/* Buttons, tabs, interactive affordances */
 .type-control {
   font-size: var(--text-sm);
   font-weight: var(--weight-semibold);
   line-height: 1.25;
 }
 
-/* ── T4: Labels */
+/* T4 — Labels */
 .type-label {
   font-family: var(--font-primary-family);
   font-size: var(--text-2xs);
@@ -939,7 +757,6 @@ textarea:disabled {
   text-transform: uppercase;
   color: var(--text-muted);
 }
-
 .type-label-mono {
   font-family: var(--font-mono-family);
   font-size: var(--text-2xs);
@@ -950,14 +767,12 @@ textarea:disabled {
   color: var(--text-muted);
   font-synthesis: none;
 }
-
 .type-caption {
   font-size: var(--text-xs);
   font-weight: var(--weight-normal);
   line-height: 1.35;
   color: var(--text-muted);
 }
-
 .type-caption-mono {
   font-family: var(--font-mono-family);
   font-size: var(--font-mono-size-sm);
@@ -967,8 +782,6 @@ textarea:disabled {
   font-synthesis: none;
   font-variant-numeric: tabular-nums;
 }
-
-/* KPI number blocks */
 .type-metric {
   font-family: var(--font-mono-family);
   font-weight: var(--weight-bold);
@@ -979,29 +792,9 @@ textarea:disabled {
   color: var(--text-primary);
 }
 
-/* ─── deprecated aliases — keep building; remove in next major version ─── */
-/* type-micro-label → type-label */
-.type-micro-label {
-  font-family: var(--font-primary-family);
-  font-size: var(--text-2xs);
-  font-weight: var(--weight-semibold);
-  letter-spacing: var(--tracking-wider);
-  text-transform: uppercase;
-  line-height: 1;
-  color: var(--text-muted);
-}
-/* type-heading → type-heading-2/3 depending on context */
-.type-heading {
-  font-family: var(--font-display-family);
-  font-weight: var(--weight-semibold);
-  line-height: 1.2;
-  letter-spacing: var(--tracking-tight);
-  color: var(--text-primary);
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   FORM / FIELD LABEL HELPERS
-   ═══════════════════════════════════════════════════════════════════════════ */
+/* ═══════════════════════════════════════════════════════════════════════
+   FORM FIELD HELPERS
+═══════════════════════════════════════════════════════════════════════ */
 .field-label {
   display: block;
   font-family: var(--font-primary-family);
@@ -1013,7 +806,6 @@ textarea:disabled {
   color: var(--text-muted);
   margin-bottom: var(--space-1);
 }
-
 .field-hint {
   display: block;
   font-size: var(--text-xs);
@@ -1021,13 +813,11 @@ textarea:disabled {
   color: var(--text-muted);
   margin-top: var(--space-1);
 }
-
 /* aria-hidden="true" in markup; CSS asterisk is decorative only */
 .field-label-required::after {
   content: ' *';
   color: var(--danger);
 }
-
 .field-error {
   display: block;
   font-size: var(--text-xs);
@@ -1036,8 +826,6 @@ textarea:disabled {
   color: var(--danger);
   margin-top: var(--space-1);
 }
-
-/* Screen-reader-only (WCAG) */
 .sr-only {
   position: absolute;
   width: 1px;
@@ -1050,18 +838,16 @@ textarea:disabled {
   border-width: 0;
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════
+/* ═══════════════════════════════════════════════════════════════════════
    BUTTON SURFACES
-   ─────────────────────────────────────────────────────────────────────────
-   .ui-button        — base structure; apply one surface modifier below
-   .ui-button-{sm|md|lg} — size modifiers via scoped custom properties
-   .button-*-surface — background / border / fg tokens per variant
-   ═══════════════════════════════════════════════════════════════════════════ */
+   .ui-button            — base structure
+   .ui-button-{sm|lg}    — size overrides
+   .button-*-surface     — one surface per variant
+═══════════════════════════════════════════════════════════════════════ */
 .ui-button {
   --_h: var(--btn-height);
   --_fs: var(--btn-font-size);
   --_px: var(--btn-padding-x);
-
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1080,7 +866,6 @@ textarea:disabled {
     inset 0 1px 0 color-mix(in srgb, white 16%, transparent),
     var(--shadow-xs-value);
 }
-
 .ui-button svg {
   color: inherit;
   stroke: currentColor;
@@ -1088,26 +873,15 @@ textarea:disabled {
 }
 
 .ui-button-sm {
-  --_h: var(--btn-height);
-  --_fs: var(--btn-font-size);
   --_px: 10px;
   border-radius: var(--radius-sm);
   gap: 6px;
 }
-
-.ui-button-md {
-  --_h: var(--btn-height);
-  --_fs: var(--btn-font-size);
-  --_px: 13px;
-}
-
 .ui-button-lg {
-  --_h: var(--btn-height);
-  --_fs: var(--btn-font-size);
   --_px: 16px;
 }
 
-/* ── Surface variants */
+/* Surface variants */
 .button-action-surface {
   background: var(--btn-primary-bg);
   border-color: var(--btn-primary-border);
@@ -1190,7 +964,7 @@ textarea:disabled {
   background: transparent;
 }
 
-/* Anchors styled as buttons — prevent browser <a> color override */
+/* Prevent browser color override for anchor-buttons */
 a.ui-button.button-action-surface {
   color: var(--btn-primary-fg);
 }
@@ -1214,14 +988,12 @@ a.ui-button.button-quiet-surface:hover {
   color: var(--btn-primary-fg);
 }
 
-/* ── Toggle selected (pill toggle) */
+/* ─── Toggle / pill ─────────────────────────────────────────────────── */
 .toggle-selected {
   border: 1px solid var(--accent);
   background: var(--accent-subtle);
   color: var(--text-primary);
 }
-
-/* ── Toggle track/thumb */
 .toggle-track-on {
   background-color: var(--toggle-track-on);
 }
@@ -1234,15 +1006,13 @@ a.ui-button.button-quiet-surface:hover {
 .toggle-thumb-shadow {
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
 }
-
-/* ── Overlay scrim */
 .overlay-scrim {
   background: var(--overlay-scrim);
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════
+/* ═══════════════════════════════════════════════════════════════════════
    TOOLTIP & SEGMENTED CONTROL
-   ═══════════════════════════════════════════════════════════════════════════ */
+═══════════════════════════════════════════════════════════════════════ */
 .tooltip-surface {
   border: var(--interactive-border-width) solid var(--border-strong);
 }
@@ -1255,7 +1025,6 @@ a.ui-button.button-quiet-surface:hover {
     0 1px 0 color-mix(in srgb, white 10%, transparent);
 }
 
-/* ── Workspace tabs (segmented variant with rounded corners) */
 .workspace-tabs {
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
@@ -1264,7 +1033,6 @@ a.ui-button.button-quiet-surface:hover {
     inset 0 1px 2px color-mix(in srgb, black 7%, transparent),
     0 1px 0 color-mix(in srgb, white 10%, transparent);
 }
-
 .workspace-tab {
   min-height: 36px;
   border: 1px solid transparent;
@@ -1292,9 +1060,9 @@ a.ui-button.button-quiet-surface:hover {
     0 1px 2px color-mix(in srgb, var(--accent) 16%, transparent);
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════
+/* ═══════════════════════════════════════════════════════════════════════
    SLIDER CONTROL
-   ═══════════════════════════════════════════════════════════════════════════ */
+═══════════════════════════════════════════════════════════════════════ */
 .slider-control {
   -webkit-appearance: none;
   appearance: none;
@@ -1337,9 +1105,9 @@ a.ui-button.button-quiet-surface:hover {
   outline-offset: 3px;
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════
+/* ═══════════════════════════════════════════════════════════════════════
    LAYOUT HELPERS
-   ═══════════════════════════════════════════════════════════════════════════ */
+═══════════════════════════════════════════════════════════════════════ */
 .page-stack {
   display: flex;
   flex-direction: column;
@@ -1355,12 +1123,10 @@ a.ui-button.button-quiet-surface:hover {
   flex-direction: column;
   gap: var(--space-4);
 }
-
 .surface-muted {
   border: 1px solid var(--border);
   background: var(--bg-alt);
 }
-
 .card-gradient {
   background: var(--bg-panel);
   box-shadow: none;
@@ -1393,7 +1159,6 @@ html:not([data-theme='dark']) .code-block {
   border: 2px solid var(--accent);
   box-shadow: 0 0 10px color-mix(in srgb, var(--accent) 22%, transparent);
 }
-
 .metric-stripe {
   background: var(--metric-stripe-color, var(--accent));
 }
@@ -1409,9 +1174,9 @@ html:not([data-theme='dark']) .code-block {
   background: color-mix(in srgb, var(--danger) 12%, transparent);
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════
+/* ═══════════════════════════════════════════════════════════════════════
    ALERT SURFACES
-   ═══════════════════════════════════════════════════════════════════════════ */
+═══════════════════════════════════════════════════════════════════════ */
 .alert-surface {
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
@@ -1419,7 +1184,6 @@ html:not([data-theme='dark']) .code-block {
   font-size: var(--text-sm);
   box-shadow: none;
 }
-
 .alert-neutral {
   background: var(--bg-alt);
   border-color: var(--border);
@@ -1441,9 +1205,27 @@ html:not([data-theme='dark']) .code-block {
   color: var(--alert-danger-text);
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════
+/* Alert token aliases (not duplicated in :root — derived directly) */
+:root {
+  --alert-success-bg: var(--success-bg);
+  --alert-success-border: var(--success-border);
+  --alert-success-text: var(--success-text);
+  --alert-warning-bg: var(--warning-bg);
+  --alert-warning-border: var(--warning-border);
+  --alert-warning-text: var(--warning-text);
+  --alert-danger-bg: var(--danger-bg);
+  --alert-danger-border: var(--danger-border);
+  --alert-danger-text: var(--danger-text);
+}
+html[data-theme='dark'] {
+  --alert-success-text: var(--success);
+  --alert-warning-text: var(--warning);
+  --alert-danger-text: var(--danger);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
    CODE BLOCK
-   ═══════════════════════════════════════════════════════════════════════════ */
+═══════════════════════════════════════════════════════════════════════ */
 .code-block {
   background: var(--bg-alt);
   border: 1px solid var(--border);
@@ -1461,9 +1243,9 @@ html:not([data-theme='dark']) .code-block {
   tab-size: 2;
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════
+/* ═══════════════════════════════════════════════════════════════════════
    CRAWL TERMINAL
-   ═══════════════════════════════════════════════════════════════════════════ */
+═══════════════════════════════════════════════════════════════════════ */
 .crawl-terminal {
   background: var(--terminal-bg);
   border: 1px solid var(--terminal-border);
@@ -1477,7 +1259,6 @@ html:not([data-theme='dark']) .code-block {
   max-height: 320px;
   box-shadow: var(--terminal-shadow);
 }
-
 .crawl-terminal,
 .crawl-terminal * {
   font-family: var(--font-mono-family);
@@ -1498,6 +1279,17 @@ html:not([data-theme='dark']) .code-block {
 }
 
 /* JSON viewer — always dark regardless of theme */
+.crawl-terminal-json,
+.bg-zinc-950,
+.bg-zinc-900,
+[data-json-dark-theme='true'] {
+  --syntax-key: #9cdcfe;
+  --syntax-string: #ce9178;
+  --syntax-number: #b5cea8;
+  --syntax-boolean: #569cd6;
+  --syntax-null: #569cd6;
+  --syntax-punct: #d4d4d4;
+}
 .crawl-terminal-json {
   background: #09090b;
   color: #d4d4d4;
@@ -1511,19 +1303,6 @@ html:not([data-theme='dark']) .code-block {
   padding: var(--space-4) var(--space-5);
 }
 
-/* Force VS Code dark syntax in all dark-bg contexts */
-.crawl-terminal-json,
-.bg-zinc-950,
-.bg-zinc-900,
-[data-json-dark-theme='true'] {
-  --syntax-key: #9cdcfe;
-  --syntax-string: #ce9178;
-  --syntax-number: #b5cea8;
-  --syntax-boolean: #569cd6;
-  --syntax-null: #569cd6;
-  --syntax-punct: #d4d4d4;
-}
-
 /* Activity log (sans-serif, not mono) */
 .crawl-activity-log,
 .crawl-activity-log * {
@@ -1534,7 +1313,7 @@ html:not([data-theme='dark']) .code-block {
   letter-spacing: normal;
 }
 
-/* ── JSON Syntax Highlighting */
+/* JSON Syntax Highlighting */
 .syntax-key {
   color: var(--syntax-key);
 }
@@ -1569,16 +1348,15 @@ html:not([data-theme='dark']) .code-block {
   animation: log-entry-in 180ms ease-out both;
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════
+/* ═══════════════════════════════════════════════════════════════════════
    DATA TABLES
-   ═══════════════════════════════════════════════════════════════════════════ */
+═══════════════════════════════════════════════════════════════════════ */
 .compact-data-table {
   width: 100%;
   border-collapse: separate;
   border-spacing: 0;
   font-size: var(--table-font-size);
 }
-
 .compact-data-table thead {
   background: var(--bg-alt);
 }
@@ -1599,10 +1377,6 @@ html:not([data-theme='dark']) .code-block {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.compact-data-table th.text-right,
-.compact-data-table td.text-right {
-  text-align: right;
-}
 .compact-data-table td {
   height: var(--table-row-height);
   padding-inline: var(--space-5);
@@ -1615,6 +1389,10 @@ html:not([data-theme='dark']) .code-block {
   text-overflow: ellipsis;
   font-size: var(--text-sm);
   font-weight: var(--weight-normal);
+}
+.compact-data-table th.text-right,
+.compact-data-table td.text-right {
+  text-align: right;
 }
 .compact-data-table tbody tr {
   transition: background-color var(--transition-fast);
@@ -1646,16 +1424,15 @@ html:not([data-theme='dark']) .compact-data-table {
   border-radius: var(--radius-md);
   box-shadow: none;
 }
-
 .table-surface-flat {
   border: 1px solid var(--border);
   background: transparent;
   box-shadow: none;
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════
+/* ═══════════════════════════════════════════════════════════════════════
    COMMERCE TABLE
-   ═══════════════════════════════════════════════════════════════════════════ */
+═══════════════════════════════════════════════════════════════════════ */
 .commerce-table {
   --ct-img-size: 44px;
 }
@@ -1743,9 +1520,9 @@ html:not([data-theme='dark']) .compact-data-table {
   display: none;
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════
+/* ═══════════════════════════════════════════════════════════════════════
    METRIC PULSE — dashboard KPI strip
-   ═══════════════════════════════════════════════════════════════════════════ */
+═══════════════════════════════════════════════════════════════════════ */
 .metric-pulse-container {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -1760,7 +1537,6 @@ html:not([data-theme='dark']) .compact-data-table {
     grid-template-columns: repeat(2, 1fr);
   }
 }
-
 .metric-pulse-item {
   background: var(--bg-panel);
   padding: var(--space-4) var(--space-5);
@@ -1773,7 +1549,6 @@ html:not([data-theme='dark']) .compact-data-table {
 .metric-pulse-item:hover {
   background: var(--bg-elevated);
 }
-
 .metric-pulse-accent {
   position: absolute;
   top: 0;
@@ -1787,7 +1562,6 @@ html:not([data-theme='dark']) .compact-data-table {
 .metric-pulse-item:hover .metric-pulse-accent {
   opacity: 1;
 }
-
 .metric-pulse-label {
   font-family: var(--font-primary-family);
   font-size: var(--text-2xs);
@@ -1800,7 +1574,6 @@ html:not([data-theme='dark']) .compact-data-table {
   align-items: center;
   gap: var(--space-2);
 }
-
 .metric-pulse-value {
   font-family: var(--font-mono-family);
   font-size: var(--text-2xl);
@@ -1811,7 +1584,6 @@ html:not([data-theme='dark']) .compact-data-table {
   font-variant-numeric: tabular-nums;
   font-synthesis: none;
 }
-
 .pulse-dot {
   width: 6px;
   height: 6px;
@@ -1829,9 +1601,9 @@ html:not([data-theme='dark']) .compact-data-table {
   }
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════
+/* ═══════════════════════════════════════════════════════════════════════
    SKELETON LOADER
-   ═══════════════════════════════════════════════════════════════════════════ */
+═══════════════════════════════════════════════════════════════════════ */
 @keyframes shimmer {
   0% {
     background-position: -600px 0;
@@ -1840,7 +1612,6 @@ html:not([data-theme='dark']) .compact-data-table {
     background-position: 600px 0;
   }
 }
-
 .skeleton {
   background: linear-gradient(
     90deg,
@@ -1854,9 +1625,9 @@ html:not([data-theme='dark']) .compact-data-table {
   pointer-events: none;
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════
+/* ═══════════════════════════════════════════════════════════════════════
    ANIMATIONS
-   ═══════════════════════════════════════════════════════════════════════════ */
+═══════════════════════════════════════════════════════════════════════ */
 @keyframes fade-in {
   from {
     opacity: 0;
@@ -1867,7 +1638,6 @@ html:not([data-theme='dark']) .compact-data-table {
     transform: translateY(0);
   }
 }
-
 @keyframes dropdown-in {
   from {
     opacity: 0;
@@ -1878,7 +1648,6 @@ html:not([data-theme='dark']) .compact-data-table {
     transform: translateY(0) scale(1);
   }
 }
-
 @keyframes dropdown-in-up {
   from {
     opacity: 0;
@@ -1889,7 +1658,6 @@ html:not([data-theme='dark']) .compact-data-table {
     transform: translateY(0) scale(1);
   }
 }
-
 @keyframes spin {
   to {
     transform: rotate(360deg);
@@ -1922,21 +1690,21 @@ html:not([data-theme='dark']) .compact-data-table {
   animation-delay: 250ms;
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════
+/* ═══════════════════════════════════════════════════════════════════════
    RESPONSIVE
-   ═══════════════════════════════════════════════════════════════════════════ */
+═══════════════════════════════════════════════════════════════════════ */
 @media (max-width: 480px) {
   :root {
-    --text-xl: 1.25rem; /* 20px on small screens */
-    --text-2xl: 1.625rem; /* 26px on small screens */
+    --text-xl: 1.25rem; /* 20px */
+    --text-2xl: 1.625rem; /* 26px */
     --content-gutter: var(--space-4);
   }
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════
+/* ═══════════════════════════════════════════════════════════════════════
    ACCESSIBILITY — REDUCED MOTION (WCAG 2.3.3)
    Must remain last to override all animations above.
-   ═══════════════════════════════════════════════════════════════════════════ */
+═══════════════════════════════════════════════════════════════════════ */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -1950,9 +1718,9 @@ html:not([data-theme='dark']) .compact-data-table {
   }
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════
+/* ═══════════════════════════════════════════════════════════════════════
    ACCESSIBILITY — HIGH CONTRAST MODE (WCAG 1.4.11)
-   ═══════════════════════════════════════════════════════════════════════════ */
+═══════════════════════════════════════════════════════════════════════ */
 @media (forced-colors: active) {
   .focus-ring:focus-visible,
   button:focus-visible,
@@ -1972,9 +1740,9 @@ html:not([data-theme='dark']) .compact-data-table {
   }
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════
+/* ═══════════════════════════════════════════════════════════════════════
    PRINT
-   ═══════════════════════════════════════════════════════════════════════════ */
+═══════════════════════════════════════════════════════════════════════ */
 @media print {
   body {
     background: #fff !important;

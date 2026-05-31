@@ -12,18 +12,12 @@ export default function Error({
 }>) {
   return (
     <main className="mx-auto flex min-h-[60vh] w-full max-w-3xl flex-col justify-center px-6 py-16">
-      <div className="border-border bg-panel space-y-4 rounded-[var(--radius-md)] border p-6">
+      <div className="border-border bg-panel space-y-4 rounded-md border p-6">
         <div>
-          <p className="text-muted text-[length:var(--text-xs)] font-semibold uppercase">
-            Application Error
-          </p>
-          <h1 className="text-foreground mt-2 text-[length:var(--text-xl)] font-semibold">
-            Something went wrong.
-          </h1>
+          <p className="type-label">Application Error</p>
+          <h1 className="type-heading-2 mt-2">Something went wrong.</h1>
         </div>
-        <p className="text-secondary text-[length:var(--text-sm)]">
-          The page hit an unexpected error. Try reloading this view.
-        </p>
+        <p className="type-body-sm">The page hit an unexpected error. Try reloading this view.</p>
         <Button type="button" onClick={reset}>
           Try again
         </Button>
