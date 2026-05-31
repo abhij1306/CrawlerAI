@@ -4,7 +4,6 @@ import logging
 from collections import OrderedDict, deque
 from datetime import UTC, datetime
 
-import app.main as main_module
 import pytest
 from fastapi import FastAPI, HTTPException
 from httpx import ASGITransport, AsyncClient
@@ -22,6 +21,7 @@ from app.core.public_auth import authenticate_public_api_key, hash_api_key
 from app.main import (
     RATE_LIMIT_BUCKETS,
     CrawlerAppState,
+    _crawler_app_state,
     _public_auth_session,
     app,
     auth_rate_limit_buckets_snapshot,
@@ -512,7 +512,7 @@ def test_rate_limit_buckets_view_tracks_replaced_app_state() -> None:
 @pytest.mark.component
 def test_crawler_app_state_rejects_explicit_app_without_crawler_state() -> None:
     with pytest.raises(RuntimeError, match="state.crawler"):
-        main_module._crawler_app_state(FastAPI())
+        _crawler_app_state(FastAPI())
 
 
 # from backend/tests/services/test_public_api_auth.py

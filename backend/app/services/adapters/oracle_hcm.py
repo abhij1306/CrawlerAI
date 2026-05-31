@@ -99,13 +99,11 @@ class OracleHCMAdapter(PublicEndpointAdapter):
                     job_id = str(normalized.get("job_id") or "").strip()
                     if target_job_id and job_id != target_job_id:
                         continue
-                    if job_id and job_id in seen_job_ids:
+                    if job_id and not target_job_id and job_id in seen_job_ids:
                         continue
-                    if job_id:
+                    if job_id and not target_job_id:
                         seen_job_ids.add(job_id)
                     records.append(normalized)
-                    if target_job_id and job_id == target_job_id:
-                        return [normalized]
 
             if response_item_count < page_size:
                 break

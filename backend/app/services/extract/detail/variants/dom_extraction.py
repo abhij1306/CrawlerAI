@@ -45,6 +45,7 @@ from app.services.extract.detail.variants.state_targets import (
 from app.services.extract.detail.variants.dom_options import (
     merge_variant_option_state,
     node_attr_is_truthy,
+    variant_option_availability,
     variant_option_url,
 )
 from app.services.extract.variant_group_validator import (
@@ -97,6 +98,7 @@ _DOM_OPTION_AVAILABILITY_PRIORITY = (
     "limited_stock",
     "in_stock",
 )
+_DOM_VARIANT_CACHE_ATTR = "_crawler_dom_variant_extraction_cache"
 
 
 def _safe_int_config(value: object, default: int, name: str) -> int:
@@ -337,7 +339,8 @@ def _variant_choice_entry_value(
             cleaned = clean_text(raw_value)
             if not cleaned:
                 continue
-            if candidate := _color_option_value_candidates(cleaned)[0]:
+            candidates = _color_option_value_candidates(cleaned)
+            if candidates and (candidate := candidates[0]):
                 return candidate
     return clean_text(
         node.get("data-attr-displayvalue")
@@ -359,7 +362,10 @@ def _variant_option_value_is_url_like(value: object) -> bool:
     if not text:
         return False
     lowered = text.strip().lower()
-    return lowered.startswith(("http://", "https://", "/")) or "product-variation?" in lowered
+    return (
+        lowered.startswith(("http://", "https://", "/"))
+        or "product-variation?" in lowered
+    )
 
 
 def _variant_axis_value_from_option_url(
@@ -534,6 +540,10 @@ def extract_variants_from_dom(
     page_url: str,
     js_state_objects: dict[str, Any] | None = None,
 ) -> dict[str, object]:
+    cache_key = (str(page_url or ""), id(js_state_objects))
+    cached = _cached_dom_variant_record(soup, cache_key)
+    if cached is not None:
+        return cached
     candidate_groups = []
     title_hint = clean_text(soup.h1.get_text(" ", strip=True) if soup.h1 else "")
     for select in iter_variant_select_groups(soup):
@@ -581,6 +591,14 @@ def extract_variants_from_dom(
             entry: dict[str, object] = {"value": cleaned_value}
             if node_attr_is_truthy(option, "selected", "aria-selected"):
                 entry["selected"] = True
+            availability, stock_quantity = variant_option_availability(
+                node=option,
+                label_node=None,
+            )
+            if availability:
+                entry["availability"] = availability
+            if stock_quantity is not None:
+                entry["stock_quantity"] = stock_quantity
             variant_url = variant_option_url(
                 container=select,
                 node=option,
@@ -744,7 +762,7 @@ def extract_variants_from_dom(
             break
 
     if not deduped_groups:
-        return {}
+        return _cache_dom_variant_record(soup, cache_key, {})
 
     state_axis_targets, state_combo_targets = _state_variant_targets(
         js_state_objects,
@@ -795,7 +813,7 @@ def extract_variants_from_dom(
                     merged_metadata[key] = state_metadata[key]
         axis_order.append((axis_key, name, values))
     if not axis_values_by_name:
-        return {}
+        return _cache_dom_variant_record(soup, cache_key, {})
 
     variants: list[dict[str, object]] = []
     axis_names = [axis_key for axis_key, _label, _values in axis_order]
@@ -905,6 +923,33 @@ def extract_variants_from_dom(
                 selected_availability = text_or_none(active_variant.get("availability"))
                 if selected_availability:
                     record["availability"] = selected_availability
+    return _cache_dom_variant_record(soup, cache_key, record)
+
+
+def _cached_dom_variant_record(
+    soup: BeautifulSoup,
+    cache_key: tuple[str, int],
+) -> dict[str, object] | None:
+    cache = getattr(soup, _DOM_VARIANT_CACHE_ATTR, None)
+    if not isinstance(cache, dict):
+        return None
+    cached = cache.get(cache_key)
+    return dict(cached) if isinstance(cached, dict) else None
+
+
+def _cache_dom_variant_record(
+    soup: BeautifulSoup,
+    cache_key: tuple[str, int],
+    record: dict[str, object],
+) -> dict[str, object]:
+    cache = getattr(soup, _DOM_VARIANT_CACHE_ATTR, None)
+    if not isinstance(cache, dict):
+        cache = {}
+        try:
+            setattr(soup, _DOM_VARIANT_CACHE_ATTR, cache)
+        except Exception:
+            return record
+    cache[cache_key] = dict(record)
     return record
 
 
@@ -1094,7 +1139,9 @@ def _dom_variants_add_missing_existing_axis(
     dom_variant_rows: list[dict[str, Any]],
 ) -> bool:
     existing_axes = _variant_axes_present(existing_variants)
-    return bool(existing_axes and _real_new_dom_axes(existing_variants, dom_variant_rows))
+    return bool(
+        existing_axes and _real_new_dom_axes(existing_variants, dom_variant_rows)
+    )
 
 
 def _expand_existing_variants_with_dom_axes(

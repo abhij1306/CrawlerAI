@@ -1255,7 +1255,7 @@ def _detail_redirect_identity_is_mismatched(
         ):
             return True
 
-    if not current or requested == current:
+    if not current:
         return False
     if not same_site(requested, current):
         return False

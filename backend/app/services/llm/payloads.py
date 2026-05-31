@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-from json import loads as parse_json
 from typing import Annotated, Any, Literal, NotRequired, TypedDict
 
 from app.services.config.llm_runtime import llm_runtime_settings
@@ -198,6 +197,23 @@ class _DesignSystemMarkdownPayload(BaseModel):
     caveats: list[str] = Field(default_factory=list)
 
 
+class _RunDiagnosisFieldPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    field: str = ""
+    source: str = ""
+    note: str = ""
+
+
+class _RunDiagnosisPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    summary: str = ""
+    field_provenance: list[_RunDiagnosisFieldPayload] = Field(default_factory=list)
+    likely_root_cause: str = ""
+    missing_field_reasons: list[_RunDiagnosisFieldPayload] = Field(default_factory=list)
+
+
 _PAYLOAD_ADAPTERS: dict[str, TypeAdapter[Any]] = {
     "direct_record_extraction": TypeAdapter(list[dict[_FieldKey, Any]]),
     "xpath_discovery": TypeAdapter(list[_XPathSelector]),
@@ -215,6 +231,7 @@ _PAYLOAD_ADAPTERS: dict[str, TypeAdapter[Any]] = {
     "ucp_schema_analysis": TypeAdapter(_UCPSchemaAnalysisPayload),
     "aid_discoverability_audit": TypeAdapter(_AIDDiscoverabilityAuditPayload),
     "design_system_markdown": TypeAdapter(_DesignSystemMarkdownPayload),
+    "run_diagnosis": TypeAdapter(_RunDiagnosisPayload),
 }
 SUPPORTED_TASK_TYPES = tuple(_PAYLOAD_ADAPTERS.keys())
 
@@ -266,7 +283,7 @@ def _parse_json_object(raw_text: str) -> dict | None:
     if start == -1 or end < start:
         return None
     try:
-        payload = parse_json(raw_text[start : end + 1])
+        payload = json.loads(raw_text[start : end + 1])
     except json.JSONDecodeError:
         return None
     return payload if isinstance(payload, dict) else None
@@ -278,7 +295,7 @@ def _parse_json_array(raw_text: str) -> list | None:
     if start == -1 or end < start:
         return None
     try:
-        payload = parse_json(raw_text[start : end + 1])
+        payload = json.loads(raw_text[start : end + 1])
     except json.JSONDecodeError:
         return None
     return payload if isinstance(payload, list) else None

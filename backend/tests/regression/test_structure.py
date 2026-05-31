@@ -88,6 +88,9 @@ ALLOWED_PRIVATE_TEST_IMPORTS: set[str] = {
     "tests/unit/test_detail_image_cleanup.py -> app.services.extract.detail.images.cleanup:_detail_image_candidate_is_usable",
     "tests/unit/test_materials_sanitizer.py -> app.services.extract.detail.text.sanitizer:_clean_materials_pollution",
     "tests/unit/test_normalizers.py -> app.services.extract.variant_choice_traversal:_variant_choice_container_is_overbroad",
+    "tests/component/test_product_intelligence.py -> app.services.product_intelligence.discovery:_candidate_dedupe_key",
+    "tests/component/test_public_api.py -> app.main:_crawler_app_state",
+    "tests/services/observability/test_extraction_trace_projection.py -> app.services.pipeline.extraction_loop:_record_extraction_trace",
 }
 ALLOWED_ROOT_EXTRACTION_MODULES = {
     # Slice 2 keeps this as the public listing orchestration facade.
@@ -216,7 +219,7 @@ FILE_LOC_BUDGETS = {
     Path("app/services/extract/variant_axis.py"): 295,
     Path("app/services/extract/variant_option_value.py"): 260,
     Path("app/services/extract/variant_choice_traversal.py"): 905,
-    Path("app/services/extract/variant_identity_merge.py"): 415,
+    Path("app/services/extract/variant_identity_merge.py"): 500,
     # Listing extraction is the orchestration facade; card/title/image/brand
     # signal ownership lives in extract/listing_signals.py.
     Path("app/services/listing_extractor.py"): 900,
@@ -239,7 +242,7 @@ FILE_LOC_BUDGETS = {
     Path("app/services/js_state/state_normalizer/_product_mapping.py"): 460,
     Path("app/services/js_state/state_normalizer/_variant_mapping.py"): 280,
     Path("app/services/js_state/state_normalizer/_variant_rows.py"): 390,
-    Path("app/services/product_intelligence/discovery.py"): 1250,
+    Path("app/services/product_intelligence/discovery.py"): 1320,
     Path("app/services/extract/detail/variants/dom_extraction.py"): 1150,
     # Extraction loop owns stage orchestration; retry and record extraction stages are split out.
     Path("app/services/pipeline/extraction_loop.py"): 1000,

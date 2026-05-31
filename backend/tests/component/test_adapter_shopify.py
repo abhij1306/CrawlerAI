@@ -92,3 +92,26 @@ def test_shopify_adapter_treats_blank_tag_string_as_empty_list() -> None:
 
     assert record["tags"] == []
 
+
+@pytest.mark.component
+def test_shopify_adapter_reads_shopifyanalytics_meta_with_unquoted_product() -> None:
+    adapter = ShopifyAdapter()
+    html = """
+    <script>
+      ShopifyAnalytics.meta = {product: {
+        "id": 7,
+        "title": "Inline Widget",
+        "vendor": "Acme",
+        "variants": [{"id": 11, "price": 2500, "available": true}]
+      }};
+    </script>
+    """
+
+    records = adapter._extract_embedded_product(
+        html,
+        "https://example.com/products/widget",
+    )
+
+    assert records[0]["title"] == "Inline Widget"
+    assert records[0]["price"] == "25"
+

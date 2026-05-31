@@ -199,8 +199,10 @@ def test_prepare_extraction_context_caches_original_dom_objects() -> None:
         "<html><body><main><h1>Widget</h1></main></body></html>"
     )
 
-    assert context.original_soup is context.original_soup
-    assert context.original_dom_parser is context.original_dom_parser
+    cached_soup = context.original_soup
+    cached_dom_parser = context.original_dom_parser
+    assert context.original_soup is cached_soup
+    assert context.original_dom_parser is cached_dom_parser
 
 
 @pytest.mark.regression

@@ -46,7 +46,9 @@ from tests.fixtures.loader import read_optional_artifact_text
 
 
 @pytest.mark.regression
-def test_detail_currency_hint_host_matching_avoids_partial_word_false_positive() -> None:
+def test_detail_currency_hint_host_matching_avoids_partial_word_false_positive() -> (
+    None
+):
     assert (
         detail_currency_hint_is_host_level(
             "https://www.notarget.com/products/widget",
@@ -81,7 +83,9 @@ def test_reconcile_detail_currency_with_url_tracks_nested_currency_sources() -> 
 
 
 @pytest.mark.regression
-def test_extract_detail_prefers_visible_price_symbol_over_region_path_currency() -> None:
+def test_extract_detail_prefers_visible_price_symbol_over_region_path_currency() -> (
+    None
+):
     html = """
     <html>
       <head>
@@ -181,7 +185,9 @@ def test_extract_ecommerce_detail_rejects_url_like_structured_brand() -> None:
 
 
 @pytest.mark.regression
-def test_extract_ecommerce_detail_backfills_currency_from_url_hint_when_price_exists() -> None:
+def test_extract_ecommerce_detail_backfills_currency_from_url_hint_when_price_exists() -> (
+    None
+):
     html = """
     <html>
       <head>
@@ -398,8 +404,11 @@ def test_extract_ecommerce_detail_from_microdata() -> None:
     assert record["availability"] == "in_stock"
     assert record["_source"] == "microdata"
 
+
 @pytest.mark.regression
-def test_extract_ecommerce_detail_merges_shopify_available_sizes_over_single_jsonld_variant() -> None:
+def test_extract_ecommerce_detail_merges_shopify_available_sizes_over_single_jsonld_variant() -> (
+    None
+):
     html = """
     <html>
       <head>
@@ -615,7 +624,9 @@ def test_extract_ecommerce_detail_from_opengraph() -> None:
 
 
 @pytest.mark.regression
-def test_extract_ecommerce_detail_prefers_localized_jsonld_price_over_state_variants() -> None:
+def test_extract_ecommerce_detail_prefers_localized_jsonld_price_over_state_variants() -> (
+    None
+):
     html = """
     <html>
       <head>
@@ -676,7 +687,9 @@ def test_extract_ecommerce_detail_prefers_localized_jsonld_price_over_state_vari
 
 
 @pytest.mark.regression
-def test_build_detail_record_overrides_default_market_adapter_price_with_visible_local_price() -> None:
+def test_build_detail_record_overrides_default_market_adapter_price_with_visible_local_price() -> (
+    None
+):
     html = """
     <html>
       <head>
@@ -730,7 +743,9 @@ def test_build_detail_record_overrides_default_market_adapter_price_with_visible
 
 
 @pytest.mark.regression
-def test_extract_ecommerce_detail_keeps_page_url_when_opengraph_url_is_site_root() -> None:
+def test_extract_ecommerce_detail_keeps_page_url_when_opengraph_url_is_site_root() -> (
+    None
+):
     html = """
     <html>
       <head>
@@ -804,7 +819,9 @@ def test_extract_ecommerce_detail_ignores_placeholder_same_site_json_ld_url() ->
 
 
 @pytest.mark.regression
-def test_extract_ecommerce_detail_ignores_review_json_ld_title_description_and_images() -> None:
+def test_extract_ecommerce_detail_ignores_review_json_ld_title_description_and_images() -> (
+    None
+):
     html = """
     <html>
       <head>
@@ -850,7 +867,9 @@ def test_extract_ecommerce_detail_ignores_review_json_ld_title_description_and_i
 
 
 @pytest.mark.regression
-def test_extract_ecommerce_detail_ignores_nested_person_name_inside_product_json_ld() -> None:
+def test_extract_ecommerce_detail_ignores_nested_person_name_inside_product_json_ld() -> (
+    None
+):
     html = """
     <html>
       <head>
@@ -1068,8 +1087,7 @@ def test_extract_ecommerce_detail_reads_plain_initial_state_variants() -> None:
     assert record["variant_count"] == 4
     assert {variant["size"] for variant in record["variants"]} == {"S", "M", "L", "XL"}
     assert all(
-        variant.get("availability") == "out_of_stock"
-        for variant in record["variants"]
+        variant.get("availability") == "out_of_stock" for variant in record["variants"]
     )
 
 
@@ -1229,7 +1247,9 @@ def test_extract_ecommerce_detail_category_from_dom_breadcrumb() -> None:
 
 
 @pytest.mark.regression
-def test_extract_ecommerce_detail_dom_breadcrumb_drops_ui_tokens_and_title_suffix() -> None:
+def test_extract_ecommerce_detail_dom_breadcrumb_drops_ui_tokens_and_title_suffix() -> (
+    None
+):
     html = """
     <html>
       <head>
@@ -1348,7 +1368,9 @@ def test_extract_ecommerce_detail_json_ld_breadcrumb_beats_noisy_dom() -> None:
 
 
 @pytest.mark.regression
-def test_reconcile_parent_price_against_variant_range_repairs_lower_parent_price() -> None:
+def test_reconcile_parent_price_against_variant_range_repairs_lower_parent_price() -> (
+    None
+):
     record = {
         "price": "89.00",
         "variants": [
@@ -1393,7 +1415,9 @@ def test_extract_ecommerce_detail_category_drops_terminal_sku() -> None:
 
 
 @pytest.mark.regression
-def test_extract_ecommerce_detail_from_nuxt_payload_with_self_referential_wrapper() -> None:
+def test_extract_ecommerce_detail_from_nuxt_payload_with_self_referential_wrapper() -> (
+    None
+):
     html = """
     <html>
       <head>
@@ -1851,7 +1875,9 @@ def test_extract_ecommerce_detail_drops_low_signal_zero_display_price() -> None:
 
 
 @pytest.mark.regression
-def test_extract_ecommerce_detail_keeps_structured_zero_price_with_authoritative_offer() -> None:
+def test_extract_ecommerce_detail_keeps_structured_zero_price_with_authoritative_offer() -> (
+    None
+):
     html = """
     <html>
       <head>
@@ -1909,7 +1935,9 @@ def test_extract_ecommerce_detail_keeps_raw_json_zero_price() -> None:
 
 
 @pytest.mark.regression
-def test_extract_ecommerce_detail_rejects_collection_url_with_visible_tile_prices() -> None:
+def test_extract_ecommerce_detail_rejects_collection_url_with_visible_tile_prices() -> (
+    None
+):
     html = """
     <html>
       <body>
@@ -2029,7 +2057,9 @@ async def test_myntra_adapter_extracts_detail_media_and_variants() -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.regression
-async def test_myntra_adapter_allows_dom_description_fill_when_detail_payload_is_sparse() -> None:
+async def test_myntra_adapter_allows_dom_description_fill_when_detail_payload_is_sparse() -> (
+    None
+):
     html = """
     <html>
       <head>
@@ -2079,7 +2109,9 @@ async def test_myntra_adapter_allows_dom_description_fill_when_detail_payload_is
 
 
 @pytest.mark.regression
-def test_extract_ecommerce_detail_recovers_variant_axes_from_dom_controls_when_js_state_is_absent() -> None:
+def test_extract_ecommerce_detail_recovers_variant_axes_from_dom_controls_when_js_state_is_absent() -> (
+    None
+):
     html = """
     <html>
       <body>
@@ -2118,7 +2150,9 @@ def test_extract_ecommerce_detail_recovers_variant_axes_from_dom_controls_when_j
 
 
 @pytest.mark.regression
-def test_extract_ecommerce_detail_recovers_dicks_like_size_variants_from_button_grid() -> None:
+def test_extract_ecommerce_detail_recovers_dicks_like_size_variants_from_button_grid() -> (
+    None
+):
     html = """
     <html>
       <body>
@@ -2346,8 +2380,12 @@ def test_extract_ecommerce_detail_recovers_labeled_image_color_swatches() -> Non
 
 
 @pytest.mark.regression
-def test_extract_ecommerce_detail_guarded_dom_cartesian_keeps_axis_rows(monkeypatch: pytest.MonkeyPatch) -> None:
-    from app.services.extract.detail.variants import dom_extraction as detail_dom_variant_extraction
+def test_extract_ecommerce_detail_guarded_dom_cartesian_keeps_axis_rows(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.services.extract.detail.variants import (
+        dom_extraction as detail_dom_variant_extraction,
+    )
 
     monkeypatch.setattr(
         detail_dom_variant_extraction,
@@ -2502,7 +2540,9 @@ def test_extract_ecommerce_detail_rejects_foreign_currency_variants() -> None:
 
 
 @pytest.mark.regression
-def test_extract_ecommerce_detail_ignores_newsletter_fields_inside_size_container() -> None:
+def test_extract_ecommerce_detail_ignores_newsletter_fields_inside_size_container() -> (
+    None
+):
     html = """
     <html>
       <body>
@@ -2534,7 +2574,9 @@ def test_extract_ecommerce_detail_ignores_newsletter_fields_inside_size_containe
 
 
 @pytest.mark.regression
-def test_extract_ecommerce_detail_rejects_promo_and_hex_only_dom_variant_values() -> None:
+def test_extract_ecommerce_detail_rejects_promo_and_hex_only_dom_variant_values() -> (
+    None
+):
     html = """
     <html>
       <body>
@@ -2573,7 +2615,9 @@ def test_extract_ecommerce_detail_rejects_promo_and_hex_only_dom_variant_values(
 
 
 @pytest.mark.regression
-def test_extract_ecommerce_detail_rejects_cookie_disclosure_title_and_description() -> None:
+def test_extract_ecommerce_detail_rejects_cookie_disclosure_title_and_description() -> (
+    None
+):
     html = """
     <html>
       <head><title>Barrow Short-sleeved T-shirt</title></head>
@@ -2613,7 +2657,9 @@ def test_extract_ecommerce_detail_rejects_cookie_disclosure_title_and_descriptio
 
 
 @pytest.mark.regression
-def test_extract_ecommerce_detail_recovers_radio_size_variants_with_stock_availability() -> None:
+def test_extract_ecommerce_detail_recovers_radio_size_variants_with_stock_availability() -> (
+    None
+):
     html = """
     <html>
       <body>
@@ -2659,7 +2705,9 @@ def test_extract_ecommerce_detail_recovers_radio_size_variants_with_stock_availa
 
 
 @pytest.mark.regression
-def test_extract_ecommerce_detail_keeps_supported_dom_variant_axes_and_drops_unknown_axes() -> None:
+def test_extract_ecommerce_detail_keeps_supported_dom_variant_axes_and_drops_unknown_axes() -> (
+    None
+):
     html = """
     <html>
       <body>
@@ -2740,7 +2788,9 @@ def test_extract_ecommerce_detail_keeps_fit_dom_variants() -> None:
 
 
 @pytest.mark.regression
-def test_extract_ecommerce_detail_drops_addon_variant_noise_and_keeps_real_axes() -> None:
+def test_extract_ecommerce_detail_drops_addon_variant_noise_and_keeps_real_axes() -> (
+    None
+):
     html = """
     <html>
       <body>
@@ -2803,7 +2853,9 @@ def test_extract_ecommerce_detail_drops_addon_variant_noise_and_keeps_real_axes(
 
 
 @pytest.mark.regression
-def test_extract_ecommerce_detail_prefers_priced_adapter_variants_over_dom_cartesian_guess() -> None:
+def test_extract_ecommerce_detail_prefers_priced_adapter_variants_over_dom_cartesian_guess() -> (
+    None
+):
     html = """
     <html>
       <body>
@@ -2888,8 +2940,7 @@ def test_extract_ecommerce_detail_prefers_priced_adapter_variants_over_dom_carte
     assert record["variant_count"] == 4
     assert record["color"] == "Carbon Black"
     assert {
-        (row["type"], row["switches"], row["price"])
-        for row in record["variants"]
+        (row["type"], row["switches"], row["price"]) for row in record["variants"]
     } == {
         ("Fully Assembled Knob", "Gateron Jupiter Red", "104.99"),
         ("Fully Assembled Knob", "Gateron Jupiter Brown", "104.99"),
@@ -2899,7 +2950,9 @@ def test_extract_ecommerce_detail_prefers_priced_adapter_variants_over_dom_carte
 
 
 @pytest.mark.regression
-def test_extract_ecommerce_detail_prefers_structured_shopify_variants_over_dom_guess() -> None:
+def test_extract_ecommerce_detail_prefers_structured_shopify_variants_over_dom_guess() -> (
+    None
+):
     html = """
     <html>
       <head>
@@ -3005,8 +3058,7 @@ def test_extract_ecommerce_detail_prefers_structured_shopify_variants_over_dom_g
     assert record["variant_count"] == 4
     assert record["color"] == "Carbon Black"
     assert {
-        (row["type"], row["switches"], row["price"])
-        for row in record["variants"]
+        (row["type"], row["switches"], row["price"]) for row in record["variants"]
     } == {
         ("Fully Assembled Knob", "Gateron Jupiter Red", "104.99"),
         ("Fully Assembled Knob", "Gateron Jupiter Brown", "104.99"),
@@ -3016,7 +3068,9 @@ def test_extract_ecommerce_detail_prefers_structured_shopify_variants_over_dom_g
 
 
 @pytest.mark.regression
-def test_should_collect_dom_variants_keeps_priced_shopify_rows_over_unpriced_dom_guess() -> None:
+def test_should_collect_dom_variants_keeps_priced_shopify_rows_over_unpriced_dom_guess() -> (
+    None
+):
     candidates = {
         "variants": [
             [
@@ -3075,7 +3129,9 @@ def test_should_collect_dom_variants_keeps_priced_shopify_rows_over_unpriced_dom
 
 
 @pytest.mark.regression
-def test_build_detail_record_keeps_raw_priced_variant_rows_over_dom_backfill_guess() -> None:
+def test_build_detail_record_keeps_raw_priced_variant_rows_over_dom_backfill_guess() -> (
+    None
+):
     html = """
     <html>
       <body>
@@ -3166,8 +3222,7 @@ def test_build_detail_record_keeps_raw_priced_variant_rows_over_dom_backfill_gue
     assert record["variant_count"] == 4
     assert record["color"] == "Carbon Black"
     assert {
-        (row["type"], row["switches"], row["price"])
-        for row in record["variants"]
+        (row["type"], row["switches"], row["price"]) for row in record["variants"]
     } == {
         ("Fully Assembled Knob", "Gateron Jupiter Red", "104.99"),
         ("Fully Assembled Knob", "Gateron Jupiter Brown", "104.99"),
@@ -3177,7 +3232,9 @@ def test_build_detail_record_keeps_raw_priced_variant_rows_over_dom_backfill_gue
 
 
 @pytest.mark.regression
-def test_extract_ecommerce_detail_keeps_ifixit_variant_group_local_and_drops_pdp_chrome() -> None:
+def test_extract_ecommerce_detail_keeps_ifixit_variant_group_local_and_drops_pdp_chrome() -> (
+    None
+):
     html = """
     <html>
       <body>
@@ -3402,10 +3459,7 @@ def test_extract_ecommerce_detail_recovers_hidden_anchor_color_swatch_urls() -> 
     )
 
     assert len(rows) == 1
-    assert {
-        (variant["color"], variant["url"])
-        for variant in rows[0]["variants"]
-    } == {
+    assert {(variant["color"], variant["url"]) for variant in rows[0]["variants"]} == {
         (
             "Blush",
             "https://www.fashionnova.com/products/ballpark-tassel-suede-sneakers-blush",
@@ -3490,7 +3544,9 @@ def test_extract_ecommerce_detail_recovers_linked_scent_offer_variants() -> None
 
 @pytest.mark.asyncio
 @pytest.mark.regression
-async def test_shopify_adapter_expands_linked_product_color_handles(monkeypatch) -> None:
+async def test_shopify_adapter_expands_linked_product_color_handles(
+    monkeypatch,
+) -> None:
     html = """
     <html>
       <head><script>Shopify.theme = { "name": "test" };</script></head>
@@ -3567,7 +3623,9 @@ async def test_shopify_adapter_expands_linked_product_color_handles(monkeypatch)
 
 
 @pytest.mark.regression
-def test_extract_ecommerce_detail_recovers_variant_urls_from_js_state_option_mapping() -> None:
+def test_extract_ecommerce_detail_recovers_variant_urls_from_js_state_option_mapping() -> (
+    None
+):
     html = """
     <html>
       <head>
@@ -3681,7 +3739,9 @@ def test_extract_ecommerce_detail_skips_unnamed_dom_variant_groups() -> None:
 
 
 @pytest.mark.regression
-def test_extract_ecommerce_detail_ignores_review_qa_controls_and_payment_icons() -> None:
+def test_extract_ecommerce_detail_ignores_review_qa_controls_and_payment_icons() -> (
+    None
+):
     html = """
     <html>
       <body>
@@ -3763,7 +3823,9 @@ def test_extract_ecommerce_detail_does_not_use_bundle_upsell_as_title() -> None:
 
 
 @pytest.mark.regression
-def test_extract_ecommerce_detail_ignores_sort_filter_and_availability_controls_as_variants() -> None:
+def test_extract_ecommerce_detail_ignores_sort_filter_and_availability_controls_as_variants() -> (
+    None
+):
     html = """
     <html>
       <body>
@@ -3803,7 +3865,9 @@ def test_extract_ecommerce_detail_ignores_sort_filter_and_availability_controls_
 
 
 @pytest.mark.regression
-def test_extract_ecommerce_detail_does_not_treat_etsy_report_radios_as_variants() -> None:
+def test_extract_ecommerce_detail_does_not_treat_etsy_report_radios_as_variants() -> (
+    None
+):
     html = """
     <html>
       <body>
@@ -3847,7 +3911,9 @@ def test_extract_ecommerce_detail_does_not_treat_etsy_report_radios_as_variants(
 
 
 @pytest.mark.regression
-def test_extract_ecommerce_detail_does_not_treat_shipping_country_selector_as_variant_axis() -> None:
+def test_extract_ecommerce_detail_does_not_treat_shipping_country_selector_as_variant_axis() -> (
+    None
+):
     html = """
     <html>
       <body>
@@ -3891,7 +3957,9 @@ def test_extract_ecommerce_detail_does_not_treat_shipping_country_selector_as_va
 
 
 @pytest.mark.regression
-def test_extract_ecommerce_detail_splits_style_and_size_from_compound_select_before_color() -> None:
+def test_extract_ecommerce_detail_splits_style_and_size_from_compound_select_before_color() -> (
+    None
+):
     html = """
     <html>
       <body>
@@ -3930,7 +3998,9 @@ def test_extract_ecommerce_detail_splits_style_and_size_from_compound_select_bef
 
 
 @pytest.mark.regression
-def test_extract_ecommerce_detail_does_not_treat_question_radiogroup_as_size_variants() -> None:
+def test_extract_ecommerce_detail_does_not_treat_question_radiogroup_as_size_variants() -> (
+    None
+):
     html = """
     <html>
       <body>
@@ -3960,7 +4030,9 @@ def test_extract_ecommerce_detail_does_not_treat_question_radiogroup_as_size_var
 
 
 @pytest.mark.regression
-def test_extract_ecommerce_detail_keeps_stronger_js_state_variants_over_dom_fallback() -> None:
+def test_extract_ecommerce_detail_keeps_stronger_js_state_variants_over_dom_fallback() -> (
+    None
+):
     html = """
     <html>
       <body>
@@ -3994,7 +4066,9 @@ def test_extract_ecommerce_detail_keeps_stronger_js_state_variants_over_dom_fall
 
 
 @pytest.mark.regression
-def test_extract_ecommerce_detail_skips_dom_variant_scan_for_rich_structured_variants() -> None:
+def test_extract_ecommerce_detail_skips_dom_variant_scan_for_rich_structured_variants() -> (
+    None
+):
     html = """
     <html>
       <body>
@@ -4049,7 +4123,9 @@ def test_extract_ecommerce_detail_skips_dom_variant_scan_for_rich_structured_var
 
 
 @pytest.mark.regression
-def test_extract_ecommerce_detail_backfills_selected_variant_price_from_record_when_dom_variants_are_sparse() -> None:
+def test_extract_ecommerce_detail_backfills_selected_variant_price_from_record_when_dom_variants_are_sparse() -> (
+    None
+):
     html = """
     <html>
       <body>
@@ -4081,7 +4157,9 @@ def test_extract_ecommerce_detail_backfills_selected_variant_price_from_record_w
 
 
 @pytest.mark.regression
-def test_extract_ecommerce_detail_prunes_single_value_marketing_axes_from_final_variant_record() -> None:
+def test_extract_ecommerce_detail_prunes_single_value_marketing_axes_from_final_variant_record() -> (
+    None
+):
     html = """
     <html>
       <head>
@@ -4135,7 +4213,9 @@ def test_extract_ecommerce_detail_prunes_single_value_marketing_axes_from_final_
 
 
 @pytest.mark.regression
-def test_extract_ecommerce_detail_does_not_duplicate_parent_price_into_variants_when_uniform() -> None:
+def test_extract_ecommerce_detail_does_not_duplicate_parent_price_into_variants_when_uniform() -> (
+    None
+):
     html = """
     <html>
       <head>
@@ -4199,7 +4279,9 @@ def test_extract_ecommerce_detail_does_not_duplicate_parent_price_into_variants_
 
 
 @pytest.mark.regression
-def test_extract_ecommerce_detail_ignores_generic_selector_axis_names_without_semantic_labels() -> None:
+def test_extract_ecommerce_detail_ignores_generic_selector_axis_names_without_semantic_labels() -> (
+    None
+):
     html = """
     <html>
       <body>
@@ -4227,7 +4309,9 @@ def test_extract_ecommerce_detail_ignores_generic_selector_axis_names_without_se
 
 
 @pytest.mark.regression
-def test_extract_ecommerce_detail_infers_unlabeled_select_variants_and_ignores_translate_widget() -> None:
+def test_extract_ecommerce_detail_infers_unlabeled_select_variants_and_ignores_translate_widget() -> (
+    None
+):
     html = """
     <html>
       <body>
@@ -4269,7 +4353,9 @@ def test_extract_ecommerce_detail_infers_unlabeled_select_variants_and_ignores_t
 
 
 @pytest.mark.regression
-def test_extract_ecommerce_detail_keeps_size_axis_when_bad_dom_label_says_color() -> None:
+def test_extract_ecommerce_detail_keeps_size_axis_when_bad_dom_label_says_color() -> (
+    None
+):
     html = """
     <html>
       <head>
@@ -4318,7 +4404,9 @@ def test_extract_ecommerce_detail_keeps_size_axis_when_bad_dom_label_says_color(
 
 
 @pytest.mark.regression
-def test_variant_option_availability_does_not_treat_disabled_control_as_out_of_stock() -> None:
+def test_variant_option_availability_does_not_treat_disabled_control_as_out_of_stock() -> (
+    None
+):
     soup = BeautifulSoup(
         """
         <li class="size disabled selected">
@@ -4340,6 +4428,138 @@ def test_variant_option_availability_does_not_treat_disabled_control_as_out_of_s
 
     assert availability is None
     assert stock_quantity is None
+
+
+@pytest.mark.regression
+def test_variant_option_availability_treats_unselected_disabled_control_as_out_of_stock() -> (
+    None
+):
+    soup = BeautifulSoup(
+        """
+        <button type="button" aria-disabled="true">M 5 / W 6.5</button>
+        """,
+        "html.parser",
+    )
+    node = soup.select_one("button")
+
+    assert node is not None
+    availability, stock_quantity = variant_option_availability(
+        node=node,
+        label_node=None,
+    )
+
+    assert availability == "out_of_stock"
+    assert stock_quantity == 0
+
+    data_disabled_true = BeautifulSoup(
+        '<button type="button" data-disabled="true">M</button>',
+        "html.parser",
+    ).select_one("button")
+
+    assert variant_option_availability(node=data_disabled_true, label_node=None) == (
+        "out_of_stock",
+        0,
+    )
+
+    data_disabled_false = BeautifulSoup(
+        '<button type="button" data-disabled="false">M</button>',
+        "html.parser",
+    ).select_one("button")
+
+    assert variant_option_availability(node=data_disabled_false, label_node=None) == (
+        None,
+        None,
+    )
+
+
+@pytest.mark.regression
+def test_variant_option_availability_reads_data_available_flag() -> None:
+    out_of_stock = BeautifulSoup(
+        '<div data-available="false">XL</div>', "html.parser"
+    ).select_one("div")
+    in_stock = BeautifulSoup(
+        '<div data-available="true">L</div>', "html.parser"
+    ).select_one("div")
+
+    assert variant_option_availability(node=out_of_stock, label_node=None) == (
+        "out_of_stock",
+        0,
+    )
+    assert variant_option_availability(node=in_stock, label_node=None) == (
+        "in_stock",
+        None,
+    )
+
+
+@pytest.mark.regression
+def test_reconciles_belk_style_variant_availability_from_soft_scope() -> None:
+    html = """
+    <html>
+      <body>
+        <main>
+          <h1>Belk Shirt</h1>
+          <div class="pdp-swatch">
+            <button aria-label="Select Black color" value="048001">Black</button>
+          </div>
+          <div class="border-gray-200">
+            <div role="radiogroup" class="grid gap-3">
+              <label><button role="radio" value="10965_S"></button>S</label>
+              <label><button role="radio" value="10970_M" disabled data-disabled=""></button>M</label>
+            </div>
+          </div>
+        </main>
+      </body>
+    </html>
+    """
+
+    rows = extract_detail_records(
+        html,
+        "https://www.belk.com/p/belk-shirt/123.html",
+        "ecommerce_detail",
+        adapter_records=[
+            {
+                "title": "Belk Shirt",
+                "price": "10.00",
+                "image_url": "https://www.belk.com/image.jpg",
+                "availability": "in_stock",
+                "variants": [{"size": "S"}, {"size": "M"}],
+            }
+        ],
+    )
+
+    assert len(rows) == 1
+    variants = rows[0]["variants"]
+    assert variants == [
+        {"size": "S", "availability": "in_stock"},
+        {
+            "size": "M",
+            "availability": "out_of_stock",
+            "stock_quantity": 0,
+        },
+    ]
+
+
+@pytest.mark.regression
+def test_reconciles_nike_artifact_variant_availability_and_labels() -> None:
+    html = read_optional_artifact_text("artifacts/runs/1/pages/1bcb5c849a75b86f.html")
+
+    rows = extract_detail_records(
+        html,
+        "https://www.nike.com/t/air-force-1-07-mens-shoes-jBrhbr/CW2288-111",
+        "ecommerce_detail",
+    )
+
+    assert len(rows) == 1
+    variants = rows[0]["variants"]
+    assert len(variants) == 22
+    assert {row["availability"] for row in variants} == {
+        "in_stock",
+        "out_of_stock",
+    }
+    assert {
+        row["size"] for row in variants if row.get("availability") == "out_of_stock"
+    } == {"M 5 / W 6.5", "M 5.5 / W 7", "M 16 / W 17.5"}
+    assert variants[0]["size"].startswith("M ")
 
 
 @pytest.mark.regression
@@ -4373,7 +4593,9 @@ def test_extract_detail_variants_from_plain_buttons_without_data_attributes() ->
 
 
 @pytest.mark.regression
-def test_extract_automobile_detail_ignores_irrelevant_video_json_ld_when_dom_title_exists() -> None:
+def test_extract_automobile_detail_ignores_irrelevant_video_json_ld_when_dom_title_exists() -> (
+    None
+):
     html = """
     <html>
       <head>
@@ -4458,7 +4680,9 @@ def test_extract_automobile_detail_accepts_vehicle_json_ld_title_and_image() -> 
 
 
 @pytest.mark.regression
-def test_extract_ecommerce_detail_allows_dom_variants_to_fill_weak_js_state_variants() -> None:
+def test_extract_ecommerce_detail_allows_dom_variants_to_fill_weak_js_state_variants() -> (
+    None
+):
     html = """
     <html>
       <head>
@@ -4512,7 +4736,9 @@ def test_extract_ecommerce_detail_allows_dom_variants_to_fill_weak_js_state_vari
 
 
 @pytest.mark.regression
-def test_extract_ecommerce_detail_merges_deduped_additional_images_across_js_state_and_dom() -> None:
+def test_extract_ecommerce_detail_merges_deduped_additional_images_across_js_state_and_dom() -> (
+    None
+):
     html = """
     <html>
       <head>
@@ -4658,7 +4884,9 @@ def test_build_detail_record_collapses_semicolon_image_resize_duplicates() -> No
         ],
     )
 
-    assert record["image_url"].endswith("4900964_sd.jpg;maxHeight=1080;maxWidth=900?format=webp")
+    assert record["image_url"].endswith(
+        "4900964_sd.jpg;maxHeight=1080;maxWidth=900?format=webp"
+    )
     assert record["additional_images"] == [
         (
             "https://pisces.bbystatic.com/image2/BestBuy_US/images/products/"
@@ -4668,7 +4896,9 @@ def test_build_detail_record_collapses_semicolon_image_resize_duplicates() -> No
 
 
 @pytest.mark.regression
-def test_extract_detail_keeps_dom_images_live_when_structured_data_only_has_primary_image() -> None:
+def test_extract_detail_keeps_dom_images_live_when_structured_data_only_has_primary_image() -> (
+    None
+):
     html = """
     <html>
       <head>
@@ -4724,7 +4954,9 @@ def test_extract_detail_keeps_dom_images_live_when_structured_data_only_has_prim
 
 
 @pytest.mark.regression
-def test_extract_ecommerce_detail_prefers_full_dom_description_and_keeps_product_details_separate() -> None:
+def test_extract_ecommerce_detail_prefers_full_dom_description_and_keeps_product_details_separate() -> (
+    None
+):
     html = """
     <html>
       <head>
@@ -4791,7 +5023,9 @@ def test_extract_ecommerce_detail_prefers_full_dom_description_and_keeps_product
 
 
 @pytest.mark.regression
-def test_extract_ecommerce_detail_keeps_dom_tier_live_for_product_details_without_requested_fields() -> None:
+def test_extract_ecommerce_detail_keeps_dom_tier_live_for_product_details_without_requested_fields() -> (
+    None
+):
     html = """
     <html>
       <head>
@@ -4890,7 +5124,9 @@ def test_extract_ecommerce_detail_dedupes_next_image_proxy_duplicates() -> None:
 
 
 @pytest.mark.regression
-def test_extract_ecommerce_detail_keeps_real_description_when_dom_sections_only_see_tabs() -> None:
+def test_extract_ecommerce_detail_keeps_real_description_when_dom_sections_only_see_tabs() -> (
+    None
+):
     html = """
     <html>
       <head>
@@ -4946,7 +5182,9 @@ def test_extract_ecommerce_detail_keeps_real_description_when_dom_sections_only_
 
 
 @pytest.mark.regression
-def test_extract_ecommerce_detail_maps_anchor_hash_product_description_upstream() -> None:
+def test_extract_ecommerce_detail_maps_anchor_hash_product_description_upstream() -> (
+    None
+):
     html = """
     <html>
       <head>
@@ -5140,7 +5378,9 @@ def test_extract_ecommerce_detail_maps_zara_composition_block_to_materials() -> 
 
 
 @pytest.mark.regression
-def test_extract_detail_keeps_requested_custom_dom_sections_live_past_structured_early_exit() -> None:
+def test_extract_detail_keeps_requested_custom_dom_sections_live_past_structured_early_exit() -> (
+    None
+):
     html = """
     <html>
       <head>
@@ -5195,7 +5435,9 @@ def test_extract_detail_keeps_requested_custom_dom_sections_live_past_structured
 
 
 @pytest.mark.regression
-def test_extract_detail_matches_exact_requested_section_label_without_collapsing_it() -> None:
+def test_extract_detail_matches_exact_requested_section_label_without_collapsing_it() -> (
+    None
+):
     html = """
     <html>
       <head>
@@ -5406,7 +5648,9 @@ def test_extract_detail_keeps_nike_record_when_canonical_drops_style_code() -> N
 
 
 @pytest.mark.regression
-def test_extract_detail_keeps_shopify_collection_detail_when_canonical_collapses_path() -> None:
+def test_extract_detail_keeps_shopify_collection_detail_when_canonical_collapses_path() -> (
+    None
+):
     requested_url = (
         "https://kith.com/collections/mens-footwear-sneakers/products/st40002-02000"
     )
@@ -5481,7 +5725,9 @@ def test_extract_detail_corrects_host_currency_hint_integer_cent_price() -> None
 
 
 @pytest.mark.regression
-def test_extract_detail_keeps_decimal_price_when_currency_conflicts_with_host_hint() -> None:
+def test_extract_detail_keeps_decimal_price_when_currency_conflicts_with_host_hint() -> (
+    None
+):
     html = """
     <html>
       <head>
@@ -5511,7 +5757,9 @@ def test_extract_detail_keeps_decimal_price_when_currency_conflicts_with_host_hi
 
 
 @pytest.mark.regression
-def test_extract_detail_does_not_backfill_low_signal_price_after_currency_conflict() -> None:
+def test_extract_detail_does_not_backfill_low_signal_price_after_currency_conflict() -> (
+    None
+):
     html = """
     <html>
       <head>
@@ -5546,7 +5794,9 @@ def test_extract_detail_does_not_backfill_low_signal_price_after_currency_confli
 
 
 @pytest.mark.regression
-def test_repair_ecommerce_detail_replaces_mismatched_title_when_slug_evidence_matches() -> None:
+def test_repair_ecommerce_detail_replaces_mismatched_title_when_slug_evidence_matches() -> (
+    None
+):
     record = {
         "title": "Yonder Jr. 600 mL / 20 oz Water Bottle",
         "price": "25.00",
@@ -5579,7 +5829,9 @@ def test_detail_title_prime_is_not_promoted_when_supported_by_url() -> None:
 
 
 @pytest.mark.regression
-def test_detail_title_prime_is_not_promoted_when_supported_by_terminal_slug_tokens() -> None:
+def test_detail_title_prime_is_not_promoted_when_supported_by_terminal_slug_tokens() -> (
+    None
+):
     assert not title_needs_promotion(
         "Prime",
         page_url="https://example.com/products/prime-day-shirt",
@@ -5672,7 +5924,9 @@ def test_extract_detail_cleans_tracking_pixels_and_video_thumbs_from_images() ->
 
 
 @pytest.mark.regression
-def test_build_detail_record_runs_dom_tier_when_authoritative_record_has_no_images() -> None:
+def test_build_detail_record_runs_dom_tier_when_authoritative_record_has_no_images() -> (
+    None
+):
     html = """
     <html>
       <body>
@@ -5706,7 +5960,9 @@ def test_build_detail_record_runs_dom_tier_when_authoritative_record_has_no_imag
 
 
 @pytest.mark.regression
-def test_extract_ecommerce_detail_prunes_irrelevant_nested_related_products_from_structured_data() -> None:
+def test_extract_ecommerce_detail_prunes_irrelevant_nested_related_products_from_structured_data() -> (
+    None
+):
     html = """
     <html>
       <head>
@@ -5756,7 +6012,9 @@ def test_extract_ecommerce_detail_prunes_irrelevant_nested_related_products_from
 
 
 @pytest.mark.regression
-def test_build_detail_record_drops_related_rows_and_keeps_canonicalized_variant_axes() -> None:
+def test_build_detail_record_drops_related_rows_and_keeps_canonicalized_variant_axes() -> (
+    None
+):
     record = build_detail_record(
         "<html><body><main><h1>Going Coconuts</h1></main></body></html>",
         "https://colourpop.com/products/going-coconuts-eyeshadow-palette",
@@ -5792,7 +6050,9 @@ def test_build_detail_record_drops_related_rows_and_keeps_canonicalized_variant_
 
 
 @pytest.mark.regression
-def test_build_detail_record_sanitizes_cross_sell_images_placeholder_variants_and_legal_tail() -> None:
+def test_build_detail_record_sanitizes_cross_sell_images_placeholder_variants_and_legal_tail() -> (
+    None
+):
     html = "<html><body><main><h1>Black Seascape Stretch Bracelet</h1></main></body></html>"
 
     record = build_detail_record(
@@ -5872,7 +6132,9 @@ def test_build_detail_record_sanitizes_cross_sell_images_placeholder_variants_an
 
 
 @pytest.mark.regression
-def test_build_detail_record_drops_v6_widget_fulfillment_and_variant_scalar_noise() -> None:
+def test_build_detail_record_drops_v6_widget_fulfillment_and_variant_scalar_noise() -> (
+    None
+):
     record = build_detail_record(
         "<html><body><main><h1>V6 Test Sneaker</h1></main></body></html>",
         "https://www.example.com/products/v6-test-sneaker",
@@ -5896,7 +6158,9 @@ def test_build_detail_record_drops_v6_widget_fulfillment_and_variant_scalar_nois
 
 
 @pytest.mark.regression
-def test_build_detail_record_drops_v6_generic_title_cross_product_text_and_ad_product_type() -> None:
+def test_build_detail_record_drops_v6_generic_title_cross_product_text_and_ad_product_type() -> (
+    None
+):
     record = build_detail_record(
         "<html><body><main><h1>Calvin Klein Bernard Lace-Up Oxfords</h1></main></body></html>",
         "https://www.macys.com/shop/product/calvin-klein-mens-bernard-lace-up-oxfords?ID=12345",
@@ -5938,8 +6202,11 @@ def test_build_detail_record_drops_v6_target_fulfillment_description() -> None:
 
     assert "description" not in record
 
+
 @pytest.mark.regression
-def test_build_detail_record_rejects_audit_artifact_candidates_before_selection() -> None:
+def test_build_detail_record_rejects_audit_artifact_candidates_before_selection() -> (
+    None
+):
     record = build_detail_record(
         "<html><body><main><h1>Audit Widget</h1><img src='/widget.jpg'></main></body></html>",
         "https://example.com/products/audit-widget",
@@ -6007,7 +6274,9 @@ def test_build_detail_record_rejects_structural_identity_artifacts() -> None:
 
 
 @pytest.mark.regression
-def test_build_detail_record_trims_long_text_ui_tail_when_product_copy_remains() -> None:
+def test_build_detail_record_trims_long_text_ui_tail_when_product_copy_remains() -> (
+    None
+):
     record = build_detail_record(
         "<html><body><main><h1>Cotton Shirt</h1></main></body></html>",
         "https://example.com/products/cotton-shirt",
@@ -6028,7 +6297,9 @@ def test_build_detail_record_trims_long_text_ui_tail_when_product_copy_remains()
 
 
 @pytest.mark.regression
-def test_build_detail_record_drops_duplicate_specifications_and_materials_ui_labels() -> None:
+def test_build_detail_record_drops_duplicate_specifications_and_materials_ui_labels() -> (
+    None
+):
     record = build_detail_record(
         "<html><body><main><h1>Linen Jacket</h1></main></body></html>",
         "https://example.com/products/linen-jacket",
@@ -6060,8 +6331,7 @@ def test_build_detail_record_dedupes_repeated_material_weight_tail() -> None:
             {
                 "title": "Wrangler Jeans",
                 "materials": (
-                    "78% Cotton, 20% Recycled Cotton, 2% Spandex; "
-                    "11.25 oz. 11.25 oz."
+                    "78% Cotton, 20% Recycled Cotton, 2% Spandex; 11.25 oz. 11.25 oz."
                 ),
             }
         ],
@@ -6127,7 +6397,9 @@ def test_build_detail_record_keeps_valid_candidates_after_candidate_gate() -> No
 
 
 @pytest.mark.regression
-def test_build_detail_record_preserves_integral_price_magnitude_without_cent_context() -> None:
+def test_build_detail_record_preserves_integral_price_magnitude_without_cent_context() -> (
+    None
+):
     cases = [
         (
             "https://in.puma.com/in/en/pd/deviate-nitro-elite-4-run-club-mens-road-running-shoes/312907",
@@ -6195,7 +6467,9 @@ def test_extract_detail_preserves_visible_integer_price_magnitude() -> None:
 
 
 @pytest.mark.regression
-def test_extract_detail_prefers_visible_decimal_shift_price_over_integral_jsonld() -> None:
+def test_extract_detail_prefers_visible_decimal_shift_price_over_integral_jsonld() -> (
+    None
+):
     rows = extract_records(
         """
         <html>
@@ -6221,7 +6495,9 @@ def test_extract_detail_prefers_visible_decimal_shift_price_over_integral_jsonld
 
 
 @pytest.mark.regression
-def test_build_detail_record_rejects_broken_extensionless_transformed_image_urls() -> None:
+def test_build_detail_record_rejects_broken_extensionless_transformed_image_urls() -> (
+    None
+):
     record = build_detail_record(
         "<html><body><main><h1>Adidas Samba OG Shoes</h1></main></body></html>",
         "https://www.zappos.com/p/adidas-samba-og/product/12345",
@@ -6387,7 +6663,9 @@ def test_build_detail_record_drops_polluted_parent_size_option_list() -> None:
 
 
 @pytest.mark.regression
-def test_build_detail_record_drops_numeric_parent_color_when_variants_have_labels() -> None:
+def test_build_detail_record_drops_numeric_parent_color_when_variants_have_labels() -> (
+    None
+):
     record = build_detail_record(
         "<html><body><main><h1>Tommy Hilfiger Mens Hiday Casualized Hybrid Oxfords</h1></main></body></html>",
         "https://www.macys.com/shop/product/tommy-hilfiger-mens-hiser-casualized-hybrid-oxfords?ID=19526232",
@@ -6431,7 +6709,9 @@ def test_extract_detail_rejects_same_url_model_number_title_mismatch() -> None:
 
 
 @pytest.mark.regression
-def test_extract_detail_accepts_same_url_model_code_when_record_identity_matches() -> None:
+def test_extract_detail_accepts_same_url_model_code_when_record_identity_matches() -> (
+    None
+):
     requested_url = (
         "https://www.kitchenaid.com/countertop-appliances/food-processors/"
         "processors/p.13-cup-food-processor.KFP1318CU.html"
@@ -6631,7 +6911,9 @@ def test_extract_detail_corrects_100x_structured_price_from_visible_dom_price() 
 
 
 @pytest.mark.regression
-def test_build_detail_record_corrects_parent_price_from_variant_magnitude_match() -> None:
+def test_build_detail_record_corrects_parent_price_from_variant_magnitude_match() -> (
+    None
+):
     record = build_detail_record(
         "<html><body><main><h1>Road Running Shoes</h1></main></body></html>",
         "https://example.com/products/road-running-shoes",
@@ -6869,7 +7151,9 @@ def test_build_detail_record_strips_review_copy_from_color_scalar() -> None:
 
 
 @pytest.mark.regression
-def test_build_detail_record_drops_polluted_parent_color_dump_when_variants_are_cleaner() -> None:
+def test_build_detail_record_drops_polluted_parent_color_dump_when_variants_are_cleaner() -> (
+    None
+):
     record = build_detail_record(
         "<html><body><main><h1>Rambler 8 oz Stackable Cup</h1></main></body></html>",
         "https://www.yeti.com/drinkware/tumblers/21071507376.html",
@@ -6900,7 +7184,9 @@ def test_build_detail_record_drops_polluted_parent_color_dump_when_variants_are_
 
 
 @pytest.mark.regression
-def test_build_detail_record_prefers_dom_sizes_over_existing_color_only_variants() -> None:
+def test_build_detail_record_prefers_dom_sizes_over_existing_color_only_variants() -> (
+    None
+):
     html = """
     <html>
       <body>
@@ -6999,6 +7285,7 @@ def test_build_detail_record_backfills_shared_variant_image_and_availability() -
     assert "image_url" not in record["variants"][0]
     assert record["variants"][1]["availability"] == "out_of_stock"
 
+
 @pytest.mark.regression
 def test_build_detail_record_repairs_nike_uuid_variant_skus_and_empty_prices() -> None:
     record = build_detail_record(
@@ -7033,7 +7320,9 @@ def test_build_detail_record_repairs_nike_uuid_variant_skus_and_empty_prices() -
 
 
 @pytest.mark.regression
-def test_build_detail_record_replaces_feature_duplicate_description_with_details() -> None:
+def test_build_detail_record_replaces_feature_duplicate_description_with_details() -> (
+    None
+):
     record = build_detail_record(
         "<html><body><main><h1>Scotch Heavy Duty Shipping Packaging Tape</h1></main></body></html>",
         "https://www.samsclub.com/ip/scotch-heavy-duty-shipping-packaging-tape-dispensers-6-pack/5113185138",
@@ -7099,7 +7388,9 @@ def test_build_detail_record_backfills_price_from_buy_button_aria_label() -> Non
 
 
 @pytest.mark.regression
-def test_build_detail_record_repairs_shopify_cent_variant_prices_and_numeric_titles() -> None:
+def test_build_detail_record_repairs_shopify_cent_variant_prices_and_numeric_titles() -> (
+    None
+):
     record = build_detail_record(
         "<html><body><main><h1>SATISFY TheROCKER - Jet Black</h1></main></body></html>",
         "https://kith.com/collections/mens-footwear-sneakers/products/st40002-02000",
@@ -7395,7 +7686,9 @@ def test_extract_detail_ignores_variant_leaf_jsonld_scalars_for_base_request() -
 
 
 @pytest.mark.regression
-def test_extract_detail_backfills_current_price_variants_and_strips_unavailable_suffixes() -> None:
+def test_extract_detail_backfills_current_price_variants_and_strips_unavailable_suffixes() -> (
+    None
+):
     html = """
     <html>
       <body>
@@ -7447,6 +7740,7 @@ def test_extract_detail_backfills_current_price_variants_and_strips_unavailable_
     assert record["price"] == "100.00"
     assert record["variants"][0]["size"] == "12.5"
     assert "price" not in record["variants"][0]
+
 
 @pytest.mark.regression
 def test_extract_detail_rejects_asos_mixed_product_identity_record() -> None:
@@ -7518,7 +7812,9 @@ def test_extract_ecommerce_detail_recovers_ulta_swatch_variants_from_artifact() 
 
 
 @pytest.mark.regression
-def test_extract_ecommerce_detail_recovers_jd_size_button_variants_from_artifact() -> None:
+def test_extract_ecommerce_detail_recovers_jd_size_button_variants_from_artifact() -> (
+    None
+):
     html = read_optional_artifact_text("artifacts/runs/1/pages/c4ab41de0cea1a3a.html")
 
     rows = extract_records(
@@ -7535,7 +7831,9 @@ def test_extract_ecommerce_detail_recovers_jd_size_button_variants_from_artifact
 
 
 @pytest.mark.regression
-def test_extract_ecommerce_detail_preserves_zadig_js_state_variants_from_artifact() -> None:
+def test_extract_ecommerce_detail_preserves_zadig_js_state_variants_from_artifact() -> (
+    None
+):
     html = read_optional_artifact_text("artifacts/runs/1/pages/0ed7c0adb54a6d56.html")
 
     rows = extract_records(
@@ -7552,7 +7850,9 @@ def test_extract_ecommerce_detail_preserves_zadig_js_state_variants_from_artifac
 
 
 @pytest.mark.regression
-def test_extract_ecommerce_detail_recovers_toddsnyder_component_size_variants_from_artifact() -> None:
+def test_extract_ecommerce_detail_recovers_toddsnyder_component_size_variants_from_artifact() -> (
+    None
+):
     html = read_optional_artifact_text("artifacts/runs/1/pages/3f9356011b5bfe4f.html")
 
     rows = extract_records(
@@ -7566,8 +7866,7 @@ def test_extract_ecommerce_detail_recovers_toddsnyder_component_size_variants_fr
     assert len(rows) == 1
     variants = rows[0]["variants"]
     assert any(
-        row.get("style") == "Jacket" and row.get("size") == "36R"
-        for row in variants
+        row.get("style") == "Jacket" and row.get("size") == "36R" for row in variants
     )
     assert any(
         row.get("style") in {"Trouser", "Pant"} and row.get("size") == "28/32"
@@ -7664,7 +7963,9 @@ def test_build_detail_record_prefers_dom_description_over_cut_off_meta_copy() ->
 
 
 @pytest.mark.regression
-def test_build_detail_record_drops_cut_off_description_without_complete_source() -> None:
+def test_build_detail_record_drops_cut_off_description_without_complete_source() -> (
+    None
+):
     record = build_detail_record(
         """
         <html>
@@ -7688,7 +7989,9 @@ def test_build_detail_record_drops_cut_off_description_without_complete_source()
 
 
 @pytest.mark.regression
-def test_build_detail_record_prefers_js_state_html_description_over_truncated_json_ld() -> None:
+def test_build_detail_record_prefers_js_state_html_description_over_truncated_json_ld() -> (
+    None
+):
     html = """
     <html>
       <head>
@@ -7863,7 +8166,9 @@ def test_extract_ecommerce_detail_prefers_displayvalue_for_variant_sizes() -> No
 
 
 @pytest.mark.regression
-def test_extract_ecommerce_detail_derives_wrangler_size_length_from_variant_urls() -> None:
+def test_extract_ecommerce_detail_derives_wrangler_size_length_from_variant_urls() -> (
+    None
+):
     html = """
     <html>
       <body>
@@ -7944,7 +8249,10 @@ def test_extract_ecommerce_detail_derives_wrangler_size_length_from_variant_urls
     assert rows
     record = rows[0]
     assert record["variant_count"] == 8
-    assert {(variant["color"], variant["size"], variant["length"]) for variant in record["variants"]} == {
+    assert {
+        (variant["color"], variant["size"], variant["length"])
+        for variant in record["variants"]
+    } == {
         ("Huxley", "28", "30"),
         ("Huxley", "28", "32"),
         ("Huxley", "30", "30"),
@@ -8172,10 +8480,7 @@ def test_extract_ecommerce_detail_captures_nautica_swatchanchor_variants() -> No
     assert rows
     record = rows[0]
     assert record["variant_count"] == 6
-    assert {
-        (variant["color"], variant["size"])
-        for variant in record["variants"]
-    } == {
+    assert {(variant["color"], variant["size"]) for variant in record["variants"]} == {
         ("Angel Blue", "XS"),
         ("Angel Blue", "S"),
         ("Angel Blue", "M"),
@@ -8186,7 +8491,9 @@ def test_extract_ecommerce_detail_captures_nautica_swatchanchor_variants() -> No
 
 
 @pytest.mark.regression
-def test_extract_ecommerce_detail_keeps_public_size_color_axes_only_for_herman_style_fieldsets() -> None:
+def test_extract_ecommerce_detail_keeps_public_size_color_axes_only_for_herman_style_fieldsets() -> (
+    None
+):
     html = read_optional_artifact_text("tests/fixtures/herman_miller_aeron.html")
 
     rows = extract_records(
@@ -8213,7 +8520,9 @@ def test_extract_ecommerce_detail_keeps_public_size_color_axes_only_for_herman_s
 
 
 @pytest.mark.regression
-def test_extract_ecommerce_detail_ignores_embedded_json_feature_flags_and_size_rows() -> None:
+def test_extract_ecommerce_detail_ignores_embedded_json_feature_flags_and_size_rows() -> (
+    None
+):
     html = """
     <html>
       <head>
@@ -8358,7 +8667,9 @@ def test_normalize_variant_record_does_not_fold_size_token_into_color() -> None:
 
 
 @pytest.mark.regression
-def test_normalize_variant_record_infers_single_variant_size_from_title_tokens() -> None:
+def test_normalize_variant_record_infers_single_variant_size_from_title_tokens() -> (
+    None
+):
     record = {
         "title": "Arizona Sandal - EU 42",
         "url": "https://www.birkenstock.com/us/arizona-birko-flor/arizona-core-birkoflor-0-eva-u_1.html",
@@ -8380,7 +8691,9 @@ def test_normalize_variant_record_infers_single_variant_size_from_title_tokens()
 
 
 @pytest.mark.regression
-def test_extract_ecommerce_detail_reads_scalar_size_from_two_span_label_value_row() -> None:
+def test_extract_ecommerce_detail_reads_scalar_size_from_two_span_label_value_row() -> (
+    None
+):
     html = """
     <html>
       <body>
@@ -8410,10 +8723,10 @@ def test_extract_ecommerce_detail_reads_scalar_size_from_two_span_label_value_ro
 
 
 @pytest.mark.regression
-def test_extract_detail_ignores_nordstrom_sold_out_gift_option_price_from_artifact() -> None:
-    html = read_optional_artifact_text(
-        "artifacts/runs/1/pages/9192dbfda15a2ac3.html"
-    )
+def test_extract_detail_ignores_nordstrom_sold_out_gift_option_price_from_artifact() -> (
+    None
+):
+    html = read_optional_artifact_text("artifacts/runs/1/pages/9192dbfda15a2ac3.html")
     rows = extract_records(
         html,
         "https://www.nordstrom.com/s/nike-air-force-1-07-basketball-sneaker-men/7507996",
@@ -8475,7 +8788,9 @@ def test_extract_detail_recovers_end_option_variants_from_artifact() -> None:
 
 
 @pytest.mark.regression
-def test_extract_detail_recovers_asos_stock_price_and_size_variants_from_artifact() -> None:
+def test_extract_detail_recovers_asos_stock_price_and_size_variants_from_artifact() -> (
+    None
+):
     html = read_optional_artifact_text("artifacts/runs/1/pages/db1fce245d2380a5.html")
     rows = extract_records(
         html,
@@ -8497,7 +8812,9 @@ def test_extract_detail_recovers_asos_stock_price_and_size_variants_from_artifac
         "US 14",
         "US 24",
     }
-    assert any(variant.get("availability") == "in_stock" for variant in record["variants"])
+    assert any(
+        variant.get("availability") == "in_stock" for variant in record["variants"]
+    )
 
 
 @pytest.mark.regression
@@ -8519,11 +8836,15 @@ def test_extract_detail_recovers_ssense_next_f_size_variants_from_artifact() -> 
         "L",
         "XL",
     }
-    assert all(variant.get("availability") == "out_of_stock" for variant in record["variants"])
+    assert all(
+        variant.get("availability") == "out_of_stock" for variant in record["variants"]
+    )
 
 
 @pytest.mark.regression
-def test_extract_detail_recovers_carhartt_ng_state_variant_matrix_rows_from_artifact() -> None:
+def test_extract_detail_recovers_carhartt_ng_state_variant_matrix_rows_from_artifact() -> (
+    None
+):
     html = read_optional_artifact_text("artifacts/runs/11/pages/9d986b49e5c2fb5d.html")
     rows = extract_records(
         html,

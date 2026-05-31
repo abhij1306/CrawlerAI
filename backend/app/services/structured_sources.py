@@ -73,7 +73,7 @@ def parse_json_ld(soup: BeautifulSoup) -> list[dict[str, Any]]:
             rows.extend(json_ld_candidates(json.loads(raw)))
         except json.JSONDecodeError:
             continue
-    return sorted(rows, key=lambda node: _json_ld_node_priority(node))
+    return sorted(rows, key=_json_ld_node_priority)
 
 
 def json_ld_candidates(value: Any) -> list[dict[str, Any]]:
@@ -104,7 +104,7 @@ def _resolve_json_ld_graph(graph: list[Any]) -> list[dict[str, Any]]:
     ]
     return sorted(
         resolved,
-        key=lambda node: _json_ld_node_priority(node),
+        key=_json_ld_node_priority,
     )
 
 

@@ -2,14 +2,9 @@ from __future__ import annotations
 # ruff: noqa: F401,F403,F405
 
 import logging
-import re
-from decimal import Decimal, InvalidOperation
-from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from typing import Any
 
-import jmespath
-from bs4 import BeautifulSoup
-from glom import GlomError, glom  # type: ignore[import-untyped]
+from glom import glom  # type: ignore[import-untyped]
 
 from app.services.config.js_state_field_specs import (
     JS_STATE_PRODUCT_PAYLOAD_LIMIT,

@@ -1,0 +1,24 @@
+Explain this crawl run. Use only the evidence below.
+
+URL: $url
+Surface: $surface
+Verdict: $verdict
+
+High-value fields requested/expected: $high_value_fields_json
+
+Run trace (acquire timeline + extraction tiers + skip-DOM decision + field provenance):
+$run_trace_json
+
+Audit flags already raised (symptom -> invariant -> owning file):
+$flags_json
+
+Persisted record fields (values redacted to presence only where large):
+$record_fields_json
+
+HTML snippet (truncated):
+$html_snippet
+
+Produce the JSON diagnosis described in the system prompt. Focus on:
+1. Where each high-value field came from (map field -> source tier).
+2. Why any missing high-value field is missing.
+3. The single most likely root cause, tied to a flag/owner file when one applies.

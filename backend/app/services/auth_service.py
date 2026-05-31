@@ -6,7 +6,6 @@ import logging
 from app.core.config import (
     admin_password_strength_issues,
     load_admin_bootstrap_settings,
-    settings,  # noqa: F401
 )
 from app.core.security import (
     create_access_token,

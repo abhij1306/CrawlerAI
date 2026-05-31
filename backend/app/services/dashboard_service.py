@@ -239,7 +239,8 @@ async def _reset_crawl_runtime_state() -> dict:
     legacy_artifacts_dir = BASE_DIR / "artifacts"
     artifacts_dir = Path(settings.artifacts_dir).resolve()
     if (
-        artifacts_dir.is_relative_to(PROJECT_ROOT.resolve())
+        not _looks_like_test_artifacts_dir(artifacts_dir)
+        and artifacts_dir.is_relative_to(PROJECT_ROOT.resolve())
         and legacy_artifacts_dir.resolve() != artifacts_dir
     ):
         artifacts_removed += _reset_directory(legacy_artifacts_dir, create_if_missing=False)
@@ -249,6 +250,10 @@ async def _reset_crawl_runtime_state() -> dict:
         "cookies_removed": cookies_removed,
         "knowledge_base_reset": False,
     }
+
+
+def _looks_like_test_artifacts_dir(path: Path) -> bool:
+    return any(str(part).startswith(".pytest") for part in path.parts)
 
 
 async def _reset_domain_memory_runtime_state() -> dict:

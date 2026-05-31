@@ -1025,6 +1025,103 @@ async def test_process_single_url_runs_adapter_against_browser_artifact_fragment
 
 @pytest.mark.asyncio
 @pytest.mark.regression
+async def test_process_single_url_runs_adapter_against_network_payloads(
+    db_session: AsyncSession,
+    test_user,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run = await create_crawl_run(
+        db_session,
+        test_user.id,
+        {
+            "run_type": "crawl",
+            "url": "https://www.belk.com/p/example-pants/3200645HC01000.html",
+            "surface": "ecommerce_detail",
+            "settings": {"respect_robots_txt": False},
+        },
+    )
+
+    payload_body = {
+        "utag_data": {
+            "product_name": ["Example Pants"],
+            "product_url": [
+                "https://www.belk.com/p/example-pants/3200645HC01000.html"
+            ],
+            "sku_id": ["0438651111111"],
+            "sku_upc": ["0019783000001"],
+        }
+    }
+
+    @_as_async
+    def _fake_acquire(request):
+        return _fake_acquire_result(
+            request,
+            html="<html><body><h1>Example Pants</h1></body></html>",
+            method="browser",
+            network_payloads=[
+                {
+                    "url": "https://www.belk.com/_next/payload",
+                    "content_type": "text/x-component",
+                    "body": payload_body,
+                }
+            ],
+        )
+
+    @_as_async
+    def _fake_run_adapter(url, html, surface):
+        del url, surface
+        if "utag_data" not in html:
+            return None
+        return AdapterResult(
+            records=[
+                {
+                    "title": "Example Pants",
+                    "url": "https://www.belk.com/p/example-pants/3200645HC01000.html",
+                    "variants": [{"sku": "0438651111111", "barcode": "0019783000001"}],
+                    "variant_count": 1,
+                    "_source": "belk_adapter",
+                }
+            ],
+            source_type="belk_adapter",
+            adapter_name="belk",
+        )
+
+    @_as_async
+    def _no_selector_rules(*args, **kwargs):
+        del args, kwargs
+        return []
+
+    def _fake_extract_records(*args, **kwargs):
+        return list(kwargs.get("adapter_records") or [])
+
+    @_as_async
+    def _persist_artifacts(**kwargs):
+        del kwargs
+        return "artifacts/belk.html"
+
+    monkeypatch.setattr("app.services.pipeline.extraction_loop.acquire", _fake_acquire)
+    monkeypatch.setattr("app.services.pipeline.extraction_loop.run_adapter", _fake_run_adapter)
+    monkeypatch.setattr(
+        "app.services.pipeline.extraction_loop.load_domain_selector_rules", _no_selector_rules
+    )
+    monkeypatch.setattr(
+        "app.services.pipeline.extraction_loop.extract_records", _fake_extract_records
+    )
+    monkeypatch.setattr(
+        "app.services.pipeline.extraction_loop.persist_acquisition_artifacts",
+        _persist_artifacts,
+    )
+
+    result = await process_single_url(db_session, run, run.url)
+
+    assert result.url_metrics["adapter_name"] == "belk"
+    assert result.records[0]["variants"] == [
+        {"sku": "0438651111111", "barcode": "0019783000001"}
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
 async def test_process_single_url_skips_redundant_adapter_artifacts_when_main_html_sufficient(
     db_session: AsyncSession,
     test_user,

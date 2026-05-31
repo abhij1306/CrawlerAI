@@ -389,7 +389,16 @@ def _infer_brand(
 
 
 def _is_belk_source(*values: object) -> bool:
-    return "belk.com" in " ".join(str(value or "") for value in values).casefold()
+    return any(_host_is_belk(value) for value in values)
+
+
+def _host_is_belk(value: object) -> bool:
+    raw = str(value or "").strip().casefold()
+    if not raw:
+        return False
+    netloc = urlsplit(raw if "://" in raw else f"//{raw}").netloc
+    host = netloc.rsplit("@", 1)[-1].split(":", 1)[0].removeprefix("www.")
+    return host == "belk.com" or host.endswith(".belk.com")
 
 
 def _url_path_text(value: object) -> str:

@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import json
-from json import loads as parse_json
 from urllib.parse import urljoin, urlparse
 
 from app.services.adapters.base import AdapterResult, BaseAdapter, adapter_host_matches
@@ -34,7 +33,7 @@ class WalmartAdapter(BaseAdapter):
         node = soup.select_one("script#__NEXT_DATA__")
         if node and node.string:
             try:
-                return parse_json(node.string)
+                return json.loads(node.string)
             except json.JSONDecodeError:
                 pass
         return {}

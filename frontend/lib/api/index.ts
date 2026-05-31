@@ -47,6 +47,7 @@ import type {
   LlmCostLogRecord,
   InAppNotification,
   PlaygroundSessionResponse,
+  RunObservability,
 } from './types';
 
 function withQuery(path: string, query: URLSearchParams) {
@@ -145,6 +146,8 @@ export const api = {
   },
   getRecordProvenance: (recordId: number) =>
     apiClient.get<CrawlRecordProvenance>(`/api/records/${recordId}/provenance`),
+  getRunObservability: (runId: number) =>
+    apiClient.get<RunObservability>(`/api/runs/${runId}/observability`),
   getCrawlLogs: (runId: number, params?: { afterId?: number; limit?: number }) => {
     const query = new URLSearchParams();
     if (params?.afterId !== undefined) query.set('after_id', String(params.afterId));

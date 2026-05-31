@@ -36,7 +36,7 @@ _BRAND_REGION_SUFFIX_RE = (
         re.IGNORECASE,
     )
     if _brand_region_suffix_tokens
-    else re.compile(r"$^")
+    else re.compile(r"(?!)")
 )
 _CATEGORY_URL_PATH_PATTERN = re.compile(
     r"""

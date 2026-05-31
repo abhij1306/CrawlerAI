@@ -98,6 +98,7 @@ async def abort_browser_stage(
             reason,
         )
     except asyncio.CancelledError:
+        # Teardown was cancelled; nothing further to unwind here.
         pass
     except Exception:
         logger.debug(

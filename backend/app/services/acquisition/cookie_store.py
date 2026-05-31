@@ -461,6 +461,7 @@ def _write_storage_state_file(path: Path, storage_state: Mapping[str, object]) -
         try:
             tmp_path.unlink()
         except OSError:
+            # Temp file already gone or not removable; the original error is re-raised below.
             pass
         raise
 

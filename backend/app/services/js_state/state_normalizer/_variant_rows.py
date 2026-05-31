@@ -291,6 +291,7 @@ def _variant_matrix_row(
             try:
                 row["stock_quantity"] = int(str(stock_level).strip())
             except (TypeError, ValueError):
+                # Non-numeric stock level; leave stock_quantity unset.
                 pass
         status = text_or_none(stock.get("stockLevelStatus"))
         if status:

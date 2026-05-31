@@ -187,8 +187,8 @@ async def test_content_detail_skips_detail_repair_pipeline(
         del context, fetched
         return records, selector_rules
 
-    async def _fake_log_extraction_outcome(context, acquisition_result, records):
-        del context, acquisition_result, records
+    async def _fake_log_extraction_outcome(_context, _acquisition_result, _records):
+        return None
 
     async def _unexpected_detail_stage(*args, **kwargs):
         del args, kwargs

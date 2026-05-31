@@ -47,5 +47,6 @@ async def get_session() -> AsyncIterator[AsyncSession]:
             try:
                 await session.rollback()
             except Exception:
+                # Rollback best-effort during teardown; original error is re-raised.
                 pass
             raise

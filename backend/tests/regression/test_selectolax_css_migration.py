@@ -1804,6 +1804,84 @@ async def test_belk_adapter_maps_per_variant_upc_from_utag_sku_arrays() -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.regression
+async def test_belk_adapter_extracts_detail_variants_from_captured_json_payload() -> None:
+    import json as _json
+
+    body = {
+        "utag_data": {
+            "product_name": ["Iron Free Premium Khaki Pants"],
+            "product_brand": ["Haggar"],
+            "product_id": ["3200645HC01000"],
+            "product_url": [
+                (
+                    "https://www.belk.com/p/haggar-men-s-iron-free-premium-khaki-"
+                    "classic-fit-flat-front-hidden-comfort-waistband-casual-pants/"
+                    "3200645HC01000.html"
+                )
+            ],
+            "product_price": ["44.95"],
+            "sku_id": ["0438651111111", "0438652222222"],
+            "sku_upc": ["0019783000001", "0019783000002"],
+            "sku_price": ["44.95", "44.95"],
+            "sku_inventory": ["12", "0"],
+            "sku_out_of_stock": [False, True],
+        },
+        "colorSizeMap": {
+            "colors": {
+                "289356974949": {"name": "Premium Khaki"},
+            }
+        },
+        "variants": [
+            {
+                "variantId": "0438651111111",
+                "color": "289356974949",
+                "size": {"sizeName": "32 x 30"},
+            },
+            {
+                "variantId": "0438652222222",
+                "color": "289356974949",
+                "size": {"sizeName": "32 x 32"},
+            },
+        ],
+    }
+
+    result = await BelkAdapter().extract(
+        (
+            "https://www.belk.com/p/haggar-men-s-iron-free-premium-khaki-classic-fit-"
+            "flat-front-hidden-comfort-waistband-casual-pants/3200645HC01000.html"
+        ),
+        _json.dumps(body),
+        "ecommerce_detail",
+    )
+
+    assert len(result.records) == 1
+    record = result.records[0]
+    assert record["variant_count"] == 2
+    assert record["barcode"] == "0019783000001"
+    assert record["variants"] == [
+        {
+            "color": "Premium Khaki",
+            "size": "32 x 30",
+            "sku": "0438651111111",
+            "barcode": "0019783000001",
+            "price": "44.95",
+            "availability": "in_stock",
+            "stock_quantity": 12,
+        },
+        {
+            "color": "Premium Khaki",
+            "size": "32 x 32",
+            "sku": "0438652222222",
+            "barcode": "0019783000002",
+            "price": "44.95",
+            "availability": "out_of_stock",
+            "stock_quantity": 0,
+        },
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
 async def test_amazon_adapter_does_not_fabricate_multi_axis_twister_product() -> None:
     result = await AmazonAdapter().extract(
         "https://www.amazon.com/Under-Armour-Mens-Tech-Shorts/dp/B016APPQ4S",
@@ -2028,7 +2106,10 @@ async def test_nike_adapter_maps_next_data_selected_product_payload() -> None:
     assert record["currency"] == "USD"
     assert record["image_url"] == "https://static.nike.com/af1-main.jpg"
     assert record["additional_images"] == ["https://static.nike.com/af1-alt.jpg"]
-    assert "barcode" not in record["variants"][0]
+    # Nike exposes a distinct GTIN per size, and `barcode` is a flat-variant key
+    # (FLAT_VARIANT_KEYS), so each variant keeps its own barcode.
+    assert record["variants"][0]["barcode"] == "00194500874886"
+    assert record["variants"][1]["barcode"] == "00194500874909"
     assert record["variants"][0]["price"] == "115"
     assert record["variants"][1]["availability"] == "out_of_stock"
 

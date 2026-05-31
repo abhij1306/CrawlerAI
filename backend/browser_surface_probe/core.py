@@ -295,6 +295,7 @@ def _clean_ip_values(values: list[str], *, known_versions: list[int] | None = No
                 if int(octets[0]) in version_set:
                     continue
             except ValueError:
+                # Non-numeric leading octet: keep value as-is.
                 pass
         cleaned.append(value)
     return sorted(set(cleaned))
@@ -568,6 +569,7 @@ async def _collect_behavioral_smoke(page) -> dict[str, object]:
         await page.mouse.click(24, 24, delay=50)
         await page.wait_for_timeout(50)
     except Exception:
+        # Trust-probe input is best-effort; evaluation below reports actual state.
         pass
     try:
         return _object_dict(
@@ -1374,6 +1376,7 @@ def _validated_target_url(value: object) -> str:
     try:
         address = ip_address(host)
     except ValueError:
+        # Host is a domain name, not an IP literal; SSRF IP checks below are skipped.
         pass
     if address is not None and (
         address.is_loopback
@@ -1797,10 +1800,12 @@ async def _capture_probe_artifacts(page, artifacts: dict[str, Path]) -> None:
     try:
         await page.screenshot(path=str(artifacts["screenshot"]), full_page=True)
     except Exception:
+        # Screenshot artifact is diagnostic-only; ignore capture failures.
         pass
     try:
         artifacts["html"].write_text(await page.content(), encoding="utf-8")
     except Exception:
+        # HTML artifact is diagnostic-only; ignore capture failures.
         pass
 
 

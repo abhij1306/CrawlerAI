@@ -20,6 +20,7 @@ import {
   FileChartColumn,
   FolderKanban,
   Grid2x2,
+  Network,
   Radar,
   SearchCheck,
   Settings2,
@@ -57,6 +58,7 @@ const navGroups = [
       { href: '/data-enrichment', label: 'Data Enrichment', icon: FileChartColumn },
       { href: '/product-intelligence', label: 'Product Intelligence', icon: BrainCircuit },
       { href: '/ucp-audit', label: 'AI Discoverability', icon: ClipboardCheck },
+      { href: '/run-trace', label: 'Run Trace', icon: Network },
       { href: '/selectors', label: 'Selector Tool', icon: SearchCheck, exactMatch: true },
       { href: '/selectors/manage', label: 'Domain Memory', icon: DatabaseZap },
       { href: '/jobs', label: 'Jobs', icon: BriefcaseBusiness },
@@ -657,6 +659,11 @@ function getFallbackHeader(pathname: string): TopBarState {
     return {
       title: 'AI Discoverability Score',
       description: 'Audit catalog signals for AI-readable commerce discovery.',
+    };
+  if (pathname.startsWith('/run-trace'))
+    return {
+      title: 'Run Trace',
+      description: 'Inspect acquire timeline, extraction tiers, and auto-flagged bugs for a run.',
     };
   if (pathname.startsWith('/runs/'))
     return {

@@ -81,8 +81,13 @@ def axis_values_are_mislabeled_duplicate(
     overlap = len(set_a & set_b)
     if not overlap:
         return False
-    smaller = min(len(set_a), len(set_b))
-    return overlap / smaller >= ratio
+    # Jaccard similarity (overlap / union): two axes are the same axis mislabeled
+    # only when their value sets are (near-)identical. Using the union as the
+    # denominator avoids false positives between genuinely distinct numeric axes
+    # that merely share a value (e.g. waist {28,30} vs inseam {30,32} -> 1/3),
+    # while identical sets still score 1.0 and collapse.
+    union = len(set_a | set_b)
+    return overlap / union >= ratio
 
 def split_variant_axes(
     axes: dict[str, list[str]],

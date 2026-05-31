@@ -34,6 +34,9 @@ from app.services.extract.detail.variants import pruning as _variant_pruning
 from app.services.extract.detail.variants.dom_extraction import (
     backfill_variants_from_dom_if_missing,
 )
+from app.services.extract.detail.variants.dom_availability import (
+    reconcile_variant_availability_from_dom,
+)
 from app.services.extract.detail.variants.numbered_options import (
     hydrate_numbered_variant_options_from_dom,
 )
@@ -92,6 +95,8 @@ def repair_ecommerce_detail_record_quality(
             identity_url=text_or_none(requested_page_url) or page_url,
         )
     normalize_variant_record(record, finalize_contract=False)
+    if soup is not None:
+        reconcile_variant_availability_from_dom(record, soup=soup)
     backfill_detail_price_from_html(record, html=html)
     reconcile_detail_currency_with_url(record, page_url=page_url)
     reconcile_detail_price_magnitudes(record)
@@ -130,6 +135,7 @@ def _sanitize_ecommerce_detail_record(
             if isinstance(js_state_objects, dict)
             else None,
         )
+        reconcile_variant_availability_from_dom(record, soup=soup)
         _image_cleanup.backfill_detail_image_from_html(
             record,
             soup=soup,

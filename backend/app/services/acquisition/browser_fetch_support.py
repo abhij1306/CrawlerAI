@@ -24,6 +24,7 @@ async def emit_page_loaded_event(
     try:
         page_title = clean_text(await page.title())
     except Exception:
+        # Best-effort: page title is cosmetic for the event; ignore failures.
         pass
     await emit_browser_event(
         on_event,
@@ -45,13 +46,19 @@ async def dismiss_browser_interstitial(
 ) -> dict[str, object]:
     interstitial_started_at = time.perf_counter()
     diagnostics = await dismiss_safe_location_interstitial(page)
-    phase_timings_ms["interstitial_dismissal"] = elapsed_ms(interstitial_started_at)
-    if diagnostics.get("status") == "dismissed":
+    elapsed = elapsed_ms(interstitial_started_at)
+    # Label the cost honestly: when nothing was dismissed, the time was spent on
+    # detection, not dismissal. Avoids "status: not_found yet
+    # interstitial_dismissal: 3873ms" in diagnostics.
+    if str(diagnostics.get("status") or "").strip().lower() == "dismissed":
+        phase_timings_ms["interstitial_dismissal"] = elapsed
         await emit_browser_event(
             on_event,
             "info",
             f"Dismissed location interstitial via {diagnostics.get('selector')}",
         )
+    else:
+        phase_timings_ms["interstitial_probe"] = elapsed
     return diagnostics
 
 

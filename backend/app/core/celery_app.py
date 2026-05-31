@@ -5,14 +5,9 @@ from types import SimpleNamespace
 
 try:
     from celery import Celery  # type: ignore[import-untyped]
-    from celery.signals import worker_process_init, worker_process_shutdown  # type: ignore[import-untyped]
 except (
     ModuleNotFoundError
 ):  # pragma: no cover - exercised only when Celery is not installed locally.
-
-    class _DummySignal:
-        def connect(self, func):
-            return func
 
     class Celery:  # type: ignore[no-redef]
         def __init__(self, *_args, **_kwargs) -> None:
@@ -30,9 +25,6 @@ except (
             if dargs and callable(dargs[0]) and len(dargs) == 1 and not dkwargs:
                 return _decorate(dargs[0])
             return _decorate
-
-    worker_process_init = _DummySignal()
-    worker_process_shutdown = _DummySignal()
 
 from app.core.config import settings
 from app.services.config.monitor_settings import (
@@ -60,6 +52,14 @@ celery_app.conf.update(
     task_reject_on_worker_lost=True,
 )
 
+# Celery worker lifecycle signals
+try:
+    from celery.signals import worker_process_init, worker_process_shutdown
+except ImportError:
+    # Stub signals when Celery is not installed
+    worker_process_init = SimpleNamespace(connect=lambda func: func)  # type: ignore[assignment]
+    worker_process_shutdown = SimpleNamespace(connect=lambda func: func)  # type: ignore[assignment]
+
 # Beat stores task names, but workers still need these tasks registered on app import.
 import_module("app.tasks")
 
@@ -74,3 +74,12 @@ if settings.scheduler_driver == SCHEDULER_DRIVER_CELERY:
             "schedule": 86400.0,
         },
     }
+
+# Re-exported for app.tasks, which binds the worker lifecycle hooks via
+# ``@worker_process_init.connect`` / ``@worker_process_shutdown.connect``. Listed
+# in __all__ so these names are recognized as intentional public re-exports.
+__all__ = [
+    "celery_app",
+    "worker_process_init",
+    "worker_process_shutdown",
+]

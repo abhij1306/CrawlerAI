@@ -1,6 +1,8 @@
 from __future__ import annotations
 # ruff: noqa: F401,F403,F405
 
+import re
+
 from ._common import *
 from ._detail import *
 from ._detail_sections import *
@@ -10,7 +12,9 @@ VARIANT_SIZE_ALIAS_SUFFIXES = (" us",)
 # set as an existing axis from another source, the two "axes" are really one
 # axis mislabeled (e.g. shoe sizes captured once as `size` and once as `color`).
 # Merging them as independent axes would fabricate a Cartesian explosion, so the
-# axis is treated as a duplicate when its value overlap meets this ratio.
+# axis is treated as a duplicate when the Jaccard similarity (shared / union of
+# values) meets this ratio. Union-based so genuinely distinct numeric axes that
+# merely share a value (waist vs inseam) are not collapsed.
 VARIANT_MISLABELED_AXIS_MIN_OVERLAP_RATIO = 0.5
 VARIANT_OPTION_VALUE_UI_NOISE_PHRASES = (
     "create an account",
@@ -279,3 +283,82 @@ VARIANT_CHOICE_CONTAINER_OPTION_LIMIT = 24
 VARIANT_CHOICE_CONTAINER_SELECT_LIMIT = 8
 VARIANT_CHOICE_CONTAINER_GROUP_LIMIT = 12
 VARIANT_CHOICE_CONTAINER_MIN_DISTINCT_NAMES = 2
+
+# --- Per-variant option availability detection ------------------------------
+# Class tokens on an option/label/parent node that unconditionally mark the
+# option out of stock, regardless of selected state.
+VARIANT_OPTION_OUT_OF_STOCK_CLASS_TOKENS = (
+    "outstock",
+    "out-stock",
+    "soldout",
+    "sold-out",
+    "unavailable",
+    "oos",
+    "no-stock",
+    "nostock",
+)
+# "disabled"-style class tokens only mean out of stock when the option is NOT
+# the currently selected one. A selected swatch is commonly disabled to lock it
+# in (see the disabled+selected regression contract).
+VARIANT_OPTION_DISABLED_CLASS_TOKENS = (
+    "disabled",
+    "is-disabled",
+)
+# Boolean/flag attributes that mark an option out of stock when present/truthy.
+# These are the universal machine-readable OOS signals most ecommerce PDPs emit
+# (a disabled/aria-disabled control). Only honored when the option is NOT the
+# currently selected one.
+VARIANT_OPTION_DISABLED_ATTRIBUTE_NAMES = (
+    "disabled",
+    "aria-disabled",
+)
+# data-* style flags whose truthiness directly means out of stock regardless of
+# selected state (e.g. data-oos, data-out-of-stock, data-sold-out).
+VARIANT_OPTION_OUT_OF_STOCK_FLAG_ATTRIBUTE_NAMES = (
+    "data-oos",
+    "data-out-of-stock",
+    "data-outofstock",
+    "data-sold-out",
+    "data-soldout",
+    "data-unavailable",
+)
+# data-* flags that carry an explicit availability boolean (truthy => in stock,
+# falsy => out of stock).
+VARIANT_OPTION_AVAILABLE_FLAG_ATTRIBUTE_NAMES = (
+    "data-available",
+    "data-in-stock",
+    "data-instock",
+)
+VARIANT_OPTION_FLAG_FALSE_VALUES = frozenset(
+    {"0", "false", "no", "none", "off", "out", "outofstock", "out_of_stock"}
+)
+VARIANT_OPTION_OUT_OF_STOCK_TEXT_PHRASES = ("out of stock", "sold out")
+VARIANT_OPTION_IN_STOCK_TEXT_PHRASES = ("in stock", "available")
+VARIANT_OPTION_STOCK_LEFT_PATTERN = re.compile(r"\b(\d+)\s+left\b")
+
+# Selector for individual variant option controls used when reconciling
+# already-extracted variant rows against rendered-DOM availability cues. This
+# covers radio/checkbox inputs, role=radio/option nodes, select <option>s, and
+# swatch/size buttons that carry a value/label and a disabled/OOS signal.
+VARIANT_OPTION_CONTROL_SELECTOR = (
+    "option, input[type='radio'], input[type='checkbox'], "
+    "[role='radio'], [role='option'], "
+    "button[value], button[data-option-id], button[data-value], "
+    "button[aria-label], a[class*='swatch' i][title], "
+    "a[class*='swatch' i][aria-label], [data-testid='swatch' i], "
+    "[data-testid*='swatch-option' i]"
+)
+VARIANT_OPTION_CONTROL_SCAN_LIMIT = 300
+# Attributes on an option control whose value carries a join key back to an
+# extracted variant row (the option/SKU/variant value or label).
+VARIANT_OPTION_CONTROL_KEY_ATTRIBUTES = (
+    "value",
+    "data-value",
+    "data-option-value",
+    "data-size",
+    "data-sku",
+    "data-variant-id",
+    "data-option-id",
+    "aria-label",
+    "title",
+)

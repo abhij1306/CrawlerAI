@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import json
 import re
-from json import loads as parse_json
 import math
 from urllib.parse import parse_qsl, urljoin, urlparse, urlsplit
 
@@ -20,6 +19,10 @@ from app.services.normalizers import normalize_decimal_price
 from app.services.shared.field_coerce import clean_text, text_or_none
 
 _FETCH_ERRORS = (OSError, RuntimeError, ValueError, TypeError, json.JSONDecodeError)
+_SHOPIFY_META_ASSIGNMENT_RE = re.compile(
+    r"(?:var\s+meta|(?:window\s*\.\s*)?ShopifyAnalytics\s*\.\s*meta)\s*=\s*",
+    re.DOTALL,
+)
 
 
 class ShopifyAdapter(BaseAdapter):
@@ -469,67 +472,61 @@ class ShopifyAdapter(BaseAdapter):
     def _extract_embedded_product(self, html: str, url: str) -> list[dict]:
         """Extract product data from Shopify's embedded JSON in <script> tags."""
         records = []
-        # Look for ShopifyAnalytics.meta or similar
-        pattern = r"var\s+meta\s*=\s*(\{.*?\});"
-        match = re.search(pattern, html, re.DOTALL)
-        if match:
-            try:
-                meta = parse_json(match.group(1))
-                product = meta.get("product", {})
-                if product.get("title"):
-                    option_names = self._option_names(product.get("options"))
-                    normalized_variants = [
-                        normalized
-                        for variant in (product.get("variants") or [])
-                        if isinstance(variant, dict)
-                        if (
-                            normalized := self._normalize_variant(
-                                variant,
-                                option_names=option_names,
-                                scheme=urlparse(url).scheme or "https",
-                                base_url=url,
-                            )
-                        )
-                    ]
-                    normalized_variants = self._dedupe_variants(normalized_variants)
-                    active_variant = self._select_shopify_variant(
-                        normalized_variants,
+        for meta in _shopify_meta_payloads(html):
+            product = meta.get("product", {})
+            if not isinstance(product, dict) or not product.get("title"):
+                continue
+            option_names = self._option_names(product.get("options"))
+            normalized_variants = [
+                normalized
+                for variant in (product.get("variants") or [])
+                if isinstance(variant, dict)
+                if (
+                    normalized := self._normalize_variant(
+                        variant,
+                        option_names=option_names,
+                        scheme=urlparse(url).scheme or "https",
                         base_url=url,
                     )
-                    axes = self._variant_axes(normalized_variants)
-                    # Only the single-value attributes are needed on this
-                    # branch; discard the selectable-axes half of the tuple.
-                    _, single_value_attributes = self._split_selectable_axes(axes)
-                    selected_price = (
-                        active_variant.get("price")
-                        if isinstance(active_variant, dict)
-                        else product.get("price")
-                    )
-                    flat_variants = flatten_variants_for_public_output(
-                        normalized_variants,
-                        page_url=url,
-                    )
-                    records.append(
-                        {
-                            "title": product.get("title"),
-                            "brand": product.get("vendor"),
-                            "vendor": product.get("vendor"),
-                            "price": normalize_decimal_price(
-                                selected_price,
-                                interpret_integral_as_cents=True,
-                            ),
-                            "category": product.get("type"),
-                            "product_type": product.get("type"),
-                            "product_id": str(product.get("id"))
-                            if product.get("id") not in (None, "", [], {})
-                            else None,
-                            "variants": flat_variants,
-                            "variant_count": len(flat_variants or []) or None,
-                            "product_attributes": single_value_attributes or None,
-                        }
-                    )
-            except (json.JSONDecodeError, TypeError):
-                pass
+                )
+            ]
+            normalized_variants = self._dedupe_variants(normalized_variants)
+            active_variant = self._select_shopify_variant(
+                normalized_variants,
+                base_url=url,
+            )
+            axes = self._variant_axes(normalized_variants)
+            # Only the single-value attributes are needed on this branch; discard
+            # the selectable-axes half of the tuple.
+            _, single_value_attributes = self._split_selectable_axes(axes)
+            selected_price = (
+                active_variant.get("price")
+                if isinstance(active_variant, dict)
+                else product.get("price")
+            )
+            flat_variants = flatten_variants_for_public_output(
+                normalized_variants,
+                page_url=url,
+            )
+            records.append(
+                {
+                    "title": product.get("title"),
+                    "brand": product.get("vendor"),
+                    "vendor": product.get("vendor"),
+                    "price": normalize_decimal_price(
+                        selected_price,
+                        interpret_integral_as_cents=True,
+                    ),
+                    "category": product.get("type"),
+                    "product_type": product.get("type"),
+                    "product_id": str(product.get("id"))
+                    if product.get("id") not in (None, "", [], {})
+                    else None,
+                    "variants": flat_variants,
+                    "variant_count": len(flat_variants or []) or None,
+                    "product_attributes": single_value_attributes or None,
+                }
+            )
         return records
 
     def _image_src(self, image: object) -> str | None:
@@ -891,3 +888,66 @@ class ShopifyAdapter(BaseAdapter):
         text = str(value or "").strip().lower().replace("&", " ")
         text = re.sub(r"[^a-z0-9]+", "_", text).strip("_")
         return text or "option"
+
+
+def _shopify_meta_payloads(html: str) -> list[dict]:
+    source = str(html or "")
+    payloads: list[dict] = []
+    for match in _SHOPIFY_META_ASSIGNMENT_RE.finditer(source):
+        fragment = _balanced_json_fragment(source[match.end() :])
+        if not fragment:
+            continue
+        payload = _loads_shopify_meta(fragment)
+        if isinstance(payload, dict):
+            payloads.append(payload)
+    return payloads
+
+
+def _loads_shopify_meta(fragment: str) -> dict | None:
+    try:
+        payload = json.loads(fragment)
+    except (json.JSONDecodeError, TypeError):
+        product_fragment = _balanced_object_property_fragment(fragment, "product")
+        if not product_fragment:
+            return None
+        try:
+            return {"product": json.loads(product_fragment)}
+        except (json.JSONDecodeError, TypeError):
+            return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _balanced_object_property_fragment(text: str, property_name: str) -> str:
+    match = re.search(rf"(?:^|[{{,])\s*{re.escape(property_name)}\s*:\s*", text, re.S)
+    return _balanced_json_fragment(text[match.end() :]) if match else ""
+
+
+def _balanced_json_fragment(text: str) -> str:
+    source = str(text or "")
+    start = next((index for index, char in enumerate(source) if char in "{["), -1)
+    if start < 0:
+        return ""
+    opening = source[start]
+    closing = "}" if opening == "{" else "]"
+    depth = 0
+    in_string = False
+    escaped = False
+    for index in range(start, len(source)):
+        char = source[index]
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+            continue
+        if char == '"':
+            in_string = True
+        elif char == opening:
+            depth += 1
+        elif char == closing:
+            depth -= 1
+            if depth == 0:
+                return source[start : index + 1]
+    return ""

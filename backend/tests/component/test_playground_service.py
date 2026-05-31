@@ -129,16 +129,16 @@ async def test_playground_pipeline_uses_all_extracted_records_and_urls(
         enrich_calls.append(dict(payload))
         return SimpleNamespace(id=101)
 
-    async def _fake_run_data_enrichment_job(job_id: int) -> None:
-        del job_id
+    async def _fake_run_data_enrichment_job(_job_id: int) -> None:
+        return None
 
     async def _fake_create_product_intelligence_job(session, *, user, payload):
         del session, user
         compare_calls.append(dict(payload))
         return SimpleNamespace(id=202)
 
-    async def _fake_run_product_intelligence_job(job_id: int) -> None:
-        del job_id
+    async def _fake_run_product_intelligence_job(_job_id: int) -> None:
+        return None
 
     async def _fake_create_monitor(session, *, user, payload):
         del session, user

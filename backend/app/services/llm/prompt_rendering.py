@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-from json import loads as parse_json
 from typing import Any
 
 from app.services.config.llm_runtime import llm_runtime_settings
@@ -194,7 +193,7 @@ def trim_prompt_section_body(body: str, budget: int, placeholder: str) -> str:
     if stripped.startswith(("{", "[")):
         if len(stripped) <= llm_runtime_settings.prompt_json_reparse_max_chars:
             try:
-                parsed = parse_json(stripped)
+                parsed = json.loads(stripped)
             except json.JSONDecodeError:
                 return _truncate_structured_text(stripped, budget, placeholder)
             else:

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 import re
+from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlparse
 
@@ -53,6 +55,13 @@ from app.services.shared.field_coerce import (
 )
 from app.services.js_state.helpers import compact_dict, normalize_price
 from app.services.structured_sources import harvest_js_state_objects
+
+_BELK_PRODUCT_TITLE_KEY_SET = frozenset(BELK_PRODUCT_TITLE_KEYS)
+_BELK_PRODUCT_URL_KEY_SET = frozenset(BELK_PRODUCT_URL_KEYS)
+_BELK_PRODUCT_SIGNAL_KEY_SET = frozenset(
+    (*BELK_PRODUCT_BRAND_KEYS, *BELK_PRODUCT_PRICE_KEYS, *BELK_PRODUCT_IMAGE_KEYS)
+)
+_BELK_VARIANT_ID_KEY_SET = frozenset(BELK_VARIANT_ID_KEYS)
 
 
 class BelkAdapter(BaseAdapter):
@@ -124,7 +133,7 @@ def _extract_listing_records(page_url: str, html: str) -> list[dict[str, Any]]:
 
 def _extract_detail_record(page_url: str, html: str) -> dict[str, Any] | None:
     page_path = (urlparse(page_url).path or "").rstrip("/").lower()
-    for record in _state_product_index(page_url, html).values():
+    for record in _state_product_records(page_url, html, target_path=page_path):
         record_url = str(record.get("url") or "")
         if (urlparse(record_url).path or "").rstrip("/").lower() == page_path:
             return _finalize_adapter_record(record, surface="ecommerce_detail")
@@ -136,33 +145,69 @@ def _extract_detail_record(page_url: str, html: str) -> dict[str, Any] | None:
 
 def _state_product_index(page_url: str, html: str) -> dict[str, dict[str, Any]]:
     index: dict[str, dict[str, Any]] = {}
-    for root in harvest_js_state_objects(None, html).values():
-        variant_objects = _collect_variant_objects(root)
-        color_name_by_code = _collect_color_name_map(root)
-        for product in _walk_product_payloads(root):
-            record = _record_from_payload(
-                product,
-                page_url=page_url,
-                variant_objects=variant_objects,
-                color_name_by_code=color_name_by_code,
-            )
-            url = str(record.get("url") or "")
-            if url:
-                index[url] = record
-            if len(index) >= adapter_runtime_settings.belk_max_products:
-                return index
+    for record in _state_product_records(page_url, html):
+        url = str(record.get("url") or "")
+        if url:
+            index[url] = record
+        if len(index) >= adapter_runtime_settings.belk_max_products:
+            return index
     return index
 
 
-def _collect_color_name_map(root: object) -> dict[str, str]:
-    """Map Belk numeric color codes to display names from the RSC `colors` dict.
+def _state_product_records(
+    page_url: str,
+    html: str,
+    *,
+    target_path: str | None = None,
+) -> list[dict[str, Any]]:
+    records: list[dict[str, Any]] = []
+    for root in _belk_state_roots(html):
+        parts = _collect_state_payload_parts(root)
+        variant_objects_by_id = _variant_objects_by_id(parts.variant_objects)
+        for product in parts.products:
+            record = _record_from_payload(
+                product,
+                page_url=page_url,
+                variant_objects_by_id=variant_objects_by_id,
+                color_name_by_code=parts.color_name_by_code,
+            )
+            if target_path and _record_path(record) == target_path:
+                return [record]
+            records.append(record)
+            if len(records) >= adapter_runtime_settings.belk_max_products:
+                return records
+    return records
 
-    Belk's `colorSizeMap` exposes ``colors`` as ``{code: {"name": "Tan", ...}}``
-    where ``code`` is the value each variant object carries under ``color``.
-    Multi-colorway PDPs list several codes; this lets every variant resolve its
-    own colorway name instead of leaking the raw numeric code.
-    """
-    color_names: dict[str, str] = {}
+
+def _record_path(record: dict[str, Any]) -> str:
+    return (urlparse(str(record.get("url") or "")).path or "").rstrip("/").lower()
+
+
+def _belk_state_roots(html: str) -> list[Any]:
+    raw = str(html or "").strip()
+    roots: list[Any] = []
+    if raw and raw[0] in "[{":
+        try:
+            roots.append(json.loads(raw))
+        except json.JSONDecodeError:
+            # Not a raw JSON document; fall back to JS-state harvesting below.
+            pass
+    roots.extend(harvest_js_state_objects(None, html).values())
+    return roots
+
+
+@dataclass(slots=True)
+class _BelkStatePayloadParts:
+    products: list[dict[str, Any]]
+    variant_objects: list[dict[str, Any]]
+    color_name_by_code: dict[str, str]
+
+
+def _collect_state_payload_parts(root: object) -> _BelkStatePayloadParts:
+    products: list[dict[str, Any]] = []
+    variant_objects: list[dict[str, Any]] = []
+    color_name_by_code: dict[str, str] = {}
+    product_limit = adapter_runtime_settings.belk_max_products
 
     def visit(node: object, depth: int) -> None:
         if depth > 60:
@@ -172,21 +217,40 @@ def _collect_color_name_map(root: object) -> dict[str, str]:
             if isinstance(color_map, dict):
                 for code, value in color_map.items():
                     code_text = clean_text(code)
-                    if not code_text or code_text in color_names:
+                    if not code_text or code_text in color_name_by_code:
                         continue
                     name = _color_name_from_entry(value)
                     if name:
-                        color_names[code_text] = name
+                        color_name_by_code[code_text] = name
+
+            keys = {str(k) for k in node.keys()}
+            if (
+                len(variant_objects) < product_limit
+                and (keys & _BELK_VARIANT_ID_KEY_SET)
+                and "size" in keys
+            ):
+                variant_objects.append(node)
+            if (
+                len(products) < product_limit
+                and _looks_like_product_payload(node)
+            ):
+                products.append(node)
+
             for child in node.values():
                 if isinstance(child, (dict, list)):
                     visit(child, depth + 1)
-        elif isinstance(node, list):
+            return
+        if isinstance(node, list):
             for child in node:
                 if isinstance(child, (dict, list)):
                     visit(child, depth + 1)
 
     visit(root, 0)
-    return color_names
+    return _BelkStatePayloadParts(
+        products=products,
+        variant_objects=variant_objects,
+        color_name_by_code=color_name_by_code,
+    )
 
 
 def _color_name_from_entry(value: object) -> str | None:
@@ -199,52 +263,14 @@ def _color_name_from_entry(value: object) -> str | None:
     return None
 
 
-def _collect_variant_objects(root: object) -> list[dict[str, Any]]:
-    """Collect Belk variant objects (variantId + size/color) from an RSC state tree."""
-    found: list[dict[str, Any]] = []
-
-    def visit(node: object, depth: int) -> None:
-        if depth > 60 or len(found) >= adapter_runtime_settings.belk_max_products:
-            return
-        if isinstance(node, dict):
-            keys = {str(k) for k in node.keys()}
-            if (keys & set(BELK_VARIANT_ID_KEYS)) and "size" in keys:
-                found.append(node)
-            for child in node.values():
-                if isinstance(child, (dict, list)):
-                    visit(child, depth + 1)
-        elif isinstance(node, list):
-            for child in node:
-                if isinstance(child, (dict, list)):
-                    visit(child, depth + 1)
-
-    visit(root, 0)
-    return found
-
-
-def _walk_product_payloads(value: object) -> list[dict[str, Any]]:
-    rows: list[dict[str, Any]] = []
-
-    def visit(node: object) -> None:
-        if len(rows) >= adapter_runtime_settings.belk_max_products:
-            return
-        if isinstance(node, dict):
-            if _looks_like_product_payload(node):
-                rows.append(node)
-            for child in node.values():
-                if isinstance(child, (dict, list)):
-                    visit(child)
-            return
-        if isinstance(node, list):
-            for child in node:
-                if isinstance(child, (dict, list)):
-                    visit(child)
-
-    visit(value)
-    return rows
-
-
 def _looks_like_product_payload(payload: dict[str, Any]) -> bool:
+    keys = set(payload)
+    if not (
+        keys & _BELK_PRODUCT_TITLE_KEY_SET
+        and keys & _BELK_PRODUCT_URL_KEY_SET
+        and keys & _BELK_PRODUCT_SIGNAL_KEY_SET
+    ):
+        return False
     return bool(
         _first_payload_field(payload, field_name="title", page_url="", keys=BELK_PRODUCT_TITLE_KEYS)
         and _first_payload_field(payload, field_name="url", page_url="", keys=BELK_PRODUCT_URL_KEYS)
@@ -256,7 +282,14 @@ def _looks_like_product_payload(payload: dict[str, Any]) -> bool:
     )
 
 
-def _record_from_payload(product: dict[str, Any], *, page_url: str, variant_objects: list[dict[str, Any]] | None = None, color_name_by_code: dict[str, str] | None = None) -> dict[str, Any]:
+def _record_from_payload(
+    product: dict[str, Any],
+    *,
+    page_url: str,
+    variant_objects: list[dict[str, Any]] | None = None,
+    variant_objects_by_id: dict[str, dict[str, Any]] | None = None,
+    color_name_by_code: dict[str, str] | None = None,
+) -> dict[str, Any]:
     title = _first_payload_field(product, field_name="title", page_url=page_url, keys=BELK_PRODUCT_TITLE_KEYS)
     brand = _first_payload_field(product, field_name="brand", page_url=page_url, keys=BELK_PRODUCT_BRAND_KEYS)
     price_value = _first_payload_field(product, field_name="price", page_url=page_url, keys=BELK_PRODUCT_PRICE_KEYS)
@@ -275,6 +308,7 @@ def _record_from_payload(product: dict[str, Any], *, page_url: str, variant_obje
         product,
         page_url=page_url,
         variant_objects=variant_objects or [],
+        variant_objects_by_id=variant_objects_by_id,
         color_name_by_code=color_name_by_code or {},
     )
     if sku_variants:
@@ -816,6 +850,7 @@ def _variants_from_sku_arrays(
     *,
     page_url: str,
     variant_objects: list[dict[str, Any]],
+    variant_objects_by_id: dict[str, dict[str, Any]] | None = None,
     color_name_by_code: dict[str, str] | None = None,
 ) -> list[dict[str, object]] | None:
     """Build variant rows from Belk's per-SKU parallel `utag_data` arrays.
@@ -836,7 +871,7 @@ def _variants_from_sku_arrays(
     inventories = _sku_array(product, BELK_SKU_ARRAY_INVENTORY_KEY)
     out_of_stock = _sku_array(product, BELK_SKU_ARRAY_OUT_OF_STOCK_KEY)
     images = _sku_array(product, BELK_SKU_ARRAY_IMAGE_KEY)
-    objects_by_id = _variant_objects_by_id(variant_objects)
+    objects_by_id = variant_objects_by_id or _variant_objects_by_id(variant_objects)
 
     def at(seq: list[Any], i: int) -> Any:
         return seq[i] if i < len(seq) else None
@@ -865,6 +900,7 @@ def _variants_from_sku_arrays(
             row["stock_quantity"] = inv_int
             row.setdefault("availability", "in_stock" if inv_int > 0 else "out_of_stock")
         except (TypeError, ValueError):
+            # Inventory value missing or non-numeric; leave stock fields unset.
             pass
         image_value = clean_text(at(images, index))
         if image_value:

@@ -104,6 +104,7 @@ async def _populate_adapter_records(
     for html in [
         str(acquisition_result.html or ""),
         *_adapter_browser_artifact_htmls(acquisition_result),
+        *_adapter_network_payload_inputs(acquisition_result),
     ]:
         from app.services.pipeline import extraction_loop
 
@@ -264,6 +265,46 @@ def _adapter_browser_artifact_htmls(
         seen.add(html)
         htmls.append(html)
     return htmls
+
+
+def _adapter_network_payload_inputs(
+    acquisition_result: AcquisitionResult,
+) -> list[str]:
+    inputs: list[str] = []
+    seen: set[str] = set()
+    identity_tokens = _adapter_payload_identity_tokens(acquisition_result.final_url)
+    for payload in list(getattr(acquisition_result, "network_payloads", []) or []):
+        if not isinstance(payload, dict):
+            continue
+        body = payload.get("body")
+        if body in (None, "", [], {}):
+            continue
+        try:
+            serialized = json.dumps(body, ensure_ascii=True, separators=(",", ":"))
+        except (TypeError, ValueError):
+            continue
+        serialized_key = serialized.casefold()
+        if identity_tokens and not any(token in serialized_key for token in identity_tokens):
+            continue
+        if not serialized or serialized in seen:
+            continue
+        seen.add(serialized)
+        inputs.append(serialized)
+    return inputs
+
+
+def _adapter_payload_identity_tokens(page_url: str) -> set[str]:
+    from app.services.extract.detail.identity.core import detail_identity_codes_from_url
+
+    min_length = max(
+        0, int(crawler_runtime_settings.adapter_payload_identity_min_token_length)
+    )
+    return {
+        str(token).casefold()
+        for token in detail_identity_codes_from_url(page_url)
+        if len(str(token or "").strip()) >= min_length
+    }
+
 
 def _rendered_listing_fragments_html(value: object) -> str:
     if not isinstance(value, list):

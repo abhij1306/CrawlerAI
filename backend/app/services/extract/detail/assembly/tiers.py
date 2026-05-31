@@ -15,6 +15,7 @@ from typing import Any, Callable
 from bs4 import BeautifulSoup
 from selectolax.lexbor import LexborHTMLParser
 
+from app.services.config import observability as obs_config
 from app.services.config.extraction_rules import (
     DETAIL_BREADCRUMB_JSONLD_TYPES,
     DETAIL_IRRELEVANT_JSON_LD_TYPES,
@@ -138,7 +139,9 @@ class DetailTierExecutor:
         inputs: DetailTierInputs,
     ) -> dict[str, Any]:
         record = self._collect_pre_dom_tiers(prepared, inputs)
-        if self._can_skip_dom_tier(record, prepared, inputs):
+        skip_dom, skip_decision = self._dom_skip_decision(record, prepared, inputs)
+        if skip_dom:
+            record["_dom_skip_decision"] = skip_decision
             if inputs.surface == ECOMMERCE_DETAIL_SURFACE:
                 self._promote_dom_title(record, prepared, inputs.page_url)
             return self._runtime.finalize_early_detail_record(
@@ -153,6 +156,7 @@ class DetailTierExecutor:
             )
 
         record = self._build_dom_tier_record(prepared, inputs)
+        record["_dom_skip_decision"] = skip_decision
         return self._runtime.finalize_dom_detail_record(
             record,
             html=inputs.html,
@@ -329,21 +333,28 @@ class DetailTierExecutor:
                     source="dom_selector",
                 )
 
-    def _can_skip_dom_tier(
+    def _dom_skip_decision(
         self,
         record: dict[str, Any],
         prepared: PreparedDetailExtraction,
         inputs: DetailTierInputs,
-    ) -> bool:
+    ) -> tuple[bool, dict[str, Any]]:
+        """Decide whether the DOM tier can be skipped, with an observe-only reason.
+
+        This is the decision INVARIANT Rule 3 names as the #1 missing-variant root
+        cause. The returned decision dict is attached to the record's internal
+        trace so the audit layer can see exactly why DOM ran or was skipped. The
+        boolean result is unchanged from the prior logic (observe-only).
+        """
         confidence_score = self._runtime.coerce_float(
             _object_dict(record.get("_confidence")).get("score")
         )
         threshold = self._runtime.coerce_float(
             prepared.selector_self_heal.get("threshold")
         )
-        return (
-            confidence_score >= threshold
-            and not self._runtime.requires_dom_completion(
+        confidence_clears = confidence_score >= threshold
+        dom_completion_required = (
+            self._runtime.requires_dom_completion(
                 record=record,
                 surface=inputs.surface,
                 requested_fields=inputs.requested_fields,
@@ -351,7 +362,23 @@ class DetailTierExecutor:
                 soup=prepared.soup,
                 breadcrumb_soup=prepared.raw_soup,
             )
+            if confidence_clears
+            else True
         )
+        dom_skipped = confidence_clears and not dom_completion_required
+        if dom_skipped:
+            reason = obs_config.DOM_SKIP_REASON_CLEARED
+        elif not confidence_clears:
+            reason = obs_config.DOM_SKIP_REASON_CONFIDENCE_BELOW_THRESHOLD
+        else:
+            reason = obs_config.DOM_SKIP_REASON_DOM_COMPLETION_REQUIRED
+        decision = {
+            obs_config.DOM_SKIP_KEY_SKIPPED: dom_skipped,
+            obs_config.DOM_SKIP_KEY_CONFIDENCE: confidence_score,
+            obs_config.DOM_SKIP_KEY_THRESHOLD: threshold,
+            obs_config.DOM_SKIP_KEY_REASON: reason,
+        }
+        return dom_skipped, decision
 
     def _materialize(
         self,

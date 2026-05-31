@@ -44,6 +44,11 @@ PROMPT_REGISTRY = {
         "system_file": "design_system_markdown.system.txt",
         "user_file": "design_system_markdown.user.txt",
     },
+    "run_diagnosis": {
+        "response_type": "object",
+        "system_file": "run_diagnosis.system.txt",
+        "user_file": "run_diagnosis.user.txt",
+    },
 }
 
 COLOR_FIELD = "color"

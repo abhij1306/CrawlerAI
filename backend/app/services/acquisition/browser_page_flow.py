@@ -365,6 +365,7 @@ async def settle_browser_page_impl(
                 timeout=wait_ms,
             )
         except PlaywrightTimeoutError:
+            # Optimistic readiness wait is best-effort; proceed and re-probe.
             pass
         phase_timings_ms["optimistic_wait"] = elapsed_ms(optimistic_wait_started_at)
         current_probe = await _cached_probe(refresh_html=True)
@@ -422,11 +423,19 @@ async def settle_browser_page_impl(
         # extraction. Without a settle, capture is a race that only wins when
         # navigation happened to be slow. Bounded best-effort networkidle wait so
         # those payloads land before serialization. Detail-only; non-fatal.
+        #
+        # Skipped when the page is already fast-path ready: a ready detail page
+        # has the content it needs, so the fast path stays wait-free (the settle
+        # targets the not-yet-ready branches where variant XHRs may still load).
         detail_payload_settle_ms = max(
             0,
             int(crawler_runtime_settings.browser_detail_payload_settle_timeout_ms or 0),
         )
-        if is_detail_surface and detail_payload_settle_ms > 0:
+        if (
+            is_detail_surface
+            and detail_payload_settle_ms > 0
+            and networkidle_skip_reason != "fast_path_ready"
+        ):
             detail_payload_settle_started_at = time.perf_counter()
             try:
                 await page.wait_for_load_state(
@@ -437,6 +446,7 @@ async def settle_browser_page_impl(
                     ),
                 )
             except PlaywrightTimeoutError:
+                # Detail payload settle is a bounded best-effort wait; non-fatal.
                 pass
             phase_timings_ms["detail_payload_settle"] = elapsed_ms(
                 detail_payload_settle_started_at
@@ -513,6 +523,7 @@ async def settle_browser_page_impl(
                     timeout=min(int(timeout_seconds * 1000), max_wait_ms),
                 )
             except PlaywrightTimeoutError:
+                # Generic detail readiness probe is best-effort; proceed and re-probe.
                 pass
         phase_timings_ms["readiness_wait"] = elapsed_ms(readiness_started_at)
         current_probe = await _cached_probe(refresh_html=True)

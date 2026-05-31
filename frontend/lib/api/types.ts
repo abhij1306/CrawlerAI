@@ -944,3 +944,64 @@ export type PlaygroundSessionResponse = {
   created_at: string;
   updated_at: string;
 };
+
+// --- Observability (Run Trace) ---
+export type RunAuditFlag = {
+  code: string;
+  severity: string;
+  symptom: string;
+  invariant: string;
+  owner: string;
+  url?: string;
+  evidence?: Record<string, unknown>;
+};
+
+export type RunAuditFlags = {
+  schema_version: number;
+  run_id: number;
+  flag_count: number;
+  severity_counts: Record<string, number>;
+  flags: RunAuditFlag[];
+  llm_diagnosis?: Record<string, unknown>;
+};
+
+export type RunTraceArtifact = {
+  schema_version: number;
+  tier: string;
+  run_id: number;
+  url: string;
+  surface: string;
+  requested_fields: string[];
+  high_value_fields: string[];
+  verdict: string;
+  acquire_timeline: Array<{
+    kind: string;
+    sequence: number;
+    duration_ms?: number;
+    detail?: Record<string, unknown>;
+  }>;
+  extraction: {
+    completed_tiers: string[];
+    dom_skipped?: boolean;
+    skip_decision?: Record<string, unknown>;
+    field_provenance?: Array<{
+      field: string;
+      winning_source?: string;
+      candidates?: Array<{
+        source: string;
+        won: boolean;
+        value_preview?: string;
+        reject_reason?: string;
+      }>;
+    }>;
+  };
+  host_outcome?: Record<string, unknown>;
+  normalize_edits?: Array<{ field: string; reason: string }>;
+};
+
+export type RunObservability = {
+  run_id: number;
+  flags: RunAuditFlags | null;
+  traces: RunTraceArtifact[];
+  llm_diagnosis: Record<string, unknown> | null;
+};

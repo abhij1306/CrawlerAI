@@ -172,8 +172,8 @@ async def test_resolve_sitemap_retries_transient_root_fetch_failure(
         }
     )
 
-    async def _no_sleep(seconds: float) -> None:
-        del seconds
+    async def _no_sleep(_seconds: float) -> None:
+        return None
 
     monkeypatch.setattr(
         "app.services.crawl.sitemap_resolver.httpx.AsyncClient",
@@ -226,8 +226,8 @@ async def test_resolve_sitemap_index_skips_failed_child_sitemaps(
         _valid_target,
     )
 
-    async def _no_sleep(seconds: float) -> None:
-        del seconds
+    async def _no_sleep(_seconds: float) -> None:
+        return None
 
     monkeypatch.setattr(
         "app.services.crawl.sitemap_resolver.asyncio.sleep",

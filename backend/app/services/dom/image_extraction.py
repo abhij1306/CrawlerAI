@@ -380,6 +380,7 @@ def gallery_image_score(node: Tag, candidate_url: str) -> int:
         if int(width or "0") >= 120 or int(height or "0") >= 120:
             score += 1
     except ValueError:
+        # Non-numeric width/height attributes contribute no size bonus.
         pass
     if "srcset" in node.attrs or "data-srcset" in node.attrs:
         score += 1

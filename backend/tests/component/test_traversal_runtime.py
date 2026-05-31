@@ -4,22 +4,21 @@ from dataclasses import dataclass
 from typing import Any
 
 import pytest
-import app.services.acquisition.traversal as traversal_module
 
-from app.services.acquisition.traversal import (
-    TraversalResult,
-    click_with_retry,
-    locator_still_resolves,
-    wait_for_load_more_card_gain,
-    count_listing_cards,
-    dismiss_overlays_if_needed,
-    execute_listing_traversal,
-)
+import app.services.acquisition.traversal as traversal_module
 from app.services.config.selectors import CARD_SELECTORS, PAGINATION_SELECTORS
 from app.services.extract.listing_card_fragments import (
     listing_node_html,
     listing_selector_is_weak,
 )
+
+TraversalResult = traversal_module.TraversalResult
+click_with_retry = traversal_module.click_with_retry
+locator_still_resolves = traversal_module.locator_still_resolves
+wait_for_load_more_card_gain = traversal_module.wait_for_load_more_card_gain
+count_listing_cards = traversal_module.count_listing_cards
+dismiss_overlays_if_needed = traversal_module.dismiss_overlays_if_needed
+execute_listing_traversal = traversal_module.execute_listing_traversal
 
 
 @dataclass

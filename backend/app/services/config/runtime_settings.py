@@ -371,6 +371,7 @@ class CrawlerRuntimeSettings(BaseSettings):
     selector_synthesis_max_html_chars: int = 200000
     raw_json_surface_field_overlap_ratio: float = 0.25
     raw_json_surface_field_overlap_absolute: int = 2
+    adapter_payload_identity_min_token_length: int = 6
     low_quality_browser_retry_min_remaining_seconds: float = 20.0
     acquisition_contract_stale_failure_threshold: int = 2
     detail_max_variant_axes: int = 3
@@ -431,6 +432,7 @@ class CrawlerRuntimeSettings(BaseSettings):
             "browser_capture_read_timeout_seconds",
             "browser_capture_queue_join_timeout_ms",
             "browser_artifact_capture_timeout_ms",
+            "adapter_payload_identity_min_token_length",
         ):
             _require_positive(field_name, getattr(self, field_name))
         for field_name in (

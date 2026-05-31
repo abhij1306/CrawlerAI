@@ -179,6 +179,7 @@ def detail_breadcrumb_is_root_label(text: str, page_url: str = "") -> bool:
             if lowered == host or lowered == host.split(".")[0]:
                 return True
         except ValueError:
+            # Unparseable page URL: treat label as a non-host breadcrumb.
             pass
     return False
 

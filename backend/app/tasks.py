@@ -49,8 +49,10 @@ def _worker_process_shutdown(**_kwargs) -> None:
 
 async def _run_with_session(run_id: int) -> None:
     from app.services.monitor_change_detection import ensure_monitor_change_detection_registered
+    from app.services.observability.run_audit import ensure_run_audit_registered
 
     ensure_monitor_change_detection_registered()
+    ensure_run_audit_registered()
     async with SessionLocal() as session:
         await process_run_async(session, run_id)
 
