@@ -75,7 +75,7 @@ jobs:
       - name: Apply backend migrations
         working-directory: backend
         run: |
-          python -m alembic -c alembic.ini upgrade head
+          python -c "from app.core.migrations import apply_pending_migrations; apply_pending_migrations()"
 
       - name: Start backend API server
         working-directory: backend
