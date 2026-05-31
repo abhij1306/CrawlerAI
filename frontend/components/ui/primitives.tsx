@@ -6,10 +6,12 @@ import { createPortal } from 'react-dom';
 import type { ReactNode } from 'react';
 import { cn } from '../../lib/utils';
 
-export { Badge, badgeVariants } from './badge';
-export { Button, buttonVariants } from './button';
-export { Card, cardVariants } from './card';
-export { Input, Textarea, inputVariants, textareaVariants } from './input';
+const DROPDOWN_LISTBOX_ROLE = 'listbox';
+
+export { Badge } from './badge';
+export { Button } from './button';
+export { Card } from './card';
+export { Input, Textarea } from './input';
 export { Metric, StatCard } from './metric';
 export { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './table';
 
@@ -36,11 +38,7 @@ export function Title({
 }
 
 export function Subtitle({ children }: Readonly<{ children: ReactNode }>) {
-  return (
-    <p className="type-caption text-secondary mt-1.5 max-w-2xl leading-[var(--leading-relaxed)]">
-      {children}
-    </p>
-  );
+  return <p className="type-caption text-secondary mt-1.5 max-w-2xl leading-relaxed">{children}</p>;
 }
 
 /* ─── Field ──────────────────────────────────────────────────────────────── */
@@ -156,8 +154,9 @@ export function Dropdown<T extends string>({
   }, [open, updatePosition]);
 
   React.useEffect(() => {
+    const closeTimer = closeTimerRef;
     return () => {
-      if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
+      if (closeTimer.current) clearTimeout(closeTimer.current);
     };
   }, []);
 
@@ -211,11 +210,12 @@ export function Dropdown<T extends string>({
     <div
       ref={listboxRef}
       id={listboxId}
-      role="listbox"
+      role={DROPDOWN_LISTBOX_ROLE}
+      tabIndex={-1}
       onMouseEnter={cancelClose}
       onMouseLeave={scheduleClose}
       className={cn(
-        'border-border bg-background-elevated z-[300] max-h-[320px] w-max overflow-y-auto rounded-[var(--radius-lg)] border py-1',
+        'border-border bg-background-elevated z-[300] max-h-[320px] w-max overflow-y-auto rounded-lg border py-1',
         portal ? 'fixed' : 'absolute',
         listboxPosition.side === 'bottom'
           ? 'animate-[dropdown-in_150ms_cubic-bezier(0.16,1,0.3,1)]'
@@ -242,6 +242,7 @@ export function Dropdown<T extends string>({
           <button
             key={option.value}
             id={optionId}
+            type="button"
             role="option"
             aria-selected={option.value === value}
             onClick={() => {
@@ -250,7 +251,7 @@ export function Dropdown<T extends string>({
             }}
             onMouseDown={(e) => e.preventDefault()}
             className={cn(
-              'flex w-full items-center py-2 text-[11px] leading-[var(--leading-snug)] transition-colors',
+              'text-2xs flex w-full items-center py-2 leading-snug transition-colors',
               align === 'center' ? 'justify-center px-8' : 'justify-start px-3',
               option.value === value
                 ? 'bg-accent-subtle text-accent font-medium'
@@ -290,7 +291,7 @@ export function Dropdown<T extends string>({
         disabled={disabled}
         onKeyDown={handleKeyDown}
         className={cn(
-          'focus-ring border-border bg-panel text-foreground hover:border-border-strong focus:border-accent flex w-full items-center gap-2 rounded-[var(--radius-md)] border px-3 text-[12px] leading-[1.4] font-normal transition-[background-color,border-color]',
+          'focus-ring border-border bg-panel text-foreground hover:border-border-strong focus:border-accent flex w-full items-center gap-2 rounded-md border px-3 text-xs leading-snug font-normal transition-[background-color,border-color]',
           size === 'sm' ? 'h-8' : 'h-[var(--control-height)]',
           align === 'center' ? 'justify-center text-center' : 'justify-between text-left',
           className,
@@ -400,6 +401,7 @@ export function Tooltip({
     const nextTop = Math.max(margin, anchorRect.top - tooltipRect.height - 8);
     setPosition({ left: nextLeft, top: nextTop });
   }, [align, setPosition]);
+  const updatePositionEvent = React.useEffectEvent(updatePosition);
 
   React.useLayoutEffect(() => {
     if (!open) {
@@ -412,14 +414,14 @@ export function Tooltip({
     if (!open) {
       return;
     }
-    const handleLayout = () => updatePosition();
+    const handleLayout = () => updatePositionEvent();
     window.addEventListener('resize', handleLayout);
     window.addEventListener('scroll', handleLayout, true);
     return () => {
       window.removeEventListener('resize', handleLayout);
       window.removeEventListener('scroll', handleLayout, true);
     };
-  }, [open, updatePosition]);
+  }, [open]);
 
   return (
     <div
@@ -443,7 +445,7 @@ export function Tooltip({
               role="tooltip"
               className={cn(
                 'pointer-events-none fixed w-max max-w-[min(420px,calc(100vw-24px))]',
-                'tooltip-surface bg-panel rounded-[var(--radius-md)] px-2 py-1.5',
+                'tooltip-surface bg-panel rounded-md px-2 py-1.5',
                 'text-foreground z-[200] text-sm leading-normal font-medium break-words',
               )}
               style={{ left: `${position.left}px`, top: `${position.top}px` }}

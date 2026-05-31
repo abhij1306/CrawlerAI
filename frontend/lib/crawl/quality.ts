@@ -115,15 +115,22 @@ export function scoreFieldQuality(records: CrawlRecord[], field: string) {
   if (!records.length) {
     return 0;
   }
-  const informativeValues = records
-    .map((record) => readRecordValue(record, field))
-    .filter((value) => isInformativeValue(value));
+  const informativeValues = records.reduce<unknown[]>((acc, record) => {
+    const value = readRecordValue(record, field);
+    if (isInformativeValue(value)) {
+      acc.push(value);
+    }
+    return acc;
+  }, []);
   if (!informativeValues.length) {
     return 0;
   }
   const coverage = informativeValues.length / records.length;
   const uniqueValues = new Set(
-    informativeValues.map((value) => stringifyCell(value).trim().toLowerCase()).filter(Boolean),
+    informativeValues.flatMap((value) => {
+      const rendered = stringifyCell(value).trim().toLowerCase();
+      return rendered ? [rendered] : [];
+    }),
   ).size;
   const diversity = Math.min(1, uniqueValues / Math.min(3, informativeValues.length));
   return coverage * 0.75 + diversity * 0.25;

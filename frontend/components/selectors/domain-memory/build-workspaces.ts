@@ -132,11 +132,11 @@ export function buildDomainWorkspaces({
   const visibleDomains = new Set<string>([
     ...byDomain.keys(),
     ...runsByDomain.keys(),
-    ...cookies
-      .filter(
-        (row) => surfaceFilter === 'all' && (!query || row.domain.toLowerCase().includes(query)),
-      )
-      .map((row) => row.domain),
+    ...cookies.flatMap((row) =>
+      surfaceFilter === 'all' && (!query || row.domain.toLowerCase().includes(query))
+        ? [row.domain]
+        : [],
+    ),
   ]);
 
   const workspaces: DomainWorkspace[] = [];
@@ -179,13 +179,20 @@ export function buildDomainWorkspaces({
 }
 
 function latestCompletedAtFor(surfaces: SurfaceWorkspace[]) {
-  return (
-    surfaces
-      .flatMap((surface) => surface.completedRuns)
-      .map((run) => run.completed_at ?? run.updated_at ?? run.created_at)
-      .filter(Boolean)
-      .sort((left, right) => new Date(right).getTime() - new Date(left).getTime())[0] ?? null
-  );
+  let latest: string | null = null;
+  let latestTime = -Infinity;
+  for (const surface of surfaces) {
+    for (const run of surface.completedRuns) {
+      const value = run.completed_at ?? run.updated_at ?? run.created_at;
+      if (!value) continue;
+      const time = new Date(value).getTime();
+      if (time > latestTime) {
+        latestTime = time;
+        latest = value;
+      }
+    }
+  }
+  return latest;
 }
 
 function compareDomainWorkspaces(left: DomainWorkspace, right: DomainWorkspace) {

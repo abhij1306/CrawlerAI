@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useReducer } from 'react';
 
 import type { MonitorJob, AlertCreatePayload, AlertUpdatePayload } from '../../lib/api/types';
 import { Button, Dropdown, Field, Input } from '../ui/primitives';
@@ -21,6 +21,54 @@ const intervalOptions = [
   { value: '1800', label: '30 min' },
   { value: '3600', label: '1 hour' },
 ];
+
+type AlertFormState = {
+  url: string;
+  targetFields: string[];
+  condition: string;
+  pollInterval: string;
+  webhookUrl: string;
+  error: string;
+  submitting: boolean;
+};
+
+type AlertFormAction =
+  | { type: 'urlChanged'; value: string }
+  | { type: 'fieldToggled'; field: string }
+  | { type: 'conditionChanged'; value: string }
+  | { type: 'pollIntervalChanged'; value: string }
+  | { type: 'webhookUrlChanged'; value: string }
+  | { type: 'submitStarted' }
+  | { type: 'submitFailed'; message: string }
+  | { type: 'submitSettled' }
+  | { type: 'validationFailed'; message: string };
+
+function alertFormReducer(state: AlertFormState, action: AlertFormAction): AlertFormState {
+  switch (action.type) {
+    case 'urlChanged':
+      return { ...state, url: action.value };
+    case 'fieldToggled':
+      return {
+        ...state,
+        targetFields: state.targetFields.includes(action.field)
+          ? state.targetFields.filter((item) => item !== action.field)
+          : [...state.targetFields, action.field],
+      };
+    case 'conditionChanged':
+      return { ...state, condition: action.value };
+    case 'pollIntervalChanged':
+      return { ...state, pollInterval: action.value };
+    case 'webhookUrlChanged':
+      return { ...state, webhookUrl: action.value };
+    case 'submitStarted':
+      return { ...state, error: '', submitting: true };
+    case 'submitFailed':
+    case 'validationFailed':
+      return { ...state, error: action.message };
+    case 'submitSettled':
+      return { ...state, submitting: false };
+  }
+}
 
 function sameFieldSet(left: readonly string[], right: readonly string[]) {
   if (left.length !== right.length) {
@@ -46,13 +94,16 @@ export function AlertForm({ initial, onSubmit, onCancel, submitLabel }: Readonly
     }
     return filteredFields;
   })();
-  const [url, setUrl] = useState(initialUrl);
-  const [targetFields, setTargetFields] = useState<string[]>(initialFields);
-  const [condition, setCondition] = useState(initial?.condition ?? '');
-  const [pollInterval, setPollInterval] = useState(String(initial?.poll_interval_seconds ?? 300));
-  const [webhookUrl, setWebhookUrl] = useState(initial?.webhook_url ?? '');
-  const [error, setError] = useState('');
-  const [submitting, setSubmitting] = useState(false);
+  const [state, dispatch] = useReducer(alertFormReducer, {
+    url: initialUrl,
+    targetFields: initialFields,
+    condition: initial?.condition ?? '',
+    pollInterval: String(initial?.poll_interval_seconds ?? 300),
+    webhookUrl: initial?.webhook_url ?? '',
+    error: '',
+    submitting: false,
+  });
+  const { url, targetFields, condition, pollInterval, webhookUrl, error, submitting } = state;
   const editing = Boolean(initial?.id);
 
   const currentValues = useMemo(() => {
@@ -61,28 +112,28 @@ export function AlertForm({ initial, onSubmit, onCancel, submitLabel }: Readonly
   }, [initial?.last_known_values, targetFields]);
 
   function toggleField(field: string) {
-    setTargetFields((current) =>
-      current.includes(field) ? current.filter((item) => item !== field) : [...current, field],
-    );
+    dispatch({ type: 'fieldToggled', field });
   }
 
   async function submit() {
-    setError('');
     const cleanUrl = url.trim();
     const cleanWebhook = webhookUrl.trim();
     if (!editing && !/^https?:\/\//i.test(cleanUrl)) {
-      setError('URL must start with http:// or https://.');
+      dispatch({ type: 'validationFailed', message: 'URL must start with http:// or https://.' });
       return;
     }
     if (!targetFields.length) {
-      setError('Select at least one field.');
+      dispatch({ type: 'validationFailed', message: 'Select at least one field.' });
       return;
     }
     if (cleanWebhook && !/^https?:\/\//i.test(cleanWebhook)) {
-      setError('Webhook URL must start with http:// or https://.');
+      dispatch({
+        type: 'validationFailed',
+        message: 'Webhook URL must start with http:// or https://.',
+      });
       return;
     }
-    setSubmitting(true);
+    dispatch({ type: 'submitStarted' });
     try {
       const initialTrackedFields = Array.isArray(initial?.tracked_fields)
         ? initial.tracked_fields
@@ -98,9 +149,12 @@ export function AlertForm({ initial, onSubmit, onCancel, submitLabel }: Readonly
       };
       await onSubmit(editing ? payload : { ...payload, url: cleanUrl });
     } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : 'Unable to save alert.');
+      dispatch({
+        type: 'submitFailed',
+        message: submitError instanceof Error ? submitError.message : 'Unable to save alert.',
+      });
     } finally {
-      setSubmitting(false);
+      dispatch({ type: 'submitSettled' });
     }
   }
 
@@ -113,7 +167,7 @@ export function AlertForm({ initial, onSubmit, onCancel, submitLabel }: Readonly
             <Input
               value={url}
               disabled={editing}
-              onChange={(event) => setUrl(event.target.value)}
+              onChange={(event) => dispatch({ type: 'urlChanged', value: event.target.value })}
               placeholder="https://example.com/product"
             />
           </Field>
@@ -132,25 +186,31 @@ export function AlertForm({ initial, onSubmit, onCancel, submitLabel }: Readonly
               ))}
             </div>
           </div>
-          {editing && currentValues ? (
-            <p className="text-muted type-caption m-0">{currentValues}</p>
-          ) : null}
+          {editing && currentValues ? <p className="type-caption m-0">{currentValues}</p> : null}
         </div>
         <div className="space-y-4">
           <Field label="Condition" hint="Optional. Example: price < 150">
             <Input
               value={condition}
-              onChange={(event) => setCondition(event.target.value)}
+              onChange={(event) =>
+                dispatch({ type: 'conditionChanged', value: event.target.value })
+              }
               placeholder="e.g. price < 150"
             />
           </Field>
           <Field label="Poll Interval">
-            <Dropdown value={pollInterval} onChange={setPollInterval} options={intervalOptions} />
+            <Dropdown
+              value={pollInterval}
+              onChange={(value) => dispatch({ type: 'pollIntervalChanged', value })}
+              options={intervalOptions}
+            />
           </Field>
           <Field label="Webhook URL" hint="Optional. Empty stores deltas only.">
             <Input
               value={webhookUrl}
-              onChange={(event) => setWebhookUrl(event.target.value)}
+              onChange={(event) =>
+                dispatch({ type: 'webhookUrlChanged', value: event.target.value })
+              }
               placeholder="https://agent.example/webhook"
             />
           </Field>

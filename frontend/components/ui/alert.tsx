@@ -1,22 +1,10 @@
 'use client';
 
 import type { ReactNode } from 'react';
-import { cva, type VariantProps } from 'class-variance-authority';
+import type { VariantProps } from 'class-variance-authority';
 
 import { cn } from '../../lib/utils';
-
-export const alertVariants = cva('alert-surface', {
-  variants: {
-    tone: {
-      danger: 'alert-danger',
-      warning: 'alert-warning',
-      neutral: 'alert-neutral',
-    },
-  },
-  defaultVariants: {
-    tone: 'danger',
-  },
-});
+import { alertVariants } from './alert-variants';
 
 export type InlineAlertProps = {
   message: ReactNode;

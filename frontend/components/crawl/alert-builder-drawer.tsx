@@ -198,7 +198,7 @@ export function AlertBuilderDrawer({
             <div className="flex items-start justify-between gap-4">
               <div className="min-w-0">
                 <DialogPrimitive.Title className="type-heading-1 m-0 flex items-center gap-2.5">
-                  <span className="bg-accent/10 text-accent inline-flex size-8 items-center justify-center rounded-[var(--radius-md)]">
+                  <span className="bg-accent/10 text-accent inline-flex size-8 items-center justify-center rounded-md">
                     <Bell className="size-4" />
                   </span>
                   Alert Builder
@@ -321,7 +321,7 @@ export function AlertBuilderDrawer({
                         <div
                           key={variantIdentity(variant, index)}
                           className={cn(
-                            'border-border bg-panel rounded-[var(--radius-md)] border p-3 transition-colors',
+                            'border-border bg-panel rounded-md border p-3 transition-colors',
                             hasActiveRule && 'border-l-accent border-l-2',
                           )}
                         >
@@ -363,7 +363,7 @@ export function AlertBuilderDrawer({
                             })}
                             {hiddenVariantFieldCount > 0 ? (
                               <span className="text-muted type-body-sm inline-flex h-8 items-center px-1.5">
-                                and {hiddenVariantFieldCount} more...
+                                and {hiddenVariantFieldCount} more…
                               </span>
                             ) : null}
                           </div>
@@ -372,7 +372,7 @@ export function AlertBuilderDrawer({
                     })}
                     {hiddenVariantCount > 0 ? (
                       <div className="text-muted type-body-sm px-1.5 py-1">
-                        and {hiddenVariantCount} more...
+                        and {hiddenVariantCount} more…
                       </div>
                     ) : null}
                   </div>
@@ -398,7 +398,7 @@ export function AlertBuilderDrawer({
                     {rules.map((rule) => (
                       <div
                         key={rule.id}
-                        className="border-border bg-panel grid gap-3 rounded-[var(--radius-md)] border p-3.5 md:grid-cols-[1fr_150px_140px_auto]"
+                        className="border-border bg-panel grid gap-3 rounded-md border p-3.5 md:grid-cols-[1fr_150px_140px_auto]"
                       >
                         <div className="min-w-0">
                           <div className="text-foreground type-body-sm truncate font-semibold">
@@ -451,7 +451,7 @@ export function AlertBuilderDrawer({
                 )}
               </section>
 
-              <section className="bg-background-alt rounded-[var(--radius-lg)] p-4">
+              <section className="bg-background-alt rounded-lg p-4">
                 <h3 className="type-body-sm text-foreground mb-3 flex items-center gap-2 font-semibold">
                   <Clock className="text-muted size-4" />
                   Alert Settings
@@ -545,7 +545,7 @@ function AlertFieldCard({
       type="button"
       onClick={onClick}
       className={cn(
-        'group border-border bg-panel rounded-[var(--radius-md)] border p-3.5 text-left transition-all',
+        'group border-border bg-panel rounded-md border p-3.5 text-left transition-all',
         'hover:shadow-card hover:border-accent/50',
         active && 'border-accent bg-accent-subtle shadow-card',
       )}
@@ -597,7 +597,9 @@ function recordData(record: CrawlRecord | undefined) {
 
 function productVariants(data: Record<string, unknown>) {
   return Array.isArray(data.variants)
-    ? data.variants.filter(isRecordObject).map((item) => item as Record<string, unknown>)
+    ? data.variants.flatMap((item) =>
+        isRecordObject(item) ? [item as Record<string, unknown>] : [],
+      )
     : [];
 }
 

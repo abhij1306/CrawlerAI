@@ -49,13 +49,13 @@ export function CandidateGroupSection({
           </div>
           <div className="mt-0.5 flex items-center gap-3">
             {group.sourceBrand && group.sourceBrand !== '--' ? (
-              <span className="text-muted type-caption flex items-center gap-1.5">
+              <span className="type-caption flex items-center gap-1.5">
                 <Layers className="size-3 opacity-50" />
                 {group.sourceBrand}
               </span>
             ) : null}
             {group.sourceBrand && group.sourceBrand !== '--' && group.sourcePrice ? (
-              <span className="bg-divider h-1 w-1 rounded-full" />
+              <span className="bg-divider size-1 rounded-full" />
             ) : null}
             {group.sourcePrice ? (
               <span className="type-caption-mono text-foreground text-sm">
@@ -64,7 +64,7 @@ export function CandidateGroupSection({
             ) : null}
             {group.sourceUrl ? (
               <>
-                <span className="bg-divider h-1 w-1 rounded-full" />
+                <span className="bg-divider size-1 rounded-full" />
                 <a
                   href={group.sourceUrl}
                   target="_blank"
@@ -107,7 +107,7 @@ function CandidateCard({
   return (
     <div
       className={cn(
-        'group/card border-border bg-panel hover:border-accent/40 hover:shadow-card relative flex flex-col justify-between rounded-[var(--radius-md)] border p-3 transition-all',
+        'group/card border-border bg-panel hover:border-accent/40 hover:shadow-card relative flex flex-col justify-between rounded-md border p-3 transition-all',
         selected && 'border-accent/60 bg-accent-soft shadow-card',
       )}
     >
@@ -143,9 +143,7 @@ function CandidateCard({
         </CandidateImage>
 
         <div className="mt-3 flex min-w-0 flex-col">
-          {brand && brand !== '--' ? (
-            <div className="type-label text-muted truncate">{brand}</div>
-          ) : null}
+          {brand && brand !== '--' ? <div className="type-label truncate">{brand}</div> : null}
           <a
             href={candidate.url}
             target="_blank"
@@ -156,7 +154,7 @@ function CandidateCard({
             {title}
           </a>
           <div className="mt-2 flex flex-col gap-1">
-            <div className="type-caption text-muted truncate" title={candidate.domain}>
+            <div className="type-caption truncate" title={candidate.domain}>
               {candidate.domain}
             </div>
           </div>
@@ -166,7 +164,7 @@ function CandidateCard({
       <div className="border-divider mt-3 grid min-h-5 grid-cols-[auto_1fr_auto] items-center gap-2 border-t pt-1.5">
         <button
           type="button"
-          className="focus-ring type-label text-secondary hover:text-foreground inline-flex h-5 items-center gap-1 rounded-[var(--radius-xs)] px-1 transition-colors"
+          className="focus-ring type-label text-secondary hover:text-foreground inline-flex h-5 items-center gap-1 rounded-xs px-1 transition-colors"
           onClick={() => controller.setJsonModalCandidate(candidate)}
         >
           <Code2 className="mr-1 size-3" />
@@ -182,7 +180,7 @@ function CandidateCard({
           href={candidate.url}
           target="_blank"
           rel="noopener noreferrer"
-          className="text-accent type-label flex h-5 items-center gap-1 justify-self-end rounded-[var(--radius-xs)] px-1 hover:underline"
+          className="text-accent type-label flex h-5 items-center gap-1 justify-self-end rounded-xs px-1 hover:underline"
         >
           Source
           <ExternalLink className="size-2.5" />
@@ -202,7 +200,7 @@ function CandidateImage({
   children?: React.ReactNode;
 }) {
   return (
-    <div className="border-divider hover:shadow-card relative aspect-square w-full shrink-0 overflow-hidden rounded-[var(--radius-md)] border bg-white p-1.5 shadow-xs transition-shadow">
+    <div className="border-divider hover:shadow-card relative aspect-square w-full shrink-0 overflow-hidden rounded-md border bg-white p-1.5 shadow-xs transition-shadow">
       {imageUrl ? (
         <ExternalCandidateImage
           src={imageUrl}

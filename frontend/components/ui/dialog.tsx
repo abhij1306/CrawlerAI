@@ -42,7 +42,7 @@ export function ConfirmDialog({
         <DialogPrimitive.Content
           className={cn(
             'fixed top-1/2 left-1/2 z-[101] w-[min(420px,calc(100vw-32px))] -translate-x-1/2 -translate-y-1/2',
-            'border-border card-gradient rounded-[var(--radius-lg)] border p-5',
+            'border-border card-gradient rounded-lg border p-5',
           )}
         >
           <div className="flex items-start justify-between gap-4">
@@ -50,7 +50,7 @@ export function ConfirmDialog({
               <DialogPrimitive.Title className="text-foreground m-0 text-base leading-snug font-semibold">
                 {title}
               </DialogPrimitive.Title>
-              <DialogPrimitive.Description className="text-secondary mt-2 text-sm leading-[var(--leading-relaxed)]">
+              <DialogPrimitive.Description className="text-secondary mt-2 text-sm leading-relaxed">
                 {description}
               </DialogPrimitive.Description>
             </div>
@@ -69,7 +69,7 @@ export function ConfirmDialog({
           {error ? (
             <div
               role="alert"
-              className="border-danger/20 bg-danger/10 text-danger mt-4 rounded-[var(--radius-md)] border px-3 py-2 text-sm leading-[var(--leading-normal)]"
+              className="border-danger/20 bg-danger/10 text-danger mt-4 rounded-md border px-3 py-2 text-sm leading-normal"
             >
               {error}
             </div>

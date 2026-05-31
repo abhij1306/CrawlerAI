@@ -74,9 +74,9 @@ export function MonitorEvents({
         </Button>
       </div>
       {query.isPending ? (
-        <div className="skeleton h-32 w-full rounded-[var(--radius-lg)]" />
+        <div className="skeleton h-32 w-full rounded-lg" />
       ) : events.length ? (
-        <div className="divide-border border-border rounded-[var(--radius-lg)] border">
+        <div className="divide-border border-border rounded-lg border">
           {events.map((event) => (
             <div key={event.id} className="px-4 py-3">
               <div className="flex flex-wrap items-center gap-2">
@@ -85,9 +85,7 @@ export function MonitorEvents({
                 {event.condition_met ? (
                   <span className="type-caption-mono text-success">condition met</span>
                 ) : null}
-                <span className="text-muted type-caption truncate">
-                  {hostPath(event.source_url)}
-                </span>
+                <span className="type-caption truncate">{hostPath(event.source_url)}</span>
               </div>
               <p className="text-secondary type-body-sm mt-1">
                 {event.event_type === 'field_changed'
@@ -96,9 +94,7 @@ export function MonitorEvents({
                     ? 'New product detected'
                     : 'Product no longer found'}
               </p>
-              <p className="text-muted type-caption mt-1">
-                {formatRelativeTime(event.detected_at)}
-              </p>
+              <p className="type-caption mt-1">{formatRelativeTime(event.detected_at)}</p>
             </div>
           ))}
         </div>

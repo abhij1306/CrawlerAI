@@ -14,7 +14,7 @@ export function EnrichmentStatus({
   llmEnabled: boolean;
 }>) {
   return (
-    <div className="border-accent/30 bg-accent-subtle text-foreground animate-in fade-in flex flex-wrap items-center gap-3 rounded-[var(--radius-md)] border px-4 py-3 text-xs duration-300">
+    <div className="border-accent/30 bg-accent-subtle text-foreground animate-in fade-in flex flex-wrap items-center gap-3 rounded-md border px-4 py-3 text-xs duration-300">
       <Loader2 className="text-accent size-4 animate-spin" aria-hidden="true" />
       <div className="min-w-[180px] flex-1">
         <div className="font-normal">Enrichment running</div>
@@ -72,7 +72,7 @@ export function EnrichmentTableLoading({ llmEnabled }: Readonly<{ llmEnabled: bo
 
 function EnrichmentLoadingStep({ label, detail }: Readonly<{ label: string; detail: string }>) {
   return (
-    <div className="border-divider bg-background-alt/50 hover:bg-background-alt rounded-[var(--radius-md)] border px-3 py-2 transition-colors">
+    <div className="border-divider bg-background-alt/50 hover:bg-background-alt rounded-md border px-3 py-2 transition-colors">
       <div className="text-foreground flex items-center gap-2 text-xs font-normal tracking-tight uppercase">
         <span className="bg-accent size-1.5 animate-pulse rounded-full" />
         {label}
@@ -80,46 +80,4 @@ function EnrichmentLoadingStep({ label, detail }: Readonly<{ label: string; deta
       <div className="text-muted mt-1 text-xs leading-tight">{detail}</div>
     </div>
   );
-}
-
-export function formatPrice(price: unknown, currency: string): string {
-  if (price === null || price === undefined) return '--';
-  const stringifyStructuredPrice = (value: object) => {
-    try {
-      return JSON.stringify(value);
-    } catch {
-      return String(value);
-    }
-  };
-  const safeCurrency = (value: unknown) => {
-    const normalized = String(value || '')
-      .trim()
-      .toUpperCase();
-    return /^[A-Z]{3}$/.test(normalized) ? normalized : 'USD';
-  };
-  const formatAmount = (amount: number, currencyCode: unknown) => {
-    try {
-      return new Intl.NumberFormat('en-US', {
-        style: 'currency',
-        currency: safeCurrency(currencyCode),
-      }).format(amount);
-    } catch {
-      return String(amount);
-    }
-  };
-  if (typeof price === 'object') {
-    if (Array.isArray(price)) {
-      return stringifyStructuredPrice(price);
-    }
-    const p = price as Record<string, unknown>;
-    const amount = p.amount ?? p.price_min;
-    if (typeof amount === 'number') {
-      return formatAmount(amount, p.currency || currency);
-    }
-    return stringifyStructuredPrice(p);
-  }
-  if (typeof price === 'number') {
-    return formatAmount(price, currency);
-  }
-  return String(price);
 }

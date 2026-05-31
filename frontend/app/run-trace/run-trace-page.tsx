@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Network, Search } from 'lucide-react';
 
 import { InlineAlert, PageHeader } from '../../components/ui/patterns';
@@ -14,6 +14,44 @@ function severityTone(severity: string): 'danger' | 'warning' | 'neutral' {
   if (severity === 'high') return 'danger';
   if (severity === 'medium') return 'warning';
   return 'neutral';
+}
+
+type RunDiagnosis = {
+  status?: string;
+  diagnosis?: Record<string, unknown>;
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function readRunDiagnosis(value: unknown): RunDiagnosis | null {
+  if (!isRecord(value)) return null;
+  const status = value.status;
+  const diagnosis = value.diagnosis;
+  if (status !== undefined && typeof status !== 'string') return null;
+  if (diagnosis !== undefined && !isRecord(diagnosis)) return null;
+  return {
+    status,
+    diagnosis,
+  };
+}
+
+function stableHash(value: unknown): string {
+  const text = JSON.stringify(value) ?? '';
+  let hash = 0;
+  for (let index = 0; index < text.length; index += 1) {
+    hash = (hash * 31 + text.charCodeAt(index)) % 2147483647;
+  }
+  return hash.toString(36);
+}
+
+function traceKey(trace: RunTraceArtifact): string {
+  const traceId = (trace as RunTraceArtifact & { id?: unknown }).id;
+  if (typeof traceId === 'string' || typeof traceId === 'number') {
+    return `${trace.run_id}:${traceId}`;
+  }
+  return `${trace.run_id}:${trace.url}:${trace.surface}:${trace.tier}:${stableHash(trace)}`;
 }
 
 function FlagCard({ flag }: Readonly<{ flag: RunAuditFlag }>) {
@@ -53,7 +91,7 @@ function TraceCard({ trace }: Readonly<{ trace: RunTraceArtifact }>) {
       </div>
 
       <div>
-        <h4 className="text-sm font-semibold">Acquire timeline</h4>
+        <h4 className="type-subheading">Acquire timeline</h4>
         <ol className="mt-1 flex flex-col gap-1">
           {trace.acquire_timeline.length === 0 ? (
             <li className="text-muted text-xs">No acquire events recorded.</li>
@@ -72,7 +110,7 @@ function TraceCard({ trace }: Readonly<{ trace: RunTraceArtifact }>) {
       </div>
 
       <div>
-        <h4 className="text-sm font-semibold">Extraction</h4>
+        <h4 className="type-subheading">Extraction</h4>
         <p className="mt-1 text-xs">
           Tiers:{' '}
           <span className="font-mono">{trace.extraction.completed_tiers.join(' → ') || '—'}</span>
@@ -103,12 +141,16 @@ function TraceCard({ trace }: Readonly<{ trace: RunTraceArtifact }>) {
 }
 
 export default function RunTracePage() {
+  const queryClient = useQueryClient();
   const [runIdInput, setRunIdInput] = useState('');
   const [data, setData] = useState<RunObservability | null>(null);
 
   const lookup = useMutation({
     mutationFn: (runId: number) => api.getRunObservability(runId),
-    onSuccess: (result) => setData(result),
+    onSuccess: (result, runId) => {
+      queryClient.setQueryData(['run-observability', runId], result);
+      setData(result);
+    },
   });
 
   const onSubmit = (event: React.FormEvent) => {
@@ -120,10 +162,7 @@ export default function RunTracePage() {
   };
 
   const notFound = httpErrorStatus(lookup.error) === 404;
-  const diagnosis = data?.llm_diagnosis as
-    | { status?: string; diagnosis?: Record<string, unknown> }
-    | null
-    | undefined;
+  const diagnosis = readRunDiagnosis(data?.llm_diagnosis);
 
   return (
     <div className="page-stack gap-5">
@@ -134,7 +173,7 @@ export default function RunTracePage() {
 
       <form onSubmit={onSubmit} className="flex items-end gap-2">
         <div className="flex flex-col gap-1">
-          <label htmlFor="run-id" className="text-xs font-medium">
+          <label htmlFor="run-id" className="field-label">
             Run ID
           </label>
           <Input
@@ -160,7 +199,7 @@ export default function RunTracePage() {
       {data ? (
         <>
           <section className="flex flex-col gap-2">
-            <h3 className="flex items-center gap-2 text-sm font-semibold">
+            <h3 className="type-heading-3 flex items-center gap-2">
               <Network className="size-4" /> Flags
               {data.flags ? <Badge tone="neutral">{data.flags.flag_count}</Badge> : null}
             </h3>
@@ -177,7 +216,7 @@ export default function RunTracePage() {
 
           {diagnosis && diagnosis.status === 'ok' && diagnosis.diagnosis ? (
             <section className="flex flex-col gap-2">
-              <h3 className="text-sm font-semibold">LLM diagnosis</h3>
+              <h3 className="type-heading-3">LLM diagnosis</h3>
               <Card className="p-4">
                 <pre className="overflow-x-auto text-xs">
                   {JSON.stringify(diagnosis.diagnosis, null, 2)}
@@ -187,13 +226,13 @@ export default function RunTracePage() {
           ) : null}
 
           <section className="flex flex-col gap-2">
-            <h3 className="text-sm font-semibold">Traces ({data.traces.length})</h3>
+            <h3 className="type-heading-3">Traces ({data.traces.length})</h3>
             {data.traces.length === 0 ? (
               <InlineAlert tone="neutral" message="No per-URL traces found for this run." />
             ) : (
               <div className="flex flex-col gap-3">
-                {data.traces.map((trace, index) => (
-                  <TraceCard key={`${trace.url}-${index}`} trace={trace} />
+                {data.traces.map((trace) => (
+                  <TraceCard key={traceKey(trace)} trace={trace} />
                 ))}
               </div>
             )}

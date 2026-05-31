@@ -1,7 +1,7 @@
 'use client';
 
 import { History, X } from 'lucide-react';
-import React, { useEffect } from 'react';
+import React, { useEffect, useEffectEvent } from 'react';
 
 import { Badge, Button } from './primitives';
 import { cn } from '../../lib/utils';
@@ -39,14 +39,16 @@ export function HistoryDrawer({
   onSelect: (id: number) => void;
   title?: string;
 }>) {
+  const onCloseEvent = useEffectEvent(onClose);
+
   useEffect(() => {
     if (!open) return;
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') onCloseEvent();
     };
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [open, onClose]);
+  }, [open]);
 
   if (!open) return null;
 
@@ -57,7 +59,7 @@ export function HistoryDrawer({
         <div className="border-divider flex items-center justify-between border-b px-4 py-3">
           <div className="flex items-center gap-2">
             <History className="text-muted size-4" />
-            <h2 className="text-foreground type-heading text-sm font-medium">{title}</h2>
+            <h2 className="type-subheading">{title}</h2>
           </div>
           <Button
             type="button"
@@ -90,7 +92,7 @@ export function HistoryDrawer({
                     onClose();
                   }}
                 >
-                  <div className="flex w-full items-center justify-between">
+                  <div className="type-caption flex w-full items-center justify-between">
                     <span
                       className={cn(
                         'text-accent type-label-mono font-medium',
@@ -111,7 +113,7 @@ export function HistoryDrawer({
                       {item.label}
                     </div>
                   )}
-                  <div className="text-muted type-caption flex w-full items-center justify-between">
+                  <div className="flex w-full items-center justify-between">
                     <span>{item.meta ?? 'No details'}</span>
                     <span className="type-caption-mono">{formatShortDate(item.created_at)}</span>
                   </div>

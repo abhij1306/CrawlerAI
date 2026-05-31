@@ -2,7 +2,7 @@
 
 import { CheckCircle2, CircleAlert, GripVertical, Info, RotateCcw, Trash2, X } from 'lucide-react';
 import React from 'react';
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import type { ReactElement, ReactNode } from 'react';
 
 import { Button, Input, Tooltip, Toggle as PrimitiveToggle } from '../ui/primitives';
@@ -68,7 +68,7 @@ export function SettingSection({
           {renderedIcon ? (
             <div
               className={cn(
-                'flex size-8 shrink-0 items-center justify-center rounded-[var(--radius-md)] border transition-colors',
+                'flex size-8 shrink-0 items-center justify-center rounded-md border transition-colors',
                 checked
                   ? 'bg-setting-icon-active-bg text-accent shadow-setting-icon-active border-[color:color-mix(in_srgb,var(--accent)_22%,transparent)]'
                   : 'border-border bg-setting-icon-bg text-secondary',
@@ -151,6 +151,7 @@ export function SliderRow({
       </div>
       <input
         type="range"
+        aria-label={label}
         min={min}
         max={max}
         step={step}
@@ -168,7 +169,7 @@ export function SliderRow({
           className="pr-8 text-right font-mono tabular-nums"
         />
         {suffix ? (
-          <span className="text-muted type-caption pointer-events-none absolute top-1/2 right-1.5 -translate-y-1/2 lowercase">
+          <span className="type-caption pointer-events-none absolute top-1/2 right-1.5 -translate-y-1/2 lowercase">
             {suffix}
           </span>
         ) : null}
@@ -213,18 +214,19 @@ export function AdditionalFieldInput({
     onChange(parts.at(-1) ?? '');
   }
 
-  function handleBlur() {
+  function commitPendingFields() {
     parseLines(value).forEach(commitField);
     onChange('');
   }
 
   return (
-    <label className="grid gap-1.5">
+    <label htmlFor="additional-fields-input" className="grid gap-1.5">
       <span className="type-body-sm text-foreground font-semibold">Additional Fields</span>
       <Input
+        id="additional-fields-input"
         value={value}
         onChange={(event) => handleChange(event.target.value)}
-        onBlur={handleBlur}
+        onBlur={commitPendingFields}
         placeholder="price, sku, Features & Benefits, Product Story"
         className="font-mono"
       />
@@ -237,7 +239,7 @@ export function AdditionalFieldInput({
               type="button"
               onClick={() => onRemove(field)}
               aria-label={`Remove ${field}`}
-              className="border-subtle-panel-border bg-subtle-panel text-secondary type-body-sm inline-flex items-center gap-1 rounded-[var(--radius-sm)] border px-2 py-1"
+              className="border-subtle-panel-border bg-subtle-panel text-secondary type-body-sm inline-flex items-center gap-1 rounded-sm border px-2 py-1"
             >
               <X className="size-3.5 shrink-0" aria-hidden="true" />
               <span className="truncate">{field}</span>
@@ -266,21 +268,20 @@ export function SitemapConfigFields({
 }>) {
   return (
     <div className="grid gap-4">
-      <label className="grid gap-2">
+      <label htmlFor="sitemap-domain" className="grid gap-2">
         <span className="type-control font-medium">Site Domain</span>
         <Input
+          id="sitemap-domain"
           value={domain}
           onChange={(event) => onDomainChange(event.target.value)}
           placeholder="example.com or https://example.com/sitemap.xml"
           className="font-mono"
           aria-label="Sitemap domain input"
         />
-        <span className="type-caption text-muted">
-          App will auto-discover sitemap from this domain.
-        </span>
+        <span className="type-caption">App will auto-discover sitemap from this domain.</span>
       </label>
 
-      <label className="grid gap-2">
+      <label htmlFor="sitemap-filter" className="grid gap-2">
         <span className="type-control flex items-center gap-1.5 font-medium">
           Collection Filter
           <Tooltip content="Only child sitemaps whose filename contains this keyword will be crawled. For Shopify use collections. For WooCommerce or Magento use category.">
@@ -288,6 +289,7 @@ export function SitemapConfigFields({
           </Tooltip>
         </span>
         <Input
+          id="sitemap-filter"
           value={filterKeyword}
           onChange={(event) => onFilterKeywordChange(event.target.value)}
           placeholder="collections"
@@ -296,7 +298,7 @@ export function SitemapConfigFields({
         />
       </label>
 
-      <label className="grid gap-2">
+      <label htmlFor="sitemap-max-urls" className="grid gap-2">
         <span className="type-control flex items-center gap-1.5 font-medium">
           Max Category URLs
           <Tooltip content="Maximum number of category URLs to crawl from the sitemap.">
@@ -304,6 +306,7 @@ export function SitemapConfigFields({
           </Tooltip>
         </span>
         <Input
+          id="sitemap-max-urls"
           type="number"
           min={1}
           max={2000}
@@ -330,9 +333,10 @@ export function TargetUrlField({
   onChange: (value: string) => void;
 }>) {
   return (
-    <label className="grid gap-2">
+    <label htmlFor="target-url-input" className="grid gap-2">
       <span className="type-control font-medium">Target URL</span>
       <Input
+        id="target-url-input"
         value={value}
         onChange={(event) => onChange(event.target.value)}
         className="font-mono"
@@ -364,7 +368,7 @@ export function CsvFileField({
         />
         <label
           htmlFor="csv-file-input"
-          className="ui-on-accent-surface bg-accent hover:bg-accent-hover type-control cursor-pointer rounded-[var(--radius-md)] px-3 py-1.5 transition-colors"
+          className="ui-on-accent-surface bg-accent hover:bg-accent-hover type-control cursor-pointer rounded-md px-3 py-1.5 transition-colors"
         >
           Choose file
         </label>
@@ -395,15 +399,17 @@ export function ManualFieldEditor({
   messageTone?: FieldRowMessageTone;
   showLabels?: boolean;
 }>) {
+  const fieldNameId = useId();
   return (
-    <div className="border-border card-gradient space-y-1.5 rounded-[var(--radius-md)] border p-2.5">
+    <div className="border-border card-gradient space-y-1.5 rounded-md border p-2.5">
       <div className="grid gap-2 xl:grid-cols-[24px_minmax(140px,0.8fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,0.8fr)_auto]">
         <div className="text-muted/50 hidden items-center justify-center xl:flex">
           <GripVertical className="size-3.5" />
         </div>
-        <label className="grid gap-1">
+        <label htmlFor={fieldNameId} className="grid gap-1">
           <span className={cn('field-label', !showLabels && 'sr-only')}>Field</span>
           <Input
+            id={fieldNameId}
             aria-label="Field"
             value={row.fieldName}
             onChange={(event) => onChange({ fieldName: event.target.value })}
@@ -456,7 +462,7 @@ export function ManualFieldEditor({
               type="button"
               onClick={onDelete}
               aria-label={`Delete ${row.fieldName || 'manual field'}`}
-              className="surface-muted text-danger/70 hover:bg-danger/10 hover:text-danger inline-flex size-8 items-center justify-center rounded-[var(--radius-md)]"
+              className="surface-muted text-danger/70 hover:bg-danger/10 hover:text-danger inline-flex size-8 items-center justify-center rounded-md"
             >
               <Trash2 className="size-3.5" />
             </button>

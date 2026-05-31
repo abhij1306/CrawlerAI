@@ -33,7 +33,7 @@ export function CrawlActionButtons({
               className="inline-block size-1.5 animate-pulse rounded-full bg-current opacity-80"
               aria-hidden="true"
             />
-            Starting...
+            Starting…
           </>
         ) : (
           <>
@@ -55,7 +55,7 @@ export function CrawlActionButtons({
               className="inline-block size-1.5 animate-pulse rounded-full bg-current opacity-80"
               aria-hidden="true"
             />
-            Starting...
+            Starting…
           </>
         ) : (
           'Start Crawl'

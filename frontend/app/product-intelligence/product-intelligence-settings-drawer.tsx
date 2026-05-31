@@ -6,7 +6,7 @@ import { useEffect, useRef } from 'react';
 import { Button, Dropdown, Field, Input, Textarea } from '../../components/ui/primitives';
 import type { ProductIntelligenceOptions } from '../../lib/api/types';
 import { cn } from '../../lib/utils';
-import { SEARCH_PROVIDER_OPTIONS } from './product-intelligence-components';
+import { SEARCH_PROVIDER_OPTIONS } from './product-intelligence-utils';
 
 export function SettingsDrawer({
   open,
@@ -53,7 +53,7 @@ export function SettingsDrawer({
       <div className="fixed inset-0 z-40 bg-black/20" onClick={onClose} aria-hidden="true" />
       <div className="border-divider bg-background-elevated animate-in slide-in-from-right-4 fixed top-0 right-0 z-50 h-full w-[380px] max-w-full overflow-y-auto border-l p-5 shadow-xl duration-200">
         <div className="flex items-center justify-between">
-          <h2 className="text-foreground type-heading text-sm font-medium">Configuration</h2>
+          <h2 className="type-subheading">Configuration</h2>
           <Button
             type="button"
             variant="quiet"
@@ -128,15 +128,16 @@ export function SettingsDrawer({
             />
           </Field>
           <Field label="LLM Cleanup">
-            <div className="surface-muted flex h-[var(--control-height)] items-center justify-between rounded-[var(--radius-md)] px-3 shadow-sm">
+            <div className="surface-muted flex h-[var(--control-height)] items-center justify-between rounded-md px-3 shadow-sm">
               <span className="text-muted text-xs font-normal">Enable Enrichment</span>
               <input
                 type="checkbox"
+                aria-label="Enable LLM enrichment"
                 checked={options.llm_enrichment_enabled}
                 onChange={(event) =>
                   onOptionsChange({ llm_enrichment_enabled: event.target.checked })
                 }
-                className="border-divider text-accent focus:ring-accent h-3.5 w-3.5 rounded"
+                className="border-divider text-accent focus:ring-accent size-3.5 rounded"
               />
             </div>
           </Field>
@@ -179,7 +180,7 @@ function ProviderField({
             onClick={() => onOptionsChange({ search_provider: option.value })}
             aria-pressed={options.search_provider === option.value}
             className={cn(
-              'flex-1 rounded-[var(--radius-md)] border px-3 py-1.5 text-center text-sm font-medium transition-[background-color,border-color]',
+              'flex-1 rounded-md border px-3 py-1.5 text-center text-sm font-medium transition-[background-color,border-color]',
               options.search_provider === option.value
                 ? 'border-accent bg-accent-subtle text-accent'
                 : 'border-border-strong bg-background-elevated text-foreground hover:bg-background-alt',

@@ -1,0 +1,15 @@
+{
+  "lint": true,
+  "deadCode": false,
+  "verbose": false,
+  "failOn": "none",
+  "ignore": {
+    "rules": [
+      "react-doctor/no-giant-component",
+      "react-doctor/js-set-map-lookups",
+      "react-doctor/prefer-tag-over-role",
+      "react-doctor/nextjs-no-client-side-redirect"
+    ],
+    "files": []
+  }
+}

@@ -8,7 +8,7 @@ import {
   MutedPanelMessage,
   SurfaceSection,
 } from '../../ui/patterns';
-import { Badge, Button, Input, Toggle } from '../../ui/primitives';
+import { Badge, Button, Field, Input, Toggle } from '../../ui/primitives';
 import type { DomainWorkspace, EditDraft, LocalRecord } from './types';
 import { selectorValue, surfaceLabel, titleCaseToken } from './utils';
 
@@ -51,7 +51,7 @@ export function SelectorsTab({
         selectedWorkspace.surfaces.map((surfaceWorkspace) => (
           <div
             key={`${selectedWorkspace.domain}:${surfaceWorkspace.surface}`}
-            className="border-subtle-panel-border bg-subtle-panel space-y-3 rounded-[var(--radius-xl)] border p-4"
+            className="border-subtle-panel-border bg-subtle-panel space-y-3 rounded-xl border p-4"
           >
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
@@ -192,8 +192,7 @@ function SelectorEditForm({
   return (
     <div className="space-y-3">
       <div className="grid gap-3 md:grid-cols-2">
-        <label className="grid gap-1.5">
-          <span className="field-label">Field</span>
+        <Field label="Field">
           <Input
             value={draft.field_name}
             onChange={(event) =>
@@ -202,9 +201,8 @@ function SelectorEditForm({
               )
             }
           />
-        </label>
-        <label className="grid gap-1.5">
-          <span className="field-label">Source</span>
+        </Field>
+        <Field label="Source">
           <Input
             value={draft.source}
             onChange={(event) =>
@@ -213,7 +211,7 @@ function SelectorEditForm({
               )
             }
           />
-        </label>
+        </Field>
       </div>
       <label className="grid gap-1.5">
         <span className="field-label">Selector Kind</span>
@@ -224,15 +222,14 @@ function SelectorEditForm({
               current ? { ...current, kind: event.target.value as EditDraft['kind'] } : current,
             )
           }
-          className="border-divider bg-background rounded-[var(--radius-md)] border px-3 py-2 text-sm"
+          className="border-divider bg-background rounded-md border px-3 py-2 text-sm"
         >
           <option value="css_selector">CSS Selector</option>
           <option value="xpath">XPath</option>
           <option value="regex">Regex</option>
         </select>
       </label>
-      <label className="grid gap-1.5">
-        <span className="field-label">Selector</span>
+      <Field label="Selector">
         <Input
           value={draft.selectorValue}
           onChange={(event) =>
@@ -241,7 +238,7 @@ function SelectorEditForm({
             )
           }
         />
-      </label>
+      </Field>
       <label className="text-secondary flex items-center gap-2 text-sm">
         <input
           type="checkbox"

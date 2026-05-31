@@ -1,7 +1,14 @@
 import { normalizeField } from './format';
 
 export function uniqueFields(values: string[]) {
-  return Array.from(new Set(values.map(normalizeField).filter(Boolean)));
+  return Array.from(
+    new Set(
+      values.flatMap((value) => {
+        const normalized = normalizeField(value);
+        return normalized ? [normalized] : [];
+      }),
+    ),
+  );
 }
 
 export function cleanRequestedField(value: string) {
@@ -33,7 +40,14 @@ export function uniqueNumbers(values: number[]) {
 }
 
 export function uniqueStrings(values: string[]) {
-  return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean)));
+  return Array.from(
+    new Set(
+      values.flatMap((value) => {
+        const trimmed = value.trim();
+        return trimmed ? [trimmed] : [];
+      }),
+    ),
+  );
 }
 
 const SCHEMA_TYPE_FIELD_NAMES = new Set(

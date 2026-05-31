@@ -6,7 +6,6 @@ import {
   ArrowRight,
   CheckCircle2,
   Circle,
-  Download,
   ExternalLink,
   Loader2,
   Play,
@@ -352,8 +351,8 @@ export default function PlaygroundPage() {
       {!session && (
         <SurfacePanel>
           <div className="p-6">
-            <h3 className="type-label mb-2">Enter a URL to explore</h3>
-            <p className="text-muted mb-4 text-sm">
+            <h3 className="type-heading-3 mb-2">Enter a URL to explore</h3>
+            <p className="type-body-sm mb-4">
               Paste a category page, brand page, or product listing URL. The system will discover
               what products are available.
             </p>

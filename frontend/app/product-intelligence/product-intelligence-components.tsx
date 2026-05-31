@@ -1,6 +1,7 @@
 'use client';
 
 import { Copy, Download, Loader2, X } from 'lucide-react';
+import Image from 'next/image';
 import React, { useEffect } from 'react';
 
 import { Badge, Button, Dropdown, Field, Input, Textarea } from '../../components/ui/primitives';
@@ -10,20 +11,8 @@ import type {
 } from '../../lib/api/types';
 import { decodeUrlsForDisplay } from '../../lib/crawl/format';
 import { cn } from '../../lib/utils';
-import { syntaxHighlightJson } from '../../lib/ui/syntax';
-
-export const SEARCH_PROVIDER_OPTIONS: Array<{
-  value: ProductIntelligenceOptions['search_provider'];
-  label: string;
-}> = [
-  { value: 'serpapi', label: 'SerpAPI' },
-  { value: 'google_native', label: 'Google Native' },
-];
-
-export function searchProviderLabel(provider: string) {
-  const option = SEARCH_PROVIDER_OPTIONS.find((item) => item.value === provider);
-  return option?.label ?? provider;
-}
+import { syntaxHighlightJsonNodes } from '../../lib/ui/syntax';
+import { isRecord, searchProviderLabel } from './product-intelligence-utils';
 
 function hideBrokenImage(event: React.SyntheticEvent<HTMLImageElement>): void {
   event.currentTarget.style.display = 'none';
@@ -39,10 +28,15 @@ export function ExternalCandidateImage({
   className: string;
 }>) {
   return (
-    <>
-      {/* eslint-disable-next-line @next/next/no-img-element -- external candidate URLs are not known at build time */}
-      <img src={src} alt={alt} className={className} onError={hideBrokenImage} />
-    </>
+    <Image
+      src={src}
+      alt={alt}
+      className={className}
+      fill
+      sizes="(max-width: 768px) 50vw, 180px"
+      unoptimized
+      onError={hideBrokenImage}
+    />
   );
 }
 
@@ -64,19 +58,17 @@ export function JsonModal({
   return (
     <>
       <div className="fixed inset-0 z-50 bg-black/40" onClick={onClose} aria-hidden="true" />
-      <div className="border-border bg-background-elevated fixed top-1/2 left-1/2 z-50 flex max-h-[80vh] w-[640px] max-w-[90vw] -translate-x-1/2 -translate-y-1/2 flex-col rounded-[var(--radius-md)] border shadow-xl">
+      <div className="border-border bg-background-elevated fixed top-1/2 left-1/2 z-50 flex max-h-[80vh] w-[640px] max-w-[90vw] -translate-x-1/2 -translate-y-1/2 flex-col rounded-md border shadow-xl">
         <div className="border-divider flex items-center justify-between border-b px-4 py-3">
-          <h3 className="text-foreground type-heading text-sm font-medium">Raw JSON</h3>
+          <h3 className="type-subheading">Raw JSON</h3>
           <Button type="button" variant="quiet" size="icon" onClick={onClose} aria-label="Close">
             <X className="size-3.5" />
           </Button>
         </div>
         <div className="flex-1 overflow-auto p-4">
-          <pre
-            className="crawl-terminal crawl-terminal-json text-xs leading-relaxed"
-            tabIndex={0}
-            dangerouslySetInnerHTML={{ __html: syntaxHighlightJson(text) }}
-          />
+          <pre className="crawl-terminal crawl-terminal-json text-xs leading-relaxed">
+            {syntaxHighlightJsonNodes(text)}
+          </pre>
         </div>
         <div className="border-divider flex items-center justify-end gap-2 border-t px-4 py-3">
           <Button
@@ -120,7 +112,7 @@ export function DiscoveryStatus({
 }>) {
   const providerLabel = searchProviderLabel(provider);
   return (
-    <div className="border-accent/30 bg-accent-subtle text-foreground flex flex-wrap items-center gap-3 rounded-[var(--radius-md)] border px-4 py-3 text-xs">
+    <div className="border-accent/30 bg-accent-subtle text-foreground flex flex-wrap items-center gap-3 rounded-md border px-4 py-3 text-xs">
       <Loader2 className="text-accent size-4 animate-spin" aria-hidden="true" />
       <div className="min-w-[180px] flex-1">
         <div className="font-medium">{providerLabel} discovery running</div>
@@ -173,7 +165,7 @@ export function DiscoveryTableLoading({ provider }: Readonly<{ provider: string 
 
 function DiscoveryLoadingStep({ label, detail }: Readonly<{ label: string; detail: string }>) {
   return (
-    <div className="border-divider bg-background-alt rounded-[var(--radius-md)] border px-3 py-2">
+    <div className="border-divider bg-background-alt rounded-md border px-3 py-2">
       <div className="text-foreground flex items-center gap-2 text-xs font-medium">
         <span className="bg-accent size-1.5 rounded-full" />
         {label}
@@ -181,10 +173,6 @@ function DiscoveryLoadingStep({ label, detail }: Readonly<{ label: string; detai
       <div className="text-muted mt-1 text-xs">{detail}</div>
     </div>
   );
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function searchProvider(value: unknown): ProductIntelligenceOptions['search_provider'] {

@@ -69,7 +69,7 @@ export default function AdminUsersPage() {
     usersContent = <DataRegionLoading count={6} />;
   } else if (users.length) {
     usersContent = (
-      <div className="surface-muted rounded-[var(--radius-md)] border">
+      <div className="surface-muted rounded-md border">
         <Table
           wrapperClassName="max-h-[70vh]"
           className="compact-data-table min-w-[840px] table-fixed"
@@ -115,9 +115,7 @@ export default function AdminUsersPage() {
                     {user.is_active ? 'active' : 'inactive'}
                   </Badge>
                 </TableCell>
-                <TableCell className="type-caption text-muted">
-                  {formatDate(user.created_at)}
-                </TableCell>
+                <TableCell className="type-caption">{formatDate(user.created_at)}</TableCell>
                 <TableCell className="text-right">
                   <Button
                     type="button"

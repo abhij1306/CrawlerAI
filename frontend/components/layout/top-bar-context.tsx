@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useMemo, useRef, useSyncExternalStore } from 'react';
+import { createContext, use, useMemo, useRef, useSyncExternalStore } from 'react';
 import type { ReactNode } from 'react';
 
 export type TopBarState = {
@@ -26,9 +26,10 @@ export function TopBarProvider({ children }: Readonly<{ children: ReactNode }>) 
     () => ({
       getSnapshot: () => headerRef.current,
       subscribe: (listener) => {
-        listenersRef.current.add(listener);
+        const listeners = listenersRef.current;
+        listeners.add(listener);
         return () => {
-          listenersRef.current.delete(listener);
+          listeners.delete(listener);
         };
       },
       setHeader: (value) => {
@@ -45,7 +46,7 @@ export function TopBarProvider({ children }: Readonly<{ children: ReactNode }>) 
 }
 
 export function useTopBarStore() {
-  const context = useContext(TopBarContext);
+  const context = use(TopBarContext);
   if (!context) {
     throw new Error('useTopBarStore must be used within TopBarProvider');
   }

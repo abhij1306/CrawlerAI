@@ -8,6 +8,50 @@ import { formatCellDisplay, humanizeFieldName, stringifyCell } from '../../lib/c
 import { readRecordValue } from '../../lib/crawl/record-utils';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/table';
 import { RecordThumbnail } from './record-thumbnail';
+
+const IMAGE_KEYS = new Set(['image_url', 'image', 'thumbnail', 'img']);
+const TITLE_KEYS = new Set(['title', 'name', 'product_name', 'product title']);
+const PRICE_KEYS = new Set([
+  'price',
+  'sale_price',
+  'offer_price',
+  'current_price',
+  'final_price',
+  'our_price',
+  'deal_price',
+]);
+const URL_KEYS = new Set(['url', 'source_url', 'product_url', 'canonical_url']);
+
+function RecordCell({ col, record }: Readonly<{ col: string; record: CrawlRecord }>) {
+  const colKey = col.toLowerCase();
+  const raw = formatCellDisplay(readRecordValue(record, col));
+  if (!raw || raw === '--') return <span className="text-muted/40 type-body">--</span>;
+
+  if (TITLE_KEYS.has(colKey)) {
+    return <span className="type-body block max-w-[320px] truncate font-medium">{raw}</span>;
+  }
+  if (PRICE_KEYS.has(colKey)) {
+    return <span className="text-foreground type-body font-bold tabular-nums">{raw}</span>;
+  }
+  if (URL_KEYS.has(colKey)) {
+    const isSafe = raw.startsWith('http://') || raw.startsWith('https://');
+    if (isSafe) {
+      return (
+        <a
+          href={raw}
+          target="_blank"
+          rel="noreferrer"
+          className="link-accent block max-w-[200px] truncate text-sm transition-colors"
+          title={raw}
+        >
+          {raw}
+        </a>
+      );
+    }
+  }
+  return <span className="text-secondary block max-w-[260px] truncate text-sm">{raw}</span>;
+}
+
 export const RecordsTable = memo(function RecordsTable({
   records,
   visibleColumns,
@@ -21,21 +65,8 @@ export const RecordsTable = memo(function RecordsTable({
   onSelectAll: (checked: boolean) => void;
   onToggleRow: (id: number, checked: boolean) => void;
 }>) {
-  const IMAGE_KEYS = new Set(['image_url', 'image', 'thumbnail', 'img']);
-  const TITLE_KEYS = new Set(['title', 'name', 'product_name', 'product title']);
-  const PRICE_KEYS = new Set([
-    'price',
-    'sale_price',
-    'offer_price',
-    'current_price',
-    'final_price',
-    'our_price',
-    'deal_price',
-  ]);
-  const URL_KEYS = new Set(['url', 'source_url', 'product_url', 'canonical_url']);
-
-  const imageCol = visibleColumns.find((col) => IMAGE_KEYS.has(col));
-  const dataColumns = visibleColumns.filter((col) => !IMAGE_KEYS.has(col));
+  const imageCol = visibleColumns.find((col) => IMAGE_KEYS.has(col.toLowerCase()));
+  const dataColumns = visibleColumns.filter((col) => !IMAGE_KEYS.has(col.toLowerCase()));
   const hasImageCol = !!imageCol;
   const totalCols = dataColumns.length + (hasImageCol ? 1 : 0) + 1;
 
@@ -73,37 +104,8 @@ export const RecordsTable = memo(function RecordsTable({
     return () => observer.disconnect();
   }, [containerNode]);
 
-  function renderCell(col: string, record: CrawlRecord) {
-    const raw = formatCellDisplay(readRecordValue(record, col));
-    if (!raw || raw === '--') return <span className="text-muted/40 type-body">--</span>;
-
-    if (TITLE_KEYS.has(col)) {
-      return <span className="type-body block max-w-[320px] truncate font-medium">{raw}</span>;
-    }
-    if (PRICE_KEYS.has(col)) {
-      return <span className="text-foreground type-body font-bold tabular-nums">{raw}</span>;
-    }
-    if (URL_KEYS.has(col)) {
-      const isSafe = raw.startsWith('http://') || raw.startsWith('https://');
-      if (isSafe) {
-        return (
-          <a
-            href={raw}
-            target="_blank"
-            rel="noreferrer"
-            className="link-accent block max-w-[200px] truncate text-sm transition-colors"
-            title={raw}
-          >
-            {raw}
-          </a>
-        );
-      }
-    }
-    return <span className="text-secondary block max-w-[260px] truncate text-sm">{raw}</span>;
-  }
-
   return (
-    <div className="surface-muted max-h-[calc(100vh-272px)] overflow-hidden rounded-[var(--radius-md)] border">
+    <div className="surface-muted max-h-[calc(100vh-272px)] overflow-hidden rounded-md border">
       <Table
         className="compact-data-table min-w-max"
         wrapperClassName="max-h-[calc(100vh-276px)] scrollbar-stable"
@@ -115,6 +117,7 @@ export const RecordsTable = memo(function RecordsTable({
             <TableHead className="bg-background sticky left-0 z-50 w-10">
               <input
                 type="checkbox"
+                aria-label="Select all records"
                 checked={selectedIds.length === records.length && records.length > 0}
                 onChange={(event) => onSelectAll(event.target.checked)}
               />
@@ -125,8 +128,9 @@ export const RecordsTable = memo(function RecordsTable({
               </TableHead>
             ) : null}
             {dataColumns.map((col, idx) => {
+              const colKey = col.toLowerCase();
               const isFirstData = idx === 0;
-              const isUrl = URL_KEYS.has(col.toLowerCase());
+              const isUrl = URL_KEYS.has(colKey);
               const leftOffset = isFirstData ? (hasImageCol ? 104 : 40) : undefined;
               return (
                 <TableHead
@@ -138,7 +142,7 @@ export const RecordsTable = memo(function RecordsTable({
                   }
                   className={cn(
                     'bg-background whitespace-nowrap',
-                    PRICE_KEYS.has(col) && 'text-right',
+                    PRICE_KEYS.has(colKey) && 'text-right',
                     isFirstData && 'sticky z-50',
                     isUrl && 'min-w-[280px]',
                   )}
@@ -164,6 +168,7 @@ export const RecordsTable = memo(function RecordsTable({
                 <TableCell className="bg-background sticky left-0 z-30">
                   <input
                     type="checkbox"
+                    aria-label={`Select record ${record.id}`}
                     checked={isSelected}
                     onChange={(event) => onToggleRow(record.id, event.target.checked)}
                   />
@@ -178,8 +183,9 @@ export const RecordsTable = memo(function RecordsTable({
                   </TableCell>
                 ) : null}
                 {dataColumns.map((col, idx) => {
+                  const colKey = col.toLowerCase();
                   const isFirstData = idx === 0;
-                  const isUrl = URL_KEYS.has(col.toLowerCase());
+                  const isUrl = URL_KEYS.has(colKey);
                   const leftOffset = isFirstData ? (hasImageCol ? 104 : 40) : undefined;
                   return (
                     <TableCell
@@ -190,12 +196,12 @@ export const RecordsTable = memo(function RecordsTable({
                           : undefined
                       }
                       className={cn(
-                        PRICE_KEYS.has(col) && 'text-right',
+                        PRICE_KEYS.has(colKey) && 'text-right',
                         isFirstData && 'bg-background sticky z-30',
                         isUrl && 'min-w-[280px]',
                       )}
                     >
-                      {renderCell(col, record)}
+                      <RecordCell col={col} record={record} />
                     </TableCell>
                   );
                 })}

@@ -15,7 +15,7 @@ export function DomainSidebar({
   setSelectedDomain,
 }: DomainSidebarProps) {
   return (
-    <SurfacePanel className="flex max-h-[calc(100vh-180px)] flex-col space-y-3 p-3">
+    <SurfacePanel className="flex max-h-[calc(100vh-180px)] flex-col gap-3 p-3">
       <div className="flex shrink-0 items-center justify-between px-1">
         <h3 className="type-label">Domains</h3>
         <span className="text-muted text-xs">{groupedWorkspaces.length}</span>
@@ -26,8 +26,8 @@ export function DomainSidebar({
           selectedKey={resolvedSelectedDomain}
           onSelect={setSelectedDomain}
           getKey={(ws) => ws.domain}
-          renderLabel={(ws) => ws.domain}
-          renderMeta={(ws) => {
+          getLabel={(ws) => ws.domain}
+          getMeta={(ws) => {
             const selectorCount = getTotalSelectorCount(ws.surfaces);
             const profileCount = getProfileCount(ws.surfaces);
             const meta = [
@@ -40,7 +40,7 @@ export function DomainSidebar({
               .join(' · ');
             return meta ? <span className="text-muted text-xs">{meta}</span> : null;
           }}
-          renderBadge={(ws) =>
+          getBadge={(ws) =>
             ws.cookieMemory ? <Badge tone="accent">{ws.cookieMemory.cookie_count}</Badge> : null
           }
         />

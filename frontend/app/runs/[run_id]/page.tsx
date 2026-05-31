@@ -1,4 +1,10 @@
+import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
+
+export const metadata: Metadata = {
+  title: 'Run Detail',
+  description: 'View crawl run details and review extracted records.',
+};
 
 /**
  * Next.js App Router entrypoint for `/runs/[run_id]`; invoked by file-system routing.

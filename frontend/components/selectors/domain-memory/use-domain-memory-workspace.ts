@@ -18,6 +18,19 @@ import { cloneDomainRunProfile, firstUsableDomain, profileDraftKey } from './uti
 
 let localUidCounter = 0;
 
+function latestCompletedRunIdFor(surfaceWorkspace: SurfaceWorkspace): number | null {
+  let latestId: number | null = null;
+  let latestTime = -Infinity;
+  for (const run of surfaceWorkspace.completedRuns) {
+    const time = new Date(run.completed_at ?? run.updated_at ?? run.created_at).getTime();
+    if (time > latestTime) {
+      latestTime = time;
+      latestId = run.id;
+    }
+  }
+  return latestId;
+}
+
 function toLocalRecords(selectorData: SelectorRecord[]) {
   return selectorData.map((record, index) => ({
     ...record,
@@ -205,19 +218,8 @@ export function useDomainMemoryWorkspace() {
     }));
   }
 
-  function latestCompletedRunId(surfaceWorkspace: SurfaceWorkspace) {
-    const latestRun = [...surfaceWorkspace.completedRuns].sort((left, right) => {
-      const leftTime = new Date(left.completed_at ?? left.updated_at ?? left.created_at).getTime();
-      const rightTime = new Date(
-        right.completed_at ?? right.updated_at ?? right.created_at,
-      ).getTime();
-      return rightTime - leftTime;
-    })[0];
-    return latestRun?.id ?? null;
-  }
-
   async function saveProfile(domain: string, surfaceWorkspace: SurfaceWorkspace) {
-    const sourceRunId = latestCompletedRunId(surfaceWorkspace);
+    const sourceRunId = latestCompletedRunIdFor(surfaceWorkspace);
     if (!sourceRunId) {
       setError('No completed run available to save this profile.');
       return;
@@ -272,7 +274,7 @@ export function useDomainMemoryWorkspace() {
     error,
     groupedWorkspaces,
     hasLoadedOnce,
-    latestCompletedRunId,
+    latestCompletedRunId: latestCompletedRunIdFor,
     loadedSelectorDomain,
     loading,
     loadWorkspace,

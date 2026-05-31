@@ -16,9 +16,9 @@ import {
   Search,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import { useDeferredValue, useEffect, useMemo, useReducer, useRef } from 'react';
 import { HistoryDrawer, type HistoryItem } from '../ui/history-drawer';
-import { syntaxHighlightJson } from '../../lib/ui/syntax';
+import { syntaxHighlightJsonNodes } from '../../lib/ui/syntax';
 import {
   DataRegionEmpty,
   DataRegionLoading,
@@ -80,12 +80,56 @@ import {
   downloadMarkdown,
   isDesignSystemRun,
   isMarkdownOutputRun,
-  MarkdownOutputPanel,
-} from './markdown-output';
+} from './markdown-output-utils';
+import { MarkdownOutputPanel } from './markdown-output';
+import { storeDataEnrichmentPrefill, storeProductIntelligencePrefill } from './crawl-run-prefill';
+import { buildInitialCrawlRunLocalState, crawlRunLocalReducer } from './crawl-run-state';
 import { useLiveClock, useTerminalRecordSync, useTerminalSync } from './use-run-polling';
 import { useRunWorkspace } from './use-run-workspace';
 
 type CrawlRunScreenProps = { runId: number };
+
+function RunOutputSummary({
+  llmRequested,
+  llmTouchedRecords,
+  llmTouchedFields,
+  duration,
+  verdict,
+  quality,
+}: Readonly<{
+  llmRequested: boolean;
+  llmTouchedRecords: number;
+  llmTouchedFields: number;
+  duration: string;
+  verdict: string;
+  quality: ResultSummaryQualityLevel;
+}>) {
+  return (
+    <div className="flex flex-wrap items-center justify-end gap-2.5">
+      {llmRequested ? (
+        <Badge
+          tone={llmTouchedRecords > 0 ? 'accent' : 'neutral'}
+          title={
+            llmTouchedRecords > 0
+              ? `LLM used ${llmTouchedRecords} record(s) / ${llmTouchedFields} field(s)`
+              : 'LLM enabled, no visible repair'
+          }
+        >
+          {llmTouchedRecords > 0
+            ? `LLM used ${llmTouchedRecords} rec / ${llmTouchedFields} fld`
+            : 'LLM on, no visible repair'}
+        </Badge>
+      ) : (
+        <Badge tone="neutral">LLM off</Badge>
+      )}
+      <RunSummaryChips
+        duration={duration}
+        verdict={humanizeVerdict(verdict).toLowerCase()}
+        quality={humanizeQuality(quality).toLowerCase()}
+      />
+    </div>
+  );
+}
 
 function llmTouchedFieldNames(record: CrawlRecord): string[] {
   const raw =
@@ -112,79 +156,6 @@ function llmTouchedFieldNames(record: CrawlRecord): string[] {
   return Array.from(touched);
 }
 
-type ProductIntelligencePrefillPayload = {
-  source_run_id: number | null;
-  source_domain: string;
-  records: Array<Pick<CrawlRecord, 'id' | 'run_id' | 'source_url' | 'data'>>;
-};
-
-type DataEnrichmentPrefillPayload = {
-  source_run_id: number | null;
-  records: Array<Pick<CrawlRecord, 'id' | 'run_id' | 'source_url' | 'data'>>;
-};
-
-export function storeProductIntelligencePrefill(
-  payload: ProductIntelligencePrefillPayload,
-  storage: Storage = window.sessionStorage,
-) {
-  try {
-    storage.setItem(STORAGE_KEYS.PRODUCT_INTELLIGENCE_PREFILL, JSON.stringify(payload));
-  } catch (error) {
-    console.error('Unable to store full Product Intelligence prefill.', error);
-    const reducedPayload = {
-      ...payload,
-      records: payload.records.slice(0, CRAWL_DEFAULTS.TABLE_PAGE_SIZE * 4).map((record) => ({
-        id: record.id,
-        run_id: record.run_id,
-        source_url: record.source_url,
-        data: {},
-      })),
-    };
-    try {
-      storage.setItem(STORAGE_KEYS.PRODUCT_INTELLIGENCE_PREFILL, JSON.stringify(reducedPayload));
-    } catch (fallbackError) {
-      console.error('Unable to store reduced Product Intelligence prefill.', fallbackError);
-      storage.removeItem(STORAGE_KEYS.PRODUCT_INTELLIGENCE_PREFILL);
-    }
-  }
-}
-
-export function storeDataEnrichmentPrefill(
-  payload: DataEnrichmentPrefillPayload,
-  storage: Storage = window.sessionStorage,
-) {
-  const serializedPayload = JSON.stringify(payload);
-  try {
-    storage.setItem(STORAGE_KEYS.DATA_ENRICHMENT_PREFILL, serializedPayload);
-  } catch (error) {
-    console.error(
-      'Unable to store Data Enrichment prefill for triggerDataEnrichmentFromResults.',
-      error,
-    );
-    if (isStorageQuotaError(error)) {
-      try {
-        storage.removeItem(STORAGE_KEYS.PRODUCT_INTELLIGENCE_PREFILL);
-        storage.removeItem(STORAGE_KEYS.BULK_PREFILL);
-        storage.setItem(STORAGE_KEYS.DATA_ENRICHMENT_PREFILL, serializedPayload);
-        return;
-      } catch (fallbackError) {
-        console.error(
-          'Unable to store Data Enrichment prefill after clearing older keys.',
-          fallbackError,
-        );
-      }
-    }
-    storage.removeItem(STORAGE_KEYS.DATA_ENRICHMENT_PREFILL);
-  }
-}
-
-function isStorageQuotaError(error: unknown) {
-  return (
-    error instanceof DOMException &&
-    (error.name === 'QuotaExceededError' || error.name === 'NS_ERROR_DOM_QUOTA_REACHED')
-  );
-}
-
 export function CrawlRunScreen({ runId }: Readonly<CrawlRunScreenProps>) {
   const router = useRouter();
   const selectedIds = useCrawlRunStore((state) => state.selectedIds);
@@ -200,19 +171,27 @@ export function CrawlRunScreen({ runId }: Readonly<CrawlRunScreenProps>) {
   const historyOpen = useCrawlRunStore((state) => state.historyOpen);
   const setHistoryOpen = useCrawlRunStore((state) => state.setHistoryOpen);
   const resetWorkspaceUi = useCrawlRunStore((state) => state.resetWorkspaceUi);
-  const [recipeActionPending, setRecipeActionPending] = useState<
-    `field:${string}:${'keep' | 'reject'}` | null
-  >(null);
-  const [recipeActionError, setRecipeActionError] = useState('');
-  const [liveJumpAvailable, setLiveJumpAvailable] = useState(false);
-  const [runActionPending, setRunActionPending] = useState<'kill' | null>(null);
-  const [runActionError, setRunActionError] = useState('');
-  const [socketLogItems, setSocketLogItems] = useState<CrawlLog[]>([]);
-  const [logSocketConnected, setLogSocketConnected] = useState(false);
+  const [localState, dispatchLocal] = useReducer(
+    crawlRunLocalReducer,
+    undefined,
+    buildInitialCrawlRunLocalState,
+  );
+  const {
+    recipeActionPending,
+    recipeActionError,
+    liveJumpAvailable,
+    runActionPending,
+    runActionError,
+    socketLogItems,
+    logSocketConnected,
+    sessionStartMs,
+  } = localState;
   const logViewportRef = useRef<HTMLDivElement | null>(null);
   const logCursorRef = useRef<number | undefined>(undefined);
-  const [sessionStartMs] = useState(() => Date.now());
-  const pollErrorEventKeysRef = useRef<Set<string>>(new Set());
+  const pollErrorEventKeysRef = useRef<Set<string> | null>(null);
+  if (pollErrorEventKeysRef.current === null) {
+    pollErrorEventKeysRef.current = new Set();
+  }
   const { runQuery, run, live, terminal } = useRunWorkspace(runId);
   const localNow = useLiveClock(live);
   const { refetch: refetchRunQuery } = runQuery;
@@ -404,9 +383,7 @@ export function CrawlRunScreen({ runId }: Readonly<CrawlRunScreenProps>) {
   useEffect(() => resetWorkspaceUi(), [resetWorkspaceUi, runId]);
 
   useEffect(() => {
-    if (!socketLogItems.length) {
-      logCursorRef.current = logCursorAfterId;
-    }
+    logCursorRef.current = socketLogItems.length ? logCursorRef.current : logCursorAfterId;
   }, [logCursorAfterId, socketLogItems.length]);
 
   useEffect(() => {
@@ -427,15 +404,15 @@ export function CrawlRunScreen({ runId }: Readonly<CrawlRunScreenProps>) {
     const wsUrl = `${getApiWebSocketBaseUrl()}/api/crawls/${runId}/logs/ws${queryString ? `?${queryString}` : ''}`;
     const ws = new WebSocket(wsUrl);
 
-    ws.onopen = () => setLogSocketConnected(true);
+    ws.onopen = () => dispatchLocal({ type: 'logSocketConnectionChanged', connected: true });
     ws.onclose = () => {
-      setLogSocketConnected(false);
+      dispatchLocal({ type: 'logSocketConnectionChanged', connected: false });
       // When the backend closes the stream at terminal status, refresh immediately
       // so the completed screen appears without manual page refresh.
       void refetchRunQuery();
       void refetchLogsQuery();
     };
-    ws.onerror = () => setLogSocketConnected(false);
+    ws.onerror = () => dispatchLocal({ type: 'logSocketConnectionChanged', connected: false });
     ws.onmessage = (event) => {
       try {
         const parsed = JSON.parse(event.data) as CrawlLog;
@@ -443,7 +420,7 @@ export function CrawlRunScreen({ runId }: Readonly<CrawlRunScreenProps>) {
           return;
         }
         logCursorRef.current = parsed.id;
-        setSocketLogItems((current) => mergeLogs(current, [parsed]));
+        dispatchLocal({ type: 'socketLogReceived', log: parsed });
       } catch {
         // Ignore malformed websocket payloads and rely on polling fallback.
       }
@@ -452,13 +429,17 @@ export function CrawlRunScreen({ runId }: Readonly<CrawlRunScreenProps>) {
   }, [refetchLogsQuery, refetchRunQuery, runId, shouldFetchLogs]);
 
   useEffect(() => {
+    const pollErrorEventKeys = pollErrorEventKeysRef.current;
+    if (!pollErrorEventKeys) {
+      return;
+    }
     for (const panel of panelRefreshErrors) {
       const message = panel.error instanceof Error ? panel.error.message : 'Unknown error';
       const eventKey = `${runId}:${panel.key}:${message}`;
-      if (pollErrorEventKeysRef.current.has(eventKey)) {
+      if (pollErrorEventKeys.has(eventKey)) {
         continue;
       }
-      pollErrorEventKeysRef.current.add(eventKey);
+      pollErrorEventKeys.add(eventKey);
       trackEvent(
         'run_screen_poll_error_rate',
         telemetryErrorPayload(panel.error, {
@@ -484,9 +465,9 @@ export function CrawlRunScreen({ runId }: Readonly<CrawlRunScreenProps>) {
       const atBottom = scrollHeight - scrollTop - clientHeight < CRAWL_DEFAULTS.SCROLL_THRESHOLD_PX;
       if (atBottom) {
         node.scrollTop = scrollHeight;
-        setLiveJumpAvailable(false);
+        dispatchLocal({ type: 'liveJumpChanged', available: false });
       } else {
-        setLiveJumpAvailable(true);
+        dispatchLocal({ type: 'liveJumpChanged', available: true });
       }
     });
     return () => window.cancelAnimationFrame(frame);
@@ -549,10 +530,7 @@ export function CrawlRunScreen({ runId }: Readonly<CrawlRunScreenProps>) {
       ),
     [effectiveOutputTab, filteredTableRecords, records, visibleSelectedIds],
   );
-  const batchSourceRecords = useMemo(
-    () => (tableRecords.length ? tableRecords : records),
-    [records, tableRecords],
-  );
+  const batchSourceRecords = tableRecords.length ? tableRecords : records;
   const llmSummary = useMemo(() => {
     const llmRequested = Boolean(run?.settings?.llm_enabled);
     const touchedFields = new Set<string>();
@@ -643,6 +621,51 @@ export function CrawlRunScreen({ runId }: Readonly<CrawlRunScreenProps>) {
         terminal ? run?.completed_at : new Date(localNow).toISOString(),
       ),
   };
+  const outputTabs = useMemo(
+    () => (
+      <TabBar
+        value={effectiveOutputTab}
+        variant="underline"
+        onChange={(value) => setOutputTab(value as OutputTabKey)}
+        options={[
+          ...(markdownOutputRun
+            ? [{ value: 'markdown', label: designSystemRun ? 'design.md' : 'Markdown' }]
+            : [{ value: 'table', label: `Table (${summary.records})` }]),
+          ...(!designSystemRun ? [{ value: 'json', label: 'JSON' }] : []),
+          { value: 'logs', label: 'Logs' },
+          ...(showRunLearningTab ? [{ value: 'learning', label: 'Learning' }] : []),
+        ]}
+      />
+    ),
+    [
+      designSystemRun,
+      effectiveOutputTab,
+      markdownOutputRun,
+      setOutputTab,
+      showRunLearningTab,
+      summary.records,
+    ],
+  );
+  const outputSummary = useMemo(
+    () => (
+      <RunOutputSummary
+        llmRequested={llmSummary.requested}
+        llmTouchedRecords={llmSummary.touchedRecords}
+        llmTouchedFields={llmSummary.touchedFields}
+        duration={summary.duration}
+        verdict={verdict}
+        quality={completedQualityLevel}
+      />
+    ),
+    [
+      completedQualityLevel,
+      llmSummary.requested,
+      llmSummary.touchedFields,
+      llmSummary.touchedRecords,
+      summary.duration,
+      verdict,
+    ],
+  );
 
   const knownTableRecordsTotal = Math.max(tableTotal, tableRecordsQuery.data?.meta?.total ?? 0);
   const terminalRecordsExpected =
@@ -663,7 +686,7 @@ export function CrawlRunScreen({ runId }: Readonly<CrawlRunScreenProps>) {
   });
 
   function downloadExport(kind: 'csv' | 'json') {
-    setRunActionError('');
+    dispatchLocal({ type: 'runActionErrorCleared' });
     const filename = `run-${runId}.${kind}`;
     try {
       const href = kind === 'csv' ? api.exportCsv(runId) : api.exportJson(runId);
@@ -675,13 +698,15 @@ export function CrawlRunScreen({ runId }: Readonly<CrawlRunScreenProps>) {
       anchor.click();
       anchor.remove();
     } catch (error) {
-      setRunActionError(error instanceof Error ? error.message : 'Unable to download export.');
+      dispatchLocal({
+        type: 'runActionFailed',
+        message: error instanceof Error ? error.message : 'Unable to download export.',
+      });
     }
   }
 
   async function runControl() {
-    setRunActionPending('kill');
-    setRunActionError('');
+    dispatchLocal({ type: 'runActionStarted', pendingKey: 'kill' });
     try {
       await api.killCrawl(runId);
       await Promise.all([
@@ -691,9 +716,12 @@ export function CrawlRunScreen({ runId }: Readonly<CrawlRunScreenProps>) {
         jsonRecordsQuery.refetch(),
       ]);
     } catch (error) {
-      setRunActionError(error instanceof Error ? error.message : 'Unable to kill crawl.');
+      dispatchLocal({
+        type: 'runActionFailed',
+        message: error instanceof Error ? error.message : 'Unable to kill crawl.',
+      });
     } finally {
-      setRunActionPending(null);
+      dispatchLocal({ type: 'runActionFinished' });
     }
   }
 
@@ -765,8 +793,7 @@ export function CrawlRunScreen({ runId }: Readonly<CrawlRunScreenProps>) {
     sourceRecordIds?: number[],
   ) {
     const pendingKey = `field:${fieldName}:${action}` as const;
-    setRecipeActionPending(pendingKey);
-    setRecipeActionError('');
+    dispatchLocal({ type: 'recipeStarted', pendingKey });
     try {
       await api.applyDomainRecipeFieldAction(runId, {
         field_name: fieldName,
@@ -777,11 +804,15 @@ export function CrawlRunScreen({ runId }: Readonly<CrawlRunScreenProps>) {
       });
       await refetchDomainRecipeQuery();
     } catch (error) {
-      setRecipeActionError(
-        error instanceof Error ? error.message : `Unable to ${action} this field learning signal.`,
-      );
+      dispatchLocal({
+        type: 'recipeFailed',
+        message:
+          error instanceof Error
+            ? error.message
+            : `Unable to ${action} this field learning signal.`,
+      });
     } finally {
-      setRecipeActionPending(null);
+      dispatchLocal({ type: 'recipeFinished' });
     }
   }
 
@@ -846,9 +877,7 @@ export function CrawlRunScreen({ runId }: Readonly<CrawlRunScreenProps>) {
             title="Loading Crawl"
             description="Fetching run details and restoring the workspace."
           />
-          <div className="text-muted type-body leading-[var(--leading-relaxed)]">
-            Run #{runId} is loading.
-          </div>
+          <div className="text-muted type-body leading-relaxed">Run #{runId} is loading.</div>
         </Card>
       ) : null}
 
@@ -901,7 +930,7 @@ export function CrawlRunScreen({ runId }: Readonly<CrawlRunScreenProps>) {
             </span>
             <div className="flex items-center gap-3">
               {run ? (
-                <span className="border-divider bg-background-elevated text-foreground type-body inline-flex h-8 items-center gap-1.5 rounded-[var(--radius-sm)] border px-3 tabular-nums">
+                <span className="border-divider bg-background-elevated text-foreground type-body inline-flex h-8 items-center gap-1.5 rounded-sm border px-3 tabular-nums">
                   <Clock className="size-3.5" />
                   {elapsedLabel}
                 </span>
@@ -912,9 +941,9 @@ export function CrawlRunScreen({ runId }: Readonly<CrawlRunScreenProps>) {
                   type="button"
                   onClick={() => {
                     scrollViewportToBottom(logViewportRef);
-                    setLiveJumpAvailable(false);
+                    dispatchLocal({ type: 'liveJumpChanged', available: false });
                   }}
-                  className="bg-background-alt shadow-card type-control inline-flex items-center gap-1 rounded-[var(--radius-md)] px-2.5 py-1.5"
+                  className="bg-background-alt shadow-card type-control inline-flex items-center gap-1 rounded-md px-2.5 py-1.5"
                 >
                   <ChevronsDown className="size-3.5" aria-hidden="true" />
                   Jump to Latest
@@ -1039,46 +1068,8 @@ export function CrawlRunScreen({ runId }: Readonly<CrawlRunScreenProps>) {
                   </Button>
                 </>
               }
-              tabs={
-                <TabBar
-                  value={effectiveOutputTab}
-                  variant="underline"
-                  onChange={(value) => setOutputTab(value as OutputTabKey)}
-                  options={[
-                    ...(markdownOutputRun
-                      ? [{ value: 'markdown', label: designSystemRun ? 'design.md' : 'Markdown' }]
-                      : [{ value: 'table', label: `Table (${summary.records})` }]),
-                    ...(!designSystemRun ? [{ value: 'json', label: 'JSON' }] : []),
-                    { value: 'logs', label: 'Logs' },
-                    ...(showRunLearningTab ? [{ value: 'learning', label: 'Learning' }] : []),
-                  ]}
-                />
-              }
-              summary={
-                <div className="flex flex-wrap items-center justify-end gap-2.5">
-                  {llmSummary.requested ? (
-                    <Badge
-                      tone={llmSummary.touchedRecords > 0 ? 'accent' : 'neutral'}
-                      title={
-                        llmSummary.touchedRecords > 0
-                          ? `LLM used ${llmSummary.touchedRecords} record(s) / ${llmSummary.touchedFields} field(s)`
-                          : 'LLM enabled, no visible repair'
-                      }
-                    >
-                      {llmSummary.touchedRecords > 0
-                        ? `LLM used ${llmSummary.touchedRecords} rec / ${llmSummary.touchedFields} fld`
-                        : 'LLM on, no visible repair'}
-                    </Badge>
-                  ) : (
-                    <Badge tone="neutral">LLM off</Badge>
-                  )}
-                  <RunSummaryChips
-                    duration={summary.duration}
-                    verdict={humanizeVerdict(verdict).toLowerCase()}
-                    quality={humanizeQuality(completedQualityLevel).toLowerCase()}
-                  />
-                </div>
-              }
+              tabs={outputTabs}
+              summary={outputSummary}
               content={
                 <>
                   {effectiveOutputTab === 'markdown' ? (
@@ -1114,7 +1105,7 @@ export function CrawlRunScreen({ runId }: Readonly<CrawlRunScreenProps>) {
                             }
                           />
                           {hasMoreTableRecords ? (
-                            <div className="surface-muted text-muted type-body flex items-center justify-between rounded-[var(--radius-md)] px-6 py-2">
+                            <div className="surface-muted text-muted type-body flex items-center justify-between rounded-md px-6 py-2">
                               <span>
                                 Showing {tableRecords.length} of {tableTotal} records
                               </span>
@@ -1166,13 +1157,11 @@ export function CrawlRunScreen({ runId }: Readonly<CrawlRunScreenProps>) {
                           Copy
                         </Button>
                       </div>
-                      <pre
-                        className="crawl-terminal crawl-terminal-json max-h-[72vh] min-h-[55vh]"
-                        tabIndex={0}
-                        dangerouslySetInnerHTML={{ __html: syntaxHighlightJson(recordsJson) }}
-                      />
+                      <pre className="crawl-terminal crawl-terminal-json max-h-[72vh] min-h-[55vh]">
+                        {syntaxHighlightJsonNodes(recordsJson)}
+                      </pre>
                       {hasMoreJsonRecords ? (
-                        <div className="surface-muted text-muted type-body mt-2 flex items-center justify-between rounded-[var(--radius-md)] px-6 py-2">
+                        <div className="surface-muted text-muted type-body mt-2 flex items-center justify-between rounded-md px-6 py-2">
                           <span>
                             JSON previewing {jsonRecords.length} of {recordsTotal} records
                           </span>
@@ -1229,7 +1218,7 @@ export function CrawlRunScreen({ runId }: Readonly<CrawlRunScreenProps>) {
                               description={`Review extraction evidence for ${domainRecipe.domain} on ${domainRecipe.surface}. Keep what should compound, reject what should not.`}
                             />
                             <div className="grid gap-3 md:grid-cols-2">
-                              <div className="surface-muted text-secondary type-body rounded-[var(--radius-md)] px-6 py-3 leading-[var(--leading-relaxed)]">
+                              <div className="surface-muted text-secondary type-body rounded-md px-6 py-3 leading-relaxed">
                                 <div className="field-label mb-1">Requested Coverage</div>
                                 Requested:{' '}
                                 {domainRecipe.requested_field_coverage.requested.join(', ') ||
@@ -1241,7 +1230,7 @@ export function CrawlRunScreen({ runId }: Readonly<CrawlRunScreenProps>) {
                                 Missing:{' '}
                                 {domainRecipe.requested_field_coverage.missing.join(', ') || 'None'}
                               </div>
-                              <div className="surface-muted text-secondary type-body rounded-[var(--radius-md)] px-6 py-3 leading-[var(--leading-relaxed)]">
+                              <div className="surface-muted text-secondary type-body rounded-md px-6 py-3 leading-relaxed">
                                 <div className="field-label mb-1">Acquisition Evidence</div>
                                 Method:{' '}
                                 {domainRecipe.acquisition_evidence.actual_fetch_method || '—'}
@@ -1303,7 +1292,7 @@ export function CrawlRunScreen({ runId }: Readonly<CrawlRunScreenProps>) {
                                                 </Badge>
                                               ) : null}
                                             </div>
-                                            <div className="type-caption text-muted mt-1">
+                                            <div className="type-caption mt-1">
                                               {selectorWinnerLabel(item.selector_kind)} · Sources:{' '}
                                               {item.source_labels.join(', ') || '—'}
                                             </div>
@@ -1355,7 +1344,7 @@ export function CrawlRunScreen({ runId }: Readonly<CrawlRunScreenProps>) {
                                   })}
                                 </div>
                               ) : (
-                                <div className="surface-muted rounded-[var(--radius-lg)] border border-dashed px-6 py-3">
+                                <div className="surface-muted rounded-lg border border-dashed px-6 py-3">
                                   <p className="type-body text-secondary m-0">
                                     No field learning signals were captured for this run.
                                   </p>

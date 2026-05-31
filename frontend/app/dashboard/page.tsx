@@ -39,10 +39,7 @@ function DomainBar({
   const pct = max > 0 ? Math.round((count / max) * 100) : 0;
   return (
     <div className="flex items-center gap-3 py-1.5">
-      <span
-        className="text-secondary min-w-0 flex-1 truncate font-mono text-[13px] font-normal normal-case"
-        title={domain}
-      >
+      <span className="text-secondary min-w-0 flex-1 truncate font-mono text-sm" title={domain}>
         {domain}
       </span>
       <div className="bg-border h-1.5 w-28 overflow-hidden rounded-full">
@@ -51,7 +48,7 @@ function DomainBar({
           style={{ width: `${pct}%` }}
         />
       </div>
-      <span className="text-muted w-8 text-right font-mono text-[13px] font-normal">{count}</span>
+      <span className="text-muted w-8 text-right font-mono text-sm tabular-nums">{count}</span>
     </div>
   );
 }
@@ -82,13 +79,13 @@ function RunActivityRow({ run }: Readonly<{ run: CrawlRun }>) {
   return (
     <Link
       href={`/crawl?run_id=${run.id}` as Route}
-      className="group hover:bg-accent/[0.04] flex items-center gap-3 rounded-[var(--radius-md)] px-2 py-2 no-underline transition-colors"
+      className="group hover:bg-accent/[0.04] flex items-center gap-3 rounded-md p-2 no-underline transition-colors"
     >
       <StatusDot tone={runExecutionTone(run.status, run.result_summary)} />
-      <span className="type-body group-hover:text-accent min-w-0 flex-1 truncate font-medium transition-colors">
+      <span className="type-body text-foreground group-hover:text-accent min-w-0 flex-1 truncate font-medium transition-colors">
         {domain || `Run #${run.id}`}
       </span>
-      <span className="type-caption text-muted w-20 text-right tabular-nums">
+      <span className="type-body-sm text-secondary w-20 text-right tabular-nums">
         {recordCount.toLocaleString()} rec
       </span>
       <div className="flex w-32 justify-start">
@@ -208,9 +205,7 @@ export default function DashboardPage() {
                 <Badge tone={statusTone(status)} flat={isSubduedStatus(status)}>
                   {statusLabel(status)}
                 </Badge>
-                <span className="text-primary font-mono text-sm font-normal tabular-nums">
-                  {count}
-                </span>
+                <span className="text-primary font-mono text-sm tabular-nums">{count}</span>
               </div>
             ))}
           </div>
