@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import sys
 from typing import Any
@@ -14,6 +15,8 @@ from app.services.config.monitor_settings import (
     MCP_API_KEY_ENV,
     MCP_DEFAULT_API_BASE_URL,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class AlertMCPServer:
