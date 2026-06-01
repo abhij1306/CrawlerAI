@@ -164,7 +164,7 @@ def _selected_option_node(control: Any) -> Any | None:
             ),
             None,
         )
-    return None
+    return options[0] if options else None
 
 
 def _clean_dom_option_display_label(value: object) -> str:

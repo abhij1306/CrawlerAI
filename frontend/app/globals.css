@@ -4,6 +4,7 @@
    Fonts: Public Sans · Bricolage Grotesque · Ubuntu Mono
 ═══════════════════════════════════════════════════════════════════════ */
 
+@import 'katex/dist/katex.min.css';
 @import 'tailwindcss';
 
 /* ─── TAILWIND v4 TOKEN BRIDGE ─────────────────────────────────────── */

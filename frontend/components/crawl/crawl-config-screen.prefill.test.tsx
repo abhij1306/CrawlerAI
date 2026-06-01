@@ -164,7 +164,9 @@ describe('CrawlConfigScreen bulk prefill', () => {
     enterTargetUrl('https://example.com/collections/chairs');
 
     await expectDomainProfileLookup('https://example.com/collections/chairs');
-    expect(listSelectorsMock).toHaveBeenCalledWith({ domain: 'example.com' });
+    await waitFor(() => {
+      expect(listSelectorsMock).toHaveBeenCalledWith({ domain: 'example.com' });
+    });
 
     fireEvent.click(screen.getByRole('button', { name: 'Advanced' }));
 

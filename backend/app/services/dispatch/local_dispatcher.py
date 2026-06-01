@@ -42,6 +42,14 @@ def get_live_local_run_task(run_id: int) -> asyncio.Task[None] | None:
     return task
 
 
+def live_local_run_task_count() -> int:
+    return sum(
+        1
+        for run_id in list(_local_run_tasks)
+        if get_live_local_run_task(int(run_id)) is not None
+    )
+
+
 def clear_local_run_task(
     run_id: int, *, expected_task: asyncio.Task[None] | None = None
 ) -> None:

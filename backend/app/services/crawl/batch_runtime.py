@@ -72,7 +72,7 @@ def _parallel_url_concurrency(total_urls: int, settings_view) -> int:
         batch_limit = int(
             url_batch_concurrency()
             if callable(url_batch_concurrency)
-            else _DEFAULT_URL_CONCURRENCY
+            else url_batch_concurrency
         )
     except (AttributeError, TypeError, ValueError):
         batch_limit = _DEFAULT_URL_CONCURRENCY

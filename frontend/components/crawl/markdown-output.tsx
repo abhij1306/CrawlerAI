@@ -3,6 +3,8 @@
 import { Copy } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
+import katex from 'katex';
+import type { KatexOptions } from 'katex';
 
 import { DataRegionEmpty, DataRegionLoading } from '../ui/patterns';
 import { Button } from '../ui/primitives';
@@ -11,43 +13,18 @@ type KaTeXApi = {
   render: (
     math: string,
     element: HTMLElement,
-    options: { displayMode: boolean; throwOnError: boolean; strict: string },
+    options: KatexOptions,
   ) => void;
 };
 
 type WindowWithKaTeX = Window & { katex?: KaTeXApi };
 
-// Dynamically load KaTeX scripts and stylesheets
-let katexPromise: Promise<KaTeXApi> | null = null;
 function loadKaTeX(): Promise<KaTeXApi> {
   if (typeof window === 'undefined') return Promise.reject(new Error('Window is undefined'));
   const browserWindow = window as WindowWithKaTeX;
   if (browserWindow.katex) return Promise.resolve(browserWindow.katex);
-  if (katexPromise) return katexPromise;
-
-  katexPromise = new Promise((resolve, reject) => {
-    const link = document.createElement('link');
-    link.rel = 'stylesheet';
-    link.href = 'https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.css';
-    document.head.appendChild(link);
-
-    const script = document.createElement('script');
-    script.src = 'https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.js';
-    script.onload = () => {
-      if (browserWindow.katex) {
-        resolve(browserWindow.katex);
-      } else {
-        reject(new Error('KaTeX did not initialize'));
-      }
-    };
-    script.onerror = () => {
-      katexPromise = null;
-      reject(new Error('Failed to load KaTeX'));
-    };
-    document.body.appendChild(script);
-  });
-
-  return katexPromise;
+  browserWindow.katex = katex;
+  return Promise.resolve(katex);
 }
 
 export function MathRenderer({
@@ -193,7 +170,13 @@ function MarkdownPreview({ markdown }: Readonly<{ markdown: string }>) {
       continue;
     }
 
-    if (index === 0 && trimmed === '---') {
+    if (
+      index === 0 &&
+      trimmed === '---' &&
+      lines.findIndex((candidate, candidateIndex) => {
+        return candidateIndex > index && candidate.trim() === '---';
+      }) !== -1
+    ) {
       const frontmatter: string[] = [];
       index += 1;
       while (index < lines.length && lines[index].trim() !== '---') {

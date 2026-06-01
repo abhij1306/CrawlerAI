@@ -2,6 +2,8 @@ from __future__ import annotations
 # ruff: noqa: F401,F403,F405
 # pylint: disable=wildcard-import,unused-wildcard-import
 
+import re
+
 from ._common import *
 
 SELECTOR_RUNTIME_PRIMARY_IFRAME_MAX_PAGE_TEXT = 400

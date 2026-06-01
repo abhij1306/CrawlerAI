@@ -537,6 +537,10 @@ class CrawlerRuntimeSettings(BaseSettings):
         if not str(self.host_memory_ttl_seconds_key or "").strip():
             raise ValueError("host_memory_ttl_seconds_key must not be blank")
         _require_positive("detail_max_variant_axes", self.detail_max_variant_axes)
+        _require_positive(
+            "selector_regex_max_pattern_length",
+            self.selector_regex_max_pattern_length,
+        )
         _require_non_negative(
             "detail_max_variant_matrix_cells",
             self.detail_max_variant_matrix_cells,

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import hmac
 import logging
 from dataclasses import dataclass
@@ -36,6 +37,10 @@ def hash_api_key(value: str) -> str:
     ).hex()
 
 
+def _legacy_sha256_api_key_hash(value: str) -> str:
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
 async def authenticate_public_api_key(
     session: AsyncSession,
     authorization: str | None,
@@ -52,8 +57,12 @@ async def authenticate_public_api_key(
             },
         )
     key_hash = hash_api_key(credentials.strip())
+    legacy_key_hash = _legacy_sha256_api_key_hash(credentials.strip())
     api_key = await session.scalar(
-        select(ApiKey).where(ApiKey.key_hash == key_hash, ApiKey.is_active.is_(True))
+        select(ApiKey).where(
+            ApiKey.key_hash.in_((key_hash, legacy_key_hash)),
+            ApiKey.is_active.is_(True),
+        )
     )
     if api_key is None or api_key.user_id is None:
         raise HTTPException(

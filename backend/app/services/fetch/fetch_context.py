@@ -242,7 +242,6 @@ def _browser_attempt_timeout_seconds(
         browser_engine == "patchright"
         and _is_vendor_block_reason(reason)
         and not str(context.forced_browser_engine or "").strip()
-        and engine_index < len(engine_attempts)
         and _patchright_probe_cap_applies(host_policy=host_policy, reason=reason)
     ):
         return min(
@@ -270,9 +269,9 @@ def _patchright_probe_cap_applies(
         return False
     expected_vendor = _extract_vendor_from_reason(reason) or ""
     last_vendor = str(host_policy.last_block_vendor or "").strip().lower()
-    if expected_vendor and last_vendor and expected_vendor != last_vendor:
-        return False
-    return True
+    if not expected_vendor:
+        return True
+    return expected_vendor == last_vendor
 
 
 async def fetch_page(

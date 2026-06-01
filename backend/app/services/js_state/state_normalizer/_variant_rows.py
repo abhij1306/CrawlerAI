@@ -235,7 +235,10 @@ def _collect_variant_matrix_rows(
     rows: list[dict[str, Any]],
     axis_hints: list[tuple[str, frozenset[str]]],
     option_values: dict[str, str],
+    depth: int = 0,
 ) -> None:
+    if depth >= JS_STATE_LIST_ITERATION_LIMIT:
+        return
     current_option_values = dict(option_values)
     axis_key, axis_value = _variant_matrix_axis_value(
         node,
@@ -260,6 +263,7 @@ def _collect_variant_matrix_rows(
             rows=rows,
             axis_hints=axis_hints,
             option_values=current_option_values,
+            depth=depth + 1,
         )
 
 
@@ -297,6 +301,8 @@ def _variant_matrix_row(
         if status:
             lowered = status.casefold()
             if lowered == "instock":
+                row["availability"] = "in_stock"
+            elif lowered == "lowstock":
                 row["availability"] = "in_stock"
             elif lowered == "outofstock":
                 row["availability"] = "out_of_stock"

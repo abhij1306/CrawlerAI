@@ -1279,7 +1279,7 @@ def _quoted(value: object) -> str:
     text = str(value or "").strip()
     if not text:
         return ""
-    text = " ".join(text.replace('"', " ").split())
+    text = " ".join(text.replace('"', '\\"').split())
     return f"\"{text}\"" if text else ""
 
 

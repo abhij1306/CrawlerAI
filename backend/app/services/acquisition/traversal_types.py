@@ -17,7 +17,7 @@ class TraversalResult:
     card_count: int = 0
     overlays_dismissed: bool = False
     click_retries: int = 0
-    html_fragments: list[tuple[str, bool]] = field(default_factory=list)
+    html_fragments: list[tuple[str | None, bool]] = field(default_factory=list)
     events: list[tuple[str, str]] = field(default_factory=list)
     _seen_card_fragments: set[str] = field(default_factory=set, repr=False)
     _seen_structured_fragments: set[str] = field(default_factory=set, repr=False)

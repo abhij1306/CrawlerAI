@@ -16,4 +16,5 @@ except ImportError:  # pragma: no cover
 PLAYWRIGHT_RECOVERABLE_ERRORS: tuple[type[Exception], ...] = (
     PlaywrightError,
     PlaywrightTimeoutError,
+    RuntimeError,
 )

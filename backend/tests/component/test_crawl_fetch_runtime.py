@@ -560,6 +560,7 @@ def test_browser_engine_attempts_uses_real_chrome_after_patchright_when_availabl
             host="example.com",
             patchright_blocked=True,
             prefer_browser=True,
+            last_block_vendor="datadome",
         ),
     )
 
@@ -3089,6 +3090,7 @@ async def test_run_browser_attempts_caps_patchright_probe_timeout_for_vendor_blo
                 host="example.com",
                 patchright_blocked=True,
                 prefer_browser=True,
+                last_block_vendor="datadome",
             )
         ),
     )
@@ -3105,6 +3107,7 @@ async def test_run_browser_attempts_caps_patchright_probe_timeout_for_vendor_blo
             host="example.com",
             patchright_blocked=True,
             prefer_browser=True,
+            last_block_vendor="datadome",
         ),
     )
 
@@ -3474,5 +3477,3 @@ async def test_reset_fetch_runtime_state_closes_adapter_and_runtime_http_clients
         "runtime_http",
         "adapter_http",
     ]
-
-

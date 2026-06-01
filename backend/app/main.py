@@ -105,6 +105,10 @@ class CrawlerAppState:
         default_factory=OrderedDict
     )
     rate_limit_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    public_rate_limit_buckets: OrderedDict[str, deque[float]] = field(
+        default_factory=OrderedDict
+    )
+    public_rate_limit_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     auth_rate_limit_buckets: OrderedDict[str, deque[float]] = field(
         default_factory=OrderedDict
     )
@@ -199,8 +203,8 @@ async def public_api_middleware(request: Request, call_next) -> Response:
     request.state.public_api_user_id = principal.user_id
 
     decision = await consume_public_rate_limit(
-        _crawler_app_state(request.app).rate_limit_buckets,
-        _crawler_app_state(request.app).rate_limit_lock,
+        _crawler_app_state(request.app).public_rate_limit_buckets,
+        _crawler_app_state(request.app).public_rate_limit_lock,
         api_key_id=principal.api_key_id,
         scope=public_rate_scope(request.url.path),
     )
@@ -362,6 +366,25 @@ def restore_rate_limit_buckets_for_testing(
     buckets: OrderedDict[str, deque[float]],
 ) -> None:
     rate_limit_buckets = _crawler_app_state().rate_limit_buckets
+    rate_limit_buckets.clear()
+    rate_limit_buckets.update(
+        OrderedDict((key, deque(value)) for key, value in buckets.items())
+    )
+
+
+def public_rate_limit_buckets_snapshot() -> OrderedDict[str, deque[float]]:
+    buckets = _crawler_app_state().public_rate_limit_buckets
+    return OrderedDict((key, deque(value)) for key, value in buckets.items())
+
+
+def clear_public_rate_limit_buckets_for_testing() -> None:
+    _crawler_app_state().public_rate_limit_buckets.clear()
+
+
+def restore_public_rate_limit_buckets_for_testing(
+    buckets: OrderedDict[str, deque[float]],
+) -> None:
+    rate_limit_buckets = _crawler_app_state().public_rate_limit_buckets
     rate_limit_buckets.clear()
     rate_limit_buckets.update(
         OrderedDict((key, deque(value)) for key, value in buckets.items())

@@ -101,6 +101,7 @@ def _first_decimal_text(text: str) -> str | None:
     start: int | None = None
     saw_digit = False
     saw_dot = False
+    end: int | None = None
     for index, char in enumerate(text):
         if start is None:
             if char.isdigit() or (
@@ -117,18 +118,12 @@ def _first_decimal_text(text: str) -> str | None:
         if char == "." and not saw_dot:
             saw_dot = True
             continue
+        end = index
         break
     if start is None:
         return None
-    end = start
-    if text[end] == "-":
-        end += 1
-    while end < len(text) and text[end].isdigit():
-        end += 1
-    if end < len(text) and text[end] == ".":
-        end += 1
-        while end < len(text) and text[end].isdigit():
-            end += 1
+    if end is None:
+        end = len(text)
     return text[start:end] if saw_digit else None
 
 

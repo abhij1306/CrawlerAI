@@ -23,6 +23,7 @@ from app.services.crawl.state import (
 from app.services.dispatch.local_dispatcher import (
     clear_local_run_task,
     get_live_local_run_task,
+    live_local_run_task_count,
 )
 from app.services.pipeline.runtime_helpers import log_event
 from app.services.publish import (
@@ -233,7 +234,8 @@ async def kill_run(session: AsyncSession, run: CrawlRun) -> CrawlRun:
             local_task.cancel()
             update_run_status(retry_run, CrawlStatus.KILLED)
             _set_task_id(retry_run, None)
-            await _shutdown_browser_runtime_after_kill()
+            if live_local_run_task_count() == 0:
+                await _shutdown_browser_runtime_after_kill()
             await log_event(
                 retry_session,
                 retry_run.id,
@@ -243,7 +245,6 @@ async def kill_run(session: AsyncSession, run: CrawlRun) -> CrawlRun:
             return
         elif task_id:
             process_run_task.app.control.revoke(task_id, terminate=True)
-            await _shutdown_browser_runtime_after_kill()
         update_run_status(retry_run, CrawlStatus.KILLED)
         _set_task_id(retry_run, None)
         await log_event(

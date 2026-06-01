@@ -100,7 +100,6 @@ from .url_processing_context import (
 )
 
 __all__ = [
-    "asyncio",
     "STAGE_ACQUIRE",
     "STAGE_EXTRACT",
     "STAGE_NORMALIZE",

@@ -22,4 +22,3 @@ def read_optional_artifact_text(
         if candidate.exists():
             return candidate.read_text(encoding="utf-8", errors="ignore")
     pytest.skip(f"artifact fixture missing: {candidates[0] if candidates else artifact_path}")
-    return ""

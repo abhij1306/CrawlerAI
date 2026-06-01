@@ -143,10 +143,11 @@ async def _handle_message(server: AlertMCPServer, message: dict[str, Any]) -> di
             raise ValueError(f"Unsupported method: {method}")
         return {"jsonrpc": "2.0", "id": request_id, "result": result}
     except Exception as exc:  # pylint: disable=broad-exception-caught
+        logger.exception("MCP alert server request failed")
         return {
             "jsonrpc": "2.0",
             "id": request_id,
-            "error": {"code": -32000, "message": type(exc).__name__},
+            "error": {"code": -32000, "message": f"{type(exc).__name__}: {exc}"},
         }
 
 

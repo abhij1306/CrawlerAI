@@ -392,7 +392,10 @@ async def crawls_logs_ws(
 
             if next_run is None:
                 missing_run_snapshots += 1
-                logger.warning("Run logs snapshot did not reload run; retrying")
+                logger.warning(
+                    "Run logs snapshot did not reload run; retrying",
+                    extra={"run_id": run_id},
+                )
                 if missing_run_snapshots >= 3:
                     await websocket.close(code=1011, reason="Run snapshot unavailable")
                     return
@@ -407,7 +410,10 @@ async def crawls_logs_ws(
     except WebSocketDisconnect:
         return
     except Exception as exc:
-        logger.exception("Run logs websocket stream failed")
+        logger.exception(
+            "Run logs websocket stream failed",
+            extra={"run_id": run_id},
+        )
         try:
             await websocket.close(
                 code=1011, reason=f"stream_error: {type(exc).__name__}"

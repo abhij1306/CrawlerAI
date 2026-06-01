@@ -91,7 +91,10 @@ async def redis_fail_open(
         logger.warning(
             "Redis operation failed; continuing without shared state",
             exc_info=False,
-            extra={"exception_type": type(exc).__name__},
+            extra={
+                "operation_name": operation_name,
+                "exception_type": type(exc).__name__,
+            },
         )
         return default
 

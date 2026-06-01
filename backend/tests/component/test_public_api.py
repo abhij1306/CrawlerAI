@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import logging
 from collections import OrderedDict, deque
 from datetime import UTC, datetime
@@ -26,10 +27,13 @@ from app.main import (
     app,
     auth_rate_limit_buckets_snapshot,
     clear_auth_rate_limit_buckets_for_testing,
+    clear_public_rate_limit_buckets_for_testing,
     clear_rate_limit_buckets_for_testing,
     client_rate_limit_key,
+    public_rate_limit_buckets_snapshot,
     rate_limit_buckets_snapshot,
     restore_auth_rate_limit_buckets_for_testing,
+    restore_public_rate_limit_buckets_for_testing,
     restore_rate_limit_buckets_for_testing,
 )
 from app.models.api_key import ApiKey
@@ -605,6 +609,33 @@ async def test_public_capabilities_uses_api_key_envelope(
 
 @pytest.mark.asyncio
 @pytest.mark.component
+async def test_public_api_accepts_legacy_sha256_api_key_hash(
+    public_api_client: AsyncClient,
+    db_session,
+    test_user,
+) -> None:
+    raw_key = "crawlerai_public_legacy_key"
+    db_session.add(
+        ApiKey(
+            user_id=test_user.id,
+            name="legacy",
+            key_prefix="crawlerai",
+            key_hash=hashlib.sha256(raw_key.encode("utf-8")).hexdigest(),
+            is_active=True,
+        )
+    )
+    await db_session.commit()
+
+    response = await public_api_client.get(
+        "/api/v1/capabilities",
+        headers={"Authorization": f"Bearer {raw_key}"},
+    )
+
+    assert response.status_code == 200
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
 async def test_authenticate_public_api_key_fails_when_touch_commit_fails() -> None:
     class _Session:
         def __init__(self) -> None:
@@ -688,7 +719,8 @@ async def test_public_rate_limit_is_keyed_by_api_key(
 ) -> None:
     monkeypatch.setattr("app.api.public.rate_limit.PUBLIC_API_READ_RATE_LIMIT", 2)
     monkeypatch.setattr("app.api.public.rate_limit.PUBLIC_API_READ_BURST_LIMIT", 2)
-    clear_rate_limit_buckets_for_testing()
+    previous_public_buckets = public_rate_limit_buckets_snapshot()
+    clear_public_rate_limit_buckets_for_testing()
     raw_key = "crawlerai_rate_key"
     db_session.add(
         ApiKey(
@@ -711,7 +743,7 @@ async def test_public_rate_limit_is_keyed_by_api_key(
         second = await client.get("/api/v1/capabilities", headers=headers)
         third = await client.get("/api/v1/capabilities", headers=headers)
     app.dependency_overrides.clear()
-    clear_rate_limit_buckets_for_testing()
+    restore_public_rate_limit_buckets_for_testing(previous_public_buckets)
 
     assert first.status_code == 200
     assert second.status_code == 200

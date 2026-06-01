@@ -24,12 +24,8 @@ from app.services.config.selectors import (
 
 try:
     from patchright.async_api import Error as PlaywrightError
-    from patchright.async_api import TimeoutError as PlaywrightTimeoutError
 except ImportError:  # pragma: no cover
     class PlaywrightError(Exception):  # type: ignore[no-redef]
-        pass
-
-    class PlaywrightTimeoutError(PlaywrightError):  # type: ignore[no-redef]
         pass
 
 
@@ -115,7 +111,7 @@ async def page_might_have_location_interstitial(page: Any) -> bool:
             """,
             {"selectors": selectors, "tokens": tokens},
         )
-    except (asyncio.TimeoutError, PlaywrightTimeoutError, PlaywrightError):
+    except (asyncio.TimeoutError, PlaywrightError):
         logger.debug(
             "Location interstitial precheck failed url=%s",
             getattr(page, "url", ""),
@@ -166,7 +162,7 @@ async def dismiss_safe_location_interstitial(page: Any) -> dict[str, object]:
             if not await page_might_have_location_interstitial(page):
                 return {"status": "dismissed", "selector": selector}
             still_present_result = {"status": "still_present", "selector": selector}
-        except (asyncio.TimeoutError, PlaywrightTimeoutError, PlaywrightError):
+        except (asyncio.TimeoutError, PlaywrightError):
             logger.debug(
                 "Location interstitial dismissal probe failed selector=%s url=%s",
                 selector,
@@ -254,7 +250,7 @@ async def _dismiss_location_interstitial_by_text(page: Any) -> dict[str, object]
                 **dict(result),
                 "status": "still_present",
             }
-    except (asyncio.TimeoutError, PlaywrightTimeoutError, PlaywrightError):
+    except (asyncio.TimeoutError, PlaywrightError):
         logger.debug(
             "Location interstitial text dismissal failed url=%s",
             getattr(page, "url", ""),
