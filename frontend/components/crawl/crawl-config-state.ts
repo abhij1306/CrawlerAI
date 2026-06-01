@@ -1,8 +1,9 @@
 import type { CrawlDomain, DomainRunProfile } from '../../lib/api/types';
 import { CRAWL_DEFAULTS } from '../../lib/constants/crawl-defaults';
+import { STORAGE_KEYS } from '../../lib/constants/storage-keys';
 import { useEffect, useReducer, useRef, type Dispatch } from 'react';
 import { cloneRunProfile, defaultRunProfile, type StudioMode } from './crawl-config-logic';
-import { DOMAIN_TABS } from './domain-surface-config';
+import { DOMAIN_OPTIONS, DOMAIN_TABS } from './domain-surface-config';
 import type { CategoryMode, CrawlTab, FieldRowMessageTone, PdpMode } from './shared';
 
 export type CrawlConfigScreenProps = {
@@ -187,6 +188,47 @@ export type CrawlRouteAction =
   | { type: 'setPdpMode'; mode: PdpMode }
   | { type: 'applyBulkPrefill'; domain?: CrawlDomain };
 
+type BulkPrefill = {
+  domain?: CrawlDomain;
+  urls: string[];
+  additional_fields?: string[];
+};
+
+function isCrawlDomain(value: unknown): value is CrawlDomain {
+  return DOMAIN_OPTIONS.some((option) => option.value === value);
+}
+
+export function isBulkPrefill(value: unknown): value is BulkPrefill {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+  const candidate = value as Record<string, unknown>;
+  return (
+    (candidate.domain === undefined || isCrawlDomain(candidate.domain)) &&
+    Array.isArray(candidate.urls) &&
+    candidate.urls.every((url) => typeof url === 'string') &&
+    (candidate.additional_fields === undefined ||
+      (Array.isArray(candidate.additional_fields) &&
+        candidate.additional_fields.every((field) => typeof field === 'string')))
+  );
+}
+
+function readBulkPrefill(): BulkPrefill | null {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+  try {
+    const stored = window.sessionStorage.getItem(STORAGE_KEYS.BULK_PREFILL);
+    if (!stored) {
+      return null;
+    }
+    const parsed = JSON.parse(stored) as unknown;
+    return isBulkPrefill(parsed) && parsed.urls.length ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
 function normalizeTabForDomain(domain: CrawlDomain, tab: CrawlTab): CrawlTab {
   const tabs = DOMAIN_TABS[domain];
   return tabs.some((entry) => entry.value === tab) ? tab : (tabs[0]?.value ?? 'category');
@@ -197,11 +239,12 @@ export function buildInitialRouteState({
   requestedCategoryMode,
   requestedPdpMode,
 }: Readonly<CrawlConfigScreenProps>): CrawlRouteState {
+  const bulkPrefill = readBulkPrefill();
   return {
-    crawlTab: requestedTab ?? 'category',
-    crawlDomain: 'auto',
+    crawlTab: bulkPrefill ? 'pdp' : (requestedTab ?? 'category'),
+    crawlDomain: bulkPrefill?.domain ?? 'auto',
     categoryMode: requestedCategoryMode ?? 'single',
-    pdpMode: requestedPdpMode ?? 'single',
+    pdpMode: bulkPrefill ? 'batch' : (requestedPdpMode ?? 'single'),
   };
 }
 

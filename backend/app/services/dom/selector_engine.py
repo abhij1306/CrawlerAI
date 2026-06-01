@@ -79,6 +79,16 @@ from app.services.dom.xpath_service import validate_xpath_syntax
 
 logger = logging.getLogger(__name__)
 
+__all__ = [
+    "candidate_image_urls_from_node",
+    "canonical_image_url",
+    "dedupe_image_urls",
+    "extract_feature_rows",
+    "image_candidate_score",
+    "is_garbage_image_candidate",
+    "upgrade_low_resolution_image_url",
+]
+
 
 _cross_product_container_tokens = tuple(
     clean_text(token).lower()

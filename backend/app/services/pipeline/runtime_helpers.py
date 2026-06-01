@@ -36,7 +36,18 @@ async def log_pipeline_event(
 ) -> None:
     if not context.config.persist_logs:
         return
-    await log_event(context.session, context.run.id, level, message)
+
+    url = getattr(context, "url", None)
+    run = getattr(context, "run", None)
+    if run is None:
+        return
+    resolved_urls = run.result_summary.get("resolved_url_list")
+    if url and resolved_urls and len(resolved_urls) > 1:
+        prefixed_message = f"[url:{url}] {message}"
+    else:
+        prefixed_message = message
+
+    await log_event(context.session, run.id, level, prefixed_message)
     if commit:
         await context.session.commit()
 

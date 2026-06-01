@@ -64,8 +64,6 @@ async def run_browser_stage(
         raise timeout_exc
     try:
         return stage_task.result()
-    except asyncio.CancelledError:
-        raise
     except Exception as exc:
         annotate_browser_failure(
             exc,
@@ -128,8 +126,6 @@ async def force_close_browser_handles(
         try:
             await asyncio.wait_for(page_close(), timeout=close_timeout_seconds)
             return
-        except asyncio.CancelledError:
-            raise
         except Exception:
             logger.debug(
                 "Browser page close failed during %s %s teardown",
@@ -146,8 +142,6 @@ async def force_close_browser_handles(
         return
     try:
         await asyncio.wait_for(context_close(), timeout=close_timeout_seconds)
-    except asyncio.CancelledError:
-        raise
     except Exception:
         logger.debug(
             "Browser context close failed during %s %s teardown",

@@ -15,7 +15,8 @@ class URLProcessingResult:
 
 
 class RecordWriter(Protocol):
-    def write_record(self, record: dict[str, Any]) -> Any: ...
+    def write_record(self, record: dict[str, Any]) -> Any:
+        raise NotImplementedError
 
 
 @dataclass(slots=True)

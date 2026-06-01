@@ -92,6 +92,11 @@ describe('CrawlConfigScreen bulk prefill', () => {
 
     renderConfigScreen();
 
+    expect(screen.getByRole('button', { name: 'Batch' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByLabelText('Bulk URLs input')).toHaveValue(
+      'https://jobs.example.com/posting/1',
+    );
+
     await waitFor(() => {
       expect(`${window.location.pathname}${window.location.search}`).toBe(
         '/crawl?module=pdp&mode=batch',

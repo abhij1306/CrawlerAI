@@ -31,18 +31,11 @@ from selectolax.lexbor import LexborHTMLParser
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
-    from app.services.acquisition.traversal import TraversalResult
+    from app.services.acquisition.traversal_types import TraversalResult
 
 
 async def _wait_for_dom_mutation_settle(page, **kwargs):
-    from app.services.acquisition import traversal
-
-    wait_impl = getattr(
-        traversal,
-        "wait_for_dom_mutation_settle",
-        _dom_wait_for_dom_mutation_settle,
-    )
-    await wait_impl(page, **kwargs)
+    await _dom_wait_for_dom_mutation_settle(page, **kwargs)
 
 async def _append_html_fragment(
     page,

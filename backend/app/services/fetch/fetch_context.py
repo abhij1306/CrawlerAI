@@ -13,12 +13,9 @@ from app.services.acquisition.browser_runtime import (
     build_failed_browser_diagnostics,
     browser_fetch,
     browser_runtime_snapshot,
-    classify_network_endpoint,
     expand_all_interactive_elements,
     get_browser_runtime,
-    read_network_payload_body,
     real_chrome_browser_available,
-    should_capture_network_payload,
     shutdown_browser_runtime,
     temporary_browser_page,
 )
@@ -168,9 +165,6 @@ _browser_fetch = partial(
     proxied_page_factory=temporary_browser_page,
     blocked_html_checker=is_blocked_html_async,
 )
-_should_capture_network_payload = should_capture_network_payload
-_classify_network_endpoint = classify_network_endpoint
-_read_network_payload_body = read_network_payload_body
 
 
 async def reset_fetch_runtime_state() -> None:

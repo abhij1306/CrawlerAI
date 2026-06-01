@@ -3,11 +3,13 @@ from __future__ import annotations
 import pytest
 
 import ast
+import importlib
 import tomllib
 from pathlib import Path
 
 from app.core.database import Base
-import app.models  # noqa: F401
+
+importlib.import_module("app.models")
 
 
 ROOT = Path(__file__).resolve().parents[2]

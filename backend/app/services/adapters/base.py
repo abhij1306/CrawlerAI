@@ -77,7 +77,7 @@ class BaseAdapter(ABC):
     @abstractmethod
     async def can_handle(self, url: str, html: str) -> bool:
         """Return True if this adapter should run for the given URL/HTML."""
-        ...
+        raise NotImplementedError
 
     @abstractmethod
     async def extract(
@@ -92,7 +92,7 @@ class BaseAdapter(ABC):
         ``surface`` is the user-declared surface type so the adapter can
         tailor its output (e.g. listing vs detail fields).
         """
-        ...
+        raise NotImplementedError
 
     def normalize_acquisition_url(self, url: str | None) -> str | None:
         return url
@@ -298,7 +298,8 @@ class PublicEndpointAdapter(BaseAdapter):
         surface: str,
         *,
         proxy: str | None = None,
-    ) -> list[dict]: ...
+    ) -> list[dict]:
+        raise NotImplementedError
 
 
 class SelectolaxJobAdapter(BaseAdapter):
@@ -351,11 +352,13 @@ class SelectolaxJobAdapter(BaseAdapter):
         self,
         parser: LexborHTMLParser,
         url: str,
-    ) -> dict | None | Awaitable[dict | None]: ...
+    ) -> dict | None | Awaitable[dict | None]:
+        raise NotImplementedError
 
     @abstractmethod
     def _extract_listing(
         self,
         parser: LexborHTMLParser,
         url: str,
-    ) -> list[dict] | Awaitable[list[dict]]: ...
+    ) -> list[dict] | Awaitable[list[dict]]:
+        raise NotImplementedError

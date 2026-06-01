@@ -637,7 +637,12 @@ type ActivityEntry = {
 // Map raw backend log messages to short, human-friendly lines.
 // Returns null to drop noisy entries.
 function humanizeLogMessage(raw: string): string | null {
-  const msg = raw.trim();
+  let msg = raw.trim();
+  if (!msg) return null;
+
+  // Strip [url:...] prefix if present
+  const urlPrefixRegex = /^\[url:(https?:\/\/[^\s\]]+)\]\s*/i;
+  msg = msg.replace(urlPrefixRegex, '').trim();
   if (!msg) return null;
 
   // Skip framework/internal noise

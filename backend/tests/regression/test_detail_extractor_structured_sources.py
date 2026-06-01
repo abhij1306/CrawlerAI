@@ -2060,6 +2060,64 @@ async def test_myntra_adapter_extracts_detail_media_and_variants() -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.regression
+async def test_myntra_adapter_keeps_numeric_size_variants_from_related_urls() -> None:
+    html = """
+    <html>
+      <head>
+        <script>
+          window.__myx = {
+            "pdpData": {
+              "id": 30191552,
+              "name": "WROGN Men Woven Design Walking Shoes",
+              "brand": "WROGN",
+              "baseColour": "Black",
+              "mrp": 3999,
+              "selectedSeller": {"discountedPrice": 1399},
+              "media": {"albums": []},
+              "sizes": [
+                {
+                  "skuId": 97143404,
+                  "label": "6",
+                  "available": true,
+                  "action": "/product/30191552/related/6?co=1"
+                },
+                {
+                  "skuId": 97143405,
+                  "label": "7",
+                  "available": true,
+                  "action": "/product/30191552/related/7?co=1"
+                }
+              ]
+            }
+          };
+        </script>
+      </head>
+      <body>
+        <h1>WROGN Men Woven Design Walking Shoes</h1>
+      </body>
+    </html>
+    """
+    page_url = (
+        "https://www.myntra.com/sports-shoes/wrogn/"
+        "wrogn-men-woven-design-walking-shoes/30191552/buy"
+    )
+
+    result = await MyntraAdapter().extract(page_url, html, "ecommerce_detail")
+    rows = extract_records(
+        html,
+        page_url,
+        "ecommerce_detail",
+        max_records=5,
+        adapter_records=result.records,
+    )
+
+    assert len(rows) == 1
+    assert rows[0]["variant_count"] == 2
+    assert [variant["size"] for variant in rows[0]["variants"]] == ["6", "7"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
 async def test_myntra_adapter_allows_dom_description_fill_when_detail_payload_is_sparse() -> (
     None
 ):

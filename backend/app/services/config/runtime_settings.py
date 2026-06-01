@@ -109,8 +109,8 @@ class CrawlerRuntimeSettings(BaseSettings):
     schema_max_age_days: int = 30
     listing_fallback_fragment_limit: int = 200
     auto_detect_surface: bool = False
-    batch_url_concurrency: int = 8
-    url_batch_concurrency: int = 4
+    batch_url_concurrency: int = 1
+    url_batch_concurrency: int = 1
     url_process_timeout_seconds: float = 90.0
     url_process_timeout_buffer_seconds: float = 15.0
     max_url_process_timeout_seconds: float = 600.0
@@ -307,6 +307,7 @@ class CrawlerRuntimeSettings(BaseSettings):
     interruptible_wait_poll_ms: int = 250
     cooperative_sleep_poll_ms: int = 250
     selector_regex_timeout_seconds: float = 0.05
+    selector_regex_max_pattern_length: int = 512
     browser_shutdown_timeout_seconds: float = 10.0
     traversal_locator_visible_timeout_ms: int = 250
     traversal_scroll_into_view_timeout_ms: int = 2000

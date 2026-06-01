@@ -162,6 +162,9 @@ def sanitize_variant_row(
         and not _variant_url_matches_requested_base(
             variant_url, identity_url=identity_url
         )
+        and not _variant_url_shares_requested_identity(
+            variant_url, identity_url=identity_url
+        )
         and not _cross_asin_variant_url_can_be_option(
             variant,
             variant_url=variant_url,
@@ -325,6 +328,14 @@ def _variant_url_matches_requested_base(value: object, *, identity_url: str) -> 
     requested = urlparse(identity_url)
     candidate = urlparse(variant_url)
     return requested.path.rstrip("/") == candidate.path.rstrip("/")
+
+
+def _variant_url_shares_requested_identity(
+    variant_url: str, *, identity_url: str
+) -> bool:
+    requested_codes = detail_identity_codes_from_url(identity_url)
+    variant_codes = detail_identity_codes_from_url(variant_url)
+    return bool(requested_codes and variant_codes and requested_codes & variant_codes)
 
 
 def _cross_product_variant_url_can_be_option(

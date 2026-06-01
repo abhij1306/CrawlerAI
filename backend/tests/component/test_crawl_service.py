@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import logging
 from datetime import UTC, datetime, timedelta
 
@@ -747,8 +746,7 @@ async def test_pause_run_preserves_live_local_task_bookkeeping(
 
     local_dispatch_module._local_run_tasks.pop(run.id, None)
     local_task.cancel()
-    with contextlib.suppress(asyncio.CancelledError):
-        await local_task
+    await asyncio.gather(local_task, return_exceptions=True)
 
 
 @pytest.mark.asyncio
@@ -759,6 +757,15 @@ async def test_kill_run_clears_local_task_bookkeeping(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(settings, "celery_dispatch_enabled", False)
+    browser_shutdowns = 0
+
+    async def _fake_shutdown_browser_runtime() -> None:
+        nonlocal browser_shutdowns
+        browser_shutdowns += 1
+
+    monkeypatch.setattr(
+        crawl_service, "shutdown_browser_runtime", _fake_shutdown_browser_runtime
+    )
     run = await _create_running_run(db_session, user_id=test_user.id)
     local_task = asyncio.create_task(asyncio.sleep(60))
     local_dispatch_module._local_run_tasks[run.id] = local_task
@@ -772,6 +779,7 @@ async def test_kill_run_clears_local_task_bookkeeping(
     assert killed.get_summary(crawl_service.CELERY_TASK_ID_KEY) is None
     assert run.id not in local_dispatch_module._local_run_tasks
     assert local_task.cancelled()
+    assert browser_shutdowns == 1
 
 
 @pytest.mark.asyncio
@@ -930,8 +938,7 @@ async def test_dispatch_run_locally_recovers_stale_runs_before_launch(
 
     local_task = local_dispatch_module._local_run_tasks.pop(new_run.id, None)
     if local_task is not None:
-        with contextlib.suppress(asyncio.CancelledError):
-            await local_task
+        await asyncio.gather(local_task, return_exceptions=True)
 
 
 @pytest.mark.asyncio

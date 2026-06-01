@@ -25,4 +25,5 @@ class RunDispatcher(Protocol):
     task creation failed).
     """
 
-    async def dispatch(self, session: AsyncSession, run: CrawlRun) -> CrawlRun: ...
+    async def dispatch(self, session: AsyncSession, run: CrawlRun) -> CrawlRun:
+        raise NotImplementedError

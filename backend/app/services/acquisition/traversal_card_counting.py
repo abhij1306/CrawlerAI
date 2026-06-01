@@ -37,7 +37,7 @@ from app.services.extract.listing_card_fragments import (
 )
 
 if TYPE_CHECKING:
-    from app.services.acquisition.traversal import TraversalResult
+    from app.services.acquisition.traversal_types import TraversalResult
 
 logger = logging.getLogger(__name__)
 

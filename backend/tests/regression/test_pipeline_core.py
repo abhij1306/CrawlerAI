@@ -2133,10 +2133,14 @@ async def test_process_single_url_upserts_duplicate_run_identity_records(
 
     def _extract_records(*args, **kwargs):
         del args, kwargs
+        try:
+            price = extracted_prices.__next__()
+        except StopIteration as exc:
+            raise AssertionError("Expected another extracted price") from exc
         return [
             {
                 "title": "Widget Prime",
-                "price": next(extracted_prices),
+                "price": price,
                 "source_url": "https://example.com/products/widget-prime",
                 "url": "https://example.com/products/widget-prime",
                 "_source": "json_ld",

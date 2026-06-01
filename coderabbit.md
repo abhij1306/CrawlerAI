@@ -1,141 +1,186 @@
-<QODO_SUGGESTION>
-{
-  "identifier": "sec_001_logfire_pii",
-  "description": "**Potential sensitive data exposure via Logfire span attributes (URLs may include tokens/PII)\n\n- Description: Multiple spans attach full `url`/`final_url`-derived values (and sometimes `domain=normalize_domain(url)` is safe, but other attributes include raw URLs), which can leak query params (tokens, emails) into telemetry.\n- PR Git Diff Pointer:\n```diff\n@@ async def process_run(session: AsyncSession, run_id: int) -> None:\n-                                    url=url,\n+                                    url=url,\n@@ async def process_single_url(\n-        \"pipeline.url.process\",\n-        run_id=run.id,\n-        domain=normalize_domain(url),\n+        \"pipeline.url.process\",\n+        run_id=run.id,\n+        domain=normalize_domain(url),\n@@\n-        \"pipeline.persist\",\n-        run_id=context.run.id,\n-        domain=normalize_domain(str(acquisition_result.final_url or context.url)),\n+        \"pipeline.persist\",\n+        run_id=context.run.id,\n+        domain=normalize_domain(str(acquisition_result.final_url or context.url)),\n```\n- Evidence: `process_run` passes `url=url` into `process_single_url(...)` and new spans in `batch_runtime.py`/`extraction_loop.py` add URL-derived attributes; `logfire_span` only truncates values and stringifies, it does not redact query strings or secrets.\n- How to Fix: Ensure span attributes never include full URLs (only normalized domain + path without query, or a hashed URL), and add a small helper to strip query/fragment before logging.\n",
-  "filePath": "c:\\Projects\\pre_poc_ai_crawler\\backend\\app\\services\\pipeline\\extraction_loop.py",
-  "severity": "high",
-  "prompt": "Prevent sensitive data exposure in Logfire attributes by redacting/stripping URL query/fragment and avoiding full URL attributes across spans."
-}
-</QODO_SUGGESTION>
+# Bug Triage
 
-<QODO_CONFIRM>
-{
-  "identifier": "all-bugs",
-  "text": "4 Potential bugs",
-  "ctaText": "Resolve all",
-  "doneCtaText": "✓ All resolved",
-  "prompt": "Resolve all bug suggestions",
-  "type": "resolve_all",
-  "suggestionIdentifiers": [
-    "bug_001_logfire_noop_span_not_none",
-    "bug_002_dom_availability_select_label_blank",
-    "bug_003_dom_merge_axis_detection_changed",
-    "bug_004_admin_llm_model_catalog_includes_untrimmed"
-  ]
-}
-</QODO_CONFIRM>
+> **Instructions for agent:** Verify each issue against current code before fixing. Fix only still-valid issues; for invalid ones, note why briefly. Keep changes minimal and validate after each fix.
 
-<QODO_SUGGESTION>
-{
-  "identifier": "bug_001_logfire_noop_span_not_none",
-  "description": "**`logfire_span` no-op yields a non-None object, but tests and callers assume `None`\n\n- Description: When Logfire is disabled, `logfire_span` yields `nullcontext()`’s value (which is `None` only if `nullcontext(None)` is used); currently it yields a `nullcontext()` instance result, causing `span is None` assertions and `set_logfire_attributes` behavior to be inconsistent.\n- PR Git Diff Pointer:\n```diff\n@@ def logfire_span(name: str, **attributes: object) -> Iterator[Any]:\n-    if not settings.logfire_enabled or not configure_logfire():\n-        with nullcontext() as span:\n-            yield span\n+    if not settings.logfire_enabled or not configure_logfire():\n+        with nullcontext() as span:\n+            yield span\n         return\n```\n- Evidence: `backend/tests/component/test_logfire_integration.py` asserts `span is None` after `with logfire_span(...) as span:` when disabled, but `contextlib.nullcontext()` defaults to yielding itself unless constructed with `None`.\n- How to Fix: Use `nullcontext(None)` (and same for the ModuleNotFoundError path) so the yielded `span` is actually `None`.\n",
-  "filePath": "c:\\Projects\\pre_poc_ai_crawler\\backend\\app\\core\\logfire_integration.py",
-  "severity": "high",
-  "prompt": "Fix logfire_span no-op behavior to yield None (use nullcontext(None)) so tests/callers behave consistently."
-}
-</QODO_SUGGESTION>
+---
 
-<QODO_SUGGESTION>
-{
-  "identifier": "bug_002_dom_availability_select_label_blank",
-  "description": "**DOM variant option display label becomes empty for `<select>` controls with multiple options\n\n- Description: `_control_display_label` now returns `\"\"` when a control contains multiple `<option>` labels, which can prevent out-of-stock DOM-only variants from being appended because `axis_value = option.display` becomes empty.\n- PR Git Diff Pointer:\n```diff\n@@ def _control_display_label(control: Any, label: Any | None) -> str:\n-    candidates: list[str] = []\n+    if _control_has_multiple_option_labels(control):\n+        return \"\"\n+    candidates: list[str] = []\n```\n- Evidence: `_append_dom_only_out_of_stock_variants` uses `axis_value = option.display` and then `_normalized_key(axis_value)`; an empty display will be skipped as low-signal, reducing availability detection coverage.\n- How to Fix: For `<select>`, derive display from the selected `<option>` (or the control’s current value) rather than blanking when multiple options exist.\n",
-  "filePath": "c:\\Projects\\pre_poc_ai_crawler\\backend\\app\\services\\extract\\detail\\variants\\dom_availability.py",
-  "severity": "medium",
-  "prompt": "Adjust _control_display_label to handle <select> controls by using selected option text instead of returning empty when multiple options exist."
-}
-</QODO_SUGGESTION>
+## 🔴 HIGH — Bugs
 
-<QODO_SUGGESTION>
-{
-  "identifier": "bug_003_dom_merge_axis_detection_changed",
-  "description": "**DOM axis presence detection now considers `option_values` keys, which can change expansion behavior\n\n- Description: `_variant_axes_present` and `_variant_axis_values` were moved to `dom_merge.py` and now include axes found in `row['option_values']`, which can cause `missing_dom_axes` to be empty (or larger) compared to the previous logic and change whether Cartesian expansion happens.\n- PR Git Diff Pointer:\n```diff\n+++ b/backend/app/services/extract/detail/variants/dom_merge.py\n+def _variant_axes_present(rows: list[dict[str, Any]]) -> set[str]:\n+    axes: set[str] = set()\n+    for row in rows:\n+        option_values = row.get(\"option_values\")\n+        if isinstance(option_values, dict):\n+            axes.update(str(axis) for axis, value in option_values.items() if text_or_none(value))\n+        axes.update(axis for axis in public_variant_axis_fields if text_or_none(row.get(axis)))\n+    return axes\n```\n- Evidence: The removed implementation in `dom_extraction.py` only checked `public_variant_axis_fields` on the row itself; now any populated `option_values` key counts as an axis, even if it’s not a public axis field, affecting `_real_new_dom_axes` and expansion gating.\n- How to Fix: Restrict `option_values` axis detection to `public_variant_axis_fields` (or a validated axis-key set) to preserve prior behavior and avoid unexpected expansion suppression/triggering.\n",
-  "filePath": "c:\\Projects\\pre_poc_ai_crawler\\backend\\app\\services\\extract\\detail\\variants\\dom_merge.py",
-  "severity": "medium",
-  "prompt": "Constrain dom_merge axis detection to public axes (or validated axis keys) to avoid behavior changes from arbitrary option_values keys."
-}
-</QODO_SUGGESTION>
+### BUG-001 · `logfire_span` no-op yields non-None object
+**File:** `backend/app/core/logfire_integration.py`
+**Problem:** `nullcontext()` yields itself, not `None`, so `span is None` assertions fail when Logfire is disabled.
+**Fix:** Use `nullcontext(None)` (both in the `logfire_enabled` branch and the `ModuleNotFoundError` branch).
 
-<QODO_SUGGESTION>
-{
-  "identifier": "bug_004_admin_llm_model_catalog_includes_untrimmed",
-  "description": "**Admin LLM model dropdown checks catalog membership using untrimmed model value\n\n- Description: `modelInCatalog` uses `recommendedModels.includes(form.model)` while other logic uses `form.model.trim()`, so a model with trailing spaces will be treated as custom and duplicated in options.\n- PR Git Diff Pointer:\n```diff\n@@\n-  const formModel = form.model.trim();\n-  const modelInCatalog = recommendedModels.includes(form.model);\n+  const formModel = form.model.trim();\n+  const modelInCatalog = recommendedModels.includes(form.model);\n```\n- Evidence: `modelIsCustom` depends on `formModel !== '' && !modelInCatalog`, but `modelInCatalog` ignores trimming, creating inconsistent classification for whitespace-variant inputs.\n- How to Fix: Compute `modelInCatalog` using the trimmed value (and use the trimmed value when adding the fallback option).\n",
-  "filePath": "c:\\Projects\\pre_poc_ai_crawler\\frontend\\app\\admin\\llm\\page.tsx",
-  "severity": "low",
-  "prompt": "Use trimmed model value for catalog membership checks and option insertion to avoid duplicate/custom misclassification."
-}
-</QODO_SUGGESTION>
+---
 
-<QODO_CONFIRM>
-{
-  "identifier": "all-quality",
-  "text": "2 Code quality / reliability issues",
-  "ctaText": "Resolve all",
-  "doneCtaText": "✓ All resolved",
-  "prompt": "Resolve all quality suggestions",
-  "type": "resolve_all",
-  "suggestionIdentifiers": [
-    "qual_001_search_files_tooling_masked_missing_checks",
-    "qual_002_identity_core_all_formatting_regression"
-  ]
-}
-</QODO_CONFIRM>
+### BUG-002 · Potential PII/token exposure in Logfire span attributes
+**File:** `backend/app/services/pipeline/extraction_loop.py`
+**Problem:** Full URLs (including query params with tokens/emails) are attached as span attributes. `logfire_span` only truncates, does not redact.
+**Fix:** Strip query strings and fragments before logging. Use `normalize_domain(url)` or a hashed URL only. Add a `strip_url_sensitive_parts(url)` helper used consistently across all span attribute sites.
 
-<QODO_SUGGESTION>
-{
-  "identifier": "qual_001_search_files_tooling_masked_missing_checks",
-  "description": "**New extraction rules module export relies on wildcard imports; missing `__all__` can cause unstable public API\n\n- Description: `extraction_rules/__init__.py` now wildcard-imports `_variant_options`, but `_variant_options.py` defines no `__all__`, so `from app.services.config.extraction_rules import *` will export every name (including `re`) and can create accidental API surface.\n- PR Git Diff Pointer:\n```diff\n@@ backend/app/services/config/extraction_rules/__init__.py\n-from ._variants import *\n+from ._variants import *\n+from ._variant_options import *\n```\n- Evidence: `_variant_options.py` imports `re` and defines constants; without `__all__`, star import exports `re` too, and `_extra_exports.py` suggests there is an intended curated export list.\n- How to Fix: Add `__all__` to `_variant_options.py` (constants only) or avoid star import and explicitly re-export the needed constants.\n",
-  "filePath": "c:\\Projects\\pre_poc_ai_crawler\\backend\\app\\services\\config\\extraction_rules\\__init__.py",
-  "severity": "medium",
-  "prompt": "Stabilize extraction_rules exports by adding __all__ to _variant_options.py or explicitly importing constants instead of star import."
-}
-</QODO_SUGGESTION>
+---
 
-<QODO_SUGGESTION>
-{
-  "identifier": "qual_002_identity_core_all_formatting_regression",
-  "description": "**`__all__` formatting change reduces maintainability and increases merge conflict risk\n\n- Description: Collapsing `__all__` into long wrapped lines makes diffs noisier and increases conflict likelihood without functional benefit.\n- PR Git Diff Pointer:\n```diff\n@@\n-__all__ = (\n-    \"prune_irrelevant_detail_dom_nodes\",\n-    \"detail_title_fallback_looks_like_code\",\n-    ...\n-)\n+__all__ = (\n+    \"prune_irrelevant_detail_dom_nodes\", \"detail_title_fallback_looks_like_code\", \"listing_url_is_structural\",\n+    ...\n+)\n```\n- Evidence: The same file also collapses the tuple assignment list into a single wrapped block, making future edits harder to review and more error-prone.\n- How to Fix: Revert to one-item-per-line formatting (or apply a consistent formatter like ruff/black across the repo, not just this file).\n",
-  "filePath": "c:\\Projects\\pre_poc_ai_crawler\\backend\\app\\services\\extract\\detail\\identity\\core.py",
-  "severity": "low",
-  "prompt": "Restore readable one-item-per-line formatting for __all__ and related tuple assignments in identity/core.py."
-}
-</QODO_SUGGESTION>
+## 🟡 MEDIUM — Bugs
 
-These are comments left during a code review. Please review all issues and provide fixes.
+### BUG-003 · `<select>` display label blanked when multiple options exist
+**File:** `backend/app/services/extract/detail/variants/dom_availability.py` · L120, L195
+**Problem:** `_control_display_label` returns `""` for `<select>` with multiple options, causing `axis_value` to be empty and out-of-stock variants to be silently dropped.
+**Fix:** For `<select>`, derive display from the currently selected `<option>` value instead of returning `""`.
 
-1. Code Quality: Axis inference misses select controls and can cause cross-axis variant assignment errors.
-   Path: backend/app/services/extract/detail/variants/dom_availability.py
-   Lines: 195-195
+---
 
-2. Code Quality: Clearing labels for multi-option controls can remove legitimate variant values from availability extraction.
-   Path: backend/app/services/extract/detail/variants/dom_availability.py
-   Lines: 120-120
+### BUG-004 · DOM axis detection now includes arbitrary `option_values` keys
+**File:** `backend/app/services/extract/detail/variants/dom_merge.py`
+**Problem:** `_variant_axes_present` now counts any key in `option_values` as an axis, including non-public keys, changing Cartesian expansion behavior vs. previous logic.
+**Fix:** Restrict `option_values` axis detection to `public_variant_axis_fields` only.
 
-3. Code Quality: A new top-level cross-module import can trigger circular initialization and break runtime imports.
-   Path: backend/app/services/extract/detail/variants/dom_extraction.py
-   Lines: 53-53
+---
 
-4. Code Quality: A function intended to detect cross-ASIN variant URLs never inspects the variant URL or ASIN, so it incorrectly exempts unrelated variants from pruning.
-   Path: backend/app/services/extract/detail/variants/pruning.py
-   Lines: 244-244
+## 🟢 LOW — Bugs
 
-5. Code Quality: The numeric-size noise rule is overbroad and can delete valid decimal size values.
-   Path: backend/app/services/extract/detail/variants/pruning.py
-   Lines: 439-439
+### BUG-005 · Admin LLM model dropdown uses untrimmed value for catalog check
+**File:** `frontend/app/admin/llm/page.tsx`
+**Problem:** `modelInCatalog` uses `form.model` while other logic uses `form.model.trim()`, causing whitespace variants to be misclassified as custom and duplicated in the dropdown.
+**Fix:** Compute `modelInCatalog = recommendedModels.includes(formModel)` using the already-trimmed `formModel`.
 
-6. Code Quality: Unvalidated domain normalization in instrumentation can crash extraction when the URL input is missing or malformed.
-   Path: backend/app/services/pipeline/extract_records.py
-   Lines: 250-250
+---
 
-7. Code Quality: Taking the length of a possibly null extraction result can raise a runtime error.
-   Path: backend/app/services/pipeline/extract_records.py
-   Lines: 90-90
+## 🟡 MEDIUM — Code Quality / Reliability
 
-8. Code Quality: Accessing metric keys without normalizing the metrics container can crash when the container is null.
-   Path: backend/app/services/pipeline/extraction_loop.py
-   Lines: 207-207
+### QUAL-001 · `_variant_options` star import pollutes extraction_rules public API
+**File:** `backend/app/services/config/extraction_rules/__init__.py`
+**Problem:** `from ._variant_options import *` exports `re` and all module-level names because `_variant_options.py` has no `__all__`.
+**Fix:** Add `__all__` to `_variant_options.py` listing only public constants, or switch to explicit named imports.
 
-9. Code Quality: Telemetry now introduces a runtime failure when extraction returns a non-sized result.
-   Path: backend/app/services/pipeline/record_extraction_stage.py
-   Lines: 381-381
+---
 
-Validate the correctness of each issue sequentially. For each issue that is correct, implement a fix. Please make the fixes concise and address all issues comprehensively and don't impact anything else.
+### QUAL-002 · `__all__` collapsed into long lines in `identity/core.py`
+**File:** `backend/app/services/extract/detail/identity/core.py`
+**Problem:** Multi-item lines in `__all__` make diffs noisy and increase merge conflict risk.
+**Fix:** Restore one-item-per-line format, or apply `ruff`/`black` consistently.
+
+---
+
+### QUAL-003 · Axis inference misses `<select>` controls → cross-axis assignment errors
+**File:** `backend/app/services/extract/detail/variants/dom_availability.py` · L195
+
+### QUAL-004 · Circular import risk from new cross-module import
+**File:** `backend/app/services/extract/detail/variants/dom_extraction.py` · L53
+
+### QUAL-005 · Cross-ASIN variant URL detector never inspects URL/ASIN
+**File:** `backend/app/services/extract/detail/variants/pruning.py` · L244
+**Problem:** Function always returns the same result, incorrectly exempting unrelated variants from pruning.
+
+### QUAL-006 · Numeric-size noise rule deletes valid decimal size values
+**File:** `backend/app/services/extract/detail/variants/pruning.py` · L439
+
+### QUAL-007 · `normalize_domain(url)` called without null/malformed URL guard
+**File:** `backend/app/services/pipeline/extract_records.py` · L250
+**Fix:** Guard with `url and is_valid_url(url)` before calling `normalize_domain`.
+
+### QUAL-008 · `len()` on possibly-None extraction result
+**File:** `backend/app/services/pipeline/extract_records.py` · L90
+**Fix:** Guard with `if result is not None` before `len(result)`.
+
+### QUAL-009 · Metrics container not null-checked before key access
+**File:** `backend/app/services/pipeline/extraction_loop.py` · L207
+**Fix:** Add `if metrics:` guard.
+
+### QUAL-010 · Telemetry crashes when extraction returns non-sized result
+**File:** `backend/app/services/pipeline/record_extraction_stage.py` · L381
+
+---
+
+## 🔁 Inline Fix Instructions (verbatim prompts for agent)
+
+> Apply each fix only if the issue is still present in current code.
+
+**`backend/app/api/crawls.py` · L410**
+Add `extra={"run_id": run_id}` to `logger.exception("Run logs websocket stream failed")`.
+
+**`backend/app/api/crawls.py` · L395**
+Add `extra={"run_id": run_id}` to the `logger.warning("Run logs snapshot did not reload run; retrying")` call.
+
+**`backend/app/core/config.py` · L215–244**
+Replace `issue_count` numeric logging with full `", ".join(password_issues)` detail in both `warn`/`error` log calls.
+
+**`backend/app/core/public_auth.py` · L31–36**
+HMAC-based `hash_api_key` invalidates existing `ApiKey.key_hash` rows. Add backwards-compatible SHA-256 fallback in validation, or use a versioned `key_hash` field + migration plan. Do not break existing key lookup.
+
+**`backend/app/core/redis.py` · L91, L94**
+Restore `operation_name` structured field to `redis_fail_open` logger call: `extra={"operation_name": operation_name, "exception_type": type(exc).__name__}`.
+
+**`backend/app/main.py` · L201–207**
+Create dedicated `public_rate_limit_buckets` + `public_rate_limit_lock` on crawler app state (see `auth_rate_limit_buckets` as precedent). Pass these into `consume_public_rate_limit` so public and general limiters don't share an `OrderedDict`.
+
+**`backend/app/mcp/alert_server.py` · L145–150**
+Change error `"message"` field from `type(exc).__name__` to `f"{type(exc).__name__}: {exc}"`. Also log full exception with `logger.exception(...)` before returning.
+
+**`backend/app/models/crawl_settings.py` · L73**
+Expand exception handling beyond single type to restore previously handled invalid inputs.
+
+**`backend/app/models/playground.py` · L32**
+Change `user: Mapped[Any]` → `Mapped["User"]`. Add `TYPE_CHECKING`-guarded import.
+
+**`backend/app/services/acquisition/browser_diagnostics.py` · L166**
+Replace generic substring match for driver-closed detection with a specific check to avoid misclassifying unrelated `AttributeError`s.
+
+**`backend/app/services/acquisition/browser_interstitial.py` · L118**
+Remove `PlaywrightTimeoutError` from `except` tuples (it's a subclass of `PlaywrightError`). Result: `except (asyncio.TimeoutError, PlaywrightError)`.
+
+**`backend/app/services/acquisition/playwright_compat.py` · L16–19**
+Restore `RuntimeError` to `PLAYWRIGHT_RECOVERABLE_ERRORS` or replace with appropriate specific exceptions. Validate all retry/cleanup paths that depend on this tuple.
+
+**`backend/app/services/acquisition/traversal_types.py` · L32–50**
+Change `html_fragments: list[tuple[str, bool]]` → `list[tuple[str | None, bool]]` to match `compose_html` defensive handling.
+
+**`backend/app/services/auth_service.py` · L30–33**
+Change `logger.warning(... issue_count=%d, len(issues))` to include `issues` detail text alongside the count.
+
+**`backend/app/services/config/extraction_rules/_detail.py` · L476**
+Replace dynamic `__all__ = sorted(name for name in globals() if name.isupper())` with an explicit, enumerated `__all__` list.
+
+**`backend/app/services/config/extraction_rules/_jobs.py` · L5–37**
+Add explicit `import re` at top of module. Do not rely on wildcard `from ._common import *` to supply `re`.
+
+**`backend/app/services/config/runtime_settings.py` · L310**
+Add `_require_positive("selector_regex_max_pattern_length", self.selector_regex_max_pattern_length)` in `_apply_profile_defaults`.
+
+**`backend/app/services/crawl/batch_runtime.py` · L71–78**
+Handle both callable and integer `url_batch_concurrency`: call it if callable, cast to `int` if not, fall back to `_DEFAULT_URL_CONCURRENCY` on `AttributeError`/`TypeError`/`ValueError`.
+
+**`backend/app/services/crawl/service.py` · L230–247**
+Gate `_shutdown_browser_runtime_after_kill()` in the local-task branch on runtime ownership + no other active local runs. In the Celery branch, replace direct shutdown with a worker-directed control action (see `app.control.revoke`).
+
+**`backend/app/services/fetch/fetch_context.py` · L271–275**
+Tighten patchright probe cap logic: apply cap only on exact vendor match (`expected_vendor == last_vendor`). If `expected_vendor` is empty, keep existing `True` behavior. If non-empty but no match, return `False`.
+
+**`backend/app/services/js_state/state_normalizer/_variant_rows.py` · L232–263**
+Add `depth` param (default 0) to `_collect_variant_matrix_rows`. Increment on recursion. Return early when depth hits `JS_STATE_LIST_ITERATION_LIMIT` (or equivalent). Apply check before descending into `node["elements"]`.
+
+**`backend/app/services/js_state/state_normalizer/_variant_rows.py` · L296–302**
+Add `"lowstock"` branch: `if lowered == "lowstock": row["availability"] = "in_stock"`, alongside existing `"instock"` and `"outofstock"` branches.
+
+**`backend/app/services/monitor_condition.py` · L100–132**
+In `_first_decimal_text`: capture `end` index when first loop breaks, then slice `text[start:end]`. Remove second redundant scan. Preserve `-` prefix handling, `saw_dot`, `saw_digit`, and `return None` when no digit seen.
+
+**`backend/app/services/pipeline/extraction_loop.py` · L103**
+Remove `asyncio` from module `__all__`. Update tests to patch via `monkeypatch.setattr(extraction_loop.asyncio, "to_thread", ...)` instead.
+
+**`backend/app/services/product_intelligence/discovery.py` · L1282–1283**
+Change `text.replace('"', " ")` to `text.replace('"', '\\"')` so embedded double-quotes are escaped, not stripped. Keep `return f'"{text}"'` wrapper. Validate output against SerpAPI and Google Native.
+
+**`backend/tests/fixtures/loader.py` · L24–25**
+Decide: if empty string is intended → remove `pytest.skip(...)`, keep `return ""`. If skip is intended → remove `return ""`. They are mutually exclusive; pick one.
+
+**`backend/tests/regression/test_data_enrichment.py` · L293, L371**
+Replace `await asyncio.gather(task)` with `await task` (single-task gather is unnecessary).
+
+**`frontend/components/crawl/crawl-config-screen.prefill.test.tsx` · L166–168**
+After `expectDomainProfileLookup(...)`, await a helper or use a `waitFor` wrapper to confirm `listSelectorsMock` has been called with `{ domain: 'example.com' }` before asserting. This fixes the race condition.
+
+**`frontend/components/crawl/markdown-output.tsx` · L20–50**
+Replace CDN KaTeX injection (`document.createElement('script'/'link')`) with bundled `katex` package import + CSS import via the app's normal build path. Keep `KaTeXApi`/`browserWindow` handling.
+
+**`frontend/components/crawl/markdown-output.tsx` · L196–218**
+Before entering frontmatter parse mode (`index === 0 && trimmed === '---'`), search for a closing `---` at `closingIndex > index`. Only parse as frontmatter if `closingIndex !== -1`. Otherwise treat the line as normal content.

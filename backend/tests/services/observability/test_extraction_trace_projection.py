@@ -85,6 +85,27 @@ def test_projects_high_value_field_winning_sources_only():
     assert "title" in provenance
 
 
+def test_projects_missing_variant_candidate_state():
+    record = _detail_record()
+    record.pop("variants")
+    trace = RunTrace(
+        run_id=1,
+        url="https://example.com/p/widget",
+        surface="ecommerce_detail",
+        requested_fields=["price"],
+    )
+
+    _record_extraction_trace(_context(trace), [record])
+
+    provenance = {
+        entry["field"]: entry
+        for entry in trace.to_dict()["extraction"]["field_provenance"]
+    }
+    assert provenance["variants"]["winning_source"] == "dom_selector"
+    assert provenance["variants"]["present"] is False
+    assert provenance["variants"]["note"] == "candidate_source_without_public_value"
+
+
 def test_skipped_dom_reflected_when_dom_absent_from_completed():
     record = _detail_record()
     record["_extraction_tiers"]["completed"] = [

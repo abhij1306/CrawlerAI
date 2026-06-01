@@ -4,7 +4,7 @@ import asyncio
 
 import pytest
 
-from app.services.crawl.batch_runtime import process_run
+from app.services.crawl.batch_runtime import _parallel_worker_record_limit, process_run
 from app.services.config.sitemap import SITEMAP_DEFAULT_MAX_URLS
 from app.services.acquisition.acquirer import AcquisitionResult
 from app.services.crawl.crud import create_crawl_run, get_run_records
@@ -39,6 +39,13 @@ def _detail_html() -> str:
       <body><h1>Widget Prime</h1></body>
     </html>
     """
+
+
+@pytest.mark.unit
+def test_parallel_worker_record_limit_bounds_each_worker_budget() -> None:
+    assert _parallel_worker_record_limit(5, 2) == 3
+    assert _parallel_worker_record_limit(100, 8) == 13
+    assert _parallel_worker_record_limit(1, 2) == 1
 
 
 def _listing_shell_html() -> str:
@@ -229,6 +236,158 @@ async def test_process_run_starts_with_fresh_batch_progress(
     assert run.result_summary["completed_urls"] == 2
     assert run.result_summary["verdict_counts"] == {"error": 1, "success": 1}
     assert run.result_summary["acquisition_summary"]["methods"] == {"fresh": 2}
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_process_run_defaults_to_sequential_batch_url_processing(
+    db_session: AsyncSession,
+    test_user,
+    monkeypatch: pytest.MonkeyPatch,
+    patch_settings,
+) -> None:
+    patch_settings(batch_url_concurrency=1, url_batch_concurrency=1)
+    run = await create_crawl_run(
+        db_session,
+        test_user.id,
+        {
+            "run_type": "batch",
+            "surface": "ecommerce_detail",
+            "settings": {
+                "urls": [
+                    "https://example-one.com/products/one",
+                    "https://example-two.com/products/two",
+                    "https://example-three.com/products/three",
+                ],
+            },
+        },
+    )
+    seen: list[tuple[str, int]] = []
+
+    async def _fake_process_single_url(*args, **kwargs):
+        del args
+        seen.append((str(kwargs.get("url") or ""), id(kwargs["session"])))
+        return URLProcessingResult(
+            records=[],
+            verdict="success",
+            url_metrics={"record_count": 0},
+        )
+
+    monkeypatch.setattr(
+        "app.services.crawl.batch_runtime.process_single_url",
+        _fake_process_single_url,
+    )
+
+    await process_run(db_session, run.id)
+
+    assert [url for url, _session_id in seen] == [
+        "https://example-one.com/products/one",
+        "https://example-two.com/products/two",
+        "https://example-three.com/products/three",
+    ]
+    assert {session_id for _url, session_id in seen} == {id(db_session)}
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_process_run_uses_batch_url_concurrency_setting(
+    db_session: AsyncSession,
+    test_user,
+    monkeypatch: pytest.MonkeyPatch,
+    patch_settings,
+) -> None:
+    patch_settings(batch_url_concurrency=2, url_batch_concurrency=1)
+    run = await create_crawl_run(
+        db_session,
+        test_user.id,
+        {
+            "run_type": "batch",
+            "surface": "ecommerce_detail",
+            "settings": {
+                "urls": [
+                    "https://one.example.com/products/one",
+                    "https://two.example.com/products/two",
+                    "https://three.example.com/products/three",
+                ],
+            },
+        },
+    )
+    active = 0
+    max_active = 0
+
+    async def _fake_process_single_url(*args, **kwargs):
+        nonlocal active, max_active
+        del args
+        active += 1
+        max_active = max(max_active, active)
+        await asyncio.sleep(0.01)
+        active -= 1
+        return URLProcessingResult(
+            records=[],
+            verdict="success",
+            url_metrics={"record_count": 0, "url": str(kwargs.get("url") or "")},
+        )
+
+    monkeypatch.setattr(
+        "app.services.crawl.batch_runtime.process_single_url",
+        _fake_process_single_url,
+    )
+
+    await process_run(db_session, run.id)
+    await db_session.refresh(run)
+
+    assert max_active == 2
+    assert run.result_summary["url_verdicts"] == ["success", "success", "success"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_process_run_runs_same_domain_batch_urls_in_parallel(
+    db_session: AsyncSession,
+    test_user,
+    monkeypatch: pytest.MonkeyPatch,
+    patch_settings,
+) -> None:
+    patch_settings(batch_url_concurrency=3, url_batch_concurrency=3)
+    run = await create_crawl_run(
+        db_session,
+        test_user.id,
+        {
+            "run_type": "batch",
+            "surface": "ecommerce_detail",
+            "settings": {
+                "urls": [
+                    "https://example.com/products/one",
+                    "https://example.com/products/two",
+                    "https://example.com/products/three",
+                ],
+            },
+        },
+    )
+    active = 0
+    max_active = 0
+
+    async def _fake_process_single_url(*args, **kwargs):
+        nonlocal active, max_active
+        del args, kwargs
+        active += 1
+        max_active = max(max_active, active)
+        await asyncio.sleep(0.01)
+        active -= 1
+        return URLProcessingResult(
+            records=[],
+            verdict="success",
+            url_metrics={"record_count": 0},
+        )
+
+    monkeypatch.setattr(
+        "app.services.crawl.batch_runtime.process_single_url",
+        _fake_process_single_url,
+    )
+
+    await process_run(db_session, run.id)
+
+    assert max_active == 3
 
 
 @pytest.mark.asyncio
@@ -549,7 +708,9 @@ async def test_process_batch_run_preserves_requested_fields_for_every_url(
     db_session: AsyncSession,
     test_user,
     monkeypatch: pytest.MonkeyPatch,
+    patch_settings,
 ) -> None:
+    patch_settings(batch_url_concurrency=1, url_batch_concurrency=1)
     run = await create_crawl_run(
         db_session,
         test_user.id,
@@ -588,7 +749,9 @@ async def test_process_batch_run_preserves_proxy_list_for_every_url(
     db_session: AsyncSession,
     test_user,
     monkeypatch: pytest.MonkeyPatch,
+    patch_settings,
 ) -> None:
+    patch_settings(batch_url_concurrency=1, url_batch_concurrency=1)
     run = await create_crawl_run(
         db_session,
         test_user.id,
@@ -637,7 +800,9 @@ async def test_process_batch_run_preserves_exact_requested_section_labels_for_ev
     db_session: AsyncSession,
     test_user,
     monkeypatch: pytest.MonkeyPatch,
+    patch_settings,
 ) -> None:
+    patch_settings(batch_url_concurrency=1, url_batch_concurrency=1)
     run = await create_crawl_run(
         db_session,
         test_user.id,
@@ -679,7 +844,9 @@ async def test_process_batch_run_resolves_urls_from_sitemap_settings(
     db_session: AsyncSession,
     test_user,
     monkeypatch: pytest.MonkeyPatch,
+    patch_settings,
 ) -> None:
+    patch_settings(batch_url_concurrency=1, url_batch_concurrency=1)
     run = await create_crawl_run(
         db_session,
         test_user.id,
@@ -907,7 +1074,9 @@ async def test_process_run_continues_after_sqlalchemy_url_error(
     db_session: AsyncSession,
     test_user,
     monkeypatch: pytest.MonkeyPatch,
+    patch_settings,
 ) -> None:
+    patch_settings(batch_url_concurrency=1, url_batch_concurrency=1)
     run = await create_crawl_run(
         db_session,
         test_user.id,

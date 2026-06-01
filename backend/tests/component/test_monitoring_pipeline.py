@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import contextlib
 from types import SimpleNamespace
 
 import pytest
@@ -31,13 +30,17 @@ from app.services.monitor_service import create_monitor
 from app.services.pipeline import run_complete_callbacks
 
 
+def _route_by_path(path: str):
+    for route in product_intelligence_router.routes:
+        if getattr(route, "path", "") == path:
+            return route
+    raise AssertionError(f"Route not found: {path}")
+
+
 @pytest.mark.component
 def test_product_intelligence_create_monitor_accepts_omitted_body() -> None:
-    route = next(
-        route
-        for route in product_intelligence_router.routes
-        if getattr(route, "path", "")
-        == "/api/product-intelligence/jobs/{job_id}/create-monitor"
+    route = _route_by_path(
+        "/api/product-intelligence/jobs/{job_id}/create-monitor"
     )
 
     assert [param.name for param in route.dependant.body_params] == ["payload"]
@@ -143,8 +146,7 @@ async def test_dispatch_monitor_run_does_not_redispatch_new_run(
     local_task = local_dispatch_module._local_run_tasks.pop(run_ids[0], None)
     if local_task is not None:
         local_task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await local_task
+        await asyncio.gather(local_task, return_exceptions=True)
 
 
 @pytest.mark.asyncio

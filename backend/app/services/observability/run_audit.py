@@ -37,6 +37,7 @@ from app.services.config.audit_rules import (
     FLAG_DOM_SKIPPED_WITH_VARIANT_CUES,
     FLAG_HIGH_VALUE_FIELD_MISSING,
     FLAG_LISTING_SINGLE_METADATA_RECORD,
+    FLAG_VARIANT_CANDIDATE_DROPPED,
     FLAG_USABLE_CONTENT_BUT_BLOCKED,
 )
 from app.services.db_utils import mapping_or_empty
@@ -390,6 +391,29 @@ def _audit_traces(
     flagged_rejections: set[tuple[str, str]] = set()
     for trace in traces or _read_trace_artifacts(run_id):
         extraction = mapping_or_empty(trace.get("extraction"))
+        field_provenance = extraction.get("field_provenance")
+        if isinstance(field_provenance, list):
+            for entry in field_provenance:
+                if not isinstance(entry, dict):
+                    continue
+                if str(entry.get("field") or "") != "variants":
+                    continue
+                if entry.get("present") is not False:
+                    continue
+                winning_source = str(entry.get("winning_source") or "").strip()
+                if not winning_source:
+                    continue
+                flags.append(
+                    _flag(
+                        FLAG_VARIANT_CANDIDATE_DROPPED,
+                        evidence={
+                            "winning_source": winning_source,
+                            "note": entry.get("note"),
+                            "value_shape": entry.get("value_shape"),
+                        },
+                        url=str(trace.get("url") or ""),
+                    )
+                )
         rejection_reason = str(extraction.get("rejection_reason") or "").strip()
         if not rejection_reason:
             continue

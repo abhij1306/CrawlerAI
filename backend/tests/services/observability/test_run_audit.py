@@ -38,15 +38,20 @@ def _record(*, url: str = "https://e.com/p/x", data=None, source_trace=None):
     )
 
 
+def _flag_with_code(flags, code: str):
+    for flag in flags:
+        if flag["code"] == code:
+            return flag
+    raise AssertionError(f"Flag not found: {code}")
+
+
 def test_listing_single_metadata_record_flagged():
     run = _run(surface="ecommerce_listing", verdict="success")
     record = _record(data={"title": "Some Page", "url": "https://e.com/c/shoes"})
     flags = run_audit.build_run_flags(run, [record])
     codes = {f["code"] for f in flags}
     assert audit_rules.FLAG_LISTING_SINGLE_METADATA_RECORD in codes
-    flag = next(
-        f for f in flags if f["code"] == audit_rules.FLAG_LISTING_SINGLE_METADATA_RECORD
-    )
+    flag = _flag_with_code(flags, audit_rules.FLAG_LISTING_SINGLE_METADATA_RECORD)
     assert flag["owner"] == audit_rules.OWNER_LISTING_EXTRACTOR
     assert "Rule 7" in flag["invariant"]
 
@@ -67,9 +72,7 @@ def test_listing_single_rich_metadata_record_flagged():
     codes = {f["code"] for f in flags}
 
     assert audit_rules.FLAG_LISTING_SINGLE_METADATA_RECORD in codes
-    flag = next(
-        f for f in flags if f["code"] == audit_rules.FLAG_LISTING_SINGLE_METADATA_RECORD
-    )
+    flag = _flag_with_code(flags, audit_rules.FLAG_LISTING_SINGLE_METADATA_RECORD)
     assert flag["owner"] == audit_rules.OWNER_LISTING_EXTRACTOR
     assert "Rule 7" in flag["invariant"]
 
@@ -201,9 +204,7 @@ def test_browser_artifact_challenge_shell_flag_uses_probe_url(tmp_path, monkeypa
     run = _run(surface="ecommerce_detail", verdict="blocked", run_id=run_id)
 
     flags = run_audit.build_run_flags(run, [])
-    flag = next(
-        f for f in flags if f["code"] == audit_rules.FLAG_ACQUISITION_CHALLENGE_BLOCKED
-    )
+    flag = _flag_with_code(flags, audit_rules.FLAG_ACQUISITION_CHALLENGE_BLOCKED)
 
     assert flag["url"] == "https://yeti.example/p/1"
 
@@ -270,6 +271,43 @@ def test_trace_rejection_flags_challenge_shell_and_updates_each_domain_baseline(
     assert (
         baseline_mod.load_baseline("beta.example", "ecommerce_detail")["samples"] == 1
     )
+
+
+def test_trace_flags_variant_candidate_dropped(tmp_path, monkeypatch):
+    monkeypatch.setattr(run_audit.settings, "artifacts_dir", tmp_path)
+    pages = tmp_path / "runs" / "52" / "pages"
+    pages.mkdir(parents=True)
+    (pages / "a.trace.json").write_text(
+        json.dumps(
+            {
+                "run_id": 52,
+                "url": "https://shop.example/p/1",
+                "surface": "ecommerce_detail",
+                "verdict": "success",
+                "acquire_timeline": [],
+                "extraction": {
+                    "completed_tiers": ["structured_data", "dom"],
+                    "field_provenance": [
+                        {
+                            "field": "variants",
+                            "winning_source": "embedded_json",
+                            "present": False,
+                            "value_shape": "missing",
+                            "note": "candidate_source_without_public_value",
+                        }
+                    ],
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    run = _run(surface="ecommerce_detail", verdict="success", run_id=52)
+
+    flags = run_audit.build_run_flags(run, [])
+    flag = _flag_with_code(flags, audit_rules.FLAG_VARIANT_CANDIDATE_DROPPED)
+
+    assert flag["owner"] == audit_rules.OWNER_RECORD_ASSEMBLY
+    assert flag["evidence"]["winning_source"] == "embedded_json"
 
 
 def test_clean_run_produces_no_flags(tmp_path, monkeypatch):

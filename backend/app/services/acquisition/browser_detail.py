@@ -505,8 +505,6 @@ async def expand_interactive_elements_via_accessibility_impl(
     try:
         async with asyncio.timeout(_accessibility_snapshot_timeout_seconds()):
             snapshot = await snapshot_fn()
-    except asyncio.CancelledError:
-        raise
     except (asyncio.TimeoutError, PlaywrightTimeoutError):
         diagnostics["status"] = "snapshot_timeout"
         diagnostics["elapsed_ms"] = elapsed_ms(started_at)

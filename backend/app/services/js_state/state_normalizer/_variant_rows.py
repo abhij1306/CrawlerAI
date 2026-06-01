@@ -376,3 +376,6 @@ def _classification_feature_axis_key(feature: dict[str, Any]) -> str | None:
             if axis_key in cleaned:
                 return axis_key
     return None
+
+
+__all__: list[str] = []

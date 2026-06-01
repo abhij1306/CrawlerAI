@@ -234,7 +234,12 @@ async def test_content_detail_skips_detail_repair_pipeline(
         acquisition_result=SimpleNamespace(method="curl_cffi", browser_diagnostics={}),
         url_metrics={},
     )
-    context = SimpleNamespace(surface="content_detail", requested_fields=[])
+    context = SimpleNamespace(
+        run=SimpleNamespace(id=1),
+        url="https://example.com/docs",
+        surface="content_detail",
+        requested_fields=[],
+    )
 
     extracted = await extraction_loop._run_extraction_stage(context, fetched)
 

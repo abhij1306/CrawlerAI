@@ -36,6 +36,13 @@ def _seed(domain="example.com", surface="ecommerce_detail", n=None):
     return baseline_mod.load_baseline(domain, surface)
 
 
+def _flag_with_code(flags, code: str):
+    for flag in flags:
+        if flag["code"] == code:
+            return flag
+    raise AssertionError(f"Flag not found: {code}")
+
+
 def test_no_drift_until_min_samples():
     baseline_mod.update_baseline("example.com", "ecommerce_detail", _obs())
     baseline = baseline_mod.load_baseline("example.com", "ecommerce_detail")
@@ -52,7 +59,7 @@ def test_field_regression_flagged_after_baseline_established():
     )
     codes = {f["code"] for f in flags}
     assert audit_rules.FLAG_BASELINE_FIELD_REGRESSION in codes
-    field_flag = next(f for f in flags if f["code"] == audit_rules.FLAG_BASELINE_FIELD_REGRESSION)
+    field_flag = _flag_with_code(flags, audit_rules.FLAG_BASELINE_FIELD_REGRESSION)
     assert "price" in field_flag["evidence"]["lost_fields"]
 
 

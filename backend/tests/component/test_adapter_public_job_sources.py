@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from urllib.parse import urlparse
+
 import pytest
 
 from app.services.adapters.algolia_jobs import AlgoliaJobsAdapter
@@ -151,7 +153,7 @@ async def test_firestore_jobs_adapter_extracts_public_published_jobs(
             "salary": "USD 24.63 - 35.58 hourly",
         }
     ]
-    assert "firestore.googleapis.com" in calls[0][0]
+    assert urlparse(calls[0][0]).hostname == "firestore.googleapis.com"
     assert calls[0][1]["json_body"]["structuredQuery"]["where"]["fieldFilter"] == {
         "field": {"fieldPath": "status"},
         "op": "EQUAL",

@@ -8,7 +8,7 @@ import logging
 import re
 import asyncio
 from html import unescape
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 
 import regex as regex_lib
 from app.services.exceptions import CrawlerConfigurationError
@@ -19,10 +19,17 @@ logger = logging.getLogger(__name__)
 
 
 class _SettingsViewLike(Protocol):
-    def urls(self) -> list[str]: ...
-    def get(self, key: str, default: Any = None) -> Any: ...
-    def has(self, key: str) -> bool: ...
-    def advanced_enabled(self) -> bool: ...
+    def urls(self) -> list[str]:
+        raise NotImplementedError
+
+    def get(self, key: str, default: Any = None) -> Any:
+        raise NotImplementedError
+
+    def has(self, key: str) -> bool:
+        raise NotImplementedError
+
+    def advanced_enabled(self) -> bool:
+        raise NotImplementedError
 
 
 # CSV parsing
@@ -73,7 +80,7 @@ def _settings_view(settings: object) -> _SettingsViewLike | dict:
         and hasattr(settings, "has")
         and hasattr(settings, "advanced_enabled")
     ):
-        return settings
+        return cast(_SettingsViewLike, settings)
     return settings if isinstance(settings, dict) else {}
 
 

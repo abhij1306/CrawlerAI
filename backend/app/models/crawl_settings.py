@@ -71,7 +71,7 @@ def _mapping(value: object) -> dict[str, Any]:
 def _proxy_username(proxy_url: object) -> str:
     try:
         return str(urlparse(str(proxy_url or "").strip()).username or "").strip()
-    except Exception:
+    except ValueError:
         return ""
 
 
@@ -355,9 +355,9 @@ class CrawlRunSettings:
         return _coerce_int(
             self.data.get(
                 "url_batch_concurrency",
-                crawler_runtime_settings.url_batch_concurrency,
+                crawler_runtime_settings.batch_url_concurrency,
             ),
-            crawler_runtime_settings.url_batch_concurrency,
+            crawler_runtime_settings.batch_url_concurrency,
             1,
         )
 

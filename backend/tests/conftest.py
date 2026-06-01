@@ -144,7 +144,7 @@ class FakeRedis:
 
 @pytest.fixture
 def workspace_tmp_path() -> Path:
-    path = _WORKSPACE_TMP_ROOT / f"case-{next(_TMP_COUNTER)}"
+    path = _WORKSPACE_TMP_ROOT / f"case-{_TMP_COUNTER.__next__()}"
     path.mkdir(parents=True, exist_ok=True)
     return path
 
@@ -205,7 +205,9 @@ async def _dispose_global_app_engine():
 async def db_session():
     """Create a PostgreSQL database schema for each test."""
     worker_id = os.environ.get("PYTEST_XDIST_WORKER", "gw0")
-    schema_suffix = re.sub(r"[^a-zA-Z0-9_]", "_", f"{worker_id}_{next(_TMP_COUNTER)}")
+    schema_suffix = re.sub(
+        r"[^a-zA-Z0-9_]", "_", f"{worker_id}_{_TMP_COUNTER.__next__()}"
+    )
     schema_name = f"test_{schema_suffix}"
     quoted_schema_name = f'"{schema_name}"'
     engine = create_async_engine(TEST_DATABASE_URL, future=True, echo=False)
@@ -234,7 +236,7 @@ async def db_session():
 async def test_user(db_session: AsyncSession) -> User:
     """Create a test user with a deterministic password hash."""
     user = User(
-        email=f"test-{next(_TMP_COUNTER)}@example.com",
+        email=f"test-{_TMP_COUNTER.__next__()}@example.com",
         hashed_password=hash_password("password123"),
         role="admin",
     )

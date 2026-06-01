@@ -88,12 +88,24 @@ class FieldProvenanceObservation:
 
     field_name: str
     winning_source: str | None = None
+    present: bool | None = None
+    value_shape: str = ""
+    value_count: int | None = None
+    note: str = ""
     candidates: list[CandidateObservation] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         payload: dict[str, Any] = {"field": self.field_name}
         if self.winning_source is not None:
             payload["winning_source"] = self.winning_source
+        if self.present is not None:
+            payload["present"] = bool(self.present)
+        if self.value_shape:
+            payload["value_shape"] = self.value_shape
+        if self.value_count is not None:
+            payload["value_count"] = int(self.value_count)
+        if self.note:
+            payload["note"] = self.note
         if self.candidates:
             payload["candidates"] = [c.to_dict() for c in self.candidates]
         return payload
@@ -145,11 +157,16 @@ class RunTrace:
     verdict: str = ""
     _seq: int = 0
     _high_value: frozenset[str] = field(default_factory=frozenset)
+    _diagnostic_fields: frozenset[str] = field(default_factory=frozenset)
+    _trace_fields: frozenset[str] = field(default_factory=frozenset)
 
     def __post_init__(self) -> None:
         self._high_value = frozenset(
             high_value_fields(self.surface, self.requested_fields)
         )
+        if "detail" in str(self.surface or "").strip().lower():
+            self._diagnostic_fields = frozenset(obs_config.DETAIL_DIAGNOSTIC_FIELDS)
+        self._trace_fields = self._high_value | self._diagnostic_fields
 
     # -- acquire timeline -----------------------------------------------------
     def record_acquire_event(
@@ -210,16 +227,13 @@ class RunTrace:
     ) -> None:
         """Record a competing candidate for a high-value field only.
 
-        Non-high-value fields are ignored to bound trace size. Loser lists are
-        capped per field.
+        Non-trace fields are ignored to bound trace size. Loser lists are capped
+        per field.
         """
         normalized = str(field_name or "").strip().lower()
-        if normalized not in self._high_value:
+        if normalized not in self._trace_fields:
             return
-        obs = self.extraction.field_provenance.get(normalized)
-        if obs is None:
-            obs = FieldProvenanceObservation(field_name=normalized)
-            self.extraction.field_provenance[normalized] = obs
+        obs = self._field_observation(normalized)
         if won:
             if obs.winning_source is not None:
                 logger.warning("Ignoring repeated winning candidate for %s", normalized)
@@ -245,6 +259,39 @@ class RunTrace:
                 reject_reason=str(reject_reason) if reject_reason else None,
             )
         )
+
+    def record_field_state(
+        self,
+        field_name: str,
+        *,
+        value: object,
+        candidate_sources: list[str] | None = None,
+    ) -> None:
+        normalized = str(field_name or "").strip().lower()
+        if normalized not in self._trace_fields:
+            return
+        obs = self._field_observation(normalized)
+        present = value not in (None, "", [], {})
+        obs.present = present
+        obs.value_shape, obs.value_count = _value_shape(value)
+        if (
+            not present
+            and candidate_sources
+            and obs.note in ("", "missing_without_candidate")
+        ):
+            obs.note = "candidate_source_without_public_value"
+        elif not present and not candidate_sources and not obs.note:
+            obs.note = "missing_without_candidate"
+
+    def trace_field_names(self) -> list[str]:
+        return sorted(self._trace_fields)
+
+    def _field_observation(self, normalized: str) -> FieldProvenanceObservation:
+        obs = self.extraction.field_provenance.get(normalized)
+        if obs is None:
+            obs = FieldProvenanceObservation(field_name=normalized)
+            self.extraction.field_provenance[normalized] = obs
+        return obs
 
     # -- normalize / verdict --------------------------------------------------
     def record_normalize_edit(self, field_name: str, reason: str) -> None:
@@ -279,6 +326,7 @@ class RunTrace:
             "surface": self.surface,
             "requested_fields": list(self.requested_fields),
             "high_value_fields": sorted(self._high_value),
+            "diagnostic_fields": sorted(self._diagnostic_fields),
             "verdict": self.verdict,
             "acquire_timeline": [event.to_dict() for event in self.acquire_events],
             "extraction": extraction_payload,
@@ -386,11 +434,29 @@ def _light_extraction(extraction_payload: dict[str, Any]) -> dict[str, Any]:
             {
                 key: value
                 for key, value in dict(entry).items()
-                if key in {"field", "winning_source"}
+                if key
+                in {
+                    "field",
+                    "winning_source",
+                    "present",
+                    "value_shape",
+                    "value_count",
+                    "note",
+                }
             }
             for entry in provenance
         ]
     return light
+
+
+def _value_shape(value: object) -> tuple[str, int | None]:
+    if value in (None, "", [], {}):
+        return ("missing", None)
+    if isinstance(value, list):
+        return ("list", len(value))
+    if isinstance(value, dict):
+        return ("dict", len(value))
+    return (type(value).__name__, None)
 
 
 # Reserved for future timing helpers in instrumentation slices.

@@ -58,7 +58,7 @@ async def test_resolve_host_ips_falls_back_to_ipv4_after_unspec_failure(
 @pytest.mark.asyncio
 @pytest.mark.component
 async def test_validate_public_target_rejects_configured_blocked_hostname() -> None:
-    blocked_hostname = next(iter(BLOCKED_HOSTNAMES))
+    blocked_hostname = sorted(BLOCKED_HOSTNAMES)[0]
 
     with pytest.raises(url_safety.SecurityError, match="Target host is not allowed"):
         await url_safety.validate_public_target(f"https://{blocked_hostname}/")
@@ -66,7 +66,7 @@ async def test_validate_public_target_rejects_configured_blocked_hostname() -> N
 
 @pytest.mark.component
 def test_raise_if_non_public_ip_rejects_configured_blocked_ip() -> None:
-    blocked_ip = next(iter(BLOCKED_IPS))
+    blocked_ip = sorted(BLOCKED_IPS)[0]
 
     with pytest.raises(
         url_safety.SecurityError,
@@ -77,7 +77,7 @@ def test_raise_if_non_public_ip_rejects_configured_blocked_ip() -> None:
 
 @pytest.mark.component
 def test_raise_if_non_public_ip_rejects_cgnat_range() -> None:
-    ip_value = next(CGNAT_NETWORK.hosts())
+    ip_value = CGNAT_NETWORK.network_address + 1
 
     with pytest.raises(
         url_safety.SecurityError,
@@ -141,4 +141,3 @@ async def test_validate_public_target_rejects_private_and_metadata_ranges(
 ) -> None:
     with pytest.raises(url_safety.SecurityError):
         await url_safety.validate_public_target(url)
-

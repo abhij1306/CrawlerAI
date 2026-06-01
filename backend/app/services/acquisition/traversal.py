@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 import logging
 import time
 from urllib.parse import urljoin
@@ -10,7 +9,7 @@ from app.services.acquisition.dom_runtime import (
     wait_for_dom_mutation_settle,
 )
 from app.services.config.runtime_settings import crawler_runtime_settings
-from app.services.config.selectors import PAGINATION_SELECTORS
+from app.services.acquisition.traversal_types import TraversalResult
 
 from app.services.acquisition.traversal_card_counting import (
     count_listing_cards as count_listing_cards,
@@ -26,8 +25,6 @@ from app.services.acquisition.traversal_helpers import (
     deadline_reached as _deadline_reached,
     emit_event as _emit_event,
     is_same_origin,
-    looks_like_next_page_control as _looks_like_next_page_control,
-    looks_like_paginate_control,
     page_matches_block_challenge as _page_matches_block_challenge,
     remaining_timeout_ms as _remaining_timeout_ms,
     settle_after_action as _settle_after_action,
@@ -35,9 +32,9 @@ from app.services.acquisition.traversal_helpers import (
 )
 from app.services.acquisition.traversal_recovery import (
     PlaywrightError,
+    _find_actionable_locator,
     click_with_retry,
     dismiss_overlays_if_needed,
-    find_aom_actionable_locator as _find_aom_actionable_locator,
     locator_still_resolves,
 )
 
@@ -54,68 +51,6 @@ __all__ = [
 ]
 
 logger = logging.getLogger(__name__)
-
-@dataclass(slots=True)
-class TraversalResult:
-    requested_mode: str | None
-    selected_mode: str | None = None
-    activated: bool = False
-    stop_reason: str = "not_requested"
-    iterations: int = 0
-    scroll_iterations: int = 0
-    load_more_clicks: int = 0
-    pages_advanced: int = 0
-    progress_events: int = 0
-    card_count: int = 0
-    overlays_dismissed: bool = False
-    click_retries: int = 0
-    html_fragments: list[tuple[str, bool]] = field(default_factory=list)
-    events: list[tuple[str, str]] = field(default_factory=list)
-    _seen_card_fragments: set[str] = field(default_factory=set, repr=False)
-    _seen_structured_fragments: set[str] = field(default_factory=set, repr=False)
-
-    def html_bytes(self) -> int:
-        return sum(
-            len(fragment.encode("utf-8"))
-            for fragment, _is_fallback in self.html_fragments
-            if fragment
-        )
-
-    def compose_html(self) -> str:
-        texts = [str(fragment or "").strip() for fragment, _is_fallback in self.html_fragments if str(fragment or "").strip()]
-        if not texts:
-            return ""
-        if not self.activated:
-            return "\n".join(texts)
-        sections = [
-            (
-                f'<section data-traversal-fragment="{index}">\n'
-                f"{text}\n"
-                "</section>"
-            )
-            for index, text in enumerate(texts, start=1)
-        ]
-        return "<html><body>\n" + "\n".join(sections) + "\n</body></html>"
-
-    def diagnostics(self) -> dict[str, object]:
-        return {
-            "requested_traversal_mode": self.requested_mode,
-            "selected_traversal_mode": self.selected_mode,
-            "traversal_activated": self.activated,
-            "traversal_stop_reason": self.stop_reason,
-            "traversal_iterations": self.iterations,
-            "scroll_iterations": self.scroll_iterations,
-            "load_more_clicks": self.load_more_clicks,
-            "pages_advanced": self.pages_advanced,
-            "traversal_progress_events": self.progress_events,
-            "listing_card_count": self.card_count,
-            "traversal_fragment_count": len(self.html_fragments),
-            "traversal_html_bytes": self.html_bytes(),
-            "overlays_dismissed": self.overlays_dismissed,
-            "click_retries": self.click_retries,
-            "traversal_events": self.events,
-        }
-
 
 def _format_traversal_detection_message(
     *,
@@ -741,89 +676,3 @@ async def _settle_thin_initial_listing(
     result.events.append(("info", message))
     await _emit_event(on_event, "info", message)
     return current
-
-
-async def _find_actionable_locator(page, selector_group: str):
-    selectors = PAGINATION_SELECTORS.get(selector_group) if isinstance(PAGINATION_SELECTORS, dict) else []
-    for selector in selectors or []:
-        locator = page.locator(str(selector)).first
-        try:
-            if await locator.count() == 0:
-                continue
-            if not await locator.is_visible(
-                timeout=int(crawler_runtime_settings.traversal_locator_visible_timeout_ms)
-            ):
-                continue
-            if await locator.is_disabled():
-                continue
-            return locator
-        except Exception:
-            logger.debug(
-                "Traversal locator check failed for selector_group=%s selector=%s",
-                selector_group,
-                selector,
-                exc_info=True,
-            )
-            continue
-    if selector_group == "next_page":
-        generic_locator = await _find_generic_next_page_locator(page)
-        if generic_locator is not None:
-            return generic_locator
-        return await _find_aom_actionable_locator(
-            page,
-            selector_group=selector_group,
-            name_pattern=r"(next|older|›|»|>)",
-        )
-    if selector_group == "load_more":
-        return await _find_aom_actionable_locator(
-            page,
-            selector_group=selector_group,
-            name_pattern=r"(load more|show more|see more|view more)",
-        )
-    return None
-
-
-async def _find_generic_next_page_locator(page):
-    for selector in (
-        "a[rel='next']",
-        "link[rel='next']",
-        ".pagination-next a",
-        ".pagination-next",
-        ".pagination-container a[rel='next']",
-        ".pagination-container a[href*='?p=']",
-        ".pagination-container a[href*='&p=']",
-        "[aria-label*='pagination' i] a",
-        "[aria-label*='pagination' i] button",
-        "[class*='pagination' i] a",
-        "[class*='pagination' i] button",
-        "[aria-current='page'] + a",
-        "[aria-current='page'] + button",
-    ):
-        locator = page.locator(selector).first
-        try:
-            if await locator.count() == 0:
-                continue
-            if selector == "link[rel='next']":
-                continue
-            if not await locator.is_visible(
-                timeout=int(crawler_runtime_settings.traversal_locator_visible_timeout_ms)
-            ):
-                continue
-            if await locator.is_disabled():
-                continue
-            if not (
-                await looks_like_paginate_control(locator)
-                or await _looks_like_next_page_control(locator)
-            ):
-                continue
-            logger.info("Traversal generic next-page selector=%s url=%s", selector, page.url)
-            return locator
-        except Exception:
-            logger.debug(
-                "Traversal generic next-page lookup failed selector=%s url=%s",
-                selector,
-                page.url,
-                exc_info=True,
-            )
-            continue
-    return None

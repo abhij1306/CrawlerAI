@@ -254,7 +254,7 @@ def _clone_visible_only(
 ) -> Tag | NavigableString | None:
     if isinstance(node, NavigableString):
         text = clean_text(str(node))
-        return NavigableString(str(node)) if isinstance(node, NavigableString) else None
+        return NavigableString(text) if text else None
     if not isinstance(node, Tag) or _node_is_hidden_or_auxiliary(node):
         return None
     if remaining_depth <= 0:

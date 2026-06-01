@@ -6,7 +6,7 @@ import type { Route } from 'next';
 import Link from 'next/link';
 import { useState } from 'react';
 import { Activity, ArrowUpRight, Globe, Hash, LayoutDashboard, RefreshCw } from 'lucide-react';
-import { Badge, Button, StatCard } from '../../components/ui/primitives';
+import { Badge, Button } from '../../components/ui/primitives';
 import {
   DataRegionEmpty,
   EmptyPanel,

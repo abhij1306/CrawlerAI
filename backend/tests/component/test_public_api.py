@@ -212,7 +212,12 @@ async def test_failed_login_logs_structured_event_without_secrets(
     )
 
     assert response.status_code == 401
-    event = next(record for record in caplog.records if record.msg == "auth.login_failed")
+    event = None
+    for record in caplog.records:
+        if record.msg == "auth.login_failed":
+            event = record
+            break
+    assert event is not None
     assert event.__dict__["reason"] == "bad_credentials"
     assert event.__dict__["client_id_hash"]
     assert event.__dict__["email_hash"]

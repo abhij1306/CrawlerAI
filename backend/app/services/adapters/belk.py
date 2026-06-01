@@ -70,7 +70,7 @@ class BelkAdapter(BaseAdapter):
 
     async def can_handle(self, url: str, html: str) -> bool:
         host = (urlparse(str(url or "")).hostname or "").lower()
-        return host.endswith("belk.com") or "belk.com" in str(html or "").lower()
+        return host == "belk.com" or host.endswith(".belk.com")
 
     async def extract(self, url: str, html: str, surface: str, proxy: str | None = None) -> AdapterResult:
         normalized_surface = str(surface or "").strip().lower()

@@ -84,6 +84,7 @@ export const LOG_PATTERNS = {
   PERSISTENCE_SUMMARY: /\bpersisted\s+\d+\s+record/i,
   ROBOTS_PREFIX: /^\[ROBOTS\]\s*/i,
   HEADLESS_BROWSER: /launched headless browser \(([^,]+),[^)]+\)/i,
+  URL_PREFIX: /^\[url:(https?:\/\/[^\s\]]+)\]\s*/i,
   URL: /https?:\/\/[^\s]+/g,
   COUNTER: /\(\d+\/\d+\)/,
 } as const;
@@ -140,6 +141,7 @@ export type LogSiteGroup = {
 
 export function sanitizeLogMessage(message: string) {
   return String(message || '')
+    .replace(LOG_PATTERNS.URL_PREFIX, '')
     .replace(/\s*\[corr=[^\]]+\]/gi, '')
     .replace(/\s{2,}/g, ' ')
     .trim();
@@ -267,14 +269,48 @@ function firstUrlInLog(message: string): string {
 
 export function buildLogSiteGroups(logs: CrawlLog[], records: CrawlRecord[] = []): LogSiteGroup[] {
   const groups: LogSiteGroupDraft[] = [];
+  const groupMap = new Map<string, LogSiteGroupDraft>();
+  const activeGroupKeyByUrl = new Map<string, string>();
   let currentGroup: LogSiteGroupDraft | null = null;
   let pendingRunLogs: CrawlLog[] = [];
   let untitledCounter = 0;
+
+  const isParallel = logs.some((log) => LOG_PATTERNS.URL_PREFIX.test(log.message));
 
   for (const [logIndex, log] of logs.entries()) {
     if (isHiddenLogMessage(log.message)) {
       continue;
     }
+
+    // 1. Check if the log message has a [url:...] prefix
+    const urlMatch = log.message.match(LOG_PATTERNS.URL_PREFIX);
+    if (urlMatch) {
+      const url = urlMatch[1];
+      const cleanMessage = log.message.replace(LOG_PATTERNS.URL_PREFIX, '');
+      const cleanLog = { ...log, message: cleanMessage };
+      const groupKey = activeGroupKeyByUrl.get(url);
+
+      // Look up or create group for this URL
+      let group = groupKey ? groupMap.get(groupKey) : undefined;
+      if (!group) {
+        const key = `site:prefixed:${log.id}:${url}`;
+        group = createSiteGroup({
+          key,
+          url,
+          index: null,
+          total: null,
+        });
+        groups.push(group);
+        groupMap.set(key, group);
+        activeGroupKeyByUrl.set(url, key);
+      }
+
+      addLogToGroup(group, cleanLog, getLogStage(cleanLog.message));
+      currentGroup = group;
+      continue;
+    }
+
+    // 2. Check if the log is a starting log
     const start = parseStartingLog(log.message);
     if (start) {
       if (pendingRunLogs.length) {
@@ -286,37 +322,68 @@ export function buildLogSiteGroups(logs: CrawlLog[], records: CrawlRecord[] = []
         groups.push(runGroup);
         pendingRunLogs = [];
       }
-      currentGroup = createSiteGroup({
-        key: `site:${start.index ?? logIndex}:${start.url}`,
+
+      const key = `site:${start.index ?? logIndex}:${log.id}:${start.url}`;
+      const group = createSiteGroup({
+        key,
         url: start.url,
         index: start.index,
         total: start.total,
       });
-      groups.push(currentGroup);
-      addLogToGroup(currentGroup, log, 'system');
+      groups.push(group);
+      groupMap.set(key, group);
+      activeGroupKeyByUrl.set(start.url, key);
+
+      addLogToGroup(group, log, 'system');
+      currentGroup = group;
       continue;
     }
 
-    if (!currentGroup) {
-      const inferredUrl = firstUrlInLog(log.message);
-      if (!inferredUrl) {
+    // 3. Inferred URL via log content
+    const inferredUrl = firstUrlInLog(log.message);
+    if (inferredUrl) {
+      const groupKey = activeGroupKeyByUrl.get(inferredUrl);
+      let group = groupKey ? groupMap.get(groupKey) : undefined;
+      if (group) {
+        addLogToGroup(group, log, getLogStage(log.message));
+        currentGroup = group;
+        continue;
+      }
+
+      if (!currentGroup || isParallel) {
+        group = createSiteGroup({
+          key: `site:inferred:${log.id}:${inferredUrl}`,
+          url: inferredUrl,
+          index: null,
+          total: null,
+        });
+        groups.push(group);
+        groupMap.set(group.key, group);
+        activeGroupKeyByUrl.set(inferredUrl, group.key);
+
+        // Attach leading run logs if this is the first URL group and currentGroup is null
+        if (!currentGroup && pendingRunLogs.length) {
+          for (const pendingLog of pendingRunLogs) {
+            addLogToGroup(group, pendingLog, getLogStage(pendingLog.message));
+          }
+          pendingRunLogs = [];
+        }
+        addLogToGroup(group, log, getLogStage(log.message));
+        currentGroup = group;
+        continue;
+      }
+    }
+
+    // 4. Fallback for logs without URL and without prefix
+    if (isParallel && !currentGroup) {
+      pendingRunLogs.push(log);
+    } else {
+      if (!currentGroup) {
         pendingRunLogs.push(log);
         continue;
       }
-      currentGroup = createSiteGroup({
-        key: `site:inferred:${log.id}:${inferredUrl}`,
-        url: inferredUrl,
-        index: null,
-        total: null,
-      });
-      groups.push(currentGroup);
-      for (const pendingLog of pendingRunLogs) {
-        addLogToGroup(currentGroup, pendingLog, getLogStage(pendingLog.message));
-      }
-      pendingRunLogs = [];
+      addLogToGroup(currentGroup, log, getLogStage(log.message));
     }
-
-    addLogToGroup(currentGroup, log, getLogStage(log.message));
   }
 
   if (pendingRunLogs.length) {

@@ -115,8 +115,6 @@ async def page_might_have_location_interstitial(page: Any) -> bool:
             """,
             {"selectors": selectors, "tokens": tokens},
         )
-    except asyncio.CancelledError:
-        raise
     except (asyncio.TimeoutError, PlaywrightTimeoutError, PlaywrightError):
         logger.debug(
             "Location interstitial precheck failed url=%s",
@@ -168,8 +166,6 @@ async def dismiss_safe_location_interstitial(page: Any) -> dict[str, object]:
             if not await page_might_have_location_interstitial(page):
                 return {"status": "dismissed", "selector": selector}
             still_present_result = {"status": "still_present", "selector": selector}
-        except asyncio.CancelledError:
-            raise
         except (asyncio.TimeoutError, PlaywrightTimeoutError, PlaywrightError):
             logger.debug(
                 "Location interstitial dismissal probe failed selector=%s url=%s",
@@ -258,8 +254,6 @@ async def _dismiss_location_interstitial_by_text(page: Any) -> dict[str, object]
                 **dict(result),
                 "status": "still_present",
             }
-    except asyncio.CancelledError:
-        raise
     except (asyncio.TimeoutError, PlaywrightTimeoutError, PlaywrightError):
         logger.debug(
             "Location interstitial text dismissal failed url=%s",

@@ -14,20 +14,22 @@ from fastapi import FastAPI
 from app.core.config import settings
 
 logger = logging.getLogger("app.core.logfire")
-_configured = False
-_fastapi_instrumented = False
-_celery_instrumented = False
 _MAX_ATTRIBUTE_LENGTH = 500
+
+
+class _LogfireState:
+    configured = False
+    fastapi_instrumented = False
+    celery_instrumented = False
 
 
 def configure_logfire() -> bool:
     """Configure Logfire once when explicitly enabled."""
-    global _configured
     if not settings.logfire_enabled:
         return False
     if _running_under_pytest() and not settings.logfire_enabled_in_tests:
         return False
-    if _configured:
+    if _LogfireState.configured:
         return True
 
     try:
@@ -45,7 +47,7 @@ def configure_logfire() -> bool:
         console=False,
         inspect_arguments=False,
     )
-    _configured = True
+    _LogfireState.configured = True
     if token is None:
         logger.warning(
             "Logfire enabled without LOGFIRE_TOKEN; cloud export is disabled"
@@ -55,9 +57,8 @@ def configure_logfire() -> bool:
 
 def instrument_fastapi(app: FastAPI) -> bool:
     """Instrument FastAPI requests when Logfire is enabled."""
-    global _fastapi_instrumented
-    if _fastapi_instrumented or not configure_logfire():
-        return _fastapi_instrumented
+    if _LogfireState.fastapi_instrumented or not configure_logfire():
+        return _LogfireState.fastapi_instrumented
 
     import logfire
 
@@ -65,20 +66,19 @@ def instrument_fastapi(app: FastAPI) -> bool:
         app,
         capture_headers=bool(settings.logfire_capture_headers),
     )
-    _fastapi_instrumented = True
+    _LogfireState.fastapi_instrumented = True
     return True
 
 
 def instrument_celery() -> bool:
     """Instrument Celery producers and workers when Logfire is enabled."""
-    global _celery_instrumented
-    if _celery_instrumented or not configure_logfire():
-        return _celery_instrumented
+    if _LogfireState.celery_instrumented or not configure_logfire():
+        return _LogfireState.celery_instrumented
 
     import logfire
 
     logfire.instrument_celery()
-    _celery_instrumented = True
+    _LogfireState.celery_instrumented = True
     return True
 
 
@@ -156,10 +156,9 @@ def set_logfire_attributes(span: Any, **attributes: object) -> None:
 
 
 def reset_logfire_state_for_tests() -> None:
-    global _configured, _fastapi_instrumented, _celery_instrumented
-    _configured = False
-    _fastapi_instrumented = False
-    _celery_instrumented = False
+    _LogfireState.configured = False
+    _LogfireState.fastapi_instrumented = False
+    _LogfireState.celery_instrumented = False
 
 
 __all__ = [

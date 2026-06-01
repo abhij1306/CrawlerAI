@@ -1,7 +1,6 @@
 from __future__ import annotations
 # ruff: noqa: F401,F403,F405
-
-import re
+# pylint: disable=wildcard-import,unused-wildcard-import
 
 from ._common import *
 from ._detail import *
@@ -310,3 +309,5 @@ VARIANT_OPTION_CONTROL_KEY_ATTRIBUTES = (
     "aria-label",
     "title",
 )
+
+__all__ = sorted(name for name in globals() if name.isupper())

@@ -26,9 +26,6 @@ from app.services.platform_policy import (
 )
 from app.services.publish import VERDICT_PARTIAL, VERDICT_SUCCESS
 from app.services.publish.metrics import diagnostics_indicate_block
-from app.services.config.extraction_rules import (
-    LISTING_UTILITY_TITLE_PATTERNS,
-)
 from app.services.extract.listing_candidate_ranking import looks_like_utility_record
 from app.services.config.public_record_policy import PUBLIC_RECORD_LEGACY_VARIANT_FIELDS
 from app.services.config.variant_policy import PUBLIC_VARIANT_AXIS_FIELDS
@@ -126,9 +123,6 @@ _PLACEHOLDER_TITLES = {
 _DETAIL_SLUG_WITH_ID_RE = re.compile(r".+_\d+$")
 _DETAIL_FILE_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*\.(?:html?|htm)$")
 _NON_DETAIL_FILE_RE = re.compile(r"^(?:index|page[-_]?\d+)\.(?:html?|htm)$")
-_UTILITY_TITLE_REGEXES = tuple(
-    re.compile(pattern, re.I) for pattern in LISTING_UTILITY_TITLE_PATTERNS
-)
 _IDENTITY_SEGMENT_SKIP = {
     "c",
     "catalog",
@@ -189,7 +183,8 @@ def infer_surface(url: str, explicit_surface: object | None = None) -> str:
         family in job_platform_families()
         or host.endswith(".jobs")
         or host.endswith("startup.jobs")
-        or host.endswith("usajobs.gov")
+        or host == "usajobs.gov"
+        or host.endswith(".usajobs.gov")
     ):
         if any(token in normalized_url for token in _JOB_LISTING_HINTS):
             return "job_listing"
@@ -207,7 +202,7 @@ def infer_surface(url: str, explicit_surface: object | None = None) -> str:
     if any(token in normalized_url for token in _JOB_LISTING_HINTS):
         return "job_listing"
     if (
-        host.endswith("autozone.com")
+        (host == "autozone.com" or host.endswith(".autozone.com"))
         and normalized_url.rstrip("/").rsplit("/", 1)[-1].count("_") >= 2
     ):
         return "ecommerce_detail"

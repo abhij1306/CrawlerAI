@@ -6,6 +6,7 @@ from typing import Any
 import pytest
 
 import app.services.acquisition.traversal as traversal_module
+import app.services.acquisition.traversal_helpers as traversal_helpers
 from app.services.config.selectors import CARD_SELECTORS, PAGINATION_SELECTORS
 from app.services.extract.listing_card_fragments import (
     listing_node_html,
@@ -1286,7 +1287,7 @@ async def test_paginate_click_transition_uses_networkidle_settle_timeout(
         return {"observed": True}
 
     monkeypatch.setattr(
-        traversal_module, "wait_for_dom_mutation_settle", _capture_settle
+        traversal_helpers, "_dom_wait_for_dom_mutation_settle", _capture_settle
     )
 
     result = await execute_listing_traversal(
@@ -1771,7 +1772,6 @@ async def testclick_with_retry_uses_mutation_settle_after_js_fallback() -> None:
             state: str,
             timeout: int | None = None,
         ) -> None:
-            del timeout
             self.load_state_calls.append(state)
 
         async def wait_for_timeout(self, timeout_ms: int) -> None:
@@ -1779,7 +1779,7 @@ async def testclick_with_retry_uses_mutation_settle_after_js_fallback() -> None:
 
     class _ClickLocator:
         async def scroll_into_view_if_needed(self, timeout: int | None = None) -> None:
-            del timeout
+            return None
 
         async def evaluate(self, script: str) -> Any:
             if "scrollIntoView" in script:
@@ -1822,10 +1822,10 @@ async def testclick_with_retry_stops_when_locator_no_longer_resolves() -> None:
             state: str,
             timeout: int | None = None,
         ) -> None:
-            del state, timeout
+            return None
 
         async def wait_for_timeout(self, timeout_ms: int) -> None:
-            del timeout_ms
+            return None
 
     class _StaleLocator:
         def __init__(self) -> None:
@@ -1833,7 +1833,7 @@ async def testclick_with_retry_stops_when_locator_no_longer_resolves() -> None:
             self.click_calls = 0
 
         async def scroll_into_view_if_needed(self, timeout: int | None = None) -> None:
-            del timeout
+            return None
 
         async def evaluate(self, script: str) -> Any:
             del script
@@ -1877,10 +1877,10 @@ async def testclick_with_retry_tolerates_transient_locator_resolution_loss() -> 
             state: str,
             timeout: int | None = None,
         ) -> None:
-            del state, timeout
+            return None
 
         async def wait_for_timeout(self, timeout_ms: int) -> None:
-            del timeout_ms
+            return None
 
     class _TransientLocator:
         def __init__(self) -> None:
@@ -1888,7 +1888,7 @@ async def testclick_with_retry_tolerates_transient_locator_resolution_loss() -> 
             self.click_calls = 0
 
         async def scroll_into_view_if_needed(self, timeout: int | None = None) -> None:
-            del timeout
+            return None
 
         async def evaluate(self, script: str) -> Any:
             del script
@@ -1940,17 +1940,17 @@ async def testclick_with_retry_tolerates_locator_probe_errors() -> None:
             state: str,
             timeout: int | None = None,
         ) -> None:
-            del state, timeout
+            return None
 
         async def wait_for_timeout(self, timeout_ms: int) -> None:
-            del timeout_ms
+            return None
 
     class _ProbeErrorLocator:
         def __init__(self) -> None:
             self.click_calls = 0
 
         async def scroll_into_view_if_needed(self, timeout: int | None = None) -> None:
-            del timeout
+            return None
 
         async def evaluate(self, script: str) -> Any:
             del script

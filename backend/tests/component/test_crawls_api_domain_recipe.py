@@ -307,11 +307,12 @@ async def test_crawls_domain_recipe_routes_round_trip(
     )
     assert "proxy_profile" not in saved_recipe["saved_run_profile"]
     assert any(row["field_name"] == "price" for row in saved_recipe["saved_selectors"])
-    promoted_candidate = next(
-        row
-        for row in saved_recipe["selector_candidates"]
-        if row["field_name"] == "price"
-    )
+    promoted_candidate = None
+    for row in saved_recipe["selector_candidates"]:
+        if row["field_name"] == "price":
+            promoted_candidate = row
+            break
+    assert promoted_candidate is not None
     assert promoted_candidate["already_saved"] is True
     assert promoted_candidate["saved_selector_id"] == promoted[0]["id"]
 

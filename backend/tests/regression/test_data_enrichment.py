@@ -290,7 +290,7 @@ async def test_data_enrichment_job_commits_running_before_product_work(
         visible_job = await check_session.get(type(job), job.id)
 
     release.set()
-    await task
+    await asyncio.gather(task)
 
     assert visible_job is not None
     assert visible_job.status == DATA_ENRICHMENT_STATUS_RUNNING
@@ -368,7 +368,7 @@ async def test_data_enrichment_commits_product_progress_between_records(
         )
 
     release.set()
-    await task
+    await asyncio.gather(task)
 
     assert visible_products[0].status == DATA_ENRICHMENT_STATUS_ENRICHED
     assert visible_products[1].status in {

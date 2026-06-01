@@ -7,11 +7,22 @@ import type { ReactNode } from 'react';
 import { DataRegionEmpty, DataRegionLoading } from '../ui/patterns';
 import { Button } from '../ui/primitives';
 
+type KaTeXApi = {
+  render: (
+    math: string,
+    element: HTMLElement,
+    options: { displayMode: boolean; throwOnError: boolean; strict: string },
+  ) => void;
+};
+
+type WindowWithKaTeX = Window & { katex?: KaTeXApi };
+
 // Dynamically load KaTeX scripts and stylesheets
-let katexPromise: Promise<any> | null = null;
-function loadKaTeX(): Promise<any> {
+let katexPromise: Promise<KaTeXApi> | null = null;
+function loadKaTeX(): Promise<KaTeXApi> {
   if (typeof window === 'undefined') return Promise.reject(new Error('Window is undefined'));
-  if ((window as any).katex) return Promise.resolve((window as any).katex);
+  const browserWindow = window as WindowWithKaTeX;
+  if (browserWindow.katex) return Promise.resolve(browserWindow.katex);
   if (katexPromise) return katexPromise;
 
   katexPromise = new Promise((resolve, reject) => {
@@ -23,7 +34,11 @@ function loadKaTeX(): Promise<any> {
     const script = document.createElement('script');
     script.src = 'https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.js';
     script.onload = () => {
-      resolve((window as any).katex);
+      if (browserWindow.katex) {
+        resolve(browserWindow.katex);
+      } else {
+        reject(new Error('KaTeX did not initialize'));
+      }
     };
     script.onerror = () => {
       katexPromise = null;
@@ -40,11 +55,11 @@ export function MathRenderer({
   displayMode,
 }: Readonly<{ math: string; displayMode?: boolean }>) {
   const containerRef = useRef<HTMLSpanElement>(null);
-  const katexRef = useRef<any>(null);
+  const katexRef = useRef<KaTeXApi | null>(null);
 
   useEffect(() => {
     let active = true;
-    function renderMath(kt: any | null) {
+    function renderMath(kt: KaTeXApi | null) {
       if (!containerRef.current) {
         return;
       }

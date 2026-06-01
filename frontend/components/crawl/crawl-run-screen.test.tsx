@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CrawlLog, CrawlRecord, CrawlRun, DomainRecipe } from '../../lib/api/types';
 import { POLLING_INTERVALS } from '../../lib/constants/timing';
 import { TopBarProvider } from '../layout/top-bar-context';
+import { LogTerminal } from './log-terminal';
 import { CrawlRunScreen } from './crawl-run-screen';
 import { storeProductIntelligencePrefill } from './crawl-run-prefill';
 
@@ -973,6 +974,23 @@ describe('CrawlRunScreen', () => {
 
     expect(await screen.findByText('40%')).toBeInTheDocument();
     expect(screen.getByText('0m 42s')).toBeInTheDocument();
+  });
+
+  it('ticks duration for every active parallel site group', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-04-08T10:00:10Z'));
+
+    render(
+      <LogTerminal
+        live
+        logs={[
+          makeLog(1, 'Starting crawl run for https://example.com/p/1 (1/2)'),
+          makeLog(2, 'Starting crawl run for https://example.com/p/2 (2/2)'),
+        ]}
+      />,
+    );
+
+    expect(screen.getAllByText('0m 10s')).toHaveLength(2);
   });
 
   it('prefills batch crawl with the originating jobs domain from listing runs', async () => {

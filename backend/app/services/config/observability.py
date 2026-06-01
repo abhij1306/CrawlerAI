@@ -45,6 +45,20 @@ TRACE_SUCCESS_VERDICTS = frozenset({"success"})
 # requested/default fields resolve (defensive floor for ecommerce detail).
 HIGH_VALUE_FIELD_FLOOR = ("price", "title", "image_url")
 
+# Detail fields that are always useful for debugging extraction quality, even
+# when the run did not request them. These do not make a field contractually
+# required; they only widen trace visibility so missing/deleted variant paths are
+# obvious from artifacts.
+DETAIL_DIAGNOSTIC_FIELDS = (
+    "availability",
+    "brand",
+    "color",
+    "sku",
+    "size",
+    "variant_count",
+    "variants",
+)
+
 # Max losing candidates captured per field in full-tier traces. Bounds trace
 # size on pathological pages with many rejected candidates.
 MAX_CANDIDATE_LOSERS_PER_FIELD = 12
@@ -193,6 +207,7 @@ __all__ = [
     "TRACE_TIER_FULL",
     "TRACE_SUCCESS_VERDICTS",
     "HIGH_VALUE_FIELD_FLOOR",
+    "DETAIL_DIAGNOSTIC_FIELDS",
     "MAX_CANDIDATE_LOSERS_PER_FIELD",
     "ACQUIRE_EVENT_NAVIGATION",
     "ACQUIRE_EVENT_HTTP_FETCH",

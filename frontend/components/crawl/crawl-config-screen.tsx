@@ -77,6 +77,7 @@ import {
   bindCrawlConfigLocalDispatch,
   buildInitialLocalState,
   crawlConfigLocalReducer,
+  isBulkPrefill,
   RUN_SETUP_CONTROL_CLASS,
   RUN_SETUP_LABEL_CLASS,
   RUN_SETUP_ROW_CLASS,
@@ -232,12 +233,8 @@ export function CrawlConfigScreen({
       return;
     }
     try {
-      const parsed = JSON.parse(stored) as {
-        domain?: CrawlDomain;
-        urls: string[];
-        additional_fields?: string[];
-      };
-      if (Array.isArray(parsed.urls) && parsed.urls.length) {
+      const parsed = JSON.parse(stored) as unknown;
+      if (isBulkPrefill(parsed) && parsed.urls.length) {
         bulkPrefillRouteSyncGuardRef.current = true;
         const parsedDomain = parsed.domain;
         const domain =

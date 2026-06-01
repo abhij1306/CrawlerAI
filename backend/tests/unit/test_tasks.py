@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 
 import signal
@@ -74,8 +76,29 @@ def test_run_task_in_worker_loop_installs_asyncio_exception_filter(
     tasks._run_task_in_worker_loop(42)
 
     assert installed_loops == [loop]
-    assert event_loops == [loop, None]
-    assert loop.closed is True
+    assert event_loops == [loop]
+    assert loop.closed is False
+
+
+@pytest.mark.unit
+def test_task_termination_shutdown_closes_browser_runtime(monkeypatch) -> None:
+    shutdowns = 0
+
+    async def _fake_shutdown_browser_runtime() -> None:
+        nonlocal shutdowns
+        shutdowns += 1
+
+    class FakeLoop:
+        def run_until_complete(self, awaitable):
+            asyncio.run(awaitable)
+
+    monkeypatch.setattr(
+        tasks, "shutdown_browser_runtime", _fake_shutdown_browser_runtime
+    )
+
+    tasks._shutdown_browser_runtime_before_task_exit(FakeLoop())
+
+    assert shutdowns == 1
 
 
 @pytest.mark.unit

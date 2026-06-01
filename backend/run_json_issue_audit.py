@@ -464,7 +464,7 @@ def _find_image_issues(record: dict[str, Any], issues: list[Issue]) -> None:
 def _looks_like_variant_expected(record: dict[str, Any]) -> bool:
     url = _safe_str(record.get("url"))
     host = _host_from_url(url)
-    if "discogs.com" in host:
+    if host == "discogs.com" or host.endswith(".discogs.com"):
         return False
     text = " ".join(
         [
@@ -683,7 +683,7 @@ def _find_logical_errors(record: dict[str, Any], issues: list[Issue]) -> None:
 
     host = _host_from_url(_safe_str(record.get("url")))
     tags = [str(item) for item in _safe_list(record.get("tags"))]
-    if "discogs.com" in host:
+    if host == "discogs.com" or host.endswith(".discogs.com"):
         discogs_noise = [
             token
             for token in tags

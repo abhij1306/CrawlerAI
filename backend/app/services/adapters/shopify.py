@@ -23,6 +23,7 @@ _SHOPIFY_META_ASSIGNMENT_RE = re.compile(
     r"(?:var\s+meta|(?:window\s*\.\s*)?ShopifyAnalytics\s*\.\s*meta)\s*=\s*",
     re.DOTALL,
 )
+_SHOPIFY_CDN_URL_RE = re.compile(r"https?://cdn\.shopify\.com(?:[/:?#]|$)", re.I)
 
 
 class ShopifyAdapter(BaseAdapter):
@@ -30,11 +31,12 @@ class ShopifyAdapter(BaseAdapter):
     domains: list[str] = []  # any domain can be Shopify; detected by signals
 
     async def can_handle(self, url: str, html: str) -> bool:
+        host = (urlparse(str(url or "")).hostname or "").lower()
         signals = [
             "Shopify.theme" in html,
-            "cdn.shopify.com" in html,
+            bool(_SHOPIFY_CDN_URL_RE.search(html)),
             '"shopify"' in html.lower(),
-            "myshopify.com" in url,
+            host == "myshopify.com" or host.endswith(".myshopify.com"),
         ]
         return any(signals)
 

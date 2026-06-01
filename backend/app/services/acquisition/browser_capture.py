@@ -203,8 +203,6 @@ class BrowserNetworkCapture:
                 if response is None:
                     return
                 await self._capture_response(response)
-            except asyncio.CancelledError:
-                raise
             except Exception:
                 logger.debug(
                     "Failed to capture browser network payload",

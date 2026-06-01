@@ -12,7 +12,6 @@ from lxml import html as lxml_html
 from app.services.config.selectors import (
     XPATH_ALLOWED_FUNCTIONS,
     XPATH_DISALLOWED_PATTERNS,
-    XPATH_FUNCTION_PATTERN,
 )
 from app.services.config.runtime_settings import crawler_runtime_settings
 
@@ -173,10 +172,33 @@ def _validate_xpath_policy(xpath: str) -> str | None:
         if pattern.search(candidate):
             return message
 
-    for function_name in XPATH_FUNCTION_PATTERN.findall(candidate):
+    for function_name in _xpath_function_names(candidate):
         if function_name.lower() not in XPATH_ALLOWED_FUNCTIONS:
             return f"XPath function '{function_name}' is not allowed"
     return None
+
+
+def _xpath_function_names(candidate: str) -> list[str]:
+    names: list[str] = []
+    for index, char in enumerate(candidate):
+        if char != "(":
+            continue
+        end = index
+        while end > 0 and candidate[end - 1].isspace():
+            end -= 1
+        start = end
+        while start > 0 and (
+            candidate[start - 1].isalnum() or candidate[start - 1] in {"_", "-", "."}
+        ):
+            start -= 1
+        if start == end:
+            continue
+        if start > 0 and (
+            candidate[start - 1].isalnum() or candidate[start - 1] in {":", "_", "-"}
+        ):
+            continue
+        names.append(candidate[start:end])
+    return names
 
 
 def _coerce_xpath_match(results: list[object]) -> str | None:
@@ -201,6 +223,18 @@ def _coerce_xpath_matches(results: list[object]) -> list[str]:
 def _apply_regex_filter(pattern: str | None, values: list[str]) -> list[str]:
     if not pattern:
         return values
+    max_pattern_length = int(
+        crawler_runtime_settings.selector_regex_max_pattern_length
+    )
+    if max_pattern_length > 0 and len(pattern) > max_pattern_length:
+        logger.warning(
+            "Skipping selector regex that exceeds configured length",
+            extra={
+                "pattern_length": len(pattern),
+                "max_pattern_length": max_pattern_length,
+            },
+        )
+        return []
     raw_timeout = crawler_runtime_settings.selector_regex_timeout_seconds
     try:
         timeout = float(raw_timeout)
@@ -232,7 +266,11 @@ def _apply_regex_filter(pattern: str | None, values: list[str]) -> list[str]:
         if not match:
             continue
         if match.groups():
-            extracted = next((group for group in match.groups() if group), None)
+            extracted = None
+            for group in match.groups():
+                if group:
+                    extracted = group
+                    break
         else:
             extracted = match.group(0)
         normalized = str(extracted or "").strip()
@@ -270,11 +308,11 @@ def _looks_like_css_selector(candidate: str) -> bool:
         return False
     if "::" in normalized or "@" in normalized:
         return False
-    if XPATH_FUNCTION_PATTERN.search(normalized):
+    if _xpath_function_names(normalized):
         return False
     if "#" in normalized:
         return True
-    if re.search(r"(?<!\.)\.[A-Za-z_][\w-]*", normalized):
+    if _contains_css_class_selector(normalized):
         return True
     if any(token in normalized for token in (">", "+", "~", ",")):
         return True
@@ -282,6 +320,16 @@ def _looks_like_css_selector(candidate: str) -> bool:
         return True
     if "[" in normalized and "]" in normalized and "=" in normalized:
         return True
+    return False
+
+
+def _contains_css_class_selector(candidate: str) -> bool:
+    for index, char in enumerate(candidate[:-1]):
+        if char != "." or (index > 0 and candidate[index - 1] == "."):
+            continue
+        next_char = candidate[index + 1]
+        if next_char.isalpha() or next_char == "_":
+            return True
     return False
 
 

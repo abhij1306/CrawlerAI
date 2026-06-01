@@ -66,9 +66,5 @@ async def create_monitor_from_job(
     logger.info(
         "Creating monitor from PI job matches url_count=%s",
         len(urls),
-        extra={
-            "job_id": job_id,
-            "monitor_name": "custom" if name else "pi_job_accepted_matches",
-        },
     )
     return await create_monitor(session, user=user, payload=payload)

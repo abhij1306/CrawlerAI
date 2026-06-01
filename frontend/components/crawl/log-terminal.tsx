@@ -197,19 +197,6 @@ function severityTone(group: LogSiteGroup, index: number) {
     : 'bg-transparent';
 }
 
-function severityLabel(group: LogSiteGroup) {
-  if (group.hasError) {
-    return 'Error';
-  }
-  if (group.hasWarning) {
-    return 'Warning';
-  }
-  if (group.recordCount > 0 || group.stageLogs.persistence.length > 0) {
-    return 'Persisted';
-  }
-  return 'Running';
-}
-
 function payloadSnapshot(group: LogSiteGroup) {
   if (!group.records.length) {
     return '';
@@ -309,6 +296,20 @@ function groupDurationMs(group: LogSiteGroup, activeNowMs?: number): number | nu
     return null;
   }
   return Math.max(0, Math.max(...endCandidatesMs) - startedMs);
+}
+
+function groupStillActive(group: LogSiteGroup) {
+  if (!group.url) {
+    return false;
+  }
+  const lastMessage = sanitizeLogMessage(group.logs.at(-1)?.message ?? '').toLowerCase();
+  return !(
+    group.stageLogs.persistence.length > 0 ||
+    group.hasError ||
+    lastMessage.includes('processing failed') ||
+    lastMessage.includes('timed out') ||
+    lastMessage.includes('stopped after reaching max_records')
+  );
 }
 
 function groupFieldCoverage(group: LogSiteGroup, requestedFields: string[]) {
@@ -506,6 +507,19 @@ export const LogTerminal = memo(function LogTerminal({
   >('__auto__');
   const [triageCursor, setTriageCursor] = useState(0);
   const groups = useMemo(() => buildLogSiteGroups(logs, records), [logs, records]);
+  const isParallelCrawl = useMemo(() => groups.filter((g) => g.url).length > 1, [groups]);
+  const siteOrdinalByKey = useMemo(() => {
+    let ordinal = 0;
+    const values = new Map<string, number>();
+    for (const group of groups) {
+      if (!group.url) {
+        continue;
+      }
+      ordinal += 1;
+      values.set(group.key, ordinal);
+    }
+    return values;
+  }, [groups]);
   const issueGroups = useMemo(
     () => groups.filter((group) => group.hasError || group.hasWarning),
     [groups],
@@ -710,8 +724,7 @@ export const LogTerminal = memo(function LogTerminal({
             const payload = payloadSnapshot(group);
             const confidence = groupConfidence(group);
             const coverage = groupFieldCoverage(group, requestedFields);
-            const activeGroup =
-              live && groups.length > 0 && group.key === groups[groups.length - 1].key;
+            const activeGroup = live && (group.key === activeKey || groupStillActive(group));
             const durationMs = groupDurationMs(group, activeGroup ? nowMs : undefined);
             const lastLog = group.logs.at(-1);
             const summaryLog =
@@ -741,7 +754,9 @@ export const LogTerminal = memo(function LogTerminal({
                   )}
                 >
                   <div className="text-muted text-xs font-medium opacity-60">
-                    {(group.index ?? index + 1).toString().padStart(2, '0')}
+                    {(group.index ?? siteOrdinalByKey.get(group.key) ?? index + 1)
+                      .toString()
+                      .padStart(2, '0')}
                   </div>
                   <div className="flex min-w-0 items-center gap-2">
                     {!isRunEventGroup && <Globe className="text-muted size-3.5 shrink-0" />}
@@ -765,6 +780,14 @@ export const LogTerminal = memo(function LogTerminal({
                         {formatShortUrlLabel(group.url)}
                       </a>
                     )}
+                    {isParallelCrawl && group.url && (
+                      <span className="text-muted border-border shrink-0 rounded border px-1 py-px text-[9px] font-semibold tracking-widest uppercase">
+                        Parallel
+                      </span>
+                    )}
+                    <span className="text-muted shrink-0 font-mono text-[10px] opacity-50">
+                      {group.logs.length} logs
+                    </span>
                   </div>
                   {!isRunEventGroup ? (
                     <>

@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 from app.core.config import settings
 from app.core.dependencies import get_run_dispatcher
 from app.models.crawl_run import CrawlRun
+from app.services.acquisition import shutdown_browser_runtime
 from app.services.config.runtime_settings import (
     CELERY_TASK_ID_KEY,
     crawler_runtime_settings,
@@ -73,6 +74,13 @@ def _summary_task_id(summary: object) -> str | None:
         return None
     task_id = str(summary.get(CELERY_TASK_ID_KEY) or "").strip()
     return task_id or None
+
+
+async def _shutdown_browser_runtime_after_kill() -> None:
+    try:
+        await shutdown_browser_runtime()
+    except Exception:
+        logger.exception("Browser runtime shutdown failed after hard kill")
 
 
 def _should_recover_stale_run(
@@ -225,6 +233,7 @@ async def kill_run(session: AsyncSession, run: CrawlRun) -> CrawlRun:
             local_task.cancel()
             update_run_status(retry_run, CrawlStatus.KILLED)
             _set_task_id(retry_run, None)
+            await _shutdown_browser_runtime_after_kill()
             await log_event(
                 retry_session,
                 retry_run.id,
@@ -234,6 +243,7 @@ async def kill_run(session: AsyncSession, run: CrawlRun) -> CrawlRun:
             return
         elif task_id:
             process_run_task.app.control.revoke(task_id, terminate=True)
+            await _shutdown_browser_runtime_after_kill()
         update_run_status(retry_run, CrawlStatus.KILLED)
         _set_task_id(retry_run, None)
         await log_event(

@@ -256,4 +256,35 @@ describe('buildLogSiteGroups', () => {
     expect(groups[0].stageLogs.persistence).toHaveLength(1);
     expect(groups[1].url).toBe('https://example.com/p/2');
   });
+
+  it('keeps repeated runs for the same URL in separate groups', () => {
+    const logs = [
+      makeLog(1, 'Starting crawl run for https://example.com/p/1'),
+      makeLog(2, 'Extracted 1 records using generic extraction path'),
+      makeLog(3, 'Starting crawl run for https://example.com/p/1'),
+      makeLog(4, 'Extraction yielded 0 records (generic extraction path)', 'warning'),
+    ];
+
+    const groups = buildLogSiteGroups(logs);
+
+    expect(groups).toHaveLength(2);
+    expect(groups[0].url).toBe('https://example.com/p/1');
+    expect(groups[1].url).toBe('https://example.com/p/1');
+    expect(groups[0].stageLogs.extraction).toHaveLength(1);
+    expect(groups[1].stageLogs.extraction).toHaveLength(1);
+  });
+
+  it('keeps non-prefixed parallel logs with the active site group', () => {
+    const logs = [
+      makeLog(1, 'Starting crawl run for https://example.com/p/1'),
+      makeLog(2, '[url:https://example.com/p/1] Extracted 1 records using generic extraction path'),
+      makeLog(3, 'Normalized 1 record(s) for persistence'),
+    ];
+
+    const groups = buildLogSiteGroups(logs);
+
+    expect(groups).toHaveLength(1);
+    expect(groups[0].stageLogs.extraction).toHaveLength(1);
+    expect(groups[0].stageLogs.normalize).toHaveLength(1);
+  });
 });

@@ -18,7 +18,7 @@ async def ucp_audit_api_client(db_session, test_user, monkeypatch: pytest.Monkey
         return test_user
 
     async def _noop_run(job_id: int) -> None:
-        del job_id
+        _ = job_id
 
     app.dependency_overrides[get_db] = _override_db
     app.dependency_overrides[get_current_user] = _override_user

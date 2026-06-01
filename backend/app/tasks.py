@@ -10,10 +10,13 @@ from types import FrameType
 from typing import Iterator
 
 from app.core.celery_app import celery_app, worker_process_init, worker_process_shutdown
-from app.core.database import SessionLocal
+from app.core.database import SessionLocal, dispose_engine
 from app.core.telemetry import install_asyncio_exception_filter
-from app.services.acquisition import shutdown_browser_runtime_sync
-from app.services.crawl.batch_runtime import process_run as process_run_async
+from app.services.acquisition import (
+    shutdown_browser_runtime,
+    shutdown_browser_runtime_sync,
+)
+from app.services.crawl.batch_runtime import process_run
 from app.services.config.runtime_settings import crawler_runtime_settings
 
 logger = logging.getLogger(__name__)
@@ -21,14 +24,23 @@ _SignalHandler = Callable[[int, FrameType | None], object]
 _SignalPreviousHandler = _SignalHandler | int | None
 
 
+# Valid when Celery runs with --pool=solo, one active task per worker process.
 @dataclass
 class _WorkerTaskState:
+    worker_loop: asyncio.AbstractEventLoop | None = None
     active_task_loop: asyncio.AbstractEventLoop | None = None
     active_run_task: asyncio.Task[None] | None = None
     termination_requested: bool = False
 
 
 _WORKER_TASK_STATE = _WorkerTaskState()
+
+
+def _run_worker_shutdown_step(name: str, action: Callable[[], object]) -> None:
+    try:
+        action()
+    except Exception:  # pylint: disable=broad-exception-caught
+        logger.exception("Worker shutdown step failed: %s", name)
 
 
 def _crawl_task_time_limits() -> dict[str, int]:
@@ -39,22 +51,42 @@ def _crawl_task_time_limits() -> dict[str, int]:
 
 @worker_process_init.connect
 def _worker_process_init(**_kwargs) -> None:
-    return None
-
-
-@worker_process_shutdown.connect
-def _worker_process_shutdown(**_kwargs) -> None:
-    shutdown_browser_runtime_sync()
-
-
-async def _run_with_session(run_id: int) -> None:
-    from app.services.monitor_change_detection import ensure_monitor_change_detection_registered
+    from app.services.monitor_change_detection import (
+        ensure_monitor_change_detection_registered,
+    )
     from app.services.observability.run_audit import ensure_run_audit_registered
 
     ensure_monitor_change_detection_registered()
     ensure_run_audit_registered()
+
+
+@worker_process_shutdown.connect
+def _worker_process_shutdown(**_kwargs) -> None:
+    loop = _WORKER_TASK_STATE.worker_loop
+    if loop is None or loop.is_closed():
+        _run_worker_shutdown_step("browser runtime", shutdown_browser_runtime_sync)
+        return
+    _run_worker_shutdown_step(
+        "browser runtime", lambda: loop.run_until_complete(shutdown_browser_runtime())
+    )
+    _run_worker_shutdown_step(
+        "database engine", lambda: loop.run_until_complete(dispose_engine())
+    )
+    _run_worker_shutdown_step(
+        "async generators", lambda: loop.run_until_complete(loop.shutdown_asyncgens())
+    )
+    _run_worker_shutdown_step(
+        "default executor",
+        lambda: loop.run_until_complete(loop.shutdown_default_executor()),
+    )
+    asyncio.set_event_loop(None)
+    loop.close()
+    _WORKER_TASK_STATE.worker_loop = None
+
+
+async def _run_with_session(run_id: int) -> None:
     async with SessionLocal() as session:
-        await process_run_async(session, run_id)
+        await process_run(session, run_id)
 
 
 def _task_termination_handler(signum: int, _frame: FrameType | None) -> None:
@@ -67,6 +99,14 @@ def _task_termination_handler(signum: int, _frame: FrameType | None) -> None:
     if loop is None or task is None or loop.is_closed() or task.done():
         return
     loop.call_soon_threadsafe(task.cancel)
+
+
+def _shutdown_browser_runtime_before_task_exit(
+    loop: asyncio.AbstractEventLoop,
+) -> None:
+    _run_worker_shutdown_step(
+        "browser runtime", lambda: loop.run_until_complete(shutdown_browser_runtime())
+    )
 
 
 @contextmanager
@@ -87,7 +127,10 @@ def _install_task_signal_handlers() -> Iterator[dict[int, _SignalPreviousHandler
 
 def _run_task_in_worker_loop(run_id: int) -> None:
     _WORKER_TASK_STATE.termination_requested = False
-    loop = asyncio.new_event_loop()
+    loop = _WORKER_TASK_STATE.worker_loop
+    if loop is None or loop.is_closed():
+        loop = asyncio.new_event_loop()
+        _WORKER_TASK_STATE.worker_loop = loop
     asyncio.set_event_loop(loop)
     install_asyncio_exception_filter(loop)
     task = loop.create_task(_run_with_session(run_id), name=f"crawl-run-{run_id}")
@@ -97,22 +140,12 @@ def _run_task_in_worker_loop(run_id: int) -> None:
         loop.run_until_complete(task)
     except asyncio.CancelledError:
         if _WORKER_TASK_STATE.termination_requested:
-            shutdown_browser_runtime_sync()
+            _shutdown_browser_runtime_before_task_exit(loop)
             raise SystemExit(0) from None
         raise
     finally:
         _WORKER_TASK_STATE.active_run_task = None
         _WORKER_TASK_STATE.active_task_loop = None
-        try:
-            loop.run_until_complete(loop.shutdown_asyncgens())
-        finally:
-            try:
-                loop.run_until_complete(loop.shutdown_default_executor())
-            except RuntimeError:
-                logger.warning("Failed to shutdown default executor", exc_info=True)
-            finally:
-                asyncio.set_event_loop(None)
-                loop.close()
 
 
 @celery_app.task(name="crawl.process_run", **_crawl_task_time_limits())

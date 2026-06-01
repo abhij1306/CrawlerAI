@@ -110,9 +110,8 @@ class Socks5AuthBridge:
         tasks = list(self._tasks)
         for task in tasks:
             task.cancel()
-        for task in tasks:
-            with contextlib.suppress(asyncio.CancelledError, Exception):
-                await task
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
 
     async def _handle_client(
         self,
@@ -166,8 +165,6 @@ class Socks5AuthBridge:
                 _relay_stream(reader, opened_writer),
                 _relay_stream(opened_reader, writer),
             )
-        except asyncio.CancelledError:
-            raise
         except _ClientNotifiedSocksError:
             _increment_bridge_counter("failures")
             logger.debug("SOCKS5 auth bridge rejected client request", exc_info=True)

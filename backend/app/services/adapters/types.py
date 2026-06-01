@@ -6,3 +6,5 @@ from typing import TypeAlias
 
 AdapterRecord: TypeAlias = dict[str, object]
 AdapterRecords: TypeAlias = list[AdapterRecord]
+
+__all__ = ["AdapterRecord", "AdapterRecords"]

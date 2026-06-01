@@ -161,3 +161,6 @@ def _dedupe_product_payloads(
         seen.add(key)
         deduped.append((product, extractor))
     return deduped[: int(JS_STATE_PRODUCT_PAYLOAD_LIMIT)]
+
+
+__all__ = ["map_js_state_to_fields"]

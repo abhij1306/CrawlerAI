@@ -315,9 +315,13 @@ async def update_selector_record(
             domain=memory.domain,
             surface=memory.surface,
         )
-        refreshed = next(
-            row for row in rules if _coerce_int(row.get("id"), default=0) == int(selector_id)
-        )
+        refreshed = None
+        for row in rules:
+            if _coerce_int(row.get("id"), default=0) == int(selector_id):
+                refreshed = row
+                break
+        if refreshed is None:
+            raise ValueError(f"Selector {selector_id} was not found after update")
         return {
             "domain": memory.domain,
             "surface": memory.surface,

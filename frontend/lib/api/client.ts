@@ -154,7 +154,6 @@ async function requestWithParser<T>(
   init?: RequestInit,
 ): Promise<T> {
   const maxAttempts = 3;
-  let lastError: ApiError | null = null;
   let lastFetchError: Error | null = null;
   const candidateBaseUrls = getApiBaseUrlCandidates();
   const hasConfiguredBaseUrl =
@@ -180,7 +179,6 @@ async function requestWithParser<T>(
           const body = await readErrorBody(response);
           const message = body || response.statusText || 'Request failed';
           const error = new ApiError(message, response.status, body);
-          lastError = error;
 
           if (response.status === 404 && hasConfiguredBaseUrl) {
             throw error;
@@ -200,19 +198,15 @@ async function requestWithParser<T>(
         if (error.status !== 404) {
           throw error;
         }
-        lastError = error;
-        break;
+        throw error;
       }
     }
   }
 
-  if (lastError) {
-    throw lastError;
-  }
   if (lastFetchError) {
     throw new Error(`Failed to reach backend API. Tried: ${candidateBaseUrls.join(', ')}`);
   }
-  throw lastError ?? new ApiError('Request failed', 500, '');
+  throw new ApiError('Request failed', 500, '');
 }
 
 function withJsonHeaders(init?: RequestInit): RequestInit {

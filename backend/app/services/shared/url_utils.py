@@ -24,6 +24,8 @@ __all__ = [
     "terminal_tokens",
     "title_preserving_acronyms",
     "title_tokens",
+    "ensure_scheme",
+    "is_placeholder_image_url",
     "_ensure_scheme",
     "_is_placeholder_image_url",
 ]

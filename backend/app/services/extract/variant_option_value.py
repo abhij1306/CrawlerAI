@@ -54,26 +54,22 @@ _variant_promo_noise_tokens = frozenset(
     if str(token).strip()
 )
 _variant_artifact_value_tokens = frozenset(
-    compact
+    re.sub(r"[^a-z0-9%#]+", "", str(token).strip().lower())
     for token in tuple(DETAIL_VARIANT_ARTIFACT_VALUE_TOKENS or ())
-    if (
-        compact := re.sub(
-            r"[^a-z0-9%#]+", "", str(token).strip().lower()
-        )
-    )
+    if re.sub(r"[^a-z0-9%#]+", "", str(token).strip().lower())
 )
 _variant_option_value_ui_noise_phrases = tuple(
-    cleaned.casefold()
+    clean_text(token).casefold()
     for token in (
         *tuple(VARIANT_OPTION_VALUE_UI_NOISE_PHRASES or ()),
         *tuple(VARIANT_OPTION_VALUE_UI_NOISE_PHRASES_EXTRA or ()),
     )
-    if (cleaned := clean_text(token))
+    if clean_text(token)
 )
 _variant_option_noise_phrases = tuple(
-    cleaned.casefold()
+    clean_text(token).casefold()
     for token in tuple(VARIANT_OPTION_NOISE_PHRASES or ())
-    if (cleaned := clean_text(token))
+    if clean_text(token)
 )
 _variant_option_value_exact_noise_tokens = frozenset(
     str(token).strip().lower()

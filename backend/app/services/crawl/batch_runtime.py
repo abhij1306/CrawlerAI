@@ -5,6 +5,7 @@ import logging
 from contextlib import suppress
 from datetime import UTC, datetime
 
+from app.core.config import settings
 from app.core.database import SessionLocal
 from app.core.logfire_integration import logfire_span, set_logfire_attributes
 from app.models.crawl_run import CrawlRun
@@ -27,15 +28,12 @@ from app.services.config.runtime_settings import crawler_runtime_settings
 from app.services.config.design_system import DESIGN_SYSTEM_SURFACE
 from app.services.design_system import process_design_system_run
 from app.services.domain_utils import normalize_domain
-from app.services.acquisition.browser_runtime import (
-    get_browser_runtime,
-    patchright_browser_available,
-)
 from app.services.pipeline.extraction_loop import process_single_url
 from app.services.pipeline.run_complete_callbacks import on_run_complete
 from app.services.pipeline.run_progress import BatchRunProgressState
 from app.services.pipeline.runtime_helpers import (
     STAGE_ACQUIRE,
+    STAGE_PERSIST,
     log_event,
     mark_run_failed,
     set_stage,
@@ -49,23 +47,42 @@ from sqlalchemy.ext.asyncio import AsyncSession
 logger = logging.getLogger(__name__)
 
 
-async def _prewarm_browser_pool() -> None:
-    """Launch patchright browser process ahead of first URL so cold start doesn't block acquisition."""
-    if not patchright_browser_available():
-        return
-    try:
-        runtime = await get_browser_runtime(browser_engine="patchright")
-        await runtime.ensure()
-    except Exception:
-        logger.debug(
-            "Browser pool pre-warm failed; will launch on demand", exc_info=True
-        )
-
-
 def _require_url_processing_result(url_result: object) -> URLProcessingResult:
     if isinstance(url_result, URLProcessingResult):
         return url_result
     raise TypeError(f"Unexpected URL result type: {type(url_result)!r}")
+
+
+_DEFAULT_URL_CONCURRENCY = 1
+
+
+async def _prewarm_browser_pool() -> None:
+    return None
+
+
+def _parallel_url_concurrency(total_urls: int, settings_view) -> int:
+    try:
+        system_limit = int(
+            getattr(settings, "system_max_concurrent_urls", _DEFAULT_URL_CONCURRENCY)
+        )
+    except (AttributeError, TypeError, ValueError):
+        system_limit = _DEFAULT_URL_CONCURRENCY
+    try:
+        url_batch_concurrency = getattr(settings_view, "url_batch_concurrency", None)
+        batch_limit = int(
+            url_batch_concurrency()
+            if callable(url_batch_concurrency)
+            else _DEFAULT_URL_CONCURRENCY
+        )
+    except (AttributeError, TypeError, ValueError):
+        batch_limit = _DEFAULT_URL_CONCURRENCY
+    return max(1, min(total_urls, system_limit, batch_limit))
+
+
+def _parallel_worker_record_limit(max_records: int, concurrency: int) -> int:
+    total_budget = max(1, int(max_records or 1))
+    worker_count = max(1, int(concurrency or 1))
+    return max(1, (total_budget + worker_count - 1) // worker_count)
 
 
 def _safe_sitemap_max_urls(value: object) -> int:
@@ -273,9 +290,246 @@ async def _persist_url_failure_log(
     return run
 
 
+def _url_start_message(*, url: str, idx: int, total_urls: int) -> str:
+    if idx == 1:
+        return f"Starting crawl run for {url}"
+    return f"Starting crawl run for {url} ({idx}/{total_urls})"
+
+
+async def _process_url_in_parallel(
+    *,
+    run_id: int,
+    idx: int,
+    total_urls: int,
+    url: str,
+    max_records: int,
+    url_timeout_seconds: float,
+) -> tuple[int, str, URLProcessingResult]:
+    async with SessionLocal() as url_session:
+        run = await url_session.get(CrawlRun, run_id, populate_existing=True)
+        if run is None:
+            raise RuntimeError(f"Run {run_id} disappeared before URL processing")
+        await log_event(
+            url_session,
+            run.id,
+            "info",
+            _url_start_message(url=url, idx=idx, total_urls=total_urls),
+        )
+        await url_session.commit()
+        url_config = URLProcessingConfig.from_acquisition_plan(
+            run.settings_view.acquisition_plan(
+                surface=run.surface,
+                max_records=max(1, max_records),
+            ),
+            update_run_state=False,
+            persist_logs=True,
+        )
+        try:
+            with logfire_span(
+                "pipeline.url",
+                run_id=run.id,
+                url_index=idx,
+                url_count=total_urls,
+                domain=normalize_domain(url),
+                surface=run.surface,
+                max_records=max_records,
+                timeout_seconds=url_timeout_seconds,
+            ) as url_span:
+                url_result = _require_url_processing_result(
+                    await asyncio.wait_for(
+                        process_single_url(
+                            session=url_session,
+                            run=run,
+                            url=url,
+                            config=url_config,
+                        ),
+                        timeout=url_timeout_seconds,
+                    )
+                )
+                set_logfire_attributes(
+                    url_span,
+                    verdict=url_result.verdict,
+                    record_count=_url_metric(
+                        url_result,
+                        "record_count",
+                        len(url_result.records),
+                    ),
+                    method=_url_metric(url_result, "method"),
+                    blocked=_url_metric(url_result, "blocked"),
+                )
+            await url_session.commit()
+        except TimeoutError as exc:
+            logger.warning("URL processing timed out for run=%s url=%s", run.id, url)
+            run, url_result = await _recover_url_failure(
+                url_session,
+                run=run,
+                run_id=run.id,
+                url=url,
+                exc=exc,
+                log_message=(
+                    f"URL processing timed out for {url} "
+                    f"(timeout_seconds={url_timeout_seconds})"
+                ),
+            )
+            url_result.url_metrics["error"] = (
+                f"TimeoutError: url exceeded timeout_seconds={url_timeout_seconds}"
+            )
+        except Exception as exc:
+            run, url_result = await _recover_url_failure(
+                url_session,
+                run=run,
+                run_id=run.id,
+                url=url,
+                exc=exc,
+                log_message=f"URL processing failed for {url}: {type(exc).__name__}: {exc}",
+            )
+        return idx, url, url_result
+
+
+async def _cancel_pending_tasks(tasks: list[asyncio.Task]) -> None:
+    """Cancel all incomplete tasks and await their cancellation cleanly."""
+    for t in tasks:
+        if not t.done():
+            t.cancel()
+    with suppress(BaseException):
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+
+async def _process_urls_in_parallel(
+    session: AsyncSession,
+    *,
+    run: CrawlRun,
+    settings_view,
+    url_list: list[str],
+    progress_state: BatchRunProgressState,
+    max_records: int,
+    url_timeout_seconds: float,
+) -> tuple[list[str], int]:
+    total_urls = len(url_list)
+    concurrency = _parallel_url_concurrency(total_urls, settings_view)
+    record_limit = _parallel_worker_record_limit(max_records, concurrency)
+    await log_event(
+        session,
+        run.id,
+        "info",
+        f"Processing {total_urls} URL(s) with concurrency={concurrency}",
+    )
+    await session.commit()
+    semaphore = asyncio.Semaphore(concurrency)
+    run_id = int(run.id)
+
+    async def _guarded(
+        idx: int, url: str, record_limit: int
+    ) -> tuple[int, str, URLProcessingResult]:
+        async with semaphore:
+            return await _process_url_in_parallel(
+                run_id=run_id,
+                idx=idx,
+                total_urls=total_urls,
+                url=url,
+                max_records=record_limit,
+                url_timeout_seconds=url_timeout_seconds,
+            )
+
+    tasks = [
+        asyncio.create_task(
+            _guarded(idx, url, record_limit), name=f"crawl-run-{run_id}-url-{idx}"
+        )
+        for idx, url in enumerate(url_list, start=1)
+    ]
+    verdicts: list[str] = []
+    record_count = as_int(run.get_summary("record_count", 0))
+
+    async def _record_task_result(task: asyncio.Task) -> tuple[int, str]:
+        nonlocal record_count
+        idx, url, url_result = await task
+        verdict = str(url_result.verdict or VERDICT_ERROR)
+        verdicts.append(verdict)
+        records_count = as_int(
+            _url_metric(url_result, "record_count", len(url_result.records))
+        )
+        record_count += records_count
+        progress_state.record_url_result(
+            idx=idx - 1,
+            records_count=records_count,
+            verdict=verdict,
+            url_metrics=url_result.url_metrics,
+        )
+        _touch_run_heartbeat(run)
+        run.update_summary(
+            **progress_state.build_progress_patch(
+                current_url=url,
+                current_url_index=idx,
+            ),
+            duration_ms=_current_duration_ms(run),
+        )
+        await session.commit()
+        return idx, url
+
+    async def _drain_completed(pending: set[asyncio.Task]) -> None:
+        completed = [task for task in pending if task.done()]
+        for task in completed:
+            pending.remove(task)
+            await _record_task_result(task)
+
+    try:
+        pending = set(tasks)
+        while pending:
+            done, pending = await asyncio.wait(
+                pending, return_when=asyncio.FIRST_COMPLETED
+            )
+            for task in done:
+                await _record_task_result(task)
+
+            await session.refresh(run)
+
+            control_request = get_control_request(run)
+            if control_request in (CONTROL_REQUEST_PAUSE, CONTROL_REQUEST_KILL):
+                await _drain_completed(pending)
+                await _cancel_pending_tasks(list(pending))
+                new_status = (
+                    CrawlStatus.PAUSED
+                    if control_request == CONTROL_REQUEST_PAUSE
+                    else CrawlStatus.KILLED
+                )
+                update_run_status(run, new_status)
+                set_control_request(run, None)
+                signal_word = (
+                    "paused" if control_request == CONTROL_REQUEST_PAUSE else "killed"
+                )
+                await log_event(
+                    session, run.id, "warning", f"Run {signal_word} at checkpoint"
+                )
+                await session.commit()
+                return verdicts, record_count
+
+            if record_count >= max_records:
+                await _drain_completed(pending)
+                await _cancel_pending_tasks(list(pending))
+                await log_event(
+                    session,
+                    run.id,
+                    "info",
+                    f"Stopped after reaching max_records={max_records}",
+                )
+                await session.commit()
+                pending.clear()
+                break
+
+    except BaseException:
+        await _cancel_pending_tasks(tasks)
+        raise
+    return verdicts, record_count
+
+
 async def process_run(session: AsyncSession, run_id: int) -> None:
     with logfire_span("pipeline.run", run_id=run_id) as run_span:
         await _process_run_with_span(session, run_id, run_span)
+
+
+async def process_run_async(run_id: int) -> None:
+    async with SessionLocal() as session:
+        await process_run(session, run_id)
 
 
 async def _process_run_with_span(
@@ -309,6 +563,7 @@ async def _process_run_with_span(
         total_urls = len(url_list)
         if total_urls == 0:
             raise ValueError("No URL provided")
+        await _prewarm_browser_pool()
         set_logfire_attributes(
             run_span,
             url_count=total_urls,
@@ -337,167 +592,177 @@ async def _process_run_with_span(
         verdicts: list[str] = []
         record_count = as_int(run.get_summary("record_count", 0))
 
-        # Pre-warm browser pool so cold start doesn't block first URL acquisition.
-        prewarm_task: asyncio.Task[None] = asyncio.create_task(_prewarm_browser_pool())
-
         try:
-            for idx, url in enumerate(url_list, start=1):
-                await session.refresh(run)
-                _touch_run_heartbeat(run)
-                control_request = get_control_request(run)
-                if control_request == CONTROL_REQUEST_PAUSE:
-                    update_run_status(run, CrawlStatus.PAUSED)
-                    set_control_request(run, None)
-                    await log_event(
-                        session, run.id, "warning", "Run paused at checkpoint"
-                    )
-                    await session.commit()
-                    return
-                if control_request == CONTROL_REQUEST_KILL:
-                    update_run_status(run, CrawlStatus.KILLED)
-                    set_control_request(run, None)
-                    await log_event(
-                        session, run.id, "warning", "Run killed at checkpoint"
-                    )
-                    await session.commit()
-                    return
-
-                if idx == 1:
-                    await log_event(
-                        session, run.id, "info", f"Starting crawl run for {url}"
-                    )
-                    await log_event(
-                        session,
-                        run.id,
-                        "info",
-                        f"Resolved {total_urls} seed URL(s), domain policy: standard",
-                    )
-                else:
-                    await log_event(
-                        session,
-                        run.id,
-                        "info",
-                        f"Starting crawl run for {url} ({idx}/{total_urls})",
-                    )
-                await set_stage(
+            if (
+                total_urls > 1
+                and _parallel_url_concurrency(total_urls, settings_view) > 1
+            ):
+                verdicts, record_count = await _process_urls_in_parallel(
                     session,
-                    run,
-                    STAGE_ACQUIRE,
-                    current_url=url,
-                    current_url_index=idx,
-                    total_urls=total_urls,
+                    run=run,
+                    settings_view=settings_view,
+                    url_list=url_list,
+                    progress_state=progress_state,
+                    max_records=max_records,
+                    url_timeout_seconds=url_timeout_seconds,
                 )
-                await session.commit()
-                remaining_records = max(max_records - record_count, 1)
-                url_config = URLProcessingConfig.from_acquisition_plan(
-                    run.settings_view.acquisition_plan(
-                        surface=run.surface,
-                        max_records=remaining_records,
-                    ),
-                    update_run_state=True,
-                    persist_logs=True,
-                )
-                try:
-                    with logfire_span(
-                        "pipeline.url",
-                        run_id=run.id,
-                        url_index=idx,
-                        url_count=total_urls,
-                        domain=normalize_domain(url),
-                        surface=run.surface,
-                        max_records=remaining_records,
-                        timeout_seconds=url_timeout_seconds,
-                    ) as url_span:
-                        url_result = _require_url_processing_result(
-                            await asyncio.wait_for(
-                                process_single_url(
-                                    session=session,
-                                    run=run,
-                                    url=url,
-                                    config=url_config,
-                                ),
-                                timeout=url_timeout_seconds,
-                            )
+            else:
+                for idx, url in enumerate(url_list, start=1):
+                    await session.refresh(run)
+                    _touch_run_heartbeat(run)
+                    control_request = get_control_request(run)
+                    if control_request == CONTROL_REQUEST_PAUSE:
+                        update_run_status(run, CrawlStatus.PAUSED)
+                        set_control_request(run, None)
+                        await log_event(
+                            session, run.id, "warning", "Run paused at checkpoint"
                         )
-                        set_logfire_attributes(
-                            url_span,
-                            verdict=url_result.verdict,
-                            record_count=_url_metric(
-                                url_result,
-                                "record_count",
-                                len(url_result.records),
-                            ),
-                            method=_url_metric(url_result, "method"),
-                            blocked=_url_metric(url_result, "blocked"),
+                        await session.commit()
+                        return
+                    if control_request == CONTROL_REQUEST_KILL:
+                        update_run_status(run, CrawlStatus.KILLED)
+                        set_control_request(run, None)
+                        await log_event(
+                            session, run.id, "warning", "Run killed at checkpoint"
                         )
-                except TimeoutError as exc:
-                    logger.warning(
-                        "URL processing timed out for run=%s url=%s", run.id, url
-                    )
-                    run, url_result = await _recover_url_failure(
-                        session,
-                        run=run,
-                        run_id=run.id,
-                        url=url,
-                        exc=exc,
-                        log_message=(
-                            f"URL processing timed out for {url} "
-                            f"(timeout_seconds={url_timeout_seconds})"
-                        ),
-                    )
-                    url_result.url_metrics["error"] = (
-                        f"TimeoutError: url exceeded timeout_seconds={url_timeout_seconds}"
-                    )
-                except Exception as exc:
-                    run, url_result = await _recover_url_failure(
-                        session,
-                        run=run,
-                        run_id=run.id,
-                        url=url,
-                        exc=exc,
-                        log_message=(
-                            f"URL processing failed for {url}: {type(exc).__name__}: {exc}"
-                        ),
-                    )
+                        await session.commit()
+                        return
 
-                verdicts.append(str(url_result.verdict or VERDICT_ERROR))
-                records_count = as_int(
-                    _url_metric(url_result, "record_count", len(url_result.records))
-                )
-                record_count += records_count
-                set_logfire_attributes(
-                    run_span,
-                    record_count=record_count,
-                    last_url_verdict=str(url_result.verdict or VERDICT_ERROR),
-                )
-                progress_state.record_url_result(
-                    idx=idx - 1,
-                    records_count=records_count,
-                    verdict=str(url_result.verdict or VERDICT_ERROR),
-                    url_metrics=url_result.url_metrics,
-                )
-                _touch_run_heartbeat(run)
-                run.update_summary(
-                    **progress_state.build_progress_patch(
+                    if idx == 1:
+                        await log_event(
+                            session, run.id, "info", f"Starting crawl run for {url}"
+                        )
+                        await log_event(
+                            session,
+                            run.id,
+                            "info",
+                            f"Resolved {total_urls} seed URL(s), domain policy: standard",
+                        )
+                    else:
+                        await log_event(
+                            session,
+                            run.id,
+                            "info",
+                            f"Starting crawl run for {url} ({idx}/{total_urls})",
+                        )
+                    await set_stage(
+                        session,
+                        run,
+                        STAGE_ACQUIRE,
                         current_url=url,
                         current_url_index=idx,
-                    ),
-                    duration_ms=_current_duration_ms(run),
-                )
-                await session.commit()
-
-                if record_count >= max_records:
-                    await log_event(
-                        session,
-                        run.id,
-                        "info",
-                        f"Stopped after reaching max_records={max_records}",
+                        total_urls=total_urls,
                     )
                     await session.commit()
-                    break
-                if sleep_ms > 0 and idx < total_urls:
-                    await asyncio.sleep(sleep_ms / 1000)
+                    remaining_records = max(max_records - record_count, 1)
+                    url_config = URLProcessingConfig.from_acquisition_plan(
+                        run.settings_view.acquisition_plan(
+                            surface=run.surface,
+                            max_records=remaining_records,
+                        ),
+                        update_run_state=True,
+                        persist_logs=True,
+                    )
+                    try:
+                        with logfire_span(
+                            "pipeline.url",
+                            run_id=run.id,
+                            url_index=idx,
+                            url_count=total_urls,
+                            domain=normalize_domain(url),
+                            surface=run.surface,
+                            max_records=remaining_records,
+                            timeout_seconds=url_timeout_seconds,
+                        ) as url_span:
+                            url_result = _require_url_processing_result(
+                                await asyncio.wait_for(
+                                    process_single_url(
+                                        session=session,
+                                        run=run,
+                                        url=url,
+                                        config=url_config,
+                                    ),
+                                    timeout=url_timeout_seconds,
+                                )
+                            )
+                            set_logfire_attributes(
+                                url_span,
+                                verdict=url_result.verdict,
+                                record_count=_url_metric(
+                                    url_result,
+                                    "record_count",
+                                    len(url_result.records),
+                                ),
+                                method=_url_metric(url_result, "method"),
+                                blocked=_url_metric(url_result, "blocked"),
+                            )
+                    except TimeoutError as exc:
+                        logger.warning(
+                            "URL processing timed out for run=%s url=%s", run.id, url
+                        )
+                        run, url_result = await _recover_url_failure(
+                            session,
+                            run=run,
+                            run_id=run.id,
+                            url=url,
+                            exc=exc,
+                            log_message=(
+                                f"URL processing timed out for {url} "
+                                f"(timeout_seconds={url_timeout_seconds})"
+                            ),
+                        )
+                        url_result.url_metrics["error"] = (
+                            f"TimeoutError: url exceeded timeout_seconds={url_timeout_seconds}"
+                        )
+                    except Exception as exc:
+                        run, url_result = await _recover_url_failure(
+                            session,
+                            run=run,
+                            run_id=run.id,
+                            url=url,
+                            exc=exc,
+                            log_message=(
+                                f"URL processing failed for {url}: {type(exc).__name__}: {exc}"
+                            ),
+                        )
 
+                    verdicts.append(str(url_result.verdict or VERDICT_ERROR))
+                    records_count = as_int(
+                        _url_metric(url_result, "record_count", len(url_result.records))
+                    )
+                    record_count += records_count
+                    set_logfire_attributes(
+                        run_span,
+                        record_count=record_count,
+                        last_url_verdict=str(url_result.verdict or VERDICT_ERROR),
+                    )
+                    progress_state.record_url_result(
+                        idx=idx - 1,
+                        records_count=records_count,
+                        verdict=str(url_result.verdict or VERDICT_ERROR),
+                        url_metrics=url_result.url_metrics,
+                    )
+                    _touch_run_heartbeat(run)
+                    run.update_summary(
+                        **progress_state.build_progress_patch(
+                            current_url=url,
+                            current_url_index=idx,
+                        ),
+                        duration_ms=_current_duration_ms(run),
+                    )
+                    await session.commit()
+
+                    if record_count >= max_records:
+                        await log_event(
+                            session,
+                            run.id,
+                            "info",
+                            f"Stopped after reaching max_records={max_records}",
+                        )
+                        await session.commit()
+                        break
+                    if sleep_ms > 0 and idx < total_urls:
+                        await asyncio.sleep(sleep_ms / 1000)
             await session.refresh(run)
             if run.status_value in TERMINAL_STATUSES:
                 return
@@ -511,6 +776,7 @@ async def _process_run_with_span(
             _touch_run_heartbeat(run)
             run.update_summary(
                 **progress_state.build_final_patch(aggregate_verdict_value),
+                current_stage=STAGE_PERSIST,
                 duration_ms=_current_duration_ms(run),
             )
             await log_event(
@@ -532,12 +798,7 @@ async def _process_run_with_span(
                         f"on_run_complete failure: {exc}",
                     )
         finally:
-            # Ensure the pre-warm task never outlives process_run, even on
-            # early return, break, or exception.
-            if not prewarm_task.done():
-                prewarm_task.cancel()
-            with suppress(BaseException):
-                await prewarm_task
+            pass
     except (RuntimeError, ValueError, TypeError, SQLAlchemyError) as exc:
         logger.exception("Run-level failure for run=%s", run_id)
         await _rollback_url_session(session, context="run failure marking")

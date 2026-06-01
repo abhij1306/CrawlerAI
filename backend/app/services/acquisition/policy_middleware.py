@@ -1,13 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import Any
 
 from app.services.acquisition.rate_limiter import record_fetch_outcome
 from app.services.acquisition.rate_limiter import wait_for_host_slot
-
-if TYPE_CHECKING:
-    from app.services.acquisition.acquirer import AcquisitionRequest, AcquisitionResult
 
 
 @dataclass(slots=True)
@@ -30,14 +27,14 @@ class PolicyDecision:
 class PolicyMiddleware:
     decisions: list[PolicyDecision] = field(default_factory=list)
 
-    async def before_fetch(self, request: AcquisitionRequest) -> None:
+    async def before_fetch(self, request: Any) -> None:
         await wait_for_host_slot(
             request.url,
             ttl_seconds=request.policy.host_memory_ttl_seconds if request.policy else None,
         )
         self._record("pre_fetch", "paced", "domain_rate_limiter", request.url)
 
-    async def after_fetch(self, result: AcquisitionResult) -> None:
+    async def after_fetch(self, result: Any) -> None:
         backoff_applied = await record_fetch_outcome(
             result.final_url or result.request.url,
             status_code=result.status_code,

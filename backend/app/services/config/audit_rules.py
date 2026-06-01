@@ -29,6 +29,7 @@ FLAG_HIGH_VALUE_FIELD_MISSING = "high_value_field_missing"
 FLAG_DETAIL_ON_LISTING_SEED = "detail_on_listing_seed"
 FLAG_DETAIL_IDENTITY_REJECTED = "detail_identity_rejected"
 FLAG_ACQUISITION_CHALLENGE_BLOCKED = "acquisition_challenge_blocked"
+FLAG_VARIANT_CANDIDATE_DROPPED = "variant_candidate_dropped"
 FLAG_BASELINE_FIELD_REGRESSION = "baseline_field_regression"
 FLAG_BASELINE_ENGINE_CHANGED = "baseline_engine_changed"
 FLAG_BASELINE_TIER_REGRESSION = "baseline_tier_regression"
@@ -90,6 +91,12 @@ AUDIT_RULES: dict[str, dict[str, str]] = {
         "severity": FLAG_SEVERITY_HIGH,
         "symptom": "acquisition produced only a challenge or low-content shell",
     },
+    FLAG_VARIANT_CANDIDATE_DROPPED: {
+        "invariant": "Rule 3 (Extraction — variant candidate existed but did not survive public output)",
+        "owner": OWNER_RECORD_ASSEMBLY,
+        "severity": FLAG_SEVERITY_HIGH,
+        "symptom": "variants had an extraction source but were missing from final output",
+    },
     # Baseline-drift flags (Slice 5).
     FLAG_BASELINE_FIELD_REGRESSION: {
         "invariant": "Rule 9 (Domain memory — field that normally extracts for this domain/surface is now missing)",
@@ -136,6 +143,7 @@ __all__ = [
     "FLAG_DETAIL_ON_LISTING_SEED",
     "FLAG_DETAIL_IDENTITY_REJECTED",
     "FLAG_ACQUISITION_CHALLENGE_BLOCKED",
+    "FLAG_VARIANT_CANDIDATE_DROPPED",
     "FLAG_BASELINE_FIELD_REGRESSION",
     "FLAG_BASELINE_ENGINE_CHANGED",
     "FLAG_BASELINE_TIER_REGRESSION",

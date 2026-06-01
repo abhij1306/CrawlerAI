@@ -9,11 +9,7 @@ import {
   Copy,
   Download,
   History,
-  Info,
-  PackageSearch,
   Plus,
-  RefreshCcw,
-  Search,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useDeferredValue, useEffect, useMemo, useReducer, useRef } from 'react';
@@ -30,7 +26,7 @@ import {
   SectionHeader,
   TabBar,
 } from '../ui/patterns';
-import { Badge, Button, Card, Dropdown, Tooltip } from '../ui/primitives';
+import { Badge, Button, Card } from '../ui/primitives';
 import { api } from '../../lib/api';
 import { getApiWebSocketBaseUrl } from '../../lib/api/client';
 import type {
@@ -46,14 +42,12 @@ import { POLLING_INTERVALS, RETRY_LIMITS } from '../../lib/constants/timing';
 import { getDomain } from '../../lib/format/domain';
 import { telemetryErrorPayload, trackEvent } from '../../lib/telemetry/events';
 import { parseApiDate } from '../../lib/format/date';
-import { humanizeStatus, runsStatusTone as statusTone } from '../../lib/ui/status';
 import {
   ActionButton,
   cleanRecordForDisplay,
   copyJson,
   extractRecordUrl,
   extractionVerdict,
-  extractionVerdictTone,
   formatDuration,
   formatDurationMs,
   estimateDataQuality,
@@ -63,11 +57,8 @@ import {
   isListingRun,
   LogTerminal,
   mergeLogs,
-  mergeRecords,
   type OutputTabKey,
-  qualityTone,
   RecordsTable,
-  scoreFieldQuality,
   scrollViewportToBottom,
   selectorWinnerLabel,
   uniqueNumbers,
@@ -380,7 +371,11 @@ export function CrawlRunScreen({ runId }: Readonly<CrawlRunScreenProps>) {
 
   useTerminalSync(run, terminal, [runQuery, tableRecordsQuery, jsonRecordsQuery, logsQuery]);
 
-  useEffect(() => resetWorkspaceUi(), [resetWorkspaceUi, runId]);
+  useEffect(() => {
+    resetWorkspaceUi();
+    logCursorRef.current = undefined;
+    dispatchLocal({ type: 'runChanged', sessionStartMs: Date.now() });
+  }, [resetWorkspaceUi, runId]);
 
   useEffect(() => {
     logCursorRef.current = socketLogItems.length ? logCursorRef.current : logCursorAfterId;
@@ -472,12 +467,6 @@ export function CrawlRunScreen({ runId }: Readonly<CrawlRunScreenProps>) {
     });
     return () => window.cancelAnimationFrame(frame);
   }, [logs, live]);
-
-  const terminalRecordCount = Math.max(
-    tableTotal,
-    recordsTotal,
-    Number(run?.result_summary?.record_count ?? 0) || 0,
-  );
 
   const visibleColumns = useMemo(() => {
     const columns = new Set<string>();

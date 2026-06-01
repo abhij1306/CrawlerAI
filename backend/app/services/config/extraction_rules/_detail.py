@@ -1,8 +1,10 @@
 from __future__ import annotations
 # ruff: noqa: F401,F403,F405
+# pylint: disable=wildcard-import,unused-wildcard-import
 
 from ._common import *
 from ._images import *
+from ._common import _STATIC_EXPORTS
 
 DETAIL_LOW_SIGNAL_LONG_TEXT_VALUES = frozenset(
     {
@@ -470,3 +472,5 @@ DETAIL_GENDER_TERMS = {
         "gender-neutral",
     ),
 }
+
+__all__ = sorted(name for name in globals() if name.isupper())

@@ -63,6 +63,20 @@ def _response(method: str, url: str, status: int, payload: dict, headers: dict |
     )
 
 
+def _dimension(dimensions, dimension_id: str):
+    for item in dimensions:
+        if item.dimension_id == dimension_id:
+            return item
+    raise AssertionError(f"Missing dimension {dimension_id}")
+
+
+def _finding(findings, code: str):
+    for item in findings:
+        if item.code == code:
+            return item
+    raise AssertionError(f"Missing finding {code}")
+
+
 @pytest.mark.component
 def test_transport_profile_required_scores_partial() -> None:
     manifest = UCPManifestResult(
@@ -93,7 +107,7 @@ def test_transport_profile_required_scores_partial() -> None:
         [],
     )
 
-    transport = next(item for item in dimensions if item.dimension_id == D_UCP3_ID)
+    transport = _dimension(dimensions, D_UCP3_ID)
 
     assert transport.score == 70
     assert transport.findings[0].code == FINDING_TRANSPORT_NEGOTIATION_INCOMPLETE
@@ -140,13 +154,13 @@ def test_discovery_dimension_splits_signing_keys_from_manifest_validity() -> Non
     )
 
     dimensions = build_protocol_dimensions(valid_missing_keys, [], [])
-    discovery = next(item for item in dimensions if item.dimension_id == D_UCP1_ID)
+    discovery = _dimension(dimensions, D_UCP1_ID)
 
     assert discovery.score == 80
     assert [item.code for item in discovery.findings] == [FINDING_SIGNING_KEYS_MISSING]
 
     dimensions = build_protocol_dimensions(invalid_structure, [], [])
-    discovery = next(item for item in dimensions if item.dimension_id == D_UCP1_ID)
+    discovery = _dimension(dimensions, D_UCP1_ID)
 
     assert discovery.score == 40
     assert discovery.findings[0].code == FINDING_MANIFEST_INVALID
@@ -287,7 +301,7 @@ def test_transport_incomplete_uses_reachable_only_and_best_score() -> None:
         ],
         [],
     )
-    transport = next(item for item in dimensions if item.dimension_id == D_UCP3_ID)
+    transport = _dimension(dimensions, D_UCP3_ID)
 
     assert transport.score == 100
     assert FINDING_TRANSPORT_NEGOTIATION_INCOMPLETE not in [
@@ -314,12 +328,11 @@ def test_transport_incomplete_uses_reachable_only_and_best_score() -> None:
         ],
         [],
     )
-    transport = next(item for item in dimensions if item.dimension_id == D_UCP3_ID)
+    transport = _dimension(dimensions, D_UCP3_ID)
 
-    finding = next(
-        item
-        for item in transport.findings
-        if item.code == FINDING_TRANSPORT_NEGOTIATION_INCOMPLETE
+    finding = _finding(
+        transport.findings,
+        FINDING_TRANSPORT_NEGOTIATION_INCOMPLETE,
     )
     assert finding.evidence[0]["endpoint"] == "https://b"
 
@@ -347,7 +360,7 @@ def test_transport_unreachable_does_not_emit_negotiation_incomplete() -> None:
         ],
         [],
     )
-    transport = next(item for item in dimensions if item.dimension_id == D_UCP3_ID)
+    transport = _dimension(dimensions, D_UCP3_ID)
     codes = [item.code for item in transport.findings]
 
     assert FINDING_TRANSPORT_UNREACHABLE in codes
@@ -385,7 +398,7 @@ def test_transport_score_uses_best_with_breadth_bonus() -> None:
         ],
         [],
     )
-    transport = next(item for item in dimensions if item.dimension_id == D_UCP3_ID)
+    transport = _dimension(dimensions, D_UCP3_ID)
     assert transport.score == 75
 
     dimensions = build_protocol_dimensions(
@@ -400,7 +413,7 @@ def test_transport_score_uses_best_with_breadth_bonus() -> None:
         ],
         [],
     )
-    transport = next(item for item in dimensions if item.dimension_id == D_UCP3_ID)
+    transport = _dimension(dimensions, D_UCP3_ID)
     assert transport.score == 50
 
 

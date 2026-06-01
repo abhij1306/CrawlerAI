@@ -914,7 +914,7 @@ class _FakeRoleLocator:
 
 
 class _NoTimeoutRoleLocator(_FakeRoleLocator):
-    async def is_visible(self) -> bool:  # NOSONAR - exercises locators without timeout support.
+    async def is_visible(self, **_kwargs) -> bool:
         return await self.count() > 0
 
 
@@ -1600,7 +1600,10 @@ async def test_browser_fetch_attempts_implicit_networkidle_for_unmatched_spa_lis
         async def _fake_probe_browser_readiness(*args, **kwargs):
             await _async_checkpoint()
             del args, kwargs
-            return next(probe_results)
+            try:
+                return probe_results.__next__()
+            except StopIteration as exc:
+                raise AssertionError("Expected another probe result") from exc
 
         browser_runtime.probe_browser_readiness = _fake_probe_browser_readiness
         result = await browser_runtime.browser_fetch(
@@ -4241,7 +4244,6 @@ async def test_emit_challenge_activity_ignores_negative_scroll(
     class _Mouse:
         async def move(self, x: int, y: int, *, steps: int) -> None:
             await _async_checkpoint()
-            del x, y, steps
 
         async def wheel(self, delta_x: int, delta_y: int) -> None:
             await _async_checkpoint()
@@ -4257,7 +4259,6 @@ async def test_emit_challenge_activity_ignores_negative_scroll(
 
         async def wait_for_timeout(self, delay_ms: int) -> None:
             await _async_checkpoint()
-            del delay_ms
 
     monkeypatch.setattr(browser_recovery.secrets, "randbelow", lambda limit: 0)
     patch_settings(challenge_activity_scroll_px=-120)
@@ -4318,11 +4319,9 @@ async def test_emit_browser_behavior_activity_ignores_scroll_failures(
     class _Mouse:
         async def move(self, x: int, y: int) -> None:
             await _async_checkpoint()
-            del x, y
 
         async def wheel(self, delta_x: int, delta_y: int) -> None:
             await _async_checkpoint()
-            del delta_x, delta_y
 
     class _Page:
         mouse = _Mouse()
@@ -5493,7 +5492,7 @@ async def test_browser_fetch_force_closes_context_when_cancelled_mid_stage() -> 
 
     with pytest.raises(asyncio.CancelledError):
         async with asyncio.timeout(0.5):
-            await task
+            await asyncio.wait_for(task, timeout=0.5)
 
     assert page.page_close_calls + page.context_close_calls >= 1
 
@@ -5515,10 +5514,16 @@ async def test_browser_fetch_force_closes_context_when_stage_times_out(
         return _FakeRuntime(page)
 
     remaining_timeouts = iter([5.0, 0.05, 0.05, 0.05])
+    def _remaining_timeout() -> float:
+        try:
+            return remaining_timeouts.__next__()
+        except StopIteration:
+            return 0.05
+
     monkeypatch.setattr(
         browser_runtime,
         "remaining_timeout_factory",
-        lambda _deadline: lambda: next(remaining_timeouts, 0.05),
+        lambda _deadline: _remaining_timeout,
     )
 
     with pytest.raises(TimeoutError, match="Browser settle stage exceeded") as excinfo:

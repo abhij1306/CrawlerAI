@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import hashlib
+import hmac
 import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.dependencies import get_db
 from app.models.api_key import ApiKey
 from app.models.user import User
@@ -28,7 +29,11 @@ class PublicApiPrincipal:
 
 
 def hash_api_key(value: str) -> str:
-    return hashlib.sha256(value.encode("utf-8")).hexdigest()
+    return hmac.digest(
+        settings.jwt_secret_key.encode("utf-8"),
+        value.encode("utf-8"),
+        "sha256",
+    ).hex()
 
 
 async def authenticate_public_api_key(

@@ -11,23 +11,105 @@ from app.services.acquisition.playwright_compat import (
 )
 from app.services.acquisition.traversal_helpers import (
     emit_event as _emit_event,
+    looks_like_next_page_control as _looks_like_next_page_control,
+    looks_like_paginate_control,
     remaining_timeout_ms as _remaining_timeout_ms,
     wait_for_traversal_dom_mutation_settle as _wait_for_dom_mutation_settle,
 )
 from app.services.config.extraction_rules import TRAVERSAL_LISTING_RECOVERY_ACTIONS
 from app.services.config.runtime_settings import crawler_runtime_settings
-from app.services.config.selectors import COOKIE_CONSENT_SELECTORS
+from app.services.config.selectors import COOKIE_CONSENT_SELECTORS, PAGINATION_SELECTORS
 
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
-    from app.services.acquisition.traversal import TraversalResult
+    from app.services.acquisition.traversal_types import TraversalResult
 
 
 async def _find_actionable_locator(page, selector_group: str):
-    from app.services.acquisition import traversal
+    selectors = PAGINATION_SELECTORS.get(selector_group) if isinstance(PAGINATION_SELECTORS, dict) else []
+    for selector in selectors or []:
+        locator = page.locator(str(selector)).first
+        try:
+            if await locator.count() == 0:
+                continue
+            if not await locator.is_visible(
+                timeout=int(crawler_runtime_settings.traversal_locator_visible_timeout_ms)
+            ):
+                continue
+            if await locator.is_disabled():
+                continue
+            return locator
+        except PLAYWRIGHT_RECOVERABLE_ERRORS:
+            logger.debug(
+                "Traversal locator check failed for selector_group=%s selector=%s",
+                selector_group,
+                selector,
+                exc_info=True,
+            )
+            continue
+    if selector_group == "next_page":
+        generic_locator = await _find_generic_next_page_locator(page)
+        if generic_locator is not None:
+            return generic_locator
+        return await _find_aom_actionable_locator(
+            page,
+            selector_group=selector_group,
+            name_pattern=r"(next|older|›|»|>)",
+        )
+    if selector_group == "load_more":
+        return await _find_aom_actionable_locator(
+            page,
+            selector_group=selector_group,
+            name_pattern=r"(load more|show more|see more|view more)",
+        )
+    return None
 
-    return await traversal._find_actionable_locator(page, selector_group)
+
+async def _find_generic_next_page_locator(page):
+    for selector in (
+        "a[rel='next']",
+        "link[rel='next']",
+        ".pagination-next a",
+        ".pagination-next",
+        ".pagination-container a[rel='next']",
+        ".pagination-container a[href*='?p=']",
+        ".pagination-container a[href*='&p=']",
+        "[aria-label*='pagination' i] a",
+        "[aria-label*='pagination' i] button",
+        "[class*='pagination' i] a",
+        "[class*='pagination' i] button",
+        "[aria-current='page'] + a",
+        "[aria-current='page'] + button",
+    ):
+        locator = page.locator(selector).first
+        try:
+            if await locator.count() == 0:
+                continue
+            if selector == "link[rel='next']":
+                continue
+            if not await locator.is_visible(
+                timeout=int(crawler_runtime_settings.traversal_locator_visible_timeout_ms)
+            ):
+                continue
+            if await locator.is_disabled():
+                continue
+            if not (
+                await looks_like_paginate_control(locator)
+                or await _looks_like_next_page_control(locator)
+            ):
+                continue
+            logger.info("Traversal generic next-page selector=%s url=%s", selector, page.url)
+            return locator
+        except PLAYWRIGHT_RECOVERABLE_ERRORS:
+            logger.debug(
+                "Traversal generic next-page lookup failed selector=%s url=%s",
+                selector,
+                page.url,
+                exc_info=True,
+            )
+            continue
+    return None
 
 
 async def recover_listing_page_content(
@@ -48,7 +130,7 @@ async def recover_listing_page_content(
         diagnostics["status"] = "disabled"
         return diagnostics
 
-    from app.services.acquisition.traversal import TraversalResult
+    from app.services.acquisition.traversal_types import TraversalResult
 
     helper_result = TraversalResult(requested_mode="recovery")
     wait_ms = max(0, int(crawler_runtime_settings.listing_recovery_post_action_wait_ms))
@@ -256,8 +338,6 @@ async def locator_still_resolves(locator) -> bool:
         try:
             if bool(await counter()):
                 return True
-        except asyncio.CancelledError:
-            raise
         except PlaywrightError:
             logger.debug(
                 "Traversal locator resolution probe failed",

@@ -11,7 +11,6 @@ import {
   MutedPanelMessage,
   PageHeader,
   SectionCard,
-  SurfaceSection,
 } from '../../../components/ui/patterns';
 import {
   Table,

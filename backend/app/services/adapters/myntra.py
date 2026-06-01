@@ -37,7 +37,7 @@ class MyntraAdapter(BaseAdapter):
 
     async def can_handle(self, url: str, html: str) -> bool:
         host = (urlparse(str(url or "")).hostname or "").lower()
-        return host.endswith("myntra.com") or "window.__myx" in str(html or "")
+        return host == "myntra.com" or host.endswith(".myntra.com")
 
     async def extract(
         self, url: str, html: str, surface: str, proxy: str | None = None

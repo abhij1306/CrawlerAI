@@ -193,3 +193,6 @@ def _record_has_variant_family_signal(record: dict[str, Any]) -> bool:
         record.get(field_name) not in (None, "", [], {})
         for field_name in ("color", "size", "style", "material", "variant_count")
     )
+
+
+__all__: list[str] = []

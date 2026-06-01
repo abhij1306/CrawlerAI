@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import re
 from collections.abc import Iterable
 
 from app.services.config.field_mappings import (
@@ -28,7 +27,6 @@ __all__ = [
     "repair_target_fields_for_surface",
 ]
 
-_NON_FIELD_RE = re.compile(r"[^a-z0-9.]+")
 _ALL_CANONICAL_FIELDS = frozenset(
     field_name for fields in CANONICAL_SCHEMAS.values() for field_name in fields
 )
@@ -122,11 +120,27 @@ def normalize_field_key(value: str | None) -> str:
     if not text:
         return ""
     text = text.replace("&", " ")
-    text = re.sub(r"([A-Z]+)([A-Z][a-z])", r"\1_\2", text)
-    text = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", text)
-    text = text.lower()
-    text = _NON_FIELD_RE.sub("_", text)
-    return re.sub(r"_+", "_", text).strip("_.")
+    separated: list[str] = []
+    for index, char in enumerate(text):
+        previous = text[index - 1] if index else ""
+        next_char = text[index + 1] if index + 1 < len(text) else ""
+        if index and char.isupper() and (
+            previous.islower()
+            or previous.isdigit()
+            or (previous.isupper() and next_char.islower())
+        ):
+            separated.append("_")
+        separated.append(char.lower())
+    normalized: list[str] = []
+    last_was_separator = False
+    for char in separated:
+        if char.isalnum() or char == ".":
+            normalized.append(char)
+            last_was_separator = False
+        elif not last_was_separator:
+            normalized.append("_")
+            last_was_separator = True
+    return "".join(normalized).strip("_.")
 
 
 def _dedupe_aliases(*groups: object) -> list[str]:

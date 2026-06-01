@@ -1,9 +1,20 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 import re
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from app.services.ucp_audit.evidence import ContradictionFlag, EvidencePacket
+if TYPE_CHECKING:
+    from app.services.ucp_audit.evidence import EvidencePacket
+
+
+@dataclass(slots=True)
+class ContradictionFlag:
+    field: str
+    source_a: str
+    value_a: str
+    source_b: str
+    value_b: str
 
 
 def detect_contradictions(packet: EvidencePacket) -> list[ContradictionFlag]:

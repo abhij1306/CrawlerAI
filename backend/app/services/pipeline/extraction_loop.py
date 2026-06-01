@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio  # noqa: F401 - kept for tests that patch asyncio.to_thread on this module.
-import logging
 import time
 
 from app.core.logfire_integration import logfire_span, set_logfire_attributes
@@ -100,8 +99,8 @@ from .url_processing_context import (
     resolved_url_processing_config as _resolved_url_processing_config,
 )
 
-logger = logging.getLogger(__name__)
 __all__ = [
+    "asyncio",
     "STAGE_ACQUIRE",
     "STAGE_EXTRACT",
     "STAGE_NORMALIZE",
@@ -649,6 +648,22 @@ def _record_extraction_trace(
             source=winning_source,
             won=True,
             value_preview="" if value in (None, "", [], {}) else str(value),
+        )
+    trace_fields = set(field_sources)
+    trace_field_names = getattr(trace, "trace_field_names", None)
+    if callable(trace_field_names):
+        trace_fields.update(str(field_name) for field_name in trace_field_names())
+    for field_name in sorted(trace_fields):
+        source_values = field_sources.get(field_name)
+        source_list = source_values if isinstance(source_values, list) else [source_values]
+        trace.record_field_state(
+            str(field_name),
+            value=primary.get(field_name),
+            candidate_sources=[
+                str(item)
+                for item in source_list
+                if str(item or "").strip()
+            ],
         )
 
 

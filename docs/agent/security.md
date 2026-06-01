@@ -339,8 +339,8 @@ The rule: never commit secrets. A `.env` file is for local development only — 
 
 ```python
 # BAD — hardcoded secret in source code
-SECRET_KEY = "sk_live_abc123supersecretkey"
-DATABASE_URL = "postgres://admin:password123@prod-db/app"
+SECRET_KEY = "<provider-secret-from-env>"
+DATABASE_URL = "postgres://admin:<password-from-env>@prod-db/app"
 
 # GOOD — read from environment at runtime
 import os

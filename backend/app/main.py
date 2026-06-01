@@ -249,7 +249,12 @@ async def _public_auth_session(request: Request):
             await value.aclose()
         return
     if inspect.isgenerator(value):
-        session = next(value)
+        try:
+            session = value.send(None)
+        except StopIteration as exc:
+            raise RuntimeError("Database session dependency did not yield") from exc
+        if session is None:
+            raise RuntimeError("Database session dependency did not yield")
         try:
             yield session
         finally:

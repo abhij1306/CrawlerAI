@@ -23,6 +23,7 @@ export type CrawlRunLocalAction =
   | { type: 'runActionErrorCleared' }
   | { type: 'runActionFailed'; message: string }
   | { type: 'runActionFinished' }
+  | { type: 'runChanged'; sessionStartMs: number }
   | { type: 'liveJumpChanged'; available: boolean }
   | { type: 'logSocketConnectionChanged'; connected: boolean }
   | { type: 'socketLogReceived'; log: CrawlLog };
@@ -59,6 +60,14 @@ export function crawlRunLocalReducer(
       return { ...state, runActionError: action.message };
     case 'runActionFinished':
       return { ...state, runActionPending: null };
+    case 'runChanged':
+      return {
+        ...state,
+        liveJumpAvailable: false,
+        socketLogItems: [],
+        logSocketConnected: false,
+        sessionStartMs: action.sessionStartMs,
+      };
     case 'liveJumpChanged':
       return { ...state, liveJumpAvailable: action.available };
     case 'logSocketConnectionChanged':

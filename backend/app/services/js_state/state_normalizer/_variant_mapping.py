@@ -234,3 +234,6 @@ def _name_or_value(value: Any) -> Any:
     if isinstance(value, dict):
         return value.get("name") or value.get("title") or value.get("value")
     return value
+
+
+__all__: list[str] = []

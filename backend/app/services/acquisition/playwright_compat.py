@@ -13,4 +13,7 @@ except ImportError:  # pragma: no cover
         pass
 
 
-PLAYWRIGHT_RECOVERABLE_ERRORS = (PlaywrightError, PlaywrightTimeoutError)
+PLAYWRIGHT_RECOVERABLE_ERRORS: tuple[type[Exception], ...] = (
+    PlaywrightError,
+    PlaywrightTimeoutError,
+)

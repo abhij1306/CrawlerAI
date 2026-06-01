@@ -2,16 +2,13 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import TYPE_CHECKING
+from typing import Any
 
 from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
-
-if TYPE_CHECKING:
-    from app.models.user import User
 
 
 class PlaygroundSession(Base):
@@ -32,4 +29,4 @@ class PlaygroundSession(Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
 
-    user: Mapped["User"] = relationship("User", back_populates="playground_sessions")
+    user: Mapped[Any] = relationship("User", back_populates="playground_sessions")

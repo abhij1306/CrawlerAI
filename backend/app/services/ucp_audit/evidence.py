@@ -5,15 +5,7 @@ from typing import Any
 
 from app.services.config import aid_score as config
 from app.services.ucp_audit.catalog_crawl import CatalogCrawlResult
-
-
-@dataclass(slots=True)
-class ContradictionFlag:
-    field: str
-    source_a: str
-    value_a: str
-    source_b: str
-    value_b: str
+from app.services.ucp_audit.contradiction import ContradictionFlag
 
 
 @dataclass(slots=True)

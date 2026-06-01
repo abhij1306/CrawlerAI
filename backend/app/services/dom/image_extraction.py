@@ -28,7 +28,6 @@ from app.services.config.surface_hints import detail_path_hints
 from app.services.shared.coerce_primitives import safe_int as _safe_int
 from app.services.shared.field_coerce import absolute_url, clean_text, extract_urls
 
-_candidate_cleanup_raw: dict[str, object] = {}
 _IMAGE_FILE_EXTENSIONS = (".avif", ".gif", ".jpeg", ".jpg", ".png", ".webp")
 _PAGE_FILE_EXTENSIONS = (".asp", ".aspx", ".htm", ".html", ".jsp", ".php")
 _IMAGE_URL_HINTS = (

@@ -211,3 +211,6 @@ def _product_payload_score(product: dict[str, Any]) -> tuple[int, ...]:
         len(product_keys & strong_product_keys),
         len(product_keys),
     )
+
+
+__all__: list[str] = []

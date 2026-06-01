@@ -30,6 +30,13 @@ def _trace(**kwargs) -> RunTrace:
     return RunTrace(**base)
 
 
+def _field_provenance(trace: RunTrace, field: str):
+    for entry in trace.to_dict(flagged=True)["extraction"]["field_provenance"]:
+        if entry["field"] == field:
+            return entry
+    raise AssertionError(f"Field provenance not found: {field}")
+
+
 def test_high_value_fields_unions_requested_and_defaults():
     fields = high_value_fields("ecommerce_detail", ["variants"])
     assert "variants" in fields
@@ -93,6 +100,27 @@ def test_field_candidate_only_records_high_value_fields():
     assert provenance["price"]["winning_source"] == "js_state"
 
 
+def test_detail_diagnostic_fields_are_traced_when_not_requested():
+    trace = _trace(requested_fields=["price"])
+    trace.record_field_candidate(
+        "variants", source="embedded_json", won=True, value_preview=""
+    )
+    trace.record_field_state(
+        "variants", value=None, candidate_sources=["embedded_json"]
+    )
+
+    payload = trace.to_dict()
+    provenance = {
+        entry["field"]: entry
+        for entry in payload["extraction"]["field_provenance"]
+    }
+
+    assert "variants" in payload["diagnostic_fields"]
+    assert provenance["variants"]["winning_source"] == "embedded_json"
+    assert provenance["variants"]["present"] is False
+    assert provenance["variants"]["note"] == "candidate_source_without_public_value"
+
+
 def test_candidate_losers_are_bounded_per_field():
     trace = _trace(requested_fields=["price"])
     trace.record_field_candidate("price", source="js_state", won=True)
@@ -103,11 +131,7 @@ def test_candidate_losers_are_bounded_per_field():
             won=False,
             reject_reason="lower_priority",
         )
-    price = next(
-        entry
-        for entry in trace.to_dict(flagged=True)["extraction"]["field_provenance"]
-        if entry["field"] == "price"
-    )
+    price = _field_provenance(trace, "price")
     # winner + capped losers
     assert len(price["candidates"]) == obs_config.MAX_CANDIDATE_LOSERS_PER_FIELD + 1
 
@@ -117,11 +141,7 @@ def test_repeated_winning_candidates_are_ignored():
     trace.record_field_candidate("price", source="adapter", won=True)
     trace.record_field_candidate("price", source="dom", won=True)
 
-    price = next(
-        entry
-        for entry in trace.to_dict(flagged=True)["extraction"]["field_provenance"]
-        if entry["field"] == "price"
-    )
+    price = _field_provenance(trace, "price")
     assert price["winning_source"] == "adapter"
     assert [candidate["source"] for candidate in price["candidates"]] == ["adapter"]
 

@@ -144,6 +144,7 @@ Flow:
 | `acquisition/browser_stage_runner.py` | Bounded browser-stage execution, timeout cancellation, and page/context teardown |
 | `acquisition/browser_storage_state.py` | Browser storage-state capture and persist-policy marking |
 | `acquisition/traversal.py` | Listing traversal mode orchestration |
+| `acquisition/traversal_types.py` | Traversal result state container shared by traversal helpers/recovery |
 | `acquisition/traversal_helpers.py` | Traversal fragments, timing waits, pagination-control detection |
 | `acquisition/traversal_recovery.py` | Listing recovery actions, overlay dismissal, resilient clicks |
 | `acquisition/traversal_card_counting.py` | Card-count and progress-snapshot helpers used by traversal loops |

@@ -17,6 +17,8 @@ down_revision: str | None = None
 branch_labels: Sequence[str] | None = None
 depends_on: Sequence[str] | None = None
 
+__all__ = ["branch_labels", "depends_on", "down_revision", "revision"]
+
 
 _UPGRADE_SQL: tuple[str, ...] = (
     """

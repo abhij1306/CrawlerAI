@@ -137,8 +137,6 @@ async def _recover_interrupted_navigation(
         recovery_state = "domcontentloaded"
     try:
         await page.wait_for_load_state(recovery_state, timeout=timeout_ms)
-    except asyncio.CancelledError:
-        raise
     except (asyncio.TimeoutError, PlaywrightTimeoutError, PlaywrightError):
         return False
     return _urls_match_for_navigation(url, str(getattr(page, "url", "") or ""))
@@ -157,8 +155,6 @@ async def _goto_with_interrupted_navigation_recovery(
             wait_until=wait_until,
             timeout=timeout_ms,
         )
-    except asyncio.CancelledError:
-        raise
     except PlaywrightError as exc:
         if not _is_navigation_interrupted_error(exc):
             raise
@@ -225,8 +221,6 @@ async def navigate_browser_page_impl(
             wait_until=navigation_wait_until,
             timeout_ms=goto_timeout_ms,
         )
-    except asyncio.CancelledError:
-        raise
     except (PlaywrightTimeoutError, PlaywrightError):
         fallback_strategy = (
             "domcontentloaded" if navigation_wait_until == "networkidle" else "commit"
@@ -249,8 +243,6 @@ async def navigate_browser_page_impl(
                 wait_until=fallback_strategy,
                 timeout_ms=fallback_timeout,
             )
-        except asyncio.CancelledError:
-            raise
         except Exception as exc:
             if fallback_strategy != "commit":
                 navigation_strategy = "commit"
@@ -261,8 +253,6 @@ async def navigate_browser_page_impl(
                         wait_until="commit",
                         timeout_ms=fallback_timeout_ms,
                     )
-                except asyncio.CancelledError:
-                    raise
                 except Exception as final_exc:
                     phase_timings_ms["navigation"] = elapsed_ms(navigation_started_at)
                     setattr(

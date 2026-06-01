@@ -7,7 +7,6 @@ from selectolax.lexbor import LexborHTMLParser
 
 from app.services.config.extraction_rules import (
     EXTRACTION_RULES,
-    LISTING_STRUCTURE_NEGATIVE_HINTS,
 )
 from app.services.config.runtime_settings import crawler_runtime_settings
 from app.services.extraction_context import (
@@ -84,7 +83,6 @@ from app.services.extract.field_candidates import (
 from app.services.dom.selector_engine import apply_selector_fallbacks
 
 logger = logging.getLogger(__name__)
-_LISTING_STRUCTURE_NEGATIVE_HINTS = frozenset(LISTING_STRUCTURE_NEGATIVE_HINTS)
 _alnum_word_pattern = re.compile(r"[a-z0-9]+", re.I)
 
 

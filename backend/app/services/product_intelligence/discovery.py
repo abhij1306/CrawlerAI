@@ -296,10 +296,6 @@ async def shared_query_runner(provider: str):
 
     yield _http_run
 
-
-_query_runner = shared_query_runner
-
-
 def classify_source_type(domain: str, product: dict[str, object]) -> str:
     normalized_domain = str(domain or "").removeprefix("www.").lower()
     brand_domain = BRAND_DOMAIN_MAP.get(normalize_brand(product.get("brand")))
@@ -825,7 +821,11 @@ def _google_native_result_url(href: str) -> str:
         return ""
     parsed = urlsplit(raw)
     if parsed.scheme in {"http", "https"}:
-        if parsed.netloc.endswith("google.com") and parsed.path == GOOGLE_NATIVE_REDIRECT_PATH:
+        host = (parsed.hostname or "").lower()
+        if (
+            (host == "google.com" or host.endswith(".google.com"))
+            and parsed.path == GOOGLE_NATIVE_REDIRECT_PATH
+        ):
             target = parse_qs(parsed.query).get(GOOGLE_NATIVE_REDIRECT_TARGET_PARAM, [""])[0]
             return _clean_result_url(target)
         return _clean_result_url(raw)

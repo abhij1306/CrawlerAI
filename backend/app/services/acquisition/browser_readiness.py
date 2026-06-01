@@ -5,11 +5,13 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from functools import lru_cache
 import re
+from types import SimpleNamespace
 from typing import Any
 
 from bs4 import BeautifulSoup, Comment
 
 from app.services.acquisition.dom_runtime import get_page_html
+from app.services.acquisition.traversal_card_counting import count_listing_cards
 from app.services.config.extraction_rules import (
     BROWSER_DETAIL_READINESS_HINTS,
     LOW_CONTENT_SHELL_PHRASES,
@@ -247,8 +249,6 @@ async def probe_browser_readiness_impl(
 
 
 async def listing_card_signal_count_impl(page: Any, *, surface: str) -> int:
-    from app.services.acquisition.traversal import count_listing_cards
-
     if str(surface or "").strip().lower().startswith("ecommerce"):
         html = await get_page_html(page)
         ready_count = _ecommerce_ready_card_count(analyze_html(html).soup)
@@ -450,8 +450,6 @@ async def probe_browser_readiness(
 
 
 async def listing_card_signal_count(page: Any, *, surface: str) -> int:
-    from app.services.acquisition.traversal import count_listing_cards
-
     return await count_listing_cards(
         page,
         surface=surface,
@@ -477,9 +475,7 @@ def classify_browser_outcome(
     block_classification: Any = None,
     traversal_result: Any = None,
 ) -> str:
-    from app.services.acquisition.runtime import BlockPageClassification
-
-    classification = block_classification or BlockPageClassification(
+    classification = block_classification or SimpleNamespace(
         blocked=blocked,
         outcome="challenge_page" if blocked else "ok",
     )
