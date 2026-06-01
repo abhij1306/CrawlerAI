@@ -115,6 +115,8 @@ def _structured_alias_value_allowed(
         return False
     if canonical != "size" or normalized_key != "size":
         return True
+    if _structured_size_value_looks_like_ui_metric(value):
+        return False
     if not isinstance(value, (int, float, str)):
         return True
     payload_keys = {normalize_field_key(str(key or "")) for key in payload}
@@ -126,6 +128,15 @@ def _structured_alias_value_allowed(
         {SHIPPING_DATE_FIELD, SPECIAL_DAYS_FIELD} <= inventory_payload_keys
         and bool(inventory_payload_keys & {IS_AVAILABLE_FIELD, IS_INVENTORY_ONLY_FIELD})
     )
+
+
+def _structured_size_value_looks_like_ui_metric(value: object) -> bool:
+    if not isinstance(value, dict):
+        return False
+    unit = str(value.get("unit") or "").strip().casefold()
+    if unit not in {"px", "em", "rem", "vh", "vw", "%"}:
+        return False
+    return value.get("value") not in (None, "", [], {})
 
 
 def _structured_payload_types(payload: dict[str, object]) -> set[str]:

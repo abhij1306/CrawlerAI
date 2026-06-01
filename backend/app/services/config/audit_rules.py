@@ -27,6 +27,8 @@ FLAG_USABLE_CONTENT_BUT_BLOCKED = "usable_content_but_blocked"
 FLAG_LISTING_SINGLE_METADATA_RECORD = "listing_single_metadata_record"
 FLAG_HIGH_VALUE_FIELD_MISSING = "high_value_field_missing"
 FLAG_DETAIL_ON_LISTING_SEED = "detail_on_listing_seed"
+FLAG_DETAIL_IDENTITY_REJECTED = "detail_identity_rejected"
+FLAG_ACQUISITION_CHALLENGE_BLOCKED = "acquisition_challenge_blocked"
 FLAG_BASELINE_FIELD_REGRESSION = "baseline_field_regression"
 FLAG_BASELINE_ENGINE_CHANGED = "baseline_engine_changed"
 FLAG_BASELINE_TIER_REGRESSION = "baseline_tier_regression"
@@ -76,6 +78,18 @@ AUDIT_RULES: dict[str, dict[str, str]] = {
         "severity": FLAG_SEVERITY_MEDIUM,
         "symptom": "detail run rejected the URL as a listing/category seed",
     },
+    FLAG_DETAIL_IDENTITY_REJECTED: {
+        "invariant": "Rule 3 (Extraction — detail identity guard rejected the extracted record)",
+        "owner": OWNER_RECORD_ASSEMBLY,
+        "severity": FLAG_SEVERITY_HIGH,
+        "symptom": "detail extraction rejected a candidate as a different product",
+    },
+    FLAG_ACQUISITION_CHALLENGE_BLOCKED: {
+        "invariant": "Rule 6 (Acquisition — target remained behind bot protection/challenge shell)",
+        "owner": OWNER_BLOCK_CLASSIFY,
+        "severity": FLAG_SEVERITY_HIGH,
+        "symptom": "acquisition produced only a challenge or low-content shell",
+    },
     # Baseline-drift flags (Slice 5).
     FLAG_BASELINE_FIELD_REGRESSION: {
         "invariant": "Rule 9 (Domain memory — field that normally extracts for this domain/surface is now missing)",
@@ -120,6 +134,8 @@ __all__ = [
     "FLAG_LISTING_SINGLE_METADATA_RECORD",
     "FLAG_HIGH_VALUE_FIELD_MISSING",
     "FLAG_DETAIL_ON_LISTING_SEED",
+    "FLAG_DETAIL_IDENTITY_REJECTED",
+    "FLAG_ACQUISITION_CHALLENGE_BLOCKED",
     "FLAG_BASELINE_FIELD_REGRESSION",
     "FLAG_BASELINE_ENGINE_CHANGED",
     "FLAG_BASELINE_TIER_REGRESSION",

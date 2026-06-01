@@ -20,9 +20,7 @@ import { buttonVariants } from '../../components/ui/button-variants';
 import { api } from '../../lib/api';
 import { EnrichmentStatus, EnrichmentTableLoading } from './enrichment-components';
 import type {
-  DataEnrichmentJob,
   DataEnrichmentSourceRecordInput,
-  EnrichedProduct,
 } from '../../lib/api/types';
 import { STORAGE_KEYS } from '../../lib/constants/storage-keys';
 import { cn } from '../../lib/utils';
@@ -75,23 +73,6 @@ function dataEnrichmentReducer(
       return { ...state, activeJobId: action.jobId };
   }
 }
-
-const ENRICHED_FIELD_LABELS: Array<[keyof EnrichedProduct, string]> = [
-  ['price_normalized', 'Price'],
-  ['color_family', 'Color'],
-  ['size_normalized', 'Size'],
-  ['size_system', 'Size system'],
-  ['gender_normalized', 'Gender'],
-  ['materials_normalized', 'Materials'],
-  ['availability_normalized', 'Availability'],
-  ['seo_keywords', 'SEO keywords'],
-  ['category_path', 'Category'],
-  ['intent_attributes', 'Intent'],
-  ['audience', 'Audience'],
-  ['style_tags', 'Style'],
-  ['ai_discovery_tags', 'Discovery tags'],
-  ['suggested_bundles', 'Bundles'],
-];
 
 function loadPrefill(): PrefillPayload {
   if (typeof window === 'undefined') return {};
@@ -300,7 +281,6 @@ export default function DataEnrichmentPage() {
                   const title = product.source_url
                     ? product.source_url.replace(/^https?:\/\/(www\.)?/, '')
                     : `Record #${product.source_record_id}`;
-                  const formattedPrice = formatValue(product.price_normalized);
 
                   return (
                     <button

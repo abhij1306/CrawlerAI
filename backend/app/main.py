@@ -42,6 +42,7 @@ from app.api.ucp_audit import router as ucp_audit_router
 from app.api.alerts import router as alerts_router
 from app.core.config import get_frontend_origins, runtime_app_env, settings
 from app.core.dependencies import get_db, shutdown_run_dispatchers
+from app.core.logfire_integration import instrument_fastapi
 from app.core.metrics import (
     check_browser_pool,
     check_database,
@@ -159,6 +160,7 @@ async def lifespan(fastapi_app: FastAPI):
 
 app = FastAPI(title=settings.app_name, lifespan=lifespan)
 app.state.crawler = CrawlerAppState()
+instrument_fastapi(app)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=get_frontend_origins(),

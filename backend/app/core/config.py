@@ -81,6 +81,14 @@ class Settings(BaseSettings):
     crawl_log_db_max_rows_per_run: int = 1000
     crawl_log_file_enabled: bool = True
     crawl_log_file_dir: Path = Field(default=BASE_DIR / "artifacts" / "run_logs")
+    logfire_enabled: bool = False
+    logfire_token: str = Field(
+        default="",
+        validation_alias=AliasChoices("LOGFIRE_TOKEN", "logfire_token"),
+    )
+    logfire_service_name: str = "invoro-backend"
+    logfire_environment: str = ""
+    logfire_capture_headers: bool = False
     system_max_concurrent_urls: int = 8
     llm_cache_ttl_seconds: int = 86400
     default_admin_email: str = Field(
@@ -198,7 +206,7 @@ def _check_secret_defaults() -> None:
     default_admin_password = str(settings.default_admin_password or "").strip()
     default_admin_email = str(settings.default_admin_email or "").strip().lower()
     if default_admin_password in _INSECURE_ADMIN_PASSWORD_DEFAULTS:
-        issues.append("default_admin_password is set to an insecure placeholder value")
+        issues.append("admin bootstrap secret is set to an insecure placeholder value")
     if settings.bootstrap_admin_once and default_admin_password:
         password_issues = admin_password_strength_issues(default_admin_password)
         if password_issues:
@@ -208,7 +216,7 @@ def _check_secret_defaults() -> None:
             )
     if settings.bootstrap_admin_once and not default_admin_password:
         issues.append(
-            "bootstrap_admin_once requires a non-empty default_admin_password"
+            "bootstrap_admin_once requires a non-empty admin bootstrap secret"
         )
     if (
         settings.bootstrap_admin_once
@@ -217,14 +225,14 @@ def _check_secret_defaults() -> None:
         issues.append("bootstrap_admin_once requires a non-default default_admin_email")
     if warnings:
         logger.warning(
-            "SECURITY WARNING — admin bootstrap password is weaker than the current recommendation:\n  • "
-            + "\n  • ".join(warnings)
+            "SECURITY WARNING: admin bootstrap secret is weaker than the current recommendation:\n  - "
+            + "\n  - ".join(warnings)
         )
     if not issues:
         return
     msg = (
-        "SECURITY WARNING — insecure default secrets detected:\n  • "
-        + "\n  • ".join(issues)
+        "SECURITY WARNING: insecure default secrets detected:\n  - "
+        + "\n  - ".join(issues)
         + '\nGenerate secure values: python -c "import secrets; print(secrets.token_urlsafe(64))"'
     )
     if _is_non_dev_environment(env):

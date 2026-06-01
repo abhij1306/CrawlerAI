@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import secrets
 import time
 from contextlib import suppress
@@ -11,6 +12,8 @@ from app.services.config.selectors import (
     LISTING_CAPTURE_STRUCTURAL_ANCESTOR_SELECTORS,
 )
 from app.services.extract.listing_card_fragments import listing_capture_selectors
+
+logger = logging.getLogger(__name__)
 
 
 async def recover_browser_challenge(
@@ -341,12 +344,12 @@ async def emit_browser_behavior_activity(page: Any) -> dict[str, object]:
         pointer_moves += max(0, int(after or 0) - int(before or 0))
     except Exception:
         # Best-effort humanization metric; pointer move count is non-critical.
-        pass
+        logger.debug("Challenge pointer activity failed", exc_info=True)
     try:
         scroll_steps += await _emit_scroll_physics(page)
     except Exception:
         # Best-effort humanization metric; scroll count is non-critical.
-        pass
+        logger.debug("Challenge scroll activity failed", exc_info=True)
     return {
         "enabled": True,
         "pointer_moves": pointer_moves,
@@ -384,7 +387,7 @@ async def type_text_like_human(
         # Preserve the partial typed_chars count so callers can detect partial
         # input and recover (e.g., clear the field or fall back to direct nav)
         # instead of treating the form as untouched.
-        pass
+        logger.debug("Humanized typing stopped early", exc_info=True)
     return {"typed_chars": typed_chars}
 
 

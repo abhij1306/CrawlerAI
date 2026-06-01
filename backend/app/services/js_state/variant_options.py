@@ -155,38 +155,20 @@ def variant_option_values(
         return option_values
     attributes = variant.get("attributes")
     if isinstance(attributes, dict):
-        for axis_name, raw_value in attributes.items():
-            axis_key = normalized_variant_axis_key(axis_name)
-            cleaned = variant_axis_value(axis_key, raw_value, page_url="")
-            if (
-                not axis_key
-                or not cleaned
-                or not variant_axis_name_is_semantic(axis_name)
-            ):
-                continue
-            option_values[axis_key] = _display_option_value(
-                axis_key,
-                cleaned,
-                option_value_labels=option_value_labels,
-            )
+        _add_option_values_from_mapping(
+            attributes,
+            option_values,
+            option_value_labels=option_value_labels,
+        )
     if option_values:
         return option_values
     traits = variant.get("traits")
     if isinstance(traits, dict):
-        for axis_name, raw_value in traits.items():
-            axis_key = normalized_variant_axis_key(axis_name)
-            cleaned = variant_axis_value(axis_key, raw_value, page_url="")
-            if (
-                not axis_key
-                or not cleaned
-                or not variant_axis_name_is_semantic(axis_name)
-            ):
-                continue
-            option_values[axis_key] = _display_option_value(
-                axis_key,
-                cleaned,
-                option_value_labels=option_value_labels,
-            )
+        _add_option_values_from_mapping(
+            traits,
+            option_values,
+            option_value_labels=option_value_labels,
+        )
     if option_values:
         return option_values
     size_chart = variant.get("sizeChart")
@@ -317,6 +299,24 @@ def _name_value_axis(
             option_value_labels=option_value_labels,
         )
     }
+
+
+def _add_option_values_from_mapping(
+    values: dict[object, object],
+    option_values: dict[str, str],
+    *,
+    option_value_labels: dict[str, dict[str, str]] | None,
+) -> None:
+    for axis_name, raw_value in values.items():
+        axis_key = normalized_variant_axis_key(axis_name)
+        cleaned = variant_axis_value(axis_key, raw_value, page_url="")
+        if not axis_key or not cleaned or not variant_axis_name_is_semantic(axis_name):
+            continue
+        option_values[axis_key] = _display_option_value(
+            axis_key,
+            cleaned,
+            option_value_labels=option_value_labels,
+        )
 
 
 def _display_option_value(

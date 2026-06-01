@@ -125,7 +125,7 @@ def title_tokens(value: object) -> list[str]:
     return [
         identity_token(token)
         for token in re.findall(r"[a-z0-9]+", clean_text(value).casefold())
-        if token and token != "s"
+        if token and token != "s"  # nosec B105
     ]
 
 

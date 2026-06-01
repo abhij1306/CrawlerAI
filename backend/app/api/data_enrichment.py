@@ -38,13 +38,9 @@ async def data_enrichment_create_job(
             payload=payload.model_dump(),
         )
     except (LookupError, AccessDeniedError) as exc:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)
-        ) from exc
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except ValueError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
-        ) from exc
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     background_tasks.add_task(run_data_enrichment_job, job.id)
     return DataEnrichmentJobResponse.model_validate(job, from_attributes=True)
 

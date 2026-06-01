@@ -16,7 +16,6 @@ import { ExternalCandidateImage } from './product-intelligence-components';
 import type { ProductIntelligenceController } from './use-product-intelligence';
 import {
   candidateConfidence,
-  formatExtractedPrice,
   formatPrice,
   isRecord,
   stringField,

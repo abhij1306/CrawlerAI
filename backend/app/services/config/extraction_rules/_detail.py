@@ -202,7 +202,7 @@ DETAIL_COOKIE_DISCLOSURE_TEXT_PATTERNS = (
     r"\bgoogle\s+adsense\b",
     r"\breal\s+time\s+bidding\b",
 )
-DETAIL_TRACKING_TOKEN_PATTERN = r"_[a-z][a-z0-9_]{2,}"
+DETAIL_TRACKING_TOKEN_PATTERN = r"_[a-z][a-z0-9_]{2,}"  # nosec B105
 SMALL_NUMERIC_PATTERN = r"\d{1,2}"
 TRACKING_PIXEL_PATTERN = r"_[a-z]+"
 COLOR_KEYWORD_PATTERN = r"\b(?:color|colour|black|blue|brown|green|grey|gray|orange|pink|purple|red|white|yellow)\b"

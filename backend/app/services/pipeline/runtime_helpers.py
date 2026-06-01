@@ -27,6 +27,20 @@ async def log_event(session, run_id: int | None, level: str, message: str) -> No
     await session.flush()
 
 
+async def log_pipeline_event(
+    context,
+    level: str,
+    message: str,
+    *,
+    commit: bool = True,
+) -> None:
+    if not context.config.persist_logs:
+        return
+    await log_event(context.session, context.run.id, level, message)
+    if commit:
+        await context.session.commit()
+
+
 async def set_stage(
     session,
     run,
@@ -169,12 +183,10 @@ async def mark_run_failed(session: AsyncSession, run_id: int, error_msg: str) ->
             await persist_failure_state(recovery, run_id, error_msg)
     except SQLAlchemyError:
         logger.critical(
-            "Failure recovery via SessionLocal failed for run_id=%s — "
-            "run may be stuck in RUNNING state (zombie run). "
-            "Original error: %s",
-            run_id,
-            error_msg,
+            "Failure recovery via SessionLocal failed; "
+            "run may be stuck in RUNNING state (zombie run).",
             exc_info=True,
+            extra={"run_id": run_id},
         )
         return
 

@@ -265,9 +265,9 @@ def _ecommerce_ready_card_count(soup: BeautifulSoup) -> int:
     count = 0
     for selector in _ECOMMERCE_READY_CARD_SELECTORS:
         try:
-            nodes = soup.select(selector)
+            nodes: Iterable[Any] = soup.select(selector)
         except Exception:
-            continue
+            nodes = []
         for node in nodes:
             node_id = id(node)
             if node_id in seen:

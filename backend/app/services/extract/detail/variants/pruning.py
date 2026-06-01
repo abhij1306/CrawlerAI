@@ -37,7 +37,6 @@ from app.services.extract.variant_option_value import (
 )
 from app.services.extract.detail.identity.core import (
     detail_url_looks_like_product as _detail_url_looks_like_product,
-    detail_url_matches_requested_identity as _detail_url_matches_requested_identity,
     record_matches_requested_detail_identity as _record_matches_requested_detail_identity,
 )
 from app.services.extract.detail.text.sanitizer import (
@@ -132,6 +131,7 @@ def sanitize_variant_row(
     for field_name in ("size", "color"):
         raw_value = variant.get(field_name)
         cleaned_value = clean_text(raw_value)
+        cleaned_value = _clean_variant_axis_label(cleaned_value)
         if not cleaned_value:
             if raw_value in (None, "", [], {}):
                 variant.pop(field_name, None)
@@ -158,11 +158,12 @@ def sanitize_variant_row(
         variant_url
         and same_site(identity_url, variant_url)
         and _detail_url_looks_like_product(variant_url)
-        and not _detail_url_matches_requested_identity(
-            variant_url,
-            requested_page_url=identity_url,
+        and not _variant_url_matches_requested_base(variant_url, identity_url=identity_url)
+        and not _cross_product_variant_url_can_be_option(
+            variant,
+            variant_url=variant_url,
+            title_hint=title_hint,
         )
-        and not _variant_has_public_axis_or_identity_signal(variant)
     ):
         return False
     title = clean_text(variant.get("title"))
@@ -226,6 +227,16 @@ def _amazon_variant_axis_value_is_noise(
     )
 
 
+def _clean_variant_axis_label(value: str) -> str:
+    cleaned = clean_text(value)
+    if not cleaned:
+        return ""
+    choose_match = re.fullmatch(r"choose\s+(.+?)\s+variant", cleaned, flags=re.I)
+    if choose_match:
+        return clean_text(choose_match.group(1))
+    return cleaned
+
+
 def _url_is_amazon(value: object) -> bool:
     hostname = urlparse(str(value or "")).hostname or ""
     hostname = hostname.casefold()
@@ -283,6 +294,44 @@ def _variant_url_matches_requested_base(value: object, *, identity_url: str) -> 
     requested = urlparse(identity_url)
     candidate = urlparse(variant_url)
     return requested.path.rstrip("/") == candidate.path.rstrip("/")
+
+
+def _cross_product_variant_url_can_be_option(
+    variant: dict[str, Any],
+    *,
+    variant_url: str,
+    title_hint: str,
+) -> bool:
+    if not _variant_has_public_axis_or_identity_signal(variant):
+        return False
+    parent_tokens = _product_family_tokens(title_hint)
+    if not parent_tokens:
+        return True
+    variant_tokens = _product_family_tokens(urlparse(variant_url).path)
+    if not variant_tokens:
+        return False
+    required_overlap = 1 if len(parent_tokens) == 1 else 2
+    return len(parent_tokens & variant_tokens) >= required_overlap
+
+
+def _product_family_tokens(value: object) -> set[str]:
+    tokens: set[str] = set()
+    for raw_token in re.findall(r"[a-z0-9]+", clean_text(value).casefold()):
+        if len(raw_token) < 3:
+            continue
+        tokens.add(_singular_family_token(raw_token))
+    return tokens
+
+
+def _singular_family_token(token: str) -> str:
+    # Irregular plural token: normalize "mens" to "men"; nosec because this is not a secret.
+    if token == "mens":  # nosec B105
+        return "men"
+    if token.endswith("ies") and len(token) > 5:
+        return f"{token[:-3]}y"
+    if token.endswith("s") and len(token) > 4:
+        return token[:-1]
+    return token
 
 
 def _detail_variant_row_is_low_signal_numeric_only(variant: object) -> bool:
@@ -476,7 +525,9 @@ def _numeric_size_value_in_variants(parent_value: str, variant_values: set[str])
     normalized_values: set[str] = set()
     for value in variant_values:
         try:
-            normalized_values.add(str(Decimal(value).normalize()))
+            normalized_value = str(Decimal(value).normalize())
         except Exception:
-            continue
+            normalized_value = None
+        if normalized_value is not None:
+            normalized_values.add(normalized_value)
     return str(parent_number) in normalized_values

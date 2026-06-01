@@ -67,6 +67,15 @@ def test_skip_dom_decision_is_captured():
     assert extraction["skip_decision"]["threshold"] == pytest.approx(0.7)
 
 
+def test_extraction_rejection_reason_is_captured():
+    trace = _trace()
+    trace.record_extraction_rejection("detail_identity_mismatch")
+
+    extraction = trace.to_dict(flagged=True)["extraction"]
+
+    assert extraction["rejection_reason"] == "detail_identity_mismatch"
+
+
 def test_field_candidate_only_records_high_value_fields():
     trace = _trace(requested_fields=["price"])
     trace.record_field_candidate(

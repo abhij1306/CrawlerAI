@@ -108,6 +108,8 @@ export function SectionHeader({
   );
 }
 
+type TabBarOption = { value: string; label: ReactNode; icon?: ReactNode };
+
 /* ─── TabBar — sliding CSS indicator, no flash ──────────────────────────── */
 export function TabBar({
   value,
@@ -121,7 +123,7 @@ export function TabBar({
 }: Readonly<{
   value: string;
   onChange: (value: string) => void;
-  options: Array<{ value: string; label: ReactNode; icon?: ReactNode }>;
+  options: TabBarOption[];
   compact?: boolean;
   className?: string;
   variant?: 'pill' | 'underline';
@@ -172,14 +174,7 @@ export function TabBar({
                 : 'text-secondary hover:text-foreground hover:border-border border-b-2 border-transparent',
             )}
           >
-            {option.icon ? (
-              <span className={cn('inline-flex items-center', gapClass)}>
-                <span className="shrink-0">{option.icon}</span>
-                <span>{option.label}</span>
-              </span>
-            ) : (
-              option.label
-            )}
+            {tabBarOptionContent(option, gapClass)}
           </button>
         ))}
       </div>
@@ -210,17 +205,20 @@ export function TabBar({
               : 'text-muted hover:text-foreground border border-transparent bg-transparent',
           )}
         >
-          {option.icon ? (
-            <span className={cn('inline-flex items-center', gapClass)}>
-              <span className="shrink-0">{option.icon}</span>
-              <span>{option.label}</span>
-            </span>
-          ) : (
-            option.label
-          )}
+          {tabBarOptionContent(option, gapClass)}
         </button>
       ))}
     </div>
+  );
+}
+
+function tabBarOptionContent(option: TabBarOption, gapClass: string) {
+  if (!option.icon) return option.label;
+  return (
+    <span className={cn('inline-flex items-center', gapClass)}>
+      <span className="shrink-0">{option.icon}</span>
+      <span>{option.label}</span>
+    </span>
   );
 }
 

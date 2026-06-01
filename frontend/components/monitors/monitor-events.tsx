@@ -10,6 +10,7 @@ import { formatRelativeTime } from '../../lib/format/date';
 import { Button } from '../ui/primitives';
 import { TabBar, DataRegionError } from '../ui/patterns';
 import { MonitorEmptyState } from './monitor-empty-state';
+import { formatMonitorValue, monitorHostPath } from './monitor-format';
 
 const eventFilters: Array<{ value: MonitorEventType | 'all'; label: string }> = [
   { value: 'all', label: 'All' },
@@ -85,11 +86,11 @@ export function MonitorEvents({
                 {event.condition_met ? (
                   <span className="type-caption-mono text-success">condition met</span>
                 ) : null}
-                <span className="type-caption truncate">{hostPath(event.source_url)}</span>
+                <span className="type-caption truncate">{monitorHostPath(event.source_url)}</span>
               </div>
               <p className="text-secondary type-body-sm mt-1">
                 {event.event_type === 'field_changed'
-                  ? `${formatValue(event.old_value)} -> ${formatValue(event.new_value)}`
+                  ? `${formatMonitorValue(event.old_value)} -> ${formatMonitorValue(event.new_value)}`
                   : event.event_type === 'record_new'
                     ? 'New product detected'
                     : 'Product no longer found'}
@@ -126,19 +127,4 @@ export function MonitorEvents({
       </div>
     </div>
   );
-}
-
-function formatValue(value: unknown) {
-  if (value === null || value === undefined || value === '') return 'empty';
-  if (typeof value === 'object') return JSON.stringify(value);
-  return String(value);
-}
-
-function hostPath(url: string) {
-  try {
-    const parsed = new URL(url);
-    return `${parsed.hostname}${parsed.pathname}`;
-  } catch {
-    return url;
-  }
 }

@@ -983,6 +983,7 @@ export type RunTraceArtifact = {
   extraction: {
     completed_tiers: string[];
     dom_skipped?: boolean;
+    rejection_reason?: string;
     skip_decision?: Record<string, unknown>;
     field_provenance?: Array<{
       field: string;

@@ -28,8 +28,7 @@ def _validate_default_admin_password(password: str) -> None:
     issues = admin_password_strength_issues(password)
     if issues:
         logger.warning(
-            "%s is weaker than the current recommendation: %s",
-            DEFAULT_ADMIN_PASSWORD,
+            "Admin bootstrap secret is weaker than the current recommendation: %s",
             ", ".join(issues),
         )
 

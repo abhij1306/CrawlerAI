@@ -5,45 +5,23 @@ import logging
 import re
 from typing import TYPE_CHECKING
 
-from app.services.acquisition.dom_runtime import wait_for_dom_mutation_settle
+from app.services.acquisition.playwright_compat import (
+    PLAYWRIGHT_RECOVERABLE_ERRORS,
+    PlaywrightError,
+)
 from app.services.acquisition.traversal_helpers import (
     emit_event as _emit_event,
     remaining_timeout_ms as _remaining_timeout_ms,
+    wait_for_traversal_dom_mutation_settle as _wait_for_dom_mutation_settle,
 )
 from app.services.config.extraction_rules import TRAVERSAL_LISTING_RECOVERY_ACTIONS
 from app.services.config.runtime_settings import crawler_runtime_settings
 from app.services.config.selectors import COOKIE_CONSENT_SELECTORS
 
-try:
-    from patchright.async_api import (
-        Error as PlaywrightError,
-        TimeoutError as PlaywrightTimeoutError,
-    )
-except ImportError:  # pragma: no cover
-    class PlaywrightError(Exception):  # type: ignore[no-redef]
-        pass
-
-    class PlaywrightTimeoutError(PlaywrightError):  # type: ignore[no-redef]
-        pass
-
-
-PLAYWRIGHT_RECOVERABLE_ERRORS = (PlaywrightError, PlaywrightTimeoutError, RuntimeError)
-
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from app.services.acquisition.traversal import TraversalResult
-
-
-async def _wait_for_dom_mutation_settle(page, **kwargs):
-    from app.services.acquisition import traversal
-
-    wait_impl = getattr(
-        traversal,
-        "wait_for_dom_mutation_settle",
-        wait_for_dom_mutation_settle,
-    )
-    await wait_impl(page, **kwargs)
 
 
 async def _find_actionable_locator(page, selector_group: str):

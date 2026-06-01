@@ -4,8 +4,12 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Callable
-from typing import Annotated, Any, NoReturn, cast
+from typing import Annotated, Any, cast
 
+from app.api.run_access import (
+    get_accessible_run_or_404 as _get_accessible_run_or_404,
+    raise_http_from_exception as _raise_http_from_exception,
+)
 from app.core.dependencies import get_current_user, get_db
 from app.models.crawl_run import CrawlRun
 from app.models.user import User
@@ -94,26 +98,6 @@ def _websocket_token(websocket: WebSocket) -> str | None:
     return token
 
 
-def _raise_http_from_value_error(*, status_code: int, exc: ValueError) -> NoReturn:
-    """Translate validation/business ValueError into HTTPException preserving cause."""
-    raise HTTPException(status_code=status_code, detail=str(exc)) from exc
-
-
-async def _get_accessible_run_or_404(
-    session: AsyncSession,
-    *,
-    run_id: int,
-    user: User,
-) -> CrawlRun:
-    try:
-        return await require_accessible_run(session, run_id=run_id, user=user)
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=str(exc),
-        ) from exc
-
-
 async def _mutate_run_status(
     session: AsyncSession,
     *,
@@ -125,7 +109,7 @@ async def _mutate_run_status(
     try:
         updated = await action(session, run)
     except ValueError as exc:
-        _raise_http_from_value_error(
+        _raise_http_from_exception(
             status_code=status.HTTP_409_CONFLICT,
             exc=exc,
         )
@@ -153,7 +137,7 @@ async def crawls_create(
             session, user.id, payload.model_dump()
         )
     except ValueError as exc:
-        _raise_http_from_value_error(
+        _raise_http_from_exception(
             status_code=status.HTTP_400_BAD_REQUEST,
             exc=exc,
         )
@@ -188,7 +172,7 @@ async def crawls_create_csv(
             settings_json=settings_json,
         )
     except ValueError as exc:
-        _raise_http_from_value_error(
+        _raise_http_from_exception(
             status_code=status.HTTP_400_BAD_REQUEST,
             exc=exc,
         )
@@ -251,7 +235,7 @@ async def crawls_delete(
     try:
         await delete_run(session, run)
     except ValueError as exc:
-        _raise_http_from_value_error(
+        _raise_http_from_exception(
             status_code=status.HTTP_409_CONFLICT,
             exc=exc,
         )
@@ -409,8 +393,8 @@ async def crawls_logs_ws(
             if next_run is None:
                 missing_run_snapshots += 1
                 logger.warning(
-                    "Run logs snapshot did not reload run %s; retrying",
-                    run_id,
+                    "Run logs snapshot did not reload run; retrying",
+                    extra={"run_id": run_id},
                 )
                 if missing_run_snapshots >= 3:
                     await websocket.close(code=1011, reason="Run snapshot unavailable")
@@ -426,7 +410,7 @@ async def crawls_logs_ws(
     except WebSocketDisconnect:
         return
     except Exception as exc:
-        logger.exception("Run logs websocket stream failed for run %s", run_id)
+        logger.exception("Run logs websocket stream failed", extra={"run_id": run_id})
         try:
             await websocket.close(
                 code=1011, reason=f"stream_error: {type(exc).__name__}"

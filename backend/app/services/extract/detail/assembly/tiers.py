@@ -59,8 +59,7 @@ class DetailTierRuntime:
     requires_dom_completion: Callable[..., bool]
     promote_dom_detail_title: Callable[..., None]
     fill_missing_dom_detail_title: Callable[..., None]
-    finalize_early_detail_record: Callable[..., dict[str, Any]]
-    finalize_dom_detail_record: Callable[..., dict[str, Any]]
+    finalize_detail_record: Callable[..., dict[str, Any]]
 
 
 @dataclass(frozen=True, slots=True)
@@ -144,7 +143,7 @@ class DetailTierExecutor:
             record["_dom_skip_decision"] = skip_decision
             if inputs.surface == ECOMMERCE_DETAIL_SURFACE:
                 self._promote_dom_title(record, prepared, inputs.page_url)
-            return self._runtime.finalize_early_detail_record(
+            return self._runtime.finalize_detail_record(
                 record,
                 html=inputs.html,
                 page_url=inputs.page_url,
@@ -153,11 +152,12 @@ class DetailTierExecutor:
                 requested_page_url=prepared.state.requested_page_url,
                 soup=prepared.soup,
                 js_state_objects=prepared.js_state_objects,
+                early_exit="js_state",
             )
 
         record = self._build_dom_tier_record(prepared, inputs)
         record["_dom_skip_decision"] = skip_decision
-        return self._runtime.finalize_dom_detail_record(
+        return self._runtime.finalize_detail_record(
             record,
             html=inputs.html,
             page_url=inputs.page_url,
@@ -166,6 +166,7 @@ class DetailTierExecutor:
             requested_page_url=prepared.state.requested_page_url,
             soup=prepared.soup,
             js_state_objects=prepared.js_state_objects,
+            early_exit=None,
         )
 
     def _collect_pre_dom_tiers(

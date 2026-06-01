@@ -110,7 +110,7 @@ class AlertMCPServer:
             if api_error is not None:
                 code, message = api_error
                 return _tool_error(code, message)
-            return _tool_error("API_ERROR", response.text)
+            return _tool_error("API_ERROR", response.text or "API error")
         return payload
 
 

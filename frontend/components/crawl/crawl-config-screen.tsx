@@ -1,10 +1,10 @@
 'use client';
-import { Check, Globe, Info, Plus, Shield, SlidersHorizontal, Sparkles } from 'lucide-react';
+import { Globe, Info, Plus, SlidersHorizontal, Sparkles } from 'lucide-react';
 import type { Route } from 'next';
 import { useRouter } from 'next/navigation';
 import { startTransition, useEffect, useLayoutEffect, useMemo, useReducer, useRef } from 'react';
 import { cn } from '../../lib/utils';
-import { InlineAlert, PageHeader, SectionHeader, TabBar } from '../ui/patterns';
+import { InlineAlert, PageHeader, TabBar } from '../ui/patterns';
 import { Badge, Button, Dropdown, Card, Input, Textarea, Toggle, Tooltip } from '../ui/primitives';
 import { api } from '../../lib/api';
 import type { CrawlConfig, CrawlDomain, DomainRunProfile } from '../../lib/api/types';
@@ -32,7 +32,6 @@ import {
   SliderRow,
   SitemapConfigFields,
   TargetUrlField,
-  validateAdditionalFieldName,
   normalizeField,
   uniqueRequestedFields,
 } from './shared';
@@ -81,7 +80,6 @@ import {
   RUN_SETUP_CONTROL_CLASS,
   RUN_SETUP_LABEL_CLASS,
   RUN_SETUP_ROW_CLASS,
-  RUN_SETUP_STACK_CLASS,
   type CrawlConfigScreenProps,
   useCrawlRouteState,
 } from './crawl-config-state';

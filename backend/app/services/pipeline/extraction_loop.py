@@ -84,7 +84,7 @@ from .runtime_helpers import (
     record_detail_expansion_extraction_outcome as _record_detail_expansion_extraction_outcome,
     screenshot_required as _screenshot_required,
     suppress_empty_downstream_record_logs as _suppress_empty_downstream_record_logs,
-    log_event,
+    log_pipeline_event as _log_pipeline_event,
     set_stage,
 )
 from .types import URLProcessingConfig, URLProcessingResult
@@ -201,20 +201,6 @@ async def _enter_stage(
             stage_name,
             current_url=context.url,
         )
-        await context.session.commit()
-
-
-async def _log_pipeline_event(
-    context: _URLProcessingContext,
-    level: str,
-    message: str,
-    *,
-    commit: bool = True,
-) -> None:
-    if not context.config.persist_logs:
-        return
-    await log_event(context.session, context.run.id, level, message)
-    if commit:
         await context.session.commit()
 
 
@@ -354,6 +340,21 @@ def _record_acquire_timeline(
                     "stage": decision.get("stage"),
                 },
             )
+
+    host_outcome = mapping_or_empty(diagnostics.get("host_outcome"))
+    if host_outcome:
+        trace.record_host_outcome(host_outcome)
+
+    if method != "browser":
+        trace.record_acquire_event(
+            obs_config.ACQUIRE_EVENT_HTTP_FETCH,
+            detail={
+                "method": method,
+                "status_code": getattr(acquisition_result, "status_code", None),
+                "blocked": bool(getattr(acquisition_result, "blocked", False)),
+            },
+        )
+        return
 
     if method == "browser":
         trace.record_acquire_event(
@@ -771,6 +772,15 @@ async def _run_persistence_stage(
         verdict = VERDICT_LISTING_FAILED
     trace = context.trace
     if trace is not None:
+        diagnostics = mapping_or_empty(
+            getattr(acquisition_result, "browser_diagnostics", {})
+        )
+        failure_reason = (
+            extracted.fetched.url_metrics.get("failure_reason")
+            if isinstance(extracted.fetched.url_metrics, dict)
+            else None
+        ) or diagnostics.get("failure_reason")
+        trace.record_extraction_rejection(str(failure_reason or "").strip() or None)
         trace.record_verdict(verdict)
         await persist_run_trace(
             run_id=context.run.id,

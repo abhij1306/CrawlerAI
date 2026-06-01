@@ -87,7 +87,14 @@ async def discover_ucp_manifest(domain: str) -> UCPManifestResult:
             missing_required_services=list(config.UCP_REQUIRED_SERVICE_NAMES),
             errors=parse_errors,
         )
-    assert payload is not None
+    if payload is None:
+        return UCPManifestResult(
+            manifest_found=False,
+            **metadata,
+            missing_required_capabilities=list(config.UCP_REQUIRED_CAPABILITIES),
+            missing_required_services=list(config.UCP_REQUIRED_SERVICE_NAMES),
+            errors=["Manifest payload missing after parse"],
+        )
 
     root = _profile_root(payload)
     services = _service_entries(payload)

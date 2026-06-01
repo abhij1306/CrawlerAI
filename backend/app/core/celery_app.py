@@ -27,6 +27,7 @@ except (
             return _decorate
 
 from app.core.config import settings
+from app.core.logfire_integration import instrument_celery
 from app.services.config.monitor_settings import (
     SCHEDULER_DRIVER_CELERY,
     SCHEDULER_POLL_INTERVAL_SECONDS,
@@ -51,6 +52,7 @@ celery_app.conf.update(
     task_acks_late=True,
     task_reject_on_worker_lost=True,
 )
+instrument_celery()
 
 # Celery worker lifecycle signals
 try:

@@ -473,7 +473,7 @@ async def _search_serpapi_immersive_product(item: dict[str, object]) -> dict[str
 
 def _serpapi_immersive_params(item: dict[str, object]) -> dict[str, str]:
     api_url = str(item.get(SERPAPI_SHOPPING_IMMERSIVE_API_FIELD) or "").strip()
-    page_token = ""
+    page_token = ""  # nosec B105
     if api_url:
         try:
             parsed = urlsplit(api_url)
@@ -920,6 +920,8 @@ def _descriptive_product_slug(value: str) -> bool:
 
 def _normalize_slug_token(value: str) -> str:
     token = str(value or "").casefold()
+    if token in {"series", "business", "news", "analysis", "species"}:
+        return token
     if token.endswith("ies") and len(token) > 4:
         return f"{token[:-3]}y"
     if token.endswith("es") and len(token) > 4:
@@ -1277,7 +1279,8 @@ def _quoted(value: object) -> str:
     text = str(value or "").strip()
     if not text:
         return ""
-    return f"\"{text.replace('\"', '\\\"')}\""
+    text = " ".join(text.replace('"', " ").split())
+    return f"\"{text}\"" if text else ""
 
 
 def _join_query_parts(*parts: str) -> str:

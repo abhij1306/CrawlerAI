@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 
 class RubricVerdict(StrEnum):
-    PASS = "PASS"
+    PASS = "PASS"  # nosec B105
     PARTIAL = "PARTIAL"
     FAIL = "FAIL"
     INSUFFICIENT_EVIDENCE = "INSUFFICIENT_EVIDENCE"

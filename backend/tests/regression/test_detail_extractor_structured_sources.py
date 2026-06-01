@@ -2464,6 +2464,66 @@ def test_extract_ecommerce_detail_ignores_related_product_carousel_variants() ->
 
 
 @pytest.mark.regression
+def test_extract_ecommerce_detail_prunes_js_state_related_product_variants() -> None:
+    related_variants = [
+        {
+            "id": "pink-dreams",
+            "title": "Pink Dreams",
+            "color": "Pink Dreams",
+            "url": "https://colourpop.com/products/pink-dreams-shadow-palette",
+            "available": True,
+        },
+        {
+            "id": "silver-lining",
+            "title": "Silver Lining",
+            "color": "Silver Lining",
+            "url": "https://colourpop.com/products/silver-lining-shadow-palette",
+            "available": True,
+        },
+    ]
+    html = f"""
+    <html>
+      <head>
+        <script id="__NEXT_DATA__" type="application/json">
+        {{
+          "props": {{
+            "pageProps": {{
+              "product": {{
+                "id": "going-coconuts",
+                "title": "Going Coconuts",
+                "url": "https://colourpop.com/products/going-coconuts-eyeshadow-palette",
+                "size": 24,
+                "price": 14,
+                "currency": "USD",
+                "variants": {json.dumps(related_variants)}
+              }}
+            }}
+          }}
+        }}
+        </script>
+        <script type="application/json">
+        {{"arrows": {{"size": {{"value": 24, "unit": "px"}}, "enabled": true}}}}
+        </script>
+      </head>
+      <body><main><h1>Going Coconuts</h1></main></body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        "https://colourpop.com/products/going-coconuts-eyeshadow-palette",
+        "ecommerce_detail",
+        max_records=5,
+    )
+
+    assert len(rows) == 1
+    record = rows[0]
+    assert "variants" not in record
+    assert "variant_count" not in record
+    assert "size" not in record
+
+
+@pytest.mark.regression
 def test_extract_ecommerce_detail_recovers_structured_variants_with_axes() -> None:
     variants = []
     for color in ("Black", "Ivory", "Red"):

@@ -53,6 +53,7 @@ MAX_CANDIDATE_LOSERS_PER_FIELD = 12
 # Stable identifiers for ordered acquire-timeline events so the audit engine and
 # frontend can match on kind rather than free text.
 ACQUIRE_EVENT_NAVIGATION = "navigation"
+ACQUIRE_EVENT_HTTP_FETCH = "http_fetch"
 ACQUIRE_EVENT_READINESS_PROBE = "readiness_probe"
 ACQUIRE_EVENT_INTERSTITIAL = "interstitial"
 ACQUIRE_EVENT_CHALLENGE = "challenge"
@@ -194,6 +195,7 @@ __all__ = [
     "HIGH_VALUE_FIELD_FLOOR",
     "MAX_CANDIDATE_LOSERS_PER_FIELD",
     "ACQUIRE_EVENT_NAVIGATION",
+    "ACQUIRE_EVENT_HTTP_FETCH",
     "ACQUIRE_EVENT_READINESS_PROBE",
     "ACQUIRE_EVENT_INTERSTITIAL",
     "ACQUIRE_EVENT_CHALLENGE",

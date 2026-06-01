@@ -26,16 +26,16 @@ def redis_is_enabled() -> bool:
     return time.monotonic() >= _redis_disabled_until
 
 
-def _temporarily_disable_redis(exc: Exception) -> None:
+def _temporarily_disable_redis(_exc: Exception) -> None:
     global _redis_disabled_until, _last_disable_log_at, _redis_failure_total
     now = time.monotonic()
     _redis_disabled_until = now + _DISABLE_COOLDOWN_SECONDS
     _redis_failure_total += 1
     if now - _last_disable_log_at >= _DISABLE_COOLDOWN_SECONDS:
         logger.warning(
-            "Redis unavailable; disabling shared state for %.0fs: %s",
+            "Redis unavailable; disabling shared state for %.0fs",
             _DISABLE_COOLDOWN_SECONDS,
-            exc,
+            extra={"exception_type": type(_exc).__name__},
         )
         _last_disable_log_at = now
 
@@ -87,9 +87,12 @@ async def redis_fail_open[T](
     except Exception as exc:
         _temporarily_disable_redis(exc)
         logger.warning(
-            "Redis operation failed; continuing without shared state: %s",
-            operation_name,
+            "Redis operation failed; continuing without shared state",
             exc_info=False,
+            extra={
+                "operation_name": operation_name,
+                "exception_type": type(exc).__name__,
+            },
         )
         return default
 

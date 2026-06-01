@@ -56,7 +56,7 @@ def tokenize_text(value: object) -> list[str]:
     return [
         normalized
         for token in _token_re.findall(clean_text(strip_html_tags(value)).casefold())
-        if token != "s" and (normalized := normalize_taxonomy_token(token))
+        if token != "s" and (normalized := normalize_taxonomy_token(token))  # nosec B105
     ]
 
 

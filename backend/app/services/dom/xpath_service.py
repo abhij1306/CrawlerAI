@@ -220,12 +220,13 @@ def _apply_regex_filter(pattern: str | None, values: list[str]) -> list[str]:
         except TimeoutError:
             logger.warning(
                 "Timed out while evaluating selector regex",
-                extra={"pattern": pattern[:200]},
+                extra={"pattern_length": len(pattern)},
             )
             return []
         except regex_lib.error:
             logger.warning(
-                "Failed to evaluate selector regex", extra={"pattern": pattern[:200]}
+                "Failed to evaluate selector regex",
+                extra={"pattern_length": len(pattern)},
             )
             return []
         if not match:

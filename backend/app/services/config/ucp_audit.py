@@ -67,7 +67,7 @@ UCP_SIDE_EFFECT_TOOL_KEYWORDS = (
     "discount",
 )
 
-UCP_STATUS_PASS = "pass"
+UCP_STATUS_PASS = "pass"  # nosec B105
 UCP_STATUS_WARNING = "warning"
 UCP_STATUS_FAIL = "fail"
 UCP_FINDING_BLOCKING = "blocking"

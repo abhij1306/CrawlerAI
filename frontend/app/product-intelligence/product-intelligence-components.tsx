@@ -2,15 +2,11 @@
 
 import { Copy, Download, Loader2, X } from 'lucide-react';
 import Image from 'next/image';
-import React, { useEffect } from 'react';
+import React from 'react';
 
-import { Badge, Button, Dropdown, Field, Input, Textarea } from '../../components/ui/primitives';
-import type {
-  ProductIntelligenceDiscoveryResponse,
-  ProductIntelligenceOptions,
-} from '../../lib/api/types';
+import { Badge, Button } from '../../components/ui/primitives';
+import type { ProductIntelligenceDiscoveryResponse } from '../../lib/api/types';
 import { decodeUrlsForDisplay } from '../../lib/crawl/format';
-import { cn } from '../../lib/utils';
 import { syntaxHighlightJsonNodes } from '../../lib/ui/syntax';
 import { isRecord, searchProviderLabel } from './product-intelligence-utils';
 
@@ -173,22 +169,4 @@ function DiscoveryLoadingStep({ label, detail }: Readonly<{ label: string; detai
       <div className="text-muted mt-1 text-xs">{detail}</div>
     </div>
   );
-}
-
-function searchProvider(value: unknown): ProductIntelligenceOptions['search_provider'] {
-  return value === 'google_native' || value === 'serpapi' ? value : 'serpapi';
-}
-
-function clampInt(value: unknown, min: number, max: number, fallback: number) {
-  const parsed = Number.parseInt(String(value), 10);
-  if (!Number.isFinite(parsed)) {
-    return fallback;
-  }
-  return Math.min(Math.max(parsed, min), max);
-}
-
-function formatShortDate(value: string) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }

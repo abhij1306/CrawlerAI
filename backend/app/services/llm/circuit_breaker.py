@@ -78,7 +78,7 @@ def _local_circuit_is_open(provider: str) -> bool:
     elapsed = time.monotonic() - circuit.opened_at
     if elapsed >= llm_runtime_settings.circuit_cooldown_seconds:
         logger.info(
-            "Circuit half-open for provider=%s; allowing probe request",
+            "Circuit half-open for provider %s; allowing probe request",
             provider,
         )
         return False
@@ -106,7 +106,7 @@ def _record_local_failure(provider: str, category: LLMErrorCategory) -> None:
     ):
         circuit.opened_at = time.monotonic()
         logger.warning(
-            "Circuit open for provider=%s after %d consecutive failures (last=%s)",
+            "Circuit open for provider %s after %d consecutive failures (last=%s)",
             provider,
             circuit.consecutive_failures,
             category,

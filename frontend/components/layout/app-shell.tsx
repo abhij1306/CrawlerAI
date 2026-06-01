@@ -39,6 +39,7 @@ import { formatRelativeTime } from '../../lib/format/date';
 import { cn } from '../../lib/utils';
 import { getAuthSessionQueryOptions, isAuthRoute } from './auth-session-query';
 import { Button } from '../ui/button';
+import { ConfirmDialog } from '../ui/confirm-dialog';
 import type { TopBarState } from './top-bar-context';
 import { TopBarProvider, useTopBarHeader } from './top-bar-context';
 import { ThemeToggle } from '../ui/theme-toggle';
@@ -556,56 +557,21 @@ function ShellContent({
         <div className="app-page-inner">{children}</div>
       </main>
       {canResetWorkspace && resetDialogOpen ? (
-        <div className="overlay-scrim fixed inset-0 z-[100] grid place-items-center p-4">
-          <dialog
-            ref={resetDialogRef}
-            open
-            aria-labelledby="reset-workspace-title"
-            aria-describedby="reset-workspace-description"
-            tabIndex={-1}
-            className="border-border card-gradient w-[min(420px,100%)] rounded-lg border p-5"
-          >
-            <h2
-              id="reset-workspace-title"
-              className="text-foreground m-0 text-base leading-snug font-semibold"
-            >
-              {resetDialogCopy.title}
-            </h2>
-            <p
-              id="reset-workspace-description"
-              className="text-secondary mt-2 text-sm leading-relaxed"
-            >
-              {resetDialogCopy.description}
-            </p>
-            {resetError ? (
-              <div
-                role="alert"
-                className="border-danger/20 bg-danger/10 text-danger mt-4 rounded-md border px-3 py-2 text-sm leading-normal"
-              >
-                {resetError}
-              </div>
-            ) : null}
-            <div className="mt-5 flex justify-end gap-2">
-              <Button
-                type="button"
-                variant="quiet"
-                disabled={resetPending}
-                onClick={() => setResetDialogOpen(false)}
-              >
-                Cancel
-              </Button>
-              <Button
-                ref={resetConfirmRef}
-                type="button"
-                variant="destructive"
-                disabled={resetPending}
-                onClick={() => void executeReset()}
-              >
-                {resetPending ? 'Working…' : resetDialogCopy.confirmLabel}
-              </Button>
-            </div>
-          </dialog>
-        </div>
+        <ConfirmDialog
+          dialogRef={resetDialogRef}
+          confirmRef={resetConfirmRef}
+          titleId="reset-workspace-title"
+          descriptionId="reset-workspace-description"
+          title={resetDialogCopy.title}
+          description={resetDialogCopy.description}
+          error={resetError}
+          pending={resetPending}
+          pendingLabel="Working…"
+          confirmLabel={resetDialogCopy.confirmLabel}
+          overlayClassName="overlay-scrim fixed inset-0 z-[100] grid place-items-center p-4"
+          onCancel={() => setResetDialogOpen(false)}
+          onConfirm={() => void executeReset()}
+        />
       ) : null}
     </div>
   );

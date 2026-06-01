@@ -532,7 +532,7 @@ def _product_card_nodes(parser: LexborHTMLParser) -> list[Any]:
         try:
             matches = parser.css(str(selector))
         except Exception:
-            continue
+            matches = []
         for node in matches:
             key = str(getattr(node, "html", "") or "")
             if not key or key in seen:
@@ -739,7 +739,7 @@ def _first_selector_text(node: Any, selectors: tuple[str, ...]) -> str | None:
         try:
             match = node.css_first(str(selector))
         except Exception:
-            continue
+            match = None
         if match is None:
             continue
         value = clean_text(match.text(strip=True)) or _attr(match, "title") or _attr(match, "aria-label")
@@ -753,7 +753,7 @@ def _first_belk_title(node: Any) -> str | None:
         try:
             match = node.css_first(str(selector))
         except Exception:
-            continue
+            match = None
         if match is None:
             continue
         value = clean_text(match.text(strip=True)) or _attr(match, "title") or _attr(match, "aria-label")
@@ -774,7 +774,7 @@ def _first_selector_attr(node: Any, selectors: tuple[str, ...], attrs: tuple[str
         try:
             matches = node.css(str(selector))
         except Exception:
-            continue
+            matches = []
         for match in matches:
             for attr in attrs:
                 value = _attr(match, attr)

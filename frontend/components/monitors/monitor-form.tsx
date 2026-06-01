@@ -9,6 +9,12 @@ import { DEFAULT_FIELDS, SURFACE_DISPATCH } from '../crawl/domain-surface-config
 import { SettingSection } from '../crawl/form-fields';
 import { Button, Dropdown, Field, Input, Textarea, Toggle, Tooltip } from '../ui/primitives';
 import { InlineAlert } from '../ui/patterns';
+import {
+  failFormSubmit,
+  settleFormSubmit,
+  startFormSubmit,
+  toggleSelectedValue,
+} from './monitor-form-state';
 
 interface MonitorFormProps {
   initial?: Partial<MonitorCreatePayload>;
@@ -73,9 +79,7 @@ function monitorFormReducer(state: MonitorFormState, action: MonitorFormAction):
     case 'fieldToggled':
       return {
         ...state,
-        trackedFields: state.trackedFields.includes(action.field)
-          ? state.trackedFields.filter((item) => item !== action.field)
-          : [...state.trackedFields, action.field],
+        trackedFields: toggleSelectedValue(state.trackedFields, action.field),
       };
     case 'intervalValueChanged':
       return { ...state, intervalValue: action.value };
@@ -94,12 +98,12 @@ function monitorFormReducer(state: MonitorFormState, action: MonitorFormAction):
     case 'skipHeadCheckChanged':
       return { ...state, skipHeadCheck: action.value };
     case 'submitStarted':
-      return { ...state, error: '', submitting: true };
+      return startFormSubmit(state);
     case 'submitFailed':
     case 'validationFailed':
-      return { ...state, error: action.message };
+      return failFormSubmit(state, action.message);
     case 'submitSettled':
-      return { ...state, submitting: false };
+      return settleFormSubmit(state);
   }
 }
 

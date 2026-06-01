@@ -34,7 +34,7 @@ from app.services.pipeline.record_extraction_stage import (
 )
 from app.services.pipeline.runtime_helpers import (
     effective_blocked as _effective_blocked,
-    log_event,
+    log_pipeline_event as _log_pipeline_event,
     merge_browser_diagnostics as _merge_browser_diagnostics,
 )
 from app.services.publish import build_acquisition_profile, build_url_metrics
@@ -46,20 +46,6 @@ from app.services.pipeline.url_processing_context import (
 )
 
 acquire = _acquire
-
-
-async def _log_pipeline_event(
-    context: _URLProcessingContext,
-    level: str,
-    message: str,
-    *,
-    commit: bool = True,
-) -> None:
-    if not context.config.persist_logs:
-        return
-    await log_event(context.session, context.run.id, level, message)
-    if commit:
-        await context.session.commit()
 
 
 def _pipeline_acquisition_event_logger(context: _URLProcessingContext):

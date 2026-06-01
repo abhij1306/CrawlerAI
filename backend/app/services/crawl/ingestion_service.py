@@ -22,14 +22,14 @@ def _parse_settings_json(settings_json: str) -> dict:
     except json.JSONDecodeError as exc:
         logger.debug(
             "_parse_settings_json failed to decode settings JSON",
-            extra={"settings_json": settings_json},
+            extra={"settings_json_length": len(settings_json)},
             exc_info=exc,
         )
         raise ValueError("_parse_settings_json failed to decode settings JSON") from exc
     if not isinstance(parsed, dict):
         logger.debug(
             "_parse_settings_json expected a JSON object",
-            extra={"parsed_type": type(parsed).__name__, "parsed_value": parsed},
+            extra={"parsed_type": type(parsed).__name__},
         )
         raise ValueError(
             f"_parse_settings_json expected a JSON object, got {type(parsed).__name__}"

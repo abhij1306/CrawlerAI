@@ -36,7 +36,7 @@ from app.services.robots_policy import reset_robots_policy_cache
 from app.services.config.runtime_settings import crawler_runtime_settings
 from app.services.domain_utils import normalize_domain
 from app.services.runtime_metrics import snapshot as runtime_metrics_snapshot
-from sqlalchemy import delete, func, select, text
+from sqlalchemy import bindparam, delete, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
@@ -381,13 +381,10 @@ async def _reset_bucket_tables(
         await _reset_postgres_identities(session, *table_names)
         return
     if dialect_name == "sqlite" and await _sqlite_sequence_exists(session):
-        quoted_names = ", ".join(f"'{table_name}'" for table_name in table_names)
-        await session.execute(
-            text(
-                "DELETE FROM sqlite_sequence "
-                f"WHERE name IN ({quoted_names})"
-            )
-        )
+        statement = text(
+            "DELETE FROM sqlite_sequence WHERE name IN :table_names"
+        ).bindparams(bindparam("table_names", expanding=True))
+        await session.execute(statement, {"table_names": tuple(table_names)})
 
 
 async def _sqlite_sequence_exists(session: AsyncSession) -> bool:
@@ -408,15 +405,10 @@ async def _reset_postgres_identities(
     *table_names: str,
 ) -> None:
     for table_name in table_names:
-        sequence_name = (
-            await session.execute(
-                text("SELECT pg_get_serial_sequence(:table_name, 'id')"),
-                {"table_name": table_name},
-            )
-        ).scalar_one_or_none()
-        if not sequence_name:
-            continue
-        await session.execute(text(f"ALTER SEQUENCE {sequence_name} RESTART WITH 1"))
+        await session.execute(
+            text("SELECT setval(pg_get_serial_sequence(:table_name, 'id'), 1, false)"),
+            {"table_name": table_name},
+        )
 
 
 def _reset_directory(path, *, create_if_missing: bool = True) -> int:

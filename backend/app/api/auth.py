@@ -1,6 +1,8 @@
 # Authentication route handlers.
 from __future__ import annotations
 
+import hashlib
+import hmac
 import logging
 from typing import Annotated
 
@@ -28,6 +30,24 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 logger = logging.getLogger("app.auth")
+
+
+def _auth_log_hash(value: str) -> str:
+    normalized = str(value or "").strip().casefold()
+    if not normalized:
+        return ""
+    return hmac.new(
+        settings.jwt_secret_key.encode("utf-8"),
+        normalized.encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+
+
+def _auth_client_id_from_request(request: Request) -> str:
+    return client_identifier_from_request(
+        request,
+        trusted_proxies=tuple(crawler_runtime_settings.api_rate_limit_trusted_proxies),
+    )
 
 
 async def _enforce_auth_rate_limit(request: Request, route_group: str) -> Response | None:
@@ -90,19 +110,15 @@ async def login(
     limited = await _enforce_auth_rate_limit(request, "login")
     if limited is not None:
         return limited
-    client_identifier = client_identifier_from_request(
-        request,
-        trusted_proxies=tuple(crawler_runtime_settings.api_rate_limit_trusted_proxies),
-    )
-    normalized_email = payload.email.lower()
     authenticated = await authenticate_user(session, payload.email, payload.password)
+    client_id_hash = _auth_log_hash(_auth_client_id_from_request(request))
     if authenticated is None:
         logger.warning(
             "auth.login_failed",
             extra={
-                "email": normalized_email,
-                "client_ip": client_identifier,
                 "reason": "bad_credentials",
+                "client_id_hash": client_id_hash,
+                "email_hash": _auth_log_hash(payload.email),
             },
         )
         raise HTTPException(
@@ -121,7 +137,7 @@ async def login(
     )
     logger.info(
         "auth.login_success",
-        extra={"user_id": str(user.id), "client_ip": client_identifier},
+        extra={"user_id": str(user.id), "client_id_hash": client_id_hash},
     )
     return AuthResponse(user=UserResponse.model_validate(user, from_attributes=True))
 

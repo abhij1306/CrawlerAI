@@ -134,7 +134,7 @@ async def test_oracle_hcm_adapter_uses_shared_request_json_contract(
 
 @pytest.mark.asyncio
 @pytest.mark.component
-async def test_oracle_hcm_target_job_id_keeps_all_matching_records(
+async def test_oracle_hcm_target_job_id_returns_first_matching_record(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     adapter = OracleHCMAdapter()
@@ -173,10 +173,7 @@ async def test_oracle_hcm_target_job_id_keeps_all_matching_records(
         surface="job_detail",
     )
 
-    assert [record["title"] for record in records] == [
-        "Platform Engineer",
-        "Platform Engineer Remote",
-    ]
+    assert [record["title"] for record in records] == ["Platform Engineer"]
 
 
 @pytest.mark.component
@@ -221,4 +218,3 @@ async def test_oracle_hcm_adapter_does_not_swallow_parser_errors(
             "",
             "job_listing",
         )
-

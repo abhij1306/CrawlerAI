@@ -31,6 +31,9 @@ from app.services.config import observability as obs_config
 from app.services.config.audit_rules import (
     AUDIT_RULES,
     AUDIT_SCHEMA_VERSION,
+    FLAG_ACQUISITION_CHALLENGE_BLOCKED,
+    FLAG_DETAIL_IDENTITY_REJECTED,
+    FLAG_DETAIL_ON_LISTING_SEED,
     FLAG_DOM_SKIPPED_WITH_VARIANT_CUES,
     FLAG_HIGH_VALUE_FIELD_MISSING,
     FLAG_LISTING_SINGLE_METADATA_RECORD,
@@ -38,6 +41,7 @@ from app.services.config.audit_rules import (
 )
 from app.services.db_utils import mapping_or_empty
 from app.services.domain_utils import normalize_domain
+from app.services.field_url_normalization import canonical_public_record_url
 from app.services.field_policy import repair_target_fields_for_surface
 from app.services.observability.baseline import (
     build_observation,
@@ -125,6 +129,8 @@ def build_run_flags(
     verdict = str(summary.get("extraction_verdict") or "").strip().lower()
     requested_fields = list(getattr(run, "requested_fields", []) or [])
     high_value = _high_value_fields(surface, requested_fields)
+    run_id = int(getattr(run, "id", 0) or 0)
+    traces = _read_trace_artifacts(run_id)
 
     flags: list[dict[str, Any]] = []
 
@@ -144,7 +150,7 @@ def build_run_flags(
         flags.extend(_audit_record(record, surface=surface, high_value=high_value))
 
     # Run-level acquisition flags from the per-URL trace artifacts.
-    flags.extend(_audit_traces(run_id=int(getattr(run, "id", 0) or 0), verdict=verdict))
+    flags.extend(_audit_traces(run_id=run_id, verdict=verdict, traces=traces))
 
     # Baseline drift (the self-healing loop), scoped by (domain, surface).
     flags.extend(
@@ -154,6 +160,7 @@ def build_run_flags(
             surface=surface,
             verdict=verdict,
             high_value=high_value,
+            traces=traces,
             update_baselines=update_baselines,
         )
     )
@@ -168,8 +175,20 @@ def _audit_baseline_drift(
     surface: str,
     verdict: str,
     high_value: list[str],
+    traces: list[dict[str, Any]],
     update_baselines: bool,
 ) -> list[dict[str, Any]]:
+    if traces:
+        return _audit_trace_baseline_drift(
+            run,
+            records,
+            default_surface=surface,
+            default_verdict=verdict,
+            default_high_value=high_value,
+            traces=traces,
+            update_baselines=update_baselines,
+        )
+
     domain = _run_domain(run, records)
     if not domain or not surface:
         return []
@@ -191,6 +210,55 @@ def _audit_baseline_drift(
             logger.exception(
                 "Baseline update failed for domain=%s surface=%s", domain, surface
             )
+    return flags
+
+
+def _audit_trace_baseline_drift(
+    run: CrawlRun,
+    records: list[CrawlRecord],
+    *,
+    default_surface: str,
+    default_verdict: str,
+    default_high_value: list[str],
+    traces: list[dict[str, Any]],
+    update_baselines: bool,
+) -> list[dict[str, Any]]:
+    flags: list[dict[str, Any]] = []
+    records_by_url = _records_by_url(records, surface=default_surface)
+    requested_fields = list(getattr(run, "requested_fields", []) or [])
+    for trace in traces:
+        url = str(trace.get("url") or "").strip()
+        surface = str(trace.get("surface") or default_surface).strip().lower()
+        if not url or not surface:
+            continue
+        high_value = _high_value_fields(surface, requested_fields) or default_high_value
+        record_matches = records_by_url.get(_url_compare_key(url, surface=surface), [])
+        browser_artifact = _browser_artifact_for_trace(trace)
+        observation = build_observation(
+            completed_tiers=_trace_completed_tiers(trace)
+            or _observed_tiers(record_matches),
+            fields_present=_observed_high_value_fields(record_matches, high_value),
+            engine=_trace_engine(trace)
+            or _browser_artifact_engine(browser_artifact)
+            or _observed_engine(record_matches),
+            total_acquire_ms=_trace_total_acquire_ms(trace, browser_artifact),
+            verdict=str(trace.get("verdict") or default_verdict).strip().lower(),
+        )
+        domain = normalize_domain(url)
+        baseline = load_baseline(domain, surface)
+        for flag in compare_to_baseline(baseline, observation):
+            enriched = dict(flag)
+            enriched["url"] = url
+            flags.append(enriched)
+        if update_baselines:
+            try:
+                update_baseline(domain, surface, observation)
+            except Exception:
+                logger.exception(
+                    "Baseline update failed for domain=%s surface=%s",
+                    domain,
+                    surface,
+                )
     return flags
 
 
@@ -277,8 +345,14 @@ def _audit_record(
         if data.get(field_name) in (None, "", [], {})
     ]
     field_discovery_missing = source_trace.get("field_discovery_missing")
-    diagnosed = set(field_discovery_missing) if isinstance(field_discovery_missing, list) else set()
-    undiagnosed_missing = [field_name for field_name in missing if field_name not in diagnosed]
+    diagnosed = (
+        set(field_discovery_missing)
+        if isinstance(field_discovery_missing, list)
+        else set()
+    )
+    undiagnosed_missing = [
+        field_name for field_name in missing if field_name not in diagnosed
+    ]
     if undiagnosed_missing:
         flags.append(
             _flag(
@@ -306,8 +380,48 @@ def _audit_record(
     return flags
 
 
-def _audit_traces(*, run_id: int, verdict: str) -> list[dict[str, Any]]:
+def _audit_traces(
+    *,
+    run_id: int,
+    verdict: str,
+    traces: list[dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
     flags: list[dict[str, Any]] = []
+    flagged_rejections: set[tuple[str, str]] = set()
+    for trace in traces or _read_trace_artifacts(run_id):
+        extraction = mapping_or_empty(trace.get("extraction"))
+        rejection_reason = str(extraction.get("rejection_reason") or "").strip()
+        if not rejection_reason:
+            continue
+        url = str(trace.get("url") or "")
+        evidence: dict[str, Any] = {
+            "rejection_reason": rejection_reason,
+            "verdict": trace.get("verdict"),
+        }
+        browser_artifact = _browser_artifact_for_trace(trace)
+        if isinstance(browser_artifact, dict):
+            for key in (
+                "browser_outcome",
+                "challenge_evidence",
+                "challenge_provider_hits",
+            ):
+                value = browser_artifact.get(key)
+                if value not in (None, "", [], {}):
+                    evidence[key] = value
+        if rejection_reason == "non_detail_seed":
+            flags.append(_flag(FLAG_DETAIL_ON_LISTING_SEED, evidence=evidence, url=url))
+            flagged_rejections.add((url, rejection_reason))
+        elif rejection_reason == "detail_identity_mismatch":
+            flags.append(
+                _flag(FLAG_DETAIL_IDENTITY_REJECTED, evidence=evidence, url=url)
+            )
+            flagged_rejections.add((url, rejection_reason))
+        elif rejection_reason == "challenge_shell":
+            flags.append(
+                _flag(FLAG_ACQUISITION_CHALLENGE_BLOCKED, evidence=evidence, url=url)
+            )
+            flagged_rejections.add((url, rejection_reason))
+
     pages_dir = _run_pages_dir(run_id)
     if not pages_dir.is_dir():
         return flags
@@ -317,7 +431,30 @@ def _audit_traces(*, run_id: int, verdict: str) -> list[dict[str, Any]]:
             continue
         outcome = str(diagnostics.get("browser_outcome") or "").strip().lower()
         host_outcome = mapping_or_empty(diagnostics.get("host_outcome"))
-        blocked = bool(host_outcome.get("blocked")) or verdict in obs_config.AUDIT_BLOCKED_VERDICTS
+        final_url = _browser_artifact_url(diagnostics)
+        failure_reason = str(diagnostics.get("failure_reason") or "").strip()
+        if (
+            failure_reason == "challenge_shell"
+            and (final_url, failure_reason) not in flagged_rejections
+        ):
+            flags.append(
+                _flag(
+                    FLAG_ACQUISITION_CHALLENGE_BLOCKED,
+                    evidence={
+                        "rejection_reason": failure_reason,
+                        "browser_outcome": outcome,
+                        "challenge_evidence": diagnostics.get("challenge_evidence"),
+                        "challenge_provider_hits": diagnostics.get(
+                            "challenge_provider_hits"
+                        ),
+                    },
+                    url=final_url,
+                )
+            )
+        blocked = (
+            bool(host_outcome.get("blocked"))
+            or verdict in obs_config.AUDIT_BLOCKED_VERDICTS
+        )
         # usable_content but the run/host says blocked -> Rule 6 contradiction.
         if outcome == "usable_content" and blocked:
             flags.append(
@@ -328,10 +465,125 @@ def _audit_traces(*, run_id: int, verdict: str) -> list[dict[str, Any]]:
                         "host_result": host_outcome.get("result"),
                         "verdict": verdict,
                     },
-                    url=str(diagnostics.get("final_url") or ""),
+                    url=final_url,
                 )
             )
     return flags
+
+
+def _browser_artifact_url(diagnostics: dict[str, Any]) -> str:
+    final_url = str(diagnostics.get("final_url") or "").strip()
+    if final_url.startswith(("http://", "https://")):
+        return final_url
+    for key in ("readiness_probes", "policy_decisions"):
+        for item in diagnostics.get(key) or []:
+            if not isinstance(item, dict):
+                continue
+            url = str(item.get("url") or "").strip()
+            if url.startswith(("http://", "https://")):
+                return url
+    _ = mapping_or_empty(diagnostics.get("artifact_paths"))
+    return ""
+
+
+def _read_trace_artifacts(run_id: int) -> list[dict[str, Any]]:
+    pages_dir = _run_pages_dir(run_id)
+    if not pages_dir.is_dir():
+        return []
+    traces: list[dict[str, Any]] = []
+    for trace_path in sorted(pages_dir.glob("*.trace.json")):
+        payload = _read_json(trace_path)
+        if isinstance(payload, dict):
+            trace = dict(payload)
+            trace["_artifact_path"] = str(trace_path)
+            traces.append(trace)
+    return traces
+
+
+def _browser_artifact_for_trace(trace: dict[str, Any]) -> dict[str, Any] | None:
+    artifact_path = str(trace.get("_artifact_path") or "")
+    if not artifact_path:
+        return None
+    trace_path = Path(artifact_path)
+    browser_path = trace_path.with_name(
+        trace_path.name.replace(".trace.json", ".browser.json")
+    )
+    payload = _read_json(browser_path)
+    return payload if isinstance(payload, dict) else None
+
+
+def _records_by_url(
+    records: list[CrawlRecord],
+    *,
+    surface: str,
+) -> dict[str, list[CrawlRecord]]:
+    grouped: dict[str, list[CrawlRecord]] = {}
+    for record in records:
+        key = _url_compare_key(
+            str(getattr(record, "source_url", "") or ""),
+            surface=surface,
+        )
+        if key:
+            grouped.setdefault(key, []).append(record)
+    return grouped
+
+
+def _url_compare_key(url: str, *, surface: str) -> str:
+    canonical = canonical_public_record_url(url, surface=surface, field_name="url")
+    return str(canonical or url or "").strip().rstrip("/").lower()
+
+
+def _trace_completed_tiers(trace: dict[str, Any]) -> list[str]:
+    extraction = mapping_or_empty(trace.get("extraction"))
+    tiers = extraction.get("completed_tiers")
+    return [str(t) for t in tiers] if isinstance(tiers, list) else []
+
+
+def _trace_engine(trace: dict[str, Any]) -> str:
+    for event in trace.get("acquire_timeline") or []:
+        if not isinstance(event, dict):
+            continue
+        detail = mapping_or_empty(event.get("detail"))
+        kind = str(event.get("kind") or "").strip().lower()
+        if kind == obs_config.ACQUIRE_EVENT_NAVIGATION:
+            engine = str(detail.get("engine") or "").strip().lower()
+            if engine:
+                return engine
+        if kind == obs_config.ACQUIRE_EVENT_HTTP_FETCH:
+            method = str(detail.get("method") or "").strip().lower()
+            if method:
+                return method
+    return ""
+
+
+def _browser_artifact_engine(browser_artifact: dict[str, Any] | None) -> str:
+    if not isinstance(browser_artifact, dict):
+        return ""
+    engine = str(browser_artifact.get("browser_engine") or "").strip().lower()
+    if engine:
+        return engine
+    return str(browser_artifact.get("method") or "").strip().lower()
+
+
+def _trace_total_acquire_ms(
+    trace: dict[str, Any],
+    browser_artifact: dict[str, Any] | None,
+) -> int | None:
+    if isinstance(browser_artifact, dict):
+        timings = mapping_or_empty(browser_artifact.get("phase_timings_ms"))
+        total = timings.get("total")
+        if isinstance(total, (int, float)) and not isinstance(total, bool):
+            return int(total)
+    total_ms = 0
+    found = False
+    for event in trace.get("acquire_timeline") or []:
+        if not isinstance(event, dict):
+            continue
+        duration = event.get("duration_ms")
+        if isinstance(duration, (int, float)) and not isinstance(duration, bool):
+            total_ms += int(duration)
+            found = True
+    return total_ms if found else None
 
 
 def _flag(code: str, *, evidence: dict[str, Any], url: str = "") -> dict[str, Any]:
@@ -376,11 +628,18 @@ def _has_variant_cues(data: dict[str, Any]) -> bool:
 
 
 def _run_audit_dir(run_id: int) -> Path:
-    return Path(settings.artifacts_dir) / "runs" / str(max(int(run_id or 0), 0)) / obs_config.AUDIT_ARTIFACT_SUBDIR
+    return (
+        Path(settings.artifacts_dir)
+        / "runs"
+        / str(max(int(run_id or 0), 0))
+        / obs_config.AUDIT_ARTIFACT_SUBDIR
+    )
 
 
 def _run_pages_dir(run_id: int) -> Path:
-    return Path(settings.artifacts_dir) / "runs" / str(max(int(run_id or 0), 0)) / "pages"
+    return (
+        Path(settings.artifacts_dir) / "runs" / str(max(int(run_id or 0), 0)) / "pages"
+    )
 
 
 def _read_json(path: Path) -> Any:

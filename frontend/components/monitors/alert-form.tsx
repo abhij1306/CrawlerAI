@@ -5,6 +5,12 @@ import { useMemo, useReducer } from 'react';
 import type { MonitorJob, AlertCreatePayload, AlertUpdatePayload } from '../../lib/api/types';
 import { Button, Dropdown, Field, Input } from '../ui/primitives';
 import { InlineAlert } from '../ui/patterns';
+import {
+  failFormSubmit,
+  settleFormSubmit,
+  startFormSubmit,
+  toggleSelectedValue,
+} from './monitor-form-state';
 
 interface AlertFormProps {
   initial?: Partial<MonitorJob>;
@@ -50,9 +56,7 @@ function alertFormReducer(state: AlertFormState, action: AlertFormAction): Alert
     case 'fieldToggled':
       return {
         ...state,
-        targetFields: state.targetFields.includes(action.field)
-          ? state.targetFields.filter((item) => item !== action.field)
-          : [...state.targetFields, action.field],
+        targetFields: toggleSelectedValue(state.targetFields, action.field),
       };
     case 'conditionChanged':
       return { ...state, condition: action.value };
@@ -61,12 +65,12 @@ function alertFormReducer(state: AlertFormState, action: AlertFormAction): Alert
     case 'webhookUrlChanged':
       return { ...state, webhookUrl: action.value };
     case 'submitStarted':
-      return { ...state, error: '', submitting: true };
+      return startFormSubmit(state);
     case 'submitFailed':
     case 'validationFailed':
-      return { ...state, error: action.message };
+      return failFormSubmit(state, action.message);
     case 'submitSettled':
-      return { ...state, submitting: false };
+      return settleFormSubmit(state);
   }
 }
 

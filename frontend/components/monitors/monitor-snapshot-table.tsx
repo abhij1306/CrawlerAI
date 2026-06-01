@@ -18,6 +18,7 @@ import {
 } from '../ui/primitives';
 import { DataRegionError } from '../ui/patterns';
 import { MonitorEmptyState } from './monitor-empty-state';
+import { formatMonitorValue, monitorHostPath } from './monitor-format';
 
 type SortKey = 'source_url' | 'created_at' | string;
 
@@ -104,14 +105,14 @@ export function MonitorSnapshotTable({
                   <a
                     href={record.source_url}
                     target="_blank"
-                    rel="noreferrer"
+                    rel="noreferrer noopener"
                     className="text-accent hover:underline"
                   >
-                    {hostPath(record.source_url)}
+                    {monitorHostPath(record.source_url)}
                   </a>
                 </TableCell>
                 {monitor.tracked_fields.map((field) => (
-                  <TableCell key={field}>{formatValue(record.field_values[field])}</TableCell>
+                  <TableCell key={field}>{formatMonitorValue(record.field_values[field])}</TableCell>
                 ))}
                 <TableCell>{formatRelativeTime(record.created_at)}</TableCell>
               </TableRow>
@@ -137,19 +138,4 @@ function cellValue(record: MonitorSnapshotRecord, sortKey: SortKey) {
   if (sortKey === 'source_url') return record.source_url;
   if (sortKey === 'created_at') return record.created_at;
   return record.field_values[sortKey] ?? '';
-}
-
-function formatValue(value: unknown) {
-  if (value === null || value === undefined || value === '') return 'empty';
-  if (typeof value === 'object') return JSON.stringify(value);
-  return String(value);
-}
-
-function hostPath(url: string) {
-  try {
-    const parsed = new URL(url);
-    return `${parsed.hostname}${parsed.pathname}`;
-  } catch {
-    return url;
-  }
 }

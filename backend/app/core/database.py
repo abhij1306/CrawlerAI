@@ -1,12 +1,15 @@
 # Async database engine and session factory.
 from __future__ import annotations
 
+import logging
 from collections.abc import AsyncIterator
 
 from app.core.config import settings
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
+
+logger = logging.getLogger(__name__)
 
 
 class Base(DeclarativeBase):
@@ -47,6 +50,5 @@ async def get_session() -> AsyncIterator[AsyncSession]:
             try:
                 await session.rollback()
             except Exception:
-                # Rollback best-effort during teardown; original error is re-raised.
-                pass
+                logger.debug("Session rollback failed during teardown", exc_info=True)
             raise

@@ -130,10 +130,24 @@ def _control_display_label(control: Any, label: Any | None) -> str:
         for attr_name in ("data-size", "data-value", "value", "title"):
             candidates.append(str(control.get(attr_name) or ""))
     for value in candidates:
-        cleaned = clean_text(value)
+        cleaned = _clean_dom_option_display_label(value)
         if cleaned and len(cleaned) <= _MAX_AXIS_LABEL_LEN:
             return cleaned
     return ""
+
+
+def _clean_dom_option_display_label(value: object) -> str:
+    cleaned = clean_text(value)
+    if not cleaned:
+        return ""
+    match = re.fullmatch(
+        r"(?:choose|select|view)\s+(?:alternate\s+product\s+)?(?:colour|color)?\s*(.+?)\s+(?:variant|selected|unselected)",
+        cleaned,
+        flags=re.I,
+    )
+    if match:
+        return clean_text(match.group(1))
+    return cleaned
 
 
 def _control_join_keys(control: Any, label: Any | None) -> set[str]:
@@ -178,7 +192,7 @@ def _collect_dom_options(soup: BeautifulSoup) -> list[_DomOption]:
         try:
             controls = root.select(selector)
         except Exception:
-            continue
+            controls = []
         for control in controls:
             if id(control) in seen_control_ids:
                 continue

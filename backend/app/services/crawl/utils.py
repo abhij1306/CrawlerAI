@@ -56,7 +56,7 @@ def normalize_target_url(value: object) -> str:
     if not text:
         return ""
     if re.search(r"\s", text):
-        logger.warning("Rejected target URL containing internal whitespace: %r", text)
+        logger.warning("Rejected target URL containing internal whitespace")
         return ""
     from app.services.shared.field_coerce import strip_tracking_query_params
 
@@ -157,10 +157,8 @@ def resolve_traversal_mode(settings: object) -> str | None:
             return None
         if fetch_profile_mode in _TRAVERSAL_MODES:
             return fetch_profile_mode
-        logger.error("Unrecognized traversal_mode=%r", fetch_profile_mode)
-        raise CrawlerConfigurationError(
-            f"Unsupported traversal_mode: {fetch_profile_mode}"
-        )
+        logger.error("Unrecognized traversal_mode")
+        raise CrawlerConfigurationError("Unsupported traversal_mode")
     if advanced_flag_present and not advanced_enabled:
         return None
     mode = _normalize_traversal_mode_value(
@@ -170,8 +168,8 @@ def resolve_traversal_mode(settings: object) -> str | None:
         return None
     if mode in _TRAVERSAL_MODES:
         return mode
-    logger.error("Unrecognized traversal_mode=%r", mode)
-    raise CrawlerConfigurationError(f"Unsupported traversal_mode: {mode}")
+    logger.error("Unrecognized traversal_mode")
+    raise CrawlerConfigurationError("Unsupported traversal_mode")
 
 
 # Extraction contract validation

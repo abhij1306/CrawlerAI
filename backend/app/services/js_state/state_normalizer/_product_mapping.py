@@ -99,11 +99,17 @@ def _map_product_payload(
         )
     size = variant_attribute(active_variant, "size")
     if size in (None, "", [], {}):
-        size = variant_axis_value(
-            "size",
-            product.get("size") or product.get("sz"),
-            page_url=page_url,
-        )
+        raw_product_size = product.get("size") or product.get("sz")
+        if _product_scalar_size_is_public(
+            raw_product_size,
+            option_names=option_names,
+            normalized_variants=normalized_variants,
+        ):
+            size = variant_axis_value(
+                "size",
+                raw_product_size,
+                page_url=page_url,
+            )
 
     # Resolve brand/vendor: dict values need name extraction
     brand_raw = base.get("brand")
@@ -152,6 +158,27 @@ def _map_product_payload(
         }
     )
     return record
+
+
+def _product_scalar_size_is_public(
+    raw_value: object,
+    *,
+    option_names: list[str],
+    normalized_variants: list[dict[str, Any]],
+) -> bool:
+    value = clean_text(raw_value)
+    if not value:
+        return False
+    if any(normalized_variant_axis_key(name) == "size" for name in option_names):
+        return True
+    variant_sizes = {
+        clean_text(variant.get("size")).casefold()
+        for variant in normalized_variants
+        if clean_text(variant.get("size"))
+    }
+    if len(variant_sizes) >= 2:
+        return True
+    return True
 
 def _extract_ecommerce_description_fields(value: object) -> dict[str, object]:
     description_html = str(value or "").strip()

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, type FormEventHandler } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Network, Search } from 'lucide-react';
 
@@ -25,23 +25,67 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function readRunDiagnosis(value: unknown): RunDiagnosis | null {
+function optionalString(value: unknown) {
+  switch (typeof value) {
+    case 'undefined':
+      return undefined;
+    case 'string':
+      return value;
+    default:
+      return null;
+  }
+}
+
+function optionalRecord(value: unknown) {
+  if (value === undefined) return undefined;
+  return isRecord(value) ? value : null;
+}
+
+function runDiagnosisFromRecord(value: Record<string, unknown>) {
+  const status = optionalString(value.status);
+  const diagnosis = optionalRecord(value.diagnosis);
+  if (status === null || diagnosis === null) return null;
+  return { status, diagnosis };
+}
+
+function readRunDiagnosis(value: unknown) {
   if (!isRecord(value)) return null;
-  const status = value.status;
-  const diagnosis = value.diagnosis;
-  if (status !== undefined && typeof status !== 'string') return null;
-  if (diagnosis !== undefined && !isRecord(diagnosis)) return null;
-  return {
-    status,
-    diagnosis,
-  };
+  return runDiagnosisFromRecord(value);
+}
+
+function jsonDisplayValue(value: unknown, fallback: string) {
+  try {
+    return JSON.stringify(value) ?? fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function nonNullDisplayValue(value: unknown, fallback: string) {
+  switch (typeof value) {
+    case 'string':
+      return value;
+    case 'number':
+    case 'boolean':
+      return String(value);
+    default:
+      return jsonDisplayValue(value, fallback);
+  }
+}
+
+function displayValue(value: unknown, fallback = '') {
+  return value == null ? fallback : nonNullDisplayValue(value, fallback);
+}
+
+function firstCodePoint(value: string) {
+  return value.codePointAt(0) ?? 0;
 }
 
 function stableHash(value: unknown): string {
   const text = JSON.stringify(value) ?? '';
   let hash = 0;
-  for (let index = 0; index < text.length; index += 1) {
-    hash = (hash * 31 + text.charCodeAt(index)) % 2147483647;
+  for (const character of text) {
+    hash = (hash * 31 + firstCodePoint(character)) % 2147483647;
   }
   return hash.toString(36);
 }
@@ -52,6 +96,57 @@ function traceKey(trace: RunTraceArtifact): string {
     return `${trace.run_id}:${traceId}`;
   }
   return `${trace.run_id}:${trace.url}:${trace.surface}:${trace.tier}:${stableHash(trace)}`;
+}
+
+type TimelineDisplayEvent = {
+  key: string;
+  sequence: string;
+  label: string;
+  duration_ms?: number;
+  detail?: string;
+};
+
+function formatAcquireTimeline(trace: RunTraceArtifact): TimelineDisplayEvent[] {
+  const result: TimelineDisplayEvent[] = [];
+  let index = 0;
+  while (index < trace.acquire_timeline.length) {
+    const event = trace.acquire_timeline[index];
+    if (event.kind !== 'readiness_probe') {
+      result.push({
+        key: String(event.sequence),
+        sequence: String(event.sequence),
+        label: event.kind,
+        duration_ms: event.duration_ms,
+      });
+      index += 1;
+      continue;
+    }
+
+    const group = [event];
+    index += 1;
+    while (trace.acquire_timeline[index]?.kind === 'readiness_probe') {
+      group.push(trace.acquire_timeline[index]);
+      index += 1;
+    }
+    const first = group[0];
+    const last = group.at(-1) ?? first;
+    const firstStage = displayValue(first.detail?.stage);
+    const lastStage = displayValue(last.detail?.stage);
+    const detailParts = [
+      firstStage && lastStage && firstStage !== lastStage
+        ? `${firstStage} -> ${lastStage}`
+        : lastStage,
+      `ready=${displayValue(last.detail?.is_ready, 'unknown')}`,
+      `detail=${displayValue(last.detail?.detail_like, 'unknown')}`,
+    ].filter(Boolean);
+    result.push({
+      key: `${first.sequence}-${last.sequence}`,
+      sequence: group.length === 1 ? String(first.sequence) : `${first.sequence}-${last.sequence}`,
+      label: group.length === 1 ? 'readiness_probe' : `readiness_probe x${group.length}`,
+      detail: detailParts.join(' | '),
+    });
+  }
+  return result;
 }
 
 function FlagCard({ flag }: Readonly<{ flag: RunAuditFlag }>) {
@@ -79,6 +174,14 @@ function FlagCard({ flag }: Readonly<{ flag: RunAuditFlag }>) {
 }
 
 function TraceCard({ trace }: Readonly<{ trace: RunTraceArtifact }>) {
+  const timeline = formatAcquireTimeline(trace);
+  const hasTimeline = timeline.length > 0;
+  const domSkipped = trace.extraction.dom_skipped;
+  const showDomSkipped = typeof domSkipped === 'boolean';
+  const domCompletionReason = displayValue(trace.extraction.skip_decision?.dom_completion_reason);
+  const fieldProvenance = trace.extraction.field_provenance ?? [];
+  const hasFieldProvenance = fieldProvenance.length > 0;
+
   return (
     <Card className="flex flex-col gap-3 p-4">
       <div className="flex flex-wrap items-center gap-2">
@@ -93,18 +196,19 @@ function TraceCard({ trace }: Readonly<{ trace: RunTraceArtifact }>) {
       <div>
         <h4 className="type-subheading">Acquire timeline</h4>
         <ol className="mt-1 flex flex-col gap-1">
-          {trace.acquire_timeline.length === 0 ? (
-            <li className="text-muted text-xs">No acquire events recorded.</li>
-          ) : (
-            trace.acquire_timeline.map((event) => (
-              <li key={event.sequence} className="flex items-center gap-2 text-xs">
+          {hasTimeline ? (
+            timeline.map((event) => (
+              <li key={event.key} className="flex flex-wrap items-center gap-2 text-xs">
                 <span className="text-muted font-mono">{event.sequence}.</span>
-                <span className="font-medium">{event.kind}</span>
+                <span className="font-medium">{event.label}</span>
                 {event.duration_ms != null ? (
                   <span className="text-muted">{event.duration_ms}ms</span>
                 ) : null}
+                {event.detail ? <span className="text-muted">{event.detail}</span> : null}
               </li>
             ))
+          ) : (
+            <li className="text-muted text-xs">No acquire events recorded.</li>
           )}
         </ol>
       </div>
@@ -115,17 +219,20 @@ function TraceCard({ trace }: Readonly<{ trace: RunTraceArtifact }>) {
           Tiers:{' '}
           <span className="font-mono">{trace.extraction.completed_tiers.join(' → ') || '—'}</span>
         </p>
-        {trace.extraction.dom_skipped != null ? (
+        {showDomSkipped ? (
           <p className="text-xs">
-            DOM skipped: <span className="font-mono">{String(trace.extraction.dom_skipped)}</span>
-            {trace.extraction.skip_decision?.dom_completion_reason
-              ? ` (${String(trace.extraction.skip_decision.dom_completion_reason)})`
-              : ''}
+            DOM skipped: <span className="font-mono">{String(domSkipped)}</span>
+            {domCompletionReason ? ` (${domCompletionReason})` : ''}
           </p>
         ) : null}
-        {trace.extraction.field_provenance && trace.extraction.field_provenance.length > 0 ? (
+        {trace.extraction.rejection_reason ? (
+          <p className="text-xs">
+            Rejection: <span className="font-mono">{trace.extraction.rejection_reason}</span>
+          </p>
+        ) : null}
+        {hasFieldProvenance ? (
           <ul className="mt-1 flex flex-col gap-1">
-            {trace.extraction.field_provenance.map((entry) => (
+            {fieldProvenance.map((entry) => (
               <li key={entry.field} className="text-xs">
                 <span className="font-medium">{entry.field}</span>
                 {entry.winning_source ? (
@@ -153,7 +260,7 @@ export default function RunTracePage() {
     },
   });
 
-  const onSubmit = (event: React.FormEvent) => {
+  const onSubmit: FormEventHandler<HTMLFormElement> = (event) => {
     event.preventDefault();
     const runId = Number.parseInt(runIdInput, 10);
     if (Number.isFinite(runId) && runId > 0) {
@@ -163,6 +270,11 @@ export default function RunTracePage() {
 
   const notFound = httpErrorStatus(lookup.error) === 404;
   const diagnosis = readRunDiagnosis(data?.llm_diagnosis);
+  const flags = data?.flags ?? null;
+  const hasFlags = (flags?.flags.length ?? 0) > 0;
+  const hasFlagCount = typeof flags?.flag_count === 'number';
+  const traces = data?.traces ?? [];
+  const hasTraces = traces.length > 0;
 
   return (
     <div className="page-stack gap-5">
@@ -201,16 +313,16 @@ export default function RunTracePage() {
           <section className="flex flex-col gap-2">
             <h3 className="type-heading-3 flex items-center gap-2">
               <Network className="size-4" /> Flags
-              {data.flags ? <Badge tone="neutral">{data.flags.flag_count}</Badge> : null}
+              {hasFlagCount ? <Badge tone="neutral">{flags?.flag_count}</Badge> : null}
             </h3>
-            {!data.flags || data.flags.flags.length === 0 ? (
-              <InlineAlert tone="neutral" message="No bugs flagged for this run." />
-            ) : (
+            {hasFlags ? (
               <div className="grid gap-3 md:grid-cols-2">
-                {data.flags.flags.map((flag, index) => (
+                {flags?.flags.map((flag, index) => (
                   <FlagCard key={`${flag.code}-${index}`} flag={flag} />
                 ))}
               </div>
+            ) : (
+              <InlineAlert tone="neutral" message="No bugs flagged for this run." />
             )}
           </section>
 
@@ -226,15 +338,15 @@ export default function RunTracePage() {
           ) : null}
 
           <section className="flex flex-col gap-2">
-            <h3 className="type-heading-3">Traces ({data.traces.length})</h3>
-            {data.traces.length === 0 ? (
-              <InlineAlert tone="neutral" message="No per-URL traces found for this run." />
-            ) : (
+            <h3 className="type-heading-3">Traces ({traces.length})</h3>
+            {hasTraces ? (
               <div className="flex flex-col gap-3">
-                {data.traces.map((trace) => (
+                {traces.map((trace) => (
                   <TraceCard key={traceKey(trace)} trace={trace} />
                 ))}
               </div>
+            ) : (
+              <InlineAlert tone="neutral" message="No per-URL traces found for this run." />
             )}
           </section>
         </>

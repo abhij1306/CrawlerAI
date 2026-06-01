@@ -150,19 +150,21 @@ def detail_currency_from_html(
         match = DETAIL_CURRENCY_JSONLD_RE.search(script_text)
         if match is not None:
             return text_or_none(match.group("currency"))
-    for selector in (*DETAIL_CURRENT_PRICE_SELECTORS, *DETAIL_ORIGINAL_PRICE_SELECTORS):
-        for node in soup.select(selector):
-            raw_value = node.get("aria-label") if hasattr(node, "get") else None
-            if raw_value in (None, "", [], {}):
-                raw_value = node.get_text(" ", strip=True)
-            currency = extract_currency_code(raw_value)
-            if currency:
-                return currency
-    return None
+    return _first_currency_from_price_selectors(
+        soup,
+        (*DETAIL_CURRENT_PRICE_SELECTORS, *DETAIL_ORIGINAL_PRICE_SELECTORS),
+    )
 
 
 def detail_current_price_currency_from_html(soup: BeautifulSoup) -> str | None:
-    for selector in DETAIL_CURRENT_PRICE_SELECTORS:
+    return _first_currency_from_price_selectors(soup, DETAIL_CURRENT_PRICE_SELECTORS)
+
+
+def _first_currency_from_price_selectors(
+    soup: BeautifulSoup,
+    selectors: tuple[str, ...],
+) -> str | None:
+    for selector in selectors:
         for node in soup.select(selector):
             raw_value = node.get("aria-label") if hasattr(node, "get") else None
             if raw_value in (None, "", [], {}):

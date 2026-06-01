@@ -337,7 +337,7 @@ def collect_material_percentage_matches(
 
 def percentage_material_parse(text: str) -> list[str]:
     materials: list[str] = []
-    material_token = r"[a-z]+(?:-[a-z]+)?"
+    material_token = r"[a-z]+(?:-[a-z]+)?"  # nosec B105
     material_phrase = rf"{material_token}(?:\s+{material_token}){{0,4}}"
     pattern = re.compile(DATA_ENRICHMENT_MATERIAL_PERCENTAGE_RE, re.I)
     for match in pattern.finditer(text):

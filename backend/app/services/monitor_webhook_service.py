@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-import random
+from random import SystemRandom
 from typing import Any
 
 import httpx
@@ -23,6 +23,8 @@ from app.services.config.monitor_settings import (
     WEBHOOK_STATUS_SKIPPED,
 )
 from app.services.monitor_service import utcnow
+
+_jitter_random = SystemRandom()
 
 
 async def dispatch_alert_webhooks(
@@ -106,7 +108,7 @@ async def _deliver_payload(
                     session.add(delivery)
                     return
                 delivery.error_message = f"HTTP {response.status_code}"
-            except (httpx.RequestError, httpx.TimeoutException) as exc:
+            except httpx.RequestError as exc:
                 delivery.error_message = f"{type(exc).__name__}: {exc}"
             session.add(delivery)
             if attempt < WEBHOOK_MAX_RETRY_ATTEMPTS:
@@ -146,4 +148,4 @@ def _retry_backoff_seconds(attempt: int) -> float:
         WEBHOOK_RETRY_BACKOFF_MAX_SECONDS,
         WEBHOOK_RETRY_BACKOFF_BASE_SECONDS * (2 ** max(0, attempt - 1)),
     )
-    return backoff + random.uniform(0.0, WEBHOOK_RETRY_JITTER_SECONDS)
+    return backoff + _jitter_random.uniform(0.0, WEBHOOK_RETRY_JITTER_SECONDS)

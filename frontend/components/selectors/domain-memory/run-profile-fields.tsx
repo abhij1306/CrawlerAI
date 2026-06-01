@@ -12,12 +12,31 @@ type RunProfileFieldsProps = {
   updateProfileDraft: UpdateProfileDraft;
 };
 
+type BrowserEngine = 'auto' | 'patchright' | 'real_chrome';
+type BrowserEngineFieldKey = 'preferred_browser_engine' | 'handoff_cookie_engine';
+
+const browserEngineOptions: Array<{ value: BrowserEngine; label: string }> = [
+  { value: 'auto', label: 'Auto' },
+  { value: 'patchright', label: 'Patchright' },
+  { value: 'real_chrome', label: 'Real Chrome' },
+];
+
 export function RunProfileFields({
   domain,
   profile,
   surface,
   updateProfileDraft,
 }: RunProfileFieldsProps) {
+  function updateBrowserEngine(key: BrowserEngineFieldKey, value: string) {
+    updateProfileDraft(domain, surface, (current) => ({
+      ...current,
+      acquisition_contract: {
+        ...current.acquisition_contract,
+        [key]: value as BrowserEngine,
+      },
+    }));
+  }
+
   return (
     <div className="grid content-start gap-3 md:col-span-2 md:grid-cols-2">
       <Field label="Fetch Mode">
@@ -172,43 +191,27 @@ export function RunProfileFields({
         />
       </Field>
       <Field label="Preferred Browser Engine">
-        <Dropdown
+        <BrowserEngineDropdown
           value={profile.acquisition_contract.preferred_browser_engine}
-          onChange={(value) =>
-            updateProfileDraft(domain, surface, (current) => ({
-              ...current,
-              acquisition_contract: {
-                ...current.acquisition_contract,
-                preferred_browser_engine: value as 'auto' | 'patchright' | 'real_chrome',
-              },
-            }))
-          }
-          options={[
-            { value: 'auto', label: 'Auto' },
-            { value: 'patchright', label: 'Patchright' },
-            { value: 'real_chrome', label: 'Real Chrome' },
-          ]}
+          onChange={(value) => updateBrowserEngine('preferred_browser_engine', value)}
         />
       </Field>
       <Field label="Handoff Cookie Engine">
-        <Dropdown
+        <BrowserEngineDropdown
           value={profile.acquisition_contract.handoff_cookie_engine}
-          onChange={(value) =>
-            updateProfileDraft(domain, surface, (current) => ({
-              ...current,
-              acquisition_contract: {
-                ...current.acquisition_contract,
-                handoff_cookie_engine: value as 'auto' | 'patchright' | 'real_chrome',
-              },
-            }))
-          }
-          options={[
-            { value: 'auto', label: 'Auto' },
-            { value: 'patchright', label: 'Patchright' },
-            { value: 'real_chrome', label: 'Real Chrome' },
-          ]}
+          onChange={(value) => updateBrowserEngine('handoff_cookie_engine', value)}
         />
       </Field>
     </div>
   );
+}
+
+function BrowserEngineDropdown({
+  value,
+  onChange,
+}: Readonly<{
+  value: BrowserEngine;
+  onChange: (value: string) => void;
+}>) {
+  return <Dropdown value={value} onChange={onChange} options={browserEngineOptions} />;
 }

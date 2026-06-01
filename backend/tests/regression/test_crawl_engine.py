@@ -772,6 +772,37 @@ def test_detail_identity_allows_canonical_product_url_with_variant_sku_suffix() 
 
 
 @pytest.mark.regression
+def test_detail_identity_allows_canonical_url_with_reordered_query_after_redirect() -> None:
+    requested_url = (
+        "https://www.converse.com/shop/p/"
+        "chuck-taylor-all-star-retro-embroidery-womens-high-top-shoe/A16914F.html"
+        "?dwvar_A16914F_color=black%2Fnew%20found%20bloom"
+        "&dwvar_A16914F_width=standard&styleNo=A16914F&cgid=womens-high-top-shoes"
+    )
+    current_url = requested_url.replace("-womens-", "-unisex-")
+    record = {
+        "title": "Chuck Taylor All Star Retro Embroidery",
+        "url": (
+            "https://www.converse.com/shop/p/"
+            "chuck-taylor-all-star-retro-embroidery-womens-high-top-shoe/A16914F.html"
+            "?cgid=womens-high-top-shoes&dwvar_A16914F_color=black%2Fnew%20found%20bloom"
+            "&styleNo=A16914F&dwvar_A16914F_width=standard"
+        ),
+        "price": "70.00",
+        "image_url": "https://www.converse.com/images/A16914F.jpg",
+    }
+
+    assert (
+        detail_extractor.detail_record_rejection_reason(
+            record,
+            page_url=current_url,
+            requested_page_url=requested_url,
+        )
+        is None
+    )
+
+
+@pytest.mark.regression
 def test_detail_identity_extracts_numeric_hm_product_codes_from_url() -> None:
     url = "https://www2.hm.com/en_in/productpage.1317259001.html"
 

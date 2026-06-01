@@ -185,7 +185,7 @@ async def selectors_preview_html(
         await validate_public_target(url)
         document = await fetch_selector_document(url)
     except (ValueError, SecurityError) as exc:
-        logger.info("Rejected selector preview URL", extra={"url": url}, exc_info=True)
+        logger.info("Rejected selector preview URL", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(exc),
@@ -193,7 +193,6 @@ async def selectors_preview_html(
     except TimeoutError as exc:
         logger.warning(
             "Timed out fetching selector preview HTML",
-            extra={"url": url},
             exc_info=True,
         )
         raise HTTPException(
@@ -203,7 +202,6 @@ async def selectors_preview_html(
     except (httpx.HTTPError, OSError, RuntimeError) as exc:
         logger.warning(
             "Failed fetching selector preview HTML",
-            extra={"url": url},
             exc_info=True,
         )
         raise HTTPException(

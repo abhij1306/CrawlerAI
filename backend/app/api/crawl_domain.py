@@ -1,14 +1,17 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Annotated, Any, NoReturn
+from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Query, status
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.run_access import (
+    get_accessible_run_or_404 as _get_accessible_run_or_404,
+    raise_http_from_exception as _raise_http_from_exception,
+)
 from app.core.dependencies import get_current_user, get_db
-from app.models.crawl_run import CrawlRun
 from app.models.user import User
 from app.schemas.crawl import (
     DomainCookieMemoryRecordResponse,
@@ -24,7 +27,6 @@ from app.schemas.crawl import (
 from app.services.acquisition.cookie_store import list_domain_cookie_memory
 from app.services.crawl.access_service import (
     RUN_NOT_FOUND_DETAIL,
-    require_accessible_run,
 )
 from app.services.crawl.profile import (
     list_domain_run_profiles,
@@ -58,25 +60,6 @@ def _domain_run_profile_payload(value: object) -> DomainRunProfilePayload:
     )
 
 
-def _raise_http_from_value_error(*, status_code: int, exc: ValueError) -> NoReturn:
-    raise HTTPException(status_code=status_code, detail=str(exc)) from exc
-
-
-async def _get_accessible_run_or_404(
-    session: AsyncSession,
-    *,
-    run_id: int,
-    user: User,
-) -> CrawlRun:
-    try:
-        return await require_accessible_run(session, run_id=run_id, user=user)
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=str(exc),
-        ) from exc
-
-
 @router.get("/domain-run-profile")
 async def crawls_domain_run_profile_lookup(
     url: str,
@@ -108,6 +91,7 @@ async def crawls_domain_run_profile_lookup(
     )
 
 
+@router.get("/domain-memory/run-profiles")
 @router.get("/domain-run-profiles")
 async def crawls_domain_run_profiles(
     session: Annotated[AsyncSession, Depends(get_db)],
@@ -144,21 +128,6 @@ async def _list_domain_run_profile_responses(
         )
         for row in rows
     ]
-
-
-@router.get("/domain-memory/run-profiles")
-async def crawls_domain_memory_run_profiles(
-    session: Annotated[AsyncSession, Depends(get_db)],
-    _user: Annotated[User, Depends(get_current_user)],
-    domain: str = "",
-    surface: str = "",
-) -> list[DomainRunProfileRecordResponse]:
-    return await _list_domain_run_profile_responses(
-        session,
-        domain=domain,
-        surface=surface,
-    )
-
 
 @router.get("/domain-memory/cookies")
 async def crawls_domain_memory_cookies(
@@ -244,7 +213,7 @@ async def crawls_domain_recipe_field_action(
         )
     except ValueError as exc:
         await session.rollback()
-        _raise_http_from_value_error(
+        _raise_http_from_exception(
             status_code=status.HTTP_400_BAD_REQUEST,
             exc=exc,
         )

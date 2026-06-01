@@ -9,6 +9,7 @@ __all__ = (
 )
 
 import logging
+from copy import deepcopy
 from itertools import product
 from typing import Any
 from urllib.parse import parse_qsl, urlsplit
@@ -474,13 +475,7 @@ def _log_url_color_fallback(
         return
     logger.debug(
         "Extracted DOM variant color from option URL",
-        extra={
-            "color": color,
-            "page_url": page_url,
-            "option_url": option_url,
-            "title_hint": title_hint,
-            "original_value": original_value,
-        },
+        extra={"color_length": len(color), "color_extracted": bool(color)},
     )
 
 
@@ -540,7 +535,8 @@ def extract_variants_from_dom(
     page_url: str,
     js_state_objects: dict[str, Any] | None = None,
 ) -> dict[str, object]:
-    cache_key = (str(page_url or ""), id(js_state_objects))
+    # TODO: profile cache-key cost if callers start mutating soup before reuse.
+    cache_key = (str(page_url or ""), id(js_state_objects), id(soup))
     cached = _cached_dom_variant_record(soup, cache_key)
     if cached is not None:
         return cached
@@ -928,18 +924,18 @@ def extract_variants_from_dom(
 
 def _cached_dom_variant_record(
     soup: BeautifulSoup,
-    cache_key: tuple[str, int],
+    cache_key: tuple[str, int, int],
 ) -> dict[str, object] | None:
     cache = getattr(soup, _DOM_VARIANT_CACHE_ATTR, None)
     if not isinstance(cache, dict):
         return None
     cached = cache.get(cache_key)
-    return dict(cached) if isinstance(cached, dict) else None
+    return deepcopy(cached) if isinstance(cached, dict) else None
 
 
 def _cache_dom_variant_record(
     soup: BeautifulSoup,
-    cache_key: tuple[str, int],
+    cache_key: tuple[str, int, int],
     record: dict[str, object],
 ) -> dict[str, object]:
     cache = getattr(soup, _DOM_VARIANT_CACHE_ATTR, None)
@@ -949,7 +945,7 @@ def _cache_dom_variant_record(
             setattr(soup, _DOM_VARIANT_CACHE_ATTR, cache)
         except Exception:
             return record
-    cache[cache_key] = dict(record)
+    cache[cache_key] = deepcopy(record)
     return record
 
 

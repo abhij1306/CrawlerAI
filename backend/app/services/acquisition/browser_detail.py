@@ -557,6 +557,10 @@ async def expand_interactive_elements_via_accessibility_impl(
                 try:
                     await wait_for(state="visible", timeout=visibility_timeout_ms)
                 except Exception:
+                    visible = False
+                else:
+                    visible = True
+                if not visible:
                     continue
             elif hasattr(locator, "is_visible") and not await locator.is_visible():
                 continue

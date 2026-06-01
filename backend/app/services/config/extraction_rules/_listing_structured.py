@@ -157,7 +157,7 @@ DETAIL_MODEL_NUMBER_TOKEN_PATTERNS = (
     r"(?<![A-Za-z0-9])\d{5,}(?![A-Za-z0-9])",
 )
 DETAIL_MODEL_SMALL_NUMERIC_TOKEN_PATTERN = (
-    r"(?<![A-Za-z0-9])\d{1,4}(?![A-Za-z0-9])"
+    r"(?<![A-Za-z0-9])\d{1,4}(?![A-Za-z0-9])"  # nosec B105
 )
 DETAIL_MODEL_CONFLICT_MIN_SHARED_WORDS = 2
 REMOTE_BOOLEAN_TRUE_TOKENS = frozenset(

@@ -977,6 +977,30 @@ def test_map_js_state_to_fields_backfills_richer_variant_state_from_later_same_p
 
 
 @pytest.mark.unit
+def test_map_js_state_to_fields_preserves_lone_numeric_product_size() -> None:
+    mapped = map_js_state_to_fields(
+        {
+            "__NEXT_DATA__": {
+                "props": {
+                    "pageProps": {
+                        "product": {
+                            "id": "prod-1",
+                            "name": "Trail Runner",
+                            "size": "10",
+                            "price": "129.95",
+                        }
+                    }
+                }
+            }
+        },
+        surface="ecommerce_detail",
+        page_url="https://example.com/products/trail-runner",
+    )
+
+    assert mapped["size"] == "10"
+
+
+@pytest.mark.unit
 def test_map_js_state_to_fields_merges_same_product_sibling_payloads() -> None:
     mapped = map_js_state_to_fields(
         {

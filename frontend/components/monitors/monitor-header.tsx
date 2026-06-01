@@ -25,6 +25,7 @@ import { formatNextRun, formatRelativeTime } from '../../lib/format/date';
 import { formatSeconds } from '../../lib/format/time';
 import { cn } from '../../lib/utils';
 import { Button } from '../ui/button';
+import { ConfirmDialog } from '../ui/confirm-dialog';
 import { KVTile } from '../ui/patterns';
 import { MonitorForm } from './monitor-form';
 import { MonitorPriorityBadge, MonitorStatusBadge } from './monitor-badges';
@@ -313,49 +314,23 @@ export function MonitorHeader({
         </div>
       ) : null}
       {deleteOpen ? (
-        <div className="fixed inset-0 z-[100] grid place-items-center bg-[color-mix(in_srgb,var(--bg-base)_34%,black)] p-4">
-          <dialog
-            ref={deleteDialogRef}
-            open
-            aria-labelledby="monitor-delete-title"
-            aria-describedby="monitor-delete-description"
-            tabIndex={-1}
-            className="border-border card-gradient w-[min(420px,100%)] rounded-lg border p-5"
-          >
-            <h2
-              id="monitor-delete-title"
-              className="text-foreground m-0 text-base leading-snug font-semibold"
-            >
-              Delete this {isAlert ? 'alert' : 'monitor'}?
-            </h2>
-            <p
-              id="monitor-delete-description"
-              className="text-secondary mt-2 text-sm leading-relaxed"
-            >
+        <ConfirmDialog
+          dialogRef={deleteDialogRef}
+          confirmRef={deleteConfirmRef}
+          titleId="monitor-delete-title"
+          descriptionId="monitor-delete-description"
+          title={`Delete this ${isAlert ? 'alert' : 'monitor'}?`}
+          description={
+            <>
               This permanently deletes the {isAlert ? 'alert' : 'monitor'}, its snapshots, events,
               URL state, and notifications.
-            </p>
-            <div className="mt-5 flex justify-end gap-2">
-              <Button
-                type="button"
-                variant="quiet"
-                disabled={deletePending}
-                onClick={() => dispatch({ type: 'deleteClosed' })}
-              >
-                Cancel
-              </Button>
-              <Button
-                ref={deleteConfirmRef}
-                type="button"
-                variant="destructive"
-                disabled={deletePending}
-                onClick={() => void remove()}
-              >
-                {deletePending ? 'Working...' : `Delete ${isAlert ? 'Alert' : 'Monitor'}`}
-              </Button>
-            </div>
-          </dialog>
-        </div>
+            </>
+          }
+          pending={deletePending}
+          confirmLabel={`Delete ${isAlert ? 'Alert' : 'Monitor'}`}
+          onCancel={() => dispatch({ type: 'deleteClosed' })}
+          onConfirm={() => void remove()}
+        />
       ) : null}
     </div>
   );

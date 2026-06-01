@@ -84,39 +84,6 @@ from app.services.shared.field_coerce import (
     _detail_dom_completion._should_collect_dom_variants,
 )
 
-def _finalize_early_detail_record(
-    record: dict[str, Any],
-    *,
-    html: str,
-    page_url: str,
-    surface: str,
-    requested_fields: list[str] | None,
-    requested_page_url: str | None,
-    soup: BeautifulSoup,
-    js_state_objects: dict[str, Any],
-) -> dict[str, Any]:
-    _attach_detail_tables(record, soup)
-    if str(surface or "").strip().lower() == "ecommerce_detail":
-        _reconcile_detail_currency_with_url(record, page_url=page_url)
-        repair_ecommerce_detail_record_quality(
-            record,
-            html=html,
-            page_url=page_url,
-            requested_page_url=requested_page_url,
-            soup=soup,
-            js_state_objects=js_state_objects,
-        )
-        drop_low_signal_zero_detail_price(record)
-        record = finalize_record(record, surface=surface)
-    record["_confidence"] = score_record_confidence(
-        record,
-        surface=surface,
-        requested_fields=requested_fields,
-    )
-    record["_extraction_tiers"]["early_exit"] = "js_state"
-    return record
-
-
 def _promote_dom_detail_title(
     record: dict[str, Any],
     *,
@@ -146,7 +113,7 @@ def _fill_missing_dom_detail_title(record: dict[str, Any], *, page_url: str) -> 
         title_sources.append("url_slug")
 
 
-def _finalize_dom_detail_record(
+def _finalize_detail_record(
     record: dict[str, Any],
     *,
     html: str,
@@ -156,6 +123,7 @@ def _finalize_dom_detail_record(
     requested_page_url: str | None,
     soup: BeautifulSoup,
     js_state_objects: dict[str, Any],
+    early_exit: str | None,
 ) -> dict[str, Any]:
     _attach_detail_tables(record, soup)
     if str(surface or "").strip().lower() == "ecommerce_detail":
@@ -175,7 +143,7 @@ def _finalize_dom_detail_record(
         surface=surface,
         requested_fields=requested_fields,
     )
-    record["_extraction_tiers"]["early_exit"] = None
+    record["_extraction_tiers"]["early_exit"] = early_exit
     return record
 
 
@@ -324,8 +292,7 @@ def build_detail_record(
             requires_dom_completion=_requires_dom_completion,
             promote_dom_detail_title=_promote_dom_detail_title,
             fill_missing_dom_detail_title=_fill_missing_dom_detail_title,
-            finalize_early_detail_record=_finalize_early_detail_record,
-            finalize_dom_detail_record=_finalize_dom_detail_record,
+            finalize_detail_record=_finalize_detail_record,
         )
     )
     return tier_executor.build_record(

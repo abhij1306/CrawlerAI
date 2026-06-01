@@ -106,6 +106,7 @@ class ExtractionTrace:
     completed_tiers: list[str] = field(default_factory=list)
     dom_skipped: bool | None = None
     skip_decision: dict[str, Any] = field(default_factory=dict)
+    rejection_reason: str = ""
     field_provenance: dict[str, FieldProvenanceObservation] = field(
         default_factory=dict
     )
@@ -116,6 +117,8 @@ class ExtractionTrace:
             payload["dom_skipped"] = bool(self.dom_skipped)
         if self.skip_decision:
             payload["skip_decision"] = dict(self.skip_decision)
+        if self.rejection_reason:
+            payload["rejection_reason"] = self.rejection_reason
         if self.field_provenance:
             payload["field_provenance"] = [
                 obs.to_dict() for obs in self.field_provenance.values()
@@ -190,6 +193,11 @@ class RunTrace:
         if dom_completion_reason:
             decision["dom_completion_reason"] = str(dom_completion_reason)
         self.extraction.skip_decision = decision
+
+    def record_extraction_rejection(self, reason: str | None) -> None:
+        cleaned = str(reason or "").strip()
+        if cleaned:
+            self.extraction.rejection_reason = cleaned
 
     def record_field_candidate(
         self,
@@ -321,6 +329,9 @@ class NullRunTrace(RunTrace):
         threshold: float | None = None,
         dom_completion_reason: str | None = None,
     ) -> None:
+        return None
+
+    def record_extraction_rejection(self, reason: str | None) -> None:
         return None
 
     def record_field_candidate(

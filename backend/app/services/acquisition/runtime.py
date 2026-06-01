@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 import logging
 import re
@@ -677,9 +677,9 @@ def _has_extractable_dom_content_detail_signals(analysis: HtmlAnalysis) -> bool:
         *CONTENT_SURFACE_PROTECTED_DESCENDANT_SELECTORS,
     ):
         try:
-            nodes = analysis.soup.select(selector)
+            nodes: Iterable[Any] = analysis.soup.select(selector)
         except Exception:
-            continue
+            nodes = []
         for node in nodes:
             body_text = clean_text(node.get_text(" ", strip=True))
             if not body_text or body_text == heading_text:

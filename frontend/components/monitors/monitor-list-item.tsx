@@ -12,6 +12,7 @@ import { formatSeconds } from '../../lib/format/time';
 import { cn } from '../../lib/utils';
 import { Button } from '../ui/primitives';
 import { MonitorPriorityBadge, MonitorStatusBadge } from './monitor-badges';
+import { formatMonitorValue, monitorHostPath } from './monitor-format';
 
 interface MonitorListItemProps {
   monitor: MonitorJob;
@@ -88,7 +89,7 @@ export function MonitorListItem({
             href={detailHref ?? (`/monitors/${id}` as Route)}
             className="type-subheading text-foreground truncate"
           >
-            {isAlert ? hostPath(firstUrl) : monitor.name}
+            {isAlert ? monitorHostPath(firstUrl, 'Alert') : monitor.name}
           </Link>
           <MonitorStatusBadge status={monitor.status} />
           <MonitorPriorityBadge priority={monitor.priority} />
@@ -113,7 +114,7 @@ export function MonitorListItem({
           <div className="type-caption mt-1 flex flex-wrap gap-x-3 gap-y-1">
             {monitor.tracked_fields.map((field) => (
               <span key={field}>
-                {field}: {formatValue(currentValues[field])}
+                {field}: {formatMonitorValue(currentValues[field])}
               </span>
             ))}
             {monitor.last_error ? <span className="text-danger">{monitor.last_error}</span> : null}
@@ -203,18 +204,3 @@ const ActionButton = function ActionButton({
     </button>
   );
 };
-
-function formatValue(value: unknown) {
-  if (value === null || value === undefined || value === '') return 'empty';
-  if (typeof value === 'object') return JSON.stringify(value);
-  return String(value);
-}
-
-function hostPath(url: string) {
-  try {
-    const parsed = new URL(url);
-    return `${parsed.hostname}${parsed.pathname}`;
-  } catch {
-    return url || 'Alert';
-  }
-}

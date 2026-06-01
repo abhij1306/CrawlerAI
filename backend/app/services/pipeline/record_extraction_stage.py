@@ -22,7 +22,7 @@ from app.services.pipeline.extract_records import extract_records
 from app.services.pipeline.runtime_helpers import (
     browser_result_is_extractable as _browser_result_is_extractable,
     effective_blocked as _effective_blocked,
-    log_event,
+    log_pipeline_event as _log_pipeline_event,
     merge_browser_diagnostics as _merge_browser_diagnostics,
 )
 from app.services.platform_policy import detect_platform_family
@@ -33,19 +33,6 @@ from .url_processing_context import (
     URLProcessingContext as _URLProcessingContext,
 )
 
-
-async def _log_pipeline_event(
-    context: _URLProcessingContext,
-    level: str,
-    message: str,
-    *,
-    commit: bool = True,
-) -> None:
-    if not context.config.persist_logs:
-        return
-    await log_event(context.session, context.run.id, level, message)
-    if commit:
-        await context.session.commit()
 
 async def _extract_records_for_acquisition(
     context: _URLProcessingContext,

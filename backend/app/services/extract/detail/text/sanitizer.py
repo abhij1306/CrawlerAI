@@ -316,7 +316,7 @@ def _category_candidate_is_noise(field_name: str, value: object) -> bool:
         return True
     lowered = f" {cleaned.lower()} "
     return any(
-        f" {token} " in lowered for token in DETAIL_CATEGORY_UI_TOKENS if token != "..."
+        f" {token} " in lowered for token in DETAIL_CATEGORY_UI_TOKENS if token != "..."  # nosec B105
     )
 
 
@@ -763,8 +763,9 @@ def _materials_extract_trailing_composition(text: str) -> str | None:
     string is long and ends with one or more composition entries, replace
     the value with just the trailing composition slice.
 
-    Returns the trimmed composition text, or ``None`` when no salvage is
-    needed (head already has composition, or no composition at all).
+    Returns the trimmed composition text, ``""`` when an editorial block
+    should be discarded, or ``None`` when no salvage is needed because the
+    head already has composition.
     """
     if len(text) <= _materials_editorial_min_len:
         return None
@@ -773,7 +774,7 @@ def _materials_extract_trailing_composition(text: str) -> str | None:
         return None
     matches = list(_MATERIALS_COMPOSITION_PATTERN.finditer(text))
     if not matches:
-        # No composition anywhere — drop the editorial block entirely.
+        # Empty string means discard this editorial block; None means keep original.
         return ""
     first = matches[0]
     return text[first.start() :].strip() or ""

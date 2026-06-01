@@ -923,6 +923,26 @@ def _record_has_strong_requested_identity_code(
     return False
 
 
+def _record_has_detail_product_evidence(record: dict[str, object]) -> bool:
+    return any(
+        record.get(field_name) not in (None, "", [], {})
+        for field_name in (
+            "title",
+            "price",
+            "original_price",
+            "currency",
+            "image_url",
+            "description",
+            "brand",
+            "sku",
+            "product_id",
+            "part_number",
+            "barcode",
+            "variants",
+        )
+    )
+
+
 def _normalized_model_token(value: object) -> str:
     normalized = _MIXED_NON_ALNUM_RE.sub("", str(value or "")).lower()
     if not normalized:
@@ -1249,6 +1269,8 @@ def _detail_redirect_identity_is_mismatched(
             requested_page_url=requested,
         ):
             return True
+        if _record_has_detail_product_evidence(record):
+            return False
         if not _record_matches_requested_detail_identity(
             record,
             requested_page_url=requested,

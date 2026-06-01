@@ -15,6 +15,7 @@ import pytest
 
 from app.services.config import audit_rules
 from app.services.config import observability as obs_config
+from app.services.observability import baseline as baseline_mod
 from app.services.observability import run_audit
 
 pytestmark = pytest.mark.unit
@@ -179,6 +180,96 @@ def test_usable_content_but_blocked_flagged(tmp_path, monkeypatch):
     flags = run_audit.build_run_flags(run, [])
     codes = {f["code"] for f in flags}
     assert audit_rules.FLAG_USABLE_CONTENT_BUT_BLOCKED in codes
+
+
+def test_browser_artifact_challenge_shell_flag_uses_probe_url(tmp_path, monkeypatch):
+    monkeypatch.setattr(run_audit.settings, "artifacts_dir", tmp_path)
+    run_id = 44
+    pages = tmp_path / "runs" / str(run_id) / "pages"
+    pages.mkdir(parents=True)
+    (pages / "abc.browser.json").write_text(
+        json.dumps(
+            {
+                "browser_outcome": "low_content_shell",
+                "failure_reason": "challenge_shell",
+                "readiness_probes": [{"url": "https://yeti.example/p/1"}],
+                "challenge_provider_hits": ["px-captcha"],
+            }
+        ),
+        encoding="utf-8",
+    )
+    run = _run(surface="ecommerce_detail", verdict="blocked", run_id=run_id)
+
+    flags = run_audit.build_run_flags(run, [])
+    flag = next(
+        f for f in flags if f["code"] == audit_rules.FLAG_ACQUISITION_CHALLENGE_BLOCKED
+    )
+
+    assert flag["url"] == "https://yeti.example/p/1"
+
+
+def test_trace_rejection_flags_challenge_shell_and_updates_each_domain_baseline(
+    tmp_path,
+    monkeypatch,
+):
+    monkeypatch.setattr(run_audit.settings, "artifacts_dir", tmp_path)
+    pages = tmp_path / "runs" / "51" / "pages"
+    pages.mkdir(parents=True)
+    (pages / "a.trace.json").write_text(
+        json.dumps(
+            {
+                "run_id": 51,
+                "url": "https://alpha.example/p/1",
+                "surface": "ecommerce_detail",
+                "verdict": "success",
+                "acquire_timeline": [
+                    {
+                        "kind": obs_config.ACQUIRE_EVENT_HTTP_FETCH,
+                        "sequence": 1,
+                        "detail": {"method": "curl_cffi", "status_code": 200},
+                    }
+                ],
+                "extraction": {"completed_tiers": ["structured_data"]},
+            }
+        ),
+        encoding="utf-8",
+    )
+    (pages / "b.trace.json").write_text(
+        json.dumps(
+            {
+                "run_id": 51,
+                "url": "https://beta.example/p/2",
+                "surface": "ecommerce_detail",
+                "verdict": "blocked",
+                "acquire_timeline": [],
+                "extraction": {
+                    "completed_tiers": [],
+                    "rejection_reason": "challenge_shell",
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    run = _run(surface="ecommerce_detail", verdict="partial", run_id=51)
+    record = _record(
+        url="https://alpha.example/p/1",
+        data={
+            "title": "Alpha",
+            "price": "10.00",
+            "image_url": "https://alpha.example/i.jpg",
+        },
+    )
+
+    flags = run_audit.build_run_flags(run, [record], update_baselines=True)
+    codes = {f["code"] for f in flags}
+
+    assert audit_rules.FLAG_ACQUISITION_CHALLENGE_BLOCKED in codes
+    assert (
+        baseline_mod.load_baseline("alpha.example", "ecommerce_detail")["samples"] == 1
+    )
+    assert (
+        baseline_mod.load_baseline("beta.example", "ecommerce_detail")["samples"] == 1
+    )
 
 
 def test_clean_run_produces_no_flags(tmp_path, monkeypatch):

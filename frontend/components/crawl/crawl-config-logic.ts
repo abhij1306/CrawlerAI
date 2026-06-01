@@ -284,6 +284,39 @@ function buildExtractionContract(fieldRows: FieldRow[]) {
   return extractionContract;
 }
 
+function buildBatchDispatch(
+  surface: PendingDispatch['surface'],
+  urls: string[],
+  commonSettings: Record<string, unknown>,
+  additionalFields: string[],
+): PendingDispatch {
+  return {
+    runType: 'batch',
+    surface,
+    url: urls[0],
+    urls,
+    settings: { ...commonSettings, urls },
+    additionalFields,
+    csvFile: null,
+  };
+}
+
+function buildSingleUrlDispatch(
+  surface: PendingDispatch['surface'],
+  targetUrl: string,
+  commonSettings: Record<string, unknown>,
+  additionalFields: string[],
+): PendingDispatch {
+  return {
+    runType: 'crawl',
+    surface,
+    url: targetUrl.trim(),
+    settings: commonSettings,
+    additionalFields,
+    csvFile: null,
+  };
+}
+
 export function buildDispatch(
   config: CrawlConfig,
   fieldRows: FieldRow[] = [],
@@ -365,25 +398,10 @@ export function buildDispatch(
     if (config.mode === 'bulk') {
       const urls = parseLines(config.bulk_urls);
       if (!urls.length) throw new Error('Bulk crawl needs at least one URL.');
-      return {
-        runType: 'batch',
-        surface,
-        url: urls[0],
-        urls,
-        settings: { ...commonSettings, urls },
-        additionalFields,
-        csvFile: null,
-      };
+      return buildBatchDispatch(surface, urls, commonSettings, additionalFields);
     }
     if (!config.target_url.trim()) throw new Error('Enter a target URL.');
-    return {
-      runType: 'crawl',
-      surface,
-      url: config.target_url.trim(),
-      settings: commonSettings,
-      additionalFields,
-      csvFile: null,
-    };
+    return buildSingleUrlDispatch(surface, config.target_url, commonSettings, additionalFields);
   }
 
   if (config.mode === 'csv') {
@@ -401,26 +419,11 @@ export function buildDispatch(
   if (config.mode === 'batch') {
     const urls = parseLines(config.bulk_urls);
     if (!urls.length) throw new Error('Batch crawl needs at least one URL.');
-    return {
-      runType: 'batch',
-      surface,
-      url: urls[0],
-      urls,
-      settings: { ...commonSettings, urls },
-      additionalFields,
-      csvFile: null,
-    };
+    return buildBatchDispatch(surface, urls, commonSettings, additionalFields);
   }
 
   if (!config.target_url.trim()) throw new Error('Enter a target URL.');
-  return {
-    runType: 'crawl',
-    surface,
-    url: config.target_url.trim(),
-    settings: commonSettings,
-    additionalFields,
-    csvFile: null,
-  };
+  return buildSingleUrlDispatch(surface, config.target_url, commonSettings, additionalFields);
 }
 
 export function canPreview(

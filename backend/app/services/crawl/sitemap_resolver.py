@@ -4,8 +4,8 @@ import asyncio
 import logging
 from dataclasses import dataclass
 from urllib.parse import urlsplit, urlunsplit
-from xml.etree import ElementTree
 
+from defusedxml import ElementTree
 import httpx
 from bs4 import BeautifulSoup, Tag
 
@@ -492,4 +492,3 @@ def _extract_locs(xml: ElementTree.Element) -> list[str]:
 
 def _local_tag(tag: str) -> str:
     return tag.rsplit("}", 1)[-1]
-

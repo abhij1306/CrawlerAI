@@ -1,7 +1,6 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import dynamic from 'next/dynamic';
 import { use } from 'react';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
@@ -9,31 +8,10 @@ import { useRouter } from 'next/navigation';
 import { monitorsApi } from '../../../lib/api';
 import type { MonitorStatus, MonitorUpdatePayload } from '../../../lib/api/types';
 import { isThenable } from '../../../lib/params';
-import { MonitorEvents } from '../../../components/monitors/monitor-events';
+import { MonitorDetailTabs } from '../../../components/monitors/monitor-detail-tabs';
 import { MonitorHeader } from '../../../components/monitors/monitor-header';
-import { MonitorSnapshotTable } from '../../../components/monitors/monitor-snapshot-table';
 import { MonitorDetailSkeleton } from '../../../components/monitors/monitor-skeleton';
-import { Skeleton } from '../../../components/ui/primitives';
-import { InlineAlert, PageHeader, SurfacePanel, TabBar } from '../../../components/ui/patterns';
-
-type TabValue = 'events' | 'history' | 'snapshot';
-
-const tabs: Array<{ value: TabValue; label: string }> = [
-  { value: 'events', label: 'Events' },
-  { value: 'history', label: 'History' },
-  { value: 'snapshot', label: 'Current Snapshot' },
-];
-
-const MonitorHistoryChart = dynamic(
-  () =>
-    import('../../../components/monitors/monitor-history-chart').then(
-      (module) => module.MonitorHistoryChart,
-    ),
-  {
-    loading: () => <Skeleton className="h-80 w-full rounded-lg" />,
-    ssr: false,
-  },
-);
+import { InlineAlert, PageHeader } from '../../../components/ui/patterns';
 
 export default function MonitorDetailPage({
   params,
@@ -45,7 +23,6 @@ export default function MonitorDetailPage({
   const monitorIdNumber = Number(monitorId);
   const router = useRouter();
   const queryClient = useQueryClient();
-  const [tab, setTab] = useState<TabValue>('events');
   const [notice, setNotice] = useState('');
   const [runError, setRunError] = useState('');
 
@@ -121,25 +98,11 @@ export default function MonitorDetailPage({
         onDelete={() => deleteMutation.mutateAsync().then(() => undefined)}
         onSave={(payload) => editMutation.mutateAsync(payload).then(() => undefined)}
       />
-      <SurfacePanel>
-        <div className="border-divider border-b px-4 pt-2">
-          <TabBar
-            value={tab}
-            onChange={(value) => setTab(value as TabValue)}
-            options={tabs}
-            variant="underline"
-          />
-        </div>
-        <div className="p-4">
-          {tab === 'events' ? (
-            <MonitorEvents monitorId={monitorIdNumber} onRunNow={() => runMutation.mutate()} />
-          ) : null}
-          {tab === 'history' ? <MonitorHistoryChart monitor={monitor} /> : null}
-          {tab === 'snapshot' ? (
-            <MonitorSnapshotTable monitor={monitor} onRunNow={() => runMutation.mutate()} />
-          ) : null}
-        </div>
-      </SurfacePanel>
+      <MonitorDetailTabs
+        monitor={monitor}
+        monitorId={monitorIdNumber}
+        onRunNow={() => runMutation.mutate()}
+      />
     </div>
   );
 }

@@ -5,7 +5,11 @@ import time
 from typing import TYPE_CHECKING
 from urllib.parse import urlsplit
 
-from app.services.acquisition.dom_runtime import get_page_html, wait_for_dom_mutation_settle
+from app.services.acquisition.dom_runtime import (
+    get_page_html,
+    wait_for_dom_mutation_settle as _dom_wait_for_dom_mutation_settle,
+)
+from app.services.acquisition.playwright_compat import PLAYWRIGHT_RECOVERABLE_ERRORS
 from app.services.acquisition.runtime import classify_blocked_page_async
 from app.services.config.extraction_rules import (
     TRAVERSAL_STRUCTURED_SCRIPT_IDS,
@@ -24,21 +28,6 @@ from app.services.platform_policy import (
 )
 from selectolax.lexbor import LexborHTMLParser
 
-try:
-    from patchright.async_api import (
-        Error as PlaywrightError,
-        TimeoutError as PlaywrightTimeoutError,
-    )
-except ImportError:  # pragma: no cover
-    class PlaywrightError(Exception):  # type: ignore[no-redef]
-        pass
-
-    class PlaywrightTimeoutError(PlaywrightError):  # type: ignore[no-redef]
-        pass
-
-
-PLAYWRIGHT_RECOVERABLE_ERRORS = (PlaywrightError, PlaywrightTimeoutError, RuntimeError)
-
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
@@ -51,7 +40,7 @@ async def _wait_for_dom_mutation_settle(page, **kwargs):
     wait_impl = getattr(
         traversal,
         "wait_for_dom_mutation_settle",
-        wait_for_dom_mutation_settle,
+        _dom_wait_for_dom_mutation_settle,
     )
     await wait_impl(page, **kwargs)
 
@@ -466,4 +455,5 @@ looks_like_next_page_control = _looks_like_next_page_control
 page_matches_block_challenge = _page_matches_block_challenge
 remaining_timeout_ms = _remaining_timeout_ms
 settle_after_action = _settle_after_action
+wait_for_traversal_dom_mutation_settle = _wait_for_dom_mutation_settle
 wait_for_transition = _wait_for_transition
