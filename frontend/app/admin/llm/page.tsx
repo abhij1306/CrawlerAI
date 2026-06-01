@@ -275,12 +275,20 @@ export default function AdminLlmPage() {
 
   const recommendedModels =
     providers.find((provider) => provider.provider === form.provider)?.recommended_models ?? [];
-  const modelDropdownValue = customModelSelected ? CUSTOM_MODEL_OPTION : form.model;
+  const modelCatalogLoaded = recommendedModels.length > 0;
+  const formModel = form.model.trim();
+  const modelInCatalog = recommendedModels.includes(formModel);
+  const modelIsCustom =
+    customModelSelected || (modelCatalogLoaded && formModel !== '' && !modelInCatalog);
+  const modelDropdownValue = modelIsCustom ? CUSTOM_MODEL_OPTION : form.model;
   const modelOptions = [
     ...recommendedModels.map((model) => ({
       value: model,
       label: model,
     })),
+    ...(modelCatalogLoaded || formModel === '' || modelInCatalog
+      ? []
+      : [{ value: formModel, label: formModel }]),
     { value: CUSTOM_MODEL_OPTION, label: 'Custom...' },
   ];
   const modelSuggestionsId = 'llm-model-suggestions';
@@ -346,7 +354,7 @@ export default function AdminLlmPage() {
                     }}
                     options={modelOptions}
                   />
-                  {customModelSelected ? (
+                  {modelIsCustom ? (
                     <>
                       <Input
                         value={form.model}

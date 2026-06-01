@@ -39,6 +39,7 @@ def test_logfire_configures_once_and_instruments(monkeypatch) -> None:
     )
     monkeypatch.setitem(sys.modules, "logfire", fake_logfire)
     monkeypatch.setattr(settings, "logfire_enabled", True)
+    monkeypatch.setattr(settings, "logfire_enabled_in_tests", True)
     monkeypatch.setattr(settings, "logfire_token", "token-123")
     monkeypatch.setattr(settings, "logfire_service_name", "invoro-test")
     monkeypatch.setattr(settings, "logfire_environment", "staging")
@@ -62,9 +63,102 @@ def test_logfire_configures_once_and_instruments(monkeypatch) -> None:
                 "service_name": "invoro-test",
                 "environment": "staging",
                 "console": False,
+                "inspect_arguments": False,
             },
         )
     ]
     assert len(fastapi_calls) == 1
     assert fastapi_calls[0][1]["capture_headers"] is False
     assert len(celery_calls) == 1
+
+
+@pytest.mark.component
+def test_logfire_span_is_noop_when_disabled(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "logfire_enabled", False)
+
+    with logfire_integration.logfire_span("test.span", run_id=1) as span:
+        logfire_integration.set_logfire_attributes(span, record_count=2)
+
+    assert span is None
+
+
+@pytest.mark.component
+def test_logfire_span_sanitizes_attributes(monkeypatch) -> None:
+    calls: list[tuple[str, dict[str, object]]] = []
+
+    class FakeSpan:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def set_attributes(self, attrs):
+            calls.append(("set_attributes", attrs))
+
+    fake_logfire = SimpleNamespace(
+        configure=lambda **kwargs: calls.append(("configure", kwargs)),
+        span=lambda name, **kwargs: (
+            calls.append(("span", {"name": name, **kwargs})) or FakeSpan()
+        ),
+    )
+    monkeypatch.setitem(sys.modules, "logfire", fake_logfire)
+    monkeypatch.setattr(settings, "logfire_enabled", True)
+    monkeypatch.setattr(settings, "logfire_enabled_in_tests", True)
+    monkeypatch.setattr(settings, "logfire_token", "token-123")
+
+    with logfire_integration.logfire_span("test.span", raw=None, items=[1, None]):
+        pass
+
+    span_calls = [call for call in calls if call[0] == "span"]
+    assert span_calls == [("span", {"name": "test.span", "items": [1]})]
+
+
+@pytest.mark.component
+def test_logfire_span_strips_url_query_attributes(monkeypatch) -> None:
+    calls: list[tuple[str, dict[str, object]]] = []
+
+    class FakeSpan:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+    fake_logfire = SimpleNamespace(
+        configure=lambda **kwargs: calls.append(("configure", kwargs)),
+        span=lambda name, **kwargs: (
+            calls.append(("span", {"name": name, **kwargs})) or FakeSpan()
+        ),
+    )
+    monkeypatch.setitem(sys.modules, "logfire", fake_logfire)
+    monkeypatch.setattr(settings, "logfire_enabled", True)
+    monkeypatch.setattr(settings, "logfire_enabled_in_tests", True)
+    monkeypatch.setattr(settings, "logfire_token", "token-123")
+
+    with logfire_integration.logfire_span(
+        "test.span",
+        final_url="https://example.com/p/widget?token=secret#reviews",
+        domain="example.com",
+    ):
+        pass
+
+    span_calls = [call for call in calls if call[0] == "span"]
+    assert span_calls == [
+        (
+            "span",
+            {
+                "name": "test.span",
+                "final_url": "https://example.com/p/widget",
+                "domain": "example.com",
+            },
+        )
+    ]
+
+
+@pytest.mark.component
+def test_logfire_disabled_under_pytest_by_default(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "logfire_enabled", True)
+    monkeypatch.setattr(settings, "logfire_enabled_in_tests", False)
+
+    assert logfire_integration.configure_logfire() is False

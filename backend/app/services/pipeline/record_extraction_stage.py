@@ -6,6 +6,7 @@ import json
 
 from app.services.acquisition.acquirer import AcquisitionResult
 from app.services.acquisition_plan import AcquisitionPlan
+from app.core.logfire_integration import logfire_span, set_logfire_attributes
 from app.services.adapters.base import AdapterResult
 from app.services.adapters.registry import run_adapter, try_blocked_adapter_recovery
 from app.services.crawl.profile import record_acquisition_contract_outcome
@@ -71,6 +72,7 @@ async def _extract_records_for_acquisition(
             records = fallback_records
     return records, selector_rules
 
+
 async def _populate_adapter_records(
     context: _URLProcessingContext,
     acquisition_result: AcquisitionResult,
@@ -88,34 +90,53 @@ async def _populate_adapter_records(
         ),
         None,
     )
-    for html in [
-        str(acquisition_result.html or ""),
-        *_adapter_browser_artifact_htmls(acquisition_result),
-        *_adapter_network_payload_inputs(acquisition_result),
-    ]:
-        from app.services.pipeline import extraction_loop
+    with logfire_span(
+        "extract.tier.adapter",
+        run_id=context.run.id,
+        domain=normalize_domain(acquisition_result.final_url),
+        surface=context.surface,
+        proxy_configured=bool(adapter_proxy),
+    ) as span:
+        for html in [
+            str(acquisition_result.html or ""),
+            *_adapter_browser_artifact_htmls(acquisition_result),
+            *_adapter_network_payload_inputs(acquisition_result),
+        ]:
+            from app.services.pipeline import extraction_loop
 
-        adapter_runner = getattr(extraction_loop, "run_adapter", run_adapter)
-        adapter_kwargs = (
-            {"proxy": adapter_proxy}
-            if adapter_proxy
-            and "proxy" in inspect.signature(adapter_runner).parameters
-            else {}
+            adapter_runner = getattr(extraction_loop, "run_adapter", run_adapter)
+            adapter_kwargs = (
+                {"proxy": adapter_proxy}
+                if adapter_proxy
+                and "proxy" in inspect.signature(adapter_runner).parameters
+                else {}
+            )
+            adapter_result = await adapter_runner(
+                acquisition_result.final_url,
+                html,
+                context.surface,
+                **adapter_kwargs,
+            )
+            if adapter_result is not None and list(adapter_result.records or []):
+                adapter_results.append(adapter_result)
+                if _adapter_result_satisfies_listing_context(
+                    context,
+                    acquisition_result=acquisition_result,
+                    adapter_result=adapter_result,
+                ):
+                    break
+        set_logfire_attributes(
+            span,
+            adapter_result_count=len(adapter_results),
+            adapter_names=[
+                str(result.adapter_name or "")
+                for result in adapter_results
+                if str(result.adapter_name or "").strip()
+            ],
+            record_count=sum(
+                len(list(result.records or [])) for result in adapter_results
+            ),
         )
-        adapter_result = await adapter_runner(
-            acquisition_result.final_url,
-            html,
-            context.surface,
-            **adapter_kwargs,
-        )
-        if adapter_result is not None and list(adapter_result.records or []):
-            adapter_results.append(adapter_result)
-            if _adapter_result_satisfies_listing_context(
-                context,
-                acquisition_result=acquisition_result,
-                adapter_result=adapter_result,
-            ):
-                break
     adapter_result = _best_adapter_result(adapter_results)
     if (
         adapter_result is None or not list(adapter_result.records or [])
@@ -138,6 +159,7 @@ async def _populate_adapter_records(
         acquisition_result.adapter_records = list(adapter_result.records or [])
         acquisition_result.adapter_name = adapter_result.adapter_name or None
         acquisition_result.adapter_source_type = adapter_result.source_type or None
+
 
 def _best_adapter_result(adapter_results: list[AdapterResult]) -> AdapterResult | None:
     if not adapter_results:
@@ -178,6 +200,7 @@ def _best_adapter_result(adapter_results: list[AdapterResult]) -> AdapterResult 
         source_type=best.source_type,
         adapter_name=best.adapter_name,
     )
+
 
 def _adapter_result_score(records: list[object]) -> tuple[int, int]:
     populated = 0
@@ -224,6 +247,7 @@ def _positive_int(value: object) -> int:
         return max(0, value)
     if isinstance(value, float):
         import math
+
         if not math.isfinite(value):
             return 0
         return max(0, int(value))
@@ -271,7 +295,9 @@ def _adapter_network_payload_inputs(
         except (TypeError, ValueError):
             continue
         serialized_key = serialized.casefold()
-        if identity_tokens and not any(token in serialized_key for token in identity_tokens):
+        if identity_tokens and not any(
+            token in serialized_key for token in identity_tokens
+        ):
             continue
         if not serialized or serialized in seen:
             continue
@@ -304,6 +330,7 @@ def _rendered_listing_fragments_html(value: object) -> str:
     joined = "\n".join(fragments)
     return f"<html><body>{joined}</body></html>"
 
+
 def _assign_platform_family(acquisition_result: AcquisitionResult) -> None:
     from app.services.pipeline import extraction_loop
 
@@ -320,6 +347,7 @@ def _assign_platform_family(acquisition_result: AcquisitionResult) -> None:
         platform_family = acquisition_result.adapter_name
     acquisition_result.platform_family = platform_family or None
 
+
 async def _run_record_extraction(
     context: _URLProcessingContext,
     *,
@@ -329,23 +357,39 @@ async def _run_record_extraction(
     from app.services.pipeline import extraction_loop
 
     extract_records_impl = getattr(extraction_loop, "extract_records", extract_records)
-    return await asyncio.to_thread(
-        extract_records_impl,
-        acquisition_result.html,
-        acquisition_result.final_url,
-        context.surface,
-        max_records=context.config.max_records,
-        requested_page_url=context.url,
-        requested_fields=list(context.requested_fields),
-        adapter_records=acquisition_result.adapter_records,
-        network_payloads=acquisition_result.network_payloads,
-        artifacts=acquisition_result.artifacts,
-        selector_rules=selector_rules,
-        extraction_runtime_snapshot=context.run.settings_view.extraction_runtime_snapshot(),
-        content_type=acquisition_result.content_type,
-        browser_diagnostics=getattr(acquisition_result, "browser_diagnostics", None),
-        record_dom_observed_selectors=True,
-    )
+    with logfire_span(
+        "extract.record_thread",
+        run_id=context.run.id,
+        domain=normalize_domain(acquisition_result.final_url),
+        surface=context.surface,
+        adapter_record_count=len(acquisition_result.adapter_records or []),
+        network_payload_count=len(acquisition_result.network_payloads or []),
+        selector_rule_count=len(selector_rules or []),
+    ) as span:
+        records = _record_list(
+            await asyncio.to_thread(
+                extract_records_impl,
+                acquisition_result.html,
+                acquisition_result.final_url,
+                context.surface,
+                max_records=context.config.max_records,
+                requested_page_url=context.url,
+                requested_fields=list(context.requested_fields),
+                adapter_records=acquisition_result.adapter_records,
+                network_payloads=acquisition_result.network_payloads,
+                artifacts=acquisition_result.artifacts,
+                selector_rules=selector_rules,
+                extraction_runtime_snapshot=context.run.settings_view.extraction_runtime_snapshot(),
+                content_type=acquisition_result.content_type,
+                browser_diagnostics=getattr(
+                    acquisition_result, "browser_diagnostics", None
+                ),
+                record_dom_observed_selectors=True,
+            )
+        )
+        set_logfire_attributes(span, record_count=len(records))
+        return records
+
 
 async def _extract_records_from_preserved_browser_html(
     context: _URLProcessingContext,
@@ -366,21 +410,23 @@ async def _extract_records_from_preserved_browser_html(
     from app.services.pipeline import extraction_loop as _extraction_loop
 
     extract_impl = getattr(_extraction_loop, "extract_records", extract_records)
-    fallback_records = await asyncio.to_thread(
-        extract_impl,
-        rendered_html,
-        acquisition_result.final_url,
-        context.surface,
-        max_records=context.config.max_records,
-        requested_page_url=context.url,
-        requested_fields=list(context.requested_fields),
-        adapter_records=acquisition_result.adapter_records,
-        network_payloads=acquisition_result.network_payloads,
-        artifacts=acquisition_result.artifacts,
-        selector_rules=selector_rules,
-        extraction_runtime_snapshot=context.run.settings_view.extraction_runtime_snapshot(),
-        content_type=acquisition_result.content_type,
-        record_dom_observed_selectors=True,
+    fallback_records = _record_list(
+        await asyncio.to_thread(
+            extract_impl,
+            rendered_html,
+            acquisition_result.final_url,
+            context.surface,
+            max_records=context.config.max_records,
+            requested_page_url=context.url,
+            requested_fields=list(context.requested_fields),
+            adapter_records=acquisition_result.adapter_records,
+            network_payloads=acquisition_result.network_payloads,
+            artifacts=acquisition_result.artifacts,
+            selector_rules=selector_rules,
+            extraction_runtime_snapshot=context.run.settings_view.extraction_runtime_snapshot(),
+            content_type=acquisition_result.content_type,
+            record_dom_observed_selectors=True,
+        )
     )
     if not fallback_records:
         await _log_pipeline_event(
@@ -423,6 +469,7 @@ async def _extract_records_from_preserved_browser_html(
     )
     return fallback_records
 
+
 async def _load_selector_rules(
     context: _URLProcessingContext,
     page_url: str,
@@ -443,6 +490,7 @@ async def _load_selector_rules(
         saved_rules,
         context.run.settings_view.extraction_contract(),
     )
+
 
 async def _update_acquisition_contract_memory(
     context: _URLProcessingContext,
@@ -480,3 +528,9 @@ async def _update_acquisition_contract_memory(
 
 
 extract_records_for_acquisition = _extract_records_for_acquisition
+
+
+def _record_list(value: object) -> list[dict[str, object]]:
+    if not isinstance(value, list):
+        return []
+    return [record for record in value if isinstance(record, dict)]

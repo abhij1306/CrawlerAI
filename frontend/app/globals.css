@@ -1512,7 +1512,7 @@ html:not([data-theme='dark']) .compact-data-table {
   height: 18px;
   min-height: 0;
   border-radius: var(--radius-sm);
-  text-transform: uppercase;
+  text-transform: capitalize;
   letter-spacing: var(--tracking-wide);
   opacity: 0.9;
 }

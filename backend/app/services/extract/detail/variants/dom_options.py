@@ -21,18 +21,12 @@ from app.services.config.extraction_rules import (
     VARIANT_OPTION_OUT_OF_STOCK_CLASS_TOKENS,
     VARIANT_OPTION_OUT_OF_STOCK_FLAG_ATTRIBUTE_NAMES,
     VARIANT_OPTION_OUT_OF_STOCK_TEXT_PHRASES,
+    VARIANT_OPTION_SELECTED_CLASS_TOKENS,
+    VARIANT_OPTION_SELECTED_STATE_VALUES,
+    VARIANT_OPTION_SELECTED_TRUTHY_ATTRIBUTES,
     VARIANT_OPTION_STOCK_LEFT_PATTERN,
 )
 from app.services.shared.field_coerce import absolute_url, clean_text, text_or_none
-
-_SELECTED_CLASS_TOKENS = ("selected", "active", "current", "highlight", "checked")
-_SELECTED_TRUTHY_ATTRS = (
-    "aria-checked",
-    "aria-selected",
-    "aria-current",
-    "aria-pressed",
-)
-_SELECTED_STATE_VALUES = frozenset({"checked", "selected", "active"})
 
 
 def node_state_matches(node: Any, *tokens: str) -> bool:
@@ -77,7 +71,7 @@ def _option_node_is_selected(node: Any, label_node: Any | None) -> bool:
     ):
         if candidate is None or not hasattr(candidate, "get"):
             continue
-        if node_state_matches(candidate, *_SELECTED_CLASS_TOKENS):
+        if node_state_matches(candidate, *VARIANT_OPTION_SELECTED_CLASS_TOKENS):
             return True
         # `checked`/`selected` are valueless boolean attributes that BeautifulSoup
         # exposes as "", so presence is the signal, not truthiness.
@@ -85,9 +79,9 @@ def _option_node_is_selected(node: Any, label_node: Any | None) -> bool:
             candidate, "selected"
         ):
             return True
-        if node_attr_is_truthy(candidate, *_SELECTED_TRUTHY_ATTRS):
+        if node_attr_is_truthy(candidate, *VARIANT_OPTION_SELECTED_TRUTHY_ATTRIBUTES):
             return True
-        if text_or_none(candidate.get("data-state")) in _SELECTED_STATE_VALUES:
+        if text_or_none(candidate.get("data-state")) in VARIANT_OPTION_SELECTED_STATE_VALUES:
             return True
         if text_or_none(candidate.get("data-selected")) not in (None,):
             if node_attr_is_truthy(candidate, "data-selected") or _node_has_attr(

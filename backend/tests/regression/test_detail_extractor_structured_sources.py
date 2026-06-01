@@ -12,6 +12,9 @@ from app.services.extract.detail.assembly.record_assembly import (
     extract_detail_records,
 )
 from app.services.extract.detail.variants.dom_options import variant_option_availability
+from app.services.extract.detail.variants.dom_availability import (
+    reconcile_variant_availability_from_dom,
+)
 from app.services.extract.detail.price.core import (
     backfill_detail_price_from_html,
     detail_currency_hint_is_host_level,
@@ -4530,6 +4533,38 @@ def test_variant_option_availability_treats_unselected_disabled_control_as_out_o
         None,
         None,
     )
+
+
+@pytest.mark.regression
+def test_dom_availability_appends_disabled_select_option_with_label() -> None:
+    record = {
+        "variants": [{"size": "S", "option_values": {"size": "S"}}],
+        "variant_count": 1,
+    }
+    soup = BeautifulSoup(
+        """
+        <html><body>
+          <section class="variant-options">
+            <label for="size-select">Size</label>
+            <select id="size-select" name="size">
+              <option value="S">S</option>
+              <option value="M" disabled>M</option>
+            </select>
+          </section>
+        </body></html>
+        """,
+        "html.parser",
+    )
+
+    reconcile_variant_availability_from_dom(record, soup=soup)
+
+    assert record["variant_count"] == 2
+    assert record["variants"][1] == {
+        "size": "M",
+        "option_values": {"size": "M"},
+        "availability": "out_of_stock",
+        "stock_quantity": 0,
+    }
 
 
 @pytest.mark.regression

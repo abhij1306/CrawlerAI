@@ -4,6 +4,7 @@ import asyncio  # noqa: F401 - kept for tests that patch asyncio.to_thread on th
 import logging
 import time
 
+from app.core.logfire_integration import logfire_span, set_logfire_attributes
 from app.models.crawl_run import CrawlRun
 from app.services.acquisition.acquirer import AcquisitionResult
 from app.services.acquisition.acquirer import acquire as _acquire
@@ -64,7 +65,11 @@ from .retry import (
     retry_low_quality_extraction_with_browser as _retry_low_quality_extraction_with_browser,
     retry_patchright_detail_rejection_with_real_chrome as _retry_patchright_detail_rejection_with_real_chrome,
 )
-from .persistence import persist_acquisition_artifacts, persist_extracted_records, persist_run_trace
+from .persistence import (
+    persist_acquisition_artifacts,
+    persist_extracted_records,
+    persist_run_trace,
+)
 from .record_extraction_stage import (
     _best_adapter_result,
     _extract_records_for_acquisition,
@@ -174,20 +179,46 @@ async def process_single_url(
         requested_fields=list(run.requested_fields or []),
         surface=run.surface,
     )
-    await _enter_stage(context, STAGE_ACQUIRE)
-    robots_result = await _run_robots_gate(context)
-    if robots_result is not None:
-        return robots_result
-    fetched = await _run_acquisition_stage(
-        context,
-        prefetched_acquisition=prefetched_acquisition,
-    )
-    if context.config.prefetch_only:
-        return _build_prefetch_only_result(context, fetched)
-    await _enter_stage(context, STAGE_EXTRACT)
-    extracted = await _run_extraction_stage(context, fetched)
-    extracted = await _run_normalization_stage(context, extracted)
-    return await _run_persistence_stage(context, extracted)
+    with logfire_span(
+        "pipeline.url.process",
+        run_id=run.id,
+        domain=normalize_domain(url),
+        surface=run.surface,
+        llm_enabled=settings_view.llm_enabled(),
+        traversal_mode=context.config.traversal_mode or "",
+        max_records=context.config.max_records,
+    ) as span:
+        await _enter_stage(context, STAGE_ACQUIRE)
+        robots_result = await _run_robots_gate(context)
+        if robots_result is not None:
+            set_logfire_attributes(
+                span,
+                verdict=robots_result.verdict,
+                blocked=True,
+                stage="robots",
+            )
+            return robots_result
+        fetched = await _run_acquisition_stage(
+            context,
+            prefetched_acquisition=prefetched_acquisition,
+        )
+        if context.config.prefetch_only:
+            result = _build_prefetch_only_result(context, fetched)
+            set_logfire_attributes(span, verdict=result.verdict, prefetch_only=True)
+            return result
+        await _enter_stage(context, STAGE_EXTRACT)
+        extracted = await _run_extraction_stage(context, fetched)
+        extracted = await _run_normalization_stage(context, extracted)
+        result = await _run_persistence_stage(context, extracted)
+        result_metrics = mapping_or_empty(result.url_metrics)
+        set_logfire_attributes(
+            span,
+            verdict=result.verdict,
+            record_count=result_metrics.get("record_count"),
+            method=result_metrics.get("method"),
+            blocked=result_metrics.get("blocked"),
+        )
+        return result
 
 
 async def _enter_stage(
@@ -249,8 +280,6 @@ async def _run_robots_gate(
     return None
 
 
-
-
 def _pipeline_acquisition_event_logger(
     context: _URLProcessingContext,
 ):
@@ -265,8 +294,35 @@ async def _run_acquisition_stage(
     *,
     prefetched_acquisition: AcquisitionResult | None,
 ) -> _FetchedURLStage:
-    acquisition_request = await _build_acquisition_request(context)
-    acquisition_result = prefetched_acquisition or await acquire(acquisition_request)
+    with logfire_span(
+        "pipeline.acquire",
+        run_id=context.run.id,
+        domain=normalize_domain(context.url),
+        surface=context.surface,
+        prefetched=bool(prefetched_acquisition),
+    ) as span:
+        acquisition_request = await _build_acquisition_request(context)
+        acquisition_result = prefetched_acquisition or await acquire(
+            acquisition_request
+        )
+        diagnostics = mapping_or_empty(
+            getattr(acquisition_result, "browser_diagnostics", {})
+        )
+        timings = mapping_or_empty(diagnostics.get("phase_timings_ms", {}))
+        set_logfire_attributes(
+            span,
+            method=getattr(acquisition_result, "method", "unknown"),
+            status_code=getattr(acquisition_result, "status_code", None),
+            blocked=bool(getattr(acquisition_result, "blocked", False)),
+            browser_attempted=_browser_attempted(acquisition_result),
+            browser_outcome=_browser_outcome(acquisition_result),
+            browser_engine=diagnostics.get("browser_engine"),
+            total_ms=timings.get("total"),
+            navigation_ms=timings.get("navigation"),
+            final_domain=normalize_domain(
+                str(getattr(acquisition_result, "final_url", "") or context.url)
+            ),
+        )
     method = getattr(acquisition_result, "method", "unknown")
     if method == "browser":
         if getattr(acquisition_request, "on_event", None) is None:
@@ -327,7 +383,9 @@ def _record_acquire_timeline(
     if trace is None:
         return
     method = str(getattr(acquisition_result, "method", "") or "")
-    diagnostics = mapping_or_empty(getattr(acquisition_result, "browser_diagnostics", {}))
+    diagnostics = mapping_or_empty(
+        getattr(acquisition_result, "browser_diagnostics", {})
+    )
     timings = mapping_or_empty(diagnostics.get("phase_timings_ms"))
 
     for decision in _object_list(diagnostics.get("policy_decisions")):
@@ -380,9 +438,7 @@ def _record_acquire_timeline(
                 )
         interstitial = mapping_or_empty(diagnostics.get("interstitial"))
         if interstitial:
-            interstitial_status = (
-                str(interstitial.get("status") or "").strip().lower()
-            )
+            interstitial_status = str(interstitial.get("status") or "").strip().lower()
             interstitial_timing_key = (
                 obs_config.INTERSTITIAL_DISMISSAL_TIMING_KEY
                 if interstitial_status == "dismissed"
@@ -431,10 +487,32 @@ async def _run_extraction_stage(
     context: _URLProcessingContext,
     fetched: _FetchedURLStage,
 ) -> _ExtractedURLStage:
+    with logfire_span(
+        "pipeline.extract",
+        run_id=context.run.id,
+        domain=normalize_domain(context.url),
+        surface=context.surface,
+        method=getattr(fetched.acquisition_result, "method", ""),
+    ) as span:
+        return await _run_extraction_stage_observed(context, fetched, span)
+
+
+async def _run_extraction_stage_observed(
+    context: _URLProcessingContext,
+    fetched: _FetchedURLStage,
+    span,
+) -> _ExtractedURLStage:
     acquisition_result = fetched.acquisition_result
     records, selector_rules = await _extract_records_for_acquisition(
         context,
         fetched,
+    )
+    set_logfire_attributes(
+        span,
+        initial_record_count=len(records),
+        selector_rule_count=len(selector_rules),
+        adapter=getattr(acquisition_result, "adapter_name", None),
+        platform=getattr(acquisition_result, "platform_family", None),
     )
     _record_detail_expansion_extraction_outcome(
         acquisition_result,
@@ -450,6 +528,7 @@ async def _run_extraction_stage(
     if _is_content_detail_surface(context.surface):
         await _log_extraction_outcome(context, acquisition_result, records)
         _record_extraction_trace(context, records)
+        set_logfire_attributes(span, final_record_count=len(records))
         return _ExtractedURLStage(fetched=fetched, records=records)
     records, selector_rules = await _retry_low_quality_extraction_with_browser(
         context,
@@ -482,6 +561,7 @@ async def _run_extraction_stage(
         rejection_reason=rejection_reason,
     )
     if retry_stage is not None:
+        set_logfire_attributes(span, retry="real_chrome_challenge")
         return retry_stage
     retry_stage = await _retry_patchright_detail_rejection_with_real_chrome(
         context,
@@ -489,6 +569,7 @@ async def _run_extraction_stage(
         rejection_reason=rejection_reason,
     )
     if retry_stage is not None:
+        set_logfire_attributes(span, retry="real_chrome_rejection")
         return retry_stage
     await _log_extraction_outcome(context, acquisition_result, records)
     if rejection_reason:
@@ -503,6 +584,11 @@ async def _run_extraction_stage(
             f"Rejected detail extraction for {context.url}: {rejection_reason}{guidance}",
         )
     _record_extraction_trace(context, records)
+    set_logfire_attributes(
+        span,
+        final_record_count=len(records),
+        rejection_reason=rejection_reason,
+    )
     return _ExtractedURLStage(fetched=fetched, records=records)
 
 
@@ -570,14 +656,6 @@ def _is_content_detail_surface(surface: str) -> bool:
     return str(surface or "").strip().lower() in CONTENT_DETAIL_SURFACES
 
 
-
-
-
-
-
-
-
-
 async def _run_normalization_stage(
     context: _URLProcessingContext,
     extracted: _ExtractedURLStage,
@@ -619,28 +697,6 @@ async def _run_normalization_stage(
     return _ExtractedURLStage(fetched=extracted.fetched, records=normalized_records)
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 async def _apply_extraction_post_processing(
     context: _URLProcessingContext,
     *,
@@ -671,23 +727,32 @@ async def _apply_extraction_post_processing(
             reason="llm_disabled",
         )
         return records, selector_rules
-    records = await apply_direct_record_llm_fallback_impl(
-        context.session,
-        run=context.run,
-        page_url=acquisition_result.final_url,
-        html=acquisition_result.html,
-        records=records,
-        resolve_run_config_fn=resolve_run_config,
-        extract_records_fn=extract_records_directly_with_llm,
-    )
-    if "detail" in context.surface and records:
-        records = await apply_llm_fallback(
+    with logfire_span(
+        "pipeline.llm.backfill",
+        run_id=context.run.id,
+        domain=normalize_domain(str(acquisition_result.final_url or context.url)),
+        surface=context.surface,
+        input_record_count=len(records),
+        detail_surface="detail" in context.surface,
+    ) as span:
+        records = await apply_direct_record_llm_fallback_impl(
             context.session,
             run=context.run,
             page_url=acquisition_result.final_url,
             html=acquisition_result.html,
             records=records,
+            resolve_run_config_fn=resolve_run_config,
+            extract_records_fn=extract_records_directly_with_llm,
         )
+        if "detail" in context.surface and records:
+            records = await apply_llm_fallback(
+                context.session,
+                run=context.run,
+                page_url=acquisition_result.final_url,
+                html=acquisition_result.html,
+                records=records,
+            )
+        set_logfire_attributes(span, output_record_count=len(records))
     _annotate_field_repair(
         records,
         surface=context.surface,
@@ -699,54 +764,49 @@ async def _apply_extraction_post_processing(
     return records, selector_rules
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 async def _run_persistence_stage(
     context: _URLProcessingContext,
     extracted: _ExtractedURLStage,
 ) -> URLProcessingResult:
     acquisition_result = extracted.fetched.acquisition_result
-    raw_html_path = await persist_acquisition_artifacts(
+    extracted_records = list(extracted.records or [])
+    with logfire_span(
+        "pipeline.persist",
         run_id=context.run.id,
-        acquisition_result=acquisition_result,
-        browser_attempted=_browser_attempted(acquisition_result),
-        screenshot_required=_screenshot_required(_browser_outcome(acquisition_result)),
+        domain=normalize_domain(str(acquisition_result.final_url or context.url)),
         surface=context.surface,
-        blocked=_effective_blocked(acquisition_result),
-    )
-    await _enter_stage(context, STAGE_PERSIST)
-    persisted_count = await persist_extracted_records(
-        context.session,
-        context.run,
-        extracted.records,
-        acquisition_result=acquisition_result,
-        raw_html_path=raw_html_path,
-    )
+        input_record_count=len(extracted_records),
+    ) as span:
+        raw_html_path = await persist_acquisition_artifacts(
+            run_id=context.run.id,
+            acquisition_result=acquisition_result,
+            browser_attempted=_browser_attempted(acquisition_result),
+            screenshot_required=_screenshot_required(
+                _browser_outcome(acquisition_result)
+            ),
+            surface=context.surface,
+            blocked=_effective_blocked(acquisition_result),
+        )
+        await _enter_stage(context, STAGE_PERSIST)
+        persisted_count = await persist_extracted_records(
+            context.session,
+            context.run,
+            extracted_records,
+            acquisition_result=acquisition_result,
+            raw_html_path=raw_html_path,
+        )
+        set_logfire_attributes(
+            span,
+            persisted_count=persisted_count,
+            artifact_path=str(raw_html_path or ""),
+        )
     if persisted_count > 0:
         await auto_save_dom_observed_selectors(
             context.session,
             domain=normalize_domain(acquisition_result.final_url),
             surface=context.surface,
             html=acquisition_result.html,
-            records=extracted.records,
+            records=extracted_records,
             source_run_id=context.run.id,
         )
     verdict = compute_verdict(
@@ -756,7 +816,7 @@ async def _run_persistence_stage(
     )
     if not _suppress_empty_downstream_record_logs(
         acquisition_result,
-        extracted.records,
+        extracted_records,
     ):
         await _log_pipeline_event(
             context,
@@ -775,10 +835,8 @@ async def _run_persistence_stage(
         diagnostics = mapping_or_empty(
             getattr(acquisition_result, "browser_diagnostics", {})
         )
-        failure_reason = (
-            extracted.fetched.url_metrics.get("failure_reason")
-            if isinstance(extracted.fetched.url_metrics, dict)
-            else None
+        failure_reason = mapping_or_empty(extracted.fetched.url_metrics).get(
+            "failure_reason"
         ) or diagnostics.get("failure_reason")
         trace.record_extraction_rejection(str(failure_reason or "").strip() or None)
         trace.record_verdict(verdict)
@@ -791,12 +849,12 @@ async def _run_persistence_stage(
     await _update_acquisition_contract_memory(
         context,
         acquisition_result=acquisition_result,
-        records=extracted.records,
+        records=extracted_records,
         persisted_count=persisted_count,
         verdict=verdict,
     )
     result_records = []
-    for record in extracted.records:
+    for record in extracted_records:
         next_record = dict(record)
         next_record.pop("_field_repair", None)
         result_records.append(next_record)
@@ -804,12 +862,10 @@ async def _run_persistence_stage(
         records=result_records,
         verdict=verdict,
         url_metrics=finalize_url_metrics(
-            extracted.fetched.url_metrics,
+            mapping_or_empty(extracted.fetched.url_metrics),
             record_count=persisted_count,
         ),
     )
-
-
 
 
 URLProcessingContext = _URLProcessingContext

@@ -89,6 +89,7 @@ class Settings(BaseSettings):
     logfire_service_name: str = "invoro-backend"
     logfire_environment: str = ""
     logfire_capture_headers: bool = False
+    logfire_enabled_in_tests: bool = False
     system_max_concurrent_urls: int = 8
     llm_cache_ttl_seconds: int = 86400
     default_admin_email: str = Field(

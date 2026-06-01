@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-__all__ = (
-    "sanitize_variant_row",
-)
+__all__ = ("sanitize_variant_row",)
 
 import logging
 import re
@@ -36,6 +34,7 @@ from app.services.extract.variant_option_value import (
     variant_option_value_is_noise as _variant_option_value_is_noise,
 )
 from app.services.extract.detail.identity.core import (
+    detail_identity_codes_from_url,
     detail_url_looks_like_product as _detail_url_looks_like_product,
     record_matches_requested_detail_identity as _record_matches_requested_detail_identity,
 )
@@ -105,12 +104,14 @@ def sanitize_variant_row(
             cleaned_value = clean_text(axis_value)
             if not axis_key or not cleaned_value:
                 continue
-            if axis_key.startswith("toggle") or _variant_option_value_is_noise(
-                cleaned_value
-            ) or _amazon_variant_axis_value_is_noise(
-                cleaned_value,
-                axis_key=axis_key,
-                identity_url=identity_url,
+            if (
+                axis_key.startswith("toggle")
+                or _variant_option_value_is_noise(cleaned_value)
+                or _amazon_variant_axis_value_is_noise(
+                    cleaned_value,
+                    axis_key=axis_key,
+                    identity_url=identity_url,
+                )
             ):
                 axis_value_rejected = True
                 continue
@@ -158,7 +159,15 @@ def sanitize_variant_row(
         variant_url
         and same_site(identity_url, variant_url)
         and _detail_url_looks_like_product(variant_url)
-        and not _variant_url_matches_requested_base(variant_url, identity_url=identity_url)
+        and not _variant_url_matches_requested_base(
+            variant_url, identity_url=identity_url
+        )
+        and not _cross_asin_variant_url_can_be_option(
+            variant,
+            variant_url=variant_url,
+            identity_url=identity_url,
+            title_hint=title_hint,
+        )
         and not _cross_product_variant_url_can_be_option(
             variant,
             variant_url=variant_url,
@@ -243,6 +252,30 @@ def _url_is_amazon(value: object) -> bool:
     return bool(re.search(r"(^|\.)amazon\.", hostname))
 
 
+def _cross_asin_variant_url_can_be_option(
+    variant: dict[str, Any],
+    *,
+    variant_url: str,
+    identity_url: str,
+    title_hint: str,
+) -> bool:
+    if not (
+        _url_is_amazon(identity_url)
+        and _url_is_amazon(variant_url)
+        and _variant_has_public_axis_or_identity_signal(variant)
+    ):
+        return False
+    requested_codes = detail_identity_codes_from_url(identity_url)
+    variant_codes = detail_identity_codes_from_url(variant_url)
+    if not (requested_codes and variant_codes and requested_codes != variant_codes):
+        return False
+    return _cross_product_variant_url_can_be_option(
+        variant,
+        variant_url=variant_url,
+        title_hint=title_hint,
+    )
+
+
 def _variant_has_public_axis_or_identity_signal(variant: dict[str, Any]) -> bool:
     if any(
         clean_text(variant.get(field_name))
@@ -253,11 +286,9 @@ def _variant_has_public_axis_or_identity_signal(variant: dict[str, Any]) -> bool
     if not isinstance(option_values, dict):
         return False
     return any(
-        normalized_variant_axis_key(axis_name)
-        and clean_text(axis_value)
+        normalized_variant_axis_key(axis_name) and clean_text(axis_value)
         for axis_name, axis_value in option_values.items()
     )
-
 
 
 def _variant_title_is_low_signal(title: str) -> bool:
@@ -348,7 +379,11 @@ def _detail_variant_row_is_low_signal_numeric_only(variant: object) -> bool:
     if not isinstance(option_values, dict) or set(option_values) != {"size"}:
         return False
     size_value = clean_text(option_values.get("size") or variant.get("size"))
-    return bool(size_value) and size_value.isdigit() and int(size_value) <= 4
+    return (
+        bool(size_value)
+        and re.fullmatch(r"\d+", size_value) is not None
+        and int(size_value) <= 4
+    )
 
 
 def _detail_variant_cluster_is_low_signal_numeric_only(
@@ -405,6 +440,12 @@ def _drop_detail_variant_scalar_noise(record: dict[str, Any]) -> None:
         ):
             record.pop(field_name, None)
             continue
+        if field_name == "size" and _scalar_size_is_js_state_numeric_noise(
+            record,
+            cleaned_value,
+        ):
+            record.pop(field_name, None)
+            continue
         if (
             cleaned_value
             and not _variant_option_value_is_noise(cleaned_value)
@@ -420,6 +461,20 @@ def _drop_detail_variant_scalar_noise(record: dict[str, Any]) -> None:
 
 def _scalar_color_is_numeric_swatch_id(value: str) -> bool:
     return bool(value and re.fullmatch(r"\d{4,}", value))
+
+
+def _scalar_size_is_js_state_numeric_noise(
+    record: dict[str, Any],
+    value: str,
+) -> bool:
+    if not re.fullmatch(r"\d+(?:\.\d+)?", value):
+        return False
+    if any(isinstance(row, dict) for row in record.get("variants") or []):
+        return False
+    field_sources = record.get("_field_sources")
+    if not isinstance(field_sources, dict):
+        return False
+    return "js_state" in [str(source) for source in field_sources.get("size") or []]
 
 
 def _scalar_size_looks_like_option_list(value: str) -> bool:
@@ -449,9 +504,7 @@ def _whole_value_pattern(value: str) -> re.Pattern[str]:
 
 
 def _drop_variant_derived_parent_axis_scalars(record: dict[str, Any]) -> None:
-    variants = [
-        row for row in record.get("variants") or [] if isinstance(row, dict)
-    ]
+    variants = [row for row in record.get("variants") or [] if isinstance(row, dict)]
     if not variants:
         return
     field_sources = record.get("_field_sources")
@@ -475,7 +528,10 @@ def _drop_variant_derived_parent_axis_scalars(record: dict[str, Any]) -> None:
             record.pop(field_name, None)
             continue
         # Drop parent axis strings that are just a dump of child variant values.
-        if field_name in ("color", "size") and _parent_axis_value_looks_like_variant_dump(
+        if field_name in (
+            "color",
+            "size",
+        ) and _parent_axis_value_looks_like_variant_dump(
             parent_value,
             variant_values,
         ):
@@ -517,7 +573,9 @@ def _parent_axis_value_looks_like_variant_dump(
     )
 
 
-def _numeric_size_value_in_variants(parent_value: str, variant_values: set[str]) -> bool:
+def _numeric_size_value_in_variants(
+    parent_value: str, variant_values: set[str]
+) -> bool:
     try:
         parent_number = Decimal(parent_value).normalize()
     except Exception:

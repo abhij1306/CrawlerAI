@@ -48,7 +48,10 @@ from app.services.extract.detail.variants.dom_options import (
     variant_option_availability,
 )
 from app.services.extract.variant_dom_cues import variant_scope_roots
-from app.services.extract.variant_axis import public_variant_axis_fields
+from app.services.extract.variant_axis import (
+    normalized_variant_axis_key,
+    public_variant_axis_fields,
+)
 from app.services.shared.field_coerce import clean_text, text_or_none
 
 _NON_ALNUM_RE = re.compile(r"[^a-z0-9]+")
@@ -102,7 +105,7 @@ def _label_map(soup: BeautifulSoup) -> dict[str, Any]:
 
 
 class _DomOption:
-    __slots__ = ("availability", "stock_quantity", "display", "keys")
+    __slots__ = ("availability", "stock_quantity", "display", "keys", "axis_key")
 
     def __init__(
         self,
@@ -110,16 +113,21 @@ class _DomOption:
         stock_quantity: int | None,
         display: str,
         keys: set[str],
+        axis_key: str | None,
     ) -> None:
         self.availability = availability
         self.stock_quantity = stock_quantity
         self.display = display
         self.keys = keys
+        self.axis_key = axis_key
 
 
 def _control_display_label(control: Any, label: Any | None) -> str:
     """Human-facing option label, preferring the visible <label> text."""
+    selected_option = _selected_option_node(control)
     candidates: list[str] = []
+    if selected_option is not None and hasattr(selected_option, "get_text"):
+        candidates.append(selected_option.get_text(" ", strip=True))
     if label is not None and hasattr(label, "get_text"):
         candidates.append(label.get_text(" ", strip=True))
     if hasattr(control, "get"):
@@ -134,6 +142,29 @@ def _control_display_label(control: Any, label: Any | None) -> str:
         if cleaned and len(cleaned) <= _MAX_AXIS_LABEL_LEN:
             return cleaned
     return ""
+
+
+def _selected_option_node(control: Any) -> Any | None:
+    node = control
+    if getattr(node, "name", None) == "option":
+        return node
+    if getattr(node, "name", None) != "select" or not hasattr(node, "find_all"):
+        return None
+    options = list(node.find_all("option", limit=VARIANT_OPTION_CONTROL_SCAN_LIMIT))
+    selected = next((option for option in options if option.has_attr("selected")), None)
+    if selected is not None:
+        return selected
+    value = text_or_none(node.get("value")) if hasattr(node, "get") else None
+    if value:
+        return next(
+            (
+                option
+                for option in options
+                if text_or_none(option.get("value")) == value
+            ),
+            None,
+        )
+    return None
 
 
 def _clean_dom_option_display_label(value: object) -> str:
@@ -173,7 +204,40 @@ def _control_join_keys(control: Any, label: Any | None) -> set[str]:
         normalized = _normalized_key(node.get_text(" ", strip=True))
         if normalized:
             keys.add(normalized)
+    selected_option = _selected_option_node(control)
+    if selected_option is not None:
+        for value in (
+            selected_option.get_text(" ", strip=True)
+            if hasattr(selected_option, "get_text")
+            else "",
+            selected_option.get("value") if hasattr(selected_option, "get") else "",
+        ):
+            normalized = _normalized_key(value)
+            if normalized:
+                keys.add(normalized)
     return keys
+
+
+def _control_axis_key(control: Any, label_map: dict[str, Any]) -> str | None:
+    parent = getattr(control, "parent", None)
+    select_node = control if getattr(control, "name", None) == "select" else parent
+    axis_labels: list[object] = []
+    if select_node is not None and getattr(select_node, "name", None) == "select":
+        axis_labels.extend(
+            (
+                select_node.get("name"),
+                select_node.get("aria-label"),
+                select_node.get("id"),
+            )
+        )
+        select_id = text_or_none(select_node.get("id"))
+        if select_id and select_id in label_map:
+            axis_labels.append(label_map[select_id].get_text(" ", strip=True))
+    for value in axis_labels:
+        axis_key = normalized_variant_axis_key(value)
+        if axis_key:
+            return axis_key
+    return None
 
 
 def _collect_dom_options(soup: BeautifulSoup) -> list[_DomOption]:
@@ -204,6 +268,9 @@ def _collect_dom_options(soup: BeautifulSoup) -> list[_DomOption]:
                 node=control,
                 label_node=label,
             )
+            axis_key = _control_axis_key(control, label_map)
+            if axis_key and axis_key not in _PUBLIC_AXIS_FIELDS:
+                continue
             keys = _control_join_keys(control, label)
             if not keys:
                 continue
@@ -213,6 +280,7 @@ def _collect_dom_options(soup: BeautifulSoup) -> list[_DomOption]:
                     stock_quantity=stock_quantity,
                     display=_control_display_label(control, label),
                     keys=keys,
+                    axis_key=axis_key,
                 )
             )
     return options
@@ -294,6 +362,8 @@ def _maybe_upgrade_axis_label(
     if len(display) <= len(current):
         return
     if current_norm not in display_norm:
+        return
+    if re.search(r"\b(?:choose|select)\b", display, flags=re.I):
         return
     row[axis_key] = display
     option_values = row.get("option_values")
@@ -395,6 +465,8 @@ def _append_dom_only_out_of_stock_variants(
         if id(option) in matched_options:
             continue
         if option.availability != AVAILABILITY_OUT_OF_STOCK:
+            continue
+        if option.axis_key and option.axis_key != axis_key:
             continue
         axis_value = option.display
         normalized_axis_value = _normalized_key(axis_value)

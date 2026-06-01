@@ -14,6 +14,10 @@ from app.services.extract.detail.identity.core import (
     listing_detail_like_path,
 )
 from app.services.extract.detail.price.core import backfill_detail_price_from_html
+from app.services.extract.detail.variants.dom_merge import (
+    dom_variants_add_missing_existing_axis,
+)
+from app.services.extract.detail.variants.pruning import sanitize_variant_row
 from app.services.extract.variant_normalization import normalize_variant_record
 from app.services.pipeline.extract_records import extract_records
 from app.services.js_state.helpers import select_variant
@@ -5915,6 +5919,45 @@ def test_normalize_variant_record_drops_scalar_legacy_variant_axes() -> None:
     assert "size" not in record
     assert "stock" not in record
     assert "variant_axes" not in record
+
+
+@pytest.mark.regression
+def test_dom_variant_axis_detection_ignores_unknown_option_value_axes() -> None:
+    existing = [
+        {
+            "sku": "sku-s",
+            "size": "S",
+            "option_values": {"size": "S", "material": "Cotton"},
+        }
+    ]
+    dom_rows = [{"option_values": {"material": "Linen"}}]
+
+    assert dom_variants_add_missing_existing_axis(existing, dom_rows) is False
+
+
+@pytest.mark.regression
+def test_variant_sanitizer_rejects_unrelated_amazon_cross_asin_url() -> None:
+    variant = {
+        "url": "https://www.amazon.com/Other-Product/dp/B000OTHER1",
+        "size": "M",
+    }
+
+    assert (
+        sanitize_variant_row(
+            variant,
+            identity_url="https://www.amazon.com/Parent-Product/dp/B000PARENT1",
+            title_hint="Parent Product",
+        )
+        is False
+    )
+
+
+@pytest.mark.regression
+def test_variant_numeric_noise_keeps_decimal_size() -> None:
+    variant = {"option_values": {"size": "3.5"}}
+
+    assert sanitize_variant_row(variant, identity_url="https://example.com/p/shoe")
+    assert variant["option_values"] == {"size": "3.5"}
 
 
 @pytest.mark.regression

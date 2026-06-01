@@ -6,6 +6,7 @@ from contextlib import suppress
 from datetime import UTC, datetime
 
 from app.core.database import SessionLocal
+from app.core.logfire_integration import logfire_span, set_logfire_attributes
 from app.models.crawl_run import CrawlRun
 from app.services.crawl.state import (
     CONTROL_REQUEST_KILL,
@@ -26,7 +27,10 @@ from app.services.config.runtime_settings import crawler_runtime_settings
 from app.services.config.design_system import DESIGN_SYSTEM_SURFACE
 from app.services.design_system import process_design_system_run
 from app.services.domain_utils import normalize_domain
-from app.services.acquisition.browser_runtime import get_browser_runtime, patchright_browser_available
+from app.services.acquisition.browser_runtime import (
+    get_browser_runtime,
+    patchright_browser_available,
+)
 from app.services.pipeline.extraction_loop import process_single_url
 from app.services.pipeline.run_complete_callbacks import on_run_complete
 from app.services.pipeline.run_progress import BatchRunProgressState
@@ -53,7 +57,9 @@ async def _prewarm_browser_pool() -> None:
         runtime = await get_browser_runtime(browser_engine="patchright")
         await runtime.ensure()
     except Exception:
-        logger.debug("Browser pool pre-warm failed; will launch on demand", exc_info=True)
+        logger.debug(
+            "Browser pool pre-warm failed; will launch on demand", exc_info=True
+        )
 
 
 def _require_url_processing_result(url_result: object) -> URLProcessingResult:
@@ -137,7 +143,9 @@ def _url_timeout_seconds(settings_view) -> float:
         # Allow ~30s per traversal page on top of the base timeout, capped at max.
         traversal_budget = traversal_pages * 30.0
         extended = base_timeout + traversal_budget
-        return min(extended, float(crawler_runtime_settings.max_url_process_timeout_seconds))
+        return min(
+            extended, float(crawler_runtime_settings.max_url_process_timeout_seconds)
+        )
     return base_timeout
 
 
@@ -266,11 +274,26 @@ async def _persist_url_failure_log(
 
 
 async def process_run(session: AsyncSession, run_id: int) -> None:
+    with logfire_span("pipeline.run", run_id=run_id) as run_span:
+        await _process_run_with_span(session, run_id, run_span)
+
+
+async def _process_run_with_span(
+    session: AsyncSession,
+    run_id: int,
+    run_span,
+) -> None:
     try:
         run = await session.get(CrawlRun, run_id, populate_existing=True)
         if run is None or run.status_value in TERMINAL_STATUSES:
             return
         await session.refresh(run)
+        set_logfire_attributes(
+            run_span,
+            surface=run.surface,
+            run_type=run.run_type,
+            llm_enabled=run.settings_view.llm_enabled(),
+        )
         if str(run.surface or "").strip().lower() == DESIGN_SYSTEM_SURFACE:
             await process_design_system_run(session, run)
             return
@@ -286,6 +309,11 @@ async def process_run(session: AsyncSession, run_id: int) -> None:
         total_urls = len(url_list)
         if total_urls == 0:
             raise ValueError("No URL provided")
+        set_logfire_attributes(
+            run_span,
+            url_count=total_urls,
+            domain=normalize_domain(url_list[0]) if url_list else "",
+        )
 
         max_records = settings_view.max_records()
         sleep_ms = settings_view.sleep_ms()
@@ -320,13 +348,17 @@ async def process_run(session: AsyncSession, run_id: int) -> None:
                 if control_request == CONTROL_REQUEST_PAUSE:
                     update_run_status(run, CrawlStatus.PAUSED)
                     set_control_request(run, None)
-                    await log_event(session, run.id, "warning", "Run paused at checkpoint")
+                    await log_event(
+                        session, run.id, "warning", "Run paused at checkpoint"
+                    )
                     await session.commit()
                     return
                 if control_request == CONTROL_REQUEST_KILL:
                     update_run_status(run, CrawlStatus.KILLED)
                     set_control_request(run, None)
-                    await log_event(session, run.id, "warning", "Run killed at checkpoint")
+                    await log_event(
+                        session, run.id, "warning", "Run killed at checkpoint"
+                    )
                     await session.commit()
                     return
 
@@ -366,17 +398,38 @@ async def process_run(session: AsyncSession, run_id: int) -> None:
                     persist_logs=True,
                 )
                 try:
-                    url_result = _require_url_processing_result(
-                        await asyncio.wait_for(
-                            process_single_url(
-                                session=session,
-                                run=run,
-                                url=url,
-                                config=url_config,
-                            ),
-                            timeout=url_timeout_seconds,
+                    with logfire_span(
+                        "pipeline.url",
+                        run_id=run.id,
+                        url_index=idx,
+                        url_count=total_urls,
+                        domain=normalize_domain(url),
+                        surface=run.surface,
+                        max_records=remaining_records,
+                        timeout_seconds=url_timeout_seconds,
+                    ) as url_span:
+                        url_result = _require_url_processing_result(
+                            await asyncio.wait_for(
+                                process_single_url(
+                                    session=session,
+                                    run=run,
+                                    url=url,
+                                    config=url_config,
+                                ),
+                                timeout=url_timeout_seconds,
+                            )
                         )
-                    )
+                        set_logfire_attributes(
+                            url_span,
+                            verdict=url_result.verdict,
+                            record_count=_url_metric(
+                                url_result,
+                                "record_count",
+                                len(url_result.records),
+                            ),
+                            method=_url_metric(url_result, "method"),
+                            blocked=_url_metric(url_result, "blocked"),
+                        )
                 except TimeoutError as exc:
                     logger.warning(
                         "URL processing timed out for run=%s url=%s", run.id, url
@@ -409,9 +462,14 @@ async def process_run(session: AsyncSession, run_id: int) -> None:
 
                 verdicts.append(str(url_result.verdict or VERDICT_ERROR))
                 records_count = as_int(
-                    url_result.url_metrics.get("record_count", len(url_result.records))
+                    _url_metric(url_result, "record_count", len(url_result.records))
                 )
                 record_count += records_count
+                set_logfire_attributes(
+                    run_span,
+                    record_count=record_count,
+                    last_url_verdict=str(url_result.verdict or VERDICT_ERROR),
+                )
                 progress_state.record_url_result(
                     idx=idx - 1,
                     records_count=records_count,
@@ -444,6 +502,11 @@ async def process_run(session: AsyncSession, run_id: int) -> None:
             if run.status_value in TERMINAL_STATUSES:
                 return
             aggregate_verdict_value = aggregate_verdict(verdicts)
+            set_logfire_attributes(
+                run_span,
+                verdict=aggregate_verdict_value,
+                record_count=record_count,
+            )
             update_run_status(run, CrawlStatus.COMPLETED)
             _touch_run_heartbeat(run)
             run.update_summary(
@@ -479,3 +542,12 @@ async def process_run(session: AsyncSession, run_id: int) -> None:
         logger.exception("Run-level failure for run=%s", run_id)
         await _rollback_url_session(session, context="run failure marking")
         await mark_run_failed(session, run_id, f"{type(exc).__name__}: {exc}")
+
+
+def _url_metric(
+    url_result: URLProcessingResult,
+    key: str,
+    default: object | None = None,
+) -> object | None:
+    metrics = url_result.url_metrics if isinstance(url_result.url_metrics, dict) else {}
+    return metrics.get(key, default)

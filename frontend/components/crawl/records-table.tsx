@@ -107,7 +107,7 @@ export const RecordsTable = memo(function RecordsTable({
   return (
     <div className="surface-muted max-h-[calc(100vh-272px)] overflow-hidden rounded-md border">
       <Table
-        className="compact-data-table min-w-max"
+        className="compact-data-table commerce-table min-w-max"
         wrapperClassName="max-h-[calc(100vh-276px)] scrollbar-stable"
         wrapperRef={setContainerRef}
         onWrapperScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}

@@ -4,6 +4,7 @@ from typing import Any
 
 from bs4 import BeautifulSoup
 
+from app.core.logfire_integration import logfire_span, set_logfire_attributes
 from app.services.acquisition.runtime import classify_blocked_page
 from app.services.config.runtime_settings import crawler_runtime_settings
 from app.services.extract.content_listing_handler import validate_table_rows_quality
@@ -16,7 +17,9 @@ from app.services.extract.detail.identity.core import (
     listing_url_is_structural,
 )
 from app.services.extract.detail.assembly.record_assembly import extract_detail_records
-from app.services.extract.detail.assembly.final_cleanup import repair_ecommerce_detail_record_quality
+from app.services.extract.detail.assembly.final_cleanup import (
+    repair_ecommerce_detail_record_quality,
+)
 from app.services.extract.detail.price.core import drop_low_signal_zero_detail_price
 from app.services.extract.listing_candidate_ranking import best_listing_candidate_set
 from app.services.extract.listing_record_finalizer import finalize_listing_price_fields
@@ -40,6 +43,7 @@ from app.services.shared.field_coerce import (
     finalize_record,
     is_title_noise,
 )
+
 
 def extract_records(
     html: str,
@@ -76,18 +80,24 @@ def extract_records(
     raw_json_surface_field_overlap_ratio = float(
         crawler_runtime_settings.raw_json_surface_field_overlap_ratio
     )
-    json_records = extract_raw_json_records(
-        html,
-        page_url,
-        normalized_surface,
-        max_records=max_records,
-        requested_fields=requested_fields,
-        content_type=content_type,
-        raw_json_surface_field_overlap_absolute=(
-            raw_json_surface_field_overlap_absolute
-        ),
-        raw_json_surface_field_overlap_ratio=raw_json_surface_field_overlap_ratio,
-    )
+    with logfire_span(
+        "extract.tier.raw_json",
+        domain=_safe_domain(page_url),
+        surface=normalized_surface,
+    ) as span:
+        json_records = extract_raw_json_records(
+            html,
+            page_url,
+            normalized_surface,
+            max_records=max_records,
+            requested_fields=requested_fields,
+            content_type=content_type,
+            raw_json_surface_field_overlap_absolute=(
+                raw_json_surface_field_overlap_absolute
+            ),
+            raw_json_surface_field_overlap_ratio=raw_json_surface_field_overlap_ratio,
+        )
+        set_logfire_attributes(span, record_count=len(json_records))
     if json_records:
         if "listing" in normalized_surface:
             return json_records
@@ -98,11 +108,17 @@ def extract_records(
             requested_page_url=requested_page_url,
         )
     if normalized_surface in CONTENT_DETAIL_SURFACES:
-        record = extract_content_surface(
-            BeautifulSoup(html or "", "html.parser"),
-            page_url=page_url,
+        with logfire_span(
+            "extract.tier.content_detail",
+            domain=_safe_domain(page_url),
             surface=normalized_surface,
-        )
+        ) as span:
+            record = extract_content_surface(
+                BeautifulSoup(html or "", "html.parser"),
+                page_url=page_url,
+                surface=normalized_surface,
+            )
+            set_logfire_attributes(span, record_count=1 if record else 0)
         if not record:
             return []
         if _html_is_blocked_extraction_shell(html) and not _content_record_is_useful(
@@ -133,12 +149,24 @@ def extract_records(
                 )
                 if shaped.get("title") and shaped.get("url"):
                     adapter_rows.append(shaped)
-        network_rows = extract_listing_rows_from_network(
-            network_payloads,
-            page_url=page_url,
+        with logfire_span(
+            "extract.tier.listing_candidates",
+            domain=_safe_domain(page_url),
             surface=normalized_surface,
-            max_records=max_records,
-        )
+            adapter_input_count=len(adapter_records or []),
+            network_payload_count=len(network_payloads or []),
+        ) as span:
+            network_rows = extract_listing_rows_from_network(
+                network_payloads,
+                page_url=page_url,
+                surface=normalized_surface,
+                max_records=max_records,
+            )
+            set_logfire_attributes(
+                span,
+                adapter_row_count=len(adapter_rows),
+                network_row_count=len(network_rows),
+            )
         backfill_listing_rows_from_network(
             adapter_rows,
             network_payloads=network_payloads,
@@ -154,16 +182,23 @@ def extract_records(
         )
         if adapter_fast_rows:
             return adapter_fast_rows
-        listing_rows = extract_listing_records(
-            html,
-            page_url,
-            normalized_surface,
-            max_records=max_records,
-            artifacts=artifacts,
-            selector_rules=selector_rules,
-            network_payloads=network_payloads,
-            record_dom_observed_selectors=record_dom_observed_selectors,
-        )
+        with logfire_span(
+            "extract.tier.dom_listing",
+            domain=_safe_domain(page_url),
+            surface=normalized_surface,
+            selector_rule_count=len(selector_rules or []),
+        ) as span:
+            listing_rows = extract_listing_records(
+                html,
+                page_url,
+                normalized_surface,
+                max_records=max_records,
+                artifacts=artifacts,
+                selector_rules=selector_rules,
+                network_payloads=network_payloads,
+                record_dom_observed_selectors=record_dom_observed_selectors,
+            )
+            set_logfire_attributes(span, record_count=len(listing_rows))
         backfill_listing_rows_from_network(
             listing_rows,
             network_payloads=network_payloads,
@@ -214,25 +249,43 @@ def extract_records(
             return gated_rows
         propagate_listing_integrity_to_diagnostics(artifacts, browser_diagnostics)
         return []
-    detail_rows = _postprocess_detail_records(
-        extract_detail_records(
-            html,
-            page_url,
-            normalized_surface,
-            requested_page_url=requested_page_url,
-            requested_fields=requested_fields,
-            adapter_records=adapter_records,
-            network_payloads=network_payloads,
-            selector_rules=selector_rules,
-            extraction_runtime_snapshot=extraction_runtime_snapshot,
-        )[:max_records],
-        html=html,
-        page_url=page_url,
-        requested_page_url=requested_page_url,
+    with logfire_span(
+        "extract.tier.detail",
+        domain=_safe_domain(page_url),
         surface=normalized_surface,
-        repair_quality=False,
-    )
+        adapter_record_count=len(adapter_records or []),
+        network_payload_count=len(network_payloads or []),
+        selector_rule_count=len(selector_rules or []),
+    ) as span:
+        detail_rows = _postprocess_detail_records(
+            extract_detail_records(
+                html,
+                page_url,
+                normalized_surface,
+                requested_page_url=requested_page_url,
+                requested_fields=requested_fields,
+                adapter_records=adapter_records,
+                network_payloads=network_payloads,
+                selector_rules=selector_rules,
+                extraction_runtime_snapshot=extraction_runtime_snapshot,
+            )[:max_records],
+            html=html,
+            page_url=page_url,
+            requested_page_url=requested_page_url,
+            surface=normalized_surface,
+            repair_quality=False,
+        )
+        set_logfire_attributes(span, record_count=len(detail_rows))
     return detail_rows
+
+
+def _safe_domain(url: str) -> str:
+    from app.services.domain_utils import normalize_domain
+
+    try:
+        return normalize_domain(str(url or ""))
+    except (TypeError, ValueError):
+        return ""
 
 
 def _html_is_blocked_extraction_shell(html: str) -> bool:
@@ -371,5 +424,3 @@ def _listing_row_identity(row: dict[str, Any]) -> str:
     if product_id:
         return product_id.lower()
     return listing_identity_from_url(str(row.get("url") or ""))
-
-
