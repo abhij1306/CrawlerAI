@@ -69,11 +69,14 @@ def _parallel_url_concurrency(total_urls: int, settings_view) -> int:
         system_limit = _DEFAULT_URL_CONCURRENCY
     try:
         url_batch_concurrency = getattr(settings_view, "url_batch_concurrency", None)
-        batch_limit = int(
+        raw_batch_limit = (
             url_batch_concurrency()
             if callable(url_batch_concurrency)
             else url_batch_concurrency
         )
+        if raw_batch_limit is None:
+            raw_batch_limit = _DEFAULT_URL_CONCURRENCY
+        batch_limit = int(raw_batch_limit)
     except (AttributeError, TypeError, ValueError):
         batch_limit = _DEFAULT_URL_CONCURRENCY
     return max(1, min(total_urls, system_limit, batch_limit))
