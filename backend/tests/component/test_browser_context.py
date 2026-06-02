@@ -2245,7 +2245,11 @@ async def test_get_browser_runtime_evicts_idle_proxied_runtime_when_pool_is_full
 async def test_get_browser_runtime_uses_one_browser_runtime_for_total_capacity(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(acquisition_browser_pool.settings, "browser_pool_size", 10)
+    monkeypatch.setattr(
+        acquisition_browser_pool.crawler_runtime_settings,
+        "browser_runtime_pool_max_entries",
+        10,
+    )
 
     await acquisition_browser_runtime.shutdown_browser_runtime()
     runtime = await acquisition_browser_runtime.get_browser_runtime(
@@ -2916,6 +2920,18 @@ async def test_load_storage_state_for_domain_filters_existing_challenge_state(
                         "path": "/",
                     },
                     {
+                        "name": "_abck",
+                        "value": "akamai-token",
+                        "domain": f".{domain}",
+                        "path": "/",
+                    },
+                    {
+                        "name": "__cf_bm",
+                        "value": "cloudflare-token",
+                        "domain": f".{domain}",
+                        "path": "/",
+                    },
+                    {
                         "name": "analytics",
                         "value": "bot_management:captcha",
                         "domain": f".{domain}",
@@ -3117,6 +3133,20 @@ class TestNativeContextContract:
         assert headers.get("sec-ch-ua-mobile") == "?0"
         assert "Google Chrome" in str(headers.get("sec-ch-ua") or "")
         assert '"145"' in str(headers.get("sec-ch-ua") or "")
+
+    def test_native_context_merges_locality_headers_with_client_hints(self) -> None:
+        opts = browser_identity.build_playwright_context_options(
+            browser_major_version=145,
+            locality_profile={
+                "browser_context_profile": {
+                    "extra_http_headers": {"Accept-Language": "en-US"}
+                }
+            },
+        )
+        headers = opts.get("extra_http_headers") or {}
+        assert headers["Accept-Language"] == "en-US"
+        assert headers.get("sec-ch-ua-mobile") == "?0"
+        assert "Google Chrome" in str(headers.get("sec-ch-ua") or "")
 
     def test_native_context_uses_no_viewport_true(self) -> None:
         opts = browser_identity.build_playwright_context_options()

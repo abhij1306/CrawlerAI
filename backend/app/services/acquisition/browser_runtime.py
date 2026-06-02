@@ -119,19 +119,13 @@ logger = logging.getLogger(__name__)
 _ORIGIN_WARMUP_STATE_LOCK = asyncio.Lock()
 _ORIGIN_WARMUP_IN_FLIGHT: set[tuple[str, str, str, str]] = set()
 _ORIGIN_WARMUP_RECENT: dict[tuple[str, str, str, str], float] = {}
+_ORIGIN_WARMUP_RECENT_MAX_ENTRIES = 512
 
 
-async def get_browser_runtime(*args, **kwargs):
-    return await _get_browser_runtime_impl(*args, **kwargs)
-
-async def shutdown_browser_runtime() -> None:
-    await _shutdown_browser_runtime_impl()
-
-def shutdown_browser_runtime_sync() -> None:
-    _shutdown_browser_runtime_sync_impl()
-
-def browser_runtime_snapshot() -> dict[str, int | bool]:
-    return _browser_runtime_snapshot_impl()
+get_browser_runtime = _get_browser_runtime_impl
+shutdown_browser_runtime = _shutdown_browser_runtime_impl
+shutdown_browser_runtime_sync = _shutdown_browser_runtime_sync_impl
+browser_runtime_snapshot = _browser_runtime_snapshot_impl
 
 
 block_unneeded_route = _block_unneeded_route
@@ -360,22 +354,22 @@ async def browser_fetch(
             started_at = time.perf_counter()
             _remaining = remaining_timeout_factory(started_at + float(timeout_seconds))
             normalized_surface = _normalize_surface(surface)
-            payload_capture = _build_payload_capture(surface=normalized_surface)
-            payload_capture.attach(page)
-            if not capture_screenshot:
-                # Request filtering is best-effort noise/bandwidth reduction, not an
-                # acquisition gate. A route-install hiccup must not abort the fetch.
-                with suppress(Exception):
-                    await page.route("**/*", _block_unneeded_route)
-            traversal_active, readiness_policy, readiness_override = (
-                resolve_browser_fetch_policy_impl(
-                    url=url,
-                    surface=normalized_surface,
-                    traversal_mode=traversal_mode,
-                    should_run_traversal=should_run_traversal,
-                )
-            )
             try:
+                payload_capture = _build_payload_capture(surface=normalized_surface)
+                payload_capture.attach(page)
+                if not capture_screenshot:
+                    # Request filtering is best-effort noise/bandwidth reduction, not an
+                    # acquisition gate. A route-install hiccup must not abort the fetch.
+                    with suppress(Exception):
+                        await page.route("**/*", _block_unneeded_route)
+                traversal_active, readiness_policy, readiness_override = (
+                    resolve_browser_fetch_policy_impl(
+                        url=url,
+                        surface=normalized_surface,
+                        traversal_mode=traversal_mode,
+                        should_run_traversal=should_run_traversal,
+                    )
+                )
                 pre_nav_pause_ms = max(
                     0, int(crawler_runtime_settings.browser_first_nav_pause_ms)
                 )
@@ -775,9 +769,7 @@ async def _maybe_warm_origin_before_navigation(
         _normalize_browser_engine(browser_engine) == _REAL_CHROME_BROWSER_ENGINE
     )
     open_warmup_page = None
-    if use_active_warmup_page:
-        pass
-    else:
+    if not use_active_warmup_page:
         context = getattr(page, "context", None)
         if callable(context):
             with suppress(Exception):
@@ -889,6 +881,11 @@ async def _begin_origin_warmup(key: tuple[str, str, str, str]) -> bool:
             ]
             for stale_key in stale_keys:
                 _ORIGIN_WARMUP_RECENT.pop(stale_key, None)
+            if len(_ORIGIN_WARMUP_RECENT) > _ORIGIN_WARMUP_RECENT_MAX_ENTRIES:
+                keep_count = _ORIGIN_WARMUP_RECENT_MAX_ENTRIES // 2
+                excess = len(_ORIGIN_WARMUP_RECENT) - keep_count
+                for evict_key in list(_ORIGIN_WARMUP_RECENT.keys())[:excess]:
+                    _ORIGIN_WARMUP_RECENT.pop(evict_key, None)
         else:
             _ORIGIN_WARMUP_RECENT.clear()
         if key in _ORIGIN_WARMUP_IN_FLIGHT:

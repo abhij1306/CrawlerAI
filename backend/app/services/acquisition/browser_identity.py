@@ -129,8 +129,16 @@ def build_playwright_context_spec(
         browser_context_profile = locality_profile.get("browser_context_profile")
         if isinstance(browser_context_profile, dict):
             for key, value in browser_context_profile.items():
-                if value is not None:
-                    context_options[str(key)] = value
+                normalized_key = str(key)
+                if value is None:
+                    continue
+                if normalized_key == "extra_http_headers" and isinstance(value, Mapping):
+                    context_options["extra_http_headers"] = {
+                        **dict(context_options.get("extra_http_headers") or {}),
+                        **{str(header): str(header_value) for header, header_value in value.items()},
+                    }
+                    continue
+                context_options[normalized_key] = value
 
     return PlaywrightContextSpec(
         context_options=context_options,

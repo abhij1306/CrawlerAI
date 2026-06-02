@@ -176,14 +176,10 @@ async def probe_browser_readiness_impl(
         "__nuxt__",
         "shopifyanalytics.meta",
     )
-    # Specific detail tokens that strongly indicate PDP/Job content is present
-    detail_tokens = (
-        '"@type":"product"',
-        '"@type":"jobposting"',
-    )
-
     has_shell_token = any(token in analysis.lowered_html for token in shell_tokens)
-    has_detail_token = any(token in analysis.lowered_html for token in detail_tokens)
+    has_detail_token = bool(
+        re.search(r'"@type"\s*:\s*"(product|jobposting)"', analysis.lowered_html)
+    )
 
     if is_detail:
         # For detail pages, a generic shell token is NOT enough to claim readiness

@@ -154,13 +154,6 @@ class BrowserAcquisitionResultBuilder:
             block_classification=blocked_classification,
             traversal_result=payload.traversal_result,
         )
-        if (
-            browser_outcome == "usable_content"
-            and "detail" in str(payload.surface or "").strip().lower()
-            and not _detail_readiness_probe_succeeded(payload.readiness_probes)
-        ):
-            browser_outcome = "low_content_shell"
-            low_content_reason = low_content_reason or "detail_readiness_not_met"
         if location_interstitial_present:
             blocked = True
             browser_outcome = "location_required"
@@ -609,18 +602,6 @@ def _ready_probe_supports_fast_finalize(
         return True
     return False
 
-
-def _detail_readiness_probe_succeeded(
-    readiness_probes: list[dict[str, object]],
-) -> bool:
-    for probe in readiness_probes:
-        if not isinstance(probe, dict) or not bool(probe.get("is_ready")):
-            continue
-        if bool(probe.get("detail_like")):
-            return True
-        if bool(probe.get("structured_data_present")):
-            return True
-    return False
 
 async def finalize_browser_fetch(
     payload: BrowserFinalizeInput,

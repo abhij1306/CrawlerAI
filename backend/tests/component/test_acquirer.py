@@ -169,6 +169,19 @@ def test_page_evidence_keeps_usable_content_with_vendor_block_reason_out_of_chal
 
 @pytest.mark.asyncio
 @pytest.mark.component
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://100.64.0.1/api/products",
+        "https://168.63.129.16/api/products",
+    ],
+)
+async def test_internal_api_replay_reuses_public_target_ip_safety(url: str) -> None:
+    assert await _is_safe_replay_url(url, page_url=url) is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
 async def test_acquire_translates_policy_to_fetch_runtime_knobs(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

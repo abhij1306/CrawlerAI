@@ -358,9 +358,9 @@ class CrawlRunSettings:
         return _coerce_int(
             self.data.get(
                 "url_batch_concurrency",
-                crawler_runtime_settings.batch_url_concurrency,
+                crawler_runtime_settings.url_batch_concurrency,
             ),
-            crawler_runtime_settings.batch_url_concurrency,
+            crawler_runtime_settings.url_batch_concurrency,
             1,
         )
 

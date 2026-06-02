@@ -7,7 +7,6 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
-from app.core.config import settings
 from app.services.acquisition import cookie_store
 from app.services.acquisition.browser_diagnostics import (
     CHROMIUM_BROWSER_ENGINE as _CHROMIUM_BROWSER_ENGINE,
@@ -127,22 +126,15 @@ def _resolve_browser_binary(engine: str) -> tuple[str | None, str]:
         return None, _REAL_CHROME_BROWSER_ENGINE
     return executable_path, executable_path
 
+
 def _async_playwright_manager_for_engine(engine: str):
     normalized_engine = _normalize_browser_engine(engine)
-    if normalized_engine in {_PATCHRIGHT_BROWSER_ENGINE, _CHROMIUM_BROWSER_ENGINE}:
-        try:
-            playwright_factory = _patchright_async_playwright_factory
-            return playwright_factory()
-        except Exception as exc:
-            raise RuntimeError(
-                "Patchright package is not available for browser runtime"
-            ) from exc
     try:
         playwright_factory = _patchright_async_playwright_factory
         return playwright_factory()
     except Exception as exc:
         raise RuntimeError(
-            "Patchright package is not available for real_chrome browser runtime"
+            f"Patchright package is not available for {normalized_engine} browser runtime"
         ) from exc
 
 
@@ -178,8 +170,6 @@ class SharedBrowserRuntime:
         self._browser: Browser | None = None
         self._semaphore = asyncio.Semaphore(self.max_contexts)
         self._lock = asyncio.Lock()
-        self._counter_lock = asyncio.Lock()
-        self._stats_lock = asyncio.Lock()
         self._active_contexts = 0
         self._queued_count = 0
         self._total_contexts_created = 0
@@ -256,8 +246,7 @@ class SharedBrowserRuntime:
                 launch_kwargs["proxy"] = launch_proxy_config
             self._browser = await self._playwright.chromium.launch(**launch_kwargs)
             self._browser_launched_at = time.monotonic()
-            async with self._counter_lock:
-                self._total_contexts_created = 0
+            self._total_contexts_created = 0
 
     async def ensure(self) -> None:
         """Public browser warm-up API."""
@@ -272,9 +261,7 @@ class SharedBrowserRuntime:
         self,
         *,
         context_options: dict[str, Any],
-        context_spec: PlaywrightContextSpec,
     ) -> tuple[BrowserContext, Any]:
-        del context_spec
         last_error: Exception | None = None
         for attempt in range(2):
             if self._browser is None:
@@ -282,8 +269,7 @@ class SharedBrowserRuntime:
             context: BrowserContext | None = None
             try:
                 context = await self._browser.new_context(**cast(Any, context_options))
-                async with self._counter_lock:
-                    self._total_contexts_created += 1
+                self._total_contexts_created += 1
                 page = await context.new_page()
                 return context, page
             except Exception as exc:
@@ -364,19 +350,6 @@ class SharedBrowserRuntime:
             init_script=None,
         )
 
-    def _build_context_options(
-        self,
-        *,
-        run_id: int | None = None,
-        locality_profile: dict[str, object] | None = None,
-    ) -> dict[str, Any]:
-        return dict(
-            self._build_context_spec(
-                run_id=run_id,
-                locality_profile=locality_profile,
-            ).context_options
-        )
-
     @asynccontextmanager
     async def page(
         self,
@@ -386,10 +359,8 @@ class SharedBrowserRuntime:
         domain: str | None = None,
         locality_profile: dict[str, object] | None = None,
         allow_storage_state: bool = True,
-        inject_init_script: bool = False,
         phase_timings_ms: dict[str, int] | None = None,
     ):
-        del inject_init_script
         normalized_proxy = _normalized_proxy_value(proxy)
         if self.launch_proxy is None:
             if normalized_proxy is not None:
@@ -399,7 +370,7 @@ class SharedBrowserRuntime:
         elif normalized_proxy not in {None, self.launch_proxy}:
             raise RuntimeError("Browser runtime proxy does not match requested proxy")
         self.touch()
-        await self._update_queue_count(1)
+        self._update_queue_count(1)
         slot_wait_started_at = time.perf_counter()
         try:
             await asyncio.wait_for(
@@ -422,7 +393,7 @@ class SharedBrowserRuntime:
                 f"after {_browser_context_slot_timeout_seconds():.1f}s"
             ) from exc
         finally:
-            await self._update_queue_count(-1)
+            self._update_queue_count(-1)
         try:
             should_time_browser_start = (
                 self._browser is None or self._should_recycle_browser()
@@ -438,9 +409,9 @@ class SharedBrowserRuntime:
         except Exception:
             self._semaphore.release()
             raise
-        await self._update_active_contexts(1)
+        self._update_active_contexts(1)
         if self._browser is None:
-            await self._update_active_contexts(-1)
+            self._update_active_contexts(-1)
             self._semaphore.release()
             raise RuntimeError("Browser runtime failed to initialize")
         context: BrowserContext | None = None
@@ -481,7 +452,6 @@ class SharedBrowserRuntime:
             try:
                 context, page = await self._open_context_page(
                     context_options=context_options,
-                    context_spec=context_spec,
                 )
             finally:
                 _record_timing(
@@ -530,7 +500,7 @@ class SharedBrowserRuntime:
                             context_close_started_at,
                         )
             finally:
-                await self._update_active_contexts(-1)
+                self._update_active_contexts(-1)
                 self._semaphore.release()
 
     async def close(self) -> None:
@@ -582,13 +552,11 @@ class SharedBrowserRuntime:
         self._socks5_auth_bridge = None
         self._browser_launched_at = 0.0
 
-    async def _update_active_contexts(self, delta: int) -> None:
-        async with self._stats_lock:
-            self._active_contexts = max(0, self._active_contexts + delta)
+    def _update_active_contexts(self, delta: int) -> None:
+        self._active_contexts = max(0, self._active_contexts + delta)
 
-    async def _update_queue_count(self, delta: int) -> None:
-        async with self._stats_lock:
-            self._queued_count = max(0, self._queued_count + delta)
+    def _update_queue_count(self, delta: int) -> None:
+        self._queued_count = max(0, self._queued_count + delta)
 
     def snapshot(self) -> dict[str, object]:
         snapshot: dict[str, object] = {
@@ -808,7 +776,9 @@ async def get_browser_runtime(
             if runtime is None:
                 await _evict_idle_browser_runtimes_locked()
                 runtime = _build_browser_runtime_entry(
-                    max_contexts=settings.browser_pool_size,
+                    max_contexts=(
+                        crawler_runtime_settings.browser_runtime_pool_max_entries
+                    ),
                     browser_engine=normalized_engine,
                 )
                 _BROWSER_POOL.direct[normalized_engine] = runtime
@@ -818,7 +788,9 @@ async def get_browser_runtime(
         runtime = _BROWSER_POOL.proxied.get((normalized_engine, normalized_proxy))
         if runtime is None:
             runtime = _build_browser_runtime_entry(
-                max_contexts=settings.browser_pool_size,
+                max_contexts=(
+                    crawler_runtime_settings.browser_runtime_pool_max_entries
+                ),
                 launch_proxy=normalized_proxy,
                 browser_engine=normalized_engine,
             )
@@ -840,6 +812,7 @@ def _build_browser_runtime_entry(
         browser_engine=browser_engine,
     )
 
+
 async def shutdown_browser_runtime() -> None:
     async with _BROWSER_POOL.lock:
         runtimes = [
@@ -852,9 +825,18 @@ async def shutdown_browser_runtime() -> None:
         ]
         _BROWSER_POOL.direct.clear()
         _BROWSER_POOL.proxied.clear()
-    for runtime in runtimes:
-        await runtime.close()
+    results = await asyncio.gather(
+        *(runtime.close() for runtime in runtimes),
+        return_exceptions=True,
+    )
+    for result in results:
+        if isinstance(result, Exception):
+            logger.warning(
+                "Browser runtime close failed during shutdown: %s",
+                result,
+            )
     clear_browser_identity_cache()
+
 
 def shutdown_browser_runtime_sync() -> None:
     try:
@@ -867,6 +849,7 @@ def shutdown_browser_runtime_sync() -> None:
     task = loop.create_task(shutdown_browser_runtime())
     task.add_done_callback(_log_shutdown_task_result)
 
+
 def browser_runtime_snapshot() -> dict[str, int | bool]:
     runtimes = [
         runtime
@@ -877,7 +860,10 @@ def browser_runtime_snapshot() -> dict[str, int | bool]:
         if runtime is not None
     ]
     if not runtimes:
-        max_size = max(1, int(settings.browser_pool_size))
+        max_size = max(
+            1,
+            int(crawler_runtime_settings.browser_runtime_pool_max_entries),
+        )
         return {
             "ready": False,
             "size": 0,

@@ -2,10 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
-import socket
-import asyncio
 from collections.abc import Mapping
-from ipaddress import ip_address
 from urllib.parse import SplitResult, urlsplit
 
 import httpx
@@ -24,6 +21,7 @@ from app.services.config.runtime_settings import crawler_runtime_settings
 from app.services.domain_utils import normalize_domain
 from app.services.extract.network_listing_mapper import extract_listing_rows_from_network
 from app.services.network_payload_mapper import map_network_payloads_to_fields
+from app.services.url_safety import validate_public_target
 
 logger = logging.getLogger(__name__)
 
@@ -201,48 +199,17 @@ async def _is_safe_replay_url(url: str, *, page_url: str) -> bool:
     hostname = parsed.hostname
     if not hostname:
         return False
-    return await _host_resolves_publicly(hostname)
+    try:
+        await validate_public_target(url)
+    except ValueError:
+        return False
+    return True
 
 
 def _origin(parsed: SplitResult) -> tuple[str, str, int]:
     scheme = parsed.scheme.lower()
     port = parsed.port or (443 if scheme == "https" else 80)
     return scheme, str(parsed.hostname or "").lower(), port
-
-
-async def _host_resolves_publicly(hostname: str) -> bool:
-    try:
-        literal = ip_address(hostname)
-    except ValueError:
-        pass
-    else:
-        return _is_public_ip(literal)
-    try:
-        infos = await asyncio.to_thread(socket.getaddrinfo, hostname, None)
-    except OSError:
-        return False
-    addresses = {info[4][0] for info in infos if info and info[4]}
-    if not addresses:
-        return False
-    for address in addresses:
-        try:
-            parsed_address = ip_address(address)
-        except ValueError:
-            return False
-        if not _is_public_ip(parsed_address):
-            return False
-    return True
-
-
-def _is_public_ip(address: object) -> bool:
-    return not (
-        getattr(address, "is_private", False)
-        or getattr(address, "is_loopback", False)
-        or getattr(address, "is_link_local", False)
-        or getattr(address, "is_multicast", False)
-        or getattr(address, "is_reserved", False)
-        or getattr(address, "is_unspecified", False)
-    )
 
 
 def _endpoint_from_payload(

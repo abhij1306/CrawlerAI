@@ -246,7 +246,7 @@ async def test_process_run_defaults_to_sequential_batch_url_processing(
     monkeypatch: pytest.MonkeyPatch,
     patch_settings,
 ) -> None:
-    patch_settings(batch_url_concurrency=1, url_batch_concurrency=1)
+    patch_settings(url_batch_concurrency=1)
     run = await create_crawl_run(
         db_session,
         test_user.id,
@@ -290,13 +290,13 @@ async def test_process_run_defaults_to_sequential_batch_url_processing(
 
 @pytest.mark.asyncio
 @pytest.mark.regression
-async def test_process_run_uses_batch_url_concurrency_setting(
+async def test_process_run_uses_url_batch_concurrency_setting(
     db_session: AsyncSession,
     test_user,
     monkeypatch: pytest.MonkeyPatch,
     patch_settings,
 ) -> None:
-    patch_settings(batch_url_concurrency=2, url_batch_concurrency=1)
+    patch_settings(url_batch_concurrency=2)
     run = await create_crawl_run(
         db_session,
         test_user.id,
@@ -348,7 +348,7 @@ async def test_process_run_runs_same_domain_batch_urls_in_parallel(
     monkeypatch: pytest.MonkeyPatch,
     patch_settings,
 ) -> None:
-    patch_settings(batch_url_concurrency=3, url_batch_concurrency=3)
+    patch_settings(url_batch_concurrency=3)
     run = await create_crawl_run(
         db_session,
         test_user.id,
@@ -710,7 +710,7 @@ async def test_process_batch_run_preserves_requested_fields_for_every_url(
     monkeypatch: pytest.MonkeyPatch,
     patch_settings,
 ) -> None:
-    patch_settings(batch_url_concurrency=1, url_batch_concurrency=1)
+    patch_settings(url_batch_concurrency=1)
     run = await create_crawl_run(
         db_session,
         test_user.id,
@@ -751,7 +751,7 @@ async def test_process_batch_run_preserves_proxy_list_for_every_url(
     monkeypatch: pytest.MonkeyPatch,
     patch_settings,
 ) -> None:
-    patch_settings(batch_url_concurrency=1, url_batch_concurrency=1)
+    patch_settings(url_batch_concurrency=1)
     run = await create_crawl_run(
         db_session,
         test_user.id,
@@ -802,7 +802,7 @@ async def test_process_batch_run_preserves_exact_requested_section_labels_for_ev
     monkeypatch: pytest.MonkeyPatch,
     patch_settings,
 ) -> None:
-    patch_settings(batch_url_concurrency=1, url_batch_concurrency=1)
+    patch_settings(url_batch_concurrency=1)
     run = await create_crawl_run(
         db_session,
         test_user.id,
@@ -846,7 +846,7 @@ async def test_process_batch_run_resolves_urls_from_sitemap_settings(
     monkeypatch: pytest.MonkeyPatch,
     patch_settings,
 ) -> None:
-    patch_settings(batch_url_concurrency=1, url_batch_concurrency=1)
+    patch_settings(url_batch_concurrency=1)
     run = await create_crawl_run(
         db_session,
         test_user.id,
@@ -1076,7 +1076,7 @@ async def test_process_run_continues_after_sqlalchemy_url_error(
     monkeypatch: pytest.MonkeyPatch,
     patch_settings,
 ) -> None:
-    patch_settings(batch_url_concurrency=1, url_batch_concurrency=1)
+    patch_settings(url_batch_concurrency=1)
     run = await create_crawl_run(
         db_session,
         test_user.id,

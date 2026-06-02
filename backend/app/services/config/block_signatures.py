@@ -136,6 +136,11 @@ BLOCK_SIGNATURES = {
                 "_px",
             ],
             "cookie_name_exact": [
+                "__cf_bm",
+                "_abck",
+                "ak_bmsc",
+                "bm_sz",
+                "cf_clearance",
                 "pxcts",
                 "datadome",
             ],

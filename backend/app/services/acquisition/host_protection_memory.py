@@ -385,12 +385,12 @@ async def reset_host_protection_memory(
                     await owned_session.rollback()
             return
     try:
-        await session.execute(delete(HostProtectionMemory))
-        await session.flush()
+        async with session.begin_nested():
+            await session.execute(delete(HostProtectionMemory))
+            await session.flush()
     except (IntegrityError, OperationalError, ProgrammingError) as exc:
         if "host_protection_memory" not in str(exc).lower():
             raise
-        await session.rollback()
         return
 
 
@@ -400,18 +400,18 @@ async def _load_row(
     host: str,
 ) -> HostProtectionMemory | None:
     try:
-        result = await session.execute(
-            select(HostProtectionMemory)
-            .where(HostProtectionMemory.host == host)
-            .order_by(
-                HostProtectionMemory.updated_at.desc(), HostProtectionMemory.id.desc()
+        async with session.begin_nested():
+            result = await session.execute(
+                select(HostProtectionMemory)
+                .where(HostProtectionMemory.host == host)
+                .order_by(
+                    HostProtectionMemory.updated_at.desc(), HostProtectionMemory.id.desc()
+                )
+                .limit(1)
             )
-            .limit(1)
-        )
     except (IntegrityError, OperationalError, ProgrammingError) as exc:
         if "host_protection_memory" not in str(exc).lower():
             raise
-        await session.rollback()
         return None
     return result.scalar_one_or_none()
 
@@ -425,15 +425,15 @@ async def _ensure_row(
         row = await _load_row(session, host=host)
         if row is not None:
             return row
-        row = HostProtectionMemory(host=host)
-        session.add(row)
         try:
-            await session.flush()
+            async with session.begin_nested():
+                row = HostProtectionMemory(host=host)
+                session.add(row)
+                await session.flush()
             return row
         except (IntegrityError, OperationalError, ProgrammingError) as exc:
             if "host_protection_memory" not in str(exc).lower():
                 raise
-            await session.rollback()
             row = await _load_row(session, host=host)
             if row is not None:
                 return row

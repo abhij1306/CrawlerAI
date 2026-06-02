@@ -46,6 +46,7 @@ _PROFILE_CONTROLLED_FIELDS = (
     "origin_warm_pause_ms",
     "surface_readiness_max_wait_ms",
 )
+_DEFAULT_CHROME_MAJOR_VERSION = 131
 VALID_FETCH_MODES = frozenset(
     {"auto", "http_only", "browser_only", "http_then_browser"}
 )
@@ -86,12 +87,12 @@ class CrawlerRuntimeSettings(BaseSettings):
     performance_profile: Literal["ULTRA_FAST", "BALANCED", "STEALTH"] = "BALANCED"
     http_timeout_seconds: int = 10
     acquisition_attempt_timeout_seconds: int = 90
-    curl_impersonate_target: str = "chrome131"
+    curl_impersonate_target: str = f"chrome{_DEFAULT_CHROME_MAJOR_VERSION}"
     force_httpx: bool = False
     http_user_agent: str = (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
         "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/131.0.0.0 Safari/537.36"
+        f"Chrome/{_DEFAULT_CHROME_MAJOR_VERSION}.0.0.0 Safari/537.36"
     )
     browser_fallback_visible_text_min: int | None = 500
     browser_fallback_visible_text_ratio_max: float = 0.02
@@ -109,7 +110,6 @@ class CrawlerRuntimeSettings(BaseSettings):
     schema_max_age_days: int = 30
     listing_fallback_fragment_limit: int = 200
     auto_detect_surface: bool = False
-    batch_url_concurrency: int = 20
     url_batch_concurrency: int = 20
     url_process_timeout_seconds: float = 90.0
     url_process_timeout_buffer_seconds: float = 15.0
@@ -620,6 +620,9 @@ class CrawlerRuntimeSettings(BaseSettings):
 
 
 crawler_runtime_settings = CrawlerRuntimeSettings()
+
+# Compatibility exports: these are import-time snapshots. Use the functions below
+# when tests or runtime code need values patched through crawler_runtime_settings.
 BROWSER_CAPTURE_MAX_NETWORK_PAYLOADS = (
     crawler_runtime_settings.browser_capture_max_network_payloads
 )

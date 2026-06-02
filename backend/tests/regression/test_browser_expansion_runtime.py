@@ -268,6 +268,48 @@ async def test_finalize_browser_fetch_marks_location_interstitial_blocked(
     assert browser_finalize_support.visual_calls == []
 
 
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_finalize_browser_fetch_keeps_usable_detail_without_ready_probe(
+    browser_finalize_support: SimpleNamespace,
+) -> None:
+    html = """
+    <html><body>
+      <main>
+        <div class="product-title">Widget Prime</div>
+        <div class="price">$19.99</div>
+        <p>Durable cotton shirt with complete product copy.</p>
+      </main>
+    </body></html>
+    """
+    payload = browser_finalize_support.make_payload(
+        html=html,
+        readiness_probes=[
+            {
+                "is_ready": False,
+                "detail_like": False,
+                "structured_data_present": False,
+                "visible_text_length": 70,
+            }
+        ],
+    )
+
+    result = await browser_page_flow.finalize_browser_fetch(
+        payload,
+        blocked_html_checker=lambda *_args, **_kwargs: False,
+        classify_blocked_page_async=browser_finalize_support.classify_blocked_page_async,
+        classify_low_content_reason=lambda *_args, **_kwargs: None,
+        classify_browser_outcome=lambda **_kwargs: "usable_content",
+        capture_browser_screenshot=lambda _page: "",
+        emit_browser_event=browser_finalize_support.emit_browser_event,
+        elapsed_ms=lambda _started_at: 0,
+    )
+
+    assert result["blocked"] is False
+    assert result["diagnostics"]["browser_outcome"] == "usable_content"
+    assert result["diagnostics"].get("low_content_reason") in (None, "")
+
+
 @pytest.mark.regression
 def test_location_interstitial_detects_text_only_fallback() -> None:
     html = """
@@ -280,6 +322,93 @@ def test_location_interstitial_detects_text_only_fallback() -> None:
     """
 
     assert browser_page_flow.location_interstitial_detected(html) is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_probe_browser_readiness_detects_spaced_jsonld_detail_type() -> None:
+    html = """
+    <html><body>
+      <script type="application/ld+json">
+        {"@context": "https://schema.org", "@type" : "Product", "name": "Widget"}
+      </script>
+    </body></html>
+    """
+
+    probe = await browser_readiness.probe_browser_readiness_impl(
+        SimpleNamespace(),
+        url="https://example.com/products/widget",
+        surface="ecommerce_detail",
+        html=html,
+        detail_readiness_hint_count=lambda *_args, **_kwargs: 0,
+    )
+
+    assert probe["structured_data_present"] is True
+    assert probe["is_ready"] is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_browser_fetch_closes_payload_capture_after_policy_resolution_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    closed: list[object] = []
+
+    class _FakePayloadCapture:
+        def attach(self, _page):
+            return None
+
+        async def close(self, page):
+            closed.append(page)
+            return _network_capture_summary()
+
+    page = SimpleNamespace(
+        url="https://example.com/products/widget",
+        route=lambda *_args, **_kwargs: _async_checkpoint(),
+    )
+
+    @asynccontextmanager
+    async def _page_context():
+        yield page
+
+    async def _fake_resolve_page_context(**_kwargs):
+        return None, _page_context()
+
+    async def _fake_prepare_context(**_kwargs):
+        return "chromium", "chromium", False, True
+
+    def _raise_policy_error(**_kwargs):
+        raise RuntimeError("policy failed")
+
+    monkeypatch.setattr(
+        browser_runtime,
+        "_resolve_browser_fetch_page_context",
+        _fake_resolve_page_context,
+    )
+    monkeypatch.setattr(
+        browser_runtime,
+        "_prepare_browser_fetch_launch_context",
+        _fake_prepare_context,
+    )
+    monkeypatch.setattr(
+        browser_runtime,
+        "_build_payload_capture",
+        lambda **_kwargs: _FakePayloadCapture(),
+    )
+    monkeypatch.setattr(
+        browser_runtime,
+        "resolve_browser_fetch_policy_impl",
+        _raise_policy_error,
+    )
+
+    with pytest.raises(RuntimeError, match="policy failed"):
+        await browser_runtime.browser_fetch(
+            "https://example.com/products/widget",
+            timeout_seconds=1,
+            surface="ecommerce_detail",
+        )
+
+    assert closed == [page]
 
 
 @pytest.mark.regression
