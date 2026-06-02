@@ -6,7 +6,7 @@ cd /d "%ROOT%"
 
 set "REDIS_URL=redis://localhost:6380/0"
 set "REDIS_STATE_ENABLED=false"
-set "CELERY_DISPATCH_ENABLED=false"
+set "CELERY_DISPATCH_ENABLED=true"
 set "INVORO_WORKER_COUNT=2"
 if exist "%ROOT%.env" (
     for /f "usebackq tokens=1,* delims==" %%A in ("%ROOT%.env") do (
@@ -67,12 +67,11 @@ echo [Invoro] Starting frontend...
 start "Invoro Frontend" /D "%ROOT%frontend" cmd /k npm.cmd run dev
 
 REM --- Celery workers ------------------------------------------------
-REM --- Celery workers ------------------------------------------------
 if /I "%CELERY_DISPATCH_ENABLED%"=="true" (
-    echo [Invoro] Starting %INVORO_WORKER_COUNT% Celery worker(s)...
+    echo [Invoro] Starting %INVORO_WORKER_COUNT% Celery workers...
     for /L %%I in (1,1,%INVORO_WORKER_COUNT%) do (
         echo [Invoro] Starting worker %%I...
-        start "Invoro Worker %%I" /D "%ROOT%backend" cmd /k .venv\Scripts\python.exe -m celery -A app.core.celery_app.celery_app worker --loglevel=INFO --pool=solo --concurrency=1 --hostname=invoro-worker-%%I@%COMPUTERNAME% --logfile="%ROOT%backend\artifacts\celery-worker-%%I.log"
+        start "Invoro Worker %%I" /D "%ROOT%backend" cmd /k "set PYTHONPATH=.&& .venv\Scripts\python.exe -m celery -A app.core.celery_app.celery_app worker --loglevel=INFO --pool=solo --concurrency=1 --hostname=invoro-worker-%%I@%COMPUTERNAME% --logfile=artifacts\celery-worker-%%I.log"
     )
 ) else (
     echo [Invoro] Celery workers disabled.

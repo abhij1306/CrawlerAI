@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm.attributes import set_committed_value
 
 DEFAULT_ADMIN_EMAIL = "DEFAULT_ADMIN_EMAIL"
-DEFAULT_ADMIN_PASSWORD = "DEFAULT_ADMIN_PASSWORD"  # nosec B105
+DEFAULT_ADMIN_PASSWORD = "DEFAULT_ADMIN_PASSWORD"  # nosec B105 # skipcq: SCT-A000 - environment variable name, not a secret.
 BOOTSTRAP_ADMIN_ONCE = "BOOTSTRAP_ADMIN_ONCE"
 logger = logging.getLogger("app.auth")
 
@@ -28,9 +28,7 @@ def _validate_default_admin_password(password: str) -> None:
     issues = admin_password_strength_issues(password)
     if issues:
         logger.warning(
-            "Admin bootstrap secret is weaker than the current recommendation; issue_count=%d issues=%s",
-            len(issues),
-            ", ".join(issues),
+            "Admin bootstrap secret is weaker than the current recommendation",
         )
 
 

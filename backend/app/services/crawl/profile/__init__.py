@@ -9,7 +9,11 @@ from .acquisition_contract import (
     save_learned_acquisition_contract,
 )
 from .merge import merge_saved_run_profile, resolve_url_acquisition_recipe
-from .normalization import normalize_acquisition_contract, normalize_domain_run_profile
+from .normalization import (
+    normalize_acquisition_contract,
+    normalize_domain_run_profile,
+    normalize_internal_api_endpoints,
+)
 from .repository import (
     list_domain_run_profiles,
     load_domain_run_profile,
@@ -25,6 +29,7 @@ __all__ = [
     "merge_saved_run_profile",
     "normalize_acquisition_contract",
     "normalize_domain_run_profile",
+    "normalize_internal_api_endpoints",
     "note_acquisition_contract_failure",
     "record_acquisition_contract_outcome",
     "resolve_url_acquisition_recipe",

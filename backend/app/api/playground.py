@@ -52,7 +52,13 @@ async def playground_create_session(
 ) -> PlaygroundSessionResponse:
     """Create a new playground session with a starting URL."""
     try:
-        playground = await create_session(session, user=user, url=payload.url)
+        playground = await create_session(
+            session,
+            user=user,
+            url=None,
+            urls=payload.selected_urls(),
+            category_limit=payload.category_limit,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     response = _session_response(playground)

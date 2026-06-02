@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import httpx
 import pytest
 
@@ -350,6 +352,269 @@ async def test_resolver_default_does_not_filter_urls(
 
 @pytest.mark.asyncio
 @pytest.mark.component
+async def test_resolver_category_only_filters_non_category_urls(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root_url = "https://example.com/sitemap.xml"
+    fake_client = _FakeClient(
+        {
+            root_url: _xml_response(
+                root_url,
+                f"""<urlset xmlns="{SITEMAP_NS}">
+                  <url><loc>https://example.com/collections/women</loc></url>
+                  <url><loc>https://example.com/products/shoe-123</loc></url>
+                  <url><loc>https://example.com/pages/about</loc></url>
+                  <url><loc>https://example.com/shop/sale</loc></url>
+                </urlset>""",
+            ),
+        }
+    )
+    monkeypatch.setattr(
+        "app.services.crawl.sitemap_resolver.httpx.AsyncClient",
+        lambda **kwargs: fake_client,
+    )
+    monkeypatch.setattr(
+        "app.services.crawl.sitemap_resolver.validate_public_target",
+        _valid_target,
+    )
+
+    urls = await resolve_category_urls_from_sitemap(
+        "example.com",
+        category_only=True,
+    )
+
+    assert urls == [
+        "https://example.com/collections/women",
+        "https://example.com/shop/sale",
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_resolver_builds_nav_tree_from_sitemap_category_urls(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root_url = "https://example.com/sitemap.xml"
+    fake_client = _FakeClient(
+        {
+            root_url: _xml_response(
+                root_url,
+                f"""<urlset xmlns="{SITEMAP_NS}">
+                  <url><loc>https://example.com/collections/women/dresses</loc></url>
+                  <url><loc>https://example.com/collections/men/shirts</loc></url>
+                </urlset>""",
+            ),
+        }
+    )
+    monkeypatch.setattr(
+        "app.services.crawl.sitemap_resolver.httpx.AsyncClient",
+        lambda **kwargs: fake_client,
+    )
+    monkeypatch.setattr(
+        "app.services.crawl.sitemap_resolver.validate_public_target",
+        _valid_target,
+    )
+
+    result = await resolve_category_urls_from_sitemap_result(
+        "example.com",
+        category_only=True,
+    )
+
+    assert result.nav_tree == [
+        {
+            "label": "Collections",
+            "children": [
+                {
+                    "label": "Women",
+                    "children": [
+                        {
+                            "label": "Dresses",
+                            "url": "https://example.com/collections/women/dresses",
+                            "children": [],
+                        }
+                    ],
+                },
+                {
+                    "label": "Men",
+                    "children": [
+                        {
+                            "label": "Shirts",
+                            "url": "https://example.com/collections/men/shirts",
+                            "children": [],
+                        }
+                    ],
+                },
+            ],
+        }
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_homepage_fallback_nav_tree_prefers_anchor_text_labels(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sitemap_url = "https://example.com/sitemap.xml"
+    homepage_url = "https://example.com"
+    fake_client = _FakeClient(
+        {
+            sitemap_url: _xml_response(sitemap_url, "missing", 404),
+            homepage_url: httpx.Response(
+                200,
+                text="""
+                <html><body>
+                  <nav>
+                    <a href="/collections/women/dresses">Women's Dresses</a>
+                  </nav>
+                </body></html>
+                """,
+                request=httpx.Request("GET", homepage_url),
+            ),
+        }
+    )
+    monkeypatch.setattr(
+        "app.services.crawl.sitemap_resolver.httpx.AsyncClient",
+        lambda **kwargs: fake_client,
+    )
+    monkeypatch.setattr(
+        "app.services.crawl.sitemap_resolver.validate_public_target",
+        _valid_target,
+    )
+
+    result = await resolve_category_urls_from_sitemap_result(
+        "example.com",
+        allow_homepage_fallback=True,
+        category_only=True,
+    )
+
+    assert result.nav_tree == [
+        {
+            "label": "Collections",
+            "children": [
+                {
+                    "label": "Women",
+                    "children": [
+                        {
+                            "label": "Women's Dresses",
+                            "url": "https://example.com/collections/women/dresses",
+                            "children": [],
+                        }
+                    ],
+                }
+            ],
+        }
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_resolver_category_only_falls_back_when_sitemap_has_account_links(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sitemap_url = "https://www.tommy.com/sitemap.xml"
+    homepage_url = "https://www.tommy.com"
+    fake_client = _FakeClient(
+        {
+            sitemap_url: _xml_response(
+                sitemap_url,
+                f"""<urlset xmlns="{SITEMAP_NS}">
+                  <url><loc>https://www.tommy.com/myorders</loc></url>
+                  <url><loc>https://www.tommy.com/store-locator</loc></url>
+                  <url><loc>https://www.tommy.com/apps</loc></url>
+                </urlset>""",
+            ),
+            homepage_url: httpx.Response(
+                200,
+                text="""
+                <html><body>
+                  <nav>
+                    <a href="/women">Women</a>
+                    <a href="/men">Men</a>
+                    <a href="/myorders">Orders</a>
+                    <a href="/store-locator">Stores</a>
+                    <a href="/apps">Apps</a>
+                  </nav>
+                </body></html>
+                """,
+                # Different request host is intentional: covers relative links after redirects.
+                request=httpx.Request("GET", "https://tommyhilfiger.nnnow.com/"),
+            ),
+        }
+    )
+    monkeypatch.setattr(
+        "app.services.crawl.sitemap_resolver.httpx.AsyncClient",
+        lambda **kwargs: fake_client,
+    )
+    monkeypatch.setattr(
+        "app.services.crawl.sitemap_resolver.validate_public_target",
+        _valid_target,
+    )
+
+    result = await resolve_category_urls_from_sitemap_result(
+        "https://www.tommy.com",
+        allow_homepage_fallback=True,
+        category_only=True,
+    )
+
+    assert result.source == "homepage"
+    assert result.urls == [
+        "https://tommyhilfiger.nnnow.com/women",
+        "https://tommyhilfiger.nnnow.com/men",
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_homepage_category_only_keeps_auto_listing_without_anchor_signal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "app.services.crawl.sitemap_resolver.validate_public_target",
+        _valid_target,
+    )
+    monkeypatch.setattr(
+        "app.services.crawl.sitemap_resolver.resolve_auto_surface",
+        lambda **kwargs: SimpleNamespace(surface="ecommerce_listing", confidence=0.8),
+    )
+
+    urls = await sitemap_resolver._extract_homepage_candidate_urls(
+        homepage_url="https://example.com",
+        html='<html><body><nav><a href="/lookbook">Explore</a></nav></body></html>',
+        keyword="",
+        limit=10,
+        category_only=True,
+    )
+
+    assert urls == ["https://example.com/lookbook"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_homepage_category_only_keeps_anchor_category_without_auto_listing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "app.services.crawl.sitemap_resolver.validate_public_target",
+        _valid_target,
+    )
+    monkeypatch.setattr(
+        "app.services.crawl.sitemap_resolver.resolve_auto_surface",
+        lambda **kwargs: SimpleNamespace(surface="unknown", confidence=0.0),
+    )
+
+    urls = await sitemap_resolver._extract_homepage_candidate_urls(
+        homepage_url="https://example.com",
+        html='<html><body><nav><a href="/women">Women</a></nav></body></html>',
+        keyword="",
+        limit=10,
+        category_only=True,
+    )
+
+    assert urls == ["https://example.com/women"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
 async def test_resolver_empty_urlset_without_filter_reports_no_urls(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -656,4 +921,3 @@ async def test_resolver_rejects_private_redirect_chain_url(
 
     with pytest.raises(SecurityError):
         await resolve_category_urls_from_sitemap("example.com", "collections", 500)
-

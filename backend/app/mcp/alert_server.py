@@ -24,7 +24,8 @@ class AlertMCPServer:
         self.api_key = api_key or os.environ.get(MCP_API_KEY_ENV, "")
         self.base_url = (base_url or os.environ.get(MCP_API_BASE_URL_ENV, MCP_DEFAULT_API_BASE_URL)).rstrip("/")
 
-    def tools(self) -> list[dict[str, Any]]:
+    @staticmethod
+    def tools() -> list[dict[str, Any]]:
         return [
             {
                 "name": "alert_product",
@@ -75,7 +76,7 @@ class AlertMCPServer:
 
     async def call_tool(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         if name == "alert_product":
-            return await self._request("POST", "/alerts", json=arguments)
+            return await self._request("POST", "/alerts", json_body=arguments)
         if name == "get_alert_status":
             return await self._request("GET", f"/alerts/{arguments['alert_id']}")
         if name == "cancel_alert":
@@ -91,7 +92,7 @@ class AlertMCPServer:
         method: str,
         path: str,
         *,
-        json: dict[str, Any] | None = None,
+        json_body: dict[str, Any] | None = None,
         params: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         if not self.api_key:
@@ -102,7 +103,7 @@ class AlertMCPServer:
                 method,
                 f"{self.base_url}{path}",
                 headers=headers,
-                json=json,
+                json=json_body,
                 params=params,
             )
         if response.status_code == 204:

@@ -211,10 +211,7 @@ def _check_secret_defaults() -> None:
     if settings.bootstrap_admin_once and default_admin_password:
         password_issues = admin_password_strength_issues(default_admin_password)
         if password_issues:
-            warnings.append(
-                "admin bootstrap secret must include "
-                + ", ".join(password_issues)
-            )
+            warnings.append("admin bootstrap secret strength requirements not met")
     if settings.bootstrap_admin_once and not default_admin_password:
         issues.append(
             "bootstrap_admin_once requires a non-empty admin bootstrap secret"
@@ -226,8 +223,7 @@ def _check_secret_defaults() -> None:
         issues.append("bootstrap_admin_once requires a non-default default_admin_email")
     if warnings:
         logger.warning(
-            "SECURITY WARNING: admin bootstrap secret is weaker than the current recommendation; issues=%s",
-            ", ".join(warnings),
+            "SECURITY WARNING: admin bootstrap secret is weaker than the current recommendation",
         )
     if not issues:
         return
@@ -265,8 +261,6 @@ def get_frontend_origins() -> list[str]:
 
 
 def load_admin_bootstrap_settings() -> Settings:
-    import os
-
     fresh = _load_settings()
     resolved = settings.model_copy()
     if (

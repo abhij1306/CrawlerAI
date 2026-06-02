@@ -21,7 +21,6 @@ _DISABLE_COOLDOWN_SECONDS = 30.0
 _BACKGROUND_TASKS: set[asyncio.Task[None]] = set()
 T = TypeVar("T")
 
-
 def redis_is_enabled() -> bool:
     if not settings.redis_state_enabled:
         return False
@@ -92,8 +91,8 @@ async def redis_fail_open(
             "Redis operation failed; continuing without shared state",
             exc_info=False,
             extra={
-                "operation_name": operation_name,
                 "exception_type": type(exc).__name__,
+                "operation_name": operation_name,
             },
         )
         return default

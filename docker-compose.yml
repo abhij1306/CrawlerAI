@@ -42,7 +42,7 @@ services:
       - .env
     environment: &backend_env
       APP_ENV: development
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}@db:5432/${POSTGRES_DB:-crawlerai}
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}@db:5432/${POSTGRES_DB:-crawlerai} # skipcq: SCT-A000 - password is required from environment, not hardcoded.
       REDIS_URL: redis://redis:6379/0
       REDIS_STATE_ENABLED: "false"
       CELERY_DISPATCH_ENABLED: "true"

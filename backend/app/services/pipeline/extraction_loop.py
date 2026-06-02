@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio  # noqa: F401 - kept for tests that patch asyncio.to_thread on this module.
 import time
 
 from app.core.logfire_integration import logfire_span, set_logfire_attributes

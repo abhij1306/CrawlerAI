@@ -4,6 +4,7 @@ import hashlib
 import logging
 from collections import defaultdict
 from datetime import UTC, datetime
+from threading import Lock
 
 import httpx
 from sqlalchemy import select
@@ -23,11 +24,26 @@ from app.services.config.monitor_settings import (
     MONITOR_RUN_TYPE_CRAWL,
     SKIP_HEAD_CHECK_KEY,
 )
-from app.services.crawl.ingestion_service import create_crawl_run_from_payload
 from app.services.domain_utils import normalize_domain
 from app.services.monitor_service import PRIORITY_ORDER, next_run_time, next_alert_run_time, utcnow
 
 logger = logging.getLogger(__name__)
+create_crawl_run_from_payload = None
+_create_crawl_run_from_payload_lock = Lock()
+
+
+def _create_crawl_run_from_payload():
+    global create_crawl_run_from_payload
+    if create_crawl_run_from_payload is not None:
+        return create_crawl_run_from_payload
+    with _create_crawl_run_from_payload_lock:
+        if create_crawl_run_from_payload is None:
+            from app.services.crawl.ingestion_service import (
+                create_crawl_run_from_payload as imported_factory,
+            )
+
+            create_crawl_run_from_payload = imported_factory
+    return create_crawl_run_from_payload
 
 
 class MonitorSchedulerService:
@@ -65,8 +81,7 @@ class MonitorSchedulerService:
                     state.last_checked_at = now
                     had_prior_hash = bool(state.last_content_hash)
                     if content_hash is None:
-                        # Unknown content — treat as changed only if no prior hash exists.
-                        changed = not had_prior_hash
+                        changed = had_prior_hash
                     else:
                         changed = not had_prior_hash or state.last_content_hash != content_hash
                         state.last_content_hash = content_hash
@@ -125,6 +140,8 @@ class MonitorSchedulerService:
             raise ValueError(f"Monitor {monitor.id} has no user_id")
         user_id = int(monitor.user_id)
         run_ids: list[int] = []
+        payload_factory = _create_crawl_run_from_payload()
+
         for domain_urls in _urls_by_domain(urls).values():
             settings = dict(monitor.settings or {})
             settings[MONITOR_ID_SETTING_KEY] = monitor.id
@@ -136,7 +153,7 @@ class MonitorSchedulerService:
                 "settings": settings,
                 "requested_fields": list(monitor.requested_fields or []),
             }
-            run = await create_crawl_run_from_payload(
+            run = await payload_factory(
                 session,
                 user_id,
                 payload,

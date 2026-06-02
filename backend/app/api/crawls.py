@@ -306,7 +306,7 @@ async def crawls_resume(
 
 
 @router.post(
-    "/{run_id}/kill",
+    "/{run_id:int}/kill",
     responses=cast(ResponseSpec, {
         status.HTTP_404_NOT_FOUND: {"description": RUN_NOT_FOUND_DETAIL},
         status.HTTP_409_CONFLICT: {
@@ -328,7 +328,7 @@ async def crawls_kill(
 
 
 @router.post(
-    "/{run_id}/cancel",
+    "/{run_id:int}/cancel",
     responses=cast(ResponseSpec, {
         status.HTTP_404_NOT_FOUND: {"description": RUN_NOT_FOUND_DETAIL},
         status.HTTP_409_CONFLICT: {"description": RUN_CONFLICT_DETAIL},
@@ -360,7 +360,7 @@ async def crawls_logs(
     return [LogEntryResponse.model_validate(row, from_attributes=True) for row in rows]
 
 
-@router.websocket("/{run_id}/logs/ws")
+@router.websocket("/{run_id:int}/logs/ws")
 async def crawls_logs_ws(
     websocket: WebSocket, run_id: int, after_id: int | None = None
 ) -> None:

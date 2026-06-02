@@ -7,7 +7,10 @@ from urllib.parse import urlparse
 
 from app.services.acquisition_plan import AcquisitionPlan
 from app.services.crawl.utils import normalize_target_url, resolve_traversal_mode
-from app.services.config.domain_profiles import AUTO_SURFACE
+from app.services.config.domain_profiles import (
+    AUTO_SURFACE,
+    INTERNAL_API_ENDPOINTS_PROFILE_KEY,
+)
 from app.services.config.runtime_settings import crawler_runtime_settings
 
 _BROWSER_ENGINE_VALUES = {"auto", "patchright", "real_chrome"}
@@ -420,6 +423,12 @@ class CrawlRunSettings:
         proxy_profile = self.proxy_profile()
         profile["proxy_profile"] = proxy_profile
         profile["locality_profile"] = self.locality_profile()
+        if self.data.get(INTERNAL_API_ENDPOINTS_PROFILE_KEY) is not None:
+            from app.services.crawl.profile.normalization import normalize_internal_api_endpoints
+
+            profile[INTERNAL_API_ENDPOINTS_PROFILE_KEY] = normalize_internal_api_endpoints(
+                self.data.get(INTERNAL_API_ENDPOINTS_PROFILE_KEY)
+            )
         return profile
 
     def acquisition_plan(
@@ -462,6 +471,12 @@ class CrawlRunSettings:
         normalized["locality_profile"] = self.locality_profile()
         normalized["diagnostics_profile"] = self.diagnostics_profile()
         normalized["acquisition_contract"] = self.acquisition_contract()
+        if self.data.get(INTERNAL_API_ENDPOINTS_PROFILE_KEY) is not None:
+            from app.services.crawl.profile.normalization import normalize_internal_api_endpoints
+
+            normalized[INTERNAL_API_ENDPOINTS_PROFILE_KEY] = normalize_internal_api_endpoints(
+                self.data.get(INTERNAL_API_ENDPOINTS_PROFILE_KEY)
+            )
         normalized["max_pages"] = self.max_pages()
         normalized["max_scrolls"] = self.max_scrolls()
         normalized["sleep_ms"] = self.sleep_ms()

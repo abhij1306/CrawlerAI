@@ -63,14 +63,13 @@ class _FakeLocator:
         )
 
     async def is_visible(self, timeout: int | None = None) -> bool:
-        del timeout
         return await self.count() > 0
 
     async def is_disabled(self) -> bool:
         return False
 
     async def scroll_into_view_if_needed(self, timeout: int | None = None) -> None:
-        del timeout
+        return None
 
     async def click(self, timeout: int | None = None, force: bool = False) -> None:
         del timeout, force
@@ -112,7 +111,6 @@ class _EmptyRoleLocator:
         return self
 
     async def is_visible(self, timeout: int | None = None) -> bool:
-        del timeout
         return False
 
     async def is_disabled(self) -> bool:
@@ -133,7 +131,6 @@ class _RoleLocator:
         return _RoleLocator(self._page, [self._matches[index]])
 
     async def is_visible(self, timeout: int | None = None) -> bool:
-        del timeout
         if not self._matches:
             return False
         return bool(self._matches[0].get("visible", True))
@@ -144,7 +141,7 @@ class _RoleLocator:
         return bool(self._matches[0].get("disabled", False))
 
     async def scroll_into_view_if_needed(self, timeout: int | None = None) -> None:
-        del timeout
+        return None
 
     async def evaluate(self, script: str) -> Any:
         del script
@@ -259,7 +256,7 @@ class _OverlayTestPage:
         return _OverlayCookieLocator()
 
     async def wait_for_timeout(self, timeout_ms: int) -> None:
-        del timeout_ms
+        return None
 
 
 class _OverlayCookieLocator:
@@ -271,7 +268,6 @@ class _OverlayCookieLocator:
         return 0
 
     async def is_visible(self, timeout: int | None = None) -> bool:
-        del timeout
         return False
 
 
@@ -1419,7 +1415,7 @@ async def test_paginate_traversal_detects_cycle_on_redirect_loop() -> None:
 @pytest.mark.asyncio
 async def testis_same_origin_blocks_cross_tenant_paths() -> None:
     """Pagination must not bleed across path-based multi-tenant boundaries."""
-    from app.services.acquisition.traversal import is_same_origin
+    is_same_origin = traversal_module.is_same_origin
 
     assert is_same_origin(
         "https://myworkdayjobs.com/TenantA/jobs?page=1",
@@ -1433,7 +1429,7 @@ async def testis_same_origin_blocks_cross_tenant_paths() -> None:
 
 @pytest.mark.asyncio
 async def testis_same_origin_blocks_cross_tenant_paths_for_workday_subdomains() -> None:
-    from app.services.acquisition.traversal import is_same_origin
+    is_same_origin = traversal_module.is_same_origin
 
     assert is_same_origin(
         "https://smithnephew.wd5.myworkdayjobs.com/TenantA/jobs?page=1",
@@ -1447,7 +1443,7 @@ async def testis_same_origin_blocks_cross_tenant_paths_for_workday_subdomains() 
 
 @pytest.mark.asyncio
 async def testis_same_origin_allows_same_tenant_different_pages() -> None:
-    from app.services.acquisition.traversal import is_same_origin
+    is_same_origin = traversal_module.is_same_origin
 
     assert is_same_origin(
         "https://example.com/listing?page=1",
@@ -1463,7 +1459,7 @@ async def testis_same_origin_allows_same_tenant_different_pages() -> None:
 async def testis_same_origin_allows_same_host_path_changes_outside_tenant_hosts() -> (
     None
 ):
-    from app.services.acquisition.traversal import is_same_origin
+    is_same_origin = traversal_module.is_same_origin
 
     assert is_same_origin(
         "https://example.com/careers?page=1",

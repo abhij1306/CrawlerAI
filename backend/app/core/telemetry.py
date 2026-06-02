@@ -23,7 +23,6 @@ _ASYNCIO_EXCEPTION_FILTERS: "weakref.WeakKeyDictionary[asyncio.AbstractEventLoop
     weakref.WeakKeyDictionary()
 )
 
-
 def _add_correlation_id(
     logger: object,
     method_name: str,

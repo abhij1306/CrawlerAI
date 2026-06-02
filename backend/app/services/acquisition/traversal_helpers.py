@@ -9,7 +9,10 @@ from app.services.acquisition.dom_runtime import (
     get_page_html,
     wait_for_dom_mutation_settle as _dom_wait_for_dom_mutation_settle,
 )
-from app.services.acquisition.playwright_compat import PLAYWRIGHT_RECOVERABLE_ERRORS
+from app.services.acquisition.playwright_compat import (
+    PlaywrightError,
+    PlaywrightTimeoutError,
+)
 from app.services.acquisition.runtime import classify_blocked_page_async
 from app.services.config.extraction_rules import (
     TRAVERSAL_STRUCTURED_SCRIPT_IDS,
@@ -29,12 +32,14 @@ from app.services.platform_policy import (
 from selectolax.lexbor import LexborHTMLParser
 
 logger = logging.getLogger(__name__)
+_RECOVERABLE_ERRORS = (PlaywrightError, PlaywrightTimeoutError)
 
 if TYPE_CHECKING:
     from app.services.acquisition.traversal_types import TraversalResult
 
 
 async def _wait_for_dom_mutation_settle(page, **kwargs):
+    # skipcq: PYL-E1125 - wrapper forwards caller-provided keyword-only timeout values.
     await _dom_wait_for_dom_mutation_settle(page, **kwargs)
 
 async def _append_html_fragment(
@@ -122,7 +127,7 @@ async def looks_like_paginate_control(locator) -> bool:
             }
             """
         )
-    except PLAYWRIGHT_RECOVERABLE_ERRORS:
+    except _RECOVERABLE_ERRORS:
         logger.debug("Traversal next_page control inspection failed", exc_info=True)
         return False
     if not isinstance(inspection, dict):
@@ -181,7 +186,7 @@ async def _looks_like_next_page_control(locator) -> bool:
             }
             """
         )
-    except PLAYWRIGHT_RECOVERABLE_ERRORS:
+    except _RECOVERABLE_ERRORS:
         return False
     if not isinstance(inspection, dict):
         return False
@@ -304,7 +309,7 @@ async def _settle_after_action(
         return
     try:
         await page.wait_for_load_state("networkidle", timeout=min(1500, wait_ms * 2))
-    except PLAYWRIGHT_RECOVERABLE_ERRORS:
+    except _RECOVERABLE_ERRORS:
         logger.debug(
             "Traversal networkidle settle wait failed url=%s",
             page.url,
@@ -312,7 +317,7 @@ async def _settle_after_action(
         )
     try:
         await page.wait_for_load_state("domcontentloaded", timeout=min(1500, wait_ms * 2))
-    except PLAYWRIGHT_RECOVERABLE_ERRORS:
+    except _RECOVERABLE_ERRORS:
         logger.debug(
             "Traversal domcontentloaded settle wait failed url=%s",
             page.url,
@@ -378,7 +383,7 @@ async def _wait_for_domcontentloaded(page, *, deadline_at: float | None) -> None
             "domcontentloaded",
             timeout=timeout_ms,
         )
-    except PLAYWRIGHT_RECOVERABLE_ERRORS:
+    except _RECOVERABLE_ERRORS:
         logger.debug("Traversal domcontentloaded wait failed", exc_info=True)
         return
 

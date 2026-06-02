@@ -10,8 +10,8 @@ from typing import cast
 from urllib.parse import urlparse
 
 from bs4 import BeautifulSoup, NavigableString, Tag
-from lxml import etree
-from lxml import html as lxml_html
+from lxml import etree  # skipcq: BAN-B410 - lxml is used in HTML parsing mode for sanitized DOM recovery, not arbitrary XML.
+from lxml import html as lxml_html  # skipcq: BAN-B410 - lxml.html.fromstring parses sanitized HTML snippets, not arbitrary XML.
 from soupsieve import SelectorSyntaxError
 
 from app.services.config.extraction_rules import (

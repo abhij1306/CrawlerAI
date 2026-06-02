@@ -53,20 +53,18 @@ class SaaSHRAdapter(PublicEndpointAdapter):
         offset = 1
         company_name: str | None = None
         while True:
-            endpoint = "{}?{}".format(
-                f"{base_url}/ta/rest/ui/recruitment/companies/%7C{company_code}/job-requisitions",
-                urlencode(
-                    {
-                        "offset": offset,
-                        "size": size,
-                        "sort": str(adapter_runtime_settings.saashr_job_reqs_sort).strip()
-                        or "desc",
-                        "ein_id": ein_id,
-                        "lang": lang,
-                        "career_portal_id": career_portal_id,
-                    }
-                ),
+            query = urlencode(
+                {
+                    "offset": offset,
+                    "size": size,
+                    "sort": str(adapter_runtime_settings.saashr_job_reqs_sort).strip()
+                    or "desc",
+                    "ein_id": ein_id,
+                    "lang": lang,
+                    "career_portal_id": career_portal_id,
+                }
             )
+            endpoint = f"{base_url}/ta/rest/ui/recruitment/companies/%7C{company_code}/job-requisitions?{query}"
             try:
                 payload = await self._request_json(
                     endpoint,
@@ -121,16 +119,14 @@ class SaaSHRAdapter(PublicEndpointAdapter):
         lang: str,
         proxy: str | None = None,
     ) -> str:
-        endpoint = "{}?{}".format(
-            f"{base_url}/ta/rest/ui/recruitment/companies/%7C{company_code}/job-search/config",
-            urlencode(
-                {
-                    "ein_id": ein_id,
-                    "career_portal_id": career_portal_id,
-                    "lang": lang,
-                }
-            ),
+        query = urlencode(
+            {
+                "ein_id": ein_id,
+                "career_portal_id": career_portal_id,
+                "lang": lang,
+            }
         )
+        endpoint = f"{base_url}/ta/rest/ui/recruitment/companies/%7C{company_code}/job-search/config?{query}"
         try:
             payload = await self._request_json(
                 endpoint,

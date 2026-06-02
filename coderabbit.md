@@ -1,186 +1,210 @@
-# Bug Triage
-
-> **Instructions for agent:** Verify each issue against current code before fixing. Fix only still-valid issues; for invalid ones, note why briefly. Keep changes minimal and validate after each fix.
+# Bug Triage — AI Crawler PR Review
 
 ---
 
-## 🔴 HIGH — Bugs
+## 🔴 SECURITY — High Priority
 
-### BUG-001 · `logfire_span` no-op yields non-None object
-**File:** `backend/app/core/logfire_integration.py`
-**Problem:** `nullcontext()` yields itself, not `None`, so `span is None` assertions fail when Logfire is disabled.
-**Fix:** Use `nullcontext(None)` (both in the `logfire_enabled` branch and the `ModuleNotFoundError` branch).
-
----
-
-### BUG-002 · Potential PII/token exposure in Logfire span attributes
-**File:** `backend/app/services/pipeline/extraction_loop.py`
-**Problem:** Full URLs (including query params with tokens/emails) are attached as span attributes. `logfire_span` only truncates, does not redact.
-**Fix:** Strip query strings and fragments before logging. Use `normalize_domain(url)` or a hashed URL only. Add a `strip_url_sensitive_parts(url)` helper used consistently across all span attribute sites.
+### SEC-001 · Legacy API Keys Break Auth
+**File:** `backend/app/core/public_auth.py` · Lines 54–60
+**Issue:** Legacy SHA-256 hash fallback removed; any key stored with the old hash returns 401.
+**Fix:** Compute legacy hash alongside new hash in `session.scalar(select(...))`. If a legacy match is found, re-hash and update the row in the same transaction (dual-check-and-migrate).
 
 ---
 
-## 🟡 MEDIUM — Bugs
-
-### BUG-003 · `<select>` display label blanked when multiple options exist
-**File:** `backend/app/services/extract/detail/variants/dom_availability.py` · L120, L195
-**Problem:** `_control_display_label` returns `""` for `<select>` with multiple options, causing `axis_value` to be empty and out-of-stock variants to be silently dropped.
-**Fix:** For `<select>`, derive display from the currently selected `<option>` value instead of returning `""`.
+### SEC-002 · SSRF via Internal API Replay
+**File:** `backend/app/services/acquisition/acquirer.py` · Lines 220–254
+**Issue:** `internal_api_endpoints` URLs are persisted and replayed with no origin/IP validation — SSRF primitive.
+**Fix:** Enforce same-origin constraint, HTTPS-only, block private IP ranges, no redirects, cap timeouts/size in `replay_internal_api_endpoints`.
 
 ---
 
-### BUG-004 · DOM axis detection now includes arbitrary `option_values` keys
-**File:** `backend/app/services/extract/detail/variants/dom_merge.py`
-**Problem:** `_variant_axes_present` now counts any key in `option_values` as an axis, including non-public keys, changing Cartesian expansion behavior vs. previous logic.
-**Fix:** Restrict `option_values` axis detection to `public_variant_axis_fields` only.
+## 🟠 BUGS — Medium/High Priority
+
+### BUG-001 · Nav Tree Silently Drops Children
+**File:** `backend/app/services/crawl/sitemap_resolver.py`
+**Issue:** `children_for()` returns a new `[]` when `children` isn't a list but doesn't write it back to `node["children"]`, so appends are lost.
+**Fix:** `node["children"] = []` when type is wrong; return the stored reference.
 
 ---
 
-## 🟢 LOW — Bugs
-
-### BUG-005 · Admin LLM model dropdown uses untrimmed value for catalog check
-**File:** `frontend/app/admin/llm/page.tsx`
-**Problem:** `modelInCatalog` uses `form.model` while other logic uses `form.model.trim()`, causing whitespace variants to be misclassified as custom and duplicated in the dropdown.
-**Fix:** Compute `modelInCatalog = recommendedModels.includes(formModel)` using the already-trimmed `formModel`.
+### BUG-002 · `category_only` Filter Too Strict
+**File:** `backend/app/services/crawl/sitemap_resolver.py`
+**Issue:** `_looks_like_category_url()` misses common patterns like `/women/shoes`; UI shows no categories.
+**Fix:** Relax token matching or use scoring-based filtering; add logging for empty results.
 
 ---
 
-## 🟡 MEDIUM — Code Quality / Reliability
-
-### QUAL-001 · `_variant_options` star import pollutes extraction_rules public API
-**File:** `backend/app/services/config/extraction_rules/__init__.py`
-**Problem:** `from ._variant_options import *` exports `re` and all module-level names because `_variant_options.py` has no `__all__`.
-**Fix:** Add `__all__` to `_variant_options.py` listing only public constants, or switch to explicit named imports.
+### BUG-003 · `internal_api_endpoints` Not Normalized in `CrawlRunSettings`
+**File:** `backend/app/models/crawl_settings.py` · Lines 426, 472
+**Issue:** `profile()` and `normalized()` copy raw endpoint lists, bypassing `normalize_internal_api_endpoints()`. Empty-list overrides silently dropped (truthy check only).
+**Fix:** Call `normalize_internal_api_endpoints()` in both methods; change `if self.data.get(...)` to `if ... is not None` to preserve explicit empty lists.
 
 ---
 
-### QUAL-002 · `__all__` collapsed into long lines in `identity/core.py`
-**File:** `backend/app/services/extract/detail/identity/core.py`
-**Problem:** Multi-item lines in `__all__` make diffs noisy and increase merge conflict risk.
-**Fix:** Restore one-item-per-line format, or apply `ruff`/`black` consistently.
+### BUG-004 · Dispatcher `dispatch()` Changed to `@staticmethod`
+**File:** `backend/app/services/dispatch/celery_dispatcher.py`, `local_dispatcher.py`
+**Issue:** Breaks `RunDispatcher` protocol/ABC interface; causes mypy and runtime inconsistencies.
+**Fix:** Revert to `async def dispatch(self, ...)` — keep `self` even if unused.
 
 ---
 
-### QUAL-003 · Axis inference misses `<select>` controls → cross-axis assignment errors
-**File:** `backend/app/services/extract/detail/variants/dom_availability.py` · L195
-
-### QUAL-004 · Circular import risk from new cross-module import
-**File:** `backend/app/services/extract/detail/variants/dom_extraction.py` · L53
-
-### QUAL-005 · Cross-ASIN variant URL detector never inspects URL/ASIN
-**File:** `backend/app/services/extract/detail/variants/pruning.py` · L244
-**Problem:** Function always returns the same result, incorrectly exempting unrelated variants from pruning.
-
-### QUAL-006 · Numeric-size noise rule deletes valid decimal size values
-**File:** `backend/app/services/extract/detail/variants/pruning.py` · L439
-
-### QUAL-007 · `normalize_domain(url)` called without null/malformed URL guard
-**File:** `backend/app/services/pipeline/extract_records.py` · L250
-**Fix:** Guard with `url and is_valid_url(url)` before calling `normalize_domain`.
-
-### QUAL-008 · `len()` on possibly-None extraction result
-**File:** `backend/app/services/pipeline/extract_records.py` · L90
-**Fix:** Guard with `if result is not None` before `len(result)`.
-
-### QUAL-009 · Metrics container not null-checked before key access
-**File:** `backend/app/services/pipeline/extraction_loop.py` · L207
-**Fix:** Add `if metrics:` guard.
-
-### QUAL-010 · Telemetry crashes when extraction returns non-sized result
-**File:** `backend/app/services/pipeline/record_extraction_stage.py` · L381
+### BUG-005 · `run_id` Removed from Websocket Log Context
+**File:** `backend/app/api/crawls.py` · Lines 308–342
+**Issue:** `extra={"run_id": run_id}` stripped from warning/exception logs; impossible to correlate errors to a run.
+**Fix:** Restore `run_id` in `extra`. Also change path params to `/{run_id:int}/kill`, `/{run_id:int}/cancel`, `/{run_id:int}/logs/ws` for consistency and to return 404 on non-integer IDs.
 
 ---
 
-## 🔁 Inline Fix Instructions (verbatim prompts for agent)
+### BUG-006 · Replay Branch Skips `PolicyMiddleware.after_fetch`
+**File:** `backend/app/services/acquisition/acquirer.py` · Lines 220–254
+**Issue:** Early return on `replay_payload` leaks state set in `before_fetch`.
+**Fix:** `await policy_middleware.after_fetch(...)` immediately before returning the `AcquisitionResult` in the replay branch.
 
-> Apply each fix only if the issue is still present in current code.
+---
 
-**`backend/app/api/crawls.py` · L410**
-Add `extra={"run_id": run_id}` to `logger.exception("Run logs websocket stream failed")`.
+### BUG-007 · `_endpoint_list` Accepts Any HTTP Method
+**File:** `backend/app/services/acquisition/policy.py` · Lines 203–222
+**Issue:** No allowlist enforcement; raw dicts stored without normalization break deduplication.
+**Fix:** Normalize `method = str(...).strip().upper()`; skip if not in `INTERNAL_API_ENDPOINT_ALLOWED_METHODS`; persist normalized dict.
 
-**`backend/app/api/crawls.py` · L395**
-Add `extra={"run_id": run_id}` to the `logger.warning("Run logs snapshot did not reload run; retrying")` call.
+---
 
-**`backend/app/core/config.py` · L215–244**
-Replace `issue_count` numeric logging with full `", ".join(password_issues)` detail in both `warn`/`error` log calls.
+### BUG-008 · `RuntimeError` in `_RECOVERABLE_ERRORS` Too Broad
+**Files:** `backend/app/services/acquisition/traversal_helpers.py` · Line 35
+`backend/app/services/acquisition/traversal_recovery.py` · Line 24
+**Issue:** `RuntimeError` is too generic — swallows programming errors silently.
+**Fix:** Remove `RuntimeError` from both tuples; catch `PlaywrightError`/`PlaywrightTimeoutError` or a narrow custom `RecoverableAcquisitionError` only.
 
-**`backend/app/core/public_auth.py` · L31–36**
-HMAC-based `hash_api_key` invalidates existing `ApiKey.key_hash` rows. Add backwards-compatible SHA-256 fallback in validation, or use a versioned `key_hash` field + migration plan. Do not break existing key lookup.
+---
 
-**`backend/app/core/redis.py` · L91, L94**
-Restore `operation_name` structured field to `redis_fail_open` logger call: `extra={"operation_name": operation_name, "exception_type": type(exc).__name__}`.
+### BUG-009 · `save_domain_run_profile` Missing `existing_record` → Upsert Conflict
+**File:** `backend/app/services/crawl/profile/acquisition_contract.py` · Lines 269–277
+**Issue:** Follow-up write omits `existing_record`, causing insert instead of upsert → unique-constraint violation.
+**Fix:** Pass `existing_record=existing` to `save_domain_run_profile` call.
 
-**`backend/app/main.py` · L201–207**
-Create dedicated `public_rate_limit_buckets` + `public_rate_limit_lock` on crawler app state (see `auth_rate_limit_buckets` as precedent). Pass these into `consume_public_rate_limit` so public and general limiters don't share an `OrderedDict`.
+---
 
-**`backend/app/mcp/alert_server.py` · L145–150**
-Change error `"message"` field from `type(exc).__name__` to `f"{type(exc).__name__}: {exc}"`. Also log full exception with `logger.exception(...)` before returning.
+### BUG-010 · Unsafe `float()` Cast on `raw_network_payload_count`
+**File:** `backend/app/services/crawl/profile/acquisition_contract.py` · Lines 84–89
+**Issue:** `float("abc")` raises `ValueError`.
+**Fix:** Wrap in `try/except (ValueError, TypeError)`, fall back to `0.0`.
 
-**`backend/app/models/crawl_settings.py` · L73**
-Expand exception handling beyond single type to restore previously handled invalid inputs.
+---
 
-**`backend/app/models/playground.py` · L32**
-Change `user: Mapped[Any]` → `Mapped["User"]`. Add `TYPE_CHECKING`-guarded import.
+### BUG-011 · Unsafe `int()` Cast on `raw_source_run_id`
+**File:** `backend/app/services/crawl/profile/acquisition_contract.py` · Lines 188–193
+**Issue:** Direct `int()` on non-numeric string raises `ValueError`.
+**Fix:** `try: int(val)` → `except: try: int(float(val))` → `except: fallback to 1`.
 
-**`backend/app/services/acquisition/browser_diagnostics.py` · L166**
-Replace generic substring match for driver-closed detection with a specific check to avoid misclassifying unrelated `AttributeError`s.
+---
 
-**`backend/app/services/acquisition/browser_interstitial.py` · L118**
-Remove `PlaywrightTimeoutError` from `except` tuples (it's a subclass of `PlaywrightError`). Result: `except (asyncio.TimeoutError, PlaywrightError)`.
+### BUG-012 · Endpoint Merge Replaces Instead of Merges
+**File:** `backend/app/services/crawl/profile/merge.py` · Lines 197–207
+**Issue:** `explicit_endpoints or saved_endpoints` fully replaces learned endpoints.
+**Fix:** Union/merge both lists; explicit entries take precedence for conflicts, preserved entries stay.
 
-**`backend/app/services/acquisition/playwright_compat.py` · L16–19**
-Restore `RuntimeError` to `PLAYWRIGHT_RECOVERABLE_ERRORS` or replace with appropriate specific exceptions. Validate all retry/cleanup paths that depend on this tuple.
+---
 
-**`backend/app/services/acquisition/traversal_types.py` · L32–50**
-Change `html_fragments: list[tuple[str, bool]]` → `list[tuple[str | None, bool]]` to match `compose_html` defensive handling.
+### BUG-013 · `internal_api_replay` Always Uses `client.get()`
+**File:** `backend/app/services/acquisition/internal_api_replay.py` · Lines 95–148
+**Issue:** `method` is parsed but ignored; POST/PUT/etc. endpoints always replay as GET.
+**Fix:** Use generic `client.request(method, url, timeout=...)` instead of `client.get()`.
 
-**`backend/app/services/auth_service.py` · L30–33**
-Change `logger.warning(... issue_count=%d, len(issues))` to include `issues` detail text alongside the count.
+---
 
-**`backend/app/services/config/extraction_rules/_detail.py` · L476**
-Replace dynamic `__all__ = sorted(name for name in globals() if name.isupper())` with an explicit, enumerated `__all__` list.
+### BUG-014 · Content Hash Failure Treated Incorrectly
+**File:** `backend/app/services/monitor_scheduler_service.py` · Lines 78–83
+**Issue:** `content_hash is None` when a prior hash existed should be treated as changed; currently it may not be.
+**Fix:** Set `changed = had_prior_hash`; do not overwrite `state.last_content_hash` when hash is `None`.
 
-**`backend/app/services/config/extraction_rules/_jobs.py` · L5–37**
-Add explicit `import re` at top of module. Do not rely on wildcard `from ._common import *` to supply `re`.
+---
 
-**`backend/app/services/config/runtime_settings.py` · L310**
-Add `_require_positive("selector_regex_max_pattern_length", self.selector_regex_max_pattern_length)` in `_apply_profile_defaults`.
+## 🟡 CODE QUALITY — Low Priority
 
-**`backend/app/services/crawl/batch_runtime.py` · L71–78**
-Handle both callable and integer `url_batch_concurrency`: call it if callable, cast to `int` if not, fall back to `_DEFAULT_URL_CONCURRENCY` on `AttributeError`/`TypeError`/`ValueError`.
+### QUAL-001 · Lazy-Import Globals Not Concurrency-Safe
+**Files:** `backend/app/services/dispatch/celery_dispatcher.py`, `monitor_scheduler_service.py` · Lines 33–41
+**Issue:** Global `None` + check-and-set pattern races under concurrent workers.
+**Fix:** Use `functools.lru_cache` or a `threading.Lock` (double-checked lock) around import + assignment.
 
-**`backend/app/services/crawl/service.py` · L230–247**
-Gate `_shutdown_browser_runtime_after_kill()` in the local-task branch on runtime ownership + no other active local runs. In the Celery branch, replace direct shutdown with a worker-directed control action (see `app.control.revoke`).
+---
 
-**`backend/app/services/fetch/fetch_context.py` · L271–275**
-Tighten patchright probe cap logic: apply cap only on exact vendor match (`expected_vendor == last_vendor`). If `expected_vendor` is empty, keep existing `True` behavior. If non-empty but no match, return `False`.
+### QUAL-002 · `operation_name` Dropped from Redis Failure Logs
+**File:** `backend/app/core/redis.py` · Lines 81–118
+**Issue:** `operation_name` accepted but not logged; `schedule_fail_open` doesn't forward it.
+**Fix:** Add `"operation_name": operation_name` back to `extra` in `logger.warning`; forward it in `schedule_fail_open`.
 
-**`backend/app/services/js_state/state_normalizer/_variant_rows.py` · L232–263**
-Add `depth` param (default 0) to `_collect_variant_matrix_rows`. Increment on recursion. Return early when depth hits `JS_STATE_LIST_ITERATION_LIMIT` (or equivalent). Apply check before descending into `node["elements"]`.
+---
 
-**`backend/app/services/js_state/state_normalizer/_variant_rows.py` · L296–302**
-Add `"lowstock"` branch: `if lowered == "lowstock": row["availability"] = "in_stock"`, alongside existing `"instock"` and `"outofstock"` branches.
+### QUAL-003 · `__all__` Exports Private Symbols / Incomplete
+**Files:**
+- `backend/app/core/redis.py` · Line 24 — exports only `_last_disable_log_at` (private)
+- `backend/app/core/telemetry.py` · Line 26 — exports only `_LOGGING_CONFIGURED` (private)
+- `backend/app/main.py` · Line 354 — exports only `RATE_LIMIT_BUCKETS`
+- `backend/app/services/dom/selector_engine.py` · Line 85 — exports `_CANDIDATE_CLEANUP` (private)
 
-**`backend/app/services/monitor_condition.py` · L100–132**
-In `_first_decimal_text`: capture `end` index when first loop breaks, then slice `text[start:end]`. Remove second redundant scan. Preserve `-` prefix handling, `saw_dot`, `saw_digit`, and `return None` when no digit seen.
+**Fix:** Either remove `__all__` or update to list actual public symbols only. Remove all private (`_`-prefixed) names.
 
-**`backend/app/services/pipeline/extraction_loop.py` · L103**
-Remove `asyncio` from module `__all__`. Update tests to patch via `monkeypatch.setattr(extraction_loop.asyncio, "to_thread", ...)` instead.
+---
 
-**`backend/app/services/product_intelligence/discovery.py` · L1282–1283**
-Change `text.replace('"', " ")` to `text.replace('"', '\\"')` so embedded double-quotes are escaped, not stripped. Keep `return f'"{text}"'` wrapper. Validate output against SerpAPI and Google Native.
+### QUAL-004 · Alert MCP Error Loses Exception Message
+**File:** `backend/app/mcp/alert_server.py`
+**Issue:** Error response returns only `type(exc).__name__`, stripping diagnostic detail.
+**Fix:** Return sanitized `f"{type(exc).__name__}: {exc}"` or add a server-side correlation ID.
 
-**`backend/tests/fixtures/loader.py` · L24–25**
-Decide: if empty string is intended → remove `pytest.skip(...)`, keep `return ""`. If skip is intended → remove `return ""`. They are mutually exclusive; pick one.
+---
 
-**`backend/tests/regression/test_data_enrichment.py` · L293, L371**
-Replace `await asyncio.gather(task)` with `await task` (single-task gather is unnecessary).
+### QUAL-005 · BAN-B410 Suppression Comments Not Specific Enough
+**Files:** `backend/app/services/dom/selector_engine.py` · Lines 13–14
+`backend/app/services/dom/xpath_service.py` · Lines 9–10
+**Fix:** Update suppression comment to state: lxml is used in **HTML parsing mode** (`lxml.html.fromstring`), not arbitrary XML; parsing is scoped to trusted/sanitized input.
 
-**`frontend/components/crawl/crawl-config-screen.prefill.test.tsx` · L166–168**
-After `expectDomainProfileLookup(...)`, await a helper or use a `waitFor` wrapper to confirm `listSelectorsMock` has been called with `{ domain: 'example.com' }` before asserting. This fixes the race condition.
+---
 
-**`frontend/components/crawl/markdown-output.tsx` · L20–50**
-Replace CDN KaTeX injection (`document.createElement('script'/'link')`) with bundled `katex` package import + CSS import via the app's normal build path. Keep `KaTeXApi`/`browserWindow` handling.
+### QUAL-006 · Duplicated `selected_urls` Logic in Playground Schemas
+**File:** `backend/app/schemas/playground.py` · Lines 14–33
+**Issue:** `PlaygroundSessionCreate` and `PlaygroundSelectCategoryRequest` duplicate identical URL normalization.
+**Fix:** Extract `_normalize_selected_urls(url, urls) -> list[str]` helper; both validators call it.
 
-**`frontend/components/crawl/markdown-output.tsx` · L196–218**
-Before entering frontmatter parse mode (`index === 0 && trimmed === '---'`), search for a closing `---` at `closingIndex > index`. Only parse as frontmatter if `closingIndex !== -1`. Otherwise treat the line as normal content.
+---
+
+### QUAL-007 · `getattr` Used on Always-Present `nav_tree` Attribute
+**File:** `backend/app/services/playground_service.py` · Lines 181, 318
+**Issue:** `getattr(resolution, "nav_tree", None)` is defensive where `SitemapResolutionResult.nav_tree` always exists.
+**Fix:** Replace with direct `resolution.nav_tree`.
+
+---
+
+## 🖥️ FRONTEND
+
+### FE-001 · Branch Labels Don't Toggle Expansion
+**File:** `frontend/app/playground/page.tsx` · Lines 1171–1180
+**Fix:** Wire branch `onClick` to toggle-expand function instead of returning `undefined`.
+
+---
+
+### FE-002 · Duplicate React Keys in List/Quote Renderers
+**Files:** `frontend/components/crawl/markdown-output.tsx` · Lines 350–354, 377–381
+**Fix:** Use `index` (or `${item}-${index}`) as key in both `quote.map` and `items.map`.
+
+---
+
+### FE-003 · No Client-Side Guard in `createPlaygroundSession`
+**File:** `frontend/lib/api/index.ts` · Lines 350–351
+**Fix:** Validate `payload.url` or `payload.urls.length > 0` before `apiClient.post`; throw if neither present.
+
+---
+
+### FE-004 · Stateful `/g` Regex Shared Across Calls
+**File:** `frontend/lib/ui/syntax.ts` · Lines 5–6
+**Issue:** Module-level `tokenRegex` with `/g` flag retains `lastIndex` between calls → skipped tokens.
+**Fix:** Reset `tokenRegex.lastIndex = 0` at top of each function, or create `new RegExp(...)` per call.
+
+---
+
+### FE-005 · Duplicate React Keys in `syntaxHighlightJsonNodes`
+**File:** `frontend/lib/ui/syntax.ts` · Lines 117–135
+**Fix:** Use `${index}-${line}` as span key instead of raw `line` content.
+
+---
+
+*Total: 2 Security · 14 Bugs · 7 Quality · 5 Frontend = **28 issues***

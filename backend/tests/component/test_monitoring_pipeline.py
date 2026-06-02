@@ -384,8 +384,8 @@ async def test_monitor_pre_check_none_hash_no_overwrite(monkeypatch):
     )
 
     changed = await MonitorSchedulerService().pre_check_url("https://example.com/", state)
-    # None hash with existing prior hash => treat as unchanged
-    assert changed is False
+    # None hash with existing prior hash => treat as changed, but keep prior hash.
+    assert changed is True
     # Should not overwrite existing hash
     assert state.last_content_hash == "existing-hash"
-    assert state.consecutive_unchanged_count == 1
+    assert state.consecutive_unchanged_count == 0

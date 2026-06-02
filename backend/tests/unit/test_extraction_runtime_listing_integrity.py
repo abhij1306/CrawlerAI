@@ -40,8 +40,7 @@ class TestPropagateListingIntegrityToDiagnostics:
     def test_noop_when_browser_diagnostics_none(self):
         """No crash when browser_diagnostics is None."""
         artifacts = {"listing_integrity": {"outcome": "product_grid", "reason": "supported_set", "metrics": {}}}
-        result = propagate_listing_integrity_to_diagnostics(artifacts, None)
-        assert result is None
+        propagate_listing_integrity_to_diagnostics(artifacts, None)
 
     @pytest.mark.unit
     def test_noop_when_no_decision_in_artifacts(self):

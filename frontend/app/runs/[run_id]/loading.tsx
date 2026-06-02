@@ -12,8 +12,8 @@ export default function LoadingRunDetailPage() {
         <div className="bg-panel h-4 w-80 animate-pulse rounded-md" />
       </div>
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        {Array.from({ length: 4 }).map((_, index) => (
-          <Card key={index} className="bg-panel h-20 animate-pulse" aria-hidden="true">
+        {['summary', 'records', 'status', 'timing'].map((slot) => (
+          <Card key={slot} className="bg-panel h-20 animate-pulse" aria-hidden="true">
             <div />
           </Card>
         ))}

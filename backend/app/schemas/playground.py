@@ -5,9 +5,36 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field, model_validator
 
+from app.services.config.sitemap import (
+    PLAYGROUND_CATEGORY_DEFAULT_LIMIT,
+    PLAYGROUND_CATEGORY_MAX_LIMIT,
+)
+
+
+def _normalize_selected_urls(url: str | None, urls: list[str]) -> list[str]:
+    selected = [item.strip() for item in urls if item and item.strip()]
+    if url and url.strip():
+        selected.insert(0, url.strip())
+    return list(dict.fromkeys(selected))
+
 
 class PlaygroundSessionCreate(BaseModel):
-    url: str
+    url: str | None = None
+    urls: list[str] = Field(default_factory=list, max_length=50)
+    category_limit: int = Field(
+        default=PLAYGROUND_CATEGORY_DEFAULT_LIMIT,
+        ge=1,
+        le=PLAYGROUND_CATEGORY_MAX_LIMIT,
+    )
+
+    @model_validator(mode="after")
+    def _validate_input_urls(self) -> "PlaygroundSessionCreate":
+        if not self.selected_urls():
+            raise ValueError("URL is required")
+        return self
+
+    def selected_urls(self) -> list[str]:
+        return _normalize_selected_urls(self.url, self.urls)
 
 
 class PlaygroundSelectRequest(BaseModel):
@@ -64,10 +91,7 @@ class PlaygroundSelectCategoryRequest(BaseModel):
         return self
 
     def selected_urls(self) -> list[str]:
-        selected = [item.strip() for item in self.urls if item and item.strip()]
-        if self.url and self.url.strip():
-            selected.insert(0, self.url.strip())
-        return list(dict.fromkeys(selected))
+        return _normalize_selected_urls(self.url, self.urls)
 
 
 class PlaygroundExtractResponse(BaseModel):

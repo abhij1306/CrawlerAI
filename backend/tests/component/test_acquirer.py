@@ -8,6 +8,7 @@ from app.services.acquisition.acquirer import (
     PageEvidence,
     acquire,
 )
+from app.services.acquisition.internal_api_replay import _is_safe_replay_url
 from app.services.acquisition.policy import AcquisitionPolicy
 from app.services.acquisition_plan import AcquisitionPlan
 from app.services.crawl.utils import normalize_target_url
@@ -231,6 +232,94 @@ async def test_acquire_translates_policy_to_fetch_runtime_knobs(
     assert captured["prefer_curl_handoff"] is True
     assert captured["handoff_cookie_engine"] == "real_chrome"
     assert captured["forced_browser_engine"] == "real_chrome"
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_acquire_uses_internal_api_replay_before_page_fetch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def _fake_fetch_page(*args, **kwargs):
+        raise AssertionError("page fetch should not run when API replay succeeds")
+
+    async def _fake_replay(*, page_url, surface, endpoints, requested_fields):
+        assert page_url == "https://example.com/products/replay-widget"
+        assert surface == "ecommerce_detail"
+        assert requested_fields == ["title", "price"]
+        assert endpoints == [
+            {
+                "url": "https://example.com/api/products/replay-widget.json",
+                "method": "GET",
+                "endpoint_type": "product_api",
+                "endpoint_family": "generic",
+                "source_run_id": 92,
+            }
+        ]
+        return {
+            "url": "https://example.com/api/products/replay-widget.json",
+            "method": "GET",
+            "status": 200,
+            "content_type": "application/json",
+            "endpoint_type": "product_api",
+            "endpoint_family": "generic",
+            "body": {
+                "product": {
+                    "title": "Replay Widget",
+                    "price": {"amount": "19.99"},
+                    "sku": "RW-100",
+                    "url": "https://example.com/products/replay-widget",
+                }
+            },
+        }
+
+    monkeypatch.setattr(
+        "app.services.acquisition.acquirer.fetch_page",
+        _fake_fetch_page,
+    )
+    monkeypatch.setattr(
+        "app.services.acquisition.acquirer.replay_internal_api_endpoints",
+        _fake_replay,
+    )
+
+    result = await acquire(
+        AcquisitionRequest(
+            run_id=92,
+            url="https://example.com/products/replay-widget",
+            plan=AcquisitionPlan(surface="ecommerce_detail"),
+            requested_fields=["title", "price"],
+            acquisition_profile={
+                "internal_api_endpoints": [
+                    {
+                        "url": "https://example.com/api/products/replay-widget.json",
+                        "method": "GET",
+                        "endpoint_type": "product_api",
+                        "endpoint_family": "generic",
+                        "source_run_id": 92,
+                    }
+                ]
+            },
+        )
+    )
+
+    assert result.method == "api_replay"
+    assert result.final_url == "https://example.com/products/replay-widget"
+    assert result.network_payloads[0]["url"] == (
+        "https://example.com/api/products/replay-widget.json"
+    )
+    assert result.browser_diagnostics["internal_api_replay"] is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_internal_api_replay_rejects_non_https_and_private_ip() -> None:
+    assert await _is_safe_replay_url(
+        "http://example.com/api/products.json",
+        page_url="https://example.com/products",
+    ) is False
+    assert await _is_safe_replay_url(
+        "https://127.0.0.1/api/products.json",
+        page_url="https://127.0.0.1/products",
+    ) is False
 
 
 @pytest.mark.asyncio

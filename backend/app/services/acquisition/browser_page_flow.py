@@ -48,6 +48,7 @@ logger = logging.getLogger(__name__)
 
 __all__ = [
     "BlockPageClassification",
+    "BrowserFinalizeInput",
     "dismiss_safe_location_interstitial",
     "finalize_browser_fetch",
     "location_interstitial_detected",
@@ -727,6 +728,7 @@ _ready_probe_supports_fast_finalize = (
 
 async def _capture_listing_artifact_with_timeout(*args, **kwargs):
     kwargs.setdefault("logger_impl", logger)
+    # skipcq: PYL-E1125 - wrapper preserves test monkeypatch seam and forwards required keywords.
     return await _browser_result_builder._capture_listing_artifact_with_timeout(
         *args,
         **kwargs,
@@ -749,6 +751,7 @@ async def finalize_browser_fetch(*args, **kwargs):
         _ready_probe_supports_fast_finalize,
     )
     kwargs.setdefault("logger_impl", logger)
+    # skipcq: PYL-E1125 - wrapper injects defaults while callers provide finalize dependencies.
     return await _browser_result_builder.finalize_browser_fetch(*args, **kwargs)
 
 

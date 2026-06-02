@@ -251,9 +251,9 @@ function MarkdownPreview({ markdown }: Readonly<{ markdown: string }>) {
           <table className="w-full min-w-[560px] border-collapse text-sm">
             <thead className="bg-background-alt text-secondary">
               <tr>
-                {headers.map((header, headerIndex) => (
+                {headers.map((header) => (
                   <th
-                    key={`${header}-${headerIndex}`}
+                    key={header}
                     className="border-border text-2xs border-b px-3 py-2 text-left font-mono font-semibold tracking-wide uppercase"
                   >
                     <InlineMarkdown text={header} />
@@ -262,14 +262,14 @@ function MarkdownPreview({ markdown }: Readonly<{ markdown: string }>) {
               </tr>
             </thead>
             <tbody>
-              {rows.map((row, rowIndex) => (
+              {rows.map((row) => (
                 <tr
-                  key={`${rowIndex}-${row.join('|')}`}
+                  key={row.join('|')}
                   className="odd:bg-background even:bg-background-alt/40"
                 >
                   {headers.map((header, cellIndex) => (
                     <td
-                      key={`${header}-${cellIndex}`}
+                      key={header}
                       className="border-border/70 text-foreground border-b px-3 py-2 align-top"
                     >
                       <InlineMarkdown text={row[cellIndex] || ''} />
@@ -348,7 +348,7 @@ function MarkdownPreview({ markdown }: Readonly<{ markdown: string }>) {
           className="border-accent/40 text-secondary border-l-2 pl-4 leading-relaxed"
         >
           {quote.map((item, itemIndex) => (
-            <p key={`${itemIndex}-${item}`} className="type-body my-1">
+            <p key={`${item}-${itemIndex}`} className="type-body my-1">
               <InlineMarkdown text={item} />
             </p>
           ))}
@@ -375,7 +375,7 @@ function MarkdownPreview({ markdown }: Readonly<{ markdown: string }>) {
           className="type-body text-foreground my-3 space-y-1 pl-6 leading-relaxed"
         >
           {items.map((item, itemIndex) => (
-            <li key={`${itemIndex}-${item}`} className={orderedList ? 'list-decimal' : 'list-disc'}>
+            <li key={`${item}-${itemIndex}`} className={orderedList ? 'list-decimal' : 'list-disc'}>
               <InlineMarkdown text={item} />
             </li>
           ))}

@@ -4,7 +4,16 @@ from collections.abc import Mapping
 from datetime import UTC, datetime
 
 from app.models.crawl_settings import _coerce_int as _coerce_int_clamped
-from app.services.config.domain_profiles import TRAVERSAL_MODE_VALUES
+from app.services.config.domain_profiles import (
+    INTERNAL_API_ENDPOINT_ALLOWED_METHODS,
+    INTERNAL_API_ENDPOINT_FAMILY_KEY,
+    INTERNAL_API_ENDPOINT_METHOD_KEY,
+    INTERNAL_API_ENDPOINT_SOURCE_RUN_ID_KEY,
+    INTERNAL_API_ENDPOINT_TYPE_KEY,
+    INTERNAL_API_ENDPOINT_URL_KEY,
+    INTERNAL_API_ENDPOINTS_PROFILE_KEY,
+    TRAVERSAL_MODE_VALUES,
+)
 from app.services.config.runtime_settings import crawler_runtime_settings
 
 _FETCH_MODE_VALUES = {
@@ -110,6 +119,49 @@ def _coerce_proxy_list(value: object) -> list[str]:
         seen.add(text)
         proxies.append(text)
     return proxies
+
+
+def normalize_internal_api_endpoints(value: object) -> list[dict[str, object]]:
+    if not isinstance(value, list):
+        return []
+    endpoints: list[dict[str, object]] = []
+    seen: set[tuple[str, str]] = set()
+    max_endpoints = max(
+        1,
+        int(crawler_runtime_settings.internal_api_replay_max_endpoints),
+    )
+    for item in value:
+        if not isinstance(item, Mapping):
+            continue
+        url = _clean_str(item.get(INTERNAL_API_ENDPOINT_URL_KEY))
+        method = str(item.get(INTERNAL_API_ENDPOINT_METHOD_KEY) or "GET").strip().upper()
+        if not url or method not in INTERNAL_API_ENDPOINT_ALLOWED_METHODS:
+            continue
+        key = (method, url)
+        if key in seen:
+            continue
+        seen.add(key)
+        endpoint: dict[str, object] = {
+            INTERNAL_API_ENDPOINT_URL_KEY: url,
+            INTERNAL_API_ENDPOINT_METHOD_KEY: method,
+        }
+        endpoint_type = _clean_str(item.get(INTERNAL_API_ENDPOINT_TYPE_KEY))
+        if endpoint_type:
+            endpoint[INTERNAL_API_ENDPOINT_TYPE_KEY] = endpoint_type
+        endpoint_family = _clean_str(item.get(INTERNAL_API_ENDPOINT_FAMILY_KEY))
+        if endpoint_family:
+            endpoint[INTERNAL_API_ENDPOINT_FAMILY_KEY] = endpoint_family
+        source_run_id = _coerce_int_clamped(
+            item.get(INTERNAL_API_ENDPOINT_SOURCE_RUN_ID_KEY),
+            default=0,
+            minimum=0,
+        )
+        if source_run_id > 0:
+            endpoint[INTERNAL_API_ENDPOINT_SOURCE_RUN_ID_KEY] = source_run_id
+        endpoints.append(endpoint)
+        if len(endpoints) >= max_endpoints:
+            break
+    return endpoints
 
 
 def _coerce_country(value: object) -> str:
@@ -267,6 +319,9 @@ def normalize_domain_run_profile(
         },
         "acquisition_contract": normalize_acquisition_contract(
             payload.get("acquisition_contract")
+        ),
+        INTERNAL_API_ENDPOINTS_PROFILE_KEY: normalize_internal_api_endpoints(
+            payload.get(INTERNAL_API_ENDPOINTS_PROFILE_KEY)
         ),
         "source_run_id": normalized_source_run_id,
         "saved_at": normalized_saved_at,

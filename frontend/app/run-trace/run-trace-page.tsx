@@ -317,8 +317,8 @@ export default function RunTracePage() {
             </h3>
             {hasFlags ? (
               <div className="grid gap-3 md:grid-cols-2">
-                {flags?.flags.map((flag, index) => (
-                  <FlagCard key={`${flag.code}-${index}`} flag={flag} />
+                {flags?.flags.map((flag) => (
+                  <FlagCard key={`${flag.code}-${flag.symptom}-${flag.url ?? ''}`} flag={flag} />
                 ))}
               </div>
             ) : (

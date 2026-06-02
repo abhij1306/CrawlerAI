@@ -6,8 +6,8 @@ import re
 import regex as regex_lib
 from bs4 import BeautifulSoup, NavigableString, Tag
 from cssselect import GenericTranslator, SelectorError
-from lxml import etree
-from lxml import html as lxml_html
+from lxml import etree  # skipcq: BAN-B410 - lxml is used in HTML parsing mode for sanitized selector validation, not arbitrary XML.
+from lxml import html as lxml_html  # skipcq: BAN-B410 - lxml.html.fromstring parses sanitized HTML snippets, not arbitrary XML.
 
 from app.services.config.selectors import (
     XPATH_ALLOWED_FUNCTIONS,

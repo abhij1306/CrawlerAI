@@ -58,6 +58,7 @@ def _pipeline_acquisition_event_logger(context: _URLProcessingContext):
 async def _apply_extraction_post_processing(*args, **kwargs):
     from app.services.pipeline import extraction_loop
 
+    # skipcq: PYL-E1125 - retry stage forwards the full extraction-loop call contract.
     return await extraction_loop._apply_extraction_post_processing(*args, **kwargs)
 
 async def _build_acquisition_request(
@@ -170,6 +171,7 @@ async def _retry_patchright_detail_rejection_with_real_chrome(
         return None
 
     if mark_patchright_hard_block:
+        # skipcq: PYL-W0404 - lazy import avoids the extraction_loop <-> retry.stage import cycle.
         from app.services.pipeline import extraction_loop
 
         note_hard_block_impl = getattr(

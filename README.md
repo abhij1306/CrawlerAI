@@ -164,7 +164,7 @@ Hosted MCP server:
 
 ```powershell
 cd backend
-$env:CRAWLERAI_API_KEY='<api-key>'
+$env:CRAWLERAI_API_KEY='<set-api-key-in-shell>'
 $env:CRAWLERAI_API_BASE_URL='http://127.0.0.1:8000/api/v1'
 .\.venv\Scripts\python.exe -m app.mcp_server.server
 ```
@@ -173,7 +173,7 @@ Alert stdio wrapper:
 
 ```powershell
 cd backend
-$env:CRAWLERAI_API_KEY='<api-key>'
+$env:CRAWLERAI_API_KEY='<set-api-key-in-shell>'
 $env:CRAWLERAI_API_BASE_URL='http://127.0.0.1:8000/api/v1'
 .\.venv\Scripts\python.exe -m app.mcp.alert_server
 ```

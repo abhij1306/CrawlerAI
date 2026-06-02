@@ -351,6 +351,7 @@ class _RateLimitBucketsView(Mapping[str, deque[float]]):
 
 
 RATE_LIMIT_BUCKETS: Mapping[str, deque[float]] = _RateLimitBucketsView()
+__all__ = ["RATE_LIMIT_BUCKETS"]
 
 
 def rate_limit_buckets_snapshot() -> OrderedDict[str, deque[float]]:

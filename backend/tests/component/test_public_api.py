@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import logging
 from collections import OrderedDict, deque
 from datetime import UTC, datetime
@@ -18,7 +17,11 @@ from app.core import config
 from app.core import metrics as metrics_module
 from app.core.config import settings
 from app.core.dependencies import get_current_user, get_db
-from app.core.public_auth import authenticate_public_api_key, hash_api_key
+from app.core.public_auth import (
+    authenticate_public_api_key,
+    hash_api_key,
+    legacy_hash_api_key,
+)
 from app.main import (
     RATE_LIMIT_BUCKETS,
     CrawlerAppState,
@@ -609,29 +612,31 @@ async def test_public_capabilities_uses_api_key_envelope(
 
 @pytest.mark.asyncio
 @pytest.mark.component
-async def test_public_api_accepts_legacy_sha256_api_key_hash(
-    public_api_client: AsyncClient,
+async def test_authenticate_public_api_key_migrates_legacy_hash(
     db_session,
     test_user,
 ) -> None:
-    raw_key = "crawlerai_public_legacy_key"
+    raw_key = "crawlerai_legacy_public_test_key"
     db_session.add(
         ApiKey(
             user_id=test_user.id,
             name="legacy",
             key_prefix="crawlerai",
-            key_hash=hashlib.sha256(raw_key.encode("utf-8")).hexdigest(),
+            key_hash=legacy_hash_api_key(raw_key),
             is_active=True,
         )
     )
     await db_session.commit()
 
-    response = await public_api_client.get(
-        "/api/v1/capabilities",
-        headers={"Authorization": f"Bearer {raw_key}"},
+    principal = await authenticate_public_api_key(
+        db_session,
+        f"Bearer {raw_key}",
+        touch=False,
     )
 
-    assert response.status_code == 200
+    stored = await db_session.scalar(select(ApiKey).where(ApiKey.id == principal.api_key_id))
+    assert stored is not None
+    assert stored.key_hash == hash_api_key(raw_key)
 
 
 @pytest.mark.asyncio

@@ -8,6 +8,7 @@ from ._common import (
     _CANDIDATE_IMAGE_FILE_EXTENSIONS,
     _STATIC_EXPORTS,
     _string_frozenset,
+    re,
 )
 
 CDN_IMAGE_QUERY_PARAMS = _string_frozenset(

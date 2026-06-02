@@ -9,7 +9,9 @@ import httpx
 from app.services.acquisition_plan import AcquisitionPlan
 from app.services.acquisition.policy import AcquisitionPolicy
 from app.services.acquisition.policy_middleware import PolicyMiddleware
+from app.services.acquisition.internal_api_replay import replay_internal_api_endpoints
 from app.services.adapters.registry import normalize_adapter_acquisition_url
+from app.services.config.domain_profiles import INTERNAL_API_ENDPOINTS_PROFILE_KEY
 from app.services.fetch.fetch_context import fetch_page
 from app.services.platform_policy import resolve_platform_runtime_policy
 
@@ -219,6 +221,42 @@ async def acquire(request: AcquisitionRequest) -> AcquisitionResult:
     await policy_middleware.before_fetch(request)
     request = request.with_profile_updates(**acquisition_policy.to_profile())
     await _emit_event(request.on_event, "info", f"Acquiring {effective_url}")
+    profile_endpoints = request.acquisition_profile.get(
+        INTERNAL_API_ENDPOINTS_PROFILE_KEY
+    )
+    replay_payload = await replay_internal_api_endpoints(
+        page_url=effective_url,
+        surface=request.surface,
+        endpoints=profile_endpoints if isinstance(profile_endpoints, list) else [],
+        requested_fields=list(request.requested_fields),
+    )
+    if replay_payload is not None:
+        replay_url = str(replay_payload.get("url") or effective_url)
+        raw_status = replay_payload.get("status")
+        status_code = int(raw_status) if isinstance(raw_status, (int, str)) else 200
+        acquisition_result = AcquisitionResult(
+            request=request,
+            final_url=effective_url,
+            html="",
+            method="api_replay",
+            status_code=status_code,
+            content_type=str(
+                replay_payload.get("content_type") or "application/json"
+            ),
+            blocked=False,
+            platform_family=runtime_policy.get("family"),
+            headers={},
+            network_payloads=[replay_payload],
+            browser_diagnostics={
+                "internal_api_replay": True,
+                "internal_api_replay_url": replay_url,
+                "network_payload_count": 1,
+                "extraction_source": "network_payload_first",
+            },
+            artifacts={},
+        )
+        await policy_middleware.after_fetch(acquisition_result)
+        return acquisition_result
     result = await fetch_page(
         effective_url,
         run_id=request.run_id,

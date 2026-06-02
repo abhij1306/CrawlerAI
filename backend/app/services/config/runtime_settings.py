@@ -220,6 +220,9 @@ class CrawlerRuntimeSettings(BaseSettings):
     browser_capture_total_network_payload_bytes: int = 12000000
     browser_capture_workers: int = 4
     browser_capture_read_timeout_seconds: float = 5.0
+    internal_api_replay_enabled: bool = True
+    internal_api_replay_timeout_seconds: float = 3.0
+    internal_api_replay_max_endpoints: int = 3
     browser_accessibility_snapshot_timeout_seconds: float = 0.5
     browser_capture_queue_join_timeout_ms: int = 2000
     browser_artifact_capture_timeout_ms: int = 4000
@@ -431,6 +434,8 @@ class CrawlerRuntimeSettings(BaseSettings):
             "browser_capture_total_network_payload_bytes",
             "browser_capture_workers",
             "browser_capture_read_timeout_seconds",
+            "internal_api_replay_timeout_seconds",
+            "internal_api_replay_max_endpoints",
             "browser_capture_queue_join_timeout_ms",
             "browser_artifact_capture_timeout_ms",
             "adapter_payload_identity_min_token_length",

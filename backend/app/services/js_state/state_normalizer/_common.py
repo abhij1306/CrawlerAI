@@ -1,7 +1,6 @@
 from __future__ import annotations
 # ruff: noqa: F401,F403,F405
 
-import logging
 from typing import Any
 
 from glom import glom  # type: ignore[import-untyped]
@@ -57,7 +56,6 @@ from app.services.js_state.helpers import (
 from app.services.js_state import job_mapper as _job_mapper
 from app.services.platform_policy import JSStateExtractorConfig, platform_js_state_extractors
 
-logger = logging.getLogger(__name__)
 PRODUCT_FIELD_SPEC = JS_STATE_PRODUCT_FIELD_SPEC
 _VARIANT_FIELD_SPEC = JS_STATE_VARIANT_FIELD_SPEC
 map_configured_state_payload = _job_mapper.map_configured_state_payload
@@ -72,6 +70,7 @@ __all__ = [
     "DETAIL_ARTIFACT_PRODUCT_TYPE_VALUES",
     "DETAIL_LOW_SIGNAL_PRODUCT_TYPE_VALUES",
     "ECOMMERCE_DESCRIPTION_BLOCK_LIMIT",
+    "glom",
     "JSStateExtractorConfig",
     "JS_STATE_LIST_ITERATION_LIMIT",
     "JS_STATE_OPTION_GROUP_VALUE_KEYS",

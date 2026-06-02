@@ -10,8 +10,6 @@ from app.core.database import get_session
 from app.core.security import TokenDecodeError, decode_access_token
 from app.models.user import User
 from app.services.dispatch.base import RunDispatcher
-from app.services.dispatch.celery_dispatcher import CeleryRunDispatcher
-from app.services.dispatch.local_dispatcher import LocalRunDispatcher
 from fastapi import Cookie, Depends, Header, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -84,7 +82,14 @@ def get_run_dispatcher() -> RunDispatcher:
         # Double-check after acquiring lock.
         dispatcher = _run_dispatchers.get(celery_enabled)
         if dispatcher is None:
-            dispatcher = CeleryRunDispatcher() if celery_enabled else LocalRunDispatcher()
+            if celery_enabled:
+                from app.services.dispatch.celery_dispatcher import CeleryRunDispatcher
+
+                dispatcher = CeleryRunDispatcher()
+            else:
+                from app.services.dispatch.local_dispatcher import LocalRunDispatcher
+
+                dispatcher = LocalRunDispatcher()
             _run_dispatchers[celery_enabled] = dispatcher
     return dispatcher
 

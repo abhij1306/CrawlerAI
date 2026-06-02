@@ -34,6 +34,7 @@ DATA_ENRICHMENT_JOB_TERMINAL_STATUSES = (
 )
 
 ECOMMERCE_DETAIL_SURFACE = "ecommerce_detail"
+ECOMMERCE_LISTING_SURFACE = "ecommerce_listing"
 DATA_ENRICHMENT_TAXONOMY_FILENAME = "shopify_categories.json"
 DATA_ENRICHMENT_ATTRIBUTES_FILENAME = "shopify_attributes.json"
 DATA_ENRICHMENT_DATA_DIR = Path(__file__).resolve().parents[2] / "data" / "enrichment"

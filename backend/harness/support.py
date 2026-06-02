@@ -39,7 +39,7 @@ DEFAULT_SITE_SET_PATH = (
     Path(__file__).resolve().parent / "test_site_sets" / "commerce_browser_heavy.json"
 )
 DEFAULT_HARNESS_EMAIL = "admin@admin.com"
-DEFAULT_HARNESS_PASSWORD = "AdminPassword123!"
+DEFAULT_HARNESS_PASSWORD = "AdminPassword123!"  # nosec B105 # skipcq: SCT-A000 - local harness bootstrap placeholder only.
 _VARIANT_AXIS_FIELDS = tuple(
     dict.fromkeys(
         str(token).strip().lower()
@@ -182,9 +182,8 @@ def infer_surface(url: str, explicit_surface: object | None = None) -> str:
     if (
         family in job_platform_families()
         or host.endswith(".jobs")
-        or host.endswith("startup.jobs")
+        or host.endswith(("startup.jobs", ".usajobs.gov"))
         or host == "usajobs.gov"
-        or host.endswith(".usajobs.gov")
     ):
         if any(token in normalized_url for token in _JOB_LISTING_HINTS):
             return "job_listing"

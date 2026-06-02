@@ -26,6 +26,7 @@ function displayJsonStringToken(token: string): string {
 
 export function syntaxHighlightJson(json: string) {
   if (!json) return '';
+  tokenRegex.lastIndex = 0;
 
   // Walk the input with a tokenizer regex; escape both matched tokens and the
   // gaps between them so any unmatched character is rendered as text, not HTML.
@@ -122,7 +123,7 @@ export function syntaxHighlightJsonNodes(json: string): ReactNode[] {
     return createElement(
       'span',
       {
-        key: index,
+        key: `${index}-${line}`,
         style: {
           display: 'block',
           paddingLeft: `${indent}ch`,

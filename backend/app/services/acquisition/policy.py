@@ -9,6 +9,12 @@ from app.services.acquisition_plan import AcquisitionPlan
 from app.services.config.browser_fingerprint_profiles import (
     RETRY_REASON_BROWSER_LABELS,
 )
+from app.services.config.domain_profiles import (
+    INTERNAL_API_ENDPOINT_ALLOWED_METHODS,
+    INTERNAL_API_ENDPOINT_METHOD_KEY,
+    INTERNAL_API_ENDPOINT_URL_KEY,
+    INTERNAL_API_ENDPOINTS_PROFILE_KEY,
+)
 from app.services.config.runtime_settings import VALID_FETCH_MODES
 
 
@@ -24,6 +30,7 @@ class AcquisitionPolicyUpdates(TypedDict, total=False):
     handoff_cookie_engine: str | None
     forced_browser_engine: str | None
     requires_browser: bool
+    internal_api_endpoints: list[dict[str, object]]
 
 
 @dataclass(frozen=True, slots=True)
@@ -39,6 +46,7 @@ class AcquisitionPolicy:
     handoff_cookie_engine: str | None = None
     forced_browser_engine: str | None = None
     requires_browser: bool = False
+    internal_api_endpoints: tuple[dict[str, object], ...] = ()
 
     @classmethod
     def from_profile(
@@ -69,6 +77,9 @@ class AcquisitionPolicy:
             handoff_cookie_engine=_optional_text(payload.get("handoff_cookie_engine")),
             forced_browser_engine=_optional_text(payload.get("forced_browser_engine")),
             requires_browser=bool(payload.get("requires_browser", False)),
+            internal_api_endpoints=tuple(
+                _endpoint_list(payload.get(INTERNAL_API_ENDPOINTS_PROFILE_KEY))
+            ),
         )
 
     def with_updates(
@@ -129,6 +140,10 @@ class AcquisitionPolicy:
             profile["forced_browser_engine"] = self.forced_browser_engine
         if self.requires_browser:
             profile["requires_browser"] = self.requires_browser
+        if self.internal_api_endpoints:
+            profile[INTERNAL_API_ENDPOINTS_PROFILE_KEY] = [
+                dict(endpoint) for endpoint in self.internal_api_endpoints
+            ]
         return profile
 
     def __post_init__(self) -> None:
@@ -184,6 +199,31 @@ def _optional_positive_int(value: object) -> int | None:
     except (TypeError, ValueError):
         return None
     return result if result > 0 else None
+
+
+def _endpoint_list(value: object) -> list[dict[str, object]]:
+    if not isinstance(value, list):
+        return []
+    endpoints: list[dict[str, object]] = []
+    seen: set[tuple[str, str]] = set()
+    for item in value:
+        if not isinstance(item, Mapping):
+            continue
+        url = str(item.get(INTERNAL_API_ENDPOINT_URL_KEY) or "").strip()
+        method = (
+            str(item.get(INTERNAL_API_ENDPOINT_METHOD_KEY) or "GET").strip().upper()
+        )
+        if not url or method not in INTERNAL_API_ENDPOINT_ALLOWED_METHODS:
+            continue
+        key = (method, url)
+        if key in seen:
+            continue
+        seen.add(key)
+        endpoint = dict(item)
+        endpoint[INTERNAL_API_ENDPOINT_URL_KEY] = url
+        endpoint[INTERNAL_API_ENDPOINT_METHOD_KEY] = method
+        endpoints.append(endpoint)
+    return endpoints
 
 
 def _normalize_fetch_mode(value: object, *, prefer_browser: bool) -> str:

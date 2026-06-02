@@ -1,6 +1,9 @@
 # Active Plan
 
-**Current:** None (last plan completed 2026-05-30)
+**Current:** Agentic Browser Playground → `docs/plans/agentic-browser-playground-plan.md`
+**Status:** IN PROGRESS
+**Started:** 2026-06-02
+**Last slice completed:** None
 
 ## Queue
 

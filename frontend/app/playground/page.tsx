@@ -11,7 +11,14 @@ import {
   Play,
   Search,
 } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  type Dispatch,
+  type SetStateAction,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from 'react';
 
 import {
   DataRegionEmpty,
@@ -63,6 +70,69 @@ type ExtractedRecord = {
   data: Record<string, unknown>;
 };
 
+type SitemapGroup = {
+  inputUrl: string;
+  urls: string[];
+  source: string;
+  error?: string;
+};
+
+export type NavNode = {
+  label: string;
+  url?: string;
+  children: NavNode[];
+};
+
+export type NavTreeGroup = {
+  inputUrl: string;
+  source: string;
+  error?: string;
+  tree: NavNode[];
+};
+
+const CATEGORY_LIMIT_MIN = 1;
+const CATEGORY_LIMIT_MAX = 50;
+
+function clampCategoryLimit(value: number): number {
+  if (!Number.isFinite(value)) return 10;
+  return Math.min(CATEGORY_LIMIT_MAX, Math.max(CATEGORY_LIMIT_MIN, Math.trunc(value)));
+}
+
+function parseUrlInput(value: string): string[] {
+  return Array.from(
+    new Set(
+      value
+        .split(/\r?\n/)
+        .map((item) => item.trim())
+        .filter(Boolean),
+    ),
+  );
+}
+
+function isNavNode(value: unknown): value is NavNode {
+  if (!value || typeof value !== 'object') return false;
+  const data = value as Record<string, unknown>;
+  if (typeof data.label !== 'string') return false;
+  if (data.url !== undefined && typeof data.url !== 'string') return false;
+  return Array.isArray(data.children) && data.children.every(isNavNode);
+}
+
+function parseNavTree(value: unknown): NavNode[] {
+  return Array.isArray(value) ? value.filter(isNavNode) : [];
+}
+
+function collectNodeUrls(node: NavNode): string[] {
+  const urls = node.url ? [node.url] : [];
+  for (const child of node.children) {
+    urls.push(...collectNodeUrls(child));
+  }
+  return Array.from(new Set(urls));
+}
+
+function collectTreeUrls(tree: NavNode[]): string[] {
+  return Array.from(new Set(tree.flatMap(collectNodeUrls)));
+}
+
 // ─── Steps ───────────────────────────────────────────────────────────────────
 
 const STEPS = [
@@ -99,6 +169,7 @@ export default function PlaygroundPage() {
   const queryClient = useQueryClient();
   const [sessionId, setSessionId] = useState<number | null>(null);
   const [url, setUrl] = useState('');
+  const [categoryLimit, setCategoryLimit] = useState(10);
   const [error, setError] = useState('');
   const [selectedUrls, setSelectedUrls] = useState<Set<string>>(new Set());
   const [pipelineOptions, setPipelineOptions] = useState({
@@ -153,8 +224,14 @@ export default function PlaygroundPage() {
   // ─── Mutations ───────────────────────────────────────────────────────────
 
   const createSession = useMutation({
-    mutationFn: (inputUrl: string) =>
-      api.createPlaygroundSession({ url: inputUrl }) as Promise<PlaygroundSession>,
+    mutationFn: (inputUrl: string) => {
+      const inputUrls = parseUrlInput(inputUrl);
+      return api.createPlaygroundSession({
+        url: inputUrls[0] ?? inputUrl,
+        urls: inputUrls.slice(1),
+        category_limit: clampCategoryLimit(categoryLimit),
+      }) as Promise<PlaygroundSession>;
+    },
     onSuccess: (data) => {
       setSessionId(data.id);
       setError('');
@@ -202,10 +279,10 @@ export default function PlaygroundPage() {
   // ─── Handlers ────────────────────────────────────────────────────────────
 
   const handleStart = useCallback(() => {
-    const trimmed = url.trim();
-    if (!trimmed) return;
+    const inputUrls = parseUrlInput(url);
+    if (inputUrls.length === 0) return;
     setError('');
-    createSession.mutate(trimmed);
+    createSession.mutate(inputUrls.join('\n'));
   }, [url, createSession]);
 
   const handleSelect = useCallback(() => {
@@ -221,6 +298,7 @@ export default function PlaygroundPage() {
   const handleReset = useCallback(() => {
     setSessionId(null);
     setUrl('');
+    setCategoryLimit(10);
     setError('');
     setSelectedUrls(new Set());
     setPipelineOptions({ enrich: false, compare: false, monitor: false, audit: false });
@@ -274,6 +352,65 @@ export default function PlaygroundPage() {
       return source === 'homepage' ? 'homepage' : 'sitemap';
     }
     return 'sitemap';
+  })();
+
+  const sitemapGroups: SitemapGroup[] = (() => {
+    const sitemap = session?.step_data?.sitemap;
+    if (!sitemap || typeof sitemap !== 'object') return [];
+    const data = sitemap as Record<string, unknown>;
+    const groups = data.groups;
+    if (!groups || typeof groups !== 'object' || Array.isArray(groups)) return [];
+    const sources = data.sources && typeof data.sources === 'object' ? data.sources : {};
+    const errors = data.errors && typeof data.errors === 'object' ? data.errors : {};
+    return Object.entries(groups as Record<string, unknown>).map(([inputUrl, rawUrls]) => ({
+      inputUrl,
+      urls: Array.isArray(rawUrls)
+        ? rawUrls.filter((item): item is string => typeof item === 'string')
+        : [],
+      source:
+        typeof (sources as Record<string, unknown>)[inputUrl] === 'string'
+          ? String((sources as Record<string, unknown>)[inputUrl])
+          : 'unknown',
+      error:
+        typeof (errors as Record<string, unknown>)[inputUrl] === 'string'
+          ? String((errors as Record<string, unknown>)[inputUrl])
+          : undefined,
+    }));
+  })();
+
+  const navTreeGroups: NavTreeGroup[] = (() => {
+    const sitemap = session?.step_data?.sitemap;
+    if (!sitemap || typeof sitemap !== 'object') return [];
+    const data = sitemap as Record<string, unknown>;
+    const sources = data.sources && typeof data.sources === 'object' ? data.sources : {};
+    const errors = data.errors && typeof data.errors === 'object' ? data.errors : {};
+    const trees = data.trees;
+    if (trees && typeof trees === 'object' && !Array.isArray(trees)) {
+      return Object.entries(trees as Record<string, unknown>)
+        .map(([inputUrl, rawTree]) => ({
+          inputUrl,
+          tree: parseNavTree(rawTree),
+          source:
+            typeof (sources as Record<string, unknown>)[inputUrl] === 'string'
+              ? String((sources as Record<string, unknown>)[inputUrl])
+              : 'unknown',
+          error:
+            typeof (errors as Record<string, unknown>)[inputUrl] === 'string'
+              ? String((errors as Record<string, unknown>)[inputUrl])
+              : undefined,
+        }))
+        .filter((group) => group.tree.length > 0);
+    }
+    const navTree = parseNavTree(data.nav_tree);
+    if (navTree.length === 0 || !session) return [];
+    return [
+      {
+        inputUrl: session.input_url,
+        source: typeof data.source === 'string' ? data.source : 'unknown',
+        error: typeof data.error === 'string' ? data.error : undefined,
+        tree: navTree,
+      },
+    ];
   })();
 
   const resultsSteps = (() => {
@@ -351,21 +488,37 @@ export default function PlaygroundPage() {
       {!session && (
         <SurfacePanel>
           <div className="p-6">
-            <h3 className="type-heading-3 mb-2">Enter a URL to explore</h3>
+            <h3 className="type-heading-3 mb-2">Enter URL(s) to explore</h3>
             <p className="type-body-sm mb-4">
-              Paste a category page, brand page, or product listing URL. The system will discover
-              what products are available.
+              Paste brand homepages, category pages, or listing URLs. Category URLs are shown first.
             </p>
-            <div className="flex gap-3">
-              <input
-                type="url"
+            <div className="grid gap-3 sm:grid-cols-[1fr_140px_auto]">
+              <textarea
                 value={url}
                 onChange={(e) => setUrl(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleStart()}
-                placeholder="https://www.example.com/category/shoes"
-                className="border-divider focus-ring bg-panel flex-1 rounded-md border px-3 py-2 text-sm"
+                placeholder={`https://brand-a.example\nhttps://brand-b.example`}
+                rows={4}
+                className="border-divider focus-ring bg-panel min-h-24 flex-1 resize-y rounded-md border px-3 py-2 font-mono text-sm"
               />
-              <Button onClick={handleStart} disabled={createSession.isPending || !url.trim()}>
+              <label className="grid content-start gap-2">
+                <span className="type-label">Limit</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={50}
+                  value={categoryLimit}
+                  onChange={(e) => {
+                    const nextValue = Number(e.target.value);
+                    setCategoryLimit(clampCategoryLimit(nextValue));
+                  }}
+                  className="border-divider focus-ring bg-panel rounded-md border px-3 py-2 text-sm"
+                />
+              </label>
+              <Button
+                className="self-start"
+                onClick={handleStart}
+                disabled={createSession.isPending || parseUrlInput(url).length === 0}
+              >
                 {createSession.isPending ? (
                   <Loader2 className="size-4 animate-spin" />
                 ) : (
@@ -408,11 +561,14 @@ export default function PlaygroundPage() {
           {/* ─── Step: Discovering ──────────────────────────────────────── */}
           {(session.state === 'discovering' || session.state === 'created') && (
             <ActivityLogPanel
-              title="Discovering products"
+              title="Discovering category URLs"
               subtitle={
                 <>
-                  Crawling <span className="font-mono">{session.input_url}</span> to find available
-                  products.
+                  Checking <span className="font-mono">{session.input_url}</span>
+                  {Array.isArray(session.step_data?.input_urls)
+                    ? ` and ${String(Math.max(0, session.step_data.input_urls.length - 1))} more URL(s)`
+                    : ''}{' '}
+                  in parallel.
                 </>
               }
               runId={
@@ -427,34 +583,79 @@ export default function PlaygroundPage() {
 
           {/* ─── Step: Sitemap → pick a category ────────────────────────── */}
           {session.state === 'sitemap_listed' && (
-            <PickerPanel
-              mode="multi"
-              title={`URLs from ${sitemapSource === 'homepage' ? 'homepage' : 'sitemap'} (${sitemapUrls.length})`}
-              description={
-                sitemapSource === 'homepage'
-                  ? 'Sitemap was unavailable, so these links were inferred from the homepage. Pick one or more URLs to crawl.'
-                  : 'Pick one or more category, collection, or section URLs to crawl.'
-              }
-              items={sitemapUrls.map((u) => ({ url: u }))}
-              selected={selectedUrls}
-              onToggle={toggleProduct}
-              onSelectAll={() => setSelectedUrls(new Set(sitemapUrls.slice(0, 50)))}
-              onConfirm={() => {
-                const categoryUrls = Array.from(selectedUrls);
-                if (sessionId && categoryUrls.length > 0) {
-                  selectCategory.mutate({ sid: sessionId, categoryUrls });
-                }
-              }}
-              confirmLabel={
-                selectedUrls.size === 0
-                  ? 'Pick URL(s)'
-                  : `Crawl ${selectedUrls.size} URL${selectedUrls.size === 1 ? '' : 's'}`
-              }
-              confirmDisabled={selectedUrls.size === 0 || selectCategory.isPending}
-              isLoading={selectCategory.isPending}
-              emptyTitle="No homepage or sitemap links found"
-              emptyDescription={`Couldn't pull useful links from sitemap or homepage for ${session.input_url}. Try a category or product URL directly.`}
-            />
+            <>
+              {sitemapGroups.length > 0 && <CategoryDiscoverySummary groups={sitemapGroups} />}
+              {navTreeGroups.length > 0 ? (
+                <NavTreePanel
+                  groups={navTreeGroups}
+                  selected={selectedUrls}
+                  onToggleUrls={(urls) => {
+                    setSelectedUrls((prev) => {
+                      const next = new Set(prev);
+                      const allSelected = urls.every((item) => next.has(item));
+                      if (allSelected) {
+                        urls.forEach((item) => next.delete(item));
+                      } else {
+                        for (const item of urls) {
+                          if (next.size >= 50 && !next.has(item)) break;
+                          next.add(item);
+                        }
+                      }
+                      return next;
+                    });
+                  }}
+                  onSelectAll={() =>
+                    setSelectedUrls(
+                      new Set(
+                        navTreeGroups.flatMap((group) => collectTreeUrls(group.tree)).slice(0, 50),
+                      ),
+                    )
+                  }
+                  onConfirm={() => {
+                    const categoryUrls = Array.from(selectedUrls);
+                    if (sessionId && categoryUrls.length > 0) {
+                      selectCategory.mutate({ sid: sessionId, categoryUrls });
+                    }
+                  }}
+                  confirmLabel={
+                    selectedUrls.size === 0
+                      ? 'Pick URL(s)'
+                      : `Crawl ${selectedUrls.size} URL${selectedUrls.size === 1 ? '' : 's'}`
+                  }
+                  confirmDisabled={selectedUrls.size === 0 || selectCategory.isPending}
+                  isLoading={selectCategory.isPending}
+                />
+              ) : (
+                <PickerPanel
+                  mode="multi"
+                  title={`Category URLs from ${sitemapSource === 'homepage' ? 'homepage' : 'sitemap'} (${sitemapUrls.length})`}
+                  description={
+                    sitemapSource === 'homepage'
+                      ? 'Sitemap was unavailable, so category-like links were inferred from the homepage. Pick one or more URLs to crawl.'
+                      : 'Pick one or more category, collection, or section URLs to crawl.'
+                  }
+                  items={sitemapUrls.map((u) => ({ url: u }))}
+                  selected={selectedUrls}
+                  onToggle={toggleProduct}
+                  onSelectAll={() => setSelectedUrls(new Set(sitemapUrls.slice(0, 50)))}
+                  onConfirm={() => {
+                    const categoryUrls = Array.from(selectedUrls);
+                    if (sessionId && categoryUrls.length > 0) {
+                      selectCategory.mutate({ sid: sessionId, categoryUrls });
+                    }
+                  }}
+                  confirmLabel={
+                    selectedUrls.size === 0
+                      ? 'Pick URL(s)'
+                      : `Crawl ${selectedUrls.size} URL${selectedUrls.size === 1 ? '' : 's'}`
+                  }
+                  confirmDisabled={selectedUrls.size === 0 || selectCategory.isPending}
+                  isLoading={selectCategory.isPending}
+                  emptyTitle="No category links found"
+                  emptyDescription={`No category URLs found for ${session.input_url}. Try a category URL directly or raise the limit.`}
+                />
+              )}
+            </>
           )}
 
           {/* ─── Step: Select Products ─────────────────────────────────── */}
@@ -829,6 +1030,187 @@ function ActivityLogPanel({
   );
 }
 
+export function NavTreePanel({
+  groups,
+  selected,
+  onToggleUrls,
+  onSelectAll,
+  onConfirm,
+  confirmLabel,
+  confirmDisabled,
+  isLoading,
+}: {
+  groups: NavTreeGroup[];
+  selected: Set<string>;
+  onToggleUrls: (urls: string[]) => void;
+  onSelectAll: () => void;
+  onConfirm: () => void;
+  confirmLabel: string;
+  confirmDisabled: boolean;
+  isLoading: boolean;
+}) {
+  const initialOpen = groups.flatMap((group) =>
+    group.tree.map((_, index) => `${group.inputUrl}-${index}`),
+  );
+  const [open, setOpen] = useState<Set<string>>(() => new Set(initialOpen));
+  const totalUrls = groups.flatMap((group) => collectTreeUrls(group.tree)).length;
+
+  return (
+    <SurfacePanel>
+      <div className="border-divider flex items-center justify-between gap-3 border-b px-4 py-3">
+        <div>
+          <p className="type-label m-0">Navigation categories ({totalUrls})</p>
+          <p className="text-muted m-0 text-sm">Pick one or more category branches to crawl.</p>
+        </div>
+        <div className="flex gap-2">
+          <Button size="sm" variant="ghost" onClick={onSelectAll}>
+            Select All (max 50)
+          </Button>
+          <Button size="sm" onClick={onConfirm} disabled={confirmDisabled}>
+            {isLoading ? (
+              <Loader2 className="size-3.5 animate-spin" />
+            ) : (
+              <Play className="size-3.5" />
+            )}
+            {confirmLabel}
+          </Button>
+        </div>
+      </div>
+      <div className="divide-divider divide-y">
+        {groups.map((group) => (
+          <div key={group.inputUrl} className="p-4">
+            <div className="mb-3 flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="m-0 truncate font-mono text-sm">{group.inputUrl}</p>
+                <p className="text-muted m-0 text-xs">
+                  {collectTreeUrls(group.tree).length} category URL(s) from {group.source}
+                  {group.error ? ` (${group.error})` : ''}
+                </p>
+              </div>
+              <Badge tone={group.error ? 'warning' : 'success'}>{group.source}</Badge>
+            </div>
+            <div className="space-y-1">
+              {group.tree.map((node, index) => (
+                <NavTreeNode
+                  key={`${group.inputUrl}-${node.label}-${index}`}
+                  node={node}
+                  nodeKey={`${group.inputUrl}-${index}`}
+                  selected={selected}
+                  open={open}
+                  setOpen={setOpen}
+                  onToggleUrls={onToggleUrls}
+                />
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </SurfacePanel>
+  );
+}
+
+function NavTreeNode({
+  node,
+  nodeKey,
+  selected,
+  open,
+  setOpen,
+  onToggleUrls,
+  depth = 0,
+}: {
+  node: NavNode;
+  nodeKey: string;
+  selected: Set<string>;
+  open: Set<string>;
+  setOpen: Dispatch<SetStateAction<Set<string>>>;
+  onToggleUrls: (urls: string[]) => void;
+  depth?: number;
+}) {
+  const urls = collectNodeUrls(node);
+  const hasChildren = node.children.length > 0;
+  const isOpen = open.has(nodeKey);
+  const selectedCount = urls.filter((item) => selected.has(item)).length;
+  const allSelected = urls.length > 0 && selectedCount === urls.length;
+  const someSelected = selectedCount > 0 && selectedCount < urls.length;
+
+  return (
+    <div>
+      <div
+        className={cn(
+          'hover:bg-background-alt flex items-center gap-2 rounded-md px-2 py-1.5 text-sm',
+          (allSelected || someSelected) && 'bg-background-alt',
+        )}
+        style={{ paddingLeft: `${depth * 18 + 8}px` }}
+      >
+        <button
+          type="button"
+          className="text-muted flex size-5 shrink-0 items-center justify-center rounded"
+          onClick={() => {
+            if (!hasChildren) return;
+            setOpen((prev) => {
+              const next = new Set(prev);
+              if (next.has(nodeKey)) next.delete(nodeKey);
+              else next.add(nodeKey);
+              return next;
+            });
+          }}
+          aria-label={isOpen ? 'Collapse category' : 'Expand category'}
+        >
+          {hasChildren ? (isOpen ? '-' : '+') : ''}
+        </button>
+        <input
+          type="checkbox"
+          checked={allSelected}
+          ref={(el) => {
+            if (el) el.indeterminate = someSelected;
+          }}
+          onChange={() => onToggleUrls(urls)}
+          disabled={urls.length === 0}
+          className="size-4 rounded"
+        />
+        <button
+          type="button"
+          className="min-w-0 flex-1 text-left"
+          onClick={() => {
+            if (hasChildren) {
+              setOpen((prev) => {
+                const next = new Set(prev);
+                if (next.has(nodeKey)) next.delete(nodeKey);
+                else next.add(nodeKey);
+                return next;
+              });
+              return;
+            }
+            onToggleUrls(urls);
+          }}
+        >
+          <span className="block truncate font-medium">{node.label}</span>
+          {node.url && (
+            <span className="text-muted block truncate font-mono text-xs">{node.url}</span>
+          )}
+        </button>
+        {hasChildren && <Badge tone="neutral">{urls.length}</Badge>}
+      </div>
+      {hasChildren && isOpen && (
+        <div className="space-y-1">
+          {node.children.map((child, index) => (
+            <NavTreeNode
+              key={`${nodeKey}-${index}`}
+              node={child}
+              nodeKey={`${nodeKey}-${index}`}
+              selected={selected}
+              open={open}
+              setOpen={setOpen}
+              onToggleUrls={onToggleUrls}
+              depth={depth + 1}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function PickerPanel({
   mode,
   title,
@@ -942,6 +1324,39 @@ function PickerPanel({
           </Table>
         )}
       </TableSurface>
+    </SurfacePanel>
+  );
+}
+
+function CategoryDiscoverySummary({ groups }: { groups: SitemapGroup[] }) {
+  const foundCount = groups.filter((group) => group.urls.length > 0).length;
+  return (
+    <SurfacePanel>
+      <div className="border-divider border-b px-4 py-3">
+        <p className="type-label m-0">Discovery Status</p>
+        <p className="text-muted m-0 text-sm">
+          {foundCount} of {groups.length} input URL(s) returned category links.
+        </p>
+      </div>
+      <div className="divide-divider divide-y">
+        {groups.map((group) => (
+          <div key={group.inputUrl} className="flex items-start justify-between gap-4 px-4 py-3">
+            <div className="min-w-0">
+              <p className="m-0 truncate font-mono text-sm">{group.inputUrl}</p>
+              <p className="text-muted m-0 text-xs">
+                {group.urls.length > 0
+                  ? `${group.urls.length} category URL(s) from ${group.source}`
+                  : group.error
+                    ? `No category URLs. ${group.error}`
+                    : 'No category URLs.'}
+              </p>
+            </div>
+            <Badge tone={group.urls.length > 0 ? 'success' : 'warning'}>
+              {group.urls.length > 0 ? 'found' : group.source}
+            </Badge>
+          </div>
+        ))}
+      </div>
     </SurfacePanel>
   );
 }

@@ -1,10 +1,6 @@
-"""Playground session service.
-
-Coordinates existing crawl, enrichment, product intelligence, alert,
-and UCP audit services into a guided pipeline for non-technical users.
-"""
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 from urllib.parse import urlparse
@@ -22,11 +18,17 @@ from app.services.config.aid_score import (
 from app.services.config.data_enrichment import (
     DATA_ENRICHMENT_JOB_TERMINAL_STATUSES,
     ECOMMERCE_DETAIL_SURFACE,
+    ECOMMERCE_LISTING_SURFACE,
 )
 from app.services.config.monitor_settings import MONITOR_PRIORITY_BACKGROUND
 from app.services.config.product_intelligence import (
     PRODUCT_INTELLIGENCE_JOB_STATUS_COMPLETE,
     PRODUCT_INTELLIGENCE_JOB_STATUS_FAILED,
+)
+from app.services.config.sitemap import (
+    PLAYGROUND_CATEGORY_DEFAULT_LIMIT,
+    PLAYGROUND_CATEGORY_MAX_LIMIT,
+    PLAYGROUND_CATEGORY_PER_INPUT_TIMEOUT_SECONDS,
 )
 from app.services.crawl.ingestion_service import create_crawl_run_from_payload
 from app.services.crawl.sitemap_resolver import resolve_category_urls_from_sitemap_result
@@ -35,50 +37,20 @@ from app.services.surface_resolver import resolve_auto_surface
 
 logger = logging.getLogger(__name__)
 
-_AUDIT_TERMINAL_STATUSES = {
-    AID_AUDIT_JOB_STATUS_COMPLETE,
-    AID_AUDIT_JOB_STATUS_FAILED,
-}
-_PI_TERMINAL_STATUSES = {
-    PRODUCT_INTELLIGENCE_JOB_STATUS_COMPLETE,
-    PRODUCT_INTELLIGENCE_JOB_STATUS_FAILED,
-}
+_AUDIT_TERMINAL_STATUSES = {AID_AUDIT_JOB_STATUS_COMPLETE, AID_AUDIT_JOB_STATUS_FAILED}
+_PI_TERMINAL_STATUSES = {PRODUCT_INTELLIGENCE_JOB_STATUS_COMPLETE, PRODUCT_INTELLIGENCE_JOB_STATUS_FAILED}
 _ENRICH_TERMINAL_STATUSES = set(DATA_ENRICHMENT_JOB_TERMINAL_STATUSES)
 
-# State machine transitions
-VALID_TRANSITIONS = {
-    "created": ["sitemap_listed", "discovering", "extracting"],
-    "sitemap_listed": ["discovering"],
-    "discovering": ["discovered"],
-    "discovered": ["extracting"],
-    "extracting": ["extracted"],
-    "extracted": ["running_pipeline"],
-    "running_pipeline": ["complete"],
-}
-
 MAX_PRODUCTS = 50
-SITEMAP_DISPLAY_LIMIT = 100
 
 
 def _classify_input_url(url: str) -> str:
-    """Decide which playground entry stage applies for the given URL.
-
-    Returns one of ``"sitemap"`` (homepage / domain root),
-    ``"listing"`` (category, search, shop), or ``"detail"`` (PDP, article).
-    Pure URL inspection — relies on the existing ``resolve_auto_surface``
-    helper for surface classification.
-    """
     parsed = urlparse(url)
     path = (parsed.path or "").strip("/")
-    # Domain root or trivially shallow path (no slugs) → sitemap stage.
     if not path:
         return "sitemap"
     resolution = resolve_auto_surface(url=url)
     surface = resolution.surface
-    # Low-confidence fallback content_detail on a shallow path such as
-    # `/en`, `/us`, or `/en-us` is usually a locale-root homepage, not a
-    # real detail page. Treat it like sitemap entry so orchestration can
-    # expand into categories or products instead of extracting the root URL.
     if (
         surface == "content_detail"
         and resolution.confidence < 0.5
@@ -96,20 +68,27 @@ async def create_session(
     session: AsyncSession,
     *,
     user: User,
-    url: str,
+    url: str | None = None,
+    urls: list[str] | None = None,
+    category_limit: int = PLAYGROUND_CATEGORY_DEFAULT_LIMIT,
 ) -> PlaygroundSession:
-    """Create a new playground session."""
-    url = url.strip()
-    if not url:
+    input_values: list[str] = [item for item in [url, *(urls or [])] if item is not None]
+    input_urls = _normalize_input_urls(input_values)
+    if not input_urls:
         raise ValueError("URL is required")
-    if not url.startswith(("http://", "https://")):
-        url = f"https://{url}"
+    if len(input_urls) > MAX_PRODUCTS:
+        raise ValueError(f"Maximum {MAX_PRODUCTS} input URLs per session")
+
+    safe_category_limit = _safe_category_limit(category_limit)
+    step_data: dict[str, object] = {"category_limit": safe_category_limit}
+    if len(input_urls) > 1:
+        step_data["input_urls"] = input_urls
 
     playground = PlaygroundSession(
         user_id=user.id,
-        input_url=url,
+        input_url=input_urls[0],
         state="created",
-        step_data={},
+        step_data=step_data,
     )
     session.add(playground)
     await session.flush()
@@ -123,19 +102,13 @@ async def get_session(
     session_id: int,
     user: User,
 ) -> PlaygroundSession:
-    """Get a playground session, enforcing ownership. Auto-advances state if crawl completed."""
     playground = await session.get(PlaygroundSession, session_id)
     if playground is None or playground.user_id != user.id:
         raise LookupError("Session not found")
-    # Ensure step_data is loaded before auto-advance to avoid lazy reload issues
     _ = playground.step_data
     state_before = playground.state
     step_data_before = playground.step_data
     await _auto_advance(session, playground)
-    # Only flush + refresh when auto-advance actually mutated the row.
-    # Calling refresh on an unchanged row can trigger an implicit flush in
-    # async sessions and surface a MissingGreenlet error during the reload
-    # of server-computed columns (updated_at).
     if playground.state != state_before or playground.step_data != step_data_before:
         await session.flush()
         await session.refresh(playground)
@@ -148,7 +121,6 @@ async def list_sessions(
     user: User,
     limit: int = 20,
 ) -> list[PlaygroundSession]:
-    """List recent playground sessions for a user."""
     rows = await session.scalars(
         select(PlaygroundSession)
         .where(PlaygroundSession.user_id == user.id)
@@ -164,24 +136,36 @@ async def start_discover(
     playground: PlaygroundSession,
     user: User,
 ) -> dict[str, Any]:
-    """Route the input URL into the right entry stage.
-
-    Three entry points, all driven by existing services:
-
-    - ``sitemap``: homepage / domain root → fetch the sitemap and surface
-      category URLs for the user to pick from. Sets state ``sitemap_listed``.
-    - ``listing``: category / search URL → start a standard crawl on it
-      (run_type=crawl, surface=auto). Sets state ``discovering``.
-    - ``detail``: PDP / article URL → start a standard crawl directly
-      against the URL and skip discover/select. Sets state ``extracting``.
-
-    Returns a small payload describing what was started so the API layer
-    can return useful info to the client.
-    """
     _require_state(playground, "created")
 
     classification = _classify_input_url(playground.input_url)
     step_data = dict(playground.step_data or {})
+    input_urls = _session_input_urls(playground)
+    category_limit = _session_category_limit(playground)
+
+    if len(input_urls) > 1:
+        detail_urls, discover_urls = _partition_playground_urls(input_urls)
+        if detail_urls and not discover_urls:
+            run_ids = await _launch_extract_runs(
+                session,
+                playground=playground,
+                user=user,
+                urls=detail_urls,
+                skipped_discover=True,
+            )
+            return {"stage": "detail", "run_id": run_ids[0]}
+        if detail_urls:
+            step_data["seed_detail_urls"] = detail_urls
+
+        sitemap = await _resolve_category_list_for_inputs(
+            discover_urls,
+            limit=category_limit,
+        )
+        step_data["sitemap"] = sitemap
+        playground.state = "sitemap_listed"
+        playground.step_data = step_data
+        await session.flush()
+        return {"stage": "sitemap", "url_count": int(sitemap["total_found"])}
 
     if classification == "sitemap":
         sitemap_source: str
@@ -190,23 +174,29 @@ async def start_discover(
             sitemap_resolution = await resolve_category_urls_from_sitemap_result(
                 domain=playground.input_url,
                 allow_homepage_fallback=True,
+                category_only=True,
+                max_urls=category_limit,
             )
             sitemap_urls = sitemap_resolution.urls
             sitemap_source = sitemap_resolution.source
+            sitemap_nav_tree = sitemap_resolution.nav_tree
         except Exception as exc:
             logger.warning(
                 "Sitemap fetch failed for %s: %s", playground.input_url, exc
             )
             sitemap_urls = []
             sitemap_source = "failed"
+            sitemap_nav_tree = None
             sitemap_error = type(exc).__name__
-        # Limit what we expose to the user; everything else stays in step_data.
         step_data["sitemap"] = {
             "status": "completed",
             "source": sitemap_source,
-            "urls": sitemap_urls[:SITEMAP_DISPLAY_LIMIT],
+            "urls": sitemap_urls[:category_limit],
             "total_found": len(sitemap_urls),
+            "limit": category_limit,
         }
+        if sitemap_nav_tree:
+            step_data["sitemap"]["nav_tree"] = sitemap_nav_tree
         if sitemap_error:
             step_data["sitemap"]["error"] = sitemap_error
         playground.state = "sitemap_listed"
@@ -215,15 +205,13 @@ async def start_discover(
         return {"stage": "sitemap", "url_count": len(sitemap_urls)}
 
     if classification == "detail":
-        # Treat the URL as the only product to extract — same crawl call
-        # Crawl Studio uses for a single PDP.
         run = await create_crawl_run_from_payload(
             session,
             user.id,
             {
                 "run_type": "crawl",
                 "url": playground.input_url,
-                "surface": "auto",
+                "surface": ECOMMERCE_DETAIL_SURFACE,
                 "settings": {"playground_session_id": playground.id},
             },
         )
@@ -240,14 +228,13 @@ async def start_discover(
         await session.flush()
         return {"stage": "detail", "run_id": run.id}
 
-    # Listing / category crawl — standard call shape.
     run = await create_crawl_run_from_payload(
         session,
         user.id,
         {
             "run_type": "crawl",
             "url": playground.input_url,
-            "surface": "auto",
+            "surface": ECOMMERCE_LISTING_SURFACE,
             "settings": {"playground_session_id": playground.id},
         },
     )
@@ -258,6 +245,80 @@ async def start_discover(
     return {"stage": "listing", "run_id": run.id}
 
 
+async def _resolve_category_list_for_inputs(
+    urls: list[str],
+    *,
+    limit: int,
+) -> dict[str, Any]:
+    grouped: dict[str, list[str]] = {}
+    flat_urls: list[str] = []
+    errors: dict[str, str] = {}
+    sources: dict[str, str] = {}
+    trees: dict[str, list[dict[str, object]]] = {}
+
+    tasks = [_resolve_categories_for_input(input_url, limit=limit) for input_url in urls]
+    results = await asyncio.gather(*tasks)
+    for input_url, (category_urls, source, error, nav_tree) in zip(urls, results, strict=True):
+        if error:
+            errors[input_url] = error
+
+        limited_urls = category_urls[:limit]
+        grouped[input_url] = limited_urls
+        sources[input_url] = source
+        if nav_tree:
+            trees[input_url] = nav_tree
+        for category_url in limited_urls:
+            if category_url not in flat_urls:
+                flat_urls.append(category_url)
+
+    return {
+        "status": "completed",
+        "source": "multi",
+        "sources": sources,
+        "urls": flat_urls[:limit],
+        "groups": grouped,
+        "trees": trees,
+        "errors": errors,
+        "total_found": len(flat_urls),
+        "limit": limit,
+    }
+
+
+async def _resolve_categories_for_input(
+    url: str,
+    *,
+    limit: int,
+) -> tuple[list[str], str, str | None, list[dict[str, object]] | None]:
+    try:
+        return await asyncio.wait_for(
+            _resolve_categories_for_input_inner(url, limit=limit),
+            timeout=PLAYGROUND_CATEGORY_PER_INPUT_TIMEOUT_SECONDS,
+        )
+    except TimeoutError:
+        return [], "timeout", "TimeoutError", None
+    except Exception as exc:
+        return [], "failed", type(exc).__name__, None
+
+
+async def _resolve_categories_for_input_inner(
+    url: str,
+    *,
+    limit: int,
+) -> tuple[list[str], str, str | None, list[dict[str, object]] | None]:
+    classification = _classify_input_url(url)
+    if classification == "listing":
+        return [url], "input", None, None
+    if classification == "detail":
+        return [], "input", None, None
+    resolution = await resolve_category_urls_from_sitemap_result(
+        domain=url,
+        allow_homepage_fallback=True,
+        category_only=True,
+        max_urls=limit,
+    )
+    return resolution.urls, resolution.source, None, resolution.nav_tree
+
+
 async def select_category(
     session: AsyncSession,
     *,
@@ -265,10 +326,6 @@ async def select_category(
     user: User,
     urls: list[str],
 ) -> int:
-    """User picked one or more categories from the sitemap. Start crawl.
-
-    Same call shape as the listing branch of ``start_discover``.
-    """
     _require_state(playground, "sitemap_listed")
     normalized_urls = [url.strip() for url in urls if url and url.strip()]
     if not normalized_urls:
@@ -296,7 +353,7 @@ async def select_category(
             "run_type": run_type,
             "url": discover_urls[0],
             "urls": discover_urls if len(discover_urls) > 1 else None,
-            "surface": "auto",
+            "surface": ECOMMERCE_LISTING_SURFACE,
             "settings": {"playground_session_id": playground.id},
         },
     )
@@ -318,7 +375,6 @@ async def complete_discover(
     playground: PlaygroundSession,
     products: list[dict[str, Any]],
 ) -> None:
-    """Mark discovery complete with found products (called by crawl completion hook or poll)."""
     _require_state(playground, "discovering")
 
     playground.state = "discovered"
@@ -339,7 +395,6 @@ async def select_products(
     playground: PlaygroundSession,
     urls: list[str],
 ) -> list[str]:
-    """User confirms which products to extract (max 50)."""
     _require_state(playground, "discovered")
 
     if len(urls) > MAX_PRODUCTS:
@@ -360,12 +415,6 @@ async def start_extract(
     playground: PlaygroundSession,
     user: User,
 ) -> list[int]:
-    """Kick off PDP crawls for selected products.
-
-    One standard ``run_type=crawl`` run per URL — same call shape Crawl
-    Studio uses for a single product. The orchestrator just dispatches
-    them in parallel; nothing else.
-    """
     _require_state(playground, "discovered")
 
     urls = (playground.step_data or {}).get("selected_urls", [])
@@ -389,14 +438,6 @@ async def start_pipeline(
     monitor: bool = False,
     audit: bool = False,
 ) -> tuple[dict[str, Any], list[tuple[Any, int]]]:
-    """Launch selected downstream operations in parallel where possible.
-
-    Returns a tuple of (launched_summary, dispatch_specs). The caller is
-    expected to enqueue each ``(runner, job_id)`` spec via FastAPI
-    ``BackgroundTasks`` so the underlying service workers actually run.
-    """
-    # Audit only needs the input URL; allow it from any post-creation state.
-    # Other ops require completed extraction.
     needs_extracted = bool(enrich or compare or monitor)
     if needs_extracted:
         _require_state(playground, "extracted")
@@ -528,9 +569,6 @@ async def start_pipeline(
             }
         step_data["audit"] = launched["audit"]
 
-    # Only transition to running_pipeline when there is actual extraction work
-    # to track. Audit-only sessions stay in their current state but still
-    # surface results via step_data.
     if needs_extracted:
         playground.state = "running_pipeline"
     playground.step_data = step_data
@@ -543,7 +581,6 @@ async def get_results(
     *,
     playground: PlaygroundSession,
 ) -> dict[str, Any]:
-    """Aggregate results from all pipeline steps."""
     step_data = dict(playground.step_data or {})
     results: dict[str, Any] = {
         "state": playground.state,
@@ -551,7 +588,6 @@ async def get_results(
         "steps": {},
     }
 
-    # Discovery results
     discover = step_data.get("discover", {})
     if discover:
         results["steps"]["discover"] = {
@@ -560,10 +596,8 @@ async def get_results(
             "products": discover.get("products", []),
         }
 
-    # Selected URLs
     results["steps"]["selected_urls"] = step_data.get("selected_urls", [])
 
-    # Extraction results — fetch records from the crawl run
     extract = step_data.get("extract", {})
     if extract:
         records = await _extract_records(session, _extract_run_ids(step_data))
@@ -576,7 +610,6 @@ async def get_results(
             "records": records,
         }
 
-    # Pipeline results
     for key in ("enrich", "compare", "monitor", "audit"):
         if key in step_data:
             results["steps"][key] = step_data[key]
@@ -588,7 +621,6 @@ async def _auto_advance(
     session: AsyncSession,
     playground: PlaygroundSession,
 ) -> None:
-    """Check if underlying crawl runs / pipeline jobs finished and advance state."""
     step_data = dict(playground.step_data or {})
 
     if playground.state == "discovering":
@@ -596,7 +628,6 @@ async def _auto_advance(
         if run_id:
             run = await session.get(CrawlRun, run_id)
             if run and run.status in {s.value for s in TERMINAL_STATUSES}:
-                # Pull discovered product URLs from the crawl records
                 products = await _extract_discovered_products(session, run_id)
                 products = _merge_seed_detail_products(step_data, products)
                 step_data["discover"] = {
@@ -627,8 +658,6 @@ async def _auto_advance(
         if resolved_run_ids and len(resolved_run_ids) >= expected_run_count:
             terminal = {s.value for s in TERMINAL_STATUSES}
             statuses = [str(run.status) for run in extract_runs]
-            # All resolved session-owned runs must reach a terminal status
-            # before we transition.
             if all(status in terminal for status in statuses):
                 step_data["extract"] = {
                     **extract_info,
@@ -638,8 +667,6 @@ async def _auto_advance(
                 playground.step_data = step_data
 
     elif playground.state == "running_pipeline":
-        # Refresh the live status of each launched downstream job and decide
-        # if the whole pipeline is done.
         mutated = False
         for key, refresher in (
             ("enrich", _refresh_enrich_status),
@@ -654,7 +681,6 @@ async def _auto_advance(
                 step_data[key] = updated
                 mutated = True
 
-        # Pipeline is done once no tracked job is still in a non-terminal state.
         all_done = True
         for key in ("enrich", "compare", "audit"):
             info = step_data.get(key, {})
@@ -667,8 +693,6 @@ async def _auto_advance(
         if mutated:
             playground.step_data = step_data
 
-    # Audit can be launched standalone (independent of extraction). Refresh
-    # its status whenever it exists, regardless of the session state.
     if playground.state != "running_pipeline":
         audit_info = step_data.get("audit")
         if isinstance(audit_info, dict) and audit_info.get("status") == "running":
@@ -736,7 +760,6 @@ async def _extract_discovered_products(
     session: AsyncSession,
     run_id: int,
 ) -> list[dict[str, Any]]:
-    """Pull product data from crawl records for the discovery run."""
     rows = await session.scalars(
         select(CrawlRecord)
         .where(CrawlRecord.run_id == run_id)
@@ -779,7 +802,7 @@ async def _launch_extract_runs(
             {
                 "run_type": "crawl",
                 "url": product_url,
-                "surface": "auto",
+                "surface": ECOMMERCE_DETAIL_SURFACE,
                 "settings": {"playground_session_id": playground.id},
             },
         )
@@ -823,6 +846,50 @@ def _validate_http_urls(urls: list[str]) -> list[str]:
     if invalid:
         raise ValueError(f"Invalid URL(s): {', '.join(invalid)}")
     return valid
+
+
+def _normalize_input_urls(values: list[str]) -> list[str]:
+    normalized: list[str] = []
+    for raw_value in values:
+        for item in str(raw_value or "").splitlines():
+            candidate = item.strip()
+            if not candidate:
+                continue
+            if not candidate.startswith(("http://", "https://")):
+                candidate = f"https://{candidate}"
+            normalized.append(candidate)
+    return list(dict.fromkeys(_validate_http_urls(normalized)))
+
+
+def _session_input_urls(playground: PlaygroundSession) -> list[str]:
+    step_data = dict(playground.step_data or {})
+    input_urls = step_data.get("input_urls")
+    if isinstance(input_urls, list):
+        normalized = [
+            item.strip()
+            for item in input_urls
+            if isinstance(item, str) and item.strip()
+        ]
+        if normalized:
+            return normalized
+    return [playground.input_url]
+
+
+def _safe_category_limit(value: object) -> int:
+    try:
+        candidate = int(value) if isinstance(value, (int, float, str)) else PLAYGROUND_CATEGORY_DEFAULT_LIMIT
+    except (TypeError, ValueError):
+        candidate = PLAYGROUND_CATEGORY_DEFAULT_LIMIT
+    return max(1, min(candidate, PLAYGROUND_CATEGORY_MAX_LIMIT))
+
+
+def _session_category_limit(playground: PlaygroundSession) -> int:
+    return _safe_category_limit(
+        dict(playground.step_data or {}).get(
+            "category_limit",
+            PLAYGROUND_CATEGORY_DEFAULT_LIMIT,
+        )
+    )
 
 
 def _merge_seed_detail_products(
@@ -964,7 +1031,6 @@ async def _resolve_extract_runs(
 
 
 def _require_state(playground: PlaygroundSession, expected: str) -> None:
-    """Enforce state machine — playground must be in expected state."""
     if playground.state != expected:
         raise ValueError(
             f"Session is in state '{playground.state}', expected '{expected}'"

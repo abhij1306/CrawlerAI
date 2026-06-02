@@ -8,6 +8,9 @@ from ._detail import *
 from ._detail_sections import *
 from ._variants import *
 from ._common import (
+    AXIS_NAME_ALIASES,
+    HASH_LINK_SELECTOR,
+    PUBLIC_VARIANT_AXIS_FIELDS,
     _IMAGE_FIELDS_RAW,
     _INTEGER_VALUE_FIELDS_RAW,
     _LONG_TEXT_FIELDS_RAW,
@@ -21,6 +24,7 @@ from ._common import (
     _STRUCTURED_OBJECT_FIELDS_RAW,
     _STRUCTURED_OBJECT_LIST_FIELDS_RAW,
     _URL_FIELDS_RAW,
+    re,
 )
 
 BELK_PRODUCT_BARCODE_KEYS = (

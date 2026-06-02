@@ -22,6 +22,7 @@ from app.services.crawl.crud import (
     delete_run,
 )
 from app.services.crawl.profile import (
+    build_success_acquisition_contract,
     load_domain_run_profile,
     note_acquisition_contract_failure,
     normalize_acquisition_contract,
@@ -295,6 +296,22 @@ def test_normalize_acquisition_contract_accepts_legacy_handoff_flag() -> None:
     assert contract["handoff_eligible"] is True
 
 
+@pytest.mark.component
+def test_build_success_acquisition_contract_tolerates_bad_payload_count() -> None:
+    contract = build_success_acquisition_contract(
+        method="browser",
+        browser_engine="patchright",
+        browser_diagnostics={"network_payload_count": "not-a-number"},
+        record_count=1,
+        requested_fields=["title"],
+        found_fields=["title"],
+        source_run_id=10,
+    )
+
+    assert contract["required_network_payloads"] is False
+    assert contract["handoff_eligible"] is True
+
+
 @pytest.mark.asyncio
 @pytest.mark.component
 async def test_create_crawl_run_rejects_invalid_traversal_mode(
@@ -374,6 +391,39 @@ async def test_contract_marks_stale_after_repeated_quality_failures(
     }
     assert second["acquisition_contract"]["stale_after_failures"] == {
         "failure_count": 2,
+        "stale": True,
+    }
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_contract_failure_tolerates_bad_source_run_id(
+    db_session: AsyncSession,
+) -> None:
+    await save_domain_run_profile(
+        db_session,
+        domain="example.com",
+        surface="ecommerce_detail",
+        profile={
+            "source_run_id": "bad-value",
+            "acquisition_contract": {
+                "last_quality_success": {"method": "browser"},
+                "stale_after_failures": {"failure_count": 0, "stale": False},
+            },
+        },
+        source_run_id=1,
+    )
+
+    updated = await note_acquisition_contract_failure(
+        db_session,
+        domain="example.com",
+        surface="ecommerce_detail",
+        threshold=1,
+    )
+
+    assert updated is not None
+    assert updated["acquisition_contract"]["stale_after_failures"] == {
+        "failure_count": 1,
         "stale": True,
     }
 
@@ -482,6 +532,72 @@ async def test_resolve_url_acquisition_recipe_reuses_saved_profile_for_batch_def
     assert resolved["diagnostics_profile"]["capture_network"] == "matched_only"
     assert resolved["acquisition_contract"]["preferred_browser_engine"] == "real_chrome"
     assert resolved["acquisition_contract"]["handoff_eligible"] is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_record_acquisition_contract_outcome_saves_internal_api_endpoint(
+    db_session: AsyncSession,
+) -> None:
+    await record_acquisition_contract_outcome(
+        db_session,
+        domain="example.com",
+        surface="ecommerce_detail",
+        source_run_id=92,
+        method="browser",
+        browser_engine="patchright",
+        browser_diagnostics={"network_payload_count": 1},
+        requested_fields=["title", "price"],
+        records=[
+            {
+                "title": "Replay Widget",
+                "price": 19.99,
+                "_field_sources": {
+                    "title": ["network_payload"],
+                    "price": ["network_payload"],
+                },
+            }
+        ],
+        persisted_count=1,
+        verdict="success",
+        blocked=False,
+        page_url="https://example.com/products/replay-widget",
+        network_payloads=[
+            {
+                "url": "https://example.com/api/products/replay-widget.json",
+                "method": "GET",
+                "status": 200,
+                "content_type": "application/json",
+                "endpoint_type": "product_api",
+                "endpoint_family": "generic",
+                "body": {
+                    "product": {
+                        "title": "Replay Widget",
+                        "price": {"amount": "19.99"},
+                        "sku": "RW-100",
+                        "url": "https://example.com/products/replay-widget",
+                    }
+                },
+            }
+        ],
+    )
+
+    row = await load_domain_run_profile(
+        db_session,
+        domain="example.com",
+        surface="ecommerce_detail",
+    )
+
+    assert row is not None
+    assert row.profile["internal_api_endpoints"] == [
+        {
+            "url": "https://example.com/api/products/replay-widget.json",
+            "method": "GET",
+            "endpoint_type": "product_api",
+            "endpoint_family": "generic",
+            "source_run_id": 92,
+        }
+    ]
 
 
 @pytest.mark.asyncio

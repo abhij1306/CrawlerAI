@@ -17,7 +17,7 @@ describe('check-crawl-architecture', () => {
       writeFileSync(
         join(workspace, 'components', 'crawl', 'crawl-run-screen.tsx'),
         [
-          "const marker = `outer ${condition ? `refetchPanels` : `${'noop'}`}`;",
+          "const marker = `outer $" + "{condition ? `refetchPanels` : `$" + "{'noop'}`}`;",
           'export function CrawlRunScreen() {',
           '  return <div>{marker}</div>;',
           '}',

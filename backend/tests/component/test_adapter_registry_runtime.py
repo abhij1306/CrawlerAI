@@ -136,10 +136,10 @@ class _AsyncSelectolaxAdapter(SelectolaxJobAdapter):
     async def can_handle(self, url: str, html: str) -> bool:
         return True
 
-    async def _extract_detail(self, parser, url: str) -> dict | None:
+    def _extract_detail(self, parser, url: str) -> dict | None:
         return {"url": url, "title": parser.css_first("h1").text(strip=True)}
 
-    async def _extract_listing(self, parser, url: str) -> list[dict]:
+    def _extract_listing(self, parser, url: str) -> list[dict]:
         return [
             {"url": url, "title": node.text(strip=True)} for node in parser.css(".job")
         ]

@@ -278,12 +278,21 @@ class DomainRunAcquisitionContract(BaseModel):
     )
 
 
+class DomainRunInternalApiEndpoint(BaseModel):
+    url: str
+    method: str = "GET"
+    endpoint_type: str | None = None
+    endpoint_family: str | None = None
+    source_run_id: int | None = None
+
+
 class DomainRunProfilePayload(BaseModel):
     version: int = 1
     fetch_profile: DomainRunFetchProfile = Field(default_factory=DomainRunFetchProfile)
     locality_profile: DomainRunLocalityProfile = Field(default_factory=DomainRunLocalityProfile)
     diagnostics_profile: DomainRunDiagnosticsProfile = Field(default_factory=DomainRunDiagnosticsProfile)
     acquisition_contract: DomainRunAcquisitionContract = Field(default_factory=DomainRunAcquisitionContract)
+    internal_api_endpoints: list[DomainRunInternalApiEndpoint] = Field(default_factory=list)
     source_run_id: int | None = None
     saved_at: datetime | None = None
 

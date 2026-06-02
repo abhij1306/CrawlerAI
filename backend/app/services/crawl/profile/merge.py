@@ -3,11 +3,13 @@ from __future__ import annotations
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.crawl_settings import normalize_crawl_settings
+from app.services.config.domain_profiles import INTERNAL_API_ENDPOINTS_PROFILE_KEY
 from app.services.domain_utils import normalize_domain
 
 from .normalization import (
     _empty_acquisition_contract,
     normalize_acquisition_contract,
+    normalize_internal_api_endpoints,
 )
 from .repository import load_domain_run_profile
 
@@ -192,6 +194,24 @@ def merge_saved_run_profile(
             saved_contract,
             ignore_default_equivalent_values=ignore_default_equivalent_values,
         )
+    saved_endpoints = normalize_internal_api_endpoints(
+        saved.get(INTERNAL_API_ENDPOINTS_PROFILE_KEY)
+    )
+    explicit_endpoints = normalize_internal_api_endpoints(
+        merged.get(INTERNAL_API_ENDPOINTS_PROFILE_KEY)
+    )
+    if saved_endpoints or explicit_endpoints:
+        endpoints_by_key = {
+            (str(endpoint.get("method") or ""), str(endpoint.get("url") or "")): endpoint
+            for endpoint in saved_endpoints
+        }
+        endpoints_by_key.update(
+            {
+                (str(endpoint.get("method") or ""), str(endpoint.get("url") or "")): endpoint
+                for endpoint in explicit_endpoints
+            }
+        )
+        merged[INTERNAL_API_ENDPOINTS_PROFILE_KEY] = list(endpoints_by_key.values())
     return merged
 
 

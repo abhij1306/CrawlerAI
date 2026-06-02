@@ -5,7 +5,6 @@ from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 
 from app.core.config import settings
-from app.core.dependencies import get_run_dispatcher
 from app.models.crawl_run import CrawlRun
 from app.services.acquisition import shutdown_browser_runtime
 from app.services.config.runtime_settings import (
@@ -20,17 +19,11 @@ from app.services.crawl.state import (
     set_control_request,
     update_run_status,
 )
-from app.services.dispatch.local_dispatcher import (
-    clear_local_run_task,
-    get_live_local_run_task,
-    live_local_run_task_count,
-)
 from app.services.pipeline.runtime_helpers import log_event
 from app.services.publish import (
     VERDICT_BLOCKED,
     VERDICT_ERROR,
 )
-from app.tasks import process_run_task
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -164,12 +157,17 @@ async def _run_control_update(
 
 
 async def dispatch_run(session: AsyncSession, run: CrawlRun) -> CrawlRun:
+    from app.core.dependencies import get_run_dispatcher
+
+    if not settings.celery_dispatch_enabled:
+        await recover_stale_local_runs(session)
     dispatcher = get_run_dispatcher()
     return await dispatcher.dispatch(session, run)
 
 
 async def pause_run(session: AsyncSession, run: CrawlRun) -> CrawlRun:
     run_id = int(run.id)
+    from app.services.dispatch.local_dispatcher import get_live_local_run_task
 
     async def _operation(
         retry_session: AsyncSession, retry_run: CrawlRun, current: CrawlStatus
@@ -190,6 +188,8 @@ async def pause_run(session: AsyncSession, run: CrawlRun) -> CrawlRun:
         else:
             if task_id is None:
                 raise ValueError("Cannot pause run without an active Celery task id")
+            from app.tasks import process_run_task
+
             process_run_task.app.control.revoke(task_id, terminate=True)
         update_run_status(retry_run, CrawlStatus.PAUSED)
         _set_task_id(retry_run, None)
@@ -220,6 +220,11 @@ async def resume_run(session: AsyncSession, run: CrawlRun) -> CrawlRun:
 
 async def kill_run(session: AsyncSession, run: CrawlRun) -> CrawlRun:
     run_id = int(run.id)
+    from app.services.dispatch.local_dispatcher import (
+        clear_local_run_task,
+        get_live_local_run_task,
+        live_local_run_task_count,
+    )
 
     async def _operation(
         retry_session: AsyncSession, retry_run: CrawlRun, current: CrawlStatus
@@ -244,6 +249,8 @@ async def kill_run(session: AsyncSession, run: CrawlRun) -> CrawlRun:
             )
             return
         elif task_id:
+            from app.tasks import process_run_task
+
             process_run_task.app.control.revoke(task_id, terminate=True)
         update_run_status(retry_run, CrawlStatus.KILLED)
         _set_task_id(retry_run, None)
@@ -264,6 +271,7 @@ async def cancel_run(session: AsyncSession, run: CrawlRun) -> CrawlRun:
 async def recover_stale_local_runs(session: AsyncSession) -> int:
     if settings.celery_dispatch_enabled:
         return 0
+    from app.services.dispatch.local_dispatcher import clear_local_run_task
 
     result = await session.execute(
         select(

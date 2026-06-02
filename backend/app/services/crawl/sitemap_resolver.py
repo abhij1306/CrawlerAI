@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Mapping
 from dataclasses import dataclass
 from urllib.parse import urlsplit, urlunsplit
 
@@ -10,6 +11,10 @@ import httpx
 from bs4 import BeautifulSoup, Tag
 
 from app.services.config.sitemap import (
+    SITEMAP_CATEGORY_ANCHOR_TEXT_EXCLUDED_TOKENS,
+    SITEMAP_CATEGORY_ANCHOR_TEXT_TOKENS,
+    SITEMAP_CATEGORY_EXCLUDED_PATH_TOKENS,
+    SITEMAP_CATEGORY_PATH_TOKENS,
     SITEMAP_DEFAULT_FILTER_KEYWORD,
     SITEMAP_DEFAULT_MAX_URLS,
     SITEMAP_FETCH_MAX_REDIRECTS,
@@ -38,6 +43,13 @@ logger = logging.getLogger(__name__)
 class SitemapResolutionResult:
     urls: list[str]
     source: str
+    nav_tree: list[dict[str, object]] | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class HomepageCandidate:
+    url: str
+    label: str | None = None
 
 
 def _normalize_sitemap_url(domain: str) -> str:
@@ -75,12 +87,14 @@ async def resolve_category_urls_from_sitemap(
     filter_keyword: str = SITEMAP_DEFAULT_FILTER_KEYWORD,
     max_urls: int = SITEMAP_DEFAULT_MAX_URLS,
     allow_homepage_fallback: bool = False,
+    category_only: bool = False,
 ) -> list[str]:
     result = await resolve_category_urls_from_sitemap_result(
         domain=domain,
         filter_keyword=filter_keyword,
         max_urls=max_urls,
         allow_homepage_fallback=allow_homepage_fallback,
+        category_only=category_only,
     )
     return result.urls
 
@@ -90,6 +104,7 @@ async def resolve_category_urls_from_sitemap_result(
     filter_keyword: str = SITEMAP_DEFAULT_FILTER_KEYWORD,
     max_urls: int = SITEMAP_DEFAULT_MAX_URLS,
     allow_homepage_fallback: bool = False,
+    category_only: bool = False,
 ) -> SitemapResolutionResult:
     keyword = str(
         filter_keyword
@@ -113,6 +128,7 @@ async def resolve_category_urls_from_sitemap_result(
                     root_url=root_url,
                     keyword=keyword,
                     limit=limit,
+                    category_only=category_only,
                 )
                 break
             except ValueError as exc:
@@ -127,34 +143,43 @@ async def resolve_category_urls_from_sitemap_result(
             and len(sitemap_result.urls) < SITEMAP_THIN_RESULT_THRESHOLD
         ):
             try:
-                homepage_urls = await _resolve_homepage_urls(
+                homepage_result = await _resolve_homepage_urls(
                     client,
                     homepage_url=homepage_url,
                     keyword=keyword,
                     limit=limit,
+                    category_only=category_only,
                 )
             except ValueError:
                 return sitemap_result
+            if not sitemap_result.urls:
+                return homepage_result
             merged = _merge_dedupe_urls(
-                sitemap_result.urls, homepage_urls, limit=limit
+                sitemap_result.urls, homepage_result.urls, limit=limit
             )
-            return SitemapResolutionResult(urls=merged, source="sitemap+homepage")
+            labels = _labels_by_url_from_tree(homepage_result.nav_tree or [])
+            return SitemapResolutionResult(
+                urls=merged,
+                source="sitemap+homepage",
+                nav_tree=_build_nav_tree(merged, labels_by_url=labels),
+            )
 
         if sitemap_result is not None:
             return sitemap_result
 
         if allow_homepage_fallback:
             try:
-                homepage_urls = await _resolve_homepage_urls(
+                homepage_result = await _resolve_homepage_urls(
                     client,
                     homepage_url=homepage_url,
                     keyword=keyword,
                     limit=limit,
+                    category_only=category_only,
                 )
             except ValueError:
                 pass
             else:
-                return SitemapResolutionResult(urls=homepage_urls, source="homepage")
+                return homepage_result
 
     if last_sitemap_error is not None:
         raise last_sitemap_error
@@ -167,6 +192,7 @@ async def _resolve_sitemap_urls(
     root_url: str,
     keyword: str,
     limit: int,
+    category_only: bool,
 ) -> SitemapResolutionResult:
     root_xml = await _fetch_xml(client, root_url)
     root_tag = _local_tag(root_xml.tag)
@@ -179,24 +205,37 @@ async def _resolve_sitemap_urls(
         ]
         if not child_urls:
             raise ValueError(f"No child sitemaps found in {root_url}.")
-        filtered = await _resolve_child_sitemap_urls(child_urls, keyword, limit)
+        filtered = await _resolve_child_sitemap_urls(
+            child_urls, keyword, limit, category_only=category_only
+        )
         if not filtered:
             raise ValueError(f"No URLs matched filter '{keyword}' in {root_url}.")
-        return SitemapResolutionResult(urls=filtered, source="sitemap")
+        return SitemapResolutionResult(
+            urls=filtered,
+            source="sitemap",
+            nav_tree=_build_nav_tree(filtered),
+        )
 
     if root_tag == "urlset":
-        urls = _filter_urls(await _safe_locs(root_xml), keyword)
+        urls = _filter_urls(
+            await _safe_locs(root_xml), keyword, category_only=category_only
+        )
         if not urls:
             if keyword:
                 raise ValueError(f"No URLs matched filter '{keyword}' in {root_url}.")
             raise ValueError(f"No URLs found in sitemap {root_url}.")
-        return SitemapResolutionResult(urls=urls[:limit], source="sitemap")
+        limited_urls = urls[:limit]
+        return SitemapResolutionResult(
+            urls=limited_urls,
+            source="sitemap",
+            nav_tree=_build_nav_tree(limited_urls),
+        )
 
     raise ValueError(f"Unrecognised sitemap root tag: {root_tag}")
 
 
 async def _resolve_child_sitemap_urls(
-    child_urls: list[str], keyword: str, max_urls: int
+    child_urls: list[str], keyword: str, max_urls: int, *, category_only: bool
 ) -> list[str]:
     all_urls: list[str] = []
     async with httpx.AsyncClient(
@@ -210,14 +249,28 @@ async def _resolve_child_sitemap_urls(
             except ValueError as exc:
                 logger.warning("Skipping failed child sitemap %s: %s", child_url, exc)
                 continue
-            all_urls.extend(_filter_urls(await _safe_locs(child_xml), keyword))
+            all_urls.extend(
+                _filter_urls(
+                    await _safe_locs(child_xml),
+                    keyword,
+                    category_only=category_only,
+                )
+            )
     return all_urls[:max_urls]
 
 
-def _filter_urls(urls: list[str], keyword: str) -> list[str]:
-    if not keyword:
-        return urls
-    return [url for url in urls if keyword in url.lower()]
+def _filter_urls(
+    urls: list[str],
+    keyword: str,
+    *,
+    category_only: bool = False,
+) -> list[str]:
+    filtered = urls
+    if keyword:
+        filtered = [url for url in filtered if keyword in url.lower()]
+    if category_only:
+        filtered = [url for url in filtered if _looks_like_category_url(url)]
+    return filtered
 
 
 def _merge_dedupe_urls(
@@ -252,17 +305,29 @@ async def _resolve_homepage_urls(
     homepage_url: str,
     keyword: str,
     limit: int,
-) -> list[str]:
-    html = await _fetch_text(client, homepage_url)
-    urls = await _extract_homepage_candidate_urls(
-        homepage_url=homepage_url,
-        html=html,
+    category_only: bool,
+) -> SitemapResolutionResult:
+    response = await _fetch_response(client, homepage_url)
+    candidates = await _extract_homepage_candidate_entries(
+        homepage_url=str(response.url),
+        html=response.text,
         keyword=keyword,
         limit=limit,
+        category_only=category_only,
     )
-    if not urls:
+    if not candidates:
         raise ValueError(f"No candidate links found on homepage {homepage_url}.")
-    return urls
+    urls = [candidate.url for candidate in candidates]
+    labels = {
+        candidate.url: candidate.label
+        for candidate in candidates
+        if candidate.label
+    }
+    return SitemapResolutionResult(
+        urls=urls,
+        source="homepage",
+        nav_tree=_build_nav_tree(urls, labels_by_url=labels),
+    )
 
 
 async def _fetch_xml(client: httpx.AsyncClient, url: str) -> ElementTree.Element:
@@ -271,11 +336,6 @@ async def _fetch_xml(client: httpx.AsyncClient, url: str) -> ElementTree.Element
         return ElementTree.fromstring(response.content)
     except ElementTree.ParseError as exc:
         raise ValueError(f"Invalid XML in sitemap: {url} - {exc}") from exc
-
-
-async def _fetch_text(client: httpx.AsyncClient, url: str) -> str:
-    response = await _fetch_response(client, url)
-    return response.text
 
 
 async def _fetch_response(client: httpx.AsyncClient, url: str) -> httpx.Response:
@@ -324,11 +384,30 @@ async def _extract_homepage_candidate_urls(
     html: str,
     keyword: str,
     limit: int,
+    category_only: bool = False,
 ) -> list[str]:
+    candidates = await _extract_homepage_candidate_entries(
+        homepage_url=homepage_url,
+        html=html,
+        keyword=keyword,
+        limit=limit,
+        category_only=category_only,
+    )
+    return [candidate.url for candidate in candidates]
+
+
+async def _extract_homepage_candidate_entries(
+    *,
+    homepage_url: str,
+    html: str,
+    keyword: str,
+    limit: int,
+    category_only: bool = False,
+) -> list[HomepageCandidate]:
     homepage_origin = _origin_key(homepage_url)
     homepage_normalized = _strip_fragment(homepage_url).rstrip("/")
     soup = BeautifulSoup(html or "", "html.parser")
-    scored_urls: dict[str, tuple[int, str, int]] = {}
+    scored_urls: dict[str, tuple[int, str, int, str | None]] = {}
     validations = 0
     for index, anchor in enumerate(
         soup.select("a[href]")[:SITEMAP_HOMEPAGE_FALLBACK_MAX_ANCHORS]
@@ -349,14 +428,22 @@ async def _extract_homepage_candidate_urls(
             keyword=keyword,
             anchor=anchor,
         )
-        if not classification:
+        category_signal = (
+            category_only and _has_category_homepage_signal(candidate_url, anchor)
+        )
+        if not classification and not category_signal:
+            continue
+        if category_only and (
+            classification != "listing"
+            and not category_signal
+        ):
             continue
         if validations >= SITEMAP_HOMEPAGE_FALLBACK_MAX_VALIDATIONS:
             break
         await validate_public_target(candidate_url)
         validations += 1
         previous = scored_urls.get(candidate_url)
-        next_value = (score, classification, index)
+        next_value = (score, classification, index, _anchor_label(anchor))
         if previous is None or score > previous[0]:
             scored_urls[candidate_url] = next_value
 
@@ -368,7 +455,98 @@ async def _extract_homepage_candidate_urls(
             item[1][2],
         ),
     )
-    return [url for url, _ in ranked[:limit]]
+    return [
+        HomepageCandidate(url=url, label=score_data[3])
+        for url, score_data in ranked[:limit]
+    ]
+
+
+def _build_nav_tree(
+    urls: list[str],
+    *,
+    labels_by_url: Mapping[str, str | None] | None = None,
+) -> list[dict[str, object]]:
+    labels = {
+        _url_key(url): label
+        for url, label in (labels_by_url or {}).items()
+        if label
+    }
+    url_by_key = {_url_key(url): url for url in urls}
+    roots: list[dict[str, object]] = []
+    child_maps: dict[int, dict[str, dict[str, object]]] = {}
+
+    def children_for(node: dict[str, object]) -> list[dict[str, object]]:
+        children = node.setdefault("children", [])
+        if not isinstance(children, list):
+            children = []
+            node["children"] = children
+        return children
+
+    for raw_url in urls:
+        parsed = urlsplit(raw_url)
+        segments = [segment for segment in parsed.path.split("/") if segment]
+        if not segments:
+            continue
+        parent_children = roots
+        current_path: list[str] = []
+        for segment in segments:
+            current_path.append(segment)
+            prefix_url = urlunsplit(
+                (parsed.scheme, parsed.netloc, "/" + "/".join(current_path), "", "")
+            )
+            prefix_key = _url_key(prefix_url)
+            siblings_key = id(parent_children)
+            siblings = child_maps.setdefault(siblings_key, {})
+            node = siblings.get(segment.lower())
+            if node is None:
+                node = {
+                    "label": labels.get(prefix_key) or _label_from_path_segment(segment),
+                    "children": [],
+                }
+                siblings[segment.lower()] = node
+                parent_children.append(node)
+            if prefix_key in url_by_key:
+                node["url"] = url_by_key[prefix_key]
+                if prefix_key in labels:
+                    node["label"] = labels[prefix_key]
+            parent_children = children_for(node)
+
+    return roots
+
+
+def _labels_by_url_from_tree(tree: list[dict[str, object]]) -> dict[str, str]:
+    labels: dict[str, str] = {}
+    stack = list(tree)
+    while stack:
+        node = stack.pop()
+        url = node.get("url")
+        label = node.get("label")
+        if isinstance(url, str) and isinstance(label, str):
+            labels[_url_key(url)] = label
+        children = node.get("children")
+        if isinstance(children, list):
+            stack.extend(
+                child for child in children if isinstance(child, dict)
+            )
+    return labels
+
+
+def _url_key(url: str) -> str:
+    return _strip_fragment(url).rstrip("/").lower()
+
+
+def _label_from_path_segment(segment: str) -> str:
+    cleaned = segment.replace("-", " ").replace("_", " ").strip()
+    if not cleaned:
+        return segment
+    return " ".join(word.capitalize() for word in cleaned.split())
+
+
+def _anchor_label(anchor: Tag) -> str | None:
+    label = " ".join(anchor.stripped_strings).strip()
+    if not label:
+        return None
+    return " ".join(label.split())
 
 
 def _classify_homepage_candidate(
@@ -435,6 +613,53 @@ def _looks_like_detail_link(slug: str, *, depth: int, anchor_words: int) -> bool
     if any(char.isdigit() for char in slug):
         return True
     return slug.count("-") >= 2 or slug.count("_") >= 2
+
+
+def _looks_like_category_url(url: str) -> bool:
+    path = urlsplit(url).path.lower()
+    if any(token in path for token in SITEMAP_CATEGORY_EXCLUDED_PATH_TOKENS):
+        return False
+    if any(token in path for token in SITEMAP_CATEGORY_PATH_TOKENS):
+        return True
+    segments = [segment for segment in path.split("/") if segment]
+    if not segments or any(_looks_like_locale_segment(segment) for segment in segments):
+        return False
+    if any(segment.isdigit() for segment in segments):
+        return False
+    segment_text = " ".join(segment.replace("-", " ") for segment in segments)
+    if any(token in segment_text for token in SITEMAP_CATEGORY_ANCHOR_TEXT_EXCLUDED_TOKENS):
+        return False
+    category_segments = {
+        token
+        for token in SITEMAP_CATEGORY_ANCHOR_TEXT_TOKENS
+        if token and " " not in token
+    }
+    return (
+        1 <= len(segments) <= 3
+        and all(len(segment) >= 2 for segment in segments)
+        and any(segment.replace("-", " ") in category_segments for segment in segments)
+    )
+
+
+def _has_category_homepage_signal(url: str, anchor: Tag) -> bool:
+    if _looks_like_category_url(url):
+        return True
+    path = urlsplit(url).path.lower().strip("/")
+    if not path or _looks_like_locale_path(path):
+        return False
+    text = " ".join(anchor.stripped_strings).strip().lower()
+    if not text:
+        return False
+    if any(token in text for token in SITEMAP_CATEGORY_ANCHOR_TEXT_EXCLUDED_TOKENS):
+        return False
+    return any(token in text for token in SITEMAP_CATEGORY_ANCHOR_TEXT_TOKENS)
+
+
+def _looks_like_locale_path(path: str) -> bool:
+    parts = [part for part in path.split("/") if part]
+    if not parts or len(parts) > 2:
+        return False
+    return all(_looks_like_locale_segment(part.replace("_", "-")) for part in parts)
 
 
 def _reject_homepage_candidate(candidate_url: str) -> bool:

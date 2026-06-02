@@ -6,8 +6,8 @@ import re
 from typing import TYPE_CHECKING
 
 from app.services.acquisition.playwright_compat import (
-    PLAYWRIGHT_RECOVERABLE_ERRORS,
     PlaywrightError,
+    PlaywrightTimeoutError,
 )
 from app.services.acquisition.traversal_helpers import (
     emit_event as _emit_event,
@@ -21,6 +21,7 @@ from app.services.config.runtime_settings import crawler_runtime_settings
 from app.services.config.selectors import COOKIE_CONSENT_SELECTORS, PAGINATION_SELECTORS
 
 logger = logging.getLogger(__name__)
+_RECOVERABLE_ERRORS = (PlaywrightError, PlaywrightTimeoutError)
 
 if TYPE_CHECKING:
     from app.services.acquisition.traversal_types import TraversalResult
@@ -40,7 +41,7 @@ async def _find_actionable_locator(page, selector_group: str):
             if await locator.is_disabled():
                 continue
             return locator
-        except PLAYWRIGHT_RECOVERABLE_ERRORS:
+        except _RECOVERABLE_ERRORS:
             logger.debug(
                 "Traversal locator check failed for selector_group=%s selector=%s",
                 selector_group,
@@ -101,7 +102,7 @@ async def _find_generic_next_page_locator(page):
                 continue
             logger.info("Traversal generic next-page selector=%s url=%s", selector, page.url)
             return locator
-        except PLAYWRIGHT_RECOVERABLE_ERRORS:
+        except _RECOVERABLE_ERRORS:
             logger.debug(
                 "Traversal generic next-page lookup failed selector=%s url=%s",
                 selector,
@@ -163,7 +164,7 @@ async def recover_listing_page_content(
                     crawler_runtime_settings.traversal_settle_networkidle_timeout_ms
                 ),
             )
-        except PLAYWRIGHT_RECOVERABLE_ERRORS:
+        except _RECOVERABLE_ERRORS:
             logger.debug(
                 "Listing recovery networkidle wait timed out for action=%s url=%s",
                 action_name,
@@ -192,7 +193,7 @@ async def _find_aom_actionable_locator(
         locator = page.get_by_role(role, name=compiled)
         try:
             count = min(await locator.count(), 10)
-        except PLAYWRIGHT_RECOVERABLE_ERRORS:
+        except _RECOVERABLE_ERRORS:
             logger.debug(
                 "Traversal AOM locator count failed selector_group=%s role=%s url=%s",
                 selector_group,
@@ -218,7 +219,7 @@ async def _find_aom_actionable_locator(
                     page.url,
                 )
                 return candidate
-            except PLAYWRIGHT_RECOVERABLE_ERRORS:
+            except _RECOVERABLE_ERRORS:
                 logger.debug(
                     "Traversal AOM candidate probe failed selector_group=%s role=%s index=%s url=%s",
                     selector_group,
@@ -256,7 +257,7 @@ async def click_with_retry(
         await locator.scroll_into_view_if_needed(
             timeout=int(crawler_runtime_settings.traversal_scroll_into_view_timeout_ms)
         )
-    except PLAYWRIGHT_RECOVERABLE_ERRORS:
+    except _RECOVERABLE_ERRORS:
         logger.debug("Traversal scroll_into_view failed", exc_info=True)
         if not await locator_still_resolves(locator):
             return False
@@ -268,7 +269,7 @@ async def click_with_retry(
                 }
             }"""
         )
-    except PLAYWRIGHT_RECOVERABLE_ERRORS:
+    except _RECOVERABLE_ERRORS:
         logger.debug(
             "Traversal center-scroll evaluate failed url=%s",
             page.url,
@@ -282,7 +283,7 @@ async def click_with_retry(
     try:
         await locator.click(timeout=click_timeout_ms)
         return True
-    except PLAYWRIGHT_RECOVERABLE_ERRORS as exc:
+    except _RECOVERABLE_ERRORS as exc:
         first_exc = exc
         if not await locator_still_resolves(locator):
             return False
@@ -299,7 +300,7 @@ async def click_with_retry(
         await locator.click(timeout=click_timeout_ms, force=True)
         await _restore_overlays(page)
         return True
-    except PLAYWRIGHT_RECOVERABLE_ERRORS as exc:
+    except _RECOVERABLE_ERRORS as exc:
         force_exc = exc
         if not await locator_still_resolves(locator):
             return False
@@ -321,7 +322,7 @@ async def click_with_retry(
             timeout_ms=min(2000, click_timeout_ms),
         )
         return True
-    except PLAYWRIGHT_RECOVERABLE_ERRORS as js_exc:
+    except _RECOVERABLE_ERRORS as js_exc:
         logger.warning(
             "Traversal all click strategies failed: normal=%s force=%s js=%s",
             type(first_exc).__name__,
@@ -343,7 +344,7 @@ async def locator_still_resolves(locator) -> bool:
                 "Traversal locator resolution probe failed",
                 exc_info=True,
             )
-        except PLAYWRIGHT_RECOVERABLE_ERRORS:
+        except _RECOVERABLE_ERRORS:
             logger.debug(
                 "Traversal locator resolution probe raised non-Playwright error",
                 exc_info=True,
@@ -425,7 +426,7 @@ async def dismiss_overlays_if_needed(
             """
         )
         dismissed_any = int(muted_count or 0) > 0
-    except PLAYWRIGHT_RECOVERABLE_ERRORS:
+    except _RECOVERABLE_ERRORS:
         logger.debug("Traversal overlay dismissal JS failed", exc_info=True)
     consent_selectors = (
         list(COOKIE_CONSENT_SELECTORS)
@@ -450,7 +451,7 @@ async def dismiss_overlays_if_needed(
                 dismissed_any = True
                 logger.info("Traversal dismissed cookie consent via %s", selector)
                 break
-        except PLAYWRIGHT_RECOVERABLE_ERRORS:
+        except _RECOVERABLE_ERRORS:
             logger.debug(
                 "Traversal cookie consent dismissal probe failed selector=%s url=%s",
                 selector,
@@ -495,7 +496,7 @@ async def _restore_overlays(page) -> None:
             }
             """
         )
-    except PLAYWRIGHT_RECOVERABLE_ERRORS:
+    except _RECOVERABLE_ERRORS:
         logger.debug("Traversal overlay restore JS failed", exc_info=True)
 
 

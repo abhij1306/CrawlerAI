@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from types import SimpleNamespace
+import asyncio
 
 import pytest
 import pytest_asyncio
@@ -12,9 +13,11 @@ from app.core.dependencies import get_current_user, get_db
 from app.main import app
 from app.models.crawl_run import CrawlRecord
 from app.models.playground import PlaygroundSession
+from app.schemas.playground import PlaygroundSessionCreate
 from app.services.playground_service import (
     _classify_input_url,
     _merge_seed_detail_products,
+    create_session,
     get_session,
     get_results,
     select_category,
@@ -399,7 +402,7 @@ async def test_select_category_uses_existing_batch_crawl_for_multiple_urls(
                 "https://www.wrangler.com/collections/men",
                 "https://www.wrangler.com/collections/women",
             ],
-            "surface": "auto",
+            "surface": "ecommerce_listing",
             "settings": {"playground_session_id": playground.id},
         }
     ]
@@ -509,13 +512,13 @@ async def test_select_category_skips_discover_when_sitemap_urls_are_all_pdps(
         {
             "run_type": "crawl",
             "url": "https://www.wrangler.com/p/jean-1",
-            "surface": "auto",
+            "surface": "ecommerce_detail",
             "settings": {"playground_session_id": playground.id},
         },
         {
             "run_type": "crawl",
             "url": "https://www.wrangler.com/p/jean-2",
-            "surface": "auto",
+            "surface": "ecommerce_detail",
             "settings": {"playground_session_id": playground.id},
         },
     ]
@@ -565,13 +568,32 @@ async def test_start_discover_uses_sitemap_stage_for_shallow_locale_root(
     await db_session.flush()
 
     async def _fake_resolve_category_urls_from_sitemap_result(
-        *, domain: str, allow_homepage_fallback: bool = False
+        *,
+        domain: str,
+        max_urls: int,
+        allow_homepage_fallback: bool = False,
+        category_only: bool = False,
     ):
         assert domain == "https://usa.tommy.com/en"
+        assert max_urls == 10
         assert allow_homepage_fallback is True
+        assert category_only is True
         return SimpleNamespace(
             urls=["https://usa.tommy.com/en/women/clothing"],
             source="homepage",
+            nav_tree=[
+                {
+                    "label": "Women",
+                    "url": "https://usa.tommy.com/en/women",
+                    "children": [
+                        {
+                            "label": "Clothing",
+                            "url": "https://usa.tommy.com/en/women/clothing",
+                            "children": [],
+                        }
+                    ],
+                }
+            ],
         )
 
     monkeypatch.setattr(
@@ -591,3 +613,258 @@ async def test_start_discover_uses_sitemap_stage_for_shallow_locale_root(
     assert playground.step_data["sitemap"]["urls"] == [
         "https://usa.tommy.com/en/women/clothing"
     ]
+    assert playground.step_data["sitemap"]["nav_tree"] == [
+        {
+            "label": "Women",
+            "url": "https://usa.tommy.com/en/women",
+            "children": [
+                {
+                    "label": "Clothing",
+                    "url": "https://usa.tommy.com/en/women/clothing",
+                    "children": [],
+                }
+            ],
+        }
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_create_session_accepts_url_list_without_single_url(
+    db_session: AsyncSession,
+    test_user,
+) -> None:
+    payload = PlaygroundSessionCreate(urls=["https://brand-a.example"])
+    assert payload.selected_urls() == ["https://brand-a.example"]
+
+    playground = await create_session(
+        db_session,
+        user=test_user,
+        urls=[
+            "https://brand-a.example",
+            "https://brand-b.example",
+        ],
+    )
+
+    assert playground.input_url == "https://brand-a.example"
+    assert playground.step_data["input_urls"] == [
+        "https://brand-a.example",
+        "https://brand-b.example",
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_start_discover_extracts_multiple_detail_inputs(
+    db_session: AsyncSession,
+    test_user,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    playground = PlaygroundSession(
+        user_id=test_user.id,
+        input_url="https://brand.example/products/shoe-1",
+        state="created",
+        step_data={
+            "input_urls": [
+                "https://brand.example/products/shoe-1",
+                "https://brand.example/products/shoe-2",
+            ],
+        },
+    )
+    db_session.add(playground)
+    await db_session.flush()
+
+    created_payloads: list[dict] = []
+
+    async def _fake_create_crawl_run_from_payload(
+        session,
+        user_id,
+        payload,
+    ):
+        del session, user_id
+        created_payloads.append(payload)
+        return SimpleNamespace(id=900 + len(created_payloads))
+
+    monkeypatch.setattr(
+        "app.services.playground_service.create_crawl_run_from_payload",
+        _fake_create_crawl_run_from_payload,
+    )
+
+    result = await start_discover(db_session, playground=playground, user=test_user)
+
+    assert result["stage"] == "detail"
+    assert playground.state == "extracting"
+    assert playground.step_data["selected_urls"] == [
+        "https://brand.example/products/shoe-1",
+        "https://brand.example/products/shoe-2",
+    ]
+    assert playground.step_data["extract"]["url_count"] == 2
+    assert created_payloads == [
+        {
+            "run_type": "crawl",
+            "url": "https://brand.example/products/shoe-1",
+            "surface": "ecommerce_detail",
+            "settings": {"playground_session_id": playground.id},
+        },
+        {
+            "run_type": "crawl",
+            "url": "https://brand.example/products/shoe-2",
+            "surface": "ecommerce_detail",
+            "settings": {"playground_session_id": playground.id},
+        },
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_start_discover_lists_categories_for_multiple_input_urls(
+    db_session: AsyncSession,
+    test_user,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    playground = PlaygroundSession(
+        user_id=test_user.id,
+        input_url="https://brand-a.example",
+        state="created",
+        step_data={
+            "input_urls": [
+                "https://brand-a.example",
+                "https://brand-b.example",
+            ],
+            "category_limit": 1,
+        },
+    )
+    db_session.add(playground)
+    await db_session.flush()
+
+    async def _fake_resolve_category_urls_from_sitemap_result(
+        *,
+        domain: str,
+        max_urls: int,
+        allow_homepage_fallback: bool = False,
+        category_only: bool = False,
+    ):
+        assert max_urls == 1
+        assert allow_homepage_fallback is True
+        assert category_only is True
+        return SimpleNamespace(
+            urls=[f"{domain}/collections/women", f"{domain}/collections/men"],
+            source="sitemap",
+            nav_tree=[
+                {
+                    "label": "Collections",
+                    "children": [
+                        {
+                            "label": "Women",
+                            "url": f"{domain}/collections/women",
+                            "children": [],
+                        }
+                    ],
+                }
+            ],
+        )
+
+    monkeypatch.setattr(
+        "app.services.playground_service.resolve_category_urls_from_sitemap_result",
+        _fake_resolve_category_urls_from_sitemap_result,
+    )
+
+    result = await start_discover(
+        db_session,
+        playground=playground,
+        user=test_user,
+    )
+
+    assert result == {"stage": "sitemap", "url_count": 2}
+    assert playground.state == "sitemap_listed"
+    assert playground.step_data["sitemap"]["urls"] == [
+        "https://brand-a.example/collections/women",
+    ]
+    assert playground.step_data["sitemap"]["limit"] == 1
+    assert playground.step_data["sitemap"]["groups"] == {
+        "https://brand-a.example": ["https://brand-a.example/collections/women"],
+        "https://brand-b.example": ["https://brand-b.example/collections/women"],
+    }
+    assert playground.step_data["sitemap"]["trees"] == {
+        "https://brand-a.example": [
+            {
+                "label": "Collections",
+                "children": [
+                    {
+                        "label": "Women",
+                        "url": "https://brand-a.example/collections/women",
+                        "children": [],
+                    }
+                ],
+            }
+        ],
+        "https://brand-b.example": [
+            {
+                "label": "Collections",
+                "children": [
+                    {
+                        "label": "Women",
+                        "url": "https://brand-b.example/collections/women",
+                        "children": [],
+                    }
+                ],
+            }
+        ],
+    }
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_start_discover_does_not_block_remaining_urls_on_slow_first_input(
+    db_session: AsyncSession,
+    test_user,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    playground = PlaygroundSession(
+        user_id=test_user.id,
+        input_url="https://slow-brand.example",
+        state="created",
+        step_data={
+            "input_urls": [
+                "https://slow-brand.example",
+                "https://fast-brand.example",
+            ],
+            "category_limit": 10,
+        },
+    )
+    db_session.add(playground)
+    await db_session.flush()
+
+    async def _fake_resolve_category_urls_from_sitemap_result(
+        *,
+        domain: str,
+        max_urls: int,
+        allow_homepage_fallback: bool = False,
+        category_only: bool = False,
+    ):
+        del max_urls, allow_homepage_fallback, category_only
+        if "slow-brand" in domain:
+            await asyncio.sleep(0.5)
+        return SimpleNamespace(
+            urls=[f"{domain}/collections/women"],
+            source="sitemap",
+            nav_tree=[],
+        )
+
+    monkeypatch.setattr(
+        "app.services.playground_service.PLAYGROUND_CATEGORY_PER_INPUT_TIMEOUT_SECONDS",
+        0.05,
+    )
+    monkeypatch.setattr(
+        "app.services.playground_service.resolve_category_urls_from_sitemap_result",
+        _fake_resolve_category_urls_from_sitemap_result,
+    )
+
+    result = await start_discover(db_session, playground=playground, user=test_user)
+
+    assert result == {"stage": "sitemap", "url_count": 1}
+    assert playground.step_data["sitemap"]["urls"] == [
+        "https://fast-brand.example/collections/women"
+    ]
+    assert playground.step_data["sitemap"]["sources"]["https://slow-brand.example"] == "timeout"
+    assert playground.step_data["sitemap"]["errors"]["https://slow-brand.example"] == "TimeoutError"

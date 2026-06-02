@@ -462,14 +462,14 @@ function renderLogContent(message: string, isStartingCrawl: boolean): React.Reac
   const baseContent = parts.length > 0 ? parts : [text];
 
   if (isStartingCrawl) {
-    return baseContent.map((part, i) => {
+    return baseContent.map((part) => {
       if (typeof part === 'string') {
         const counterMatch = part.match(LOG_PATTERNS.COUNTER);
         if (counterMatch && counterMatch.index !== undefined) {
           const before = part.slice(0, counterMatch.index);
           const after = part.slice(counterMatch.index + counterMatch[0].length);
           return (
-            <React.Fragment key={i}>
+            <React.Fragment key={`${before}-${counterMatch[0]}-${after}`}>
               {before}
               <span className="text-blue-400/70">{counterMatch[0]}</span>
               {after}

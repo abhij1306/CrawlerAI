@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from app.services.config import aid_score as config
 from app.services.ucp_audit.catalog_crawl import CatalogCrawlResult
-from app.services.ucp_audit.contradiction import ContradictionFlag
+
+if TYPE_CHECKING:
+    from app.services.ucp_audit.contradiction import ContradictionFlag
 
 
 @dataclass(slots=True)

@@ -972,9 +972,9 @@ function AiAssessmentSummary({
         <div className="grid gap-2">
           <div className="type-label text-secondary">Shopper-query simulation</div>
           {queries.length ? (
-            queries.slice(0, 6).map((query, index) => (
+            queries.slice(0, 6).map((query) => (
               <div
-                key={`${query.query}-${index}`}
+                key={query.query}
                 className="border-border bg-panel rounded-md border p-3"
               >
                 <div className="flex items-start justify-between gap-2">
@@ -994,9 +994,9 @@ function AiAssessmentSummary({
         <div className="grid gap-2">
           <div className="type-label text-secondary">Cross-signal conflicts</div>
           {contradictions.length ? (
-            contradictions.map((row, index) => (
+            contradictions.map((row) => (
               <div
-                key={`${row.url}-${index}`}
+                key={`${row.url}-${JSON.stringify(row.flags ?? [])}`}
                 className="border-warning/40 bg-warning/5 rounded-md border p-3"
               >
                 <div className="type-caption-mono mb-2">
@@ -1068,7 +1068,7 @@ function SampledUrlList({ urls }: Readonly<{ urls: string[] }>) {
     <ol className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
       {urls.map((url, index) => (
         <li
-          key={`${url}-${index}`}
+          key={url}
           className="border-border bg-panel flex min-w-0 items-center gap-2 rounded-md border px-3 py-2.5"
         >
           <span className="bg-background border-border text-muted text-2xs grid size-6 shrink-0 place-items-center rounded border font-mono">
@@ -1176,9 +1176,9 @@ function EvidenceChips({ evidence }: Readonly<{ evidence: Array<Record<string, u
   if (!lines.length) return null;
   return (
     <div className="mt-2 flex flex-wrap gap-1">
-      {lines.map((line, index) => (
+      {lines.map((line) => (
         <code
-          key={`${line}-${index}`}
+          key={line}
           className="text-foreground bg-background-alt/80 border-border/80 rounded border px-1.5 py-0.5 font-mono text-xs"
         >
           {line}
@@ -1205,23 +1205,6 @@ function evidenceToLines(evidence: Array<Record<string, unknown>> = []): string[
     }),
   );
   return lines.slice(0, 12);
-}
-
-function findingsForCodes(findings: Array<Record<string, unknown>>, codes: string[]) {
-  const codeSet = new Set(codes);
-  return findings.flatMap((finding) => {
-    if (!codeSet.has(formatUnknownText(finding.code))) {
-      return [];
-    }
-    return [
-      {
-        ...finding,
-        evidence: Array.isArray(finding.evidence)
-          ? (finding.evidence as Array<Record<string, unknown>>)
-          : [],
-      },
-    ];
-  });
 }
 
 function formatEvidenceValue(value: unknown): string {

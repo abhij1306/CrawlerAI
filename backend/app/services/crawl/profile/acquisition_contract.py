@@ -5,6 +5,8 @@ from datetime import UTC, datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.services.acquisition.internal_api_replay import learned_internal_api_endpoints
+from app.services.config.domain_profiles import INTERNAL_API_ENDPOINTS_PROFILE_KEY
 from app.services.config.runtime_settings import crawler_runtime_settings
 from app.services.publish import VERDICT_BLOCKED, VERDICT_EMPTY, VERDICT_LISTING_FAILED
 
@@ -80,11 +82,15 @@ def build_success_acquisition_contract(
     required_rendering = extraction_source in {"rendered_dom", "rendered_dom_visual"}
     required_traversal = bool(diagnostics.get("traversal_activated"))
     raw_network_payload_count = diagnostics.get("network_payload_count")
-    required_network_payloads = (
-        float(raw_network_payload_count)
-        if isinstance(raw_network_payload_count, (int, float, str))
-        else 0.0
-    ) > 0
+    try:
+        network_payload_count = (
+            float(raw_network_payload_count)
+            if isinstance(raw_network_payload_count, (int, float, str))
+            else 0.0
+        )
+    except (TypeError, ValueError):
+        network_payload_count = 0.0
+    required_network_payloads = network_payload_count > 0
     handoff_eligible = (
         normalized_method == "browser"
         and preferred_engine != "auto"
@@ -184,11 +190,7 @@ async def note_acquisition_contract_failure(
     }
     profile["acquisition_contract"] = contract
     raw_source_run_id = profile.get("source_run_id")
-    source_run_id = (
-        int(raw_source_run_id)
-        if isinstance(raw_source_run_id, (int, float, str)) and raw_source_run_id != ""
-        else 1
-    )
+    source_run_id = _coerce_source_run_id(raw_source_run_id)
     return await save_domain_run_profile(
         session,
         domain=domain,
@@ -213,6 +215,8 @@ async def record_acquisition_contract_outcome(
     persisted_count: int,
     verdict: str,
     blocked: bool,
+    page_url: str | None = None,
+    network_payloads: list[dict[str, object]] | None = None,
 ) -> None:
     stale_threshold = int(
         crawler_runtime_settings.acquisition_contract_stale_failure_threshold
@@ -240,7 +244,7 @@ async def record_acquisition_contract_outcome(
                 if not str(field_name).startswith("_") and value not in (None, "", [], {})
             }
         )
-        await save_learned_acquisition_contract(
+        saved_profile = await save_learned_acquisition_contract(
             session,
             domain=domain,
             surface=surface,
@@ -255,6 +259,28 @@ async def record_acquisition_contract_outcome(
                 source_run_id=source_run_id,
             ),
         )
+        endpoints = learned_internal_api_endpoints(
+            network_payloads=network_payloads,
+            surface=surface,
+            page_url=page_url or "",
+            requested_fields=requested_fields,
+            source_run_id=source_run_id,
+        )
+        if endpoints:
+            saved_profile[INTERNAL_API_ENDPOINTS_PROFILE_KEY] = endpoints
+            existing_profile = await load_domain_run_profile(
+                session,
+                domain=domain,
+                surface=surface,
+            )
+            await save_domain_run_profile(
+                session,
+                domain=domain,
+                surface=surface,
+                profile=saved_profile,
+                source_run_id=source_run_id,
+                existing_record=existing_profile,
+            )
         return
     if not count_failure:
         return
@@ -264,3 +290,15 @@ async def record_acquisition_contract_outcome(
         surface=surface,
         threshold=stale_threshold,
     )
+
+
+def _coerce_source_run_id(value: object) -> int:
+    if value in (None, ""):
+        return 1
+    try:
+        return int(value) if isinstance(value, (int, float, str)) else 1
+    except (TypeError, ValueError):
+        try:
+            return int(float(str(value)))
+        except (TypeError, ValueError):
+            return 1

@@ -621,10 +621,19 @@ def _dict_value(value: object) -> dict[str, Any]:
     return dict(value) if isinstance(value, dict) else {}
 
 
+def _sort_css_variables_for_role(
+    css_variables: dict[str, str], hints: tuple[str, ...]
+) -> list[tuple[str, str]]:
+    def sort_key(item: tuple[str, str], role_hints: tuple[str, ...] = hints) -> tuple[int, str]:
+        return _var_score(item[0], role_hints)
+
+    return sorted(css_variables.items(), key=sort_key)
+
+
 def _color_tokens(css_variables: dict[str, str], color_counter: Counter[str]) -> dict[str, str]:
     tokens: dict[str, str] = {}
     for role, hints in DESIGN_SYSTEM_COLOR_ROLE_HINTS.items():
-        for name, value in sorted(css_variables.items(), key=lambda item: _var_score(item[0], hints)):
+        for name, value in _sort_css_variables_for_role(css_variables, hints):
             if not _matches_hint(name, hints):
                 continue
             resolved = _resolve_css_color(value, css_variables)

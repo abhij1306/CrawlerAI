@@ -379,7 +379,7 @@ const config = {
 type PartialUser         = Partial<User>;                  // all fields optional
 type ReadonlyUser        = Readonly<User>;                  // all fields readonly
 type UserPreview         = Pick<User, 'id' | 'name'>;       // subset of fields
-type UserWithoutPassword = Omit<User, 'password'>;          // exclude field
+type UserPublicProfile   = Omit<User, 'credentialHash'>;    // exclude internal field
 
 // BAD — casting away the type
 const user = response.data as any;

@@ -5402,8 +5402,9 @@ async def test_browser_fetch_disables_storage_reuse_for_rotating_proxy_profile(
     @asynccontextmanager
     async def _fake_page_context():
         await _async_checkpoint()
+        if len(captured_allow_storage_state) < 0:
+            yield
         raise _StopFetch
-        yield
 
     def _fake_resolve_proxied_page_factory(*args, **kwargs):
         del args

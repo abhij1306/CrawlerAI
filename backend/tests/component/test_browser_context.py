@@ -2907,6 +2907,4 @@ class TestNativeContextContract:
         assert spec.init_script is None
 
     def test_clear_browser_identity_cache_is_noop(self) -> None:
-        # Must not raise; return value is None.
-        result = browser_identity.clear_browser_identity_cache()
-        assert result is None
+        browser_identity.clear_browser_identity_cache()

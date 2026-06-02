@@ -72,10 +72,7 @@ def listing_integrity_escalation_decision(
 
     # 1. Surface must be a listing surface.
     surface_lower = str(surface or "").strip().lower()
-    if not (
-        surface_lower.startswith("ecommerce_listing")
-        or surface_lower.startswith("job_listing")
-    ):
+    if not surface_lower.startswith(("ecommerce_listing", "job_listing")):
         return _skip("not_listing_surface")
 
     # 2. Gate must have flagged promo_only_cluster.
