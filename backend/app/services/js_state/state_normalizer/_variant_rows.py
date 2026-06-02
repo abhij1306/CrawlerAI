@@ -33,6 +33,12 @@ def _product_variant_rows(product: dict[str, Any]) -> list[dict[str, Any]]:
                     variant_count=len(raw_rows),
                 )
             rows.append(row)
+    if not rows:
+        rows.extend(_axis_keyed_variant_rows(product.get("variants"), product))
+    if not rows and isinstance(product.get("plp_pdp_bridge"), dict):
+        rows.extend(
+            _axis_keyed_variant_rows(product["plp_pdp_bridge"].get("variants"), product)
+        )
     rows.extend(_nested_choice_item_variant_rows(product))
     if not rows:
         rows.extend(_variant_matrix_rows(product))
@@ -40,6 +46,40 @@ def _product_variant_rows(product: dict[str, Any]) -> list[dict[str, Any]]:
         rows.extend(_mapped_size_variant_rows(product))
     if not rows:
         rows.extend(_option_group_variant_rows(product))
+    return rows
+
+def _axis_keyed_variant_rows(
+    raw_variants: object,
+    product: dict[str, Any],
+) -> list[dict[str, Any]]:
+    if not isinstance(raw_variants, dict):
+        return []
+    rows: list[dict[str, Any]] = []
+    for raw_axis_name, raw_rows in raw_variants.items():
+        axis_key = normalized_variant_axis_key(raw_axis_name)
+        if axis_key not in _MATRIX_AXIS_FIELDS:
+            continue
+        variant_items = as_list(raw_rows)
+        for item in variant_items:
+            if not isinstance(item, dict):
+                continue
+            row = dict(item)
+            if row.get(axis_key) in (None, "", [], {}):
+                axis_value = (
+                    text_or_none(item.get("title"))
+                    or text_or_none(item.get("displayName"))
+                    or text_or_none(item.get("name"))
+                    or text_or_none(item.get("label"))
+                    or text_or_none(item.get("value"))
+                )
+                if axis_value:
+                    row[axis_key] = axis_value
+            _backfill_single_axis_variant_context(
+                row,
+                product,
+                variant_count=len(variant_items),
+            )
+            rows.append(row)
     return rows
 
 def _mapped_size_variant_rows(product: dict[str, Any]) -> list[dict[str, Any]]:

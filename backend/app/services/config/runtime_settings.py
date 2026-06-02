@@ -109,8 +109,8 @@ class CrawlerRuntimeSettings(BaseSettings):
     schema_max_age_days: int = 30
     listing_fallback_fragment_limit: int = 200
     auto_detect_surface: bool = False
-    batch_url_concurrency: int = 1
-    url_batch_concurrency: int = 1
+    batch_url_concurrency: int = 20
+    url_batch_concurrency: int = 20
     url_process_timeout_seconds: float = 90.0
     url_process_timeout_buffer_seconds: float = 15.0
     max_url_process_timeout_seconds: float = 600.0
@@ -197,6 +197,7 @@ class CrawlerRuntimeSettings(BaseSettings):
     surface_readiness_poll_ms: int = 250
     origin_warm_pause_ms: int | None = 500
     origin_warmup_max_budget_ratio: float = 0.4
+    origin_warmup_dedupe_ttl_seconds: float = 0.0
     browser_error_retry_attempts: int = 1
     browser_error_retry_delay_ms: int = 1000
     browser_post_block_cooldown_ms: int = 500
@@ -357,6 +358,7 @@ class CrawlerRuntimeSettings(BaseSettings):
     cookie_consent_postclick_wait_ms: int = 600
     shadow_dom_flatten_max_hosts: int = 100
     browser_context_timeout_ms: int = 15000
+    browser_context_slot_timeout_seconds: float = 90.0
     browser_new_page_timeout_ms: int = 10000
     browser_close_timeout_ms: int = 5000
     browser_render_timeout_seconds: float = 30.0
@@ -439,12 +441,14 @@ class CrawlerRuntimeSettings(BaseSettings):
             "browser_capture_queue_join_timeout_ms",
             "browser_artifact_capture_timeout_ms",
             "adapter_payload_identity_min_token_length",
+            "browser_context_slot_timeout_seconds",
         ):
             _require_positive(field_name, getattr(self, field_name))
         for field_name in (
             "url_process_timeout_buffer_seconds",
             "browser_post_block_cooldown_ms",
             "browser_first_nav_pause_ms",
+            "origin_warmup_dedupe_ttl_seconds",
             "browser_accessibility_snapshot_timeout_seconds",
         ):
             _require_non_negative(field_name, getattr(self, field_name))

@@ -172,13 +172,24 @@ def ordered_axes(
 def availability_value(value: dict[str, Any] | None) -> str | None:
     if not isinstance(value, dict):
         return None
+    in_stock_aliases = {"1", "true", "yes", "available", "in-stock", "instock", "in stock"}
+    out_of_stock_aliases = {
+        "0",
+        "false",
+        "no",
+        "unavailable",
+        "out-of-stock",
+        "outofstock",
+        "out of stock",
+        "sold out",
+    }
     raw = value.get("availability") or value.get("inventory_status") or value.get("stock_status")
     cleaned = text_or_none(raw)
     if cleaned:
         lowered = cleaned.lower()
-        if lowered in {"instock", "in stock", "available", "true"}:
+        if lowered in in_stock_aliases:
             return "in_stock"
-        if lowered in {"outofstock", "out of stock", "sold out", "false"}:
+        if lowered in out_of_stock_aliases:
             return "out_of_stock"
         if lowered in {"limited stock", "low stock"}:
             return "limited_stock"
@@ -189,8 +200,10 @@ def availability_value(value: dict[str, Any] | None) -> str | None:
             return "in_stock" if available else "out_of_stock"
         if available not in (None, "", [], {}):
             normalized_available = str(available).strip().lower()
-            if normalized_available in {"1", "true", "yes", "available", "in-stock"}:
+            if normalized_available in in_stock_aliases:
                 return "in_stock"
+            if normalized_available in out_of_stock_aliases:
+                return "out_of_stock"
             return None
     qty = stock_quantity(value)
     if qty is None:

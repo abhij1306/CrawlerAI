@@ -58,11 +58,11 @@ class Settings(BaseSettings):
     )
     cookie_store_dir: Path = Field(default=BASE_DIR / "cookie_store")
     playwright_headless: bool = True
-    browser_pool_size: int = 2
+    browser_pool_size: int = 4
     browser_context_timeout_seconds: float = 30.0
     http_timeout_seconds: float = 20.0
-    http_max_connections: int = 50
-    http_max_keepalive_connections: int = 20
+    http_max_connections: int = 100
+    http_max_keepalive_connections: int = 40
     anthropic_api_key: str = ""
     groq_api_key: str = ""
     mistral_api_key: str = Field(
@@ -90,7 +90,7 @@ class Settings(BaseSettings):
     logfire_environment: str = ""
     logfire_capture_headers: bool = False
     logfire_enabled_in_tests: bool = False
-    system_max_concurrent_urls: int = 8
+    system_max_concurrent_urls: int = 20
     llm_cache_ttl_seconds: int = 86400
     default_admin_email: str = Field(
         default="",

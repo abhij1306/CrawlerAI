@@ -7,7 +7,15 @@ from app.services.js_state.state_normalizer import (
     map_configured_state_payload,
     map_js_state_to_fields,
 )
+from app.services.js_state.helpers import availability_value
 from app.services.network_payload_mapper import map_network_payloads_to_fields
+
+
+@pytest.mark.unit
+def test_availability_value_normalizes_primary_string_aliases() -> None:
+    assert availability_value({"availability": "out-of-stock"}) == "out_of_stock"
+    assert availability_value({"inventory_status": "unavailable"}) == "out_of_stock"
+    assert availability_value({"stock_status": "0"}) == "out_of_stock"
 
 
 @pytest.mark.unit
@@ -98,6 +106,54 @@ def test_map_js_state_to_fields_recovers_next_data_shopify_product_fields() -> N
         mapped["variants"][1]["url"]
         == "https://store.example.com/products/trail-runner?variant=102"
     )
+
+
+@pytest.mark.unit
+def test_map_js_state_to_fields_recovers_axis_keyed_variant_dict_rows() -> None:
+    mapped = map_js_state_to_fields(
+        {
+            "__INITIAL_STATE__": {
+                "product": {
+                    "id": "19759526",
+                    "title": "Puma Men Radcliff Black Sneakers",
+                    "brand": "Puma",
+                    "price": 1650,
+                    "currency": "INR",
+                    "variants": {
+                        "size": [
+                            {
+                                "sku": "PUMAX00412442",
+                                "id": "19758924",
+                                "variant_id": "4694",
+                                "name": "UK 6",
+                                "in_stock": "0",
+                            },
+                            {
+                                "sku": "PUMAX00412443",
+                                "id": "19758925",
+                                "variant_id": "4695",
+                                "name": "UK 7",
+                                "in_stock": "1",
+                            },
+                        ]
+                    },
+                }
+            }
+        },
+        surface="ecommerce_detail",
+        page_url="https://www.nykaafashion.com/puma-men-radcliff-black-sneakers/p/19759526",
+    )
+
+    assert mapped["variant_count"] == 2
+    assert [variant["size"] for variant in mapped["variants"]] == ["UK 6", "UK 7"]
+    assert [variant["sku"] for variant in mapped["variants"]] == [
+        "PUMAX00412442",
+        "PUMAX00412443",
+    ]
+    assert [variant["availability"] for variant in mapped["variants"]] == [
+        "out_of_stock",
+        "in_stock",
+    ]
 
 
 @pytest.mark.unit

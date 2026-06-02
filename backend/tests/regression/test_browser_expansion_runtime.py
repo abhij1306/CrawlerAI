@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -32,6 +33,15 @@ from app.services.acquisition.traversal import TraversalResult
 from app.services.config.runtime_settings import crawler_runtime_settings
 from app.services.config.selectors import CARD_SELECTORS
 from app.services.pipeline.extract_records import extract_records
+
+
+@pytest.fixture(autouse=True)
+def _reset_origin_warmup_state():
+    browser_runtime._ORIGIN_WARMUP_IN_FLIGHT.clear()
+    browser_runtime._ORIGIN_WARMUP_RECENT.clear()
+    yield
+    browser_runtime._ORIGIN_WARMUP_IN_FLIGHT.clear()
+    browser_runtime._ORIGIN_WARMUP_RECENT.clear()
 
 
 async def _async_checkpoint() -> None:
@@ -4728,6 +4738,57 @@ async def test_recover_browser_challenge_drops_stale_block_status_after_wait_cle
 
 @pytest.mark.asyncio
 @pytest.mark.regression
+async def test_recover_browser_challenge_bounds_slow_activity(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original_response = SimpleNamespace(
+        status=200, headers={"content-type": "text/html"}
+    )
+
+    class _Page:
+        mouse = None
+
+        async def wait_for_timeout(self, _timeout: int) -> None:
+            await asyncio.sleep(1)
+
+        async def goto(self, *_args, **_kwargs):
+            return original_response
+
+    async def _get_page_html(_page: Any) -> str:
+        await _async_checkpoint()
+        return "<html><body>akamai shell</body></html>"
+
+    async def _classify_blocked_page(_html: str, _status_code: int):
+        await _async_checkpoint()
+        return SimpleNamespace(blocked=False, provider_hits=["akamai"])
+
+    async def _slow_activity(_page: Any) -> None:
+        await asyncio.sleep(1)
+
+    monkeypatch.setattr(browser_recovery, "_emit_challenge_activity", _slow_activity)
+
+    started_at = time.perf_counter()
+    await browser_recovery.recover_browser_challenge(
+        _Page(),
+        url="https://example.com/products/widget",
+        response=original_response,
+        browser_engine="patchright",
+        timeout_seconds=5,
+        phase_timings_ms={},
+        challenge_wait_max_seconds=0.05,
+        challenge_poll_interval_ms=100,
+        navigation_timeout_ms=1000,
+        elapsed_ms=lambda start: int((time.perf_counter() - start) * 1000),
+        classify_blocked_page=_classify_blocked_page,
+        get_page_html=_get_page_html,
+        looks_like_low_content_shell=lambda html, **_kwargs: "akamai shell" in html,
+    )
+
+    assert time.perf_counter() - started_at < 0.5
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
 async def test_recover_browser_challenge_marks_retry_response_without_wrapping() -> (
     None
 ):
@@ -5160,7 +5221,8 @@ async def test_origin_warmup_runs_for_real_chrome_without_saved_domain_state() -
         phase_timings_ms={},
     )
 
-    assert len(page.spawned_pages) == 1
+    assert page.goto_calls == ["domcontentloaded"]
+    assert not page.spawned_pages
 
 
 @pytest.mark.asyncio
@@ -5186,8 +5248,8 @@ async def test_origin_warmup_caps_budget_to_preserve_navigation_time(
         phase_timings_ms={},
     )
 
-    assert len(page.spawned_pages) == 1
-    assert page.spawned_pages[0].goto_timeout_calls == [8000]
+    assert page.goto_timeout_calls == [8000]
+    assert not page.spawned_pages
 
 
 @pytest.mark.asyncio
@@ -5213,8 +5275,8 @@ async def test_origin_warmup_keeps_minimum_budget_for_short_url_timeout(
         phase_timings_ms={},
     )
 
-    assert len(page.spawned_pages) == 1
-    assert page.spawned_pages[0].goto_timeout_calls == [750]
+    assert page.goto_timeout_calls == [750]
+    assert not page.spawned_pages
 
 
 @pytest.mark.asyncio
@@ -5240,8 +5302,8 @@ async def test_origin_warmup_zero_ratio_preserves_minimum_budget(
         phase_timings_ms={},
     )
 
-    assert len(page.spawned_pages) == 1
-    assert page.spawned_pages[0].goto_timeout_calls == [750]
+    assert page.goto_timeout_calls == [750]
+    assert not page.spawned_pages
 
 
 @pytest.mark.asyncio
@@ -5302,7 +5364,35 @@ async def test_origin_warmup_runs_for_real_chrome_despite_vendor_block_memory() 
         phase_timings_ms={},
     )
 
-    assert len(page.spawned_pages) == 1
+    assert page.goto_calls == ["domcontentloaded"]
+    assert not page.spawned_pages
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_origin_warmup_dedupes_parallel_same_host() -> None:
+    pages = [
+        _FakeExpansionPage(base_html="<html><body><h1>Widget</h1></body></html>")
+        for _index in range(6)
+    ]
+
+    await asyncio.gather(
+        *(
+            browser_runtime._maybe_warm_origin_before_navigation(
+                page,
+                url="https://example.com/products/widget",
+                surface="ecommerce_detail",
+                browser_reason="http-escalation",
+                host_policy_snapshot=None,
+                proxy_profile=None,
+                timeout_seconds=5,
+                phase_timings_ms={},
+            )
+            for page in pages
+        )
+    )
+
+    assert sum(len(page.spawned_pages) for page in pages) == 1
 
 
 @pytest.mark.asyncio

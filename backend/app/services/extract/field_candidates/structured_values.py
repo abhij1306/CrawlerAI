@@ -81,6 +81,8 @@ def _structured_alias_allowed(
     normalized_key: str,
     payload: dict[str, object],
 ) -> bool:
+    if canonical == "variants":
+        return False
     if (
         canonical == "sku"
         and normalized_key == "id"

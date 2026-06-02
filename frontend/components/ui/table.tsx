@@ -1,6 +1,6 @@
 'use client';
 
-import type { ReactNode, Ref, UIEventHandler } from 'react';
+import type { CSSProperties, ReactNode, Ref, UIEventHandler } from 'react';
 
 import { cn } from '../../lib/utils';
 
@@ -10,12 +10,14 @@ export function Table({
   wrapperClassName,
   wrapperRef,
   onWrapperScroll,
+  style,
 }: Readonly<{
   children: ReactNode;
   className?: string;
   wrapperClassName?: string;
   wrapperRef?: Ref<HTMLDivElement>;
   onWrapperScroll?: UIEventHandler<HTMLDivElement>;
+  style?: CSSProperties;
 }>) {
   return (
     <div
@@ -23,7 +25,9 @@ export function Table({
       onScroll={onWrapperScroll}
       className={cn('relative w-full overflow-auto', wrapperClassName)}
     >
-      <table className={cn('w-full caption-bottom', className)}>{children}</table>
+      <table className={cn('w-full caption-bottom', className)} style={style}>
+        {children}
+      </table>
     </div>
   );
 }

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import secrets
 import time
@@ -78,8 +79,20 @@ async def recover_browser_challenge(
         terminal_hard_block = _is_terminal_hard_block(classification)
         return None
 
+    async def _run_before_deadline(awaitable_factory: Callable[[], Any]) -> Any | None:
+        remaining_seconds = deadline - time.perf_counter()
+        if remaining_seconds <= 0:
+            return None
+        try:
+            return await asyncio.wait_for(
+                awaitable_factory(),
+                timeout=remaining_seconds,
+            )
+        except asyncio.TimeoutError:
+            return None
+
     while time.perf_counter() < deadline:
-        recovered = await _check_cleared()
+        recovered = await _run_before_deadline(_check_cleared)
         if recovered is not None:
             return recovered
         # A terminal "Access Denied" page (title/strong evidence, no active
@@ -88,13 +101,13 @@ async def recover_browser_challenge(
         if terminal_hard_block:
             break
 
-        await _emit_challenge_activity(page)
+        await _run_before_deadline(lambda: _emit_challenge_activity(page))
 
         # Re-check immediately after activity: challenge activity is ~2s and the
         # provider often clears during it. Catching the clear here avoids burning
         # another poll interval (and a needless engine escalation) on a page that
         # is already usable.
-        recovered = await _check_cleared()
+        recovered = await _run_before_deadline(_check_cleared)
         if recovered is not None:
             return recovered
         if terminal_hard_block:

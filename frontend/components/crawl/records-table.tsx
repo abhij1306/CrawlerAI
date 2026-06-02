@@ -1,12 +1,13 @@
 'use client';
 
 import { memo, useCallback, useEffect, useState } from 'react';
+import type { CSSProperties } from 'react';
 
 import type { CrawlRecord } from '../../lib/api/types';
 import { cn } from '../../lib/utils';
 import { formatCellDisplay, humanizeFieldName, stringifyCell } from '../../lib/crawl/format';
 import { readRecordValue } from '../../lib/crawl/record-utils';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/table';
+import { TableBody, TableCell, TableRow } from '../ui/table';
 import { RecordThumbnail } from './record-thumbnail';
 
 const IMAGE_KEYS = new Set(['image_url', 'image', 'thumbnail', 'img']);
@@ -21,6 +22,50 @@ const PRICE_KEYS = new Set([
   'deal_price',
 ]);
 const URL_KEYS = new Set(['url', 'source_url', 'product_url', 'canonical_url']);
+
+const SELECT_COLUMN_WIDTH = 40;
+const IMAGE_COLUMN_WIDTH = 64;
+const HEADER_HEIGHT = 38;
+
+function getDataColumnWidth(col: string) {
+  const colKey = col.toLowerCase();
+  if (URL_KEYS.has(colKey)) return 320;
+  if (TITLE_KEYS.has(colKey)) return 360;
+  if (PRICE_KEYS.has(colKey)) return 128;
+  if (colKey === 'brand') return 180;
+  if (colKey === 'size') return 96;
+  return 180;
+}
+
+function fixedColumnStyle(width: number, left?: number): CSSProperties {
+  return {
+    ...(left === undefined ? {} : { left }),
+    width,
+    minWidth: width,
+    maxWidth: width,
+  };
+}
+
+function headerCellStyle(width: number, left?: number): CSSProperties {
+  return {
+    ...fixedColumnStyle(width, left),
+    ...(left === undefined ? {} : { position: 'sticky', zIndex: 70 }),
+    color: 'var(--text-muted)',
+    fontFamily: 'var(--table-header-font-family)',
+    fontSize: 'var(--table-header-font-size)',
+    fontWeight: 'var(--table-header-weight)',
+    letterSpacing: 'var(--table-header-tracking)',
+    textTransform: 'uppercase',
+  };
+}
+
+function stickyBodyStyle(width: number, left: number): CSSProperties {
+  return {
+    ...fixedColumnStyle(width, left),
+    position: 'sticky',
+    zIndex: 20,
+  };
+}
 
 function RecordCell({ col, record }: Readonly<{ col: string; record: CrawlRecord }>) {
   const colKey = col.toLowerCase();
@@ -69,8 +114,13 @@ export const RecordsTable = memo(function RecordsTable({
   const dataColumns = visibleColumns.filter((col) => !IMAGE_KEYS.has(col.toLowerCase()));
   const hasImageCol = !!imageCol;
   const totalCols = dataColumns.length + (hasImageCol ? 1 : 0) + 1;
+  const pinnedDataLeft = SELECT_COLUMN_WIDTH + (hasImageCol ? IMAGE_COLUMN_WIDTH : 0);
+  const totalTableWidth =
+    SELECT_COLUMN_WIDTH +
+    (hasImageCol ? IMAGE_COLUMN_WIDTH : 0) +
+    dataColumns.reduce((sum, col) => sum + getDataColumnWidth(col), 0);
 
-  const rowHeightPx = 40;
+  const rowHeightPx = 44;
   const overscanRows = 8;
   const [scrollTop, setScrollTop] = useState(0);
   const [viewportHeight, setViewportHeight] = useState(560);
@@ -82,8 +132,10 @@ export const RecordsTable = memo(function RecordsTable({
     }
   }, []);
   const totalCount = records.length;
-  const startIndex = Math.max(0, Math.floor(scrollTop / rowHeightPx) - overscanRows);
-  const visibleCount = Math.ceil(viewportHeight / rowHeightPx) + overscanRows * 2;
+  const bodyScrollTop = Math.max(0, scrollTop - HEADER_HEIGHT);
+  const bodyViewportHeight = Math.max(rowHeightPx, viewportHeight - HEADER_HEIGHT);
+  const startIndex = Math.max(0, Math.floor(bodyScrollTop / rowHeightPx) - overscanRows);
+  const visibleCount = Math.ceil(bodyViewportHeight / rowHeightPx) + overscanRows * 2;
   const endIndex = Math.min(totalCount, startIndex + visibleCount);
   const windowedRecords = records.slice(startIndex, endIndex);
   const topSpacerPx = startIndex * rowHeightPx;
@@ -106,53 +158,67 @@ export const RecordsTable = memo(function RecordsTable({
 
   return (
     <div className="surface-muted max-h-[calc(100vh-272px)] overflow-hidden rounded-md border">
-      <Table
-        className="compact-data-table commerce-table min-w-max"
-        wrapperClassName="max-h-[calc(100vh-276px)] scrollbar-stable"
-        wrapperRef={setContainerRef}
-        onWrapperScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
+      <div
+        ref={setContainerRef}
+        onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
+        className="scrollbar-stable relative max-h-[calc(100vh-276px)] w-full overflow-auto"
       >
-        <TableHeader className="bg-background sticky top-0 z-40">
-          <TableRow>
-            <TableHead className="bg-background sticky left-0 z-50 w-10">
+        <table
+          className="compact-data-table commerce-table table-fixed caption-bottom"
+          style={{ minWidth: totalTableWidth }}
+        >
+        <colgroup>
+          <col style={{ width: SELECT_COLUMN_WIDTH }} />
+          {hasImageCol ? <col style={{ width: IMAGE_COLUMN_WIDTH }} /> : null}
+          {dataColumns.map((col) => (
+            <col key={col} style={{ width: getDataColumnWidth(col) }} />
+          ))}
+        </colgroup>
+        <thead className="bg-background sticky top-0 z-50">
+          <tr className="border-border border-b" style={{ height: HEADER_HEIGHT }}>
+            <th
+              scope="col"
+              className="bg-background px-5 text-left align-middle"
+              style={headerCellStyle(SELECT_COLUMN_WIDTH, 0)}
+            >
               <input
                 type="checkbox"
                 aria-label="Select all records"
                 checked={selectedIds.length === records.length && records.length > 0}
                 onChange={(event) => onSelectAll(event.target.checked)}
               />
-            </TableHead>
+            </th>
             {hasImageCol ? (
-              <TableHead className="bg-background sticky left-10 z-50 w-16 text-center">
+              <th
+                scope="col"
+                className="bg-background px-5 text-center align-middle"
+                style={headerCellStyle(IMAGE_COLUMN_WIDTH, SELECT_COLUMN_WIDTH)}
+              >
                 IMG
-              </TableHead>
+              </th>
             ) : null}
             {dataColumns.map((col, idx) => {
               const colKey = col.toLowerCase();
               const isFirstData = idx === 0;
-              const isUrl = URL_KEYS.has(colKey);
-              const leftOffset = isFirstData ? (hasImageCol ? 104 : 40) : undefined;
               return (
-                <TableHead
+                <th
                   key={col}
-                  style={
-                    leftOffset !== undefined
-                      ? { left: leftOffset, width: isUrl ? 280 : 180 }
-                      : undefined
-                  }
+                  scope="col"
                   className={cn(
-                    'bg-background whitespace-nowrap',
+                    'bg-background px-5 text-left align-middle whitespace-nowrap',
                     PRICE_KEYS.has(colKey) && 'text-right',
-                    isFirstData && 'sticky z-50',
-                    isUrl && 'min-w-[280px]',
+                  )}
+                  style={headerCellStyle(
+                    getDataColumnWidth(col),
+                    isFirstData ? pinnedDataLeft : undefined,
                   )}
                 >
                   {humanizeFieldName(col)}
-                </TableHead>
+                </th>
               );
             })}
-          </TableRow>
-        </TableHeader>
+          </tr>
+        </thead>
         <TableBody>
           {topSpacerPx > 0 ? (
             <TableRow aria-hidden className="pointer-events-none hover:bg-transparent">
@@ -165,7 +231,10 @@ export const RecordsTable = memo(function RecordsTable({
 
             return (
               <TableRow key={record.id} className={cn(isSelected && 'bg-accent/[0.04]')}>
-                <TableCell className="bg-background sticky left-0 z-30">
+                <TableCell
+                  className="bg-background"
+                  style={stickyBodyStyle(SELECT_COLUMN_WIDTH, 0)}
+                >
                   <input
                     type="checkbox"
                     aria-label={`Select record ${record.id}`}
@@ -174,7 +243,10 @@ export const RecordsTable = memo(function RecordsTable({
                   />
                 </TableCell>
                 {hasImageCol ? (
-                  <TableCell className="bg-background sticky left-10 z-30 text-center">
+                  <TableCell
+                    className="bg-background text-center"
+                    style={stickyBodyStyle(IMAGE_COLUMN_WIDTH, SELECT_COLUMN_WIDTH)}
+                  >
                     {imageSrc ? (
                       <RecordThumbnail src={imageSrc} />
                     ) : (
@@ -185,20 +257,18 @@ export const RecordsTable = memo(function RecordsTable({
                 {dataColumns.map((col, idx) => {
                   const colKey = col.toLowerCase();
                   const isFirstData = idx === 0;
-                  const isUrl = URL_KEYS.has(colKey);
-                  const leftOffset = isFirstData ? (hasImageCol ? 104 : 40) : undefined;
+                  const width = getDataColumnWidth(col);
                   return (
                     <TableCell
                       key={col}
                       style={
-                        leftOffset !== undefined
-                          ? { left: leftOffset, width: isUrl ? 280 : 180 }
-                          : undefined
+                        isFirstData
+                          ? stickyBodyStyle(width, pinnedDataLeft)
+                          : fixedColumnStyle(width)
                       }
                       className={cn(
                         PRICE_KEYS.has(colKey) && 'text-right',
-                        isFirstData && 'bg-background sticky z-30',
-                        isUrl && 'min-w-[280px]',
+                        isFirstData && 'bg-background',
                       )}
                     >
                       <RecordCell col={col} record={record} />
@@ -214,7 +284,8 @@ export const RecordsTable = memo(function RecordsTable({
             </TableRow>
           ) : null}
         </TableBody>
-      </Table>
+        </table>
+      </div>
     </div>
   );
 });

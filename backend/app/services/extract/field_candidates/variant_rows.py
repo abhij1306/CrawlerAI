@@ -331,6 +331,14 @@ def _structured_variants_from_product_payload(
 ) -> list[dict[str, object]]:
     raw_variants = payload.get("variants")
     if not isinstance(raw_variants, list):
+        raw_size_options = payload.get("sizeOptions")
+        if isinstance(raw_size_options, dict):
+            raw_variants = raw_size_options.get("options")
+    if (not isinstance(raw_variants, list) or not raw_variants) and (
+        _payload_is_single_size_variant(payload)
+    ):
+        raw_variants = [payload]
+    if not isinstance(raw_variants, list):
         return []
     labels = _variation_attribute_labels(payload)
     rows: list[dict[str, object]] = []
@@ -342,6 +350,15 @@ def _structured_variants_from_product_payload(
             payload=payload,
             labels=labels,
         )
+        if not option_values:
+            size_name = text_or_none(
+                item.get("sizeName")
+                or item.get("size_name")
+                or item.get("name")
+                or item.get("title")
+            )
+            if size_name:
+                option_values = {"size": size_name}
         if not option_values:
             continue
         row: dict[str, object] = {"option_values": option_values}
@@ -357,7 +374,11 @@ def _structured_variants_from_product_payload(
             row["variant_id"] = variant_id
         price = _coerce_structured_candidate_value(
             "price",
-            item.get("price"),
+            item.get("discountedPrice")
+            if item.get("discountedPrice") not in (None, "", [], {})
+            else item.get("discounted_price")
+            if item.get("discounted_price") not in (None, "", [], {})
+            else item.get("price"),
             page_url=page_url,
             payload=payload,
             source_key="price",
@@ -373,16 +394,30 @@ def _structured_variants_from_product_payload(
             else item.get("availableForSale"),
             page_url,
         )
+        if availability in (None, "", [], {}) and item.get("isOutOfStock") not in (
+            None,
+            "",
+            [],
+            {},
+        ):
+            availability = "out_of_stock" if item.get("isOutOfStock") else "in_stock"
         if availability not in (None, "", [], {}):
             row["availability"] = availability
         image_url = coerce_field_value(
             "image_url",
-            item.get("image") or item.get("featured_image") or item.get("featuredImage"),
+            item.get("image")
+            or item.get("imageUrl")
+            or item.get("featured_image")
+            or item.get("featuredImage"),
             page_url,
         )
         if image_url not in (None, "", [], {}):
             row["image_url"] = image_url
-        variant_url = coerce_field_value("url", item.get("url"), page_url)
+        variant_url = coerce_field_value(
+            "url",
+            item.get("url") or item.get("action_url") or item.get("productUrl"),
+            page_url,
+        )
         if variant_url in (None, "", [], {}) and variant_id:
             variant_url = _variant_url_from_id(page_url, variant_id)
         if variant_url not in (None, "", [], {}):
@@ -390,5 +425,22 @@ def _structured_variants_from_product_payload(
         for axis_key, axis_value in option_values.items():
             if axis_key in public_variant_axis_fields:
                 row[axis_key] = axis_value
+        color = coerce_field_value(
+            "color",
+            item.get("product_detail_color") or item.get("color"),
+            page_url,
+        )
+        if color not in (None, "", [], {}) and "color" not in row:
+            row["color"] = color
         rows.append(row)
     return rows
+
+
+def _payload_is_single_size_variant(payload: dict[str, object]) -> bool:
+    size_value = payload.get("sizeName") or payload.get("size_name")
+    is_one_size = payload.get("isOneSize") is True or payload.get("is_one_size") is True
+    if is_one_size and text_or_none(size_value):
+        return True
+    return bool(text_or_none(size_value)) and str(
+        payload.get("type") or ""
+    ).casefold() == "simple"

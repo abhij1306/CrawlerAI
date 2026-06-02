@@ -191,6 +191,8 @@ class SharedBrowserRuntime:
             return False
         if not getattr(self._browser, "is_connected", lambda: True)():
             return True
+        if self._active_contexts > 0:
+            return False
         max_contexts = int(crawler_runtime_settings.browser_max_contexts_before_recycle)
         if max_contexts > 0 and self._total_contexts_created >= max_contexts:
             return True
@@ -385,6 +387,7 @@ class SharedBrowserRuntime:
         locality_profile: dict[str, object] | None = None,
         allow_storage_state: bool = True,
         inject_init_script: bool = False,
+        phase_timings_ms: dict[str, int] | None = None,
     ):
         del inject_init_script
         normalized_proxy = _normalized_proxy_value(proxy)
@@ -396,19 +399,51 @@ class SharedBrowserRuntime:
         elif normalized_proxy not in {None, self.launch_proxy}:
             raise RuntimeError("Browser runtime proxy does not match requested proxy")
         self.touch()
-        await self._ensure()
         await self._update_queue_count(1)
+        slot_wait_started_at = time.perf_counter()
         try:
-            await self._semaphore.acquire()
-        except Exception:
+            await asyncio.wait_for(
+                self._semaphore.acquire(),
+                timeout=_browser_context_slot_timeout_seconds(),
+            )
+            _record_timing(
+                phase_timings_ms,
+                "context_slot_wait_ms",
+                slot_wait_started_at,
+            )
+        except asyncio.TimeoutError as exc:
+            _record_timing(
+                phase_timings_ms,
+                "context_slot_wait_ms",
+                slot_wait_started_at,
+            )
+            raise TimeoutError(
+                "Timed out waiting for browser context slot "
+                f"after {_browser_context_slot_timeout_seconds():.1f}s"
+            ) from exc
+        finally:
             await self._update_queue_count(-1)
+        try:
+            should_time_browser_start = (
+                self._browser is None or self._should_recycle_browser()
+            )
+            browser_start_started_at = time.perf_counter()
+            await self._ensure()
+            if should_time_browser_start:
+                _record_timing(
+                    phase_timings_ms,
+                    "browser_start_ms",
+                    browser_start_started_at,
+                )
+        except Exception:
+            self._semaphore.release()
             raise
-        await self._update_queue_count(-1)
+        await self._update_active_contexts(1)
         if self._browser is None:
+            await self._update_active_contexts(-1)
             self._semaphore.release()
             raise RuntimeError("Browser runtime failed to initialize")
         context: BrowserContext | None = None
-        await self._update_active_contexts(1)
         try:
             context_spec = self._build_context_spec(
                 run_id=run_id,
@@ -425,6 +460,7 @@ class SharedBrowserRuntime:
                 )
             )
             if allow_storage_state:
+                storage_load_started_at = time.perf_counter()
                 storage_state = await cookie_store.load_storage_state_for_run(
                     run_id,
                     browser_engine=self.browser_engine,
@@ -436,31 +472,66 @@ class SharedBrowserRuntime:
                     )
                 if storage_state:
                     context_options["storage_state"] = storage_state
-            context, page = await self._open_context_page(
-                context_options=context_options,
-                context_spec=context_spec,
-            )
+                _record_timing(
+                    phase_timings_ms,
+                    "storage_state_load_ms",
+                    storage_load_started_at,
+                )
+            context_open_started_at = time.perf_counter()
+            try:
+                context, page = await self._open_context_page(
+                    context_options=context_options,
+                    context_spec=context_spec,
+                )
+            finally:
+                _record_timing(
+                    phase_timings_ms,
+                    "context_open_ms",
+                    context_open_started_at,
+                )
             yield page
         finally:
-            await self._update_active_contexts(-1)
-            if context is not None:
-                persist_storage_state = persist_context_storage_state
-                await persist_storage_state(
-                    context,
-                    run_id=run_id,
-                    domain=domain,
-                    browser_engine=self.browser_engine,
-                    persist_run_storage_state=bool(
-                        getattr(context, _RUN_STORAGE_PERSIST_ATTR, True)
-                    ),
-                    persist_domain_storage_state=bool(
-                        allow_domain_storage_state
-                        and bool(getattr(context, _DOMAIN_STORAGE_PERSIST_ATTR, True))
-                    ),
-                    timeout_seconds=_browser_context_timeout_seconds(),
-                )
-                await _close_browser_context_safely(context)
-            self._semaphore.release()
+            try:
+                if context is not None:
+                    persist_storage_state = persist_context_storage_state
+                    try:
+                        storage_persist_started_at = time.perf_counter()
+                        try:
+                            await persist_storage_state(
+                                context,
+                                run_id=run_id,
+                                domain=domain,
+                                browser_engine=self.browser_engine,
+                                persist_run_storage_state=bool(
+                                    getattr(context, _RUN_STORAGE_PERSIST_ATTR, True)
+                                ),
+                                persist_domain_storage_state=bool(
+                                    allow_domain_storage_state
+                                    and bool(
+                                        getattr(
+                                            context, _DOMAIN_STORAGE_PERSIST_ATTR, True
+                                        )
+                                    )
+                                ),
+                                timeout_seconds=_browser_context_timeout_seconds(),
+                            )
+                        finally:
+                            _record_timing(
+                                phase_timings_ms,
+                                "storage_state_persist_ms",
+                                storage_persist_started_at,
+                            )
+                    finally:
+                        context_close_started_at = time.perf_counter()
+                        await _close_browser_context_safely(context)
+                        _record_timing(
+                            phase_timings_ms,
+                            "context_close_ms",
+                            context_close_started_at,
+                        )
+            finally:
+                await self._update_active_contexts(-1)
+                self._semaphore.release()
 
     async def close(self) -> None:
         async with self._lock:
@@ -538,6 +609,7 @@ class SharedBrowserRuntime:
             "bridge_used": self.bridge_used(),
         }
         return snapshot
+
 
 async def _block_unneeded_route(route: Any) -> None:
     request = getattr(route, "request", None)
@@ -735,7 +807,7 @@ async def get_browser_runtime(
             runtime = _BROWSER_POOL.direct.get(normalized_engine)
             if runtime is None:
                 await _evict_idle_browser_runtimes_locked()
-                runtime = SharedBrowserRuntime(
+                runtime = _build_browser_runtime_entry(
                     max_contexts=settings.browser_pool_size,
                     browser_engine=normalized_engine,
                 )
@@ -745,7 +817,7 @@ async def get_browser_runtime(
         await _evict_idle_browser_runtimes_locked()
         runtime = _BROWSER_POOL.proxied.get((normalized_engine, normalized_proxy))
         if runtime is None:
-            runtime = SharedBrowserRuntime(
+            runtime = _build_browser_runtime_entry(
                 max_contexts=settings.browser_pool_size,
                 launch_proxy=normalized_proxy,
                 browser_engine=normalized_engine,
@@ -753,6 +825,20 @@ async def get_browser_runtime(
             _BROWSER_POOL.proxied[(normalized_engine, normalized_proxy)] = runtime
         runtime.touch()
         return runtime
+
+
+def _build_browser_runtime_entry(
+    *,
+    max_contexts: int,
+    launch_proxy: str | None = None,
+    browser_engine: str = _CHROMIUM_BROWSER_ENGINE,
+) -> SharedBrowserRuntime:
+    total_contexts = max(1, int(max_contexts))
+    return SharedBrowserRuntime(
+        max_contexts=total_contexts,
+        launch_proxy=launch_proxy,
+        browser_engine=browser_engine,
+    )
 
 async def shutdown_browser_runtime() -> None:
     async with _BROWSER_POOL.lock:
@@ -838,6 +924,12 @@ def _browser_context_timeout_seconds() -> float:
         float(crawler_runtime_settings.browser_context_timeout_ms) / 1000,
     )
 
+def _browser_context_slot_timeout_seconds() -> float:
+    return max(
+        0.1,
+        float(crawler_runtime_settings.browser_context_slot_timeout_seconds),
+    )
+
 def _browser_close_timeout_seconds() -> float:
     return max(
         0.1,
@@ -860,6 +952,16 @@ async def _close_browser_context_safely(context: Any) -> None:
         raise
     except Exception:
         logger.debug("Failed to close browser context", exc_info=True)
+
+
+def _record_timing(
+    phase_timings_ms: dict[str, int] | None,
+    key: str,
+    started_at: float,
+) -> None:
+    if phase_timings_ms is None:
+        return
+    phase_timings_ms[key] = max(0, int((time.perf_counter() - started_at) * 1000))
 
 
 browser_pool_state = _BROWSER_POOL

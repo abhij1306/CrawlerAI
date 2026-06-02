@@ -435,6 +435,18 @@ def collect_structured_candidates(
                     variants = resolve_variants(axes, variants)
                 add_candidate(candidates, "variants", variants)
                 add_candidate(candidates, "variant_count", len(variants))
+        if (
+            not in_variant_context
+            and not candidates.get("variants")
+            and _embedded_payload_has_variant_options(payload)
+        ):
+            variants = _structured_variants_from_product_payload(payload, page_url)
+            if variants:
+                axes = _variant_axes_from_rows(variants)
+                if axes:
+                    variants = resolve_variants(axes, variants)
+                add_candidate(candidates, "variants", variants)
+                add_candidate(candidates, "variant_count", len(variants))
         if "jobposting" in normalized_type:
             organization = payload.get("hiringOrganization")
             remote_hint = coerce_text(payload.get("jobLocationType"))
@@ -490,3 +502,51 @@ def collect_structured_candidates(
                 limit=limit,
                 in_variant_context=in_variant_context,
             )
+
+
+def _embedded_payload_has_variant_options(payload: dict[str, object]) -> bool:
+    size_options = payload.get("sizeOptions")
+    has_size_options = False
+    if isinstance(size_options, dict):
+        options = size_options.get("options")
+        has_size_options = isinstance(options, list) and any(
+            isinstance(item, dict) for item in options
+        )
+    size_value = payload.get("sizeName") or payload.get("size_name")
+    has_one_size = payload.get("isOneSize") is True and size_value not in (
+        None,
+        "",
+        [],
+        {},
+    )
+    raw_variants = payload.get("variants")
+    variant_row_signal_fields = {
+        "sku",
+        "productId",
+        "product_id",
+        "price",
+        "discountedPrice",
+        "discounted_price",
+        "availability",
+        "available",
+        "availableForSale",
+        "isOutOfStock",
+        "sizeName",
+        "size",
+        "color",
+        "selectedOptions",
+        "variationValues",
+        "option1",
+        "url",
+        "action_url",
+    }
+    has_variant_rows = isinstance(raw_variants, list) and any(
+        isinstance(item, dict) and bool(set(item) & variant_row_signal_fields)
+        for item in raw_variants
+    )
+    if not has_size_options and not has_one_size and not has_variant_rows:
+        return False
+    return any(
+        payload.get(field_name) not in (None, "", [], {})
+        for field_name in ("id", "sku", "title", "subTitle", "price", "discountedPrice")
+    )

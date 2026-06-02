@@ -17,6 +17,12 @@ from app.services.extract.detail.assembly.record_assembly import (
     build_detail_record,
     extract_detail_records,
 )
+from app.services.extract.field_candidates.structured_payloads import (
+    collect_structured_candidates,
+)
+from app.services.extract.field_candidates.variant_rows import (
+    _structured_variants_from_product_payload,
+)
 from app.services.extraction_html_helpers import extract_job_sections
 from app.services.listing_extractor import extract_listing_records
 from app.services.pipeline.extract_records import extract_records
@@ -1913,6 +1919,196 @@ async def test_amazon_adapter_does_not_fabricate_multi_axis_twister_product() ->
 
     record = result.records[0]
     assert "variants" not in record
+
+
+@pytest.mark.regression
+def test_detail_extractor_recovers_untyped_embedded_size_options_variants() -> None:
+    html = """
+    <html>
+      <body>
+        <script id="__PRELOADED_STATE__" type="application/json">
+        {
+          "details": {
+            "skuData": {
+              "product": {
+                "id": "19759526",
+                "sku": "PUMAX00410571",
+                "discountedPrice": 1890,
+                "price": 4499,
+                "imageUrl": "https://example.com/shoe.jpg",
+                "color": {"name": "Black"},
+                "action_url": "/puma-men-radcliff-black-sneakers/p/19759526",
+                "title": "Puma",
+                "subTitle": "Men Radcliff Black Sneakers",
+                "isOutOfStock": 0,
+                "sizeOptions": {
+                  "title": "Select Size",
+                  "options": [
+                    {"id": "19759125", "sku": "PUMAX00410170", "sizeName": "UK 6", "discountedPrice": 1890, "price": 4499, "isOutOfStock": 1},
+                    {"id": "19759126", "sku": "PUMAX00410171", "sizeName": "UK 7", "discountedPrice": 1890, "price": 4499, "isOutOfStock": 0}
+                  ]
+                }
+              }
+            }
+          },
+          "remoteConfigs": {
+            "AB_V2": [
+              {"id": "paymentOffers", "variants": [{"name": "control", "sampleRate": {"from": 0, "to": 1}}]}
+            ]
+          }
+        }
+        </script>
+      </body>
+    </html>
+    """
+    url = "https://www.nykaafashion.com/puma-men-radcliff-black-sneakers/p/19759526"
+
+    record = build_detail_record(html, url, "ecommerce_detail", None)
+
+    assert record["variant_count"] == 2
+    assert [variant["size"] for variant in record["variants"]] == ["UK 6", "UK 7"]
+    assert [variant["sku"] for variant in record["variants"]] == [
+        "PUMAX00410170",
+        "PUMAX00410171",
+    ]
+    assert all(variant["size"] != "control" for variant in record["variants"])
+
+
+@pytest.mark.regression
+def test_detail_extractor_recovers_untyped_embedded_one_size_variant() -> None:
+    html = """
+    <html>
+      <body>
+        <script id="__PRELOADED_STATE__" type="application/json">
+        {
+          "details": {
+            "skuData": {
+              "product": {
+                "id": "21019447",
+                "sku": "PUMAX00420531",
+                "discountedPrice": 500,
+                "price": 999,
+                "imageUrl": "https://example.com/cap.jpg",
+                "color": {"name": "Green"},
+                "action_url": "/puma-metal-cat-classic-adjustable-baseball-cap/p/21019447",
+                "title": "Puma",
+                "subTitle": "Metal Cat Classic Adjustable Baseball Cap",
+                "isOutOfStock": 0,
+                "isOneSize": true,
+                "sizeName": "One Size"
+              }
+            }
+          },
+          "remoteConfigs": {
+            "AB_V2": [
+              {"id": "add-to-cart-nudge", "variants": [{"name": "atc-a", "sampleRate": {"from": 0, "to": 1}}]}
+            ]
+          }
+        }
+        </script>
+      </body>
+    </html>
+    """
+    url = "https://www.nykaafashion.com/puma-metal-cat-classic-adjustable-baseball-cap/p/21019447"
+
+    record = build_detail_record(html, url, "ecommerce_detail", None)
+
+    assert record["variant_count"] == 1
+    assert record["variants"][0]["color"] == "Green"
+    assert record["variants"][0]["size"] == "One Size"
+    assert record["variants"][0]["sku"] == "PUMAX00420531"
+    assert record["variants"][0]["url"] == url
+    assert record["variants"][0]["image_url"] == "https://example.com/cap.jpg"
+
+
+@pytest.mark.regression
+def test_detail_extractor_recovers_embedded_one_size_variant_with_size_name() -> None:
+    html = """
+    <html>
+      <body>
+        <script id="__PRELOADED_STATE__" type="application/json">
+        {
+          "details": {
+            "skuData": {
+              "product": {
+                "id": "21019447",
+                "sku": "PUMAX00420531",
+                "discountedPrice": 500,
+                "price": 999,
+                "imageUrl": "https://example.com/cap.jpg",
+                "color": {"name": "Green"},
+                "title": "Puma",
+                "subTitle": "Metal Cat Classic Adjustable Baseball Cap",
+                "isOutOfStock": 0,
+                "isOneSize": true,
+                "size_name": "One Size"
+              }
+            }
+          }
+        }
+        </script>
+      </body>
+    </html>
+    """
+
+    record = build_detail_record(
+        html,
+        "https://www.nykaafashion.com/puma-metal-cat-classic-adjustable-baseball-cap/p/21019447",
+        "ecommerce_detail",
+        None,
+    )
+
+    assert record["variant_count"] == 1
+    assert record["variants"][0]["size"] == "One Size"
+    assert record["variants"][0]["sku"] == "PUMAX00420531"
+
+
+@pytest.mark.regression
+def test_structured_product_payload_skips_duplicate_embedded_variants() -> None:
+    payload = {
+        "@type": "Product",
+        "name": "Trail Cap",
+        "sku": "CAP-1",
+        "price": 10,
+        "isOneSize": True,
+        "sizeName": "One Size",
+        "variants": [
+            {"id": "CAP-1", "sku": "CAP-1", "sizeName": "One Size", "price": 10}
+        ],
+    }
+    candidates: dict[str, list[object]] = {}
+
+    collect_structured_candidates(
+        payload,
+        {},
+        "https://example.com/products/trail-cap",
+        candidates,
+    )
+
+    assert len(candidates["variants"]) == 1
+    assert candidates["variant_count"] == [1]
+
+
+@pytest.mark.regression
+def test_structured_product_payload_single_size_variant_accepts_snake_case() -> None:
+    rows = _structured_variants_from_product_payload(
+        {
+            "sku": "CAP-1",
+            "price": 10,
+            "is_one_size": True,
+            "size_name": "One Size",
+        },
+        "https://example.com/products/trail-cap",
+    )
+
+    assert rows == [
+        {
+            "option_values": {"size": "One Size"},
+            "sku": "CAP-1",
+            "price": "10",
+            "size": "One Size",
+        }
+    ]
 
 
 @pytest.mark.asyncio

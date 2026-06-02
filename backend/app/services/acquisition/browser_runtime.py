@@ -116,6 +116,10 @@ from app.services.domain_utils import normalize_domain
 logger = logging.getLogger(__name__)
 
 
+_ORIGIN_WARMUP_STATE_LOCK = asyncio.Lock()
+_ORIGIN_WARMUP_IN_FLIGHT: set[tuple[str, str, str, str]] = set()
+_ORIGIN_WARMUP_RECENT: dict[tuple[str, str, str, str], float] = {}
+
 
 async def get_browser_runtime(*args, **kwargs):
     return await _get_browser_runtime_impl(*args, **kwargs)
@@ -334,6 +338,7 @@ async def browser_fetch(
             run_id=run_id,
             locality_profile=locality_profile,
             allow_storage_state=allow_storage_state,
+            phase_timings_ms=phase_timings_ms,
         )
         async with page_context as page:
             phase_timings_ms["page_acquire"] = _elapsed_ms(page_acquire_started_at)
@@ -383,6 +388,7 @@ async def browser_fetch(
                     browser_engine=runtime_engine,
                     browser_reason=browser_reason,
                     host_policy_snapshot=host_policy_snapshot,
+                    proxy=proxy,
                     proxy_profile=proxy_profile,
                     skip_for_reusable_domain_state=skip_origin_warmup,
                     timeout_seconds=_remaining(),
@@ -613,6 +619,7 @@ async def _resolve_browser_fetch_page_context(
     run_id: int | None,
     locality_profile: dict[str, object] | None,
     allow_storage_state: bool,
+    phase_timings_ms: dict[str, int],
 ):
     if proxy and proxied_page_factory is not temporary_browser_page:
         page_context = _resolve_proxied_page_factory(
@@ -625,16 +632,19 @@ async def _resolve_browser_fetch_page_context(
             allow_storage_state=allow_storage_state,
         )
         return None, page_context
+    runtime_lookup_started_at = time.perf_counter()
     runtime = await _resolve_runtime_provider(
         runtime_provider,
         browser_engine=normalized_engine,
         proxy=proxy,
     )
+    phase_timings_ms["runtime_lookup_ms"] = _elapsed_ms(runtime_lookup_started_at)
     return runtime, runtime.page(
         run_id=run_id,
         domain=normalized_domain,
         locality_profile=locality_profile,
         allow_storage_state=allow_storage_state,
+        phase_timings_ms=phase_timings_ms,
     )
 
 
@@ -699,6 +709,7 @@ async def _maybe_warm_origin_before_navigation(
     browser_engine: str = _CHROMIUM_BROWSER_ENGINE,
     browser_reason: str | None,
     host_policy_snapshot: dict[str, object] | None,
+    proxy: str | None = None,
     proxy_profile: dict[str, object] | None,
     skip_for_reusable_domain_state: bool = False,
     timeout_seconds: float,
@@ -739,6 +750,16 @@ async def _maybe_warm_origin_before_navigation(
     warm_url = f"{parsed.scheme}://{parsed.netloc}/"
     if warm_url.rstrip("/") == str(url or "").strip().rstrip("/"):
         return
+    warmup_key = _origin_warmup_key(
+        url=url,
+        browser_engine=browser_engine,
+        proxy=proxy,
+        proxy_profile=proxy_profile,
+    )
+    should_run_warmup = await _begin_origin_warmup(warmup_key)
+    if not should_run_warmup:
+        phase_timings_ms["origin_warmup"] = 0
+        return
     warm_budget_ratio = max(
         0.0, float(crawler_runtime_settings.origin_warmup_max_budget_ratio)
     )
@@ -747,22 +768,37 @@ async def _maybe_warm_origin_before_navigation(
         int(crawler_runtime_settings.browser_navigation_domcontentloaded_timeout_ms),
     )
     if warm_budget_ms < 750:
+        await asyncio.shield(_finish_origin_warmup(warmup_key))
         return
     started_at = time.perf_counter()
-    context = getattr(page, "context", None)
-    if callable(context):
-        with suppress(Exception):
-            context = context()
-    new_page = getattr(context, "new_page", None)
-    if not callable(new_page):
-        logger.debug(
-            "Skipping origin warmup for %s because page context cannot spawn a sibling page",
-            url,
-        )
-        return
+    use_active_warmup_page = (
+        _normalize_browser_engine(browser_engine) == _REAL_CHROME_BROWSER_ENGINE
+    )
+    open_warmup_page = None
+    if use_active_warmup_page:
+        pass
+    else:
+        context = getattr(page, "context", None)
+        if callable(context):
+            with suppress(Exception):
+                context = context()
+        new_page = getattr(context, "new_page", None)
+        if not callable(new_page):
+            logger.debug(
+                "Skipping origin warmup for %s because page context cannot spawn a sibling page",
+                url,
+            )
+            await asyncio.shield(_finish_origin_warmup(warmup_key))
+            return
+        open_warmup_page = new_page
     warm_page = None
+    warmup_succeeded = False
     try:
-        warm_page = await new_page()
+        if use_active_warmup_page:
+            warm_page = page
+        else:
+            assert callable(open_warmup_page)
+            warm_page = await open_warmup_page()
         warm_response = await warm_page.goto(
             warm_url,
             wait_until="domcontentloaded",
@@ -800,6 +836,7 @@ async def _maybe_warm_origin_before_navigation(
         phase_timings_ms["origin_warmup_behavior"] = 0
         remaining_budget_ms = max(0, warm_budget_ms - _elapsed_ms(started_at))
         await warm_page.wait_for_timeout(min(warm_pause_ms, remaining_budget_ms))
+        warmup_succeeded = True
         if warm_phase_timings_ms.get("challenge_wait"):
             phase_timings_ms["origin_warmup_challenge_wait"] = int(
                 warm_phase_timings_ms["challenge_wait"]
@@ -811,12 +848,71 @@ async def _maybe_warm_origin_before_navigation(
     except Exception:
         logger.debug("Origin warmup failed for %s", url, exc_info=True)
     finally:
-        if warm_page is not None:
+        if warm_page is not None and not use_active_warmup_page:
             close_page = getattr(warm_page, "close", None)
             if callable(close_page):
                 with suppress(Exception):
                     await close_page()
         phase_timings_ms["origin_warmup"] = _elapsed_ms(started_at)
+        await asyncio.shield(
+            _finish_origin_warmup(warmup_key, succeeded=warmup_succeeded)
+        )
+
+
+def _origin_warmup_key(
+    *,
+    url: str,
+    browser_engine: str,
+    proxy: str | None,
+    proxy_profile: dict[str, object] | None,
+) -> tuple[str, str, str, str]:
+    parsed = urlparse(url)
+    return (
+        _normalize_browser_engine(browser_engine),
+        str(parsed.scheme or "").lower(),
+        str(parsed.netloc or "").lower(),
+        str(proxy or proxy_rotation_mode(proxy_profile) or "direct").lower(),
+    )
+
+
+async def _begin_origin_warmup(key: tuple[str, str, str, str]) -> bool:
+    now = time.monotonic()
+    ttl_seconds = max(
+        0.0, float(crawler_runtime_settings.origin_warmup_dedupe_ttl_seconds)
+    )
+    async with _ORIGIN_WARMUP_STATE_LOCK:
+        if ttl_seconds > 0:
+            stale_keys = [
+                recent_key
+                for recent_key, completed_at in _ORIGIN_WARMUP_RECENT.items()
+                if now - completed_at >= ttl_seconds
+            ]
+            for stale_key in stale_keys:
+                _ORIGIN_WARMUP_RECENT.pop(stale_key, None)
+        else:
+            _ORIGIN_WARMUP_RECENT.clear()
+        if key in _ORIGIN_WARMUP_IN_FLIGHT:
+            return False
+        completed_at = _ORIGIN_WARMUP_RECENT.get(key)
+        if ttl_seconds > 0 and completed_at is not None:
+            if now - completed_at < ttl_seconds:
+                return False
+        _ORIGIN_WARMUP_IN_FLIGHT.add(key)
+        return True
+
+
+async def _finish_origin_warmup(
+    key: tuple[str, str, str, str],
+    *,
+    succeeded: bool = False,
+) -> None:
+    async with _ORIGIN_WARMUP_STATE_LOCK:
+        _ORIGIN_WARMUP_IN_FLIGHT.discard(key)
+        ttl_seconds = max(
+            0.0, float(crawler_runtime_settings.origin_warmup_dedupe_ttl_seconds)
+        )
+        if succeeded and ttl_seconds > 0:
+            _ORIGIN_WARMUP_RECENT[key] = time.monotonic()
 
 
 async def _settle_browser_page(

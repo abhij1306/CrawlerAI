@@ -1524,6 +1524,67 @@ async def test_shared_browser_runtime_bounds_hung_context_cleanup(
 
 @pytest.mark.asyncio
 @pytest.mark.component
+async def test_shared_browser_runtime_releases_pool_slot_when_cleanup_is_cancelled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    close_started = asyncio.Event()
+    close_release = asyncio.Event()
+    close_calls = 0
+
+    class FakeContext:
+        async def route(self, pattern: str, handler) -> None:
+            del pattern, handler
+            return None
+
+        async def add_init_script(self, script: str) -> None:
+            del script
+            return None
+
+        async def new_page(self):
+            return object()
+
+        async def close(self) -> None:
+            nonlocal close_calls
+            close_calls += 1
+            if close_calls == 1:
+                close_started.set()
+                await close_release.wait()
+
+    class FakeBrowser:
+        async def new_context(self, **kwargs):
+            del kwargs
+            return FakeContext()
+
+    runtime = crawl_fetch_runtime.SharedBrowserRuntime(max_contexts=1)
+    runtime._browser = FakeBrowser()
+    runtime._playwright = object()
+
+    monkeypatch.setattr(
+        acquisition_browser_pool,
+        "build_playwright_context_spec",
+        lambda **_: _context_spec(),
+    )
+
+    async def _use_page() -> None:
+        async with runtime.page(allow_storage_state=False):
+            pass
+
+    task = asyncio.create_task(_use_page())
+    await asyncio.wait_for(close_started.wait(), timeout=1.0)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    async def _acquire_again() -> None:
+        async with runtime.page(allow_storage_state=False):
+            pass
+
+    await asyncio.wait_for(_acquire_again(), timeout=1.0)
+    assert close_calls == 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
 async def test_shared_browser_runtime_close_bounds_hung_shutdown(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
@@ -1749,6 +1810,76 @@ async def test_shared_browser_runtime_snapshot_tracks_queue_without_private_sema
 
 @pytest.mark.asyncio
 @pytest.mark.component
+async def test_shared_browser_runtime_bounds_context_slot_wait(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    entered = asyncio.Event()
+    release = asyncio.Event()
+
+    class FakeContext:
+        async def route(self, pattern: str, handler) -> None:
+            del pattern, handler
+            return None
+
+        async def add_init_script(self, script: str) -> None:
+            del script
+            return None
+
+        async def new_page(self):
+            return object()
+
+        async def close(self) -> None:
+            return None
+
+    class FakeBrowser:
+        async def new_context(self, **kwargs):
+            del kwargs
+            return FakeContext()
+
+    runtime = crawl_fetch_runtime.SharedBrowserRuntime(max_contexts=1)
+    runtime._browser = FakeBrowser()
+    runtime._playwright = object()
+
+    monkeypatch.setattr(
+        acquisition_browser_pool,
+        "build_playwright_context_spec",
+        lambda **_: _context_spec(),
+    )
+    monkeypatch.setattr(
+        acquisition_browser_pool.crawler_runtime_settings,
+        "browser_context_slot_timeout_seconds",
+        0.01,
+    )
+    phase_timings_ms_first: dict[str, int] = {}
+    phase_timings_ms_second: dict[str, int] = {}
+
+    async def _hold_page() -> None:
+        async with runtime.page(phase_timings_ms=phase_timings_ms_first):
+            entered.set()
+            await release.wait()
+
+    first = asyncio.create_task(_hold_page())
+    await entered.wait()
+    try:
+        with pytest.raises(TimeoutError, match="browser context slot"):
+            async with runtime.page(phase_timings_ms=phase_timings_ms_second):
+                pass
+    finally:
+        release.set()
+        await first
+
+    snapshot = runtime.snapshot()
+    assert snapshot["active"] == 0
+    assert snapshot["queued"] == 0
+    assert phase_timings_ms_first["context_open_ms"] >= 0
+    assert phase_timings_ms_first["context_close_ms"] >= 0
+    assert phase_timings_ms_second["context_slot_wait_ms"] >= 0
+    assert "context_open_ms" not in phase_timings_ms_second
+    assert "context_close_ms" not in phase_timings_ms_second
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
 async def test_shared_browser_runtime_recycles_browser_without_deadlocking(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1831,6 +1962,74 @@ async def test_shared_browser_runtime_recycles_browser_without_deadlocking(
 
     assert old_events == ["browser_closed", "playwright_stopped"]
     assert new_events == ["launched", "new_context", "context_closed"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_shared_browser_runtime_does_not_recycle_with_active_context(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    entered = asyncio.Event()
+    release = asyncio.Event()
+    events: list[str] = []
+
+    class FakeContext:
+        async def route(self, pattern: str, handler) -> None:
+            del pattern, handler
+            return None
+
+        async def add_init_script(self, script: str) -> None:
+            del script
+            return None
+
+        async def new_page(self):
+            return object()
+
+        async def close(self) -> None:
+            events.append("context_closed")
+
+    class FakeBrowser:
+        def is_connected(self) -> bool:
+            return True
+
+        async def new_context(self, **kwargs):
+            del kwargs
+            events.append("new_context")
+            return FakeContext()
+
+        async def close(self) -> None:
+            events.append("browser_closed")
+
+    runtime = crawl_fetch_runtime.SharedBrowserRuntime(max_contexts=2)
+    runtime._browser = FakeBrowser()
+    runtime._playwright = object()
+    runtime._browser_launched_at = acquisition_browser_pool.time.monotonic()
+
+    monkeypatch.setattr(
+        acquisition_browser_pool,
+        "build_playwright_context_spec",
+        lambda **_: _context_spec(),
+    )
+    monkeypatch.setattr(
+        crawl_fetch_runtime.crawler_runtime_settings,
+        "browser_max_contexts_before_recycle",
+        1,
+    )
+
+    async def _hold_page() -> None:
+        async with runtime.page():
+            entered.set()
+            await release.wait()
+
+    first = asyncio.create_task(_hold_page())
+    await entered.wait()
+    runtime._total_contexts_created = 1
+    async with runtime.page():
+        pass
+    release.set()
+    await first
+
+    assert "browser_closed" not in events
 
 
 @pytest.mark.asyncio
@@ -2022,7 +2221,6 @@ async def test_get_browser_runtime_evicts_idle_proxied_runtime_when_pool_is_full
         "browser_runtime_pool_idle_ttl_seconds",
         0,
     )
-
     await acquisition_browser_runtime.shutdown_browser_runtime()
     first = await acquisition_browser_runtime.get_browser_runtime(
         proxy="http://proxy-one",
@@ -2040,6 +2238,29 @@ async def test_get_browser_runtime_evicts_idle_proxied_runtime_when_pool_is_full
     ]
     assert closed == [("http://proxy-one", "chromium")]
     await acquisition_browser_runtime.shutdown_browser_runtime()
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_get_browser_runtime_uses_one_browser_runtime_for_total_capacity(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(acquisition_browser_pool.settings, "browser_pool_size", 10)
+
+    await acquisition_browser_runtime.shutdown_browser_runtime()
+    runtime = await acquisition_browser_runtime.get_browser_runtime(
+        browser_engine="chromium"
+    )
+
+    try:
+        snapshot = runtime.snapshot()
+        assert isinstance(runtime, acquisition_browser_pool.SharedBrowserRuntime)
+        assert snapshot["capacity"] == 10
+        assert snapshot["max_size"] == 10
+        assert "browser_instances" not in snapshot
+        assert "contexts_per_instance" not in snapshot
+    finally:
+        await acquisition_browser_runtime.shutdown_browser_runtime()
 
 
 @pytest.mark.asyncio
@@ -2100,7 +2321,6 @@ async def test_get_browser_runtime_evicts_idle_direct_runtime_when_pool_is_full(
         "browser_runtime_pool_idle_ttl_seconds",
         0,
     )
-
     await acquisition_browser_runtime.shutdown_browser_runtime()
     first = await acquisition_browser_runtime.get_browser_runtime(
         browser_engine="chromium"
