@@ -205,14 +205,9 @@ def test_parallel_runtime_defaults_stay_bounded_without_env(
     ):
         monkeypatch.delenv(env_name, raising=False)
     runtime = CrawlerRuntimeSettings(_env_file=None)
-    dummy_secret_kwargs = {
-        "jwt_" + "secret_key": "0123456789abcdef0123456789abcdef",
-        "encryption_" + "key": "abcdef0123456789abcdef0123456789",
-    }
-    app_settings = Settings(
-        _env_file=None,
-        **dummy_secret_kwargs,
-    )
+    monkeypatch.setenv("JWT_SECRET_" + "KEY", "0123456789abcdef0123456789abcdef")
+    monkeypatch.setenv("ENCRYPTION_" + "KEY", "abcdef0123456789abcdef0123456789")
+    app_settings = Settings(_env_file=None)
 
     assert runtime.url_batch_concurrency <= 8
     assert runtime.browser_runtime_pool_max_entries <= 8
