@@ -46,6 +46,14 @@ def looks_like_site_shell_record(record: dict[str, Any], *, page_url: str) -> bo
     title_sources = {
         str(source).strip() for source in title_field_sources if str(source).strip()
     }
+    brand_sources = {
+        str(source).strip()
+        for source in object_list(field_sources.get("brand"))
+        if str(source).strip()
+    }
+    ignore_repaired_brand = bool(record.get("brand")) and brand_sources == {
+        "identity_repair"
+    }
     if detail_url_has_multiple_product_segments(page_url):
         return True
     if is_title_noise(title):
@@ -63,10 +71,12 @@ def looks_like_site_shell_record(record: dict[str, Any], *, page_url: str) -> bo
     has_generic_detail_fields = any(
         record.get(field_name) not in (None, "", [], {})
         for field_name in generic_detail_fields
+        if field_name != "brand" or not ignore_repaired_brand
     )
     has_strong_detail_fields = any(
         record.get(field_name) not in (None, "", [], {})
         for field_name in strong_detail_fields
+        if field_name != "brand" or not ignore_repaired_brand
     )
     availability = text_or_none(record.get("availability"))
     if availability and availability != AVAILABILITY_UNKNOWN:
@@ -85,6 +95,7 @@ def looks_like_site_shell_record(record: dict[str, Any], *, page_url: str) -> bo
             "image_url",
             "availability",
         )
+        if field_name != "brand" or not ignore_repaired_brand
     )
     confidence_payload = record.get("_confidence")
     confidence_value = (

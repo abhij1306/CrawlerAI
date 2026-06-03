@@ -21,7 +21,7 @@ from app.services.config.runtime_settings import crawler_runtime_settings
 from app.services.config.selectors import COOKIE_CONSENT_SELECTORS, PAGINATION_SELECTORS
 
 logger = logging.getLogger(__name__)
-_RECOVERABLE_ERRORS = (PlaywrightError, PlaywrightTimeoutError)
+_RECOVERABLE_ERRORS = (PlaywrightError, PlaywrightTimeoutError, RuntimeError)
 
 if TYPE_CHECKING:
     from app.services.acquisition.traversal_types import TraversalResult

@@ -31,7 +31,11 @@ def _variant_url_from_id(page_url: str, variant_id: str) -> str:
     ]
     query.append(("variant", variant_id))
     composed = urlunparse(parsed._replace(query=urlencode(query, doseq=True)))
-    return composed if parsed.scheme and parsed.netloc else absolute_url(page_url, composed) or ""
+    return (
+        composed
+        if parsed.scheme and parsed.netloc
+        else absolute_url(page_url, composed) or ""
+    )
 
 
 def _structured_variant_rows(
@@ -171,7 +175,9 @@ def _offer_title_scent(
         )
         if text
     ).casefold()
-    if not any(token in probe for token in ("scent", "fragrance", "body mist", "body-mist")):
+    if not any(
+        token in probe for token in ("scent", "fragrance", "body mist", "body-mist")
+    ):
         return ""
     parts = re.split(r"\s[-–—]\s", title, maxsplit=1)
     if len(parts) != 2:
@@ -247,7 +253,9 @@ def _structured_product_option_names(payload: dict[str, object]) -> list[str]:
     names: list[str] = []
     for item in raw_options:
         if isinstance(item, dict):
-            name = text_or_none(item.get("name") or item.get("title") or item.get("label"))
+            name = text_or_none(
+                item.get("name") or item.get("title") or item.get("label")
+            )
         else:
             name = text_or_none(item)
         if name:
@@ -273,7 +281,9 @@ def _structured_selected_option_values(
             selected.get("name") or selected.get("option") or selected.get("label")
         )
         cleaned = text_or_none(
-            selected.get("value") or selected.get("displayValue") or selected.get("label")
+            selected.get("value")
+            or selected.get("displayValue")
+            or selected.get("label")
         )
         if not axis_key or not cleaned:
             continue
@@ -394,13 +404,10 @@ def _structured_variants_from_product_payload(
             else item.get("availableForSale"),
             page_url,
         )
-        if availability in (None, "", [], {}) and item.get("isOutOfStock") not in (
-            None,
-            "",
-            [],
-            {},
-        ):
-            availability = "out_of_stock" if item.get("isOutOfStock") else "in_stock"
+        if availability in (None, "", [], {}):
+            is_out_of_stock = _coerce_boolean_flag(item.get("isOutOfStock"))
+            if is_out_of_stock is not None:
+                availability = "out_of_stock" if is_out_of_stock else "in_stock"
         if availability not in (None, "", [], {}):
             row["availability"] = availability
         image_url = coerce_field_value(
@@ -437,10 +444,31 @@ def _structured_variants_from_product_payload(
 
 
 def _payload_is_single_size_variant(payload: dict[str, object]) -> bool:
-    size_value = payload.get("sizeName") or payload.get("size_name")
+    size_value = (
+        payload.get("sizeName")
+        or payload.get("size_name")
+        or payload.get("size")
+        or payload.get("displaySize")
+        or payload.get("display_size")
+    )
     is_one_size = payload.get("isOneSize") is True or payload.get("is_one_size") is True
     if is_one_size and text_or_none(size_value):
         return True
-    return bool(text_or_none(size_value)) and str(
-        payload.get("type") or ""
-    ).casefold() == "simple"
+    return (
+        bool(text_or_none(size_value))
+        and str(payload.get("type") or "").casefold() == "simple"
+    )
+
+
+def _coerce_boolean_flag(value: object) -> bool | None:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int) and value in {0, 1}:
+        return bool(value)
+    if isinstance(value, str):
+        normalized = value.strip().casefold()
+        if normalized in {"true", "1", "yes"}:
+            return True
+        if normalized in {"false", "0", "no"}:
+            return False
+    return None

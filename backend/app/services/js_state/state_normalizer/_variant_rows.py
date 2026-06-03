@@ -35,7 +35,7 @@ def _product_variant_rows(product: dict[str, Any]) -> list[dict[str, Any]]:
             rows.append(row)
     if not rows:
         rows.extend(_axis_keyed_variant_rows(product.get("variants"), product))
-    if not rows and isinstance(product.get("plp_pdp_bridge"), dict):
+    if isinstance(product.get("plp_pdp_bridge"), dict):
         rows.extend(
             _axis_keyed_variant_rows(product["plp_pdp_bridge"].get("variants"), product)
         )
@@ -48,6 +48,7 @@ def _product_variant_rows(product: dict[str, Any]) -> list[dict[str, Any]]:
         rows.extend(_option_group_variant_rows(product))
     return rows
 
+
 def _axis_keyed_variant_rows(
     raw_variants: object,
     product: dict[str, Any],
@@ -59,7 +60,7 @@ def _axis_keyed_variant_rows(
         axis_key = normalized_variant_axis_key(raw_axis_name)
         if axis_key not in _MATRIX_AXIS_FIELDS:
             continue
-        variant_items = as_list(raw_rows)
+        variant_items = raw_rows if isinstance(raw_rows, list) else []
         for item in variant_items:
             if not isinstance(item, dict):
                 continue
@@ -82,6 +83,7 @@ def _axis_keyed_variant_rows(
             rows.append(row)
     return rows
 
+
 def _mapped_size_variant_rows(product: dict[str, Any]) -> list[dict[str, Any]]:
     raw_sizes = product.get("sizes")
     if not isinstance(raw_sizes, dict):
@@ -101,6 +103,7 @@ def _mapped_size_variant_rows(product: dict[str, Any]) -> list[dict[str, Any]]:
         _backfill_single_axis_variant_context(row, product)
         rows.append(row)
     return rows
+
 
 def _option_group_variant_rows(product: dict[str, Any]) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
@@ -139,12 +142,15 @@ def _option_group_variant_rows(product: dict[str, Any]) -> list[dict[str, Any]]:
                 row["name"] = axis_name
                 row["value"] = axis_value
                 simple_id = text_or_none(
-                    item.get("simple_id") or item.get("simpleId") or item.get("variantId")
+                    item.get("simple_id")
+                    or item.get("simpleId")
+                    or item.get("variantId")
                 )
                 if simple_id and row.get("id") in (None, "", [], {}):
                     row["id"] = simple_id
                 rows.append(row)
     return rows
+
 
 def _nested_choice_item_variant_rows(product: dict[str, Any]) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
@@ -155,13 +161,10 @@ def _nested_choice_item_variant_rows(product: dict[str, Any]) -> list[dict[str, 
             if not isinstance(choice, dict):
                 continue
             color_family = choice.get("colorFamily")
-            color = (
-                text_or_none(choice.get("displayColorDescription"))
-                or (
-                    text_or_none(color_family.get("label"))
-                    if isinstance(color_family, dict)
-                    else None
-                )
+            color = text_or_none(choice.get("displayColorDescription")) or (
+                text_or_none(color_family.get("label"))
+                if isinstance(color_family, dict)
+                else None
             )
             image_url = _choice_primary_image(choice)
             for item in as_list(choice.get("items")):
@@ -178,6 +181,7 @@ def _nested_choice_item_variant_rows(product: dict[str, Any]) -> list[dict[str, 
                 rows.append(row)
     return rows
 
+
 def _choice_primary_image(choice: dict[str, Any]) -> str | None:
     for shot in as_list(choice.get("orderedShots")):
         if not isinstance(shot, dict):
@@ -186,6 +190,7 @@ def _choice_primary_image(choice: dict[str, Any]) -> str | None:
         if image_url:
             return image_url
     return None
+
 
 def _backfill_nested_variant_context(
     variant: dict[str, Any],
@@ -214,6 +219,7 @@ def _backfill_nested_variant_context(
             if value not in (None, "", [], {}):
                 variant[target_key] = value
                 break
+
 
 def _backfill_single_axis_variant_context(
     variant: dict[str, Any],
@@ -287,7 +293,9 @@ def _collect_variant_matrix_rows(
     )
     if axis_key and axis_value:
         current_option_values.setdefault(axis_key, axis_value)
-    children = [child for child in as_list(node.get("elements")) if isinstance(child, dict)]
+    children = [
+        child for child in as_list(node.get("elements")) if isinstance(child, dict)
+    ]
     variant_option = node.get("variantOption")
     if (node.get("isLeaf") or not children) and isinstance(variant_option, dict):
         row = _variant_matrix_row(
@@ -371,7 +379,9 @@ def _variant_matrix_axis_value(
         return None, None
     parent_category = node.get("parentVariantCategory")
     axis_candidates = [
-        text_or_none(parent_category.get("name")) if isinstance(parent_category, dict) else None,
+        text_or_none(parent_category.get("name"))
+        if isinstance(parent_category, dict)
+        else None,
         text_or_none(value_category.get("label")),
         text_or_none(value_category.get("description")),
     ]
@@ -388,7 +398,9 @@ def _variant_matrix_axis_value(
     return None, None
 
 
-def _classification_axis_hints(product: dict[str, Any]) -> list[tuple[str, frozenset[str]]]:
+def _classification_axis_hints(
+    product: dict[str, Any],
+) -> list[tuple[str, frozenset[str]]]:
     hints: list[tuple[str, frozenset[str]]] = []
     for classification in as_list(product.get("classifications")):
         if not isinstance(classification, dict):

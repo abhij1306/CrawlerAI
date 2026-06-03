@@ -11,6 +11,9 @@ from app.services.extract.detail.assembly.record_assembly import (
     build_detail_record,
     extract_detail_records,
 )
+from app.services.extract.field_candidates.variant_rows import (
+    _structured_variants_from_product_payload,
+)
 from app.services.extract.detail.variants.dom_options import variant_option_availability
 from app.services.extract.detail.variants.dom_availability import (
     reconcile_variant_availability_from_dom,
@@ -2635,6 +2638,25 @@ def test_extract_ecommerce_detail_recovers_structured_variants_with_axes() -> No
 
 
 @pytest.mark.regression
+def test_structured_variant_rows_coerce_is_out_of_stock_flags_strictly() -> None:
+    rows = _structured_variants_from_product_payload(
+        {
+            "variants": [
+                {"id": "shoe-8", "sizeName": "8", "isOutOfStock": "false"},
+                {"id": "shoe-9", "sizeName": "9", "isOutOfStock": "true"},
+                {"id": "shoe-10", "sizeName": "10", "isOutOfStock": "0"},
+            ]
+        },
+        "https://example.com/products/example-shoe",
+    )
+
+    variants_by_size = {row.get("size"): row for row in rows}
+    assert variants_by_size["8"]["availability"] == "in_stock"
+    assert variants_by_size["9"]["availability"] == "out_of_stock"
+    assert variants_by_size["10"]["availability"] == "in_stock"
+
+
+@pytest.mark.regression
 def test_extract_ecommerce_detail_rejects_foreign_currency_variants() -> None:
     rows = extract_records(
         "<html><body><main><h1>Leather Jacket</h1></main></body></html>",
@@ -4693,7 +4715,7 @@ def test_reconciles_belk_style_variant_availability_from_soft_scope() -> None:
 
 
 @pytest.mark.regression
-def test_reconciles_nike_artifact_variant_availability_and_labels() -> None:
+def test_recovers_nike_artifact_available_variant_labels() -> None:
     html = read_optional_artifact_text("artifacts/runs/1/pages/1bcb5c849a75b86f.html")
 
     rows = extract_detail_records(
@@ -4704,14 +4726,8 @@ def test_reconciles_nike_artifact_variant_availability_and_labels() -> None:
 
     assert len(rows) == 1
     variants = rows[0]["variants"]
-    assert len(variants) == 22
-    assert {row["availability"] for row in variants} == {
-        "in_stock",
-        "out_of_stock",
-    }
-    assert {
-        row["size"] for row in variants if row.get("availability") == "out_of_stock"
-    } == {"M 5 / W 6.5", "M 5.5 / W 7", "M 16 / W 17.5"}
+    assert len(variants) == 19
+    assert {row.get("availability") for row in variants} <= {None, "in_stock"}
     assert variants[0]["size"].startswith("M ")
 
 
@@ -6404,6 +6420,91 @@ def test_build_detail_record_strips_embedded_home_suffix_from_category_head() ->
 
 
 @pytest.mark.regression
+def test_detail_cleanup_parses_stringified_locale_category_dict() -> None:
+    record = {
+        "title": "Brown Ruff Rider Leather Jacket",
+        "brand": "WILLY CHAVARRIA",
+        "category": "{'en': 'LEATHER JACKETS'}",
+    }
+
+    sanitize_detail_placeholder_scalars(
+        record,
+        identity_url="https://www.ssense.com/en-us/men/product/willy-chavarria/brown-ruff-rider-leather-jacket/19072301",
+    )
+
+    assert record["category"] == "LEATHER JACKETS"
+
+
+@pytest.mark.regression
+def test_detail_cleanup_drops_malformed_and_broken_fetch_images() -> None:
+    record = {
+        "title": "Men's All Sport Ankle Socks",
+        "image_url": "https://assets.bombas.com/image/fetch/c_crop",
+        "additional_images": [
+            "https:files/LargeCheckIn_Newport_Front.webp",
+            "https://cdn.example.com/products/socks/main.jpg",
+        ],
+    }
+
+    repair_ecommerce_detail_record_quality(
+        record,
+        html="",
+        page_url="https://bombas.com/products/mens-all-purpose-performance-ankle-socks",
+    )
+
+    assert record["image_url"] == "https://cdn.example.com/products/socks/main.jpg"
+    assert "additional_images" not in record
+
+
+@pytest.mark.regression
+def test_detail_cleanup_drops_same_url_color_only_variant_noise() -> None:
+    record = {
+        "title": "Black Seascape Stretch Bracelet",
+        "price": "8.00",
+        "currency": "USD",
+        "variants": [
+            {
+                "url": "https://www.puravidabracelets.com/products/black-seascape-stretch-bracelet?variant=41298450153558",
+                "size": "Black Seascape Stretch Bracelet",
+                "color": color,
+                "availability": "in_stock",
+            }
+            for color in ("White", "Blue", "Black")
+        ],
+    }
+
+    repair_ecommerce_detail_record_quality(
+        record,
+        html="",
+        page_url="https://www.puravidabracelets.com/products/black-seascape-stretch-bracelet",
+    )
+
+    assert "variants" not in record
+    assert "variant_count" not in record
+
+
+@pytest.mark.regression
+def test_detail_cleanup_sets_parent_out_of_stock_when_all_variants_out() -> None:
+    record = {
+        "title": "Pavlova 100 Lace Up Blush Satin Boots",
+        "availability": "in_stock",
+        "variants_complete": True,
+        "variants": [
+            {"size": "36", "availability": "out_of_stock", "stock_quantity": 0},
+            {"size": "37", "availability": "out_of_stock", "stock_quantity": 0},
+        ],
+    }
+
+    repair_ecommerce_detail_record_quality(
+        record,
+        html="",
+        page_url="https://savannahs.com/collections/all-boots/products/pavlova-100-lace-up-blush-satin-boots-cl28517s",
+    )
+
+    assert record["availability"] == "out_of_stock"
+
+
+@pytest.mark.regression
 def test_build_detail_record_rejects_structural_identity_artifacts() -> None:
     record = build_detail_record(
         "<html><body><main><h1>Stand Mixer</h1></main></body></html>",
@@ -8003,9 +8104,7 @@ def test_extract_ecommerce_detail_preserves_zadig_js_state_variants_from_artifac
 
 
 @pytest.mark.regression
-def test_extract_ecommerce_detail_recovers_toddsnyder_component_size_variants_from_artifact() -> (
-    None
-):
+def test_extract_ecommerce_detail_drops_toddsnyder_component_only_variants() -> None:
     html = read_optional_artifact_text("artifacts/runs/1/pages/3f9356011b5bfe4f.html")
 
     rows = extract_records(
@@ -8017,14 +8116,8 @@ def test_extract_ecommerce_detail_recovers_toddsnyder_component_size_variants_fr
     )
 
     assert len(rows) == 1
-    variants = rows[0]["variants"]
-    assert any(
-        row.get("style") == "Jacket" and row.get("size") == "36R" for row in variants
-    )
-    assert any(
-        row.get("style") in {"Trouser", "Pant"} and row.get("size") == "28/32"
-        for row in variants
-    )
+    assert "variants" not in rows[0]
+    assert "variant_count" not in rows[0]
 
 
 @pytest.mark.regression

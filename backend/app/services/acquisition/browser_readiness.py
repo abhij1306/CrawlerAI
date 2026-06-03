@@ -446,7 +446,7 @@ async def probe_browser_readiness(
 
 
 async def listing_card_signal_count(page: Any, *, surface: str) -> int:
-    return await count_listing_cards(
+    return await listing_card_signal_count_impl(
         page,
         surface=surface,
     )

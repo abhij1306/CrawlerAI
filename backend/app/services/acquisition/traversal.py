@@ -25,6 +25,7 @@ from app.services.acquisition.traversal_helpers import (
     deadline_reached as _deadline_reached,
     emit_event as _emit_event,
     is_same_origin,
+    looks_like_paginate_control,
     page_matches_block_challenge as _page_matches_block_challenge,
     remaining_timeout_ms as _remaining_timeout_ms,
     settle_after_action as _settle_after_action,
@@ -46,6 +47,7 @@ __all__ = [
     "dismiss_overlays_if_needed",
     "execute_listing_traversal",
     "locator_still_resolves",
+    "looks_like_paginate_control",
     "wait_for_dom_mutation_settle",
     "wait_for_load_more_card_gain",
 ]

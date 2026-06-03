@@ -114,6 +114,23 @@ def test_dedupe_image_urls_normalizes_repeated_scheme_slashes() -> None:
 
 
 @pytest.mark.regression
+def test_dedupe_image_urls_preserves_shopify_store_identity() -> None:
+    result = dedupe_image_urls(
+        [
+            "https://cdn.shopify.com/s/files/1/0094/2252/files/widget_0240.jpg?v=1",
+            "https://kith.com/cdn/shop/files/widget_0240.jpg?v=1&width=2000",
+            "https://kith.com/cdn/shop/files/widget_0242.jpg?v=1&width=2000",
+        ]
+    )
+
+    assert result == [
+        "https://cdn.shopify.com/s/files/1/0094/2252/files/widget_0240.jpg?v=1",
+        "https://kith.com/cdn/shop/files/widget_0240.jpg?v=1&width=2000",
+        "https://kith.com/cdn/shop/files/widget_0242.jpg?v=1&width=2000",
+    ]
+
+
+@pytest.mark.regression
 def test_upgrade_low_resolution_amazon_image_url_strips_thumbnail_transform() -> None:
     assert (
         upgrade_low_resolution_image_url(

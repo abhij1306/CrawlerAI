@@ -5,7 +5,9 @@ import pytest
 from bs4 import BeautifulSoup
 
 from app.services.extract.detail.assembly.final_cleanup import (
+    _reconcile_variant_derived_parent_fields,
     repair_ecommerce_detail_record_quality,
+    sanitize_variant_row,
 )
 from app.services.extract.detail.price.core import backfill_detail_price_from_html
 from app.services.extract.variant_normalization import normalize_variant_record
@@ -33,6 +35,18 @@ def test_preserve_existing_localized_money_without_jsonld_price() -> None:
 
     assert record["currency"] == "INR"
     assert record["price"] == "INR 1,999"
+
+
+@pytest.mark.unit
+def test_coerce_category_reads_locale_dict_string() -> None:
+    assert (
+        coerce_field_value(
+            "category",
+            "{'en': 'LEATHER JACKETS'}",
+            "https://www.ssense.com/en-us/men/product/example/1",
+        )
+        == "LEATHER JACKETS"
+    )
 
 
 @pytest.mark.unit
@@ -174,6 +188,238 @@ def test_repair_ecommerce_detail_skips_variant_range_reconcile_when_magnitudes_d
         requested_page_url="https://example.com/p",
     )
     assert record["price"] == "282.00"
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("url", "record", "expected_brand"),
+    [
+        (
+            "https://www.endclothing.com/us/47-ny-yankees-clean-up-cap-b-rgw17gws-vn.html",
+            {"title": "47 NY Yankees Clean Up Cap", "price": "35.00"},
+            "47",
+        ),
+        (
+            "https://www.firstcry.com/babyhug/babyhug-denim-woven-sleeveless-top-and-pant-set-with-floral-print-blue/22346676/product-detail",
+            {
+                "title": "Babyhug Denim Woven Sleeveless Top & Pant Set With Floral Print - Blue",
+                "price": "868.21",
+            },
+            "Babyhug",
+        ),
+        (
+            "https://www.aesop.com/home-fragrance/candles/aganice-aromatique-candle/HM03.html",
+            {"title": "Aganice Aromatique Candle", "price": "120.00"},
+            "Aesop",
+        ),
+        (
+            "https://amsterdamvintagewatches.com/shop/rolex-day-date-18038-champagne-5/",
+            {
+                "title": "Rolex Day-Date 18038 - Amsterdam Vintage Watches",
+                "price": "43000.00",
+            },
+            "Rolex",
+        ),
+    ],
+)
+def test_repair_ecommerce_detail_backfills_missing_brand_from_identity(
+    url: str,
+    record: dict[str, object],
+    expected_brand: str,
+) -> None:
+    repair_ecommerce_detail_record_quality(
+        record,
+        html="<html></html>",
+        page_url=url,
+        requested_page_url=url,
+    )
+
+    assert record["brand"] == expected_brand
+
+
+@pytest.mark.unit
+def test_repair_ecommerce_detail_backfills_game_publisher_brand_from_description() -> (
+    None
+):
+    record: dict[str, object] = {
+        "title": "PRAGMATA",
+        "price": "59.99",
+        "description": "A new sci-fi adventure from Capcom's upcoming lineup.",
+    }
+    url = "https://www.nintendo.com/us/store/products/pragmata-switch-2/"
+
+    repair_ecommerce_detail_record_quality(
+        record,
+        html="<html></html>",
+        page_url=url,
+        requested_page_url=url,
+    )
+
+    assert record["brand"] == "Capcom"
+
+
+@pytest.mark.unit
+def test_repair_ecommerce_detail_prunes_child_pdp_variants_from_adult_product() -> None:
+    url = "https://www.dtlr.com/collections/men/products/jordan-air-jordan-5-retro-white-metallic-mf-white-hq7978-103"
+    record: dict[str, object] = {
+        "title": "Jordan Air Jordan 5 Retro 'White Metallic'",
+        "price": "215.00",
+        "variants": [
+            {"size": "8", "price": "215", "url": f"{url}?variant=adult"},
+            {
+                "size": "4",
+                "price": "165",
+                "color": "Grade School Jf White Hq7980 103",
+                "url": "https://www.dtlr.com/collections/men/products/jordan-air-jordan-5-retro-white-metallic-grade-school-jf-white-hq7980-103?variant=gs",
+            },
+            {
+                "size": "5",
+                "price": "90",
+                "color": "Toddler If White Hq7981 103",
+                "url": "https://www.dtlr.com/collections/men/products/jordan-air-jordan-5-retro-white-metallic-toddler-if-white-hq7981-103?variant=td",
+            },
+        ],
+    }
+
+    repair_ecommerce_detail_record_quality(
+        record,
+        html="<html></html>",
+        page_url=url,
+        requested_page_url=url,
+    )
+
+    assert len(record["variants"]) == 1
+    assert record["variants"][0]["size"] == "8"
+    assert record["variants"][0]["url"] == f"{url}?variant=adult"
+    assert record["variant_count"] == 1
+
+
+@pytest.mark.unit
+def test_repair_ecommerce_detail_drops_color_values_misread_as_sizes() -> None:
+    url = "https://www.macys.com/shop/product/tommy-hilfiger-mens-hiday-casualized-hybrid-oxfords"
+    record: dict[str, object] = {
+        "title": "Tommy Hilfiger Mens Virat Casualized Hybrid Oxfords",
+        "variants": [
+            {"size": "7M", "color": "Cognac"},
+            {"size": "Cognac", "color": "Cognac"},
+            {"size": "Black", "color": "Cognac"},
+            {"size": "8M", "color": "Black"},
+            {"size": "Black", "color": "Black"},
+        ],
+    }
+
+    repair_ecommerce_detail_record_quality(
+        record,
+        html="<html></html>",
+        page_url=url,
+        requested_page_url=url,
+    )
+
+    assert record["variants"] == [
+        {"size": "7M", "color": "Cognac"},
+        {"size": "8M", "color": "Black"},
+    ]
+
+
+@pytest.mark.unit
+def test_repair_ecommerce_detail_drops_same_url_color_only_variant_cluster() -> None:
+    url = "https://colourpop.com/products/going-coconuts-eyeshadow-palette"
+    record: dict[str, object] = {
+        "title": "Going Coconuts",
+        "variants": [
+            {"color": "Pink Dreams", "url": f"{url}?variant=31181373636690"},
+            {"color": "Blue Moon", "url": f"{url}?variant=31181373636690"},
+        ],
+    }
+
+    repair_ecommerce_detail_record_quality(
+        record,
+        html="<html></html>",
+        page_url=url,
+        requested_page_url=url,
+    )
+
+    assert "variants" not in record
+    assert "variant_count" not in record
+
+
+@pytest.mark.unit
+def test_repair_ecommerce_detail_filters_related_and_low_res_images() -> None:
+    url = "https://www.aesop.com/home-fragrance/candles/aganice-aromatique-candle/HM03.html"
+    record: dict[str, object] = {
+        "title": "Aganice Aromatique Candle",
+        "image_url": "https://www.aesop.com/dw/image/v2/AANG_PRD/on/demandware.static/-/Sites-aesop-us-master-catalog/default/dwdbcd8bbe/images/products/HM03/Aesop_Home_Aganice_Aromatique_Candle_Web_Front_2000x2000px.png",
+        "additional_images": [
+            "https://www.aesop.com/dw/image/v2/AANG_PRD/on/demandware.static/-/Sites-aesop-us-master-catalog/default/dw00834621/images/products/HM03/Aesop_Home_Aganice_Aromatique_Candle_Vessel_&_Carton_Front_2000x2000px.jpg?sw=1536&sh=1536",
+            "https://www.aesop.com/dw/image/v2/AANG_PRD/on/demandware.static/-/Sites-aesop-us-master-catalog/default/dwb2be19cc/images/products/FR11/Aesop_Fragrance_Marrakech_Intense_Parfum_10mL_Vial_NGL_2000x2000px.jpg?sw=330&sh=330",
+            "https://www.aesop.com/dw/image/v2/AANG_PRD/on/demandware.static/Sites-aesop-us-Site/-/default/dw9315f36d/images/landscape.png?sw=304&sh=250",
+        ],
+    }
+
+    repair_ecommerce_detail_record_quality(
+        record,
+        html="<html></html>",
+        page_url=url,
+        requested_page_url=url,
+    )
+
+    assert record["additional_images"] == [
+        "https://www.aesop.com/dw/image/v2/AANG_PRD/on/demandware.static/-/Sites-aesop-us-master-catalog/default/dw00834621/images/products/HM03/Aesop_Home_Aganice_Aromatique_Candle_Vessel_&_Carton_Front_2000x2000px.jpg?sw=1536&sh=1536"
+    ]
+
+
+@pytest.mark.unit
+def test_repair_ecommerce_detail_prefers_active_color_image_and_drops_swatch_thumbs() -> (
+    None
+):
+    url = "https://www.patagonia.com/product/mens-nano-puff-insulated-jacket/84213.html"
+    record: dict[str, object] = {
+        "title": "Men's Nano Puff Jacket",
+        "brand": "Patagonia",
+        "color": "Aquatic Blue",
+        "image_url": "https://www.patagonia.com/dw/image/v2/BDJB_PRD/on/demandware.static/-/Sites-patagonia-master/default/dw3898a537/images/hi-res/84213_SMDB.jpg?sw=1920",
+        "additional_images": [
+            "https://www.patagonia.com/dw/image/v2/BDJB_PRD/on/demandware.static/-/Sites-patagonia-master/default/dwb71fb616/images/hi-res/84213_AQT.jpg?sw=1920",
+            "https://images.urbndata.com/is/image/Anthropologie/108064080_001_s?fit=constrain&hei=56&qlt=75",
+        ],
+    }
+
+    repair_ecommerce_detail_record_quality(
+        record,
+        html="<html></html>",
+        page_url=url,
+        requested_page_url=url,
+    )
+
+    assert "84213_AQT" in str(record["image_url"])
+    assert all(
+        "_s?fit=constrain&hei=56" not in image for image in record["additional_images"]
+    )
+
+
+@pytest.mark.unit
+def test_repair_ecommerce_detail_trims_description_to_url_identity_chunk() -> None:
+    url = "https://www.macys.com/shop/product/tommy-hilfiger-mens-hiday-casualized-hybrid-oxfords"
+    record: dict[str, object] = {
+        "title": "Tommy Hilfiger Mens Virat Casualized Hybrid Oxfords",
+        "description": (
+            "The Hiday men's lace-up oxford has a classic silhouette. "
+            "Subtle branding details have been added. "
+            "Elevate everyday style with these Tommy Hilfiger Foray sneakers. "
+            "The Florsheim Midtown shoe is a different product."
+        ),
+    }
+
+    repair_ecommerce_detail_record_quality(
+        record,
+        html="<html></html>",
+        page_url=url,
+        requested_page_url=url,
+    )
+
+    assert "Hiday" in str(record["description"])
+    assert "Foray" not in str(record["description"])
+    assert "Florsheim" not in str(record["description"])
 
 
 @pytest.mark.unit
@@ -1069,6 +1315,117 @@ def test_detail_record_quality_repairs_invalid_original_prices_and_selected_vari
 
 
 @pytest.mark.unit
+def test_detail_record_quality_does_not_downgrade_in_stock_parent_from_partial_variants() -> (
+    None
+):
+    record = {
+        "title": "Example Shoe",
+        "price": "100.00",
+        "currency": "USD",
+        "availability": "in_stock",
+        "variants": [
+            {
+                "size": "8",
+                "availability": "out_of_stock",
+                "option_values": {"size": "8"},
+            },
+            {
+                "size": "9",
+                "availability": "unknown",
+                "option_values": {"size": "9"},
+            },
+        ],
+    }
+
+    repair_ecommerce_detail_record_quality(
+        record,
+        html="<html></html>",
+        page_url="https://example.com/products/example-shoe",
+    )
+
+    assert record["availability"] == "in_stock"
+
+
+@pytest.mark.unit
+def test_reconcile_variant_derived_parent_fields_clears_stale_values_without_variants() -> (
+    None
+):
+    record = {
+        "image_url": "https://cdn.example.com/variant.jpg",
+        "availability": "out_of_stock",
+    }
+
+    _reconcile_variant_derived_parent_fields(
+        record,
+        variant_parent_image="https://cdn.example.com/variant.jpg",
+        variant_parent_availability="out_of_stock",
+    )
+
+    assert "image_url" not in record
+    assert "availability" not in record
+
+
+@pytest.mark.unit
+def test_detail_record_quality_does_not_overwrite_structured_color_from_description() -> (
+    None
+):
+    record = {
+        "title": "Example Jacket",
+        "color": "Black",
+        "description": "Made with 'Red' leather upper.",
+        "_field_sources": {"color": ["structured"]},
+    }
+
+    repair_ecommerce_detail_record_quality(
+        record,
+        html="<html></html>",
+        page_url="https://example.com/products/example-jacket",
+    )
+
+    assert record["color"] == "Black"
+    assert record["_field_sources"]["color"] == ["structured"]
+
+
+@pytest.mark.unit
+def test_detail_record_quality_does_not_assign_numeric_prefix_brand_without_url_match() -> (
+    None
+):
+    record = {"title": "123 Example Jacket"}
+
+    repair_ecommerce_detail_record_quality(
+        record,
+        html="<html></html>",
+        page_url="https://example.com/products/example-jacket",
+    )
+
+    assert "brand" not in record
+
+
+@pytest.mark.unit
+def test_field_coerce_ignores_non_json_structured_category_text() -> None:
+    assert (
+        coerce_field_value(
+            "category",
+            "{not json but user visible category text",
+            "https://example.com/products/example",
+        )
+        == "{not json but user visible category text"
+    )
+
+
+@pytest.mark.unit
+def test_sanitize_variant_row_preserves_relative_image_paths() -> None:
+    variant = {"size": "8", "image_url": "/images/example-shoe-8.jpg"}
+
+    assert sanitize_variant_row(
+        variant,
+        identity_url="https://example.com/products/example-shoe",
+        title_hint="Example Shoe",
+    )
+    assert variant["image_url"] == "/images/example-shoe-8.jpg"
+
+
+@pytest.mark.unit
 def test_normalize_variant_record_does_not_invent_color_size_cross_product() -> None:
     record = {
         "color": "Cloud White / Core White / Green",
@@ -1166,7 +1523,10 @@ def test_normalize_variant_record_keeps_parent_scalar_size_without_variants() ->
 
 @pytest.mark.unit
 def test_variant_choice_container_is_overbroad() -> None:
-    from app.services.extract.variant_choice_traversal import _variant_choice_container_is_overbroad
+    from app.services.extract.variant_choice_traversal import (
+        _variant_choice_container_is_overbroad,
+    )
+
     # A container with both color and size inputs is overbroad
     html = """
     <div class="overbroad-parent">
@@ -1194,4 +1554,3 @@ def test_variant_choice_container_is_overbroad() -> None:
     soup_fine = BeautifulSoup(html_fine, "html.parser")
     container_fine = soup_fine.find(class_="fine-parent")
     assert _variant_choice_container_is_overbroad(container_fine) is False
-

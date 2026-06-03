@@ -50,6 +50,7 @@ _DEFAULT_CHROME_MAJOR_VERSION = 131
 VALID_FETCH_MODES = frozenset(
     {"auto", "http_only", "browser_only", "http_then_browser"}
 )
+BROWSER_CONCURRENCY_EXEMPT_FETCH_MODES = frozenset({"http_only"})
 CELERY_TASK_ID_KEY = "celery_task_id"
 
 
@@ -110,7 +111,7 @@ class CrawlerRuntimeSettings(BaseSettings):
     schema_max_age_days: int = 30
     listing_fallback_fragment_limit: int = 200
     auto_detect_surface: bool = False
-    url_batch_concurrency: int = 20
+    url_batch_concurrency: int = 8
     url_process_timeout_seconds: float = 90.0
     url_process_timeout_buffer_seconds: float = 15.0
     max_url_process_timeout_seconds: float = 600.0
@@ -247,6 +248,7 @@ class CrawlerRuntimeSettings(BaseSettings):
         "--no-first-run",
     )
     browser_use_new_headless: bool = True
+    browser_runtime_context_capacity: int = 4
     browser_runtime_pool_max_entries: int = 8
     browser_runtime_pool_idle_ttl_seconds: int = 300
     browser_proxy_bridge_connect_timeout_seconds: float = 10.0
@@ -357,8 +359,9 @@ class CrawlerRuntimeSettings(BaseSettings):
     cookie_consent_prewait_ms: int = 400
     cookie_consent_postclick_wait_ms: int = 600
     shadow_dom_flatten_max_hosts: int = 100
+    browser_launch_timeout_seconds: float = 25.0
     browser_context_timeout_ms: int = 15000
-    browser_context_slot_timeout_seconds: float = 90.0
+    browser_context_slot_timeout_seconds: float = 20.0
     browser_new_page_timeout_ms: int = 10000
     browser_close_timeout_ms: int = 5000
     browser_render_timeout_seconds: float = 30.0
@@ -441,6 +444,7 @@ class CrawlerRuntimeSettings(BaseSettings):
             "browser_capture_queue_join_timeout_ms",
             "browser_artifact_capture_timeout_ms",
             "adapter_payload_identity_min_token_length",
+            "browser_launch_timeout_seconds",
             "browser_context_slot_timeout_seconds",
         ):
             _require_positive(field_name, getattr(self, field_name))
@@ -486,6 +490,7 @@ class CrawlerRuntimeSettings(BaseSettings):
         )
         for field_name in (
             "platform_detection_html_search_limit",
+            "browser_runtime_context_capacity",
             "browser_runtime_pool_max_entries",
             "browser_proxy_bridge_connect_timeout_seconds",
             "browser_proxy_bridge_auth_timeout_seconds",

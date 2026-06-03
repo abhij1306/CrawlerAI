@@ -438,16 +438,37 @@ def sanitize_detail_long_text_fields(
     *,
     title_hint: str | None = None,
 ) -> None:
-    record_title = clean_text(record.get("title")) or clean_text(title_hint)
+    record_title = clean_text(
+        " ".join(
+            value
+            for value in (clean_text(record.get("title")), clean_text(title_hint))
+            if value
+        )
+    )
+    title_tokens = set(detail_product_text_tokens(clean_text(record.get("title"))))
+    protected_identity_tokens = {
+        token
+        for token in detail_product_text_tokens(clean_text(title_hint))
+        if len(token) >= _token_min_len_chunk
+        and token not in title_tokens
+    }
     for field_name in LONG_TEXT_FIELDS:
         text = text_or_none(record.get(field_name))
         if not text:
             continue
-        cleaned = sanitize_detail_long_text(text, title=record_title)
+        cleaned = sanitize_detail_long_text(
+            text,
+            title=record_title,
+            protected_identity_tokens=protected_identity_tokens,
+        )
         if cleaned:
             record[field_name] = cleaned
         else:
             record.pop(field_name, None)
+    _trim_description_to_identity_hint(
+        record,
+        protected_identity_tokens=protected_identity_tokens,
+    )
     description = clean_text(record.get("description")).casefold()
     specifications = clean_text(record.get("specifications")).casefold()
     if description and specifications and description == specifications:
@@ -493,6 +514,51 @@ def _repair_description_feature_duplicate(record: dict[str, Any]) -> None:
     record.pop("description", None)
 
 
+def _trim_description_to_identity_hint(
+    record: dict[str, Any],
+    *,
+    protected_identity_tokens: set[str],
+) -> None:
+    description = clean_text(record.get("description"))
+    if not description or not protected_identity_tokens:
+        return
+    chunks = [
+        clean_text(chunk)
+        for chunk in re.split(r"(?<=[.!?])\s+|\s+:\s+|\n+", description)
+        if clean_text(chunk)
+    ]
+    if not chunks:
+        return
+    kept: list[str] = []
+    seen_identity = False
+    for chunk in chunks:
+        chunk_tokens = detail_product_text_tokens(chunk)
+        has_identity = bool(protected_identity_tokens & chunk_tokens)
+        if has_identity:
+            seen_identity = True
+            kept.append(chunk)
+            continue
+        if not seen_identity:
+            continue
+        if detail_long_text_chunk_has_product_name_shape(
+            chunk
+        ) and _chunk_has_named_product_signal(chunk):
+            break
+        kept.append(chunk)
+    if kept and len(kept) < len(chunks):
+        record["description"] = " ".join(kept)
+
+
+def _chunk_has_named_product_signal(chunk: str) -> bool:
+    words = re.findall(r"[A-Za-z][A-Za-z'’-]*", str(chunk or ""))
+    capitalized = [
+        word
+        for word in words[1:]
+        if len(word) > 1 and word[:1].isupper() and word.casefold() not in {"this"}
+    ]
+    return len(capitalized) >= 2
+
+
 def _promote_product_details_description(record: dict[str, Any]) -> None:
     description = clean_text(record.get("description"))
     product_details = sanitize_detail_long_text(
@@ -531,7 +597,12 @@ def _drop_redundant_product_details(record: dict[str, Any]) -> None:
         field_sources.pop("product_details", None)
 
 
-def sanitize_detail_long_text(text: str, *, title: str) -> str:
+def sanitize_detail_long_text(
+    text: str,
+    *,
+    title: str,
+    protected_identity_tokens: set[str] | None = None,
+) -> str:
     cleaned_text = _strip_long_text_ui_tail(
         _strip_leading_attribute_blob(_strip_bracket_artifact_noise(clean_text(text)))
     )
@@ -558,6 +629,7 @@ def sanitize_detail_long_text(text: str, *, title: str) -> str:
     ]
     seen: set[str] = set()
     kept: list[str] = []
+    protected_tokens = protected_identity_tokens or set()
     for chunk in chunks:
         lowered = chunk.lower()
         if lowered in seen:
@@ -566,10 +638,13 @@ def sanitize_detail_long_text(text: str, *, title: str) -> str:
             continue
         if any(pattern.search(chunk) for pattern in long_text_disclaimer_patterns):
             continue
-        if detail_long_text_chunk_is_variant_title(chunk, title=title):
-            continue
-        if detail_long_text_chunk_is_other_product(chunk, title=title):
-            continue
+        chunk_tokens = detail_product_text_tokens(chunk)
+        protected_chunk = bool(protected_tokens & chunk_tokens)
+        if not protected_chunk:
+            if detail_long_text_chunk_is_variant_title(chunk, title=title):
+                continue
+            if detail_long_text_chunk_is_other_product(chunk, title=title):
+                continue
         if detail_long_text_chunk_is_variant_size_sequence(chunk):
             continue
         if detail_long_text_chunk_looks_truncated(chunk):

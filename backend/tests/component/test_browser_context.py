@@ -2122,6 +2122,134 @@ async def test_acquisition_shared_browser_runtime_recycles_after_driver_closed_o
     assert new_events == ["launched", "new_context", "context_closed"]
 
 
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_shared_browser_runtime_bounds_hung_browser_launch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    blocker = asyncio.Event()
+    events: list[str] = []
+
+    class FakePlaywrightInstance:
+        def __init__(self) -> None:
+            self.chromium = SimpleNamespace(launch=self._launch)
+
+        async def _launch(self, **kwargs):
+            del kwargs
+            await blocker.wait()
+
+        async def stop(self) -> None:
+            events.append("playwright_stopped")
+
+    class FakePlaywrightManager:
+        async def start(self) -> FakePlaywrightInstance:
+            return FakePlaywrightInstance()
+
+    runtime = acquisition_browser_runtime.SharedBrowserRuntime(max_contexts=1)
+    monkeypatch.setattr(
+        acquisition_browser_pool,
+        "_patchright_async_playwright_factory",
+        lambda: lambda: FakePlaywrightManager(),
+    )
+    monkeypatch.setattr(
+        acquisition_browser_runtime.crawler_runtime_settings,
+        "browser_launch_timeout_seconds",
+        0.05,
+    )
+    monkeypatch.setattr(
+        acquisition_browser_runtime.crawler_runtime_settings,
+        "browser_close_timeout_ms",
+        50,
+    )
+
+    with pytest.raises(asyncio.TimeoutError, match="Timed out launching browser"):
+        async with asyncio.timeout(0.5):
+            await runtime.ensure()
+
+    assert events == ["playwright_stopped"]
+    assert runtime._browser is None
+    assert runtime._playwright is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_shared_browser_runtime_bounds_hung_new_context(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    blocker = asyncio.Event()
+
+    class FakeBrowser:
+        async def new_context(self, **kwargs):
+            del kwargs
+            await blocker.wait()
+
+    runtime = acquisition_browser_runtime.SharedBrowserRuntime(max_contexts=1)
+    runtime._browser = FakeBrowser()
+    runtime._playwright = object()
+
+    monkeypatch.setattr(
+        acquisition_browser_pool,
+        "build_playwright_context_spec",
+        lambda **_: _context_spec(),
+    )
+    monkeypatch.setattr(
+        acquisition_browser_runtime.crawler_runtime_settings,
+        "browser_context_timeout_ms",
+        50,
+    )
+
+    with pytest.raises(asyncio.TimeoutError, match="Timed out opening browser context"):
+        async with asyncio.timeout(0.5):
+            async with runtime.page(allow_storage_state=False):
+                pass
+
+    assert runtime._active_contexts == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_shared_browser_runtime_bounds_hung_new_page_and_closes_context(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    blocker = asyncio.Event()
+    closed: list[str] = []
+
+    class FakeContext:
+        async def new_page(self):
+            await blocker.wait()
+
+        async def close(self) -> None:
+            closed.append("context_closed")
+
+    class FakeBrowser:
+        async def new_context(self, **kwargs):
+            del kwargs
+            return FakeContext()
+
+    runtime = acquisition_browser_runtime.SharedBrowserRuntime(max_contexts=1)
+    runtime._browser = FakeBrowser()
+    runtime._playwright = object()
+
+    monkeypatch.setattr(
+        acquisition_browser_pool,
+        "build_playwright_context_spec",
+        lambda **_: _context_spec(),
+    )
+    monkeypatch.setattr(
+        acquisition_browser_runtime.crawler_runtime_settings,
+        "browser_new_page_timeout_ms",
+        50,
+    )
+
+    with pytest.raises(asyncio.TimeoutError, match="Timed out opening browser page"):
+        async with asyncio.timeout(0.5):
+            async with runtime.page(allow_storage_state=False):
+                pass
+
+    assert closed == ["context_closed"]
+    assert runtime._active_contexts == 0
+
+
 @pytest.mark.component
 def test_browser_runtime_snapshot_reports_runtime_capacity_without_host_cache() -> None:
     snapshot = crawl_fetch_runtime.browser_runtime_snapshot()
@@ -2236,19 +2364,26 @@ async def test_get_browser_runtime_evicts_idle_proxied_runtime_when_pool_is_full
         ("http://proxy-one", "chromium"),
         ("http://proxy-two", "real_chrome"),
     ]
+    # Eviction close now runs in a background task; yield to let it complete.
+    await asyncio.sleep(0)
     assert closed == [("http://proxy-one", "chromium")]
     await acquisition_browser_runtime.shutdown_browser_runtime()
 
 
 @pytest.mark.asyncio
 @pytest.mark.component
-async def test_get_browser_runtime_uses_one_browser_runtime_for_total_capacity(
+async def test_get_browser_runtime_uses_context_capacity_for_runtime_capacity(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
         acquisition_browser_pool.crawler_runtime_settings,
-        "browser_runtime_pool_max_entries",
+        "browser_runtime_context_capacity",
         10,
+    )
+    monkeypatch.setattr(
+        acquisition_browser_pool.crawler_runtime_settings,
+        "browser_runtime_pool_max_entries",
+        1,
     )
 
     await acquisition_browser_runtime.shutdown_browser_runtime()
@@ -2335,6 +2470,8 @@ async def test_get_browser_runtime_evicts_idle_direct_runtime_when_pool_is_full(
 
     assert first is not second
     assert created == [(None, "chromium"), (None, "real_chrome")]
+    # Eviction close now runs in a background task; yield to let it complete.
+    await asyncio.sleep(0)
     assert closed == [(None, "chromium")]
     await acquisition_browser_runtime.shutdown_browser_runtime()
 
@@ -2385,7 +2522,9 @@ async def test_browser_pool_skip_evicts_runtime_reused_after_candidate_snapshot(
 
     try:
         async with acquisition_browser_pool._BROWSER_POOL.lock:
-            await acquisition_browser_pool._evict_idle_browser_runtimes_locked()
+            to_close = acquisition_browser_pool._evict_idle_browser_runtimes_locked()
+        for r in to_close:
+            await r.close()
 
         assert closed == ["second"]
         assert acquisition_browser_pool._BROWSER_POOL.direct["chromium"] is first

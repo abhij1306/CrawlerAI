@@ -24,7 +24,10 @@ from app.services.config.sitemap import (
     SITEMAP_DEFAULT_FILTER_KEYWORD,
     SITEMAP_DEFAULT_MAX_URLS,
 )
-from app.services.config.runtime_settings import crawler_runtime_settings
+from app.services.config.runtime_settings import (
+    BROWSER_CONCURRENCY_EXEMPT_FETCH_MODES,
+    crawler_runtime_settings,
+)
 from app.services.config.design_system import DESIGN_SYSTEM_SURFACE
 from app.services.design_system import process_design_system_run
 from app.services.domain_utils import normalize_domain
@@ -79,7 +82,41 @@ def _parallel_url_concurrency(total_urls: int, settings_view) -> int:
         batch_limit = int(raw_batch_limit)
     except (AttributeError, TypeError, ValueError):
         batch_limit = _DEFAULT_URL_CONCURRENCY
-    return max(1, min(total_urls, system_limit, batch_limit))
+    limits = [total_urls, system_limit, batch_limit]
+    browser_capacity_limit = _browser_capacity_limit(settings_view)
+    if browser_capacity_limit is not None:
+        limits.append(browser_capacity_limit)
+    return max(1, min(limits))
+
+
+def _browser_capacity_limit(settings_view) -> int | None:
+    fetch_mode = _settings_fetch_mode(settings_view)
+    if fetch_mode in BROWSER_CONCURRENCY_EXEMPT_FETCH_MODES:
+        return None
+    try:
+        return max(1, int(crawler_runtime_settings.browser_runtime_context_capacity))
+    except (AttributeError, TypeError, ValueError):
+        return _DEFAULT_URL_CONCURRENCY
+
+
+def _settings_fetch_mode(settings_view) -> str:
+    fetch_profile = None
+    try:
+        fetch_profile_attr = getattr(settings_view, "fetch_profile", None)
+        fetch_profile = (
+            fetch_profile_attr()
+            if callable(fetch_profile_attr)
+            else fetch_profile_attr
+        )
+    except (AttributeError, TypeError, ValueError):
+        fetch_profile = None
+    if fetch_profile is None:
+        getter = getattr(settings_view, "get", None)
+        if callable(getter):
+            fetch_profile = getter("fetch_profile")
+    if not isinstance(fetch_profile, dict):
+        return ""
+    return str(fetch_profile.get("fetch_mode") or "").strip().lower()
 
 
 def _parallel_worker_record_limit(max_records: int, concurrency: int) -> int:

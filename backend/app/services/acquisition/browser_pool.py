@@ -56,16 +56,14 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-
-
-
-
 class BrowserRuntimePool:
     def __init__(self) -> None:
         self.direct: dict[str, SharedBrowserRuntime] = {}
         self.proxied: dict[tuple[str, str], SharedBrowserRuntime] = {}
         self.lock = asyncio.Lock()
         self.popup_guard_tasks: set[asyncio.Task[Any]] = set()
+        self.eviction_cleanup_tasks: set[asyncio.Task[Any]] = set()
+
 
 _BROWSER_POOL = BrowserRuntimePool()
 
@@ -80,6 +78,7 @@ def _patchright_async_playwright_factory():
 
     return patchright_async_playwright
 
+
 def patchright_browser_available() -> bool:
     if not bool(crawler_runtime_settings.browser_patchright_enabled):
         return False
@@ -88,6 +87,7 @@ def patchright_browser_available() -> bool:
     except Exception:
         return False
     return True
+
 
 def _real_chrome_candidate_paths() -> tuple[str, ...]:
     configured = str(
@@ -104,6 +104,7 @@ def _real_chrome_candidate_paths() -> tuple[str, ...]:
         "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
     )
 
+
 def real_chrome_executable_path() -> str | None:
     if not crawler_runtime_settings.browser_real_chrome_enabled:
         return None
@@ -112,8 +113,10 @@ def real_chrome_executable_path() -> str | None:
             return candidate
     return None
 
+
 def real_chrome_browser_available() -> bool:
     return real_chrome_executable_path() is not None
+
 
 def _resolve_browser_binary(engine: str) -> tuple[str | None, str]:
     normalized_engine = _normalize_browser_engine(engine)
@@ -149,9 +152,7 @@ class SharedBrowserRuntime:
         self.max_contexts = max(1, int(max_contexts))
         self.browser_engine = _normalize_browser_engine(browser_engine)
         resolve_binary = _resolve_browser_binary
-        self.executable_path, self.browser_binary = resolve_binary(
-            self.browser_engine
-        )
+        self.executable_path, self.browser_binary = resolve_binary(self.browser_engine)
         self.engine_available = bool(
             (
                 self.browser_engine
@@ -183,14 +184,43 @@ class SharedBrowserRuntime:
             return True
         if self._active_contexts > 0:
             return False
-        max_contexts = int(crawler_runtime_settings.browser_max_contexts_before_recycle)
-        if max_contexts > 0 and self._total_contexts_created >= max_contexts:
+        if self._context_recycle_threshold_reached():
             return True
         max_lifetime = int(crawler_runtime_settings.browser_max_lifetime_seconds)
         if max_lifetime > 0 and self._browser_launched_at > 0:
             if time.monotonic() - self._browser_launched_at >= max_lifetime:
                 return True
         return False
+
+    def _context_recycle_threshold_reached(self) -> bool:
+        max_contexts = int(crawler_runtime_settings.browser_max_contexts_before_recycle)
+        return max_contexts > 0 and self._total_contexts_created >= max_contexts
+
+    async def _yield_slot_until_recycle_window(self, timeout_seconds: float) -> bool:
+        if (
+            self._browser is None
+            or not self._context_recycle_threshold_reached()
+            or self._active_contexts > 0
+        ):
+            return False
+        deadline = time.monotonic() + max(0.0, timeout_seconds)
+        self._semaphore.release()
+        while self._active_contexts > 0 and self._context_recycle_threshold_reached():
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise asyncio.TimeoutError(
+                    "Timed out waiting for browser context slot "
+                    f"after {timeout_seconds:.1f}s"
+                )
+            await asyncio.sleep(min(0.05, remaining))
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise asyncio.TimeoutError(
+                "Timed out waiting for browser context slot "
+                f"after {timeout_seconds:.1f}s"
+            )
+        await asyncio.wait_for(self._semaphore.acquire(), timeout=remaining)
+        return True
 
     async def _ensure(self) -> None:
         if self._browser is not None and not self._should_recycle_browser():
@@ -207,46 +237,60 @@ class SharedBrowserRuntime:
                 await self._close_locked()
             if self._browser is not None:
                 return
-            async_playwright = _async_playwright_manager_for_engine(self.browser_engine)
-            self._playwright = await async_playwright().start()
-            launch_args = [
-                str(value).strip()
-                for value in crawler_runtime_settings.browser_launch_args or ()
-                if str(value).strip()
-            ]
-            launch_headless = _launch_headless_for_engine(self.browser_engine)
-            if (
-                launch_headless
-                and bool(crawler_runtime_settings.browser_use_new_headless)
-                and "--headless=new" not in launch_args
-            ):
-                launch_args.append("--headless=new")
-                launch_headless = False
-            launch_kwargs: dict[str, Any] = {
-                "headless": launch_headless,
-            }
-            if launch_args:
-                launch_kwargs["args"] = launch_args
-            if self.browser_engine == _REAL_CHROME_BROWSER_ENGINE:
-                if not self.executable_path:
-                    raise RuntimeError(
-                        "Real Chrome executable is not available for browser runtime"
-                    )
-                launch_kwargs["executable_path"] = self.executable_path
-                real_chrome_ignore_args = REAL_CHROME_IGNORE_DEFAULT_ARGS
-                ignore_default_args = [
-                    str(arg).strip()
-                    for arg in (real_chrome_ignore_args or ())
-                    if str(arg).strip()
+            try:
+                async_playwright = _async_playwright_manager_for_engine(
+                    self.browser_engine
+                )
+                self._playwright = await _wait_for_browser_step(
+                    async_playwright().start(),
+                    timeout_seconds=_browser_launch_timeout_seconds(),
+                    message="Timed out launching browser driver",
+                )
+                launch_args = [
+                    str(value).strip()
+                    for value in crawler_runtime_settings.browser_launch_args or ()
+                    if str(value).strip()
                 ]
-                if ignore_default_args:
-                    launch_kwargs["ignore_default_args"] = ignore_default_args
-            launch_proxy_config = await self._launch_proxy_config_for_browser()
-            if launch_proxy_config is not None:
-                launch_kwargs["proxy"] = launch_proxy_config
-            self._browser = await self._playwright.chromium.launch(**launch_kwargs)
-            self._browser_launched_at = time.monotonic()
-            self._total_contexts_created = 0
+                launch_headless = _launch_headless_for_engine(self.browser_engine)
+                if (
+                    launch_headless
+                    and bool(crawler_runtime_settings.browser_use_new_headless)
+                    and "--headless=new" not in launch_args
+                ):
+                    launch_args.append("--headless=new")
+                    launch_headless = False
+                launch_kwargs: dict[str, Any] = {
+                    "headless": launch_headless,
+                }
+                if launch_args:
+                    launch_kwargs["args"] = launch_args
+                if self.browser_engine == _REAL_CHROME_BROWSER_ENGINE:
+                    if not self.executable_path:
+                        raise RuntimeError(
+                            "Real Chrome executable is not available for browser runtime"
+                        )
+                    launch_kwargs["executable_path"] = self.executable_path
+                    real_chrome_ignore_args = REAL_CHROME_IGNORE_DEFAULT_ARGS
+                    ignore_default_args = [
+                        str(arg).strip()
+                        for arg in (real_chrome_ignore_args or ())
+                        if str(arg).strip()
+                    ]
+                    if ignore_default_args:
+                        launch_kwargs["ignore_default_args"] = ignore_default_args
+                launch_proxy_config = await self._launch_proxy_config_for_browser()
+                if launch_proxy_config is not None:
+                    launch_kwargs["proxy"] = launch_proxy_config
+                self._browser = await _wait_for_browser_step(
+                    self._playwright.chromium.launch(**launch_kwargs),
+                    timeout_seconds=_browser_launch_timeout_seconds(),
+                    message="Timed out launching browser",
+                )
+                self._browser_launched_at = time.monotonic()
+                self._total_contexts_created = 0
+            except Exception:
+                await self._close_locked()
+                raise
 
     async def ensure(self) -> None:
         """Public browser warm-up API."""
@@ -268,9 +312,17 @@ class SharedBrowserRuntime:
                 raise RuntimeError("Browser runtime failed to initialize")
             context: BrowserContext | None = None
             try:
-                context = await self._browser.new_context(**cast(Any, context_options))
+                context = await _wait_for_browser_step(
+                    self._browser.new_context(**cast(Any, context_options)),
+                    timeout_seconds=_browser_context_timeout_seconds(),
+                    message="Timed out opening browser context",
+                )
                 self._total_contexts_created += 1
-                page = await context.new_page()
+                page = await _wait_for_browser_step(
+                    context.new_page(),
+                    timeout_seconds=_browser_new_page_timeout_seconds(),
+                    message="Timed out opening browser page",
+                )
                 return context, page
             except Exception as exc:
                 last_error = exc
@@ -296,9 +348,7 @@ class SharedBrowserRuntime:
             return dict(self.launch_proxy_config)
         if self._socks5_auth_bridge is None:
             bridge_cls = Socks5AuthBridge
-            self._socks5_auth_bridge = bridge_cls(
-                self._authenticated_socks5_proxy
-            )
+            self._socks5_auth_bridge = bridge_cls(self._authenticated_socks5_proxy)
         bridge_proxy = await self._socks5_auth_bridge.start()
         bridge_proxy_config = _build_browser_proxy_config(bridge_proxy)
         if bridge_proxy_config is None:
@@ -371,12 +421,19 @@ class SharedBrowserRuntime:
             raise RuntimeError("Browser runtime proxy does not match requested proxy")
         self.touch()
         self._update_queue_count(1)
+        slot_timeout_seconds = _browser_context_slot_timeout_seconds()
         slot_wait_started_at = time.perf_counter()
+        slot_deadline = time.monotonic() + slot_timeout_seconds
         try:
             await asyncio.wait_for(
                 self._semaphore.acquire(),
-                timeout=_browser_context_slot_timeout_seconds(),
+                timeout=slot_timeout_seconds,
             )
+            remaining_slot_timeout = max(
+                0.0,
+                slot_deadline - time.monotonic(),
+            )
+            await self._yield_slot_until_recycle_window(remaining_slot_timeout)
             _record_timing(
                 phase_timings_ms,
                 "context_slot_wait_ms",
@@ -388,9 +445,9 @@ class SharedBrowserRuntime:
                 "context_slot_wait_ms",
                 slot_wait_started_at,
             )
-            raise TimeoutError(
+            raise asyncio.TimeoutError(
                 "Timed out waiting for browser context slot "
-                f"after {_browser_context_slot_timeout_seconds():.1f}s"
+                f"after {slot_timeout_seconds:.1f}s"
             ) from exc
         finally:
             self._update_queue_count(-1)
@@ -629,6 +686,7 @@ async def _block_unneeded_route(route: Any) -> None:
             exc_info=True,
         )
 
+
 async def temporary_browser_page(
     *,
     proxy: str,
@@ -647,7 +705,14 @@ async def temporary_browser_page(
     ) as page:
         yield page
 
-async def _evict_idle_browser_runtimes_locked() -> None:
+
+def _evict_idle_browser_runtimes_locked() -> list[SharedBrowserRuntime]:
+    """Identify and remove evictable runtimes from pool dicts.
+
+    Returns the removed runtimes so the caller can close them **outside**
+    the pool lock.  Never awaits teardown — that would block all concurrent
+    browser acquisitions for the duration of browser/playwright shutdown.
+    """
     idle_ttl_seconds = max(
         0, int(crawler_runtime_settings.browser_runtime_pool_idle_ttl_seconds)
     )
@@ -700,6 +765,10 @@ async def _evict_idle_browser_runtimes_locked() -> None:
             break
         remaining.sort(key=lambda item: (item[2].eviction_key()[0], item[3]))
         candidates.append(remaining[0])
+
+    runtimes_to_close: list[SharedBrowserRuntime] = []
+
+    # Pop candidates from dicts synchronously — no awaits while locked.
     for pool_name, key, runtime, candidate_last_used in candidates:
         if pool_name == "direct":
             current_runtime = _BROWSER_POOL.direct.get(str(key))
@@ -721,7 +790,9 @@ async def _evict_idle_browser_runtimes_locked() -> None:
             proxied_key = key if isinstance(key, tuple) and len(key) == 2 else None
             if proxied_key is not None:
                 _BROWSER_POOL.proxied.pop(proxied_key, None)
-        await runtime.close()
+        runtimes_to_close.append(runtime)
+
+    # Strict enforcement of pool size limit.
     while sum(len(pool) for _pool_name, pool in pools) > max_entries:
         eviction_candidates: list[
             tuple[str, str | tuple[str, str], SharedBrowserRuntime, float]
@@ -737,7 +808,9 @@ async def _evict_idle_browser_runtimes_locked() -> None:
                     normalized_key = (str(key[0]), str(key[1]))
                 else:
                     continue
-                eviction_candidates.append((pool_name, normalized_key, runtime, last_used))
+                eviction_candidates.append(
+                    (pool_name, normalized_key, runtime, last_used)
+                )
         if not eviction_candidates:
             break
         eviction_candidates.sort(key=lambda item: (item[2].eviction_key()[0], item[3]))
@@ -751,7 +824,10 @@ async def _evict_idle_browser_runtimes_locked() -> None:
             proxied_key = key if isinstance(key, tuple) and len(key) == 2 else None
             if proxied_key is not None:
                 _BROWSER_POOL.proxied.pop(proxied_key, None)
-        await runtime.close()
+        runtimes_to_close.append(runtime)
+
+    return runtimes_to_close
+
 
 async def get_browser_runtime(
     *,
@@ -770,33 +846,48 @@ async def get_browser_runtime(
         if runtime is not None:
             runtime.touch()
             return runtime
+    runtimes_to_close: list[SharedBrowserRuntime] = []
     async with _BROWSER_POOL.lock:
         if normalized_proxy is None:
             runtime = _BROWSER_POOL.direct.get(normalized_engine)
             if runtime is None:
-                await _evict_idle_browser_runtimes_locked()
+                runtimes_to_close = _evict_idle_browser_runtimes_locked()
                 runtime = _build_browser_runtime_entry(
-                    max_contexts=(
-                        crawler_runtime_settings.browser_runtime_pool_max_entries
-                    ),
+                    max_contexts=_browser_runtime_context_capacity(),
                     browser_engine=normalized_engine,
                 )
                 _BROWSER_POOL.direct[normalized_engine] = runtime
             runtime.touch()
-            return runtime
-        await _evict_idle_browser_runtimes_locked()
-        runtime = _BROWSER_POOL.proxied.get((normalized_engine, normalized_proxy))
-        if runtime is None:
-            runtime = _build_browser_runtime_entry(
-                max_contexts=(
-                    crawler_runtime_settings.browser_runtime_pool_max_entries
-                ),
-                launch_proxy=normalized_proxy,
-                browser_engine=normalized_engine,
-            )
-            _BROWSER_POOL.proxied[(normalized_engine, normalized_proxy)] = runtime
-        runtime.touch()
-        return runtime
+        else:
+            runtimes_to_close = _evict_idle_browser_runtimes_locked()
+            runtime = _BROWSER_POOL.proxied.get((normalized_engine, normalized_proxy))
+            if runtime is None:
+                runtime = _build_browser_runtime_entry(
+                    max_contexts=_browser_runtime_context_capacity(),
+                    launch_proxy=normalized_proxy,
+                    browser_engine=normalized_engine,
+                )
+                _BROWSER_POOL.proxied[(normalized_engine, normalized_proxy)] = runtime
+            runtime.touch()
+    # Teardown evicted runtimes in background — never block the pool lock on
+    # browser/playwright shutdown (can take several seconds each).
+    for stale_runtime in runtimes_to_close:
+        task = asyncio.create_task(_close_evicted_runtime(stale_runtime))
+        _BROWSER_POOL.eviction_cleanup_tasks.add(task)
+        task.add_done_callback(_BROWSER_POOL.eviction_cleanup_tasks.discard)
+    return runtime
+
+
+async def _close_evicted_runtime(runtime: SharedBrowserRuntime) -> None:
+    """Best-effort teardown of an evicted runtime in the background."""
+    try:
+        await runtime.close()
+    except Exception:
+        logger.warning(
+            "Background eviction cleanup failed for %s runtime",
+            getattr(runtime, "browser_engine", "unknown"),
+            exc_info=True,
+        )
 
 
 def _build_browser_runtime_entry(
@@ -814,6 +905,12 @@ def _build_browser_runtime_entry(
 
 
 async def shutdown_browser_runtime() -> None:
+    # Drain any in-flight eviction cleanup tasks first so we don't orphan
+    # browser processes that are mid-teardown from a recent eviction.
+    pending_eviction_tasks = list(_BROWSER_POOL.eviction_cleanup_tasks)
+    _BROWSER_POOL.eviction_cleanup_tasks.clear()
+    if pending_eviction_tasks:
+        await asyncio.gather(*pending_eviction_tasks, return_exceptions=True)
     async with _BROWSER_POOL.lock:
         runtimes = [
             runtime
@@ -860,10 +957,7 @@ def browser_runtime_snapshot() -> dict[str, int | bool]:
         if runtime is not None
     ]
     if not runtimes:
-        max_size = max(
-            1,
-            int(crawler_runtime_settings.browser_runtime_pool_max_entries),
-        )
+        max_size = _browser_runtime_context_capacity()
         return {
             "ready": False,
             "size": 0,
@@ -896,6 +990,7 @@ def browser_runtime_snapshot() -> dict[str, int | bool]:
         ),
     }
 
+
 def _log_shutdown_task_result(task: asyncio.Task[None]) -> None:
     try:
         task.result()
@@ -904,11 +999,20 @@ def _log_shutdown_task_result(task: asyncio.Task[None]) -> None:
     except Exception:
         logger.exception("Browser runtime shutdown task failed")
 
+
 def _browser_context_timeout_seconds() -> float:
     return max(
         0.1,
         float(crawler_runtime_settings.browser_context_timeout_ms) / 1000,
     )
+
+
+def _browser_launch_timeout_seconds() -> float:
+    return max(
+        0.1,
+        float(crawler_runtime_settings.browser_launch_timeout_seconds),
+    )
+
 
 def _browser_context_slot_timeout_seconds() -> float:
     return max(
@@ -916,11 +1020,37 @@ def _browser_context_slot_timeout_seconds() -> float:
         float(crawler_runtime_settings.browser_context_slot_timeout_seconds),
     )
 
+
+def _browser_new_page_timeout_seconds() -> float:
+    return max(
+        0.1,
+        float(crawler_runtime_settings.browser_new_page_timeout_ms) / 1000,
+    )
+
+
 def _browser_close_timeout_seconds() -> float:
     return max(
         0.1,
         float(crawler_runtime_settings.browser_close_timeout_ms) / 1000,
     )
+
+
+def _browser_runtime_context_capacity() -> int:
+    return max(1, int(crawler_runtime_settings.browser_runtime_context_capacity))
+
+
+async def _wait_for_browser_step(
+    awaitable: Any,
+    *,
+    timeout_seconds: float,
+    message: str,
+) -> Any:
+    bounded_timeout = max(0.1, float(timeout_seconds))
+    try:
+        return await asyncio.wait_for(awaitable, timeout=bounded_timeout)
+    except asyncio.TimeoutError as exc:
+        raise asyncio.TimeoutError(f"{message} after {bounded_timeout:.1f}s") from exc
+
 
 async def _close_browser_context_safely(context: Any) -> None:
     try:
@@ -955,6 +1085,7 @@ block_unneeded_route = _block_unneeded_route
 real_chrome_candidate_paths = _real_chrome_candidate_paths
 resolve_browser_binary = _resolve_browser_binary
 patchright_async_playwright_factory = _patchright_async_playwright_factory
+
 
 def _snapshot_count(snapshot: dict[str, object], *keys: str) -> int:
     for key in keys:

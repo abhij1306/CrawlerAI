@@ -89,8 +89,15 @@ class Settings(BaseSettings):
     logfire_service_name: str = "invoro-backend"
     logfire_environment: str = ""
     logfire_capture_headers: bool = False
+    logfire_send_to_logfire: bool | Literal["if-token-present"] = Field(
+        default="if-token-present",
+        validation_alias=AliasChoices(
+            "LOGFIRE_SEND_TO_LOGFIRE",
+            "logfire_send_to_logfire",
+        ),
+    )
     logfire_enabled_in_tests: bool = False
-    system_max_concurrent_urls: int = 20
+    system_max_concurrent_urls: int = 8
     llm_cache_ttl_seconds: int = 86400
     default_admin_email: str = Field(
         default="",

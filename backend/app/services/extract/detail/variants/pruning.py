@@ -12,6 +12,8 @@ from urllib.parse import urlparse
 
 from app.services.config.extraction_rules import (
     AMAZON_VARIANT_OPTION_VALUE_NOISE_PHRASES,
+    BROKEN_FETCH_IMAGE_PATH_PATTERN,
+    LOW_RES_SWATCH_IMAGE_PATH_PATTERN,
     SCALAR_FIELD_MAX_OPTION_TOKENS,
     VARIANT_OPTION_LABEL_MAX_WORDS,
 )
@@ -22,6 +24,7 @@ from app.services.shared.field_coerce import (
     clean_text,
     text_or_none,
 )
+from app.services.shared.image_utils import query_dimension_is_tiny
 from app.services.field_url_normalization import same_site
 from app.services.dom.selector_engine import upgrade_low_resolution_image_url
 from app.services.extract.variant_axis import (
@@ -56,6 +59,13 @@ _amazon_variant_option_value_noise_phrases = frozenset(
     for value in tuple(AMAZON_VARIANT_OPTION_VALUE_NOISE_PHRASES or ())
     if clean_text(value)
 )
+_BROKEN_FETCH_IMAGE_PATH_RE = re.compile(
+    getattr(
+        BROKEN_FETCH_IMAGE_PATH_PATTERN, "pattern", BROKEN_FETCH_IMAGE_PATH_PATTERN
+    ),
+    re.I,
+)
+_LOW_RES_SWATCH_IMAGE_PATH_RE = re.compile(str(LOW_RES_SWATCH_IMAGE_PATH_PATTERN), re.I)
 
 
 def _sanitize_detail_variant_payload(
@@ -73,6 +83,9 @@ def _sanitize_detail_variant_payload(
         cleaned_variants.append(variant)
     if _detail_variant_cluster_is_low_signal_numeric_only(cleaned_variants):
         cleaned_variants = []
+    _drop_size_values_that_are_variant_colors(cleaned_variants)
+    cleaned_variants = _drop_color_only_rows_when_sized_color_exists(cleaned_variants)
+    cleaned_variants = _drop_low_signal_same_url_option_rows(cleaned_variants)
     if cleaned_variants:
         record["variants"] = cleaned_variants
         record["variant_count"] = len(cleaned_variants)
@@ -155,6 +168,13 @@ def sanitize_variant_row(
             continue
         variant[field_name] = cleaned_value
     variant_url = text_or_none(variant.get("url"))
+    if variant_url and _variant_url_is_child_product_for_adult_parent(
+        variant_url,
+        identity_url=identity_url,
+        title_hint=title_hint,
+        variant=variant,
+    ):
+        return False
     if (
         variant_url
         and same_site(identity_url, variant_url)
@@ -193,7 +213,14 @@ def sanitize_variant_row(
         normalized_image = upgrade_low_resolution_image_url(image_url)
         if normalized_image.lower().startswith("http://"):
             normalized_image = "https://" + normalized_image[7:]
-        variant["image_url"] = normalized_image
+        parsed_image = urlparse(normalized_image)
+        if _BROKEN_FETCH_IMAGE_PATH_RE.fullmatch(parsed_image.path or "") or (
+            _LOW_RES_SWATCH_IMAGE_PATH_RE.search(normalized_image)
+            and query_dimension_is_tiny(parsed_image.query)
+        ):
+            variant.pop("image_url", None)
+        else:
+            variant["image_url"] = normalized_image
     if axis_value_rejected and not _variant_has_public_axis_or_identity_signal(variant):
         return False
     return any(
@@ -272,6 +299,12 @@ def _cross_asin_variant_url_can_be_option(
     variant_codes = detail_identity_codes_from_url(variant_url)
     if not (requested_codes and variant_codes and requested_codes != variant_codes):
         return False
+    option_values = variant.get("option_values")
+    has_color_axis = bool(clean_text(variant.get("color"))) or (
+        isinstance(option_values, dict) and bool(clean_text(option_values.get("color")))
+    )
+    if has_color_axis and _variant_has_public_axis_or_identity_signal(variant):
+        return True
     return _cross_product_variant_url_can_be_option(
         variant,
         variant_url=variant_url,
@@ -402,6 +435,153 @@ def _detail_variant_cluster_is_low_signal_numeric_only(
 ) -> bool:
     return bool(variants) and all(
         _detail_variant_row_is_low_signal_numeric_only(variant) for variant in variants
+    )
+
+
+def _drop_low_signal_same_url_option_rows(
+    variants: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    if len(variants) < 2:
+        return variants
+    urls = {text_or_none(variant.get("url")) for variant in variants}
+    urls.discard(None)
+    if len(urls) != 1:
+        return variants
+    stable_fields = (
+        "sku",
+        "variant_id",
+        "barcode",
+        "image_url",
+        "price",
+        "original_price",
+        "stock_quantity",
+        "size",
+    )
+    if any(
+        text_or_none(variant.get(field_name))
+        for variant in variants
+        for field_name in stable_fields
+    ):
+        return variants
+    axis_fields = ("color", "style", "scent", "material")
+    if not all(
+        any(_variant_axis_value(variant, field_name) for field_name in axis_fields)
+        for variant in variants
+    ):
+        return variants
+    return []
+
+
+def _variant_axis_value(variant: dict[str, Any], field_name: str) -> str | None:
+    value = text_or_none(variant.get(field_name))
+    if value:
+        return value
+    option_values = variant.get("option_values")
+    if isinstance(option_values, dict):
+        return text_or_none(option_values.get(field_name))
+    return None
+
+
+def _drop_size_values_that_are_variant_colors(variants: list[dict[str, Any]]) -> None:
+    color_values = {
+        clean_text(row.get("color")).casefold()
+        for row in variants
+        if clean_text(row.get("color"))
+    }
+    if not color_values:
+        return
+    for row in variants:
+        size = clean_text(row.get("size"))
+        if not size or _variant_size_value_looks_real(size):
+            continue
+        if size.casefold() in color_values:
+            row.pop("size", None)
+            options = row.get("option_values")
+            if (
+                isinstance(options, dict)
+                and clean_text(options.get("size")).casefold() in color_values
+            ):
+                options.pop("size", None)
+                if not options:
+                    row.pop("option_values", None)
+
+
+def _drop_color_only_rows_when_sized_color_exists(
+    variants: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    sized_colors = {
+        clean_text(row.get("color")).casefold()
+        for row in variants
+        if clean_text(row.get("size")) and clean_text(row.get("color"))
+    }
+    if not sized_colors:
+        return variants
+    cleaned: list[dict[str, Any]] = []
+    for row in variants:
+        color = clean_text(row.get("color")).casefold()
+        if (
+            color
+            and color in sized_colors
+            and not clean_text(row.get("size"))
+            and not any(
+                text_or_none(row.get(field_name))
+                for field_name in (
+                    "sku",
+                    "variant_id",
+                    "barcode",
+                    "image_url",
+                    "price",
+                    "original_price",
+                    "stock_quantity",
+                )
+            )
+        ):
+            continue
+        cleaned.append(row)
+    return cleaned
+
+
+def _variant_size_value_looks_real(value: str) -> bool:
+    cleaned = clean_text(value)
+    if not cleaned:
+        return False
+    return bool(
+        re.fullmatch(r"\d+(?:\.\d+)?(?:[A-Z])?", cleaned, re.I)
+        or re.fullmatch(r"(?:XXS|XS|S|M|L|XL|XXL|XXXL|\d+XL)", cleaned, re.I)
+    )
+
+
+def _variant_url_is_child_product_for_adult_parent(
+    variant_url: str,
+    *,
+    identity_url: str,
+    title_hint: str,
+    variant: dict[str, Any],
+) -> bool:
+    parent_text = clean_text(f"{identity_url} {title_hint}").casefold()
+    if not re.search(r"\b(?:men|mens|women|womens)\b", parent_text):
+        return False
+    if re.search(
+        r"\b(?:kid|kids|child|children|toddler|grade school|pre school|preschool)\b",
+        parent_text,
+    ):
+        return False
+    candidate_text = clean_text(
+        " ".join(
+            str(value or "")
+            for value in (
+                variant_url,
+                variant.get("title"),
+                variant.get("color"),
+                variant.get("option_values"),
+            )
+        )
+    ).casefold()
+    return bool(
+        re.search(
+            r"\b(?:grade school|pre school|preschool|toddler|infant|little kids?|kids?)\b",
+            candidate_text,
+        )
     )
 
 

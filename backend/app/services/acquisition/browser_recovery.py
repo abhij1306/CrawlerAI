@@ -83,12 +83,19 @@ async def recover_browser_challenge(
         remaining_seconds = deadline - time.perf_counter()
         if remaining_seconds <= 0:
             return None
+        task = asyncio.create_task(awaitable_factory())
         try:
-            return await asyncio.wait_for(
-                awaitable_factory(),
-                timeout=remaining_seconds,
-            )
+            return await asyncio.wait_for(task, timeout=remaining_seconds)
+        except asyncio.CancelledError:
+            task.cancel()
+            with suppress(asyncio.CancelledError):
+                await task
+            raise
         except asyncio.TimeoutError:
+            if not task.done():
+                task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await task
             return None
 
     while time.perf_counter() < deadline:

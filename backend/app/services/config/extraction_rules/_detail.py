@@ -208,6 +208,41 @@ DETAIL_TRACKING_TOKEN_PATTERN = r"_[a-z][a-z0-9_]{2,}"  # nosec B105
 SMALL_NUMERIC_PATTERN = r"\d{1,2}"
 TRACKING_PIXEL_PATTERN = r"_[a-z]+"
 COLOR_KEYWORD_PATTERN = r"\b(?:color|colour|black|blue|brown|green|grey|gray|orange|pink|purple|red|white|yellow)\b"
+DETAIL_QUOTED_COLOR_PATTERN = (
+    r"['\"](?P<color>[A-Z][A-Za-z]+(?:\s+[A-Z][A-Za-z]+){0,2})['\"]"
+    r"\s+(?:canvas|cotton|denim|leather|mesh|nylon|suede|upper|wool)\b"
+)
+DETAIL_BRAND_TITLE_PREFIX_MAX_WORDS = 3
+DETAIL_BRAND_PREFIX_CONTINUATION_TOKENS = frozenset({"hilfiger", "originals"})
+DETAIL_BRAND_TITLE_SUFFIX_PATTERN = r"\s[-\u2013\u2014]\s(?P<brand>[A-Z][A-Za-z0-9&'.\-\s]{1,40})$"
+DETAIL_BRAND_HOST_FALLBACKS = {
+    "aesop": "Aesop",
+    "converse": "Converse",
+}
+DETAIL_BRAND_DESCRIPTION_PATTERNS = (
+    r"\bfrom\s+(?P<brand>[A-Z][A-Za-z0-9&'.-]{2,}(?:\s+[A-Z][A-Za-z0-9&'.-]{2,}){0,2})['’]s\b",
+    r"\b(?P<brand>[A-Z][A-Za-z0-9&'.-]{2,}(?:\s+[A-Z][A-Za-z0-9&'.-]{2,}){0,2})['’]s\s+upcoming\b",
+)
+DETAIL_BRAND_SUFFIX_REJECT_TOKENS = frozenset(
+    {"lifewear", "vintage watches", "official store"}
+)
+DETAIL_BRAND_PREFIX_STOP_TOKENS = frozenset(
+    {
+        "air",
+        "boho",
+        "classic",
+        "gg",
+        "going",
+        "italian",
+        "mens",
+        "men",
+        "pragmata",
+        "tobago",
+        "vitamin",
+        "womens",
+        "women",
+    }
+)
 GIF_BASE64_PREFIX = "r0lgodlh"
 URL_DETECTION_TOKENS = ("g_auto", "f_auto", "q_auto", "c_fill")
 YEAR_SLUG_PATTERN = r"(?:19|20)\d{2}"
@@ -514,6 +549,14 @@ __all__ = [
     "SMALL_NUMERIC_PATTERN",
     "TRACKING_PIXEL_PATTERN",
     "COLOR_KEYWORD_PATTERN",
+    "DETAIL_QUOTED_COLOR_PATTERN",
+    "DETAIL_BRAND_TITLE_PREFIX_MAX_WORDS",
+    "DETAIL_BRAND_PREFIX_CONTINUATION_TOKENS",
+    "DETAIL_BRAND_TITLE_SUFFIX_PATTERN",
+    "DETAIL_BRAND_HOST_FALLBACKS",
+    "DETAIL_BRAND_DESCRIPTION_PATTERNS",
+    "DETAIL_BRAND_SUFFIX_REJECT_TOKENS",
+    "DETAIL_BRAND_PREFIX_STOP_TOKENS",
     "GIF_BASE64_PREFIX",
     "URL_DETECTION_TOKENS",
     "YEAR_SLUG_PATTERN",

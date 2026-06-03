@@ -21,6 +21,7 @@ from app.services.config._export_data import (
 )
 from app.services.config.runtime_settings import crawler_runtime_settings
 from app.services.config.runtime_settings import CrawlerRuntimeSettings
+from app.core.config import Settings
 from app.services.exceptions import CrawlerConfigurationError
 from app.services.platform_policy import resolve_platform_runtime_policy
 
@@ -114,6 +115,10 @@ def test_extraction_rules_export_keys_cover_module_references() -> None:
     assert "TRACKING_PRESERVED_SHORT_QUERY_KEYS" in extraction_rules.__all__
     assert "LISTING_EDITORIAL_URL_TOKENS" in extraction_rules.__all__
     assert "LISTING_EDITORIAL_PATH_SEGMENTS" in extraction_rules.__all__
+    assert "DETAIL_BRAND_PREFIX_CONTINUATION_TOKENS" in extraction_rules.__all__
+    assert extraction_rules.DETAIL_BRAND_PREFIX_CONTINUATION_TOKENS == frozenset(
+        {"hilfiger", "originals"}
+    )
     assert set(exports) <= set(extraction_rules.__all__)
     try:
         source_tiers = extraction_rules.SOURCE_TIERS
@@ -186,6 +191,29 @@ def test_runtime_settings_allow_zero_accessibility_snapshot_timeout() -> None:
     settings = CrawlerRuntimeSettings(browser_accessibility_snapshot_timeout_seconds=0)
 
     assert settings.browser_accessibility_snapshot_timeout_seconds == 0
+
+
+@pytest.mark.regression
+def test_parallel_runtime_defaults_stay_bounded_without_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    for env_name in (
+        "CRAWLER_RUNTIME_URL_BATCH_CONCURRENCY",
+        "CRAWLER_RUNTIME_BROWSER_RUNTIME_POOL_MAX_ENTRIES",
+        "SYSTEM_MAX_CONCURRENT_URLS",
+        "system_max_concurrent_urls",
+    ):
+        monkeypatch.delenv(env_name, raising=False)
+    runtime = CrawlerRuntimeSettings(_env_file=None)
+    app_settings = Settings(
+        _env_file=None,
+        jwt_secret_key="0123456789abcdef0123456789abcdef",
+        encryption_key="abcdef0123456789abcdef0123456789",
+    )
+
+    assert runtime.url_batch_concurrency <= 8
+    assert runtime.browser_runtime_pool_max_entries <= 8
+    assert app_settings.system_max_concurrent_urls <= 8
 
 
 @pytest.mark.regression

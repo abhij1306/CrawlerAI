@@ -129,6 +129,8 @@ def coerce_brand_text(value: object) -> str | None:
     if not text:
         return None
     text = re.sub(r"^\s*\d+\s+(?=[A-Za-z])", "", text).strip()
+    if re.fullmatch(r"\d{2,3}", text):
+        return text
     if not text or not re.search(r"[A-Za-z]", text):
         return None
     parsed = urlparse(text)

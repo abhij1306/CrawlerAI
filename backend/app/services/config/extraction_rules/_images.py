@@ -55,6 +55,16 @@ CDN_IMAGE_PATH_SUFFIX_PATTERN = (
     r"|/t_(?:default|thumbnail|pdp_\d+_v\d+|web_pdp_\d+_v\d+)"
     r")(?=\.[a-z0-9]+$|/|$)"
 )
+SHOPIFY_IMAGE_FILE_PATH_PATTERN = (
+    r"(?:^|/)(?:cdn/shop/files|s/files/(?:[^/]+/)*files)/(?P<filename>[^/?#]+)(?:[?#].*)?$"
+)
+BROKEN_FETCH_IMAGE_PATH_PATTERN = (
+    r"/image/(?:fetch|upload)/"
+    r"(?:[a-z]{1,5}_[a-z0-9:.,-]+|[a-z]+:[a-z0-9:.,-]+|[a-z]+)"
+    r"(?:[,/](?:[a-z]{1,5}_[a-z0-9:.,-]+|[a-z]+:[a-z0-9:.,-]+|[a-z]+))*/*$"
+)
+LOW_RES_SWATCH_IMAGE_PATH_PATTERN = r"(?:^|/)[^/?#]+_[a-z0-9]{3}_s(?:$|\?)"
+DETAIL_IMAGE_PRODUCT_CODE_PATTERN = r"(?:^|/)([A-Z]{2,4}\d{2,6})(?:/|[_\-.])"
 AMAZON_IMAGE_CDN_HOSTS = frozenset(
     {"m.media-amazon.com", "images-na.ssl-images-amazon.com"}
 )

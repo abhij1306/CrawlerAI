@@ -14,8 +14,11 @@ from urllib.parse import unquote, urlparse
 
 
 from app.services.config.extraction_rules import (
+    BROKEN_FETCH_IMAGE_PATH_PATTERN,
+    DETAIL_IMAGE_PRODUCT_CODE_PATTERN,
     IMAGE_FAMILY_NOISE_TOKENS,
     IMAGE_PATH_TOKENS,
+    LOW_RES_SWATCH_IMAGE_PATH_PATTERN,
 )
 from app.services.shared.field_coerce import (
     absolute_url,
@@ -23,6 +26,7 @@ from app.services.shared.field_coerce import (
     extract_urls,
     text_or_none,
 )
+from app.services.shared.image_utils import query_dimension_is_tiny
 from app.services.field_url_normalization import same_site
 from app.services.dom.selector_engine import (
     dedupe_image_urls,
@@ -43,6 +47,23 @@ from app.services.config.detail_extraction_constants import (
 )
 
 logger = logging.getLogger(__name__)
+_BROKEN_FETCH_IMAGE_PATH_RE = re.compile(
+    getattr(
+        BROKEN_FETCH_IMAGE_PATH_PATTERN, "pattern", BROKEN_FETCH_IMAGE_PATH_PATTERN
+    ),
+    re.I,
+)
+_LOW_RES_SWATCH_IMAGE_PATH_RE = re.compile(
+    getattr(
+        LOW_RES_SWATCH_IMAGE_PATH_PATTERN, "pattern", LOW_RES_SWATCH_IMAGE_PATH_PATTERN
+    ),
+    re.I,
+)
+_DETAIL_IMAGE_PRODUCT_CODE_RE = re.compile(
+    getattr(
+        DETAIL_IMAGE_PRODUCT_CODE_PATTERN, "pattern", DETAIL_IMAGE_PRODUCT_CODE_PATTERN
+    )
+)
 
 
 def backfill_parent_image_from_variants(record: dict[str, Any]) -> None:
@@ -79,9 +100,13 @@ def _sanitize_detail_images(record: dict[str, Any], *, identity_url: str) -> Non
         record.pop("image_url", None)
         record.pop("additional_images", None)
         return
-    primary_image = cleaned[0]
+    primary_image = _preferred_primary_image(cleaned, record=record) or cleaned[0]
     family_cleaned: list[str] = []
-    for normalized_image in cleaned:
+    ordered_cleaned = [
+        primary_image,
+        *[image for image in cleaned if image != primary_image],
+    ]
+    for normalized_image in ordered_cleaned:
         if not detail_image_matches_primary_family(
             normalized_image,
             primary_image=primary_image,
@@ -162,8 +187,16 @@ def _detail_image_candidate_is_usable(url: str, *, identity_url: str) -> bool:
     parsed = urlparse(url)
     if parsed.scheme not in {"http", "https"}:
         return False
+    if not parsed.netloc:
+        return False
     path = str(parsed.path or "").strip()
     if not path or path == "/":
+        return False
+    if _BROKEN_FETCH_IMAGE_PATH_RE.fullmatch(path):
+        return False
+    if _LOW_RES_SWATCH_IMAGE_PATH_RE.search(url) and query_dimension_is_tiny(
+        parsed.query
+    ):
         return False
     lowered = url.lower()
     if "base64," in lowered or lowered.startswith("data:"):
@@ -252,8 +285,24 @@ def detail_image_matches_primary_family(
 ) -> bool:
     if url == primary_image:
         return True
+    primary_product_code = _detail_image_product_code(primary_image)
+    candidate_product_code = _detail_image_product_code(url)
+    if (
+        primary_product_code
+        and candidate_product_code
+        and primary_product_code != candidate_product_code
+    ):
+        return False
     primary_tokens = _detail_image_family_tokens(primary_image)
     candidate_tokens = _detail_image_family_tokens(url)
+    title_tokens = _semantic_detail_identity_tokens(title)
+    if primary_product_code and not candidate_product_code:
+        if (
+            title_tokens
+            and candidate_tokens
+            and len(title_tokens & candidate_tokens) >= min(2, len(title_tokens))
+        ):
+            return True
     # Reject when both filenames carry long alphabetic distinguishing tokens
     # that share a prefix but disagree on the tail (different colorway slugs
     # under the same family code, e.g. ``therockerjetblack`` vs
@@ -262,9 +311,13 @@ def detail_image_matches_primary_family(
         primary_tokens, candidate_tokens
     ):
         return False
-    if primary_tokens and candidate_tokens and primary_tokens & candidate_tokens:
+    if (
+        primary_tokens
+        and candidate_tokens
+        and primary_tokens & candidate_tokens
+        and not (primary_product_code and not candidate_product_code)
+    ):
         return True
-    title_tokens = _semantic_detail_identity_tokens(title)
     if (
         title_tokens
         and candidate_tokens
@@ -315,10 +368,8 @@ def _detail_image_family_tokens_disagree_on_colorway(
             if len(candidate_alpha_tail) < 6:
                 continue
             shared = _shared_prefix_length(primary_alpha_tail, candidate_alpha_tail)
-            if (
-                shared >= 6
-                and shared
-                < min(len(primary_alpha_tail), len(candidate_alpha_tail))
+            if shared >= 6 and shared < min(
+                len(primary_alpha_tail), len(candidate_alpha_tail)
             ):
                 return True
     return False
@@ -445,3 +496,55 @@ def _detail_image_media_code(url: str) -> str | None:
     if match is not None:
         return match.group(1)
     return None
+
+
+def _detail_image_product_code(url: str) -> str | None:
+    path = unquote(urlparse(str(url or "")).path)
+    match = _DETAIL_IMAGE_PRODUCT_CODE_RE.search(path)
+    if match is not None:
+        return match.group(1).upper()
+    return None
+
+
+def _preferred_primary_image(
+    images: list[str],
+    *,
+    record: dict[str, Any],
+) -> str | None:
+    color = clean_text(record.get("color"))
+    if not color:
+        return None
+    candidates = _color_code_candidates(color)
+    if not candidates:
+        return None
+    for image in images:
+        path = unquote(urlparse(image).path).upper()
+        if any(
+            re.search(rf"(?:^|[_\-/]){re.escape(code)}(?:[_\-.]|$)", path)
+            for code in candidates
+        ):
+            return image
+    return None
+
+
+def _color_code_candidates(color: str) -> tuple[str, ...]:
+    codes: list[str] = []
+    words = re.findall(r"[A-Za-z]+", color)
+    for word in words:
+        upper = word.upper()
+        if len(upper) >= 3:
+            codes.append(upper[:3])
+        consonants = re.sub(r"[AEIOU]", "", upper[1:])
+        if len(upper) >= 2 and consonants:
+            codes.append((upper[0] + consonants)[:3])
+    initials = "".join(word[0].upper() for word in words)
+    if len(initials) >= 2:
+        codes.append(initials[:4])
+    seen: set[str] = set()
+    merged: list[str] = []
+    for code in codes:
+        if len(code) < 2 or code in seen:
+            continue
+        seen.add(code)
+        merged.append(code)
+    return tuple(merged)

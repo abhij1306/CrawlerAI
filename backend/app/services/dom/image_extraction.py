@@ -22,6 +22,7 @@ from app.services.config.extraction_rules import (
     NON_PRODUCT_PROVIDER_HINTS,
     PRODUCT_GALLERY_CONTEXT_HINTS,
     SEMANTIC_SECTION_NOISE,
+    SHOPIFY_IMAGE_FILE_PATH_PATTERN,
     UNRESOLVED_TEMPLATE_URL_TOKENS,
 )
 from app.services.config.surface_hints import detail_path_hints
@@ -55,7 +56,7 @@ _CDN_IMAGE_QUERY_KEY_REGEXES = tuple(
     if str(pattern).strip()
 )
 _CDN_IMAGE_PATH_SUFFIX_RE = regex_lib.compile(
-    str(CDN_IMAGE_PATH_SUFFIX_PATTERN),
+    getattr(CDN_IMAGE_PATH_SUFFIX_PATTERN, "pattern", CDN_IMAGE_PATH_SUFFIX_PATTERN),
     regex_lib.I,
 )
 _AMAZON_IMAGE_CDN_HOSTS = frozenset(
@@ -71,6 +72,12 @@ _AMAZON_IMAGE_TRANSFORM_DIMENSION_RE = re.compile(
 )
 _IMAGE_PATH_DIMENSION_RE = re.compile(
     r"(?:[/?_=-])(?:w|wid|width|h|hei|height|sl|sx|sy|us)?[_=-]?(\d{2,4})(?:x(\d{2,4}))?",
+    re.I,
+)
+_SHOPIFY_IMAGE_FILE_PATH_RE = re.compile(
+    getattr(
+        SHOPIFY_IMAGE_FILE_PATH_PATTERN, "pattern", SHOPIFY_IMAGE_FILE_PATH_PATTERN
+    ),
     re.I,
 )
 _DEMANDWARE_IMAGE_PATH_RE = re.compile(
@@ -147,6 +154,14 @@ def canonical_image_url(url: str) -> str:
         if not _is_cdn_image_query_key(str(key or "").strip())
     ]
     normalized_path = _canonical_image_path(parsed.path or "")
+    shopify_match = _SHOPIFY_IMAGE_FILE_PATH_RE.search(normalized_path)
+    if shopify_match is not None:
+        parsed = parsed._replace(
+            scheme="https",
+            netloc=parsed.netloc or "shopify-cdn",
+            path=f"/files/{shopify_match.group('filename')}",
+        )
+        normalized_path = parsed.path
     return urlunparse(
         parsed._replace(
             path=normalized_path,
@@ -260,11 +275,9 @@ def upgrade_low_resolution_image_url(url: str) -> str:
     transform_dimension_match = _AMAZON_IMAGE_TRANSFORM_DIMENSION_RE.search(
         parsed.path or ""
     )
-    if (
-        transform_dimension_match is not None
-        and int(transform_dimension_match.group(1))
-        > int(AMAZON_IMAGE_LOW_RES_MAX_DIMENSION)
-    ):
+    if transform_dimension_match is not None and int(
+        transform_dimension_match.group(1)
+    ) > int(AMAZON_IMAGE_LOW_RES_MAX_DIMENSION):
         return normalized_url
     path = _AMAZON_IMAGE_LOW_RES_SUFFIX_RE.sub("", parsed.path or "")
     return urlunparse(parsed._replace(path=path))
@@ -329,7 +342,9 @@ def extract_page_images(
                 continue
             if is_garbage_image_candidate(node, candidate):
                 continue
-            scored_values.append((gallery_image_score(node, candidate), index, candidate))
+            scored_values.append(
+                (gallery_image_score(node, candidate), index, candidate)
+            )
     ordered = [
         candidate
         for _score, _index, candidate in sorted(

@@ -1,7 +1,9 @@
 """Shared field coercion, normalization, and public-record shaping helpers."""
+
 from __future__ import annotations
 
 import ast
+import json
 import re
 from typing import Any, cast
 from app.services.extraction_html_helpers import html_to_text
@@ -37,7 +39,10 @@ from app.services.config.field_mappings import (
     URL_FIELD,
     WEIGHT_FIELD,
 )
-from app.services.config.design_system import DESIGN_SYSTEM_PUBLIC_FIELDS, DESIGN_SYSTEM_SURFACE
+from app.services.config.design_system import (
+    DESIGN_SYSTEM_PUBLIC_FIELDS,
+    DESIGN_SYSTEM_SURFACE,
+)
 from app.services.config.public_record_policy import (
     PUBLIC_RECORD_ECOMMERCE_DROPPED_FIELDS,
     PUBLIC_RECORD_LEGACY_VARIANT_FIELDS,
@@ -173,7 +178,9 @@ def _surface_field_type_error(
     value: object,
     scalar_list_fields: set[str],
 ) -> str | None:
-    if normalized_field in STRUCTURED_OBJECT_LIST_FIELDS and not isinstance(value, list):
+    if normalized_field in STRUCTURED_OBJECT_LIST_FIELDS and not isinstance(
+        value, list
+    ):
         return f"{field_name} expected list"
     if normalized_field in STRUCTURED_OBJECT_FIELDS and not isinstance(value, dict):
         return f"{field_name} expected object"
@@ -199,7 +206,8 @@ def validate_record_for_surface(
         return {
             key: value
             for key, value in dict(record or {}).items()
-            if str(key).startswith("_") or (key in allowed and value not in (None, "", [], {}))
+            if str(key).startswith("_")
+            or (key in allowed and value not in (None, "", [], {}))
         }, []
     logical_fields = {
         key: value
@@ -383,9 +391,15 @@ def coerce_structured_scalar(
         stripped = value.strip()
         if stripped.startswith("{") and stripped.endswith("}"):
             try:
-                parsed = ast.literal_eval(stripped)
-            except (MemoryError, RecursionError, SyntaxError, TypeError, ValueError):
-                return None
+                parsed = json.loads(stripped)
+            except (json.JSONDecodeError, TypeError, ValueError):
+                try:
+                    parsed = ast.literal_eval(stripped)
+                except (SyntaxError, ValueError, TypeError):
+                    return _coerce_simple_string_dict_scalar(stripped, keys=keys)
+                if isinstance(parsed, (dict, list)):
+                    return coerce_structured_scalar(parsed, keys=keys)
+                return _coerce_simple_string_dict_scalar(stripped, keys=keys)
             if isinstance(parsed, (dict, list)):
                 return coerce_structured_scalar(parsed, keys=keys)
             return None
@@ -405,6 +419,39 @@ def coerce_structured_scalar(
                 return text
         return None
     return coerce_text(value)
+
+
+def _coerce_simple_string_dict_scalar(
+    value: str,
+    *,
+    keys: tuple[str, ...],
+) -> str | None:
+    """Parse simple {'key': 'value'} scalars, returning None if malformed.
+
+    This fallback naively splits on commas, so embedded comma values such as
+    {'name': 'Foo, Inc'} are unsupported; prefer JSON when commas are possible.
+    """
+    body = value[1:-1].strip()
+    if not body:
+        return None
+    for part in body.split(","):
+        raw_key, separator, raw_value = part.partition(":")
+        if not separator:
+            return None
+        key = _unquote_simple_string_dict_token(raw_key.strip())
+        candidate = _unquote_simple_string_dict_token(raw_value.strip())
+        if key in keys and candidate:
+            return candidate
+    return None
+
+
+def _unquote_simple_string_dict_token(value: str) -> str | None:
+    if len(value) < 2 or value[0] != value[-1] or value[0] not in {"'", '"'}:
+        return None
+    inner = value[1:-1].strip()
+    if not inner or any(token in inner for token in "{}[]\r\n"):
+        return None
+    return inner
 
 
 def _join_text_parts(parts: list[str | None], *, separator: str) -> str | None:
@@ -442,11 +489,41 @@ _SHORT_COLOR_ALLOWLIST = frozenset(
         # short, real color words. Lower-case only is fine; real PDPs use
         # mixed-case rendering. Keep this list narrow — it only protects
         # genuinely human-readable short forms.
-        "red", "tan", "navy", "blue", "pink", "gold", "lime", "teal",
-        "gray", "grey", "black", "white", "green", "ivory", "khaki",
-        "olive", "rose", "wine", "rust", "sand", "snow", "cyan",
-        "plum", "ruby", "lilac", "coral", "azure", "beige", "amber",
-        "denim", "ochre", "mocha", "mauve", "stone", "stoun",
+        "red",
+        "tan",
+        "navy",
+        "blue",
+        "pink",
+        "gold",
+        "lime",
+        "teal",
+        "gray",
+        "grey",
+        "black",
+        "white",
+        "green",
+        "ivory",
+        "khaki",
+        "olive",
+        "rose",
+        "wine",
+        "rust",
+        "sand",
+        "snow",
+        "cyan",
+        "plum",
+        "ruby",
+        "lilac",
+        "coral",
+        "azure",
+        "beige",
+        "amber",
+        "denim",
+        "ochre",
+        "mocha",
+        "mauve",
+        "stone",
+        "stoun",
     }
 )
 
@@ -732,6 +809,12 @@ def coerce_field_value(field_name: str, value: object, page_url: str) -> object 
                 or value.get("title")
                 or value.get("slug")
                 or value.get("value")
+                or value.get("en")
+            )
+        elif isinstance(value, str) and value.strip().startswith(("{", "[")):
+            value = coerce_structured_scalar(
+                value,
+                keys=("name", "title", "label", "value", "text", "en"),
             )
         category_text = coerce_text(value)
         if category_text and category_value_is_url_path(category_text):
@@ -758,9 +841,7 @@ def coerce_field_value(field_name: str, value: object, page_url: str) -> object 
             filtered = [
                 item
                 for item in value
-                if not (
-                    isinstance(item, str) and _color_value_is_opaque_code(item)
-                )
+                if not (isinstance(item, str) and _color_value_is_opaque_code(item))
             ]
             if filtered:
                 scalar_input = filtered

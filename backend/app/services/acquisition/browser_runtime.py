@@ -3,8 +3,9 @@ from __future__ import annotations
 import asyncio
 import inspect
 import logging
+import threading
 import time
-from contextlib import suppress
+from contextlib import asynccontextmanager, suppress
 from typing import Any
 from urllib.parse import urlparse
 
@@ -116,7 +117,7 @@ from app.services.domain_utils import normalize_domain
 logger = logging.getLogger(__name__)
 
 
-_ORIGIN_WARMUP_STATE_LOCK = asyncio.Lock()
+_ORIGIN_WARMUP_STATE_MUTEX = threading.Lock()
 _ORIGIN_WARMUP_IN_FLIGHT: set[tuple[str, str, str, str]] = set()
 _ORIGIN_WARMUP_RECENT: dict[tuple[str, str, str, str], float] = {}
 _ORIGIN_WARMUP_RECENT_MAX_ENTRIES = 512
@@ -168,7 +169,6 @@ async def _emit_browser_behavior_activity_bounded(page: Any) -> dict[str, object
         }
 
 
-
 def _build_payload_capture(*, surface: str) -> _BrowserNetworkCapture:
     return _BrowserNetworkCapture(
         surface=surface,
@@ -184,6 +184,7 @@ def _normalize_surface(surface: str | None) -> str:
 
 def _mapping_value(value: object) -> dict[str, object]:
     return dict(value) if isinstance(value, dict) else {}
+
 
 def _proxy_requires_fresh_browser_state(
     proxy_profile: dict[str, object] | None,
@@ -229,6 +230,7 @@ def _browser_storage_state_is_persistable(
         isinstance(probe, dict) and bool(probe.get("is_ready"))
         for probe in readiness_probes
     )
+
 
 async def _resolve_runtime_provider(
     runtime_provider,
@@ -281,7 +283,8 @@ async def browser_fetch(
     url: str,
     timeout_seconds: float,
     *,
-    run_id: int | None = None, proxy: str | None = None,
+    run_id: int | None = None,
+    proxy: str | None = None,
     browser_engine: str = _CHROMIUM_BROWSER_ENGINE,
     browser_reason: str | None = None,
     escalation_lane: str | None = None,
@@ -297,7 +300,8 @@ async def browser_fetch(
     max_scrolls: int = 1,
     max_records: int | None = None,
     on_event=None,
-    runtime_provider=get_browser_runtime, proxied_page_factory=temporary_browser_page,
+    runtime_provider=get_browser_runtime,
+    proxied_page_factory=temporary_browser_page,
     blocked_html_checker=is_blocked_html_async,
 ) -> PageFetchResult:
     normalized_domain = normalize_domain(url)
@@ -433,8 +437,8 @@ async def browser_fetch(
                     browser_reason=browser_reason,
                 ):
                     behavior_started_at = time.perf_counter()
-                    behavior_diagnostics = await _emit_browser_behavior_activity_bounded(
-                        page
+                    behavior_diagnostics = (
+                        await _emit_browser_behavior_activity_bounded(page)
                     )
                     phase_timings_ms["behavior_realism"] = _elapsed_ms(
                         behavior_started_at
@@ -872,7 +876,7 @@ async def _begin_origin_warmup(key: tuple[str, str, str, str]) -> bool:
     ttl_seconds = max(
         0.0, float(crawler_runtime_settings.origin_warmup_dedupe_ttl_seconds)
     )
-    async with _ORIGIN_WARMUP_STATE_LOCK:
+    async with _origin_warmup_state_lock():
         if ttl_seconds > 0:
             stale_keys = [
                 recent_key
@@ -903,13 +907,22 @@ async def _finish_origin_warmup(
     *,
     succeeded: bool = False,
 ) -> None:
-    async with _ORIGIN_WARMUP_STATE_LOCK:
+    async with _origin_warmup_state_lock():
         _ORIGIN_WARMUP_IN_FLIGHT.discard(key)
         ttl_seconds = max(
             0.0, float(crawler_runtime_settings.origin_warmup_dedupe_ttl_seconds)
         )
         if succeeded and ttl_seconds > 0:
             _ORIGIN_WARMUP_RECENT[key] = time.monotonic()
+
+
+@asynccontextmanager
+async def _origin_warmup_state_lock():
+    _ORIGIN_WARMUP_STATE_MUTEX.acquire()
+    try:
+        yield
+    finally:
+        _ORIGIN_WARMUP_STATE_MUTEX.release()
 
 
 async def _settle_browser_page(
@@ -939,12 +952,6 @@ async def _settle_browser_page(
         append_readiness_probe=append_readiness_probe,
         elapsed_ms=_elapsed_ms,
     )
-
-
-
-
-
-
 
 
 def _elapsed_ms(started_at: float) -> int:
@@ -1011,25 +1018,38 @@ async def _close_unexpected_popup(page: Any, *, on_event=None) -> None:
             f"Closed unexpected popup page: {popup_url}",
         )
 
+
 __all__ = [
     "SharedBrowserRuntime",
-    "BROWSER_CAPTURE_MAX_NETWORK_PAYLOADS", "BROWSER_CAPTURE_MAX_NETWORK_PAYLOAD_BYTES",
-    "BROWSER_CAPTURE_QUEUE_SIZE", "BROWSER_CAPTURE_WORKERS",
-    "NetworkPayloadReadResult", "browser_fetch",
+    "BROWSER_CAPTURE_MAX_NETWORK_PAYLOADS",
+    "BROWSER_CAPTURE_MAX_NETWORK_PAYLOAD_BYTES",
+    "BROWSER_CAPTURE_QUEUE_SIZE",
+    "BROWSER_CAPTURE_WORKERS",
+    "NetworkPayloadReadResult",
+    "browser_fetch",
     "accessibility_expand_candidates",
     "build_browser_diagnostics_contract",
     "browser_runtime_snapshot",
-    "block_unneeded_route", "build_failed_browser_diagnostics",
-    "capture_browser_screenshot", "classify_network_endpoint",
-    "classify_browser_outcome", "detail_expansion_keywords",
+    "block_unneeded_route",
+    "build_failed_browser_diagnostics",
+    "capture_browser_screenshot",
+    "classify_network_endpoint",
+    "classify_browser_outcome",
+    "detail_expansion_keywords",
     "expand_all_interactive_elements",
-    "expand_detail_content_if_needed", "expand_interactive_elements_via_accessibility",
-    "interactive_candidate_snapshot", "get_browser_runtime",
-    "listing_card_signal_count", "looks_like_low_content_shell",
+    "expand_detail_content_if_needed",
+    "expand_interactive_elements_via_accessibility",
+    "interactive_candidate_snapshot",
+    "get_browser_runtime",
+    "listing_card_signal_count",
+    "looks_like_low_content_shell",
     "patchright_browser_available",
-    "read_network_payload_body", "real_chrome_browser_available",
-    "real_chrome_candidate_paths", "real_chrome_executable_path",
+    "read_network_payload_body",
+    "real_chrome_browser_available",
+    "real_chrome_candidate_paths",
+    "real_chrome_executable_path",
     "should_capture_network_payload",
-    "shutdown_browser_runtime", "shutdown_browser_runtime_sync",
+    "shutdown_browser_runtime",
+    "shutdown_browser_runtime_sync",
     "temporary_browser_page",
 ]

@@ -347,6 +347,8 @@ def infer_detail_failure_reason(
 ) -> str | None:
     if "detail" not in str(surface or "").strip().lower():
         return None
+    if _detail_html_has_empty_body(html):
+        return "detail_shell"
     record = build_detail_record(
         html,
         page_url,
@@ -363,6 +365,14 @@ def infer_detail_failure_reason(
         page_url=page_url,
         requested_page_url=requested_page_url,
     )
+
+
+def _detail_html_has_empty_body(html: str) -> bool:
+    soup = BeautifulSoup(str(html or ""), "html.parser")
+    body = soup.find("body")
+    if body is None:
+        return False
+    return not body.get_text(" ", strip=True)
 
 
 def extract_detail_records(

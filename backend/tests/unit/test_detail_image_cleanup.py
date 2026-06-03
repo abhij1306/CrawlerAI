@@ -5,7 +5,9 @@ import pytest
 
 from app.services.extract.detail.images.cleanup import (
     _detail_image_candidate_is_usable,
+    detail_image_matches_primary_family,
 )
+from app.services.dom.image_extraction import canonical_image_url
 
 
 @pytest.mark.unit
@@ -44,3 +46,29 @@ def test_pdp_segment_with_image_extension_passes() -> None:
     identity = "https://example.com/products/widget"
     image = "https://cdn.example.com/products/widget-front.jpg"
     assert _detail_image_candidate_is_usable(image, identity_url=identity)
+
+
+@pytest.mark.unit
+def test_primary_code_without_candidate_code_still_uses_family_tokens() -> None:
+    primary = "https://cdn.example.com/images/AB12345-widget-front.jpg"
+    candidate = "https://cdn.example.com/images/widget-jacket-side.jpg"
+
+    assert detail_image_matches_primary_family(
+        candidate,
+        primary_image=primary,
+        title="Widget jacket",
+    )
+
+
+@pytest.mark.unit
+def test_shopify_canonical_image_keeps_store_identity_with_query() -> None:
+    left = canonical_image_url(
+        "https://store-a.myshopify.com/cdn/shop/files/widget.jpg?v=1&width=200"
+    )
+    right = canonical_image_url(
+        "https://store-b.myshopify.com/cdn/shop/files/widget.jpg?v=1&width=200"
+    )
+
+    assert left == "https://store-a.myshopify.com/files/widget?v=1"
+    assert right == "https://store-b.myshopify.com/files/widget?v=1"
+    assert left != right

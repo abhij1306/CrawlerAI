@@ -40,7 +40,7 @@ def configure_logfire() -> bool:
 
     token = settings.logfire_token.strip() or None
     logfire.configure(
-        send_to_logfire="if-token-present",
+        send_to_logfire=settings.logfire_send_to_logfire,
         token=token,
         service_name=settings.logfire_service_name,
         environment=settings.logfire_environment or settings.app_env,
@@ -48,7 +48,7 @@ def configure_logfire() -> bool:
         inspect_arguments=False,
     )
     _LogfireState.configured = True
-    if token is None:
+    if token is None and settings.logfire_send_to_logfire is not False:
         logger.warning(
             "Logfire enabled without LOGFIRE_TOKEN; cloud export is disabled"
         )

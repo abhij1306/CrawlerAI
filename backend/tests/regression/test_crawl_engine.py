@@ -3728,7 +3728,7 @@ def test_extract_ecommerce_detail_returns_normalized_record() -> None:
     assert record["features"] == ["Lightweight body", "Long battery life"]
     assert record["materials"] == "Cotton blend"
     assert record["care"] == "Machine wash"
-    assert sorted(v.get("size") for v in record["variants"] if v.get("size")) == ["S"]
+    assert record["size"] == "S"
     assert isinstance(record["_confidence"], dict)
     assert record["_confidence"]["level"] in {"medium", "high"}
 

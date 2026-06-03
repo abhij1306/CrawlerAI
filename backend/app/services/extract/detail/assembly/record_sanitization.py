@@ -11,22 +11,35 @@ import logging
 import re
 from difflib import SequenceMatcher
 from typing import Any
+from urllib.parse import urlparse
 
 
 from app.services.config.extraction_rules import (
     CANDIDATE_PLACEHOLDER_VALUES,
     CATEGORY_PLACEHOLDER_VALUES,
+    COLOR_KEYWORD_PATTERN,
+    DETAIL_BRAND_DESCRIPTION_PATTERNS,
+    DETAIL_BRAND_HOST_FALLBACKS,
+    DETAIL_BRAND_PREFIX_CONTINUATION_TOKENS,
+    DETAIL_BRAND_PREFIX_STOP_TOKENS,
+    DETAIL_BRAND_SUFFIX_REJECT_TOKENS,
+    DETAIL_BRAND_TITLE_PREFIX_MAX_WORDS,
+    DETAIL_BRAND_TITLE_SUFFIX_PATTERN,
     DETAIL_CATEGORY_BRANCH_STOP_TOKENS,
     DETAIL_CATEGORY_LABEL_PREFIXES,
     DETAIL_CATEGORY_UI_TOKENS,
     DETAIL_BREADCRUMB_SEPARATOR_LABELS,
     DETAIL_BREADCRUMB_TITLE_DUPLICATE_RATIO,
+    DETAIL_QUOTED_COLOR_PATTERN,
 )
 from app.services.shared.field_coerce import (
     clean_text,
+    coerce_brand_text,
+    coerce_structured_scalar,
     is_title_noise,
     text_or_none,
 )
+from app.services.shared.text_coerce import slug_tokens
 from app.services.extract.detail.identity.core import (
     detail_identity_codes_from_url as _detail_identity_codes_from_url,
     detail_slug_title_fallback_from_url as _detail_slug_title_fallback_from_url,
@@ -100,6 +113,7 @@ def sanitize_detail_placeholder_scalars(
         else:
             record.pop("product_attributes", None)
 
+
 def _feature_text_is_json_object(value: str) -> bool:
     text = clean_text(value)
     if not (text.startswith("{") and text.endswith("}")):
@@ -126,6 +140,8 @@ def sanitize_detail_identity_scalars(
         if text_or_none(record.get("part_number")) in (None, ""):
             record["part_number"] = preferred_code
     _repair_detail_title_from_requested_identity(record, identity_url=identity_url)
+    _repair_missing_detail_brand(record, identity_url=identity_url)
+    _repair_detail_color_from_description(record)
     placeholder_title_removed = bool(record.pop("_placeholder_title_removed", False))
     if not text_or_none(record.get("title")):
         fallback_is_safe = _detail_title_fallback_is_safe(record)
@@ -143,6 +159,141 @@ def sanitize_detail_identity_scalars(
             )
             field_sources = record.setdefault("_field_sources", {})
             field_sources["title"] = ["url_slug"]
+
+
+def _repair_missing_detail_brand(
+    record: dict[str, Any],
+    *,
+    identity_url: str,
+) -> None:
+    if text_or_none(record.get("brand")) or record.get(
+        "_irrelevant_detail_structured_product"
+    ):
+        return
+    candidates = (
+        _brand_from_title_suffix(record),
+        _brand_from_host(identity_url),
+        _brand_from_title_prefix(record, identity_url=identity_url),
+        _brand_from_description(record),
+    )
+    for candidate in candidates:
+        brand = coerce_brand_text(candidate)
+        if not brand:
+            continue
+        record["brand"] = brand
+        field_sources = record.setdefault("_field_sources", {})
+        if isinstance(field_sources, dict):
+            field_sources["brand"] = ["identity_repair"]
+        return
+
+
+def _brand_from_title_suffix(record: dict[str, Any]) -> str | None:
+    title = clean_text(record.get("title"))
+    if not title:
+        return None
+    match = re.search(str(DETAIL_BRAND_TITLE_SUFFIX_PATTERN), title)
+    if match is None:
+        return None
+    candidate = clean_text(match.group("brand"))
+    lowered = candidate.casefold()
+    if (
+        not candidate
+        or any(token in lowered for token in DETAIL_BRAND_SUFFIX_REJECT_TOKENS)
+        or re.fullmatch(str(COLOR_KEYWORD_PATTERN), candidate, flags=re.I)
+    ):
+        return None
+    return candidate
+
+
+def _brand_from_title_prefix(
+    record: dict[str, Any],
+    *,
+    identity_url: str,
+) -> str | None:
+    title = clean_text(record.get("title"))
+    title_parts = slug_tokens(title)
+    path_parts = slug_tokens(urlparse(str(identity_url or "")).path)
+    if not title_parts or not path_parts:
+        return None
+    first = title_parts[0]
+    if first in DETAIL_BRAND_PREFIX_STOP_TOKENS:
+        return None
+    if first not in path_parts:
+        return None
+    raw_words = [word for word in re.findall(r"[A-Za-z0-9&'.-]+", title) if word]
+    if not raw_words:
+        return None
+    max_words = max(1, int(DETAIL_BRAND_TITLE_PREFIX_MAX_WORDS))
+    continuation_tokens = set(DETAIL_BRAND_PREFIX_CONTINUATION_TOKENS or ())
+    take = 1
+    while (
+        take < min(max_words, len(title_parts), len(raw_words))
+        and title_parts[take] in continuation_tokens
+    ):
+        take += 1
+    candidate_tokens = title_parts[:take]
+    if not _tokens_appear_contiguously(path_parts, candidate_tokens):
+        return None
+    return " ".join(word.strip() for word in raw_words[:take] if word.strip())
+
+
+def _tokens_appear_contiguously(tokens: list[str], needle: list[str]) -> bool:
+    if not tokens or not needle or len(needle) > len(tokens):
+        return False
+    return any(
+        tokens[index : index + len(needle)] == needle for index in range(len(tokens))
+    )
+
+
+def _brand_from_host(identity_url: str) -> str | None:
+    host = (urlparse(str(identity_url or "")).hostname or "").casefold()
+    if not host:
+        return None
+    labels = [label for label in host.split(".") if label and label != "www"]
+    registrable_label = labels[-2] if len(labels) >= 2 else labels[0] if labels else ""
+    if registrable_label in DETAIL_BRAND_HOST_FALLBACKS:
+        return str(DETAIL_BRAND_HOST_FALLBACKS[registrable_label])
+    return None
+
+
+def _brand_from_description(record: dict[str, Any]) -> str | None:
+    description = clean_text(record.get("description"))
+    if not description:
+        return None
+    for pattern in tuple(DETAIL_BRAND_DESCRIPTION_PATTERNS or ()):
+        match = re.search(str(pattern), description)
+        if match is not None:
+            return clean_text(match.group("brand"))
+    return None
+
+
+def _repair_detail_color_from_description(record: dict[str, Any]) -> None:
+    description = clean_text(record.get("description"))
+    if not description:
+        return
+    matches = [
+        clean_text(match.group("color"))
+        for match in re.finditer(str(DETAIL_QUOTED_COLOR_PATTERN), description)
+        if clean_text(match.group("color"))
+    ]
+    if not matches:
+        return
+    current = clean_text(record.get("color"))
+    field_sources = record.get("_field_sources")
+    color_sources = field_sources.get("color") if isinstance(field_sources, dict) else None
+    description_only_sources = {"description_color_repair", "description"}
+    if current and (
+        not isinstance(color_sources, list)
+        or any(str(source) not in description_only_sources for source in color_sources)
+    ):
+        return
+    if current and current.casefold() in {value.casefold() for value in matches}:
+        return
+    color = matches[0]
+    record["color"] = color
+    field_sources = record.setdefault("_field_sources", {})
+    if isinstance(field_sources, dict):
+        field_sources["color"] = ["description_color_repair"]
 
 
 def _fallback_title_is_low_signal(title: object) -> bool:
@@ -272,6 +423,7 @@ def _clean_detail_category_path(
     sku: object,
     page_url: str = "",
 ) -> str:
+    value = _category_literal_scalar(value)
     parts = [
         clean_text(part)
         for part in re.split(r"\s*(?:>|/|›|»|→|\|)\s*", clean_text(value))
@@ -329,6 +481,21 @@ def _clean_detail_category_path(
         )
     ]
     return " > ".join(cleaned_parts)
+
+
+def _category_literal_scalar(value: object) -> object:
+    if not isinstance(value, str):
+        return value
+    text = value.strip()
+    if not (text.startswith("{") and text.endswith("}")):
+        return value
+    parsed = coerce_structured_scalar(
+        text,
+        keys=("name", "title", "label", "value", "text", "en"),
+    )
+    if parsed is None:
+        return value
+    return parsed
 
 
 def _strip_embedded_root_suffix_from_category_head(

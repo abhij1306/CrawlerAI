@@ -157,6 +157,33 @@ def test_map_js_state_to_fields_recovers_axis_keyed_variant_dict_rows() -> None:
 
 
 @pytest.mark.unit
+def test_map_js_state_to_fields_keeps_bridge_variants_with_primary_rows() -> None:
+    mapped = map_js_state_to_fields(
+        {
+            "product": {
+                "title": "Example Tee",
+                "variants": [{"id": "base", "size": "S"}],
+                "plp_pdp_bridge": {
+                    "variants": {
+                        "color": [
+                            {"id": "black", "name": "Black"},
+                            {"id": "white", "name": "White"},
+                        ]
+                    }
+                },
+            }
+        },
+        surface="ecommerce_detail",
+        page_url="https://example.com/products/example-tee",
+    )
+
+    assert {variant.get("color") for variant in mapped["variants"]} >= {
+        "Black",
+        "White",
+    }
+
+
+@pytest.mark.unit
 def test_map_js_state_to_fields_treats_shopify_product_level_prices_as_cents() -> None:
     mapped = map_js_state_to_fields(
         {

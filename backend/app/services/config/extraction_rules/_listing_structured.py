@@ -373,6 +373,10 @@ NON_PRODUCT_IMAGE_HINTS = tuple(
 DETAIL_NON_PRODUCT_IMAGE_URL_HINTS = (
     "/media/catalog/category/",
     "/category/",
+    "/library-sites-sharedlibrary/",
+    "/search-page-",
+    "_nav.",
+    "-nav.",
     "dropdown",
 )
 PAGE_URL_CURRENCY_HINTS_RAW = {

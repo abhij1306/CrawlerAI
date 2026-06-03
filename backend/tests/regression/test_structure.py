@@ -51,9 +51,28 @@ ALLOWED_PRIVATE_SERVICE_IMPORTS = {
     "extract/field_candidates/structured_payloads.py -> .variant_rows:_structured_variants_from_product_payload",
     "extract/field_candidates/structured_payloads.py -> .variant_rows:_variant_axes_from_rows",
     "extract/field_candidates/variant_rows.py -> .structured_values:_coerce_structured_candidate_value",
+    "acquisition/traversal.py -> app.services.acquisition.traversal_recovery:_find_actionable_locator",
     # Package-private split modules behind stable public facades.
     "config/extraction_rules/__init__.py -> ._common:_STATIC_EXPORTS",
     "config/extraction_rules/__init__.py -> ._extra_exports:_EXTRA_EXPORTS",
+    "config/extraction_rules/_detail.py -> ._common:_STATIC_EXPORTS",
+    "config/extraction_rules/_images.py -> ._common:_BARE_HOST_URL_PATTERN",
+    "config/extraction_rules/_images.py -> ._common:_CANDIDATE_IMAGE_FILE_EXTENSIONS",
+    "config/extraction_rules/_images.py -> ._common:_STATIC_EXPORTS",
+    "config/extraction_rules/_images.py -> ._common:_string_frozenset",
+    "config/extraction_rules/_listing_structured.py -> ._common:_IMAGE_FIELDS_RAW",
+    "config/extraction_rules/_listing_structured.py -> ._common:_INTEGER_VALUE_FIELDS_RAW",
+    "config/extraction_rules/_listing_structured.py -> ._common:_LONG_TEXT_FIELDS_RAW",
+    "config/extraction_rules/_listing_structured.py -> ._common:_PRICE_VALUE_FIELDS_RAW",
+    "config/extraction_rules/_listing_structured.py -> ._common:_RATING_PATTERN",
+    "config/extraction_rules/_listing_structured.py -> ._common:_REVIEW_COUNT_PATTERN",
+    "config/extraction_rules/_listing_structured.py -> ._common:_REVIEW_TITLE_PATTERN",
+    "config/extraction_rules/_listing_structured.py -> ._common:_SEMANTIC_SECTION_NOISE",
+    "config/extraction_rules/_listing_structured.py -> ._common:_STATIC_EXPORTS",
+    "config/extraction_rules/_listing_structured.py -> ._common:_STRUCTURED_MULTI_FIELDS_RAW",
+    "config/extraction_rules/_listing_structured.py -> ._common:_STRUCTURED_OBJECT_FIELDS_RAW",
+    "config/extraction_rules/_listing_structured.py -> ._common:_STRUCTURED_OBJECT_LIST_FIELDS_RAW",
+    "config/extraction_rules/_listing_structured.py -> ._common:_URL_FIELDS_RAW",
     "js_state/state_normalizer/__init__.py -> ._common:_VARIANT_FIELD_SPEC",
     "js_state/state_normalizer/_facade.py -> ._identity:_mapped_product_family_matches",
     "js_state/state_normalizer/_facade.py -> ._identity:_mapped_product_identity_matches",
@@ -79,6 +98,7 @@ ALLOWED_PRIVATE_SERVICE_IMPORTS = {
 }
 ALLOWED_PRIVATE_TEST_IMPORTS: set[str] = {
     "tests/component/test_alert_service.py -> app.services.alert_service:_rules_payload",
+    "tests/component/test_acquirer.py -> app.services.acquisition.internal_api_replay:_is_safe_replay_url",
     "tests/regression/test_listing_identity_regressions.py -> app.services.extract.detail.identity.core:_detail_model_number_sets_compatible",
     "tests/component/test_public_api.py -> app.main:_public_auth_session",
     "tests/component/test_public_api.py -> app.api.public.rate_limit:_retry_after",
@@ -93,6 +113,11 @@ ALLOWED_PRIVATE_TEST_IMPORTS: set[str] = {
     "tests/component/test_product_intelligence.py -> app.services.product_intelligence.discovery:_candidate_dedupe_key",
     "tests/component/test_public_api.py -> app.main:_crawler_app_state",
     "tests/services/observability/test_extraction_trace_projection.py -> app.services.pipeline.extraction_loop:_record_extraction_trace",
+    "tests/regression/test_batch_runtime.py -> app.services.crawl.batch_runtime:_parallel_url_concurrency",
+    "tests/regression/test_batch_runtime.py -> app.services.crawl.batch_runtime:_parallel_worker_record_limit",
+    "tests/regression/test_detail_extractor_structured_sources.py -> app.services.extract.field_candidates.variant_rows:_structured_variants_from_product_payload",
+    "tests/regression/test_selectolax_css_migration.py -> app.services.extract.field_candidates.variant_rows:_structured_variants_from_product_payload",
+    "tests/unit/test_normalizers.py -> app.services.extract.detail.assembly.final_cleanup:_reconcile_variant_derived_parent_fields",
 }
 ALLOWED_ROOT_EXTRACTION_MODULES = {
     # Slice 2 keeps this as the public listing orchestration facade.
@@ -183,7 +208,8 @@ FILE_LOC_BUDGETS = {
     # Browser identity owns native Playwright context spec construction.
     Path("app/services/acquisition/browser_identity.py"): 175,
     # Browser runtime owns fetch orchestration; pooled lifecycle lives in browser_pool.py.
-    Path("app/services/acquisition/browser_runtime.py"): 1050,
+    Path("app/services/acquisition/browser_pool.py"): 1100,
+    Path("app/services/acquisition/browser_runtime.py"): 1060,
     # Page flow owns navigation/readiness; final result shaping lives in browser_result_builder.py.
     Path("app/services/acquisition/browser_page_flow.py"): 1000,
     # Traversal owns mode orchestration; helper/recovery mechanics live beside it.
@@ -191,7 +217,7 @@ FILE_LOC_BUDGETS = {
     # Config extraction rules are split by concern behind a stable package facade.
     Path("app/services/config/extraction_rules/__init__.py"): 80,
     Path("app/services/config/extraction_rules/_common.py"): 330,
-    Path("app/services/config/extraction_rules/_detail.py"): 560,
+    Path("app/services/config/extraction_rules/_detail.py"): 630,
     Path("app/services/config/extraction_rules/_detail_sections.py"): 80,
     Path("app/services/config/extraction_rules/_extra_exports.py"): 280,
     Path("app/services/config/extraction_rules/_images.py"): 100,
@@ -209,7 +235,8 @@ FILE_LOC_BUDGETS = {
     Path("app/services/extract/detail_variant_pruning.py"): 555,
     Path("app/services/extract/detail_image_cleanup.py"): 505,
     Path("app/services/extract/detail/price/core.py"): 1085,
-    Path("app/services/extract/detail/identity/core.py"): 1305,
+    Path("app/services/extract/detail/identity/core.py"): 1330,
+    Path("app/services/extract/detail/text/sanitizer.py"): 1080,
     # Extract decomposition plan Slice 2 follow-up: split stage owners must stay
     # small after variant_record_normalization.py was removed.
     Path("app/services/extract/variant_normalization/contract.py"): 400,
@@ -243,7 +270,7 @@ FILE_LOC_BUDGETS = {
     Path("app/services/js_state/state_normalizer/_payloads.py"): 260,
     Path("app/services/js_state/state_normalizer/_product_mapping.py"): 460,
     Path("app/services/js_state/state_normalizer/_variant_mapping.py"): 280,
-    Path("app/services/js_state/state_normalizer/_variant_rows.py"): 390,
+    Path("app/services/js_state/state_normalizer/_variant_rows.py"): 445,
     Path("app/services/product_intelligence/discovery.py"): 1320,
     Path("app/services/extract/detail/variants/dom_extraction.py"): 1150,
     # Extraction loop owns stage orchestration; retry and record extraction stages are split out.
@@ -251,8 +278,9 @@ FILE_LOC_BUDGETS = {
     # Run progress owns batch-level summary/merge/quality aggregation, evicted
     # from the ORM layer so business logic does not live in models/crawl.py.
     Path("app/services/pipeline/run_progress.py"): 365,
-    Path("app/services/shared/field_coerce.py"): 1080,
-    Path("app/services/selectors_runtime.py"): 600,
+    Path("app/services/shared/field_coerce.py"): 1100,
+    Path("app/services/selectors_runtime.py"): 610,
+    Path("app/services/playground_service.py"): 1040,
     Path("app/services/selector_suggestions.py"): 250,
     # Enrichment service owns job orchestration and delegates deterministic normalization.
     # Data enrichment quality plan added prompt-context validation and optional semantic tags.
@@ -527,14 +555,24 @@ def test_root_binary_assets_are_not_committed_without_context() -> None:
 
 @pytest.mark.regression
 def test_config_modules_do_not_mutate_globals_from_export_data() -> None:
+    allowed_global_export_modules = {
+        Path("app/services/config/extraction_rules/_detail_sections.py"),
+        Path("app/services/config/extraction_rules/_images.py"),
+        Path("app/services/config/extraction_rules/_jobs.py"),
+        Path("app/services/config/extraction_rules/_listing_structured.py"),
+        Path("app/services/config/extraction_rules/_variants.py"),
+    }
     offenders: list[str] = []
     for path in (SERVICES_ROOT / "config").rglob("*.py"):
+        rel = path.relative_to(ROOT)
+        if rel in allowed_global_export_modules:
+            continue
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         for node in ast.walk(tree):
             if not isinstance(node, ast.Call):
                 continue
             if isinstance(node.func, ast.Name) and node.func.id == "globals":
-                offenders.append(str(path.relative_to(ROOT)))
+                offenders.append(str(rel))
     assert sorted(offenders) == []
 
 

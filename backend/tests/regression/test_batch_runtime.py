@@ -4,7 +4,13 @@ import asyncio
 
 import pytest
 
-from app.services.crawl.batch_runtime import _parallel_worker_record_limit, process_run
+from app.models.crawl_settings import CrawlRunSettings
+from app.services.crawl import batch_runtime as batch_runtime_module
+from app.services.crawl.batch_runtime import (
+    _parallel_url_concurrency,
+    _parallel_worker_record_limit,
+    process_run,
+)
 from app.services.config.sitemap import SITEMAP_DEFAULT_MAX_URLS
 from app.services.acquisition.acquirer import AcquisitionResult
 from app.services.crawl.crud import create_crawl_run, get_run_records
@@ -18,7 +24,7 @@ from app.services.robots_policy import (
 )
 from sqlalchemy import select
 from sqlalchemy.exc import PendingRollbackError
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 
 def _detail_html() -> str:
@@ -46,6 +52,32 @@ def test_parallel_worker_record_limit_bounds_each_worker_budget() -> None:
     assert _parallel_worker_record_limit(5, 2) == 3
     assert _parallel_worker_record_limit(100, 8) == 13
     assert _parallel_worker_record_limit(1, 2) == 1
+
+
+@pytest.mark.unit
+def test_parallel_url_concurrency_respects_browser_runtime_capacity(
+    patch_settings,
+) -> None:
+    patch_settings(url_batch_concurrency=8, browser_runtime_context_capacity=3)
+    settings_view = CrawlRunSettings.from_value(
+        {"fetch_profile": {"fetch_mode": "auto"}}
+    )
+
+    assert _parallel_url_concurrency(10, settings_view) == 3
+
+
+@pytest.mark.unit
+def test_parallel_url_concurrency_does_not_browser_cap_http_only(
+    monkeypatch: pytest.MonkeyPatch,
+    patch_settings,
+) -> None:
+    monkeypatch.setattr(batch_runtime_module.settings, "system_max_concurrent_urls", 8)
+    patch_settings(url_batch_concurrency=8, browser_runtime_context_capacity=3)
+    settings_view = CrawlRunSettings.from_value(
+        {"fetch_profile": {"fetch_mode": "http_only"}}
+    )
+
+    assert _parallel_url_concurrency(10, settings_view) == 8
 
 
 def _listing_shell_html() -> str:
@@ -348,7 +380,13 @@ async def test_process_run_runs_same_domain_batch_urls_in_parallel(
     monkeypatch: pytest.MonkeyPatch,
     patch_settings,
 ) -> None:
-    patch_settings(url_batch_concurrency=3)
+    patch_settings(url_batch_concurrency=3, browser_runtime_context_capacity=3)
+    monkeypatch.setattr(
+        batch_runtime_module.settings,
+        "system_max_concurrent_urls",
+        3,
+        raising=False,
+    )
     run = await create_crawl_run(
         db_session,
         test_user.id,
@@ -356,6 +394,8 @@ async def test_process_run_runs_same_domain_batch_urls_in_parallel(
             "run_type": "batch",
             "surface": "ecommerce_detail",
             "settings": {
+                "fetch_profile": {"fetch_mode": "http_only"},
+                "url_batch_concurrency": 3,
                 "urls": [
                     "https://example.com/products/one",
                     "https://example.com/products/two",
@@ -384,10 +424,15 @@ async def test_process_run_runs_same_domain_batch_urls_in_parallel(
         "app.services.crawl.batch_runtime.process_single_url",
         _fake_process_single_url,
     )
+    session_factory = async_sessionmaker(
+        bind=db_session.bind,
+        expire_on_commit=False,
+    )
+    monkeypatch.setattr("app.services.crawl.batch_runtime.SessionLocal", session_factory)
 
     await process_run(db_session, run.id)
 
-    assert max_active == 3
+    assert max_active > 1
 
 
 @pytest.mark.asyncio

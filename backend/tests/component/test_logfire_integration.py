@@ -44,6 +44,7 @@ def test_logfire_configures_once_and_instruments(monkeypatch) -> None:
     monkeypatch.setattr(settings, "logfire_service_name", "invoro-test")
     monkeypatch.setattr(settings, "logfire_environment", "staging")
     monkeypatch.setattr(settings, "logfire_capture_headers", False)
+    monkeypatch.setattr(settings, "logfire_send_to_logfire", "if-token-present")
 
     app = FastAPI()
 
@@ -70,6 +71,36 @@ def test_logfire_configures_once_and_instruments(monkeypatch) -> None:
     assert len(fastapi_calls) == 1
     assert fastapi_calls[0][1]["capture_headers"] is False
     assert len(celery_calls) == 1
+
+
+@pytest.mark.component
+def test_logfire_can_disable_cloud_export(monkeypatch) -> None:
+    calls: list[tuple[str, dict[str, object]]] = []
+
+    fake_logfire = SimpleNamespace(
+        configure=lambda **kwargs: calls.append(("configure", kwargs)),
+    )
+    monkeypatch.setitem(sys.modules, "logfire", fake_logfire)
+    monkeypatch.setattr(settings, "logfire_enabled", True)
+    monkeypatch.setattr(settings, "logfire_enabled_in_tests", True)
+    monkeypatch.setattr(settings, "logfire_token", "token-123")
+    monkeypatch.setattr(settings, "logfire_send_to_logfire", False)
+
+    assert logfire_integration.configure_logfire() is True
+
+    assert calls == [
+        (
+            "configure",
+            {
+                "send_to_logfire": False,
+                "token": "token-123",
+                "service_name": settings.logfire_service_name,
+                "environment": settings.logfire_environment or settings.app_env,
+                "console": False,
+                "inspect_arguments": False,
+            },
+        )
+    ]
 
 
 @pytest.mark.component

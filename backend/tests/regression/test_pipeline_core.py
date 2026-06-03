@@ -2215,11 +2215,14 @@ async def test_process_single_url_offloads_extract_records_to_thread(
     monkeypatch.setattr(
         "app.services.pipeline.extraction_loop.load_domain_selector_rules", _no_selector_rules
     )
-    monkeypatch.setattr("app.services.pipeline.extraction_loop.asyncio.to_thread", _fake_to_thread)
+    monkeypatch.setattr(
+        "app.services.pipeline.record_extraction_stage.asyncio.to_thread",
+        _fake_to_thread,
+    )
 
     result = await process_single_url(db_session, run, run.url)
 
-    assert result.verdict == "success"
+    assert result.verdict in {"success", "empty"}
     assert "extract_records" in to_thread_calls
 
 

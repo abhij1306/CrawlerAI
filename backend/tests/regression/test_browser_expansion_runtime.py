@@ -3478,7 +3478,8 @@ async def test_listing_card_signal_count_uses_heuristic_card_fallback_after_sele
         return 9 if allow_heuristic else 0
 
     monkeypatch.setattr(
-        "app.services.acquisition.traversal.count_listing_cards",
+        browser_readiness,
+        "count_listing_cards",
         _fake_count_listing_cards,
     )
 
@@ -4629,6 +4630,48 @@ async def test_recover_browser_challenge_keeps_original_response_when_retry_stay
 
 @pytest.mark.asyncio
 @pytest.mark.regression
+async def test_recover_browser_challenge_propagates_inner_timeout_errors() -> None:
+    response = SimpleNamespace(status=403)
+
+    class _Page:
+        mouse = None
+
+        async def wait_for_timeout(self, _ms: int) -> None:
+            await _async_checkpoint()
+
+    html_calls = 0
+
+    async def _get_page_html(_page: Any) -> str:
+        nonlocal html_calls
+        await _async_checkpoint()
+        html_calls += 1
+        if html_calls > 1:
+            raise asyncio.TimeoutError("inner html timeout")
+        return "<html><body>blocked</body></html>"
+
+    async def _classify_blocked_page(_html: str, _status_code: int):
+        await _async_checkpoint()
+        return SimpleNamespace(blocked=True, provider_hits=[])
+
+    recovered = await browser_recovery.recover_browser_challenge(
+        _Page(),
+        url="https://example.com/products/widget",
+        response=response,
+        timeout_seconds=5,
+        phase_timings_ms={},
+        challenge_wait_max_seconds=1,
+        challenge_poll_interval_ms=100,
+        navigation_timeout_ms=1000,
+        elapsed_ms=lambda _started_at: 0,
+        classify_blocked_page=_classify_blocked_page,
+        get_page_html=_get_page_html,
+    )
+
+    assert recovered is response
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
 async def test_recover_browser_challenge_runs_for_real_chrome() -> None:
     original_response = SimpleNamespace(
         status=403, headers={"content-type": "text/html"}
@@ -5734,6 +5777,7 @@ async def test_browser_fetch_force_closes_context_when_stage_times_out(
         return _FakeRuntime(page)
 
     remaining_timeouts = iter([5.0, 0.05, 0.05, 0.05])
+
     def _remaining_timeout() -> float:
         try:
             return remaining_timeouts.__next__()
