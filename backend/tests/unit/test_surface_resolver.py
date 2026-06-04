@@ -45,6 +45,50 @@ def test_resolve_auto_ecommerce_product_url_to_detail() -> None:
     assert result.surface == "ecommerce_detail"
 
 
+def test_resolve_auto_generic_ecommerce_category_segment_to_listing() -> None:
+    result = resolve_surface(
+        "auto",
+        url="https://www.balenciaga.com/en-en/gifts/gifts-for-home",
+        crawl_module="category",
+    )
+
+    assert result.surface == "ecommerce_listing"
+    assert "ecommerce_listing_segment_signal" in result.evidence
+
+
+def test_resolve_auto_sku_html_product_slug_to_detail() -> None:
+    result = resolve_surface(
+        "auto",
+        url="https://www.balenciaga.com/en-en/beijing-coffee-cup-black-666275T01011004.html",
+        crawl_module="pdp",
+    )
+
+    assert result.surface == "ecommerce_detail"
+    assert "ecommerce_detail_sku_html_signal" in result.evidence
+
+
+def test_resolve_auto_multi_token_html_product_slug_to_detail() -> None:
+    result = resolve_surface(
+        "auto",
+        url="https://shop.example.com/en-us/black-leather-card-holder.html",
+        crawl_module="pdp",
+    )
+
+    assert result.surface == "ecommerce_detail"
+    assert "ecommerce_detail_html_slug_signal" in result.evidence
+
+
+def test_resolve_auto_listing_path_wins_over_html_product_shape() -> None:
+    result = resolve_surface(
+        "auto",
+        url="https://shop.example.com/category/sale-product-black-12345.html",
+        crawl_module="category",
+    )
+
+    assert result.surface == "ecommerce_listing"
+    assert "ecommerce_listing_url_signal" in result.evidence
+
+
 def test_resolve_explicit_surface_bypasses_auto_detection() -> None:
     result = resolve_surface(
         "job_detail",

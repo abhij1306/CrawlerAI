@@ -1,11 +1,12 @@
 # Active Plan
 
-**Current:** Agentic Browser Playground → `docs/plans/agentic-browser-playground-plan.md`
-**Status:** QUEUED
-**Started:** 2026-06-02
+**Current:** Site-Link Category Discovery for Crawl Studio → `docs/plans/site-link-category-discovery-plan.md`
+**Status:** IN PROGRESS
+**Started:** 2026-06-04
 **Last slice completed:** None
 
 ## Queue
+1. Agentic Browser Playground → `docs/plans/agentic-browser-playground-plan.md` — queued, not yet started
 
 ## Previously Completed
 - Self-Healing Observability & Run-Audit Layer → `docs/plans/self-healing-observability-plan.md`

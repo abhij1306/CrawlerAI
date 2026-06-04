@@ -57,9 +57,9 @@ def _classify_input_url(url: str) -> str:
         and path.count("/") == 0
     ):
         return "sitemap"
-    if surface.endswith("_detail"):
+    if surface == ECOMMERCE_DETAIL_SURFACE:
         return "detail"
-    if surface.endswith("_listing"):
+    if surface == ECOMMERCE_LISTING_SURFACE or surface.endswith("_listing"):
         return "listing"
     return "listing"
 

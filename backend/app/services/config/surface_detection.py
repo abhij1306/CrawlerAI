@@ -68,6 +68,38 @@ SURFACE_RESOLVER_ECOMMERCE_LISTING_PATH_TOKENS = (
     "/search",
     "/shop/",
 )
+SURFACE_RESOLVER_ECOMMERCE_LISTING_PATH_SEGMENTS = (
+    "accessories",
+    "apparel",
+    "bags",
+    "beauty",
+    "boys",
+    "clothing",
+    "dresses",
+    "gifts",
+    "girls",
+    "home",
+    "jackets",
+    "jeans",
+    "kids",
+    "men",
+    "mens",
+    "new-arrivals",
+    "pants",
+    "sale",
+    "shirts",
+    "shoes",
+    "shorts",
+    "sweaters",
+    "tops",
+    "women",
+    "womens",
+)
+SURFACE_RESOLVER_ECOMMERCE_DETAIL_SKU_HTML_PATTERN = (
+    r"(?:^|/)[a-z0-9][a-z0-9-]*-[a-z0-9]*\d[a-z0-9]{5,}\.html$"
+)
+SURFACE_RESOLVER_ECOMMERCE_DETAIL_HTML_MIN_HYPHENS = 3
+SURFACE_RESOLVER_ECOMMERCE_DETAIL_HTML_EXTENSION = ".html"
 SURFACE_RESOLVER_JOB_PATH_TOKENS = (
     "/job/",
     "/jobs/",
@@ -88,4 +120,3 @@ SURFACE_RESOLVER_HTML_TYPES = {
 SURFACE_RESOLVER_LOW_CONFIDENCE = 0.4
 SURFACE_RESOLVER_MEDIUM_CONFIDENCE = 0.7
 SURFACE_RESOLVER_HIGH_CONFIDENCE = 0.9
-

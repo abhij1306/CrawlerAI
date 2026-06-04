@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import asdict, dataclass
 from urllib.parse import urlparse
 
@@ -125,6 +126,21 @@ def resolve_auto_surface(
             [*evidence, "ecommerce_detail_url_signal"],
         )
 
+    html_detail_signal = _html_detail_signal(path)
+    if html_detail_signal:
+        return SurfaceResolution(
+            "ecommerce_detail",
+            config.SURFACE_RESOLVER_MEDIUM_CONFIDENCE,
+            [*evidence, html_detail_signal],
+        )
+
+    if _has_listing_segment(path):
+        return SurfaceResolution(
+            "ecommerce_listing",
+            config.SURFACE_RESOLVER_MEDIUM_CONFIDENCE,
+            [*evidence, "ecommerce_listing_segment_signal"],
+        )
+
     fallback = "content_detail"
     if is_listing and _has_listing_url_shape(path):
         fallback = "content_listing"
@@ -214,6 +230,29 @@ def _has_forum_signal(host: str, path: str) -> bool:
 
 def _has_any(value: str, tokens: tuple[str, ...]) -> bool:
     return any(token in value for token in tokens)
+
+
+def _has_listing_segment(path: str) -> bool:
+    segments = {
+        segment.strip().lower()
+        for segment in str(path or "").split("/")
+        if segment.strip()
+    }
+    return bool(
+        segments.intersection(config.SURFACE_RESOLVER_ECOMMERCE_LISTING_PATH_SEGMENTS)
+    )
+
+
+def _html_detail_signal(path: str) -> str:
+    normalized = str(path or "").strip().lower()
+    slug = normalized.rstrip("/").rsplit("/", maxsplit=1)[-1]
+    if not slug.endswith(config.SURFACE_RESOLVER_ECOMMERCE_DETAIL_HTML_EXTENSION):
+        return ""
+    if re.search(config.SURFACE_RESOLVER_ECOMMERCE_DETAIL_SKU_HTML_PATTERN, normalized):
+        return "ecommerce_detail_sku_html_signal"
+    if slug.count("-") >= config.SURFACE_RESOLVER_ECOMMERCE_DETAIL_HTML_MIN_HYPHENS:
+        return "ecommerce_detail_html_slug_signal"
+    return ""
 
 
 def _has_listing_url_shape(path: str) -> bool:

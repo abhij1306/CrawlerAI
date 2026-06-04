@@ -551,6 +551,24 @@ def test_classify_input_url_treats_shallow_locale_root_as_sitemap() -> None:
     assert _classify_input_url("https://usa.tommy.com/en") == "sitemap"
 
 
+@pytest.mark.component
+def test_classify_input_url_treats_generic_category_path_as_listing() -> None:
+    assert (
+        _classify_input_url("https://www.balenciaga.com/en-en/gifts/gifts-for-home")
+        == "listing"
+    )
+
+
+@pytest.mark.component
+def test_classify_input_url_treats_sku_html_product_slug_as_detail() -> None:
+    assert (
+        _classify_input_url(
+            "https://www.balenciaga.com/en-en/beijing-coffee-cup-black-666275T01011004.html"
+        )
+        == "detail"
+    )
+
+
 @pytest.mark.asyncio
 @pytest.mark.component
 async def test_start_discover_uses_sitemap_stage_for_shallow_locale_root(
