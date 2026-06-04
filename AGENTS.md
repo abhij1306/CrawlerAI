@@ -19,10 +19,9 @@ Invoro is a deterministic crawl, extraction, review, and export system for ecomm
 
 Before coding:
 
-1. Check `docs/plans/ACTIVE.md`.
-2. Identify the owning area from `docs/CODEBASE_MAP.md` if file ownership is unclear.
-3. Read only the canonical doc that matches the task.
-4. Grep before adding code: `grep -r "concept_or_function_name" backend/app`
+1. Identify the owning area from `docs/CODEBASE_MAP.md` if file ownership is unclear.
+2. Read only the canonical doc that matches the task.
+3. Grep before adding code: `grep -r "concept_or_function_name" backend/app`
 
 Do not read every project doc by default.
 Read more only when the task crosses subsystem boundaries or changes shared behavior.
@@ -99,7 +98,8 @@ Fix those in place before adding browser interaction or downstream fallbacks.
 
 ## Plans
 
-- `docs/plans/ACTIVE.md` is the only start point for plan state.
+- Do not check plan files by default.
+- Read `docs/plans/ACTIVE.md` only when the user explicitly asks for plan work.
 - If the active plan is `COMPLETE`, do not keep treating it as active work.
 - A slice is not done until its verify step passes.
 - Do not open a new plan for a problem already covered by an unverified plan.
@@ -109,7 +109,7 @@ Fix those in place before adding browser interaction or downstream fallbacks.
 ## Quick Task Routing
 
 - Small/local bugfix or UI tweak:
-  Check `docs/plans/ACTIVE.md`, then inspect code directly. Open other docs only if ownership or behavior is unclear.
+  Inspect code directly. Open docs only if ownership or behavior is unclear.
 - New behavior or contract change:
   Read `docs/BUSINESS_LOGIC.md` and any relevant section of `docs/INVARIANTS.md`.
 - Refactor or file creation:

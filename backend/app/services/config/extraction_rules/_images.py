@@ -65,6 +65,8 @@ BROKEN_FETCH_IMAGE_PATH_PATTERN = (
 )
 LOW_RES_SWATCH_IMAGE_PATH_PATTERN = r"(?:^|/)[^/?#]+_[a-z0-9]{3}_s(?:$|\?)"
 DETAIL_IMAGE_PRODUCT_CODE_PATTERN = r"(?:^|/)([A-Z]{2,4}\d{2,6})(?:/|[_\-.])"
+DETAIL_IMAGE_COLORWAY_CODE_PATTERN = r"(?:^|[_-])\d{4,8}_([A-Z0-9]{2,5})(?:[_\-.]|$)"
+DETAIL_IMAGE_VIEW_CODE_PATTERN = r"[A-Z]\d+"
 AMAZON_IMAGE_CDN_HOSTS = frozenset(
     {"m.media-amazon.com", "images-na.ssl-images-amazon.com"}
 )

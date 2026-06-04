@@ -71,6 +71,8 @@ from app.services.config.extraction_rules import (
     DETAIL_LOW_SIGNAL_TITLE_VALUES,
     DETAIL_LEGAL_TAIL_PATTERNS,
     DETAIL_LONG_TEXT_DISCLAIMER_PATTERNS,
+    DETAIL_LONG_TEXT_SUBSTRING_REMOVE_PATTERNS,
+    DETAIL_LONG_TEXT_REPEATED_PROMPTS,
     DETAIL_LONG_TEXT_LEADING_ATTRIBUTE_BLOB_PATTERN,
     DETAIL_LONG_TEXT_TRUNCATED_TAIL_TOKENS,
     DETAIL_LONG_TEXT_UI_TAIL_PHRASES,
@@ -124,6 +126,16 @@ long_text_disclaimer_patterns = tuple(
     re.compile(str(pattern), re.I)
     for pattern in tuple(DETAIL_LONG_TEXT_DISCLAIMER_PATTERNS or ())
     if str(pattern).strip()
+)
+long_text_substring_remove_patterns = tuple(
+    re.compile(str(pattern), re.I)
+    for pattern in tuple(DETAIL_LONG_TEXT_SUBSTRING_REMOVE_PATTERNS or ())
+    if str(pattern).strip()
+)
+long_text_repeated_prompts = tuple(
+    clean_text(prompt)
+    for prompt in tuple(DETAIL_LONG_TEXT_REPEATED_PROMPTS or ())
+    if clean_text(prompt)
 )
 low_signal_title_values = frozenset(
     clean_text(value).lower()
@@ -316,7 +328,9 @@ def _category_candidate_is_noise(field_name: str, value: object) -> bool:
         return True
     lowered = f" {cleaned.lower()} "
     return any(
-        f" {token} " in lowered for token in DETAIL_CATEGORY_UI_TOKENS if token != "..."  # nosec B105
+        f" {token} " in lowered
+        for token in DETAIL_CATEGORY_UI_TOKENS
+        if token != "..."  # nosec B105
     )
 
 
@@ -449,8 +463,7 @@ def sanitize_detail_long_text_fields(
     protected_identity_tokens = {
         token
         for token in detail_product_text_tokens(clean_text(title_hint))
-        if len(token) >= _token_min_len_chunk
-        and token not in title_tokens
+        if len(token) >= _token_min_len_chunk and token not in title_tokens
     }
     for field_name in LONG_TEXT_FIELDS:
         text = text_or_none(record.get(field_name))
@@ -597,6 +610,7 @@ def _drop_redundant_product_details(record: dict[str, Any]) -> None:
         field_sources.pop("product_details", None)
 
 
+# skipcq: PY-R1000
 def sanitize_detail_long_text(
     text: str,
     *,
@@ -606,6 +620,8 @@ def sanitize_detail_long_text(
     cleaned_text = _strip_long_text_ui_tail(
         _strip_leading_attribute_blob(_strip_bracket_artifact_noise(clean_text(text)))
     )
+    cleaned_text = _strip_long_text_substring_noise(cleaned_text)
+    cleaned_text = _trim_repeated_title_lead(cleaned_text, title=title)
     if _text_is_structured_object_repr(cleaned_text) or _text_is_structured_json_array(
         cleaned_text
     ):
@@ -631,7 +647,10 @@ def sanitize_detail_long_text(
     kept: list[str] = []
     protected_tokens = protected_identity_tokens or set()
     for chunk in chunks:
+        chunk = _strip_repeated_prompt_text(chunk)
         lowered = chunk.lower()
+        if not chunk:
+            continue
         if lowered in seen:
             continue
         if detail_long_text_chunk_is_legal_tail(chunk):
@@ -654,6 +673,39 @@ def sanitize_detail_long_text(
     if kept and all(detail_long_text_chunk_is_document_label(chunk) for chunk in kept):
         return ""
     return " ".join(kept).strip()
+
+
+def _strip_long_text_substring_noise(text: str) -> str:
+    cleaned = clean_text(text)
+    if not cleaned:
+        return ""
+    for pattern in long_text_substring_remove_patterns:
+        cleaned = clean_text(pattern.sub("", cleaned))
+    return cleaned
+
+
+def _strip_repeated_prompt_text(text: str) -> str:
+    cleaned = clean_text(text)
+    for prompt in long_text_repeated_prompts:
+        if cleaned.count(prompt) >= 2:
+            cleaned = clean_text(cleaned.replace(prompt, ""))
+    return cleaned
+
+
+def _trim_repeated_title_lead(text: str, *, title: str) -> str:
+    cleaned = clean_text(text)
+    title_lead = clean_text(str(title or "").split("|", 1)[0])
+    if len(title_lead.split()) < 3:
+        return cleaned
+    lowered = cleaned.casefold()
+    needle = title_lead.casefold()
+    first = lowered.find(needle)
+    if first < 0:
+        return cleaned
+    second = lowered.find(needle, first + len(needle))
+    if second <= first:
+        return cleaned
+    return clean_text(cleaned[:second])
 
 
 def sanitize_detail_features(value: object, *, title: str) -> list[str]:
@@ -880,7 +932,10 @@ def _materials_trim_to_first_specifics(text: str) -> str:
     match = _MATERIALS_HEAD_TRIM_TERMINATORS_RE.search(text[:400])
     if match is None:
         return text
-    if any(item.start() > match.end() for item in _MATERIALS_COMPOSITION_PATTERN.finditer(text)):
+    if any(
+        item.start() > match.end()
+        for item in _MATERIALS_COMPOSITION_PATTERN.finditer(text)
+    ):
         return text
     cut = text[: match.end()].strip()
     return cut or text

@@ -360,6 +360,8 @@ def should_escalate_to_browser(
     non_retryable_http_status = is_non_retryable_http_status(result.status_code)
     if result.blocked or is_retryable_http_status(result.status_code):
         return True
+    if non_retryable_http_status:
+        return False
     resolved_policy = (
         runtime_policy
         if runtime_policy is not None
@@ -389,8 +391,6 @@ def should_escalate_to_browser(
         and _looks_like_listing_shell(result, analysis=analysis)
     ):
         return True
-    if non_retryable_http_status:
-        return False
     if bool(escalation_policy.get("missing_detail_signals")) and not has_detail_signals:
         return True
     return False

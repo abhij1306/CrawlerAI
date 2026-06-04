@@ -325,7 +325,10 @@ async def _persist_url_failure_log(
     logger.warning(
         "URL processing failed for run=%s url=%s", run_id, url, exc_info=True
     )
-    await log_event(session, run.id, "warning", log_message)
+    event_message = log_message
+    if not event_message.startswith("[url:"):
+        event_message = f"[url:{url}] {event_message}"
+    await log_event(session, run.id, "warning", event_message)
     await session.commit()
     return run
 

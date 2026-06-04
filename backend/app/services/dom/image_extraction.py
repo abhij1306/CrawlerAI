@@ -239,7 +239,7 @@ def dedupe_image_urls(urls: list[str]) -> list[str]:
             or any(token in lowered for token in NON_PRODUCT_PROVIDER_HINTS)
         ):
             continue
-        canonical = canonical_image_url(url)
+        canonical = _dedupe_key_for_image_url(url)
         if not canonical:
             continue
         score = image_candidate_score(url)
@@ -256,6 +256,30 @@ def dedupe_image_urls(urls: list[str]) -> list[str]:
                 normalized_url if score > current_score else current_url,
             )
     return [best_by_key[key][2] for key in order]
+
+
+def _dedupe_key_for_image_url(url: str) -> str:
+    canonical = canonical_image_url(url)
+    if not canonical:
+        return ""
+    parsed = urlparse(canonical)
+    shopify_match = _SHOPIFY_IMAGE_FILE_PATH_RE.search(parsed.path or "")
+    if (
+        parsed.netloc == "cdn.shopify.com"
+        or shopify_match is not None
+        or (parsed.path or "").startswith("/files/")
+    ):
+        filename = unquote((parsed.path or "").rsplit("/", 1)[-1]).casefold()
+        query = urlencode(
+            [
+                (key, value)
+                for key, value in parse_qsl(parsed.query, keep_blank_values=True)
+                if str(key or "").casefold() == "v"
+            ],
+            doseq=True,
+        )
+        return f"shopify:{filename}?{query}" if query else f"shopify:{filename}"
+    return canonical
 
 
 def _canonical_image_path(path: str) -> str:

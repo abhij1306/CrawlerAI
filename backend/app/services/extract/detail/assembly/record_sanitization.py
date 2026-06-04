@@ -28,9 +28,14 @@ from app.services.config.extraction_rules import (
     DETAIL_CATEGORY_BRANCH_STOP_TOKENS,
     DETAIL_CATEGORY_LABEL_PREFIXES,
     DETAIL_CATEGORY_UI_TOKENS,
+    DETAIL_SIZE_GUIDE_ALLOWED_HEADER_KEYS,
+    DETAIL_SIZE_GUIDE_CONTEXT_TOKENS,
+    DETAIL_TITLE_LEADING_SKU_PREFIX_PATTERN,
+    DETAIL_TITLE_TRAILING_SIZE_VALUES,
     DETAIL_BREADCRUMB_SEPARATOR_LABELS,
     DETAIL_BREADCRUMB_TITLE_DUPLICATE_RATIO,
     DETAIL_QUOTED_COLOR_PATTERN,
+    DETAIL_LOW_SIGNAL_NUMERIC_SIZE_MAX,
 )
 from app.services.shared.field_coerce import (
     clean_text,
@@ -62,6 +67,9 @@ from app.services.config.detail_extraction_constants import (
 )
 
 logger = logging.getLogger(__name__)
+_DETAIL_TITLE_LEADING_SKU_PREFIX_RE = re.compile(
+    str(DETAIL_TITLE_LEADING_SKU_PREFIX_PATTERN), re.I
+)
 
 
 def sanitize_detail_placeholder_scalars(
@@ -112,6 +120,8 @@ def sanitize_detail_placeholder_scalars(
             record["product_attributes"] = cleaned_attributes
         else:
             record.pop("product_attributes", None)
+    _sanitize_detail_scalar_size(record)
+    _normalize_detail_tables(record)
 
 
 def _feature_text_is_json_object(value: str) -> bool:
@@ -141,6 +151,8 @@ def sanitize_detail_identity_scalars(
             record["part_number"] = preferred_code
     _repair_detail_title_from_requested_identity(record, identity_url=identity_url)
     _repair_missing_detail_brand(record, identity_url=identity_url)
+    _repair_detail_brand_from_host_fallback(record, identity_url=identity_url)
+    _sanitize_detail_title_noise(record)
     _repair_detail_color_from_description(record)
     placeholder_title_removed = bool(record.pop("_placeholder_title_removed", False))
     if not text_or_none(record.get("title")):
@@ -205,6 +217,7 @@ def _brand_from_title_suffix(record: dict[str, Any]) -> str | None:
     return candidate
 
 
+# skipcq: PY-R1000
 def _brand_from_title_prefix(
     record: dict[str, Any],
     *,
@@ -223,6 +236,12 @@ def _brand_from_title_prefix(
     raw_words = [word for word in re.findall(r"[A-Za-z0-9&'.-]+", title) if word]
     if not raw_words:
         return None
+    if (
+        raw_words[0].isdigit()
+        and 2 <= len(raw_words[0]) <= 3
+        and raw_words[0] in path_parts
+    ):
+        return raw_words[0]
     max_words = max(1, int(DETAIL_BRAND_TITLE_PREFIX_MAX_WORDS))
     continuation_tokens = set(DETAIL_BRAND_PREFIX_CONTINUATION_TOKENS or ())
     take = 1
@@ -235,6 +254,101 @@ def _brand_from_title_prefix(
     if not _tokens_appear_contiguously(path_parts, candidate_tokens):
         return None
     return " ".join(word.strip() for word in raw_words[:take] if word.strip())
+
+
+def _repair_detail_brand_from_host_fallback(
+    record: dict[str, Any],
+    *,
+    identity_url: str,
+) -> None:
+    fallback = coerce_brand_text(_brand_from_host(identity_url))
+    if not fallback:
+        return
+    current = text_or_none(record.get("brand"))
+    if current and current.casefold() == fallback.casefold():
+        return
+    if current and not _brand_value_is_weak_title_prefix(current, record):
+        return
+    record["brand"] = fallback
+    field_sources = record.setdefault("_field_sources", {})
+    if isinstance(field_sources, dict):
+        field_sources["brand"] = ["host_identity_repair"]
+
+
+def _brand_value_is_weak_title_prefix(value: str, record: dict[str, Any]) -> bool:
+    title = clean_text(record.get("title"))
+    if not title:
+        return False
+    brand_tokens = slug_tokens(value)
+    title_tokens = slug_tokens(title)
+    if not brand_tokens or not title_tokens:
+        return False
+    return title_tokens[: len(brand_tokens)] == brand_tokens
+
+
+def _sanitize_detail_title_noise(record: dict[str, Any]) -> None:
+    title = clean_text(record.get("title"))
+    if not title:
+        return
+    title = _dedupe_repeated_semicolon_title(title)
+    title = clean_text(title.lstrip("+").strip())
+    title = _strip_leading_sku_title_prefix(title, record)
+    title = _strip_trailing_title_variant_params(title, record)
+    if title:
+        record["title"] = title
+
+
+def _dedupe_repeated_semicolon_title(title: str) -> str:
+    parts = [clean_text(part) for part in title.split(";") if clean_text(part)]
+    if len(parts) == 2 and parts[0].casefold() == parts[1].casefold():
+        return parts[0]
+    return title
+
+
+def _strip_leading_sku_title_prefix(title: str, record: dict[str, Any]) -> str:
+    brand = clean_text(record.get("brand"))
+    if not brand:
+        return title
+    parts = title.split(" ", 1)
+    if len(parts) != 2:
+        return title
+    prefix, rest = clean_text(parts[0]), clean_text(parts[1])
+    if not prefix or not rest:
+        return title
+    if not _DETAIL_TITLE_LEADING_SKU_PREFIX_RE.fullmatch(prefix):
+        return title
+    if not re.search(r"[A-Za-z]", prefix) or not re.search(r"\d", prefix):
+        return title
+    if not rest.casefold().startswith(brand.casefold()):
+        return title
+    return rest
+
+
+def _strip_trailing_title_variant_params(title: str, record: dict[str, Any]) -> str:
+    parts = [clean_text(part) for part in re.split(r"\s[-\u2013\u2014]\s", title)]
+    if len(parts) < 3:
+        return title
+    trailing_size = parts[-1]
+    trailing_color = parts[-2]
+    record_size = clean_text(record.get("size"))
+    size_values = {
+        clean_text(value).casefold()
+        for value in tuple(DETAIL_TITLE_TRAILING_SIZE_VALUES or ())
+        if clean_text(value)
+    }
+    if record_size:
+        size_values.add(record_size.casefold())
+    size_matches = trailing_size.casefold() in size_values
+    color_matches = bool(
+        trailing_color
+        and (
+            trailing_color.casefold() == clean_text(record.get("color")).casefold()
+            or re.fullmatch(str(COLOR_KEYWORD_PATTERN), trailing_color, flags=re.I)
+        )
+    )
+    if size_matches and color_matches:
+        return clean_text(" - ".join(parts[:-2]))
+    return title
 
 
 def _tokens_appear_contiguously(tokens: list[str], needle: list[str]) -> bool:
@@ -280,7 +394,9 @@ def _repair_detail_color_from_description(record: dict[str, Any]) -> None:
         return
     current = clean_text(record.get("color"))
     field_sources = record.get("_field_sources")
-    color_sources = field_sources.get("color") if isinstance(field_sources, dict) else None
+    color_sources = (
+        field_sources.get("color") if isinstance(field_sources, dict) else None
+    )
     description_only_sources = {"description_color_repair", "description"}
     if current and (
         not isinstance(color_sources, list)
@@ -414,6 +530,81 @@ def _detail_scalar_value_is_placeholder(value: object) -> bool:
     if cleaned in {str(item).strip().lower() for item in CANDIDATE_PLACEHOLDER_VALUES}:
         return True
     return cleaned in {"category", "default title", "uncategorized"}
+
+
+def _sanitize_detail_scalar_size(record: dict[str, Any]) -> None:
+    size = clean_text(record.get("size"))
+    if not size or not size.isdigit():
+        return
+    try:
+        max_low_signal = int(DETAIL_LOW_SIGNAL_NUMERIC_SIZE_MAX)
+    except (TypeError, ValueError):
+        max_low_signal = 3
+    if int(size) > max_low_signal:
+        return
+    title_tokens = set(slug_tokens(record.get("title")))
+    category_tokens = set(slug_tokens(record.get("category")))
+    if {"men", "mens", "women", "womens"} & (title_tokens | category_tokens):
+        record.pop("size", None)
+
+
+# skipcq: PY-R1000
+def _normalize_detail_tables(record: dict[str, Any]) -> None:
+    tables = record.get("tables")
+    if not isinstance(tables, list):
+        return
+    normalized_tables: list[dict[str, Any]] = []
+    for table in tables:
+        if not isinstance(table, dict):
+            continue
+        headers = list(_table_headers(table))
+        rows = table.get("rows")
+        if not headers or not isinstance(rows, list):
+            normalized_tables.append(table)
+            continue
+        if _table_is_size_guide(table):
+            allowed = {
+                clean_text(value).casefold()
+                for value in tuple(DETAIL_SIZE_GUIDE_ALLOWED_HEADER_KEYS or ())
+                if clean_text(value)
+            }
+            headers = [header for header in headers if header.casefold() in allowed]
+        normalized_rows = [
+            {
+                header: row[header]
+                for header in headers
+                if isinstance(row, dict) and row.get(header) not in (None, "", [], {})
+            }
+            for row in rows
+        ]
+        normalized_rows = [row for row in normalized_rows if row]
+        if not normalized_rows:
+            continue
+        normalized_table = dict(table)
+        normalized_table["headers"] = headers
+        normalized_table["rows"] = normalized_rows
+        normalized_tables.append(normalized_table)
+    if normalized_tables:
+        record["tables"] = normalized_tables
+    else:
+        record.pop("tables", None)
+
+
+def _table_headers(table: dict[str, Any]) -> list[str]:
+    raw_headers = table.get("headers")
+    if not isinstance(raw_headers, list):
+        return []
+    return [clean_text(header) for header in raw_headers if clean_text(header)]
+
+
+def _table_is_size_guide(table: dict[str, Any]) -> bool:
+    context = clean_text(table.get("context")).casefold()
+    tokens = {
+        clean_text(value).casefold()
+        for value in tuple(DETAIL_SIZE_GUIDE_CONTEXT_TOKENS or ())
+        if clean_text(value)
+    }
+    return bool(context and any(token in context for token in tokens))
 
 
 def _clean_detail_category_path(

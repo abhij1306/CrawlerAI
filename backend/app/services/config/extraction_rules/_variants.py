@@ -128,7 +128,7 @@ VARIANT_PLACEHOLDER_VALUES = frozenset(
     }
 )
 VARIANT_PLACEHOLDER_PREFIXES = ("please select", "open ", "select ")
-VARIANT_SIZE_QUANTITY_CONTROL_VALUES = frozenset({"-", "+"})
+VARIANT_SIZE_QUANTITY_CONTROL_VALUES = frozenset({"-", "+", "qty", "qty."})
 SIZE_REJECT_TOKENS = frozenset(
     {
         "customer reviews",
@@ -153,6 +153,8 @@ SIZE_REJECT_TOKENS = frozenset(
         "filter by",
         "price",
         "quantity",
+        "qty",
+        "qty.",
     }
 )
 COMMON_WORD_SIZE_VALUES = frozenset(

@@ -343,6 +343,17 @@ async def _retry_empty_extraction_with_browser(
     )
     if not retry_decision["should_retry"]:
         return records, selector_rules
+    remaining_budget_seconds = _remaining_url_budget_seconds(context)
+    min_remaining_seconds = _browser_retry_min_remaining_seconds()
+    if remaining_budget_seconds < min_remaining_seconds:
+        await _log_pipeline_event(
+            context,
+            "info",
+            "Skipping empty-extraction browser retry for "
+            f"{context.url}: remaining URL budget {remaining_budget_seconds:.1f}s"
+            f" < required {min_remaining_seconds:.1f}s",
+        )
+        return records, selector_rules
     await _log_pipeline_event(
         context,
         "info",
@@ -633,7 +644,8 @@ def _remaining_url_budget_seconds(context: _URLProcessingContext) -> float:
 def _browser_retry_min_remaining_seconds() -> float:
     return max(
         float(crawler_runtime_settings.low_quality_browser_retry_min_remaining_seconds),
-        float(crawler_runtime_settings.browser_render_timeout_seconds),
+        float(crawler_runtime_settings.browser_render_timeout_seconds)
+        + float(crawler_runtime_settings.url_process_timeout_buffer_seconds),
     )
 
 

@@ -9,6 +9,7 @@ from app.services.crawl import batch_runtime as batch_runtime_module
 from app.services.crawl.batch_runtime import (
     _parallel_url_concurrency,
     _parallel_worker_record_limit,
+    _persist_url_failure_log,
     process_run,
 )
 from app.services.config.sitemap import SITEMAP_DEFAULT_MAX_URLS
@@ -78,6 +79,43 @@ def test_parallel_url_concurrency_does_not_browser_cap_http_only(
     )
 
     assert _parallel_url_concurrency(10, settings_view) == 8
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_persist_url_failure_log_prefixes_url_for_parallel_ui(
+    db_session: AsyncSession,
+    test_user,
+) -> None:
+    run = await create_crawl_run(
+        db_session,
+        test_user.id,
+        {
+            "run_type": "batch",
+            "surface": "ecommerce_detail",
+            "settings": {"urls": ["https://example.com/products/missing-widget"]},
+        },
+    )
+    url = "https://example.com/products/missing-widget"
+
+    await _persist_url_failure_log(
+        db_session,
+        run_id=run.id,
+        url=url,
+        exc=RuntimeError("navigation failed"),
+        log_message=f"URL processing failed for {url}: RuntimeError: navigation failed",
+    )
+    logs = (
+        await db_session.execute(
+            select(CrawlLog).where(CrawlLog.run_id == run.id).order_by(CrawlLog.id)
+        )
+    ).scalars().all()
+
+    if logs[-1].level != "warning":
+        pytest.fail(f"expected warning log, got {logs[-1].level!r}")
+    expected_prefix = f"[url:{url}] URL processing failed for {url}"
+    if not logs[-1].message.startswith(expected_prefix):
+        pytest.fail(f"expected URL-prefixed failure log, got {logs[-1].message!r}")
 
 
 def _listing_shell_html() -> str:
@@ -406,14 +444,25 @@ async def test_process_run_runs_same_domain_batch_urls_in_parallel(
     )
     active = 0
     max_active = 0
+    second_active = asyncio.Event()
 
     async def _fake_process_single_url(*args, **kwargs):
         nonlocal active, max_active
         del args, kwargs
         active += 1
         max_active = max(max_active, active)
-        await asyncio.sleep(0.01)
-        active -= 1
+        if active > 1:
+            second_active.set()
+        try:
+            if active == 1:
+                try:
+                    await asyncio.wait_for(second_active.wait(), timeout=0.5)
+                except asyncio.TimeoutError:
+                    pass
+            else:
+                await asyncio.sleep(0.01)
+        finally:
+            active -= 1
         return URLProcessingResult(
             records=[],
             verdict="success",

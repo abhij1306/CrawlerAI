@@ -8,7 +8,9 @@ from app.services.acquisition.acquirer import AcquisitionResult
 from app.services.acquisition.acquirer import acquire as _acquire
 from app.services.acquisition.browser_runtime import real_chrome_browser_available
 from app.services.acquisition.host_protection_memory import note_host_hard_block
+from app.services.acquisition.runtime import is_non_retryable_http_status
 from app.services.config import observability as obs_config
+from app.services.config.pipeline_reasons import NON_RETRYABLE_HTTP_STATUS_REASON
 from app.services.config.runtime_settings import crawler_runtime_settings
 from app.services.db_utils import mapping_or_empty
 from app.services.shared.field_coerce import object_list as _object_list
@@ -34,6 +36,7 @@ from app.services.pipeline.direct_record_fallback import (
 from app.services.publish import (
     VERDICT_BLOCKED,
     VERDICT_EMPTY,
+    VERDICT_ERROR,
     VERDICT_LISTING_FAILED,
     build_url_metrics,
     compute_verdict,
@@ -777,6 +780,7 @@ async def _apply_extraction_post_processing(
     return records, selector_rules
 
 
+# skipcq: PY-R1000
 async def _run_persistence_stage(
     context: _URLProcessingContext,
     extracted: _ExtractedURLStage,
@@ -827,6 +831,12 @@ async def _run_persistence_stage(
         blocked=_effective_blocked(acquisition_result),
         record_count=persisted_count,
     )
+    status_code = int(getattr(acquisition_result, "status_code", 0) or 0)
+    if persisted_count == 0 and is_non_retryable_http_status(status_code):
+        url_metrics = mapping_or_empty(extracted.fetched.url_metrics)
+        url_metrics["failure_reason"] = NON_RETRYABLE_HTTP_STATUS_REASON
+        extracted.fetched.url_metrics = url_metrics
+        verdict = VERDICT_ERROR
     if not _suppress_empty_downstream_record_logs(
         acquisition_result,
         extracted_records,

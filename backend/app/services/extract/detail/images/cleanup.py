@@ -15,7 +15,9 @@ from urllib.parse import unquote, urlparse
 
 from app.services.config.extraction_rules import (
     BROKEN_FETCH_IMAGE_PATH_PATTERN,
+    DETAIL_IMAGE_COLORWAY_CODE_PATTERN,
     DETAIL_IMAGE_PRODUCT_CODE_PATTERN,
+    DETAIL_IMAGE_VIEW_CODE_PATTERN,
     IMAGE_FAMILY_NOISE_TOKENS,
     IMAGE_PATH_TOKENS,
     LOW_RES_SWATCH_IMAGE_PATH_PATTERN,
@@ -64,6 +66,14 @@ _DETAIL_IMAGE_PRODUCT_CODE_RE = re.compile(
         DETAIL_IMAGE_PRODUCT_CODE_PATTERN, "pattern", DETAIL_IMAGE_PRODUCT_CODE_PATTERN
     )
 )
+_DETAIL_IMAGE_COLORWAY_CODE_RE = re.compile(
+    getattr(
+        DETAIL_IMAGE_COLORWAY_CODE_PATTERN,
+        "pattern",
+        DETAIL_IMAGE_COLORWAY_CODE_PATTERN,
+    )
+)
+_DETAIL_IMAGE_VIEW_CODE_RE = re.compile(str(DETAIL_IMAGE_VIEW_CODE_PATTERN), re.I)
 
 
 def backfill_parent_image_from_variants(record: dict[str, Any]) -> None:
@@ -277,6 +287,7 @@ def _detail_path_looks_like_image_asset(path: str, lowered_url: str) -> bool:
     return any(token in lowered_path for token in IMAGE_PATH_TOKENS)
 
 
+# skipcq: PY-R1000
 def detail_image_matches_primary_family(
     url: str,
     *,
@@ -291,6 +302,19 @@ def detail_image_matches_primary_family(
         primary_product_code
         and candidate_product_code
         and primary_product_code != candidate_product_code
+    ):
+        return False
+    primary_color_code = _detail_image_colorway_code(primary_image)
+    candidate_color_code = _detail_image_colorway_code(url)
+    if (
+        primary_color_code
+        and candidate_color_code
+        and primary_color_code != candidate_color_code
+        and not (
+            primary_product_code
+            and candidate_product_code
+            and primary_product_code == candidate_product_code
+        )
     ):
         return False
     primary_tokens = _detail_image_family_tokens(primary_image)
@@ -401,7 +425,13 @@ def _detail_image_title_from_url(url: str) -> str | None:
     return normalized or None
 
 
+# skipcq: PY-R1000
 def _detail_image_stem_looks_encoded(stem: str) -> bool:
+    readable_tokens = [
+        token for token in re.split(r"[^A-Za-z]+", str(stem or "")) if len(token) >= 4
+    ]
+    if len(readable_tokens) >= 2 and re.search(r"[-_]", str(stem or "")):
+        return False
     compact = re.sub(r"[^A-Za-z0-9_-]+", "", str(stem or ""))
     alpha = re.sub(r"[^A-Za-z]+", "", compact)
     if (
@@ -429,6 +459,7 @@ def _detail_image_title_has_identity_signal(title: str) -> bool:
     )
 
 
+# skipcq: PY-R1000
 def _detail_image_title_matches_requested_identity(
     title: str,
     *,
@@ -473,6 +504,16 @@ def _detail_image_title_matches_requested_identity(
         and normalized_candidate_title.lower().startswith(requested_slug.lower())
     ):
         return True
+    requested_semantic_tokens = _semantic_detail_identity_tokens(
+        requested_title or requested_page_url
+    )
+    if not requested_semantic_tokens and requested_title:
+        requested_semantic_tokens = _semantic_detail_identity_tokens(requested_page_url)
+    candidate_semantic_tokens = _semantic_detail_identity_tokens(title)
+    if requested_semantic_tokens and candidate_semantic_tokens:
+        semantic_overlap = requested_semantic_tokens & candidate_semantic_tokens
+        if len(semantic_overlap) >= min(2, len(requested_semantic_tokens)):
+            return True
     requested_tokens = _detail_identity_tokens(requested_title or requested_page_url)
     candidate_tokens = _detail_identity_tokens(title)
     if not requested_tokens or not candidate_tokens:
@@ -504,6 +545,18 @@ def _detail_image_product_code(url: str) -> str | None:
     if match is not None:
         return match.group(1).upper()
     return None
+
+
+def _detail_image_colorway_code(url: str) -> str | None:
+    path = unquote(urlparse(str(url or "")).path)
+    filename = path.rsplit("/", 1)[-1]
+    match = _DETAIL_IMAGE_COLORWAY_CODE_RE.search(filename)
+    if match is None:
+        return None
+    code = match.group(1).upper()
+    if _DETAIL_IMAGE_VIEW_CODE_RE.fullmatch(code):
+        return None
+    return code
 
 
 def _preferred_primary_image(

@@ -46,10 +46,16 @@ function fixedColumnStyle(width: number, left?: number): CSSProperties {
   };
 }
 
+// skipcq: JS-0067
 function headerCellStyle(width: number, left?: number): CSSProperties {
   return {
     ...fixedColumnStyle(width, left),
-    ...(left === undefined ? {} : { position: 'sticky', zIndex: 70 }),
+    position: 'sticky',
+    top: 0,
+    ...(left === undefined ? {} : { left }),
+    zIndex: left === undefined ? 60 : 90,
+    height: HEADER_HEIGHT,
+    background: 'var(--bg-base)',
     color: 'var(--text-muted)',
     fontFamily: 'var(--table-header-font-family)',
     fontSize: 'var(--table-header-font-size)',
@@ -163,6 +169,49 @@ export const RecordsTable = memo(function RecordsTable({
         onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
         className="scrollbar-stable relative max-h-[calc(100vh-276px)] w-full overflow-auto"
       >
+        <div
+          className="bg-background border-border sticky top-0 z-[100] flex border-b"
+          style={{ minWidth: totalTableWidth, height: HEADER_HEIGHT }}
+        >
+          <div
+            className="flex shrink-0 items-center px-5"
+            style={headerCellStyle(SELECT_COLUMN_WIDTH, 0)}
+          >
+            <input
+              type="checkbox"
+              aria-label="Select all records"
+              checked={selectedIds.length === records.length && records.length > 0}
+              onChange={(event) => onSelectAll(event.target.checked)}
+            />
+          </div>
+          {hasImageCol ? (
+            <div
+              className="flex shrink-0 items-center justify-center px-5"
+              style={headerCellStyle(IMAGE_COLUMN_WIDTH, SELECT_COLUMN_WIDTH)}
+            >
+              IMG
+            </div>
+          ) : null}
+          {dataColumns.map((col, idx) => {
+            const colKey = col.toLowerCase();
+            const isFirstData = idx === 0;
+            return (
+              <div
+                key={col}
+                className={cn(
+                  'flex shrink-0 items-center px-5 whitespace-nowrap',
+                  PRICE_KEYS.has(colKey) && 'justify-end text-right',
+                )}
+                style={headerCellStyle(
+                  getDataColumnWidth(col),
+                  isFirstData ? pinnedDataLeft : undefined,
+                )}
+              >
+                {humanizeFieldName(col)}
+              </div>
+            );
+          })}
+        </div>
         <table
           className="compact-data-table commerce-table table-fixed caption-bottom"
           style={{ minWidth: totalTableWidth }}
@@ -174,51 +223,6 @@ export const RecordsTable = memo(function RecordsTable({
             <col key={col} style={{ width: getDataColumnWidth(col) }} />
           ))}
         </colgroup>
-        <thead className="bg-background sticky top-0 z-50">
-          <tr className="border-border border-b" style={{ height: HEADER_HEIGHT }}>
-            <th
-              scope="col"
-              className="bg-background px-5 text-left align-middle"
-              style={headerCellStyle(SELECT_COLUMN_WIDTH, 0)}
-            >
-              <input
-                type="checkbox"
-                aria-label="Select all records"
-                checked={selectedIds.length === records.length && records.length > 0}
-                onChange={(event) => onSelectAll(event.target.checked)}
-              />
-            </th>
-            {hasImageCol ? (
-              <th
-                scope="col"
-                className="bg-background px-5 text-center align-middle"
-                style={headerCellStyle(IMAGE_COLUMN_WIDTH, SELECT_COLUMN_WIDTH)}
-              >
-                IMG
-              </th>
-            ) : null}
-            {dataColumns.map((col, idx) => {
-              const colKey = col.toLowerCase();
-              const isFirstData = idx === 0;
-              return (
-                <th
-                  key={col}
-                  scope="col"
-                  className={cn(
-                    'bg-background px-5 text-left align-middle whitespace-nowrap',
-                    PRICE_KEYS.has(colKey) && 'text-right',
-                  )}
-                  style={headerCellStyle(
-                    getDataColumnWidth(col),
-                    isFirstData ? pinnedDataLeft : undefined,
-                  )}
-                >
-                  {humanizeFieldName(col)}
-                </th>
-              );
-            })}
-          </tr>
-        </thead>
         <TableBody>
           {topSpacerPx > 0 ? (
             <TableRow aria-hidden className="pointer-events-none hover:bg-transparent">

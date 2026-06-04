@@ -393,7 +393,8 @@ def test_repair_ecommerce_detail_prefers_active_color_image_and_drops_swatch_thu
 
     assert "84213_AQT" in str(record["image_url"])
     assert all(
-        "_s?fit=constrain&hei=56" not in image for image in record["additional_images"]
+        "_s?fit=constrain&hei=56" not in image
+        for image in record.get("additional_images", [])
     )
 
 

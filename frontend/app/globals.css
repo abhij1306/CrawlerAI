@@ -234,9 +234,9 @@
   --card-padding: 20px;
 
   /* Controls */
-  --control-height-sm: 28px;
-  --control-height: 32px;
-  --control-height-lg: 36px;
+  --control-height-sm: 30px;
+  --control-height: 34px;
+  --control-height-lg: 38px;
   --interactive-border-width: 1px;
 
   /* Border radii (also bridged in @theme) */
@@ -265,7 +265,7 @@
   /* Buttons */
   --btn-height: var(--control-height-lg);
   --btn-font-size: var(--text-sm);
-  --btn-padding-x: 13px;
+  --btn-padding-x: 11px;
 
   /* Button surfaces */
   --btn-primary-bg: var(--accent);
@@ -423,24 +423,24 @@ html[data-theme='dark'] {
   --overlay-scrim: color-mix(in srgb, var(--bg-base) 34%, black);
 
   /* Buttons */
-  --btn-secondary-bg: color-mix(in srgb, var(--bg-panel) 85%, var(--bg-elevated));
-  --btn-secondary-hover-bg: rgba(240, 235, 224, 0.07);
-  --btn-secondary-border: rgba(240, 235, 224, 0.16);
+  --btn-secondary-bg: var(--bg-panel);
+  --btn-secondary-hover-bg: var(--bg-elevated);
+  --btn-secondary-border: var(--border);
   --btn-secondary-hover-border: var(--accent-text);
   --btn-secondary-fg: var(--accent-text);
 
   --btn-destructive-bg: var(--bg-panel);
-  --btn-destructive-hover-bg: rgba(248, 113, 113, 0.08);
-  --btn-destructive-border: rgba(248, 113, 113, 0.2);
+  --btn-destructive-hover-bg: var(--bg-elevated);
+  --btn-destructive-border: var(--border);
   --btn-destructive-hover-border: var(--danger);
 
-  --btn-neutral-bg: color-mix(in srgb, var(--bg-panel) 88%, var(--bg-elevated));
+  --btn-neutral-bg: var(--bg-panel);
   --btn-neutral-hover-bg: var(--bg-elevated);
 
-  --btn-ghost-hover-bg: rgba(240, 235, 224, 0.05);
+  --btn-ghost-hover-bg: var(--bg-panel);
 
-  --btn-topbar-bg: rgba(240, 235, 224, 0.04);
-  --btn-topbar-hover-bg: rgba(240, 235, 224, 0.08);
+  --btn-topbar-bg: transparent;
+  --btn-topbar-hover-bg: var(--bg-panel);
 
   /* Form controls */
   --segmented-bg: rgba(240, 235, 224, 0.04);
@@ -849,6 +849,8 @@ textarea:disabled {
   --_h: var(--btn-height);
   --_fs: var(--btn-font-size);
   --_px: var(--btn-padding-x);
+  --button-height: var(--_h);
+  --button-padding-x: var(--_px);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -863,9 +865,7 @@ textarea:disabled {
   white-space: nowrap;
   text-decoration: none;
   user-select: none;
-  box-shadow:
-    inset 0 1px 0 color-mix(in srgb, white 16%, transparent),
-    var(--shadow-xs-value);
+  box-shadow: none;
 }
 .ui-button svg {
   color: inherit;
@@ -874,12 +874,17 @@ textarea:disabled {
 }
 
 .ui-button-sm {
+  --_h: var(--control-height-sm);
   --_px: 10px;
   border-radius: var(--radius-sm);
   gap: 6px;
 }
+.ui-button-md {
+  --_h: var(--control-height);
+}
 .ui-button-lg {
-  --_px: 16px;
+  --_h: var(--control-height-lg);
+  --_px: 14px;
 }
 
 /* Surface variants */
@@ -891,9 +896,7 @@ textarea:disabled {
 .button-action-surface:hover:not(:disabled) {
   background: var(--btn-primary-hover-bg);
   border-color: var(--btn-primary-hover-border);
-  box-shadow:
-    inset 0 1px 0 color-mix(in srgb, white 18%, transparent),
-    0 4px 12px color-mix(in srgb, var(--accent) 22%, transparent);
+  box-shadow: none;
 }
 
 .button-download-surface {
@@ -924,9 +927,7 @@ textarea:disabled {
 .button-neutral-surface:hover:not(:disabled) {
   background: var(--btn-neutral-hover-bg);
   border-color: var(--btn-neutral-hover-border);
-  box-shadow:
-    inset 0 1px 0 color-mix(in srgb, white 18%, transparent),
-    var(--shadow-sm-value);
+  box-shadow: none;
 }
 
 .button-quiet-surface {
@@ -963,6 +964,15 @@ textarea:disabled {
 .button-link-surface:hover:not(:disabled) {
   color: var(--accent-hover);
   background: transparent;
+}
+
+.theme-toggle-compact {
+  --button-height: var(--control-height-sm);
+  height: var(--control-height-sm) !important;
+  width: var(--control-height-sm);
+  min-width: var(--control-height-sm);
+  min-height: 0;
+  padding-block: 0;
 }
 
 /* Prevent browser color override for anchor-buttons */

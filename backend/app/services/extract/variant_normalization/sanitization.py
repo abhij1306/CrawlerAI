@@ -11,7 +11,10 @@ from app.services.config.extraction_rules import (
     VARIANT_SEPARATE_DIMENSION_SIZE_RULES,
     VARIANT_TITLE_STOPWORDS,
 )
-from app.services.config.variant_policy import FLAT_VARIANT_KEYS, PUBLIC_VARIANT_AXIS_FIELDS
+from app.services.config.variant_policy import (
+    FLAT_VARIANT_KEYS,
+    PUBLIC_VARIANT_AXIS_FIELDS,
+)
 from app.services.extract.variant_axis import normalized_variant_axis_key
 from app.services.extract.variant_choice_traversal import (
     infer_variant_group_name_from_values,
@@ -65,13 +68,17 @@ for rule in tuple(VARIANT_SEPARATE_DIMENSION_SIZE_RULES or ()):
     if not pattern or not style:
         continue
     try:
-        variant_separate_dimension_size_rules_list.append((re.compile(pattern, re.I), style))
+        variant_separate_dimension_size_rules_list.append(
+            (re.compile(pattern, re.I), style)
+        )
     except re.error:
         logger.warning(
             "Skipping invalid variant separate-dimension size rule",
             extra={"pattern": pattern},
         )
-variant_separate_dimension_size_rules = tuple(variant_separate_dimension_size_rules_list)
+variant_separate_dimension_size_rules = tuple(
+    variant_separate_dimension_size_rules_list
+)
 variant_title_stopwords = frozenset(
     clean_text(token).lower()
     for token in tuple(VARIANT_TITLE_STOPWORDS or ())
@@ -131,6 +138,7 @@ def _sanitize_variant_axes(record: dict[str, Any]) -> None:
     )
     _flatten_variant_rows(record)
     _clean_variant_rows(record)
+    _drop_static_duplicate_variant_urls(record)
     _normalize_separate_dimension_size_rows(record)
     deduplication._prune_unrecognized_size_rows_when_real_sizes_exist(record)
     deduplication._prune_child_size_rows_from_adult_products(record)
@@ -170,9 +178,7 @@ def _clean_variant_rows(record: dict[str, Any]) -> None:
         for field_name in public_variant_axis_fields:
             raw_axis_key = _variant_axis_source_key(cleaned_variant, field_name)
             raw_axis_value = (
-                cleaned_variant.get(raw_axis_key)
-                if raw_axis_key is not None
-                else None
+                cleaned_variant.get(raw_axis_key) if raw_axis_key is not None else None
             )
             if size_color_extraction._variant_size_axis_value_is_quantity_control(
                 field_name,
@@ -213,6 +219,37 @@ def _clean_variant_rows(record: dict[str, Any]) -> None:
         return
     record.pop("variants", None)
     record.pop("variant_count", None)
+
+
+def _drop_static_duplicate_variant_urls(record: dict[str, Any]) -> None:
+    variants = record.get("variants")
+    if not isinstance(variants, list) or len(variants) < 2:
+        return
+    rows = [variant for variant in variants if isinstance(variant, dict)]
+    values_by_url: dict[str, set[tuple[tuple[str, str], ...]]] = {}
+    for row in rows:
+        url = clean_text(row.get("url"))
+        if not url:
+            continue
+        axis_values = tuple(
+            sorted(
+                (axis, clean_text(row.get(axis)).casefold())
+                for axis in public_variant_axis_fields
+                if clean_text(row.get(axis))
+            )
+        )
+        if axis_values:
+            values_by_url.setdefault(url, set()).add(axis_values)
+    static_urls = {
+        url
+        for url, values in values_by_url.items()
+        if len(values) >= 2
+    }
+    if not static_urls:
+        return
+    for row in rows:
+        if clean_text(row.get("url")) in static_urls:
+            row.pop("url", None)
 
 
 def _enforce_variant_axis_contract(record: dict[str, Any]) -> None:

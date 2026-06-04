@@ -296,6 +296,84 @@ def test_empty_detail_extraction_retry_skips_collection_seed() -> None:
 
 
 @pytest.mark.regression
+def test_empty_detail_extraction_retry_skips_non_retryable_http_status() -> None:
+    request = AcquisitionRequest(
+        run_id=1,
+        url="https://example.com/products/missing-widget",
+        plan=AcquisitionPlan(surface="ecommerce_detail"),
+    )
+    acquisition_result = AcquisitionResult(
+        request=request,
+        final_url=request.url,
+        html="<html><body><h1>404</h1><p>Product not found.</p></body></html>",
+        method="curl_cffi",
+        status_code=404,
+    )
+
+    decision = empty_extraction_browser_retry_decision(
+        acquisition_result,
+        [],
+        surface="ecommerce_detail",
+        requested_fields=[],
+        selector_rules=[],
+    )
+
+    assert decision == {
+        "should_retry": False,
+        "reason": "non_retryable_http_status",
+        "status_code": 404,
+    }
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_process_single_url_marks_non_retryable_http_status_as_error(
+    db_session: AsyncSession,
+    test_user,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run = await create_crawl_run(
+        db_session,
+        test_user.id,
+        {
+            "run_type": "crawl",
+            "url": "https://example.com/products/missing-widget",
+            "surface": "ecommerce_detail",
+            "settings": {"respect_robots_txt": False},
+        },
+    )
+    acquire_calls: list[dict[str, object]] = []
+
+    @_as_async
+    def _fake_acquire(request: AcquisitionRequest) -> AcquisitionResult:
+        acquire_calls.append(dict(request.acquisition_profile))
+        if request.acquisition_profile.get("prefer_browser"):
+            raise AssertionError(
+                "browser retry should not run for non-retryable HTTP status"
+            )
+        return _fake_acquire_result(
+            request,
+            html="<html><body><h1>404</h1><p>Product not found.</p></body></html>",
+            method="curl_cffi",
+            status_code=404,
+        )
+
+    monkeypatch.setattr("app.services.pipeline.extraction_loop.acquire", _fake_acquire)
+    monkeypatch.setattr("app.services.pipeline.extraction_loop.run_adapter", _no_adapter)
+    monkeypatch.setattr(
+        "app.services.pipeline.extraction_loop.extract_records", lambda *args, **kwargs: []
+    )
+
+    result = await process_single_url(db_session, run, run.url)
+
+    assert result.records == []
+    assert result.verdict == "error"
+    assert result.url_metrics["status_code"] == 404
+    assert result.url_metrics["failure_reason"] == "non_retryable_http_status"
+    assert len(acquire_calls) == 1
+
+
+@pytest.mark.regression
 def test_low_quality_detail_retry_targets_real_non_browser_fetches() -> None:
     request = AcquisitionRequest(
         run_id=1,
@@ -476,6 +554,64 @@ async def test_process_single_url_skips_low_quality_browser_retry_when_budget_lo
     assert result.records
     assert len(acquire_calls) == 1
     assert any("Skipping low-quality browser retry" in log.message for log in logs)
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_process_single_url_skips_empty_browser_retry_when_budget_low(
+    db_session: AsyncSession,
+    test_user,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run = await create_crawl_run(
+        db_session,
+        test_user.id,
+        {
+            "run_type": "crawl",
+            "url": "https://example.com/products/widget-prime",
+            "surface": "ecommerce_detail",
+            "settings": {
+                "respect_robots_txt": False,
+                "url_timeout_seconds": 35,
+            },
+        },
+    )
+    acquire_calls: list[dict[str, object]] = []
+
+    @_as_async
+    def _fake_acquire(request: AcquisitionRequest) -> AcquisitionResult:
+        acquire_calls.append(dict(request.acquisition_profile))
+        if request.acquisition_profile.get("prefer_browser"):
+            raise AssertionError("empty extraction browser retry should be skipped")
+        return _fake_acquire_result(
+            request,
+            html=(
+                "<html><body><div id='__next'></div>"
+                "<script>window.__NEXT_DATA__={}</script></body></html>"
+            ),
+            method="curl_cffi",
+        )
+
+    @_as_async
+    def _fake_run_adapter(*_args, **_kwargs):
+        return None
+
+    monkeypatch.setattr("app.services.pipeline.extraction_loop.acquire", _fake_acquire)
+    monkeypatch.setattr("app.services.pipeline.extraction_loop.run_adapter", _fake_run_adapter)
+    monkeypatch.setattr(
+        "app.services.pipeline.extraction_loop.extract_records", lambda *args, **kwargs: []
+    )
+    monkeypatch.setattr(
+        "app.services.pipeline.extraction_loop._remaining_url_budget_seconds",
+        lambda _context: 29.0,
+    )
+
+    result = await process_single_url(db_session, run, run.url)
+    logs = await get_run_logs(db_session, run.id)
+
+    assert result.records == []
+    assert len(acquire_calls) == 1
+    assert any("Skipping empty-extraction browser retry" in log.message for log in logs)
 
 
 @pytest.mark.asyncio
