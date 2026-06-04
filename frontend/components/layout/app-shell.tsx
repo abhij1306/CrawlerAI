@@ -46,21 +46,36 @@ import './auth-shell.module.css';
 
 const navGroups = [
   {
-    label: 'Workspace',
+    label: 'Primary',
     items: [
       { href: '/dashboard', label: 'Dashboard', icon: Grid2x2 },
       { href: '/playground', label: 'Playground', icon: FolderKanban },
       { href: '/crawl', label: 'Crawl Studio', icon: WandSparkles },
       { href: '/runs', label: 'History', icon: Clock3 },
+      { href: '/jobs', label: 'Jobs', icon: BriefcaseBusiness },
+    ],
+  },
+  {
+    label: 'Monitoring',
+    items: [
       { href: '/monitors', label: 'Monitors', icon: Radar },
       { href: '/alerts', label: 'Product Alerts', icon: Bell },
+      { href: '/run-trace', label: 'Run Trace', icon: Network },
+    ],
+  },
+  {
+    label: 'Intelligence',
+    items: [
       { href: '/data-enrichment', label: 'Data Enrichment', icon: FileChartColumn },
       { href: '/product-intelligence', label: 'Product Intelligence', icon: BrainCircuit },
       { href: '/ucp-audit', label: 'AI Discoverability', icon: ClipboardCheck },
-      { href: '/run-trace', label: 'Run Trace', icon: Network },
+    ],
+  },
+  {
+    label: 'Memory',
+    items: [
       { href: '/selectors', label: 'Selector Tool', icon: SearchCheck, exactMatch: true },
       { href: '/selectors/manage', label: 'Domain Memory', icon: DatabaseZap },
-      { href: '/jobs', label: 'Jobs', icon: BriefcaseBusiness },
     ],
   },
   {
@@ -302,7 +317,6 @@ function Sidebar({ pathname }: Readonly<{ pathname: string }>) {
       <nav className="app-sidebar-nav" aria-label="Main navigation">
         {navGroups.map((group) => (
           <div key={group.label} className="app-sidebar-group">
-            {!collapsed && <p className="app-sidebar-group-label">{group.label}</p>}
             <div className="space-y-1">
               {group.items.map((item) => {
                 const active = isNavItemActive(pathname, item);

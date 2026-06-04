@@ -9,7 +9,7 @@ type ThemeMode = 'light' | 'dark';
 const THEME_STORAGE_KEY = 'crawlerai-theme';
 const THEME_TRANSITION_ATTR = 'data-theme-transition';
 
-export function ThemeToggle({ compact: _compact }: Readonly<{ compact?: boolean }>) {
+export function ThemeToggle({ compact }: Readonly<{ compact?: boolean }>) {
   const theme = useSyncExternalStore(subscribeTheme, readTheme, () => 'light');
 
   function toggleTheme() {
@@ -23,6 +23,7 @@ export function ThemeToggle({ compact: _compact }: Readonly<{ compact?: boolean 
       onClick={toggleTheme}
       variant="neutral"
       size="icon"
+      className={compact ? 'theme-toggle-compact' : undefined}
       aria-label="Toggle color theme"
       title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
     >

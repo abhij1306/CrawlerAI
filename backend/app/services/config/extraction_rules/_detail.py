@@ -192,6 +192,12 @@ DETAIL_LONG_TEXT_DISCLAIMER_PATTERNS = (
     r"\bwas\s+this\s+product\s+information\s+helpful\b",
     r"\bwrite\s+a\s+review\b",
 )
+DETAIL_LONG_TEXT_SUBSTRING_REMOVE_PATTERNS = (
+    r"\b(?:l|i)nstagram\s+@[A-Za-z0-9_.-]+\b",
+    r"\bimport\s+duties,\s+taxes,\s+and\s+charges\b.{0,260}\bprior\s+to\s+(?:bidding|buying)\b\.?",
+    r"\bFootnote\s+\d+\s*\.?",
+)
+DETAIL_LONG_TEXT_REPEATED_PROMPTS = ("Please check the measurements below",)
 DETAIL_COOKIE_DISCLOSURE_TEXT_PATTERNS = (
     r"\bcookie\s+name\s+is\s+associated\s+with\b",
     r"\bcookie\s+descriptions?\s+are\s+displayed\b",
@@ -207,7 +213,7 @@ DETAIL_COOKIE_DISCLOSURE_TEXT_PATTERNS = (
 DETAIL_TRACKING_TOKEN_PATTERN = r"_[a-z][a-z0-9_]{2,}"  # nosec B105
 SMALL_NUMERIC_PATTERN = r"\d{1,2}"
 TRACKING_PIXEL_PATTERN = r"_[a-z]+"
-COLOR_KEYWORD_PATTERN = r"\b(?:color|colour|black|blue|brown|green|grey|gray|orange|pink|purple|red|white|yellow)\b"
+COLOR_KEYWORD_PATTERN = r"\b(?:color|colour|black|blue|brown|gold|green|grey|gray|orange|pink|purple|red|silver|white|yellow)\b"
 DETAIL_QUOTED_COLOR_PATTERN = (
     r"['\"](?P<color>[A-Z][A-Za-z]+(?:\s+[A-Z][A-Za-z]+){0,2})['\"]"
     r"\s+(?:canvas|cotton|denim|leather|mesh|nylon|suede|upper|wool)\b"
@@ -217,7 +223,10 @@ DETAIL_BRAND_PREFIX_CONTINUATION_TOKENS = frozenset({"hilfiger", "originals"})
 DETAIL_BRAND_TITLE_SUFFIX_PATTERN = r"\s[-\u2013\u2014]\s(?P<brand>[A-Z][A-Za-z0-9&'.\-\s]{1,40})$"
 DETAIL_BRAND_HOST_FALLBACKS = {
     "aesop": "Aesop",
+    "apple": "Apple",
     "converse": "Converse",
+    "phase-eight": "Phase Eight",
+    "vans": "Vans",
 }
 DETAIL_BRAND_DESCRIPTION_PATTERNS = (
     r"\bfrom\s+(?P<brand>[A-Z][A-Za-z0-9&'.-]{2,}(?:\s+[A-Z][A-Za-z0-9&'.-]{2,}){0,2})['’]s\b",
@@ -415,6 +424,7 @@ DETAIL_VARIANT_SCOPE_SELECTOR = (
 VARIANT_SCOPE_MAX_ROOTS = 4
 DETAIL_LOW_SIGNAL_PRICE_VISIBLE_MIN_DELTA = 10.0
 DETAIL_LOW_SIGNAL_PRICE_VISIBLE_RATIO = 0.1
+DETAIL_LOW_SIGNAL_SALE_PRICE_RATIO_MAX = 0.15
 DETAIL_IMAGE_RAW_SOUP_FALLBACK_MAX_WINNING_IMAGES = 1
 DETAIL_IMAGE_URL_ATTRS = (
     "src",
@@ -431,6 +441,26 @@ SHADE_CODE_COLOR_MIN_TOKENS = 2
 SCALAR_FIELD_POLLUTION_VALUES = frozenset(
     {"size", "color", "colour", "bust", "waist", "hips", "length"}
 )
+DETAIL_SIZE_GUIDE_ALLOWED_HEADER_KEYS = frozenset(
+    {
+        "alpha",
+        "bust",
+        "cm",
+        "eu",
+        "eu_it",
+        "hips",
+        "in",
+        "it",
+        "size",
+        "uk",
+        "uk_size",
+        "us",
+        "waist",
+    }
+)
+DETAIL_SIZE_GUIDE_CONTEXT_TOKENS = frozenset({"size guide", "size chart"})
+DETAIL_TITLE_TRAILING_SIZE_VALUES = frozenset({"one size"})
+DETAIL_TITLE_LEADING_SKU_PREFIX_PATTERN = r"^[A-Za-z0-9]{6,18}$"
 MULTI_PART_PUBLIC_SUFFIXES = frozenset(
     {
         "ac.in",
@@ -544,6 +574,8 @@ __all__ = [
     "DETAIL_GUIDE_GLOSSARY_HEADING_TOKENS",
     "DETAIL_GUIDE_GLOSSARY_HEADING_MIN_HITS",
     "DETAIL_LONG_TEXT_DISCLAIMER_PATTERNS",
+    "DETAIL_LONG_TEXT_SUBSTRING_REMOVE_PATTERNS",
+    "DETAIL_LONG_TEXT_REPEATED_PROMPTS",
     "DETAIL_COOKIE_DISCLOSURE_TEXT_PATTERNS",
     "DETAIL_TRACKING_TOKEN_PATTERN",
     "SMALL_NUMERIC_PATTERN",
@@ -597,6 +629,7 @@ __all__ = [
     "VARIANT_SCOPE_MAX_ROOTS",
     "DETAIL_LOW_SIGNAL_PRICE_VISIBLE_MIN_DELTA",
     "DETAIL_LOW_SIGNAL_PRICE_VISIBLE_RATIO",
+    "DETAIL_LOW_SIGNAL_SALE_PRICE_RATIO_MAX",
     "DETAIL_IMAGE_RAW_SOUP_FALLBACK_MAX_WINNING_IMAGES",
     "DETAIL_IMAGE_URL_ATTRS",
     "INLINE_SCALAR_LABEL_MAX_LEN",
@@ -605,6 +638,10 @@ __all__ = [
     "SCALAR_FIELD_MAX_OPTION_TOKENS",
     "SHADE_CODE_COLOR_MIN_TOKENS",
     "SCALAR_FIELD_POLLUTION_VALUES",
+    "DETAIL_SIZE_GUIDE_ALLOWED_HEADER_KEYS",
+    "DETAIL_SIZE_GUIDE_CONTEXT_TOKENS",
+    "DETAIL_TITLE_TRAILING_SIZE_VALUES",
+    "DETAIL_TITLE_LEADING_SKU_PREFIX_PATTERN",
     "MULTI_PART_PUBLIC_SUFFIXES",
     "VARIANT_OPTION_LABEL_MAX_WORDS",
     "DETAIL_BREADCRUMB_ROOT_LABELS",

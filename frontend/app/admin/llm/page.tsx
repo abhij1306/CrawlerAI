@@ -473,16 +473,17 @@ export default function AdminLlmPage() {
             className="flex-1"
           >
             {costLog.length ? (
-              <div className="custom-scrollbar max-h-[700px] overflow-x-auto overflow-y-auto">
-                {/* Shared Table components — type-label-mono headers, accent hover rows */}
-                <Table className="min-w-[850px] table-fixed">
+              <div className="custom-scrollbar max-h-[700px] overflow-y-auto">
+                <Table className="table-auto">
                   <TableHeader>
                     <TableRow className="border-divider/50">
-                      <TableHead className="w-[140px] px-0">Usage &amp; Cost</TableHead>
-                      <TableHead className="w-[180px]">Task Type</TableHead>
-                      <TableHead className="w-[200px]">Target Entity</TableHead>
-                      <TableHead>Provider / Model</TableHead>
-                      <TableHead className="w-[90px] px-0 text-right">Time</TableHead>
+                      <TableHead className="w-[118px] text-[10px] tracking-[0.08em]">Usage</TableHead>
+                      <TableHead className="w-[170px] text-[10px] tracking-[0.08em]">Task</TableHead>
+                      <TableHead className="w-[160px] text-[10px] tracking-[0.08em]">Target</TableHead>
+                      <TableHead className="text-[10px] tracking-[0.08em]">Provider</TableHead>
+                      <TableHead className="w-[110px] text-right text-[10px] tracking-[0.08em]">
+                        Time
+                      </TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -497,7 +498,7 @@ export default function AdminLlmPage() {
                         const cost = parseFloat(entry.cost_usd) || 0;
                         return (
                           <TableRow key={entry.id} className="group transition-colors">
-                            <TableCell className="px-0 py-4">
+                            <TableCell className="py-3">
                               <div className="flex flex-col">
                                 <div className="flex items-baseline gap-1.5">
                                   <span className="text-foreground type-caption-mono font-medium tabular-nums">
@@ -512,15 +513,15 @@ export default function AdminLlmPage() {
                             </TableCell>
 
                             {/* Task type */}
-                            <TableCell className="p-4">
-                              <span className="type-control text-foreground !font-normal">
+                            <TableCell className="py-3">
+                              <span className="type-control text-foreground block max-w-[150px] whitespace-normal !font-normal">
                                 {entry.task_type.replace(/_/g, ' ')}
                               </span>
                             </TableCell>
 
                             {/* Domain / run target */}
                             <TableCell
-                              className="p-4"
+                              className="py-3"
                               title={entry.domain || `Run #${entry.run_id}`}
                             >
                               <span className="text-foreground/80 block truncate">
@@ -529,7 +530,7 @@ export default function AdminLlmPage() {
                             </TableCell>
 
                             {/* Provider + model stacked */}
-                            <TableCell className="p-4">
+                            <TableCell className="py-3">
                               <div className="flex flex-col overflow-hidden">
                                 <span className="type-control text-foreground truncate !font-normal">
                                   {entry.provider}
@@ -540,7 +541,7 @@ export default function AdminLlmPage() {
                               </div>
                             </TableCell>
 
-                            <TableCell className="px-0 py-4 text-right">
+                            <TableCell className="py-3 text-right">
                               <span className="type-caption-mono group-hover:text-foreground transition-colors">
                                 {(() => {
                                   const d = new Date(entry.created_at);

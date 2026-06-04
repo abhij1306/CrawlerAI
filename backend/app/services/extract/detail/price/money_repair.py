@@ -17,6 +17,7 @@ from app.services.config.extraction_rules import (
     AVAILABILITY_IN_STOCK,
     DETAIL_LOW_SIGNAL_PARENT_MIN,
     DETAIL_LOW_SIGNAL_PRICE_MAX,
+    DETAIL_LOW_SIGNAL_SALE_PRICE_RATIO_MAX,
     DETAIL_PRICE_COMPARISON_TOLERANCE,
 )
 from app.services.shared.field_coerce import (
@@ -168,6 +169,22 @@ def _drop_invalid_detail_discounts(record: dict[str, Any]) -> None:
     discount_amount = detail_price_decimal(record.get("discount_amount"))
     discount_percentage = detail_price_decimal(record.get("discount_percentage"))
     if sale_price is not None and price is not None and sale_price >= price:
+        record.pop("sale_price", None)
+        field_sources = record.get("_field_sources")
+        if isinstance(field_sources, dict):
+            field_sources.pop("sale_price", None)
+    elif (
+        sale_price is not None
+        and price is not None
+        and original_price is not None
+        and abs(original_price - price)
+        <= Decimal(str(DETAIL_PRICE_COMPARISON_TOLERANCE))
+        and (
+            _price_is_low_signal_copy(str(sale_price), str(price))
+            or sale_price / price
+            <= Decimal(str(DETAIL_LOW_SIGNAL_SALE_PRICE_RATIO_MAX))
+        )
+    ):
         record.pop("sale_price", None)
         field_sources = record.get("_field_sources")
         if isinstance(field_sources, dict):
