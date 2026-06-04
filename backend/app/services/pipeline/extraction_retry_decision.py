@@ -3,6 +3,7 @@ from __future__ import annotations
 from bs4 import BeautifulSoup
 
 from app.services.acquisition.acquirer import AcquisitionResult, PageEvidence
+from app.services.acquisition.runtime import is_non_retryable_http_status
 from app.services.acquisition.browser_readiness import analyze_html
 from app.services.config.extraction_rules import (
     DETAIL_CURRENT_PRICE_SELECTORS,
@@ -47,6 +48,13 @@ def empty_extraction_browser_retry_decision(
         }
     if effective_blocked(acquisition_result):
         return {"should_retry": False, "reason": "blocked"}
+    status_code = int(getattr(acquisition_result, "status_code", 0) or 0)
+    if is_non_retryable_http_status(status_code):
+        return {
+            "should_retry": False,
+            "reason": "non_retryable_http_status",
+            "status_code": status_code,
+        }
     content_type = str(getattr(acquisition_result, "content_type", "") or "").lower()
     if "json" in content_type:
         return {"should_retry": False, "reason": "json_response"}

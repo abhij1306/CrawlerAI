@@ -2380,7 +2380,7 @@ async def test_fetch_page_returns_non_retryable_404_without_browser_fallback(
 
 @pytest.mark.asyncio
 @pytest.mark.component
-async def test_fetch_page_escalates_404_shell_to_browser_before_return(
+async def test_fetch_page_returns_non_retryable_404_shell_without_browser_fallback(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     @_as_async
@@ -2403,15 +2403,8 @@ async def test_fetch_page_escalates_404_shell_to_browser_before_return(
 
     @_as_async
     def _fake_browser(url, timeout, **kwargs):
-        del timeout, kwargs
-        browser_calls.append(url)
-        return PageFetchResult(
-            url=url,
-            final_url=url,
-            html="<html><body><h1>Rendered page</h1></body></html>",
-            status_code=200,
-            method="browser",
-            blocked=False,
+        raise AssertionError(
+            f"browser fallback should not run for non-retryable status {url} {timeout} {kwargs}"
         )
 
     monkeypatch.setattr(crawl_fetch_runtime, "_curl_fetch", _fake_curl)
@@ -2422,8 +2415,9 @@ async def test_fetch_page_escalates_404_shell_to_browser_before_return(
         surface="ecommerce_detail",
     )
 
-    assert result.method == "browser"
-    assert browser_calls == ["https://example.com/missing-spa-route"]
+    assert result.status_code == 404
+    assert result.method == "curl_cffi"
+    assert browser_calls == []
 
 
 @pytest.mark.asyncio
