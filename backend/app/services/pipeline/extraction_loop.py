@@ -10,6 +10,7 @@ from app.services.acquisition.browser_runtime import real_chrome_browser_availab
 from app.services.acquisition.host_protection_memory import note_host_hard_block
 from app.services.acquisition.runtime import is_non_retryable_http_status
 from app.services.config import observability as obs_config
+from app.services.config.pipeline_reasons import NON_RETRYABLE_HTTP_STATUS_REASON
 from app.services.config.runtime_settings import crawler_runtime_settings
 from app.services.db_utils import mapping_or_empty
 from app.services.shared.field_coerce import object_list as _object_list
@@ -833,7 +834,7 @@ async def _run_persistence_stage(
     status_code = int(getattr(acquisition_result, "status_code", 0) or 0)
     if persisted_count == 0 and is_non_retryable_http_status(status_code):
         url_metrics = mapping_or_empty(extracted.fetched.url_metrics)
-        url_metrics["failure_reason"] = "non_retryable_http_status"
+        url_metrics["failure_reason"] = NON_RETRYABLE_HTTP_STATUS_REASON
         extracted.fetched.url_metrics = url_metrics
         verdict = VERDICT_ERROR
     if not _suppress_empty_downstream_record_logs(

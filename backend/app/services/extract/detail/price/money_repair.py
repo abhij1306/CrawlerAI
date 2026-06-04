@@ -177,6 +177,7 @@ def _drop_invalid_detail_discounts(record: dict[str, Any]) -> None:
     elif (
         sale_price is not None
         and price is not None
+        and price > 0
         and original_price is not None
         and abs(original_price - price)
         <= Decimal(str(DETAIL_PRICE_COMPARISON_TOLERANCE))

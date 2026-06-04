@@ -15,6 +15,7 @@ from app.services.config.extraction_rules import (
     PRICE_FIELDS,
     VARIANT_FIELDS,
 )
+from app.services.config.pipeline_reasons import NON_RETRYABLE_HTTP_STATUS_REASON
 from app.services.config.runtime_settings import crawler_runtime_settings
 from app.services.extract.detail.identity.core import (
     detail_url_is_collection_like,
@@ -52,7 +53,7 @@ def empty_extraction_browser_retry_decision(
     if is_non_retryable_http_status(status_code):
         return {
             "should_retry": False,
-            "reason": "non_retryable_http_status",
+            "reason": NON_RETRYABLE_HTTP_STATUS_REASON,
             "status_code": status_code,
         }
     content_type = str(getattr(acquisition_result, "content_type", "") or "").lower()

@@ -967,7 +967,10 @@ textarea:disabled {
 }
 
 .theme-toggle-compact {
+  --button-height: var(--control-height-sm);
   height: var(--control-height-sm) !important;
+  width: var(--control-height-sm);
+  min-width: var(--control-height-sm);
   min-height: 0;
   padding-block: 0;
 }
