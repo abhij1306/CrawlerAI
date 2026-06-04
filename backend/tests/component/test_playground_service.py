@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from types import SimpleNamespace
-import asyncio
 
 import pytest
 import pytest_asyncio
