@@ -24,11 +24,14 @@ def test_shopify_detail_images_dedupe_across_storefront_and_cdn_hosts() -> None:
         ]
     )
 
-    assert len(images) == 2
-    assert {image.rsplit("/", 1)[-1].split("?", 1)[0] for image in images} == {
-        "item-2.jpg",
-        "item-3.jpg",
-    }
+    assert len(images) == 2  # nosec B101
+    assert (  # nosec B101
+        {image.rsplit("/", 1)[-1].split("?", 1)[0] for image in images}
+        == {
+            "item-2.jpg",
+            "item-3.jpg",
+        }
+    )
 
 
 @pytest.mark.unit
@@ -49,7 +52,7 @@ def test_detail_image_family_rejects_other_colorway_codes() -> None:
         "https://www.patagonia.com/product/mens-nano-puff-insulated-jacket/84213.html",
     )
 
-    assert record["additional_images"] == [
+    assert record["additional_images"] == [  # nosec B101
         "https://www.patagonia.com/images/hi-res/84213_AQT_CDD1.jpg"
     ]
 
@@ -89,21 +92,26 @@ def test_detail_record_cleanup_repairs_brand_title_tables_variants_and_discount(
         "https://www.vans.com/en-us/p/shoes/icons/old-skool-5205/old-skool-VN000E9TBPG",
     )
 
-    assert record["brand"] == "Vans"
-    assert record["title"] == "Old Skool Shoe"
-    assert "size" not in record
-    assert "sale_price" not in record
-    assert "Footnote" not in str(record.get("description"))
-    assert "lnstagram" not in str(record.get("description"))
-    assert "Please check the measurements below" not in str(record.get("description"))
-    assert record["tables"] == [
+    assert record["brand"] == "Vans"  # nosec B101
+    assert record["title"] == "Old Skool Shoe"  # nosec B101
+    assert "size" not in record  # nosec B101
+    assert "sale_price" not in record  # nosec B101
+    assert "Footnote" not in str(record.get("description"))  # nosec B101
+    assert "lnstagram" not in str(record.get("description"))  # nosec B101
+    assert (  # nosec B101
+        "Please check the measurements below" not in str(record.get("description"))
+    )
+    assert record["tables"] == [  # nosec B101
         {
             "context": "Size Guide",
             "headers": ["eu_it", "uk", "us"],
             "rows": [{"eu_it": "35", "uk": "2", "us": "5"}],
         }
     ]
-    assert record["variants"] == [{"color": "White"}, {"color": "Blue"}]
+    assert record["variants"] == [  # nosec B101
+        {"color": "White"},
+        {"color": "Blue"},
+    ]
 
 
 @pytest.mark.unit
@@ -118,7 +126,7 @@ def test_missing_numeric_brand_can_be_repaired_from_title_and_url() -> None:
         "https://www.endclothing.com/us/47-ny-yankees-clean-up-cap-b-rgw17gws-vn.html",
     )
 
-    assert record["brand"] == "47"
+    assert record["brand"] == "47"  # nosec B101
 
 
 @pytest.mark.unit
@@ -142,10 +150,10 @@ def test_detail_cleanup_trims_repeated_title_blocks_and_sku_title_prefix() -> No
     )
     _repair(lvr, "https://www.luisaviaroma.com/en-in/p/barrow/kids-boys/83I-UKD027")
 
-    assert (
+    assert (  # nosec B101
         sweetwater["title"]
         == "Sony Wh 1000Xm5 Wireless Noise Canceling Headphones Black"
     )
-    assert lvr["description"] == (
+    assert lvr["description"] == (  # nosec B101
         "Nylon tank top - Barrow - Boys - Logo details - Composition: 100% Polyester - Item code: 83I-UKD027"
     )
