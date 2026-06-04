@@ -15,6 +15,8 @@ from app.models.crawl_run import CrawlRun
 from app.models.user import User
 from app.schemas.common import LogEntryResponse, PaginatedResponse, PaginationMeta
 from app.schemas.crawl import (
+    CategoryDiscoveryRequest,
+    CategoryDiscoveryResponse,
     CrawlCreate,
     CrawlRunResponse,
     FieldCommitRequest,
@@ -24,6 +26,7 @@ from app.services.crawl.access_service import (
     RUN_NOT_FOUND_DETAIL,
     require_accessible_run,
 )
+from app.services.crawl.category_discovery import discover_category_urls
 from app.services.crawl.crud import (
     commit_llm_suggestions,
     commit_selected_fields,
@@ -142,6 +145,23 @@ async def crawls_create(
             exc=exc,
         )
     return {"run_id": run.id}
+
+
+@router.post("/category-discovery")
+async def crawls_category_discovery(
+    payload: CategoryDiscoveryRequest,
+    user: Annotated[User, Depends(get_current_user)],
+) -> CategoryDiscoveryResponse:
+    del user
+    result = await discover_category_urls(
+        payload.selected_urls(),
+        limit=payload.limit,
+        max_depth=payload.max_depth,
+        max_pages=payload.max_pages,
+        strategy=payload.strategy,
+        validate_candidates=payload.validate_candidates,
+    )
+    return CategoryDiscoveryResponse.model_validate(result)
 
 
 @router.post(

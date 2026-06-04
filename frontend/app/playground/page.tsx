@@ -349,7 +349,10 @@ export default function PlaygroundPage() {
     const sitemap = session?.step_data?.sitemap;
     if (sitemap && typeof sitemap === 'object' && 'source' in sitemap) {
       const source = (sitemap as Record<string, unknown>).source;
-      return source === 'homepage' ? 'homepage' : 'sitemap';
+      if (source === 'homepage') return 'homepage';
+      if (source === 'rendered_site_links') return 'rendered site links';
+      if (source === 'mixed' || String(source).includes('rendered_site_links')) return 'mixed discovery';
+      return 'sitemap';
     }
     return 'sitemap';
   })();
@@ -628,10 +631,12 @@ export default function PlaygroundPage() {
               ) : (
                 <PickerPanel
                   mode="multi"
-                  title={`Category URLs from ${sitemapSource === 'homepage' ? 'homepage' : 'sitemap'} (${sitemapUrls.length})`}
+                  title={`Category URLs from ${sitemapSource} (${sitemapUrls.length})`}
                   description={
                     sitemapSource === 'homepage'
                       ? 'Sitemap was unavailable, so category-like links were inferred from the homepage. Pick one or more URLs to crawl.'
+                      : sitemapSource === 'rendered site links' || sitemapSource === 'mixed discovery'
+                        ? 'Rendered site links were crawled to find category-like URLs. Pick one or more URLs to crawl.'
                       : 'Pick one or more category, collection, or section URLs to crawl.'
                   }
                   items={sitemapUrls.map((u) => ({ url: u }))}

@@ -78,6 +78,27 @@ export type PlaygroundPipelineApiResponse = {
 export type PlaygroundSelectCategoryPayload =
   | { url: string; urls?: string[] }
   | { url?: string; urls: string[] };
+export type CategoryDiscoveryPayload = {
+  url?: string;
+  urls?: string[];
+  limit?: number;
+  max_depth?: number;
+  max_pages?: number;
+  strategy?: 'static_then_rendered' | 'static_only' | 'rendered_only';
+  validate_candidates?: boolean;
+};
+export type CategoryDiscoveryResponse = {
+  status: string;
+  source: string;
+  urls: string[];
+  groups: Record<string, string[]>;
+  sources: Record<string, string>;
+  errors: Record<string, string>;
+  trees: Record<string, Array<Record<string, unknown>>>;
+  diagnostics: Record<string, unknown>;
+  total_found: number;
+  limit: number;
+};
 
 export const api = {
   register: (email: string, password: string) =>
@@ -94,6 +115,8 @@ export const api = {
     apiClient.post<Record<string, number | boolean>>('/api/dashboard/reset-domain-memory', {}),
   createCrawl: (payload: CrawlCreatePayload) =>
     apiClient.post<{ run_id: number }>('/api/crawls', payload),
+  discoverCategoryUrls: (payload: CategoryDiscoveryPayload) =>
+    apiClient.post<CategoryDiscoveryResponse>('/api/crawls/category-discovery', payload),
   createCsvCrawl: (payload: {
     file: File;
     surface: CrawlSurface;

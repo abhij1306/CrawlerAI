@@ -18,7 +18,7 @@ from app.services.crawl.state import (
     set_control_request,
     update_run_status,
 )
-from app.services.crawl.sitemap_resolver import resolve_category_urls_from_sitemap
+from app.services.crawl.sitemap_resolver import resolve_category_urls_with_site_links
 from app.services.crawl.utils import normalize_target_url, parse_csv_urls_async
 from app.services.config.sitemap import (
     SITEMAP_DEFAULT_FILTER_KEYWORD,
@@ -48,6 +48,22 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
+
+
+async def resolve_category_urls_from_sitemap(
+    domain: str,
+    filter_keyword: str,
+    max_urls: int,
+    allow_homepage_fallback: bool = False,
+) -> list[str]:
+    result = await resolve_category_urls_with_site_links(
+        domain=domain,
+        filter_keyword=filter_keyword,
+        max_urls=max_urls,
+        allow_homepage_fallback=allow_homepage_fallback,
+        category_only=True,
+    )
+    return result.urls
 
 
 def _require_url_processing_result(url_result: object) -> URLProcessingResult:

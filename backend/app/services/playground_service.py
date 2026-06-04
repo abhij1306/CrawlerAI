@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import logging
 from typing import Any
 from urllib.parse import urlparse
@@ -28,10 +27,9 @@ from app.services.config.product_intelligence import (
 from app.services.config.sitemap import (
     PLAYGROUND_CATEGORY_DEFAULT_LIMIT,
     PLAYGROUND_CATEGORY_MAX_LIMIT,
-    PLAYGROUND_CATEGORY_PER_INPUT_TIMEOUT_SECONDS,
 )
+from app.services.crawl.category_discovery import discover_category_urls
 from app.services.crawl.ingestion_service import create_crawl_run_from_payload
-from app.services.crawl.sitemap_resolver import resolve_category_urls_from_sitemap_result
 from app.services.crawl.state import TERMINAL_STATUSES
 from app.services.surface_resolver import resolve_auto_surface
 
@@ -57,7 +55,7 @@ def _classify_input_url(url: str) -> str:
         and path.count("/") == 0
     ):
         return "sitemap"
-    if surface == ECOMMERCE_DETAIL_SURFACE:
+    if surface.endswith("_detail"):
         return "detail"
     if surface == ECOMMERCE_LISTING_SURFACE or surface.endswith("_listing"):
         return "listing"
@@ -168,41 +166,21 @@ async def start_discover(
         return {"stage": "sitemap", "url_count": int(sitemap["total_found"])}
 
     if classification == "sitemap":
-        sitemap_source: str
-        sitemap_error: str | None = None
-        try:
-            sitemap_resolution = await resolve_category_urls_from_sitemap_result(
-                domain=playground.input_url,
-                allow_homepage_fallback=True,
-                category_only=True,
-                max_urls=category_limit,
-            )
-            sitemap_urls = sitemap_resolution.urls
-            sitemap_source = sitemap_resolution.source
-            sitemap_nav_tree = sitemap_resolution.nav_tree
-        except Exception as exc:
-            logger.warning(
-                "Sitemap fetch failed for %s: %s", playground.input_url, exc
-            )
-            sitemap_urls = []
-            sitemap_source = "failed"
-            sitemap_nav_tree = None
-            sitemap_error = type(exc).__name__
-        step_data["sitemap"] = {
-            "status": "completed",
-            "source": sitemap_source,
-            "urls": sitemap_urls[:category_limit],
-            "total_found": len(sitemap_urls),
-            "limit": category_limit,
-        }
-        if sitemap_nav_tree:
-            step_data["sitemap"]["nav_tree"] = sitemap_nav_tree
-        if sitemap_error:
-            step_data["sitemap"]["error"] = sitemap_error
+        sitemap = await _resolve_category_list_for_inputs(
+            [playground.input_url],
+            limit=category_limit,
+        )
+        first_tree = sitemap.get("trees", {}).get(playground.input_url)
+        if first_tree:
+            sitemap["nav_tree"] = first_tree
+        first_error = sitemap.get("errors", {}).get(playground.input_url)
+        if first_error:
+            sitemap["error"] = first_error
+        step_data["sitemap"] = sitemap
         playground.state = "sitemap_listed"
         playground.step_data = step_data
         await session.flush()
-        return {"stage": "sitemap", "url_count": len(sitemap_urls)}
+        return {"stage": "sitemap", "url_count": int(sitemap["total_found"])}
 
     if classification == "detail":
         run = await create_crawl_run_from_payload(
@@ -250,73 +228,60 @@ async def _resolve_category_list_for_inputs(
     *,
     limit: int,
 ) -> dict[str, Any]:
-    grouped: dict[str, list[str]] = {}
-    flat_urls: list[str] = []
-    errors: dict[str, str] = {}
+    discover_urls: list[str] = []
+    input_listing_urls: list[str] = []
+    groups: dict[str, list[str]] = {}
     sources: dict[str, str] = {}
-    trees: dict[str, list[dict[str, object]]] = {}
+    for url in urls:
+        classification = _classify_input_url(url)
+        if classification == "listing":
+            input_listing_urls.append(url)
+            groups[url] = [url]
+            sources[url] = "input"
+        elif classification != "detail":
+            discover_urls.append(url)
 
-    tasks = [_resolve_categories_for_input(input_url, limit=limit) for input_url in urls]
-    results = await asyncio.gather(*tasks)
-    for input_url, (category_urls, source, error, nav_tree) in zip(urls, results, strict=True):
-        if error:
-            errors[input_url] = error
-
-        limited_urls = category_urls[:limit]
-        grouped[input_url] = limited_urls
-        sources[input_url] = source
-        if nav_tree:
-            trees[input_url] = nav_tree
-        for category_url in limited_urls:
-            if category_url not in flat_urls:
-                flat_urls.append(category_url)
-
+    discovered = (
+        await discover_category_urls(discover_urls, limit=limit)
+        if discover_urls
+        else {
+            "status": "completed",
+            "source": "input",
+            "sources": {},
+            "urls": [],
+            "groups": {},
+            "trees": {},
+            "errors": {},
+            "diagnostics": {},
+            "total_found": 0,
+            "limit": limit,
+        }
+    )
+    merged_groups = {**groups, **dict(discovered.get("groups") or {})}
+    merged_sources = {**sources, **dict(discovered.get("sources") or {})}
+    flat_urls: list[str] = []
+    for url in [*input_listing_urls, *list(discovered.get("urls") or [])]:
+        if isinstance(url, str) and url not in flat_urls:
+            flat_urls.append(url)
+    source = str(discovered.get("source") or "multi")
+    if input_listing_urls and not discover_urls:
+        source = "input"
+    elif input_listing_urls:
+        source = "multi"
+    discovered_total = int(discovered.get("total_found") or 0)
+    total_found = max(len(flat_urls), discovered_total + len(input_listing_urls))
     return {
         "status": "completed",
-        "source": "multi",
-        "sources": sources,
+        "source": source,
+        "sources": merged_sources,
         "urls": flat_urls[:limit],
-        "groups": grouped,
-        "trees": trees,
-        "errors": errors,
-        "total_found": len(flat_urls),
+        "groups": merged_groups,
+        "trees": dict(discovered.get("trees") or {}),
+        "errors": dict(discovered.get("errors") or {}),
+        "diagnostics": dict(discovered.get("diagnostics") or {}),
+        "total_found": total_found,
         "limit": limit,
     }
-
-
-async def _resolve_categories_for_input(
-    url: str,
-    *,
-    limit: int,
-) -> tuple[list[str], str, str | None, list[dict[str, object]] | None]:
-    try:
-        return await asyncio.wait_for(
-            _resolve_categories_for_input_inner(url, limit=limit),
-            timeout=PLAYGROUND_CATEGORY_PER_INPUT_TIMEOUT_SECONDS,
-        )
-    except TimeoutError:
-        return [], "timeout", "TimeoutError", None
-    except Exception as exc:
-        return [], "failed", type(exc).__name__, None
-
-
-async def _resolve_categories_for_input_inner(
-    url: str,
-    *,
-    limit: int,
-) -> tuple[list[str], str, str | None, list[dict[str, object]] | None]:
-    classification = _classify_input_url(url)
-    if classification == "listing":
-        return [url], "input", None, None
-    if classification == "detail":
-        return [], "input", None, None
-    resolution = await resolve_category_urls_from_sitemap_result(
-        domain=url,
-        allow_homepage_fallback=True,
-        category_only=True,
-        max_urls=limit,
-    )
-    return resolution.urls, resolution.source, None, resolution.nav_tree
 
 
 async def select_category(

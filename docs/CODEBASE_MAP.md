@@ -34,6 +34,7 @@ If a file is not listed, assume it is a helper under a listed owner.
 | `public_alerts.py` | API-key authenticated `/api/v1/alerts` public alert surface |
 | `api_keys.py` | Dashboard API-key create/list/revoke endpoints; returns plaintext only on create || `public/*` | Public API v1 envelope, rate-limit helpers, HTTP-only extraction, domain info, capabilities, and deferred batch routes |
 | `playground.py` | Guided playground session create/list/detail plus discover/select/extract/pipeline/results routes |
+| `crawls.py` | Run creation plus Crawl Studio category discovery API |
 | `notifications.py` | In-app monitor notification listing, unread counts, and read state |
 | `auth.py` | Login, register, `/me` |
 | `users.py`, `dashboard.py`, `jobs.py`, `health.py`, `metrics.py` | Named route modules |
@@ -98,12 +99,14 @@ Public API schemas live in `api_key.py` and `public_api.py`.
 | `monitor_service.py`, `monitor_scheduler_service.py`, `monitor_async_loop.py`, `monitor_change_detection.py`, `monitor_retention.py`, `monitor_alert_service.py` | Product monitoring CRUD support, due-job scheduling, dev scheduler loop, post-run diffing, retention, and in-app alerts |
 | `alert_service.py`, `monitor_condition.py`, `monitor_webhook_service.py` | Agentic Delta Engine alert wrappers, sandboxed condition evaluation, and webhook dispatch/logging |
 | `playground_service.py` | Guided playground session owner that creates normal crawl runs and downstream jobs from one session |
+| `crawl/category_discovery.py` | Shared Crawl Studio category discovery response assembly for one or more seed URLs |
 | `public_api/extraction_service.py` | Public HTTP-only single-product extraction wrapper over normal crawl creation and per-URL pipeline processing |
 | `public_api/domain_info_service.py` | Read-only public domain readiness view over domain memory, run profiles, and recent crawl rows |
 | `data_enrichment/deterministic.py` | Deterministic enrichment normalization, taxonomy matching, and product attribute diagnostics |
 | `data_enrichment/llm_diagnostics.py` | Data enrichment LLM rejection and skip-reason diagnostics |
 | `data_enrichment/shopify_catalog.py` | Shopify taxonomy and attribute repository loading/matching |
 | `crawl/batch_runtime.py` | URL loop, progress, pause, kill checks |
+| `crawl/sitemap_resolver.py`, `crawl/site_link_discovery.py` | Static sitemap/homepage category discovery plus rendered same-origin site-link fallback |
 | `tasks.py` | Celery task entry |
 | `pipeline/extraction_loop.py` | Per-URL stage orchestration: acquire -> extract -> normalize -> persist |
 | `pipeline/record_extraction_stage.py` | Adapter population, selector-rule loading, extraction invocation, acquisition-contract memory |
