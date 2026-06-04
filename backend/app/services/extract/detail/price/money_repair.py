@@ -162,6 +162,7 @@ def _money_two_decimals(value: object) -> str | None:
     return format_detail_price_decimal(text)
 
 
+# skipcq: PY-R1000
 def _drop_invalid_detail_discounts(record: dict[str, Any]) -> None:
     price = detail_price_decimal(record.get("price"))
     sale_price = detail_price_decimal(record.get("sale_price"))

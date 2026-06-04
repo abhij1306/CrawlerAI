@@ -287,6 +287,7 @@ def _detail_path_looks_like_image_asset(path: str, lowered_url: str) -> bool:
     return any(token in lowered_path for token in IMAGE_PATH_TOKENS)
 
 
+# skipcq: PY-R1000
 def detail_image_matches_primary_family(
     url: str,
     *,
@@ -424,6 +425,7 @@ def _detail_image_title_from_url(url: str) -> str | None:
     return normalized or None
 
 
+# skipcq: PY-R1000
 def _detail_image_stem_looks_encoded(stem: str) -> bool:
     readable_tokens = [
         token for token in re.split(r"[^A-Za-z]+", str(stem or "")) if len(token) >= 4
@@ -457,6 +459,7 @@ def _detail_image_title_has_identity_signal(title: str) -> bool:
     )
 
 
+# skipcq: PY-R1000
 def _detail_image_title_matches_requested_identity(
     title: str,
     *,

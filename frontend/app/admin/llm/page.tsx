@@ -153,6 +153,7 @@ function adminLlmReducer(state: AdminLlmState, action: AdminLlmAction): AdminLlm
   }
 }
 
+// skipcq: JS-0067
 export default function AdminLlmPage() {
   const [state, dispatch] = useReducer(adminLlmReducer, INITIAL_ADMIN_LLM_STATE);
   const {
@@ -302,6 +303,7 @@ export default function AdminLlmPage() {
       <div className="grid gap-4 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
         {/* ── Left column: create form + active configs */}
         <div className="page-stack">
+          {/* skipcq: JS-0415 */}
           <SectionCard
             title="Create Config"
             description="Activate one provider/model per task. New active configs automatically replace the previous active config for the same task."

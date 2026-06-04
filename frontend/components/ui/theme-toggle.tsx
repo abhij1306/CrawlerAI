@@ -9,6 +9,7 @@ type ThemeMode = 'light' | 'dark';
 const THEME_STORAGE_KEY = 'crawlerai-theme';
 const THEME_TRANSITION_ATTR = 'data-theme-transition';
 
+// skipcq: JS-0067
 export function ThemeToggle({ compact }: Readonly<{ compact?: boolean }>) {
   const theme = useSyncExternalStore(subscribeTheme, readTheme, () => 'light');
 

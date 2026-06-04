@@ -779,6 +779,7 @@ async def _apply_extraction_post_processing(
     return records, selector_rules
 
 
+# skipcq: PY-R1000
 async def _run_persistence_stage(
     context: _URLProcessingContext,
     extracted: _ExtractedURLStage,

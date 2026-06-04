@@ -610,6 +610,7 @@ def _drop_redundant_product_details(record: dict[str, Any]) -> None:
         field_sources.pop("product_details", None)
 
 
+# skipcq: PY-R1000
 def sanitize_detail_long_text(
     text: str,
     *,

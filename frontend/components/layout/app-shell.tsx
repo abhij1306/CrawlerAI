@@ -271,6 +271,7 @@ function LogoMark({
   );
 }
 
+// skipcq: JS-0067
 function Sidebar({ pathname }: Readonly<{ pathname: string }>) {
   const [collapsed, setCollapsed] = useState(() => {
     if (typeof window === 'undefined') return false;

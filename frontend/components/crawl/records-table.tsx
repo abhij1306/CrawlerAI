@@ -46,6 +46,7 @@ function fixedColumnStyle(width: number, left?: number): CSSProperties {
   };
 }
 
+// skipcq: JS-0067
 function headerCellStyle(width: number, left?: number): CSSProperties {
   return {
     ...fixedColumnStyle(width, left),

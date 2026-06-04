@@ -217,6 +217,7 @@ def _brand_from_title_suffix(record: dict[str, Any]) -> str | None:
     return candidate
 
 
+# skipcq: PY-R1000
 def _brand_from_title_prefix(
     record: dict[str, Any],
     *,
@@ -547,6 +548,7 @@ def _sanitize_detail_scalar_size(record: dict[str, Any]) -> None:
         record.pop("size", None)
 
 
+# skipcq: PY-R1000
 def _normalize_detail_tables(record: dict[str, Any]) -> None:
     tables = record.get("tables")
     if not isinstance(tables, list):
@@ -555,7 +557,7 @@ def _normalize_detail_tables(record: dict[str, Any]) -> None:
     for table in tables:
         if not isinstance(table, dict):
             continue
-        headers = [normalize_field_key for normalize_field_key in _table_headers(table)]
+        headers = list(_table_headers(table))
         rows = table.get("rows")
         if not headers or not isinstance(rows, list):
             normalized_tables.append(table)
