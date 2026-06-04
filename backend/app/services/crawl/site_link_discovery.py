@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections import deque
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import dataclass, field
 import re
 from typing import Any
@@ -255,7 +255,7 @@ def _score_candidate(url: str, anchor: Tag, label: str | None) -> tuple[int, str
     return score, "+".join(reasons)
 
 
-def _rank_candidates(candidates: object) -> list[SiteLinkCandidate]:
+def _rank_candidates(candidates: Iterable[SiteLinkCandidate]) -> list[SiteLinkCandidate]:
     best: dict[str, SiteLinkCandidate] = {}
     for candidate in candidates:
         if not isinstance(candidate, SiteLinkCandidate):

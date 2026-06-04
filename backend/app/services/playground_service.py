@@ -241,7 +241,7 @@ async def _resolve_category_list_for_inputs(
         elif classification != "detail":
             discover_urls.append(url)
 
-    discovered = (
+    discovered: dict[str, Any] = (
         await discover_category_urls(discover_urls, limit=limit)
         if discover_urls
         else {
