@@ -204,7 +204,7 @@ describe('CrawlConfigScreen bulk prefill', () => {
     expect(replaceMock).toHaveBeenCalledWith('/crawl?run_id=321');
   });
 
-  it('does not expose sitemap controls while auto surface is selected', async () => {
+  it('does not expose sitemap controls while auto surface is selected', () => {
     render(
       <TopBarProvider>
         <CrawlConfigScreen

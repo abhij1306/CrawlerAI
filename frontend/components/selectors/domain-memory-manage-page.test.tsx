@@ -145,7 +145,7 @@ describe('DomainMemoryManagePage', () => {
       meta: { page: 1, limit: 200, total: 1 },
     });
     apiMock.updateSelector.mockImplementation(
-      async (_id: number, payload: Record<string, unknown>) => ({
+      (_id: number, payload: Record<string, unknown>) => Promise.resolve({
         id: 11,
         domain: 'example.com',
         surface: 'ecommerce_detail',
@@ -296,7 +296,7 @@ describe('DomainMemoryManagePage', () => {
   });
 
   it('reloads selectors for the resolved domain after workspace refresh', async () => {
-    apiMock.listSelectors.mockImplementation(async ({ domain }: { domain?: string }) => [
+    apiMock.listSelectors.mockImplementation(({ domain }: { domain?: string }) => Promise.resolve([
       {
         id: domain === 'other.com' ? 22 : 11,
         domain: domain ?? 'example.com',
@@ -313,7 +313,7 @@ describe('DomainMemoryManagePage', () => {
         created_at: new Date('2026-04-08T10:00:00Z').toISOString(),
         updated_at: new Date('2026-04-08T10:00:00Z').toISOString(),
       },
-    ]);
+    ]));
 
     render(
       <TopBarProvider>

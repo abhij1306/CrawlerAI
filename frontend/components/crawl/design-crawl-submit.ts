@@ -4,7 +4,7 @@ import { api } from '../../lib/api';
 import type { CrawlConfig, DomainRunProfile } from '../../lib/api/types';
 import { cloneRunProfile } from './crawl-config-logic';
 
-export async function createDesignCrawlRun({
+export function createDesignCrawlRun({
   targetUrl,
   config,
   runProfile,
