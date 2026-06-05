@@ -262,23 +262,32 @@ def _dedupe_key_for_image_url(url: str) -> str:
     canonical = canonical_image_url(url)
     if not canonical:
         return ""
-    parsed = urlparse(canonical)
-    shopify_match = _SHOPIFY_IMAGE_FILE_PATH_RE.search(parsed.path or "")
+    original_parsed = urlparse(_normalize_image_url_text(_effective_image_url(url)))
+    original_path = _canonical_image_path(original_parsed.path or "")
+    shopify_match = _SHOPIFY_IMAGE_FILE_PATH_RE.search(original_path)
     if (
-        parsed.netloc == "cdn.shopify.com"
+        original_parsed.netloc == "cdn.shopify.com"
         or shopify_match is not None
-        or (parsed.path or "").startswith("/files/")
     ):
-        filename = unquote((parsed.path or "").rsplit("/", 1)[-1]).casefold()
+        if shopify_match is None:
+            return canonical
+        filename = unquote(shopify_match.group("filename")).casefold()
+        scope = unquote(original_path[: shopify_match.start("filename")]).casefold()
+        if original_parsed.netloc != "cdn.shopify.com":
+            scope = f"{original_parsed.netloc.casefold()}{scope}"
         query = urlencode(
             [
                 (key, value)
-                for key, value in parse_qsl(parsed.query, keep_blank_values=True)
+                for key, value in parse_qsl(
+                    original_parsed.query,
+                    keep_blank_values=True,
+                )
                 if str(key or "").casefold() == "v"
             ],
             doseq=True,
         )
-        return f"shopify:{filename}?{query}" if query else f"shopify:{filename}"
+        key = f"shopify:{scope}{filename}"
+        return f"{key}?{query}" if query else key
     return canonical
 
 

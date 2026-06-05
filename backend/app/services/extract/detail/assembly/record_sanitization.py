@@ -21,6 +21,7 @@ from app.services.config.extraction_rules import (
     DETAIL_BRAND_DESCRIPTION_PATTERNS,
     DETAIL_BRAND_HOST_FALLBACKS,
     DETAIL_BRAND_PREFIX_CONTINUATION_TOKENS,
+    DETAIL_BRAND_NUMERIC_PREFIX_ALLOWLIST,
     DETAIL_BRAND_PREFIX_STOP_TOKENS,
     DETAIL_BRAND_SUFFIX_REJECT_TOKENS,
     DETAIL_BRAND_TITLE_PREFIX_MAX_WORDS,
@@ -241,6 +242,8 @@ def _brand_from_title_prefix(
         and 2 <= len(raw_words[0]) <= 3
         and raw_words[0] in path_parts
     ):
+        if raw_words[0] not in DETAIL_BRAND_NUMERIC_PREFIX_ALLOWLIST:
+            return None
         return raw_words[0]
     max_words = max(1, int(DETAIL_BRAND_TITLE_PREFIX_MAX_WORDS))
     continuation_tokens = set(DETAIL_BRAND_PREFIX_CONTINUATION_TOKENS or ())
@@ -296,6 +299,11 @@ def _sanitize_detail_title_noise(record: dict[str, Any]) -> None:
     title = _strip_trailing_title_variant_params(title, record)
     if title:
         record["title"] = title
+        return
+    record.pop("title", None)
+    field_sources = record.get("_field_sources")
+    if isinstance(field_sources, dict):
+        field_sources.pop("title", None)
 
 
 def _dedupe_repeated_semicolon_title(title: str) -> str:
@@ -570,12 +578,9 @@ def _normalize_detail_tables(record: dict[str, Any]) -> None:
             }
             headers = [header for header in headers if header.casefold() in allowed]
         normalized_rows = [
-            {
-                header: row[header]
-                for header in headers
-                if isinstance(row, dict) and row.get(header) not in (None, "", [], {})
-            }
+            _normalized_table_row(row, headers=headers)
             for row in rows
+            if isinstance(row, dict)
         ]
         normalized_rows = [row for row in normalized_rows if row]
         if not normalized_rows:
@@ -595,6 +600,19 @@ def _table_headers(table: dict[str, Any]) -> list[str]:
     if not isinstance(raw_headers, list):
         return []
     return [clean_text(header) for header in raw_headers if clean_text(header)]
+
+
+def _normalized_table_row(row: dict[str, Any], *, headers: list[str]) -> dict[str, Any]:
+    values_by_header = {
+        clean_text(key): value
+        for key, value in row.items()
+        if clean_text(key) and value not in (None, "", [], {})
+    }
+    return {
+        header: values_by_header[header]
+        for header in headers
+        if values_by_header.get(header) not in (None, "", [], {})
+    }
 
 
 def _table_is_size_guide(table: dict[str, Any]) -> bool:

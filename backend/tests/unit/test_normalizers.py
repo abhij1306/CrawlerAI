@@ -399,6 +399,20 @@ def test_repair_ecommerce_detail_prefers_active_color_image_and_drops_swatch_thu
 
 
 @pytest.mark.unit
+def test_normalize_variant_record_keeps_url_when_same_axis_value_is_repeated() -> None:
+    record = {
+        "variants": [
+            {"url": "https://example.com/p?variant=red", "color": "Red", "size": "S"},
+            {"url": "https://example.com/p?variant=red", "color": "Red"},
+        ],
+    }
+
+    normalize_variant_record(record)
+
+    assert all(variant.get("url") for variant in record["variants"])  # nosec B101
+
+
+@pytest.mark.unit
 def test_repair_ecommerce_detail_trims_description_to_url_identity_chunk() -> None:
     url = "https://www.macys.com/shop/product/tommy-hilfiger-mens-hiday-casualized-hybrid-oxfords"
     record: dict[str, object] = {

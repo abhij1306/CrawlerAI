@@ -226,24 +226,19 @@ def _drop_static_duplicate_variant_urls(record: dict[str, Any]) -> None:
     if not isinstance(variants, list) or len(variants) < 2:
         return
     rows = [variant for variant in variants if isinstance(variant, dict)]
-    values_by_url: dict[str, set[tuple[tuple[str, str], ...]]] = {}
+    values_by_url: dict[str, dict[str, set[str]]] = {}
     for row in rows:
         url = clean_text(row.get("url"))
         if not url:
             continue
-        axis_values = tuple(
-            sorted(
-                (axis, clean_text(row.get(axis)).casefold())
-                for axis in public_variant_axis_fields
-                if clean_text(row.get(axis))
-            )
-        )
-        if axis_values:
-            values_by_url.setdefault(url, set()).add(axis_values)
+        for axis in public_variant_axis_fields:
+            value = clean_text(row.get(axis)).casefold()
+            if value:
+                values_by_url.setdefault(url, {}).setdefault(axis, set()).add(value)
     static_urls = {
         url
-        for url, values in values_by_url.items()
-        if len(values) >= 2
+        for url, values_by_axis in values_by_url.items()
+        if any(len(values) >= 2 for values in values_by_axis.values())
     }
     if not static_urls:
         return

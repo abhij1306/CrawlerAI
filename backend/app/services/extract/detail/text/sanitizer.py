@@ -688,7 +688,10 @@ def _strip_repeated_prompt_text(text: str) -> str:
     cleaned = clean_text(text)
     for prompt in long_text_repeated_prompts:
         if cleaned.count(prompt) >= 2:
-            cleaned = clean_text(cleaned.replace(prompt, ""))
+            first_end = cleaned.find(prompt) + len(prompt)
+            cleaned = clean_text(
+                cleaned[:first_end] + cleaned[first_end:].replace(prompt, "")
+            )
     return cleaned
 
 
@@ -700,10 +703,12 @@ def _trim_repeated_title_lead(text: str, *, title: str) -> str:
     lowered = cleaned.casefold()
     needle = title_lead.casefold()
     first = lowered.find(needle)
-    if first < 0:
+    if first != 0:
         return cleaned
     second = lowered.find(needle, first + len(needle))
     if second <= first:
+        return cleaned
+    if re.search(r"[.!?]", cleaned[len(title_lead) : second]):
         return cleaned
     return clean_text(cleaned[:second])
 
