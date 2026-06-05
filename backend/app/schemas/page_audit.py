@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -10,7 +10,10 @@ from app.services.config import page_audit as config
 
 class PageAuditJobCreate(BaseModel):
     url: str = Field(min_length=1, max_length=2048)
-    context: Literal["auto", "generic", "ecommerce"] = config.PAGE_AUDIT_CONTEXT_AUTO
+    context: Literal["auto", "generic", "ecommerce"] = cast(
+        Literal["auto", "generic", "ecommerce"],
+        config.PAGE_AUDIT_CONTEXT_AUTO,
+    )
 
     @field_validator("url")
     @classmethod

@@ -31,7 +31,6 @@ App routes under `frontend/app`:
 - `/dashboard`
 - `/playground`
 - `/crawl`
-- `/page-audit`
 - `/crawl/category`
 - `/crawl/pdp`
 - `/crawl/bulk`
@@ -52,7 +51,8 @@ App routes under `frontend/app`:
 Important route behavior:
 
 - `/crawl` switches between config mode and run workspace based on `run_id`
-- `/page-audit` launches and displays a single-URL technical audit; Crawl Studio and completed runs can prefill its URL
+- `/crawl?tool=audit` opens the Crawl Studio page-audit mode; completed runs can prefill its URL
+- `/crawl?audit_job_id={id}` displays page-audit results inside Crawl Studio
 - `/crawl/category`, `/crawl/pdp`, and `/crawl/bulk` are route shims into `/crawl?...`
 - `/runs/[run_id]` routes back into the crawl workspace
 

@@ -1,29 +1,22 @@
 'use client';
 
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import {
   AlertTriangle,
   CheckCircle2,
+  ClipboardCheck,
   Download,
   FileCode2,
   Globe2,
-  Play,
   RefreshCcw,
 } from 'lucide-react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
 
 import { api } from '../../lib/api';
-import type { PageAuditCheck, PageAuditContext, PageAuditReport } from '../../lib/api/types';
-import {
-  DataRegionEmpty,
-  DataRegionLoading,
-  InlineAlert,
-  PageHeader,
-  SectionHeader,
-  TabBar,
-} from '../../components/ui/patterns';
-import { Badge, Button, Card, Field, Input } from '../../components/ui/primitives';
+import type { PageAuditCheck, PageAuditReport } from '../../lib/api/types';
+import { DataRegionLoading, InlineAlert, PageHeader, SectionHeader, TabBar } from '../ui/patterns';
+import { Badge, Button, Card } from '../ui/primitives';
 
 type CheckGroup = 'source' | 'dom' | 'diff';
 
@@ -38,50 +31,22 @@ const SCORE_META: Array<{
   { key: 'ecommerce_readiness', label: 'Ecommerce' },
 ];
 
-export default function PageAuditPage() {
+export function PageAuditWorkspace({ jobId }: Readonly<{ jobId: number }>) {
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const jobId = parseJobId(searchParams.get('job_id'));
-  const [url, setUrl] = useState(searchParams.get('url') ?? '');
-  const [context, setContext] = useState<PageAuditContext>('auto');
   const [activeGroup, setActiveGroup] = useState<CheckGroup>('source');
-  const [error, setError] = useState('');
 
   const detailQuery = useQuery({
     queryKey: ['page-audit-job', jobId],
-    queryFn: () => api.getPageAuditJob(jobId ?? 0),
-    enabled: jobId !== null,
+    queryFn: () => api.getPageAuditJob(jobId),
     refetchInterval: (query) => {
       const status = String(query.state.data?.job.status ?? '');
       return status === 'queued' || status === 'running' ? 2000 : false;
     },
   });
-  const createMutation = useMutation({
-    mutationFn: () => api.createPageAuditJob({ url: normalizedUrl(url), context }),
-    onSuccess: (job) => {
-      setError('');
-      router.replace(`/page-audit?job_id=${job.id}`);
-    },
-    onError: (mutationError) => {
-      setError(
-        mutationError instanceof Error ? mutationError.message : 'Unable to start page audit.',
-      );
-    },
-  });
-
   const job = detailQuery.data?.job ?? null;
   const report = detailQuery.data?.result?.report_json ?? null;
   const running = job?.status === 'queued' || job?.status === 'running';
   const checks = useMemo(() => checksForGroup(report, activeGroup), [activeGroup, report]);
-
-  function startAudit() {
-    try {
-      normalizedUrl(url);
-      createMutation.mutate();
-    } catch (validationError) {
-      setError(validationError instanceof Error ? validationError.message : 'Enter a valid URL.');
-    }
-  }
 
   const actions = (
     <div className="flex flex-wrap items-center justify-end gap-2">
@@ -89,13 +54,22 @@ export default function PageAuditPage() {
         type="button"
         variant="neutral"
         size="sm"
+        onClick={() => router.replace('/crawl?tool=audit')}
+      >
+        <ClipboardCheck className="size-3" />
+        New Audit
+      </Button>
+      <Button
+        type="button"
+        variant="neutral"
+        size="sm"
         onClick={() => void detailQuery.refetch()}
-        disabled={!jobId || detailQuery.isFetching}
+        disabled={detailQuery.isFetching}
       >
         <RefreshCcw className="size-3" />
         Refresh
       </Button>
-      {jobId && report ? (
+      {report ? (
         <>
           <Button asChild variant="neutral" size="sm">
             <a href={api.exportPageAuditJson(jobId)} download>
@@ -117,47 +91,10 @@ export default function PageAuditPage() {
   return (
     <div className="page-stack gap-5">
       <PageHeader
-        title="Page Technical Audit"
-        description="Source HTML, rendered DOM, and crawler visibility."
+        title="Crawl Studio"
+        description="Page technical audit results."
         actions={actions}
       />
-
-      <section className="border-border bg-panel grid gap-4 rounded-lg border p-4 shadow-sm lg:grid-cols-[minmax(0,1fr)_180px_auto] lg:items-end">
-        <Field label="Page URL">
-          <Input
-            value={url}
-            onChange={(event) => {
-              setUrl(event.target.value);
-              setError('');
-            }}
-            placeholder="https://example.com/page"
-            aria-label="Page URL"
-          />
-        </Field>
-        <Field label="Audit Context">
-          <select
-            value={context}
-            onChange={(event) => setContext(event.target.value as PageAuditContext)}
-            aria-label="Audit Context"
-            className="border-border bg-background text-foreground h-[var(--control-height)] w-full rounded-md border px-3 text-sm"
-          >
-            <option value="auto">Auto detect</option>
-            <option value="generic">Generic page</option>
-            <option value="ecommerce">Ecommerce page</option>
-          </select>
-        </Field>
-        <Button
-          type="button"
-          variant="action"
-          onClick={startAudit}
-          disabled={createMutation.isPending || running}
-        >
-          <Play className="size-4" />
-          {createMutation.isPending || running ? 'Auditing...' : 'Start Audit'}
-        </Button>
-      </section>
-
-      {error ? <InlineAlert tone="danger" message={error} /> : null}
       {detailQuery.error ? (
         <InlineAlert
           tone="danger"
@@ -172,7 +109,7 @@ export default function PageAuditPage() {
         <InlineAlert tone="danger" message={String(job.summary.error || 'Page audit failed.')} />
       ) : null}
 
-      {jobId && (detailQuery.isLoading || running) ? <DataRegionLoading count={5} /> : null}
+      {detailQuery.isLoading || running ? <DataRegionLoading count={5} /> : null}
 
       {report ? (
         <>
@@ -240,8 +177,6 @@ export default function PageAuditPage() {
             </div>
           </section>
         </>
-      ) : !jobId ? (
-        <DataRegionEmpty title="Ready to audit" description="Enter one public page URL." />
       ) : null}
     </div>
   );
@@ -286,20 +221,6 @@ function checksForGroup(report: PageAuditReport | null, group: CheckGroup): Page
   if (group === 'dom') return report.dom_checks;
   if (group === 'diff') return report.diff_checks;
   return report.source_checks;
-}
-
-function parseJobId(value: string | null): number | null {
-  const parsed = Number(value);
-  return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
-}
-
-function normalizedUrl(value: string): string {
-  const text = value.trim();
-  if (!text) throw new Error('Page URL is required.');
-  const normalized = /^https?:\/\//i.test(text) ? text : `https://${text}`;
-  const parsed = new URL(normalized);
-  if (!parsed.hostname) throw new Error('Enter a valid public page URL.');
-  return parsed.toString();
 }
 
 function formatValue(value: unknown): string {

@@ -325,12 +325,10 @@ describe('CrawlRunScreen', () => {
   it('opens page audit for the completed run URL', async () => {
     renderRunScreen();
 
-    fireEvent.click(
-      await screen.findByRole('button', { name: 'Audit Page' }, { timeout: 5000 }),
-    );
+    fireEvent.click(await screen.findByRole('button', { name: 'Audit Page' }, { timeout: 5000 }));
 
     expect(replaceMock).toHaveBeenCalledWith(
-      '/page-audit?url=https%3A%2F%2Fexample.com%2Fproducts%2Fchair',
+      '/crawl?tool=audit&url=https%3A%2F%2Fexample.com%2Fproducts%2Fchair',
     );
   });
 

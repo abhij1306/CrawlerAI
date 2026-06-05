@@ -11,6 +11,7 @@ const {
   refreshMock,
   createCsvCrawlMock,
   createCrawlMock,
+  createPageAuditJobMock,
   getDomainRunProfileMock,
   listSelectorsMock,
 } = vi.hoisted(() => ({
@@ -18,6 +19,7 @@ const {
   refreshMock: vi.fn(),
   createCsvCrawlMock: vi.fn(),
   createCrawlMock: vi.fn(),
+  createPageAuditJobMock: vi.fn(),
   getDomainRunProfileMock: vi.fn(),
   listSelectorsMock: vi.fn(),
 }));
@@ -34,6 +36,7 @@ vi.mock('../../lib/api', () => ({
   api: {
     createCsvCrawl: createCsvCrawlMock,
     createCrawl: createCrawlMock,
+    createPageAuditJob: createPageAuditJobMock,
     getDomainRunProfile: getDomainRunProfileMock,
     listSelectors: listSelectorsMock,
   },
@@ -80,6 +83,7 @@ describe('CrawlConfigScreen bulk prefill', () => {
     });
     listSelectorsMock.mockResolvedValue([]);
     createCrawlMock.mockResolvedValue({ run_id: 321 });
+    createPageAuditJobMock.mockResolvedValue({ id: 41 });
   });
   it('restores the jobs domain from batch prefill storage', async () => {
     window.sessionStorage.setItem(
@@ -204,15 +208,20 @@ describe('CrawlConfigScreen bulk prefill', () => {
     expect(replaceMock).toHaveBeenCalledWith('/crawl?run_id=321');
   });
 
-  it('opens page audit with the current target URL', () => {
+  it('runs page audit from the Crawl Studio audit mode', async () => {
     renderConfigScreen();
 
+    fireEvent.click(screen.getByRole('button', { name: 'Audit' }));
     enterTargetUrl('https://example.com/about');
-    fireEvent.click(screen.getByRole('button', { name: 'Page Audit' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Start Audit' }));
 
-    expect(replaceMock).toHaveBeenCalledWith(
-      '/page-audit?url=https%3A%2F%2Fexample.com%2Fabout',
-    );
+    await waitFor(() => {
+      expect(createPageAuditJobMock).toHaveBeenCalledWith({
+        url: 'https://example.com/about',
+        context: 'auto',
+      });
+    });
+    expect(replaceMock).toHaveBeenCalledWith('/crawl?audit_job_id=41');
   });
 
   it('does not expose sitemap controls while auto surface is selected', async () => {

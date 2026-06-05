@@ -69,7 +69,7 @@ def _source_checks(soup: BeautifulSoup, *, url: str) -> tuple[list[Check], dict[
     canonical = _absolute_url(url, canonical_nodes[0].get("href")) if canonical_nodes else ""
     robots = _meta_content(soup, name="robots").lower()
     viewport = _meta_content(soup, name="viewport").lower()
-    lang = str((soup.html or {}).get("lang") or "").strip() if soup.html else ""
+    lang = str(soup.html.get("lang") or "").strip() if soup.html else ""
     jsonld_values, jsonld_errors = _jsonld_values(soup)
     schema_types = sorted(_schema_types(jsonld_values))
     page_path = urlparse(url).path.strip("/")

@@ -10,6 +10,8 @@ export type CrawlConfigScreenProps = {
   requestedTab: CrawlTab | null;
   requestedCategoryMode: CategoryMode | null;
   requestedPdpMode: PdpMode | null;
+  requestedWorkspace?: 'crawl' | 'audit';
+  requestedUrl?: string;
 };
 
 export const RUN_SETUP_ROW_CLASS =
@@ -53,6 +55,7 @@ export type CrawlConfigLocalState = {
   fieldRowMessages: Record<string, { tone: FieldRowMessageTone; message: string }>;
   activeFieldTestId: string | null;
   configError: string;
+  workspaceMode: 'crawl' | 'audit';
 };
 
 export type CrawlConfigLocalAction =
@@ -66,7 +69,9 @@ export type CrawlConfigLocalAction =
       ) => Record<string, { tone: FieldRowMessageTone; message: string }>;
     };
 
-export function buildInitialLocalState(): CrawlConfigLocalState {
+export function buildInitialLocalState(
+  workspaceMode: 'crawl' | 'audit' = 'crawl',
+): CrawlConfigLocalState {
   return {
     sitemapDomain: '',
     sitemapFilterKeyword: 'collections',
@@ -90,6 +95,7 @@ export function buildInitialLocalState(): CrawlConfigLocalState {
     fieldRowMessages: {},
     activeFieldTestId: null,
     configError: '',
+    workspaceMode,
   };
 }
 
@@ -172,6 +178,8 @@ export function bindCrawlConfigLocalDispatch(dispatchLocal: Dispatch<CrawlConfig
       dispatchLocal({ type: 'patch', patch: { activeFieldTestId } }),
     setConfigError: (configError: string) =>
       dispatchLocal({ type: 'patch', patch: { configError } }),
+    setWorkspaceMode: (workspaceMode: 'crawl' | 'audit') =>
+      dispatchLocal({ type: 'patch', patch: { workspaceMode } }),
   };
 }
 

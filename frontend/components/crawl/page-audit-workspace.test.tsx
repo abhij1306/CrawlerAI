@@ -1,23 +1,17 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { TopBarProvider, useTopBarHeader } from '../../components/layout/top-bar-context';
-import PageAuditPage from './page-audit-page';
+import { TopBarProvider, useTopBarHeader } from '../layout/top-bar-context';
+import { PageAuditWorkspace } from './page-audit-workspace';
 
 const replaceMock = vi.fn();
-let queryValues: Record<string, string> = {};
-
 vi.mock('next/navigation', () => ({
-  usePathname: () => '/page-audit',
+  usePathname: () => '/crawl',
   useRouter: () => ({ replace: replaceMock }),
-  useSearchParams: () => ({
-    get: (key: string) => queryValues[key] ?? null,
-  }),
 }));
 
 const apiMock = vi.hoisted(() => ({
-  createPageAuditJob: vi.fn(),
   getPageAuditJob: vi.fn(),
   exportPageAuditJson: vi.fn((jobId: number) => `/api/page-audit/jobs/${jobId}/export.json`),
   exportPageAuditMarkdown: vi.fn((jobId: number) => `/api/page-audit/jobs/${jobId}/export.md`),
@@ -27,7 +21,7 @@ vi.mock('../../lib/api', () => ({
   api: apiMock,
 }));
 
-function renderPage() {
+function renderPage(jobId = 41) {
   const queryClient = new QueryClient({
     defaultOptions: {
       mutations: { retry: false },
@@ -38,7 +32,7 @@ function renderPage() {
     <QueryClientProvider client={queryClient}>
       <TopBarProvider>
         <HeaderActions />
-        <PageAuditPage />
+        <PageAuditWorkspace jobId={jobId} />
       </TopBarProvider>
     </QueryClientProvider>,
   );
@@ -49,46 +43,13 @@ function HeaderActions() {
   return <>{header?.actions ?? null}</>;
 }
 
-describe('PageAuditPage', () => {
+describe('PageAuditWorkspace', () => {
   beforeEach(() => {
-    queryValues = {};
     replaceMock.mockReset();
-    apiMock.createPageAuditJob.mockReset();
     apiMock.getPageAuditJob.mockReset();
-    apiMock.createPageAuditJob.mockResolvedValue({
-      id: 41,
-      user_id: 1,
-      url: 'https://example.com/page',
-      context: 'generic',
-      status: 'queued',
-      options: {},
-      summary: {},
-      created_at: '2026-06-05T00:00:00Z',
-      updated_at: '2026-06-05T00:00:00Z',
-      completed_at: null,
-    });
-  });
-
-  it('starts a page audit for any single URL', async () => {
-    queryValues = { url: 'https://example.com/page' };
-    renderPage();
-
-    fireEvent.change(screen.getByLabelText(/audit context/i), {
-      target: { value: 'generic' },
-    });
-    fireEvent.click(screen.getByRole('button', { name: /start audit/i }));
-
-    await waitFor(() => {
-      expect(apiMock.createPageAuditJob).toHaveBeenCalledWith({
-        url: 'https://example.com/page',
-        context: 'generic',
-      });
-    });
-    expect(replaceMock).toHaveBeenCalledWith('/page-audit?job_id=41');
   });
 
   it('renders score groups, critical failures, check groups, and exports', async () => {
-    queryValues = { job_id: '41' };
     apiMock.getPageAuditJob.mockResolvedValue({
       job: {
         id: 41,
@@ -169,7 +130,6 @@ describe('PageAuditPage', () => {
   });
 
   it('shows the persisted failure reason for a failed audit', async () => {
-    queryValues = { job_id: '41' };
     apiMock.getPageAuditJob.mockResolvedValue({
       job: {
         id: 41,

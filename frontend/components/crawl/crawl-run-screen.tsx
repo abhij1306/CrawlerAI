@@ -780,7 +780,7 @@ export function CrawlRunScreen({ runId }: Readonly<CrawlRunScreenProps>) {
     if (!auditTargetUrl) {
       return;
     }
-    router.replace(`/page-audit?url=${encodeURIComponent(auditTargetUrl)}`);
+    router.replace(`/crawl?tool=audit&url=${encodeURIComponent(auditTargetUrl)}`);
   }
 
   async function applyFieldLearningAction(
