@@ -6,6 +6,7 @@ import {
   Brain,
   ChevronsDown,
   Clock,
+  ClipboardCheck,
   Copy,
   Download,
   History,
@@ -546,6 +547,7 @@ export function CrawlRunScreen({ runId }: Readonly<CrawlRunScreenProps>) {
     () => uniqueStrings(selectedRecords.map((record) => extractRecordUrl(record))),
     [selectedRecords],
   );
+  const auditTargetUrl = selectedResultUrls[0] ?? run?.url ?? '';
   const listingRun = useMemo(() => isListingRun(run), [run]);
   const ecommerceDetailRun = String(run?.surface ?? '') === 'ecommerce_detail';
   const verdict = extractionVerdict(run);
@@ -774,6 +776,13 @@ export function CrawlRunScreen({ runId }: Readonly<CrawlRunScreenProps>) {
     router.replace('/data-enrichment');
   }
 
+  function triggerPageAudit() {
+    if (!auditTargetUrl) {
+      return;
+    }
+    router.replace(`/page-audit?url=${encodeURIComponent(auditTargetUrl)}`);
+  }
+
   async function applyFieldLearningAction(
     fieldName: string,
     action: 'keep' | 'reject',
@@ -978,6 +987,17 @@ export function CrawlRunScreen({ runId }: Readonly<CrawlRunScreenProps>) {
               }
               actions={
                 <>
+                  {!designSystemRun && auditTargetUrl ? (
+                    <Button
+                      variant="neutral"
+                      type="button"
+                      size="sm"
+                      onClick={triggerPageAudit}
+                    >
+                      <ClipboardCheck className="size-3" />
+                      {selectedResultUrls.length ? 'Audit Selected URL' : 'Audit Page'}
+                    </Button>
+                  ) : null}
                   {!designSystemRun && listingRun && batchFromResultsUrls.length ? (
                     <Button
                       variant="action"

@@ -204,6 +204,17 @@ describe('CrawlConfigScreen bulk prefill', () => {
     expect(replaceMock).toHaveBeenCalledWith('/crawl?run_id=321');
   });
 
+  it('opens page audit with the current target URL', () => {
+    renderConfigScreen();
+
+    enterTargetUrl('https://example.com/about');
+    fireEvent.click(screen.getByRole('button', { name: 'Page Audit' }));
+
+    expect(replaceMock).toHaveBeenCalledWith(
+      '/page-audit?url=https%3A%2F%2Fexample.com%2Fabout',
+    );
+  });
+
   it('does not expose sitemap controls while auto surface is selected', async () => {
     render(
       <TopBarProvider>

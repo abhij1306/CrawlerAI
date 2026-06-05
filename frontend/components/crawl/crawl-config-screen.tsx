@@ -783,6 +783,11 @@ export function CrawlConfigScreen({
                 canSubmitDesign={canSubmitDesign}
                 designSubmitting={designSubmitting}
                 isSubmitting={isSubmitting}
+                onPageAudit={() =>
+                  router.replace(
+                    `/page-audit?url=${encodeURIComponent(targetUrl.trim())}` as Route,
+                  )
+                }
                 onDesignCrawl={() => void startDesignCrawl()}
               />
             </div>

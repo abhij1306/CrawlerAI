@@ -322,6 +322,18 @@ describe('CrawlRunScreen', () => {
     alertsApiMock.create.mockResolvedValue({ id: 42 });
   });
 
+  it('opens page audit for the completed run URL', async () => {
+    renderRunScreen();
+
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'Audit Page' }, { timeout: 5000 }),
+    );
+
+    expect(replaceMock).toHaveBeenCalledWith(
+      '/page-audit?url=https%3A%2F%2Fexample.com%2Fproducts%2Fchair',
+    );
+  });
+
   it('prefills Product Intelligence from selected listing records', async () => {
     apiMock.getCrawl.mockResolvedValue({
       ...terminalRun(101),

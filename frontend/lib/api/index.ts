@@ -14,6 +14,9 @@ import type {
   UcpAuditJob,
   UcpAuditJobCreatePayload,
   UcpAuditJobDetail,
+  PageAuditJob,
+  PageAuditJobCreatePayload,
+  PageAuditJobDetail,
   Dashboard,
   DomainRecipe,
   DomainCookieMemoryRecord,
@@ -192,6 +195,14 @@ export const api = {
     `${getApiBaseUrl()}/api/ucp-audit/jobs/${jobId}/export.json`,
   exportUcpAuditMarkdown: (jobId: number) =>
     `${getApiBaseUrl()}/api/ucp-audit/jobs/${jobId}/export.md`,
+  createPageAuditJob: (payload: PageAuditJobCreatePayload) =>
+    apiClient.post<PageAuditJob>('/api/page-audit/jobs', payload),
+  getPageAuditJob: (jobId: number) =>
+    apiClient.get<PageAuditJobDetail>(`/api/page-audit/jobs/${jobId}`),
+  exportPageAuditJson: (jobId: number) =>
+    `${getApiBaseUrl()}/api/page-audit/jobs/${jobId}/export.json`,
+  exportPageAuditMarkdown: (jobId: number) =>
+    `${getApiBaseUrl()}/api/page-audit/jobs/${jobId}/export.md`,
   reviewProductIntelligenceMatch: (
     jobId: number,
     matchId: number,
