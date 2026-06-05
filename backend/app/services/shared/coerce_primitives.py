@@ -2,6 +2,7 @@ from __future__ import annotations
 
 __all__ = [
     "coerce_int",
+    "is_blank",
     "object_dict",
     "object_list",
     "safe_int",
@@ -9,6 +10,10 @@ __all__ = [
 ]
 
 from collections.abc import Iterable
+
+
+def is_blank(value: object) -> bool:
+    return value in (None, "", [], {})
 
 
 def object_list(value: object) -> list:

@@ -6,7 +6,6 @@ import re
 from typing import cast
 
 from bs4 import BeautifulSoup, NavigableString, Tag
-from soupsieve import SelectorSyntaxError
 
 from app.services.config.extraction_rules import (
     DETAIL_LONG_TEXT_MAX_SECTION_BLOCKS,
@@ -17,13 +16,26 @@ from app.services.config.extraction_rules import (
     SEMANTIC_SECTION_LABEL_SKIP_TOKENS,
     SEMANTIC_SECTION_NOISE,
 )
+from app.services.dom.query import safe_select as _safe_select
 from app.services.extraction_html_helpers import html_to_text
 from app.services.field_policy import normalize_field_key
 from app.services.shared.coerce_primitives import safe_int as _safe_int
 from app.services.shared.field_coerce import clean_text
 
-_max_section_blocks = _safe_int(DETAIL_LONG_TEXT_MAX_SECTION_BLOCKS, default=8) or 8
-_max_section_chars = _safe_int(DETAIL_LONG_TEXT_MAX_SECTION_CHARS, default=1200) or 1200
+_max_section_blocks = cast(
+    int,
+    _safe_int(
+        DETAIL_LONG_TEXT_MAX_SECTION_BLOCKS,
+        default=DETAIL_LONG_TEXT_MAX_SECTION_BLOCKS,
+    ),
+)
+_max_section_chars = cast(
+    int,
+    _safe_int(
+        DETAIL_LONG_TEXT_MAX_SECTION_CHARS,
+        default=DETAIL_LONG_TEXT_MAX_SECTION_CHARS,
+    ),
+)
 _SECTION_SKIP_PATTERNS = tuple(
     str(token).lower() for token in (SEMANTIC_SECTION_NOISE.get("skip_patterns") or ())
 )
@@ -218,15 +230,6 @@ def extract_feature_rows(root: BeautifulSoup | Tag) -> list[str]:
         content = extract_section_content(heading, scoped_root)
         _add(_split_feature_text(content))
     return rows
-
-
-def _safe_select(root: BeautifulSoup | Tag, selector: str) -> list[Tag]:
-    if not selector:
-        return []
-    try:
-        return [node for node in root.select(selector) if isinstance(node, Tag)]
-    except SelectorSyntaxError:
-        return []
 
 
 def _node_style_is_hidden(node: Tag) -> bool:

@@ -6,6 +6,7 @@ from app.services.shared.text_coerce import (
     clean_text,
     coerce_long_text,
     coerce_text,
+    is_null_text,
     is_title_noise,
     slug_tokens,
     strip_html_tags,
@@ -54,6 +55,15 @@ def test_title_noise_and_slug_tokens() -> None:
     assert not is_title_noise("Cotton Shirt")
     assert slug_tokens("Café au lait") == ["caf", "au", "lait"]
     assert slug_tokens("Cotton-Shirt / Blue") == ["cotton", "shirt", "blue"]
+
+
+@pytest.mark.unit
+def test_is_null_text_normalizes_common_string_sentinels() -> None:
+    assert is_null_text(" NULL ")
+    assert is_null_text("undefined")
+    assert is_null_text("N/A")
+    assert is_null_text("- / null")
+    assert not is_null_text("null leather finish")
 
 
 @pytest.mark.unit

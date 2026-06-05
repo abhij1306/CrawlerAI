@@ -272,7 +272,7 @@ def _title_from_url(url: str) -> str | None:
     if not path:
         return None
     terminal = path.rsplit("/", 1)[-1]
-    terminal = re.sub(r"\.(html?|htm)$", "", terminal, flags=re.I)
+    terminal = re.sub(r"\.html?$", "", terminal, flags=re.I)
     if not terminal:
         return None
     title = clean_text(re.sub(r"[-_]+", " ", terminal))

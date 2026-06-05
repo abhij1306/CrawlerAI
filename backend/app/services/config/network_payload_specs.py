@@ -102,7 +102,7 @@ SKU_KEYS: Final[tuple[str, ...]] = ("sku", "id", "variantId", "variant_id")
 SURFACE_ECOMMERCE_DETAIL: Final[str] = "ecommerce_detail"
 NETWORK_PAYLOAD_ID_MIN_LENGTH: Final[int] = 5
 NETWORK_PAYLOAD_HTML_EXT_RE: Final[re.Pattern[str]] = re.compile(
-    r"\.(?:html?|htm)$",
+    r"\.html?$",
     re.I,
 )
 NETWORK_PAYLOAD_SPECS: Final[dict[str, tuple[PayloadMappingSpec, ...]]] = _SURFACE_SPECS

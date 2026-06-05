@@ -3,7 +3,7 @@
 // Next.js App Router error boundary; invoked by file-system routing.
 import { Button } from '../components/ui/button';
 
-export default function Error({
+export default function ErrorBoundary({
   error: _error,
   reset,
 }: Readonly<{

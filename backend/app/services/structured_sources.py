@@ -18,6 +18,7 @@ from app.services.config.extraction_rules import (
     OPENGRAPH_PRODUCT_TYPE,
 )
 from app.services.config.runtime_settings import crawler_runtime_settings
+from app.services.shared.regex_patterns import compile_regex_patterns
 from app.services.script_text_extractor import (
     extract_script_text_by_id,
     find_script_regex_matches,
@@ -34,10 +35,9 @@ try:
 except ImportError:  # pragma: no cover - dependency may be absent in local test envs
     get_base_url = None  # type: ignore[assignment]
 
-_NON_STATE_ASSIGNMENT_REGEXES = tuple(
-    re.compile(str(pattern), re.S)
-    for pattern in NON_STATE_ASSIGNMENT_PATTERNS
-    if str(pattern).strip()
+_NON_STATE_ASSIGNMENT_REGEXES = compile_regex_patterns(
+    NON_STATE_ASSIGNMENT_PATTERNS,
+    flags=re.S,
 )
 _NEXT_F_PUSH_REGEX = re.compile(
     r'self\.__next_f\.push\(\[1,"((?:\\.|[^"\\])*)"\]\)',

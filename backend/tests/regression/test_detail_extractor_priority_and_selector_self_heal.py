@@ -262,7 +262,7 @@ def test_collect_structured_source_payloads_extracts_vtex_string_price_from_id_r
     item_list = embedded_json[0]["itemListElement"]
     first_item = item_list[0]["item"]
 
-    assert first_item["offers"]["price"] == 21.0
+    assert first_item["offers"]["price"] == pytest.approx(21.0)
     assert first_item["image"] == "https://cdn.example.com/widget-one.jpg"
 
 
@@ -307,8 +307,8 @@ def test_collect_structured_source_payloads_extracts_vtex_string_price_from_fall
     embedded_json = dict(payloads)["embedded_json"]
     item_list = embedded_json[0]["itemListElement"]
 
-    assert item_list[0]["item"]["offers"]["price"] == 41.5
-    assert item_list[1]["item"]["offers"]["price"] == 55.25
+    assert item_list[0]["item"]["offers"]["price"] == pytest.approx(41.5)
+    assert item_list[1]["item"]["offers"]["price"] == pytest.approx(55.25)
 
 
 @pytest.mark.regression

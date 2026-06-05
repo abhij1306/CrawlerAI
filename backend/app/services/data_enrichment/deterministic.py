@@ -39,6 +39,7 @@ from app.services.data_enrichment.shopify_catalog import (
     term_dict,
     top_taxonomy_candidates as shopify_top_taxonomy_candidates,
 )
+from app.services.shared.regex_patterns import compile_regex_patterns
 from app.services.shared.currency_hints import currency_hint_from_page_url
 from app.services.normalizers import normalize_decimal_price
 from app.services.shared.field_coerce import (
@@ -392,13 +393,12 @@ def add_material_match(
 
 @lru_cache(maxsize=1)
 def compiled_material_strip_patterns() -> tuple[re.Pattern[str], ...]:
-    compiled: list[re.Pattern[str]] = []
-    for pattern in tuple(DATA_ENRICHMENT_MATERIAL_CONTEXT_STRIP_PATTERNS or ()):
-        try:
-            compiled.append(re.compile(str(pattern), re.I))
-        except re.error:
-            logger.warning("Skipping invalid material strip pattern: %r", pattern)
-    return tuple(compiled)
+    return compile_regex_patterns(
+        tuple(DATA_ENRICHMENT_MATERIAL_CONTEXT_STRIP_PATTERNS or ()),
+        logger=logger,
+        warning_message="Skipping invalid material strip pattern: %r",
+        skip_blank=False,
+    )
 
 
 def strip_material_context_noise(value: str) -> str:

@@ -142,7 +142,7 @@ def test_dom_skipped_with_variant_cues_flagged():
     ]
     assert dom_flags
     assert dom_flags[0]["owner"] == audit_rules.OWNER_DETAIL_TIERS
-    assert dom_flags[0]["evidence"]["confidence"] == 0.82
+    assert dom_flags[0]["evidence"]["confidence"] == pytest.approx(0.82)
 
 
 def test_dom_skip_not_flagged_when_variants_present():

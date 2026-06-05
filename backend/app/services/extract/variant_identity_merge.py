@@ -1,14 +1,9 @@
 from __future__ import annotations
 
 __all__ = (
-    "split_variant_axes",
-    "resolve_variants",
-    "variant_identity",
-    "variant_semantic_identity",
-    "collapse_duplicate_size_aliases",
-    "variant_row_richness",
-    "merge_variant_pair",
-    "merge_variant_rows",
+    "split_variant_axes", "resolve_variants", "variant_identity",
+    "variant_semantic_identity", "collapse_duplicate_size_aliases",
+    "variant_row_richness", "merge_variant_pair", "merge_variant_rows",
     "axis_values_are_mislabeled_duplicate",
 )
 
@@ -16,27 +11,16 @@ import itertools
 import logging
 from typing import Any
 
-from app.services.config.extraction_rules import (
-    VARIANT_MISLABELED_AXIS_MIN_OVERLAP_RATIO,
-    VARIANT_SIZE_ALIAS_SUFFIXES,
-)
-from app.services.extract.variant_axis import (
-    normalized_variant_axis_key,
-    variant_axis_allowed_single_tokens,
-)
+from app.services.config.extraction_rules import VARIANT_MISLABELED_AXIS_MIN_OVERLAP_RATIO, VARIANT_SIZE_ALIAS_SUFFIXES
+from app.services.config.variant_policy import FLAT_VARIANT_KEYS
+from app.services.extract.variant_axis import normalized_variant_axis_key, variant_axis_allowed_single_tokens
 from app.services.shared.field_coerce import clean_text, text_or_none
 
 logger = logging.getLogger(__name__)
 _variant_axis_allowed_single_tokens = variant_axis_allowed_single_tokens
-_variant_size_alias_suffixes = tuple(
-    str(token).strip().lower()
-    for token in tuple(VARIANT_SIZE_ALIAS_SUFFIXES or ())
-    if str(token).strip()
-)
+_variant_size_alias_suffixes = tuple(str(token).strip().lower() for token in tuple(VARIANT_SIZE_ALIAS_SUFFIXES or ()) if str(token).strip())
 try:
-    _variant_mislabeled_axis_min_overlap_ratio = float(
-        VARIANT_MISLABELED_AXIS_MIN_OVERLAP_RATIO
-    )
+    _variant_mislabeled_axis_min_overlap_ratio = float(VARIANT_MISLABELED_AXIS_MIN_OVERLAP_RATIO)
 except (TypeError, ValueError):
     _variant_mislabeled_axis_min_overlap_ratio = 0.5
 
@@ -62,13 +46,6 @@ def axis_values_are_mislabeled_duplicate(
     *,
     min_overlap_ratio: float | None = None,
 ) -> bool:
-    """Return True when two axis value sets are really one axis mislabeled.
-
-    Generic guard: a real second axis multiplies the variant matrix, but when a
-    second axis (often from a different source) carries (almost) the same value
-    set as an existing axis, the two "axes" are the same single axis under two
-    names. Treating them as independent fabricates a Cartesian explosion.
-    """
     set_a = _normalized_axis_value_set(values_a)
     set_b = _normalized_axis_value_set(values_b)
     if not set_a or not set_b:
@@ -81,11 +58,6 @@ def axis_values_are_mislabeled_duplicate(
     overlap = len(set_a & set_b)
     if not overlap:
         return False
-    # Jaccard similarity (overlap / union): two axes are the same axis mislabeled
-    # only when their value sets are (near-)identical. Using the union as the
-    # denominator avoids false positives between genuinely distinct numeric axes
-    # that merely share a value (e.g. waist {28,30} vs inseam {30,32} -> 1/3),
-    # while identical sets still score 1.0 and collapse.
     union = len(set_a | set_b)
     return overlap / union >= ratio
 
@@ -127,13 +99,6 @@ def _collapse_mislabeled_duplicate_axes(
     options_matrix: dict[str, list[str]],
     variants: list[dict[str, Any]],
 ) -> dict[str, list[str]]:
-    """Drop a matrix axis that is the same single axis mislabeled under two names.
-
-    Two axes whose value sets substantially overlap are not independent
-    dimensions; multiplying them fabricates phantom combinations. Keep the axis
-    that the variant rows actually carry inside `option_values` (the real one)
-    and drop the duplicate so the Cartesian product cannot explode.
-    """
     keys = list(options_matrix.keys())
     if len(keys) < 2:
         return options_matrix
@@ -157,8 +122,6 @@ def _collapse_mislabeled_duplicate_axes(
                 options_matrix.get(key_b, []),
             ):
                 continue
-            # Keep the axis the variant rows actually populate; on a tie keep the
-            # axis with more distinct values, then the first-declared axis.
             if option_value_axis_counts[key_a] != option_value_axis_counts[key_b]:
                 weaker = (
                     key_b
@@ -184,7 +147,6 @@ def resolve_variants(
     options_matrix: dict[str, list[str]],
     variants: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    """Resolve variants as a Cartesian product matrix, preserving unmatched rows."""
     if not options_matrix or not variants:
         return list(variants)
 
@@ -193,8 +155,6 @@ def resolve_variants(
     if not keys:
         return list(variants)
 
-    # Index variants by their option_values tuple for O(1) lookup.
-    # When duplicates map to the same combo, keep the richer row.
     variant_by_combo: dict[tuple[str, ...], dict[str, Any]] = {}
     no_option_values: list[dict[str, Any]] = []
     for variant in variants:
@@ -212,14 +172,12 @@ def resolve_variants(
         ):
             variant_by_combo[combo] = variant
 
-    # Walk the Cartesian product; only emit combos that have a real variant.
     resolved: list[dict[str, Any]] = []
     for combo in itertools.product(*(options_matrix[k] for k in keys)):
         matched = variant_by_combo.get(combo)
         if matched is not None:
             resolved.append(matched)
 
-    # Append variants that lacked full option_values (avoid data loss).
     if no_option_values:
         seen_ids = {
             v.get("variant_id") or v.get("sku")
@@ -238,7 +196,6 @@ def resolve_variants(
 
 
 def variant_identity(variant: dict[str, Any]) -> str | None:
-    """Canonical identity for a variant row."""
     if not isinstance(variant, dict):
         return None
     variant_id = text_or_none(variant.get("variant_id"))
@@ -258,8 +215,6 @@ def variant_identity(variant: dict[str, Any]) -> str | None:
             return "options:" + "|".join(
                 f"{axis}={value}" for axis, value in normalized_pairs
             )
-    # URL-based identity causes duplicate rows; unidentifiable variants
-    # are handled by merge_variant_rows instead.
     return None
 
 
@@ -393,7 +348,6 @@ def _rewrite_variant_row_size_alias(
 
 
 def variant_row_richness(variant: dict[str, Any]) -> tuple[int, int, int]:
-    """Compare key for two rows that share an identity."""
     populated_fields = sum(
         1 for value in variant.values() if value not in (None, "", [], {})
     )
@@ -410,7 +364,6 @@ def merge_variant_pair(
     primary: dict[str, Any],
     secondary: dict[str, Any],
 ) -> dict[str, Any]:
-    """Merge two rows of the same identity. Primary wins; missing fields filled from secondary."""
     merged = dict(primary)
     for field_name, field_value in secondary.items():
         if merged.get(field_name) in (None, "", [], {}) and field_value not in (
@@ -424,7 +377,6 @@ def merge_variant_pair(
 
 
 def merge_variant_rows(*row_lists: Any) -> list[dict[str, Any]]:
-    """Merge variant rows by canonical identity, keeping richer data per identity."""
     merged_by_identity: dict[str, dict[str, Any]] = {}
     ordered_keys: list[str] = []
     identityless_rows: list[dict[str, Any]] = []
@@ -477,9 +429,6 @@ def merge_variant_rows(*row_lists: Any) -> list[dict[str, Any]]:
             continue
         merged = merged_by_semantic.get(semantic_identity)
         if merged is None:
-            # Defensive: we populated merged_by_semantic on the first pass, so a
-            # miss here signals a semantic-identity inconsistency. Preserve the
-            # original row rather than silently losing variant data.
             logger.warning(
                 "variant merge missed semantic identity %r; preserving original row",
                 semantic_identity,
@@ -489,4 +438,49 @@ def merge_variant_rows(*row_lists: Any) -> list[dict[str, Any]]:
             continue
         emitted_semantic.add(semantic_identity)
         merged_rows.append(merged)
-    return merged_rows
+    return _dedupe_flat_identity_rows(merged_rows)
+
+
+def _dedupe_flat_identity_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    merged_by_key: dict[str, dict[str, Any]] = {}
+    ordered_keys: list[str] = []
+    passthrough: list[dict[str, Any]] = []
+    for row in rows:
+        key = _variant_flat_identity(row)
+        if not key:
+            passthrough.append(row)
+            continue
+        current = merged_by_key.get(key)
+        if current is None:
+            merged_by_key[key] = dict(row)
+            ordered_keys.append(key)
+            continue
+        primary, secondary = (
+            (row, current)
+            if variant_row_richness(row) > variant_row_richness(current)
+            else (current, row)
+        )
+        merged_by_key[key] = merge_variant_pair(primary, secondary)
+    deduped = [merged_by_key[key] for key in ordered_keys]
+    deduped.extend(passthrough)
+    return deduped
+
+
+def _variant_flat_identity(variant: dict[str, Any]) -> str | None:
+    if variant_identity(variant) or variant_semantic_identity(variant):
+        return None
+    fingerprint = tuple(
+        (field_name, _variant_field_fingerprint(variant.get(field_name)))
+        for field_name in FLAT_VARIANT_KEYS
+        if _variant_field_fingerprint(variant.get(field_name)) is not None
+    )
+    return f"flat:{repr(fingerprint)}" if fingerprint else None
+
+
+def _variant_field_fingerprint(value: object) -> str | int | float | None:
+    if value in (None, "", [], {}):
+        return None
+    if isinstance(value, (int, float)):
+        return value
+    cleaned = clean_text(value)
+    return cleaned or None

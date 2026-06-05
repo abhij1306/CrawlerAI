@@ -1,6 +1,9 @@
 # Active Plan
 
-No active plan.
+**Current:** LOC and Complexity Reduction from Duplication Audits → `docs/plans/loc-complexity-reduction-plan.md`
+**Status:** BLOCKED
+**Started:** 2026-06-05
+**Last slice completed:** Slice 8 — Finalization Scheduling Ratchet
 
 ## Queue
 1. Agentic Browser Playground → `docs/plans/agentic-browser-playground-plan.md` — queued, not yet started

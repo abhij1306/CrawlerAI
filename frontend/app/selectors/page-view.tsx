@@ -429,11 +429,7 @@ export default function SelectorsPage() {
             result.reason instanceof Error ? result.reason.message : 'Unable to save selector.',
         };
       });
-      if (savedRows.size) {
-        dispatch({ type: 'rowsSaved', savedRows, resolvedSurface, nextMessages });
-      } else {
-        dispatch({ type: 'rowsSaved', savedRows, resolvedSurface, nextMessages });
-      }
+      dispatch({ type: 'rowsSaved', savedRows, resolvedSurface, nextMessages });
     } finally {
       dispatch({ type: 'saveFinished' });
     }

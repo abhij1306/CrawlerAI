@@ -28,6 +28,7 @@ from app.services.extract.network_listing_mapper import (
     extract_listing_rows_from_network,
     listing_identity_from_url,
 )
+from app.services.extract.record_overlay import overlay_record
 from app.services.listing_extractor import (
     apply_listing_integrity_gate,
     extract_listing_records,
@@ -212,18 +213,18 @@ def extract_records(
             and validate_table_rows_quality(listing_rows)
         ):
             return listing_rows[:max_records]
-        _backfill_listing_rows_from_adapter(
+        generic_rows = _overlay_listing_rows_from_adapter(
             listing_rows,
             adapter_rows=adapter_rows,
         )
         candidate_sets: list[tuple[str, list[dict[str, Any]]]] = []
         if adapter_rows:
             candidate_sets.append(("adapter", adapter_rows))
-        if listing_rows:
-            candidate_sets.append(("generic", listing_rows))
+        if generic_rows:
+            candidate_sets.append(("generic", generic_rows))
         if network_rows:
             candidate_sets.append(("network", network_rows))
-        combined_rows = [*listing_rows, *adapter_rows, *network_rows]
+        combined_rows = [*generic_rows, *adapter_rows, *network_rows]
         if len(candidate_sets) >= 2 and combined_rows and not adapter_rows:
             candidate_sets.append(("combined", combined_rows))
         if candidate_sets:
@@ -274,6 +275,7 @@ def extract_records(
             requested_page_url=requested_page_url,
             surface=normalized_surface,
             repair_quality=False,
+            finalize_rows=False,
         )
         set_logfire_attributes(span, record_count=len(detail_rows))
     return detail_rows
@@ -364,6 +366,7 @@ def _postprocess_detail_records(
     requested_page_url: str | None,
     surface: str = "ecommerce_detail",
     repair_quality: bool = True,
+    finalize_rows: bool = True,
 ) -> list[dict]:
     rows: list[dict] = []
     for record in list(records or []):
@@ -375,19 +378,19 @@ def _postprocess_detail_records(
                 html=html,
                 page_url=page_url,
                 requested_page_url=requested_page_url,
-            )
+        )
         drop_low_signal_zero_detail_price(record)
-        rows.append(finalize_record(record, surface=surface))
+        rows.append(finalize_record(record, surface=surface) if finalize_rows else record)
     return rows
 
 
-def _backfill_listing_rows_from_adapter(
+def _overlay_listing_rows_from_adapter(
     rows: list[dict],
     *,
     adapter_rows: list[dict[str, Any]],
-) -> None:
+) -> list[dict[str, Any]]:
     if not rows or not adapter_rows:
-        return
+        return [dict(row) for row in rows if isinstance(row, dict)]
     adapter_by_url = {
         str(row.get("url") or "").strip(): row
         for row in adapter_rows
@@ -399,22 +402,21 @@ def _backfill_listing_rows_from_adapter(
         if isinstance(row, dict) and (identity := _listing_row_identity(row))
     }
     if not adapter_by_url and not adapter_by_identity:
-        return
+        return [dict(row) for row in rows if isinstance(row, dict)]
+    overlaid_rows: list[dict[str, Any]] = []
     for row in rows:
         if not isinstance(row, dict):
             continue
+        overlaid = dict(row)
         adapter_row = adapter_by_url.get(str(row.get("url") or "").strip())
         if adapter_row is None:
             row_identity = _listing_row_identity(row)
             if row_identity:
                 adapter_row = adapter_by_identity.get(row_identity)
-        if not isinstance(adapter_row, dict):
-            continue
-        for field_name, value in adapter_row.items():
-            if str(field_name).startswith("_") or value in (None, "", [], {}):
-                continue
-            if row.get(field_name) in (None, "", [], {}):
-                row[field_name] = value
+        if isinstance(adapter_row, dict):
+            overlaid = overlay_record(overlaid, adapter_row, skip_private=True)
+        overlaid_rows.append(overlaid)
+    return overlaid_rows
 
 
 def _listing_row_identity(row: dict[str, Any]) -> str:

@@ -10,6 +10,7 @@ from app.services.config.extraction_rules import (
 )
 from app.services.extract.variant_normalization import size_color_extraction
 from app.services.shared.field_coerce import clean_text
+from app.services.shared.regex_patterns import compile_regex_patterns
 from app.services.shared.url_utils import (
     clean_color_tokens,
     terminal_text,
@@ -27,10 +28,9 @@ gender_possessive_re = (
 standard_size_values = frozenset(
     str(value).casefold() for value in tuple(STANDARD_SIZE_VALUES or ())
 )
-variant_sku_size_suffix_patterns = tuple(
-    pattern if isinstance(pattern, re.Pattern) else re.compile(str(pattern), re.I)
-    for pattern in tuple(VARIANT_SKU_SIZE_SUFFIX_PATTERNS or ())
-    if str(pattern).strip()
+variant_sku_size_suffix_patterns = compile_regex_patterns(
+    VARIANT_SKU_SIZE_SUFFIX_PATTERNS or (),
+    preserve_compiled=True,
 )
 
 

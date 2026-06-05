@@ -62,6 +62,11 @@ def _classify_input_url(url: str) -> str:
     return "listing"
 
 
+def _detail_surface_for_url(url: str) -> str:
+    surface = resolve_auto_surface(url=url).surface
+    return surface if surface.endswith("_detail") else ECOMMERCE_DETAIL_SURFACE
+
+
 async def create_session(
     session: AsyncSession,
     *,
@@ -189,7 +194,7 @@ async def start_discover(
             {
                 "run_type": "crawl",
                 "url": playground.input_url,
-                "surface": ECOMMERCE_DETAIL_SURFACE,
+                "surface": _detail_surface_for_url(playground.input_url),
                 "settings": {"playground_session_id": playground.id},
             },
         )
@@ -767,7 +772,7 @@ async def _launch_extract_runs(
             {
                 "run_type": "crawl",
                 "url": product_url,
-                "surface": ECOMMERCE_DETAIL_SURFACE,
+                "surface": _detail_surface_for_url(product_url),
                 "settings": {"playground_session_id": playground.id},
             },
         )

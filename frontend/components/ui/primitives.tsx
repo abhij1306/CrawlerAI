@@ -20,7 +20,7 @@ function sanitizeIdSegment(value: string) {
     .trim()
     .toLowerCase()
     .replace(/[^a-z0-9_-]+/g, '-');
-  return normalized.replace(/^-+|-+$/g, '') || 'option';
+  return normalized.replace(/^-+/g, '').replace(/-+$/g, '') || 'option';
 }
 
 /* ─── Title / Subtitle ───────────────────────────────────────────────────── */

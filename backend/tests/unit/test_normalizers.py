@@ -472,7 +472,7 @@ def test_normalize_value_price_normalizes_clean_decimal_strings() -> None:
 @pytest.mark.unit
 def test_normalize_value_unwraps_singleton_barcode_list_and_rounds_rating() -> None:
     assert normalize_value("barcode", "['0840424803104']") == "0840424803104"
-    assert normalize_value("rating", "2.399113082039911") == 2.4
+    assert normalize_value("rating", "2.399113082039911") == pytest.approx(2.4)
 
 
 @pytest.mark.unit
@@ -508,7 +508,7 @@ def test_variant_price_backfill_handles_numeric_string_equivalence() -> None:
 
     backfill._backfill_variant_context(record)
 
-    assert record["variants"][0]["price"] == 10.0
+    assert record["variants"][0]["price"] == pytest.approx(10.0)
     assert record["variants"][1]["price"] == "10.00"
 
 
@@ -537,7 +537,7 @@ def test_field_coercion_repairs_source_quality_before_enrichment() -> None:
         coerce_field_value("availability", "https://schema.org/LimitedAvailability", "")
         == "limited_stock"
     )
-    assert coerce_field_value("rating", {"ratingValue": "4.5"}, "") == 4.5
+    assert coerce_field_value("rating", {"ratingValue": "4.5"}, "") == pytest.approx(4.5)
     assert coerce_field_value("product_type", {"variationGroup": True}, "") is None
 
 

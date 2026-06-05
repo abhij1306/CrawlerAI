@@ -12,7 +12,6 @@ from urllib.parse import urlparse
 from bs4 import BeautifulSoup, NavigableString, Tag
 from lxml import etree  # skipcq: BAN-B410 - lxml is used in HTML parsing mode for sanitized DOM recovery, not arbitrary XML.
 from lxml import html as lxml_html  # skipcq: BAN-B410 - lxml.html.fromstring parses sanitized HTML snippets, not arbitrary XML.
-from soupsieve import SelectorSyntaxError
 
 from app.services.config.extraction_rules import (
     CROSS_LINK_CONTAINER_HINTS,
@@ -57,6 +56,7 @@ from app.services.config.field_mappings import ADDITIONAL_IMAGES_FIELD
 from app.services.dom.content_extractability import (
     requested_content_extractability_impl,
 )
+from app.services.dom.query import safe_select, walk_ancestors
 from app.services.extraction_html_helpers import html_to_text
 from app.services.field_policy import (
     normalize_field_key,
@@ -75,6 +75,7 @@ from app.services.shared.field_coerce import (
     surface_fields,
 )
 from app.services.shared.coerce_primitives import safe_int as _safe_int
+from app.services.shared.regex_patterns import compile_regex_patterns
 from app.services.dom.xpath_service import validate_xpath_syntax
 
 logger = logging.getLogger(__name__)
@@ -86,6 +87,7 @@ __all__ = [
     "extract_feature_rows",
     "image_candidate_score",
     "is_garbage_image_candidate",
+    "safe_select",
     "upgrade_low_resolution_image_url",
 ]
 
@@ -111,17 +113,11 @@ _scope_score_product_context_weight = (
 
 
 def _compile_variant_option_child_drop_patterns() -> tuple[re.Pattern[str], ...]:
-    compiled: list[re.Pattern[str]] = []
-    for pattern in tuple(VARIANT_OPTION_TEXT_CHILD_DROP_PATTERNS or ()):
-        if not str(pattern).strip():
-            continue
-        try:
-            compiled.append(re.compile(str(pattern), re.I))
-        except re.error:
-            logger.warning(
-                "Skipping invalid variant option child-drop pattern: %r", pattern
-            )
-    return tuple(compiled)
+    return compile_regex_patterns(
+        tuple(VARIANT_OPTION_TEXT_CHILD_DROP_PATTERNS or ()),
+        logger=logger,
+        warning_message="Skipping invalid variant option child-drop pattern: %r",
+    )
 
 
 _VARIANT_OPTION_CHILD_DROP_RE = _compile_variant_option_child_drop_patterns()
@@ -398,25 +394,16 @@ def _is_other_detail_link(
 
 
 def _is_in_cross_link_container(node: Tag, *, max_depth: int = 6) -> bool:
-    current: Tag | None = node
-    depth = 0
-    while isinstance(current, Tag) and depth < max_depth:
-        context = _node_attr_text(current)
-        if any(hint in context for hint in CROSS_LINK_CONTAINER_HINTS):
-            return True
-        current = current.parent
-        depth += 1
-    return False
-
-
-def safe_select(root: BeautifulSoup | Tag, selector: str) -> list[Tag]:
-    if not selector:
-        return []
-    try:
-        return [node for node in root.select(selector) if isinstance(node, Tag)]
-    except SelectorSyntaxError:
-        logger.warning("Skipping invalid css selector: %s", selector)
-        return []
+    return (
+        walk_ancestors(
+            node,
+            lambda current, _depth: any(
+                hint in _node_attr_text(current) for hint in CROSS_LINK_CONTAINER_HINTS
+            ),
+            max_depth=max_depth,
+        )
+        is not None
+    )
 
 
 def extract_node_value(node: Tag, field_name: str, page_url: str) -> object | None:

@@ -32,6 +32,7 @@ from app.services.config.extraction_rules import (
     DETAIL_GENDER_TERMS,
 )
 from app.services.shared.field_coerce import clean_text
+from app.services.shared.regex_patterns import compile_regex_patterns
 
 logger = logging.getLogger(__name__)
 _BREADCRUMB_NOISE_ICON_PATTERNS = tuple(DETAIL_BREADCRUMB_NOISE_ICON_PATTERNS or ())
@@ -39,16 +40,17 @@ _BREADCRUMB_NOISE_ICON_PATTERNS = tuple(DETAIL_BREADCRUMB_NOISE_ICON_PATTERNS or
 
 @lru_cache(maxsize=1)
 def _compiled_breadcrumb_noise_icon_patterns() -> tuple[re.Pattern[str], ...]:
-    compiled: list[re.Pattern[str]] = []
-    for pattern in _BREADCRUMB_NOISE_ICON_PATTERNS:
-        try:
-            compiled.append(re.compile(str(pattern), re.I))
-        except re.error as exc:
-            logger.warning(
-                "Invalid breadcrumb noise icon regex",
-                extra={"pattern": str(pattern), "error": str(exc)},
-            )
-    return tuple(compiled)
+    return compile_regex_patterns(
+        _BREADCRUMB_NOISE_ICON_PATTERNS,
+        logger=logger,
+        warning_message="Invalid breadcrumb noise icon regex",
+        skip_blank=False,
+        warning_pattern_arg=False,
+        warning_extra=lambda pattern, _text, exc: {
+            "pattern": str(pattern),
+            "error": str(exc),
+        },
+    )
 
 
 def gender_from_text(value: object) -> str | None:

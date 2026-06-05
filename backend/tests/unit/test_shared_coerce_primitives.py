@@ -4,11 +4,22 @@ import pytest
 
 from app.services.shared.coerce_primitives import (
     coerce_int,
+    is_blank,
     object_dict,
     object_list,
     safe_int,
     string_list,
 )
+
+
+@pytest.mark.unit
+def test_is_blank_covers_empty_container_sentinels_without_rejecting_false() -> None:
+    assert is_blank(None)
+    assert is_blank("")
+    assert is_blank([])
+    assert is_blank({})
+    assert not is_blank(False)
+    assert not is_blank(0)
 
 
 @pytest.mark.unit

@@ -27,6 +27,7 @@ __all__ = [
     "coerce_literal_text_list",
     "coerce_long_text",
     "coerce_text",
+    "is_null_text",
     "is_title_noise",
     "slug_tokens",
     "strip_html_tags",
@@ -42,6 +43,7 @@ tracking_token_re = re.compile(str(DETAIL_TRACKING_TOKEN_PATTERN), re.I)
 _LISTING_UTILITY_TITLE_REGEXES = tuple(
     re.compile(pattern, re.I) for pattern in LISTING_UTILITY_TITLE_PATTERNS
 )
+_NULL_TEXT_VALUES = frozenset({"nan", "none", "null", "undefined", "n/a", "na", "- / null"})
 
 
 def clean_text(value: object) -> str:
@@ -78,7 +80,7 @@ def is_title_noise(title: object) -> bool:
     lowered = cleaned.lower()
     if not lowered:
         return True
-    if "undefined" in lowered or lowered in {"nan", "none", "null"}:
+    if is_null_text(cleaned):
         return True
     if cleaned.isdigit():
         return True
@@ -106,6 +108,10 @@ def is_title_noise(title: object) -> bool:
     if LISTING_ALT_TEXT_TITLE_PATTERN.search(lowered):
         return True
     return any(pattern.search(lowered) for pattern in LISTING_EDITORIAL_TITLE_PATTERNS)
+
+
+def is_null_text(value: object) -> bool:
+    return clean_text(value).casefold() in _NULL_TEXT_VALUES
 
 
 def strip_html_tags(value: object) -> str:

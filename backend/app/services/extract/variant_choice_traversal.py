@@ -7,6 +7,7 @@ __all__ = (
     "infer_variant_group_name_from_values",
     "iter_variant_select_groups",
     "iter_variant_choice_groups",
+    "variant_input_label",
 )
 
 import re
@@ -38,6 +39,7 @@ from app.services.config.extraction_rules import (
     VARIANT_SWATCH_BUTTON_SELECTOR,
     VARIANT_SWATCH_PARENT_DEPTH,
 )
+from app.services.config.surface_hints import detail_path_hints
 from app.services.extract.variant_dom_cues import (
     select_variant_nodes as _select_variant_nodes,
     variant_context_noise_tokens as _variant_context_noise_tokens,
@@ -56,7 +58,9 @@ from app.services.extract.variant_option_value import (
     select_option_values_are_noise as _select_option_values_are_noise,
     value_looks_like_color as _value_looks_like_color,
 )
+from app.services.dom.query import safe_find
 from app.services.shared.field_coerce import clean_text, text_or_none
+from app.services.shared.regex_patterns import compile_regex_patterns
 
 _ALNUM_SPLIT_PATTERN = r"[^a-z0-9]+"
 
@@ -65,20 +69,24 @@ _variant_group_attr_noise_tokens = frozenset(
     for token in tuple(VARIANT_GROUP_ATTR_NOISE_TOKENS or ())
     if str(token).strip()
 )
-_variant_group_attr_noise_patterns = tuple(
-    re.compile(str(pattern), re.I)
-    for pattern in tuple(VARIANT_GROUP_ATTR_NOISE_PATTERNS or ())
-    if str(pattern).strip()
+_variant_group_attr_noise_patterns = compile_regex_patterns(
+    VARIANT_GROUP_ATTR_NOISE_PATTERNS or ()
 )
-_variant_size_value_patterns = tuple(
-    re.compile(str(pattern), re.I)
-    for pattern in tuple(VARIANT_SIZE_VALUE_PATTERNS or ())
-    if str(pattern).strip()
-)
+_variant_size_value_patterns = compile_regex_patterns(VARIANT_SIZE_VALUE_PATTERNS or ())
 _variant_quantity_attr_tokens = frozenset(
     str(token).strip().lower()
     for token in tuple(VARIANT_QUANTITY_ATTR_TOKENS or ())
     if str(token).strip()
+)
+_variant_anchor_href_markers = tuple(
+    str(marker or "").strip().casefold()
+    for marker in (
+        *detail_path_hints("ecommerce_detail"),
+        "?piid=",
+        "&piid=",
+        "variant=",
+    )
+    if str(marker or "").strip()
 )
 _VARIANT_CHOICE_CACHE_ATTR = "_crawler_variant_choice_cache"
 
@@ -144,7 +152,7 @@ def _choice_option_text(node: Any, *, parent: Any | None = None) -> str:
         return ""
     label_text = ""
     if str(getattr(node, "name", "") or "").strip().lower() in {"input", "button"}:
-        label = _variant_input_label(parent or node, node)
+        label = variant_input_label(parent or node, node)
         if label is not None:
             label_text = clean_text(label.get_text(" ", strip=True))
     node_text = (
@@ -164,12 +172,12 @@ def _choice_option_text(node: Any, *, parent: Any | None = None) -> str:
     )
 
 
-def _variant_input_label(container: Any, input_node: Any) -> Any | None:
+def variant_input_label(container: Any, input_node: Any) -> Any | None:
     input_id = (
         text_or_none(input_node.get("id")) if hasattr(input_node, "get") else None
     )
-    if input_id and hasattr(container, "find"):
-        label = container.find("label", attrs={"for": input_id})
+    if input_id:
+        label = safe_find(container, "label", attrs={"for": input_id})
         if label is not None:
             return label
     if hasattr(input_node, "find_parent"):
@@ -295,7 +303,7 @@ def _anchor_node_has_variant_signal(node: Any) -> bool:
     if not href:
         return False
     href_lower = href.casefold()
-    if any(marker in href_lower for marker in ("/product/", "/products/", "/p/", "?piid=", "&piid=", "variant=")):
+    if any(marker in href_lower for marker in _variant_anchor_href_markers):
         return True
     if any(
         node.get(attr) not in (None, "", [], {})

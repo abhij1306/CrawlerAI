@@ -5,6 +5,8 @@ import re
 from typing import Any
 from urllib.parse import urlsplit
 
+from app.services.extract.record_overlay import overlay_record
+
 from ._common import *
 
 def _merge_same_product_record(
@@ -13,23 +15,12 @@ def _merge_same_product_record(
     *,
     page_url: str,
 ) -> dict[str, Any]:
-    merged = dict(base_record)
-    for field_name, field_value in incoming.items():
-        if field_name in {"variants", "variant_count"}:
-            continue
-        if (
-            field_name in {"availability", "stock_quantity", "original_price"}
-            and field_value not in (None, "", [], {})
-        ):
-            merged[field_name] = field_value
-            continue
-        if merged.get(field_name) in (None, "", [], {}) and field_value not in (
-            None,
-            "",
-            [],
-            {},
-        ):
-            merged[field_name] = field_value
+    merged = overlay_record(
+        base_record,
+        incoming,
+        skip_fields={"variants", "variant_count"},
+        overwrite_fields={"availability", "stock_quantity", "original_price"},
+    )
 
     merged_variants = merge_variant_rows(
         base_record.get("variants"),

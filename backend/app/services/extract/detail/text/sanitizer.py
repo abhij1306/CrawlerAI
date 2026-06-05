@@ -1,44 +1,29 @@
 from __future__ import annotations
 
 __all__ = (
-    "document_link_label_patterns",
-    "fulfillment_only_long_text_phrases",
-    "fulfillment_long_text_patterns",
-    "guide_glossary_text_patterns",
-    "guide_glossary_heading_tokens",
-    "long_text_disclaimer_patterns",
-    "low_signal_title_values",
-    "low_signal_long_text_values",
-    "materials_pollution_tokens",
-    "low_signal_product_type_values",
-    "detail_artifact_product_type_patterns",
-    "cross_product_text_type_tokens",
-    "cross_product_text_generic_tokens",
-    "title_dimension_size_re",
-    "tracking_token_re",
-    "cookie_disclosure_text_patterns",
-    "low_signal_numeric_size_max",
-    "artifact_price_values",
-    "feature_row_noise_patterns",
-    "detail_title_value_is_low_signal",
-    "detail_product_type_is_low_signal",
-    "detail_scalar_size_is_low_signal",
-    "detail_candidate_is_valid",
-    "sanitize_detail_long_text_fields",
-    "sanitize_detail_long_text",
-    "sanitize_detail_features",
+    "document_link_label_patterns", "fulfillment_only_long_text_phrases",
+    "fulfillment_long_text_patterns", "guide_glossary_text_patterns",
+    "guide_glossary_heading_tokens", "long_text_disclaimer_patterns",
+    "low_signal_title_values", "low_signal_long_text_values",
+    "materials_pollution_tokens", "low_signal_product_type_values",
+    "detail_artifact_product_type_patterns", "cross_product_text_type_tokens",
+    "cross_product_text_generic_tokens", "title_dimension_size_re",
+    "tracking_token_re", "cookie_disclosure_text_patterns",
+    "low_signal_numeric_size_max", "artifact_price_values",
+    "feature_row_noise_patterns", "detail_title_value_is_low_signal",
+    "detail_product_type_is_low_signal", "detail_scalar_size_is_low_signal",
+    "detail_candidate_is_valid", "sanitize_detail_long_text_fields",
+    "sanitize_detail_long_text", "sanitize_detail_features",
     "detail_long_text_chunk_looks_truncated",
     "detail_long_text_chunk_is_variant_size_sequence",
-    "detail_long_text_is_numeric_sequence",
-    "detail_long_text_is_fulfillment_only",
+    "detail_long_text_is_numeric_sequence", "detail_long_text_is_fulfillment_only",
     "detail_long_text_is_guide_or_glossary_dump",
     "detail_long_text_is_cookie_disclosure_dump",
     "detail_long_text_chunk_is_legal_tail",
     "detail_long_text_chunk_is_document_label",
     "detail_long_text_is_document_label_cluster",
     "detail_long_text_chunk_is_variant_title",
-    "detail_long_text_chunk_is_other_product",
-    "detail_product_text_tokens",
+    "detail_long_text_chunk_is_other_product", "detail_product_text_tokens",
     "detail_long_text_chunk_has_product_name_shape",
 )
 
@@ -49,88 +34,57 @@ from collections.abc import Iterable
 from typing import Any
 
 from app.services.config.extraction_rules import (
-    DETAIL_ARTIFACT_IDENTIFIER_VALUES,
-    DETAIL_ARTIFACT_PRICE_VALUES,
-    DETAIL_ARTIFACT_PRODUCT_TYPE_PATTERNS,
-    DETAIL_ARTIFACT_PRODUCT_TYPE_VALUES,
-    DETAIL_ARTIFACT_SKU_PREFIXES,
-    DETAIL_BRACKET_PROSE_MIN_WORDS,
-    DETAIL_CATEGORY_UI_TOKENS,
-    DETAIL_COOKIE_DISCLOSURE_TEXT_PATTERNS,
-    DETAIL_CROSS_PRODUCT_TEXT_GENERIC_TOKENS,
-    DETAIL_CROSS_PRODUCT_TEXT_TYPE_TOKENS,
-    DETAIL_DOCUMENT_LINK_LABEL_PATTERNS,
-    DETAIL_FULFILLMENT_ONLY_LONG_TEXT_PHRASES,
-    DETAIL_FULFILLMENT_LONG_TEXT_PATTERNS,
-    DETAIL_GUIDE_GLOSSARY_HEADING_MIN_HITS,
-    DETAIL_GUIDE_GLOSSARY_HEADING_TOKENS,
-    DETAIL_GUIDE_GLOSSARY_TEXT_PATTERNS,
-    DETAIL_LOW_SIGNAL_LONG_TEXT_VALUES,
-    DETAIL_LOW_SIGNAL_NUMERIC_SIZE_MAX,
-    DETAIL_LOW_SIGNAL_PRODUCT_TYPE_VALUES,
-    DETAIL_LOW_SIGNAL_TITLE_VALUES,
-    DETAIL_LEGAL_TAIL_PATTERNS,
-    DETAIL_LONG_TEXT_DISCLAIMER_PATTERNS,
-    DETAIL_LONG_TEXT_SUBSTRING_REMOVE_PATTERNS,
-    DETAIL_LONG_TEXT_REPEATED_PROMPTS,
+    DETAIL_ARTIFACT_IDENTIFIER_VALUES, DETAIL_ARTIFACT_PRICE_VALUES,
+    DETAIL_ARTIFACT_PRODUCT_TYPE_PATTERNS, DETAIL_ARTIFACT_PRODUCT_TYPE_VALUES,
+    DETAIL_ARTIFACT_SKU_PREFIXES, DETAIL_BRACKET_PROSE_MIN_WORDS,
+    DETAIL_CATEGORY_UI_TOKENS, DETAIL_COOKIE_DISCLOSURE_TEXT_PATTERNS,
+    DETAIL_CROSS_PRODUCT_TEXT_GENERIC_TOKENS, DETAIL_CROSS_PRODUCT_TEXT_TYPE_TOKENS,
+    DETAIL_DOCUMENT_LINK_LABEL_PATTERNS, DETAIL_FULFILLMENT_ONLY_LONG_TEXT_PHRASES,
+    DETAIL_FULFILLMENT_LONG_TEXT_PATTERNS, DETAIL_GUIDE_GLOSSARY_HEADING_MIN_HITS,
+    DETAIL_GUIDE_GLOSSARY_HEADING_TOKENS, DETAIL_GUIDE_GLOSSARY_TEXT_PATTERNS,
+    DETAIL_LOW_SIGNAL_LONG_TEXT_VALUES, DETAIL_LOW_SIGNAL_NUMERIC_SIZE_MAX,
+    DETAIL_LOW_SIGNAL_PRODUCT_TYPE_VALUES, DETAIL_LOW_SIGNAL_TITLE_VALUES,
+    DETAIL_LEGAL_TAIL_PATTERNS, DETAIL_LONG_TEXT_DISCLAIMER_PATTERNS,
     DETAIL_LONG_TEXT_LEADING_ATTRIBUTE_BLOB_PATTERN,
-    DETAIL_LONG_TEXT_TRUNCATED_TAIL_TOKENS,
-    DETAIL_LONG_TEXT_UI_TAIL_PHRASES,
-    DETAIL_LONG_TEXT_UI_TAIL_MIN_PRODUCT_WORDS,
-    DETAIL_MATERIALS_POLLUTION_TOKENS,
-    DETAIL_MATERIALS_ZERO_PERCENT_PATTERN,
-    DETAIL_MATERIALS_COMPOSITION_PATTERN,
-    DETAIL_MATERIALS_EDITORIAL_HEAD_THRESHOLD,
-    DETAIL_MATERIALS_EDITORIAL_LENGTH_THRESHOLD,
-    DETAIL_NOISE_PREFIXES,
-    DETAIL_TITLE_DIMENSION_SIZE_PATTERN,
-    DETAIL_TRACKING_TOKEN_PATTERN,
-    DETAIL_VARIANT_SIZE_SEQUENCE_MIN_COUNT,
-    DETAIL_VARIANT_ARTIFACT_VALUE_TOKENS,
-    FEATURE_ROW_NOISE_PATTERNS,
-    LONG_TEXT_MAX_WORDS,
-    LONG_TEXT_MIN_WORDS,
-    LONG_TEXT_PREFIXES,
-    TOKEN_MIN_LEN_CHUNK,
-    TOKEN_MIN_LEN_DISTINCTIVE,
+    DETAIL_LONG_TEXT_REPEATED_PROMPTS, DETAIL_LONG_TEXT_SUBSTRING_REMOVE_PATTERNS,
+    DETAIL_LONG_TEXT_TRUNCATED_TAIL_TOKENS, DETAIL_LONG_TEXT_UI_TAIL_MIN_PRODUCT_WORDS,
+    DETAIL_LONG_TEXT_UI_TAIL_PHRASES, DETAIL_MATERIALS_COMPOSITION_PATTERN,
+    DETAIL_MATERIALS_EDITORIAL_HEAD_THRESHOLD, DETAIL_MATERIALS_EDITORIAL_LENGTH_THRESHOLD,
+    DETAIL_MATERIALS_POLLUTION_TOKENS, DETAIL_MATERIALS_ZERO_PERCENT_PATTERN,
+    DETAIL_NOISE_PREFIXES, DETAIL_TITLE_DIMENSION_SIZE_PATTERN,
+    DETAIL_TRACKING_TOKEN_PATTERN, DETAIL_VARIANT_ARTIFACT_VALUE_TOKENS,
+    DETAIL_VARIANT_SIZE_SEQUENCE_MIN_COUNT, FEATURE_ROW_NOISE_PATTERNS,
+    LONG_TEXT_MAX_WORDS, LONG_TEXT_MIN_WORDS, LONG_TEXT_PREFIXES,
+    TOKEN_MIN_LEN_CHUNK, TOKEN_MIN_LEN_DISTINCTIVE,
 )
 from app.services.config.detail_extraction_constants import MAX_STRUCTURED_TEXT_LENGTH
 from app.services.shared.field_coerce import LONG_TEXT_FIELDS, clean_text, text_or_none
+from app.services.shared.regex_patterns import compile_regex_patterns
 
-document_link_label_patterns = tuple(
-    re.compile(str(pattern), re.I)
-    for pattern in tuple(DETAIL_DOCUMENT_LINK_LABEL_PATTERNS or ())
-    if str(pattern).strip()
+document_link_label_patterns = compile_regex_patterns(
+    DETAIL_DOCUMENT_LINK_LABEL_PATTERNS or ()
 )
 fulfillment_only_long_text_phrases = frozenset(
     clean_text(phrase).lower()
     for phrase in tuple(DETAIL_FULFILLMENT_ONLY_LONG_TEXT_PHRASES or ())
     if clean_text(phrase)
 )
-fulfillment_long_text_patterns = tuple(
-    re.compile(str(pattern), re.I)
-    for pattern in tuple(DETAIL_FULFILLMENT_LONG_TEXT_PATTERNS or ())
-    if str(pattern).strip()
+fulfillment_long_text_patterns = compile_regex_patterns(
+    DETAIL_FULFILLMENT_LONG_TEXT_PATTERNS or ()
 )
-guide_glossary_text_patterns = tuple(
-    re.compile(str(pattern), re.I)
-    for pattern in tuple(DETAIL_GUIDE_GLOSSARY_TEXT_PATTERNS or ())
-    if str(pattern).strip()
+guide_glossary_text_patterns = compile_regex_patterns(
+    DETAIL_GUIDE_GLOSSARY_TEXT_PATTERNS or ()
 )
 guide_glossary_heading_tokens = frozenset(
     clean_text(value).lower()
     for value in tuple(DETAIL_GUIDE_GLOSSARY_HEADING_TOKENS or ())
     if clean_text(value)
 )
-long_text_disclaimer_patterns = tuple(
-    re.compile(str(pattern), re.I)
-    for pattern in tuple(DETAIL_LONG_TEXT_DISCLAIMER_PATTERNS or ())
-    if str(pattern).strip()
+long_text_disclaimer_patterns = compile_regex_patterns(
+    DETAIL_LONG_TEXT_DISCLAIMER_PATTERNS or ()
 )
-long_text_substring_remove_patterns = tuple(
-    re.compile(str(pattern), re.I)
-    for pattern in tuple(DETAIL_LONG_TEXT_SUBSTRING_REMOVE_PATTERNS or ())
-    if str(pattern).strip()
+long_text_substring_remove_patterns = compile_regex_patterns(
+    DETAIL_LONG_TEXT_SUBSTRING_REMOVE_PATTERNS or ()
 )
 long_text_repeated_prompts = tuple(
     clean_text(prompt)
@@ -160,10 +114,8 @@ low_signal_product_type_values = frozenset(
     for value in tuple(DETAIL_LOW_SIGNAL_PRODUCT_TYPE_VALUES or ())
     if clean_text(value)
 )
-detail_artifact_product_type_patterns = tuple(
-    re.compile(str(pattern), re.I)
-    for pattern in tuple(DETAIL_ARTIFACT_PRODUCT_TYPE_PATTERNS or ())
-    if str(pattern).strip()
+detail_artifact_product_type_patterns = compile_regex_patterns(
+    DETAIL_ARTIFACT_PRODUCT_TYPE_PATTERNS or ()
 )
 cross_product_text_type_tokens = frozenset(
     clean_text(value).lower()
@@ -177,10 +129,8 @@ cross_product_text_generic_tokens = frozenset(
 )
 title_dimension_size_re = re.compile(str(DETAIL_TITLE_DIMENSION_SIZE_PATTERN), re.I)
 tracking_token_re = re.compile(str(DETAIL_TRACKING_TOKEN_PATTERN), re.I)
-cookie_disclosure_text_patterns = tuple(
-    re.compile(str(pattern), re.I)
-    for pattern in tuple(DETAIL_COOKIE_DISCLOSURE_TEXT_PATTERNS or ())
-    if str(pattern).strip()
+cookie_disclosure_text_patterns = compile_regex_patterns(
+    DETAIL_COOKIE_DISCLOSURE_TEXT_PATTERNS or ()
 )
 low_signal_numeric_size_max = int(DETAIL_LOW_SIGNAL_NUMERIC_SIZE_MAX)
 _detail_noise_prefixes = tuple(
@@ -249,11 +199,7 @@ artifact_price_values = frozenset(
     for v in tuple(DETAIL_ARTIFACT_PRICE_VALUES or ())
     if clean_text(v)
 )
-feature_row_noise_patterns = tuple(
-    re.compile(str(pattern), re.I)
-    for pattern in tuple(FEATURE_ROW_NOISE_PATTERNS or ())
-    if str(pattern).strip()
-)
+feature_row_noise_patterns = compile_regex_patterns(FEATURE_ROW_NOISE_PATTERNS or ())
 
 
 def detail_title_value_is_low_signal(value: object) -> bool:

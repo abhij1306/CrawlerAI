@@ -568,20 +568,54 @@ def test_classify_input_url_treats_sku_html_product_slug_as_detail() -> None:
     )
 
 
+@pytest.mark.asyncio
 @pytest.mark.component
 @pytest.mark.parametrize(
-    "url",
+    ("url", "expected_surface"),
     [
-        "https://codeforces.com/blog/entry/153802",
-        "https://community.example.com/thread/123",
-        "https://company.example.com/jobs/software-engineer",
-        "https://example.com/reference/manual",
+        ("https://codeforces.com/blog/entry/153802", "article_detail"),
+        ("https://community.example.com/thread/123", "forum_detail"),
+        ("https://company.example.com/jobs/software-engineer", "job_detail"),
+        ("https://example.com/reference/manual", "content_detail"),
     ],
 )
-def test_classify_input_url_treats_non_ecommerce_detail_surfaces_as_detail(
+async def test_classify_input_url_treats_non_ecommerce_detail_surfaces_as_detail(
+    db_session: AsyncSession,
+    test_user,
+    monkeypatch: pytest.MonkeyPatch,
     url: str,
+    expected_surface: str,
 ) -> None:
     assert _classify_input_url(url) == "detail"
+    playground = PlaygroundSession(
+        user_id=test_user.id,
+        input_url=url,
+        state="created",
+        step_data={},
+    )
+    db_session.add(playground)
+    await db_session.flush()
+    created_payloads: list[dict[str, object]] = []
+
+    async def _fake_create_crawl_run_from_payload(session, user_id, payload):
+        del session, user_id
+        created_payloads.append(dict(payload))
+        return SimpleNamespace(id=601)
+
+    monkeypatch.setattr(
+        "app.services.playground_service.create_crawl_run_from_payload",
+        _fake_create_crawl_run_from_payload,
+    )
+
+    result = await start_discover(
+        db_session,
+        playground=playground,
+        user=test_user,
+    )
+
+    assert result == {"stage": "detail", "run_id": 601}
+    assert created_payloads[0]["surface"] == expected_surface
+    assert created_payloads[0]["surface"] != "ecommerce_detail"
 
 
 @pytest.mark.asyncio

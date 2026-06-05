@@ -190,6 +190,7 @@ Canonical config owner:
 | `shared/field_coerce_url.py` | URL/image URL coercion and tracking cleanup exports |
 | `field_url_normalization.py` | Tracking URL cleanup and query stripping |
 | `dom/content_extractability.py` | Visible text/link/image extractability checks used by selector extraction |
+| `dom/query.py` | Safe BeautifulSoup selector/find/text/traversal primitives shared by DOM extraction modules |
 | `dom/selector_engine.py` | DOM selector extraction, image URL ranking, and selector result assembly |
 | `dom/xpath_service.py` | XPath syntax validation, conversion, absolute XPath building, and selector value extraction |
 | `dom/image_extraction.py` | DOM image URL scoring, dedupe, low-resolution upgrade, and page image extraction |
@@ -206,6 +207,7 @@ Canonical config owner:
 | `extract/network_listing_mapper.py` | Network listing rows and network-to-listing price/brand/currency backfill |
 | `extract/content_listing_handler.py` | Content listing table-row extraction and open-field row tagging |
 | `extract/content_surface_extractor.py` | DOM fallback extraction for content, article, and forum detail surfaces |
+| `extract/record_overlay.py` | Primary-wins record overlay helper shared by adapter, JS-state, and listing merges |
 | `extract/table_extractor.py` | Meaningful table detection, filtering, context resolution, and structured table output |
 | `extract/detail/assembly/tiers.py` | Detail tier execution order, DOM skip decision, and finalization transitions |
 | `extract/detail/assembly/dom_section_targets.py` | Detail DOM context selection and section target field discovery |

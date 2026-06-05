@@ -30,6 +30,7 @@ from app.services.extract.variant_value_guards import (
     variant_axis_value_exceeds_word_limit,
 )
 from app.services.shared.field_coerce import clean_text
+from app.services.shared.regex_patterns import compile_regex_patterns
 
 logger = logging.getLogger(__name__)
 
@@ -44,20 +45,18 @@ __all__ = (
 )
 
 def _safe_compile_patterns(name: str, patterns: object) -> tuple[re.Pattern[str], ...]:
-    compiled: list[re.Pattern[str]] = []
     raw_patterns = patterns if isinstance(patterns, (list, tuple, set, frozenset)) else ()
-    for pattern in raw_patterns:
-        text = str(pattern).strip()
-        if not text:
-            continue
-        try:
-            compiled.append(re.compile(text, re.I))
-        except re.error:
-            logger.warning(
-                "Skipping invalid variant regex pattern",
-                extra={"name": name, "pattern": text},
-            )
-    return tuple(compiled)
+    return compile_regex_patterns(
+        raw_patterns,
+        logger=logger,
+        warning_message="Skipping invalid variant regex pattern",
+        strip=True,
+        warning_pattern_arg=False,
+        warning_extra=lambda _pattern, text, _exc: {
+            "pattern_group": name,
+            "pattern": text,
+        },
+    )
 
 
 variant_size_value_extract_patterns = _safe_compile_patterns(
@@ -73,10 +72,8 @@ variant_color_hint_words = frozenset(
     for value in tuple(VARIANT_COLOR_HINT_WORDS or ())
     if clean_text(value)
 )
-variant_option_value_suffix_noise_patterns = tuple(
-    re.compile(str(pattern), re.I)
-    for pattern in tuple(VARIANT_OPTION_VALUE_SUFFIX_NOISE_PATTERNS or ())
-    if str(pattern).strip()
+variant_option_value_suffix_noise_patterns = compile_regex_patterns(
+    VARIANT_OPTION_VALUE_SUFFIX_NOISE_PATTERNS or ()
 )
 variant_placeholder_values = frozenset(
     clean_text(value).lower()
@@ -122,11 +119,7 @@ adult_size_context_tokens = frozenset(
     for token in tuple(ADULT_SIZE_CONTEXT_TOKENS or ())
     if clean_text(token)
 )
-variant_child_size_patterns = tuple(
-    re.compile(str(pattern), re.I)
-    for pattern in tuple(VARIANT_CHILD_SIZE_PATTERNS or ())
-    if str(pattern).strip()
-)
+variant_child_size_patterns = compile_regex_patterns(VARIANT_CHILD_SIZE_PATTERNS or ())
 variant_condition_header_prefixes = frozenset(
     clean_text(token).lower()
     for token in tuple(VARIANT_CONDITION_HEADER_PREFIXES or ())

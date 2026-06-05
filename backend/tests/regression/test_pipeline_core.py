@@ -558,6 +558,63 @@ async def test_process_single_url_skips_low_quality_browser_retry_when_budget_lo
 
 @pytest.mark.asyncio
 @pytest.mark.regression
+async def test_low_quality_browser_retry_timeout_preserves_http_record(
+    db_session: AsyncSession,
+    test_user,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run = await create_crawl_run(
+        db_session,
+        test_user.id,
+        {
+            "run_type": "crawl",
+            "url": "https://example.com/products/widget-prime",
+            "surface": "ecommerce_detail",
+            "settings": {"respect_robots_txt": False},
+        },
+    )
+    acquire_calls: list[dict[str, object]] = []
+
+    @_as_async
+    def _fake_acquire(request: AcquisitionRequest) -> AcquisitionResult:
+        acquire_calls.append(dict(request.acquisition_profile))
+        if request.acquisition_profile.get("prefer_browser"):
+            raise TimeoutError(
+                "Browser navigation stage exceeded timeout_seconds=45.00"
+            )
+        return _fake_acquire_result(
+            request,
+            html="""
+            <html>
+              <head>
+                <script>window.__NEXT_DATA__ = {"props":{"pageProps":{"product":{"id":"123"}}}};</script>
+              </head>
+              <body>
+                <div id="__next"></div>
+                <noscript>Please enable JavaScript to continue.</noscript>
+              </body>
+            </html>
+            """,
+            method="curl_cffi",
+        )
+
+    monkeypatch.setattr("app.services.pipeline.extraction_loop.acquire", _fake_acquire)
+    monkeypatch.setattr("app.services.pipeline.extraction_loop.run_adapter", _no_adapter)
+    monkeypatch.setattr(
+        "app.services.pipeline.extraction_loop.extract_records",
+        lambda *args, **kwargs: [{"title": "Widget Prime"}],
+    )
+
+    result = await process_single_url(db_session, run, run.url)
+    logs = await get_run_logs(db_session, run.id)
+
+    assert result.records == [{"title": "Widget Prime"}]
+    assert len(acquire_calls) == 2
+    assert any("Browser retry failed" in log.message for log in logs)
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
 async def test_process_single_url_skips_empty_browser_retry_when_budget_low(
     db_session: AsyncSession,
     test_user,

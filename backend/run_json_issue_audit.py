@@ -393,9 +393,7 @@ def _find_pollution(record: dict[str, Any], issues: list[Issue]) -> None:
                 url_like_tags = [
                     _safe_str(item)
                     for item in value
-                    if re.search(
-                        r"(?:^/shop/product/|https?://)", _safe_str(item), re.I
-                    )
+                    if re.search(r"(?:(?:^/shop/product/)|https?://)", _safe_str(item), re.I)
                 ]
                 if len(url_like_tags) >= 3:
                     issues.append(

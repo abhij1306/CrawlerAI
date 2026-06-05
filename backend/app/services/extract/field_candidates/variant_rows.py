@@ -1,18 +1,17 @@
 from __future__ import annotations
 
 import re
-from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 from app.services.extract.variant_axis import (
+    is_public_variant_axis,
     normalized_variant_axis_key,
-    public_variant_axis_fields,
 )
 from app.services.shared.field_coerce import (
-    absolute_url,
     coerce_field_value,
     coerce_text,
     text_or_none,
 )
+from app.services.shared.url_utils import variant_url_with_param
 
 from .structured_values import _coerce_structured_candidate_value
 
@@ -23,19 +22,7 @@ _OFFER_TITLE_SIZE_RE = re.compile(
 
 
 def _variant_url_from_id(page_url: str, variant_id: str) -> str:
-    parsed = urlparse(page_url)
-    query = [
-        (key, value)
-        for key, value in parse_qsl(parsed.query, keep_blank_values=True)
-        if key != "variant"
-    ]
-    query.append(("variant", variant_id))
-    composed = urlunparse(parsed._replace(query=urlencode(query, doseq=True)))
-    return (
-        composed
-        if parsed.scheme and parsed.netloc
-        else absolute_url(page_url, composed) or ""
-    )
+    return variant_url_with_param(page_url, variant_id)
 
 
 def _structured_variant_rows(
@@ -243,7 +230,7 @@ def _variation_attribute_labels(
 
 def _public_variant_axis_key(value: object) -> str:
     axis_key = normalized_variant_axis_key(value)
-    return axis_key if axis_key in public_variant_axis_fields else ""
+    return axis_key if is_public_variant_axis(axis_key) else ""
 
 
 def _structured_product_option_names(payload: dict[str, object]) -> list[str]:
@@ -430,7 +417,7 @@ def _structured_variants_from_product_payload(
         if variant_url not in (None, "", [], {}):
             row["url"] = variant_url
         for axis_key, axis_value in option_values.items():
-            if axis_key in public_variant_axis_fields:
+            if is_public_variant_axis(axis_key):
                 row[axis_key] = axis_value
         color = coerce_field_value(
             "color",

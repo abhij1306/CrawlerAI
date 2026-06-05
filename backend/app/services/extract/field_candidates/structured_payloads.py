@@ -19,6 +19,7 @@ from app.services.shared.field_coerce import (
     coerce_field_value,
     coerce_text,
     extract_urls,
+    is_blank,
     text_or_none,
 )
 
@@ -66,7 +67,7 @@ def _breadcrumb_item_name(item: object) -> str | None:
     source = item.get("item")
     if isinstance(source, dict):
         name = source.get("name") or source.get("title")
-        if name not in (None, "", [], {}):
+        if not is_blank(name):
             return text_or_none(name)
     return text_or_none(item.get("name") or item.get("title"))
 
@@ -149,7 +150,7 @@ def _structured_feature_rows(payload: dict[str, object], page_url: str) -> list[
 
     for key in ("feature", "features"):
         raw_value = payload.get(key)
-        if raw_value not in (None, "", [], {}):
+        if not is_blank(raw_value):
             _add(raw_value)
 
     additional_properties = payload.get("additionalProperty")
@@ -547,6 +548,6 @@ def _embedded_payload_has_variant_options(payload: dict[str, object]) -> bool:
     if not has_size_options and not has_one_size and not has_variant_rows:
         return False
     return any(
-        payload.get(field_name) not in (None, "", [], {})
+        not is_blank(payload.get(field_name))
         for field_name in ("id", "sku", "title", "subTitle", "price", "discountedPrice")
     )

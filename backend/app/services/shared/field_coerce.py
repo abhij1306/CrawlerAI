@@ -59,6 +59,7 @@ from app.services.field_policy import (
 from app.services.normalizers import normalize_record_fields
 from app.services.shared.coerce_primitives import (
     coerce_int as _coerce_int,
+    is_blank,
     object_dict as _object_dict,
     object_list as _object_list,
     safe_int as _safe_int,
@@ -68,6 +69,7 @@ from app.services.shared.text_coerce import (
     coerce_literal_text_list,
     coerce_long_text,
     coerce_text,
+    is_null_text,
     is_title_noise as is_title_noise,
     strip_html_tags as strip_html_tags,
     text_or_none,
@@ -102,6 +104,7 @@ from app.services.shared.field_coerce_url import (
     strip_record_tracking_params,
     strip_tracking_query_params as strip_tracking_query_params,
 )
+from app.services.shared.regex_patterns import compile_regex_patterns
 
 REVIEW_COUNT_RE = _REVIEW_COUNT_RE
 _decimal_for_shared_price = decimal_for_shared_price
@@ -109,10 +112,8 @@ _decimal_for_shared_price = decimal_for_shared_price
 PRODUCT_URL_HINTS = detail_path_hints("ecommerce_detail")
 JOB_URL_HINTS = detail_path_hints("job_detail")
 _FIELD_ALIASES = FIELD_ALIASES
-_OPTION_VALUE_SUFFIX_NOISE_RE = tuple(
-    re.compile(str(pattern), re.I)
-    for pattern in tuple(VARIANT_OPTION_VALUE_SUFFIX_NOISE_PATTERNS or ())
-    if str(pattern).strip()
+_OPTION_VALUE_SUFFIX_NOISE_RE = compile_regex_patterns(
+    VARIANT_OPTION_VALUE_SUFFIX_NOISE_PATTERNS or ()
 )
 _OPTION_VALUE_NOISE_WORD_PATTERN = "|".join(
     re.escape(str(word))
@@ -167,7 +168,7 @@ def clean_record(record: dict[str, Any]) -> dict[str, Any]:
     return {
         str(key): value
         for key, value in record.items()
-        if value not in (None, "", [], {})
+        if not is_blank(value)
     }
 
 
@@ -207,7 +208,7 @@ def validate_record_for_surface(
             key: value
             for key, value in dict(record or {}).items()
             if str(key).startswith("_")
-            or (key in allowed and value not in (None, "", [], {}))
+            or (key in allowed and not is_blank(value))
         }, []
     logical_fields = {
         key: value
@@ -592,7 +593,7 @@ def _sanitize_option_scalar(field_name: str, value: object) -> str | None:
             return None
     elif field_name == WEIGHT_FIELD and re.fullmatch(r"\d+(?:\.\d+)?", cleaned):
         return None
-    if cleaned.strip().casefold() in {"none", "null", "- / null", "n/a", "na"}:
+    if is_null_text(cleaned):
         return None
     return cleaned or None
 
@@ -1072,6 +1073,8 @@ __all__ = [
     "identity_internal_tokens",
     "infer_brand_from_product_url",
     "infer_brand_from_title_marker",
+    "is_blank",
+    "is_null_text",
     "is_title_noise",
     "is_url_field",
     "normalize_field_key",

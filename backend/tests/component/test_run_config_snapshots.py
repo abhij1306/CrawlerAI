@@ -303,4 +303,4 @@ def test_runtime_settings_default_url_timeout_includes_acquisition_slack() -> No
         url_process_timeout_buffer_seconds=12,
     )
 
-    assert settings.default_url_process_timeout_seconds() == 42.0
+    assert settings.default_url_process_timeout_seconds() == pytest.approx(42.0)

@@ -28,6 +28,7 @@ from app.services.config.extraction_rules import (
 from app.services.config.surface_hints import detail_path_hints
 from app.services.shared.coerce_primitives import safe_int as _safe_int
 from app.services.shared.field_coerce import absolute_url, clean_text, extract_urls
+from app.services.shared.regex_patterns import compile_regex_patterns
 
 _IMAGE_FILE_EXTENSIONS = (".avif", ".gif", ".jpeg", ".jpg", ".png", ".webp")
 _PAGE_FILE_EXTENSIONS = (".asp", ".aspx", ".htm", ".html", ".jsp", ".php")
@@ -50,11 +51,7 @@ _detail_text_scope_exclude_tokens = tuple(
     if str(token).strip()
 )
 _CDN_IMAGE_QUERY_PARAMS = frozenset(CDN_IMAGE_QUERY_PARAMS or ())
-_CDN_IMAGE_QUERY_KEY_REGEXES = tuple(
-    re.compile(str(pattern), re.I)
-    for pattern in tuple(CDN_IMAGE_QUERY_KEY_PATTERNS or ())
-    if str(pattern).strip()
-)
+_CDN_IMAGE_QUERY_KEY_REGEXES = compile_regex_patterns(CDN_IMAGE_QUERY_KEY_PATTERNS or ())
 _CDN_IMAGE_PATH_SUFFIX_RE = regex_lib.compile(
     getattr(CDN_IMAGE_PATH_SUFFIX_PATTERN, "pattern", CDN_IMAGE_PATH_SUFFIX_PATTERN),
     regex_lib.I,

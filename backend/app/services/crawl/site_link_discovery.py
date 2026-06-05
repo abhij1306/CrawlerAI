@@ -20,6 +20,7 @@ from app.services.config.sitemap import (
     SITEMAP_CATEGORY_ANCHOR_TEXT_EXCLUDED_TOKENS,
     SITEMAP_CATEGORY_ANCHOR_TEXT_TOKENS,
 )
+from app.services.config.surface_hints import detail_path_hints
 from app.services.crawl.sitemap_resolver import (
     SitemapResolutionResult,
     build_category_nav_tree,
@@ -30,7 +31,7 @@ from app.services.crawl.sitemap_resolver import (
     looks_like_category_url,
     strip_url_fragment,
 )
-from app.services.crawl.utils import normalize_target_url
+from app.services.crawl.utils import normalize_target_url, text_has_token
 from app.services.fetch.fetch_context import fetch_page
 from app.services.shared.url_utils import absolute_url
 from app.services.surface_resolver import resolve_auto_surface
@@ -39,6 +40,11 @@ from app.services.url_safety import validate_public_target
 FetchPage = Callable[..., Awaitable[Any]]
 
 _PRICE_RE = re.compile(r"(?:[$€£¥₹]\s?\d|\d[\d,.]*\s?(?:usd|eur|gbp|inr))", re.I)
+_listing_detail_path_hints = tuple(
+    str(marker or "").strip().lower()
+    for marker in detail_path_hints(ECOMMERCE_LISTING_SURFACE)
+    if str(marker or "").strip()
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -242,7 +248,7 @@ def _score_candidate(url: str, anchor: Tag, label: str | None) -> tuple[int, str
     if anchor.find_parent(("nav", "header", "menu")) is not None:
         score += 25
         reasons.append("nav")
-    if any(_text_has_token(text, token) for token in SITEMAP_CATEGORY_ANCHOR_TEXT_TOKENS):
+    if any(text_has_token(text, token) for token in SITEMAP_CATEGORY_ANCHOR_TEXT_TOKENS):
         score += 40
         reasons.append("category_text")
     if path.count("/") > 4:
@@ -324,7 +330,10 @@ def _html_has_listing_signals(html: str) -> bool:
     product_links = [
         anchor
         for anchor in soup.select("a[href]")
-        if any(token in str(anchor.get("href") or "").lower() for token in ("/p/", "/product", "/products/", "/item/"))
+        if any(
+            token in str(anchor.get("href") or "").lower()
+            for token in _listing_detail_path_hints
+        )
     ]
     price_hits = len(_PRICE_RE.findall(soup.get_text(" ", strip=True)[:20_000]))
     return productish_nodes >= 4 or (len(product_links) >= 3 and price_hits >= 2)
@@ -334,24 +343,9 @@ def _anchor_text_rejected(text: str) -> bool:
     if not text:
         return False
     return any(
-        _text_has_token(text, token)
+        text_has_token(text, token)
         for token in SITEMAP_CATEGORY_ANCHOR_TEXT_EXCLUDED_TOKENS
     )
-
-
-def _text_has_token(text: str, token: str) -> bool:
-    cleaned_text = str(text or "").strip().lower()
-    cleaned_token = str(token or "").strip().lower()
-    if not cleaned_text or not cleaned_token:
-        return False
-    if " " in cleaned_token:
-        return cleaned_token in cleaned_text
-    words = {
-        word
-        for word in cleaned_text.replace("-", " ").replace("_", " ").split()
-        if word
-    }
-    return cleaned_token in words
 
 
 def _anchor_label(anchor: Tag) -> str | None:

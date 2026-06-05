@@ -42,7 +42,7 @@ Replace the current sitemap/homepage-only category discovery with a Crawl Studio
 **Status:** DONE
 **Files:** `backend/app/services/crawl/site_link_discovery.py`, `backend/app/services/crawl/sitemap_resolver.py`, `backend/app/services/config/sitemap.py`, `backend/tests/component/test_site_link_discovery.py`
 **What:** Add a Crawl-owned rendered discovery helper that uses normal acquisition/browser runtime to fetch seed pages, harvest visible rendered DOM anchors, canonicalize/dedupe same-origin URLs, score category/listing candidates, and walk a bounded breadth-first frontier. Keep it observational: URL, final URL, status, diagnostics, link context, score, reject reason. Do not extract product fields and do not use markdown as input.
-**Verify:** `cd backend; .\.venv\Scripts\python.exe -m pytest tests/component/test_site_link_discovery.py -q` (3 passed, 2026-06-04)
+**Verify:** `cd backend; .\.venv\Scripts\python.exe -m pytest tests/component/test_site_link_discovery.py -q` (5 passed, 2026-06-04)
 
 ### Slice 3: Candidate Validation and Batch Runtime Reuse
 **Status:** DONE

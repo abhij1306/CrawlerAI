@@ -8,6 +8,7 @@ zyte/
 /test-sites-issues
 TEST_SITES.md
 .codacy/
+.kilo/
 
 .hypothesis/
 .scannerwork/

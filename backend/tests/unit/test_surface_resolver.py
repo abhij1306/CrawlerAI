@@ -11,7 +11,7 @@ def test_resolve_auto_codeforces_homepage_to_content_detail() -> None:
     result = resolve_surface("auto", url="https://codeforces.com/", crawl_module="category")
 
     assert result.surface == "content_detail"
-    assert result.confidence == 0.4
+    assert result.confidence == pytest.approx(0.4)
     assert "fallback_content_surface" in result.evidence
 
 
@@ -97,7 +97,7 @@ def test_resolve_explicit_surface_bypasses_auto_detection() -> None:
     )
 
     assert result.surface == "job_detail"
-    assert result.confidence == 1.0
+    assert result.confidence == pytest.approx(1.0)
     assert result.evidence == ["explicit_surface"]
 
 

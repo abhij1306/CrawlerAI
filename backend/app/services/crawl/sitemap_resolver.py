@@ -32,7 +32,7 @@ from app.services.config.sitemap import (
     SITEMAP_THIN_RESULT_THRESHOLD,
     SITEMAP_USER_AGENT,
 )
-from app.services.crawl.utils import normalize_target_url
+from app.services.crawl.utils import normalize_target_url, text_has_token
 from app.services.shared.url_utils import absolute_url
 from app.services.surface_resolver import resolve_auto_surface
 from app.services.url_safety import validate_public_target
@@ -823,11 +823,11 @@ def _has_category_homepage_signal(url: str, anchor: Tag) -> bool:
     if not text:
         return False
     if any(
-        _text_has_token(text, token)
+        text_has_token(text, token)
         for token in SITEMAP_CATEGORY_ANCHOR_TEXT_EXCLUDED_TOKENS
     ):
         return False
-    return any(_text_has_token(text, token) for token in SITEMAP_CATEGORY_ANCHOR_TEXT_TOKENS)
+    return any(text_has_token(text, token) for token in SITEMAP_CATEGORY_ANCHOR_TEXT_TOKENS)
 
 
 def _looks_like_locale_path(path: str) -> bool:
@@ -867,21 +867,6 @@ def _looks_like_locale_segment(value: str) -> bool:
     if len(cleaned) == 5 and cleaned[2] == "-":
         return cleaned[:2].isalpha() and cleaned[3:].isalpha()
     return False
-
-
-def _text_has_token(text: str, token: str) -> bool:
-    cleaned_text = str(text or "").strip().lower()
-    cleaned_token = str(token or "").strip().lower()
-    if not cleaned_text or not cleaned_token:
-        return False
-    if " " in cleaned_token:
-        return cleaned_token in cleaned_text
-    words = {
-        word
-        for word in cleaned_text.replace("-", " ").replace("_", " ").split()
-        if word
-    }
-    return cleaned_token in words
 
 
 def _strip_fragment(value: str) -> str:

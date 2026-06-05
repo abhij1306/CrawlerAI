@@ -121,8 +121,8 @@ _PLACEHOLDER_TITLES = {
     "sylius demo",
 }
 _DETAIL_SLUG_WITH_ID_RE = re.compile(r".+_\d+$")
-_DETAIL_FILE_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*\.(?:html?|htm)$")
-_NON_DETAIL_FILE_RE = re.compile(r"^(?:index|page[-_]?\d+)\.(?:html?|htm)$")
+_DETAIL_FILE_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*\.html?$")
+_NON_DETAIL_FILE_RE = re.compile(r"^(?:index|page[-_]?\d+)\.html?$")
 _IDENTITY_SEGMENT_SKIP = {
     "c",
     "catalog",
@@ -1486,7 +1486,7 @@ def _primary_identity_tokens(value: str) -> set[str]:
         path = unquote(str(parsed.path or "").strip())
         segments = [segment for segment in path.split("/") if segment]
         for segment in reversed(segments):
-            cleaned = re.sub(r"\.(?:html?|htm)$", "", segment.strip().lower())
+            cleaned = re.sub(r"\.html?$", "", segment.strip().lower())
             if not cleaned or cleaned.isdigit() or cleaned in _IDENTITY_SEGMENT_SKIP:
                 continue
             return _identity_tokens(cleaned)

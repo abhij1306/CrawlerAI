@@ -32,10 +32,7 @@ from app.services.extract.variant_normalization import backfill
 from app.services.extract.variant_normalization import deduplication
 from app.services.extract.variant_normalization import size_color_extraction
 
-__all__ = (
-    "drop_polluted_parent_scalar_axes",
-    "sanitize_variant_axes",
-)
+__all__ = ("drop_polluted_parent_scalar_axes", "sanitize_variant_axes")
 
 logger = logging.getLogger(__name__)
 _REMAP_ELIGIBLE_AXES = frozenset({"state", "type", "style", "configuration"})
