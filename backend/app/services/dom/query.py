@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable, Iterator
-from typing import Any, TypeVar
+from typing import Any
 
 from bs4 import BeautifulSoup, Tag
 from soupsieve import SelectorSyntaxError
@@ -19,7 +19,7 @@ __all__ = (
 
 logger = logging.getLogger(__name__)
 
-_NodeT = TypeVar("_NodeT")
+DomNode = BeautifulSoup | Tag
 
 
 def safe_select(root: Any, selector: str) -> list[Tag]:
@@ -51,13 +51,13 @@ def iter_tag_children(node: Any) -> Iterator[Tag]:
 
 
 def walk_ancestors(
-    node: _NodeT,
-    predicate: Callable[[_NodeT, int], bool],
+    node: DomNode,
+    predicate: Callable[[DomNode, int], bool],
     *,
     max_depth: int | None = None,
-    stop_at: Callable[[_NodeT, int], bool] | None = None,
+    stop_at: Callable[[DomNode, int], bool] | None = None,
     include_self: bool = True,
-) -> _NodeT | None:
+) -> DomNode | None:
     current: Any = node if include_self else getattr(node, "parent", None)
     depth = 0
     while isinstance(current, (BeautifulSoup, Tag)):
