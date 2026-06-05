@@ -73,7 +73,10 @@ def _breadcrumb_item_name(item: object) -> str | None:
         name = source.get("name") or source.get("title")
         if not is_blank(name):
             return _clean_structured_markup_text(name)
-    return _clean_structured_markup_text(item.get("name") or item.get("title"))
+    name = item.get("name") or item.get("title")
+    if is_blank(name):
+        return None
+    return _clean_structured_markup_text(name)
 
 
 def _clean_structured_markup_text(value: object) -> str | None:
@@ -203,7 +206,7 @@ def _structured_property_value(value: object) -> str | None:
         ]
         if not values:
             return None
-        return str(values)
+        return "; ".join(values)
     return _clean_structured_markup_text(value)
 
 

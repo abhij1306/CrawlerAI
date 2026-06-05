@@ -1495,7 +1495,7 @@ def test_extract_ecommerce_detail_keeps_structured_subscript_feature_label() -> 
                 {
                     "@type": "PropertyValue",
                     "name": "d<SUB>f</SUB>",
-                    "value": ["0.20\xa0μm"],
+                    "value": ["0.20\xa0μm", "<span>0.25\xa0μm</span>"],
                 },
                 {
                     "@type": "PropertyValue",
@@ -1507,10 +1507,10 @@ def test_extract_ecommerce_detail_keeps_structured_subscript_feature_label() -> 
         "https://www.sigmaaldrich.com/IN/en/product/supelco/24056",
     )
 
-    assert "df: ['0.20 μm']" in features
+    assert "df: 0.20 μm; 0.25 μm" in features
     assert "d" not in features
     assert "f" not in features
-    assert ": ['0.20 μm']" not in features
+    assert ": ['0.20 μm'" not in features
 
 
 @pytest.mark.regression

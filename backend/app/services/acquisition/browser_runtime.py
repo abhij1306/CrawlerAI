@@ -7,6 +7,7 @@ import time
 from contextlib import suppress
 from typing import Any
 from urllib.parse import urlparse
+from weakref import WeakKeyDictionary
 
 from app.services.acquisition.browser_capture import (
     BrowserNetworkCapture as _BrowserNetworkCapture,
@@ -116,10 +117,21 @@ from app.services.domain_utils import normalize_domain
 logger = logging.getLogger(__name__)
 
 
-_ORIGIN_WARMUP_STATE_LOCK = asyncio.Lock()
+_ORIGIN_WARMUP_STATE_LOCKS: WeakKeyDictionary[
+    asyncio.AbstractEventLoop, asyncio.Lock
+] = WeakKeyDictionary()
 _ORIGIN_WARMUP_IN_FLIGHT: set[tuple[str, str, str, str]] = set()
 _ORIGIN_WARMUP_RECENT: dict[tuple[str, str, str, str], float] = {}
 _ORIGIN_WARMUP_RECENT_MAX_ENTRIES = 512
+
+
+def _origin_warmup_state_lock() -> asyncio.Lock:
+    loop = asyncio.get_running_loop()
+    lock = _ORIGIN_WARMUP_STATE_LOCKS.get(loop)
+    if lock is None:
+        lock = asyncio.Lock()
+        _ORIGIN_WARMUP_STATE_LOCKS[loop] = lock
+    return lock
 
 
 get_browser_runtime = _get_browser_runtime_impl
@@ -875,7 +887,7 @@ async def _begin_origin_warmup(key: tuple[str, str, str, str]) -> bool:
     ttl_seconds = max(
         0.0, float(crawler_runtime_settings.origin_warmup_dedupe_ttl_seconds)
     )
-    async with _ORIGIN_WARMUP_STATE_LOCK:
+    async with _origin_warmup_state_lock():
         if ttl_seconds > 0:
             stale_keys = [
                 recent_key
@@ -906,7 +918,7 @@ async def _finish_origin_warmup(
     *,
     succeeded: bool = False,
 ) -> None:
-    async with _ORIGIN_WARMUP_STATE_LOCK:
+    async with _origin_warmup_state_lock():
         _ORIGIN_WARMUP_IN_FLIGHT.discard(key)
         ttl_seconds = max(
             0.0, float(crawler_runtime_settings.origin_warmup_dedupe_ttl_seconds)

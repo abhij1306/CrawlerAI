@@ -432,7 +432,7 @@ def section_text_is_meaningful(node: Tag | None, *, label: str, text: str) -> bo
             and str(candidate.get("role") or "").strip().lower()
             not in {"button", "tab"}
         )
-        if interactive_count >= 2 and content_count == 0:
+        if interactive_count and content_count == 0:
             return False
     return True
 

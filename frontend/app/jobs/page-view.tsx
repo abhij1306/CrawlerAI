@@ -30,6 +30,7 @@ import {
 } from '../../components/ui/table';
 import { Badge, Button } from '../../components/ui/primitives';
 
+// JobsPage intentionally keeps polling, actions, and table rendering together for cohesive job-state UX.
 // skipcq: JS-0067
 export default function JobsPage() {
   const [pendingAction, setPendingAction] = useState('');

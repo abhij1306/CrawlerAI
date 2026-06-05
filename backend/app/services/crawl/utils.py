@@ -132,7 +132,10 @@ def collect_target_urls(
     # CSV content from settings
     csv_content = str(settings_view.get("csv_content") or "")
     if csv_content:
-        candidates.extend(parse_csv_urls(csv_content))
+        for value in parse_csv_urls(csv_content):
+            candidate = normalize_target_url(value)
+            if candidate and candidate not in candidates:
+                candidates.append(candidate)
 
     # Deduplicate while preserving order
     return list(dict.fromkeys(candidates))
