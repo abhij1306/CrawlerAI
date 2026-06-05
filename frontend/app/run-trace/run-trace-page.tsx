@@ -16,10 +16,6 @@ function severityTone(severity: string): 'danger' | 'warning' | 'neutral' {
   return 'neutral';
 }
 
-type RunDiagnosis = {
-  status?: string;
-  diagnosis?: Record<string, unknown>;
-};
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
