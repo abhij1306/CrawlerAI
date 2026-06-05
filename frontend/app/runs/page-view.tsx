@@ -382,7 +382,7 @@ export default function RunsPage() {
 
       {/* Total count */}
       {visibleRuns.length > 0 && (
-        <p className="type-caption">
+        <p className="table-footer-rail rounded-md px-4 py-2">
           Showing {visibleRuns.length} of {query.data?.meta?.total ?? visibleRuns.length} runs
         </p>
       )}

@@ -155,6 +155,10 @@ export default function JobsPage() {
                 ))}
               </TableBody>
             </Table>
+            <div className="table-footer-rail flex items-center justify-between px-4 py-2">
+              <span>Showing {jobs.length} active jobs</span>
+              <span>Last refresh {lastRefreshed}</span>
+            </div>
           </div>
         ) : (
           <DataRegionEmpty

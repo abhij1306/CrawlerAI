@@ -1094,7 +1094,7 @@ export function CrawlRunScreen({ runId }: Readonly<CrawlRunScreenProps>) {
                             }
                           />
                           {hasMoreTableRecords ? (
-                            <div className="surface-muted text-muted type-body flex items-center justify-between rounded-md px-6 py-2">
+                            <div className="table-footer-rail flex items-center justify-between rounded-md px-6 py-2">
                               <span>
                                 Showing {tableRecords.length} of {tableTotal} records
                               </span>
