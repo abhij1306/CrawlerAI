@@ -32,7 +32,6 @@ import { getApiWebSocketBaseUrl } from '../../lib/api/client';
 import type {
   CrawlLog,
   CrawlRecord,
-  CrawlRun,
   ResultSummaryQualityLevel,
 } from '../../lib/api/types';
 import { CRAWL_DEFAULTS } from '../../lib/constants/crawl-defaults';
