@@ -157,6 +157,7 @@ SITEMAP_CATEGORY_ANCHOR_TEXT_EXCLUDED_TOKENS = (
 SITEMAP_HOMEPAGE_FALLBACK_MAX_LINK_TEXT_WORDS = 10
 SITEMAP_HOMEPAGE_FALLBACK_MAX_ANCHORS = 500
 SITEMAP_HOMEPAGE_FALLBACK_MAX_VALIDATIONS = 100
+SITEMAP_HOMEPAGE_CATEGORY_PATH_SCORE_BOOST = 20
 
 # Threshold below which a sitemap result is considered "thin" — when the
 # real sitemap returns fewer usable URLs than this and homepage fallback is

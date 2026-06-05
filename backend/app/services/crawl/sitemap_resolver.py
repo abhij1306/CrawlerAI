@@ -24,6 +24,7 @@ from app.services.config.sitemap import (
     SITEMAP_FETCH_TIMEOUT_SECONDS,
     SITEMAP_HOMEPAGE_FALLBACK_EXCLUDED_EXTENSIONS,
     SITEMAP_HOMEPAGE_FALLBACK_MAX_ANCHORS,
+    SITEMAP_HOMEPAGE_CATEGORY_PATH_SCORE_BOOST,
     SITEMAP_HOMEPAGE_FALLBACK_EXCLUDED_PATH_TOKENS,
     SITEMAP_HOMEPAGE_FALLBACK_MAX_LINK_TEXT_WORDS,
     SITEMAP_HOMEPAGE_FALLBACK_MAX_VALIDATIONS,
@@ -565,12 +566,14 @@ def _classify_homepage_candidate(
         keyword in candidate_url.lower() or keyword in anchor_text
     )
     nav_boost = 12 if anchor.find_parent(("nav", "header")) is not None else 0
+    category_path_boost = _category_path_score_boost(path)
     if resolution.surface.endswith("_listing"):
         return (
             "listing",
             300
             + int(resolution.confidence * 100)
             + nav_boost
+            + category_path_boost
             + (25 if keyword_hit else 0),
         )
     if (
@@ -578,7 +581,10 @@ def _classify_homepage_candidate(
         and resolution.confidence <= 0.4
         and _looks_like_listing_link(path, depth=depth, anchor_words=anchor_words)
     ):
-        return "listing", 180 + nav_boost + (25 if keyword_hit else 0)
+        return (
+            "listing",
+            180 + nav_boost + category_path_boost + (25 if keyword_hit else 0),
+        )
     if resolution.surface.endswith("_detail"):
         return (
             "detail",
@@ -587,6 +593,14 @@ def _classify_homepage_candidate(
     if _looks_like_detail_link(slug, depth=depth, anchor_words=anchor_words):
         return "detail", 120 + (25 if keyword_hit else 0)
     return "", 0
+
+
+def _category_path_score_boost(path: str) -> int:
+    return (
+        SITEMAP_HOMEPAGE_CATEGORY_PATH_SCORE_BOOST
+        if any(token in path for token in SITEMAP_CATEGORY_PATH_TOKENS)
+        else 0
+    )
 
 
 def _looks_like_listing_link(path: str, *, depth: int, anchor_words: int) -> bool:
