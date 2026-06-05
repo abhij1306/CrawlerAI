@@ -165,6 +165,7 @@ function stepIndex(state: SessionState): number {
 
 // ─── Main Component ──────────────────────────────────────────────────────────
 
+// skipcq: JS-R1005
 // skipcq: JS-0067
 export default function PlaygroundPage() {
   const queryClient = useQueryClient();
