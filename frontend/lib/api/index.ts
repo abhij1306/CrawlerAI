@@ -136,7 +136,7 @@ export const api = {
     ),
   killCrawl: (runId: number) =>
     apiClient.post<{ run_id: number; status: CrawlRun['status'] }>(`/api/crawls/${runId}/kill`, {}),
-  commitSelectedFields: async (runId: number, items: FieldCommitPayload[]) =>
+  commitSelectedFields: (runId: number, items: FieldCommitPayload[]) =>
     apiClient.post<FieldCommitResponse>(`/api/crawls/${runId}/commit-fields`, { items }),
   getRecords: (runId: number, params?: { page?: number; limit?: number }) => {
     const query = new URLSearchParams();

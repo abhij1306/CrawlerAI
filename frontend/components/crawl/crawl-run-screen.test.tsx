@@ -302,7 +302,7 @@ describe('CrawlRunScreen', () => {
     });
     apiMock.getCrawl.mockResolvedValue(terminalRun(101));
     apiMock.getRecords.mockImplementation(
-      async (_runId: number, params?: { page?: number; limit?: number }) => {
+      (_runId: number, params?: { page?: number; limit?: number }) => {
         const limit = params?.limit ?? 100;
         const total = 2;
         return {
@@ -558,16 +558,16 @@ describe('CrawlRunScreen', () => {
 
   it('supports progressive table loading for large result sets', async () => {
     apiMock.getRecords.mockImplementation(
-      async (_runId: number, params?: { page?: number; limit?: number }) => {
+      (_runId: number, params?: { page?: number; limit?: number }) => {
         const page = Math.max(1, params?.page ?? 1);
         const limit = params?.limit ?? 100;
         const total = 150;
         const start = (page - 1) * limit;
         const count = Math.max(0, Math.min(limit, total - start));
-        return {
+        return Promise.resolve({
           items: Array.from({ length: count }, (_, index) => makeRecord(start + index + 1)),
           meta: { page, limit, total },
-        };
+        });
       },
     );
 
@@ -678,19 +678,19 @@ describe('CrawlRunScreen', () => {
 
     let callCount = 0;
     apiMock.getRecords.mockImplementation(
-      async (_runId: number, params?: { page?: number; limit?: number }) => {
+      (_runId: number, params?: { page?: number; limit?: number }) => {
         callCount += 1;
         const limit = params?.limit ?? 100;
         if (callCount === 1) {
-          return {
+          return Promise.resolve({
             items: [],
             meta: { page: 1, limit, total: 0 },
-          };
+          });
         }
-        return {
+        return Promise.resolve({
           items: [makeRecord(1), makeRecord(2)],
           meta: { page: 1, limit, total: 2 },
-        };
+        });
       },
     );
 
@@ -725,7 +725,7 @@ describe('CrawlRunScreen', () => {
     let tableCalls = 0;
     let jsonCalls = 0;
     apiMock.getRecords.mockImplementation(
-      async (_runId: number, params?: { page?: number; limit?: number }) => {
+      (_runId: number, params?: { page?: number; limit?: number }) => {
         const limit = params?.limit ?? 100;
         if (params?.page === 1) {
           tableCalls += 1;
@@ -772,19 +772,19 @@ describe('CrawlRunScreen', () => {
 
     let callCount = 0;
     apiMock.getRecords.mockImplementation(
-      async (_runId: number, params?: { page?: number; limit?: number }) => {
+      (_runId: number, params?: { page?: number; limit?: number }) => {
         callCount += 1;
         const limit = params?.limit ?? 100;
         if (callCount === 1) {
-          return {
+          return Promise.resolve({
             items: [],
             meta: { page: 1, limit, total: 0 },
-          };
+          });
         }
-        return {
+        return Promise.resolve({
           items: [makeRecord(1), makeRecord(2)],
           meta: { page: 1, limit, total: 2 },
-        };
+        });
       },
     );
 
@@ -1037,9 +1037,9 @@ describe('CrawlRunScreen', () => {
       },
     });
     apiMock.getRecords.mockImplementation(
-      async (_runId: number, params?: { page?: number; limit?: number }) => {
+      (_runId: number, params?: { page?: number; limit?: number }) => {
         const limit = params?.limit ?? 100;
-        return {
+        return Promise.resolve({
           items: [
             {
               ...makeRecord(1),
@@ -1053,7 +1053,7 @@ describe('CrawlRunScreen', () => {
             },
           ],
           meta: { page: 1, limit, total: 2 },
-        };
+        });
       },
     );
 
