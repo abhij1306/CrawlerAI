@@ -598,7 +598,6 @@ async def test_classify_input_url_treats_non_ecommerce_detail_surfaces_as_detail
     created_payloads: list[dict[str, object]] = []
 
     async def _fake_create_crawl_run_from_payload(session, user_id, payload):
-        del session, user_id
         created_payloads.append(dict(payload))
         return SimpleNamespace(id=601)
 
@@ -915,7 +914,6 @@ async def test_start_discover_does_not_block_remaining_urls_on_slow_first_input(
     await db_session.flush()
 
     async def _fake_discover_category_urls(urls: list[str], **kwargs: object):
-        del kwargs
         assert urls == ["https://slow-brand.example", "https://fast-brand.example"]
         return {
             "status": "completed",

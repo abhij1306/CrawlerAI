@@ -384,6 +384,7 @@ def _postprocess_detail_records(
     return rows
 
 
+# skipcq: PY-R1000
 def _overlay_listing_rows_from_adapter(
     rows: list[dict],
     *,

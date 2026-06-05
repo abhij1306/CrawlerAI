@@ -7,7 +7,7 @@ from urllib.parse import urlsplit
 
 from app.services.extract.record_overlay import overlay_record
 
-from ._common import *
+from ._common import *  # skipcq: PYL-W0614 - normalizer modules re-export shared mapper helpers.
 
 def _merge_same_product_record(
     base_record: dict[str, Any],

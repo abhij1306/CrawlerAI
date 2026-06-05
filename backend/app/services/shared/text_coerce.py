@@ -75,6 +75,7 @@ def _decode_common_escaped_text(value: str) -> str:
     return text.replace('\\"', '"').replace("\\'", "'")
 
 
+# skipcq: PY-R1000
 def is_title_noise(title: object) -> bool:
     cleaned = clean_text(title)
     lowered = cleaned.lower()

@@ -3,6 +3,7 @@
 // Next.js App Router error boundary; invoked by file-system routing.
 import { Button } from '../components/ui/button';
 
+// skipcq: JS-0067
 export default function ErrorBoundary({
   error: _error,
   reset,

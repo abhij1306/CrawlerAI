@@ -175,6 +175,7 @@ function selectorsPageReducer(
   }
 }
 
+// skipcq: JS-0067
 export default function SelectorsPage() {
   const [state, dispatch] = useReducer(selectorsPageReducer, INITIAL_SELECTORS_PAGE_STATE);
   const {

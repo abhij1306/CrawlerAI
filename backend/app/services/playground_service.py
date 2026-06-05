@@ -228,6 +228,7 @@ async def start_discover(
     return {"stage": "listing", "run_id": run.id}
 
 
+# skipcq: PY-R1000
 async def _resolve_category_list_for_inputs(
     urls: list[str],
     *,

@@ -20,7 +20,6 @@ def test_detail_postprocess_skips_redundant_finalize_for_finalized_boundary(
     )
 
     def _unexpected_finalize(*args, **kwargs):
-        del args, kwargs
         raise AssertionError("detail boundary record was finalized twice")
 
     monkeypatch.setattr(extract_records_module, "finalize_record", _unexpected_finalize)
@@ -71,7 +70,6 @@ def test_raw_detail_postprocess_keeps_public_boundary_finalization(monkeypatch) 
 @pytest.mark.unit
 def test_listing_price_finalizer_does_not_finalize_whole_record(monkeypatch) -> None:
     def _unexpected_finalize(*args, **kwargs):
-        del args, kwargs
         raise AssertionError("listing candidate was finalized as whole record")
 
     monkeypatch.setattr(extract_records_module, "finalize_record", _unexpected_finalize)

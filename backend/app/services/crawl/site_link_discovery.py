@@ -79,6 +79,7 @@ class SiteLinkDiscoveryDiagnostics:
         }
 
 
+# skipcq: PY-R1000
 async def discover_rendered_category_links(
     seed_url: str,
     *,

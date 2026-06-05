@@ -881,7 +881,7 @@ def extract_variants_from_dom(
         flat_variants = flatten_variants_for_public_output(
             resolved_variants,
             page_url=page_url,
-        )
+        ) or []
         if flat_variants:
             for variant in flat_variants:
                 variant["_validated"] = True

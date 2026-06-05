@@ -517,7 +517,6 @@ async def test_parallel_run_does_not_mislabel_nested_timeout_as_url_deadline(
     )
 
     async def _fake_process_single_url(*args, **kwargs):
-        del args
         if kwargs["url"] == failing_url:
             raise TimeoutError(
                 "Browser navigation stage exceeded timeout_seconds=45.00"

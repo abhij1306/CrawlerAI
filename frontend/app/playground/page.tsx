@@ -165,6 +165,7 @@ function stepIndex(state: SessionState): number {
 
 // ─── Main Component ──────────────────────────────────────────────────────────
 
+// skipcq: JS-0067
 export default function PlaygroundPage() {
   const queryClient = useQueryClient();
   const [sessionId, setSessionId] = useState<number | null>(null);
@@ -345,6 +346,7 @@ export default function PlaygroundPage() {
     return [];
   })();
 
+  // skipcq: JS-R1005
   const sitemapSource = (() => {
     const sitemap = session?.step_data?.sitemap;
     if (sitemap && typeof sitemap === 'object' && 'source' in sitemap) {

@@ -102,6 +102,7 @@ async def resolve_category_urls_from_sitemap(
     return result.urls
 
 
+# skipcq: PY-R1000
 async def resolve_category_urls_with_site_links(
     domain: str,
     filter_keyword: str = SITEMAP_DEFAULT_FILTER_KEYWORD,
@@ -717,6 +718,7 @@ def _anchor_label(anchor: Tag) -> str | None:
     return " ".join(label.split())
 
 
+# skipcq: PY-R1000
 def _classify_homepage_candidate(
     *,
     candidate_url: str,

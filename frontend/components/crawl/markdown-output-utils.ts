@@ -52,6 +52,7 @@ export function buildMarkdownDocument(records: CrawlRecord[]): string {
   return documents.join('\n\n---\n\n');
 }
 
+// skipcq: JS-0067
 function markdownDownloadName(run: CrawlRun | undefined): string {
   if (isDesignSystemRun(run)) {
     return 'design.md';

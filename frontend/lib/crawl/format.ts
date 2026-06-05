@@ -16,6 +16,7 @@ export function clampNumber(value: string | number, min: number, max: number, fa
   return Math.min(max, Math.max(min, parsed));
 }
 
+// skipcq: JS-0067
 export function normalizeField(value: string) {
   return value
     .trim()

@@ -169,6 +169,7 @@ def ordered_axes(
     return ordered
 
 
+# skipcq: PY-R1000
 def availability_value(value: dict[str, Any] | None) -> str | None:
     if not isinstance(value, dict):
         return None

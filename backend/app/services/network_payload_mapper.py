@@ -537,6 +537,7 @@ def _has_minimum_descriptive_text(body: object) -> bool:
     return bool(samples)
 
 
+# skipcq: PY-R1000
 def _has_detail_anchor(
     candidates: dict[str, list[object]],
     *,

@@ -882,8 +882,6 @@ async def _close_evicted_runtime(runtime: SharedBrowserRuntime) -> None:
     """Best-effort teardown of an evicted runtime in the background."""
     try:
         await runtime.close()
-    except asyncio.CancelledError:
-        raise
     except Exception:
         logger.warning(
             "Background eviction cleanup failed for %s runtime",

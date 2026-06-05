@@ -152,7 +152,6 @@ async def crawls_category_discovery(
     payload: CategoryDiscoveryRequest,
     user: Annotated[User, Depends(get_current_user)],
 ) -> CategoryDiscoveryResponse:
-    del user
     result = await discover_category_urls(
         payload.selected_urls(),
         limit=payload.limit,

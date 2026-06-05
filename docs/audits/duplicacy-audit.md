@@ -165,7 +165,7 @@ Token set	Config source hardcoded in service	File(s) and location
 /products/, /product/, /p/, /dp/, /item/	_node_has_detail_like_link	backend/app/services/extract/listing_card_fragments.py:537
 B. Expand/toggle selectors duplicated in service (derive from config but redefined locally)
 Selector/blocks	Config source	Duplicated in service
-[aria-expanded='false'], button[aria-controls], [role='button'][aria-controls], [role='tab'][aria-controls], size selector, size-selector, open-size-selector	backend/app/services/config/extraction_rules/_common.py:100-116 and _exports.json	backend/app/services/acquisition/browser_detail.py:340-347, backend/app/services/acquisition/browser_detail.py:401-406
+`[aria-expanded='false']`, `button[aria-controls]`, `[role='button'][aria-controls]`, `[role='tab'][aria-controls]`, size selector, size-selector, open-size-selector	backend/app/services/config/extraction_rules/_common.py:100-116 and _exports.json	backend/app/services/acquisition/browser_detail.py:340-347, backend/app/services/acquisition/browser_detail.py:401-406
 C. DOM operator constants with mismatched defaults between config and service
 Constant	Config extract rule value	Effective service default	File(s)
 MAX_SELECTOR_MATCHES	12	12 (match)	backend/app/services/config/extraction_rules/_variants.py:279, backend/app/services/dom/selector_engine.py:104, backend/app/services/dom/image_extraction.py:97
