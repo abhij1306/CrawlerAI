@@ -179,6 +179,8 @@ def extract_heading_sections(
         if id(heading) in seen:
             continue
         seen.add(id(heading))
+        if _node_is_section_navigation_label(heading):
+            continue
         heading_text = section_label_text(heading)
         if not _is_section_label(heading_text):
             continue
@@ -249,10 +251,44 @@ def _node_is_hidden_or_auxiliary(node: Tag) -> bool:
     return role in {"presentation", "none"}
 
 
+def _node_attr_text(node: Tag) -> str:
+    values: list[str] = [str(node.name or "")]
+    for key, value in dict(getattr(node, "attrs", {}) or {}).items():
+        if isinstance(value, (list, tuple, set)):
+            values.extend(str(item or "") for item in value)
+        else:
+            values.append(str(value or ""))
+        values.append(str(key or ""))
+    return clean_text(" ".join(values)).lower()
+
+
+def _node_is_section_navigation_label(node: Tag, *, max_depth: int = 4) -> bool:
+    current: Tag | None = node
+    for _ in range(max_depth + 1):
+        if not isinstance(current, Tag):
+            return False
+        attr_text = _node_attr_text(current)
+        if any(
+            token in attr_text
+            for token in (
+                "breadcrumb",
+                "jump",
+                "linkstylebutton",
+                "menu",
+                "nav",
+                "skip",
+            )
+        ):
+            return True
+        parent = current.parent
+        current = parent if isinstance(parent, Tag) else None
+    return False
+
+
 def _clone_visible_only(
     node: Tag | NavigableString,
     *,
-    remaining_depth: int = 8,
+    remaining_depth: int = 16,
     _soup: BeautifulSoup | None = None,
 ) -> Tag | NavigableString | None:
     if isinstance(node, NavigableString):
@@ -440,6 +476,40 @@ def _find_wrapped_section_content(node: Tag, *, label: str) -> str:
     return best_text
 
 
+def _extract_adjacent_panel_content(node: Tag, *, label: str) -> str:
+    container: Tag | None = node
+    for _ in range(4):
+        if not isinstance(container, Tag):
+            break
+        for sibling in container.next_siblings:
+            if not isinstance(sibling, Tag):
+                continue
+            if sibling.name in _SECTION_STOP_TAGS:
+                break
+            if _node_is_hidden_or_auxiliary(sibling):
+                continue
+            text = _section_text(sibling, label=label)
+            if (
+                len(text) >= 12
+                and section_text_is_meaningful(sibling, label=label, text=text)
+            ):
+                return text
+        parent = container.parent
+        container = parent if isinstance(parent, Tag) else None
+    return ""
+
+
+def _section_label_uses_adjacent_panel(node: Tag) -> bool:
+    role = str(node.get("role") or "").strip().lower()
+    return (
+        node.name in {"button", "summary"}
+        or role in {"button", "tab"}
+        or node.has_attr("aria-controls")
+        or node.has_attr("data-accordion-heading")
+        or node.has_attr("data-tab-heading")
+    )
+
+
 def _section_content_is_heading_like(
     text: str,
     *,
@@ -560,6 +630,10 @@ def extract_section_content(node: Tag, root: BeautifulSoup | Tag) -> str:
                 return text
 
     sibling_content = _extract_sibling_content(node, label=label)
+    if _section_label_uses_adjacent_panel(node):
+        adjacent_panel = _extract_adjacent_panel_content(node, label=label)
+        if adjacent_panel and not _section_matches_page_heading(root, adjacent_panel):
+            return adjacent_panel
     wrapped = _find_wrapped_section_content(node, label=label)
     if wrapped and not _section_matches_page_heading(root, wrapped):
         if not (

@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import html as html_lib
 import logging
 from typing import Any
 from urllib.parse import urlparse
+
+from bs4 import BeautifulSoup
 
 from app.services.config.extraction_rules import (
     DETAIL_BREADCRUMB_ROOT_LABELS,
@@ -16,6 +19,7 @@ from app.services.field_policy import normalize_field_key, normalize_requested_f
 from app.services.shared.field_coerce import (
     STRUCTURED_MULTI_FIELDS,
     absolute_url,
+    clean_text,
     coerce_field_value,
     coerce_text,
     extract_urls,
@@ -61,15 +65,26 @@ def _gender_from_text(value: object) -> str | None:
 
 def _breadcrumb_item_name(item: object) -> str | None:
     if isinstance(item, str):
-        return text_or_none(item)
+        return _clean_structured_markup_text(item)
     if not isinstance(item, dict):
         return None
     source = item.get("item")
     if isinstance(source, dict):
         name = source.get("name") or source.get("title")
         if not is_blank(name):
-            return text_or_none(name)
-    return text_or_none(item.get("name") or item.get("title"))
+            return _clean_structured_markup_text(name)
+    return _clean_structured_markup_text(item.get("name") or item.get("title"))
+
+
+def _clean_structured_markup_text(value: object) -> str | None:
+    text = text_or_none(value)
+    if not text:
+        return None
+    unescaped = html_lib.unescape(text)
+    if "<" in unescaped and ">" in unescaped:
+        unescaped = BeautifulSoup(unescaped, "html.parser").get_text("", strip=True)
+    cleaned = clean_text(unescaped)
+    return cleaned or None
 
 
 def _breadcrumb_names(payload: dict[str, object], page_url: str = "") -> list[str]:
@@ -158,13 +173,38 @@ def _structured_feature_rows(payload: dict[str, object], page_url: str) -> list[
         for item in additional_properties[: _structured_candidate_list_slice]:
             if not isinstance(item, dict):
                 continue
-            name = text_or_none(item.get("name") or item.get("label"))
-            value = text_or_none(item.get("value") or item.get("description"))
+            name = _structured_property_label(item.get("name") or item.get("label"))
+            value = _structured_property_value(
+                item.get("value") or item.get("description")
+            )
             if name and value:
                 _add(f"{name}: {value}")
             elif value:
                 _add(value)
     return rows
+
+
+def _structured_property_label(value: object) -> str | None:
+    label = _clean_structured_markup_text(value)
+    if not label:
+        return None
+    parts = label.split("_")
+    if len(parts) > 1 and all(len(part) == 1 and part.isalnum() for part in parts):
+        label = "".join(parts)
+    return label
+
+
+def _structured_property_value(value: object) -> str | None:
+    if isinstance(value, (list, tuple, set)):
+        values = [
+            cleaned
+            for item in value
+            if (cleaned := _clean_structured_markup_text(item))
+        ]
+        if not values:
+            return None
+        return str(values)
+    return _clean_structured_markup_text(value)
 
 
 def collect_structured_candidates(

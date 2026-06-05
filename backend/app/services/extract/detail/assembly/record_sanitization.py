@@ -86,16 +86,7 @@ def sanitize_detail_placeholder_scalars(
     if category.lower() in CATEGORY_PLACEHOLDER_VALUES:
         record.pop("category", None)
     elif category:
-        cleaned_category = _clean_detail_category_path(
-            category,
-            title=record.get("title"),
-            sku=record.get("sku"),
-            page_url=identity_url,
-        )
-        if cleaned_category:
-            record["category"] = cleaned_category
-        else:
-            record.pop("category", None)
+        _sanitize_detail_category(record, identity_url=identity_url)
     features = record.get("features")
     if isinstance(features, list):
         if not any(text_or_none(item) for item in features):
@@ -154,6 +145,7 @@ def sanitize_detail_identity_scalars(
     _repair_missing_detail_brand(record, identity_url=identity_url)
     _repair_detail_brand_from_host_fallback(record, identity_url=identity_url)
     _sanitize_detail_title_noise(record)
+    _sanitize_detail_category(record, identity_url=identity_url)
     _repair_detail_color_from_description(record)
     placeholder_title_removed = bool(record.pop("_placeholder_title_removed", False))
     if not text_or_none(record.get("title")):
@@ -540,6 +532,26 @@ def _detail_scalar_value_is_placeholder(value: object) -> bool:
     return cleaned in {"category", "default title", "uncategorized"}
 
 
+def _sanitize_detail_category(
+    record: dict[str, Any],
+    *,
+    identity_url: str,
+) -> None:
+    category = clean_text(record.get("category"))
+    if not category:
+        return
+    cleaned_category = _clean_detail_category_path(
+        category,
+        title=record.get("title"),
+        sku=record.get("sku"),
+        page_url=identity_url,
+    )
+    if cleaned_category:
+        record["category"] = cleaned_category
+    else:
+        record.pop("category", None)
+
+
 def _sanitize_detail_scalar_size(record: dict[str, Any]) -> None:
     size = clean_text(record.get("size"))
     if not size or not size.isdigit():
@@ -733,19 +745,28 @@ def _strip_embedded_root_suffix_from_category_head(
 
 
 def _category_part_matches_identity(part: object, identity: str) -> bool:
-    part_key = re.sub(r"[^a-z0-9]+", "", clean_text(part).casefold())
-    identity_key = re.sub(r"[^a-z0-9]+", "", clean_text(identity).casefold())
+    part_key = _category_identity_key(part)
+    identity_key = _category_identity_key(identity)
     if not part_key or not identity_key:
         return False
     if part_key == identity_key:
         return True
     if len(identity_key) >= 5 and identity_key in part_key:
-        return part_key.startswith(("buy", "shop", "choose"))
+        return part_key.startswith(identity_key) or part_key.startswith(
+            ("buy", "shop", "choose")
+        )
     if min(len(part_key), len(identity_key)) < 8:
         return False
     return SequenceMatcher(None, part_key, identity_key).ratio() >= float(
         DETAIL_BREADCRUMB_TITLE_DUPLICATE_RATIO
     )
+
+
+def _category_identity_key(value: object) -> str:
+    text = clean_text(value)
+    if "<" in text and ">" in text:
+        text = re.sub(r"<[^>]+>", "", text)
+    return re.sub(r"[^a-z0-9]+", "", text.casefold())
 
 
 def detail_title_looks_like_placeholder(title: str) -> bool:

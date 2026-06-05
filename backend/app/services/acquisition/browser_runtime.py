@@ -3,9 +3,8 @@ from __future__ import annotations
 import asyncio
 import inspect
 import logging
-import threading
 import time
-from contextlib import asynccontextmanager, suppress
+from contextlib import suppress
 from typing import Any
 from urllib.parse import urlparse
 
@@ -117,7 +116,7 @@ from app.services.domain_utils import normalize_domain
 logger = logging.getLogger(__name__)
 
 
-_ORIGIN_WARMUP_STATE_MUTEX = threading.Lock()
+_ORIGIN_WARMUP_STATE_LOCK = asyncio.Lock()
 _ORIGIN_WARMUP_IN_FLIGHT: set[tuple[str, str, str, str]] = set()
 _ORIGIN_WARMUP_RECENT: dict[tuple[str, str, str, str], float] = {}
 _ORIGIN_WARMUP_RECENT_MAX_ENTRIES = 512
@@ -876,7 +875,7 @@ async def _begin_origin_warmup(key: tuple[str, str, str, str]) -> bool:
     ttl_seconds = max(
         0.0, float(crawler_runtime_settings.origin_warmup_dedupe_ttl_seconds)
     )
-    async with _origin_warmup_state_lock():
+    async with _ORIGIN_WARMUP_STATE_LOCK:
         if ttl_seconds > 0:
             stale_keys = [
                 recent_key
@@ -907,22 +906,13 @@ async def _finish_origin_warmup(
     *,
     succeeded: bool = False,
 ) -> None:
-    async with _origin_warmup_state_lock():
+    async with _ORIGIN_WARMUP_STATE_LOCK:
         _ORIGIN_WARMUP_IN_FLIGHT.discard(key)
         ttl_seconds = max(
             0.0, float(crawler_runtime_settings.origin_warmup_dedupe_ttl_seconds)
         )
         if succeeded and ttl_seconds > 0:
             _ORIGIN_WARMUP_RECENT[key] = time.monotonic()
-
-
-@asynccontextmanager
-async def _origin_warmup_state_lock():
-    _ORIGIN_WARMUP_STATE_MUTEX.acquire()
-    try:
-        yield
-    finally:
-        _ORIGIN_WARMUP_STATE_MUTEX.release()
 
 
 async def _settle_browser_page(
