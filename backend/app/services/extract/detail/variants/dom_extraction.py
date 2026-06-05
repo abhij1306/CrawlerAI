@@ -502,6 +502,7 @@ def _stock_quantity_from_selected_options(
     return None
 
 
+# skipcq: PY-R1000
 def extract_variants_from_dom(
     soup: BeautifulSoup,
     *,

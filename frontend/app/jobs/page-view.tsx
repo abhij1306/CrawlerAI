@@ -30,6 +30,7 @@ import {
 } from '../../components/ui/table';
 import { Badge, Button } from '../../components/ui/primitives';
 
+// skipcq: JS-0067
 export default function JobsPage() {
   const [pendingAction, setPendingAction] = useState('');
   const [actionError, setActionError] = useState('');

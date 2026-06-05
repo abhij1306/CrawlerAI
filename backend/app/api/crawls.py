@@ -150,7 +150,7 @@ async def crawls_create(
 @router.post("/category-discovery")
 async def crawls_category_discovery(
     payload: CategoryDiscoveryRequest,
-    user: Annotated[User, Depends(get_current_user)],
+    _user: Annotated[User, Depends(get_current_user)],
 ) -> CategoryDiscoveryResponse:
     result = await discover_category_urls(
         payload.selected_urls(),
