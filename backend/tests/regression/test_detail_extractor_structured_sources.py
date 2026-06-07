@@ -8104,7 +8104,7 @@ def test_extract_ecommerce_detail_preserves_zadig_js_state_variants_from_artifac
 
 
 @pytest.mark.regression
-def test_extract_ecommerce_detail_drops_toddsnyder_component_only_variants() -> None:
+def test_extract_ecommerce_detail_preserves_toddsnyder_suit_component_variants() -> None:
     html = read_optional_artifact_text("artifacts/runs/1/pages/3f9356011b5bfe4f.html")
 
     rows = extract_records(
@@ -8116,8 +8116,15 @@ def test_extract_ecommerce_detail_drops_toddsnyder_component_only_variants() -> 
     )
 
     assert len(rows) == 1
-    assert "variants" not in rows[0]
-    assert "variant_count" not in rows[0]
+    variants = rows[0].get("variants") or []
+    assert any(
+        variant.get("style") == "Jacket" and variant.get("size") == "36S"
+        for variant in variants
+    )
+    assert any(
+        variant.get("style") == "Trouser" and variant.get("size") == "28/32"
+        for variant in variants
+    )
 
 
 @pytest.mark.regression

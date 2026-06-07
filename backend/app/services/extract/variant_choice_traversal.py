@@ -23,6 +23,8 @@ from app.services.config.extraction_rules import (
     VARIANT_CHOICE_CONTAINER_SELECT_LIMIT,
     VARIANT_CHOICE_OPTION_LIMIT,
     VARIANT_CHOICE_OPTION_SELECTOR,
+    VARIANT_COMPONENT_TYPE_ATTRIBUTES,
+    VARIANT_COMPONENT_TYPE_AXIS_NAME,
     VARIANT_COLOR_AXIS_TOKENS,
     VARIANT_DESCENDANT_SCAN_LIMIT,
     VARIANT_GROUP_ATTR_NOISE_PATTERNS,
@@ -401,6 +403,8 @@ def resolve_variant_group_name(node: Any) -> str:
         return ""
     if _variant_group_node_attrs_are_noise(node):
         return ""
+    if component_name := _component_variant_group_name_from_attrs(node):
+        return component_name
     inferred_name = infer_variant_group_name(node)
     visible_candidates: list[object] = []
     machine_candidates: list[object] = []
@@ -497,6 +501,14 @@ def infer_variant_group_name_from_values(values: Sequence[object]) -> str:
     color_hits = sum(1 for value in cleaned_values if _value_looks_like_color(value))
     if color_hits >= 2 and color_hits / len(cleaned_values) >= 0.5:
         return "color"
+    return ""
+
+
+def _component_variant_group_name_from_attrs(node: Any) -> str:
+    for attr_name in tuple(VARIANT_COMPONENT_TYPE_ATTRIBUTES or ()):
+        raw_value = text_or_none(node.get(attr_name))
+        if raw_value:
+            return clean_text(f"{raw_value} {VARIANT_COMPONENT_TYPE_AXIS_NAME}")
     return ""
 
 

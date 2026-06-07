@@ -1,7 +1,7 @@
 /* ═══════════════════════════════════════════════════════════════════════
    Invoro — Design System v3
    Clean token hierarchy · 4px grid · WCAG 2.1 AA
-   Fonts: Public Sans · Bricolage Grotesque · Ubuntu Mono
+   Fonts: Public Sans · Bricolage Grotesque · Martian Mono
 ═══════════════════════════════════════════════════════════════════════ */
 
 @import 'katex/dist/katex.min.css';
@@ -120,7 +120,7 @@
   --font-display-family:
     var(--font-display-source, 'Bricolage Grotesque'), 'Bricolage Grotesque', system-ui, sans-serif;
   --font-mono-family:
-    var(--font-mono-source, 'Ubuntu Mono'), 'Ubuntu Mono', ui-monospace, monospace;
+    var(--font-mono-source, 'Martian Mono'), 'Martian Mono', ui-monospace, monospace;
 
   /* Surfaces */
   --bg-base: #f2f0ec;
@@ -212,8 +212,8 @@
   --weight-bold: 700;
 
   /* Mono type */
-  --font-mono-size: 0.875rem; /* 14px */
-  --font-mono-size-sm: 0.75rem; /* 12px */
+  --font-mono-size: 0.75rem; /* 12px */
+  --font-mono-size-sm: 0.625rem; /* 10px */
   --font-mono-line-height: 1.55;
 
   /* Spacing — 4px grid */
@@ -572,7 +572,7 @@ samp {
   font-size: var(--font-mono-size);
   line-height: var(--font-mono-line-height);
   letter-spacing: 0;
-  font-stretch: normal;
+  font-weight: 300;
   font-synthesis: none;
   font-variant-numeric: tabular-nums;
   -webkit-font-smoothing: antialiased;
@@ -761,7 +761,7 @@ textarea:disabled {
 .type-label-mono {
   font-family: var(--font-mono-family);
   font-size: var(--text-2xs);
-  font-weight: var(--weight-semibold);
+  font-weight: 400;
   line-height: 1.35;
   letter-spacing: var(--tracking-wider);
   text-transform: uppercase;
@@ -777,7 +777,7 @@ textarea:disabled {
 .type-caption-mono {
   font-family: var(--font-mono-family);
   font-size: var(--font-mono-size-sm);
-  font-weight: var(--weight-normal);
+  font-weight: 300;
   line-height: 1.35;
   color: var(--text-muted);
   font-synthesis: none;
@@ -785,7 +785,7 @@ textarea:disabled {
 }
 .type-metric {
   font-family: var(--font-mono-family);
-  font-weight: var(--weight-bold);
+  font-weight: 500;
   line-height: 1;
   letter-spacing: -0.025em;
   font-variant-numeric: tabular-nums;

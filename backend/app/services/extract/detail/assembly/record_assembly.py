@@ -123,6 +123,7 @@ def _finalize_detail_record(
     requested_page_url: str | None,
     soup: BeautifulSoup,
     js_state_objects: dict[str, Any],
+    raw_soup: BeautifulSoup | None,
     early_exit: str | None,
 ) -> dict[str, Any]:
     _attach_detail_tables(record, soup)
@@ -136,6 +137,19 @@ def _finalize_detail_record(
             soup=soup,
             js_state_objects=js_state_objects,
         )
+        if (
+            record.get("variants") in (None, "", [], {})
+            and raw_soup is not None
+            and raw_soup is not soup
+        ):
+            repair_ecommerce_detail_record_quality(
+                record,
+                html=html,
+                page_url=page_url,
+                requested_page_url=requested_page_url,
+                soup=raw_soup,
+                js_state_objects=js_state_objects,
+            )
         drop_low_signal_zero_detail_price(record)
         record = finalize_record(record, surface=surface)
     record["_confidence"] = score_record_confidence(
@@ -243,8 +257,17 @@ def _extract_prepared_dom_variants(
     page_url: str,
     prepared: PreparedDetailExtraction,
 ) -> dict[str, object]:
-    return _extract_variants_from_dom(
+    dom_variants = _extract_variants_from_dom(
         soup,
+        page_url=page_url,
+        js_state_objects=prepared.js_state_objects,
+    )
+    if dom_variants.get("variants") or prepared.raw_soup is None:
+        return dom_variants
+    if prepared.raw_soup is soup:
+        return dom_variants
+    return _extract_variants_from_dom(
+        prepared.raw_soup,
         page_url=page_url,
         js_state_objects=prepared.js_state_objects,
     )

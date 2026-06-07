@@ -19,7 +19,7 @@ from app.services.config.field_mappings import (
     NORMALIZER_LIST_TEXT_FIELDS,
 )
 
-_NUMERIC_TEXT_RE = re.compile(r"[-+]?\d[\d.,]*")
+_NUMERIC_TEXT_RE = re.compile(r"[-+−]?\d[\d.,]*")
 _CURRENCY_CODE_CONTEXT_PATTERN = (
     "|".join(
         re.escape(code.lower())
@@ -108,7 +108,11 @@ def normalize_decimal_price(
     if not text:
         return None
     if re.match(
-        rf"^-\s*(?:[$€£¥₹]|rs\.?|\b(?:{_CURRENCY_CODE_CONTEXT_PATTERN}))?\s*\d",
+        rf"^[-−]\s*(?:[$€£¥₹]|rs\.?|\b(?:{_CURRENCY_CODE_CONTEXT_PATTERN}))?\s*\d",
+        text,
+        re.I,
+    ) or re.match(
+        rf"^(?:[$€£¥₹]|rs\.?|\b(?:{_CURRENCY_CODE_CONTEXT_PATTERN})\b)\s*[-−]\s*\d",
         text,
         re.I,
     ):

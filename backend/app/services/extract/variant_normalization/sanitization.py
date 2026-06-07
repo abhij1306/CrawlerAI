@@ -27,7 +27,7 @@ from app.services.extract.variant_normalization.contract import (
     flatten_variants_for_public_output,
 )
 from app.services.extract.variant_value_guards import drop_invalid_variant_urls
-from app.services.shared.field_coerce import clean_text
+from app.services.shared.field_coerce import clean_text, coerce_field_value
 from app.services.extract.variant_normalization import backfill
 from app.services.extract.variant_normalization import deduplication
 from app.services.extract.variant_normalization import size_color_extraction
@@ -316,6 +316,15 @@ def _drop_polluted_parent_scalar_axes(record: dict[str, Any]) -> None:
         value = clean_text(record.get(field_name))
         if not value:
             continue
+        coerced_value = coerce_field_value(
+            field_name, value, clean_text(record.get("url"))
+        )
+        if not coerced_value:
+            record.pop(field_name, None)
+            continue
+        if clean_text(coerced_value) != value:
+            record[field_name] = coerced_value
+            value = clean_text(coerced_value)
         lowered = value.casefold()
         tokens = [token for token in re.split(r"[\s,|/]+", lowered) if token]
         numeric_tokens = sum(1 for token in tokens if re.search(r"\d", token))
@@ -382,9 +391,14 @@ def _normalize_separate_dimension_size_rows(record: dict[str, Any]) -> None:
     for row in rows:
         relabeled = dict(row)
         size_value = clean_text(relabeled.get("size"))
-        style_label = _separate_dimension_style_label(size_value)
+        option_values = relabeled.get("option_values")
+        existing_style = clean_text(relabeled.get("style")) or (
+            clean_text(option_values.get("style"))
+            if isinstance(option_values, dict)
+            else ""
+        )
+        style_label = existing_style or _separate_dimension_style_label(size_value)
         if style_label and size_value:
-            option_values = relabeled.get("option_values")
             relabeled["option_values"] = (
                 dict(option_values) if isinstance(option_values, dict) else {}
             )
