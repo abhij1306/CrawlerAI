@@ -2744,6 +2744,67 @@ async def test_fetch_page_uses_cookie_handoff_before_browser_first(
 
 @pytest.mark.asyncio
 @pytest.mark.component
+async def test_explicit_browser_preference_skips_host_handoff(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    await crawl_fetch_runtime.reset_fetch_runtime_state()
+    url = "https://example.com/products/widget"
+    browser_engines: list[str] = []
+
+    @_as_async
+    def _unexpected_export_cookie_header_for_domain(*_args, **_kwargs):
+        raise AssertionError("explicit browser run should not export handoff cookies")
+
+    @_as_async
+    def _unexpected_curl(*_args, **_kwargs):
+        raise AssertionError("explicit browser run should not use HTTP handoff")
+
+    @_as_async
+    def _browser_fetch(request_url: str, _timeout_seconds: float, **kwargs):
+        browser_engines.append(str(kwargs.get("browser_engine")))
+        return PageFetchResult(
+            url=request_url,
+            final_url=request_url,
+            html="<html><body>rendered</body></html>",
+            status_code=200,
+            method="browser",
+            browser_diagnostics={"browser_engine": kwargs.get("browser_engine")},
+        )
+
+    monkeypatch.setattr(
+        crawl_fetch_runtime,
+        "load_host_protection_policy",
+        AsyncMock(
+            return_value=HostProtectionPolicy(
+                host="example.com",
+                prefer_browser=True,
+                real_chrome_success=True,
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        crawl_fetch_runtime,
+        "export_cookie_header_for_domain",
+        _unexpected_export_cookie_header_for_domain,
+    )
+    monkeypatch.setattr(crawl_fetch_runtime, "_curl_fetch", _unexpected_curl)
+    monkeypatch.setattr(crawl_fetch_runtime, "_browser_fetch", _browser_fetch)
+    try:
+        result = await crawl_fetch_runtime.fetch_page(
+            url,
+            surface="ecommerce_detail",
+            prefer_browser=True,
+            forced_browser_engine="real_chrome",
+        )
+    finally:
+        await crawl_fetch_runtime.reset_fetch_runtime_state()
+
+    assert result.method == "browser"
+    assert browser_engines == ["real_chrome"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
 async def test_fetch_page_emits_http_strategy_and_escalation_events(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

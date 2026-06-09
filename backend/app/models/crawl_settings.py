@@ -234,9 +234,16 @@ class CrawlRunSettings:
 
     def acquisition_contract(self) -> dict[str, object]:
         stored = _mapping(self.data.get("acquisition_contract"))
+        fetch_profile = _mapping(self.data.get("fetch_profile"))
+        fetch_mode = str(
+            fetch_profile.get("fetch_mode", self.data.get("fetch_mode") or "")
+        ).strip().lower()
+        browser_only = fetch_mode == "browser_only"
         handoff_eligible = bool(
             stored.get("handoff_eligible", stored.get(_LEGACY_HANDOFF_ELIGIBLE_KEY, False))
         )
+        if browser_only:
+            handoff_eligible = False
         stale = _mapping(stored.get("stale_after_failures"))
         last_quality_success = _mapping(stored.get("last_quality_success"))
         normalized_success: dict[str, object] | None = None
@@ -274,12 +281,16 @@ class CrawlRunSettings:
             .strip()
             .lower()
             or "auto",
-            "prefer_browser": bool(stored.get("prefer_browser", False)),
+            "prefer_browser": bool(stored.get("prefer_browser", False)) or browser_only,
             "handoff_eligible": handoff_eligible,
-            "handoff_cookie_engine": str(stored.get("handoff_cookie_engine") or "auto")
-            .strip()
-            .lower()
-            or "auto",
+            "handoff_cookie_engine": (
+                "auto"
+                if browser_only
+                else str(stored.get("handoff_cookie_engine") or "auto")
+                .strip()
+                .lower()
+                or "auto"
+            ),
             "required_rendering": bool(stored.get("required_rendering", False)),
             "required_traversal": bool(stored.get("required_traversal", False)),
             "required_network_payloads": bool(

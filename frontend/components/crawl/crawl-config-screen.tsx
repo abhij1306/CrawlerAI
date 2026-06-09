@@ -1094,6 +1094,15 @@ export function CrawlConfigScreen({
                               ...current.fetch_profile,
                               fetch_mode: next,
                             },
+                            acquisition_contract:
+                              next === 'browser_only'
+                                ? {
+                                    ...current.acquisition_contract,
+                                    prefer_browser: true,
+                                    prefer_curl_handoff: false,
+                                    handoff_cookie_engine: 'auto',
+                                  }
+                                : current.acquisition_contract,
                           }));
                         }
                       }}
@@ -1117,6 +1126,9 @@ export function CrawlConfigScreen({
                             acquisition_contract: {
                               ...current.acquisition_contract,
                               preferred_browser_engine: next,
+                              prefer_browser: next === 'auto' ? false : true,
+                              prefer_curl_handoff: false,
+                              handoff_cookie_engine: next === 'auto' ? 'auto' : next,
                             },
                           }));
                         }

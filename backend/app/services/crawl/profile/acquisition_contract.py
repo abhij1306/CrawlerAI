@@ -37,6 +37,8 @@ def apply_acquisition_contract_to_profile(
         else {}
     )
     normalized = normalize_acquisition_contract(contract)
+    fetch_mode = str(profile.get("fetch_mode") or "").strip().lower()
+    browser_only = fetch_mode == "browser_only"
     stale_value = normalized.get("stale_after_failures")
     stale = dict(stale_value) if isinstance(stale_value, Mapping) else {}
     if bool(stale.get("stale")):
@@ -44,15 +46,19 @@ def apply_acquisition_contract_to_profile(
         return profile
     engine = str(normalized.get("preferred_browser_engine") or "auto").strip().lower()
     cookie_engine = str(normalized.get("handoff_cookie_engine") or "auto").strip().lower()
-    if bool(normalized.get("prefer_browser")):
+    if bool(normalized.get("prefer_browser")) or browser_only:
         profile["prefer_browser"] = True
         profile.setdefault("browser_reason", "acquisition-contract")
     if engine in {"patchright", "real_chrome"} and not profile.get("forced_browser_engine"):
         profile["forced_browser_engine"] = engine
-    if bool(normalized.get("handoff_eligible")):
+    if bool(normalized.get("handoff_eligible")) and not browser_only:
         profile["prefer_curl_handoff"] = True
         profile["handoff_eligible"] = True
-    if cookie_engine in {"patchright", "real_chrome"}:
+    if browser_only:
+        profile.pop("prefer_curl_handoff", None)
+        profile.pop("handoff_eligible", None)
+        profile.pop("handoff_cookie_engine", None)
+    elif cookie_engine in {"patchright", "real_chrome"}:
         profile["handoff_cookie_engine"] = cookie_engine
     elif engine in {"patchright", "real_chrome"}:
         profile["handoff_cookie_engine"] = engine

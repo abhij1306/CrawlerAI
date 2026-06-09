@@ -22,6 +22,7 @@ from app.services.crawl.crud import (
     delete_run,
 )
 from app.services.crawl.profile import (
+    apply_acquisition_contract_to_profile,
     build_success_acquisition_contract,
     load_domain_run_profile,
     note_acquisition_contract_failure,
@@ -287,6 +288,68 @@ async def test_explicit_forced_engine_overrides_saved_contract(
     assert contract["preferred_browser_engine"] == "patchright"
     assert contract["handoff_eligible"] is False
     assert contract["handoff_cookie_engine"] == "patchright"
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_browser_only_run_disables_saved_handoff_contract(
+    db_session: AsyncSession,
+    test_user,
+) -> None:
+    await save_domain_run_profile(
+        db_session,
+        domain="example.com",
+        surface="ecommerce_detail",
+        profile={
+            "fetch_profile": {"fetch_mode": "http_then_browser"},
+            "acquisition_contract": {
+                "preferred_browser_engine": "real_chrome",
+                "prefer_browser": True,
+                "handoff_eligible": True,
+                "handoff_cookie_engine": "real_chrome",
+            },
+        },
+        source_run_id=91,
+    )
+    await db_session.commit()
+
+    run = await create_crawl_run(
+        db_session,
+        test_user.id,
+        {
+            "run_type": "crawl",
+            "url": "https://example.com/product/widget",
+            "surface": "ecommerce_detail",
+            "settings": {
+                "advanced_enabled": True,
+                "fetch_profile": {"fetch_mode": "browser_only"},
+            },
+        },
+    )
+
+    contract = run.settings["acquisition_contract"]
+    assert run.settings["fetch_profile"]["fetch_mode"] == "browser_only"
+    assert contract["prefer_browser"] is True
+    assert contract["handoff_eligible"] is False
+    assert contract["handoff_cookie_engine"] == "auto"
+
+
+@pytest.mark.component
+def test_browser_only_profile_application_drops_handoff() -> None:
+    profile = apply_acquisition_contract_to_profile(
+        {"fetch_mode": "browser_only"},
+        {
+            "preferred_browser_engine": "real_chrome",
+            "prefer_browser": True,
+            "handoff_eligible": True,
+            "handoff_cookie_engine": "real_chrome",
+        },
+    )
+
+    assert profile["prefer_browser"] is True
+    assert profile["forced_browser_engine"] == "real_chrome"
+    assert "prefer_curl_handoff" not in profile
+    assert "handoff_cookie_engine" not in profile
 
 
 @pytest.mark.component
