@@ -344,6 +344,17 @@
   --chart-success: var(--success);
   --chart-warning: var(--warning);
   --chart-info: var(--info);
+
+  /* Alert token aliases */
+  --alert-success-bg: var(--success-bg);
+  --alert-success-border: var(--success-border);
+  --alert-success-text: var(--success-text);
+  --alert-warning-bg: var(--warning-bg);
+  --alert-warning-border: var(--warning-border);
+  --alert-warning-text: var(--warning-text);
+  --alert-danger-bg: var(--danger-bg);
+  --alert-danger-border: var(--danger-border);
+  --alert-danger-text: var(--danger-text);
 }
 
 /* ─── DARK THEME — Warm Charcoal Console ───────────────────────────────
@@ -400,6 +411,11 @@ html[data-theme='dark'] {
   --info-border: rgba(96, 165, 250, 0.24);
   --info-text: #60a5fa;
   --neutral-bg: rgba(240, 235, 224, 0.04);
+
+  /* Alert text aliases */
+  --alert-success-text: var(--success);
+  --alert-warning-text: var(--warning);
+  --alert-danger-text: var(--danger);
 
   /* Status */
   --status-neutral-bg: var(--bg-panel);
@@ -1216,24 +1232,6 @@ html:not([data-theme='dark']) .code-block {
   color: var(--alert-danger-text);
 }
 
-/* Alert token aliases (not duplicated in :root — derived directly) */
-:root {
-  --alert-success-bg: var(--success-bg);
-  --alert-success-border: var(--success-border);
-  --alert-success-text: var(--success-text);
-  --alert-warning-bg: var(--warning-bg);
-  --alert-warning-border: var(--warning-border);
-  --alert-warning-text: var(--warning-text);
-  --alert-danger-bg: var(--danger-bg);
-  --alert-danger-border: var(--danger-border);
-  --alert-danger-text: var(--danger-text);
-}
-html[data-theme='dark'] {
-  --alert-success-text: var(--success);
-  --alert-warning-text: var(--warning);
-  --alert-danger-text: var(--danger);
-}
-
 /* ═══════════════════════════════════════════════════════════════════════
    CODE BLOCK
 ═══════════════════════════════════════════════════════════════════════ */
@@ -1307,11 +1305,15 @@ html[data-theme='dark'] {
   border-color: #27272a;
   font-family: var(--font-mono-family);
   font-size: var(--font-mono-size);
+  font-weight: var(--weight-light);
   line-height: var(--font-mono-line-height);
   white-space: pre-wrap;
   word-break: break-word;
   tab-size: 2;
   padding: var(--space-4) var(--space-5);
+}
+.crawl-terminal-json * {
+  font-weight: var(--weight-light);
 }
 
 /* Activity log (sans-serif, not mono) */

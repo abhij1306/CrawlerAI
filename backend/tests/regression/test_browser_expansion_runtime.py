@@ -1816,6 +1816,7 @@ async def test_probe_browser_readiness_does_not_fast_path_ecommerce_category_car
           </button>
         </body></html>
         """,
+        selector_counts={".plp-card": 3},
     )
 
     probe = await browser_runtime.probe_browser_readiness(

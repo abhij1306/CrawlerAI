@@ -18,6 +18,7 @@
     "connectionId": "http-127-0-0-1-9000",
     "projectKey": "pre-poc-ai-crawler-local"
   },
+  "css.lint.unknownAtRules": "ignore",
   "cursorpyright.analysis.extraPaths": [
     "./backend"
   ],
