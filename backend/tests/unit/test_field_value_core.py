@@ -996,6 +996,14 @@ def test_coerce_color_strips_trailing_style_codes() -> None:
 
 
 @pytest.mark.unit
+def test_coerce_color_strips_code_tail_without_dropping_prefix() -> None:
+    assert (
+        coerce_field_value("color", "Nike Mf White Hq7978 103", "https://example.com/p")
+        == "Nike Mf White"
+    )
+
+
+@pytest.mark.unit
 def test_coerce_color_rejects_tracking_pixel_classes() -> None:
     assert coerce_field_value("color", "_clck", "https://example.com/p") is None
     assert coerce_field_value("color", "_fbp", "https://example.com/p") is None

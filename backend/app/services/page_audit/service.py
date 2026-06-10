@@ -63,6 +63,7 @@ async def run_page_audit_job(job_id: int) -> None:
             await _run_job(session, job)
         except Exception as exc:
             logger.exception("Page audit job failed: %s", job_id)
+            await session.rollback()
             await session.refresh(job)
             job.status = config.PAGE_AUDIT_JOB_STATUS_FAILED
             job.summary = {

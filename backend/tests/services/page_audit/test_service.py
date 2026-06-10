@@ -4,6 +4,8 @@ from types import SimpleNamespace
 
 import pytest
 
+from app.services.config import page_audit as config
+from app.services.page_audit import service as page_audit_service
 from app.services.page_audit.service import build_page_audit_report
 
 pytestmark = pytest.mark.component
@@ -58,3 +60,50 @@ async def test_build_page_audit_report_fetches_source_and_rendered_dom(
     assert report["render_summary"]["source_status_code"] == 200
     assert report["render_summary"]["dom_status_code"] == 200
     assert report["render_summary"]["dom_only_text_count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_run_page_audit_job_rolls_back_before_marking_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    job = SimpleNamespace(
+        id=1,
+        status=config.PAGE_AUDIT_JOB_STATUS_QUEUED,
+        summary={},
+        completed_at=None,
+    )
+    calls: list[str] = []
+
+    class FakeSession:
+        async def __aenter__(self) -> "FakeSession":
+            return self
+
+        async def __aexit__(self, *args: object) -> None:
+            return None
+
+        async def scalar(self, query: object) -> object:
+            del query
+            return job
+
+        async def rollback(self) -> None:
+            calls.append("rollback")
+
+        async def refresh(self, refreshed_job: object) -> None:
+            assert refreshed_job is job
+            calls.append("refresh")
+
+        async def commit(self) -> None:
+            calls.append("commit")
+
+    async def fail_run(*args: object) -> None:
+        del args
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(page_audit_service, "SessionLocal", FakeSession)
+    monkeypatch.setattr(page_audit_service, "_run_job", fail_run)
+
+    await page_audit_service.run_page_audit_job(job.id)
+
+    assert calls == ["rollback", "refresh", "commit"]
+    assert job.status == config.PAGE_AUDIT_JOB_STATUS_FAILED
+    assert job.summary["error"] == "RuntimeError: boom"

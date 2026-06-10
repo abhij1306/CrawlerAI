@@ -25,7 +25,7 @@ const displayFont = Bricolage_Grotesque({
 
 const monoFont = Martian_Mono({
   subsets: ['latin'],
-  weight: ['200', '300', '400', '500'],
+  weight: ['300', '400', '500'],
   variable: '--font-mono-source',
   display: 'swap',
 });

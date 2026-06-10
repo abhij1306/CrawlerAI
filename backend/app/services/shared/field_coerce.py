@@ -510,7 +510,7 @@ def _strip_color_value_code_pollution(value: str) -> str:
         for token in tail
     ):
         return value
-    return clean_text(" ".join(tokens[color_indexes[0] : color_indexes[-1] + 1]))
+    return clean_text(" ".join(tokens[: color_indexes[-1] + 1]))
 
 
 _SHORT_COLOR_ALLOWLIST = frozenset(

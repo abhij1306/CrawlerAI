@@ -20,6 +20,7 @@ from app.services.config.field_mappings import (
 )
 
 _NUMERIC_TEXT_RE = re.compile(r"[-+−]?\d[\d.,]*")
+_UNICODE_MINUS_CHARS = "\u2212"
 _CURRENCY_CODE_CONTEXT_PATTERN = (
     "|".join(
         re.escape(code.lower())
@@ -147,7 +148,7 @@ def normalize_decimal_price(
 
 
 def _canonicalize_decimal_candidate(value: str) -> str | None:
-    text = _normalize_text(value)
+    text = _normalize_text(value).translate(str.maketrans(_UNICODE_MINUS_CHARS, "-"))
     if not text:
         return None
     match = _NUMERIC_TEXT_RE.search(text)
@@ -183,7 +184,7 @@ def _normalize_int(value: object) -> int | str:
     if match is None:
         return ""
     try:
-        return int(Decimal(match.group(0)))
+        return int(Decimal(match.group(0).translate(str.maketrans(_UNICODE_MINUS_CHARS, "-"))))
     except (InvalidOperation, ValueError):
         return ""
 

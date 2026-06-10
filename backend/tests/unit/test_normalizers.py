@@ -117,6 +117,11 @@ def test_normalize_decimal_price_rejects_negative_values() -> None:
 
 
 @pytest.mark.unit
+def test_normalize_integer_field_handles_unicode_minus_as_negative() -> None:
+    assert normalize_value("stock_quantity", "−123") == -123
+
+
+@pytest.mark.unit
 def test_normalize_decimal_price_rejects_structured_types() -> None:
     assert normalize_decimal_price({"key": "val"}) is None
     assert normalize_decimal_price([100, 200]) is None

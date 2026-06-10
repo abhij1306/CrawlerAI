@@ -266,11 +266,14 @@ def _extract_prepared_dom_variants(
         return dom_variants
     if prepared.raw_soup is soup:
         return dom_variants
-    return _extract_variants_from_dom(
+    fallback_variants = _extract_variants_from_dom(
         prepared.raw_soup,
         page_url=page_url,
         js_state_objects=prepared.js_state_objects,
     )
+    if not fallback_variants.get("variants"):
+        return dom_variants
+    return {**dom_variants, **fallback_variants}
 
 
 def build_detail_record(
