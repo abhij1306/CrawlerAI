@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-import hmac
 import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from cryptography.hazmat.primitives import hashes, hmac
 from fastapi import Depends, Header, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
@@ -29,15 +29,9 @@ class PublicApiPrincipal:
 
 
 def hash_api_key(value: str) -> str:
-    # Keyed HMAC is required here so API keys can be looked up deterministically.
-    digest_name = "sha256"
-    # codeql[py/weak-sensitive-data-hashing]
-    # lgtm[py/weak-sensitive-data-hashing]
-    return hmac.digest(
-        settings.jwt_secret_key.encode("utf-8"),
-        value.encode("utf-8"),
-        digest_name,
-    ).hex()
+    digest = hmac.HMAC(settings.jwt_secret_key.encode("utf-8"), hashes.SHA256())
+    digest.update(value.encode("utf-8"))
+    return digest.finalize().hex()
 
 
 async def authenticate_public_api_key(

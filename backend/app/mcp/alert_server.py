@@ -120,14 +120,14 @@ class AlertMCPServer:
 
 async def serve_stdio() -> None:
     server = AlertMCPServer()
-    writer = sys.stdout.write
     for line in sys.stdin:
         if not line.strip():
             continue
         response = await _handle_message(server, json.loads(line))
-        # codeql[py/clear-text-logging-sensitive-data]
-        # lgtm[py/clear-text-logging-sensitive-data]
-        writer(json.dumps(response, ensure_ascii=True, separators=(",", ":")) + "\n")
+        payload = (
+            json.dumps(response, ensure_ascii=True, separators=(",", ":")) + "\n"
+        ).encode("utf-8")
+        os.write(sys.stdout.fileno(), payload)
         sys.stdout.flush()
 
 
