@@ -73,7 +73,6 @@ ALLOWED_PRIVATE_SERVICE_IMPORTS = {
     "config/extraction_rules/_listing_structured.py -> ._common:_STRUCTURED_OBJECT_FIELDS_RAW",
     "config/extraction_rules/_listing_structured.py -> ._common:_STRUCTURED_OBJECT_LIST_FIELDS_RAW",
     "config/extraction_rules/_listing_structured.py -> ._common:_URL_FIELDS_RAW",
-    "js_state/state_normalizer/__init__.py -> ._common:_VARIANT_FIELD_SPEC",
     "js_state/state_normalizer/_facade.py -> ._identity:_mapped_product_family_matches",
     "js_state/state_normalizer/_facade.py -> ._identity:_mapped_product_identity_matches",
     "js_state/state_normalizer/_facade.py -> ._identity:_mapped_record_matches_page_url",

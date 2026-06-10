@@ -5,6 +5,9 @@ from __future__ import annotations
 from . import _common as _common_module
 from . import _product_mapping as _product_mapping_module
 from . import _variant_mapping as _variant_mapping_module
+from app.services.config.js_state_field_specs import (
+    JS_STATE_VARIANT_FIELD_SPEC as _VARIANT_FIELD_SPEC,
+)
 from ._common import (
     PRODUCT_FIELD_SPEC,
     glom,
@@ -34,6 +37,7 @@ def _normalize_variant(*args, **kwargs):
 
 __all__ = [
     "PRODUCT_FIELD_SPEC",
+    "_VARIANT_FIELD_SPEC",
     "_map_product_payload",
     "_normalize_variant",
     "map_configured_state_payload",
