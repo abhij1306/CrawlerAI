@@ -182,8 +182,9 @@ def fake_redis(monkeypatch: pytest.MonkeyPatch) -> FakeRedis:
     client = FakeRedis()
     monkeypatch.setattr(app_redis, "_client", client)
     monkeypatch.setattr(app_redis, "_pool", None)
-    monkeypatch.setattr(app_redis, "_redis_disabled_until", 0.0)
-    monkeypatch.setattr(app_redis, "_last_disable_log_at", 0.0)
+    app_redis._redis_failure_state.disabled_until = 0.0
+    app_redis._redis_failure_state.last_disable_log_at = 0.0
+    app_redis._redis_failure_state.total = 0
     monkeypatch.setattr(app_redis.settings, "redis_state_enabled", True)
     return client
 

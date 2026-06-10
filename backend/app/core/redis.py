@@ -5,6 +5,7 @@ import logging
 import re
 import time
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from typing import TypeVar
 
 from redis.asyncio import ConnectionPool, Redis
@@ -25,13 +26,20 @@ __all__ = [
 
 _pool: ConnectionPool | None = None
 _client: Redis | None = None
-_redis_disabled_until: float = 0.0
-_last_disable_log_at: float = 0.0
-_redis_failure_total: int = 0
 _DISABLE_COOLDOWN_SECONDS = 30.0
 _BACKGROUND_TASKS: set[asyncio.Task[None]] = set()
 T = TypeVar("T")
 _LOG_EXTRA_TOKEN_RE = re.compile(r"[^A-Za-z0-9_.:-]+")
+
+
+@dataclass
+class _RedisFailureState:
+    disabled_until: float = 0.0
+    last_disable_log_at: float = 0.0
+    total: int = 0
+
+
+_redis_failure_state = _RedisFailureState()
 
 
 def _safe_log_extra_token(value: object) -> str:
@@ -41,21 +49,23 @@ def _safe_log_extra_token(value: object) -> str:
 def redis_is_enabled() -> bool:
     if not settings.redis_state_enabled:
         return False
-    return time.monotonic() >= _redis_disabled_until
+    return time.monotonic() >= _redis_failure_state.disabled_until
 
 
 def _temporarily_disable_redis(_exc: Exception) -> None:
-    global _redis_disabled_until, _last_disable_log_at, _redis_failure_total
     now = time.monotonic()
-    _redis_disabled_until = now + _DISABLE_COOLDOWN_SECONDS
-    _redis_failure_total += 1
-    if now - _last_disable_log_at >= _DISABLE_COOLDOWN_SECONDS:
+    _redis_failure_state.disabled_until = now + _DISABLE_COOLDOWN_SECONDS
+    _redis_failure_state.total += 1
+    if (
+        now - _redis_failure_state.last_disable_log_at
+        >= _DISABLE_COOLDOWN_SECONDS
+    ):
         logger.warning(
             "Redis unavailable; disabling shared state for %.0fs",
             _DISABLE_COOLDOWN_SECONDS,
             extra={"exception_type": _safe_log_extra_token(type(_exc).__name__)},
         )
-        _last_disable_log_at = now
+        _redis_failure_state.last_disable_log_at = now
 
 
 def get_redis_pool() -> ConnectionPool:
@@ -77,7 +87,7 @@ def get_redis() -> Redis:
 
 
 def redis_failure_total() -> int:
-    return _redis_failure_total
+    return _redis_failure_state.total
 
 
 async def close_redis() -> None:
@@ -109,7 +119,6 @@ async def redis_fail_open(
             exc_info=False,
             extra={
                 "exception_type": _safe_log_extra_token(type(exc).__name__),
-                "operation_name": _safe_log_extra_token(operation_name),
             },
         )
         return default
