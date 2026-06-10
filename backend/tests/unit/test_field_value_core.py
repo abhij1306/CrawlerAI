@@ -999,7 +999,7 @@ def test_coerce_color_strips_trailing_style_codes() -> None:
 def test_coerce_color_strips_code_tail_without_dropping_prefix() -> None:
     assert (
         coerce_field_value("color", "Nike Mf White Hq7978 103", "https://example.com/p")
-        == "Nike Mf White"
+        == "Nike White"
     )
 
 

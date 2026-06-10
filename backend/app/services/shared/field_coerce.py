@@ -510,7 +510,23 @@ def _strip_color_value_code_pollution(value: str) -> str:
         for token in tail
     ):
         return value
-    return clean_text(" ".join(tokens[: color_indexes[-1] + 1]))
+    color_prefix = [
+        token
+        for token in tokens[: color_indexes[0]]
+        if not _color_prefix_token_is_code_like(token)
+    ]
+    color_tokens = tokens[color_indexes[0] : color_indexes[-1] + 1]
+    return clean_text(" ".join([*color_prefix, *color_tokens]))
+
+
+def _color_prefix_token_is_code_like(token: str) -> bool:
+    text = token.strip()
+    return (
+        1 < len(text) <= 3
+        and not text.islower()
+        and text.casefold() not in _SHORT_COLOR_ALLOWLIST
+        and _COLOR_KEYWORD_RE.fullmatch(text) is None
+    )
 
 
 _SHORT_COLOR_ALLOWLIST = frozenset(
