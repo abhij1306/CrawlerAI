@@ -1567,7 +1567,7 @@ async def test_shared_browser_runtime_releases_pool_slot_when_cleanup_is_cancell
 
     async def _use_page() -> None:
         async with runtime.page(allow_storage_state=False):
-            pass
+            await asyncio.sleep(0)
 
     task = asyncio.create_task(_use_page())
     await asyncio.wait_for(close_started.wait(), timeout=1.0)
@@ -1577,7 +1577,7 @@ async def test_shared_browser_runtime_releases_pool_slot_when_cleanup_is_cancell
 
     async def _acquire_again() -> None:
         async with runtime.page(allow_storage_state=False):
-            pass
+            await asyncio.sleep(0)
 
     await asyncio.wait_for(_acquire_again(), timeout=1.0)
     assert close_calls == 2
@@ -1863,7 +1863,7 @@ async def test_shared_browser_runtime_bounds_context_slot_wait(
     try:
         with pytest.raises(TimeoutError, match="browser context slot"):
             async with runtime.page(phase_timings_ms=phase_timings_ms_second):
-                pass
+                await asyncio.sleep(0)
     finally:
         release.set()
         await first
@@ -2025,7 +2025,7 @@ async def test_shared_browser_runtime_does_not_recycle_with_active_context(
     await entered.wait()
     runtime._total_contexts_created = 1
     async with runtime.page():
-        pass
+        await asyncio.sleep(0)
     release.set()
     await first
 

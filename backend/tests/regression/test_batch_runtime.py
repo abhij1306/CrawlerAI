@@ -457,6 +457,7 @@ async def test_process_run_runs_same_domain_batch_urls_in_parallel(
                 try:
                     await asyncio.wait_for(second_active.wait(), timeout=0.5)
                 except asyncio.TimeoutError:
+                    # Expected when concurrency is not opened by the runtime.
                     pass
             else:
                 await asyncio.sleep(0.01)

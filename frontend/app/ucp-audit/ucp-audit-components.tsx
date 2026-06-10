@@ -973,10 +973,7 @@ function AiAssessmentSummary({
           <div className="type-label text-secondary">Shopper-query simulation</div>
           {queries.length ? (
             queries.slice(0, 6).map((query) => (
-              <div
-                key={query.query}
-                className="border-border bg-panel rounded-md border p-3"
-              >
+              <div key={query.query} className="border-border bg-panel rounded-md border p-3">
                 <div className="flex items-start justify-between gap-2">
                   <p className="type-body-sm text-foreground">{query.query}</p>
                   <Badge tone={query.answerable ? 'success' : 'warning'}>

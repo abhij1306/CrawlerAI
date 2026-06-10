@@ -10,11 +10,7 @@ import { DataRegionEmpty, DataRegionLoading } from '../ui/patterns';
 import { Button } from '../ui/primitives';
 
 type KaTeXApi = {
-  render: (
-    math: string,
-    element: HTMLElement,
-    options: KatexOptions,
-  ) => void;
+  render: (math: string, element: HTMLElement, options: KatexOptions) => void;
 };
 
 type WindowWithKaTeX = Window & { katex?: KaTeXApi };
@@ -263,10 +259,7 @@ function MarkdownPreview({ markdown }: Readonly<{ markdown: string }>) {
             </thead>
             <tbody>
               {rows.map((row) => (
-                <tr
-                  key={row.join('|')}
-                  className="odd:bg-background even:bg-background-alt/40"
-                >
+                <tr key={row.join('|')} className="odd:bg-background even:bg-background-alt/40">
                   {headers.map((header, cellIndex) => (
                     <td
                       key={header}

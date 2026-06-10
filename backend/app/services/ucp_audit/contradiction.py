@@ -2,10 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import re
-from typing import TYPE_CHECKING, Any
-
-if TYPE_CHECKING:
-    from app.services.ucp_audit.evidence import EvidencePacket
+from typing import Any
 
 
 @dataclass(slots=True)
@@ -17,7 +14,7 @@ class ContradictionFlag:
     value_b: str
 
 
-def detect_contradictions(packet: EvidencePacket) -> list[ContradictionFlag]:
+def detect_contradictions(packet: Any) -> list[ContradictionFlag]:
     flags: list[ContradictionFlag] = []
     product = packet.jsonld_product_blocks[0] if packet.jsonld_product_blocks else {}
     _maybe_add_text(

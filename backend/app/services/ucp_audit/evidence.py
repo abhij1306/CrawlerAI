@@ -1,13 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from app.services.config import aid_score as config
 from app.services.ucp_audit.catalog_crawl import CatalogCrawlResult
-
-if TYPE_CHECKING:
-    from app.services.ucp_audit.contradiction import ContradictionFlag
 
 
 @dataclass(slots=True)
@@ -20,7 +17,7 @@ class EvidencePacket:
     robots_allows_perplexitybot: bool
     robots_allows_gptbot: bool
     sitemap_found: bool
-    contradictions: list[ContradictionFlag] = field(default_factory=list)
+    contradictions: list[Any] = field(default_factory=list)
 
     def to_prompt_dict(self) -> dict[str, Any]:
         payload = asdict(self)

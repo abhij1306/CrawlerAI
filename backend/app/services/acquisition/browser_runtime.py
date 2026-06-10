@@ -56,10 +56,10 @@ from app.services.acquisition.browser_fetch_support import (
     dismiss_browser_interstitial,
     emit_page_loaded_event,
 )
+from app.services.acquisition import browser_readiness as _browser_readiness
 from app.services.acquisition.browser_readiness import (
     classify_browser_outcome,
     classify_low_content_reason,
-    listing_card_signal_count as listing_card_signal_count,
     looks_like_low_content_shell,
     probe_browser_readiness,
     wait_for_listing_readiness,
@@ -138,6 +138,10 @@ get_browser_runtime = _get_browser_runtime_impl
 shutdown_browser_runtime = _shutdown_browser_runtime_impl
 shutdown_browser_runtime_sync = _shutdown_browser_runtime_sync_impl
 browser_runtime_snapshot = _browser_runtime_snapshot_impl
+
+
+async def listing_card_signal_count(page: Any, *, surface: str) -> int:
+    return await _browser_readiness.listing_card_signal_count(page, surface=surface)
 
 
 block_unneeded_route = _block_unneeded_route
@@ -804,7 +808,10 @@ async def _maybe_warm_origin_before_navigation(
         if use_active_warmup_page:
             warm_page = page
         else:
-            assert callable(open_warmup_page)
+            if not callable(open_warmup_page):
+                logger.debug("Skipping origin warmup for %s because no opener is available", url)
+                await asyncio.shield(_finish_origin_warmup(warmup_key))
+                return
             warm_page = await open_warmup_page()
         warm_response = await warm_page.goto(
             warm_url,
@@ -1022,36 +1029,20 @@ async def _close_unexpected_popup(page: Any, *, on_event=None) -> None:
 
 
 __all__ = [
-    "SharedBrowserRuntime",
-    "BROWSER_CAPTURE_MAX_NETWORK_PAYLOADS",
-    "BROWSER_CAPTURE_MAX_NETWORK_PAYLOAD_BYTES",
-    "BROWSER_CAPTURE_QUEUE_SIZE",
-    "BROWSER_CAPTURE_WORKERS",
-    "NetworkPayloadReadResult",
-    "browser_fetch",
-    "accessibility_expand_candidates",
-    "build_browser_diagnostics_contract",
-    "browser_runtime_snapshot",
-    "block_unneeded_route",
-    "build_failed_browser_diagnostics",
-    "capture_browser_screenshot",
-    "classify_network_endpoint",
-    "classify_browser_outcome",
-    "detail_expansion_keywords",
-    "expand_all_interactive_elements",
-    "expand_detail_content_if_needed",
-    "expand_interactive_elements_via_accessibility",
-    "interactive_candidate_snapshot",
-    "get_browser_runtime",
-    "listing_card_signal_count",
-    "looks_like_low_content_shell",
-    "patchright_browser_available",
-    "read_network_payload_body",
-    "real_chrome_browser_available",
-    "real_chrome_candidate_paths",
-    "real_chrome_executable_path",
-    "should_capture_network_payload",
-    "shutdown_browser_runtime",
-    "shutdown_browser_runtime_sync",
+    "SharedBrowserRuntime", "BROWSER_CAPTURE_MAX_NETWORK_PAYLOADS",
+    "BROWSER_CAPTURE_MAX_NETWORK_PAYLOAD_BYTES", "BROWSER_CAPTURE_QUEUE_SIZE",
+    "BROWSER_CAPTURE_WORKERS", "NetworkPayloadReadResult", "browser_fetch",
+    "accessibility_expand_candidates", "build_browser_diagnostics_contract",
+    "browser_runtime_snapshot", "block_unneeded_route",
+    "build_failed_browser_diagnostics", "capture_browser_screenshot",
+    "classify_network_endpoint", "classify_browser_outcome",
+    "detail_expansion_keywords", "expand_all_interactive_elements",
+    "expand_detail_content_if_needed", "expand_interactive_elements_via_accessibility",
+    "interactive_candidate_snapshot", "get_browser_runtime",
+    "listing_card_signal_count", "looks_like_low_content_shell",
+    "patchright_browser_available", "read_network_payload_body",
+    "real_chrome_browser_available", "real_chrome_candidate_paths",
+    "real_chrome_executable_path", "should_capture_network_payload",
+    "shutdown_browser_runtime", "shutdown_browser_runtime_sync",
     "temporary_browser_page",
 ]

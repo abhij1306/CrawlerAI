@@ -4,26 +4,21 @@ __all__ = (
     "document_link_label_patterns", "fulfillment_only_long_text_phrases",
     "fulfillment_long_text_patterns", "guide_glossary_text_patterns",
     "guide_glossary_heading_tokens", "long_text_disclaimer_patterns",
-    "low_signal_title_values", "low_signal_long_text_values",
-    "materials_pollution_tokens", "low_signal_product_type_values",
-    "detail_artifact_product_type_patterns", "cross_product_text_type_tokens",
-    "cross_product_text_generic_tokens", "title_dimension_size_re",
-    "tracking_token_re", "cookie_disclosure_text_patterns",
-    "low_signal_numeric_size_max", "artifact_price_values",
-    "feature_row_noise_patterns", "detail_title_value_is_low_signal",
-    "detail_product_type_is_low_signal", "detail_scalar_size_is_low_signal",
-    "detail_candidate_is_valid", "sanitize_detail_long_text_fields",
-    "sanitize_detail_long_text", "sanitize_detail_features",
-    "detail_long_text_chunk_looks_truncated",
-    "detail_long_text_chunk_is_variant_size_sequence",
-    "detail_long_text_is_numeric_sequence", "detail_long_text_is_fulfillment_only",
-    "detail_long_text_is_guide_or_glossary_dump",
-    "detail_long_text_is_cookie_disclosure_dump",
-    "detail_long_text_chunk_is_legal_tail",
-    "detail_long_text_chunk_is_document_label",
-    "detail_long_text_is_document_label_cluster",
-    "detail_long_text_chunk_is_variant_title",
-    "detail_long_text_chunk_is_other_product", "detail_product_text_tokens",
+    "low_signal_title_values", "low_signal_long_text_values", "materials_pollution_tokens",
+    "low_signal_product_type_values", "detail_artifact_product_type_patterns",
+    "cross_product_text_type_tokens", "cross_product_text_generic_tokens",
+    "title_dimension_size_re", "tracking_token_re", "cookie_disclosure_text_patterns",
+    "low_signal_numeric_size_max", "artifact_price_values", "feature_row_noise_patterns",
+    "detail_title_value_is_low_signal", "detail_product_type_is_low_signal",
+    "detail_scalar_size_is_low_signal", "detail_candidate_is_valid",
+    "sanitize_detail_long_text_fields", "sanitize_detail_long_text",
+    "sanitize_detail_features", "detail_long_text_chunk_looks_truncated",
+    "detail_long_text_chunk_is_variant_size_sequence", "detail_long_text_is_numeric_sequence",
+    "detail_long_text_is_fulfillment_only", "detail_long_text_is_guide_or_glossary_dump",
+    "detail_long_text_is_cookie_disclosure_dump", "detail_long_text_chunk_is_legal_tail",
+    "detail_long_text_chunk_is_document_label", "detail_long_text_is_document_label_cluster",
+    "detail_long_text_chunk_is_variant_title", "detail_long_text_chunk_is_other_product",
+    "detail_product_text_tokens",
     "detail_long_text_chunk_has_product_name_shape",
 )
 
@@ -138,6 +133,7 @@ _detail_noise_prefixes = tuple(
     for prefix in tuple(DETAIL_NOISE_PREFIXES or ())
     if clean_text(prefix)
 )
+_DESCRIPTION_REPAIRED_FROM_PRODUCT_DETAILS = "_description_repaired_from_product_details"
 _long_text_ui_tail_phrases = tuple(
     clean_text(phrase).lower()
     for phrase in tuple(DETAIL_LONG_TEXT_UI_TAIL_PHRASES or ())
@@ -442,9 +438,9 @@ def sanitize_detail_long_text_fields(
         record["features"] = features
     else:
         record.pop("features", None)
-    _promote_product_details_description(record)
-    _drop_redundant_product_details(record)
     _repair_description_feature_duplicate(record)
+    _drop_redundant_product_details(record)
+    _promote_product_details_description(record)
 
 
 def _repair_description_feature_duplicate(record: dict[str, Any]) -> None:
@@ -469,6 +465,7 @@ def _repair_description_feature_duplicate(record: dict[str, Any]) -> None:
     )
     if product_details and product_details.casefold() != description.casefold():
         record["description"] = product_details
+        record[_DESCRIPTION_REPAIRED_FROM_PRODUCT_DETAILS] = True
         return
     record.pop("description", None)
 
@@ -547,6 +544,8 @@ def _drop_redundant_product_details(record: dict[str, Any]) -> None:
         title=clean_text(record.get("title")),
     )
     if not description or not product_details:
+        return
+    if record.get(_DESCRIPTION_REPAIRED_FROM_PRODUCT_DETAILS) is True:
         return
     if description.casefold() != product_details.casefold():
         return

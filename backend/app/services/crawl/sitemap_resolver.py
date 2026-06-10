@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import importlib
 import logging
 from collections.abc import Mapping
 from dataclasses import dataclass, field
@@ -149,9 +150,10 @@ async def resolve_category_urls_with_site_links(
             raise static_error
         raise ValueError(f"Unable to resolve sitemap for {_normalize_homepage_url(domain)}")
 
-    from app.services.crawl.site_link_discovery import discover_rendered_category_links
-
     try:
+        discover_rendered_category_links = importlib.import_module(
+            "app.services.crawl.site_link_discovery"
+        ).discover_rendered_category_links
         rendered_result = await discover_rendered_category_links(
             _normalize_homepage_url(domain),
             limit=limit,
@@ -305,7 +307,6 @@ async def resolve_category_urls_from_sitemap_result(
                         "message": str(exc),
                     }
                 )
-                pass
             else:
                 homepage_result.diagnostics.setdefault(
                     "sitemap_attempts", sitemap_attempts

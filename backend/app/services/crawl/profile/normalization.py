@@ -3,7 +3,6 @@ from __future__ import annotations
 from collections.abc import Mapping
 from datetime import UTC, datetime
 
-from app.models.crawl_settings import _coerce_int as _coerce_int_clamped
 from app.services.config.domain_profiles import (
     INTERNAL_API_ENDPOINT_ALLOWED_METHODS,
     INTERNAL_API_ENDPOINT_FAMILY_KEY,
@@ -32,6 +31,18 @@ _JS_MODE_VALUES = {"auto", "enabled", "disabled"}
 _CAPTURE_NETWORK_VALUES = {"off", "matched_only", "all_small_json"}
 _BROWSER_ENGINE_VALUES = {"auto", "patchright", "real_chrome"}
 _LEGACY_HANDOFF_ELIGIBLE_KEY = "prefer_curl_handoff"
+
+
+def _coerce_int_clamped(
+    value: object, default: int, minimum: int, maximum: int | None = None
+) -> int:
+    try:
+        result = max(minimum, int(float(str(value))))
+        if maximum is not None:
+            result = min(result, maximum)
+        return result
+    except (TypeError, ValueError):
+        return default
 
 
 def _empty_acquisition_contract() -> dict[str, object]:

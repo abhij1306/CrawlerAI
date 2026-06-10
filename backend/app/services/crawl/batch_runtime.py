@@ -64,14 +64,14 @@ async def _run_url_processing_with_timeout(operation, timeout_seconds: float):
         )
     except asyncio.CancelledError:
         task.cancel()
-        with suppress(BaseException):
-            await task
+        with suppress(asyncio.CancelledError):
+            _ = await task
         raise
     if task in done:
         return task.result()
     task.cancel()
-    with suppress(BaseException):
-        await task
+    with suppress(asyncio.CancelledError):
+        _ = await task
     raise _URLProcessingDeadlineExceeded(
         f"URL processing exceeded timeout_seconds={timeout_seconds}"
     )

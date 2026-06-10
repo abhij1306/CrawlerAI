@@ -1377,7 +1377,11 @@ html:not([data-theme='dark']) .code-block {
 }
 .compact-data-table thead {
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--bg-elevated) 60%, var(--bg-panel)), var(--bg-alt)),
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--bg-elevated) 60%, var(--bg-panel)),
+      var(--bg-alt)
+    ),
     var(--bg-alt);
 }
 .compact-data-table thead tr th {
@@ -1488,7 +1492,11 @@ html:not([data-theme='dark']) .compact-data-table {
   border-radius: var(--radius-sm);
   border: 1px solid var(--border);
   background:
-    linear-gradient(145deg, color-mix(in srgb, var(--bg-elevated) 60%, var(--bg-panel)), var(--bg-alt)),
+    linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--bg-elevated) 60%, var(--bg-panel)),
+      var(--bg-alt)
+    ),
     var(--bg-alt);
   display: flex;
   align-items: center;

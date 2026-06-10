@@ -381,7 +381,11 @@ export const api = {
   listJobs: () => apiClient.get<ActiveJob[]>('/api/jobs/active'),
 
   // Playground
-  createPlaygroundSession: (payload: { url?: string; urls?: string[]; category_limit?: number }) => {
+  createPlaygroundSession: (payload: {
+    url?: string;
+    urls?: string[];
+    category_limit?: number;
+  }) => {
     if (!payload.url && (!payload.urls || payload.urls.length === 0)) {
       throw new Error('Enter at least one URL');
     }

@@ -474,13 +474,21 @@ export default function AdminLlmPage() {
             className="flex-1"
           >
             {costLog.length ? (
-              <div className="custom-scrollbar max-h-[700px] overflow-y-auto"> {/* skipcq: JS-0415 */}
+              <div className="custom-scrollbar max-h-[700px] overflow-y-auto">
+                {' '}
+                {/* skipcq: JS-0415 */}
                 <Table className="table-auto">
                   <TableHeader>
                     <TableRow className="border-divider/50">
-                      <TableHead className="w-[118px] text-[10px] tracking-[0.08em]">Usage</TableHead>
-                      <TableHead className="w-[170px] text-[10px] tracking-[0.08em]">Task</TableHead>
-                      <TableHead className="w-[160px] text-[10px] tracking-[0.08em]">Target</TableHead>
+                      <TableHead className="w-[118px] text-[10px] tracking-[0.08em]">
+                        Usage
+                      </TableHead>
+                      <TableHead className="w-[170px] text-[10px] tracking-[0.08em]">
+                        Task
+                      </TableHead>
+                      <TableHead className="w-[160px] text-[10px] tracking-[0.08em]">
+                        Target
+                      </TableHead>
                       <TableHead className="text-[10px] tracking-[0.08em]">Provider</TableHead>
                       <TableHead className="w-[110px] text-right text-[10px] tracking-[0.08em]">
                         Time
@@ -515,7 +523,7 @@ export default function AdminLlmPage() {
 
                             {/* Task type */}
                             <TableCell className="py-3">
-                              <span className="type-control text-foreground block max-w-[150px] whitespace-normal !font-normal">
+                              <span className="type-control text-foreground block max-w-[150px] !font-normal whitespace-normal">
                                 {entry.task_type.replace(/_/g, ' ')}
                               </span>
                             </TableCell>

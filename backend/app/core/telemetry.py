@@ -17,6 +17,15 @@ try:
 except ImportError:  # pragma: no cover - optional dependency fallback
     pass
 
+__all__ = [
+    "configure_logging",
+    "generate_correlation_id",
+    "get_correlation_id",
+    "install_asyncio_exception_filter",
+    "reset_correlation_id",
+    "set_correlation_id",
+]
+
 _correlation_id_ctx: ContextVar[str | None] = ContextVar("correlation_id", default=None)
 _LOGGING_CONFIGURED = False
 _ASYNCIO_EXCEPTION_FILTERS: "weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, object]" = (

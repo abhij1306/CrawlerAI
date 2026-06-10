@@ -20,7 +20,6 @@ from app.core.dependencies import get_current_user, get_db
 from app.core.public_auth import (
     authenticate_public_api_key,
     hash_api_key,
-    legacy_hash_api_key,
 )
 from app.main import (
     RATE_LIMIT_BUCKETS,
@@ -612,7 +611,7 @@ async def test_public_capabilities_uses_api_key_envelope(
 
 @pytest.mark.asyncio
 @pytest.mark.component
-async def test_authenticate_public_api_key_migrates_legacy_hash(
+async def test_authenticate_public_api_key_rejects_legacy_unkeyed_hash(
     db_session,
     test_user,
 ) -> None:
@@ -622,21 +621,14 @@ async def test_authenticate_public_api_key_migrates_legacy_hash(
             user_id=test_user.id,
             name="legacy",
             key_prefix="crawlerai",
-            key_hash=legacy_hash_api_key(raw_key),
+            key_hash="legacy-unkeyed-hash-placeholder",
             is_active=True,
         )
     )
     await db_session.commit()
 
-    principal = await authenticate_public_api_key(
-        db_session,
-        f"Bearer {raw_key}",
-        touch=False,
-    )
-
-    stored = await db_session.scalar(select(ApiKey).where(ApiKey.id == principal.api_key_id))
-    assert stored is not None
-    assert stored.key_hash == hash_api_key(raw_key)
+    with pytest.raises(HTTPException):
+        await authenticate_public_api_key(db_session, f"Bearer {raw_key}", touch=False)
 
 
 @pytest.mark.asyncio

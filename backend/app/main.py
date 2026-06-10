@@ -339,6 +339,14 @@ sanitize_header_value = _sanitize_header_value
 sanitize_header_name = _sanitize_header_name
 client_rate_limit_key = _client_rate_limit_key
 
+__all__ = [
+    "app",
+    "sanitize_header_value",
+    "sanitize_header_name",
+    "client_rate_limit_key",
+    "RATE_LIMIT_BUCKETS",
+]
+
 
 class _RateLimitBucketsView(Mapping[str, deque[float]]):
     def __getitem__(self, key: str) -> deque[float]:
@@ -352,7 +360,6 @@ class _RateLimitBucketsView(Mapping[str, deque[float]]):
 
 
 RATE_LIMIT_BUCKETS: Mapping[str, deque[float]] = _RateLimitBucketsView()
-__all__ = ["RATE_LIMIT_BUCKETS"]
 
 
 def rate_limit_buckets_snapshot() -> OrderedDict[str, deque[float]]:

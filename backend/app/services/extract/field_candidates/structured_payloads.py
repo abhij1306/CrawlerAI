@@ -149,7 +149,7 @@ def _breadcrumb_category_path(
     return " > ".join(names) if names else None
 
 
-def _structured_feature_rows(payload: dict[str, object], page_url: str) -> list[str]:
+def structured_feature_rows(payload: dict[str, object], page_url: str) -> list[str]:
     rows: list[str] = []
     seen: set[str] = set()
 
@@ -456,7 +456,7 @@ def collect_structured_candidates(
                 coerce_field_value("size", payload.get("size"), page_url),
             )
             add_candidate(candidates, "materials", coerce_text(payload.get("material")))
-            feature_rows = _structured_feature_rows(payload, page_url)
+            feature_rows = structured_feature_rows(payload, page_url)
             if feature_rows:
                 add_candidate(candidates, "features", feature_rows)
             if images:

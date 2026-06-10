@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+__all__ = ("drop_polluted_parent_scalar_axes", "sanitize_variant_axes")
+
 import logging
 import re
 from typing import Any
@@ -31,8 +33,6 @@ from app.services.shared.field_coerce import clean_text, coerce_field_value
 from app.services.extract.variant_normalization import backfill
 from app.services.extract.variant_normalization import deduplication
 from app.services.extract.variant_normalization import size_color_extraction
-
-__all__ = ("drop_polluted_parent_scalar_axes", "sanitize_variant_axes")
 
 logger = logging.getLogger(__name__)
 _REMAP_ELIGIBLE_AXES = frozenset({"state", "type", "style", "configuration"})
@@ -73,9 +73,7 @@ for rule in tuple(VARIANT_SEPARATE_DIMENSION_SIZE_RULES or ()):
             "Skipping invalid variant separate-dimension size rule",
             extra={"pattern": pattern},
         )
-variant_separate_dimension_size_rules = tuple(
-    variant_separate_dimension_size_rules_list
-)
+variant_separate_dimension_size_rules = tuple(variant_separate_dimension_size_rules_list)
 variant_title_stopwords = frozenset(
     clean_text(token).lower()
     for token in tuple(VARIANT_TITLE_STOPWORDS or ())
@@ -108,20 +106,14 @@ def _remap_generic_variant_axes(record: dict[str, Any]) -> None:
         if not inferred or inferred not in _CORE_AXES:
             continue
         # Check that no variant already has the target axis set.
-        if any(
-            clean_text(variant.get(inferred))
-            for variant in variants
-            if isinstance(variant, dict)
-        ):
+        if any(clean_text(variant.get(inferred)) for variant in variants if isinstance(variant, dict)):
             continue
         # Check that the parent record does not already have the target axis
         # populated — remapping would create conflicting parent/variant state.
         if clean_text(record.get(inferred)):
             continue
         # Remap: move values from generic axis to the inferred axis.
-        for variant in variants:
-            if not isinstance(variant, dict):
-                continue
+        for variant in (item for item in variants if isinstance(item, dict)):
             value = variant.pop(axis, None)
             if value not in (None, "", [], {}):
                 variant[inferred] = value
@@ -174,9 +166,7 @@ def _clean_variant_rows(record: dict[str, Any]) -> None:
         drop_row = False
         for field_name in public_variant_axis_fields:
             raw_axis_key = _variant_axis_source_key(cleaned_variant, field_name)
-            raw_axis_value = (
-                cleaned_variant.get(raw_axis_key) if raw_axis_key is not None else None
-            )
+            raw_axis_value = cleaned_variant.get(raw_axis_key) if raw_axis_key is not None else None
             if size_color_extraction._variant_size_axis_value_is_quantity_control(
                 field_name,
                 raw_axis_value,
@@ -205,10 +195,7 @@ def _clean_variant_rows(record: dict[str, Any]) -> None:
             cleaned_variant=cleaned_variant,
         ):
             cleaned_variant["url"] = variant.get("url")
-        if any(
-            cleaned_variant.get(field_name) not in (None, "", [], {})
-            for field_name in _VARIANT_REQUIRED_FIELDS
-        ):
+        if any(cleaned_variant.get(field_name) not in (None, "", [], {}) for field_name in _VARIANT_REQUIRED_FIELDS):
             cleaned_variants.append(cleaned_variant)
     if cleaned_variants:
         record["variants"] = cleaned_variants
@@ -248,11 +235,7 @@ def _enforce_variant_axis_contract(record: dict[str, Any]) -> None:
     variants = record.get("variants")
     if not isinstance(variants, list) or not variants:
         return
-    axisful_variants = [
-        variant
-        for variant in variants
-        if isinstance(variant, dict) and _variant_has_axis_value(variant)
-    ]
+    axisful_variants = [variant for variant in variants if isinstance(variant, dict) and _variant_has_axis_value(variant)]
     if axisful_variants:
         record["variants"] = axisful_variants
         record["variant_count"] = len(axisful_variants)
@@ -299,18 +282,14 @@ def _should_restore_original_variant_url(
 
 def _drop_polluted_parent_scalar_axes(record: dict[str, Any]) -> None:
     variants = record.get("variants")
-    if not isinstance(variants, list) or not any(
-        isinstance(variant, dict) for variant in variants
-    ):
+    if not isinstance(variants, list) or not any(isinstance(variant, dict) for variant in variants):
         return
     max_tokens = scalar_field_max_option_tokens
     for field_name in ("color", "size"):
         value = clean_text(record.get(field_name))
         if not value:
             continue
-        coerced_value = coerce_field_value(
-            field_name, value, clean_text(record.get("url"))
-        )
+        coerced_value = coerce_field_value(field_name, value, clean_text(record.get("url")))
         if not coerced_value:
             record.pop(field_name, None)
             continue
@@ -368,15 +347,10 @@ def _normalize_separate_dimension_size_rows(record: dict[str, Any]) -> None:
     rows = [variant for variant in variants if isinstance(variant, dict)]
     if not rows or any(clean_text(row.get("color")) for row in rows):
         return
-    size_values = [
-        clean_text(row.get("size")) for row in rows if clean_text(row.get("size"))
-    ]
+    size_values = [clean_text(row.get("size")) for row in rows if clean_text(row.get("size"))]
     if len(size_values) < 2:
         return
-    separate_family_hits = [
-        sum(1 for value in size_values if pattern.fullmatch(value))
-        for pattern, _label in variant_separate_dimension_size_rules
-    ]
+    separate_family_hits = [sum(1 for value in size_values if pattern.fullmatch(value)) for pattern, _label in variant_separate_dimension_size_rules]
     if sum(1 for count in separate_family_hits if count >= 2) < 2:
         return
     relabeled_rows: list[dict[str, Any]] = []

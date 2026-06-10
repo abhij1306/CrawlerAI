@@ -139,7 +139,7 @@ _NOISY_PRODUCT_ATTRIBUTE_KEYS = frozenset(
 _SMALL_NUMERIC_RE = re.compile(str(SMALL_NUMERIC_PATTERN), re.I)
 _TRACKING_PIXEL_RE = re.compile(str(TRACKING_PIXEL_PATTERN), re.I)
 _COLOR_KEYWORD_RE = re.compile(str(COLOR_KEYWORD_PATTERN), re.I)
-_VARIANT_COLOR_CODELIKE_TOKEN_RE = re.compile(
+_variant_color_codelike_token_re = re.compile(
     str(VARIANT_COLOR_CODELIKE_TOKEN_PATTERN), re.I
 )
 _SIZE_REJECT_TOKENS_NORMALIZED: frozenset[str] = frozenset(
@@ -506,7 +506,7 @@ def _strip_color_value_code_pollution(value: str) -> str:
     if not tail:
         return value
     if not all(
-        token.isdigit() or _VARIANT_COLOR_CODELIKE_TOKEN_RE.fullmatch(token)
+        token.isdigit() or _variant_color_codelike_token_re.fullmatch(token)
         for token in tail
     ):
         return value
@@ -1039,102 +1039,3 @@ def finalize_record(
 
 
 decimal_for_shared_price = _decimal_for_shared_price
-
-
-__all__ = [
-    "ADDITIONAL_IMAGES_FIELD",
-    "ALL_CANONICAL_FIELDS",
-    "AVAILABILITY_URL_MAP",
-    "BRAND_LIKE_FIELDS",
-    "CANDIDATE_AVAILABILITY_NOISE_PHRASES",
-    "CANONICAL_SCHEMAS",
-    "COLOR_KEYWORD_PATTERN",
-    "CURRENCY_CODE_PATTERN",
-    "CURRENCY_SYMBOL_PATTERN",
-    "DESIGN_SYSTEM_PUBLIC_FIELDS",
-    "DESIGN_SYSTEM_SURFACE",
-    "FIELD_ALIASES",
-    "IMAGE_FIELDS",
-    "INTEGER_VALUE_FIELDS",
-    "JOB_URL_HINTS",
-    "LISTING_UTILITY_TITLE_PATTERNS",
-    "LISTING_UTILITY_TITLE_REGEXES",
-    "LONG_TEXT_FIELDS",
-    "NOISY_PRODUCT_ATTRIBUTE_KEYS",
-    "OPTION_SCALAR_FIELDS",
-    "OPTION_VALUE_NOISE_WORDS",
-    "PRICE_RE",
-    "PRICE_VALUE_FIELDS",
-    "PRODUCT_URL_HINTS",
-    "PUBLIC_RECORD_ECOMMERCE_DROPPED_FIELDS",
-    "PUBLIC_RECORD_LEGACY_VARIANT_FIELDS",
-    "PUBLIC_RECORD_PRODUCT_TYPE_NOISE_TOKENS",
-    "RATING_RE",
-    "REVIEW_COUNT_RE",
-    "SIZE_REJECT_TOKENS",
-    "SMALL_NUMERIC_PATTERN",
-    "STRUCTURED_MULTI_FIELDS",
-    "STRUCTURED_OBJECT_FIELDS",
-    "STRUCTURED_OBJECT_LIST_FIELDS",
-    "TITLE_FIELD",
-    "TITLE_STRUCTURED_VALUE_KEYS",
-    "TRACKING_PIXEL_PATTERN",
-    "URL_FIELD",
-    "URL_FIELDS",
-    "VARIANT_OPTION_VALUE_SUFFIX_NOISE_PATTERNS",
-    "WEIGHT_FIELD",
-    "absolute_url",
-    "category_value_is_url_path",
-    "clean_record",
-    "clean_text",
-    "coerce_availability_dict",
-    "coerce_availability_value",
-    "coerce_barcode",
-    "coerce_brand_text",
-    "coerce_field_value",
-    "coerce_gender",
-    "coerce_identity_token_or_none",
-    "coerce_int",
-    "coerce_literal_text_list",
-    "coerce_location",
-    "coerce_long_text",
-    "coerce_price_from_dict",
-    "coerce_product_attributes",
-    "coerce_rating_value",
-    "coerce_sku",
-    "coerce_structured_scalar",
-    "coerce_text",
-    "coerce_url_field_value",
-    "decimal_for_shared_price",
-    "detail_path_hints",
-    "direct_record_to_surface_fields",
-    "exact_requested_field_key",
-    "expand_requested_fields",
-    "extract_currency_code",
-    "extract_price_text",
-    "extract_urls",
-    "finalize_record",
-    "get_surface_field_aliases",
-    "identity_internal_tokens",
-    "infer_brand_from_product_url",
-    "infer_brand_from_title_marker",
-    "is_blank",
-    "is_null_text",
-    "is_title_noise",
-    "is_url_field",
-    "normalize_field_key",
-    "normalize_record_fields",
-    "object_dict",
-    "object_list",
-    "price_text_is_negative",
-    "safe_int",
-    "salary_from_json",
-    "same_host",
-    "strip_html_tags",
-    "strip_record_tracking_params",
-    "strip_tracking_query_params",
-    "surface_alias_lookup",
-    "surface_fields",
-    "text_or_none",
-    "validate_record_for_surface",
-]

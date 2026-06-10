@@ -120,11 +120,12 @@ class AlertMCPServer:
 
 async def serve_stdio() -> None:
     server = AlertMCPServer()
+    writer = sys.stdout.write
     for line in sys.stdin:
         if not line.strip():
             continue
         response = await _handle_message(server, json.loads(line))
-        sys.stdout.write(json.dumps(response) + "\n")
+        writer(json.dumps(response) + "\n")
         sys.stdout.flush()
 
 

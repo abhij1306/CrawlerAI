@@ -112,7 +112,9 @@ export function MonitorSnapshotTable({
                   </a>
                 </TableCell>
                 {monitor.tracked_fields.map((field) => (
-                  <TableCell key={field}>{formatMonitorValue(record.field_values[field])}</TableCell>
+                  <TableCell key={field}>
+                    {formatMonitorValue(record.field_values[field])}
+                  </TableCell>
                 ))}
                 <TableCell>{formatRelativeTime(record.created_at)}</TableCell>
               </TableRow>

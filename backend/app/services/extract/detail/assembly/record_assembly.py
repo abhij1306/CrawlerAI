@@ -149,9 +149,10 @@ def _finalize_detail_record(
                 requested_page_url=requested_page_url,
                 soup=raw_soup,
                 js_state_objects=js_state_objects,
-            )
+        )
         drop_low_signal_zero_detail_price(record)
         record = finalize_record(record, surface=surface)
+    record.pop("_description_repaired_from_product_details", None)
     record["_confidence"] = score_record_confidence(
         record,
         surface=surface,

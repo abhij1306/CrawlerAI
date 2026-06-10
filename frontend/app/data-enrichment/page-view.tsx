@@ -19,9 +19,7 @@ import { Badge, Button } from '../../components/ui/primitives';
 import { buttonVariants } from '../../components/ui/button-variants';
 import { api } from '../../lib/api';
 import { EnrichmentStatus, EnrichmentTableLoading } from './enrichment-components';
-import type {
-  DataEnrichmentSourceRecordInput,
-} from '../../lib/api/types';
+import type { DataEnrichmentSourceRecordInput } from '../../lib/api/types';
 import { STORAGE_KEYS } from '../../lib/constants/storage-keys';
 import { cn } from '../../lib/utils';
 

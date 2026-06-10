@@ -6,6 +6,8 @@ from importlib import import_module
 import inspect
 import logging
 
+import httpx
+
 from app.services.adapters.base import AdapterResult, BaseAdapter, SelectolaxJobAdapter
 from app.services.acquisition_plan import AcquisitionPlan
 from app.services.platform_policy import (
@@ -194,7 +196,7 @@ async def try_blocked_adapter_recovery(
                     surface=plan.surface,
                     **recovery_kwargs,
                 )
-            except (RuntimeError, OSError, ValueError, TypeError) as exc:
+            except (httpx.HTTPError, RuntimeError, OSError, ValueError, TypeError) as exc:
                 logger.debug(
                     "%s recovery proxy failed for %s via %s: %s",
                     adapter.name,

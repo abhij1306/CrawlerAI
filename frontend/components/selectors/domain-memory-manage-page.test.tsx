@@ -144,8 +144,8 @@ describe('DomainMemoryManagePage', () => {
       ],
       meta: { page: 1, limit: 200, total: 1 },
     });
-    apiMock.updateSelector.mockImplementation(
-      (_id: number, payload: Record<string, unknown>) => Promise.resolve({
+    apiMock.updateSelector.mockImplementation((_id: number, payload: Record<string, unknown>) =>
+      Promise.resolve({
         id: 11,
         domain: 'example.com',
         surface: 'ecommerce_detail',
@@ -296,24 +296,26 @@ describe('DomainMemoryManagePage', () => {
   });
 
   it('reloads selectors for the resolved domain after workspace refresh', async () => {
-    apiMock.listSelectors.mockImplementation(({ domain }: { domain?: string }) => Promise.resolve([
-      {
-        id: domain === 'other.com' ? 22 : 11,
-        domain: domain ?? 'example.com',
-        surface: 'ecommerce_detail',
-        field_name: 'price',
-        css_selector: domain === 'other.com' ? '.other-price' : '.price',
-        xpath: null,
-        regex: null,
-        status: 'validated',
-        sample_value: '$19.99',
-        source: 'domain_recipe',
-        source_run_id: 101,
-        is_active: true,
-        created_at: new Date('2026-04-08T10:00:00Z').toISOString(),
-        updated_at: new Date('2026-04-08T10:00:00Z').toISOString(),
-      },
-    ]));
+    apiMock.listSelectors.mockImplementation(({ domain }: { domain?: string }) =>
+      Promise.resolve([
+        {
+          id: domain === 'other.com' ? 22 : 11,
+          domain: domain ?? 'example.com',
+          surface: 'ecommerce_detail',
+          field_name: 'price',
+          css_selector: domain === 'other.com' ? '.other-price' : '.price',
+          xpath: null,
+          regex: null,
+          status: 'validated',
+          sample_value: '$19.99',
+          source: 'domain_recipe',
+          source_run_id: 101,
+          is_active: true,
+          created_at: new Date('2026-04-08T10:00:00Z').toISOString(),
+          updated_at: new Date('2026-04-08T10:00:00Z').toISOString(),
+        },
+      ]),
+    );
 
     render(
       <TopBarProvider>

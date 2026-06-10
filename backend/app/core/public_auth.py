@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import hmac
 import logging
 from dataclasses import dataclass
@@ -37,10 +36,6 @@ def hash_api_key(value: str) -> str:
     ).hex()
 
 
-def legacy_hash_api_key(value: str) -> str:
-    return hashlib.sha256(value.encode("utf-8")).hexdigest()
-
-
 async def authenticate_public_api_key(
     session: AsyncSession,
     authorization: str | None,
@@ -58,10 +53,9 @@ async def authenticate_public_api_key(
         )
     raw_key = credentials.strip()
     key_hash = hash_api_key(raw_key)
-    legacy_key_hash = legacy_hash_api_key(raw_key)
     api_key = await session.scalar(
         select(ApiKey).where(
-            ApiKey.key_hash.in_([key_hash, legacy_key_hash]),
+            ApiKey.key_hash == key_hash,
             ApiKey.is_active.is_(True),
         )
     )
@@ -82,12 +76,9 @@ async def authenticate_public_api_key(
                 "message": "Inactive API user",
             },
         )
-    legacy_match = api_key.key_hash == legacy_key_hash
-    if legacy_match:
-        api_key.key_hash = key_hash
     if touch:
         api_key.last_used_at = datetime.now(UTC)
-    if legacy_match or touch:
+    if touch:
         try:
             await session.commit()
         except SQLAlchemyError:

@@ -77,6 +77,7 @@ _DETAIL_IMAGE_VIEW_CODE_RE = re.compile(
     getattr(DETAIL_IMAGE_VIEW_CODE_PATTERN, "pattern", DETAIL_IMAGE_VIEW_CODE_PATTERN),
     re.I,
 )
+_title_primary_overlap_min = 4
 
 
 def backfill_parent_image_from_variants(record: dict[str, Any]) -> None:
@@ -336,6 +337,15 @@ def detail_image_matches_primary_family(
     # ``therockerfalcon``).
     if _detail_image_family_tokens_disagree_on_colorway(
         primary_tokens, candidate_tokens
+    ):
+        return False
+    title_primary_tokens = primary_tokens & title_tokens
+    if (
+        title_primary_tokens
+        and candidate_tokens
+        and len(title_primary_tokens) >= _title_primary_overlap_min
+        and len(candidate_tokens & title_primary_tokens)
+        < min(_title_primary_overlap_min, len(title_primary_tokens))
     ):
         return False
     if (

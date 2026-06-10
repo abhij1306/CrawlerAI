@@ -16,7 +16,6 @@ function severityTone(severity: string): 'danger' | 'warning' | 'neutral' {
   return 'neutral';
 }
 
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

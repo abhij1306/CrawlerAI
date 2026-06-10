@@ -12,6 +12,16 @@ from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
+__all__ = [
+    "close_redis",
+    "get_redis",
+    "get_redis_pool",
+    "redis_fail_open",
+    "redis_failure_total",
+    "redis_is_enabled",
+    "schedule_fail_open",
+]
+
 _pool: ConnectionPool | None = None
 _client: Redis | None = None
 _redis_disabled_until: float = 0.0

@@ -14,9 +14,7 @@ from app.services.extract.detail.assembly.record_assembly import (
 from app.services.extract.field_candidates.variant_rows import (
     _structured_variants_from_product_payload,
 )
-from app.services.extract.field_candidates.structured_payloads import (
-    _structured_feature_rows,
-)
+from app.services.extract.field_candidates.structured_payloads import structured_feature_rows
 from app.services.extract.detail.variants.dom_options import variant_option_availability
 from app.services.extract.detail.variants.dom_availability import (
     reconcile_variant_availability_from_dom,
@@ -1482,7 +1480,7 @@ def test_extract_ecommerce_detail_category_drops_structured_product_crumb() -> N
 
 @pytest.mark.regression
 def test_extract_ecommerce_detail_keeps_structured_subscript_feature_label() -> None:
-    features = _structured_feature_rows(
+    features = structured_feature_rows(
         {
             "@type": "Product",
             "additionalProperty": [

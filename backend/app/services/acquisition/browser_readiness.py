@@ -247,7 +247,12 @@ async def probe_browser_readiness_impl(
 async def listing_card_signal_count_impl(page: Any, *, surface: str) -> int:
     if str(surface or "").strip().lower().startswith("ecommerce"):
         html = await get_page_html(page)
-        return _ecommerce_ready_card_count(analyze_html(html).soup)
+        analysis = analyze_html(html)
+        ready_count = _ecommerce_ready_card_count(analysis.soup)
+        if ready_count <= 0:
+            return 0 if _ecommerce_ready_card_candidates_present(analysis.soup) else await count_listing_cards(page, surface=surface)
+        selector_count = await count_listing_cards(page, surface=surface)
+        return max(ready_count, selector_count)
     return await count_listing_cards(
         page,
         surface=surface,
@@ -270,6 +275,17 @@ def _ecommerce_ready_card_count(soup: BeautifulSoup) -> int:
             if _ecommerce_node_has_product_evidence(node):
                 count += 1
     return count
+
+
+def _ecommerce_ready_card_candidates_present(soup: BeautifulSoup) -> bool:
+    for selector in _ECOMMERCE_READY_CARD_SELECTORS:
+        try:
+            candidate = soup.select_one(selector)
+        except Exception:
+            candidate = None
+        if candidate is not None:
+            return True
+    return False
 
 
 def _ecommerce_node_has_product_evidence(node: Any) -> bool:
@@ -314,7 +330,7 @@ def _ecommerce_node_has_product_evidence(node: Any) -> bool:
         return True
     if has_price and (has_link or has_media):
         return True
-    if product_signature and (has_link or has_media):
+    if product_signature and (text or has_link or has_media):
         return True
     return bool(has_detail_link and (has_price or product_signature or has_media))
 

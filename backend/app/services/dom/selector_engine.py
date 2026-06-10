@@ -122,10 +122,6 @@ def _compile_variant_option_child_drop_patterns() -> tuple[re.Pattern[str], ...]
 
 _VARIANT_OPTION_CHILD_DROP_RE = _compile_variant_option_child_drop_patterns()
 
-_candidate_cleanup_raw = EXTRACTION_RULES.get("candidate_cleanup")
-_CANDIDATE_CLEANUP = (
-    dict(_candidate_cleanup_raw) if isinstance(_candidate_cleanup_raw, dict) else {}
-)
 _PAGE_FILE_EXTENSIONS = (".asp", ".aspx", ".htm", ".html", ".jsp", ".php")
 
 

@@ -16,6 +16,15 @@ down_revision: str | None = "20260528_0008"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
+__all__ = [
+    "revision",
+    "down_revision",
+    "branch_labels",
+    "depends_on",
+    "upgrade",
+    "downgrade",
+]
+
 
 def upgrade() -> None:
     op.create_table(

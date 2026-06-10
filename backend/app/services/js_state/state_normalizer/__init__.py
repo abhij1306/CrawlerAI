@@ -35,7 +35,6 @@ def _normalize_variant(*args, **kwargs):
 
 __all__ = [
     "PRODUCT_FIELD_SPEC",
-    "_VARIANT_FIELD_SPEC",
     "_map_product_payload",
     "_normalize_variant",
     "map_configured_state_payload",

@@ -89,13 +89,13 @@ async def recover_browser_challenge(
         except asyncio.CancelledError:
             task.cancel()
             with suppress(asyncio.CancelledError):
-                await task
+                _ = await task
             raise
         except asyncio.TimeoutError:
             if not task.done():
                 task.cancel()
                 with suppress(asyncio.CancelledError):
-                    await task
+                    _ = await task
             return None
 
     while time.perf_counter() < deadline:
