@@ -7,6 +7,7 @@ import sys
 import weakref
 from collections.abc import MutableMapping
 from contextvars import ContextVar, Token
+from functools import lru_cache
 from typing import Any, cast
 from uuid import uuid4
 
@@ -27,7 +28,6 @@ __all__ = [
 ]
 
 _correlation_id_ctx: ContextVar[str | None] = ContextVar("correlation_id", default=None)
-_LOGGING_CONFIGURED = False
 _ASYNCIO_EXCEPTION_FILTERS: "weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, object]" = (
     weakref.WeakKeyDictionary()
 )
@@ -44,17 +44,14 @@ def _add_correlation_id(
     return event_dict
 
 
+@lru_cache(maxsize=1)
 def configure_logging() -> None:
-    global _LOGGING_CONFIGURED
-    if _LOGGING_CONFIGURED:
-        return
     if structlog is None:
         logging.basicConfig(
             level=logging.INFO,
             format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
             stream=sys.stdout,
         )
-        _LOGGING_CONFIGURED = True
         return
 
     shared_processors = cast(list[Any], [
@@ -98,7 +95,6 @@ def configure_logging() -> None:
         wrapper_class=structlog.stdlib.BoundLogger,
         cache_logger_on_first_use=True,
     )
-    _LOGGING_CONFIGURED = True
 
 
 def _is_known_windows_pipe_reset(

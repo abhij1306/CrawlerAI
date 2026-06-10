@@ -1573,7 +1573,7 @@ async def test_shared_browser_runtime_releases_pool_slot_when_cleanup_is_cancell
     await asyncio.wait_for(close_started.wait(), timeout=1.0)
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
-        await task
+        _ = await task
 
     async def _acquire_again() -> None:
         async with runtime.page(allow_storage_state=False):
@@ -1866,7 +1866,7 @@ async def test_shared_browser_runtime_bounds_context_slot_wait(
                 await asyncio.sleep(0)
     finally:
         release.set()
-        await first
+        _ = await first
 
     snapshot = runtime.snapshot()
     assert snapshot["active"] == 0
@@ -2027,7 +2027,7 @@ async def test_shared_browser_runtime_does_not_recycle_with_active_context(
     async with runtime.page():
         await asyncio.sleep(0)
     release.set()
-    await first
+    _ = await first
 
     assert "browser_closed" not in events
 

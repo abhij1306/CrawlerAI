@@ -398,6 +398,7 @@ async def crawls_logs_ws(
     cursor = after_id
     poll_interval_seconds = _log_stream_sleep_seconds()
     missing_run_snapshots = 0
+    log_run_id = int(run_id)
     try:
         while True:
             rows, next_run = await load_log_stream_snapshot(
@@ -413,7 +414,7 @@ async def crawls_logs_ws(
                 missing_run_snapshots += 1
                 logger.warning(
                     "Run logs snapshot did not reload run; retrying",
-                    extra={"run_id": run_id},
+                    extra={"run_id": log_run_id},
                 )
                 if missing_run_snapshots >= 3:
                     await websocket.close(code=1011, reason="Run snapshot unavailable")
@@ -431,7 +432,7 @@ async def crawls_logs_ws(
     except Exception as exc:
         logger.exception(
             "Run logs websocket stream failed",
-            extra={"run_id": run_id},
+            extra={"run_id": log_run_id},
         )
         try:
             await websocket.close(

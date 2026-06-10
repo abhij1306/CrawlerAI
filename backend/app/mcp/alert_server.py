@@ -125,7 +125,7 @@ async def serve_stdio() -> None:
         if not line.strip():
             continue
         response = await _handle_message(server, json.loads(line))
-        writer(json.dumps(response) + "\n")
+        writer(json.dumps(response, ensure_ascii=True, separators=(",", ":")) + "\n")
         sys.stdout.flush()
 
 

@@ -7,7 +7,6 @@ from . import _product_mapping as _product_mapping_module
 from . import _variant_mapping as _variant_mapping_module
 from ._common import (
     PRODUCT_FIELD_SPEC,
-    _VARIANT_FIELD_SPEC,
     glom,
     map_configured_state_payload,
 )

@@ -110,6 +110,22 @@ from app.services.shared.regex_patterns import compile_regex_patterns
 REVIEW_COUNT_RE = _REVIEW_COUNT_RE
 _decimal_for_shared_price = decimal_for_shared_price
 
+__all__ = (
+    "IMAGE_FIELDS",
+    "URL_FIELDS",
+    "PRICE_RE",
+    "absolute_url",
+    "clean_text",
+    "extract_price_text",
+    "extract_urls",
+    "infer_brand_from_product_url",
+    "infer_brand_from_title_marker",
+    "is_title_noise",
+    "same_host",
+    "strip_html_tags",
+    "strip_tracking_query_params",
+)
+
 PRODUCT_URL_HINTS = detail_path_hints("ecommerce_detail")
 JOB_URL_HINTS = detail_path_hints("job_detail")
 _FIELD_ALIASES = FIELD_ALIASES

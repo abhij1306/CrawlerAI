@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import time
 from collections.abc import Awaitable, Callable
 from typing import TypeVar
@@ -30,6 +31,12 @@ _redis_failure_total: int = 0
 _DISABLE_COOLDOWN_SECONDS = 30.0
 _BACKGROUND_TASKS: set[asyncio.Task[None]] = set()
 T = TypeVar("T")
+_LOG_EXTRA_TOKEN_RE = re.compile(r"[^A-Za-z0-9_.:-]+")
+
+
+def _safe_log_extra_token(value: object) -> str:
+    text = str(value or "")[:128]
+    return _LOG_EXTRA_TOKEN_RE.sub("_", text)
 
 def redis_is_enabled() -> bool:
     if not settings.redis_state_enabled:
@@ -46,7 +53,7 @@ def _temporarily_disable_redis(_exc: Exception) -> None:
         logger.warning(
             "Redis unavailable; disabling shared state for %.0fs",
             _DISABLE_COOLDOWN_SECONDS,
-            extra={"exception_type": type(_exc).__name__},
+            extra={"exception_type": _safe_log_extra_token(type(_exc).__name__)},
         )
         _last_disable_log_at = now
 
@@ -101,8 +108,8 @@ async def redis_fail_open(
             "Redis operation failed; continuing without shared state",
             exc_info=False,
             extra={
-                "exception_type": type(exc).__name__,
-                "operation_name": operation_name,
+                "exception_type": _safe_log_extra_token(type(exc).__name__),
+                "operation_name": _safe_log_extra_token(operation_name),
             },
         )
         return default
