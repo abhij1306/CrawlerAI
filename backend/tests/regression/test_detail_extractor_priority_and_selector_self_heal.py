@@ -696,8 +696,6 @@ def test_reduce_html_for_selector_synthesis_keeps_valid_content_focused_html() -
     """
 
     reduced = reduce_html_for_selector_synthesis(html)
-    from bs4 import BeautifulSoup
-
     parsed = BeautifulSoup(reduced, "html.parser")
     main = parsed.find("main", attrs={"id": "product-detail"})
 
