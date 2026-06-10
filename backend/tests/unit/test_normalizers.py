@@ -112,6 +112,13 @@ def test_normalize_decimal_price_rejects_negative_values() -> None:
     assert normalize_decimal_price("$-1") is None
     assert normalize_decimal_price("-$1") is None
     assert normalize_decimal_price("-USD100") is None
+    assert normalize_decimal_price("−1") is None
+    assert normalize_decimal_price("$−1") is None
+
+
+@pytest.mark.unit
+def test_normalize_integer_field_handles_unicode_minus_as_negative() -> None:
+    assert normalize_value("stock_quantity", "−123") == -123
 
 
 @pytest.mark.unit
@@ -292,6 +299,27 @@ def test_repair_ecommerce_detail_prunes_child_pdp_variants_from_adult_product() 
     assert record["variants"][0]["size"] == "8"
     assert record["variants"][0]["url"] == f"{url}?variant=adult"
     assert record["variant_count"] == 1
+
+
+@pytest.mark.unit
+def test_infer_shared_variant_color_drops_trailing_style_code_tokens() -> None:
+    record = {
+        "title": "Jordan Air Jordan 5 Retro 'White Metallic'",
+        "url": "https://www.dtlr.com/collections/men/products/jordan-air-jordan-5-retro-white-metallic-mf-white-hq7978-103",
+        "variants": [
+            {"size": "8"},
+            {"size": "8.5"},
+            {"size": "9"},
+        ],
+    }
+
+    hydration._hydrate_variant_axes(record)
+
+    assert [variant.get("color") for variant in record["variants"]] == [
+        "White",
+        "White",
+        "White",
+    ]
 
 
 @pytest.mark.unit
@@ -937,6 +965,22 @@ def test_normalize_variant_record_preserves_separate_suit_sizes_with_dimension_l
         {"size": "34/30", "style": "Pant"},
     ]
     assert record["variant_count"] == 4
+
+
+@pytest.mark.unit
+def test_normalize_variant_record_cleans_code_polluted_parent_color() -> None:
+    record = {
+        "title": "Jordan Air Jordan 5 Retro 'White Metallic'",
+        "color": "Mf White Hq7978 103",
+        "variants": [
+            {"size": "8", "color": "Mf White Hq7978 103"},
+            {"size": "8.5", "color": "Mf White Hq7978 103"},
+        ],
+    }
+
+    normalize_variant_record(record)
+
+    assert record["color"] == "White"
 
 
 @pytest.mark.unit

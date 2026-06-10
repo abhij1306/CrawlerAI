@@ -204,6 +204,7 @@ def _build_fetch_runtime_context(call: _FetchPageCall) -> _FetchRuntimeContext:
         host_memory_ttl_seconds=crawler_runtime_settings.coerce_host_memory_ttl_seconds(
             call.host_memory_ttl_seconds
         ),
+        prefer_browser=bool(call.prefer_browser),
         prefer_curl_handoff=bool(call.prefer_curl_handoff),
         handoff_cookie_engine=str(call.handoff_cookie_engine or "").strip().lower()
         or None,
@@ -783,6 +784,8 @@ async def _try_browser_http_handoff(
     if _hard_browser_requirement(context=context):
         return None
     if context.fetch_mode == "browser_only":
+        return None
+    if context.prefer_browser and not context.prefer_curl_handoff:
         return None
     if not (host_policy.prefer_browser or context.prefer_curl_handoff):
         return None

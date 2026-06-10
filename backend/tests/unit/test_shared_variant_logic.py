@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import json
+from types import SimpleNamespace
 
 import pytest
 
 from bs4 import BeautifulSoup
 
+from app.services.extract.detail.assembly import record_assembly
 from app.services.extract.detail.assembly.record_assembly import build_detail_record
 from app.services.extract import variant_choice_traversal
 from app.services.extract.variant_choice_traversal import (
@@ -42,6 +44,66 @@ variant_choice_container_is_overbroad = (
 
 def _next_f_script(fragment: str) -> str:
     return f"<script>self.__next_f.push([1,{json.dumps(fragment)}])</script>"
+
+
+@pytest.mark.unit
+def test_prepared_dom_variants_keeps_first_pass_signals_without_fallback_variants(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    rendered_soup = BeautifulSoup("<html><body>rendered</body></html>", "html.parser")
+    raw_soup = BeautifulSoup("<html><body>raw</body></html>", "html.parser")
+
+    def fake_extract_variants_from_dom(soup: BeautifulSoup, **kwargs: object) -> dict[str, object]:
+        del kwargs
+        if soup is rendered_soup:
+            return {"variant_axes": {"size": ["S"]}}
+        return {}
+
+    monkeypatch.setattr(
+        record_assembly,
+        "_extract_variants_from_dom",
+        fake_extract_variants_from_dom,
+    )
+
+    result = record_assembly._extract_prepared_dom_variants(
+        rendered_soup,
+        page_url="https://example.com/p",
+        prepared=SimpleNamespace(raw_soup=raw_soup, js_state_objects={}),
+    )
+
+    assert result == {"variant_axes": {"size": ["S"]}}
+
+
+@pytest.mark.unit
+def test_prepared_dom_variants_merges_first_pass_metadata_into_fallback_variants(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    rendered_soup = BeautifulSoup("<html><body>rendered</body></html>", "html.parser")
+    raw_soup = BeautifulSoup("<html><body>raw</body></html>", "html.parser")
+
+    def fake_extract_variants_from_dom(soup: BeautifulSoup, **kwargs: object) -> dict[str, object]:
+        del kwargs
+        if soup is rendered_soup:
+            return {"variant_axes": {"size": ["S"]}, "source": "rendered"}
+        return {"variants": [{"size": "S"}]}
+
+    monkeypatch.setattr(
+        record_assembly,
+        "_extract_variants_from_dom",
+        fake_extract_variants_from_dom,
+    )
+
+    result = record_assembly._extract_prepared_dom_variants(
+        rendered_soup,
+        page_url="https://example.com/p",
+        prepared=SimpleNamespace(raw_soup=raw_soup, js_state_objects={}),
+    )
+
+    assert result == {
+        "variant_axes": {"size": ["S"]},
+        "source": "rendered",
+        "variants": [{"size": "S"}],
+    }
 
 
 @pytest.mark.unit

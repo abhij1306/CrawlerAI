@@ -635,23 +635,23 @@ def _has_extractable_dom_detail_signals(analysis: HtmlAnalysis) -> bool:
         detail_hint_hits += 1
     has_product_anchor = bool(
         analysis.soup.find(
-            attrs={
+            attrs=cast(Any, {
                 "content": re.compile(r"\bproduct\b", re.I),
                 "property": re.compile(r"og:type", re.I),
-            }
+            })
         )
     )
     has_price_anchor = bool(
         analysis.soup.find(
-            attrs={
+            attrs=cast(Any, {
                 "content": re.compile(
                     r"(?:[$€£₹]\s*)?\d{1,3}(?:,\d{3})*(?:[.,]\d{1,2})?|(?:[$€£₹]\s*)?\d+(?:[.,]\d{1,2})?",
                     re.I,
                 ),
                 "property": re.compile(r"(?:product:)?price", re.I),
-            }
+            })
         )
-        or analysis.soup.find(attrs={"itemprop": re.compile(r"price", re.I)})
+        or analysis.soup.find(attrs=cast(Any, {"itemprop": re.compile(r"price", re.I)}))
         or re.search(r"(?:[$€£₹]\s*)\d+(?:[.,]\d{2})?", analysis.normalized_text)
     )
     if (

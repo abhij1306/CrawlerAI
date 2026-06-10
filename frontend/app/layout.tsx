@@ -4,7 +4,7 @@ import Script from 'next/script';
 import './globals.css';
 
 // Next.js App Router root layout; invoked by file-system routing.
-import { Bricolage_Grotesque, Ubuntu_Mono, Public_Sans } from 'next/font/google';
+import { Bricolage_Grotesque, Martian_Mono, Public_Sans } from 'next/font/google';
 
 import { AppShell } from '../components/layout/app-shell';
 import { QueryProvider } from '../components/ui/query-provider';
@@ -23,9 +23,9 @@ const displayFont = Bricolage_Grotesque({
   display: 'swap',
 });
 
-const monoFont = Ubuntu_Mono({
+const monoFont = Martian_Mono({
   subsets: ['latin'],
-  weight: ['400', '700'],
+  weight: ['300', '400', '500'],
   variable: '--font-mono-source',
   display: 'swap',
 });

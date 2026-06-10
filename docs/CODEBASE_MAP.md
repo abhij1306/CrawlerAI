@@ -29,6 +29,7 @@ If a file is not listed, assume it is a helper under a listed owner.
 | `product_intelligence.py` | Product matching jobs, source products, candidates, match review |
 | `data_enrichment.py` | On-demand ecommerce detail enrichment jobs and enriched product rows |
 | `ucp_audit.py` | AI Discoverability audit job creation, history, detail, and report exports |
+| `page_audit.py` | Single-page technical audit job creation, detail, and JSON/Markdown report exports |
 | `monitors.py` | Product monitor CRUD, run-now dispatch, history/events/snapshot, and exports |
 | `alerts.py` | Agentic Delta Engine alert CRUD, test poll, history, and webhook delivery log |
 | `public_alerts.py` | API-key authenticated `/api/v1/alerts` public alert surface |
@@ -69,6 +70,7 @@ If a file is not listed, assume it is a helper under a listed owner.
 | `ProductIntelligenceJob`, `ProductIntelligenceSourceProduct`, `ProductIntelligenceCandidate`, `ProductIntelligenceMatch` | `product_intelligence.py` | web product matching and price comparison jobs |
 | `DataEnrichmentJob`, `EnrichedProduct` | `data_enrichment.py` | on-demand ecommerce detail enrichment jobs and derived enriched product rows |
 | `UCPAuditJob`, `UCPAuditPageResult`, `UCPAuditReport` | `ucp_audit.py` | persisted AI Discoverability audit jobs, sampled page payloads, and report artifacts |
+| `PageAuditJob`, `PageAuditResult` | `page_audit.py` | persisted single-page technical audit jobs and deterministic report artifacts |
 | `MonitorJob`, `MonitorEvent`, `MonitorSnapshot`, `MonitorSnapshotRecord`, `MonitorURLState`, `MonitorWebhookDelivery` | `monitor.py` | recurring crawl monitors, agentic alerts, field-level events, snapshots, URL pre-check state, and webhook delivery logs |
 | `InAppNotification` | `notification.py` | user-visible monitor change alerts and read state |
 | `PlaygroundSession` | `playground.py` | guided session state, selected URLs, and downstream run/job references |
@@ -76,7 +78,7 @@ If a file is not listed, assume it is a helper under a listed owner.
 
 ### `schemas/` — request and response DTOs
 
-`crawl.py`, `user.py`, `llm.py`, `selectors.py`, `data_enrichment.py`, `ucp_audit.py`, `playground.py`, `common.py`
+`crawl.py`, `user.py`, `llm.py`, `selectors.py`, `data_enrichment.py`, `ucp_audit.py`, `page_audit.py`, `playground.py`, `common.py`
 
 Public API schemas live in `api_key.py` and `public_api.py`.
 
@@ -96,6 +98,7 @@ Public API schemas live in `api_key.py` and `public_api.py`.
 | `../data/product_intelligence/*` | Product Intelligence brand registry data, including Belk brand and exclusive/private-label lists |
 | `data_enrichment/service.py` | On-demand enrichment job orchestration and persistence for ecommerce detail records |
 | `ucp_audit/catalog_crawl.py`, `ucp_audit/catalog_checks.py`, `ucp_audit/*` | AI Discoverability catalog sampling, signal checks, scoring, reporting, repair roadmap, and job orchestration; dormant UCP protocol files remain here |
+| `page_audit/analysis.py`, `page_audit/service.py`, `page_audit/reporting.py` | Deterministic source/rendered-DOM technical checks, dual-fetch job orchestration, persistence, and report rendering |
 | `monitor_service.py`, `monitor_scheduler_service.py`, `monitor_async_loop.py`, `monitor_change_detection.py`, `monitor_retention.py`, `monitor_alert_service.py` | Product monitoring CRUD support, due-job scheduling, dev scheduler loop, post-run diffing, retention, and in-app alerts |
 | `alert_service.py`, `monitor_condition.py`, `monitor_webhook_service.py` | Agentic Delta Engine alert wrappers, sandboxed condition evaluation, and webhook dispatch/logging |
 | `playground_service.py` | Guided playground session owner that creates normal crawl runs and downstream jobs from one session |
@@ -263,6 +266,7 @@ Canonical config owners:
 | `config/data_enrichment.py` | data enrichment statuses, limits, and taxonomy file path |
 | `config/monitor_settings.py` | monitor statuses, priorities, scheduler limits, retention limits, and HEAD pre-check constants |
 | `config/public_api.py` | public API key prefixes, envelopes, error codes, rate limits, extraction caps, MCP env names, and static capabilities |
+| `config/page_audit.py` | page-audit statuses, fetch policy, thresholds, selectors, signals, and finding copy |
 | `config/aid_score.py` | AI Discoverability dimension IDs, finding codes, weights, crawl limits, and report constants |
 
 ### `mcp/` — local agent tool adapters

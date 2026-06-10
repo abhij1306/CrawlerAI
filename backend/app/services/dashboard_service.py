@@ -25,6 +25,7 @@ from app.models.product_intelligence import (
     ProductIntelligenceMatch,
     ProductIntelligenceSourceProduct,
 )
+from app.models.page_audit import PageAuditJob, PageAuditResult
 from app.models.review import ReviewPromotion
 from app.models.ucp_audit import UCPAuditJob, UCPAuditPageResult, UCPAuditReport
 from app.models.llm import LLMCostLog
@@ -123,6 +124,7 @@ async def reset_application_data(session: AsyncSession) -> dict:
         intelligence_reset = await _reset_product_intelligence_db(session)
         enrichment_reset = await _reset_data_enrichment_db(session)
         ucp_audit_reset = await _reset_ucp_audit_db(session)
+        page_audit_reset = await _reset_page_audit_db(session)
     return {
         **crawl_reset,
         **await _reset_crawl_runtime_state(),
@@ -130,6 +132,7 @@ async def reset_application_data(session: AsyncSession) -> dict:
         **intelligence_reset,
         **enrichment_reset,
         **ucp_audit_reset,
+        **page_audit_reset,
     }
 
 
@@ -227,6 +230,18 @@ async def _reset_ucp_audit_db(session: AsyncSession) -> dict:
         ],
     )
     await _reset_ucp_audit_tables(session)
+    return counts
+
+
+async def _reset_page_audit_db(session: AsyncSession) -> dict:
+    counts = await _reset_bucket_db(
+        session,
+        [
+            ("page_audit_jobs_deleted", PageAuditJob),
+            ("page_audit_results_deleted", PageAuditResult),
+        ],
+    )
+    await _reset_page_audit_tables(session)
     return counts
 
 
@@ -365,6 +380,15 @@ async def _reset_ucp_audit_tables(session: AsyncSession) -> None:
         UCPAuditReport.__tablename__,
         UCPAuditPageResult.__tablename__,
         UCPAuditJob.__tablename__,
+    )
+
+
+async def _reset_page_audit_tables(session: AsyncSession) -> None:
+    await _reset_bucket_tables(
+        session,
+        [PageAuditResult, PageAuditJob],
+        PageAuditResult.__tablename__,
+        PageAuditJob.__tablename__,
     )
 
 

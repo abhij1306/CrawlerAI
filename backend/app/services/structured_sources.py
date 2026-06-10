@@ -4,7 +4,7 @@ import json
 import logging
 import re
 from functools import lru_cache
-from typing import Any
+from typing import Any, cast
 
 from bs4 import BeautifulSoup
 from app.services.config.extraction_rules import (
@@ -467,7 +467,7 @@ def _extract_extruct_rows(html: str, page_url: str, *, syntax: str) -> list[dict
 
 def _parse_microdata_fallback(soup: BeautifulSoup, page_url: str) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
-    for node in soup.find_all(attrs={"itemscope": True}):
+    for node in soup.find_all(attrs=cast(Any, {"itemscope": True})):
         if _has_itemscope_ancestor(node):
             continue
         parsed = _parse_microdata_node(node, page_url)

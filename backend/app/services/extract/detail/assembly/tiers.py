@@ -151,6 +151,7 @@ class DetailTierExecutor:
                 requested_fields=inputs.requested_fields,
                 requested_page_url=prepared.state.requested_page_url,
                 soup=prepared.soup,
+                raw_soup=prepared.raw_soup,
                 js_state_objects=prepared.js_state_objects,
                 early_exit="js_state",
             )
@@ -165,6 +166,7 @@ class DetailTierExecutor:
             requested_fields=inputs.requested_fields,
             requested_page_url=prepared.state.requested_page_url,
             soup=prepared.soup,
+            raw_soup=prepared.raw_soup,
             js_state_objects=prepared.js_state_objects,
             early_exit=None,
         )

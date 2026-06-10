@@ -702,6 +702,14 @@ def test_model_bootstrap_registers_domain_memory_tables() -> None:
 
 
 @pytest.mark.regression
+def test_model_bootstrap_registers_page_audit_tables() -> None:
+    assert {
+        "page_audit_jobs",
+        "page_audit_results",
+    }.issubset(Base.metadata.tables)
+
+
+@pytest.mark.regression
 def test_new_service_level_config_constants_are_not_added_outside_config() -> None:
     offenders: list[str] = []
     for path in SERVICES_ROOT.rglob("*.py"):

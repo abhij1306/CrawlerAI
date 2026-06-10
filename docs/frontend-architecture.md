@@ -51,6 +51,8 @@ App routes under `frontend/app`:
 Important route behavior:
 
 - `/crawl` switches between config mode and run workspace based on `run_id`
+- `/crawl?tool=audit` opens the Crawl Studio page-audit mode; completed runs can prefill its URL
+- `/crawl?audit_job_id={id}` displays page-audit results inside Crawl Studio
 - `/crawl/category`, `/crawl/pdp`, and `/crawl/bulk` are route shims into `/crawl?...`
 - `/runs/[run_id]` routes back into the crawl workspace
 
@@ -169,6 +171,7 @@ Primary files:
 Responsibilities:
 
 - guided playground flow for URL intake, product discovery, product selection, PDP extraction, pipeline launch, and unified results
+- single-page source/rendered-DOM technical audit workspace with deterministic checks and JSON/Markdown exports
 - dashboard metrics and recent runs
 - run history
 - monitor/alert list, creation, detail, event, history, current snapshot inspection, and webhook delivery log
@@ -214,6 +217,7 @@ The frontend currently uses live backend routes for:
 - users: `/api/users`
 - llm: `/api/llm/providers`, `/api/llm/configs`, `/api/llm/test-connection`, `/api/llm/cost-log`
 - ucp audit: `/api/ucp-audit/jobs`, `/api/ucp-audit/jobs/{id}`, `/api/ucp-audit/jobs/{id}/export.json`, `/api/ucp-audit/jobs/{id}/export.md`
+- page audit: `/api/page-audit/jobs`, `/api/page-audit/jobs/{id}`, `/api/page-audit/jobs/{id}/export.json`, `/api/page-audit/jobs/{id}/export.md`
 - jobs: `/api/jobs/active`
 - monitors: `/api/monitors`, `/api/monitors/{id}`, `/api/monitors/{id}/run/now`, `/api/monitors/{id}/events`, `/api/monitors/{id}/history`, `/api/monitors/{id}/snapshot/current`
 - alerts: `/api/alerts`, `/api/alerts/{id}`, `/api/alerts/{id}/test`, `/api/alerts/{id}/history`, `/api/alerts/{id}/deliveries`

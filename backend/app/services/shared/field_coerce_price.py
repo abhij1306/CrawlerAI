@@ -73,7 +73,10 @@ def price_text_is_negative(value: object) -> bool:
     if not text:
         return False
     marker = rf"(?:{CURRENCY_SYMBOL_PATTERN}|\b(?:{CURRENCY_CODE_PATTERN})\b)?"
-    return re.match(rf"^\s*-\s*{marker}\s*\d", text, re.I) is not None
+    return (
+        re.match(rf"^\s*[-−]\s*{marker}\s*\d", text, re.I) is not None
+        or re.match(rf"^\s*{marker}\s*[-−]\s*\d", text, re.I) is not None
+    )
 
 
 def _price_candidate_has_money_signal(value: str) -> bool:

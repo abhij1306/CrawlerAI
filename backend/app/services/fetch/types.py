@@ -31,6 +31,7 @@ class FetchRuntimeContext:
     capture_screenshot: bool = False
     forced_browser_engine: str | None = None
     host_memory_ttl_seconds: int = 0
+    prefer_browser: bool = False
     prefer_curl_handoff: bool = False
     handoff_cookie_engine: str | None = None
     locality_profile: dict[str, object] = field(default_factory=dict)

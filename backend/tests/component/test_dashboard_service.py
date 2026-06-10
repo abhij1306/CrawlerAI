@@ -22,6 +22,7 @@ from app.models.product_intelligence import (
 from app.models.crawl_run import CrawlLog, CrawlRecord, CrawlRun
 from app.models.review import ReviewPromotion
 from app.models.ucp_audit import UCPAuditJob, UCPAuditPageResult, UCPAuditReport
+from app.models.page_audit import PageAuditJob, PageAuditResult
 from app.models.llm import LLMCostLog
 from app.models.user import User
 from app.services.acquisition.host_protection_memory import (
@@ -390,6 +391,50 @@ async def test_reset_application_data_clears_ucp_audit_rows(
     assert result["ucp_audit_page_results_deleted"] == 1
     assert result["ucp_audit_reports_deleted"] == 1
     for model in (UCPAuditReport, UCPAuditPageResult, UCPAuditJob):
+        assert (await db_session.execute(select(model))).scalars().all() == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_reset_application_data_clears_page_audit_rows(
+    db_session: AsyncSession,
+    test_user,
+    workspace_tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.services import dashboard_service
+
+    artifacts_dir = workspace_tmp_path / "artifacts"
+    cookies_dir = workspace_tmp_path / "cookies"
+    artifacts_dir.mkdir(parents=True, exist_ok=True)
+    cookies_dir.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(dashboard_service.settings, "artifacts_dir", artifacts_dir)
+    monkeypatch.setattr(dashboard_service.settings, "cookie_store_dir", cookies_dir)
+
+    job = PageAuditJob(
+        user_id=test_user.id,
+        url="https://example.com/products/widget",
+        context="auto",
+        options={},
+        summary={},
+    )
+    db_session.add(job)
+    await db_session.flush()
+    db_session.add(
+        PageAuditResult(
+            job_id=job.id,
+            url=job.url,
+            report_json={"url": job.url},
+            markdown_report="# Page Audit",
+        )
+    )
+    await db_session.commit()
+
+    result = await reset_application_data(db_session)
+
+    assert result["page_audit_jobs_deleted"] == 1
+    assert result["page_audit_results_deleted"] == 1
+    for model in (PageAuditResult, PageAuditJob):
         assert (await db_session.execute(select(model))).scalars().all() == []
 
 

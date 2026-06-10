@@ -6,6 +6,7 @@ from typing import Any
 from app.services.config.extraction_rules import (
     GENDER_POSSESSIVE_PATTERN,
     STANDARD_SIZE_VALUES,
+    VARIANT_URL_SUFFIX_CODE_PREFIX_MAX_LEN,
     VARIANT_SKU_SIZE_SUFFIX_PATTERNS,
 )
 from app.services.extract.variant_normalization import size_color_extraction
@@ -32,6 +33,12 @@ variant_sku_size_suffix_patterns = compile_regex_patterns(
     VARIANT_SKU_SIZE_SUFFIX_PATTERNS or (),
     preserve_compiled=True,
 )
+try:
+    variant_url_suffix_code_prefix_max_len = max(
+        1, int(VARIANT_URL_SUFFIX_CODE_PREFIX_MAX_LEN)
+    )
+except (TypeError, ValueError):
+    variant_url_suffix_code_prefix_max_len = 3
 
 
 def _hydrate_variant_axes(record: dict[str, Any]) -> None:
@@ -198,6 +205,24 @@ def _record_url_suffix_after_title(record: dict[str, Any]) -> str:
     cleaned_tokens = clean_color_tokens(suffix_tokens)
     if not cleaned_tokens:
         return ""
+    while cleaned_tokens and _token_looks_like_code(cleaned_tokens[-1]):
+        cleaned_tokens = cleaned_tokens[:-1]
+    while cleaned_tokens and cleaned_tokens[-1].isdigit():
+        cleaned_tokens = cleaned_tokens[:-1]
+    if not cleaned_tokens:
+        return ""
+    while (
+        len(cleaned_tokens) > 1
+        and len(cleaned_tokens[0]) <= variant_url_suffix_code_prefix_max_len
+        and cleaned_tokens[0].isalpha()
+        and cleaned_tokens[0].casefold()
+        not in size_color_extraction.variant_color_hint_words
+        and any(
+            token.casefold() in size_color_extraction.variant_color_hint_words
+            for token in cleaned_tokens[1:]
+        )
+    ):
+        cleaned_tokens = cleaned_tokens[1:]
     # SKU/style codes mix letters and digits inside a single token
     # (e.g. ``cl28517s``, ``vn000e9tbpg``). Real color slugs are
     # alphabetic words such as ``tuke-river`` or ``natural-black``.

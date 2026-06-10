@@ -4,7 +4,7 @@ import type { Route } from 'next';
 import { useRouter } from 'next/navigation';
 import { startTransition, useEffect, useLayoutEffect, useMemo, useReducer, useRef } from 'react';
 import { cn } from '../../lib/utils';
-import { InlineAlert, PageHeader, TabBar } from '../ui/patterns';
+import { InlineAlert, TabBar } from '../ui/patterns';
 import { Badge, Button, Dropdown, Card, Input, Textarea, Toggle, Tooltip } from '../ui/primitives';
 import { api } from '../../lib/api';
 import type { CrawlConfig, CrawlDomain, DomainRunProfile } from '../../lib/api/types';
@@ -65,7 +65,9 @@ import {
   type TraversalDropdownValue,
 } from './crawl-config-logic';
 import { resolveAutoSurface } from './auto-surface';
+import { CrawlAuditMode, CrawlWorkspaceHeader } from './crawl-audit-mode';
 import { CrawlActionButtons } from './crawl-action-buttons';
+import { testCrawlFieldRow } from './crawl-field-test';
 import {
   ADVANCED_COLUMN_CLASS,
   ADVANCED_CONTROL_ROW_CLASS,
@@ -89,6 +91,8 @@ export function CrawlConfigScreen({
   requestedTab,
   requestedCategoryMode,
   requestedPdpMode,
+  requestedWorkspace = 'crawl',
+  requestedUrl = '',
 }: Readonly<CrawlConfigScreenProps>) {
   const router = useRouter();
   const { routeState, dispatchRoute, bulkPrefillRouteSyncGuardRef } = useCrawlRouteState({
@@ -110,7 +114,7 @@ export function CrawlConfigScreen({
   } = crawlConfigForm.useCrawlConfig();
   const [localState, dispatchLocal] = useReducer(
     crawlConfigLocalReducer,
-    undefined,
+    requestedWorkspace,
     buildInitialLocalState,
   );
   const {
@@ -136,6 +140,7 @@ export function CrawlConfigScreen({
     fieldRowMessages,
     activeFieldTestId,
     configError,
+    workspaceMode,
   } = localState;
   const localDispatch = useMemo(() => bindCrawlConfigLocalDispatch(dispatchLocal), [dispatchLocal]);
   const profileLookupRequestRef = useRef(0);
@@ -173,6 +178,7 @@ export function CrawlConfigScreen({
   // Adjust state during render when the lookup key changes, instead of in an
   // effect. This avoids an extra render with stale UI between commits. See
   // https://react.dev/learn/you-might-not-need-an-effect#adjusting-some-state-when-a-prop-changes
+  /* eslint-disable react-hooks/refs -- Existing render-time state synchronization uses refs as change guards. */
   if (lastProfileKeyRef.current !== profileLookupKey) {
     profileDirtyRef.current = false;
     lastProfileKeyRef.current = profileLookupKey;
@@ -190,11 +196,20 @@ export function CrawlConfigScreen({
     localDispatch.setFieldRowMessages({});
     setFieldRows((current) => stripDomainMemoryFieldRows(current));
   }
+  /* eslint-enable react-hooks/refs */
 
+  useEffect(() => {
+    if (requestedWorkspace === 'audit' && requestedUrl) {
+      setValue('targetUrl', requestedUrl);
+    }
+  }, [requestedUrl, requestedWorkspace, setValue]);
   useEffect(() => {
     profileLookupTargetUrlRef.current = profileLookupKey ? targetUrl.trim() : '';
   }, [profileLookupKey, targetUrl]);
   useEffect(() => {
+    if (workspaceMode === 'audit') {
+      return;
+    }
     const routeMode = crawlTab === 'category' ? requestedCategoryMode : requestedPdpMode;
     if (
       bulkPrefillRouteSyncGuardRef.current ||
@@ -216,6 +231,7 @@ export function CrawlConfigScreen({
     requestedCategoryMode,
     requestedPdpMode,
     requestedTab,
+    workspaceMode,
   ]);
 
   useEffect(() => {
@@ -566,53 +582,16 @@ export function CrawlConfigScreen({
   }
 
   async function testFieldRow(row: FieldRow) {
-    const target = targetUrl.trim();
-    if (!target) {
-      localDispatch.setFieldRowMessages((current) => ({
-        ...current,
-        [row.id]: { tone: 'warning', message: 'Enter a target URL before testing selectors.' },
-      }));
-      return;
-    }
-    if (!row.cssSelector.trim() && !row.xpath.trim() && !row.regex.trim()) {
-      localDispatch.setFieldRowMessages((current) => ({
-        ...current,
-        [row.id]: {
-          tone: 'warning',
-          message: 'Add a CSS selector, XPath, or regex before testing.',
-        },
-      }));
-      return;
-    }
-    localDispatch.setActiveFieldTestId(row.id);
-    try {
-      const response = await api.testSelector({
-        url: target,
-        css_selector: row.cssSelector.trim() || undefined,
-        xpath: row.xpath.trim() || undefined,
-        regex: row.regex.trim() || undefined,
-      });
-      localDispatch.setFieldRowMessages((current) => ({
-        ...current,
-        [row.id]: {
-          tone: response.count > 0 ? 'success' : 'warning',
-          message:
-            response.count > 0
-              ? `Matched ${response.count} result${response.count === 1 ? '' : 's'}${response.matched_value ? `: ${response.matched_value}` : '.'}`
-              : 'No matches.',
-        },
-      }));
-    } catch (error) {
-      localDispatch.setFieldRowMessages((current) => ({
-        ...current,
-        [row.id]: {
-          tone: 'danger',
-          message: error instanceof Error ? error.message : 'Selector test failed.',
-        },
-      }));
-    } finally {
-      localDispatch.setActiveFieldTestId(null);
-    }
+    await testCrawlFieldRow({
+      row,
+      targetUrl,
+      setActiveId: localDispatch.setActiveFieldTestId,
+      setMessage: (rowId, tone, message) =>
+        localDispatch.setFieldRowMessages((current) => ({
+          ...current,
+          [rowId]: { tone, message },
+        })),
+    });
   }
 
   async function saveToDomainMemory() {
@@ -704,13 +683,27 @@ export function CrawlConfigScreen({
     !isSubmitting &&
     !designSubmitting;
   const canSubmitDesign = targetUrl.trim().length > 0 && !isSubmitting && !designSubmitting;
+  function selectWorkspace(value: string) {
+    if (value !== 'crawl' && value !== 'audit') return;
+    localDispatch.setWorkspaceMode(value);
+    window.history.replaceState(
+      null,
+      '',
+      value === 'audit' ? '/crawl?tool=audit' : `/crawl?module=${crawlTab}&mode=${activeMode}`,
+    );
+  }
+  if (workspaceMode === 'audit')
+    return (
+      <CrawlAuditMode
+        targetUrl={targetUrl}
+        onTargetUrlChange={(value) => setValue('targetUrl', value)}
+        onWorkspaceChange={selectWorkspace}
+      />
+    );
 
   return (
     <div className="page-stack gap-4">
-      <PageHeader
-        title="Crawl Studio"
-        description="Configure and launch crawls across product listings and detail pages."
-      />
+      <CrawlWorkspaceHeader value="crawl" onChange={selectWorkspace} />
       <form
         className="grid gap-5 xl:grid-cols-[minmax(0,1.45fr)_380px] xl:items-stretch"
         onSubmit={(event) => void handleSubmit(startCrawl)(event)}
@@ -1098,6 +1091,15 @@ export function CrawlConfigScreen({
                               ...current.fetch_profile,
                               fetch_mode: next,
                             },
+                            acquisition_contract:
+                              next === 'browser_only'
+                                ? {
+                                    ...current.acquisition_contract,
+                                    prefer_browser: true,
+                                    prefer_curl_handoff: false,
+                                    handoff_cookie_engine: 'auto',
+                                  }
+                                : current.acquisition_contract,
                           }));
                         }
                       }}
@@ -1121,6 +1123,9 @@ export function CrawlConfigScreen({
                             acquisition_contract: {
                               ...current.acquisition_contract,
                               preferred_browser_engine: next,
+                              prefer_browser: next === 'auto' ? false : true,
+                              prefer_curl_handoff: false,
+                              handoff_cookie_engine: next === 'auto' ? 'auto' : next,
                             },
                           }));
                         }

@@ -27,6 +27,7 @@ from app.services.config.extraction_rules import (
     STRUCTURED_OBJECT_LIST_FIELDS,
     TRACKING_PIXEL_PATTERN,
     URL_FIELDS as URL_FIELDS,
+    VARIANT_COLOR_CODELIKE_TOKEN_PATTERN,
     VARIANT_OPTION_VALUE_SUFFIX_NOISE_PATTERNS,
 )
 from app.services.config.field_mappings import (
@@ -138,6 +139,9 @@ _NOISY_PRODUCT_ATTRIBUTE_KEYS = frozenset(
 _SMALL_NUMERIC_RE = re.compile(str(SMALL_NUMERIC_PATTERN), re.I)
 _TRACKING_PIXEL_RE = re.compile(str(TRACKING_PIXEL_PATTERN), re.I)
 _COLOR_KEYWORD_RE = re.compile(str(COLOR_KEYWORD_PATTERN), re.I)
+_VARIANT_COLOR_CODELIKE_TOKEN_RE = re.compile(
+    str(VARIANT_COLOR_CODELIKE_TOKEN_PATTERN), re.I
+)
 _SIZE_REJECT_TOKENS_NORMALIZED: frozenset[str] = frozenset(
     str(token).strip().lower()
     for token in tuple(SIZE_REJECT_TOKENS or ())
@@ -485,6 +489,46 @@ def _color_value_is_opaque_code(value: str) -> bool:
     return True
 
 
+def _strip_color_value_code_pollution(value: str) -> str:
+    if not value or not any(char.isdigit() for char in value):
+        return value
+    tokens = re.findall(r"[A-Za-z0-9]+", value)
+    if len(tokens) < 2:
+        return value
+    color_indexes = [
+        index
+        for index, token in enumerate(tokens)
+        if _COLOR_KEYWORD_RE.fullmatch(token)
+    ]
+    if not color_indexes:
+        return value
+    tail = tokens[color_indexes[-1] + 1 :]
+    if not tail:
+        return value
+    if not all(
+        token.isdigit() or _VARIANT_COLOR_CODELIKE_TOKEN_RE.fullmatch(token)
+        for token in tail
+    ):
+        return value
+    color_prefix = [
+        token
+        for token in tokens[: color_indexes[0]]
+        if not _color_prefix_token_is_code_like(token)
+    ]
+    color_tokens = tokens[color_indexes[0] : color_indexes[-1] + 1]
+    return clean_text(" ".join([*color_prefix, *color_tokens]))
+
+
+def _color_prefix_token_is_code_like(token: str) -> bool:
+    text = token.strip()
+    return (
+        1 < len(text) <= 3
+        and not text.islower()
+        and text.casefold() not in _SHORT_COLOR_ALLOWLIST
+        and _COLOR_KEYWORD_RE.fullmatch(text) is None
+    )
+
+
 _SHORT_COLOR_ALLOWLIST = frozenset(
     {
         # short, real color words. Lower-case only is fine; real PDPs use
@@ -579,6 +623,7 @@ def _sanitize_option_scalar(field_name: str, value: object) -> str | None:
         cleaned = re.split(
             r"\bsize(?:\s*\([^)]*\))?\b", cleaned, maxsplit=1, flags=re.I
         )[0]
+        cleaned = _strip_color_value_code_pollution(cleaned)
         cleaned = clean_text(cleaned)
         if not cleaned or re.search(r"\d+\s*x\s*\d+", cleaned):
             return None

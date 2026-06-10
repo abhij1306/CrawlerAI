@@ -31,6 +31,7 @@ enabled = true
 
   [analyzers.meta]
   runtime_version = "3.x.x"
+  cyclomatic_complexity_threshold = "critical"
 
 [[analyzers]]
 name = "javascript"
@@ -40,7 +41,9 @@ dependency_file_paths = ["frontend"]
   [analyzers.meta]
   plugins = ["react"]
   environment = ["nodejs", "browser", "vitest"]
+  module_system = "es-modules"
   dialect = "typescript"
+  cyclomatic_complexity_threshold = "critical"
 
 [[analyzers]]
 name = "docker"

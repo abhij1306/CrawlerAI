@@ -462,6 +462,70 @@ export type UcpAuditJobDetail = {
   report: UcpAuditReport | null;
 };
 
+export type PageAuditContext = 'auto' | 'generic' | 'ecommerce';
+
+export type PageAuditCheck = {
+  id: string;
+  label: string;
+  category: string;
+  severity: 'critical' | 'high' | 'medium' | 'low';
+  data_source: 'source' | 'dom' | 'diff';
+  passed: boolean;
+  applicable: boolean;
+  detected_value: unknown;
+  expected_value: unknown;
+  fix: string;
+};
+
+export type PageAuditReport = {
+  url: string;
+  source_checks: PageAuditCheck[];
+  dom_checks: PageAuditCheck[];
+  diff_checks: PageAuditCheck[];
+  scores: {
+    seo: number | null;
+    performance_indicators: number | null;
+    structured_data: number | null;
+    accessibility: number | null;
+    ecommerce_readiness: number | null;
+  };
+  critical_failures: PageAuditCheck[];
+  render_summary: Record<string, unknown>;
+};
+
+export type PageAuditJobCreatePayload = {
+  url: string;
+  context: PageAuditContext;
+};
+
+export type PageAuditJob = {
+  id: number;
+  user_id: number;
+  url: string;
+  context: PageAuditContext;
+  status: string;
+  options: Record<string, unknown>;
+  summary: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+  completed_at: string | null;
+};
+
+export type PageAuditResult = {
+  id: number;
+  job_id: number;
+  url: string;
+  report_json: PageAuditReport;
+  markdown_report: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type PageAuditJobDetail = {
+  job: PageAuditJob;
+  result: PageAuditResult | null;
+};
+
 export type DomainRunProfile = {
   version: number;
   fetch_profile: {

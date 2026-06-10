@@ -322,6 +322,16 @@ describe('CrawlRunScreen', () => {
     alertsApiMock.create.mockResolvedValue({ id: 42 });
   });
 
+  it('does not show page audit actions on the completed run screen', async () => {
+    renderRunScreen();
+
+    await screen.findByRole('button', { name: 'Excel (CSV)' }, { timeout: 5000 });
+
+    expect(screen.queryByRole('button', { name: 'Audit Page' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Audit Selected URL' })).not.toBeInTheDocument();
+    expect(replaceMock).not.toHaveBeenCalledWith(expect.stringContaining('tool=audit'));
+  });
+
   it('prefills Product Intelligence from selected listing records', async () => {
     apiMock.getCrawl.mockResolvedValue({
       ...terminalRun(101),

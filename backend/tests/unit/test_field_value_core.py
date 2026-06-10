@@ -151,6 +151,16 @@ def testdecimal_for_shared_price_supports_european_decimal_format() -> None:
 
 
 @pytest.mark.unit
+def test_coerce_price_rejects_negative_currency_fallbacks() -> None:
+    url = "https://www.gucci.com/int/en/pr/men/accessories-for-men/scarves-for-men/scarves-for-men/gg-wool-silk-jacquard-stole-p-8705434GAK31360"
+
+    assert coerce_field_value("price", "-1", url) is None
+    assert coerce_field_value("price", "$-1", url) is None
+    assert coerce_field_value("price", "−1", url) is None
+    assert coerce_field_value("price", {"amount": "$-1"}, url) is None
+
+
+@pytest.mark.unit
 def test_persistence_schema_firewall_drops_unknown_and_internal_fields() -> None:
     data, rejected = public_record_data_for_surface(
         {
@@ -970,6 +980,26 @@ def test_coerce_color_strips_color_details_suffix() -> None:
     assert (
         coerce_field_value("color", "Huxley Color Details", "https://example.com/p")
         == "Huxley"
+    )
+
+
+@pytest.mark.unit
+def test_coerce_color_strips_trailing_style_codes() -> None:
+    assert (
+        coerce_field_value("color", "Mf White Hq7978 103", "https://example.com/p")
+        == "White"
+    )
+    assert (
+        coerce_field_value("color", "White Hq7978 103", "https://example.com/p")
+        == "White"
+    )
+
+
+@pytest.mark.unit
+def test_coerce_color_strips_code_tail_without_dropping_prefix() -> None:
+    assert (
+        coerce_field_value("color", "Nike Mf White Hq7978 103", "https://example.com/p")
+        == "Nike White"
     )
 
 
