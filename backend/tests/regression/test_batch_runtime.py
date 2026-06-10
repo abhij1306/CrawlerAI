@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 
 import pytest
+import pytest_asyncio
 
 from app.models.crawl_settings import CrawlRunSettings
 from app.services.crawl import batch_runtime as batch_runtime_module
@@ -25,6 +26,15 @@ from app.services.robots_policy import (
 from sqlalchemy import select
 from sqlalchemy.exc import PendingRollbackError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def _use_test_session_local_for_parallel_urls(
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session_factory = async_sessionmaker(bind=db_session.bind, expire_on_commit=False)
+    monkeypatch.setattr(batch_runtime_module, "SessionLocal", session_factory)
 
 
 def _detail_html() -> str:
@@ -365,7 +375,13 @@ async def test_process_run_uses_url_batch_concurrency_setting(
     monkeypatch: pytest.MonkeyPatch,
     patch_settings,
 ) -> None:
-    patch_settings(url_batch_concurrency=2)
+    patch_settings(url_batch_concurrency=2, browser_runtime_context_capacity=2)
+    monkeypatch.setattr(
+        batch_runtime_module.settings,
+        "system_max_concurrent_urls",
+        2,
+        raising=False,
+    )
     run = await create_crawl_run(
         db_session,
         test_user.id,
@@ -383,14 +399,22 @@ async def test_process_run_uses_url_batch_concurrency_setting(
     )
     active = 0
     max_active = 0
+    second_active = asyncio.Event()
 
     async def _fake_process_single_url(*args, **kwargs):
         nonlocal active, max_active
         del args
         active += 1
         max_active = max(max_active, active)
-        await asyncio.sleep(0.01)
-        active -= 1
+        if active > 1:
+            second_active.set()
+        try:
+            if active == 1:
+                await asyncio.wait_for(second_active.wait(), timeout=0.5)
+            else:
+                await asyncio.sleep(0.01)
+        finally:
+            active -= 1
         return URLProcessingResult(
             records=[],
             verdict="success",

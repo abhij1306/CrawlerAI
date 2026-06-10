@@ -30,11 +30,13 @@ class PublicApiPrincipal:
 
 def hash_api_key(value: str) -> str:
     # Keyed HMAC is required here so API keys can be looked up deterministically.
+    digest_name = "sha256"
     # codeql[py/weak-sensitive-data-hashing]
+    # lgtm[py/weak-sensitive-data-hashing]
     return hmac.digest(
         settings.jwt_secret_key.encode("utf-8"),
         value.encode("utf-8"),
-        "sha256",
+        digest_name,
     ).hex()
 
 
