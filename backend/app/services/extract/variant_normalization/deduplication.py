@@ -5,13 +5,9 @@ from typing import Any
 import re
 
 from app.services.config.extraction_rules import VARIANT_SEPARATE_DIMENSION_SIZE_RULES
-from app.services.config.variant_policy import FLAT_VARIANT_KEYS
 from app.services.extract.variant_identity_merge import (
     collapse_duplicate_size_aliases,
-    merge_variant_pair,
-    variant_identity,
-    variant_row_richness,
-    variant_semantic_identity,
+    merge_variant_rows,
 )
 from app.services.extract.variant_structural_pruning import (
     drop_color_only_rows_when_size_rows_exist,
@@ -136,80 +132,13 @@ def _dedupe_variant_rows(record: dict[str, Any]) -> None:
     variants = record.get("variants")
     if not isinstance(variants, list) or not variants:
         return
-    merged_by_key: dict[str, dict[str, Any]] = {}
-    ordered_keys: list[str] = []
-    for variant in variants:
-        if not isinstance(variant, dict):
-            continue
-        key = _variant_primary_key(variant)
-        if key is None:
-            continue
-        current = merged_by_key.get(key)
-        if current is None:
-            merged_by_key[key] = dict(variant)
-            ordered_keys.append(key)
-            continue
-        primary, secondary = _richer_variant_pair(current, variant)
-        merged_by_key[key] = merge_variant_pair(primary, secondary)
-    deduped_variants = [merged_by_key[key] for key in ordered_keys]
-    semantic_merged: dict[str, dict[str, Any]] = {}
-    semantic_order: list[str] = []
-    passthrough: list[dict[str, Any]] = []
-    for variant in deduped_variants:
-        semantic_key = variant_semantic_identity(variant)
-        if not semantic_key:
-            passthrough.append(variant)
-            continue
-        current = semantic_merged.get(semantic_key)
-        if current is None:
-            semantic_merged[semantic_key] = dict(variant)
-            semantic_order.append(semantic_key)
-            continue
-        primary, secondary = _richer_variant_pair(current, variant)
-        semantic_merged[semantic_key] = merge_variant_pair(primary, secondary)
-    merged_variants = [semantic_merged[key] for key in semantic_order]
-    merged_variants.extend(passthrough)
+    merged_variants = merge_variant_rows(variants)
     if merged_variants:
         record["variants"] = merged_variants
         record["variant_count"] = len(merged_variants)
         return
     record.pop("variants", None)
     record.pop("variant_count", None)
-
-
-def _variant_primary_key(variant: dict[str, Any]) -> str | None:
-    identity = variant_identity(variant)
-    if identity:
-        return identity
-    semantic = variant_semantic_identity(variant)
-    if semantic:
-        return semantic
-    fingerprint = tuple(
-        (field_name, _variant_field_fingerprint(variant.get(field_name)))
-        for field_name in FLAT_VARIANT_KEYS
-        if _variant_field_fingerprint(variant.get(field_name)) is not None
-    )
-    if fingerprint:
-        return f"flat:{repr(fingerprint)}"
-    return None
-
-
-def _variant_field_fingerprint(value: object) -> str | int | float | None:
-    if value in (None, "", [], {}):
-        return None
-    if isinstance(value, (int, float)):
-        return value
-    cleaned = clean_text(value)
-    return cleaned or None
-
-
-def _richer_variant_pair(
-    left: dict[str, Any],
-    right: dict[str, Any],
-) -> tuple[dict[str, Any], dict[str, Any]]:
-    if variant_row_richness(right) > variant_row_richness(left):
-        return right, left
-    return left, right
 
 
 dedupe_and_prune_variant_rows = _dedupe_and_prune_variant_rows

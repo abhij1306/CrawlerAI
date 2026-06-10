@@ -16,7 +16,7 @@ from app.services.config.variant_policy import (
     VARIANT_TRANSPORT_FIELDS,
 )
 from app.services.extract.variant_axis import normalized_variant_axis_key
-from app.services.extract.variant_normalization import deduplication
+from app.services.extract.variant_identity_merge import variant_identity
 from app.services.normalizers import normalize_decimal_price
 from app.services.shared.field_coerce import (
     coerce_field_value,
@@ -288,10 +288,7 @@ def enforce_payload_limits(record: dict[str, Any], *, max_rows: int) -> None:
         variant
         for variant in candidates
         if isinstance(variant, dict)
-        and (
-            deduplication._variant_primary_key(variant)
-            or _variant_has_axis_value(variant)
-        )
+        and (variant_identity(variant) or _variant_has_axis_value(variant))
     ]
     truncated = kept if kept else candidates
     if truncated:

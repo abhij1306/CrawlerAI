@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import asyncio
+
 import httpx
 import pytest
 
+from app.services.acquisition import browser_runtime
 from app.services.acquisition.acquirer import (
     AcquisitionRequest,
     PageEvidence,
@@ -11,7 +14,42 @@ from app.services.acquisition.acquirer import (
 from app.services.acquisition.internal_api_replay import _is_safe_replay_url
 from app.services.acquisition.policy import AcquisitionPolicy
 from app.services.acquisition_plan import AcquisitionPlan
-from app.services.crawl.utils import normalize_target_url
+from app.services.crawl.utils import collect_target_urls, normalize_target_url
+
+
+@pytest.mark.component
+def test_origin_warmup_state_lock_is_scoped_to_running_loop() -> None:
+    async def _locks() -> tuple[asyncio.Lock, asyncio.Lock]:
+        return (
+            browser_runtime._origin_warmup_state_lock(),
+            browser_runtime._origin_warmup_state_lock(),
+        )
+
+    first_lock, repeated_first_lock = asyncio.run(_locks())
+    second_lock, repeated_second_lock = asyncio.run(_locks())
+
+    assert first_lock is repeated_first_lock
+    assert second_lock is repeated_second_lock
+    assert first_lock is not second_lock
+
+
+@pytest.mark.component
+def test_collect_target_urls_normalizes_csv_values() -> None:
+    urls = collect_target_urls(
+        {"url": "https://example.com/products/widget"},
+        {
+            "csv_content": (
+                "url\n"
+                "https://example.com/products/widget?utm_source=newsletter\n"
+                "https://example.com/products/other?fbclid=tracking"
+            )
+        },
+    )
+
+    assert urls == [
+        "https://example.com/products/widget",
+        "https://example.com/products/other",
+    ]
 
 
 @pytest.mark.asyncio

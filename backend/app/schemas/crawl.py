@@ -233,6 +233,52 @@ class DomainRunFetchProfile(BaseModel):
     max_scrolls: int = Field(default=8, ge=0, le=100)
     host_memory_ttl_seconds: int | None = Field(default=None, ge=1, le=86_400)
 
+
+class CategoryDiscoveryRequest(BaseModel):
+    url: str | None = None
+    urls: list[str] = Field(default_factory=list, max_length=50)
+    limit: int = Field(default=10, ge=1, le=50)
+    max_depth: int = Field(default=2, ge=0, le=3)
+    max_pages: int = Field(default=8, ge=1, le=20)
+    strategy: Literal["static_then_rendered", "static_only", "rendered_only"] = (
+        "static_then_rendered"
+    )
+    validate_candidates: bool = False
+
+    @model_validator(mode="after")
+    def _validate_urls(self) -> "CategoryDiscoveryRequest":
+        if not self.selected_urls():
+            raise ValueError("URL is required")
+        return self
+
+    def selected_urls(self) -> list[str]:
+        selected = [item.strip() for item in self.urls if item and item.strip()]
+        if self.url and self.url.strip():
+            selected.insert(0, self.url.strip())
+        return list(dict.fromkeys(selected))
+
+
+class CategoryDiscoveryGroup(BaseModel):
+    input_url: str
+    urls: list[str] = Field(default_factory=list)
+    source: str
+    error: str | None = None
+    nav_tree: list[dict[str, object]] | None = None
+    diagnostics: dict[str, object] = Field(default_factory=dict)
+
+
+class CategoryDiscoveryResponse(BaseModel):
+    status: str
+    source: str
+    urls: list[str] = Field(default_factory=list)
+    groups: dict[str, list[str]] = Field(default_factory=dict)
+    sources: dict[str, str] = Field(default_factory=dict)
+    errors: dict[str, str] = Field(default_factory=dict)
+    trees: dict[str, list[dict[str, object]]] = Field(default_factory=dict)
+    diagnostics: dict[str, object] = Field(default_factory=dict)
+    total_found: int
+    limit: int
+
 class DomainRunLocalityProfile(BaseModel):
     geo_country: str = "auto"
     language_hint: str | None = None

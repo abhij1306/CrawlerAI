@@ -195,7 +195,7 @@
   --focus-ring: 0 0 0 3px rgba(194, 65, 12, 0.2);
   --overlay-scrim: color-mix(in srgb, var(--bg-base) 34%, black);
 
-  /* Type scale — 4px rhythm */
+  /* Type scale — optically balanced sizes */
   --text-2xs: 0.625rem; /* 10px — uppercase labels only */
   --text-xs: 0.6875rem; /* 11px — captions, timestamps  */
   --text-sm: 0.8125rem; /* 13px — secondary body        */
@@ -255,12 +255,12 @@
 
   /* Table */
   --table-font-size: var(--text-sm);
-  --table-header-font-size: var(--text-2xs);
+  --table-header-font-size: var(--text-xs);
   --table-header-font-family: var(--font-primary-family);
   --table-header-weight: var(--weight-semibold);
-  --table-header-tracking: var(--tracking-wider);
-  --table-header-height: 38px;
-  --table-row-height: 44px;
+  --table-header-tracking: var(--tracking-wide);
+  --table-header-height: 42px;
+  --table-row-height: 52px;
 
   /* Buttons */
   --btn-height: var(--control-height-lg);
@@ -1369,12 +1369,19 @@ html:not([data-theme='dark']) .code-block {
   border-collapse: separate;
   border-spacing: 0;
   font-size: var(--table-font-size);
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  box-shadow: var(--shadow-card-value);
 }
 .compact-data-table thead {
-  background: var(--bg-alt);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--bg-elevated) 60%, var(--bg-panel)), var(--bg-alt)),
+    var(--bg-alt);
 }
 .compact-data-table thead tr th {
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--border-strong);
 }
 .compact-data-table th {
   height: var(--table-header-height);
@@ -1389,6 +1396,7 @@ html:not([data-theme='dark']) .code-block {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  font-variant-numeric: tabular-nums;
 }
 .compact-data-table td {
   height: var(--table-row-height);
@@ -1396,7 +1404,7 @@ html:not([data-theme='dark']) .code-block {
   border-bottom: 1px solid var(--border-subtle);
   vertical-align: middle;
   color: var(--text-primary);
-  font-feature-settings: 'tnum' 1;
+  font-variant-numeric: tabular-nums;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1408,13 +1416,17 @@ html:not([data-theme='dark']) .code-block {
   text-align: right;
 }
 .compact-data-table tbody tr {
-  transition: background-color var(--transition-fast);
+  position: relative;
+  transition:
+    background-color var(--transition-base),
+    box-shadow var(--transition-base);
 }
 .compact-data-table tbody tr:last-child td {
   border-bottom: none;
 }
 .compact-data-table tbody tr:hover {
-  background: var(--bg-alt);
+  background: color-mix(in srgb, var(--accent-subtle) 45%, var(--bg-panel));
+  box-shadow: inset 3px 0 0 var(--accent);
 }
 
 /* Corner rounding */
@@ -1433,21 +1445,19 @@ html:not([data-theme='dark']) .code-block {
 
 /* Light mode outer border */
 html:not([data-theme='dark']) .compact-data-table {
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  box-shadow: none;
+  box-shadow: var(--shadow-xs-value);
 }
 .table-surface-flat {
   border: 1px solid var(--border);
-  background: transparent;
-  box-shadow: none;
+  background: var(--bg-panel);
+  box-shadow: var(--shadow-xs-value);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
    COMMERCE TABLE
 ═══════════════════════════════════════════════════════════════════════ */
 .commerce-table {
-  --ct-img-size: 44px;
+  --ct-img-size: 46px;
 }
 .commerce-table thead {
   position: sticky;
@@ -1460,10 +1470,11 @@ html:not([data-theme='dark']) .compact-data-table {
   letter-spacing: var(--table-header-tracking);
   text-transform: uppercase;
   color: var(--text-muted);
+  font-family: var(--table-header-font-family);
 }
 .commerce-table td {
   height: var(--table-row-height);
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--border-subtle);
   font-size: var(--text-sm);
 }
 .commerce-table .ct-image-cell {
@@ -1474,16 +1485,22 @@ html:not([data-theme='dark']) .compact-data-table {
   width: var(--ct-img-size);
   height: var(--ct-img-size);
   overflow: hidden;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-sm);
   border: 1px solid var(--border);
-  background: var(--bg-alt);
+  background:
+    linear-gradient(145deg, color-mix(in srgb, var(--bg-elevated) 60%, var(--bg-panel)), var(--bg-alt)),
+    var(--bg-alt);
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: border-color var(--transition-fast);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--bg-elevated) 55%, transparent);
+  transition:
+    border-color var(--transition-base),
+    transform var(--transition-base);
 }
 .commerce-table tbody tr:hover .ct-image-wrap {
   border-color: color-mix(in srgb, var(--accent) 38%, var(--border));
+  transform: translateY(-1px);
 }
 .commerce-table .ct-image-wrap img {
   width: 100%;
@@ -1492,7 +1509,7 @@ html:not([data-theme='dark']) .compact-data-table {
 }
 .commerce-table .ct-title {
   font-size: var(--table-font-size);
-  font-weight: var(--weight-medium);
+  font-weight: var(--weight-semibold);
   color: var(--text-primary);
   line-height: 1.35;
 }
@@ -1519,18 +1536,27 @@ html:not([data-theme='dark']) .compact-data-table {
   color: var(--text-muted);
 }
 .commerce-table .ct-header-badge {
-  font-size: var(--text-xs);
+  font-size: var(--text-2xs);
   font-weight: var(--weight-bold);
-  padding: 0 var(--space-1);
-  height: 18px;
+  padding: 0 var(--space-2);
+  height: 20px;
   min-height: 0;
-  border-radius: var(--radius-sm);
-  text-transform: capitalize;
-  letter-spacing: var(--tracking-wide);
+  border-radius: var(--radius-xs);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wider);
   opacity: 0.9;
 }
 .commerce-table .ct-header-badge > span:first-child {
   display: none;
+}
+
+.table-footer-rail {
+  border-top: 1px solid var(--border);
+  background: color-mix(in srgb, var(--bg-alt) 62%, var(--bg-panel));
+  color: var(--text-muted);
+  font-family: var(--font-mono-family);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════

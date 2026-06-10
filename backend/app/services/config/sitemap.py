@@ -5,12 +5,27 @@ SITEMAP_DEFAULT_MAX_URLS = 500
 PLAYGROUND_CATEGORY_DEFAULT_LIMIT = 10
 PLAYGROUND_CATEGORY_MAX_LIMIT = 50
 PLAYGROUND_CATEGORY_PER_INPUT_TIMEOUT_SECONDS = 20
+CRAWL_CATEGORY_DISCOVERY_PER_INPUT_TIMEOUT_SECONDS = 60
 SITEMAP_FETCH_TIMEOUT_SECONDS = 15
 SITEMAP_FETCH_RETRY_ATTEMPTS = 2
 SITEMAP_FETCH_RETRY_DELAY_SECONDS = 0.5
 SITEMAP_FETCH_RETRY_STATUS_CODES = (429, 502, 503, 504)
 SITEMAP_FETCH_MAX_REDIRECTS = 5
 SITEMAP_USER_AGENT = "Mozilla/5.0 (compatible; CrawlwiseBot/1.0)"
+SITE_LINK_DISCOVERY_FETCH_TIMEOUT_SECONDS = 35
+SITE_LINK_DISCOVERY_MAX_DEPTH = 2
+SITE_LINK_DISCOVERY_MAX_PAGES = 8
+SITE_LINK_DISCOVERY_MAX_LINKS_PER_PAGE = 250
+SITE_LINK_DISCOVERY_VALIDATE_MAX_URLS = 8
+SITE_LINK_DISCOVERY_REQUIRE_VALIDATION = False
+SITE_LINK_DISCOVERY_CARD_SELECTOR_HINTS = (
+    "[class*='product' i]",
+    "[data-testid*='product' i]",
+    "[class*='grid' i]",
+    "[class*='tile' i]",
+    "[class*='card' i]",
+    "[itemtype*='Product' i]",
+)
 # Path tokens that signal a page is not a category/listing/detail candidate
 # (account, auth, support, legal, transactional flows, on-page search). These
 # are surface-agnostic — we deliberately do NOT exclude /blog or /news here
@@ -21,13 +36,18 @@ SITEMAP_HOMEPAGE_FALLBACK_EXCLUDED_PATH_TOKENS = (
     "/apps",
     "/auth",
     "/cart",
+    "/client-service",
     "/checkout",
     "/contact",
+    "/customer-service",
+    "/digital-card",
+    "/experience",
     "/faq",
     "/faqs",
     "/help",
     "/login",
     "/logout",
+    "/legal",
     "/myorders",
     "/order",
     "/payment",
@@ -84,10 +104,15 @@ SITEMAP_CATEGORY_EXCLUDED_PATH_TOKENS = (
     "/blogs/",
     "/cart",
     "/change-location",
+    "/client-service",
     "/checkout",
+    "/customer-service",
+    "/digital-card",
     "/dp/",
+    "/experience",
     "/item/",
     "/my-order",
+    "/legal",
     "/news/",
     "/order",
     "/page/",
@@ -137,6 +162,7 @@ SITEMAP_CATEGORY_ANCHOR_TEXT_EXCLUDED_TOKENS = (
     "cart",
     "country",
     "customer service",
+    "experience",
     "help",
     "language",
     "location",

@@ -190,6 +190,31 @@ def test_select_primary_browser_html_prefers_full_rendered_when_traversal_fragme
 
 
 @pytest.mark.regression
+def test_select_primary_browser_html_uses_surface_specific_detail_hints() -> None:
+    traversal_result = SimpleNamespace(
+        activated=True,
+        progress_events=0,
+        card_count=0,
+        stop_reason="target_records_reached",
+    )
+
+    html = browser_page_flow._select_primary_browser_html(
+        surface="job_listing",
+        traversal_result=traversal_result,
+        traversal_html=(
+            "<html><body>"
+            "<a href='/products/a'>Product A</a>"
+            "<a href='/products/b'>Product B</a>"
+            "</body></html>"
+        ),
+        rendered_html="<html><body><a href='/jobs/123'>Job</a></body></html>",
+        listing_min_items=2,
+    )
+
+    assert "jobs/123" in html
+
+
+@pytest.mark.regression
 def test_location_interstitial_diagnostics_marks_location_required() -> None:
     html = """
     <html><body>

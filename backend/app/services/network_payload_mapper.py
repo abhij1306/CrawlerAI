@@ -25,11 +25,11 @@ from app.services.config.network_payload_specs import (
 from app.services.extraction_html_helpers import extract_job_sections, html_to_text
 from app.services.extract.field_candidates import (
     collect_structured_candidates,
+    finalize_candidate_fields,
     finalize_candidate_value,
 )
 from app.services.field_policy import normalize_field_key
 from app.services.shared.field_coerce import (
-    STRUCTURED_MULTI_FIELDS,
     coerce_field_value,
     surface_alias_lookup,
     surface_fields,
@@ -421,23 +421,20 @@ def _ghost_route_payload(
         return None
     if _looks_like_navigation_payload(body):
         return None
-    if not _has_detail_anchor(
-        body,
-        inferred_surface=inferred_surface,
-        page_url=page_url,
-        requested_fields=requested_fields,
-    ):
-        return None
     alias_lookup = surface_alias_lookup(inferred_surface, requested_fields)
     candidates: dict[str, list[object]] = {}
     collect_structured_candidates(body, alias_lookup, page_url, candidates)
-    result: dict[str, Any] = {}
-    for field_name in surface_fields(inferred_surface, requested_fields):
-        finalized = finalize_candidate_value(field_name, candidates.get(field_name, []))
-        if finalized not in (None, "", [], {}):
-            if field_name in STRUCTURED_MULTI_FIELDS and not isinstance(finalized, list):
-                continue
-            result[field_name] = finalized
+    if not _has_detail_anchor(
+        candidates,
+        inferred_surface=inferred_surface,
+        page_url=page_url,
+    ):
+        return None
+    result = finalize_candidate_fields(
+        candidates,
+        surface_fields(inferred_surface, requested_fields),
+        require_structured_multi_list=True,
+    )
     url = finalize_candidate_value("url", candidates.get("url", []))
     if url not in (None, "", [], {}):
         result["url"] = url
@@ -540,18 +537,13 @@ def _has_minimum_descriptive_text(body: object) -> bool:
     return bool(samples)
 
 
+# skipcq: PY-R1000
 def _has_detail_anchor(
-    body: object,
+    candidates: dict[str, list[object]],
     *,
     inferred_surface: str,
     page_url: str,
-    requested_fields: list[str] | None,
 ) -> bool:
-    if not isinstance(body, dict):
-        return False
-    alias_lookup = surface_alias_lookup(inferred_surface, requested_fields)
-    candidates: dict[str, list[object]] = {}
-    collect_structured_candidates(body, alias_lookup, page_url, candidates)
     title = finalize_candidate_value("title", candidates.get("title", []))
     url = finalize_candidate_value("url", candidates.get("url", []))
     if inferred_surface == "ecommerce_detail":

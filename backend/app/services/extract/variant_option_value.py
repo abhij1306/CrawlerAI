@@ -35,6 +35,7 @@ from app.services.config.variant_migration_rules import (
     VARIANT_OPTION_VALUE_UI_NOISE_PHRASES_EXTRA,
 )
 from app.services.shared.field_coerce import clean_text
+from app.services.shared.regex_patterns import compile_regex_patterns
 
 _ALNUM_SPLIT_PATTERN = r"[^a-z0-9]+"
 
@@ -77,28 +78,18 @@ _variant_option_value_exact_noise_tokens = frozenset(
     if str(token).strip()
 )
 _variant_option_value_noise_patterns = VARIANT_OPTION_VALUE_NOISE_PATTERNS or {}
-variant_size_value_patterns = tuple(
-    re.compile(str(pattern), re.I)
-    for pattern in tuple(VARIANT_SIZE_VALUE_PATTERNS or ())
-    if str(pattern).strip()
+variant_size_value_patterns = compile_regex_patterns(VARIANT_SIZE_VALUE_PATTERNS or ())
+variant_option_value_suffix_noise_patterns = compile_regex_patterns(
+    VARIANT_OPTION_VALUE_SUFFIX_NOISE_PATTERNS or ()
 )
-variant_option_value_suffix_noise_patterns = tuple(
-    re.compile(str(pattern), re.I)
-    for pattern in tuple(VARIANT_OPTION_VALUE_SUFFIX_NOISE_PATTERNS or ())
-    if str(pattern).strip()
-)
-_variant_option_value_noise_fullmatch_regexes = tuple(
-    re.compile(str(pattern), re.I)
-    for pattern in (
+_variant_option_value_noise_fullmatch_regexes = compile_regex_patterns(
+    (
         *tuple(_variant_option_value_noise_patterns.get("fullmatch") or ()),
         *tuple(VARIANT_OPTION_VALUE_NOISE_FULLMATCH_PATTERNS_EXTRA or ()),
     )
-    if str(pattern).strip()
 )
-_variant_option_value_noise_search_regexes = tuple(
-    re.compile(str(pattern), re.I)
-    for pattern in tuple(_variant_option_value_noise_patterns.get("search") or ())
-    if str(pattern).strip()
+_variant_option_value_noise_search_regexes = compile_regex_patterns(
+    _variant_option_value_noise_patterns.get("search") or ()
 )
 
 

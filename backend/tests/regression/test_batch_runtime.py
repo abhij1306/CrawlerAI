@@ -9,7 +9,6 @@ from app.services.crawl import batch_runtime as batch_runtime_module
 from app.services.crawl.batch_runtime import (
     _parallel_url_concurrency,
     _parallel_worker_record_limit,
-    _persist_url_failure_log,
     process_run,
 )
 from app.services.config.sitemap import SITEMAP_DEFAULT_MAX_URLS
@@ -98,7 +97,7 @@ async def test_persist_url_failure_log_prefixes_url_for_parallel_ui(
     )
     url = "https://example.com/products/missing-widget"
 
-    await _persist_url_failure_log(
+    await batch_runtime_module._persist_url_failure_log(
         db_session,
         run_id=run.id,
         url=url,
@@ -482,6 +481,79 @@ async def test_process_run_runs_same_domain_batch_urls_in_parallel(
     await process_run(db_session, run.id)
 
     assert max_active > 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_parallel_run_does_not_mislabel_nested_timeout_as_url_deadline(
+    db_session: AsyncSession,
+    test_user,
+    monkeypatch: pytest.MonkeyPatch,
+    patch_settings,
+) -> None:
+    patch_settings(url_batch_concurrency=2, browser_runtime_context_capacity=2)
+    monkeypatch.setattr(
+        batch_runtime_module.settings,
+        "system_max_concurrent_urls",
+        2,
+        raising=False,
+    )
+    failing_url = "https://example.com/products/browser-timeout"
+    run = await create_crawl_run(
+        db_session,
+        test_user.id,
+        {
+            "run_type": "batch",
+            "surface": "ecommerce_detail",
+            "settings": {
+                "fetch_profile": {"fetch_mode": "http_only"},
+                "url_batch_concurrency": 2,
+                "urls": [
+                    failing_url,
+                    "https://example.com/products/widget-prime",
+                ],
+            },
+        },
+    )
+
+    async def _fake_process_single_url(*args, **kwargs):
+        if kwargs["url"] == failing_url:
+            raise TimeoutError(
+                "Browser navigation stage exceeded timeout_seconds=45.00"
+            )
+        return URLProcessingResult(
+            records=[],
+            verdict="success",
+            url_metrics={"record_count": 0},
+        )
+
+    monkeypatch.setattr(
+        "app.services.crawl.batch_runtime.process_single_url",
+        _fake_process_single_url,
+    )
+    session_factory = async_sessionmaker(
+        bind=db_session.bind,
+        expire_on_commit=False,
+    )
+    monkeypatch.setattr("app.services.crawl.batch_runtime.SessionLocal", session_factory)
+
+    await process_run(db_session, run.id)
+    logs = (
+        await db_session.execute(
+            select(CrawlLog).where(CrawlLog.run_id == run.id).order_by(CrawlLog.id)
+        )
+    ).scalars().all()
+    messages = [log.message for log in logs]
+
+    assert any(
+        f"URL processing failed for {failing_url}: TimeoutError: "
+        "Browser navigation stage exceeded timeout_seconds=45.00" in message
+        for message in messages
+    )
+    assert not any(
+        f"URL processing timed out for {failing_url}" in message
+        for message in messages
+    )
 
 
 @pytest.mark.asyncio

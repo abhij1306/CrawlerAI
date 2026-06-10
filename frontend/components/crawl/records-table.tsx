@@ -23,9 +23,9 @@ const PRICE_KEYS = new Set([
 ]);
 const URL_KEYS = new Set(['url', 'source_url', 'product_url', 'canonical_url']);
 
-const SELECT_COLUMN_WIDTH = 40;
-const IMAGE_COLUMN_WIDTH = 64;
-const HEADER_HEIGHT = 38;
+const SELECT_COLUMN_WIDTH = 48;
+const IMAGE_COLUMN_WIDTH = 80;
+const HEADER_HEIGHT = 42;
 
 function getDataColumnWidth(col: string) {
   const colKey = col.toLowerCase();
@@ -55,7 +55,7 @@ function headerCellStyle(width: number, left?: number): CSSProperties {
     ...(left === undefined ? {} : { left }),
     zIndex: left === undefined ? 60 : 90,
     height: HEADER_HEIGHT,
-    background: 'var(--bg-base)',
+    background: 'linear-gradient(180deg, color-mix(in srgb, var(--bg-elevated) 60%, var(--bg-panel)), var(--bg-alt))',
     color: 'var(--text-muted)',
     fontFamily: 'var(--table-header-font-family)',
     fontSize: 'var(--table-header-font-size)',
@@ -126,7 +126,7 @@ export const RecordsTable = memo(function RecordsTable({
     (hasImageCol ? IMAGE_COLUMN_WIDTH : 0) +
     dataColumns.reduce((sum, col) => sum + getDataColumnWidth(col), 0);
 
-  const rowHeightPx = 44;
+  const rowHeightPx = 52;
   const overscanRows = 8;
   const [scrollTop, setScrollTop] = useState(0);
   const [viewportHeight, setViewportHeight] = useState(560);
@@ -163,18 +163,18 @@ export const RecordsTable = memo(function RecordsTable({
   }, [containerNode]);
 
   return (
-    <div className="surface-muted max-h-[calc(100vh-272px)] overflow-hidden rounded-md border">
+    <div className="surface-muted max-h-[calc(100vh-272px)] overflow-hidden rounded-lg border shadow-card">
       <div
         ref={setContainerRef}
         onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
         className="scrollbar-stable relative max-h-[calc(100vh-276px)] w-full overflow-auto"
       >
         <div
-          className="bg-background border-border sticky top-0 z-[100] flex border-b"
+          className="bg-background-alt border-border-strong sticky top-0 z-[100] flex border-b"
           style={{ minWidth: totalTableWidth, height: HEADER_HEIGHT }}
         >
           <div
-            className="flex shrink-0 items-center px-5"
+            className="flex shrink-0 items-center justify-center px-3"
             style={headerCellStyle(SELECT_COLUMN_WIDTH, 0)}
           >
             <input
@@ -186,7 +186,7 @@ export const RecordsTable = memo(function RecordsTable({
           </div>
           {hasImageCol ? (
             <div
-              className="flex shrink-0 items-center justify-center px-5"
+              className="flex shrink-0 items-center justify-center px-2"
               style={headerCellStyle(IMAGE_COLUMN_WIDTH, SELECT_COLUMN_WIDTH)}
             >
               IMG
@@ -236,7 +236,7 @@ export const RecordsTable = memo(function RecordsTable({
             return (
               <TableRow key={record.id} className={cn(isSelected && 'bg-accent/[0.04]')}>
                 <TableCell
-                  className="bg-background"
+                  className="bg-panel px-3 text-center"
                   style={stickyBodyStyle(SELECT_COLUMN_WIDTH, 0)}
                 >
                   <input
@@ -248,7 +248,7 @@ export const RecordsTable = memo(function RecordsTable({
                 </TableCell>
                 {hasImageCol ? (
                   <TableCell
-                    className="bg-background text-center"
+                    className="bg-panel px-2 text-center"
                     style={stickyBodyStyle(IMAGE_COLUMN_WIDTH, SELECT_COLUMN_WIDTH)}
                   >
                     {imageSrc ? (
@@ -272,7 +272,7 @@ export const RecordsTable = memo(function RecordsTable({
                       }
                       className={cn(
                         PRICE_KEYS.has(colKey) && 'text-right',
-                        isFirstData && 'bg-background',
+                        isFirstData && 'bg-panel',
                       )}
                     >
                       <RecordCell col={col} record={record} />

@@ -73,7 +73,10 @@ _DETAIL_IMAGE_COLORWAY_CODE_RE = re.compile(
         DETAIL_IMAGE_COLORWAY_CODE_PATTERN,
     )
 )
-_DETAIL_IMAGE_VIEW_CODE_RE = re.compile(str(DETAIL_IMAGE_VIEW_CODE_PATTERN), re.I)
+_DETAIL_IMAGE_VIEW_CODE_RE = re.compile(
+    getattr(DETAIL_IMAGE_VIEW_CODE_PATTERN, "pattern", DETAIL_IMAGE_VIEW_CODE_PATTERN),
+    re.I,
+)
 
 
 def backfill_parent_image_from_variants(record: dict[str, Any]) -> None:

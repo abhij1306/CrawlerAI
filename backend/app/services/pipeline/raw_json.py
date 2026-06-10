@@ -9,7 +9,7 @@ from app.services.config.extraction_rules import JSON_RECORD_LIST_KEYS
 from app.services.config.runtime_settings import crawler_runtime_settings
 from app.services.extract.field_candidates import (
     collect_structured_candidates,
-    finalize_candidate_value,
+    finalize_candidate_fields,
 )
 from app.services.extract.listing_record_finalizer import finalize_listing_price_fields
 from app.services.field_policy import canonical_fields_for_surface, normalize_field_key
@@ -395,12 +395,12 @@ def _raw_json_record(
         candidates: dict[str, list[object]] = {}
         collect_structured_candidates(payload, alias_lookup, page_url, candidates)
         record: dict[str, Any] = {"source_url": page_url, "_source": "raw_json"}
-        for field_name in surface_fields(surface, requested_fields):
-            finalized = finalize_candidate_value(
-                field_name, candidates.get(field_name, [])
+        record.update(
+            finalize_candidate_fields(
+                candidates,
+                surface_fields(surface, requested_fields),
             )
-            if finalized not in (None, "", [], {}):
-                record[field_name] = finalized
+        )
         preferred_title = coerce_text(
             payload.get("title") or payload.get("name") or payload.get("label")
         )

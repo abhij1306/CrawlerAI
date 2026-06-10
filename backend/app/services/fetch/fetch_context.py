@@ -397,11 +397,7 @@ async def fetch_page(
     if vendor_block_confirmed and context.last_error is not None:
         raise context.last_error
     if context.last_error is not None:
-        cause = (
-            context.last_error
-            if isinstance(context.last_error, BaseException)
-            else None
-        )
+        cause = context.last_error if isinstance(context.last_error, Exception) else None
         logger.info(
             "HTTP fetchers exhausted for %s (%s); attempting browser fallback",
             context.url,

@@ -28,6 +28,7 @@ from app.services.config.extraction_rules import (
 from app.services.config.surface_hints import detail_path_hints
 from app.services.shared.coerce_primitives import safe_int as _safe_int
 from app.services.shared.field_coerce import absolute_url, clean_text, extract_urls
+from app.services.shared.regex_patterns import compile_regex_patterns
 
 _IMAGE_FILE_EXTENSIONS = (".avif", ".gif", ".jpeg", ".jpg", ".png", ".webp")
 _PAGE_FILE_EXTENSIONS = (".asp", ".aspx", ".htm", ".html", ".jsp", ".php")
@@ -50,11 +51,7 @@ _detail_text_scope_exclude_tokens = tuple(
     if str(token).strip()
 )
 _CDN_IMAGE_QUERY_PARAMS = frozenset(CDN_IMAGE_QUERY_PARAMS or ())
-_CDN_IMAGE_QUERY_KEY_REGEXES = tuple(
-    re.compile(str(pattern), re.I)
-    for pattern in tuple(CDN_IMAGE_QUERY_KEY_PATTERNS or ())
-    if str(pattern).strip()
-)
+_CDN_IMAGE_QUERY_KEY_REGEXES = compile_regex_patterns(CDN_IMAGE_QUERY_KEY_PATTERNS or ())
 _CDN_IMAGE_PATH_SUFFIX_RE = regex_lib.compile(
     getattr(CDN_IMAGE_PATH_SUFFIX_PATTERN, "pattern", CDN_IMAGE_PATH_SUFFIX_PATTERN),
     regex_lib.I,
@@ -262,23 +259,32 @@ def _dedupe_key_for_image_url(url: str) -> str:
     canonical = canonical_image_url(url)
     if not canonical:
         return ""
-    parsed = urlparse(canonical)
-    shopify_match = _SHOPIFY_IMAGE_FILE_PATH_RE.search(parsed.path or "")
+    original_parsed = urlparse(_normalize_image_url_text(_effective_image_url(url)))
+    original_path = _canonical_image_path(original_parsed.path or "")
+    shopify_match = _SHOPIFY_IMAGE_FILE_PATH_RE.search(original_path)
     if (
-        parsed.netloc == "cdn.shopify.com"
+        original_parsed.netloc == "cdn.shopify.com"
         or shopify_match is not None
-        or (parsed.path or "").startswith("/files/")
     ):
-        filename = unquote((parsed.path or "").rsplit("/", 1)[-1]).casefold()
+        if shopify_match is None:
+            return canonical
+        filename = unquote(shopify_match.group("filename")).casefold()
+        scope = unquote(original_path[: shopify_match.start("filename")]).casefold()
+        if original_parsed.netloc != "cdn.shopify.com":
+            scope = f"{original_parsed.netloc.casefold()}{scope}"
         query = urlencode(
             [
                 (key, value)
-                for key, value in parse_qsl(parsed.query, keep_blank_values=True)
+                for key, value in parse_qsl(
+                    original_parsed.query,
+                    keep_blank_values=True,
+                )
                 if str(key or "").casefold() == "v"
             ],
             doseq=True,
         )
-        return f"shopify:{filename}?{query}" if query else f"shopify:{filename}"
+        key = f"shopify:{scope}{filename}"
+        return f"{key}?{query}" if query else key
     return canonical
 
 

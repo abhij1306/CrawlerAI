@@ -71,7 +71,7 @@ export function TableRow({
     <tr
       {...props}
       className={cn(
-        'border-divider bg-panel hover:bg-background-alt h-[var(--table-row-height)] border-b transition-colors',
+        'border-divider bg-panel hover:bg-accent-subtle/30 h-[var(--table-row-height)] border-b transition-colors',
         className,
       )}
     >
@@ -92,7 +92,7 @@ export function TableHead({
     <th
       {...props}
       className={cn(
-        'text-muted bg-background-alt text-2xs sticky top-0 z-10 h-[var(--table-header-height)] px-5 text-left align-middle [font-family:var(--table-header-font-family)] font-semibold tracking-[var(--table-header-tracking)] uppercase',
+        'text-muted bg-background-alt text-xs sticky top-0 z-10 h-[var(--table-header-height)] px-5 text-left align-middle [font-family:var(--table-header-font-family)] font-semibold tracking-[var(--table-header-tracking)] uppercase tabular-nums',
         className,
       )}
     >
@@ -116,7 +116,7 @@ export function TableCell({
   return (
     <td
       {...props}
-      className={cn('text-primary type-body-sm px-5 py-0 align-middle', className)}
+      className={cn('text-primary type-body-sm px-5 py-0 align-middle tabular-nums', className)}
       colSpan={colSpan}
     >
       {children}

@@ -9,8 +9,11 @@ from app.services.shared.field_coerce import (
     coerce_text,
     text_or_none,
 )
+from app.services.shared.coerce_primitives import is_blank
 
 from .collection import candidate_fingerprint
+
+_FieldNames = list[str] | tuple[str, ...] | set[str] | frozenset[str]
 
 
 def finalize_candidate_value(field_name: str, values: list[object]) -> object | None:
@@ -83,6 +86,32 @@ def finalize_candidate_value(field_name: str, values: list[object]) -> object | 
     return values[0]
 
 
+def finalize_candidate_fields(
+    candidates: dict[str, list[object]],
+    field_names: _FieldNames | None,
+    *,
+    require_structured_multi_list: bool = False,
+) -> dict[str, object]:
+    result: dict[str, object] = {}
+    iterable_fields = (
+        field_names if isinstance(field_names, (list, tuple, set, frozenset)) else ()
+    )
+    for field_name in iterable_fields:
+        if not isinstance(field_name, str):
+            continue
+        finalized = finalize_candidate_value(field_name, candidates.get(field_name, []))
+        if is_blank(finalized):
+            continue
+        if (
+            require_structured_multi_list
+            and field_name in STRUCTURED_MULTI_FIELDS
+            and not isinstance(finalized, list)
+        ):
+            continue
+        result[field_name] = finalized
+    return result
+
+
 def _long_text_differs_only_by_short_suffix(left: str, right: str) -> bool:
     if len(left) < 200 or len(right) < 200:
         return False
@@ -123,7 +152,7 @@ def _deep_merge_structured_dict(
             and isinstance(merged.get("option_values"), dict)
             and merged["option_values"]
             and normalized_key in incoming_option_keys
-            and existing in (None, "", [], {})
+            and is_blank(existing)
         ):
             continue
         if isinstance(existing, dict) and isinstance(value, dict):
@@ -140,7 +169,7 @@ def _deep_merge_structured_dict(
                 combined.append(item)
             merged[normalized_key] = combined
             continue
-        if existing in (None, "", [], {}) and value not in (None, "", [], {}):
+        if is_blank(existing) and not is_blank(value):
             merged[normalized_key] = value
             continue
         if normalized_key not in merged:

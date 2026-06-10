@@ -418,11 +418,14 @@ async def _retry_low_quality_extraction_with_browser(
         "Detail record missing high-value fields "
         f"{', '.join(missing_fields)} via {acquisition_result.method}; retrying browser render for {context.url}",
     )
-    browser_result = await _acquire_browser_retry_result(
-        context,
-        fetched,
-        retry_reason="low_quality_extraction",
-    )
+    try:
+        browser_result = await _acquire_browser_retry_result(
+            context,
+            fetched,
+            retry_reason="low_quality_extraction",
+        )
+    except (RuntimeError, ValueError, TypeError, OSError):
+        return records, selector_rules
     fetched.acquisition_result = browser_result
     return await _extract_records_for_acquisition(context, fetched)
 

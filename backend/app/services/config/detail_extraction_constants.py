@@ -10,6 +10,7 @@ from app.services.config.extraction_rules import (
     PLACEHOLDER_IMAGE_URL_PATTERNS,
     WAF_QUEUE_PATTERNS,
 )
+from app.services.shared.regex_patterns import compile_regex_patterns
 
 logger = logging.getLogger(__name__)
 
@@ -44,15 +45,11 @@ DETAIL_BASE_PLACEHOLDER_TITLE_PATTERNS: tuple[re.Pattern[str], ...] = (
 
 
 def compile_detail_waf_queue_title_patterns() -> tuple[re.Pattern[str], ...]:
-    patterns: list[re.Pattern[str]] = []
-    for pattern in tuple(WAF_QUEUE_PATTERNS or ()):
-        if not str(pattern).strip():
-            continue
-        try:
-            patterns.append(re.compile(str(pattern), re.I))
-        except re.error:
-            logger.warning("Skipping invalid WAF queue title pattern: %r", pattern)
-    return tuple(patterns)
+    return compile_regex_patterns(
+        tuple(WAF_QUEUE_PATTERNS or ()),
+        logger=logger,
+        warning_message="Skipping invalid WAF queue title pattern: %r",
+    )
 
 
 DETAIL_WAF_QUEUE_TITLE_PATTERNS = compile_detail_waf_queue_title_patterns()

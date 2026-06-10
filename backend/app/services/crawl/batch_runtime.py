@@ -18,7 +18,7 @@ from app.services.crawl.state import (
     set_control_request,
     update_run_status,
 )
-from app.services.crawl.sitemap_resolver import resolve_category_urls_from_sitemap
+from app.services.crawl.sitemap_resolver import resolve_category_urls_with_site_links
 from app.services.crawl.utils import normalize_target_url, parse_csv_urls_async
 from app.services.config.sitemap import (
     SITEMAP_DEFAULT_FILTER_KEYWORD,
@@ -48,6 +48,49 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
+
+
+class _URLProcessingDeadlineExceeded(TimeoutError):
+    pass
+
+
+async def _run_url_processing_with_timeout(operation, timeout_seconds: float):
+    task = asyncio.create_task(operation)
+    try:
+        done, _pending = await asyncio.wait(
+            {task},
+            timeout=max(0.001, float(timeout_seconds)),
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+    except asyncio.CancelledError:
+        task.cancel()
+        with suppress(BaseException):
+            await task
+        raise
+    if task in done:
+        return task.result()
+    task.cancel()
+    with suppress(BaseException):
+        await task
+    raise _URLProcessingDeadlineExceeded(
+        f"URL processing exceeded timeout_seconds={timeout_seconds}"
+    )
+
+
+async def resolve_category_urls_from_sitemap(
+    domain: str,
+    filter_keyword: str,
+    max_urls: int,
+    allow_homepage_fallback: bool = False,
+) -> list[str]:
+    result = await resolve_category_urls_with_site_links(
+        domain=domain,
+        filter_keyword=filter_keyword,
+        max_urls=max_urls,
+        allow_homepage_fallback=allow_homepage_fallback,
+        category_only=True,
+    )
+    return result.urls
 
 
 def _require_url_processing_result(url_result: object) -> URLProcessingResult:
@@ -379,14 +422,14 @@ async def _process_url_in_parallel(
                 timeout_seconds=url_timeout_seconds,
             ) as url_span:
                 url_result = _require_url_processing_result(
-                    await asyncio.wait_for(
+                    await _run_url_processing_with_timeout(
                         process_single_url(
                             session=url_session,
                             run=run,
                             url=url,
                             config=url_config,
                         ),
-                        timeout=url_timeout_seconds,
+                        url_timeout_seconds,
                     )
                 )
                 set_logfire_attributes(
@@ -401,7 +444,7 @@ async def _process_url_in_parallel(
                     blocked=_url_metric(url_result, "blocked"),
                 )
             await url_session.commit()
-        except TimeoutError as exc:
+        except _URLProcessingDeadlineExceeded as exc:
             logger.warning("URL processing timed out for run=%s url=%s", run.id, url)
             run, url_result = await _recover_url_failure(
                 url_session,
@@ -718,14 +761,14 @@ async def _process_run_with_span(
                             timeout_seconds=url_timeout_seconds,
                         ) as url_span:
                             url_result = _require_url_processing_result(
-                                await asyncio.wait_for(
+                                await _run_url_processing_with_timeout(
                                     process_single_url(
                                         session=session,
                                         run=run,
                                         url=url,
                                         config=url_config,
                                     ),
-                                    timeout=url_timeout_seconds,
+                                    url_timeout_seconds,
                                 )
                             )
                             set_logfire_attributes(
@@ -739,7 +782,7 @@ async def _process_run_with_span(
                                 method=_url_metric(url_result, "method"),
                                 blocked=_url_metric(url_result, "blocked"),
                             )
-                    except TimeoutError as exc:
+                    except _URLProcessingDeadlineExceeded as exc:
                         logger.warning(
                             "URL processing timed out for run=%s url=%s", run.id, url
                         )

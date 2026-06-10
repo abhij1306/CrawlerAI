@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from types import SimpleNamespace
-import asyncio
 
 import pytest
 import pytest_asyncio
@@ -571,6 +570,55 @@ def test_classify_input_url_treats_sku_html_product_slug_as_detail() -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.component
+@pytest.mark.parametrize(
+    ("url", "expected_surface"),
+    [
+        ("https://codeforces.com/blog/entry/153802", "article_detail"),
+        ("https://community.example.com/thread/123", "forum_detail"),
+        ("https://company.example.com/jobs/software-engineer", "job_detail"),
+        ("https://example.com/reference/manual", "content_detail"),
+    ],
+)
+async def test_classify_input_url_treats_non_ecommerce_detail_surfaces_as_detail(
+    db_session: AsyncSession,
+    test_user,
+    monkeypatch: pytest.MonkeyPatch,
+    url: str,
+    expected_surface: str,
+) -> None:
+    assert _classify_input_url(url) == "detail"
+    playground = PlaygroundSession(
+        user_id=test_user.id,
+        input_url=url,
+        state="created",
+        step_data={},
+    )
+    db_session.add(playground)
+    await db_session.flush()
+    created_payloads: list[dict[str, object]] = []
+
+    async def _fake_create_crawl_run_from_payload(session, user_id, payload):
+        created_payloads.append(dict(payload))
+        return SimpleNamespace(id=601)
+
+    monkeypatch.setattr(
+        "app.services.playground_service.create_crawl_run_from_payload",
+        _fake_create_crawl_run_from_payload,
+    )
+
+    result = await start_discover(
+        db_session,
+        playground=playground,
+        user=test_user,
+    )
+
+    assert result == {"stage": "detail", "run_id": 601}
+    assert created_payloads[0]["surface"] == expected_surface
+    assert created_payloads[0]["surface"] != "ecommerce_detail"
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
 async def test_start_discover_uses_sitemap_stage_for_shallow_locale_root(
     db_session: AsyncSession,
     test_user,
@@ -585,21 +633,10 @@ async def test_start_discover_uses_sitemap_stage_for_shallow_locale_root(
     db_session.add(playground)
     await db_session.flush()
 
-    async def _fake_resolve_category_urls_from_sitemap_result(
-        *,
-        domain: str,
-        max_urls: int,
-        allow_homepage_fallback: bool = False,
-        category_only: bool = False,
-    ):
-        assert domain == "https://usa.tommy.com/en"
-        assert max_urls == 10
-        assert allow_homepage_fallback is True
-        assert category_only is True
-        return SimpleNamespace(
-            urls=["https://usa.tommy.com/en/women/clothing"],
-            source="homepage",
-            nav_tree=[
+    async def _fake_discover_category_urls(urls: list[str], **kwargs: object):
+        assert urls == ["https://usa.tommy.com/en"]
+        assert kwargs["limit"] == 10
+        nav_tree = [
                 {
                     "label": "Women",
                     "url": "https://usa.tommy.com/en/women",
@@ -611,12 +648,27 @@ async def test_start_discover_uses_sitemap_stage_for_shallow_locale_root(
                         }
                     ],
                 }
-            ],
-        )
+        ]
+        return {
+            "status": "completed",
+            "source": "homepage",
+            "sources": {"https://usa.tommy.com/en": "homepage"},
+            "urls": ["https://usa.tommy.com/en/women/clothing"],
+            "groups": {
+                "https://usa.tommy.com/en": [
+                    "https://usa.tommy.com/en/women/clothing"
+                ]
+            },
+            "trees": {"https://usa.tommy.com/en": nav_tree},
+            "errors": {},
+            "diagnostics": {},
+            "total_found": 1,
+            "limit": 10,
+        }
 
     monkeypatch.setattr(
-        "app.services.playground_service.resolve_category_urls_from_sitemap_result",
-        _fake_resolve_category_urls_from_sitemap_result,
+        "app.services.playground_service.discover_category_urls",
+        _fake_discover_category_urls,
     )
 
     result = await start_discover(
@@ -755,20 +807,11 @@ async def test_start_discover_lists_categories_for_multiple_input_urls(
     db_session.add(playground)
     await db_session.flush()
 
-    async def _fake_resolve_category_urls_from_sitemap_result(
-        *,
-        domain: str,
-        max_urls: int,
-        allow_homepage_fallback: bool = False,
-        category_only: bool = False,
-    ):
-        assert max_urls == 1
-        assert allow_homepage_fallback is True
-        assert category_only is True
-        return SimpleNamespace(
-            urls=[f"{domain}/collections/women", f"{domain}/collections/men"],
-            source="sitemap",
-            nav_tree=[
+    async def _fake_discover_category_urls(urls: list[str], **kwargs: object):
+        assert urls == ["https://brand-a.example", "https://brand-b.example"]
+        assert kwargs["limit"] == 1
+        trees = {
+            domain: [
                 {
                     "label": "Collections",
                     "children": [
@@ -779,12 +822,29 @@ async def test_start_discover_lists_categories_for_multiple_input_urls(
                         }
                     ],
                 }
-            ],
-        )
+            ]
+            for domain in urls
+        }
+        groups = {
+            domain: [f"{domain}/collections/women", f"{domain}/collections/men"][:1]
+            for domain in urls
+        }
+        return {
+            "status": "completed",
+            "source": "sitemap",
+            "sources": {domain: "sitemap" for domain in urls},
+            "urls": ["https://brand-a.example/collections/women"],
+            "groups": groups,
+            "trees": trees,
+            "errors": {},
+            "diagnostics": {},
+            "total_found": 2,
+            "limit": 1,
+        }
 
     monkeypatch.setattr(
-        "app.services.playground_service.resolve_category_urls_from_sitemap_result",
-        _fake_resolve_category_urls_from_sitemap_result,
+        "app.services.playground_service.discover_category_urls",
+        _fake_discover_category_urls,
     )
 
     result = await start_discover(
@@ -853,29 +913,32 @@ async def test_start_discover_does_not_block_remaining_urls_on_slow_first_input(
     db_session.add(playground)
     await db_session.flush()
 
-    async def _fake_resolve_category_urls_from_sitemap_result(
-        *,
-        domain: str,
-        max_urls: int,
-        allow_homepage_fallback: bool = False,
-        category_only: bool = False,
-    ):
-        del max_urls, allow_homepage_fallback, category_only
-        if "slow-brand" in domain:
-            await asyncio.sleep(0.5)
-        return SimpleNamespace(
-            urls=[f"{domain}/collections/women"],
-            source="sitemap",
-            nav_tree=[],
-        )
+    async def _fake_discover_category_urls(urls: list[str], **kwargs: object):
+        assert urls == ["https://slow-brand.example", "https://fast-brand.example"]
+        return {
+            "status": "completed",
+            "source": "multi",
+            "sources": {
+                "https://slow-brand.example": "timeout",
+                "https://fast-brand.example": "sitemap",
+            },
+            "urls": ["https://fast-brand.example/collections/women"],
+            "groups": {
+                "https://slow-brand.example": [],
+                "https://fast-brand.example": [
+                    "https://fast-brand.example/collections/women"
+                ],
+            },
+            "trees": {},
+            "errors": {"https://slow-brand.example": "TimeoutError"},
+            "diagnostics": {},
+            "total_found": 1,
+            "limit": 10,
+        }
 
     monkeypatch.setattr(
-        "app.services.playground_service.PLAYGROUND_CATEGORY_PER_INPUT_TIMEOUT_SECONDS",
-        0.05,
-    )
-    monkeypatch.setattr(
-        "app.services.playground_service.resolve_category_urls_from_sitemap_result",
-        _fake_resolve_category_urls_from_sitemap_result,
+        "app.services.playground_service.discover_category_urls",
+        _fake_discover_category_urls,
     )
 
     result = await start_discover(db_session, playground=playground, user=test_user)

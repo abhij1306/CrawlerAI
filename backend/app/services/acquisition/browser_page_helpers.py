@@ -79,8 +79,14 @@ def _select_primary_browser_html(
     progress_events = int(getattr(traversal_result, "progress_events", 0) or 0)
     card_count = int(getattr(traversal_result, "card_count", 0) or 0)
     stop_reason = str(getattr(traversal_result, "stop_reason", "") or "").strip()
-    rendered_signal_count = _listing_html_detail_anchor_count(rendered_html)
-    traversal_signal_count = _listing_html_detail_anchor_count(traversal_html)
+    rendered_signal_count = _listing_html_detail_anchor_count(
+        rendered_html,
+        surface=surface,
+    )
+    traversal_signal_count = _listing_html_detail_anchor_count(
+        traversal_html,
+        surface=surface,
+    )
     if rendered_signal_count > traversal_signal_count:
         return rendered_html
     if progress_events > 0 and (
@@ -101,22 +107,21 @@ def _select_primary_browser_html(
         return rendered_html
     return traversal_html
 
-def _listing_html_detail_anchor_count(html: str) -> int:
+def _listing_html_detail_anchor_count(
+    html: str,
+    *,
+    surface: str | None,
+) -> int:
     soup = BeautifulSoup(str(html or ""), HTML_PARSER)
+    detail_markers = tuple(
+        str(marker or "").strip().lower()
+        for marker in detail_path_hints(surface)
+        if str(marker or "").strip()
+    )
     count = 0
     for anchor in soup.find_all("a", href=True):
         href = str(anchor.get("href") or "").strip().lower()
-        if any(
-            marker in href
-            for marker in (
-                "/products/",
-                "/product/",
-                "/p/",
-                "/item/",
-                "/jobs/",
-                "/job/",
-            )
-        ):
+        if any(marker in href for marker in detail_markers):
             count += 1
     return count
 

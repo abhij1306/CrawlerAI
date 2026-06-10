@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from urllib.parse import urlsplit, urlunsplit
 
 from defusedxml import ElementTree
@@ -17,6 +17,8 @@ from app.services.config.sitemap import (
     SITEMAP_CATEGORY_PATH_TOKENS,
     SITEMAP_DEFAULT_FILTER_KEYWORD,
     SITEMAP_DEFAULT_MAX_URLS,
+    SITE_LINK_DISCOVERY_MAX_DEPTH,
+    SITE_LINK_DISCOVERY_MAX_PAGES,
     SITEMAP_FETCH_MAX_REDIRECTS,
     SITEMAP_FETCH_RETRY_ATTEMPTS,
     SITEMAP_FETCH_RETRY_DELAY_SECONDS,
@@ -31,7 +33,7 @@ from app.services.config.sitemap import (
     SITEMAP_THIN_RESULT_THRESHOLD,
     SITEMAP_USER_AGENT,
 )
-from app.services.crawl.utils import normalize_target_url
+from app.services.crawl.utils import normalize_target_url, text_has_token
 from app.services.shared.url_utils import absolute_url
 from app.services.surface_resolver import resolve_auto_surface
 from app.services.url_safety import validate_public_target
@@ -45,6 +47,7 @@ class SitemapResolutionResult:
     urls: list[str]
     source: str
     nav_tree: list[dict[str, object]] | None = None
+    diagnostics: dict[str, object] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
@@ -100,6 +103,97 @@ async def resolve_category_urls_from_sitemap(
     return result.urls
 
 
+# skipcq: PY-R1000
+async def resolve_category_urls_with_site_links(
+    domain: str,
+    filter_keyword: str = SITEMAP_DEFAULT_FILTER_KEYWORD,
+    max_urls: int = SITEMAP_DEFAULT_MAX_URLS,
+    allow_homepage_fallback: bool = False,
+    category_only: bool = False,
+    *,
+    strategy: str = "static_then_rendered",
+    max_depth: int = SITE_LINK_DISCOVERY_MAX_DEPTH,
+    max_pages: int = SITE_LINK_DISCOVERY_MAX_PAGES,
+    validate_candidates: bool = False,
+) -> SitemapResolutionResult:
+    """Resolve category URLs through static discovery plus rendered site links."""
+
+    normalized_strategy = str(strategy or "static_then_rendered").strip().lower()
+    allowed = {"static_then_rendered", "static_only", "rendered_only"}
+    if normalized_strategy not in allowed:
+        raise ValueError("Unsupported category discovery strategy")
+    limit = max(1, int(max_urls or SITEMAP_DEFAULT_MAX_URLS))
+    static_result: SitemapResolutionResult | None = None
+    static_error: Exception | None = None
+    if normalized_strategy != "rendered_only":
+        try:
+            static_result = await resolve_category_urls_from_sitemap_result(
+                domain=domain,
+                filter_keyword=filter_keyword,
+                max_urls=limit,
+                allow_homepage_fallback=allow_homepage_fallback,
+                category_only=category_only,
+            )
+        except Exception as exc:
+            static_error = exc
+        else:
+            if (
+                normalized_strategy == "static_only"
+                or len(static_result.urls) >= SITEMAP_THIN_RESULT_THRESHOLD
+            ):
+                return static_result
+    if normalized_strategy == "static_only":
+        if static_result is not None:
+            return static_result
+        if static_error is not None:
+            raise static_error
+        raise ValueError(f"Unable to resolve sitemap for {_normalize_homepage_url(domain)}")
+
+    from app.services.crawl.site_link_discovery import discover_rendered_category_links
+
+    try:
+        rendered_result = await discover_rendered_category_links(
+            _normalize_homepage_url(domain),
+            limit=limit,
+            max_depth=max_depth,
+            max_pages=max_pages,
+            validate_candidates=validate_candidates,
+        )
+    except Exception as exc:
+        if static_result is not None:
+            static_result.diagnostics["rendered_fallback_error"] = {
+                "error_type": type(exc).__name__,
+                "message": str(exc),
+            }
+            return static_result
+        raise exc
+
+    if static_result is None or not static_result.urls:
+        if static_error is not None:
+            rendered_result.diagnostics["static_error"] = {
+                "error_type": type(static_error).__name__,
+                "message": str(static_error),
+            }
+        return rendered_result
+
+    merged = _merge_dedupe_urls(static_result.urls, rendered_result.urls, limit=limit)
+    labels = {
+        **_labels_by_url_from_tree(static_result.nav_tree or []),
+        **_labels_by_url_from_tree(rendered_result.nav_tree or []),
+    }
+    return SitemapResolutionResult(
+        urls=merged,
+        source=f"{static_result.source}+{rendered_result.source}",
+        nav_tree=_build_nav_tree(merged, labels_by_url=labels),
+        diagnostics={
+            "static": static_result.diagnostics,
+            "rendered": rendered_result.diagnostics,
+            "static_url_count": len(static_result.urls),
+            "rendered_url_count": len(rendered_result.urls),
+        },
+    )
+
+
 async def resolve_category_urls_from_sitemap_result(
     domain: str,
     filter_keyword: str = SITEMAP_DEFAULT_FILTER_KEYWORD,
@@ -115,6 +209,7 @@ async def resolve_category_urls_from_sitemap_result(
     limit = max(1, int(max_urls or SITEMAP_DEFAULT_MAX_URLS))
     homepage_url = _normalize_homepage_url(domain)
     last_sitemap_error: ValueError | None = None
+    sitemap_attempts: list[dict[str, str]] = []
 
     async with httpx.AsyncClient(
         follow_redirects=True,
@@ -131,9 +226,18 @@ async def resolve_category_urls_from_sitemap_result(
                     limit=limit,
                     category_only=category_only,
                 )
+                sitemap_result.diagnostics.setdefault("sitemap_attempts", sitemap_attempts)
+                sitemap_result.diagnostics.setdefault("static_status", "sitemap_success")
                 break
             except ValueError as exc:
                 last_sitemap_error = exc
+                sitemap_attempts.append(
+                    {
+                        "url": root_url,
+                        "error_type": type(exc).__name__,
+                        "message": str(exc),
+                    }
+                )
 
         # If we got a sitemap but it's thin (e.g. only policy pages), and
         # homepage fallback is allowed, also harvest the homepage and merge
@@ -151,9 +255,19 @@ async def resolve_category_urls_from_sitemap_result(
                     limit=limit,
                     category_only=category_only,
                 )
-            except ValueError:
+            except ValueError as exc:
+                sitemap_result.diagnostics["homepage_fallback_error"] = {
+                    "error_type": type(exc).__name__,
+                    "message": str(exc),
+                }
                 return sitemap_result
             if not sitemap_result.urls:
+                homepage_result.diagnostics.setdefault(
+                    "sitemap_attempts", sitemap_attempts
+                )
+                homepage_result.diagnostics.setdefault(
+                    "static_status", "homepage_fallback_success"
+                )
                 return homepage_result
             merged = _merge_dedupe_urls(
                 sitemap_result.urls, homepage_result.urls, limit=limit
@@ -163,6 +277,12 @@ async def resolve_category_urls_from_sitemap_result(
                 urls=merged,
                 source="sitemap+homepage",
                 nav_tree=_build_nav_tree(merged, labels_by_url=labels),
+                diagnostics={
+                    "sitemap_attempts": sitemap_attempts,
+                    "static_status": "sitemap_plus_homepage_success",
+                    "sitemap_url_count": len(sitemap_result.urls),
+                    "homepage_url_count": len(homepage_result.urls),
+                },
             )
 
         if sitemap_result is not None:
@@ -177,9 +297,22 @@ async def resolve_category_urls_from_sitemap_result(
                     limit=limit,
                     category_only=category_only,
                 )
-            except ValueError:
+            except ValueError as exc:
+                sitemap_attempts.append(
+                    {
+                        "url": homepage_url,
+                        "error_type": type(exc).__name__,
+                        "message": str(exc),
+                    }
+                )
                 pass
             else:
+                homepage_result.diagnostics.setdefault(
+                    "sitemap_attempts", sitemap_attempts
+                )
+                homepage_result.diagnostics.setdefault(
+                    "static_status", "homepage_fallback_success"
+                )
                 return homepage_result
 
     if last_sitemap_error is not None:
@@ -532,6 +665,42 @@ def _labels_by_url_from_tree(tree: list[dict[str, object]]) -> dict[str, str]:
     return labels
 
 
+def build_category_nav_tree(
+    urls: list[str],
+    *,
+    labels_by_url: Mapping[str, str | None] | None = None,
+) -> list[dict[str, object]]:
+    return _build_nav_tree(urls, labels_by_url=labels_by_url)
+
+
+def category_labels_by_url_from_tree(tree: list[dict[str, object]]) -> dict[str, str]:
+    return _labels_by_url_from_tree(tree)
+
+
+def category_url_key(url: str) -> str:
+    return _url_key(url)
+
+
+def category_origin_key(value: str) -> tuple[str, str, int]:
+    return _origin_key(value)
+
+
+def strip_url_fragment(value: str) -> str:
+    return _strip_fragment(value)
+
+
+def category_link_rejected(candidate_url: str) -> bool:
+    return _reject_homepage_candidate(candidate_url)
+
+
+def looks_like_category_url(url: str) -> bool:
+    return _looks_like_category_url(url)
+
+
+def has_category_anchor_signal(url: str, anchor: Tag) -> bool:
+    return _has_category_homepage_signal(url, anchor)
+
+
 def _url_key(url: str) -> str:
     return _strip_fragment(url).rstrip("/").lower()
 
@@ -550,6 +719,7 @@ def _anchor_label(anchor: Tag) -> str | None:
     return " ".join(label.split())
 
 
+# skipcq: PY-R1000
 def _classify_homepage_candidate(
     *,
     candidate_url: str,
@@ -664,9 +834,12 @@ def _has_category_homepage_signal(url: str, anchor: Tag) -> bool:
     text = " ".join(anchor.stripped_strings).strip().lower()
     if not text:
         return False
-    if any(token in text for token in SITEMAP_CATEGORY_ANCHOR_TEXT_EXCLUDED_TOKENS):
+    if any(
+        text_has_token(text, token)
+        for token in SITEMAP_CATEGORY_ANCHOR_TEXT_EXCLUDED_TOKENS
+    ):
         return False
-    return any(token in text for token in SITEMAP_CATEGORY_ANCHOR_TEXT_TOKENS)
+    return any(text_has_token(text, token) for token in SITEMAP_CATEGORY_ANCHOR_TEXT_TOKENS)
 
 
 def _looks_like_locale_path(path: str) -> bool:

@@ -90,7 +90,7 @@ function getApiBaseUrlCandidates() {
   return [getApiBaseUrl()];
 }
 
-async function retrySequentially<T>(
+function retrySequentially<T>(
   operation: (attempt: number) => Promise<T>,
   {
     maxAttempts,

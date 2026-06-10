@@ -591,7 +591,7 @@ def test_product_intelligence_search_result_snapshot_keeps_description() -> None
     )
 
     assert snapshot["description"] == "Garment-dyed denim with a slim straight fit."
-    assert snapshot["price"] == 125.0
+    assert snapshot["price"] == pytest.approx(125.0)
     assert snapshot["currency"] == "USD"
 
 
@@ -1340,7 +1340,7 @@ def test_product_intelligence_parses_serpapi_shopping_payload() -> None:
     assert results[0].url == "https://www.example.com/p/crown-ivy-floral-midi-dress/123.html"
     assert results[0].payload["provider"] == "serpapi_shopping"
     assert results[0].payload["product_id"] == "987654321"
-    assert results[0].payload["extracted_price"] == 49.99
+    assert results[0].payload["extracted_price"] == pytest.approx(49.99)
     assert results[0].payload["thumbnail"] == "https://example.com/image.jpg"
 
 
@@ -1376,7 +1376,7 @@ def test_product_intelligence_parses_serpapi_immersive_store_links() -> None:
     assert results[0].payload["provider"] == "serpapi_immersive"
     assert results[0].payload["product_id"] == "immersive-product-id"
     assert results[0].payload["product_link"] == "https://www.google.com/search?ibp=oshop&q=levi"
-    assert results[0].payload["extracted_price"] == 69.5
+    assert results[0].payload["extracted_price"] == pytest.approx(69.5)
 
 
 @pytest.mark.asyncio
@@ -2223,7 +2223,7 @@ async def test_product_intelligence_job_stores_source_products_and_llm_option(
     )
     assert source is not None
     assert source.is_private_label is True
-    assert source.price == 19.99
+    assert source.price == pytest.approx(19.99)
 
 
 @pytest.mark.asyncio
@@ -2493,7 +2493,7 @@ async def test_product_intelligence_discovery_uses_product_url_from_listing_reco
     assert response["candidates"][0]["source_url"] == (
         "https://www.belk.com/p/wrangler--relaxed-bootcut-jeans-/3200040112342570.html"
     )
-    assert response["candidates"][0]["source_price"] == 39.95
+    assert response["candidates"][0]["source_price"] == pytest.approx(39.95)
     assert seen_queries[0] == "site:wrangler.com wrangler Relaxed Bootcut Jeans"
 
 

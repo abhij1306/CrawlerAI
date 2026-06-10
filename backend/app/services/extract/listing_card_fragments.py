@@ -40,6 +40,7 @@ from app.services.config.extraction_rules import (
 )
 from app.services.config.runtime_settings import crawler_runtime_settings
 from app.services.config.selectors import CARD_SELECTORS
+from app.services.config.surface_hints import detail_path_hints
 from app.services.shared.field_coerce import PRICE_RE, clean_text
 
 FragmentScoreFn = Callable[[object], int]
@@ -531,10 +532,10 @@ def _node_has_listing_media(node) -> bool:
 
 
 def _node_has_detail_like_link(node, *, surface: str) -> bool:
-    href_tokens = (
-        ("/job/", "/jobs/", "/viewjob", "showjob=", "/careers/")
-        if str(surface or "").strip().lower().startswith("job_")
-        else ("/products/", "/product/", "/p/", "/dp/", "/item/")
+    href_tokens = tuple(
+        str(marker or "").strip().lower()
+        for marker in detail_path_hints(surface)
+        if str(marker or "").strip()
     )
     anchors = listing_node_css(node, "a[href]")
     for anchor in anchors[:6]:

@@ -764,7 +764,6 @@ export const LogTerminal = memo(function LogTerminal({
                       <span
                         className="text-secondary block truncate text-xs font-medium"
                         title={group.label}
-                        onClick={(e) => e.stopPropagation()}
                       >
                         {group.label}
                       </span>
