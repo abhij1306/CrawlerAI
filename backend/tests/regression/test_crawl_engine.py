@@ -3723,7 +3723,7 @@ def test_extract_ecommerce_detail_returns_normalized_record() -> None:
     assert record["category"] == "Widgets"
     assert record["image_url"] == "https://example.com/images/widget-1.jpg"
     assert any("widget-2.jpg" in value for value in record["additional_images"])
-    assert record["rating"] == 4.7
+    assert record["rating"] == pytest.approx(4.7)
     assert record["review_count"] == 128
     assert record["features"] == ["Lightweight body", "Long battery life"]
     assert record["materials"] == "Cotton blend"

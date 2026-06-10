@@ -21,6 +21,7 @@ from app.services.config.extraction_rules import (
     DETAIL_BRAND_DESCRIPTION_PATTERNS,
     DETAIL_BRAND_HOST_FALLBACKS,
     DETAIL_BRAND_PREFIX_CONTINUATION_TOKENS,
+    DETAIL_BRAND_NUMERIC_PREFIX_ALLOWLIST,
     DETAIL_BRAND_PREFIX_STOP_TOKENS,
     DETAIL_BRAND_SUFFIX_REJECT_TOKENS,
     DETAIL_BRAND_TITLE_PREFIX_MAX_WORDS,
@@ -85,16 +86,7 @@ def sanitize_detail_placeholder_scalars(
     if category.lower() in CATEGORY_PLACEHOLDER_VALUES:
         record.pop("category", None)
     elif category:
-        cleaned_category = _clean_detail_category_path(
-            category,
-            title=record.get("title"),
-            sku=record.get("sku"),
-            page_url=identity_url,
-        )
-        if cleaned_category:
-            record["category"] = cleaned_category
-        else:
-            record.pop("category", None)
+        _sanitize_detail_category(record, identity_url=identity_url)
     features = record.get("features")
     if isinstance(features, list):
         if not any(text_or_none(item) for item in features):
@@ -153,6 +145,7 @@ def sanitize_detail_identity_scalars(
     _repair_missing_detail_brand(record, identity_url=identity_url)
     _repair_detail_brand_from_host_fallback(record, identity_url=identity_url)
     _sanitize_detail_title_noise(record)
+    _sanitize_detail_category(record, identity_url=identity_url)
     _repair_detail_color_from_description(record)
     placeholder_title_removed = bool(record.pop("_placeholder_title_removed", False))
     if not text_or_none(record.get("title")):
@@ -241,6 +234,8 @@ def _brand_from_title_prefix(
         and 2 <= len(raw_words[0]) <= 3
         and raw_words[0] in path_parts
     ):
+        if raw_words[0] not in DETAIL_BRAND_NUMERIC_PREFIX_ALLOWLIST:
+            return None
         return raw_words[0]
     max_words = max(1, int(DETAIL_BRAND_TITLE_PREFIX_MAX_WORDS))
     continuation_tokens = set(DETAIL_BRAND_PREFIX_CONTINUATION_TOKENS or ())
@@ -296,6 +291,11 @@ def _sanitize_detail_title_noise(record: dict[str, Any]) -> None:
     title = _strip_trailing_title_variant_params(title, record)
     if title:
         record["title"] = title
+        return
+    record.pop("title", None)
+    field_sources = record.get("_field_sources")
+    if isinstance(field_sources, dict):
+        field_sources.pop("title", None)
 
 
 def _dedupe_repeated_semicolon_title(title: str) -> str:
@@ -532,6 +532,26 @@ def _detail_scalar_value_is_placeholder(value: object) -> bool:
     return cleaned in {"category", "default title", "uncategorized"}
 
 
+def _sanitize_detail_category(
+    record: dict[str, Any],
+    *,
+    identity_url: str,
+) -> None:
+    category = clean_text(record.get("category"))
+    if not category:
+        return
+    cleaned_category = _clean_detail_category_path(
+        category,
+        title=record.get("title"),
+        sku=record.get("sku"),
+        page_url=identity_url,
+    )
+    if cleaned_category:
+        record["category"] = cleaned_category
+    else:
+        record.pop("category", None)
+
+
 def _sanitize_detail_scalar_size(record: dict[str, Any]) -> None:
     size = clean_text(record.get("size"))
     if not size or not size.isdigit():
@@ -570,12 +590,9 @@ def _normalize_detail_tables(record: dict[str, Any]) -> None:
             }
             headers = [header for header in headers if header.casefold() in allowed]
         normalized_rows = [
-            {
-                header: row[header]
-                for header in headers
-                if isinstance(row, dict) and row.get(header) not in (None, "", [], {})
-            }
+            _normalized_table_row(row, headers=headers)
             for row in rows
+            if isinstance(row, dict)
         ]
         normalized_rows = [row for row in normalized_rows if row]
         if not normalized_rows:
@@ -595,6 +612,19 @@ def _table_headers(table: dict[str, Any]) -> list[str]:
     if not isinstance(raw_headers, list):
         return []
     return [clean_text(header) for header in raw_headers if clean_text(header)]
+
+
+def _normalized_table_row(row: dict[str, Any], *, headers: list[str]) -> dict[str, Any]:
+    values_by_header = {
+        clean_text(key): value
+        for key, value in row.items()
+        if clean_text(key) and value not in (None, "", [], {})
+    }
+    return {
+        header: values_by_header[header]
+        for header in headers
+        if values_by_header.get(header) not in (None, "", [], {})
+    }
 
 
 def _table_is_size_guide(table: dict[str, Any]) -> bool:
@@ -715,19 +745,28 @@ def _strip_embedded_root_suffix_from_category_head(
 
 
 def _category_part_matches_identity(part: object, identity: str) -> bool:
-    part_key = re.sub(r"[^a-z0-9]+", "", clean_text(part).casefold())
-    identity_key = re.sub(r"[^a-z0-9]+", "", clean_text(identity).casefold())
+    part_key = _category_identity_key(part)
+    identity_key = _category_identity_key(identity)
     if not part_key or not identity_key:
         return False
     if part_key == identity_key:
         return True
     if len(identity_key) >= 5 and identity_key in part_key:
-        return part_key.startswith(("buy", "shop", "choose"))
+        return part_key.startswith(identity_key) or part_key.startswith(
+            ("buy", "shop", "choose")
+        )
     if min(len(part_key), len(identity_key)) < 8:
         return False
     return SequenceMatcher(None, part_key, identity_key).ratio() >= float(
         DETAIL_BREADCRUMB_TITLE_DUPLICATE_RATIO
     )
+
+
+def _category_identity_key(value: object) -> str:
+    text = clean_text(value)
+    if "<" in text and ">" in text:
+        text = re.sub(r"<[^>]+>", "", text)
+    return re.sub(r"[^a-z0-9]+", "", text.casefold())
 
 
 def detail_title_looks_like_placeholder(title: str) -> bool:

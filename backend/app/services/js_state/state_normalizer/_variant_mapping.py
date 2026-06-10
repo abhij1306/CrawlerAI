@@ -3,9 +3,9 @@ from __future__ import annotations
 
 import logging
 from typing import Any
-from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from glom import GlomError, glom  # type: ignore[import-untyped]
+from app.services.shared.url_utils import variant_url_with_param
 
 from ._common import *
 
@@ -205,14 +205,7 @@ def _dict_label(value: Any) -> str | None:
     return text_or_none(value.get("label")) or text_or_none(value.get("name"))
 
 def _variant_url(page_url: str, variant_id: str) -> str:
-    parsed = urlsplit(str(page_url or "").strip())
-    query_pairs = [
-        (key, value)
-        for key, value in parse_qsl(parsed.query, keep_blank_values=True)
-        if key != "variant"
-    ]
-    query_pairs.append(("variant", variant_id))
-    return urlunsplit(parsed._replace(query=urlencode(query_pairs, doseq=True)))
+    return variant_url_with_param(page_url, variant_id)
 
 def _connection_nodes(value: Any) -> list[dict[str, Any]]:
     if isinstance(value, dict):

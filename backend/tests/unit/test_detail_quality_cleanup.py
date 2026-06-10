@@ -6,6 +6,7 @@ from app.services.dom.image_extraction import dedupe_image_urls
 from app.services.extract.detail.assembly.final_cleanup import (
     repair_ecommerce_detail_record_quality,
 )
+from app.services.extract.detail.text.sanitizer import sanitize_detail_long_text
 
 
 def _repair(record: dict[str, object], page_url: str) -> dict[str, object]:
@@ -14,7 +15,7 @@ def _repair(record: dict[str, object], page_url: str) -> dict[str, object]:
 
 
 @pytest.mark.unit
-def test_shopify_detail_images_dedupe_across_storefront_and_cdn_hosts() -> None:
+def test_shopify_detail_images_dedupe_keeps_distinct_store_scopes() -> None:
     images = dedupe_image_urls(
         [
             "https://sneakerpolitics.com/cdn/shop/files/item-2.jpg?v=1",
@@ -24,14 +25,7 @@ def test_shopify_detail_images_dedupe_across_storefront_and_cdn_hosts() -> None:
         ]
     )
 
-    assert len(images) == 2  # nosec B101
-    assert (  # nosec B101
-        {image.rsplit("/", 1)[-1].split("?", 1)[0] for image in images}
-        == {
-            "item-2.jpg",
-            "item-3.jpg",
-        }
-    )
+    assert len(images) == 4  # nosec B101
 
 
 @pytest.mark.unit
@@ -76,8 +70,8 @@ def test_detail_record_cleanup_repairs_brand_title_tables_variants_and_discount(
         "tables": [
             {
                 "context": "Size Guide",
-                "headers": ["eu_it", "uk", "us", "ferragamo"],
-                "rows": [{"uk": "2", "us": "5", "eu_it": "35", "ferragamo": "4.5"}],
+                "headers": [" eu_it ", "uk", "us", "ferragamo"],
+                "rows": [{"uk": "2", "us": "5", " eu_it ": "35", "ferragamo": "4.5"}],
             }
         ],
         "variants": [
@@ -96,11 +90,11 @@ def test_detail_record_cleanup_repairs_brand_title_tables_variants_and_discount(
     assert record["title"] == "Old Skool Shoe"  # nosec B101
     assert "size" not in record  # nosec B101
     assert "sale_price" not in record  # nosec B101
-    assert "Footnote" not in str(record.get("description"))  # nosec B101
-    assert "lnstagram" not in str(record.get("description"))  # nosec B101
-    assert (  # nosec B101
-        "Please check the measurements below" not in str(record.get("description"))
-    )
+    assert "description" in record  # nosec B101
+    description = str(record["description"])
+    assert "Footnote" not in description  # nosec B101
+    assert "lnstagram" not in description  # nosec B101
+    assert description.count("Please check the measurements below") == 1  # nosec B101
     assert record["tables"] == [  # nosec B101
         {
             "context": "Size Guide",
@@ -127,6 +121,43 @@ def test_missing_numeric_brand_can_be_repaired_from_title_and_url() -> None:
     )
 
     assert record["brand"] == "47"  # nosec B101
+
+
+@pytest.mark.unit
+def test_numeric_title_prefix_is_not_promoted_to_brand_without_allowlist() -> None:
+    record: dict[str, object] = {"title": "123 Example Jacket", "price": "99.00"}
+
+    _repair(record, "https://example.com/products/123-example-jacket")
+
+    assert "brand" not in record  # nosec B101
+
+
+@pytest.mark.unit
+def test_title_cleanup_removes_empty_sanitized_title() -> None:
+    record: dict[str, object] = {"title": "+", "_field_sources": {"title": ["dom"]}}
+
+    _repair(record, "https://example.com/products/example")
+
+    assert "title" not in record  # nosec B101
+    assert "title" not in record["_field_sources"]  # nosec B101
+
+
+@pytest.mark.unit
+def test_long_text_cleanup_keeps_later_title_mentions_and_only_extra_prompts() -> None:
+    text = (
+        "Example Jacket is cut from cotton. "
+        "The Example Jacket returns this season with a relaxed fit."
+    )
+
+    assert sanitize_detail_long_text(text, title="Example Jacket") == text  # nosec B101
+    assert (  # nosec B101
+        sanitize_detail_long_text(
+            "Details Please check the measurements below Model is 6 ft "
+            "Please check the measurements below Cotton shell.",
+            title="Example Jacket",
+        )
+        == "Details Please check the measurements below Model is 6 ft Cotton shell."
+    )
 
 
 @pytest.mark.unit

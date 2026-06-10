@@ -18,6 +18,7 @@ from app.services.domain_memory_service import (
 )
 from app.services.domain_utils import normalize_domain
 from app.services.extract.content_surface_extractor import CONTENT_DETAIL_SURFACES
+from app.services.extract.record_overlay import overlay_record
 from app.services.field_policy import repair_target_fields_for_surface
 from app.services.pipeline.extract_records import extract_records
 from app.services.pipeline.runtime_helpers import (
@@ -190,11 +191,7 @@ def _best_adapter_result(adapter_results: list[AdapterResult]) -> AdapterResult 
                 unsourced_records.append(dict(record))
                 continue
             existing = merged_records.setdefault(url, {})
-            for key, value in record.items():
-                if value in (None, "", [], {}):
-                    continue
-                if existing.get(key) in (None, "", [], {}):
-                    existing[key] = value
+            merged_records[url] = overlay_record(existing, record)
     return AdapterResult(
         records=[*merged_records.values(), *unsourced_records],
         source_type=best.source_type,

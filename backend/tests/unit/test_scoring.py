@@ -27,7 +27,7 @@ def dimension(dimension_id: str, score: int) -> UCPDimensionScore:
 
 @pytest.mark.unit
 def test_dimension_weights_sum_to_one() -> None:
-    assert round(sum(DIMENSION_WEIGHTS.values()), 6) == 1.0
+    assert round(sum(DIMENSION_WEIGHTS.values()), 6) == pytest.approx(1.0)
 
 
 @pytest.mark.unit

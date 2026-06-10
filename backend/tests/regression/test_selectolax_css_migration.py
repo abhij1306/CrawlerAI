@@ -60,7 +60,7 @@ def test_detail_extractor_preserves_css_dom_field_output() -> None:
 
     assert record["title"] == "Widget Prime"
     assert record["price"] == "19.99"
-    assert record["rating"] == 4.8
+    assert record["rating"] == pytest.approx(4.8)
     assert record["review_count"] == 128
 
 
@@ -103,7 +103,7 @@ def test_listing_extractor_preserves_css_card_field_output() -> None:
     assert rows[0]["url"] == "https://example.com/products/widget-prime"
     assert rows[0]["price"] == "19.99"
     assert rows[0]["image_url"] == "https://example.com/images/widget-prime.jpg"
-    assert rows[0]["rating"] == 4.7
+    assert rows[0]["rating"] == pytest.approx(4.7)
     assert rows[0]["review_count"] == 128
 
 
@@ -1044,7 +1044,7 @@ async def test_amazon_adapter_preserves_css_field_output() -> None:
     assert record["title"] == "Widget Prime"
     assert record["price"] == "$19.99"
     assert record["brand"] == "Orion"
-    assert record["rating"] == 4.8
+    assert record["rating"] == pytest.approx(4.8)
     assert record["review_count"] == 128
     assert record["image_url"] == "https://example.com/widget.jpg"
 

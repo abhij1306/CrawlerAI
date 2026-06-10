@@ -113,7 +113,7 @@ def test_run_health_verdict_uses_recorded_verdict_count_over_url_count() -> None
     health = run_health_verdict({"url_count": 10, "url_verdicts": ["error"]})
 
     assert health["url_count"] == 10
-    assert health["failure_rate"] == 0.1
+    assert health["failure_rate"] == pytest.approx(0.1)
 
 
 @pytest.mark.unit
@@ -121,7 +121,7 @@ def test_run_health_verdict_empty_verdicts_use_zero_count() -> None:
     health = run_health_verdict({"url_count": 10, "url_verdicts": []})
 
     assert health["url_count"] == 0
-    assert health["failure_rate"] == 0.0
+    assert health["failure_rate"] == pytest.approx(0.0)
     assert health["status"] == "healthy"
 
 
@@ -130,7 +130,7 @@ def test_run_health_verdict_missing_verdicts_uses_url_count() -> None:
     health = run_health_verdict({"url_count": 10})
 
     assert health["url_count"] == 10
-    assert health["failure_rate"] == 0.0
+    assert health["failure_rate"] == pytest.approx(0.0)
     assert health["status"] == "healthy"
 
 

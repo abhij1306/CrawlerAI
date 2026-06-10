@@ -55,7 +55,7 @@ Routers registered in `backend/app/main.py`:
 
 Important route groups:
 
-- `api/crawls.py`: create runs, CSV ingestion, logs, websocket updates, pause/resume/kill, commit fields, commit LLM suggestions
+- `api/crawls.py`: create runs, category discovery, CSV ingestion, logs, websocket updates, pause/resume/kill, commit fields, commit LLM suggestions
 - `api/crawl_domain.py`: domain recipe, domain run-profile, field feedback, and cookie-memory routes under `/api/crawls`
 - `api/records.py`: records list plus JSON/CSV/artifacts/discoverist exports and provenance
 - `api/review.py`: review payload, artifact HTML, save review mapping
@@ -91,6 +91,7 @@ Current live behavior:
 
 - batch and crawl run creation preserve raw user-entered `requested_fields` / `additional_fields` on the run, while runtime-only canonicalization happens later when extraction and confidence scoring need alias matching
 - batch run settings persist the resolved `urls` list inside `CrawlRunSettings`, so `crawl/batch_runtime.py` fans out the same URL set that the create request submitted
+- category discovery is exposed as `POST /api/crawls/category-discovery`; it returns candidate category/listing URLs only and does not create runs or records
 
 `CrawlRunSettings` normalizes settings for storage/runtime. Important fields include:
 
@@ -167,6 +168,9 @@ Primary files:
 - `crawl/crud.py`
 - `crawl/events.py`
 - `crawl/batch_runtime.py`
+- `crawl/category_discovery.py`
+- `crawl/sitemap_resolver.py`
+- `crawl/site_link_discovery.py`
 - `crawl/profile/*`
 - `pipeline/core.py`
 - `pipeline/direct_record_fallback.py`
@@ -187,6 +191,7 @@ Responsibilities:
 - stamp run snapshots
 - dispatch and recover runs
 - process URLs
+- discover category/listing URLs from static sitemaps/homepages and rendered same-origin site links
 - load, merge, persist, and learn reusable domain run-profile acquisition settings
 - persist records and summary state
 - create on-demand enrichment jobs from persisted ecommerce detail records
@@ -202,6 +207,7 @@ Current live behavior:
 - acceptance harness runs now support curated manifest-driven site sets with bucketed expectations, explicit acceptance surfaces remain authoritative instead of being silently re-inferred from URLs, and curated commerce rows can reuse artifact-backed run ids before falling back to live execution
 - acceptance reports now distinguish transport verdicts from output quality through `quality_verdict`, `observed_failure_mode`, and `quality_checks`, so runs that technically succeed but return shell pages, promo pages, chrome-heavy listings, or broken variant semantics no longer look healthy
 - reusable domain execution defaults are persisted separately from selector memory in `DomainRunProfile`; fetch/locality/diagnostics defaults still merge into single-URL run creation, while acquisition contracts are re-resolved per URL at runtime for every run type
+- category discovery runs static sitemap/homepage discovery first, then rendered DOM site-link discovery for empty, thin, blocked, invalid, or explicitly rendered cases; it returns grouped URL evidence and never extracts product fields or parses markdown as a link source
 - `pipeline/extraction_loop.py` stays the per-URL stage orchestrator; record extraction, acquisition-contract memory, retry families, direct-record LLM fallback, browser diagnostics merge, typed result objects, and public failure-state persistence live in dedicated pipeline helper modules
 - Data Enrichment is separate from the crawl pipeline: it reads persisted ecommerce detail `CrawlRecord` rows, writes `EnrichedProduct` rows, and only updates source-record enrichment status metadata.
 - Product Monitoring is a recurring crawl orchestration layer: `MonitorJob` rows store URL sets, schedule interval, priority, tracked fields, retention, and crawl settings; scheduler drivers call `MonitorSchedulerService.check_due_jobs()`; monitor runs are normal `CrawlRun` rows tagged with `settings.monitor_id`; `MonitorChangeDetectionService` diffs completed run records against the latest snapshot; `monitor_alert_service.py` creates in-app notifications for tracked field changes; retention purges monitor snapshots/events only.

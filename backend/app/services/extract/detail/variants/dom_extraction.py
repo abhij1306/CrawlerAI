@@ -67,6 +67,7 @@ from app.services.extract.variant_choice_traversal import (
     iter_variant_choice_groups,
     iter_variant_select_groups,
     resolve_variant_group_name,
+    variant_input_label,
     variant_dom_cues_present,
 )
 from app.services.extract.variant_identity_merge import (
@@ -132,26 +133,6 @@ _resolve_dom_variant_group_name = _variant_coercion._resolve_dom_variant_group_n
 _strip_variant_option_value_suffix_noise = (
     _variant_coercion._strip_variant_option_value_suffix_noise
 )
-
-
-def _variant_input_label(container: Any, input_node: Any) -> Any | None:
-    input_id = (
-        text_or_none(input_node.get("id")) if hasattr(input_node, "get") else None
-    )
-    if input_id:
-        label = container.find("label", attrs={"for": input_id})
-        if label is not None:
-            return label
-    if hasattr(input_node, "find_parent"):
-        label = input_node.find_parent("label")
-        if label is not None:
-            return label
-    sibling = getattr(input_node, "next_sibling", None)
-    while sibling is not None:
-        if getattr(sibling, "name", None) == "label":
-            return sibling
-        sibling = getattr(sibling, "next_sibling", None)
-    return None
 
 
 def _visible_node_text(
@@ -259,7 +240,7 @@ def _collect_variant_choice_entries(
     for input_node in container.select("input[type='radio'], input[type='checkbox']")[
         :option_limit
     ]:
-        label_node = _variant_input_label(container, input_node)
+        label_node = variant_input_label(container, input_node)
         raw_value = _variant_choice_entry_value(
             container,
             input_node,
@@ -314,7 +295,7 @@ def _variant_choice_entry_value(
     label_node: Any | None = None,
     visible_text_cache: dict[int, str] | None = None,
 ) -> str:
-    resolved_label = label_node or _variant_input_label(container, node)
+    resolved_label = label_node or variant_input_label(container, node)
     label_text = _visible_node_text(resolved_label, cache=visible_text_cache)
     node_text = _visible_node_text(node, cache=visible_text_cache)
     aria_label = node.get("aria-label") if hasattr(node, "get") else None
@@ -521,6 +502,7 @@ def _stock_quantity_from_selected_options(
     return None
 
 
+# skipcq: PY-R1000
 def extract_variants_from_dom(
     soup: BeautifulSoup,
     *,
@@ -900,7 +882,7 @@ def extract_variants_from_dom(
         flat_variants = flatten_variants_for_public_output(
             resolved_variants,
             page_url=page_url,
-        )
+        ) or []
         if flat_variants:
             for variant in flat_variants:
                 variant["_validated"] = True

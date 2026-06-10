@@ -52,6 +52,7 @@ export function buildMarkdownDocument(records: CrawlRecord[]): string {
   return documents.join('\n\n---\n\n');
 }
 
+// skipcq: JS-0067
 function markdownDownloadName(run: CrawlRun | undefined): string {
   if (isDesignSystemRun(run)) {
     return 'design.md';
@@ -59,7 +60,8 @@ function markdownDownloadName(run: CrawlRun | undefined): string {
   const host = run?.url
     ? getDomain(run.url)
         .replace(/[^a-z0-9.-]+/gi, '-')
-        .replace(/^-+|-+$/g, '')
+        .replace(/^-+/g, '')
+        .replace(/-+$/g, '')
     : '';
   return `${host || `run-${run?.id ?? 'output'}`}.md`;
 }

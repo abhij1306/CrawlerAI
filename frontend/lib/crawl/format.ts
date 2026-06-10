@@ -16,6 +16,7 @@ export function clampNumber(value: string | number, min: number, max: number, fa
   return Math.min(max, Math.max(min, parsed));
 }
 
+// skipcq: JS-0067
 export function normalizeField(value: string) {
   return value
     .trim()
@@ -24,7 +25,8 @@ export function normalizeField(value: string) {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '_')
     .replace(/_+/g, '_')
-    .replace(/^_+|_+$/g, '');
+    .replace(/^_+/g, '')
+    .replace(/_+$/g, '');
 }
 
 export function stringifyCell(value: unknown) {

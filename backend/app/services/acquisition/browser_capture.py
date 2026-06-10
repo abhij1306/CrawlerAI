@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import tempfile
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -524,12 +524,7 @@ async def capture_browser_screenshot(page: Any) -> str:
     temp_dir.mkdir(parents=True, exist_ok=True)
     temp_path: Path | None = None
     try:
-        with tempfile.NamedTemporaryFile(
-            delete=False,
-            suffix=".png",
-            dir=temp_dir,
-        ) as handle:
-            temp_path = Path(handle.name)
+        temp_path = temp_dir / f"browser-screenshot-{uuid.uuid4().hex}.png"
         await page.screenshot(path=temp_path, full_page=True, type="png")
         if temp_path.is_file() and temp_path.stat().st_size > 0:
             return str(temp_path)

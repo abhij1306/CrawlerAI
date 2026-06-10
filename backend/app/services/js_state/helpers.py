@@ -8,7 +8,7 @@ from app.services.config.js_state_field_specs import (
     JS_STATE_VARIANT_AVAILABILITY_BOOL_KEYS,
     JS_STATE_VARIANT_STOCK_QUANTITY_KEYS,
 )
-from app.services.shared.field_coerce import text_or_none
+from app.services.shared.field_coerce import coerce_availability_value, text_or_none
 from app.services.normalizers import normalize_decimal_price
 
 
@@ -169,6 +169,7 @@ def ordered_axes(
     return ordered
 
 
+# skipcq: PY-R1000
 def availability_value(value: dict[str, Any] | None) -> str | None:
     if not isinstance(value, dict):
         return None
@@ -186,6 +187,9 @@ def availability_value(value: dict[str, Any] | None) -> str | None:
     raw = value.get("availability") or value.get("inventory_status") or value.get("stock_status")
     cleaned = text_or_none(raw)
     if cleaned:
+        coerced = coerce_availability_value(cleaned)
+        if coerced:
+            return coerced
         lowered = cleaned.lower()
         if lowered in in_stock_aliases:
             return "in_stock"

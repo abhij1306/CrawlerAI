@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from urllib.parse import unquote, urljoin, urlparse
+from urllib.parse import parse_qsl, unquote, urlencode, urljoin, urlparse, urlunparse
 
 from app.services.config.extraction_rules import (
     BARE_HOST_URL_RE,
@@ -24,6 +24,7 @@ __all__ = [
     "terminal_tokens",
     "title_preserving_acronyms",
     "title_tokens",
+    "variant_url_with_param",
     "ensure_scheme",
     "is_placeholder_image_url",
     "_ensure_scheme",
@@ -60,6 +61,22 @@ def absolute_url(base_url: str, candidate: object) -> str:
     if origin_relative:
         return origin_relative
     return urljoin(base_url, text)
+
+
+def variant_url_with_param(page_url: str, variant_id: str) -> str:
+    parsed = urlparse(str(page_url or "").strip())
+    query = [
+        (key, value)
+        for key, value in parse_qsl(parsed.query, keep_blank_values=True)
+        if key != "variant"
+    ]
+    query.append(("variant", variant_id))
+    composed = urlunparse(parsed._replace(query=urlencode(query)))
+    return (
+        composed
+        if parsed.scheme and parsed.netloc
+        else absolute_url(str(page_url or ""), composed) or ""
+    )
 
 
 def _origin_relative_url(base_url: str, candidate: str) -> str:

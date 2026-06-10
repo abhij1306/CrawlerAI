@@ -14,6 +14,9 @@ from app.services.extract.detail.assembly.record_assembly import (
 from app.services.extract.field_candidates.variant_rows import (
     _structured_variants_from_product_payload,
 )
+from app.services.extract.field_candidates.structured_payloads import (
+    _structured_feature_rows,
+)
 from app.services.extract.detail.variants.dom_options import variant_option_availability
 from app.services.extract.detail.variants.dom_availability import (
     reconcile_variant_availability_from_dom,
@@ -1418,6 +1421,175 @@ def test_extract_ecommerce_detail_category_drops_terminal_sku() -> None:
 
     assert len(rows) == 1
     assert rows[0]["category"] == "Tools > Drills"
+
+
+@pytest.mark.regression
+def test_extract_ecommerce_detail_category_drops_structured_product_crumb() -> None:
+    html = """
+    <html>
+      <head>
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "BreadcrumbList",
+          "itemListElement": [
+            {"@type": "ListItem", "position": 1, "name": "Products"},
+            {
+              "@type": "ListItem",
+              "position": 2,
+              "name": "Analytical Chromatography"
+            },
+            {
+              "@type": "ListItem",
+              "position": 3,
+              "name": "SP<SUP>&reg;</SUP>-2560 Capillary GC Column (24056)"
+            }
+          ]
+        }
+        </script>
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "Product",
+          "name": "SP®-2560 Capillary GC Column",
+          "sku": "24056SUPELCO",
+          "productID": "24056",
+          "offers": {"price": "141894.10", "priceCurrency": "INR"}
+        }
+        </script>
+      </head>
+      <body><main><h1>SP®-2560 Capillary GC Column</h1></main></body>
+    </html>
+    """
+
+    record = build_detail_record(
+        html,
+        "https://www.sigmaaldrich.com/IN/en/product/supelco/24056",
+        "ecommerce_detail",
+        None,
+        adapter_records=[
+            {
+                "title": "SP®-2560 Capillary GC Column",
+                "sku": "24056SUPELCO",
+                "price": "141894.10",
+                "currency": "INR",
+            }
+        ],
+    )
+
+    assert record["category"] == "Products > Analytical Chromatography"
+
+
+@pytest.mark.regression
+def test_extract_ecommerce_detail_keeps_structured_subscript_feature_label() -> None:
+    features = _structured_feature_rows(
+        {
+            "@type": "Product",
+            "additionalProperty": [
+                {
+                    "@type": "PropertyValue",
+                    "name": "material",
+                    "value": ["fused silica"],
+                },
+                {"@type": "PropertyValue", "name": "Beta value", "value": ["313"]},
+                {
+                    "@type": "PropertyValue",
+                    "name": "d<SUB>f</SUB>",
+                    "value": ["0.20\xa0μm", "<span>0.25\xa0μm</span>"],
+                },
+                {
+                    "@type": "PropertyValue",
+                    "name": "L × I.D.",
+                    "value": ["100\xa0m × 0.25\xa0mm"],
+                },
+            ],
+        },
+        "https://www.sigmaaldrich.com/IN/en/product/supelco/24056",
+    )
+
+    assert "df: 0.20 μm; 0.25 μm" in features
+    assert "d" not in features
+    assert "f" not in features
+    assert ": ['0.20 μm'" not in features
+
+
+@pytest.mark.regression
+def test_extract_ecommerce_detail_prefers_visible_description_panel_without_inference() -> None:
+    html = """
+    <html>
+      <head>
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "Product",
+          "name": "SP®-2560 Capillary GC Column",
+          "sku": "24056SUPELCO",
+          "description": "SP®-2560 Capillary GC Column L × I.D. 100 m × 0.25 mm, df 0.20 μm; Synonyms: SP-2560, 100M.20UM.25MM at Sigma-Aldrich",
+          "offers": {"price": "141894.10", "priceCurrency": "INR"}
+        }
+        </script>
+      </head>
+      <body>
+        <main>
+          <h1>SP®-2560 Capillary GC Column</h1>
+          <div class="skipToContainer">
+            <div class="jumpLink"><button>Description</button></div>
+            <div class="jumpLink">Compare Similar Items</div>
+          </div>
+          <div class="product-shell"><div><div><div><div><div><div>
+            <div class="productDescriptions">
+              <div>
+                <button id="pdp-description"><p>Description</p></button>
+              </div>
+              <div class="MuiCollapse-root">
+                <div class="MuiCollapse-wrapper">
+                  <div class="MuiCollapse-wrapperInner">
+                    <div class="accordionBody">
+                      <div class="descriptionContainer">
+                        <div class="descriptionItem">
+                          <h3>General description</h3>
+                          <div class="description">
+                            <b>Application</b>: This highly polar biscyanopropyl column was specifically designed for detailed
+                            separation of geometricpositional (cis/trans) isomers of fatty acid methyl esters (FAMEs).
+                            It is extremely effective for FAME isomer applications.
+                            <br><b>USP Code</b>: This column meets USP G5 requirements.
+                          </div>
+                        </div>
+                        <div class="descriptionItem">
+                          <h3>Application</h3>
+                          <div class="description">
+                            The SP-2560 Capillary GC Columns meets the requirements as a USP G5 and AOAC® designation.
+                            They are specifically designed for the detailed separation of geometric and positional isomers.
+                          </div>
+                        </div>
+                        <div class="descriptionItem">
+                          <h3>Legal Information</h3>
+                          <div class="description">AOAC is a registered trademark of AOAC International</div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div></div></div></div></div></div></div>
+        </main>
+      </body>
+    </html>
+    """
+
+    record = build_detail_record(
+        html,
+        "https://www.sigmaaldrich.com/IN/en/product/supelco/24056",
+        "ecommerce_detail",
+        ["description", "product_details"],
+    )
+
+    assert "This highly polar biscyanopropyl column" in record["description"]
+    assert "They are specifically designed" in record["description"]
+    assert "Synonyms: SP-2560" not in record["description"]
+    assert "Compare Similar Items" not in record["description"]
+    assert "product_details" not in record
 
 
 @pytest.mark.regression

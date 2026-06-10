@@ -25,6 +25,7 @@ SURFACE_DETAIL_PATH_HINTS: dict[str, tuple[str, ...]] = {
     "job": (
         "/job", "/jobs", "/career", "/careers",
         "/position", "/posting", "/opening",
+        "/viewjob", "showjob=",
         "/emploi/", "/offres-demploi/",
         "/stelle/", "/stellenangebot/",
         "/empleo/", "/ofertas-de-empleo/",

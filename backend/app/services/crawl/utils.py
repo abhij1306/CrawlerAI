@@ -73,6 +73,21 @@ def normalize_target_url(value: object) -> str:
     return text
 
 
+def text_has_token(text: str, token: str) -> bool:
+    cleaned_text = str(text or "").strip().lower()
+    cleaned_token = str(token or "").strip().lower()
+    if not cleaned_text or not cleaned_token:
+        return False
+    if " " in cleaned_token:
+        return cleaned_token in cleaned_text
+    words = {
+        word
+        for word in cleaned_text.replace("-", " ").replace("_", " ").split()
+        if word
+    }
+    return cleaned_token in words
+
+
 def _settings_view(settings: object) -> _SettingsViewLike | dict:
     if (
         hasattr(settings, "urls")
@@ -117,7 +132,10 @@ def collect_target_urls(
     # CSV content from settings
     csv_content = str(settings_view.get("csv_content") or "")
     if csv_content:
-        candidates.extend(parse_csv_urls(csv_content))
+        for value in parse_csv_urls(csv_content):
+            candidate = normalize_target_url(value)
+            if candidate and candidate not in candidates:
+                candidates.append(candidate)
 
     # Deduplicate while preserving order
     return list(dict.fromkeys(candidates))

@@ -96,7 +96,8 @@ async def abort_browser_stage(
             reason,
         )
     except asyncio.CancelledError:
-        # Teardown was cancelled; nothing further to unwind here.
+        # The stage task normally finishes cancellation here. The caller still
+        # owns whether to raise cancellation or the stage timeout.
         pass
     except Exception:
         logger.debug(

@@ -3,6 +3,7 @@ from __future__ import annotations
 __all__ = (
     "variant_axis_allowed_single_tokens",
     "public_variant_axis_fields",
+    "is_public_variant_axis",
     "option_scalar_fields",
     "normalized_variant_axis_key",
     "normalized_variant_axis_display_name",
@@ -26,6 +27,7 @@ from app.services.config.extraction_rules import (
 )
 from app.services.config.variant_policy import OPTION_SCALAR_FIELDS, PUBLIC_VARIANT_AXIS_FIELDS
 from app.services.shared.field_coerce import clean_text
+from app.services.shared.regex_patterns import compile_regex_patterns
 
 _ALNUM_SPLIT_PATTERN = r"[^a-z0-9]+"
 
@@ -34,10 +36,8 @@ _variant_axis_label_noise_tokens = frozenset(
     for token in tuple(VARIANT_AXIS_LABEL_NOISE_TOKENS or ())
     if str(token).strip()
 )
-_variant_axis_label_noise_patterns = tuple(
-    re.compile(str(pattern), re.I)
-    for pattern in tuple(VARIANT_AXIS_LABEL_NOISE_PATTERNS or ())
-    if str(pattern).strip()
+_variant_axis_label_noise_patterns = compile_regex_patterns(
+    VARIANT_AXIS_LABEL_NOISE_PATTERNS or ()
 )
 _variant_axis_allowed_single_tokens = frozenset(
     str(token).strip().lower()
@@ -60,11 +60,13 @@ _variant_axis_generic_tokens = frozenset(
     for token in tuple(VARIANT_AXIS_GENERIC_TOKENS or ())
     if str(token).strip()
 )
-_variant_axis_technical_patterns = tuple(
-    re.compile(str(pattern), re.I)
-    for pattern in tuple(VARIANT_AXIS_TECHNICAL_PATTERNS or ())
-    if str(pattern).strip()
+_variant_axis_technical_patterns = compile_regex_patterns(
+    VARIANT_AXIS_TECHNICAL_PATTERNS or ()
 )
+
+
+def is_public_variant_axis(value: object) -> bool:
+    return normalized_variant_axis_key(value) in public_variant_axis_fields
 
 
 def _variant_axis_label_is_noise(value: object) -> bool:
