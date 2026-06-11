@@ -306,16 +306,21 @@ function Sidebar({ pathname }: Readonly<{ pathname: string }>) {
       <div className="app-sidebar-header">
         <LogoMark collapsed={collapsed} />
         <button
+          id="app-sidebar-toggle"
+          data-testid="app-sidebar-toggle"
           type="button"
           onClick={() => setCollapsed((value) => !value)}
           className="app-icon-button"
+          aria-controls="app-sidebar-navigation"
+          aria-expanded={!collapsed}
           aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
         >
           {collapsed ? <ChevronRight className="size-3.5" /> : <ChevronLeft className="size-3.5" />}
         </button>
       </div>
 
-      <nav className="app-sidebar-nav" aria-label="Main navigation">
+      <nav id="app-sidebar-navigation" className="app-sidebar-nav" aria-label="Main navigation">
         {navGroups.map((group) => (
           <div key={group.label} className="app-sidebar-group">
             <div className="space-y-1">

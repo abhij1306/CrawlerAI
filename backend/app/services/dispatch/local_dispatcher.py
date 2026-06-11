@@ -46,7 +46,7 @@ def live_local_run_task_count() -> int:
     return sum(
         1
         for run_id in list(_local_run_tasks)
-        if get_live_local_run_task(int(run_id)) is not None
+        if get_live_local_run_task(run_id) is not None
     )
 
 

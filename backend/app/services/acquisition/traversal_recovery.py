@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 from app.services.acquisition.playwright_compat import (
     PlaywrightError,
     PlaywrightTimeoutError,
+    is_recoverable_playwright_error,
 )
 from app.services.acquisition.traversal_helpers import (
     emit_event as _emit_event,
@@ -21,7 +22,8 @@ from app.services.config.runtime_settings import crawler_runtime_settings
 from app.services.config.selectors import COOKIE_CONSENT_SELECTORS, PAGINATION_SELECTORS
 
 logger = logging.getLogger(__name__)
-_RECOVERABLE_ERRORS = (PlaywrightError, PlaywrightTimeoutError, RuntimeError)
+_RECOVERABLE_ERRORS = (PlaywrightError, PlaywrightTimeoutError)
+_POTENTIALLY_RECOVERABLE_ERRORS = (*_RECOVERABLE_ERRORS, RuntimeError, OSError)
 
 if TYPE_CHECKING:
     from app.services.acquisition.traversal_types import TraversalResult
@@ -257,7 +259,9 @@ async def click_with_retry(
         await locator.scroll_into_view_if_needed(
             timeout=int(crawler_runtime_settings.traversal_scroll_into_view_timeout_ms)
         )
-    except _RECOVERABLE_ERRORS:
+    except _POTENTIALLY_RECOVERABLE_ERRORS as exc:
+        if not is_recoverable_playwright_error(exc):
+            raise
         logger.debug("Traversal scroll_into_view failed", exc_info=True)
         if not await locator_still_resolves(locator):
             return False
@@ -269,7 +273,9 @@ async def click_with_retry(
                 }
             }"""
         )
-    except _RECOVERABLE_ERRORS:
+    except _POTENTIALLY_RECOVERABLE_ERRORS as exc:
+        if not is_recoverable_playwright_error(exc):
+            raise
         logger.debug(
             "Traversal center-scroll evaluate failed url=%s",
             page.url,
@@ -283,7 +289,9 @@ async def click_with_retry(
     try:
         await locator.click(timeout=click_timeout_ms)
         return True
-    except _RECOVERABLE_ERRORS as exc:
+    except _POTENTIALLY_RECOVERABLE_ERRORS as exc:
+        if not is_recoverable_playwright_error(exc):
+            raise
         first_exc = exc
         if not await locator_still_resolves(locator):
             return False
@@ -300,7 +308,9 @@ async def click_with_retry(
         await locator.click(timeout=click_timeout_ms, force=True)
         await _restore_overlays(page)
         return True
-    except _RECOVERABLE_ERRORS as exc:
+    except _POTENTIALLY_RECOVERABLE_ERRORS as exc:
+        if not is_recoverable_playwright_error(exc):
+            raise
         force_exc = exc
         if not await locator_still_resolves(locator):
             return False
@@ -322,7 +332,9 @@ async def click_with_retry(
             timeout_ms=min(2000, click_timeout_ms),
         )
         return True
-    except _RECOVERABLE_ERRORS as js_exc:
+    except _POTENTIALLY_RECOVERABLE_ERRORS as js_exc:
+        if not is_recoverable_playwright_error(js_exc):
+            raise
         logger.warning(
             "Traversal all click strategies failed: normal=%s force=%s js=%s",
             type(first_exc).__name__,
@@ -339,14 +351,11 @@ async def locator_still_resolves(locator) -> bool:
         try:
             if bool(await counter()):
                 return True
-        except PlaywrightError:
+        except _POTENTIALLY_RECOVERABLE_ERRORS as exc:
+            if not is_recoverable_playwright_error(exc):
+                raise
             logger.debug(
                 "Traversal locator resolution probe failed",
-                exc_info=True,
-            )
-        except _RECOVERABLE_ERRORS:
-            logger.debug(
-                "Traversal locator resolution probe raised non-Playwright error",
                 exc_info=True,
             )
         if attempt == 0:

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 
+from . import _common as _common_exports
 from ._common import *
 
 SELECTOR_RUNTIME_PRIMARY_IFRAME_MAX_PAGE_TEXT = 400
@@ -39,4 +40,15 @@ ORACLE_HCM_LOCATION_LIST_KEYS = (
 )
 INDEED_DEFAULT_BASE_ORIGIN = "https://www.indeed.com"
 
-__all__ = sorted(name for name in globals() if name.isupper())
+_LOCAL_EXPORTS = (
+    "INDEED_DEFAULT_BASE_ORIGIN",
+    "ORACLE_HCM_CX_CONFIG_RE",
+    "ORACLE_HCM_DEFAULT_FACETS",
+    "ORACLE_HCM_EXPAND_FIELDS",
+    "ORACLE_HCM_JOB_PATH_RE",
+    "ORACLE_HCM_LANG_PATH_RE",
+    "ORACLE_HCM_LOCATION_LIST_KEYS",
+    "ORACLE_HCM_SITE_PATH_RE",
+    "SELECTOR_RUNTIME_PRIMARY_IFRAME_MAX_PAGE_TEXT",
+)
+__all__ = sorted((*_common_exports.__all__, *_LOCAL_EXPORTS))

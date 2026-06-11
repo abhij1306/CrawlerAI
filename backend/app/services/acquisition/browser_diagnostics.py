@@ -164,19 +164,14 @@ def browser_failure_kind(exc: Exception) -> str:
         return "page_closed"
     if "connection closed while reading from the driver" in message:
         return "browser_driver_closed"
-    if (
-        class_name == "attributeerror"
-        and (
-            "'connection' object has no attribute 'send'" in message
-            or "'connection' object has no attribute '_send'" in message
-            or "'nonetype' object has no attribute 'send'" in message
-            or "'nonetype' object has no attribute '_send'" in message
-            or "connection object has no attribute 'send'" in message
-            or "connection object has no attribute '_send'" in message
-            or "nonetype object has no attribute 'send'" in message
-            or "nonetype object has no attribute '_send'" in message
-        )
-    ):
+    if class_name == "attributeerror":
+        squashed = message.replace("'", "")
+        if any(
+            f"{obj} object has no attribute {attr}" in squashed
+            for obj in ("connection", "nonetype")
+            for attr in ("send", "_send")
+        ):
+            return "browser_driver_closed"
         return "browser_driver_closed"
     if "real chrome executable is not available" in message:
         return "engine_unavailable"

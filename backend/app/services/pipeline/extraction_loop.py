@@ -72,9 +72,9 @@ from .persistence import (
     persist_run_trace,
 )
 from .record_extraction_stage import (
-    _best_adapter_result,
-    _extract_records_for_acquisition,
-    _update_acquisition_contract_memory,
+    best_adapter_result,
+    extract_records_for_acquisition,
+    update_acquisition_contract_memory,
 )
 from .runtime_helpers import (
     STAGE_ACQUIRE,
@@ -503,7 +503,7 @@ async def _run_extraction_stage_observed(
     span,
 ) -> _ExtractedURLStage:
     acquisition_result = fetched.acquisition_result
-    records, selector_rules = await _extract_records_for_acquisition(
+    records, selector_rules = await extract_records_for_acquisition(
         context,
         fetched,
     )
@@ -869,7 +869,7 @@ async def _run_persistence_stage(
             trace=trace,
             flagged=verdict not in obs_config.TRACE_SUCCESS_VERDICTS,
         )
-    await _update_acquisition_contract_memory(
+    await update_acquisition_contract_memory(
         context,
         acquisition_result=acquisition_result,
         records=extracted_records,
@@ -892,7 +892,6 @@ async def _run_persistence_stage(
 
 
 URLProcessingContext = _URLProcessingContext
-best_adapter_result = _best_adapter_result
 empty_extraction_browser_retry_decision = _empty_extraction_browser_retry_decision
 resolved_url_processing_config = _resolved_url_processing_config
 

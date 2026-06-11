@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 from functools import partial
-from inspect import signature
 import logging
 import time
 from typing import Any
@@ -82,21 +81,6 @@ logger = logging.getLogger(__name__)
 _FetchRuntimeContext = FetchRuntimeContext
 _FetchPageCall = FetchPageCall
 
-
-async def _load_host_protection_policy_compat(
-    url: str,
-    *,
-    ttl_seconds: int | None,
-) -> HostProtectionPolicy:
-    if "ttl_seconds" in signature(load_host_protection_policy).parameters:
-        return await load_host_protection_policy(url, ttl_seconds=ttl_seconds)
-    logger.warning(
-        "load_host_protection_policy lacks ttl_seconds; dropping host_memory_ttl_seconds=%s",
-        ttl_seconds,
-    )
-    return await load_host_protection_policy(url)
-
-
 async def _emit_fetch_event(on_event: Any | None, level: str, message: str) -> None:
     if not callable(on_event):
         return
@@ -104,6 +88,7 @@ async def _emit_fetch_event(on_event: Any | None, level: str, message: str) -> N
         await on_event(level, message)
     except Exception:
         logger.debug("Fetch event callback failed", exc_info=True)
+
 
 def _should_retry_patchright_with_real_chrome(
     *,
@@ -271,7 +256,7 @@ def _patchright_probe_cap_applies(
     expected_vendor = _extract_vendor_from_reason(reason) or ""
     last_vendor = str(host_policy.last_block_vendor or "").strip().lower()
     if not expected_vendor:
-        return True
+        return False
     return expected_vendor == last_vendor
 
 
@@ -325,7 +310,7 @@ async def fetch_page(
         on_event=on_event,
     )
     context = _build_fetch_runtime_context(call)
-    context.host_policy = await _load_host_protection_policy_compat(
+    context.host_policy = await load_host_protection_policy(
         call.url,
         ttl_seconds=context.host_memory_ttl_seconds,
     )
@@ -346,7 +331,7 @@ async def fetch_page(
         ),
     )
     if browser_first:
-        handoff_result = await _try_browser_http_handoff(context)
+        handoff_result = await try_browser_http_handoff(context)
         if handoff_result is not None:
             await _update_host_result_memory(
                 context,
@@ -360,7 +345,7 @@ async def fetch_page(
             host_preference_enabled=host_preference_enabled,
         )
         try:
-            browser_result = await _run_browser_attempts(
+            browser_result = await run_browser_attempts(
                 context,
                 reason=resolved_browser_reason,
                 requested_fields=context.requested_fields,
@@ -383,7 +368,7 @@ async def fetch_page(
                 raise
 
     if context.prefer_curl_handoff:
-        handoff_result = await _try_browser_http_handoff(context)
+        handoff_result = await try_browser_http_handoff(context)
         if handoff_result is not None:
             await _update_host_result_memory(
                 context,
@@ -404,7 +389,7 @@ async def fetch_page(
             type(context.last_error).__name__,
         )
         try:
-            return await _run_browser_attempts(
+            return await run_browser_attempts(
                 context,
                 reason=call.browser_reason or "http-escalation",
                 requested_fields=context.requested_fields,
@@ -509,7 +494,7 @@ async def _run_browser_attempts(
     recovery_mode = str(recovery_mode_source or "").strip() or None
     active_host_policy = host_policy or context.host_policy
     if active_host_policy is None:
-        active_host_policy = await _load_host_protection_policy_compat(
+        active_host_policy = await load_host_protection_policy(
             context.url,
             ttl_seconds=context.host_memory_ttl_seconds,
         )
@@ -603,7 +588,7 @@ async def _run_browser_attempts(
                         context,
                         result=result,
                     )
-                    active_host_policy = await _load_host_protection_policy_compat(
+                    active_host_policy = await load_host_protection_policy(
                         result.final_url or result.url or context.url,
                         ttl_seconds=context.host_memory_ttl_seconds,
                     )
@@ -686,7 +671,7 @@ async def _run_browser_attempts(
                         proxy_used=bool(proxy),
                         ttl_seconds=context.host_memory_ttl_seconds,
                     )
-                    active_host_policy = await _load_host_protection_policy_compat(
+                    active_host_policy = await load_host_protection_policy(
                         context.url,
                         ttl_seconds=context.host_memory_ttl_seconds,
                     )
@@ -717,6 +702,9 @@ async def _run_browser_attempts(
         )
         raise last_browser_error
     raise RuntimeError(f"Failed to fetch {context.url} in browser")
+
+
+run_browser_attempts = _run_browser_attempts
 
 
 async def _run_http_fetch_chain(
@@ -854,6 +842,9 @@ async def _try_browser_http_handoff(
             context.last_browser_attempt_diagnostics = dict(result.browser_diagnostics)
             return None
     return None
+
+
+try_browser_http_handoff = _try_browser_http_handoff
 
 
 def _handoff_cookie_engines(
@@ -1018,7 +1009,7 @@ async def _handle_http_result(
             proxy_used=proxy is not None,
             ttl_seconds=context.host_memory_ttl_seconds,
         )
-        context.host_policy = await _load_host_protection_policy_compat(
+        context.host_policy = await load_host_protection_policy(
             result.final_url or result.url or context.url,
             ttl_seconds=context.host_memory_ttl_seconds,
         )
@@ -1039,7 +1030,7 @@ async def _handle_http_result(
             current_proxy=proxy,
             vendor_blocked=bool(vendor),
         )
-        browser_result = await _run_browser_attempts(
+        browser_result = await run_browser_attempts(
             context,
             reason=browser_reason,
             requested_fields=context.requested_fields,
@@ -1114,6 +1105,8 @@ async def _update_host_result_memory(
 
 
 __all__ = [
+    "FetchPageCall",
+    "FetchRuntimeContext",
     "PageFetchResult",
     "SharedBrowserRuntime",
     "browser_runtime_snapshot",
@@ -1122,5 +1115,7 @@ __all__ = [
     "fetch_page",
     "is_blocked_html",
     "reset_fetch_runtime_state",
+    "run_browser_attempts",
     "shutdown_browser_runtime",
+    "try_browser_http_handoff",
 ]

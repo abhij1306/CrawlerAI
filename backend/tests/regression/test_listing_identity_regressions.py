@@ -11,8 +11,8 @@ from __future__ import annotations
 
 import pytest
 
-from app.services.extract.detail.identity.core import (
-    _detail_model_number_sets_compatible,
+from app.services.extract.detail.identity import (
+    detail_model_number_sets_compatible,
     listing_detail_like_path,
     listing_url_is_structural,
 )
@@ -67,8 +67,8 @@ def test_product_slug_with_filter_query_is_not_structural() -> None:
 
 @pytest.mark.regression
 def test_model_number_prefix_match_requires_alpha_signal() -> None:
-    assert _detail_model_number_sets_compatible({"ABC123"}, {"ABC1234"}) is True
-    assert _detail_model_number_sets_compatible({"12345"}, {"123456"}) is False
+    assert detail_model_number_sets_compatible({"ABC123"}, {"ABC1234"}) is True
+    assert detail_model_number_sets_compatible({"12345"}, {"123456"}) is False
 
 
 @pytest.mark.regression

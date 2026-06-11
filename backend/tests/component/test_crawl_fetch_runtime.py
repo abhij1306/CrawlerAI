@@ -864,7 +864,7 @@ async def test_fetch_page_preserves_requested_fields_on_http_to_browser_escalati
     )
     monkeypatch.setattr(
         crawl_fetch_runtime,
-        "_run_browser_attempts",
+        "run_browser_attempts",
         _fake_run_browser_attempts,
     )
 
@@ -915,7 +915,7 @@ async def test_fetch_page_preserves_requested_fields_on_browser_first_path(
 
     monkeypatch.setattr(
         crawl_fetch_runtime,
-        "_run_browser_attempts",
+        "run_browser_attempts",
         _fake_run_browser_attempts,
     )
 
@@ -1140,7 +1140,7 @@ async def test_fetch_page_preserves_proxy_list_on_browser_first_path(
 
     monkeypatch.setattr(
         crawl_fetch_runtime,
-        "_run_browser_attempts",
+        "run_browser_attempts",
         _fake_run_browser_attempts,
     )
 
@@ -1304,7 +1304,7 @@ async def test_run_browser_attempts_records_driver_closed_exception(
     monkeypatch.setattr(crawl_fetch_runtime, "wait_for_host_slot", AsyncMock())
 
     with pytest.raises(BrowserDriverError):
-        await crawl_fetch_runtime._run_browser_attempts(
+        await crawl_fetch_runtime.run_browser_attempts(
             context,
             reason="browser-only",
             host_policy=HostProtectionPolicy(host="example.com"),
@@ -1512,7 +1512,7 @@ async def test_run_browser_attempts_replans_to_real_chrome_after_same_proxy_patc
         ),
     )
 
-    result = await crawl_fetch_runtime._run_browser_attempts(
+    result = await crawl_fetch_runtime.run_browser_attempts(
         context,
         reason="browser-only",
         host_policy=HostProtectionPolicy(host="example.com"),
@@ -1572,7 +1572,7 @@ async def test_run_browser_attempts_lets_browser_runtime_own_stage_timeouts(
     )
     monkeypatch.setattr(crawl_fetch_runtime, "wait_for_host_slot", AsyncMock())
 
-    result = await crawl_fetch_runtime._run_browser_attempts(
+    result = await crawl_fetch_runtime.run_browser_attempts(
         context,
         reason="browser-only",
         host_policy=HostProtectionPolicy(host="example.com"),
@@ -1735,7 +1735,7 @@ async def test_run_browser_attempts_treats_none_cooldown_as_zero(
         None,
     )
 
-    result = await crawl_fetch_runtime._run_browser_attempts(
+    result = await crawl_fetch_runtime.run_browser_attempts(
         context,
         reason="browser-only",
         host_policy=host_policy,
@@ -2626,7 +2626,7 @@ async def test_fetch_page_learns_browser_first_after_rate_limit_http_recovery(
     monkeypatch.setattr(crawl_fetch_runtime, "_curl_fetch", _rate_limited_curl)
     monkeypatch.setattr(crawl_fetch_runtime, "_browser_fetch", _browser_ok)
     monkeypatch.setattr(
-        crawl_fetch_runtime, "_try_browser_http_handoff", AsyncMock(return_value=None)
+        crawl_fetch_runtime, "try_browser_http_handoff", AsyncMock(return_value=None)
     )
     monkeypatch.setattr(
         crawl_fetch_runtime,
@@ -3047,7 +3047,7 @@ async def test_fetch_page_uses_remaining_timeout_budget_across_http_and_browser_
     monkeypatch.setattr(crawl_fetch_runtime, "_browser_fetch", _browser_fetch)
     monkeypatch.setattr(
         crawl_fetch_runtime,
-        "_load_host_protection_policy_compat",
+        "load_host_protection_policy",
         _load_policy,
     )
     monkeypatch.setattr(crawl_fetch_runtime, "_update_host_result_memory", AsyncMock())
@@ -3134,7 +3134,7 @@ async def test_run_browser_attempts_caps_patchright_probe_timeout_for_vendor_blo
     monkeypatch.setattr(crawl_fetch_runtime, "note_host_hard_block", AsyncMock())
     monkeypatch.setattr(
         crawl_fetch_runtime,
-        "_load_host_protection_policy_compat",
+        "load_host_protection_policy",
         AsyncMock(
             return_value=HostProtectionPolicy(
                 host="example.com",
@@ -3150,7 +3150,7 @@ async def test_run_browser_attempts_caps_patchright_probe_timeout_for_vendor_blo
         0,
     )
 
-    result = await crawl_fetch_runtime._run_browser_attempts(
+    result = await crawl_fetch_runtime.run_browser_attempts(
         context,
         reason="vendor-block:datadome",
         host_policy=HostProtectionPolicy(
@@ -3231,7 +3231,7 @@ async def test_run_browser_attempts_skips_patchright_probe_cap_for_fresh_host(
     fresh_policy = HostProtectionPolicy(host="example.com")
     monkeypatch.setattr(
         crawl_fetch_runtime,
-        "_load_host_protection_policy_compat",
+        "load_host_protection_policy",
         AsyncMock(return_value=fresh_policy),
     )
     monkeypatch.setattr(
@@ -3240,7 +3240,7 @@ async def test_run_browser_attempts_skips_patchright_probe_cap_for_fresh_host(
         0,
     )
 
-    result = await crawl_fetch_runtime._run_browser_attempts(
+    result = await crawl_fetch_runtime.run_browser_attempts(
         context,
         reason="vendor-block:cloudflare",
         host_policy=fresh_policy,
@@ -3253,6 +3253,30 @@ async def test_run_browser_attempts_skips_patchright_probe_cap_for_fresh_host(
     assert browser_calls[0][1] > 12.5
     # Real Chrome must not be called when patchright succeeds.
     assert len(browser_calls) == 1
+
+
+@pytest.mark.component
+def test_browser_attempt_timeout_skips_patchright_probe_cap_without_vendor(
+    patch_settings,
+) -> None:
+    patch_settings(browser_vendor_block_probe_timeout_seconds=1.0)
+    context = _default_fetch_context()
+
+    timeout_seconds = crawl_fetch_runtime._browser_attempt_timeout_seconds(
+        context=context,
+        reason="vendor-block:",
+        browser_engine="patchright",
+        engine_index=0,
+        engine_attempts=["patchright", "real_chrome"],
+        host_policy=HostProtectionPolicy(
+            host="example.com",
+            patchright_blocked=True,
+            prefer_browser=True,
+            last_block_vendor="datadome",
+        ),
+    )
+
+    assert timeout_seconds > 1.5
 
 
 @pytest.mark.asyncio

@@ -6,7 +6,7 @@ import logging
 import re
 from dataclasses import dataclass
 from typing import Awaitable, Callable
-from urllib.parse import parse_qs, parse_qsl, unquote, urlencode, urljoin, urlsplit
+from urllib.parse import parse_qs, urlencode, urljoin, urlsplit
 
 from bs4 import BeautifulSoup
 import httpx
@@ -19,13 +19,8 @@ from app.services.config.product_intelligence import (
     BRAND_DOMAIN_MAP,
     DISCOVERY_SOURCE_TYPE_PRIORITY,
     DISCOVERY_GENERIC_PRODUCT_TOKENS,
-    DISCOVERY_LISTING_PATH_SEGMENTS,
-    DISCOVERY_NON_PRODUCT_PATH_SEGMENTS,
-    DISCOVERY_PRODUCT_DETAIL_EXTENSIONS,
-    DISCOVERY_PRODUCT_PATH_HINTS,
     DISCOVERY_TITLE_MISMATCH_MIN_DISTINCTIVE_TOKENS,
     DISCOVERY_TITLE_MISMATCH_MIN_OVERLAP_RATIO,
-    DISCOVERY_VOLATILE_QUERY_PARAMS,
     MARKETPLACE_DOMAINS,
     RETAILER_DOMAINS,
     SEARCH_EXCLUDED_DOMAIN_PREFIX,
@@ -84,6 +79,12 @@ from app.services.config.product_intelligence import (
     product_intelligence_settings,
 )
 from app.services.shared.field_coerce import clean_text
+from app.services.product_intelligence.candidate_urls import (
+    candidate_dedupe_key,
+    clean_result_url,
+    looks_like_product_detail_url,
+    normalized_compare_url,
+)
 from app.services.product_intelligence.matching import (
     manufacturer_style_code,
     normalize_brand,
@@ -236,13 +237,13 @@ async def _collect_candidates(
     for query_order, query in enumerate(queries):
         results = await run_query(query, pool_limit)
         for rank, result in enumerate(results, start=1):
-            normalized_url = _clean_result_url(result.url)
+            normalized_url = clean_result_url(result.url)
             if not normalized_url:
                 continue
             # Collapse the same listing offered at multiple sizes/colors (URLs differing only
             # by volatile query params) to one canonical key so a single product at N sizes
             # does not consume N per-product candidate slots.
-            dedupe_key = _candidate_dedupe_key(normalized_url)
+            dedupe_key = candidate_dedupe_key(normalized_url)
             if dedupe_key in seen:
                 continue
             if _same_source_url(normalized_url, source_urls):
@@ -582,7 +583,7 @@ def _parse_serpapi_immersive_results(
     for position, store in enumerate(store_rows, start=1):
         if not isinstance(store, dict):
             continue
-        url = _clean_result_url(store.get("link"))
+        url = clean_result_url(store.get("link"))
         if not url:
             continue
         results.append(
@@ -613,7 +614,7 @@ def _parse_serpapi_immersive_results(
         return results[: max(1, int(limit))]
     about = product.get("about_the_product")
     if isinstance(about, dict):
-        about_url = _clean_result_url(about.get("link"))
+        about_url = clean_result_url(about.get("link"))
         if about_url:
             results.append(
                 SearchResult(
@@ -639,7 +640,7 @@ def _first_shopping_url(item: dict[str, object]) -> str:
     for field in SERPAPI_SHOPPING_LINK_FIELDS:
         value = item.get(field)
         if value:
-            cleaned = _clean_result_url(value)
+            cleaned = clean_result_url(value)
             if cleaned:
                 return cleaned
     return ""
@@ -649,7 +650,7 @@ def _dedupe_search_results(results: list[SearchResult]) -> list[SearchResult]:
     seen: set[str] = set()
     deduped: list[SearchResult] = []
     for result in results:
-        cleaned = _clean_result_url(result.url)
+        cleaned = clean_result_url(result.url)
         if not cleaned or cleaned in seen:
             continue
         seen.add(cleaned)
@@ -793,7 +794,7 @@ def _google_native_anchor_title(anchor, *, url: str) -> str:
     heading = anchor.select_one(GOOGLE_NATIVE_TITLE_SELECTOR)
     if heading is not None:
         return clean_text(heading.get_text(" ", strip=True))
-    if not _looks_like_product_detail_url(url):
+    if not looks_like_product_detail_url(url):
         return ""
     for attr in ("aria-label", "title"):
         value = clean_text(anchor.get(attr))
@@ -827,29 +828,14 @@ def _google_native_result_url(href: str) -> str:
             and parsed.path == GOOGLE_NATIVE_REDIRECT_PATH
         ):
             target = parse_qs(parsed.query).get(GOOGLE_NATIVE_REDIRECT_TARGET_PARAM, [""])[0]
-            return _clean_result_url(target)
-        return _clean_result_url(raw)
+            return clean_result_url(target)
+        return clean_result_url(raw)
     if raw.startswith(GOOGLE_NATIVE_REDIRECT_PATH):
         target = parse_qs(urlsplit(raw).query).get(GOOGLE_NATIVE_REDIRECT_TARGET_PARAM, [""])[0]
-        return _clean_result_url(target)
+        return clean_result_url(target)
     if raw.startswith("/"):
-        return _clean_result_url(urljoin(GOOGLE_NATIVE_HOME_URL, raw))
+        return clean_result_url(urljoin(GOOGLE_NATIVE_HOME_URL, raw))
     return ""
-
-
-def _clean_result_url(value: object) -> str:
-    text = str(value or "").strip()
-    if not text:
-        return ""
-    if text.startswith("//"):
-        text = f"https:{text}"
-    try:
-        parsed = urlsplit(text)
-    except ValueError:
-        return ""
-    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
-        return ""
-    return text
 
 
 def _candidate_matches_product(
@@ -857,7 +843,7 @@ def _candidate_matches_product(
     url: str,
     payload: dict[str, object] | None,
 ) -> bool:
-    if not _looks_like_product_detail_url(url):
+    if not looks_like_product_detail_url(url):
         return False
     result_text = _search_result_text(payload)
     candidate_text = " ".join(part for part in (result_text, url) if part)
@@ -866,76 +852,6 @@ def _candidate_matches_product(
     if _has_conflicting_numeric_identity(product, result_text):
         return False
     return not _title_mismatch(product, result_text or url)
-
-
-def _looks_like_product_detail_url(value: object) -> bool:
-    try:
-        parsed = urlsplit(str(value or ""))
-    except ValueError:
-        return False
-    path = unquote(parsed.path or "").casefold()
-    if not path or path == "/":
-        return False
-    has_product_hint = any(hint in path for hint in DISCOVERY_PRODUCT_PATH_HINTS)
-    segments = [segment for segment in path.strip("/").split("/") if segment]
-    if any(_non_product_path_segment(segment) for segment in segments):
-        return False
-    if not has_product_hint and any(
-        segment in DISCOVERY_LISTING_PATH_SEGMENTS for segment in segments
-    ):
-        return False
-    if has_product_hint:
-        return True
-    terminal = segments[-1] if segments else ""
-    if terminal.endswith(tuple(DISCOVERY_PRODUCT_DETAIL_EXTENSIONS)):
-        return True
-    if _descriptive_product_slug(terminal):
-        return True
-    return _product_id_like(terminal)
-
-
-def _non_product_path_segment(segment: str) -> bool:
-    normalized = re.sub(r"[^a-z0-9]+", " ", str(segment or "").casefold()).strip()
-    return any(
-        normalized == token or normalized.startswith(f"{token} ")
-        for token in DISCOVERY_NON_PRODUCT_PATH_SEGMENTS
-    )
-
-
-def _descriptive_product_slug(value: str) -> bool:
-    terminal = str(value or "").casefold()
-    if "-" not in terminal:
-        return False
-    tokens = [
-        _normalize_slug_token(token)
-        for re_match in re.split(r"[^a-z0-9]+", terminal)
-        if (token := re_match)
-    ]
-    alpha_tokens = [token for token in tokens if re.search(r"[a-z]", token)]
-    distinctive_tokens = [
-        token for token in alpha_tokens if token not in DISCOVERY_GENERIC_PRODUCT_TOKENS
-    ]
-    return len(alpha_tokens) >= 3 and len(set(distinctive_tokens)) >= 2
-
-
-def _normalize_slug_token(value: str) -> str:
-    token = str(value or "").casefold()
-    if token in {"series", "business", "news", "analysis", "species"}:
-        return token
-    if token.endswith("ies") and len(token) > 4:
-        return f"{token[:-3]}y"
-    if token.endswith("es") and len(token) > 4:
-        return token[:-2]
-    if token.endswith("s") and len(token) > 3:
-        return token[:-1]
-    return token
-
-
-def _product_id_like(value: str) -> bool:
-    token = re.sub(r"[^a-z0-9]+", "", str(value or "").casefold())
-    if len(token) < 6:
-        return False
-    return any(char.isdigit() for char in token) and any(char.isalpha() for char in token)
 
 
 def _search_result_text(payload: dict[str, object] | None) -> str:
@@ -1096,7 +1012,7 @@ def _source_excluded_domains(
 def _source_excluded_urls(product: dict[str, object]) -> set[str]:
     return {
         normalized
-        for normalized in (_normalized_compare_url(url) for url in _source_url_values(product))
+        for normalized in (normalized_compare_url(url) for url in _source_url_values(product))
         if normalized
     }
 
@@ -1118,43 +1034,7 @@ def _source_url_values(product: dict[str, object]) -> list[object]:
 
 
 def _same_source_url(candidate_url: str, source_urls: set[str]) -> bool:
-    return bool(source_urls and _normalized_compare_url(candidate_url) in source_urls)
-
-
-def _normalized_compare_url(value: object) -> str:
-    cleaned = _clean_result_url(value)
-    if not cleaned:
-        return ""
-    try:
-        parsed = urlsplit(cleaned)
-    except ValueError:
-        return ""
-    return parsed._replace(fragment="").geturl().rstrip("/")
-
-
-def _candidate_dedupe_key(value: object) -> str:
-    """Canonical key for collapsing the same listing at different sizes/colors.
-
-    Drops the fragment and configured volatile query params (size, color, variant, tracking)
-    so ``.../582039?size=10`` and ``.../582039?size=13`` dedupe to one candidate. Identity-
-    bearing params (e.g. ``product``, ``productId``) are preserved.
-    """
-    cleaned = _clean_result_url(value)
-    if not cleaned:
-        return ""
-    try:
-        parsed = urlsplit(cleaned)
-    except ValueError:
-        return ""
-    kept_params = [
-        (key, val)
-        for key, val in parse_qsl(parsed.query, keep_blank_values=False)
-        if key.casefold() not in DISCOVERY_VOLATILE_QUERY_PARAMS
-    ]
-    query = urlencode(sorted(kept_params))
-    host = (parsed.hostname or "").removeprefix("www.").lower()
-    path = parsed.path.rstrip("/")
-    return f"{host}{path}?{query}" if query else f"{host}{path}"
+    return bool(source_urls and normalized_compare_url(candidate_url) in source_urls)
 
 
 def _domain_matches(normalized_domain: str, target: str) -> bool:

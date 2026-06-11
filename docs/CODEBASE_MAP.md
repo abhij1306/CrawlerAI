@@ -94,7 +94,7 @@ Public API schemas live in `api_key.py` and `public_api.py`.
 | `dispatch/` | `RunDispatcher` protocol + `LocalRunDispatcher` + `CeleryRunDispatcher` |
 | `crawl/profile/*` | Reusable domain run-profile normalization, merge, persistence, and acquisition-contract learning |
 | `crawl/events.py` | WebSocket log emission |
-| `product_intelligence/*` | Product web discovery, brand registry loading, candidate crawl orchestration, deterministic match scoring |
+| `product_intelligence/*` | Product web discovery, candidate URL admission/dedupe, brand registry loading, candidate crawl orchestration, deterministic match scoring |
 | `../data/product_intelligence/*` | Product Intelligence brand registry data, including Belk brand and exclusive/private-label lists |
 | `data_enrichment/service.py` | On-demand enrichment job orchestration and persistence for ecommerce detail records |
 | `ucp_audit/catalog_crawl.py`, `ucp_audit/catalog_checks.py`, `ucp_audit/*` | AI Discoverability catalog sampling, signal checks, scoring, reporting, repair roadmap, and job orchestration; dormant UCP protocol files remain here |
@@ -227,6 +227,7 @@ Canonical config owner:
 | `extract/detail/assembly/raw_signals.py` | Raw detail breadcrumb category and deterministic gender signal helpers |
 | `extract/detail/identity/core.py` | Detail/listing URL identity, redirect identity, and requested-detail matching |
 | `extract/detail/identity/jsonld_identity.py` | JSON-LD identity helpers and duplicate product heading pruning |
+| `extract/detail/identity/model_codes.py` | Detail model-number/code compatibility and token extraction |
 | `extract/detail/price/core.py` | Detail price, currency reconciliation, visible PDP price backfill, and magnitude repair |
 | `extract/detail/assembly/final_cleanup.py` | Ecommerce detail final cleanup orchestrator |
 | `extract/detail/assembly/record_sanitization.py` | Detail placeholder, identity scalar, category, materials, and title cleanup |

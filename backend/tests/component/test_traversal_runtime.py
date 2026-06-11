@@ -1786,7 +1786,7 @@ async def testclick_with_retry_uses_mutation_settle_after_js_fallback() -> None:
 
         async def click(self, timeout: int | None = None, force: bool = False) -> None:
             del timeout, force
-            raise RuntimeError("intercepted")
+            raise traversal_module.PlaywrightError("intercepted")
 
     page = _ClickPage()
     locator = _ClickLocator()
@@ -1834,7 +1834,7 @@ async def testclick_with_retry_stops_when_locator_no_longer_resolves() -> None:
         async def evaluate(self, script: str) -> Any:
             del script
             self.detached = True
-            raise RuntimeError("detached")
+            raise traversal_module.PlaywrightError("detached")
 
         async def count(self) -> int:
             return 0 if self.detached else 1
@@ -1888,7 +1888,7 @@ async def testclick_with_retry_tolerates_transient_locator_resolution_loss() -> 
 
         async def evaluate(self, script: str) -> Any:
             del script
-            raise RuntimeError("transient evaluate failure")
+            raise traversal_module.PlaywrightError("transient evaluate failure")
 
         async def count(self) -> int:
             self.count_calls += 1

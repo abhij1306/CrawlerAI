@@ -196,7 +196,7 @@ async def test_content_detail_skips_detail_repair_pipeline(
 
     monkeypatch.setattr(
         extraction_loop,
-        "_extract_records_for_acquisition",
+        "extract_records_for_acquisition",
         _fake_extract_records_for_acquisition,
     )
     monkeypatch.setattr(

@@ -2,6 +2,7 @@ from __future__ import annotations
 # ruff: noqa: F401,F403,F405
 # pylint: disable=wildcard-import,unused-wildcard-import
 
+from . import _common as _common_exports
 from ._common import *
 from ._common import (
     _BARE_HOST_URL_PATTERN,
@@ -80,4 +81,20 @@ VARIANT_UI_NOISE_EXACT_MATCH_MAX_LENGTH = 8
 EXPORT_IMAGE_URL_SUFFIXES = tuple(_CANDIDATE_IMAGE_FILE_EXTENSIONS)
 BARE_HOST_URL_RE = re.compile(str(_BARE_HOST_URL_PATTERN), re.I)
 
-__all__ = sorted(name for name in globals() if name.isupper())
+_LOCAL_EXPORTS = (
+    "AMAZON_IMAGE_CDN_HOSTS",
+    "AMAZON_IMAGE_LOW_RES_MAX_DIMENSION",
+    "AMAZON_IMAGE_LOW_RES_SUFFIX_PATTERN",
+    "BARE_HOST_URL_RE", "BROKEN_FETCH_IMAGE_PATH_PATTERN",
+    "CDN_IMAGE_PATH_SUFFIX_PATTERN",
+    "CDN_IMAGE_QUERY_KEY_PATTERNS",
+    "CDN_IMAGE_QUERY_PARAMS",
+    "CDN_IMAGE_TRANSFORM_SUFFIX_PATTERN",
+    "DETAIL_IMAGE_COLORWAY_CODE_PATTERN",
+    "DETAIL_IMAGE_PRODUCT_CODE_PATTERN",
+    "DETAIL_IMAGE_VIEW_CODE_PATTERN",
+    "EXPORT_IMAGE_URL_SUFFIXES", "LOW_RES_SWATCH_IMAGE_PATH_PATTERN",
+    "SHOPIFY_IMAGE_FILE_PATH_PATTERN",
+    "VARIANT_UI_NOISE_EXACT_MATCH_MAX_LENGTH",
+)
+__all__ = sorted((*_common_exports.__all__, *_LOCAL_EXPORTS))

@@ -963,6 +963,36 @@ async def test_kill_run_clears_local_task_bookkeeping(
 
 @pytest.mark.asyncio
 @pytest.mark.component
+async def test_shutdown_browser_runtime_after_kill_skips_concurrent_calls(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    browser_shutdowns = 0
+    shutdown_started = asyncio.Event()
+    release_shutdown = asyncio.Event()
+
+    async def _fake_shutdown_browser_runtime() -> None:
+        nonlocal browser_shutdowns
+        browser_shutdowns += 1
+        shutdown_started.set()
+        await release_shutdown.wait()
+
+    monkeypatch.setattr(
+        crawl_service, "shutdown_browser_runtime", _fake_shutdown_browser_runtime
+    )
+
+    first = asyncio.create_task(crawl_service._shutdown_browser_runtime_after_kill())
+    await shutdown_started.wait()
+    second = asyncio.create_task(crawl_service._shutdown_browser_runtime_after_kill())
+    await asyncio.sleep(0)
+
+    release_shutdown.set()
+    await asyncio.gather(first, second)
+
+    assert browser_shutdowns == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
 async def test_recover_stale_local_runs_clears_task_entries_and_task_ids(
     db_session: AsyncSession,
     test_user,

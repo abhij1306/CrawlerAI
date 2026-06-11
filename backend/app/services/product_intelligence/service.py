@@ -46,9 +46,9 @@ from app.services.crawl.crud import create_crawl_run, get_run_records
 from app.services.crawl.service import dispatch_run
 from app.services.domain_utils import normalize_domain
 from app.services.llm.runtime import run_prompt_task
-from app.services.product_intelligence.discovery import _looks_like_product_detail_url
 from app.services.product_intelligence.discovery import discover_candidates
 from app.services.product_intelligence.discovery import shared_query_runner
+from app.services.product_intelligence.candidate_urls import looks_like_product_detail_url
 from app.services.product_intelligence.matching import (
     build_search_result_intelligence,
     extract_product_snapshot,
@@ -74,7 +74,7 @@ def _resolved_source_url(
 ) -> str:
     row_url = str(row.get("source_url") or "").strip()
     snapshot_url = str(snapshot.get("url") or "").strip()
-    if snapshot_url and (not row_url or not _looks_like_product_detail_url(row_url)):
+    if snapshot_url and (not row_url or not looks_like_product_detail_url(row_url)):
         return snapshot_url
     return row_url or snapshot_url
 

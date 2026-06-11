@@ -3577,7 +3577,12 @@ async def test_fetch_page_keeps_http_for_structured_shopify_detail(
             f"browser fallback should not run for {url} {timeout_seconds} {kwargs}"
         )
 
-    async def fake_load_host_protection_policy(url: str) -> HostProtectionPolicy:
+    async def fake_load_host_protection_policy(
+        url: str,
+        *,
+        ttl_seconds: int | None = None,
+    ) -> HostProtectionPolicy:
+        del ttl_seconds
         return HostProtectionPolicy(host=url)
 
     monkeypatch.setattr(crawl_fetch_runtime, "_curl_fetch", fake_curl)

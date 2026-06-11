@@ -2,6 +2,8 @@ from __future__ import annotations
 # ruff: noqa: F401,F403,F405
 # pylint: disable=wildcard-import,unused-wildcard-import
 
+from . import _common as _common_exports
+from . import _detail as _detail_exports
 from ._common import *
 from ._detail import *
 
@@ -24,4 +26,10 @@ DETAIL_NOISE_SECTION_SELECTORS = (
 DETAIL_IDENTITY_FIELDS = frozenset({"title", "image_url"})
 VARIANT_FIELDS = frozenset({"variants"})
 
-__all__ = sorted(name for name in globals() if name.isupper())
+_LOCAL_EXPORTS = (
+    "DETAIL_FULFILLMENT_LONG_TEXT_PATTERNS",
+    "DETAIL_IDENTITY_FIELDS",
+    "DETAIL_NOISE_SECTION_SELECTORS",
+    "VARIANT_FIELDS",
+)
+__all__ = sorted((*_common_exports.__all__, *_detail_exports.__all__, *_LOCAL_EXPORTS))

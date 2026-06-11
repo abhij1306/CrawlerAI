@@ -228,9 +228,9 @@ def _check_secret_defaults() -> None:
         and default_admin_email in _INSECURE_ADMIN_EMAIL_DEFAULTS
     ):
         issues.append("bootstrap_admin_once requires a non-default default_admin_email")
-    if warnings:
         logger.warning(
             "SECURITY WARNING: admin bootstrap secret is weaker than the current recommendation",
+            extra={"warnings": warnings, "warning_count": len(warnings)},
         )
     if not issues:
         return
@@ -242,8 +242,8 @@ def _check_secret_defaults() -> None:
     if _is_non_dev_environment(env):
         raise RuntimeError(msg)
     logger.warning(
-        "SECURITY WARNING: insecure default secrets detected; issues=%s",
-        ", ".join(issues),
+        "SECURITY WARNING: insecure default secrets detected",
+        extra={"issues": issues, "issue_count": len(issues)},
     )
 
 

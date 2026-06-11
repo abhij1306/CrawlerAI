@@ -2946,18 +2946,22 @@ def test_score_candidate_brand_resolved_from_candidate_evidence() -> None:
 
 @pytest.mark.component
 def test_candidate_dedupe_key_collapses_size_and_color_variants() -> None:
-    from app.services.product_intelligence.discovery import _candidate_dedupe_key
+    from app.services.product_intelligence.candidate_urls import candidate_dedupe_key
 
-    key_a = _candidate_dedupe_key(
+    key_a = candidate_dedupe_key(
         "https://www.dsw.com/product/x/582039?size=10&width=Medium&cm_mmc=CSE"
     )
-    key_b = _candidate_dedupe_key(
+    key_b = candidate_dedupe_key(
         "https://www.dsw.com/product/x/582039?size=13&activeColor=002"
     )
     assert key_a == key_b
     # Identity-bearing params are preserved, so genuinely different products stay distinct.
-    key_c = _candidate_dedupe_key("https://www.lyst.com/shoes/x/?product=SEECFLM&size=10")
-    key_d = _candidate_dedupe_key("https://www.lyst.com/shoes/x/?product=OTHER&size=11")
+    key_c = candidate_dedupe_key(
+        "https://www.lyst.com/shoes/x/?product=SEECFLM&size=10"
+    )
+    key_d = candidate_dedupe_key(
+        "https://www.lyst.com/shoes/x/?product=OTHER&size=11"
+    )
     assert key_c != key_d
 
 

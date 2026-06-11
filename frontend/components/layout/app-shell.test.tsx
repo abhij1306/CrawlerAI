@@ -39,40 +39,40 @@ function renderShell() {
   );
 }
 
-describe('AppShell reset workspace', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    const storage = new Map<string, string>();
-    Object.defineProperty(globalThis, 'localStorage', {
-      writable: true,
-      value: {
-        getItem: vi.fn((key: string) => storage.get(key) ?? null),
-        setItem: vi.fn((key: string, value: string) => {
-          storage.set(key, value);
-        }),
-        removeItem: vi.fn((key: string) => {
-          storage.delete(key);
-        }),
-        clear: vi.fn(() => {
-          storage.clear();
-        }),
-      },
-    });
-    Object.defineProperty(globalThis, 'matchMedia', {
-      writable: true,
-      value: vi.fn().mockImplementation(() => ({
-        matches: false,
-        media: '',
-        onchange: null,
-        addListener: vi.fn(),
-        removeListener: vi.fn(),
-        addEventListener: vi.fn(),
-        removeEventListener: vi.fn(),
-        dispatchEvent: vi.fn(),
-      })),
-    });
+beforeEach(() => {
+  vi.clearAllMocks();
+  const storage = new Map<string, string>();
+  Object.defineProperty(globalThis, 'localStorage', {
+    writable: true,
+    value: {
+      getItem: vi.fn((key: string) => storage.get(key) ?? null),
+      setItem: vi.fn((key: string, value: string) => {
+        storage.set(key, value);
+      }),
+      removeItem: vi.fn((key: string) => {
+        storage.delete(key);
+      }),
+      clear: vi.fn(() => {
+        storage.clear();
+      }),
+    },
   });
+  Object.defineProperty(globalThis, 'matchMedia', {
+    writable: true,
+    value: vi.fn().mockImplementation(() => ({
+      matches: false,
+      media: '',
+      onchange: null,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    })),
+  });
+});
 
+describe('AppShell reset workspace', () => {
   it('opens the confirm dialog when reset is clicked', async () => {
     apiMock.me.mockResolvedValue({
       id: 1,
@@ -143,8 +143,35 @@ describe('AppShell reset workspace', () => {
 
     await waitFor(() => {
       expect(apiMock.me).toHaveBeenCalled();
+      expect(screen.queryByRole('button', { name: /reset workspace/i })).not.toBeInTheDocument();
+    });
+  });
+});
+
+describe('AppShell sidebar toggle', () => {
+  it('exposes a stable sidebar toggle for automation tools', async () => {
+    apiMock.me.mockResolvedValue({
+      id: 2,
+      email: 'user@example.com',
+      role: 'user',
+      is_active: true,
+      created_at: new Date('2026-05-19T00:00:00Z').toISOString(),
+      updated_at: new Date('2026-05-19T00:00:00Z').toISOString(),
     });
 
-    expect(screen.queryByRole('button', { name: /reset workspace/i })).not.toBeInTheDocument();
+    renderShell();
+
+    const toggle = await screen.findByRole('button', { name: /collapse sidebar/i });
+    expect(toggle).toHaveAttribute('id', 'app-sidebar-toggle');
+    expect(toggle).toHaveAttribute('data-testid', 'app-sidebar-toggle');
+    expect(toggle).toHaveAttribute('aria-controls', 'app-sidebar-navigation');
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+
+    fireEvent.click(toggle);
+
+    expect(screen.getByRole('button', { name: /expand sidebar/i })).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    );
   });
 });

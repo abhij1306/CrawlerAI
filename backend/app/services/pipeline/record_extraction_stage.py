@@ -35,6 +35,12 @@ from .url_processing_context import (
     URLProcessingContext as _URLProcessingContext,
 )
 
+__all__ = (
+    "best_adapter_result",
+    "extract_records_for_acquisition",
+    "update_acquisition_contract_memory",
+)
+
 
 async def _extract_records_for_acquisition(
     context: _URLProcessingContext,
@@ -527,6 +533,8 @@ async def _update_acquisition_contract_memory(
 
 
 extract_records_for_acquisition = _extract_records_for_acquisition
+best_adapter_result = _best_adapter_result
+update_acquisition_contract_memory = _update_acquisition_contract_memory
 
 
 def _record_list(value: object) -> list[dict[str, object]]:

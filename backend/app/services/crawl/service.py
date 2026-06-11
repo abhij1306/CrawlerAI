@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
@@ -28,6 +29,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
+_shutdown_after_kill_lock = asyncio.Lock()
+_shutdown_after_kill_in_progress = False
 
 
 def _get_task_id(run: CrawlRun) -> str | None:
@@ -71,10 +74,19 @@ def _summary_task_id(summary: object) -> str | None:
 
 
 async def _shutdown_browser_runtime_after_kill() -> None:
+    global _shutdown_after_kill_in_progress
+    async with _shutdown_after_kill_lock:
+        if _shutdown_after_kill_in_progress:
+            logger.debug("Browser runtime shutdown after kill already in progress")
+            return
+        _shutdown_after_kill_in_progress = True
     try:
         await shutdown_browser_runtime()
     except Exception:
         logger.exception("Browser runtime shutdown failed after hard kill")
+    finally:
+        async with _shutdown_after_kill_lock:
+            _shutdown_after_kill_in_progress = False
 
 
 def _should_recover_stale_run(
@@ -236,7 +248,7 @@ async def kill_run(session: AsyncSession, run: CrawlRun) -> CrawlRun:
         if local_task is not None:
             set_control_request(retry_run, CONTROL_REQUEST_KILL)
             clear_local_run_task(run_id, expected_task=local_task)
-            local_task.cancel()
+
             update_run_status(retry_run, CrawlStatus.KILLED)
             _set_task_id(retry_run, None)
             if live_local_run_task_count() == 0:

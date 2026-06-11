@@ -38,8 +38,6 @@ from app.services.config.extraction_rules import (
     DETAIL_NOISE_SECTION_SELECTORS,
     DETAIL_IDENTITY_STOPWORDS,
     DETAIL_MODEL_CONFLICT_MIN_SHARED_WORDS,
-    DETAIL_MODEL_NUMBER_TOKEN_PATTERNS,
-    DETAIL_MODEL_SMALL_NUMERIC_TOKEN_PATTERN,
     DETAIL_NON_PAGE_FILE_EXTENSIONS,
     DETAIL_PRODUCT_PATH_TOKENS,
     DETAIL_SEARCH_QUERY_KEYS,
@@ -83,6 +81,12 @@ from app.services.extract.detail.identity.jsonld_identity import (
     jsonld_item_supports_identity,
     jsonld_items,
     prune_duplicate_product_headings,
+)
+from app.services.extract.detail.identity.model_codes import (
+    detail_model_number_sets_compatible,
+    detail_model_number_tokens,
+    detail_small_numeric_model_tokens,
+    normalized_model_token,
 )
 
 logger = logging.getLogger(__name__)
@@ -824,11 +828,11 @@ def _detail_model_numbers_conflict(
     *,
     record: dict[str, object] | None = None,
 ) -> bool:
-    requested_numbers = _detail_model_number_tokens(requested_title)
-    candidate_numbers = _detail_model_number_tokens(candidate_title)
+    requested_numbers = detail_model_number_tokens(requested_title)
+    candidate_numbers = detail_model_number_tokens(candidate_title)
     if not requested_numbers or not candidate_numbers:
-        requested_numbers = _detail_small_numeric_model_tokens(requested_title)
-        candidate_numbers = _detail_small_numeric_model_tokens(candidate_title)
+        requested_numbers = detail_small_numeric_model_tokens(requested_title)
+        candidate_numbers = detail_small_numeric_model_tokens(candidate_title)
         if not (
             requested_numbers
             and candidate_numbers
@@ -839,7 +843,7 @@ def _detail_model_numbers_conflict(
             return False
     if not requested_numbers or not candidate_numbers:
         return False
-    if _detail_model_number_sets_compatible(requested_numbers, candidate_numbers):
+    if detail_model_number_sets_compatible(requested_numbers, candidate_numbers):
         return False
     requested_words = _semantic_detail_identity_tokens(requested_title)
     candidate_words = _semantic_detail_identity_tokens(candidate_title)
@@ -852,49 +856,6 @@ def _detail_model_numbers_conflict(
     return required_shared_words > 0 and len(shared_words) >= required_shared_words
 
 
-def _detail_model_number_sets_compatible(
-    requested_numbers: set[str],
-    candidate_numbers: set[str],
-) -> bool:
-    for requested in requested_numbers:
-        for candidate in candidate_numbers:
-            if requested == candidate:
-                return True
-            shorter, longer = sorted((requested, candidate), key=len)
-            if (
-                len(shorter) >= 5
-                and len(longer) - len(shorter) <= 2
-                and longer.startswith(shorter)
-                and any(char.isalpha() for char in shorter)
-            ):
-                return True
-    return False
-
-
-def _detail_model_number_tokens(value: object) -> set[str]:
-    tokens: set[str] = set()
-    text = clean_text(value)
-    for pattern in tuple(DETAIL_MODEL_NUMBER_TOKEN_PATTERNS or ()):
-        if not str(pattern).strip():
-            continue
-        for match in re.findall(str(pattern), text):
-            raw_token = match[0] if isinstance(match, tuple) else match
-            normalized = _normalized_model_token(raw_token)
-            if normalized:
-                tokens.add(normalized)
-    return tokens
-
-
-def _detail_small_numeric_model_tokens(value: object) -> set[str]:
-    pattern = str(DETAIL_MODEL_SMALL_NUMERIC_TOKEN_PATTERN or "").strip()
-    if not pattern:
-        return set()
-    return {
-        token.lstrip("0") or "0"
-        for token in re.findall(pattern, clean_text(value))
-    }
-
-
 def _detail_has_sku_evidence(
     record: dict[str, object],
     *,
@@ -903,7 +864,7 @@ def _detail_has_sku_evidence(
     if not tokens:
         return False
     for field_name in ("sku", "product_id", "variant_id", "part_number", "barcode"):
-        normalized = _normalized_model_token(record.get(field_name))
+        normalized = normalized_model_token(record.get(field_name))
         if normalized and any(token in normalized for token in tokens):
             return True
     return False
@@ -941,15 +902,6 @@ def _record_has_detail_product_evidence(record: dict[str, object]) -> bool:
             "variants",
         )
     )
-
-
-def _normalized_model_token(value: object) -> str:
-    normalized = _MIXED_NON_ALNUM_RE.sub("", str(value or "")).lower()
-    if not normalized:
-        return ""
-    if normalized.isdigit():
-        return normalized.lstrip("0") or "0"
-    return normalized
 
 
 def _detail_slug_title_fallback_from_url(identity_url: str) -> str | None:
@@ -1176,8 +1128,8 @@ def _detail_redirect_identity_is_mismatched(
             record,
             requested_codes=requested_codes,
         )
-        requested_small_numbers = _detail_small_numeric_model_tokens(requested_title)
-        candidate_small_numbers = _detail_small_numeric_model_tokens(candidate_title)
+        requested_small_numbers = detail_small_numeric_model_tokens(requested_title)
+        candidate_small_numbers = detail_small_numeric_model_tokens(candidate_title)
         has_matching_small_model_number = bool(
             requested_small_numbers & candidate_small_numbers
         )

@@ -90,15 +90,10 @@ ALLOWED_PRIVATE_SERVICE_IMPORTS = {
     "js_state/state_normalizer/_product_mapping.py -> ._variant_rows:_product_variant_rows",
     "js_state/state_normalizer/_variant_rows.py -> ._variant_mapping:_option_names",
     "js_state/state_normalizer/_variant_rows.py -> ._variant_mapping:_variant_axis_raw_value",
-    "pipeline/extraction_loop.py -> .record_extraction_stage:_best_adapter_result",
-    "pipeline/extraction_loop.py -> .record_extraction_stage:_extract_records_for_acquisition",
-    "pipeline/extraction_loop.py -> .record_extraction_stage:_update_acquisition_contract_memory",
-    "product_intelligence/service.py -> app.services.product_intelligence.discovery:_looks_like_product_detail_url",
 }
 ALLOWED_PRIVATE_TEST_IMPORTS: set[str] = {
     "tests/component/test_alert_service.py -> app.services.alert_service:_rules_payload",
     "tests/component/test_acquirer.py -> app.services.acquisition.internal_api_replay:_is_safe_replay_url",
-    "tests/regression/test_listing_identity_regressions.py -> app.services.extract.detail.identity.core:_detail_model_number_sets_compatible",
     "tests/component/test_public_api.py -> app.main:_public_auth_session",
     "tests/component/test_public_api.py -> app.api.public.rate_limit:_retry_after",
     "tests/component/test_public_api.py -> app.api.public.rate_limit:_trim",
@@ -109,7 +104,6 @@ ALLOWED_PRIVATE_TEST_IMPORTS: set[str] = {
     "tests/unit/test_detail_image_cleanup.py -> app.services.extract.detail.images.cleanup:_detail_image_candidate_is_usable",
     "tests/unit/test_materials_sanitizer.py -> app.services.extract.detail.text.sanitizer:_clean_materials_pollution",
     "tests/unit/test_normalizers.py -> app.services.extract.variant_choice_traversal:_variant_choice_container_is_overbroad",
-    "tests/component/test_product_intelligence.py -> app.services.product_intelligence.discovery:_candidate_dedupe_key",
     "tests/component/test_public_api.py -> app.main:_crawler_app_state",
     "tests/services/observability/test_extraction_trace_projection.py -> app.services.pipeline.extraction_loop:_record_extraction_trace",
     "tests/regression/test_batch_runtime.py -> app.services.crawl.batch_runtime:_parallel_url_concurrency",
@@ -555,9 +549,6 @@ def test_root_binary_assets_are_not_committed_without_context() -> None:
 @pytest.mark.regression
 def test_config_modules_do_not_mutate_globals_from_export_data() -> None:
     allowed_global_export_modules = {
-        Path("app/services/config/extraction_rules/_detail_sections.py"),
-        Path("app/services/config/extraction_rules/_images.py"),
-        Path("app/services/config/extraction_rules/_jobs.py"),
         Path("app/services/config/extraction_rules/_listing_structured.py"),
         Path("app/services/config/extraction_rules/_variants.py"),
     }
