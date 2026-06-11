@@ -17,6 +17,10 @@ from ._variant_mapping import (
     _normalize_variant,
     _option_names,
 )
+from app.services.config.variant_policy import (
+    GEOGRAPHIC_STATE_VARIANT_VALUE_SET,
+    variant_state_values_are_geographic,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +52,7 @@ def _map_product_payload(
             )
         )
     ]
+    normalized_variants = _drop_geographic_state_variant_rows(normalized_variants)
     axes = variant_axes(normalized_variants)
     variants = resolve_variants(axes, normalized_variants) if axes else normalized_variants
     active_variant = select_variant(variants, page_url=page_url)
@@ -158,6 +163,34 @@ def _map_product_payload(
         }
     )
     return record
+
+
+def _drop_geographic_state_variant_rows(
+    variants: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    state_values = [
+        state_value
+        for variant in variants
+        if (state_value := _variant_state_axis_value(variant))
+    ]
+    if variant_state_values_are_geographic(state_values):
+        return [
+            variant
+            for variant in variants
+            if (_variant_state_axis_value(variant) or "").strip().casefold()
+            not in GEOGRAPHIC_STATE_VARIANT_VALUE_SET
+        ]
+    return variants
+
+
+def _variant_state_axis_value(variant: dict[str, Any]) -> str | None:
+    option_values = variant.get("option_values")
+    value = (
+        option_values.get("state")
+        if isinstance(option_values, dict)
+        else variant.get("state")
+    )
+    return text_or_none(value)
 
 
 def _product_scalar_size_is_public(

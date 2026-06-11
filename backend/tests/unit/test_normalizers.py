@@ -150,6 +150,25 @@ def test_variant_payload_limit_accepts_explicit_max_rows() -> None:
 
 
 @pytest.mark.unit
+def test_normalize_variant_record_drops_geographic_state_dropdown_rows() -> None:
+    record: dict[str, object] = {
+        "title": "EOS R5 Body",
+        "variants": [
+            {"state": "Alabama"},
+            {"state": "Alaska"},
+            {"state": "California"},
+            {"state": "Texas"},
+        ],
+        "variant_count": 4,
+    }
+
+    normalize_variant_record(record)
+
+    assert "variants" not in record
+    assert "variant_count" not in record
+
+
+@pytest.mark.unit
 def test_repair_ecommerce_detail_reconciles_parent_price_against_unanimous_variants() -> (
     None
 ):

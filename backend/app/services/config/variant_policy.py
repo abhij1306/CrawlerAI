@@ -144,6 +144,75 @@ PUBLIC_VARIANT_AXIS_FIELDS: tuple[str, ...] = (
     "usage_limit",
     "tier",
 )
+GEOGRAPHIC_STATE_VARIANT_MIN_MATCHES = 3
+GEOGRAPHIC_STATE_VARIANT_VALUES: tuple[str, ...] = (
+    "alabama",
+    "alaska",
+    "american samoa",
+    "arizona",
+    "arkansas",
+    "armed forces africa",
+    "armed forces americas",
+    "armed forces canada",
+    "armed forces europe",
+    "armed forces middle east",
+    "armed forces pacific",
+    "california",
+    "colorado",
+    "connecticut",
+    "delaware",
+    "district of columbia",
+    "federated states of micronesia",
+    "florida",
+    "georgia",
+    "guam",
+    "hawaii",
+    "idaho",
+    "illinois",
+    "indiana",
+    "iowa",
+    "kansas",
+    "kentucky",
+    "louisiana",
+    "maine",
+    "marshall islands",
+    "maryland",
+    "massachusetts",
+    "michigan",
+    "minnesota",
+    "mississippi",
+    "missouri",
+    "montana",
+    "nebraska",
+    "nevada",
+    "new hampshire",
+    "new jersey",
+    "new mexico",
+    "new york",
+    "north carolina",
+    "north dakota",
+    "northern mariana islands",
+    "ohio",
+    "oklahoma",
+    "oregon",
+    "palau",
+    "pennsylvania",
+    "puerto rico",
+    "rhode island",
+    "south carolina",
+    "south dakota",
+    "tennessee",
+    "texas",
+    "utah",
+    "vermont",
+    "virgin islands",
+    "virginia",
+    "washington",
+    "west virginia",
+    "wisconsin",
+    "wyoming",
+)
+GEOGRAPHIC_STATE_VARIANT_VALUE_SET = frozenset(GEOGRAPHIC_STATE_VARIANT_VALUES)
 AXIS_NAME_ALIASES = {
     normalized_alias: normalized_canonical
     for group, canonical in VARIANT_AXIS_CANONICAL_MAPPING.items()
@@ -154,6 +223,19 @@ AXIS_NAME_ALIASES = {
     if normalized_alias and normalized_canonical
 }
 OPTION_SCALAR_FIELDS = frozenset(PUBLIC_VARIANT_AXIS_FIELDS)
+
+
+def variant_state_values_are_geographic(values: object) -> bool:
+    if not isinstance(values, list):
+        return False
+    matched = {
+        str(value or "").strip().casefold()
+        for value in values
+        if str(value or "").strip().casefold() in GEOGRAPHIC_STATE_VARIANT_VALUE_SET
+    }
+    return len(matched) >= int(GEOGRAPHIC_STATE_VARIANT_MIN_MATCHES)
+
+
 FLAT_VARIANT_KEYS: tuple[str, ...] = (
     COLOR_FIELD,
     SIZE_FIELD,

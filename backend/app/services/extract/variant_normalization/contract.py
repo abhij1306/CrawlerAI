@@ -10,10 +10,12 @@ from app.services.config.public_record_policy import (
 )
 from app.services.config.variant_policy import (
     FLAT_VARIANT_KEYS,
+    GEOGRAPHIC_STATE_VARIANT_VALUE_SET,
     PUBLIC_VARIANT_AXIS_FIELDS,
     SCENT_DOMINANT_URL_TOKENS,
     VARIANT_PARENT_SHARED_FIELDS,
     VARIANT_TRANSPORT_FIELDS,
+    variant_state_values_are_geographic,
 )
 from app.services.extract.variant_axis import normalized_variant_axis_key
 from app.services.extract.variant_identity_merge import variant_identity
@@ -159,7 +161,26 @@ def flatten_variants_for_public_output(
             )
         ):
             flattened.append(merged)
+    flattened = _drop_geographic_state_public_rows(flattened)
     return flattened or None
+
+
+def _drop_geographic_state_public_rows(
+    rows: list[dict[str, object]],
+) -> list[dict[str, object]]:
+    state_values = [
+        state_value
+        for row in rows
+        if (state_value := text_or_none(row.get("state")))
+    ]
+    if not variant_state_values_are_geographic(state_values):
+        return rows
+    return [
+        row
+        for row in rows
+        if (text_or_none(row.get("state")) or "").strip().casefold()
+        not in GEOGRAPHIC_STATE_VARIANT_VALUE_SET
+    ]
 
 
 def _drop_parent_shared_variant_fields(record: dict[str, Any]) -> None:

@@ -157,6 +157,42 @@ def test_map_js_state_to_fields_recovers_axis_keyed_variant_dict_rows() -> None:
 
 
 @pytest.mark.unit
+def test_map_js_state_to_fields_drops_geographic_state_dropdown_variants() -> None:
+    mapped = map_js_state_to_fields(
+        {
+            "__NEXT_DATA__": {
+                "props": {
+                    "pageProps": {
+                        "product": {
+                            "sku": "4147C002",
+                            "title": "EOS R5 Body",
+                            "brand": "Canon",
+                            "price": "2999.00",
+                            "currency": "USD",
+                            "options": [{"name": "State"}],
+                            "variants": [
+                                {"option1": "Alabama"},
+                                {"option1": "Alaska"},
+                                {"option1": "California"},
+                                {"option1": "Texas"},
+                            ],
+                        }
+                    }
+                }
+            }
+        },
+        surface="ecommerce_detail",
+        page_url="https://www.usa.canon.com/shop/p/eos-r5",
+    )
+
+    assert mapped["title"] == "EOS R5 Body"
+    assert mapped["sku"] == "4147C002"
+    assert mapped["price"] == "2999.00"
+    assert "variants" not in mapped
+    assert "variant_count" not in mapped
+
+
+@pytest.mark.unit
 def test_map_js_state_to_fields_keeps_bridge_variants_with_primary_rows() -> None:
     mapped = map_js_state_to_fields(
         {

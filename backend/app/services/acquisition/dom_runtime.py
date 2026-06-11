@@ -149,6 +149,8 @@ def _is_retryable_page_content_error(exc: Exception) -> bool:
         marker in message
         for marker in (
             "connection closed while reading from the driver",
+            "unable to retrieve content because the page is navigating",
+            "page is navigating and changing the content",
             "target closed",
             "page closed",
             "browser has been closed",

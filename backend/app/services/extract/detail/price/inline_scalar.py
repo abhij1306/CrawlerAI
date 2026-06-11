@@ -76,7 +76,7 @@ def collect_inline_scalar_rows(
         normalized = alias_lookup.get(label.lower()) or alias_lookup.get(
             re.sub(r"[^a-z0-9]+", "_", label.lower()).strip("_")
         )
-        if normalized not in INLINE_SCALAR_ALLOWED_FIELDS:
+        if normalized is None or normalized not in INLINE_SCALAR_ALLOWED_FIELDS:
             continue
         if normalized_allowed_fields and normalized not in normalized_allowed_fields:
             continue

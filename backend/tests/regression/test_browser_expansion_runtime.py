@@ -5102,6 +5102,31 @@ async def test_get_page_html_outer_html_fallback_preserves_doctype(
     assert html.startswith("<!DOCTYPE html>")
 
 
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_get_page_html_falls_back_after_live_navigation_content_error(
+    patch_settings,
+) -> None:
+    patch_settings(browser_error_retry_attempts=0, browser_error_retry_delay_ms=0)
+
+    class _Page:
+        async def content(self) -> str:
+            await _async_checkpoint()
+            raise RuntimeError(
+                "Page.content: Unable to retrieve content because the page is navigating and changing the content."
+            )
+
+        async def evaluate(self, script: str):
+            await _async_checkpoint()
+            if "flattenedRoots" in script:
+                return 0
+            return "<html><body><main><h1>Recovered live DOM</h1></main></body></html>"
+
+    html = await dom_runtime.get_page_html(_Page())
+
+    assert "Recovered live DOM" in html
+
+
 @pytest.mark.regression
 def test_shadow_dom_flattener_avoids_inner_html_assignment() -> None:
     assert ".innerHTML" not in dom_runtime._SHADOW_DOM_FLATTENER_SCRIPT
