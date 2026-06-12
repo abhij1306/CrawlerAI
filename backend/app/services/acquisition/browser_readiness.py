@@ -7,6 +7,7 @@ from functools import lru_cache
 import re
 from types import SimpleNamespace
 from typing import Any
+from urllib.parse import urlparse
 
 from bs4 import BeautifulSoup, Comment
 
@@ -18,6 +19,7 @@ from app.services.config.extraction_rules import (
 )
 from app.services.config.runtime_settings import crawler_runtime_settings
 from app.services.shared.field_coerce import clean_text, coerce_int as _coerce_int
+from app.services.shared.text_coerce import slug_tokens
 
 
 _DETAIL_READINESS_HINTS: dict[str, tuple[str, ...]] = {
@@ -188,7 +190,19 @@ async def probe_browser_readiness_impl(
         # For listings or others, we can be more lenient
         structured_data_present = has_detail_token or has_shell_token
     detail_hints = detail_readiness_hint_count(surface, analysis.visible_text.lower())
-    detail_like = analysis.h1_present or structured_data_present or detail_hints > 0
+    detail_title_matches_url = _detail_title_matches_url(
+        url,
+        analysis.title_text,
+        min_matches=int(
+            crawler_runtime_settings.browser_detail_title_url_token_min_count
+        ),
+    )
+    detail_like = (
+        analysis.h1_present
+        or structured_data_present
+        or detail_hints > 0
+        or detail_title_matches_url
+    )
     listing_card_count = 0
     matched_listing_selectors = 0
     if is_listing:
@@ -210,14 +224,21 @@ async def probe_browser_readiness_impl(
             else [],
         )
     if is_detail:
+        enough_visible_detail_text = visible_text_length >= int(
+            crawler_runtime_settings.browser_readiness_visible_text_min
+        )
+        has_detail_identity_signal = bool(
+            analysis.h1_present
+            or detail_hints
+            >= int(crawler_runtime_settings.detail_field_signal_min_count)
+            or detail_title_matches_url
+        )
         is_ready = bool(
-            structured_data_present
+            (structured_data_present and enough_visible_detail_text)
             or (
                 detail_like
-                and detail_hints
-                >= int(crawler_runtime_settings.detail_field_signal_min_count)
-                and visible_text_length
-                >= int(crawler_runtime_settings.browser_readiness_visible_text_min)
+                and has_detail_identity_signal
+                and enough_visible_detail_text
             )
         )
     elif is_listing:
@@ -238,6 +259,7 @@ async def probe_browser_readiness_impl(
         "structured_data_present": structured_data_present,
         "visible_text_length": visible_text_length,
         "detail_hint_count": detail_hints,
+        "detail_title_matches_url": detail_title_matches_url,
         "listing_card_count": listing_card_count,
         "matched_listing_selectors": matched_listing_selectors,
         "h1_present": analysis.h1_present,
@@ -257,6 +279,33 @@ async def listing_card_signal_count_impl(page: Any, *, surface: str) -> int:
         page,
         surface=surface,
     )
+
+
+def _detail_title_matches_url(
+    url: str,
+    title: str,
+    *,
+    min_matches: int,
+) -> bool:
+    if min_matches <= 0:
+        return False
+    parsed = urlparse(str(url or ""))
+    title_tokens = {
+        token for token in slug_tokens(title) if len(token) >= 3 and not token.isdigit()
+    }
+    if not title_tokens:
+        return False
+    for segment in reversed([part for part in parsed.path.split("/") if part]):
+        segment_tokens = [
+            token
+            for token in slug_tokens(segment)
+            if len(token) >= 3 and not token.isdigit()
+        ]
+        if not segment_tokens:
+            continue
+        if len(set(segment_tokens) & title_tokens) >= min_matches:
+            return True
+    return False
 
 
 def _ecommerce_ready_card_count(soup: BeautifulSoup) -> int:

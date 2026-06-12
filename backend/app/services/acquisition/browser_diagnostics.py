@@ -172,7 +172,6 @@ def browser_failure_kind(exc: Exception) -> str:
             for attr in ("send", "_send")
         ):
             return "browser_driver_closed"
-        return "browser_driver_closed"
     if "real chrome executable is not available" in message:
         return "engine_unavailable"
     if "patchright package is not available" in message:

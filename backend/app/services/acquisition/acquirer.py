@@ -12,6 +12,7 @@ from app.services.acquisition.policy_middleware import PolicyMiddleware
 from app.services.acquisition.internal_api_replay import replay_internal_api_endpoints
 from app.services.adapters.registry import normalize_adapter_acquisition_url
 from app.services.config.domain_profiles import INTERNAL_API_ENDPOINTS_PROFILE_KEY
+from app.services.crawl.utils import normalize_target_url
 from app.services.fetch.fetch_context import fetch_page
 from app.services.platform_policy import resolve_platform_runtime_policy
 
@@ -200,7 +201,7 @@ async def _emit_event(on_event: Any, level: str, message: str) -> None:
 
 
 async def acquire(request: AcquisitionRequest) -> AcquisitionResult:
-    requested_url = str(request.url or "")
+    requested_url = normalize_target_url(request.url)
     effective_url = (
         await normalize_adapter_acquisition_url(requested_url) or requested_url
     )

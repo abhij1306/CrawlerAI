@@ -1002,7 +1002,7 @@
         "maytag.com"
       ],
       "job_platform": false,
-      "requires_browser": true,
+      "requires_browser": false,
       "readiness_domains": [
         "kitchenaid.com",
         "whirlpool.com",

@@ -84,14 +84,10 @@ def _map_product_payload(
             base.get("original_price"),
             interpret_integral_as_cents=shopify_like,
         )
-    currency = (
-        variant_attribute(active_variant, "currency")
-        or text_or_none(base.get("currency"))
+    currency = variant_attribute(active_variant, "currency") or text_or_none(
+        base.get("currency")
     )
-    availability = (
-        availability_value(active_variant)
-        or availability_value(product)
-    )
+    availability = availability_value(active_variant) or availability_value(product)
     product_stock = stock_quantity(active_variant)
     if product_stock is None:
         product_stock = stock_quantity(product)
@@ -116,13 +112,11 @@ def _map_product_payload(
                 page_url=page_url,
             )
 
-    # Resolve brand/vendor: dict values need name extraction
     brand_raw = base.get("brand")
     vendor_raw = base.get("vendor")
     brand = _name_or_value(brand_raw) if isinstance(brand_raw, dict) else brand_raw
     vendor = _name_or_value(vendor_raw) if isinstance(vendor_raw, dict) else vendor_raw
 
-    # Category fallback from product_type when flag is set
     category = base.get("category")
     if not category and category_fallback_from_type:
         category = base.get("product_type")
@@ -185,11 +179,7 @@ def _drop_geographic_state_variant_rows(
 
 def _variant_state_axis_value(variant: dict[str, Any]) -> str | None:
     option_values = variant.get("option_values")
-    value = (
-        option_values.get("state")
-        if isinstance(option_values, dict)
-        else variant.get("state")
-    )
+    value = option_values.get("state") if isinstance(option_values, dict) else variant.get("state")
     return text_or_none(value)
 
 
@@ -203,13 +193,6 @@ def _product_scalar_size_is_public(
     if not value:
         return False
     if any(normalized_variant_axis_key(name) == "size" for name in option_names):
-        return True
-    variant_sizes = {
-        clean_text(variant.get("size")).casefold()
-        for variant in normalized_variants
-        if clean_text(variant.get("size"))
-    }
-    if len(variant_sizes) >= 2:
         return True
     return True
 

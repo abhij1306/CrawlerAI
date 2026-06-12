@@ -1088,6 +1088,31 @@ async def test_block_unneeded_route_allows_fonts_and_protected_challenge_urls() 
 
 @pytest.mark.asyncio
 @pytest.mark.component
+async def test_block_unneeded_route_aborts_third_party_trackers() -> None:
+    events: list[str] = []
+
+    class FakeRoute:
+        def __init__(self, *, resource_type: str, url: str) -> None:
+            self.request = SimpleNamespace(resource_type=resource_type, url=url)
+
+        async def abort(self) -> None:
+            events.append(f"abort:{self.request.resource_type}:{self.request.url}")
+
+        async def continue_(self) -> None:
+            events.append(f"continue:{self.request.resource_type}:{self.request.url}")
+
+    await acquisition_browser_runtime._block_unneeded_route(
+        FakeRoute(
+            resource_type="script",
+            url="https://tr.snapchat.com/p?pid=abc",
+        )
+    )
+
+    assert events == ["abort:script:https://tr.snapchat.com/p?pid=abc"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
 async def test_shared_browser_runtime_reuses_run_storage_state(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

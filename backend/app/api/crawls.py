@@ -75,6 +75,7 @@ RUN_CONFLICT_RESPONSE: ResponseSpec = {
     **RUN_NOT_FOUND_RESPONSE,
     status.HTTP_409_CONFLICT: {"description": RUN_CONFLICT_DETAIL},
 }
+_WEBSOCKET_PROTOCOL_TRANSFER_TASK_ATTR = "transfer_data_task"
 
 
 def _log_stream_sleep_seconds() -> float:
@@ -99,6 +100,18 @@ def _websocket_token(websocket: WebSocket) -> str | None:
         if scheme.lower() == "bearer" and credentials.strip():
             token = credentials.strip()
     return token
+
+
+# WebSocket disconnect compatibility: Some WebSocket implementations raise
+# AttributeError for transfer_data_task when client disconnects abruptly
+def _is_websocket_disconnect_compat_error(exc: Exception) -> bool:
+    if not isinstance(exc, AttributeError):
+        return False
+    message = str(exc)
+    return (
+        "WebSocketProtocol" in message
+        and _WEBSOCKET_PROTOCOL_TRANSFER_TASK_ATTR in message
+    )
 
 
 async def _mutate_run_status(
@@ -430,6 +443,8 @@ async def crawls_logs_ws(
     except WebSocketDisconnect:
         return
     except Exception as exc:
+        if _is_websocket_disconnect_compat_error(exc):
+            return
         logger.exception(
             "Run logs websocket stream failed",
             extra={"run_id": log_run_id},

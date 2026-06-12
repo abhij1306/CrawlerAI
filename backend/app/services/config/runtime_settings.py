@@ -147,11 +147,12 @@ class CrawlerRuntimeSettings(BaseSettings):
     js_shell_visible_ratio_max: float = 0.15
     js_shell_min_script_count: int = 2
     detail_field_signal_min_count: int = 2
+    browser_detail_title_url_token_min_count: int = 3
     network_payload_signature_min_match: int = 3
     structured_source_generic_assignment_max_script_chars: int = 250000
     structured_source_generic_assignment_max_matches_per_script: int = 24
     http_retry_status_codes: list[int] = Field(
-        default_factory=lambda: [403, 429, 502, 503, 504]
+        default_factory=lambda: [403, 406, 429, 502, 503, 504]
     )
     proxy_failure_cooldown_base_ms: int = 1000
     proxy_failure_cooldown_max_ms: int = 15000
@@ -198,7 +199,7 @@ class CrawlerRuntimeSettings(BaseSettings):
     surface_readiness_poll_ms: int = 250
     origin_warm_pause_ms: int | None = 500
     origin_warmup_max_budget_ratio: float = 0.4
-    origin_warmup_dedupe_ttl_seconds: float = 0.0
+    origin_warmup_dedupe_ttl_seconds: float = 60.0
     browser_error_retry_attempts: int = 1
     browser_error_retry_delay_ms: int = 1000
     browser_post_block_cooldown_ms: int = 500

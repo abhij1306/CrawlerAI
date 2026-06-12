@@ -118,7 +118,7 @@
 }
 
 :global(.app-logo-title) {
-  font-size: var(--text-sm);
+  font-size: var(--text-lg);
   font-weight: var(--weight-semibold);
   letter-spacing: 0;
   color: var(--text-primary);
@@ -291,7 +291,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   font-family: var(--font-primary-family);
-  font-size: var(--text-sm);
+  font-size: var(--text-lg);
   font-weight: var(--weight-semibold);
   letter-spacing: 0;
   line-height: 1.2;

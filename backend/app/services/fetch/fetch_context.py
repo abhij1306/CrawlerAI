@@ -228,7 +228,11 @@ def _browser_attempt_timeout_seconds(
         browser_engine == "patchright"
         and _is_vendor_block_reason(reason)
         and not str(context.forced_browser_engine or "").strip()
-        and _patchright_probe_cap_applies(host_policy=host_policy, reason=reason)
+        and _patchright_probe_cap_applies(
+            host_policy=host_policy,
+            reason=reason,
+            engine_attempts=engine_attempts,
+        )
     ):
         return min(
             remaining_timeout,
@@ -241,22 +245,26 @@ def _patchright_probe_cap_applies(
     *,
     host_policy: HostProtectionPolicy | None,
     reason: str,
+    engine_attempts: list[str],
 ) -> bool:
-    """Probe-cap patchright only when host already has durable patchright
-    failure memory for the same vendor. Fresh hosts get the full URL budget
-    so patchright can complete origin warmup, behavior realism, and challenge
-    wait without being truncated and misclassified as blocked.
+    """Probe-cap Patchright when real Chrome is already queued.
+
+    Vendor-blocked pages need enough remaining acquisition budget for the
+    stronger engine. Without this cap Patchright can burn most of the URL-local
+    budget and leave real Chrome too little time to navigate.
     """
+    expected_vendor = _extract_vendor_from_reason(reason) or ""
+    if not expected_vendor:
+        return False
+    if "real_chrome" in engine_attempts:
+        return True
     if host_policy is None:
         return False
     if not bool(host_policy.patchright_blocked):
         return False
     if not bool(host_policy.prefer_browser):
         return False
-    expected_vendor = _extract_vendor_from_reason(reason) or ""
     last_vendor = str(host_policy.last_block_vendor or "").strip().lower()
-    if not expected_vendor:
-        return False
     return expected_vendor == last_vendor
 
 
@@ -360,12 +368,29 @@ async def fetch_page(
             return browser_result
         except Exception as exc:
             context.last_error = exc
+            context.browser_first_failed = True
+            if not context.last_browser_attempt_diagnostics:
+                context.last_browser_attempt_diagnostics = build_failed_browser_diagnostics(
+                    browser_reason=resolved_browser_reason,
+                    exc=exc,
+                )
+            _attach_exception_browser_diagnostics(
+                exc,
+                context.last_browser_attempt_diagnostics,
+            )
             if (
-                call.prefer_browser
-                or context.fetch_mode == "browser_only"
+                context.fetch_mode == "browser_only"
                 or _hard_browser_requirement(context=context)
             ):
                 raise
+            await _emit_fetch_event(
+                context.on_event,
+                "warning",
+                (
+                    "Browser-first acquisition failed; falling back to HTTP "
+                    f"({type(exc).__name__})"
+                ),
+            )
 
     if context.prefer_curl_handoff:
         handoff_result = await try_browser_http_handoff(context)
@@ -600,13 +625,7 @@ async def _run_browser_attempts(
                         host_policy=active_host_policy,
                     )
                     if engine_index < len(engine_attempts):
-                        cooldown_ms = max(
-                            0,
-                            int(
-                                crawler_runtime_settings.browser_post_block_cooldown_ms
-                                or 0
-                            ),
-                        )
+                        cooldown_ms = max(0, int(crawler_runtime_settings.browser_post_block_cooldown_ms or 0))
                         if cooldown_ms > 0:
                             await asyncio.sleep(cooldown_ms / 1000)
                         continue
@@ -683,13 +702,7 @@ async def _run_browser_attempts(
                         host_policy=active_host_policy,
                     )
                     if engine_index < len(engine_attempts):
-                        cooldown_ms = max(
-                            0,
-                            int(
-                                crawler_runtime_settings.browser_post_block_cooldown_ms
-                                or 0
-                            ),
-                        )
+                        cooldown_ms = max(0, int(crawler_runtime_settings.browser_post_block_cooldown_ms or 0))
                         if cooldown_ms > 0:
                             await asyncio.sleep(cooldown_ms / 1000)
                         continue
@@ -1014,6 +1027,12 @@ async def _handle_http_result(
             ttl_seconds=context.host_memory_ttl_seconds,
         )
     if browser_escalation_allowed:
+        if context.browser_first_failed and not (vendor or bool(result.blocked)):
+            _attach_browser_attempt_diagnostics(
+                result,
+                diagnostics=context.last_browser_attempt_diagnostics,
+            )
+            return result, bool(vendor)
         browser_reason = context.browser_reason or (
             f"vendor-block:{vendor}" if vendor else "http-escalation"
         )

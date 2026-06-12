@@ -136,6 +136,25 @@ def test_classify_blocked_page_keeps_perimeterx_evidence_on_403() -> None:
 
 
 @pytest.mark.unit
+def test_classify_blocked_page_detects_access_forbidden_title() -> None:
+    html = """
+    <html>
+      <head><title>Access Forbidden</title></head>
+      <body>
+        <main>Access Forbidden</main>
+      </body>
+    </html>
+    """
+
+    classification = classify_blocked_page(html, 200)
+
+    assert classification.blocked is True
+    assert classification.outcome == "challenge_page"
+    assert "access forbidden" in classification.strong_hits
+    assert bool(classification.title_matches) is True
+
+
+@pytest.mark.unit
 def test_classify_blocked_page_uses_configured_challenge_element_markers(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

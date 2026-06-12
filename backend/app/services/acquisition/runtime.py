@@ -108,14 +108,23 @@ _BOT_VENDOR_HEADER_MARKERS: tuple[tuple[str, str, str], ...] = (
 
 
 def is_retryable_http_status(status_code: int) -> bool:
-    return status_code in {403, 429} or 500 <= int(status_code or 0) <= 599
+    code = int(status_code or 0)
+    configured_retry_statuses = {
+        int(item)
+        for item in list(crawler_runtime_settings.http_retry_status_codes or [])
+    }
+    return code in configured_retry_statuses or 500 <= code <= 599
 
 
 def is_non_retryable_http_status(status_code: int) -> bool:
     code = int(status_code or 0)
     if code == 401:
         return True
-    return 400 <= code <= 499 and code not in {403, 429}
+    configured_retry_statuses = {
+        int(item)
+        for item in list(crawler_runtime_settings.http_retry_status_codes or [])
+    }
+    return 400 <= code <= 499 and code not in configured_retry_statuses
 
 
 def is_blocked_html(html: str, status_code: int) -> bool:

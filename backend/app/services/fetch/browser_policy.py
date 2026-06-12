@@ -315,6 +315,8 @@ def durable_vendor_block_engine_attempts(
         if last_block_method.startswith("browser:")
         else None
     )
+    if not blocked_engine:
+        return prioritized
     if blocked_engine and blocked_engine in prioritized and len(prioritized) > 1:
         prioritized = [
             candidate for candidate in prioritized if candidate != blocked_engine

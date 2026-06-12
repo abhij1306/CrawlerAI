@@ -369,7 +369,25 @@ async def test_probe_browser_readiness_detects_spaced_jsonld_detail_type() -> No
     )
 
     assert probe["structured_data_present"] is True
-    assert probe["is_ready"] is True
+    assert probe["is_ready"] is False
+
+    ready_probe = await browser_readiness.probe_browser_readiness_impl(
+        SimpleNamespace(),
+        url="https://example.com/products/widget",
+        surface="ecommerce_detail",
+        html=html.replace(
+            "</body>",
+            (
+                "<h1>Widget</h1>"
+                "<p>Detailed rendered product content. " * 12
+                + "</p></body>"
+            ),
+        ),
+        detail_readiness_hint_count=lambda *_args, **_kwargs: 0,
+    )
+
+    assert ready_probe["structured_data_present"] is True
+    assert ready_probe["is_ready"] is True
 
 
 @pytest.mark.asyncio
@@ -1363,7 +1381,16 @@ async def test_browser_fetch_fast_paths_ready_detail_without_extra_waits() -> No
           </head>
           <body>
             <h1>Widget Prime</h1>
-            <div>Description</div>
+            <div>
+              Detailed product information with visible rendered content.
+              Detailed product information with visible rendered content.
+              Detailed product information with visible rendered content.
+              Detailed product information with visible rendered content.
+              Detailed product information with visible rendered content.
+              Detailed product information with visible rendered content.
+              Detailed product information with visible rendered content.
+              Detailed product information with visible rendered content.
+            </div>
           </body>
         </html>
         """,
@@ -1386,9 +1413,9 @@ async def test_browser_fetch_fast_paths_ready_detail_without_extra_waits() -> No
     assert result.browser_diagnostics["networkidle_skip_reason"] == "fast_path_ready"
     assert (
         result.browser_diagnostics["detail_expansion"]["reason"]
-        == "missing_detail_content"
+        == "canonical_detail_already_ready"
     )
-    assert result.browser_diagnostics["detail_expansion"]["status"] == "attempted"
+    assert result.browser_diagnostics["detail_expansion"]["status"] == "skipped"
     assert result.browser_diagnostics["detail_expansion"]["clicked_count"] == 0
     assert page.goto_calls == ["domcontentloaded"]
     assert page.wait_timeout_calls == []
@@ -1917,6 +1944,79 @@ async def test_probe_browser_readiness_accepts_ecommerce_product_tiles() -> None
 
     assert probe["listing_card_count"] == 3
     assert probe["is_ready"] is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_browser_fetch_fast_paths_h1_detail_without_configured_hints() -> None:
+    page = _FakeExpansionPage(
+        base_html="""
+        <html>
+          <head><title>Widget Prime for Men | Example</title></head>
+          <body>
+            <h1>Widget Prime</h1>
+            <p>
+              Premium polarized sunglasses with silver-tone aviator frames,
+              adjustable nose pads, and a protective case included for everyday wear.
+            </p>
+            <span>$450.00</span>
+          </body>
+        </html>
+        """,
+    )
+
+    async def _fake_runtime(**_kwargs):
+        await _async_checkpoint()
+        return _FakeRuntime(page)
+
+    result = await browser_runtime.browser_fetch(
+        "https://example.com/products/widget",
+        5,
+        surface="ecommerce_detail",
+        runtime_provider=_fake_runtime,
+    )
+
+    assert result.browser_diagnostics["readiness_probes"][0]["is_ready"] is True
+    assert result.browser_diagnostics["phase_timings_ms"]["optimistic_wait"] == 0
+    assert result.browser_diagnostics["phase_timings_ms"]["networkidle_wait"] == 0
+    assert result.browser_diagnostics["phase_timings_ms"]["readiness_wait"] == 0
+    assert result.browser_diagnostics["detail_expansion"]["status"] == "skipped"
+    assert (
+        result.browser_diagnostics["detail_expansion"]["reason"]
+        == "canonical_detail_already_ready"
+    )
+    assert page.wait_function_calls == []
+    assert page.load_state_calls == []
+    assert page.wait_timeout_calls == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_probe_browser_readiness_accepts_detail_title_matching_url() -> None:
+    visible_text = (
+        "This vintage bracelet is crafted in 18-karat gold with coral cabochons "
+        "and diamond accents. The product page includes condition notes, "
+        "shipping information, returns, and authenticated packaging details."
+    )
+    probe = await browser_readiness.probe_browser_readiness_impl(
+        object(),
+        url=(
+            "https://www.net-a-porter.com/en-us/shop/product/eleuteri/"
+            "jewelry-and-watches/vintage-bracelets/"
+            "plus-bulgari-vintage-1980s-doppio-cuore-18-karat-gold-coral-and-diamond-bracelet/"
+            "46376663163120086"
+        ),
+        surface="ecommerce_detail",
+        html=(
+            "<html><head><title>ELEUTERI + Bulgari Vintage 1980s Doppio Cuore "
+            "18-karat gold, coral and diamond bracelet | NET-A-PORTER</title></head>"
+            f"<body><main><p>{visible_text}</p></main></body></html>"
+        ),
+        detail_readiness_hint_count=browser_readiness.detail_readiness_hint_count,
+    )
+
+    assert probe["is_ready"] is True
+    assert probe["detail_title_matches_url"] is True
 
 
 @pytest.mark.asyncio
@@ -3461,6 +3561,67 @@ def test_detail_expansion_skip_requires_extractable_ecommerce_content() -> None:
 
     assert can_skip is False
     assert reason is None
+
+
+@pytest.mark.regression
+def test_detail_expansion_skip_does_not_trust_sparse_structured_data_alone() -> None:
+    readiness_probe = {
+        "is_ready": True,
+        "structured_data_present": True,
+        "visible_text_length": 1,
+        "detail_hint_count": 0,
+        "h1_present": False,
+    }
+
+    can_skip, reason = browser_page_flow._detail_expansion_can_skip(
+        {"verified": False, "matched_requested_fields": []},
+        surface="ecommerce_detail",
+        requested_fields=None,
+        readiness_probe=readiness_probe,
+    )
+
+    assert can_skip is False
+    assert reason is None
+
+    can_skip, reason = browser_page_flow._detail_expansion_can_skip(
+        {"verified": True, "matched_requested_fields": []},
+        surface="ecommerce_detail",
+        requested_fields=None,
+        readiness_probe=readiness_probe,
+    )
+
+    assert can_skip is True
+    assert reason == "canonical_detail_already_ready"
+
+
+@pytest.mark.regression
+def test_detail_expansion_skip_does_not_trust_sparse_detail_hints_alone() -> None:
+    can_skip, reason = browser_page_flow._detail_expansion_can_skip(
+        {"verified": False, "matched_requested_fields": []},
+        surface="ecommerce_detail",
+        requested_fields=None,
+        readiness_probe={
+            "is_ready": True,
+            "structured_data_present": False,
+            "visible_text_length": 1,
+            "detail_hint_count": int(
+                crawler_runtime_settings.detail_field_signal_min_count
+            ),
+            "h1_present": False,
+        },
+    )
+
+    assert can_skip is False
+    assert reason is None
+
+
+@pytest.mark.regression
+def test_detail_title_url_match_scans_past_nonmatching_trailing_segments() -> None:
+    assert browser_readiness._detail_title_matches_url(
+        "https://example.com/products/widget/reviews",
+        "Widget",
+        min_matches=1,
+    )
 
 
 @pytest.mark.asyncio
@@ -5614,6 +5775,29 @@ async def test_origin_warmup_dedupes_parallel_same_host() -> None:
             for page in pages
         )
     )
+
+    assert sum(len(page.spawned_pages) for page in pages) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_origin_warmup_dedupes_recent_same_host_waves_by_default() -> None:
+    pages = [
+        _FakeExpansionPage(base_html="<html><body><h1>Widget</h1></body></html>")
+        for _index in range(3)
+    ]
+
+    for page in pages:
+        await browser_runtime._maybe_warm_origin_before_navigation(
+            page,
+            url="https://example.com/products/widget",
+            surface="ecommerce_detail",
+            browser_reason="http-escalation",
+            host_policy_snapshot=None,
+            proxy_profile=None,
+            timeout_seconds=5,
+            phase_timings_ms={},
+        )
 
     assert sum(len(page.spawned_pages) for page in pages) == 1
 

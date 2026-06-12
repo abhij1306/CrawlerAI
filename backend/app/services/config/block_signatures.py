@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 ACCESS_DENIED_MARKER = "access denied"
+ACCESS_FORBIDDEN_MARKER = "access forbidden"
 SHAPE_SECURITY_MARKER = "shape security"
 
 BLOCK_SIGNATURES = {
     "phrases": [
         ACCESS_DENIED_MARKER,
+        ACCESS_FORBIDDEN_MARKER,
         "access to this page has been denied",
         "robot or human",
         "are you a robot",
@@ -85,6 +87,7 @@ BLOCK_SIGNATURES = {
         "just a moment": "interstitial_text",
         "reddit - please wait for verification": "reddit_verification",
         ACCESS_DENIED_MARKER: "access_denied",
+        ACCESS_FORBIDDEN_MARKER: "access_forbidden",
         "powered and protected by akamai": "akamai_banner",
         "datadome": "datadome_marker",
         "unusual traffic from your computer network": "google_unusual_traffic",
@@ -99,6 +102,7 @@ BLOCK_SIGNATURES = {
     },
     "title_regexes": [
         r"access\s+denied",
+        r"access\s+forbidden",
         r"robot\s+or\s+human",
         r"you(?:'|’)?re\s+not\s+a\s+robot",
         r"human\s+verification",
@@ -146,6 +150,7 @@ BLOCK_SIGNATURES = {
             ],
             "cookie_value_tokens": [
                 ACCESS_DENIED_MARKER,
+                ACCESS_FORBIDDEN_MARKER,
                 "bot_management",
                 "captcha",
                 "datadome",
@@ -156,6 +161,7 @@ BLOCK_SIGNATURES = {
             ],
             "local_storage_value_tokens": [
                 ACCESS_DENIED_MARKER,
+                ACCESS_FORBIDDEN_MARKER,
                 "bot_management",
                 "captcha",
                 "datadome",

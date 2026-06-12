@@ -212,6 +212,7 @@ def test_parallel_runtime_defaults_stay_bounded_without_env(
 
     assert runtime.url_batch_concurrency <= 8
     assert runtime.browser_runtime_pool_max_entries <= 8
+    assert runtime.origin_warmup_dedupe_ttl_seconds >= 30
     assert app_settings.system_max_concurrent_urls <= 8
 
 
@@ -639,6 +640,19 @@ def test_platform_runtime_policy_does_not_force_browser_for_vendor_specific_doma
 ):
     policy = resolve_platform_runtime_policy("https://www.autozone.com/")
 
+    assert policy["requires_browser"] is False
+
+
+@pytest.mark.regression
+def test_platform_runtime_policy_does_not_hard_require_browser_for_sap_hybris_detail() -> (
+    None
+):
+    policy = resolve_platform_runtime_policy(
+        "https://www.kitchenaid.com/countertop-appliances/food-processors/processors/p.13-cup-food-processor.KFP1318CU.html",
+        surface="ecommerce_detail",
+    )
+
+    assert policy["family"] == "sap_hybris"
     assert policy["requires_browser"] is False
 
 

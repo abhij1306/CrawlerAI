@@ -453,6 +453,8 @@ def _reset_directory(path, *, create_if_missing: bool = True) -> int:
                 logger.warning("Failed to remove path during reset: %s", child)
         except FileNotFoundError:
             removed += 1
+        except PermissionError:
+            logger.warning("Skipped locked path during reset: %s", child)
         except OSError:
             logger.exception("Failed to remove path during reset: %s", child)
     if create_if_missing:

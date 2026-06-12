@@ -325,6 +325,39 @@ def test_empty_detail_extraction_retry_skips_non_retryable_http_status() -> None
     }
 
 
+@pytest.mark.regression
+def test_empty_detail_extraction_retries_retryable_http_status() -> None:
+    request = AcquisitionRequest(
+        run_id=1,
+        url="https://example.com/products/pragmata-switch-2",
+        plan=AcquisitionPlan(surface="ecommerce_detail"),
+    )
+    acquisition_result = AcquisitionResult(
+        request=request,
+        final_url=request.url,
+        html=(
+            "<html><body><h1>Pragmata</h1>"
+            "<span data-testid='price'>$59.99</span></body></html>"
+        ),
+        method="curl_cffi",
+        status_code=406,
+    )
+
+    decision = empty_extraction_browser_retry_decision(
+        acquisition_result,
+        [],
+        surface="ecommerce_detail",
+        requested_fields=[],
+        selector_rules=[],
+    )
+
+    assert decision == {
+        "should_retry": True,
+        "reason": "retryable_http_status",
+        "status_code": 406,
+    }
+
+
 @pytest.mark.asyncio
 @pytest.mark.regression
 async def test_process_single_url_marks_non_retryable_http_status_as_error(
@@ -371,6 +404,77 @@ async def test_process_single_url_marks_non_retryable_http_status_as_error(
     assert result.url_metrics["status_code"] == 404
     assert result.url_metrics["failure_reason"] == "non_retryable_http_status"
     assert len(acquire_calls) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_process_single_url_retries_406_empty_detail_with_browser(
+    db_session: AsyncSession,
+    test_user,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run = await create_crawl_run(
+        db_session,
+        test_user.id,
+        {
+            "run_type": "crawl",
+            "url": "https://www.nintendo.com/us/store/products/pragmata-switch-2/",
+            "surface": "ecommerce_detail",
+            "settings": {"respect_robots_txt": False},
+        },
+    )
+    acquire_calls: list[dict[str, object]] = []
+
+    @_as_async
+    def _fake_acquire(request: AcquisitionRequest) -> AcquisitionResult:
+        acquire_calls.append(dict(request.acquisition_profile))
+        if request.acquisition_profile.get("prefer_browser"):
+            return _fake_acquire_result(
+                request,
+                html="<html><body><h1>Pragmata</h1><span>$59.99</span></body></html>",
+                method="browser",
+                status_code=200,
+                browser_diagnostics={
+                    "browser_attempted": True,
+                    "browser_engine": "patchright",
+                    "browser_outcome": "usable_content",
+                },
+            )
+        return _fake_acquire_result(
+            request,
+            html=(
+                "<html><body><h1>Pragmata</h1>"
+                "<span data-testid='price'>$59.99</span></body></html>"
+            ),
+            method="curl_cffi",
+            status_code=406,
+        )
+
+    def _fake_extract_records(html: str, *_args, **_kwargs):
+        if "$59.99" in html and "data-testid" not in html:
+            return [{"title": "Pragmata", "price": "59.99", "currency": "USD"}]
+        return []
+
+    monkeypatch.setattr("app.services.pipeline.extraction_loop.acquire", _fake_acquire)
+    monkeypatch.setattr("app.services.pipeline.extraction_loop.run_adapter", _no_adapter)
+    monkeypatch.setattr(
+        "app.services.pipeline.extraction_loop.extract_records",
+        _fake_extract_records,
+    )
+
+    result = await process_single_url(db_session, run, run.url)
+    logs = await get_run_logs(db_session, run.id)
+
+    assert len(acquire_calls) == 2
+    assert acquire_calls[1]["prefer_browser"] is True
+    assert result.verdict == "success"
+    assert result.records == [
+        {"title": "Pragmata", "price": "59.99", "currency": "USD"}
+    ]
+    assert any(
+        "No records via curl_cffi; retrying browser render" in log.message
+        for log in logs
+    )
 
 
 @pytest.mark.regression
@@ -3470,6 +3574,77 @@ async def test_process_single_url_rejects_detail_challenge_shell_and_marks_block
         "Extraction yielded 0 records (generic extraction path)",
         "Rejected detail extraction for https://example.com/products/widget-prime: challenge_shell",
     ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_challenge_shell_budget_skip_logs_once(
+    db_session: AsyncSession,
+    test_user,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run = await create_crawl_run(
+        db_session,
+        test_user.id,
+        {
+            "run_type": "crawl",
+            "url": "https://example.com/products/widget-prime",
+            "surface": "ecommerce_detail",
+            "settings": {"respect_robots_txt": False},
+        },
+    )
+
+    @_as_async
+    def _fake_acquire(request):
+        return AcquisitionResult(
+            request=request,
+            final_url=request.url,
+            html="<html><body>challenge</body></html>",
+            method="browser",
+            status_code=200,
+            blocked=False,
+            browser_diagnostics={
+                "browser_attempted": True,
+                "browser_engine": "patchright",
+                "browser_reason": "vendor-block:akamai",
+                "browser_outcome": "low_content_shell",
+                "readiness_probes": [{"is_ready": False}],
+            },
+        )
+
+    @_as_async
+    def _no_selector_rules(*args, **kwargs):
+        del args, kwargs
+        return []
+
+    monkeypatch.setattr("app.services.pipeline.extraction_loop.acquire", _fake_acquire)
+    monkeypatch.setattr("app.services.pipeline.extraction_loop.run_adapter", _no_adapter)
+    monkeypatch.setattr(
+        "app.services.pipeline.extraction_loop.load_domain_selector_rules", _no_selector_rules
+    )
+    monkeypatch.setattr(
+        "app.services.pipeline.extraction_loop.extract_records",
+        lambda *args, **kwargs: [],
+    )
+    monkeypatch.setattr(
+        "app.services.pipeline.extraction_loop.real_chrome_browser_available",
+        lambda: True,
+    )
+    monkeypatch.setattr(
+        "app.services.pipeline.extraction_loop._remaining_url_budget_seconds",
+        lambda context: 1.0,
+    )
+
+    result = await process_single_url(db_session, run, run.url)
+    logs = await get_run_logs(db_session, run.id)
+    skip_logs = [
+        log.message
+        for log in logs
+        if "Skipping challenge_shell Chrome escalation" in log.message
+    ]
+
+    assert result.url_metrics["failure_reason"] == "challenge_shell"
+    assert len(skip_logs) == 1
 
 
 @pytest.mark.asyncio

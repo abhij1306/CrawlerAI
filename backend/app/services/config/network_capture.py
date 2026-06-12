@@ -27,6 +27,7 @@ BLOCKED_BROWSER_ROUTE_TOKENS: Final[tuple[str, ...]] = (
     "facebook",
     "google-analytics",
     "googletagmanager",
+    "snapchat",
 )
 
 BLOCKED_BROWSER_RESOURCE_TYPES: Final[tuple[str, ...]] = (

@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import logging
+from pathlib import Path
+
 import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.exc import OperationalError
 
 from app.core.dependencies import get_db, require_admin
 from app.main import app
+from app.services import dashboard_service
 from app.models.domain_memory import (
     DomainCookieMemory,
     DomainFieldFeedback,
@@ -289,6 +293,47 @@ async def test_split_reset_crawl_data_and_domain_memory_preserve_the_other_scope
     ):
         assert (await db_session.execute(select(model))).scalars().all() == []
     assert list(cookies_dir.iterdir()) == []
+
+
+@pytest.mark.component
+def test_reset_directory_skips_locked_celery_worker_logs_without_error(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    artifacts_dir = tmp_path / "artifacts"
+    artifacts_dir.mkdir()
+    locked_log = artifacts_dir / "celery-worker-1.log"
+    locked_log.write_text("worker output", encoding="utf-8")
+    stale_run_dir = artifacts_dir / "runs"
+    stale_run_dir.mkdir()
+    (stale_run_dir / "stale.html").write_text("artifact", encoding="utf-8")
+
+    original_unlink = Path.unlink
+
+    def _unlink(self: Path, *args, **kwargs):
+        if self == locked_log:
+            raise PermissionError(
+                "The process cannot access the file because it is being used by another process"
+            )
+        return original_unlink(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "unlink", _unlink)
+
+    with caplog.at_level(logging.WARNING, logger="app.services.dashboard_service"):
+        removed = dashboard_service._reset_directory(artifacts_dir)
+
+    assert removed == 1
+    assert locked_log.exists()
+    assert not stale_run_dir.exists()
+    assert any(
+        record.levelname == "WARNING"
+        and (
+            "celery-worker-1.log" in record.getMessage()
+            or "being used by another process" in record.getMessage()
+        )
+        for record in caplog.records
+    )
 
 
 @pytest.mark.asyncio

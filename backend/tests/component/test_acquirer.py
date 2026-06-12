@@ -14,7 +14,7 @@ from app.services.acquisition.acquirer import (
 from app.services.acquisition.internal_api_replay import _is_safe_replay_url
 from app.services.acquisition.policy import AcquisitionPolicy
 from app.services.acquisition_plan import AcquisitionPlan
-from app.services.crawl.utils import collect_target_urls, normalize_target_url
+from app.services.crawl.utils import collect_target_urls, normalize_target_url, parse_csv_urls
 
 
 @pytest.mark.component
@@ -159,6 +159,57 @@ async def test_acquire_normalizes_url_via_adapter_registry(
     assert result.final_url == "https://example.com/jobs/123?normalized=1"
 
 
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_acquire_strips_pasted_encoded_url_suffix_before_fetch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    observed_urls: list[str] = []
+
+    async def _fake_fetch_page(url: str, *args, **kwargs):
+        del args, kwargs
+        observed_urls.append(url)
+        return type(
+            "FetchResult",
+            (),
+            {
+                "final_url": url,
+                "html": "<html></html>",
+                "method": "httpx",
+                "status_code": 200,
+                "content_type": "text/html",
+                "blocked": False,
+                "headers": httpx.Headers({"content-type": "text/html"}),
+                "network_payloads": [],
+                "browser_diagnostics": {},
+                "artifacts": {},
+            },
+        )()
+
+    monkeypatch.setattr(
+        "app.services.acquisition.acquirer.fetch_page",
+        _fake_fetch_page,
+    )
+
+    result = await acquire(
+        AcquisitionRequest(
+            run_id=1,
+            url=(
+                "https://www.harrods.com/en-gb/p/"
+                "brinkhaus-emperor-100percent-arctic-duck-down-duvet-85-tog-000000000004579693%22,"
+            ),
+            plan=AcquisitionPlan(surface="ecommerce_detail"),
+        )
+    )
+
+    expected = (
+        "https://www.harrods.com/en-gb/p/"
+        "brinkhaus-emperor-100percent-arctic-duck-down-duvet-85-tog-000000000004579693"
+    )
+    assert observed_urls == [expected]
+    assert result.final_url == expected
+
+
 @pytest.mark.component
 def test_normalize_target_url_strips_signed_detail_context_query_params() -> None:
     normalized = normalize_target_url(
@@ -167,6 +218,44 @@ def test_normalize_target_url_strips_signed_detail_context_query_params() -> Non
     )
 
     assert normalized == "https://www.mouser.in/ProductDetail/Phoenix-Contact/1509524"
+
+
+@pytest.mark.component
+def test_normalize_target_url_strips_pasted_trailing_quote_and_comma() -> None:
+    normalized = normalize_target_url(
+        'https://www.harrods.com/en-gb/p/brinkhaus-emperor-100percent-arctic-duck-down-duvet-85-tog-000000000004579693",'
+    )
+
+    assert (
+        normalized
+        == "https://www.harrods.com/en-gb/p/brinkhaus-emperor-100percent-arctic-duck-down-duvet-85-tog-000000000004579693"
+    )
+
+
+@pytest.mark.component
+def test_normalize_target_url_strips_encoded_trailing_quote_and_comma() -> None:
+    normalized = normalize_target_url(
+        "https://www.harrods.com/en-gb/p/brinkhaus-emperor-100percent-arctic-duck-down-duvet-85-tog-000000000004579693%22,"
+    )
+
+    assert (
+        normalized
+        == "https://www.harrods.com/en-gb/p/brinkhaus-emperor-100percent-arctic-duck-down-duvet-85-tog-000000000004579693"
+    )
+
+
+@pytest.mark.component
+def test_normalize_target_url_strips_uppercase_scheme_trailing_delimiter() -> None:
+    normalized = normalize_target_url('HTTPS://example.com/products/widget",')
+
+    assert normalized == "HTTPS://example.com/products/widget"
+
+
+@pytest.mark.component
+def test_parse_csv_urls_accepts_uppercase_http_scheme() -> None:
+    assert parse_csv_urls("url\nHTTPS://example.com/products/widget\n") == [
+        "HTTPS://example.com/products/widget"
+    ]
 
 
 @pytest.mark.component

@@ -9,12 +9,18 @@ import re
 import asyncio
 from html import unescape
 from typing import Any, Protocol, cast
+from urllib.parse import urlparse
 
 import regex as regex_lib
+from app.services.config.crawl_inputs import (
+    ENCODED_TRAILING_PASTED_URL_DELIMITERS,
+    HTTP_URL_PREFIXES,
+    TRAILING_PASTED_URL_DELIMITERS,
+    WRAPPED_URL_DELIMITER_PAIRS,
+)
 from app.services.exceptions import CrawlerConfigurationError
 from app.services.dom.xpath_service import validate_xpath_syntax
 
-HTTP_URL_PREFIXES = ("http://", "https://")
 logger = logging.getLogger(__name__)
 
 
@@ -43,9 +49,9 @@ def parse_csv_urls(csv_content: str) -> list[str]:
         if not row:
             continue
         cell = row[0].strip()
-        if i == 0 and not cell.startswith(HTTP_URL_PREFIXES):
+        if i == 0 and not _has_http_url_prefix(cell):
             continue  # skip header
-        if cell.startswith(HTTP_URL_PREFIXES):
+        if _has_http_url_prefix(cell):
             urls.append(cell)
     return urls
 
@@ -59,7 +65,7 @@ async def parse_csv_urls_async(csv_content: str) -> list[str]:
 
 def normalize_target_url(value: object) -> str:
     """Normalize a target URL while rejecting pasted multi-value inputs."""
-    text = unescape(str(value or "")).strip()
+    text = _strip_pasted_url_delimiters(unescape(str(value or "")).strip())
     if not text:
         return ""
     if re.search(r"\s", text):
@@ -71,6 +77,44 @@ def normalize_target_url(value: object) -> str:
     if normalized:
         return normalized
     return text
+
+
+def _strip_pasted_url_delimiters(text: str) -> str:
+    candidate = str(text or "").strip()
+    for opener, closer in WRAPPED_URL_DELIMITER_PAIRS:
+        if candidate.startswith(opener) and candidate.endswith(closer):
+            candidate = candidate[len(opener) : -len(closer)].strip()
+            break
+    trimmed = _rstrip_pasted_url_delimiters(candidate)
+    if trimmed != candidate and _looks_like_absolute_http_url(trimmed):
+        return trimmed
+    return candidate
+
+
+def _rstrip_pasted_url_delimiters(text: str) -> str:
+    candidate = str(text or "")
+    while candidate:
+        previous = candidate
+        candidate = candidate.rstrip(TRAILING_PASTED_URL_DELIMITERS)
+        lowered = candidate.lower()
+        for suffix in ENCODED_TRAILING_PASTED_URL_DELIMITERS:
+            if lowered.endswith(suffix):
+                candidate = candidate[: -len(suffix)]
+                break
+        if candidate == previous:
+            return candidate
+    return candidate
+
+
+def _looks_like_absolute_http_url(text: str) -> bool:
+    if not _has_http_url_prefix(text):
+        return False
+    parsed = urlparse(text)
+    return bool(parsed.scheme and parsed.netloc)
+
+
+def _has_http_url_prefix(text: str) -> bool:
+    return str(text or "").lower().startswith(HTTP_URL_PREFIXES)
 
 
 def text_has_token(text: str, token: str) -> bool:

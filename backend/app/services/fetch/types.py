@@ -37,6 +37,7 @@ class FetchRuntimeContext:
     locality_profile: dict[str, object] = field(default_factory=dict)
     host_policy: HostProtectionPolicy | None = None
     last_browser_attempt_diagnostics: dict[str, object] = field(default_factory=dict)
+    browser_first_failed: bool = False
     last_error: Exception | None = None
 
 

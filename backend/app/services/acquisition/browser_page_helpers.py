@@ -32,6 +32,7 @@ from app.services.config.selectors import (
     LISTING_VISUAL_CANDIDATE_CONTAINER_SELECTORS,
     LISTING_VISUAL_CAPTURE_SELECTORS,
 )
+from app.services.config.runtime_settings import crawler_runtime_settings
 from app.services.config.surface_hints import detail_path_hints
 from app.services.dom.selector_engine import requested_content_extractability
 
@@ -192,12 +193,33 @@ def _detail_expansion_can_skip(
     if normalized_surface == ECOMMERCE_DETAIL_SURFACE and bool(
         (readiness_probe or {}).get("is_ready")
     ):
+        if not list(requested_fields or []) and _ready_probe_has_detail_content(
+            readiness_probe
+        ):
+            return True, "canonical_detail_already_ready"
         can_skip = bool(extractability.get("verified"))
         return can_skip, "canonical_detail_already_ready" if can_skip else None
     if not bool(extractability.get("verified")):
         return False, None
     can_skip = "ecommerce" not in normalized_surface
     return can_skip, "requested_content_already_extractable" if can_skip else None
+
+
+def _ready_probe_has_detail_content(
+    readiness_probe: dict[str, object] | None,
+) -> bool:
+    probe = readiness_probe if isinstance(readiness_probe, dict) else {}
+    visible_text_length = _object_int(probe.get("visible_text_length"))
+    visible_text_min = int(crawler_runtime_settings.browser_readiness_visible_text_min)
+    if bool(probe.get("structured_data_present")) and visible_text_length >= visible_text_min:
+        return True
+    detail_hint_count = _object_int(probe.get("detail_hint_count"))
+    if (
+        detail_hint_count >= int(crawler_runtime_settings.detail_field_signal_min_count)
+        and visible_text_length >= visible_text_min
+    ):
+        return True
+    return bool(probe.get("h1_present")) and visible_text_length >= visible_text_min
 
 async def _capture_listing_visual_elements(
     page: Any,

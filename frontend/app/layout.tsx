@@ -4,28 +4,25 @@ import Script from 'next/script';
 import './globals.css';
 
 // Next.js App Router root layout; invoked by file-system routing.
-import { Bricolage_Grotesque, Martian_Mono, Public_Sans } from 'next/font/google';
+import { Geist, Geist_Mono } from 'next/font/google';
 
 import { AppShell } from '../components/layout/app-shell';
 import { QueryProvider } from '../components/ui/query-provider';
 
-const primaryFont = Public_Sans({
+const primaryFont = Geist({
   subsets: ['latin'],
-  weight: ['300', '400', '500', '600', '700', '800'],
   variable: '--font-primary-source',
   display: 'swap',
 });
 
-const displayFont = Bricolage_Grotesque({
+const displayFont = Geist({
   subsets: ['latin'],
-  weight: ['300', '400', '500', '600', '700', '800'],
   variable: '--font-display-source',
   display: 'swap',
 });
 
-const monoFont = Martian_Mono({
+const monoFont = Geist_Mono({
   subsets: ['latin'],
-  weight: ['300', '400', '500'],
   variable: '--font-mono-source',
   display: 'swap',
 });

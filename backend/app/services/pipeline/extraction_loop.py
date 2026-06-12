@@ -563,14 +563,15 @@ async def _run_extraction_stage_observed(
     if retry_stage is not None:
         set_logfire_attributes(span, retry="real_chrome_challenge")
         return retry_stage
-    retry_stage = await _retry_patchright_detail_rejection_with_real_chrome(
-        context,
-        fetched,
-        rejection_reason=rejection_reason,
-    )
-    if retry_stage is not None:
-        set_logfire_attributes(span, retry="real_chrome_rejection")
-        return retry_stage
+    if rejection_reason != "challenge_shell":
+        retry_stage = await _retry_patchright_detail_rejection_with_real_chrome(
+            context,
+            fetched,
+            rejection_reason=rejection_reason,
+        )
+        if retry_stage is not None:
+            set_logfire_attributes(span, retry="real_chrome_rejection")
+            return retry_stage
     await _log_extraction_outcome(context, acquisition_result, records)
     if rejection_reason:
         guidance = (
