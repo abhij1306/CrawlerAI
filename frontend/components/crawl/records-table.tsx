@@ -39,17 +39,21 @@ function getDataColumnWidth(col: string) {
 
 function fixedColumnStyle(width: number, left?: number): CSSProperties {
   return {
-    ...(left === undefined ? {} : { left }),
-    width,
-    minWidth: width,
-    maxWidth: width,
+    ...(left === undefined ? {} : { left: `${left}px` }),
+    width: `${width}px`,
+    minWidth: `${width}px`,
+    maxWidth: `${width}px`,
   };
 }
 
 // skipcq: JS-0067
-function headerCellStyle(width: number, left?: number): CSSProperties {
+function headerCellStyle(width: number, left?: number, isLast?: boolean): CSSProperties {
+  const baseStyle = fixedColumnStyle(width, left);
+  if (isLast) {
+    delete baseStyle.maxWidth;
+  }
   return {
-    ...fixedColumnStyle(width, left),
+    ...baseStyle,
     position: 'sticky',
     top: 0,
     ...(left === undefined ? {} : { left }),
@@ -63,6 +67,7 @@ function headerCellStyle(width: number, left?: number): CSSProperties {
     fontWeight: 'var(--table-header-weight)',
     letterSpacing: 'var(--table-header-tracking)',
     textTransform: 'uppercase',
+    ...(isLast ? { flexGrow: 1, flexShrink: 1 } : {}),
   };
 }
 
@@ -77,13 +82,13 @@ function stickyBodyStyle(width: number, left: number): CSSProperties {
 function RecordCell({ col, record }: Readonly<{ col: string; record: CrawlRecord }>) {
   const colKey = col.toLowerCase();
   const raw = formatCellDisplay(readRecordValue(record, col));
-  if (!raw || raw === '--') return <span className="text-muted/40 type-body">--</span>;
+  if (!raw || raw === '--') return <span className="text-muted/40 text-xs">--</span>;
 
   if (TITLE_KEYS.has(colKey)) {
-    return <span className="type-body block max-w-[320px] truncate font-medium">{raw}</span>;
+    return <span className="text-xs block max-w-[320px] truncate font-medium">{raw}</span>;
   }
   if (PRICE_KEYS.has(colKey)) {
-    return <span className="text-foreground type-body font-bold tabular-nums">{raw}</span>;
+    return <span className="text-foreground text-xs font-bold tabular-nums">{raw}</span>;
   }
   if (URL_KEYS.has(colKey)) {
     const isSafe = raw.startsWith('http://') || raw.startsWith('https://');
@@ -93,7 +98,7 @@ function RecordCell({ col, record }: Readonly<{ col: string; record: CrawlRecord
           href={raw}
           target="_blank"
           rel="noreferrer"
-          className="link-accent block max-w-[200px] truncate text-sm transition-colors"
+          className="link-accent block max-w-[200px] truncate text-xs transition-colors"
           title={raw}
         >
           {raw}
@@ -101,7 +106,7 @@ function RecordCell({ col, record }: Readonly<{ col: string; record: CrawlRecord
       );
     }
   }
-  return <span className="text-secondary block max-w-[260px] truncate text-sm">{raw}</span>;
+  return <span className="text-secondary block max-w-[260px] truncate text-xs">{raw}</span>;
 }
 
 export const RecordsTable = memo(function RecordsTable({
@@ -171,8 +176,13 @@ export const RecordsTable = memo(function RecordsTable({
         className="scrollbar-stable relative max-h-[calc(100vh-276px)] w-full overflow-auto"
       >
         <div
-          className="bg-background-alt border-border-strong sticky top-0 z-[100] flex border-b"
-          style={{ minWidth: totalTableWidth, height: HEADER_HEIGHT }}
+          className="border-border-strong sticky top-0 z-[100] flex border-b"
+          style={{
+            minWidth: totalTableWidth,
+            height: HEADER_HEIGHT,
+            background:
+              'linear-gradient(180deg, color-mix(in srgb, var(--bg-elevated) 60%, var(--bg-panel)), var(--bg-alt))',
+          }}
         >
           <div
             className="flex shrink-0 items-center justify-center px-3"
@@ -196,6 +206,7 @@ export const RecordsTable = memo(function RecordsTable({
           {dataColumns.map((col, idx) => {
             const colKey = col.toLowerCase();
             const isFirstData = idx === 0;
+            const isLastData = idx === dataColumns.length - 1;
             return (
               <div
                 key={col}
@@ -206,6 +217,7 @@ export const RecordsTable = memo(function RecordsTable({
                 style={headerCellStyle(
                   getDataColumnWidth(col),
                   isFirstData ? pinnedDataLeft : undefined,
+                  isLastData,
                 )}
               >
                 {humanizeFieldName(col)}
@@ -215,14 +227,24 @@ export const RecordsTable = memo(function RecordsTable({
         </div>
         <table
           className="compact-data-table commerce-table table-fixed caption-bottom"
-          style={{ minWidth: totalTableWidth }}
+          style={{ width: '100%', minWidth: totalTableWidth }}
         >
           <colgroup>
             <col style={{ width: SELECT_COLUMN_WIDTH }} />
             {hasImageCol ? <col style={{ width: IMAGE_COLUMN_WIDTH }} /> : null}
-            {dataColumns.map((col) => (
-              <col key={col} style={{ width: getDataColumnWidth(col) }} />
-            ))}
+            {dataColumns.map((col, idx) => {
+              const isLast = idx === dataColumns.length - 1;
+              return (
+                <col
+                  key={col}
+                  style={
+                    isLast
+                      ? { minWidth: getDataColumnWidth(col) }
+                      : { width: getDataColumnWidth(col) }
+                  }
+                />
+              );
+            })}
           </colgroup>
           <TableBody>
             {topSpacerPx > 0 ? (
@@ -237,7 +259,7 @@ export const RecordsTable = memo(function RecordsTable({
               return (
                 <TableRow key={record.id} className={cn(isSelected && 'bg-accent/[0.04]')}>
                   <TableCell
-                    className="bg-panel px-3 text-center"
+                    className="bg-panel !px-0 text-center"
                     style={stickyBodyStyle(SELECT_COLUMN_WIDTH, 0)}
                   >
                     <input
@@ -249,7 +271,7 @@ export const RecordsTable = memo(function RecordsTable({
                   </TableCell>
                   {hasImageCol ? (
                     <TableCell
-                      className="bg-panel px-2 text-center"
+                      className="bg-panel !px-2 text-center"
                       style={stickyBodyStyle(IMAGE_COLUMN_WIDTH, SELECT_COLUMN_WIDTH)}
                     >
                       {imageSrc ? (
@@ -262,6 +284,7 @@ export const RecordsTable = memo(function RecordsTable({
                   {dataColumns.map((col, idx) => {
                     const colKey = col.toLowerCase();
                     const isFirstData = idx === 0;
+                    const isLastData = idx === dataColumns.length - 1;
                     const width = getDataColumnWidth(col);
                     return (
                       <TableCell
@@ -269,7 +292,9 @@ export const RecordsTable = memo(function RecordsTable({
                         style={
                           isFirstData
                             ? stickyBodyStyle(width, pinnedDataLeft)
-                            : fixedColumnStyle(width)
+                            : isLastData
+                              ? { minWidth: width }
+                              : fixedColumnStyle(width)
                         }
                         className={cn(
                           PRICE_KEYS.has(colKey) && 'text-right',

@@ -5,7 +5,14 @@ import { useQuery } from '@tanstack/react-query';
 import type { Route } from 'next';
 import Link from 'next/link';
 import { useState } from 'react';
-import { Activity, ArrowUpRight, Globe, Hash, LayoutDashboard, RefreshCw } from 'lucide-react';
+import {
+  Activity,
+  ArrowUpRight,
+  Globe,
+  Hash,
+  LayoutDashboard,
+  RefreshCw,
+} from 'lucide-react';
 import { Badge, Button } from '../../components/ui/primitives';
 import {
   DataRegionEmpty,
@@ -38,13 +45,13 @@ function DomainBar({
 }: Readonly<{ domain: string; count: number; max: number }>) {
   const pct = max > 0 ? Math.round((count / max) * 100) : 0;
   return (
-    <div className="flex items-center gap-3 py-1.5">
-      <span className="text-secondary min-w-0 flex-1 truncate font-mono text-sm" title={domain}>
+    <div className="border-divider flex items-center gap-3 border-b py-2 last:border-b-0">
+      <span className="text-foreground min-w-0 flex-1 truncate text-sm font-medium" title={domain}>
         {domain}
       </span>
-      <div className="bg-border h-1.5 w-28 overflow-hidden rounded-full">
+      <div className="bg-background-alt h-2 w-28 overflow-hidden rounded-full">
         <div
-          className="bg-metric-domains h-full rounded-full transition-[width] duration-700"
+          className="bg-accent h-full rounded-full transition-[width] duration-700"
           style={{ width: `${pct}%` }}
         />
       </div>
@@ -79,16 +86,16 @@ function RunActivityRow({ run }: Readonly<{ run: CrawlRun }>) {
   return (
     <Link
       href={`/crawl?run_id=${run.id}` as Route}
-      className="group hover:bg-accent/[0.04] flex items-center gap-3 rounded-md p-2 no-underline transition-colors"
+      className="group hover:bg-background-alt flex items-center gap-3 rounded-lg p-2 no-underline transition-colors"
     >
       <StatusDot tone={runExecutionTone(run.status, run.result_summary)} />
       <span className="type-body text-foreground group-hover:text-accent min-w-0 flex-1 truncate font-medium transition-colors">
         {domain || `Run #${run.id}`}
       </span>
-      <span className="type-body-sm text-secondary w-20 text-right tabular-nums">
+      <span className="type-body-sm text-secondary w-24 text-right whitespace-nowrap tabular-nums">
         {recordCount.toLocaleString()} rec
       </span>
-      <div className="flex w-32 justify-start">
+      <div className="flex w-28 justify-start">
         <Badge
           tone={runExecutionTone(run.status, run.result_summary)}
           flat={isSubduedStatus(run.status)}
@@ -137,7 +144,7 @@ export default function DashboardPage() {
       <PageHeader
         title="Dashboard"
         actions={
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-2">
             <Button
               type="button"
               variant="neutral"
@@ -186,34 +193,8 @@ export default function DashboardPage() {
         </MetricPulse>
       )}
 
-      {/* ── Status distribution bar ── */}
-      {!isLoading && totalInDistribution > 0 ? (
-        <div className="space-y-4">
-          <div className="bg-border flex h-2 w-full gap-px overflow-hidden rounded-full">
-            {sortedStatusEntries.map(([status, count]) => (
-              <StatusSegment
-                key={status}
-                status={status}
-                count={count}
-                total={totalInDistribution}
-              />
-            ))}
-          </div>
-          <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
-            {sortedStatusEntries.map(([status, count]) => (
-              <div key={status} className="type-caption flex items-center gap-2">
-                <Badge tone={statusTone(status)} flat={isSubduedStatus(status)}>
-                  {statusLabel(status)}
-                </Badge>
-                <span className="text-primary font-mono text-sm tabular-nums">{count}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      ) : null}
-
       {/* ── Lower grid ── */}
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.25fr)_minmax(0,0.75fr)]">
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(340px,0.9fr)]">
         {/* Recent runs */}
         <SurfaceSection
           title="Recent Runs"
@@ -263,6 +244,42 @@ export default function DashboardPage() {
           )}
         </SurfaceSection>
       </div>
+
+      <SurfaceSection title="Run Status" description="Recent run distribution" bodyClassName="p-4">
+        {!isLoading && totalInDistribution > 0 ? (
+          <div className="space-y-4">
+            <div className="bg-background-alt flex h-3 w-full gap-px overflow-hidden rounded-full">
+              {sortedStatusEntries.map(([status, count]) => (
+                <StatusSegment
+                  key={status}
+                  status={status}
+                  count={count}
+                  total={totalInDistribution}
+                />
+              ))}
+            </div>
+            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+              {sortedStatusEntries.map(([status, count]) => (
+                <div
+                  key={status}
+                  className="border-border bg-background-alt flex items-center justify-between rounded-lg border px-3 py-2"
+                >
+                  <Badge tone={statusTone(status)} flat={isSubduedStatus(status)}>
+                    {statusLabel(status)}
+                  </Badge>
+                  <span className="text-primary font-mono text-sm tabular-nums">{count}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <DataRegionEmpty
+            title="No status data yet"
+            description="Run crawls to build status distribution."
+            className="px-0 py-0"
+          />
+        )}
+      </SurfaceSection>
     </div>
   );
 }
