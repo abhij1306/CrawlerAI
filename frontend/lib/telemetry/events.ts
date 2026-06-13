@@ -32,7 +32,7 @@ export function trackEvent(name: string, payload: TelemetryPayload = {}) {
     path: window.location.pathname,
   };
 
-  if (process.env.NODE_ENV !== 'production') {
+  if (import.meta.env.MODE !== 'production') {
     // Keep local and test runs noise-free but observable.
     console.debug('[telemetry:event]', event);
     return;

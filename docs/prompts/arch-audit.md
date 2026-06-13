@@ -1,11 +1,11 @@
-# Invoro — Forensic Architecture Audit
+# CrawlerAI — Forensic Architecture Audit
 
 ## System Context
 
-Invoro is a Python/FastAPI web crawling and data extraction platform. It uses a
+CrawlerAI is a Python/FastAPI web crawling and data extraction platform. It uses a
 hybrid acquisition pipeline (curl_cffi default → Playwright fallback), selectors/domain-
 memory feedback loops, provenance-aware record responses, admin-managed LLM runtime/config,
-and supports ecommerce, jobs, automobiles, and tabular targets. Audit shared/generic paths
+and supports commerce and jobs targets. Audit shared/generic paths
 against all supported surfaces. Surface-specific deep checks should focus on the surfaces
 the active plan or recent regressions currently emphasize.
 
@@ -418,3 +418,4 @@ Techniques to evaluate if gaps were found (verify existence before recommending)
   in recent work (see "Known recent implementations" in System Context).
 - Every CRITICAL finding must have a corresponding Work Order in Section 10.
   If you cannot write a specific Work Order for a CRITICAL, it is not a CRITICAL.
+

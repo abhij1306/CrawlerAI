@@ -1,5 +1,5 @@
 # Feature Spec: Agentic Delta Engine
-**Invoro — Product Feature Specification**
+**CrawlerAI — Product Feature Specification**
 **Status:** Draft for Codex planning
 **Scope:** Backend + Frontend
 
@@ -11,7 +11,7 @@ Existing price monitoring tools — Price2Spy, Minderest, enterprise scraping AP
 
 The agentic commerce wave (ACP, AP2) requires a structurally different kind of monitoring: one where an autonomous LLM shopping agent can register a condition, receive a structured webhook when that condition is met, and immediately execute a checkout transaction — with no human in the loop.
 
-Invoro's existing extraction pipeline already produces clean, typed, field-level structured data. The Delta Engine is the scheduling, delta-detection, and webhook-dispatch layer built on top of it.
+CrawlerAI's existing extraction pipeline already produces clean, typed, field-level structured data. The Delta Engine is the scheduling, delta-detection, and webhook-dispatch layer built on top of it.
 
 ---
 
@@ -27,7 +27,7 @@ Invoro's existing extraction pipeline already produces clean, typed, field-level
 
 ## 3. Non-Goals
 
-- This spec does NOT cover ACP/AP2 payment token generation. The Delta Engine fires a webhook. What the receiving agent does with it (initiate ACP checkout, log it, alert a user) is outside Invoro's scope.
+- This spec does NOT cover ACP/AP2 payment token generation. The Delta Engine fires a webhook. What the receiving agent does with it (initiate ACP checkout, log it, alert a user) is outside CrawlerAI's scope.
 - Sub-second latency is NOT a requirement. 60-second minimum poll intervals are acceptable for the initial version.
 - This spec does NOT introduce new extraction surfaces. It reuses the existing ecommerce surface extraction pipeline.
 
@@ -187,7 +187,7 @@ Trigger an immediate one-off poll and return the result without firing the webho
 
 ## 9. Frontend — Monitors Tab
 
-The existing Monitors tab in the Invoro Console should be extended with the following UI:
+The existing Monitors tab in the CrawlerAI Console should be extended with the following UI:
 
 ### 9.1 Watch Creation Form
 

@@ -30,9 +30,9 @@ describe('check-crawl-architecture', () => {
         'utf8',
       );
       writeFileSync(
-        join(workspace, 'app', 'crawl', 'page.tsx'),
+        join(workspace, 'app', 'crawl', 'page-view.tsx'),
         [
-          "import dynamic from 'next/dynamic';",
+          "import dynamic from '@/routing/dynamic';",
           "const Screen = dynamic(() => import('../../components/crawl/crawl-run-screen'));",
           'export default function Page() { return <Screen />; }',
         ].join('\n'),
@@ -72,9 +72,9 @@ describe('check-crawl-architecture', () => {
         'utf8',
       );
       writeFileSync(
-        join(workspace, 'app', 'crawl', 'page.tsx'),
+        join(workspace, 'app', 'crawl', 'page-view.tsx'),
         [
-          "import dynamic from 'next/dynamic';",
+          "import dynamic from '@/routing/dynamic';",
           "const Screen = dynamic(() => import('../../components/crawl/crawl-run-screen'));",
           'export default function Page() { return <Screen />; }',
         ].join('\n'),

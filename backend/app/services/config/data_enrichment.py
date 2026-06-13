@@ -151,7 +151,6 @@ DATA_ENRICHMENT_TAXONOMY_TOY_EVIDENCE_TERMS = (
     "minifigure",
     "minifigures",
     "play",
-    "playground",
     "playset",
     "toy",
     "toys",

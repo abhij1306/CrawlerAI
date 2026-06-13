@@ -280,11 +280,7 @@ async def persist_extracted_records(
         )
         if not data:
             continue
-        is_content_table_row = (
-            str(run.surface or "") == "content_listing"
-            and raw_record.get("_extraction_mode") == "table_rows"
-        )
-        if "listing" in str(run.surface or "") and not data.get("url") and not is_content_table_row:
+        if "listing" in str(run.surface or "") and not data.get("url"):
             continue
         record_source_url = str(
             data.get("source_url") or acquisition_result.final_url

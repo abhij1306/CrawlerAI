@@ -93,15 +93,7 @@ def evaluate_listing_integrity(
 
     min_ratio = crawler_runtime_settings.listing_cohort_homogeneity_min_ratio
     if cohort_homogeneity_ratio < min_ratio:
-        # Override: non-article listings still need at least 5 records and
-        # support on at least half the set. Small sets are normally not
-        # overridden, but article listings may override at any size when every
-        # record carries a support signal.
-        support_override = (
-            surface == "article_listing"
-            and record_count > 0
-            and support_signal_count == record_count
-        ) or (record_count >= 5 and support_signal_count >= max(1, record_count // 2))
+        support_override = record_count >= 5 and support_signal_count >= max(1, record_count // 2)
         if not support_override:
             return IntegrityDecision(
                 outcome="promo_only_cluster",

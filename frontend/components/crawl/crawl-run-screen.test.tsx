@@ -12,7 +12,7 @@ import { storeProductIntelligencePrefill } from './crawl-run-prefill';
 const replaceMock = vi.fn();
 const pushMock = vi.fn();
 
-vi.mock('next/navigation', () => ({
+vi.mock('@/routing/navigation', () => ({
   usePathname: () => '/runs/42',
   useRouter: () => ({
     push: pushMock,
@@ -31,9 +31,6 @@ const apiMock = vi.hoisted(() => ({
   deleteSelector: vi.fn(),
   exportCsv: vi.fn(() => '/export.csv'),
   exportJson: vi.fn(() => '/export.json'),
-}));
-const alertsApiMock = vi.hoisted(() => ({
-  create: vi.fn(),
 }));
 
 class MockWebSocket {
@@ -54,7 +51,6 @@ class MockWebSocket {
 
 vi.mock('../../lib/api', () => ({
   api: apiMock,
-  alertsApi: alertsApiMock,
 }));
 
 function terminalRun(runId: number): CrawlRun {
@@ -319,17 +315,6 @@ describe('CrawlRunScreen', () => {
     apiMock.promoteDomainRecipeSelectors.mockResolvedValue([]);
     apiMock.applyDomainRecipeFieldAction.mockResolvedValue({});
     apiMock.deleteSelector.mockResolvedValue(undefined);
-    alertsApiMock.create.mockResolvedValue({ id: 42 });
-  });
-
-  it('does not show page audit actions on the completed run screen', async () => {
-    renderRunScreen();
-
-    await screen.findByRole('button', { name: 'Excel (CSV)' }, { timeout: 5000 });
-
-    expect(screen.queryByRole('button', { name: 'Audit Page' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Audit Selected URL' })).not.toBeInTheDocument();
-    expect(replaceMock).not.toHaveBeenCalledWith(expect.stringContaining('tool=audit'));
   });
 
   it('prefills Product Intelligence from selected listing records', async () => {
@@ -841,53 +826,6 @@ describe('CrawlRunScreen', () => {
     expect(screen.queryByText(/%E0%B8%AA%E0%B8%B5%E0%B8%94%E0%B8%B3/)).not.toBeInTheDocument();
   });
 
-  it('creates variant alert rules from the JSON result builder', async () => {
-    apiMock.getRecords.mockResolvedValue({
-      items: [
-        {
-          ...makeRecord(1),
-          source_url: 'https://example.com/products/shirt',
-          data: {
-            title: 'Variant Shirt',
-            url: 'https://example.com/products/shirt',
-            variants: [
-              { sku: 'shirt-s', size: 'S', availability: 'in_stock', price: '999.00' },
-              { sku: 'shirt-m', size: 'M', availability: 'out_of_stock', price: '1099.00' },
-            ],
-          },
-        },
-      ],
-      meta: { page: 1, limit: 400, total: 1 },
-    });
-
-    renderRunScreen();
-
-    const jsonButtons = await screen.findAllByRole('button', { name: 'JSON' });
-    fireEvent.click(jsonButtons.at(-1)!);
-    fireEvent.click(await screen.findByRole('button', { name: 'Alert' }));
-    fireEvent.click(await screen.findByRole('button', { name: 'Any Availability' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Create Alert' }));
-
-    await waitFor(() => {
-      expect(alertsApiMock.create).toHaveBeenCalledWith({
-        url: 'https://example.com/products/shirt',
-        target_fields: ['variants'],
-        target_rules: [
-          {
-            path: 'variants[*].availability',
-            label: 'Any variant availability',
-            operator: 'changed',
-            value: undefined,
-          },
-        ],
-        condition: null,
-        webhook_url: null,
-        poll_interval_seconds: 300,
-      });
-    });
-    expect(pushMock).toHaveBeenCalledWith('/alerts/42');
-  });
-
   it('keeps payload peek limited to the cleaned JSON record', async () => {
     apiMock.getRecords.mockResolvedValue({
       items: [
@@ -1097,90 +1035,6 @@ describe('CrawlRunScreen', () => {
     } finally {
       clickSpy.mockRestore();
     }
-  });
-
-  it('uses formatted markdown as the primary output for content runs', async () => {
-    apiMock.getCrawl.mockResolvedValue({
-      ...terminalRun(101),
-      url: 'https://codeforces.com/',
-      surface: 'content_detail',
-      requested_fields: ['title', 'markdown', 'url'],
-      result_summary: {
-        extraction_verdict: 'success',
-        record_count: 1,
-      },
-    });
-    apiMock.getRecords.mockResolvedValue({
-      items: [
-        {
-          ...makeRecord(1),
-          source_url: 'https://codeforces.com/',
-          data: {
-            title: 'Codeforces',
-            markdown:
-              '# Codeforces\n\nProgramming contests and **practice**.\n\n- Contests\n- Problemset\n\n[Visit](https://codeforces.com/)',
-            url: 'https://codeforces.com/',
-          },
-        },
-      ],
-      meta: { page: 1, limit: 100, total: 1 },
-    });
-
-    renderRunScreen();
-
-    expect(await screen.findByRole('heading', { name: 'Codeforces' })).toBeInTheDocument();
-    const markdownButtons = screen.getAllByRole('button', { name: 'Markdown' });
-    expect(markdownButtons.some((button) => button.getAttribute('aria-pressed') === 'true')).toBe(
-      true,
-    );
-    expect(screen.queryByRole('button', { name: /Table/ })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Excel (CSV)' })).not.toBeInTheDocument();
-    expect(screen.getByText(/Programming contests and/)).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Visit' })).toHaveAttribute(
-      'href',
-      'https://codeforces.com/',
-    );
-  });
-
-  it('shows only design.md and logs for design system runs', async () => {
-    apiMock.getCrawl.mockResolvedValue({
-      ...terminalRun(101),
-      url: 'https://example.com/',
-      surface: 'design_system',
-      requested_fields: [],
-      result_summary: {
-        extraction_verdict: 'success',
-        record_count: 1,
-      },
-    });
-    apiMock.getRecords.mockResolvedValue({
-      items: [
-        {
-          ...makeRecord(1),
-          source_url: 'https://example.com/',
-          data: {
-            title: 'Design System',
-            url: 'https://example.com/',
-          },
-          raw_data: {
-            markdown:
-              '---\nversion: alpha\nname: "Example Design System"\ncolors:\n  primary: "#123456"\n---\n\n# DESIGN.md\n\n## Colors\n\n| Token | Value | Guidance |\n|---|---|---|\n| `primary` | `#123456` | Core text. |',
-          },
-        },
-      ],
-      meta: { page: 1, limit: 100, total: 1 },
-    });
-
-    renderRunScreen();
-
-    expect(await screen.findByText('Design Tokens')).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'DESIGN.md' })).toBeInTheDocument();
-    expect(screen.getAllByRole('button', { name: 'design.md' }).length).toBeGreaterThan(0);
-    expect(screen.getByRole('button', { name: 'Logs' })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'JSON' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Excel (CSV)' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /Table/ })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Learning' })).not.toBeInTheDocument();
   });
 
   it('keeps table and exports visible for failed terminal runs with records', async () => {

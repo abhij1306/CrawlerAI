@@ -611,10 +611,6 @@ def _has_extractable_detail_signals(
                 "product",
                 "productgroup",
                 "jobposting",
-                "article",
-                "newsarticle",
-                "blogposting",
-                "discussionforumposting",
             )
         ):
             return True
@@ -623,7 +619,7 @@ def _has_extractable_detail_signals(
         return True
     if _has_extractable_dom_detail_signals(parsed):
         return True
-    if _has_extractable_dom_content_detail_signals(parsed):
+    if _has_extractable_dom_meaningful_detail_signals(parsed):
         return True
     lowered_html = parsed.lowered_html
     if any(token in lowered_html for token in DETAIL_SHELL_STATE_TOKENS):
@@ -674,7 +670,7 @@ def _has_extractable_dom_detail_signals(analysis: HtmlAnalysis) -> bool:
     return detail_hint_hits > 0 and has_product_anchor
 
 
-def _has_extractable_dom_content_detail_signals(analysis: HtmlAnalysis) -> bool:
+def _has_extractable_dom_meaningful_detail_signals(analysis: HtmlAnalysis) -> bool:
     if not analysis.h1_present:
         return False
     heading = analysis.soup.select_one("main h1, article h1, [role='main'] h1, h1")
@@ -851,7 +847,7 @@ def _marker_map_from_config(
     }
 
 
-def has_extractable_dom_content_detail_signals(
+def has_extractable_dom_meaningful_detail_signals(
     value: HtmlAnalysis | str | object,
     *,
     analysis: HtmlAnalysis | None = None,
@@ -862,7 +858,7 @@ def has_extractable_dom_content_detail_signals(
         parsed = value
     else:
         parsed = analyze_html(str(value or ""))
-    return _has_extractable_dom_content_detail_signals(parsed)
+    return _has_extractable_dom_meaningful_detail_signals(parsed)
 
 
 def has_extractable_listing_signals(
@@ -889,7 +885,7 @@ __all__ = [
     "is_blocked_html_async",
     "is_non_retryable_http_status",
     "is_retryable_http_status",
-    "has_extractable_dom_content_detail_signals",
+    "has_extractable_dom_meaningful_detail_signals",
     "has_extractable_listing_signals",
     "should_escalate_to_browser",
     "should_escalate_to_browser_async",

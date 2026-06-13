@@ -1,6 +1,6 @@
 ---
 version: "2.0"
-name: "Invoro Design System v2"
+name: "CrawlerAI Design System v2"
 description: >
   Canonical frontend design system mirrored from frontend/app/globals.css.
   Warm stone light theme, warm charcoal dark theme, rust accent, 4px grid,
@@ -177,7 +177,7 @@ compatibility:
 
 # Overview
 
-`frontend/app/globals.css` is source of truth. This file defines Invoro Design System v2. Old blue light-theme refresh spec is stale. Current system uses warm stone surfaces, rust accent, shared tokens, and same theme logic in both raw CSS and Tailwind utility bridge.
+`frontend/app/globals.css` is source of truth. This file defines CrawlerAI Design System v2. Old blue light-theme refresh spec is stale. Current system uses warm stone surfaces, rust accent, shared tokens, and same theme logic in both raw CSS and Tailwind utility bridge.
 
 # Theme Model
 

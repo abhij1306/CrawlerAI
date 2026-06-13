@@ -507,7 +507,6 @@ export const LogTerminal = memo(function LogTerminal({
   >('__auto__');
   const [triageCursor, setTriageCursor] = useState(0);
   const groups = useMemo(() => buildLogSiteGroups(logs, records), [logs, records]);
-  const isParallelCrawl = useMemo(() => groups.filter((g) => g.url).length > 1, [groups]);
   const siteOrdinalByKey = useMemo(() => {
     let ordinal = 0;
     const values = new Map<string, number>();
@@ -779,14 +778,7 @@ export const LogTerminal = memo(function LogTerminal({
                         {formatShortUrlLabel(group.url)}
                       </a>
                     )}
-                    {isParallelCrawl && group.url && (
-                      <span className="text-muted border-border shrink-0 rounded border px-1 py-px text-[9px] font-semibold tracking-widest uppercase">
-                        Parallel
-                      </span>
-                    )}
-                    <span className="text-muted shrink-0 font-mono text-[10px] opacity-50">
-                      {group.logs.length} logs
-                    </span>
+
                   </div>
                   {!isRunEventGroup ? (
                     <>

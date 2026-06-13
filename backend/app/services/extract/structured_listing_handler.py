@@ -144,9 +144,6 @@ def _structured_listing_items(
             for token in (
                 "product",
                 "jobposting",
-                "article",
-                "newsarticle",
-                "blogposting",
             )
         )
         if allow_standalone_typed and is_typed_listing_node:
@@ -187,9 +184,6 @@ def _typed_listing_payloads(payloads: list[dict[str, Any]]) -> Iterator[dict[str
                 for token in (
                     "product",
                     "jobposting",
-                    "article",
-                    "newsarticle",
-                    "blogposting",
                 )
             ):
                 yield candidate

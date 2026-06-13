@@ -41,7 +41,7 @@ def test_logfire_configures_once_and_instruments(monkeypatch) -> None:
     monkeypatch.setattr(settings, "logfire_enabled", True)
     monkeypatch.setattr(settings, "logfire_enabled_in_tests", True)
     monkeypatch.setattr(settings, "logfire_token", "token-123")
-    monkeypatch.setattr(settings, "logfire_service_name", "invoro-test")
+    monkeypatch.setattr(settings, "logfire_service_name", "crawlerai-test")
     monkeypatch.setattr(settings, "logfire_environment", "staging")
     monkeypatch.setattr(settings, "logfire_capture_headers", False)
     monkeypatch.setattr(settings, "logfire_send_to_logfire", "if-token-present")
@@ -61,7 +61,7 @@ def test_logfire_configures_once_and_instruments(monkeypatch) -> None:
             {
                 "send_to_logfire": "if-token-present",
                 "token": "token-123",
-                "service_name": "invoro-test",
+                "service_name": "crawlerai-test",
                 "environment": "staging",
                 "console": False,
                 "inspect_arguments": False,

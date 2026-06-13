@@ -109,7 +109,7 @@ export function Dropdown<T extends string>({
       ? `${dropdownId}-option-${activeIndex}-${sanitizeIdSegment(options[activeIndex].value)}`
       : undefined;
 
-  if (process.env.NODE_ENV === 'development' && activeIndex === -1 && options.length > 0) {
+  if (import.meta.env.DEV && activeIndex === -1 && options.length > 0) {
     console.warn(`Dropdown: value "${value}" not found in options`);
   }
 
@@ -445,7 +445,7 @@ export function Tooltip({
               role="tooltip"
               className={cn(
                 'pointer-events-none fixed w-max max-w-[min(420px,calc(100vw-24px))]',
-                'tooltip-surface bg-panel rounded-md px-2 py-1.5',
+                'border border-border-strong bg-panel rounded-md px-2 py-1.5',
                 'text-foreground z-[200] text-sm leading-normal font-medium break-words',
               )}
               style={{ left: `${position.left}px`, top: `${position.top}px` }}

@@ -34,7 +34,7 @@ function read(relativePath) {
   }
 }
 
-function importsNextDynamic(content) {
+function importsAppDynamic(content) {
   const source = ts.createSourceFile(
     'app/crawl/page.tsx',
     content,
@@ -46,7 +46,7 @@ function importsNextDynamic(content) {
     (statement) =>
       ts.isImportDeclaration(statement) &&
       ts.isStringLiteral(statement.moduleSpecifier) &&
-      statement.moduleSpecifier.text === 'next/dynamic',
+      statement.moduleSpecifier.text === '@/routing/dynamic',
   );
 }
 
@@ -188,9 +188,9 @@ if (configScreen !== null && hasManualDateNowFieldId(configScreen)) {
   );
 }
 
-const crawlPage = read('app/crawl/page.tsx');
-if (crawlPage !== null && !importsNextDynamic(crawlPage)) {
-  failures.push('app/crawl/page.tsx must dynamic-import heavy crawl screens.');
+const crawlPage = read('app/crawl/page-view.tsx');
+if (crawlPage !== null && !importsAppDynamic(crawlPage)) {
+  failures.push('app/crawl/page-view.tsx must dynamic-import heavy crawl screens.');
 }
 
 if (failures.length) {

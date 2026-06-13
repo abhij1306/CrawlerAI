@@ -145,7 +145,7 @@ def browser_finalize_support(monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace
 
 
 @pytest.mark.regression
-def test_generic_card_selectors_use_ecommerce_group_for_unknown_listing_surface(
+def test_generic_card_selectors_use_ecommerce_group_for_commerce_listing_surface(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
@@ -154,9 +154,7 @@ def test_generic_card_selectors_use_ecommerce_group_for_unknown_listing_surface(
         {"ecommerce": [".product-card"], "jobs": [".job-card", ".product-card"]},
     )
 
-    selectors = browser_page_flow._generic_card_selectors_for_surface(
-        "automobile_listing"
-    )
+    selectors = browser_page_flow._generic_card_selectors_for_surface("ecommerce_listing")
 
     # Non-job surfaces route to ecommerce group only, matching listing_selector_group.
     assert selectors == [".product-card"]

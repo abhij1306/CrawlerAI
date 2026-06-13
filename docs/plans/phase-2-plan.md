@@ -7,7 +7,7 @@
 
 ## Goal
 
-Extend Invoro from single-user tool to multi-tenant SaaS with webhook/email notifications, job enrichment, programmatic API access with keys, and scale infrastructure. This plan is a roadmap — slices will be detailed when Phase 1 (Product Monitoring + Job Aggregation) is verified complete.
+Extend CrawlerAI from single-user tool to multi-tenant SaaS with webhook/email notifications, job enrichment, programmatic API access with keys, and scale infrastructure. This plan is a roadmap — slices will be detailed when Phase 1 (Product Monitoring + Job Aggregation) is verified complete.
 
 ## Prerequisites
 

@@ -568,7 +568,7 @@ def test_browser_engine_attempts_uses_real_chrome_after_patchright_when_availabl
 
 
 @pytest.mark.component
-def test_browser_engine_attempts_uses_real_chrome_for_blocked_forum_detail_when_available(
+def test_browser_engine_attempts_uses_real_chrome_for_blocked_commerce_detail_when_available(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
@@ -582,8 +582,8 @@ def test_browser_engine_attempts_uses_real_chrome_for_blocked_forum_detail_when_
         lambda: True,
     )
     context = _default_fetch_context(
-        url="https://www.reddit.com/r/python/comments/abc123/example/",
-        surface="forum_detail",
+        url="https://shop.example.com/products/widget",
+        surface="ecommerce_detail",
     )
 
     attempts = crawl_fetch_runtime._browser_engine_attempts(
@@ -1535,7 +1535,7 @@ async def test_fetch_page_browser_only_escalates_to_real_chrome_after_patchright
 
 @pytest.mark.asyncio
 @pytest.mark.component
-async def test_fetch_page_browser_only_escalates_to_real_chrome_for_forum_detail(
+async def test_fetch_page_browser_only_escalates_to_real_chrome_for_commerce_detail(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     attempted_engines: list[str] = []
@@ -1545,8 +1545,8 @@ async def test_fetch_page_browser_only_escalates_to_real_chrome_for_forum_detail
         del url, timeout
         attempted_engines.append(str(kwargs.get("browser_engine")))
         return PageFetchResult(
-            url="https://www.reddit.com/r/python/comments/abc123/example/",
-            final_url="https://www.reddit.com/r/python/comments/abc123/example/",
+            url="https://shop.example.com/products/widget",
+            final_url="https://shop.example.com/products/widget",
             html="<html><body><main>Thread</main></body></html>",
             status_code=200,
             method="browser",
@@ -1574,7 +1574,7 @@ async def test_fetch_page_browser_only_escalates_to_real_chrome_for_forum_detail
         "load_host_protection_policy",
         AsyncMock(
             return_value=HostProtectionPolicy(
-                host="reddit.com",
+                host="shop.example.com",
                 prefer_browser=True,
                 patchright_blocked=True,
             )
@@ -1582,8 +1582,8 @@ async def test_fetch_page_browser_only_escalates_to_real_chrome_for_forum_detail
     )
 
     result = await crawl_fetch_runtime.fetch_page(
-        "https://www.reddit.com/r/python/comments/abc123/example/",
-        surface="forum_detail",
+        "https://shop.example.com/products/widget",
+        surface="ecommerce_detail",
         fetch_mode="browser_only",
     )
 

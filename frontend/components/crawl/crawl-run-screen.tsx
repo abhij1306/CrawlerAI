@@ -2,7 +2,6 @@
 import { useQuery } from '@tanstack/react-query';
 import {
   ArrowRightCircle,
-  Bell,
   Brain,
   ChevronsDown,
   Clock,
@@ -11,7 +10,7 @@ import {
   History,
   Plus,
 } from 'lucide-react';
-import { useRouter } from 'next/navigation';
+import { useRouter } from '@/routing/navigation';
 import { useDeferredValue, useEffect, useMemo, useReducer, useRef } from 'react';
 import { HistoryDrawer, type HistoryItem } from '../ui/history-drawer';
 import { syntaxHighlightJsonNodes } from '../../lib/ui/syntax';
@@ -59,12 +58,10 @@ import {
   uniqueNumbers,
   uniqueStrings,
 } from './shared';
-import { AlertBuilderDrawer } from './alert-builder-drawer';
 import { useCrawlRunStore } from './crawl-run-store';
 import {
   buildMarkdownDocument,
   downloadMarkdown,
-  isDesignSystemRun,
   isMarkdownOutputRun,
 } from './markdown-output-utils';
 import { MarkdownOutputPanel } from './markdown-output';
@@ -152,8 +149,6 @@ export function CrawlRunScreen({ runId }: Readonly<CrawlRunScreenProps>) {
   const setTablePage = useCrawlRunStore((state) => state.setTablePage);
   const jsonVisibleCount = useCrawlRunStore((state) => state.jsonVisibleCount);
   const setJsonVisibleCount = useCrawlRunStore((state) => state.setJsonVisibleCount);
-  const alertBuilderOpen = useCrawlRunStore((state) => state.alertBuilderOpen);
-  const setAlertBuilderOpen = useCrawlRunStore((state) => state.setAlertBuilderOpen);
   const historyOpen = useCrawlRunStore((state) => state.historyOpen);
   const setHistoryOpen = useCrawlRunStore((state) => state.setHistoryOpen);
   const resetWorkspaceUi = useCrawlRunStore((state) => state.resetWorkspaceUi);
@@ -193,22 +188,18 @@ export function CrawlRunScreen({ runId }: Readonly<CrawlRunScreenProps>) {
     Number(run?.result_summary?.record_count ?? 0) === 0,
   );
   const markdownOutputRun = isMarkdownOutputRun(run);
-  const designSystemRun = isDesignSystemRun(run);
-  const showRunLearningTab = Boolean(run?.run_type === 'crawl' && terminal && !designSystemRun);
+  const showRunLearningTab = Boolean(run?.run_type === 'crawl' && terminal);
   const defaultOutputTab = markdownOutputRun ? 'markdown' : 'table';
   const effectiveOutputTab =
     failedRunWithoutRecords && (outputTab === 'table' || outputTab === 'markdown')
       ? 'logs'
-      : designSystemRun &&
-          (outputTab === 'json' || outputTab === 'table' || outputTab === 'learning')
-        ? 'markdown'
-        : (outputTab === 'learning' && !showRunLearningTab) || outputTab === 'run_config'
-          ? defaultOutputTab
-          : markdownOutputRun && outputTab === 'table'
-            ? 'markdown'
-            : !markdownOutputRun && outputTab === 'markdown'
-              ? 'table'
-              : outputTab;
+      : (outputTab === 'learning' && !showRunLearningTab) || outputTab === 'run_config'
+        ? defaultOutputTab
+        : markdownOutputRun && outputTab === 'table'
+          ? 'markdown'
+          : !markdownOutputRun && outputTab === 'markdown'
+            ? 'table'
+            : outputTab;
   const shouldFetchTableRecords = Boolean(run) && effectiveOutputTab === 'table';
   const shouldFetchJsonRecords =
     Boolean(run) && (effectiveOutputTab === 'json' || effectiveOutputTab === 'markdown');
@@ -613,22 +604,15 @@ export function CrawlRunScreen({ runId }: Readonly<CrawlRunScreenProps>) {
         onChange={(value) => setOutputTab(value as OutputTabKey)}
         options={[
           ...(markdownOutputRun
-            ? [{ value: 'markdown', label: designSystemRun ? 'design.md' : 'Markdown' }]
+            ? [{ value: 'markdown', label: 'Markdown' }]
             : [{ value: 'table', label: `Table (${summary.records})` }]),
-          ...(!designSystemRun ? [{ value: 'json', label: 'JSON' }] : []),
+          { value: 'json', label: 'JSON' },
           { value: 'logs', label: 'Logs' },
           ...(showRunLearningTab ? [{ value: 'learning', label: 'Learning' }] : []),
         ]}
       />
     ),
-    [
-      designSystemRun,
-      effectiveOutputTab,
-      markdownOutputRun,
-      setOutputTab,
-      showRunLearningTab,
-      summary.records,
-    ],
+    [effectiveOutputTab, markdownOutputRun, setOutputTab, showRunLearningTab, summary.records],
   );
   const outputSummary = useMemo(
     () => (
@@ -973,7 +957,7 @@ export function CrawlRunScreen({ runId }: Readonly<CrawlRunScreenProps>) {
               }
               actions={
                 <>
-                  {!designSystemRun && listingRun && batchFromResultsUrls.length ? (
+                  {listingRun && batchFromResultsUrls.length ? (
                     <Button
                       variant="action"
                       type="button"
@@ -984,9 +968,7 @@ export function CrawlRunScreen({ runId }: Readonly<CrawlRunScreenProps>) {
                       {batchFromResultsLabel}
                     </Button>
                   ) : null}
-                  {!designSystemRun &&
-                  (listingRun || ecommerceDetailRun) &&
-                  productIntelligenceRecords.length ? (
+                  {(listingRun || ecommerceDetailRun) && productIntelligenceRecords.length ? (
                     <Button
                       variant="neutral"
                       type="button"
@@ -997,7 +979,7 @@ export function CrawlRunScreen({ runId }: Readonly<CrawlRunScreenProps>) {
                       {productIntelligenceLabel}
                     </Button>
                   ) : null}
-                  {!designSystemRun && ecommerceDetailRun && dataEnrichmentRecords.length ? (
+                  {ecommerceDetailRun && dataEnrichmentRecords.length ? (
                     <Button
                       variant="action"
                       type="button"
@@ -1017,7 +999,7 @@ export function CrawlRunScreen({ runId }: Readonly<CrawlRunScreenProps>) {
                       onClick={() => downloadMarkdown(markdownDocument, run)}
                     >
                       <Download className="size-3" />
-                      {designSystemRun ? 'design.md' : 'Markdown'}
+                      Markdown
                     </Button>
                   ) : (
                     <Button
@@ -1030,17 +1012,15 @@ export function CrawlRunScreen({ runId }: Readonly<CrawlRunScreenProps>) {
                       Excel (CSV)
                     </Button>
                   )}
-                  {!designSystemRun ? (
-                    <Button
-                      variant="download"
-                      type="button"
-                      size="sm"
-                      onClick={() => void downloadExport('json')}
-                    >
-                      <Download className="size-3" />
-                      JSON
-                    </Button>
-                  ) : null}
+                  <Button
+                    variant="download"
+                    type="button"
+                    size="sm"
+                    onClick={() => void downloadExport('json')}
+                  >
+                    <Download className="size-3" />
+                    JSON
+                  </Button>
                   <Button
                     variant="neutral"
                     type="button"
@@ -1122,16 +1102,6 @@ export function CrawlRunScreen({ runId }: Readonly<CrawlRunScreenProps>) {
                   {effectiveOutputTab === 'json' ? (
                     <div className="relative min-h-[55vh]">
                       <div className="absolute top-2 right-2 z-10 flex items-center gap-2">
-                        {ecommerceDetailRun && records.length ? (
-                          <Button
-                            variant="action"
-                            type="button"
-                            onClick={() => setAlertBuilderOpen(true)}
-                          >
-                            <Bell className="size-3.5" />
-                            Alert
-                          </Button>
-                        ) : null}
                         <Button
                           variant="quiet"
                           type="button"
@@ -1352,13 +1322,6 @@ export function CrawlRunScreen({ runId }: Readonly<CrawlRunScreenProps>) {
           </Card>
         </div>
       ) : null}
-      <AlertBuilderDrawer
-        open={alertBuilderOpen}
-        onOpenChange={setAlertBuilderOpen}
-        records={records}
-        run={run}
-        onCreated={(alertId) => router.push(`/alerts/${alertId}`)}
-      />
       <HistoryDrawer
         open={historyOpen}
         onClose={() => setHistoryOpen(false)}

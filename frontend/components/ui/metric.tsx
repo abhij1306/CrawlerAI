@@ -47,8 +47,8 @@ export function StatCard({
   return (
     <div className="border-border card-gradient hover:border-border-strong relative overflow-hidden rounded-lg border px-5 py-4 transition-[border-color]">
       <div
-        className="metric-stripe absolute inset-x-0 top-0 h-0.5"
-        style={{ '--metric-stripe-color': stripeColor ?? 'var(--accent)' } as CSSProperties}
+        className="absolute inset-x-0 top-0 h-0.5"
+        style={{ background: stripeColor ?? 'var(--accent)' }}
         aria-hidden
       />
       <div className="mb-2.5 flex items-center justify-between gap-2">

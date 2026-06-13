@@ -568,27 +568,6 @@ def test_ghost_route_skips_non_matching_payload() -> None:
 
 
 @pytest.mark.unit
-def test_ghost_route_works_on_surface_with_no_specs() -> None:
-    rows = map_network_payloads_to_fields(
-        [
-            {
-                "url": "https://example.com/api/product",
-                "body": {
-                    "name": "Unconfigured Surface Product",
-                    "price": "15.00",
-                    "sku": "US-01",
-                    "description": "No spec for this surface",
-                },
-            }
-        ],
-        surface="automobile_detail",
-        page_url="https://example.com/car/xyz",
-    )
-    assert len(rows) == 1
-    assert rows[0].get("title") == "Unconfigured Surface Product"
-
-
-@pytest.mark.unit
 def test_ghost_route_rejects_navigation_payloads_with_price_like_noise() -> None:
     rows = map_network_payloads_to_fields(
         [

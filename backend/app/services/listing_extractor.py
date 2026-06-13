@@ -13,11 +13,6 @@ from app.services.extraction_context import (
     collect_structured_source_payloads,
     prepare_extraction_context,
 )
-from app.services.extract.article_card_parser import (
-    article_card_date,
-    article_card_summary,
-    article_card_text,
-)
 from app.services.extract.structured_listing_handler import (
     allow_embedded_json_listing_payloads,
     extract_structured_listing,
@@ -58,10 +53,6 @@ from app.services.extract.listing_card_fragments import (
     listing_node_text,
 )
 from app.services.extract.listing_visual import visual_listing_records
-from app.services.extract.content_listing_handler import (
-    has_table_row_intent,
-    table_row_records,
-)
 from app.services.field_policy import normalize_requested_field
 from app.services.shared.currency_hints import currency_hint_from_page_url
 from app.services.shared.field_coerce import (
@@ -177,11 +168,7 @@ def _build_card_candidates(
     candidates: dict[str, list[object]] = {"title": [title], "url": [url]}
     selector_trace_candidates: dict[str, list[dict[str, object]]] = {}
     card_soup: BeautifulSoup | None = None
-    needs_card_soup = (
-        bool(selector_rules)
-        or surface in {"article_listing", "content_listing"}
-        or _surface_has_dom_fallback_patterns(surface)
-    )
+    needs_card_soup = bool(selector_rules) or _surface_has_dom_fallback_patterns(surface)
     if needs_card_soup:
         card_soup = BeautifulSoup(str(getattr(card, "html", "") or ""), "html.parser")
     if card_soup is not None:
@@ -195,22 +182,6 @@ def _build_card_candidates(
             selector_trace_candidates=selector_trace_candidates,
             record_dom_observed_selectors=record_dom_observed_selectors,
         )
-    if surface == "article_listing" and card_soup is not None:
-        author = article_card_text(
-            card_soup, [".author", ".byline", "[rel='author']", "[itemprop='author']"]
-        )
-        if author:
-            add_candidate(candidates, "author", author)
-        publication_date = article_card_date(card_soup)
-        if publication_date:
-            add_candidate(candidates, "publication_date", publication_date)
-        summary = article_card_summary(card_soup, title)
-        if summary:
-            add_candidate(candidates, "summary", summary)
-    elif surface == "content_listing" and card_soup is not None:
-        summary = article_card_summary(card_soup, title)
-        if summary:
-            add_candidate(candidates, "summary", summary)
     if not is_job and not candidates.get("brand"):
         brand_text = extract_brand_signal_from_card(card, title)
         if brand_text:
@@ -603,14 +574,6 @@ def extract_listing_records(
     record_dom_observed_selectors: bool = False,
 ) -> list[dict[str, Any]]:
     del network_payloads
-    if surface == "content_listing":
-        table_records = table_row_records(html, page_url, max_records=max_records)
-        if table_records:
-            return table_records
-        # Table intent prevents falling back to unrelated DOM cards when table parsing finds no records.
-        table_row_intent = has_table_row_intent(html)
-    else:
-        table_row_intent = False
     context = prepare_extraction_context(html)
     dom_parser = context.dom_parser
     is_job_surface = surface.startswith("job_")
@@ -763,9 +726,6 @@ def extract_listing_records(
             is_job=is_job_surface,
         ),
     )
-    if table_row_intent and not best_records:
-        # Preserve empty table-listing results instead of substituting non-table card records.
-        return []
     return apply_listing_integrity_gate(
         best_records,
         page_url=page_url,

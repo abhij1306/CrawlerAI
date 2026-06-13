@@ -3357,7 +3357,7 @@ async def test_process_single_url_does_not_retry_browser_after_prior_challenge_a
 
 @pytest.mark.asyncio
 @pytest.mark.regression
-async def test_process_single_url_marks_low_content_listing_with_challenge_signals_as_blocked(
+async def test_process_single_url_marks_sparse_listing_with_challenge_signals_as_blocked(
     db_session: AsyncSession,
     test_user,
     monkeypatch: pytest.MonkeyPatch,

@@ -1,7 +1,7 @@
 'use client';
 
 // Next.js App Router entrypoint for `/register`; invoked by file-system routing.
-import Link from 'next/link';
+import Link from '@/routing/link';
 
 import { InlineAlert } from '../../components/ui/patterns';
 import { Subtitle, Title } from '../../components/ui/primitives';

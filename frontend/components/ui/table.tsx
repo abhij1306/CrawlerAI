@@ -92,7 +92,7 @@ export function TableHead({
     <th
       {...props}
       className={cn(
-        'text-muted bg-background-alt sticky top-0 z-10 h-[var(--table-header-height)] px-5 text-left align-middle [font-family:var(--table-header-font-family)] text-sm font-semibold tracking-[var(--table-header-tracking)] uppercase tabular-nums',
+        'text-muted bg-background-alt sticky top-0 z-10 h-[var(--table-header-height)] px-5 text-left align-middle [font-family:var(--table-header-font-family)] [font-size:var(--table-header-font-size)] font-semibold tracking-[var(--table-header-tracking)] uppercase tabular-nums',
         className,
       )}
     >
@@ -116,7 +116,7 @@ export function TableCell({
   return (
     <td
       {...props}
-      className={cn('text-primary type-body-sm px-5 py-0 align-middle tabular-nums', className)}
+      className={cn('text-primary px-5 py-0 align-middle tabular-nums', className)}
       colSpan={colSpan}
     >
       {children}

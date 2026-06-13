@@ -601,9 +601,7 @@ async def test_public_capabilities_uses_api_key_envelope(
     assert response.headers["X-RateLimit-Limit"] == "600"
     payload = response.json()
     assert payload["status"] == "ok"
-    assert {"auto", "content", "article", "forum_thread", "ecommerce"}.issubset(
-        set(payload["data"]["surfaces"])
-    )
+    assert payload["data"]["surfaces"] == ["ecommerce"]
     assert "extract_product" in payload["data"]["tools"]
     assert "alert_product" in payload["data"]["tools"]
     assert "watches" not in payload["data"]["deferred"]
@@ -943,7 +941,7 @@ async def test_public_extract_rejects_unsupported_surface(db_session, test_user)
 
 @pytest.mark.asyncio
 @pytest.mark.component
-async def test_public_extract_accepts_auto_surface(
+async def test_public_extract_rejects_auto_surface(
     db_session,
     test_user,
     monkeypatch: pytest.MonkeyPatch,
@@ -1002,12 +1000,8 @@ async def test_public_extract_accepts_auto_surface(
     finally:
         app.dependency_overrides.clear()
 
-    assert response.status_code == 200
-    payload = response.json()
-    assert payload["data"]["surface"] == "content"
-    assert payload["data"]["fields"] == {"title": "Codeforces", "url": "https://codeforces.com/"}
-    assert seen["surface"] == "content_detail"
-    assert seen["surface_resolution"]["surface"] == "content_detail"
+    assert response.status_code == 422
+    assert seen == {}
 
 
 # from backend/tests/services/test_public_watch_api.py

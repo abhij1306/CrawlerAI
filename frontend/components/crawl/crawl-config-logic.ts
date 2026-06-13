@@ -200,15 +200,6 @@ export function normalizeHttpLookupDomain(rawUrl: string) {
 }
 
 export function surfaceLabel(surface: string) {
-  if (surface === 'auto') {
-    return 'Auto';
-  }
-  if (surface === 'content_listing') {
-    return 'Content Rows';
-  }
-  if (surface === 'content_detail') {
-    return 'Page Content';
-  }
   if (surface === 'ecommerce_listing') {
     return 'Commerce Listing';
   }
@@ -220,24 +211,6 @@ export function surfaceLabel(surface: string) {
   }
   if (surface === 'job_detail') {
     return 'Job Detail';
-  }
-  if (surface === 'automobile_listing') {
-    return 'Automobile Listing';
-  }
-  if (surface === 'automobile_detail') {
-    return 'Automobile Detail';
-  }
-  if (surface === 'article_listing') {
-    return 'Article Feed';
-  }
-  if (surface === 'article_detail') {
-    return 'Article Page';
-  }
-  if (surface === 'forum_detail') {
-    return 'Forum Thread';
-  }
-  if (surface === 'design_system') {
-    return 'Design System';
   }
   return surface;
 }

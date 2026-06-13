@@ -2,17 +2,10 @@
 
 // Next.js App Router entrypoint for `/dashboard`; invoked by file-system routing.
 import { useQuery } from '@tanstack/react-query';
-import type { Route } from 'next';
-import Link from 'next/link';
+import type { Route } from '@/routing/link';
+import Link from '@/routing/link';
 import { useState } from 'react';
-import {
-  Activity,
-  ArrowUpRight,
-  Globe,
-  Hash,
-  LayoutDashboard,
-  RefreshCw,
-} from 'lucide-react';
+import { Activity, ArrowUpRight, Globe, Hash, LayoutDashboard, RefreshCw } from 'lucide-react';
 import { Badge, Button } from '../../components/ui/primitives';
 import {
   DataRegionEmpty,

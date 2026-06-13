@@ -51,12 +51,8 @@ def _crawl_task_time_limits() -> dict[str, int]:
 
 @worker_process_init.connect
 def _worker_process_init(**_kwargs) -> None:
-    from app.services.monitor_change_detection import (
-        ensure_monitor_change_detection_registered,
-    )
     from app.services.observability.run_audit import ensure_run_audit_registered
 
-    ensure_monitor_change_detection_registered()
     ensure_run_audit_registered()
 
 
@@ -152,25 +148,3 @@ def _run_task_in_worker_loop(run_id: int) -> None:
 def process_run_task(run_id: int) -> None:
     with _install_task_signal_handlers():
         _run_task_in_worker_loop(run_id)
-
-
-async def _run_monitor_check_due_jobs() -> None:
-    from app.services.monitor_scheduler_service import MonitorSchedulerService
-
-    await MonitorSchedulerService().check_due_jobs()
-
-
-async def _run_monitor_purge_expired() -> None:
-    from app.services.monitor_retention import MonitorRetentionService
-
-    await MonitorRetentionService().purge_expired()
-
-
-@celery_app.task(name="monitor.check_due_jobs")
-def celery_check_due_jobs() -> None:
-    asyncio.run(_run_monitor_check_due_jobs())
-
-
-@celery_app.task(name="monitor.purge_expired_snapshots")
-def celery_purge_expired() -> None:
-    asyncio.run(_run_monitor_purge_expired())

@@ -1,7 +1,7 @@
 'use client';
 
 import { Copy, Download, Loader2, X } from 'lucide-react';
-import Image from 'next/image';
+import Image from '@/routing/image';
 import React from 'react';
 
 import { Badge, Button } from '../../components/ui/primitives';

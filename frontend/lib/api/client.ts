@@ -2,17 +2,24 @@ function normalizeBaseUrl(value: string) {
   return value.endsWith('/') ? value.slice(0, -1) : value;
 }
 
+function runtimeEnv(name: 'NODE_ENV' | 'VITE_API_BASE_URL' | 'MODE') {
+  if (name === 'NODE_ENV') {
+    return import.meta.env.MODE?.trim();
+  }
+  return import.meta.env[name]?.trim();
+}
+
 function parseConfiguredApiBaseUrl(configured: string) {
   let parsed: URL;
   try {
     parsed = new URL(configured);
   } catch {
     throw new Error(
-      'NEXT_PUBLIC_API_BASE_URL must be a valid absolute URL (for example, http://127.0.0.1:8000).',
+      'VITE_API_BASE_URL must be a valid absolute URL (for example, http://127.0.0.1:8000).',
     );
   }
   if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-    throw new Error('NEXT_PUBLIC_API_BASE_URL must use http:// or https://.');
+    throw new Error('VITE_API_BASE_URL must use http:// or https://.');
   }
   return normalizeBaseUrl(parsed.toString());
 }
@@ -53,21 +60,21 @@ export function getApiBaseUrl() {
   if (resolvedBaseUrl) {
     return resolvedBaseUrl;
   }
-  const configured = process.env.NEXT_PUBLIC_API_BASE_URL?.trim();
+  const configured = runtimeEnv('VITE_API_BASE_URL');
   if (configured) {
     resolvedBaseUrl = parseConfiguredApiBaseUrl(configured);
     return resolvedBaseUrl;
   }
   if (typeof window !== 'undefined') {
-    if (process.env.NODE_ENV === 'production') {
-      throw new Error('NEXT_PUBLIC_API_BASE_URL must be set in production.');
+    if (runtimeEnv('NODE_ENV') === 'production') {
+      throw new Error('VITE_API_BASE_URL must be set in production.');
     }
     const { protocol, hostname } = window.location;
     resolvedBaseUrl = `${protocol}//${hostname}:8000`;
     return resolvedBaseUrl;
   }
-  if (process.env.NODE_ENV === 'production') {
-    throw new Error('NEXT_PUBLIC_API_BASE_URL must be set in production.');
+  if (runtimeEnv('NODE_ENV') === 'production') {
+    throw new Error('VITE_API_BASE_URL must be set in production.');
   }
   resolvedBaseUrl = 'http://127.0.0.1:8000';
   return resolvedBaseUrl;
@@ -157,7 +164,7 @@ async function requestWithParser<T>(
   let lastFetchError: Error | null = null;
   const candidateBaseUrls = getApiBaseUrlCandidates();
   const hasConfiguredBaseUrl =
-    Boolean(process.env.NEXT_PUBLIC_API_BASE_URL?.trim()) || candidateBaseUrls.length === 1;
+    Boolean(runtimeEnv('VITE_API_BASE_URL')) || candidateBaseUrls.length === 1;
 
   for (const baseUrl of candidateBaseUrls) {
     try {

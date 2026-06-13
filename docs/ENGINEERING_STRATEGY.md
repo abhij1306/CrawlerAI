@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Engineering constraints for Invoro. Defines how code should be shaped and how to change it without reintroducing bloat.
+Engineering constraints for CrawlerAI. Defines how code should be shaped and how to change it without reintroducing bloat.
 
 `AGENTS.md` — session bootstrap and operator guide.
 `INVARIANTS.md` — hard runtime contracts with violation signatures. Read it first.

@@ -49,8 +49,6 @@ logger = logging.getLogger(__name__)
 
 def listing_selector_group(surface: str) -> str:
     normalized = str(surface or "").strip().lower()
-    if normalized == "article_listing":
-        return "article"
     return "jobs" if normalized.startswith("job_") else "ecommerce"
 
 

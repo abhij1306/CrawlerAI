@@ -1,4 +1,4 @@
-# Invoro Codebase Map
+# CrawlerAI Codebase Map
 
 Use this doc for ownership and file location. Do not filesystem-wander first.
 If a file is not listed, assume it is a helper under a listed owner.
@@ -28,15 +28,9 @@ If a file is not listed, assume it is a helper under a listed owner.
 | `llm.py` | LLM provider catalog, config, connection test, cost log |
 | `product_intelligence.py` | Product matching jobs, source products, candidates, match review |
 | `data_enrichment.py` | On-demand ecommerce detail enrichment jobs and enriched product rows |
-| `ucp_audit.py` | AI Discoverability audit job creation, history, detail, and report exports |
-| `page_audit.py` | Single-page technical audit job creation, detail, and JSON/Markdown report exports |
-| `monitors.py` | Product monitor CRUD, run-now dispatch, history/events/snapshot, and exports |
-| `alerts.py` | Agentic Delta Engine alert CRUD, test poll, history, and webhook delivery log |
-| `public_alerts.py` | API-key authenticated `/api/v1/alerts` public alert surface |
-| `api_keys.py` | Dashboard API-key create/list/revoke endpoints; returns plaintext only on create || `public/*` | Public API v1 envelope, rate-limit helpers, HTTP-only extraction, domain info, capabilities, and deferred batch routes |
-| `playground.py` | Guided playground session create/list/detail plus discover/select/extract/pipeline/results routes |
+| `api_keys.py` | Dashboard API-key create/list/revoke endpoints; returns plaintext only on create |
+| `public/*` | Public API v1 envelope, rate-limit helpers, HTTP-only extraction, domain info, capabilities, and deferred batch routes |
 | `crawls.py` | Run creation plus Crawl Studio category discovery API |
-| `notifications.py` | In-app monitor notification listing, unread counts, and read state |
 | `auth.py` | Login, register, `/me` |
 | `users.py`, `dashboard.py`, `jobs.py`, `health.py`, `metrics.py` | Named route modules |
 
@@ -69,16 +63,10 @@ If a file is not listed, assume it is a helper under a listed owner.
 | `ReviewPromotion` | `review.py` | approved review schema snapshot |
 | `ProductIntelligenceJob`, `ProductIntelligenceSourceProduct`, `ProductIntelligenceCandidate`, `ProductIntelligenceMatch` | `product_intelligence.py` | web product matching and price comparison jobs |
 | `DataEnrichmentJob`, `EnrichedProduct` | `data_enrichment.py` | on-demand ecommerce detail enrichment jobs and derived enriched product rows |
-| `UCPAuditJob`, `UCPAuditPageResult`, `UCPAuditReport` | `ucp_audit.py` | persisted AI Discoverability audit jobs, sampled page payloads, and report artifacts |
-| `PageAuditJob`, `PageAuditResult` | `page_audit.py` | persisted single-page technical audit jobs and deterministic report artifacts |
-| `MonitorJob`, `MonitorEvent`, `MonitorSnapshot`, `MonitorSnapshotRecord`, `MonitorURLState`, `MonitorWebhookDelivery` | `monitor.py` | recurring crawl monitors, agentic alerts, field-level events, snapshots, URL pre-check state, and webhook delivery logs |
-| `InAppNotification` | `notification.py` | user-visible monitor change alerts and read state |
-| `PlaygroundSession` | `playground.py` | guided session state, selected URLs, and downstream run/job references |
 | `LLMConfig`, `LLMCostLog` | `llm.py` | LLM config and cost tracking |
 
 ### `schemas/` — request and response DTOs
 
-`crawl.py`, `user.py`, `llm.py`, `selectors.py`, `data_enrichment.py`, `ucp_audit.py`, `page_audit.py`, `playground.py`, `common.py`
 
 Public API schemas live in `api_key.py` and `public_api.py`.
 
@@ -97,11 +85,6 @@ Public API schemas live in `api_key.py` and `public_api.py`.
 | `product_intelligence/*` | Product web discovery, candidate URL admission/dedupe, brand registry loading, candidate crawl orchestration, deterministic match scoring |
 | `../data/product_intelligence/*` | Product Intelligence brand registry data, including Belk brand and exclusive/private-label lists |
 | `data_enrichment/service.py` | On-demand enrichment job orchestration and persistence for ecommerce detail records |
-| `ucp_audit/catalog_crawl.py`, `ucp_audit/catalog_checks.py`, `ucp_audit/*` | AI Discoverability catalog sampling, signal checks, scoring, reporting, repair roadmap, and job orchestration; dormant UCP protocol files remain here |
-| `page_audit/analysis.py`, `page_audit/service.py`, `page_audit/reporting.py` | Deterministic source/rendered-DOM technical checks, dual-fetch job orchestration, persistence, and report rendering |
-| `monitor_service.py`, `monitor_scheduler_service.py`, `monitor_async_loop.py`, `monitor_change_detection.py`, `monitor_retention.py`, `monitor_alert_service.py` | Product monitoring CRUD support, due-job scheduling, dev scheduler loop, post-run diffing, retention, and in-app alerts |
-| `alert_service.py`, `monitor_condition.py`, `monitor_webhook_service.py` | Agentic Delta Engine alert wrappers, sandboxed condition evaluation, and webhook dispatch/logging |
-| `playground_service.py` | Guided playground session owner that creates normal crawl runs and downstream jobs from one session |
 | `crawl/category_discovery.py` | Shared Crawl Studio category discovery response assembly for one or more seed URLs |
 | `public_api/extraction_service.py` | Public HTTP-only single-product extraction wrapper over normal crawl creation and per-URL pipeline processing |
 | `public_api/domain_info_service.py` | Read-only public domain readiness view over domain memory, run profiles, and recent crawl rows |
@@ -117,7 +100,7 @@ Public API schemas live in `api_key.py` and `public_api.py`.
 | `pipeline/url_processing_context.py` | Per-URL acquisition config and run-context resolution |
 | `pipeline/persistence.py` | `CrawlRecord` writes, dedupe, summaries |
 | `pipeline/runtime_helpers.py` | Typed stage helpers, browser diagnostics merge, failure-state persistence |
-| `pipeline/run_complete_callbacks.py` | Single run-complete callback registration point for post-run subsystems such as monitors |
+| `pipeline/run_complete_callbacks.py` | Single run-complete callback registration point for post-run observability hooks |
 | `pipeline/direct_record_fallback.py` | Direct-record and explicit LLM gap-fill fallback |
 | `pipeline/extraction_retry_decision.py` | Empty-extraction browser retry decisions |
 | `pipeline/types.py` | Pipeline typed objects |
@@ -206,10 +189,7 @@ Canonical config owner:
 | `extract/listing_card_fragments.py` | Canonical listing-fragment discovery, scoring, and listing-card heuristics shared by traversal, browser artifact capture, and listing extraction |
 | `extract/listing_candidate_ranking.py` | Listing candidate admission, support signals, utility rejection, dedupe, and set ranking |
 | `extract/structured_listing_handler.py` | Structured JSON-LD listing record extraction and typed/untyped listing payload gating |
-| `extract/article_card_parser.py` | Article/content listing card author, date, and summary parsing |
 | `extract/network_listing_mapper.py` | Network listing rows and network-to-listing price/brand/currency backfill |
-| `extract/content_listing_handler.py` | Content listing table-row extraction and open-field row tagging |
-| `extract/content_surface_extractor.py` | DOM fallback extraction for content, article, and forum detail surfaces |
 | `extract/record_overlay.py` | Primary-wins record overlay helper shared by adapter, JS-state, and listing merges |
 | `extract/table_extractor.py` | Meaningful table detection, filtering, context resolution, and structured table output |
 | `extract/detail/assembly/tiers.py` | Detail tier execution order, DOM skip decision, and finalization transitions |
@@ -265,16 +245,7 @@ Canonical config owners:
 | `config/platforms.json` | adapter metadata, signatures, JS mappings, readiness selectors |
 | `config/network_payload_specs.py` | payload specs and endpoint tokens |
 | `config/data_enrichment.py` | data enrichment statuses, limits, and taxonomy file path |
-| `config/monitor_settings.py` | monitor statuses, priorities, scheduler limits, retention limits, and HEAD pre-check constants |
 | `config/public_api.py` | public API key prefixes, envelopes, error codes, rate limits, extraction caps, MCP env names, and static capabilities |
-| `config/page_audit.py` | page-audit statuses, fetch policy, thresholds, selectors, signals, and finding copy |
-| `config/aid_score.py` | AI Discoverability dimension IDs, finding codes, weights, crawl limits, and report constants |
-
-### `mcp/` — local agent tool adapters
-
-| File | Purpose |
-|---|---|
-| `alert_server.py` | Local stdio JSON-RPC/MCP-style wrapper for `alert_product`, `get_alert_status`, `cancel_alert`, and `list_alerts` over `/api/v1/alerts` |
 
 ### `mcp_server/` — hosted MCP wrapper
 
@@ -336,11 +307,10 @@ All selector memory is scoped by normalized `(domain, surface)`.
 
 | Path | Purpose |
 |---|---|
-| `app/` | Next.js App Router pages |
-| `app/playground/*` | Guided playground page for discovery, selection, extraction, pipeline launch, and results |
+| `app/` | Frontend feature route components retained from the former Next layout |
+| `src/main.tsx`, `src/router.tsx` | Vite bootstrap and React Router route table |
+| `src/routing/` | App-owned Link, navigation, dynamic import, and image helpers |
 | `app/product-intelligence/product-intelligence-components.tsx` | Product Intelligence local UI pieces |
-| `app/monitors/*`, `app/alerts/*`, `components/monitors/*` | Monitor and alert list/detail/create UI, monitor/alert forms, events, history chart, snapshot table, webhook delivery log, loading and empty states |
-| `app/ucp-audit/*` | AI Discoverability operator page, hook, and local report components |
 | `components/layout/` | shell, auth, nav, theme, scoped shell CSS modules |
 | `components/ui/button.tsx`, `badge.tsx`, `input.tsx`, `card.tsx`, `metric.tsx`, `table.tsx`, `alert.tsx`, `dialog.tsx` | typed UI primitive owners |
 | `components/ui/primitives.tsx` | compatibility barrel plus dropdown, toggle, tooltip, skeleton, field helpers |

@@ -11,9 +11,7 @@ from app.models.llm import LLMConfig
 from app.services.config.field_mappings import PROMPT_REGISTRY
 from app.services.config.llm_runtime import SUPPORTED_LLM_PROVIDERS
 from app.services.config.data_enrichment import DATA_ENRICHMENT_PROMPT_REGISTRY
-from app.services.config.aid_score import AID_SCORE_PROMPT_REGISTRY
 from app.services.config.product_intelligence import PRODUCT_INTELLIGENCE_PROMPT_REGISTRY
-from app.services.config.ucp_audit import UCP_AUDIT_PROMPT_REGISTRY
 from app.services.llm.payloads import SUPPORTED_TASK_TYPES
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -84,9 +82,7 @@ def get_prompt_task(task_type: str) -> dict | None:
         (name, registry.get(normalized))
         for name, registry in (
             ("DATA_ENRICHMENT_PROMPT_REGISTRY", DATA_ENRICHMENT_PROMPT_REGISTRY),
-            ("AID_SCORE_PROMPT_REGISTRY", AID_SCORE_PROMPT_REGISTRY),
             ("PRODUCT_INTELLIGENCE_PROMPT_REGISTRY", PRODUCT_INTELLIGENCE_PROMPT_REGISTRY),
-            ("UCP_AUDIT_PROMPT_REGISTRY", UCP_AUDIT_PROMPT_REGISTRY),
             ("PROMPT_REGISTRY", PROMPT_REGISTRY),
         )
         if normalized in registry

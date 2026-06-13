@@ -149,9 +149,7 @@ When `llm_enabled=True` and active config allows the relevant LLM workflow, LLM 
 Browser acquisition may use Patchright or real Chrome to produce better observations: rendered HTML, network payloads, visible text, accessibility text, readiness probes, and screenshots when enabled. It may also produce explicit detail-expansion artifacts (HTML/JSON from clicked size/color variant controls, expanded accordion sections, etc.). These are observation artifacts and are allowed inputs to extraction and LLM repair.
 Browser acquisition must not fabricate fields. It must not run hidden page scripts that directly assign `price`, `brand`, `variants`, or other logical fields outside the normal extraction/repair provenance path.
 
-UCP audit is observational and report-only. It may call existing acquisition and extraction primitives to compare manifest, structured data, rendered data, variant fields, taxonomy coverage, and policy-readability signals, but it must store findings in `ucp_audit_*` tables only. It must not mutate `CrawlRun.surface`, `CrawlRecord.data`, publish/export cleanup, selector memory, or enrichment output to make a compliance score look better.
 
-Page audit is observational and report-only. It must fetch raw HTTP source separately from a browser-rendered DOM, prefer the browser artifact's full rendered HTML when available, and store deterministic findings only in `page_audit_*` tables. It must not create or mutate crawl runs, crawl records, selector memory, UCP audit rows, or crawl exports.
 
 Challenge recovery is part of acquisition, not extraction. Direct browser navigation and origin warmup must both run the bounded challenge wait/activity/retry loop. A provider-marked low-content shell may not be accepted as final just because the blocked-page classifier is not yet `blocked=True`; it must be re-polled until it becomes usable content or the configured challenge budget is exhausted.
 
@@ -275,43 +273,25 @@ Static cleanup advice to persist/reuse more browser state caused a real regressi
 
 ---
 
-## 11. Product Monitoring — Scheduling and Diffing
+## 11. Deleted Monitoring and Alerting Surfaces
 
-**Rule:** Monitors reuse normal crawl runs. They must not introduce a special extraction path or mutate pipeline behavior beyond the single run-complete callback registration point in `app/services/pipeline/run_complete_callbacks.py`.
+**Rule:** Monitors, product alerts, in-app monitor notifications, and alert MCP wrappers are deleted product surfaces. Do not reintroduce monitor schedulers, alert routes, notification tables, or watch/alert MCP tools without a new approved plan.
 
-Monitor scheduling is explicit:
-- Scheduled runs update `last_run_at` and `next_run_at`.
-- On-demand runs must not change `next_run_at`.
-- Retention must purge monitor snapshots/events beyond each monitor's `retention_days` without deleting `CrawlRun` or `CrawlRecord` rows.
-
-Product alerts are the public single-product monitoring contract. UI/API/MCP naming must use `alert`/`alerts`: console routes live under `/api/alerts`, public routes under `/api/v1/alerts`, and MCP tools use alert names. Do not register new `watch`/`watches` routes or tools. Historical plan/spec wording may mention watches, but runtime code must not expose that name.
-
-Alert `target_fields` are the extraction request owner for alert polls. Creating or updating an alert must keep `MonitorJob.tracked_fields` and `MonitorJob.requested_fields` aligned to the alert target fields so future polls extract exactly what the alert asks to monitor.
-
-HEAD pre-check is conservative. If HEAD, validator comparison, or fallback hashing fails, the monitor must proceed with a full crawl. It must never skip silently on transport failure.
+The run-complete callback remains a generic observability extension point. It must not grow monitor-specific diffing, retention, webhook, or notification behavior.
 
 **VIOLATION signatures:**
-- Monitor-specific logic appears inside the per-URL pipeline body instead of the registered callback.
-- A run-now API call delays the next scheduled run by rewriting `next_run_at`.
-- HEAD failure or 405 causes a scheduled monitor to skip a crawl.
-- Retention deletes crawl runs or crawl records instead of only monitor-owned history/event rows.
-- `/api/v1/watches`, `/api/watches`, `watch_product`, `list_watches`, or similar runtime names are exposed after the alert rename.
-- Updating an alert from `["price", "availability"]` to `["sku"]` leaves old fields in `requested_fields`.
+- Runtime routes such as `/api/monitors`, `/api/alerts`, `/api/v1/alerts`, `/api/watches`, or `/api/v1/watches` are registered.
+- ORM tables such as `monitor_jobs`, `monitor_events`, `monitor_snapshots`, `monitor_webhook_deliveries`, or `in_app_notifications` return.
+- Celery or FastAPI startup registers monitor scheduler tasks or loops.
+- Frontend routes `/monitors` or `/alerts` return.
+- Product Intelligence creates monitors instead of handing selected URLs to normal crawl workflows.
 
 ---
 
-## 12. Playground — Sequencing Only
 
-**Rule:** Playground maps one user-entered URL to existing crawl, enrichment, Product Intelligence, monitor/alert, and audit primitives. It stores a thin `PlaygroundSession` shell with session state plus referenced run/job ids inside `step_data`. It must not implement extraction, add a parallel data store for extracted rows, or hide the underlying crawl run or downstream job.
 
-The playground flow creates normal `CrawlRun` rows for discover/extract, launches existing downstream subsystems for enrich/compare/monitor/audit, and reads existing result stores (`crawl_records`, enrichment rows, PI jobs, alerts, audit reports) for result views.
 
 **VIOLATION signatures:**
-- Playground code parses HTML, repairs fields, or changes extraction ranking.
-- Playground stores extracted product rows outside existing crawl/enrichment/PI/audit stores.
-- A playground step silently enables `llm_enabled`, rewrites `surface`, changes traversal intent, or injects a proxy profile without user-visible config.
-- `/api/playground/*` launches a bespoke extraction path instead of creating/reading normal subsystem records.
-- A playground result view omits the underlying crawl run id or downstream job/alert id.
 
 ---
 

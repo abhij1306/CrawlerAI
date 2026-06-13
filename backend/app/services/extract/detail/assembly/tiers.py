@@ -124,7 +124,7 @@ def _structured_payload_allowed_for_surface(payload: object, surface: str) -> bo
         if str(item or "").strip()
     }
     if "webpage" in normalized_types:
-        return str(surface or "").strip().lower() == "content_detail"
+        return False
     return not _detail_json_ld_payload_is_irrelevant(payload)
 
 

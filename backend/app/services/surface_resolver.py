@@ -46,8 +46,6 @@ def resolve_public_surface(
     is_listing: bool = False,
 ) -> SurfaceResolution | None:
     normalized = str(requested_surface or "").strip().lower()
-    if normalized == config.PUBLIC_SURFACE_AUTO:
-        return resolve_auto_surface(url=url, html=html, is_listing=is_listing)
     if normalized in config.PUBLIC_TO_DETAIL_SURFACE:
         mapping = (
             config.PUBLIC_TO_LISTING_SURFACE
@@ -63,12 +61,6 @@ def public_surface_for_internal(surface: str) -> str:
     normalized = str(surface or "").strip().lower()
     if normalized.startswith("ecommerce_"):
         return config.PUBLIC_SURFACE_ECOMMERCE
-    if normalized.startswith("article_"):
-        return config.PUBLIC_SURFACE_ARTICLE
-    if normalized.startswith("content_"):
-        return config.PUBLIC_SURFACE_CONTENT
-    if normalized == "forum_detail":
-        return config.PUBLIC_SURFACE_FORUM_THREAD
     return normalized
 
 
@@ -86,23 +78,6 @@ def resolve_auto_surface(
     typed_html_resolution = _resolve_from_html_schema(html)
     if typed_html_resolution is not None:
         return typed_html_resolution
-
-    if _has_any(path, config.SURFACE_RESOLVER_ARTICLE_PATH_TOKENS) or (
-        host in config.SURFACE_RESOLVER_ARTICLE_HOSTS
-        and _has_article_detail_path(path)
-    ):
-        return SurfaceResolution(
-            "article_detail",
-            config.SURFACE_RESOLVER_HIGH_CONFIDENCE,
-            [*evidence, "article_detail_url_signal"],
-        )
-
-    if _has_forum_signal(host, path):
-        return SurfaceResolution(
-            "forum_detail",
-            config.SURFACE_RESOLVER_MEDIUM_CONFIDENCE,
-            [*evidence, "forum_url_signal"],
-        )
 
     if _has_any(path, config.SURFACE_RESOLVER_JOB_PATH_TOKENS):
         surface = "job_listing" if is_listing else "job_detail"
@@ -141,13 +116,13 @@ def resolve_auto_surface(
             [*evidence, "ecommerce_listing_segment_signal"],
         )
 
-    fallback = "content_detail"
-    if is_listing and _has_listing_url_shape(path):
-        fallback = "content_listing"
+    fallback = "ecommerce_detail"
+    if is_listing:
+        fallback = "ecommerce_listing"
     return SurfaceResolution(
         fallback,
         config.SURFACE_RESOLVER_LOW_CONFIDENCE,
-        [*evidence, "fallback_content_surface"],
+        [*evidence, "fallback_ecommerce_surface"],
     )
 
 
@@ -217,17 +192,6 @@ def _is_listing_context(*, run_type: str, crawl_module: str | None) -> bool:
     return normalized_run_type in {"batch", "csv"} or normalized_module == "category"
 
 
-def _has_article_detail_path(path: str) -> bool:
-    return any(token in path for token in ("/blog/entry/", "/article/", "/post/"))
-
-
-def _has_forum_signal(host: str, path: str) -> bool:
-    return any(token in host for token in config.SURFACE_RESOLVER_FORUM_HOST_TOKENS) or _has_any(
-        path,
-        config.SURFACE_RESOLVER_FORUM_PATH_TOKENS,
-    )
-
-
 def _has_any(value: str, tokens: tuple[str, ...]) -> bool:
     return any(token in value for token in tokens)
 
@@ -254,21 +218,3 @@ def _html_detail_signal(path: str) -> str:
         return "ecommerce_detail_html_slug_signal"
     return ""
 
-
-def _has_listing_url_shape(path: str) -> bool:
-    normalized = str(path or "").strip().lower().rstrip("/")
-    return normalized in {
-        "/archive",
-        "/archives",
-        "/blog",
-        "/blogs",
-        "/docs",
-        "/documentation",
-        "/events",
-        "/forum",
-        "/forums",
-        "/news",
-        "/posts",
-        "/resources",
-        "/topics",
-    }

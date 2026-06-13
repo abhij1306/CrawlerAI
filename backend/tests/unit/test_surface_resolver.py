@@ -7,32 +7,32 @@ from app.services.surface_resolver import resolve_public_surface, resolve_surfac
 pytestmark = pytest.mark.unit
 
 
-def test_resolve_auto_codeforces_homepage_to_content_detail() -> None:
+def test_resolve_auto_codeforces_homepage_to_ecommerce_listing() -> None:
     result = resolve_surface("auto", url="https://codeforces.com/", crawl_module="category")
 
-    assert result.surface == "content_detail"
+    assert result.surface == "ecommerce_listing"
     assert result.confidence == pytest.approx(0.4)
-    assert "fallback_content_surface" in result.evidence
+    assert "fallback_ecommerce_surface" in result.evidence
 
 
-def test_resolve_auto_codeforces_blog_entry_to_article_detail() -> None:
+def test_resolve_auto_codeforces_blog_entry_to_ecommerce_detail() -> None:
     result = resolve_surface(
         "auto",
         url="https://codeforces.com/blog/entry/153802",
         crawl_module="pdp",
     )
 
-    assert result.surface == "article_detail"
+    assert result.surface == "ecommerce_detail"
 
 
-def test_resolve_auto_forum_thread_url_to_forum_detail() -> None:
+def test_resolve_auto_forum_thread_url_to_ecommerce_detail() -> None:
     result = resolve_surface(
         "auto",
         url="https://community.example.com/thread/123",
         crawl_module="pdp",
     )
 
-    assert result.surface == "forum_detail"
+    assert result.surface == "ecommerce_detail"
 
 
 def test_resolve_auto_ecommerce_product_url_to_detail() -> None:
@@ -101,11 +101,10 @@ def test_resolve_explicit_surface_bypasses_auto_detection() -> None:
     assert result.evidence == ["explicit_surface"]
 
 
-def test_resolve_public_auto_returns_internal_surface() -> None:
+def test_resolve_public_auto_is_not_supported() -> None:
     result = resolve_public_surface("auto", url="https://codeforces.com/")
 
-    assert result is not None
-    assert result.surface == "content_detail"
+    assert result is None
 
 
 def test_resolve_auto_does_not_treat_generic_tables_as_listing() -> None:
@@ -128,7 +127,7 @@ def test_resolve_auto_does_not_treat_generic_tables_as_listing() -> None:
         crawl_module="category",
     )
 
-    assert result.surface == "content_detail"
+    assert result.surface == "ecommerce_listing"
 
 
 def test_resolve_auto_does_not_treat_article_cards_as_listing_by_default() -> None:
@@ -147,4 +146,4 @@ def test_resolve_auto_does_not_treat_article_cards_as_listing_by_default() -> No
         crawl_module="category",
     )
 
-    assert result.surface == "content_detail"
+    assert result.surface == "ecommerce_listing"

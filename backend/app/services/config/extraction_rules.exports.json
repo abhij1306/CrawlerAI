@@ -4053,14 +4053,6 @@
         "brand"
       ]
     },
-    "article_listing": {
-      "__type__": "frozenset",
-      "items": [
-        "publication_date",
-        "author",
-        "summary"
-      ]
-    },
     "job_listing": {
       "__type__": "frozenset",
       "items": [
@@ -5796,7 +5788,7 @@
       "__type__": "tuple",
       "items": [
         "authoritative",
-        1.0
+        1
       ]
     },
     "network_payload": {

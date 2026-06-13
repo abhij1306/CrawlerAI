@@ -1,7 +1,7 @@
 'use client';
 
 // Next.js App Router entrypoint for `/login`; invoked by file-system routing.
-import { useRouter } from 'next/navigation';
+import { useRouter } from '@/routing/navigation';
 import { FormEvent, useState } from 'react';
 
 import { InlineAlert } from '../../components/ui/patterns';

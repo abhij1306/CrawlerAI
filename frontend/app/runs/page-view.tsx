@@ -1,8 +1,8 @@
 'use client';
 
 // Next.js App Router entrypoint for `/runs`; invoked by file-system routing.
-import Link from 'next/link';
-import type { Route } from 'next';
+import Link from '@/routing/link';
+import type { Route } from '@/routing/link';
 import { useReducer } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowRightCircle, Copy, ExternalLink, Plus, Trash2 } from 'lucide-react';
@@ -130,7 +130,7 @@ function RunRow({
             <Tooltip content={run.url} align="start">
               <Link
                 href={`/crawl?run_id=${run.id}`}
-                className="link-accent text-primary block max-w-[280px] truncate text-sm font-medium no-underline transition-colors"
+                className="link-accent text-primary block max-w-[280px] truncate font-medium no-underline transition-colors"
               >
                 {domain || `Run #${run.id}`}
               </Link>
@@ -167,10 +167,8 @@ function RunRow({
 
       {/* Mode */}
       <TableCell>
-        <span className="bg-background-elevated text-muted rounded-sm px-1.5 py-0.5 text-sm">
-          {run.surface === 'design_system'
-            ? `${formatRunType(run.run_type)} · Design System`
-            : formatRunType(run.run_type)}
+        <span className="bg-background-elevated text-muted rounded-sm px-1.5 py-0.5">
+          {formatRunType(run.run_type)}
         </span>
       </TableCell>
 
@@ -187,7 +185,7 @@ function RunRow({
       {/* Records */}
       <TableCell className="text-right">
         <span
-          className={cn('text-sm tabular-nums', recordCount > 0 ? 'text-primary' : 'text-muted')}
+          className={cn('tabular-nums', recordCount > 0 ? 'text-primary' : 'text-muted')}
         >
           {recordCount > 0 ? recordCount.toLocaleString() : '—'}
         </span>
@@ -195,7 +193,7 @@ function RunRow({
 
       {/* Date */}
       <TableCell className="text-right">
-        <span className="text-muted text-sm tabular-nums">{formatDate(run.created_at)}</span>
+        <span className="text-muted tabular-nums">{formatDate(run.created_at)}</span>
       </TableCell>
 
       {/* Actions */}

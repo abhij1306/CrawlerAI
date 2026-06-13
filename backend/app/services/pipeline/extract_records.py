@@ -2,16 +2,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from bs4 import BeautifulSoup
-
 from app.core.logfire_integration import logfire_span, set_logfire_attributes
 from app.services.acquisition.runtime import classify_blocked_page
 from app.services.config.runtime_settings import crawler_runtime_settings
-from app.services.extract.content_listing_handler import validate_table_rows_quality
-from app.services.extract.content_surface_extractor import (
-    CONTENT_DETAIL_SURFACES,
-    extract as extract_content_surface,
-)
 from app.services.extract.detail.identity.core import (
     listing_detail_like_path,
     listing_url_is_structural,
@@ -39,7 +32,6 @@ from app.services.pipeline.listing_integrity import (
 from app.services.pipeline.raw_json import extract_raw_json_records
 from app.services.pipeline.sitemap import extract_xml_sitemap_records
 from app.services.shared.field_coerce import (
-    clean_text,
     direct_record_to_surface_fields,
     finalize_record,
     is_title_noise,
@@ -108,28 +100,6 @@ def extract_records(
             page_url=page_url,
             requested_page_url=requested_page_url,
         )
-    if normalized_surface in CONTENT_DETAIL_SURFACES:
-        with logfire_span(
-            "extract.tier.content_detail",
-            domain=_safe_domain(page_url),
-            surface=normalized_surface,
-        ) as span:
-            record = extract_content_surface(
-                BeautifulSoup(html or "", "html.parser"),
-                page_url=page_url,
-                surface=normalized_surface,
-            )
-            set_logfire_attributes(span, record_count=1 if record else 0)
-        if not record:
-            return []
-        if _html_is_blocked_extraction_shell(html) and not _content_record_is_useful(
-            record
-        ):
-            return []
-        finalized_record = finalize_record(record, surface=normalized_surface)
-        if record.get("markdown"):
-            finalized_record["markdown"] = record["markdown"]
-        return [finalized_record]
     if _html_is_blocked_extraction_shell(html):
         return []
     if "listing" in normalized_surface:
@@ -206,13 +176,6 @@ def extract_records(
         )
         listing_rows = _finalize_listing_rows(listing_rows)
         network_rows = _finalize_listing_rows(network_rows)
-        if (
-            normalized_surface == "content_listing"
-            and listing_rows
-            and all(row.get("_extraction_mode") == "table_rows" for row in listing_rows)
-            and validate_table_rows_quality(listing_rows)
-        ):
-            return listing_rows[:max_records]
         generic_rows = _overlay_listing_rows_from_adapter(
             listing_rows,
             adapter_rows=adapter_rows,
@@ -304,12 +267,6 @@ def _html_is_blocked_extraction_shell(html: str) -> bool:
             or classification.title_matches
         )
     )
-
-
-def _content_record_is_useful(record: dict[str, Any]) -> bool:
-    markdown = clean_text(record.get("markdown"))
-    content = clean_text(record.get("content"))
-    return len(markdown) >= 300 or len(content) >= 300
 
 
 def _finalize_listing_rows(rows: list[dict]) -> list[dict[str, Any]]:

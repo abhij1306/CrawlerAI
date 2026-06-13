@@ -63,19 +63,6 @@ def get_surface_field_aliases(surface: str) -> dict[str, list[str]]:
         for canonical, values in _FIELD_ALIASES.items()
         if canonical in allowed
     }
-    if normalized in {"automobile_listing", "automobile_detail"}:
-        automobile_aliases = {
-            canonical: list(values) for canonical, values in aliases.items()
-        }
-        make_aliases = automobile_aliases.setdefault("make", [])
-        if "manufacturer" not in make_aliases:
-            make_aliases.append("manufacturer")
-        brand_aliases = automobile_aliases.get("brand")
-        if brand_aliases is not None:
-            automobile_aliases["brand"] = [
-                alias for alias in brand_aliases if alias != "manufacturer"
-            ]
-        return automobile_aliases
     if normalized.startswith("ecommerce_"):
         ecommerce_aliases = {
             canonical: list(values) for canonical, values in aliases.items()

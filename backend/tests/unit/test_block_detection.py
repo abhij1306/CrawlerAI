@@ -309,7 +309,7 @@ def test_classify_blocked_page_preserves_dom_heavy_detail_content_despite_challe
 
 
 @pytest.mark.unit
-def test_classify_blocked_page_preserves_forum_detail_content_despite_provider_markers() -> None:
+def test_classify_blocked_page_preserves_detail_content_despite_provider_markers() -> None:
     html = """
     <html>
       <head>
@@ -339,7 +339,7 @@ def test_classify_blocked_page_preserves_forum_detail_content_despite_provider_m
 
 
 @pytest.mark.unit
-def test_classify_blocked_page_preserves_forum_listing_content_despite_provider_markers() -> None:
+def test_classify_blocked_page_preserves_listing_content_despite_provider_markers() -> None:
     html = """
     <html>
       <head>

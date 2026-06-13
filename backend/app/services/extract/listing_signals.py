@@ -297,7 +297,6 @@ def _select_primary_anchor(
     title_node=None,
 ) -> tuple[object, str, str, int] | None:
     is_job = surface.startswith("job_")
-    is_article = surface == "article_listing"
     card_html = listing_node_html(card)
     title_index = -1
     if title_node is not None and listing_node_tag(title_node) != "a":
@@ -315,7 +314,7 @@ def _select_primary_anchor(
         if not url or (not same_host(page_url, url) and not same_site(page_url, url)):
             continue
         lowered_url = url.lower()
-        if not is_article and listing_url_is_structural(url, page_url):
+        if listing_url_is_structural(url, page_url):
             continue
         if any(
             token in lowered_url

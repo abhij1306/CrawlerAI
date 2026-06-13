@@ -4,8 +4,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { TopBarProvider } from '../layout/top-bar-context';
 import { PageHeader, RunSummaryChips } from './patterns';
 
-vi.mock('next/navigation', () => ({
-  usePathname: () => '/playground',
+vi.mock('@/routing/navigation', () => ({
+  usePathname: () => '/crawl',
 }));
 
 describe('RunSummaryChips', () => {

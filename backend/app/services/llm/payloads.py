@@ -147,56 +147,6 @@ class _DataEnrichmentSemanticPayload(BaseModel):
     suggested_bundles: list[str] | None = None
 
 
-class _UCPSchemaAnalysisPayload(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    summary: str = ""
-    recommended_changes: list[str] = Field(default_factory=list)
-    risk_notes: list[str] = Field(default_factory=list)
-
-
-class _AIDRubricFindingPayload(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    dimension: str = ""
-    verdict: Literal["PASS", "PARTIAL", "FAIL", "INSUFFICIENT_EVIDENCE"]
-    evidence_quote: str = ""
-    finding_code: str = ""
-    recommendation: str = ""
-
-    @field_validator("evidence_quote", mode="before")
-    @classmethod
-    def _coerce_null_evidence_quote(cls, value: Any) -> Any:
-        # LLMs sometimes emit an explicit `"evidence_quote": null`; treat it as
-        # an empty string so the whole findings payload does not fail validation.
-        return "" if value is None else value
-
-
-class _AIDSimulatedQueryPayload(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    query: str = ""
-    answerable: bool = False
-    gap: str = ""
-
-
-class _AIDDiscoverabilityAuditPayload(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    url: str = ""
-    findings: list[_AIDRubricFindingPayload] = Field(default_factory=list)
-    simulated_queries: list[_AIDSimulatedQueryPayload] = Field(default_factory=list)
-    error: str = ""
-
-
-class _DesignSystemMarkdownPayload(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    overview: str = ""
-    usage_notes: list[str] = Field(default_factory=list)
-    caveats: list[str] = Field(default_factory=list)
-
-
 class _RunDiagnosisFieldPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -228,9 +178,6 @@ _PAYLOAD_ADAPTERS: dict[str, TypeAdapter[Any]] = {
         _ProductIntelligenceBrandInferencePayload
     ),
     "data_enrichment_semantic": TypeAdapter(_DataEnrichmentSemanticPayload),
-    "ucp_schema_analysis": TypeAdapter(_UCPSchemaAnalysisPayload),
-    "aid_discoverability_audit": TypeAdapter(_AIDDiscoverabilityAuditPayload),
-    "design_system_markdown": TypeAdapter(_DesignSystemMarkdownPayload),
     "run_diagnosis": TypeAdapter(_RunDiagnosisPayload),
 }
 SUPPORTED_TASK_TYPES = tuple(_PAYLOAD_ADAPTERS.keys())

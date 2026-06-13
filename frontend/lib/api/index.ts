@@ -1,5 +1,4 @@
 import { apiClient, getApiBaseUrl } from './client';
-export { alertsApi, monitorsApi } from './monitors';
 import type {
   ActiveJob,
   CrawlCreatePayload,
@@ -11,12 +10,6 @@ import type {
   DataEnrichmentJob,
   DataEnrichmentJobCreatePayload,
   DataEnrichmentJobDetail,
-  UcpAuditJob,
-  UcpAuditJobCreatePayload,
-  UcpAuditJobDetail,
-  PageAuditJob,
-  PageAuditJobCreatePayload,
-  PageAuditJobDetail,
   Dashboard,
   DomainRecipe,
   DomainCookieMemoryRecord,
@@ -48,8 +41,6 @@ import type {
   LlmProviderCatalogItem,
   LlmConnectionTestResponse,
   LlmCostLogRecord,
-  InAppNotification,
-  PlaygroundSessionResponse,
   RunObservability,
 } from './types';
 
@@ -58,29 +49,6 @@ function withQuery(path: string, query: URLSearchParams) {
   return queryString ? `${path}?${queryString}` : path;
 }
 
-// Playground API response types
-export type PlaygroundDiscoverApiResponse = {
-  session_id: number;
-  state: string;
-  stage: 'sitemap' | 'listing' | 'detail';
-  run_id: number | null;
-  sitemap_url_count: number | null;
-  message: string;
-};
-export type PlaygroundExtractApiResponse = {
-  session_id: number;
-  state: string;
-  run_ids: number[];
-  url_count: number;
-};
-export type PlaygroundPipelineApiResponse = {
-  session_id: number;
-  state: string;
-  launched: Record<string, unknown>;
-};
-export type PlaygroundSelectCategoryPayload =
-  | { url: string; urls?: string[] }
-  | { url?: string; urls: string[] };
 export type CategoryDiscoveryPayload = {
   url?: string;
   urls?: string[];
@@ -205,27 +173,6 @@ export const api = {
   },
   getDataEnrichmentJob: (jobId: number) =>
     apiClient.get<DataEnrichmentJobDetail>(`/api/data-enrichment/jobs/${jobId}`),
-  createUcpAuditJob: (payload: UcpAuditJobCreatePayload) =>
-    apiClient.post<UcpAuditJob>('/api/ucp-audit/jobs', payload),
-  listUcpAuditJobs: (params?: { limit?: number }) => {
-    const query = new URLSearchParams();
-    if (params?.limit !== undefined) query.set('limit', String(params.limit));
-    return apiClient.get<UcpAuditJob[]>(withQuery('/api/ucp-audit/jobs', query));
-  },
-  getUcpAuditJob: (jobId: number) =>
-    apiClient.get<UcpAuditJobDetail>(`/api/ucp-audit/jobs/${jobId}`),
-  exportUcpAuditJson: (jobId: number) =>
-    `${getApiBaseUrl()}/api/ucp-audit/jobs/${jobId}/export.json`,
-  exportUcpAuditMarkdown: (jobId: number) =>
-    `${getApiBaseUrl()}/api/ucp-audit/jobs/${jobId}/export.md`,
-  createPageAuditJob: (payload: PageAuditJobCreatePayload) =>
-    apiClient.post<PageAuditJob>('/api/page-audit/jobs', payload),
-  getPageAuditJob: (jobId: number) =>
-    apiClient.get<PageAuditJobDetail>(`/api/page-audit/jobs/${jobId}`),
-  exportPageAuditJson: (jobId: number) =>
-    `${getApiBaseUrl()}/api/page-audit/jobs/${jobId}/export.json`,
-  exportPageAuditMarkdown: (jobId: number) =>
-    `${getApiBaseUrl()}/api/page-audit/jobs/${jobId}/export.md`,
   reviewProductIntelligenceMatch: (
     jobId: number,
     matchId: number,
@@ -235,28 +182,10 @@ export const api = {
       `/api/product-intelligence/jobs/${jobId}/matches/${matchId}/review`,
       payload,
     ),
-  createMonitorFromProductIntelligenceJob: (jobId: number) =>
-    apiClient.post<{ monitor_id: number; name: string; url_count: number }>(
-      `/api/product-intelligence/jobs/${jobId}/create-monitor`,
-      {},
-    ),
-  listNotifications: (params?: { limit?: number }) => {
-    const query = new URLSearchParams();
-    if (params?.limit !== undefined) query.set('limit', String(params.limit));
-    return apiClient.get<InAppNotification[]>(withQuery('/api/notifications', query));
-  },
-  notificationUnreadCount: () =>
-    apiClient.get<{ count: number }>('/api/notifications/unread-count'),
-  markNotificationRead: (notificationId: number) =>
-    apiClient.post<InAppNotification>(`/api/notifications/${notificationId}/read`, {}),
-  markMonitorNotificationsRead: (monitorId: number) =>
-    apiClient.post<{ updated: number }>(`/api/notifications/monitors/${monitorId}/read`, {}),
   downloadCsv: (runId: number) => apiClient.getBlob(`/api/crawls/${runId}/export/csv`),
   downloadJson: (runId: number) => apiClient.getBlob(`/api/crawls/${runId}/export/json`),
   exportCsv: (runId: number) => `${getApiBaseUrl()}/api/crawls/${runId}/export/csv`,
   exportJson: (runId: number) => `${getApiBaseUrl()}/api/crawls/${runId}/export/json`,
-  exportDesignMarkdown: (runId: number) =>
-    `${getApiBaseUrl()}/api/crawls/${runId}/export/design.md`,
   getReview: (runId: number) => apiClient.get<ReviewPayload>(`/api/review/${runId}`),
   reviewHtml: (runId: number) => `${getApiBaseUrl()}/api/review/${runId}/artifact-html`,
   saveReview: (runId: number, payload: { selections: ReviewSelection[]; extra_fields: string[] }) =>
@@ -379,56 +308,6 @@ export const api = {
     apiClient.post<LlmConnectionTestResponse>('/api/llm/test-connection', payload),
   listLlmCostLog: () => apiClient.get<LlmCostLogRecord[]>('/api/llm/cost-log'),
   listJobs: () => apiClient.get<ActiveJob[]>('/api/jobs/active'),
-
-  // Playground
-  createPlaygroundSession: (payload: {
-    url?: string;
-    urls?: string[];
-    category_limit?: number;
-  }) => {
-    if (!payload.url && (!payload.urls || payload.urls.length === 0)) {
-      throw new Error('Enter at least one URL');
-    }
-    return apiClient.post<PlaygroundSessionResponse>('/api/playground/sessions', payload);
-  },
-  listPlaygroundSessions: () =>
-    apiClient.get<PlaygroundSessionResponse[]>('/api/playground/sessions'),
-  getPlaygroundSession: (sessionId: number) =>
-    apiClient.get<PlaygroundSessionResponse>(`/api/playground/sessions/${sessionId}`),
-  playgroundDiscover: (sessionId: number) =>
-    apiClient.post<PlaygroundDiscoverApiResponse>(
-      `/api/playground/sessions/${sessionId}/discover`,
-      {},
-    ),
-  playgroundSelect: (sessionId: number, payload: { urls: string[] }) =>
-    apiClient.post<PlaygroundSessionResponse>(
-      `/api/playground/sessions/${sessionId}/select`,
-      payload,
-    ),
-  playgroundSelectCategory: (sessionId: number, payload: PlaygroundSelectCategoryPayload) => {
-    if (!payload.url && (!payload.urls || payload.urls.length === 0)) {
-      throw new Error('Select at least one category URL');
-    }
-    return apiClient.post<PlaygroundSessionResponse>(
-      `/api/playground/sessions/${sessionId}/select-category`,
-      payload,
-    );
-  },
-  playgroundExtract: (sessionId: number) =>
-    apiClient.post<PlaygroundExtractApiResponse>(
-      `/api/playground/sessions/${sessionId}/extract`,
-      {},
-    ),
-  playgroundPipeline: (
-    sessionId: number,
-    options: { enrich: boolean; compare: boolean; monitor: boolean; audit: boolean },
-  ) =>
-    apiClient.post<PlaygroundPipelineApiResponse>(
-      `/api/playground/sessions/${sessionId}/pipeline`,
-      options,
-    ),
-  playgroundResults: (sessionId: number) =>
-    apiClient.get<Record<string, unknown>>(`/api/playground/sessions/${sessionId}/results`),
 };
 
 // Named exports for easier consumption in components

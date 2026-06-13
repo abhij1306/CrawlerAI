@@ -1,8 +1,8 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import type { Route } from 'next';
-import { useRouter } from 'next/navigation';
+import type { Route } from '@/routing/link';
+import { useRouter } from '@/routing/navigation';
 import { useMemo, useState } from 'react';
 
 import type { HistoryItem } from '../../components/ui/history-drawer';
@@ -149,13 +149,6 @@ export function useProductIntelligence() {
     );
     return { count: uniqueSelectedUrls.length, domains };
   }, [discovery, uniqueSelectedUrls]);
-  const acceptedMatchCount = useMemo(
-    () =>
-      (detailQuery.data?.matches ?? []).filter((match) => match.review_status === 'accepted')
-        .length,
-    [detailQuery.data?.matches],
-  );
-
   async function discover() {
     if (!visibleSourceRecords.length) return;
     setPending(true);
@@ -199,22 +192,6 @@ export function useProductIntelligence() {
       setError(caught instanceof Error ? caught.message : 'Unable to discover candidates.');
     } finally {
       setPending(false);
-    }
-  }
-
-  const [creatingMonitor, setCreatingMonitor] = useState(false);
-
-  async function createMonitorFromJob() {
-    if (resolvedActiveJobId === null) return;
-    setCreatingMonitor(true);
-    setError('');
-    try {
-      await api.createMonitorFromProductIntelligenceJob(resolvedActiveJobId);
-      router.push('/monitors' as Route);
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'Unable to create monitor.');
-    } finally {
-      setCreatingMonitor(false);
     }
   }
 
@@ -290,9 +267,6 @@ export function useProductIntelligence() {
     toggleUrl,
     uniqueSelectedUrls,
     visibleSourceRecords,
-    creatingMonitor,
-    createMonitorFromJob,
-    acceptedMatchCount,
   };
 }
 

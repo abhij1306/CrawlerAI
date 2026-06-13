@@ -20,10 +20,6 @@ from app.services.acquisition.browser_page_helpers import (
 from app.services.acquisition.browser_readiness import HtmlAnalysis
 from app.services.acquisition.browser_recovery import capture_rendered_listing_fragments
 from app.services.acquisition.runtime import BlockPageClassification, copy_headers
-from app.services.config.design_system import (
-    DESIGN_SYSTEM_BROWSER_SNAPSHOT_SCRIPT,
-    DESIGN_SYSTEM_SURFACE,
-)
 from app.services.config.runtime_settings import crawler_runtime_settings
 from app.services.platform_policy import resolve_platform_runtime_policy
 
@@ -176,7 +172,6 @@ class BrowserAcquisitionResultBuilder:
             listing_visual_elements,
             listing_artifact_diagnostics,
         ) = await self._capture_listing_artifacts()
-        design_system_snapshot = await self._capture_design_system_snapshot()
         payload.phase_timings_ms["total"] = self.elapsed_ms(payload.started_at)
         listing_evidence_counts = {
             "rendered_listing_fragments": len(rendered_listing_fragments),
@@ -236,8 +231,6 @@ class BrowserAcquisitionResultBuilder:
                 else None
             ),
         )
-        if design_system_snapshot:
-            artifacts["design_system_snapshot"] = design_system_snapshot
         return {
             "response_missing": response_missing,
             "status_code": status_code,
@@ -377,17 +370,6 @@ class BrowserAcquisitionResultBuilder:
                 "listing_visual_capture": listing_visual_capture,
             },
         )
-
-    async def _capture_design_system_snapshot(self) -> dict[str, object]:
-        payload = self.payload
-        if str(payload.surface or "").strip().lower() != DESIGN_SYSTEM_SURFACE:
-            return {}
-        try:
-            result = await payload.page.evaluate(DESIGN_SYSTEM_BROWSER_SNAPSHOT_SCRIPT)
-        except (PlaywrightError, PlaywrightTimeoutError, TimeoutError):
-            logger.debug("Design system browser snapshot failed", exc_info=True)
-            return {}
-        return dict(result) if isinstance(result, dict) else {}
 
     async def _capture_timed_listing_artifact(
         self,

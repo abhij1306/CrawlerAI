@@ -28,10 +28,6 @@ except (
 
 from app.core.config import settings
 from app.core.logfire_integration import instrument_celery
-from app.services.config.monitor_settings import (
-    SCHEDULER_DRIVER_CELERY,
-    SCHEDULER_POLL_INTERVAL_SECONDS,
-)
 
 celery_app = Celery(
     "crawlerai",
@@ -64,18 +60,6 @@ except ImportError:
 
 # Beat stores task names, but workers still need these tasks registered on app import.
 import_module("app.tasks")
-
-if settings.scheduler_driver == SCHEDULER_DRIVER_CELERY:
-    celery_app.conf.beat_schedule = {
-        "monitor-check-due": {
-            "task": "monitor.check_due_jobs",
-            "schedule": float(SCHEDULER_POLL_INTERVAL_SECONDS),
-        },
-        "monitor-purge": {
-            "task": "monitor.purge_expired_snapshots",
-            "schedule": 86400.0,
-        },
-    }
 
 # Re-exported for app.tasks, which binds the worker lifecycle hooks via
 # ``@worker_process_init.connect`` / ``@worker_process_shutdown.connect``. Listed

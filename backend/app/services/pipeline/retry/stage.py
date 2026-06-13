@@ -21,7 +21,6 @@ from app.services.extract.detail.assembly.record_assembly import (
     detail_record_rejection_reason,
     infer_detail_failure_reason,
 )
-from app.services.extract.content_surface_extractor import CONTENT_DETAIL_SURFACES
 from app.services.pipeline.extraction_retry_decision import (
     empty_extraction_browser_retry_decision as _empty_extraction_browser_retry_decision,
     low_quality_extraction_browser_retry_decision as _low_quality_extraction_browser_retry_decision,
@@ -246,8 +245,6 @@ def _apply_detail_rejection_guard(
     selector_rules: list[dict[str, object]],
 ) -> tuple[list[dict[str, object]], str | None]:
     if "detail" not in context.surface:
-        return records, None
-    if str(context.surface or "").strip().lower() in CONTENT_DETAIL_SURFACES:
         return records, None
     acquisition_result = fetched.acquisition_result
     rejection_reason = _challenge_shell_reason(acquisition_result)

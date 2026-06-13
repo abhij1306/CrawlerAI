@@ -1,19 +1,18 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const originalApiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
+const originalViteApiBaseUrl = import.meta.env.VITE_API_BASE_URL;
 
 describe('apiClient', () => {
   beforeEach(() => {
     vi.resetModules();
     vi.restoreAllMocks();
-    delete process.env.NEXT_PUBLIC_API_BASE_URL;
+    vi.unstubAllEnvs();
   });
 
   afterEach(() => {
-    if (originalApiBaseUrl) {
-      process.env.NEXT_PUBLIC_API_BASE_URL = originalApiBaseUrl;
-    } else {
-      delete process.env.NEXT_PUBLIC_API_BASE_URL;
+    vi.unstubAllEnvs();
+    if (originalViteApiBaseUrl) {
+      vi.stubEnv('VITE_API_BASE_URL', originalViteApiBaseUrl);
     }
   });
 
@@ -33,24 +32,31 @@ describe('apiClient', () => {
   });
 
   it('validates configured API base URL contract early', async () => {
-    process.env.NEXT_PUBLIC_API_BASE_URL = 'localhost';
+    vi.stubEnv('VITE_API_BASE_URL', 'localhost');
     const { getApiBaseUrl } = await import('./client');
 
-    expect(() => getApiBaseUrl()).toThrow('NEXT_PUBLIC_API_BASE_URL must be a valid absolute URL');
+    expect(() => getApiBaseUrl()).toThrow('VITE_API_BASE_URL must be a valid absolute URL');
   });
 
   it('rejects configured API base URL with unsupported protocol', async () => {
-    process.env.NEXT_PUBLIC_API_BASE_URL = 'ftp://api.example.com';
+    vi.stubEnv('VITE_API_BASE_URL', 'ftp://api.example.com');
     const { getApiBaseUrl } = await import('./client');
 
-    expect(() => getApiBaseUrl()).toThrow('NEXT_PUBLIC_API_BASE_URL must use http:// or https://.');
+    expect(() => getApiBaseUrl()).toThrow('VITE_API_BASE_URL must use http:// or https://.');
   });
 
   it('normalizes a valid configured API base URL', async () => {
-    process.env.NEXT_PUBLIC_API_BASE_URL = 'https://api.example.com/';
+    vi.stubEnv('VITE_API_BASE_URL', 'https://api.example.com/');
     const { getApiBaseUrl } = await import('./client');
 
     expect(getApiBaseUrl()).toBe('https://api.example.com');
+  });
+
+  it('uses Vite API base URL for production configuration', async () => {
+    vi.stubEnv('VITE_API_BASE_URL', 'https://vite.example.com/');
+    const { getApiBaseUrl } = await import('./client');
+
+    expect(getApiBaseUrl()).toBe('https://vite.example.com');
   });
 
   it('keeps a single-origin policy after 404 responses', async () => {

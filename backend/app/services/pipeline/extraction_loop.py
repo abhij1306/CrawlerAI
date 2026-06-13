@@ -26,7 +26,6 @@ from app.services.extract.detail.assembly.record_assembly import (
     detail_record_rejection_reason,
     infer_detail_failure_reason,
 )
-from app.services.extract.content_surface_extractor import CONTENT_DETAIL_SURFACES
 from app.services.platform_policy import detect_platform_family
 from app.services.pipeline.extract_records import extract_records
 from app.services.pipeline.direct_record_fallback import (
@@ -525,11 +524,6 @@ async def _run_extraction_stage_observed(
         records=records,
         selector_rules=selector_rules,
     )
-    if _is_content_detail_surface(context.surface):
-        await _log_extraction_outcome(context, acquisition_result, records)
-        _record_extraction_trace(context, records)
-        set_logfire_attributes(span, final_record_count=len(records))
-        return _ExtractedURLStage(fetched=fetched, records=records)
     records, selector_rules = await _retry_low_quality_extraction_with_browser(
         context,
         fetched,
@@ -667,10 +661,6 @@ def _record_extraction_trace(
                 if str(item or "").strip()
             ],
         )
-
-
-def _is_content_detail_surface(surface: str) -> bool:
-    return str(surface or "").strip().lower() in CONTENT_DETAIL_SURFACES
 
 
 async def _run_normalization_stage(

@@ -17,10 +17,6 @@ from app.services.dom.selector_engine import (
     extract_page_images,
 )
 from app.services.extract.detail.assembly import dom_section_targets as _section_targets
-from app.services.extract.content_surface_extractor import (
-    CONTENT_DETAIL_SURFACES,
-    extract as extract_content_surface,
-)
 from app.services.extract.detail.price.inline_scalar import collect_inline_scalar_rows
 from app.services.extract.detail.assembly.raw_signals import (
     breadcrumb_category_from_dom,
@@ -59,22 +55,6 @@ def apply_dom_fallbacks(
 ) -> None:
     fields = surface_fields(surface, requested_fields)
     normalized_surface = str(surface or "").strip().lower()
-    if normalized_surface in CONTENT_DETAIL_SURFACES:
-        for field_name, value in extract_content_surface(
-            soup,
-            page_url=page_url,
-            surface=normalized_surface,
-        ).items():
-            if field_name in fields:
-                add_sourced_candidate(
-                    candidates,
-                    candidate_sources,
-                    field_sources,
-                    field_name,
-                    coerce_field_value(field_name, value, page_url),
-                    source="dom_text",
-                )
-        return
     # ``prune_irrelevant_detail_dom_nodes`` may decompose the body H1 on the
     # BeautifulSoup without touching the selectolax parser cache. Mirror that
     # decision here so the DOM fallback cannot resurrect a title from a page

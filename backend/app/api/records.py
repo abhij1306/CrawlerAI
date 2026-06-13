@@ -19,8 +19,6 @@ from app.services.crawl.access_service import (
     require_accessible_run,
 )
 from app.services.crawl.record_reconciliation import load_records_with_reconciliation
-from app.services.config.design_system import DESIGN_SYSTEM_EXPORT_FILENAME
-from app.services.design_system import design_markdown_for_run
 from app.services.record_export_service import (
     MAX_RECORD_PAGE_SIZE,
     RECORD_PROVENANCE_NOT_FOUND_RESPONSE,
@@ -129,26 +127,6 @@ async def export_csv(
 ) -> StreamingResponse:
     await _require_run_access(session, run_id=run_id, user=current_user)
     return await build_csv_export_response(session, run_id=run_id)
-
-
-@router.get(
-    "/api/crawls/{run_id}/export/design.md",
-    responses=_route_responses(RUN_NOT_FOUND_RESPONSE),
-)
-async def export_design_markdown(
-    run_id: int,
-    session: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[User, Depends(get_current_user)],
-) -> StreamingResponse:
-    await _require_run_access(session, run_id=run_id, user=current_user)
-    markdown = await design_markdown_for_run(session, run_id)
-    return StreamingResponse(
-        iter([markdown.encode("utf-8")]),
-        media_type="text/markdown; charset=utf-8",
-        headers={
-            "Content-Disposition": f'attachment; filename="{DESIGN_SYSTEM_EXPORT_FILENAME}"'
-        },
-    )
 
 
 @router.get(

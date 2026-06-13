@@ -1,5 +1,5 @@
-# Feature Spec: Invoro MCP Server & Public API
-**Invoro — Product Feature Specification**
+# Feature Spec: CrawlerAI MCP Server & Public API
+**CrawlerAI — Product Feature Specification**
 **Status:** Draft for Codex planning
 **Scope:** MCP Server + REST API surface
 
@@ -7,12 +7,12 @@
 
 ## 1. Problem Statement
 
-Invoro today is a UI-driven tool. Developers building LLM shopping agents cannot call it programmatically mid-workflow — they have to use the dashboard manually, then pass results out themselves.
+CrawlerAI today is a UI-driven tool. Developers building LLM shopping agents cannot call it programmatically mid-workflow — they have to use the dashboard manually, then pass results out themselves.
 
 Two things are needed:
 
-1. A **public REST API** that exposes Invoro's core capabilities to external callers in a well-documented, versioned, authenticated way.
-2. An **MCP Server** that wraps the public API as a set of typed MCP tools, so any MCP-compatible LLM agent (Claude, GPT-4, Cursor, etc.) can call Invoro as infrastructure mid-thought.
+1. A **public REST API** that exposes CrawlerAI's core capabilities to external callers in a well-documented, versioned, authenticated way.
+2. An **MCP Server** that wraps the public API as a set of typed MCP tools, so any MCP-compatible LLM agent (Claude, GPT-4, Cursor, etc.) can call CrawlerAI as infrastructure mid-thought.
 
 These are separate layers. The MCP server is a thin adapter over the public API. The public API is the authoritative interface.
 
@@ -21,7 +21,7 @@ These are separate layers. The MCP server is a thin adapter over the public API.
 ## 2. Goals
 
 1. Allow developers to crawl, extract, and monitor any ecommerce page programmatically via REST API.
-2. Allow LLM agents to call Invoro tools via the Model Context Protocol without human involvement.
+2. Allow LLM agents to call CrawlerAI tools via the Model Context Protocol without human involvement.
 3. Keep the MCP server stateless and thin — all business logic stays in the backend.
 4. Design the API for developer-first use: clear errors, typed responses, consistent field names, no surprise HTML in responses.
 
@@ -47,7 +47,7 @@ Version is in the URL path, not headers. Breaking changes increment the version.
 
 API key authentication via `Authorization: Bearer <api_key>` header.
 
-API keys are generated and revoked from the Invoro Console under Settings → API Keys. Each key is scoped to a user account and inherits that user's plan limits.
+API keys are generated and revoked from the CrawlerAI Console under Settings → API Keys. Each key is scoped to a user account and inherits that user's plan limits.
 
 Rate limits are enforced per API key:
 - Extraction endpoints: 60 requests / minute
@@ -160,7 +160,7 @@ Deferred in the lightweight public launch. The route validates the basic request
   "urls": ["https://...", "https://..."],
   "surface": "ecommerce",
   "fields": ["price", "availability"],
-  "webhook_url": "https://your-server.com/invoro-results"
+  "webhook_url": "https://your-server.com/crawlerai-results"
 }
 ```
 
@@ -181,7 +181,7 @@ Maximum 100 URLs per batch.
 **Polling:**
 `GET /api/v1/extract/batch/{batch_id}` — returns status (`pending`, `processing`, `complete`, `partial`) and results for completed URLs.
 
-If `webhook_url` was provided, Invoro POSTs the full batch result to that URL on completion instead of requiring polling.
+If `webhook_url` was provided, CrawlerAI POSTs the full batch result to that URL on completion instead of requiring polling.
 
 ---
 
@@ -207,7 +207,7 @@ Full request/response schemas are defined in the Delta Engine spec. These endpoi
 
 #### `GET /api/v1/domains/{domain}`
 
-Returns metadata about what Invoro knows about a domain — whether it has been crawled before, what surface it was classified as, and whether cached selectors exist. Useful for developers to check if a domain will extract quickly (cache hit) or require a fresh crawl.
+Returns metadata about what CrawlerAI knows about a domain — whether it has been crawled before, what surface it was classified as, and whether cached selectors exist. Useful for developers to check if a domain will extract quickly (cache hit) or require a fresh crawl.
 
 **Response:**
 ```json
@@ -232,9 +232,9 @@ Returns metadata about what Invoro knows about a domain — whether it has been 
 
 ### 5.1 Overview
 
-The MCP server is a lightweight process that exposes Invoro's public API as MCP tools. It follows the MCP specification (JSON-RPC 2.0 over SSE or stdio transport).
+The MCP server is a lightweight process that exposes CrawlerAI's public API as MCP tools. It follows the MCP specification (JSON-RPC 2.0 over SSE or stdio transport).
 
-It is stateless: it holds no database connections and no crawl state. Every tool call translates to one or more authenticated calls to the Invoro public API.
+It is stateless: it holds no database connections and no crawl state. Every tool call translates to one or more authenticated calls to the CrawlerAI public API.
 
 ### 5.2 Transport
 
@@ -372,7 +372,7 @@ List all active watches for the configured API key.
 
 #### Tool: `check_domain`
 
-Check if Invoro has prior knowledge of a domain (affects extraction speed).
+Check if CrawlerAI has prior knowledge of a domain (affects extraction speed).
 
 **Input schema:**
 ```json
@@ -412,7 +412,7 @@ Developer installs the MCP server package and configures it in their MCP client 
 
 **Option B — Hosted (HTTP + SSE)**
 
-Invoro hosts the MCP server at `mcp.invoro.ai`. Developers point their MCP client at this URL and authenticate with their API key. No local install required. This is the target for cloud-hosted agents like OpenAI Agents SDK and LangChain.
+CrawlerAI hosts the MCP server at `mcp.crawlerai.ai`. Developers point their MCP client at this URL and authenticate with their API key. No local install required. This is the target for cloud-hosted agents like OpenAI Agents SDK and LangChain.
 
 ---
 
@@ -421,7 +421,7 @@ Invoro hosts the MCP server at `mcp.invoro.ai`. Developers point their MCP clien
 The public API must ship with:
 
 - OpenAPI 3.1 spec — machine-readable, used to auto-generate client SDKs
-- Hosted interactive docs (Swagger UI or Scalar) at `docs.invoro.ai/api`
+- Hosted interactive docs (Swagger UI or Scalar) at `docs.crawlerai.ai/api`
 - At least two code examples per endpoint: Python and JavaScript/Node
 - All error codes documented with causes and recommended handling
 
@@ -452,5 +452,5 @@ A Python SDK and a TypeScript SDK are the natural follow-ons once the API is sta
 - `extract_product` p95 response time: < 5 seconds for domains with cached selectors
 - `extract_product` p95 response time: < 30 seconds for unknown domains
 - API error rate (5xx): < 0.5%
-- MCP tool call success rate: ≥ 99% (excluding bot-block errors from target sites, which are domain errors not Invoro errors)
+- MCP tool call success rate: ≥ 99% (excluding bot-block errors from target sites, which are domain errors not CrawlerAI errors)
 - Time from API key creation to first successful `extract_product` call: < 5 minutes (developer onboarding speed)

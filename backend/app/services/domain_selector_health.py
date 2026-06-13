@@ -14,9 +14,6 @@ CRITICAL_FIELDS_BY_SURFACE: dict[str, tuple[str, ...]] = {
     "ecommerce_listing": ("title", "url"),
     "job_detail": ("title", "company", "url"),
     "job_listing": ("title", "url"),
-    "automobile_detail": ("title", "price", "url"),
-    "automobile_listing": ("title", "url"),
-    "table": ("url",),
 }
 
 
@@ -34,4 +31,3 @@ class SelectorHealthSnapshot(BaseModel):
     stale: bool = False
     critical: bool = False
     captured_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
-

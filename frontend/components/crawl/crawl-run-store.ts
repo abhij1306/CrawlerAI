@@ -12,13 +12,11 @@ type CrawlRunUiState = {
   outputTab: OutputTabKey;
   tablePage: number;
   jsonVisibleCount: number;
-  alertBuilderOpen: boolean;
   historyOpen: boolean;
   setSelectedIds: (next: Updater<number[]>) => void;
   setOutputTab: (next: OutputTabKey) => void;
   setTablePage: (next: Updater<number>) => void;
   setJsonVisibleCount: (next: Updater<number>) => void;
-  setAlertBuilderOpen: (open: boolean) => void;
   setHistoryOpen: (open: boolean) => void;
   resetWorkspaceUi: () => void;
 };
@@ -32,7 +30,6 @@ const initialState = {
   outputTab: 'table' as OutputTabKey,
   tablePage: 1,
   jsonVisibleCount: CRAWL_DEFAULTS.TABLE_PAGE_SIZE * 4,
-  alertBuilderOpen: false,
   historyOpen: false,
 };
 
@@ -44,7 +41,6 @@ export const useCrawlRunStore = create<CrawlRunUiState>((set) => ({
   setTablePage: (next) => set((state) => ({ tablePage: resolveUpdater(state.tablePage, next) })),
   setJsonVisibleCount: (next) =>
     set((state) => ({ jsonVisibleCount: resolveUpdater(state.jsonVisibleCount, next) })),
-  setAlertBuilderOpen: (alertBuilderOpen) => set({ alertBuilderOpen }),
   setHistoryOpen: (historyOpen) => set({ historyOpen }),
   resetWorkspaceUi: () => set(initialState),
 }));

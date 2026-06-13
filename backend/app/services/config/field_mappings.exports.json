@@ -5,47 +5,6 @@
     "invariant": "Static field mapping export. Keep keys loaded by field_mappings.py present and decodeable."
   },
   "CANONICAL_SCHEMAS": {
-    "automobile_detail": {
-      "__type__": "list",
-      "items": [
-        "title",
-        "price",
-        "currency",
-        "make",
-        "model",
-        "year",
-        "trim",
-        "mileage",
-        "vin",
-        "condition",
-        "body_style",
-        "fuel_type",
-        "transmission",
-        "drivetrain",
-        "exterior_color",
-        "interior_color",
-        "location",
-        "dealer_name",
-        "image_url",
-        "description",
-        "tables"
-      ]
-    },
-    "automobile_listing": {
-      "__type__": "list",
-      "items": [
-        "title",
-        "price",
-        "url",
-        "image_url",
-        "make",
-        "model",
-        "year",
-        "mileage",
-        "location",
-        "dealer_name"
-      ]
-    },
     "ecommerce_detail": {
       "__type__": "list",
       "items": [
@@ -149,91 +108,6 @@
         "url",
         "apply_url"
       ]
-    },
-    "tabular": {
-      "__type__": "list",
-      "items": []
-    },
-    "content_detail": {
-      "__type__": "list",
-      "items": [
-        "title",
-        "url",
-        "content",
-        "markdown",
-        "summary",
-        "headings",
-        "image_url",
-        "additional_images",
-        "tags",
-        "category",
-        "breadcrumbs",
-        "language",
-        "word_count",
-        "tables"
-      ]
-    },
-    "content_listing": {
-      "__type__": "list",
-      "items": [
-        "title",
-        "url",
-        "summary",
-        "image_url",
-        "category"
-      ]
-    },
-    "article_listing": {
-      "__type__": "list",
-      "items": [
-        "title",
-        "author",
-        "publication_date",
-        "url",
-        "image_url",
-        "category",
-        "summary",
-        "source_name"
-      ]
-    },
-    "article_detail": {
-      "__type__": "list",
-      "items": [
-        "title",
-        "url",
-        "author",
-        "publication_date",
-        "content",
-        "markdown",
-        "summary",
-        "category",
-        "tags",
-        "image_url",
-        "additional_images",
-        "source_name",
-        "language",
-        "word_count",
-        "reading_time",
-        "tables"
-      ]
-    },
-    "forum_detail": {
-      "__type__": "list",
-      "items": [
-        "title",
-        "author",
-        "publication_date",
-        "content",
-        "markdown",
-        "summary",
-        "url",
-        "category",
-        "tags",
-        "reply_count",
-        "view_count",
-        "last_reply_date",
-        "tables"
-      ]
     }
   },
   "COLLECTION_KEYS": {
@@ -287,29 +161,6 @@
         "description",
         "qualifications"
       ]
-    },
-    "content_detail": {
-      "__type__": "frozenset",
-      "items": [
-        "content",
-        "markdown",
-        "summary"
-      ]
-    },
-    "article_detail": {
-      "__type__": "frozenset",
-      "items": [
-        "content",
-        "markdown",
-        "summary"
-      ]
-    },
-    "forum_detail": {
-      "__type__": "frozenset",
-      "items": [
-        "content",
-        "markdown"
-      ]
     }
   },
   "DOM_OPTIONAL_CUE_FIELDS": {
@@ -329,30 +180,6 @@
         "skills",
         "requirements"
       ]
-    },
-    "content_detail": {
-      "__type__": "frozenset",
-      "items": [
-        "tags",
-        "category",
-        "headings"
-      ]
-    },
-    "article_detail": {
-      "__type__": "frozenset",
-      "items": [
-        "tags",
-        "category",
-        "reading_time"
-      ]
-    },
-    "forum_detail": {
-      "__type__": "frozenset",
-      "items": [
-        "tags",
-        "reply_count",
-        "view_count"
-      ]
     }
   },
   "SURFACE_FIELD_REPAIR_TARGETS": {
@@ -360,21 +187,6 @@
       "price",
       "title",
       "image_url"
-    ],
-    "content_detail": [
-      "title",
-      "content",
-      "url"
-    ],
-    "article_detail": [
-      "title",
-      "content",
-      "url"
-    ],
-    "forum_detail": [
-      "title",
-      "content",
-      "url"
     ]
   },
   "SURFACE_BROWSER_RETRY_TARGETS": {
@@ -383,21 +195,6 @@
       "currency",
       "title",
       "image_url"
-    ],
-    "content_detail": [
-      "title",
-      "content",
-      "url"
-    ],
-    "article_detail": [
-      "title",
-      "content",
-      "url"
-    ],
-    "forum_detail": [
-      "title",
-      "content",
-      "url"
     ]
   },
   "ECOMMERCE_DETAIL_JS_STATE_FIELDS": {
@@ -1371,8 +1168,6 @@
   },
   "OPEN_FIELD_SURFACES": {
     "__type__": "list",
-    "items": [
-      "content_listing"
-    ]
+    "items": []
   }
 }

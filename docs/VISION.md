@@ -1,16 +1,16 @@
-# Invoro — Agentic Vision
+# CrawlerAI — Agentic Vision
 
 > **Status:** DRAFT
 > **Created:** 2026-04-21
-> **Purpose:** Define what Invoro is, where it is going, and what architectural
+> **Purpose:** Define what CrawlerAI is, where it is going, and what architectural
 > boundaries must be preserved as it gets there. This document informs every agent
 > and engineer touching the codebase. It is not an implementation plan.
 
 ---
 
-## 1. What Invoro Is
+## 1. What CrawlerAI Is
 
-Invoro is an **agentic web intelligence platform**. Specialized agents collaborate to
+CrawlerAI is an **agentic web intelligence platform**. Specialized agents collaborate to
 acquire, extract, normalize, enrich, and act on web data. The core pipeline runs
 deterministically and always. Optional agents extend it — enriching output and taking
 supervised real-world actions — without affecting the core.
@@ -64,7 +64,6 @@ Users toggle optional agents on or off per run. The core never toggles.
 ## 3. Core Pipeline
 
 The core pipeline handles all crawl surfaces: `ecommerce_listing`, `ecommerce_detail`,
-`job_listing`, `job_detail`, `automobile_listing`, `automobile_detail`, `tabular`.
 
 ### Extraction Source Hierarchy (deterministic, first-match-wins)
 
@@ -351,3 +350,4 @@ These boundaries must be respected by every change, regardless of phase.
 | `docs/agent/PLAN_PROTOCOL.md` | How plans are created, executed, and closed |
 | `docs/agent/SKILLS.md` | Step-by-step recipes for common implementation tasks |
 | `docs/plans/ACTIVE.md` | Current active plan pointer |
+

@@ -64,13 +64,6 @@ def test_field_allowed_for_surface_rejects_unknown_fields() -> None:
 
 
 @pytest.mark.unit
-def test_content_surfaces_allow_internal_markdown_field() -> None:
-    assert field_allowed_for_surface("content_detail", "markdown") is True
-    assert field_allowed_for_surface("article_detail", "markdown") is True
-    assert field_allowed_for_surface("forum_detail", "markdown") is True
-
-
-@pytest.mark.unit
 def test_normalize_requested_field_accepts_ecommerce_gender_aliases() -> None:
     assert normalize_requested_field("target gender") == "gender"
     assert normalize_requested_field("gender") == "gender"

@@ -747,15 +747,6 @@ def _classify_homepage_candidate(
             + category_path_boost
             + (25 if keyword_hit else 0),
         )
-    if (
-        resolution.surface == "content_detail"
-        and resolution.confidence <= 0.4
-        and _looks_like_listing_link(path, depth=depth, anchor_words=anchor_words)
-    ):
-        return (
-            "listing",
-            180 + nav_boost + category_path_boost + (25 if keyword_hit else 0),
-        )
     if resolution.surface.endswith("_detail"):
         return (
             "detail",

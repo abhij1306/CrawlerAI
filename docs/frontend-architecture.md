@@ -6,42 +6,43 @@ This document describes the live frontend structure, what it actually calls in t
 
 ## 1. Stack and Role
 
-Frontend is a Next.js App Router UI for:
+Frontend is a React + Vite UI for:
 
 - auth/session handling
 - crawl configuration and launch
-- run monitoring and record inspection
+- run history and record inspection
 - selectors workflow
 - dashboard/history/jobs operations
 - admin users and LLM configuration
 
 Key client libraries:
 
-- Next.js App Router
+- React Router
 - React Query
 - Lucide icons
 
+Runtime notes:
+
+- Vite boots the app through `src/main.tsx`.
+- `src/router.tsx` owns browser routes and redirect shims.
+- `src/routing/` owns router-compatible replacements for link, navigation, dynamic import, and image helpers.
+- `VITE_API_BASE_URL` is the frontend API base URL.
+- Production security headers and CSP are owned by the static hosting boundary, not frontend service code.
+
 ## 2. Route Map
 
-App routes under `frontend/app`:
+Vite maps routes in `frontend/src/router.tsx`:
 
 - `/` -> redirect-style entry page
 - `/login`
 - `/register`
 - `/dashboard`
-- `/playground`
 - `/crawl`
 - `/crawl/category`
 - `/crawl/pdp`
 - `/crawl/bulk`
 - `/runs`
 - `/runs/[run_id]`
-- `/monitors`
-- `/monitors/new`
-- `/monitors/[id]`
-- `/alerts`
-- `/alerts/new`
-- `/alerts/[id]`
 - `/jobs`
 - `/selectors`
 - `/selectors/manage`
@@ -51,8 +52,6 @@ App routes under `frontend/app`:
 Important route behavior:
 
 - `/crawl` switches between config mode and run workspace based on `run_id`
-- `/crawl?tool=audit` opens the Crawl Studio page-audit mode; completed runs can prefill its URL
-- `/crawl?audit_job_id={id}` displays page-audit results inside Crawl Studio
 - `/crawl/category`, `/crawl/pdp`, and `/crawl/bulk` are route shims into `/crawl?...`
 - `/runs/[run_id]` routes back into the crawl workspace
 
@@ -63,15 +62,17 @@ Important route behavior:
 Primary files:
 
 - `components/layout/app-shell.tsx`
+- `src/router.tsx`
+- `src/main.tsx`
 - `components/layout/app-shell.module.css`
 - `components/layout/auth-shell.module.css`
 - `components/layout/auth-session-query.ts`
 - `components/layout/top-bar-context.tsx`
-- `app/layout.tsx`
 - `components/ui/patterns.tsx` for shared operator-page section shells used across non-crawl app surfaces
 
 Responsibilities:
 
+- Vite app bootstrap and route table
 - session gating
 - shell layout and nav
 - auth-route vs app-route split
@@ -125,7 +126,6 @@ Current UI settings behavior reflects the backend contract:
 - proxy input
 - additional fields
 - additional fields are dispatched as the operator typed them (trimmed/deduped only); the UI no longer rewrites labels like `Features & Benefits` into snake_case before the backend sees them
-- Crawl Studio domain options live in `domain-surface-config.ts`: Content, Commerce, Jobs, Automobiles, Article, and Forum Thread.
 - Surface tabs adapt by domain. Forum Thread renders one tab and hides the mode picker.
 
 ### 3.4 Run workspace
@@ -136,7 +136,6 @@ Primary files:
 - `components/crawl/use-run-workspace.ts`
 - `components/crawl/use-run-polling.ts`
 - `components/crawl/crawl-run-store.ts`
-- `components/crawl/alert-builder-drawer.tsx`
 - `components/crawl/shared.tsx`
 
 Responsibilities:
@@ -147,7 +146,6 @@ Responsibilities:
 - show quality/verdict/progress signals
 - expose pause/resume/kill and export actions
 - keep run workspace UI coordination in the crawl Zustand store, not in server-query state
-- build product alert rules from run records in the dedicated alert drawer
 
 Important live data features:
 
@@ -159,10 +157,8 @@ Important live data features:
 
 Primary files:
 
-- `app/playground/page.tsx`
 - `app/dashboard/page.tsx`
-- `app/runs/page.tsx`
-- `app/monitors/*`
+- `app/runs/page-view.tsx`
 - `app/jobs/page.tsx`
 - `app/selectors/page.tsx`
 - `app/admin/users/page.tsx`
@@ -170,11 +166,8 @@ Primary files:
 
 Responsibilities:
 
-- guided playground flow for URL intake, product discovery, product selection, PDP extraction, pipeline launch, and unified results
-- single-page source/rendered-DOM technical audit workspace with deterministic checks and JSON/Markdown exports
 - dashboard metrics and recent runs
 - run history
-- monitor/alert list, creation, detail, event, history, current snapshot inspection, and webhook delivery log
 - active jobs view
 - selector picker/test/save workflow
 - domain-memory management across domains and surfaces
@@ -190,8 +183,6 @@ Primary files:
 - `components/ui/patterns.tsx` for shared operator-page patterns
 - `components/ui/table.module.css` for compact and commerce table styling
 - `app/product-intelligence/product-intelligence-components.tsx`, `product-intelligence-results.tsx`, and `product-intelligence-candidate-card.tsx` for Product Intelligence local UI pieces, result summaries, source-vs-candidate comparison rows, confidence reason chips, and URL selection actions; crawl result screens can prefill Product Intelligence from both listing and ecommerce detail records
-- `components/monitors/*` for Monitor and Alert Management list/detail/form/event/history/snapshot components
-- `app/ucp-audit/ucp-audit-components.tsx` for UCP audit report UI pieces
 
 Global CSS policy:
 
@@ -216,13 +207,7 @@ The frontend currently uses live backend routes for:
 - selectors: `/api/selectors`, `/api/selectors/suggest`, `/api/selectors/test`, `/api/selectors/preview-html`
 - users: `/api/users`
 - llm: `/api/llm/providers`, `/api/llm/configs`, `/api/llm/test-connection`, `/api/llm/cost-log`
-- ucp audit: `/api/ucp-audit/jobs`, `/api/ucp-audit/jobs/{id}`, `/api/ucp-audit/jobs/{id}/export.json`, `/api/ucp-audit/jobs/{id}/export.md`
-- page audit: `/api/page-audit/jobs`, `/api/page-audit/jobs/{id}`, `/api/page-audit/jobs/{id}/export.json`, `/api/page-audit/jobs/{id}/export.md`
 - jobs: `/api/jobs/active`
-- monitors: `/api/monitors`, `/api/monitors/{id}`, `/api/monitors/{id}/run/now`, `/api/monitors/{id}/events`, `/api/monitors/{id}/history`, `/api/monitors/{id}/snapshot/current`
-- alerts: `/api/alerts`, `/api/alerts/{id}`, `/api/alerts/{id}/test`, `/api/alerts/{id}/history`, `/api/alerts/{id}/deliveries`
-- playground: `/api/playground/sessions`, `/api/playground/sessions/{id}`, `/api/playground/sessions/{id}/discover`, `/api/playground/sessions/{id}/select`, `/api/playground/sessions/{id}/extract`, `/api/playground/sessions/{id}/pipeline`, `/api/playground/sessions/{id}/results`
-- notifications: `/api/notifications`, `/api/notifications/unread-count`, `/api/notifications/{id}/read`, `/api/notifications/monitors/{id}/read`
 
 ## 5. Known Client/Backend Drift
 
@@ -284,9 +269,7 @@ The admin LLM UI is built on:
 - connection tests
 - cost log listing
 
-### UCP Audit
 
-The UCP audit UI is built on:
 
 - persisted audit jobs with status, domain, options, and summary
 - one detail payload containing page results and the final report

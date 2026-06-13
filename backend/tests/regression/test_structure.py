@@ -92,15 +92,11 @@ ALLOWED_PRIVATE_SERVICE_IMPORTS = {
     "js_state/state_normalizer/_variant_rows.py -> ._variant_mapping:_variant_axis_raw_value",
 }
 ALLOWED_PRIVATE_TEST_IMPORTS: set[str] = {
-    "tests/component/test_alert_service.py -> app.services.alert_service:_rules_payload",
     "tests/component/test_acquirer.py -> app.services.acquisition.internal_api_replay:_is_safe_replay_url",
     "tests/component/test_public_api.py -> app.main:_public_auth_session",
     "tests/component/test_public_api.py -> app.api.public.rate_limit:_retry_after",
     "tests/component/test_public_api.py -> app.api.public.rate_limit:_trim",
     "tests/component/test_sitemap_resolver.py -> app.services.crawl.sitemap_resolver:_normalize_sitemap_url",
-    "tests/component/test_playground_service.py -> app.services.playground_service:_classify_input_url",
-    "tests/component/test_playground_service.py -> app.services.playground_service:_merge_seed_detail_products",
-    "tests/unit/test_content_article_forum_surfaces.py -> app.services.pipeline.retry.stage:_apply_detail_rejection_guard",
     "tests/unit/test_detail_image_cleanup.py -> app.services.extract.detail.images.cleanup:_detail_image_candidate_is_usable",
     "tests/unit/test_materials_sanitizer.py -> app.services.extract.detail.text.sanitizer:_clean_materials_pollution",
     "tests/unit/test_normalizers.py -> app.services.extract.variant_choice_traversal:_variant_choice_container_is_overbroad",
@@ -142,7 +138,6 @@ ALLOWED_SERVICE_CONFIG_CONSTANTS = {
     ("normalizers/__init__.py", "_AVAILABILITY_TOKENS"),
     ("platform_policy.py", "_GENERIC_COMMERCE_TOKENS"),
     ("platform_policy.py", "_GENERIC_JOB_TOKENS"),
-    ("playground_service.py", "SITEMAP_DISPLAY_LIMIT"),
 }
 DEFAULT_LOC_BUDGET = 1000
 PLAN_TARGET_LOC_BUDGETS = {
@@ -273,7 +268,6 @@ FILE_LOC_BUDGETS = {
     Path("app/services/pipeline/run_progress.py"): 365,
     Path("app/services/shared/field_coerce.py"): 1100,
     Path("app/services/selectors_runtime.py"): 610,
-    Path("app/services/playground_service.py"): 1040,
     Path("app/services/selector_suggestions.py"): 250,
     # Enrichment service owns job orchestration and delegates deterministic normalization.
     # Data enrichment quality plan added prompt-context validation and optional semantic tags.
@@ -591,7 +585,6 @@ def test_pylint_useful_checks_are_not_blanket_disabled() -> None:
 @pytest.mark.regression
 def test_high_risk_services_do_not_use_broad_exception_catches() -> None:
     high_risk_paths = [
-        SERVICES_ROOT / "alert_service.py",
         SERVICES_ROOT / "acquisition" / "traversal_helpers.py",
         SERVICES_ROOT / "acquisition" / "traversal_recovery.py",
         SERVICES_ROOT / "listing_extractor.py",
@@ -689,14 +682,6 @@ def test_model_bootstrap_registers_domain_memory_tables() -> None:
         "host_protection_memory",
     }
     assert expected.issubset(Base.metadata.tables)
-
-
-@pytest.mark.regression
-def test_model_bootstrap_registers_page_audit_tables() -> None:
-    assert {
-        "page_audit_jobs",
-        "page_audit_results",
-    }.issubset(Base.metadata.tables)
 
 
 @pytest.mark.regression

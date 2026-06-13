@@ -28,8 +28,6 @@ from app.services.config.runtime_settings import (
     BROWSER_CONCURRENCY_EXEMPT_FETCH_MODES,
     crawler_runtime_settings,
 )
-from app.services.config.design_system import DESIGN_SYSTEM_SURFACE
-from app.services.design_system import process_design_system_run
 from app.services.domain_utils import normalize_domain
 from app.services.pipeline.extraction_loop import process_single_url
 from app.services.pipeline.run_complete_callbacks import on_run_complete
@@ -634,9 +632,6 @@ async def _process_run_with_span(
             run_type=run.run_type,
             llm_enabled=run.settings_view.llm_enabled(),
         )
-        if str(run.surface or "").strip().lower() == DESIGN_SYSTEM_SURFACE:
-            await process_design_system_run(session, run)
-            return
         if run.status_value == CrawlStatus.PAUSED:
             return
         if run.status_value == CrawlStatus.PENDING:

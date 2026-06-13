@@ -179,40 +179,16 @@ export function parseRequestedPdpMode(value: string | null): PdpMode | null {
 }
 
 export function deriveSurface(domain: CrawlDomain, module: CrawlTab): CrawlSurface {
-  if (domain === 'auto') {
-    return 'auto';
-  }
-  if (domain === 'forum_thread') {
-    return 'forum_detail';
-  }
   return SURFACE_DISPATCH[`${domain}:${module}`];
 }
 
 export function inferDomainFromSurface(surface: string | null | undefined): CrawlDomain | null {
   const normalizedSurface = String(surface || '').toLowerCase();
-  if (normalizedSurface === 'auto') {
-    return 'auto';
-  }
   if (normalizedSurface.startsWith('job_')) {
     return 'jobs';
   }
   if (normalizedSurface.startsWith('ecommerce_')) {
     return 'commerce';
-  }
-  if (normalizedSurface.startsWith('automobile_')) {
-    return 'automobiles';
-  }
-  if (normalizedSurface.startsWith('article_')) {
-    return 'article';
-  }
-  if (normalizedSurface.startsWith('content_')) {
-    return 'content';
-  }
-  if (normalizedSurface === 'forum_detail') {
-    return 'forum_thread';
-  }
-  if (normalizedSurface === 'design_system') {
-    return 'content';
   }
   return null;
 }

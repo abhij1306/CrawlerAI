@@ -23,7 +23,6 @@ from app.services.config.public_record_policy import (
     PUBLIC_RECORD_URL_BLOCKED_PATH_MARKERS,
     PUBLIC_RECORD_URL_MAX_LENGTH,
 )
-from app.services.config.design_system import DESIGN_SYSTEM_PUBLIC_FIELDS, DESIGN_SYSTEM_SURFACE
 from app.services.extract.variant_normalization.contract import (
     enforce_flat_variant_public_contract,
     flatten_variants_for_public_output,
@@ -54,13 +53,6 @@ def public_record_data_for_surface(
     requested_fields: list[str] | None = None,
 ) -> tuple[dict[str, Any], dict[str, str]]:
     normalized_surface = str(surface or "").strip().lower()
-    if normalized_surface == DESIGN_SYSTEM_SURFACE:
-        allowed = set(DESIGN_SYSTEM_PUBLIC_FIELDS)
-        return {
-            str(key): value
-            for key, value in dict(record or {}).items()
-            if str(key) in allowed and value not in (None, "", [], {})
-        }, {}
     allowed_fields = {
         str(field_name).strip()
         for field_name in list(CANONICAL_SCHEMAS.get(normalized_surface, []))

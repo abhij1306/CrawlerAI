@@ -1,8 +1,4 @@
-# Backend Architecture| `monitors.py` | Product monitor CRUD, run-now dispatch, history/events/snapshot, and exports |
-
-| `alerts.py` | Agentic Delta Engine alert CRUD, test poll, history, and webhook delivery log |
-| `public_alerts.py` | API-key authenticated `/api/v1/alerts` public alert surface |
-| `api_keys.py` | Dashboard API-key create/list/revoke endpoints; returns plaintext only on create |
+# Backend Architecture
 
 > Last updated: 2026-05-07
 >
@@ -10,7 +6,7 @@
 
 ## 1. Scope
 
-Invoro backend is a crawl execution, extraction, review, and export system with:
+CrawlerAI backend is a crawl execution, extraction, review, and export system with:
 
 - authenticated FastAPI APIs
 - Postgres persistence
@@ -46,10 +42,8 @@ Routers registered in `backend/app/main.py`:
 - `/api/selectors`
 - `/api/llm`
 - `/api/data-enrichment`
-- `/api/monitors`
-- `/api/alerts`
-- `/api/v1/alerts`
-- `/api/playground`
+- `/api/product-intelligence`
+- `/api/v1`
 - `/api/health`
 - `/api/metrics`
 
@@ -62,10 +56,8 @@ Important route groups:
 - `api/selectors.py`: selector CRUD, cross-surface listing by domain, suggestion, test, preview HTML
 - `api/llm.py`: provider catalog, config CRUD, connection test, cost log
 - `api/data_enrichment.py`: on-demand ecommerce detail enrichment jobs and enriched product row lookup
-- `api/monitors.py`: monitor CRUD, run-now dispatch, event/history/current-snapshot lookup, and JSON/CSV exports
-- `api/alerts.py`: console-auth Agentic Delta Engine alert CRUD, immediate test poll, delta history, and webhook delivery log
-- `api/public_alerts.py`: API-key authenticated `/api/v1/alerts` envelope endpoints for agent callers
-- `api/playground.py`: guided playground session creation/list/detail plus discover/select/extract/pipeline/results routes over normal crawl, enrichment, PI, monitor, and audit systems
+- `api/product_intelligence.py`: product discovery, candidate crawl jobs, match scoring, and review
+- `api/public/*`: API-key authenticated extraction, domain info, capabilities, and envelopes
 
 Domain-recipe routes live under `api/crawl_domain.py`:
 
@@ -82,7 +74,6 @@ Domain-recipe routes live under `api/crawl_domain.py`:
 
 - `run_type`: `crawl | batch | csv`
 - `url` and/or `urls`
-- `surface`: `auto | ecommerce_listing | ecommerce_detail | job_listing | job_detail | automobile_listing | automobile_detail | content_listing | content_detail | article_listing | article_detail | forum_detail | tabular`
 - `settings`
 - `requested_fields`
 - `additional_fields`
@@ -180,8 +171,6 @@ Primary files:
 - `pipeline/types.py`
 - `pipeline/runtime_helpers.py`
 - `data_enrichment/service.py`
-- `monitor_service.py`, `monitor_scheduler_service.py`, `monitor_async_loop.py`, `monitor_change_detection.py`, `monitor_retention.py`
-- `playground_service.py`
 - `data_enrichment/deterministic.py`
 - `data_enrichment/shopify_catalog.py`
 
@@ -210,11 +199,9 @@ Current live behavior:
 - category discovery runs static sitemap/homepage discovery first, then rendered DOM site-link discovery for empty, thin, blocked, invalid, or explicitly rendered cases; it returns grouped URL evidence and never extracts product fields or parses markdown as a link source
 - `pipeline/extraction_loop.py` stays the per-URL stage orchestrator; record extraction, acquisition-contract memory, retry families, direct-record LLM fallback, browser diagnostics merge, typed result objects, and public failure-state persistence live in dedicated pipeline helper modules
 - Data Enrichment is separate from the crawl pipeline: it reads persisted ecommerce detail `CrawlRecord` rows, writes `EnrichedProduct` rows, and only updates source-record enrichment status metadata.
-- Product Monitoring is a recurring crawl orchestration layer: `MonitorJob` rows store URL sets, schedule interval, priority, tracked fields, retention, and crawl settings; scheduler drivers call `MonitorSchedulerService.check_due_jobs()`; monitor runs are normal `CrawlRun` rows tagged with `settings.monitor_id`; `MonitorChangeDetectionService` diffs completed run records against the latest snapshot; `monitor_alert_service.py` creates in-app notifications for tracked field changes; retention purges monitor snapshots/events only.
-- Agentic Delta Engine alerts extend Product Monitoring instead of creating a second engine: single-URL ecommerce alerts are `MonitorJob` rows with `poll_interval_seconds`, `condition`, `webhook_url`, `last_known_values`, and delivery state; condition evaluation is sandboxed in `monitor_condition.py`; webhook attempts are stored in `MonitorWebhookDelivery`; the MCP stdio wrapper in `app/mcp/alert_server.py` is a thin client over `/api/v1/alerts`.
-- Public API v1 is a lightweight FastAPI surface under `/api/v1` for Railway-style single-process deployment. API keys are dashboard-owned rows in `ApiKey`; public auth and rate limits are keyed by API key, not client IP. `POST /api/v1/extract` creates a normal single-URL crawl and runs one URL inline with HTTP-only settings, disabled LLM/browser/traversal/screenshots/network capture, and a capped timeout; public `surface="auto"` resolves to an internal concrete surface before run creation, while `ecommerce`, `content`, `article`, and `forum_thread` map to existing internal surfaces. Batch extraction remains deferred with structured `WORKER_REQUIRED`. Product alerts are active under `/api/v1/alerts` and reuse monitor-owned crawl runs, snapshots, events, and webhook delivery logs; stale `/api/v1/watches` routes are not registered. `GET /api/v1/domains/{domain}` reads existing `DomainMemory`, `DomainRunProfile`, and recent crawl rows without probing the target. `app/mcp_server/*` is a stateless FastMCP wrapper over `/api/v1` and does not import crawl services.
-- Playground is the guided session layer: `PlaygroundSession` stores input URL, session state, selected URLs, and downstream run/job ids inside `step_data`. Discover and extract create normal crawl runs; enrich, compare, monitor, and audit launch their existing subsystems. Playground does not implement extraction or duplicate extracted data.
-- Scheduler driver split is explicit: `SCHEDULER_DRIVER=dev` starts `AsyncSchedulerLoop` from FastAPI lifespan with no Celery Beat; `SCHEDULER_DRIVER=celery` registers Celery Beat tasks `monitor.check_due_jobs` and `monitor.purge_expired_snapshots`.
+- Product monitoring, product alerts, in-app monitor notifications, and alert MCP wrappers are deleted surfaces. There are no monitor scheduler loops, alert routes, public alert routes, notification models, or monitor-owned run callbacks.
+- Public API v1 is a lightweight FastAPI surface under `/api/v1` for Railway-style single-process deployment. API keys are dashboard-owned rows in `ApiKey`; public auth and rate limits are keyed by API key, not client IP. `POST /api/v1/extract` creates a normal single-URL crawl and runs one URL inline with HTTP-only settings, disabled LLM/browser/traversal/screenshots/network capture, and a capped timeout. Batch extraction remains deferred with structured `WORKER_REQUIRED`. `GET /api/v1/domains/{domain}` reads existing `DomainMemory`, `DomainRunProfile`, and recent crawl rows without probing the target. `app/mcp_server/*` is a stateless FastMCP wrapper over `/api/v1` and does not import crawl services.
+- Alembic is reset for a fresh-start project: `backend/alembic/versions/` intentionally contains one clean baseline migration.
 
 ### 6.3 Acquisition and browser runtime
 
@@ -332,7 +319,6 @@ Primary files:
 - `extract/detail/assembly/tiers.py`
 - `listing_extractor.py`
 - `extract/structured_listing_handler.py`
-- `extract/article_card_parser.py`
 - `extract/network_listing_mapper.py`
 - `extract/field_candidates/*`
 - `structured_sources.py`
@@ -372,7 +358,6 @@ Important implemented features:
 - detail tier execution lives in `extract/detail/assembly/tiers.py`; `detail_extractor.py` prepares state and owns candidate arbitration, while the tier executor owns authoritative -> structured -> JS state -> DOM sequencing, DOM skip decisions, and early/DOM finalization transitions
 - detail extraction now has a DOM variant fallback for `ecommerce_detail` pages when structured data and JS state leave variant axes empty
 - listing candidate quality lives in `extract/listing_candidate_ranking.py`; listing extraction now delegates candidate admission, support-signal checks, utility rejection, dedupe, and set ranking to that owner
-- structured listing JSON-LD handling lives in `extract/structured_listing_handler.py`, article/content card text parsing lives in `extract/article_card_parser.py`, network listing row/backfill mapping lives in `extract/network_listing_mapper.py`, and structured field-candidate responsibilities live in `extract/field_candidates/*`; `listing_extractor.py` and `extraction_runtime.py` keep orchestration
 - extraction config is split by concept: `field_mappings.py` owns schemas/aliases/field-name primitives, `js_state_field_specs.py` owns glom specs, `variant_policy.py` owns variant axes and flat transport fields, `extraction_price_rules.py` owns price selectors/JSON-LD price fields/currency-price thresholds, and `public_record_policy.py` owns public persisted/exported record policy
 - variant record normalization has its own owner in `extract/variant_normalization/`; `detail_extractor.py` extracts candidates and delegates final variant axis/value cleanup
 - DOM variant recovery now recognizes radio/checkbox-based size and color groups, associates labels via `for`/parent label structure, and carries stock-derived availability (`0 Left`, `17 Left`, etc.) into `variants` and `selected_variant`
@@ -511,20 +496,10 @@ Primary models:
 - `ReviewPromotion`
 - `DataEnrichmentJob`
 - `EnrichedProduct`
-- `UCPAuditJob`
-- `UCPAuditPageResult`
-- `UCPAuditReport`
-- `MonitorJob`
-- `MonitorEvent`
-- `MonitorSnapshot`
-- `MonitorSnapshotRecord`
-- `MonitorURLState`
-- `MonitorWebhookDelivery`
 - `ApiKey`
 - `LLMConfig`
 - `LLMCostLog`
 - `DomainMemory`
-- `PlaygroundSession`
 
 Notable current schema direction:
 
@@ -532,8 +507,6 @@ Notable current schema direction:
 - max-records trigger support
 - URL identity keys on records
 - enrichment status metadata on crawl records, with derived enrichment data stored separately in `enriched_products`
-- AI Discoverability audit report storage separated from crawl records, with JSON/Markdown artifacts in `ucp_audit_reports`; report JSON now carries sampled catalog crawl metadata, D-AID1 gate caps, structured markup signals, product sample summaries, robots/sitemap discovery signals, and evidence-backed repair roadmap items
-- playground sessions store step state and references only; extracted data stays in `crawl_records`, derived enrichment data stays in `enriched_products`, and recurring state stays in monitor tables
 - domain-memory storage
 - split crawl-data reset versus domain-memory reset, so destructive cleanup no longer wipes learned selectors/profiles/cookies by default
 

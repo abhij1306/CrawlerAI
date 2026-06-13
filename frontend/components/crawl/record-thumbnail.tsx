@@ -1,6 +1,6 @@
 'use client';
 
-import Image from 'next/image';
+import Image from '@/routing/image';
 import { useState } from 'react';
 const BROKEN_THUMBNAIL_STORAGE_KEY = 'crawlerai-broken-thumb-urls-v1';
 const BROKEN_THUMBNAIL_HOSTS_KEY = 'crawlerai-broken-thumb-hosts-v1';
@@ -50,10 +50,10 @@ export function RecordThumbnail({ src }: Readonly<{ src: string }>) {
     BROKEN_THUMBNAIL_URLS.has(src) || (host !== '' && BROKEN_THUMBNAIL_HOSTS.has(host));
   const [broken, setBroken] = useState(initiallyBroken);
   if (broken) {
-    return <span className="ct-muted">--</span>;
+    return <span className="text-muted text-xs">--</span>;
   }
   return (
-    <div className="ct-image-wrap relative">
+    <div className="relative w-[46px] h-[46px] overflow-hidden rounded-sm border border-border bg-gradient-to-br from-background-elevated/60 to-background-alt flex items-center justify-center shadow-[inset_0_0_0_1px_rgba(255,255,255,0.05)] transition-all duration-180 hover:-translate-y-px group-hover:border-accent/38">
       <Image
         src={src}
         alt=""
@@ -61,6 +61,7 @@ export function RecordThumbnail({ src }: Readonly<{ src: string }>) {
         sizes="64px"
         unoptimized
         referrerPolicy="no-referrer"
+        className="w-full h-full object-contain"
         onError={() => {
           BROKEN_THUMBNAIL_URLS.add(src);
           if (host) BROKEN_THUMBNAIL_HOSTS.add(host);

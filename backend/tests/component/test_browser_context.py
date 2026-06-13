@@ -20,7 +20,7 @@ from app.services.acquisition.browser_readiness import analyze_html
 from app.services.acquisition.browser_proxy_config import build_browser_proxy_config
 from app.services.acquisition import browser_runtime as acquisition_browser_runtime
 from app.services.acquisition.runtime import (
-    has_extractable_dom_content_detail_signals,
+    has_extractable_dom_meaningful_detail_signals,
     has_extractable_listing_signals,
 )
 from app.services.config.runtime_settings import crawler_runtime_settings
@@ -77,7 +77,7 @@ def test_chromium_browser_binary_is_labeled_chromium() -> None:
 
 
 @pytest.mark.component
-def test_content_detail_signals_accept_meaningful_body_without_paragraph() -> None:
+def test_meaningful_detail_signals_accept_body_without_paragraph() -> None:
     analysis = analyze_html(
         """
         <html><body><main>
@@ -87,11 +87,11 @@ def test_content_detail_signals_accept_meaningful_body_without_paragraph() -> No
         """
     )
 
-    assert has_extractable_dom_content_detail_signals(analysis) is True
+    assert has_extractable_dom_meaningful_detail_signals(analysis) is True
 
 
 @pytest.mark.component
-def test_content_detail_signals_reject_empty_and_heading_only_body() -> None:
+def test_meaningful_detail_signals_reject_empty_and_heading_only_body() -> None:
     empty_analysis = analyze_html(
         "<html><body><main><h1>Thread</h1><div></div></main></body></html>"
     )
@@ -99,12 +99,12 @@ def test_content_detail_signals_reject_empty_and_heading_only_body() -> None:
         "<html><body><main><h1>Thread</h1><div>Thread</div></main></body></html>"
     )
 
-    assert has_extractable_dom_content_detail_signals(empty_analysis) is False
-    assert has_extractable_dom_content_detail_signals(heading_only_analysis) is False
+    assert has_extractable_dom_meaningful_detail_signals(empty_analysis) is False
+    assert has_extractable_dom_meaningful_detail_signals(heading_only_analysis) is False
 
 
 @pytest.mark.component
-def test_content_detail_signals_accept_common_content_descendant() -> None:
+def test_meaningful_detail_signals_accept_common_descendant() -> None:
     analysis = analyze_html(
         """
         <html><body><main>
@@ -114,7 +114,7 @@ def test_content_detail_signals_accept_common_content_descendant() -> None:
         """
     )
 
-    assert has_extractable_dom_content_detail_signals(analysis) is True
+    assert has_extractable_dom_meaningful_detail_signals(analysis) is True
 
 
 @pytest.mark.component

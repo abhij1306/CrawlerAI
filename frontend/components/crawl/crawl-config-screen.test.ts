@@ -88,20 +88,6 @@ describe('buildDispatch', () => {
     expect(dispatch.url).toBe('https://example.com/collections/chairs');
   });
 
-  it('can submit auto surface for backend resolution', () => {
-    const dispatch = buildDispatch(
-      baseConfig({
-        domain: 'auto',
-        target_url: 'https://codeforces.com/',
-      }),
-      [],
-      { runProfile: baseProfile() },
-    );
-
-    expect(dispatch.surface).toBe('auto');
-    expect(dispatch.settings.crawl_module).toBe('category');
-  });
-
   it('keeps commerce listing when the URL is job-like', () => {
     const dispatch = buildDispatch(
       baseConfig({

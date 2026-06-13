@@ -2,10 +2,8 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Any
-
 from sqlalchemy import Boolean, DateTime, Integer, String
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
 
@@ -28,6 +26,3 @@ class User(Base):
         onupdate=lambda: datetime.now(UTC),
     )
 
-    playground_sessions: Mapped[list[Any]] = relationship(
-        "PlaygroundSession", back_populates="user", cascade="all, delete-orphan"
-    )

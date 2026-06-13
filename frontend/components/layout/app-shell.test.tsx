@@ -6,7 +6,7 @@ import { AppShell } from './app-shell';
 
 const routerReplaceMock = vi.fn();
 
-vi.mock('next/navigation', () => ({
+vi.mock('@/routing/navigation', () => ({
   usePathname: () => '/dashboard',
   useRouter: () => ({
     replace: routerReplaceMock,

@@ -27,7 +27,7 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    app_name: str = "Invoro"
+    app_name: str = "CrawlerAI"
     app_env: str = Field(
         default="development",
         validation_alias=AliasChoices("APP_ENV", "app_env"),
@@ -48,10 +48,6 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
     redis_state_enabled: bool = False
     celery_dispatch_enabled: bool = True
-    scheduler_driver: Literal["dev", "celery"] = Field(
-        default="dev",
-        validation_alias=AliasChoices("SCHEDULER_DRIVER", "scheduler_driver"),
-    )
     artifacts_dir: Path = Field(default=BASE_DIR / "artifacts")
     acquisition_cache_dir: Path = Field(
         default=BASE_DIR / "artifacts" / "acquisition_cache"
@@ -86,7 +82,7 @@ class Settings(BaseSettings):
         default="",
         validation_alias=AliasChoices("LOGFIRE_TOKEN", "logfire_token"),
     )
-    logfire_service_name: str = "invoro-backend"
+    logfire_service_name: str = "crawlerai-backend"
     logfire_environment: str = ""
     logfire_capture_headers: bool = False
     logfire_send_to_logfire: bool | Literal["if-token-present"] = Field(
@@ -134,11 +130,6 @@ class Settings(BaseSettings):
     @classmethod
     def _resolve_repo_relative_paths(cls, value: str | Path) -> Path:
         return _resolve_project_path(value, anchor=PROJECT_ROOT)
-
-    @field_validator("scheduler_driver", mode="before")
-    @classmethod
-    def _normalize_scheduler_driver(cls, value: object) -> str:
-        return str(value or "dev").strip().lower()
 
 
 def _load_settings() -> Settings:
