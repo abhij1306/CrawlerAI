@@ -8,14 +8,23 @@ from bs4 import BeautifulSoup, NavigableString, Tag
 from cssselect import GenericTranslator, SelectorError
 from lxml import etree  # skipcq: BAN-B410 - lxml is used in HTML parsing mode for sanitized selector validation, not arbitrary XML.
 from lxml import html as lxml_html  # skipcq: BAN-B410 - lxml.html.fromstring parses sanitized HTML snippets, not arbitrary XML.
+from soupsieve import SelectorSyntaxError
 
+from app.services.config.extraction_rules import DETAIL_TEXT_HIDDEN_STYLE_TOKENS
 from app.services.config.selectors import (
+    NON_CONTENT_TAGS,
     XPATH_ALLOWED_FUNCTIONS,
     XPATH_DISALLOWED_PATTERNS,
+    XPATH_NON_CONTENT_ANCESTOR_TAGS,
 )
 from app.services.config.runtime_settings import crawler_runtime_settings
 
 logger = logging.getLogger(__name__)
+_hidden_style_tokens = tuple(
+    str(token or "").strip().lower()
+    for token in tuple(DETAIL_TEXT_HIDDEN_STYLE_TOKENS or ())
+    if str(token or "").strip()
+)
 
 
 def extract_selector_value(
@@ -45,7 +54,11 @@ def extract_selector_value(
     if css_selector:
         soup = BeautifulSoup(html_text, "html.parser")
         normalized = _normalize_css_selector(css_selector)
-        matches = soup.select(normalized) if normalized else []
+        try:
+            matches = soup.select(normalized) if normalized else []
+        except SelectorSyntaxError:
+            logger.warning("Skipping invalid css selector: %s", css_selector)
+            matches = []
         if matches:
             values = [value for value in (_node_value(node) for node in matches[:12]) if value]
             filtered_values = _apply_regex_filter(regex, values)
@@ -206,9 +219,61 @@ def _coerce_xpath_match(results: list[object]) -> str | None:
     return values[0] if values else None
 
 
+def _node_tag_name(node: object) -> str:
+    tag = getattr(node, "tag", None)
+    if tag is None:
+        tag = getattr(node, "name", None)
+    return str(tag or "").strip().lower()
+
+
+def _node_parent(node: object) -> object | None:
+    if hasattr(node, "getparent"):
+        return node.getparent()
+    return getattr(node, "parent", None)
+
+
+def _node_attrs(node: object) -> dict[str, object]:
+    attrs = getattr(node, "attrib", None)
+    if isinstance(attrs, dict):
+        return attrs
+    attrs = getattr(node, "attrs", None)
+    return attrs if isinstance(attrs, dict) else {}
+
+
+def _node_hidden_by_attrs(node: object) -> bool:
+    attrs = _node_attrs(node)
+    if not attrs:
+        return False
+    if "hidden" in attrs:
+        return True
+    if str(attrs.get("aria-hidden") or "").strip().lower() == "true":
+        return True
+    style = str(attrs.get("style") or "").strip().lower()
+    return bool(style) and any(token in style for token in _hidden_style_tokens)
+
+
+def _is_non_visible_node(node: object) -> bool:
+    current: object | None = node
+    depth = 0
+    while current is not None and depth < 16:
+        tag_name = _node_tag_name(current)
+        if depth == 0:
+            if tag_name in NON_CONTENT_TAGS:
+                return True
+        elif tag_name in XPATH_NON_CONTENT_ANCESTOR_TAGS:
+            return True
+        if _node_hidden_by_attrs(current):
+            return True
+        current = _node_parent(current)
+        depth += 1
+    return False
+
+
 def _coerce_xpath_matches(results: list[object]) -> list[str]:
     values: list[str] = []
     for result in results:
+        if _is_non_visible_node(result):
+            continue
         if isinstance(result, str):
             text = result.strip()
         elif hasattr(result, "text_content"):
@@ -235,13 +300,7 @@ def _apply_regex_filter(pattern: str | None, values: list[str]) -> list[str]:
             },
         )
         return []
-    raw_timeout = crawler_runtime_settings.selector_regex_timeout_seconds
-    try:
-        timeout = float(raw_timeout)
-    except (TypeError, ValueError):
-        raise ValueError(
-            "Invalid selector_regex_timeout_seconds configuration"
-        ) from None
+    timeout = resolve_selector_regex_timeout()
     filtered: list[str] = []
     for value in values:
         try:
@@ -279,7 +338,22 @@ def _apply_regex_filter(pattern: str | None, values: list[str]) -> list[str]:
     return filtered
 
 
+def resolve_selector_regex_timeout() -> float | None:
+    raw_timeout = crawler_runtime_settings.selector_regex_timeout_seconds
+    try:
+        timeout = float(raw_timeout)
+    except (TypeError, ValueError):
+        logger.warning(
+            "Invalid selector_regex_timeout_seconds=%r; disabling selector regex timeout",
+            raw_timeout,
+        )
+        return None
+    return timeout if timeout > 0 else None
+
+
 def _node_value(node: Tag) -> str | None:
+    if str(node.name or "").strip().lower() in NON_CONTENT_TAGS:
+        return None
     if node.name == "meta":
         return str(node.get("content") or "").strip() or None
     if node.name == "img":

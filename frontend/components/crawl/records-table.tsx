@@ -82,13 +82,32 @@ function stickyBodyStyle(width: number, left: number): CSSProperties {
 function RecordCell({ col, record }: Readonly<{ col: string; record: CrawlRecord }>) {
   const colKey = col.toLowerCase();
   const raw = formatCellDisplay(readRecordValue(record, col));
-  if (!raw || raw === '--') return <span className="text-muted/40" style={{ fontSize: 'var(--table-font-size)' }}>--</span>;
+  if (!raw || raw === '--')
+    return (
+      <span className="text-muted/40" style={{ fontSize: 'var(--table-font-size)' }}>
+        --
+      </span>
+    );
 
   if (TITLE_KEYS.has(colKey)) {
-    return <span className="block max-w-[320px] truncate font-medium" style={{ fontSize: 'var(--table-font-size)' }}>{raw}</span>;
+    return (
+      <span
+        className="block max-w-[320px] truncate font-medium"
+        style={{ fontSize: 'var(--table-font-size)' }}
+      >
+        {raw}
+      </span>
+    );
   }
   if (PRICE_KEYS.has(colKey)) {
-    return <span className="text-foreground font-bold tabular-nums" style={{ fontSize: 'var(--table-font-size)' }}>{raw}</span>;
+    return (
+      <span
+        className="text-foreground font-bold tabular-nums"
+        style={{ fontSize: 'var(--table-font-size)' }}
+      >
+        {raw}
+      </span>
+    );
   }
   if (URL_KEYS.has(colKey)) {
     const isSafe = raw.startsWith('http://') || raw.startsWith('https://');
@@ -107,7 +126,14 @@ function RecordCell({ col, record }: Readonly<{ col: string; record: CrawlRecord
       );
     }
   }
-  return <span className="text-secondary block max-w-[260px] truncate" style={{ fontSize: 'var(--table-font-size)' }}>{raw}</span>;
+  return (
+    <span
+      className="text-secondary block max-w-[260px] truncate"
+      style={{ fontSize: 'var(--table-font-size)' }}
+    >
+      {raw}
+    </span>
+  );
 }
 
 export const RecordsTable = memo(function RecordsTable({
@@ -227,7 +253,7 @@ export const RecordsTable = memo(function RecordsTable({
           })}
         </div>
         <table
-          className="w-full border-collapse border-spacing-0 bg-panel table-fixed caption-bottom"
+          className="bg-panel w-full table-fixed caption-bottom border-collapse border-spacing-0"
           style={{ width: '100%', minWidth: totalTableWidth, fontSize: 'var(--table-font-size)' }}
         >
           <colgroup>
@@ -262,7 +288,7 @@ export const RecordsTable = memo(function RecordsTable({
                   key={record.id}
                   className={cn(
                     'group hover:bg-accent-subtle/45 hover:shadow-[inset_3px_0_0_var(--accent)]',
-                    isSelected && 'bg-accent/[0.04]'
+                    isSelected && 'bg-accent/[0.04]',
                   )}
                 >
                   <TableCell

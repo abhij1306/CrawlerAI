@@ -35,7 +35,7 @@ type RowMessage = {
 type SelectorsPageState = {
   url: string;
   loadedUrl: string;
-  previewUrl: string;
+  previewHtml: string;
   resolvedSurface: string;
   iframePromoted: boolean;
   expectedColumns: string;
@@ -56,7 +56,7 @@ type SelectorsPageAction =
   | {
       type: 'suggestionsLoaded';
       loadedUrl: string;
-      previewUrl: string;
+      previewHtml: string;
       resolvedSurface: string;
       iframePromoted: boolean;
       rows: SelectorRow[];
@@ -82,7 +82,7 @@ type SelectorsPageAction =
 const INITIAL_SELECTORS_PAGE_STATE: SelectorsPageState = {
   url: '',
   loadedUrl: '',
-  previewUrl: '',
+  previewHtml: '',
   resolvedSurface: 'generic',
   iframePromoted: false,
   expectedColumns: '',
@@ -112,7 +112,7 @@ function selectorsPageReducer(
       return {
         ...state,
         loadedUrl: action.loadedUrl,
-        previewUrl: action.previewUrl,
+        previewHtml: action.previewHtml,
         resolvedSurface: action.resolvedSurface,
         iframePromoted: action.iframePromoted,
         rows: action.rows,
@@ -181,7 +181,7 @@ export default function SelectorsPage() {
   const {
     url,
     loadedUrl,
-    previewUrl,
+    previewHtml,
     resolvedSurface,
     iframePromoted,
     expectedColumns,
@@ -215,11 +215,19 @@ export default function SelectorsPage() {
       });
       const previewTargetUrl = response.preview_url || targetUrl;
       const nextSurface = response.surface || inferSelectorSurface(parsedColumns, targetUrl);
-      const selectorDomain =
-        getNormalizedDomain(previewTargetUrl) || getNormalizedDomain(targetUrl);
-      const savedRecords = selectorDomain
-        ? await api.listSelectors({ domain: selectorDomain, surface: nextSurface })
-        : [];
+      const [savedRecords, previewHtml] = await Promise.all([
+        (async () => {
+          const selectorDomain =
+            getNormalizedDomain(previewTargetUrl) || getNormalizedDomain(targetUrl);
+          return selectorDomain
+            ? await api.listSelectors({ domain: selectorDomain, surface: nextSurface })
+            : [];
+        })(),
+        api.getPreviewHtml(previewTargetUrl).catch((err) => {
+          console.error('Failed to load preview HTML:', err);
+          return '';
+        }),
+      ]);
       const savedRows = selectRelevantSelectorRecords(savedRecords, nextSurface).map(
         buildRowFromSelectorRecord,
       );
@@ -230,7 +238,7 @@ export default function SelectorsPage() {
       dispatch({
         type: 'suggestionsLoaded',
         loadedUrl: previewTargetUrl,
-        previewUrl: api.selectorPreviewHtml(previewTargetUrl),
+        previewHtml,
         resolvedSurface: nextSurface,
         iframePromoted: Boolean(response.iframe_promoted),
         rows: mergeSelectorRows(savedRows, suggestedRows),
@@ -501,10 +509,10 @@ export default function SelectorsPage() {
           }
         >
           <div className="bg-panel shadow-card overflow-hidden rounded-none p-0 backdrop-blur-md">
-            {previewUrl ? (
+            {previewHtml ? (
               <iframe
-                key={previewUrl}
-                src={previewUrl}
+                key={loadedUrl}
+                srcDoc={previewHtml}
                 title="Selector page preview"
                 className="bg-panel h-[760px] w-full"
                 loading="lazy"

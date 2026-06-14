@@ -665,6 +665,60 @@ async def test_record_acquisition_contract_outcome_saves_internal_api_endpoint(
 
 @pytest.mark.asyncio
 @pytest.mark.component
+async def test_record_acquisition_contract_outcome_tracks_requested_custom_fields(
+    db_session: AsyncSession,
+) -> None:
+    await record_acquisition_contract_outcome(
+        db_session,
+        domain="sigmaaldrich.com",
+        surface="ecommerce_detail",
+        source_run_id=93,
+        method="browser",
+        browser_engine="patchright",
+        browser_diagnostics={"extraction_source": "rendered_dom"},
+        requested_fields=[
+            "cas_number",
+            "molecular_formula",
+            "molecular_weight",
+            "price",
+            "title",
+            "image_url",
+        ],
+        records=[
+            {
+                "title": "Sodium Chloride",
+                "cas_number": "7647-14-5",
+                "molecular_formula": "NaCl",
+                "molecular_weight": "58.44",
+                "price": "12.00",
+                "image_url": "https://example.com/nacl.jpg",
+            }
+        ],
+        persisted_count=1,
+        verdict="success",
+        blocked=False,
+        page_url="https://www.sigmaaldrich.com/US/en/product/sial/s9888",
+    )
+
+    row = await load_domain_run_profile(
+        db_session,
+        domain="sigmaaldrich.com",
+        surface="ecommerce_detail",
+    )
+
+    assert row is not None
+    contract = row.profile["acquisition_contract"]
+    assert contract["prefer_browser"] is True
+    assert contract["required_rendering"] is True
+    coverage = contract["last_quality_success"]["field_coverage"]
+    assert coverage["missing"] == []
+    assert "cas_number" in coverage["found"]
+    assert "molecular_formula" in coverage["found"]
+    assert "molecular_weight" in coverage["found"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
 async def test_record_acquisition_contract_outcome_counts_empty_detail_failure(
     db_session: AsyncSession,
 ) -> None:

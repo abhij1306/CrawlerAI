@@ -231,7 +231,7 @@ def validate_record_for_surface(
         for field_name in surface_fields(
             surface,
             requested_fields,
-            allow_noncanonical_requested=False,
+            allow_noncanonical_requested=True,
         )
     }
     validation_errors: list[str] = []

@@ -153,7 +153,9 @@ Browser acquisition must not fabricate fields. It must not run hidden page scrip
 
 Challenge recovery is part of acquisition, not extraction. Direct browser navigation and origin warmup must both run the bounded challenge wait/activity/retry loop. A provider-marked low-content shell may not be accepted as final just because the blocked-page classifier is not yet `blocked=True`; it must be re-polled until it becomes usable content or the configured challenge budget is exhausted.
 
-Field-aware browser retry is allowed when policy and diagnostics justify it. A non-browser fetch that produces a low-quality ecommerce detail record missing requested/default high-value fields may retry browser. Default ecommerce detail retry targets stay limited to `price`, `title`, and `image_url`; user-requested fields are added explicitly. A Patchright result with usable content may escalate once to real Chrome only when high-value fields remain missing and diagnostics show weak rendered evidence. Every retry must be logged.
+Browser retry is allowed only when policy and diagnostics justify it, and only when enough URL-local budget remains to complete a meaningful browser attempt. If an HTTP result indicates a block/shell but the remaining budget is below `browser_retry_min_remaining_seconds`, acquisition returns the observed HTTP result with `browser_escalation_skipped=insufficient_budget` instead of starting a doomed browser navigation/settle stage.
+
+Empty extraction may retry browser for retryable HTTP statuses, blocked/shell evidence, listing-integrity recovery, and non-browser HTML with no static detail evidence. Detail runs with explicit requested fields may choose browser up front because those fields often require rendered DOM or expansion. It must not retry browser for static detail "not found" pages (for example `Page Not Found`, `Product not found`, or `Nothing to see here`), static homepage/category shells that do not match the requested detail slug, or low-quality detail records that already exist but are missing default fields. Missing `price`, `title`, `image_url`, or requested fields after a completed acquisition should be handled by deterministic extraction diagnostics and the explicit LLM path when enabled, not by hidden HTTP-to-browser escalation. Every retry must be logged.
 
 Diagnostics controls are user controls. If `diagnostics_profile.capture_screenshot` is `False`, browser acquisition must not capture any screenshots, regardless of outcome.
 
@@ -192,6 +194,8 @@ is a crawler bug, not stricter security detection.
 - A usable detail page retries from Chromium to real Chrome solely because Akamai/DataDome/Cloudflare provider markers are present
 - Host protection memory records a hard block from a usable browser page with provider markers but no title/strong blocked evidence
 - A retry happens that is not logged and visible in diagnostics
+- Browser escalation starts when remaining acquisition budget is below `browser_retry_min_remaining_seconds`, producing predictable `Browser navigation/settle stage exceeded timeout_seconds=...` failures
+- A static product-not-found or homepage-shell detail page retries browser only to rediscover the same non-product page
 - Direct navigation challenge recovery runs only during origin warmup, or provider-marked low-content shells skip the bounded recovery loop
 - Browser escalation triggers for a URL that returned 200 with complete requested/default high-value fields
 - Browser-side code writes logical extraction fields directly into the record instead of returning observation artifacts

@@ -1009,12 +1009,15 @@ def test_xpath_regex_invalid_timeout_falls_back_without_timeout(
     )
     html = '<span class="rating">star-rating Three</span>'
 
-    with pytest.raises(ValueError, match="selector_regex_timeout_seconds"):
-        extract_selector_value(
-            html,
-            xpath="//span[@class='rating']/text()",
-            regex=r"star-rating\s+(\w+)",
-        )
+    value, count, selector_used = extract_selector_value(
+        html,
+        xpath="//span[@class='rating']/text()",
+        regex=r"star-rating\s+(\w+)",
+    )
+
+    assert value == "Three"
+    assert count == 1
+    assert selector_used == "//span[@class='rating']/text()"
 
 
 @pytest.mark.asyncio

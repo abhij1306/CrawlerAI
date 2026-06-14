@@ -9,6 +9,7 @@ from urllib.parse import quote, unquote, urlparse, urlunparse
 
 from app.services.acquisition.host_protection_memory import HostProtectionPolicy
 from app.services.acquisition.runtime import classify_block_from_headers
+from app.services.config.pipeline_reasons import REQUESTED_FIELDS_BROWSER_REASON
 from app.services.config.runtime_settings import crawler_runtime_settings
 
 logger = logging.getLogger(__name__)
@@ -141,6 +142,7 @@ def browser_first_decision(
     return (
         prefer_browser
         or host_preference_enabled
+        or requested_detail_fields_require_browser(context)
         or hard_browser_requirement(context=context)
     )
 
@@ -169,6 +171,8 @@ def browser_first_reason(
         return "prefer_browser"
     if host_preference_enabled:
         return "host-preference"
+    if requested_detail_fields_require_browser(context):
+        return REQUESTED_FIELDS_BROWSER_REASON
     if hard_browser_requirement(context=context):
         return "hard_requirement"
     return "auto"
@@ -190,6 +194,15 @@ def resolve_browser_reason(
     if host_preference_enabled:
         return "host-preference"
     return "http-escalation"
+
+
+def requested_detail_fields_require_browser(context: Any) -> bool:
+    surface = str(getattr(context, "surface", "") or "").strip().lower()
+    if "detail" not in surface:
+        return False
+    if str(getattr(context, "fetch_mode", "") or "").strip().lower() != "auto":
+        return False
+    return bool(list(getattr(context, "requested_fields", []) or []))
 
 
 def host_policy_snapshot(policy: HostProtectionPolicy) -> dict[str, object]:

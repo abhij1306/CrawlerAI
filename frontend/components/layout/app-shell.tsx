@@ -50,9 +50,7 @@ const navGroups = [
   },
   {
     label: 'Operations',
-    items: [
-      { href: '/run-trace', label: 'Run Trace', icon: Network },
-    ],
+    items: [{ href: '/run-trace', label: 'Run Trace', icon: Network }],
   },
   {
     label: 'Intelligence',

@@ -179,6 +179,10 @@ def _anchor_has_inline_variant_option_signal(node: Any, *, container: Any) -> bo
     ) or (
         clean_text(node.get_text(" ", strip=True)) if hasattr(node, "get_text") else None
     )
+    if not option_label and hasattr(node, "select_one"):
+        image = node.select_one("img[alt]")
+        if image is not None and hasattr(image, "get"):
+            option_label = text_or_none(image.get("alt"))
     if not option_label:
         return False
     node_probe_parts: list[str] = []

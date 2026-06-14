@@ -80,6 +80,20 @@ def test_ecommerce_repair_targets_union_user_fields_with_limited_defaults() -> N
 
 
 @pytest.mark.unit
+def test_ecommerce_repair_targets_include_requested_custom_fields() -> None:
+    assert repair_target_fields_for_surface(
+        "ecommerce_detail",
+        ["CAS Number", "Molecular Formula"],
+    ) == [
+        "cas_number",
+        "molecular_formula",
+        "price",
+        "title",
+        "image_url",
+    ]
+
+
+@pytest.mark.unit
 def test_ecommerce_browser_retry_targets_do_not_force_deep_variant_fields() -> None:
     assert browser_retry_target_fields_for_surface("ecommerce_detail", []) == [
         "price",

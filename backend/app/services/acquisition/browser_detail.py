@@ -209,6 +209,7 @@ async def expand_all_interactive_elements_impl(
     max_elapsed_ms: int | None = None,
 ) -> dict[str, object]:
     started_at = time.perf_counter()
+    requested_keywords = requested_field_tokens(requested_fields)
     click_timeout_ms = int(crawler_runtime_settings.detail_expand_click_timeout_ms)
     diagnostics: dict[str, object] = {
         "status": DETAIL_EXPANSION_STATUS_ATTEMPTED,
@@ -220,7 +221,6 @@ async def expand_all_interactive_elements_impl(
         "max_elapsed_ms": max_elapsed_ms,
     }
     keywords = detail_expansion_keywords(surface, requested_fields=requested_fields)
-    requested_keywords = requested_field_tokens(requested_fields)
     expanded_elements: list[str] = []
     interaction_failures: list[str] = []
     max_interactions = max(
@@ -591,12 +591,7 @@ def accessibility_expand_candidates_impl(
     aom_expand_roles: set[str],
     detail_expansion_keywords,
 ) -> list[tuple[str, str]]:
-    requested_keywords = requested_field_tokens(requested_fields)
-    keywords = (
-        requested_keywords
-        if requested_keywords
-        else detail_expansion_keywords(surface, requested_fields=requested_fields)
-    )
+    keywords = detail_expansion_keywords(surface, requested_fields=requested_fields)
     if not snapshot:
         return []
     results: list[tuple[str, str]] = []
@@ -654,6 +649,7 @@ def detail_expansion_keywords(
     *,
     requested_fields: list[str] | None = None,
 ) -> tuple[str, ...]:
+    dynamic_keywords = requested_field_tokens(requested_fields)
     lowered = str(surface or "").strip().lower()
     if "ecommerce" in lowered:
         base_keywords = _DETAIL_EXPAND_KEYWORDS.get("ecommerce", ())
@@ -664,7 +660,6 @@ def detail_expansion_keywords(
     else:
         base_keywords = ()
         extended_keywords = ()
-    dynamic_keywords = requested_field_tokens(requested_fields)
     keywords = [*base_keywords]
     if extended_keywords:
         keywords.extend(extended_keywords)

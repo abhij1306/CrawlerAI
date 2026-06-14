@@ -392,7 +392,7 @@ def _record_has_supporting_signals(
     job_surface: bool,
     surface: str,
 ) -> bool:
-    normalized_surface = str(surface or "").strip().lower()
+    del surface
     if detail_like and job_surface:
         return True
     url = str(record.get("url") or "").strip()

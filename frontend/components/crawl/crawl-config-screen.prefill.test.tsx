@@ -149,7 +149,6 @@ describe('CrawlConfigScreen bulk prefill', () => {
     ).not.toBeInTheDocument();
   });
 
-
   it('does not apply proxy defaults from the saved domain run profile', async () => {
     getDomainRunProfileMock.mockResolvedValue({
       domain: 'example.com',

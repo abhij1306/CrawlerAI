@@ -6,6 +6,7 @@ from app.core.logfire_integration import logfire_span, set_logfire_attributes
 from app.models.crawl_run import CrawlRun
 from app.services.acquisition.acquirer import AcquisitionResult
 from app.services.acquisition.acquirer import acquire as _acquire
+from app.services.acquisition.browser_fetch_support import browser_page_load_elapsed_ms
 from app.services.acquisition.browser_runtime import real_chrome_browser_available
 from app.services.acquisition.host_protection_memory import note_host_hard_block
 from app.services.acquisition.runtime import is_non_retryable_http_status
@@ -55,15 +56,14 @@ from .extraction_retry_decision import (
     empty_extraction_browser_retry_decision as _empty_extraction_browser_retry_decision,
 )
 from .retry import (
-    apply_detail_rejection_guard as _apply_detail_rejection_guard,
-    build_acquisition_request as _build_acquisition_request,
-    log_extraction_outcome as _log_extraction_outcome,
-    remaining_url_budget_seconds as _remaining_url_budget_seconds,
-    retry_detail_challenge_shell_with_real_chrome as _retry_detail_challenge_shell_with_real_chrome,
-    retry_empty_extraction_with_browser as _retry_empty_extraction_with_browser,
-    retry_listing_integrity_with_stronger_tier as _retry_listing_integrity_with_stronger_tier,
-    retry_low_quality_extraction_with_browser as _retry_low_quality_extraction_with_browser,
-    retry_patchright_detail_rejection_with_real_chrome as _retry_patchright_detail_rejection_with_real_chrome,
+    apply_detail_rejection_guard,
+    build_acquisition_request,
+    log_extraction_outcome,
+    retry_detail_challenge_shell_with_real_chrome,
+    retry_empty_extraction_with_browser,
+    retry_listing_integrity_with_stronger_tier,
+    retry_low_quality_extraction_with_browser,
+    retry_patchright_detail_rejection_with_real_chrome,
 )
 from .persistence import (
     persist_acquisition_artifacts,
@@ -106,7 +106,6 @@ __all__ = [
     "STAGE_NORMALIZE",
     "STAGE_PERSIST",
     "URLProcessingContext",
-    "_remaining_url_budget_seconds",
     "best_adapter_result",
     "detail_record_rejection_reason",
     "detect_platform_family",
@@ -300,7 +299,7 @@ async def _run_acquisition_stage(
         surface=context.surface,
         prefetched=bool(prefetched_acquisition),
     ) as span:
-        acquisition_request = await _build_acquisition_request(context)
+        acquisition_request = await build_acquisition_request(context)
         acquisition_result = prefetched_acquisition or await acquire(
             acquisition_request
         )
@@ -329,7 +328,7 @@ async def _run_acquisition_stage(
                 getattr(acquisition_result, "browser_diagnostics", {})
             )
             timings = mapping_or_empty(diagnostics.get("phase_timings_ms", {}))
-            load_ms = timings.get("navigation", 0) or timings.get("total", 0)
+            load_ms = browser_page_load_elapsed_ms(timings) or timings.get("total", 0)
             await _log_pipeline_event(
                 context,
                 "info",
@@ -518,19 +517,19 @@ async def _run_extraction_stage_observed(
         records,
         requested_fields=list(context.requested_fields),
     )
-    records, selector_rules = await _retry_empty_extraction_with_browser(
+    records, selector_rules = await retry_empty_extraction_with_browser(
         context,
         fetched,
         records=records,
         selector_rules=selector_rules,
     )
-    records, selector_rules = await _retry_low_quality_extraction_with_browser(
+    records, selector_rules = await retry_low_quality_extraction_with_browser(
         context,
         fetched,
         records=records,
         selector_rules=selector_rules,
     )
-    records, selector_rules = await _retry_listing_integrity_with_stronger_tier(
+    records, selector_rules = await retry_listing_integrity_with_stronger_tier(
         context,
         fetched,
         records=records,
@@ -543,13 +542,13 @@ async def _run_extraction_stage_observed(
         records=records,
         selector_rules=selector_rules,
     )
-    records, rejection_reason = _apply_detail_rejection_guard(
+    records, rejection_reason = apply_detail_rejection_guard(
         context,
         fetched,
         records=records,
         selector_rules=selector_rules,
     )
-    retry_stage = await _retry_detail_challenge_shell_with_real_chrome(
+    retry_stage = await retry_detail_challenge_shell_with_real_chrome(
         context,
         fetched,
         rejection_reason=rejection_reason,
@@ -558,7 +557,7 @@ async def _run_extraction_stage_observed(
         set_logfire_attributes(span, retry="real_chrome_challenge")
         return retry_stage
     if rejection_reason != "challenge_shell":
-        retry_stage = await _retry_patchright_detail_rejection_with_real_chrome(
+        retry_stage = await retry_patchright_detail_rejection_with_real_chrome(
             context,
             fetched,
             rejection_reason=rejection_reason,
@@ -566,7 +565,7 @@ async def _run_extraction_stage_observed(
         if retry_stage is not None:
             set_logfire_attributes(span, retry="real_chrome_rejection")
             return retry_stage
-    await _log_extraction_outcome(context, acquisition_result, records)
+    await log_extraction_outcome(context, acquisition_result, records)
     if rejection_reason:
         guidance = (
             "; URL looks like a listing/search seed. Use ecommerce_listing."

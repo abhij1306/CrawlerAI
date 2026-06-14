@@ -608,6 +608,10 @@ def test_deleted_facades_do_not_return() -> None:
 
     stale_facades = [
         SERVICES_ROOT / "pipeline" / "core.py",
+        SERVICES_ROOT / "pipeline" / "retry" / "challenge_retry.py",
+        SERVICES_ROOT / "pipeline" / "retry" / "decision.py",
+        SERVICES_ROOT / "pipeline" / "retry" / "empty_result_retry.py",
+        SERVICES_ROOT / "pipeline" / "retry" / "integrity_escalation.py",
         deleted_extract_module("shared", "variant", "logic"),
         deleted_extract_module("variant", "grouping"),
         deleted_extract_module("detail", "materializer"),

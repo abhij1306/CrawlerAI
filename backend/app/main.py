@@ -16,6 +16,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.api.auth import router as auth_router
 from app.api.api_keys import router as api_keys_router
@@ -472,8 +473,10 @@ async def public_api_error_handler(request: Request, exc: PublicApiError) -> JSO
     return JSONResponse({"detail": exc.message}, status_code=exc.status_code)
 
 
-@app.exception_handler(HTTPException)
-async def public_http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
+@app.exception_handler(StarletteHTTPException)
+async def public_http_exception_handler(
+    request: Request, exc: StarletteHTTPException
+) -> JSONResponse:
     if not request.url.path.startswith(_PUBLIC_API_PREFIX):
         return JSONResponse({"detail": exc.detail}, status_code=exc.status_code, headers=exc.headers)
     detail: dict[str, Any] = exc.detail if isinstance(exc.detail, dict) else {}
@@ -504,6 +507,25 @@ async def public_validation_exception_handler(
         message="Request validation failed.",
         status_code=422,
         details={"errors": exc.errors()},
+    )
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    """Catch-all so unhandled errors return 500 JSON instead of crashing
+    the Starlette BaseHTTPMiddleware task-group (ExceptionGroup on 3.14)."""
+    logger.exception(
+        "Unhandled exception on %s %s", request.method, request.url.path
+    )
+    if request.url.path.startswith(_PUBLIC_API_PREFIX):
+        return public_error_response(
+            request,
+            code="INTERNAL_ERROR",
+            message="An unexpected error occurred.",
+            status_code=500,
+        )
+    return JSONResponse(
+        {"detail": "Internal server error"}, status_code=500
     )
 
 

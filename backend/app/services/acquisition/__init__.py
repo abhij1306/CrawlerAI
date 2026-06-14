@@ -2,8 +2,6 @@ from __future__ import annotations
 
 from app.services.acquisition.browser_runtime import (
     browser_runtime_snapshot,
-    expand_all_interactive_elements,
-    interactive_candidate_snapshot,
     shutdown_browser_runtime,
     shutdown_browser_runtime_sync,
 )
@@ -27,8 +25,6 @@ async def close_shared_http_client() -> None:
 
 __all__ = [
     "browser_runtime_snapshot",
-    "expand_all_interactive_elements",
-    "interactive_candidate_snapshot",
     "HttpFetchResult",
     "close_shared_http_client",
     "PageFetchResult",

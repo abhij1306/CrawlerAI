@@ -96,7 +96,7 @@ Public API schemas live in `api_key.py` and `public_api.py`.
 | `tasks.py` | Celery task entry |
 | `pipeline/extraction_loop.py` | Per-URL stage orchestration: acquire -> extract -> normalize -> persist |
 | `pipeline/record_extraction_stage.py` | Adapter population, selector-rule loading, extraction invocation, acquisition-contract memory |
-| `pipeline/extraction_retry_stage.py` | Browser retry families, detail rejection guard, listing-integrity escalation |
+| `pipeline/retry/stage.py` | Browser retry families, detail rejection guard, listing-integrity escalation |
 | `pipeline/url_processing_context.py` | Per-URL acquisition config and run-context resolution |
 | `pipeline/persistence.py` | `CrawlRecord` writes, dedupe, summaries |
 | `pipeline/runtime_helpers.py` | Typed stage helpers, browser diagnostics merge, failure-state persistence |

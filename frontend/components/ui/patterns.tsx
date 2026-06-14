@@ -637,7 +637,11 @@ export function KVTile({
 
 /* ─── MetricPulse ────────────────────────────────────────────────────────── */
 export function MetricPulse({ children }: Readonly<{ children: ReactNode }>) {
-  return <div className="grid grid-cols-4 gap-3 bg-transparent border border-border rounded-xl p-3 overflow-hidden shadow-card max-sm:grid-cols-2">{children}</div>;
+  return (
+    <div className="border-border shadow-card grid grid-cols-4 gap-3 overflow-hidden rounded-xl border bg-transparent p-3 max-sm:grid-cols-2">
+      {children}
+    </div>
+  );
 }
 
 export function MetricPulseItem({
@@ -654,14 +658,24 @@ export function MetricPulseItem({
   pulse?: boolean;
 }>) {
   return (
-    <div className="bg-panel border border-border-subtle rounded-lg px-5 py-4 flex flex-col gap-2 transition-all duration-180 hover:bg-background-elevated hover:border-border-strong relative group/metric">
-      <div className="absolute top-4 right-4 w-2 h-2 rounded-full bg-accent opacity-0 transition-opacity duration-180 group-hover/metric:opacity-100" aria-hidden="true" />
-      <div className="font-sans text-2xs font-semibold uppercase tracking-wider text-muted flex items-center gap-2">
+    <div className="bg-panel border-border-subtle hover:bg-background-elevated hover:border-border-strong group/metric relative flex flex-col gap-2 rounded-lg border px-5 py-4 transition-all duration-180">
+      <div
+        className="bg-accent absolute top-4 right-4 h-2 w-2 rounded-full opacity-0 transition-opacity duration-180 group-hover/metric:opacity-100"
+        aria-hidden="true"
+      />
+      <div className="text-2xs text-muted flex items-center gap-2 font-sans font-semibold tracking-wider uppercase">
         {Icon && <Icon className="size-3.5" />}
         {label}
-        {pulse && <div className="w-1.5 h-1.5 rounded-full bg-success animate-pulse ml-auto" aria-hidden="true" />}
+        {pulse && (
+          <div
+            className="bg-success ml-auto h-1.5 w-1.5 animate-pulse rounded-full"
+            aria-hidden="true"
+          />
+        )}
       </div>
-      <div className="font-mono text-2xl font-bold text-foreground leading-none tracking-tighter tabular-nums">{value}</div>
+      <div className="text-foreground font-mono text-2xl leading-none font-bold tracking-tighter tabular-nums">
+        {value}
+      </div>
       {trend && <div className="mt-auto">{trend}</div>}
     </div>
   );
@@ -669,7 +683,7 @@ export function MetricPulseItem({
 
 export function MetricPulseSkeleton() {
   return (
-    <div className="bg-panel border border-border-subtle rounded-lg px-5 py-4 flex flex-col gap-2 transition-all duration-180 relative">
+    <div className="bg-panel border-border-subtle relative flex flex-col gap-2 rounded-lg border px-5 py-4 transition-all duration-180">
       <Skeleton className="h-3 w-16" />
       <Skeleton className="mt-2 h-8 w-24" />
     </div>

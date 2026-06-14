@@ -71,7 +71,6 @@ def resolve_auto_surface(
     is_listing: bool = False,
 ) -> SurfaceResolution:
     parsed = urlparse(str(url or ""))
-    host = parsed.netloc.lower().removeprefix("www.")
     path = parsed.path.lower()
     evidence: list[str] = ["requested_surface:auto"]
 
@@ -217,4 +216,3 @@ def _html_detail_signal(path: str) -> str:
     if slug.count("-") >= config.SURFACE_RESOLVER_ECOMMERCE_DETAIL_HTML_MIN_HYPHENS:
         return "ecommerce_detail_html_slug_signal"
     return ""
-

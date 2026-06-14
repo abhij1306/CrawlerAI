@@ -95,6 +95,10 @@ SELECTOR_SYNTHESIS_KEEP_ATTRS = frozenset(
     {"data-variant-id", "data-product-id", "data-price", "value"}
 )
 SELECTOR_SYNTHESIS_KEEP_TOKENS = frozenset({"buy", "cart", "pdp", "product", "variant"})
+NON_CONTENT_TAGS = frozenset({"script", "style", "noscript", "template", "head"})
+XPATH_NON_CONTENT_ANCESTOR_TAGS = frozenset(
+    tag for tag in NON_CONTENT_TAGS if tag != "head"
+)
 LISTING_FIELD_SELECTORS: dict[str, list[str]] = {
     "title": [
         "[itemprop='name']",
@@ -175,6 +179,8 @@ __all__ = sorted(
         "SELECTOR_SELF_HEAL_TARGET_LIMIT",
         "SELECTOR_SYNTHESIS_KEEP_WORTHY_TAGS",
         "SELECTOR_SYNTHESIS_LOW_VALUE_TAGS",
+        "NON_CONTENT_TAGS",
+        "XPATH_NON_CONTENT_ANCESTOR_TAGS",
         "LISTING_FIELD_SELECTORS",
     }
 )

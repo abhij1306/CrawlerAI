@@ -778,7 +778,6 @@ export const LogTerminal = memo(function LogTerminal({
                         {formatShortUrlLabel(group.url)}
                       </a>
                     )}
-
                   </div>
                   {!isRunEventGroup ? (
                     <>

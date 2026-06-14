@@ -115,6 +115,27 @@ def test_validate_record_for_surface_drops_unknown_fields_but_keeps_canonical_fi
 
 
 @pytest.mark.unit
+def test_validate_record_for_surface_keeps_requested_custom_fields() -> None:
+    cleaned, errors = validate_record_for_surface(
+        {
+            "title": "Sodium Chloride",
+            "cas_number": "7647-14-5",
+            "molecular_formula": "NaCl",
+            "random_garbage_key": "keep me out",
+        },
+        "ecommerce_detail",
+        requested_fields=["CAS Number", "Molecular Formula"],
+    )
+
+    assert cleaned == {
+        "title": "Sodium Chloride",
+        "cas_number": "7647-14-5",
+        "molecular_formula": "NaCl",
+    }
+    assert errors == []
+
+
+@pytest.mark.unit
 def test_ecommerce_aliases_keep_product_id_distinct_from_sku() -> None:
     aliases = surface_alias_lookup("ecommerce_detail", None)
 

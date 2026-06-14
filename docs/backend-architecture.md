@@ -167,7 +167,7 @@ Primary files:
 - `pipeline/direct_record_fallback.py`
 - `pipeline/extraction_retry_decision.py`
 - `pipeline/record_extraction_stage.py`
-- `pipeline/extraction_retry_stage.py`
+- `pipeline/retry/stage.py`
 - `pipeline/types.py`
 - `pipeline/runtime_helpers.py`
 - `data_enrichment/service.py`
@@ -255,7 +255,7 @@ Current live behavior:
 - domain cookie memory is intentionally filtered acquisition memory, not a verbatim storage-state cache: challenge-only bot-defense state (for example PerimeterX `_px*`, `pxcts`, PX localStorage) is dropped on load/save, and blocked browser runs do not persist domain memory
 - blocked browser runs also do not rewrite per-run Playwright storage snapshots, so one challenged detail page does not poison later URLs in the same batch run
 - browser-to-HTTP handoff is guarded: only sanitized engine-scoped session state is exported, direct-lane reuse is allowed, proxy-scoped replay is skipped unless proxy affinity is explicit, and drift/challenge re-entry falls back to browser
-- shared HTTP acquisition is intentionally shallow: one `curl_cffi` attempt, one `httpx` fallback attempt when curl transport fails, then browser escalation; there is no hidden multi-attempt HTTP backoff loop inside `fetch_context.py`
+- shared HTTP acquisition is intentionally shallow: one `curl_cffi` attempt, one `httpx` fallback attempt when curl transport fails, then browser escalation when policy/evidence and remaining budget allow it; there is no hidden multi-attempt HTTP backoff loop inside `fetch_context.py`
 - successful acquisition paths can autosave an editable `DomainRunProfile.acquisition_contract`; future runs may reuse a proven browser engine, mark whether curl-cookie handoff is actually eligible, and record whether rendering, traversal, or network payloads were required. Host memory no longer owns the durable success path; it only biases short-lived protection/backoff choices.
 - browser diagnostics now persist explicit lane identity (`browser_engine`, `browser_profile`, launch mode, native-context flag, stealth-enabled flag) so metrics and audits can distinguish shaped Chromium from native real Chrome without inferring from free-form logs
 - traversal is explicit and separate from browser escalation; only explicit traversal modes are supported
@@ -266,7 +266,7 @@ Current live behavior:
 - browser diagnostics now also expose rendered-listing evidence counts (`rendered_listing_fragment_count`, `listing_visual_element_count`) plus stage-aware browser failures (`failure_stage`, `timeout_phase`) so browser-heavy listing regressions can be triaged without replaying the whole run
 - rendered-listing-fragment capture and visual-element capture are now bounded by a dedicated runtime timeout and recorded in `phase_timings_ms` (`rendered_listing_fragment_capture`, `listing_visual_capture`) so heavy browser pages cannot stall the whole acquisition tail indefinitely
 - browser stages (`navigation`, `settle`, `serialize`, `finalize`) now run in cancellation-aware tasks; if a stage times out or the run is killed mid-flight, the runtime force-closes the page/context before unwinding so local hard-kill does not wait forever on a stuck Playwright DOM call
-- acquisition timeout budget is staged: HTTP/curl attempts are capped at `http_timeout_seconds` (10s) per attempt, leaving the rest of the `acquisition_attempt_timeout_seconds` (90s) budget for browser launch, navigation, and settling. `browser_only` mode skips the HTTP tier and allocates the full budget to the browser path. The outer URL-processing timeout (`url_timeout_seconds` + buffer, default 105s) enforces the ceiling across all acquisition tiers
+- acquisition timeout budget is staged: HTTP/curl attempts are capped at `http_timeout_seconds` (10s) per attempt, and browser fallback starts only when at least `browser_retry_min_remaining_seconds` remains for launch/navigation/settling. If the remaining budget is too small, the HTTP observation is returned with `browser_escalation_skipped=insufficient_budget` instead of failing in a predictable browser stage timeout. `browser_only` mode skips the HTTP tier and allocates the full budget to the browser path. The outer URL-processing timeout (`url_timeout_seconds` + buffer, default 105s) enforces the ceiling across all acquisition tiers
 - shared browser runtimes now recycle once when the driver disconnects during `new_context` / page bootstrap, so a dead browser process does not poison later URLs in the same run
 - browser rendering probes extractability at `domcontentloaded`, caps primary `networkidle` navigation to a configured budget slice, uses a short-circuit readiness wait instead of fixed optimistic sleep, reuses settled HTML/analysis for serialization, and limits detail expansion with bounded DOM-first then accessibility-assisted fallback
 - browser rendering behavior:
@@ -274,7 +274,8 @@ Current live behavior:
   - caps primary `networkidle` navigation to a configured budget slice
   - uses a short-circuit readiness wait instead of fixed optimistic sleep
   - reuses settled HTML/analysis for serialization
-  - limits detail expansion with bounded DOM-first then accessibility-assisted fallback- detail expansion now skips plain navigation anchors with real `href`s (for example footer/about/careers/returns links) unless they behave like true in-page expanders, which prevents Souled Store-style utility-page navigations during PDP acquisition
+  - limits detail expansion with bounded DOM-first then accessibility-assisted fallback
+- detail expansion now skips plain navigation anchors with real `href`s (for example footer/about/careers/returns links) unless they behave like true in-page expanders, which prevents Souled Store-style utility-page navigations during PDP acquisition
 - detail expansion also skips header/nav/footer controls outside main content, preventing Lowe's-style pivots from a requested PDP into site chrome or marketing pages
 - blocked-page detection is evidence-based: anti-bot vendor markers alone do not block a page, but challenge-specific signals such as CAPTCHA-delivery elements and corroborating blocker text do
 - browser outcomes now distinguish challenge pages, low-content terminal shells, and explicit navigation/page-closed failures instead of collapsing them into generic browser HTML
@@ -284,7 +285,7 @@ Current live behavior:
 - traversal-enabled browser fetches now retain both traversal-composed HTML and the full rendered HTML so the pipeline can retry extraction once when traversal fragments produce zero records
 - browser block classification now preserves usable listing/detail content when vendor markers and challenge widgets coexist with clear extractable signals, instead of forcing a blocked verdict from anti-bot evidence alone
 - traversal stop reasons remain diagnostic when the first rendered listing page is already usable: no-progress traversal keeps the full rendered HTML as the primary payload and only downgrades to `traversal_failed` when listing evidence is still below threshold
-- detail-page expansion is field-aware and commerce-safe: requested fields now contribute expansion tokens, blocked action labels such as add-to-cart/login are skipped, and ARIA-driven affordances (`aria-expanded`, `aria-controls`, tabs, summaries) are considered even when the initial detail readiness probe already looks usable
+- detail-page expansion is field-aware and commerce-safe: default detail acquisition does not click accordions/tabs/carousels just to hunt core fields; requested fields contribute expansion tokens, blocked action labels such as add-to-cart/login are skipped, and ARIA-driven affordances (`aria-expanded`, `aria-controls`, tabs, summaries) are considered only for requested-field expansion inside browser acquisition
 - detail-page expansion now short-circuits when the current rendered DOM already exposes the requested section headings, avoiding unrelated follow-up clicks that would otherwise mutate an already-extractable detail page
 - thin browser listing results can trigger one bounded recovery re-acquisition that performs ordered listing actions (`clear filters`, `view all`, `next page`) before traversal/extraction, and the pipeline only keeps the retry when it improves record count
 - browser acquisition keeps internal rendered-page evidence (rendered HTML, visible text, accessibility snapshots, expansion artifacts, network payloads), but markdown is no longer a first-class runtime/export artifact
@@ -445,7 +446,7 @@ Current storage/runtime model:
 - selectors are persisted inside `DomainMemory`
 - reusable run defaults and learned acquisition contracts are persisted separately in `DomainRunProfile`, keyed by the same normalized `(domain, surface)` scope but never mixed into selector rows or `DomainMemory.selectors`
 - successful DOM-only extraction can auto-save revalidated final-field selectors as `dom_observed` rules; structured, adapter, network, and JS-state winners are intentionally not promoted to selector memory
-- ecommerce-detail setup repair uses the union of explicit user fields and limited defaults (`price`, `title`, `image_url`) for browser retry, selector self-heal, LLM gap fill, and acquisition field-coverage metadata; optional deep fields are not forced unless requested
+- ecommerce-detail setup repair uses the union of explicit user fields and limited defaults (`price`, `title`, `image_url`) for selector self-heal, LLM gap fill, and acquisition field-coverage metadata. Missing default fields no longer trigger low-quality HTTP-to-browser retry by themselves; browser retry is reserved for empty extraction with retryable evidence, blocked/shell evidence, explicit browser mode, traversal/listing recovery, and listing-integrity escalation. Static not-found pages and static homepage/category shells that do not match the requested detail slug are terminal HTTP observations, not browser retries. Optional deep fields are not forced unless requested
 - reusable browser cookie/local-storage state is persisted separately in `DomainCookieMemory`, keyed by normalized domain only, because acquisition reuse is host-level rather than surface-level
 - completed-run field keep/reject actions are persisted separately in `DomainFieldFeedback`, keyed by normalized `(domain, surface)` and the field/source that was accepted or rejected
 - runtime can layer surface-specific and generic rules

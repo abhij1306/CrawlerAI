@@ -26,6 +26,10 @@ from app.services.acquisition.runtime import (
     http_fetch,
     should_escalate_to_browser_async,
 )
+from app.services.config.pipeline_reasons import (
+    BROWSER_ESCALATION_SKIPPED_INSUFFICIENT_BUDGET,
+    REQUESTED_FIELDS_BROWSER_REASON,
+)
 from tests.fixtures.http_mocks import FakeBodyResponse
 
 
@@ -947,6 +951,76 @@ async def test_fetch_page_preserves_requested_fields_on_browser_first_path(
 
 @pytest.mark.asyncio
 @pytest.mark.component
+async def test_fetch_page_uses_browser_first_for_detail_requested_fields(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured_requested_fields: list[str] = []
+    browser_reasons: list[str] = []
+    http_called = False
+
+    @_as_async
+    def _fake_curl(url: str, timeout_seconds: float, *, proxy: str | None = None):
+        del url, timeout_seconds, proxy
+        nonlocal http_called
+        http_called = True
+        return PageFetchResult(
+            url="https://example.com/products/widget",
+            final_url="https://example.com/products/widget",
+            html="<html><body>http</body></html>",
+            status_code=200,
+            method="curl_cffi",
+        )
+
+    @_as_async
+    def _fake_run_browser_attempts(
+        context,
+        *,
+        reason: str,
+        requested_fields: list[str] | None = None,
+        listing_recovery_mode: str | None = None,
+        capture_page_markdown: bool = False,
+        proxies: list[str | None] | None = None,
+        **_kwargs,
+    ):
+        del (
+            context,
+            listing_recovery_mode,
+            capture_page_markdown,
+            proxies,
+            _kwargs,
+        )
+        nonlocal captured_requested_fields
+        captured_requested_fields = list(requested_fields or [])
+        browser_reasons.append(reason)
+        return PageFetchResult(
+            url="https://example.com/products/widget",
+            final_url="https://example.com/products/widget",
+            html="<html><body><h1>Widget</h1></body></html>",
+            status_code=200,
+            method="browser",
+        )
+
+    monkeypatch.setattr(crawl_fetch_runtime, "_curl_fetch", _fake_curl)
+    monkeypatch.setattr(
+        crawl_fetch_runtime,
+        "run_browser_attempts",
+        _fake_run_browser_attempts,
+    )
+
+    result = await crawl_fetch_runtime.fetch_page(
+        "https://example.com/products/widget",
+        surface="ecommerce_detail",
+        requested_fields=["CAS Number", "Molecular Formula"],
+    )
+
+    assert result.method == "browser"
+    assert captured_requested_fields == ["CAS Number", "Molecular Formula"]
+    assert browser_reasons == [REQUESTED_FIELDS_BROWSER_REASON]
+    assert http_called is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
 async def test_fetch_page_prefer_browser_falls_back_to_http_after_browser_timeout(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1024,7 +1098,9 @@ async def test_fetch_page_kitchenaid_prefer_browser_timeout_falls_back_to_http(
 @pytest.mark.component
 async def test_handle_http_result_retries_browser_after_browser_first_failure_and_block(
     monkeypatch: pytest.MonkeyPatch,
+    patch_settings,
 ) -> None:
+    patch_settings(browser_retry_min_remaining_seconds=0.0)
     context = _default_fetch_context()
     context.fetch_mode = "auto"
     context.browser_first_failed = True
@@ -1676,7 +1752,7 @@ async def test_run_browser_attempts_replans_to_real_chrome_after_same_proxy_patc
 
 @pytest.mark.asyncio
 @pytest.mark.component
-async def test_run_browser_attempts_lets_browser_runtime_own_stage_timeouts(
+async def test_run_browser_attempts_bounds_browser_runtime_wall_clock(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     attempted_engines: list[str] = []
@@ -1724,15 +1800,16 @@ async def test_run_browser_attempts_lets_browser_runtime_own_stage_timeouts(
     )
     monkeypatch.setattr(crawl_fetch_runtime, "wait_for_host_slot", AsyncMock())
 
-    result = await crawl_fetch_runtime.run_browser_attempts(
-        context,
-        reason="browser-only",
-        host_policy=HostProtectionPolicy(host="example.com"),
-    )
+    with pytest.raises(TimeoutError):
+        await crawl_fetch_runtime.run_browser_attempts(
+            context,
+            reason="browser-only",
+            host_policy=HostProtectionPolicy(host="example.com"),
+        )
 
     assert attempted_engines == ["patchright"]
-    assert result.browser_diagnostics["browser_engine"] == "patchright"
-    assert context.last_browser_attempt_diagnostics == {}
+    assert context.last_browser_attempt_diagnostics["browser_engine"] == "patchright"
+    assert context.last_browser_attempt_diagnostics["failure_stage"] == "attempt"
 
 
 @pytest.mark.asyncio
@@ -3175,7 +3252,10 @@ async def test_fetch_page_retries_patchright_http2_protocol_error_with_real_chro
             status_code=200,
             method="browser",
             blocked=False,
-            browser_diagnostics={"browser_engine": engine},
+            browser_diagnostics={
+                "browser_engine": engine,
+                "host_policy_snapshot": dict(kwargs.get("host_policy_snapshot") or {}),
+            },
         )
 
     monkeypatch.setattr(crawl_fetch_runtime, "_curl_fetch", _failing_curl)
@@ -3203,7 +3283,9 @@ async def test_fetch_page_retries_patchright_http2_protocol_error_with_real_chro
 @pytest.mark.component
 async def test_fetch_page_uses_remaining_timeout_budget_across_http_and_browser_retries(
     monkeypatch: pytest.MonkeyPatch,
+    patch_settings,
 ) -> None:
+    patch_settings(browser_retry_min_remaining_seconds=0.0)
     url = "https://example.com/products/widget"
     browser_timeouts: list[float] = []
 
@@ -3244,7 +3326,10 @@ async def test_fetch_page_uses_remaining_timeout_budget_across_http_and_browser_
             status_code=200,
             method="browser",
             blocked=False,
-            browser_diagnostics={"browser_engine": engine},
+            browser_diagnostics={
+                "browser_engine": engine,
+                "host_policy_snapshot": dict(kwargs.get("host_policy_snapshot") or {}),
+            },
         )
 
     monkeypatch.setattr(crawl_fetch_runtime, "_curl_fetch", _vendor_blocked_curl)
@@ -3374,15 +3459,10 @@ async def test_run_browser_attempts_caps_patchright_probe_timeout_for_vendor_blo
 
 @pytest.mark.asyncio
 @pytest.mark.component
-async def test_run_browser_attempts_caps_patchright_probe_when_real_chrome_is_queued(
+async def test_run_browser_attempts_does_not_cap_patchright_just_because_real_chrome_is_queued(
     monkeypatch: pytest.MonkeyPatch,
     patch_settings,
 ) -> None:
-    """Vendor-blocked Patchright probes stay short when real Chrome is queued.
-
-    Otherwise Patchright can consume most of the acquisition budget and leave
-    the stronger engine too little time to navigate.
-    """
     patch_settings(browser_vendor_block_probe_timeout_seconds=12.0)
     browser_calls: list[tuple[str, float]] = []
     context = crawl_fetch_runtime._FetchRuntimeContext(
@@ -3452,9 +3532,80 @@ async def test_run_browser_attempts_caps_patchright_probe_when_real_chrome_is_qu
 
     assert result.browser_diagnostics["browser_engine"] == "patchright"
     assert browser_calls[0][0] == "patchright"
-    assert browser_calls[0][1] <= 12.1
+    assert browser_calls[0][1] > 12.1
     # Real Chrome must not be called when patchright succeeds.
     assert len(browser_calls) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_run_browser_attempts_patchright_probe_cap_bounds_wall_clock(
+    monkeypatch: pytest.MonkeyPatch,
+    patch_settings,
+) -> None:
+    patch_settings(
+        browser_vendor_block_probe_timeout_seconds=0.01,
+        browser_post_block_cooldown_ms=0,
+    )
+    browser_calls: list[tuple[str, float]] = []
+    context = _default_fetch_context()
+    context.resolved_timeout = 0.12
+    context.deadline_monotonic = time.perf_counter() + 0.12
+
+    async def _fake_browser_fetch(url: str, browser_timeout: float, **kwargs):
+        del url
+        engine = str(kwargs.get("browser_engine") or "")
+        browser_calls.append((engine, browser_timeout))
+        if engine == "patchright":
+            await asyncio.sleep(0.08)
+            raise TimeoutError("patchright hidden launch exceeded probe budget")
+        return PageFetchResult(
+            url="https://example.com/products/widget",
+            final_url="https://example.com/products/widget",
+            html="<html><body><h1>Rendered</h1></body></html>",
+            status_code=200,
+            method="browser",
+            blocked=False,
+            browser_diagnostics={"browser_engine": engine},
+        )
+
+    monkeypatch.setattr(crawl_fetch_runtime, "_browser_fetch", _fake_browser_fetch)
+    monkeypatch.setattr(
+        crawl_fetch_runtime,
+        "_browser_engine_attempts",
+        lambda **_kwargs: ["patchright", "real_chrome"],
+    )
+    monkeypatch.setattr(crawl_fetch_runtime, "wait_for_host_slot", AsyncMock())
+    monkeypatch.setattr(crawl_fetch_runtime, "note_host_hard_block", AsyncMock())
+    monkeypatch.setattr(
+        crawl_fetch_runtime,
+        "load_host_protection_policy",
+        AsyncMock(
+            return_value=HostProtectionPolicy(
+                host="example.com",
+                patchright_blocked=True,
+                prefer_browser=True,
+                last_block_vendor="cloudflare",
+            )
+        ),
+    )
+
+    result = await crawl_fetch_runtime.run_browser_attempts(
+        context,
+        reason="vendor-block:cloudflare",
+        host_policy=HostProtectionPolicy(
+            host="example.com",
+            patchright_blocked=True,
+            prefer_browser=True,
+            last_block_vendor="cloudflare",
+        ),
+    )
+
+    assert result.browser_diagnostics["browser_engine"] == "real_chrome"
+    assert browser_calls[0][0] == "patchright"
+    assert browser_calls[0][1] == pytest.approx(0.01, abs=0.01)
+    assert browser_calls[1][0] == "real_chrome"
+    assert browser_calls[1][1] > 0.06
 
 
 @pytest.mark.component
@@ -3482,7 +3633,7 @@ def test_browser_attempt_timeout_skips_patchright_probe_cap_without_vendor(
 
 
 @pytest.mark.component
-def test_browser_attempt_timeout_caps_patchright_when_real_chrome_is_queued(
+def test_browser_attempt_timeout_does_not_cap_patchright_when_real_chrome_is_only_queued(
     patch_settings,
 ) -> None:
     patch_settings(browser_vendor_block_probe_timeout_seconds=1.0)
@@ -3497,7 +3648,63 @@ def test_browser_attempt_timeout_caps_patchright_when_real_chrome_is_queued(
         host_policy=HostProtectionPolicy(host="example.com"),
     )
 
-    assert timeout_seconds <= 1.1
+    assert timeout_seconds > 1.5
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_fetch_page_returns_http_result_when_browser_escalation_budget_is_too_low(
+    monkeypatch: pytest.MonkeyPatch,
+    patch_settings,
+) -> None:
+    patch_settings(browser_retry_min_remaining_seconds=20.0)
+    url = "https://example.com/products/widget"
+    browser_calls: list[float] = []
+
+    @_as_async
+    def _blocked_http(
+        request_url: str,
+        timeout: float,
+        *,
+        proxy: str | None = None,
+        cookie_header: str | None = None,
+    ):
+        del timeout, proxy, cookie_header
+        return PageFetchResult(
+            url=request_url,
+            final_url=request_url,
+            html="<html><body>blocked</body></html>",
+            status_code=403,
+            method="curl_cffi",
+            blocked=True,
+            headers={"x-datadome": "blocked"},
+        )
+
+    @_as_async
+    def _unexpected_browser(request_url: str, browser_timeout: float, **_kwargs):
+        del request_url
+        browser_calls.append(browser_timeout)
+        raise AssertionError("browser should not start with insufficient budget")
+
+    monkeypatch.setattr(crawl_fetch_runtime, "_curl_fetch", _blocked_http)
+    monkeypatch.setattr(crawl_fetch_runtime, "_browser_fetch", _unexpected_browser)
+    monkeypatch.setattr(crawl_fetch_runtime, "wait_for_host_slot", AsyncMock())
+    monkeypatch.setattr(crawl_fetch_runtime, "note_host_hard_block", AsyncMock())
+    monkeypatch.setattr(crawl_fetch_runtime, "apply_protected_host_backoff", AsyncMock())
+    monkeypatch.setattr(crawl_fetch_runtime, "_update_host_result_memory", AsyncMock())
+
+    result = await crawl_fetch_runtime.fetch_page(
+        url,
+        timeout_seconds=2.0,
+        surface="ecommerce_detail",
+    )
+
+    assert result.method == "curl_cffi"
+    assert result.blocked is True
+    assert browser_calls == []
+    assert result.browser_diagnostics["browser_escalation_skipped"] == (
+        BROWSER_ESCALATION_SKIPPED_INSUFFICIENT_BUDGET
+    )
 
 
 @pytest.mark.asyncio

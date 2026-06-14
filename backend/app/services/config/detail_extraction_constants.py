@@ -37,6 +37,9 @@ DETAIL_BASE_PLACEHOLDER_TITLE_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(
         r"^oops!? the page you['’]re looking for can['’]t be found\.?$", re.I
     ),
+    re.compile(r"\bpage\s+not\s+found\b", re.I),
+    re.compile(r"\bnothing\s+to\s+see\s+here\b", re.I),
+    re.compile(r"\bproduct\s+not\s+found\b", re.I),
     re.compile(r"^page not found$", re.I),
     re.compile(r"^not found$", re.I),
     re.compile(r"^access denied$", re.I),
@@ -62,6 +65,25 @@ DETAIL_PLACEHOLDER_TITLE_PATTERNS: tuple[re.Pattern[str], ...] = (
     *DETAIL_BASE_PLACEHOLDER_TITLE_PATTERNS,
     *DETAIL_WAF_QUEUE_TITLE_PATTERNS,
 )
+STATIC_DETAIL_NOT_FOUND_TITLE_PATTERNS: tuple[re.Pattern[str], ...] = tuple(
+    pattern
+    for pattern in DETAIL_BASE_PLACEHOLDER_TITLE_PATTERNS
+    if pattern.pattern
+    not in {
+        r"^access denied$",
+        r"^adding\s+to\s+cart\.{0,3}$",
+    }
+)
+STATIC_DETAIL_SHELL_HEADING_PHRASES = (
+    "added to cart",
+    "new arrivals",
+    "men",
+    "mens",
+    "women",
+    "womens",
+    "sale",
+)
+STATIC_DETAIL_SHELL_HEADING_MIN_MATCHES = 2
 ORG_SUFFIX_PATTERN = (
     re.compile(
         r"\b(?:"

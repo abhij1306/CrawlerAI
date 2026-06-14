@@ -184,9 +184,7 @@ function RunRow({
 
       {/* Records */}
       <TableCell className="text-right">
-        <span
-          className={cn('tabular-nums', recordCount > 0 ? 'text-primary' : 'text-muted')}
-        >
+        <span className={cn('tabular-nums', recordCount > 0 ? 'text-primary' : 'text-muted')}>
           {recordCount > 0 ? recordCount.toLocaleString() : '—'}
         </span>
       </TableCell>
