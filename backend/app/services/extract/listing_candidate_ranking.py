@@ -316,7 +316,7 @@ def _listing_record_quality_metrics(
         record,
         detail_like=detail_like,
         job_surface=is_job_surface,
-        surface=surface,
+        _surface=surface,
     )
     fallback_merchandise = False
     score = 0
@@ -390,9 +390,8 @@ def _record_has_supporting_signals(
     *,
     detail_like: bool,
     job_surface: bool,
-    surface: str,
+    _surface: str,
 ) -> bool:
-    del surface
     if detail_like and job_surface:
         return True
     url = str(record.get("url") or "").strip()

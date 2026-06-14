@@ -26,7 +26,10 @@ from app.services.extract.field_candidates.variant_rows import (
 from app.services.extraction_html_helpers import extract_job_sections
 from app.services.listing_extractor import extract_listing_records
 from app.services.pipeline.extract_records import extract_records
-from app.services.dom.xpath_service import extract_selector_value
+from app.services.dom.xpath_service import (
+    extract_selector_value,
+    resolve_selector_regex_timeout,
+)
 from tests.fixtures.loader import read_optional_artifact_text
 
 
@@ -979,6 +982,24 @@ def test_xpath_selector_extraction_remains_unchanged() -> None:
 
 
 @pytest.mark.regression
+def test_xpath_selector_extraction_skips_hidden_lxml_nodes() -> None:
+    html = """
+    <html>
+      <body>
+        <span hidden>Hidden salary</span>
+        <span>Visible salary</span>
+      </body>
+    </html>
+    """
+
+    value, count, selector_used = extract_selector_value(html, xpath="//span")
+
+    assert value == "Visible salary"
+    assert count == 1
+    assert selector_used == "//span"
+
+
+@pytest.mark.regression
 def test_xpath_selector_extraction_applies_regex_to_xpath_result() -> None:
     html = """
     <html>
@@ -1018,6 +1039,17 @@ def test_xpath_regex_invalid_timeout_falls_back_without_timeout(
     assert value == "Three"
     assert count == 1
     assert selector_used == "//span[@class='rating']/text()"
+
+
+@pytest.mark.regression
+def test_xpath_regex_invalid_timeout_uses_configured_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        crawler_runtime_settings, "selector_regex_timeout_seconds", "bad"
+    )
+
+    assert resolve_selector_regex_timeout() == 0.05
 
 
 @pytest.mark.asyncio

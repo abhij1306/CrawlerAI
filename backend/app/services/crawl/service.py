@@ -30,7 +30,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
 _shutdown_after_kill_lock = asyncio.Lock()
-_shutdown_after_kill_in_progress = False
 
 
 def _get_task_id(run: CrawlRun) -> str | None:
@@ -74,19 +73,14 @@ def _summary_task_id(summary: object) -> str | None:
 
 
 async def _shutdown_browser_runtime_after_kill() -> None:
-    global _shutdown_after_kill_in_progress
+    if _shutdown_after_kill_lock.locked():
+        logger.debug("Browser runtime shutdown after kill already in progress")
+        return
     async with _shutdown_after_kill_lock:
-        if _shutdown_after_kill_in_progress:
-            logger.debug("Browser runtime shutdown after kill already in progress")
-            return
-        _shutdown_after_kill_in_progress = True
-    try:
-        await shutdown_browser_runtime()
-    except Exception:
-        logger.exception("Browser runtime shutdown failed after hard kill")
-    finally:
-        async with _shutdown_after_kill_lock:
-            _shutdown_after_kill_in_progress = False
+        try:
+            await shutdown_browser_runtime()
+        except Exception:
+            logger.exception("Browser runtime shutdown failed after hard kill")
 
 
 def _should_recover_stale_run(

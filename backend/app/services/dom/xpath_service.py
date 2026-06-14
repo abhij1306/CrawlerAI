@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import re
+from collections.abc import Mapping
 
 import regex as regex_lib
 from bs4 import BeautifulSoup, NavigableString, Tag
@@ -17,7 +18,10 @@ from app.services.config.selectors import (
     XPATH_DISALLOWED_PATTERNS,
     XPATH_NON_CONTENT_ANCESTOR_TAGS,
 )
-from app.services.config.runtime_settings import crawler_runtime_settings
+from app.services.config.runtime_settings import (
+    CrawlerRuntimeSettings,
+    crawler_runtime_settings,
+)
 
 logger = logging.getLogger(__name__)
 _hidden_style_tokens = tuple(
@@ -107,6 +111,9 @@ def validate_xpath_syntax(xpath: str) -> tuple[bool, str | None]:
     if policy_error:
         return False, policy_error
     try:
+        # User-authored selectors are intentional here. The policy check above
+        # keeps this sandbox to a bounded XPath subset before compilation.
+        # codeql[py/xpath-injection]
         etree.XPath(candidate)
     except etree.XPathSyntaxError as exc:
         return False, f"Invalid XPath syntax: {exc}"
@@ -234,10 +241,10 @@ def _node_parent(node: object) -> object | None:
 
 def _node_attrs(node: object) -> dict[str, object]:
     attrs = getattr(node, "attrib", None)
-    if isinstance(attrs, dict):
-        return attrs
+    if isinstance(attrs, Mapping):
+        return dict(attrs)
     attrs = getattr(node, "attrs", None)
-    return attrs if isinstance(attrs, dict) else {}
+    return dict(attrs) if isinstance(attrs, Mapping) else {}
 
 
 def _node_hidden_by_attrs(node: object) -> bool:
@@ -343,11 +350,16 @@ def resolve_selector_regex_timeout() -> float | None:
     try:
         timeout = float(raw_timeout)
     except (TypeError, ValueError):
+        default_timeout = float(
+            CrawlerRuntimeSettings.model_fields[
+                "selector_regex_timeout_seconds"
+            ].default
+        )
         logger.warning(
-            "Invalid selector_regex_timeout_seconds=%r; disabling selector regex timeout",
+            "Invalid selector_regex_timeout_seconds=%r; using default selector regex timeout",
             raw_timeout,
         )
-        return None
+        return default_timeout
     return timeout if timeout > 0 else None
 
 

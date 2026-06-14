@@ -35,7 +35,6 @@ from app.services.url_safety import SecurityError, validate_public_target
 from app.services.acquisition.playwright_compat import (
     PlaywrightError,
     PlaywrightTimeoutError,
-    is_recoverable_playwright_error,
 )
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from fastapi.responses import HTMLResponse
@@ -51,8 +50,6 @@ def _raise_selector_fetch_error(
     message: str,
     detail: str,
 ) -> NoReturn:
-    if isinstance(exc, RuntimeError) and not is_recoverable_playwright_error(exc):
-        raise exc
     logger.warning(message, exc_info=True)
     raise HTTPException(
         status_code=status.HTTP_502_BAD_GATEWAY,

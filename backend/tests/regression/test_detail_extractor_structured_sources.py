@@ -9240,7 +9240,7 @@ def test_extract_detail_recovers_llbean_dom_size_variants_from_artifact() -> Non
 @pytest.mark.regression
 def test_extract_detail_recovers_patagonia_boldmetrics_variants_from_artifact() -> None:
     html = read_optional_artifact_text("artifacts/runs/1/pages/72d532d622b8051e.html")
-    if "mens-nano-puff-insulated-jacket" not in html and "84213" not in html:
+    if "mens-nano-puff-insulated-jacket" not in html or "84213" not in html:
         pytest.skip("optional Patagonia artifact is not the product fixture")
     rows = extract_records(
         html,

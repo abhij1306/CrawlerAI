@@ -70,8 +70,7 @@ def resolve_auto_surface(
     html: str | None = None,
     is_listing: bool = False,
 ) -> SurfaceResolution:
-    parsed = urlparse(str(url or ""))
-    path = parsed.path.lower()
+    path = urlparse(str(url or "")).path.lower()
     evidence: list[str] = ["requested_surface:auto"]
 
     typed_html_resolution = _resolve_from_html_schema(html)

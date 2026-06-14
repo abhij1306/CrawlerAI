@@ -65,14 +65,8 @@ DETAIL_PLACEHOLDER_TITLE_PATTERNS: tuple[re.Pattern[str], ...] = (
     *DETAIL_BASE_PLACEHOLDER_TITLE_PATTERNS,
     *DETAIL_WAF_QUEUE_TITLE_PATTERNS,
 )
-STATIC_DETAIL_NOT_FOUND_TITLE_PATTERNS: tuple[re.Pattern[str], ...] = tuple(
-    pattern
-    for pattern in DETAIL_BASE_PLACEHOLDER_TITLE_PATTERNS
-    if pattern.pattern
-    not in {
-        r"^access denied$",
-        r"^adding\s+to\s+cart\.{0,3}$",
-    }
+STATIC_DETAIL_NOT_FOUND_TITLE_PATTERNS: tuple[re.Pattern[str], ...] = (
+    DETAIL_BASE_PLACEHOLDER_TITLE_PATTERNS[:11]
 )
 STATIC_DETAIL_SHELL_HEADING_PHRASES = (
     "added to cart",
