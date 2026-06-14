@@ -77,6 +77,7 @@ from app.services.shared.field_coerce import (
 from app.services.shared.coerce_primitives import safe_int as _safe_int
 from app.services.shared.regex_patterns import compile_regex_patterns
 from app.services.dom.xpath_service import (
+    _is_non_visible_node,
     resolve_selector_regex_timeout,
     validate_xpath_syntax,
 )
@@ -568,7 +569,7 @@ def extract_xpath_values(
         except TypeError:
             limited_matches = [matches]
     for match in limited_matches:
-        if hasattr(match, "tag") and str(match.tag).lower() in NON_CONTENT_TAGS:
+        if _is_non_visible_node(match):
             continue
         if isinstance(match, lxml_html.HtmlElement):
             raw_value = match.text_content()

@@ -1035,7 +1035,6 @@ async def _handle_http_result(
                 **dict(result.browser_diagnostics or {}),
                 "browser_escalation_skipped": BROWSER_ESCALATION_SKIPPED_INSUFFICIENT_BUDGET,
             }
-            await _update_host_result_memory(context, result=result)
             return result, bool(vendor)
         browser_reason = context.browser_reason or (
             f"vendor-block:{vendor}" if vendor else "http-escalation"

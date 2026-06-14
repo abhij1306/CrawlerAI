@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from bs4 import BeautifulSoup
 import pytest
 from selectolax.lexbor import LexborHTMLParser
 
@@ -12,7 +13,10 @@ from app.services.adapters.ebay import EbayAdapter
 from app.services.adapters.indeed import IndeedAdapter
 from app.services.adapters.linkedin import LinkedInAdapter
 from app.services.adapters.nike import NikeAdapter
-from app.services.config.runtime_settings import crawler_runtime_settings
+from app.services.config.runtime_settings import (
+    CrawlerRuntimeSettings,
+    crawler_runtime_settings,
+)
 from app.services.extract.detail.assembly.record_assembly import (
     build_detail_record,
     extract_detail_records,
@@ -30,6 +34,7 @@ from app.services.dom.xpath_service import (
     extract_selector_value,
     resolve_selector_regex_timeout,
 )
+from app.services.dom.selector_engine import extract_xpath_values
 from tests.fixtures.loader import read_optional_artifact_text
 
 
@@ -1000,6 +1005,26 @@ def test_xpath_selector_extraction_skips_hidden_lxml_nodes() -> None:
 
 
 @pytest.mark.regression
+def test_selector_engine_xpath_text_nodes_skip_non_content_ancestors() -> None:
+    html = """
+    <html>
+      <body>
+        <script>var title = "Hidden title";</script>
+        <span>Visible title</span>
+      </body>
+    </html>
+    """
+    soup = BeautifulSoup(html, "html.parser")
+
+    assert extract_xpath_values(
+        soup,
+        "//script/text()",
+        "title",
+        "https://example.com/products/widget",
+    ) == []
+
+
+@pytest.mark.regression
 def test_xpath_selector_extraction_applies_regex_to_xpath_result() -> None:
     html = """
     <html>
@@ -1049,7 +1074,10 @@ def test_xpath_regex_invalid_timeout_uses_configured_default(
         crawler_runtime_settings, "selector_regex_timeout_seconds", "bad"
     )
 
-    assert resolve_selector_regex_timeout() == 0.05
+    expected_default = CrawlerRuntimeSettings.model_fields[
+        "selector_regex_timeout_seconds"
+    ].default
+    assert resolve_selector_regex_timeout() == expected_default
 
 
 @pytest.mark.asyncio

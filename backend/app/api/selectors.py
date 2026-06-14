@@ -35,6 +35,7 @@ from app.services.url_safety import SecurityError, validate_public_target
 from app.services.acquisition.playwright_compat import (
     PlaywrightError,
     PlaywrightTimeoutError,
+    is_recoverable_playwright_error,
 )
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from fastapi.responses import HTMLResponse
@@ -55,6 +56,17 @@ def _raise_selector_fetch_error(
         status_code=status.HTTP_502_BAD_GATEWAY,
         detail=detail,
     ) from exc
+
+
+def _raise_selector_runtime_error(
+    exc: RuntimeError,
+    *,
+    message: str,
+    detail: str,
+) -> NoReturn:
+    if is_recoverable_playwright_error(exc):
+        _raise_selector_fetch_error(exc, message=message, detail=detail)
+    raise exc
 
 
 @router.get("/summary")
@@ -177,8 +189,14 @@ async def selectors_suggest(
             status_code=status.HTTP_504_GATEWAY_TIMEOUT,
             detail="Timed out fetching preview HTML from the upstream page.",
         ) from exc
-    except (httpx.HTTPError, OSError, RuntimeError, PlaywrightError) as exc:
+    except (httpx.HTTPError, OSError, PlaywrightError) as exc:
         _raise_selector_fetch_error(
+            exc,
+            message="Failed suggesting selectors",
+            detail="Unable to fetch preview HTML from the upstream page.",
+        )
+    except RuntimeError as exc:
+        _raise_selector_runtime_error(
             exc,
             message="Failed suggesting selectors",
             detail="Unable to fetch preview HTML from the upstream page.",
@@ -206,8 +224,14 @@ async def selectors_test(
             status_code=status.HTTP_504_GATEWAY_TIMEOUT,
             detail="Timed out fetching HTML from the upstream page.",
         ) from exc
-    except (httpx.HTTPError, OSError, RuntimeError, PlaywrightError) as exc:
+    except (httpx.HTTPError, OSError, PlaywrightError) as exc:
         _raise_selector_fetch_error(
+            exc,
+            message="Failed testing selector",
+            detail="Unable to fetch HTML from the upstream page.",
+        )
+    except RuntimeError as exc:
+        _raise_selector_runtime_error(
             exc,
             message="Failed testing selector",
             detail="Unable to fetch HTML from the upstream page.",
@@ -244,8 +268,14 @@ async def selectors_preview_html(
             status_code=status.HTTP_504_GATEWAY_TIMEOUT,
             detail="Timed out fetching preview HTML from the upstream page.",
         ) from exc
-    except (httpx.HTTPError, OSError, RuntimeError, PlaywrightError) as exc:
+    except (httpx.HTTPError, OSError, PlaywrightError) as exc:
         _raise_selector_fetch_error(
+            exc,
+            message="Failed fetching selector preview HTML",
+            detail="Unable to fetch preview HTML from the upstream page.",
+        )
+    except RuntimeError as exc:
+        _raise_selector_runtime_error(
             exc,
             message="Failed fetching selector preview HTML",
             detail="Unable to fetch preview HTML from the upstream page.",

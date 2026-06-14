@@ -521,7 +521,7 @@ export default function SelectorsPage() {
               />
             ) : (
               <div className="text-muted grid h-[760px] place-items-center text-sm leading-relaxed">
-                No page loaded.
+                {loadedUrl ? 'Preview fetch failed.' : 'No page loaded.'}
               </div>
             )}
           </div>

@@ -28,7 +28,7 @@ NON_PRODUCT_IMAGE_HINTS_LOWER = tuple(
     for pattern in tuple(DETAIL_NON_PRODUCT_IMAGE_URL_HINTS or ())
     if str(pattern).strip()
 )
-DETAIL_BASE_PLACEHOLDER_TITLE_PATTERNS: tuple[re.Pattern[str], ...] = (
+DETAIL_STATIC_NOT_FOUND_TITLE_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"^404$"),
     re.compile(r"^(?:error\s*)?404\b", re.I),
     re.compile(r"^error\s+page$", re.I),
@@ -42,6 +42,9 @@ DETAIL_BASE_PLACEHOLDER_TITLE_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"\bproduct\s+not\s+found\b", re.I),
     re.compile(r"^page not found$", re.I),
     re.compile(r"^not found$", re.I),
+)
+DETAIL_BASE_PLACEHOLDER_TITLE_PATTERNS: tuple[re.Pattern[str], ...] = (
+    *DETAIL_STATIC_NOT_FOUND_TITLE_PATTERNS,
     re.compile(r"^access denied$", re.I),
     re.compile(r"^adding\s+to\s+cart\.{0,3}$", re.I),
 )
@@ -65,9 +68,9 @@ DETAIL_PLACEHOLDER_TITLE_PATTERNS: tuple[re.Pattern[str], ...] = (
     *DETAIL_BASE_PLACEHOLDER_TITLE_PATTERNS,
     *DETAIL_WAF_QUEUE_TITLE_PATTERNS,
 )
-STATIC_DETAIL_NOT_FOUND_TITLE_PATTERNS: tuple[re.Pattern[str], ...] = (
-    DETAIL_BASE_PLACEHOLDER_TITLE_PATTERNS[:11]
-)
+# Static fallback includes only deterministic not-found page titles; WAF and
+# transient shell titles stay out of this subset.
+STATIC_DETAIL_NOT_FOUND_TITLE_PATTERNS = DETAIL_STATIC_NOT_FOUND_TITLE_PATTERNS
 STATIC_DETAIL_SHELL_HEADING_PHRASES = (
     "added to cart",
     "new arrivals",

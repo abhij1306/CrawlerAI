@@ -262,7 +262,7 @@ async def test_selectors_api_error_handling(
     assert suggest_response2.status_code == 502
 
     async def _fake_suggest_runtime_error(*args, **kwargs):
-        raise RuntimeError("browser runtime failed")
+        raise RuntimeError("browser has been closed")
 
     monkeypatch.setattr("app.api.selectors.suggest_selectors", _fake_suggest_runtime_error)
     suggest_response3 = await selector_api_client.post(
@@ -274,6 +274,23 @@ async def test_selectors_api_error_handling(
         },
     )
     assert suggest_response3.status_code == 502
+
+    async def _fake_suggest_internal_runtime_error(*args, **kwargs):
+        raise RuntimeError("unexpected internal bug")
+
+    monkeypatch.setattr(
+        "app.api.selectors.suggest_selectors",
+        _fake_suggest_internal_runtime_error,
+    )
+    with pytest.raises(RuntimeError, match="unexpected internal bug"):
+        await selector_api_client.post(
+            "/api/selectors/suggest",
+            json={
+                "url": "https://example.com/products/widget",
+                "surface": "ecommerce_detail",
+                "expected_columns": ["title"],
+            },
+        )
 
     # 2. Test test endpoint exceptions
     async def _fake_test_security_error(*args, **kwargs):

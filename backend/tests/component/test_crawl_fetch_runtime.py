@@ -3705,6 +3705,7 @@ async def test_fetch_page_returns_http_result_when_browser_escalation_budget_is_
     assert result.browser_diagnostics["browser_escalation_skipped"] == (
         BROWSER_ESCALATION_SKIPPED_INSUFFICIENT_BUDGET
     )
+    crawl_fetch_runtime._update_host_result_memory.assert_not_awaited()
 
 
 @pytest.mark.asyncio
