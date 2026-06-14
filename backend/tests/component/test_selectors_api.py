@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import pytest
+import httpx
 from httpx import ASGITransport, AsyncClient
 
 from app.core.dependencies import get_current_user, get_db
 from app.main import app
+from app.services.url_safety import SecurityError
 
 
 @pytest.fixture
@@ -222,3 +224,81 @@ async def test_selectors_api_summary_returns_per_surface_counts(
         ("example.com", "ecommerce_detail", 2),
         ("example.com", "generic", 1),
     }
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_selectors_api_error_handling(
+    selector_api_client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # 1. Test suggest exceptions
+    async def _fake_suggest_error(*args, **kwargs):
+        raise TimeoutError("connection timeout")
+
+    monkeypatch.setattr("app.api.selectors.suggest_selectors", _fake_suggest_error)
+    suggest_response = await selector_api_client.post(
+        "/api/selectors/suggest",
+        json={
+            "url": "https://example.com/products/widget",
+            "surface": "ecommerce_detail",
+            "expected_columns": ["title"],
+        },
+    )
+    assert suggest_response.status_code == 504
+
+    async def _fake_suggest_http_error(*args, **kwargs):
+        raise httpx.ConnectError("connect error")
+
+    monkeypatch.setattr("app.api.selectors.suggest_selectors", _fake_suggest_http_error)
+    suggest_response2 = await selector_api_client.post(
+        "/api/selectors/suggest",
+        json={
+            "url": "https://example.com/products/widget",
+            "surface": "ecommerce_detail",
+            "expected_columns": ["title"],
+        },
+    )
+    assert suggest_response2.status_code == 502
+
+    async def _fake_suggest_runtime_error(*args, **kwargs):
+        raise RuntimeError("browser has been closed")
+
+    monkeypatch.setattr("app.api.selectors.suggest_selectors", _fake_suggest_runtime_error)
+    suggest_response3 = await selector_api_client.post(
+        "/api/selectors/suggest",
+        json={
+            "url": "https://example.com/products/widget",
+            "surface": "ecommerce_detail",
+            "expected_columns": ["title"],
+        },
+    )
+    assert suggest_response3.status_code == 502
+
+    async def _fake_suggest_internal_runtime_error(*args, **kwargs):
+        raise RuntimeError("unexpected internal bug")
+
+    monkeypatch.setattr(
+        "app.api.selectors.suggest_selectors",
+        _fake_suggest_internal_runtime_error,
+    )
+    with pytest.raises(RuntimeError, match="unexpected internal bug"):
+        await selector_api_client.post(
+            "/api/selectors/suggest",
+            json={
+                "url": "https://example.com/products/widget",
+                "surface": "ecommerce_detail",
+                "expected_columns": ["title"],
+            },
+        )
+
+    # 2. Test test endpoint exceptions
+    async def _fake_test_security_error(*args, **kwargs):
+        raise SecurityError("local ip disallowed")
+
+    monkeypatch.setattr("app.api.selectors.test_selector", _fake_test_security_error)
+    test_response = await selector_api_client.post(
+        "/api/selectors/test",
+        json={"url": "https://example.com/products/widget", "css_selector": ".price"},
+    )
+    assert test_response.status_code == 400

@@ -32,7 +32,6 @@ from app.services.pipeline.record_extraction_stage import (
     extract_records_for_acquisition as _extract_records_for_acquisition,
 )
 from app.services.pipeline.runtime_helpers import (
-    effective_blocked as _effective_blocked,
     log_pipeline_event as _log_pipeline_event,
     merge_browser_diagnostics as _merge_browser_diagnostics,
 )
@@ -60,7 +59,7 @@ async def _apply_extraction_post_processing(*args, **kwargs):
     # skipcq: PYL-E1125 - retry stage forwards the full extraction-loop call contract.
     return await extraction_loop._apply_extraction_post_processing(*args, **kwargs)
 
-async def _build_acquisition_request(
+async def build_acquisition_request(
     context: _URLProcessingContext,
 ) -> AcquisitionRequest:
     current_settings_view = context.run.settings_view
@@ -104,7 +103,7 @@ async def _build_acquisition_request(
         on_event=_pipeline_acquisition_event_logger(context),
     )
 
-async def _retry_detail_challenge_shell_with_real_chrome(
+async def retry_detail_challenge_shell_with_real_chrome(
     context: _URLProcessingContext,
     fetched: _FetchedURLStage,
     *,
@@ -112,7 +111,7 @@ async def _retry_detail_challenge_shell_with_real_chrome(
 ) -> _ExtractedURLStage | None:
     if rejection_reason != "challenge_shell":
         return None
-    return await _retry_patchright_detail_rejection_with_real_chrome(
+    return await retry_patchright_detail_rejection_with_real_chrome(
         context,
         fetched,
         rejection_reason=rejection_reason,
@@ -121,7 +120,7 @@ async def _retry_detail_challenge_shell_with_real_chrome(
     )
 
 
-async def _retry_patchright_detail_rejection_with_real_chrome(
+async def retry_patchright_detail_rejection_with_real_chrome(
     context: _URLProcessingContext,
     fetched: _FetchedURLStage,
     *,
@@ -157,7 +156,7 @@ async def _retry_patchright_detail_rejection_with_real_chrome(
     if not real_chrome_available():
         return None
 
-    remaining_budget_seconds = _remaining_url_budget_seconds(context)
+    remaining_budget_seconds = remaining_url_budget_seconds(context)
     min_remaining_seconds = _post_extraction_browser_retry_min_remaining_seconds()
     if remaining_budget_seconds < min_remaining_seconds:
         await _log_pipeline_event(
@@ -216,7 +215,7 @@ async def _retry_patchright_detail_rejection_with_real_chrome(
         records=retry_records,
         selector_rules=retry_selector_rules,
     )
-    retry_records, retry_rejection_reason = _apply_detail_rejection_guard(
+    retry_records, retry_rejection_reason = apply_detail_rejection_guard(
         context,
         fetched,
         records=retry_records,
@@ -229,7 +228,7 @@ async def _retry_patchright_detail_rejection_with_real_chrome(
             f"Rejected detail extraction for {context.url}: {retry_rejection_reason}",
         )
     else:
-        await _log_extraction_outcome(context, retry_result, retry_records)
+        await log_extraction_outcome(context, retry_result, retry_records)
     return _ExtractedURLStage(fetched=fetched, records=retry_records)
 
 def _challenge_shell_reason(acquisition_result: AcquisitionResult) -> str | None:
@@ -237,7 +236,7 @@ def _challenge_shell_reason(acquisition_result: AcquisitionResult) -> str | None
         acquisition_result
     ).challenge_shell_reason
 
-def _apply_detail_rejection_guard(
+def apply_detail_rejection_guard(
     context: _URLProcessingContext,
     fetched: _FetchedURLStage,
     *,
@@ -301,7 +300,7 @@ def _apply_detail_rejection_guard(
     fetched.url_metrics["failure_reason"] = rejection_reason
     return [], rejection_reason
 
-async def _log_extraction_outcome(
+async def log_extraction_outcome(
     context: _URLProcessingContext,
     acquisition_result,
     records: list[dict[str, object]],
@@ -323,7 +322,7 @@ async def _log_extraction_outcome(
         f"Extraction yielded 0 records ({extraction_label})",
     )
 
-async def _retry_empty_extraction_with_browser(
+async def retry_empty_extraction_with_browser(
     context: _URLProcessingContext,
     fetched: _FetchedURLStage,
     *,
@@ -340,7 +339,7 @@ async def _retry_empty_extraction_with_browser(
     )
     if not retry_decision["should_retry"]:
         return records, selector_rules
-    remaining_budget_seconds = _remaining_url_budget_seconds(context)
+    remaining_budget_seconds = remaining_url_budget_seconds(context)
     min_remaining_seconds = _browser_retry_min_remaining_seconds()
     if remaining_budget_seconds < min_remaining_seconds:
         await _log_pipeline_event(
@@ -365,7 +364,8 @@ async def _retry_empty_extraction_with_browser(
     )
     return retry_records, retry_selector_rules
 
-async def _retry_low_quality_extraction_with_browser(
+
+async def retry_low_quality_extraction_with_browser(
     context: _URLProcessingContext,
     fetched: _FetchedURLStage,
     *,
@@ -373,12 +373,6 @@ async def _retry_low_quality_extraction_with_browser(
     selector_rules: list[dict[str, object]],
 ) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
     acquisition_result = fetched.acquisition_result
-    if "detail" not in context.surface:
-        return records, selector_rules
-    if getattr(acquisition_result, "method", "") == "browser":
-        return records, selector_rules
-    if not records or _effective_blocked(acquisition_result):
-        return records, selector_rules
     retry_decision = _low_quality_extraction_browser_retry_decision(
         acquisition_result,
         records,
@@ -398,7 +392,7 @@ async def _retry_low_quality_extraction_with_browser(
     ]
     if not missing_fields:
         return records, selector_rules
-    remaining_budget_seconds = _remaining_url_budget_seconds(context)
+    remaining_budget_seconds = remaining_url_budget_seconds(context)
     min_remaining_seconds = _browser_retry_min_remaining_seconds()
     if remaining_budget_seconds < min_remaining_seconds:
         await _log_pipeline_event(
@@ -413,7 +407,8 @@ async def _retry_low_quality_extraction_with_browser(
         context,
         "info",
         "Detail record missing high-value fields "
-        f"{', '.join(missing_fields)} via {acquisition_result.method}; retrying browser render for {context.url}",
+        f"{', '.join(missing_fields)} via {acquisition_result.method}; "
+        f"retrying browser render for {context.url}",
     )
     try:
         browser_result = await _acquire_browser_retry_result(
@@ -426,7 +421,8 @@ async def _retry_low_quality_extraction_with_browser(
     fetched.acquisition_result = browser_result
     return await _extract_records_for_acquisition(context, fetched)
 
-async def _retry_listing_integrity_with_stronger_tier(
+
+async def retry_listing_integrity_with_stronger_tier(
     context: _URLProcessingContext,
     fetched: _FetchedURLStage,
     *,
@@ -436,7 +432,7 @@ async def _retry_listing_integrity_with_stronger_tier(
     """Retry at a stronger acquisition tier when the Listing_Integrity_Gate
     flags a promo_only_cluster. Applies only to listing surfaces.
 
-    Mirrors the contract shape of _retry_low_quality_extraction_with_browser.
+    Mirrors the contract shape of other pipeline browser retries.
     """
     if "listing" not in context.surface:
         return records, selector_rules
@@ -504,7 +500,7 @@ async def _retry_listing_integrity_with_stronger_tier(
         return records, selector_rules
 
     # --- Budget guard (reuse existing pattern) ---
-    remaining_budget_seconds = _remaining_url_budget_seconds(context)
+    remaining_budget_seconds = remaining_url_budget_seconds(context)
     min_remaining_seconds = _browser_retry_min_remaining_seconds()
     if remaining_budget_seconds < min_remaining_seconds:
         await _log_pipeline_event(
@@ -629,12 +625,7 @@ class _EscalationPolicySnapshot:
         self.escalation_disabled = escalation_disabled
         self.host_hard_block = host_hard_block
 
-def _remaining_url_budget_seconds(context: _URLProcessingContext) -> float:
-    from app.services.pipeline import extraction_loop
-
-    facade_func = getattr(extraction_loop, "_remaining_url_budget_seconds", None)
-    if facade_func is not None and facade_func is not _remaining_url_budget_seconds:
-        return float(facade_func(context))
+def remaining_url_budget_seconds(context: _URLProcessingContext) -> float:
     return max(
         0.0,
         float(context.url_timeout_seconds)
@@ -643,13 +634,11 @@ def _remaining_url_budget_seconds(context: _URLProcessingContext) -> float:
 
 def _browser_retry_min_remaining_seconds() -> float:
     return max(
-        float(crawler_runtime_settings.low_quality_browser_retry_min_remaining_seconds),
+        float(crawler_runtime_settings.browser_retry_min_remaining_seconds),
         float(crawler_runtime_settings.browser_render_timeout_seconds)
         + float(crawler_runtime_settings.url_process_timeout_buffer_seconds),
     )
 
-
-remaining_url_budget_seconds = _remaining_url_budget_seconds
 
 def _post_extraction_browser_retry_min_remaining_seconds() -> float:
     return max(
@@ -672,7 +661,7 @@ async def _acquire_browser_retry_result(
     }
     if forced_browser_engine:
         profile_updates["forced_browser_engine"] = forced_browser_engine
-    retry_request = (await _build_acquisition_request(context)).with_profile_updates(
+    retry_request = (await build_acquisition_request(context)).with_profile_updates(
         **profile_updates
     )
     try:

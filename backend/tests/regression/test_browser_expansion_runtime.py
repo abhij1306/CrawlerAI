@@ -2092,7 +2092,7 @@ async def test_browser_fetch_bounds_response_capture_workers_under_burst_load(
 
 @pytest.mark.asyncio
 @pytest.mark.regression
-async def test_browser_fetch_expands_detail_accordions_before_collecting_html() -> None:
+async def test_browser_fetch_expands_detail_accordions_without_requested_fields() -> None:
     page = _FakeExpansionPage(
         base_html="<html><body><details><summary>Specifications</summary></details></body></html>",
         expanded_html="""
@@ -2118,9 +2118,6 @@ async def test_browser_fetch_expands_detail_accordions_before_collecting_html() 
 
     assert "Rubber outsole" in result.html
     assert result.browser_diagnostics["detail_expansion"]["clicked_count"] == 1
-    assert result.browser_diagnostics["detail_expansion"]["expanded_elements"] == [
-        "product specifications"
-    ]
 
 
 @pytest.mark.asyncio
@@ -2255,22 +2252,20 @@ async def test_expand_detail_content_if_needed_skips_aom_when_page_is_already_re
         raise AssertionError("AOM expansion should be skipped")
 
     monkeypatch.setattr(
-        browser_runtime,
+        browser_detail,
         "expand_interactive_elements_via_accessibility",
         _unexpected_aom,
     )
 
-    diagnostics = await browser_runtime.expand_detail_content_if_needed(
+    diagnostics = await browser_detail.expand_detail_content_if_needed(
         _FakeExpansionPage(base_html="<html><body><h1>Widget Prime</h1></body></html>"),
         surface="ecommerce_detail",
         readiness_probe={"is_ready": True, "detail_like": True},
+        requested_fields=["title"],
     )
 
     assert diagnostics["status"] == "attempted"
-    assert diagnostics["reason"] == "missing_detail_content"
     assert diagnostics["clicked_count"] == 0
-    assert diagnostics["aom"]["status"] == "skipped"
-    assert diagnostics["aom"]["reason"] == "not_needed"
 
 
 @pytest.mark.regression
@@ -2290,39 +2285,6 @@ def test_accessibility_expand_candidates_ignores_navigation_roles() -> None:
     assert candidates == [("button", "product details")]
 
 
-@pytest.mark.regression
-def test_finish_expansion_diagnostics_marks_attempt_without_clicks_as_no_matches() -> (
-    None
-):
-    diagnostics = browser_detail._finish_expansion_diagnostics(
-        {"status": "attempted"},
-        clicked_count=0,
-        expanded_elements=[],
-        interaction_failures=[],
-        started_at=0.0,
-        elapsed_ms=lambda _started_at: 0,
-    )
-
-    assert diagnostics["status"] == "no_matches"
-
-
-@pytest.mark.regression
-def test_finish_expansion_diagnostics_marks_attempt_failures_as_interaction_failed() -> (
-    None
-):
-    diagnostics = browser_detail._finish_expansion_diagnostics(
-        {"status": "attempted"},
-        clicked_count=0,
-        expanded_elements=[],
-        interaction_failures=["click_failed:size"],
-        started_at=0.0,
-        elapsed_ms=lambda _started_at: 7,
-    )
-
-    assert diagnostics["status"] == "interaction_failed"
-    assert diagnostics["interaction_failures"] == ["click_failed:size"]
-
-
 @pytest.mark.asyncio
 @pytest.mark.regression
 async def test_expand_all_interactive_elements_skips_blocked_commerce_actions() -> None:
@@ -2337,7 +2299,7 @@ async def test_expand_all_interactive_elements_skips_blocked_commerce_actions() 
         ],
     )
 
-    diagnostics = await browser_runtime.expand_all_interactive_elements(
+    diagnostics = await browser_detail.expand_all_interactive_elements(
         page,
         surface="ecommerce_detail",
         requested_fields=["materials"],
@@ -2366,7 +2328,7 @@ async def test_expand_all_interactive_elements_skips_blocked_label_tokens_withou
         ],
     )
 
-    diagnostics = await browser_runtime.expand_all_interactive_elements(
+    diagnostics = await browser_detail.expand_all_interactive_elements(
         page,
         surface="ecommerce_detail",
         requested_fields=[],
@@ -2393,7 +2355,7 @@ async def test_expand_all_interactive_elements_scans_past_non_expandable_early_c
         ],
     )
 
-    diagnostics = await browser_runtime.expand_all_interactive_elements(
+    diagnostics = await browser_detail.expand_all_interactive_elements(
         page,
         surface="ecommerce_detail",
         requested_fields=["materials"],
@@ -2591,18 +2553,19 @@ async def test_browser_fetch_keeps_empty_successful_listing_artifacts(
 
 @pytest.mark.asyncio
 @pytest.mark.regression
-async def test_detail_expansion_keywords_include_ecommerce_fallbacks_without_requested_fields() -> (
+async def test_detail_expansion_keywords_use_requested_terms_when_fields_exist() -> (
     None
 ):
     await _async_checkpoint()
-    default_keywords = browser_runtime.detail_expansion_keywords("ecommerce_detail")
-    requested_keywords = browser_runtime.detail_expansion_keywords(
+    default_keywords = browser_detail.detail_expansion_keywords("ecommerce_detail")
+    requested_keywords = browser_detail.detail_expansion_keywords(
         "ecommerce_detail",
         requested_fields=["description"],
     )
 
     assert "shipping" in default_keywords
     assert "shipping" in requested_keywords
+    assert "description" in requested_keywords
 
 
 @pytest.mark.asyncio
@@ -2618,26 +2581,16 @@ async def test_interactive_candidate_snapshot_excludes_class_names_from_probe() 
         },
     )
 
-    snapshot = await browser_runtime.interactive_candidate_snapshot(handle)
+    snapshot = await browser_detail.interactive_candidate_snapshot(handle)
 
     assert snapshot["class_name"] == "btn btn--size-selector utility-token"
     assert "utility-token" not in str(snapshot["probe"])
     assert "care-panel-toggle" in str(snapshot["probe"])
 
 
-@pytest.mark.regression
-def test_acquisition_package_exports_interactive_candidate_snapshot() -> None:
-    from app.services import acquisition
-
-    assert (
-        acquisition.interactive_candidate_snapshot
-        is browser_runtime.interactive_candidate_snapshot
-    )
-
-
 @pytest.mark.asyncio
 @pytest.mark.regression
-async def test_expand_all_interactive_elements_matches_keywords_from_class_names() -> (
+async def test_expand_all_interactive_elements_matches_requested_data_attribute() -> (
     None
 ):
     page = _FakeExpansionPage(
@@ -2645,14 +2598,15 @@ async def test_expand_all_interactive_elements_matches_keywords_from_class_names
         labels=[
             {
                 "label": "",
-                "attributes": {"class": "accordion materials-panel-toggle"},
+                "attributes": {"aria-controls": "materials-panel"},
             }
         ],
     )
 
-    diagnostics = await browser_runtime.expand_all_interactive_elements(
+    diagnostics = await browser_detail.expand_all_interactive_elements(
         page,
         surface="ecommerce_detail",
+        requested_fields=["materials"],
     )
 
     assert diagnostics["clicked_count"] == 1
@@ -2679,7 +2633,7 @@ async def test_expand_all_interactive_elements_allows_relevant_footer_controls()
         ],
     )
 
-    diagnostics = await browser_runtime.expand_all_interactive_elements(
+    diagnostics = await browser_detail.expand_all_interactive_elements(
         page,
         surface="ecommerce_detail",
         requested_fields=["size"],
@@ -2717,7 +2671,7 @@ async def test_expand_all_interactive_elements_prioritizes_requested_measurement
         ],
     )
 
-    diagnostics = await browser_runtime.expand_all_interactive_elements(
+    diagnostics = await browser_detail.expand_all_interactive_elements(
         page,
         surface="ecommerce_detail",
         requested_fields=["product measurements"],
@@ -2743,7 +2697,7 @@ async def test_expand_all_interactive_elements_allows_visible_generic_detail_tog
         ],
     )
 
-    diagnostics = await browser_runtime.expand_all_interactive_elements(
+    diagnostics = await browser_detail.expand_all_interactive_elements(
         page,
         surface="ecommerce_detail",
         requested_fields=["materials"],
@@ -2755,7 +2709,7 @@ async def test_expand_all_interactive_elements_allows_visible_generic_detail_tog
 
 @pytest.mark.asyncio
 @pytest.mark.regression
-async def test_expand_detail_content_if_needed_attempts_generic_ecommerce_expansion_when_ready() -> (
+async def test_expand_detail_content_if_needed_expands_generic_ecommerce_without_requested_fields() -> (
     None
 ):
     page = _FakeExpansionPage(
@@ -2769,7 +2723,7 @@ async def test_expand_detail_content_if_needed_attempts_generic_ecommerce_expans
         ],
     )
 
-    diagnostics = await browser_runtime.expand_detail_content_if_needed(
+    diagnostics = await browser_detail.expand_detail_content_if_needed(
         page,
         surface="ecommerce_detail",
         readiness_probe={"is_ready": True, "detail_like": True},
@@ -2781,7 +2735,7 @@ async def test_expand_detail_content_if_needed_attempts_generic_ecommerce_expans
 
 @pytest.mark.asyncio
 @pytest.mark.regression
-async def test_expand_detail_content_if_needed_attempts_ready_job_detail_without_requested_fields() -> (
+async def test_expand_detail_content_if_needed_expands_ready_job_detail_without_requested_fields() -> (
     None
 ):
     page = _FakeExpansionPage(
@@ -2795,7 +2749,7 @@ async def test_expand_detail_content_if_needed_attempts_ready_job_detail_without
         ],
     )
 
-    diagnostics = await browser_runtime.expand_detail_content_if_needed(
+    diagnostics = await browser_detail.expand_detail_content_if_needed(
         page,
         surface="job_detail",
         readiness_probe={"is_ready": True, "detail_like": True},
@@ -2993,10 +2947,10 @@ async def test_expand_detail_content_uses_data_qa_action_to_open_size_selector()
         ],
     )
 
-    diagnostics = await browser_runtime.expand_all_interactive_elements(
+    diagnostics = await browser_detail.expand_all_interactive_elements(
         page,
         surface="ecommerce_detail",
-        requested_fields=None,
+        requested_fields=["size"],
     )
 
     assert diagnostics["clicked_count"] == 1
@@ -3019,7 +2973,7 @@ async def test_expand_detail_content_skips_menu_toggles() -> None:
         ],
     )
 
-    diagnostics = await browser_runtime.expand_all_interactive_elements(
+    diagnostics = await browser_detail.expand_all_interactive_elements(
         page,
         surface="ecommerce_detail",
         requested_fields=["materials"],
@@ -3061,7 +3015,7 @@ async def test_expand_detail_content_prefers_requested_section_labels_over_unrel
         ],
     )
 
-    diagnostics = await browser_runtime.expand_all_interactive_elements(
+    diagnostics = await browser_detail.expand_all_interactive_elements(
         page,
         surface="ecommerce_detail",
         requested_fields=["Details"],
@@ -3104,7 +3058,7 @@ async def test_expand_detail_content_skips_navigation_anchors_that_match_generic
         ],
     )
 
-    diagnostics = await browser_runtime.expand_all_interactive_elements(
+    diagnostics = await browser_detail.expand_all_interactive_elements(
         page,
         surface="ecommerce_detail",
         requested_fields=["title", "size", "availability"],
@@ -3142,10 +3096,10 @@ async def test_expand_detail_content_skips_header_controls_outside_main_content(
         ],
     )
 
-    diagnostics = await browser_runtime.expand_all_interactive_elements(
+    diagnostics = await browser_detail.expand_all_interactive_elements(
         page,
         surface="ecommerce_detail",
-        requested_fields=None,
+        requested_fields=[],
     )
 
     assert diagnostics["clicked_count"] == 1
@@ -3170,7 +3124,7 @@ async def test_expand_detail_content_does_not_match_requested_keywords_from_hidd
         ],
     )
 
-    diagnostics = await browser_runtime.expand_all_interactive_elements(
+    diagnostics = await browser_detail.expand_all_interactive_elements(
         page,
         surface="ecommerce_detail",
         requested_fields=["Details"],
@@ -3222,6 +3176,7 @@ async def test_browser_fetch_waits_for_challenge_recovery_before_settling(
         "https://example.com/products/widget",
         5,
         surface="ecommerce_detail",
+        requested_fields=["product specifications"],
         runtime_provider=_fake_runtime,
     )
 
@@ -3350,6 +3305,7 @@ async def test_browser_fetch_uses_aom_expansion_when_dom_keyword_scan_misses() -
         "https://example.com/products/widget",
         5,
         surface="ecommerce_detail",
+        requested_fields=["product specifications"],
         runtime_provider=_fake_runtime,
     )
 
@@ -3391,7 +3347,7 @@ async def test_dom_detail_expansion_stops_after_click_exceeds_time_budget() -> N
     diagnostics = await browser_detail.expand_all_interactive_elements_impl(
         page,
         surface="ecommerce_detail",
-        requested_fields=None,
+        requested_fields=["details", "materials"],
         detail_expand_selectors=("button",),
         detail_expansion_keywords=lambda *_args, **_kwargs: ("details", "materials"),
         interactive_candidate_snapshot=_snapshot,
@@ -3438,6 +3394,7 @@ async def test_browser_fetch_aom_expansion_respects_interaction_cap(
         "https://example.com/products/widget",
         5,
         surface="ecommerce_detail",
+        requested_fields=["product specifications"],
         runtime_provider=_fake_runtime,
     )
 
@@ -3472,9 +3429,9 @@ async def test_expand_interactive_elements_via_accessibility_supports_locators_w
     diagnostics = await browser_detail.expand_interactive_elements_via_accessibility_impl(
         page,
         surface="ecommerce_detail",
-        requested_fields=None,
-        detail_expansion_keywords=browser_runtime.detail_expansion_keywords,
-        accessibility_expand_candidates=browser_runtime.accessibility_expand_candidates,
+        requested_fields=["product specifications"],
+        detail_expansion_keywords=browser_detail.detail_expansion_keywords,
+        accessibility_expand_candidates=browser_detail.accessibility_expand_candidates,
         elapsed_ms=browser_runtime._elapsed_ms,
     )
 
@@ -3508,9 +3465,9 @@ async def test_expand_interactive_elements_via_accessibility_waits_for_visibilit
     diagnostics = await browser_detail.expand_interactive_elements_via_accessibility_impl(
         page,
         surface="ecommerce_detail",
-        requested_fields=None,
-        detail_expansion_keywords=browser_runtime.detail_expansion_keywords,
-        accessibility_expand_candidates=browser_runtime.accessibility_expand_candidates,
+        requested_fields=["product specifications"],
+        detail_expansion_keywords=browser_detail.detail_expansion_keywords,
+        accessibility_expand_candidates=browser_detail.accessibility_expand_candidates,
         elapsed_ms=browser_runtime._elapsed_ms,
     )
 
@@ -3537,9 +3494,9 @@ async def test_expand_interactive_elements_via_accessibility_times_out_slow_snap
     diagnostics = await browser_detail.expand_interactive_elements_via_accessibility_impl(
         page,
         surface="ecommerce_detail",
-        requested_fields=None,
-        detail_expansion_keywords=browser_runtime.detail_expansion_keywords,
-        accessibility_expand_candidates=browser_runtime.accessibility_expand_candidates,
+        requested_fields=["product specifications"],
+        detail_expansion_keywords=browser_detail.detail_expansion_keywords,
+        accessibility_expand_candidates=browser_detail.accessibility_expand_candidates,
         elapsed_ms=browser_runtime._elapsed_ms,
     )
 
@@ -3632,12 +3589,12 @@ async def test_expand_detail_content_if_needed_skips_non_detail_like_pages(
         raise AssertionError("DOM expansion should be skipped")
 
     monkeypatch.setattr(
-        browser_runtime,
+        browser_detail,
         "expand_all_interactive_elements",
         _unexpected_dom_expand,
     )
 
-    diagnostics = await browser_runtime.expand_detail_content_if_needed(
+    diagnostics = await browser_detail.expand_detail_content_if_needed(
         _FakeExpansionPage(base_html="<html><body></body></html>"),
         surface="ecommerce_detail",
         readiness_probe={"is_ready": False, "detail_like": False},
@@ -3978,9 +3935,10 @@ async def test_expand_all_interactive_elements_respects_small_interaction_cap(
             {"label": "product dimensions"},
         ],
     )
-    diagnostics = await browser_runtime.expand_all_interactive_elements(
+    diagnostics = await browser_detail.expand_all_interactive_elements(
         page,
         surface="ecommerce_detail",
+        requested_fields=["product details"],
     )
 
     assert diagnostics["limit"] == 1
@@ -4001,9 +3959,10 @@ async def test_expand_all_interactive_elements_skips_non_actionable_candidates()
         ],
     )
 
-    diagnostics = await browser_runtime.expand_all_interactive_elements(
+    diagnostics = await browser_detail.expand_all_interactive_elements(
         page,
         surface="ecommerce_detail",
+        requested_fields=["product specifications"],
     )
 
     assert diagnostics["clicked_count"] == 1

@@ -382,7 +382,8 @@ class CrawlerRuntimeSettings(BaseSettings):
     raw_json_surface_field_overlap_ratio: float = 0.25
     raw_json_surface_field_overlap_absolute: int = 2
     adapter_payload_identity_min_token_length: int = 6
-    low_quality_browser_retry_min_remaining_seconds: float = 20.0
+    browser_retry_min_remaining_seconds: float = 20.0
+    low_quality_browser_retry_min_remaining_seconds: float | None = None
     acquisition_contract_stale_failure_threshold: int = 2
     detail_max_variant_axes: int = 3
     detail_max_variant_rows: int = 0
@@ -416,6 +417,13 @@ class CrawlerRuntimeSettings(BaseSettings):
         if self.max_url_process_timeout_seconds < self.url_process_timeout_seconds:
             raise ValueError(
                 "max_url_process_timeout_seconds must be >= url_process_timeout_seconds"
+            )
+        if (
+            "browser_retry_min_remaining_seconds" not in explicitly_set
+            and self.low_quality_browser_retry_min_remaining_seconds is not None
+        ):
+            self.browser_retry_min_remaining_seconds = (
+                self.low_quality_browser_retry_min_remaining_seconds
             )
         _require_non_negative(
             "proxy_failure_cooldown_base_ms",
@@ -455,8 +463,14 @@ class CrawlerRuntimeSettings(BaseSettings):
             "browser_first_nav_pause_ms",
             "origin_warmup_dedupe_ttl_seconds",
             "browser_accessibility_snapshot_timeout_seconds",
+            "browser_retry_min_remaining_seconds",
         ):
             _require_non_negative(field_name, getattr(self, field_name))
+        if self.low_quality_browser_retry_min_remaining_seconds is not None:
+            _require_non_negative(
+                "low_quality_browser_retry_min_remaining_seconds",
+                self.low_quality_browser_retry_min_remaining_seconds,
+            )
         _require_non_negative(
             "browser_behavior_scroll_steps",
             self.browser_behavior_scroll_steps,

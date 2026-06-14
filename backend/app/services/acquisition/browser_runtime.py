@@ -17,12 +17,7 @@ from app.services.acquisition.browser_capture import (
     should_capture_network_payload,
 )
 from app.services.acquisition.browser_detail import (
-    expand_all_interactive_elements,
-    expand_interactive_elements_via_accessibility,
-    accessibility_expand_candidates,  # noqa: F401  re-exported for callers/tests
-    expand_detail_content_if_needed,
-    detail_expansion_keywords,
-    interactive_candidate_snapshot,
+    expand_detail_content_if_needed as _expand_detail_content_if_needed,
 )
 from app.services.acquisition.browser_diagnostics import (
     CHROMIUM_BROWSER_ENGINE as _CHROMIUM_BROWSER_ENGINE,
@@ -957,7 +952,7 @@ async def _settle_browser_page(
         crawler_runtime_settings=crawler_runtime_settings,
         probe_browser_readiness=probe_browser_readiness,
         wait_for_listing_readiness=wait_for_listing_readiness,
-        expand_detail_content_if_needed=expand_detail_content_if_needed,
+        expand_detail_content_if_needed=_expand_detail_content_if_needed,
         append_readiness_probe=append_readiness_probe,
         elapsed_ms=_elapsed_ms,
     )
@@ -1032,13 +1027,11 @@ __all__ = [
     "SharedBrowserRuntime", "BROWSER_CAPTURE_MAX_NETWORK_PAYLOADS",
     "BROWSER_CAPTURE_MAX_NETWORK_PAYLOAD_BYTES", "BROWSER_CAPTURE_QUEUE_SIZE",
     "BROWSER_CAPTURE_WORKERS", "NetworkPayloadReadResult", "browser_fetch",
-    "accessibility_expand_candidates", "build_browser_diagnostics_contract",
+    "build_browser_diagnostics_contract",
     "browser_runtime_snapshot", "block_unneeded_route",
     "build_failed_browser_diagnostics", "capture_browser_screenshot",
     "classify_network_endpoint", "classify_browser_outcome",
-    "detail_expansion_keywords", "expand_all_interactive_elements",
-    "expand_detail_content_if_needed", "expand_interactive_elements_via_accessibility",
-    "interactive_candidate_snapshot", "get_browser_runtime",
+    "get_browser_runtime",
     "listing_card_signal_count", "looks_like_low_content_shell",
     "patchright_browser_available", "read_network_payload_body",
     "real_chrome_browser_available", "real_chrome_candidate_paths",

@@ -445,7 +445,7 @@ export function Tooltip({
               role="tooltip"
               className={cn(
                 'pointer-events-none fixed w-max max-w-[min(420px,calc(100vw-24px))]',
-                'border border-border-strong bg-panel rounded-md px-2 py-1.5',
+                'bg-panel rounded-md border border-border-strong px-2 py-1.5',
                 'text-foreground z-[200] text-sm leading-normal font-medium break-words',
               )}
               style={{ left: `${position.left}px`, top: `${position.top}px` }}

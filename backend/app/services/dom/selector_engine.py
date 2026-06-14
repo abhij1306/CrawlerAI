@@ -32,6 +32,7 @@ from app.services.config.extraction_rules import (
     SCOPE_SCORE_PRIORITY_WEIGHT,
     SCOPE_SCORE_PRODUCT_CONTEXT_WEIGHT,
 )
+from app.services.config.selectors import NON_CONTENT_TAGS
 from app.services.config.surface_hints import detail_path_hints
 from app.services.dom.image_extraction import (
     candidate_image_urls_from_node,  # noqa: F401 - public compatibility export
@@ -51,7 +52,6 @@ from app.services.dom.section_extraction import (
     extract_label_value_pairs,
     section_text_is_meaningful,
 )
-from app.services.config.runtime_settings import crawler_runtime_settings
 from app.services.config.field_mappings import ADDITIONAL_IMAGES_FIELD
 from app.services.dom.content_extractability import (
     requested_content_extractability_impl,
@@ -76,7 +76,11 @@ from app.services.shared.field_coerce import (
 )
 from app.services.shared.coerce_primitives import safe_int as _safe_int
 from app.services.shared.regex_patterns import compile_regex_patterns
-from app.services.dom.xpath_service import validate_xpath_syntax
+from app.services.dom.xpath_service import (
+    _is_non_visible_node,
+    resolve_selector_regex_timeout,
+    validate_xpath_syntax,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -123,18 +127,6 @@ def _compile_variant_option_child_drop_patterns() -> tuple[re.Pattern[str], ...]
 _VARIANT_OPTION_CHILD_DROP_RE = _compile_variant_option_child_drop_patterns()
 
 _PAGE_FILE_EXTENSIONS = (".asp", ".aspx", ".htm", ".html", ".jsp", ".php")
-
-
-def _selector_regex_timeout_seconds() -> float | None:
-    try:
-        timeout = float(crawler_runtime_settings.selector_regex_timeout_seconds)
-    except (TypeError, ValueError):
-        logger.warning(
-            "Invalid selector_regex_timeout_seconds=%r; disabling selector regex timeout",
-            crawler_runtime_settings.selector_regex_timeout_seconds,
-        )
-        return None
-    return timeout if timeout > 0 else None
 
 
 _detail_text_scope_selectors = tuple(
@@ -403,6 +395,8 @@ def _is_in_cross_link_container(node: Tag, *, max_depth: int = 6) -> bool:
 
 
 def extract_node_value(node: Tag, field_name: str, page_url: str) -> object | None:
+    if str(node.name or "").strip().lower() in NON_CONTENT_TAGS:
+        return None
     if field_name in IMAGE_FIELDS:
         srcset = node.get("srcset")
         image_candidates: object = (
@@ -575,6 +569,8 @@ def extract_xpath_values(
         except TypeError:
             limited_matches = [matches]
     for match in limited_matches:
+        if _is_non_visible_node(match):
+            continue
         if isinstance(match, lxml_html.HtmlElement):
             raw_value = match.text_content()
         elif isinstance(match, etree._Element):
@@ -596,7 +592,7 @@ def extract_regex_values(
 ) -> list[object]:
     html_text = str(root)
     values: list[object] = []
-    timeout = _selector_regex_timeout_seconds()
+    timeout = resolve_selector_regex_timeout()
     try:
         matches = regex_lib.finditer(
             pattern,
@@ -628,7 +624,7 @@ def filter_values_by_regex(
     page_url: str,
 ) -> list[object]:
     filtered: list[object] = []
-    timeout = _selector_regex_timeout_seconds()
+    timeout = resolve_selector_regex_timeout()
     try:
         for candidate in values:
             match = regex_lib.search(

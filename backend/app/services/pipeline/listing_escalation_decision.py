@@ -1,8 +1,6 @@
 """Listing-integrity acquisition escalation decision.
 
-Pure decision function that mirrors the contract shape of
-``extraction_retry_decision.low_quality_extraction_browser_retry_decision``:
-no I/O, no mutation of inputs.
+Pure decision function: no I/O, no mutation of inputs.
 
 Determines whether a listing-quality retry at a stronger acquisition tier
 should be triggered when the Listing_Integrity_Gate flags a candidate set

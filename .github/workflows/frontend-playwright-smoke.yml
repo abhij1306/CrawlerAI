@@ -98,7 +98,7 @@ jobs:
         env:
           NEXT_PUBLIC_API_BASE_URL: http://127.0.0.1:8000
         run: |
-          nohup npm run dev -- --hostname 127.0.0.1 --port 3000 > /tmp/frontend.log 2>&1 &
+          nohup npm run dev > /tmp/frontend.log 2>&1 &
 
       - name: Wait for frontend root URL
         run: |

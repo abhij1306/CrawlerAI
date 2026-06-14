@@ -272,7 +272,7 @@ def _surface_requested_defaults_union(
     requested = [
         field_name
         for field_name in canonical_requested_fields(requested_fields)
-        if field_allowed_for_surface(surface, field_name, pre_normalized=True)
+        if field_name
     ]
     defaults = [
         field_name

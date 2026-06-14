@@ -160,19 +160,6 @@ def test_listing_signals_detect_list_item_type() -> None:
 
     assert has_extractable_listing_signals(html) is True
 
-
-
-@pytest.mark.component
-def test_acquisition_package_exports_runtime_expand_function() -> None:
-    from app.services import acquisition
-
-    assert (
-        acquisition.expand_all_interactive_elements
-        is acquisition_browser_runtime.expand_all_interactive_elements
-    )
-
-
-
 @pytest.mark.component
 def test_is_special_use_domain_ignores_ports() -> None:
     assert is_special_use_domain("localhost:3000") is True

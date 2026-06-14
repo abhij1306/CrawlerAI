@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Mapping
 from typing import Any, Awaitable, Callable
 
 from app.services.acquisition.browser_diagnostics import (
@@ -11,6 +12,20 @@ from app.services.acquisition.browser_diagnostics import (
 from app.services.acquisition.browser_page_helpers import dismiss_safe_location_interstitial
 from app.services.acquisition.runtime import PageFetchResult, copy_headers
 from app.services.shared.field_coerce import clean_text
+
+
+def browser_page_load_elapsed_ms(phase_timings_ms: Mapping[str, object]) -> int:
+    navigation_ms = _timing_ms(phase_timings_ms.get("navigation"))
+    challenge_wait_ms = _timing_ms(phase_timings_ms.get("challenge_wait"))
+    challenge_retry_ms = _timing_ms(phase_timings_ms.get("challenge_retry"))
+    return navigation_ms + challenge_wait_ms + challenge_retry_ms
+
+
+def _timing_ms(value: object) -> int:
+    try:
+        return max(0, int(float(value)))  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return 0
 
 
 async def emit_page_loaded_event(
@@ -30,7 +45,7 @@ async def emit_page_loaded_event(
         on_event,
         "info",
         (
-            f"Page loaded in {phase_timings_ms.get('navigation', 0)}ms"
+            f"Page loaded in {browser_page_load_elapsed_ms(phase_timings_ms)}ms"
             + (f' - title="{page_title}"' if page_title else "")
         ),
     )

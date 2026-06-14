@@ -16,7 +16,6 @@ from app.services.acquisition.acquirer import (
 from app.services.adapters.base import AdapterResult
 from app.services.crawl.crud import create_crawl_run, get_run_logs, get_run_records
 from app.services.pipeline.extraction_loop import (
-    URLProcessingContext,
     best_adapter_result,
     empty_extraction_browser_retry_decision,
     resolved_url_processing_config,
@@ -24,10 +23,6 @@ from app.services.pipeline.extraction_loop import (
     process_single_url,
 )
 from app.services.pipeline.direct_record_fallback import apply_direct_record_llm_fallback
-from app.services.pipeline.extraction_retry_decision import (
-    low_quality_extraction_browser_retry_decision,
-    records_missing_repair_fields,
-)
 from app.services.pipeline.persistence import persist_acquisition_artifacts
 from app.services.pipeline.types import URLProcessingConfig
 from app.services.robots_policy import RobotsPolicyResult
@@ -326,6 +321,104 @@ def test_empty_detail_extraction_retry_skips_non_retryable_http_status() -> None
 
 
 @pytest.mark.regression
+def test_empty_detail_extraction_retry_skips_static_not_found_page() -> None:
+    request = AcquisitionRequest(
+        run_id=1,
+        url="https://example.com/products/missing-widget",
+        plan=AcquisitionPlan(surface="ecommerce_detail"),
+    )
+    acquisition_result = AcquisitionResult(
+        request=request,
+        final_url=request.url,
+        html=(
+            "<html><head><title>Page Not Found - Example</title></head>"
+            "<body><h1>Nothing to see here</h1></body></html>"
+        ),
+        method="curl_cffi",
+        status_code=200,
+    )
+
+    decision = empty_extraction_browser_retry_decision(
+        acquisition_result,
+        [],
+        surface="ecommerce_detail",
+        requested_fields=[],
+        selector_rules=[],
+    )
+
+    assert decision == {
+        "should_retry": False,
+        "reason": "static_detail_not_found",
+    }
+
+
+@pytest.mark.regression
+def test_empty_detail_extraction_does_not_treat_access_denied_as_not_found() -> None:
+    request = AcquisitionRequest(
+        run_id=1,
+        url="https://example.com/products/widget",
+        plan=AcquisitionPlan(surface="ecommerce_detail"),
+    )
+    acquisition_result = AcquisitionResult(
+        request=request,
+        final_url=request.url,
+        html=(
+            "<html><head><title>Access Denied</title></head>"
+            "<body><h1>Access Denied</h1></body></html>"
+        ),
+        method="curl_cffi",
+        status_code=200,
+    )
+
+    decision = empty_extraction_browser_retry_decision(
+        acquisition_result,
+        [],
+        surface="ecommerce_detail",
+        requested_fields=[],
+        selector_rules=[],
+    )
+
+    assert decision == {
+        "should_retry": True,
+        "reason": "empty_non_browser_html",
+    }
+
+
+@pytest.mark.regression
+def test_empty_detail_extraction_retry_skips_static_shell_mismatch() -> None:
+    request = AcquisitionRequest(
+        run_id=1,
+        url="https://www.allbirds.com/products/mens-wool-runners-natural-black",
+        plan=AcquisitionPlan(surface="ecommerce_detail"),
+    )
+    acquisition_result = AcquisitionResult(
+        request=request,
+        final_url=request.url,
+        html=(
+            "<html><head><title>Allbirds: Comfortable, Sustainable Shoes & Apparel"
+            "</title></head><body><h1>Added to Cart</h1>"
+            "<h1>Wildly Comfortable. Super Natural.</h1>"
+            "<h1>New Arrivals</h1><h1>Mens</h1><h1>Womens</h1></body></html>"
+        ),
+        method="curl_cffi",
+        status_code=200,
+    )
+
+    decision = empty_extraction_browser_retry_decision(
+        acquisition_result,
+        [],
+        surface="ecommerce_detail",
+        requested_fields=[],
+        selector_rules=[],
+    )
+
+    assert decision == {
+        "should_retry": False,
+        "reason": "static_detail_shell_mismatch",
+    }
+
+
+@pytest.mark.regression
 def test_empty_detail_extraction_retries_retryable_http_status() -> None:
     request = AcquisitionRequest(
         run_id=1,
@@ -477,126 +570,9 @@ async def test_process_single_url_retries_406_empty_detail_with_browser(
     )
 
 
-@pytest.mark.regression
-def test_low_quality_detail_retry_targets_real_non_browser_fetches() -> None:
-    request = AcquisitionRequest(
-        run_id=1,
-        url="https://example.com/products/widget-prime",
-        plan=AcquisitionPlan(surface="ecommerce_detail"),
-    )
-    acquisition_result = AcquisitionResult(
-        request=request,
-        final_url=request.url,
-        html="""
-        <html>
-          <head>
-            <script>window.__NEXT_DATA__ = {"props":{"pageProps":{"product":{"id":"123"}}}};</script>
-          </head>
-          <body>
-            <div id="__next"></div>
-            <noscript>Please enable JavaScript to continue.</noscript>
-          </body>
-        </html>
-        """,
-        method="curl_cffi",
-        status_code=200,
-    )
-
-    decision = low_quality_extraction_browser_retry_decision(
-        acquisition_result,
-        [{"title": "Widget Prime"}],
-        surface="ecommerce_detail",
-        requested_fields=[],
-    )
-
-    assert decision["should_retry"] is True
-    assert "price" in decision["missing_fields"]
-
-    acquisition_result.method = "test"
-    assert low_quality_extraction_browser_retry_decision(
-        acquisition_result,
-        [{"title": "Widget Prime"}],
-        surface="ecommerce_detail",
-        requested_fields=[],
-    ) == {"should_retry": False, "reason": "method_not_retryable"}
-
-
-@pytest.mark.regression
-def test_low_quality_detail_retry_skips_when_limited_canonical_fields_complete() -> (
-    None
-):
-    request = AcquisitionRequest(
-        run_id=1,
-        url="https://example.com/products/widget-prime",
-        plan=AcquisitionPlan(surface="ecommerce_detail"),
-    )
-    acquisition_result = AcquisitionResult(
-        request=request,
-        final_url=request.url,
-        html=_detail_html(),
-        method="curl_cffi",
-        status_code=200,
-    )
-
-    decision = low_quality_extraction_browser_retry_decision(
-        acquisition_result,
-        [
-            {
-                "title": "Widget Prime",
-                "price": "19.99",
-                "image_url": "https://example.com/widget.jpg",
-            }
-        ],
-        surface="ecommerce_detail",
-        requested_fields=[],
-    )
-
-    assert decision == {
-        "should_retry": False,
-        "reason": "repair_fields_complete",
-    }
-
-
 @pytest.mark.asyncio
 @pytest.mark.regression
-async def test_missing_repair_fields_uses_default_ecommerce_targets(
-    db_session: AsyncSession,
-    test_user,
-) -> None:
-    run = await create_crawl_run(
-        db_session,
-        test_user.id,
-        {
-            "run_type": "crawl",
-            "url": "https://example.com/products/widget-prime",
-            "surface": "ecommerce_detail",
-            "settings": {},
-        },
-    )
-    context = URLProcessingContext(
-        session=db_session,
-        run=run,
-        url=run.url,
-        config=URLProcessingConfig(),
-        url_timeout_seconds=30.0,
-        started_at_monotonic=0.0,
-        requested_fields=list(run.requested_fields or []),
-        surface=run.surface,
-    )
-
-    missing = records_missing_repair_fields(
-        surface=context.surface,
-        requested_fields=list(context.requested_fields),
-        records=[{"title": "Widget Prime", "price": "19.99"}],
-    )
-
-    assert "price" not in missing
-    assert missing == ["image_url"]
-
-
-@pytest.mark.asyncio
-@pytest.mark.regression
-async def test_process_single_url_skips_low_quality_browser_retry_when_budget_low(
+async def test_process_single_url_does_not_retry_browser_for_missing_detail_fields(
     db_session: AsyncSession,
     test_user,
     monkeypatch: pytest.MonkeyPatch,
@@ -610,7 +586,7 @@ async def test_process_single_url_skips_low_quality_browser_retry_when_budget_lo
             "surface": "ecommerce_detail",
             "settings": {
                 "respect_robots_txt": False,
-                "url_timeout_seconds": 5,
+                "url_timeout_seconds": 45,
             },
         },
     )
@@ -647,74 +623,10 @@ async def test_process_single_url_skips_low_quality_browser_retry_when_budget_lo
     monkeypatch.setattr(
         "app.services.pipeline.extraction_loop.extract_records", _fake_extract_records
     )
-    monkeypatch.setattr(
-        "app.services.pipeline.extraction_loop._remaining_url_budget_seconds",
-        lambda _context: 4.5,
-    )
-
     result = await process_single_url(db_session, run, run.url)
-    logs = await get_run_logs(db_session, run.id)
 
     assert result.records
     assert len(acquire_calls) == 1
-    assert any("Skipping low-quality browser retry" in log.message for log in logs)
-
-
-@pytest.mark.asyncio
-@pytest.mark.regression
-async def test_low_quality_browser_retry_timeout_preserves_http_record(
-    db_session: AsyncSession,
-    test_user,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    run = await create_crawl_run(
-        db_session,
-        test_user.id,
-        {
-            "run_type": "crawl",
-            "url": "https://example.com/products/widget-prime",
-            "surface": "ecommerce_detail",
-            "settings": {"respect_robots_txt": False},
-        },
-    )
-    acquire_calls: list[dict[str, object]] = []
-
-    @_as_async
-    def _fake_acquire(request: AcquisitionRequest) -> AcquisitionResult:
-        acquire_calls.append(dict(request.acquisition_profile))
-        if request.acquisition_profile.get("prefer_browser"):
-            raise TimeoutError(
-                "Browser navigation stage exceeded timeout_seconds=45.00"
-            )
-        return _fake_acquire_result(
-            request,
-            html="""
-            <html>
-              <head>
-                <script>window.__NEXT_DATA__ = {"props":{"pageProps":{"product":{"id":"123"}}}};</script>
-              </head>
-              <body>
-                <div id="__next"></div>
-                <noscript>Please enable JavaScript to continue.</noscript>
-              </body>
-            </html>
-            """,
-            method="curl_cffi",
-        )
-
-    monkeypatch.setattr("app.services.pipeline.extraction_loop.acquire", _fake_acquire)
-    monkeypatch.setattr("app.services.pipeline.extraction_loop.run_adapter", _no_adapter)
-    monkeypatch.setattr(
-        "app.services.pipeline.extraction_loop.extract_records",
-        lambda *args, **kwargs: [{"title": "Widget Prime"}],
-    )
-
-    result = await process_single_url(db_session, run, run.url)
-    logs = await get_run_logs(db_session, run.id)
-
-    assert result.records == [{"title": "Widget Prime"}]
-    assert len(acquire_calls) == 2
-    assert any("Browser retry failed" in log.message for log in logs)
 
 
 @pytest.mark.asyncio
@@ -763,7 +675,7 @@ async def test_process_single_url_skips_empty_browser_retry_when_budget_low(
         "app.services.pipeline.extraction_loop.extract_records", lambda *args, **kwargs: []
     )
     monkeypatch.setattr(
-        "app.services.pipeline.extraction_loop._remaining_url_budget_seconds",
+        "app.services.pipeline.retry.stage.remaining_url_budget_seconds",
         lambda _context: 29.0,
     )
 
@@ -3631,7 +3543,7 @@ async def test_challenge_shell_budget_skip_logs_once(
         lambda: True,
     )
     monkeypatch.setattr(
-        "app.services.pipeline.extraction_loop._remaining_url_budget_seconds",
+        "app.services.pipeline.retry.stage.remaining_url_budget_seconds",
         lambda context: 1.0,
     )
 

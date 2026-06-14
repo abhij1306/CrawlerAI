@@ -12,7 +12,6 @@ from app.services.acquisition.browser_runtime import (
     build_failed_browser_diagnostics,
     browser_fetch,
     browser_runtime_snapshot,
-    expand_all_interactive_elements,
     get_browser_runtime,
     real_chrome_browser_available,
     shutdown_browser_runtime,
@@ -53,6 +52,10 @@ from app.services.config.runtime_settings import (
     crawler_runtime_settings,
     proxy_rotation_mode,
 )
+from app.services.config.pipeline_reasons import (
+    BROWSER_ESCALATION_SKIPPED_INSUFFICIENT_BUDGET,
+    REQUESTED_FIELDS_BROWSER_REASON,
+)
 from app.services.platform_policy import resolve_platform_runtime_policy
 from app.services.fetch.browser_policy import (
     browser_engine_attempts as _browser_engine_attempts_impl,
@@ -69,11 +72,13 @@ from app.services.fetch.browser_policy import (
     host_policy_snapshot as _host_policy_snapshot,
     is_vendor_block_reason as _is_vendor_block_reason,
     normalize_fetch_mode as _normalize_fetch_mode,
+    requested_detail_fields_require_browser as _requested_detail_fields_require_browser,
     normalize_proxy_profile as _normalize_proxy_profile,
     resolve_browser_reason as _resolve_browser_reason,
     resolve_proxy_attempts as _resolve_proxy_attempts,
     vendor_confirmed_block as _vendor_confirmed_block,
 )
+from app.services.fetch.browser_attempt import browser_fetch_kwargs, browser_fetch_with_wall_clock_timeout
 from app.services.fetch.types import FetchPageCall, FetchRuntimeContext
 from app.services.shared.url_utils import ensure_scheme
 logger = logging.getLogger(__name__)
@@ -247,17 +252,9 @@ def _patchright_probe_cap_applies(
     reason: str,
     engine_attempts: list[str],
 ) -> bool:
-    """Probe-cap Patchright when real Chrome is already queued.
-
-    Vendor-blocked pages need enough remaining acquisition budget for the
-    stronger engine. Without this cap Patchright can burn most of the URL-local
-    budget and leave real Chrome too little time to navigate.
-    """
     expected_vendor = _extract_vendor_from_reason(reason) or ""
     if not expected_vendor:
         return False
-    if "real_chrome" in engine_attempts:
-        return True
     if host_policy is None:
         return False
     if not bool(host_policy.patchright_blocked):
@@ -266,6 +263,7 @@ def _patchright_probe_cap_applies(
         return False
     last_vendor = str(host_policy.last_block_vendor or "").strip().lower()
     return expected_vendor == last_vendor
+
 
 
 async def fetch_page(
@@ -347,7 +345,12 @@ async def fetch_page(
             )
             return handoff_result
         resolved_browser_reason = _resolve_browser_reason(
-            browser_reason=call.browser_reason,
+            browser_reason=call.browser_reason
+            or (
+                REQUESTED_FIELDS_BROWSER_REASON
+                if _requested_detail_fields_require_browser(context)
+                else None
+            ),
             requires_browser=bool(context.runtime_policy.get("requires_browser")),
             traversal_required=context.traversal_required,
             host_preference_enabled=host_preference_enabled,
@@ -577,26 +580,22 @@ async def _run_browser_attempts(
                         "Acquisition browser retry budget exhausted before "
                         f"{browser_engine} could run"
                     )
-                result = await _browser_fetch(
+                result = await browser_fetch_with_wall_clock_timeout(
+                    _browser_fetch,
                     context.url,
                     remaining_timeout,
-                    run_id=context.run_id,
-                    proxy=proxy,
                     browser_engine=browser_engine,
-                    browser_reason=reason,
-                    escalation_lane=escalation_lane,
-                    host_policy_snapshot=host_policy_snapshot,
-                    proxy_profile=context.proxy_profile,
-                    locality_profile=context.locality_profile,
-                    surface=context.surface,
-                    traversal_mode=context.traversal_mode,
-                    requested_fields=browser_requested_fields,
-                    listing_recovery_mode=recovery_mode,
-                    capture_screenshot=capture_screenshot,
-                    max_pages=context.max_pages,
-                    max_scrolls=context.max_scrolls,
-                    max_records=context.max_records,
-                    on_event=context.on_event,
+                    fetch_kwargs=browser_fetch_kwargs(
+                        context,
+                        proxy=proxy,
+                        browser_engine=browser_engine,
+                        reason=reason,
+                        escalation_lane=escalation_lane,
+                        host_policy_snapshot=host_policy_snapshot,
+                        requested_fields=browser_requested_fields,
+                        recovery_mode=recovery_mode,
+                        capture_screenshot=capture_screenshot,
+                    ),
                 )
                 result.browser_diagnostics = {
                     **dict(result.browser_diagnostics or {}),
@@ -673,10 +672,6 @@ async def _run_browser_attempts(
                         ),
                     )
                     continue
-                # When patchright times out on a vendor-block escalation,
-                # treat it like a blocked result for engine rotation purposes.
-                # This allows real_chrome to be tried within the same run
-                # instead of requiring a second run with host memory.
                 if (
                     isinstance(exc, (TimeoutError, asyncio.TimeoutError))
                     and _is_vendor_block_reason(reason)
@@ -1033,6 +1028,14 @@ async def _handle_http_result(
                 diagnostics=context.last_browser_attempt_diagnostics,
             )
             return result, bool(vendor)
+        remaining_timeout = _remaining_browser_timeout_seconds(context)
+        min_browser_budget = max(0.0, float(crawler_runtime_settings.browser_retry_min_remaining_seconds))
+        if remaining_timeout < min_browser_budget:
+            result.browser_diagnostics = {
+                **dict(result.browser_diagnostics or {}),
+                "browser_escalation_skipped": BROWSER_ESCALATION_SKIPPED_INSUFFICIENT_BUDGET,
+            }
+            return result, bool(vendor)
         browser_reason = context.browser_reason or (
             f"vendor-block:{vendor}" if vendor else "http-escalation"
         )
@@ -1130,7 +1133,6 @@ __all__ = [
     "SharedBrowserRuntime",
     "browser_runtime_snapshot",
     "close_shared_http_client",
-    "expand_all_interactive_elements",
     "fetch_page",
     "is_blocked_html",
     "reset_fetch_runtime_state",

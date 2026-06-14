@@ -32,6 +32,7 @@ from app.services.pipeline.listing_integrity import (
 from app.services.pipeline.raw_json import extract_raw_json_records
 from app.services.pipeline.sitemap import extract_xml_sitemap_records
 from app.services.shared.field_coerce import (
+    clean_text,
     direct_record_to_surface_fields,
     finalize_record,
     is_title_noise,

@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import logging
-from typing import Annotated
+from typing import Annotated, NoReturn
 from urllib.parse import urlparse
 
 import httpx
+from soupsieve import SelectorSyntaxError
 
 from app.core.dependencies import get_current_user, get_db
 from app.models.user import User
@@ -31,12 +32,41 @@ from app.services.selectors_runtime import (
     update_selector_record,
 )
 from app.services.url_safety import SecurityError, validate_public_target
+from app.services.acquisition.playwright_compat import (
+    PlaywrightError,
+    PlaywrightTimeoutError,
+    is_recoverable_playwright_error,
+)
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from fastapi.responses import HTMLResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter(prefix="/api/selectors", tags=["selectors"])
 logger = logging.getLogger(__name__)
+
+
+def _raise_selector_fetch_error(
+    exc: Exception,
+    *,
+    message: str,
+    detail: str,
+) -> NoReturn:
+    logger.warning(message, exc_info=True)
+    raise HTTPException(
+        status_code=status.HTTP_502_BAD_GATEWAY,
+        detail=detail,
+    ) from exc
+
+
+def _raise_selector_runtime_error(
+    exc: RuntimeError,
+    *,
+    message: str,
+    detail: str,
+) -> NoReturn:
+    if is_recoverable_playwright_error(exc):
+        _raise_selector_fetch_error(exc, message=message, detail=detail)
+    raise exc
 
 
 @router.get("/summary")
@@ -151,8 +181,26 @@ async def selectors_suggest(
             expected_columns=list(payload.expected_columns or []),
             surface=payload.surface,
         )
-    except ValueError as exc:
+    except (ValueError, SecurityError, SelectorSyntaxError) as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except (TimeoutError, PlaywrightTimeoutError) as exc:
+        logger.warning("Timed out suggesting selectors", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="Timed out fetching preview HTML from the upstream page.",
+        ) from exc
+    except (httpx.HTTPError, OSError, PlaywrightError) as exc:
+        _raise_selector_fetch_error(
+            exc,
+            message="Failed suggesting selectors",
+            detail="Unable to fetch preview HTML from the upstream page.",
+        )
+    except RuntimeError as exc:
+        _raise_selector_runtime_error(
+            exc,
+            message="Failed suggesting selectors",
+            detail="Unable to fetch preview HTML from the upstream page.",
+        )
     return SelectorSuggestResponse.model_validate(result)
 
 
@@ -161,12 +209,33 @@ async def selectors_test(
     payload: SelectorTestRequest,
     _: Annotated[User, Depends(get_current_user)],
 ) -> SelectorTestResponse:
-    result = await test_selector(
-        url=str(payload.url),
-        css_selector=payload.css_selector,
-        xpath=payload.xpath,
-        regex=payload.regex,
-    )
+    try:
+        result = await test_selector(
+            url=str(payload.url),
+            css_selector=payload.css_selector,
+            xpath=payload.xpath,
+            regex=payload.regex,
+        )
+    except (ValueError, SecurityError, SelectorSyntaxError) as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except (TimeoutError, PlaywrightTimeoutError) as exc:
+        logger.warning("Timed out testing selector", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="Timed out fetching HTML from the upstream page.",
+        ) from exc
+    except (httpx.HTTPError, OSError, PlaywrightError) as exc:
+        _raise_selector_fetch_error(
+            exc,
+            message="Failed testing selector",
+            detail="Unable to fetch HTML from the upstream page.",
+        )
+    except RuntimeError as exc:
+        _raise_selector_runtime_error(
+            exc,
+            message="Failed testing selector",
+            detail="Unable to fetch HTML from the upstream page.",
+        )
     return SelectorTestResponse.model_validate(result)
 
 
@@ -190,7 +259,7 @@ async def selectors_preview_html(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(exc),
         ) from exc
-    except TimeoutError as exc:
+    except (TimeoutError, PlaywrightTimeoutError) as exc:
         logger.warning(
             "Timed out fetching selector preview HTML",
             exc_info=True,
@@ -199,15 +268,18 @@ async def selectors_preview_html(
             status_code=status.HTTP_504_GATEWAY_TIMEOUT,
             detail="Timed out fetching preview HTML from the upstream page.",
         ) from exc
-    except (httpx.HTTPError, OSError, RuntimeError) as exc:
-        logger.warning(
-            "Failed fetching selector preview HTML",
-            exc_info=True,
-        )
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
+    except (httpx.HTTPError, OSError, PlaywrightError) as exc:
+        _raise_selector_fetch_error(
+            exc,
+            message="Failed fetching selector preview HTML",
             detail="Unable to fetch preview HTML from the upstream page.",
-        ) from exc
+        )
+    except RuntimeError as exc:
+        _raise_selector_runtime_error(
+            exc,
+            message="Failed fetching selector preview HTML",
+            detail="Unable to fetch preview HTML from the upstream page.",
+        )
     return HTMLResponse(
         content=build_preview_html(
             source_url=str(document["url"]),

@@ -3,11 +3,11 @@ from __future__ import annotations
 from bs4 import BeautifulSoup
 
 from app.services.acquisition.acquirer import AcquisitionResult, PageEvidence
+from app.services.acquisition.browser_readiness import analyze_html
 from app.services.acquisition.runtime import (
     is_non_retryable_http_status,
     is_retryable_http_status,
 )
-from app.services.acquisition.browser_readiness import analyze_html
 from app.services.config.extraction_rules import (
     DETAIL_CURRENT_PRICE_SELECTORS,
     DETAIL_IDENTITY_FIELDS,
@@ -18,11 +18,26 @@ from app.services.config.extraction_rules import (
     PRICE_FIELDS,
     VARIANT_FIELDS,
 )
-from app.services.config.pipeline_reasons import NON_RETRYABLE_HTTP_STATUS_REASON
+from app.services.config.detail_extraction_constants import (
+    STATIC_DETAIL_NOT_FOUND_TITLE_PATTERNS,
+    STATIC_DETAIL_SHELL_HEADING_MIN_MATCHES,
+    STATIC_DETAIL_SHELL_HEADING_PHRASES,
+)
+from app.services.config.pipeline_reasons import (
+    NON_RETRYABLE_HTTP_STATUS_REASON,
+    STATIC_DETAIL_NOT_FOUND_REASON,
+    STATIC_DETAIL_SHELL_MISMATCH_REASON,
+)
 from app.services.config.runtime_settings import crawler_runtime_settings
 from app.services.extract.detail.identity.core import (
+    detail_title_from_url,
+    detail_url_looks_like_product,
     detail_url_is_collection_like,
     detail_url_is_utility,
+    semantic_detail_identity_tokens,
+)
+from app.services.extract.detail.identity.shell_filter import (
+    title_looks_like_brand_shell,
 )
 from app.services.extract.variant_choice_traversal import variant_dom_cues_present
 from app.services.field_policy import (
@@ -31,6 +46,12 @@ from app.services.field_policy import (
 )
 from app.services.dom.selector_engine import requested_content_extractability
 from app.services.pipeline.runtime_helpers import effective_blocked
+
+NORMALIZED_STATIC_DETAIL_SHELL_HEADING_PHRASES = {
+    str(phrase or "").strip().lower()
+    for phrase in tuple(STATIC_DETAIL_SHELL_HEADING_PHRASES or ())
+    if str(phrase or "").strip()
+}
 
 
 def empty_extraction_browser_retry_decision(
@@ -70,6 +91,13 @@ def empty_extraction_browser_retry_decision(
         return {"should_retry": False, "reason": "json_response"}
     if _detail_request_url_is_non_detail_seed(acquisition_result, surface=surface):
         return {"should_retry": False, "reason": "non_detail_seed"}
+    if _empty_detail_html_looks_not_found(acquisition_result, surface=surface):
+        return {"should_retry": False, "reason": STATIC_DETAIL_NOT_FOUND_REASON}
+    if _empty_detail_html_looks_like_shell_mismatch(
+        acquisition_result,
+        surface=surface,
+    ):
+        return {"should_retry": False, "reason": STATIC_DETAIL_SHELL_MISMATCH_REASON}
     if _empty_detail_extraction_has_static_evidence(
         acquisition_result,
         surface=surface,
@@ -100,6 +128,92 @@ def _detail_request_url_is_non_detail_seed(
         ):
             return True
     return False
+
+
+def _empty_detail_html_looks_not_found(
+    acquisition_result: AcquisitionResult,
+    *,
+    surface: str,
+) -> bool:
+    if "detail" not in str(surface or "").strip().lower():
+        return False
+    html = str(getattr(acquisition_result, "html", "") or "")
+    if not html.strip():
+        return False
+    soup = BeautifulSoup(html, "html.parser")
+    candidates: list[str] = []
+    if soup.title:
+        candidates.append(soup.title.get_text(" ", strip=True))
+    candidates.extend(
+        node.get_text(" ", strip=True) for node in soup.find_all(["h1", "h2"], limit=3)
+    )
+    return any(
+        pattern.search(candidate)
+        for candidate in candidates
+        if str(candidate or "").strip()
+        for pattern in STATIC_DETAIL_NOT_FOUND_TITLE_PATTERNS
+    )
+
+
+def _empty_detail_html_looks_like_shell_mismatch(
+    acquisition_result: AcquisitionResult,
+    *,
+    surface: str,
+) -> bool:
+    if "detail" not in str(surface or "").strip().lower():
+        return False
+    request_url = str(
+        getattr(getattr(acquisition_result, "request", None), "url", "") or ""
+    )
+    if not request_url or not detail_url_looks_like_product(request_url):
+        return False
+    requested_tokens = semantic_detail_identity_tokens(
+        detail_title_from_url(request_url) or ""
+    )
+    if len(requested_tokens) < 2:
+        return False
+    html = str(getattr(acquisition_result, "html", "") or "")
+    if not html.strip():
+        return False
+    soup = BeautifulSoup(html, "html.parser")
+    title = soup.title.get_text(" ", strip=True) if soup.title else ""
+    headings = [
+        node.get_text(" ", strip=True)
+        for node in soup.find_all(["h1", "h2"], limit=6)
+        if node.get_text(" ", strip=True)
+    ]
+    if _any_text_matches_requested_identity(
+        [title, *headings],
+        requested_tokens=requested_tokens,
+    ):
+        return False
+    return title_looks_like_brand_shell(
+        title,
+        page_url=request_url,
+    ) or _has_static_shell_headings(headings)
+
+
+def _any_text_matches_requested_identity(
+    candidates: list[str],
+    *,
+    requested_tokens: set[str],
+) -> bool:
+    min_matches = 2 if len(requested_tokens) >= 3 else 1
+    for candidate in candidates:
+        candidate_tokens = semantic_detail_identity_tokens(candidate)
+        if len(candidate_tokens & requested_tokens) >= min_matches:
+            return True
+    return False
+
+
+def _has_static_shell_headings(headings: list[str]) -> bool:
+    matches = {
+        str(heading or "").strip().lower()
+        for heading in headings
+        if str(heading or "").strip().lower()
+        in NORMALIZED_STATIC_DETAIL_SHELL_HEADING_PHRASES
+    }
+    return len(matches) >= int(STATIC_DETAIL_SHELL_HEADING_MIN_MATCHES)
 
 
 def records_missing_repair_fields(

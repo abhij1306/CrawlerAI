@@ -53,7 +53,7 @@ export function RecordThumbnail({ src }: Readonly<{ src: string }>) {
     return <span className="text-muted text-xs">--</span>;
   }
   return (
-    <div className="relative w-[46px] h-[46px] overflow-hidden rounded-sm border border-border bg-gradient-to-br from-background-elevated/60 to-background-alt flex items-center justify-center shadow-[inset_0_0_0_1px_rgba(255,255,255,0.05)] transition-all duration-180 hover:-translate-y-px group-hover:border-accent/38">
+    <div className="border-border from-background-elevated/60 to-background-alt group-hover:border-accent/38 relative flex h-[46px] w-[46px] items-center justify-center overflow-hidden rounded-sm border bg-gradient-to-br shadow-[inset_0_0_0_1px_rgba(255,255,255,0.05)] transition-all duration-180 hover:-translate-y-px">
       <Image
         src={src}
         alt=""
@@ -61,7 +61,7 @@ export function RecordThumbnail({ src }: Readonly<{ src: string }>) {
         sizes="64px"
         unoptimized
         referrerPolicy="no-referrer"
-        className="w-full h-full object-contain"
+        className="h-full w-full object-contain"
         onError={() => {
           BROKEN_THUMBNAIL_URLS.add(src);
           if (host) BROKEN_THUMBNAIL_HOSTS.add(host);
