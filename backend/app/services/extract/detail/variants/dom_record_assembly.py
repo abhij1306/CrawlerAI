@@ -55,7 +55,7 @@ def assemble_dom_variant_record(
         axis_option_metadata[axis_key] = _option_metadata(group)
         _merge_state_axis_targets(
             axis_option_metadata[axis_key],
-            dict(state_axis_targets.get(axis_key) or {}),
+            state_axis_targets.get(axis_key) or {},
         )
         axis_order.append((axis_key, name, values))
     if not axis_values_by_name:
@@ -121,7 +121,7 @@ def _option_metadata(group: dict[str, object]) -> dict[str, dict[str, object]]:
 
 def _merge_state_axis_targets(
     option_metadata: dict[str, dict[str, object]],
-    state_targets: dict[object, object],
+    state_targets: dict[str, dict[str, object]],
 ) -> None:
     for option_value, state_metadata in state_targets.items():
         merged_metadata = option_metadata.setdefault(str(option_value), {})
