@@ -14,6 +14,7 @@ from app.models.domain_memory import DomainCookieMemory
 from app.services.acquisition import browser_identity, browser_storage_state
 from app.services.acquisition import browser_background_tasks
 from app.services.acquisition import browser_proxy_bridge
+from app.services.acquisition import browser_pool_page as acquisition_browser_pool_page
 from app.services.acquisition import cookie_store
 from app.services.acquisition import host_protection_memory
 from app.services.acquisition import browser_pool as acquisition_browser_pool
@@ -1594,6 +1595,9 @@ async def test_shared_browser_runtime_releases_pool_slot_when_cleanup_is_cancell
         async with runtime.page(allow_storage_state=False):
             await asyncio.sleep(0)
 
+    assert runtime._semaphore.locked()
+    close_release.set()
+    await browser_background_tasks.drain_browser_background_tasks()
     await asyncio.wait_for(_acquire_again(), timeout=1.0)
     assert close_calls == 2
 
@@ -2311,7 +2315,7 @@ async def test_shared_browser_runtime_keeps_capacity_until_timed_out_close_finis
         lambda **_: _context_spec(),
     )
     monkeypatch.setattr(
-        acquisition_browser_pool,
+        acquisition_browser_pool_page,
         "persist_context_storage_state",
         _skip_storage,
     )
