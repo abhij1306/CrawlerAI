@@ -17,7 +17,6 @@ from app.services.extract.variant_normalization.contract import (
 from app.services.js_state.helpers import select_variant
 from app.services.shared.field_coerce import (
     clean_text,
-    object_dict as _object_dict,
     object_list as _object_list,
     text_or_none,
 )

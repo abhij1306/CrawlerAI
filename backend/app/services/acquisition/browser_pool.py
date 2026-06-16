@@ -8,7 +8,6 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
-from app.services.acquisition import cookie_store
 from app.services.acquisition.browser_background_tasks import (
     await_without_cancelling,
     drain_browser_background_tasks,
@@ -31,7 +30,6 @@ from app.services.acquisition.browser_identity import (
 from app.services.acquisition.browser_pool_spec import (
     build_playwright_context_spec,
     Socks5AuthBridge,
-    persist_context_storage_state,
     REAL_CHROME_IGNORE_DEFAULT_ARGS,
 )
 from app.services.acquisition.browser_page_helpers import object_int as _int_or_zero
@@ -51,10 +49,6 @@ from app.services.acquisition.browser_proxy_bridge import (
 from app.services.acquisition.browser_proxy_config import (
     build_browser_proxy_config as _build_browser_proxy_config,
     normalized_proxy_value as _normalized_proxy_value,
-)
-from app.services.acquisition.browser_storage_state import (
-    DOMAIN_STORAGE_PERSIST_ATTR as _DOMAIN_STORAGE_PERSIST_ATTR,
-    RUN_STORAGE_PERSIST_ATTR as _RUN_STORAGE_PERSIST_ATTR,
 )
 from app.services.config.browser_fingerprint_profiles import (
     NATIVE_REAL_CHROME_CONTEXT_OPTIONS,
