@@ -776,6 +776,85 @@ def test_detail_identity_allows_canonical_product_url_with_variant_sku_suffix() 
 
 
 @pytest.mark.regression
+def test_detail_identity_allows_canonical_product_url_without_variant_fragment() -> None:
+    requested_url = (
+        "https://www.example.com/product/39323/130117/fragrance/"
+        "carbone-eau-de-parfum#/sku/189322"
+    )
+    record = {
+        "title": "Carbone Eau de Parfum",
+        "url": (
+            "https://www.example.com/product/39323/130117/fragrance/"
+            "carbone-eau-de-parfum"
+        ),
+        "sku": "B02I01",
+        "price": "45.00",
+        "image_url": "https://www.example.com/images/carbone.jpg",
+    }
+
+    assert (
+        detail_extractor.detail_record_rejection_reason(
+            record,
+            page_url=requested_url,
+            requested_page_url=requested_url,
+        )
+        is None
+    )
+
+
+@pytest.mark.regression
+def test_detail_identity_keeps_product_code_below_category_ancestors() -> None:
+    requested_url = (
+        "https://www.example.com/in/m/womens/categories/clothing/pants/wide-leg/"
+        "ME988?display=standard"
+    )
+    record = {
+        "title": "Soleil pant in linen",
+        "url": (
+            "https://www.example.com/in/m/womens/categories/clothing/pants/wide-leg/"
+            "soleil-pant-in-linen/ME988"
+        ),
+        "product_id": "CI939-BR8825",
+        "sku": "CU898",
+        "price": "14389.00",
+        "image_url": "https://www.example.com/images/soleil.jpg",
+    }
+
+    assert (
+        detail_extractor.detail_record_rejection_reason(
+            record,
+            page_url=requested_url,
+            requested_page_url=requested_url,
+        )
+        is None
+    )
+
+
+@pytest.mark.regression
+def test_detail_title_promotes_domain_shell_to_product_h1() -> None:
+    url = "https://www.gap.com/browse/product.do?pid=887835012"
+    html = """
+    <html>
+      <head><script type="application/ld+json">
+      {"@context":"https://schema.org","@type":"Product","name":"gap.com",
+       "offers":{"price":"79.95","priceCurrency":"USD"}}
+      </script></head>
+      <body><h1>Linen-Cotton Relaxed Taper Easy Pants</h1></body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        url,
+        "ecommerce_detail",
+        max_records=5,
+        requested_page_url=url,
+    )
+
+    assert rows[0]["title"] == "Linen-Cotton Relaxed Taper Easy Pants"
+
+
+@pytest.mark.regression
 def test_detail_identity_allows_canonical_url_with_reordered_query_after_redirect() -> None:
     requested_url = (
         "https://www.converse.com/shop/p/"
@@ -1359,9 +1438,14 @@ def test_extract_records_normalizes_belk_run_26_detail_variants_without_duplicat
     assert record["title"] == "Women's Denim Capri Pants"
     assert record["availability"] == "in_stock"
     assert len(record["variants"]) == 21
-    assert all("price" not in variant for variant in record["variants"])
-    assert all("currency" not in variant for variant in record["variants"])
-    assert all("availability" not in variant for variant in record["variants"])
+    assert all(variant["price"] == record["price"] for variant in record["variants"])
+    assert all(
+        variant["currency"] == record["currency"] for variant in record["variants"]
+    )
+    assert all(
+        variant["availability"] == record["availability"]
+        for variant in record["variants"]
+    )
 
     def _has_axis(variant: dict) -> bool:
         if variant.get("color") or variant.get("size"):
@@ -2352,9 +2436,33 @@ def test_extract_records_backfills_listing_price_from_network_payload_candidates
 
 
 @pytest.mark.regression
-def test_extract_records_uses_network_payload_listing_rows_when_dom_is_empty() -> None:
+def test_extract_records_preserves_observed_listing_url_for_route_light_network_slug() -> None:
     rows = extract_records(
-        "<html><body></body></html>",
+        """
+        <html><body>
+          <div class="qa--grid-product-tile product-tile" data-product-id="X000010398">
+            <a href="/shop/mens/norvan-ld-4-shoe-0398">
+              <img src="/norvan.jpg" alt="Norvan LD 4 Shoe Men's">
+              <span class="product-tile-name">Norvan LD 4 Shoe Men's</span>
+              <span class="product-tile-price">$220.00</span>
+            </a>
+          </div>
+          <div class="qa--grid-product-tile product-tile" data-product-id="X000009613">
+            <a href="/shop/mens/vertex-speed-shoe-9613">
+              <img src="/vertex.jpg" alt="Vertex Speed Shoe Men's">
+              <span class="product-tile-name">Vertex Speed Shoe Men's</span>
+              <span class="product-tile-price">$240.00</span>
+            </a>
+          </div>
+          <div class="qa--grid-product-tile product-tile" data-product-id="X000009715">
+            <a href="/shop/mens/vertex-speed-low-shoe-9715">
+              <img src="/vertex-low.jpg" alt="Vertex Speed Low Shoe Men's">
+              <span class="product-tile-name">Vertex Speed Low Shoe Men's</span>
+              <span class="product-tile-price">$230.00</span>
+            </a>
+          </div>
+        </body></html>
+        """,
         "https://arcteryx.com/ca/en/c/mens/footwear-run/wid-kjyr4dq9",
         "ecommerce_listing",
         max_records=10,
@@ -2369,7 +2477,7 @@ def test_extract_records_uses_network_payload_listing_rows_when_dom_is_empty() -
                                         "id": "X000010398",
                                         "marketingName": "Norvan LD 4 Shoe Men's",
                                         "shortDescription": "Adaptable, long-distance mountain running shoe",
-                                        "slug": "shop/mens/norvan-ld-4-shoe-0398",
+                                        "slug": "mens/norvan-ld-4-shoe-0398",
                                         "priceRange": {
                                             "currency": "CAD",
                                             "regularPrice": 220,
@@ -2406,6 +2514,43 @@ def test_extract_records_uses_network_payload_listing_rows_when_dom_is_empty() -
             "currency": "CAD",
         }
     ]
+
+
+@pytest.mark.regression
+def test_internal_api_replay_rejects_route_light_listing_slugs() -> None:
+    from app.services.acquisition.internal_api_replay import payload_extracts_surface
+
+    payload = {
+        "body": {
+            "products": [
+                {
+                    "id": "X000010398",
+                    "marketingName": "Norvan LD 4 Shoe Men's",
+                    "slug": "mens/norvan-ld-4-shoe-0398",
+                    "priceRange": {"regularPrice": 220, "currency": "CAD"},
+                }
+            ]
+        }
+    }
+    assert (
+        payload_extracts_surface(
+            payload,
+            surface="ecommerce_listing",
+            page_url="https://arcteryx.com/ca/en/c/mens/footwear-run/wid-kjyr4dq9",
+            requested_fields=[],
+        )
+        is False
+    )
+    payload["body"]["products"][0]["slug"] = "shop/mens/norvan-ld-4-shoe-0398"
+    assert (
+        payload_extracts_surface(
+            payload,
+            surface="ecommerce_listing",
+            page_url="https://arcteryx.com/ca/en/c/mens/footwear-run/wid-kjyr4dq9",
+            requested_fields=[],
+        )
+        is True
+    )
 
 
 @pytest.mark.regression
@@ -6008,7 +6153,7 @@ def test_normalize_variant_record_strips_legacy_option_summaries_and_selected_va
 
 
 @pytest.mark.regression
-def test_normalize_variant_record_drops_parent_shared_variant_prices_and_axes() -> None:
+def test_normalize_variant_record_keeps_complete_variant_offers_and_drops_shared_axes() -> None:
     record = {
         "price": "115.00",
         "currency": "USD",
@@ -6021,7 +6166,10 @@ def test_normalize_variant_record_drops_parent_shared_variant_prices_and_axes() 
 
     normalize_variant_record(record)
 
-    assert record["variants"] == [{"size": "S"}, {"size": "M"}]
+    assert record["variants"] == [
+        {"size": "S", "price": "115.0", "currency": "USD"},
+        {"size": "M", "price": "115", "currency": "USD"},
+    ]
 
 
 @pytest.mark.regression
@@ -6102,7 +6250,20 @@ def test_extract_dom_variants_rejects_payment_button_text_as_size() -> None:
         max_records=5,
     )
 
-    assert rows[0]["variants"] == [{"size": "S"}, {"size": "M"}]
+    assert rows[0]["variants"] == [
+        {
+            "size": "S",
+            "price": "14.90",
+            "currency": "USD",
+            "availability": "in_stock",
+        },
+        {
+            "size": "M",
+            "price": "14.90",
+            "currency": "USD",
+            "availability": "in_stock",
+        },
+    ]
 
 
 @pytest.mark.regression

@@ -45,6 +45,20 @@ def test_resolve_auto_ecommerce_product_url_to_detail() -> None:
     assert result.surface == "ecommerce_detail"
 
 
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://shop.example.com/collections/shoes/products/trail-runner-100",
+        "https://www.example.com/shop/buy-phone/phone-16",
+        "https://www.example.com/women/designer-floral-linen-bag-p01155657",
+    ],
+)
+def test_resolve_auto_prefers_product_identity_over_listing_ancestor(url: str) -> None:
+    result = resolve_surface("auto", url=url)
+
+    assert result.surface == "ecommerce_detail"
+
+
 def test_resolve_auto_generic_ecommerce_category_segment_to_listing() -> None:
     result = resolve_surface(
         "auto",

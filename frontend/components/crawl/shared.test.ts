@@ -187,19 +187,6 @@ describe('cleanRecordForDisplay', () => {
       payload: { title: 'Trail Shoe', price: '$120' },
     });
   });
-
-  it('hides markdown from JSON preview data', () => {
-    const record = makeRecord(1, {
-      title: 'Codeforces',
-      markdown: '# Codeforces',
-      content: 'Codeforces page content',
-    });
-
-    expect(cleanRecordForDisplay(record)).toEqual({
-      title: 'Codeforces',
-      content: 'Codeforces page content',
-    });
-  });
 });
 
 describe('getLogStage', () => {

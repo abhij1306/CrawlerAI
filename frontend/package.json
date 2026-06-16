@@ -21,6 +21,8 @@
     "test:e2e:ui": "playwright test --ui"
   },
   "dependencies": {
+    "@fontsource-variable/geist": "^5.2.9",
+    "@fontsource-variable/geist-mono": "^5.2.8",
     "@hookform/resolvers": "^5.4.0",
     "@radix-ui/react-dialog": "^1.1.16",
     "@radix-ui/react-label": "^2.1.7",
@@ -30,7 +32,6 @@
     "@tanstack/react-table": "^8.21.3",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
-    "katex": "^0.17.0",
     "lucide-react": "^1.16.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
@@ -43,7 +44,6 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",
-    "@google/design.md": "^0.2.0",
     "@playwright/test": "^1.60.0",
     "@tailwindcss/postcss": "^4.3.1",
     "@testing-library/jest-dom": "^6.9.1",

@@ -1,6 +1,3 @@
-'use client';
-
-// Next.js App Router entrypoint for `/crawl`; invoked by file-system routing.
 import dynamic from '@/routing/dynamic';
 import { useSearchParams } from '@/routing/navigation';
 import { Suspense } from 'react';

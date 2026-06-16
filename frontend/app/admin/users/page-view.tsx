@@ -1,6 +1,3 @@
-'use client';
-
-// Next.js App Router entrypoint for `/admin/users`; invoked by file-system routing.
 import { useQuery } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import { useMemo, useState } from 'react';
@@ -8,7 +5,7 @@ import { useMemo, useState } from 'react';
 import { api } from '../../../lib/api';
 import type { Paginated, User } from '../../../lib/api/types';
 import { formatAdminUserDate as formatDate } from '../../../lib/format/date';
-import { Badge, Button, Dropdown, Input, Metric } from '../../../components/ui/primitives';
+import { Badge, Button, Dropdown, Input } from '../../../components/ui/primitives';
 import {
   DataRegionEmpty,
   DataRegionLoading,
@@ -42,14 +39,6 @@ export default function AdminUsersPage() {
   });
 
   const users = useMemo(() => usersQuery.data?.items ?? [], [usersQuery.data?.items]);
-  const counts = useMemo(
-    () => ({
-      total: usersQuery.data?.meta?.total ?? users.length,
-      active: users.filter((user) => user.is_active).length,
-      inactive: users.filter((user) => !user.is_active).length,
-    }),
-    [users, usersQuery.data?.meta?.total],
-  );
 
   async function updateUser(userId: number, payload: Partial<Pick<User, 'role' | 'is_active'>>) {
     setPendingUserId(userId);
@@ -147,12 +136,6 @@ export default function AdminUsersPage() {
   return (
     <div className="page-stack">
       <PageHeader title="Users" description="Manage roles and account status." />
-
-      <div className="grid gap-3 md:grid-cols-3">
-        <Metric label="Total" value={counts.total} />
-        <Metric label="Active" value={counts.active} />
-        <Metric label="Inactive" value={counts.inactive} />
-      </div>
 
       <SectionCard title="User Management" description="Filter by email and status.">
         <div className="flex flex-col gap-3 sm:flex-row">

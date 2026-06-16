@@ -147,6 +147,8 @@ async def apply_llm_fallback(
     html: str,
     records: list[dict[str, object]],
 ) -> list[dict[str, object]]:
+    if "detail" in str(run.surface or ""):
+        return records
     updated_records: list[dict[str, object]] = []
     domain = normalize_domain(page_url)
     requested_fields = repair_target_fields_for_surface(

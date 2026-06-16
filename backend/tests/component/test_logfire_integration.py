@@ -31,6 +31,7 @@ def test_logfire_configures_once_and_instruments(monkeypatch) -> None:
     calls: list[tuple[str, dict[str, object]]] = []
 
     fake_logfire = SimpleNamespace(
+        AdvancedOptions=lambda **kwargs: ("advanced", kwargs),
         configure=lambda **kwargs: calls.append(("configure", kwargs)),
         instrument_fastapi=lambda app, **kwargs: calls.append(
             ("fastapi", {"app": app, **kwargs})
@@ -43,6 +44,7 @@ def test_logfire_configures_once_and_instruments(monkeypatch) -> None:
     monkeypatch.setattr(settings, "logfire_token", "token-123")
     monkeypatch.setattr(settings, "logfire_service_name", "crawlerai-test")
     monkeypatch.setattr(settings, "logfire_environment", "staging")
+    monkeypatch.setattr(settings, "logfire_base_url", "https://logfire-us.pydantic.dev")
     monkeypatch.setattr(settings, "logfire_capture_headers", False)
     monkeypatch.setattr(settings, "logfire_send_to_logfire", "if-token-present")
 
@@ -65,6 +67,10 @@ def test_logfire_configures_once_and_instruments(monkeypatch) -> None:
                 "environment": "staging",
                 "console": False,
                 "inspect_arguments": False,
+                "advanced": (
+                    "advanced",
+                    {"base_url": "https://logfire-us.pydantic.dev"},
+                ),
             },
         )
     ]
@@ -78,6 +84,7 @@ def test_logfire_can_disable_cloud_export(monkeypatch) -> None:
     calls: list[tuple[str, dict[str, object]]] = []
 
     fake_logfire = SimpleNamespace(
+        AdvancedOptions=lambda **kwargs: ("advanced", kwargs),
         configure=lambda **kwargs: calls.append(("configure", kwargs)),
     )
     monkeypatch.setitem(sys.modules, "logfire", fake_logfire)
@@ -85,6 +92,7 @@ def test_logfire_can_disable_cloud_export(monkeypatch) -> None:
     monkeypatch.setattr(settings, "logfire_enabled_in_tests", True)
     monkeypatch.setattr(settings, "logfire_token", "token-123")
     monkeypatch.setattr(settings, "logfire_send_to_logfire", False)
+    monkeypatch.setattr(settings, "logfire_base_url", "")
 
     assert logfire_integration.configure_logfire() is True
 
@@ -98,6 +106,7 @@ def test_logfire_can_disable_cloud_export(monkeypatch) -> None:
                 "environment": settings.logfire_environment or settings.app_env,
                 "console": False,
                 "inspect_arguments": False,
+                "advanced": None,
             },
         )
     ]
@@ -128,6 +137,7 @@ def test_logfire_span_sanitizes_attributes(monkeypatch) -> None:
             calls.append(("set_attributes", attrs))
 
     fake_logfire = SimpleNamespace(
+        AdvancedOptions=lambda **kwargs: ("advanced", kwargs),
         configure=lambda **kwargs: calls.append(("configure", kwargs)),
         span=lambda name, **kwargs: (
             calls.append(("span", {"name": name, **kwargs})) or FakeSpan()
@@ -157,6 +167,7 @@ def test_logfire_span_strips_url_query_attributes(monkeypatch) -> None:
             return False
 
     fake_logfire = SimpleNamespace(
+        AdvancedOptions=lambda **kwargs: ("advanced", kwargs),
         configure=lambda **kwargs: calls.append(("configure", kwargs)),
         span=lambda name, **kwargs: (
             calls.append(("span", {"name": name, **kwargs})) or FakeSpan()

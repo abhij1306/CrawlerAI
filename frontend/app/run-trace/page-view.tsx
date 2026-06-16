@@ -1,5 +1,3 @@
-'use client';
-
 import { useState, type FormEventHandler } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Network, Search } from 'lucide-react';

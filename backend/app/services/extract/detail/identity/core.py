@@ -26,7 +26,7 @@ __all__ = (
 import json
 import logging
 import re
-from urllib.parse import parse_qsl, urlparse
+from urllib.parse import parse_qsl, urlparse, urlunparse
 
 from bs4 import BeautifulSoup
 
@@ -35,6 +35,8 @@ from app.services.config.extraction_rules import (
     DETAIL_COLLECTION_PATH_TOKENS,
     DETAIL_GENERIC_TERMINAL_TOKENS,
     DETAIL_IDENTITY_CODE_MIN_LENGTH,
+    DETAIL_IDENTITY_QUERY_KEYS,
+    DETAIL_IDENTITY_QUERY_PREFIXES,
     DETAIL_NOISE_SECTION_SELECTORS,
     DETAIL_IDENTITY_STOPWORDS,
     DETAIL_MODEL_CONFLICT_MIN_SHARED_WORDS,
@@ -57,10 +59,6 @@ from app.services.config.extraction_rules import (
     LISTING_STRUCTURAL_QUERY_FILTER_TOKENS,
     PRODUCT_SLUG_MIN_TERMINAL_TOKENS,
     YEAR_SLUG_PATTERN,
-)
-from app.services.config.public_record_policy import (
-    PUBLIC_RECORD_DETAIL_CANONICAL_QUERY_KEYS,
-    PUBLIC_RECORD_DETAIL_CANONICAL_QUERY_PREFIXES,
 )
 from app.services.config.surface_hints import detail_path_hints
 from app.services.extract.listing_candidate_ranking import (
@@ -92,12 +90,12 @@ from app.services.extract.detail.identity.model_codes import (
 logger = logging.getLogger(__name__)
 _DETAIL_IDENTITY_QUERY_KEYS = frozenset(
     str(value).strip().lower()
-    for value in tuple(PUBLIC_RECORD_DETAIL_CANONICAL_QUERY_KEYS or ())
+    for value in tuple(DETAIL_IDENTITY_QUERY_KEYS or ())
     if str(value).strip()
 )
 _DETAIL_IDENTITY_QUERY_PREFIXES = tuple(
     str(value).strip().lower()
-    for value in tuple(PUBLIC_RECORD_DETAIL_CANONICAL_QUERY_PREFIXES or ())
+    for value in tuple(DETAIL_IDENTITY_QUERY_PREFIXES or ())
     if str(value).strip()
 )
 _DETAIL_URL_PLACEHOLDER_SEGMENTS = frozenset(
@@ -686,7 +684,9 @@ def _detail_url_looks_like_product(url: str) -> bool:
             return False
     if _detail_url_is_utility(url):
         return False
-    if _detail_url_is_collection_like(url):
+    if _detail_url_is_collection_like(url) and not _detail_segment_looks_like_identity_code(
+        terminal
+    ):
         return False
     if any(
         token in terminal for token in ("category", "collections", "search", "sale")
@@ -718,6 +718,10 @@ def _detail_url_is_utility(url: str) -> bool:
 def _detail_url_is_collection_like(url: str) -> bool:
     path_tokens = _detail_url_path_tokens(url)
     if any(token in path_tokens for token in DETAIL_PRODUCT_PATH_TOKENS):
+        return False
+    path_segments = _detail_url_path_segments(url)
+    terminal = path_segments[-1] if path_segments else ""
+    if _detail_segment_looks_like_identity_code(terminal):
         return False
     return any(token in path_tokens for token in DETAIL_COLLECTION_PATH_TOKENS)
 
@@ -1102,8 +1106,16 @@ def _detail_redirect_identity_is_mismatched(
     if not _detail_url_looks_like_product(requested):
         return False
 
+    if current and _url_without_fragment(requested) == _url_without_fragment(current):
+        current = requested
+
     if current and requested == current:
         candidate_url = text_or_none(record.get("url"))
+        if (
+            candidate_url
+            and _url_without_fragment(requested) == _url_without_fragment(candidate_url)
+        ):
+            candidate_url = requested
         if (
             candidate_url
             and candidate_url != requested
@@ -1239,6 +1251,11 @@ def _detail_redirect_identity_is_mismatched(
         record,
         requested_page_url=requested,
     )
+
+
+def _url_without_fragment(value: str) -> str:
+    parsed = urlparse(value)
+    return urlunparse(parsed._replace(fragment=""))
 
 
 (

@@ -4,7 +4,7 @@ __all__ = (
     "document_link_label_patterns", "fulfillment_only_long_text_phrases",
     "fulfillment_long_text_patterns", "guide_glossary_text_patterns",
     "guide_glossary_heading_tokens", "long_text_disclaimer_patterns",
-    "low_signal_title_values", "low_signal_long_text_values", "materials_pollution_tokens",
+    "low_signal_title_values", "low_signal_long_text_values",
     "low_signal_product_type_values", "detail_artifact_product_type_patterns",
     "cross_product_text_type_tokens", "cross_product_text_generic_tokens",
     "title_dimension_size_re", "tracking_token_re", "cookie_disclosure_text_patterns",
@@ -43,9 +43,7 @@ from app.services.config.extraction_rules import (
     DETAIL_LONG_TEXT_LEADING_ATTRIBUTE_BLOB_PATTERN,
     DETAIL_LONG_TEXT_REPEATED_PROMPTS, DETAIL_LONG_TEXT_SUBSTRING_REMOVE_PATTERNS,
     DETAIL_LONG_TEXT_TRUNCATED_TAIL_TOKENS, DETAIL_LONG_TEXT_UI_TAIL_MIN_PRODUCT_WORDS,
-    DETAIL_LONG_TEXT_UI_TAIL_PHRASES, DETAIL_MATERIALS_COMPOSITION_PATTERN,
-    DETAIL_MATERIALS_EDITORIAL_HEAD_THRESHOLD, DETAIL_MATERIALS_EDITORIAL_LENGTH_THRESHOLD,
-    DETAIL_MATERIALS_POLLUTION_TOKENS, DETAIL_MATERIALS_ZERO_PERCENT_PATTERN,
+    DETAIL_LONG_TEXT_UI_TAIL_PHRASES, DETAIL_LONG_TEXT_UI_TAIL_PREFIXES,
     DETAIL_NOISE_PREFIXES, DETAIL_TITLE_DIMENSION_SIZE_PATTERN,
     DETAIL_TRACKING_TOKEN_PATTERN, DETAIL_VARIANT_ARTIFACT_VALUE_TOKENS,
     DETAIL_VARIANT_SIZE_SEQUENCE_MIN_COUNT, FEATURE_ROW_NOISE_PATTERNS,
@@ -55,6 +53,7 @@ from app.services.config.extraction_rules import (
 from app.services.config.detail_extraction_constants import MAX_STRUCTURED_TEXT_LENGTH
 from app.services.shared.field_coerce import LONG_TEXT_FIELDS, clean_text, text_or_none
 from app.services.shared.regex_patterns import compile_regex_patterns
+from app.services.extract.detail.text.materials import sanitize_materials_text
 
 document_link_label_patterns = compile_regex_patterns(
     DETAIL_DOCUMENT_LINK_LABEL_PATTERNS or ()
@@ -96,14 +95,6 @@ low_signal_long_text_values = frozenset(
     for value in tuple(DETAIL_LOW_SIGNAL_LONG_TEXT_VALUES or ())
     if clean_text(value)
 )
-materials_pollution_tokens = frozenset(
-    clean_text(token).casefold()
-    for token in tuple(DETAIL_MATERIALS_POLLUTION_TOKENS or ())
-    if clean_text(token)
-)
-_MATERIALS_ZERO_PERCENT_PATTERN = re.compile(
-    str(DETAIL_MATERIALS_ZERO_PERCENT_PATTERN), re.I
-)
 low_signal_product_type_values = frozenset(
     clean_text(value).lower()
     for value in tuple(DETAIL_LOW_SIGNAL_PRODUCT_TYPE_VALUES or ())
@@ -137,6 +128,11 @@ _DESCRIPTION_REPAIRED_FROM_PRODUCT_DETAILS = "_description_repaired_from_product
 _long_text_ui_tail_phrases = tuple(
     clean_text(phrase).lower()
     for phrase in tuple(DETAIL_LONG_TEXT_UI_TAIL_PHRASES or ())
+    if clean_text(phrase)
+)
+_long_text_ui_tail_prefixes = tuple(
+    clean_text(phrase).lower()
+    for phrase in tuple(DETAIL_LONG_TEXT_UI_TAIL_PREFIXES or ())
     if clean_text(phrase)
 )
 _long_text_ui_tail_min_product_words = int(DETAIL_LONG_TEXT_UI_TAIL_MIN_PRODUCT_WORDS)
@@ -776,6 +772,10 @@ def _strip_long_text_ui_tail(text: str) -> str:
         suffix = f" {phrase}"
         if lowered.endswith(suffix):
             return clean_text(cleaned[: -len(suffix)])
+    for prefix in _long_text_ui_tail_prefixes:
+        offset = lowered.rfind(f" {prefix}")
+        if offset >= 0:
+            return clean_text(cleaned[:offset])
     return cleaned
 
 
@@ -790,124 +790,7 @@ def _clean_materials_pollution(value: object) -> str:
         pattern.search(text) for pattern in long_text_disclaimer_patterns
     ):
         return ""
-    # Editorial / glossary blocks (e.g. Todd Snyder seersucker page) sneak
-    # into materials when the DOM selector pulls a description accordion.
-    # Real fabric composition leads with a percent token within the first
-    # ~200 characters. When the head of a long string lacks a composition
-    # pattern but the tail contains one, keep only the trailing composition.
-    composition_repaired = _materials_extract_trailing_composition(text)
-    if composition_repaired is not None:
-        text = composition_repaired
-    text = _materials_trim_to_first_specifics(text)
-    chunks = [
-        clean_text(chunk)
-        for chunk in re.split(r"(?<=[.!?])\s+|\s+:\s+|\n+", text)
-        if clean_text(chunk)
-    ]
-    kept = [
-        chunk
-        for chunk in chunks
-        if clean_text(chunk).casefold() not in materials_pollution_tokens
-        # DQ-10 / 2026-05-04 gemini audit: "0% Silk" / "0% Lyocell" segments
-        # are spec-table placeholder rows; drop them so only non-zero
-        # composition entries survive.
-        and not _MATERIALS_ZERO_PERCENT_PATTERN.search(chunk)
-    ]
-    cleaned = _dedupe_adjacent_material_chunks(" ".join(kept).strip())
-    while True:
-        parts = cleaned.split(maxsplit=1)
-        if (
-            not parts
-            or parts[0].casefold().strip(":") not in materials_pollution_tokens
-        ):
-            return _dedupe_adjacent_material_chunks(cleaned)
-        cleaned = parts[1] if len(parts) > 1 else ""
-
-
-_MATERIALS_COMPOSITION_PATTERN = re.compile(
-    str(DETAIL_MATERIALS_COMPOSITION_PATTERN),
-    re.I,
-)
-_materials_editorial_head_len = int(DETAIL_MATERIALS_EDITORIAL_HEAD_THRESHOLD)
-_materials_editorial_min_len = int(DETAIL_MATERIALS_EDITORIAL_LENGTH_THRESHOLD)
-
-
-def _materials_extract_trailing_composition(text: str) -> str | None:
-    """Salvage trailing fabric composition from an editorial-prefixed block.
-
-    Real composition starts with a percent token (``97% Cotton, 3% Elastane``).
-    When the first ~200 chars lack any composition pattern but the full
-    string is long and ends with one or more composition entries, replace
-    the value with just the trailing composition slice.
-
-    Returns the trimmed composition text, ``""`` when an editorial block
-    should be discarded, or ``None`` when no salvage is needed because the
-    head already has composition.
-    """
-    if len(text) <= _materials_editorial_min_len:
-        return None
-    head = text[:_materials_editorial_head_len]
-    if _MATERIALS_COMPOSITION_PATTERN.search(head):
-        return None
-    matches = list(_MATERIALS_COMPOSITION_PATTERN.finditer(text))
-    if not matches:
-        # Empty string means discard this editorial block; None means keep original.
-        return ""
-    first = matches[0]
-    return text[first.start() :].strip() or ""
-
-
-_MATERIALS_HEAD_TRIM_TERMINATORS_RE = re.compile(
-    r"\b(?:Made\s+in|Garment\s+Made\s+in|Fabric\s+(?:From|Made\s+in)|"
-    r"Dry\s+Clean(?:\s+Only)?|Machine\s+Wash|Hand\s+Wash|Wash\s+Cold|"
-    r"Tumble\s+Dry|Do\s+Not\s+Bleach)\b[^.]{0,80}\.",
-    re.I,
-)
-
-
-def _materials_trim_to_first_specifics(text: str) -> str:
-    """When a long materials field starts with composition + care/origin
-    info but trails into a glossary of unrelated fabrics, keep only the
-    first composition+origin sentences.
-
-    Heuristic: locate the FIRST occurrence of a care/origin terminator
-    (``Made in X.``, ``Dry Clean Only.``, ``Machine Wash.`` etc.); cut
-    just after that period. If none is found within the first 400 chars,
-    fall back to the original text.
-    """
-    if len(text) <= 200:
-        return text
-    if not _MATERIALS_COMPOSITION_PATTERN.match(text):
-        return text
-    match = _MATERIALS_HEAD_TRIM_TERMINATORS_RE.search(text[:400])
-    if match is None:
-        return text
-    if any(
-        item.start() > match.end()
-        for item in _MATERIALS_COMPOSITION_PATTERN.finditer(text)
-    ):
-        return text
-    cut = text[: match.end()].strip()
-    return cut or text
-
-
-def _dedupe_adjacent_material_chunks(text: str) -> str:
-    cleaned = clean_text(text)
-    if not cleaned:
-        return ""
-    chunks = [
-        clean_text(chunk)
-        for chunk in re.split(r"(?<=[.;!?])\s+", cleaned)
-        if clean_text(chunk)
-    ]
-    if len(chunks) < 2:
-        return cleaned
-    deduped: list[str] = []
-    for chunk in chunks:
-        if deduped and chunk.casefold() == deduped[-1].casefold():
-            continue
-        deduped.append(chunk)
-    return " ".join(deduped)
+    return sanitize_materials_text(text)
 
 
 def detail_long_text_is_numeric_sequence(text: str) -> bool:

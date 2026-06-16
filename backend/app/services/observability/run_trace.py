@@ -119,6 +119,7 @@ class ExtractionTrace:
     dom_skipped: bool | None = None
     skip_decision: dict[str, Any] = field(default_factory=dict)
     rejection_reason: str = ""
+    evidence_summary: dict[str, int] = field(default_factory=dict)
     field_provenance: dict[str, FieldProvenanceObservation] = field(
         default_factory=dict
     )
@@ -131,6 +132,8 @@ class ExtractionTrace:
             payload["skip_decision"] = dict(self.skip_decision)
         if self.rejection_reason:
             payload["rejection_reason"] = self.rejection_reason
+        if self.evidence_summary:
+            payload["evidence_summary"] = dict(self.evidence_summary)
         if self.field_provenance:
             payload["field_provenance"] = [
                 obs.to_dict() for obs in self.field_provenance.values()
@@ -215,6 +218,15 @@ class RunTrace:
         cleaned = str(reason or "").strip()
         if cleaned:
             self.extraction.rejection_reason = cleaned
+
+    def record_evidence_summary(self, summary: dict[str, int]) -> None:
+        evidence_summary: dict[str, int] = {}
+        for key, value in summary.items():
+            try:
+                evidence_summary[str(key)] = max(0, int(value))
+            except (TypeError, ValueError):
+                continue
+        self.extraction.evidence_summary = evidence_summary
 
     def record_field_candidate(
         self,

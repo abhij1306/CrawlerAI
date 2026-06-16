@@ -1,8 +1,16 @@
-'use client';
 import { Globe, Info, Plus, SlidersHorizontal, Sparkles } from 'lucide-react';
 import type { Route } from '@/routing/link';
 import { useRouter } from '@/routing/navigation';
-import { startTransition, useEffect, useLayoutEffect, useMemo, useReducer, useRef } from 'react';
+import {
+  startTransition,
+  useDeferredValue,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useReducer,
+  useRef,
+} from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { cn } from '../../lib/utils';
 import { InlineAlert, TabBar } from '../ui/patterns';
 import { Badge, Button, Dropdown, Card, Input, Textarea, Toggle, Tooltip } from '../ui/primitives';
@@ -11,7 +19,6 @@ import type { CrawlConfig, CrawlDomain, DomainRunProfile } from '../../lib/api/t
 import { CRAWL_DEFAULTS, CRAWL_LIMITS } from '../../lib/constants/crawl-defaults';
 import { getNormalizedDomain } from '../../lib/format/domain';
 import { STORAGE_KEYS } from '../../lib/constants/storage-keys';
-import { UI_DELAYS } from '../../lib/constants/timing';
 import { telemetryErrorPayload, trackEvent } from '../../lib/telemetry/events';
 import {
   AdditionalFieldInput,
@@ -133,9 +140,7 @@ export function CrawlConfigScreen({
     configError,
   } = localState;
   const localDispatch = useMemo(() => bindCrawlConfigLocalDispatch(dispatchLocal), [dispatchLocal]);
-  const profileLookupRequestRef = useRef(0);
-  const domainMemoryLookupRequestRef = useRef(0);
-  const profileLookupTargetUrlRef = useRef('');
+  const queryClient = useQueryClient();
   const profileDirtyRef = useRef(false);
   const lastProfileKeyRef = useRef('');
   const lastDomainMemoryKeyRef = useRef('');
@@ -159,6 +164,12 @@ export function CrawlConfigScreen({
       ? `${normalizedTargetDomain}|${effectiveSurface}`
       : '';
   const diagnosticsPreset = diagnosticsPresetForProfile(runProfile);
+
+  const deferredTargetUrl = useDeferredValue(targetUrl.trim());
+  const deferredTargetDomain = normalizeHttpLookupDomain(deferredTargetUrl);
+  const deferredSurface = useDeferredValue(effectiveSurface);
+  const deferredLookupReady =
+    deferredTargetDomain === normalizedTargetDomain && deferredSurface === effectiveSurface;
 
   // Adjust state during render when the lookup key changes, instead of in an
   // effect. This avoids an extra render with stale UI between commits. See
@@ -188,9 +199,6 @@ export function CrawlConfigScreen({
       setValue('targetUrl', requestedUrl);
     }
   }, [requestedUrl, setValue]);
-  useEffect(() => {
-    profileLookupTargetUrlRef.current = profileLookupKey ? targetUrl.trim() : '';
-  }, [profileLookupKey, targetUrl]);
   useEffect(() => {
     const routeMode = crawlTab === 'category' ? requestedCategoryMode : requestedPdpMode;
     if (
@@ -252,87 +260,107 @@ export function CrawlConfigScreen({
     }
   }, [bulkPrefillRouteSyncGuardRef, dispatchRoute, localDispatch, setValue]);
 
-  useEffect(() => {
-    if (!profileLookupKey) {
-      return;
-    }
-    const requestId = profileLookupRequestRef.current + 1;
-    profileLookupRequestRef.current = requestId;
-    const timer = window.setTimeout(async () => {
-      try {
-        const response = await api.getDomainRunProfile({
-          url: profileLookupTargetUrlRef.current,
-          surface: effectiveSurface,
-        });
-        if (profileLookupRequestRef.current === requestId) {
-          const savedProfile = response.saved_run_profile;
-          localDispatch.setSavedProfileDomain(response.domain);
-          if (savedProfile && !profileDirtyRef.current) {
-            localDispatch.setRunProfile(cloneRunProfile(savedProfile));
-            localDispatch.setSavedProfileLoaded(true);
-            localDispatch.setSavedProfileMessage(
-              `Saved domain profile applied for ${response.domain} on ${surfaceLabel(response.surface)}. Explicit edits below override it for this run.`,
-            );
-          } else {
-            localDispatch.setSavedProfileLoaded(Boolean(savedProfile));
-            localDispatch.setSavedProfileMessage(
-              savedProfile
-                ? `Saved domain profile found for ${response.domain}. Your current edits are preserved for this run.`
-                : '',
-            );
-            if (!savedProfile && !profileDirtyRef.current) {
-              localDispatch.setRunProfile(defaultRunProfile());
-            }
-          }
-        }
-      } catch {
-        if (profileLookupRequestRef.current === requestId) {
-          localDispatch.setSavedProfileLoaded(false);
-          localDispatch.setSavedProfileDomain('');
-          localDispatch.setSavedProfileMessage('');
-        }
+  const profileQuery = useQuery({
+    queryKey: ['domain-run-profile', deferredTargetDomain, deferredSurface],
+    queryFn: async () => {
+      if (!singleUrlMode || !deferredLookupReady || !deferredTargetDomain || !deferredSurface) {
+        return null;
       }
-    }, UI_DELAYS.DEBOUNCE_MS);
-    return () => window.clearTimeout(timer);
-  }, [effectiveSurface, localDispatch, profileLookupKey]);
+      return api.getDomainRunProfile({
+        url: deferredTargetUrl,
+        surface: deferredSurface,
+      });
+    },
+    enabled: singleUrlMode && deferredLookupReady && !!deferredTargetDomain && !!deferredSurface,
+    staleTime: 30000,
+  });
+
+  const selectorsQuery = useQuery({
+    queryKey: ['domain-selectors', deferredTargetDomain],
+    queryFn: async () => {
+      if (!singleUrlMode || !deferredTargetDomain) return null;
+      return api.listSelectors({ domain: deferredTargetDomain });
+    },
+    enabled: singleUrlMode && deferredLookupReady && !!deferredTargetDomain && !!deferredSurface,
+    staleTime: 30000,
+  });
 
   useEffect(() => {
-    if (!domainMemoryLookupKey) {
+    const isEnabled =
+      singleUrlMode && deferredLookupReady && !!deferredTargetDomain && !!deferredSurface;
+    if (!isEnabled) {
       return;
     }
-    const requestId = domainMemoryLookupRequestRef.current + 1;
-    domainMemoryLookupRequestRef.current = requestId;
-    const lookupDomain = normalizedTargetDomain;
-    const timer = window.setTimeout(async () => {
-      localDispatch.setFieldConfigError('');
-      try {
-        const records = await api.listSelectors({ domain: lookupDomain });
-        if (domainMemoryLookupRequestRef.current === requestId) {
-          const matchingRecords = selectRelevantSelectorRecords(records, effectiveSurface);
-          if (!matchingRecords.length) {
-            setFieldRows((current) => stripDomainMemoryFieldRows(current));
-            return;
-          }
-          const incomingRows = matchingRecords.map(buildFieldRowFromSelectorRecord);
-          setFieldRows((current) =>
-            mergeFieldRows(stripDomainMemoryFieldRows(current), incomingRows),
-          );
-          localDispatch.setFieldRowMessages({});
-        }
-      } catch (error) {
-        if (domainMemoryLookupRequestRef.current === requestId) {
-          localDispatch.setFieldConfigError(
-            error instanceof Error ? error.message : 'Unable to load domain memory.',
-          );
+    if (profileQuery.isSuccess && profileQuery.data) {
+      const response = profileQuery.data;
+      const savedProfile = response.saved_run_profile;
+      localDispatch.setSavedProfileDomain(response.domain);
+      if (savedProfile && !profileDirtyRef.current) {
+        localDispatch.setRunProfile(cloneRunProfile(savedProfile));
+        localDispatch.setSavedProfileLoaded(true);
+        localDispatch.setSavedProfileMessage(
+          `Saved domain profile applied for ${response.domain} on ${surfaceLabel(response.surface)}. Explicit edits below override it for this run.`,
+        );
+      } else {
+        localDispatch.setSavedProfileLoaded(Boolean(savedProfile));
+        localDispatch.setSavedProfileMessage(
+          savedProfile
+            ? `Saved domain profile found for ${response.domain}. Your current edits are preserved for this run.`
+            : '',
+        );
+        if (!savedProfile && !profileDirtyRef.current) {
+          localDispatch.setRunProfile(defaultRunProfile());
         }
       }
-    }, UI_DELAYS.DEBOUNCE_MS);
-    return () => window.clearTimeout(timer);
+    } else if (profileQuery.isError) {
+      localDispatch.setSavedProfileLoaded(false);
+      localDispatch.setSavedProfileDomain('');
+      localDispatch.setSavedProfileMessage('');
+    }
   }, [
-    domainMemoryLookupKey,
-    effectiveSurface,
+    profileQuery.data,
+    profileQuery.isSuccess,
+    profileQuery.isError,
+    singleUrlMode,
+    deferredLookupReady,
+    deferredTargetDomain,
+    deferredSurface,
     localDispatch,
-    normalizedTargetDomain,
+  ]);
+
+  useEffect(() => {
+    const isEnabled =
+      singleUrlMode && deferredLookupReady && !!deferredTargetDomain && !!deferredSurface;
+    if (!isEnabled) {
+      return;
+    }
+    localDispatch.setFieldConfigError('');
+    if (selectorsQuery.isSuccess && selectorsQuery.data) {
+      const records = selectorsQuery.data;
+      const matchingRecords = selectRelevantSelectorRecords(records, deferredSurface);
+      if (!matchingRecords.length) {
+        setFieldRows((current) => stripDomainMemoryFieldRows(current));
+        return;
+      }
+      const incomingRows = matchingRecords.map(buildFieldRowFromSelectorRecord);
+      setFieldRows((current) => mergeFieldRows(stripDomainMemoryFieldRows(current), incomingRows));
+      localDispatch.setFieldRowMessages({});
+    } else if (selectorsQuery.isError) {
+      const error = selectorsQuery.error;
+      localDispatch.setFieldConfigError(
+        error instanceof Error ? error.message : 'Unable to load domain memory.',
+      );
+    }
+  }, [
+    selectorsQuery.data,
+    selectorsQuery.isSuccess,
+    selectorsQuery.isError,
+    selectorsQuery.error,
+    singleUrlMode,
+    deferredLookupReady,
+    deferredTargetDomain,
+    deferredSurface,
+    localDispatch,
     setFieldRows,
   ]);
 
@@ -378,42 +406,6 @@ export function CrawlConfigScreen({
       targetUrl,
     ],
   );
-
-  async function loadDomainMemoryForUrl(rawUrl: string) {
-    const target = rawUrl.trim();
-    const domain = getNormalizedDomain(target);
-    if (!target || !domain) {
-      return;
-    }
-    const requestId = domainMemoryLookupRequestRef.current + 1;
-    domainMemoryLookupRequestRef.current = requestId;
-    localDispatch.setFieldConfigError('');
-    try {
-      const records = await api.listSelectors({ domain });
-      if (domainMemoryLookupRequestRef.current === requestId) {
-        const matchingRecords = selectRelevantSelectorRecords(records, effectiveSurface);
-        if (!matchingRecords.length) {
-          localDispatch.setFieldConfigMessage('No saved domain memory found for this URL.');
-          setFieldRows((current) => stripDomainMemoryFieldRows(current));
-          return;
-        }
-        const incomingRows = matchingRecords.map(buildFieldRowFromSelectorRecord);
-        setFieldRows((current) =>
-          mergeFieldRows(stripDomainMemoryFieldRows(current), incomingRows),
-        );
-        localDispatch.setFieldRowMessages({});
-        localDispatch.setFieldConfigMessage(
-          `Loaded ${matchingRecords.length} saved selector${matchingRecords.length === 1 ? '' : 's'} from domain memory.`,
-        );
-      }
-    } catch (error) {
-      if (domainMemoryLookupRequestRef.current === requestId) {
-        localDispatch.setFieldConfigError(
-          error instanceof Error ? error.message : 'Unable to load domain memory.',
-        );
-      }
-    }
-  }
 
   function markProfileDirty(updater: (current: DomainRunProfile) => DomainRunProfile) {
     profileDirtyRef.current = true;
@@ -624,7 +616,7 @@ export function CrawlConfigScreen({
         );
       }
       if (savedCount) {
-        await loadDomainMemoryForUrl(target);
+        await queryClient.invalidateQueries({ queryKey: ['domain-selectors', domain] });
       }
     } catch (error) {
       localDispatch.setFieldConfigError(
@@ -1031,10 +1023,15 @@ export function CrawlConfigScreen({
                                 ? {
                                     ...current.acquisition_contract,
                                     prefer_browser: true,
-                                    prefer_curl_handoff: false,
+                                    handoff_eligible: false,
                                     handoff_cookie_engine: 'auto',
                                   }
-                                : current.acquisition_contract,
+                                : {
+                                    ...current.acquisition_contract,
+                                    prefer_browser: false,
+                                    handoff_eligible: false,
+                                    handoff_cookie_engine: 'auto',
+                                  },
                           }));
                         }
                       }}
@@ -1059,7 +1056,7 @@ export function CrawlConfigScreen({
                               ...current.acquisition_contract,
                               preferred_browser_engine: next,
                               prefer_browser: next === 'auto' ? false : true,
-                              prefer_curl_handoff: false,
+                              handoff_eligible: false,
                               handoff_cookie_engine: next === 'auto' ? 'auto' : next,
                             },
                           }));

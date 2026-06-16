@@ -452,3 +452,26 @@ def test_classify_blocked_page_blocks_human_verification_title_without_extractab
     assert classification.outcome == "challenge_page"
     assert "human verification" in classification.strong_hits
     assert bool(classification.title_matches) is True
+
+
+@pytest.mark.unit
+def test_classify_blocked_page_blocks_akamai_bot_failover_checkout_shell() -> None:
+    html = """
+    <html>
+      <head>
+        <title>Hang Tight! Routing to checkout...</title>
+        <script src="./botfailoveroriginal_files/spin.min.js"></script>
+      </head>
+      <body>
+        <main>Please wait while we route your request.</main>
+        <script src="https://example.akamaized.net/failover.js"></script>
+      </body>
+    </html>
+    """
+
+    classification = classify_blocked_page(html, 200)
+
+    assert classification.blocked is True
+    assert classification.outcome == "challenge_page"
+    assert "hang tight! routing to checkout" in classification.strong_hits
+    assert bool(classification.title_matches) is True

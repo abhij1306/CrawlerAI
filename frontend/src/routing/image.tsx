@@ -3,13 +3,11 @@ import type { ImgHTMLAttributes } from 'react';
 type AppImageProps = Omit<ImgHTMLAttributes<HTMLImageElement>, 'src'> & {
   src: string;
   fill?: boolean;
-  priority?: boolean;
   unoptimized?: boolean;
 };
 
 export default function Image({
   fill,
-  priority: _priority,
   unoptimized: _unoptimized,
   style,
   ...props

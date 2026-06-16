@@ -1,6 +1,3 @@
-'use client';
-
-// Next.js App Router entrypoint for `/selectors`; invoked by file-system routing.
 import { AlertCircle, Check, CheckCircle2, Plus, Search, Sparkles, Trash2 } from 'lucide-react';
 import { useReducer } from 'react';
 

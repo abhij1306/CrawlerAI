@@ -4,6 +4,7 @@ __all__ = (
     "drop_cross_product_variant_rows",
     "drop_cross_handle_variant_rows",
     "drop_parent_shared_variant_axes",
+    "prune_unidentified_cartesian_rows_to_parent_axes",
     "prune_axisless_rows_when_axisful_rows_exist",
     "drop_color_only_rows_when_size_rows_exist",
     "drop_subset_variants_when_richer_alternative_exists",
@@ -35,6 +36,7 @@ _PUBLIC_VARIANT_AXIS_FIELDS = tuple(str(field).strip().lower() for field in PUBL
 _VARIANT_TITLE_STOPWORDS = frozenset(clean_text(token).lower() for token in tuple(VARIANT_TITLE_STOPWORDS or ()) if clean_text(token))
 _detail_cross_product_text_type_tokens = frozenset(clean_text(token).lower() for token in tuple(DETAIL_CROSS_PRODUCT_TEXT_TYPE_TOKENS or ()) if clean_text(token))
 _detail_cross_product_text_generic_tokens = frozenset(clean_text(token).lower() for token in tuple(DETAIL_CROSS_PRODUCT_TEXT_GENERIC_TOKENS or ()) if clean_text(token))
+_COMBINATION_IDENTITY_FIELDS = ("sku", "variant_id", "url", "barcode")
 try:
     _VARIANT_OPTION_LABEL_MAX_WORDS = max(1, int(VARIANT_OPTION_LABEL_MAX_WORDS))
 except (TypeError, ValueError):
@@ -163,6 +165,46 @@ def drop_parent_shared_variant_axes(record: dict[str, Any]) -> None:
             continue
         for variant in variant_rows:
             variant.pop(axis, None)
+
+
+def prune_unidentified_cartesian_rows_to_parent_axes(record: dict[str, Any]) -> None:
+    variants = record.get("variants")
+    if not isinstance(variants, list) or len(variants) < 4:
+        return
+    rows = [row for row in variants if isinstance(row, dict)]
+    if len(rows) != len(variants) or any(
+        any(text_or_none(row.get(field_name)) for field_name in _COMBINATION_IDENTITY_FIELDS)
+        for row in rows
+    ):
+        return
+    varying_axes = [
+        axis
+        for axis in _PUBLIC_VARIANT_AXIS_FIELDS
+        if len(
+            {
+                clean_text(row.get(axis)).casefold()
+                for row in rows
+                if clean_text(row.get(axis))
+            }
+        )
+        >= 2
+    ]
+    if len(varying_axes) < 2:
+        return
+    kept = rows
+    for axis in varying_axes:
+        parent_value = clean_text(record.get(axis)).casefold()
+        if not parent_value:
+            continue
+        matching = [
+            row
+            for row in kept
+            if clean_text(row.get(axis)).casefold() == parent_value
+        ]
+        if len(matching) >= 2:
+            kept = matching
+    if len(kept) < len(rows):
+        _replace_or_drop_variants(record, kept)
 
 
 def prune_axisless_rows_when_axisful_rows_exist(record: dict[str, Any]) -> None:

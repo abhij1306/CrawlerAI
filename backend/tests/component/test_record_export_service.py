@@ -42,7 +42,6 @@ async def test_export_streams_serialize_clean_record_data(
                 "title": "Widget Prime",
                 "price": "19.99",
                 "_source": "dom",
-                "page_markdown": "# internal",
                 "empty_field": "",
             },
             raw_data={},
@@ -58,7 +57,6 @@ async def test_export_streams_serialize_clean_record_data(
 
     assert json_rows == [{"price": "19.99", "title": "Widget Prime"}]
     assert "_source" not in exported_csv
-    assert "page_markdown" not in exported_csv
     assert "Widget Prime" in exported_csv
 
 
@@ -250,15 +248,13 @@ def test_export_image_dedupe_preserves_comma_containing_urls() -> None:
 
 
 @pytest.mark.component
-def test_clean_export_data_keeps_variant_payloads_but_hides_internal_markdown() -> None:
+def test_clean_export_data_keeps_variant_payloads_but_hides_internal_fields() -> None:
     cleaned = record_export_service.clean_export_data(
         {
             "title": "Widget Prime",
             "variants": [{"sku": "W-1", "color": "Black"}],
             "variant_axes": {"color": ["Black"]},
             "selected_variant": {"sku": "W-1", "color": "Black"},
-            "markdown": "# rendered markdown",
-            "page_markdown": "# internal",
             "_source": "dom",
         }
     )

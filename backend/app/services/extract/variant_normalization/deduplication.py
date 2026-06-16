@@ -5,6 +5,10 @@ from typing import Any
 import re
 
 from app.services.config.extraction_rules import VARIANT_SEPARATE_DIMENSION_SIZE_RULES
+from app.services.config.variant_policy import (
+    RELATED_VOLUME_VARIANT_PATTERN,
+    RELATED_VOLUME_VARIANT_RULE_ID,
+)
 from app.services.extract.variant_identity_merge import (
     collapse_duplicate_size_aliases,
     merge_variant_rows,
@@ -33,14 +37,51 @@ variant_separate_dimension_size_rules = tuple(
     and str(rule.get("pattern") or "").strip()
     and clean_text(rule.get("style"))
 )
+related_volume_variant_re = re.compile(RELATED_VOLUME_VARIANT_PATTERN, re.I)
 
 
 def _dedupe_and_prune_variant_rows(record: dict[str, Any]) -> None:
+    _drop_related_volume_rows(record)
     collapse_duplicate_size_aliases(record)
     _dedupe_variant_rows(record)
     drop_color_only_rows_when_size_rows_exist(record)
     drop_subset_variants_when_richer_alternative_exists(record)
     prune_axisless_rows_when_axisful_rows_exist(record)
+
+
+def _drop_related_volume_rows(record: dict[str, Any]) -> None:
+    variants = record.get("variants")
+    if not isinstance(variants, list) or len(variants) < 2:
+        return
+    rows = [row for row in variants if isinstance(row, dict)]
+    if len(rows) != len(variants):
+        return
+    volumes = {clean_text(row.get("volume")).casefold() for row in rows}
+    sizes = [clean_text(row.get("size")) for row in rows]
+    has_offer_identity = any(
+        clean_text(row.get(field_name))
+        for row in rows
+        for field_name in ("sku", "variant_id", "url", "image_url", "color")
+    )
+    if (
+        has_offer_identity
+        or len(volumes) != 1
+        or "" in volumes
+        or not all(size and related_volume_variant_re.match(size) for size in sizes)
+    ):
+        return
+    record.pop("variants", None)
+    record.pop("variant_count", None)
+    record.setdefault("_transforms", []).append(
+        {
+            "rule_id": RELATED_VOLUME_VARIANT_RULE_ID,
+            "field_name": "variants",
+            "entity_ref": "product",
+            "before": rows,
+            "after": None,
+            "evidence_ids": [],
+        }
+    )
 
 
 def _prune_unrecognized_size_rows_when_real_sizes_exist(record: dict[str, Any]) -> None:

@@ -12,6 +12,7 @@ from app.services.shared.field_coerce import text_or_none
 
 __all__ = (
     "dom_variants_add_missing_existing_axis",
+    "dom_rows_have_combination_identity",
     "expand_existing_variants_with_dom_axes",
 )
 
@@ -26,6 +27,17 @@ _VARIANT_TRANSPORT_FIELDS = (
     "availability",
     "stock_quantity",
 )
+_VARIANT_COMBINATION_IDENTITY_FIELDS = ("sku", "variant_id", "url")
+
+
+def dom_rows_have_combination_identity(rows: list[dict[str, Any]]) -> bool:
+    return bool(rows) and all(
+        any(
+            text_or_none(row.get(field_name))
+            for field_name in _VARIANT_COMBINATION_IDENTITY_FIELDS
+        )
+        for row in rows
+    )
 
 
 def dom_variants_add_missing_existing_axis(
@@ -55,6 +67,8 @@ def expand_existing_variants_with_dom_axes(
         for row in existing_variants
         if isinstance(row, dict)
     ):
+        return []
+    if not dom_rows_have_combination_identity(dom_variant_rows):
         return []
     if len(existing_variants) * len(dom_variant_rows) > _safe_int_config(
         DOM_VARIANT_CARTESIAN_COMBO_LIMIT,

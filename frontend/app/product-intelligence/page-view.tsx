@@ -1,5 +1,3 @@
-'use client';
-
 import { Play, Search } from 'lucide-react';
 
 import { HistoryDrawer } from '../../components/ui/history-drawer';

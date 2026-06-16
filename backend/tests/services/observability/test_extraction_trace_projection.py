@@ -43,6 +43,20 @@ def _detail_record() -> dict:
             "title": ["dom_h1"],
             "variants": ["dom_selector"],
         },
+        "_evidence_graph": {
+            "field_evidence": {
+                "ev_1": {"field_name": "price"},
+                "ev_2": {"field_name": "price"},
+            },
+            "field_decisions": {
+                "price": {
+                    "conflict_count": 1,
+                    "rejected_candidate_count": 1,
+                }
+            },
+        },
+        "_validation_findings": [{"finding_id": "vf_1"}],
+        "_review_bucket": [{"key": "price", "value": "59.99", "source": "dom"}],
     }
 
 
@@ -83,6 +97,26 @@ def test_projects_high_value_field_winning_sources_only():
     assert provenance["variants"]["winning_source"] == "dom_selector"
     # title is a default canonical high-value field for ecommerce detail
     assert "title" in provenance
+
+
+def test_projects_bounded_evidence_health_summary():
+    trace = RunTrace(
+        run_id=1,
+        url="https://example.com/p/widget",
+        surface="ecommerce_detail",
+        requested_fields=["price"],
+    )
+
+    _record_extraction_trace(_context(trace), [_detail_record()])
+
+    assert trace.to_dict()["extraction"]["evidence_summary"] == {
+        "candidate_count": 2,
+        "field_decision_count": 1,
+        "conflict_count": 1,
+        "rejected_candidate_count": 1,
+        "validation_finding_count": 1,
+        "review_candidate_count": 1,
+    }
 
 
 def test_projects_missing_variant_candidate_state():

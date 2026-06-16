@@ -1,5 +1,3 @@
-'use client';
-
 import type { ProductIntelligenceDiscoveryResponse } from '../../lib/api/types';
 import type { ProductIntelligenceCandidate } from './product-intelligence-utils';
 import { isRecord } from './product-intelligence-utils';

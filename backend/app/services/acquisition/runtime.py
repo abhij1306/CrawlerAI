@@ -127,6 +127,22 @@ def is_non_retryable_http_status(status_code: int) -> bool:
     return 400 <= code <= 499 and code not in configured_retry_statuses
 
 
+def is_browser_recoverable_http_status(
+    status_code: int,
+    *,
+    surface: str | None,
+) -> bool:
+    if "detail" not in str(surface or "").strip().lower():
+        return False
+    configured_statuses = {
+        int(item)
+        for item in list(
+            crawler_runtime_settings.browser_recoverable_detail_status_codes or []
+        )
+    }
+    return int(status_code or 0) in configured_statuses
+
+
 def is_blocked_html(html: str, status_code: int) -> bool:
     return classify_blocked_page(html, status_code).blocked
 
@@ -368,6 +384,8 @@ def should_escalate_to_browser(
 ) -> bool:
     non_retryable_http_status = is_non_retryable_http_status(result.status_code)
     if result.blocked or is_retryable_http_status(result.status_code):
+        return True
+    if is_browser_recoverable_http_status(result.status_code, surface=surface):
         return True
     if non_retryable_http_status:
         return False
@@ -884,6 +902,7 @@ __all__ = [
     "is_blocked_html",
     "is_blocked_html_async",
     "is_non_retryable_http_status",
+    "is_browser_recoverable_http_status",
     "is_retryable_http_status",
     "has_extractable_dom_meaningful_detail_signals",
     "has_extractable_listing_signals",

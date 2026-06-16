@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 
 import pytest
-import pytest_asyncio
 
 from app.models.crawl_settings import CrawlRunSettings
 from app.services.crawl import batch_runtime as batch_runtime_module
@@ -26,15 +25,6 @@ from app.services.robots_policy import (
 from sqlalchemy import select
 from sqlalchemy.exc import PendingRollbackError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
-
-
-@pytest_asyncio.fixture(autouse=True)
-async def _use_test_session_local_for_parallel_urls(
-    db_session: AsyncSession,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    session_factory = async_sessionmaker(bind=db_session.bind, expire_on_commit=False)
-    monkeypatch.setattr(batch_runtime_module, "SessionLocal", session_factory)
 
 
 def _detail_html() -> str:
@@ -66,9 +56,14 @@ def test_parallel_worker_record_limit_bounds_each_worker_budget() -> None:
 
 @pytest.mark.unit
 def test_parallel_url_concurrency_respects_browser_runtime_capacity(
+    monkeypatch: pytest.MonkeyPatch,
     patch_settings,
 ) -> None:
-    patch_settings(url_batch_concurrency=8, browser_runtime_context_capacity=3)
+    monkeypatch.setattr(batch_runtime_module.settings, "celery_dispatch_enabled", True)
+    patch_settings(
+        url_batch_concurrency=8,
+        browser_runtime_context_capacity=3,
+    )
     settings_view = CrawlRunSettings.from_value(
         {"fetch_profile": {"fetch_mode": "auto"}}
     )
@@ -81,13 +76,32 @@ def test_parallel_url_concurrency_does_not_browser_cap_http_only(
     monkeypatch: pytest.MonkeyPatch,
     patch_settings,
 ) -> None:
+    monkeypatch.setattr(batch_runtime_module.settings, "celery_dispatch_enabled", True)
     monkeypatch.setattr(batch_runtime_module.settings, "system_max_concurrent_urls", 8)
-    patch_settings(url_batch_concurrency=8, browser_runtime_context_capacity=3)
+    patch_settings(
+        url_batch_concurrency=8,
+        browser_runtime_context_capacity=3,
+    )
     settings_view = CrawlRunSettings.from_value(
         {"fetch_profile": {"fetch_mode": "http_only"}}
     )
 
     assert _parallel_url_concurrency(10, settings_view) == 8
+
+
+@pytest.mark.unit
+def test_parallel_url_concurrency_is_serial_when_celery_dispatch_is_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+    patch_settings,
+) -> None:
+    monkeypatch.setattr(batch_runtime_module.settings, "celery_dispatch_enabled", False)
+    monkeypatch.setattr(batch_runtime_module.settings, "system_max_concurrent_urls", 8)
+    patch_settings(url_batch_concurrency=8, browser_runtime_context_capacity=8)
+    settings_view = CrawlRunSettings.from_value(
+        {"fetch_profile": {"fetch_mode": "http_only"}}
+    )
+
+    assert _parallel_url_concurrency(10, settings_view) == 1
 
 
 @pytest.mark.asyncio
@@ -341,11 +355,11 @@ async def test_process_run_defaults_to_sequential_batch_url_processing(
             },
         },
     )
-    seen: list[tuple[str, int]] = []
+    seen: list[tuple[str, object]] = []
 
     async def _fake_process_single_url(*args, **kwargs):
         del args
-        seen.append((str(kwargs.get("url") or ""), id(kwargs["session"])))
+        seen.append((str(kwargs.get("url") or ""), kwargs["session"]))
         return URLProcessingResult(
             records=[],
             verdict="success",
@@ -364,7 +378,8 @@ async def test_process_run_defaults_to_sequential_batch_url_processing(
         "https://example-two.com/products/two",
         "https://example-three.com/products/three",
     ]
-    assert {session_id for _url, session_id in seen} == {id(db_session)}
+    assert len({id(session) for _url, session in seen}) == 3
+    assert all(session is not db_session for _url, session in seen)
 
 
 @pytest.mark.asyncio
@@ -375,7 +390,11 @@ async def test_process_run_uses_url_batch_concurrency_setting(
     monkeypatch: pytest.MonkeyPatch,
     patch_settings,
 ) -> None:
-    patch_settings(url_batch_concurrency=2, browser_runtime_context_capacity=2)
+    monkeypatch.setattr(batch_runtime_module.settings, "celery_dispatch_enabled", True)
+    patch_settings(
+        url_batch_concurrency=2,
+        browser_runtime_context_capacity=2,
+    )
     monkeypatch.setattr(
         batch_runtime_module.settings,
         "system_max_concurrent_urls",
@@ -441,7 +460,11 @@ async def test_process_run_runs_same_domain_batch_urls_in_parallel(
     monkeypatch: pytest.MonkeyPatch,
     patch_settings,
 ) -> None:
-    patch_settings(url_batch_concurrency=3, browser_runtime_context_capacity=3)
+    monkeypatch.setattr(batch_runtime_module.settings, "celery_dispatch_enabled", True)
+    patch_settings(
+        url_batch_concurrency=3,
+        browser_runtime_context_capacity=3,
+    )
     monkeypatch.setattr(
         batch_runtime_module.settings,
         "system_max_concurrent_urls",

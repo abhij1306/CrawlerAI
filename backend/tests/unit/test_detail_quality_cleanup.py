@@ -7,6 +7,7 @@ from app.services.extract.detail.assembly.final_cleanup import (
     repair_ecommerce_detail_record_quality,
 )
 from app.services.extract.detail.text.sanitizer import sanitize_detail_long_text
+from app.services.extract.detail.text.materials import sanitize_materials_text
 
 
 def _repair(record: dict[str, object], page_url: str) -> dict[str, object]:
@@ -15,7 +16,7 @@ def _repair(record: dict[str, object], page_url: str) -> dict[str, object]:
 
 
 @pytest.mark.unit
-def test_shopify_detail_images_dedupe_keeps_distinct_store_scopes() -> None:
+def test_shopify_detail_images_dedupe_uses_asset_identity_across_delivery_hosts() -> None:
     images = dedupe_image_urls(
         [
             "https://sneakerpolitics.com/cdn/shop/files/item-2.jpg?v=1",
@@ -25,7 +26,7 @@ def test_shopify_detail_images_dedupe_keeps_distinct_store_scopes() -> None:
         ]
     )
 
-    assert len(images) == 4  # nosec B101
+    assert len(images) == 2  # nosec B101
 
 
 @pytest.mark.unit
@@ -103,8 +104,8 @@ def test_detail_record_cleanup_repairs_brand_title_tables_variants_and_discount(
         }
     ]
     assert record["variants"] == [  # nosec B101
-        {"color": "White"},
-        {"color": "Blue"},
+        {"color": "White", "price": "249.99", "currency": "USD"},
+        {"color": "Blue", "price": "249.99", "currency": "USD"},
     ]
 
 
@@ -157,6 +158,37 @@ def test_long_text_cleanup_keeps_later_title_mentions_and_only_extra_prompts() -
             title="Example Jacket",
         )
         == "Details Please check the measurements below Model is 6 ft Cotton shell."
+    )
+
+
+@pytest.mark.unit
+def test_detail_cleanup_strips_materials_review_tail_and_care_ui_tail() -> None:
+    record: dict[str, object] = {
+        "title": "Spot Midi Dress",
+        "materials": (
+            "Polyester 100% Care: Delicate Machine Wash Lining: Polyester 100% "
+            "Reviews ( 32 ) Polyester 100%"
+        ),
+        "care": (
+            "Keep away from water. Wipe with a soft cloth. "
+            "Learn more about our materials and jewelry care here"
+        ),
+    }
+
+    _repair(record, "https://example.com/products/spot-midi-dress")
+
+    assert record["materials"] == (
+        "Polyester 100% Care: Delicate Machine Wash Lining: Polyester 100%"
+    )
+    assert record["care"] == "Keep away from water. Wipe with a soft cloth."
+
+
+@pytest.mark.unit
+def test_materials_cleanup_preserves_long_description_without_percentages() -> None:
+    text = " ".join(["Soft woven cotton fabric with a brushed finish."] * 20)
+
+    assert sanitize_materials_text(text) == (
+        "Soft woven cotton fabric with a brushed finish."
     )
 
 

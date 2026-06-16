@@ -280,6 +280,22 @@ LISTING_CATEGORY_PATH_PREFIXES = (
     "/clp/",
 )
 LISTING_CATEGORY_PATH_SEGMENTS = frozenset({"productlist"})
+LISTING_NETWORK_REPLAY_ROUTE_PREFIXES = frozenset(
+    {
+        "buy",
+        "detail",
+        "dp",
+        "goods",
+        "item",
+        "merchandise",
+        "p",
+        "pd",
+        "product",
+        "products",
+        "shop",
+        "sku",
+    }
+)
 LISTING_STRUCTURAL_QUERY_CATEGORY_TOKENS = ("categor",)
 LISTING_STRUCTURAL_QUERY_FILTER_TOKENS = ("price", "rf=")
 LISTING_PRODUCT_DETAIL_ID_RE = re.compile(
@@ -452,6 +468,7 @@ VARIANT_OPTION_VALUE_SUFFIX_NOISE_PATTERNS = tuple(
             r"\s+(?:not\s+)?selected\s*$",
             r"\s+\((?:sold\s+out|unavailable)\)\s*$",
             r"\s+(?:variant\s+)?sold\s+out(?:\s+or\s+unavailable)?\s*$",
+            r"\s+(?:waitlist|backorder)(?:\s+(?:waitlist|backorder))*\s*$",
             r"\s+learn\s+more\s*$",
         )
     )

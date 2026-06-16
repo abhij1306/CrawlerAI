@@ -65,8 +65,11 @@ function baseProfile(overrides: DomainRunProfileOverrides = {}): DomainRunProfil
     acquisition_contract: {
       preferred_browser_engine: 'auto',
       prefer_browser: false,
-      prefer_curl_handoff: false,
+      handoff_eligible: false,
       handoff_cookie_engine: 'auto',
+      required_rendering: false,
+      required_traversal: false,
+      required_network_payloads: false,
       last_quality_success: null,
       stale_after_failures: {
         failure_count: 0,
@@ -167,8 +170,11 @@ describe('buildDispatch', () => {
     expect(dispatch.settings.acquisition_contract).toEqual({
       preferred_browser_engine: 'auto',
       prefer_browser: false,
-      prefer_curl_handoff: false,
+      handoff_eligible: false,
       handoff_cookie_engine: 'auto',
+      required_rendering: false,
+      required_traversal: false,
+      required_network_payloads: false,
       last_quality_success: null,
       stale_after_failures: {
         failure_count: 0,

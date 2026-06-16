@@ -12,6 +12,7 @@ from app.services.fetch import fetch_context as crawl_fetch_runtime
 
 from app.models.domain_memory import DomainCookieMemory
 from app.services.acquisition import browser_identity, browser_storage_state
+from app.services.acquisition import browser_background_tasks
 from app.services.acquisition import browser_proxy_bridge
 from app.services.acquisition import cookie_store
 from app.services.acquisition import host_protection_memory
@@ -1532,6 +1533,8 @@ async def test_shared_browser_runtime_bounds_hung_context_cleanup(
         )
         for record in caplog.records
     )
+    await browser_background_tasks.drain_browser_background_tasks()
+    assert runtime._active_contexts == 0
 
 
 @pytest.mark.asyncio
@@ -1602,18 +1605,31 @@ async def test_shared_browser_runtime_close_bounds_hung_shutdown(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     blocker = asyncio.Event()
+    cancelled: list[str] = []
 
     class FakeBrowser:
         async def close(self) -> None:
-            await blocker.wait()
+            try:
+                await blocker.wait()
+            except asyncio.CancelledError:
+                cancelled.append("browser")
+                raise
 
     class FakePlaywright:
         async def stop(self) -> None:
-            await blocker.wait()
+            try:
+                await blocker.wait()
+            except asyncio.CancelledError:
+                cancelled.append("playwright")
+                raise
 
     class FakeBridge:
         async def close(self) -> None:
-            await blocker.wait()
+            try:
+                await blocker.wait()
+            except asyncio.CancelledError:
+                cancelled.append("bridge")
+                raise
 
     runtime = crawl_fetch_runtime.SharedBrowserRuntime(max_contexts=1)
     runtime._browser = FakeBrowser()
@@ -1644,6 +1660,7 @@ async def test_shared_browser_runtime_close_bounds_hung_shutdown(
         "Timed out closing SOCKS5 auth bridge" in record.message
         for record in caplog.records
     )
+    assert cancelled == []
 
 
 @pytest.mark.asyncio
@@ -2260,6 +2277,73 @@ async def test_shared_browser_runtime_bounds_hung_new_page_and_closes_context(
 
     assert closed == ["context_closed"]
     assert runtime._active_contexts == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_shared_browser_runtime_keeps_capacity_until_timed_out_close_finishes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    release_close = asyncio.Event()
+
+    class FakeContext:
+        async def new_page(self):
+            return object()
+
+        async def close(self) -> None:
+            await release_close.wait()
+
+    class FakeBrowser:
+        async def new_context(self, **kwargs):
+            del kwargs
+            return FakeContext()
+
+    async def _skip_storage(*args, **kwargs) -> None:
+        del args, kwargs
+
+    runtime = acquisition_browser_runtime.SharedBrowserRuntime(max_contexts=1)
+    runtime._browser = FakeBrowser()
+    runtime._playwright = object()
+    monkeypatch.setattr(
+        acquisition_browser_pool,
+        "build_playwright_context_spec",
+        lambda **_: _context_spec(),
+    )
+    monkeypatch.setattr(
+        acquisition_browser_pool,
+        "persist_context_storage_state",
+        _skip_storage,
+    )
+    monkeypatch.setattr(
+        acquisition_browser_runtime.crawler_runtime_settings,
+        "browser_close_timeout_ms",
+        1,
+    )
+
+    async with runtime.page(allow_storage_state=False):
+        pass
+
+    assert runtime._active_contexts == 1
+    assert runtime._semaphore.locked()
+    release_close.set()
+    await browser_background_tasks.drain_browser_background_tasks()
+    assert runtime._active_contexts == 0
+    assert not runtime._semaphore.locked()
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_await_without_cancelling_returns_false_when_awaitable_fails() -> None:
+    async def _fail() -> None:
+        raise RuntimeError("close failed")
+
+    assert (
+        await browser_background_tasks.await_without_cancelling(
+            _fail(),
+            timeout_seconds=1,
+        )
+        is False
+    )
 
 
 @pytest.mark.component

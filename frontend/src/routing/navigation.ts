@@ -1,44 +1,33 @@
-import { Navigate, UNSAFE_LocationContext, UNSAFE_NavigationContext } from 'react-router-dom';
-import { useContext } from 'react';
+import { useMemo } from 'react';
+import {
+  Navigate,
+  useLocation,
+  useNavigate,
+  useSearchParams as useReactRouterSearchParams,
+} from 'react-router-dom';
 
 export { Navigate };
 
 export function usePathname() {
-  const locationContext = useContext(UNSAFE_LocationContext);
-  return (
-    locationContext?.location.pathname ??
-    (typeof window === 'undefined' ? '/' : window.location.pathname)
-  );
+  return useLocation().pathname;
 }
 
 export function useSearchParams() {
-  const locationContext = useContext(UNSAFE_LocationContext);
-  return new URLSearchParams(
-    locationContext?.location.search ??
-      (typeof window === 'undefined' ? '' : window.location.search),
-  );
+  const [searchParams] = useReactRouterSearchParams();
+  return searchParams;
 }
 
 export function useRouter() {
-  const navigationContext = useContext(UNSAFE_NavigationContext);
-  const navigator = navigationContext?.navigator;
-  return {
-    push: (href: string) => {
-      if (navigator) {
-        navigator.push(href);
-      } else {
-        window.location.assign(href);
-      }
-    },
-    replace: (href: string) => {
-      if (navigator) {
-        navigator.replace(href);
-      } else {
-        window.location.replace(href);
-      }
-    },
-    back: () => window.history.back(),
-    forward: () => window.history.forward(),
-    refresh: () => window.location.reload(),
-  };
+  const navigate = useNavigate();
+
+  return useMemo(
+    () => ({
+      push: (href: string) => navigate(href),
+      replace: (href: string) => navigate(href, { replace: true }),
+      back: () => navigate(-1),
+      forward: () => navigate(1),
+      refresh: () => window.location.reload(),
+    }),
+    [navigate],
+  );
 }

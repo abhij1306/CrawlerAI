@@ -14,5 +14,5 @@ Rules:
 
 Output requirements:
 - Return strictly the JSON schema in the user prompt.
-- No markdown, no extra keys, no commentary.
+- No markdown or code fences. No extra keys or commentary.
 - confidence is a decimal in [0.0, 1.0], rounded to three decimals or fewer.

@@ -1,6 +1,3 @@
-'use client';
-
-// Next.js App Router entrypoint for `/data-enrichment`; invoked by file-system routing.
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ExternalLink, History, Loader2, Play, RefreshCcw } from 'lucide-react';
 import { useMemo, useReducer, useState } from 'react';

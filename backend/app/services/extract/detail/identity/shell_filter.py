@@ -16,6 +16,8 @@ from app.services.config.extraction_rules import (
     AVAILABILITY_UNKNOWN,
     DETAIL_BRAND_SHELL_DESCRIPTION_PHRASES,
     DETAIL_BRAND_SHELL_TITLE_TOKENS,
+    DETAIL_SHELL_GENERIC_FIELDS,
+    DETAIL_SHELL_STRONG_FIELDS,
     TRACKING_PIXEL_PATTERNS,
 )
 from app.services.extract.detail.identity.core import (
@@ -42,11 +44,12 @@ _ALNUM_SPLIT_PATTERN = r"[^a-z0-9]+"
 def looks_like_site_shell_record(record: dict[str, Any], *, page_url: str) -> bool:
     title = text_or_none(record.get("title")) or ""
     field_sources = object_dict(record.get("_field_sources"))
-    title_field_sources = object_list(field_sources.get("title"))
-    title_sources = {
-        str(source).strip() for source in title_field_sources if str(source).strip()
+    title_sources = _winning_field_sources(record, "title") or {
+        str(source).strip()
+        for source in object_list(field_sources.get("title"))
+        if str(source).strip()
     }
-    brand_sources = {
+    brand_sources = _winning_field_sources(record, "brand") or {
         str(source).strip()
         for source in object_list(field_sources.get("brand"))
         if str(source).strip()
@@ -58,29 +61,21 @@ def looks_like_site_shell_record(record: dict[str, Any], *, page_url: str) -> bo
         return True
     if is_title_noise(title):
         return True
-    if detail_url_is_collection_like(page_url):
-        return True
-    generic_detail_fields = ("price", "currency", "brand", "category")
-    strong_detail_fields = (
-        "brand",
-        "sku",
-        "part_number",
-        "barcode",
-        "variants",
-    )
     has_generic_detail_fields = any(
         record.get(field_name) not in (None, "", [], {})
-        for field_name in generic_detail_fields
+        for field_name in DETAIL_SHELL_GENERIC_FIELDS
         if field_name != "brand" or not ignore_repaired_brand
     )
     has_strong_detail_fields = any(
         record.get(field_name) not in (None, "", [], {})
-        for field_name in strong_detail_fields
+        for field_name in DETAIL_SHELL_STRONG_FIELDS
         if field_name != "brand" or not ignore_repaired_brand
     )
     availability = text_or_none(record.get("availability"))
     if availability and availability != AVAILABILITY_UNKNOWN:
         has_strong_detail_fields = True
+    if detail_url_is_collection_like(page_url) and not has_strong_detail_fields:
+        return True
     has_identity_fields = any(
         record.get(field_name) not in (None, "", [], {})
         for field_name in (
@@ -103,11 +98,12 @@ def looks_like_site_shell_record(record: dict[str, Any], *, page_url: str) -> bo
         if isinstance(confidence_payload, dict)
         else None
     )
-    confidence_score = (
-        float(confidence_value)
-        if isinstance(confidence_value, (int, float, str))
-        else 0.0
-    )
+    try:
+        confidence_score = float(
+            0.0 if confidence_value is None else confidence_value
+        )
+    except (TypeError, ValueError):
+        confidence_score = 0.0
     description_text = clean_text(record.get("description"))
     has_rich_pdp_corroboration = bool(
         record.get("price") not in (None, "", [], {})
@@ -190,7 +186,7 @@ def looks_like_site_shell_record(record: dict[str, Any], *, page_url: str) -> bo
         in {"opengraph", "json_ld_page_level", "microdata"}
         and not any(
             record.get(field_name) not in (None, "", [], {})
-            for field_name in strong_detail_fields
+            for field_name in DETAIL_SHELL_STRONG_FIELDS
         )
     ):
         return True
@@ -199,7 +195,7 @@ def looks_like_site_shell_record(record: dict[str, Any], *, page_url: str) -> bo
         and not has_generic_detail_fields
         and not any(
             record.get(field_name) not in (None, "", [], {})
-            for field_name in strong_detail_fields
+            for field_name in DETAIL_SHELL_STRONG_FIELDS
         )
     ):
         return True
@@ -215,7 +211,7 @@ def looks_like_site_shell_record(record: dict[str, Any], *, page_url: str) -> bo
             and not has_generic_detail_fields
             and not any(
                 record.get(field_name) not in (None, "", [], {})
-                for field_name in strong_detail_fields
+                for field_name in DETAIL_SHELL_STRONG_FIELDS
             )
             and (
                 description_looks_like_shell_copy(record.get("description"))
@@ -245,8 +241,34 @@ def looks_like_site_shell_record(record: dict[str, Any], *, page_url: str) -> bo
         return True
     return not any(
         record.get(field_name) not in (None, "", [], {})
-        for field_name in strong_detail_fields
+        for field_name in DETAIL_SHELL_STRONG_FIELDS
     )
+
+
+def _winning_field_sources(record: dict[str, Any], field_name: str) -> set[str]:
+    field_evidence = object_dict(record.get("_field_evidence"))
+    summary = object_dict(field_evidence.get(field_name))
+    winning_ids = {
+        str(value)
+        for value in object_list(summary.get("winning_evidence_ids"))
+        if str(value).strip()
+    }
+    if not winning_ids:
+        return set()
+    graph = object_dict(record.get("_evidence_graph"))
+    evidence = object_dict(graph.get("field_evidence"))
+    current_value = clean_text(record.get(field_name)).casefold()
+    return {
+        str(object_dict(evidence.get(evidence_id)).get("source") or "").strip()
+        for evidence_id in winning_ids
+        if (
+            str(object_dict(evidence.get(evidence_id)).get("source") or "").strip()
+            and clean_text(
+                object_dict(evidence.get(evidence_id)).get("value")
+            ).casefold()
+            == current_value
+        )
+    }
 
 
 def detail_url_has_multiple_product_segments(url: str) -> bool:

@@ -23,6 +23,7 @@ from app.services.config.extraction_rules import (
     ECOMMERCE_DETAIL_SURFACE,
 )
 from app.services.extraction_context import ExtractionContext
+from app.services.extract.contracts import CandidateSet
 
 
 @dataclass(slots=True)
@@ -33,9 +34,8 @@ class DetailTierState:
     requested_fields: list[str] | None
     fields: list[str]
     candidates: dict[str, list[object]]
-    candidate_sources: dict[str, list[str]]
-    field_sources: dict[str, list[str]]
     selector_trace_candidates: dict[str, list[dict[str, object]]]
+    evidence_builder: CandidateSet
     extraction_runtime_snapshot: dict[str, object] | None
     completed_tiers: list[str]
     raw_soup: BeautifulSoup | None = None
@@ -54,7 +54,7 @@ class DetailTierRuntime:
     apply_dom_fallbacks: Callable[..., None]
     extract_variants_from_dom: Callable[..., dict[str, object]]
     should_collect_dom_variants: Callable[..., bool]
-    add_sourced_candidate: Callable[..., None]
+    add_sourced_candidate: Callable[..., int]
     coerce_float: Callable[..., float]
     requires_dom_completion: Callable[..., bool]
     promote_dom_detail_title: Callable[..., None]
@@ -181,13 +181,13 @@ class DetailTierExecutor:
             adapter_records=inputs.adapter_records,
             network_payloads=inputs.network_payloads,
         )
-        self._materialize(prepared.state, "authoritative")
+        prepared.state.completed_tiers.append("authoritative")
         self._collect_structured_data_tier(
             prepared.state,
             context=prepared.context,
             alias_lookup=inputs.alias_lookup,
         )
-        self._materialize(prepared.state, "structured_data")
+        prepared.state.completed_tiers.append("structured_data")
         self._collect_js_state_tier(
             prepared.state,
             js_state_record=prepared.js_state_record,
@@ -208,10 +208,9 @@ class DetailTierExecutor:
                     page_url=state.page_url,
                     fields=state.fields,
                     candidates=state.candidates,
-                    candidate_sources=state.candidate_sources,
-                    field_sources=state.field_sources,
                     selector_trace_candidates=state.selector_trace_candidates,
                     source="adapter",
+                    evidence_builder=state.evidence_builder,
                 )
         for mapped_payload in self._runtime.map_network_payloads_to_fields(
             network_payloads,
@@ -224,10 +223,9 @@ class DetailTierExecutor:
                 page_url=state.page_url,
                 fields=state.fields,
                 candidates=state.candidates,
-                candidate_sources=state.candidate_sources,
-                field_sources=state.field_sources,
                 selector_trace_candidates=state.selector_trace_candidates,
                 source="network_payload",
+                evidence_builder=state.evidence_builder,
             )
 
     def _collect_structured_data_tier(
@@ -261,10 +259,9 @@ class DetailTierExecutor:
                     page_url=state.page_url,
                     requested_page_url=state.requested_page_url,
                     candidates=state.candidates,
-                    candidate_sources=state.candidate_sources,
-                    field_sources=state.field_sources,
                     selector_trace_candidates=state.selector_trace_candidates,
                     source=source_name,
+                    evidence_builder=state.evidence_builder,
                 )
 
     def _collect_js_state_tier(
@@ -278,10 +275,9 @@ class DetailTierExecutor:
             page_url=state.page_url,
             fields=state.fields,
             candidates=state.candidates,
-            candidate_sources=state.candidate_sources,
-            field_sources=state.field_sources,
             selector_trace_candidates=state.selector_trace_candidates,
             source="js_state",
+            evidence_builder=state.evidence_builder,
         )
 
     def _build_dom_tier_record(
@@ -329,11 +325,10 @@ class DetailTierExecutor:
             for field_name, value in dom_variants.items():
                 self._runtime.add_sourced_candidate(
                     state.candidates,
-                    state.candidate_sources,
-                    state.field_sources,
                     field_name,
                     value,
                     source="dom_selector",
+                    evidence_builder=state.evidence_builder,
                 )
 
     def _dom_skip_decision(
@@ -397,8 +392,7 @@ class DetailTierExecutor:
             requested_fields=state.requested_fields,
             fields=state.fields,
             candidates=state.candidates,
-            candidate_sources=state.candidate_sources,
-            field_sources=state.field_sources,
+            evidence_builder=state.evidence_builder,
             selector_trace_candidates=state.selector_trace_candidates,
             extraction_runtime_snapshot=state.extraction_runtime_snapshot,
             tier_name=tier_name,

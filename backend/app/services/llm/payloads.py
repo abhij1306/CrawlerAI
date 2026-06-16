@@ -54,23 +54,27 @@ class _XPathSelector(TypedDict):
     css_selector: NotRequired[str]
 
 
-class _CanonicalFieldReview(TypedDict):
-    suggested_value: _PresentValue
-    source: _NonEmptyText
-    supporting_sources: NotRequired[list[_NonEmptyText]]
+class _EvidenceDecision(TypedDict):
+    action: Literal["choose", "reject", "abstain"]
+    winning_evidence_ids: NotRequired[list[_NonEmptyText]]
+    rejected_evidence_ids: NotRequired[list[_NonEmptyText]]
+    note: NotRequired[str]
 
 
-class _ReviewBucketItem(TypedDict):
-    key: _NonEmptyText
-    value: _PresentValue
-    source: _NonEmptyText
+class _EvidenceRecipeSuggestion(TypedDict):
+    field_name: _NonEmptyText
+    css_selector: NotRequired[str]
+    xpath: NotRequired[str]
+    json_path: NotRequired[str]
+    endpoint_family: NotRequired[str]
+    source_ref: NotRequired[str]
 
 
 class _FieldCleanupReviewPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    canonical: dict[_FieldKey, _CanonicalFieldReview] = Field(default_factory=dict)
-    review_bucket: list[_ReviewBucketItem] = Field(default_factory=list)
+    decisions: dict[_FieldKey, _EvidenceDecision] = Field(default_factory=dict)
+    recipe_suggestions: list[_EvidenceRecipeSuggestion] = Field(default_factory=list)
 
 
 class _PageClassificationPayload(TypedDict):

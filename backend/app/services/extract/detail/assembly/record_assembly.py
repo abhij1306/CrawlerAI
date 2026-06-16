@@ -48,6 +48,7 @@ from app.services.extract.detail.assembly.tiers import (
     DetailTierState,
     PreparedDetailExtraction,
 )
+from app.services.extract.contracts import CandidateSet
 from app.services.extract.detail.assembly.title_scorer import title_needs_promotion
 from app.services.extract.field_candidates import record_score
 from app.services.extract.table_extractor import extract_tables
@@ -190,9 +191,8 @@ def _prepare_detail_extraction(
             requested_page_url=text_or_none(requested_page_url) or page_url,
         )
     candidates: dict[str, list[object]] = {}
-    candidate_sources: dict[str, list[str]] = {}
-    field_sources: dict[str, list[str]] = {}
     selector_trace_candidates: dict[str, list[dict[str, object]]] = {}
+    evidence_builder = CandidateSet(surface=surface, page_url=page_url)
     state = DetailTierState(
         page_url=page_url,
         requested_page_url=requested_page_url,
@@ -200,9 +200,8 @@ def _prepare_detail_extraction(
         requested_fields=requested_fields,
         fields=surface_fields(surface, requested_fields),
         candidates=candidates,
-        candidate_sources=candidate_sources,
-        field_sources=field_sources,
         selector_trace_candidates=selector_trace_candidates,
+        evidence_builder=evidence_builder,
         extraction_runtime_snapshot=extraction_runtime_snapshot,
         completed_tiers=[],
         raw_soup=raw_soup,
@@ -236,6 +235,14 @@ def _apply_prepared_dom_fallbacks(
 ) -> None:
     if prepared.soup is None:
         return
+
+    def _add_dom_candidate(*args, **kwargs) -> int:
+        return _add_sourced_candidate(
+            *args,
+            **kwargs,
+            evidence_builder=prepared.state.evidence_builder,
+        )
+
     apply_dom_fallbacks(
         prepared.dom_parser,
         prepared.soup,
@@ -243,11 +250,9 @@ def _apply_prepared_dom_fallbacks(
         surface=prepared.state.surface,
         requested_fields=prepared.state.requested_fields,
         candidates=prepared.state.candidates,
-        candidate_sources=prepared.state.candidate_sources,
-        field_sources=prepared.state.field_sources,
         selector_trace_candidates=prepared.state.selector_trace_candidates,
         selector_rules=selector_rules,
-        add_sourced_candidate=_add_sourced_candidate,
+        add_sourced_candidate=_add_dom_candidate,
         breadcrumb_soup=prepared.raw_soup,
     )
 

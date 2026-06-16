@@ -13,11 +13,6 @@ from typing import Any
 
 from bs4 import BeautifulSoup
 
-from app.services.config.extraction_rules import (
-    AVAILABILITY_IN_STOCK,
-    AVAILABILITY_OUT_OF_STOCK,
-    AVAILABILITY_UNKNOWN,
-)
 from app.services.extract.detail.identity.core import (
     detail_title_from_url,
 )
@@ -48,6 +43,11 @@ from app.services.extract.detail.price.core import (
 )
 from app.services.extract.detail.text.sanitizer import sanitize_detail_long_text_fields
 from app.services.extract.variant_normalization import normalize_variant_record
+from app.services.extract.detail.validation import attach_detail_validation_findings
+from app.services.extract.detail.resolution import (
+    resolve_detail_entities,
+    variant_parent_availability_value,
+)
 
 detail_image_matches_primary_family = _image_cleanup.detail_image_matches_primary_family
 detail_title_looks_like_placeholder = (
@@ -91,7 +91,7 @@ def repair_ecommerce_detail_record_quality(
     if isinstance(availability_sources, list) and "variant_parent_availability" in {
         str(source) for source in availability_sources
     }:
-        variant_parent_availability = _variant_parent_availability_value(record)
+        variant_parent_availability = variant_parent_availability_value(record)
         if record.get("availability") != variant_parent_availability:
             variant_parent_availability = None
     if (
@@ -127,7 +127,9 @@ def repair_ecommerce_detail_record_quality(
     _money_repair.repair_invalid_original_prices(record)
     _money_repair.drop_invalid_detail_discounts(record)
     _money_repair.repair_detail_variant_prices_and_identity(record)
+    resolve_detail_entities(record)
     enforce_flat_variant_public_contract(record, page_url=page_url)
+    attach_detail_validation_findings(record)
 
 
 def _sanitize_ecommerce_detail_record(
@@ -173,51 +175,6 @@ def _sanitize_ecommerce_detail_record(
     )
     _image_cleanup.sanitize_detail_images(record, identity_url=identity_url)
     _image_cleanup.backfill_parent_image_from_variants(record)
-    _reconcile_detail_availability_from_variants(record)
-
-
-def _reconcile_detail_availability_from_variants(record: dict[str, Any]) -> None:
-    availability = _variant_parent_availability_value(record)
-    if availability is None:
-        return
-    record["availability"] = availability
-    field_sources = record.setdefault("_field_sources", {})
-    if isinstance(field_sources, dict):
-        field_sources["availability"] = ["variant_parent_availability"]
-
-
-def _variant_parent_availability_value(record: dict[str, Any]) -> str | None:
-    variants = [row for row in record.get("variants") or [] if isinstance(row, dict)]
-    if not variants:
-        return None
-    values = {text_or_none(row.get("availability")) for row in variants}
-    values.discard(None)
-    if AVAILABILITY_IN_STOCK in values:
-        return AVAILABILITY_IN_STOCK
-    complete_variant_set = bool(
-        record.get("variants_complete") or record.get("variant_rows_complete")
-    )
-    parent_is_out_of_stock = record.get("availability") == AVAILABILITY_OUT_OF_STOCK
-    if values == {AVAILABILITY_OUT_OF_STOCK} and (
-        complete_variant_set
-        or parent_is_out_of_stock
-        or _all_variants_have_zero_stock(variants)
-    ):
-        return AVAILABILITY_OUT_OF_STOCK
-    if (
-        values
-        and values <= {AVAILABILITY_OUT_OF_STOCK, AVAILABILITY_UNKNOWN}
-        and (complete_variant_set or parent_is_out_of_stock)
-    ):
-        return AVAILABILITY_OUT_OF_STOCK
-    return None
-
-
-def _all_variants_have_zero_stock(variants: list[dict[str, Any]]) -> bool:
-    # Missing stock_quantity means unknown stock, not zero, so it blocks all-zero.
-    return bool(variants) and all(
-        row.get("stock_quantity") in (0, "0") for row in variants
-    )
 
 
 def _variant_parent_image_values(record: dict[str, Any]) -> set[str]:
@@ -239,7 +196,6 @@ def _reconcile_variant_derived_parent_fields(
 ) -> None:
     if any(isinstance(row, dict) for row in record.get("variants") or []):
         _image_cleanup.backfill_parent_image_from_variants(record)
-        _reconcile_detail_availability_from_variants(record)
         return
     if variant_parent_image and record.get("image_url") == variant_parent_image:
         record.pop("image_url", None)

@@ -6,7 +6,6 @@ from urllib.parse import urlparse
 from app.models.crawl_run import CrawlRecord
 from app.services.config.public_record_policy import (
     PUBLIC_RECORD_FALLBACK_INTERNAL_FIELDS,
-    PUBLIC_RECORD_PRESENTATION_FIELDS,
 )
 from app.services.db_utils import mapping_or_empty
 from app.services.shared.field_coerce import object_list as _object_list
@@ -20,6 +19,13 @@ class FieldProvenance(BaseModel):
     value: Any = None
     sources: list[str] = Field(default_factory=list)
     selector_trace: dict[str, Any] | None = None
+    winning_evidence_ids: list[str] = Field(default_factory=list)
+    candidate_count: int = 0
+    rejected_candidate_count: int = 0
+    conflict_count: int = 0
+    validation_finding_ids: list[str] = Field(default_factory=list)
+    resolver_rule: str | None = None
+    llm_used: bool = False
 
     @field_validator("sources", mode="before")
     @classmethod
@@ -51,6 +57,8 @@ class ExtractionTrace(BaseModel):
     rejected_public_fields: dict[str, Any] = Field(default_factory=dict)
     dom_skip: dict[str, Any] = Field(default_factory=dict)
     completed_tiers: list[str] = Field(default_factory=list)
+    validation_findings: list[dict[str, Any]] = Field(default_factory=list)
+    transforms: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class ExportRecord(BaseModel):
@@ -101,6 +109,7 @@ def build_source_trace(
     field_sources = mapping_or_empty(record.get("_field_sources"))
     selector_traces = mapping_or_empty(record.get("_selector_traces"))
     rejected_public_fields = mapping_or_empty(record.get("_rejected_public_fields"))
+    field_evidence = mapping_or_empty(record.get("_field_evidence"))
     for key, value in record.items():
         if str(key).startswith("_"):
             continue
@@ -117,6 +126,9 @@ def build_source_trace(
                 **dict(selector_trace),
                 "survived_to_final_record": True,
             }
+        evidence_summary = field_evidence.get(str(key))
+        if isinstance(evidence_summary, dict):
+            discovery.update(dict(evidence_summary))
         field_discovery[str(key)] = discovery
     trace: dict[str, object] = {
         "acquisition": {
@@ -140,6 +152,8 @@ def build_source_trace(
             "rejected_public_fields": rejected_public_fields,
             "dom_skip": mapping_or_empty(record.get("_dom_skip_decision")),
             "completed_tiers": _completed_tiers_list(record.get("_extraction_tiers")),
+            "validation_findings": _object_list(record.get("_validation_findings")),
+            "transforms": _object_list(record.get("_transforms")),
         },
         "field_discovery": field_discovery,
     }
@@ -175,7 +189,6 @@ def clean_export_data(data: dict) -> dict:
             v not in (None, "", [], {})
             and not str(k).strip().startswith("_")
             and str(k).strip().lower() not in PUBLIC_RECORD_FALLBACK_INTERNAL_FIELDS
-            and str(k).strip().lower() not in PUBLIC_RECORD_PRESENTATION_FIELDS
         )
     }
 

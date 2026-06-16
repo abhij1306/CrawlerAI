@@ -29,6 +29,7 @@ from app.services.publish import (
     refresh_record_commit_metadata,
 )
 from app.services.schema_service import load_resolved_schema
+from app.services.review.evidence import collect_evidence_review
 from app.services.selectors_runtime import (
     create_selector_record,
     list_selector_records,
@@ -636,6 +637,7 @@ async def build_domain_recipe_payload(
                 str(row.get("selector_value") or ""),
             ),
         ),
+        "evidence_review": collect_evidence_review(records),
         "affordance_candidates": affordance_candidates,
         "saved_selectors": saved_selectors,
         "saved_run_profile": (

@@ -98,6 +98,8 @@ async def test_ok_diagnosis_shaped_from_llm(monkeypatch):
     result = await diag.diagnose_run(object(), run, [_record()], _FLAGS)
     assert result["status"] == "ok"
     assert result["provider"] == "groq"
+    assert result["authority"] == "explanatory_only"
+    assert result["deterministic_flags"] == _FLAGS
     assert result["diagnosis"]["likely_root_cause"].startswith("DOM tier skipped")
 
 

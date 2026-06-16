@@ -45,6 +45,9 @@ from app.services.extract.detail.assembly.raw_signals import (
 )
 from app.services.extract.field_candidates import finalize_candidate_value
 from app.services.extract.variant_choice_traversal import variant_dom_cues_present
+from app.services.extract.detail.variants.dom_merge import (
+    dom_rows_have_combination_identity,
+)
 from app.services.field_policy import exact_requested_field_key
 from app.services.shared.field_coerce import (
     clean_text,
@@ -120,6 +123,19 @@ def _should_collect_dom_variants(
     existing_variants = finalize_candidate_value(
         "variants", list(candidates.get("variants") or [])
     )
+    raw_dom_rows = dom_variants.get("variants")
+    dom_rows = (
+        [row for row in raw_dom_rows if isinstance(row, dict)]
+        if isinstance(raw_dom_rows, list)
+        else []
+    )
+    if (
+        isinstance(existing_variants, list)
+        and existing_variants
+        and len(_variant_axis_coverage(dom_rows)) > 1
+        and not dom_rows_have_combination_identity(dom_rows)
+    ):
+        return False
     existing_strength = _variant_signal_strength(existing_variants)
     if dom_variants:
         existing_axes = _variant_axis_coverage(existing_variants)
@@ -243,50 +259,24 @@ def _requires_dom_completion(
     raw_soup = breadcrumb_soup or soup
     requested_missing_fields = _missing_requested_fields(record, requested_fields)
     requested_variant_fields = _requested_variant_fields(requested_fields)
-    if normalized_surface == "ecommerce_detail":
-        breadcrumb_category = breadcrumb_category_from_dom(
-            raw_soup,
-            current_title=text_or_none(record.get("title")),
-        )
-        record_category = _normalized_category_path(record.get("category"))
-        dom_category = _normalized_category_path(breadcrumb_category)
-        if record_category and dom_category and record_category != dom_category:
-            return True
-    if (
-        normalized_surface == "ecommerce_detail"
-        and not requested_variant_fields
-        and not selector_rules
-        and _record_has_complete_unrequested_dom_variant_skip_fields(record)
-        and not _requires_dom_long_text_completion(
-            record,
-            extractable_fields=set(DOM_HIGH_VALUE_FIELDS.get(normalized_surface) or ()),
-        )
+    if _ecommerce_category_conflicts_with_dom(record, raw_soup, normalized_surface):
+        return True
+    if _can_skip_unrequested_ecommerce_dom_completion(
+        record=record,
+        normalized_surface=normalized_surface,
+        requested_variant_fields=requested_variant_fields,
+        selector_rules=selector_rules,
     ):
         return False
-    if (
-        normalized_surface == "ecommerce_detail"
-        and not record_has_rich_existing_variants(record)
-        and (
-            variant_dom_cues_present(soup)
-            or (raw_soup is not soup and variant_dom_cues_present(raw_soup))
-        )
-    ):
+    if _ecommerce_dom_variant_cues_need_completion(record, soup, raw_soup, normalized_surface):
         return True
-    if (
-        normalized_surface == "ecommerce_detail"
-        and record.get("image_url") in (None, "", [], {})
-        and raw_soup.select_one(DETAIL_PRODUCT_IMAGE_CUE_SELECTOR) is not None
-    ):
+    if _ecommerce_image_cue_needs_completion(record, raw_soup, normalized_surface):
         return True
-    if (
-        normalized_surface == "ecommerce_detail"
-        and not requested_fields
-        and not selector_rules
-        and record_has_rich_existing_variants(record)
-        and all(
-            record.get(field_name) not in (None, "", [], {})
-            for field_name in _EARLY_PRICE_REPAIR_REQUIRED_FIELDS
-        )
+    if _can_skip_complete_ecommerce_record(
+        record=record,
+        normalized_surface=normalized_surface,
+        requested_fields=requested_fields,
+        selector_rules=selector_rules,
     ):
         return False
     high_value_fields = set(DOM_HIGH_VALUE_FIELDS.get(normalized_surface) or ())
@@ -323,6 +313,109 @@ def _requires_dom_completion(
             if field_name in requested_missing_fields
         }
     )
+    return _extractability_requires_dom_completion(
+        record=record,
+        normalized_surface=normalized_surface,
+        requested_missing_fields=requested_missing_fields,
+        high_value_fields=high_value_fields,
+        missing_high_value_fields=missing_high_value_fields,
+        extractable_fields=extractable_fields,
+        extractability=extractability,
+    )
+
+
+def _ecommerce_category_conflicts_with_dom(
+    record: dict[str, Any],
+    raw_soup: BeautifulSoup,
+    normalized_surface: str,
+) -> bool:
+    if normalized_surface != "ecommerce_detail":
+        return False
+    breadcrumb_category = breadcrumb_category_from_dom(
+        raw_soup,
+        current_title=text_or_none(record.get("title")),
+    )
+    record_category = _normalized_category_path(record.get("category"))
+    dom_category = _normalized_category_path(breadcrumb_category)
+    return bool(record_category and dom_category and record_category != dom_category)
+
+
+def _can_skip_unrequested_ecommerce_dom_completion(
+    *,
+    record: dict[str, Any],
+    normalized_surface: str,
+    requested_variant_fields: set[str],
+    selector_rules: list[dict[str, object]] | None,
+) -> bool:
+    return (
+        normalized_surface == "ecommerce_detail"
+        and not requested_variant_fields
+        and not selector_rules
+        and _record_has_complete_unrequested_dom_variant_skip_fields(record)
+        and not _requires_dom_long_text_completion(
+            record,
+            extractable_fields=set(DOM_HIGH_VALUE_FIELDS.get(normalized_surface) or ()),
+        )
+    )
+
+
+def _ecommerce_dom_variant_cues_need_completion(
+    record: dict[str, Any],
+    soup: BeautifulSoup,
+    raw_soup: BeautifulSoup,
+    normalized_surface: str,
+) -> bool:
+    return (
+        normalized_surface == "ecommerce_detail"
+        and not record_has_rich_existing_variants(record)
+        and (
+            variant_dom_cues_present(soup)
+            or (raw_soup is not soup and variant_dom_cues_present(raw_soup))
+        )
+    )
+
+
+def _ecommerce_image_cue_needs_completion(
+    record: dict[str, Any],
+    raw_soup: BeautifulSoup,
+    normalized_surface: str,
+) -> bool:
+    return (
+        normalized_surface == "ecommerce_detail"
+        and record.get("image_url") in (None, "", [], {})
+        and raw_soup.select_one(DETAIL_PRODUCT_IMAGE_CUE_SELECTOR) is not None
+    )
+
+
+def _can_skip_complete_ecommerce_record(
+    *,
+    record: dict[str, Any],
+    normalized_surface: str,
+    requested_fields: list[str] | None,
+    selector_rules: list[dict[str, object]] | None,
+) -> bool:
+    return (
+        normalized_surface == "ecommerce_detail"
+        and not requested_fields
+        and not selector_rules
+        and record_has_rich_existing_variants(record)
+        and all(
+            record.get(field_name) not in (None, "", [], {})
+            for field_name in _EARLY_PRICE_REPAIR_REQUIRED_FIELDS
+        )
+    )
+
+
+def _extractability_requires_dom_completion(
+    *,
+    record: dict[str, Any],
+    normalized_surface: str,
+    requested_missing_fields: set[str],
+    high_value_fields: set[str],
+    missing_high_value_fields: set[str],
+    extractable_fields: set[str],
+    extractability: dict[str, object],
+) -> bool:
     if extractable_fields & requested_missing_fields:
         return True
     if missing_high_value_fields or requested_missing_fields & high_value_fields:

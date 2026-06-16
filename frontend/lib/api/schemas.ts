@@ -1,0 +1,141 @@
+import { z } from 'zod';
+import type { User, CrawlRun, CrawlRecord, DomainRunProfile } from './types';
+
+export const userSchema: z.ZodSchema<User> = z.object({
+  id: z.number(),
+  email: z.string(),
+  role: z.enum(['user', 'admin', 'harness']),
+  is_active: z.boolean(),
+  created_at: z.string(),
+  updated_at: z.string(),
+});
+
+export const runStatusSchema = z.enum([
+  'pending',
+  'running',
+  'paused',
+  'completed',
+  'killed',
+  'failed',
+  'proxy_exhausted',
+]);
+
+export const resultSummarySchema = z
+  .object({
+    extraction_verdict: z.string().optional(),
+    record_count: z.number().optional(),
+    quality_summary: z.record(z.string(), z.unknown()).optional(),
+    acquisition_summary: z.record(z.string(), z.unknown()).optional(),
+    duration_ms: z.number().optional(),
+    domain: z.string().optional(),
+    error: z.string().optional(),
+    current_stage: z.string().optional(),
+    current_url: z.string().optional(),
+    current_url_index: z.number().optional(),
+    total_urls: z.number().optional(),
+  })
+  .passthrough();
+
+export const crawlRunSchema: z.ZodSchema<CrawlRun> = z.object({
+  id: z.number(),
+  user_id: z.number(),
+  run_type: z.string(),
+  url: z.string(),
+  status: runStatusSchema,
+  surface: z.string(),
+  settings: z.record(z.string(), z.unknown()),
+  requested_fields: z.array(z.string()),
+  result_summary: resultSummarySchema,
+  created_at: z.string(),
+  updated_at: z.string(),
+  completed_at: z.string().nullable(),
+});
+
+export const crawlRecordSchema: z.ZodSchema<CrawlRecord> = z.object({
+  id: z.number(),
+  run_id: z.number(),
+  source_url: z.string(),
+  data: z.record(z.string(), z.unknown()),
+  raw_data: z.record(z.string(), z.unknown()),
+  discovered_data: z.record(z.string(), z.unknown()),
+  source_trace: z.record(z.string(), z.unknown()),
+  review_bucket: z
+    .array(
+      z.object({
+        key: z.string(),
+        value: z.unknown(),
+        source: z.string(),
+      }),
+    )
+    .optional(),
+  provenance_available: z.boolean().optional(),
+  raw_html_path: z.string().nullable(),
+  enrichment_status: z.string().optional(),
+  enriched_at: z.string().nullable().optional(),
+  created_at: z.string(),
+});
+
+export const domainRunProfileSchema: z.ZodSchema<DomainRunProfile> = z.object({
+  version: z.number(),
+  fetch_profile: z.object({
+    fetch_mode: z.enum(['auto', 'http_only', 'browser_only', 'http_then_browser']),
+    extraction_source: z.enum([
+      'raw_html',
+      'rendered_dom',
+      'rendered_dom_visual',
+      'network_payload_first',
+    ]),
+    js_mode: z.enum(['auto', 'enabled', 'disabled']),
+    include_iframes: z.boolean(),
+    traversal_mode: z.enum(['scroll', 'load_more', 'paginate', 'view_all']).nullable(),
+    request_delay_ms: z.number(),
+    host_memory_ttl_seconds: z.number().nullable().optional(),
+    max_pages: z.number().optional(),
+    max_scrolls: z.number().optional(),
+  }),
+  locality_profile: z.object({
+    geo_country: z.string(),
+    language_hint: z.string().nullable(),
+    currency_hint: z.string().nullable(),
+  }),
+  diagnostics_profile: z.object({
+    capture_html: z.boolean(),
+    capture_screenshot: z.boolean(),
+    capture_network: z.enum(['off', 'matched_only', 'all_small_json']),
+    capture_response_headers: z.boolean(),
+    capture_browser_diagnostics: z.boolean(),
+  }),
+  acquisition_contract: z.object({
+    preferred_browser_engine: z.enum(['auto', 'patchright', 'real_chrome']),
+    prefer_browser: z.boolean(),
+    handoff_eligible: z.boolean(),
+    handoff_cookie_engine: z.enum(['auto', 'patchright', 'real_chrome']),
+    required_rendering: z.boolean(),
+    required_traversal: z.boolean(),
+    required_network_payloads: z.boolean(),
+    last_quality_success: z
+      .object({
+        method: z.string().nullable(),
+        browser_engine: z.enum(['auto', 'patchright', 'real_chrome']).nullable(),
+        record_count: z.number(),
+        field_coverage: z.record(z.string(), z.unknown()),
+        source_run_id: z.number().nullable(),
+        timestamp: z.string().nullable(),
+      })
+      .nullable(),
+    stale_after_failures: z.object({
+      failure_count: z.number(),
+      stale: z.boolean(),
+    }),
+  }),
+  source_run_id: z.number().nullable().optional(),
+  saved_at: z.string().nullable().optional(),
+});
+
+export function safeValidate<T>(schema: z.ZodSchema<T>, data: unknown, context: string): T {
+  const result = schema.safeParse(data);
+  if (!result.success) {
+    throw new Error(`API validation failure in ${context}: ${result.error.message}`);
+  }
+  return result.data;
+}

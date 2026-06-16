@@ -100,6 +100,7 @@ def extract_records(
             html=html,
             page_url=page_url,
             requested_page_url=requested_page_url,
+            surface=normalized_surface,
         )
     if _html_is_blocked_extraction_shell(html):
         return []
@@ -177,6 +178,10 @@ def extract_records(
         )
         listing_rows = _finalize_listing_rows(listing_rows)
         network_rows = _finalize_listing_rows(network_rows)
+        network_rows = _replace_network_listing_urls_from_observed_rows(
+            network_rows,
+            observed_rows=[*listing_rows, *adapter_rows],
+        )
         generic_rows = _overlay_listing_rows_from_adapter(
             listing_rows,
             adapter_rows=adapter_rows,
@@ -379,9 +384,51 @@ def _overlay_listing_rows_from_adapter(
 
 
 def _listing_row_identity(row: dict[str, Any]) -> str:
+    identities = _listing_row_identities(row)
+    return identities[0] if identities else ""
+
+
+def _replace_network_listing_urls_from_observed_rows(
+    rows: list[dict[str, Any]],
+    *,
+    observed_rows: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    observed_urls_by_identity: dict[str, str] = {}
+    for row in observed_rows:
+        if not isinstance(row, dict):
+            continue
+        observed_url = str(row.get("url") or "").strip()
+        if not observed_url:
+            continue
+        for identity in _listing_row_identities(row):
+            observed_urls_by_identity.setdefault(identity, observed_url)
+    if not observed_urls_by_identity:
+        return rows
+    corrected: list[dict[str, Any]] = []
+    for row in rows:
+        copy = dict(row)
+        corrected_url = next(
+            (
+                observed_urls_by_identity[identity]
+                for identity in _listing_row_identities(copy)
+                if identity in observed_urls_by_identity
+            ),
+            None,
+        )
+        if corrected_url:
+            copy["url"] = corrected_url
+        corrected.append(copy)
+    return corrected
+
+
+def _listing_row_identities(row: dict[str, Any]) -> tuple[str, ...]:
+    identities: list[str] = []
     product_id = clean_text(
         row.get("product_id") or row.get("productId") or row.get("sku")
     )
     if product_id:
-        return product_id.lower()
-    return listing_identity_from_url(str(row.get("url") or ""))
+        identities.append(product_id.lower())
+    url_identity = listing_identity_from_url(str(row.get("url") or ""))
+    if url_identity and url_identity not in identities:
+        identities.append(url_identity)
+    return tuple(identities)

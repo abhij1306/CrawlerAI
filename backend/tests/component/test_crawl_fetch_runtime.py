@@ -12,6 +12,7 @@ from patchright.async_api import Error as PlaywrightError
 
 from app.services.fetch import fetch_context as crawl_fetch_runtime
 from app.services.acquisition import (
+    browser_background_tasks,
     browser_capture,
     runtime as acquisition_runtime,
 )
@@ -854,7 +855,6 @@ async def test_fetch_page_preserves_requested_fields_on_http_to_browser_escalati
         reason: str,
         requested_fields: list[str] | None = None,
         listing_recovery_mode: str | None = None,
-        capture_page_markdown: bool = False,
         proxies: list[str | None] | None = None,
         **_kwargs,
     ):
@@ -862,7 +862,6 @@ async def test_fetch_page_preserves_requested_fields_on_http_to_browser_escalati
             context,
             reason,
             listing_recovery_mode,
-            capture_page_markdown,
             proxies,
             _kwargs,
         )
@@ -911,7 +910,6 @@ async def test_fetch_page_preserves_requested_fields_on_browser_first_path(
         reason: str,
         requested_fields: list[str] | None = None,
         listing_recovery_mode: str | None = None,
-        capture_page_markdown: bool = False,
         proxies: list[str | None] | None = None,
         **_kwargs,
     ):
@@ -919,7 +917,6 @@ async def test_fetch_page_preserves_requested_fields_on_browser_first_path(
             context,
             reason,
             listing_recovery_mode,
-            capture_page_markdown,
             proxies,
             _kwargs,
         )
@@ -978,14 +975,12 @@ async def test_fetch_page_uses_browser_first_for_detail_requested_fields(
         reason: str,
         requested_fields: list[str] | None = None,
         listing_recovery_mode: str | None = None,
-        capture_page_markdown: bool = False,
         proxies: list[str | None] | None = None,
         **_kwargs,
     ):
         del (
             context,
             listing_recovery_mode,
-            capture_page_markdown,
             proxies,
             _kwargs,
         )
@@ -1054,6 +1049,39 @@ async def test_fetch_page_prefer_browser_falls_back_to_http_after_browser_timeou
 
     assert calls == ["browser", "curl"]
     assert result.method == "curl_cffi"
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_fetch_page_forced_browser_only_never_falls_back_to_http(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[str] = []
+
+    @_as_async
+    def _failing_browser(*_args, **_kwargs):
+        calls.append("browser")
+        raise TimeoutError("real Chrome attempt timed out")
+
+    @_as_async
+    def _unexpected_curl(url: str, timeout_seconds: float, *, proxy: str | None = None):
+        del url, timeout_seconds, proxy
+        calls.append("curl")
+        raise AssertionError("targeted browser-only retry must not fall back to HTTP")
+
+    monkeypatch.setattr(crawl_fetch_runtime, "run_browser_attempts", _failing_browser)
+    monkeypatch.setattr(crawl_fetch_runtime, "_curl_fetch", _unexpected_curl)
+
+    with pytest.raises(TimeoutError, match="real Chrome attempt timed out"):
+        await crawl_fetch_runtime.fetch_page(
+            "https://www.mytheresa.com/int/en/women/product",
+            surface="ecommerce_detail",
+            fetch_mode="browser_only",
+            prefer_browser=True,
+            forced_browser_engine="real_chrome",
+        )
+
+    assert calls == ["browser"]
 
 
 @pytest.mark.asyncio
@@ -1344,7 +1372,6 @@ async def test_fetch_page_preserves_proxy_list_on_browser_first_path(
         reason: str,
         requested_fields: list[str] | None = None,
         listing_recovery_mode: str | None = None,
-        capture_page_markdown: bool = False,
         proxies: list[str | None] | None = None,
         **_kwargs,
     ):
@@ -1353,7 +1380,6 @@ async def test_fetch_page_preserves_proxy_list_on_browser_first_path(
             reason,
             requested_fields,
             listing_recovery_mode,
-            capture_page_markdown,
             _kwargs,
         )
         nonlocal captured_proxies
@@ -2066,21 +2092,23 @@ async def test_read_network_payload_body_marks_generic_read_failures_explicitly(
 async def test_read_network_payload_body_maps_read_timeouts_to_timeout(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    response = FakeBodyResponse(b"x")
+    release = asyncio.Event()
 
-    @_as_async
-    def _fake_wait_for(awaitable, timeout: float):
-        awaitable.close()
-        del timeout
-        raise asyncio.TimeoutError
+    class SlowBodyResponse:
+        url = "https://example.com/product.json"
 
-    monkeypatch.setattr(browser_capture.asyncio, "wait_for", _fake_wait_for)
+        async def body(self) -> bytes:
+            await release.wait()
+            raise RuntimeError("Target closed")
 
-    result = await read_network_payload_body(response)
+    monkeypatch.setattr(browser_capture, "_payload_read_timeout_seconds", lambda: 0)
+
+    result = await read_network_payload_body(SlowBodyResponse())
 
     assert result.outcome == "timeout"
     assert result.body is None
-    assert response.body_calls == 0
+    release.set()
+    await browser_background_tasks.drain_browser_background_tasks()
 
 
 @pytest.mark.asyncio

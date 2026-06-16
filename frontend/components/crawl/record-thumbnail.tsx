@@ -1,5 +1,3 @@
-'use client';
-
 import Image from '@/routing/image';
 import { useState } from 'react';
 const BROKEN_THUMBNAIL_STORAGE_KEY = 'crawlerai-broken-thumb-urls-v1';

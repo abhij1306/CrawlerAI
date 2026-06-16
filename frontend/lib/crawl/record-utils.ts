@@ -6,8 +6,6 @@ import {
   stringifyCell,
 } from './format';
 
-const DISPLAY_HIDDEN_RECORD_FIELDS = new Set(['markdown', 'page_markdown', 'table_markdown']);
-
 export function extractRecordUrl(record: CrawlRecord) {
   const value = record.data?.url ?? record.raw_data?.url ?? record.source_url;
   return stringifyCell(value).trim();
@@ -31,7 +29,6 @@ export function cleanRecord(record: CrawlRecord) {
     Object.entries(record.data ?? {}).filter(
       ([key, value]) =>
         !key.startsWith('_') &&
-        !DISPLAY_HIDDEN_RECORD_FIELDS.has(key.trim().toLowerCase()) &&
         value !== null &&
         value !== '' &&
         !(Array.isArray(value) && value.length === 0),

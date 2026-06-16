@@ -671,6 +671,7 @@ def _clean_detail_category_path(
     )
     for part in parts:
         cleaned = clean_text(part.strip(strip_chars))
+        cleaned = _strip_category_ui_suffix(cleaned, ui_tokens=ui_tokens)
         if not cleaned_parts:
             cleaned = _strip_embedded_root_suffix_from_category_head(
                 cleaned,
@@ -702,6 +703,15 @@ def _clean_detail_category_path(
         )
     ]
     return " > ".join(cleaned_parts)
+
+
+def _strip_category_ui_suffix(value: str, *, ui_tokens: set[str]) -> str:
+    cleaned = clean_text(value)
+    for token in sorted(ui_tokens, key=len, reverse=True):
+        match = re.search(rf"\s*:\s*{re.escape(token)}\s*$", cleaned, re.I)
+        if match:
+            return clean_text(cleaned[: match.start()])
+    return cleaned
 
 
 def _category_literal_scalar(value: object) -> object:

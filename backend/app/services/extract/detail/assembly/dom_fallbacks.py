@@ -46,58 +46,21 @@ def apply_dom_fallbacks(
     surface: str,
     requested_fields: list[str] | None,
     candidates: dict[str, list[object]],
-    candidate_sources: dict[str, list[str]],
-    field_sources: dict[str, list[str]],
     selector_trace_candidates: dict[str, list[dict[str, object]]],
     selector_rules: list[dict[str, object]] | None,
-    add_sourced_candidate: Callable[..., None],
+    add_sourced_candidate: Callable[..., int],
     breadcrumb_soup: BeautifulSoup | None = None,
 ) -> None:
     fields = surface_fields(surface, requested_fields)
     normalized_surface = str(surface or "").strip().lower()
-    # ``prune_irrelevant_detail_dom_nodes`` may decompose the body H1 on the
-    # BeautifulSoup without touching the selectolax parser cache. Mirror that
-    # decision here so the DOM fallback cannot resurrect a title from a page
-    # whose primary structured evidence pointed to a different product.
-    h1_in_soup = soup.select_one("h1") if soup is not None else None
-    h1 = dom_parser.css_first("h1") if h1_in_soup is not None else None
-    page_title = dom_parser.css_first("title") if h1_in_soup is not None else None
-    h1_title = text_or_none(h1.text(separator=" ", strip=True) if h1 else "")
-    page_title_text = text_or_none(
-        page_title.text(separator=" ", strip=True) if page_title else ""
+    title = _add_dom_title_candidate(
+        dom_parser=dom_parser,
+        soup=soup,
+        page_url=page_url,
+        candidates=candidates,
+        selector_trace_candidates=selector_trace_candidates,
+        add_sourced_candidate=add_sourced_candidate,
     )
-    title = next(
-        (
-            candidate
-            for candidate in (h1_title, page_title_text)
-            if candidate and not is_title_noise(candidate)
-        ),
-        None,
-    )
-    if title:
-        before_count = len(candidates.get("title", []))
-        add_sourced_candidate(
-            candidates,
-            candidate_sources,
-            field_sources,
-            "title",
-            title,
-            source="dom_h1",
-        )
-        if len(candidates.get("title", [])) > before_count:
-            selector_value = "h1" if title == h1_title else "title"
-            selector_trace_candidates.setdefault("title", []).append(
-                {
-                    "selector_kind": "css_selector",
-                    "selector_value": selector_value,
-                    "selector_source": "dom_observed",
-                    "selector_record_id": None,
-                    "source_run_id": None,
-                    "sample_value": title,
-                    "page_url": page_url,
-                    "_candidate_value": title,
-                }
-            )
     apply_selector_fallbacks(
         soup,
         page_url,
@@ -105,8 +68,12 @@ def apply_dom_fallbacks(
         requested_fields,
         candidates,
         selector_rules=selector_rules,
-        candidate_sources=candidate_sources,
-        field_sources=field_sources,
+        candidate_adder=lambda field_name, value, source: add_sourced_candidate(
+            candidates,
+            field_name,
+            value,
+            source="dom_selector" if source == "selector_rule" else source,
+        ),
         selector_trace_candidates=selector_trace_candidates,
         record_dom_observed_selectors=True,
     )
@@ -115,35 +82,17 @@ def apply_dom_fallbacks(
     if canonical_href:
         add_sourced_candidate(
             candidates,
-            candidate_sources,
-            field_sources,
             "url",
             absolute_url(page_url, canonical_href),
             source="dom_canonical",
         )
-    images = extract_page_images(
-        soup,
-        page_url,
-        exclude_linked_detail_images="detail" in str(surface or "").strip().lower(),
+    _add_dom_image_candidates(
+        soup=soup,
+        page_url=page_url,
         surface=surface,
+        candidates=candidates,
+        add_sourced_candidate=add_sourced_candidate,
     )
-    if images:
-        add_sourced_candidate(
-            candidates,
-            candidate_sources,
-            field_sources,
-            "image_url",
-            images[0],
-            source="dom_images",
-        )
-        add_sourced_candidate(
-            candidates,
-            candidate_sources,
-            field_sources,
-            "additional_images",
-            images[1:],
-            source="dom_images",
-        )
     alias_lookup = surface_alias_lookup(surface, requested_fields)
     inline_scalar_target_fields = {
         field_name
@@ -159,8 +108,6 @@ def apply_dom_fallbacks(
             continue
         add_sourced_candidate(
             candidates,
-            candidate_sources,
-            field_sources,
             field_name,
             coerce_field_value(field_name, value, page_url),
             source="dom_text",
@@ -181,8 +128,6 @@ def apply_dom_fallbacks(
         if normalized:
             add_sourced_candidate(
                 candidates,
-                candidate_sources,
-                field_sources,
                 normalized,
                 coerce_field_value(normalized, value, page_url),
                 source="dom_sections",
@@ -192,8 +137,6 @@ def apply_dom_fallbacks(
         if feature_rows:
             add_sourced_candidate(
                 candidates,
-                candidate_sources,
-                field_sources,
                 "features",
                 feature_rows,
                 source="dom_sections",
@@ -206,8 +149,6 @@ def apply_dom_fallbacks(
     if "category" in fields and breadcrumb_category:
         add_sourced_candidate(
             candidates,
-            candidate_sources,
-            field_sources,
             "category",
             breadcrumb_category,
             source="dom_breadcrumb",
@@ -219,14 +160,109 @@ def apply_dom_fallbacks(
         if gender:
             add_sourced_candidate(
                 candidates,
-                candidate_sources,
-                field_sources,
                 "gender",
                 gender,
                 source="dom_text",
             )
-    body_text = ""
-    body_text_needed = (
+    body_text = _body_text_if_needed(dom_parser, fields, candidates, normalized_surface)
+    _add_body_text_candidates(
+        fields=fields,
+        candidates=candidates,
+        body_text=body_text,
+        page_url=page_url,
+        normalized_surface=normalized_surface,
+        add_sourced_candidate=add_sourced_candidate,
+    )
+    if "currency" in fields and not candidates.get("currency"):
+        for price_value in candidates.get("price") or []:
+            currency_code = extract_currency_code(price_value)
+            if not currency_code:
+                continue
+            add_sourced_candidate(
+                candidates,
+                "currency",
+                currency_code,
+                source="dom_text",
+            )
+            break
+
+
+def _add_dom_title_candidate(
+    *,
+    dom_parser: LexborHTMLParser,
+    soup: BeautifulSoup,
+    page_url: str,
+    candidates: dict[str, list[object]],
+    selector_trace_candidates: dict[str, list[dict[str, object]]],
+    add_sourced_candidate: Callable[..., int],
+) -> str | None:
+    h1_in_soup = soup.select_one("h1") if soup is not None else None
+    h1 = dom_parser.css_first("h1") if h1_in_soup is not None else None
+    page_title = dom_parser.css_first("title") if h1_in_soup is not None else None
+    h1_title = text_or_none(h1.text(separator=" ", strip=True) if h1 else "")
+    page_title_text = text_or_none(
+        page_title.text(separator=" ", strip=True) if page_title else ""
+    )
+    title = next(
+        (
+            candidate
+            for candidate in (h1_title, page_title_text)
+            if candidate and not is_title_noise(candidate)
+        ),
+        None,
+    )
+    if not title:
+        return None
+    before_count = len(candidates.get("title", []))
+    add_sourced_candidate(candidates, "title", title, source="dom_h1")
+    if len(candidates.get("title", [])) > before_count:
+        selector_trace_candidates.setdefault("title", []).append(
+            {
+                "selector_kind": "css_selector",
+                "selector_value": "h1" if title == h1_title else "title",
+                "selector_source": "dom_observed",
+                "selector_record_id": None,
+                "source_run_id": None,
+                "sample_value": title,
+                "page_url": page_url,
+                "_candidate_value": title,
+            }
+        )
+    return title
+
+
+def _add_dom_image_candidates(
+    *,
+    soup: BeautifulSoup,
+    page_url: str,
+    surface: str,
+    candidates: dict[str, list[object]],
+    add_sourced_candidate: Callable[..., int],
+) -> None:
+    images = extract_page_images(
+        soup,
+        page_url,
+        exclude_linked_detail_images="detail" in str(surface or "").strip().lower(),
+        surface=surface,
+    )
+    if not images:
+        return
+    add_sourced_candidate(candidates, "image_url", images[0], source="dom_images")
+    add_sourced_candidate(
+        candidates,
+        "additional_images",
+        images[1:],
+        source="dom_images",
+    )
+
+
+def _body_text_if_needed(
+    dom_parser: LexborHTMLParser,
+    fields: list[str],
+    candidates: dict[str, list[object]],
+    normalized_surface: str,
+) -> str:
+    needed = (
         ("size" in fields and not candidates.get("size"))
         or ("review_count" in fields and not candidates.get("review_count"))
         or ("rating" in fields and not candidates.get("rating"))
@@ -236,70 +272,39 @@ def apply_dom_fallbacks(
             and not candidates.get("remote")
         )
     )
-    if body_text_needed:
-        body_node = dom_parser.body
-        body_text = (
-            clean_text(body_node.text(separator=" ", strip=True)) if body_node else ""
-        )
+    if not needed:
+        return ""
+    body_node = dom_parser.body
+    return clean_text(body_node.text(separator=" ", strip=True)) if body_node else ""
+
+
+def _add_body_text_candidates(
+    *,
+    fields: list[str],
+    candidates: dict[str, list[object]],
+    body_text: str,
+    page_url: str,
+    normalized_surface: str,
+    add_sourced_candidate: Callable[..., int],
+) -> None:
     if "size" in fields and not candidates.get("size"):
         size_match = re.search(str(DETAIL_DOM_SCALAR_SIZE_PATTERN), body_text, re.I)
         if size_match:
             add_sourced_candidate(
                 candidates,
-                candidate_sources,
-                field_sources,
                 "size",
                 coerce_field_value("size", size_match.group(1), page_url),
                 source="dom_text",
             )
-    if "currency" in fields and not candidates.get("currency"):
-        for price_value in candidates.get("price") or []:
-            currency_code = extract_currency_code(price_value)
-            if not currency_code:
-                continue
-            add_sourced_candidate(
-                candidates,
-                candidate_sources,
-                field_sources,
-                "currency",
-                currency_code,
-                source="dom_text",
-            )
-            break
     if "review_count" in fields and not candidates.get("review_count"):
         review_match = REVIEW_COUNT_RE.search(body_text)
         if review_match:
-            add_sourced_candidate(
-                candidates,
-                candidate_sources,
-                field_sources,
-                "review_count",
-                review_match.group(1),
-                source="dom_text",
-            )
+            add_sourced_candidate(candidates, "review_count", review_match.group(1), source="dom_text")
     if "rating" in fields and not candidates.get("rating"):
         rating_match = RATING_RE.search(body_text)
         if rating_match:
-            add_sourced_candidate(
-                candidates,
-                candidate_sources,
-                field_sources,
-                "rating",
-                rating_match.group(1),
-                source="dom_text",
-            )
-    if (
-        normalized_surface.startswith("job_")
-        and "remote" in fields
-        and not candidates.get("remote")
-    ):
+            add_sourced_candidate(candidates, "rating", rating_match.group(1), source="dom_text")
+    if normalized_surface.startswith("job_") and "remote" in fields and not candidates.get("remote"):
         lowered = body_text.lower()
         if "remote" in lowered or "work from home" in lowered:
-            add_sourced_candidate(
-                candidates,
-                candidate_sources,
-                field_sources,
-                "remote",
-                "remote",
-                source="dom_text",
-            )
+            add_sourced_candidate(candidates, "remote", "remote", source="dom_text")

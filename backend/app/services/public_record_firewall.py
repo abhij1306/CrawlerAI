@@ -19,7 +19,6 @@ from app.services.config.public_record_policy import (
     PUBLIC_RECORD_DEFAULT_EXCLUDED_FIELDS,
     PUBLIC_RECORD_ECOMMERCE_DROPPED_FIELDS,
     PUBLIC_RECORD_LEGACY_VARIANT_FIELDS,
-    PUBLIC_RECORD_PRESENTATION_FIELDS,
     PUBLIC_RECORD_URL_BLOCKED_PATH_MARKERS,
     PUBLIC_RECORD_URL_MAX_LENGTH,
 )
@@ -89,9 +88,6 @@ def public_record_data_for_surface(
         if not field_name or str(raw_field_name).startswith("_"):
             continue
         if raw_value in (None, "", [], {}):
-            continue
-        if field_name in PUBLIC_RECORD_PRESENTATION_FIELDS:
-            rejected[str(raw_field_name)] = "presentation_field_excluded"
             continue
         if (
             normalized_surface.startswith("ecommerce_")

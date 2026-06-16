@@ -1481,6 +1481,25 @@
       "\"stylecolor\":"
     ]
   },
+  "DETAIL_SHELL_GENERIC_FIELDS": {
+    "__type__": "tuple",
+    "items": [
+      "price",
+      "currency",
+      "brand",
+      "category"
+    ]
+  },
+  "DETAIL_SHELL_STRONG_FIELDS": {
+    "__type__": "tuple",
+    "items": [
+      "brand",
+      "sku",
+      "part_number",
+      "barcode",
+      "variants"
+    ]
+  },
   "DETAIL_SEARCH_QUERY_KEYS": {
     "__type__": "tuple",
     "items": [
@@ -3926,7 +3945,6 @@
       "/jobs/",
       "/jobs/detail/",
       "/opening/",
-      "/p",
       "/p.",
       "/p/",
       "/pdp/",
@@ -4264,8 +4282,7 @@
       "skills",
       "specifications",
       "summary",
-      "content",
-      "markdown"
+      "content"
     ]
   },
   "LISTING_PRODUCT_DETAIL_IMAGE_SOURCE_KEYS": {
@@ -4446,6 +4463,7 @@
       "^\\d[\\d,\\s]*\\s+reviews?\\s+given\\s+by\\s+verified\\s+buyers$",
       "^how posting dates work$",
       "^download(?:\\s+the)?\\s+.+\\s+app$",
+      "keyboard shortcut",
       "^\\d+\\s+(?:minutes?|hours?|days?)\\s+ago$",
       "^shop all categories$",
       "^(?:all filters|todos os filtros)$",
@@ -4824,7 +4842,6 @@
     "__type__": "frozenset",
     "items": [
       "contact",
-      "gtin",
       "terms",
       "returns",
       "policies",
@@ -4832,17 +4849,12 @@
       "contact_us",
       "shipping_policy",
       "customer_service",
-      "ean",
       "about_us",
       "about",
       "faq",
       "accessibility_statement",
-      "gtin13",
-      "upc",
       "shipping",
-      "gtin14",
       "store_locations",
-      "gtin12",
       "faqs",
       "terms_policies",
       "privacy_policy",

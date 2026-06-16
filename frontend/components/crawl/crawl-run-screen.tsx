@@ -1,4 +1,3 @@
-'use client';
 import { useQuery } from '@tanstack/react-query';
 import {
   ArrowRightCircle,
@@ -59,12 +58,7 @@ import {
   uniqueStrings,
 } from './shared';
 import { useCrawlRunStore } from './crawl-run-store';
-import {
-  buildMarkdownDocument,
-  downloadMarkdown,
-  isMarkdownOutputRun,
-} from './markdown-output-utils';
-import { MarkdownOutputPanel } from './markdown-output';
+
 import { storeDataEnrichmentPrefill, storeProductIntelligencePrefill } from './crawl-run-prefill';
 import { buildInitialCrawlRunLocalState, crawlRunLocalReducer } from './crawl-run-state';
 import { useLiveClock, useTerminalRecordSync, useTerminalSync } from './use-run-polling';
@@ -187,22 +181,16 @@ export function CrawlRunScreen({ runId }: Readonly<CrawlRunScreenProps>) {
     (run.status === 'failed' || run.status === 'proxy_exhausted') &&
     Number(run?.result_summary?.record_count ?? 0) === 0,
   );
-  const markdownOutputRun = isMarkdownOutputRun(run);
   const showRunLearningTab = Boolean(run?.run_type === 'crawl' && terminal);
-  const defaultOutputTab = markdownOutputRun ? 'markdown' : 'table';
+  const defaultOutputTab = 'table';
   const effectiveOutputTab =
-    failedRunWithoutRecords && (outputTab === 'table' || outputTab === 'markdown')
+    failedRunWithoutRecords && outputTab === 'table'
       ? 'logs'
       : (outputTab === 'learning' && !showRunLearningTab) || outputTab === 'run_config'
         ? defaultOutputTab
-        : markdownOutputRun && outputTab === 'table'
-          ? 'markdown'
-          : !markdownOutputRun && outputTab === 'markdown'
-            ? 'table'
-            : outputTab;
+        : outputTab;
   const shouldFetchTableRecords = Boolean(run) && effectiveOutputTab === 'table';
-  const shouldFetchJsonRecords =
-    Boolean(run) && (effectiveOutputTab === 'json' || effectiveOutputTab === 'markdown');
+  const shouldFetchJsonRecords = Boolean(run) && effectiveOutputTab === 'json';
   const shouldFetchLogs = Boolean(run) && (live || effectiveOutputTab === 'logs');
 
   const tableRecordsLimit = CRAWL_DEFAULTS.TABLE_PAGE_SIZE * 4 * tablePage;
@@ -259,7 +247,6 @@ export function CrawlRunScreen({ runId }: Readonly<CrawlRunScreenProps>) {
   }, [runsQuery.data]);
 
   const records = useMemo(() => jsonRecordsQuery.data?.items ?? [], [jsonRecordsQuery.data?.items]);
-  const markdownDocument = useMemo(() => buildMarkdownDocument(records), [records]);
   const recordsFetchCapReached = useMemo(
     () => records.length >= recordsFetchLimit && recordsFetchLimit >= 800,
     [records, recordsFetchLimit],
@@ -603,16 +590,14 @@ export function CrawlRunScreen({ runId }: Readonly<CrawlRunScreenProps>) {
         variant="underline"
         onChange={(value) => setOutputTab(value as OutputTabKey)}
         options={[
-          ...(markdownOutputRun
-            ? [{ value: 'markdown', label: 'Markdown' }]
-            : [{ value: 'table', label: `Table (${summary.records})` }]),
+          { value: 'table', label: `Table (${summary.records})` },
           { value: 'json', label: 'JSON' },
           { value: 'logs', label: 'Logs' },
           ...(showRunLearningTab ? [{ value: 'learning', label: 'Learning' }] : []),
         ]}
       />
     ),
-    [effectiveOutputTab, markdownOutputRun, setOutputTab, showRunLearningTab, summary.records],
+    [effectiveOutputTab, setOutputTab, showRunLearningTab, summary.records],
   );
   const outputSummary = useMemo(
     () => (
@@ -990,28 +975,15 @@ export function CrawlRunScreen({ runId }: Readonly<CrawlRunScreenProps>) {
                       {dataEnrichmentLabel}
                     </Button>
                   ) : null}
-                  {markdownOutputRun ? (
-                    <Button
-                      variant="download"
-                      type="button"
-                      size="sm"
-                      disabled={!markdownDocument}
-                      onClick={() => downloadMarkdown(markdownDocument, run)}
-                    >
-                      <Download className="size-3" />
-                      Markdown
-                    </Button>
-                  ) : (
-                    <Button
-                      variant="download"
-                      type="button"
-                      size="sm"
-                      onClick={() => void downloadExport('csv')}
-                    >
-                      <Download className="size-3" />
-                      Excel (CSV)
-                    </Button>
-                  )}
+                  <Button
+                    variant="download"
+                    type="button"
+                    size="sm"
+                    onClick={() => void downloadExport('csv')}
+                  >
+                    <Download className="size-3" />
+                    Excel (CSV)
+                  </Button>
                   <Button
                     variant="download"
                     type="button"
@@ -1036,15 +1008,6 @@ export function CrawlRunScreen({ runId }: Readonly<CrawlRunScreenProps>) {
               summary={outputSummary}
               content={
                 <>
-                  {effectiveOutputTab === 'markdown' ? (
-                    <MarkdownOutputPanel
-                      isLoading={jsonRecordsQuery.isLoading && !records.length}
-                      markdown={markdownDocument}
-                      emptyTitle={emptyRecordsState.title}
-                      emptyDescription={emptyRecordsState.description}
-                    />
-                  ) : null}
-
                   {effectiveOutputTab === 'table' ? (
                     <div className="min-h-[55vh] space-y-3">
                       {tableRecordsQuery.isLoading && !tableRecords.length ? (

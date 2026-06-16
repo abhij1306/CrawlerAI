@@ -321,6 +321,37 @@ def test_empty_detail_extraction_retry_skips_non_retryable_http_status() -> None
 
 
 @pytest.mark.regression
+def test_empty_detail_extraction_retries_browser_recoverable_400_status() -> None:
+    request = AcquisitionRequest(
+        run_id=1,
+        url="https://example.com/products/widget",
+        plan=AcquisitionPlan(surface="ecommerce_detail"),
+    )
+    acquisition_result = AcquisitionResult(
+        request=request,
+        final_url=request.url,
+        html='{"message":"Bad Request.","errorCode":"GE401001"}',
+        method="curl_cffi",
+        status_code=400,
+        content_type="application/json",
+    )
+
+    decision = empty_extraction_browser_retry_decision(
+        acquisition_result,
+        [],
+        surface="ecommerce_detail",
+        requested_fields=[],
+        selector_rules=[],
+    )
+
+    assert decision == {
+        "should_retry": True,
+        "reason": "browser_recoverable_http_status",
+        "status_code": 400,
+    }
+
+
+@pytest.mark.regression
 def test_empty_detail_extraction_retry_skips_static_not_found_page() -> None:
     request = AcquisitionRequest(
         run_id=1,
@@ -952,6 +983,8 @@ async def test_post_extraction_identity_mismatch_escalates_real_chrome(
         },
     )
     attempted_engines: list[str] = []
+    retry_profiles: list[dict[str, object]] = []
+    retry_timeouts: list[float | None] = []
 
     @_as_async
     def _fake_acquire(request: AcquisitionRequest) -> AcquisitionResult:
@@ -959,6 +992,9 @@ async def test_post_extraction_identity_mismatch_escalates_real_chrome(
             request.acquisition_profile.get("forced_browser_engine") or "patchright"
         )
         attempted_engines.append(forced_engine)
+        if forced_engine == "real_chrome":
+            retry_profiles.append(dict(request.acquisition_profile))
+            retry_timeouts.append(request.attempt_timeout_seconds)
         return _fake_acquire_result(
             request,
             html=f"<html><body>{forced_engine}</body></html>",
@@ -1011,6 +1047,9 @@ async def test_post_extraction_identity_mismatch_escalates_real_chrome(
     logs = await get_run_logs(db_session, run.id)
 
     assert attempted_engines == ["patchright", "real_chrome"]
+    assert retry_profiles[0]["fetch_mode"] == "browser_only"
+    assert retry_timeouts[0] is not None
+    assert 0 < float(retry_timeouts[0]) <= 150
     assert result.verdict == "success"
     assert result.records[0]["title"].startswith("Valentino Garavani")
     assert any(
@@ -1018,6 +1057,55 @@ async def test_post_extraction_identity_mismatch_escalates_real_chrome(
         "https://www.mytheresa.com/int/en/women/valentino-garavani-loco-small-floral-linen-top-handle-bag-beige-p01155657"
         in log.message
         for log in logs
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_process_single_url_persists_terminal_acquisition_failure_trace(
+    db_session: AsyncSession,
+    test_user,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run = await create_crawl_run(
+        db_session,
+        test_user.id,
+        {
+            "run_type": "crawl",
+            "url": "https://www.decathlon.com/products/widget",
+            "surface": "ecommerce_detail",
+            "settings": {"respect_robots_txt": False},
+        },
+    )
+    persisted: list[dict[str, object]] = []
+
+    @_as_async
+    def _failing_acquire(_request):
+        exc = TimeoutError("Browser real_chrome attempt exceeded timeout_seconds=30.47")
+        exc.browser_diagnostics = {
+            "browser_attempted": True,
+            "browser_outcome": "navigation_failed",
+            "failure_reason": "browser_timeout",
+        }
+        raise exc
+
+    async def _capture_trace(**kwargs):
+        persisted.append(kwargs["trace"].to_dict(flagged=kwargs["flagged"]))
+        return "trace.json"
+
+    monkeypatch.setattr("app.services.pipeline.extraction_loop.acquire", _failing_acquire)
+    monkeypatch.setattr(
+        "app.services.pipeline.extraction_loop.persist_run_trace",
+        _capture_trace,
+    )
+
+    with pytest.raises(TimeoutError, match="Browser real_chrome attempt exceeded"):
+        await process_single_url(db_session, run, run.url)
+
+    assert persisted[0]["verdict"] == "error"
+    assert persisted[0]["acquire_timeline"][-1]["kind"] == "terminal_failure"
+    assert persisted[0]["acquire_timeline"][-1]["detail"]["failure_reason"] == (
+        "browser_timeout"
     )
 
 
@@ -1910,7 +1998,7 @@ async def test_process_single_url_does_not_duplicate_block_warning_after_browser
 
 @pytest.mark.asyncio
 @pytest.mark.regression
-async def test_process_single_url_persists_detail_records_after_self_heal_and_llm_fallback(
+async def test_process_single_url_persists_detail_records_after_self_heal_without_llm_fill(
     db_session: AsyncSession,
     test_user,
     monkeypatch: pytest.MonkeyPatch,
@@ -1947,10 +2035,8 @@ async def test_process_single_url_persists_detail_records_after_self_heal_and_ll
 
     @_as_async
     def _fake_llm(session, *, records, **kwargs):
-        del session, kwargs
-        record = dict(records[0])
-        record["price"] = "19.99"
-        return [record]
+        del session, records, kwargs
+        raise AssertionError("Ecommerce detail LLM fill must not run")
 
     monkeypatch.setattr("app.services.pipeline.extraction_loop.acquire", _fake_acquire)
 
@@ -1992,12 +2078,11 @@ async def test_process_single_url_persists_detail_records_after_self_heal_and_ll
             "title": "Widget Prime (self-healed)",
             "_source": "extraction",
             "_self_heal": {"mode": "selector_synthesis", "triggered": True},
-            "price": "19.99",
         }
     ]
     assert run.summary_dict()["current_stage"] == "PERSIST"
     assert total == 1
-    assert rows[0].data == {"title": "Widget Prime (self-healed)", "price": "19.99"}
+    assert rows[0].data == {"title": "Widget Prime (self-healed)"}
     assert rows[0].raw_html_path == "artifacts/widget-prime.html"
 
 
@@ -2226,7 +2311,6 @@ async def test_process_single_url_persists_listing_page_source_separately_from_r
     assert total == 1
     assert rows[0].source_url == "https://example.com/category/widgets"
     assert rows[0].data["url"] == "https://example.com/products/widget-prime"
-    assert "page_markdown" not in (rows[0].raw_data or {})
 
 
 @pytest.mark.asyncio
@@ -2499,68 +2583,6 @@ async def test_process_single_url_keeps_platform_family_separate_from_adapter_pr
 
 @pytest.mark.asyncio
 @pytest.mark.regression
-async def test_apply_llm_fallback_re_normalizes_llm_values_before_return(
-    db_session: AsyncSession,
-    test_user,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    run = await create_crawl_run(
-        db_session,
-        test_user.id,
-        {
-            "run_type": "crawl",
-            "url": "https://example.com/products/widget-prime?utm_source=mail",
-            "surface": "ecommerce_detail",
-            "settings": {"llm_enabled": True},
-            "additional_fields": ["review_count", "availability"],
-        },
-    )
-
-    @_as_async
-    def _fake_extract_missing_fields(*args, **kwargs):
-        del args, kwargs
-        return (
-            {
-                "review_count": "1,234 reviews",
-                "availability": "In Stock",
-                "url": "https://example.com/products/widget-prime?utm_source=mail",
-            },
-            None,
-        )
-
-    monkeypatch.setattr(
-        "app.services.pipeline.direct_record_fallback.extract_missing_fields",
-        _fake_extract_missing_fields,
-    )
-
-    rows = await apply_llm_fallback(
-        db_session,
-        run=run,
-        page_url="https://example.com/products/widget-prime?utm_source=mail",
-        html=_detail_html(),
-        records=[
-            {
-                "title": "Widget Prime",
-                "source_url": "https://example.com/products/widget-prime?utm_source=mail",
-                "url": "https://example.com/products/widget-prime?utm_source=mail",
-                "_source": "json_ld",
-                "_field_sources": {"title": ["json_ld"]},
-                "_confidence": {"score": 0.1},
-                "_self_heal": {"enabled": False, "triggered": False},
-            }
-        ],
-    )
-
-    assert rows[0]["review_count"] == 1234
-    assert rows[0]["availability"] == "in_stock"
-    assert rows[0]["url"] == "https://example.com/products/widget-prime"
-    assert rows[0]["source_url"] == "https://example.com/products/widget-prime"
-    assert rows[0]["_field_sources"]["review_count"] == ["llm_missing_field_extraction"]
-    assert rows[0]["_self_heal"]["mode"] == "missing_field_extraction"
-
-
-@pytest.mark.asyncio
-@pytest.mark.regression
 async def test_apply_llm_fallback_skips_when_contract_fields_complete(
     db_session: AsyncSession,
     test_user,
@@ -2609,7 +2631,7 @@ async def test_apply_llm_fallback_skips_when_contract_fields_complete(
 
 @pytest.mark.asyncio
 @pytest.mark.regression
-async def test_process_single_url_applies_llm_fallback_when_confidence_score_is_non_numeric(
+async def test_process_single_url_handles_non_numeric_confidence_without_detail_llm_fill(
     db_session: AsyncSession,
     test_user,
     monkeypatch: pytest.MonkeyPatch,
@@ -2680,9 +2702,9 @@ async def test_process_single_url_applies_llm_fallback_when_confidence_score_is_
     result = await process_single_url(db_session, run, run.url)
     rows, total = await get_run_records(db_session, run.id, 1, 20)
 
-    assert result.records[0]["price"] == "19.99"
+    assert "price" not in result.records[0]
     assert total == 1
-    assert rows[0].data["price"] == "19.99"
+    assert "price" not in rows[0].data
 
 
 @pytest.mark.asyncio

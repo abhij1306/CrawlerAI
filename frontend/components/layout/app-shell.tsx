@@ -1,5 +1,3 @@
-'use client';
-
 import { useQuery } from '@tanstack/react-query';
 import Image from '@/routing/image';
 import Link from '@/routing/link';
@@ -63,7 +61,7 @@ const navGroups = [
     label: 'Memory',
     items: [
       { href: '/selectors', label: 'Selector Tool', icon: SearchCheck, exactMatch: true },
-      { href: '/selectors/manage', label: 'Domain Memory', icon: DatabaseZap },
+      { href: '/domain-memory', label: 'Domain Memory', icon: DatabaseZap },
     ],
   },
   {
@@ -511,7 +509,7 @@ function getFallbackHeader(pathname: string): TopBarState {
     };
   if (pathname.startsWith('/runs'))
     return { title: 'Run History', description: 'Review and manage previously submitted crawls.' };
-  if (pathname.startsWith('/selectors/manage'))
+  if (pathname.startsWith('/domain-memory'))
     return {
       title: 'Domain Memory',
       description: 'Inspect learned selectors and saved run profiles by domain and surface.',

@@ -1,5 +1,3 @@
-'use client';
-
 import type { ComponentPropsWithoutRef, ReactNode } from 'react';
 import type { VariantProps } from 'class-variance-authority';
 

@@ -45,16 +45,16 @@ If it exists, extend it. If a similar version exists, consolidate — do not cre
 
 ## 3. Extraction Model — Field Quality and Repair
 
-**How the candidate system works (correct, do not change):**
-All tiers (adapter, structured data, JS state, DOM) write into a shared `candidates` dict via `_add_sourced_candidate`. Field selection in `_materialize_record` is per-field independently — `_winning_candidates_for_field` picks the best source for each field slot separately. This means price can come from js_state while sku comes from DOM. This architecture is correct. Do not replace it with a record-level merge.
+**How the detail candidate system works:**
+All tiers (adapter, structured data, JS state, DOM) write through `_add_sourced_candidate`. `CandidateSet` is the single owner of candidate source, tier, index, and evidence ID. The legacy value buckets may support collectors, but must not gain parallel source/evidence arrays or independent arbitration. Field selection remains per-field: price may come from JS state while SKU comes from DOM. Do not replace it with a record-level merge.
 
-**Source priority order (enforced by `SOURCE_PRIORITY` / `_SOURCE_PRIORITY_RANK`):**
+**Source priority is a resolver tiebreaker (enforced by `SOURCE_PRIORITY` / `_SOURCE_PRIORITY_RANK`):**
 1. Platform adapter
 2. JSON-LD / Microdata
 3. Network payload intercept
 4. JS state
 5. DOM selector / heuristics
-6. LLM field repair when the user enabled LLM
+6. LLM-adjudicated evidence only when the user enabled LLM
 
 **Exception for structured object fields:** `variants`, `variant_axes`, `selected_variant` use `finalize_candidate_value` across ALL source candidates, not just the winner's. This is intentional — do not change it to winner-only.
 
@@ -79,6 +79,10 @@ Ecommerce detail candidate admission must reject semantic artifacts before ranki
 
 Public ecommerce detail output has a flat variant contract. Persisted/exported `variants` rows may contain only public transport fields (`sku`, `price`, `currency`, `url`, `image_url`, `availability`, `stock_quantity`) plus configured public variant axes from `app/services/config/field_mappings.py` (`PUBLIC_VARIANT_AXIS_FIELDS`), plus top-level `variant_count`. Public output must not expose `selected_variant`, `variant_axes`, `available_sizes`, `option_*`, variant `title`, nested `option_values`, or variant-only identity helpers. If legacy rows are still present internally, the public boundary must flatten and strip them before persistence/export.
 
+Complete variant offers are semantic data, not transport duplication. Public-contract shaping must not delete inherited `price`, `currency`, or `availability` after the resolver makes them explicit. Product/variant consensus and offer inheritance belong to `extract/detail/resolution.py`; findings belong to `extract/detail/validation.py`.
+
+Asset dedupe uses canonical asset identity, not delivery URL equality. Storefront-host and CDN-host Shopify URLs for the same file, and transformed Nike URLs for the same asset ID, are one asset. Keep the strongest delivery URL.
+
 Public-field identity validators are single-owner rules at the public boundary (`field_value_core.py` / `FieldCoercion`):
 
 - **`barcode`**: digits-only, allowed lengths `8`, `12`, `13`, `14`; otherwise absent and may be rerouted to `sku`.
@@ -92,8 +96,8 @@ Data enrichment consumes persisted `record.data` as the upstream extraction cont
 **Shopify taxonomy and attributes are the enrichment source of truth.**
 Data enrichment must use `shopify_categories.json` for product category paths and category attribute handles, and `shopify_attributes.json` for Shopify-defined attribute values such as colors, sizes, fabrics, materials, and target gender. Do not build local product-universe dictionaries for categories, colors, materials, sizes, or category synonyms. Small local rules are allowed only for generic parsing mechanics such as token singularization, UI noise stripping, source-field lookup, and availability wording that Shopify does not model.
 
-**LLM is an explicit repair tier, not forbidden.**
-When `llm_enabled=True` and active config allows the relevant LLM workflow, LLM must be considered for missing requested/default canonical fields after deterministic/browser evidence has been used. It may fill empty fields with provenance and validation. It must not silently overwrite populated deterministic values.
+**Ecommerce detail LLM is adjudication-only.**
+Ecommerce detail must not call missing-field value generation. LLM may later choose or reject existing evidence IDs, suggest reusable selectors/source references, or abstain. Verified recipes store selectors, JSON paths, endpoint families, and validation rules by `(domain, surface)`; they never store extracted values. Non-detail LLM workflows remain explicitly gated by run settings and active config.
 
 ---
 
@@ -108,8 +112,12 @@ When `llm_enabled=True` and active config allows the relevant LLM workflow, LLM 
 - Fixing missing variants by adding hidden browser-side extraction that bypasses normal field provenance
 - Calling `backfill_detail_price_from_html` only at the end of the full tier sequence but not after early exit paths
 - Fixing missing visible PDP prices in persistence/export instead of `detail_extractor.py`
-- Suppressing LLM repair when `llm_enabled=True`, config allows it, high-value fields are missing, and deterministic/browser evidence did not fill them
+- Calling ecommerce-detail `extract_missing_fields()` or accepting an LLM-generated field value
 - Letting LLM replace a populated adapter / structured / network / JS / DOM value without an explicit conflict-review workflow
+- Maintaining parallel candidate source/evidence arrays beside `CandidateSet`
+- Silently rewriting a contradictory currency or dropping the contradicting evidence instead of emitting a finding
+- Deleting explicit variant offer fields because they equal the parent offer
+- Treating a thin acquisition shell with only URL/title identity as a complete detail record without a high-severity evidence finding
 - Adding enrichment-side blocklists or cleanup to hide polluted extracted `title`, `brand`, `category`, `size`, `material`, or other canonical source fields
 - Adding local category synonym maps such as "matching sets -> outfit sets" instead of improving Shopify-backed taxonomy matching
 - Adding hand-maintained material/color/category lists when Shopify attributes or category metadata already contain the vocabulary
@@ -161,6 +169,10 @@ Diagnostics controls are user controls. If `diagnostics_profile.capture_screensh
 
 Browser-driver disconnects are URL-local failures. If a shared browser dies during `new_context`, page bootstrap, or content serialization, the runtime may recycle that browser once, but `_batch_runtime.py` must keep the failure scoped to the current URL and continue the batch.
 
+Every batch URL owns its own database session and transaction, including serial/local execution. A failed flush or `PendingRollbackError` for one URL must never poison the run-orchestration session or stop later URLs. When `CELERY_DISPATCH_ENABLED=false`, batch URL concurrency is `1`; local mode does not silently retain the Celery parallel execution policy.
+
+Browser close operations are bounded but not cancellation-owned by timeout wrappers. If Patchright/Playwright close exceeds its cleanup budget, the close task remains observed until completion; callers must not cancel driver internals and create unhandled `TargetClosedError` futures.
+
 **Patchright runs headless bundled Chromium; headless leaks must be masked.**
 
 - Engine is `patchright` headless bundled Chromium (`--headless=new`), not Patchright's headful `channel="chrome"` mode. Headless leaks a `HeadlessChrome` UA token with no `sec-ch-ua` hints, which PX/Akamai/DataDome block on sight.
@@ -195,6 +207,8 @@ is a crawler bug, not stricter security detection.
 - Host protection memory records a hard block from a usable browser page with provider markers but no title/strong blocked evidence
 - A retry happens that is not logged and visible in diagnostics
 - Browser escalation starts when remaining acquisition budget is below `browser_retry_min_remaining_seconds`, producing predictable `Browser navigation/settle stage exceeded timeout_seconds=...` failures
+- Serial URL processing reuses the run-orchestration SQLAlchemy session for extraction/persistence work
+- `CELERY_DISPATCH_ENABLED=false` still allows `url_batch_concurrency > 1`
 - A static product-not-found or homepage-shell detail page retries browser only to rediscover the same non-product page
 - Direct navigation challenge recovery runs only during origin warmup, or provider-marked low-content shells skip the bounded recovery loop
 - Browser escalation triggers for a URL that returned 200 with complete requested/default high-value fields

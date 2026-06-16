@@ -50,6 +50,7 @@ from app.services.extract.detail.variants.dom_options import (
     variant_option_url,
 )
 from app.services.extract.detail.variants.dom_merge import (
+    dom_rows_have_combination_identity as _dom_rows_have_combination_identity,
     dom_variants_add_missing_existing_axis as _dom_variants_add_missing_existing_axis,
     expand_existing_variants_with_dom_axes as _expand_existing_variants_with_dom_axes,
 )
@@ -985,10 +986,11 @@ def backfill_variants_from_dom_if_missing(
     ]
     if not dom_variant_rows:
         return
-    if (
+    existing_variants_are_rich = (
         record_has_rich_existing_variants(record)
         or existing_variant_cluster_has_transport_signal(existing_variants)
-    ) and not _dom_variants_add_missing_existing_axis(
+    )
+    if existing_variants_are_rich and not _dom_variants_add_missing_existing_axis(
         existing_variants, dom_variant_rows
     ):
         return
@@ -1000,6 +1002,10 @@ def backfill_variants_from_dom_if_missing(
         if expanded_rows:
             record["variants"] = expanded_rows
             record["variant_count"] = len(expanded_rows)
+        elif existing_variants_are_rich and not _dom_rows_have_combination_identity(
+            dom_variant_rows
+        ):
+            return
         else:
             existing_by_key: dict[str, dict[str, Any]] = {}
             for row in existing_variants:

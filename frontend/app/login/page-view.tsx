@@ -1,15 +1,15 @@
-'use client';
-
-// Next.js App Router entrypoint for `/login`; invoked by file-system routing.
 import { useRouter } from '@/routing/navigation';
+import { useQueryClient } from '@tanstack/react-query';
 import { FormEvent, useState } from 'react';
 
+import { AUTH_SESSION_QUERY_KEY } from '../../components/layout/auth-session-query';
 import { InlineAlert } from '../../components/ui/patterns';
 import { Button, Field, Input, Subtitle, Title } from '../../components/ui/primitives';
 import { api } from '../../lib/api';
 
 export default function LoginPage() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -21,7 +21,8 @@ export default function LoginPage() {
     setLoading(true);
     try {
       setError('');
-      await api.login(email, password);
+      const response = await api.login(email, password);
+      queryClient.setQueryData(AUTH_SESSION_QUERY_KEY, response.user);
       router.replace('/dashboard');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Login failed');

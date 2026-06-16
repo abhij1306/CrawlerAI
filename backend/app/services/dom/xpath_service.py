@@ -24,6 +24,13 @@ from app.services.config.runtime_settings import (
 )
 
 logger = logging.getLogger(__name__)
+
+__all__ = (
+    "extract_selector_value",
+    "is_non_visible_node",
+    "resolve_selector_regex_timeout",
+    "validate_xpath_syntax",
+)
 _hidden_style_tokens = tuple(
     str(token or "").strip().lower()
     for token in tuple(DETAIL_TEXT_HIDDEN_STYLE_TOKENS or ())
@@ -259,7 +266,7 @@ def _node_hidden_by_attrs(node: object) -> bool:
     return bool(style) and any(token in style for token in _hidden_style_tokens)
 
 
-def _is_non_visible_node(node: object) -> bool:
+def is_non_visible_node(node: object) -> bool:
     current: object | None = node
     depth = 0
     while current is not None and depth < 16:
@@ -279,7 +286,7 @@ def _is_non_visible_node(node: object) -> bool:
 def _coerce_xpath_matches(results: list[object]) -> list[str]:
     values: list[str] = []
     for result in results:
-        if _is_non_visible_node(result):
+        if is_non_visible_node(result):
             continue
         if isinstance(result, str):
             text = result.strip()

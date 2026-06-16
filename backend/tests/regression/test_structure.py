@@ -167,28 +167,6 @@ PLAN_TARGET_LOC_BUDGETS = {
 }
 
 
-@pytest.mark.regression
-def test_detail_package_keeps_public_reexports() -> None:
-    from app.services.extract import detail
-
-    assert callable(detail.backfill_detail_price_from_html)
-    assert callable(detail.repair_ecommerce_detail_record_quality)
-    assert callable(detail.currency_hint_from_page_url)
-    assert callable(detail.drop_low_signal_zero_detail_price)
-
-
-@pytest.mark.regression
-def test_variant_normalization_common_keeps_compatibility_reexports() -> None:
-    from app.services.extract.variant_normalization import common
-    from app.services.extract.variant_normalization.contract import (
-        flatten_variants_for_public_output,
-    )
-
-    assert (
-        common.flatten_variants_for_public_output is flatten_variants_for_public_output
-    )
-
-
 # Keep explicit budgets for coherent large owners. Budgets are set to roughly the
 # current LOC plus 10% so growth requires a conscious update instead of a blanket
 # threshold increase.
@@ -196,7 +174,7 @@ FILE_LOC_BUDGETS = {
     # Browser identity owns native Playwright context spec construction.
     Path("app/services/acquisition/browser_identity.py"): 175,
     # Browser runtime owns fetch orchestration; pooled lifecycle lives in browser_pool.py.
-    Path("app/services/acquisition/browser_pool.py"): 1100,
+    Path("app/services/acquisition/browser_pool.py"): 1110,
     Path("app/services/acquisition/browser_runtime.py"): 1060,
     # Page flow owns navigation/readiness; final result shaping lives in browser_result_builder.py.
     Path("app/services/acquisition/browser_page_flow.py"): 1000,

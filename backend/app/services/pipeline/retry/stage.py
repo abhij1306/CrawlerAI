@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 import time
 
 from app.services.acquisition.acquirer import AcquisitionRequest, AcquisitionResult, PageEvidence
@@ -655,14 +656,19 @@ async def _acquire_browser_retry_result(
     forced_browser_engine: str | None = None,
 ):
     acquisition_result = fetched.acquisition_result
+    remaining_budget_seconds = remaining_url_budget_seconds(context)
     profile_updates: dict[str, object] = {
+        "fetch_mode": "browser_only",
         "prefer_browser": True,
         "retry_reason": retry_reason,
     }
     if forced_browser_engine:
         profile_updates["forced_browser_engine"] = forced_browser_engine
-    retry_request = (await build_acquisition_request(context)).with_profile_updates(
-        **profile_updates
+    retry_request = replace(
+        (await build_acquisition_request(context)).with_profile_updates(
+            **profile_updates
+        ),
+        attempt_timeout_seconds=remaining_budget_seconds,
     )
     try:
         from app.services.pipeline import extraction_loop
