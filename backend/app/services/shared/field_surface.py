@@ -153,8 +153,6 @@ def surface_alias_lookup(
             lookup[normalized_requested] = exact_field or normalized_requested
         if exact_field:
             lookup[exact_field] = exact_field
-        if normalized_requested and exact_field:
-            lookup[normalized_requested] = exact_field
     for canonical in fields:
         normalized_canonical = normalize_field_key(canonical)
         if normalized_canonical:

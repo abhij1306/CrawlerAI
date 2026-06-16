@@ -30,7 +30,6 @@ from app.services.config.extraction_rules import (
     VARIANT_OPTION_VALUE_SUFFIX_NOISE_PATTERNS,
 )
 from app.services.config.field_mappings import (
-    CANONICAL_SCHEMAS,
     FIELD_ALIASES,
     WEIGHT_FIELD,
 )
@@ -80,6 +79,7 @@ from app.services.shared.field_coerce_url import (
     strip_tracking_query_params as strip_tracking_query_params,
 )
 from app.services.shared.field_surface import (
+    ALL_CANONICAL_FIELDS as ALL_CANONICAL_FIELDS,
     clean_record as clean_record,
     surface_alias_lookup as surface_alias_lookup,
     surface_fields as surface_fields,
@@ -116,14 +116,6 @@ _OPTION_VALUE_NOISE_WORD_PATTERN = "|".join(
     re.escape(str(word))
     for word in tuple(OPTION_VALUE_NOISE_WORDS or ())
     if str(word).strip()
-)
-ALL_CANONICAL_FIELDS = sorted(
-    {
-        field_name
-        for fields in CANONICAL_SCHEMAS.values()
-        for field_name in fields or []
-        if field_name
-    }
 )
 _PRICE_FIELD_NAMES = PRICE_VALUE_FIELDS
 _INTEGER_FIELD_NAMES = INTEGER_VALUE_FIELDS

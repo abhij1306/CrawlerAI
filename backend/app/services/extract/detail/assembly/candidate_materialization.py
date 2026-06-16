@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from app.services.config.extraction_rules import DETAIL_LONG_TEXT_RANK_FIELDS
 from app.services.extract.contracts import CandidateSet, RawCandidate
 from app.services.extract.detail.assembly import dom_completion as _detail_dom_completion
@@ -26,7 +28,7 @@ def winning_materialized_field(
     surface: str,
     page_url: str,
     evidence_builder: CandidateSet,
-    source_rank,
+    source_rank: Callable[[str, str, str | None], int],
 ) -> tuple[object, str | None, list[RawCandidate]]:
     ordered_candidates = evidence_builder.ordered(
         field_name,

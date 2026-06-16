@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from typing import cast
+from typing import Any, cast
 
 from app.services.config.extraction_rules import (
     AVAILABILITY_URL_MAP,
@@ -37,20 +37,12 @@ from app.services.shared.text_coerce import (
     coerce_text,
 )
 
-from app.services.shared.field_coerce import (
-    PRICE_VALUE_FIELDS as _PRICE_FIELD_NAMES,
-    INTEGER_VALUE_FIELDS as _INTEGER_FIELD_NAMES,
-    RATING_RE,
-    _AVAILABILITY_CANONICAL_ENUM,
-    _color_value_is_opaque_code,
-    _coerce_structured_multi_rows,
-    _product_type_noise_tokens,
-    _sanitize_option_scalar,
-    coerce_location,
-    coerce_product_attributes,
-    coerce_structured_scalar,
-    salary_from_json,
-)
+
+
+def _field_coerce() -> Any:
+    from app.services.shared import field_coerce
+
+    return field_coerce
 
 
 def coerce_availability_dict(value: object) -> str | None:
@@ -86,7 +78,7 @@ def coerce_availability_value(value: object) -> str | None:
     if mapped:
         return str(mapped)
     normalized_enum = lowered.replace("-", "_").replace(" ", "_")
-    if normalized_enum in _AVAILABILITY_CANONICAL_ENUM:
+    if normalized_enum in _field_coerce()._AVAILABILITY_CANONICAL_ENUM:
         return normalized_enum
     return None
 
@@ -95,7 +87,7 @@ def coerce_rating_value(value: object) -> float | None:
     text = coerce_text(value)
     if not text:
         return None
-    match = RATING_RE.search(text)
+    match = _field_coerce().RATING_RE.search(text)
     candidate = match.group(0) if match else text
     try:
         return float(candidate)
@@ -130,7 +122,7 @@ def _coerce_category_value(value: object) -> str | None:
             or value.get("en")
         )
     elif isinstance(value, str) and value.strip().startswith(("{", "[")):
-        value = coerce_structured_scalar(
+        value = _field_coerce().coerce_structured_scalar(
             value,
             keys=("name", "title", "label", "value", "text", "en"),
         )
@@ -157,13 +149,16 @@ def _coerce_option_scalar_value(field_name: str, value: object) -> str | None:
         filtered = [
             item
             for item in value
-            if not (isinstance(item, str) and _color_value_is_opaque_code(item))
+            if not (
+                isinstance(item, str)
+                and _field_coerce()._color_value_is_opaque_code(item)
+            )
         ]
         if filtered:
             scalar_input = filtered
-    return _sanitize_option_scalar(
+    return _field_coerce()._sanitize_option_scalar(
         field_name,
-        coerce_structured_scalar(
+        _field_coerce().coerce_structured_scalar(
             scalar_input,
             keys=(field_name, "name", "title", "label", "value", "text"),
         ),
@@ -188,7 +183,7 @@ def _coerce_integer_value(value: object) -> int | None:
 
 
 def _coerce_structured_multi_value(field_name: str, value: object) -> list[str] | None:
-    rows = _coerce_structured_multi_rows(field_name, value)
+    rows = _field_coerce()._coerce_structured_multi_rows(field_name, value)
     deduped: list[str] = []
     seen: set[str] = set()
     for row in rows:
@@ -217,16 +212,16 @@ def coerce_field_value(field_name: str, value: object, page_url: str) -> object 
     if value in (None, "", [], {}):
         return None
     if field_name == "product_attributes":
-        return coerce_product_attributes(value)
+        return _field_coerce().coerce_product_attributes(value)
     if field_name in STRUCTURED_OBJECT_FIELDS and isinstance(value, dict):
         return value
     if field_name in STRUCTURED_OBJECT_LIST_FIELDS and isinstance(value, list):
         dict_rows = [item for item in value if isinstance(item, dict)]
         return dict_rows or None
     if field_name == "location":
-        return coerce_location(value)
+        return _field_coerce().coerce_location(value)
     if field_name == "salary":
-        return salary_from_json(value)
+        return _field_coerce().salary_from_json(value)
     if field_name in {"currency", "salary_currency"} and isinstance(value, str):
         return _coerce_currency_value(value)
     if field_name in BRAND_LIKE_FIELDS:
@@ -247,14 +242,14 @@ def coerce_field_value(field_name: str, value: object, page_url: str) -> object 
         return coerce_gender(value)
     if field_name in OPTION_SCALAR_FIELDS:
         return _coerce_option_scalar_value(field_name, value)
-    if field_name in _PRICE_FIELD_NAMES and isinstance(value, str):
+    if field_name in _field_coerce().PRICE_VALUE_FIELDS and isinstance(value, str):
         text = coerce_text(value)
         if text and not re.search(r"\d", text):
             return None
         if price_text_is_negative(text):
             return None
         return text or None
-    if field_name in _INTEGER_FIELD_NAMES:
+    if field_name in _field_coerce().INTEGER_VALUE_FIELDS:
         return _coerce_integer_value(value)
     if field_name in {
         "price",
@@ -309,7 +304,7 @@ def _coerce_title_text(value: object) -> str | None:
         and value.strip().endswith("}")
     )
     if is_structured_input:
-        structured = coerce_structured_scalar(
+        structured = _field_coerce().coerce_structured_scalar(
             value,
             keys=TITLE_STRUCTURED_VALUE_KEYS,
         )
@@ -322,7 +317,7 @@ def _coerce_title_text(value: object) -> str | None:
 
 def _coerce_product_type_clean(value: object) -> str | None:
     if isinstance(value, dict):
-        value = coerce_structured_scalar(
+        value = _field_coerce().coerce_structured_scalar(
             value, keys=("name", "title", "label", "value", "text", "type")
         )
     text = coerce_text(value)
@@ -333,6 +328,6 @@ def _coerce_product_type_clean(value: object) -> str | None:
     folded = text.strip().lower()
     if folded in identity_internal_tokens():
         return None
-    if any(token in folded for token in _product_type_noise_tokens):
+    if any(token in folded for token in _field_coerce()._product_type_noise_tokens):
         return None
     return text
