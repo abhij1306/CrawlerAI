@@ -152,6 +152,35 @@ def test_entity_resolver_converts_negative_inventory_to_explicit_unavailable() -
 
 
 @pytest.mark.regression
+def test_entity_resolver_uses_negative_stock_for_parent_availability() -> None:
+    record = {
+        "variants_complete": True,
+        "variants": [
+            {"sku": "S", "stock_quantity": -1},
+            {"sku": "M", "stock_quantity": -2},
+        ],
+    }
+
+    resolve_detail_entities(record)
+
+    assert record["availability"] == "out_of_stock"
+
+
+@pytest.mark.regression
+def test_entity_resolver_marks_parent_oos_when_all_variant_stock_is_zero() -> None:
+    record = {
+        "variants": [
+            {"sku": "S", "stock_quantity": 0},
+            {"sku": "M", "stock_quantity": "0"},
+        ],
+    }
+
+    resolve_detail_entities(record)
+
+    assert record["availability"] == "out_of_stock"
+
+
+@pytest.mark.regression
 def test_normalization_drops_related_products_misread_as_volume_variants() -> None:
     record = {
         "title": "Aganice Aromatique Candle",

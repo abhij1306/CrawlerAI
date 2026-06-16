@@ -1,7 +1,7 @@
 # Active Plan
 
 **Current:** Frontend Audits and Cleanup → `docs/plans/frontend-audits-cleanup-plan.md`
-**Status:** IN PROGRESS
+**Status:** DONE
 **Started:** 2026-06-15
 **Current slice:** Awaiting plan approval before Slice 1
 

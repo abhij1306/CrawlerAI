@@ -4,7 +4,7 @@ import {
   crawlRunSchema,
   crawlRecordSchema,
   domainRunProfileSchema,
-  safeValidate,
+  strictValidate,
 } from './schemas';
 import type {
   ActiveJob,
@@ -81,18 +81,18 @@ export type CategoryDiscoveryResponse = {
 export const api = {
   register: async (email: string, password: string) => {
     const res = await apiClient.post<User>('/api/auth/register', { email, password });
-    return safeValidate(userSchema, res, 'register');
+    return strictValidate(userSchema, res, 'register');
   },
   login: async (email: string, password: string) => {
     const response = await apiClient.post<LoginResponse>('/api/auth/login', { email, password });
     if (response?.user) {
-      response.user = safeValidate(userSchema, response.user, 'login');
+      response.user = strictValidate(userSchema, response.user, 'login');
     }
     return response;
   },
   me: async () => {
     const res = await apiClient.get<User>('/api/auth/me');
-    return safeValidate(userSchema, res, 'me');
+    return strictValidate(userSchema, res, 'me');
   },
   dashboard: () => apiClient.get<Dashboard>('/api/dashboard'),
   resetApplicationData: () =>
@@ -131,13 +131,13 @@ export const api = {
     if (params?.limit !== undefined) query.set('limit', String(params.limit));
     const res = await apiClient.get<Paginated<CrawlRun>>(withQuery('/api/crawls', query));
     if (res?.items) {
-      res.items = res.items.map((item) => safeValidate(crawlRunSchema, item, 'listCrawls'));
+      res.items = res.items.map((item) => strictValidate(crawlRunSchema, item, 'listCrawls'));
     }
     return res;
   },
   getCrawl: async (runId: number) => {
     const res = await apiClient.get<CrawlRun>(`/api/crawls/${runId}`);
-    return safeValidate(crawlRunSchema, res, `getCrawl(${runId})`);
+    return strictValidate(crawlRunSchema, res, `getCrawl(${runId})`);
   },
   deleteCrawl: (runId: number) => apiClient.delete<void>(`/api/crawls/${runId}`),
   pauseCrawl: (runId: number) =>
@@ -163,7 +163,7 @@ export const api = {
     );
     if (res?.items) {
       res.items = res.items.map((item) =>
-        safeValidate(crawlRecordSchema, item, `getRecords(${runId})`),
+        strictValidate(crawlRecordSchema, item, `getRecords(${runId})`),
       );
     }
     return res;
@@ -219,11 +219,11 @@ export const api = {
   getReview: async (runId: number) => {
     const res = await apiClient.get<ReviewPayload>(`/api/review/${runId}`);
     if (res?.run) {
-      res.run = safeValidate(crawlRunSchema, res.run, `getReview(${runId}).run`);
+      res.run = strictValidate(crawlRunSchema, res.run, `getReview(${runId}).run`);
     }
     if (res?.records) {
       res.records = res.records.map((item) =>
-        safeValidate(crawlRecordSchema, item, `getReview(${runId}).records`),
+        strictValidate(crawlRecordSchema, item, `getReview(${runId}).records`),
       );
     }
     return res;
@@ -239,7 +239,7 @@ export const api = {
       withQuery('/api/crawls/domain-run-profile', query),
     );
     if (res?.saved_run_profile) {
-      res.saved_run_profile = safeValidate(
+      res.saved_run_profile = strictValidate(
         domainRunProfileSchema,
         res.saved_run_profile,
         `getDomainRunProfile(${params.url})`,
@@ -257,7 +257,7 @@ export const api = {
     if (Array.isArray(res)) {
       res.forEach((item) => {
         if (item?.profile) {
-          item.profile = safeValidate(
+          item.profile = strictValidate(
             domainRunProfileSchema,
             item.profile,
             `listDomainRunProfiles(${params?.domain})`,
@@ -306,7 +306,7 @@ export const api = {
       `/api/crawls/${runId}/domain-recipe/save-run-profile`,
       payload,
     );
-    return safeValidate(domainRunProfileSchema, res, `saveDomainRunProfile(${runId})`);
+    return strictValidate(domainRunProfileSchema, res, `saveDomainRunProfile(${runId})`);
   },
   applyDomainRecipeFieldAction: (
     runId: number,
@@ -328,13 +328,13 @@ export const api = {
     if (params?.is_active !== undefined) query.set('is_active', String(params.is_active));
     const res = await apiClient.get<Paginated<User>>(withQuery('/api/users', query));
     if (res?.items) {
-      res.items = res.items.map((item) => safeValidate(userSchema, item, 'listUsers'));
+      res.items = res.items.map((item) => strictValidate(userSchema, item, 'listUsers'));
     }
     return res;
   },
   updateUser: async (userId: number, payload: Partial<Pick<User, 'role' | 'is_active'>>) => {
     const res = await apiClient.patch<User>(`/api/users/${userId}`, payload);
-    return safeValidate(userSchema, res, `updateUser(${userId})`);
+    return strictValidate(userSchema, res, `updateUser(${userId})`);
   },
   listSelectors: (params?: { domain?: string; surface?: string }) => {
     const query = new URLSearchParams();

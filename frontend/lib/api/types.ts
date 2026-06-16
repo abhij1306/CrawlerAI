@@ -113,6 +113,8 @@ export type CrawlRecord = {
     key: string;
     value: unknown;
     source: string;
+    evidence_id?: string;
+    reason?: string | null;
   }>;
   provenance_available?: boolean;
   raw_html_path: string | null;

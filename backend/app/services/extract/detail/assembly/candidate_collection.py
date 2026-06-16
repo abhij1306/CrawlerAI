@@ -31,28 +31,23 @@ from app.services.config.extraction_rules import (
     DETAIL_CATEGORY_SOURCE_RANKS,
     DETAIL_LONG_TEXT_RANK_FIELDS,
     DETAIL_LONG_TEXT_SOURCE_RANKS,
-    DETAIL_LONG_TEXT_THIN_DESCRIPTION_WORDS,
     DETAIL_TITLE_SOURCE_RANKS,
     SOURCE_PRIORITY,
 )
 from app.services.config.runtime_settings import crawler_runtime_settings
 from app.services.shared.field_coerce import (
-    STRUCTURED_OBJECT_FIELDS,
-    STRUCTURED_OBJECT_LIST_FIELDS,
     coerce_field_value,
     finalize_record,
 )
 from app.services.extract.field_candidates import (
     add_candidate,
     collect_structured_candidates,
-    finalize_candidate_value,
 )
 from app.services.extract.contracts import CandidateSet, RawCandidate
 from app.services.extract.detail.identity.core import (
     detail_identity_codes_from_url as _detail_identity_codes_from_url,
     detail_identity_tokens as _detail_identity_tokens,
     detail_title_from_url as _detail_title_from_url,
-    detail_url_candidate_is_low_signal as _detail_url_candidate_is_low_signal,
     preferred_detail_identity_url as _preferred_detail_identity_url,
 )
 from app.services.extract.detail.images.dedupe import dedupe_primary_and_additional_images
@@ -66,6 +61,9 @@ from app.services.extract.detail.price.core import (
 )
 from app.services.extract.detail.assembly.title_scorer import (
     promote_detail_title,
+)
+from app.services.extract.detail.assembly.candidate_materialization import (
+    winning_materialized_field as _winning_materialized_field,
 )
 
 logger = logging.getLogger(__name__)
@@ -81,24 +79,13 @@ _EARLY_PRICE_REPAIR_REQUIRED_FIELDS = (TITLE_FIELD, IMAGE_URL_FIELD, URL_FIELD)
     _detail_structured_pruning._structured_payload_is_breadcrumb_list,
 )
 (
-    _detail_description_value_looks_thin,
-    _detail_long_text_value_looks_truncated,
     _requires_dom_completion,
     _should_collect_dom_variants,
 ) = (
-    _detail_dom_completion._detail_description_value_looks_thin,
-    _detail_dom_completion._detail_long_text_value_looks_truncated,
     _detail_dom_completion._requires_dom_completion,
     _detail_dom_completion._should_collect_dom_variants,
 )
 _materialize_image_fields = _detail_image_materialize._materialize_image_fields
-
-try:
-    DETAIL_LONG_TEXT_THIN_DESCRIPTION_WORDS_INT = int(
-        DETAIL_LONG_TEXT_THIN_DESCRIPTION_WORDS
-    )
-except (TypeError, ValueError):
-    DETAIL_LONG_TEXT_THIN_DESCRIPTION_WORDS_INT = 50
 
 
 def _coerce_float(value: object, default: float = 0.0) -> float:
@@ -287,18 +274,6 @@ _SOURCE_PRIORITY_RANK = {
 }
 
 
-def _group_candidates_by_source(
-    ordered_candidates: list[RawCandidate],
-) -> list[tuple[str, list[RawCandidate]]]:
-    grouped: list[tuple[str, list[RawCandidate]]] = []
-    for candidate in ordered_candidates:
-        if grouped and grouped[-1][0] == candidate.source:
-            grouped[-1][1].append(candidate)
-            continue
-        grouped.append((candidate.source, [candidate]))
-    return grouped
-
-
 def _tier_from_source(source: str) -> str:
     normalized = str(source or "").strip().lower()
     if normalized in {"adapter", "network_payload"}:
@@ -361,84 +336,6 @@ def _selected_selector_trace(
     return {key: value for key, value in trace.items() if not str(key).startswith("_")}
 
 
-def _winning_materialized_field(
-    *,
-    field_name: str,
-    surface: str,
-    page_url: str,
-    evidence_builder: CandidateSet,
-) -> tuple[object, str | None, list[RawCandidate]]:
-    ordered_candidates = evidence_builder.ordered(
-        field_name,
-        source_rank=lambda source: _field_source_rank(surface, field_name, source),
-    )
-    grouped_entries = _group_candidates_by_source(ordered_candidates)
-    grouped_values = [
-        (source, [candidate.value for candidate in entries])
-        for source, entries in grouped_entries
-    ]
-    selected_source = grouped_values[0][0] if grouped_values else None
-    winning_values = grouped_values[0][1] if grouped_values else []
-    selected_group_index = _best_long_text_group_index(field_name, grouped_values)
-    if len(grouped_values) > selected_group_index:
-        selected_source, winning_values = grouped_values[selected_group_index]
-    finalized = _finalized_field_value(field_name, ordered_candidates, winning_values)
-    if (
-        field_name == "url"
-        and "detail" in str(surface or "").strip().lower()
-        and _detail_url_candidate_is_low_signal(finalized, page_url=page_url)
-    ):
-        return None, None, []
-    if field_name in STRUCTURED_OBJECT_FIELDS | STRUCTURED_OBJECT_LIST_FIELDS:
-        return finalized, selected_source, ordered_candidates
-    selected_entries = (
-        grouped_entries[selected_group_index][1]
-        if len(grouped_entries) > selected_group_index
-        else []
-    )
-    return finalized, selected_source, selected_entries
-
-
-def _best_long_text_group_index(
-    field_name: str,
-    grouped_values: list[tuple[str, list[object]]],
-) -> int:
-    if field_name not in DETAIL_LONG_TEXT_RANK_FIELDS or not grouped_values:
-        return 0
-    selected_long_text = finalize_candidate_value(field_name, grouped_values[0][1])
-    if not _detail_long_text_value_looks_truncated(selected_long_text) and not (
-        field_name == "description"
-        and _detail_description_value_looks_thin(selected_long_text)
-    ):
-        return 0
-    for group_index, (_source, candidate_values) in enumerate(
-        grouped_values[1:], start=1
-    ):
-        candidate_long_text = finalize_candidate_value(field_name, candidate_values)
-        if candidate_long_text in (None, "", [], {}):
-            continue
-        if _detail_long_text_value_looks_truncated(candidate_long_text):
-            continue
-        if field_name == "description" and _detail_description_value_looks_thin(
-            candidate_long_text
-        ):
-            continue
-        return group_index
-    return 0
-
-
-def _finalized_field_value(
-    field_name: str,
-    ordered_candidates: list[RawCandidate],
-    winning_values: list[object],
-) -> object:
-    if field_name in STRUCTURED_OBJECT_FIELDS | STRUCTURED_OBJECT_LIST_FIELDS:
-        return finalize_candidate_value(
-            field_name, [candidate.value for candidate in ordered_candidates]
-        )
-    return finalize_candidate_value(field_name, winning_values)
-
-
 def _materialize_record(
     *,
     page_url: str,
@@ -480,6 +377,7 @@ def _materialize_record(
                 surface=surface,
                 page_url=page_url,
                 evidence_builder=evidence_builder,
+                source_rank=_field_source_rank,
             )
         )
         if finalized not in (None, "", [], {}):

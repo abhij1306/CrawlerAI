@@ -41,6 +41,7 @@ from app.services.acquisition.browser_pool_eviction import (
 from app.services.acquisition.browser_pool_snapshot import (
     browser_runtime_snapshot_from_runtimes,
 )
+from app.services.acquisition.browser_pool_page import runtime_page
 from app.services.acquisition.browser_route_blocking import (
     block_unneeded_route as _block_unneeded_route,
 )
@@ -469,122 +470,17 @@ class SharedBrowserRuntime:
         allow_storage_state: bool = True,
         phase_timings_ms: dict[str, int] | None = None,
     ):
-        normalized_proxy = _normalized_proxy_value(proxy)
-        if self.launch_proxy is None:
-            if normalized_proxy is not None:
-                raise RuntimeError(
-                    "Proxied browser pages require a launch-owned browser runtime"
-                )
-        elif normalized_proxy not in {None, self.launch_proxy}:
-            raise RuntimeError("Browser runtime proxy does not match requested proxy")
-        self.touch()
-        try:
-            await self._acquire_context_slot(phase_timings_ms=phase_timings_ms)
-            await self._ensure_with_timing(phase_timings_ms=phase_timings_ms)
-        except Exception:
-            self._semaphore.release()
-            raise
-        self._update_active_contexts(1)
-        if self._browser is None:
-            self._update_active_contexts(-1)
-            self._semaphore.release()
-            raise RuntimeError("Browser runtime failed to initialize")
-        context: BrowserContext | None = None
-        context_release_deferred = False
-        def _release_context_capacity_when_closed(task: asyncio.Task[Any]) -> None:
-            nonlocal context_release_deferred
-            context_release_deferred = True
-            task.add_done_callback(lambda _task: self._release_context_capacity())
-        try:
-            context_spec = self._build_context_spec(
-                run_id=run_id,
-                locality_profile=locality_profile,
-            )
-            context_options = dict(context_spec.context_options)
-            allow_domain_storage_state = bool(
-                allow_storage_state
-                and (
-                    self.launch_proxy is None
-                    or bool(
-                        crawler_runtime_settings.browser_proxy_domain_storage_enabled
-                    )
-                )
-            )
-            if allow_storage_state:
-                storage_load_started_at = time.perf_counter()
-                storage_state = await cookie_store.load_storage_state_for_run(
-                    run_id,
-                    browser_engine=self.browser_engine,
-                )
-                if not storage_state and allow_domain_storage_state:
-                    storage_state = await cookie_store.load_storage_state_for_domain(
-                        domain,
-                        browser_engine=self.browser_engine,
-                    )
-                if storage_state:
-                    context_options["storage_state"] = storage_state
-                _record_timing(
-                    phase_timings_ms,
-                    "storage_state_load_ms",
-                    storage_load_started_at,
-                )
-            context_open_started_at = time.perf_counter()
-            try:
-                context, page = await self._open_context_page(
-                    context_options=context_options,
-                )
-            finally:
-                _record_timing(
-                    phase_timings_ms,
-                    "context_open_ms",
-                    context_open_started_at,
-                )
+        async with runtime_page(
+            self,
+            proxy=proxy,
+            run_id=run_id,
+            domain=domain,
+            locality_profile=locality_profile,
+            allow_storage_state=allow_storage_state,
+            phase_timings_ms=phase_timings_ms,
+        ) as page:
             yield page
-        finally:
-            try:
-                if context is not None:
-                    persist_storage_state = persist_context_storage_state
-                    try:
-                        storage_persist_started_at = time.perf_counter()
-                        try:
-                            await persist_storage_state(
-                                context,
-                                run_id=run_id,
-                                domain=domain,
-                                browser_engine=self.browser_engine,
-                                persist_run_storage_state=bool(
-                                    getattr(context, _RUN_STORAGE_PERSIST_ATTR, True)
-                                ),
-                                persist_domain_storage_state=bool(
-                                    allow_domain_storage_state
-                                    and bool(
-                                        getattr(
-                                            context, _DOMAIN_STORAGE_PERSIST_ATTR, True
-                                        )
-                                    )
-                                ),
-                                timeout_seconds=_browser_context_timeout_seconds(),
-                            )
-                        finally:
-                            _record_timing(
-                                phase_timings_ms,
-                                "storage_state_persist_ms",
-                                storage_persist_started_at,
-                            )
-                    finally:
-                        context_close_started_at = time.perf_counter()
-                        await _close_browser_context_safely(
-                            context,
-                            on_pending_done=_release_context_capacity_when_closed,
-                        )
-                        _record_timing(
-                            phase_timings_ms,
-                            "context_close_ms",
-                            context_close_started_at,
-                        )
-            finally:
-                if not context_release_deferred:
-                    self._release_context_capacity()
+
     def _release_context_capacity(self) -> None:
         self._update_active_contexts(-1)
         self._semaphore.release()

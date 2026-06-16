@@ -67,7 +67,16 @@ async def await_without_cancelling(
     on_pending_done: Callable[[asyncio.Task[Any]], None] | None = None,
 ) -> bool:
     task: asyncio.Task[Any] = asyncio.create_task(awaitable)
-    done, _pending = await asyncio.wait({task}, timeout=timeout_seconds)
+    try:
+        done, _pending = await asyncio.wait({task}, timeout=timeout_seconds)
+    except asyncio.CancelledError:
+        if task.done():
+            consume_task_exception(task)
+        else:
+            register_eviction_cleanup_task(task)
+            if on_pending_done is not None:
+                on_pending_done(task)
+        raise
     if not done:
         register_eviction_cleanup_task(task)
         if on_pending_done is not None:

@@ -38,6 +38,7 @@ def resolve_detail_entities(record: dict[str, Any]) -> None:
             continue
         record[field_name] = consensus
         _record_transform(record, field_name=field_name, before=before, after=consensus)
+    _resolve_negative_variant_stock(record, variants)
     availability = variant_parent_availability_value(record)
     if availability is not None and record.get("availability") != availability:
         before = record.get("availability")
@@ -74,6 +75,8 @@ def variant_parent_availability_value(record: dict[str, Any]) -> str | None:
         and values <= {AVAILABILITY_OUT_OF_STOCK, AVAILABILITY_UNKNOWN}
         and (complete_variant_set or parent_is_out_of_stock)
     ):
+        return AVAILABILITY_OUT_OF_STOCK
+    if _all_variants_have_zero_stock(variants):
         return AVAILABILITY_OUT_OF_STOCK
     return None
 
@@ -151,6 +154,19 @@ def _resolve_negative_variant_stock(
                 entity_ref=f"variant:{index}",
                 rule_id=DETAIL_NEGATIVE_STOCK_RULE_ID,
             )
+
+
+def _all_variants_have_zero_stock(variants: list[dict[str, Any]]) -> bool:
+    if not variants:
+        return False
+    for variant in variants:
+        try:
+            stock_number = int(str(variant.get("stock_quantity")).strip())
+        except (TypeError, ValueError):
+            return False
+        if stock_number != 0:
+            return False
+    return True
 
 
 def _record_transform(

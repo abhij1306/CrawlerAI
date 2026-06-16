@@ -65,6 +65,8 @@ export const crawlRecordSchema: z.ZodSchema<CrawlRecord> = z.object({
         key: z.string(),
         value: z.unknown(),
         source: z.string(),
+        evidence_id: z.string().optional(),
+        reason: z.string().nullable().optional(),
       }),
     )
     .optional(),
@@ -132,7 +134,7 @@ export const domainRunProfileSchema: z.ZodSchema<DomainRunProfile> = z.object({
   saved_at: z.string().nullable().optional(),
 });
 
-export function safeValidate<T>(schema: z.ZodSchema<T>, data: unknown, context: string): T {
+export function strictValidate<T>(schema: z.ZodSchema<T>, data: unknown, context: string): T {
   const result = schema.safeParse(data);
   if (!result.success) {
     throw new Error(`API validation failure in ${context}: ${result.error.message}`);

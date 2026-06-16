@@ -1894,6 +1894,7 @@ async def test_shared_browser_runtime_bounds_context_slot_wait(
             async with runtime.page(phase_timings_ms=phase_timings_ms_second):
                 await asyncio.sleep(0)
     finally:
+        assert runtime._semaphore.locked()
         release.set()
         _ = await first
 
@@ -2344,6 +2345,32 @@ async def test_await_without_cancelling_returns_false_when_awaitable_fails() -> 
         )
         is False
     )
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_await_without_cancelling_registers_task_when_caller_is_cancelled() -> None:
+    release = asyncio.Event()
+
+    async def _wait() -> None:
+        await release.wait()
+
+    caller = asyncio.create_task(
+        browser_background_tasks.await_without_cancelling(
+            _wait(),
+            timeout_seconds=10,
+        )
+    )
+    await asyncio.sleep(0)
+    caller.cancel()
+
+    with pytest.raises(asyncio.CancelledError):
+        await caller
+
+    assert browser_background_tasks._eviction_cleanup_tasks
+    release.set()
+    await browser_background_tasks.drain_browser_background_tasks()
+    assert not browser_background_tasks._eviction_cleanup_tasks
 
 
 @pytest.mark.component
