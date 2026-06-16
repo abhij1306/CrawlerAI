@@ -19,7 +19,10 @@ from app.services.config.domain_profiles import (
 )
 from app.services.config.runtime_settings import crawler_runtime_settings
 from app.services.domain_utils import normalize_domain
-from app.services.extract.network_listing_mapper import extract_listing_rows_from_network
+from app.services.extract.network_listing_mapper import (
+    extract_listing_rows_from_network,
+    network_listing_payload_has_replay_safe_urls,
+)
 from app.services.network_payload_mapper import map_network_payloads_to_fields
 from app.services.url_safety import validate_public_target
 
@@ -57,7 +60,7 @@ def learned_internal_api_endpoints(
         )
         if key in seen:
             continue
-        if not _payload_extracts_surface(
+        if not payload_extracts_surface(
             payload,
             surface=normalized_surface,
             page_url=page_url,
@@ -134,7 +137,7 @@ async def _replay_endpoint(
         ),
         "body": body,
     }
-    if not _payload_extracts_surface(
+    if not payload_extracts_surface(
         payload,
         surface=str(surface or "").strip().lower(),
         page_url=page_url,
@@ -241,7 +244,7 @@ def _endpoint_from_payload(
     return endpoint
 
 
-def _payload_extracts_surface(
+def payload_extracts_surface(
     payload: dict[str, object],
     *,
     surface: str,
@@ -249,6 +252,8 @@ def _payload_extracts_surface(
     requested_fields: list[str],
 ) -> bool:
     if "listing" in surface:
+        if not network_listing_payload_has_replay_safe_urls(payload):
+            return False
         return bool(
             extract_listing_rows_from_network(
                 [payload],
@@ -271,5 +276,6 @@ def _payload_extracts_surface(
 
 __all__ = [
     "learned_internal_api_endpoints",
+    "payload_extracts_surface",
     "replay_internal_api_endpoints",
 ]

@@ -1,4 +1,11 @@
 import { apiClient, getApiBaseUrl } from './client';
+import {
+  userSchema,
+  crawlRunSchema,
+  crawlRecordSchema,
+  domainRunProfileSchema,
+  strictValidate,
+} from './schemas';
 import type {
   ActiveJob,
   CrawlCreatePayload,
@@ -72,13 +79,21 @@ export type CategoryDiscoveryResponse = {
 };
 
 export const api = {
-  register: (email: string, password: string) =>
-    apiClient.post<User>('/api/auth/register', { email, password }),
+  register: async (email: string, password: string) => {
+    const res = await apiClient.post<User>('/api/auth/register', { email, password });
+    return strictValidate(userSchema, res, 'register');
+  },
   login: async (email: string, password: string) => {
     const response = await apiClient.post<LoginResponse>('/api/auth/login', { email, password });
+    if (response?.user) {
+      response.user = strictValidate(userSchema, response.user, 'login');
+    }
     return response;
   },
-  me: () => apiClient.get<User>('/api/auth/me'),
+  me: async () => {
+    const res = await apiClient.get<User>('/api/auth/me');
+    return strictValidate(userSchema, res, 'me');
+  },
   dashboard: () => apiClient.get<Dashboard>('/api/dashboard'),
   resetApplicationData: () =>
     apiClient.post<Record<string, number | boolean>>('/api/dashboard/reset-data', {}),
@@ -101,7 +116,7 @@ export const api = {
     form.append('settings_json', JSON.stringify(payload.settings));
     return apiClient.postForm<{ run_id: number; url_count: number }>('/api/crawls/csv', form);
   },
-  listCrawls: (params?: {
+  listCrawls: async (params?: {
     status?: string;
     run_type?: string;
     url_search?: string;
@@ -114,9 +129,16 @@ export const api = {
     if (params?.url_search) query.set('url_search', params.url_search);
     if (params?.page !== undefined) query.set('page', String(params.page));
     if (params?.limit !== undefined) query.set('limit', String(params.limit));
-    return apiClient.get<Paginated<CrawlRun>>(withQuery('/api/crawls', query));
+    const res = await apiClient.get<Paginated<CrawlRun>>(withQuery('/api/crawls', query));
+    if (res?.items) {
+      res.items = res.items.map((item) => strictValidate(crawlRunSchema, item, 'listCrawls'));
+    }
+    return res;
   },
-  getCrawl: (runId: number) => apiClient.get<CrawlRun>(`/api/crawls/${runId}`),
+  getCrawl: async (runId: number) => {
+    const res = await apiClient.get<CrawlRun>(`/api/crawls/${runId}`);
+    return strictValidate(crawlRunSchema, res, `getCrawl(${runId})`);
+  },
   deleteCrawl: (runId: number) => apiClient.delete<void>(`/api/crawls/${runId}`),
   pauseCrawl: (runId: number) =>
     apiClient.post<{ run_id: number; status: CrawlRun['status'] }>(
@@ -132,11 +154,19 @@ export const api = {
     apiClient.post<{ run_id: number; status: CrawlRun['status'] }>(`/api/crawls/${runId}/kill`, {}),
   commitSelectedFields: (runId: number, items: FieldCommitPayload[]) =>
     apiClient.post<FieldCommitResponse>(`/api/crawls/${runId}/commit-fields`, { items }),
-  getRecords: (runId: number, params?: { page?: number; limit?: number }) => {
+  getRecords: async (runId: number, params?: { page?: number; limit?: number }) => {
     const query = new URLSearchParams();
     if (params?.page !== undefined) query.set('page', String(params.page));
     if (params?.limit !== undefined) query.set('limit', String(params.limit));
-    return apiClient.get<Paginated<CrawlRecord>>(withQuery(`/api/crawls/${runId}/records`, query));
+    const res = await apiClient.get<Paginated<CrawlRecord>>(
+      withQuery(`/api/crawls/${runId}/records`, query),
+    );
+    if (res?.items) {
+      res.items = res.items.map((item) =>
+        strictValidate(crawlRecordSchema, item, `getRecords(${runId})`),
+      );
+    }
+    return res;
   },
   getRecordProvenance: (recordId: number) =>
     apiClient.get<CrawlRecordProvenance>(`/api/records/${recordId}/provenance`),
@@ -186,25 +216,56 @@ export const api = {
   downloadJson: (runId: number) => apiClient.getBlob(`/api/crawls/${runId}/export/json`),
   exportCsv: (runId: number) => `${getApiBaseUrl()}/api/crawls/${runId}/export/csv`,
   exportJson: (runId: number) => `${getApiBaseUrl()}/api/crawls/${runId}/export/json`,
-  getReview: (runId: number) => apiClient.get<ReviewPayload>(`/api/review/${runId}`),
+  getReview: async (runId: number) => {
+    const res = await apiClient.get<ReviewPayload>(`/api/review/${runId}`);
+    if (res?.run) {
+      res.run = strictValidate(crawlRunSchema, res.run, `getReview(${runId}).run`);
+    }
+    if (res?.records) {
+      res.records = res.records.map((item) =>
+        strictValidate(crawlRecordSchema, item, `getReview(${runId}).records`),
+      );
+    }
+    return res;
+  },
   reviewHtml: (runId: number) => `${getApiBaseUrl()}/api/review/${runId}/artifact-html`,
   saveReview: (runId: number, payload: { selections: ReviewSelection[]; extra_fields: string[] }) =>
     apiClient.post(`/api/review/${runId}/save`, payload),
-  getDomainRunProfile: (params: { url: string; surface: CrawlSurface }) => {
+  getDomainRunProfile: async (params: { url: string; surface: CrawlSurface }) => {
     const query = new URLSearchParams();
     query.set('url', params.url);
     query.set('surface', params.surface);
-    return apiClient.get<DomainRunProfileLookup>(
+    const res = await apiClient.get<DomainRunProfileLookup>(
       withQuery('/api/crawls/domain-run-profile', query),
     );
+    if (res?.saved_run_profile) {
+      res.saved_run_profile = strictValidate(
+        domainRunProfileSchema,
+        res.saved_run_profile,
+        `getDomainRunProfile(${params.url})`,
+      );
+    }
+    return res;
   },
-  listDomainRunProfiles: (params?: { domain?: string; surface?: string }) => {
+  listDomainRunProfiles: async (params?: { domain?: string; surface?: string }) => {
     const query = new URLSearchParams();
     if (params?.domain) query.set('domain', params.domain);
     if (params?.surface) query.set('surface', params.surface);
-    return apiClient.get<DomainRunProfileRecord[]>(
+    const res = await apiClient.get<DomainRunProfileRecord[]>(
       withQuery('/api/crawls/domain-memory/run-profiles', query),
     );
+    if (Array.isArray(res)) {
+      res.forEach((item) => {
+        if (item?.profile) {
+          item.profile = strictValidate(
+            domainRunProfileSchema,
+            item.profile,
+            `listDomainRunProfiles(${params?.domain})`,
+          );
+        }
+      });
+    }
+    return res;
   },
   listDomainCookieMemory: (params?: { domain?: string }) => {
     const query = new URLSearchParams();
@@ -240,11 +301,13 @@ export const api = {
       `/api/crawls/${runId}/domain-recipe/promote-selectors`,
       payload,
     ),
-  saveDomainRunProfile: (runId: number, payload: { profile: DomainRunProfile }) =>
-    apiClient.post<DomainRunProfile>(
+  saveDomainRunProfile: async (runId: number, payload: { profile: DomainRunProfile }) => {
+    const res = await apiClient.post<DomainRunProfile>(
       `/api/crawls/${runId}/domain-recipe/save-run-profile`,
       payload,
-    ),
+    );
+    return strictValidate(domainRunProfileSchema, res, `saveDomainRunProfile(${runId})`);
+  },
   applyDomainRecipeFieldAction: (
     runId: number,
     payload: {
@@ -259,14 +322,20 @@ export const api = {
       `/api/crawls/${runId}/domain-recipe/field-action`,
       payload,
     ),
-  listUsers: (params?: { search?: string; is_active?: boolean }) => {
+  listUsers: async (params?: { search?: string; is_active?: boolean }) => {
     const query = new URLSearchParams();
     if (params?.search) query.set('search', params.search);
     if (params?.is_active !== undefined) query.set('is_active', String(params.is_active));
-    return apiClient.get<Paginated<User>>(withQuery('/api/users', query));
+    const res = await apiClient.get<Paginated<User>>(withQuery('/api/users', query));
+    if (res?.items) {
+      res.items = res.items.map((item) => strictValidate(userSchema, item, 'listUsers'));
+    }
+    return res;
   },
-  updateUser: (userId: number, payload: Partial<Pick<User, 'role' | 'is_active'>>) =>
-    apiClient.patch<User>(`/api/users/${userId}`, payload),
+  updateUser: async (userId: number, payload: Partial<Pick<User, 'role' | 'is_active'>>) => {
+    const res = await apiClient.patch<User>(`/api/users/${userId}`, payload);
+    return strictValidate(userSchema, res, `updateUser(${userId})`);
+  },
   listSelectors: (params?: { domain?: string; surface?: string }) => {
     const query = new URLSearchParams();
     if (params?.domain) query.set('domain', params.domain);
@@ -311,18 +380,3 @@ export const api = {
   listLlmCostLog: () => apiClient.get<LlmCostLogRecord[]>('/api/llm/cost-log'),
   listJobs: () => apiClient.get<ActiveJob[]>('/api/jobs/active'),
 };
-
-// Named exports for easier consumption in components
-export const fetchCrawlRun = api.getCrawl;
-export const fetchCrawlRecords = (runId: number) => api.getRecords(runId).then((res) => res.items);
-export const fetchCrawlRecordMetadata = (runId: number) =>
-  api.getRecords(runId, { limit: 1 }).then((res) => res.items[0]);
-export const fetchCrawlLogs = api.getCrawlLogs;
-export const createCrawl = api.createCrawl;
-export const pauseCrawlRun = api.pauseCrawl;
-export const resumeCrawlRun = api.resumeCrawl;
-export const killCrawlRun = api.killCrawl;
-export const commitFieldSuggestion = (
-  runId: number,
-  item: { record_id: number; field_name: string; value: unknown },
-) => api.commitSelectedFields(runId, [item]);

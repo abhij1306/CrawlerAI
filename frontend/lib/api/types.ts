@@ -113,6 +113,8 @@ export type CrawlRecord = {
     key: string;
     value: unknown;
     source: string;
+    evidence_id?: string;
+    reason?: string | null;
   }>;
   provenance_available?: boolean;
   raw_html_path: string | null;
@@ -414,8 +416,11 @@ export type DomainRunProfile = {
   acquisition_contract: {
     preferred_browser_engine: 'auto' | 'patchright' | 'real_chrome';
     prefer_browser: boolean;
-    prefer_curl_handoff: boolean;
+    handoff_eligible: boolean;
     handoff_cookie_engine: 'auto' | 'patchright' | 'real_chrome';
+    required_rendering: boolean;
+    required_traversal: boolean;
+    required_network_payloads: boolean;
     last_quality_success: {
       method: string | null;
       browser_engine: 'auto' | 'patchright' | 'real_chrome' | null;

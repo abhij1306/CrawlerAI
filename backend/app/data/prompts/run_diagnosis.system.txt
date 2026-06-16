@@ -21,4 +21,4 @@ Respond ONLY with a JSON object matching this shape:
     {"field": "variants", "source": "", "note": "why this field is missing"}
   ]
 }
-Return valid JSON only. No markdown, no prose outside the JSON.
+Return valid JSON only, with no prose outside the JSON.

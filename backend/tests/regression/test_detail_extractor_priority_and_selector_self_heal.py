@@ -12,6 +12,7 @@ from app.services.extract.detail.identity import (
     structured_pruning as detail_structured_pruning,
 )
 from app.services.config._export_data import load_export_data
+from app.services.extract.contracts import CandidateSet
 from app.services.extraction_context import (
     ExtractionContext,
     collect_structured_source_payloads,
@@ -57,8 +58,7 @@ def test_extract_records_prefers_higher_priority_adapter_value_even_when_dom_val
 
     assert record["title"] == "Widget Prime"
     assert record["price"] == "19.99"
-    assert "adapter" in str(record["_field_sources"]["price"])
-    assert "dom_selector" in str(record["_field_sources"]["price"])
+    assert record["_field_sources"]["price"] == ["adapter"]
     assert record["_source"] == "adapter"
 
 
@@ -83,6 +83,71 @@ def testrequires_dom_completion_uses_raw_variant_cues_after_pruning() -> None:
         soup=soup,
         breadcrumb_soup=raw_soup,
     )
+
+
+@pytest.mark.regression
+def test_jsonld_price_with_dom_variants_requires_dom_completion() -> None:
+    html = """
+    <html>
+      <head>
+        <script type="application/ld+json">
+        {
+          "@type": "Product",
+          "name": "Trail Runner",
+          "image": "https://example.com/trail.jpg",
+          "offers": {"price": "120.00", "priceCurrency": "USD"}
+        }
+        </script>
+      </head>
+      <body>
+        <main>
+          <h1>Trail Runner</h1>
+          <select name="size"><option>8</option><option>9</option></select>
+        </main>
+      </body>
+    </html>
+    """
+
+    record = extract_records(
+        html,
+        "https://example.com/products/trail-runner",
+        "ecommerce_detail",
+        max_records=1,
+        requested_fields=["price", "currency", "variants"],
+    )[0]
+
+    assert record["_dom_skip_decision"]["dom_skipped"] is False
+    assert "variant_dom_cues" in record["_dom_skip_decision"]["dom_cues"]
+
+
+@pytest.mark.regression
+def test_complete_jsonld_product_without_dom_variant_cues_may_skip_dom() -> None:
+    html = """
+    <html>
+      <head>
+        <script type="application/ld+json">
+        {
+          "@type": "Product",
+          "name": "Trail Runner",
+          "image": "https://example.com/trail.jpg",
+          "description": "A durable trail shoe with mesh upper and rubber outsole.",
+          "offers": {"price": "120.00", "priceCurrency": "USD"}
+        }
+        </script>
+      </head>
+      <body><main><h1>Trail Runner</h1></main></body>
+    </html>
+    """
+
+    record = extract_records(
+        html,
+        "https://example.com/products/trail-runner",
+        "ecommerce_detail",
+        max_records=1,
+        requested_fields=None,
+    )[0]
+
+    assert record["_dom_skip_decision"]["dom_cues"] == []
 
 
 def testrequires_dom_completion_ignores_logo_only_image_cue() -> None:
@@ -344,11 +409,9 @@ def test_apply_dom_fallbacks_limits_heading_section_targets_to_section_like_fiel
         surface="ecommerce_detail",
         requested_fields=["brand", "product_story"],
         candidates={},
-        candidate_sources={},
-        field_sources={},
         selector_trace_candidates={},
         selector_rules=None,
-        add_sourced_candidate=lambda *args, **kwargs: None,
+        add_sourced_candidate=lambda *args, **kwargs: 0,
     )
 
     assert "description" in captured["allowed_fields"]
@@ -430,10 +493,22 @@ def testmaterialize_image_fields_merges_raw_soup_gallery_when_structured_is_sing
         "html.parser",
     )
 
+    candidate_set = CandidateSet(
+        surface="ecommerce_detail",
+        page_url="https://example.com/products/widget",
+    )
+    candidate_set.add(
+        field_name="image_url",
+        value="https://example.com/images/widget-cover.jpg",
+        source="json_ld",
+        extraction_tier="structured_source",
+        candidate_index=0,
+    )
+
     images, source = materialize_image_fields(
         surface="ecommerce_detail",
-        candidates={"image_url": ["https://example.com/images/widget-cover.jpg"]},
-        candidate_sources={"image_url": ["json_ld"]},
+        candidate_set=candidate_set,
+        source_rank=lambda _surface, _field, _source: 0,
         page_url="https://example.com/products/widget",
         soup=BeautifulSoup("<main></main>", "html.parser"),
         raw_soup=raw_soup,
@@ -534,8 +609,7 @@ def test_extract_records_keeps_first_match_for_long_text_fields() -> None:
     )[0]
 
     assert record["description"] == "Adapter description."
-    assert "adapter" in str(record["_field_sources"]["description"])
-    assert "dom_selector" in str(record["_field_sources"]["description"])
+    assert record["_field_sources"]["description"] == ["adapter"]
     assert record["_source"] == "adapter"
 
 

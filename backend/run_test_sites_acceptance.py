@@ -25,6 +25,7 @@ from harness.support import (
     status_for_result,
     timeout_owner_for_mode,
 )
+from app.services.acquisition import shutdown_browser_runtime
 
 DEFAULT_TEST_SITES_PATH = Path(__file__).resolve().parent.parent / "TEST_SITES.md"
 DEFAULT_REPORT_DIR = Path("artifacts/test_sites_acceptance")
@@ -229,7 +230,7 @@ async def main(argv: list[str]) -> int:
         "--path", default=str(DEFAULT_TEST_SITES_PATH), help="Path to TEST_SITES.md"
     )
     parser.add_argument(
-        "--start-line", type=int, default=156, help="1-based start line"
+        "--start-line", type=int, default=190, help="1-based start line"
     )
     parser.add_argument("--limit", type=int, default=None, help="Optional site limit")
     parser.add_argument(
@@ -309,48 +310,56 @@ async def main(argv: list[str]) -> int:
     print("=" * 70)
 
     results: list[dict[str, object]] = []
-    for offset, site in enumerate(sites, start=1):
-        print(f"\n[{offset}/{len(sites)}] {site['url']}")
-        row = await _run_one(site, args.mode)
-        results.append(row)
-        print(f"  Status: {status_for_result(row)}")
-        print(
-            f"  Mode: {row.get('mode')}  Surface: {row.get('surface')}  Platform: {row.get('platform_family')}  Bucket: {row.get('bucket')}"
-        )
-        print(
-            f"  Verdict: {row.get('verdict')}  Failure mode: {row.get('failure_mode')}"
-        )
-        print(
-            f"  Quality: {row.get('quality_verdict')}  Observed: {row.get('observed_failure_mode')}  Source: {row.get('run_source')}"
-        )
-        if row.get("records") is not None:
-            print(f"  Records: {row.get('records')}")
-        if row.get("sample_title"):
-            print(f"  Sample: {_console_safe(row['sample_title'])}")
-        if row.get("sample_url"):
-            print(f"  Sample URL: {_console_safe(row['sample_url'])}")
-        if row.get("sample_utility_noise_hits"):
-            print(f"  Audit utility hits: {row['sample_utility_noise_hits']}")
-        if isinstance(row.get("challenge_summary"), dict):
-            challenge_summary = _object_dict(row.get("challenge_summary"))
-            provider = str(challenge_summary.get("provider") or "").strip()
-            evidence = _object_list(challenge_summary.get("evidence"))
-            provider_text = provider or "unknown"
-            print(f"  Challenge: provider={provider_text}")
-            if evidence:
-                print(
-                    f"  Challenge evidence: {', '.join(str(item) for item in evidence[:3])}"
-                )
-        failed_quality_checks = [
-            name
-            for name, value in _object_dict(row.get("quality_checks")).items()
-            if not bool(value)
-        ]
-        if failed_quality_checks:
-            print(f"  Failed quality checks: {', '.join(failed_quality_checks)}")
-        if row.get("error"):
-            print(f"  Error: {row['error']}")
-        print(f"  Elapsed: {row.get('elapsed_s')}s")
+    cleanup_failed = False
+    try:
+        for offset, site in enumerate(sites, start=1):
+            print(f"\n[{offset}/{len(sites)}] {site['url']}")
+            row = await _run_one(site, args.mode)
+            results.append(row)
+            print(f"  Status: {status_for_result(row)}")
+            print(
+                f"  Mode: {row.get('mode')}  Surface: {row.get('surface')}  Platform: {row.get('platform_family')}  Bucket: {row.get('bucket')}"
+            )
+            print(
+                f"  Verdict: {row.get('verdict')}  Failure mode: {row.get('failure_mode')}"
+            )
+            print(
+                f"  Quality: {row.get('quality_verdict')}  Observed: {row.get('observed_failure_mode')}  Source: {row.get('run_source')}"
+            )
+            if row.get("records") is not None:
+                print(f"  Records: {row.get('records')}")
+            if row.get("sample_title"):
+                print(f"  Sample: {_console_safe(row['sample_title'])}")
+            if row.get("sample_url"):
+                print(f"  Sample URL: {_console_safe(row['sample_url'])}")
+            if row.get("sample_utility_noise_hits"):
+                print(f"  Audit utility hits: {row['sample_utility_noise_hits']}")
+            if isinstance(row.get("challenge_summary"), dict):
+                challenge_summary = _object_dict(row.get("challenge_summary"))
+                provider = str(challenge_summary.get("provider") or "").strip()
+                evidence = _object_list(challenge_summary.get("evidence"))
+                provider_text = provider or "unknown"
+                print(f"  Challenge: provider={provider_text}")
+                if evidence:
+                    print(
+                        f"  Challenge evidence: {', '.join(str(item) for item in evidence[:3])}"
+                    )
+            failed_quality_checks = [
+                name
+                for name, value in _object_dict(row.get("quality_checks")).items()
+                if not bool(value)
+            ]
+            if failed_quality_checks:
+                print(f"  Failed quality checks: {', '.join(failed_quality_checks)}")
+            if row.get("error"):
+                print(f"  Error: {row['error']}")
+            print(f"  Elapsed: {row.get('elapsed_s')}s")
+    finally:
+        try:
+            await shutdown_browser_runtime()
+        except Exception as exc:
+            cleanup_failed = True
+            print(f"Browser runtime shutdown failed: {type(exc).__name__}: {exc}")
 
     summary = _build_summary(results)
     print("\n" + "=" * 70)
@@ -359,7 +368,7 @@ async def main(argv: list[str]) -> int:
         results, start_line=args.start_line, source_path=source_path, mode=args.mode
     )
     print(f"Report: {report_path}")
-    return 0 if summary["failed"] == 0 else 1
+    return 0 if summary["failed"] == 0 and not cleanup_failed else 1
 
 
 def _safe_int(value: object) -> int:

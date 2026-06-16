@@ -23,6 +23,8 @@ describe('auth session query contract', () => {
     expect(options.enabled).toBe(true);
     expect(options.retry).toBe(false);
     expect(options.refetchOnWindowFocus).toBe(false);
+    expect(options.staleTime).toBe(5 * 60_000);
+    expect(options.gcTime).toBe(10 * 60_000);
   });
 
   it('disables auth session query on auth routes', () => {

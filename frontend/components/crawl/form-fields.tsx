@@ -1,5 +1,3 @@
-'use client';
-
 import { CheckCircle2, CircleAlert, GripVertical, Info, RotateCcw, Trash2, X } from 'lucide-react';
 import React from 'react';
 import { useId, useState } from 'react';
@@ -354,11 +352,20 @@ export function CsvFileField({
   file: File | null;
   onChange: (file: File | null) => void;
 }>) {
+  const inputRef = React.useRef<HTMLInputElement>(null);
+
+  React.useEffect(() => {
+    if (file === null && inputRef.current) {
+      inputRef.current.value = '';
+    }
+  }, [file]);
+
   return (
     <label className="grid gap-2">
       <span className="type-control font-medium">CSV File</span>
       <div className="flex items-center gap-4">
         <input
+          ref={inputRef}
           id="csv-file-input"
           type="file"
           accept=".csv,text/csv"
@@ -523,12 +530,15 @@ function ValidatedField({
   onBlur: (value: string) => void;
   showLabel?: boolean;
 }>) {
+  const errorId = useId();
   return (
     <label className="grid gap-1">
       <span className={cn('field-label', !showLabel && 'sr-only')}>{label}</span>
       <div className="relative">
         <Input
           aria-label={label}
+          aria-invalid={state === 'invalid'}
+          aria-describedby={state === 'invalid' ? errorId : undefined}
           value={value}
           onChange={(event) => onChange(event.target.value)}
           onBlur={(event) => onBlur(event.target.value)}
@@ -537,9 +547,20 @@ function ValidatedField({
         />
         <div className="pointer-events-none absolute inset-y-0 right-2.5 flex items-center">
           {state === 'valid' ? <CheckCircle2 className="text-success/80 size-3.5" /> : null}
-          {state === 'invalid' ? <CircleAlert className="text-danger/80 size-3.5" /> : null}
+          {state === 'invalid' ? (
+            <CircleAlert
+              className="text-danger/80 size-3.5"
+              aria-label={`${label} selector is invalid`}
+              role="img"
+            />
+          ) : null}
         </div>
       </div>
+      {state === 'invalid' ? (
+        <p id={errorId} className="text-danger type-caption mt-0.5" role="alert">
+          Invalid {label.toLowerCase()}
+        </p>
+      ) : null}
     </label>
   );
 }

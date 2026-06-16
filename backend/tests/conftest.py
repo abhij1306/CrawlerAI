@@ -203,7 +203,7 @@ async def _dispose_global_app_engine():
 
 
 @pytest_asyncio.fixture
-async def db_session():
+async def db_session(monkeypatch: pytest.MonkeyPatch):
     """Create a PostgreSQL database schema for each test."""
     worker_id = os.environ.get("PYTEST_XDIST_WORKER", "gw0")
     schema_suffix = re.sub(
@@ -223,6 +223,9 @@ async def db_session():
         expire_on_commit=False,
         class_=AsyncSession,
     )
+    from app.services.crawl import batch_runtime
+
+    monkeypatch.setattr(batch_runtime, "SessionLocal", session_factory)
     async with session_factory() as session:
         yield session
     async with scoped_engine.begin() as conn:

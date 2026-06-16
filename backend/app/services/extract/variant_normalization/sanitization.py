@@ -24,6 +24,7 @@ from app.services.extract.variant_choice_traversal import (
 from app.services.extract.variant_structural_pruning import (
     drop_cross_product_variant_rows,
     drop_parent_shared_variant_axes,
+    prune_unidentified_cartesian_rows_to_parent_axes,
 )
 from app.services.extract.variant_normalization.contract import (
     flatten_variants_for_public_output,
@@ -127,6 +128,7 @@ def _sanitize_variant_axes(record: dict[str, Any]) -> None:
     )
     _flatten_variant_rows(record)
     _clean_variant_rows(record)
+    prune_unidentified_cartesian_rows_to_parent_axes(record)
     _drop_static_duplicate_variant_urls(record)
     _normalize_separate_dimension_size_rows(record)
     deduplication._prune_unrecognized_size_rows_when_real_sizes_exist(record)

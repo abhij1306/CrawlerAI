@@ -39,6 +39,7 @@ def configure_logfire() -> bool:
         return False
 
     token = settings.logfire_token.strip() or None
+    base_url = settings.logfire_base_url.strip() or None
     logfire.configure(
         send_to_logfire=settings.logfire_send_to_logfire,
         token=token,
@@ -46,6 +47,7 @@ def configure_logfire() -> bool:
         environment=settings.logfire_environment or settings.app_env,
         console=False,
         inspect_arguments=False,
+        advanced=logfire.AdvancedOptions(base_url=base_url) if base_url else None,
     )
     _LogfireState.configured = True
     if token is None and settings.logfire_send_to_logfire is not False:

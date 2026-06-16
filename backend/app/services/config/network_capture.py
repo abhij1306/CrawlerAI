@@ -98,6 +98,26 @@ HIGH_VALUE_NETWORK_ENDPOINT_TYPES: Final[frozenset[str]] = frozenset(
 
 HIGH_VALUE_NETWORK_PAYLOAD_BUDGET_MULTIPLIER: Final[int] = 4
 
+NETWORK_EVIDENCE_SAFE_REQUEST_HEADERS: Final[tuple[str, ...]] = (
+    "accept-language",
+    "content-type",
+    "sec-ch-ua-platform",
+    "x-country",
+    "x-country-code",
+    "x-currency",
+)
+
+NETWORK_EVIDENCE_SAFE_RESPONSE_HEADERS: Final[tuple[str, ...]] = (
+    "content-language",
+    "content-location",
+    "content-type",
+    "etag",
+    "vary",
+    "x-country",
+    "x-country-code",
+    "x-currency",
+)
+
 
 __all__ = [
     "BLOCKED_BROWSER_RESOURCE_TYPES",
@@ -109,6 +129,8 @@ __all__ = [
     "NETWORK_PAYLOAD_NOISE_DOMAINS",
     "NETWORK_PAYLOAD_NOISE_KEYWORDS",
     "NETWORK_PAYLOAD_NOISE_URL_RE",
+    "NETWORK_EVIDENCE_SAFE_REQUEST_HEADERS",
+    "NETWORK_EVIDENCE_SAFE_RESPONSE_HEADERS",
     "NETWORK_PAYLOAD_JSON_CONTENT_TYPE_HINTS",
     "NETWORK_PAYLOAD_STREAMING_CONTENT_TYPES",
     "NETWORK_PAYLOAD_URL_HINTS",

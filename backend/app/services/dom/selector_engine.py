@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
+from collections.abc import Callable
 from copy import deepcopy
 import regex as regex_lib
 from typing import cast
@@ -77,7 +78,7 @@ from app.services.shared.field_coerce import (
 from app.services.shared.coerce_primitives import safe_int as _safe_int
 from app.services.shared.regex_patterns import compile_regex_patterns
 from app.services.dom.xpath_service import (
-    _is_non_visible_node,
+    is_non_visible_node,
     resolve_selector_regex_timeout,
     validate_xpath_syntax,
 )
@@ -569,7 +570,7 @@ def extract_xpath_values(
         except TypeError:
             limited_matches = [matches]
     for match in limited_matches:
-        if _is_non_visible_node(match):
+        if is_non_visible_node(match):
             continue
         if isinstance(match, lxml_html.HtmlElement):
             raw_value = match.text_content()
@@ -697,11 +698,16 @@ def apply_selector_fallbacks(
     *,
     candidate_sources: dict[str, list[str]] | None = None,
     field_sources: dict[str, list[str]] | None = None,
+    candidate_adder: Callable[[str, object, str], int] | None = None,
     selector_trace_candidates: dict[str, list[dict[str, object]]] | None = None,
     record_dom_observed_selectors: bool = False,
 ) -> None:
     def _add(field_name: str, value: object, source: str) -> int:
-        growth = add_candidate(candidates, field_name, value)
+        growth = (
+            int(candidate_adder(field_name, value, source) or 0)
+            if candidate_adder is not None
+            else add_candidate(candidates, field_name, value)
+        )
         if growth <= 0:
             return 0
         if candidate_sources is not None:

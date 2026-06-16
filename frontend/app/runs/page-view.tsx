@@ -1,6 +1,3 @@
-'use client';
-
-// Next.js App Router entrypoint for `/runs`; invoked by file-system routing.
 import Link from '@/routing/link';
 import type { Route } from '@/routing/link';
 import { useReducer } from 'react';

@@ -154,6 +154,9 @@ class CrawlerRuntimeSettings(BaseSettings):
     http_retry_status_codes: list[int] = Field(
         default_factory=lambda: [403, 406, 429, 502, 503, 504]
     )
+    browser_recoverable_detail_status_codes: list[int] = Field(
+        default_factory=lambda: [400]
+    )
     proxy_failure_cooldown_base_ms: int = 1000
     proxy_failure_cooldown_max_ms: int = 15000
     proxy_failure_backoff_max_exponent: int = 8

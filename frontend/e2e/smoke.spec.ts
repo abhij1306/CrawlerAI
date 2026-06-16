@@ -1,6 +1,8 @@
 import { expect, test } from '@playwright/test';
 
 test('smoke: login to crawl and see exports', async ({ page }) => {
+  let authSessionRequests = 0;
+
   await page.route('**/api/auth/login', async (route) => {
     await route.fulfill({
       status: 200,
@@ -19,6 +21,7 @@ test('smoke: login to crawl and see exports', async ({ page }) => {
   });
 
   await page.route('**/api/auth/me', async (route) => {
+    authSessionRequests += 1;
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -117,7 +120,8 @@ test('smoke: login to crawl and see exports', async ({ page }) => {
   await page.getByRole('button', { name: /sign in/i }).click();
 
   await expect(page).toHaveURL(/dashboard|crawl/);
-  await page.goto('/crawl');
+  await page.getByRole('link', { name: 'Crawl Studio' }).click();
+  expect(authSessionRequests).toBe(0);
   await page.getByLabel('Target URL input').fill('https://example.com/products/chair');
   await page.getByRole('button', { name: 'Start Crawl' }).click();
 

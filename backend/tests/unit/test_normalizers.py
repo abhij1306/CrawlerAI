@@ -663,7 +663,7 @@ def test_normalize_variant_record_drops_parent_sku_alias_rows_using_indexed_look
 
 
 @pytest.mark.unit
-def test_normalize_variant_record_drops_axisless_rows_and_rejects_foreign_currency() -> (
+def test_normalize_variant_record_drops_axisless_rows_without_running_validators() -> (
     None
 ):
     record = {
@@ -678,9 +678,11 @@ def test_normalize_variant_record_drops_axisless_rows_and_rejects_foreign_curren
     normalize_variant_record(record)
 
     assert record["variants"] == [
-        {"color": "Black", "sku": "BLACK-1", "price": "10.00", "currency": "GBP"}
+        {"color": "Black", "sku": "BLACK-1", "price": "10.00", "currency": "GBP"},
+        {"size": "M", "sku": "RED-M", "price": "12.00", "currency": "EUR"},
     ]
-    assert record["variant_count"] == 1
+    assert record["variant_count"] == 2
+    assert "_validation_findings" not in record
 
 
 @pytest.mark.unit
@@ -748,7 +750,20 @@ def test_repair_ecommerce_detail_backfills_dom_variants_before_sanitizing_noise(
         soup=BeautifulSoup(html, "html.parser"),
     )
 
-    assert record["variants"] == [{"size": "S"}, {"size": "M"}]
+    assert record["variants"] == [
+        {
+            "size": "S",
+            "price": "49.99",
+            "currency": "USD",
+            "availability": "in_stock",
+        },
+        {
+            "size": "M",
+            "price": "49.99",
+            "currency": "USD",
+            "availability": "in_stock",
+        },
+    ]
     assert record["variant_count"] == 2
 
 
@@ -1022,7 +1037,7 @@ def test_prune_unrecognized_size_rows_does_not_treat_any_style_as_size_dimension
 
 
 @pytest.mark.unit
-def test_enforce_variant_currency_context_keeps_all_mismatched_variants_for_review() -> (
+def test_enforce_variant_currency_context_preserves_mismatches_for_later_validation() -> (
     None
 ):
     record = {
@@ -1040,7 +1055,7 @@ def test_enforce_variant_currency_context_keeps_all_mismatched_variants_for_revi
         {"size": "M", "currency": "EUR", "price": "12"},
     ]
     assert record["variant_count"] == 2
-    assert len(record["variants_currency_mismatch"]) == 2
+    assert "_validation_findings" not in record
 
 
 @pytest.mark.unit

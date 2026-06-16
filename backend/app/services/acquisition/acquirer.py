@@ -32,6 +32,7 @@ class AcquisitionRequest:
     policy: AcquisitionPolicy | None = None
     checkpoint: Any = None
     on_event: Any = None
+    attempt_timeout_seconds: float | None = None
 
     def __post_init__(self) -> None:
         policy = self.policy or AcquisitionPolicy.from_profile(self.acquisition_profile)
@@ -261,6 +262,7 @@ async def acquire(request: AcquisitionRequest) -> AcquisitionResult:
     result = await fetch_page(
         effective_url,
         run_id=request.run_id,
+        timeout_seconds=request.attempt_timeout_seconds,
         proxy_list=request.proxy_list,
         proxy_profile=dict(acquisition_policy.proxy_profile)
         if acquisition_policy.proxy_profile

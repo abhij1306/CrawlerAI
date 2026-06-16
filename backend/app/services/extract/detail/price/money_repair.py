@@ -14,7 +14,6 @@ from typing import Any
 
 
 from app.services.config.extraction_rules import (
-    AVAILABILITY_IN_STOCK,
     DETAIL_LOW_SIGNAL_PARENT_MIN,
     DETAIL_LOW_SIGNAL_PRICE_MAX,
     DETAIL_LOW_SIGNAL_SALE_PRICE_RATIO_MAX,
@@ -90,19 +89,6 @@ def _repair_detail_variant_prices_and_identity(record: dict[str, Any]) -> None:
                 row["title"] = replacement
             else:
                 row.pop("title", None)
-    variant_rows = [
-        row for row in record.get("variants") or [] if isinstance(row, dict)
-    ]
-    if (
-        parent_availability == AVAILABILITY_IN_STOCK
-        and variant_rows
-        and all(
-            text_or_none(row.get("availability")) == parent_availability
-            for row in variant_rows
-        )
-    ):
-        for row in variant_rows:
-            row.pop("availability", None)
     if parent_sku and _looks_like_uuid(parent_sku):
         record.pop("sku", None)
 

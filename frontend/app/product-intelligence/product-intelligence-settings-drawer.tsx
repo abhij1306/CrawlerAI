@@ -1,5 +1,3 @@
-'use client';
-
 import { X } from 'lucide-react';
 import { useEffect, useRef } from 'react';
 
@@ -114,6 +112,7 @@ export function SettingsDrawer({
           </Field>
           <Field label="Private Label">
             <Dropdown
+              ariaLabel="Private Label"
               value={options.private_label_mode}
               onChange={(value) =>
                 onOptionsChange({

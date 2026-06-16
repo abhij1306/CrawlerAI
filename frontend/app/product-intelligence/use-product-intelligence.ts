@@ -1,5 +1,3 @@
-'use client';
-
 import { useQuery } from '@tanstack/react-query';
 import type { Route } from '@/routing/link';
 import { useRouter } from '@/routing/navigation';

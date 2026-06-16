@@ -91,7 +91,7 @@ Public API schemas live in `api_key.py` and `public_api.py`.
 | `data_enrichment/deterministic.py` | Deterministic enrichment normalization, taxonomy matching, and product attribute diagnostics |
 | `data_enrichment/llm_diagnostics.py` | Data enrichment LLM rejection and skip-reason diagnostics |
 | `data_enrichment/shopify_catalog.py` | Shopify taxonomy and attribute repository loading/matching |
-| `crawl/batch_runtime.py` | URL loop, progress, pause, kill checks |
+| `crawl/batch_runtime.py` | URL orchestration, per-URL session ownership, concurrency, progress, pause, kill checks |
 | `crawl/sitemap_resolver.py`, `crawl/site_link_discovery.py` | Static sitemap/homepage category discovery plus rendered same-origin site-link fallback |
 | `tasks.py` | Celery task entry |
 | `pipeline/extraction_loop.py` | Per-URL stage orchestration: acquire -> extract -> normalize -> persist |
@@ -101,7 +101,7 @@ Public API schemas live in `api_key.py` and `public_api.py`.
 | `pipeline/persistence.py` | `CrawlRecord` writes, dedupe, summaries |
 | `pipeline/runtime_helpers.py` | Typed stage helpers, browser diagnostics merge, failure-state persistence |
 | `pipeline/run_complete_callbacks.py` | Single run-complete callback registration point for post-run observability hooks |
-| `pipeline/direct_record_fallback.py` | Direct-record and explicit LLM gap-fill fallback |
+| `pipeline/direct_record_fallback.py` | Non-detail direct-record and explicit LLM gap-fill fallback; ecommerce detail is guarded |
 | `pipeline/extraction_retry_decision.py` | Empty-extraction browser retry decisions |
 | `pipeline/types.py` | Pipeline typed objects |
 
@@ -120,6 +120,7 @@ Flow:
 | `acquisition/http_client.py` | Thin shared-client wrapper |
 | `acquisition/browser_runtime.py` | Browser fetch orchestration and runtime-policy wiring |
 | `acquisition/browser_pool.py` | Shared Playwright pool, context lifecycle, browser binary/proxy launch |
+| `acquisition/browser_background_tasks.py` | Observed popup, eviction, and bounded browser-close task lifecycle |
 | `acquisition/browser_fetch_support.py` | Browser fetch result, diagnostics, and page event assembly helpers |
 | `acquisition/browser_capture.py` | Screenshots and network payload capture |
 | `acquisition/browser_diagnostics.py` | Browser engine labels, profile diagnostics, and failed-fetch diagnostic contracts |
@@ -165,6 +166,10 @@ Canonical config owner:
 | `listing_extractor.py` | Listing-page extraction |
 | `structured_sources.py` | JSON-LD, microdata, OG, Nuxt, harvested JS state |
 | `extract/field_candidates/*` | Field candidate collection, structured payload traversal, structured variant row assembly, finalization, and scoring |
+| `extract/contracts.py` | Typed extraction contracts and the detail `CandidateSet` evidence ledger |
+| `extract/detail/resolution.py` | Single owner for product/variant consensus, inherited offers, and traceable semantic transforms |
+| `extract/detail/validation.py` | Single owner for missing evidence, incomplete offers, and currency-contradiction findings |
+| `extract/detail/images/dedupe.py`, `dom/image_extraction.py` | Product asset collection and canonical asset-identity dedupe |
 | `js_state/state_normalizer/` | JS state facade plus focused ecommerce payload, variant, identity, and product mapping modules |
 | `js_state/job_mapper.py` | Configured job-detail JS-state mapping and reusable state-path traversal |
 | `js_state/helpers.py` | Shared JS-state variant selection, availability, stock, price, and compact-row helpers |
@@ -193,6 +198,7 @@ Canonical config owner:
 | `extract/record_overlay.py` | Primary-wins record overlay helper shared by adapter, JS-state, and listing merges |
 | `extract/table_extractor.py` | Meaningful table detection, filtering, context resolution, and structured table output |
 | `extract/detail/assembly/tiers.py` | Detail tier execution order, DOM skip decision, and finalization transitions |
+| `extract/detail/assembly/candidate_collection.py` | Detail candidate admission, evidence-backed arbitration, and field evidence summaries |
 | `extract/detail/assembly/dom_section_targets.py` | Detail DOM context selection and section target field discovery |
 | `extract/detail/assembly/dom_fallbacks.py` | DOM fallback field assembly for detail records |
 | `extract/detail/variants/dom_coercion.py` | DOM variant axis and option-value coercion helpers |
@@ -217,6 +223,7 @@ Canonical config owner:
 | `extract/detail/identity/shell_filter.py` | Site-shell and utility-page detail rejection helpers |
 | `extract/detail/variants/state_targets.py` | JS-state target maps for DOM variant URL/id enrichment |
 | `extract/detail/text/sanitizer.py` | Detail long-text pollution filters, fulfillment copy cleanup, and low-signal scalar checks |
+| `extract/detail/text/materials.py` | Materials-specific parsing and cleanup |
 | `extract/detail/assembly/title_scorer.py` | Detail title promotion and shell-title scoring |
 | `extract/variant_axis.py` | Variant axis key/display normalization and semantic axis-label gates |
 | `extract/variant_option_value.py` | Variant option-value noise, UI-noise, color, and quantity-run gates |

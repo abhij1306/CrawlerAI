@@ -1,5 +1,3 @@
-'use client';
-
 import { memo, useCallback, useEffect, useState } from 'react';
 import type { CSSProperties } from 'react';
 

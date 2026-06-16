@@ -48,6 +48,7 @@ from app.services.extract.detail.assembly.tiers import (
     DetailTierState,
     PreparedDetailExtraction,
 )
+from app.services.extract.contracts import CandidateSet
 from app.services.extract.detail.assembly.title_scorer import title_needs_promotion
 from app.services.extract.field_candidates import record_score
 from app.services.extract.table_extractor import extract_tables
@@ -116,6 +117,7 @@ def _fill_missing_dom_detail_title(record: dict[str, Any], *, page_url: str) -> 
 def _finalize_detail_record(
     record: dict[str, Any],
     *,
+    evidence_builder: CandidateSet,
     html: str,
     page_url: str,
     surface: str,
@@ -131,6 +133,7 @@ def _finalize_detail_record(
         _reconcile_detail_currency_with_url(record, page_url=page_url)
         repair_ecommerce_detail_record_quality(
             record,
+            evidence_builder=evidence_builder,
             html=html,
             page_url=page_url,
             requested_page_url=requested_page_url,
@@ -144,6 +147,7 @@ def _finalize_detail_record(
         ):
             repair_ecommerce_detail_record_quality(
                 record,
+                evidence_builder=evidence_builder,
                 html=html,
                 page_url=page_url,
                 requested_page_url=requested_page_url,
@@ -152,6 +156,9 @@ def _finalize_detail_record(
         )
         drop_low_signal_zero_detail_price(record)
         record = finalize_record(record, surface=surface)
+    _sync_validation_links_to_decisions(record, evidence_builder)
+    _attach_variant_row_lineage(record, evidence_builder)
+    record["_evidence_graph"] = evidence_builder.as_graph()
     record.pop("_description_repaired_from_product_details", None)
     record["_confidence"] = score_record_confidence(
         record,
@@ -160,6 +167,61 @@ def _finalize_detail_record(
     )
     record["_extraction_tiers"]["early_exit"] = early_exit
     return record
+
+
+def _sync_validation_links_to_decisions(
+    record: dict[str, Any],
+    evidence_builder: CandidateSet,
+) -> None:
+    field_evidence = record.get("_field_evidence")
+    if not isinstance(field_evidence, dict):
+        return
+    for field_name, summary in field_evidence.items():
+        if not isinstance(summary, dict):
+            continue
+        decision = evidence_builder.field_decisions.get(str(field_name))
+        if not isinstance(decision, dict):
+            continue
+        validation_ids = summary.get("validation_finding_ids")
+        if isinstance(validation_ids, list):
+            decision["validation_finding_ids"] = list(validation_ids)
+
+
+def _attach_variant_row_lineage(
+    record: dict[str, Any],
+    evidence_builder: CandidateSet,
+) -> None:
+    if evidence_builder.row_lineage:
+        return
+    variants = record.get("variants")
+    if not isinstance(variants, list) or not variants:
+        return
+    evidence_ids = [
+        candidate.evidence_id
+        for candidate in evidence_builder.field_candidates("variants")
+    ]
+    transform_ids = [
+        str(transform.get("transform_id"))
+        for transform in evidence_builder.field_transforms
+        if transform.get("field_name") == "variants"
+    ]
+    if not evidence_ids and not transform_ids:
+        return
+    for index, row in enumerate(variants):
+        if not isinstance(row, dict):
+            continue
+        key_parts = [
+            str(row.get(field_name) or "").strip()
+            for field_name in ("sku", "variant_id", "size", "color", "url")
+            if str(row.get(field_name) or "").strip()
+        ]
+        evidence_builder.record_row_lineage(
+            field_name="variants",
+            row_index=index,
+            evidence_ids=evidence_ids,
+            transform_ids=transform_ids,
+            variant_key="|".join(key_parts) if key_parts else None,
+        )
 
 
 def _attach_detail_tables(record: dict[str, Any], soup: BeautifulSoup | None) -> None:
@@ -190,9 +252,8 @@ def _prepare_detail_extraction(
             requested_page_url=text_or_none(requested_page_url) or page_url,
         )
     candidates: dict[str, list[object]] = {}
-    candidate_sources: dict[str, list[str]] = {}
-    field_sources: dict[str, list[str]] = {}
     selector_trace_candidates: dict[str, list[dict[str, object]]] = {}
+    evidence_builder = CandidateSet(surface=surface, page_url=page_url)
     state = DetailTierState(
         page_url=page_url,
         requested_page_url=requested_page_url,
@@ -200,9 +261,8 @@ def _prepare_detail_extraction(
         requested_fields=requested_fields,
         fields=surface_fields(surface, requested_fields),
         candidates=candidates,
-        candidate_sources=candidate_sources,
-        field_sources=field_sources,
         selector_trace_candidates=selector_trace_candidates,
+        evidence_builder=evidence_builder,
         extraction_runtime_snapshot=extraction_runtime_snapshot,
         completed_tiers=[],
         raw_soup=raw_soup,
@@ -236,6 +296,14 @@ def _apply_prepared_dom_fallbacks(
 ) -> None:
     if prepared.soup is None:
         return
+
+    def _add_dom_candidate(*args, **kwargs) -> int:
+        return _add_sourced_candidate(
+            *args,
+            **kwargs,
+            evidence_builder=prepared.state.evidence_builder,
+        )
+
     apply_dom_fallbacks(
         prepared.dom_parser,
         prepared.soup,
@@ -243,11 +311,9 @@ def _apply_prepared_dom_fallbacks(
         surface=prepared.state.surface,
         requested_fields=prepared.state.requested_fields,
         candidates=prepared.state.candidates,
-        candidate_sources=prepared.state.candidate_sources,
-        field_sources=prepared.state.field_sources,
         selector_trace_candidates=prepared.state.selector_trace_candidates,
         selector_rules=selector_rules,
-        add_sourced_candidate=_add_sourced_candidate,
+        add_sourced_candidate=_add_dom_candidate,
         breadcrumb_soup=prepared.raw_soup,
     )
 

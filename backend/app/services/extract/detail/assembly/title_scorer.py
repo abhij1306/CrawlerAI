@@ -18,6 +18,7 @@ from app.services.config.extraction_rules import (
     TITLE_PROMOTION_SUBSTRINGS,
 )
 from app.services.shared.field_coerce import is_title_noise, text_or_none
+from app.services.extract.contracts import CandidateSet, RawCandidate
 
 _low_signal_title_values = frozenset(
     str(value).strip().lower()
@@ -35,61 +36,59 @@ def promote_detail_title(
     record: dict[str, Any],
     *,
     page_url: str,
-    candidates: dict[str, list[object]],
-    candidate_sources: dict[str, list[str]],
+    candidate_set: CandidateSet,
     source_rank: Callable[[str, str, str | None], int],
-) -> tuple[str, str] | None:
+) -> RawCandidate | None:
     title = text_or_none(record.get("title"))
     if not title or not title_needs_promotion(title, page_url=page_url):
         return None
-    force_semantic_replacement = title.strip().lower() in _title_promotion_exact_values
-    values = list(candidates.get("title", []))
-    sources = list(candidate_sources.get("title", []))
-    ranked_candidates = sorted(
-        (
-            (
-                source_rank("ecommerce_detail", "title", sources[index]),
-                index,
-                text_or_none(values[index]),
-                sources[index],
-            )
-            for index in range(min(len(values), len(sources)))
-            if text_or_none(values[index])
+    force_semantic_replacement = (
+        title.strip().lower() in _title_promotion_exact_values
+        or _title_is_host_shell(title, page_url=page_url)
+    )
+    ranked_candidates = candidate_set.ordered(
+        "title",
+        source_rank=lambda source: source_rank(
+            "ecommerce_detail",
+            "title",
+            source,
         ),
-        key=lambda row: (row[0], row[1]),
     )
     current_rank = min(
         (
-            source_rank("ecommerce_detail", "title", source)
-            for source, value in zip(sources, values, strict=False)
-            if text_or_none(value) == title
+            source_rank("ecommerce_detail", "title", candidate.source)
+            for candidate in ranked_candidates
+            if text_or_none(candidate.value) == title
         ),
         default=source_rank("ecommerce_detail", "title", "dom_h1"),
     )
     replacement = next(
         (
-            (candidate, source)
-            for rank, _, candidate, source in ranked_candidates
-            if candidate
-            and candidate != title
-            and not is_title_noise(candidate)
+            candidate
+            for candidate in ranked_candidates
+            if (candidate_text := text_or_none(candidate.value))
+            and candidate_text != title
+            and not is_title_noise(candidate_text)
             and (
-                rank < current_rank
-                or (rank == current_rank and len(candidate) > len(title))
-                or (force_semantic_replacement and len(candidate) > len(title))
+                source_rank("ecommerce_detail", "title", candidate.source) < current_rank
+                or (
+                    source_rank("ecommerce_detail", "title", candidate.source)
+                    == current_rank
+                    and len(candidate_text) > len(title)
+                )
+                or (force_semantic_replacement and len(candidate_text) > len(title))
             )
         ),
         None,
     )
     if replacement:
-        record["title"] = replacement[0]
+        record["title"] = replacement.value
         return replacement
     return None
 
 
 def title_needs_promotion(title: str, *, page_url: str) -> bool:
     normalized_title = str(title or "").strip().lower()
-    host = str(urlparse(page_url).hostname or "").strip().lower()
     if not normalized_title:
         return False
     if normalized_title in _low_signal_title_values:
@@ -104,12 +103,20 @@ def title_needs_promotion(title: str, *, page_url: str) -> bool:
         return True
     if any(substring in normalized_title for substring in TITLE_PROMOTION_SUBSTRINGS):
         return True
-    if not host:
+    return _title_is_host_shell(normalized_title, page_url=page_url)
+
+
+def _title_is_host_shell(title: str, *, page_url: str) -> bool:
+    normalized_title = str(title or "").strip().lower()
+    host = str(urlparse(page_url).hostname or "").strip().lower()
+    if not normalized_title or not host:
         return False
-    host_label = host.removeprefix("www.").split(".", 1)[0]
+    normalized_host = host.removeprefix("www.")
+    host_label = normalized_host.split(".", 1)[0]
     compact_title = re.sub(r"[^a-z0-9]+", "", normalized_title)
     compact_host = re.sub(r"[^a-z0-9]+", "", host_label)
-    return compact_title == compact_host
+    compact_full_host = re.sub(r"[^a-z0-9]+", "", normalized_host)
+    return compact_title in {compact_host, compact_full_host}
 
 
 def _title_supported_by_url(title: str, *, page_url: str) -> bool:

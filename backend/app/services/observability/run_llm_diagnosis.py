@@ -114,8 +114,10 @@ async def diagnose_run(
     payload = result.payload if isinstance(result.payload, dict) else {}
     return {
         "status": "ok",
+        "authority": "explanatory_only",
         "provider": result.provider,
         "model": result.model,
+        "deterministic_flags": flags,
         "diagnosis": payload,
     }
 

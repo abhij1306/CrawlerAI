@@ -1,5 +1,3 @@
-'use client';
-
 import { Award, CheckCircle2, Clock, LucideIcon } from 'lucide-react';
 import { Children, isValidElement, useEffectEvent, useLayoutEffect } from 'react';
 import type { ReactNode } from 'react';

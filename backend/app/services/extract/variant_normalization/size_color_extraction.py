@@ -24,6 +24,7 @@ from app.services.config.extraction_rules import (
     STANDARD_SIZE_VALUES,
     VARIANT_TITLE_STOPWORDS,
 )
+from app.services.config.variant_policy import VARIANT_COLOR_METADATA_PREFIX_PATTERN
 from app.services.extract.variant_axis import normalized_variant_axis_key
 from app.services.extract.variant_option_value import variant_option_value_is_noise
 from app.services.extract.variant_value_guards import (
@@ -33,6 +34,10 @@ from app.services.shared.field_coerce import clean_text
 from app.services.shared.regex_patterns import compile_regex_patterns
 
 logger = logging.getLogger(__name__)
+variant_color_metadata_prefix_re = re.compile(
+    VARIANT_COLOR_METADATA_PREFIX_PATTERN,
+    re.I,
+)
 
 __all__ = (
     "_normalize_variant_axis_value",
@@ -131,6 +136,10 @@ def _normalize_variant_axis_value(field_name: str, value: object) -> str:
     cleaned = _strip_variant_option_suffix_noise(value)
     if not cleaned:
         return ""
+    if normalized_variant_axis_key(field_name) == "color":
+        cleaned = clean_text(variant_color_metadata_prefix_re.sub("", cleaned))
+        if not cleaned:
+            return ""
     if variant_axis_value_exceeds_word_limit(
         normalized_variant_axis_key(field_name),
         cleaned,

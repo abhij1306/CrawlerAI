@@ -5,6 +5,7 @@ from bs4 import BeautifulSoup
 from app.services.acquisition.acquirer import AcquisitionResult, PageEvidence
 from app.services.acquisition.browser_readiness import analyze_html
 from app.services.acquisition.runtime import (
+    is_browser_recoverable_http_status,
     is_non_retryable_http_status,
     is_retryable_http_status,
 )
@@ -74,6 +75,12 @@ def empty_extraction_browser_retry_decision(
     if effective_blocked(acquisition_result):
         return {"should_retry": False, "reason": "blocked"}
     status_code = int(getattr(acquisition_result, "status_code", 0) or 0)
+    if is_browser_recoverable_http_status(status_code, surface=surface):
+        return {
+            "should_retry": True,
+            "reason": "browser_recoverable_http_status",
+            "status_code": status_code,
+        }
     if is_non_retryable_http_status(status_code):
         return {
             "should_retry": False,

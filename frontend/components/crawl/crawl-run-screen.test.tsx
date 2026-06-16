@@ -231,7 +231,10 @@ function makeDomainRecipe(): DomainRecipe {
       acquisition_contract: {
         preferred_browser_engine: 'real_chrome',
         prefer_browser: true,
-        prefer_curl_handoff: true,
+        handoff_eligible: true,
+        required_rendering: false,
+        required_traversal: false,
+        required_network_payloads: false,
         handoff_cookie_engine: 'real_chrome',
         last_quality_success: null,
         stale_after_failures: {

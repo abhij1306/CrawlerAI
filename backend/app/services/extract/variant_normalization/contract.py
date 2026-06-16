@@ -3,18 +3,17 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from app.services.config.field_mappings import PRICE_FIELD
 from app.services.config.public_record_policy import (
     PUBLIC_RECORD_LEGACY_OPTION_FIELD_PATTERN,
     PUBLIC_RECORD_LEGACY_VARIANT_FIELDS,
 )
+from app.services.config.field_mappings import PRICE_FIELD
 from app.services.config.variant_policy import (
     FLAT_VARIANT_KEYS,
     GEOGRAPHIC_STATE_VARIANT_VALUE_SET,
     PUBLIC_VARIANT_AXIS_FIELDS,
     SCENT_DOMINANT_URL_TOKENS,
     VARIANT_PARENT_SHARED_FIELDS,
-    VARIANT_TRANSPORT_FIELDS,
     variant_state_values_are_geographic,
 )
 from app.services.extract.variant_axis import normalized_variant_axis_key
@@ -22,7 +21,6 @@ from app.services.extract.variant_identity_merge import variant_identity
 from app.services.normalizers import normalize_decimal_price
 from app.services.shared.field_coerce import (
     coerce_field_value,
-    decimal_for_shared_price,
     text_or_none,
 )
 
@@ -191,11 +189,6 @@ def _drop_parent_shared_variant_fields(record: dict[str, Any]) -> None:
     if len(variant_rows) < 2:
         return
     for field_name in VARIANT_PARENT_SHARED_FIELDS:
-        if field_name == "currency" and any(
-            variant.get(PRICE_FIELD) not in (None, "", [], {})
-            for variant in variant_rows
-        ):
-            continue
         parent_value = text_or_none(record.get(field_name))
         if parent_value is None:
             continue
@@ -215,37 +208,6 @@ def _drop_parent_shared_variant_fields(record: dict[str, Any]) -> None:
                 parent_value,
             ):
                 variant.pop(field_name, None)
-    _drop_unanimous_variant_transport_fields(variant_rows)
-
-
-def _drop_unanimous_variant_transport_fields(
-    variant_rows: list[dict[str, Any]],
-) -> None:
-    if len(variant_rows) < 2:
-        return
-    if not any(
-        text_or_none(variant.get(axis_name))
-        for variant in variant_rows
-        for axis_name in _PUBLIC_VARIANT_AXIS_KEYS
-    ):
-        return
-    for field_name in VARIANT_TRANSPORT_FIELDS:
-        if field_name == "currency" and any(
-            variant.get(PRICE_FIELD) not in (None, "", [], {})
-            for variant in variant_rows
-        ):
-            continue
-        values = [variant.get(field_name) for variant in variant_rows]
-        if any(value in (None, "", [], {}) for value in values):
-            continue
-        first_value = values[0]
-        if not all(
-            _variant_shared_value_matches_parent(field_name, value, first_value)
-            for value in values[1:]
-        ):
-            continue
-        for variant in variant_rows:
-            variant.pop(field_name, None)
 
 
 def _variant_shared_value_matches_parent(
@@ -257,14 +219,6 @@ def _variant_shared_value_matches_parent(
     parent_text = text_or_none(parent_value)
     if variant_text is None or parent_text is None:
         return False
-    if field_name == PRICE_FIELD:
-        variant_price = decimal_for_shared_price(variant_text)
-        parent_price = decimal_for_shared_price(parent_text)
-        return (
-            variant_price is not None
-            and parent_price is not None
-            and variant_price == parent_price
-        )
     return variant_text == parent_text
 
 

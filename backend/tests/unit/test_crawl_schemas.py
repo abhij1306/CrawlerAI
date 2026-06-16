@@ -19,7 +19,6 @@ def test_serialize_crawl_record_response_preserves_display_payload_shape() -> No
             "data": {
                 "title": "Senior Engineer",
                 "_debug": "hidden",
-                "page_markdown": "hidden",
                 "record_type": "job_detail",
                 "description": "",
             },

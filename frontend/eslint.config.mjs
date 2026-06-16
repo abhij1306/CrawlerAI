@@ -49,6 +49,13 @@ const config = [
       'react/prop-types': 'off',
       'no-empty': ['error', { allowEmptyCatch: true }],
       'no-useless-escape': 'off',
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: 'ExpressionStatement[expression.value="use client"]',
+          message: "'use client' is a Next.js directive and is dead code in this Vite SPA.",
+        },
+      ],
       '@typescript-eslint/no-empty-object-type': 'off',
       '@typescript-eslint/no-unused-expressions': 'off',
       '@typescript-eslint/no-unused-vars': [

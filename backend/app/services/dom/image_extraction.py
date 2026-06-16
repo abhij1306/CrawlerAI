@@ -269,9 +269,6 @@ def _dedupe_key_for_image_url(url: str) -> str:
         if shopify_match is None:
             return canonical
         filename = unquote(shopify_match.group("filename")).casefold()
-        scope = unquote(original_path[: shopify_match.start("filename")]).casefold()
-        if original_parsed.netloc != "cdn.shopify.com":
-            scope = f"{original_parsed.netloc.casefold()}{scope}"
         query = urlencode(
             [
                 (key, value)
@@ -283,8 +280,20 @@ def _dedupe_key_for_image_url(url: str) -> str:
             ],
             doseq=True,
         )
-        key = f"shopify:{scope}{filename}"
+        key = f"shopify:{filename}"
         return f"{key}?{query}" if query else key
+    if original_parsed.netloc.casefold() == "static.nike.com":
+        nike_asset_match = re.search(
+            r"/([0-9a-f]{8}-[0-9a-f-]{27,})/([^/]+)$",
+            original_path,
+            re.I,
+        )
+        if nike_asset_match is not None:
+            return (
+                "nike:"
+                f"{nike_asset_match.group(1).casefold()}/"
+                f"{unquote(nike_asset_match.group(2)).casefold()}"
+            )
     return canonical
 
 

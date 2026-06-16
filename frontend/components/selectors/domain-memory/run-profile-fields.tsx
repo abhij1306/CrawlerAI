@@ -41,6 +41,7 @@ export function RunProfileFields({
     <div className="grid content-start gap-3 md:col-span-2 md:grid-cols-2">
       <Field label="Fetch Mode">
         <Dropdown
+          ariaLabel="Fetch Mode"
           value={profile.fetch_profile.fetch_mode}
           onChange={(value) =>
             updateProfileDraft(domain, surface, (current) => ({
@@ -58,6 +59,7 @@ export function RunProfileFields({
       </Field>
       <Field label="Extraction Source">
         <Dropdown
+          ariaLabel="Extraction Source"
           value={profile.fetch_profile.extraction_source}
           onChange={(value) =>
             updateProfileDraft(domain, surface, (current) => ({
@@ -75,6 +77,7 @@ export function RunProfileFields({
       </Field>
       <Field label="JS Mode">
         <Dropdown
+          ariaLabel="JS Mode"
           value={profile.fetch_profile.js_mode}
           onChange={(value) =>
             updateProfileDraft(domain, surface, (current) => ({
@@ -91,6 +94,7 @@ export function RunProfileFields({
       </Field>
       <Field label="Traversal Mode">
         <Dropdown
+          ariaLabel="Traversal Mode"
           value={profile.fetch_profile.traversal_mode ?? ''}
           onChange={(value) =>
             updateProfileDraft(domain, surface, (current) => ({
@@ -176,6 +180,7 @@ export function RunProfileFields({
       </Field>
       <Field label="Network Capture">
         <Dropdown
+          ariaLabel="Network Capture"
           value={profile.diagnostics_profile.capture_network}
           onChange={(value) =>
             updateProfileDraft(domain, surface, (current) => ({
@@ -192,12 +197,14 @@ export function RunProfileFields({
       </Field>
       <Field label="Preferred Browser Engine">
         <BrowserEngineDropdown
+          ariaLabel="Preferred Browser Engine"
           value={profile.acquisition_contract.preferred_browser_engine}
           onChange={(value) => updateBrowserEngine('preferred_browser_engine', value)}
         />
       </Field>
       <Field label="Handoff Cookie Engine">
         <BrowserEngineDropdown
+          ariaLabel="Handoff Cookie Engine"
           value={profile.acquisition_contract.handoff_cookie_engine}
           onChange={(value) => updateBrowserEngine('handoff_cookie_engine', value)}
         />
@@ -207,11 +214,20 @@ export function RunProfileFields({
 }
 
 function BrowserEngineDropdown({
+  ariaLabel,
   value,
   onChange,
 }: Readonly<{
+  ariaLabel: string;
   value: BrowserEngine;
   onChange: (value: string) => void;
 }>) {
-  return <Dropdown value={value} onChange={onChange} options={browserEngineOptions} />;
+  return (
+    <Dropdown
+      ariaLabel={ariaLabel}
+      value={value}
+      onChange={onChange}
+      options={browserEngineOptions}
+    />
+  );
 }

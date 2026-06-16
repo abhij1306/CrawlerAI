@@ -1,5 +1,3 @@
-'use client';
-
 import type { CSSProperties, ReactNode, Ref, UIEventHandler } from 'react';
 
 import { cn } from '../../lib/utils';

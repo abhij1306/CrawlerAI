@@ -214,6 +214,18 @@ def test_persistence_schema_firewall_keeps_ecommerce_gender() -> None:
 
 
 @pytest.mark.unit
+def test_persistence_schema_firewall_normalizes_compact_gender_code() -> None:
+    data, rejected = public_record_data_for_surface(
+        {"title": "Stan Smith Shoes", "gender": "M"},
+        surface="ecommerce_detail",
+        page_url="https://example.com/products/stan-smith",
+    )
+
+    assert data == {"title": "Stan Smith Shoes", "gender": "Men"}
+    assert rejected == {}
+
+
+@pytest.mark.unit
 def test_public_record_firewall_validates_identity_shapes() -> None:
     data, rejected = public_record_data_for_surface(
         {
@@ -504,6 +516,25 @@ def test_public_record_firewall_drops_parent_shared_variant_fields_but_keeps_pri
         ],
         "variant_count": 2,
     }
+    assert rejected == {}
+
+
+@pytest.mark.unit
+def test_public_record_firewall_preserves_variant_currency_conflict() -> None:
+    data, rejected = public_record_data_for_surface(
+        {
+            "title": "Teddyx T-shirt",
+            "currency": "GBP",
+            "variants": [
+                {"size": "S", "price": "104.00", "currency": "EUR"},
+                {"size": "M", "price": "104.00", "currency": "GBP"},
+            ],
+        },
+        surface="ecommerce_detail",
+        page_url="https://example.com/products/teddyx",
+    )
+
+    assert [row["currency"] for row in data["variants"]] == ["EUR", "GBP"]
     assert rejected == {}
 
 
@@ -1143,6 +1174,27 @@ def test_public_firewall_rejects_concatenated_url() -> None:
     )
     assert "url" not in data
     assert rejected.get("url") == "empty_after_coercion"
+
+
+@pytest.mark.unit
+def test_public_firewall_rejects_removed_markdown_artifacts_upstream() -> None:
+    data, rejected = public_record_data_for_surface(
+        {
+            "title": "Test Product",
+            "markdown": "# Test Product",
+            "page_markdown": "# Page",
+            "table_markdown": "| a |",
+        },
+        surface="ecommerce_detail",
+        page_url="https://example.com/products/test-product",
+    )
+
+    assert data == {"title": "Test Product"}
+    assert rejected == {
+        "markdown": "field_not_allowed_for_surface",
+        "page_markdown": "field_not_allowed_for_surface",
+        "table_markdown": "field_not_allowed_for_surface",
+    }
 
 
 @pytest.mark.unit

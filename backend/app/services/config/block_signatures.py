@@ -89,6 +89,7 @@ BLOCK_SIGNATURES = {
         ACCESS_DENIED_MARKER: "access_denied",
         ACCESS_FORBIDDEN_MARKER: "access_forbidden",
         "powered and protected by akamai": "akamai_banner",
+        "hang tight! routing to checkout": "akamai_bot_failover",
         "datadome": "datadome_marker",
         "unusual traffic from your computer network": "google_unusual_traffic",
     },
@@ -113,6 +114,7 @@ BLOCK_SIGNATURES = {
         r"security\s+check",
         r"pardon\s+our\s+interruption",
         r"unusual\s+traffic",
+        r"hang\s+tight!?\s+routing\s+to\s+checkout",
     ],
     "challenge_elements": {
         "iframe_src_markers": {

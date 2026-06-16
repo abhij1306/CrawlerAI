@@ -114,7 +114,7 @@ def test_dedupe_image_urls_normalizes_repeated_scheme_slashes() -> None:
 
 
 @pytest.mark.regression
-def test_dedupe_image_urls_preserves_shopify_store_identity() -> None:
+def test_dedupe_image_urls_merges_shopify_delivery_hosts_by_asset_identity() -> None:
     result = dedupe_image_urls(
         [
             "https://cdn.shopify.com/s/files/1/0094/2252/files/widget_0240.jpg?v=1",
@@ -124,10 +124,22 @@ def test_dedupe_image_urls_preserves_shopify_store_identity() -> None:
     )
 
     assert result == [
-        "https://cdn.shopify.com/s/files/1/0094/2252/files/widget_0240.jpg?v=1",
         "https://kith.com/cdn/shop/files/widget_0240.jpg?v=1&width=2000",
         "https://kith.com/cdn/shop/files/widget_0242.jpg?v=1&width=2000",
     ]
+
+
+@pytest.mark.regression
+def test_dedupe_image_urls_merges_nike_transform_paths_by_asset_identity() -> None:
+    result = dedupe_image_urls(
+        [
+            "https://static.nike.com/a/images/t_default/e6da41fa-1be4-4ce5-b89c-22be4f1f02d4/AIR+FORCE+1+'07.png",
+            "https://static.nike.com/a/images/t_PDP_144_v1/f_auto,q_auto:eco,u_overlay/e6da41fa-1be4-4ce5-b89c-22be4f1f02d4/AIR+FORCE+1+'07.png",
+        ]
+    )
+
+    assert len(result) == 1
+    assert "e6da41fa-1be4-4ce5-b89c-22be4f1f02d4" in result[0]
 
 
 @pytest.mark.regression

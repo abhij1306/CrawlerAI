@@ -45,7 +45,7 @@ Vite maps routes in `frontend/src/router.tsx`:
 - `/runs/[run_id]`
 - `/jobs`
 - `/selectors`
-- `/selectors/manage`
+- `/domain-memory`
 - `/admin/users`
 - `/admin/llm`
 
@@ -258,7 +258,7 @@ The selectors UI is built on:
 - preview HTML loaded into a same-origin iframe so the selector tool can compute XPath directly from the loaded DOM
 - manual test response with count and matched value
 - optional LLM suggestion flow from Crawl Studio field configuration, not from the selector tool page
-- a dedicated `/selectors/manage` domain-memory surface for edit/delete/toggle operations
+- a dedicated `/domain-memory` surface for edit/delete/toggle operations
 
 ### LLM Admin
 

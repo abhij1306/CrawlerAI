@@ -62,6 +62,15 @@ def test_infer_surface_handles_acceptance_critical_hosts() -> None:
         infer_surface("https://www.rockler.com/rockler-table-saw-crosscut-sled")
         == "ecommerce_detail"
     )
+    for url in (
+        "https://www.nordstrom.com/s/nike-air-force-1-07-basketball-sneaker-men/7507996",
+        "https://www.nike.com/t/air-force-1-07-mens-shoes-jBrhbr/CW2288-111",
+        "https://www.apple.com/shop/buy-iphone/iphone-16",
+        "https://www.mytheresa.com/int/en/women/valentino-garavani-loco-small-floral-linen-top-handle-bag-beige-p01155657",
+        "https://www.bluenile.com/engagement-rings/design-your-own-ring/classic-four-prong-solitaire-engagement-ring-in-platinum-item-194156",
+        "https://arcteryx.com/ca/en/shop/mens/norvan-ld-4-gtx-shoe-0397",
+    ):
+        assert infer_surface(url) == "ecommerce_detail"
 
 
 @pytest.mark.regression
@@ -632,6 +641,42 @@ def test_evaluate_quality_flags_audit_variant_and_system_artifacts() -> None:
     assert quality["observed_failure_mode"] == "variant_artifact_pollution"
     assert quality["quality_checks"]["variant_artifacts_ok"] is False
     assert quality["quality_checks"]["system_artifacts_ok"] is False
+
+
+@pytest.mark.regression
+def test_evaluate_quality_accepts_canonical_flat_variant_transport_fields() -> None:
+    site = {
+        "surface": "ecommerce_detail",
+        "quality_expectations": {"require_clean_variants": True},
+    }
+    result = {
+        "surface": "ecommerce_detail",
+        "requested_url": "https://example.com/products/jacket",
+        "sample_title": "Leather Jacket",
+        "sample_url": "https://example.com/products/jacket",
+        "populated_fields": 10,
+        "sample_record_data": {
+            "title": "Leather Jacket",
+            "url": "https://example.com/products/jacket",
+            "price": "1500.00",
+            "variants": [
+                {
+                    "fit": "Slim",
+                    "sku": "JACKET-S",
+                    "barcode": "123456789012",
+                    "size": "S",
+                    "price": "1500.00",
+                    "currency": "USD",
+                }
+            ],
+        },
+        "sample_semantics": {"price_present": True, "variant_count": 1},
+        "failure_mode": "success",
+    }
+
+    quality = evaluate_quality(site, result)
+
+    assert quality["quality_checks"]["variant_artifacts_ok"] is True
 
 
 @pytest.mark.regression

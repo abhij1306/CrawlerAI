@@ -1,5 +1,3 @@
-'use client';
-
 import { create } from 'zustand';
 
 import { CRAWL_DEFAULTS } from '../../lib/constants/crawl-defaults';

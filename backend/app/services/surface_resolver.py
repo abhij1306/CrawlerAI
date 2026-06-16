@@ -85,18 +85,29 @@ def resolve_auto_surface(
             [*evidence, "job_url_signal"],
         )
 
-    if _has_any(path, config.SURFACE_RESOLVER_ECOMMERCE_LISTING_PATH_TOKENS):
+    if _has_any(path, config.SURFACE_RESOLVER_ECOMMERCE_DETAIL_PATH_TOKENS):
+        return SurfaceResolution(
+            "ecommerce_detail",
+            config.SURFACE_RESOLVER_MEDIUM_CONFIDENCE,
+            [*evidence, "ecommerce_detail_url_signal"],
+        )
+
+    product_like_terminal = _has_product_like_terminal(path)
+    if (
+        _has_any(path, config.SURFACE_RESOLVER_ECOMMERCE_LISTING_PATH_TOKENS)
+        and not product_like_terminal
+    ):
         return SurfaceResolution(
             "ecommerce_listing",
             config.SURFACE_RESOLVER_MEDIUM_CONFIDENCE,
             [*evidence, "ecommerce_listing_url_signal"],
         )
 
-    if _has_any(path, config.SURFACE_RESOLVER_ECOMMERCE_DETAIL_PATH_TOKENS):
+    if product_like_terminal:
         return SurfaceResolution(
             "ecommerce_detail",
             config.SURFACE_RESOLVER_MEDIUM_CONFIDENCE,
-            [*evidence, "ecommerce_detail_url_signal"],
+            [*evidence, "ecommerce_detail_terminal_signal"],
         )
 
     html_detail_signal = _html_detail_signal(path)
@@ -215,3 +226,18 @@ def _html_detail_signal(path: str) -> str:
     if slug.count("-") >= config.SURFACE_RESOLVER_ECOMMERCE_DETAIL_HTML_MIN_HYPHENS:
         return "ecommerce_detail_html_slug_signal"
     return ""
+
+
+def _has_product_like_terminal(path: str) -> bool:
+    terminal = str(path or "").rstrip("/").rsplit("/", maxsplit=1)[-1]
+    if not terminal or any(
+        re.fullmatch(pattern, terminal)
+        for pattern in config.SURFACE_RESOLVER_ECOMMERCE_LISTING_TERMINAL_PATTERNS
+    ):
+        return False
+    return bool(
+        re.fullmatch(
+            config.SURFACE_RESOLVER_ECOMMERCE_DETAIL_TERMINAL_PATTERN,
+            terminal,
+        )
+    )

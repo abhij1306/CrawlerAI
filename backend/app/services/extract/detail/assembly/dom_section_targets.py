@@ -27,19 +27,9 @@ from app.services.shared.field_coerce import (
     text_or_none,
 )
 from app.services.extract.variant_axis import public_variant_axis_fields
+from app.services.extract.detail.validation import variant_offer_is_complete
 
 logger = logging.getLogger(__name__)
-
-_VARIANT_TRANSPORT_FIELDS = (
-    "sku",
-    "price",
-    "currency",
-    "url",
-    "image_url",
-    "availability",
-    "stock_quantity",
-)
-
 
 def _dom_section_target_fields(
     surface: str,
@@ -73,7 +63,7 @@ def record_has_rich_existing_variants(record: dict[str, Any]) -> bool:
         return False
     return all(
         any(text_or_none(row.get(axis)) for axis in public_variant_axis_fields)
-        and any(text_or_none(row.get(field)) for field in _VARIANT_TRANSPORT_FIELDS)
+        and variant_offer_is_complete(row, parent=record)
         for row in variants
     )
 

@@ -53,26 +53,16 @@ class _URLProcessingDeadlineExceeded(TimeoutError):
 
 
 async def _run_url_processing_with_timeout(operation, timeout_seconds: float):
-    task = asyncio.create_task(operation)
+    deadline = asyncio.timeout(max(0.001, float(timeout_seconds)))
     try:
-        done, _pending = await asyncio.wait(
-            {task},
-            timeout=max(0.001, float(timeout_seconds)),
-            return_when=asyncio.FIRST_COMPLETED,
-        )
-    except asyncio.CancelledError:
-        task.cancel()
-        with suppress(asyncio.CancelledError):
-            _ = await task
-        raise
-    if task in done:
-        return task.result()
-    task.cancel()
-    with suppress(asyncio.CancelledError):
-        _ = await task
-    raise _URLProcessingDeadlineExceeded(
-        f"URL processing exceeded timeout_seconds={timeout_seconds}"
-    )
+        async with deadline:
+            return await operation
+    except TimeoutError as exc:
+        if not deadline.expired():
+            raise
+        raise _URLProcessingDeadlineExceeded(
+            f"URL processing exceeded timeout_seconds={timeout_seconds}"
+        ) from exc
 
 
 async def resolve_category_urls_from_sitemap(
@@ -105,6 +95,8 @@ async def _prewarm_browser_pool() -> None:
 
 
 def _parallel_url_concurrency(total_urls: int, settings_view) -> int:
+    if not bool(settings.celery_dispatch_enabled):
+        return _DEFAULT_URL_CONCURRENCY
     try:
         system_limit = int(
             getattr(settings, "system_max_concurrent_urls", _DEFAULT_URL_CONCURRENCY)
@@ -286,10 +278,12 @@ async def _recover_url_failure(
 ) -> tuple[CrawlRun, URLProcessingResult]:
     await _rollback_url_session(session, context="URL failure recovery")
     if run is not None:
-        with suppress(Exception):
+        try:
             session.expire(run)
-        with suppress(Exception):
             await session.refresh(run)
+        except Exception:
+            logger.debug("Failed to refresh run during URL failure recovery", exc_info=True)
+            await _rollback_url_session(session, context="failed run refresh recovery")
     recovery_error: Exception | None = None
     try:
         run = await _persist_url_failure_log(
@@ -330,6 +324,7 @@ async def _recover_url_failure(
                 "Failed to reload run after URL failure recovery; keeping current instance",
                 exc_info=True,
             )
+            await _rollback_url_session(session, context="after reload failure")
             if run is None:
                 raise RuntimeError(
                     f"Original session unusable after URL failure recovery for run {run_id}"
@@ -380,7 +375,7 @@ def _url_start_message(*, url: str, idx: int, total_urls: int) -> str:
     return f"Starting crawl run for {url} ({idx}/{total_urls})"
 
 
-async def _process_url_in_parallel(
+async def _process_url_in_owned_session(
     *,
     run_id: int,
     idx: int,
@@ -388,18 +383,20 @@ async def _process_url_in_parallel(
     url: str,
     max_records: int,
     url_timeout_seconds: float,
+    log_start: bool = True,
 ) -> tuple[int, str, URLProcessingResult]:
     async with SessionLocal() as url_session:
         run = await url_session.get(CrawlRun, run_id, populate_existing=True)
         if run is None:
             raise RuntimeError(f"Run {run_id} disappeared before URL processing")
-        await log_event(
-            url_session,
-            run.id,
-            "info",
-            _url_start_message(url=url, idx=idx, total_urls=total_urls),
-        )
-        await url_session.commit()
+        if log_start:
+            await log_event(
+                url_session,
+                run.id,
+                "info",
+                _url_start_message(url=url, idx=idx, total_urls=total_urls),
+            )
+            await url_session.commit()
         url_config = URLProcessingConfig.from_acquisition_plan(
             run.settings_view.acquisition_plan(
                 surface=run.surface,
@@ -426,6 +423,7 @@ async def _process_url_in_parallel(
                             run=run,
                             url=url,
                             config=url_config,
+                            url_timeout_seconds=url_timeout_seconds,
                         ),
                         url_timeout_seconds,
                     )
@@ -506,7 +504,7 @@ async def _process_urls_in_parallel(
         idx: int, url: str, record_limit: int
     ) -> tuple[int, str, URLProcessingResult]:
         async with semaphore:
-            return await _process_url_in_parallel(
+            return await _process_url_in_owned_session(
                 run_id=run_id,
                 idx=idx,
                 total_urls=total_urls,
@@ -736,76 +734,16 @@ async def _process_run_with_span(
                     )
                     await session.commit()
                     remaining_records = max(max_records - record_count, 1)
-                    url_config = URLProcessingConfig.from_acquisition_plan(
-                        run.settings_view.acquisition_plan(
-                            surface=run.surface,
-                            max_records=remaining_records,
-                        ),
-                        update_run_state=True,
-                        persist_logs=True,
+                    _, _, url_result = await _process_url_in_owned_session(
+                        run_id=run.id,
+                        idx=idx,
+                        total_urls=total_urls,
+                        url=url,
+                        max_records=remaining_records,
+                        url_timeout_seconds=url_timeout_seconds,
+                        log_start=False,
                     )
-                    try:
-                        with logfire_span(
-                            "pipeline.url",
-                            run_id=run.id,
-                            url_index=idx,
-                            url_count=total_urls,
-                            domain=normalize_domain(url),
-                            surface=run.surface,
-                            max_records=remaining_records,
-                            timeout_seconds=url_timeout_seconds,
-                        ) as url_span:
-                            url_result = _require_url_processing_result(
-                                await _run_url_processing_with_timeout(
-                                    process_single_url(
-                                        session=session,
-                                        run=run,
-                                        url=url,
-                                        config=url_config,
-                                    ),
-                                    url_timeout_seconds,
-                                )
-                            )
-                            set_logfire_attributes(
-                                url_span,
-                                verdict=url_result.verdict,
-                                record_count=_url_metric(
-                                    url_result,
-                                    "record_count",
-                                    len(url_result.records),
-                                ),
-                                method=_url_metric(url_result, "method"),
-                                blocked=_url_metric(url_result, "blocked"),
-                            )
-                    except _URLProcessingDeadlineExceeded as exc:
-                        logger.warning(
-                            "URL processing timed out for run=%s url=%s", run.id, url
-                        )
-                        run, url_result = await _recover_url_failure(
-                            session,
-                            run=run,
-                            run_id=run.id,
-                            url=url,
-                            exc=exc,
-                            log_message=(
-                                f"URL processing timed out for {url} "
-                                f"(timeout_seconds={url_timeout_seconds})"
-                            ),
-                        )
-                        url_result.url_metrics["error"] = (
-                            f"TimeoutError: url exceeded timeout_seconds={url_timeout_seconds}"
-                        )
-                    except Exception as exc:
-                        run, url_result = await _recover_url_failure(
-                            session,
-                            run=run,
-                            run_id=run.id,
-                            url=url,
-                            exc=exc,
-                            log_message=(
-                                f"URL processing failed for {url}: {type(exc).__name__}: {exc}"
-                            ),
-                        )
+                    await session.refresh(run)
 
                     verdicts.append(str(url_result.verdict or VERDICT_ERROR))
                     records_count = as_int(
@@ -871,13 +809,16 @@ async def _process_run_with_span(
                 await on_run_complete(run.id)
             except Exception as exc:
                 logger.exception("Run-complete callback failed for run=%s", run.id)
-                with suppress(Exception):
+                try:
                     await log_event(
                         session,
                         run.id,
                         "error",
                         f"on_run_complete failure: {exc}",
                     )
+                except Exception:
+                    logger.debug("Failed to log on_run_complete failure to DB", exc_info=True)
+                    await _rollback_url_session(session, context="failed complete log recovery")
         finally:
             pass
     except (RuntimeError, ValueError, TypeError, SQLAlchemyError) as exc:

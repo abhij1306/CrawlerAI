@@ -1,14 +1,20 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import uuid
+from collections.abc import Mapping
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from app.core.config import settings
+from app.services.acquisition.browser_background_tasks import (
+    register_eviction_cleanup_task,
+)
 from app.services.acquisition.runtime import NetworkPayloadReadResult
 from app.services.config.network_capture import (
     ENDPOINT_TYPE_PATH_TOKENS,
@@ -16,6 +22,8 @@ from app.services.config.network_capture import (
     HIGH_VALUE_NETWORK_ENDPOINT_TYPES,
     HIGH_VALUE_NETWORK_PAYLOAD_BUDGET_MULTIPLIER,
     NETWORK_PAYLOAD_NOISE_URL_RE,
+    NETWORK_EVIDENCE_SAFE_REQUEST_HEADERS,
+    NETWORK_EVIDENCE_SAFE_RESPONSE_HEADERS,
     NETWORK_PAYLOAD_JSON_CONTENT_TYPE_HINTS,
     NETWORK_PAYLOAD_STREAMING_CONTENT_TYPES,
     NETWORK_PAYLOAD_URL_HINTS,
@@ -133,7 +141,14 @@ class BrowserNetworkCapture:
         if self._workers:
             workers = set(self._workers)
             await asyncio.sleep(0)
-            join_timeout_seconds = _queue_join_timeout_seconds()
+            self._closing = True
+            queue_empty = getattr(self._queue, "empty", None)
+            active_payload_reads = self._pending_payloads > 0 or (
+                callable(queue_empty) and not queue_empty()
+            )
+            join_timeout_seconds = _queue_join_timeout_seconds(
+                active_payload_reads=active_payload_reads
+            )
             try:
                 for _worker in workers:
                     await asyncio.wait_for(
@@ -145,7 +160,6 @@ class BrowserNetworkCapture:
                     timeout=join_timeout_seconds,
                 )
             except asyncio.TimeoutError:
-                self._closing = True
                 logger.warning(
                     "Browser capture queue join timed out after %ss; "
                     "cancelling workers and draining queue",
@@ -168,7 +182,6 @@ class BrowserNetworkCapture:
                     except asyncio.QueueEmpty:
                         break
             else:
-                self._closing = True
                 for worker in workers:
                     worker.cancel()
             await asyncio.gather(*workers, return_exceptions=True)
@@ -290,6 +303,20 @@ class BrowserNetworkCapture:
                     "content_type": content_type,
                     "endpoint_type": endpoint_info["type"],
                     "endpoint_family": endpoint_info["family"],
+                    "request_headers": _safe_headers(
+                        getattr(response.request, "headers", {}),
+                        allowed=NETWORK_EVIDENCE_SAFE_REQUEST_HEADERS,
+                    ),
+                    "response_headers": _safe_headers(
+                        response.headers,
+                        allowed=NETWORK_EVIDENCE_SAFE_RESPONSE_HEADERS,
+                    ),
+                    "body_sha256": hashlib.sha256(body_bytes).hexdigest(),
+                    "captured_at": datetime.now(timezone.utc).isoformat(),
+                    "resource_type": str(
+                        getattr(response.request, "resource_type", "") or ""
+                    ),
+                    "frame_url": _request_frame_url(response.request),
                     "body": payload,
                 }
             )
@@ -326,6 +353,28 @@ class BrowserNetworkCapture:
         async with self._lock:
             self._pending_payloads = max(0, self._pending_payloads - 1)
             self._reserved_bytes = max(0, self._reserved_bytes - reserved_bytes)
+
+
+def _safe_headers(
+    headers: dict[str, object] | Any,
+    *,
+    allowed: tuple[str, ...],
+) -> dict[str, str]:
+    if not isinstance(headers, Mapping):
+        return {}
+    allowed_names = set(allowed)
+    return {
+        str(name).strip().lower(): str(value)
+        for name, value in headers.items()
+        if str(name).strip().lower() in allowed_names
+    }
+
+
+def _request_frame_url(request: Any) -> str:
+    try:
+        return str(getattr(getattr(request, "frame", None), "url", "") or "")
+    except Exception:
+        return ""
 
 
 def should_capture_network_payload(
@@ -488,12 +537,15 @@ async def read_network_payload_body(
         endpoint_info=endpoint_info,
     )
     try:
-        body_bytes = await asyncio.wait_for(
-            response.body(),
+        body_task = asyncio.create_task(response.body())
+        done, _pending = await asyncio.wait(
+            {body_task},
             timeout=_payload_read_timeout_seconds(),
         )
-    except asyncio.TimeoutError:
-        return NetworkPayloadReadResult(body=None, outcome="timeout")
+        if not done:
+            register_eviction_cleanup_task(body_task)
+            return NetworkPayloadReadResult(body=None, outcome="timeout")
+        body_bytes = body_task.result()
     except Exception as exc:
         if is_response_closed_error(exc):
             return NetworkPayloadReadResult(
@@ -556,11 +608,14 @@ def has_chunked_transfer_encoding(headers: dict[str, object] | Any) -> bool:
     return any(token.strip() == "chunked" for token in normalized.split(","))
 
 
-def _queue_join_timeout_seconds() -> float:
-    return max(
+def _queue_join_timeout_seconds(*, active_payload_reads: bool = False) -> float:
+    configured = max(
         0.1,
         float(crawler_runtime_settings.browser_capture_queue_join_timeout_ms) / 1000,
     )
+    if not active_payload_reads:
+        return configured
+    return max(configured, _payload_read_timeout_seconds() + 0.5)
 
 
 def _payload_read_timeout_seconds() -> float:

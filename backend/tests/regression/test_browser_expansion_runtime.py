@@ -2394,38 +2394,6 @@ async def test_browser_fetch_flattens_shadow_dom_before_serializing_html() -> No
 
 @pytest.mark.asyncio
 @pytest.mark.regression
-async def test_browser_fetch_keeps_markdown_removed() -> None:
-    page = _FakeExpansionPage(
-        base_html="""
-        <html>
-          <body>
-            <header>Brand header</header>
-            <main>
-              <h1>Widget Prime</h1>
-              <p>Built for long mileage.</p>
-              <a href="/products/widget/specs">View specs</a>
-            </main>
-          </body>
-        </html>
-        """,
-    )
-
-    async def _fake_runtime(**_kwargs):
-        await _async_checkpoint()
-        return _FakeRuntime(page)
-
-    result = await browser_runtime.browser_fetch(
-        "https://example.com/products/widget",
-        5,
-        surface="ecommerce_detail",
-        runtime_provider=_fake_runtime,
-    )
-
-    assert hasattr(result, "page_markdown") is False
-
-
-@pytest.mark.asyncio
-@pytest.mark.regression
 async def test_browser_fetch_captures_rendered_listing_fragments_artifact() -> None:
     page = _FakeExpansionPage(
         base_html="""

@@ -16,6 +16,7 @@ from app.services.acquisition.browser_capture import (
     read_network_payload_body,
     should_capture_network_payload,
 )
+from app.services.acquisition.browser_background_tasks import register_popup_guard_task
 from app.services.acquisition.browser_detail import (
     expand_detail_content_if_needed as _expand_detail_content_if_needed,
 )
@@ -75,7 +76,6 @@ from app.services.acquisition.browser_pool import (
     real_chrome_browser_available,
     real_chrome_candidate_paths as _real_chrome_candidate_paths,
     real_chrome_executable_path,
-    register_popup_guard_task,
     shutdown_browser_runtime as _shutdown_browser_runtime_impl,
     shutdown_browser_runtime_sync as _shutdown_browser_runtime_sync_impl,
     temporary_browser_page,

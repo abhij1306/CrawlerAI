@@ -4,6 +4,7 @@ __all__ = (
     "backfill_listing_rows_from_network",
     "extract_listing_rows_from_network",
     "listing_identity_from_url",
+    "network_listing_payload_has_replay_safe_urls",
 )
 
 import re
@@ -19,6 +20,7 @@ from app.services.config.extraction_rules import (
     LISTING_NETWORK_PRICE_BUCKETS,
     LISTING_NETWORK_PRICE_CANDIDATE_KEYS,
     LISTING_NETWORK_PRIMARY_PRICE_KEYS,
+    LISTING_NETWORK_REPLAY_ROUTE_PREFIXES,
     LISTING_NETWORK_TITLE_KEYS,
 )
 from app.services.extract.field_candidates import (
@@ -103,6 +105,30 @@ def extract_listing_rows_from_network(
             if len(rows) >= max_records:
                 return rows
     return rows
+
+
+def network_listing_payload_has_replay_safe_urls(
+    payload: dict[str, object],
+) -> bool:
+    body = payload.get("body") if isinstance(payload, dict) else None
+    candidates = _iter_listing_price_candidates(body)
+    if not candidates:
+        return False
+    return all(_network_listing_candidate_has_replay_safe_url(candidate) for candidate in candidates)
+
+
+def _network_listing_candidate_has_replay_safe_url(candidate: dict[str, Any]) -> bool:
+    for key in ("url", "link", "href", "permalink"):
+        value = clean_text(candidate.get(key))
+        if value and (re.match(r"^https?://", value, re.I) or value.startswith("/")):
+            return True
+    slug = clean_text(candidate.get("slug") or candidate.get("handle"))
+    if not slug:
+        return False
+    if re.match(r"^https?://", slug, re.I) or slug.startswith("/"):
+        return True
+    first_segment = slug.split("/", 1)[0].strip().lower()
+    return first_segment in LISTING_NETWORK_REPLAY_ROUTE_PREFIXES
 
 
 def _network_listing_row(

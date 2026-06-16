@@ -12,7 +12,9 @@ from app.services.fetch import fetch_context as crawl_fetch_runtime
 
 from app.models.domain_memory import DomainCookieMemory
 from app.services.acquisition import browser_identity, browser_storage_state
+from app.services.acquisition import browser_background_tasks
 from app.services.acquisition import browser_proxy_bridge
+from app.services.acquisition import browser_pool_page as acquisition_browser_pool_page
 from app.services.acquisition import cookie_store
 from app.services.acquisition import host_protection_memory
 from app.services.acquisition import browser_pool as acquisition_browser_pool
@@ -1532,6 +1534,74 @@ async def test_shared_browser_runtime_bounds_hung_context_cleanup(
         )
         for record in caplog.records
     )
+    await browser_background_tasks.drain_browser_background_tasks()
+    assert runtime._active_contexts == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_context_slot_released_when_cancelled_during_recycle_wait(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime = crawl_fetch_runtime.SharedBrowserRuntime(max_contexts=1)
+    wait_started = asyncio.Event()
+    release_wait = asyncio.Event()
+
+    async def _block_recycle_wait(timeout_seconds: float) -> bool:
+        del timeout_seconds
+        wait_started.set()
+        await release_wait.wait()
+        return False
+
+    monkeypatch.setattr(
+        runtime,
+        "_yield_slot_until_recycle_window",
+        _block_recycle_wait,
+    )
+
+    task = asyncio.create_task(runtime._acquire_context_slot(phase_timings_ms={}))
+    await asyncio.wait_for(wait_started.wait(), timeout=1.0)
+    assert runtime._semaphore.locked()
+
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert not runtime._semaphore.locked()
+    assert runtime.snapshot()["queued"] == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_runtime_page_releases_slot_when_cancelled_during_browser_start(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime = crawl_fetch_runtime.SharedBrowserRuntime(max_contexts=1)
+    ensure_started = asyncio.Event()
+    release_ensure = asyncio.Event()
+
+    async def _block_ensure(*, phase_timings_ms: dict[str, int] | None) -> None:
+        del phase_timings_ms
+        ensure_started.set()
+        await release_ensure.wait()
+
+    monkeypatch.setattr(runtime, "_ensure_with_timing", _block_ensure)
+
+    async def _open_page() -> None:
+        async with runtime.page(allow_storage_state=False):
+            pass
+
+    task = asyncio.create_task(_open_page())
+    await asyncio.wait_for(ensure_started.wait(), timeout=1.0)
+    assert runtime._semaphore.locked()
+
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert not runtime._semaphore.locked()
+    assert runtime.snapshot()["active"] == 0
+    assert runtime.snapshot()["queued"] == 0
 
 
 @pytest.mark.asyncio
@@ -1591,6 +1661,9 @@ async def test_shared_browser_runtime_releases_pool_slot_when_cleanup_is_cancell
         async with runtime.page(allow_storage_state=False):
             await asyncio.sleep(0)
 
+    assert runtime._semaphore.locked()
+    close_release.set()
+    await browser_background_tasks.drain_browser_background_tasks()
     await asyncio.wait_for(_acquire_again(), timeout=1.0)
     assert close_calls == 2
 
@@ -1602,18 +1675,31 @@ async def test_shared_browser_runtime_close_bounds_hung_shutdown(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     blocker = asyncio.Event()
+    cancelled: list[str] = []
 
     class FakeBrowser:
         async def close(self) -> None:
-            await blocker.wait()
+            try:
+                await blocker.wait()
+            except asyncio.CancelledError:
+                cancelled.append("browser")
+                raise
 
     class FakePlaywright:
         async def stop(self) -> None:
-            await blocker.wait()
+            try:
+                await blocker.wait()
+            except asyncio.CancelledError:
+                cancelled.append("playwright")
+                raise
 
     class FakeBridge:
         async def close(self) -> None:
-            await blocker.wait()
+            try:
+                await blocker.wait()
+            except asyncio.CancelledError:
+                cancelled.append("bridge")
+                raise
 
     runtime = crawl_fetch_runtime.SharedBrowserRuntime(max_contexts=1)
     runtime._browser = FakeBrowser()
@@ -1644,6 +1730,7 @@ async def test_shared_browser_runtime_close_bounds_hung_shutdown(
         "Timed out closing SOCKS5 auth bridge" in record.message
         for record in caplog.records
     )
+    assert cancelled == []
 
 
 @pytest.mark.asyncio
@@ -1877,6 +1964,7 @@ async def test_shared_browser_runtime_bounds_context_slot_wait(
             async with runtime.page(phase_timings_ms=phase_timings_ms_second):
                 await asyncio.sleep(0)
     finally:
+        assert runtime._semaphore.locked()
         release.set()
         _ = await first
 
@@ -2260,6 +2348,99 @@ async def test_shared_browser_runtime_bounds_hung_new_page_and_closes_context(
 
     assert closed == ["context_closed"]
     assert runtime._active_contexts == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_shared_browser_runtime_keeps_capacity_until_timed_out_close_finishes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    release_close = asyncio.Event()
+
+    class FakeContext:
+        async def new_page(self):
+            return object()
+
+        async def close(self) -> None:
+            await release_close.wait()
+
+    class FakeBrowser:
+        async def new_context(self, **kwargs):
+            del kwargs
+            return FakeContext()
+
+    async def _skip_storage(*args, **kwargs) -> None:
+        pass
+
+    runtime = acquisition_browser_runtime.SharedBrowserRuntime(max_contexts=1)
+    runtime._browser = FakeBrowser()
+    runtime._playwright = object()
+    monkeypatch.setattr(
+        acquisition_browser_pool,
+        "build_playwright_context_spec",
+        lambda **_: _context_spec(),
+    )
+    monkeypatch.setattr(
+        acquisition_browser_pool_page,
+        "persist_context_storage_state",
+        _skip_storage,
+    )
+    monkeypatch.setattr(
+        acquisition_browser_runtime.crawler_runtime_settings,
+        "browser_close_timeout_ms",
+        1,
+    )
+
+    async with runtime.page(allow_storage_state=False):
+        pass
+
+    assert runtime._active_contexts == 1
+    assert runtime._semaphore.locked()
+    release_close.set()
+    await browser_background_tasks.drain_browser_background_tasks()
+    assert runtime._active_contexts == 0
+    assert not runtime._semaphore.locked()
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_await_without_cancelling_returns_false_when_awaitable_fails() -> None:
+    async def _fail() -> None:
+        raise RuntimeError("close failed")
+
+    assert (
+        await browser_background_tasks.await_without_cancelling(
+            _fail(),
+            timeout_seconds=1,
+        )
+        is False
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_await_without_cancelling_registers_task_when_caller_is_cancelled() -> None:
+    release = asyncio.Event()
+
+    async def _wait() -> None:
+        await release.wait()
+
+    caller = asyncio.create_task(
+        browser_background_tasks.await_without_cancelling(
+            _wait(),
+            timeout_seconds=10,
+        )
+    )
+    await asyncio.sleep(0)
+    caller.cancel()
+
+    with pytest.raises(asyncio.CancelledError):
+        await caller
+
+    assert browser_background_tasks._eviction_cleanup_tasks
+    release.set()
+    await browser_background_tasks.drain_browser_background_tasks()
+    assert not browser_background_tasks._eviction_cleanup_tasks
 
 
 @pytest.mark.component

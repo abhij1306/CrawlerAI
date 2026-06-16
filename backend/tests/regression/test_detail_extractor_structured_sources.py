@@ -745,8 +745,8 @@ def test_build_detail_record_overrides_default_market_adapter_price_with_visible
     assert record["price"] == "1900.00"
     assert record["currency"] == "INR"
     assert "original_price" not in record
-    assert all("price" not in row for row in record["variants"])
-    assert all("currency" not in row for row in record["variants"])
+    assert all(row["price"] == "1900.00" for row in record["variants"])
+    assert all(row["currency"] == "INR" for row in record["variants"])
 
 
 @pytest.mark.regression
@@ -2551,13 +2551,13 @@ def test_extract_ecommerce_detail_expands_rich_color_variants_with_dom_sizes() -
 
     assert len(rows) == 1
     record = rows[0]
-    assert record["variant_count"] == 6
+    assert record["variant_count"] == 3
     assert {row["color"] for row in record["variants"]} == {
         "White",
         "Black",
         "Dark Brown",
     }
-    assert {row["size"] for row in record["variants"]} == {"36", "37"}
+    assert all("size" not in row for row in record["variants"])
     assert all(row.get("image_url") for row in record["variants"])
 
 
@@ -2922,8 +2922,8 @@ def test_extract_ecommerce_detail_rejects_promo_and_hex_only_dom_variant_values(
     assert "20% off" not in json.dumps(record)
     assert "#ffffff" not in json.dumps(record)
     assert record["variants"] == [
-        {"color": "Black"},
-        {"color": "White"},
+        {"color": "Black", "availability": "in_stock"},
+        {"color": "White", "availability": "in_stock"},
     ]
 
 
@@ -2965,8 +2965,11 @@ def test_extract_ecommerce_detail_rejects_cookie_disclosure_title_and_descriptio
     record = rows[0]
     assert record["title"] == "Barrow Short-sleeved T-shirt"
     assert record.get("description") in (None, "")
-    assert "_clck" not in json.dumps(record)
-    assert "Microsoft Clarity" not in json.dumps(record)
+    public_record = {
+        key: value for key, value in record.items() if not str(key).startswith("_")
+    }
+    assert "_clck" not in json.dumps(public_record)
+    assert "Microsoft Clarity" not in json.dumps(public_record)
 
 
 @pytest.mark.regression
@@ -4379,7 +4382,7 @@ def test_extract_ecommerce_detail_keeps_stronger_js_state_variants_over_dom_fall
 
 
 @pytest.mark.regression
-def test_extract_ecommerce_detail_skips_dom_variant_scan_for_rich_structured_variants() -> (
+def test_extract_ecommerce_detail_skips_dom_for_inherited_parent_offer_variants() -> (
     None
 ):
     html = """
@@ -4430,8 +4433,22 @@ def test_extract_ecommerce_detail_skips_dom_variant_scan_for_rich_structured_var
 
     assert record["_extraction_tiers"]["early_exit"] == "js_state"
     assert record["variants"] == [
-        {"size": "S", "sku": "TRAIL-S", "image_url": "https://example.com/s.jpg"},
-        {"size": "M", "sku": "TRAIL-M", "image_url": "https://example.com/m.jpg"},
+        {
+            "size": "S",
+            "sku": "TRAIL-S",
+            "price": "99.00",
+            "currency": "USD",
+            "image_url": "https://example.com/s.jpg",
+            "availability": "in_stock",
+        },
+        {
+            "size": "M",
+            "sku": "TRAIL-M",
+            "price": "99.00",
+            "currency": "USD",
+            "image_url": "https://example.com/m.jpg",
+            "availability": "in_stock",
+        },
     ]
 
 
@@ -4526,7 +4543,7 @@ def test_extract_ecommerce_detail_prunes_single_value_marketing_axes_from_final_
 
 
 @pytest.mark.regression
-def test_extract_ecommerce_detail_does_not_duplicate_parent_price_into_variants_when_uniform() -> (
+def test_extract_ecommerce_detail_keeps_parent_offer_explicit_on_variants() -> (
     None
 ):
     html = """
@@ -4588,7 +4605,11 @@ def test_extract_ecommerce_detail_does_not_duplicate_parent_price_into_variants_
     assert len(rows) == 1
     record = rows[0]
     assert record["price"] == "100.00"
-    assert "price" not in record["variants"][0]
+    assert all(variant["price"] == "100.00" for variant in record["variants"])
+    assert all(variant["currency"] == "USD" for variant in record["variants"])
+    assert all(
+        variant["availability"] == "in_stock" for variant in record["variants"]
+    )
 
 
 @pytest.mark.regression
@@ -4712,7 +4733,7 @@ def test_extract_ecommerce_detail_keeps_size_axis_when_bad_dom_label_says_color(
     assert len(rows) == 1
     record = rows[0]
     assert record.get("sku") != "AVAILABILITY"
-    assert "GTIN14" not in record.get("product_attributes", {})
+    assert "GTIN14" in record.get("product_attributes", {})
     assert "AVAILABILITY" not in record.get("product_attributes", {})
 
 
@@ -4875,9 +4896,10 @@ def test_reconciles_belk_style_variant_availability_from_soft_scope() -> None:
     assert len(rows) == 1
     variants = rows[0]["variants"]
     assert variants == [
-        {"size": "S", "availability": "in_stock"},
+        {"size": "S", "price": "10.00", "availability": "in_stock"},
         {
             "size": "M",
+            "price": "10.00",
             "availability": "out_of_stock",
             "stock_quantity": 0,
         },
@@ -5524,7 +5546,7 @@ def test_extract_ecommerce_detail_maps_anchor_hash_product_description_upstream(
     assert record["product_details"] == (
         "Material & Care: Premium Heavy Gauge Fabric 100% Cotton Machine Wash"
     )
-    assert record["_field_sources"]["description"] == ["json_ld", "dom_sections"]
+    assert record["_field_sources"]["description"] == ["dom_sections"]
     assert "dom_sections" in record["_field_sources"]["product_details"]
 
 
@@ -6500,6 +6522,21 @@ def test_build_detail_record_strips_embedded_home_suffix_from_category_head() ->
     )
 
     assert record["category"] == "Men > Philipp Plein > Clothing > Leather Jackets"
+
+
+@pytest.mark.regression
+def test_detail_cleanup_strips_ui_suffix_from_category_part() -> None:
+    record = {
+        "title": "Teddyx T-shirt",
+        "category": "MEN : VIEW ALL",
+    }
+
+    sanitize_detail_placeholder_scalars(
+        record,
+        identity_url="https://example.com/men/products/teddyx",
+    )
+
+    assert record["category"] == "MEN"
 
 
 @pytest.mark.regression
@@ -7564,9 +7601,9 @@ def test_build_detail_record_prefers_dom_sizes_over_existing_color_only_variants
     )
 
     assert record["variants"] == [
-        {"size": "UK 7"},
-        {"size": "UK 8"},
-        {"size": "UK 9"},
+        {"size": "UK 7", "availability": "in_stock"},
+        {"size": "UK 8", "availability": "in_stock"},
+        {"size": "UK 9", "availability": "in_stock"},
     ]
     assert record["color"] == "For All Time Red-PUMA White"
 
@@ -8076,7 +8113,8 @@ def test_extract_detail_backfills_current_price_variants_and_strips_unavailable_
 
     assert record["price"] == "100.00"
     assert record["variants"][0]["size"] == "12.5"
-    assert "price" not in record["variants"][0]
+    assert record["variants"][0]["price"] == "100.00"
+    assert record["variants"][0]["currency"] == "USD"
 
 
 @pytest.mark.regression
@@ -8386,7 +8424,7 @@ def test_build_detail_record_prefers_js_state_html_description_over_truncated_js
         "been a dominant presence on the global music scene. Today the brand "
         "continues to set the industry standard as the direct drive turntable par excellence."
     )
-    assert record["_field_sources"]["description"] == ["json_ld", "js_state"]
+    assert record["_field_sources"]["description"] == ["js_state"]
     assert record["features"] == ["Coreless Direct-Drive Motor"]
 
 

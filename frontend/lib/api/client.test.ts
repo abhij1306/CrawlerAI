@@ -79,4 +79,37 @@ describe('apiClient', () => {
     expect(httpErrorStatus({ status: 401 })).toBe(401);
     expect(httpErrorStatus(new Error('no'))).toBeUndefined();
   });
+
+  it('preserves review bucket evidence metadata during validation', async () => {
+    const { crawlRecordSchema, strictValidate } = await import('./schemas');
+    const parsed = strictValidate(
+      crawlRecordSchema,
+      {
+        id: 1,
+        run_id: 2,
+        source_url: 'https://example.com/p',
+        data: {},
+        raw_data: {},
+        discovered_data: {},
+        source_trace: {},
+        review_bucket: [
+          {
+            key: 'price',
+            value: '10.00',
+            source: 'dom',
+            evidence_id: 'ev_000001',
+            reason: 'lower_source_priority',
+          },
+        ],
+        raw_html_path: null,
+        created_at: '2026-06-16T00:00:00Z',
+      },
+      'record',
+    );
+
+    expect(parsed.review_bucket?.[0]).toMatchObject({
+      evidence_id: 'ev_000001',
+      reason: 'lower_source_priority',
+    });
+  });
 });

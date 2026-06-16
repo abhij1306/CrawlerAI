@@ -28,7 +28,11 @@ from app.services.publish import VERDICT_PARTIAL, VERDICT_SUCCESS
 from app.services.publish.metrics import diagnostics_indicate_block
 from app.services.extract.listing_candidate_ranking import looks_like_utility_record
 from app.services.config.public_record_policy import PUBLIC_RECORD_LEGACY_VARIANT_FIELDS
-from app.services.config.variant_policy import PUBLIC_VARIANT_AXIS_FIELDS
+from app.services.config.variant_policy import (
+    PUBLIC_FLAT_VARIANT_FIELDS,
+    PUBLIC_VARIANT_AXIS_FIELDS,
+)
+from app.services.surface_resolver import resolve_surface
 from sqlalchemy import select
 
 logger = logging.getLogger(__name__)
@@ -81,22 +85,6 @@ _DETAIL_HINTS = (
     "showjob=",
     "/release/",
 )
-_PRODUCT_LIKE_TERMINAL_SLUG_RE = re.compile(
-    r"(?=.{16,}$)(?=.*[a-z])(?:[a-z0-9]+-){2,}[a-z0-9]+$",
-    re.I,
-)
-_LISTING_HINTS = (
-    "/collections",
-    "/shop/",
-    "/category/",
-    "/careers",
-    "/jobs",
-    "job-search",
-    "career-page",
-    "jobboard",
-    "recruitment",
-    "currentopenings",
-)
 _JOB_LISTING_HINTS = (
     "/jobs",
     "/careers",
@@ -120,9 +108,6 @@ _PLACEHOLDER_TITLES = {
     "page not found",
     "sylius demo",
 }
-_DETAIL_SLUG_WITH_ID_RE = re.compile(r".+_\d+$")
-_DETAIL_FILE_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*\.html?$")
-_NON_DETAIL_FILE_RE = re.compile(r"^(?:index|page[-_]?\d+)\.html?$")
 _IDENTITY_SEGMENT_SKIP = {
     "c",
     "catalog",
@@ -177,7 +162,6 @@ def infer_surface(url: str, explicit_surface: object | None = None) -> str:
     parsed_url = urlsplit(normalized_url)
     host = str(parsed_url.hostname or "").strip().lower()
     host_label = host.removeprefix("www.").split(".", 1)[0]
-    path_segments = [segment for segment in parsed_url.path.split("/") if segment]
     family = detect_platform_family(normalized_url)
     if (
         family in job_platform_families()
@@ -200,43 +184,7 @@ def infer_surface(url: str, explicit_surface: object | None = None) -> str:
         return "job_listing"
     if any(token in normalized_url for token in _JOB_LISTING_HINTS):
         return "job_listing"
-    if (
-        (host == "autozone.com" or host.endswith(".autozone.com"))
-        and normalized_url.rstrip("/").rsplit("/", 1)[-1].count("_") >= 2
-    ):
-        return "ecommerce_detail"
-    if (
-        len(path_segments) >= 2
-        and path_segments[-1] == "index.html"
-        and _DETAIL_SLUG_WITH_ID_RE.fullmatch(path_segments[-2])
-    ):
-        return "ecommerce_detail"
-    if any(token in normalized_url for token in _DETAIL_HINTS):
-        return "job_detail" if "/job" in normalized_url else "ecommerce_detail"
-    terminal = path_segments[-1].lower() if path_segments else ""
-    if (
-        _DETAIL_FILE_RE.fullmatch(terminal)
-        and not _NON_DETAIL_FILE_RE.fullmatch(terminal)
-        and any(separator in terminal for separator in ("-", "_"))
-        and not any(
-            token in terminal for token in ("jobs", "careers", "category", "collection")
-        )
-    ):
-        return "ecommerce_detail"
-    if any(token in normalized_url for token in _LISTING_HINTS):
-        return (
-            "job_listing"
-            if "job" in normalized_url or "career" in normalized_url
-            else "ecommerce_listing"
-        )
-    if (
-        len(path_segments) == 1
-        and _PRODUCT_LIKE_TERMINAL_SLUG_RE.fullmatch(terminal)
-        and host_label
-        and host_label in terminal
-    ):
-        return "ecommerce_detail"
-    return "ecommerce_listing"
+    return resolve_surface("auto", url=normalized_url).surface
 
 
 def build_explicit_sites(
@@ -1156,16 +1104,7 @@ def _quality_variant_artifacts_ok(
     ):
         return False
     values: list[object] = []
-    allowed_variant_keys = {
-        *_VARIANT_AXIS_FIELDS,
-        "sku",
-        "price",
-        "currency",
-        "url",
-        "image_url",
-        "availability",
-        "stock_quantity",
-    }
+    allowed_variant_keys = PUBLIC_FLAT_VARIANT_FIELDS
     for row in _object_list(record.get("variants")):
         if isinstance(row, dict):
             if any(str(key).strip() not in allowed_variant_keys for key in row.keys()):

@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { STORAGE_KEYS } from '../../lib/constants/storage-keys';
@@ -40,10 +41,23 @@ vi.mock('../../lib/api', () => ({
 }));
 
 function renderConfigScreen() {
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: {
+        retry: false,
+      },
+    },
+  });
   render(
-    <TopBarProvider>
-      <CrawlConfigScreen requestedTab={null} requestedCategoryMode={null} requestedPdpMode={null} />
-    </TopBarProvider>,
+    <QueryClientProvider client={queryClient}>
+      <TopBarProvider>
+        <CrawlConfigScreen
+          requestedTab={null}
+          requestedCategoryMode={null}
+          requestedPdpMode={null}
+        />
+      </TopBarProvider>
+    </QueryClientProvider>,
   );
 }
 

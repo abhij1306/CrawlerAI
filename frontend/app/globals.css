@@ -1,11 +1,9 @@
 /* ═══════════════════════════════════════════════════════════════════════
-   CrawlerAI — Design System v3
+   CrawlerAI — Design System v4
    Clean token hierarchy · 4px grid · WCAG 2.1 AA
    Fonts: Geist · Geist Mono
 ═══════════════════════════════════════════════════════════════════════ */
 
-@import url('https://fonts.googleapis.com/css2?family=Geist:wght@100..900&family=Geist+Mono:wght@100..900&display=swap');
-@import 'katex/dist/katex.min.css';
 @import 'tailwindcss';
 
 /* ─── TAILWIND v4 TOKEN BRIDGE ─────────────────────────────────────── */
@@ -25,7 +23,7 @@
 
   /* Typography */
   --color-foreground: var(--text-primary);
-  --color-primary: var(--text-primary);
+  /* DEBT REMOVED: --color-primary was a duplicate alias for --text-primary */
   --color-secondary: var(--text-secondary);
   --color-muted: var(--text-muted);
   --color-faint: var(--text-subtle);
@@ -54,7 +52,7 @@
 
   /* Component specifics */
   --color-subtle-panel: var(--bg-alt);
-  --color-subtle-panel-bg: var(--bg-alt);
+  /* DEBT REMOVED: --color-subtle-panel-bg was a redundant alias for --color-subtle-panel */
   --color-subtle-panel-border: var(--border);
   --color-status-neutral-bg: var(--status-neutral-bg);
   --color-tab-active-fg: var(--tab-active-fg);
@@ -117,10 +115,12 @@
 :root {
   color-scheme: light;
 
-  /* Fonts */
-  --font-primary-family: var(--font-primary-source, 'Geist'), 'Geist', system-ui, sans-serif;
-  --font-display-family: var(--font-display-source, 'Geist'), 'Geist', system-ui, sans-serif;
-  --font-mono-family: var(--font-mono-source, 'Geist Mono'), 'Geist Mono', ui-monospace, monospace;
+  /* Fonts — loaded via @fontsource-variable/geist in main.tsx
+     IMPORTANT: @fontsource-variable packages register the family as
+     "<Name> Variable", not "<Name>". These strings must match exactly. */
+  --font-primary-family: 'Geist Variable', system-ui, sans-serif;
+  --font-display-family: 'Geist Variable', system-ui, sans-serif;
+  --font-mono-family: 'Geist Mono Variable', ui-monospace, 'Cascadia Code', 'Fira Code', monospace;
 
   /* Surfaces */
   --bg-base: #f7f7f6;
@@ -194,23 +194,16 @@
   --shadow-lg-value: 0 22px 56px rgba(18, 18, 22, 0.1), 0 0 0 1px rgba(18, 18, 22, 0.05);
   --shadow-modal: 0 24px 60px rgba(18, 18, 22, 0.16);
   --focus-ring: 0 0 0 3px rgba(53, 87, 246, 0.18);
-  --overlay-scrim: color-mix(in srgb, var(--bg-base) 34%, black);
+  --overlay-scrim: rgba(0, 0, 0, 0.32);
 
   /* Type scale — optically balanced sizes */
-  --text-2xs: 0.625rem;
-  /* 10px — uppercase labels only */
-  --text-xs: 0.6875rem;
-  /* 11px — captions, timestamps  */
-  --text-sm: 0.8125rem;
-  /* 13px — secondary body        */
-  --text-base: 0.875rem;
-  /* 14px — primary body          */
-  --text-lg: 1.0625rem;
-  /* 17px — section headings      */
-  --text-xl: 1.3125rem;
-  /* 21px — page headings         */
-  --text-2xl: 1.8125rem;
-  /* 29px — hero / display        */
+  --text-2xs: 0.625rem;   /* 10px — uppercase labels only   */
+  --text-xs:  0.6875rem;  /* 11px — captions, timestamps    */
+  --text-sm:  0.8125rem;  /* 13px — secondary body          */
+  --text-base: 0.875rem;  /* 14px — primary body            */
+  --text-lg:  1.0625rem;  /* 17px — section headings        */
+  --text-xl:  1.3125rem;  /* 21px — page headings           */
+  --text-2xl: 1.8125rem;  /* 29px — hero / display          */
 
   /* Font weights */
   --weight-light: 300;
@@ -257,15 +250,14 @@
   --transition-slow: 280ms cubic-bezier(0.4, 0, 0.2, 1);
 
   /* Table */
-  --table-font-size: var(--text-sm); /* 13px — table body */
-  --table-header-font-size: var(--text-xs); /* 11px — table header */
+  --table-font-size: var(--text-sm);              /* 13px — table body   */
+  --table-header-font-size: var(--text-xs);        /* 11px — table header */
   --table-header-font-family: var(--font-primary-family);
   --table-header-weight: var(--weight-semibold);
   --table-header-tracking: var(--tracking-wide);
   --table-header-height: 32px;
   --table-row-height: 40px;
-  --activity-stream-font-size: 0.75rem;
-  /* 12px */
+  --activity-stream-font-size: var(--text-xs);    /* 11px — activity log */
 
   /* Buttons */
   --btn-height: var(--control-height-lg);
@@ -362,130 +354,150 @@
   --alert-danger-text: var(--danger-text);
 }
 
-/* ─── DARK THEME — Warm Charcoal Console ───────────────────────────────
-   Surface hierarchy:
-   bg-base #0d0c0a  →  bg-alt #131110  →  bg-panel #1a1714
-   →  bg-elevated #222019  →  bg-well #2b2822
+/* ─── DARK THEME — Neutral Console ─────────────────────────────────────
+   Pure neutral-gray surface hierarchy. Zero blue or purple tint.
+   Modelled after VSCode / ChatGPT / Claude.ai dark palettes.
+   bg-base #0f0f0f → bg-alt #171717 → bg-panel #1e1e1e
+   → bg-elevated #252525 → bg-well #2f2f2f
 ──────────────────────────────────────────────────────────────────────── */
 html[data-theme='dark'] {
   color-scheme: dark;
 
-  /* Surfaces */
-  --bg-base: #080710;
-  --bg-alt: #0e0d15;
-  --bg-panel: #12111a;
-  --bg-elevated: #1a1926;
-  --bg-well: #201f30;
-  --bg-sidebar: #0a0912;
-  --surface-overlay: rgba(8, 7, 16, 0.94);
+  /* Surfaces — pure neutral gray, no blue/purple cast */
+  --bg-base:     #0f0f0f;
+  --bg-alt:      #171717;
+  --bg-panel:    #1e1e1e;
+  --bg-elevated: #252525;
+  --bg-well:     #2f2f2f;
+  --bg-sidebar:  #141414;
+  --surface-overlay: rgba(15, 15, 15, 0.94);
 
-  /* Borders */
-  --border-subtle: #161520;
-  --border: #212030;
-  --border-strong: #313045;
+  /* Borders — neutral gray */
+  --border-subtle: #1f1f1f;
+  --border:        #2a2a2a;
+  --border-strong: #383838;
 
-  /* Typography */
-  --text-primary: #f7f8f8;
-  --text-secondary: #b4bcd0;
-  --text-muted: #8a8f98;
-  --text-subtle: #626875;
+  /* Typography — neutral, no cool/blue cast */
+  --text-primary:   #e8e8e8;
+  --text-secondary: #9c9c9c;
+  --text-muted:     #686868;
+  --text-subtle:    #474747;
 
-  /* Accent */
-  --accent: #3557f6;
-  --accent-hover: #6f87ff;
-  --accent-fg: #ffffff;
-  --accent-subtle: rgba(53, 87, 246, 0.24);
-  --accent-soft: rgba(53, 87, 246, 0.14);
-  --accent-border: rgba(53, 87, 246, 0.42);
-  --accent-text: #9dadff;
+  /* Accent — blue-violet, brightened for dark backgrounds */
+  --accent:        #5575ff;
+  --accent-hover:  #7a96ff;
+  --accent-fg:     #ffffff;
+  --accent-subtle: rgba(85, 117, 255, 0.14);
+  --accent-soft:   rgba(85, 117, 255, 0.08);
+  --accent-border: rgba(85, 117, 255, 0.32);
+  --accent-text:   #93aeff;
 
   /* Semantic states — brightened for dark backgrounds */
-  --success: #34d399;
-  --success-bg: rgba(52, 211, 153, 0.09);
-  --success-border: rgba(52, 211, 153, 0.22);
-  --success-text: #34d399;
-  --warning: #fbbf24;
-  --warning-bg: rgba(251, 191, 36, 0.09);
-  --warning-border: rgba(251, 191, 36, 0.22);
-  --warning-text: #fbbf24;
-  --danger: #f87171;
-  --danger-bg: rgba(248, 113, 113, 0.09);
-  --danger-border: rgba(248, 113, 113, 0.22);
-  --danger-text: #f87171;
-  --info: #60a5fa;
-  --info-bg: rgba(96, 165, 250, 0.09);
-  --info-border: rgba(96, 165, 250, 0.24);
-  --info-text: #60a5fa;
-  --neutral-bg: rgba(255, 255, 255, 0.045);
+  --success:        #3ecf8e;
+  --success-bg:     rgba(62, 207, 142, 0.08);
+  --success-border: rgba(62, 207, 142, 0.2);
+  --success-text:   #3ecf8e;
+  --warning:        #f5a623;
+  --warning-bg:     rgba(245, 166, 35, 0.08);
+  --warning-border: rgba(245, 166, 35, 0.2);
+  --warning-text:   #f5a623;
+  --danger:         #ff6b6b;
+  --danger-bg:      rgba(255, 107, 107, 0.08);
+  --danger-border:  rgba(255, 107, 107, 0.2);
+  --danger-text:    #ff8585;
+  --info:           #6ba5ff;
+  --info-bg:        rgba(107, 165, 255, 0.08);
+  --info-border:    rgba(107, 165, 255, 0.2);
+  --info-text:      #6ba5ff;
+  --neutral-bg:     rgba(255, 255, 255, 0.04);
 
   /* Alert text aliases */
-  --alert-success-text: var(--success);
-  --alert-warning-text: var(--warning);
-  --alert-danger-text: var(--danger);
+  --alert-success-bg:     var(--success-bg);
+  --alert-success-border: var(--success-border);
+  --alert-success-text:   var(--success);
+  --alert-warning-bg:     var(--warning-bg);
+  --alert-warning-border: var(--warning-border);
+  --alert-warning-text:   var(--warning);
+  --alert-danger-bg:      var(--danger-bg);
+  --alert-danger-border:  var(--danger-border);
+  --alert-danger-text:    var(--danger-text);
 
   /* Status */
+  --status-active-bg:  var(--success-bg);
+  --status-running-bg: var(--accent-subtle);
+  --status-killed-bg:  var(--danger-bg);
+  --status-paused-bg:  var(--warning-bg);
   --status-neutral-bg: var(--bg-panel);
 
-  /* JSON Syntax — VS Code Dark */
-  --syntax-key: #9cdcfe;
-  --syntax-string: #ce9178;
-  --syntax-number: #b5cea8;
+  /* JSON Syntax — VS Code Dark+ (unchanged, already optimal) */
+  --syntax-key:     #9cdcfe;
+  --syntax-string:  #ce9178;
+  --syntax-number:  #b5cea8;
   --syntax-boolean: #569cd6;
-  --syntax-null: #569cd6;
-  --syntax-punct: #d4d4d4;
+  --syntax-null:    #569cd6;
+  --syntax-punct:   #d4d4d4;
 
-  /* Shadows */
-  --shadow-xs-value: 0 1px 2px rgba(0, 0, 0, 0.52);
-  --shadow-sm-value: 0 2px 4px rgba(0, 0, 0, 0.62);
-  --shadow-card-value: 0 2px 6px rgba(0, 0, 0, 0.38);
+  /* Shadows — deep blacks for dark surfaces */
+  --shadow-xs-value:       0 1px 2px rgba(0, 0, 0, 0.5);
+  --shadow-sm-value:       0 2px 4px rgba(0, 0, 0, 0.6);
+  --shadow-card-value:     0 2px 8px rgba(0, 0, 0, 0.4);
   --shadow-elevated-value: 0 12px 28px rgba(0, 0, 0, 0.7);
-  --shadow-lg-value: 0 20px 40px rgba(0, 0, 0, 0.8);
-  --shadow-modal: 0 32px 64px rgba(0, 0, 0, 0.9);
-  --focus-ring: 0 0 0 3px rgba(53, 87, 246, 0.34);
-  --overlay-scrim: color-mix(in srgb, var(--bg-base) 34%, black);
+  --shadow-lg-value:       0 20px 40px rgba(0, 0, 0, 0.8);
+  --shadow-modal:          0 32px 64px rgba(0, 0, 0, 0.9);
+  --focus-ring:            0 0 0 3px rgba(85, 117, 255, 0.28);
+  --overlay-scrim:         rgba(0, 0, 0, 0.55);
 
-  /* Buttons */
-  --btn-secondary-bg: var(--bg-panel);
-  --btn-secondary-hover-bg: var(--bg-elevated);
-  --btn-secondary-border: var(--border);
-  --btn-secondary-hover-border: var(--accent-text);
-  --btn-secondary-fg: var(--accent-text);
+  /* Buttons — surfaces adapted for neutral dark */
+  --btn-secondary-bg:           var(--bg-panel);
+  --btn-secondary-hover-bg:     var(--bg-elevated);
+  --btn-secondary-border:       var(--border);
+  --btn-secondary-hover-border: var(--accent);
+  --btn-secondary-fg:           var(--accent-text);
 
-  --btn-destructive-bg: var(--bg-panel);
-  --btn-destructive-hover-bg: var(--bg-elevated);
-  --btn-destructive-border: var(--border);
+  --btn-destructive-bg:           var(--bg-panel);
+  --btn-destructive-hover-bg:     var(--danger-bg);
+  --btn-destructive-border:       var(--border);
   --btn-destructive-hover-border: var(--danger);
+  --btn-destructive-fg:           var(--danger-text);
 
-  --btn-neutral-bg: var(--bg-panel);
-  --btn-neutral-hover-bg: var(--bg-elevated);
+  --btn-neutral-bg:           var(--bg-panel);
+  --btn-neutral-hover-bg:     var(--bg-elevated);
+  --btn-neutral-border:       var(--border);
+  --btn-neutral-hover-border: var(--border-strong);
+  --btn-neutral-fg:           var(--text-primary);
 
-  --btn-ghost-hover-bg: var(--bg-panel);
+  --btn-ghost-hover-bg: var(--bg-elevated);
+  --btn-ghost-hover-fg: var(--text-primary);
 
-  --btn-topbar-bg: transparent;
-  --btn-topbar-hover-bg: var(--bg-panel);
+  --btn-topbar-bg:       transparent;
+  --btn-topbar-hover-bg: var(--bg-alt);
 
   /* Form controls */
-  --segmented-bg: rgba(255, 255, 255, 0.045);
-  --tab-active-fg: var(--text-primary);
+  --segmented-bg:      rgba(255, 255, 255, 0.04);
+  --tab-active-fg:     var(--text-primary);
   --slider-thumb-border: var(--bg-base);
-  --toggle-track-off: #212030;
+  --toggle-track-off:  #333333;
+  --toggle-thumb:      #e0e0e0;
 
   /* Shell */
-  --surface-header: var(--bg-base);
+  --surface-header: var(--bg-alt);
 
-  /* Terminal */
-  --terminal-bg: #080710;
-  --terminal-secondary: #b4bcd0;
-  --terminal-muted: var(--text-subtle);
-  --terminal-row-alt: #0e0d15;
-  --terminal-shadow: 0 6px 12px rgba(0, 0, 0, 0.48);
+  /* Terminal — pure neutral black, no blue tint */
+  --terminal-bg:        #111111;
+  --terminal-fg:        #e0e0e0;
+  --terminal-secondary: #9c9c9c;
+  --terminal-muted:     var(--text-subtle);
+  --terminal-row-alt:   #171717;
+  --terminal-border:    var(--border);
+  --terminal-shadow:    0 6px 12px rgba(0, 0, 0, 0.5);
 
   /* Settings */
-  --setting-body-bg: var(--bg-alt);
-  --setting-icon-bg: var(--bg-base);
+  --setting-body-bg:        var(--bg-alt);
+  --setting-icon-bg:        var(--bg-base);
+  --setting-icon-active-bg: var(--accent-soft);
 
   /* Skeleton */
-  --skeleton-base: var(--bg-panel);
+  --skeleton-base:      var(--bg-panel);
   --skeleton-highlight: var(--bg-elevated);
 }
 
@@ -502,8 +514,7 @@ html {
   min-height: 100%;
   background: var(--bg-base);
   scrollbar-gutter: stable;
-  font-size: 100%;
-  /* respects user font-size (WCAG 1.4.4) */
+  font-size: 100%; /* respects user font-size (WCAG 1.4.4) */
 }
 
 body {
@@ -511,15 +522,23 @@ body {
   min-height: 100dvh;
   margin: 0;
   background-color: var(--bg-base);
+  /*
+   * FIX: was rgba(53, 87, 246, 0.045) — hardcoded accent.
+   * Now uses CSS var so it responds to theme. Dark mode strips
+   * the radial glow entirely (see override below).
+   */
   background-image:
-    radial-gradient(circle at 18% 0%, rgba(53, 87, 246, 0.045), transparent 24rem),
+    radial-gradient(
+      circle at 18% 0%,
+      color-mix(in srgb, var(--accent) 5%, transparent),
+      transparent 24rem
+    ),
     linear-gradient(180deg, var(--bg-elevated) 0%, var(--bg-base) 18rem);
   background-position: center top;
   color: var(--text-primary);
   font-family: var(--font-primary-family);
   font-size: var(--text-base);
-  line-height: 1.5;
-  /* WCAG 1.4.12 */
+  line-height: 1.5; /* WCAG 1.4.12 */
   font-feature-settings:
     'cv11' 1,
     'ss01' 1,
@@ -529,6 +548,11 @@ body {
   -moz-osx-font-smoothing: grayscale;
   isolation: isolate;
   text-size-adjust: 100%;
+}
+
+/* Dark mode: remove accent tint glow — neutral dark has no hued background wash */
+html[data-theme='dark'] body {
+  background-image: linear-gradient(180deg, var(--bg-elevated) 0%, var(--bg-base) 14rem);
 }
 
 h1,
@@ -569,8 +593,7 @@ html[data-theme-transition] *::after {
 
 .link-accent {
   color: var(--accent-text);
-  text-decoration: underline;
-  /* WCAG 1.4.1 */
+  text-decoration: underline; /* WCAG 1.4.1 */
   text-underline-offset: 0.15em;
   text-decoration-thickness: 1px;
 }
@@ -1000,25 +1023,11 @@ textarea:disabled {
 }
 
 /* Prevent browser color override for anchor-buttons */
-a.ui-button.button-action-surface {
-  color: var(--btn-primary-fg);
-}
-
-a.ui-button.button-download-surface {
-  color: var(--btn-secondary-fg);
-}
-
-a.ui-button.button-destructive-surface {
-  color: var(--btn-destructive-fg);
-}
-
-a.ui-button.button-neutral-surface {
-  color: var(--btn-neutral-fg);
-}
-
-a.ui-button.button-quiet-surface {
-  color: var(--btn-ghost-fg);
-}
+a.ui-button.button-action-surface     { color: var(--btn-primary-fg);     }
+a.ui-button.button-download-surface   { color: var(--btn-secondary-fg);   }
+a.ui-button.button-destructive-surface{ color: var(--btn-destructive-fg); }
+a.ui-button.button-neutral-surface    { color: var(--btn-neutral-fg);     }
+a.ui-button.button-quiet-surface      { color: var(--btn-ghost-fg);       }
 
 a.ui-button.button-quiet-surface:hover {
   color: var(--btn-ghost-hover-fg);
@@ -1349,18 +1358,18 @@ html:not([data-theme='dark']) .code-block {
 .bg-zinc-950,
 .bg-zinc-900,
 [data-json-dark-theme='true'] {
-  --syntax-key: #9cdcfe;
-  --syntax-string: #ce9178;
-  --syntax-number: #b5cea8;
+  --syntax-key:     #9cdcfe;
+  --syntax-string:  #ce9178;
+  --syntax-number:  #b5cea8;
   --syntax-boolean: #569cd6;
-  --syntax-null: #569cd6;
-  --syntax-punct: #d4d4d4;
+  --syntax-null:    #569cd6;
+  --syntax-punct:   #d4d4d4;
 }
 
 .crawl-terminal-json {
-  background: #09090b;
+  background: #0d0d0d;
   color: #d4d4d4;
-  border-color: #27272a;
+  border-color: #2a2a2a;
   font-family: var(--font-mono-family);
   font-size: var(--text-sm);
   font-weight: var(--weight-normal);
@@ -1387,30 +1396,12 @@ html:not([data-theme='dark']) .code-block {
 }
 
 /* JSON Syntax Highlighting */
-.syntax-key {
-  color: var(--syntax-key);
-}
-
-.syntax-string {
-  color: var(--syntax-string);
-}
-
-.syntax-number {
-  color: var(--syntax-number);
-}
-
-.syntax-boolean {
-  color: var(--syntax-boolean);
-}
-
-.syntax-null {
-  color: var(--syntax-null);
-  font-style: italic;
-}
-
-.syntax-punct {
-  color: var(--syntax-punct);
-}
+.syntax-key     { color: var(--syntax-key);     }
+.syntax-string  { color: var(--syntax-string);  }
+.syntax-number  { color: var(--syntax-number);  }
+.syntax-boolean { color: var(--syntax-boolean); }
+.syntax-null    { color: var(--syntax-null); font-style: italic; }
+.syntax-punct   { color: var(--syntax-punct);   }
 
 @keyframes log-entry-in {
   from {
@@ -1511,21 +1502,10 @@ html:not([data-theme='dark']) .code-block {
 }
 
 /* Corner rounding */
-.compact-data-table thead tr:first-child th:first-child {
-  border-top-left-radius: var(--radius-md);
-}
-
-.compact-data-table thead tr:first-child th:last-child {
-  border-top-right-radius: var(--radius-md);
-}
-
-.compact-data-table tbody tr:last-child td:first-child {
-  border-bottom-left-radius: var(--radius-md);
-}
-
-.compact-data-table tbody tr:last-child td:last-child {
-  border-bottom-right-radius: var(--radius-md);
-}
+.compact-data-table thead tr:first-child th:first-child { border-top-left-radius:     var(--radius-md); }
+.compact-data-table thead tr:first-child th:last-child  { border-top-right-radius:    var(--radius-md); }
+.compact-data-table tbody tr:last-child td:first-child  { border-bottom-left-radius:  var(--radius-md); }
+.compact-data-table tbody tr:last-child td:last-child   { border-bottom-right-radius: var(--radius-md); }
 
 /* Light mode outer border */
 html:not([data-theme='dark']) .compact-data-table {
@@ -1542,13 +1522,8 @@ html:not([data-theme='dark']) .compact-data-table {
    SKELETON LOADER
 ═══════════════════════════════════════════════════════════════════════ */
 @keyframes shimmer {
-  0% {
-    background-position: -600px 0;
-  }
-
-  100% {
-    background-position: 600px 0;
-  }
+  0%   { background-position: -600px 0; }
+  100% { background-position:  600px 0; }
 }
 
 .skeleton {
@@ -1604,44 +1579,23 @@ html:not([data-theme='dark']) .compact-data-table {
 }
 
 @keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
+  to { transform: rotate(360deg); }
 }
 
-.animate-fade-in {
-  animation: fade-in var(--transition-base) both;
-}
-
-.animate-spin-slow {
-  animation: spin 0.75s linear infinite;
-}
+.animate-fade-in  { animation: fade-in var(--transition-base) both; }
+.animate-spin-slow { animation: spin 0.75s linear infinite; }
 
 .stagger-children > * {
   animation: fade-in 180ms ease-out both;
 }
 
-.stagger-children > *:nth-child(2) {
-  animation-delay: 50ms;
-}
+.stagger-children > *:nth-child(2) { animation-delay:  50ms; }
+.stagger-children > *:nth-child(3) { animation-delay: 100ms; }
+.stagger-children > *:nth-child(4) { animation-delay: 150ms; }
+.stagger-children > *:nth-child(5) { animation-delay: 200ms; }
+.stagger-children > *:nth-child(6) { animation-delay: 250ms; }
 
-.stagger-children > *:nth-child(3) {
-  animation-delay: 100ms;
-}
-
-.stagger-children > *:nth-child(4) {
-  animation-delay: 150ms;
-}
-
-.stagger-children > *:nth-child(5) {
-  animation-delay: 200ms;
-}
-
-.stagger-children > *:nth-child(6) {
-  animation-delay: 250ms;
-}
-
-/* ─── Custom duration token (duration-180 utility) ──────────────────── */
+/* ─── Custom duration token ─────────────────────────────────────────── */
 @theme {
   --duration-180: 180ms;
 }
@@ -1651,10 +1605,8 @@ html:not([data-theme='dark']) .compact-data-table {
 ═══════════════════════════════════════════════════════════════════════ */
 @media (max-width: 480px) {
   :root {
-    --text-xl: 1.25rem;
-    /* 20px */
-    --text-2xl: 1.625rem;
-    /* 26px */
+    --text-xl: 1.25rem;   /* 20px */
+    --text-2xl: 1.625rem; /* 26px */
     --content-gutter: var(--space-4);
   }
 }

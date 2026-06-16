@@ -1,5 +1,3 @@
-'use client';
-
 import type { ReactNode } from 'react';
 
 import { Button } from '../ui/primitives';
@@ -138,7 +136,7 @@ export type PendingDispatch = {
   additionalFields: string[];
   csvFile: File | null;
 };
-export type OutputTabKey = 'markdown' | 'table' | 'json' | 'logs' | 'learning' | 'run_config';
+export type OutputTabKey = 'table' | 'json' | 'logs' | 'learning' | 'run_config';
 
 export function selectorWinnerLabel(selectorKind: string | null | undefined): string {
   const normalized = String(selectorKind || '')

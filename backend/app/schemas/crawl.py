@@ -18,7 +18,7 @@ from pydantic import (
 from app.schemas.selectors import SelectorRecordResponse
 from app.services.publish.verdict import run_health_verdict
 
-_DISPLAY_HIDDEN_RECORD_FIELDS = {"markdown", "page_markdown", "table_markdown", "record_type"}
+_DISPLAY_HIDDEN_RECORD_FIELDS = {"record_type"}
 
 
 def _dict_payload(value: object) -> dict:

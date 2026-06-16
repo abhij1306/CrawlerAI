@@ -25,6 +25,7 @@ SURFACE_RESOLVER_ECOMMERCE_DETAIL_PATH_TOKENS = (
     "/p/",
     "/item/",
     "/dp/",
+    "/buy-",
 )
 SURFACE_RESOLVER_ECOMMERCE_LISTING_PATH_TOKENS = (
     "/collections/",
@@ -41,6 +42,8 @@ SURFACE_RESOLVER_ECOMMERCE_LISTING_PATH_SEGMENTS = (
     "beauty",
     "boys",
     "clothing",
+    "collection",
+    "collections",
     "dresses",
     "gifts",
     "girls",
@@ -66,6 +69,12 @@ SURFACE_RESOLVER_ECOMMERCE_DETAIL_SKU_HTML_PATTERN = (
 )
 SURFACE_RESOLVER_ECOMMERCE_DETAIL_HTML_MIN_HYPHENS = 3
 SURFACE_RESOLVER_ECOMMERCE_DETAIL_HTML_EXTENSION = ".html"
+SURFACE_RESOLVER_ECOMMERCE_DETAIL_TERMINAL_PATTERN = (
+    r"(?=.{8,}$)(?=.*\d)(?=.*[-_])[a-z0-9][a-z0-9_-]*"
+)
+SURFACE_RESOLVER_ECOMMERCE_LISTING_TERMINAL_PATTERNS = (
+    r"page[-_]\d+",
+)
 SURFACE_RESOLVER_JOB_PATH_TOKENS = (
     "/job/",
     "/jobs/",

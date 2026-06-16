@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+import logging
 import time
 
 from app.core.logfire_integration import logfire_span, set_logfire_attributes
@@ -122,6 +124,7 @@ __all__ = [
 ]
 
 acquire = _acquire
+logger = logging.getLogger(__name__)
 
 
 async def process_single_url(
@@ -130,6 +133,7 @@ async def process_single_url(
     url: str,
     config: URLProcessingConfig | None = None,
     *,
+    url_timeout_seconds: float | None = None,
     proxy_list: list[str] | None = None,
     traversal_mode: str | None = None,
     max_pages: int | None = None,
@@ -143,8 +147,10 @@ async def process_single_url(
 ) -> URLProcessingResult:
     del checkpoint
     settings_view = run.settings_view
-    url_timeout_seconds = (
-        settings_view.url_timeout_seconds()
+    resolved_url_timeout_seconds = (
+        float(url_timeout_seconds)
+        if url_timeout_seconds is not None
+        else settings_view.url_timeout_seconds()
         if settings_view.get("url_timeout_seconds") not in (None, "")
         else crawler_runtime_settings.default_url_process_timeout_seconds()
     )
@@ -172,51 +178,87 @@ async def process_single_url(
             update_run_state=update_run_state,
             persist_logs=persist_logs,
         ),
-        url_timeout_seconds=float(url_timeout_seconds),
+        url_timeout_seconds=float(resolved_url_timeout_seconds),
         started_at_monotonic=time.monotonic(),
         requested_fields=list(run.requested_fields or []),
         surface=run.surface,
     )
-    with logfire_span(
-        "pipeline.url.process",
-        run_id=run.id,
-        domain=normalize_domain(url),
-        surface=run.surface,
-        llm_enabled=settings_view.llm_enabled(),
-        traversal_mode=context.config.traversal_mode or "",
-        max_records=context.config.max_records,
-    ) as span:
-        await _enter_stage(context, STAGE_ACQUIRE)
-        robots_result = await _run_robots_gate(context)
-        if robots_result is not None:
+    try:
+        with logfire_span(
+            "pipeline.url.process",
+            run_id=run.id,
+            domain=normalize_domain(url),
+            surface=run.surface,
+            llm_enabled=settings_view.llm_enabled(),
+            traversal_mode=context.config.traversal_mode or "",
+            max_records=context.config.max_records,
+        ) as span:
+            await _enter_stage(context, STAGE_ACQUIRE)
+            robots_result = await _run_robots_gate(context)
+            if robots_result is not None:
+                set_logfire_attributes(
+                    span,
+                    verdict=robots_result.verdict,
+                    blocked=True,
+                    stage="robots",
+                )
+                return robots_result
+            fetched = await _run_acquisition_stage(
+                context,
+                prefetched_acquisition=prefetched_acquisition,
+            )
+            if context.config.prefetch_only:
+                result = _build_prefetch_only_result(context, fetched)
+                set_logfire_attributes(span, verdict=result.verdict, prefetch_only=True)
+                return result
+            await _enter_stage(context, STAGE_EXTRACT)
+            extracted = await _run_extraction_stage(context, fetched)
+            extracted = await _run_normalization_stage(context, extracted)
+            result = await _run_persistence_stage(context, extracted)
+            result_metrics = mapping_or_empty(result.url_metrics)
             set_logfire_attributes(
                 span,
-                verdict=robots_result.verdict,
-                blocked=True,
-                stage="robots",
+                verdict=result.verdict,
+                record_count=result_metrics.get("record_count"),
+                method=result_metrics.get("method"),
+                blocked=result_metrics.get("blocked"),
             )
-            return robots_result
-        fetched = await _run_acquisition_stage(
-            context,
-            prefetched_acquisition=prefetched_acquisition,
-        )
-        if context.config.prefetch_only:
-            result = _build_prefetch_only_result(context, fetched)
-            set_logfire_attributes(span, verdict=result.verdict, prefetch_only=True)
             return result
-        await _enter_stage(context, STAGE_EXTRACT)
-        extracted = await _run_extraction_stage(context, fetched)
-        extracted = await _run_normalization_stage(context, extracted)
-        result = await _run_persistence_stage(context, extracted)
-        result_metrics = mapping_or_empty(result.url_metrics)
-        set_logfire_attributes(
-            span,
-            verdict=result.verdict,
-            record_count=result_metrics.get("record_count"),
-            method=result_metrics.get("method"),
-            blocked=result_metrics.get("blocked"),
+    except asyncio.CancelledError as exc:
+        await _persist_terminal_failure_trace(context, exc)
+        raise
+    except Exception as exc:
+        await _persist_terminal_failure_trace(context, exc)
+        raise
+
+
+async def _persist_terminal_failure_trace(
+    context: _URLProcessingContext,
+    exc: BaseException,
+) -> None:
+    trace = context.trace
+    if trace is None:
+        return
+    diagnostics = mapping_or_empty(getattr(exc, "browser_diagnostics", {}))
+    trace.record_acquire_event(
+        obs_config.ACQUIRE_EVENT_TERMINAL_FAILURE,
+        detail={
+            "error_type": type(exc).__name__,
+            "message": str(exc),
+            "browser_outcome": diagnostics.get("browser_outcome"),
+            "failure_reason": diagnostics.get("failure_reason"),
+        },
+    )
+    trace.record_verdict(VERDICT_ERROR)
+    try:
+        await persist_run_trace(
+            run_id=context.run.id,
+            source_url=context.url,
+            trace=trace,
+            flagged=True,
         )
-        return result
+    except Exception:
+        logger.warning("Failed to persist terminal failure trace", exc_info=True)
 
 
 async def _enter_stage(
@@ -660,6 +702,29 @@ def _record_extraction_trace(
                 if str(item or "").strip()
             ],
         )
+    graph = mapping_or_empty(primary.get("_evidence_graph"))
+    decisions = mapping_or_empty(graph.get("field_decisions"))
+    trace.record_evidence_summary(
+        {
+            "candidate_count": len(mapping_or_empty(graph.get("field_evidence"))),
+            "field_decision_count": len(decisions),
+            "conflict_count": sum(
+                _as_int(mapping_or_empty(decision).get("conflict_count")) or 0
+                for decision in decisions.values()
+            ),
+            "rejected_candidate_count": sum(
+                _as_int(
+                    mapping_or_empty(decision).get("rejected_candidate_count")
+                )
+                or 0
+                for decision in decisions.values()
+            ),
+            "validation_finding_count": len(
+                _object_list(primary.get("_validation_findings"))
+            ),
+            "review_candidate_count": len(_object_list(primary.get("_review_bucket"))),
+        }
+    )
 
 
 async def _run_normalization_stage(
@@ -750,7 +815,7 @@ async def _apply_extraction_post_processing(
             resolve_run_config_fn=resolve_run_config,
             extract_records_fn=extract_records_directly_with_llm,
         )
-        if "detail" in context.surface and records:
+        if "detail" not in context.surface and records:
             records = await apply_llm_fallback(
                 context.session,
                 run=context.run,

@@ -1,6 +1,3 @@
-'use client';
-
-// Next.js App Router entrypoint for `/admin/llm`; invoked by file-system routing.
 import { startTransition, useEffect, useReducer, useState } from 'react';
 import { CheckCircle2, PlugZap, Plus, Trash2 } from 'lucide-react';
 
@@ -97,6 +94,9 @@ function alignFormToProviders(
   current: LlmConfigCreatePayload,
   providers: LlmProviderCatalogItem[],
 ): LlmConfigCreatePayload {
+  if (providers.length === 0) {
+    return current;
+  }
   const fallbackProvider = providers[0];
   const matchingProvider = providers.find((provider) => provider.provider === current.provider);
   if (matchingProvider) {
@@ -311,6 +311,7 @@ export default function AdminLlmPage() {
             <div className="grid gap-4 md:grid-cols-2">
               <Field label="Provider">
                 <Dropdown<string>
+                  ariaLabel="Provider"
                   value={form.provider}
                   onChange={(provider) => {
                     const nextModel =
@@ -334,6 +335,7 @@ export default function AdminLlmPage() {
 
               <Field label="Task">
                 <Dropdown<string>
+                  ariaLabel="Task"
                   value={form.task_type}
                   onChange={(task_type) => dispatch({ type: 'patchForm', patch: { task_type } })}
                   options={TASK_TYPES.map((taskType) => ({ value: taskType, label: taskType }))}
@@ -343,6 +345,7 @@ export default function AdminLlmPage() {
               <Field label="Model" className="md:col-span-2">
                 <div className="grid gap-2">
                   <Dropdown<string>
+                    ariaLabel="Model"
                     value={modelDropdownValue}
                     onChange={(model) => {
                       if (model === CUSTOM_MODEL_OPTION) {
@@ -500,7 +503,7 @@ export default function AdminLlmPage() {
                       const now = nowMs !== null ? new Date(nowMs) : null;
                       const todayStr = now?.toDateString();
                       const yesterdayStr = now
-                        ? new Date(nowMs! - 86_400_000).toDateString()
+                        ? new Date(now.getTime() - 86_400_000).toDateString()
                         : undefined;
                       return costLog.slice(0, 40).map((entry) => {
                         const totalTokens = entry.input_tokens + entry.output_tokens;

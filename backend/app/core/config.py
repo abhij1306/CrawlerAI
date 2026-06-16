@@ -84,6 +84,7 @@ class Settings(BaseSettings):
     )
     logfire_service_name: str = "crawlerai-backend"
     logfire_environment: str = ""
+    logfire_base_url: str = "https://logfire-us.pydantic.dev"
     logfire_capture_headers: bool = False
     logfire_send_to_logfire: bool | Literal["if-token-present"] = Field(
         default="if-token-present",

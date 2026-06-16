@@ -3,7 +3,7 @@ Product URL: $product_url
 Source domain: $source_domain
 Snippet: $product_snippet
 
-Return brand-inference JSON only. Return exactly the schema below, with no markdown or extra keys.
+Return brand-inference JSON only. Do not wrap it in markdown or code fences. Return exactly the schema below, with no extra keys or prose.
 
 Output schema:
 {

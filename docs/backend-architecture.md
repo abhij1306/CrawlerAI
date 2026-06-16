@@ -95,6 +95,8 @@ Current live behavior:
 - `sleep_ms`
 - `respect_robots_txt`
 - `url_batch_concurrency`
+- local in-process dispatch is serial when `CELERY_DISPATCH_ENABLED=false`; Celery-enabled runs may use the configured URL batch concurrency
+- every URL is processed in an owned SQLAlchemy session so a URL-local failed transaction cannot poison run orchestration or later URLs
 - `url_timeout_seconds`
 - `llm_enabled`
 - `extraction_contract`
@@ -121,7 +123,7 @@ POST /api/crawls
   -> pipeline/core._process_single_url for each URL
   -> acquire page + diagnostics + artifacts
   -> extract records
-  -> optional selector self-heal / optional LLM missing-field extraction
+  -> optional selector self-heal; ecommerce detail never generates missing values with LLM
   -> publish verdict + metrics + source trace
   -> persist CrawlRecord rows and run summary
 ```
@@ -318,6 +320,10 @@ Primary files:
 - `crawl_engine.py`
 - `detail_extractor.py`
 - `extract/detail/assembly/tiers.py`
+- `extract/contracts.py`
+- `extract/detail/resolution.py`
+- `extract/detail/validation.py`
+- `extract/detail/images/dedupe.py`
 - `listing_extractor.py`
 - `extract/structured_listing_handler.py`
 - `extract/network_listing_mapper.py`
@@ -356,7 +362,9 @@ Important implemented features:
 - ecommerce detail title selection now ranks structured sources ahead of raw DOM headings, rejects noisy DOM `<h1>/<title>` values such as promo or generic-results text, and only promotes fallback titles when the replacement source is materially stronger
 - ecommerce detail extraction now drops low-signal site-shell records when the surviving title still resolves to site-brand chrome and no real product anchors survive, preventing stale SPA/detail misses from being persisted as false product successes
 - ecommerce-detail extraction now threads the originally requested PDP URL through materialization so same-site utility redirects can either preserve the requested product identity when the product metadata still matches or drop the row entirely when the utility page is carrying mismatched stale product data
-- detail tier execution lives in `extract/detail/assembly/tiers.py`; `detail_extractor.py` prepares state and owns candidate arbitration, while the tier executor owns authoritative -> structured -> JS state -> DOM sequencing, DOM skip decisions, and early/DOM finalization transitions
+- detail tier execution lives in `extract/detail/assembly/tiers.py`; all detail insertion paths write through one sourced-candidate boundary into `CandidateSet`, which owns source, tier, index, and evidence ID; the tier executor owns authoritative -> structured -> JS state -> DOM sequencing, DOM skip decisions, and finalization transitions
+- detail materializes once before the DOM skip decision and once after DOM collection; parallel candidate-source/evidence arrays and their alignment repair pass are deleted
+- incomplete variant offers and parent/variant currency contradictions remain visible as validation findings instead of silent rewrites; public `record.data` stays flat while evidence summaries live in source trace/review
 - detail extraction now has a DOM variant fallback for `ecommerce_detail` pages when structured data and JS state leave variant axes empty
 - listing candidate quality lives in `extract/listing_candidate_ranking.py`; listing extraction now delegates candidate admission, support-signal checks, utility rejection, dedupe, and set ranking to that owner
 - extraction config is split by concept: `field_mappings.py` owns schemas/aliases/field-name primitives, `js_state_field_specs.py` owns glom specs, `variant_policy.py` owns variant axes and flat transport fields, `extraction_price_rules.py` owns price selectors/JSON-LD price fields/currency-price thresholds, and `public_record_policy.py` owns public persisted/exported record policy
@@ -389,7 +397,7 @@ Important implemented features:
 - output schema validation now applies to listing surfaces as well as detail surfaces before persistence, so type mismatches on listing records are nullified instead of silently bypassing validation
 - persistence now applies a final public-record firewall before `CrawlRecord.data`: unknown/internal fields, empty fields, invalid scalar/list/object shapes, non-navigation URLs, API/event/tracking URLs, and overlong opaque URLs are rejected into `source_trace.extraction.rejected_public_fields` instead of public data
 - the final persisted-data firewall is owned by `public_record_firewall.py`, not `pipeline/persistence.py`; persistence calls it before writing `CrawlRecord.data`
-- pipeline post-processing now has two bounded optional recovery layers: selector self-heal for detail pages, and a snapshot-backed `direct_record_extraction` LLM task that only replaces weak deterministic record sets when the LLM result scores better
+- pipeline post-processing keeps selector self-heal for detail pages. Ecommerce detail is guarded from `extract_missing_fields()` and direct-record value generation; non-detail LLM fallback remains explicitly gated
 
 ### 6.5 Publish and persistence
 
@@ -455,6 +463,7 @@ Current storage/runtime model:
 - selector self-heal persists only validated improvements and reuses domain memory on later runs before attempting another synthesis pass
 - once reused domain-memory rules satisfy the requested fields for a record, the pipeline does not launch a second generic selector-synthesis round just because confidence remains low
 - completed runs now expose a Domain Recipe workflow that combines acquisition evidence, field-local keep/reject actions, selector promotion, and saved run-profile editing in one surface; rejecting a selector-backed field deactivates the exact matching saved selector for that `(domain, surface)` without mutating unrelated memory
+- Domain Recipe also exposes confusing evidence summaries and validation findings for review; it never exposes the internal `_evidence_graph`
 
 ### 6.7 LLM admin and runtime
 

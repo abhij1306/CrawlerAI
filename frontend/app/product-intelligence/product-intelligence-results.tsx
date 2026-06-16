@@ -1,5 +1,3 @@
-'use client';
-
 import { Code2, Download, History, Layers, Search, Settings } from 'lucide-react';
 import type { ReactNode } from 'react';
 

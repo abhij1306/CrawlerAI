@@ -30,11 +30,11 @@ export function RunProfileToggles({
       />
       <ToggleRow
         label="Prefer Curl Handoff"
-        checked={profile.acquisition_contract.prefer_curl_handoff}
+        checked={profile.acquisition_contract.handoff_eligible}
         onChange={(checked) =>
           updateProfileDraft(domain, surface, (current) => ({
             ...current,
-            acquisition_contract: { ...current.acquisition_contract, prefer_curl_handoff: checked },
+            acquisition_contract: { ...current.acquisition_contract, handoff_eligible: checked },
           }))
         }
       />
@@ -108,7 +108,7 @@ function ToggleRow({ checked, label, onChange }: ToggleRowProps) {
   return (
     <div className="surface-muted flex h-[var(--control-height)] items-center justify-between rounded-md px-3 py-1.5 shadow-sm">
       <span className="text-sm font-medium">{label}</span>
-      <Toggle checked={checked} onChange={onChange} />
+      <Toggle checked={checked} onChange={onChange} ariaLabel={label} />
     </div>
   );
 }

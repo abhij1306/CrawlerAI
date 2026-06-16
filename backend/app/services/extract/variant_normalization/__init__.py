@@ -22,7 +22,6 @@ def normalize_variant_record(record: dict[str, Any], *, finalize_contract: bool 
     sanitization._sanitize_variant_axes(record)
     deduplication._dedupe_and_prune_variant_rows(record)
     backfill._backfill_variant_context(record)
-    backfill._backfill_parent_scalar_axes_from_variants(record)
     sanitization._drop_polluted_parent_scalar_axes(record)
     if finalize_contract:
         try:

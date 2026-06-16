@@ -1,5 +1,3 @@
-'use client';
-
 import { History, X } from 'lucide-react';
 import React, { useEffect, useEffectEvent } from 'react';
 

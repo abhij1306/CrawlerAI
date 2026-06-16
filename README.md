@@ -74,6 +74,24 @@ python -m venv .venv
 
 API: `http://127.0.0.1:8000`
 
+### Logfire
+
+Backend Logfire telemetry is opt-in and uses the existing FastAPI, Celery, and
+crawl-pipeline instrumentation. For local CLI authentication to the US Logfire
+instance and project:
+
+```powershell
+cd backend
+.\.venv\Scripts\logfire.exe --base-url='https://logfire-us.pydantic.dev' auth
+.\.venv\Scripts\logfire.exe --base-url='https://logfire-us.pydantic.dev' projects use --org 'abhij1306' 'crawlerai'
+```
+
+Enable export with `LOGFIRE_ENABLED=true`. Containers, CI, and deployments must
+provide the `LOGFIRE_TOKEN` secret. Keep `LOGFIRE_CAPTURE_HEADERS=false` unless
+header capture is explicitly required and reviewed for sensitive data.
+In the `abhij1306/crawlerai` Live view, filter by
+`service_name = 'crawlerai-backend'`.
+
 ### Frontend
 
 ```powershell

@@ -1,8 +1,9 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { TopBarProvider, useTopBarHeader } from '../layout/top-bar-context';
-import DomainMemoryManagePage from './domain-memory-manage-page';
+import { TopBarProvider, useTopBarHeader } from '../../components/layout/top-bar-context';
+import DomainMemoryPage from './page-view';
 
 const apiMock = vi.hoisted(() => ({
   listSelectorSummaries: vi.fn(),
@@ -27,7 +28,7 @@ function HeaderActions() {
   return <>{header?.actions ?? null}</>;
 }
 
-describe('DomainMemoryManagePage', () => {
+describe('DomainMemoryPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     apiMock.listSelectorSummaries.mockResolvedValue([
@@ -190,8 +191,11 @@ describe('DomainMemoryManagePage', () => {
       acquisition_contract: {
         preferred_browser_engine: 'auto',
         prefer_browser: false,
-        prefer_curl_handoff: false,
+        handoff_eligible: false,
         handoff_cookie_engine: 'auto',
+        required_rendering: false,
+        required_traversal: false,
+        required_network_payloads: false,
         last_quality_success: null,
         stale_after_failures: {
           failure_count: 0,
@@ -215,9 +219,11 @@ describe('DomainMemoryManagePage', () => {
 
   it('renders the selected domain memory workspace and recent learning', async () => {
     render(
-      <TopBarProvider>
-        <DomainMemoryManagePage />
-      </TopBarProvider>,
+      <MemoryRouter>
+        <TopBarProvider>
+          <DomainMemoryPage />
+        </TopBarProvider>
+      </MemoryRouter>,
     );
 
     expect(await screen.findByText('Selector Memory')).toBeInTheDocument();
@@ -246,9 +252,11 @@ describe('DomainMemoryManagePage', () => {
 
   it('edits and saves a domain run profile from domain memory', async () => {
     render(
-      <TopBarProvider>
-        <DomainMemoryManagePage />
-      </TopBarProvider>,
+      <MemoryRouter>
+        <TopBarProvider>
+          <DomainMemoryPage />
+        </TopBarProvider>
+      </MemoryRouter>,
     );
 
     fireEvent.click(await screen.findByRole('button', { name: 'Profiles (1)' }));
@@ -275,9 +283,11 @@ describe('DomainMemoryManagePage', () => {
 
   it('edits a saved selector from the domain memory workspace', async () => {
     render(
-      <TopBarProvider>
-        <DomainMemoryManagePage />
-      </TopBarProvider>,
+      <MemoryRouter>
+        <TopBarProvider>
+          <DomainMemoryPage />
+        </TopBarProvider>
+      </MemoryRouter>,
     );
 
     const editButton = await screen.findByRole('button', { name: 'Edit selector' });
@@ -318,10 +328,12 @@ describe('DomainMemoryManagePage', () => {
     );
 
     render(
-      <TopBarProvider>
-        <HeaderActions />
-        <DomainMemoryManagePage />
-      </TopBarProvider>,
+      <MemoryRouter>
+        <TopBarProvider>
+          <HeaderActions />
+          <DomainMemoryPage />
+        </TopBarProvider>
+      </MemoryRouter>,
     );
 
     await waitFor(() => {
@@ -355,10 +367,12 @@ describe('DomainMemoryManagePage', () => {
 
   it('resets domain memory from the top bar action', async () => {
     render(
-      <TopBarProvider>
-        <HeaderActions />
-        <DomainMemoryManagePage />
-      </TopBarProvider>,
+      <MemoryRouter>
+        <TopBarProvider>
+          <HeaderActions />
+          <DomainMemoryPage />
+        </TopBarProvider>
+      </MemoryRouter>,
     );
 
     fireEvent.click(await screen.findByRole('button', { name: 'Reset Domain Memory' }));
