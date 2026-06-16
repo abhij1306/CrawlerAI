@@ -42,7 +42,7 @@ async def runtime_page(
         await runtime._acquire_context_slot(phase_timings_ms=phase_timings_ms)
         slot_acquired = True
         await runtime._ensure_with_timing(phase_timings_ms=phase_timings_ms)
-    except Exception:
+    except BaseException:
         if slot_acquired:
             runtime._semaphore.release()
         raise

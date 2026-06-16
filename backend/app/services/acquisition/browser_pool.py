@@ -365,11 +365,13 @@ class SharedBrowserRuntime:
         slot_timeout_seconds = _browser_context_slot_timeout_seconds()
         slot_wait_started_at = time.perf_counter()
         slot_deadline = time.monotonic() + slot_timeout_seconds
+        slot_acquired = False
         try:
             await asyncio.wait_for(
                 self._semaphore.acquire(),
                 timeout=slot_timeout_seconds,
             )
+            slot_acquired = True
             await self._yield_slot_until_recycle_window(
                 max(0.0, slot_deadline - time.monotonic())
             )
@@ -388,6 +390,10 @@ class SharedBrowserRuntime:
                 "Timed out waiting for browser context slot "
                 f"after {slot_timeout_seconds:.1f}s"
             ) from exc
+        except BaseException:
+            if slot_acquired:
+                self._semaphore.release()
+            raise
         finally:
             self._update_queue_count(-1)
 

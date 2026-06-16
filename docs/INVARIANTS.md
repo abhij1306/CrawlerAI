@@ -48,6 +48,8 @@ If it exists, extend it. If a similar version exists, consolidate — do not cre
 **How the detail candidate system works:**
 All tiers (adapter, structured data, JS state, DOM) write through `_add_sourced_candidate`. `CandidateSet` is the single owner of candidate source, tier, index, and evidence ID. The legacy value buckets may support collectors, but must not gain parallel source/evidence arrays or independent arbitration. Field selection remains per-field: price may come from JS state while SKU comes from DOM. Do not replace it with a record-level merge.
 
+After detail candidate resolution, public-field repairs must be recorded as `CandidateSet.field_transforms` before `_evidence_graph` is attached. The graph must expose `field_evidence`, `field_decisions`, `field_transforms`, and graph-only `row_lineage` for final variant rows. Legacy `_transforms` may remain as a temporary trace projection, but it must not be the only record of a production-facing mutation.
+
 **Source priority is a resolver tiebreaker (enforced by `SOURCE_PRIORITY` / `_SOURCE_PRIORITY_RANK`):**
 1. Platform adapter
 2. JSON-LD / Microdata
@@ -115,6 +117,8 @@ Ecommerce detail must not call missing-field value generation. LLM may later cho
 - Calling ecommerce-detail `extract_missing_fields()` or accepting an LLM-generated field value
 - Letting LLM replace a populated adapter / structured / network / JS / DOM value without an explicit conflict-review workflow
 - Maintaining parallel candidate source/evidence arrays beside `CandidateSet`
+- Mutating public detail fields after `_evidence_graph` is serialized
+- Recording a repair only in record-level `_transforms` without a matching graph transform
 - Silently rewriting a contradictory currency or dropping the contradicting evidence instead of emitting a finding
 - Deleting explicit variant offer fields because they equal the parent offer
 - Treating a thin acquisition shell with only URL/title identity as a complete detail record without a high-severity evidence finding

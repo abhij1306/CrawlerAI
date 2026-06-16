@@ -1540,6 +1540,72 @@ async def test_shared_browser_runtime_bounds_hung_context_cleanup(
 
 @pytest.mark.asyncio
 @pytest.mark.component
+async def test_context_slot_released_when_cancelled_during_recycle_wait(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime = crawl_fetch_runtime.SharedBrowserRuntime(max_contexts=1)
+    wait_started = asyncio.Event()
+    release_wait = asyncio.Event()
+
+    async def _block_recycle_wait(timeout_seconds: float) -> bool:
+        del timeout_seconds
+        wait_started.set()
+        await release_wait.wait()
+        return False
+
+    monkeypatch.setattr(
+        runtime,
+        "_yield_slot_until_recycle_window",
+        _block_recycle_wait,
+    )
+
+    task = asyncio.create_task(runtime._acquire_context_slot(phase_timings_ms={}))
+    await asyncio.wait_for(wait_started.wait(), timeout=1.0)
+    assert runtime._semaphore.locked()
+
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert not runtime._semaphore.locked()
+    assert runtime.snapshot()["queued"] == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_runtime_page_releases_slot_when_cancelled_during_browser_start(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime = crawl_fetch_runtime.SharedBrowserRuntime(max_contexts=1)
+    ensure_started = asyncio.Event()
+    release_ensure = asyncio.Event()
+
+    async def _block_ensure(*, phase_timings_ms: dict[str, int] | None) -> None:
+        del phase_timings_ms
+        ensure_started.set()
+        await release_ensure.wait()
+
+    monkeypatch.setattr(runtime, "_ensure_with_timing", _block_ensure)
+
+    async def _open_page() -> None:
+        async with runtime.page(allow_storage_state=False):
+            pass
+
+    task = asyncio.create_task(_open_page())
+    await asyncio.wait_for(ensure_started.wait(), timeout=1.0)
+    assert runtime._semaphore.locked()
+
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert not runtime._semaphore.locked()
+    assert runtime.snapshot()["active"] == 0
+    assert runtime.snapshot()["queued"] == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
 async def test_shared_browser_runtime_releases_pool_slot_when_cleanup_is_cancelled(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

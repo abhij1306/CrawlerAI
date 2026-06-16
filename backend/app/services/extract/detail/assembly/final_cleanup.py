@@ -342,7 +342,9 @@ def _same_value(left: object, right: object) -> bool:
 
 def _winning_evidence_ids(record: dict[str, Any], field_name: str) -> list[str]:
     field_evidence = record.get("_field_evidence")
-    summary = field_evidence.get(field_name) if isinstance(field_evidence, dict) else None
+    summary = (
+        field_evidence.get(field_name) if isinstance(field_evidence, dict) else None
+    )
     if not isinstance(summary, dict):
         return []
     return [str(item) for item in summary.get("winning_evidence_ids") or [] if str(item)]

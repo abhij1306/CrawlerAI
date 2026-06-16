@@ -22,7 +22,10 @@ from app.services.config.extraction_rules import (
     DETAIL_SURFACE_KEYWORD,
     ECOMMERCE_DETAIL_SURFACE,
 )
-from app.services.config.field_mappings import DOM_HIGH_VALUE_FIELDS, VARIANT_DOM_FIELD_NAMES
+from app.services.config.field_mappings import (
+    DOM_HIGH_VALUE_FIELDS,
+    VARIANT_DOM_FIELD_NAMES,
+)
 from app.services.extraction_context import ExtractionContext
 from app.services.extract.contracts import CandidateSet
 from app.services.extract.variant_choice_traversal import variant_dom_cues_present
