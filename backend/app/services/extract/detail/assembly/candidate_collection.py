@@ -457,8 +457,6 @@ def _materialize_record(
         record["_selector_traces"] = selected_selector_traces
     if candidates.get("_irrelevant_detail_structured_product"):
         record["_irrelevant_detail_structured_product"] = True
-    graph = evidence_builder.as_graph()
-    record["_evidence_graph"] = graph
     review_bucket = _review_bucket_from_decisions(evidence_builder)
     if review_bucket:
         record["_review_bucket"] = review_bucket

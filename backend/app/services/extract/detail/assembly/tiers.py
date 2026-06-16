@@ -22,8 +22,10 @@ from app.services.config.extraction_rules import (
     DETAIL_SURFACE_KEYWORD,
     ECOMMERCE_DETAIL_SURFACE,
 )
+from app.services.config.field_mappings import DOM_HIGH_VALUE_FIELDS, VARIANT_DOM_FIELD_NAMES
 from app.services.extraction_context import ExtractionContext
 from app.services.extract.contracts import CandidateSet
+from app.services.extract.variant_choice_traversal import variant_dom_cues_present
 
 
 @dataclass(slots=True)
@@ -145,6 +147,7 @@ class DetailTierExecutor:
                 self._promote_dom_title(record, prepared, inputs.page_url)
             return self._runtime.finalize_detail_record(
                 record,
+                evidence_builder=prepared.state.evidence_builder,
                 html=inputs.html,
                 page_url=inputs.page_url,
                 surface=inputs.surface,
@@ -160,6 +163,7 @@ class DetailTierExecutor:
         record["_dom_skip_decision"] = skip_decision
         return self._runtime.finalize_detail_record(
             record,
+            evidence_builder=prepared.state.evidence_builder,
             html=inputs.html,
             page_url=inputs.page_url,
             surface=inputs.surface,
@@ -375,6 +379,8 @@ class DetailTierExecutor:
             obs_config.DOM_SKIP_KEY_CONFIDENCE: confidence_score,
             obs_config.DOM_SKIP_KEY_THRESHOLD: threshold,
             obs_config.DOM_SKIP_KEY_REASON: reason,
+            "required_fields": _dom_decision_required_fields(inputs),
+            "dom_cues": _dom_decision_cues(prepared.soup, prepared.raw_soup),
         }
         return dom_skipped, decision
 
@@ -417,3 +423,27 @@ class DetailTierExecutor:
 
 def _object_dict(value: object) -> dict:
     return dict(value) if isinstance(value, dict) else {}
+
+
+def _dom_decision_required_fields(inputs: DetailTierInputs) -> list[str]:
+    requested = {
+        str(field or "").strip()
+        for field in inputs.requested_fields or []
+        if str(field or "").strip()
+    }
+    if str(inputs.surface or "").strip().lower() == ECOMMERCE_DETAIL_SURFACE:
+        requested.update(DOM_HIGH_VALUE_FIELDS.get(ECOMMERCE_DETAIL_SURFACE) or ())
+        requested.update(VARIANT_DOM_FIELD_NAMES)
+    return sorted(requested)
+
+
+def _dom_decision_cues(
+    soup: BeautifulSoup | None,
+    raw_soup: BeautifulSoup | None,
+) -> list[str]:
+    for candidate_soup in (soup, raw_soup):
+        if candidate_soup is None:
+            continue
+        if variant_dom_cues_present(candidate_soup):
+            return ["variant_dom_cues"]
+    return []

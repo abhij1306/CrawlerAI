@@ -85,6 +85,71 @@ def testrequires_dom_completion_uses_raw_variant_cues_after_pruning() -> None:
     )
 
 
+@pytest.mark.regression
+def test_jsonld_price_with_dom_variants_requires_dom_completion() -> None:
+    html = """
+    <html>
+      <head>
+        <script type="application/ld+json">
+        {
+          "@type": "Product",
+          "name": "Trail Runner",
+          "image": "https://example.com/trail.jpg",
+          "offers": {"price": "120.00", "priceCurrency": "USD"}
+        }
+        </script>
+      </head>
+      <body>
+        <main>
+          <h1>Trail Runner</h1>
+          <select name="size"><option>8</option><option>9</option></select>
+        </main>
+      </body>
+    </html>
+    """
+
+    record = extract_records(
+        html,
+        "https://example.com/products/trail-runner",
+        "ecommerce_detail",
+        max_records=1,
+        requested_fields=["price", "currency", "variants"],
+    )[0]
+
+    assert record["_dom_skip_decision"]["dom_skipped"] is False
+    assert "variant_dom_cues" in record["_dom_skip_decision"]["dom_cues"]
+
+
+@pytest.mark.regression
+def test_complete_jsonld_product_without_dom_variant_cues_may_skip_dom() -> None:
+    html = """
+    <html>
+      <head>
+        <script type="application/ld+json">
+        {
+          "@type": "Product",
+          "name": "Trail Runner",
+          "image": "https://example.com/trail.jpg",
+          "description": "A durable trail shoe with mesh upper and rubber outsole.",
+          "offers": {"price": "120.00", "priceCurrency": "USD"}
+        }
+        </script>
+      </head>
+      <body><main><h1>Trail Runner</h1></main></body>
+    </html>
+    """
+
+    record = extract_records(
+        html,
+        "https://example.com/products/trail-runner",
+        "ecommerce_detail",
+        max_records=1,
+        requested_fields=None,
+    )[0]
+
+    assert record["_dom_skip_decision"]["dom_cues"] == []
+
+
 def testrequires_dom_completion_ignores_logo_only_image_cue() -> None:
     """Generic page images should not force detail DOM completion."""
     soup = BeautifulSoup("<main><h1>Widget</h1></main>", "html.parser")

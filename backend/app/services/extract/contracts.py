@@ -40,6 +40,8 @@ class CandidateSet(BaseModel):
     page_url: str = ""
     candidates: list[RawCandidate] = Field(default_factory=list)
     field_decisions: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    field_transforms: list[dict[str, Any]] = Field(default_factory=list)
+    row_lineage: list[dict[str, Any]] = Field(default_factory=list)
 
     def add(
         self,
@@ -121,6 +123,53 @@ class CandidateSet(BaseModel):
         self.field_decisions[field_name] = decision
         return dict(decision)
 
+    def record_transform(
+        self,
+        *,
+        field_name: str,
+        before_value: Any,
+        after_value: Any,
+        rule_id: str,
+        input_evidence_ids: list[str] | None = None,
+        output_source: str,
+        metadata: dict[str, Any] | None = None,
+        entity_ref: str = "product",
+    ) -> str:
+        transform_id = f"tx_{len(self.field_transforms) + 1:06d}"
+        self.field_transforms.append(
+            {
+                "transform_id": transform_id,
+                "field_name": field_name,
+                "entity_ref": entity_ref,
+                "before_value": before_value,
+                "after_value": after_value,
+                "rule_id": rule_id,
+                "input_evidence_ids": list(input_evidence_ids or []),
+                "output_source": output_source,
+                "metadata": dict(metadata or {}),
+            }
+        )
+        return transform_id
+
+    def record_row_lineage(
+        self,
+        *,
+        field_name: str,
+        row_index: int,
+        evidence_ids: list[str] | None = None,
+        transform_ids: list[str] | None = None,
+        variant_key: str | None = None,
+    ) -> None:
+        self.row_lineage.append(
+            {
+                "field_name": field_name,
+                "row_index": row_index,
+                "variant_key": variant_key or f"{field_name}:{row_index}",
+                "evidence_ids": list(evidence_ids or []),
+                "transform_ids": list(transform_ids or []),
+            }
+        )
+
     def field_candidates(self, field_name: str) -> list[RawCandidate]:
         return [
             candidate
@@ -171,6 +220,8 @@ class CandidateSet(BaseModel):
                 for candidate in self.candidates
             },
             "field_decisions": dict(self.field_decisions),
+            "field_transforms": list(self.field_transforms),
+            "row_lineage": list(self.row_lineage),
         }
 
     def stable_fingerprint(self) -> str:

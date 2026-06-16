@@ -73,6 +73,10 @@ def _validate_llm_field_type(field_name: str, value: object) -> bool:
     return True
 
 
+def _surface_is_detail(surface: object) -> bool:
+    return "detail" in str(surface or "").strip().lower()
+
+
 async def apply_direct_record_llm_fallback(
     session: AsyncSession,
     *,
@@ -85,7 +89,7 @@ async def apply_direct_record_llm_fallback(
 ) -> list[dict[str, object]]:
     if not records:
         return records
-    if "detail" in str(run.surface or ""):
+    if _surface_is_detail(run.surface):
         return records
     domain = normalize_domain(page_url)
     requested_fields = repair_target_fields_for_surface(
@@ -147,7 +151,7 @@ async def apply_llm_fallback(
     html: str,
     records: list[dict[str, object]],
 ) -> list[dict[str, object]]:
-    if "detail" in str(run.surface or ""):
+    if _surface_is_detail(run.surface):
         return records
     updated_records: list[dict[str, object]] = []
     domain = normalize_domain(page_url)

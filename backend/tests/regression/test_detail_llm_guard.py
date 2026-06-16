@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from types import SimpleNamespace
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -68,6 +69,35 @@ async def test_ecommerce_detail_llm_missing_field_fallback_is_disabled(
             "_field_sources": {"title": ["json_ld"]},
         }
     ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+@pytest.mark.parametrize("surface", [" Ecommerce_Detail ", "product detail"])
+async def test_detail_llm_missing_field_fallback_normalizes_surface_name(
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    surface: str,
+) -> None:
+    @_as_async
+    def _unexpected_extract_missing_fields(*args, **kwargs):
+        del args, kwargs
+        raise AssertionError("detail surfaces must not run LLM field filling")
+
+    monkeypatch.setattr(
+        "app.services.pipeline.direct_record_fallback.extract_missing_fields",
+        _unexpected_extract_missing_fields,
+    )
+
+    rows = await apply_llm_fallback(
+        db_session,
+        run=SimpleNamespace(id=1, surface=surface, requested_fields=["price"]),
+        page_url="https://example.com/products/widget",
+        html="<html><body><h1>Widget</h1></body></html>",
+        records=[{"title": "Widget"}],
+    )
+
+    assert rows == [{"title": "Widget"}]
 
 
 @pytest.mark.asyncio

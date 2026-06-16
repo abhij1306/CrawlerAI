@@ -87,6 +87,40 @@ def test_candidate_set_records_semantic_conflict_and_resolution_reasons() -> Non
 
 
 @pytest.mark.unit
+def test_candidate_set_records_graph_transform() -> None:
+    candidate_set = CandidateSet(
+        surface="ecommerce_detail",
+        page_url="https://example.com/p",
+    )
+
+    transform_id = candidate_set.record_transform(
+        field_name="price",
+        before_value="190.00",
+        after_value="310.00",
+        rule_id="parent_price_from_unanimous_variant_price",
+        input_evidence_ids=["ev_000001"],
+        output_source="detail_price_core",
+    )
+
+    graph = candidate_set.as_graph()
+
+    assert transform_id == "tx_000001"
+    assert graph["field_transforms"] == [
+        {
+            "transform_id": "tx_000001",
+            "field_name": "price",
+            "entity_ref": "product",
+            "before_value": "190.00",
+            "after_value": "310.00",
+            "rule_id": "parent_price_from_unanimous_variant_price",
+            "input_evidence_ids": ["ev_000001"],
+            "output_source": "detail_price_core",
+            "metadata": {},
+        }
+    ]
+
+
+@pytest.mark.unit
 def test_selector_health_and_runtime_metrics_serialize_cleanly() -> None:
     snapshot = SelectorHealthSnapshot(
         domain="example.com",

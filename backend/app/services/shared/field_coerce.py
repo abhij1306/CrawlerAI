@@ -607,10 +607,20 @@ def _clean_product_attribute_dict(value: dict[str, object]) -> dict[str, object]
     return cleaned
 
 
-from app.services.shared.field_coerce_dispatch import (  # noqa: E402
-    coerce_availability_value as coerce_availability_value,
-    coerce_field_value,
-)
+def coerce_availability_value(value: object) -> str | None:
+    from app.services.shared.field_coerce_dispatch import (
+        coerce_availability_value as _coerce_availability_value,
+    )
+
+    return _coerce_availability_value(value)
+
+
+def coerce_field_value(field_name: str, value: object, page_url: str) -> object | None:
+    from app.services.shared.field_coerce_dispatch import (
+        coerce_field_value as _coerce_field_value,
+    )
+
+    return _coerce_field_value(field_name, value, page_url)
 
 
 def finalize_record(

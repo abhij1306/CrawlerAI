@@ -1,9 +1,9 @@
 # Active Plan
 
-**Current:** Frontend Audits and Cleanup → `docs/plans/frontend-audits-cleanup-plan.md`
-**Status:** DONE
-**Started:** 2026-06-15
-**Current slice:** Awaiting plan approval before Slice 1
+**Current:** Extraction Pipeline Productionization → `docs/plans/extraction-productionization-plan.md`
+**Status:** IN PROGRESS
+**Started:** 2026-06-16
+**Current slice:** Slice 1 — Plan Activation
 
 ## Queue
 1. Acquisition And Evidence Debt Removal → `docs/plans/acquisition-evidence-debt-removal-plan.md`

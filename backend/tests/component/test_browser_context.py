@@ -2304,7 +2304,7 @@ async def test_shared_browser_runtime_keeps_capacity_until_timed_out_close_finis
             return FakeContext()
 
     async def _skip_storage(*args, **kwargs) -> None:
-        del args, kwargs
+        pass
 
     runtime = acquisition_browser_runtime.SharedBrowserRuntime(max_contexts=1)
     runtime._browser = FakeBrowser()

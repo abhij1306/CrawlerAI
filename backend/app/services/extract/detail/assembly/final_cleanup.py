@@ -9,6 +9,8 @@ __all__ = (
     "repair_ecommerce_detail_record_quality",
 )
 
+import copy
+import json
 from typing import Any
 
 from bs4 import BeautifulSoup
@@ -16,6 +18,7 @@ from bs4 import BeautifulSoup
 from app.services.extract.detail.identity.core import (
     detail_title_from_url,
 )
+from app.services.extract.contracts import CandidateSet
 from app.services.extract.variant_normalization.contract import (
     enforce_flat_variant_public_contract,
 )
@@ -66,18 +69,25 @@ def sanitize_variant_payload(record: dict[str, Any], *, identity_url: str) -> No
 def repair_ecommerce_detail_record_quality(
     record: dict[str, Any],
     *,
+    evidence_builder: CandidateSet | None = None,
     html: str,
     page_url: str,
     requested_page_url: str | None = None,
     soup: Any | None = None,
     js_state_objects: object | None = None,
 ) -> None:
-    _sanitize_ecommerce_detail_record(
+    _apply_graph_tracked_repair(
         record,
-        page_url=page_url,
-        requested_page_url=requested_page_url,
-        soup=soup,
-        js_state_objects=js_state_objects,
+        evidence_builder=evidence_builder,
+        rule_id="sanitize_ecommerce_detail_record",
+        output_source="detail_final_cleanup",
+        repair=lambda: _sanitize_ecommerce_detail_record(
+            record,
+            page_url=page_url,
+            requested_page_url=requested_page_url,
+            soup=soup,
+            js_state_objects=js_state_objects,
+        ),
     )
     variant_parent_images = _variant_parent_image_values(record)
     variant_parent_image = text_or_none(record.get("image_url"))
@@ -100,35 +110,117 @@ def repair_ecommerce_detail_record_quality(
         and str(html or "").strip()
     ):
         parsed_soup = BeautifulSoup(str(html), "html.parser")
-        _image_cleanup.backfill_detail_image_from_html(
+
+        def backfill_and_sanitize_detail_image() -> None:
+            _image_cleanup.backfill_detail_image_from_html(
+                record,
+                soup=parsed_soup,
+                identity_url=text_or_none(requested_page_url) or page_url,
+            )
+            _image_cleanup.sanitize_detail_images(
+                record,
+                identity_url=text_or_none(requested_page_url) or page_url,
+            )
+
+        _apply_graph_tracked_repair(
             record,
-            soup=parsed_soup,
-            identity_url=text_or_none(requested_page_url) or page_url,
+            evidence_builder=evidence_builder,
+            rule_id="backfill_detail_image_from_html",
+            output_source="detail_image_cleanup",
+            repair=backfill_and_sanitize_detail_image,
         )
-        _image_cleanup.sanitize_detail_images(
+    _apply_graph_tracked_repair(
+        record,
+        evidence_builder=evidence_builder,
+        rule_id="normalize_variant_record",
+        output_source="variant_normalization",
+        repair=lambda: normalize_variant_record(record, finalize_contract=False),
+    )
+    _apply_graph_tracked_repair(
+        record,
+        evidence_builder=evidence_builder,
+        rule_id="sanitize_variant_payload",
+        output_source="variant_pruning",
+        repair=lambda: sanitize_variant_payload(
             record,
             identity_url=text_or_none(requested_page_url) or page_url,
-        )
-    normalize_variant_record(record, finalize_contract=False)
-    sanitize_variant_payload(
-        record,
-        identity_url=text_or_none(requested_page_url) or page_url,
+        ),
     )
-    _reconcile_variant_derived_parent_fields(
+    _apply_graph_tracked_repair(
         record,
-        variant_parent_image=variant_parent_image,
-        variant_parent_availability=variant_parent_availability,
+        evidence_builder=evidence_builder,
+        rule_id="reconcile_variant_derived_parent_fields",
+        output_source="detail_final_cleanup",
+        repair=lambda: _reconcile_variant_derived_parent_fields(
+            record,
+            variant_parent_image=variant_parent_image,
+            variant_parent_availability=variant_parent_availability,
+        ),
     )
-    backfill_detail_price_from_html(record, html=html)
-    reconcile_detail_currency_with_url(record, page_url=page_url)
-    reconcile_detail_price_magnitudes(record)
-    reconcile_parent_price_against_variant_range(record)
-    _money_repair.normalize_detail_money_precision(record)
-    _money_repair.repair_invalid_original_prices(record)
-    _money_repair.drop_invalid_detail_discounts(record)
-    _money_repair.repair_detail_variant_prices_and_identity(record)
-    resolve_detail_entities(record)
-    enforce_flat_variant_public_contract(record, page_url=page_url)
+    _apply_graph_tracked_repair(
+        record,
+        evidence_builder=evidence_builder,
+        rule_id="backfill_detail_price_from_html",
+        output_source="detail_price_core",
+        repair=lambda: backfill_detail_price_from_html(record, html=html),
+    )
+    _apply_graph_tracked_repair(
+        record,
+        evidence_builder=evidence_builder,
+        rule_id="reconcile_detail_currency_with_url",
+        output_source="detail_price_core",
+        repair=lambda: reconcile_detail_currency_with_url(record, page_url=page_url),
+    )
+    _apply_graph_tracked_repair(
+        record,
+        evidence_builder=evidence_builder,
+        rule_id="reconcile_detail_price_magnitudes",
+        output_source="detail_price_core",
+        repair=lambda: reconcile_detail_price_magnitudes(record),
+    )
+    _apply_graph_tracked_repair(
+        record,
+        evidence_builder=evidence_builder,
+        rule_id="reconcile_parent_price_against_variant_range",
+        output_source="detail_price_core",
+        repair=lambda: reconcile_parent_price_against_variant_range(record),
+    )
+    _apply_graph_tracked_repair(
+        record,
+        evidence_builder=evidence_builder,
+        rule_id="normalize_detail_money_precision",
+        output_source="detail_money_repair",
+        repair=lambda: _money_repair.normalize_detail_money_precision(record),
+    )
+    _apply_graph_tracked_repair(
+        record,
+        evidence_builder=evidence_builder,
+        rule_id="repair_invalid_original_prices",
+        output_source="detail_money_repair",
+        repair=lambda: _money_repair.repair_invalid_original_prices(record),
+    )
+    _apply_graph_tracked_repair(
+        record,
+        evidence_builder=evidence_builder,
+        rule_id="drop_invalid_detail_discounts",
+        output_source="detail_money_repair",
+        repair=lambda: _money_repair.drop_invalid_detail_discounts(record),
+    )
+    _apply_graph_tracked_repair(
+        record,
+        evidence_builder=evidence_builder,
+        rule_id="repair_detail_variant_prices_and_identity",
+        output_source="detail_money_repair",
+        repair=lambda: _money_repair.repair_detail_variant_prices_and_identity(record),
+    )
+    resolve_detail_entities(record, evidence_builder=evidence_builder)
+    _apply_graph_tracked_repair(
+        record,
+        evidence_builder=evidence_builder,
+        rule_id="enforce_flat_variant_public_contract",
+        output_source="variant_public_contract",
+        repair=lambda: enforce_flat_variant_public_contract(record, page_url=page_url),
+    )
     attach_detail_validation_findings(record)
 
 
@@ -204,3 +296,53 @@ def _reconcile_variant_derived_parent_fields(
         and record.get("availability") == variant_parent_availability
     ):
         record.pop("availability", None)
+
+
+def _apply_graph_tracked_repair(
+    record: dict[str, Any],
+    *,
+    evidence_builder: CandidateSet | None,
+    rule_id: str,
+    output_source: str,
+    repair,
+) -> None:
+    before = _public_snapshot(record)
+    repair()
+    if evidence_builder is None:
+        return
+    after = _public_snapshot(record)
+    for field_name in sorted(set(before) | set(after)):
+        if _same_value(before.get(field_name), after.get(field_name)):
+            continue
+        evidence_builder.record_transform(
+            field_name=field_name,
+            before_value=before.get(field_name),
+            after_value=after.get(field_name),
+            rule_id=rule_id,
+            input_evidence_ids=_winning_evidence_ids(record, field_name),
+            output_source=output_source,
+        )
+
+
+def _public_snapshot(record: dict[str, Any]) -> dict[str, Any]:
+    return {
+        str(key): copy.deepcopy(value)
+        for key, value in record.items()
+        if not str(key).startswith("_")
+    }
+
+
+def _same_value(left: object, right: object) -> bool:
+    return json.dumps(left, sort_keys=True, default=str) == json.dumps(
+        right,
+        sort_keys=True,
+        default=str,
+    )
+
+
+def _winning_evidence_ids(record: dict[str, Any], field_name: str) -> list[str]:
+    field_evidence = record.get("_field_evidence")
+    summary = field_evidence.get(field_name) if isinstance(field_evidence, dict) else None
+    if not isinstance(summary, dict):
+        return []
+    return [str(item) for item in summary.get("winning_evidence_ids") or [] if str(item)]

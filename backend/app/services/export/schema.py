@@ -110,6 +110,7 @@ def build_source_trace(
     selector_traces = mapping_or_empty(record.get("_selector_traces"))
     rejected_public_fields = mapping_or_empty(record.get("_rejected_public_fields"))
     field_evidence = mapping_or_empty(record.get("_field_evidence"))
+    evidence_graph = mapping_or_empty(record.get("_evidence_graph"))
     for key, value in record.items():
         if str(key).startswith("_"):
             continue
@@ -153,7 +154,8 @@ def build_source_trace(
             "dom_skip": mapping_or_empty(record.get("_dom_skip_decision")),
             "completed_tiers": _completed_tiers_list(record.get("_extraction_tiers")),
             "validation_findings": _object_list(record.get("_validation_findings")),
-            "transforms": _object_list(record.get("_transforms")),
+            "transforms": _object_list(record.get("_transforms"))
+            or _object_list(evidence_graph.get("field_transforms")),
         },
         "field_discovery": field_discovery,
     }

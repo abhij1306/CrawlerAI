@@ -15,12 +15,17 @@ from app.services.config.variant_policy import (
     DETAIL_PRODUCT_VARIANT_OVERRIDE_FIELDS,
     DETAIL_VARIANT_CONSENSUS_RULE_ID,
 )
+from app.services.extract.contracts import CandidateSet
 from app.services.shared.field_coerce import text_or_none
 
 __all__ = ("resolve_detail_entities", "variant_parent_availability_value")
 
 
-def resolve_detail_entities(record: dict[str, Any]) -> None:
+def resolve_detail_entities(
+    record: dict[str, Any],
+    *,
+    evidence_builder: CandidateSet | None = None,
+) -> None:
     variants = [row for row in record.get("variants") or [] if isinstance(row, dict)]
     if not variants:
         return
@@ -37,20 +42,31 @@ def resolve_detail_entities(record: dict[str, Any]) -> None:
         if text_or_none(before) == text_or_none(consensus):
             continue
         record[field_name] = consensus
-        _record_transform(record, field_name=field_name, before=before, after=consensus)
-    _resolve_negative_variant_stock(record, variants)
+        _record_transform(
+            record,
+            evidence_builder=evidence_builder,
+            field_name=field_name,
+            before=before,
+            after=consensus,
+        )
+    _resolve_negative_variant_stock(record, variants, evidence_builder=evidence_builder)
     availability = variant_parent_availability_value(record)
     if availability is not None and record.get("availability") != availability:
         before = record.get("availability")
         record["availability"] = availability
         _record_transform(
             record,
+            evidence_builder=evidence_builder,
             field_name="availability",
             before=before,
             after=availability,
         )
-    _complete_variant_offers_from_parent(record, variants)
-    _resolve_negative_variant_stock(record, variants)
+    _complete_variant_offers_from_parent(
+        record,
+        variants,
+        evidence_builder=evidence_builder,
+    )
+    _resolve_negative_variant_stock(record, variants, evidence_builder=evidence_builder)
 
 
 def variant_parent_availability_value(record: dict[str, Any]) -> str | None:
@@ -100,6 +116,8 @@ def _variant_consensus(variants: list[dict[str, Any]], field_name: str) -> objec
 def _complete_variant_offers_from_parent(
     record: dict[str, Any],
     variants: list[dict[str, Any]],
+    *,
+    evidence_builder: CandidateSet | None = None,
 ) -> None:
     for index, variant in enumerate(variants):
         for field_name in DETAIL_PARENT_INHERITED_OFFER_FIELDS:
@@ -114,6 +132,7 @@ def _complete_variant_offers_from_parent(
             variant[field_name] = parent_value
             _record_transform(
                 record,
+                evidence_builder=evidence_builder,
                 field_name=field_name,
                 before=None,
                 after=parent_value,
@@ -125,6 +144,8 @@ def _complete_variant_offers_from_parent(
 def _resolve_negative_variant_stock(
     record: dict[str, Any],
     variants: list[dict[str, Any]],
+    *,
+    evidence_builder: CandidateSet | None = None,
 ) -> None:
     for index, variant in enumerate(variants):
         stock_quantity = variant.get("stock_quantity")
@@ -137,6 +158,7 @@ def _resolve_negative_variant_stock(
         variant["stock_quantity"] = 0
         _record_transform(
             record,
+            evidence_builder=evidence_builder,
             field_name="stock_quantity",
             before=stock_quantity,
             after=0,
@@ -148,6 +170,7 @@ def _resolve_negative_variant_stock(
             variant["availability"] = AVAILABILITY_OUT_OF_STOCK
             _record_transform(
                 record,
+                evidence_builder=evidence_builder,
                 field_name="availability",
                 before=before_availability,
                 after=AVAILABILITY_OUT_OF_STOCK,
@@ -172,6 +195,7 @@ def _all_variants_have_zero_stock(variants: list[dict[str, Any]]) -> bool:
 def _record_transform(
     record: dict[str, Any],
     *,
+    evidence_builder: CandidateSet | None = None,
     field_name: str,
     before: object,
     after: object,
@@ -199,3 +223,13 @@ def _record_transform(
             "evidence_ids": evidence_ids,
         }
     )
+    if evidence_builder is not None:
+        evidence_builder.record_transform(
+            field_name=field_name,
+            before_value=before,
+            after_value=after,
+            rule_id=rule_id,
+            input_evidence_ids=evidence_ids,
+            output_source="detail_resolution",
+            entity_ref=entity_ref,
+        )

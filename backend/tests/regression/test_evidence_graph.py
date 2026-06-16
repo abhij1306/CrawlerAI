@@ -5,6 +5,10 @@ from types import SimpleNamespace
 import pytest
 
 from app.services.export.schema import build_source_trace
+from app.services.extract.contracts import CandidateSet
+from app.services.extract.detail.assembly.final_cleanup import (
+    repair_ecommerce_detail_record_quality,
+)
 from app.services.extract.detail.assembly.record_assembly import build_detail_record
 from app.services.extract.detail.validation import validate_product_evidence
 
@@ -167,3 +171,56 @@ def test_semantic_losing_candidate_enters_review_bucket() -> None:
         row["key"] == "title" and row["value"] != record["title"]
         for row in record["_review_bucket"]
     )
+
+
+@pytest.mark.regression
+def test_detail_price_repair_is_recorded_in_evidence_graph_transform() -> None:
+    record = {
+        "title": "Widget Prime",
+        "price": "190.00",
+        "currency": "USD",
+        "variants": [
+            {"sku": "W-1", "size": "S", "price": "310.00", "currency": "USD"},
+            {"sku": "W-2", "size": "M", "price": "310.00", "currency": "USD"},
+        ],
+        "_field_evidence": {"price": {"winning_evidence_ids": ["ev_000001"]}},
+    }
+    evidence_builder = CandidateSet(
+        surface="ecommerce_detail",
+        page_url="https://example.com/products/widget-prime",
+    )
+
+    repair_ecommerce_detail_record_quality(
+        record,
+        evidence_builder=evidence_builder,
+        html="",
+        page_url="https://example.com/products/widget-prime",
+    )
+    transforms = evidence_builder.as_graph()["field_transforms"]
+
+    assert record["price"] == "310.00"
+    assert any(
+        transform["field_name"] == "price"
+        and transform["before_value"] == "190.00"
+        and transform["after_value"] == "310.00"
+        for transform in transforms
+    )
+
+
+@pytest.mark.regression
+def test_detail_variants_have_graph_only_row_lineage() -> None:
+    record = build_detail_record(
+        "<html><body><h1>Widget Prime</h1></body></html>",
+        "https://example.com/products/widget-prime",
+        "ecommerce_detail",
+        ["title", "variants"],
+        adapter_records=[
+            {
+                "title": "Widget Prime",
+                "variants": [{"sku": "W-1", "size": "S"}, {"sku": "W-2", "size": "M"}],
+            }
+        ],
+    )
+
+    assert all("row_lineage" not in row for row in record["variants"])
+    assert record["_evidence_graph"]["row_lineage"]
