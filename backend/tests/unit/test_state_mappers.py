@@ -1414,6 +1414,32 @@ def test_map_js_state_to_fields_drops_transport_only_variant_matrix_rows() -> No
 
 
 @pytest.mark.unit
+def test_map_js_state_to_fields_keeps_row_with_real_axis_and_noise_axis() -> None:
+    mapped = map_js_state_to_fields(
+        {
+            "__INITIAL_STATE__": {
+                "product": {
+                    "name": "Daily Tank",
+                    "variants": [
+                        {
+                            "id": "tank-m",
+                            "size": "M",
+                            "color": "Chat with us",
+                            "available": True,
+                        }
+                    ],
+                }
+            }
+        },
+        surface="ecommerce_detail",
+        page_url="https://store.example.com/products/daily-tank",
+    )
+
+    assert mapped["variants"][0]["size"] == "M"
+    assert "color" not in mapped["variants"][0]
+
+
+@pytest.mark.unit
 def test_job_detail_mappers_keep_shared_html_section_behavior() -> None:
     description_html = (
         "<p>Lead platform delivery.</p>"

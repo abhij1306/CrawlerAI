@@ -85,8 +85,8 @@ async function expectDomainProfileLookup(
 describe('CrawlConfigScreen bulk prefill', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    window.sessionStorage.clear();
-    window.history.replaceState(null, '', '/');
+    globalThis.sessionStorage.clear();
+    globalThis.history.replaceState(null, '', '/');
     getDomainRunProfileMock.mockResolvedValue({
       domain: 'example.com',
       surface: 'ecommerce_listing',
@@ -96,23 +96,20 @@ describe('CrawlConfigScreen bulk prefill', () => {
     createCrawlMock.mockResolvedValue({ run_id: 321 });
   });
   it('restores the jobs domain from batch prefill storage', async () => {
-    window.sessionStorage.setItem(
+    globalThis.sessionStorage.setItem(
       STORAGE_KEYS.BULK_PREFILL,
       JSON.stringify({
         domain: 'jobs',
         urls: ['https://jobs.example.com/posting/1'],
       }),
     );
-
     renderConfigScreen();
-
     expect(screen.getByRole('button', { name: 'Batch' })).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByLabelText('Bulk URLs input')).toHaveValue(
       'https://jobs.example.com/posting/1',
     );
-
     await waitFor(() => {
-      expect(`${window.location.pathname}${window.location.search}`).toBe(
+      expect(`${globalThis.location.pathname}${globalThis.location.search}`).toBe(
         '/crawl?module=pdp&mode=batch',
       );
     });

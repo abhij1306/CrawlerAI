@@ -21,6 +21,8 @@ from app.services.shared.field_coerce import (
     text_or_none,
 )
 
+__all__ = ("assemble_dom_variant_record",)
+
 _DOM_OPTION_AVAILABILITY_PRIORITY = (
     "out_of_stock",
     "limited_stock",

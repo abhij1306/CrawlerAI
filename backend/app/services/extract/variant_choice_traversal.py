@@ -156,6 +156,7 @@ def _choice_option_text(node: Any, *, parent: Any | None = None) -> str:
         node.get("data-attr-displayvalue")
         or node.get("data-displayvalue")
         or node.get("data-display-value")
+        or node.get("data-attr-value")
         or node.get("data-swatch-sr")
         or label_text
         or node.get("data-value")
@@ -344,6 +345,10 @@ def _descendant_group_label_nodes(node: Any, *, limit: int) -> list[Any]:
 
 def _variant_choice_container_is_overbroad(node: Any) -> bool:
     if not hasattr(node, "find_all"):
+        return False
+    class_attr = node.get("class") if hasattr(node, "get") else None
+    class_probe = " ".join(str(value) for value in class_attr) if isinstance(class_attr, list) else str(class_attr or "")
+    if "variant-list" in class_probe:
         return False
     if str(getattr(node, "name", "") or "").strip().lower() == "fieldset":
         return False
@@ -872,12 +877,6 @@ def _variant_choice_container_for_input(
         if not parent_is_axis_container:
             parent_group_name = resolve_variant_group_name(parent)
             parent_is_axis_container = bool(parent_group_name)
-        if (
-            len(matching_inputs) == 1
-            and axis_name in {"color", *_variant_axis_allowed_single_tokens}
-            and parent_has_axis_hint
-        ):
-            return parent
         if len(matching_inputs) < 2:
             parent = getattr(parent, "parent", None)
             continue

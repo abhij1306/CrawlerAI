@@ -178,9 +178,25 @@ def test_diagnostics_indicate_block_preserves_usable_content_despite_active_prov
         "browser_outcome": "usable_content",
         "challenge_evidence": ["active_provider:akamai"],
         "challenge_provider_hits": ["akamai"],
+        "readiness_probes": [{"is_ready": True}],
     }
 
     assert diagnostics_indicate_block(diagnostics) is False
+
+
+@pytest.mark.unit
+def test_diagnostics_indicate_block_flags_active_provider_without_ready_content() -> None:
+    diagnostics = {
+        "browser_outcome": "usable_content",
+        "challenge_evidence": [
+            "provider:perimeterx",
+            "active_provider:px-captcha",
+        ],
+        "challenge_provider_hits": ["perimeterx", "px-captcha"],
+        "readiness_probes": [{"is_ready": False}],
+    }
+
+    assert diagnostics_indicate_block(diagnostics) is True
 
 
 @pytest.mark.unit

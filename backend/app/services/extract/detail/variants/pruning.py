@@ -682,11 +682,42 @@ def _scalar_size_looks_like_option_list(value: str) -> bool:
 def _option_value_repeats_product_title(value: str, *, title_hint: str) -> bool:
     if not value or not title_hint:
         return False
-    value_key = re.sub(r"[^a-z0-9]+", "", clean_text(value).casefold())
-    title_key = re.sub(r"[^a-z0-9]+", "", clean_text(title_hint).casefold())
+    cleaned_value = clean_text(value)
+    cleaned_title = clean_text(title_hint)
+    value_key = re.sub(r"[^a-z0-9]+", "", cleaned_value.casefold())
+    title_key = re.sub(r"[^a-z0-9]+", "", cleaned_title.casefold())
     if not value_key or not title_key or len(title_key) < 8:
         return False
-    return title_key in value_key
+    if title_key in value_key:
+        return True
+    # Heuristic: the value is a product-name leak when it shares multiple
+    # distinguishing tokens with the title. Retailers like Levi's shoe
+    # pickers expose the related-product name as a "size" value (e.g.
+    # "501® Original 9\" Men's Shorts (32)" for the parent "Carrier Cargo
+    # Lightweight 9\" Men's Shorts"). The exact title is not a substring,
+    # but most of its meaningful tokens appear in the value.
+    title_tokens = [
+        token
+        for token in re.findall(r"[a-z0-9]+", cleaned_title.casefold())
+        if len(token) > 2 and not token.isdigit()
+    ]
+    if len(title_tokens) < 2:
+        return False
+    value_tokens = set(re.findall(r"[a-z0-9]+", cleaned_value.casefold()))
+    unique_title_tokens = set(title_tokens)
+    shared_unique = sum(1 for token in unique_title_tokens if token in value_tokens)
+    if (
+        shared_unique >= 2
+        and shared_unique >= max(2, len(title_tokens) // 2)
+    ):
+        return True
+    # Numeric model number with a registered/trademark mark (e.g. "501®",
+    # "FV5285™", "819185©") is a strong product-line signal that almost
+    # never belongs in a size/color axis. Treat it as a product-name leak
+    # regardless of title overlap.
+    if re.search(r"\d+\s*[®™©]", cleaned_value):
+        return True
+    return False
 
 
 @lru_cache(maxsize=4096)

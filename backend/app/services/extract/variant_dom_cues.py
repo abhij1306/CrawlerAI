@@ -61,30 +61,46 @@ def _variant_scope_max_roots() -> int | None:
         return None
 
 
-def variant_node_in_noise_context(node: Any) -> bool:
+def _resolve_noise_ancestor_depth() -> int:
     try:
-        depth = max(0, int(VARIANT_CONTEXT_NOISE_ANCESTOR_DEPTH))
+        return max(0, int(VARIANT_CONTEXT_NOISE_ANCESTOR_DEPTH))
     except (TypeError, ValueError):
         try:
-            depth = max(0, int(VARIANT_CONTEXT_NOISE_ANCESTOR_DEPTH_FALLBACK))
+            return max(0, int(VARIANT_CONTEXT_NOISE_ANCESTOR_DEPTH_FALLBACK))
         except (TypeError, ValueError):
-            depth = VARIANT_CONTEXT_NOISE_ANCESTOR_DEPTH_DEFAULT
+            return VARIANT_CONTEXT_NOISE_ANCESTOR_DEPTH_DEFAULT
+
+
+def _node_attr_probe(node: Any) -> str:
+    parts: list[str] = []
+    for attr_name in ("id", "class", "aria-label", "data-testid", "role"):
+        value = node.get(attr_name)
+        if isinstance(value, list):
+            parts.extend(str(item) for item in value if item)
+        elif value not in (None, "", [], {}):
+            parts.append(str(value))
+    return clean_text(" ".join(parts)).lower()
+
+
+def variant_node_in_noise_context(node: Any) -> bool:
+    depth = _resolve_noise_ancestor_depth()
     current = node
     for _ in range(depth):
         if current is None or not hasattr(current, "get"):
             return False
-        parts: list[str] = []
-        for attr_name in ("id", "class", "aria-label", "data-testid", "role"):
-            value = current.get(attr_name)
-            if isinstance(value, list):
-                parts.extend(str(item) for item in value if item)
-            elif value not in (None, "", [], {}):
-                parts.append(str(value))
-        probe = clean_text(" ".join(parts)).lower()
+        probe = _node_attr_probe(current)
         if probe and any(token in probe for token in variant_context_noise_tokens):
             return True
         current = getattr(current, "parent", None)
     return False
+
+
+def _has_variant_group_controls(node: Any) -> bool:
+    return bool(
+        node.select(VARIANT_SELECT_GROUP_SELECTOR)
+        or node.select(VARIANT_CHOICE_GROUP_SELECTOR)
+        or node.select("input[type='radio'], input[type='checkbox']")
+    )
 
 
 def variant_scope_roots(soup: Any) -> list[Any]:
@@ -101,11 +117,7 @@ def variant_scope_roots(soup: Any) -> list[Any]:
     for node in soup.select(_variant_scope_selector):
         if id(node) in seen or variant_node_in_noise_context(node):
             continue
-        if not (
-            node.select(VARIANT_SELECT_GROUP_SELECTOR)
-            or node.select(VARIANT_CHOICE_GROUP_SELECTOR)
-            or node.select("input[type='radio'], input[type='checkbox']")
-        ):
+        if not _has_variant_group_controls(node):
             continue
         roots.append(node)
         seen.add(id(node))

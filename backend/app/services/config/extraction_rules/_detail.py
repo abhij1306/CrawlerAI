@@ -57,10 +57,10 @@ DETAIL_LOW_SIGNAL_TITLE_VALUES = frozenset(
         "boys kids",
         "girls kids",
     }
-)
+) | frozenset(_STATIC_EXPORTS.get("DETAIL_LOW_SIGNAL_TITLE_VALUES_EXTRA", ()))
 DETAIL_LOW_SIGNAL_PRODUCT_TYPE_VALUES = frozenset(
     {"criteoproductrail", "giftoption", "promotionalcallout"}
-)
+) | frozenset(_STATIC_EXPORTS.get("DETAIL_LOW_SIGNAL_PRODUCT_TYPE_VALUES_EXTRA", ()))
 DETAIL_ARTIFACT_PRODUCT_TYPE_VALUES = frozenset(
     {
         "brightcove video",
@@ -73,7 +73,7 @@ DETAIL_ARTIFACT_PRODUCT_TYPE_VALUES = frozenset(
     }
 )
 TITLE_PROMOTION_EXACT_VALUES = frozenset({"prime"})
-DETAIL_ARTIFACT_PRODUCT_TYPE_PATTERNS = (r"^(?=.*\d)[a-z0-9]+(?:_[a-z0-9]+){2,}$",)
+DETAIL_ARTIFACT_PRODUCT_TYPE_PATTERNS = (r"^(?=.*\d)[a-z0-9]+(?:_[a-z0-9]+){2,}$",) + tuple(_STATIC_EXPORTS.get("DETAIL_ARTIFACT_PRODUCT_TYPE_PATTERNS_EXTRA", ()))
 DETAIL_ARTIFACT_IDENTIFIER_VALUES = frozenset(
     {"description", "details", "product details", "specification", "specifications"}
 )
@@ -215,7 +215,7 @@ DETAIL_LONG_TEXT_DISCLAIMER_PATTERNS = (
     r"\bexclusive\s+member-only\s+deals\b",
     r"\bwas\s+this\s+product\s+information\s+helpful\b",
     r"\bwrite\s+a\s+review\b",
-)
+) + tuple(_STATIC_EXPORTS.get("DETAIL_LONG_TEXT_DISCLAIMER_PATTERNS_EXTRA", ()))
 DETAIL_LONG_TEXT_SUBSTRING_REMOVE_PATTERNS = (
     r"\b(?:l|i)nstagram\s+@[A-Za-z0-9_.-]+\b",
     r"\bimport\s+duties,\s+taxes,\s+and\s+charges\b.{0,260}\bprior\s+to\s+(?:bidding|buying)\b\.?",
@@ -253,6 +253,7 @@ DETAIL_BRAND_HOST_FALLBACKS = {
     "phase-eight": "Phase Eight",
     "vans": "Vans",
 }
+DETAIL_BRAND_HOST_FALLBACKS.update(_STATIC_EXPORTS.get("DETAIL_BRAND_HOST_FALLBACKS_EXTRA", {}))
 DETAIL_BRAND_DESCRIPTION_PATTERNS = (
     r"\bfrom\s+(?P<brand>[A-Z][A-Za-z0-9&'.-]{2,}(?:\s+[A-Z][A-Za-z0-9&'.-]{2,}){0,2})['’]s\b",
     r"\b(?P<brand>[A-Z][A-Za-z0-9&'.-]{2,}(?:\s+[A-Z][A-Za-z0-9&'.-]{2,}){0,2})['’]s\s+upcoming\b",
@@ -276,7 +277,7 @@ DETAIL_BRAND_PREFIX_STOP_TOKENS = frozenset(
         "womens",
         "women",
     }
-)
+) | frozenset(_STATIC_EXPORTS.get("DETAIL_BRAND_PREFIX_STOP_TOKENS_EXTRA", ()))
 GIF_BASE64_PREFIX = "r0lgodlh"
 URL_DETECTION_TOKENS = ("g_auto", "f_auto", "q_auto", "c_fill")
 YEAR_SLUG_PATTERN = r"(?:19|20)\d{2}"
@@ -306,7 +307,7 @@ UNRESOLVED_TEMPLATE_URL_TOKENS = (
     "%%",
     "[[",
     "]]",
-)
+) + tuple(_STATIC_EXPORTS.get("UNRESOLVED_TEMPLATE_URL_TOKENS_EXTRA", ()))
 DETAIL_VARIANT_ARTIFACT_VALUE_TOKENS = frozenset(
     {"discount", "false", "off", "on", "sale", "true"}
 )

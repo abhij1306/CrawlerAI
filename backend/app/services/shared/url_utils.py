@@ -70,7 +70,8 @@ def variant_url_with_param(page_url: str, variant_id: str) -> str:
         for key, value in parse_qsl(parsed.query, keep_blank_values=True)
         if key != "variant"
     ]
-    query.append(("variant", variant_id))
+    if variant_id not in (None, ""):
+        query.append(("variant", variant_id))
     composed = urlunparse(parsed._replace(query=urlencode(query)))
     return (
         composed
@@ -274,7 +275,14 @@ def _looks_like_malformed_relative_url_candidate(value: str) -> bool:
 
 def _is_template_url(url: str) -> bool:
     lowered = str(url or "").lower()
-    return any(token in lowered for token in unresolved_template_url_tokens_lower)
+    if any(token in lowered for token in unresolved_template_url_tokens_lower):
+        return True
+    # Generic single-brace template variable detection. Catches patterns
+    # like `…_{width}x.jpg`, `…_{height}.jpg`, `…_{quality}.jpg` from
+    # image CDNs that use literal `{var}` rather than mustache `{{var}}`.
+    if re.search(r"\{[a-z_][a-z0-9_]*\}", lowered):
+        return True
+    return False
 
 
 ensure_scheme = _ensure_scheme

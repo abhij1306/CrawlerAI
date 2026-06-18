@@ -7,6 +7,9 @@ from app.services.pipeline import raw_json as extraction_runtime
 from app.services.acquisition.host_protection_memory import HostProtectionPolicy
 from app.services.adapters.belk import BelkAdapter
 from app.services.extract.detail.assembly import record_assembly as detail_extractor
+from app.services.extract.detail.assembly.tiers import (
+    network_payload_record_conflicts_with_requested_detail,
+)
 from app.services.extract.detail.identity.core import (
     detail_identity_codes_from_url,
     detail_title_from_url,
@@ -51,6 +54,95 @@ def test_listing_raw_json_honors_max_records() -> None:
         "Product 3",
     ]
 
+
+@pytest.mark.regression
+def test_extract_records_keeps_detail_row_without_title_when_product_signal_exists() -> None:
+    rows = extract_records(
+        "<html><body><main></main></body></html>",
+        "https://example.com/products/widget",
+        "ecommerce_detail",
+        max_records=1,
+        adapter_records=[{"sku": "WIDGET-1", "price": "19.99"}],
+    )
+
+    assert len(rows) == 1
+    assert rows[0]["sku"] == "WIDGET-1"
+    assert rows[0]["price"] == "19.99"
+
+
+
+@pytest.mark.regression
+def test_extract_records_rejects_detail_row_with_only_noise_title_and_code() -> None:
+    rows = extract_records(
+        """
+        <html><head><title>New Balance Shoes &amp; Apparel | Official New BalanceĀ® Site</title></head>
+        <body><h1>New Balance Shoes &amp; Apparel | Official New BalanceĀ® Site</h1></body></html>
+        """,
+        "https://www.newbalance.com/pd/1080v15-breathe/M1080V15_RU-FTW-821915.html",
+        "ecommerce_detail",
+        max_records=1,
+    )
+
+    assert rows == []
+
+
+@pytest.mark.regression
+def test_network_payload_identity_conflict_rejects_wrong_product() -> None:
+    assert network_payload_record_conflicts_with_requested_detail(
+        {
+            "title": "New Balance Men's RC Essential Heat Grid 1/2 Zip",
+            "product_id": "MT43204",
+            "sku": "17885327",
+        },
+        requested_page_url=(
+            "https://www.newbalance.com/pd/1080v15-breathe/"
+            "M1080V15_RU-FTW-821915.html"
+        ),
+    )
+    assert not network_payload_record_conflicts_with_requested_detail(
+        {"title": "1080v15 Breathe", "product_id": "M1080V15_RU-FTW-821915"},
+        requested_page_url=(
+            "https://www.newbalance.com/pd/1080v15-breathe/"
+            "M1080V15_RU-FTW-821915.html"
+        ),
+    )
+
+
+@pytest.mark.regression
+def test_extract_records_reads_hidden_data_attr_value_variant_radios() -> None:
+    html = """
+    <html>
+      <head>
+        <script type="application/ld+json">
+        {"@context":"https://schema.org","@type":"Product","name":"Script Sandal",
+         "offers":{"@type":"Offer","price":"69.30","priceCurrency":"USD"}}
+        </script>
+      </head>
+      <body>
+        <main>
+          <h1>Script Sandal</h1>
+          <div class="variant-selector-container size-container-TZ001658-420">
+            <div class="variant-list shoe-layout">
+              <input type="radio" name="size" class="d-none variant-size" data-attr-value="US 6 / EU 36" />
+              <input type="radio" name="size" class="d-none variant-size" data-attr-value="US 7 / EU 37.5" />
+            </div>
+          </div>
+        </main>
+      </body>
+    </html>
+    """
+
+    rows = extract_records(
+        html,
+        "https://usa.tommy.com/en/women/shoes/script-sandal/TZ001658-420.html",
+        "ecommerce_detail",
+        max_records=1,
+    )
+
+    assert [variant["size"] for variant in rows[0]["variants"]] == [
+        "US 6 / EU 36",
+        "US 7 / EU 37.5",
+    ]
 
 
 @pytest.mark.regression

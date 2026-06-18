@@ -44,6 +44,8 @@ from app.services.shared.url_utils import (
     title_tokens,
 )
 
+__all__ = ("collect_dom_variant_candidate_groups",)
+
 logger = logging.getLogger(__name__)
 
 _coerce_variant_option_value = _variant_coercion._coerce_variant_option_value
@@ -352,6 +354,7 @@ def _variant_choice_entry_value(
         node.get("data-attr-displayvalue")
         or node.get("data-displayvalue")
         or node.get("data-display-value")
+        or node.get("data-attr-value")
         or node.get("data-swatch-sr")
         or node.get("data-size")
         or label_text

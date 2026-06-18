@@ -157,9 +157,6 @@ class PageEvidence:
             return True
         if self.browser_outcome == "usable_content" and self.has_ready_readiness_probe:
             return False
-        # INVARIANTS.md Rule 6: usable content beats provider noise.
-        if self.browser_outcome == "usable_content":
-            return False
         provider_evidence = _list_or_empty(
             self.diagnostics.get("challenge_provider_hits")
         ) or [
@@ -167,6 +164,19 @@ class PageEvidence:
             for item in self.challenge_evidence
             if item.startswith(("provider:", "active_provider:"))
         ]
+        active_provider = any(
+            str(item or "").strip().lower().startswith("active_provider:")
+            for item in self.challenge_evidence
+        )
+        if (
+            self.browser_outcome == "usable_content"
+            and active_provider
+            and not self.has_ready_readiness_probe
+        ):
+            return True
+        # INVARIANTS.md Rule 6: ready usable content beats provider noise.
+        if self.browser_outcome == "usable_content":
+            return False
         return bool(provider_evidence and self.browser_outcome != "usable_content")
 
     @property

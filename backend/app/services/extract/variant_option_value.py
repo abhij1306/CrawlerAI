@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 __all__ = (
+    "drop_noise_variant_axis_values",
     "variant_size_value_patterns",
     "variant_option_value_suffix_noise_patterns",
     "variant_option_value_matches_ui_noise",
@@ -13,6 +14,7 @@ __all__ = (
 )
 
 import re
+from collections.abc import Iterable
 from typing import Any
 
 from app.services.config.extraction_rules import (
@@ -131,6 +133,10 @@ def variant_option_value_matches_ui_noise(value: object) -> bool:
             if lowered == phrase:
                 return True
             continue
+        if phrase.endswith(":") or phrase.endswith(" :"):
+            if lowered.startswith(phrase.rstrip()):
+                return True
+            continue
         if len(phrase) <= max_len and lowered == phrase:
             return True
         if len(phrase) <= max_len:
@@ -166,6 +172,29 @@ def variant_option_value_is_noise(value: object) -> bool:
             rx.search(lowered) for rx in _variant_option_value_noise_search_regexes
         )
     )
+
+
+def drop_noise_variant_axis_values(
+    row: dict[str, Any],
+    axis_fields: Iterable[str],
+) -> bool:
+    saw_axis = False
+    saw_real_axis = False
+    option_values = row.get("option_values")
+    options = option_values if isinstance(option_values, dict) else {}
+    for axis_key in axis_fields:
+        value = row.get(axis_key)
+        if value in (None, "", [], {}):
+            continue
+        saw_axis = True
+        if variant_option_value_is_noise(value):
+            row.pop(axis_key, None)
+            options.pop(axis_key, None)
+        else:
+            saw_real_axis = True
+    if isinstance(option_values, dict) and not option_values:
+        row.pop("option_values", None)
+    return saw_axis and not saw_real_axis
 
 
 def _select_option_texts_from_node(node: Any) -> list[str]:

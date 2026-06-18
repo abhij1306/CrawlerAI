@@ -1145,6 +1145,7 @@ async def test_usable_detail_with_active_provider_evidence_does_not_retry_real_c
                 "browser_outcome": "usable_content",
                 "challenge_evidence": ["active_provider:akamai"],
                 "challenge_provider_hits": ["akamai"],
+                "readiness_probes": [{"is_ready": True}],
             },
         )
 

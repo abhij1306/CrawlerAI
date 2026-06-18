@@ -173,6 +173,19 @@ def anchor_has_selected_variant_signal(node: Any) -> bool:
     return any(token in probe for token in VARIANT_SELECTED_SIGNAL_TOKENS)
 
 
+def _node_attr_probe_parts(node: Any, attr_names: tuple[str, ...]) -> list[str]:
+    parts: list[str] = []
+    if not hasattr(node, "get"):
+        return parts
+    for attr_name in attr_names:
+        value = node.get(attr_name)
+        if isinstance(value, list):
+            parts.extend(str(item) for item in value if item)
+        elif value not in (None, "", [], {}):
+            parts.append(str(value))
+    return parts
+
+
 def _anchor_has_inline_variant_option_signal(node: Any, *, container: Any) -> bool:
     option_label = text_or_none(
         node.get("title") or node.get("aria-label")
@@ -185,20 +198,11 @@ def _anchor_has_inline_variant_option_signal(node: Any, *, container: Any) -> bo
             option_label = text_or_none(image.get("alt"))
     if not option_label:
         return False
-    node_probe_parts: list[str] = []
-    for attr_name in ("class", "id", "data-testid", "title", "aria-label"):
-        value = node.get(attr_name) if hasattr(node, "get") else None
-        if isinstance(value, list):
-            node_probe_parts.extend(str(item) for item in value if item)
-        elif value not in (None, "", [], {}):
-            node_probe_parts.append(str(value))
-    container_probe_parts: list[str] = []
-    if hasattr(container, "get"):
-        for attr_name in ("class", "id", "data-option-name", "aria-label"):
-            value = container.get(attr_name)
-            if isinstance(value, list):
-                container_probe_parts.extend(str(item) for item in value if item)
-            elif value not in (None, "", [], {}):
-                container_probe_parts.append(str(value))
+    node_probe_parts = _node_attr_probe_parts(
+        node, ("class", "id", "data-testid", "title", "aria-label")
+    )
+    container_probe_parts = _node_attr_probe_parts(
+        container, ("class", "id", "data-option-name", "aria-label")
+    )
     probe = clean_text(" ".join([*node_probe_parts, *container_probe_parts])).lower()
     return any(token in probe for token in ("swatch", "size", "color", "colour", "variant"))

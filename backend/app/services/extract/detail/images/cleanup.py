@@ -17,6 +17,7 @@ from app.services.config.extraction_rules import (
     BROKEN_FETCH_IMAGE_PATH_PATTERN,
     DETAIL_IMAGE_COLORWAY_CODE_PATTERN,
     DETAIL_IMAGE_PRODUCT_CODE_PATTERN,
+    DETAIL_IMAGE_TITLE_PRIMARY_OVERLAP_MIN,
     DETAIL_IMAGE_VIEW_CODE_PATTERN,
     IMAGE_FAMILY_NOISE_TOKENS,
     IMAGE_PATH_TOKENS,
@@ -77,7 +78,7 @@ _DETAIL_IMAGE_VIEW_CODE_RE = re.compile(
     getattr(DETAIL_IMAGE_VIEW_CODE_PATTERN, "pattern", DETAIL_IMAGE_VIEW_CODE_PATTERN),
     re.I,
 )
-_title_primary_overlap_min = 4
+_title_primary_overlap_min = DETAIL_IMAGE_TITLE_PRIMARY_OVERLAP_MIN
 
 
 def backfill_parent_image_from_variants(record: dict[str, Any]) -> None:
@@ -215,7 +216,20 @@ def _detail_image_candidate_is_usable(url: str, *, identity_url: str) -> bool:
     lowered = url.lower()
     if "base64," in lowered or lowered.startswith("data:"):
         return False
-    if any(pattern in lowered for pattern in _PLACEHOLDER_IMAGE_URL_PATTERNS_LOWER):
+    lowered_path = path.lower()
+    filename = unquote(lowered_path.rsplit("/", 1)[-1])
+    lowered_host = str(parsed.netloc or "").lower()
+    if any(
+        pattern in filename or pattern in lowered_host
+        for pattern in _PLACEHOLDER_IMAGE_URL_PATTERNS_LOWER
+        if "/" not in pattern and "://" not in pattern
+    ):
+        return False
+    if any(
+        pattern in lowered_path or pattern in lowered
+        for pattern in _PLACEHOLDER_IMAGE_URL_PATTERNS_LOWER
+        if "/" in pattern or "://" in pattern
+    ):
         return False
     if any(pattern in lowered for pattern in _NON_PRODUCT_IMAGE_HINTS_LOWER):
         return False

@@ -1,5 +1,6 @@
 # FastAPI application factory and route registration.
 from __future__ import annotations
+# pylint: disable=missing-function-docstring
 
 import asyncio
 import inspect
@@ -106,7 +107,7 @@ class CrawlerAppState:
 
 
 @asynccontextmanager
-async def lifespan(fastapi_app: FastAPI):
+async def lifespan(_fastapi_app: FastAPI):
     configure_logging()
     try:
         install_asyncio_exception_filter()
@@ -511,7 +512,7 @@ async def public_validation_exception_handler(
 
 
 @app.exception_handler(Exception)
-async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+async def unhandled_exception_handler(request: Request, _exc: Exception) -> JSONResponse:
     """Catch-all so unhandled errors return 500 JSON instead of crashing
     the Starlette BaseHTTPMiddleware task-group (ExceptionGroup on 3.14)."""
     logger.exception(

@@ -4,9 +4,13 @@ from collections.abc import Iterable
 
 from app.services.config.field_mappings import (
     CANONICAL_SCHEMAS,
+    ECOMMERCE_CATEGORY_ALIAS_ADDITIONS,
+    ECOMMERCE_CATEGORY_ALIAS_REMOVALS,
+    ECOMMERCE_SURFACE_EXTRA_ALIASES,
     FIELD_ALIASES,
     HTML_SECTION_FIELDS,
     INTERNAL_ONLY_FIELDS,
+    JOB_SURFACE_EXTRA_ALIASES,
     REQUESTED_FIELD_ALIAS_BASES,
     REQUESTED_FIELD_ALIAS_EXTRAS,
     REQUESTED_FIELD_PREFIXES,
@@ -55,6 +59,38 @@ def field_allowed_for_surface(
     return normalized_field in frozenset(canonical_fields_for_surface(surface))
 
 
+def _extend_ecommerce_aliases(aliases: dict[str, list[str]]) -> dict[str, list[str]]:
+    ecommerce_aliases = {canonical: list(values) for canonical, values in aliases.items()}
+    for field_name, field_aliases in ECOMMERCE_SURFACE_EXTRA_ALIASES.items():
+        bucket = ecommerce_aliases.setdefault(field_name, [])
+        for alias in field_aliases:
+            if alias not in bucket:
+                bucket.append(alias)
+    category_aliases = ecommerce_aliases.get("category")
+    if category_aliases is not None:
+        ecommerce_aliases["category"] = [
+            alias
+            for alias in category_aliases
+            if alias not in ECOMMERCE_CATEGORY_ALIAS_REMOVALS
+        ]
+        for alias in ECOMMERCE_CATEGORY_ALIAS_ADDITIONS:
+            if alias not in ecommerce_aliases["category"]:
+                ecommerce_aliases["category"].append(alias)
+    return ecommerce_aliases
+
+
+def _extend_job_aliases(aliases: dict[str, list[str]]) -> dict[str, list[str]]:
+    job_aliases = {canonical: list(values) for canonical, values in aliases.items()}
+    for field_name, field_aliases in JOB_SURFACE_EXTRA_ALIASES.items():
+        if field_name not in job_aliases:
+            continue
+        bucket = job_aliases[field_name]
+        for alias in field_aliases:
+            if alias not in bucket:
+                bucket.append(alias)
+    return job_aliases
+
+
 def get_surface_field_aliases(surface: str) -> dict[str, list[str]]:
     normalized = str(surface or "").strip().lower()
     allowed = frozenset(canonical_fields_for_surface(normalized))
@@ -64,49 +100,13 @@ def get_surface_field_aliases(surface: str) -> dict[str, list[str]]:
         if canonical in allowed
     }
     if normalized.startswith("ecommerce_"):
-        ecommerce_aliases = {
-            canonical: list(values) for canonical, values in aliases.items()
-        }
-        for field_name, field_aliases in {
-            "capacity": (
-                "capacity_l",
-                "capacity_liter",
-                "capacity_litre",
-                "capacity_liters",
-                "capacity_litres",
-            ),
-            "energy_rating": ("energy_rating", "energy_star_rating", "star_rating"),
-        }.items():
-            bucket = ecommerce_aliases.setdefault(field_name, [])
-            for alias in field_aliases:
-                if alias not in bucket:
-                    bucket.append(alias)
-        category_aliases = ecommerce_aliases.get("category")
-        if category_aliases is not None:
-            ecommerce_aliases["category"] = [
-                alias
-                for alias in category_aliases
-                if alias not in {"type", "job_type", "employment_type"}
-            ]
-            for alias in ("product_type",):
-                if alias not in ecommerce_aliases["category"]:
-                    ecommerce_aliases["category"].append(alias)
-        return ecommerce_aliases
+        return _extend_ecommerce_aliases(aliases)
     if normalized.startswith("job_"):
-        job_aliases = {canonical: list(values) for canonical, values in aliases.items()}
-        if "job_type" in job_aliases:
-            for alias in ("type", "employment_type", "commitment", "work_type"):
-                if alias not in job_aliases["job_type"]:
-                    job_aliases["job_type"].append(alias)
-        return job_aliases
+        return _extend_job_aliases(aliases)
     return aliases
 
 
-def normalize_field_key(value: str | None) -> str:
-    text = " ".join(str(value or "").split()).strip()
-    if not text:
-        return ""
-    text = text.replace("&", " ")
+def _split_camel_case(text: str) -> list[str]:
     separated: list[str] = []
     for index, char in enumerate(text):
         previous = text[index - 1] if index else ""
@@ -118,6 +118,10 @@ def normalize_field_key(value: str | None) -> str:
         ):
             separated.append("_")
         separated.append(char.lower())
+    return separated
+
+
+def _collapse_non_alnum(separated: list[str]) -> list[str]:
     normalized: list[str] = []
     last_was_separator = False
     for char in separated:
@@ -127,6 +131,16 @@ def normalize_field_key(value: str | None) -> str:
         elif not last_was_separator:
             normalized.append("_")
             last_was_separator = True
+    return normalized
+
+
+def normalize_field_key(value: str | None) -> str:
+    text = " ".join(str(value or "").split()).strip()
+    if not text:
+        return ""
+    text = text.replace("&", " ")
+    separated = _split_camel_case(text)
+    normalized = _collapse_non_alnum(separated)
     return "".join(normalized).strip("_.")
 
 
@@ -276,7 +290,7 @@ def _surface_requested_defaults_union(
     ]
     defaults = [
         field_name
-        for field_name in list(default_fields or [])
+        for field_name in default_fields or []
         if field_allowed_for_surface(surface, field_name)
     ]
     seen: set[str] = set(requested)

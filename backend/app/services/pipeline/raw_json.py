@@ -32,8 +32,8 @@ def extract_raw_json_records(
     max_records: int,
     requested_fields: list[str] | None,
     content_type: str | None,
-    raw_json_surface_field_overlap_absolute: int,
-    raw_json_surface_field_overlap_ratio: float,
+    raw_json_surface_field_overlap_absolute: int | None = None,
+    raw_json_surface_field_overlap_ratio: float | None = None,
 ) -> list[dict[str, Any]]:
     payload = _parse_raw_json_payload(text, content_type=content_type)
     if payload is None:
@@ -188,8 +188,8 @@ def _raw_json_items(
     payload: object,
     *,
     surface: str,
-    raw_json_surface_field_overlap_absolute: int,
-    raw_json_surface_field_overlap_ratio: float,
+    raw_json_surface_field_overlap_absolute: int | None,
+    raw_json_surface_field_overlap_ratio: float | None,
 ) -> list[object]:
     is_listing_surface = "listing" in str(surface or "").lower()
     if isinstance(payload, list):

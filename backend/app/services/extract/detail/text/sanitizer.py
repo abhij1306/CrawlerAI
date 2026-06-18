@@ -211,6 +211,11 @@ def detail_product_type_is_low_signal(value: object) -> bool:
                 pattern.fullmatch(lowered)
                 for pattern in detail_artifact_product_type_patterns
             )
+            # Reuse the same UI-token allowlist the category field uses
+            # (GAP and Uniqlo leak "home" / "shop" / "view all" into
+            # product_type from top-nav links; the category gate
+            # `_category_candidate_is_noise` already covers these).
+            or lowered in DETAIL_CATEGORY_UI_TOKENS
         )
     )
 

@@ -218,7 +218,7 @@ is a crawler bug, not stricter security detection.
 - Browser escalation triggers for a URL that returned 200 with complete requested/default high-value fields
 - Browser-side code writes logical extraction fields directly into the record instead of returning observation artifacts
 - Browser acquisition captures a screenshot when `capture_screenshot=False`
-- A learned real Chrome success causes a later run to launch Patchright first without explicit user override or after the contract has been marked stale (see Rule 9)
+- Launching Patchright first when a learned contract specifies real Chrome, without explicit user override or when the contract has been marked stale (see Rule 9)
 
 ---
 
@@ -265,10 +265,10 @@ Detail extraction must also reject collection/category URLs that expose product-
 - Browser-to-HTTP handoff may only reuse sanitized engine-scoped session state on the same proxy identity. If proxy affinity cannot be proven, skip handoff and stay browser-first.
 - Host browser-first memory is for repeated hard blocks, not one noisy challenge hit.
 - When launching real-Chrome for detail fetches and no reusable engine-scoped `real_chrome` domain state exists, acquisition may warm the site origin before direct PDP navigation; once reusable `real_chrome` domain state exists, later fetches skip warmup.
-- Real Chrome is not challenge-exempt. If warmup or the direct PDP nav lands on a challenge shell, acquisition must still run the bounded challenge wait/activity/retry loop before declaring the page blocked.
+- Real Chrome is not challenge-exempt. If warmup or the direct PDP nav lands on a challenge shell, acquisition must still run the bounded challenge wait/activity/retry loop (defined in `app/services/config/acquisition_policy.py`) before declaring the page blocked.
 - Learned acquisition contracts live in editable `DomainRunProfile` memory scoped by normalized `(domain, surface)`. They own durable engine choice and handoff eligibility; explicit run settings always override them.
 - Future crawls must reuse the successful acquisition/data-extraction path and learned selectors for the domain/surface without fresh experimentation unless the user explicitly changes settings, enables experimentation, resets learned memory, or the contract becomes stale.
-- Only contracts with `handoff_eligible=true` may trigger curl handoff. Browser success alone is not enough; rendered extraction, traversal, or network-payload dependence must disable handoff.
+- Only contracts with `handoff_eligible=true` may trigger curl handoff. Browser success alone is not enough; rendered extraction (DOM-tier fields used), traversal (link discovery from rendered page), or network-payload dependence (intercepted XHR/fetch bodies) must disable handoff.
 - When safe cookies exist for a handoff-eligible saved engine:
   1. Try curl handoff first.
   2. On drift/block/empty output, fallback to the proven browser engine.
@@ -276,7 +276,7 @@ Detail extraction must also reject collection/category URLs that expose product-
 - **Handoff timeout is capped at `browser_http_handoff_timeout_seconds` (default 3s), not the full HTTP timeout.**
   Handoff is speculative — it tries to skip the browser entirely using stored cookies. If the WAF hangs or slow-rejects, the full `http_timeout_seconds` (10s) would burn before the browser even starts launching. On WAF-heavy sites this caused 20–26s total acquisition delay (handoff timeout + cold browser launch). The dedicated short timeout ensures handoff either succeeds fast or fails fast, keeping browser-first paths responsive.
 - Host protection memory is short-TTL block/backoff memory only. It may bias browser-first safety, but it must not become the durable owner of engine preference or handoff eligibility.
-- After the configured acquisition-contract stale threshold of consecutive non-blocked zero-data failures, the contract is marked stale. Stale contracts must not keep forcing browser engine or curl handoff choices.
+- After the configured acquisition-contract stale threshold (defined in `app/services/config/domain_memory.py` as `CONTRACT_STALE_FAILURE_COUNT`) of consecutive non-blocked zero-data failures, the contract is marked stale. Stale contracts must not keep forcing browser engine or curl handoff choices.
 
 **Why this is here:**
 Static cleanup advice to persist/reuse more browser state caused a real regression on 2026-04-23. The crawler started replaying PerimeterX challenge state (`_px*`, `pxcts`, PX localStorage) across runs, which poisoned acquisition on multiple sites. Any future "simplification" of cookie memory must preserve this guard and its regression tests.

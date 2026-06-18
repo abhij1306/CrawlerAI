@@ -61,6 +61,19 @@ def test_static_config_exports_remain_import_stable() -> None:
 
 
 @pytest.mark.regression
+def test_extraction_rules_price_exports_use_enriched_price_rules() -> None:
+    extraction_rules = importlib.import_module("app.services.config.extraction_rules")
+    price_rules = importlib.import_module("app.services.config.extraction_price_rules")
+
+    assert extraction_rules.DETAIL_CURRENT_PRICE_SELECTORS == (
+        price_rules.DETAIL_CURRENT_PRICE_SELECTORS
+    )
+    assert extraction_rules.DETAIL_ORIGINAL_PRICE_SELECTORS == (
+        price_rules.DETAIL_ORIGINAL_PRICE_SELECTORS
+    )
+
+
+@pytest.mark.regression
 def test_static_config_exports_have_provenance() -> None:
     config_dir = Path(__file__).parents[2] / "app" / "services" / "config"
     for path in sorted(config_dir.glob("*.exports.json")):

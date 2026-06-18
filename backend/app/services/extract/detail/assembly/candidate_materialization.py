@@ -14,6 +14,8 @@ from app.services.shared.field_coerce import (
     STRUCTURED_OBJECT_LIST_FIELDS,
 )
 
+__all__ = ("winning_materialized_field",)
+
 _detail_description_value_looks_thin = (
     _detail_dom_completion._detail_description_value_looks_thin
 )

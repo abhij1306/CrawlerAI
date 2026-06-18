@@ -1,9 +1,9 @@
 # Active Plan
 
 **Current:** Extraction Pipeline Productionization → `docs/plans/extraction-productionization-plan.md`
-**Status:** IN PROGRESS
+**Status:** BLOCKED
 **Started:** 2026-06-16
-**Current slice:** Slice 1 — Plan Activation
+**Current slice:** Final acceptance — `run_test_sites_acceptance.py` timed out after 15 minutes
 
 ## Queue
 1. Acquisition And Evidence Debt Removal → `docs/plans/acquisition-evidence-debt-removal-plan.md`

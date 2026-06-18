@@ -84,6 +84,21 @@ PRICE_DICT_PREFERRED_KEYS = (
     "value",
 )
 UNICODE_ESCAPE_RE = re.compile(r"\\u([0-9a-fA-F]{4})")
+ECOMMERCE_SURFACE_EXTRA_ALIASES = {
+    "capacity": (
+        "capacity_l",
+        "capacity_liter",
+        "capacity_litre",
+        "capacity_liters",
+        "capacity_litres",
+    ),
+    "energy_rating": ("energy_rating", "energy_star_rating", "star_rating"),
+}
+JOB_SURFACE_EXTRA_ALIASES = {
+    "job_type": ("type", "employment_type", "commitment", "work_type"),
+}
+ECOMMERCE_CATEGORY_ALIAS_REMOVALS = frozenset({"type", "job_type", "employment_type"})
+ECOMMERCE_CATEGORY_ALIAS_ADDITIONS = ("product_type",)
 NORMALIZER_LIST_TEXT_FIELDS = frozenset(
     {*_STATIC_EXPORTS.get("NORMALIZER_LIST_TEXT_FIELDS", ()), "features"}
 )

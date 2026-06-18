@@ -9,7 +9,14 @@ from app.services.extract.detail.identity.core import (
     listing_detail_like_path,
     listing_url_is_structural,
 )
-from app.services.extract.detail.assembly.record_assembly import extract_detail_records
+from app.services.extract.detail.identity.shell_filter import (
+    description_looks_like_shell_copy,
+    title_looks_like_brand_shell,
+)
+from app.services.extract.detail.assembly.record_assembly import (
+    detail_record_rejection_reason,
+    extract_detail_records,
+)
 from app.services.extract.detail.assembly.final_cleanup import (
     repair_ecommerce_detail_record_quality,
 )
@@ -36,6 +43,7 @@ from app.services.shared.field_coerce import (
     direct_record_to_surface_fields,
     finalize_record,
     is_title_noise,
+    text_or_none,
 )
 
 
@@ -68,40 +76,52 @@ def extract_records(
     )
     if xml_records:
         return xml_records
-    raw_json_surface_field_overlap_absolute = int(
-        crawler_runtime_settings.raw_json_surface_field_overlap_absolute
-    )
-    raw_json_surface_field_overlap_ratio = float(
-        crawler_runtime_settings.raw_json_surface_field_overlap_ratio
-    )
+    raw_json_records: list[dict[str, Any]] = []
     with logfire_span(
         "extract.tier.raw_json",
         domain=_safe_domain(page_url),
         surface=normalized_surface,
     ) as span:
-        json_records = extract_raw_json_records(
+        raw_json_records = extract_raw_json_records(
             html,
             page_url,
             normalized_surface,
             max_records=max_records,
             requested_fields=requested_fields,
             content_type=content_type,
-            raw_json_surface_field_overlap_absolute=(
-                raw_json_surface_field_overlap_absolute
-            ),
-            raw_json_surface_field_overlap_ratio=raw_json_surface_field_overlap_ratio,
         )
-        set_logfire_attributes(span, record_count=len(json_records))
-    if json_records:
+        set_logfire_attributes(span, record_count=len(raw_json_records))
+    if raw_json_records:
         if "listing" in normalized_surface:
-            return json_records
-        return _postprocess_detail_records(
-            json_records[:max_records],
+            return raw_json_records[:max_records]
+        # For detail (and any future non-listing surface), use the
+        # raw_json records as the primary result — the prior code path
+        # was the fast happy path. Also keep a copy in artifacts for
+        # downstream observability, but do not let it double as the
+        # adapter record (that injection was reverted because it caused
+        # Uniqlo "Recommended App" and Gap "Athlete.com" title
+        # regressions: adapter_records had its own title override that
+        # overwrote the raw_json title).
+        postprocessed = _postprocess_detail_records(
+            raw_json_records[:max_records],
             html=html,
             page_url=page_url,
             requested_page_url=requested_page_url,
             surface=normalized_surface,
         )
+        if artifacts is not None:
+            existing = artifacts.get("raw_json_candidate_records")
+            if isinstance(existing, list):
+                existing.extend(raw_json_records)
+            else:
+                artifacts["raw_json_candidate_records"] = list(raw_json_records)
+        viable_postprocessed = _filter_viable_detail_rows(
+            postprocessed,
+            page_url=page_url,
+            requested_page_url=requested_page_url,
+        )
+        if viable_postprocessed:
+            return viable_postprocessed
     if _html_is_blocked_extraction_shell(html):
         return []
     if "listing" in normalized_surface:
@@ -247,7 +267,103 @@ def extract_records(
             finalize_rows=False,
         )
         set_logfire_attributes(span, record_count=len(detail_rows))
-    return detail_rows
+    return _filter_viable_detail_rows(
+        detail_rows,
+        page_url=page_url,
+        requested_page_url=requested_page_url,
+    )
+
+
+def _filter_viable_detail_rows(
+    rows: list[dict],
+    *,
+    page_url: str,
+    requested_page_url: str | None,
+) -> list[dict]:
+    return [
+        row
+        for row in rows
+        if not _detail_record_fails_minimum_viable_gate(
+            row,
+            page_url=page_url,
+            requested_page_url=requested_page_url,
+        )
+    ]
+
+
+def _detail_record_fails_minimum_viable_gate(
+    record: dict[str, Any],
+    *,
+    page_url: str,
+    requested_page_url: str | None,
+) -> bool:
+    """Drop detail records that don't meet the minimum-viable-PDP bar.
+
+    The gate filters out soft-404 / error shells (e.g. New Balance
+    "Oops! Something went wrong", Louis Vuitton 404) that have a title
+    but no real product data. A record with a clean, non-noise title
+    is allowed through even when it is sparse, because downstream code
+    (e.g. domain run profile learning) needs to know that the page was
+    reachable and the extraction succeeded.
+    """
+    if not isinstance(record, dict):
+        return True
+    title = text_or_none(record.get("title"))
+    if not title:
+        return not _detail_record_has_strong_product_signal(record)
+    if (
+        title_looks_like_brand_shell(title, page_url=page_url)
+        and description_looks_like_shell_copy(record.get("description"))
+        and not any(
+            record.get(field_name) not in (None, "", [], {})
+            for field_name in (
+                "price",
+                "original_price",
+                "currency",
+                "availability",
+                "variants",
+            )
+        )
+    ):
+        return True
+    if detail_record_rejection_reason(
+        record,
+        page_url=page_url,
+        requested_page_url=requested_page_url,
+    ):
+        return True
+    return bool(is_title_noise(title))
+
+
+def _detail_record_has_product_signal(record: dict[str, Any]) -> bool:
+    fields = (
+        "price",
+        "original_price",
+        "sku",
+        "part_number",
+        "barcode",
+        "image_url",
+        "availability",
+        "variants",
+    )
+    return any(
+        record.get(field_name) not in (None, "", [], {})
+        for field_name in fields
+    )
+
+
+def _detail_record_has_strong_product_signal(record: dict[str, Any]) -> bool:
+    return any(
+        record.get(field_name) not in (None, "", [], {})
+        for field_name in (
+            "price",
+            "original_price",
+            "currency",
+            "availability",
+            "variants",
+            "description",
+        )
+    )
 
 
 def _safe_domain(url: str) -> str:

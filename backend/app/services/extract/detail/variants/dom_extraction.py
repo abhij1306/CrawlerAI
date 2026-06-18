@@ -11,12 +11,14 @@ __all__ = (
 import logging
 from copy import deepcopy
 from typing import Any
+from urllib.parse import urlparse
 
 from bs4 import BeautifulSoup
 
 from app.services.config.extraction_rules import (
     DOM_VARIANT_CARTESIAN_COMBO_LIMIT,
     DOM_VARIANT_GROUP_LIMIT,
+    LIVE_MARKETPLACE_HOSTS,
 )
 from app.services.shared.field_coerce import (
     clean_text,
@@ -304,11 +306,22 @@ def backfill_variants_from_dom_if_missing(
     variants = record.get("variants")
     if not isinstance(variants, list) or not variants:
         return
-    if any(
+    any_variant_has_price = any(
         isinstance(variant, dict) and variant.get("price") not in (None, "", [], {})
         for variant in variants
-    ):
-        return
+    )
+    # On live-marketplace sites (StockX, Back Market, GOAT, eBay, etc.)
+    # each variant has a unique, dynamic price. Broadcasting the parent
+    # price into missing variant rows turns every size/condition into
+    # the same number ($50 on StockX, $411 on Back Market) — a tell-tale
+    # sign of a failed per-variant price capture. Skip the price/currency
+    # broadcast so the missing-price row surfaces as "no price" rather
+    # than a wrong uniform value. Availability is independent of price —
+    # even a marketplace usually has the same in-stock signal for every
+    # variant of one product, so broadcast it unless the row already
+    # carries its own availability/stock evidence.
+    is_live_marketplace = _page_url_is_live_marketplace(page_url)
+    broadcast_price = bool(price) and not is_live_marketplace
     for variant in variants:
         if not isinstance(variant, dict):
             continue
@@ -318,7 +331,22 @@ def backfill_variants_from_dom_if_missing(
             and variant.get("stock_quantity") in (None, "", [], {})
         ):
             variant["availability"] = parent_availability
+        if not broadcast_price or any_variant_has_price:
+            continue
         if price:
             variant["price"] = price
         if currency and variant.get("currency") in (None, "", [], {}):
             variant["currency"] = currency
+
+
+def _page_url_is_live_marketplace(page_url: str) -> bool:
+    if not page_url:
+        return False
+    try:
+        host = (urlparse(str(page_url)).hostname or "").lower()
+    except (TypeError, ValueError):
+        return False
+    return host in LIVE_MARKETPLACE_HOSTS or any(
+        host.endswith(f".{marketplace_host}")
+        for marketplace_host in LIVE_MARKETPLACE_HOSTS
+    )

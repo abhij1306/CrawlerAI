@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import asdict, dataclass
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 from bs4 import BeautifulSoup
 
@@ -70,7 +70,8 @@ def resolve_auto_surface(
     html: str | None = None,
     is_listing: bool = False,
 ) -> SurfaceResolution:
-    path = urlparse(str(url or "")).path.lower()
+    parsed_url = urlparse(str(url or ""))
+    path = parsed_url.path.lower()
     evidence: list[str] = ["requested_surface:auto"]
 
     typed_html_resolution = _resolve_from_html_schema(html)
@@ -93,6 +94,16 @@ def resolve_auto_surface(
         )
 
     product_like_terminal = _has_product_like_terminal(path)
+    html_detail_signal = _html_detail_signal(path)
+    shop_detail_signal = _shop_detail_signal(path)
+    query_detail_signal = _query_detail_signal(parsed_url.query)
+    if html_detail_signal or shop_detail_signal or query_detail_signal:
+        return SurfaceResolution(
+            "ecommerce_detail",
+            config.SURFACE_RESOLVER_MEDIUM_CONFIDENCE,
+            [*evidence, html_detail_signal or shop_detail_signal or query_detail_signal],
+        )
+
     if (
         _has_any(path, config.SURFACE_RESOLVER_ECOMMERCE_LISTING_PATH_TOKENS)
         and not product_like_terminal
@@ -108,14 +119,6 @@ def resolve_auto_surface(
             "ecommerce_detail",
             config.SURFACE_RESOLVER_MEDIUM_CONFIDENCE,
             [*evidence, "ecommerce_detail_terminal_signal"],
-        )
-
-    html_detail_signal = _html_detail_signal(path)
-    if html_detail_signal:
-        return SurfaceResolution(
-            "ecommerce_detail",
-            config.SURFACE_RESOLVER_MEDIUM_CONFIDENCE,
-            [*evidence, html_detail_signal],
         )
 
     if _has_listing_segment(path):
@@ -221,10 +224,56 @@ def _html_detail_signal(path: str) -> str:
     slug = normalized.rstrip("/").rsplit("/", maxsplit=1)[-1]
     if not slug.endswith(config.SURFACE_RESOLVER_ECOMMERCE_DETAIL_HTML_EXTENSION):
         return ""
+    stem = slug[: -len(config.SURFACE_RESOLVER_ECOMMERCE_DETAIL_HTML_EXTENSION)]
     if re.search(config.SURFACE_RESOLVER_ECOMMERCE_DETAIL_SKU_HTML_PATTERN, normalized):
         return "ecommerce_detail_sku_html_signal"
+    if (
+        stem.isdigit()
+        and len(stem)
+        >= config.SURFACE_RESOLVER_ECOMMERCE_DETAIL_NUMERIC_HTML_MIN_LENGTH
+    ):
+        return "ecommerce_detail_numeric_html_signal"
+    if re.fullmatch(
+        config.SURFACE_RESOLVER_ECOMMERCE_DETAIL_TERMINAL_PATTERN,
+        stem,
+    ):
+        return "ecommerce_detail_html_terminal_signal"
     if slug.count("-") >= config.SURFACE_RESOLVER_ECOMMERCE_DETAIL_HTML_MIN_HYPHENS:
         return "ecommerce_detail_html_slug_signal"
+    return ""
+
+
+def _query_detail_signal(query: str) -> str:
+    if not query:
+        return ""
+    for key, values in parse_qs(query, keep_blank_values=False).items():
+        normalized_key = str(key or "").strip().lower()
+        if normalized_key not in config.SURFACE_RESOLVER_ECOMMERCE_DETAIL_QUERY_KEYS:
+            continue
+        if any(
+            re.fullmatch(
+                config.SURFACE_RESOLVER_ECOMMERCE_DETAIL_QUERY_VALUE_PATTERN,
+                str(value or "").strip().lower(),
+            )
+            for value in values
+        ):
+            return "ecommerce_detail_query_signal"
+    return ""
+
+
+def _shop_detail_signal(path: str) -> str:
+    segments = [
+        segment.strip().lower()
+        for segment in str(path or "").strip("/").split("/")
+        if segment.strip()
+    ]
+    if len(segments) != 2 or segments[0] != "shop":
+        return ""
+    slug = segments[-1]
+    if slug.count("-") < config.SURFACE_RESOLVER_ECOMMERCE_DETAIL_SHOP_SLUG_MIN_HYPHENS:
+        return ""
+    if re.search(r"[a-z]", slug):
+        return "ecommerce_detail_shop_slug_signal"
     return ""
 
 

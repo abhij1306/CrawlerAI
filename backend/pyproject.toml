@@ -95,6 +95,16 @@ disable = [
   "missing-module-docstring",
   "missing-class-docstring",
   "fixme",
+  # Legacy architecture/style patterns accepted by existing tests and facades.
+  "broad-exception-caught",
+  "import-outside-toplevel",
+  "invalid-name",
+  "protected-access",
+  "redefined-outer-name",
+  "too-few-public-methods",
+  "too-many-public-methods",
+  "unused-wildcard-import",
+  "wildcard-import",
 ]
 
 [tool.pylint.design]

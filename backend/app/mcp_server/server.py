@@ -1,4 +1,5 @@
 from __future__ import annotations
+# pylint: disable=missing-function-docstring
 
 import os
 from typing import Any

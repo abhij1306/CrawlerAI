@@ -152,11 +152,6 @@ def _clean_detail_text(value: object) -> str | None:
     return text or None
 
 
-def _gtin_like(value: object) -> str | None:
-    text = re.sub(r"\D+", "", str(value or ""))
-    return text if len(text) in {8, 12, 13, 14} else None
-
-
 def _iter_json_state_payloads(
     parser: LexborHTMLParser,
 ) -> Iterable[Mapping[str, object]]:
@@ -279,8 +274,7 @@ class AmazonAdapter(BaseAdapter):
                 candidate = selectolax_node_attr(node, attr_name)
                 if not candidate:
                     continue
-                normalized = candidate.strip()
-                normalized = upgrade_low_resolution_image_url(normalized)
+                normalized = upgrade_low_resolution_image_url(candidate.strip())
                 if normalized and normalized not in seen:
                     seen.add(normalized)
                     values.append(normalized)
@@ -292,8 +286,9 @@ class AmazonAdapter(BaseAdapter):
             except json.JSONDecodeError:
                 continue
             for candidate in payload.keys() if isinstance(payload, Mapping) else []:
-                normalized = str(candidate or "").strip()
-                normalized = upgrade_low_resolution_image_url(normalized)
+                normalized = upgrade_low_resolution_image_url(
+                    str(candidate or "").strip()
+                )
                 if normalized and normalized not in seen:
                     seen.add(normalized)
                     values.append(normalized)
@@ -411,9 +406,40 @@ class AmazonAdapter(BaseAdapter):
         )
         if not dim_order:
             return {}
+        axis_entries, selected_values = self._collect_twister_axis_entries(
+            raw_dims, dim_order
+        )
+        if not axis_entries:
+            return {}
+        record: dict[str, object] = {}
+        variants = self._twister_variants(
+            state.get("sortedVariations"),
+            dim_order=dim_order,
+            axis_entries=axis_entries,
+            page_url=url,
+        )
+        if not variants:
+            variants = self._twister_variants_from_product(
+                dim_order=dim_order,
+                axis_entries=axis_entries,
+                page_url=url,
+            )
+        if variants:
+            flat_variants = flatten_variants_for_public_output(variants, page_url=url)
+            if flat_variants:
+                record["variants"] = flat_variants
+                record["variant_count"] = len(flat_variants)
+        for axis_name, value in selected_values.items():
+            record[axis_name] = value
+        return record
+
+    def _collect_twister_axis_entries(
+        self,
+        raw_dims: Mapping[object, object],
+        dim_order: list[str],
+    ) -> tuple[dict[str, list[dict[str, object]]], dict[str, str]]:
         axis_entries: dict[str, list[dict[str, object]]] = {}
         selected_values: dict[str, str] = {}
-        record: dict[str, object] = {}
         for raw_dim in dim_order:
             raw_entries = raw_dims.get(raw_dim)
             if not isinstance(raw_entries, list):
@@ -437,31 +463,9 @@ class AmazonAdapter(BaseAdapter):
                     == "SELECTED"
                 ):
                     selected_values[axis_name] = value
-            if not values:
-                continue
-            axis_entries[axis_name] = entries
-        if not axis_entries:
-            return {}
-        variants = self._twister_variants(
-            state.get("sortedVariations"),
-            dim_order=dim_order,
-            axis_entries=axis_entries,
-            page_url=url,
-        )
-        if not variants:
-            variants = self._twister_variants_from_product(
-                dim_order=dim_order,
-                axis_entries=axis_entries,
-                page_url=url,
-            )
-        if variants:
-            flat_variants = flatten_variants_for_public_output(variants, page_url=url)
-            if flat_variants:
-                record["variants"] = flat_variants
-                record["variant_count"] = len(flat_variants)
-        for axis_name, value in selected_values.items():
-            record[axis_name] = value
-        return record
+            if values:
+                axis_entries[axis_name] = entries
+        return axis_entries, selected_values
 
     def _twister_dimension_order(
         self,

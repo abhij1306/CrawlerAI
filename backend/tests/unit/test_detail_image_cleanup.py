@@ -39,6 +39,14 @@ def test_real_walmart_image_is_kept() -> None:
 
 
 @pytest.mark.unit
+def test_empty_gif_placeholder_is_rejected() -> None:
+    identity = "https://www.skechers.com/skechers-viper-court-pro-2.0/246109.html"
+    placeholder = "https://www.skechers.com/on/demandware.static/empty.gif"
+
+    assert not _detail_image_candidate_is_usable(placeholder, identity_url=identity)
+
+
+@pytest.mark.unit
 def test_pdp_segment_with_image_extension_passes() -> None:
     """A path containing ``/products/`` IS legitimate when the URL still has
     an image extension or a known image-asset path token. Do not over-filter.

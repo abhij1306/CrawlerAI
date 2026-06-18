@@ -34,6 +34,7 @@ Engineering constraints for CrawlerAI. Defines how code should be shaped and how
 | 5 | Publish + Persistence | `publish/*`, `artifact_store.py`, `pipeline/persistence.py` |
 | 6 | Review + Selectors + Domain Memory | `review/__init__.py`, `selectors_runtime.py`, `selector_self_heal.py`, `domain_memory_service.py` |
 | 7 | LLM Admin + Runtime | `llm_runtime.py`, `llm_provider_client.py`, `llm_config_service.py`, `llm_cache.py`, `llm_circuit_breaker.py`, `llm_tasks.py` |
+| 8 | Data Enrichment     | `api/data_enrichment.py`, `data_enrichment/service.py`, `data_enrichment/shopify_catalog.py`, `models/crawl.py` |
 
 Config tunables for all buckets → `app/services/config/*`
 
@@ -162,7 +163,7 @@ Adding local product-universe dictionaries for enrichment categories, materials,
 
 **Violation looks like:** `DATA_ENRICHMENT_TAXONOMY_TOKEN_ALIASES`, `matching sets -> outfit sets`, a growing list of material names in config, or a color catalog copied into service code.
 
-**Fix:** Use canonical taxonomy files at `backend/app/data/enrichment/shopify_categories.json` for category paths and category attribute handles, and `backend/app/data/enrichment/shopify_attributes.json` for Shopify-defined attribute values. If matching fails, improve generic matching mechanics in `backend/app/services/data_enrichment/shopify_catalog.py` using taxonomy paths, category attribute handles, and normalized tokens. Local config may strip UI noise or define source-field lookup, but it must not become a shadow product taxonomy. Owner: `data_enrichment/` subsystem.
+**Fix:** Use canonical config data at `backend/app/data/enrichment/shopify_categories.json` for category paths and category attribute handles, and `backend/app/data/enrichment/shopify_attributes.json` for Shopify-defined attribute values. Put service logic in `backend/app/services/data_enrichment/shopify_catalog.py` and use it to improve generic matching mechanics (taxonomy paths, category attribute handles, normalized tokens). Local config may strip UI noise or define source-field lookup, but it must not become a shadow product taxonomy. Owner: `data_enrichment/` subsystem (config data under `app/data/enrichment/`, service code under `app/services/data_enrichment/`).
 
 ### AP-19: Duplicate public-field cleanup helpers
 Adding per-field cleanup in adapters, enrichment, exports, or UI because a bad `barcode`, `gender`, `brand`, `product_type`, or structural title leaked through.

@@ -6,6 +6,7 @@ __all__ = (
     "DetailTierInputs",
     "PreparedDetailExtraction",
     "DetailTierExecutor",
+    "network_payload_record_conflicts_with_requested_detail",
 )
 
 from collections.abc import Iterable
@@ -28,6 +29,13 @@ from app.services.config.field_mappings import (
 )
 from app.services.extraction_context import ExtractionContext
 from app.services.extract.contracts import CandidateSet
+from app.services.extract.detail.identity.core import (
+    detail_identity_codes_from_record_fields,
+    detail_identity_codes_from_url,
+    detail_identity_codes_match,
+    detail_identity_tokens,
+    detail_title_from_url,
+)
 from app.services.extract.variant_choice_traversal import variant_dom_cues_present
 
 
@@ -225,6 +233,11 @@ class DetailTierExecutor:
             page_url=state.page_url,
             requested_fields=state.requested_fields,
         ):
+            if network_payload_record_conflicts_with_requested_detail(
+                mapped_payload,
+                requested_page_url=state.requested_page_url or state.page_url,
+            ):
+                continue
             self._runtime.collect_record_candidates(
                 mapped_payload,
                 page_url=state.page_url,
@@ -422,6 +435,26 @@ class DetailTierExecutor:
             page_url=page_url,
         )
         self._runtime.fill_missing_dom_detail_title(record, page_url=page_url)
+
+
+def network_payload_record_conflicts_with_requested_detail(
+    record: dict[str, object],
+    *,
+    requested_page_url: str,
+) -> bool:
+    requested_codes = detail_identity_codes_from_url(requested_page_url)
+    record_codes = detail_identity_codes_from_record_fields(record)
+    if not requested_codes or not record_codes:
+        return False
+    if detail_identity_codes_match(requested_codes, record_codes):
+        return False
+    requested_title = detail_title_from_url(requested_page_url)
+    requested_tokens = detail_identity_tokens(requested_title)
+    requested_tokens.update(detail_identity_tokens(requested_page_url))
+    candidate_tokens = detail_identity_tokens(record.get("title"))
+    if not requested_tokens or not candidate_tokens:
+        return False
+    return requested_tokens.isdisjoint(candidate_tokens)
 
 
 def _object_dict(value: object) -> dict:

@@ -20,23 +20,25 @@ from app.services.config.extraction_rules import (
     COLOR_KEYWORD_PATTERN,
     DETAIL_BRAND_DESCRIPTION_PATTERNS,
     DETAIL_BRAND_HOST_FALLBACKS,
-    DETAIL_BRAND_PREFIX_CONTINUATION_TOKENS,
     DETAIL_BRAND_NUMERIC_PREFIX_ALLOWLIST,
+    DETAIL_BRAND_PREFIX_CONTINUATION_TOKENS,
     DETAIL_BRAND_PREFIX_STOP_TOKENS,
     DETAIL_BRAND_SUFFIX_REJECT_TOKENS,
     DETAIL_BRAND_TITLE_PREFIX_MAX_WORDS,
     DETAIL_BRAND_TITLE_SUFFIX_PATTERN,
+    DETAIL_BREADCRUMB_SEPARATOR_LABELS,
+    DETAIL_BREADCRUMB_TITLE_DUPLICATE_RATIO,
     DETAIL_CATEGORY_BRANCH_STOP_TOKENS,
     DETAIL_CATEGORY_LABEL_PREFIXES,
     DETAIL_CATEGORY_UI_TOKENS,
+    DETAIL_LOW_SIGNAL_NUMERIC_SIZE_MAX,
+    DETAIL_NON_APPAREL_GENDER_DROP_CATEGORIES,
+    DETAIL_NON_APPAREL_GENDER_DROP_URL_TOKENS,
+    DETAIL_QUOTED_COLOR_PATTERN,
     DETAIL_SIZE_GUIDE_ALLOWED_HEADER_KEYS,
     DETAIL_SIZE_GUIDE_CONTEXT_TOKENS,
     DETAIL_TITLE_LEADING_SKU_PREFIX_PATTERN,
     DETAIL_TITLE_TRAILING_SIZE_VALUES,
-    DETAIL_BREADCRUMB_SEPARATOR_LABELS,
-    DETAIL_BREADCRUMB_TITLE_DUPLICATE_RATIO,
-    DETAIL_QUOTED_COLOR_PATTERN,
-    DETAIL_LOW_SIGNAL_NUMERIC_SIZE_MAX,
 )
 from app.services.shared.field_coerce import (
     clean_text,
@@ -113,6 +115,7 @@ def sanitize_detail_placeholder_scalars(
         else:
             record.pop("product_attributes", None)
     _sanitize_detail_scalar_size(record)
+    _sanitize_detail_color_redundant_repeat(record)
     _normalize_detail_tables(record)
 
 
@@ -141,6 +144,7 @@ def sanitize_detail_identity_scalars(
         record["sku"] = preferred_code
         if text_or_none(record.get("part_number")) in (None, ""):
             record["part_number"] = preferred_code
+    _drop_gender_for_non_apparel_category(record)
     _repair_detail_title_from_requested_identity(record, identity_url=identity_url)
     _repair_missing_detail_brand(record, identity_url=identity_url)
     _repair_detail_brand_from_host_fallback(record, identity_url=identity_url)
@@ -166,6 +170,40 @@ def sanitize_detail_identity_scalars(
             field_sources["title"] = ["url_slug"]
 
 
+# Categories that indicate a non-apparel product. Gender ("Women"/"Men") is
+# meaningless for these and leaks animal sex or product-intended context
+# (e.g. Petco "Female Blue Crowntail Betta" -> gender: "Women") when the
+# title contains "male" or "female". The frozensets live in the centralized
+# extraction_rules config module (see DETAIL_NON_APPAREL_GENDER_DROP_*).
+
+
+def _drop_gender_for_non_apparel_category(record: dict[str, Any]) -> None:
+    if not text_or_none(record.get("gender")):
+        return
+    category = clean_text(record.get("category")).lower()
+    if category:
+        category_tokens = {
+            token.strip()
+            for token in re.split(r"[/|>›»→|]+", category)
+            if token.strip()
+        }
+        if category_tokens & DETAIL_NON_APPAREL_GENDER_DROP_CATEGORIES:
+            record.pop("gender", None)
+            field_sources = record.get("_field_sources")
+            if isinstance(field_sources, dict):
+                field_sources.pop("gender", None)
+            return
+    source_url = clean_text(record.get("source_url") or record.get("url")).lower()
+    if source_url:
+        url_tokens = set(re.split(r"[-/_.?=&#]+", source_url))
+        url_tokens.discard("-")
+        if url_tokens & DETAIL_NON_APPAREL_GENDER_DROP_URL_TOKENS:
+            record.pop("gender", None)
+            field_sources = record.get("_field_sources")
+            if isinstance(field_sources, dict):
+                field_sources.pop("gender", None)
+
+
 def _repair_missing_detail_brand(
     record: dict[str, Any],
     *,
@@ -175,10 +213,15 @@ def _repair_missing_detail_brand(
         "_irrelevant_detail_structured_product"
     ):
         return
+    # Try the most specific (title-suffix, title-prefix) sources first, then
+    # fall back to the more generic host-based repair. The host path used
+    # to run before title-prefix, which caused retailers like END. Clothing
+    # to be labelled "END." instead of the product-line brand "47" in
+    # the title prefix (which is in DETAIL_BRAND_NUMERIC_PREFIX_ALLOWLIST).
     candidates = (
         _brand_from_title_suffix(record),
-        _brand_from_host(identity_url),
         _brand_from_title_prefix(record, identity_url=identity_url),
+        _brand_from_host(identity_url),
         _brand_from_description(record),
     )
     for candidate in candidates:
@@ -264,10 +307,19 @@ def _repair_detail_brand_from_host_fallback(
         return
     if current and not _brand_value_is_weak_title_prefix(current, record):
         return
+    # When the title-prefix path already produced a numeric-prefix match
+    # (e.g. "47" on endclothing.com), the host label ("END.") is the
+    # store name, not the product brand. Keep the numeric value.
+    if current and _brand_value_is_numeric_prefix_allowlist_match(current):
+        return
     record["brand"] = fallback
     field_sources = record.setdefault("_field_sources", {})
     if isinstance(field_sources, dict):
         field_sources["brand"] = ["host_identity_repair"]
+
+
+def _brand_value_is_numeric_prefix_allowlist_match(value: str) -> bool:
+    return value.strip() in (DETAIL_BRAND_NUMERIC_PREFIX_ALLOWLIST or set())
 
 
 def _brand_value_is_weak_title_prefix(value: str, record: dict[str, Any]) -> bool:
@@ -289,6 +341,8 @@ def _sanitize_detail_title_noise(record: dict[str, Any]) -> None:
     title = clean_text(title.lstrip("+").strip())
     title = _strip_leading_sku_title_prefix(title, record)
     title = _strip_trailing_title_variant_params(title, record)
+    if is_title_noise(title):
+        title = ""
     if title:
         record["title"] = title
         return
@@ -410,6 +464,44 @@ def _repair_detail_color_from_description(record: dict[str, Any]) -> None:
     field_sources = record.setdefault("_field_sources", {})
     if isinstance(field_sources, dict):
         field_sources["color"] = ["description_color_repair"]
+
+
+# Detect a `color` value whose payload is a description + redundant
+# "Color: <repeat>" suffix (Sephora, J.Crew product detail copy). The
+# upstream selector / JS-state pass sometimes glues the swatch description
+# and a `Color: <name> - <description>` repeat together. Strip the
+# duplicate, prefer the head segment, and keep the original as a fallback.
+_COLOR_REDUNDANT_REPEAT_RE = re.compile(
+    r"\b(?:color|colour)\s*:\s*(.+)$",
+    re.I,
+)
+
+
+def _sanitize_detail_color_redundant_repeat(record: dict[str, Any]) -> None:
+    color = record.get("color")
+    if not isinstance(color, str):
+        return
+    cleaned = clean_text(color)
+    if not cleaned or len(cleaned) < 16:
+        return
+    match = _COLOR_REDUNDANT_REPEAT_RE.search(cleaned)
+    if not match:
+        return
+    head, _, tail = cleaned.partition(match.group(0))
+    head = clean_text(head.rstrip(" -–—:|"))
+    tail_value = clean_text(match.group(1))
+    if not head or not tail_value:
+        return
+    # The tail often reads "Color: <head> - <description>". Treat it as a
+    # redundant repeat when the tail begins with the same head words.
+    head_prefix = head[: min(len(head), 60)].casefold()
+    tail_prefix = tail_value[: min(len(tail_value), 60)].casefold()
+    if head_prefix and tail_prefix.startswith(head_prefix[:20]):
+        record["color"] = head
+        return
+    # Otherwise just trim the trailing "Color: …" repeat and keep the head
+    # even if it doesn't match the tail verbatim.
+    record["color"] = head
 
 
 def _fallback_title_is_low_signal(title: object) -> bool:

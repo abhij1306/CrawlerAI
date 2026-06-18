@@ -40,6 +40,100 @@
   "ACTION_ADD_TO_CART": "add to cart",
   "ACTION_BUY_NOW": "buy now",
   "ACTION_SIGN_IN": "sign in",
+  "DETAIL_ARTIFACT_PRODUCT_TYPE_PATTERNS_EXTRA": {
+    "__type__": "tuple",
+    "items": ["^\\d+$"]
+  },
+  "DETAIL_BRAND_HOST_FALLBACKS_EXTRA": {
+    "47brand": "47 Brand",
+    "endclothing": "END.",
+    "gap": "Gap",
+    "jcrew": "J.Crew",
+    "levi": "Levi's",
+    "lululemon": "Lululemon",
+    "maccosmetics": "MAC Cosmetics",
+    "newbalance": "New Balance",
+    "ralphlauren": "Ralph Lauren",
+    "target": "Target",
+    "tommy": "Tommy Hilfiger",
+    "tommyhilfiger": "Tommy Hilfiger",
+    "uniqlo": "Uniqlo",
+    "zara": "Zara",
+    "zadigetvoltaire": "Zadig&Voltaire"
+  },
+  "DETAIL_BRAND_PREFIX_STOP_TOKENS_EXTRA": {
+    "__type__": "frozenset",
+    "items": [
+      "authentic",
+      "basic",
+      "casual",
+      "cropped",
+      "define",
+      "designer",
+      "essential",
+      "heritage",
+      "iconic",
+      "premium",
+      "retro",
+      "script",
+      "structured"
+    ]
+  },
+  "DETAIL_IMAGE_TITLE_PRIMARY_OVERLAP_MIN": 4,
+  "DETAIL_LONG_TEXT_DISCLAIMER_PATTERNS_EXTRA": {
+    "__type__": "tuple",
+    "items": [
+      "\\b(?:==+\\s*)?This\\s+snippet\\s+of\\s+JavaScript\\s+handles\\s+fetching\\s+the\\s+dynamic\\s+recommendations\\b",
+      "\\bDIV\\s+tag\\s+id\\s+below\\s+is\\s+unique\\s+on\\s+purpose\\b",
+      "\\bsnippet\\s+ends\\s+here\\b",
+      "\\bmakes\\s+a\\s+call\\s+to\\s+render\\s+the\\s+configured\\s+template\\s+with\\s+the\\s+returned\\s+recommended\\s+products\\b"
+    ]
+  },
+  "DETAIL_LOW_SIGNAL_PRODUCT_TYPE_VALUES_EXTRA": {
+    "__type__": "frozenset",
+    "items": ["-", "default", "home", "n/a", "shop", "tba", "tbd", "undefined", "unknown", "view all", "—"]
+  },
+  "DETAIL_LOW_SIGNAL_TITLE_VALUES_EXTRA": {
+    "__type__": "frozenset",
+    "items": [
+      "404 not found",
+      "an error occurred",
+      "an unexpected error occurred",
+      "athleta.com",
+      "new balance shoes & apparel | official new balanceâ® site",
+      "new balance shoes & apparel | official new balance® site",
+      "new balance shoes & apparel | official new balanceā® site",
+      "not found",
+      "oops something went wrong",
+      "oops the page you're looking for can't be found",
+      "oops! something went wrong",
+      "oops! the page you're looking for can't be found",
+      "oops! the page you’re looking for can’t be found",
+      "page not found",
+      "recommended app",
+      "sorry, we can't find that page",
+      "something went wrong",
+      "the page you requested could not be found",
+      "we can't find that page",
+      "we can’t find that page"
+    ]
+  },
+  "DETAIL_NON_APPAREL_GENDER_DROP_CATEGORIES": {
+    "__type__": "frozenset",
+    "items": ["aquatic", "aquatic life for sale", "bird", "cat", "dog", "fish", "fish supplies", "freshwater fish", "pet", "pet supplies", "pets", "reptile", "saltwater fish", "small animal"]
+  },
+  "DETAIL_NON_APPAREL_GENDER_DROP_URL_TOKENS": {
+    "__type__": "frozenset",
+    "items": ["aquatic", "bird", "cat", "chewy", "dog", "fish", "pet", "petco", "pets", "reptile", "small-animal"]
+  },
+  "LIVE_MARKETPLACE_HOSTS": {
+    "__type__": "frozenset",
+    "items": ["backmarket.co.uk", "backmarket.com", "backmarket.de", "backmarket.fr", "chrono24.com", "ebay.com", "goat.com", "mercari.com", "poshmark.com", "reverb.com", "stockx.com", "stockx.com.au", "stockx.com.ca", "stockx.com.uk", "therealreal.com", "vestiairecollective.com"]
+  },
+  "UNRESOLVED_TEMPLATE_URL_TOKENS_EXTRA": {
+    "__type__": "tuple",
+    "items": ["{width}", "{height}", "{size}"]
+  },
   "BELK_BRAND_SELECTORS": {
     "__type__": "tuple",
     "items": [

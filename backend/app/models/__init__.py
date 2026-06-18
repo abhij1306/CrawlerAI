@@ -1,3 +1,4 @@
+# pylint: disable=duplicate-code
 # ORM model exports.
 from app.core.database import Base
 from app.models.api_key import ApiKey

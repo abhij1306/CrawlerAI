@@ -95,7 +95,7 @@ def test_resolve_auto_multi_token_html_product_slug_to_detail() -> None:
 def test_resolve_auto_listing_path_wins_over_html_product_shape() -> None:
     result = resolve_surface(
         "auto",
-        url="https://shop.example.com/category/sale-product-black-12345.html",
+        url="https://shop.example.com/category/summer.html",
         crawl_module="category",
     )
 

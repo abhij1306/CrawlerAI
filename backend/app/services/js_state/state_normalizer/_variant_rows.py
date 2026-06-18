@@ -4,12 +4,12 @@ from __future__ import annotations
 from typing import Any
 
 from app.services.config.variant_policy import PUBLIC_VARIANT_AXIS_FIELDS
+from app.services.extract import variant_option_value as variant_value
 
 from ._common import *
 from ._variant_mapping import _option_names, _variant_axis_raw_value
 
 _MATRIX_AXIS_FIELDS = frozenset(PUBLIC_VARIANT_AXIS_FIELDS)
-
 
 def _product_variant_rows(product: dict[str, Any]) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
@@ -32,6 +32,8 @@ def _product_variant_rows(product: dict[str, Any]) -> list[dict[str, Any]]:
                     product,
                     variant_count=len(raw_rows),
                 )
+            if variant_value.drop_noise_variant_axis_values(row, _MATRIX_AXIS_FIELDS):
+                continue
             rows.append(row)
     if not rows:
         rows.extend(_axis_keyed_variant_rows(product.get("variants"), product))
@@ -80,6 +82,8 @@ def _axis_keyed_variant_rows(
                 product,
                 variant_count=len(variant_items),
             )
+            if variant_value.drop_noise_variant_axis_values(row, _MATRIX_AXIS_FIELDS):
+                continue
             rows.append(row)
     return rows
 
@@ -137,6 +141,8 @@ def _option_group_variant_rows(product: dict[str, Any]) -> list[dict[str, Any]]:
                     or text_or_none(item.get("index"))
                 )
                 if not axis_value:
+                    continue
+                if variant_value.variant_option_value_is_noise(axis_value):
                     continue
                 row = dict(item)
                 row["name"] = axis_name
