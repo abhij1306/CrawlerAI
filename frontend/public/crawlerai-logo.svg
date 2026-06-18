@@ -1,0 +1,26 @@
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  viewBox="0 0 32 32"
+  width="32"
+  height="32"
+  fill="none"
+  aria-label="CrawlerAI"
+  role="img"
+>
+  <defs>
+    <linearGradient id="crawlerai-mark" x1="4" y1="4" x2="28" y2="28" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#2858FF"/>
+      <stop offset="1" stop-color="#7C5CFF"/>
+    </linearGradient>
+  </defs>
+  <rect width="32" height="32" rx="7" fill="url(#crawlerai-mark)"/>
+  <circle cx="16" cy="16" r="3" fill="white"/>
+  <line x1="18.1" y1="13.9" x2="23" y2="9" stroke="white" stroke-width="1.8" stroke-linecap="round"/>
+  <circle cx="23.5" cy="8.5" r="1.5" fill="white"/>
+  <line x1="18.1" y1="18.1" x2="23" y2="23" stroke="white" stroke-width="1.8" stroke-linecap="round"/>
+  <circle cx="23.5" cy="23.5" r="1.5" fill="white"/>
+  <line x1="13" y1="16" x2="7" y2="16" stroke="white" stroke-width="1.8" stroke-linecap="round"/>
+  <circle cx="6" cy="16" r="1.5" fill="white"/>
+  <line x1="13.9" y1="13.9" x2="10" y2="10" stroke="white" stroke-width="1.4" stroke-linecap="round" opacity="0.55"/>
+  <circle cx="9.5" cy="9.5" r="1.2" fill="white" opacity="0.55"/>
+</svg>

@@ -1,0 +1,586 @@
+from __future__ import annotations
+
+import logging
+from pathlib import Path
+
+import pytest
+from httpx import ASGITransport, AsyncClient
+from sqlalchemy.exc import OperationalError
+
+from app.core.dependencies import get_db, require_admin
+from app.main import app
+from app.services import dashboard_service
+from app.models.domain_memory import (
+    DomainCookieMemory,
+    DomainFieldFeedback,
+    DomainMemory,
+    DomainRunProfile,
+    HostProtectionMemory,
+)
+from app.models.product_intelligence import (
+    ProductIntelligenceCandidate,
+    ProductIntelligenceJob,
+    ProductIntelligenceMatch,
+    ProductIntelligenceSourceProduct,
+)
+from app.models.crawl_run import CrawlLog, CrawlRecord, CrawlRun
+from app.models.review import ReviewPromotion
+from app.models.llm import LLMCostLog
+from app.models.user import User
+from app.services.acquisition.host_protection_memory import (
+    load_host_protection_policy,
+    note_host_hard_block,
+    note_host_usable_fetch,
+    reset_host_protection_memory,
+)
+from app.services.crawl.crud import create_crawl_run
+from app.services.dashboard_service import (
+    reset_application_data,
+    reset_crawl_data,
+    reset_domain_memory,
+    reset_product_intelligence,
+    session_transaction,
+)
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_dashboard_reset_compatibility_routes(
+    db_session: AsyncSession,
+    test_user,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def _override_db():
+        yield db_session
+
+    async def _override_admin():
+        return test_user
+
+    async def _fake_reset(_session: AsyncSession) -> dict[str, int]:
+        return {"ok": 1}
+
+    monkeypatch.setattr("app.api.dashboard.reset_crawl_data", _fake_reset)
+    monkeypatch.setattr("app.api.dashboard.reset_domain_memory", _fake_reset)
+    monkeypatch.setattr("app.api.dashboard.reset_product_intelligence", _fake_reset)
+    app.dependency_overrides[get_db] = _override_db
+    app.dependency_overrides[require_admin] = _override_admin
+    try:
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://testserver",
+        ) as client:
+            for path in (
+                "/api/dashboard/reset-crawl-data",
+                "/api/dashboard/reset-domain-memory",
+                "/api/dashboard/reset-product-intelligence",
+            ):
+                response = await client.post(path)
+                assert response.status_code == 200
+                assert response.json() == {"ok": 1}
+    finally:
+        app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_dashboard_reset_data_route_commits_after_auth_reads_same_session(
+    db_session: AsyncSession,
+    test_user,
+) -> None:
+    async def _override_db():
+        yield db_session
+
+    async def _override_admin():
+        result = await db_session.execute(select(User).where(User.id == test_user.id))
+        return result.scalar_one()
+
+    run = await create_crawl_run(
+        db_session,
+        test_user.id,
+        {
+            "run_type": "crawl",
+            "url": "https://example.com/product/widget",
+            "surface": "ecommerce_detail",
+        },
+    )
+    db_session.add(
+        CrawlRecord(
+            run_id=run.id,
+            source_url=run.url,
+            data={"title": "Widget"},
+            raw_data={},
+            discovered_data={},
+            source_trace={},
+        )
+    )
+    await db_session.commit()
+
+    app.dependency_overrides[get_db] = _override_db
+    app.dependency_overrides[require_admin] = _override_admin
+    try:
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://testserver",
+        ) as client:
+            response = await client.post("/api/dashboard/reset-data")
+        assert response.status_code == 200
+    finally:
+        app.dependency_overrides.clear()
+
+    assert (await db_session.execute(select(CrawlRun))).scalars().all() == []
+    assert (await db_session.execute(select(CrawlRecord))).scalars().all() == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_split_reset_crawl_data_and_domain_memory_preserve_the_other_scope(
+    db_session: AsyncSession,
+    test_user,
+    workspace_tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.services import dashboard_service
+
+    artifacts_dir = workspace_tmp_path / "artifacts"
+    cookies_dir = workspace_tmp_path / "cookies"
+    artifacts_dir.mkdir(parents=True, exist_ok=True)
+    cookies_dir.mkdir(parents=True, exist_ok=True)
+    (artifacts_dir / "runs").mkdir(parents=True, exist_ok=True)
+    (artifacts_dir / "runs" / "stale.html").write_text("artifact", encoding="utf-8")
+    (cookies_dir / "session.json").write_text("cookie", encoding="utf-8")
+
+    monkeypatch.setattr(dashboard_service.settings, "artifacts_dir", artifacts_dir)
+    monkeypatch.setattr(dashboard_service.settings, "cookie_store_dir", cookies_dir)
+
+    run = await create_crawl_run(
+        db_session,
+        test_user.id,
+        {
+            "run_type": "crawl",
+            "url": "https://example.com/product/widget",
+            "surface": "ecommerce_detail",
+        },
+    )
+    db_session.add(
+        CrawlRecord(
+            run_id=run.id,
+            source_url=run.url,
+            data={"title": "Widget"},
+            raw_data={},
+            discovered_data={},
+            source_trace={},
+        )
+    )
+    db_session.add(CrawlLog(run_id=run.id, level="info", message="hello"))
+    db_session.add(
+        ReviewPromotion(
+            run_id=run.id,
+            domain="example.com",
+            surface="ecommerce_detail",
+            approved_schema={"fields": ["title"]},
+            field_mapping={"title": "title"},
+        )
+    )
+    db_session.add(
+        LLMCostLog(
+            run_id=run.id,
+            provider="openai",
+            model="gpt-test",
+            task_type="extract",
+            input_tokens=10,
+            output_tokens=20,
+            cost_usd=0.01,
+            domain="example.com",
+        )
+    )
+    db_session.add(
+        DomainMemory(
+            domain="example.com",
+            surface="ecommerce_detail",
+            selectors={"rules": [{"id": 1, "field_name": "title"}]},
+        )
+    )
+    db_session.add(
+        DomainRunProfile(
+            domain="example.com",
+            surface="ecommerce_detail",
+            profile={"fetch_profile": {"fetch_mode": "browser_only"}},
+        )
+    )
+    db_session.add(
+        DomainCookieMemory(
+            domain="example.com",
+            storage_state={
+                "cookies": [{"name": "session", "value": "1"}],
+                "origins": [],
+            },
+            state_fingerprint="abc",
+        )
+    )
+    db_session.add(
+        DomainFieldFeedback(
+            domain="example.com",
+            surface="ecommerce_detail",
+            field_name="price",
+            action="reject",
+            source_kind="selector",
+            source_value=".price",
+            payload={},
+        )
+    )
+    db_session.add(
+        HostProtectionMemory(
+            host="example.com",
+            hard_block_count=2,
+            last_block_vendor="datadome",
+        )
+    )
+    await db_session.commit()
+
+    result = await reset_crawl_data(db_session)
+
+    assert result["crawl_runs_deleted"] == 1
+    assert result["crawl_records_deleted"] == 1
+    assert result["crawl_logs_deleted"] == 1
+    assert result["review_promotions_deleted"] == 1
+    assert result["llm_cost_logs_deleted"] == 1
+    assert list(artifacts_dir.iterdir()) == []
+    assert list(cookies_dir.iterdir()) == []
+
+    for model in (CrawlRecord, CrawlLog, ReviewPromotion, LLMCostLog):
+        remaining = (await db_session.execute(select(model))).scalars().all()
+        assert remaining == []
+    assert (await db_session.execute(select(DomainMemory))).scalars().all() != []
+    assert (await db_session.execute(select(DomainRunProfile))).scalars().all() != []
+    assert (await db_session.execute(select(DomainCookieMemory))).scalars().all() != []
+    assert (await db_session.execute(select(DomainFieldFeedback))).scalars().all() != []
+
+    db_session.expunge_all()
+
+    next_run = await create_crawl_run(
+        db_session,
+        test_user.id,
+        {
+            "run_type": "crawl",
+            "url": "https://example.com/product/again",
+            "surface": "ecommerce_detail",
+        },
+    )
+    (cookies_dir / "memory-reset.json").write_text("cookie", encoding="utf-8")
+
+    assert next_run.id is not None
+    assert next_run.id > 0
+
+    memory_reset = await reset_domain_memory(db_session)
+
+    assert memory_reset["domain_memory_deleted"] == 1
+    assert memory_reset["domain_run_profiles_deleted"] == 1
+    assert memory_reset["domain_cookie_memory_deleted"] == 1
+    assert memory_reset["domain_field_feedback_deleted"] == 1
+    assert memory_reset["host_protection_memory_deleted"] == 1
+    assert memory_reset["cookies_removed"] == 1
+    for model in (
+        DomainMemory,
+        DomainRunProfile,
+        DomainCookieMemory,
+        DomainFieldFeedback,
+        HostProtectionMemory,
+    ):
+        assert (await db_session.execute(select(model))).scalars().all() == []
+    assert list(cookies_dir.iterdir()) == []
+
+
+@pytest.mark.component
+def test_reset_directory_skips_locked_celery_worker_logs_without_error(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    artifacts_dir = tmp_path / "artifacts"
+    artifacts_dir.mkdir()
+    locked_log = artifacts_dir / "celery-worker-1.log"
+    locked_log.write_text("worker output", encoding="utf-8")
+    stale_run_dir = artifacts_dir / "runs"
+    stale_run_dir.mkdir()
+    (stale_run_dir / "stale.html").write_text("artifact", encoding="utf-8")
+
+    original_unlink = Path.unlink
+
+    def _unlink(self: Path, *args, **kwargs):
+        if self == locked_log:
+            raise PermissionError(
+                "The process cannot access the file because it is being used by another process"
+            )
+        return original_unlink(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "unlink", _unlink)
+
+    with caplog.at_level(logging.WARNING, logger="app.services.dashboard_service"):
+        removed = dashboard_service._reset_directory(artifacts_dir)
+
+    assert removed == 1
+    assert locked_log.exists()
+    assert not stale_run_dir.exists()
+    assert any(
+        record.levelname == "WARNING"
+        and (
+            "celery-worker-1.log" in record.getMessage()
+            or "being used by another process" in record.getMessage()
+        )
+        for record in caplog.records
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_reset_application_data_rolls_back_when_domain_memory_reset_fails(
+    db_session: AsyncSession,
+    test_user,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.services import dashboard_service
+
+    run = await create_crawl_run(
+        db_session,
+        test_user.id,
+        {
+            "run_type": "crawl",
+            "url": "https://example.com/product/widget",
+            "surface": "ecommerce_detail",
+        },
+    )
+    db_session.add(
+        CrawlRecord(
+            run_id=run.id,
+            source_url=run.url,
+            data={"title": "Widget"},
+            raw_data={},
+            discovered_data={},
+            source_trace={},
+        )
+    )
+    db_session.add(
+        DomainMemory(
+            domain="example.com",
+            surface="ecommerce_detail",
+            selectors={"rules": [{"id": 1, "field_name": "title"}]},
+        )
+    )
+    await db_session.commit()
+
+    async def _boom(session: AsyncSession) -> None:
+        del session
+        raise RuntimeError("domain memory reset failed")
+
+    monkeypatch.setattr(dashboard_service, "_reset_domain_memory_tables", _boom)
+
+    with pytest.raises(RuntimeError, match="domain memory reset failed"):
+        await reset_application_data(db_session)
+
+    assert (await db_session.execute(select(CrawlRun))).scalars().all() != []
+    assert (await db_session.execute(select(CrawlRecord))).scalars().all() != []
+    assert (await db_session.execute(select(DomainMemory))).scalars().all() != []
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_resets_leave_outer_transaction_control_to_caller() -> None:
+    class _Transaction:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    class _Session:
+        nested_started = False
+
+        def in_transaction(self) -> bool:
+            return True
+
+        def begin_nested(self) -> _Transaction:
+            self.nested_started = True
+            return _Transaction()
+
+        def begin(self) -> _Transaction:
+            raise AssertionError("outer transaction should already exist")
+
+        async def commit(self) -> None:
+            raise AssertionError("caller owns the outer transaction commit")
+
+    session = _Session()
+
+    async with session_transaction(session):  # type: ignore[arg-type]
+        pass
+
+    assert session.nested_started is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_reset_product_intelligence_preserves_crawl_and_domain_memory(
+    db_session: AsyncSession,
+    test_user,
+) -> None:
+    run = await create_crawl_run(
+        db_session,
+        test_user.id,
+        {
+            "run_type": "crawl",
+            "url": "https://example.com/product/widget",
+            "surface": "ecommerce_detail",
+        },
+    )
+    db_session.add(
+        DomainMemory(domain="example.com", surface="ecommerce_detail", selectors={})
+    )
+    job = ProductIntelligenceJob(user_id=test_user.id, options={}, summary={})
+    db_session.add(job)
+    await db_session.flush()
+    source = ProductIntelligenceSourceProduct(
+        job_id=job.id,
+        source_url="https://example.com/product/widget",
+        brand="Levi's",
+        normalized_brand="levi's",
+        title="511 Jeans",
+        payload={},
+    )
+    db_session.add(source)
+    await db_session.flush()
+    candidate = ProductIntelligenceCandidate(
+        job_id=job.id,
+        source_product_id=source.id,
+        url="https://www.levi.com/p/511",
+        payload={},
+    )
+    db_session.add(candidate)
+    await db_session.flush()
+    db_session.add(
+        ProductIntelligenceMatch(
+            job_id=job.id,
+            source_product_id=source.id,
+            candidate_id=candidate.id,
+            candidate_url=candidate.url,
+            candidate_domain="levi.com",
+        )
+    )
+    await db_session.commit()
+
+    result = await reset_product_intelligence(db_session)
+
+    assert result["product_intelligence_jobs_deleted"] == 1
+    for model in (
+        ProductIntelligenceMatch,
+        ProductIntelligenceCandidate,
+        ProductIntelligenceSourceProduct,
+        ProductIntelligenceJob,
+    ):
+        assert (await db_session.execute(select(model))).scalars().all() == []
+    assert (await db_session.execute(select(CrawlRun))).scalar_one().id == run.id
+    assert (await db_session.execute(select(DomainMemory))).scalars().all() != []
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_reset_host_protection_memory_ignores_missing_table(
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def _missing_table(statement):
+        del statement
+        raise OperationalError(
+            "DELETE FROM host_protection_memory",
+            {},
+            Exception('relation "host_protection_memory" does not exist'),
+        )
+
+    async def _rollback() -> None:
+        return None
+
+    monkeypatch.setattr(db_session, "execute", _missing_table)
+    monkeypatch.setattr(db_session, "rollback", _rollback)
+
+    await reset_host_protection_memory(session=db_session)
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_host_protection_policy_persists_success_state_across_sessions(
+    db_session: AsyncSession,
+) -> None:
+    session_factory = async_sessionmaker(
+        db_session.bind,
+        expire_on_commit=False,
+        class_=AsyncSession,
+    )
+
+    await note_host_hard_block(
+        "https://example.com/products/widget",
+        method="browser:chromium",
+        vendor="akamai",
+        proxy_used=False,
+        session=db_session,
+    )
+    await note_host_hard_block(
+        "https://example.com/products/widget",
+        method="browser:chromium",
+        vendor="akamai",
+        proxy_used=False,
+        session=db_session,
+    )
+    await db_session.commit()
+
+    async with session_factory() as verification_session:
+        blocked_policy = await load_host_protection_policy(
+            "https://example.com/products/widget",
+            session=verification_session,
+        )
+
+    assert blocked_policy.prefer_browser is True
+    assert blocked_policy.chromium_blocked is True
+
+    async with session_factory() as success_session:
+        await note_host_usable_fetch(
+            "https://example.com/products/widget",
+            method="browser:real_chrome",
+            proxy_used=True,
+            session=success_session,
+        )
+        await success_session.commit()
+
+    async with session_factory() as verification_session:
+        recovered_policy = await load_host_protection_policy(
+            "https://example.com/products/widget",
+            session=verification_session,
+        )
+
+    assert recovered_policy.prefer_browser is True
+    assert recovered_policy.chromium_blocked is False
+    assert recovered_policy.real_chrome_success is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_host_protection_repeated_hard_blocks_force_browser_first(
+    db_session: AsyncSession,
+) -> None:
+    await note_host_hard_block(
+        "https://example.net/products/widget",
+        method="http",
+        status_code=500,
+        proxy_used=False,
+        session=db_session,
+    )
+    policy = await note_host_hard_block(
+        "https://example.net/products/widget",
+        method="http",
+        status_code=500,
+        proxy_used=False,
+        session=db_session,
+    )
+
+    assert policy.hard_block_count == 2
+    assert policy.prefer_browser is True

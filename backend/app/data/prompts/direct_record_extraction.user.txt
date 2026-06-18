@@ -1,0 +1,13 @@
+URL: $url
+
+Surface:
+$surface
+
+Requested fields:
+$requested_fields_json
+
+Already extracted records:
+$existing_records_json
+
+HTML snippet:
+$html_snippet

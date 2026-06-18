@@ -1,0 +1,51 @@
+# Force LF line endings for source files so prettier and the formatter
+# tooling stay deterministic across Windows / macOS / Linux checkouts.
+# Without this, Windows checkouts get CRLF and prettier --check fails on
+# every file even when content is correct.
+*               text=auto eol=lf
+
+# Explicit overrides for common source extensions (defense in depth)
+*.ts            text eol=lf
+*.tsx           text eol=lf
+*.js            text eol=lf
+*.jsx           text eol=lf
+*.mjs           text eol=lf
+*.cjs           text eol=lf
+*.json          text eol=lf
+*.css           text eol=lf
+*.scss          text eol=lf
+*.html          text eol=lf
+*.md            text eol=lf
+*.yml           text eol=lf
+*.yaml          text eol=lf
+*.toml          text eol=lf
+*.ini           text eol=lf
+*.cfg           text eol=lf
+*.py            text eol=lf
+*.sh            text eol=lf
+*.sql           text eol=lf
+
+# Windows-only batch / cmd files keep CRLF
+*.bat           text eol=crlf
+*.cmd           text eol=crlf
+*.ps1           text eol=crlf
+
+# Binary files — never normalize
+*.png           binary
+*.jpg           binary
+*.jpeg          binary
+*.gif           binary
+*.webp          binary
+*.avif          binary
+*.ico           binary
+*.pdf           binary
+*.zip           binary
+*.gz            binary
+*.tar           binary
+*.woff          binary
+*.woff2         binary
+*.ttf           binary
+*.eot           binary
+*.otf           binary
+*.mp4           binary
+*.webm          binary

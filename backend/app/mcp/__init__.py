@@ -1,0 +1,1 @@
+"""CrawlerAI MCP stdio entrypoints."""

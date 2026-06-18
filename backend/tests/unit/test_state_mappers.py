@@ -1,0 +1,2054 @@
+from __future__ import annotations
+
+import pytest
+
+from app.services.js_state import state_normalizer as js_state_mapper
+from app.services.js_state.state_normalizer import (
+    map_configured_state_payload,
+    map_js_state_to_fields,
+)
+from app.services.js_state.helpers import availability_value
+from app.services.network_payload_mapper import map_network_payloads_to_fields
+
+
+@pytest.mark.unit
+def test_availability_value_normalizes_primary_string_aliases() -> None:
+    assert availability_value({"availability": "out-of-stock"}) == "out_of_stock"
+    assert availability_value({"inventory_status": "unavailable"}) == "out_of_stock"
+    assert availability_value({"stock_status": "0"}) == "out_of_stock"
+
+
+@pytest.mark.unit
+def test_map_js_state_to_fields_recovers_next_data_shopify_product_fields() -> None:
+    js_state_objects = {
+        "__NEXT_DATA__": {
+            "props": {
+                "pageProps": {
+                    "product": {
+                        "id": 9001,
+                        "title": "Trail Runner",
+                        "vendor": "Acme Outdoors",
+                        "handle": "trail-runner",
+                        "body_html": "<p>Stable all-terrain shoe.</p>",
+                        "product_type": "Shoes",
+                        "currency": "USD",
+                        "images": [
+                            {"src": "https://cdn.example.com/products/trail-1.jpg"},
+                            {"src": "https://cdn.example.com/products/trail-2.jpg"},
+                        ],
+                        "options": [{"name": "Color"}, {"name": "Size"}],
+                        "variants": [
+                            {
+                                "id": 101,
+                                "sku": "TRAIL-BLK-8",
+                                "price": 9900,
+                                "compare_at_price": 12900,
+                                "available": True,
+                                "inventory_quantity": 7,
+                                "featured_image": {
+                                    "src": "https://cdn.example.com/products/trail-black-8.jpg"
+                                },
+                                "option1": "Black",
+                                "option2": "8",
+                                "barcode": "1111111111111",
+                            },
+                            {
+                                "id": 102,
+                                "sku": "TRAIL-SND-9",
+                                "price": 10900,
+                                "compare_at_price": 13900,
+                                "available": False,
+                                "inventory_quantity": 0,
+                                "featured_image": {
+                                    "src": "https://cdn.example.com/products/trail-sand-9.jpg"
+                                },
+                                "option1": "Sand",
+                                "option2": "9",
+                                "barcode": "2222222222222",
+                            },
+                        ],
+                    }
+                }
+            }
+        }
+    }
+
+    mapped = map_js_state_to_fields(
+        js_state_objects,
+        surface="ecommerce_detail",
+        page_url="https://store.example.com/products/trail-runner?variant=102",
+    )
+
+    assert mapped["title"] == "Trail Runner"
+    assert mapped["brand"] == "Acme Outdoors"
+    assert mapped["vendor"] == "Acme Outdoors"
+    assert mapped["handle"] == "trail-runner"
+    assert mapped["description"] == "Stable all-terrain shoe."
+    assert mapped["product_id"] == 9001
+    assert "category" not in mapped
+    assert mapped["product_type"] == "Shoes"
+    assert mapped["price"] == "109"
+    assert mapped["original_price"] == "139"
+    assert mapped["currency"] == "USD"
+    assert mapped["availability"] == "out_of_stock"
+    assert mapped["stock_quantity"] == 0
+    assert mapped["sku"] == "TRAIL-SND-9"
+    assert mapped["barcode"] == "2222222222222"
+    assert mapped["color"] == "Sand"
+    assert mapped["size"] == "9"
+    assert mapped["image_url"] == "https://cdn.example.com/products/trail-sand-9.jpg"
+    assert mapped["additional_images"] == [
+        "https://cdn.example.com/products/trail-2.jpg"
+    ]
+    assert mapped["variant_count"] == 2
+    assert mapped["variants"][1]["stock_quantity"] == 0
+    assert (
+        mapped["variants"][1]["url"]
+        == "https://store.example.com/products/trail-runner?variant=102"
+    )
+
+
+@pytest.mark.unit
+def test_map_js_state_to_fields_recovers_axis_keyed_variant_dict_rows() -> None:
+    mapped = map_js_state_to_fields(
+        {
+            "__INITIAL_STATE__": {
+                "product": {
+                    "id": "19759526",
+                    "title": "Puma Men Radcliff Black Sneakers",
+                    "brand": "Puma",
+                    "price": 1650,
+                    "currency": "INR",
+                    "variants": {
+                        "size": [
+                            {
+                                "sku": "PUMAX00412442",
+                                "id": "19758924",
+                                "variant_id": "4694",
+                                "name": "UK 6",
+                                "in_stock": "0",
+                            },
+                            {
+                                "sku": "PUMAX00412443",
+                                "id": "19758925",
+                                "variant_id": "4695",
+                                "name": "UK 7",
+                                "in_stock": "1",
+                            },
+                        ]
+                    },
+                }
+            }
+        },
+        surface="ecommerce_detail",
+        page_url="https://www.nykaafashion.com/puma-men-radcliff-black-sneakers/p/19759526",
+    )
+
+    assert mapped["variant_count"] == 2
+    assert [variant["size"] for variant in mapped["variants"]] == ["UK 6", "UK 7"]
+    assert [variant["sku"] for variant in mapped["variants"]] == [
+        "PUMAX00412442",
+        "PUMAX00412443",
+    ]
+    assert [variant["availability"] for variant in mapped["variants"]] == [
+        "out_of_stock",
+        "in_stock",
+    ]
+
+
+@pytest.mark.unit
+def test_map_js_state_to_fields_drops_geographic_state_dropdown_variants() -> None:
+    mapped = map_js_state_to_fields(
+        {
+            "__NEXT_DATA__": {
+                "props": {
+                    "pageProps": {
+                        "product": {
+                            "sku": "4147C002",
+                            "title": "EOS R5 Body",
+                            "brand": "Canon",
+                            "price": "2999.00",
+                            "currency": "USD",
+                            "options": [{"name": "State"}],
+                            "variants": [
+                                {"option1": "Alabama"},
+                                {"option1": "Alaska"},
+                                {"option1": "California"},
+                                {"option1": "Texas"},
+                            ],
+                        }
+                    }
+                }
+            }
+        },
+        surface="ecommerce_detail",
+        page_url="https://www.usa.canon.com/shop/p/eos-r5",
+    )
+
+    assert mapped["title"] == "EOS R5 Body"
+    assert mapped["sku"] == "4147C002"
+    assert mapped["price"] == "2999.00"
+    assert "variants" not in mapped
+    assert "variant_count" not in mapped
+
+
+@pytest.mark.unit
+def test_map_js_state_to_fields_keeps_bridge_variants_with_primary_rows() -> None:
+    mapped = map_js_state_to_fields(
+        {
+            "product": {
+                "title": "Example Tee",
+                "variants": [{"id": "base", "size": "S"}],
+                "plp_pdp_bridge": {
+                    "variants": {
+                        "color": [
+                            {"id": "black", "name": "Black"},
+                            {"id": "white", "name": "White"},
+                        ]
+                    }
+                },
+            }
+        },
+        surface="ecommerce_detail",
+        page_url="https://example.com/products/example-tee",
+    )
+
+    assert {variant.get("color") for variant in mapped["variants"]} >= {
+        "Black",
+        "White",
+    }
+
+
+@pytest.mark.unit
+def test_map_js_state_to_fields_treats_shopify_product_level_prices_as_cents() -> None:
+    mapped = map_js_state_to_fields(
+        {
+            "__NEXT_DATA__": {
+                "props": {
+                    "pageProps": {
+                        "product": {
+                            "id": 123,
+                            "title": "Abzorb 1890 Sneaker",
+                            "handle": "abzorb-1890-sneaker",
+                            "currency": "USD",
+                            "prices": {
+                                "currentPrice": 19650,
+                                "initialPrice": 22000,
+                            },
+                            "variants": [
+                                {
+                                    "id": 53040530784367,
+                                    "sku": "U18908JY-5",
+                                    "option1": "5 M",
+                                    "available": True,
+                                }
+                            ],
+                        }
+                    }
+                }
+            }
+        },
+        surface="ecommerce_detail",
+        page_url="https://www.notre-shop.com/products/abzorb-1890-sneaker",
+    )
+
+    # Cents-trigger: no prices.currency, so product-level currency makes numeric prices cents.
+    assert mapped["handle"] == "abzorb-1890-sneaker"
+    assert mapped["currency"] == "USD"
+    assert mapped["price"] == "USD 196.50"
+    assert mapped["original_price"] == "USD 220.00"
+
+
+@pytest.mark.unit
+def test_map_js_state_to_fields_handles_null_product_type() -> None:
+    mapped = map_js_state_to_fields(
+        {
+            "__NEXT_DATA__": {
+                "props": {
+                    "pageProps": {
+                        "product": {
+                            "id": 123,
+                            "title": "Trail Runner",
+                            "type": None,
+                            "product_type": None,
+                            "productType": None,
+                            "@type": None,
+                            "price": 99,
+                            "currency": "USD",
+                        }
+                    }
+                }
+            }
+        },
+        surface="ecommerce_detail",
+        page_url="https://store.example.com/products/trail-runner",
+    )
+
+    assert mapped["title"] == "Trail Runner"
+
+
+@pytest.mark.unit
+def test_map_js_state_to_fields_recovers_shopify_available_sizes_rows() -> None:
+    mapped = map_js_state_to_fields(
+        {
+            "__NEXT_DATA__": {
+                "props": {
+                    "pageProps": {
+                        "productData": {
+                            "product": {
+                                "id": 6804846346442,
+                                "title": 'Arrival 5" Shorts',
+                                "handle": "gymshark-arrival-5-shorts-black-ss22",
+                                "colour": "Black",
+                                "price": 26,
+                                "currencyCode": "USD",
+                                "availableSizes": [
+                                    {
+                                        "id": 39786362568906,
+                                        "inStock": True,
+                                        "inventoryQuantity": 9170,
+                                        "price": 26,
+                                        "size": "xs",
+                                        "sku": "A2A1M-BBBB-XS",
+                                        "barcode": "5057913931872",
+                                    },
+                                    {
+                                        "id": 39786362601674,
+                                        "inStock": False,
+                                        "inventoryQuantity": 0,
+                                        "price": 26,
+                                        "size": "s",
+                                        "sku": "A2A1M-BBBB-S",
+                                        "barcode": "5057913931865",
+                                    },
+                                ],
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        surface="ecommerce_detail",
+        page_url="https://www.gymshark.com/products/gymshark-arrival-5-shorts-black-ss22",
+    )
+
+    assert mapped["title"] == 'Arrival 5" Shorts'
+    assert mapped["variant_count"] == 2
+    assert [variant["size"] for variant in mapped["variants"]] == ["xs", "s"]
+    assert [variant["sku"] for variant in mapped["variants"]] == [
+        "A2A1M-BBBB-XS",
+        "A2A1M-BBBB-S",
+    ]
+    assert mapped["variants"][0]["availability"] == "in_stock"
+    assert mapped["variants"][0]["stock_quantity"] == 9170
+    assert mapped["variants"][1]["availability"] == "out_of_stock"
+    assert mapped["variants"][1]["stock_quantity"] == 0
+
+
+@pytest.mark.unit
+def test_map_js_state_to_fields_merges_same_family_sibling_product_urls() -> None:
+    mapped = map_js_state_to_fields(
+        {
+            "__NEXT_DATA__": {
+                "props": {
+                    "pageProps": {
+                        "productData": {
+                            "product": {
+                                "id": 6804846346442,
+                                "title": 'Arrival 5" Shorts',
+                                "handle": "gymshark-arrival-5-shorts-black-ss22",
+                                "colour": "Black",
+                                "price": 26,
+                                "currencyCode": "USD",
+                                "onlineStoreUrl": "https://www.gymshark.com/products/gymshark-arrival-5-shorts-black-ss22",
+                                "availableSizes": [
+                                    {
+                                        "id": 101,
+                                        "inStock": True,
+                                        "inventoryQuantity": 9,
+                                        "price": 26,
+                                        "size": "s",
+                                        "sku": "A2A1M-BBBB-S",
+                                    },
+                                    {
+                                        "id": 102,
+                                        "inStock": True,
+                                        "inventoryQuantity": 7,
+                                        "price": 26,
+                                        "size": "m",
+                                        "sku": "A2A1M-BBBB-M",
+                                    },
+                                ],
+                            },
+                            "variants": [
+                                {
+                                    "id": 6804846117066,
+                                    "title": 'Gymshark Arrival 5" Shorts - White',
+                                    "handle": "gymshark-arrival-5-shorts-white-ss22",
+                                    "colour": "White",
+                                    "price": 26,
+                                    "currencyCode": "USD",
+                                    "onlineStoreUrl": "https://www.gymshark.com/products/gymshark-arrival-5-shorts-white-ss22",
+                                    "availableSizes": [
+                                        {
+                                            "id": 201,
+                                            "inStock": True,
+                                            "inventoryQuantity": 6,
+                                            "price": 26,
+                                            "size": "s",
+                                            "sku": "A2A1M-WWWW-S",
+                                        },
+                                        {
+                                            "id": 202,
+                                            "inStock": False,
+                                            "inventoryQuantity": 0,
+                                            "price": 26,
+                                            "size": "m",
+                                            "sku": "A2A1M-WWWW-M",
+                                        },
+                                    ],
+                                }
+                            ],
+                        }
+                    }
+                }
+            }
+        },
+        surface="ecommerce_detail",
+        page_url="https://www.gymshark.com/products/gymshark-arrival-5-shorts-black-ss22",
+    )
+
+    assert mapped["title"] == 'Arrival 5" Shorts'
+    assert mapped["variant_count"] == 4
+    assert {
+        (variant["color"], variant["size"], variant["url"])
+        for variant in mapped["variants"]
+    } == {
+        (
+            "Black",
+            "s",
+            "https://www.gymshark.com/products/gymshark-arrival-5-shorts-black-ss22",
+        ),
+        (
+            "Black",
+            "m",
+            "https://www.gymshark.com/products/gymshark-arrival-5-shorts-black-ss22",
+        ),
+        (
+            "White",
+            "s",
+            "https://www.gymshark.com/products/gymshark-arrival-5-shorts-white-ss22",
+        ),
+        (
+            "White",
+            "m",
+            "https://www.gymshark.com/products/gymshark-arrival-5-shorts-white-ss22",
+        ),
+    }
+
+
+@pytest.mark.unit
+def test_map_js_state_to_fields_reads_variant_attributes_axes() -> None:
+    mapped = map_js_state_to_fields(
+        {
+            "nuxt": {
+                "product": {
+                    "id": "VN000E9TBPG",
+                    "name": "Old Skool Shoe",
+                    "currency": "USD",
+                    "price": {"current": 85},
+                    "attributes": [
+                        {
+                            "type": "color",
+                            "options": [
+                                {
+                                    "id": "VN000E9TBPG",
+                                    "value": "VN000E9TBPG - True White",
+                                    "label": "True White",
+                                }
+                            ],
+                        },
+                        {
+                            "type": "size",
+                            "options": [
+                                {
+                                    "value": "8.5 Men = 10.0 Women",
+                                    "label": "M8.5 / W10",
+                                }
+                            ],
+                        },
+                    ],
+                    "variants": [
+                        {
+                            "id": "VN:000E9T:BPG:085:M:1:",
+                            "price": {"current": 85},
+                            "attributes": {
+                                "color": "VN000E9TBPG - True White",
+                                "size": "8.5 Men = 10.0 Women",
+                            },
+                        }
+                    ],
+                }
+            }
+        },
+        surface="ecommerce_detail",
+        page_url="https://www.vans.com/en-us/p/old-skool-VN000E9TBPG",
+    )
+
+    assert mapped["variants"][0]["color"] == "True White"
+    assert mapped["variants"][0]["size"] == "M8.5 / W10"
+    assert mapped["color"] == "True White"
+    assert mapped["size"] == "M8.5 / W10"
+
+
+@pytest.mark.unit
+def test_map_js_state_to_fields_reads_variant_traits_axes() -> None:
+    mapped = map_js_state_to_fields(
+        {
+            "__NEXT_DATA__": {
+                "props": {
+                    "pageProps": {
+                        "product": {
+                            "id": "stockx-1",
+                            "title": "Nike Dunk Low Retro White Black Panda",
+                            "brand": "Nike",
+                            "variants": [
+                                {
+                                    "id": "size-35",
+                                    "traits": {"size": "3.5"},
+                                    "sizeChart": {"baseSize": "3.5"},
+                                },
+                                {
+                                    "id": "size-4",
+                                    "traits": {"size": "4"},
+                                    "sizeChart": {"baseSize": "4"},
+                                },
+                            ],
+                        }
+                    }
+                }
+            }
+        },
+        surface="ecommerce_detail",
+        page_url="https://stockx.com/nike-dunk-low-retro-white-black-2021",
+    )
+
+    assert mapped["variant_count"] == 2
+    assert [variant["size"] for variant in mapped["variants"]] == ["3.5", "4"]
+    assert [variant["url"] for variant in mapped["variants"]] == [
+        "https://stockx.com/nike-dunk-low-retro-white-black-2021?variant=size-35",
+        "https://stockx.com/nike-dunk-low-retro-white-black-2021?variant=size-4",
+    ]
+
+
+@pytest.mark.unit
+def test_map_js_state_to_fields_reads_target_variation_hierarchy() -> None:
+    mapped = map_js_state_to_fields(
+        {
+            "__NEXT_DATA__": {
+                "props": {
+                    "dehydratedState": {
+                        "queries": [
+                            {
+                                "state": {
+                                    "data": {
+                                        "data": {
+                                            "product": {
+                                                "tcin": "1002150739",
+                                                "item": {
+                                                    "product_description": {
+                                                        "title": "Tobago Stripe Duvet Cover Set - Levtex Home"
+                                                    },
+                                                    "enrichment": {
+                                                        "buy_url": "https://www.target.com/p/tobago/-/A-1002150739"
+                                                    },
+                                                },
+                                                "variation_hierarchy": [
+                                                    {
+                                                        "name": "size",
+                                                        "value": "full/queen",
+                                                        "tcin": "1002150738",
+                                                        "buy_url": "https://www.target.com/p/tobago-full/-/A-1002150738",
+                                                    },
+                                                    {
+                                                        "name": "size",
+                                                        "value": "twin/twin xl",
+                                                        "tcin": "1002150742",
+                                                        "buy_url": "https://www.target.com/p/tobago-twin/-/A-1002150742",
+                                                    },
+                                                ],
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        ]
+                    }
+                }
+            }
+        },
+        surface="ecommerce_detail",
+        page_url="https://www.target.com/p/tobago/-/A-1002150739?preselect=1002150742",
+    )
+
+    assert mapped["title"] == "Tobago Stripe Duvet Cover Set - Levtex Home"
+    assert mapped["product_id"] == "1002150739"
+    assert mapped["variant_count"] == 2
+    assert [variant["size"] for variant in mapped["variants"]] == [
+        "full/queen",
+        "twin/twin xl",
+    ]
+    assert [variant["url"] for variant in mapped["variants"]] == [
+        "https://www.target.com/p/tobago-full/-/A-1002150738",
+        "https://www.target.com/p/tobago-twin/-/A-1002150742",
+    ]
+
+
+@pytest.mark.unit
+def test_map_js_state_to_fields_uses_variation_attribute_display_names() -> None:
+    mapped = map_js_state_to_fields(
+        {
+            "mobify-data": {
+                "product": {
+                    "id": "2078471",
+                    "name": "Terminal Roamer Pants",
+                    "brand": "Columbia",
+                    "currency": "USD",
+                    "price": 60,
+                    "variationAttributes": [
+                        {
+                            "id": "color",
+                            "name": "Color",
+                            "values": [
+                                {"value": "019", "name": "Cool Grey"},
+                                {"value": "023", "name": "City Grey"},
+                            ],
+                        },
+                        {
+                            "id": "size",
+                            "name": "Size",
+                            "values": [
+                                {"value": "S", "name": "S"},
+                                {"value": "M", "name": "M"},
+                            ],
+                        },
+                    ],
+                    "variants": [
+                        {
+                            "id": "195980349741",
+                            "sku": "195980349741",
+                            "variationValues": {"color": "019", "size": "S"},
+                        },
+                        {
+                            "id": "195980349888",
+                            "sku": "195980349888",
+                            "variationValues": {"color": "023", "size": "M"},
+                        },
+                    ],
+                }
+            }
+        },
+        surface="ecommerce_detail",
+        page_url="https://www.columbia.com/p/mens-pfg-terminal-roamer-stretch-pants-2078471.html?color=019&size=S",
+    )
+
+    assert mapped["color"] == "Cool Grey"
+    assert mapped["size"] == "S"
+
+
+@pytest.mark.unit
+def test_map_js_state_to_fields_does_not_pick_arbitrary_parent_size_without_explicit_selection() -> (
+    None
+):
+    mapped = map_js_state_to_fields(
+        {
+            "__NEXT_DATA__": {
+                "props": {
+                    "pageProps": {
+                        "product": {
+                            "id": "af1-1",
+                            "title": "Air Force 1",
+                            "brand": "Nike",
+                            "prices": {
+                                "currency": "USD",
+                                "currentPrice": 115,
+                                "initialPrice": 130,
+                            },
+                            "options": [{"name": "Size"}],
+                            "variants": [
+                                {
+                                    "id": "size-6",
+                                    "available": True,
+                                    "sku": "AF1-6",
+                                    "selectedOptions": [{"name": "Size", "value": "6"}],
+                                },
+                                {
+                                    "id": "size-7",
+                                    "available": True,
+                                    "sku": "AF1-7",
+                                    "selectedOptions": [{"name": "Size", "value": "7"}],
+                                },
+                            ],
+                        }
+                    }
+                }
+            }
+        },
+        surface="ecommerce_detail",
+        page_url="https://store.example.com/products/air-force-1",
+    )
+
+    assert mapped["price"] == "USD 115"
+    assert mapped["original_price"] == "USD 130"
+    assert mapped["currency"] == "USD"
+    assert mapped["variant_count"] == 2
+    assert "size" not in mapped
+    assert "sku" not in mapped
+
+
+@pytest.mark.unit
+def test_map_js_state_to_fields_recovers_existing_state_product_fields() -> None:
+    js_state_objects = {
+        "__INITIAL_STATE__": {
+            "catalog": {
+                "selected": {
+                    "product": {
+                        "id": "sku-123",
+                        "name": "Commuter Backpack",
+                        "vendor": {"name": "Urban Carry"},
+                        "handle": "commuter-backpack",
+                        "description": "Weather resistant pack",
+                        "type": "Bags",
+                        "price": "89.50",
+                        "sku": "CB-001",
+                        "availability": "In Stock",
+                        "image": [
+                            "/images/commuter-1.jpg",
+                            "/images/commuter-2.jpg",
+                        ],
+                    }
+                }
+            }
+        }
+    }
+
+    mapped = map_js_state_to_fields(
+        js_state_objects,
+        surface="ecommerce_detail",
+        page_url="https://store.example.com/products/commuter-backpack",
+    )
+
+    assert mapped["title"] == "Commuter Backpack"
+    assert mapped["brand"] == "Urban Carry"
+    assert mapped["vendor"] == "Urban Carry"
+    assert mapped["handle"] == "commuter-backpack"
+    assert mapped["description"] == "Weather resistant pack"
+    assert mapped["product_id"] == "sku-123"
+    assert "category" not in mapped
+    assert mapped["product_type"] == "Bags"
+    assert mapped["price"] == "89.50"
+    assert mapped["sku"] == "CB-001"
+    assert mapped["availability"] == "in_stock"
+    assert mapped["image_url"] == "https://store.example.com/images/commuter-1.jpg"
+    assert mapped["additional_images"] == [
+        "https://store.example.com/images/commuter-2.jpg"
+    ]
+
+
+@pytest.mark.unit
+def test_map_js_state_to_fields_ignores_header_payment_state_before_real_product() -> (
+    None
+):
+    js_state_objects = {
+        "__INITIAL_STATE__": {
+            "header": {
+                "paymentMethods": {
+                    "title": "We accept",
+                    "images": [
+                        {"src": "https://cdn.example.com/assets/amex.svg"},
+                        {"src": "https://cdn.example.com/assets/paypal.svg"},
+                    ],
+                }
+            },
+            "catalog": {
+                "selected": {
+                    "product": {
+                        "id": "sku-123",
+                        "name": "Commuter Backpack",
+                        "vendor": {"name": "Urban Carry"},
+                        "handle": "commuter-backpack",
+                        "description": "Weather resistant pack",
+                        "type": "Bags",
+                        "price": "89.50",
+                        "sku": "CB-001",
+                        "availability": "In Stock",
+                        "image": [
+                            "/images/commuter-1.jpg",
+                            "/images/commuter-2.jpg",
+                        ],
+                    }
+                }
+            },
+        }
+    }
+
+    mapped = map_js_state_to_fields(
+        js_state_objects,
+        surface="ecommerce_detail",
+        page_url="https://store.example.com/products/commuter-backpack",
+    )
+
+    assert mapped["title"] == "Commuter Backpack"
+    assert mapped["image_url"] == "https://store.example.com/images/commuter-1.jpg"
+    assert mapped["additional_images"] == [
+        "https://store.example.com/images/commuter-2.jpg"
+    ]
+
+
+@pytest.mark.unit
+def test_map_js_state_to_fields_does_not_merge_variants_from_different_product_identity() -> (
+    None
+):
+    js_state_objects = {
+        "__INITIAL_STATE__": {
+            "catalog": {
+                "selected": {
+                    "product": {
+                        "id": "sku-123",
+                        "name": "Commuter Backpack",
+                        "handle": "commuter-backpack",
+                        "price": "89.50",
+                    }
+                }
+            }
+        },
+        "__NEXT_DATA__": {
+            "props": {
+                "pageProps": {
+                    "product": {
+                        "id": "sku-999",
+                        "title": "Trail Runner",
+                        "handle": "trail-runner",
+                        "variants": [
+                            {"id": 101, "price": 9900, "option1": "Black"},
+                            {"id": 102, "price": 10900, "option1": "Sand"},
+                        ],
+                    }
+                }
+            }
+        },
+    }
+
+    mapped = map_js_state_to_fields(
+        js_state_objects,
+        surface="ecommerce_detail",
+        page_url="https://store.example.com/products/commuter-backpack",
+    )
+
+    assert mapped["product_id"] == "sku-123"
+    assert mapped.get("variants") in (None, [])
+
+
+@pytest.mark.unit
+def test_map_network_payloads_to_fields_recovers_workday_job_detail_payload() -> None:
+    mapped = map_network_payloads_to_fields(
+        [
+            {
+                "url": "https://example.wd5.myworkdayjobs.com/wday/cxs/acme/External/job/123",
+                "endpoint_type": "job_api",
+                "endpoint_family": "workday",
+                "body": {
+                    "jobPostingInfo": {
+                        "title": "Assembler",
+                        "jobDescription": "<p>Build things.</p>",
+                        "location": "Grafton, WI",
+                        "postedOn": "Posted Today",
+                        "timeType": "Full time",
+                        "jobReqId": "REQ-100",
+                        "externalUrl": "https://example.wd5.myworkdayjobs.com/en-US/External/job/123",
+                    },
+                    "hiringOrganization": {"name": "Acme Manufacturing"},
+                },
+            }
+        ],
+        surface="job_detail",
+        page_url="https://example.wd5.myworkdayjobs.com/en-US/External/job/123",
+    )
+
+    assert mapped == [
+        {
+            "title": "Assembler",
+            "company": "Acme Manufacturing",
+            "location": "Grafton, WI",
+            "apply_url": "https://example.wd5.myworkdayjobs.com/en-US/External/job/123",
+            "url": "https://example.wd5.myworkdayjobs.com/en-US/External/job/123",
+            "posted_date": "Posted Today",
+            "job_type": "Full time",
+            "job_id": "REQ-100",
+            "description": "Build things.",
+        }
+    ]
+
+
+@pytest.mark.unit
+def test_map_js_state_to_fields_recovers_generic_nextjs_product_payload_without_schema_bleed() -> (
+    None
+):
+    mapped = map_js_state_to_fields(
+        {
+            "__NEXT_DATA__": {
+                "props": {
+                    "pageProps": {
+                        "initialData": {
+                            "product": {
+                                "id": "prod_42",
+                                "name": "Commuter Backpack",
+                                "vendor": "Urban Carry",
+                                "handle": "commuter-backpack",
+                                "description": "Weather resistant pack",
+                                "category": "Travel Gear",
+                                "type": "Backpacks",
+                                "price": "89.50",
+                                "sku": "CB-001",
+                                "availability": "In Stock",
+                                "image": [
+                                    "/images/commuter-1.jpg",
+                                    "/images/commuter-2.jpg",
+                                ],
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        surface="ecommerce_detail",
+        page_url="https://store.example.com/products/commuter-backpack",
+    )
+
+    assert mapped["title"] == "Commuter Backpack"
+    assert mapped["category"] == "Travel Gear"
+    assert mapped["product_type"] == "Backpacks"
+    assert mapped["sku"] == "CB-001"
+    assert mapped["image_url"] == "https://store.example.com/images/commuter-1.jpg"
+
+
+@pytest.mark.unit
+def test_map_js_state_to_fields_recovers_nuxt_array_payload_variant() -> None:
+    mapped = map_js_state_to_fields(
+        {
+            "__NUXT_DATA__": [
+                {
+                    "data": {
+                        "product": {
+                            "id": "sku-123",
+                            "name": "Commuter Backpack",
+                            "vendor": {"name": "Urban Carry"},
+                            "handle": "commuter-backpack",
+                            "description": "Weather resistant pack",
+                            "category": "Travel Gear",
+                            "product_type": "Backpacks",
+                            "price": "89.50",
+                            "sku": "CB-001",
+                            "availability": "In Stock",
+                            "image": [
+                                "/images/commuter-1.jpg",
+                                "/images/commuter-2.jpg",
+                            ],
+                        }
+                    }
+                }
+            ]
+        },
+        surface="ecommerce_detail",
+        page_url="https://store.example.com/products/commuter-backpack",
+    )
+
+    assert mapped["title"] == "Commuter Backpack"
+    assert mapped["category"] == "Travel Gear"
+    assert mapped["product_type"] == "Backpacks"
+    assert mapped["availability"] == "in_stock"
+    assert mapped["image_url"] == "https://store.example.com/images/commuter-1.jpg"
+
+
+@pytest.mark.unit
+def test_map_js_state_to_fields_prefers_richer_nested_product_payload_for_variant_recovery() -> (
+    None
+):
+    mapped = map_js_state_to_fields(
+        {
+            "__INITIAL_STATE__": {
+                "navigation": {
+                    "landing": {
+                        "title": "iPhone",
+                        "id": "landing-node",
+                        "url": "/en-us/l/iphone/landing-node",
+                    }
+                },
+                "pdp": {
+                    "product": {
+                        "id": "phone-14-128",
+                        "name": "iPhone 14",
+                        "brand": {"name": "Apple"},
+                        "description": "Refurbished iPhone 14 with warranty.",
+                        "price": "399.00",
+                        "currency": "USD",
+                        "image": [
+                            "https://cdn.example.com/iphone-14-front.jpg",
+                            "https://cdn.example.com/iphone-14-back.jpg",
+                        ],
+                        "variants": [
+                            {
+                                "id": "good-128",
+                                "storage": "128 GB",
+                                "condition": "Good",
+                                "price": "399.00",
+                                "currency": "USD",
+                                "availability": "In Stock",
+                            },
+                            {
+                                "id": "excellent-128",
+                                "storage": "128 GB",
+                                "condition": "Excellent",
+                                "price": "459.00",
+                                "currency": "USD",
+                                "availability": "In Stock",
+                            },
+                        ],
+                    }
+                },
+            }
+        },
+        surface="ecommerce_detail",
+        page_url="https://store.example.com/products/iphone-14?variant=excellent-128",
+    )
+
+    assert mapped["title"] == "iPhone 14"
+    assert mapped["brand"] == "Apple"
+    assert mapped["price"] == "459.00"
+    assert mapped["image_url"] == "https://cdn.example.com/iphone-14-front.jpg"
+    assert mapped["additional_images"] == ["https://cdn.example.com/iphone-14-back.jpg"]
+
+
+@pytest.mark.unit
+def test_map_js_state_to_fields_backfills_richer_variant_state_from_later_same_product_object() -> (
+    None
+):
+    mapped = map_js_state_to_fields(
+        {
+            "__STATE_A__": {
+                "product": {
+                    "id": "prod-1",
+                    "name": "Dress",
+                    "price": "99.95",
+                    "currency": "USD",
+                    "variants": [
+                        {
+                            "id": "v1",
+                            "size": "2",
+                            "price": "99.95",
+                            "available": False,
+                        },
+                        {
+                            "id": "v2",
+                            "size": "4",
+                            "price": "99.95",
+                            "available": False,
+                        },
+                    ],
+                }
+            },
+            "__STATE_B__": {
+                "product": {
+                    "id": "prod-1",
+                    "name": "Dress",
+                    "variants": [
+                        {
+                            "id": "v1",
+                            "size": "2",
+                            "price": "99.95",
+                            "available": True,
+                            "inventory_quantity": 5,
+                            "compare_at_price": "119.95",
+                        },
+                        {
+                            "id": "v2",
+                            "size": "4",
+                            "price": "99.95",
+                            "available": True,
+                            "inventory_quantity": 6,
+                            "compare_at_price": "119.95",
+                        },
+                    ],
+                }
+            },
+        },
+        surface="ecommerce_detail",
+        page_url="https://example.com/p/dress?variant=v1",
+    )
+
+    assert mapped["availability"] == "in_stock"
+    assert mapped["stock_quantity"] == 5
+    assert mapped["original_price"] == "119.95"
+    assert mapped["variants"][0]["availability"] == "in_stock"
+    assert mapped["variants"][0]["stock_quantity"] == 5
+    assert mapped["variants"][1]["availability"] == "in_stock"
+    assert mapped["variants"][1]["stock_quantity"] == 6
+
+
+@pytest.mark.unit
+def test_map_js_state_to_fields_preserves_lone_numeric_product_size() -> None:
+    mapped = map_js_state_to_fields(
+        {
+            "__NEXT_DATA__": {
+                "props": {
+                    "pageProps": {
+                        "product": {
+                            "id": "prod-1",
+                            "name": "Trail Runner",
+                            "size": "10",
+                            "price": "129.95",
+                        }
+                    }
+                }
+            }
+        },
+        surface="ecommerce_detail",
+        page_url="https://example.com/products/trail-runner",
+    )
+
+    assert mapped["size"] == "10"
+
+
+@pytest.mark.unit
+def test_map_js_state_to_fields_merges_same_product_sibling_payloads() -> None:
+    mapped = map_js_state_to_fields(
+        {
+            "__NEXT_DATA__": {
+                "props": {
+                    "pageProps": {
+                        "product": {
+                            "id": "prod-1",
+                            "name": "Trail Runner",
+                            "image": "https://example.com/trail.jpg",
+                        },
+                        "pricing": {
+                            "id": "prod-1",
+                            "name": "Trail Runner",
+                            "price": "129.95",
+                            "currency": "USD",
+                            "variants": [
+                                {"id": "blue-9", "color": "Blue", "size": "9"},
+                                {"id": "blue-10", "color": "Blue", "size": "10"},
+                                {"id": "red-9", "color": "Red", "size": "9"},
+                                {"id": "red-10", "color": "Red", "size": "10"},
+                            ],
+                        },
+                        "recommendations": [
+                            {
+                                "id": "prod-2",
+                                "name": "Other Shoe",
+                                "price": "49.00",
+                                "currency": "USD",
+                            }
+                        ],
+                    }
+                }
+            }
+        },
+        surface="ecommerce_detail",
+        page_url="https://example.com/products/trail-runner?variant=blue-9",
+    )
+
+    assert mapped["title"] == "Trail Runner"
+    assert mapped["price"] == "129.95"
+
+
+@pytest.mark.unit
+def test_map_js_state_to_fields_backfills_url_matched_variant_payload() -> None:
+    mapped = map_js_state_to_fields(
+        {
+            "__STATE_A__": {
+                "product": {
+                    "id": "prod-1",
+                    "name": "Trail Runner Black",
+                    "price": "129.95",
+                }
+            },
+            "__STATE_B__": {
+                "variantIndex": {
+                    "id": "variant-index",
+                    "name": "All Sizes",
+                    "handle": "trail-runner",
+                    "variants": [
+                        {"id": "black-9", "color": "Black", "size": "9"},
+                        {"id": "black-10", "color": "Black", "size": "10"},
+                    ],
+                }
+            },
+        },
+        surface="ecommerce_detail",
+        page_url="https://example.com/products/trail-runner?variant=black-9",
+    )
+
+    assert mapped["title"] == "Trail Runner Black"
+    assert mapped["variant_count"] == 2
+
+
+@pytest.mark.unit
+def test_map_js_state_to_fields_prefers_preloaded_state_product_over_app_banner_payload() -> (
+    None
+):
+    mapped = map_js_state_to_fields(
+        {
+            "__PRELOADED_STATE__": {
+                "appBanner": {
+                    "name": "UNIQLO - LifeWear",
+                    "title": "UNIQLO - LifeWear",
+                    "description": "Shop on our app for the best experience",
+                    "buttonText": "Open app",
+                    "buttonLink": "/app",
+                    "appIcon": "https://cdn.example.com/assets/app-icon.png",
+                },
+                "entity": {
+                    "pdpEntity": {
+                        "E474244-000-01": {
+                            "product": {
+                                "name": "AIRism Cotton Crew Neck T-Shirt",
+                                "productId": "E474244-000",
+                                "productType": "innerwear",
+                                "prices": {
+                                    "base": {"currency": {"code": "INR"}, "value": 990},
+                                    "promo": {
+                                        "currency": {"code": "INR"},
+                                        "value": 390,
+                                    },
+                                },
+                                "colors": [
+                                    {"name": "OLIVE"},
+                                    {"name": "BLACK"},
+                                ],
+                                "sizes": [
+                                    {"name": "S"},
+                                    {"name": "M"},
+                                    {"name": "L"},
+                                ],
+                                "images": {
+                                    "main": {
+                                        "57": {
+                                            "image": "https://cdn.example.com/products/airism-olive-main.jpg"
+                                        }
+                                    },
+                                    "sub": [
+                                        {
+                                            "image": "https://cdn.example.com/products/airism-detail-1.jpg"
+                                        },
+                                        {
+                                            "image": "https://cdn.example.com/products/airism-detail-2.jpg"
+                                        },
+                                    ],
+                                },
+                            }
+                        }
+                    }
+                },
+            }
+        },
+        surface="ecommerce_detail",
+        page_url="https://www.uniqlo.com/in/en/products/E474244-000/01",
+    )
+
+    assert mapped["title"] == "AIRism Cotton Crew Neck T-Shirt"
+    assert mapped["product_id"] == "E474244-000"
+    assert mapped["product_type"] == "innerwear"
+    assert mapped["price"] == "390"
+    assert mapped["original_price"] == "990"
+    assert mapped["currency"] == "INR"
+    assert (
+        mapped["image_url"] == "https://cdn.example.com/products/airism-olive-main.jpg"
+    )
+    assert mapped["additional_images"] == [
+        "https://cdn.example.com/products/airism-detail-1.jpg",
+        "https://cdn.example.com/products/airism-detail-2.jpg",
+    ]
+
+
+@pytest.mark.unit
+def test_map_js_state_to_fields_recovers_direct_grade_and_storage_axes_from_variants() -> (
+    None
+):
+    mapped = map_js_state_to_fields(
+        {
+            "__INITIAL_STATE__": {
+                "product": {
+                    "id": "console-1tb",
+                    "name": "Game Console",
+                    "variants": [
+                        {
+                            "id": "fair-512",
+                            "grade": "Fair",
+                            "storage": "512 GB",
+                            "price": "249.00",
+                            "currency": "USD",
+                        },
+                        {
+                            "id": "good-1tb",
+                            "grade": "Good",
+                            "storage": "1 TB",
+                            "price": "299.00",
+                            "currency": "USD",
+                        },
+                    ],
+                }
+            }
+        },
+        surface="ecommerce_detail",
+        page_url="https://store.example.com/products/game-console?variant=good-1tb",
+    )
+
+    assert mapped["title"] == "Game Console"
+    assert mapped["price"] == "299.00"
+
+
+@pytest.mark.unit
+def test_map_js_state_to_fields_replaces_existing_variant_query_parameter() -> None:
+    mapped = map_js_state_to_fields(
+        {
+            "__INITIAL_STATE__": {
+                "product": {
+                    "name": "Commuter Backpack",
+                    "variants": [
+                        {
+                            "id": "sku-123",
+                            "available": True,
+                        }
+                    ],
+                }
+            }
+        },
+        surface="ecommerce_detail",
+        page_url="https://store.example.com/products/commuter-backpack?ref=hero&variant=old",
+    )
+
+    assert mapped["variants"][0]["url"] == (
+        "https://store.example.com/products/commuter-backpack?ref=hero&variant=sku-123"
+    )
+
+
+@pytest.mark.unit
+def test_map_js_state_to_fields_keeps_ambiguous_availability_neutral() -> None:
+    mapped = map_js_state_to_fields(
+        {
+            "__INITIAL_STATE__": {
+                "product": {
+                    "name": "Commuter Backpack",
+                    "variants": [
+                        {
+                            "id": "sku-123",
+                            "available": 2,
+                        }
+                    ],
+                }
+            }
+        },
+        surface="ecommerce_detail",
+        page_url="https://store.example.com/products/commuter-backpack",
+    )
+
+    assert "availability" not in mapped
+    assert "availability" not in mapped["variants"][0]
+
+
+@pytest.mark.unit
+def test_map_js_state_to_fields_drops_transport_only_variant_matrix_rows() -> None:
+    mapped = map_js_state_to_fields(
+        {
+            "__INITIAL_STATE__": {
+                "product": {
+                    "name": "Relaxed Tee",
+                    "price": "32.99",
+                    "variantMatrix": [
+                        {
+                            "isLeaf": True,
+                            "variantValueCategory": {"name": "M"},
+                            "parentVariantCategory": {"name": "Size"},
+                            "variantOption": {
+                                "code": "tee-m",
+                                "url": "/products/relaxed-tee?size=m",
+                                "priceData": {"value": "32.99", "currencyIso": "USD"},
+                                "stock": {
+                                    "stockLevel": 4,
+                                    "stockLevelStatus": "inStock",
+                                },
+                            },
+                        },
+                        {
+                            "isLeaf": True,
+                            "variantOption": {
+                                "code": "tee-orphan",
+                                "url": "/products/relaxed-tee?size=unknown",
+                                "priceData": {"value": "32.99", "currencyIso": "USD"},
+                                "stock": {
+                                    "stockLevel": 2,
+                                    "stockLevelStatus": "inStock",
+                                },
+                            },
+                        },
+                    ],
+                }
+            }
+        },
+        surface="ecommerce_detail",
+        page_url="https://store.example.com/products/relaxed-tee?size=m",
+    )
+
+    assert mapped["variant_count"] == 1
+    assert mapped["size"] == "M"
+    assert len(mapped["variants"]) == 1
+    assert mapped["variants"][0]["size"] == "M"
+    assert mapped["variants"][0]["sku"] == "tee-m"
+    assert mapped["variants"][0]["price"] == "32.99"
+    assert mapped["variants"][0]["currency"] == "USD"
+    assert mapped["variants"][0]["url"] == "/products/relaxed-tee?size=m"
+    assert mapped["variants"][0]["availability"] == "in_stock"
+    assert mapped["variants"][0]["stock_quantity"] == 4
+
+
+@pytest.mark.unit
+def test_map_js_state_to_fields_keeps_row_with_real_axis_and_noise_axis() -> None:
+    mapped = map_js_state_to_fields(
+        {
+            "__INITIAL_STATE__": {
+                "product": {
+                    "name": "Daily Tank",
+                    "variants": [
+                        {
+                            "id": "tank-m",
+                            "size": "M",
+                            "color": "Chat with us",
+                            "available": True,
+                        }
+                    ],
+                }
+            }
+        },
+        surface="ecommerce_detail",
+        page_url="https://store.example.com/products/daily-tank",
+    )
+
+    assert mapped["variants"][0]["size"] == "M"
+    assert "color" not in mapped["variants"][0]
+
+
+@pytest.mark.unit
+def test_job_detail_mappers_keep_shared_html_section_behavior() -> None:
+    description_html = (
+        "<p>Lead platform delivery.</p>"
+        "<h2>What you'll do</h2><ul><li>Ship backend systems.</li></ul>"
+        "<h2>You should have</h2><ul><li>Python experience.</li></ul>"
+        "<h2>Benefits</h2><p>Remote-first.</p>"
+        "<h3>Skills</h3><p>Clear writing.</p>"
+    )
+
+    js_mapped = map_js_state_to_fields(
+        {
+            "__remixContext": {
+                "state": {
+                    "loaderData": {
+                        "routes/$url_token_.jobs_.$job_post_id": {
+                            "jobPost": {
+                                "title": "Platform Engineer",
+                                "company_name": "Acme",
+                                "job_post_location": "Remote",
+                                "public_url": "https://jobs.example.com/platform-engineer",
+                                "published_at": "2026-04-10",
+                                "content": description_html,
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        surface="job_detail",
+        page_url="https://jobs.example.com/platform-engineer",
+    )
+    network_rows = map_network_payloads_to_fields(
+        [
+            {
+                "body": {
+                    "title": "Platform Engineer",
+                    "company_name": "Acme",
+                    "location": {"name": "Remote"},
+                    "absolute_url": "https://jobs.example.com/platform-engineer",
+                    "first_published": "2026-04-10",
+                    "updated_at": "2026-04-12",
+                    "content": description_html,
+                }
+            }
+        ],
+        surface="job_detail",
+        page_url="https://jobs.example.com/platform-engineer",
+    )
+
+    assert js_mapped["responsibilities"] == "Ship backend systems."
+    assert js_mapped["qualifications"] == "Python experience."
+    assert js_mapped["benefits"] == "Remote-first."
+    assert js_mapped["skills"] == "Clear writing."
+    assert js_mapped["description"] == (
+        "Lead platform delivery. What you'll do Ship backend systems. "
+        "You should have Python experience. Benefits Remote-first. "
+        "Skills Clear writing."
+    )
+    assert network_rows == [
+        {
+            "title": "Platform Engineer",
+            "company": "Acme",
+            "location": "Remote",
+            "apply_url": "https://jobs.example.com/platform-engineer",
+            "posted_date": "2026-04-10",
+            "updated_at": "2026-04-12",
+            "responsibilities": "Ship backend systems.",
+            "qualifications": "Python experience.",
+            "benefits": "Remote-first.",
+            "skills": "Clear writing.",
+            "description": js_mapped["description"],
+            "url": "https://jobs.example.com/platform-engineer",
+        }
+    ]
+
+
+@pytest.mark.unit
+def test_map_js_state_to_fields_uses_platform_owned_job_detail_selector_config() -> (
+    None
+):
+    mapped = map_js_state_to_fields(
+        {
+            "__remixContext": {
+                "state": {
+                    "loaderData": {
+                        "routes/$url_token_.jobs_.$job_post_id": {
+                            "jobPost": {
+                                "title": "Manager, Engineering",
+                                "company_name": "Greenhouse",
+                                "job_post_location": "Ontario",
+                                "public_url": "https://job-boards.greenhouse.io/greenhouse/jobs/7704699?gh_jid=7704699",
+                                "published_at": "2026-04-09T10:05:53-04:00",
+                                "content": (
+                                    "<p>Lead the reporting and analytics engineering domain.</p>"
+                                    "<h2>What you’ll do</h2><ul><li>Lead and mentor engineers.</li></ul>"
+                                    "<h2>You should have</h2><ul><li>5+ years of engineering experience.</li></ul>"
+                                ),
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        surface="job_detail",
+        page_url="https://job-boards.greenhouse.io/greenhouse/jobs/7704699?gh_jid=7704699",
+    )
+
+    assert mapped["title"] == "Manager, Engineering"
+    assert mapped["company"] == "Greenhouse"
+    assert mapped["location"] == "Ontario"
+    assert (
+        mapped["apply_url"]
+        == "https://job-boards.greenhouse.io/greenhouse/jobs/7704699?gh_jid=7704699"
+    )
+    assert mapped["posted_date"] == "2026-04-09T10:05:53-04:00"
+    assert "Lead and mentor engineers." in mapped["responsibilities"]
+    assert "5+ years of engineering experience." in mapped["qualifications"]
+    assert (
+        mapped["url"]
+        == "https://job-boards.greenhouse.io/greenhouse/jobs/7704699?gh_jid=7704699"
+    )
+
+
+@pytest.mark.unit
+def test_configured_state_payload_merges_later_root_fields() -> None:
+    mapped = map_configured_state_payload(
+        {
+            "first": {"title": "Platform Engineer"},
+            "second": {"company_name": "Acme"},
+        },
+        root_paths=[["first"], ["second"]],
+        field_paths={
+            "title": [["title"]],
+            "company": [["company_name"]],
+        },
+    )
+
+    assert mapped == {"title": "Platform Engineer", "company": "Acme"}
+
+
+@pytest.mark.unit
+def test_map_js_state_to_fields_rejects_dict_tags_from_promotional_ui() -> None:
+    js_state_objects = {
+        "__NEXT_DATA__": {
+            "props": {
+                "pageProps": {
+                    "product": {
+                        "id": 9002,
+                        "title": "Maternity Jean",
+                        "vendor": "Hatch",
+                        "handle": "the-relaxed-wide-leg-maternity-jean-1",
+                        "body_html": "<p>Comfortable maternity denim.</p>",
+                        "product_type": "Jeans",
+                        "currency": "USD",
+                        "tags": {
+                            "button": "Add",
+                            "freeGiftHint": "Free gift",
+                            "freeGiftWarning": "Add gift to cart to proceed to checkout",
+                            "goalReached": "Congrats - all tiers unlocked!",
+                            "rewardName1": "20% off",
+                            "rewardName2": "25% off",
+                            "rewardName3": "30% off",
+                        },
+                        "variants": [
+                            {
+                                "id": 201,
+                                "sku": "HJ-BLU-28",
+                                "price": 19800,
+                                "compare_at_price": 24800,
+                                "available": True,
+                                "option1": "Blue",
+                                "option2": "28",
+                            }
+                        ],
+                        "options": [{"name": "Color"}, {"name": "Size"}],
+                        "images": [
+                            {"src": "https://cdn.example.com/jean-1.jpg"},
+                        ],
+                    }
+                }
+            }
+        }
+    }
+    mapped = map_js_state_to_fields(
+        js_state_objects,
+        surface="ecommerce_detail",
+        page_url="https://www.hatchcollection.com/products/the-relaxed-wide-leg-maternity-jean-1",
+    )
+    assert mapped.get("title") == "Maternity Jean"
+    assert mapped.get("tags") is None
+
+
+@pytest.mark.unit
+def test_map_product_payload_tolerates_product_glom_failures(
+    monkeypatch,
+) -> None:
+    original_glom = js_state_mapper.glom
+
+    def _fake_glom(target, spec, default=None):
+        if spec is js_state_mapper.PRODUCT_FIELD_SPEC:
+            raise RuntimeError("boom")
+        return original_glom(target, spec, default=default)
+
+    monkeypatch.setattr(js_state_mapper, "glom", _fake_glom)
+
+    mapped = js_state_mapper._map_product_payload(
+        {"id": "prod-1", "variants": []},
+        page_url="https://store.example.com/products/commuter-backpack",
+        category_fallback_from_type=False,
+    )
+
+    assert mapped == {}
+
+
+@pytest.mark.unit
+def test_map_product_payload_uses_configured_jmespaths_when_glom_fails(
+    monkeypatch,
+) -> None:
+    original_glom = js_state_mapper.glom
+
+    def _fake_glom(target, spec, default=None):
+        if spec is js_state_mapper.PRODUCT_FIELD_SPEC:
+            raise RuntimeError("boom")
+        return original_glom(target, spec, default=default)
+
+    monkeypatch.setattr(js_state_mapper, "glom", _fake_glom)
+
+    mapped = js_state_mapper._map_product_payload(
+        {
+            "name": "Config Mapped Pack",
+            "vendor": {"name": "Urban Carry"},
+            "price": "89.50",
+            "variants": [],
+        },
+        page_url="https://store.example.com/products/config-mapped-pack",
+        category_fallback_from_type=False,
+        field_jmespaths={
+            "title": ["title", "name"],
+            "brand": ["brand.name", "brand", "vendor.name", "vendor"],
+            "price": ["price"],
+        },
+    )
+
+    assert mapped == {
+        "title": "Config Mapped Pack",
+        "brand": "Urban Carry",
+        "price": "89.50",
+    }
+
+
+@pytest.mark.unit
+def test_map_product_payload_normalizes_raw_price_fallbacks() -> None:
+    mapped = js_state_mapper._map_product_payload(
+        {
+            "id": "prod-1",
+            "variants": [],
+            "prices": {
+                "currentPrice": "$129.50",
+                "initialPrice": {"value": 149},
+            },
+        },
+        page_url="https://store.example.com/products/commuter-backpack",
+        category_fallback_from_type=False,
+    )
+
+    assert mapped["price"] == "129.50"
+    assert mapped["original_price"] == "149"
+
+
+@pytest.mark.unit
+def test_normalize_variant_tolerates_non_dict_glom_result(
+    monkeypatch,
+) -> None:
+    original_glom = js_state_mapper.glom
+
+    def _fake_glom(target, spec, default=None):
+        if spec is js_state_mapper._VARIANT_FIELD_SPEC:
+            return None
+        return original_glom(target, spec, default=default)
+
+    monkeypatch.setattr(js_state_mapper, "glom", _fake_glom)
+
+    mapped = js_state_mapper._normalize_variant(
+        {"id": "sku-123"},
+        option_names=[],
+        page_url="https://store.example.com/products/commuter-backpack",
+        interpret_integral_as_cents=False,
+    )
+
+    assert mapped == {
+        "variant_id": "sku-123",
+        "url": "https://store.example.com/products/commuter-backpack?variant=sku-123",
+    }
+
+
+@pytest.mark.unit
+def test_normalize_variant_does_not_use_product_id_as_variant_id() -> None:
+    mapped = js_state_mapper._normalize_variant(
+        {"productId": "prod-1"},
+        option_names=[],
+        page_url="https://store.example.com/products/commuter-backpack",
+        interpret_integral_as_cents=False,
+    )
+
+    assert mapped is None
+
+
+@pytest.mark.unit
+def test_map_js_state_to_fields_uses_selected_options_and_skips_marketing_axis_names() -> (
+    None
+):
+    mapped = map_js_state_to_fields(
+        {
+            "__NEXT_DATA__": {
+                "props": {
+                    "pageProps": {
+                        "product": {
+                            "id": "leggings-1",
+                            "title": "Everyday Seamless Leggings",
+                            "vendor": "Gym Co",
+                            "price": "58.00",
+                            "currency": "USD",
+                            "options": [
+                                {"name": "Soft Fabric"},
+                                {"name": "High Waisted"},
+                            ],
+                            "variants": [
+                                {
+                                    "id": "black-s",
+                                    "available": True,
+                                    "selectedOptions": [
+                                        {"name": "Color", "value": "Black"},
+                                        {"name": "Size", "value": "S"},
+                                    ],
+                                },
+                                {
+                                    "id": "black-m",
+                                    "available": True,
+                                    "selectedOptions": [
+                                        {"name": "Color", "value": "Black"},
+                                        {"name": "Size", "value": "M"},
+                                    ],
+                                },
+                            ],
+                        }
+                    }
+                }
+            }
+        },
+        surface="ecommerce_detail",
+        page_url="https://store.example.com/products/everyday-seamless-leggings?variant=black-s",
+    )
+
+    assert mapped["variant_count"] == 2
+    assert mapped["variants"][0]["option_values"] == {"color": "Black", "size": "S"}
+    assert mapped["variants"][1]["option_values"] == {"color": "Black", "size": "M"}
+    assert "soft_fabric" not in mapped["variants"][0]["option_values"]
+    assert "high_waisted" not in mapped["variants"][0]["option_values"]
+
+
+@pytest.mark.unit
+def test_map_js_state_to_fields_reads_nested_variant_price_objects() -> None:
+    mapped = map_js_state_to_fields(
+        {
+            "__NEXT_DATA__": {
+                "props": {
+                    "pageProps": {
+                        "product": {
+                            "id": "runner-1",
+                            "title": "Tree Runner",
+                            "vendor": "Allbirds",
+                            "price": {"amount": "100.00", "currencyCode": "USD"},
+                            "options": [
+                                {"name": "Color"},
+                                {"name": "Size"},
+                            ],
+                            "variants": [
+                                {
+                                    "id": "jet-black-8",
+                                    "available": True,
+                                    "price": {
+                                        "amount": "100.00",
+                                        "currencyCode": "USD",
+                                    },
+                                    "selectedOptions": [
+                                        {"name": "Color", "value": "Jet Black"},
+                                        {"name": "Size", "value": "8"},
+                                    ],
+                                },
+                                {
+                                    "id": "jet-black-9",
+                                    "available": True,
+                                    "priceV2": {
+                                        "amount": "100.00",
+                                        "currencyCode": "USD",
+                                    },
+                                    "selectedOptions": [
+                                        {"name": "Color", "value": "Jet Black"},
+                                        {"name": "Size", "value": "9"},
+                                    ],
+                                },
+                            ],
+                        }
+                    }
+                }
+            }
+        },
+        surface="ecommerce_detail",
+        page_url="https://store.example.com/products/tree-runner?variant=jet-black-8",
+    )
+
+    assert mapped["price"] == "100.00"
+    assert mapped["variants"][0]["price"] == "100.00"
+    assert mapped["variants"][1]["price"] == "100.00"
+
+
+@pytest.mark.unit
+def test_map_js_state_to_fields_recovers_nested_choice_item_variants() -> None:
+    mapped = map_js_state_to_fields(
+        {
+            "__INITIAL_CONFIG__": {
+                "productDisplay": {
+                    "entities": {
+                        "7507996": {
+                            "legacyStyleGroupId": "10014429",
+                            "webPathAlias": "nike-air-force-1-07-basketball-sneaker-men",
+                            "copyProductTitle": "Air Force 1 '07 Basketball Sneaker",
+                            "copyDescription": "Basketball sneaker with heritage details.",
+                            "labelDisplayName": "Nike",
+                            "coreProducts": [
+                                {
+                                    "nptHierarchy": "npt.shoes.sneakers",
+                                    "coreChoices": [
+                                        {
+                                            "coreChoiceId": "4444444TRN",
+                                            "displayColorDescription": "WHITE/ BLACK",
+                                            "orderedShots": [
+                                                {
+                                                    "imageUrl": (
+                                                        "https://n.nordstrommedia.com/it/"
+                                                        "shoe.jpeg"
+                                                    )
+                                                }
+                                            ],
+                                            "items": [
+                                                {
+                                                    "npin": "22222Q92NG",
+                                                    "concatenatedDisplaySize": "7.5 M",
+                                                    "sku": {
+                                                        "skuId": "A7293017",
+                                                        "propositions": [
+                                                            {
+                                                                "salability": {
+                                                                    "status": "SELLABLE"
+                                                                },
+                                                                "availability": {
+                                                                    "isAvailable": True,
+                                                                    "shipQuantity": 1,
+                                                                },
+                                                                "pricings": [
+                                                                    {
+                                                                        "sellingRetail": {
+                                                                            "price": "69.00"
+                                                                        },
+                                                                        "baseRetail": {
+                                                                            "price": "115.00"
+                                                                        },
+                                                                    }
+                                                                ],
+                                                            }
+                                                        ],
+                                                    },
+                                                },
+                                                {
+                                                    "npin": "22222X2S9M",
+                                                    "sizeDimension1": {"label": "8"},
+                                                    "sizeDimension2": {"label": "M"},
+                                                    "sku": {
+                                                        "skuId": "A7293024",
+                                                        "propositions": [
+                                                            {
+                                                                "salability": {
+                                                                    "status": "SOLD_OUT"
+                                                                },
+                                                                "availability": {
+                                                                    "isAvailable": False,
+                                                                    "shipQuantity": 0,
+                                                                },
+                                                                "pricings": [
+                                                                    {
+                                                                        "sellingRetail": {
+                                                                            "price": "69.00"
+                                                                        }
+                                                                    }
+                                                                ],
+                                                            }
+                                                        ],
+                                                    },
+                                                },
+                                            ],
+                                        }
+                                    ],
+                                }
+                            ],
+                        }
+                    }
+                }
+            }
+        },
+        surface="ecommerce_detail",
+        page_url="https://www.nordstrom.com/s/nike-air-force-1-07-basketball-sneaker-men/7507996",
+    )
+
+    assert mapped["title"] == "Air Force 1 '07 Basketball Sneaker"
+    assert mapped["brand"] == "Nike"
+    assert mapped["variant_count"] == 2
+    assert mapped["variants"][0]["sku"] == "A7293017"
+    assert mapped["variants"][0]["size"] == "7.5 M"
+    assert mapped["variants"][0]["color"] == "WHITE/ BLACK"
+    assert mapped["variants"][0]["price"] == "69.00"
+    assert mapped["variants"][0]["original_price"] == "115.00"
+    assert mapped["variants"][0]["availability"] == "in_stock"
+    assert mapped["variants"][1]["size"] == "8"
+    assert mapped["variants"][1]["sku"] == "A7293024"
+    assert mapped["variants"][1]["price"] == "69.00"
+    assert mapped["variants"][1]["color"] == "WHITE/ BLACK"
+    assert mapped["variants"][1]["availability"] == "out_of_stock"
+
+
+@pytest.mark.unit
+def test_map_js_state_to_fields_reads_nested_variant_original_price_objects() -> None:
+    mapped = map_js_state_to_fields(
+        {
+            "__NEXT_DATA__": {
+                "props": {
+                    "pageProps": {
+                        "product": {
+                            "id": "runner-1",
+                            "title": "Tree Runner",
+                            "options": [{"name": "Size"}],
+                            "variants": [
+                                {
+                                    "id": "runner-8",
+                                    "compare_at_price": {
+                                        "amount": "120.00",
+                                        "currencyCode": "USD",
+                                    },
+                                    "selectedOptions": [{"name": "Size", "value": "8"}],
+                                },
+                                {
+                                    "id": "runner-9",
+                                    "compareAtPrice": {
+                                        "amount": "130.00",
+                                        "currencyCode": "USD",
+                                    },
+                                    "selectedOptions": [{"name": "Size", "value": "9"}],
+                                },
+                            ],
+                        }
+                    }
+                }
+            }
+        },
+        surface="ecommerce_detail",
+        page_url="https://store.example.com/products/tree-runner?variant=runner-9",
+    )
+
+    assert mapped["original_price"] == "130.00"
+    assert [row["original_price"] for row in mapped["variants"]] == ["120.00", "130.00"]
+
+
+@pytest.mark.unit
+def test_map_js_state_to_fields_reads_current_price_style_product_fields() -> None:
+    mapped = map_js_state_to_fields(
+        {
+            "__NEXT_DATA__": {
+                "props": {
+                    "pageProps": {
+                        "product": {
+                            "id": "af1-1",
+                            "title": "Air Force 1",
+                            "brand": "Nike",
+                            "prices": {
+                                "currency": "USD",
+                                "currentPrice": 115,
+                                "initialPrice": 130,
+                            },
+                            "options": [{"name": "Size"}],
+                            "variants": [
+                                {
+                                    "id": "size-6",
+                                    "available": True,
+                                    "selectedOptions": [{"name": "Size", "value": "6"}],
+                                },
+                                {
+                                    "id": "size-7",
+                                    "available": False,
+                                    "selectedOptions": [{"name": "Size", "value": "7"}],
+                                },
+                            ],
+                        }
+                    }
+                }
+            }
+        },
+        surface="ecommerce_detail",
+        page_url="https://store.example.com/products/air-force-1?variant=size-6",
+    )
+
+    assert mapped["price"] == "USD 115"
+    assert mapped["original_price"] == "USD 130"
+    assert mapped["currency"] == "USD"

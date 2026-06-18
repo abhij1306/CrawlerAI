@@ -1,0 +1,146 @@
+services:
+  # NOTE: DB credentials default to dev values. Production/staging must supply
+  # secure overrides via environment, .env, or docker-compose.override.yml / CI secrets.
+  db:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-crawlerai}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-crawlerai}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  migrate:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    restart: "no"
+    env_file:
+      - .env
+    environment: &backend_env
+      APP_ENV: development
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}@db:5432/${POSTGRES_DB:-crawlerai} # skipcq: SCT-A000 - password is required from environment, not hardcoded.
+      REDIS_URL: redis://redis:6379/0
+      REDIS_STATE_ENABLED: "false"
+      CELERY_DISPATCH_ENABLED: "true"
+      SCHEDULER_DRIVER: "celery"
+      PLAYWRIGHT_HEADLESS: "true"
+      FRONTEND_URL: http://127.0.0.1:3000
+      FRONTEND_ORIGINS: http://127.0.0.1:3000,http://localhost:3000
+      CRAWLER_RUNTIME_BROWSER_REAL_CHROME_ENABLED: "false"
+    depends_on:
+      db:
+        condition: service_healthy
+    command: ["python", "init_db.py"]
+
+  api:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment: *backend_env
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    ports:
+      - "8000:8000"
+    volumes:
+      - backend_artifacts:/app/backend/artifacts
+      - backend_cookie_store:/app/backend/cookie_store
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/health/live || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  worker:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment: *backend_env
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    command:
+      [
+        "celery",
+        "-A",
+        "app.core.celery_app.celery_app",
+        "worker",
+        "--loglevel=INFO",
+        "--concurrency=2"
+      ]
+    volumes:
+      - backend_artifacts:/app/backend/artifacts
+      - backend_cookie_store:/app/backend/cookie_store
+
+  beat:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment: *backend_env
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    command:
+      [
+        "celery",
+        "-A",
+        "app.core.celery_app.celery_app",
+        "beat",
+        "--loglevel=INFO"
+      ]
+    volumes:
+      - backend_artifacts:/app/backend/artifacts
+      - backend_cookie_store:/app/backend/cookie_store
+
+volumes:
+  pg_data:
+  redis_data:
+  backend_artifacts:
+  backend_cookie_store:

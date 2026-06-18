@@ -1,0 +1,18 @@
+Schema URL:
+$schema_url
+
+Schema title:
+$schema_title
+
+Deterministic field results:
+$field_results
+
+Missing fields by group:
+$missing_fields
+
+Return JSON:
+{
+  "summary": "one sentence",
+  "recommended_changes": ["specific schema edit"],
+  "risk_notes": ["optional risk"]
+}

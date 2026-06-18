@@ -1,0 +1,6213 @@
+from __future__ import annotations
+
+import asyncio
+import time
+from contextlib import asynccontextmanager
+from dataclasses import dataclass
+from pathlib import Path
+from types import SimpleNamespace
+from typing import Any
+
+import httpx
+import pytest
+from bs4 import BeautifulSoup
+from patchright.async_api import Error as PlaywrightError
+from patchright.async_api import TimeoutError as PlaywrightTimeoutError
+
+from app.services.acquisition import (
+    browser_capture,
+    browser_detail,
+    browser_recovery,
+    cookie_store,
+    dom_runtime,
+)
+from app.services.acquisition.browser_capture import BrowserNetworkCapture
+from app.services.acquisition import (
+    browser_page_flow,
+    browser_pool,
+    browser_readiness,
+    browser_runtime,
+)
+from app.services.acquisition.browser_fetch_support import build_browser_fetch_result
+from app.services.acquisition.traversal import TraversalResult
+from app.services.config.runtime_settings import crawler_runtime_settings
+from app.services.config.selectors import CARD_SELECTORS
+from app.services.pipeline.extract_records import extract_records
+
+
+@pytest.fixture(autouse=True)
+def _reset_origin_warmup_state():
+    browser_runtime._ORIGIN_WARMUP_IN_FLIGHT.clear()
+    browser_runtime._ORIGIN_WARMUP_RECENT.clear()
+    yield
+    browser_runtime._ORIGIN_WARMUP_IN_FLIGHT.clear()
+    browser_runtime._ORIGIN_WARMUP_RECENT.clear()
+
+
+async def _async_checkpoint() -> None:
+    await asyncio.sleep(0)
+
+
+def _network_capture_summary() -> SimpleNamespace:
+    return SimpleNamespace(
+        network_payload_count=0,
+        malformed_network_payloads=0,
+        network_payload_read_failures=0,
+        network_payload_read_timeouts=0,
+        closed_network_payloads=0,
+        skipped_oversized_network_payloads=0,
+        dropped_payload_events=0,
+        payloads=[],
+    )
+
+
+class _StaticPayloadCapture:
+    async def close(self, _page):
+        await _async_checkpoint()
+        return _network_capture_summary()
+
+
+async def _emit_browser_event_noop(*_args, **_kwargs):
+    await _async_checkpoint()
+    return None
+
+
+async def _classify_browser_page_ok(_html: str, _status_code: int):
+    await _async_checkpoint()
+    return browser_page_flow.BlockPageClassification(
+        blocked=False,
+        evidence=[],
+        outcome="ok",
+    )
+
+
+@pytest.fixture
+def browser_finalize_support(monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
+    visual_calls: list[str | None] = []
+
+    async def _capture_fragments(*_args, **_kwargs):
+        await _async_checkpoint()
+        return []
+
+    async def _capture_visuals(*_args, **_kwargs):
+        await _async_checkpoint()
+        visual_calls.append(_kwargs.get("surface"))
+        return []
+
+    monkeypatch.setattr(
+        browser_page_flow,
+        "capture_rendered_listing_fragments",
+        _capture_fragments,
+    )
+    monkeypatch.setattr(
+        browser_page_flow,
+        "_capture_listing_visual_elements",
+        _capture_visuals,
+    )
+
+    def _make_payload(**overrides: Any) -> browser_page_flow.BrowserFinalizeInput:
+        html = str(
+            overrides.get(
+                "html",
+                "<html><body><h1>Widget Prime</h1><div>Description</div></body></html>",
+            )
+        )
+        defaults = {
+            "page": SimpleNamespace(url="https://example.com/products/widget"),
+            "url": "https://example.com/products/widget",
+            "surface": "ecommerce_detail",
+            "browser_reason": "http-escalation",
+            "on_event": None,
+            "response": SimpleNamespace(status=200, headers={}),
+            "navigation_strategy": "domcontentloaded",
+            "readiness_probes": [],
+            "networkidle_timed_out": False,
+            "networkidle_skip_reason": None,
+            "readiness_policy": {},
+            "readiness_diagnostics": {},
+            "expansion_diagnostics": {},
+            "listing_recovery_diagnostics": {},
+            "payload_capture": _StaticPayloadCapture(),
+            "html": html,
+            "traversal_result": None,
+            "rendered_html": html,
+            "phase_timings_ms": {},
+            "started_at": 0.0,
+        }
+        return browser_page_flow.BrowserFinalizeInput(**{**defaults, **overrides})
+
+    return SimpleNamespace(
+        make_payload=_make_payload,
+        classify_blocked_page_async=_classify_browser_page_ok,
+        emit_browser_event=_emit_browser_event_noop,
+        visual_calls=visual_calls,
+    )
+
+
+@pytest.mark.regression
+def test_generic_card_selectors_use_ecommerce_group_for_commerce_listing_surface(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        browser_page_flow,
+        "CARD_SELECTORS",
+        {"ecommerce": [".product-card"], "jobs": [".job-card", ".product-card"]},
+    )
+
+    selectors = browser_page_flow._generic_card_selectors_for_surface("ecommerce_listing")
+
+    # Non-job surfaces route to ecommerce group only, matching listing_selector_group.
+    assert selectors == [".product-card"]
+
+
+@pytest.mark.regression
+def test_select_primary_browser_html_prefers_full_rendered_when_traversal_fragment_is_capped() -> (
+    None
+):
+    traversal_result = SimpleNamespace(
+        activated=True,
+        progress_events=1,
+        card_count=236,
+        stop_reason="target_records_reached",
+    )
+
+    html = browser_page_flow._select_primary_browser_html(
+        surface="ecommerce_listing",
+        traversal_result=traversal_result,
+        traversal_html="<html><body><a href='/products/a'>A</a></body></html>",
+        rendered_html=(
+            "<html><body>"
+            "<a href='/products/a'>A</a>"
+            "<a href='/products/b'>B</a>"
+            "</body></html>"
+        ),
+        listing_min_items=2,
+    )
+
+    assert "products/b" in html
+
+
+@pytest.mark.regression
+def test_select_primary_browser_html_uses_surface_specific_detail_hints() -> None:
+    traversal_result = SimpleNamespace(
+        activated=True,
+        progress_events=0,
+        card_count=0,
+        stop_reason="target_records_reached",
+    )
+
+    html = browser_page_flow._select_primary_browser_html(
+        surface="job_listing",
+        traversal_result=traversal_result,
+        traversal_html=(
+            "<html><body>"
+            "<a href='/products/a'>Product A</a>"
+            "<a href='/products/b'>Product B</a>"
+            "</body></html>"
+        ),
+        rendered_html="<html><body><a href='/jobs/123'>Job</a></body></html>",
+        listing_min_items=2,
+    )
+
+    assert "jobs/123" in html
+
+
+@pytest.mark.regression
+def test_location_interstitial_diagnostics_marks_location_required() -> None:
+    html = """
+    <html><body>
+      <div role="dialog" class="location-modal"><h2>Choose your location</h2><button>Continue</button></div>
+    </body></html>
+    """
+    assert browser_page_flow.location_interstitial_detected(html) is True
+
+    diagnostics = browser_page_flow.build_browser_diagnostics(
+        browser_reason="http-escalation",
+        browser_outcome="location_required",
+        navigation_strategy="domcontentloaded",
+        response_missing=False,
+        networkidle_timed_out=False,
+        networkidle_skip_reason=None,
+        readiness_policy={},
+        phase_timings_ms={},
+        html_bytes=len(html.encode("utf-8")),
+        challenge_evidence=[],
+        blocked_classification=SimpleNamespace(
+            provider_hits=[],
+            challenge_element_hits=[],
+        ),
+        low_content_reason=None,
+        readiness_probes=[],
+        capture_summary=SimpleNamespace(
+            network_payload_count=0,
+            malformed_network_payloads=0,
+            network_payload_read_failures=0,
+            network_payload_read_timeouts=0,
+            closed_network_payloads=0,
+            skipped_oversized_network_payloads=0,
+            dropped_payload_events=0,
+        ),
+        readiness_diagnostics={},
+        expansion_diagnostics={},
+        listing_recovery_diagnostics={},
+        listing_artifact_diagnostics={},
+        interstitial_diagnostics={"location_required": True},
+        traversal_result=None,
+    )
+
+    assert diagnostics["browser_outcome"] == "location_required"
+    assert diagnostics["failure_reason"] == "location_required"
+    assert diagnostics["interstitial"]["location_required"] is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_finalize_browser_fetch_marks_location_interstitial_blocked(
+    browser_finalize_support: SimpleNamespace,
+) -> None:
+    html = (
+        "<html><body><div role='dialog' class='location-modal'>"
+        "<h2>Choose your location</h2><button>Continue</button>"
+        "</div></body></html>"
+    )
+    payload = browser_finalize_support.make_payload(html=html)
+
+    result = await browser_page_flow.finalize_browser_fetch(
+        payload,
+        blocked_html_checker=lambda *_args, **_kwargs: False,
+        classify_blocked_page_async=browser_finalize_support.classify_blocked_page_async,
+        classify_low_content_reason=lambda *_args, **_kwargs: None,
+        classify_browser_outcome=lambda **_kwargs: "usable_content",
+        capture_browser_screenshot=lambda _page: "",
+        emit_browser_event=browser_finalize_support.emit_browser_event,
+        elapsed_ms=lambda _started_at: 0,
+    )
+
+    assert result["blocked"] is True
+    assert result["diagnostics"]["browser_outcome"] == "location_required"
+    assert result["diagnostics"]["failure_reason"] == "location_required"
+    assert result["diagnostics"]["low_content_reason"] == "location_required"
+    assert "location_interstitial" in result["diagnostics"]["challenge_evidence"]
+    assert browser_finalize_support.visual_calls == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_finalize_browser_fetch_keeps_usable_detail_without_ready_probe(
+    browser_finalize_support: SimpleNamespace,
+) -> None:
+    html = """
+    <html><body>
+      <main>
+        <div class="product-title">Widget Prime</div>
+        <div class="price">$19.99</div>
+        <p>Durable cotton shirt with complete product copy.</p>
+      </main>
+    </body></html>
+    """
+    payload = browser_finalize_support.make_payload(
+        html=html,
+        readiness_probes=[
+            {
+                "is_ready": False,
+                "detail_like": False,
+                "structured_data_present": False,
+                "visible_text_length": 70,
+            }
+        ],
+    )
+
+    result = await browser_page_flow.finalize_browser_fetch(
+        payload,
+        blocked_html_checker=lambda *_args, **_kwargs: False,
+        classify_blocked_page_async=browser_finalize_support.classify_blocked_page_async,
+        classify_low_content_reason=lambda *_args, **_kwargs: None,
+        classify_browser_outcome=lambda **_kwargs: "usable_content",
+        capture_browser_screenshot=lambda _page: "",
+        emit_browser_event=browser_finalize_support.emit_browser_event,
+        elapsed_ms=lambda _started_at: 0,
+    )
+
+    assert result["blocked"] is False
+    assert result["diagnostics"]["browser_outcome"] == "usable_content"
+    assert result["diagnostics"].get("low_content_reason") in (None, "")
+
+
+@pytest.mark.regression
+def test_location_interstitial_detects_text_only_fallback() -> None:
+    html = """
+    <html><body>
+      <section>
+        <h2>Choose your location</h2>
+        <p>Enter zip code to deliver to your area.</p>
+      </section>
+    </body></html>
+    """
+
+    assert browser_page_flow.location_interstitial_detected(html) is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_probe_browser_readiness_detects_spaced_jsonld_detail_type() -> None:
+    html = """
+    <html><body>
+      <script type="application/ld+json">
+        {"@context": "https://schema.org", "@type" : "Product", "name": "Widget"}
+      </script>
+    </body></html>
+    """
+
+    probe = await browser_readiness.probe_browser_readiness_impl(
+        SimpleNamespace(),
+        url="https://example.com/products/widget",
+        surface="ecommerce_detail",
+        html=html,
+        detail_readiness_hint_count=lambda *_args, **_kwargs: 0,
+    )
+
+    assert probe["structured_data_present"] is True
+    assert probe["is_ready"] is False
+
+    ready_probe = await browser_readiness.probe_browser_readiness_impl(
+        SimpleNamespace(),
+        url="https://example.com/products/widget",
+        surface="ecommerce_detail",
+        html=html.replace(
+            "</body>",
+            (
+                "<h1>Widget</h1>"
+                "<p>Detailed rendered product content. " * 12
+                + "</p></body>"
+            ),
+        ),
+        detail_readiness_hint_count=lambda *_args, **_kwargs: 0,
+    )
+
+    assert ready_probe["structured_data_present"] is True
+    assert ready_probe["is_ready"] is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_browser_fetch_closes_payload_capture_after_policy_resolution_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    closed: list[object] = []
+
+    class _FakePayloadCapture:
+        def attach(self, _page):
+            return None
+
+        async def close(self, page):
+            closed.append(page)
+            return _network_capture_summary()
+
+    page = SimpleNamespace(
+        url="https://example.com/products/widget",
+        route=lambda *_args, **_kwargs: _async_checkpoint(),
+    )
+
+    @asynccontextmanager
+    async def _page_context():
+        yield page
+
+    async def _fake_resolve_page_context(**_kwargs):
+        return None, _page_context()
+
+    async def _fake_prepare_context(**_kwargs):
+        return "chromium", "chromium", False, True
+
+    def _raise_policy_error(**_kwargs):
+        raise RuntimeError("policy failed")
+
+    monkeypatch.setattr(
+        browser_runtime,
+        "_resolve_browser_fetch_page_context",
+        _fake_resolve_page_context,
+    )
+    monkeypatch.setattr(
+        browser_runtime,
+        "_prepare_browser_fetch_launch_context",
+        _fake_prepare_context,
+    )
+    monkeypatch.setattr(
+        browser_runtime,
+        "_build_payload_capture",
+        lambda **_kwargs: _FakePayloadCapture(),
+    )
+    monkeypatch.setattr(
+        browser_runtime,
+        "resolve_browser_fetch_policy_impl",
+        _raise_policy_error,
+    )
+
+    with pytest.raises(RuntimeError, match="policy failed"):
+        await browser_runtime.browser_fetch(
+            "https://example.com/products/widget",
+            timeout_seconds=1,
+            surface="ecommerce_detail",
+        )
+
+    assert closed == [page]
+
+
+@pytest.mark.regression
+def test_ready_probe_supports_fast_finalize_for_strong_detail_page() -> None:
+    assert (
+        browser_page_flow._ready_probe_supports_fast_finalize(
+            [
+                {
+                    "is_ready": True,
+                    "visible_text_length": 5000,
+                    "structured_data_present": True,
+                    "detail_hint_count": 4,
+                }
+            ],
+            surface="ecommerce_detail",
+            status_code=200,
+        )
+        is True
+    )
+
+
+@pytest.mark.regression
+def test_ready_probe_fast_finalize_rejects_for_forced_block_status() -> None:
+    assert (
+        browser_page_flow._ready_probe_supports_fast_finalize(
+            [
+                {
+                    "is_ready": True,
+                    "visible_text_length": 5000,
+                    "structured_data_present": True,
+                    "detail_hint_count": 4,
+                }
+            ],
+            surface="ecommerce_detail",
+            status_code=403,
+        )
+        is False
+    )
+
+
+@pytest.mark.regression
+def test_fast_finalize_accepts_verified_extractability_without_probe_payload() -> None:
+    assert (
+        browser_page_flow._ready_probe_supports_fast_finalize(
+            [],
+            surface="ecommerce_detail",
+            status_code=200,
+            expansion_diagnostics={
+                "extractability": {
+                    "verified": True,
+                    "matched_requested_fields": ["title", "image_url"],
+                }
+            },
+        )
+        is True
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_fast_finalize_keeps_location_clear_when_precheck_found_no_signal(
+    browser_finalize_support: SimpleNamespace,
+) -> None:
+    payload = browser_finalize_support.make_payload(
+        readiness_probes=[
+            {
+                "is_ready": True,
+                "visible_text_length": 5000,
+                "structured_data_present": True,
+                "detail_hint_count": 4,
+            }
+        ],
+        networkidle_skip_reason="fast_path_ready",
+        interstitial_diagnostics={
+            "status": "not_found",
+            "reason": "no_location_signal",
+        },
+    )
+
+    result = await browser_page_flow.finalize_browser_fetch(
+        payload,
+        blocked_html_checker=lambda *_args, **_kwargs: False,
+        classify_blocked_page_async=browser_finalize_support.classify_blocked_page_async,
+        classify_low_content_reason=lambda *_args, **_kwargs: None,
+        classify_browser_outcome=lambda **_kwargs: "usable_content",
+        capture_browser_screenshot=lambda _page: "",
+        emit_browser_event=browser_finalize_support.emit_browser_event,
+        elapsed_ms=lambda _started_at: 0,
+    )
+
+    assert result["blocked"] is False
+    assert result["diagnostics"]["browser_outcome"] == "usable_content"
+    assert result["diagnostics"]["interstitial"]["location_required"] is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_location_interstitial_dismisses_by_safe_text_token() -> None:
+    class _MissingLocator:
+        async def count(self) -> int:
+            await _async_checkpoint()
+            return 0
+
+        @property
+        def first(self):
+            return self
+
+    class _Page:
+        url = "https://www.newbalance.com/pd/574-core/ML574V3-40377.html"
+
+        def __init__(self) -> None:
+            self.waited = False
+            self.dismissed = False
+
+        def locator(self, selector: str):
+            del selector
+            return _MissingLocator()
+
+        async def evaluate(self, script: str, payload: dict[str, object]):
+            await _async_checkpoint()
+            if "selectors" in payload:
+                return not self.dismissed
+            assert "Continue" in payload["tokens"]
+            assert "document.body.innerText" not in script
+            self.dismissed = True
+            return {"status": "dismissed", "selector": "text:continue"}
+
+        async def wait_for_timeout(self, timeout_ms: int) -> None:
+            await _async_checkpoint()
+            del timeout_ms
+            self.waited = True
+
+    page = _Page()
+
+    result = await browser_page_flow.dismiss_safe_location_interstitial(page)
+
+    assert result == {"status": "dismissed", "selector": "text:continue"}
+    assert page.waited is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_location_interstitial_dismissal_counts_before_first_locator() -> None:
+    class _FirstLocator:
+        def __init__(self, page: "_Page") -> None:
+            self._page = page
+
+        async def wait_for(self, **_kwargs) -> None:
+            await _async_checkpoint()
+            return None
+
+        async def click(self, **_kwargs) -> None:
+            await _async_checkpoint()
+            self._page.dismissed = True
+            return None
+
+    class _Locator:
+        def __init__(self, page: "_Page") -> None:
+            self._page = page
+
+        @property
+        def first(self):
+            return _FirstLocator(self._page)
+
+        async def count(self) -> int:
+            await _async_checkpoint()
+            return 1
+
+    class _Page:
+        url = "https://example.com/products/widget"
+
+        def __init__(self) -> None:
+            self.waited = False
+            self.dismissed = False
+
+        def locator(self, _selector: str):
+            return _Locator(self)
+
+        async def evaluate(self, _script: str, payload: dict[str, object]):
+            await _async_checkpoint()
+            if "selectors" in payload:
+                return not self.dismissed
+            return {"status": "not_found"}
+
+        async def wait_for_timeout(self, _timeout_ms: int) -> None:
+            await _async_checkpoint()
+            self.waited = True
+
+    result = await browser_page_flow.dismiss_safe_location_interstitial(_Page())
+
+    assert result["status"] == "dismissed"
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_location_interstitial_dismissal_requires_modal_to_clear() -> None:
+    class _FirstLocator:
+        async def wait_for(self, **_kwargs) -> None:
+            await _async_checkpoint()
+            return None
+
+        async def click(self, **_kwargs) -> None:
+            await _async_checkpoint()
+            return None
+
+    class _Locator:
+        @property
+        def first(self):
+            return _FirstLocator()
+
+        async def count(self) -> int:
+            await _async_checkpoint()
+            return 1
+
+    class _Page:
+        url = "https://example.com/products/widget"
+
+        def locator(self, _selector: str):
+            return _Locator()
+
+        async def wait_for_timeout(self, _timeout_ms: int) -> None:
+            await _async_checkpoint()
+            return None
+
+        async def evaluate(self, _script: str, _payload: dict[str, object]):
+            await _async_checkpoint()
+            return True
+
+    result = await browser_page_flow.dismiss_safe_location_interstitial(_Page())
+
+    assert result["status"] == "still_present"
+    assert "selector" in result
+    assert isinstance(result["selector"], str)
+    assert result["selector"].strip()
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_location_interstitial_dismissal_skips_when_no_signal_present() -> None:
+    class _Page:
+        url = "https://example.com/products/widget"
+
+        def locator(self, _selector: str):
+            raise AssertionError(
+                "locator probe should be skipped when no signal exists"
+            )
+
+        async def evaluate(self, script: str, payload: dict[str, object]):
+            await _async_checkpoint()
+            if "selectors" in payload:
+                return False
+            raise AssertionError(
+                "dismiss-by-text should be skipped when no signal exists"
+            )
+
+        async def wait_for_timeout(self, *_args, **_kwargs) -> None:
+            await _async_checkpoint()
+            raise AssertionError(
+                "wait_for_timeout should be skipped when no signal exists"
+            )
+
+        async def content(self) -> str:
+            await _async_checkpoint()
+            raise AssertionError("content should be skipped when no signal exists")
+
+    result = await browser_page_flow.dismiss_safe_location_interstitial(_Page())
+
+    assert result == {"status": "not_found", "reason": "no_location_signal"}
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_serialize_browser_page_content_reuses_prefetched_html_without_page_content(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    html = "<html><body><h1>Widget Prime</h1></body></html>"
+    page = _FakeExpansionPage(
+        base_html=html,
+    )
+    prefetched_analysis = browser_page_flow.analyze_html(html)
+
+    def _unexpected_analyze_html(*_args, **_kwargs):
+        raise AssertionError("analyze_html should not run for prefetched analysis")
+
+    monkeypatch.setattr(browser_page_flow, "analyze_html", _unexpected_analyze_html)
+    (
+        html,
+        traversal_result,
+        rendered_html,
+        listing_recovery_diagnostics,
+    ) = await browser_page_flow.serialize_browser_page_content_impl(
+        page,
+        surface="ecommerce_detail",
+        traversal_mode=None,
+        listing_recovery_mode=None,
+        traversal_active=False,
+        timeout_seconds=5,
+        max_pages=1,
+        max_scrolls=1,
+        max_records=1,
+        prefetched_html=None,
+        prefetched_analysis=prefetched_analysis,
+        phase_timings_ms={},
+        execute_listing_traversal=None,
+        recover_listing_page_content=None,
+        elapsed_ms=lambda _started_at: 0,
+        on_event=None,
+    )
+
+    assert page.content_calls == 0
+    assert html == rendered_html
+    assert traversal_result is None
+    assert listing_recovery_diagnostics["status"] == "skipped"
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_settle_browser_page_skips_platform_selector_when_probe_is_ready() -> (
+    None
+):
+    calls = {"probe": 0, "wait": 0}
+
+    async def get_page_html_impl(_page):
+        await _async_checkpoint()
+        return "<html><body>Searching...</body></html>"
+
+    async def probe_browser_readiness(*_args, **_kwargs):
+        await _async_checkpoint()
+        calls["probe"] += 1
+        return {
+            "is_ready": True,
+            "matched_listing_selectors": 0 if calls["probe"] == 1 else 1,
+            "structured_data_present": False,
+        }
+
+    async def wait_for_listing_readiness(*_args, **_kwargs):
+        await _async_checkpoint()
+        calls["wait"] += 1
+        return {"status": "ok"}
+
+    result = await browser_page_flow.settle_browser_page_impl(
+        SimpleNamespace(),
+        url="https://careers.clarkassociatesinc.biz/",
+        surface="job_listing",
+        requested_fields=None,
+        timeout_seconds=5,
+        readiness_override={
+            "platform": "clark_careers",
+            "selectors": ["li[data-testid='careers-search-result-listing']"],
+            "max_wait_ms": 20000,
+        },
+        readiness_policy={"require_networkidle": True},
+        phase_timings_ms={},
+        crawler_runtime_settings=crawler_runtime_settings,
+        get_page_html_impl=get_page_html_impl,
+        probe_browser_readiness=probe_browser_readiness,
+        wait_for_listing_readiness=wait_for_listing_readiness,
+        expand_detail_content_if_needed=None,
+        append_readiness_probe=browser_page_flow.append_readiness_probe,
+        elapsed_ms=lambda _started_at: 0,
+    )
+
+    _current_probe, readiness_probes, *_rest = result
+
+    assert calls["wait"] == 0
+    assert [probe["stage"] for probe in readiness_probes] == [
+        "after_navigation",
+    ]
+
+
+@pytest.mark.regression
+def test_detail_expansion_extractability_reuses_supplied_soup_without_reparse(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    soup = BeautifulSoup(
+        "<html><body><section><h2>Materials</h2><p>Leather upper.</p></section></body></html>",
+        "html.parser",
+    )
+
+    def _unexpected_bs4(*_args, **_kwargs):
+        raise AssertionError("BeautifulSoup should not be called when soup is supplied")
+
+    monkeypatch.setattr(browser_page_flow, "BeautifulSoup", _unexpected_bs4)
+    extractability = browser_page_flow._detail_expansion_extractability(
+        html="",
+        soup=soup,
+        surface="ecommerce_detail",
+        requested_fields=["materials"],
+    )
+
+    assert extractability["matched_requested_fields"] == ["materials"]
+
+
+@pytest.mark.regression
+def test_detail_expansion_extractability_limits_probe_fields_to_requested(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seen_probe_fields: set[str] | None = None
+
+    def _fake_extractability(*_args, **kwargs):
+        nonlocal seen_probe_fields
+        raw_probe_fields = kwargs.get("probe_fields")
+        seen_probe_fields = set(raw_probe_fields or [])
+        return {
+            "verified": True,
+            "matched_requested_fields": ["materials"],
+            "extractable_fields": ["materials"],
+            "section_fields": ["materials"],
+        }
+
+    monkeypatch.setattr(
+        browser_page_flow,
+        "requested_content_extractability",
+        _fake_extractability,
+    )
+
+    browser_page_flow._detail_expansion_extractability(
+        html="<html></html>",
+        surface="ecommerce_detail",
+        requested_fields=["materials"],
+    )
+
+    assert seen_probe_fields == {"materials"}
+
+
+@pytest.mark.regression
+def test_detail_expansion_extractability_uses_default_dom_probe_fields_without_requests(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seen_probe_fields: set[str] | None = None
+
+    def _fake_extractability(*_args, **kwargs):
+        nonlocal seen_probe_fields
+        raw_probe_fields = kwargs.get("probe_fields")
+        seen_probe_fields = set(raw_probe_fields or [])
+        return {
+            "verified": False,
+            "matched_requested_fields": [],
+            "extractable_fields": [],
+            "section_fields": [],
+        }
+
+    monkeypatch.setattr(
+        browser_page_flow,
+        "requested_content_extractability",
+        _fake_extractability,
+    )
+
+    browser_page_flow._detail_expansion_extractability(
+        html="<html></html>",
+        surface="ecommerce_detail",
+        requested_fields=None,
+    )
+
+    assert seen_probe_fields is not None
+    assert "description" in seen_probe_fields
+    assert "materials" in seen_probe_fields
+
+
+@dataclass
+class _FakeHandle:
+    label: str
+    page: "_FakeExpansionPage"
+    attributes: dict[str, str]
+    tag_name: str = "button"
+    actionable: bool = True
+    inside_main: bool = False
+    inside_header: bool = False
+    inside_nav: bool = False
+    inside_footer: bool = False
+    inside_aside: bool = False
+
+    async def evaluate(self, script: str) -> str | dict[str, bool] | None:
+        await _async_checkpoint()
+        if "pieces" in script:
+            return self.label
+        if "insideMain" in script:
+            return {
+                "insideMain": self.inside_main,
+                "insideHeader": self.inside_header,
+                "insideNav": self.inside_nav,
+                "insideFooter": self.inside_footer,
+                "insideAside": self.inside_aside,
+            }
+        if "tagName" in script:
+            return self.tag_name
+        if "getBoundingClientRect" in script:
+            return {"actionable": self.actionable}
+        self.page.expanded = True
+        return None
+
+    async def inner_text(self) -> str:
+        await _async_checkpoint()
+        return self.label
+
+    async def get_attribute(self, name: str) -> str | None:
+        await _async_checkpoint()
+        return self.attributes.get(name)
+
+    async def is_visible(self) -> bool:
+        await _async_checkpoint()
+        return self.actionable
+
+    async def scroll_into_view_if_needed(self) -> None:
+        await _async_checkpoint()
+        return None
+
+    async def click(self, **_kwargs) -> None:
+        await _async_checkpoint()
+        self.page.expanded = True
+
+
+class _FakeLocator:
+    def __init__(self, page: "_FakeExpansionPage", selector: str) -> None:
+        self._page = page
+        self._selector = selector
+
+    @property
+    def first(self) -> "_FakeLocator":
+        return self
+
+    async def element_handles(self) -> list[_FakeHandle]:
+        await _async_checkpoint()
+        handles: list[_FakeHandle] = []
+        for row in self._page.labels:
+            attributes = {
+                str(key): str(value)
+                for key, value in dict(row.get("attributes", {})).items()
+            }
+            tag_name = str(row.get("tag_name", "button"))
+            if not self._matches_selector(tag_name, attributes):
+                continue
+            handles.append(
+                _FakeHandle(
+                    row["label"],
+                    self._page,
+                    attributes=attributes,
+                    tag_name=tag_name,
+                    actionable=bool(row.get("actionable", True)),
+                    inside_main=bool(row.get("inside_main", False)),
+                    inside_header=bool(row.get("inside_header", False)),
+                    inside_nav=bool(row.get("inside_nav", False)),
+                    inside_footer=bool(row.get("inside_footer", False)),
+                    inside_aside=bool(row.get("inside_aside", False)),
+                )
+            )
+        return handles
+
+    def _matches_selector(
+        self,
+        tag_name: str,
+        attributes: dict[str, str],
+    ) -> bool:
+        selector = self._selector
+        role = str(attributes.get("role") or "").lower()
+        aria_controls = str(attributes.get("aria-controls") or "")
+        aria_expanded = str(attributes.get("aria-expanded") or "").lower()
+        lowered_tag = tag_name.lower()
+        tag_selectors = {
+            "summary": "summary",
+            "details > summary": "summary",
+            "button": "button",
+            "a": "a",
+        }
+        if selector in tag_selectors:
+            return lowered_tag == tag_selectors[selector]
+        if selector == "[role='button']":
+            return role == "button"
+        controlled_selectors = {
+            "button[aria-controls]": lowered_tag == "button",
+            "[role='button'][aria-controls]": role == "button",
+            "[role='tab'][aria-controls]": role == "tab",
+        }
+        if selector in controlled_selectors:
+            return controlled_selectors[selector] and bool(aria_controls)
+        if selector == "a[href^='#']":
+            return lowered_tag == "a" and str(attributes.get("href") or "").startswith(
+                "#"
+            )
+        if selector == "[aria-expanded='false']":
+            return aria_expanded == "false"
+        return False
+
+    async def count(self) -> int:
+        await _async_checkpoint()
+        if self._selector in self._page.selector_counts:
+            return int(self._page.selector_counts[self._selector])
+        if self._selector in self._page.card_selectors:
+            return int(self._page.card_count)
+        return 0
+
+    async def is_visible(self, **_kwargs) -> bool:
+        return await self.count() > 0
+
+    async def is_disabled(self) -> bool:
+        await _async_checkpoint()
+        return False
+
+    async def click(self, **_kwargs) -> None:
+        await _async_checkpoint()
+        self._page.expanded = True
+
+
+class _FakeRoleLocator:
+    def __init__(self, page: "_FakeExpansionPage", role: str, name: object) -> None:
+        self._page = page
+        self._role = role
+        self._name = str(name or "").lower()
+        self._name_pattern = name if hasattr(name, "search") else None
+
+    @property
+    def first(self) -> "_FakeRoleLocator":
+        return self
+
+    def nth(self, index: int) -> "_FakeRoleLocator":
+        del index
+        return self
+
+    async def count(self) -> int:
+        await _async_checkpoint()
+        return sum(
+            1
+            for role, name in self._page.role_targets
+            if role == self._role and self._matches_name(name)
+        )
+
+    async def is_visible(self, **_kwargs) -> bool:
+        return await self.count() > 0
+
+    async def is_disabled(self) -> bool:
+        await _async_checkpoint()
+        return False
+
+    async def click(self, **_kwargs) -> None:
+        if await self.count():
+            self._page.expanded = True
+
+    def _matches_name(self, name: str) -> bool:
+        if self._name_pattern is not None:
+            return bool(self._name_pattern.search(name))
+        return name == self._name
+
+
+class _NoTimeoutRoleLocator(_FakeRoleLocator):
+    async def is_visible(self, **_kwargs) -> bool:
+        return await self.count() > 0
+
+
+class _WaitingRoleLocator(_FakeRoleLocator):
+    def __init__(self, page: "_FakeExpansionPage", role: str, name: str) -> None:
+        super().__init__(page, role, name)
+        self.wait_for_calls: list[tuple[str | None, int | None]] = []
+
+    async def wait_for(
+        self,
+        *,
+        state: str | None = None,
+        **kwargs,
+    ) -> None:
+        self.wait_for_calls.append((state, kwargs.get("timeout")))
+        if await self.count() == 0:
+            raise PlaywrightTimeoutError("not visible")
+
+
+class _FakePageContext:
+    def __init__(self, page: "_FakeExpansionPage") -> None:
+        self._page = page
+
+    async def cookies(self, *_args, **_kwargs) -> list[dict[str, object]]:
+        return await self._page._cookies(*_args, **_kwargs)
+
+    async def close(self) -> None:
+        await self._page._close_context()
+
+    async def new_page(self) -> "_FakeExpansionPage":
+        await _async_checkpoint()
+        warm_page = _FakeExpansionPage(base_html=self._page.base_html)
+        self._page.spawned_pages.append(warm_page)
+        return warm_page
+
+    def on(self, event_name: str, callback: Any) -> None:
+        self._page.listeners.setdefault(f"context:{event_name}", []).append(callback)
+
+    def remove_listener(self, event_name: str, callback: Any) -> None:
+        key = f"context:{event_name}"
+        listeners = self._page.listeners.get(key)
+        if not listeners:
+            return
+        self._page.listeners[key] = [
+            listener for listener in listeners if listener is not callback
+        ]
+
+
+class _FakeExpansionPage:
+    def __init__(
+        self,
+        *,
+        base_html: str,
+        **options: Any,
+    ) -> None:
+        expanded_html = options.get("expanded_html")
+        labels = options.get("labels")
+        selector_counts = options.get("selector_counts")
+        accessibility_snapshot = options.get("accessibility_snapshot")
+        role_targets = options.get("role_targets")
+        goto_failures = options.get("goto_failures")
+        response_events = options.get("response_events")
+        rendered_listing_fragments = options.get("rendered_listing_fragments")
+        wait_html_sequence = options.get("wait_html_sequence")
+        cookie_snapshots = options.get("cookie_snapshots")
+        content_blocker = options.get("content_blocker")
+        content_entered = options.get("content_entered")
+
+        self.base_html = base_html
+        self.expanded_html = str(expanded_html or base_html)
+        self.shadow_html = options.get("shadow_html")
+        self.labels = [*labels] if labels else []
+        self.selector_counts = dict(selector_counts or {})
+        self.card_count = int(options.get("card_count", 0))
+        self.expanded = False
+        self.url = "https://example.com/products/widget"
+        self.wait_timeout_calls: list[int] = []
+        self.wait_function_calls: list[int] = []
+        self.load_state_calls: list[str] = []
+        self.card_selectors = set()
+        self.role_targets = set(role_targets or set())
+        self.goto_calls: list[str] = []
+        self.goto_timeout_calls: list[int | None] = []
+        self.goto_failures = dict(goto_failures or {})
+        self.goto_status = int(options.get("goto_status", 200))
+        self.response_events = [*response_events] if response_events else []
+        self.wait_for_selector_error = options.get("wait_for_selector_error")
+        self.wait_for_selector_calls: list[tuple[str, str | None, int | None]] = []
+        self.listeners: dict[str, list[Any]] = {}
+        self.rendered_listing_fragments = (
+            [*rendered_listing_fragments] if rendered_listing_fragments else []
+        )
+        self.wait_html_sequence = [*wait_html_sequence] if wait_html_sequence else []
+        self.cookie_snapshots = [*cookie_snapshots] if cookie_snapshots else [[]]
+        self.content_blocker = content_blocker
+        self.content_block_after_calls = max(
+            0, int(options.get("content_block_after_calls", 0))
+        )
+        self.ignore_content_cancellation = bool(
+            options.get("ignore_content_cancellation", False)
+        )
+        self.content_entered = content_entered
+        self.content_calls = 0
+        self.context_close_calls = 0
+        self.page_close_calls = 0
+        self.spawned_pages: list[_FakeExpansionPage] = []
+        self.accessibility = SimpleNamespace(
+            snapshot=self._snapshot if accessibility_snapshot is not None else None
+        )
+        self._accessibility_snapshot = accessibility_snapshot
+        self.shadow_flattened = False
+        self.context = _FakePageContext(self)
+
+    async def _snapshot(self) -> dict[str, object] | None:
+        await _async_checkpoint()
+        return self._accessibility_snapshot
+
+    def on(self, event_name: str, callback: Any) -> None:
+        self.listeners.setdefault(event_name, []).append(callback)
+
+    def remove_listener(self, event_name: str, callback: Any) -> None:
+        listeners = self.listeners.get(event_name)
+        if not listeners:
+            return
+        self.listeners[event_name] = [
+            listener for listener in listeners if listener is not callback
+        ]
+
+    async def goto(
+        self,
+        url: str,
+        wait_until: str | None = None,
+        **kwargs,
+    ) -> Any:
+        await _async_checkpoint()
+        self.url = url
+        strategy = str(wait_until or "")
+        self.goto_calls.append(strategy)
+        timeout = kwargs.get("timeout")
+        self.goto_timeout_calls.append(timeout)
+        if strategy in self.goto_failures:
+            raise self.goto_failures[strategy]
+        for callback in tuple(self.listeners.get("response", [])):
+            for response in self.response_events:
+                callback(response)
+        return SimpleNamespace(
+            status=self.goto_status,
+            headers={"content-type": "text/html"},
+        )
+
+    async def _cookies(self, *_args, **_kwargs) -> list[dict[str, object]]:
+        await _async_checkpoint()
+        return [*(self.cookie_snapshots[0] if self.cookie_snapshots else [])]
+
+    async def _close_context(self) -> None:
+        await _async_checkpoint()
+        self.context_close_calls += 1
+        if self.content_blocker is not None:
+            self.content_blocker.set()
+
+    async def close(self) -> None:
+        await _async_checkpoint()
+        self.page_close_calls += 1
+        if self.content_blocker is not None:
+            self.content_blocker.set()
+
+    async def evaluate(self, script: str, arg: Any | None = None) -> Any:
+        await _async_checkpoint()
+        if "document.querySelectorAll('*')" in script and self.shadow_html is not None:
+            self.shadow_flattened = True
+            return 1
+        if "const selectors = Array.isArray(args?.selectors)" in script:
+            return [*self.rendered_listing_fragments]
+        if "querySelectorAll(selector).length" in script:
+            selectors = [*(arg or [])]
+            return max(
+                (int(self.selector_counts.get(selector, 0)) for selector in selectors),
+                default=0,
+            )
+        if "MutationObserver" in script:
+            return {"observed": True}
+        return None
+
+    async def wait_for_timeout(self, timeout_ms: int) -> None:
+        await _async_checkpoint()
+        self.wait_timeout_calls.append(timeout_ms)
+        if self.wait_html_sequence:
+            next_html = self.wait_html_sequence.pop(0)
+            self.base_html = next_html
+            self.expanded_html = next_html
+        if len(self.cookie_snapshots) > 1:
+            self.cookie_snapshots.pop(0)
+
+    async def wait_for_function(self, _script: str, **kwargs) -> None:
+        await _async_checkpoint()
+        arg = kwargs.get("arg")
+        del arg
+        timeout = kwargs.get("timeout")
+        self.wait_function_calls.append(int(timeout or 0))
+        if self.wait_html_sequence:
+            next_html = self.wait_html_sequence.pop(0)
+            self.base_html = next_html
+            self.expanded_html = next_html
+        if len(self.cookie_snapshots) > 1:
+            self.cookie_snapshots.pop(0)
+
+    async def wait_for_load_state(self, state: str, **_kwargs) -> None:
+        await _async_checkpoint()
+        self.load_state_calls.append(state)
+
+    async def wait_for_selector(
+        self,
+        selector: str,
+        *,
+        state: str | None = None,
+        **kwargs,
+    ) -> None:
+        await _async_checkpoint()
+        timeout = kwargs.get("timeout")
+        self.wait_for_selector_calls.append((selector, state, timeout))
+        if self.wait_for_selector_error is not None:
+            raise self.wait_for_selector_error
+
+    def locator(self, selector: str) -> _FakeLocator:
+        return _FakeLocator(self, selector)
+
+    def get_by_role(
+        self, role: str, *, name: str, exact: bool = True
+    ) -> _FakeRoleLocator:
+        del exact
+        return _FakeRoleLocator(self, role, name)
+
+    async def content(self) -> str:
+        self.content_calls += 1
+        if self.content_entered is not None:
+            self.content_entered.set()
+        if (
+            self.content_blocker is not None
+            and self.content_calls > self.content_block_after_calls
+            and not self.content_blocker.is_set()
+        ):
+            while not self.content_blocker.is_set():
+                try:
+                    await self.content_blocker.wait()
+                except asyncio.CancelledError:
+                    if not self.ignore_content_cancellation:
+                        raise
+        html = self.expanded_html if self.expanded else self.base_html
+        if self.shadow_flattened and self.shadow_html is not None:
+            return self.shadow_html
+        return html
+
+    async def screenshot(self, *, path: str | Path | None = None, **kwargs) -> bytes:
+        await _async_checkpoint()
+        del kwargs
+        payload = b"fake-png"
+        if path is not None:
+            Path(path).write_bytes(payload)
+        return payload
+
+
+class _FakeRuntime:
+    def __init__(self, page: _FakeExpansionPage) -> None:
+        self._page = page
+
+    @asynccontextmanager
+    async def page(self, **_kwargs):
+        await _async_checkpoint()
+        yield self._page
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_browser_fetch_fast_paths_ready_detail_without_extra_waits() -> None:
+    page = _FakeExpansionPage(
+        base_html="""
+        <html>
+          <head>
+            <script type="application/ld+json">
+            {"@context":"https://schema.org","@type":"Product","name":"Widget Prime"}
+            </script>
+          </head>
+          <body>
+            <h1>Widget Prime</h1>
+            <div>
+              Detailed product information with visible rendered content.
+              Detailed product information with visible rendered content.
+              Detailed product information with visible rendered content.
+              Detailed product information with visible rendered content.
+              Detailed product information with visible rendered content.
+              Detailed product information with visible rendered content.
+              Detailed product information with visible rendered content.
+              Detailed product information with visible rendered content.
+            </div>
+          </body>
+        </html>
+        """,
+    )
+
+    async def _fake_runtime(**_kwargs):
+        await _async_checkpoint()
+        return _FakeRuntime(page)
+
+    result = await browser_runtime.browser_fetch(
+        "https://example.com/products/widget",
+        5,
+        surface="ecommerce_detail",
+        runtime_provider=_fake_runtime,
+    )
+
+    assert result.browser_diagnostics["phase_timings_ms"]["optimistic_wait"] == 0
+    assert result.browser_diagnostics["phase_timings_ms"]["networkidle_wait"] == 0
+    assert result.browser_diagnostics["phase_timings_ms"]["readiness_wait"] == 0
+    assert result.browser_diagnostics["networkidle_skip_reason"] == "fast_path_ready"
+    assert (
+        result.browser_diagnostics["detail_expansion"]["reason"]
+        == "canonical_detail_already_ready"
+    )
+    assert result.browser_diagnostics["detail_expansion"]["status"] == "skipped"
+    assert result.browser_diagnostics["detail_expansion"]["clicked_count"] == 0
+    assert page.goto_calls == ["domcontentloaded"]
+    assert page.wait_timeout_calls == []
+    assert page.content_calls == 2
+    assert "networkidle" not in page.load_state_calls
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_browser_fetch_closes_unexpected_popup_pages() -> None:
+    popup_page = _FakeExpansionPage(base_html="<html><body>popup</body></html>")
+
+    class _PopupPage(_FakeExpansionPage):
+        async def goto(
+            self,
+            url: str,
+            wait_until: str | None = None,
+            **kwargs,
+        ) -> Any:
+            response = await super().goto(url, wait_until=wait_until, **kwargs)
+            for callback in tuple(self.listeners.get("context:page", [])):
+                callback(popup_page)
+            await asyncio.sleep(0)
+            return response
+
+    page = _PopupPage(
+        base_html="""
+        <html>
+          <head>
+            <script type="application/ld+json">
+            {"@context":"https://schema.org","@type":"Product","name":"Widget Prime"}
+            </script>
+          </head>
+          <body>
+            <h1>Widget Prime</h1>
+            <p>Price Reviews Product details Shipping</p>
+          </body>
+        </html>
+        """,
+    )
+
+    async def _fake_runtime(**_kwargs):
+        await _async_checkpoint()
+        return _FakeRuntime(page)
+
+    result = await browser_runtime.browser_fetch(
+        "https://example.com/products/widget",
+        5,
+        surface="ecommerce_detail",
+        runtime_provider=_fake_runtime,
+    )
+
+    assert result.browser_diagnostics["browser_outcome"] == "usable_content"
+    assert popup_page.page_close_calls == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_browser_fetch_recovers_direct_navigation_challenge(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A transient (non-terminal) challenge shell: no "Access Denied" title/strong
+    # evidence, so it is NOT a terminal hard block and the recovery loop must keep
+    # polling until the shell swaps to usable content (INVARIANTS §6).
+    page = _FakeExpansionPage(
+        base_html="<html><head><title>Just a moment...</title></head><body><div id='challenge'>Verifying your browser...</div></body></html>",
+        wait_html_sequence=[
+            """
+            <html>
+              <head>
+                <script type="application/ld+json">
+                {"@context":"https://schema.org","@type":"Product","name":"Widget Prime","offers":{"price":"12.00"}}
+                </script>
+              </head>
+              <body>
+                <main>
+                  <h1>Widget Prime</h1>
+                  <img src="/widget.jpg" alt="Widget Prime">
+                  <span class="price">$12.00</span>
+                  <button>Add to cart</button>
+                  <p>Durable product description with enough visible detail for extraction.</p>
+                </main>
+              </body>
+            </html>
+            """
+        ],
+        goto_status=403,
+    )
+
+    async def _fake_runtime(**_kwargs):
+        await _async_checkpoint()
+        return _FakeRuntime(page)
+
+    async def _classify_blocked_page(html: str, status_code: int):
+        await _async_checkpoint()
+        lowered = html.lower()
+        challenged = "verifying your browser" in lowered or "just a moment" in lowered
+        return SimpleNamespace(
+            blocked=challenged,
+            evidence=["provider:datadome"] if challenged else [],
+            provider_hits=["datadome"] if challenged else [],
+            active_provider_hits=["datadome"] if challenged else [],
+            title_matches=[],
+            strong_hits=[],
+            challenge_element_hits=["#challenge"] if challenged else [],
+        )
+
+    monkeypatch.setattr(
+        browser_runtime,
+        "classify_blocked_page_async",
+        _classify_blocked_page,
+    )
+    monkeypatch.setattr(
+        browser_page_flow,
+        "classify_blocked_page_async",
+        _classify_blocked_page,
+    )
+
+    result = await browser_runtime.browser_fetch(
+        "https://example.com/products/widget",
+        5,
+        surface="ecommerce_detail",
+        browser_reason="http-escalation",
+        runtime_provider=_fake_runtime,
+    )
+
+    assert result.status_code == 200
+    assert result.browser_diagnostics["browser_outcome"] == "usable_content"
+    assert "Widget Prime" in result.html
+    assert page.wait_timeout_calls
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_browser_fetch_does_not_repeat_challenge_recovery_after_navigation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        browser_runtime.crawler_runtime_settings,
+        "origin_warm_pause_ms",
+        0,
+    )
+    page = _FakeExpansionPage(
+        base_html="<html><head><title>Access Denied</title></head><body>Access Denied</body></html>",
+        goto_status=403,
+    )
+
+    async def _fake_runtime(**_kwargs):
+        await _async_checkpoint()
+        return _FakeRuntime(page)
+
+    recover_calls: list[str] = []
+
+    async def _recover_once(*args, **kwargs):
+        await _async_checkpoint()
+        del args, kwargs
+        recover_calls.append("recover")
+        return SimpleNamespace(status=403, headers={"content-type": "text/html"})
+
+    async def _classify_blocked_page(_html: str, _status_code: int):
+        await _async_checkpoint()
+        return SimpleNamespace(
+            blocked=True,
+            evidence=["title:access denied"],
+            provider_hits=[],
+            challenge_element_hits=[],
+        )
+
+    monkeypatch.setattr(browser_page_flow, "recover_browser_challenge", _recover_once)
+    monkeypatch.setattr(browser_runtime, "recover_browser_challenge", _recover_once)
+    monkeypatch.setattr(
+        browser_runtime,
+        "classify_blocked_page_async",
+        _classify_blocked_page,
+    )
+
+    result = await browser_runtime.browser_fetch(
+        "https://example.com/products/widget",
+        5,
+        surface="ecommerce_detail",
+        runtime_provider=_fake_runtime,
+    )
+
+    assert recover_calls == ["recover"]
+    assert result.status_code == 403
+    assert result.browser_diagnostics["browser_outcome"] == "challenge_page"
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_browser_fetch_fast_paths_ready_listing_cards_without_networkidle() -> (
+    None
+):
+    selectors = list(CARD_SELECTORS.get("ecommerce") or [])
+    page = _FakeExpansionPage(
+        base_html="<html><body><article class='product-card'>A</article></body></html>",
+        selector_counts=dict.fromkeys(selectors[:1], 3),
+        card_count=3,
+    )
+    page.card_selectors = set(selectors)
+
+    async def _fake_runtime(**_kwargs):
+        await _async_checkpoint()
+        return _FakeRuntime(page)
+
+    result = await browser_runtime.browser_fetch(
+        "https://example.com/collections/widgets",
+        5,
+        surface="ecommerce_listing",
+        runtime_provider=_fake_runtime,
+    )
+
+    assert result.browser_diagnostics["phase_timings_ms"]["networkidle_wait"] == 0
+    assert (
+        result.browser_diagnostics["detail_expansion"]["reason"] == "non_detail_surface"
+    )
+    assert page.wait_timeout_calls == []
+    assert page.load_state_calls == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_browser_fetch_listing_does_not_treat_product_titles_as_extractable_fields() -> (
+    None
+):
+    selectors = list(CARD_SELECTORS.get("ecommerce") or [])
+    page = _FakeExpansionPage(
+        base_html="""
+        <html>
+          <body>
+            <section class="product-card-grid">
+              <article class="product-card">
+                <h2>Batman Wayne Industries</h2>
+                <p>Relaxed fit cotton shirt with oversized graphic print.</p>
+              </article>
+              <article class="product-card">
+                <h2>Venom Pure Destruction</h2>
+                <p>Heavyweight jersey shirt with all-over print.</p>
+              </article>
+            </section>
+          </body>
+        </html>
+        """,
+        selector_counts=dict.fromkeys(selectors[:1], 2),
+        card_count=2,
+    )
+    page.card_selectors = set(selectors)
+
+    async def _fake_runtime(**_kwargs):
+        await _async_checkpoint()
+        return _FakeRuntime(page)
+
+    result = await browser_runtime.browser_fetch(
+        "https://example.com/collections/widgets",
+        5,
+        surface="ecommerce_listing",
+        runtime_provider=_fake_runtime,
+    )
+
+    assert (
+        result.browser_diagnostics["detail_expansion"]["reason"] == "non_detail_surface"
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_browser_fetch_listing_skips_detail_extractability_probe(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    selectors = list(CARD_SELECTORS.get("ecommerce") or [])
+    page = _FakeExpansionPage(
+        base_html="<html><body><article class='product-card'>A</article></body></html>",
+        selector_counts=dict.fromkeys(selectors[:1], 3),
+        card_count=3,
+    )
+    page.card_selectors = set(selectors)
+
+    async def _fake_runtime(**_kwargs):
+        await _async_checkpoint()
+        return _FakeRuntime(page)
+
+    def _unexpected_extractability(*args, **kwargs):
+        raise AssertionError("listing settle should not probe detail extractability")
+
+    monkeypatch.setattr(
+        browser_page_flow,
+        "requested_content_extractability",
+        _unexpected_extractability,
+    )
+
+    result = await browser_runtime.browser_fetch(
+        "https://example.com/collections/widgets",
+        5,
+        surface="ecommerce_listing",
+        runtime_provider=_fake_runtime,
+    )
+
+    assert (
+        result.browser_diagnostics["detail_expansion"]["reason"] == "non_detail_surface"
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_browser_fetch_attempts_implicit_networkidle_for_unmatched_spa_listing(
+    patch_settings,
+) -> None:
+    patch_settings(
+        browser_navigation_optimistic_wait_ms=25,
+        browser_spa_implicit_networkidle_timeout_ms=250,
+    )
+    page = _FakeExpansionPage(base_html="<html><body>Loading</body></html>")
+    probe_results = iter(
+        [
+            {
+                "url": "https://example.com/spa/listing",
+                "surface": "ecommerce_listing",
+                "is_ready": False,
+                "detail_like": False,
+                "structured_data_present": True,
+                "visible_text_length": 20,
+                "detail_hint_count": 0,
+                "listing_card_count": 0,
+                "matched_listing_selectors": 0,
+                "h1_present": False,
+            },
+            {
+                "url": "https://example.com/spa/listing",
+                "surface": "ecommerce_listing",
+                "is_ready": False,
+                "detail_like": False,
+                "structured_data_present": True,
+                "visible_text_length": 24,
+                "detail_hint_count": 0,
+                "listing_card_count": 0,
+                "matched_listing_selectors": 0,
+                "h1_present": False,
+            },
+            {
+                "url": "https://example.com/spa/listing",
+                "surface": "ecommerce_listing",
+                "is_ready": False,
+                "detail_like": False,
+                "structured_data_present": True,
+                "visible_text_length": 260,
+                "detail_hint_count": 0,
+                "listing_card_count": 0,
+                "matched_listing_selectors": 0,
+                "h1_present": False,
+            },
+            {
+                "url": "https://example.com/spa/listing",
+                "surface": "ecommerce_listing",
+                "is_ready": False,
+                "detail_like": False,
+                "structured_data_present": True,
+                "visible_text_length": 260,
+                "detail_hint_count": 0,
+                "listing_card_count": 0,
+                "matched_listing_selectors": 0,
+                "h1_present": False,
+            },
+        ]
+    )
+
+    async def _fake_runtime(**_kwargs):
+        await _async_checkpoint()
+        return _FakeRuntime(page)
+
+    original_probe_browser_readiness = browser_runtime.probe_browser_readiness
+    try:
+
+        async def _fake_probe_browser_readiness(*args, **kwargs):
+            await _async_checkpoint()
+            del args, kwargs
+            try:
+                return probe_results.__next__()
+            except StopIteration as exc:
+                raise AssertionError("Expected another probe result") from exc
+
+        browser_runtime.probe_browser_readiness = _fake_probe_browser_readiness
+        result = await browser_runtime.browser_fetch(
+            "https://example.com/spa/listing",
+            5,
+            surface="ecommerce_listing",
+            runtime_provider=_fake_runtime,
+        )
+    finally:
+        browser_runtime.probe_browser_readiness = original_probe_browser_readiness
+
+    assert result.browser_diagnostics["phase_timings_ms"]["optimistic_wait"] >= 0
+    assert result.browser_diagnostics["phase_timings_ms"]["networkidle_wait"] >= 0
+    assert result.browser_diagnostics["phase_timings_ms"]["readiness_wait"] >= 0
+    assert page.wait_timeout_calls == []
+    assert page.wait_function_calls == [25]
+    assert page.load_state_calls == ["networkidle"]
+    assert result.browser_diagnostics["networkidle_skip_reason"] is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_probe_browser_readiness_does_not_fast_path_listing_on_visible_text_alone() -> (
+    None
+):
+    page = _FakeExpansionPage(
+        base_html="<html><body>" + ("Catalog entry " * 40) + "</body></html>",
+    )
+
+    probe = await browser_runtime.probe_browser_readiness(
+        page,
+        url="https://example.com/catalog",
+        surface="ecommerce_listing",
+        listing_override=None,
+    )
+
+    assert probe["listing_card_count"] == 0
+    assert probe["matched_listing_selectors"] == 0
+    assert probe["visible_text_length"] >= (
+        int(crawler_runtime_settings.browser_readiness_visible_text_min) * 2
+    )
+    assert probe["is_ready"] is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_probe_browser_readiness_does_not_fast_path_ecommerce_category_cards() -> (
+    None
+):
+    page = _FakeExpansionPage(
+        base_html="""
+        <html><body>
+          <h1>Outdoor Footwear</h1>
+          <button class="plp-card">
+            <a href="/ca/en/c/mens/footwear-run/wid-kjyr4dq9">
+              <h4>Run footwear</h4>
+              <img src="/run.jpg" alt="Trail running category">
+            </a>
+          </button>
+          <button class="plp-card">
+            <a href="/ca/en/c/mens/footwear-hike/wid-kjyr4dq9">
+              <h4>Hike footwear</h4>
+              <img src="/hike.jpg" alt="Hike category">
+            </a>
+          </button>
+          <button class="plp-card">
+            <a href="/ca/en/c/mens/footwear-climb/wid-kjyr4dq9">
+              <h4>Climb footwear</h4>
+              <img src="/climb.jpg" alt="Climb category">
+            </a>
+          </button>
+        </body></html>
+        """,
+        selector_counts={".plp-card": 3},
+    )
+
+    probe = await browser_runtime.probe_browser_readiness(
+        page,
+        url="https://arcteryx.com/ca/en/c/mens/footwear",
+        surface="ecommerce_listing",
+        listing_override=None,
+    )
+
+    assert probe["listing_card_count"] == 0
+    assert probe["is_ready"] is False
+
+
+@pytest.mark.regression
+def test_ecommerce_ready_card_count_rejects_repeated_product_attribute_tokens() -> None:
+    soup = BeautifulSoup(
+        """
+        <html><body>
+          <div class="product-card-card">
+            <a href="/collections/run"><img src="/run.jpg" alt="Run"></a>
+          </div>
+          <div class="product-card-card">
+            <a href="/collections/hike"><img src="/hike.jpg" alt="Hike"></a>
+          </div>
+          <div class="product-card-card">
+            <a href="/collections/climb"><img src="/climb.jpg" alt="Climb"></a>
+          </div>
+        </body></html>
+        """,
+        "html.parser",
+    )
+
+    assert browser_readiness._ecommerce_ready_card_count(soup) == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_probe_browser_readiness_accepts_ecommerce_product_tiles() -> None:
+    page = _FakeExpansionPage(
+        base_html="""
+        <html><body>
+          <div class="qa--grid-product-tile product-tile" data-product-id="X000009613">
+            <a href="/shop/mens/vertex-speed-shoe-9613">
+              <img src="/vertex.jpg" alt="Vertex Speed Shoe Men's">
+              <span class="product-tile-name">Vertex Speed Shoe Men's</span>
+              <span class="product-tile-price">$240.00</span>
+            </a>
+          </div>
+          <div class="qa--grid-product-tile product-tile" data-product-id="X000009715">
+            <a href="/shop/mens/vertex-speed-low-shoe-9715">
+              <img src="/vertex-low.jpg" alt="Vertex Speed Low Shoe Men's">
+              <span class="product-tile-name">Vertex Speed Low Shoe Men's</span>
+              <span class="product-tile-price">$230.00</span>
+            </a>
+          </div>
+          <div class="qa--grid-product-tile product-tile" data-product-id="X000010398">
+            <a href="/shop/mens/norvan-ld-4-shoe-0398">
+              <img src="/norvan.jpg" alt="Norvan LD 4 Shoe Men's">
+              <span class="product-tile-name">Norvan LD 4 Shoe Men's</span>
+              <span class="product-tile-price">$220.00</span>
+            </a>
+          </div>
+        </body></html>
+        """,
+    )
+
+    probe = await browser_runtime.probe_browser_readiness(
+        page,
+        url="https://arcteryx.com/ca/en/c/mens/footwear",
+        surface="ecommerce_listing",
+        listing_override=None,
+    )
+
+    assert probe["listing_card_count"] == 3
+    assert probe["is_ready"] is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_browser_fetch_fast_paths_h1_detail_without_configured_hints() -> None:
+    page = _FakeExpansionPage(
+        base_html="""
+        <html>
+          <head><title>Widget Prime for Men | Example</title></head>
+          <body>
+            <h1>Widget Prime</h1>
+            <p>
+              Premium polarized sunglasses with silver-tone aviator frames,
+              adjustable nose pads, and a protective case included for everyday wear.
+            </p>
+            <span>$450.00</span>
+          </body>
+        </html>
+        """,
+    )
+
+    async def _fake_runtime(**_kwargs):
+        await _async_checkpoint()
+        return _FakeRuntime(page)
+
+    result = await browser_runtime.browser_fetch(
+        "https://example.com/products/widget",
+        5,
+        surface="ecommerce_detail",
+        runtime_provider=_fake_runtime,
+    )
+
+    assert result.browser_diagnostics["readiness_probes"][0]["is_ready"] is True
+    assert result.browser_diagnostics["phase_timings_ms"]["optimistic_wait"] == 0
+    assert result.browser_diagnostics["phase_timings_ms"]["networkidle_wait"] == 0
+    assert result.browser_diagnostics["phase_timings_ms"]["readiness_wait"] == 0
+    assert result.browser_diagnostics["detail_expansion"]["status"] == "skipped"
+    assert (
+        result.browser_diagnostics["detail_expansion"]["reason"]
+        == "canonical_detail_already_ready"
+    )
+    assert page.wait_function_calls == []
+    assert page.load_state_calls == []
+    assert page.wait_timeout_calls == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_probe_browser_readiness_accepts_detail_title_matching_url() -> None:
+    visible_text = (
+        "This vintage bracelet is crafted in 18-karat gold with coral cabochons "
+        "and diamond accents. The product page includes condition notes, "
+        "shipping information, returns, and authenticated packaging details."
+    )
+    probe = await browser_readiness.probe_browser_readiness_impl(
+        object(),
+        url=(
+            "https://www.net-a-porter.com/en-us/shop/product/eleuteri/"
+            "jewelry-and-watches/vintage-bracelets/"
+            "plus-bulgari-vintage-1980s-doppio-cuore-18-karat-gold-coral-and-diamond-bracelet/"
+            "46376663163120086"
+        ),
+        surface="ecommerce_detail",
+        html=(
+            "<html><head><title>ELEUTERI + Bulgari Vintage 1980s Doppio Cuore "
+            "18-karat gold, coral and diamond bracelet | NET-A-PORTER</title></head>"
+            f"<body><main><p>{visible_text}</p></main></body></html>"
+        ),
+        detail_readiness_hint_count=browser_readiness.detail_readiness_hint_count,
+    )
+
+    assert probe["is_ready"] is True
+    assert probe["detail_title_matches_url"] is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_browser_fetch_bounds_response_capture_workers_under_burst_load(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _FakeResponse:
+        def __init__(self, index: int) -> None:
+            self.url = f"https://example.com/api/{index}"
+            self.headers = {"content-type": "application/json"}
+            self.request = SimpleNamespace(method="GET")
+            self.status = 200
+
+    page = _FakeExpansionPage(
+        base_html="<html><body><h1>Widget Prime</h1></body></html>",
+        response_events=[_FakeResponse(index) for index in range(200)],
+    )
+
+    async def _fake_runtime(**_kwargs):
+        await _async_checkpoint()
+        return _FakeRuntime(page)
+
+    async def _fake_read_network_payload_body(response, **_kwargs):
+        await _async_checkpoint()
+        return browser_runtime.NetworkPayloadReadResult(
+            body=f'{{"id": "{response.url}"}}'.encode("utf-8"),
+            outcome="ok",
+        )
+
+    create_task_calls = 0
+    original_create_task = browser_capture.asyncio.create_task
+
+    def _counting_create_task(coro):
+        nonlocal create_task_calls
+        code = getattr(coro, "cr_code", None)
+        if getattr(code, "co_name", "") == "_capture_worker":
+            create_task_calls += 1
+        return original_create_task(coro)
+
+    monkeypatch.setattr(browser_capture.asyncio, "create_task", _counting_create_task)
+    monkeypatch.setattr(
+        browser_runtime,
+        "should_capture_network_payload",
+        lambda **kwargs: True,
+    )
+    monkeypatch.setattr(
+        browser_runtime,
+        "read_network_payload_body",
+        _fake_read_network_payload_body,
+    )
+    monkeypatch.setattr(
+        browser_runtime,
+        "classify_network_endpoint",
+        lambda **kwargs: {"type": "api", "family": "generic"},
+    )
+
+    result = await browser_runtime.browser_fetch(
+        "https://example.com/products/widget",
+        5,
+        surface="ecommerce_detail",
+        runtime_provider=_fake_runtime,
+    )
+
+    assert create_task_calls == browser_runtime.BROWSER_CAPTURE_WORKERS
+    assert (
+        len(result.network_payloads)
+        == browser_runtime.BROWSER_CAPTURE_MAX_NETWORK_PAYLOADS
+    )
+    assert (
+        result.browser_diagnostics["dropped_network_payload_events"]
+        >= 200 - browser_runtime.BROWSER_CAPTURE_QUEUE_SIZE
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_browser_fetch_expands_detail_accordions_without_requested_fields() -> None:
+    page = _FakeExpansionPage(
+        base_html="<html><body><details><summary>Specifications</summary></details></body></html>",
+        expanded_html="""
+        <html><body>
+          <details open><summary>Specifications</summary>
+            <div class="product-features">Rubber outsole, reinforced toe cap.</div>
+          </details>
+        </body></html>
+        """,
+        labels=[{"label": "product specifications"}, {"label": "share"}],
+    )
+
+    async def _fake_runtime(**_kwargs):
+        await _async_checkpoint()
+        return _FakeRuntime(page)
+
+    result = await browser_runtime.browser_fetch(
+        "https://example.com/products/widget",
+        5,
+        surface="ecommerce_detail",
+        runtime_provider=_fake_runtime,
+    )
+
+    assert "Rubber outsole" in result.html
+    assert result.browser_diagnostics["detail_expansion"]["clicked_count"] == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_browser_fetch_expands_requested_field_sections_even_when_probe_is_ready() -> (
+    None
+):
+    page = _FakeExpansionPage(
+        base_html="<html><body><h1>Widget Prime</h1><button>Materials</button></body></html>",
+        expanded_html="""
+        <html><body>
+          <h1>Widget Prime</h1>
+          <button aria-controls="materials-panel">Materials</button>
+          <section id="materials-panel">Full-grain leather upper.</section>
+        </body></html>
+        """,
+        labels=[
+            {
+                "label": "materials",
+                "attributes": {"aria-controls": "materials-panel"},
+            }
+        ],
+    )
+
+    async def _fake_runtime(**_kwargs):
+        await _async_checkpoint()
+        return _FakeRuntime(page)
+
+    result = await browser_runtime.browser_fetch(
+        "https://example.com/products/widget",
+        5,
+        surface="ecommerce_detail",
+        requested_fields=["materials"],
+        runtime_provider=_fake_runtime,
+    )
+
+    assert "Full-grain leather upper." in result.html
+    assert result.browser_diagnostics["detail_expansion"]["clicked_count"] == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_browser_fetch_skips_detail_expansion_when_requested_section_is_already_extractable() -> (
+    None
+):
+    page = _FakeExpansionPage(
+        base_html="""
+        <html><body>
+          <h1>Widget Prime</h1>
+          <section>
+            <h2>FEATURES &amp; BENEFITS</h2>
+            <p>Responsive foam and carbon plate propulsion.</p>
+          </section>
+        </body></html>
+        """,
+        labels=[
+            {
+                "label": "new",
+                "attributes": {"aria-controls": "nav-new"},
+            }
+        ],
+    )
+
+    async def _fake_runtime(**_kwargs):
+        await _async_checkpoint()
+        return _FakeRuntime(page)
+
+    result = await browser_runtime.browser_fetch(
+        "https://example.com/products/widget",
+        5,
+        surface="ecommerce_detail",
+        requested_fields=["Features & Benefits"],
+        runtime_provider=_fake_runtime,
+    )
+
+    assert "Responsive foam and carbon plate propulsion." in result.html
+    assert result.browser_diagnostics["detail_expansion"]["clicked_count"] == 0
+    assert (
+        result.browser_diagnostics["detail_expansion"]["reason"]
+        == "requested_content_already_extractable"
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_browser_fetch_expands_requested_dom_pattern_content_without_heading_sections() -> (
+    None
+):
+    page = _FakeExpansionPage(
+        base_html="""
+        <html><body>
+          <main>
+            <h1>Widget Prime</h1>
+            <button aria-controls="materials-panel">Materials</button>
+            <div id="materials-panel">
+              <div class="material-composition">Full-grain leather upper.</div>
+            </div>
+          </main>
+        </body></html>
+        """,
+    )
+
+    async def _fake_runtime(**_kwargs):
+        await _async_checkpoint()
+        return _FakeRuntime(page)
+
+    result = await browser_runtime.browser_fetch(
+        "https://example.com/products/widget",
+        5,
+        surface="ecommerce_detail",
+        requested_fields=["materials"],
+        runtime_provider=_fake_runtime,
+    )
+
+    assert result.browser_diagnostics["detail_expansion"]["clicked_count"] == 0
+    assert (
+        result.browser_diagnostics["detail_expansion"]["reason"]
+        == "requested_content_already_extractable"
+    )
+    assert result.browser_diagnostics["detail_expansion"]["extractability"][
+        "matched_requested_fields"
+    ] == ["materials"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_expand_detail_content_if_needed_skips_aom_when_page_is_already_ready(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def _unexpected_aom(*args, **kwargs):
+        await _async_checkpoint()
+        raise AssertionError("AOM expansion should be skipped")
+
+    monkeypatch.setattr(
+        browser_detail,
+        "expand_interactive_elements_via_accessibility",
+        _unexpected_aom,
+    )
+
+    diagnostics = await browser_detail.expand_detail_content_if_needed(
+        _FakeExpansionPage(base_html="<html><body><h1>Widget Prime</h1></body></html>"),
+        surface="ecommerce_detail",
+        readiness_probe={"is_ready": True, "detail_like": True},
+        requested_fields=["title"],
+    )
+
+    assert diagnostics["status"] == "attempted"
+    assert diagnostics["clicked_count"] == 0
+
+
+@pytest.mark.regression
+def test_accessibility_expand_candidates_ignores_navigation_roles() -> None:
+    candidates = browser_detail.accessibility_expand_candidates(
+        {
+            "role": "document",
+            "children": [
+                {"role": "link", "name": "Product details"},
+                {"role": "menuitem", "name": "Materials"},
+                {"role": "button", "name": "Product details"},
+            ],
+        },
+        surface="ecommerce_detail",
+    )
+
+    assert candidates == [("button", "product details")]
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_expand_all_interactive_elements_skips_blocked_commerce_actions() -> None:
+    page = _FakeExpansionPage(
+        base_html="<html><body></body></html>",
+        labels=[
+            {"label": "add to cart"},
+            {
+                "label": "materials",
+                "attributes": {"aria-controls": "materials-panel"},
+            },
+        ],
+    )
+
+    diagnostics = await browser_detail.expand_all_interactive_elements(
+        page,
+        surface="ecommerce_detail",
+        requested_fields=["materials"],
+    )
+
+    assert diagnostics["clicked_count"] == 1
+    assert diagnostics["expanded_elements"] == ["materials"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_expand_all_interactive_elements_skips_blocked_label_tokens_without_requested_fields() -> (
+    None
+):
+    page = _FakeExpansionPage(
+        base_html="<html><body></body></html>",
+        labels=[
+            {
+                "label": "Auto-Replenish Save 5% on this item",
+                "attributes": {"aria-controls": "auto-replenish-panel"},
+            },
+            {
+                "label": "Product details",
+                "attributes": {"aria-controls": "details-panel"},
+            },
+        ],
+    )
+
+    diagnostics = await browser_detail.expand_all_interactive_elements(
+        page,
+        surface="ecommerce_detail",
+        requested_fields=[],
+    )
+
+    assert diagnostics["clicked_count"] == 1
+    assert diagnostics["expanded_elements"] == ["product details"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_expand_all_interactive_elements_scans_past_non_expandable_early_candidates() -> (
+    None
+):
+    page = _FakeExpansionPage(
+        base_html="<html><body></body></html>",
+        labels=[
+            {"label": "add to cart"},
+            {"label": "materials", "actionable": False},
+            {
+                "label": "materials",
+                "attributes": {"aria-controls": "materials-panel"},
+            },
+        ],
+    )
+
+    diagnostics = await browser_detail.expand_all_interactive_elements(
+        page,
+        surface="ecommerce_detail",
+        requested_fields=["materials"],
+    )
+
+    assert diagnostics["clicked_count"] == 1
+    assert diagnostics["expanded_elements"] == ["materials"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_browser_fetch_flattens_shadow_dom_before_serializing_html() -> None:
+    page = _FakeExpansionPage(
+        base_html="<html><body><shop-product></shop-product></body></html>",
+        shadow_html=(
+            "<html><body><shop-product></shop-product>"
+            "<section class='specifications'>Shadow DOM specifications</section>"
+            "</body></html>"
+        ),
+    )
+
+    async def _fake_runtime(**_kwargs):
+        await _async_checkpoint()
+        return _FakeRuntime(page)
+
+    result = await browser_runtime.browser_fetch(
+        "https://example.com/products/widget",
+        5,
+        surface="ecommerce_detail",
+        runtime_provider=_fake_runtime,
+    )
+
+    assert page.shadow_flattened is True
+    assert "Shadow DOM specifications" in result.html
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_browser_fetch_captures_rendered_listing_fragments_artifact() -> None:
+    page = _FakeExpansionPage(
+        base_html="""
+        <html>
+          <body>
+            <article class="product-card">
+              <a href="/products/widget-prime"><h2>Widget Prime</h2></a>
+              <div class="price">$19.99</div>
+              <img src="/images/widget-prime.jpg" alt="Widget Prime" />
+            </article>
+          </body>
+        </html>
+        """,
+        rendered_listing_fragments=[
+            """
+            <article class="product-card">
+              <a href="/products/widget-prime"><h2>Widget Prime</h2></a>
+              <div class="price">$19.99</div>
+              <img src="/images/widget-prime.jpg" alt="Widget Prime" />
+            </article>
+            """
+        ],
+    )
+
+    async def _fake_runtime(**_kwargs):
+        await _async_checkpoint()
+        return _FakeRuntime(page)
+
+    result = await browser_runtime.browser_fetch(
+        "https://example.com/collections/widgets",
+        5,
+        surface="ecommerce_listing",
+        runtime_provider=_fake_runtime,
+    )
+
+    assert result.artifacts["rendered_listing_fragments"] == [
+        """
+            <article class="product-card">
+              <a href="/products/widget-prime"><h2>Widget Prime</h2></a>
+              <div class="price">$19.99</div>
+              <img src="/images/widget-prime.jpg" alt="Widget Prime" />
+            </article>
+            """.strip()
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_browser_fetch_ignores_non_string_rendered_listing_fragments(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    page = _FakeExpansionPage(
+        base_html="<html><body><article><a href='/products/widget'>Widget</a></article></body></html>",
+        selector_counts={".product-card": 1},
+        card_count=1,
+    )
+    page.url = "https://example.com/collections/widgets"
+
+    async def _fake_runtime(**_kwargs):
+        await _async_checkpoint()
+        return _FakeRuntime(page)
+
+    async def _bad_fragments(*args, **kwargs):
+        await _async_checkpoint()
+        del args, kwargs
+        return [123, {"html": "<article>bad</article>"}, " <article>good</article> "]
+
+    monkeypatch.setattr(
+        browser_page_flow, "capture_rendered_listing_fragments", _bad_fragments
+    )
+
+    result = await browser_runtime.browser_fetch(
+        "https://example.com/collections/widgets",
+        5,
+        surface="ecommerce_listing",
+        runtime_provider=_fake_runtime,
+    )
+
+    assert result.artifacts["rendered_listing_fragments"] == ["<article>good</article>"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_browser_fetch_keeps_empty_successful_listing_artifacts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    page = _FakeExpansionPage(
+        base_html="<html><body><article><a href='/products/widget'>Widget</a></article></body></html>",
+        selector_counts={".product-card": 1},
+        card_count=1,
+    )
+    page.url = "https://example.com/collections/widgets"
+
+    async def _fake_runtime(**_kwargs):
+        await _async_checkpoint()
+        return _FakeRuntime(page)
+
+    async def _empty_fragments(*args, **kwargs):
+        await _async_checkpoint()
+        del args, kwargs
+        return []
+
+    async def _empty_visuals(*args, **kwargs):
+        await _async_checkpoint()
+        del args, kwargs
+        return []
+
+    monkeypatch.setattr(
+        browser_page_flow, "capture_rendered_listing_fragments", _empty_fragments
+    )
+    monkeypatch.setattr(
+        browser_page_flow, "_capture_listing_visual_elements", _empty_visuals
+    )
+
+    result = await browser_runtime.browser_fetch(
+        "https://example.com/collections/widgets",
+        5,
+        surface="ecommerce_listing",
+        runtime_provider=_fake_runtime,
+    )
+
+    assert result.artifacts["rendered_listing_fragments"] == []
+    assert result.artifacts["listing_visual_elements"] == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_detail_expansion_keywords_use_requested_terms_when_fields_exist() -> (
+    None
+):
+    await _async_checkpoint()
+    default_keywords = browser_detail.detail_expansion_keywords("ecommerce_detail")
+    requested_keywords = browser_detail.detail_expansion_keywords(
+        "ecommerce_detail",
+        requested_fields=["description"],
+    )
+
+    assert "shipping" in default_keywords
+    assert "shipping" in requested_keywords
+    assert "description" in requested_keywords
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_interactive_candidate_snapshot_excludes_class_names_from_probe() -> None:
+    page = _FakeExpansionPage(base_html="<html><body></body></html>")
+    handle = _FakeHandle(
+        "Care instructions",
+        page,
+        attributes={
+            "class": "btn btn--size-selector utility-token",
+            "data-testid": "care-panel-toggle",
+        },
+    )
+
+    snapshot = await browser_detail.interactive_candidate_snapshot(handle)
+
+    assert snapshot["class_name"] == "btn btn--size-selector utility-token"
+    assert "utility-token" not in str(snapshot["probe"])
+    assert "care-panel-toggle" in str(snapshot["probe"])
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_expand_all_interactive_elements_matches_requested_data_attribute() -> (
+    None
+):
+    page = _FakeExpansionPage(
+        base_html="<html><body></body></html>",
+        labels=[
+            {
+                "label": "",
+                "attributes": {"aria-controls": "materials-panel"},
+            }
+        ],
+    )
+
+    diagnostics = await browser_detail.expand_all_interactive_elements(
+        page,
+        surface="ecommerce_detail",
+        requested_fields=["materials"],
+    )
+
+    assert diagnostics["clicked_count"] == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_expand_all_interactive_elements_allows_relevant_footer_controls() -> (
+    None
+):
+    page = _FakeExpansionPage(
+        base_html="<html><body></body></html>",
+        labels=[
+            {
+                "label": "Main menu",
+                "attributes": {"aria-controls": "site-menu"},
+                "inside_footer": True,
+            },
+            {
+                "label": "Size guide",
+                "attributes": {"aria-controls": "size-panel"},
+                "inside_footer": True,
+            },
+        ],
+    )
+
+    diagnostics = await browser_detail.expand_all_interactive_elements(
+        page,
+        surface="ecommerce_detail",
+        requested_fields=["size"],
+    )
+
+    assert diagnostics["clicked_count"] == 1
+    assert diagnostics["expanded_elements"] == ["size guide"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_expand_all_interactive_elements_prioritizes_requested_measurements_over_media_zoom() -> (
+    None
+):
+    page = _FakeExpansionPage(
+        base_html="<html><body></body></html>",
+        labels=[
+            {
+                "label": "enlarge image rustic t-shirt",
+                "attributes": {
+                    "aria-label": "Enlarge image rustic t-shirt",
+                    "data-qa-action": "media-zoom",
+                    "class": "product-detail-image product-detail-view__main-image",
+                },
+                "tag_name": "button",
+            },
+            {
+                "label": "product measurements",
+                "attributes": {
+                    "class": "product-detail-actions__action-button",
+                    "data-qa-action": "open-interactive-size-guide-accordion",
+                },
+                "tag_name": "button",
+            },
+        ],
+    )
+
+    diagnostics = await browser_detail.expand_all_interactive_elements(
+        page,
+        surface="ecommerce_detail",
+        requested_fields=["product measurements"],
+    )
+
+    assert diagnostics["clicked_count"] == 1
+    assert diagnostics["expanded_elements"] == ["product measurements"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_expand_all_interactive_elements_allows_visible_generic_detail_toggle_for_requested_fields() -> (
+    None
+):
+    page = _FakeExpansionPage(
+        base_html="<html><body></body></html>",
+        labels=[
+            {
+                "label": "details",
+                "attributes": {"aria-controls": "details-panel"},
+                "tag_name": "button",
+            }
+        ],
+    )
+
+    diagnostics = await browser_detail.expand_all_interactive_elements(
+        page,
+        surface="ecommerce_detail",
+        requested_fields=["materials"],
+    )
+
+    assert diagnostics["clicked_count"] == 1
+    assert diagnostics["expanded_elements"] == ["details"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_expand_detail_content_if_needed_expands_generic_ecommerce_without_requested_fields() -> (
+    None
+):
+    page = _FakeExpansionPage(
+        base_html="<html><body></body></html>",
+        labels=[
+            {
+                "label": "shipping and returns",
+                "attributes": {"aria-controls": "shipping-panel"},
+                "tag_name": "button",
+            }
+        ],
+    )
+
+    diagnostics = await browser_detail.expand_detail_content_if_needed(
+        page,
+        surface="ecommerce_detail",
+        readiness_probe={"is_ready": True, "detail_like": True},
+    )
+
+    assert diagnostics["clicked_count"] == 1
+    assert page.expanded is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_expand_detail_content_if_needed_expands_ready_job_detail_without_requested_fields() -> (
+    None
+):
+    page = _FakeExpansionPage(
+        base_html="<html><body></body></html>",
+        labels=[
+            {
+                "label": "responsibilities",
+                "attributes": {"aria-controls": "responsibilities-panel"},
+                "tag_name": "button",
+            }
+        ],
+    )
+
+    diagnostics = await browser_detail.expand_detail_content_if_needed(
+        page,
+        surface="job_detail",
+        readiness_probe={"is_ready": True, "detail_like": True},
+    )
+
+    assert diagnostics["clicked_count"] == 1
+    assert page.expanded is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_browser_fetch_records_extractable_sections_after_detail_expansion() -> (
+    None
+):
+    page = _FakeExpansionPage(
+        base_html="<html><body><h1>Widget Prime</h1><button>Materials</button></body></html>",
+        expanded_html="""
+        <html><body>
+          <h1>Widget Prime</h1>
+          <div class="accordion-item">
+            <button>Materials</button>
+            <div class="accordion-item__body">
+              <div class="rich-content">Full-grain leather upper.</div>
+            </div>
+          </div>
+        </body></html>
+        """,
+        labels=[{"label": "materials"}],
+    )
+
+    async def _fake_runtime(**_kwargs):
+        await _async_checkpoint()
+        return _FakeRuntime(page)
+
+    result = await browser_runtime.browser_fetch(
+        "https://example.com/products/widget",
+        5,
+        surface="ecommerce_detail",
+        requested_fields=["materials"],
+        runtime_provider=_fake_runtime,
+    )
+
+    extractability = result.browser_diagnostics["detail_expansion"]["extractability"]
+
+    assert extractability["verified"] is True
+    assert extractability["matched_requested_fields"] == ["materials"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_browser_fetch_does_not_skip_requested_dom_pattern_when_selector_is_empty() -> (
+    None
+):
+    page = _FakeExpansionPage(
+        base_html="""
+        <html><body>
+          <main>
+            <h1>Widget Prime</h1>
+            <button aria-controls="specs-panel">Specifications</button>
+            <div class="specifications"></div>
+          </main>
+        </body></html>
+        """,
+        expanded_html="""
+        <html><body>
+          <main>
+            <h1>Widget Prime</h1>
+            <button aria-controls="specs-panel">Specifications</button>
+            <div class="specifications">Weight: 2kg</div>
+          </main>
+        </body></html>
+        """,
+        labels=[
+            {
+                "label": "specifications",
+                "attributes": {"aria-controls": "specs-panel"},
+                "tag_name": "button",
+            }
+        ],
+    )
+
+    async def _fake_runtime(**_kwargs):
+        await _async_checkpoint()
+        return _FakeRuntime(page)
+
+    result = await browser_runtime.browser_fetch(
+        "https://example.com/products/widget",
+        5,
+        surface="ecommerce_detail",
+        requested_fields=["specifications"],
+        runtime_provider=_fake_runtime,
+    )
+
+    assert result.browser_diagnostics["detail_expansion"]["clicked_count"] == 1
+    assert "Weight: 2kg" in result.html
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_browser_fetch_extracts_requested_features_from_dell_like_tab() -> None:
+    page = _FakeExpansionPage(
+        base_html="""
+        <html><body>
+          <main>
+            <h1>Dell 27 All-in-One</h1>
+            <section>
+              <h2>Description</h2>
+              <p>27-inch all-in-one desktop.</p>
+            </section>
+            <a href="#tech">Tech Specs</a>
+            <a href="#features_section">Features &amp; Design</a>
+          </main>
+        </body></html>
+        """,
+        expanded_html="""
+        <html><body>
+          <main>
+            <h1>Dell 27 All-in-One</h1>
+            <section>
+              <h2>Description</h2>
+              <p>27-inch all-in-one desktop.</p>
+            </section>
+            <a href="#tech">Tech Specs</a>
+            <div id="tech">
+              <p>Memory: 16 GB DDR5</p>
+            </div>
+            <a href="#features_section">Features &amp; Design</a>
+            <div id="features_section">
+              <p>13th Generation Intel® Core™ i5-1334U</p>
+              <p>27-inch FHD Infinity display</p>
+            </div>
+          </main>
+        </body></html>
+        """,
+        labels=[
+            {
+                "label": "tech specs",
+                "attributes": {"href": "#tech"},
+                "tag_name": "a",
+            },
+            {
+                "label": "features & design",
+                "attributes": {"href": "#features_section"},
+                "tag_name": "a",
+            },
+        ],
+    )
+
+    async def _fake_runtime(**_kwargs):
+        await _async_checkpoint()
+        return _FakeRuntime(page)
+
+    result = await browser_runtime.browser_fetch(
+        "https://example.com/products/widget",
+        5,
+        surface="ecommerce_detail",
+        requested_fields=["features"],
+        runtime_provider=_fake_runtime,
+    )
+
+    rows = extract_records(
+        result.html,
+        "https://example.com/products/widget",
+        "ecommerce_detail",
+        max_records=1,
+        requested_fields=["features"],
+    )
+
+    assert result.browser_diagnostics["detail_expansion"]["clicked_count"] >= 1
+    assert result.browser_diagnostics["detail_expansion"]["expanded_elements"][0] == (
+        "features & design"
+    )
+    assert rows[0]["features"] == [
+        "13th Generation Intel® Core™ i5-1334U",
+        "27-inch FHD Infinity display",
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_expand_detail_content_uses_data_qa_action_to_open_size_selector() -> (
+    None
+):
+    page = _FakeExpansionPage(
+        base_html="<html><body><button aria-label='Add to bag'>Add</button></body></html>",
+        labels=[
+            {
+                "label": "add",
+                "attributes": {
+                    "aria-label": "Add to bag",
+                    "data-qa-action": "product-grid-open-size-selector",
+                },
+                "tag_name": "button",
+            }
+        ],
+    )
+
+    diagnostics = await browser_detail.expand_all_interactive_elements(
+        page,
+        surface="ecommerce_detail",
+        requested_fields=["size"],
+    )
+
+    assert diagnostics["clicked_count"] == 1
+    assert page.expanded is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_expand_detail_content_skips_menu_toggles() -> None:
+    page = _FakeExpansionPage(
+        base_html="<html><body><button aria-controls='site-menu'>Open menu</button></body></html>",
+        labels=[
+            {
+                "label": "open menu",
+                "attributes": {
+                    "aria-controls": "site-menu",
+                },
+                "tag_name": "button",
+            }
+        ],
+    )
+
+    diagnostics = await browser_detail.expand_all_interactive_elements(
+        page,
+        surface="ecommerce_detail",
+        requested_fields=["materials"],
+    )
+
+    assert diagnostics["clicked_count"] == 0
+    assert page.expanded is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_expand_detail_content_prefers_requested_section_labels_over_unrelated_nav() -> (
+    None
+):
+    page = _FakeExpansionPage(
+        base_html="""
+        <html><body>
+          <button aria-controls='nav-new'>New</button>
+          <button aria-controls='nav-men'>Men</button>
+          <button aria-controls='details-panel'>Details</button>
+        </body></html>
+        """,
+        labels=[
+            {
+                "label": "new",
+                "attributes": {"aria-controls": "nav-new"},
+                "tag_name": "button",
+            },
+            {
+                "label": "men",
+                "attributes": {"aria-controls": "nav-men"},
+                "tag_name": "button",
+            },
+            {
+                "label": "details",
+                "attributes": {"aria-controls": "details-panel"},
+                "tag_name": "button",
+            },
+        ],
+    )
+
+    diagnostics = await browser_detail.expand_all_interactive_elements(
+        page,
+        surface="ecommerce_detail",
+        requested_fields=["Details"],
+    )
+
+    assert diagnostics["clicked_count"] == 1
+    assert diagnostics["expanded_elements"] == ["details"]
+    assert page.expanded is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_expand_detail_content_skips_navigation_anchors_that_match_generic_keywords() -> (
+    None
+):
+    page = _FakeExpansionPage(
+        base_html="""
+        <html><body>
+          <a href="/returns-and-refunds">Returns &amp; refunds</a>
+          <a href="/about-us">About us</a>
+          <a href="/careers">Careers</a>
+        </body></html>
+        """,
+        labels=[
+            {
+                "label": "returns & refunds",
+                "attributes": {"href": "/returns-and-refunds"},
+                "tag_name": "a",
+            },
+            {
+                "label": "about us",
+                "attributes": {"href": "/about-us"},
+                "tag_name": "a",
+            },
+            {
+                "label": "careers",
+                "attributes": {"href": "/careers"},
+                "tag_name": "a",
+            },
+        ],
+    )
+
+    diagnostics = await browser_detail.expand_all_interactive_elements(
+        page,
+        surface="ecommerce_detail",
+        requested_fields=["title", "size", "availability"],
+    )
+
+    assert diagnostics["clicked_count"] == 0
+    assert page.expanded is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_expand_detail_content_skips_header_controls_outside_main_content() -> (
+    None
+):
+    page = _FakeExpansionPage(
+        base_html="""
+        <html><body>
+          <header><button aria-controls='about-panel'>About</button></header>
+          <main><button aria-controls='details-panel'>Details</button></main>
+        </body></html>
+        """,
+        labels=[
+            {
+                "label": "about",
+                "attributes": {"aria-controls": "about-panel"},
+                "tag_name": "button",
+                "inside_header": True,
+            },
+            {
+                "label": "details",
+                "attributes": {"aria-controls": "details-panel"},
+                "tag_name": "button",
+                "inside_main": True,
+            },
+        ],
+    )
+
+    diagnostics = await browser_detail.expand_all_interactive_elements(
+        page,
+        surface="ecommerce_detail",
+        requested_fields=[],
+    )
+
+    assert diagnostics["clicked_count"] == 1
+    assert diagnostics["expanded_elements"] == ["details"]
+    assert page.expanded is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_expand_detail_content_does_not_match_requested_keywords_from_hidden_probe_only() -> (
+    None
+):
+    page = _FakeExpansionPage(
+        base_html="<html><body><button aria-controls='lifestyle-panel'>Lifestyle</button></body></html>",
+        labels=[
+            {
+                "label": "lifestyle",
+                "probe": "details drawer",
+                "attributes": {"aria-controls": "lifestyle-panel"},
+                "tag_name": "button",
+            }
+        ],
+    )
+
+    diagnostics = await browser_detail.expand_all_interactive_elements(
+        page,
+        surface="ecommerce_detail",
+        requested_fields=["Details"],
+    )
+
+    assert diagnostics["clicked_count"] == 0
+    assert page.expanded is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_browser_fetch_waits_for_challenge_recovery_before_settling(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    page = _FakeExpansionPage(
+        base_html="<html><body><div>challenge</div></body></html>",
+        wait_html_sequence=["<html><body><h1>Widget Prime</h1></body></html>"],
+        cookie_snapshots=[[], [{"name": "_abck"}]],
+    )
+    calls = {"count": 0}
+
+    async def _fake_classify_blocked_page_async(_html: str, _status: int):
+        await _async_checkpoint()
+        calls["count"] += 1
+        blocked = calls["count"] == 1
+        return SimpleNamespace(
+            blocked=blocked,
+            outcome="challenge_page" if blocked else "ok",
+            evidence=["provider:akamai"] if blocked else [],
+            provider_hits=["akamai"] if blocked else [],
+            active_provider_hits=[],
+            strong_hits=[],
+            weak_hits=[],
+            title_matches=[],
+            challenge_element_hits=[],
+        )
+
+    async def _fake_runtime(**_kwargs):
+        await _async_checkpoint()
+        return _FakeRuntime(page)
+
+    monkeypatch.setattr(
+        browser_page_flow,
+        "classify_blocked_page_async",
+        _fake_classify_blocked_page_async,
+    )
+
+    result = await browser_runtime.browser_fetch(
+        "https://example.com/products/widget",
+        5,
+        surface="ecommerce_detail",
+        requested_fields=["product specifications"],
+        runtime_provider=_fake_runtime,
+    )
+
+    assert "Widget Prime" in result.html
+    assert page.wait_function_calls
+    assert page.goto_calls == ["domcontentloaded"]
+    assert page.load_state_calls == ["networkidle"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_finalize_browser_fetch_keeps_blocked_html_checker_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def _fake_capture_close(_page):
+        await _async_checkpoint()
+        return SimpleNamespace(
+            payloads=[],
+            network_payload_count=0,
+            malformed_network_payloads=0,
+            network_payload_read_failures=0,
+            network_payload_read_timeouts=0,
+            closed_network_payloads=0,
+            skipped_oversized_network_payloads=0,
+            dropped_payload_events=0,
+        )
+
+    async def _fake_capture_fragments(*_args, **_kwargs):
+        await _async_checkpoint()
+        return []
+
+    async def _fake_capture_visuals(*_args, **_kwargs):
+        await _async_checkpoint()
+        return []
+
+    async def _fake_classify_blocked_page_async(_html: str, _status: int):
+        await _async_checkpoint()
+        return SimpleNamespace(blocked=False, outcome="ok", evidence=[])
+
+    async def _fake_emit_browser_event(*_args, **_kwargs):
+        await _async_checkpoint()
+        return None
+
+    monkeypatch.setattr(
+        browser_page_flow,
+        "capture_rendered_listing_fragments",
+        _fake_capture_fragments,
+    )
+    monkeypatch.setattr(
+        browser_page_flow,
+        "_capture_listing_visual_elements",
+        _fake_capture_visuals,
+    )
+
+    payload = browser_page_flow.BrowserFinalizeInput(
+        page=SimpleNamespace(url="https://example.com/products/widget"),
+        url="https://example.com/products/widget",
+        surface="ecommerce_detail",
+        browser_reason=None,
+        on_event=None,
+        response=SimpleNamespace(
+            status=200, headers=httpx.Headers({"content-type": "text/html"})
+        ),
+        navigation_strategy="goto",
+        readiness_probes=[],
+        networkidle_timed_out=False,
+        networkidle_skip_reason=None,
+        readiness_policy={},
+        readiness_diagnostics={},
+        expansion_diagnostics={},
+        listing_recovery_diagnostics={},
+        payload_capture=SimpleNamespace(close=_fake_capture_close),
+        html="<html><body><h1>Widget Prime</h1></body></html>",
+        traversal_result=None,
+        rendered_html="",
+        phase_timings_ms={},
+        started_at=0.0,
+    )
+
+    result = await browser_page_flow.finalize_browser_fetch(
+        payload,
+        blocked_html_checker=lambda *_args, **_kwargs: True,
+        classify_blocked_page_async=_fake_classify_blocked_page_async,
+        classify_low_content_reason=lambda *_args, **_kwargs: None,
+        classify_browser_outcome=lambda **kwargs: (
+            "challenge_page" if kwargs["blocked"] else "usable_content"
+        ),
+        capture_browser_screenshot=_fake_emit_browser_event,
+        emit_browser_event=_fake_emit_browser_event,
+        elapsed_ms=lambda _started_at: 0,
+    )
+
+    assert result["blocked"] is True
+    assert result["diagnostics"]["challenge_evidence"] == ["blocked_html_checker"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_browser_fetch_uses_aom_expansion_when_dom_keyword_scan_misses() -> None:
+    page = _FakeExpansionPage(
+        base_html="<html><body><h1>Widget Prime</h1><div>Overview</div></body></html>",
+        expanded_html="""
+        <html><body>
+          <h1>Widget Prime</h1>
+          <div>Overview</div>
+          <section>Specifications</section>
+          <div>Rubber outsole, reinforced toe cap.</div>
+        </body></html>
+        """,
+        labels=[{"label": "share"}],
+        accessibility_snapshot={
+            "role": "document",
+            "children": [
+                {"role": "tab", "name": "Product specifications"},
+                {"role": "button", "name": "Share"},
+            ],
+        },
+        role_targets={("tab", "product specifications")},
+    )
+
+    async def _fake_runtime(**_kwargs):
+        await _async_checkpoint()
+        return _FakeRuntime(page)
+
+    result = await browser_runtime.browser_fetch(
+        "https://example.com/products/widget",
+        5,
+        surface="ecommerce_detail",
+        requested_fields=["product specifications"],
+        runtime_provider=_fake_runtime,
+    )
+
+    assert "Rubber outsole" in result.html
+    assert result.browser_diagnostics["detail_expansion"]["dom"]["clicked_count"] == 0
+    assert result.browser_diagnostics["detail_expansion"]["aom"]["clicked_count"] == 1
+    assert (
+        result.browser_diagnostics["detail_expansion"]["reason"]
+        == "missing_detail_content"
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_dom_detail_expansion_stops_after_click_exceeds_time_budget() -> None:
+    page = _FakeExpansionPage(
+        base_html="<html><body><h1>Widget Prime</h1></body></html>",
+        labels=[
+            {"label": "Details", "attributes": {"aria-controls": "details"}},
+            {"label": "Materials", "attributes": {"aria-controls": "materials"}},
+        ],
+    )
+
+    async def _snapshot(handle: _FakeHandle) -> dict[str, object]:
+        await _async_checkpoint()
+        return {
+            "probe": handle.label.lower(),
+            "label": handle.label.lower(),
+            "aria_expanded": "",
+            "href": "",
+            "aria_controls": handle.attributes.get("aria-controls", ""),
+            "data_qa_action": "",
+            "class_name": "",
+            "tag_name": handle.tag_name,
+            "visible": True,
+            "actionable": True,
+        }
+
+    diagnostics = await browser_detail.expand_all_interactive_elements_impl(
+        page,
+        surface="ecommerce_detail",
+        requested_fields=["details", "materials"],
+        detail_expand_selectors=("button",),
+        detail_expansion_keywords=lambda *_args, **_kwargs: ("details", "materials"),
+        interactive_candidate_snapshot=_snapshot,
+        elapsed_ms=lambda _started_at: 999 if page.expanded else 0,
+        max_elapsed_ms=10,
+    )
+
+    assert diagnostics["status"] == "time_budget_reached"
+    assert diagnostics["clicked_count"] == 1
+    assert diagnostics["expanded_elements"] == ["details"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_browser_fetch_aom_expansion_respects_interaction_cap(
+    patch_settings,
+) -> None:
+    patch_settings(detail_aom_expand_max_interactions=1)
+    page = _FakeExpansionPage(
+        base_html="<html><body><h1>Widget Prime</h1><div>Overview</div></body></html>",
+        expanded_html="""
+        <html><body>
+          <h1>Widget Prime</h1>
+          <div>Specifications</div>
+          <div>Rubber outsole, reinforced toe cap.</div>
+        </body></html>
+        """,
+        labels=[{"label": "share"}],
+        accessibility_snapshot={
+            "role": "document",
+            "children": [
+                {"role": "tab", "name": "Product specifications"},
+                {"role": "tab", "name": "Product dimensions"},
+            ],
+        },
+        role_targets={("tab", "product specifications")},
+    )
+
+    async def _fake_runtime(**_kwargs):
+        await _async_checkpoint()
+        return _FakeRuntime(page)
+
+    result = await browser_runtime.browser_fetch(
+        "https://example.com/products/widget",
+        5,
+        surface="ecommerce_detail",
+        requested_fields=["product specifications"],
+        runtime_provider=_fake_runtime,
+    )
+
+    assert "Rubber outsole" in result.html
+    assert result.browser_diagnostics["detail_expansion"]["aom"]["limit"] == 1
+    assert result.browser_diagnostics["detail_expansion"]["aom"]["clicked_count"] == 1
+    assert result.browser_diagnostics["detail_expansion"]["aom"]["attempted"] is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_expand_interactive_elements_via_accessibility_supports_locators_without_visibility_timeout() -> (
+    None
+):
+    page = _FakeExpansionPage(
+        base_html="<html><body><h1>Widget Prime</h1></body></html>",
+        accessibility_snapshot={
+            "role": "document",
+            "children": [{"role": "tab", "name": "Product specifications"}],
+        },
+        role_targets={("tab", "product specifications")},
+    )
+
+    def _get_by_role(
+        role: str, *, name: str, exact: bool = True
+    ) -> _NoTimeoutRoleLocator:
+        del exact
+        return _NoTimeoutRoleLocator(page, role, name)
+
+    page.get_by_role = _get_by_role
+
+    diagnostics = await browser_detail.expand_interactive_elements_via_accessibility_impl(
+        page,
+        surface="ecommerce_detail",
+        requested_fields=["product specifications"],
+        detail_expansion_keywords=browser_detail.detail_expansion_keywords,
+        accessibility_expand_candidates=browser_detail.accessibility_expand_candidates,
+        elapsed_ms=browser_runtime._elapsed_ms,
+    )
+
+    assert diagnostics["clicked_count"] == 1
+    assert diagnostics["expanded_elements"] == ["product specifications"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_expand_interactive_elements_via_accessibility_waits_for_visibility_with_configured_timeout(
+    patch_settings,
+) -> None:
+    page = _FakeExpansionPage(
+        base_html="<html><body><h1>Widget Prime</h1></body></html>",
+        accessibility_snapshot={
+            "role": "document",
+            "children": [{"role": "tab", "name": "Product specifications"}],
+        },
+        role_targets={("tab", "product specifications")},
+    )
+    locator = _WaitingRoleLocator(page, "tab", "product specifications")
+    patch_settings(detail_expand_visibility_timeout_ms=375)
+
+    def _get_by_role(
+        role: str, *, name: str, exact: bool = True
+    ) -> _WaitingRoleLocator:
+        del role, name, exact
+        return locator
+
+    page.get_by_role = _get_by_role
+    diagnostics = await browser_detail.expand_interactive_elements_via_accessibility_impl(
+        page,
+        surface="ecommerce_detail",
+        requested_fields=["product specifications"],
+        detail_expansion_keywords=browser_detail.detail_expansion_keywords,
+        accessibility_expand_candidates=browser_detail.accessibility_expand_candidates,
+        elapsed_ms=browser_runtime._elapsed_ms,
+    )
+
+    assert locator.wait_for_calls == [("visible", 375)]
+    assert diagnostics["clicked_count"] == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_expand_interactive_elements_via_accessibility_times_out_slow_snapshot(
+    patch_settings,
+) -> None:
+    patch_settings(browser_accessibility_snapshot_timeout_seconds=0.05)
+    page = _FakeExpansionPage(
+        base_html="<html><body><h1>Widget Prime</h1></body></html>",
+        accessibility_snapshot={"role": "document", "children": []},
+    )
+
+    async def _slow_snapshot() -> dict[str, object]:
+        await asyncio.sleep(1)
+        return {"role": "document", "children": []}
+
+    page.accessibility = SimpleNamespace(snapshot=_slow_snapshot)
+    diagnostics = await browser_detail.expand_interactive_elements_via_accessibility_impl(
+        page,
+        surface="ecommerce_detail",
+        requested_fields=["product specifications"],
+        detail_expansion_keywords=browser_detail.detail_expansion_keywords,
+        accessibility_expand_candidates=browser_detail.accessibility_expand_candidates,
+        elapsed_ms=browser_runtime._elapsed_ms,
+    )
+
+    assert diagnostics["status"] == "snapshot_timeout"
+    assert diagnostics["clicked_count"] == 0
+    assert diagnostics["attempted"] is True
+
+
+@pytest.mark.regression
+def test_detail_expansion_skip_requires_extractable_ecommerce_content() -> None:
+    can_skip, reason = browser_page_flow._detail_expansion_can_skip(
+        {"verified": False, "matched_requested_fields": []},
+        surface="ecommerce_detail",
+        requested_fields=None,
+        readiness_probe={"is_ready": True},
+    )
+
+    assert can_skip is False
+    assert reason is None
+
+
+@pytest.mark.regression
+def test_detail_expansion_skip_does_not_trust_sparse_structured_data_alone() -> None:
+    readiness_probe = {
+        "is_ready": True,
+        "structured_data_present": True,
+        "visible_text_length": 1,
+        "detail_hint_count": 0,
+        "h1_present": False,
+    }
+
+    can_skip, reason = browser_page_flow._detail_expansion_can_skip(
+        {"verified": False, "matched_requested_fields": []},
+        surface="ecommerce_detail",
+        requested_fields=None,
+        readiness_probe=readiness_probe,
+    )
+
+    assert can_skip is False
+    assert reason is None
+
+    can_skip, reason = browser_page_flow._detail_expansion_can_skip(
+        {"verified": True, "matched_requested_fields": []},
+        surface="ecommerce_detail",
+        requested_fields=None,
+        readiness_probe=readiness_probe,
+    )
+
+    assert can_skip is True
+    assert reason == "canonical_detail_already_ready"
+
+
+@pytest.mark.regression
+def test_detail_expansion_skip_does_not_trust_sparse_detail_hints_alone() -> None:
+    can_skip, reason = browser_page_flow._detail_expansion_can_skip(
+        {"verified": False, "matched_requested_fields": []},
+        surface="ecommerce_detail",
+        requested_fields=None,
+        readiness_probe={
+            "is_ready": True,
+            "structured_data_present": False,
+            "visible_text_length": 1,
+            "detail_hint_count": int(
+                crawler_runtime_settings.detail_field_signal_min_count
+            ),
+            "h1_present": False,
+        },
+    )
+
+    assert can_skip is False
+    assert reason is None
+
+
+@pytest.mark.regression
+def test_detail_title_url_match_scans_past_nonmatching_trailing_segments() -> None:
+    assert browser_readiness._detail_title_matches_url(
+        "https://example.com/products/widget/reviews",
+        "Widget",
+        min_matches=1,
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_expand_detail_content_if_needed_skips_non_detail_like_pages(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def _unexpected_dom_expand(*args, **kwargs):
+        await _async_checkpoint()
+        raise AssertionError("DOM expansion should be skipped")
+
+    monkeypatch.setattr(
+        browser_detail,
+        "expand_all_interactive_elements",
+        _unexpected_dom_expand,
+    )
+
+    diagnostics = await browser_detail.expand_detail_content_if_needed(
+        _FakeExpansionPage(base_html="<html><body></body></html>"),
+        surface="ecommerce_detail",
+        readiness_probe={"is_ready": False, "detail_like": False},
+    )
+
+    assert diagnostics["status"] == "skipped"
+    assert diagnostics["reason"] == "not_detail_like"
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_listing_card_signal_count_uses_heuristic_card_fallback_after_selector_miss(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[bool] = []
+
+    async def _fake_count_listing_cards(
+        page, *, surface: str, allow_heuristic: bool = True
+    ) -> int:
+        await _async_checkpoint()
+        del page, surface
+        calls.append(bool(allow_heuristic))
+        return 9 if allow_heuristic else 0
+
+    monkeypatch.setattr(
+        browser_readiness,
+        "count_listing_cards",
+        _fake_count_listing_cards,
+    )
+
+    count = await browser_runtime.listing_card_signal_count(
+        _FakeExpansionPage(base_html="<html><body></body></html>"),
+        surface="ecommerce_listing",
+    )
+
+    assert count == 9
+    assert calls == [True]
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_probe_browser_readiness_uses_heuristic_listing_card_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[bool] = []
+
+    async def _fake_count_listing_cards(
+        page, *, surface: str, allow_heuristic: bool = True
+    ) -> int:
+        await _async_checkpoint()
+        del page, surface
+        calls.append(bool(allow_heuristic))
+        return 12 if allow_heuristic else 0
+
+    monkeypatch.setattr(
+        browser_readiness,
+        "listing_card_signal_count_impl",
+        _fake_count_listing_cards,
+    )
+
+    probe = await browser_runtime.probe_browser_readiness(
+        _FakeExpansionPage(
+            base_html="<html><body><h1>adidas Sneakers</h1><p>Grid loaded</p></body></html>"
+        ),
+        url="https://example.com/collections/adidas-shoes",
+        surface="ecommerce_listing",
+    )
+
+    assert probe["is_ready"] is True
+    assert probe["listing_card_count"] == 12
+    assert calls == [True]
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_browser_capture_close_drains_inflight_response_callbacks() -> None:
+    class _FakeResponse:
+        url = "https://example.com/api/product"
+        headers = {"content-type": "application/json"}
+        request = SimpleNamespace(method="GET")
+        status = 200
+
+    class _LateDispatchPage:
+        def __init__(self) -> None:
+            self.listener = None
+
+        def on(self, event_name: str, callback: Any) -> None:
+            assert event_name == "response"
+            self.listener = callback
+
+        def remove_listener(self, event_name: str, callback: Any) -> None:
+            assert event_name == "response"
+            self.listener = None
+            asyncio.get_running_loop().call_soon(callback, _FakeResponse())
+
+    async def _fake_read_payload_body(response, **_kwargs):
+        await _async_checkpoint()
+        del response
+        return browser_runtime.NetworkPayloadReadResult(
+            body=b'{"id":"captured"}',
+            outcome="ok",
+        )
+
+    capture = BrowserNetworkCapture(
+        surface="ecommerce_detail",
+        should_capture_payload=lambda **_kwargs: True,
+        classify_endpoint=lambda **_kwargs: {"type": "api", "family": "generic"},
+        read_payload_body=_fake_read_payload_body,
+    )
+    page = _LateDispatchPage()
+    capture.attach(page)
+
+    summary = await capture.close(page)
+
+    assert summary.network_payload_count == 1
+    assert summary.payloads[0]["body"]["id"] == "captured"
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_browser_capture_decodes_react_server_component_payloads() -> None:
+    class _RscResponse:
+        def __init__(self) -> None:
+            self.url = "https://example.com/products/widget"
+            self.status = 200
+            self.headers = {"content-type": "text/x-component"}
+            self.request = SimpleNamespace(method="GET")
+
+        async def body(self) -> bytes:
+            await _async_checkpoint()
+            return (
+                b'0:["$","$L1",null,{"title":"Trail Runner","price":"109.00"}]\n'
+                b'1:{"product":{"title":"Trail Runner","sku":"TRAIL-1"}}\n'
+            )
+
+    page = _FakeExpansionPage(base_html="<html><body></body></html>")
+    capture = BrowserNetworkCapture(surface="ecommerce_detail")
+    capture.attach(page)
+
+    listeners = page.listeners.get("response") or []
+    assert listeners
+    listeners[0](_RscResponse())
+
+    summary = await capture.close(page)
+
+    assert summary.network_payload_count == 1
+    assert summary.malformed_network_payloads == 0
+    assert isinstance(summary.payloads[0]["body"], list)
+    assert summary.payloads[0]["body"][0][3]["title"] == "Trail Runner"
+    assert summary.payloads[0]["body"][1]["product"]["sku"] == "TRAIL-1"
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_browser_capture_offloads_payload_decoding_to_thread() -> None:
+    class _JsonResponse:
+        def __init__(self) -> None:
+            self.url = "https://example.com/api/product"
+            self.status = 200
+            self.headers = {"content-type": "application/json"}
+            self.request = SimpleNamespace(method="GET")
+
+        async def body(self) -> bytes:
+            await _async_checkpoint()
+            return b'{"id":"captured"}'
+
+    page = _FakeExpansionPage(base_html="<html><body></body></html>")
+    capture = BrowserNetworkCapture(surface="ecommerce_detail")
+    capture.attach(page)
+
+    listeners = page.listeners.get("response") or []
+    assert listeners
+    listeners[0](_JsonResponse())
+
+    summary = await capture.close(page)
+
+    assert summary.network_payload_count == 1
+    assert summary.payloads[0]["body"]["id"] == "captured"
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_browser_capture_close_uses_bounded_queue_join_timeout(
+    patch_settings,
+) -> None:
+    patch_settings(browser_capture_queue_join_timeout_ms=50)
+    capture = BrowserNetworkCapture(
+        surface="ecommerce_detail",
+        should_capture_payload=lambda **_kwargs: True,
+        classify_endpoint=lambda **_kwargs: {"type": "api", "family": "generic"},
+        read_payload_body=lambda *_args, **_kwargs: (
+            browser_runtime.NetworkPayloadReadResult(
+                body=b'{"id":"captured"}',
+                outcome="ok",
+            )
+        ),
+    )
+    page = _FakeExpansionPage(base_html="<html><body></body></html>")
+    capture.attach(page)
+
+    async def _stalled_join() -> None:
+        await asyncio.sleep(1)
+
+    capture._queue.join = _stalled_join  # type: ignore[method-assign]
+
+    started_at = asyncio.get_running_loop().time()
+    summary = await capture.close(page)
+    elapsed = asyncio.get_running_loop().time() - started_at
+
+    assert summary.network_payload_count == 0
+    assert elapsed < 0.5
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_browser_capture_close_awaits_sentinel_enqueue_when_queue_put_blocks() -> (
+    None
+):
+    capture = BrowserNetworkCapture(surface="ecommerce_detail")
+
+    class _Queue:
+        def __init__(self) -> None:
+            self.put_calls: list[object] = []
+
+        async def join(self) -> None:
+            await _async_checkpoint()
+            return None
+
+        async def put(self, value: object) -> None:
+            self.put_calls.append(value)
+            await asyncio.sleep(0)
+
+    fake_queue = _Queue()
+    capture._queue = fake_queue  # type: ignore[assignment]
+    capture._workers = {asyncio.create_task(asyncio.sleep(0))}
+
+    summary = await capture.close(
+        _FakeExpansionPage(base_html="<html><body></body></html>")
+    )
+
+    assert summary.network_payload_count == 0
+    assert fake_queue.put_calls == [None]
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_browser_capture_close_cancels_workers_when_sentinel_enqueue_times_out(
+    patch_settings,
+) -> None:
+    patch_settings(browser_capture_queue_join_timeout_ms=50)
+    capture = BrowserNetworkCapture(surface="ecommerce_detail")
+
+    class _Queue:
+        async def join(self) -> None:
+            await _async_checkpoint()
+            return None
+
+        async def put(self, value: object) -> None:
+            del value
+            await asyncio.sleep(1)
+
+    worker = asyncio.create_task(asyncio.sleep(1))
+    capture._queue = _Queue()  # type: ignore[assignment]
+    capture._workers = {worker}
+
+    summary = await capture.close(
+        _FakeExpansionPage(base_html="<html><body></body></html>")
+    )
+
+    assert summary.network_payload_count == 0
+    assert worker.cancelled() or worker.done()
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_probe_browser_readiness_skips_listing_queries_for_detail_pages(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def _unexpected_listing_card_count(*args, **kwargs):
+        await _async_checkpoint()
+        raise AssertionError("listing card count should not run for detail pages")
+
+    async def _unexpected_selector_count(*args, **kwargs):
+        await _async_checkpoint()
+        raise AssertionError("listing selector count should not run for detail pages")
+
+    monkeypatch.setattr(
+        "app.services.acquisition.browser_readiness.listing_card_signal_count_impl",
+        _unexpected_listing_card_count,
+    )
+    monkeypatch.setattr(
+        "app.services.acquisition.browser_readiness.count_matching_selectors",
+        _unexpected_selector_count,
+    )
+
+    probe = await browser_runtime.probe_browser_readiness(
+        _FakeExpansionPage(base_html="<html><body><h1>Widget Prime</h1></body></html>"),
+        url="https://example.com/products/widget",
+        surface="ecommerce_detail",
+    )
+
+    assert probe["is_ready"] is False
+    assert probe["listing_card_count"] == 0
+    assert probe["matched_listing_selectors"] == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_count_matching_selectors_ignores_timeout_misses() -> None:
+    class _Locator:
+        async def count(self) -> int:
+            await _async_checkpoint()
+            raise PlaywrightTimeoutError("timed out")
+
+    class _Page:
+        def locator(self, selector: str) -> _Locator:
+            del selector
+            return _Locator()
+
+    matches = await browser_readiness.count_matching_selectors(
+        _Page(),
+        selectors=[".product-card"],
+    )
+
+    assert matches == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_expand_all_interactive_elements_respects_small_interaction_cap(
+    patch_settings,
+) -> None:
+    patch_settings(detail_expand_max_interactions=1)
+    page = _FakeExpansionPage(
+        base_html="<html><body></body></html>",
+        labels=[
+            {"label": "product details"},
+            {"label": "product dimensions"},
+        ],
+    )
+    diagnostics = await browser_detail.expand_all_interactive_elements(
+        page,
+        surface="ecommerce_detail",
+        requested_fields=["product details"],
+    )
+
+    assert diagnostics["limit"] == 1
+    assert diagnostics["clicked_count"] == 1
+    assert diagnostics["expanded_elements"] == ["product details"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_expand_all_interactive_elements_skips_non_actionable_candidates() -> (
+    None
+):
+    page = _FakeExpansionPage(
+        base_html="<html><body></body></html>",
+        labels=[
+            {"label": "product details", "actionable": False},
+            {"label": "product specifications", "actionable": True},
+        ],
+    )
+
+    diagnostics = await browser_detail.expand_all_interactive_elements(
+        page,
+        surface="ecommerce_detail",
+        requested_fields=["product specifications"],
+    )
+
+    assert diagnostics["clicked_count"] == 1
+    assert diagnostics["expanded_elements"] == ["product specifications"]
+
+
+@pytest.mark.regression
+def test_classify_browser_outcome_marks_empty_category_as_low_content_shell() -> None:
+    html = "<html><body><h1>Empty category</h1></body></html>"
+
+    outcome = browser_runtime.classify_browser_outcome(
+        html=html,
+        html_bytes=len(html.encode("utf-8")),
+        blocked=False,
+    )
+
+    assert outcome == "low_content_shell"
+    assert (
+        browser_runtime.classify_low_content_reason(
+            html,
+            html_bytes=len(html.encode("utf-8")),
+        )
+        == "empty_terminal_page"
+    )
+
+
+@pytest.mark.regression
+def test_classify_browser_outcome_marks_site_maintenance_title_as_low_content_shell() -> (
+    None
+):
+    html = """
+    <html>
+      <head><title>Site Maintenance</title></head>
+      <body>
+        <main>
+          <h1>Site Maintenance</h1>
+          <p>
+            We're making a few updates to our site and working through a short
+            maintenance window so shopping is unavailable right now, but we will
+            be back shortly with full product access.
+          </p>
+        </main>
+      </body>
+    </html>
+    """
+
+    outcome = browser_runtime.classify_browser_outcome(
+        html=html,
+        html_bytes=len(html.encode("utf-8")),
+        blocked=False,
+    )
+
+    assert outcome == "low_content_shell"
+    assert (
+        browser_runtime.classify_low_content_reason(
+            html,
+            html_bytes=len(html.encode("utf-8")),
+        )
+        == "empty_terminal_page"
+    )
+
+
+@pytest.mark.regression
+def test_classify_browser_outcome_marks_error_page_title_as_low_content_shell() -> None:
+    html = """
+    <html>
+      <head><title>Error Page</title></head>
+      <body>
+        <main>
+          <h1>Error Page</h1>
+          <p>
+            The requested page cannot be displayed right now. Please try again
+            later or return to the previous page.
+          </p>
+        </main>
+      </body>
+    </html>
+    """
+
+    outcome = browser_runtime.classify_browser_outcome(
+        html=html,
+        html_bytes=len(html.encode("utf-8")),
+        blocked=False,
+    )
+
+    assert outcome == "low_content_shell"
+    assert (
+        browser_runtime.classify_low_content_reason(
+            html,
+            html_bytes=len(html.encode("utf-8")),
+        )
+        == "empty_terminal_page"
+    )
+
+
+@pytest.mark.regression
+def test_classify_low_content_reason_ignores_empty_phrase_on_contentful_page() -> None:
+    html = """
+    <html><body>
+      <p>Filter summary: 0 results for XXL.</p>
+      <article><a href="/products/widget-1">Widget One</a><span>$10</span></article>
+      <article><a href="/products/widget-2">Widget Two</a><span>$20</span></article>
+      <article><a href="/products/widget-3">Widget Three</a><span>$30</span></article>
+      <article><a href="/products/widget-4">Widget Four</a><span>$40</span></article>
+      <article><a href="/products/widget-5">Widget Five</a><span>$50</span></article>
+    </body></html>
+    """
+
+    assert (
+        browser_runtime.classify_low_content_reason(
+            html,
+            html_bytes=len(html.encode("utf-8")),
+        )
+        is None
+    )
+
+
+@pytest.mark.regression
+def test_classify_browser_outcome_keeps_ready_listing_with_no_pagination_progress_usable() -> (
+    None
+):
+    html = """
+    <html><body>
+      <article class='product-card'><a href='/products/widget-1'>Widget One</a><span>$10</span></article>
+      <article class='product-card'><a href='/products/widget-2'>Widget Two</a><span>$20</span></article>
+      <article class='product-card'><a href='/products/widget-3'>Widget Three</a><span>$30</span></article>
+    </body></html>
+    """
+
+    outcome = browser_runtime.classify_browser_outcome(
+        html=html,
+        html_bytes=len(html.encode("utf-8")),
+        blocked=False,
+        traversal_result=TraversalResult(
+            requested_mode="paginate",
+            selected_mode="paginate",
+            activated=True,
+            stop_reason="next_page_not_found",
+            progress_events=0,
+            card_count=3,
+        ),
+    )
+
+    assert outcome == "usable_content"
+
+
+@pytest.mark.regression
+def test_classify_browser_outcome_keeps_extractable_listing_usable_below_threshold() -> (
+    None
+):
+    html = """
+    <html><body>
+      <article class='product-card'><a href='/products/widget-1'>Widget One</a><span>$10</span></article>
+      <article class='product-card'><a href='/products/widget-2'>Widget Two</a><span>$20</span></article>
+      <article class='product-card'><a href='/products/widget-3'>Widget Three</a><span>$30</span></article>
+    </body></html>
+    """
+
+    outcome = browser_runtime.classify_browser_outcome(
+        html=html,
+        html_bytes=len(html.encode("utf-8")),
+        blocked=False,
+        traversal_result=TraversalResult(
+            requested_mode="paginate",
+            selected_mode="paginate",
+            activated=True,
+            stop_reason="paginate_no_progress",
+            progress_events=0,
+            card_count=0,
+        ),
+    )
+
+    assert outcome == "usable_content"
+
+
+@pytest.mark.regression
+def test_build_failed_browser_diagnostics_marks_page_closed_explicitly() -> None:
+    diagnostics = browser_runtime.build_failed_browser_diagnostics(
+        browser_reason="http-escalation",
+        exc=RuntimeError("Target closed"),
+    )
+
+    assert diagnostics["browser_outcome"] == "navigation_failed"
+    assert diagnostics["failure_kind"] == "page_closed"
+    assert diagnostics["failure_stage"] == "navigation"
+
+
+@pytest.mark.regression
+def test_build_failed_browser_diagnostics_marks_timeout_explicitly() -> None:
+    diagnostics = browser_runtime.build_failed_browser_diagnostics(
+        browser_reason="http-escalation",
+        exc=TimeoutError("navigation timeout"),
+    )
+
+    assert diagnostics["browser_outcome"] == "render_timeout"
+    assert diagnostics["failure_kind"] == "timeout"
+    assert diagnostics["timeout_phase"] == "navigation"
+
+
+@pytest.mark.regression
+def test_build_failed_browser_diagnostics_preserves_failure_stage() -> None:
+    exc = TimeoutError("listing readiness timeout")
+    setattr(exc, "browser_failure_stage", "settle")
+    setattr(exc, "browser_phase_timings_ms", {"navigation": 420})
+
+    diagnostics = browser_runtime.build_failed_browser_diagnostics(
+        browser_reason="http-escalation",
+        exc=exc,
+    )
+
+    assert diagnostics["failure_stage"] == "settle"
+    assert diagnostics["timeout_phase"] == "settle"
+    assert diagnostics["phase_timings_ms"] == {"navigation": 420}
+
+
+@pytest.mark.regression
+def test_build_failed_browser_diagnostics_marks_unsupported_proxy_explicitly() -> None:
+    diagnostics = browser_runtime.build_failed_browser_diagnostics(
+        browser_reason="http-escalation",
+        exc=RuntimeError("Browser does not support socks5 proxy authentication"),
+    )
+
+    assert diagnostics["browser_outcome"] == "navigation_failed"
+    assert diagnostics["failure_kind"] == "unsupported_proxy"
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_browser_fetch_attaches_failure_diagnostics_to_direct_errors() -> None:
+    async def _failing_runtime(**_kwargs):
+        await _async_checkpoint()
+        raise RuntimeError("runtime bootstrap failed")
+
+    with pytest.raises(RuntimeError, match="runtime bootstrap failed") as excinfo:
+        await browser_runtime.browser_fetch(
+            "https://example.com/products/widget",
+            5,
+            surface="ecommerce_detail",
+            browser_reason="http-escalation",
+            runtime_provider=_failing_runtime,
+        )
+
+    diagnostics = excinfo.value.browser_diagnostics
+    assert diagnostics["browser_outcome"] == "navigation_failed"
+    assert diagnostics["failure_kind"] == "navigation_error"
+
+
+@pytest.mark.regression
+def test_build_failed_browser_diagnostics_uses_exception_proxy_mode() -> None:
+    exc = RuntimeError("proxied page failed")
+    setattr(exc, "browser_proxy_mode", "page")
+
+    diagnostics = browser_runtime.build_failed_browser_diagnostics(
+        browser_reason="http-escalation",
+        exc=exc,
+        proxy="http://proxy.example:8080",
+    )
+
+    assert diagnostics["browser_proxy_mode"] == "page"
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_browser_fetch_logs_non_usable_outcomes(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    page = _FakeExpansionPage(
+        base_html="<html><body><h1>Empty category</h1></body></html>"
+    )
+
+    async def _fake_runtime(**_kwargs):
+        await _async_checkpoint()
+        return _FakeRuntime(page)
+
+    with caplog.at_level("WARNING", logger=browser_page_flow.logger.name):
+        result = await browser_runtime.browser_fetch(
+            "https://example.com/empty",
+            5,
+            surface="ecommerce_listing",
+            capture_screenshot=True,
+            runtime_provider=_fake_runtime,
+        )
+
+    assert result.browser_diagnostics["browser_outcome"] == "low_content_shell"
+    assert any(
+        "Browser acquisition outcome=low_content_shell url=https://example.com/empty"
+        in record.message
+        for record in caplog.records
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_browser_fetch_respects_disabled_screenshot_capture(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    page = _FakeExpansionPage(
+        base_html="<html><body><h1>Empty category</h1></body></html>"
+    )
+
+    async def _fake_runtime(**_kwargs):
+        await _async_checkpoint()
+        return _FakeRuntime(page)
+
+    with caplog.at_level("WARNING", logger=browser_page_flow.logger.name):
+        result = await browser_runtime.browser_fetch(
+            "https://example.com/empty",
+            5,
+            surface="ecommerce_listing",
+            capture_screenshot=False,
+            runtime_provider=_fake_runtime,
+        )
+
+    assert result.browser_diagnostics["browser_outcome"] == "low_content_shell"
+    assert result.browser_diagnostics["phase_timings_ms"]["screenshot_capture"] == 0
+    assert not result.artifacts.get("browser_screenshot_path")
+    assert not any(
+        "Browser acquisition outcome=low_content_shell url=https://example.com/empty"
+        in record.message
+        for record in caplog.records
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_browser_fetch_surfaces_rendered_listing_evidence_counts() -> None:
+    page = _FakeExpansionPage(
+        base_html=(
+            "<html><body>"
+            "<article class='product-card'><a href='/products/widget-1'>Widget One</a><span>$10</span></article>"
+            "</body></html>"
+        ),
+        selector_counts={".product-card": 1},
+        card_count=1,
+        rendered_listing_fragments=[
+            "<article class='product-card'><a href='/products/widget-1'>Widget One</a><span>$10</span></article>"
+        ],
+    )
+    page.url = "https://example.com/collections/widgets"
+
+    async def _fake_runtime(**_kwargs):
+        await _async_checkpoint()
+        return _FakeRuntime(page)
+
+    result = await browser_runtime.browser_fetch(
+        "https://example.com/collections/widgets",
+        5,
+        surface="ecommerce_listing",
+        runtime_provider=_fake_runtime,
+    )
+
+    assert result.browser_diagnostics["rendered_listing_fragment_count"] == 1
+    assert result.browser_diagnostics["listing_visual_element_count"] >= 0
+    assert (
+        result.browser_diagnostics["extractable_listing_evidence"][
+            "rendered_listing_fragments"
+        ]
+        == 1
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_browser_fetch_bounds_listing_artifact_capture_time(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    patch_settings,
+) -> None:
+    patch_settings(browser_artifact_capture_timeout_ms=50)
+    page = _FakeExpansionPage(
+        base_html=(
+            "<html><body>"
+            "<article class='product-card'><a href='/products/widget-1'>Widget One</a></article>"
+            "</body></html>"
+        ),
+        selector_counts={".product-card": 1},
+        card_count=1,
+    )
+    page.url = "https://example.com/collections/widgets"
+
+    async def _fake_runtime(**_kwargs):
+        await _async_checkpoint()
+        return _FakeRuntime(page)
+
+    async def _slow_rendered_listing_fragments(*args, **kwargs):
+        del args, kwargs
+        await asyncio.sleep(0.2)
+        return ["<article><a href='/products/widget-1'>Widget One</a></article>"]
+
+    async def _slow_listing_visual_elements(*args, **kwargs):
+        del args, kwargs
+        await asyncio.sleep(0.2)
+        return [{"tag": "a"}]
+
+    monkeypatch.setattr(
+        browser_page_flow,
+        "capture_rendered_listing_fragments",
+        _slow_rendered_listing_fragments,
+    )
+    monkeypatch.setattr(
+        browser_page_flow,
+        "_capture_listing_visual_elements",
+        _slow_listing_visual_elements,
+    )
+    with caplog.at_level("WARNING", logger=browser_page_flow.logger.name):
+        result = await browser_runtime.browser_fetch(
+            "https://example.com/collections/widgets",
+            5,
+            surface="ecommerce_listing",
+            runtime_provider=_fake_runtime,
+        )
+
+    assert result.browser_diagnostics["rendered_listing_fragment_count"] == 0
+    assert result.browser_diagnostics["listing_visual_element_count"] == 0
+    assert (
+        result.browser_diagnostics["phase_timings_ms"][
+            "rendered_listing_fragment_capture"
+        ]
+        >= 0
+    )
+    assert result.browser_diagnostics["phase_timings_ms"]["listing_visual_capture"] >= 0
+    assert result.browser_diagnostics["listing_artifact_capture"] == {
+        "rendered_listing_fragment_capture": {"status": "timeout"},
+        "listing_visual_capture": {"status": "timeout"},
+    }
+    assert any(
+        "Timed out during rendered_listing_fragment_capture" in record.message
+        for record in caplog.records
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_capture_listing_artifact_with_timeout_reports_playwright_error(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    async def _boom():
+        await _async_checkpoint()
+        raise PlaywrightError("Target page, context or browser has been closed")
+
+    with caplog.at_level("DEBUG", logger=browser_page_flow.logger.name):
+        (
+            artifacts,
+            diagnostics,
+        ) = await browser_page_flow._capture_listing_artifact_with_timeout(
+            _boom(),
+            stage="listing_visual_capture",
+            url="https://example.com/collections/widgets",
+        )
+
+    assert artifacts == []
+    assert diagnostics == {"status": "closed"}
+    assert any(
+        "Listing artifact capture Playwright error" in record.message
+        for record in caplog.records
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_capture_rendered_listing_fragments_returns_fragment_html() -> None:
+    class _RegressionPage:
+        async def evaluate(self, script: str, arg: Any | None = None) -> list[str]:
+            await _async_checkpoint()
+            del arg
+            assert "const selectors = Array.isArray(args?.selectors)" in script
+            assert "const seenFragments = new Set();" in script
+            assert "fragments.push(fragment);" in script
+            return [
+                "<article><a href='https://example.com/products/widget-one'>Widget One</a><span>$19.99</span></article>"
+            ]
+
+    rows = await browser_recovery.capture_rendered_listing_fragments(
+        _RegressionPage(),
+        surface="ecommerce_listing",
+        limit=5,
+    )
+
+    assert rows == [
+        "<article><a href='https://example.com/products/widget-one'>Widget One</a><span>$19.99</span></article>"
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_capture_rendered_listing_fragments_ignores_non_listing_surfaces() -> (
+    None
+):
+    class _RegressionPage:
+        async def evaluate(self, script: str, arg: Any | None = None) -> list[str]:
+            await _async_checkpoint()
+            raise AssertionError("evaluate should not be called")
+
+    rows = await browser_recovery.capture_rendered_listing_fragments(
+        _RegressionPage(),
+        surface="ecommerce_detail",
+        limit=5,
+    )
+
+    assert rows == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_emit_challenge_activity_randomizes_mouse_targets(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    move_calls: list[tuple[int, int]] = []
+    wheel_calls: list[tuple[int, int]] = []
+    wait_calls: list[int] = []
+
+    class _Mouse:
+        async def move(self, x: int, y: int) -> None:
+            await _async_checkpoint()
+            move_calls.append((x, y))
+
+        async def wheel(self, delta_x: int, delta_y: int) -> None:
+            await _async_checkpoint()
+            wheel_calls.append((delta_x, delta_y))
+
+    class _Page:
+        mouse = _Mouse()
+
+        async def evaluate(self, script: str, arg: Any | None = None) -> dict[str, int]:
+            await _async_checkpoint()
+            del script, arg
+            return {"width": 900, "height": 700}
+
+        async def wait_for_timeout(self, delay_ms: int) -> None:
+            await _async_checkpoint()
+            wait_calls.append(delay_ms)
+
+    random_counter = {"value": 0}
+
+    def _fake_randbelow(limit: int) -> int:
+        random_counter["value"] += 1
+        return random_counter["value"] % max(1, int(limit))
+
+    monkeypatch.setattr(browser_recovery.secrets, "randbelow", _fake_randbelow)
+
+    await browser_recovery._emit_challenge_activity(_Page())
+
+    assert len(move_calls) == 1 + (
+        int(crawler_runtime_settings.challenge_activity_jitter_moves)
+        * int(crawler_runtime_settings.challenge_activity_mouse_steps)
+    )
+    assert all(len(call) == 2 for call in move_calls)
+    assert len(set(move_calls)) > 2
+    assert wait_calls
+    assert wheel_calls == [
+        (0, int(crawler_runtime_settings.challenge_activity_scroll_px))
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_emit_challenge_activity_ignores_negative_scroll(
+    monkeypatch: pytest.MonkeyPatch,
+    patch_settings,
+) -> None:
+    wheel_calls: list[tuple[int, int]] = []
+
+    class _Mouse:
+        async def move(self, x: int, y: int, *, steps: int) -> None:
+            await _async_checkpoint()
+
+        async def wheel(self, delta_x: int, delta_y: int) -> None:
+            await _async_checkpoint()
+            wheel_calls.append((delta_x, delta_y))
+
+    class _Page:
+        mouse = _Mouse()
+
+        async def evaluate(self, script: str, arg: Any | None = None) -> dict[str, int]:
+            await _async_checkpoint()
+            del script, arg
+            return {"width": 900, "height": 700}
+
+        async def wait_for_timeout(self, delay_ms: int) -> None:
+            await _async_checkpoint()
+
+    monkeypatch.setattr(browser_recovery.secrets, "randbelow", lambda limit: 0)
+    patch_settings(challenge_activity_scroll_px=-120)
+    await browser_recovery._emit_challenge_activity(_Page())
+
+    assert wheel_calls == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_emit_browser_behavior_activity_adds_scroll_physics(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    move_calls: list[tuple[int, int]] = []
+    wheel_calls: list[tuple[int, int]] = []
+    wait_calls: list[int] = []
+
+    class _Mouse:
+        async def move(self, x: int, y: int) -> None:
+            await _async_checkpoint()
+            move_calls.append((x, y))
+
+        async def wheel(self, delta_x: int, delta_y: int) -> None:
+            await _async_checkpoint()
+            wheel_calls.append((delta_x, delta_y))
+
+    class _Page:
+        mouse = _Mouse()
+
+        async def evaluate(self, script: str, arg: Any | None = None) -> dict[str, int]:
+            await _async_checkpoint()
+            del script, arg
+            return {"width": 900, "height": 700}
+
+        async def wait_for_timeout(self, delay_ms: int) -> None:
+            await _async_checkpoint()
+            wait_calls.append(delay_ms)
+
+    monkeypatch.setattr(browser_recovery.secrets, "randbelow", lambda limit: 0)
+    diagnostics = await browser_recovery.emit_browser_behavior_activity(_Page())
+
+    assert diagnostics["enabled"] is True
+    assert int(diagnostics["pointer_moves"]) == len(move_calls)
+    assert int(diagnostics["scroll_steps"]) == int(
+        crawler_runtime_settings.browser_behavior_scroll_steps
+    )
+    assert len(wheel_calls) == 1 + int(
+        crawler_runtime_settings.browser_behavior_scroll_steps
+    )
+    assert wait_calls
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_emit_browser_behavior_activity_ignores_scroll_failures(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _Mouse:
+        async def move(self, x: int, y: int) -> None:
+            await _async_checkpoint()
+
+        async def wheel(self, delta_x: int, delta_y: int) -> None:
+            await _async_checkpoint()
+
+    class _Page:
+        mouse = _Mouse()
+
+        async def evaluate(self, script: str, arg: Any | None = None) -> dict[str, int]:
+            await _async_checkpoint()
+            del script, arg
+            return {"width": 900, "height": 700}
+
+    async def _raise_scroll_failure(_page: object) -> int:
+        await _async_checkpoint()
+        raise RuntimeError("scroll failed")
+
+    monkeypatch.setattr(browser_recovery.secrets, "randbelow", lambda limit: 0)
+    monkeypatch.setattr(browser_recovery, "_emit_scroll_physics", _raise_scroll_failure)
+
+    diagnostics = await browser_recovery.emit_browser_behavior_activity(_Page())
+
+    assert diagnostics["enabled"] is True
+    assert int(diagnostics["scroll_steps"]) == 0
+
+
+@pytest.mark.regression
+def test_should_run_behavior_realism_skips_detail_shell_retry_for_real_chrome() -> None:
+    assert (
+        browser_runtime._should_run_behavior_realism(
+            "real_chrome",
+            browser_reason="detail-shell retry",
+        )
+        is False
+    )
+
+
+@pytest.mark.regression
+def test_should_run_behavior_realism_for_real_chrome_with_vendor_block() -> None:
+    assert (
+        browser_runtime._should_run_behavior_realism(
+            "real_chrome",
+            browser_reason="vendor-block:akamai",
+        )
+        is True
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_browser_behavior_realism_is_timeout_bounded(
+    patch_settings,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def _slow_behavior(_page):
+        await asyncio.sleep(1)
+        return {"enabled": True}
+
+    patch_settings(browser_behavior_realism_timeout_seconds=0.01)
+    monkeypatch.setattr(
+        browser_runtime,
+        "emit_browser_behavior_activity",
+        _slow_behavior,
+    )
+
+    diagnostics = await browser_runtime._emit_browser_behavior_activity_bounded(
+        object()
+    )
+
+    assert isinstance(diagnostics, dict)
+    assert diagnostics["enabled"] is True
+    assert diagnostics["timed_out"] is True
+    assert "timeout_seconds" in diagnostics
+    assert isinstance(diagnostics["timeout_seconds"], float)
+    assert diagnostics["timeout_seconds"] == pytest.approx(0.01)
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_type_text_like_human_types_one_character_at_a_time(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    typed: list[str] = []
+    clicks: list[int] = []
+
+    class _Locator:
+        async def click(self, **kwargs) -> None:
+            await _async_checkpoint()
+            timeout = kwargs.get("timeout")
+            clicks.append(timeout)
+
+    class _Keyboard:
+        async def type(self, value: str) -> None:
+            await _async_checkpoint()
+            typed.append(value)
+
+    class _Page:
+        keyboard = _Keyboard()
+
+        def locator(self, selector: str) -> _Locator:
+            assert selector == "input[name=q]"
+            return _Locator()
+
+        async def wait_for_timeout(self, delay_ms: int) -> None:
+            await _async_checkpoint()
+            assert delay_ms >= 0
+
+    monkeypatch.setattr(browser_recovery.secrets, "randbelow", lambda limit: 0)
+
+    diagnostics = await browser_recovery.type_text_like_human(
+        _Page(),
+        "input[name=q]",
+        "shoe",
+    )
+
+    assert diagnostics == {"typed_chars": 4}
+    assert typed == ["s", "h", "o", "e"]
+    assert clicks == [int(crawler_runtime_settings.traversal_click_timeout_ms)]
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_recover_browser_challenge_keeps_original_response_when_retry_stays_blocked() -> (
+    None
+):
+    original_response = SimpleNamespace(status=403, name="original")
+    retried_response = SimpleNamespace(status=200, name="retried")
+
+    class _Page:
+        def __init__(self) -> None:
+            self.mouse = None
+            self.goto_calls = 0
+
+        async def goto(self, *_args, **_kwargs):
+            await _async_checkpoint()
+            self.goto_calls += 1
+            return retried_response
+
+        async def wait_for_timeout(self, _ms: int) -> None:
+            await _async_checkpoint()
+            return None
+
+    page = _Page()
+
+    async def _get_page_html(_page: Any) -> str:
+        await _async_checkpoint()
+        return "<html><body>blocked</body></html>"
+
+    async def _classify_blocked_page(_html: str, _status_code: int):
+        await _async_checkpoint()
+        return SimpleNamespace(blocked=True, provider_hits=[])
+
+    result = await browser_recovery.recover_browser_challenge(
+        page,
+        url="https://example.com/products/widget",
+        response=original_response,
+        timeout_seconds=5,
+        phase_timings_ms={},
+        challenge_wait_max_seconds=1,
+        challenge_poll_interval_ms=100,
+        navigation_timeout_ms=1000,
+        elapsed_ms=lambda _started_at: 0,
+        classify_blocked_page=_classify_blocked_page,
+        get_page_html=_get_page_html,
+    )
+
+    assert result is original_response
+    assert page.goto_calls == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_recover_browser_challenge_propagates_inner_timeout_errors() -> None:
+    response = SimpleNamespace(status=403)
+
+    class _Page:
+        mouse = None
+
+        async def wait_for_timeout(self, _ms: int) -> None:
+            await _async_checkpoint()
+
+    html_calls = 0
+
+    async def _get_page_html(_page: Any) -> str:
+        nonlocal html_calls
+        await _async_checkpoint()
+        html_calls += 1
+        if html_calls > 1:
+            raise asyncio.TimeoutError("inner html timeout")
+        return "<html><body>blocked</body></html>"
+
+    async def _classify_blocked_page(_html: str, _status_code: int):
+        await _async_checkpoint()
+        return SimpleNamespace(blocked=True, provider_hits=[])
+
+    recovered = await browser_recovery.recover_browser_challenge(
+        _Page(),
+        url="https://example.com/products/widget",
+        response=response,
+        timeout_seconds=5,
+        phase_timings_ms={},
+        challenge_wait_max_seconds=1,
+        challenge_poll_interval_ms=100,
+        navigation_timeout_ms=1000,
+        elapsed_ms=lambda _started_at: 0,
+        classify_blocked_page=_classify_blocked_page,
+        get_page_html=_get_page_html,
+    )
+
+    assert recovered is response
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_recover_browser_challenge_runs_for_real_chrome() -> None:
+    original_response = SimpleNamespace(
+        status=403, headers={"content-type": "text/html"}
+    )
+    retried_response = SimpleNamespace(
+        status=200, headers={"content-type": "text/html"}
+    )
+
+    class _Page:
+        mouse = None
+
+        def __init__(self) -> None:
+            self.goto_calls = 0
+            self.wait_calls = 0
+
+        async def goto(self, *_args, **_kwargs):
+            await _async_checkpoint()
+            self.goto_calls += 1
+            return retried_response
+
+        async def wait_for_timeout(self, _ms: int) -> None:
+            await _async_checkpoint()
+            self.wait_calls += 1
+            return None
+
+    page = _Page()
+    classify_calls = {"count": 0}
+
+    async def _get_page_html(_page: Any) -> str:
+        await _async_checkpoint()
+        return "<html><body>product title $12.00 add to cart</body></html>"
+
+    async def _classify_blocked_page(_html: str, _status_code: int):
+        await _async_checkpoint()
+        classify_calls["count"] += 1
+        return SimpleNamespace(blocked=classify_calls["count"] == 1, provider_hits=[])
+
+    result = await browser_recovery.recover_browser_challenge(
+        page,
+        url="https://example.com/products/widget",
+        response=original_response,
+        browser_engine="real_chrome",
+        timeout_seconds=5,
+        phase_timings_ms={},
+        challenge_wait_max_seconds=1,
+        challenge_poll_interval_ms=100,
+        navigation_timeout_ms=1000,
+        elapsed_ms=lambda _started_at: 0,
+        classify_blocked_page=_classify_blocked_page,
+        get_page_html=_get_page_html,
+    )
+
+    assert result is original_response
+    assert result.browser_recovered_status == 200
+    # The recovery loop re-checks for clear at the top of the first poll
+    # iteration (before waiting), so a challenge that clears immediately needs
+    # no wait_for_timeout and no retry-goto.
+    assert page.wait_calls == 0
+    assert page.goto_calls == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_recover_browser_challenge_waits_on_provider_low_content_shell() -> None:
+    original_response = SimpleNamespace(
+        status=200, headers={"content-type": "text/html"}
+    )
+
+    class _Page:
+        def __init__(self) -> None:
+            self.mouse = None
+            self.wait_calls = 0
+            self.html = "<html><body>akamai shell</body></html>"
+
+        async def wait_for_timeout(self, _timeout: int) -> None:
+            await _async_checkpoint()
+            self.wait_calls += 1
+            self.html = (
+                "<html><body><h1>Widget Prime</h1><span>$12.00</span>"
+                "<button>Add to cart</button></body></html>"
+            )
+
+        async def goto(self, *_args, **_kwargs):
+            await _async_checkpoint()
+            raise AssertionError("wait recovery should clear before retry navigation")
+
+    page = _Page()
+
+    async def _get_page_html(active_page: Any) -> str:
+        await _async_checkpoint()
+        return active_page.html
+
+    async def _classify_blocked_page(_html: str, _status_code: int):
+        await _async_checkpoint()
+        return SimpleNamespace(blocked=False, provider_hits=["akamai"])
+
+    result = await browser_recovery.recover_browser_challenge(
+        page,
+        url="https://example.com/products/widget",
+        response=original_response,
+        browser_engine="real_chrome",
+        timeout_seconds=5,
+        phase_timings_ms={},
+        challenge_wait_max_seconds=1,
+        challenge_poll_interval_ms=100,
+        navigation_timeout_ms=1000,
+        elapsed_ms=lambda _started_at: 0,
+        classify_blocked_page=_classify_blocked_page,
+        get_page_html=_get_page_html,
+        looks_like_low_content_shell=lambda html, **_kwargs: "akamai shell" in html,
+    )
+
+    assert result is original_response
+    assert page.wait_calls == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_recover_browser_challenge_clears_akamai_shell_without_cookie() -> None:
+    """Lock INVARIANTS §6: challenge recovery re-reads the DOM every poll and
+    never gates the clear-check on a provider cookie.
+
+    Models an Akamai provider shell on a page that exposes no cookie API (so a
+    cookie-based gate could never observe `_abck`). The shell swaps to real
+    product content after one wait. Patchright must recognize the cleared page
+    in-place and must NOT fall through to the retry-goto (which is the path that
+    would otherwise trigger a needless real-Chrome escalation). Reintroducing the
+    old `_abck` cookie gate would make this spin until the budget is exhausted.
+    """
+    original_response = SimpleNamespace(
+        status=200, headers={"content-type": "text/html"}
+    )
+
+    class _Page:
+        # No `context` attribute on purpose: a cookie-gated check can never pass.
+        def __init__(self) -> None:
+            self.mouse = None
+            self.wait_calls = 0
+            self.html = "<html><body>akamai shell</body></html>"
+
+        async def wait_for_timeout(self, _timeout: int) -> None:
+            await _async_checkpoint()
+            self.wait_calls += 1
+            self.html = (
+                "<html><body><h1>Widget Prime</h1><span>$12.00</span>"
+                "<button>Add to cart</button></body></html>"
+            )
+
+        async def goto(self, *_args, **_kwargs):
+            await _async_checkpoint()
+            raise AssertionError(
+                "in-place wait recovery must clear before the retry-goto / escalation"
+            )
+
+    page = _Page()
+
+    async def _get_page_html(active_page: Any) -> str:
+        await _async_checkpoint()
+        return active_page.html
+
+    async def _classify_blocked_page(html: str, _status_code: int):
+        await _async_checkpoint()
+        return SimpleNamespace(blocked=False, provider_hits=["akamai"])
+
+    result = await browser_recovery.recover_browser_challenge(
+        page,
+        url="https://example.com/products/widget",
+        response=original_response,
+        browser_engine="patchright",
+        timeout_seconds=5,
+        phase_timings_ms={},
+        challenge_wait_max_seconds=1,
+        challenge_poll_interval_ms=100,
+        navigation_timeout_ms=1000,
+        elapsed_ms=lambda _started_at: 0,
+        classify_blocked_page=_classify_blocked_page,
+        get_page_html=_get_page_html,
+        looks_like_low_content_shell=lambda html, **_kwargs: "akamai shell" in html,
+    )
+
+    assert result is original_response
+    # Exactly one wait swaps the shell to real content; the next poll's DOM
+    # re-read clears it in-place. No retry-goto, no escalation.
+    assert page.wait_calls == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_recover_browser_challenge_drops_stale_block_status_after_wait_clear() -> (
+    None
+):
+    original_response = SimpleNamespace(
+        status=403, headers={"content-type": "text/html"}
+    )
+    status_codes: list[int] = []
+
+    class _Page:
+        mouse = None
+
+        async def goto(self, *_args, **_kwargs):
+            await _async_checkpoint()
+            raise AssertionError("retry should not run after challenge clears")
+
+        async def wait_for_timeout(self, _ms: int) -> None:
+            await _async_checkpoint()
+            return None
+
+    async def _get_page_html(_page: Any) -> str:
+        await _async_checkpoint()
+        return "<html><body>product title $12.00 add to cart</body></html>"
+
+    async def _classify_blocked_page(_html: str, status_code: int):
+        await _async_checkpoint()
+        status_codes.append(status_code)
+        return SimpleNamespace(blocked=len(status_codes) == 1, provider_hits=[])
+
+    result = await browser_recovery.recover_browser_challenge(
+        _Page(),
+        url="https://example.com/products/widget",
+        response=original_response,
+        timeout_seconds=5,
+        phase_timings_ms={},
+        challenge_wait_max_seconds=1,
+        challenge_poll_interval_ms=100,
+        navigation_timeout_ms=1000,
+        elapsed_ms=lambda _started_at: 0,
+        classify_blocked_page=_classify_blocked_page,
+        get_page_html=_get_page_html,
+    )
+
+    assert status_codes == [403, 200]
+    assert result is original_response
+    assert result.browser_recovered_status == 200
+    assert result.headers == original_response.headers
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_recover_browser_challenge_bounds_slow_activity(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original_response = SimpleNamespace(
+        status=200, headers={"content-type": "text/html"}
+    )
+
+    class _Page:
+        mouse = None
+
+        async def wait_for_timeout(self, _timeout: int) -> None:
+            await asyncio.sleep(1)
+
+        async def goto(self, *_args, **_kwargs):
+            return original_response
+
+    async def _get_page_html(_page: Any) -> str:
+        await _async_checkpoint()
+        return "<html><body>akamai shell</body></html>"
+
+    async def _classify_blocked_page(_html: str, _status_code: int):
+        await _async_checkpoint()
+        return SimpleNamespace(blocked=False, provider_hits=["akamai"])
+
+    async def _slow_activity(_page: Any) -> None:
+        await asyncio.sleep(1)
+
+    monkeypatch.setattr(browser_recovery, "_emit_challenge_activity", _slow_activity)
+
+    started_at = time.perf_counter()
+    await browser_recovery.recover_browser_challenge(
+        _Page(),
+        url="https://example.com/products/widget",
+        response=original_response,
+        browser_engine="patchright",
+        timeout_seconds=5,
+        phase_timings_ms={},
+        challenge_wait_max_seconds=0.05,
+        challenge_poll_interval_ms=100,
+        navigation_timeout_ms=1000,
+        elapsed_ms=lambda start: int((time.perf_counter() - start) * 1000),
+        classify_blocked_page=_classify_blocked_page,
+        get_page_html=_get_page_html,
+        looks_like_low_content_shell=lambda html, **_kwargs: "akamai shell" in html,
+    )
+
+    assert time.perf_counter() - started_at < 0.5
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_recover_browser_challenge_marks_retry_response_without_wrapping() -> (
+    None
+):
+    retried_response = SimpleNamespace(
+        status=403,
+        headers={"content-type": "text/html"},
+        url="https://example.com/products/widget",
+        request=SimpleNamespace(method="GET"),
+        name="retried",
+    )
+
+    class _Page:
+        mouse = None
+
+        def __init__(self) -> None:
+            self.retried = False
+
+        async def goto(self, *_args, **_kwargs):
+            await _async_checkpoint()
+            self.retried = True
+            return retried_response
+
+        async def wait_for_timeout(self, _ms: int) -> None:
+            await _async_checkpoint()
+            return None
+
+    async def _get_page_html(page: Any) -> str:
+        await _async_checkpoint()
+        return (
+            "<html><body>product title $12.00 add to cart</body></html>"
+            if page.retried
+            else "<html><body>blocked</body></html>"
+        )
+
+    async def _classify_blocked_page(html: str, _status_code: int):
+        await _async_checkpoint()
+        return SimpleNamespace(blocked="blocked" in html, provider_hits=[])
+
+    page = _Page()
+    result = await browser_recovery.recover_browser_challenge(
+        page,
+        url="https://example.com/products/widget",
+        response=SimpleNamespace(status=403, headers={"content-type": "text/html"}),
+        timeout_seconds=5,
+        phase_timings_ms={},
+        challenge_wait_max_seconds=1,
+        challenge_poll_interval_ms=100,
+        navigation_timeout_ms=1000,
+        elapsed_ms=lambda _started_at: 0,
+        classify_blocked_page=_classify_blocked_page,
+        get_page_html=_get_page_html,
+    )
+
+    assert result is retried_response
+    assert result.browser_recovered_status == 200
+    assert result.url == retried_response.url
+    assert result.request is retried_response.request
+    assert result.name == "retried"
+    assert result.browser_navigation_strategy == "domcontentloaded"
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_get_page_html_falls_back_to_outer_html_after_driver_close(
+    patch_settings,
+) -> None:
+    patch_settings(browser_error_retry_attempts=1, browser_error_retry_delay_ms=0)
+
+    class _Page:
+        def __init__(self) -> None:
+            self.content_calls = 0
+
+        async def content(self) -> str:
+            await _async_checkpoint()
+            self.content_calls += 1
+            raise RuntimeError(
+                "Page.content: Connection closed while reading from the driver"
+            )
+
+        async def evaluate(self, script: str):
+            await _async_checkpoint()
+            if "flattenedRoots" in script:
+                return 0
+            return "<html><body><main><h1>Recovered</h1></main></body></html>"
+
+    html = await dom_runtime.get_page_html(_Page())
+
+    assert "Recovered" in html
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_get_page_html_outer_html_fallback_preserves_doctype(
+    patch_settings,
+) -> None:
+    patch_settings(browser_error_retry_attempts=0, browser_error_retry_delay_ms=0)
+
+    class _Page:
+        async def content(self) -> str:
+            await _async_checkpoint()
+            raise RuntimeError(
+                "Page.content: Connection closed while reading from the driver"
+            )
+
+        async def evaluate(self, script: str):
+            await _async_checkpoint()
+            if "flattenedRoots" in script:
+                return 0
+            return "<!DOCTYPE html><html><body>Recovered</body></html>"
+
+    html = await dom_runtime.get_page_html(_Page())
+
+    assert html.startswith("<!DOCTYPE html>")
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_get_page_html_falls_back_after_live_navigation_content_error(
+    patch_settings,
+) -> None:
+    patch_settings(browser_error_retry_attempts=0, browser_error_retry_delay_ms=0)
+
+    class _Page:
+        async def content(self) -> str:
+            await _async_checkpoint()
+            raise RuntimeError(
+                "Page.content: Unable to retrieve content because the page is navigating and changing the content."
+            )
+
+        async def evaluate(self, script: str):
+            await _async_checkpoint()
+            if "flattenedRoots" in script:
+                return 0
+            return "<html><body><main><h1>Recovered live DOM</h1></main></body></html>"
+
+    html = await dom_runtime.get_page_html(_Page())
+
+    assert "Recovered live DOM" in html
+
+
+@pytest.mark.regression
+def test_shadow_dom_flattener_avoids_inner_html_assignment() -> None:
+    assert ".innerHTML" not in dom_runtime._SHADOW_DOM_FLATTENER_SCRIPT
+    assert "cloneNode(true)" in dom_runtime._SHADOW_DOM_FLATTENER_SCRIPT
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_page_might_have_location_interstitial_uses_live_selector_probe() -> None:
+    class _Page:
+        url = "https://example.com/product"
+
+        async def evaluate(self, script: str, payload: dict[str, object]):
+            await _async_checkpoint()
+            assert "document.querySelector" in script
+            assert "selectors" in payload
+            return True
+
+    detected = await browser_page_flow.page_might_have_location_interstitial(_Page())
+
+    assert detected is True
+
+
+@pytest.mark.regression
+def test_browser_diagnostics_preserves_existing_retry_reason_and_timings() -> None:
+    diagnostics = browser_runtime.build_browser_diagnostics_contract(
+        diagnostics={
+            "retry_reason": "empty_extraction",
+            "phase_timings_ms": {"navigation": 120},
+        },
+        retry_reason="",
+        phase_timings_ms={"content_serialization": 20},
+    )
+
+    assert diagnostics["retry_reason"] is None
+    assert diagnostics["phase_timings_ms"] == {
+        "navigation": 120,
+        "content_serialization": 20,
+    }
+
+
+@pytest.mark.regression
+def test_browser_diagnostics_preserves_existing_retry_reason_when_unspecified() -> None:
+    diagnostics = browser_runtime.build_browser_diagnostics_contract(
+        diagnostics={"retry_reason": "empty_extraction"},
+        retry_reason=None,
+    )
+
+    assert diagnostics["retry_reason"] == "empty_extraction"
+
+
+@pytest.mark.regression
+def test_build_failed_browser_diagnostics_rejects_non_mapping_phase_timings() -> None:
+    exc = RuntimeError("broken timings payload")
+    setattr(exc, "browser_phase_timings_ms", [("navigation", 42)])
+
+    diagnostics = browser_runtime.build_failed_browser_diagnostics(
+        browser_reason="http-escalation",
+        exc=exc,
+    )
+
+    assert diagnostics["phase_timings_ms"] == {}
+    assert diagnostics["phase_timings_error"] == "invalid_phase_timings_ms:incoming"
+
+
+@pytest.mark.regression
+def test_build_browser_fetch_result_coerces_bad_status_and_none_content_type() -> None:
+    result = build_browser_fetch_result(
+        url="https://example.com",
+        final_url="https://example.com",
+        html="<html></html>",
+        finalized={"content_type": None},
+        finalized_status_code="not-a-status",
+        finalized_platform_family=None,
+        diagnostics={},
+    )
+
+    assert result.status_code == 0
+    assert result.content_type == ""
+
+
+@pytest.mark.regression
+def test_browser_diagnostics_marks_invalid_phase_timing_payload() -> None:
+    diagnostics = browser_runtime.build_browser_diagnostics_contract(
+        diagnostics={"phase_timings_ms": {"navigation": 120}},
+        phase_timings_ms=["broken"],
+    )
+
+    assert diagnostics["phase_timings_ms"] == {"navigation": 120}
+    assert diagnostics["phase_timings_error"] == "invalid_phase_timings_ms:incoming"
+
+
+@pytest.mark.regression
+def test_browser_diagnostics_contract_clears_stale_nested_outcome_fields() -> None:
+    diagnostics = browser_runtime.build_browser_diagnostics_contract(
+        diagnostics={
+            "browser_reason": "nested",
+            "browser_outcome": "location_required",
+            "failure_reason": "location_required",
+        },
+        browser_reason="",
+        browser_outcome="",
+        failure_reason="",
+    )
+
+    assert diagnostics["browser_reason"] is None
+    assert diagnostics["browser_outcome"] is None
+    assert diagnostics["failure_reason"] is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_wait_for_listing_readiness_treats_only_playwright_timeout_as_recoverable() -> (
+    None
+):
+    page = _FakeExpansionPage(
+        base_html="<html><body></body></html>",
+        wait_for_selector_error=PlaywrightTimeoutError("listing readiness timeout"),
+    )
+
+    diagnostics = await browser_readiness.wait_for_listing_readiness_impl(
+        page,
+        override={
+            "platform": "example",
+            "selectors": [".listing-card"],
+            "max_wait_ms": 250,
+        },
+    )
+
+    assert diagnostics["status"] == "timed_out"
+    assert diagnostics["attempted_selectors"] == [".listing-card"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_wait_for_listing_readiness_propagates_browser_closure() -> None:
+    page = _FakeExpansionPage(
+        base_html="<html><body></body></html>",
+        wait_for_selector_error=PlaywrightError(
+            "Target page, context or browser has been closed"
+        ),
+    )
+
+    with pytest.raises(PlaywrightError, match="closed"):
+        await browser_readiness.wait_for_listing_readiness_impl(
+            page,
+            override={
+                "platform": "example",
+                "selectors": [".listing-card"],
+                "max_wait_ms": 250,
+            },
+        )
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_browser_fetch_records_navigation_timing_when_fallback_navigation_fails() -> (
+    None
+):
+    page = _FakeExpansionPage(
+        base_html="<html><body>Widget</body></html>",
+        goto_failures={
+            "networkidle": PlaywrightTimeoutError("primary timeout"),
+            "domcontentloaded": PlaywrightError("secondary fallback failed"),
+            "commit": PlaywrightError("fallback failed"),
+        },
+    )
+
+    async def _fake_runtime(**_kwargs):
+        await _async_checkpoint()
+        return _FakeRuntime(page)
+
+    with pytest.raises(PlaywrightError, match="fallback failed") as excinfo:
+        await browser_runtime.browser_fetch(
+            "https://example.com/products/widget",
+            5,
+            surface="ecommerce_detail",
+            browser_reason="http-escalation",
+            runtime_provider=_fake_runtime,
+        )
+
+    diagnostics = browser_runtime.build_failed_browser_diagnostics(
+        browser_reason="http-escalation",
+        exc=excinfo.value,
+    )
+
+    assert page.goto_calls == ["domcontentloaded", "commit"]
+    assert diagnostics["navigation_strategy"] == "commit"
+    assert diagnostics["phase_timings_ms"]["navigation"] >= 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_networkidle_navigation_uses_primary_budget_cap(patch_settings) -> None:
+    patch_settings(
+        browser_navigation_networkidle_timeout_ms=30000,
+        browser_navigation_networkidle_primary_budget_ratio=0.4,
+    )
+    page = _FakeExpansionPage(
+        base_html="<html><body>Widget</body></html>",
+        goto_failures={"networkidle": PlaywrightTimeoutError("primary timeout")},
+    )
+
+    _response, strategy = await browser_page_flow.navigate_browser_page_impl(
+        page,
+        url="https://example.com/products/widget",
+        timeout_seconds=5,
+        phase_timings_ms={},
+        readiness_policy={"navigation_wait_until": "networkidle"},
+        crawler_runtime_settings=crawler_runtime_settings,
+        elapsed_ms=lambda _started_at: 0,
+    )
+
+    assert strategy == "domcontentloaded"
+    assert page.goto_calls == ["networkidle", "domcontentloaded"]
+    assert page.goto_timeout_calls[:2] == [2000, 5000]
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_origin_warmup_uses_sibling_page_not_active_page() -> None:
+    page = _FakeExpansionPage(base_html="<html><body><h1>Widget</h1></body></html>")
+
+    await browser_runtime._maybe_warm_origin_before_navigation(
+        page,
+        url="https://example.com/products/widget",
+        surface="ecommerce_detail",
+        browser_reason="http-escalation",
+        host_policy_snapshot=None,
+        proxy_profile=None,
+        timeout_seconds=5,
+        phase_timings_ms={},
+    )
+
+    assert page.goto_calls == []
+    assert len(page.spawned_pages) == 1
+    assert page.spawned_pages[0].goto_calls == ["domcontentloaded"]
+    assert page.spawned_pages[0].page_close_calls == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_origin_warmup_runs_for_job_detail() -> None:
+    page = _FakeExpansionPage(base_html="<html><body><h1>Job</h1></body></html>")
+
+    await browser_runtime._maybe_warm_origin_before_navigation(
+        page,
+        url="https://example.com/jobs/123",
+        surface="job_detail",
+        browser_reason="http-escalation",
+        host_policy_snapshot=None,
+        proxy_profile=None,
+        timeout_seconds=5,
+        phase_timings_ms={},
+    )
+
+    assert page.goto_calls == []
+    assert len(page.spawned_pages) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_origin_warmup_skips_for_listing_surface() -> None:
+    page = _FakeExpansionPage(base_html="<html><body><h1>Products</h1></body></html>")
+
+    await browser_runtime._maybe_warm_origin_before_navigation(
+        page,
+        url="https://example.com/category/widgets",
+        surface="ecommerce_listing",
+        browser_reason="http-escalation",
+        host_policy_snapshot=None,
+        proxy_profile=None,
+        timeout_seconds=5,
+        phase_timings_ms={},
+    )
+
+    assert page.goto_calls == []
+    assert not page.spawned_pages
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_origin_warmup_skips_for_rotating_proxy_profile() -> None:
+    page = _FakeExpansionPage(base_html="<html><body><h1>Widget</h1></body></html>")
+
+    await browser_runtime._maybe_warm_origin_before_navigation(
+        page,
+        url="https://example.com/products/widget",
+        surface="ecommerce_detail",
+        browser_reason="http-escalation",
+        host_policy_snapshot=None,
+        proxy_profile={"rotation": "rotating"},
+        timeout_seconds=5,
+        phase_timings_ms={},
+    )
+
+    assert page.goto_calls == []
+    assert not page.spawned_pages
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_origin_warmup_runs_for_real_chrome_without_saved_domain_state() -> None:
+    page = _FakeExpansionPage(base_html="<html><body><h1>Widget</h1></body></html>")
+
+    await browser_runtime._maybe_warm_origin_before_navigation(
+        page,
+        url="https://example.com/products/widget",
+        surface="ecommerce_detail",
+        browser_engine="real_chrome",
+        browser_reason="http-escalation",
+        host_policy_snapshot=None,
+        proxy_profile=None,
+        timeout_seconds=5,
+        phase_timings_ms={},
+    )
+
+    assert page.goto_calls == ["domcontentloaded"]
+    assert not page.spawned_pages
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_origin_warmup_caps_budget_to_preserve_navigation_time(
+    patch_settings,
+) -> None:
+    patch_settings(
+        origin_warmup_max_budget_ratio=0.4,
+        browser_navigation_domcontentloaded_timeout_ms=15000,
+    )
+    page = _FakeExpansionPage(base_html="<html><body><h1>Widget</h1></body></html>")
+
+    await browser_runtime._maybe_warm_origin_before_navigation(
+        page,
+        url="https://example.com/products/widget",
+        surface="ecommerce_detail",
+        browser_engine="real_chrome",
+        browser_reason="vendor-block:akamai",
+        host_policy_snapshot=None,
+        proxy_profile=None,
+        timeout_seconds=20,
+        phase_timings_ms={},
+    )
+
+    assert page.goto_timeout_calls == [8000]
+    assert not page.spawned_pages
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_origin_warmup_keeps_minimum_budget_for_short_url_timeout(
+    patch_settings,
+) -> None:
+    patch_settings(
+        origin_warmup_max_budget_ratio=0.4,
+        browser_navigation_domcontentloaded_timeout_ms=15000,
+    )
+    page = _FakeExpansionPage(base_html="<html><body><h1>Widget</h1></body></html>")
+
+    await browser_runtime._maybe_warm_origin_before_navigation(
+        page,
+        url="https://example.com/products/widget",
+        surface="ecommerce_detail",
+        browser_engine="real_chrome",
+        browser_reason="http-escalation",
+        host_policy_snapshot=None,
+        proxy_profile=None,
+        timeout_seconds=1,
+        phase_timings_ms={},
+    )
+
+    assert page.goto_timeout_calls == [750]
+    assert not page.spawned_pages
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_origin_warmup_zero_ratio_preserves_minimum_budget(
+    patch_settings,
+) -> None:
+    patch_settings(
+        origin_warmup_max_budget_ratio=0,
+        browser_navigation_domcontentloaded_timeout_ms=15000,
+    )
+    page = _FakeExpansionPage(base_html="<html><body><h1>Widget</h1></body></html>")
+
+    await browser_runtime._maybe_warm_origin_before_navigation(
+        page,
+        url="https://example.com/products/widget",
+        surface="ecommerce_detail",
+        browser_engine="real_chrome",
+        browser_reason="http-escalation",
+        host_policy_snapshot=None,
+        proxy_profile=None,
+        timeout_seconds=10,
+        phase_timings_ms={},
+    )
+
+    assert page.goto_timeout_calls == [750]
+    assert not page.spawned_pages
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_origin_warmup_skips_for_real_chrome_with_saved_domain_state() -> None:
+    page = _FakeExpansionPage(base_html="<html><body><h1>Widget</h1></body></html>")
+
+    await browser_runtime._maybe_warm_origin_before_navigation(
+        page,
+        url="https://example.com/products/widget",
+        surface="ecommerce_detail",
+        browser_engine="real_chrome",
+        browser_reason="http-escalation",
+        host_policy_snapshot=None,
+        proxy_profile=None,
+        skip_for_reusable_domain_state=True,
+        timeout_seconds=5,
+        phase_timings_ms={},
+    )
+
+    assert not page.spawned_pages
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_origin_warmup_skips_for_known_vendor_block_memory() -> None:
+    page = _FakeExpansionPage(base_html="<html><body><h1>Widget</h1></body></html>")
+
+    await browser_runtime._maybe_warm_origin_before_navigation(
+        page,
+        url="https://example.com/products/widget",
+        surface="ecommerce_detail",
+        browser_reason="host-preference",
+        host_policy_snapshot={"prefer_browser": True, "last_block_vendor": "datadome"},
+        proxy_profile=None,
+        timeout_seconds=5,
+        phase_timings_ms={},
+    )
+
+    assert page.goto_calls == []
+    assert not page.spawned_pages
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_origin_warmup_runs_for_real_chrome_despite_vendor_block_memory() -> None:
+    page = _FakeExpansionPage(base_html="<html><body><h1>Widget</h1></body></html>")
+
+    await browser_runtime._maybe_warm_origin_before_navigation(
+        page,
+        url="https://example.com/products/widget",
+        surface="ecommerce_detail",
+        browser_engine="real_chrome",
+        browser_reason="vendor-block:datadome",
+        host_policy_snapshot={"prefer_browser": True, "last_block_vendor": "datadome"},
+        proxy_profile=None,
+        timeout_seconds=5,
+        phase_timings_ms={},
+    )
+
+    assert page.goto_calls == ["domcontentloaded"]
+    assert not page.spawned_pages
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_origin_warmup_dedupes_parallel_same_host() -> None:
+    pages = [
+        _FakeExpansionPage(base_html="<html><body><h1>Widget</h1></body></html>")
+        for _index in range(6)
+    ]
+
+    await asyncio.gather(
+        *(
+            browser_runtime._maybe_warm_origin_before_navigation(
+                page,
+                url="https://example.com/products/widget",
+                surface="ecommerce_detail",
+                browser_reason="http-escalation",
+                host_policy_snapshot=None,
+                proxy_profile=None,
+                timeout_seconds=5,
+                phase_timings_ms={},
+            )
+            for page in pages
+        )
+    )
+
+    assert sum(len(page.spawned_pages) for page in pages) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_origin_warmup_dedupes_recent_same_host_waves_by_default() -> None:
+    pages = [
+        _FakeExpansionPage(base_html="<html><body><h1>Widget</h1></body></html>")
+        for _index in range(3)
+    ]
+
+    for page in pages:
+        await browser_runtime._maybe_warm_origin_before_navigation(
+            page,
+            url="https://example.com/products/widget",
+            surface="ecommerce_detail",
+            browser_reason="http-escalation",
+            host_policy_snapshot=None,
+            proxy_profile=None,
+            timeout_seconds=5,
+            phase_timings_ms={},
+        )
+
+    assert sum(len(page.spawned_pages) for page in pages) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_browser_fetch_skips_real_chrome_warmup_when_domain_cookies_exist(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    page = _FakeExpansionPage(base_html="<html><body><h1>Widget</h1></body></html>")
+    captured_skip_flags: list[bool] = []
+
+    async def _fake_runtime(**_kwargs):
+        await _async_checkpoint()
+        return _FakeRuntime(page)
+
+    async def _fake_load_storage_state_for_domain(*_args, **_kwargs):
+        await _async_checkpoint()
+        return {
+            "cookies": [
+                {
+                    "name": "session",
+                    "value": "abc",
+                    "domain": ".example.com",
+                    "path": "/",
+                }
+            ],
+            "origins": [],
+        }
+
+    async def _fake_warm_origin(*_args, **kwargs):
+        await _async_checkpoint()
+        captured_skip_flags.append(bool(kwargs.get("skip_for_reusable_domain_state")))
+
+    monkeypatch.setattr(
+        cookie_store,
+        "load_storage_state_for_domain",
+        _fake_load_storage_state_for_domain,
+    )
+    monkeypatch.setattr(
+        browser_runtime,
+        "_maybe_warm_origin_before_navigation",
+        _fake_warm_origin,
+    )
+
+    await browser_runtime.browser_fetch(
+        "https://example.com/products/widget",
+        5,
+        surface="ecommerce_detail",
+        browser_engine="real_chrome",
+        browser_reason="http-escalation",
+        runtime_provider=_fake_runtime,
+    )
+
+    assert captured_skip_flags == [True]
+
+
+@pytest.mark.regression
+def test_browser_runtime_snapshot_uses_capacity_fallback_for_pooled_runtimes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _FakeRuntime:
+        def snapshot(self) -> dict[str, int | bool]:
+            return {
+                "ready": True,
+                "size": 1,
+                "active": 1,
+                "queued": 0,
+                "capacity": 3,
+            }
+
+        async def close(self) -> None:
+            await _async_checkpoint()
+            return None
+
+    monkeypatch.setattr(
+        browser_pool._BROWSER_POOL, "direct", {"direct": _FakeRuntime()}
+    )
+    monkeypatch.setattr(
+        browser_pool._BROWSER_POOL, "proxied", {"proxy": _FakeRuntime()}
+    )
+
+    snapshot = browser_runtime.browser_runtime_snapshot()
+
+    assert snapshot["capacity"] == 6
+    assert snapshot["max_size"] == 6
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_browser_fetch_disables_storage_reuse_for_rotating_proxy_profile(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured_allow_storage_state: list[bool] = []
+
+    class _StopFetch(Exception):
+        pass
+
+    @asynccontextmanager
+    async def _fake_page_context():
+        await _async_checkpoint()
+        if len(captured_allow_storage_state) < 0:
+            yield
+        raise _StopFetch
+
+    def _fake_resolve_proxied_page_factory(*args, **kwargs):
+        del args
+        captured_allow_storage_state.append(bool(kwargs["allow_storage_state"]))
+        return _fake_page_context()
+
+    monkeypatch.setattr(
+        browser_runtime,
+        "_resolve_proxied_page_factory",
+        _fake_resolve_proxied_page_factory,
+    )
+
+    with pytest.raises(_StopFetch):
+        await browser_runtime.browser_fetch(
+            "https://example.com/products/widget",
+            5,
+            proxy="http://proxy.example:8080",
+            proxy_profile={"rotation": "rotating"},
+            surface="ecommerce_detail",
+            proxied_page_factory=lambda **_: None,
+        )
+
+    assert captured_allow_storage_state == [False]
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_browser_fetch_recovers_when_commit_navigation_is_interrupted_by_same_url_reload() -> (
+    None
+):
+    page = _FakeExpansionPage(
+        base_html="<html><body><h1>Widget</h1></body></html>",
+        goto_failures={
+            "domcontentloaded": PlaywrightTimeoutError("primary timeout"),
+            "commit": PlaywrightError(
+                'Navigation to "https://example.com/products/widget" is interrupted '
+                'by another navigation to "https://example.com/products/widget"'
+            ),
+        },
+    )
+
+    async def _fake_runtime(**_kwargs):
+        await _async_checkpoint()
+        return _FakeRuntime(page)
+
+    result = await browser_runtime.browser_fetch(
+        "https://example.com/products/widget",
+        5,
+        surface="ecommerce_detail",
+        runtime_provider=_fake_runtime,
+    )
+
+    assert page.goto_calls == ["domcontentloaded", "commit"]
+    assert "domcontentloaded" in page.load_state_calls
+    assert result.final_url == "https://example.com/products/widget"
+    assert result.status_code == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_browser_fetch_force_closes_context_when_cancelled_mid_stage() -> None:
+    content_entered = asyncio.Event()
+    page = _FakeExpansionPage(
+        base_html="<html><body><h1>Widget</h1></body></html>",
+        content_blocker=asyncio.Event(),
+        ignore_content_cancellation=True,
+        content_entered=content_entered,
+    )
+
+    async def _fake_runtime(**_kwargs):
+        await _async_checkpoint()
+        return _FakeRuntime(page)
+
+    task = asyncio.create_task(
+        browser_runtime.browser_fetch(
+            "https://example.com/products/widget",
+            5,
+            surface="ecommerce_detail",
+            runtime_provider=_fake_runtime,
+        )
+    )
+
+    async with asyncio.timeout(0.5):
+        await content_entered.wait()
+    task.cancel()
+
+    with pytest.raises(asyncio.CancelledError):
+        async with asyncio.timeout(0.5):
+            await asyncio.wait_for(task, timeout=0.5)
+
+    assert page.page_close_calls + page.context_close_calls >= 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_browser_fetch_force_closes_context_when_stage_times_out(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    page = _FakeExpansionPage(
+        base_html="<html><body><h1>Widget</h1></body></html>",
+        content_blocker=asyncio.Event(),
+        content_block_after_calls=1,
+        ignore_content_cancellation=True,
+    )
+
+    async def _fake_runtime(**_kwargs):
+        await _async_checkpoint()
+        return _FakeRuntime(page)
+
+    remaining_timeouts = iter([5.0, 0.05, 0.05, 0.05])
+
+    def _remaining_timeout() -> float:
+        try:
+            return remaining_timeouts.__next__()
+        except StopIteration:
+            return 0.05
+
+    monkeypatch.setattr(
+        browser_runtime,
+        "remaining_timeout_factory",
+        lambda _deadline: _remaining_timeout,
+    )
+
+    with pytest.raises(TimeoutError, match="Browser settle stage exceeded") as excinfo:
+        async with asyncio.timeout(0.5):
+            await browser_runtime.browser_fetch(
+                "https://example.com/products/widget",
+                5,
+                surface="ecommerce_detail",
+                browser_reason="http-escalation",
+                runtime_provider=_fake_runtime,
+            )
+
+    diagnostics = browser_runtime.build_failed_browser_diagnostics(
+        browser_reason="http-escalation",
+        exc=excinfo.value,
+    )
+
+    assert page.page_close_calls + page.context_close_calls >= 1
+    assert diagnostics["failure_stage"] == "settle"
+    assert diagnostics["browser_outcome"] == "render_timeout"
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_browser_fetch_surfaces_traversal_fragment_metrics(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    page = _FakeExpansionPage(
+        base_html=(
+            "<html><body>"
+            "<article class='product-card'><a href='/products/widget-1'>Widget One</a><span>$10</span></article>"
+            "</body></html>"
+        ),
+        selector_counts={".product-card": 2},
+        card_count=2,
+    )
+    page.url = "https://example.com/collections/widgets"
+
+    async def _fake_runtime(**_kwargs):
+        await _async_checkpoint()
+        return _FakeRuntime(page)
+
+    async def _fake_execute_listing_traversal(*args, **kwargs):
+        await _async_checkpoint()
+        del args, kwargs
+        return TraversalResult(
+            requested_mode="paginate",
+            selected_mode="paginate",
+            activated=True,
+            progress_events=1,
+            pages_advanced=1,
+            card_count=2,
+            html_fragments=[
+                (
+                    "<div data-traversal-cards='true'><article class='product-card'><a href='/products/widget-1'>Widget One</a><span>$10</span></article></div>",
+                    False,
+                ),
+                (
+                    "<div data-traversal-cards='true'><article class='product-card'><a href='/products/widget-2'>Widget Two</a><span>$20</span></article></div>",
+                    False,
+                ),
+            ],
+        )
+
+    monkeypatch.setattr(
+        browser_runtime,
+        "execute_listing_traversal",
+        _fake_execute_listing_traversal,
+    )
+
+    result = await browser_runtime.browser_fetch(
+        "https://example.com/collections/widgets",
+        5,
+        surface="ecommerce_listing",
+        traversal_mode="paginate",
+        runtime_provider=_fake_runtime,
+    )
+
+    assert result.browser_diagnostics["traversal_fragment_count"] == 2
+    assert result.browser_diagnostics["traversal_html_bytes"] == sum(
+        len(fragment.encode("utf-8"))
+        for fragment in [
+            "<div data-traversal-cards='true'><article class='product-card'><a href='/products/widget-1'>Widget One</a><span>$10</span></article></div>",
+            "<div data-traversal-cards='true'><article class='product-card'><a href='/products/widget-2'>Widget Two</a><span>$20</span></article></div>",
+        ]
+    )
+    assert 'data-traversal-fragment="1"' in result.html
+    assert 'data-traversal-fragment="2"' in result.html
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_browser_fetch_keeps_full_rendered_html_when_traversal_makes_no_progress(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    selectors = list(CARD_SELECTORS.get("ecommerce") or [])
+    page = _FakeExpansionPage(
+        base_html=(
+            "<html><body>"
+            "<article class='product-card'><a href='/products/widget-1'>Widget One</a><span>$10</span></article>"
+            "<article class='product-card'><a href='/products/widget-2'>Widget Two</a><span>$20</span></article>"
+            "<article class='product-card'><a href='/products/widget-3'>Widget Three</a><span>$30</span></article>"
+            "</body></html>"
+        ),
+        selector_counts={selectors[0]: 3} if selectors else {},
+        card_count=3,
+    )
+    page.url = "https://example.com/collections/widgets"
+
+    async def _fake_runtime(**_kwargs):
+        await _async_checkpoint()
+        return _FakeRuntime(page)
+
+    async def _fake_execute_listing_traversal(*args, **kwargs):
+        await _async_checkpoint()
+        del args, kwargs
+        return TraversalResult(
+            requested_mode="paginate",
+            selected_mode="paginate",
+            activated=True,
+            stop_reason="next_page_not_found",
+            progress_events=0,
+            card_count=5,
+            html_fragments=[
+                (
+                    "<div data-traversal-cards='true'><a href='/privacy'>Privacy notice</a></div>",
+                    False,
+                ),
+            ],
+        )
+
+    monkeypatch.setattr(
+        browser_runtime,
+        "execute_listing_traversal",
+        _fake_execute_listing_traversal,
+    )
+
+    result = await browser_runtime.browser_fetch(
+        "https://example.com/collections/widgets",
+        5,
+        surface="ecommerce_listing",
+        traversal_mode="paginate",
+        runtime_provider=_fake_runtime,
+    )
+
+    assert "Widget One" in result.html
+    assert "Privacy notice" not in result.html
+    assert "traversal_composed_html" in result.artifacts
+    assert "Privacy notice" in result.artifacts["traversal_composed_html"]
+    assert result.browser_diagnostics["browser_outcome"] == "usable_content"
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_browser_fetch_prefers_rendered_html_when_progress_traversal_fragment_is_thin(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    selectors = list(CARD_SELECTORS.get("ecommerce") or [])
+    page = _FakeExpansionPage(
+        base_html=(
+            "<html><body>"
+            "<article class='product-card'><a href='/products/widget-1'>Widget One</a><span>$10</span></article>"
+            "<article class='product-card'><a href='/products/widget-2'>Widget Two</a><span>$20</span></article>"
+            "<article class='product-card'><a href='/products/widget-3'>Widget Three</a><span>$30</span></article>"
+            "</body></html>"
+        ),
+        selector_counts={selectors[0]: 3} if selectors else {},
+        card_count=3,
+    )
+    page.url = "https://example.com/collections/widgets"
+
+    async def _fake_runtime(**_kwargs):
+        await _async_checkpoint()
+        return _FakeRuntime(page)
+
+    async def _fake_execute_listing_traversal(*args, **kwargs):
+        await _async_checkpoint()
+        del args, kwargs
+        return TraversalResult(
+            requested_mode="paginate",
+            selected_mode="paginate",
+            activated=True,
+            stop_reason="paginate_progressed",
+            progress_events=1,
+            card_count=0,
+            html_fragments=[
+                (
+                    "<div data-traversal-cards='true'><a href='/products/widget-1'>Widget One</a></div>",
+                    False,
+                ),
+            ],
+        )
+
+    monkeypatch.setattr(
+        browser_runtime,
+        "execute_listing_traversal",
+        _fake_execute_listing_traversal,
+    )
+
+    result = await browser_runtime.browser_fetch(
+        "https://example.com/collections/widgets",
+        5,
+        surface="ecommerce_listing",
+        traversal_mode="paginate",
+        runtime_provider=_fake_runtime,
+    )
+
+    assert "Widget Two" in result.html
+    assert "traversal_composed_html" in result.artifacts
+    assert "Widget Two" in result.artifacts["full_rendered_html"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.regression
+async def test_browser_fetch_runs_listing_recovery_when_thin_listing_retry_requested(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    page = _FakeExpansionPage(
+        base_html=(
+            "<html><body>"
+            "<button>View all</button>"
+            "<article class='product-card'><a href='/products/widget-1'>Widget One</a></article>"
+            "</body></html>"
+        ),
+    )
+    page.url = "https://example.com/collections/widgets"
+    calls = {"count": 0}
+
+    async def _fake_runtime(**_kwargs):
+        await _async_checkpoint()
+        return _FakeRuntime(page)
+
+    async def _fake_recover_listing_page_content(*args, **kwargs):
+        await _async_checkpoint()
+        del args, kwargs
+        calls["count"] += 1
+        return {
+            "status": "recovered",
+            "clicked_count": 1,
+            "actions_taken": ["view_all"],
+        }
+
+    monkeypatch.setattr(
+        browser_runtime,
+        "recover_listing_page_content",
+        _fake_recover_listing_page_content,
+    )
+
+    result = await browser_runtime.browser_fetch(
+        "https://example.com/collections/widgets",
+        5,
+        surface="ecommerce_listing",
+        traversal_mode="paginate",
+        listing_recovery_mode="thin-listing retry",
+        runtime_provider=_fake_runtime,
+    )
+
+    assert calls["count"] == 1
+    assert result.browser_diagnostics["listing_recovery"]["status"] == "recovered"
+    assert (
+        result.browser_diagnostics["listing_recovery"]["requested_mode"]
+        == "thin_listing"
+    )

@@ -1,0 +1,58 @@
+from __future__ import annotations
+
+from app.services.extract.detail.identity.core import (
+    detail_identity_codes_from_record_fields,
+    detail_identity_codes_from_url,
+    detail_identity_codes_match,
+    detail_identity_tokens,
+    detail_query_identity_codes_from_url,
+    detail_redirect_identity_is_mismatched,
+    detail_slug_title_fallback_from_url,
+    detail_title_fallback_looks_like_code,
+    detail_title_from_url,
+    detail_url_candidate_is_low_signal,
+    detail_url_is_collection_like,
+    detail_url_is_utility,
+    detail_url_looks_like_product,
+    detail_url_matches_requested_identity,
+    listing_detail_like_path,
+    listing_url_is_structural,
+    preferred_detail_identity_url,
+    prune_irrelevant_detail_dom_nodes,
+    record_matches_requested_detail_identity,
+    semantic_detail_identity_tokens,
+)
+from app.services.extract.detail.identity.model_codes import (
+    detail_model_number_sets_compatible,
+    detail_model_number_tokens,
+    detail_small_numeric_model_tokens,
+    normalized_model_token,
+)
+
+__all__ = (
+    "detail_identity_codes_from_record_fields",
+    "detail_identity_codes_from_url",
+    "detail_identity_codes_match",
+    "detail_identity_tokens",
+    "detail_model_number_sets_compatible",
+    "detail_model_number_tokens",
+    "detail_query_identity_codes_from_url",
+    "detail_redirect_identity_is_mismatched",
+    "detail_small_numeric_model_tokens",
+    "detail_slug_title_fallback_from_url",
+    "detail_title_fallback_looks_like_code",
+    "detail_title_from_url",
+    "detail_url_candidate_is_low_signal",
+    "detail_url_is_collection_like",
+    "detail_url_is_utility",
+    "detail_url_looks_like_product",
+    "detail_url_matches_requested_identity",
+    "listing_detail_like_path",
+    "listing_url_is_structural",
+    "normalized_model_token",
+    "preferred_detail_identity_url",
+    "prune_irrelevant_detail_dom_nodes",
+    "record_matches_requested_detail_identity",
+    "semantic_detail_identity_tokens",
+)
+

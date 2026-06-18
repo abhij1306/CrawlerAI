@@ -1,0 +1,26 @@
+import { Card } from '../../../components/ui/primitives';
+
+// Next.js App Router loading UI for `/runs/[run_id]`; invoked by file-system routing.
+export default function LoadingRunDetailPage() {
+  return (
+    <div className="page-stack" aria-busy="true">
+      <div role="status" aria-live="polite" className="sr-only">
+        Loading content
+      </div>
+      <div className="space-y-2" aria-hidden="true">
+        <div className="bg-panel h-8 w-56 animate-pulse rounded-md" />
+        <div className="bg-panel h-4 w-80 animate-pulse rounded-md" />
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {['summary', 'records', 'status', 'timing'].map((slot) => (
+          <Card key={slot} className="bg-panel h-20 animate-pulse" aria-hidden="true">
+            <div />
+          </Card>
+        ))}
+      </div>
+      <Card className="bg-panel h-80 animate-pulse" aria-hidden="true">
+        <div />
+      </Card>
+    </div>
+  );
+}

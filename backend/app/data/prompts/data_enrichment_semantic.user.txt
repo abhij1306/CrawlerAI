@@ -1,0 +1,7 @@
+Product:
+$product_json
+
+Taxonomy rule:
+$taxonomy_hint
+
+Return only a valid JSON object containing fields from product_json["missing_backfill_fields"].

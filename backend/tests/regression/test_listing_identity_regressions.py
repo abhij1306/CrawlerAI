@@ -1,0 +1,271 @@
+"""Regression tests for listing URL / merchandise-hint fixes applied 2026-05-03.
+
+These guard two real failures observed in the DB crawl history:
+- Tire Rack category pages (run #8 and #10) yielded `listing_detection_failed`
+  because every 2-segment product URL was rejected by `listing_url_is_structural`.
+- Dell listing (run #19) persisted 33 navigation/landing anchors as products
+  because `unsupported_non_detail_ecommerce_merchandise_hint` accepted paths
+  like `/en-us/lp/dt/energy-efficient-data-center`.
+"""
+from __future__ import annotations
+
+import pytest
+
+from app.services.extract.detail.identity import (
+    detail_model_number_sets_compatible,
+    listing_detail_like_path,
+    listing_url_is_structural,
+)
+
+
+@pytest.mark.regression
+def test_tirerack_product_url_is_not_structural() -> None:
+    """Product URLs like `/accessories/<product-slug>` must survive the filter."""
+    page = "https://www.tirerack.com/accessories/category.jsp?category=Batteries"
+    product = "https://www.tirerack.com/accessories/ctek-nxt-5-battery-charger-maintainer"
+    assert listing_url_is_structural(product, page) is False
+
+
+@pytest.mark.regression
+def test_tirerack_category_root_url_still_structural() -> None:
+    """The `/accessories/` root itself must still be treated as structural."""
+    page = "https://www.tirerack.com/accessories/category.jsp?category=Batteries"
+    root = "https://www.tirerack.com/accessories/"
+    assert listing_url_is_structural(root, page) is True
+
+
+@pytest.mark.regression
+def test_embedded_category_marker_segment_stays_structural() -> None:
+    """Embedded category-marker slugs must still count as structural links."""
+    page = "https://example.com/shop/womens-productlist-sale"
+    candidate = "https://example.com/shop/mens-productlist-sale"
+
+    assert listing_url_is_structural(candidate, page) is True
+
+
+@pytest.mark.regression
+def test_product_slug_in_utility_prefix_path_is_not_structural() -> None:
+    """Long product slugs should override a structural leading segment."""
+    assert (
+        listing_url_is_structural(
+            "https://shop.example.com/shop/nike-air-force-1-low-retro-white",
+            "https://shop.example.com/shop/",
+        )
+        is False
+    )
+
+
+@pytest.mark.regression
+def test_product_slug_with_filter_query_is_not_structural() -> None:
+    page = "https://shop.example.com/shop/face-moisturiser"
+    product = (
+        "https://shop.example.com/shop/plum-rice-water-niacinamide-gel-cream"
+        "?f=Categories%3AFace%20Moisturiser&rf=Price%3A200_400"
+    )
+    assert listing_url_is_structural(product, page) is False
+
+
+@pytest.mark.regression
+def test_model_number_prefix_match_requires_alpha_signal() -> None:
+    assert detail_model_number_sets_compatible({"ABC123"}, {"ABC1234"}) is True
+    assert detail_model_number_sets_compatible({"12345"}, {"123456"}) is False
+
+
+@pytest.mark.regression
+def test_dell_landing_page_not_rescued_as_merchandise() -> None:
+    """`/en-us/lp/dt/<slug>` is a Dell landing page, not a product."""
+    from app.services.extract.listing_candidate_ranking import (
+        unsupported_non_detail_ecommerce_merchandise_hint,
+    )
+
+    assert (
+        unsupported_non_detail_ecommerce_merchandise_hint(
+            title="Sustainable Data Center",
+            url="https://www.dell.com/en-us/lp/dt/energy-efficient-data-center",
+        )
+        is False
+    )
+
+
+@pytest.mark.regression
+def test_dell_industry_landing_page_not_rescued_as_merchandise() -> None:
+    """Industry landing pages under Dell `/lp/dt/` must stay navigation."""
+    from app.services.extract.listing_candidate_ranking import (
+        unsupported_non_detail_ecommerce_merchandise_hint,
+    )
+
+    assert (
+        unsupported_non_detail_ecommerce_merchandise_hint(
+            title="State & Local Government",
+            url="https://www.dell.com/en-us/lp/dt/industry-state-and-local-government",
+        )
+        is False
+    )
+
+
+@pytest.mark.regression
+def test_short_slug_product_can_still_be_rescued() -> None:
+    """The existing 2-token rescue path for `/browse/widget-prime` is preserved."""
+    from app.services.extract.listing_candidate_ranking import (
+        unsupported_non_detail_ecommerce_merchandise_hint,
+    )
+
+    assert (
+        unsupported_non_detail_ecommerce_merchandise_hint(
+            title="Widget Prime Ultra",
+            url="https://example.com/browse/widget-prime",
+        )
+        is True
+    )
+
+
+@pytest.mark.regression
+def test_year_led_slug_is_not_product_slug() -> None:
+    """`/public-relations/2025-ceo-letter/` must remain structural."""
+    assert (
+        listing_url_is_structural(
+            "https://example.com/public-relations/2025-ceo-letter/",
+            "https://example.com/",
+        )
+        is True
+    )
+
+
+@pytest.mark.regression
+def test_looks_like_utility_url_exempts_product_slug_under_utility_segment() -> None:
+    """Tire Rack mounts products under /accessories/; must not be utility."""
+    from app.services.extract.listing_candidate_ranking import looks_like_utility_url
+
+    assert (
+        looks_like_utility_url(
+            "https://www.tirerack.com/accessories/ctek-nxt-5-battery-charger-maintainer"
+        )
+        is False
+    )
+
+
+@pytest.mark.regression
+def test_looks_like_utility_url_still_rejects_bare_utility_segment() -> None:
+    from app.services.extract.listing_candidate_ranking import looks_like_utility_url
+
+    assert looks_like_utility_url("https://example.com/accessories/") is True
+    assert looks_like_utility_url("https://example.com/help/faq") is True
+
+
+@pytest.mark.regression
+def test_looks_like_utility_url_rejects_hyphenated_policy_pages() -> None:
+    from app.services.extract.listing_candidate_ranking import looks_like_utility_url
+
+    assert looks_like_utility_url("https://content.abfrl.in/shipping-policy") is True
+    assert looks_like_utility_url("https://content.abfrl.in/returns-cancel-policy") is True
+    assert (
+        looks_like_utility_url(
+            "https://euremotejobs.com/job/account-manager-generator-customers/"
+        )
+        is False
+    )
+
+
+@pytest.mark.regression
+def test_dell_spd_product_url_is_not_utility() -> None:
+    from app.services.extract.listing_candidate_ranking import looks_like_utility_url
+
+    assert (
+        looks_like_utility_url(
+            "https://www.dell.com/en-us/shop/dell-laptops/new-xps-16-laptop/spd/xps-da16260-laptop/useda16260wcto01"
+        )
+        is False
+    )
+
+
+@pytest.mark.regression
+def test_dell_financing_url_is_utility() -> None:
+    from app.services.extract.listing_candidate_ranking import looks_like_utility_record
+
+    assert (
+        looks_like_utility_record(
+            title="Learn More about financing offers",
+            url="https://www.dell.com/financing/comm/mfe/us/en/learn-more",
+        )
+        is True
+    )
+
+
+@pytest.mark.regression
+def test_utility_url_token_requires_leading_boundary() -> None:
+    from app.services.extract.listing_candidate_ranking import utility_url_token_matches
+
+    assert (
+        utility_url_token_matches(
+            "https://example.com/products/mycart-bag",
+            "cart",
+        )
+        is False
+    )
+    assert (
+        utility_url_token_matches(
+            "https://example.com/cart/bag",
+            "cart",
+        )
+        is True
+    )
+
+
+@pytest.mark.regression
+def test_shop_path_is_not_detail_marker() -> None:
+    """Category/listing pages mounted under /shop/... must not be treated as detail.
+    Regression for Dell (/en-us/shop/computer-monitors/ar/...) and Ulta
+    (/shop/makeup/makeup-palettes) which both use /shop/ for listings.
+    """
+    assert (
+        listing_detail_like_path(
+            "https://www.dell.com/en-us/shop/computer-monitors/ar/8605/ultrawide",
+            is_job=False,
+        )
+        is False
+    )
+    assert (
+        listing_detail_like_path(
+            "https://www.ulta.com/shop/makeup/makeup-palettes",
+            is_job=False,
+        )
+        is False
+    )
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://example.com/products/foo",
+        "https://example.com/p/abc-123",
+        "https://example.com/dp/XYZ",
+        "https://example.com/shop/laptops/spd/xps-da16260-laptop/useda16260wcto01",
+        "https://example.com/detail/item-42",
+    ],
+)
+@pytest.mark.regression
+def test_explicit_detail_markers_still_recognized(url: str) -> None:
+    """/p/, /product/, /dp/, /spd/ equivalents remain detail markers."""
+    assert listing_detail_like_path(url, is_job=False) is True
+
+
+@pytest.mark.regression
+def test_detail_like_productpage_url_counts_as_supported_without_price() -> None:
+    from app.services.extract.listing_candidate_ranking import listing_record_supported
+    from app.services.shared.field_coerce import is_title_noise
+
+    assert (
+        listing_record_supported(
+            {
+                "title": "Canvas trainers",
+                "url": "https://www2.hm.com/en_in/productpage.1317259001.html",
+                "_source": "dom_listing",
+            },
+            page_url="https://www2.hm.com/en_in/men/shoes/view-all.html",
+            surface="ecommerce_listing",
+            title_is_noise=is_title_noise,
+            url_is_structural=listing_url_is_structural,
+            detail_like_url=lambda url: listing_detail_like_path(url, is_job=False),
+        )
+        is True
+    )

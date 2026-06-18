@@ -1,0 +1,38 @@
+version: 2
+updates:
+  - package-ecosystem: pip
+    directory: "/backend"
+    schedule:
+      interval: weekly
+    labels:
+      - dependencies
+      - security
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: chore
+    assignees:
+      - abhij1306
+  - package-ecosystem: npm
+    directory: "/frontend"
+    schedule:
+      interval: weekly
+    labels:
+      - dependencies
+      - security
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: chore
+    assignees:
+      - abhij1306
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: monthly
+    labels:
+      - dependencies
+      - security
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: chore
+    assignees:
+      - abhij1306

@@ -1,0 +1,556 @@
+from __future__ import annotations
+
+import asyncio
+from collections.abc import Iterable
+from dataclasses import dataclass
+from functools import lru_cache
+import re
+from types import SimpleNamespace
+from typing import Any
+from urllib.parse import urlparse
+
+from bs4 import BeautifulSoup, Comment
+
+from app.services.acquisition.dom_runtime import get_page_html
+from app.services.acquisition.traversal_card_counting import count_listing_cards
+from app.services.config.extraction_rules import (
+    BROWSER_DETAIL_READINESS_HINTS,
+    LOW_CONTENT_SHELL_PHRASES,
+)
+from app.services.config.runtime_settings import crawler_runtime_settings
+from app.services.shared.field_coerce import clean_text, coerce_int as _coerce_int
+from app.services.shared.text_coerce import slug_tokens
+
+
+_DETAIL_READINESS_HINTS: dict[str, tuple[str, ...]] = {
+    str(key): tuple(map(str, value or ()))
+    for key, value in (BROWSER_DETAIL_READINESS_HINTS or {}).items()
+}
+_ECOMMERCE_READY_CARD_SELECTORS = (
+    "[data-product-id]",
+    "[itemscope][itemtype*='Product']",
+    ".product-card",
+    ".product-item",
+    ".product-tile",
+    ".product-grid-item",
+    "li.product-grid-product",
+    "li.product-base",
+    ".plp-card",
+    "[class*='productcard']",
+    "[class*='product-card']",
+    "[class*='product-item']",
+    "[class*='product-tile']",
+    "[class*='ProductPod']",
+    "[class*='item-tile']",
+    "[data-testid*='product']",
+    "[data-test*='product']",
+    "[data-component*='product']",
+    "[data-automation*='product']",
+)
+_ECOMMERCE_READY_PRICE_RE = re.compile(
+    r"(?:rs\.?|inr|₹|\$|£|€|cad|usd|brl|r\$)\s*\d|\b\d[\d,.]{2,}\s*(?:cad|usd|brl)\b",
+    re.I,
+)
+_ECOMMERCE_READY_PRODUCT_ATTR_RE = re.compile(
+    r"\bproduct[-_ ]?(?:cards?|items?|tiles?|grid|pod|base)(?=$|[^A-Za-z0-9_-])",
+    re.I,
+)
+_ECOMMERCE_READY_DETAIL_PATH_RE = re.compile(
+    r"/(?:products?|p|dp|item|shop)/",
+    re.I,
+)
+
+
+@dataclass(frozen=True, slots=True)
+class HtmlAnalysis:
+    html: str
+    lowered_html: str
+    soup: BeautifulSoup
+    visible_text: str
+    normalized_text: str
+    title_text: str
+    h1_present: bool
+
+
+def analyze_html(html: str) -> HtmlAnalysis:
+    return _analyze_html_cached(str(html or ""))
+
+
+@lru_cache(maxsize=8)
+def _analyze_html_cached(text: str) -> HtmlAnalysis:
+    soup = BeautifulSoup(text, "html.parser")
+    visible_text = visible_text_from_soup(soup)
+    return HtmlAnalysis(
+        html=text,
+        lowered_html=text.lower(),
+        soup=soup,
+        visible_text=visible_text,
+        normalized_text=" ".join(visible_text.split()),
+        title_text=clean_text(
+            soup.title.get_text(" ", strip=True) if soup.title else ""
+        ),
+        h1_present=bool(soup.find("h1")),
+    )
+
+
+async def wait_for_listing_readiness_impl(
+    page: Any,
+    *,
+    override: dict[str, object] | None,
+) -> dict[str, object]:
+    from patchright.async_api import TimeoutError as PlaywrightTimeoutError
+
+    if not override:
+        return {}
+    raw_selectors = override.get("selectors")
+    if not isinstance(raw_selectors, Iterable) or isinstance(
+        raw_selectors, (str, bytes)
+    ):
+        return {}
+    selectors = [
+        str(selector or "").strip()
+        for selector in raw_selectors
+        if str(selector or "").strip()
+    ]
+    if not selectors:
+        return {}
+    max_wait_value = override.get("max_wait_ms")
+    safe_fallback = _coerce_int(
+        crawler_runtime_settings.listing_readiness_max_wait_ms,
+        default=0,
+    )
+    max_wait_ms = _coerce_int(
+        max_wait_value,
+        default=safe_fallback,
+    )
+    if max_wait_ms <= 0:
+        return {}
+    combined_selector = ", ".join(selectors)
+    try:
+        await page.wait_for_selector(
+            combined_selector,
+            state="attached",
+            timeout=max_wait_ms,
+        )
+    except asyncio.CancelledError:
+        raise
+    except PlaywrightTimeoutError as exc:
+        return {
+            "platform": str(override.get("platform") or ""),
+            "max_wait_ms": max_wait_ms,
+            "status": "timed_out",
+            "attempted_selectors": selectors,
+            "failures": [f"{combined_selector}:{type(exc).__name__}"],
+        }
+    matched_selector = None
+    for selector in selectors:
+        if await page.locator(selector).count():
+            matched_selector = selector
+            break
+    return {
+        "platform": str(override.get("platform") or ""),
+        "combined_selector": combined_selector,
+        "max_wait_ms": max_wait_ms,
+        "matched_selector": matched_selector or combined_selector,
+        "status": "matched",
+    }
+
+
+async def probe_browser_readiness_impl(
+    page: Any,
+    *,
+    url: str,
+    surface: str,
+    listing_override: dict[str, object] | None = None,
+    html: str | None = None,
+    detail_readiness_hint_count,
+) -> dict[str, object]:
+    html_text = html if html is not None else await get_page_html(page)
+    analysis = analyze_html(html_text or "")
+    visible_text_length = len(analysis.normalized_text)
+    is_detail = "detail" in surface
+    is_listing = "listing" in surface
+
+    # Generic shell tokens that don't guarantee content readiness
+    shell_tokens = (
+        "application/ld+json",
+        "__next_data__",
+        "__nuxt__",
+        "shopifyanalytics.meta",
+    )
+    has_shell_token = any(token in analysis.lowered_html for token in shell_tokens)
+    has_detail_token = bool(
+        re.search(r'"@type"\s*:\s*"(product|jobposting)"', analysis.lowered_html)
+    )
+
+    if is_detail:
+        # For detail pages, a generic shell token is NOT enough to claim readiness
+        structured_data_present = has_detail_token
+    else:
+        # For listings or others, we can be more lenient
+        structured_data_present = has_detail_token or has_shell_token
+    detail_hints = detail_readiness_hint_count(surface, analysis.visible_text.lower())
+    detail_title_matches_url = _detail_title_matches_url(
+        url,
+        analysis.title_text,
+        min_matches=int(
+            crawler_runtime_settings.browser_detail_title_url_token_min_count
+        ),
+    )
+    detail_like = (
+        analysis.h1_present
+        or structured_data_present
+        or detail_hints > 0
+        or detail_title_matches_url
+    )
+    listing_card_count = 0
+    matched_listing_selectors = 0
+    if is_listing:
+        listing_card_count = await listing_card_signal_count_impl(page, surface=surface)
+        raw_override_selectors = (
+            listing_override.get("selectors")
+            if isinstance(listing_override, dict)
+            else None
+        )
+        matched_listing_selectors = await count_matching_selectors(
+            page,
+            selectors=[
+                str(selector or "").strip()
+                for selector in raw_override_selectors
+                if str(selector or "").strip()
+            ]
+            if isinstance(raw_override_selectors, Iterable)
+            and not isinstance(raw_override_selectors, (str, bytes))
+            else [],
+        )
+    if is_detail:
+        enough_visible_detail_text = visible_text_length >= int(
+            crawler_runtime_settings.browser_readiness_visible_text_min
+        )
+        has_detail_identity_signal = bool(
+            analysis.h1_present
+            or detail_hints
+            >= int(crawler_runtime_settings.detail_field_signal_min_count)
+            or detail_title_matches_url
+        )
+        is_ready = bool(
+            (structured_data_present and enough_visible_detail_text)
+            or (
+                detail_like
+                and has_detail_identity_signal
+                and enough_visible_detail_text
+            )
+        )
+    elif is_listing:
+        selector_match = bool(
+            listing_card_count >= int(crawler_runtime_settings.listing_min_items)
+            or matched_listing_selectors > 0
+        )
+        is_ready = selector_match
+    else:
+        is_ready = visible_text_length >= int(
+            crawler_runtime_settings.browser_readiness_visible_text_min
+        )
+    return {
+        "url": url,
+        "surface": surface,
+        "is_ready": is_ready,
+        "detail_like": detail_like,
+        "structured_data_present": structured_data_present,
+        "visible_text_length": visible_text_length,
+        "detail_hint_count": detail_hints,
+        "detail_title_matches_url": detail_title_matches_url,
+        "listing_card_count": listing_card_count,
+        "matched_listing_selectors": matched_listing_selectors,
+        "h1_present": analysis.h1_present,
+    }
+
+
+async def listing_card_signal_count_impl(page: Any, *, surface: str) -> int:
+    if str(surface or "").strip().lower().startswith("ecommerce"):
+        html = await get_page_html(page)
+        analysis = analyze_html(html)
+        ready_count = _ecommerce_ready_card_count(analysis.soup)
+        if ready_count <= 0:
+            return 0 if _ecommerce_ready_card_candidates_present(analysis.soup) else await count_listing_cards(page, surface=surface)
+        selector_count = await count_listing_cards(page, surface=surface)
+        return max(ready_count, selector_count)
+    return await count_listing_cards(
+        page,
+        surface=surface,
+    )
+
+
+def _detail_title_matches_url(
+    url: str,
+    title: str,
+    *,
+    min_matches: int,
+) -> bool:
+    if min_matches <= 0:
+        return False
+    parsed = urlparse(str(url or ""))
+    title_tokens = {
+        token for token in slug_tokens(title) if len(token) >= 3 and not token.isdigit()
+    }
+    if not title_tokens:
+        return False
+    for segment in reversed([part for part in parsed.path.split("/") if part]):
+        segment_tokens = [
+            token
+            for token in slug_tokens(segment)
+            if len(token) >= 3 and not token.isdigit()
+        ]
+        if not segment_tokens:
+            continue
+        if len(set(segment_tokens) & title_tokens) >= min_matches:
+            return True
+    return False
+
+
+def _ecommerce_ready_card_count(soup: BeautifulSoup) -> int:
+    seen: set[int] = set()
+    count = 0
+    for selector in _ECOMMERCE_READY_CARD_SELECTORS:
+        try:
+            nodes: Iterable[Any] = soup.select(selector)
+        except Exception:
+            nodes = []
+        for node in nodes:
+            node_id = id(node)
+            if node_id in seen:
+                continue
+            seen.add(node_id)
+            if _ecommerce_node_has_product_evidence(node):
+                count += 1
+    return count
+
+
+def _ecommerce_ready_card_candidates_present(soup: BeautifulSoup) -> bool:
+    for selector in _ECOMMERCE_READY_CARD_SELECTORS:
+        try:
+            candidate = soup.select_one(selector)
+        except Exception:
+            candidate = None
+        if candidate is not None:
+            return True
+    return False
+
+
+def _ecommerce_node_has_product_evidence(node: Any) -> bool:
+    attrs = getattr(node, "attrs", {}) or {}
+    text = clean_text(
+        node.get_text(" ", strip=True) if hasattr(node, "get_text") else ""
+    )
+    signature = " ".join(
+        str(attrs.get(key) or "")
+        for key in (
+            "class",
+            "id",
+            "role",
+            "aria-label",
+            "data-testid",
+            "data-test",
+            "data-component",
+            "data-automation",
+        )
+    )
+    product_signature = bool(_ECOMMERCE_READY_PRODUCT_ATTR_RE.search(signature))
+    has_product_id = bool(
+        attrs.get("data-product-id")
+        or (hasattr(node, "select_one") and node.select_one("[data-product-id]"))
+    )
+    itemtype = str(attrs.get("itemtype") or "")
+    has_product_itemtype = "product" in itemtype.lower() or bool(
+        hasattr(node, "select_one")
+        and node.select_one("[itemscope][itemtype*='Product']")
+    )
+    has_price = bool(_ECOMMERCE_READY_PRICE_RE.search(text))
+    has_media = bool(
+        hasattr(node, "select_one") and node.select_one("img, picture, source")
+    )
+    links = node.select("a[href]")[:8] if hasattr(node, "select") else []
+    hrefs = [str(link.get("href") or "").strip() for link in links]
+    has_link = any(href and not href.startswith(("#", "javascript:")) for href in hrefs)
+    has_detail_link = any(
+        _ECOMMERCE_READY_DETAIL_PATH_RE.search(href) for href in hrefs
+    )
+    if has_product_id or has_product_itemtype:
+        return True
+    if has_price and (has_link or has_media):
+        return True
+    if product_signature and (text or has_link or has_media):
+        return True
+    return bool(has_detail_link and (has_price or product_signature or has_media))
+
+
+async def count_matching_selectors(page: Any, *, selectors: list[str]) -> int:
+    from patchright.async_api import Error as PlaywrightError
+    from patchright.async_api import TimeoutError as PlaywrightTimeoutError
+
+    matches = 0
+    for selector in selectors:
+        normalized = str(selector or "").strip()
+        if not normalized:
+            continue
+        try:
+            matches += int(await page.locator(normalized).count())
+        except PlaywrightTimeoutError:
+            continue
+        except PlaywrightError:
+            raise
+        except (TypeError, ValueError):
+            continue
+    return matches
+
+
+def classify_browser_outcome_impl(
+    *,
+    html: str,
+    html_bytes: int,
+    blocked: bool,
+    block_classification,
+    traversal_result: Any = None,
+    looks_like_low_content_shell,
+) -> str:
+    if block_classification.blocked or blocked:
+        return "challenge_page"
+    low_content_shell = looks_like_low_content_shell(html, html_bytes=html_bytes)
+    if traversal_result is not None and bool(
+        getattr(traversal_result, "activated", False)
+    ):
+        progress_events = int(getattr(traversal_result, "progress_events", 0) or 0)
+        card_count = int(getattr(traversal_result, "card_count", 0) or 0)
+        stop_reason = str(getattr(traversal_result, "stop_reason", "") or "").strip()
+        if (
+            progress_events == 0
+            and card_count < int(crawler_runtime_settings.listing_min_items)
+            and stop_reason.endswith(("_not_found", "_no_progress"))
+            and low_content_shell
+        ):
+            return "traversal_failed"
+    if low_content_shell:
+        return "low_content_shell"
+    return "usable_content"
+
+
+def classify_low_content_reason_impl(html: str, *, html_bytes: int) -> str | None:
+    analysis = analyze_html(html)
+    if not analysis.html.strip():
+        return "empty_html"
+    title_text = analysis.title_text.lower()
+    if any(phrase in title_text for phrase in LOW_CONTENT_SHELL_PHRASES):
+        return "empty_terminal_page"
+    if len(analysis.visible_text.strip()) >= 120:
+        return None
+    if any(
+        token in analysis.lowered_html
+        for token in (
+            "product",
+            "jobposting",
+            "__next_data__",
+            "__nuxt__",
+            "application/ld+json",
+        )
+    ):
+        return None
+    lowered_text = analysis.normalized_text.lower()
+    if any(phrase in lowered_text for phrase in LOW_CONTENT_SHELL_PHRASES):
+        return "empty_terminal_page"
+    if html_bytes <= 8_000:
+        return "low_visible_text"
+    return None
+
+
+def visible_text_from_soup(soup: BeautifulSoup) -> str:
+    pieces: list[str] = []
+    for node in soup.find_all(string=True):
+        if isinstance(node, Comment):
+            continue
+        parent_name = str(
+            getattr(getattr(node, "parent", None), "name", "") or ""
+        ).lower()
+        if parent_name in {"script", "style", "noscript"}:
+            continue
+        text = clean_text(str(node))
+        if text:
+            pieces.append(text)
+    return clean_text(" ".join(pieces))
+
+
+async def wait_for_listing_readiness(
+    page: Any,
+    page_url: str,
+    *,
+    override: dict[str, object] | None = None,
+) -> dict[str, object]:
+    from app.services.platform_policy import resolve_listing_readiness_override
+
+    override = override or resolve_listing_readiness_override(page_url)
+    return await wait_for_listing_readiness_impl(page, override=override)
+
+
+async def probe_browser_readiness(
+    page: Any,
+    *,
+    url: str,
+    surface: str,
+    listing_override: dict[str, object] | None = None,
+    html: str | None = None,
+) -> dict[str, object]:
+    return await probe_browser_readiness_impl(
+        page,
+        url=url,
+        surface=surface,
+        listing_override=listing_override,
+        html=html,
+        detail_readiness_hint_count=detail_readiness_hint_count,
+    )
+
+
+async def listing_card_signal_count(page: Any, *, surface: str) -> int:
+    return await listing_card_signal_count_impl(
+        page,
+        surface=surface,
+    )
+
+
+def detail_readiness_hint_count(surface: str, visible_text: str) -> int:
+    lowered_surface = str(surface or "").strip().lower()
+    if "ecommerce" in lowered_surface:
+        hints = _DETAIL_READINESS_HINTS.get("ecommerce", ())
+    elif "job" in lowered_surface:
+        hints = _DETAIL_READINESS_HINTS.get("job", ())
+    else:
+        hints = ()
+    return sum(1 for hint in hints if hint in visible_text)
+
+
+def classify_browser_outcome(
+    *,
+    html: str,
+    html_bytes: int,
+    blocked: bool,
+    block_classification: Any = None,
+    traversal_result: Any = None,
+) -> str:
+    classification = block_classification or SimpleNamespace(
+        blocked=blocked,
+        outcome="challenge_page" if blocked else "ok",
+    )
+    return classify_browser_outcome_impl(
+        html=html,
+        html_bytes=html_bytes,
+        blocked=blocked,
+        block_classification=classification,
+        traversal_result=traversal_result,
+        looks_like_low_content_shell=looks_like_low_content_shell,
+    )
+
+
+def looks_like_low_content_shell(html: str, *, html_bytes: int) -> bool:
+    return classify_low_content_reason(html, html_bytes=html_bytes) is not None
+
+
+def classify_low_content_reason(html: str, *, html_bytes: int) -> str | None:
+    return classify_low_content_reason_impl(html, html_bytes=html_bytes)

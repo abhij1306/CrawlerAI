@@ -1,0 +1,689 @@
+import { Award, CheckCircle2, Clock, LucideIcon } from 'lucide-react';
+import { Children, isValidElement, useEffectEvent, useLayoutEffect } from 'react';
+import type { ReactNode } from 'react';
+import { usePathname } from '@/routing/navigation';
+
+import { useTopBarStore } from '../layout/top-bar-context';
+import { cn } from '../../lib/utils';
+import { InlineAlert } from './alert';
+import { Card } from './card';
+import { Skeleton } from './primitives';
+
+export { InlineAlert } from './alert';
+
+function stableNodeSignature(value: ReactNode): string {
+  if (value == null) return '';
+  if (typeof value === 'boolean') return value ? 'true' : 'false';
+  if (typeof value === 'string' || typeof value === 'number') return String(value);
+  if (Array.isArray(value)) {
+    return `[${value.map((entry) => stableNodeSignature(entry)).join('|')}]`;
+  }
+  if (isValidElement(value)) {
+    const props = (value.props ?? {}) as Record<string, unknown>;
+    const typeName = stableElementTypeName(value.type);
+    const propEntries = Object.entries(props)
+      .reduce<string[]>((acc, [key, propValue]) => {
+        if (key !== 'children' && key !== 'style' && typeof propValue !== 'function') {
+          acc.push(`${key}:${stableNodeSignature(propValue as ReactNode)}`);
+        }
+        return acc;
+      }, [])
+      .sort((left, right) => left.localeCompare(right));
+    return `<${typeName}${propEntries.length ? ` ${propEntries.join(',')}` : ''}>${stableNodeSignature(props.children as ReactNode)}</${typeName}>`;
+  }
+  if (typeof value === 'object') {
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return '[object]';
+    }
+  }
+  return Children.toArray(value)
+    .map((entry) => stableNodeSignature(entry))
+    .join('|');
+}
+
+function stableElementTypeName(type: unknown): string {
+  if (typeof type === 'string') return type;
+  if (typeof type === 'symbol') return type.description ?? 'symbol';
+  if (typeof type === 'function' || (typeof type === 'object' && type !== null)) {
+    if ('displayName' in type && typeof type.displayName === 'string') {
+      return type.displayName;
+    }
+    if ('name' in type && typeof type.name === 'string') {
+      return type.name;
+    }
+  }
+  return 'component';
+}
+
+/* ─── PageHeader ─────────────────────────────────────────────────────────── */
+export function PageHeader({
+  title,
+  description,
+  actions,
+}: Readonly<{
+  title: ReactNode;
+  description?: string;
+  actions?: ReactNode;
+}>) {
+  const { setHeader } = useTopBarStore();
+  const pathname = usePathname();
+  const signature = `${stableNodeSignature(title)}::${description ?? ''}::${stableNodeSignature(actions)}`;
+  const syncHeader = useEffectEvent(() => {
+    setHeader({ pathKey: pathname, title, description, actions });
+  });
+  useLayoutEffect(() => {
+    syncHeader();
+  }, [pathname, signature, actions]);
+  return null;
+}
+
+/* ─── SectionHeader ──────────────────────────────────────────────────────── */
+export function SectionHeader({
+  title,
+  description,
+  icon: Icon,
+  action,
+}: Readonly<{
+  title: string;
+  description?: ReactNode;
+  icon?: LucideIcon;
+  action?: ReactNode;
+}>) {
+  return (
+    <div className="flex items-center justify-between gap-4">
+      <div className="min-w-0 flex-1 space-y-1.5">
+        <div className="flex items-center gap-2">
+          {Icon && <Icon className="text-muted size-3.5 shrink-0" />}
+          {/* type-heading-3: text-md, semibold, tight leading, tight tracking */}
+          <h2 className="type-heading-3 m-0">{title}</h2>
+        </div>
+        {description ? <div className="type-body-sm">{description}</div> : null}
+      </div>
+      {action ? <div className="shrink-0">{action}</div> : null}
+    </div>
+  );
+}
+
+type TabBarOption = { value: string; label: ReactNode; icon?: ReactNode };
+
+/* ─── TabBar — sliding CSS indicator, no flash ──────────────────────────── */
+export function TabBar({
+  value,
+  onChange,
+  options,
+  compact = false,
+  className,
+  variant = 'pill',
+  size = 'md',
+  fullWidth = false,
+}: Readonly<{
+  value: string;
+  onChange: (value: string) => void;
+  options: TabBarOption[];
+  compact?: boolean;
+  className?: string;
+  variant?: 'pill' | 'underline';
+  size?: 'sm' | 'md' | 'lg';
+  fullWidth?: boolean;
+}>) {
+  const padX = compact
+    ? size === 'sm'
+      ? 'px-2'
+      : 'px-2.5'
+    : size === 'lg'
+      ? 'px-4'
+      : size === 'sm'
+        ? 'px-2.5'
+        : 'px-3';
+
+  const heightClass =
+    size === 'lg'
+      ? 'h-[var(--control-height-lg)]'
+      : size === 'sm'
+        ? 'h-[var(--control-height-sm)]'
+        : 'h-[var(--control-height)]';
+
+  const gapClass = size === 'lg' ? 'gap-2' : 'gap-1.5';
+
+  if (variant === 'underline') {
+    return (
+      <div
+        className={cn(
+          '-mb-px flex items-stretch bg-transparent p-0',
+          heightClass,
+          fullWidth && 'w-full',
+          className,
+        )}
+      >
+        {options.map((option) => (
+          <button
+            key={option.value}
+            type="button"
+            aria-pressed={value === option.value}
+            onClick={() => onChange(option.value)}
+            className={cn(
+              'type-control relative -mb-px inline-flex shrink-0 items-center justify-center font-sans tracking-normal whitespace-nowrap transition-all',
+              fullWidth && 'flex-1',
+              padX,
+              value === option.value
+                ? 'border-accent text-accent border-b-2'
+                : 'text-secondary hover:text-foreground hover:border-border border-b-2 border-transparent',
+            )}
+          >
+            {tabBarOptionContent(option, gapClass)}
+          </button>
+        ))}
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className={cn(
+        'border-border bg-background-alt inline-flex items-center gap-0.5 rounded-md border p-0.5 shadow-none transition-all',
+        heightClass,
+        fullWidth && 'flex w-full',
+        className,
+      )}
+    >
+      {options.map((option) => (
+        <button
+          key={option.value}
+          type="button"
+          aria-pressed={value === option.value}
+          onClick={() => onChange(option.value)}
+          className={cn(
+            'type-control relative z-10 inline-flex h-full min-w-[72px] shrink-0 items-center justify-center rounded-sm font-sans text-sm tracking-normal whitespace-nowrap transition-[background-color,color,border-color,box-shadow] duration-150 ease-out select-none',
+            fullWidth && 'flex-1',
+            padX,
+            value === option.value
+              ? 'border-border bg-panel text-foreground border shadow-xs'
+              : 'text-muted hover:text-foreground border border-transparent bg-transparent',
+          )}
+        >
+          {tabBarOptionContent(option, gapClass)}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function tabBarOptionContent(option: TabBarOption, gapClass: string) {
+  if (!option.icon) return option.label;
+  return (
+    <span className={cn('inline-flex items-center', gapClass)}>
+      <span className="shrink-0">{option.icon}</span>
+      <span>{option.label}</span>
+    </span>
+  );
+}
+
+/* ─── ProgressBar ────────────────────────────────────────────────────────── */
+export function ProgressBar({ percent }: Readonly<{ percent: number }>) {
+  return (
+    <div className="space-y-1">
+      <div className="bg-border h-1 overflow-hidden rounded-full">
+        <div
+          className={cn(
+            'bg-accent h-full rounded-full transition-[width] duration-500',
+            percent >= 100 && 'bg-success',
+          )}
+          style={{ width: `${Math.min(percent, 100)}%` }}
+        />
+      </div>
+      {/* type-caption-mono: mono 11px, tabular-nums, muted */}
+      <div className="type-caption-mono">{percent}%</div>
+    </div>
+  );
+}
+
+/* ─── MetricGrid ─────────────────────────────────────────────────────────── */
+export function MetricGrid({ children }: Readonly<{ children: ReactNode }>) {
+  return (
+    <div className="stagger-children grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{children}</div>
+  );
+}
+
+/* ─── EmptyPanel ─────────────────────────────────────────────────────────── */
+export function EmptyPanel({
+  title,
+  description,
+}: Readonly<{ title: string; description: string }>) {
+  return (
+    <div className="border-border-strong bg-subtle-panel grid min-h-32 place-items-center rounded-lg border border-dashed px-6 py-8 text-center">
+      <div className="space-y-1">
+        <p className="type-subheading m-0">{title}</p>
+        <p className="type-body m-0">{description}</p>
+      </div>
+    </div>
+  );
+}
+
+/* ─── SectionCard ────────────────────────────────────────────────────────── */
+export function SectionCard({
+  title,
+  description,
+  action,
+  children,
+  className,
+}: Readonly<{
+  title: string;
+  description?: ReactNode;
+  action?: ReactNode;
+  children: ReactNode;
+  className?: string;
+}>) {
+  return (
+    <Card className={cn('section-card', className)}>
+      <SectionHeader title={title} description={description} action={action} />
+      {children}
+    </Card>
+  );
+}
+
+/* ─── SurfaceSection ─────────────────────────────────────────────────────── */
+export function SurfaceSection({
+  title,
+  description,
+  icon: Icon,
+  action,
+  children,
+  className,
+  bodyClassName,
+}: Readonly<{
+  title: string;
+  description?: ReactNode;
+  icon?: LucideIcon;
+  action?: ReactNode;
+  children: ReactNode;
+  className?: string;
+  bodyClassName?: string;
+}>) {
+  return (
+    <SurfacePanel className={className}>
+      <div className="border-divider border-b px-5 py-4">
+        <SectionHeader title={title} description={description} icon={Icon} action={action} />
+      </div>
+      <div className={cn('p-5', bodyClassName)}>{children}</div>
+    </SurfacePanel>
+  );
+}
+
+/* ─── MutedPanelMessage ──────────────────────────────────────────────────── */
+export function MutedPanelMessage({
+  title,
+  description,
+  className,
+}: Readonly<{
+  title: string;
+  description: string;
+  className?: string;
+}>) {
+  return (
+    <div className={cn('surface-muted rounded-lg border border-dashed px-5 py-6', className)}>
+      <p className="type-subheading m-0">{title}</p>
+      <p className="type-body m-0 mt-1.5">{description}</p>
+    </div>
+  );
+}
+
+/* ─── SkeletonRows ───────────────────────────────────────────────────────── */
+export function SkeletonRows({
+  count = 5,
+  className,
+}: Readonly<{ count?: number; className?: string }>) {
+  return (
+    <div className={cn('space-y-2', className)}>
+      {Array.from({ length: count }, (_, i) => (
+        <Skeleton key={i} className="h-8 w-full" />
+      ))}
+    </div>
+  );
+}
+
+/* ─── MetricSkeleton ─────────────────────────────────────────────────────── */
+export function MetricSkeleton() {
+  return (
+    <div className="border-border card-gradient relative space-y-2 overflow-hidden rounded-lg border p-4">
+      <Skeleton className="h-3 w-20" />
+      <Skeleton className="mt-2 h-9 w-28" />
+      <Skeleton className="h-3 w-16" />
+    </div>
+  );
+}
+
+/* ─── StatusDot ──────────────────────────────────────────────────────────── */
+export function StatusDot({
+  tone = 'neutral',
+  className,
+}: Readonly<{
+  tone?: 'neutral' | 'success' | 'warning' | 'danger' | 'accent' | 'info';
+  className?: string;
+}>) {
+  const toneClass =
+    tone === 'success'
+      ? 'bg-success'
+      : tone === 'warning'
+        ? 'bg-warning'
+        : tone === 'danger'
+          ? 'bg-danger'
+          : tone === 'accent'
+            ? 'bg-accent'
+            : tone === 'info'
+              ? 'bg-info'
+              : 'bg-muted';
+
+  return (
+    <span
+      className={cn('inline-block size-1.5 shrink-0 rounded-full', toneClass, className)}
+      aria-hidden="true"
+    />
+  );
+}
+
+/* ─── SurfacePanel ───────────────────────────────────────────────────────── */
+export function SurfacePanel({
+  children,
+  className,
+}: Readonly<{ children: ReactNode; className?: string }>) {
+  return <Card className={cn('p-0', className)}>{children}</Card>;
+}
+
+/* ─── RunWorkspaceShell ──────────────────────────────────────────────────── */
+export function RunWorkspaceShell({
+  header,
+  actions,
+  tabs,
+  summary,
+  content,
+}: Readonly<{
+  header: ReactNode;
+  actions?: ReactNode;
+  tabs: ReactNode;
+  summary?: ReactNode;
+  content: ReactNode;
+}>) {
+  return (
+    <div className="page-stack">
+      <div className="border-border card-gradient flex flex-wrap items-center justify-between gap-3 rounded-lg border px-6 py-4">
+        <div className="min-w-0 flex-1">{header}</div>
+        {actions ? (
+          <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div>
+        ) : null}
+      </div>
+      <div className="page-stack">
+        <div className="border-divider flex flex-wrap items-stretch justify-between gap-3 border-b">
+          <div className="flex items-end">{tabs}</div>
+          {summary ? <div className="self-center py-2">{summary}</div> : null}
+        </div>
+        {content}
+      </div>
+    </div>
+  );
+}
+
+/* ─── RunSummaryChips ────────────────────────────────────────────────────── */
+export function RunSummaryChips({
+  duration,
+  verdict,
+  quality,
+}: Readonly<{
+  duration: string;
+  verdict: string;
+  quality: string;
+}>) {
+  const normalizedVerdict = verdict.toLowerCase();
+  const normalizedQuality = quality.toLowerCase();
+
+  const verdictTone =
+    normalizedVerdict === 'success'
+      ? 'text-success'
+      : normalizedVerdict === 'partial'
+        ? 'text-warning'
+        : 'text-danger';
+
+  const qualityTone =
+    normalizedQuality === 'high'
+      ? 'text-success'
+      : normalizedQuality === 'medium'
+        ? 'text-warning'
+        : normalizedQuality === 'low'
+          ? 'text-danger'
+          : 'text-muted';
+
+  const chips = [
+    {
+      key: 'duration',
+      value: duration,
+      icon: Clock,
+      tone: 'text-secondary',
+    },
+    {
+      key: 'verdict',
+      value: verdict,
+      icon: CheckCircle2,
+      tone: verdictTone,
+    },
+    {
+      key: 'quality',
+      value: quality,
+      icon: Award,
+      tone: qualityTone,
+    },
+  ];
+
+  return (
+    <div className="flex flex-wrap items-center justify-end gap-1.5">
+      {chips.map((chip) => {
+        const Icon = chip.icon;
+        return (
+          <div
+            key={chip.key}
+            className="border-border bg-background-alt inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1"
+          >
+            <Icon className={cn('size-3.5 shrink-0', chip.tone)} aria-hidden="true" />
+            <span className={cn('type-body-sm tabular-nums', chip.tone)}>{chip.value}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ─── TableSurface ───────────────────────────────────────────────────────── */
+export function TableSurface({
+  children,
+  className,
+  contentClassName,
+}: Readonly<{
+  children: ReactNode;
+  className?: string;
+  contentClassName?: string;
+}>) {
+  return (
+    <SurfacePanel className={cn('overflow-visible', className)}>
+      <div className={cn('min-h-0 w-full min-w-0', contentClassName)}>{children}</div>
+    </SurfacePanel>
+  );
+}
+
+/* ─── DataRegion states ──────────────────────────────────────────────────── */
+export function DataRegionLoading({
+  count = 6,
+  className,
+}: Readonly<{ count?: number; className?: string }>) {
+  return (
+    <div className={cn('p-5', className)}>
+      <SkeletonRows count={count} />
+    </div>
+  );
+}
+
+export function DataRegionEmpty({
+  title,
+  description,
+  className,
+}: Readonly<{ title: string; description: string; className?: string }>) {
+  return (
+    <div className={cn('p-5', className)}>
+      <EmptyPanel title={title} description={description} />
+    </div>
+  );
+}
+
+export function DataRegionError({
+  message,
+  className,
+}: Readonly<{ message: string; className?: string }>) {
+  return (
+    <div className={cn('p-5', className)}>
+      <InlineAlert message={message} />
+    </div>
+  );
+}
+
+/* ─── NavList — selectable sidebar list ─────────────────────────────────── */
+export function NavList<T>({
+  items,
+  selectedKey,
+  onSelect,
+  getKey,
+  getLabel,
+  getMeta,
+  getBadge,
+  className,
+}: Readonly<{
+  items: ReadonlyArray<T>;
+  selectedKey: string;
+  onSelect: (key: string) => void;
+  getKey: (item: T) => string;
+  getLabel: (item: T) => ReactNode;
+  getMeta?: (item: T) => ReactNode;
+  getBadge?: (item: T) => ReactNode;
+  className?: string;
+}>) {
+  return (
+    <div className={cn('space-y-2', className)}>
+      {items.map((item) => {
+        const key = getKey(item);
+        const isActive = key === selectedKey;
+        return (
+          <button
+            key={key}
+            type="button"
+            aria-pressed={isActive}
+            onClick={() => onSelect(key)}
+            className={cn(
+              'w-full rounded-lg border p-3 text-left transition-colors',
+              isActive
+                ? 'border-accent bg-accent-subtle'
+                : 'border-border bg-background hover:bg-background-elevated',
+            )}
+          >
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                {/* type-control: sm, medium weight — interactive labels */}
+                <div className="type-control text-foreground truncate">{getLabel(item)}</div>
+                {getMeta ? (
+                  <div className="type-caption mt-2 flex flex-wrap gap-2">{getMeta(item)}</div>
+                ) : null}
+              </div>
+              {getBadge ? getBadge(item) : null}
+            </div>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ─── DetailRow — bordered content row for list items ────────────────────── */
+export function DetailRow({
+  children,
+  className,
+}: Readonly<{ children: ReactNode; className?: string }>) {
+  return (
+    <div className={cn('border-border bg-background rounded-lg border px-6 py-4', className)}>
+      {children}
+    </div>
+  );
+}
+
+/* ─── KVTile — compact key-value mini-stat ──────────────────────────────── */
+export function KVTile({
+  label,
+  value,
+  mono = false,
+  className,
+}: Readonly<{ label: string; value: ReactNode; mono?: boolean; className?: string }>) {
+  return (
+    <div className={cn('bg-background-elevated rounded-md px-2.5 py-2', className)}>
+      <div className="type-micro-label">{label}</div>
+      <div
+        className={cn(
+          'text-foreground pt-1',
+          mono ? 'type-caption-mono !text-foreground font-medium' : 'type-control',
+        )}
+      >
+        {value}
+      </div>
+    </div>
+  );
+}
+
+/* ─── MetricPulse ────────────────────────────────────────────────────────── */
+export function MetricPulse({ children }: Readonly<{ children: ReactNode }>) {
+  return (
+    <div className="border-border shadow-card grid grid-cols-4 gap-3 overflow-hidden rounded-xl border bg-transparent p-3 max-sm:grid-cols-2">
+      {children}
+    </div>
+  );
+}
+
+export function MetricPulseItem({
+  label,
+  value,
+  icon: Icon,
+  trend,
+  pulse,
+}: Readonly<{
+  label: string;
+  value: ReactNode;
+  icon?: LucideIcon;
+  trend?: ReactNode;
+  pulse?: boolean;
+}>) {
+  return (
+    <div className="bg-panel border-border-subtle hover:bg-background-elevated hover:border-border-strong group/metric relative flex flex-col gap-2 rounded-lg border px-5 py-4 transition-all duration-180">
+      <div
+        className="bg-accent absolute top-4 right-4 h-2 w-2 rounded-full opacity-0 transition-opacity duration-180 group-hover/metric:opacity-100"
+        aria-hidden="true"
+      />
+      <div className="text-2xs text-muted flex items-center gap-2 font-sans font-semibold tracking-wider uppercase">
+        {Icon && <Icon className="size-3.5" />}
+        {label}
+        {pulse && (
+          <div
+            className="bg-success ml-auto h-1.5 w-1.5 animate-pulse rounded-full"
+            aria-hidden="true"
+          />
+        )}
+      </div>
+      <div className="text-foreground font-mono text-2xl leading-none font-bold tracking-tighter tabular-nums">
+        {value}
+      </div>
+      {trend && <div className="mt-auto">{trend}</div>}
+    </div>
+  );
+}
+
+export function MetricPulseSkeleton() {
+  return (
+    <div className="bg-panel border-border-subtle relative flex flex-col gap-2 rounded-lg border px-5 py-4 transition-all duration-180">
+      <Skeleton className="h-3 w-16" />
+      <Skeleton className="mt-2 h-8 w-24" />
+    </div>
+  );
+}

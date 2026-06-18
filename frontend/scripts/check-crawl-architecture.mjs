@@ -1,0 +1,202 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import ts from 'typescript';
+
+const root = process.cwd();
+
+const checks = [
+  {
+    file: 'components/crawl/crawl-run-screen.tsx',
+    maxLines: 1400,
+  },
+  {
+    file: 'components/crawl/crawl-config-screen.tsx',
+    maxLines: 1500,
+  },
+];
+
+const failures = [];
+const fileCache = new Map();
+
+function read(relativePath) {
+  if (fileCache.has(relativePath)) {
+    return fileCache.get(relativePath);
+  }
+  try {
+    const content = fs.readFileSync(path.join(root, relativePath), 'utf8');
+    fileCache.set(relativePath, content);
+    return content;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    failures.push(`${relativePath} could not be read: ${message}`);
+    fileCache.set(relativePath, null);
+    return null;
+  }
+}
+
+function importsAppDynamic(content) {
+  const source = ts.createSourceFile(
+    'app/crawl/page.tsx',
+    content,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TSX,
+  );
+  return source.statements.some(
+    (statement) =>
+      ts.isImportDeclaration(statement) &&
+      ts.isStringLiteral(statement.moduleSpecifier) &&
+      statement.moduleSpecifier.text === '@/routing/dynamic',
+  );
+}
+
+function hasManualDateNowFieldId(content) {
+  return /(?:id|field|manual).{0,60}?Date\.now\(\)|Date\.now\(\).{0,60}?(?:id|field|manual)|current\.length.{0,60}?(?:id|field|manual)|(?:id|field|manual).{0,60}?current\.length/i.test(
+    content,
+  );
+}
+
+function maskNonNewlines(text) {
+  return text.replace(/[^\n]/g, ' ');
+}
+
+function scanQuotedString(content, start, quote) {
+  let index = start + 1;
+  let masked = ' ';
+  while (index < content.length) {
+    const char = content[index];
+    masked += char === '\n' ? '\n' : ' ';
+    if (char === '\\') {
+      index += 1;
+      if (index < content.length) {
+        masked += content[index] === '\n' ? '\n' : ' ';
+      }
+    } else if (char === quote) {
+      return { end: index + 1, masked };
+    }
+    index += 1;
+  }
+  return { end: content.length, masked };
+}
+
+function scanTemplateLiteral(content, start) {
+  let index = start + 1;
+  let masked = ' ';
+  while (index < content.length) {
+    const char = content[index];
+    if (char === '`') {
+      masked += ' ';
+      return { end: index + 1, masked };
+    }
+    if (char === '\\') {
+      masked += ' ';
+      index += 1;
+      if (index < content.length) {
+        masked += content[index] === '\n' ? '\n' : ' ';
+      }
+      index += 1;
+      continue;
+    }
+    if (char === '$' && content[index + 1] === '{') {
+      masked += '  ';
+      index += 2;
+      let depth = 1;
+      while (index < content.length && depth > 0) {
+        const inner = content[index];
+        if (inner === "'" || inner === '"') {
+          const scanned = scanQuotedString(content, index, inner);
+          masked += scanned.masked;
+          index = scanned.end;
+          continue;
+        }
+        if (inner === '`') {
+          const scanned = scanTemplateLiteral(content, index);
+          masked += scanned.masked;
+          index = scanned.end;
+          continue;
+        }
+        masked += inner === '\n' ? '\n' : ' ';
+        if (inner === '{') {
+          depth += 1;
+        } else if (inner === '}') {
+          depth -= 1;
+        } else if (inner === '\\') {
+          index += 1;
+          if (index < content.length) {
+            masked += content[index] === '\n' ? '\n' : ' ';
+          }
+        }
+        index += 1;
+      }
+      continue;
+    }
+    masked += char === '\n' ? '\n' : ' ';
+    index += 1;
+  }
+  return { end: content.length, masked };
+}
+
+function stripTemplateLiterals(content) {
+  let output = '';
+  let index = 0;
+  while (index < content.length) {
+    if (content[index] !== '`') {
+      output += content[index];
+      index += 1;
+      continue;
+    }
+    const scanned = scanTemplateLiteral(content, index);
+    output += scanned.masked;
+    index = scanned.end;
+  }
+  return output;
+}
+
+function stripCommentsAndStrings(content) {
+  return stripTemplateLiterals(content)
+    .replace(/\/\*[\s\S]*?\*\//g, (match) => match.replace(/[^\n]/g, ' '))
+    .replace(/\/\/.*$/gm, '')
+    .replace(/'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"/g, maskNonNewlines);
+}
+
+for (const check of checks) {
+  const content = read(check.file);
+  if (content === null) {
+    continue;
+  }
+  const lines = content.split(/\r?\n/).length;
+  if (lines > check.maxLines) {
+    failures.push(`${check.file} has ${lines} lines; limit is ${check.maxLines}. Split the owner.`);
+  }
+}
+
+const runScreen = read('components/crawl/crawl-run-screen.tsx');
+const cleanedRunScreen = runScreen === null ? null : stripCommentsAndStrings(runScreen);
+if (
+  cleanedRunScreen !== null &&
+  /\brefetchPanels\b|(?:\bwindow\.)?\bsetInterval\s*\([\s\S]*?\brefetch\b/.test(cleanedRunScreen)
+) {
+  failures.push(
+    'components/crawl/crawl-run-screen.tsx must use TanStack Query refetchInterval for server polling.',
+  );
+}
+
+const configScreen = read('components/crawl/crawl-config-screen.tsx');
+if (configScreen !== null && hasManualDateNowFieldId(configScreen)) {
+  failures.push(
+    'components/crawl/crawl-config-screen.tsx must not build manual field IDs from Date.now/current.length.',
+  );
+}
+
+const crawlPage = read('app/crawl/page-view.tsx');
+if (crawlPage !== null && !importsAppDynamic(crawlPage)) {
+  failures.push('app/crawl/page-view.tsx must dynamic-import heavy crawl screens.');
+}
+
+if (failures.length) {
+  console.error('Crawl architecture check failed:');
+  for (const failure of failures) {
+    console.error(`- ${failure}`);
+  }
+  process.exit(1);
+}
