@@ -261,6 +261,7 @@ def backfill_detail_price_from_html(
                         variant["currency"] = currency
             if localized_override_applied:
                 _drop_unverified_variant_money(record)
+                _backfill_variant_currency_from_parent(record)
 
     visible_original_price = detail_original_price_from_html(
         soup,
@@ -349,6 +350,21 @@ def _drop_unverified_variant_money(record: dict[str, Any]) -> None:
             continue
         for field_name in ("price", "sale_price", "original_price", "currency"):
             variant.pop(field_name, None)
+
+
+def _backfill_variant_currency_from_parent(record: dict[str, Any]) -> None:
+    currency = text_or_none(record.get("currency"))
+    if not currency:
+        return
+    selected_variant = record.get("selected_variant")
+    if isinstance(selected_variant, dict):
+        selected_variant["currency"] = currency
+    variants = record.get("variants")
+    if not isinstance(variants, list):
+        return
+    for variant in variants:
+        if isinstance(variant, dict):
+            variant["currency"] = currency
 
 
 def _drop_existing_original_price(record: dict[str, Any]) -> None:

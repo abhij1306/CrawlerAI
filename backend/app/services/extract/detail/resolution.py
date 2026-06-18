@@ -121,12 +121,20 @@ def _complete_variant_offers_from_parent(
 ) -> None:
     for index, variant in enumerate(variants):
         for field_name in DETAIL_PARENT_INHERITED_OFFER_FIELDS:
+            if field_name in {"price", "currency"} and _record_has_flat_offer_removal(
+                record
+            ):
+                continue
             parent_value = record.get(field_name)
             if parent_value in (None, "", [], {}) or variant.get(field_name) not in (
                 None,
                 "",
                 [],
                 {},
+            ):
+                continue
+            if field_name in {"price", "currency"} and not _variant_has_offer_identity(
+                variant
             ):
                 continue
             variant[field_name] = parent_value
@@ -139,6 +147,17 @@ def _complete_variant_offers_from_parent(
                 entity_ref=f"variant:{index}",
                 rule_id=DETAIL_PARENT_OFFER_INHERITANCE_RULE_ID,
             )
+
+
+def _record_has_flat_offer_removal(record: dict[str, Any]) -> bool:
+    findings = record.get("_validation_findings")
+    if not isinstance(findings, list):
+        return False
+    return any(
+        isinstance(finding, dict)
+        and finding.get("rule_id") == "FLAT_PARENT_VARIANT_OFFER_REMOVED"
+        for finding in findings
+    )
 
 
 def _resolve_negative_variant_stock(
@@ -177,6 +196,13 @@ def _resolve_negative_variant_stock(
                 entity_ref=f"variant:{index}",
                 rule_id=DETAIL_NEGATIVE_STOCK_RULE_ID,
             )
+
+
+def _variant_has_offer_identity(variant: dict[str, Any]) -> bool:
+    return any(
+        text_or_none(variant.get(field_name))
+        for field_name in ("sku", "variant_id", "barcode")
+    )
 
 
 def _all_variants_have_zero_stock(variants: list[dict[str, Any]]) -> bool:

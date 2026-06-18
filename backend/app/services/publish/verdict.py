@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
+from typing import Any
 
 VERDICT_SUCCESS: str = "success"
 VERDICT_PARTIAL: str = "partial"
@@ -10,12 +11,33 @@ VERDICT_EMPTY: str = "empty"
 VERDICT_ERROR: str = "error"
 
 
-def compute_verdict(*, is_listing: bool, blocked: bool, record_count: int) -> str:
+def compute_verdict(
+    *,
+    is_listing: bool,
+    blocked: bool,
+    record_count: int,
+    records: Sequence[Mapping[str, Any]] | None = None,
+) -> str:
     if int(record_count) > 0:
+        if _has_high_detail_findings(records):
+            return VERDICT_PARTIAL
         return VERDICT_PARTIAL if bool(blocked) else VERDICT_SUCCESS
     if bool(blocked):
         return VERDICT_BLOCKED
     return VERDICT_LISTING_FAILED if bool(is_listing) else VERDICT_EMPTY
+
+
+def _has_high_detail_findings(records: Sequence[Mapping[str, Any]] | None) -> bool:
+    for record in records or ():
+        findings = record.get("_validation_findings")
+        if not isinstance(findings, list):
+            continue
+        for finding in findings:
+            if not isinstance(finding, Mapping):
+                continue
+            if str(finding.get("severity") or "").strip().lower() in {"high", "critical"}:
+                return True
+    return False
 
 
 def aggregate_verdict(verdicts: list[str]) -> str:

@@ -69,6 +69,7 @@ from .retry import (
 )
 from .persistence import (
     persist_acquisition_artifacts,
+    persist_extraction_decision_artifact,
     persist_extracted_records,
     persist_run_trace,
 )
@@ -885,6 +886,7 @@ async def _run_persistence_stage(
         is_listing="listing" in context.surface,
         blocked=_effective_blocked(acquisition_result),
         record_count=persisted_count,
+        records=extracted_records,
     )
     status_code = int(getattr(acquisition_result, "status_code", 0) or 0)
     if persisted_count == 0 and is_non_retryable_http_status(status_code):
@@ -908,6 +910,14 @@ async def _run_persistence_stage(
         and persisted_count == 0
     ):
         verdict = VERDICT_LISTING_FAILED
+    await persist_extraction_decision_artifact(
+        run_id=context.run.id,
+        source_url=acquisition_result.final_url,
+        verdict=verdict,
+        persisted_count=persisted_count,
+        records=extracted_records,
+        acquisition_result=acquisition_result,
+    )
     trace = context.trace
     if trace is not None:
         diagnostics = mapping_or_empty(

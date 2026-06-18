@@ -192,9 +192,12 @@ def extract_urls(value: object, page_url: str) -> list[str]:
             return results
         if _looks_like_malformed_relative_url_candidate(text):
             return results
-        if is_concatenated_url(text):
+        if is_concatenated_url(text) and not _looks_like_image_fetch_proxy_url(text):
             return results
-        embedded_urls = re.findall(r"https?://(?:(?!https?://)[^\s,])+", text)
+        if _looks_like_image_fetch_proxy_url(text):
+            absolute = absolute_url(page_url, _trim_trailing_url_candidate(text))
+            return [absolute] if absolute else results
+        embedded_urls = re.findall(r"https?://(?:(?!https?://)[^\s])+", text)
         if len(embedded_urls) >= 2:
             for candidate in embedded_urls:
                 absolute = absolute_url(
@@ -224,7 +227,7 @@ def extract_urls(value: object, page_url: str) -> list[str]:
             continue
         if _is_placeholder_image_url(candidate) or _is_template_url(candidate):
             continue
-        if is_concatenated_url(candidate):
+        if is_concatenated_url(candidate) and not _looks_like_image_fetch_proxy_url(candidate):
             continue
         seen.add(normalized)
         deduped.append(candidate)
@@ -259,6 +262,11 @@ def _trim_trailing_url_candidate(value: str) -> str:
             break
         trimmed = trimmed[:-1].rstrip(".,:;!?}'\"")
     return trimmed
+
+
+def _looks_like_image_fetch_proxy_url(value: object) -> bool:
+    lowered = str(value or "").strip().casefold()
+    return "/image/fetch/" in lowered and "/http" in lowered
 
 
 def _looks_like_malformed_relative_url_candidate(value: str) -> bool:

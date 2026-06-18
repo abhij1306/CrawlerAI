@@ -276,7 +276,13 @@ def backfill_variants_from_dom_if_missing(
         elif existing_variants_are_rich and not _dom_rows_have_combination_identity(
             dom_variant_rows
         ):
-            return
+            if _dom_rows_are_richer_axis_grid(existing_variants, dom_variant_rows):
+                if _existing_variants_have_multiple_colors(existing_variants):
+                    record["_disable_variant_parent_color_inheritance"] = True
+                record["variants"] = dom_variant_rows
+                record["variant_count"] = len(dom_variant_rows)
+            else:
+                return
         else:
             existing_by_key: dict[str, dict[str, Any]] = {}
             for row in existing_variants:
@@ -349,4 +355,34 @@ def _page_url_is_live_marketplace(page_url: str) -> bool:
     return host in LIVE_MARKETPLACE_HOSTS or any(
         host.endswith(f".{marketplace_host}")
         for marketplace_host in LIVE_MARKETPLACE_HOSTS
+    )
+
+
+def _dom_rows_are_richer_axis_grid(
+    existing_variants: list[dict[str, Any]],
+    dom_variant_rows: list[dict[str, Any]],
+) -> bool:
+    if not existing_variants or not dom_variant_rows:
+        return False
+    existing_axis_count = max((_axis_count(row) for row in existing_variants), default=0)
+    dom_axis_count = max((_axis_count(row) for row in dom_variant_rows), default=0)
+    return dom_axis_count >= 2 and dom_axis_count > existing_axis_count
+
+
+def _existing_variants_have_multiple_colors(
+    existing_variants: list[dict[str, Any]],
+) -> bool:
+    colors = {
+        clean_text(row.get("color")).casefold()
+        for row in existing_variants
+        if clean_text(row.get("color"))
+    }
+    return len(colors) > 1
+
+
+def _axis_count(row: dict[str, Any]) -> int:
+    return sum(
+        1
+        for axis in ("color", "size", "width", "storage", "condition", "screen_size", "resolution")
+        if text_or_none(row.get(axis))
     )

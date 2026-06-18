@@ -10,6 +10,7 @@ JS_STATE_LIST_ITERATION_LIMIT = 25
 JS_STATE_PRODUCT_VARIANT_LIST_KEYS: tuple[str, ...] = (
     "variants",
     "availableSizes",
+    "variation_list",
     "variation_hierarchy",
 )
 JS_STATE_PRODUCT_OPTION_GROUP_KEYS: tuple[str, ...] = (
@@ -281,5 +282,5 @@ JS_STATE_VARIANT_FIELD_SPEC = {
         skip=JS_STATE_GLOM_SKIP,
     ),
     "sku": Coalesce("sku.skuId", "sku", default=None, skip=JS_STATE_GLOM_SKIP),
-    "barcode": Coalesce("barcode", default=None, skip=JS_STATE_GLOM_SKIP),
+    "barcode": Coalesce("barcode", "gtin", default=None, skip=JS_STATE_GLOM_SKIP),
 }

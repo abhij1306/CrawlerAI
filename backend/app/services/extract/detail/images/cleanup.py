@@ -153,8 +153,7 @@ def _backfill_detail_image_from_html(
     soup: Any,
     identity_url: str,
 ) -> None:
-    if text_or_none(record.get("image_url")):
-        return
+    current_image = text_or_none(record.get("image_url"))
     candidates: list[str] = []
     for node in soup.select(
         "meta[property='og:image'], meta[name='twitter:image'], "
@@ -165,13 +164,27 @@ def _backfill_detail_image_from_html(
             continue
         urls = extract_urls(raw, identity_url)
         candidates.extend(urls or [absolute_url(identity_url, raw)])
-    for url in _dedupe_cleaned_detail_images(candidates):
-        if _detail_image_candidate_is_usable(url, identity_url=identity_url):
-            record["image_url"] = url
+    usable = [
+        url
+        for url in _dedupe_cleaned_detail_images(candidates)
+        if _detail_image_candidate_is_usable(url, identity_url=identity_url)
+    ]
+    if current_image and usable:
+        preferred = _preferred_primary_image([current_image, *usable], record=record)
+        if preferred and preferred != current_image:
+            record["image_url"] = preferred
             field_sources = record.setdefault("_field_sources", {})
             if isinstance(field_sources, dict):
                 field_sources.setdefault("image_url", []).append("html_image")
-            return
+        return
+    if current_image:
+        return
+    for url in usable:
+        record["image_url"] = url
+        field_sources = record.setdefault("_field_sources", {})
+        if isinstance(field_sources, dict):
+            field_sources.setdefault("image_url", []).append("html_image")
+        return
 
 
 def backfill_detail_image_from_html(
@@ -206,6 +219,8 @@ def _detail_image_candidate_is_usable(url: str, *, identity_url: str) -> bool:
         return False
     path = str(parsed.path or "").strip()
     if not path or path == "/":
+        return False
+    if "/image/fetch/" in path.lower() and "/http" not in path.lower():
         return False
     if _BROKEN_FETCH_IMAGE_PATH_RE.fullmatch(path):
         return False
@@ -591,6 +606,19 @@ def _preferred_primary_image(
     *,
     record: dict[str, Any],
 ) -> str | None:
+    title_tokens = _semantic_detail_identity_tokens(record.get("title"))
+    if title_tokens:
+        scored = [
+            (
+                len(title_tokens & _detail_image_family_tokens(image)),
+                index,
+                image,
+            )
+            for index, image in enumerate(images)
+        ]
+        best_overlap, _index, best_image = max(scored, key=lambda row: (row[0], -row[1]))
+        if best_overlap >= min(2, len(title_tokens)):
+            return best_image
     color = clean_text(record.get("color"))
     if not color:
         return None

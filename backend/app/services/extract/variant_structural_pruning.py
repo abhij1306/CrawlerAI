@@ -295,7 +295,13 @@ def prune_low_signal_numeric_only_variants(record: dict[str, Any]) -> None:
     variants = record.get("variants")
     if not isinstance(variants, list) or not variants:
         return
-    if all(_variant_row_is_low_signal_numeric_only(variant) for variant in variants) and _numeric_only_variants_add_no_signal(record, variants):
+    if all(
+        _variant_row_is_low_signal_numeric_only(
+            variant,
+            parent_image=record.get("image_url"),
+        )
+        for variant in variants
+    ) and _numeric_only_variants_add_no_signal(record, variants):
         record.pop("variants", None)
         record.pop("variant_count", None)
 
@@ -385,10 +391,17 @@ def _variant_sku_is_size_specific_child(*, parent_sku: str, child_sku: str, size
     return bool(child_tokens and child_tokens[-1] == size_token)
 
 
-def _variant_row_is_low_signal_numeric_only(variant: object) -> bool:
+def _variant_row_is_low_signal_numeric_only(
+    variant: object,
+    *,
+    parent_image: object = None,
+) -> bool:
     if not isinstance(variant, dict):
         return False
-    if any(clean_text(variant.get(field_name)) for field_name in ("sku", "url", "image_url", "availability", "color")):
+    if any(clean_text(variant.get(field_name)) for field_name in ("sku", "url", "color")):
+        return False
+    variant_image = clean_text(variant.get("image_url"))
+    if variant_image and variant_image != clean_text(parent_image):
         return False
     if variant.get("stock_quantity") not in (None, "", [], {}):
         return False

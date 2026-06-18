@@ -4,12 +4,13 @@ __all__ = (
     "split_variant_axes", "resolve_variants", "variant_identity",
     "variant_semantic_identity", "collapse_duplicate_size_aliases",
     "variant_row_richness", "merge_variant_pair", "merge_variant_rows",
-    "axis_values_are_mislabeled_duplicate",
+    "axis_values_are_mislabeled_duplicate", "variant_url_matches_parent_product",
 )
 
 import itertools
 import logging
 from typing import Any
+from urllib.parse import urlsplit
 
 from app.services.config.extraction_rules import VARIANT_MISLABELED_AXIS_MIN_OVERLAP_RATIO, VARIANT_SIZE_ALIAS_SUFFIXES
 from app.services.config.variant_policy import FLAT_VARIANT_KEYS
@@ -216,6 +217,27 @@ def variant_identity(variant: dict[str, Any]) -> str | None:
                 f"{axis}={value}" for axis, value in normalized_pairs
             )
     return None
+
+
+def variant_url_matches_parent_product(value: object, *, parent_url: object) -> bool:
+    variant_url = clean_text(value)
+    parent = clean_text(parent_url)
+    if not variant_url or not parent:
+        return False
+    variant_parts = urlsplit(variant_url)
+    parent_parts = urlsplit(parent)
+    if variant_parts.netloc and parent_parts.netloc:
+        variant_host = variant_parts.netloc.casefold().removeprefix("www.")
+        parent_host = parent_parts.netloc.casefold().removeprefix("www.")
+        if variant_host != parent_host:
+            return False
+    return _normalized_url_path(variant_parts.path) == _normalized_url_path(
+        parent_parts.path
+    )
+
+
+def _normalized_url_path(value: object) -> str:
+    return "/" + str(value or "").strip("/").casefold()
 
 
 def _canonical_variant_axis_value(axis_name: object, value: object) -> str:

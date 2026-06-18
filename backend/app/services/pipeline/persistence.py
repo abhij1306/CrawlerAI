@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+from typing import Any, Mapping, Sequence
 
 from app.models.crawl_run import CrawlRecord, CrawlRun
 from app.services.db_utils import mapping_or_empty
@@ -30,6 +31,23 @@ def _merge_browser_diagnostics(
     merged = mapping_or_empty(getattr(acquisition_result, "browser_diagnostics", {}))
     merged.update(dict(diagnostics or {}))
     acquisition_result.browser_diagnostics = merged
+
+
+def _merge_browser_artifact_path(
+    acquisition_result,
+    *,
+    key: str,
+    path: str,
+) -> None:
+    if not path:
+        return
+    diagnostics = mapping_or_empty(
+        getattr(acquisition_result, "browser_diagnostics", {})
+    )
+    artifact_paths = mapping_or_empty(diagnostics.get("artifact_paths"))
+    artifact_paths[str(key)] = path
+    diagnostics["artifact_paths"] = artifact_paths
+    acquisition_result.browser_diagnostics = diagnostics
 
 
 def _record_identity_key(source_url: str) -> str | None:
@@ -137,6 +155,83 @@ async def persist_run_trace(
         suffix="trace",
         payload=payload,
     )
+
+
+def build_extraction_decision_payload(
+    *,
+    verdict: str,
+    persisted_count: int,
+    records: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    return {
+        "schema_version": "extraction_decision.v1",
+        "verdict": str(verdict or ""),
+        "record_count": len(records),
+        "persisted_count": int(persisted_count or 0),
+        "records": [_extraction_decision_record(record) for record in records],
+    }
+
+
+async def persist_extraction_decision_artifact(
+    *,
+    run_id: int,
+    source_url: str,
+    verdict: str,
+    persisted_count: int,
+    records: Sequence[Mapping[str, Any]],
+    acquisition_result=None,
+) -> str:
+    payload = build_extraction_decision_payload(
+        verdict=verdict,
+        persisted_count=persisted_count,
+        records=records,
+    )
+    path = await asyncio.to_thread(
+        persist_json_artifact,
+        run_id=run_id,
+        source_url=source_url,
+        suffix="extraction",
+        payload=payload,
+    )
+    if acquisition_result is not None:
+        _merge_browser_artifact_path(
+            acquisition_result,
+            key="extraction_decision",
+            path=path,
+        )
+    return path
+
+
+def _extraction_decision_record(record: Mapping[str, Any]) -> dict[str, Any]:
+    public_fields = {
+        str(key): _json_safe(value)
+        for key, value in record.items()
+        if not str(key).startswith("_") and value not in (None, "", [], {})
+    }
+    payload: dict[str, Any] = {"public_fields": public_fields}
+    for key in (
+        "_source",
+        "_confidence",
+        "_field_sources",
+        "_evidence_graph",
+        "_validation_findings",
+        "_review_bucket",
+        "_rejected_public_fields",
+    ):
+        value = record.get(key)
+        if value not in (None, "", [], {}):
+            payload[key.removeprefix("_")] = _json_safe(value)
+    return payload
+
+
+def _json_safe(value: Any) -> Any:
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, Mapping):
+        return {str(key): _json_safe(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple, set, frozenset)):
+        return [_json_safe(item) for item in value]
+    return str(value)
 
 
 async def persist_acquisition_artifacts(
