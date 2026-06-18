@@ -25,10 +25,6 @@ from app.services.llm.runtime import (
     extract_records_directly as extract_records_directly_with_llm,
 )
 from app.services.adapters.registry import run_adapter
-from app.services.extract.detail.assembly.record_assembly import (
-    detail_record_rejection_reason,
-    infer_detail_failure_reason,
-)
 from app.services.platform_policy import detect_platform_family
 from app.services.pipeline.extract_records import extract_records
 from app.services.pipeline.direct_record_fallback import (
@@ -60,6 +56,8 @@ from .extraction_retry_decision import (
 from .retry import (
     apply_detail_rejection_guard,
     build_acquisition_request,
+    detail_record_rejection_reason,
+    infer_detail_failure_reason,
     log_extraction_outcome,
     retry_detail_challenge_shell_with_real_chrome,
     retry_empty_extraction_with_browser,

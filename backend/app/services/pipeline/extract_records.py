@@ -13,14 +13,7 @@ from app.services.extract.detail.identity.shell_filter import (
     description_looks_like_shell_copy,
     title_looks_like_brand_shell,
 )
-from app.services.extract.detail.assembly.record_assembly import (
-    detail_record_rejection_reason,
-    extract_detail_records,
-)
-from app.services.extract.detail.assembly.final_cleanup import (
-    repair_ecommerce_detail_record_quality,
-)
-from app.services.extract.detail.price.core import drop_low_signal_zero_detail_price
+from app.services.extraction_v2 import extract_ecommerce_detail_v2
 from app.services.extract.listing_candidate_ranking import best_listing_candidate_set
 from app.services.extract.listing_record_finalizer import finalize_listing_price_fields
 from app.services.extract.network_listing_mapper import (
@@ -67,6 +60,17 @@ def extract_records(
     normalized_surface = str(surface or "").strip().lower()
     if not normalized_surface or normalized_surface == "auto":
         raise ValueError(f"Surface must be explicit, got: {surface!r}")
+    if normalized_surface == "ecommerce_detail":
+        record, replay = extract_ecommerce_detail_v2(
+            html,
+            page_url,
+            requested_page_url=requested_page_url,
+            network_payloads=network_payloads,
+            artifacts=artifacts,
+        )
+        if artifacts is not None:
+            artifacts["extraction_v2_replay"] = replay.model_dump(mode="json")
+        return [record] if isinstance(record, dict) else []
     xml_records = extract_xml_sitemap_records(
         html,
         page_url,
@@ -247,6 +251,10 @@ def extract_records(
         network_payload_count=len(network_payloads or []),
         selector_rule_count=len(selector_rules or []),
     ) as span:
+        from app.services.extract.detail.assembly.record_assembly import (
+            extract_detail_records,
+        )
+
         detail_rows = _postprocess_detail_records(
             extract_detail_records(
                 html,
@@ -324,12 +332,6 @@ def _detail_record_fails_minimum_viable_gate(
                 "variants",
             )
         )
-    ):
-        return True
-    if detail_record_rejection_reason(
-        record,
-        page_url=page_url,
-        requested_page_url=requested_page_url,
     ):
         return True
     return bool(is_title_noise(title))
@@ -451,14 +453,6 @@ def _postprocess_detail_records(
     for record in list(records or []):
         if not isinstance(record, dict):
             continue
-        if repair_quality:
-            repair_ecommerce_detail_record_quality(
-                record,
-                html=html,
-                page_url=page_url,
-                requested_page_url=requested_page_url,
-        )
-        drop_low_signal_zero_detail_price(record)
         rows.append(finalize_record(record, surface=surface) if finalize_rows else record)
     return rows
 
