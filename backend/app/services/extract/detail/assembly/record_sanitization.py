@@ -9,6 +9,7 @@ __all__ = (
 import json
 import logging
 import re
+from decimal import Decimal, InvalidOperation
 from difflib import SequenceMatcher
 from typing import Any
 from urllib.parse import urlparse
@@ -148,8 +149,10 @@ def sanitize_detail_identity_scalars(
     _repair_detail_title_from_requested_identity(record, identity_url=identity_url)
     _repair_missing_detail_brand(record, identity_url=identity_url)
     _repair_detail_brand_from_host_fallback(record, identity_url=identity_url)
+    _prefer_numeric_title_prefix_brand(record, identity_url=identity_url)
     _sanitize_detail_title_noise(record)
     _sanitize_detail_category(record, identity_url=identity_url)
+    _repair_detail_color_from_title(record)
     _repair_detail_color_from_description(record)
     placeholder_title_removed = bool(record.pop("_placeholder_title_removed", False))
     if not text_or_none(record.get("title")):
@@ -288,6 +291,8 @@ def _brand_from_title_prefix(
         and title_parts[take] in continuation_tokens
     ):
         take += 1
+    if take == 1 and first not in DETAIL_BRAND_NUMERIC_PREFIX_ALLOWLIST:
+        return None
     candidate_tokens = title_parts[:take]
     if not _tokens_appear_contiguously(path_parts, candidate_tokens):
         return None
@@ -303,7 +308,29 @@ def _repair_detail_brand_from_host_fallback(
     if not fallback:
         return
     current = text_or_none(record.get("brand"))
-    if current and current.casefold() == fallback.casefold():
+    title_prefix_brand = _brand_from_title_prefix(record, identity_url=identity_url)
+    if (
+        current
+        and title_prefix_brand
+        and _brand_value_is_numeric_prefix_allowlist_match(title_prefix_brand)
+        and not _brand_values_look_equivalent(current, title_prefix_brand)
+    ):
+        record["brand"] = title_prefix_brand
+        field_sources = record.setdefault("_field_sources", {})
+        if isinstance(field_sources, dict):
+            field_sources["brand"] = ["title_prefix_identity_repair"]
+        return
+    if current and (
+        current.casefold() == fallback.casefold()
+        or _brand_values_look_equivalent(current, fallback)
+    ):
+        if title_prefix_brand and _brand_value_is_numeric_prefix_allowlist_match(
+            title_prefix_brand
+        ):
+            record["brand"] = title_prefix_brand
+            field_sources = record.setdefault("_field_sources", {})
+            if isinstance(field_sources, dict):
+                field_sources["brand"] = ["title_prefix_identity_repair"]
         return
     if current and not _brand_value_is_weak_title_prefix(current, record):
         return
@@ -318,8 +345,33 @@ def _repair_detail_brand_from_host_fallback(
         field_sources["brand"] = ["host_identity_repair"]
 
 
+def _prefer_numeric_title_prefix_brand(
+    record: dict[str, Any],
+    *,
+    identity_url: str,
+) -> None:
+    candidate = _brand_from_title_prefix(record, identity_url=identity_url)
+    if not candidate or not _brand_value_is_numeric_prefix_allowlist_match(candidate):
+        return
+    current = text_or_none(record.get("brand"))
+    if current and _brand_values_look_equivalent(current, candidate):
+        return
+    record["brand"] = candidate
+    field_sources = record.setdefault("_field_sources", {})
+    if isinstance(field_sources, dict):
+        field_sources["brand"] = ["title_prefix_identity_repair"]
+
+
 def _brand_value_is_numeric_prefix_allowlist_match(value: str) -> bool:
     return value.strip() in (DETAIL_BRAND_NUMERIC_PREFIX_ALLOWLIST or set())
+
+
+def _brand_values_look_equivalent(left: str, right: str) -> bool:
+    return re.sub(r"[^a-z0-9]+", "", left.casefold()) == re.sub(
+        r"[^a-z0-9]+",
+        "",
+        right.casefold(),
+    )
 
 
 def _brand_value_is_weak_title_prefix(value: str, record: dict[str, Any]) -> bool:
@@ -464,6 +516,49 @@ def _repair_detail_color_from_description(record: dict[str, Any]) -> None:
     field_sources = record.setdefault("_field_sources", {})
     if isinstance(field_sources, dict):
         field_sources["color"] = ["description_color_repair"]
+
+
+def _repair_detail_color_from_title(record: dict[str, Any]) -> None:
+    title = clean_text(record.get("title"))
+    if not title:
+        return
+    parts = [
+        clean_text(part)
+        for part in re.split(r"\s+[-–—]\s+|\s+\|\s+", title)
+        if clean_text(part)
+    ]
+    candidate = parts[-1] if len(parts) >= 2 else _quoted_title_color(title)
+    if not candidate:
+        return
+    if len(candidate.split()) > 4 or not re.search(
+        str(COLOR_KEYWORD_PATTERN),
+        candidate,
+        flags=re.I,
+    ):
+        return
+    current = clean_text(record.get("color"))
+    if current and current.casefold() == candidate.casefold():
+        return
+    record["color"] = candidate
+    field_sources = record.setdefault("_field_sources", {})
+    if isinstance(field_sources, dict):
+        field_sources["color"] = ["title_color_repair"]
+
+
+def _quoted_title_color(title: str) -> str:
+    matches = [
+        clean_text(match.group(1))
+        for match in re.finditer(r"['\"]([^'\"]{3,40})['\"]", title)
+        if clean_text(match.group(1))
+    ]
+    if not matches:
+        return ""
+    candidate = matches[-1]
+    if len(candidate.split()) > 4:
+        return ""
+    if not re.search(str(COLOR_KEYWORD_PATTERN), candidate, flags=re.I):
+        return ""
+    return candidate
 
 
 # Detect a `color` value whose payload is a description + redundant
@@ -646,7 +741,12 @@ def _sanitize_detail_category(
 
 def _sanitize_detail_scalar_size(record: dict[str, Any]) -> None:
     size = clean_text(record.get("size"))
-    if not size or not size.isdigit():
+    if not size:
+        return
+    if _scalar_size_matches_price(size, record):
+        record.pop("size", None)
+        return
+    if not size.isdigit():
         return
     try:
         max_low_signal = int(DETAIL_LOW_SIGNAL_NUMERIC_SIZE_MAX)
@@ -658,6 +758,28 @@ def _sanitize_detail_scalar_size(record: dict[str, Any]) -> None:
     category_tokens = set(slug_tokens(record.get("category")))
     if {"men", "mens", "women", "womens"} & (title_tokens | category_tokens):
         record.pop("size", None)
+
+
+def _scalar_size_matches_price(size: str, record: dict[str, Any]) -> bool:
+    size_decimal = _decimal_scalar(size)
+    if size_decimal is None:
+        return False
+    for field_name in ("price", "sale_price", "original_price"):
+        price_decimal = _decimal_scalar(record.get(field_name))
+        if price_decimal is not None and size_decimal == price_decimal:
+            return True
+    return False
+
+
+def _decimal_scalar(value: object) -> Decimal | None:
+    text = re.sub(r"[^0-9.]+", "", clean_text(value))
+    if not text:
+        return None
+    try:
+        parsed = Decimal(text)
+    except InvalidOperation:
+        return None
+    return parsed if parsed.is_finite() else None
 
 
 # skipcq: PY-R1000

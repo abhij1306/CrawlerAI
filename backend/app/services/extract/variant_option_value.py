@@ -108,9 +108,10 @@ def _is_sequential_integer_run(
     ints: list[int] = []
     for value in values:
         stripped = value.strip()
-        if not stripped.isdigit():
+        match = re.fullmatch(r"(\d+)\s*\+?", stripped)
+        if match is None:
             return False
-        ints.append(int(stripped))
+        ints.append(int(match.group(1)))
     ints.sort()
     return ints[-1] - ints[0] == len(ints) - 1
 

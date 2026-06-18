@@ -44,8 +44,16 @@ from app.services.extract.detail.price.core import (
     reconcile_detail_price_magnitudes,
     reconcile_parent_price_against_variant_range,
 )
-from app.services.extract.detail.text.sanitizer import sanitize_detail_long_text_fields
+from app.services.extract.detail.text.sanitizer import (
+    sanitize_detail_long_text,
+    sanitize_detail_long_text_fields,
+)
 from app.services.extract.variant_normalization import normalize_variant_record
+from app.services.extract.variant_normalization.backfill import (
+    backfill_variant_color_from_record,
+    enforce_variant_currency_context,
+    remove_unproven_flat_variant_offers,
+)
 from app.services.extract.detail.validation import attach_detail_validation_findings
 from app.services.extract.detail.resolution import (
     resolve_detail_entities,
@@ -217,10 +225,29 @@ def repair_ecommerce_detail_record_quality(
     _apply_graph_tracked_repair(
         record,
         evidence_builder=evidence_builder,
+        rule_id="remove_unproven_flat_variant_offers",
+        output_source="variant_normalization",
+        repair=lambda: remove_unproven_flat_variant_offers(record),
+    )
+    _apply_graph_tracked_repair(
+        record,
+        evidence_builder=evidence_builder,
+        rule_id="enforce_variant_currency_context",
+        output_source="variant_normalization",
+        repair=lambda: enforce_variant_currency_context(record),
+    )
+    _apply_graph_tracked_repair(
+        record,
+        evidence_builder=evidence_builder,
         rule_id="enforce_flat_variant_public_contract",
         output_source="variant_public_contract",
         repair=lambda: enforce_flat_variant_public_contract(record, page_url=page_url),
     )
+    _record_sanitization.sanitize_detail_identity_scalars(
+        record,
+        identity_url=text_or_none(requested_page_url) or page_url,
+    )
+    backfill_variant_color_from_record(record)
     attach_detail_validation_findings(record)
 
 
@@ -265,8 +292,61 @@ def _sanitize_ecommerce_detail_record(
         record,
         title_hint=detail_title_from_url(identity_url),
     )
+    if soup is not None and not text_or_none(record.get("description")):
+        if description := _json_ld_product_description(soup, record):
+            record["description"] = description
+            field_sources = record.setdefault("_field_sources", {})
+            if isinstance(field_sources, dict):
+                field_sources["description"] = ["json_ld_description_fallback"]
     _image_cleanup.sanitize_detail_images(record, identity_url=identity_url)
     _image_cleanup.backfill_parent_image_from_variants(record)
+
+
+def _json_ld_product_description(soup: Any, record: dict[str, Any]) -> str | None:
+    if not hasattr(soup, "select"):
+        return None
+    title = text_or_none(record.get("title"))
+    for script in soup.select("script[type='application/ld+json']"):
+        raw = script.string or script.get_text(" ", strip=True)
+        if not raw:
+            continue
+        try:
+            payload = json.loads(raw)
+        except (TypeError, ValueError):
+            continue
+        for item in _walk_json_objects(payload):
+            if not _json_ld_item_is_product(item):
+                continue
+            description = sanitize_detail_long_text(
+                item.get("description"),
+                title=title,
+            )
+            if description:
+                return description
+            raw_description = text_or_none(item.get("description"))
+            if raw_description and len(raw_description.split()) >= 5:
+                return raw_description
+    return None
+
+
+def _walk_json_objects(value: object):
+    if isinstance(value, dict):
+        yield value
+        for child in value.values():
+            yield from _walk_json_objects(child)
+    elif isinstance(value, list):
+        for child in value:
+            yield from _walk_json_objects(child)
+
+
+def _json_ld_item_is_product(item: dict[str, Any]) -> bool:
+    raw_type = item.get("@type")
+    if isinstance(raw_type, list):
+        return any(
+            str(value).casefold() in {"product", "productgroup"}
+            for value in raw_type
+        )
+    return str(raw_type).casefold() in {"product", "productgroup"}
 
 
 def _variant_parent_image_values(record: dict[str, Any]) -> set[str]:

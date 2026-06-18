@@ -567,6 +567,7 @@ def sanitize_detail_long_text(
         _strip_leading_attribute_blob(_strip_bracket_artifact_noise(clean_text(text)))
     )
     cleaned_text = _strip_long_text_substring_noise(cleaned_text)
+    cleaned_text = _strip_related_product_carousel_tail(cleaned_text)
     cleaned_text = _trim_repeated_title_lead(cleaned_text, title=title)
     if _text_is_structured_object_repr(cleaned_text) or _text_is_structured_json_array(
         cleaned_text
@@ -581,6 +582,8 @@ def sanitize_detail_long_text(
     if detail_long_text_is_guide_or_glossary_dump(cleaned_text):
         return ""
     if detail_long_text_is_cookie_disclosure_dump(cleaned_text):
+        return ""
+    if _long_text_is_category_listing_blurb(cleaned_text):
         return ""
     if detail_long_text_is_document_label_cluster(text):
         return ""
@@ -619,6 +622,34 @@ def sanitize_detail_long_text(
     if kept and all(detail_long_text_chunk_is_document_label(chunk) for chunk in kept):
         return ""
     return " ".join(kept).strip()
+
+
+def _strip_related_product_carousel_tail(text: str) -> str:
+    cleaned = clean_text(text)
+    if not cleaned:
+        return ""
+    marker_patterns = (
+        r"\b\d+\+\s+\d(?:\.\d)?\s+[^.]{0,80}?\bKey Chain\b\s+\$\d",
+        r"\bAdd to Bag\b(?:\s+New)?\s+\d+\+",
+    )
+    indexes = [
+        match.start()
+        for pattern in marker_patterns
+        if (match := re.search(pattern, cleaned, flags=re.I))
+    ]
+    if not indexes:
+        return cleaned
+    head = clean_text(cleaned[: min(indexes)])
+    return head if len(head.split()) >= _long_text_min_words else cleaned
+
+
+def _long_text_is_category_listing_blurb(text: str) -> bool:
+    lowered = clean_text(text).casefold()
+    return (
+        lowered.startswith(("we've got ", "we’ve got ", "we have "))
+        and " starting at " in lowered
+        and "shop our selection" in lowered
+    )
 
 
 def _strip_long_text_substring_noise(text: str) -> str:

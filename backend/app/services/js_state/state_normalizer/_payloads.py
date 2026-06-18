@@ -67,6 +67,7 @@ def _looks_like_product_payload(value: Any) -> bool:
         for key in (
             "variants",
             "availableSizes",
+            "variation_list",
             "variation_hierarchy",
             "coreProducts",
             "options",
@@ -100,6 +101,8 @@ def _looks_like_product_payload(value: Any) -> bool:
     )
 
 def _payload_type_is_non_product(value: dict[str, Any]) -> bool:
+    if _has_strong_product_payload_signal(value):
+        return False
     raw_type = (
         clean_text(
             value.get("type")
@@ -120,6 +123,22 @@ def _payload_type_is_non_product(value: dict[str, Any]) -> bool:
         for pattern in tuple(DETAIL_ARTIFACT_PRODUCT_TYPE_PATTERNS or ())
         if str(pattern).strip()
     )
+
+
+def _has_strong_product_payload_signal(value: dict[str, Any]) -> bool:
+    has_identity = any(
+        value.get(key) not in (None, "", [], {})
+        for key in ("id", "productId", "product_id", "sku")
+    )
+    has_title = any(
+        text_or_none(value.get(key))
+        for key in ("name", "title", "productName", "productTitle")
+    )
+    has_variants = any(
+        isinstance(value.get(key), list) and bool(value.get(key))
+        for key in ("variants", "variation_list", "availableSizes")
+    )
+    return has_identity and has_title and has_variants
 
 def _looks_like_stock_price_product_payload(value: dict[str, Any]) -> bool:
     return (
@@ -156,6 +175,7 @@ def _product_payload_score(product: dict[str, Any]) -> tuple[int, ...]:
     product_keys = set(product)
     strong_product_keys = {
         "variants",
+        "variation_list",
         "options",
         "variation_hierarchy",
         "coreProducts",

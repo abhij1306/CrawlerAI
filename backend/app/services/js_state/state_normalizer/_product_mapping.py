@@ -411,6 +411,8 @@ def _extract_product_images(product: dict[str, Any], *, page_url: str) -> list[s
     values.extend(extract_urls(product.get("image"), page_url))
     values.extend(extract_urls(product.get("featuredImage"), page_url))
     values.extend(extract_urls(product.get("featured_image"), page_url))
+    values.extend(_extract_nested_image_urls(product.get("mainImage"), page_url=page_url))
+    values.extend(_extract_nested_image_urls(product.get("imageInfo"), page_url=page_url))
     values.extend(extract_urls(_connection_nodes(product.get("media")), page_url))
     return dedupe_image_urls(values)
 

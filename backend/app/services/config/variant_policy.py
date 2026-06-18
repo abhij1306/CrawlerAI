@@ -57,6 +57,7 @@ VARIANT_AXIS_CANONICAL_MAPPING: dict[frozenset[str], str] = {
     frozenset({"switch", "switches", "switch type", "switch_type"}): "switches",
     frozenset({"fit", "fits"}): "fit",
     frozenset({"length", "lengths"}): "length",
+    frozenset({"width", "widths", "shoe width", "shoe_width"}): "width",
     frozenset(
         {
             "dimensions",
@@ -109,6 +110,7 @@ PUBLIC_VARIANT_AXIS_FIELDS: tuple[str, ...] = (
     "switches",
     "fit",
     "length",
+    "width",
     "flavor",
     "material",
     "pattern",

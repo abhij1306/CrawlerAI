@@ -4,6 +4,7 @@ from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from app.services.config.extraction_rules import CURRENCY_CODES
+from app.services.extract.variant_identity_merge import variant_url_matches_parent_product
 from app.services.extract.variant_structural_pruning import (
     drop_parent_sku_alias_variant_rows,
     prune_low_signal_numeric_only_variants,
@@ -20,7 +21,9 @@ currency_codes_upper = frozenset(
 
 __all__ = (
     "backfill_variant_context",
+    "backfill_variant_color_from_record",
     "enforce_variant_currency_context",
+    "remove_unproven_flat_variant_offers",
     "_backfill_variant_context",
     "_enforce_variant_currency_context",
 )
@@ -29,6 +32,7 @@ __all__ = (
 def _backfill_variant_context(record: dict[str, Any]) -> None:
     _backfill_variant_prices_from_record(record)
     _enforce_variant_currency_context(record)
+    _remove_unproven_flat_variant_offers(record)
     _backfill_variant_shared_fields_from_record(record)
     prune_low_signal_numeric_only_variants(record)
     drop_parent_sku_alias_variant_rows(record)
@@ -41,16 +45,77 @@ def _enforce_variant_currency_context(record: dict[str, Any]) -> None:
     parent_currency = _currency_code(record.get("currency"))
     if not parent_currency:
         return
+    parent_url = clean_text(record.get("url") or record.get("source_url"))
     for variant in variants:
         if not isinstance(variant, dict):
             continue
         variant_currency = _currency_code(variant.get("currency"))
         if variant_currency and variant_currency != parent_currency:
+            if _variant_price_matches_parent(variant, record) and not _variant_has_distinct_product_url(
+                variant,
+                parent_url=parent_url,
+            ):
+                variant["currency"] = parent_currency
+                _append_variant_currency_conflict_finding(
+                    record,
+                    variant_currency=variant_currency,
+                    parent_currency=parent_currency,
+                )
+            continue
+        if (
+            not variant_currency
+            and not _variant_can_inherit_parent_offer(
+                variant,
+                parent_url=parent_url,
+            )
+            and variant.get("price") in (None, "", [], {})
+        ):
             continue
         if not variant_currency:
             variant["currency"] = parent_currency
     record["variant_count"] = len(
         [variant for variant in variants if isinstance(variant, dict)]
+    )
+
+
+def _variant_price_matches_parent(
+    variant: dict[str, Any],
+    record: dict[str, Any],
+) -> bool:
+    variant_price = text_or_none(variant.get("price"))
+    parent_price = text_or_none(record.get("price"))
+    return bool(variant_price and parent_price and variant_price == parent_price)
+
+
+def _append_variant_currency_conflict_finding(
+    record: dict[str, Any],
+    *,
+    variant_currency: str,
+    parent_currency: str,
+) -> None:
+    findings = record.setdefault("_validation_findings", [])
+    if not isinstance(findings, list):
+        return
+    if any(
+        isinstance(finding, dict)
+        and finding.get("rule_id") == "VARIANT_CURRENCY_PARENT_CONFLICT"
+        for finding in findings
+    ):
+        return
+    findings.append(
+        {
+            "finding_id": "variant_currency:parent_conflict",
+            "rule_id": "VARIANT_CURRENCY_PARENT_CONFLICT",
+            "severity": "medium",
+            "field_name": "variants.currency",
+            "entity_ref": "variants",
+            "message": "Variant currency conflicted with same-price parent currency.",
+            "suggested_action": "verify_variant_offer_currency",
+            "metadata": {
+                "variant_currency": variant_currency,
+                "parent_currency": parent_currency,
+            },
+        }
     )
 
 
@@ -112,10 +177,20 @@ def _backfill_variant_prices_from_record(record: dict[str, Any]) -> None:
         )
 
     distinct_price = _has_distinct_variant_value("price")
+    parent_url = clean_text(record.get("url") or record.get("source_url"))
     for variant in variants:
         if not isinstance(variant, dict):
             continue
-        if not distinct_price and variant.get("price") in (None, "", [], {}):
+        has_variant_price = variant.get("price") not in (None, "", [], {})
+        can_inherit_parent_offer = _variant_can_inherit_parent_offer(
+            variant,
+            parent_url=parent_url,
+        )
+        if (
+            not distinct_price
+            and can_inherit_parent_offer
+            and variant.get("price") in (None, "", [], {})
+        ):
             variant["price"] = fallback_fields.get("price")
         if variant.get("currency") in (None, "", [], {}) and fallback_fields.get(
             "currency"
@@ -124,7 +199,7 @@ def _backfill_variant_prices_from_record(record: dict[str, Any]) -> None:
             "",
             [],
             {},
-        ):
+        ) and (can_inherit_parent_offer or has_variant_price):
             variant["currency"] = fallback_fields.get("currency")
 
 
@@ -135,10 +210,18 @@ def _backfill_variant_shared_fields_from_record(record: dict[str, Any]) -> None:
     fallback_image = record.get("image_url")
     record_color = clean_text(record.get("color"))
     fallback_image_key = _image_url_normalize_key(fallback_image)
+    can_inherit_record_color = _variants_can_inherit_record_color(
+        variants,
+        record_color=record_color,
+        has_parent_image=bool(text_or_none(fallback_image)),
+    ) and not bool(record.get("_disable_variant_parent_color_inheritance"))
     for variant in variants:
         if not isinstance(variant, dict):
             continue
         variant_color = clean_text(variant.get("color"))
+        if record_color and not variant_color and can_inherit_record_color:
+            variant["color"] = record_color
+            variant_color = record_color
         # Drop pre-existing variant images that match the parent image but
         # represent a different colorway. Source upstreams (Shopify swatch
         # blocks, network listings) sometimes paint the current PDP image
@@ -172,6 +255,60 @@ def _backfill_variant_shared_fields_from_record(record: dict[str, Any]) -> None:
             variant["image_url"] = fallback_image
 
 
+def backfill_variant_color_from_record(record: dict[str, Any]) -> None:
+    variants = record.get("variants")
+    if not isinstance(variants, list) or not variants:
+        return
+    record_color = clean_text(record.get("color"))
+    can_inherit_record_color = _variants_can_inherit_record_color(
+        variants,
+        record_color=record_color,
+        has_parent_image=bool(text_or_none(record.get("image_url"))),
+    ) and not bool(record.get("_disable_variant_parent_color_inheritance"))
+    if not can_inherit_record_color:
+        return
+    for variant in variants:
+        if isinstance(variant, dict) and not clean_text(variant.get("color")):
+            variant["color"] = record_color
+
+
+def _variants_can_inherit_record_color(
+    variants: list[object],
+    *,
+    record_color: str,
+    has_parent_image: bool = False,
+) -> bool:
+    if not record_color:
+        return False
+    rows = [variant for variant in variants if isinstance(variant, dict)]
+    if not rows:
+        return False
+    colors = {
+        clean_text(row.get("color")).casefold()
+        for row in rows
+        if clean_text(row.get("color"))
+    }
+    if colors and colors != {record_color.casefold()}:
+        return False
+    return all(
+        not clean_text(row.get("color"))
+        and (
+            any(
+                text_or_none(row.get(field_name))
+                for field_name in (
+                    "sku",
+                    "variant_id",
+                    "barcode",
+                    "url",
+                    "image_url",
+                )
+            )
+            or (has_parent_image and text_or_none(row.get("size")))
+        )
+        for row in rows
+    )
+
+
 def _image_url_normalize_key(url: object) -> str:
     """Strip query string and fragment so two image URLs that differ only by
     CDN resize params (``&width=...``, ``&crop=...``) compare equal."""
@@ -182,5 +319,92 @@ def _image_url_normalize_key(url: object) -> str:
     return base.casefold()
 
 
+def _variant_has_offer_identity(variant: dict[str, Any]) -> bool:
+    return any(
+        text_or_none(variant.get(field_name))
+        for field_name in ("sku", "variant_id", "url", "image_url", "barcode")
+    )
+
+
+def _variant_can_inherit_parent_offer(
+    variant: dict[str, Any],
+    *,
+    parent_url: str,
+) -> bool:
+    return _variant_has_offer_identity(variant) and not _variant_has_distinct_product_url(
+        variant,
+        parent_url=parent_url,
+    )
+
+
+def _variant_has_distinct_product_url(
+    variant: dict[str, Any],
+    *,
+    parent_url: str,
+) -> bool:
+    variant_url = text_or_none(variant.get("url"))
+    if not variant_url or not parent_url:
+        return False
+    return not variant_url_matches_parent_product(variant_url, parent_url=parent_url)
+
+
+def _remove_unproven_flat_variant_offers(record: dict[str, Any]) -> None:
+    variants = record.get("variants")
+    if not isinstance(variants, list) or len(variants) < 4:
+        return
+    parent_price = text_or_none(record.get("price"))
+    if not parent_price:
+        return
+    rows = [variant for variant in variants if isinstance(variant, dict)]
+    prices = {
+        text_or_none(variant.get("price"))
+        for variant in rows
+        if text_or_none(variant.get("price"))
+    }
+    if prices != {parent_price}:
+        return
+    has_offer_identity = any(
+        text_or_none(variant.get(field_name))
+        for variant in rows
+        for field_name in ("sku", "variant_id", "barcode")
+    )
+    if has_offer_identity and not _flat_offer_rows_look_like_unproven_matrix(rows):
+        return
+    for variant in rows:
+        variant.pop("price", None)
+        if text_or_none(variant.get("currency")) == text_or_none(record.get("currency")):
+            variant.pop("currency", None)
+    findings = record.setdefault("_validation_findings", [])
+    if isinstance(findings, list):
+        findings.append(
+            {
+                "finding_id": "variant_offer:flat_parent_unproven",
+                "rule_id": "FLAT_PARENT_VARIANT_OFFER_REMOVED",
+                "severity": "high",
+                "field_name": "variants",
+                "entity_ref": "variants",
+                "message": "Repeated parent offer removed from variants without per-variant offer identity.",
+                "suggested_action": "collect_per_variant_offer_evidence",
+                "metadata": {"variant_count": len(rows)},
+            }
+        )
+
+
+def _flat_offer_rows_look_like_unproven_matrix(rows: list[dict[str, Any]]) -> bool:
+    if len(rows) < 12:
+        return False
+    axis_value_counts = []
+    for axis_name in ("color", "size", "width", "condition", "storage"):
+        values = {
+            clean_text(row.get(axis_name)).casefold()
+            for row in rows
+            if clean_text(row.get(axis_name))
+        }
+        if values:
+            axis_value_counts.append(len(values))
+    return sum(1 for count in axis_value_counts if count > 1) >= 2
+
+
 backfill_variant_context = _backfill_variant_context
 enforce_variant_currency_context = _enforce_variant_currency_context
+remove_unproven_flat_variant_offers = _remove_unproven_flat_variant_offers

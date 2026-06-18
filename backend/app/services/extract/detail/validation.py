@@ -7,6 +7,7 @@ from app.services.config.variant_policy import (
     DETAIL_REQUIRED_OFFER_FIELDS,
 )
 from app.services.extract.variant_axis import public_variant_axis_fields
+from app.services.extract.variant_identity_merge import variant_url_matches_parent_product
 from app.services.shared.field_coerce import extract_currency_code, text_or_none
 
 __all__ = (
@@ -41,10 +42,20 @@ def variant_offer_status(
     parent_offer_complete = isinstance(parent, dict) and all(
         text_or_none(parent.get(field_name)) for field_name in _OFFER_FIELDS
     )
+    parent_url = (
+        text_or_none(parent.get("url") or parent.get("source_url"))
+        if isinstance(parent, dict)
+        else None
+    )
+    variant_url = text_or_none(variant.get("url"))
+    distinct_product_url = (
+        bool(variant_url and parent_url)
+        and not variant_url_matches_parent_product(variant_url, parent_url=parent_url)
+    )
     has_offer_identity = any(
         text_or_none(variant.get(field_name))
         for field_name in ("sku", "variant_id", "url", "image_url")
-    )
+    ) and not distinct_product_url
     if parent_offer_complete and has_offer_identity:
         return "inherited_parent_offer"
     return "incomplete_sellable"
