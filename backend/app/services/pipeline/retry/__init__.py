@@ -3,6 +3,8 @@ from __future__ import annotations
 from .stage import (
     apply_detail_rejection_guard,
     build_acquisition_request,
+    detail_record_rejection_reason,
+    infer_detail_failure_reason,
     log_extraction_outcome,
     remaining_url_budget_seconds,
     retry_detail_challenge_shell_with_real_chrome,
@@ -15,6 +17,8 @@ from .stage import (
 __all__ = [
     "apply_detail_rejection_guard",
     "build_acquisition_request",
+    "detail_record_rejection_reason",
+    "infer_detail_failure_reason",
     "log_extraction_outcome",
     "remaining_url_budget_seconds",
     "retry_detail_challenge_shell_with_real_chrome",

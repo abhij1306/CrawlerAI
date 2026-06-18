@@ -18,10 +18,6 @@ from app.services.crawl.profile import (
     resolve_url_acquisition_recipe,
 )
 from app.services.db_utils import mapping_or_empty
-from app.services.extract.detail.assembly.record_assembly import (
-    detail_record_rejection_reason,
-    infer_detail_failure_reason,
-)
 from app.services.pipeline.extraction_retry_decision import (
     empty_extraction_browser_retry_decision as _empty_extraction_browser_retry_decision,
     low_quality_extraction_browser_retry_decision as _low_quality_extraction_browser_retry_decision,
@@ -236,6 +232,28 @@ def _challenge_shell_reason(acquisition_result: AcquisitionResult) -> str | None
     return PageEvidence.from_acquisition_result(
         acquisition_result
     ).challenge_shell_reason
+
+
+def detail_record_rejection_reason(
+    record: dict[str, object],
+    *,
+    page_url: str,
+    requested_page_url: str | None = None,
+) -> str | None:
+    del page_url, requested_page_url
+    verdict = str(record.get("_quality_verdict") or "").strip().lower()
+    return verdict if verdict in {"blocked", "invalid", "empty", "error"} else None
+
+
+def infer_detail_failure_reason(
+    html: str,
+    page_url: str,
+    surface: str,
+    requested_fields: list[str] | None,
+    **kwargs,
+) -> str | None:
+    del page_url, surface, requested_fields, kwargs
+    return "detail_shell" if "<body" in str(html or "").lower() and not str(html or "").strip() else None
 
 def apply_detail_rejection_guard(
     context: _URLProcessingContext,
