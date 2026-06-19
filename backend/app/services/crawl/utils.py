@@ -11,7 +11,6 @@ from html import unescape
 from typing import Any, Protocol, cast
 from urllib.parse import urlparse
 
-import regex as regex_lib
 from app.services.config.crawl_inputs import (
     ENCODED_TRAILING_PASTED_URL_DELIMITERS,
     HTTP_URL_PREFIXES,
@@ -19,7 +18,6 @@ from app.services.config.crawl_inputs import (
     WRAPPED_URL_DELIMITER_PAIRS,
 )
 from app.services.exceptions import CrawlerConfigurationError
-from app.services.dom.xpath_service import validate_xpath_syntax
 
 logger = logging.getLogger(__name__)
 
@@ -245,33 +243,21 @@ def resolve_traversal_mode(settings: object) -> str | None:
 
 
 def validate_extraction_contract(contract_rows: list[dict]) -> None:
-    """Validate extraction contract rows for field names, XPath, and regex syntax.
+    """Validate extraction contract rows for field names and CSS-only recipes.
 
     Raises ValueError if any validation errors are found.
     """
     errors: list[str] = []
     for index, row in enumerate(contract_rows, start=1):
         field_name = str(row.get("field_name") or "").strip()
-        xpath = str(row.get("xpath") or "").strip()
-        regex = str(row.get("regex") or "").strip()
+        css_selector = str(row.get("css_selector") or "").strip()
 
         if not field_name:
             errors.append(f"Row {index}: field_name is required")
-
-        if xpath:
-            valid_xpath, xpath_error = validate_xpath_syntax(xpath)
-            if not valid_xpath:
-                errors.append(
-                    f"Row {index} ({field_name or 'unnamed'}): invalid XPath ({xpath_error})"
-                )
-
-        if regex:
-            try:
-                regex_lib.compile(regex)
-            except regex_lib.error as exc:
-                errors.append(
-                    f"Row {index} ({field_name or 'unnamed'}): invalid regex ({exc})"
-                )
+        if not css_selector:
+            errors.append(f"Row {index} ({field_name or 'unnamed'}): css_selector is required")
+        if str(row.get("xpath") or "").strip() or str(row.get("regex") or "").strip():
+            errors.append(f"Row {index} ({field_name or 'unnamed'}): only css_selector is supported")
 
     if errors:
         raise ValueError("; ".join(errors))

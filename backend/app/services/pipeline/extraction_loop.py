@@ -36,6 +36,8 @@ from app.services.publish import (
     VERDICT_EMPTY,
     VERDICT_ERROR,
     VERDICT_LISTING_FAILED,
+    VERDICT_PARTIAL,
+    VERDICT_SUCCESS,
     build_url_metrics,
     compute_verdict,
     finalize_url_metrics,
@@ -45,8 +47,6 @@ from app.services.robots_policy import (
     ROBOTS_MISSING,
     check_url_crawlability,
 )
-from app.services.selector_auto_learn import auto_save_dom_observed_selectors
-from app.services.selector_self_heal import apply_selector_self_heal
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .extraction_retry_decision import (
@@ -774,17 +774,6 @@ async def _apply_extraction_post_processing(
     records: list[dict[str, object]],
     selector_rules: list[dict[str, object]],
 ) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
-    if "detail" in context.surface and records:
-        records, selector_rules = await apply_selector_self_heal(
-            context.session,
-            run=context.run,
-            page_url=acquisition_result.final_url,
-            html=acquisition_result.html,
-            records=records,
-            adapter_records=acquisition_result.adapter_records,
-            network_payloads=acquisition_result.network_payloads,
-            selector_rules=selector_rules,
-        )
     if not _browser_result_is_extractable(acquisition_result):
         return records, selector_rules
     if not context.run.settings_view.llm_enabled():
@@ -871,15 +860,6 @@ async def _run_persistence_stage(
             persisted_count=persisted_count,
             artifact_path=str(raw_html_path or ""),
         )
-    if persisted_count > 0:
-        await auto_save_dom_observed_selectors(
-            context.session,
-            domain=normalize_domain(acquisition_result.final_url),
-            surface=context.surface,
-            html=acquisition_result.html,
-            records=extracted_records,
-            source_run_id=context.run.id,
-        )
     verdict = compute_verdict(
         is_listing="listing" in context.surface,
         blocked=_effective_blocked(acquisition_result),
@@ -890,6 +870,14 @@ async def _run_persistence_stage(
     if persisted_count == 0 and is_non_retryable_http_status(status_code):
         url_metrics = mapping_or_empty(extracted.fetched.url_metrics)
         url_metrics["failure_reason"] = NON_RETRYABLE_HTTP_STATUS_REASON
+        extracted.fetched.url_metrics = url_metrics
+        verdict = VERDICT_ERROR
+    if verdict in {VERDICT_SUCCESS, VERDICT_PARTIAL} and not _success_has_replay_lineage(
+        acquisition_result,
+        extracted_records,
+    ):
+        url_metrics = mapping_or_empty(extracted.fetched.url_metrics)
+        url_metrics["failure_reason"] = "missing_replay_lineage"
         extracted.fetched.url_metrics = url_metrics
         verdict = VERDICT_ERROR
     if not _suppress_empty_downstream_record_logs(
@@ -952,6 +940,33 @@ async def _run_persistence_stage(
             record_count=persisted_count,
         ),
     )
+
+
+def _success_has_replay_lineage(
+    acquisition_result,
+    records: list[dict[str, object]],
+) -> bool:
+    artifacts = mapping_or_empty(getattr(acquisition_result, "artifacts", {}))
+    replay = mapping_or_empty(artifacts.get("extraction_replay"))
+    evidence = replay.get("evidence")
+    decisions = replay.get("decisions")
+    if not isinstance(evidence, list) or not evidence:
+        return False
+    if not isinstance(decisions, list) or not decisions:
+        return False
+    return all(_record_public_values_have_lineage(record) for record in records)
+
+
+def _record_public_values_have_lineage(record: dict[str, object]) -> bool:
+    lineage = mapping_or_empty(record.get("_lineage"))
+    public_keys = [
+        str(key)
+        for key, value in record.items()
+        if not str(key).startswith("_") and value not in (None, "", [], {})
+    ]
+    if not public_keys:
+        return False
+    return all(key in lineage and lineage.get(key) not in (None, "", [], {}) for key in public_keys)
 
 
 URLProcessingContext = _URLProcessingContext

@@ -9,7 +9,6 @@ from app.services.config.public_api import (
     PUBLIC_API_DEFAULT_MAX_WAIT_SECONDS,
     PUBLIC_API_MAX_BATCH_URLS,
     PUBLIC_API_MAX_WAIT_SECONDS,
-    PUBLIC_API_SURFACE_ECOMMERCE,
 )
 
 
@@ -24,7 +23,7 @@ class PublicExtractOptions(BaseModel):
 
 class PublicExtractRequest(BaseModel):
     url: str = Field(min_length=1)
-    surface: str = PUBLIC_API_SURFACE_ECOMMERCE
+    surface: str
     fields: list[str] = Field(default_factory=list)
     options: PublicExtractOptions = Field(default_factory=PublicExtractOptions)
 
@@ -41,9 +40,10 @@ class PublicExtractRequest(BaseModel):
 
 class PublicBatchExtractRequest(BaseModel):
     urls: list[str] = Field(min_length=1, max_length=PUBLIC_API_MAX_BATCH_URLS)
-    surface: str = PUBLIC_API_SURFACE_ECOMMERCE
+    surface: str
     fields: list[str] = Field(default_factory=list)
     webhook_url: str | None = None
+
 
 
 class PublicProductExtraction(BaseModel):

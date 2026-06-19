@@ -23,6 +23,7 @@ class URLProcessingContext:
     requested_fields: list[str] = field(default_factory=list)
     surface: str = ""
     listing_integrity_retry_count: int = 0
+    browser_escalation_count: int = 0
     trace: RunTrace | None = field(default=None)
 
     def __post_init__(self) -> None:

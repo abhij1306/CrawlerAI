@@ -13,8 +13,6 @@ def _normalized_selector_rule(row: dict[str, object]) -> dict[str, object]:
         "id": _safe_int(row.get("id"), default=0),
         "field_name": str(row.get("field_name") or "").strip().lower(),
         "css_selector": str(row.get("css_selector") or "").strip() or None,
-        "xpath": str(row.get("xpath") or "").strip() or None,
-        "regex": str(row.get("regex") or "").strip() or None,
         "sample_value": str(row.get("sample_value") or "").strip() or None,
         "source": str(row.get("source") or "domain_memory").strip(),
         "status": str(row.get("status") or "validated").strip(),
@@ -23,13 +21,11 @@ def _normalized_selector_rule(row: dict[str, object]) -> dict[str, object]:
     }
 
 
-def _selector_rule_signature(row: dict[str, object]) -> tuple[str, str, str, str]:
+def _selector_rule_signature(row: dict[str, object]) -> tuple[str, str]:
     normalized = _normalized_selector_rule(row)
     return (
         str(normalized.get("field_name") or "").strip().lower(),
         str(normalized.get("css_selector") or "").strip(),
-        str(normalized.get("xpath") or "").strip(),
-        str(normalized.get("regex") or "").strip(),
     )
 
 
@@ -105,8 +101,6 @@ def selector_rules_from_memory(memory: DomainMemory | None) -> list[dict[str, ob
                 "id": next_id,
                 "field_name": str(field_name or "").strip().lower(),
                 "css_selector": payload.get("css_selector") or payload.get("css"),
-                "xpath": payload.get("xpath"),
-                "regex": payload.get("regex"),
                 "sample_value": payload.get("sample_value"),
                 "source": payload.get("source") or "domain_memory",
                 "status": payload.get("status") or "validated",
@@ -141,7 +135,7 @@ async def load_domain_selector_rules(
     surface: str,
 ) -> list[dict[str, object]]:
     rules: list[dict[str, object]] = []
-    seen: set[tuple[str, str, str, str]] = set()
+    seen: set[tuple[str, str]] = set()
     normalized = str(surface or "").strip().lower()
     candidate_surfaces = (
         (DEFAULT_FALLBACK_SURFACE,)
@@ -192,7 +186,7 @@ def compose_runtime_selector_rules(
         if str(row.get("field_name") or "").strip()
     }
     combined: list[dict[str, object]] = []
-    seen: set[tuple[str, str, str, str]] = set()
+    seen: set[tuple[str, str]] = set()
     for row in normalized_saved:
         if str(row.get("field_name") or "").strip().lower() in run_override_fields:
             continue

@@ -5,8 +5,6 @@ import re
 from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
-from w3lib.url import url_query_cleaner
-
 from app.services.config.extraction_rules import (
     TRACKING_DETAIL_CONTEXT_EXACT_KEYS,
     TRACKING_PARAM_EXACT_KEYS,
@@ -91,12 +89,13 @@ def strip_tracking_query_params(url: object) -> str | None:
             removable_keys.append(key)
     if not removable_keys:
         return text
-    return url_query_cleaner(
-        text,
-        parameterlist=tuple(dict.fromkeys(removable_keys)),
-        remove=True,
-        keep_fragments=True,
-    )
+    removable = set(removable_keys)
+    kept_pairs = [
+        (key, value)
+        for key, value in query_pairs
+        if key not in removable
+    ]
+    return urlunparse(parsed._replace(query=urlencode(kept_pairs, doseq=True)))
 
 
 def _is_tracking_query_key(key: str) -> bool:

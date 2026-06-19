@@ -22,10 +22,6 @@ from app.services.config.public_record_policy import (
     PUBLIC_RECORD_URL_BLOCKED_PATH_MARKERS,
     PUBLIC_RECORD_URL_MAX_LENGTH,
 )
-from app.services.extract.variant_normalization.contract import (
-    enforce_flat_variant_public_contract,
-    flatten_variants_for_public_output,
-)
 from app.services.field_policy import canonical_requested_fields, normalize_field_key
 from app.services.shared.field_coerce import (
     IMAGE_FIELDS,
@@ -147,6 +143,42 @@ def public_record_data_for_surface(
     if normalized_surface.startswith("ecommerce_") and VARIANTS_FIELD in data:
         enforce_flat_variant_public_contract(data, page_url=page_url)
     return finalize_record(data, surface=surface), rejected
+
+
+def flatten_variants_for_public_output(
+    value: object,
+    *,
+    page_url: str = "",
+) -> list[dict[str, object]] | None:
+    del page_url
+    if not isinstance(value, list):
+        return None
+    rows: list[dict[str, object]] = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        row = {
+            str(key): val
+            for key, val in item.items()
+            if val not in (None, "", [], {}) and not str(key).startswith("_")
+        }
+        if row:
+            rows.append(row)
+    return rows or None
+
+
+def enforce_flat_variant_public_contract(
+    record: dict[str, Any],
+    *,
+    page_url: str = "",
+) -> None:
+    variants = flatten_variants_for_public_output(record.get(VARIANTS_FIELD), page_url=page_url)
+    if variants:
+        record[VARIANTS_FIELD] = variants
+        record["variant_count"] = len(variants)
+    else:
+        record.pop(VARIANTS_FIELD, None)
+        record.pop("variant_count", None)
 
 
 def _default_excluded_fields_for_surface(normalized_surface: str) -> set[str]:

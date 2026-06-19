@@ -1,66 +1,35 @@
 from __future__ import annotations
 
+import re
 from collections import defaultdict
-from collections.abc import Iterable
 from typing import TYPE_CHECKING
 from urllib.parse import urljoin
 
-from bs4 import BeautifulSoup
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.services.fetch.fetch_context import fetch_page
 from app.services.config.extraction_rules import (
-    COMMERCE_FIELD_HINTS,
-    JOB_FIELD_HINTS,
-    LISTING_URL_HINTS,
     SELECTOR_RUNTIME_PRIMARY_IFRAME_MAX_PAGE_TEXT,
 )
 from app.services.config.runtime_settings import crawler_runtime_settings
 from app.services.domain_memory_service import (
-    load_domain_memory, save_domain_memory,
-    selector_payload_from_rules, selector_rules_from_memory,
+    load_domain_memory,
+    save_domain_memory,
+    selector_payload_from_rules,
+    selector_rules_from_memory,
 )
-if TYPE_CHECKING:
-    from app.models.domain_memory import DomainMemory
-from app.services.extraction_html_helpers import html_to_text
 from app.services.domain_utils import normalize_domain
+from app.services.extraction.documents import DocumentStore, HtmlDocument
+from app.services.extraction.surfaces import parse_surface
+from app.services.extraction_html_helpers import html_to_text
+from app.services.fetch.fetch_context import fetch_page
 from app.services.field_policy import normalize_field_key
 from app.services.shared.field_coerce import coerce_int as _coerce_int
-from app.services.llm.runtime import discover_xpath_candidates
-from app.services.platform_policy import detect_platform_family, job_platform_families
-from app.services.selector_suggestions import (
-    deterministic_suggestions,
-    is_noise_value,
-    listing_card_suggestions,
-    selector_suggestion_from_record,
-    suggestion_exists,
-)
-from app.services.dom.xpath_service import (
-    extract_selector_value,
-    validate_or_convert_xpath,
-)
 from app.services.url_safety import ensure_public_crawl_targets
+
+if TYPE_CHECKING:
+    from app.models.domain_memory import DomainMemory
+
 coerce_int = _coerce_int
-_HTML_PARSER = "html.parser"
-
-
-def infer_surface(*, url: str, expected_fields: Iterable[str] | None = None) -> str:
-    normalized_fields = {
-        normalize_field_key(value) for value in expected_fields or [] if value
-    }
-    lowered_url = str(url or "").lower()
-    if normalized_fields & JOB_FIELD_HINTS:
-        return "job_detail"
-    if any(hint in lowered_url for hint in LISTING_URL_HINTS):
-        return "ecommerce_listing"
-    if normalized_fields & COMMERCE_FIELD_HINTS:
-        return "ecommerce_detail"
-    detected_family = str(detect_platform_family(url) or "").strip().lower()
-    if detected_family and detected_family in job_platform_families():
-        return "job_detail"
-    if any(token in lowered_url for token in ("jobs", "careers")):
-        return "job_detail"
-    return "ecommerce_detail"
 
 
 async def fetch_selector_document(url: str) -> dict[str, object]:
@@ -83,29 +52,14 @@ async def fetch_selector_document(url: str) -> dict[str, object]:
         html = iframe_result.html
         promoted = True
         visited.add(final_url)
-    return {
-        "url": final_url,
-        "html": html,
-        "iframe_promoted": promoted,
-    }
+    return {"url": final_url, "html": html, "iframe_promoted": promoted}
 
 
 def build_preview_html(*, source_url: str, html: str) -> str:
-    soup = BeautifulSoup(str(html or ""), _HTML_PARSER)
-    head = soup.head or soup.new_tag("head")
-    if soup.head is None:
-        if soup.html is None:
-            html_node = soup.new_tag("html")
-            body = soup.body or soup.new_tag("body")
-            body.extend(list(soup.children))
-            html_node.append(head)
-            html_node.append(body)
-            soup.append(html_node)
-        else:
-            soup.html.insert(0, head)
-    base = soup.new_tag("base", href=str(source_url or ""))
-    head.insert(0, base)
-    return str(soup)
+    base = f'<base href="{_html_attr(source_url)}">'
+    if re.search(r"<head\b[^>]*>", html or "", flags=re.I):
+        return re.sub(r"(<head\b[^>]*>)", rf"\1{base}", str(html or ""), count=1, flags=re.I)
+    return f"<html><head>{base}</head><body>{html or ''}</body></html>"
 
 
 async def list_selector_records(
@@ -190,17 +144,15 @@ async def list_selector_domain_summaries(
     if limit is not None:
         query = query.limit(int(limit))
     result = await session.execute(query)
-    summaries: list[dict[str, object]] = []
-    for memory in result.scalars().all():
-        summaries.append(
-            {
-                "domain": memory.domain,
-                "surface": memory.surface,
-                "selector_count": _selector_rule_count(memory.selectors),
-                "updated_at": memory.updated_at,
-            }
-        )
-    return summaries
+    return [
+        {
+            "domain": memory.domain,
+            "surface": memory.surface,
+            "selector_count": _selector_rule_count(memory.selectors),
+            "updated_at": memory.updated_at,
+        }
+        for memory in result.scalars().all()
+    ]
 
 
 async def create_selector_record(
@@ -212,7 +164,10 @@ async def create_selector_record(
     commit: bool = True,
 ) -> dict[str, object]:
     normalized_domain = str(domain or "").strip().lower()
-    normalized_surface = str(surface or "").strip().lower() or "generic"
+    normalized_surface = parse_surface(surface).value
+    css_selector = str(payload.get("css_selector") or "").strip()
+    if not css_selector:
+        raise ValueError("css_selector is required")
     await _ensure_unique_selector_ids(session)
     memory = await load_domain_memory(
         session,
@@ -223,10 +178,8 @@ async def create_selector_record(
     next_id = await _next_selector_id(session)
     record = {
         "id": next_id,
-        "field_name": str(payload.get("field_name") or "").strip().lower(),
-        "css_selector": str(payload.get("css_selector") or "").strip() or None,
-        "xpath": str(payload.get("xpath") or "").strip() or None,
-        "regex": str(payload.get("regex") or "").strip() or None,
+        "field_name": normalize_field_key(str(payload.get("field_name") or "")),
+        "css_selector": css_selector,
         "status": str(payload.get("status") or "validated").strip(),
         "sample_value": str(payload.get("sample_value") or "").strip() or None,
         "source": str(payload.get("source") or "domain_memory").strip(),
@@ -276,8 +229,6 @@ async def update_selector_record(
             for key in (
                 "field_name",
                 "css_selector",
-                "xpath",
-                "regex",
                 "status",
                 "sample_value",
                 "source",
@@ -288,11 +239,13 @@ async def update_selector_record(
                     continue
                 value = payload.get(key)
                 if key == "field_name":
-                    row[key] = str(value or "").strip().lower()
+                    row[key] = normalize_field_key(str(value or ""))
                 elif key == "is_active":
                     row[key] = bool(value)
                 elif key == "source_run_id":
                     row[key] = value
+                elif key == "css_selector" and not str(value or "").strip():
+                    raise ValueError("css_selector is required")
                 else:
                     row[key] = str(value or "").strip() or None
             updated = True
@@ -315,11 +268,14 @@ async def update_selector_record(
             domain=memory.domain,
             surface=memory.surface,
         )
-        refreshed = None
-        for row in rules:
-            if _coerce_int(row.get("id"), default=0) == int(selector_id):
-                refreshed = row
-                break
+        refreshed = next(
+            (
+                row
+                for row in rules
+                if _coerce_int(row.get("id"), default=0) == int(selector_id)
+            ),
+            None,
+        )
         if refreshed is None:
             raise ValueError(f"Selector {selector_id} was not found after update")
         return {
@@ -345,7 +301,9 @@ async def delete_selector_record(
     for memory in await _all_domain_memories(session):
         rules = selector_rules_from_memory(memory)
         next_rules = [
-            row for row in rules if _coerce_int(row.get("id"), default=0) != int(selector_id)
+            row
+            for row in rules
+            if _coerce_int(row.get("id"), default=0) != int(selector_id)
         ]
         if len(next_rules) == len(rules):
             continue
@@ -373,7 +331,7 @@ async def delete_domain_selector_records(
     for memory in await _all_domain_memories(session):
         if memory.domain != normalized_domain:
             continue
-        if surface and memory.surface != str(surface or "").strip().lower():
+        if surface and memory.surface != parse_surface(surface).value:
             continue
         rules = selector_rules_from_memory(memory)
         deleted += len(rules)
@@ -398,101 +356,26 @@ async def suggest_selectors(
 ) -> dict[str, object]:
     document = await fetch_selector_document(url)
     final_url = str(document["url"])
-    html = str(document["html"])
-    resolved_surface = str(surface or "").strip().lower() or infer_surface(
-        url=final_url,
-        expected_fields=expected_columns,
-    )
+    resolved_surface = parse_surface(surface).value
     domain = normalize_domain(final_url)
+    expected = {normalize_field_key(item) for item in expected_columns}
     suggestions: dict[str, list[dict[str, object]]] = defaultdict(list)
-
     for row in await list_selector_records(
         session,
         domain=domain,
         surface=resolved_surface,
     ):
-        field_name = str(row.get("field_name") or "").strip().lower()
-        if field_name and field_name in {normalize_field_key(item) for item in expected_columns}:
-            suggestions[field_name].append(selector_suggestion_from_record(row))
-
-    soup = BeautifulSoup(html, _HTML_PARSER)
-    for field_name in expected_columns:
-        normalized_field = normalize_field_key(field_name)
-        for row in deterministic_suggestions(
-            soup,
-            html=html,
-            url=final_url,
-            field_name=normalized_field,
-        ):
-            if not suggestion_exists(suggestions[normalized_field], row):
-                suggestions[normalized_field].append(row)
-
-    if resolved_surface.endswith("_listing"):
-        for field_name in expected_columns:
-            normalized_field = normalize_field_key(field_name)
-            for row in listing_card_suggestions(
-                soup,
-                html=html,
-                field_name=normalized_field,
-            ):
-                if not suggestion_exists(suggestions[normalized_field], row):
-                    suggestions[normalized_field].append(row)
-
-    llm_candidates, llm_error = await discover_xpath_candidates(
-        session,
-        run_id=0,
-        domain=domain,
-        url=final_url,
-        html_text=html,
-        missing_fields=[normalize_field_key(value) for value in expected_columns],
-        existing_values={},
-    )
-    if not llm_error:
-        for row in llm_candidates:
-            if not isinstance(row, dict):
-                continue
-            field_name = normalize_field_key(str(row.get("field_name") or ""))
-            if not field_name:
-                continue
-            xpath = str(row.get("xpath") or "").strip() or None
-            css_selector = str(row.get("css_selector") or "").strip() or None
-            if not xpath and not css_selector:
-                continue
-            if xpath:
-                validated_xpath, _ = validate_or_convert_xpath(xpath)
-                if validated_xpath:
-                    sample_value, _count, selector_used = extract_selector_value(
-                    html,
-                    xpath=validated_xpath,
-                )
-                    if is_noise_value(sample_value, field_name):
-                        xpath = None
-                    elif sample_value or selector_used:
-                        candidate: dict[str, object] = {
-                            "field_name": field_name,
-                            "xpath": selector_used or validated_xpath,
-                            "sample_value": sample_value,
-                            "source": "llm_xpath",
-                        }
-                        if not suggestion_exists(suggestions[field_name], candidate):
-                            suggestions[field_name].append(candidate)
-            if css_selector:
-                sample_value, _count, selector_used = extract_selector_value(
-                    html,
-                    css_selector=css_selector,
-                )
-                if is_noise_value(sample_value, field_name):
-                    css_selector = None
-                elif sample_value or selector_used:
-                    css_candidate: dict[str, object] = {
-                        "field_name": field_name,
-                        "css_selector": selector_used or css_selector,
-                        "sample_value": sample_value,
-                        "source": "llm_css",
-                    }
-                    if not suggestion_exists(suggestions[field_name], css_candidate):
-                        suggestions[field_name].append(css_candidate)
-
+        field_name = normalize_field_key(str(row.get("field_name") or ""))
+        css_selector = str(row.get("css_selector") or "").strip()
+        if field_name and field_name in expected and css_selector:
+            suggestions[field_name].append(
+                {
+                    "field_name": field_name,
+                    "css_selector": css_selector,
+                    "sample_value": row.get("sample_value"),
+                    "source": row.get("source") or "domain_memory",
+                }
+            )
     return {
         "surface": resolved_surface,
         "preview_url": final_url,
@@ -508,20 +391,18 @@ async def test_selector(
     *,
     url: str,
     css_selector: str | None = None,
-    xpath: str | None = None,
-    regex: str | None = None,
 ) -> dict[str, object]:
+    selector = str(css_selector or "").strip()
+    if not selector:
+        raise ValueError("css_selector is required")
     document = await fetch_selector_document(url)
-    matched_value, count, selector_used = extract_selector_value(
-        str(document["html"]),
-        css_selector=css_selector,
-        xpath=xpath,
-        regex=regex,
-    )
+    doc = DocumentStore({"html": str(document["html"])}).html("html")
+    nodes = _select(doc, selector)
+    value = _node_value(nodes[0]) if nodes else None
     return {
-        "matched_value": matched_value,
-        "count": count,
-        "selector_used": selector_used,
+        "matched_value": value,
+        "count": len(nodes),
+        "selector_used": selector if nodes else None,
     }
 
 
@@ -579,24 +460,53 @@ def _selector_rule_count(value: object) -> int:
         return 0
     rules = value.get("rules")
     if isinstance(rules, list):
-        return sum(1 for row in rules if isinstance(row, dict))
+        return sum(
+            1
+            for row in rules
+            if isinstance(row, dict) and str(row.get("css_selector") or "").strip()
+        )
     return sum(
         1
         for field_name, payload in value.items()
-        if not str(field_name).startswith("_") and isinstance(payload, dict)
+        if not str(field_name).startswith("_")
+        and isinstance(payload, dict)
+        and str(payload.get("css_selector") or payload.get("css") or "").strip()
     )
 
 
 def _primary_iframe_candidate(page_url: str, html: str) -> str:
-    soup = BeautifulSoup(str(html or ""), _HTML_PARSER)
     page_text = html_to_text(html)
     if len(page_text) > int(SELECTOR_RUNTIME_PRIMARY_IFRAME_MAX_PAGE_TEXT):
         return ""
-    for frame in soup.select("iframe[src]"):
-        src = str(frame.get("src") or "").strip()
-        if not src:
-            continue
-        return urljoin(page_url, src)
+    doc = DocumentStore({"html": html}).html("html")
+    for node in _select(doc, "iframe[src]"):
+        src = str(node.attribute("src") or "").strip()
+        if src:
+            return urljoin(page_url, src)
     return ""
 
 
+def _select(doc: HtmlDocument, selector: str):
+    try:
+        return tuple(doc.css(selector))
+    except Exception as exc:
+        raise ValueError(f"Invalid css_selector: {selector}") from exc
+
+
+def _node_value(node) -> str | None:
+    for attr in ("content", "value", "href", "src", "alt", "title", "aria-label"):
+        value = str(node.attribute(attr) or "").strip()
+        if value:
+            return value
+    text = re.sub(r"\s+", " ", node.text(separator=" ", strip=True)).strip()
+    return text or None
+
+
+def _html_attr(value: object) -> str:
+    return (
+        str(value or "")
+        .replace("&", "&amp;")
+        .replace('"', "&quot;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+    )

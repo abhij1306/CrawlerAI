@@ -162,12 +162,14 @@ def build_extraction_decision_payload(
     verdict: str,
     persisted_count: int,
     records: Sequence[Mapping[str, Any]],
+    replay: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     return {
         "schema_version": "extraction_decision.v1",
         "verdict": str(verdict or ""),
         "record_count": len(records),
         "persisted_count": int(persisted_count or 0),
+        "replay": _extraction_replay_summary(replay),
         "records": [_extraction_decision_record(record) for record in records],
     }
 
@@ -181,10 +183,16 @@ async def persist_extraction_decision_artifact(
     records: Sequence[Mapping[str, Any]],
     acquisition_result=None,
 ) -> str:
+    artifacts = (
+        mapping_or_empty(getattr(acquisition_result, "artifacts", {}))
+        if acquisition_result is not None
+        else {}
+    )
     payload = build_extraction_decision_payload(
         verdict=verdict,
         persisted_count=persisted_count,
         records=records,
+        replay=mapping_or_empty(artifacts.get("extraction_replay")),
     )
     path = await asyncio.to_thread(
         persist_json_artifact,
@@ -222,6 +230,20 @@ def _extraction_decision_record(record: Mapping[str, Any]) -> dict[str, Any]:
         if value not in (None, "", [], {}):
             payload[key.removeprefix("_")] = _json_safe(value)
     return payload
+
+
+def _extraction_replay_summary(replay: Mapping[str, Any] | None) -> dict[str, Any]:
+    payload = mapping_or_empty(replay)
+    evidence = payload.get("evidence")
+    decisions = payload.get("decisions")
+    findings = payload.get("findings")
+    return {
+        "surface": payload.get("surface"),
+        "verdict": payload.get("verdict"),
+        "evidence_count": len(evidence) if isinstance(evidence, list) else 0,
+        "decision_count": len(decisions) if isinstance(decisions, list) else 0,
+        "finding_count": len(findings) if isinstance(findings, list) else 0,
+    }
 
 
 def _json_safe(value: Any) -> Any:

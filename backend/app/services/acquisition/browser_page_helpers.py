@@ -33,8 +33,8 @@ from app.services.config.selectors import (
     LISTING_VISUAL_CAPTURE_SELECTORS,
 )
 from app.services.config.runtime_settings import crawler_runtime_settings
-from app.services.config.surface_hints import detail_path_hints
-from app.services.dom.selector_engine import requested_content_extractability
+from app.services.config.url_path_markers import detail_path_markers
+from app.services.css_extractability import requested_content_extractability
 
 logger = logging.getLogger(__name__)
 
@@ -116,7 +116,7 @@ def _listing_html_detail_anchor_count(
     soup = BeautifulSoup(str(html or ""), HTML_PARSER)
     detail_markers = tuple(
         str(marker or "").strip().lower()
-        for marker in detail_path_hints(surface)
+        for marker in detail_path_markers(surface)
         if str(marker or "").strip()
     )
     count = 0
@@ -151,7 +151,7 @@ def _detail_expansion_extractability(
     if soup is None:
         soup = beautiful_soup_factory(str(html or ""), HTML_PARSER)
     return requested_content_extractability_impl(
-        soup,
+        str(html or "") or str(soup),
         surface=surface,
         requested_fields=requested_fields,
         probe_fields=_detail_expansion_probe_fields(
@@ -357,7 +357,7 @@ async def _capture_listing_visual_elements(
             }""",
             {
                 "detailUrlHints": [
-                    hint.lower() for hint in detail_path_hints("ecommerce_detail")
+                    hint.lower() for hint in detail_path_markers("ecommerce_detail")
                 ],
                 "utilityUrlTokens": [
                     token.lower() for token in LISTING_UTILITY_URL_TOKENS

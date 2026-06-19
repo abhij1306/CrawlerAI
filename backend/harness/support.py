@@ -20,8 +20,6 @@ from app.services.pipeline.extraction_loop import process_single_url
 from app.services.pipeline.types import URLProcessingConfig
 from app.services.platform_policy import (
     configured_adapter_names,
-    detect_platform_family,
-    job_platform_families,
     platform_config_for_family,
 )
 from app.services.publish import VERDICT_PARTIAL, VERDICT_SUCCESS
@@ -32,7 +30,7 @@ from app.services.config.variant_policy import (
     PUBLIC_FLAT_VARIANT_FIELDS,
     PUBLIC_VARIANT_AXIS_FIELDS,
 )
-from app.services.surface_resolver import resolve_surface
+from app.services.extraction.surfaces import parse_surface
 from sqlalchemy import select
 
 logger = logging.getLogger(__name__)
@@ -75,31 +73,6 @@ if not _VARIANT_AXIS_FIELDS:
 _HIGH_DENOMINATION_PRICE_CURRENCIES = {"INR", "JPY", "KRW", "VND", "IDR", "HUF", "CLP"}
 _MIN_SANE_PRICE = 0.01
 
-_DETAIL_HINTS = (
-    "/products/",
-    "/product/",
-    "/p/",
-    "/dp/",
-    "/job/",
-    "/viewjob",
-    "showjob=",
-    "/release/",
-)
-_JOB_LISTING_HINTS = (
-    "/jobs",
-    "/careers",
-    "/search/results",
-    "/search?",
-    "job-search",
-    "career-page",
-    "jobboard",
-    "recruitment",
-    "currentopenings",
-    "searchrelation=",
-    "mode=location",
-    "sortby=",
-    "page=",
-)
 _SUCCESS_VERDICTS = {VERDICT_SUCCESS.lower(), VERDICT_PARTIAL.lower()}
 _PLACEHOLDER_TITLES = {
     "404",
@@ -154,37 +127,11 @@ _INTERNAL_IDENTITY_TOKENS = {
 }
 
 
-def infer_surface(url: str, explicit_surface: object | None = None) -> str:
+def require_explicit_surface(explicit_surface: object | None = None) -> str:
     explicit = str(explicit_surface or "").strip().lower()
     if explicit:
-        return explicit
-    normalized_url = str(url or "").strip().lower()
-    parsed_url = urlsplit(normalized_url)
-    host = str(parsed_url.hostname or "").strip().lower()
-    host_label = host.removeprefix("www.").split(".", 1)[0]
-    family = detect_platform_family(normalized_url)
-    if (
-        family in job_platform_families()
-        or host.endswith(".jobs")
-        or host.endswith(("startup.jobs", ".usajobs.gov"))
-        or host == "usajobs.gov"
-    ):
-        if any(token in normalized_url for token in _JOB_LISTING_HINTS):
-            return "job_listing"
-        return (
-            "job_detail"
-            if any(
-                token in normalized_url for token in ("/job/", "/viewjob", "showjob=")
-            )
-            else "job_listing"
-        )
-    if any(token in host_label for token in ("job", "career")) and not any(
-        token in normalized_url for token in _DETAIL_HINTS
-    ):
-        return "job_listing"
-    if any(token in normalized_url for token in _JOB_LISTING_HINTS):
-        return "job_listing"
-    return resolve_surface("auto", url=normalized_url).surface
+        return parse_surface(explicit).value
+    raise ValueError("surface is required")
 
 
 def build_explicit_sites(
@@ -213,7 +160,7 @@ def build_explicit_sites(
             {
                 "name": url,
                 "url": url,
-                "surface": infer_surface(url, explicit_surface=explicit_surface),
+                "surface": require_explicit_surface(explicit_surface),
             }
         )
     return rows
@@ -255,10 +202,7 @@ def load_site_set(path: Path, *, site_set_name: str) -> list[dict[str, object]]:
         row: dict[str, object] = {
             "name": str(site.get("name") or url).strip(),
             "url": url,
-            "surface": infer_surface(
-                url,
-                explicit_surface=site.get("surface"),
-            ),
+            "surface": require_explicit_surface(site.get("surface")),
             "bucket": str(site.get("bucket") or "").strip().lower() or None,
             "expected_failure_modes": [
                 str(value).strip()
@@ -294,7 +238,7 @@ def parse_test_sites_markdown(path: Path, *, start_line: int) -> list[dict[str, 
         if not value:
             continue
         if value.startswith(("http://", "https://")):
-            rows.append({"name": value, "url": value, "surface": infer_surface(value)})
+            raise ValueError(f"surface is required for TEST_SITES.md URL: {value}")
             continue
         if not value.startswith("|") or "http" not in value:
             continue
@@ -333,7 +277,7 @@ def parse_test_sites_markdown(path: Path, *, start_line: int) -> list[dict[str, 
                 {
                     "name": name or url,
                     "url": url,
-                    "surface": infer_surface(url, explicit_surface=explicit_surface),
+                    "surface": require_explicit_surface(explicit_surface),
                 }
             )
     return rows

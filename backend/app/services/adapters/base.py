@@ -15,7 +15,7 @@ from selectolax.lexbor import LexborHTMLParser
 from app.services.acquisition import HttpFetchResult, request_result, wait_for_host_slot
 from app.services.platform_policy import detect_platform_family
 
-from .types import AdapterRecords
+from .types import AdapterArtifacts, AdapterRecords
 
 logger = logging.getLogger(__name__)
 
@@ -55,11 +55,31 @@ def adapter_host_matches(host: str, expected: str) -> bool:
 
 @dataclass
 class AdapterResult:
-    """Structured data returned by a platform adapter."""
+    """Structured artifacts returned by a platform connector.
+
+    ``records`` remains as a compatibility input for old adapter implementations.
+    It is immediately converted to connector artifacts so adapter output cannot
+    bypass the evidence engine.
+    """
 
     records: AdapterRecords = field(default_factory=list)
+    artifacts: AdapterArtifacts = field(default_factory=list)
     source_type: str = "adapter"
     adapter_name: str = ""
+
+    def __post_init__(self) -> None:
+        if self.records:
+            self.artifacts.extend(
+                {
+                    "artifact_type": "adapter_json",
+                    "source_type": self.source_type,
+                    "adapter_name": self.adapter_name,
+                    "body": record,
+                }
+                for record in list(self.records)
+                if isinstance(record, dict)
+            )
+            self.records = []
 
 
 class BaseAdapter(ABC):

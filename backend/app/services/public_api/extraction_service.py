@@ -25,17 +25,13 @@ from app.services.config.public_api import (
 )
 from app.services.crawl.crud import create_crawl_run
 from app.services.crawl.state import CrawlStatus, update_run_status
+from app.services.extraction.surfaces import parse_surface, public_surface_for_internal
 from app.services.field_policy import canonical_fields_for_surface, normalize_field_key
 from app.services.pipeline.extraction_loop import process_single_url
 from app.services.pipeline.runtime_helpers import log_event, mark_run_failed
 from app.services.pipeline.types import URLProcessingConfig
 from app.services.platform_policy import resolve_platform_runtime_policy
 from app.services.publish import VERDICT_BLOCKED, VERDICT_ERROR, VERDICT_EMPTY
-from app.services.surface_resolver import (
-    SurfaceResolution,
-    public_surface_for_internal,
-    resolve_public_surface,
-)
 
 
 async def extract_public_product(
@@ -45,8 +41,7 @@ async def extract_public_product(
     payload: PublicExtractRequest,
 ) -> dict[str, Any]:
     url = _validate_url(payload.url)
-    surface_resolution = _internal_surface(payload.surface, url=url)
-    surface = surface_resolution.surface
+    surface = _internal_surface(payload.surface)
     if _platform_requires_browser(url, surface):
         raise PublicApiError(
             PUBLIC_API_ERROR_BROWSER_REQUIRED,
@@ -64,7 +59,7 @@ async def extract_public_product(
             "requested_fields": requested_fields,
             "settings": _public_http_only_settings(
                 payload.options.max_wait_seconds,
-                surface_resolution=surface_resolution.as_dict(),
+                surface=surface,
             ),
         },
     )
@@ -162,15 +157,15 @@ def _validate_url(value: str) -> str:
     return url
 
 
-def _internal_surface(value: str, *, url: str) -> SurfaceResolution:
-    resolution = resolve_public_surface(value, url=url)
-    if resolution is None:
+def _internal_surface(value: str) -> str:
+    try:
+        return parse_surface(value).value
+    except ValueError as exc:
         raise PublicApiError(
             PUBLIC_API_ERROR_INVALID_SURFACE,
             "Unsupported public extraction surface.",
             status_code=422,
-        )
-    return resolution
+        ) from exc
 
 
 def _public_requested_fields(values: list[str], *, surface: str) -> list[str]:
@@ -201,7 +196,7 @@ def _public_requested_fields(values: list[str], *, surface: str) -> list[str]:
 def _public_http_only_settings(
     max_wait_seconds: int,
     *,
-    surface_resolution: dict[str, object],
+    surface: str,
 ) -> dict[str, Any]:
     return {
         "max_records": 1,
@@ -236,7 +231,7 @@ def _public_http_only_settings(
             "stale_after_failures": {"failure_count": 0, "stale": False},
         },
         "public_api": True,
-        "surface_resolution": surface_resolution,
+        "surface_resolution": {"surface": surface, "explicit": True},
         "use_cache": "noop_v1",
     }
 

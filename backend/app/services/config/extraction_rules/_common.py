@@ -2,11 +2,9 @@ from __future__ import annotations
 # ruff: noqa: F401,F403,F405
 
 import re
-from pathlib import Path
 from collections.abc import Iterable, Mapping
 from typing import Any
 
-from app.services.config._export_data import load_export_data
 from app.services.config import extraction_price_rules as _price_rules
 from app.services.config.variant_policy import (
     AXIS_NAME_ALIASES,
@@ -29,12 +27,7 @@ AMAZON_DETAIL_TABLE_IGNORED_LABELS = frozenset(
     {"best sellers rank", "customer reviews"}
 )
 
-_EXPORTS_PATH = Path(__file__).resolve().parent.parent / "extraction_rules.exports.json"
-_STATIC_EXPORTS = {
-    name: value
-    for name, value in load_export_data(str(_EXPORTS_PATH)).items()
-    if not name.startswith("_")
-}
+_STATIC_EXPORTS: dict[str, Any] = {}
 
 HYDRATED_STATE_PATTERNS = tuple(
     dict.fromkeys(
@@ -135,6 +128,184 @@ BROWSER_REQUESTED_DETAIL_GENERIC_TOGGLE_LABELS = frozenset(
     }
 )
 
+ACTION_BUY_NOW = "buy now"
+BROWSER_DETAIL_EXPAND_KEYWORDS = {
+    "ecommerce": (
+        "about",
+        "compatibility",
+        "description",
+        "details",
+        "dimensions",
+        "more",
+        "product",
+        "read more",
+        "show more",
+        "spec",
+        "view more",
+    ),
+    "job": (
+        "benefits",
+        "compensation",
+        "description",
+        "more",
+        "qualifications",
+        "requirements",
+        "responsibilities",
+        "salary",
+        "see more",
+        "show all",
+    ),
+}
+BROWSER_DETAIL_READINESS_HINTS = {
+    "ecommerce": (
+        "add to cart",
+        "description",
+        "features",
+        "materials",
+        "price",
+        "product details",
+        "reviews",
+        "shipping",
+        "size",
+        "specifications",
+    ),
+    "job": (
+        "apply",
+        "benefits",
+        "job description",
+        "qualifications",
+        "remote",
+        "requirements",
+        "responsibilities",
+        "salary",
+        "skills",
+    ),
+}
+CANDIDATE_AVAILABILITY_NOISE_PHRASES = (
+    "select options",
+    "choose options",
+    "add to cart",
+    "quantity",
+    "wishlist",
+    "join the waitlist",
+)
+CSS_NOISE_PATTERN = (
+    r"(?:^|\s)(?:@media|@supports|\.?[a-z0-9_-]+\s*\{|"
+    r"(?:padding|margin|display|position|font-size|line-height|z-index)\s*:)"
+)
+CURRENCY_CODES = ("USD", "EUR", "GBP", "INR", "CAD", "AUD", "JPY", "CNY")
+CURRENCY_SYMBOL_MAP = {
+    "$": "USD",
+    "\u20ac": "EUR",
+    "\u00a3": "GBP",
+    "\u20b9": "INR",
+    "\u00a5": "JPY",
+}
+CURRENCY_ALIAS_PATTERNS = {r"\brs\.?\s*\d": "INR"}
+DETAIL_BLOCKED_TOKENS = ("login", "sign in", "subscribe", "newsletter")
+DETAIL_EXPAND_KEYWORD_EXTENSIONS = {
+    "ecommerce": ("materials", "care", "shipping", "returns"),
+    "job": ("about", "benefits", "responsibilities", "requirements"),
+}
+DETAIL_SHELL_FRAMEWORK_TOKENS = ("__next", "nuxt", "window.__", "data-reactroot")
+DETAIL_SHELL_PRODUCT_DATA_TOKENS = ("product", "sku", "price", "variant")
+DETAIL_SHELL_STATE_TOKENS = ("__next_data__", "__initial_state__", "application/json")
+DISCOVERIST_SCHEMA = (
+    "title",
+    "url",
+    "canonical_url",
+    "brand",
+    "price",
+    "currency",
+    "availability",
+    "image_url",
+    "additional_images",
+    "description",
+    "variants",
+    "company",
+    "location",
+    "salary",
+    "apply_url",
+    "posted_date",
+)
+JS_REQUIRED_PLACEHOLDER_PHRASES = (
+    "enable javascript",
+    "requires javascript",
+    "please enable js",
+)
+LISTING_ACTION_NOISE_PATTERNS = (
+    re.compile(r"\b(add to cart|quick view|wishlist|compare)\b", re.I),
+)
+LISTING_ALT_TEXT_TITLE_PATTERN = re.compile(r"\b(logo|icon|sprite|placeholder)\b", re.I)
+LISTING_BRAND_MAX_WORDS = 4
+LISTING_BRAND_SELECTORS = (
+    "[itemprop='brand']",
+    "[class*='brand' i]",
+    "[data-testid*='brand' i]",
+)
+LISTING_CARD_URL_ATTRS = ("href", "data-href", "data-url")
+LISTING_CLIENT_RENDERED_SHELL_HINTS = ("loading", "skeleton", "spinner")
+LISTING_DETAIL_URL_MARKERS = ("/product", "/products", "/p/", "/job", "/jobs")
+LISTING_EDITORIAL_TITLE_PATTERNS = (
+    re.compile(r"\b(blog|guide|news|article|story)\b", re.I),
+)
+LISTING_MERCHANDISING_TITLE_PREFIXES = ("shop ", "view all ", "browse ")
+LISTING_NAVIGATION_TITLE_HINTS = frozenset({"home", "menu", "account", "cart"})
+LISTING_SHELL_FRAMEWORK_TOKENS = ("__next", "nuxt", "data-reactroot", "skeleton")
+LISTING_TITLE_CTA_TITLES = frozenset(
+    {"shop now", "learn more", "view all", "see more", "load more"}
+)
+LISTING_UTILITY_TITLE_PATTERNS = (
+    r"^(?:shop now|learn more|view all|load more|sign in|account|cart)$",
+)
+LISTING_UTILITY_URL_TOKENS = (
+    "/account",
+    "/cart",
+    "/checkout",
+    "/login",
+    "/signin",
+    "/wishlist",
+)
+LISTING_WEAK_TITLES = frozenset({"product", "item", "image", "details"})
+LOW_CONTENT_SHELL_PHRASES = (
+    "enable javascript",
+    "just a moment",
+    "loading",
+    "please wait",
+)
+PRICE_FIELDS = frozenset({"price", "sale_price", "original_price"})
+REVIEW_CONTAINER_KEYS = frozenset({"reviews", "review", "ratings", "rating"})
+SOURCE_TIERS = {
+    "json_ld": ("structured", 0.9),
+    "microdata": ("structured", 0.82),
+    "open_graph": ("structured", 0.72),
+    "dom": ("text", 0.65),
+    "network": ("structured", 0.8),
+    "script_state": ("structured", 0.78),
+}
+SURFACE_WEIGHTS = {
+    "ecommerce_detail": {"structured": 0.9, "text": 0.65},
+    "ecommerce_listing": {"structured": 0.8, "text": 0.7},
+    "job_detail": {"structured": 0.88, "text": 0.72},
+    "job_listing": {"structured": 0.82, "text": 0.72},
+}
+TRACKING_DETAIL_CONTEXT_EXACT_KEYS = frozenset(
+    {"color", "colour", "productid", "product_id", "sku", "size", "variant"}
+)
+TRACKING_PARAM_EXACT_KEYS = frozenset(
+    {"fbclid", "gclid", "mc_cid", "mc_eid", "msclkid", "utm_campaign", "utm_content", "utm_medium", "utm_source", "utm_term"}
+)
+TRACKING_PARAM_PREFIXES = ("utm_",)
+TRACKING_PRESERVED_SHORT_QUERY_KEYS = frozenset({"id", "q"})
+TRACKING_STRIP_URL_FIELDS = frozenset({"url", "canonical_url", "apply_url"})
+TRAVERSAL_LISTING_RECOVERY_ACTIONS = (
+    ("load_more", r"(load more|show more|see more|view more)", "Loading more results"),
+    ("next_page", r"(next|older|\u203a|\u00bb|>)", "Moving to next page"),
+)
+TRAVERSAL_STRUCTURED_SCRIPT_IDS = ("__NEXT_DATA__", "__NUXT_DATA__")
+TRAVERSAL_STRUCTURED_SCRIPT_TEXT_MARKERS = ("Product", "JobPosting", "ItemList")
+TRAVERSAL_STRUCTURED_SCRIPT_TYPES = ("application/ld+json", "application/json")
+
 _EXTRACTION_RULES_RAW = _STATIC_EXPORTS.get("EXTRACTION_RULES", {})
 EXTRACTION_RULES = (
     dict(_EXTRACTION_RULES_RAW) if isinstance(_EXTRACTION_RULES_RAW, dict) else {}
@@ -234,11 +405,9 @@ def _string_frozenset(value: object) -> frozenset[str]:
 __all__ = [
     "annotations",
     "re",
-    "Path",
     "Iterable",
     "Mapping",
     "Any",
-    "load_export_data",
     "_price_rules",
     "AXIS_NAME_ALIASES",
     "PUBLIC_VARIANT_AXIS_FIELDS",
@@ -251,7 +420,6 @@ __all__ = [
     "AMAZON_PRICE_CONTAINER_SELECTOR",
     "AMAZON_DETAIL_PRICE_SELECTORS",
     "AMAZON_DETAIL_TABLE_IGNORED_LABELS",
-    "_EXPORTS_PATH",
     "_STATIC_EXPORTS",
     "HYDRATED_STATE_PATTERNS",
     "HYDRATED_STATE_GLOBAL_ONLY_PATTERNS",
@@ -288,6 +456,50 @@ __all__ = [
     "VARIANT_MATCHING_INPUT_LIMIT",
     "BROWSER_REQUESTED_DETAIL_SELECTOR_PRIORITY",
     "BROWSER_REQUESTED_DETAIL_GENERIC_TOGGLE_LABELS",
+    "ACTION_BUY_NOW",
+    "BROWSER_DETAIL_EXPAND_KEYWORDS",
+    "BROWSER_DETAIL_READINESS_HINTS",
+    "CANDIDATE_AVAILABILITY_NOISE_PHRASES",
+    "CSS_NOISE_PATTERN",
+    "CURRENCY_ALIAS_PATTERNS",
+    "CURRENCY_CODES",
+    "CURRENCY_SYMBOL_MAP",
+    "DETAIL_BLOCKED_TOKENS",
+    "DETAIL_EXPAND_KEYWORD_EXTENSIONS",
+    "DETAIL_SHELL_FRAMEWORK_TOKENS",
+    "DETAIL_SHELL_PRODUCT_DATA_TOKENS",
+    "DETAIL_SHELL_STATE_TOKENS",
+    "DISCOVERIST_SCHEMA",
+    "JS_REQUIRED_PLACEHOLDER_PHRASES",
+    "LISTING_ACTION_NOISE_PATTERNS",
+    "LISTING_ALT_TEXT_TITLE_PATTERN",
+    "LISTING_BRAND_MAX_WORDS",
+    "LISTING_BRAND_SELECTORS",
+    "LISTING_CARD_URL_ATTRS",
+    "LISTING_CLIENT_RENDERED_SHELL_HINTS",
+    "LISTING_DETAIL_URL_MARKERS",
+    "LISTING_EDITORIAL_TITLE_PATTERNS",
+    "LISTING_MERCHANDISING_TITLE_PREFIXES",
+    "LISTING_NAVIGATION_TITLE_HINTS",
+    "LISTING_SHELL_FRAMEWORK_TOKENS",
+    "LISTING_TITLE_CTA_TITLES",
+    "LISTING_UTILITY_TITLE_PATTERNS",
+    "LISTING_UTILITY_URL_TOKENS",
+    "LISTING_WEAK_TITLES",
+    "LOW_CONTENT_SHELL_PHRASES",
+    "PRICE_FIELDS",
+    "REVIEW_CONTAINER_KEYS",
+    "SOURCE_TIERS",
+    "SURFACE_WEIGHTS",
+    "TRACKING_DETAIL_CONTEXT_EXACT_KEYS",
+    "TRACKING_PARAM_EXACT_KEYS",
+    "TRACKING_PARAM_PREFIXES",
+    "TRACKING_PRESERVED_SHORT_QUERY_KEYS",
+    "TRACKING_STRIP_URL_FIELDS",
+    "TRAVERSAL_LISTING_RECOVERY_ACTIONS",
+    "TRAVERSAL_STRUCTURED_SCRIPT_IDS",
+    "TRAVERSAL_STRUCTURED_SCRIPT_TEXT_MARKERS",
+    "TRAVERSAL_STRUCTURED_SCRIPT_TYPES",
     "_EXTRACTION_RULES_RAW",
     "EXTRACTION_RULES",
     "CONTENT_SURFACE_SANITIZE_SELECTORS",

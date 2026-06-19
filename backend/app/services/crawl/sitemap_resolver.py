@@ -36,7 +36,6 @@ from app.services.config.sitemap import (
 )
 from app.services.crawl.utils import normalize_target_url, text_has_token
 from app.services.shared.url_utils import absolute_url
-from app.services.surface_resolver import resolve_auto_surface
 from app.services.url_safety import validate_public_target
 
 SITEMAP_NS = "http://www.sitemaps.org/schemas/sitemap/0.9"
@@ -727,7 +726,6 @@ def _classify_homepage_candidate(
     keyword: str,
     anchor: Tag,
 ) -> tuple[str, int]:
-    resolution = resolve_auto_surface(url=candidate_url)
     path = urlsplit(candidate_url).path.lower().rstrip("/")
     slug = path.rsplit("/", 1)[-1]
     depth = _path_depth(path)
@@ -738,19 +736,15 @@ def _classify_homepage_candidate(
     )
     nav_boost = 12 if anchor.find_parent(("nav", "header")) is not None else 0
     category_path_boost = _category_path_score_boost(path)
-    if resolution.surface.endswith("_listing"):
+    if _looks_like_category_url(candidate_url) or _has_category_homepage_signal(
+        candidate_url, anchor
+    ):
         return (
             "listing",
             300
-            + int(resolution.confidence * 100)
             + nav_boost
             + category_path_boost
             + (25 if keyword_hit else 0),
-        )
-    if resolution.surface.endswith("_detail"):
-        return (
-            "detail",
-            220 + int(resolution.confidence * 100) + (25 if keyword_hit else 0),
         )
     if _looks_like_detail_link(slug, depth=depth, anchor_words=anchor_words):
         return "detail", 120 + (25 if keyword_hit else 0)

@@ -565,16 +565,12 @@ async def test_resolver_category_only_falls_back_when_sitemap_has_account_links(
 
 @pytest.mark.asyncio
 @pytest.mark.component
-async def test_homepage_category_only_keeps_auto_listing_without_anchor_signal(
+async def test_homepage_category_only_rejects_link_without_category_signal(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
         "app.services.crawl.sitemap_resolver.validate_public_target",
         _valid_target,
-    )
-    monkeypatch.setattr(
-        "app.services.crawl.sitemap_resolver.resolve_auto_surface",
-        lambda **kwargs: SimpleNamespace(surface="ecommerce_listing", confidence=0.8),
     )
 
     urls = await sitemap_resolver._extract_homepage_candidate_urls(
@@ -585,7 +581,7 @@ async def test_homepage_category_only_keeps_auto_listing_without_anchor_signal(
         category_only=True,
     )
 
-    assert urls == ["https://example.com/lookbook"]
+    assert urls == []
 
 
 @pytest.mark.asyncio
@@ -596,10 +592,6 @@ async def test_homepage_category_only_keeps_anchor_category_without_auto_listing
     monkeypatch.setattr(
         "app.services.crawl.sitemap_resolver.validate_public_target",
         _valid_target,
-    )
-    monkeypatch.setattr(
-        "app.services.crawl.sitemap_resolver.resolve_auto_surface",
-        lambda **kwargs: SimpleNamespace(surface="unknown", confidence=0.0),
     )
 
     urls = await sitemap_resolver._extract_homepage_candidate_urls(

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import json
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 import logging
@@ -38,7 +39,6 @@ from app.services.network_resolution import (
     default_request_headers,
 )
 from app.services.platform_policy import resolve_platform_runtime_policy
-from app.services.structured_sources import harvest_js_state_objects, parse_json_ld
 
 logger = logging.getLogger(__name__)
 
@@ -645,6 +645,38 @@ def _has_extractable_detail_signals(
     return any(
         token in lowered_html for token in DETAIL_SHELL_FRAMEWORK_TOKENS
     ) and any(token in lowered_html for token in DETAIL_SHELL_PRODUCT_DATA_TOKENS)
+
+
+def parse_json_ld(soup: BeautifulSoup) -> list[object]:
+    rows: list[object] = []
+    for script in soup.select('script[type*="ld+json"]'):
+        text = script.string or script.get_text(" ", strip=True)
+        if not str(text or "").strip():
+            continue
+        try:
+            payload = json.loads(str(text))
+        except json.JSONDecodeError:
+            continue
+        if isinstance(payload, list):
+            rows.extend(payload)
+        else:
+            rows.append(payload)
+    return rows
+
+
+def harvest_js_state_objects(soup: BeautifulSoup | None, html: str) -> dict[str, object]:
+    parsed = soup or BeautifulSoup(str(html or ""), "html.parser")
+    states: dict[str, object] = {}
+    for script in parsed.select('script[type="application/json"], script#__NEXT_DATA__'):
+        key = str(script.get("id") or "application_json").strip() or "application_json"
+        text = script.string or script.get_text(" ", strip=True)
+        if not str(text or "").strip():
+            continue
+        try:
+            states[key] = json.loads(str(text))
+        except json.JSONDecodeError:
+            continue
+    return states
 
 
 def _has_extractable_dom_detail_signals(analysis: HtmlAnalysis) -> bool:

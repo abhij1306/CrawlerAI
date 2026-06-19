@@ -7,19 +7,11 @@ from typing import Any
 
 from app.services.config.extraction_rules import JSON_RECORD_LIST_KEYS
 from app.services.config.runtime_settings import crawler_runtime_settings
-from app.services.extract.field_candidates import (
-    collect_structured_candidates,
-    finalize_candidate_fields,
-)
-from app.services.extract.listing_record_finalizer import finalize_listing_price_fields
 from app.services.field_policy import canonical_fields_for_surface, normalize_field_key
 from app.services.shared.field_coerce import (
     absolute_url,
-    clean_text,
     coerce_text,
     finalize_record,
-    surface_alias_lookup,
-    surface_fields,
 )
 
 logger = logging.getLogger(__name__)
@@ -391,16 +383,8 @@ def _raw_json_record(
     fallback_index: int,
 ) -> dict[str, Any]:
     if isinstance(payload, dict):
-        alias_lookup = surface_alias_lookup(surface, requested_fields)
-        candidates: dict[str, list[object]] = {}
-        collect_structured_candidates(payload, alias_lookup, page_url, candidates)
         record: dict[str, Any] = {"source_url": page_url, "_source": "raw_json"}
-        record.update(
-            finalize_candidate_fields(
-                candidates,
-                surface_fields(surface, requested_fields),
-            )
-        )
+        record.update(_direct_raw_json_fields(payload, surface, requested_fields))
         preferred_title = coerce_text(
             payload.get("title") or payload.get("name") or payload.get("label")
         )
@@ -415,8 +399,6 @@ def _raw_json_record(
                 payload, page_url, fallback_index=fallback_index
             )
         cleaned = finalize_record(record, surface=surface)
-        if "listing" in surface:
-            cleaned = finalize_listing_price_fields(cleaned)
         return cleaned if len(cleaned) > 2 else {}
     title = coerce_text(payload)
     if not title:
@@ -430,6 +412,38 @@ def _raw_json_record(
         },
         surface=surface,
     )
+
+
+def _direct_raw_json_fields(
+    payload: dict[str, Any],
+    surface: str,
+    requested_fields: list[str] | None,
+) -> dict[str, object]:
+    allowed = set(canonical_fields_for_surface(surface)) | {
+        normalize_field_key(field) for field in requested_fields or []
+    }
+    aliases = {
+        "name": "title",
+        "label": "title",
+        "jobtitle": "title",
+        "href": "url",
+        "link": "url",
+        "permalink": "url",
+        "imageurl": "image_url",
+        "image": "image_url",
+        "pricecurrency": "currency",
+        "companyname": "company",
+    }
+    out: dict[str, object] = {}
+    for key, value in payload.items():
+        normalized = normalize_field_key(str(key))
+        field = aliases.get(normalized, normalized)
+        if field not in allowed or value in (None, "", [], {}):
+            continue
+        if isinstance(value, (dict, list)):
+            continue
+        out[field] = value
+    return out
 
 
 def _raw_json_url(

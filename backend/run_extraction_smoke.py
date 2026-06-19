@@ -25,7 +25,7 @@ from app.services.adapters.registry import run_adapter
 from app.services.pipeline.extract_records import extract_records
 from app.services.platform_policy import detect_platform_family
 
-from harness.support import infer_surface, parse_test_sites_markdown
+from harness.support import parse_test_sites_markdown, require_explicit_surface
 
 DEFAULT_CORPUS_PATH = (
     Path(__file__).resolve().parent / "corpora" / "acceptance_corpus.json"
@@ -170,7 +170,7 @@ def _write_report(
 async def _run_one(site: dict, run_id: int, timeout_seconds: int) -> dict:
     name = str(site.get("name") or "").strip()
     url = str(site.get("url") or "").strip()
-    surface = infer_surface(url, explicit_surface=site.get("surface"))
+    surface = require_explicit_surface(site.get("surface"))
     page_type = str(site.get("page_type") or "").strip().lower()
     started = time.perf_counter()
     result: dict[str, object] = {

@@ -20,7 +20,7 @@ from app.services.config.sitemap import (
     SITEMAP_CATEGORY_ANCHOR_TEXT_EXCLUDED_TOKENS,
     SITEMAP_CATEGORY_ANCHOR_TEXT_TOKENS,
 )
-from app.services.config.surface_hints import detail_path_hints
+from app.services.config.url_path_markers import detail_path_markers
 from app.services.crawl.sitemap_resolver import (
     SitemapResolutionResult,
     build_category_nav_tree,
@@ -34,7 +34,6 @@ from app.services.crawl.sitemap_resolver import (
 from app.services.crawl.utils import normalize_target_url, text_has_token
 from app.services.fetch.fetch_context import fetch_page
 from app.services.shared.url_utils import absolute_url
-from app.services.surface_resolver import resolve_auto_surface
 from app.services.url_safety import validate_public_target
 
 FetchPage = Callable[..., Awaitable[Any]]
@@ -42,7 +41,7 @@ FetchPage = Callable[..., Awaitable[Any]]
 _PRICE_RE = re.compile(r"(?:[$€£¥₹]\s?\d|\d[\d,.]*\s?(?:usd|eur|gbp|inr))", re.I)
 _listing_detail_path_hints = tuple(
     str(marker or "").strip().lower()
-    for marker in detail_path_hints(ECOMMERCE_LISTING_SURFACE)
+    for marker in detail_path_markers(ECOMMERCE_LISTING_SURFACE)
     if str(marker or "").strip()
 )
 
@@ -234,7 +233,6 @@ def _score_candidate(url: str, anchor: Tag, label: str | None) -> tuple[int, str
     text = str(label or "").strip().lower()
     if _anchor_text_rejected(text):
         return 0, "excluded_anchor_text"
-    resolution = resolve_auto_surface(url=url)
     score = 0
     reasons: list[str] = []
     if looks_like_category_url(url):
@@ -254,7 +252,7 @@ def _score_candidate(url: str, anchor: Tag, label: str | None) -> tuple[int, str
         reasons.append("category_text")
     if path.count("/") > 4:
         score -= 30
-    if resolution.surface.endswith("_detail"):
+    if any(token in path for token in _listing_detail_path_hints):
         score -= 180
         reasons.append("detail_penalty")
     if not reasons:

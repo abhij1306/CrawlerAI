@@ -48,12 +48,6 @@ _PresentValue = Annotated[Any, AfterValidator(_require_present_value)]
 _SchemaFieldName = Annotated[str, AfterValidator(_require_schema_field_name)]
 
 
-class _XPathSelector(TypedDict):
-    field_name: _NonEmptyText
-    xpath: NotRequired[str]
-    css_selector: NotRequired[str]
-
-
 class _EvidenceDecision(TypedDict):
     action: Literal["choose", "reject", "abstain"]
     winning_evidence_ids: NotRequired[list[_NonEmptyText]]
@@ -64,7 +58,6 @@ class _EvidenceDecision(TypedDict):
 class _EvidenceRecipeSuggestion(TypedDict):
     field_name: _NonEmptyText
     css_selector: NotRequired[str]
-    xpath: NotRequired[str]
     json_path: NotRequired[str]
     endpoint_family: NotRequired[str]
     source_ref: NotRequired[str]
@@ -170,7 +163,6 @@ class _RunDiagnosisPayload(BaseModel):
 
 _PAYLOAD_ADAPTERS: dict[str, TypeAdapter[Any]] = {
     "direct_record_extraction": TypeAdapter(list[dict[_FieldKey, Any]]),
-    "xpath_discovery": TypeAdapter(list[_XPathSelector]),
     "missing_field_extraction": TypeAdapter(dict[_FieldKey, Any]),
     "field_cleanup_review": TypeAdapter(_FieldCleanupReviewPayload),
     "page_classification": TypeAdapter(_PageClassificationPayload),
