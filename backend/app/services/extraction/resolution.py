@@ -10,6 +10,7 @@ from app.services.extraction.contracts import (
 )
 from app.services.extraction.entities import AssetEntity, EntitySet, OfferEntity, VariantEntity
 from app.services.extraction.ids import stable_id
+from app.services.config.extraction_rules._images import PRIMARY_IMAGE_REJECT_URL_TOKENS
 
 
 def resolve(
@@ -68,7 +69,26 @@ def _resolve_asset(
     evidence_by_id: dict[str, Evidence],
     findings: tuple[Finding, ...],
 ) -> Decision:
+    if any(_invalid_primary_asset_url(evidence_by_id[eid].value) for eid in asset.url_evidence_ids if eid in evidence_by_id):
+        return Decision(
+            decision_id=stable_id("decision", asset.entity_id, "asset.image_url", asset.url_evidence_ids),
+            entity_id=asset.entity_id,
+            fact_type="asset.image_url",
+            accepted_evidence_ids=(),
+            rejected=tuple(
+                RejectedEvidence(evidence_id=eid, reason="invalid_primary_asset")
+                for eid in asset.url_evidence_ids
+            ),
+            finding_ids=(),
+            rule_id="PRIMARY_ASSET_REJECTION",
+            status="unresolved",
+        )
     return _resolve_scalar(asset.entity_id, "asset.image_url", asset.url_evidence_ids, evidence_by_id, findings)
+
+
+def _invalid_primary_asset_url(value: object) -> bool:
+    text = str(value or "").casefold()
+    return any(token in text for token in PRIMARY_IMAGE_REJECT_URL_TOKENS)
 
 
 def _resolve_scalar(

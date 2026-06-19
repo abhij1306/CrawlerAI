@@ -24,7 +24,6 @@ from app.services.platform_policy import (
 )
 from app.services.publish import VERDICT_PARTIAL, VERDICT_SUCCESS
 from app.services.publish.metrics import diagnostics_indicate_block
-from app.services.extract.listing_candidate_ranking import looks_like_utility_record
 from app.services.config.public_record_policy import PUBLIC_RECORD_LEGACY_VARIANT_FIELDS
 from app.services.config.variant_policy import (
     PUBLIC_FLAT_VARIANT_FIELDS,
@@ -34,6 +33,24 @@ from app.services.extraction.surfaces import parse_surface
 from sqlalchemy import select
 
 logger = logging.getLogger(__name__)
+
+_UTILITY_RECORD_TOKENS = frozenset(
+    {
+        "account",
+        "cart",
+        "checkout",
+        "contact",
+        "faq",
+        "help",
+        "login",
+        "privacy",
+        "returns",
+        "search",
+        "shipping",
+        "sign in",
+        "wishlist",
+    }
+)
 
 HARNESS_MODE_ACQUISITION_ONLY = "acquisition_only"
 HARNESS_MODE_FULL_PIPELINE = "full_pipeline"
@@ -644,6 +661,11 @@ def _looks_like_utility_record(*, title: object, url: object) -> bool:
     return looks_like_utility_record(title=str(title or ""), url=str(url or ""))
 
 
+def looks_like_utility_record(*, title: str, url: str) -> bool:
+    text = f"{title} {url}".casefold()
+    return any(token in text for token in _UTILITY_RECORD_TOKENS)
+
+
 def _identity_path(url: str) -> str:
     parsed = urlsplit(str(url or "").strip())
     path = str(parsed.path or "").strip()
@@ -1054,7 +1076,11 @@ def _quality_variant_artifacts_ok(
             if any(str(key).strip() not in allowed_variant_keys for key in row.keys()):
                 return False
             values.extend(row.keys())
-            values.extend(row.values())
+            values.extend(
+                value
+                for key, value in row.items()
+                if str(key).strip() != "selected"
+            )
     for value in values:
         if isinstance(value, bool):
             return False

@@ -1,0 +1,46 @@
+{
+  "acquire_timeline": [
+    {
+      "detail": {
+        "action": "paced",
+        "reason": "domain_rate_limiter",
+        "stage": "pre_fetch"
+      },
+      "kind": "policy_decision",
+      "sequence": 1
+    },
+    {
+      "detail": {
+        "blocked": false,
+        "method": "curl_cffi",
+        "status_code": 200
+      },
+      "kind": "http_fetch",
+      "sequence": 2
+    }
+  ],
+  "diagnostic_fields": [
+    "availability",
+    "brand",
+    "color",
+    "size",
+    "sku",
+    "variant_count",
+    "variants"
+  ],
+  "extraction": {
+    "completed_tiers": []
+  },
+  "high_value_fields": [
+    "image_url",
+    "price",
+    "title"
+  ],
+  "requested_fields": [],
+  "run_id": 1,
+  "schema_version": 1,
+  "surface": "ecommerce_detail",
+  "tier": "full",
+  "url": "https://www.zara.com/us/en/rustic-cotton-t-shirt-p04424306.html",
+  "verdict": "empty"
+}

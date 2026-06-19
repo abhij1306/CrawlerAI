@@ -19,18 +19,9 @@ from app.services.db_utils import mapping_or_empty
 from app.services.shared.field_coerce import object_list as _object_list
 from app.services.domain_memory_service import load_domain_selector_rules
 from app.services.domain_utils import normalize_domain
-from app.services.shared.field_coerce import validate_record_for_surface
-from app.services.llm.config_service import resolve_run_config
-from app.services.llm.runtime import (
-    extract_records_directly as extract_records_directly_with_llm,
-)
 from app.services.adapters.registry import run_adapter
 from app.services.platform_policy import detect_platform_family
-from app.services.pipeline.extract_records import extract_records
-from app.services.pipeline.direct_record_fallback import (
-    apply_direct_record_llm_fallback as apply_direct_record_llm_fallback_impl,
-    apply_llm_fallback,
-)
+from app.services.pipeline.extract_records import extract_records_for_acquisition_result
 from app.services.publish import (
     VERDICT_BLOCKED,
     VERDICT_EMPTY,
@@ -49,22 +40,7 @@ from app.services.robots_policy import (
 )
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .extraction_retry_decision import (
-    annotate_field_repair as _annotate_field_repair,
-    empty_extraction_browser_retry_decision as _empty_extraction_browser_retry_decision,
-)
-from .retry import (
-    apply_detail_rejection_guard,
-    build_acquisition_request,
-    detail_record_rejection_reason,
-    infer_detail_failure_reason,
-    log_extraction_outcome,
-    retry_detail_challenge_shell_with_real_chrome,
-    retry_empty_extraction_with_browser,
-    retry_listing_integrity_with_stronger_tier,
-    retry_low_quality_extraction_with_browser,
-    retry_patchright_detail_rejection_with_real_chrome,
-)
+from .retry import build_acquisition_request, retry_extraction_request_with_browser
 from .persistence import (
     persist_acquisition_artifacts,
     persist_extraction_decision_artifact,
@@ -108,11 +84,7 @@ __all__ = [
     "STAGE_PERSIST",
     "URLProcessingContext",
     "best_adapter_result",
-    "detail_record_rejection_reason",
     "detect_platform_family",
-    "empty_extraction_browser_retry_decision",
-    "extract_records",
-    "infer_detail_failure_reason",
     "load_domain_selector_rules",
     "mark_run_failed",
     "note_host_hard_block",
@@ -542,186 +514,58 @@ async def _run_extraction_stage_observed(
     span,
 ) -> _ExtractedURLStage:
     acquisition_result = fetched.acquisition_result
-    records, selector_rules = await extract_records_for_acquisition(
+    result, selector_rules = await extract_records_for_acquisition(
         context,
         fetched,
     )
     set_logfire_attributes(
         span,
-        initial_record_count=len(records),
+        initial_record_count=len(result.records),
         selector_rule_count=len(selector_rules),
         adapter=getattr(acquisition_result, "adapter_name", None),
         platform=getattr(acquisition_result, "platform_family", None),
+        verdict=result.verdict,
     )
     _record_detail_expansion_extraction_outcome(
         acquisition_result,
-        records,
+        [record.model_dump(mode="json", exclude_none=True) for record in result.records],
         requested_fields=list(context.requested_fields),
     )
-    records, selector_rules = await retry_empty_extraction_with_browser(
+    result = await retry_extraction_request_with_browser(
         context,
         fetched,
-        records=records,
-        selector_rules=selector_rules,
+        result=result,
     )
-    records, selector_rules = await retry_low_quality_extraction_with_browser(
-        context,
-        fetched,
-        records=records,
-        selector_rules=selector_rules,
-    )
-    records, selector_rules = await retry_listing_integrity_with_stronger_tier(
-        context,
-        fetched,
-        records=records,
-        selector_rules=selector_rules,
-    )
-    acquisition_result = fetched.acquisition_result
-    records, selector_rules = await _apply_extraction_post_processing(
-        context,
-        acquisition_result=acquisition_result,
-        records=records,
-        selector_rules=selector_rules,
-    )
-    records, rejection_reason = apply_detail_rejection_guard(
-        context,
-        fetched,
-        records=records,
-        selector_rules=selector_rules,
-    )
-    retry_stage = await retry_detail_challenge_shell_with_real_chrome(
-        context,
-        fetched,
-        rejection_reason=rejection_reason,
-    )
-    if retry_stage is not None:
-        set_logfire_attributes(span, retry="real_chrome_challenge")
-        return retry_stage
-    if rejection_reason != "challenge_shell":
-        retry_stage = await retry_patchright_detail_rejection_with_real_chrome(
-            context,
-            fetched,
-            rejection_reason=rejection_reason,
-        )
-        if retry_stage is not None:
-            set_logfire_attributes(span, retry="real_chrome_rejection")
-            return retry_stage
-    await log_extraction_outcome(context, acquisition_result, records)
-    if rejection_reason:
-        guidance = (
-            "; URL looks like a listing/search seed. Use ecommerce_listing."
-            if rejection_reason == "non_detail_seed"
-            else ""
-        )
-        await _log_pipeline_event(
-            context,
-            "warning",
-            f"Rejected detail extraction for {context.url}: {rejection_reason}{guidance}",
-        )
-    _record_extraction_trace(context, records)
+    _record_extraction_trace(context, result)
     set_logfire_attributes(
         span,
-        final_record_count=len(records),
-        rejection_reason=rejection_reason,
+        final_record_count=len(result.records),
+        verdict=result.verdict,
     )
-    return _ExtractedURLStage(fetched=fetched, records=records)
+    return _ExtractedURLStage(fetched=fetched, result=result)
 
 
 def _record_extraction_trace(
     context: _URLProcessingContext,
-    records: list[dict[str, object]],
+    result,
 ) -> None:
-    """Project extraction internals into the RunTrace (observe-only).
-
-    Closes the extraction blackhole: tier execution (`_extraction_tiers`), the
-    skip-DOM decision (`_dom_skip_decision`), and per-high-value-field winning
-    source (`_field_sources`) become first-class trace data. No-op when tracing
-    is disabled. Reads only fields the extractor already attaches; never mutates
-    the record or changes selection.
-    """
     trace = getattr(context, "trace", None)
     if trace is None:
         return
-    primary = next(
-        (record for record in records if isinstance(record, dict)),
-        None,
-    )
-    if primary is None:
-        return
-
-    tiers = mapping_or_empty(primary.get("_extraction_tiers"))
-    completed = tiers.get("completed")
-    if isinstance(completed, list):
-        trace.record_completed_tiers([str(item) for item in completed])
-        dom_in_completed = any(
-            str(item).strip().lower() == obs_config.EXTRACTION_TIER_DOM
-            for item in completed
-        )
-    else:
-        dom_in_completed = False
-
-    skip_decision = mapping_or_empty(primary.get("_dom_skip_decision"))
-    if skip_decision:
-        trace.record_skip_dom_decision(
-            dom_skipped=bool(skip_decision.get("dom_skipped", not dom_in_completed)),
-            confidence=_as_float(skip_decision.get("confidence")),
-            threshold=_as_float(skip_decision.get("threshold")),
-            dom_completion_reason=str(skip_decision.get("reason") or "") or None,
-        )
-
-    field_sources = mapping_or_empty(primary.get("_field_sources"))
-    for field_name, sources in field_sources.items():
-        source_list = sources if isinstance(sources, list) else [sources]
-        winning_source = next(
-            (str(item) for item in source_list if str(item or "").strip()),
-            "",
-        )
-        if not winning_source:
-            continue
-        value = primary.get(field_name)
-        trace.record_field_candidate(
-            str(field_name),
-            source=winning_source,
-            won=True,
-            value_preview="" if value in (None, "", [], {}) else str(value),
-        )
-    trace_fields = set(field_sources)
-    trace_field_names = getattr(trace, "trace_field_names", None)
-    if callable(trace_field_names):
-        trace_fields.update(str(field_name) for field_name in trace_field_names())
-    for field_name in sorted(trace_fields):
-        source_values = field_sources.get(field_name)
-        source_list = source_values if isinstance(source_values, list) else [source_values]
-        trace.record_field_state(
-            str(field_name),
-            value=primary.get(field_name),
-            candidate_sources=[
-                str(item)
-                for item in source_list
-                if str(item or "").strip()
-            ],
-        )
-    graph = mapping_or_empty(primary.get("_evidence_graph"))
-    decisions = mapping_or_empty(graph.get("field_decisions"))
     trace.record_evidence_summary(
         {
-            "candidate_count": len(mapping_or_empty(graph.get("field_evidence"))),
-            "field_decision_count": len(decisions),
-            "conflict_count": sum(
-                _as_int(mapping_or_empty(decision).get("conflict_count")) or 0
-                for decision in decisions.values()
+            "candidate_count": result.metrics.evidence_count,
+            "field_decision_count": len(result.decisions),
+            "conflict_count": result.metrics.decision_counts_by_status.get(
+                "conflicted", 0
             ),
             "rejected_candidate_count": sum(
-                _as_int(
-                    mapping_or_empty(decision).get("rejected_candidate_count")
-                )
-                or 0
-                for decision in decisions.values()
+                len(decision.rejected) for decision in result.decisions
             ),
-            "validation_finding_count": len(
-                _object_list(primary.get("_validation_findings"))
+            "validation_finding_count": len(result.findings),
+            "review_candidate_count": result.metrics.finding_counts_by_severity.get(
+                "high", 0
             ),
-            "review_candidate_count": len(_object_list(primary.get("_review_bucket"))),
         }
     )
 
@@ -731,96 +575,7 @@ async def _run_normalization_stage(
     extracted: _ExtractedURLStage,
 ) -> _ExtractedURLStage:
     await _enter_stage(context, STAGE_NORMALIZE)
-    acquisition_result = extracted.fetched.acquisition_result
-    trace = context.trace
-    normalized_records: list[dict[str, object]] = []
-    for index, record in enumerate(extracted.records, start=1):
-        normalized_record, validation_errors = validate_record_for_surface(
-            dict(record),
-            context.surface,
-            requested_fields=context.requested_fields,
-            strict_types=True,
-        )
-        normalized_records.append(normalized_record)
-        if validation_errors:
-            for validation_error in validation_errors:
-                if trace is not None:
-                    trace.record_normalize_edit(
-                        field_name=f"record_{index}",
-                        reason=str(validation_error),
-                    )
-            await _log_pipeline_event(
-                context,
-                "warning",
-                "Schema validation cleaned record "
-                f"{index} for {context.url}: {'; '.join(validation_errors)}",
-            )
-    if not _suppress_empty_downstream_record_logs(
-        acquisition_result,
-        normalized_records,
-    ):
-        await _log_pipeline_event(
-            context,
-            "info",
-            f"Normalized {len(normalized_records)} record(s) for persistence",
-        )
-    return _ExtractedURLStage(fetched=extracted.fetched, records=normalized_records)
-
-
-async def _apply_extraction_post_processing(
-    context: _URLProcessingContext,
-    *,
-    acquisition_result,
-    records: list[dict[str, object]],
-    selector_rules: list[dict[str, object]],
-) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
-    if not _browser_result_is_extractable(acquisition_result):
-        return records, selector_rules
-    if not context.run.settings_view.llm_enabled():
-        _annotate_field_repair(
-            records,
-            surface=context.surface,
-            requested_fields=list(context.requested_fields),
-            llm_enabled=False,
-            action="skipped",
-            reason="llm_disabled",
-        )
-        return records, selector_rules
-    with logfire_span(
-        "pipeline.llm.backfill",
-        run_id=context.run.id,
-        domain=normalize_domain(str(acquisition_result.final_url or context.url)),
-        surface=context.surface,
-        input_record_count=len(records),
-        detail_surface="detail" in context.surface,
-    ) as span:
-        records = await apply_direct_record_llm_fallback_impl(
-            context.session,
-            run=context.run,
-            page_url=acquisition_result.final_url,
-            html=acquisition_result.html,
-            records=records,
-            resolve_run_config_fn=resolve_run_config,
-            extract_records_fn=extract_records_directly_with_llm,
-        )
-        if "detail" not in context.surface and records:
-            records = await apply_llm_fallback(
-                context.session,
-                run=context.run,
-                page_url=acquisition_result.final_url,
-                html=acquisition_result.html,
-                records=records,
-            )
-        set_logfire_attributes(span, output_record_count=len(records))
-    _annotate_field_repair(
-        records,
-        surface=context.surface,
-        requested_fields=list(context.requested_fields),
-        llm_enabled=True,
-        action="checked",
-        reason=None,
-    )
-    return records, selector_rules
+    return extracted
 
 
 # skipcq: PY-R1000
@@ -829,7 +584,11 @@ async def _run_persistence_stage(
     extracted: _ExtractedURLStage,
 ) -> URLProcessingResult:
     acquisition_result = extracted.fetched.acquisition_result
-    extracted_records = list(extracted.records or [])
+    extraction_result = extracted.result
+    extracted_records = [
+        record.model_dump(mode="json", exclude_none=True)
+        for record in extraction_result.records
+    ]
     with logfire_span(
         "pipeline.persist",
         run_id=context.run.id,
@@ -860,26 +619,7 @@ async def _run_persistence_stage(
             persisted_count=persisted_count,
             artifact_path=str(raw_html_path or ""),
         )
-    verdict = compute_verdict(
-        is_listing="listing" in context.surface,
-        blocked=_effective_blocked(acquisition_result),
-        record_count=persisted_count,
-        records=extracted_records,
-    )
-    status_code = int(getattr(acquisition_result, "status_code", 0) or 0)
-    if persisted_count == 0 and is_non_retryable_http_status(status_code):
-        url_metrics = mapping_or_empty(extracted.fetched.url_metrics)
-        url_metrics["failure_reason"] = NON_RETRYABLE_HTTP_STATUS_REASON
-        extracted.fetched.url_metrics = url_metrics
-        verdict = VERDICT_ERROR
-    if verdict in {VERDICT_SUCCESS, VERDICT_PARTIAL} and not _success_has_replay_lineage(
-        acquisition_result,
-        extracted_records,
-    ):
-        url_metrics = mapping_or_empty(extracted.fetched.url_metrics)
-        url_metrics["failure_reason"] = "missing_replay_lineage"
-        extracted.fetched.url_metrics = url_metrics
-        verdict = VERDICT_ERROR
+    verdict = extraction_result.verdict
     if not _suppress_empty_downstream_record_logs(
         acquisition_result,
         extracted_records,
@@ -899,9 +639,8 @@ async def _run_persistence_stage(
     await persist_extraction_decision_artifact(
         run_id=context.run.id,
         source_url=acquisition_result.final_url,
-        verdict=verdict,
         persisted_count=persisted_count,
-        records=extracted_records,
+        result=extraction_result,
         acquisition_result=acquisition_result,
     )
     trace = context.trace
@@ -927,13 +666,8 @@ async def _run_persistence_stage(
         persisted_count=persisted_count,
         verdict=verdict,
     )
-    result_records = []
-    for record in extracted_records:
-        next_record = dict(record)
-        next_record.pop("_field_repair", None)
-        result_records.append(next_record)
     return URLProcessingResult(
-        records=result_records,
+        records=extracted_records,
         verdict=verdict,
         url_metrics=finalize_url_metrics(
             mapping_or_empty(extracted.fetched.url_metrics),
@@ -942,35 +676,7 @@ async def _run_persistence_stage(
     )
 
 
-def _success_has_replay_lineage(
-    acquisition_result,
-    records: list[dict[str, object]],
-) -> bool:
-    artifacts = mapping_or_empty(getattr(acquisition_result, "artifacts", {}))
-    replay = mapping_or_empty(artifacts.get("extraction_replay"))
-    evidence = replay.get("evidence")
-    decisions = replay.get("decisions")
-    if not isinstance(evidence, list) or not evidence:
-        return False
-    if not isinstance(decisions, list) or not decisions:
-        return False
-    return all(_record_public_values_have_lineage(record) for record in records)
-
-
-def _record_public_values_have_lineage(record: dict[str, object]) -> bool:
-    lineage = mapping_or_empty(record.get("_lineage"))
-    public_keys = [
-        str(key)
-        for key, value in record.items()
-        if not str(key).startswith("_") and value not in (None, "", [], {})
-    ]
-    if not public_keys:
-        return False
-    return all(key in lineage and lineage.get(key) not in (None, "", [], {}) for key in public_keys)
-
-
 URLProcessingContext = _URLProcessingContext
-empty_extraction_browser_retry_decision = _empty_extraction_browser_retry_decision
 resolved_url_processing_config = _resolved_url_processing_config
 
 

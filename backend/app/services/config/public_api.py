@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from app.services.extraction.surfaces import Surface
-
 PUBLIC_API_KEY_PREFIX = "cai_"
 PUBLIC_API_KEY_BYTES = 32
 PUBLIC_API_KEY_PREFIX_DISPLAY_LENGTH = 12
@@ -9,9 +7,9 @@ PUBLIC_API_KEY_PREFIX_DISPLAY_LENGTH = 12
 PUBLIC_API_STATUS_OK = "ok"
 PUBLIC_API_STATUS_ERROR = "error"
 
-PUBLIC_API_SURFACE_ECOMMERCE = Surface.ECOMMERCE_DETAIL.value
+PUBLIC_API_SURFACE_ECOMMERCE = "ecommerce"
 PUBLIC_API_INTERNAL_ECOMMERCE_SURFACE = "ecommerce_detail"
-PUBLIC_API_SUPPORTED_SURFACES = frozenset(surface.value for surface in Surface)
+PUBLIC_API_SUPPORTED_SURFACES = frozenset({PUBLIC_API_SURFACE_ECOMMERCE})
 
 PUBLIC_API_DEFAULT_ECOMMERCE_FIELDS = (
     "title",

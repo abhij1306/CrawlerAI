@@ -241,9 +241,6 @@ def _score_candidate(url: str, anchor: Tag, label: str | None) -> tuple[int, str
     if has_category_anchor_signal(url, anchor):
         score += 130
         reasons.append("category_anchor")
-    if resolution.surface.endswith("_listing"):
-        score += 100 + int(resolution.confidence * 100)
-        reasons.append("surface_listing")
     if anchor.find_parent(("nav", "header", "menu")) is not None:
         score += 25
         reasons.append("nav")

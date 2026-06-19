@@ -7,7 +7,6 @@ from app.services.extraction.contracts import (
     ArtifactRef,
     CaptureBundle,
     ExtractionRequest,
-    ReplayArtifact,
     RequestContext,
 )
 from app.services.extraction.documents import DocumentStore
@@ -26,8 +25,11 @@ class MemoryArtifactReader:
     def read_json(self, artifact: ArtifactRef) -> Any:
         return self._payloads.get(artifact.artifact_id)
 
+    def exists(self, artifact_id: str) -> bool:
+        return artifact_id in self._payloads
 
-def bundle_from_inputs(html: str, page_url: str, requested_url: str | None, network_payloads: list[dict[str, object]] | None = None, artifacts: dict[str, object] | None = None) -> tuple[CaptureBundle, MemoryArtifactReader]:
+
+def fixture_bundle_from_inputs(html: str, page_url: str, requested_url: str | None, network_payloads: list[dict[str, object]] | None = None, artifacts: dict[str, object] | None = None) -> tuple[CaptureBundle, MemoryArtifactReader]:
     payloads: dict[str, Any] = {"html": html}
     refs = [ArtifactRef(artifact_id="html", artifact_type="rendered_html", content_sha256=content_sha256(html), storage_uri="memory://html", media_type="text/html")]
     js_state = (artifacts or {}).get("js_state_objects")
@@ -61,7 +63,7 @@ def bundle_from_inputs(html: str, page_url: str, requested_url: str | None, netw
     return bundle, MemoryArtifactReader(payloads)
 
 
-def request_from_inputs(
+def fixture_request_from_inputs(
     surface: Surface,
     html: str,
     page_url: str,
@@ -72,7 +74,7 @@ def request_from_inputs(
     network_payloads: list[dict[str, object]] | None = None,
     artifacts: dict[str, object] | None = None,
 ) -> ExtractionRequest:
-    bundle, reader = bundle_from_inputs(
+    bundle, reader = fixture_bundle_from_inputs(
         html,
         page_url,
         requested_url,
@@ -82,11 +84,92 @@ def request_from_inputs(
     return ExtractionRequest(
         surface=surface,
         capture=bundle,
-        artifact_payloads=dict(reader._payloads),
+        artifact_reader=reader,
         requested_fields=requested_fields,
         max_records=max_records,
     )
 
 
-def to_jsonable(artifact: ReplayArtifact) -> dict[str, Any]:
-    return artifact.model_dump(mode="json")
+def request_from_acquisition_result(
+    surface: Surface,
+    acquisition_result: Any,
+    *,
+    requested_url: str,
+    max_records: int,
+    requested_fields: tuple[str, ...] = (),
+    selector_rules: list[dict[str, object]] | None = None,
+) -> ExtractionRequest:
+    html = str(getattr(acquisition_result, "html", "") or "")
+    final_url = str(getattr(acquisition_result, "final_url", "") or requested_url)
+    run_id = int(getattr(getattr(acquisition_result, "request", None), "run_id", 0) or 0)
+    network_payloads = list(getattr(acquisition_result, "network_payloads", []) or [])
+    artifacts = dict(getattr(acquisition_result, "artifacts", {}) or {})
+    if selector_rules:
+        artifacts["css_field_rules"] = list(selector_rules)
+    bundle, reader = _bundle_from_runtime_inputs(
+        html,
+        final_url,
+        requested_url,
+        run_id=run_id,
+        status_code=getattr(acquisition_result, "status_code", None),
+        method=str(getattr(acquisition_result, "method", "") or ""),
+        blocked=bool(getattr(acquisition_result, "blocked", False)),
+        network_payloads=network_payloads,
+        artifacts=artifacts,
+    )
+    return ExtractionRequest(
+        surface=surface,
+        capture=bundle,
+        artifact_reader=reader,
+        requested_fields=requested_fields,
+        max_records=max_records,
+    )
+
+
+def _bundle_from_runtime_inputs(
+    html: str,
+    page_url: str,
+    requested_url: str,
+    *,
+    run_id: int,
+    status_code: object,
+    method: str,
+    blocked: bool,
+    network_payloads: list[dict[str, object]] | None = None,
+    artifacts: dict[str, object] | None = None,
+) -> tuple[CaptureBundle, MemoryArtifactReader]:
+    bundle, reader = fixture_bundle_from_inputs(
+        html,
+        page_url,
+        requested_url,
+        network_payloads=network_payloads,
+        artifacts=artifacts,
+    )
+    refs = tuple(
+        ref.model_copy(
+            update={
+                "storage_uri": ref.storage_uri.replace("memory://", "acquisition://", 1)
+            }
+        )
+        for ref in bundle.artifacts
+    )
+    outcome = "blocked" if blocked else "error" if _is_error_status(status_code) else "ok"
+    return (
+        bundle.model_copy(
+            update={
+                "bundle_id": stable_id("bundle", run_id, requested_url, page_url),
+                "run_id": run_id,
+                "http_status": int(status_code) if isinstance(status_code, int) else None,
+                "acquisition_method": method or None,
+                "artifacts": refs,
+                "acquisition_outcome": outcome,
+                "browser_attempted": method == "browser",
+                "blocked": blocked,
+            }
+        ),
+        reader,
+    )
+
+
+def _is_error_status(status_code: object) -> bool:
+    return isinstance(status_code, int) and status_code >= 500

@@ -3,10 +3,15 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
+from app.services.acquisition.acquirer import AcquisitionRequest, AcquisitionResult
+from app.services.acquisition_plan import AcquisitionPlan
 from app.services.extraction import Surface, extract
+from app.services.extraction.contracts import CommerceDetailRecord, ExtractionRequest
 from app.services.extraction.contracts import Evidence
-from app.services.extraction.replay import request_from_inputs
-from app.services.pipeline.extract_records import extract_records
+from app.services.extraction.replay import (
+    fixture_request_from_inputs,
+    request_from_acquisition_result,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -49,7 +54,7 @@ def _extract(
     artifacts: dict[str, object] | None = None,
 ):
     return extract(
-        request_from_inputs(
+        fixture_request_from_inputs(
             Surface(surface),
             html,
             page_url,
@@ -70,10 +75,44 @@ def test_materializes_once_with_lineage_and_quality() -> None:
     assert record["title"] == "Trail Shoe"
     assert record["price"] == "129.00"
     assert record["currency"] == "USD"
-    assert record["_quality_verdict"] == "success"
+    assert result.verdict == "success"
     assert record["_lineage"]["price"]["derived_fact_id"]
     assert result.evidence
     assert result.decisions
+
+
+def test_extraction_request_has_no_artifact_payloads_field() -> None:
+    assert "artifact_payloads" not in ExtractionRequest.model_fields
+
+
+def test_runtime_capture_bundle_uses_acquisition_metadata() -> None:
+    acquisition = AcquisitionResult(
+        request=AcquisitionRequest(
+            run_id=42,
+            url="https://shop.test/products/trail-shoe",
+            plan=AcquisitionPlan(surface="ecommerce_detail"),
+        ),
+        final_url="https://shop.test/products/trail-shoe",
+        html=HTML,
+        method="browser",
+        status_code=200,
+        artifacts={},
+    )
+    request = request_from_acquisition_result(
+        Surface.ECOMMERCE_DETAIL,
+        acquisition,
+        requested_url="https://shop.test/products/trail-shoe",
+        max_records=1,
+    )
+    assert request.capture.run_id == 42
+    assert request.capture.http_status == 200
+    assert request.capture.acquisition_method == "browser"
+    assert request.capture.browser_attempted is True
+    assert request.capture.acquisition_outcome == "ok"
+    assert all(
+        not artifact.storage_uri.startswith("memory://")
+        for artifact in request.capture.artifacts
+    )
 
 
 def test_evidence_is_immutable() -> None:
@@ -101,17 +140,16 @@ def test_order_and_duplicate_independence() -> None:
     assert first == second
 
 
-def test_ecommerce_detail_cutover_uses_replay_artifact() -> None:
-    artifacts: dict[str, object] = {}
-    rows = extract_records(
+def test_ecommerce_detail_result_is_replayable() -> None:
+    result = _extract(
+        "ecommerce_detail",
         HTML,
         "https://shop.test/products/trail-shoe",
-        "ecommerce_detail",
-        max_records=1,
-        artifacts=artifacts,
     )
-    assert rows and rows[0]["title"] == "Trail Shoe"
-    assert "extraction_replay" in artifacts
+    payload = result.model_dump(mode="json", exclude_none=True)
+    assert payload["records"][0]["title"] == "Trail Shoe"
+    assert payload["evidence"]
+    assert payload["decisions"]
 
 
 def test_ecommerce_listing_cutover_materializes_with_lineage() -> None:
@@ -143,9 +181,9 @@ def test_ecommerce_listing_cutover_materializes_with_lineage() -> None:
     assert all(item.surface.value == "ecommerce_listing" for item in result.evidence)
 
 
-def test_ecommerce_listing_extract_records_writes_replay() -> None:
-    artifacts: dict[str, object] = {}
-    rows = extract_records(
+def test_ecommerce_listing_result_is_replayable() -> None:
+    result = _extract(
+        "ecommerce_listing",
         """
         <section>
           <div class="product-tile">
@@ -155,10 +193,9 @@ def test_ecommerce_listing_extract_records_writes_replay() -> None:
         </section>
         """,
         "https://shop.test/collections/all",
-        "ecommerce_listing",
         max_records=3,
-        artifacts=artifacts,
     )
+    rows = result.model_dump(mode="json", exclude_none=True)["records"]
     assert rows == [
         {
             "title": "Trail Shoe",
@@ -168,11 +205,10 @@ def test_ecommerce_listing_extract_records_writes_replay() -> None:
             "_subject_id": rows[0]["_subject_id"],
         }
     ]
-    replay = artifacts.get("extraction_replay")
-    assert isinstance(replay, dict)
-    assert replay["surface"] == "ecommerce_listing"
-    assert replay["evidence"]
-    assert replay["decisions"]
+    payload = result.model_dump(mode="json", exclude_none=True)
+    assert payload["surface"] == "ecommerce_listing"
+    assert payload["evidence"]
+    assert payload["decisions"]
 
 
 def test_js_state_dict_values_do_not_crash_dedupe() -> None:
@@ -245,6 +281,48 @@ def test_product_group_variants_have_lineage_and_parent_subjects() -> None:
     assert variant_evidence
     assert all(item.subject_id for item in variant_evidence)
     assert all(item.parent_subject_id for item in variant_evidence)
+
+
+def test_typed_commerce_detail_record_round_trip_preserves_variants() -> None:
+    result = _extract("ecommerce_detail", HTML, "https://shop.test/products/trail-shoe")
+    typed = CommerceDetailRecord.model_validate(result.records[0])
+    dumped = typed.model_dump(mode="json", exclude_none=True)
+    assert dumped["variants"] == result.records[0]["variants"]
+    assert dumped["_lineage"]["variants"]
+
+
+def test_related_product_root_cannot_overwrite_selected_detail_entity() -> None:
+    html = """
+    <script type="application/ld+json">
+    [
+      {
+        "@context": "https://schema.org",
+        "@type": "Product",
+        "name": "Selected Trail Shoe",
+        "url": "https://shop.test/products/selected-trail-shoe",
+        "sku": "SEL-1",
+        "offers": {"@type": "Offer", "price": "120", "priceCurrency": "USD"}
+      },
+      {
+        "@context": "https://schema.org",
+        "@type": "Product",
+        "name": "Related Day Pack",
+        "url": "https://shop.test/products/day-pack",
+        "sku": "REL-1",
+        "offers": {"@type": "Offer", "price": "999", "priceCurrency": "USD"}
+      }
+    ]
+    </script>
+    """
+    result = _extract(
+        "ecommerce_detail",
+        html,
+        "https://shop.test/products/selected-trail-shoe",
+    )
+    assert result.target.status == "resolved"
+    assert result.records[0]["title"] == "Selected Trail Shoe"
+    assert result.records[0]["price"] == "120.00"
+    assert result.records[0]["url"] == "https://shop.test/products/selected-trail-shoe"
 
 
 def test_dom_variant_controls_do_not_succeed_with_missing_variants() -> None:
@@ -348,9 +426,26 @@ def test_job_detail_cutover_materializes_with_lineage() -> None:
     assert all(item.surface.value == "job_detail" for item in result.evidence)
 
 
-def test_job_detail_extract_records_writes_replay() -> None:
-    artifacts: dict[str, object] = {}
-    rows = extract_records(
+def test_job_detail_wrong_surface_product_returns_error_without_commerce_aliases() -> None:
+    html = """
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "Product",
+      "name": "Trail Shoe",
+      "offers": {"@type": "Offer", "price": "129", "priceCurrency": "USD"}
+    }
+    </script>
+    """
+    result = _extract("job_detail", html, "https://jobs.test/not-a-job")
+    assert result.verdict == "error"
+    assert not result.records
+    assert {finding.rule_id for finding in result.findings} == {"WRONG_SURFACE_CONTENT"}
+
+
+def test_job_detail_result_is_replayable() -> None:
+    result = _extract(
+        "job_detail",
         """
         <main>
           <h1>Staff Backend Engineer</h1>
@@ -360,18 +455,16 @@ def test_job_detail_extract_records_writes_replay() -> None:
         </main>
         """,
         "https://jobs.test/staff-backend-engineer",
-        "job_detail",
         max_records=1,
-        artifacts=artifacts,
     )
+    rows = result.model_dump(mode="json", exclude_none=True)["records"]
     assert rows and rows[0]["title"] == "Staff Backend Engineer"
     assert rows[0]["apply_url"] == "https://jobs.test/apply/staff-backend-engineer"
     assert rows[0]["_lineage"]["title"]
-    replay = artifacts.get("extraction_replay")
-    assert isinstance(replay, dict)
-    assert replay["surface"] == "job_detail"
-    assert replay["evidence"]
-    assert replay["decisions"]
+    payload = result.model_dump(mode="json", exclude_none=True)
+    assert payload["surface"] == "job_detail"
+    assert payload["evidence"]
+    assert payload["decisions"]
 
 
 def test_job_listing_cutover_materializes_with_lineage() -> None:
@@ -400,9 +493,9 @@ def test_job_listing_cutover_materializes_with_lineage() -> None:
     assert all(item.surface.value == "job_listing" for item in result.evidence)
 
 
-def test_job_listing_extract_records_writes_replay() -> None:
-    artifacts: dict[str, object] = {}
-    rows = extract_records(
+def test_job_listing_result_is_replayable() -> None:
+    result = _extract(
+        "job_listing",
         """
         <article class="job-card">
           <a href="/jobs/backend" title="Backend Engineer">Backend Engineer</a>
@@ -410,15 +503,13 @@ def test_job_listing_extract_records_writes_replay() -> None:
         </article>
         """,
         "https://jobs.test/careers",
-        "job_listing",
         max_records=3,
-        artifacts=artifacts,
     )
+    rows = result.model_dump(mode="json", exclude_none=True)["records"]
     assert rows and rows[0]["title"] == "Backend Engineer"
     assert rows[0]["url"] == "https://jobs.test/jobs/backend"
     assert rows[0]["_lineage"]["title"]
-    replay = artifacts.get("extraction_replay")
-    assert isinstance(replay, dict)
-    assert replay["surface"] == "job_listing"
-    assert replay["evidence"]
-    assert replay["decisions"]
+    payload = result.model_dump(mode="json", exclude_none=True)
+    assert payload["surface"] == "job_listing"
+    assert payload["evidence"]
+    assert payload["decisions"]

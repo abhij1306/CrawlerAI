@@ -1,6 +1,13 @@
 from __future__ import annotations
 
-from app.services.extraction.contracts import Decision, DerivedFact, Evidence, ResolutionResult
+from app.services.extraction.contracts import (
+    CommerceDetailRecord,
+    CommerceVariantRecord,
+    Decision,
+    DerivedFact,
+    Evidence,
+    ResolutionResult,
+)
 from app.services.extraction.entities import EntitySet
 
 PUBLIC_MAP = {
@@ -41,20 +48,34 @@ def materialize(entities: EntitySet, resolution: ResolutionResult, evidence: tup
     derived = {(item.entity_id, item.fact_type): item for item in resolution.derived_facts}
     record: dict[str, object] = {}
     lineages: dict[str, object] = {}
+    selector_traces: dict[str, object] = {}
     for decision in resolution.decisions:
         field = PUBLIC_MAP.get(decision.fact_type)
         if not field or decision.status != "resolved" or not decision.accepted_evidence_ids:
             continue
         value = derived.get((decision.entity_id, decision.fact_type))
-        record[field] = value.value if value is not None else by_id[decision.accepted_evidence_ids[0]].value
+        accepted = by_id[decision.accepted_evidence_ids[0]]
+        record[field] = value.value if value is not None else accepted.value
         lineages[field] = lineage(derived=value) if value else lineage(decision=decision)
+        if (
+            accepted.locator.kind == "css_selector"
+            and not accepted.metadata.get("derived_by")
+        ):
+            selector_traces[field] = {
+                "selector_kind": "css_selector",
+                "selector_value": accepted.locator.value,
+                "selector_source": accepted.collector_id,
+                "sample_value": accepted.value,
+            }
     variants, variant_lineage = _variants(entities, resolution, by_id)
     if variants:
         record["variants"] = variants
         lineages["variants"] = variant_lineage
     if lineages:
         record["_lineage"] = lineages
-    return {key: value for key, value in record.items() if value not in (None, "", [], {})}
+    if selector_traces:
+        record["_selector_traces"] = selector_traces
+    return _typed_detail_record(record)
 
 
 def _variants(
@@ -84,3 +105,15 @@ def _variants(
             rows.append(row)
             lineage_rows.append(lineage_row)
     return rows, lineage_rows
+
+
+def _typed_detail_record(record: dict[str, object]) -> CommerceDetailRecord:
+    cleaned = {key: value for key, value in record.items() if value not in (None, "", [], {})}
+    variants = cleaned.get("variants")
+    if isinstance(variants, list):
+        cleaned["variants"] = tuple(
+            CommerceVariantRecord.model_validate(row).model_dump(exclude_none=True)
+            for row in variants
+            if isinstance(row, dict)
+        )
+    return CommerceDetailRecord.model_validate(cleaned)

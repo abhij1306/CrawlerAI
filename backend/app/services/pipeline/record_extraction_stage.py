@@ -18,7 +18,10 @@ from app.services.domain_memory_service import (
 )
 from app.services.domain_utils import normalize_domain
 from app.services.field_policy import repair_target_fields_for_surface
-from app.services.pipeline.extract_records import extract_records
+from app.services.extraction.contracts import ExtractionResult
+from app.services.pipeline.extract_records import (
+    extract_records_for_acquisition_result,
+)
 from app.services.pipeline.runtime_helpers import (
     browser_result_is_extractable as _browser_result_is_extractable,
     effective_blocked as _effective_blocked,
@@ -43,10 +46,8 @@ __all__ = (
 async def _extract_records_for_acquisition(
     context: _URLProcessingContext,
     fetched: _FetchedURLStage,
-) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
+) -> tuple[ExtractionResult, list[dict[str, object]]]:
     acquisition_result = fetched.acquisition_result
-    if not _browser_result_is_extractable(acquisition_result):
-        return [], []
     await _populate_adapter_artifacts(context, acquisition_result)
     _assign_platform_family(acquisition_result)
 
@@ -55,24 +56,24 @@ async def _extract_records_for_acquisition(
         requested_fields=list(context.requested_fields),
     )
     selector_rules = await _load_selector_rules(context, acquisition_result.final_url)
-    records = await _run_record_extraction(
+    result = await _run_record_extraction(
         context,
         acquisition_result=acquisition_result,
         selector_rules=selector_rules,
     )
     if (
-        not records
+        not result.records
         and "listing" in context.surface
         and getattr(acquisition_result, "method", "") == "browser"
     ):
-        fallback_records = await _extract_records_from_preserved_browser_html(
+        fallback_result = await _extract_records_from_preserved_browser_html(
             context,
             fetched,
             selector_rules=selector_rules,
         )
-        if fallback_records:
-            records = fallback_records
-    return records, selector_rules
+        if fallback_result is not None and fallback_result.records:
+            result = fallback_result
+    return result, selector_rules
 
 
 async def _populate_adapter_artifacts(
@@ -281,10 +282,14 @@ async def _run_record_extraction(
     *,
     acquisition_result: AcquisitionResult,
     selector_rules: list[dict[str, object]],
-) -> list[dict[str, object]]:
+) -> ExtractionResult:
     from app.services.pipeline import extraction_loop
 
-    extract_records_impl = getattr(extraction_loop, "extract_records", extract_records)
+    extract_records_impl = getattr(
+        extraction_loop,
+        "extract_records_for_acquisition_result",
+        extract_records_for_acquisition_result,
+    )
     with logfire_span(
         "extract.record_thread",
         run_id=context.run.id,
@@ -296,28 +301,21 @@ async def _run_record_extraction(
         network_payload_count=len(acquisition_result.network_payloads or []),
         selector_rule_count=len(selector_rules or []),
     ) as span:
-        records = _record_list(
-            await asyncio.to_thread(
-                extract_records_impl,
-                acquisition_result.html,
-                acquisition_result.final_url,
-                context.surface,
-                max_records=context.config.max_records,
-                requested_page_url=context.url,
-                requested_fields=list(context.requested_fields),
-                network_payloads=acquisition_result.network_payloads,
-                artifacts=acquisition_result.artifacts,
-                selector_rules=selector_rules,
-                extraction_runtime_snapshot=context.run.settings_view.extraction_runtime_snapshot(),
-                content_type=acquisition_result.content_type,
-                browser_diagnostics=getattr(
-                    acquisition_result, "browser_diagnostics", None
-                ),
-                record_dom_observed_selectors=True,
-            )
+        result = await asyncio.to_thread(
+            extract_records_impl,
+            acquisition_result,
+            context.surface,
+            max_records=context.config.max_records,
+            requested_page_url=context.url,
+            requested_fields=list(context.requested_fields),
+            selector_rules=selector_rules,
         )
-        set_logfire_attributes(span, record_count=len(records))
-        return records
+        set_logfire_attributes(
+            span,
+            record_count=len(result.records),
+            verdict=result.verdict,
+        )
+        return result
 
 
 async def _extract_records_from_preserved_browser_html(
@@ -325,38 +323,39 @@ async def _extract_records_from_preserved_browser_html(
     fetched: _FetchedURLStage,
     *,
     selector_rules: list[dict[str, object]],
-) -> list[dict[str, object]]:
+) -> ExtractionResult | None:
     acquisition_result = fetched.acquisition_result
     browser_diagnostics = mapping_or_empty(
         getattr(acquisition_result, "browser_diagnostics", {})
     )
     if not bool(browser_diagnostics.get("traversal_activated")):
-        return []
+        return None
     artifacts = mapping_or_empty(getattr(acquisition_result, "artifacts", {}))
     rendered_html = str(artifacts.get("full_rendered_html") or "").strip()
     if not rendered_html or rendered_html == str(acquisition_result.html or "").strip():
-        return []
+        return None
     from app.services.pipeline import extraction_loop as _extraction_loop
 
-    extract_impl = getattr(_extraction_loop, "extract_records", extract_records)
-    fallback_records = _record_list(
-        await asyncio.to_thread(
+    extract_impl = getattr(
+        _extraction_loop,
+        "extract_records_for_acquisition_result",
+        extract_records_for_acquisition_result,
+    )
+    original_html = acquisition_result.html
+    acquisition_result.html = rendered_html
+    try:
+        fallback_result = await asyncio.to_thread(
             extract_impl,
-            rendered_html,
-            acquisition_result.final_url,
+            acquisition_result,
             context.surface,
             max_records=context.config.max_records,
             requested_page_url=context.url,
             requested_fields=list(context.requested_fields),
-            network_payloads=acquisition_result.network_payloads,
-            artifacts=acquisition_result.artifacts,
             selector_rules=selector_rules,
-            extraction_runtime_snapshot=context.run.settings_view.extraction_runtime_snapshot(),
-            content_type=acquisition_result.content_type,
-            record_dom_observed_selectors=True,
         )
-    )
-    if not fallback_records:
+    finally:
+        acquisition_result.html = original_html
+    if not fallback_result.records:
         await _log_pipeline_event(
             context,
             "warning",
@@ -374,28 +373,28 @@ async def _extract_records_from_preserved_browser_html(
             acquisition_result,
             requested_fields=list(context.requested_fields),
         )
-        return []
+        return None
     artifacts["traversal_composed_html"] = str(acquisition_result.html or "")
     acquisition_result.artifacts = artifacts
     acquisition_result.html = rendered_html
     await _log_pipeline_event(
         context,
         "info",
-        f"Traversal yielded 0 extractable records; recovered {len(fallback_records)} record(s) from full rendered HTML",
+        f"Traversal yielded 0 extractable records; recovered {len(fallback_result.records)} record(s) from full rendered HTML",
     )
     _merge_browser_diagnostics(
         acquisition_result,
         {
             "traversal_fallback_used": True,
             "traversal_fallback_recovered": True,
-            "traversal_fallback_record_count": len(fallback_records),
+            "traversal_fallback_record_count": len(fallback_result.records),
         },
     )
     fetched.url_metrics = build_url_metrics(
         acquisition_result,
         requested_fields=list(context.requested_fields),
     )
-    return fallback_records
+    return fallback_result
 
 
 async def _load_selector_rules(

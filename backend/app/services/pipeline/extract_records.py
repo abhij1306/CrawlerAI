@@ -4,50 +4,27 @@ from app.services.extraction import (
     extract,
     parse_surface,
 )
-from app.services.extraction.replay import request_from_inputs
+from app.services.extraction.contracts import ExtractionResult
+
+from app.services.extraction.replay import request_from_acquisition_result
 
 
-def extract_records(
-    html: str,
-    page_url: str,
+def extract_records_for_acquisition_result(
+    acquisition_result,
     surface: str,
     *,
     max_records: int,
-    requested_page_url: str | None = None,
+    requested_page_url: str,
     requested_fields: list[str] | None = None,
-    network_payloads: list[dict[str, object]] | None = None,
-    artifacts: dict[str, object] | None = None,
     selector_rules: list[dict[str, object]] | None = None,
-    extraction_runtime_snapshot: dict[str, object] | None = None,
-    content_type: str | None = None,
-    browser_diagnostics: dict[str, object] | None = None,
-    record_dom_observed_selectors: bool = False,
-) -> list[dict]:
-    del (
-        extraction_runtime_snapshot,
-        content_type,
-        browser_diagnostics,
-        record_dom_observed_selectors,
-    )
+) -> ExtractionResult:
     normalized_surface = parse_surface(surface)
-    request = request_from_inputs(
+    request = request_from_acquisition_result(
         normalized_surface,
-        html,
-        page_url,
+        acquisition_result,
         requested_url=requested_page_url,
         max_records=max_records,
         requested_fields=tuple(str(field) for field in requested_fields or ()),
-        network_payloads=network_payloads,
-        artifacts={
-            **dict(artifacts or {}),
-            "css_field_rules": list(selector_rules or []),
-        },
+        selector_rules=selector_rules,
     )
-    result = extract(request)
-    if artifacts is not None:
-        artifacts["extraction_replay"] = (
-            result.replay
-            if isinstance(result.replay, dict)
-            else result.model_dump(mode="json")
-        )
-    return list(result.records)
+    return extract(request)

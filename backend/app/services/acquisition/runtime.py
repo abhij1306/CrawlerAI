@@ -640,6 +640,9 @@ def _has_extractable_detail_signals(
     if _has_extractable_dom_meaningful_detail_signals(parsed):
         return True
     lowered_html = parsed.lowered_html
+    lowered_text = parsed.normalized_text.lower()
+    if "load in the app" in lowered_text or "loads in the app" in lowered_text:
+        return False
     if any(token in lowered_html for token in DETAIL_SHELL_STATE_TOKENS):
         return True
     return any(

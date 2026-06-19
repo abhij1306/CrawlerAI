@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from app.services.extraction import Surface, extract
-from app.services.extraction.replay import request_from_inputs
+from app.services.extraction.replay import fixture_request_from_inputs
 
 pytestmark = pytest.mark.component
 
@@ -152,7 +152,7 @@ ACCEPTANCE_SITES = (
 @pytest.mark.parametrize("site", ACCEPTANCE_SITES, ids=[site["name"] for site in ACCEPTANCE_SITES])
 def test_acceptance_replay_site_output_and_traceability(site: dict[str, object]) -> None:
     result = extract(
-        request_from_inputs(
+        fixture_request_from_inputs(
             site["surface"],
             str(site["html"]),
             str(site["url"]),
@@ -173,9 +173,9 @@ def test_acceptance_replay_site_output_and_traceability(site: dict[str, object])
     assert result.verdict in {"success", "partial"}
     assert result.evidence, site["name"]
     assert result.decisions, site["name"]
-    assert isinstance(result.replay, dict)
-    assert result.replay.get("evidence")
-    assert result.replay.get("decisions")
+    payload = result.model_dump(mode="json", exclude_none=True)
+    assert payload["evidence"]
+    assert payload["decisions"]
     assert all(evidence.subject_id for evidence in result.evidence)
     assert all(evidence.surface == site["surface"] for evidence in result.evidence)
 
@@ -193,7 +193,9 @@ def test_acceptance_replay_site_output_and_traceability(site: dict[str, object])
 
     min_variants = int(expected.get("min_variants") or 0)
     if min_variants:
-        variants = result.records[0].get("variants")
+        variants = result.records[0].model_dump(
+            mode="json", exclude_none=True
+        ).get("variants")
         assert isinstance(variants, list)
         assert len(variants) >= min_variants
         variant_evidence = [

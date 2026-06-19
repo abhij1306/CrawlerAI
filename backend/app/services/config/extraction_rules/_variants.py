@@ -7,6 +7,15 @@ from ._detail import *
 from ._detail_sections import *
 
 VARIANT_SIZE_ALIAS_SUFFIXES = (" us",)
+VARIANT_URL_AXIS_PARAMS = {
+    "color": "color",
+    "colour": "color",
+    "colordisplaycode": "color",
+    "size": "size",
+    "sizedisplaycode": "size",
+    "width": "width",
+    "style": "style",
+}
 # When a second variant axis from one source carries (almost) the same value
 # set as an existing axis from another source, the two "axes" are really one
 # axis mislabeled (e.g. shoe sizes captured once as `size` and once as `color`).
@@ -141,6 +150,17 @@ VARIANT_PLACEHOLDER_VALUES = frozenset(
     }
 )
 VARIANT_PLACEHOLDER_PREFIXES = ("please select", "open ", "select ")
+VARIANT_DOM_MAX_LABEL_LENGTH = 80
+VARIANT_DOM_SIZE_LABEL_PATTERN = (
+    r"^size\s+(?P<value>[a-z0-9][a-z0-9 .+/-]{0,12})\s*:"
+)
+VARIANT_DOM_NOISE_PHRASES = (
+    "expand color swatches",
+    "view larger image",
+    "size selector",
+    "select size for availability",
+    "select size & store for availability",
+)
 VARIANT_SIZE_QUANTITY_CONTROL_VALUES = frozenset({"-", "+", "qty", "qty."})
 SIZE_REJECT_TOKENS = frozenset(
     {

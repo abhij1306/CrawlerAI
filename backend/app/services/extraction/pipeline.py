@@ -7,37 +7,89 @@ from typing import Any
 from urllib.parse import urljoin
 
 from app.services.extraction.collectors._helpers import evidence as make_evidence
-from app.services.extraction.collectors import default_collectors
-from app.services.extraction.contracts import EntityHint, Evidence, FACT_TYPES, ReplayArtifact, SourceLocator
-from app.services.extraction.entities import build_entities
+from app.services.extraction.collectors.dom import DomCollector, collect_requested_fields
+from app.services.extraction.collectors.jsonld import JsonLdCollector
+from app.services.extraction.collectors.js_state import JsStateCollector
+from app.services.extraction.collectors.metadata import MicrodataCollector, NetworkCollector, OpenGraphCollector
+from app.services.extraction.collectors.url import UrlCollector
+from app.services.config.field_mappings import ECOMMERCE_DETAIL_FIELD_FACT_TYPES
+from app.services.config.extraction_rules import CURRENCY_SYMBOL_MAP
+from app.services.extraction.contracts import ArtifactReader, CaptureBundle, EntityHint, Evidence, FACT_TYPES, SourceLocator
 from app.services.extraction.ids import stable_id
 from app.services.extraction.materialization import materialize
-from app.services.extraction.quality import quality_verdict
-from app.services.extraction.replay import bundle_from_inputs
-from app.services.extraction.resolution import resolve
-from app.services.extraction.validation import validate
 from app.services.field_policy import normalize_field_key
 
 
-def extract_ecommerce_detail(html: str, page_url: str, *, requested_page_url: str | None = None, network_payloads: list[dict[str, object]] | None = None, artifacts: dict[str, object] | None = None) -> tuple[dict[str, object] | None, ReplayArtifact]:
-    bundle, reader = bundle_from_inputs(html, page_url, requested_page_url, network_payloads, artifacts)
-    evidence = tuple(
+def collect_ecommerce_detail(
+    bundle: CaptureBundle,
+    reader: ArtifactReader,
+    *,
+    requested_fields: tuple[str, ...] = (),
+) -> tuple[Evidence, ...]:
+    return tuple(
         ev
         for collector in default_collectors()
         for ev in collector.collect(bundle, reader)
         if ev.fact_type in FACT_TYPES
-    ) + tuple(_css_recipe_evidence(bundle, reader))
-    normalized = _dedupe_equivalent(
-        tuple(normalize_evidence(ev, page_url=page_url) for ev in evidence)
+    ) + tuple(_css_recipe_evidence(bundle, reader)) + collect_requested_fields(
+        bundle,
+        reader,
+        requested_fields,
     )
-    entities = build_entities(bundle, normalized)
-    findings = validate(normalized, entities)
-    resolution = resolve(normalized, entities, findings)
-    record = materialize(entities, resolution, normalized)
-    verdict = quality_verdict(record, resolution, bundle.acquisition_outcome)
-    record["_quality_verdict"] = verdict
-    replay = ReplayArtifact(bundle=bundle, evidence=evidence, normalized_evidence=normalized, findings=findings, resolution=resolution, record=record, verdict=verdict)
-    return (record if verdict in {"success", "partial", "review"} else None), replay
+
+
+def default_collectors():
+    return (
+        JsonLdCollector(),
+        OpenGraphCollector(),
+        MicrodataCollector(),
+        JsStateCollector(),
+        NetworkCollector(),
+        DomCollector(),
+        UrlCollector(),
+    )
+
+
+def normalize_ecommerce_detail(
+    evidence: tuple[Evidence, ...],
+    *,
+    page_url: str,
+) -> tuple[Evidence, ...]:
+    normalized = tuple(normalize_evidence(ev, page_url=page_url) for ev in evidence)
+    return _dedupe_equivalent(
+        normalized + tuple(
+            derived
+            for ev in normalized
+            for derived in (_currency_from_price_symbol(ev),)
+            if derived is not None
+        )
+    )
+
+
+def materialize_ecommerce_detail(
+    entities,
+    resolution,
+    evidence: tuple[Evidence, ...],
+) -> dict[str, object]:
+    return materialize(entities, resolution, evidence)
+
+
+def assess_ecommerce_detail_quality(
+    record: dict[str, object],
+    resolution,
+    bundle: CaptureBundle,
+) -> str:
+    if bundle.acquisition_outcome in {"error", "blocked"}:
+        return bundle.acquisition_outcome
+    if not record:
+        return "empty"
+    if resolution.blocking_finding_ids:
+        return "invalid"
+    if not resolution.primary_product_entity_id:
+        return "review"
+    if record.get("url") and record.get("title") and not resolution.unresolved_fact_types:
+        return "success"
+    return "partial" if record.get("title") or record.get("price") else "review"
 
 
 def normalize_evidence(evidence: Evidence, *, page_url: str) -> Evidence:
@@ -71,6 +123,39 @@ def _money(value: Any, flags: set[str]) -> str:
         return str(value or "")
 
 
+def _currency_from_price_symbol(evidence: Evidence) -> Evidence | None:
+    if evidence.fact_type != "offer.price" or not isinstance(evidence.raw_value, str):
+        return None
+    currencies = {
+        str(currency)
+        for symbol, currency in CURRENCY_SYMBOL_MAP.items()
+        if str(symbol) in evidence.raw_value
+    }
+    if len(currencies) != 1:
+        return None
+    currency = currencies.pop()
+    return evidence.model_copy(
+        update={
+            "evidence_id": stable_id(
+                "ev",
+                evidence.bundle_id,
+                evidence.evidence_id,
+                "currency_from_price_symbol",
+                currency,
+            ),
+            "fact_type": "offer.currency",
+            "raw_value": currency,
+            "value": currency,
+            "confidence": min(float(evidence.confidence), 0.85),
+            "metadata": {
+                **dict(evidence.metadata),
+                "derived_by": "currency_from_price_symbol",
+                "input_evidence_id": evidence.evidence_id,
+            },
+        }
+    )
+
+
 def _dedupe_equivalent(evidence: tuple[Evidence, ...]) -> tuple[Evidence, ...]:
     seen: set[tuple[object, ...]] = set()
     out: list[Evidence] = []
@@ -91,28 +176,13 @@ def _css_recipe_evidence(bundle, reader) -> tuple[Evidence, ...]:
     doc = reader.document_store.html("html")
     product_subject_id = stable_id("subject", bundle.bundle_id, "product", bundle.final_url)
     rows: list[Evidence] = []
-    field_to_fact = {
-        "title": "product.title",
-        "name": "product.title",
-        "brand": "product.brand",
-        "description": "product.description",
-        "category": "product.category",
-        "sku": "product.sku",
-        "mpn": "product.mpn",
-        "gtin": "product.gtin",
-        "price": "offer.price",
-        "currency": "offer.currency",
-        "original_price": "offer.original_price",
-        "availability": "offer.availability",
-        "image": "asset.image_url",
-        "image_url": "asset.image_url",
-        "url": "product.url",
-    }
     for row in rules:
         if not isinstance(row, dict) or not bool(row.get("is_active", True)):
             continue
         selector = str(row.get("css_selector") or "").strip()
-        fact_type = field_to_fact.get(normalize_field_key(str(row.get("field_name") or "")))
+        fact_type = ECOMMERCE_DETAIL_FIELD_FACT_TYPES.get(
+            normalize_field_key(str(row.get("field_name") or ""))
+        )
         if not selector or not fact_type:
             continue
         try:
@@ -127,8 +197,7 @@ def _css_recipe_evidence(bundle, reader) -> tuple[Evidence, ...]:
                 continue
             hint = EntityHint(entity_type="product")
             subject_id = product_subject_id
-            parent_subject_id = None
-            group_id = "product"
+            parent_subject_id, group_id = None, "product"
             if fact_type.startswith("offer."):
                 hint = EntityHint(entity_type="offer", url=bundle.final_url)
                 subject_id = stable_id("subject", bundle.bundle_id, "offer", bundle.final_url)

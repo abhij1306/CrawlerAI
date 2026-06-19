@@ -67,7 +67,14 @@ NETWORK_PAYLOAD_NOISE_URL_RE: Final[re.Pattern[str]] = re.compile(
 ENDPOINT_TYPE_PATH_TOKENS: Final[dict[str, dict[str, tuple[str, ...]]]] = {
     "ecommerce_detail": {
         "graphql": ("/graphql", "graphql?"),
-        "product_api": ("/product", "/products", "/catalog", "/pdp"),
+        "product_api": (
+            "/catalog",
+            "/pdp",
+            "/product",
+            "/products",
+            "/variant",
+            "/variants",
+        ),
     },
     "ecommerce_listing": {
         "graphql": ("/graphql", "graphql?"),

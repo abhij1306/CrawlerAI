@@ -1,0 +1,151 @@
+{
+  "acquire_timeline": [
+    {
+      "detail": {
+        "action": "paced",
+        "reason": "domain_rate_limiter",
+        "stage": "pre_fetch"
+      },
+      "kind": "policy_decision",
+      "sequence": 1
+    },
+    {
+      "detail": {
+        "engine": "patchright",
+        "reason": "vendor-block:akamai",
+        "strategy": "domcontentloaded"
+      },
+      "duration_ms": 273,
+      "kind": "navigation",
+      "sequence": 2
+    },
+    {
+      "detail": {
+        "detail_like": true,
+        "is_ready": true,
+        "listing_card_count": 0,
+        "stage": "after_navigation",
+        "visible_text_length": 167
+      },
+      "kind": "readiness_probe",
+      "sequence": 3
+    },
+    {
+      "detail": {
+        "status": "not_found"
+      },
+      "duration_ms": 21,
+      "kind": "interstitial",
+      "sequence": 4
+    },
+    {
+      "detail": {
+        "outcome": "usable_content"
+      },
+      "duration_ms": 44,
+      "kind": "challenge",
+      "sequence": 5
+    },
+    {
+      "detail": {
+        "engine": "patchright",
+        "lane": "vendor_block"
+      },
+      "kind": "escalation",
+      "sequence": 6
+    }
+  ],
+  "diagnostic_fields": [
+    "availability",
+    "brand",
+    "color",
+    "size",
+    "sku",
+    "variant_count",
+    "variants"
+  ],
+  "extraction": {
+    "completed_tiers": [],
+    "evidence_summary": {
+      "candidate_count": 0,
+      "conflict_count": 0,
+      "field_decision_count": 0,
+      "rejected_candidate_count": 0,
+      "review_candidate_count": 0,
+      "validation_finding_count": 0
+    },
+    "field_provenance": [
+      {
+        "field": "availability",
+        "note": "missing_without_candidate",
+        "present": false,
+        "value_shape": "missing"
+      },
+      {
+        "field": "brand",
+        "note": "missing_without_candidate",
+        "present": false,
+        "value_shape": "missing"
+      },
+      {
+        "field": "color",
+        "note": "missing_without_candidate",
+        "present": false,
+        "value_shape": "missing"
+      },
+      {
+        "field": "image_url",
+        "note": "missing_without_candidate",
+        "present": false,
+        "value_shape": "missing"
+      },
+      {
+        "field": "price",
+        "note": "missing_without_candidate",
+        "present": false,
+        "value_shape": "missing"
+      },
+      {
+        "field": "size",
+        "note": "missing_without_candidate",
+        "present": false,
+        "value_shape": "missing"
+      },
+      {
+        "field": "sku",
+        "note": "missing_without_candidate",
+        "present": false,
+        "value_shape": "missing"
+      },
+      {
+        "field": "title",
+        "present": true,
+        "value_shape": "str"
+      },
+      {
+        "field": "variant_count",
+        "note": "missing_without_candidate",
+        "present": false,
+        "value_shape": "missing"
+      },
+      {
+        "field": "variants",
+        "note": "missing_without_candidate",
+        "present": false,
+        "value_shape": "missing"
+      }
+    ]
+  },
+  "high_value_fields": [
+    "image_url",
+    "price",
+    "title"
+  ],
+  "requested_fields": [],
+  "run_id": 1,
+  "schema_version": 1,
+  "surface": "ecommerce_detail",
+  "tier": "light",
+  "url": "https://www.newbalance.com/pd/1080v15-breathe/M1080V15_RU-FTW-821915.html/?ICID=pgp_mt_pdp_1080_breathe_nb5294_m",
+  "verdict": "success"
+}

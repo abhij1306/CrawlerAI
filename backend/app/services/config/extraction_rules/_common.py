@@ -244,7 +244,13 @@ LISTING_BRAND_SELECTORS = (
     "[data-testid*='brand' i]",
 )
 LISTING_CARD_URL_ATTRS = ("href", "data-href", "data-url")
-LISTING_CLIENT_RENDERED_SHELL_HINTS = ("loading", "skeleton", "spinner")
+LISTING_CLIENT_RENDERED_SHELL_HINTS = (
+    "catalog/category/view",
+    "layer-product-list",
+    "loading",
+    "skeleton",
+    "spinner",
+)
 LISTING_DETAIL_URL_MARKERS = ("/product", "/products", "/p/", "/job", "/jobs")
 LISTING_EDITORIAL_TITLE_PATTERNS = (
     re.compile(r"\b(blog|guide|news|article|story)\b", re.I),
@@ -265,6 +271,7 @@ LISTING_UTILITY_URL_TOKENS = (
     "/login",
     "/signin",
     "/wishlist",
+    "/api/",
 )
 LISTING_WEAK_TITLES = frozenset({"product", "item", "image", "details"})
 LOW_CONTENT_SHELL_PHRASES = (
@@ -290,13 +297,13 @@ SURFACE_WEIGHTS = {
     "job_listing": {"structured": 0.82, "text": 0.72},
 }
 TRACKING_DETAIL_CONTEXT_EXACT_KEYS = frozenset(
-    {"color", "colour", "productid", "product_id", "sku", "size", "variant"}
+    {"content_source", "external", "pf_from", "qs", "sr_prefetch"}
 )
-TRACKING_PARAM_EXACT_KEYS = frozenset(
-    {"fbclid", "gclid", "mc_cid", "mc_eid", "msclkid", "utm_campaign", "utm_content", "utm_medium", "utm_source", "utm_term"}
+TRACKING_PARAM_EXACT_KEYS = frozenset({"fbclid", "gclid", "ref", "sid"})
+TRACKING_PARAM_PREFIXES = ("utm_", "click_")
+TRACKING_PRESERVED_SHORT_QUERY_KEYS = frozenset(
+    {"id", "ids", "p", "page", "pid", "q", "sku", "v"}
 )
-TRACKING_PARAM_PREFIXES = ("utm_",)
-TRACKING_PRESERVED_SHORT_QUERY_KEYS = frozenset({"id", "q"})
 TRACKING_STRIP_URL_FIELDS = frozenset({"url", "canonical_url", "apply_url"})
 TRAVERSAL_LISTING_RECOVERY_ACTIONS = (
     ("load_more", r"(load more|show more|see more|view more)", "Loading more results"),
@@ -373,7 +380,11 @@ CONTENT_DETAIL_MIN_BODY_TEXT_LENGTH = 50
 _CANDIDATE_IMAGE_FILE_EXTENSIONS = _STATIC_EXPORTS.get(
     "CANDIDATE_IMAGE_FILE_EXTENSIONS", ()
 )
-_BARE_HOST_URL_PATTERN = _STATIC_EXPORTS.get("BARE_HOST_URL_PATTERN", "")
+_BARE_HOST_URL_PATTERN = (
+    r"^(?:www\.)?(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)"
+    r"(?:\.(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?))+"
+    r"(?:[/:?#][^\s]*)?$"
+)
 _IMAGE_FIELDS_RAW = _STATIC_EXPORTS.get("IMAGE_FIELDS", ())
 _INTEGER_VALUE_FIELDS_RAW = _STATIC_EXPORTS.get("INTEGER_VALUE_FIELDS", ())
 _LONG_TEXT_FIELDS_RAW = _STATIC_EXPORTS.get("LONG_TEXT_FIELDS", ())

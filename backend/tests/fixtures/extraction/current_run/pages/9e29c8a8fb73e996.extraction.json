@@ -1,0 +1,27 @@
+{
+  "persisted_count": 1,
+  "record_count": 1,
+  "records": [
+    {
+      "public_fields": {
+        "availability": "https://schema.org/InStock",
+        "brand": "UNIQLO",
+        "currency": "USD",
+        "description": "Shop men's Premium Linen Shirt at UNIQLO US. Read customer reviews, explore styling ideas, and more.",
+        "image_url": "https://image.uniqlo.com/UQ/ST3/us/imagesgoods/487679/sub/usgoods_487679_sub6_3x4.jpg",
+        "price": "49.90",
+        "title": "Men's Premium Linen Shirt | UNIQLO US",
+        "url": "https://www.uniqlo.com/us/en/products/E455957-000/00"
+      }
+    }
+  ],
+  "replay": {
+    "decision_count": 304,
+    "evidence_count": 1121,
+    "finding_count": 0,
+    "surface": "ecommerce_detail",
+    "verdict": "success"
+  },
+  "schema_version": "extraction_decision.v1",
+  "verdict": "success"
+}

@@ -1,8 +1,23 @@
 from __future__ import annotations
 
+import re
+
 from app.services.extraction.collectors._helpers import evidence, html_doc
+from app.services.config.extraction_rules import (
+    VARIANT_DOM_MAX_LABEL_LENGTH,
+    VARIANT_DOM_NOISE_PHRASES,
+    VARIANT_DOM_SIZE_LABEL_PATTERN,
+    VARIANT_OPTION_VALUE_EXACT_NOISE_TOKENS,
+    VARIANT_PLACEHOLDER_PREFIXES,
+    VARIANT_PLACEHOLDER_VALUES,
+)
+from app.services.config.field_mappings import (
+    ECOMMERCE_DETAIL_FIELD_FACT_TYPES,
+    REQUESTED_FIELD_DOM_SELECTOR_TEMPLATES,
+)
 from app.services.extraction.contracts import CaptureBundle, EntityHint, Evidence, SourceLocator
 from app.services.extraction.ids import stable_id
+from app.services.field_policy import normalize_requested_field
 
 
 class DomCollector:
@@ -32,6 +47,69 @@ class DomCollector:
         return tuple(out)
 
 
+def collect_requested_fields(
+    bundle: CaptureBundle,
+    artifacts,
+    requested_fields: tuple[str, ...],
+) -> tuple[Evidence, ...]:
+    _, doc = html_doc(bundle, artifacts)
+    product_subject = stable_id("subject", bundle.bundle_id, "product", bundle.final_url)
+    rows: list[Evidence] = []
+    seen: set[tuple[str, str]] = set()
+    for requested_field in requested_fields:
+        field = normalize_requested_field(requested_field)
+        fact_type = ECOMMERCE_DETAIL_FIELD_FACT_TYPES.get(field)
+        if not fact_type:
+            continue
+        dash_field = field.replace("_", "-")
+        selectors = tuple(
+            template.format(field=field, dash_field=dash_field)
+            for template in REQUESTED_FIELD_DOM_SELECTOR_TEMPLATES
+        )
+        for selector in selectors:
+            for node in doc.css(selector):
+                if node.is_hidden():
+                    continue
+                value = _requested_node_value(node, fact_type)
+                key = (fact_type, value.casefold())
+                if not value or key in seen:
+                    continue
+                seen.add(key)
+                rows.append(
+                    evidence(
+                        bundle,
+                        "html",
+                        "dom",
+                        fact_type,
+                        value,
+                        SourceLocator(
+                            kind="css_selector",
+                            value=selector,
+                            preview=value[:120],
+                        ),
+                        hint=EntityHint(entity_type="product"),
+                        confidence=0.62,
+                        subject_id=product_subject,
+                    )
+                )
+    return tuple(rows)
+
+
+def _requested_node_value(node, fact_type: str) -> str:
+    attribute_order = (
+        ("href", "content", "value", "title", "aria-label")
+        if fact_type == "product.url"
+        else ("src", "data-src", "content", "href", "alt", "title")
+        if fact_type == "asset.image_url"
+        else ("content", "value", "title", "aria-label")
+    )
+    for attribute in attribute_order:
+        value = str(node.attribute(attribute) or "").strip()
+        if value:
+            return value
+    return " ".join(node.text().split()).strip()
+
+
 def _variant_controls(bundle: CaptureBundle, doc, product_subject: str) -> list[Evidence]:
     out: list[Evidence] = []
     for axis, selectors in {
@@ -41,8 +119,13 @@ def _variant_controls(bundle: CaptureBundle, doc, product_subject: str) -> list[
         seen: set[str] = set()
         for selector in selectors:
             for index, tag in enumerate(doc.css(selector)):
-                value = str(tag.attribute("value") or tag.attribute("aria-label") or tag.text()).strip()
-                if not value or value.lower() in {"select", "choose", "size", "color", "colour"}:
+                raw_value = str(
+                    tag.attribute("value")
+                    or tag.attribute("aria-label")
+                    or tag.text()
+                ).strip()
+                value = _variant_value(raw_value, axis=axis)
+                if not value:
                     continue
                 key = value.lower()
                 if key in seen:
@@ -66,3 +149,23 @@ def _variant_controls(bundle: CaptureBundle, doc, product_subject: str) -> list[
                     )
                 )
     return out
+
+
+def _variant_value(value: str, *, axis: str) -> str | None:
+    normalized = " ".join(value.split()).strip()
+    lowered = normalized.casefold()
+    if axis == "size":
+        match = re.match(VARIANT_DOM_SIZE_LABEL_PATTERN, lowered, flags=re.I)
+        if match:
+            return match.group("value").strip().upper()
+    if (
+        not normalized
+        or len(normalized) > VARIANT_DOM_MAX_LABEL_LENGTH
+        or lowered in {"color", "colour", "size"}
+        or lowered in VARIANT_OPTION_VALUE_EXACT_NOISE_TOKENS
+        or lowered in VARIANT_PLACEHOLDER_VALUES
+        or any(lowered.startswith(prefix) for prefix in VARIANT_PLACEHOLDER_PREFIXES)
+        or any(phrase in lowered for phrase in VARIANT_DOM_NOISE_PHRASES)
+    ):
+        return None
+    return normalized

@@ -77,6 +77,18 @@ AMAZON_IMAGE_LOW_RES_SUFFIX_PATTERN = (
 )
 AMAZON_IMAGE_LOW_RES_MAX_DIMENSION = 999
 VARIANT_UI_NOISE_EXACT_MATCH_MAX_LENGTH = 8
+PRIMARY_IMAGE_REJECT_URL_TOKENS = frozenset(
+    {
+        "benefit-icon",
+        "placeholder",
+        "logo",
+        "badge",
+        "swatch",
+        "sprite",
+        "tracking",
+        "pixel",
+    }
+)
 
 EXPORT_IMAGE_URL_SUFFIXES = tuple(_CANDIDATE_IMAGE_FILE_EXTENSIONS)
 BARE_HOST_URL_RE = re.compile(str(_BARE_HOST_URL_PATTERN), re.I)
@@ -94,7 +106,7 @@ _LOCAL_EXPORTS = (
     "DETAIL_IMAGE_PRODUCT_CODE_PATTERN",
     "DETAIL_IMAGE_VIEW_CODE_PATTERN",
     "EXPORT_IMAGE_URL_SUFFIXES", "LOW_RES_SWATCH_IMAGE_PATH_PATTERN",
-    "SHOPIFY_IMAGE_FILE_PATH_PATTERN",
+    "PRIMARY_IMAGE_REJECT_URL_TOKENS", "SHOPIFY_IMAGE_FILE_PATH_PATTERN",
     "VARIANT_UI_NOISE_EXACT_MATCH_MAX_LENGTH",
 )
 __all__ = sorted((*_common_exports.__all__, *_LOCAL_EXPORTS))

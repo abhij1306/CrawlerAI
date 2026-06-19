@@ -18,133 +18,50 @@ from app.services.config.extraction_recipes import (
 )
 from app.services.extraction.collectors._helpers import evidence, json_objects, loads_jsonish, text_value
 from app.services.extraction.contracts import (
+    ArtifactReader,
     CaptureBundle,
-    Decision,
     EntityHint,
     Evidence,
-    ExtractionResult,
     Finding,
-    RejectedEvidence,
     SourceLocator,
 )
 from app.services.extraction.documents import HtmlDocument, HtmlNode
 from app.services.extraction.ids import stable_id
-from app.services.extraction.materialization import lineage
-from app.services.extraction.replay import bundle_from_inputs
 from app.services.extraction.surfaces import Surface
 
 
-def extract_job_detail(
-    html: str,
-    page_url: str,
-    *,
-    requested_page_url: str | None = None,
-) -> ExtractionResult:
-    bundle, reader = bundle_from_inputs(html, page_url, requested_page_url)
+def wrong_surface_findings_for_job_detail(
+    bundle: CaptureBundle,
+    reader: ArtifactReader,
+) -> tuple[Finding, ...]:
     doc = reader.document_store.html("html")
-    if _has_wrong_surface_product_schema(doc):
-        finding = Finding(
+    if not _has_wrong_surface_product_schema(doc):
+        return ()
+    return (
+        Finding(
             finding_id=stable_id("finding", bundle.bundle_id, "wrong_surface_content"),
             rule_id="WRONG_SURFACE_CONTENT",
             severity="high",
+            scope="page",
             entity_ids=(),
             evidence_ids=(),
             message="Selected job_detail but page contains product schema.",
             blocking=True,
-        )
-        replay = _job_replay(
-            surface=Surface.JOB_DETAIL,
-            bundle=bundle,
-            evidence_rows=[],
-            decisions=[],
-            records=[],
-            verdict="error",
-            findings=[finding],
-        )
-        return ExtractionResult(
-            surface=Surface.JOB_DETAIL,
-            records=(),
-            evidence=(),
-            findings=(finding,),
-            decisions=(),
-            verdict="error",
-            replay=replay,
-        )
-    evidence_rows = [
-        *_collect_jsonld_job_evidence(bundle, doc, page_url=page_url),
-        *_collect_dom_job_evidence(bundle, doc, page_url=page_url),
-    ]
-    decisions = _resolve_job_decisions(evidence_rows)
-    records = _materialize_job_detail(evidence_rows, decisions)
-    verdict = "success" if records else "empty"
-    replay = _job_replay(
-        surface=Surface.JOB_DETAIL,
-        bundle=bundle,
-        evidence_rows=evidence_rows,
-        decisions=decisions,
-        records=records,
-        verdict=verdict,
-    )
-    return ExtractionResult(
-        surface=Surface.JOB_DETAIL,
-        records=tuple(records),
-        evidence=tuple(evidence_rows),
-        decisions=tuple(decisions),
-        verdict=verdict,
-        replay=replay,
+        ),
     )
 
 
-def extract_job_listing(
-    html: str,
-    page_url: str,
-    *,
-    max_records: int,
-    requested_page_url: str | None = None,
-) -> ExtractionResult:
-    bundle, reader = bundle_from_inputs(html, page_url, requested_page_url)
+def collect_job_detail(bundle: CaptureBundle, reader: ArtifactReader) -> list[Evidence]:
     doc = reader.document_store.html("html")
-    evidence_rows = _collect_job_listing_evidence(bundle, doc, page_url=page_url)
-    decisions = _resolve_listing_job_decisions(evidence_rows)
-    records = _materialize_job_listing(evidence_rows, decisions, max_records=max_records)
-    verdict = "success" if records else "empty"
-    replay = _job_replay(
-        surface=Surface.JOB_LISTING,
-        bundle=bundle,
-        evidence_rows=evidence_rows,
-        decisions=decisions,
-        records=records,
-        verdict=verdict,
-    )
-    return ExtractionResult(
-        surface=Surface.JOB_LISTING,
-        records=tuple(records),
-        evidence=tuple(evidence_rows),
-        decisions=tuple(decisions),
-        verdict=verdict,
-        replay=replay,
-    )
+    return [
+        *_collect_jsonld_job_evidence(bundle, doc, page_url=bundle.final_url),
+        *_collect_dom_job_evidence(bundle, doc, page_url=bundle.final_url),
+    ]
 
 
-def _job_replay(
-    *,
-    surface: Surface,
-    bundle: CaptureBundle,
-    evidence_rows: list[Evidence],
-    decisions: list[Decision],
-    records: list[dict[str, Any]],
-    verdict: str,
-    findings: list[Finding] | None = None,
-) -> dict[str, Any]:
-    return {
-        "surface": surface.value,
-        "bundle": bundle.model_dump(mode="json"),
-        "evidence": [row.model_dump(mode="json") for row in evidence_rows],
-        "findings": [row.model_dump(mode="json") for row in findings or []],
-        "decisions": [row.model_dump(mode="json") for row in decisions],
-        "records": records,
-        "verdict": verdict,
-    }
+def collect_job_listing(bundle: CaptureBundle, reader: ArtifactReader) -> list[Evidence]:
+    doc = reader.document_store.html("html")
+    return _collect_job_listing_evidence(bundle, doc, page_url=bundle.final_url)
 
 
 def _collect_job_listing_evidence(
@@ -235,60 +152,64 @@ def _collect_jsonld_job_evidence(
         for path, item in json_objects(data):
             if not isinstance(item, dict) or not _is_job_posting(item):
                 continue
-            fields = {
-                "title": "job.title",
-                "identifier": "job.id",
-                "datePosted": "job.posted_date",
-                "employmentType": "job.type",
-                "description": "job.description",
-                "url": "job.url",
-            }
-            for key, fact_type in fields.items():
-                value = _jsonld_value(item.get(key), page_url=page_url, fact_type=fact_type)
-                if value:
-                    rows.append(
-                        _job_evidence(
-                            bundle,
-                            artifact_id=f"jsonld:{script_index}",
-                            collector_id="job_jsonld",
-                            fact_type=fact_type,
-                            value=value,
-                            subject_id=subject_id,
-                            locator=SourceLocator(kind="json_pointer", value=f"{path}/{key}", preview=str(value)[:120]),
-                            confidence=0.92,
-                            directness="embedded",
-                        )
-                    )
-            company = _jsonld_value(item.get("hiringOrganization"), page_url=page_url, fact_type="job.company")
-            if company:
-                rows.append(
-                    _job_evidence(
-                        bundle,
-                        artifact_id=f"jsonld:{script_index}",
-                        collector_id="job_jsonld",
-                        fact_type="job.company",
-                        value=company,
-                        subject_id=subject_id,
-                        locator=SourceLocator(kind="json_pointer", value=f"{path}/hiringOrganization", preview=company[:120]),
-                        confidence=0.9,
-                        directness="embedded",
-                    )
+            rows.extend(
+                _jsonld_job_item_evidence(
+                    bundle,
+                    item,
+                    artifact_id=f"jsonld:{script_index}",
+                    path=path,
+                    page_url=page_url,
+                    subject_id=subject_id,
                 )
-            location = _jsonld_location(item.get("jobLocation"))
-            if location:
-                rows.append(
-                    _job_evidence(
-                        bundle,
-                        artifact_id=f"jsonld:{script_index}",
-                        collector_id="job_jsonld",
-                        fact_type="job.location",
-                        value=location,
-                        subject_id=subject_id,
-                        locator=SourceLocator(kind="json_pointer", value=f"{path}/jobLocation", preview=location[:120]),
-                        confidence=0.9,
-                        directness="embedded",
-                    )
-                )
+            )
+    return rows
+
+
+def _jsonld_job_item_evidence(
+    bundle: CaptureBundle,
+    item: dict[str, Any],
+    *,
+    artifact_id: str,
+    path: str,
+    page_url: str,
+    subject_id: str,
+) -> list[Evidence]:
+    values = {
+        "title": ("job.title", 0.92),
+        "identifier": ("job.id", 0.92),
+        "datePosted": ("job.posted_date", 0.92),
+        "employmentType": ("job.type", 0.92),
+        "description": ("job.description", 0.92),
+        "url": ("job.url", 0.92),
+        "hiringOrganization": ("job.company", 0.9),
+        "jobLocation": ("job.location", 0.9),
+    }
+    rows: list[Evidence] = []
+    for key, (fact_type, confidence) in values.items():
+        value = (
+            _jsonld_location(item.get(key))
+            if key == "jobLocation"
+            else _jsonld_value(item.get(key), page_url=page_url, fact_type=fact_type)
+        )
+        if not value:
+            continue
+        rows.append(
+            _job_evidence(
+                bundle,
+                artifact_id=artifact_id,
+                collector_id="job_jsonld",
+                fact_type=fact_type,
+                value=value,
+                subject_id=subject_id,
+                locator=SourceLocator(
+                    kind="json_pointer",
+                    value=f"{path}/{key}",
+                    preview=str(value)[:120],
+                ),
+                confidence=confidence,
+                directness="embedded",
+            )
+        )
     return rows
 
 
@@ -357,129 +278,6 @@ def _job_evidence(
             "parent_subject_id": None,
         }
     )
-
-
-def _resolve_job_decisions(evidence_rows: list[Evidence]) -> list[Decision]:
-    by_fact: dict[str, list[Evidence]] = {}
-    for row in evidence_rows:
-        by_fact.setdefault(row.fact_type, []).append(row)
-    decisions: list[Decision] = []
-    for fact_type, rows in sorted(by_fact.items()):
-        candidates = sorted(rows, key=lambda row: (-row.confidence, row.evidence_id))
-        accepted = candidates[0]
-        decisions.append(
-            Decision(
-                decision_id=stable_id("decision", accepted.subject_id, fact_type, accepted.evidence_id),
-                entity_id=accepted.subject_id or "job",
-                fact_type=fact_type,
-                accepted_evidence_ids=(accepted.evidence_id,),
-                rejected=tuple(
-                    RejectedEvidence(evidence_id=row.evidence_id, reason="lower_confidence")
-                    for row in candidates[1:]
-                ),
-                finding_ids=(),
-                rule_id="job_detail_highest_confidence_v1",
-                status="resolved",
-            )
-        )
-    return decisions
-
-
-def _resolve_listing_job_decisions(evidence_rows: list[Evidence]) -> list[Decision]:
-    decisions: list[Decision] = []
-    by_subject: dict[str, list[Evidence]] = {}
-    for row in evidence_rows:
-        if row.subject_id:
-            by_subject.setdefault(row.subject_id, []).append(row)
-    for subject_id, rows in by_subject.items():
-        for fact_type in sorted({row.fact_type for row in rows}):
-            candidates = sorted(
-                [row for row in rows if row.fact_type == fact_type],
-                key=lambda row: (-row.confidence, row.evidence_id),
-            )
-            accepted = candidates[0]
-            decisions.append(
-                Decision(
-                    decision_id=stable_id("decision", subject_id, fact_type, accepted.evidence_id),
-                    entity_id=subject_id,
-                    fact_type=fact_type,
-                    accepted_evidence_ids=(accepted.evidence_id,),
-                    rejected=tuple(
-                        RejectedEvidence(evidence_id=row.evidence_id, reason="lower_confidence")
-                        for row in candidates[1:]
-                    ),
-                    finding_ids=(),
-                    rule_id="job_listing_highest_confidence_v1",
-                    status="resolved",
-                )
-            )
-    return decisions
-
-
-def _materialize_job_detail(
-    evidence_rows: list[Evidence],
-    decisions: list[Decision],
-) -> list[dict[str, Any]]:
-    by_id = {row.evidence_id: row for row in evidence_rows}
-    field_map = {
-        "job.title": "title",
-        "job.id": "job_id",
-        "job.company": "company",
-        "job.location": "location",
-        "job.type": "job_type",
-        "job.posted_date": "posted_date",
-        "job.url": "url",
-        "job.apply_url": "apply_url",
-        "job.description": "description",
-    }
-    row: dict[str, Any] = {}
-    lineages: dict[str, object] = {}
-    for decision in decisions:
-        field = field_map.get(decision.fact_type)
-        if not field or not decision.accepted_evidence_ids:
-            continue
-        evidence_row = by_id[decision.accepted_evidence_ids[0]]
-        row[field] = evidence_row.value
-        lineages[field] = lineage(decision=decision)
-    if not row.get("title"):
-        return []
-    if lineages:
-        row["_lineage"] = lineages
-    return [row]
-
-
-def _materialize_job_listing(
-    evidence_rows: list[Evidence],
-    decisions: list[Decision],
-    *,
-    max_records: int,
-) -> list[dict[str, Any]]:
-    by_id = {row.evidence_id: row for row in evidence_rows}
-    field_map = {
-        "job.title": "title",
-        "job.url": "url",
-        "job.company": "company",
-        "job.location": "location",
-    }
-    rows_by_subject: dict[str, dict[str, Any]] = {}
-    lineage_by_subject: dict[str, dict[str, object]] = {}
-    for decision in decisions:
-        field = field_map.get(decision.fact_type)
-        if not field or not decision.accepted_evidence_ids:
-            continue
-        evidence_row = by_id[decision.accepted_evidence_ids[0]]
-        subject_id = evidence_row.subject_id or decision.entity_id
-        rows_by_subject.setdefault(subject_id, {})[field] = evidence_row.value
-        lineage_by_subject.setdefault(subject_id, {})[field] = lineage(decision=decision)
-    materialized: list[dict[str, Any]] = []
-    for subject_id, row in rows_by_subject.items():
-        if not row.get("title") or not row.get("url"):
-            continue
-        row["_lineage"] = lineage_by_subject.get(subject_id, {})
-        row["_subject_id"] = subject_id
-        materialized.append(row)
-    materialized.sort(key=lambda row: str(row.get("url") or ""))
-    return materialized[:max_records]
 
 
 def _is_job_posting(item: dict[str, Any]) -> bool:

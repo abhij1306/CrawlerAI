@@ -1,0 +1,28 @@
+{
+  "persisted_count": 1,
+  "record_count": 1,
+  "records": [
+    {
+      "public_fields": {
+        "availability": "https://schema.org/InStock",
+        "brand": "Levi",
+        "currency": "USD",
+        "description": "Your go-to for modern utility and all-day comfort. Our carrier cargo shorts sit at your waist and features a relaxed fit with streamlined pockets\u2014making them some of...",
+        "image_url": "https://lscoglobal.scene7.com/is/image/lscoglobal/MB_001KG-0053_GLO_CM_SV?$qv_desktop$",
+        "price": "34.99",
+        "sku": "001KG0053",
+        "title": "Carrier Cargo Lightweight 9\" Men's Shorts - Blue | Levi's\u00ae US",
+        "url": "https://www.levi.com/US/en_US/clothing/men/shorts/carrier-cargo-lightweight-9-mens-shorts/p/001KG0053"
+      }
+    }
+  ],
+  "replay": {
+    "decision_count": 18,
+    "evidence_count": 29,
+    "finding_count": 0,
+    "surface": "ecommerce_detail",
+    "verdict": "success"
+  },
+  "schema_version": "extraction_decision.v1",
+  "verdict": "success"
+}
