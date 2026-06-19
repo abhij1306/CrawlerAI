@@ -1,4 +1,4 @@
-"""Unit tests for app.services.pipeline.listing_integrity.propagate_listing_integrity_to_diagnostics.
+"""Unit tests for app.crawl.pipeline.listing_integrity.propagate_listing_integrity_to_diagnostics.
 
 Validates task 8.1 requirements:
 - Thread IntegrityDecision onto browser_diagnostics under key listing_integrity
@@ -12,7 +12,7 @@ import pytest
 
 import copy
 
-from app.services.pipeline.listing_integrity import propagate_listing_integrity_to_diagnostics
+from app.crawl.pipeline.listing_integrity import propagate_listing_integrity_to_diagnostics
 
 
 class TestPropagateListingIntegrityToDiagnostics:

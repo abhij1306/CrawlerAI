@@ -16,20 +16,20 @@ from urllib.parse import urlparse
 import pytz  # type: ignore[import-untyped]
 
 from app.core.database import SessionLocal
-from app.services.acquisition.runtime import (
+from app.acquisition.runtime import (
     classify_block_from_headers,
     classify_blocked_page,
     copy_headers,
     curl_fetch,
     http_fetch,
 )
-from app.services.acquisition.browser_runtime import (
+from app.acquisition.browser_runtime import (
     SharedBrowserRuntime,
     _display_proxy,
     get_browser_runtime,
     shutdown_browser_runtime,
 )
-from app.services.config.browser_surface_probe import (
+from app.core.config.browser_surface_probe import (
     BROWSER_SURFACE_PROBE_CREEPJS_LABELS,
     BROWSER_SURFACE_PROBE_FONT_TEST_STRINGS,
     BROWSER_SURFACE_PROBE_HIGH_ENTROPY_HINTS,
@@ -57,7 +57,7 @@ from app.services.config.browser_surface_probe import (
     BROWSER_SURFACE_PROBE_VISIBLE_TEXT_LIMIT,
     BROWSER_SURFACE_PROBE_WEBRTC_GATHER_TIMEOUT_MS,
 )
-from app.services.crawl.crud import get_run
+from app.crawl.crud import get_run
 from browser_surface_probe.report_rendering import (
     build_agent_summary,
     render_markdown,

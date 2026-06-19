@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from app.services.config.browser_surface_probe import (
+from app.core.config.browser_surface_probe import (
     BROWSER_SURFACE_PROBE_AGENT_EVIDENCE_TEXT_LIMIT,
 )
 from browser_surface_probe.value_coercion import (

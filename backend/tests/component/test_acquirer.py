@@ -5,16 +5,19 @@ import asyncio
 import httpx
 import pytest
 
-from app.services.acquisition import browser_runtime
-from app.services.acquisition.acquirer import (
+from app.acquisition import browser_runtime
+from app.acquisition.acquirer import (
     AcquisitionRequest,
     PageEvidence,
     acquire,
 )
-from app.services.acquisition.internal_api_replay import _is_safe_replay_url
-from app.services.acquisition.policy import AcquisitionPolicy
-from app.services.acquisition_plan import AcquisitionPlan
-from app.services.crawl.utils import collect_target_urls, normalize_target_url, parse_csv_urls
+from app.acquisition.internal_api_replay import (
+    _is_safe_replay_url,
+    payload_extracts_surface,
+)
+from app.acquisition.policy import AcquisitionPolicy
+from app.acquisition.runtime_plan import AcquisitionPlan
+from app.crawl.utils import collect_target_urls, normalize_target_url, parse_csv_urls
 
 
 @pytest.mark.component
@@ -87,7 +90,7 @@ async def test_acquire_returns_public_headers_as_plain_dict(
         )()
 
     monkeypatch.setattr(
-        "app.services.acquisition.acquirer.fetch_page",
+        "app.acquisition.acquirer.fetch_page",
         _fake_fetch_page,
     )
 
@@ -139,11 +142,11 @@ async def test_acquire_normalizes_url_via_adapter_registry(
         )()
 
     monkeypatch.setattr(
-        "app.services.acquisition.acquirer.normalize_adapter_acquisition_url",
+        "app.acquisition.acquirer.normalize_adapter_acquisition_url",
         _fake_normalize,
     )
     monkeypatch.setattr(
-        "app.services.acquisition.acquirer.fetch_page",
+        "app.acquisition.acquirer.fetch_page",
         _fake_fetch_page,
     )
 
@@ -187,7 +190,7 @@ async def test_acquire_strips_pasted_encoded_url_suffix_before_fetch(
         )()
 
     monkeypatch.setattr(
-        "app.services.acquisition.acquirer.fetch_page",
+        "app.acquisition.acquirer.fetch_page",
         _fake_fetch_page,
     )
 
@@ -336,7 +339,7 @@ async def test_acquire_translates_policy_to_fetch_runtime_knobs(
         )()
 
     monkeypatch.setattr(
-        "app.services.acquisition.acquirer.fetch_page",
+        "app.acquisition.acquirer.fetch_page",
         _fake_fetch_page,
     )
 
@@ -413,11 +416,11 @@ async def test_acquire_uses_internal_api_replay_before_page_fetch(
         }
 
     monkeypatch.setattr(
-        "app.services.acquisition.acquirer.fetch_page",
+        "app.acquisition.acquirer.fetch_page",
         _fake_fetch_page,
     )
     monkeypatch.setattr(
-        "app.services.acquisition.acquirer.replay_internal_api_endpoints",
+        "app.acquisition.acquirer.replay_internal_api_endpoints",
         _fake_replay,
     )
 
@@ -462,6 +465,22 @@ async def test_internal_api_replay_rejects_non_https_and_private_ip() -> None:
     ) is False
 
 
+@pytest.mark.component
+def test_internal_api_replay_rejects_title_only_settings_payload() -> None:
+    payload = {
+        "url": "https://www.chewy.com/api/event/p/sios/v1/projects/settings",
+        "method": "GET",
+        "body": {"plugin": {"title": "Reddit Browser Plugin"}},
+    }
+
+    assert not payload_extracts_surface(
+        payload,
+        surface="ecommerce_detail",
+        page_url="https://www.chewy.com/wellness-core-rawrev-grain-free-wild/dp/141791",
+        requested_fields=[],
+    )
+
+
 @pytest.mark.asyncio
 @pytest.mark.component
 async def test_acquire_persists_runtime_policy_updates_on_result_request(
@@ -487,11 +506,11 @@ async def test_acquire_persists_runtime_policy_updates_on_result_request(
         )()
 
     monkeypatch.setattr(
-        "app.services.acquisition.acquirer.fetch_page",
+        "app.acquisition.acquirer.fetch_page",
         _fake_fetch_page,
     )
     monkeypatch.setattr(
-        "app.services.acquisition.acquirer.resolve_platform_runtime_policy",
+        "app.acquisition.acquirer.resolve_platform_runtime_policy",
         lambda *_args, **_kwargs: {"requires_browser": True},
     )
 
@@ -539,11 +558,11 @@ async def test_acquire_applies_runtime_locality_defaults_without_overriding_expl
         )()
 
     monkeypatch.setattr(
-        "app.services.acquisition.acquirer.fetch_page",
+        "app.acquisition.acquirer.fetch_page",
         _fake_fetch_page,
     )
     monkeypatch.setattr(
-        "app.services.acquisition.acquirer.resolve_platform_runtime_policy",
+        "app.acquisition.acquirer.resolve_platform_runtime_policy",
         lambda *_args, **_kwargs: {
             "requires_browser": True,
             "locality_profile": {

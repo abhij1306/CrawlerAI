@@ -13,12 +13,12 @@ from typing import Iterator
 from app.core.celery_app import celery_app, worker_process_init, worker_process_shutdown
 from app.core.database import SessionLocal, dispose_engine
 from app.core.telemetry import install_asyncio_exception_filter
-from app.services.acquisition import (
+from app.acquisition.browser_runtime import (
     shutdown_browser_runtime,
     shutdown_browser_runtime_sync,
 )
-from app.services.crawl.batch_runtime import process_run
-from app.services.config.runtime_settings import crawler_runtime_settings
+from app.crawl.batch_runtime import process_run
+from app.core.config.runtime_settings import crawler_runtime_settings
 
 logger = logging.getLogger(__name__)
 _SignalHandler = Callable[[int, FrameType | None], object]
@@ -52,7 +52,7 @@ def _crawl_task_time_limits() -> dict[str, int]:
 
 @worker_process_init.connect
 def _worker_process_init(**_kwargs) -> None:
-    from app.services.observability.run_audit import ensure_run_audit_registered
+    from app.observability.run_audit import ensure_run_audit_registered
 
     ensure_run_audit_registered()
 

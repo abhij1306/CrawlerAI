@@ -13,8 +13,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.services.llm.types import LLMTaskResult
-from app.services.observability import run_llm_diagnosis as diag
+from app.connectors.llm.types import LLMTaskResult
+from app.observability import run_llm_diagnosis as diag
 
 pytestmark = pytest.mark.unit
 

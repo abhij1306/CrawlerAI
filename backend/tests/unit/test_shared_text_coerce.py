@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.services.shared.text_coerce import (
+from app.core.shared.text_coerce import (
     clean_text,
     coerce_long_text,
     coerce_text,
@@ -72,7 +72,7 @@ def test_coerce_brand_text_strips_marketing_tagline() -> None:
     serves ``"Gymshark | We Do Gym"``). The trailing tagline must be dropped
     while real multi-word brands and single-word brands stay intact.
     """
-    from app.services.shared.field_coerce_text import coerce_brand_text
+    from app.core.shared.field_coerce_text import coerce_brand_text
 
     # Tagline after pipe is stripped.
     assert coerce_brand_text("Gymshark | We Do Gym") == "Gymshark"

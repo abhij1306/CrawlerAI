@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from app.services import platform_policy
-from app.services.platform_policy import (
+from app.acquisition import platform_policy
+from app.acquisition.platform_policy import (
     detect_platform_family,
     is_job_platform_signal,
     resolve_browser_readiness_policy,

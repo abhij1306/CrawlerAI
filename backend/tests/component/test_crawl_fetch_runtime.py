@@ -10,24 +10,24 @@ import httpx
 import pytest
 from patchright.async_api import Error as PlaywrightError
 
-from app.services.fetch import fetch_context as crawl_fetch_runtime
-from app.services.acquisition import (
+from app.acquisition.fetch import fetch_context as crawl_fetch_runtime
+from app.acquisition import (
     browser_background_tasks,
     browser_capture,
     runtime as acquisition_runtime,
 )
-from app.services.acquisition.host_protection_memory import HostProtectionPolicy
-from app.services.acquisition.browser_runtime import (
+from app.acquisition.host_protection_memory import HostProtectionPolicy
+from app.acquisition.browser_runtime import (
     classify_network_endpoint,
     read_network_payload_body,
     should_capture_network_payload,
 )
-from app.services.acquisition.runtime import (
+from app.acquisition.runtime import (
     PageFetchResult,
     http_fetch,
     should_escalate_to_browser_async,
 )
-from app.services.config.pipeline_reasons import (
+from app.core.config.pipeline_reasons import (
     BROWSER_ESCALATION_SKIPPED_INSUFFICIENT_BUDGET,
     REQUESTED_FIELDS_BROWSER_REASON,
 )
@@ -2124,7 +2124,7 @@ async def test_should_escalate_to_browser_async_uses_thread_offload(
         return func(*args, **kwargs)
 
     monkeypatch.setattr(
-        "app.services.acquisition.runtime.asyncio.to_thread", _fake_to_thread
+        "app.acquisition.runtime.asyncio.to_thread", _fake_to_thread
     )
 
     result = await should_escalate_to_browser_async(
@@ -2244,7 +2244,7 @@ async def test_should_escalate_to_browser_async_uses_runtime_policy_for_missing_
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        "app.services.acquisition.runtime.resolve_platform_runtime_policy",
+        "app.acquisition.runtime.resolve_platform_runtime_policy",
         lambda url, html="", *, surface=None: {
             "family": None,
             "requires_browser": False,

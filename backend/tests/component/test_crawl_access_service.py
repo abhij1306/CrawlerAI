@@ -3,8 +3,8 @@ from __future__ import annotations
 import pytest
 
 from app.models.crawl_run import CrawlRecord
-from app.services.auth_service import create_user
-from app.services.crawl.access_service import (
+from app.core.auth_service import create_user
+from app.crawl.access_service import (
     AccessDeniedError,
     require_accessible_record,
     require_accessible_run,

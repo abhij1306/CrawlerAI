@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import pytest
 
-from app.services.extraction import Surface, extract
-from app.services.extraction.replay import fixture_request_from_inputs
-from app.services.pipeline.persistence import build_extraction_decision_payload
+from app.extraction import Surface, extract
+from app.extraction.replay import fixture_request_from_inputs
+from app.crawl.pipeline.persistence import build_extraction_decision_payload
 
 
 pytestmark = pytest.mark.unit

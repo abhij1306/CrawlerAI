@@ -5,16 +5,16 @@ import pytest
 from app.models.crawl_run import CrawlRecord
 from app.models.domain_memory import DomainFieldFeedback
 from app.models.review import ReviewPromotion
-from app.services.domain_memory_service import load_domain_memory, save_domain_memory
-from app.services.review import (
+from app.crawl.domain_memory_service import load_domain_memory, save_domain_memory
+from app.crawl.review import (
     apply_domain_recipe_field_action,
     build_domain_recipe_payload,
     list_domain_field_feedback,
     promote_domain_recipe_selectors,
     save_review,
 )
-from app.services.schema_service import ResolvedSchema
-from app.services.schema_service import load_resolved_schema
+from app.core.records.schema_service import ResolvedSchema
+from app.core.records.schema_service import load_resolved_schema
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -257,9 +257,9 @@ async def test_save_review_excludes_falsy_normalized_new_fields(
             return ""
         return text
 
-    monkeypatch.setattr("app.services.review.load_resolved_schema", _fake_load_resolved_schema)
+    monkeypatch.setattr("app.crawl.review.load_resolved_schema", _fake_load_resolved_schema)
     monkeypatch.setattr(
-        "app.services.review.normalize_review_target",
+        "app.crawl.review.normalize_review_target",
         _fake_normalize_review_target,
     )
 
@@ -322,9 +322,9 @@ async def test_promote_domain_recipe_selectors_matches_existing_selectors_by_kin
         create_calls.append(dict(kwargs))
         return {"id": 12, **dict(kwargs.get("payload") or {})}
 
-    monkeypatch.setattr("app.services.review.list_selector_records", _fake_list_selector_records)
-    monkeypatch.setattr("app.services.review.update_selector_record", _fake_update_selector_record)
-    monkeypatch.setattr("app.services.review.create_selector_record", _fake_create_selector_record)
+    monkeypatch.setattr("app.crawl.review.list_selector_records", _fake_list_selector_records)
+    monkeypatch.setattr("app.crawl.review.update_selector_record", _fake_update_selector_record)
+    monkeypatch.setattr("app.crawl.review.create_selector_record", _fake_create_selector_record)
 
     rows = await promote_domain_recipe_selectors(
         db_session,
@@ -378,9 +378,9 @@ async def test_promote_domain_recipe_selectors_skips_invalid_existing_selector_i
         create_calls.append(dict(kwargs))
         return {"id": 12, **dict(kwargs.get("payload") or {})}
 
-    monkeypatch.setattr("app.services.review.list_selector_records", _fake_list_selector_records)
-    monkeypatch.setattr("app.services.review.update_selector_record", _fake_update_selector_record)
-    monkeypatch.setattr("app.services.review.create_selector_record", _fake_create_selector_record)
+    monkeypatch.setattr("app.crawl.review.list_selector_records", _fake_list_selector_records)
+    monkeypatch.setattr("app.crawl.review.update_selector_record", _fake_update_selector_record)
+    monkeypatch.setattr("app.crawl.review.create_selector_record", _fake_create_selector_record)
 
     rows = await promote_domain_recipe_selectors(
         db_session,
@@ -566,7 +566,7 @@ async def test_apply_domain_recipe_field_action_rolls_back_staged_mutations_on_e
         )
         raise ValueError("selector promotion failed")
 
-    monkeypatch.setattr("app.services.review.promote_domain_recipe_selectors", _failing_promote)
+    monkeypatch.setattr("app.crawl.review.promote_domain_recipe_selectors", _failing_promote)
 
     with pytest.raises(ValueError, match="selector promotion failed"):
         await apply_domain_recipe_field_action(

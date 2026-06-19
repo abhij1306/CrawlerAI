@@ -5,10 +5,10 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.services.acquisition.acquirer import AcquisitionRequest, AcquisitionResult
-from app.services.acquisition_plan import AcquisitionPlan
-from app.services.pipeline import extraction_loop
-from app.services.pipeline.retry import stage
+from app.acquisition.acquirer import AcquisitionRequest, AcquisitionResult
+from app.acquisition.runtime_plan import AcquisitionPlan
+from app.crawl.pipeline import extraction_loop
+from app.crawl.pipeline.retry import stage
 
 
 def _request() -> AcquisitionRequest:

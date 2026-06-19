@@ -5,7 +5,7 @@ from typing import Any
 
 import httpx
 
-from app.services.config.public_api import PUBLIC_API_MCP_API_KEY_ENV
+from app.core.config.public_api import PUBLIC_API_MCP_API_KEY_ENV
 
 
 class PublicApiClient:

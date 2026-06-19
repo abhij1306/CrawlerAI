@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import os
 
-from app.services.config.public_api import (
+from app.core.config.public_api import (
     PUBLIC_API_CAPABILITIES,
     PUBLIC_API_MCP_API_KEY_ENV,
     PUBLIC_API_MCP_BASE_URL_ENV,

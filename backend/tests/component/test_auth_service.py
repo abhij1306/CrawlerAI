@@ -6,7 +6,7 @@ import pytest
 from passlib.hash import pbkdf2_sha256
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.services import auth_service
+from app.core import auth_service
 
 
 @pytest.mark.asyncio

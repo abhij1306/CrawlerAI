@@ -14,15 +14,15 @@ from app.core.rate_limit import (
 from app.core.dependencies import get_current_user, get_db
 from app.models.user import User
 from app.schemas.user import AuthResponse, UserCreate, UserResponse
-from app.services.config.auth_security import (
+from app.core.config.auth_security import (
     AUTH_RATE_LIMIT_MAX_BUCKETS,
     AUTH_RATE_LIMIT_WINDOW_SECONDS,
     auth_rate_limit,
     auth_rate_limit_key,
     secure_transport_required,
 )
-from app.services.auth_service import authenticate_user, create_user
-from app.services.config.runtime_settings import crawler_runtime_settings
+from app.core.auth_service import authenticate_user, create_user
+from app.core.config.runtime_settings import crawler_runtime_settings
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import JSONResponse
 from sqlalchemy import select

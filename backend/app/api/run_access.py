@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.crawl_run import CrawlRun
 from app.models.user import User
-from app.services.crawl.access_service import require_accessible_run
+from app.crawl.access_service import require_accessible_run
 
 
 def raise_http_from_exception(*, status_code: int, exc: Exception) -> NoReturn:

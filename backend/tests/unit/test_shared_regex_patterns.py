@@ -5,7 +5,7 @@ import re
 
 import pytest
 
-from app.services.shared.regex_patterns import compile_regex_patterns
+from app.core.shared.regex_patterns import compile_regex_patterns
 
 
 @pytest.mark.unit

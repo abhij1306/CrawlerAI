@@ -13,7 +13,7 @@ from app.core.config import settings
 from app.core.dependencies import get_db
 from app.models.api_key import ApiKey
 from app.models.user import User
-from app.services.config.public_api import (
+from app.core.config.public_api import (
     PUBLIC_API_ERROR_API_KEY_REQUIRED,
     PUBLIC_API_ERROR_AUTH_UNAVAILABLE,
     PUBLIC_API_ERROR_INVALID_API_KEY,

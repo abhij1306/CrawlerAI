@@ -5,7 +5,7 @@ import pytest
 from app.core.security import encrypt_secret
 from app.api.llm import llm_configs
 from app.models.llm import LLMConfig
-from app.services.llm.config_service import (
+from app.connectors.llm.config_service import (
     get_prompt_task,
     llm_provider_catalog,
     resolve_active_config,
@@ -13,8 +13,8 @@ from app.services.llm.config_service import (
     resolve_run_config,
     serialize_config_snapshot,
 )
-from app.services.config.data_enrichment import DATA_ENRICHMENT_PROMPT_REGISTRY
-from app.services.config.field_mappings import PROMPT_REGISTRY
+from app.core.config.data_enrichment import DATA_ENRICHMENT_PROMPT_REGISTRY
+from app.core.config.field_mappings import PROMPT_REGISTRY
 
 
 @pytest.mark.asyncio
@@ -52,7 +52,7 @@ async def test_resolve_active_config_prefers_task_then_general(db_session) -> No
 @pytest.mark.component
 def test_resolve_provider_api_key_prefers_encrypted_value(monkeypatch) -> None:
     monkeypatch.setattr(
-        "app.services.llm.config_service.settings.groq_api_key",
+        "app.connectors.llm.config_service.settings.groq_api_key",
         "env-secret",
     )
     encrypted = encrypt_secret("stored-secret")
@@ -168,7 +168,7 @@ def test_llm_provider_catalog_exposes_expected_provider_anchors() -> None:
 @pytest.mark.component
 def test_resolve_provider_api_key_supports_mistral_env_alias(monkeypatch) -> None:
     monkeypatch.setattr(
-        "app.services.llm.config_service.settings.mistral_api_key",
+        "app.connectors.llm.config_service.settings.mistral_api_key",
         "mistral-env-secret",
     )
 

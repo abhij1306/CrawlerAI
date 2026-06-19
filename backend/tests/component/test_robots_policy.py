@@ -5,7 +5,7 @@ import asyncio
 import httpx
 import pytest
 
-from app.services import robots_policy
+from app.crawl import robots_policy
 from tests.fixtures.http_mocks import FakeAsyncClient, FakeTextResponse
 
 

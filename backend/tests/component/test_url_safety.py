@@ -4,8 +4,8 @@ import socket
 
 import pytest
 
-from app.services import url_safety
-from app.services.config.security_rules import (
+from app.core import url_safety
+from app.core.config.security_rules import (
     BLOCKED_HOSTNAMES,
     BLOCKED_IPS,
     CGNAT_NETWORK,
@@ -41,11 +41,11 @@ async def test_resolve_host_ips_falls_back_to_ipv4_after_unspec_failure(
         ]
 
     monkeypatch.setattr(
-        "app.services.url_safety.socket.getaddrinfo",
+        "app.core.url_safety.socket.getaddrinfo",
         _fake_getaddrinfo,
     )
     monkeypatch.setattr(
-        "app.services.url_safety.dns_resolution_families",
+        "app.core.url_safety.dns_resolution_families",
         lambda: (socket.AF_UNSPEC, socket.AF_INET),
     )
 
@@ -111,11 +111,11 @@ async def test_validate_proxy_endpoint_uses_proxy_resolution_label(
         raise socket.gaierror(11001, "getaddrinfo failed")
 
     monkeypatch.setattr(
-        "app.services.url_safety.socket.getaddrinfo",
+        "app.core.url_safety.socket.getaddrinfo",
         _always_fail_getaddrinfo,
     )
     monkeypatch.setattr(
-        "app.services.url_safety.dns_resolution_families",
+        "app.core.url_safety.dns_resolution_families",
         lambda: (socket.AF_UNSPEC,),
     )
 

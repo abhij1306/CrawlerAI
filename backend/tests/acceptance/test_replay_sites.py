@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from app.services.extraction import Surface, extract
-from app.services.extraction.replay import fixture_request_from_inputs
+from app.extraction import Surface, extract
+from app.extraction.replay import fixture_request_from_inputs
 
 pytestmark = pytest.mark.component
 

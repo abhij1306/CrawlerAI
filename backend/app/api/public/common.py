@@ -6,7 +6,7 @@ from typing import Any
 from fastapi import Request
 from fastapi.responses import JSONResponse
 
-from app.services.config.public_api import PUBLIC_API_STATUS_ERROR, PUBLIC_API_STATUS_OK
+from app.core.config.public_api import PUBLIC_API_STATUS_ERROR, PUBLIC_API_STATUS_OK
 
 
 class PublicApiError(Exception):

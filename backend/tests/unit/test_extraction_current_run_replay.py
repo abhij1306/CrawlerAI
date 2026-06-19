@@ -5,9 +5,9 @@ from functools import lru_cache
 
 import pytest
 
-from app.services.extraction import Surface, extract
-from app.services.extraction.contracts import ExtractionResult
-from app.services.extraction.replay import fixture_request_from_inputs
+from app.extraction import Surface, extract
+from app.extraction.contracts import ExtractionResult
+from app.extraction.replay import fixture_request_from_inputs
 from tests.fixtures.loader import (
     current_run_pages_root,
     read_current_run_html,
@@ -121,6 +121,13 @@ def test_hm_selected_product_evidence_does_not_empty_current_replay() -> None:
 
 def test_uniqlo_explicit_variants_do_not_disappear() -> None:
     assert _variants(_replay("9e29c8a8fb73e996"))
+
+
+def test_puma_one_axis_variants_do_not_disappear() -> None:
+    variants = _variants(_replay("c650b8173c563508"))
+    assert variants
+    assert all(isinstance(row, dict) and row.get("color") for row in variants)
+    assert any(isinstance(row, dict) and row.get("price") for row in variants)
 
 
 def test_new_balance_shell_does_not_succeed() -> None:

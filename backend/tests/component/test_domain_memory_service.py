@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.services.domain_memory_service import load_domain_memory, save_domain_memory
+from app.crawl.domain_memory_service import load_domain_memory, save_domain_memory
 
 
 @pytest.mark.asyncio

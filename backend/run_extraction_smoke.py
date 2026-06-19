@@ -18,13 +18,13 @@ import time
 from datetime import UTC, datetime
 from pathlib import Path
 
-from app.services.acquisition.acquirer import AcquisitionRequest, acquire
-from app.services.acquisition.runtime import is_blocked_html
-from app.services.acquisition_plan import AcquisitionPlan
-from app.services.adapters.registry import run_adapter
-from app.services.extraction import extract, parse_surface
-from app.services.extraction.replay import request_from_acquisition_result
-from app.services.platform_policy import detect_platform_family
+from app.acquisition.acquirer import AcquisitionRequest, acquire
+from app.acquisition.runtime import is_blocked_html
+from app.acquisition.runtime_plan import AcquisitionPlan
+from app.connectors.adapters.registry import run_adapter
+from app.extraction import extract, parse_surface
+from app.extraction.replay import request_from_acquisition_result
+from app.acquisition.platform_policy import detect_platform_family
 
 from harness.support import parse_test_sites_markdown, require_explicit_surface
 
@@ -40,6 +40,22 @@ DEFAULT_REPORT_DIR = Path("artifacts/extraction_smoke")
 
 def _value_present(value: object) -> bool:
     return value not in (None, "", [], {})
+
+
+def _expected_verdicts(site: dict) -> set[str]:
+    raw_value = site.get("expect_verdict")
+    if raw_value in (None, ""):
+        return set()
+    values = raw_value if isinstance(raw_value, list) else [raw_value]
+    return {str(value).strip() for value in values if str(value).strip()}
+
+
+def _expected_fields(site: dict, verdict: str) -> list[str]:
+    fields = [str(field) for field in site.get("expect_fields") or []]
+    by_verdict = site.get("expect_fields_by_verdict") or {}
+    if isinstance(by_verdict, dict):
+        fields.extend(str(field) for field in by_verdict.get(verdict) or [])
+    return list(dict.fromkeys(fields))
 
 
 def _listing_field_coverage(
@@ -250,6 +266,9 @@ async def _run_one(site: dict, run_id: int, timeout_seconds: int) -> dict:
             record.model_dump(mode="json", exclude_none=True)
             for record in extraction_result.records
         ]
+        verdict = str(getattr(extraction_result.verdict, "value", extraction_result.verdict))
+        expected_verdicts = _expected_verdicts(site)
+        result["verdict"] = verdict
 
         if "listing" in surface:
             required_fields = [
@@ -288,6 +307,11 @@ async def _run_one(site: dict, run_id: int, timeout_seconds: int) -> dict:
             )
             min_records = int(site.get("expect_min_records") or 0)
             result["ok"] = len(records) >= min_records and not failing_fields
+            if expected_verdicts and verdict not in expected_verdicts:
+                result["ok"] = False
+                result["issue"] = (
+                    f"Expected verdict in {sorted(expected_verdicts)}, got {verdict}"
+                )
             if len(records) < min_records:
                 result["issue"] = (
                     f"Expected >= {min_records} records, got {len(records)}"
@@ -297,7 +321,7 @@ async def _run_one(site: dict, run_id: int, timeout_seconds: int) -> dict:
                     f"Coverage below threshold for: {sorted(failing_fields)}"
                 )
         else:
-            expected_fields = [str(field) for field in site.get("expect_fields") or []]
+            expected_fields = _expected_fields(site, verdict)
             found_fields = [
                 field
                 for field in expected_fields
@@ -316,6 +340,11 @@ async def _run_one(site: dict, run_id: int, timeout_seconds: int) -> dict:
                 }
             )
             result["ok"] = not missing_fields
+            if expected_verdicts and verdict not in expected_verdicts:
+                result["ok"] = False
+                result["issue"] = (
+                    f"Expected verdict in {sorted(expected_verdicts)}, got {verdict}"
+                )
             if missing_fields:
                 result["issue"] = f"Missing expected fields: {missing_fields}"
     except Exception as exc:  # pylint: disable=broad-exception-caught

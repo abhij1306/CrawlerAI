@@ -16,8 +16,8 @@ from app.schemas.product_intelligence import (
     ProductIntelligenceJobResponse,
     ProductIntelligenceReviewRequest,
 )
-from app.services.crawl.access_service import AccessDeniedError
-from app.services.product_intelligence.service import (
+from app.crawl.access_service import AccessDeniedError
+from app.intelligence.service import (
     build_job_payload,
     create_product_intelligence_job,
     discover_product_intelligence_candidates,

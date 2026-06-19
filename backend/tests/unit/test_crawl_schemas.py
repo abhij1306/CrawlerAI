@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 from types import MappingProxyType
 
 from app.schemas.crawl import CrawlRunResponse, serialize_crawl_record_response
-from app.services.publish.verdict import run_health_verdict
+from app.persistence.publish.verdict import run_health_verdict
 
 
 @pytest.mark.unit

@@ -4,12 +4,12 @@ from dataclasses import dataclass
 
 import pytest
 
-from app.services.crawl.site_link_discovery import discover_rendered_category_links
-from app.services.crawl.sitemap_resolver import (
+from app.crawl.site_link_discovery import discover_rendered_category_links
+from app.crawl.sitemap_resolver import (
     SitemapResolutionResult,
     resolve_category_urls_with_site_links,
 )
-from app.services.url_safety import ValidatedTarget
+from app.core.url_safety import ValidatedTarget
 
 
 @dataclass(slots=True)
@@ -58,7 +58,7 @@ async def test_rendered_discovery_harvests_category_links_and_rejects_utility(
         )
 
     monkeypatch.setattr(
-        "app.services.crawl.site_link_discovery.validate_public_target",
+        "app.crawl.site_link_discovery.validate_public_target",
         _valid_target,
     )
 
@@ -103,7 +103,7 @@ async def test_rendered_discovery_follows_nested_category_links(
         return _FetchResult(final_url=url, html=pages[url])
 
     monkeypatch.setattr(
-        "app.services.crawl.site_link_discovery.validate_public_target",
+        "app.crawl.site_link_discovery.validate_public_target",
         _valid_target,
     )
 
@@ -149,7 +149,7 @@ async def test_rendered_discovery_validation_keeps_listing_signal(
         )
 
     monkeypatch.setattr(
-        "app.services.crawl.site_link_discovery.validate_public_target",
+        "app.crawl.site_link_discovery.validate_public_target",
         _valid_target,
     )
 
@@ -186,11 +186,11 @@ async def test_shared_resolver_uses_rendered_fallback_after_static_error(
         )
 
     monkeypatch.setattr(
-        "app.services.crawl.sitemap_resolver.resolve_category_urls_from_sitemap_result",
+        "app.crawl.sitemap_resolver.resolve_category_urls_from_sitemap_result",
         _fake_static_result,
     )
     monkeypatch.setattr(
-        "app.services.crawl.site_link_discovery.discover_rendered_category_links",
+        "app.crawl.site_link_discovery.discover_rendered_category_links",
         _fake_rendered,
     )
 
@@ -233,11 +233,11 @@ async def test_shared_resolver_keeps_strong_static_result(
         return SitemapResolutionResult(urls=[seed_url], source="rendered_site_links")
 
     monkeypatch.setattr(
-        "app.services.crawl.sitemap_resolver.resolve_category_urls_from_sitemap_result",
+        "app.crawl.sitemap_resolver.resolve_category_urls_from_sitemap_result",
         _fake_static_result,
     )
     monkeypatch.setattr(
-        "app.services.crawl.site_link_discovery.discover_rendered_category_links",
+        "app.crawl.site_link_discovery.discover_rendered_category_links",
         _fake_rendered,
     )
 

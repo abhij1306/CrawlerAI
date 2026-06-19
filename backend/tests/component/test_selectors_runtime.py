@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from app.services.domain_memory_service import load_domain_memory, save_domain_memory
-from app.services.selectors_runtime import (
+from app.crawl.domain_memory_service import load_domain_memory, save_domain_memory
+from app.core.records.selectors_runtime import (
     coerce_int,
     create_selector_record,
     fetch_selector_document,

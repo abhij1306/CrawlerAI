@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import pytest
 
-from app.services.config import audit_rules
-from app.services.config import observability as obs_config
-from app.services.observability import baseline as baseline_mod
+from app.core.config import audit_rules
+from app.core.config import observability as obs_config
+from app.observability import baseline as baseline_mod
 
 pytestmark = pytest.mark.unit
 

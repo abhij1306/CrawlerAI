@@ -3,12 +3,12 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from app.services.acquisition.acquirer import AcquisitionRequest, AcquisitionResult
-from app.services.acquisition_plan import AcquisitionPlan
-from app.services.extraction import Surface, extract
-from app.services.extraction.contracts import CommerceDetailRecord, ExtractionRequest
-from app.services.extraction.contracts import Evidence
-from app.services.extraction.replay import (
+from app.acquisition.acquirer import AcquisitionRequest, AcquisitionResult
+from app.acquisition.runtime_plan import AcquisitionPlan
+from app.extraction import Surface, extract
+from app.extraction.contracts import CommerceDetailRecord, ExtractionRequest
+from app.extraction.contracts import Evidence
+from app.extraction.replay import (
     fixture_request_from_inputs,
     request_from_acquisition_result,
 )
@@ -75,10 +75,134 @@ def test_materializes_once_with_lineage_and_quality() -> None:
     assert record["title"] == "Trail Shoe"
     assert record["price"] == "129.00"
     assert record["currency"] == "USD"
+    assert record["availability"] == "in_stock"
     assert result.verdict == "success"
     assert record["_lineage"]["price"]["derived_fact_id"]
     assert result.evidence
+    assert "selected" not in record["variants"][0]
+
+
+def test_jsonld_product_group_uses_shade_as_color_axis() -> None:
+    html = """
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "ProductGroup",
+      "name": "Eye Shadow",
+      "url": "https://shop.test/products/eye-shadow",
+      "hasVariant": [
+        {
+          "@type": "Product",
+          "sku": "MY6RPE",
+          "name": "Eye Shadow - Carbon - .05 oz / 1.5 g",
+          "color": "Black",
+          "size": ".05 oz / 1.5 g",
+          "offers": {
+            "@type": "Offer",
+            "url": "https://shop.test/products/eye-shadow?shade=Carbon",
+            "price": "25",
+            "priceCurrency": "USD",
+            "availability": "http://schema.org/InStock"
+          }
+        }
+      ]
+    }
+    </script>
+    """
+    result = _extract("ecommerce_detail", html, "https://shop.test/products/eye-shadow")
+    assert result.records[0]["variants"] == [
+        {
+            "sku": "MY6RPE",
+            "price": "25.00",
+            "currency": "USD",
+            "availability": "in_stock",
+            "color": "Carbon",
+            "size": ".05 oz / 1.5 g",
+        }
+    ]
+
+
+def test_jsonld_one_axis_variants_with_child_offers_materialize() -> None:
+    html = """
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "ProductGroup",
+      "name": "Suede Sneakers",
+      "url": "https://shop.test/products/suede",
+      "hasVariant": [
+        {
+          "@type": "Product",
+          "color": "Red",
+          "offers": {"@type": "Offer", "price": "85", "priceCurrency": "USD"}
+        },
+        {
+          "@type": "Product",
+          "color": "Blue",
+          "offers": {"@type": "Offer", "price": "80", "priceCurrency": "USD"}
+        }
+      ]
+    }
+    </script>
+    """
+    result = _extract("ecommerce_detail", html, "https://shop.test/products/suede")
+    assert result.records[0]["variants"] == [
+        {"price": "80.00", "currency": "USD", "color": "Blue"},
+        {"price": "85.00", "currency": "USD", "color": "Red"},
+    ]
+
+
+def test_js_state_image_dimensions_do_not_materialize_as_variants() -> None:
+    artifacts = {
+        "js_state_objects": {
+            "images": [
+                {"__typename": "ProductVariantImage", "width": 1206},
+                {"__typename": "ProductVariantImage", "width": 4000},
+            ],
+            "variants": [
+                {
+                    "__typename": "ProductVariant",
+                    "sku": "2775096",
+                    "color": "Bissap Glaze",
+                    "price": "24",
+                    "currency": "USD",
+                    "availability": "https://schema.org/InStock",
+                }
+            ],
+        }
+    }
+    result = _extract(
+        "ecommerce_detail",
+        "<html><body><h1>Lip Balm</h1></body></html>",
+        "https://shop.test/products/lip-balm",
+        artifacts=artifacts,
+    )
+    assert result.records[0]["variants"] == [
+        {
+            "sku": "2775096",
+            "price": "24.00",
+            "currency": "USD",
+            "availability": "in_stock",
+            "color": "Bissap Glaze",
+        }
+    ]
     assert result.decisions
+
+
+def test_jsonld_aggregate_offer_low_price_materializes() -> None:
+    html = HTML.replace(
+        '"@type": "Offer",\n    "price": "129",',
+        '"@type": "AggregateOffer",\n    "lowPrice": "9.99",\n    "highPrice": "19.99",',
+    )
+    result = _extract(
+        "ecommerce_detail",
+        html,
+        "https://shop.test/products/trail-shoe",
+    )
+    record = result.records[0] if result.records else None
+    assert record is not None
+    assert record["price"] == "9.99"
+    assert record["currency"] == "USD"
 
 
 def test_extraction_request_has_no_artifact_payloads_field() -> None:
@@ -129,8 +253,38 @@ def test_evidence_is_immutable() -> None:
 def test_offer_price_without_currency_is_not_published() -> None:
     html = HTML.replace('"priceCurrency": "usd",', "")
     result = _extract("ecommerce_detail", html, "https://shop.test/products/trail-shoe")
-    assert not result.records
+    assert result.records
+    public = result.records[0].model_dump(mode="json", exclude_none=True)
+    assert "price" not in public
+    assert "currency" not in public
     assert "PRICE_WITHOUT_CURRENCY" in {finding.rule_id for finding in result.findings}
+
+
+def test_slug_only_detail_output_is_review_not_success() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        "<html><body></body></html>",
+        "https://www.zara.com/us/en/rustic-cotton-t-shirt-p04424306.html",
+    )
+    assert result.records
+    assert result.records[0]["title"] == "rustic cotton t shirt p04424306.html"
+    assert result.verdict == "review"
+
+
+def test_access_denied_shell_does_not_succeed() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <html>
+          <head><title>Access denied. We invite you to return at a later time to complete your purchase.</title></head>
+          <body><h1>Access denied. We invite you to return at a later time to complete your purchase.</h1></body>
+        </html>
+        """,
+        "https://us.louisvuitton.com/eng-us/products/bootleg-pants-nvprod7220319v/1AJUPQ",
+    )
+    assert result.verdict == "error"
+    assert result.retry_request is not None
+    assert result.retry_request.reason == "http_shell"
 
 
 def test_order_and_duplicate_independence() -> None:
@@ -211,6 +365,25 @@ def test_ecommerce_listing_result_is_replayable() -> None:
     assert payload["decisions"]
 
 
+def test_ecommerce_listing_filters_docs_utility_links() -> None:
+    result = _extract(
+        "ecommerce_listing",
+        """
+        <main>
+          <li><a href="/docs" title="API">API</a></li>
+          <li><a href="/file-download" title="File Download">File Download</a></li>
+          <li><a href="/sitemap.xml" title="Sitemap">Sitemap</a></li>
+          <div class="row product">
+            <a href="/products/trail-shoe"><h2>Trail Shoe</h2></a>
+          </div>
+        </main>
+        """,
+        "https://shop.test/products",
+        max_records=5,
+    )
+    assert [row["title"] for row in result.records] == ["Trail Shoe"]
+
+
 def test_js_state_dict_values_do_not_crash_dedupe() -> None:
     artifacts = {
         "js_state_objects": {
@@ -251,8 +424,63 @@ def test_js_state_explicit_variant_rows_are_materialized() -> None:
     record = result.records[0] if result.records else None
     assert record is not None
     assert record["variants"] == [
-        {"selected": False, "sku": "SKU-BLK-S", "color": "Black", "size": "S"},
-        {"selected": False, "sku": "SKU-WHT-M", "color": "White", "size": "M"},
+        {"variant_id": "v1", "sku": "SKU-BLK-S", "color": "Black", "size": "S"},
+        {"variant_id": "v2", "sku": "SKU-WHT-M", "color": "White", "size": "M"},
+    ]
+
+
+def test_js_state_nested_variant_options_and_offer_materialize() -> None:
+    artifacts = {
+        "js_state_objects": {
+            "variants": [
+                {
+                    "__typename": "ProductVariant",
+                    "variantId": "v-red-s",
+                    "sku": "TEE-RED-S",
+                    "selectedOptions": [
+                        {"name": "Color", "value": "Red"},
+                        {"name": "Size", "value": "S"},
+                    ],
+                    "price": {"value": "18.5"},
+                    "currencyCode": "USD",
+                    "inStock": True,
+                },
+                {
+                    "__typename": "ProductVariant",
+                    "skuId": "sku-blue-m",
+                    "attributes": {"color": "Blue", "size": "M"},
+                    "currentPrice": "19",
+                    "currency": "USD",
+                    "availability": "https://schema.org/OutOfStock",
+                },
+            ]
+        }
+    }
+    result = _extract(
+        "ecommerce_detail",
+        "<html><body><h1>Everyday Tee</h1></body></html>",
+        "https://shop.test/products/everyday-tee",
+        artifacts=artifacts,
+    )
+    assert result.records
+    assert result.records[0]["variants"] == [
+        {
+            "variant_id": "sku-blue-m",
+            "price": "19.00",
+            "currency": "USD",
+            "availability": "out_of_stock",
+            "color": "Blue",
+            "size": "M",
+        },
+        {
+            "variant_id": "v-red-s",
+            "sku": "TEE-RED-S",
+            "price": "18.50",
+            "currency": "USD",
+            "availability": "in_stock",
+            "color": "Red",
+            "size": "S",
+        },
     ]
 
 
@@ -272,10 +500,10 @@ def test_product_group_variants_have_lineage_and_parent_subjects() -> None:
     </script>
     """
     result = _extract("ecommerce_detail", html, "https://shop.test/products/everyday-tee")
-    assert result.verdict == "success"
+    assert result.verdict == "partial"
     assert result.records[0]["variants"] == [
-        {"selected": False, "sku": "TEE-BLK-S", "color": "Black", "size": "S"},
-        {"selected": False, "sku": "TEE-BLK-M", "color": "Black", "size": "M"},
+        {"sku": "TEE-BLK-S", "color": "Black", "size": "S"},
+        {"sku": "TEE-BLK-M", "color": "Black", "size": "M"},
     ]
     variant_evidence = [item for item in result.evidence if item.fact_type.startswith("variant.")]
     assert variant_evidence
@@ -325,7 +553,41 @@ def test_related_product_root_cannot_overwrite_selected_detail_entity() -> None:
     assert result.records[0]["url"] == "https://shop.test/products/selected-trail-shoe"
 
 
-def test_dom_variant_controls_do_not_succeed_with_missing_variants() -> None:
+def test_noisy_variant_root_cannot_outrank_complete_offer_product() -> None:
+    html = """
+    <script type="application/ld+json">
+    [
+      {
+        "@context": "https://schema.org",
+        "@type": "Product",
+        "name": "Soleil pant in linen",
+        "url": "https://shop.test/products/soleil-pant",
+        "sku": "CI939-BR8825",
+        "offers": {"@type": "Offer", "price": "14273", "priceCurrency": "INR"}
+      },
+      {
+        "@context": "https://schema.org",
+        "@type": "ProductGroup",
+        "name": "Linen",
+        "url": "https://shop.test/products/linen",
+        "hasVariant": [
+          {"@type": "Product", "color": "WT0002", "url": "https://api.shop.test/99107606086.html"}
+        ]
+      }
+    ]
+    </script>
+    """
+    result = _extract(
+        "ecommerce_detail",
+        html,
+        "https://shop.test/products/soleil-pant?colorCode=BR8825",
+    )
+    assert result.records[0]["title"] == "Soleil pant in linen"
+    assert result.records[0]["price"] == "14273.00"
+    assert not result.records[0].get("variants")
+
+
+def test_dom_option_controls_do_not_materialize_sellable_variants() -> None:
     html = """
     <main>
       <h1>Everyday Tee</h1>
@@ -339,9 +601,59 @@ def test_dom_variant_controls_do_not_succeed_with_missing_variants() -> None:
     """
     result = _extract("ecommerce_detail", html, "https://shop.test/products/everyday-tee")
     assert result.records
-    assert result.records[0]["variants"]
-    variant_evidence = [item for item in result.evidence if item.fact_type.startswith("variant.")]
-    assert all(item.parent_subject_id for item in variant_evidence)
+    assert not result.records[0].get("variants")
+    option_evidence = [item for item in result.evidence if item.fact_type.startswith("option.")]
+    assert option_evidence
+    assert result.graph.entity_counts["option"] == 3
+
+
+def test_variant_identity_merges_sources_and_materializes_child_offer() -> None:
+    html = """
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "ProductGroup",
+      "name": "Everyday Tee",
+      "url": "https://shop.test/products/everyday-tee",
+      "hasVariant": [
+        {"@type": "Product", "sku": "TEE-BLK-S", "color": "Black", "size": "S"}
+      ]
+    }
+    </script>
+    """
+    artifacts = {
+        "js_state_objects": {
+            "variant": {
+                "id": "v1",
+                "sku": "TEE-BLK-S",
+                "color": "Black",
+                "size": "S",
+                "price": "18.5",
+                "currency": "USD",
+                "availability": "InStock",
+            }
+        }
+    }
+    result = _extract(
+        "ecommerce_detail",
+        html,
+        "https://shop.test/products/everyday-tee",
+        artifacts=artifacts,
+    )
+    variants = result.records[0]["variants"]
+    assert variants == [
+        {
+            "variant_id": "v1",
+            "sku": "TEE-BLK-S",
+            "price": "18.50",
+            "currency": "USD",
+            "availability": "in_stock",
+            "color": "Black",
+            "size": "S",
+        }
+    ]
+    assert result.graph.entity_counts["variant"] == 1
+    assert result.records[0]["_lineage"]["variants"][0]["price"]
 
 
 def test_mixed_numeric_and_string_identity_values_do_not_crash() -> None:
@@ -513,3 +825,144 @@ def test_job_listing_result_is_replayable() -> None:
     assert payload["surface"] == "job_listing"
     assert payload["evidence"]
     assert payload["decisions"]
+
+
+def test_job_listing_greenhouse_table_rows_materialize() -> None:
+    result = _extract(
+        "job_listing",
+        """
+        <main><table>
+          <tr class="job-post">
+            <td class="cell">
+              <a href="https://careers.test/positions/123">
+                <p class="body body--medium">Senior Data Scientist</p>
+                <p class="body body__secondary body--metadata">Remote</p>
+              </a>
+            </td>
+          </tr>
+        </table></main>
+        """,
+        "https://job-boards.test/embed/job_board?for=company",
+        max_records=5,
+    )
+    assert result.records
+    assert result.records[0]["title"] == "Senior Data Scientist"
+    assert result.records[0]["url"] == "https://careers.test/positions/123"
+    assert result.records[0]["location"] == "Remote"
+
+
+def test_parent_availability_is_coherent_with_complete_variant_matrix() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "ProductGroup",
+          "name": "Everyday Tee",
+          "url": "https://shop.test/products/everyday-tee",
+          "offers": {
+            "price": "20",
+            "priceCurrency": "USD",
+            "availability": "https://schema.org/OutOfStock"
+          },
+          "hasVariant": [
+            {
+              "@type": "Product",
+              "sku": "TEE-S",
+              "size": "S",
+              "offers": {
+                "price": "20",
+                "priceCurrency": "USD",
+                "availability": "https://schema.org/InStock"
+              }
+            },
+            {
+              "@type": "Product",
+              "sku": "TEE-M",
+              "size": "M",
+              "offers": {
+                "price": "20",
+                "priceCurrency": "USD",
+                "availability": "https://schema.org/OutOfStock"
+              }
+            }
+          ]
+        }
+        </script>
+        """,
+        "https://shop.test/products/everyday-tee",
+    )
+    record = result.records[0]
+    assert record["availability"] == "in_stock"
+    assert record["_lineage"]["availability"]["rule_id"] == "variant_availability_aggregate"
+    assert any(finding.rule_id == "PARENT_VARIANT_AVAILABILITY_CONFLICT" for finding in result.findings)
+
+
+def test_detail_url_falls_back_to_canonical_capture_url() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <script type="application/ld+json">
+        {"@type": "Product", "name": "Trail Shoe", "offers": {"price": "10", "priceCurrency": "USD"}}
+        </script>
+        """,
+        "https://shop.test/products/trail-shoe",
+    )
+    assert result.records[0]["url"] == "https://shop.test/products/trail-shoe"
+
+
+def test_utility_image_cannot_beat_product_image() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <script type="application/ld+json">
+        {
+          "@type": "Product",
+          "name": "Trail Shoe",
+          "url": "https://shop.test/products/trail-shoe",
+          "image": [
+            "https://shop.test/assets/discount.svg",
+            "https://shop.test/products/trail-shoe-main.jpg"
+          ],
+          "offers": {"price": "10", "priceCurrency": "USD"}
+        }
+        </script>
+        """,
+        "https://shop.test/products/trail-shoe",
+    )
+    assert result.records[0]["image_url"] == "https://shop.test/products/trail-shoe-main.jpg"
+
+
+def test_missing_requested_field_has_visible_finding() -> None:
+    result = extract(
+        fixture_request_from_inputs(
+            Surface.ECOMMERCE_DETAIL,
+            '<script type="application/ld+json">{"@type":"Product","name":"Trail Shoe"}</script>',
+            "https://shop.test/products/trail-shoe",
+            requested_fields=("brand",),
+        )
+    )
+    findings = [finding for finding in result.findings if finding.rule_id == "MISSING_CONTRACT_FIELD"]
+    assert any(finding.metadata.get("field") == "brand" for finding in findings)
+    assert result.verdict in {"partial", "review"}
+
+
+def test_missing_requested_variants_requests_one_rendered_capability() -> None:
+    result = extract(
+        fixture_request_from_inputs(
+            Surface.ECOMMERCE_DETAIL,
+            """
+            <main>
+              <h1>Everyday Tee</h1>
+              <label>Size</label><select><option>S</option><option>M</option></select>
+            </main>
+            """,
+            "https://shop.test/products/everyday-tee",
+            requested_fields=("variants",),
+        )
+    )
+    assert not result.records[0].get("variants")
+    assert result.retry_request is not None
+    assert result.retry_request.reason == "explicit_variants_missing"
+    assert result.retry_request.max_attempts == 1

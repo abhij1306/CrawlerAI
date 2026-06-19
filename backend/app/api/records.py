@@ -13,13 +13,13 @@ from app.schemas.crawl import (
     CrawlRecordResponse,
     serialize_crawl_record_responses,
 )
-from app.services.crawl.access_service import (
+from app.crawl.access_service import (
     AccessDeniedError,
     RUN_NOT_FOUND_DETAIL,
     require_accessible_run,
 )
-from app.services.crawl.record_reconciliation import load_records_with_reconciliation
-from app.services.record_export_service import (
+from app.crawl.record_reconciliation import load_records_with_reconciliation
+from app.persistence.record_export_service import (
     MAX_RECORD_PAGE_SIZE,
     RECORD_PROVENANCE_NOT_FOUND_RESPONSE,
     RUN_NOT_FOUND_RESPONSE,

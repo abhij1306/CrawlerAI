@@ -24,16 +24,16 @@ from app.schemas.crawl import (
     DomainRunProfilePayload,
     DomainRunProfileRecordResponse,
 )
-from app.services.acquisition.cookie_store import list_domain_cookie_memory
-from app.services.crawl.access_service import (
+from app.acquisition.cookie_store import list_domain_cookie_memory
+from app.crawl.access_service import (
     RUN_NOT_FOUND_DETAIL,
 )
-from app.services.crawl.profile import (
+from app.crawl.profile import (
     list_domain_run_profiles,
     load_domain_run_profile,
 )
-from app.services.domain_utils import normalize_domain
-from app.services.review import (
+from app.core.domain_utils import normalize_domain
+from app.crawl.review import (
     apply_domain_recipe_field_action,
     build_domain_recipe_payload,
     list_domain_field_feedback,

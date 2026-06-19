@@ -17,11 +17,12 @@ from app.models.crawl_domain import (
     transition_status,
 )
 from app.models.crawl_settings import CrawlRunSettings
-from app.services.config.data_enrichment import DATA_ENRICHMENT_STATUS_UNENRICHED
-from app.services.db_utils import mapping_or_empty
-from app.services.run_summary import merge_run_summary_patch
+from app.core.config.data_enrichment import DATA_ENRICHMENT_STATUS_UNENRICHED
+from app.core.db_utils import mapping_or_empty
+from app.persistence.run_summary import merge_run_summary_patch
 
 CRAWL_RUN_FK = "crawl_runs.id"
+CRAWL_URL_RESULT_FK = "crawl_url_results.id"
 USERS_FK = "users.id"
 CASCADE = "CASCADE"
 SET_NULL = "SET NULL"
@@ -142,6 +143,37 @@ class CrawlRun(UpdatedAtMixin, CompletedAtMixin, Base):
         return merged
 
 
+class CrawlUrlResult(UpdatedAtMixin, CompletedAtMixin, Base):
+    __tablename__ = "crawl_url_results"
+    __table_args__ = (
+        Index(
+            "uq_crawl_url_results_identity",
+            "run_id",
+            "normalized_url",
+            "surface",
+            "generation",
+            unique=True,
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    run_id: Mapped[int] = mapped_column(
+        ForeignKey(CRAWL_RUN_FK, ondelete=CASCADE), index=True
+    )
+    requested_url: Mapped[str] = mapped_column(Text)
+    normalized_url: Mapped[str] = mapped_column(Text)
+    final_url: Mapped[str] = mapped_column(Text, default="")
+    surface: Mapped[str] = mapped_column(String(40))
+    generation: Mapped[int] = mapped_column(Integer, default=1)
+    acquisition_outcome: Mapped[str] = mapped_column(String(24), default="empty")
+    verdict: Mapped[str] = mapped_column(String(24), default="empty", index=True)
+    extraction_version: Mapped[str] = mapped_column(String(32), default="extraction.v1")
+    bundle_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    manifest_uri: Mapped[str | None] = mapped_column(Text, nullable=True)
+    record_count: Mapped[int] = mapped_column(Integer, default=0)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
 class CrawlRecord(CreatedAtMixin, Base):
     __tablename__ = "crawl_records"
     __table_args__ = (
@@ -156,6 +188,11 @@ class CrawlRecord(CreatedAtMixin, Base):
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    url_result_id: Mapped[int | None] = mapped_column(
+        ForeignKey(CRAWL_URL_RESULT_FK, ondelete=CASCADE),
+        nullable=True,
+        index=True,
+    )
     run_id: Mapped[int] = mapped_column(
         ForeignKey(CRAWL_RUN_FK, ondelete=CASCADE), index=True
     )

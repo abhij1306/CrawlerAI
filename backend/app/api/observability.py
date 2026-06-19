@@ -7,12 +7,12 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from app.core.dependencies import get_current_user, get_db
 from app.models.user import User
-from app.services.crawl.access_service import (
+from app.crawl.access_service import (
     AccessDeniedError,
     RUN_NOT_FOUND_DETAIL,
     require_accessible_run,
 )
-from app.services.observability.artifact_reader import read_run_observability
+from app.observability.artifact_reader import read_run_observability
 from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter(tags=["observability"])

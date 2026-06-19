@@ -13,10 +13,10 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.services.config import audit_rules
-from app.services.config import observability as obs_config
-from app.services.observability import baseline as baseline_mod
-from app.services.observability import run_audit
+from app.core.config import audit_rules
+from app.core.config import observability as obs_config
+from app.observability import baseline as baseline_mod
+from app.observability import run_audit
 
 pytestmark = pytest.mark.unit
 

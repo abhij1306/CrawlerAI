@@ -13,10 +13,10 @@ from app.schemas.crawl import (
     ReviewSaveResponse,
     serialize_crawl_record_responses,
 )
-from app.services.crawl.access_service import (
+from app.crawl.access_service import (
     RUN_NOT_FOUND_DETAIL,
 )
-from app.services.review import build_review_payload, load_review_html, save_review
+from app.crawl.review import build_review_payload, load_review_html, save_review
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import HTMLResponse
 from sqlalchemy.ext.asyncio import AsyncSession

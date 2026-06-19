@@ -5,13 +5,13 @@ from types import SimpleNamespace
 import httpx
 import pytest
 
-from app.services.crawl import sitemap_resolver
-from app.services.crawl.sitemap_resolver import (
+from app.crawl import sitemap_resolver
+from app.crawl.sitemap_resolver import (
     _normalize_sitemap_url,
     resolve_category_urls_from_sitemap,
     resolve_category_urls_from_sitemap_result,
 )
-from app.services.url_safety import SecurityError, ValidatedTarget
+from app.core.url_safety import SecurityError, ValidatedTarget
 
 
 SITEMAP_NS = "http://www.sitemaps.org/schemas/sitemap/0.9"
@@ -132,11 +132,11 @@ async def test_resolve_sitemap_index_filters_final_urls_not_child_sitemaps(
         }
     )
     monkeypatch.setattr(
-        "app.services.crawl.sitemap_resolver.httpx.AsyncClient",
+        "app.crawl.sitemap_resolver.httpx.AsyncClient",
         lambda **kwargs: fake_client,
     )
     monkeypatch.setattr(
-        "app.services.crawl.sitemap_resolver.validate_public_target",
+        "app.crawl.sitemap_resolver.validate_public_target",
         _valid_target,
     )
 
@@ -178,14 +178,14 @@ async def test_resolve_sitemap_retries_transient_root_fetch_failure(
         return None
 
     monkeypatch.setattr(
-        "app.services.crawl.sitemap_resolver.httpx.AsyncClient",
+        "app.crawl.sitemap_resolver.httpx.AsyncClient",
         lambda **kwargs: fake_client,
     )
     monkeypatch.setattr(
-        "app.services.crawl.sitemap_resolver.validate_public_target",
+        "app.crawl.sitemap_resolver.validate_public_target",
         _valid_target,
     )
-    monkeypatch.setattr("app.services.crawl.sitemap_resolver.asyncio.sleep", _no_sleep)
+    monkeypatch.setattr("app.crawl.sitemap_resolver.asyncio.sleep", _no_sleep)
 
     urls = await resolve_category_urls_from_sitemap("example.com", "collections", 500)
 
@@ -220,11 +220,11 @@ async def test_resolve_sitemap_index_skips_failed_child_sitemaps(
         }
     )
     monkeypatch.setattr(
-        "app.services.crawl.sitemap_resolver.httpx.AsyncClient",
+        "app.crawl.sitemap_resolver.httpx.AsyncClient",
         lambda **kwargs: fake_client,
     )
     monkeypatch.setattr(
-        "app.services.crawl.sitemap_resolver.validate_public_target",
+        "app.crawl.sitemap_resolver.validate_public_target",
         _valid_target,
     )
 
@@ -232,7 +232,7 @@ async def test_resolve_sitemap_index_skips_failed_child_sitemaps(
         return None
 
     monkeypatch.setattr(
-        "app.services.crawl.sitemap_resolver.asyncio.sleep",
+        "app.crawl.sitemap_resolver.asyncio.sleep",
         _no_sleep,
     )
 
@@ -267,11 +267,11 @@ async def test_resolve_direct_urlset_filters_urls_and_clamps(
         }
     )
     monkeypatch.setattr(
-        "app.services.crawl.sitemap_resolver.httpx.AsyncClient",
+        "app.crawl.sitemap_resolver.httpx.AsyncClient",
         lambda **kwargs: fake_client,
     )
     monkeypatch.setattr(
-        "app.services.crawl.sitemap_resolver.validate_public_target",
+        "app.crawl.sitemap_resolver.validate_public_target",
         _valid_target,
     )
 
@@ -304,11 +304,11 @@ async def test_resolver_raises_when_no_final_urls_match(
         }
     )
     monkeypatch.setattr(
-        "app.services.crawl.sitemap_resolver.httpx.AsyncClient",
+        "app.crawl.sitemap_resolver.httpx.AsyncClient",
         lambda **kwargs: fake_client,
     )
     monkeypatch.setattr(
-        "app.services.crawl.sitemap_resolver.validate_public_target",
+        "app.crawl.sitemap_resolver.validate_public_target",
         _valid_target,
     )
 
@@ -334,11 +334,11 @@ async def test_resolver_default_does_not_filter_urls(
         }
     )
     monkeypatch.setattr(
-        "app.services.crawl.sitemap_resolver.httpx.AsyncClient",
+        "app.crawl.sitemap_resolver.httpx.AsyncClient",
         lambda **kwargs: fake_client,
     )
     monkeypatch.setattr(
-        "app.services.crawl.sitemap_resolver.validate_public_target",
+        "app.crawl.sitemap_resolver.validate_public_target",
         _valid_target,
     )
 
@@ -370,11 +370,11 @@ async def test_resolver_category_only_filters_non_category_urls(
         }
     )
     monkeypatch.setattr(
-        "app.services.crawl.sitemap_resolver.httpx.AsyncClient",
+        "app.crawl.sitemap_resolver.httpx.AsyncClient",
         lambda **kwargs: fake_client,
     )
     monkeypatch.setattr(
-        "app.services.crawl.sitemap_resolver.validate_public_target",
+        "app.crawl.sitemap_resolver.validate_public_target",
         _valid_target,
     )
 
@@ -407,11 +407,11 @@ async def test_resolver_builds_nav_tree_from_sitemap_category_urls(
         }
     )
     monkeypatch.setattr(
-        "app.services.crawl.sitemap_resolver.httpx.AsyncClient",
+        "app.crawl.sitemap_resolver.httpx.AsyncClient",
         lambda **kwargs: fake_client,
     )
     monkeypatch.setattr(
-        "app.services.crawl.sitemap_resolver.validate_public_target",
+        "app.crawl.sitemap_resolver.validate_public_target",
         _valid_target,
     )
 
@@ -473,11 +473,11 @@ async def test_homepage_fallback_nav_tree_prefers_anchor_text_labels(
         }
     )
     monkeypatch.setattr(
-        "app.services.crawl.sitemap_resolver.httpx.AsyncClient",
+        "app.crawl.sitemap_resolver.httpx.AsyncClient",
         lambda **kwargs: fake_client,
     )
     monkeypatch.setattr(
-        "app.services.crawl.sitemap_resolver.validate_public_target",
+        "app.crawl.sitemap_resolver.validate_public_target",
         _valid_target,
     )
 
@@ -542,11 +542,11 @@ async def test_resolver_category_only_falls_back_when_sitemap_has_account_links(
         }
     )
     monkeypatch.setattr(
-        "app.services.crawl.sitemap_resolver.httpx.AsyncClient",
+        "app.crawl.sitemap_resolver.httpx.AsyncClient",
         lambda **kwargs: fake_client,
     )
     monkeypatch.setattr(
-        "app.services.crawl.sitemap_resolver.validate_public_target",
+        "app.crawl.sitemap_resolver.validate_public_target",
         _valid_target,
     )
 
@@ -569,7 +569,7 @@ async def test_homepage_category_only_rejects_link_without_category_signal(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        "app.services.crawl.sitemap_resolver.validate_public_target",
+        "app.crawl.sitemap_resolver.validate_public_target",
         _valid_target,
     )
 
@@ -590,7 +590,7 @@ async def test_homepage_category_only_keeps_anchor_category_without_auto_listing
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        "app.services.crawl.sitemap_resolver.validate_public_target",
+        "app.crawl.sitemap_resolver.validate_public_target",
         _valid_target,
     )
 
@@ -620,11 +620,11 @@ async def test_resolver_empty_urlset_without_filter_reports_no_urls(
         }
     )
     monkeypatch.setattr(
-        "app.services.crawl.sitemap_resolver.httpx.AsyncClient",
+        "app.crawl.sitemap_resolver.httpx.AsyncClient",
         lambda **kwargs: fake_client,
     )
     monkeypatch.setattr(
-        "app.services.crawl.sitemap_resolver.validate_public_target",
+        "app.crawl.sitemap_resolver.validate_public_target",
         _valid_target,
     )
 
@@ -638,11 +638,11 @@ async def test_resolver_raises_for_invalid_xml(monkeypatch: pytest.MonkeyPatch) 
     root_url = "https://example.com/sitemap.xml"
     fake_client = _FakeClient({root_url: _xml_response(root_url, "<not-closed")})
     monkeypatch.setattr(
-        "app.services.crawl.sitemap_resolver.httpx.AsyncClient",
+        "app.crawl.sitemap_resolver.httpx.AsyncClient",
         lambda **kwargs: fake_client,
     )
     monkeypatch.setattr(
-        "app.services.crawl.sitemap_resolver.validate_public_target",
+        "app.crawl.sitemap_resolver.validate_public_target",
         _valid_target,
     )
 
@@ -656,11 +656,11 @@ async def test_resolver_raises_for_non_200(monkeypatch: pytest.MonkeyPatch) -> N
     root_url = "https://example.com/sitemap.xml"
     fake_client = _FakeClient({root_url: _xml_response(root_url, "missing", 404)})
     monkeypatch.setattr(
-        "app.services.crawl.sitemap_resolver.httpx.AsyncClient",
+        "app.crawl.sitemap_resolver.httpx.AsyncClient",
         lambda **kwargs: fake_client,
     )
     monkeypatch.setattr(
-        "app.services.crawl.sitemap_resolver.validate_public_target",
+        "app.crawl.sitemap_resolver.validate_public_target",
         _valid_target,
     )
 
@@ -691,11 +691,11 @@ async def test_resolver_rejects_unsafe_discovered_urls(
         return await _valid_target(url)
 
     monkeypatch.setattr(
-        "app.services.crawl.sitemap_resolver.httpx.AsyncClient",
+        "app.crawl.sitemap_resolver.httpx.AsyncClient",
         lambda **kwargs: fake_client,
     )
     monkeypatch.setattr(
-        "app.services.crawl.sitemap_resolver.validate_public_target",
+        "app.crawl.sitemap_resolver.validate_public_target",
         _reject_loopback,
     )
 
@@ -735,11 +735,11 @@ async def test_resolver_falls_back_to_homepage_links_when_sitemap_missing(
         }
     )
     monkeypatch.setattr(
-        "app.services.crawl.sitemap_resolver.httpx.AsyncClient",
+        "app.crawl.sitemap_resolver.httpx.AsyncClient",
         lambda **kwargs: fake_client,
     )
     monkeypatch.setattr(
-        "app.services.crawl.sitemap_resolver.validate_public_target",
+        "app.crawl.sitemap_resolver.validate_public_target",
         _valid_target,
     )
 
@@ -787,11 +787,11 @@ async def test_resolver_homepage_fallback_does_not_hard_filter_by_keyword(
         }
     )
     monkeypatch.setattr(
-        "app.services.crawl.sitemap_resolver.httpx.AsyncClient",
+        "app.crawl.sitemap_resolver.httpx.AsyncClient",
         lambda **kwargs: fake_client,
     )
     monkeypatch.setattr(
-        "app.services.crawl.sitemap_resolver.validate_public_target",
+        "app.crawl.sitemap_resolver.validate_public_target",
         _valid_target,
     )
 
@@ -852,7 +852,7 @@ async def test_homepage_fallback_requires_exact_same_origin(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        "app.services.crawl.sitemap_resolver.validate_public_target",
+        "app.crawl.sitemap_resolver.validate_public_target",
         _valid_target,
     )
 
@@ -903,11 +903,11 @@ async def test_resolver_rejects_private_redirect_chain_url(
         return await _valid_target(url)
 
     monkeypatch.setattr(
-        "app.services.crawl.sitemap_resolver.httpx.AsyncClient",
+        "app.crawl.sitemap_resolver.httpx.AsyncClient",
         lambda **kwargs: fake_client,
     )
     monkeypatch.setattr(
-        "app.services.crawl.sitemap_resolver.validate_public_target",
+        "app.crawl.sitemap_resolver.validate_public_target",
         _reject_private,
     )
 

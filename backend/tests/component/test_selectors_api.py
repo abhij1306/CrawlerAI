@@ -6,7 +6,7 @@ from httpx import ASGITransport, AsyncClient
 
 from app.core.dependencies import get_current_user, get_db
 from app.main import app
-from app.services.url_safety import SecurityError
+from app.core.url_safety import SecurityError
 
 
 @pytest.fixture

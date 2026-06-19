@@ -10,8 +10,8 @@ from app.core.dependencies import get_db
 from app.core.public_auth import get_public_api_user
 from app.models.user import User
 from app.schemas.public_api import PublicBatchExtractRequest, PublicExtractRequest
-from app.services.config.public_api import PUBLIC_API_ERROR_WORKER_REQUIRED
-from app.services.public_api.extraction_service import extract_public_product
+from app.core.config.public_api import PUBLIC_API_ERROR_WORKER_REQUIRED
+from app.connectors.public_api.extraction_service import extract_public_product
 
 router = APIRouter(prefix="/api/v1/extract", tags=["public-extract"])
 

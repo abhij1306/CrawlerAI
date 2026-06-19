@@ -15,7 +15,7 @@ from app.models.crawl_run import (
     USERS_FK,
     UpdatedAtMixin,
 )
-from app.services.config.product_intelligence import (
+from app.core.config.product_intelligence import (
     PRODUCT_INTELLIGENCE_CANDIDATE_STATUS_DISCOVERED,
     PRODUCT_INTELLIGENCE_JOB_STATUS_QUEUED,
     PRODUCT_INTELLIGENCE_REVIEW_PENDING,

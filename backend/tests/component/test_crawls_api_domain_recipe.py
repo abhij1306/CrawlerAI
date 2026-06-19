@@ -7,11 +7,11 @@ from sqlalchemy import select
 from app.core.dependencies import get_current_user, get_db
 from app.main import app
 from app.models.domain_memory import DomainFieldFeedback
-from app.services.crawl.batch_runtime import process_run
-from app.services.acquisition.cookie_store import persist_storage_state_for_domain
-from app.services.acquisition.acquirer import AcquisitionResult
-from app.services.crawl.crud import create_crawl_run
-from app.services.domain_memory_service import save_domain_memory
+from app.crawl.batch_runtime import process_run
+from app.acquisition.cookie_store import persist_storage_state_for_domain
+from app.acquisition.acquirer import AcquisitionResult
+from app.crawl.crud import create_crawl_run
+from app.crawl.domain_memory_service import save_domain_memory
 
 
 def _authenticated_proxy_url() -> str:
@@ -157,7 +157,7 @@ async def test_crawls_domain_recipe_routes_round_trip(
             browser_diagnostics={"browser_reason": "http-escalation"},
         )
 
-    monkeypatch.setattr("app.services.pipeline.extraction_loop.acquire", _fake_acquire)
+    monkeypatch.setattr("app.crawl.pipeline.extraction_loop.acquire", _fake_acquire)
 
     await process_run(db_session, run.id)
 
@@ -415,7 +415,7 @@ async def test_domain_run_profile_contract_autosaves_real_chrome_success(
             },
         )
 
-    monkeypatch.setattr("app.services.pipeline.extraction_loop.acquire", _fake_acquire)
+    monkeypatch.setattr("app.crawl.pipeline.extraction_loop.acquire", _fake_acquire)
 
     await process_run(db_session, run.id)
 

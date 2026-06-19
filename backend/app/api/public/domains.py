@@ -9,7 +9,7 @@ from app.api.public.common import public_success
 from app.core.dependencies import get_db
 from app.core.public_auth import get_public_api_user
 from app.models.user import User
-from app.services.public_api.domain_info_service import public_domain_info
+from app.connectors.public_api.domain_info_service import public_domain_info
 
 router = APIRouter(prefix="/api/v1/domains", tags=["public-domains"])
 

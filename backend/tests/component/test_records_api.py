@@ -8,9 +8,9 @@ from httpx import ASGITransport, AsyncClient
 from app.core.dependencies import get_current_user, get_db
 from app.main import app
 from app.models.crawl_run import CrawlRecord
-from app.services.config.runtime_settings import crawler_runtime_settings
-from app.services.crawl.crud import create_crawl_run, get_run_records as real_get_run_records
-from app.services.crawl.state import CrawlStatus, update_run_status
+from app.core.config.runtime_settings import crawler_runtime_settings
+from app.crawl.crud import create_crawl_run, get_run_records as real_get_run_records
+from app.crawl.state import CrawlStatus, update_run_status
 
 
 @pytest.fixture
@@ -80,11 +80,11 @@ async def test_records_api_retries_empty_first_read_when_run_summary_expects_row
         yield db_session
 
     monkeypatch.setattr(
-        "app.services.crawl.record_reconciliation.get_run_records",
+        "app.crawl.record_reconciliation.get_run_records",
         _fake_get_run_records,
     )
     monkeypatch.setattr(
-        "app.services.crawl.record_reconciliation.SessionLocal",
+        "app.crawl.record_reconciliation.SessionLocal",
         _fake_session_local,
     )
     monkeypatch.setattr(crawler_runtime_settings, "records_read_retry_attempts", 1)

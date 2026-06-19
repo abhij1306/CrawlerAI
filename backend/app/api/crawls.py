@@ -22,31 +22,31 @@ from app.schemas.crawl import (
     FieldCommitRequest,
     FieldCommitResponse,
 )
-from app.services.crawl.access_service import (
+from app.crawl.access_service import (
     RUN_NOT_FOUND_DETAIL,
     require_accessible_run,
 )
-from app.services.crawl.category_discovery import discover_category_urls
-from app.services.crawl.crud import (
+from app.crawl.category_discovery import discover_category_urls
+from app.crawl.crud import (
     commit_llm_suggestions,
     commit_selected_fields,
     delete_run,
     get_run_logs,
     list_runs,
 )
-from app.services.crawl.events import serialize_log_event
-from app.services.crawl.ingestion_service import (
+from app.crawl.events import serialize_log_event
+from app.crawl.ingestion_service import (
     create_crawl_run_from_csv,
     create_crawl_run_from_payload,
 )
-from app.services.crawl.log_stream import (
+from app.crawl.log_stream import (
     load_accessible_log_run,
     load_log_stream_snapshot,
     resolve_log_stream_user,
 )
-from app.services.crawl.service import kill_run, pause_run, resume_run
-from app.services.crawl.state import TERMINAL_STATUSES
-from app.services.config.runtime_settings import crawler_runtime_settings
+from app.crawl.service import kill_run, pause_run, resume_run
+from app.crawl.state import TERMINAL_STATUSES
+from app.core.config.runtime_settings import crawler_runtime_settings
 from fastapi import (
     APIRouter,
     Depends,

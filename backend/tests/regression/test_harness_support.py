@@ -9,7 +9,7 @@ from sqlalchemy import select
 import harness_support
 import run_test_sites_acceptance
 from app.core.security import hash_password, verify_password
-from app.services.acquisition_plan import AcquisitionPlan
+from app.acquisition.runtime_plan import AcquisitionPlan
 from harness_support import (
     build_explicit_sites,
     classify_failure_mode,
@@ -28,11 +28,10 @@ def test_require_explicit_surface_rejects_missing_surface() -> None:
 
 
 @pytest.mark.regression
-def test_parse_test_sites_markdown_rejects_untyped_tail_urls(tmp_path: Path) -> None:
+def test_parse_test_sites_markdown_skips_untyped_tail_urls(tmp_path: Path) -> None:
     path = tmp_path / "TEST_SITES.md"
     path.write_text("ignore\nhttps://example.com/careers\nnot a url\nhttps://shop.example.com/collections\n", encoding="utf-8")
-    with pytest.raises(ValueError, match="surface is required"):
-        parse_test_sites_markdown(path, start_line=2)
+    assert parse_test_sites_markdown(path, start_line=2) == []
 
 
 @pytest.mark.regression
@@ -210,7 +209,7 @@ def test_classify_failure_mode_flags_missing_adapter_registration() -> None:
         "records": 0,
     }
 
-    assert classify_failure_mode(result) == "adapter_not_matched"
+    assert classify_failure_mode(result) == "adapter_not_registered"
 
 
 @pytest.mark.regression
@@ -408,6 +407,29 @@ def test_evaluate_quality_flags_shell_false_success() -> None:
     assert quality["quality_verdict"] == "bad_output"
     assert quality["observed_failure_mode"] == "shell_false_success"
     assert quality["quality_checks"]["identity_ok"] is False
+
+
+@pytest.mark.regression
+def test_evaluate_quality_does_not_call_error_shell_success() -> None:
+    site = {
+        "url": "https://www.newbalance.com/pd/example.html",
+        "surface": "ecommerce_detail",
+        "quality_expectations": {"require_identity": True},
+    }
+    result = {
+        "surface": "ecommerce_detail",
+        "requested_url": "https://www.newbalance.com/pd/example.html",
+        "sample_title": "",
+        "sample_url": "",
+        "populated_fields": 0,
+        "sample_semantics": {"price_present": False, "variant_count": 0},
+        "failure_mode": "error",
+        "sample_records": [],
+    }
+
+    quality = evaluate_quality(site, result)
+
+    assert quality["observed_failure_mode"] == "error"
 
 
 @pytest.mark.regression

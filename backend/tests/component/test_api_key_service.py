@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from app.core.public_auth import hash_api_key
-from app.services.api_key_service import create_api_key, list_api_keys, revoke_api_key
+from app.core.api_key_service import create_api_key, list_api_keys, revoke_api_key
 
 
 @pytest.mark.asyncio

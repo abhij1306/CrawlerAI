@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import pytest
 
 import app.api.crawls as crawls_api
-import app.services.crawl.crud as crawl_crud
+import app.crawl.crud as crawl_crud
 from app.models.crawl_run import CrawlLog
 
 

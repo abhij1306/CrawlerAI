@@ -6,7 +6,7 @@ import json
 
 import pytest
 
-from app.services.observability import artifact_reader
+from app.observability import artifact_reader
 
 pytestmark = pytest.mark.unit
 

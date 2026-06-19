@@ -246,8 +246,48 @@ function groupConfidence(group: LogSiteGroup): { score: number; level: string } 
   }
   const average = scores.reduce((total, item) => total + item.score, 0) / scores.length;
   return {
-    score: average,
-    level: String(qualityLevelFromScore(average)),
+    score: normalizeConfidenceScore(average),
+    level: String(qualityLevelFromScore(normalizeConfidenceScore(average))),
+  };
+}
+
+function confidenceFromCoverage(
+  coverage: ReturnType<typeof groupFieldCoverage>,
+): { score: number; level: string } | null {
+  if (!coverage.totalCount) {
+    return null;
+  }
+  const score = Math.max(0, Math.min(coverage.foundCount / coverage.totalCount, 1));
+  return {
+    score,
+    level: String(qualityLevelFromScore(score)),
+  };
+}
+
+function normalizeConfidenceScore(score: number) {
+  if (!Number.isFinite(score)) {
+    return 0;
+  }
+  if (score > 1 && score <= 100) {
+    return score / 100;
+  }
+  return Math.max(0, Math.min(score, 1));
+}
+
+function displayConfidence(
+  backendConfidence: ReturnType<typeof groupConfidence>,
+  coverageConfidence: ReturnType<typeof confidenceFromCoverage>,
+) {
+  const candidates = [backendConfidence, coverageConfidence].filter(
+    (value): value is { score: number; level: string } => value !== null,
+  );
+  if (!candidates.length) {
+    return null;
+  }
+  const score = Math.max(...candidates.map((item) => normalizeConfidenceScore(item.score)));
+  return {
+    score,
+    level: String(qualityLevelFromScore(score)),
   };
 }
 
@@ -387,7 +427,9 @@ function buildExpandedRows(
       );
     }
     if (confidence) {
-      parts.push(`${TERMINAL_STRINGS.CONFIDENCE} ${Math.round(confidence.score * 100)}%`);
+      parts.push(
+        `${TERMINAL_STRINGS.CONFIDENCE} ${Math.round(normalizeConfidenceScore(confidence.score) * 100)}%`,
+      );
     }
     if (durationMs !== null) {
       parts.push(`${TERMINAL_STRINGS.TIME} ${formatDurationMs(durationMs)}`);
@@ -402,6 +444,21 @@ function buildExpandedRows(
   }
 
   return rows;
+}
+
+function groupSummaryMessage(
+  group: LogSiteGroup,
+  coverage: ReturnType<typeof groupFieldCoverage>,
+  fallbackLog?: CrawlLog,
+) {
+  if (group.records.length > 0) {
+    const noun = group.records.length === 1 ? 'record' : 'records';
+    return `Extracted ${group.records.length} ${noun}; fields ${coverage.foundCount}/${coverage.totalCount || 0}`;
+  }
+  if (group.hasError || group.hasWarning) {
+    return sanitizeLogMessage(fallbackLog?.message ?? 'No public record extracted');
+  }
+  return fallbackLog ? sanitizeLogMessage(fallbackLog.message) : TERMINAL_STRINGS.PENDING;
 }
 
 function formatShortUrlLabel(url: string) {
@@ -719,8 +776,11 @@ export const LogTerminal = memo(function LogTerminal({
             const expanded = expandedGroupKey === group.key || group.key === activeKey;
             const isRunEventGroup = !group.url;
             const payload = payloadSnapshot(group);
-            const confidence = groupConfidence(group);
             const coverage = groupFieldCoverage(group, requestedFields);
+            const confidence = displayConfidence(
+              groupConfidence(group),
+              confidenceFromCoverage(coverage),
+            );
             const activeGroup = live && (group.key === activeKey || groupStillActive(group));
             const durationMs = groupDurationMs(group, activeGroup ? nowMs : undefined);
             const lastLog = group.logs.at(-1);
@@ -803,7 +863,9 @@ export const LogTerminal = memo(function LogTerminal({
                             confidence ? toneForConfidence(confidence.level) : 'text-muted',
                           )}
                         >
-                          {confidence ? `${Math.round(confidence.score * 100)}%` : '--'}
+                          {confidence
+                            ? `${Math.round(normalizeConfidenceScore(confidence.score) * 100)}%`
+                            : '--'}
                         </span>
                       </div>
                       <div
@@ -827,9 +889,7 @@ export const LogTerminal = memo(function LogTerminal({
                       className="text-secondary truncate text-xs"
                       title={summaryLog?.message || ''}
                     >
-                      {summaryLog
-                        ? sanitizeLogMessage(summaryLog.message)
-                        : TERMINAL_STRINGS.PENDING}
+                      {groupSummaryMessage(group, coverage, summaryLog)}
                     </div>
                   </div>
                   {!isRunEventGroup ? (
