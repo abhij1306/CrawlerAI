@@ -134,4 +134,7 @@ def surface_spec(value: Surface | str) -> SurfaceSpec:
 
 
 def public_surface_for_internal(value: Surface | str) -> str:
-    return surface_spec(value).surface.value
+    surface = surface_spec(value).surface
+    if surface is Surface.ECOMMERCE_DETAIL:
+        return "ecommerce"
+    return surface.value

@@ -1,0 +1,14 @@
+{
+  "persisted_count": 0,
+  "record_count": 0,
+  "records": [],
+  "replay": {
+    "decision_count": 105,
+    "evidence_count": 1435,
+    "finding_count": 19,
+    "surface": "ecommerce_detail",
+    "verdict": "invalid"
+  },
+  "schema_version": "extraction_decision.v1",
+  "verdict": "empty"
+}

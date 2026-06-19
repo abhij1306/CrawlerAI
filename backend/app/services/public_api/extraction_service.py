@@ -22,6 +22,8 @@ from app.services.config.public_api import (
     PUBLIC_API_ERROR_TIMEOUT,
     PUBLIC_API_ERROR_URL_UNREACHABLE,
     PUBLIC_API_FIELD_ALIASES,
+    PUBLIC_API_INTERNAL_ECOMMERCE_SURFACE,
+    PUBLIC_API_SURFACE_ECOMMERCE,
 )
 from app.services.crawl.crud import create_crawl_run
 from app.services.crawl.state import CrawlStatus, update_run_status
@@ -41,7 +43,7 @@ async def extract_public_product(
     payload: PublicExtractRequest,
 ) -> dict[str, Any]:
     url = _validate_url(payload.url)
-    surface = _internal_surface(payload.surface)
+    surface = _public_internal_surface(payload.surface)
     if _platform_requires_browser(url, surface):
         raise PublicApiError(
             PUBLIC_API_ERROR_BROWSER_REQUIRED,
@@ -166,6 +168,12 @@ def _internal_surface(value: str) -> str:
             "Unsupported public extraction surface.",
             status_code=422,
         ) from exc
+
+
+def _public_internal_surface(value: str) -> str:
+    if str(value or "").strip().lower() == PUBLIC_API_SURFACE_ECOMMERCE:
+        return PUBLIC_API_INTERNAL_ECOMMERCE_SURFACE
+    return _internal_surface(value)
 
 
 def _public_requested_fields(values: list[str], *, surface: str) -> list[str]:

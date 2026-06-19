@@ -8,7 +8,12 @@ import pytest
 from app.schemas.crawl import CrawlCreate
 from app.services.adapters.base import AdapterResult
 from app.services.public_api.extraction_service import _internal_surface
-from app.services.extraction.contracts import Evidence
+from app.services.extraction.contracts import (
+    CommerceDetailRecord,
+    Evidence,
+    ExtractionResult,
+    PublicRecord,
+)
 from app.services.extraction.documents import DocumentStore
 from app.services.extraction.json_walk import walk_json
 from app.services.extraction.surfaces import Surface, parse_surface
@@ -41,6 +46,13 @@ def test_surface_enum_is_exact_contract() -> None:
         CrawlCreate(run_type="crawl", url="https://example.com", surface="auto")
     with pytest.raises(Exception):
         _internal_surface("ecommerce")
+
+
+def test_extraction_result_owns_typed_records_without_parallel_replay() -> None:
+    annotation = ExtractionResult.model_fields["records"].annotation
+    assert "PublicRecord" in str(annotation)
+    assert "replay" not in ExtractionResult.model_fields
+    assert issubclass(CommerceDetailRecord, PublicRecord)
 
 
 def test_new_extraction_imports_forbidden_parser_stack_only_in_document_store() -> None:
@@ -130,3 +142,39 @@ def test_surface_inference_modules_are_deleted() -> None:
         text = path.read_text(encoding="utf-8")
         for term in forbidden_terms:
             assert term not in text, path
+
+
+def test_extraction_package_stays_within_architecture_limits() -> None:
+    files = _python_files(EXTRACTION_ROOT)
+    assert len(files) <= 24
+    assert sum(len(path.read_text(encoding="utf-8").splitlines()) for path in files) <= 5500
+    for path in files:
+        text = path.read_text(encoding="utf-8")
+        assert len(text.splitlines()) <= 400, path
+        tree = ast.parse(text, filename=str(path))
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                assert node.end_lineno is not None
+                assert node.end_lineno - node.lineno + 1 <= 60, (
+                    path,
+                    node.name,
+                )
+
+
+def test_obsolete_pipeline_semantic_owners_are_deleted() -> None:
+    forbidden_files = {
+        APP_ROOT / "services" / "pipeline" / "direct_record_fallback.py",
+        APP_ROOT / "services" / "pipeline" / "extraction_retry_decision.py",
+        APP_ROOT / "services" / "pipeline" / "listing_escalation_decision.py",
+    }
+    assert not any(path.exists() for path in forbidden_files)
+    pipeline_text = (
+        APP_ROOT / "services" / "pipeline" / "extraction_loop.py"
+    ).read_text(encoding="utf-8")
+    for term in (
+        "validate_record_for_surface",
+        "_quality_verdict",
+        "extraction_replay",
+        "apply_direct_record_llm_fallback",
+    ):
+        assert term not in pipeline_text

@@ -22,7 +22,8 @@ from app.services.acquisition.acquirer import AcquisitionRequest, acquire
 from app.services.acquisition.runtime import is_blocked_html
 from app.services.acquisition_plan import AcquisitionPlan
 from app.services.adapters.registry import run_adapter
-from app.services.pipeline.extract_records import extract_records
+from app.services.extraction import extract, parse_surface
+from app.services.extraction.replay import request_from_acquisition_result
 from app.services.platform_policy import detect_platform_family
 
 from harness.support import parse_test_sites_markdown, require_explicit_surface
@@ -220,7 +221,7 @@ async def _run_one(site: dict, run_id: int, timeout_seconds: int) -> dict:
                 "network_payloads": len(acquisition.network_payloads or []),
                 "blocked": blocked,
                 "adapter_name": adapter_result.adapter_name if adapter_result else None,
-                "adapter_records": len(adapter_result.records) if adapter_result else 0,
+                "adapter_records": len(adapter_result.artifacts) if adapter_result else 0,
                 "browser_diagnostics": dict(acquisition.browser_diagnostics or {}),
             }
         )
@@ -230,19 +231,25 @@ async def _run_one(site: dict, run_id: int, timeout_seconds: int) -> dict:
             result["note"] = "JSON response; extraction corpus checks skipped"
             return result
 
-        records = extract_records(
-            acquisition.html or "",
-            url,
-            surface,
-            max_records=int(site.get("max_records") or 50),
-            requested_fields=[str(field) for field in site.get("expect_fields") or []]
-            or None,
-            adapter_records=list(adapter_result.records or [])
-            if adapter_result
-            else None,
-            network_payloads=acquisition.network_payloads or [],
-            selector_rules=None,
+        if adapter_result and adapter_result.artifacts:
+            acquisition.artifacts["adapter_artifacts"] = list(
+                adapter_result.artifacts
+            )
+        extraction_result = extract(
+            request_from_acquisition_result(
+                parse_surface(surface),
+                acquisition,
+                requested_url=url,
+                max_records=int(site.get("max_records") or 50),
+                requested_fields=tuple(
+                    str(field) for field in site.get("expect_fields") or []
+                ),
+            )
         )
+        records = [
+            record.model_dump(mode="json", exclude_none=True)
+            for record in extraction_result.records
+        ]
 
         if "listing" in surface:
             required_fields = [

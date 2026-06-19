@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 from typing import Any
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 
 from app.services.config.extraction_recipes import (
     ECOMMERCE_LISTING_CARD_SELECTORS,
@@ -11,69 +11,51 @@ from app.services.config.extraction_recipes import (
     ECOMMERCE_LISTING_TITLE_SELECTORS,
     ECOMMERCE_LISTING_URL_SELECTORS,
 )
+from app.services.config.extraction_rules import LISTING_UTILITY_URL_TOKENS
 from app.services.extraction.collectors._helpers import evidence
 from app.services.extraction.contracts import (
+    ArtifactReader,
     CaptureBundle,
+    CommerceListingRecord,
     Decision,
     EntityHint,
     Evidence,
-    ExtractionResult,
     RejectedEvidence,
     SourceLocator,
 )
 from app.services.extraction.documents import HtmlDocument, HtmlNode
 from app.services.extraction.ids import stable_id
 from app.services.extraction.materialization import lineage
-from app.services.extraction.replay import bundle_from_inputs
 from app.services.extraction.surfaces import Surface
+from app.services.url_identity import listing_url_is_structural
 
 
-def extract_ecommerce_listing(
-    html: str,
-    page_url: str,
-    *,
-    max_records: int,
-    requested_page_url: str | None = None,
-) -> ExtractionResult:
-    bundle, reader = bundle_from_inputs(html, page_url, requested_page_url)
-    doc = reader.document_store.html("html")
-    evidence_rows = _collect_listing_evidence(bundle, doc, page_url=page_url)
-    decisions = _resolve_listing_decisions(evidence_rows)
-    records = _materialize_listing_records(evidence_rows, decisions, max_records=max_records)
-    verdict = "success" if records and decisions else "empty"
-    replay = _listing_replay(
-        bundle=bundle,
-        evidence_rows=evidence_rows,
-        decisions=decisions,
-        records=records,
-        verdict=verdict,
-    )
-    return ExtractionResult(
-        surface=Surface.ECOMMERCE_LISTING,
-        records=tuple(records),
-        evidence=tuple(evidence_rows),
-        decisions=tuple(decisions),
-        verdict=verdict,
-        replay=replay,
-    )
-
-
-def _listing_replay(
-    *,
+def collect_ecommerce_listing(
     bundle: CaptureBundle,
+    reader: ArtifactReader,
+) -> list[Evidence]:
+    doc = reader.document_store.html("html")
+    return _collect_listing_evidence(bundle, doc, page_url=bundle.final_url)
+
+
+def resolve_ecommerce_listing(evidence_rows: list[Evidence]) -> list[Decision]:
+    return _resolve_listing_decisions(evidence_rows)
+
+
+def materialize_ecommerce_listing(
     evidence_rows: list[Evidence],
     decisions: list[Decision],
-    records: list[dict[str, Any]],
-    verdict: str,
-) -> dict[str, Any]:
-    return {
-        "surface": Surface.ECOMMERCE_LISTING.value,
-        "bundle": bundle.model_dump(mode="json"),
-        "evidence": [row.model_dump(mode="json") for row in evidence_rows],
-        "decisions": [row.model_dump(mode="json") for row in decisions],
-        "records": records,
-        "verdict": verdict,
-    }
+    *,
+    max_records: int,
+) -> list[CommerceListingRecord]:
+    return [
+        CommerceListingRecord.model_validate(row)
+        for row in _materialize_listing_records(
+            evidence_rows,
+            decisions,
+            max_records=max_records,
+        )
+    ]
 
 
 def _collect_listing_evidence(
@@ -121,6 +103,8 @@ def _card_evidence(
     price = _first_price(card)
     image_url = _first_image(card)
     product_url = urljoin(page_url, url) if url else None
+    if product_url and not _valid_listing_product_url(product_url, page_url):
+        product_url = None
     absolute_image_url = urljoin(page_url, image_url) if image_url else None
     for fact_type, value, selector, confidence in (
         ("product.title", title, "title", 0.72),
@@ -145,6 +129,18 @@ def _card_evidence(
             )
         )
     return rows
+
+
+def _valid_listing_product_url(product_url: str, page_url: str) -> bool:
+    product = urlparse(product_url)
+    page = urlparse(page_url)
+    return (
+        product.scheme in {"http", "https"}
+        and product.netloc.casefold() == page.netloc.casefold()
+        and product.path not in {"", "/"}
+        and not any(token in product.path.casefold() for token in LISTING_UTILITY_URL_TOKENS)
+        and not listing_url_is_structural(product_url)
+    )
 
 
 def _listing_evidence(

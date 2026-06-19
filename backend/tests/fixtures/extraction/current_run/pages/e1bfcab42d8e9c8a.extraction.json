@@ -1,0 +1,28 @@
+{
+  "persisted_count": 1,
+  "record_count": 1,
+  "records": [
+    {
+      "public_fields": {
+        "availability": "https://schema.org/InStock",
+        "brand": "https://www.thenorthface.com/en-us#brand",
+        "currency": "USD",
+        "description": "Built for the trail, the Women\u2019s Basin Convertible Pants feature two-way stretch material, multiple pockets and FLASHDRY\u2122 technology to keep you comfortable as you push beyond your comfort zone. These pants also convert into 7'' shorts, providing the versatility and durability every hiker needs.",
+        "image_url": "https://assets.thenorthface.eu/image/upload/v1728567352/benefit-icon-wicking.webp",
+        "price": "130.00",
+        "sku": "NF0A8FBT2EL",
+        "title": "Women\u2019s Basin Convertible Pants | The North Face",
+        "url": "https://www.thenorthface.com/en-us/p/womens/womens-bottoms/womens-pants-224272/womens-basin-convertible-pants-NF0A8FBT"
+      }
+    }
+  ],
+  "replay": {
+    "decision_count": 33,
+    "evidence_count": 40,
+    "finding_count": 0,
+    "surface": "ecommerce_detail",
+    "verdict": "success"
+  },
+  "schema_version": "extraction_decision.v1",
+  "verdict": "success"
+}

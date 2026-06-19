@@ -2,60 +2,45 @@ from __future__ import annotations
 
 import pytest
 
-from app.services.pipeline.extraction_loop import _success_has_replay_lineage
+from app.services.extraction import Surface, extract
+from app.services.extraction.replay import fixture_request_from_inputs
 from app.services.pipeline.persistence import build_extraction_decision_payload
 
 
 pytestmark = pytest.mark.unit
 
 
-def test_success_guard_requires_replay_evidence_decisions_and_lineage() -> None:
-    acquisition_result = type(
-        "AcquisitionResult",
-        (),
-        {
-            "artifacts": {
-                "extraction_replay": {
-                    "evidence": [{"evidence_id": "ev_1"}],
-                    "decisions": [{"decision_id": "dec_1"}],
-                }
+def test_extraction_result_is_the_canonical_persistence_payload() -> None:
+    result = extract(
+        fixture_request_from_inputs(
+            Surface.ECOMMERCE_DETAIL,
+            """
+            <script type="application/ld+json">
+            {
+              "@context": "https://schema.org",
+              "@type": "Product",
+              "name": "Trail Shoe",
+              "url": "https://shop.test/products/trail-shoe",
+              "offers": {
+                "@type": "Offer",
+                "price": "129",
+                "priceCurrency": "USD"
+              }
             }
-        },
-    )()
-
-    assert _success_has_replay_lineage(
-        acquisition_result,
-        [{"title": "Trail Shoe", "_lineage": {"title": {"decision_id": "dec_1"}}}],
-    )
-    assert not _success_has_replay_lineage(
-        acquisition_result,
-        [{"title": "Trail Shoe"}],
-    )
-    acquisition_result.artifacts["extraction_replay"]["decisions"] = []
-    assert not _success_has_replay_lineage(
-        acquisition_result,
-        [{"title": "Trail Shoe", "_lineage": {"title": {"decision_id": "dec_1"}}}],
+            </script>
+            """,
+            "https://shop.test/products/trail-shoe",
+        )
     )
 
-
-def test_extraction_decision_payload_contains_replay_counts() -> None:
     payload = build_extraction_decision_payload(
-        verdict="success",
+        result=result,
         persisted_count=1,
-        records=[{"title": "Trail Shoe", "_lineage": {"title": {"decision_id": "dec_1"}}}],
-        replay={
-            "surface": "ecommerce_detail",
-            "verdict": "success",
-            "evidence": [{"evidence_id": "ev_1"}],
-            "decisions": [{"decision_id": "dec_1"}],
-            "findings": [],
-        },
     )
 
-    assert payload["replay"] == {
-        "surface": "ecommerce_detail",
-        "verdict": "success",
-        "evidence_count": 1,
-        "decision_count": 1,
-        "finding_count": 0,
-    }
+    assert payload["verdict"] == result.verdict
+    assert payload["records"]
+    assert payload["evidence"]
+    assert payload["decisions"]
+    assert payload["persisted_count"] == 1
+    assert "replay" not in payload

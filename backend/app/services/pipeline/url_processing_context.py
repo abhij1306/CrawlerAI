@@ -8,6 +8,7 @@ from app.models.crawl_run import CrawlRun
 from app.services.acquisition.acquirer import AcquisitionResult
 from app.services.acquisition_plan import AcquisitionPlan
 from app.services.config.runtime_settings import crawler_runtime_settings
+from app.services.extraction.contracts import ExtractionResult
 from app.services.observability.run_trace import RunTrace, new_run_trace
 from app.services.pipeline.types import URLProcessingConfig
 
@@ -46,7 +47,7 @@ class FetchedURLStage:
 @dataclass(slots=True)
 class ExtractedURLStage:
     fetched: FetchedURLStage
-    records: list[dict[str, object]]
+    result: ExtractionResult
 
 
 def resolve_run_param(

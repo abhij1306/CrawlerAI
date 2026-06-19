@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from typing import Any, Literal, Protocol
+from typing import Any, Literal, Protocol, runtime_checkable
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, SerializeAsAny
 
 from app.services.extraction.surfaces import Surface
 
@@ -56,7 +56,7 @@ FACT_TYPES = PRODUCT_FACTS | VARIANT_FACTS | OFFER_FACTS | ASSET_FACTS
 
 
 class FrozenModel(BaseModel):
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
 
 
 class RequestContext(FrozenModel):
@@ -95,9 +95,14 @@ class CaptureBundle(FrozenModel):
     run_id: int
     requested_url: str
     final_url: str
+    http_status: int | None = None
+    acquisition_method: str | None = None
     request_context: RequestContext
     artifacts: tuple[ArtifactRef, ...]
     acquisition_outcome: str
+    browser_attempted: bool = False
+    blocked: bool = False
+    captured_at: str | None = None
 
 
 class SourceLocator(FrozenModel):
@@ -150,8 +155,13 @@ class Evidence(FrozenModel):
         return self.fact_type.split(".", 1)[0]
 
 
+@runtime_checkable
 class ArtifactReader(Protocol):
     def read_text(self, artifact: ArtifactRef) -> str: ...
+
+    def read_json(self, artifact: ArtifactRef) -> JsonValue: ...
+
+    def exists(self, artifact_id: str) -> bool: ...
 
 
 class Collector(Protocol):
@@ -179,6 +189,14 @@ class Finding(FrozenModel):
     finding_id: str
     rule_id: str
     severity: Literal["info", "low", "medium", "high", "critical"]
+    scope: Literal[
+        "artifact",
+        "entity",
+        "candidate",
+        "selected_entity",
+        "selected_public_value",
+        "page",
+    ] = "entity"
     entity_ids: tuple[str, ...]
     evidence_ids: tuple[str, ...]
     message: str
@@ -197,6 +215,24 @@ class Decision(FrozenModel):
     status: Literal["resolved", "unresolved", "conflicted"]
 
 
+class OfferDecision(FrozenModel):
+    offer_entity_id: str
+    status: Literal["resolved", "unresolved", "conflicted"]
+    accepted_evidence_ids: tuple[str, ...]
+    price: JsonValue | None = None
+    currency: str | None = None
+    original_price: JsonValue | None = None
+    availability: str | None = None
+    seller: str | None = None
+
+
+class AssetDecision(FrozenModel):
+    asset_entity_id: str | None
+    accepted_evidence_ids: tuple[str, ...]
+    role: str = "primary"
+    rejection_reasons: tuple[str, ...] = ()
+
+
 class ResolutionResult(FrozenModel):
     primary_product_entity_id: str | None
     decisions: tuple[Decision, ...]
@@ -205,29 +241,151 @@ class ResolutionResult(FrozenModel):
     blocking_finding_ids: tuple[str, ...]
 
 
-class ReplayArtifact(FrozenModel):
-    bundle: CaptureBundle
-    evidence: tuple[Evidence, ...]
-    normalized_evidence: tuple[Evidence, ...]
-    findings: tuple[Finding, ...]
-    resolution: ResolutionResult
-    record: dict[str, Any]
-    verdict: str
+class EntityGraph(FrozenModel):
+    schema_version: Literal["entity_graph.v1"] = "entity_graph.v1"
+    root_entity_ids: tuple[str, ...] = ()
+    entity_counts: dict[str, int] = Field(default_factory=dict)
+
+
+class RejectedEntity(FrozenModel):
+    entity_id: str
+    reason: str
+
+
+class TargetSelection(FrozenModel):
+    status: Literal["resolved", "ambiguous", "missing", "wrong_surface"] = "missing"
+    root_entity_ids: tuple[str, ...] = ()
+    selected_root_entity_id: str | None = None
+    rejected_roots: tuple[RejectedEntity, ...] = ()
+
+
+class RetryRequest(FrozenModel):
+    required: bool = False
+    reason: Literal[
+        "dynamic_content_missing",
+        "explicit_variants_missing",
+        "http_shell",
+    ]
+    required_artifacts: tuple[str, ...] = ()
+
+
+class ExtractionMetrics(FrozenModel):
+    collector_count: int = 0
+    evidence_count: int = 0
+    entity_counts: dict[str, int] = Field(default_factory=dict)
+    finding_counts_by_severity: dict[str, int] = Field(default_factory=dict)
+    decision_counts_by_status: dict[str, int] = Field(default_factory=dict)
+    selected_root_ids: tuple[str, ...] = ()
+    variant_count: int = 0
+    public_lineage_coverage: float = 0.0
+    verdict: str | None = None
+
+
+class PublicRecord(FrozenModel):
+    model_config = ConfigDict(frozen=True, extra="allow")
+
+    def __getitem__(self, key: str) -> Any:
+        payload = self.model_dump(mode="json", exclude_none=True)
+        if key not in payload:
+            raise KeyError(key)
+        return payload[key]
+
+    def get(self, key: str, default: Any = None) -> Any:
+        extra = self.__pydantic_extra__ or {}
+        return getattr(self, key, extra.get(key, default))
+
+    def items(self):
+        return self.model_dump(mode="python").items()
+
+    def keys(self):
+        return self.model_dump(mode="python").keys()
+
+    def values(self):
+        return self.model_dump(mode="python").values()
+
+    def __iter__(self):
+        return iter(self.model_dump(mode="python"))
+
+    def __len__(self) -> int:
+        return len(self.model_dump(mode="python"))
+
+
+class CommerceVariantRecord(PublicRecord):
+    sku: str | None = None
+    price: JsonValue | None = None
+    currency: str | None = None
+    url: str | None = None
+    image_url: str | None = None
+    availability: str | None = None
+    stock_quantity: JsonValue | None = None
+
+
+class CommerceDetailRecord(PublicRecord):
+    url: str | None = None
+    title: str | None = None
+    brand: str | None = None
+    description: str | None = None
+    category: str | None = None
+    sku: str | None = None
+    mpn: str | None = None
+    gtin: str | None = None
+    price: JsonValue | None = None
+    currency: str | None = None
+    original_price: JsonValue | None = None
+    availability: str | None = None
+    image_url: str | None = None
+    variants: tuple[CommerceVariantRecord, ...] = ()
+
+
+class CommerceListingRecord(PublicRecord):
+    url: str
+    title: str
+    price: JsonValue | None = None
+    image_url: str | None = None
+
+
+class JobDetailRecord(PublicRecord):
+    title: str
+    company: str | None = None
+    location: str | None = None
+    apply_url: str | None = None
+    description: str | None = None
+
+
+class JobListingRecord(PublicRecord):
+    title: str
+    url: str
+    company: str | None = None
+    location: str | None = None
 
 
 class ExtractionRequest(FrozenModel):
     surface: Surface
     capture: CaptureBundle
-    artifact_payloads: dict[str, JsonValue] = Field(default_factory=dict)
+    artifact_reader: ArtifactReader = Field(exclude=True)
     requested_fields: tuple[str, ...] = ()
     max_records: int = 1
 
 
 class ExtractionResult(FrozenModel):
+    schema_version: Literal["extraction.v1"] = "extraction.v1"
     surface: Surface
-    records: tuple[dict[str, Any], ...]
+    bundle_id: str = ""
+    records: tuple[SerializeAsAny[PublicRecord], ...]
     evidence: tuple[Evidence, ...] = ()
+    graph: EntityGraph = Field(default_factory=EntityGraph)
+    target: TargetSelection = Field(default_factory=TargetSelection)
     findings: tuple[Finding, ...] = ()
     decisions: tuple[Decision, ...] = ()
-    verdict: str
-    replay: JsonValue | None = None
+    verdict: Literal[
+        "success",
+        "partial",
+        "review",
+        "invalid",
+        "empty",
+        "blocked",
+        "error",
+        "wrong_surface",
+    ]
+    retry_request: RetryRequest | None = None
+    metrics: ExtractionMetrics = Field(default_factory=ExtractionMetrics)

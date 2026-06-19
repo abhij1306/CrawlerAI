@@ -137,6 +137,7 @@ def _finding(
         finding_id=stable_id("finding", rule, entity_ids, evidence_ids),
         rule_id=rule,
         severity="high" if blocking else "medium",
+        scope="selected_entity" if entity_ids else "page",
         entity_ids=entity_ids,
         evidence_ids=evidence_ids,
         message=message,

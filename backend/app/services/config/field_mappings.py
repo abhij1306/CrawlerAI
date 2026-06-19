@@ -58,6 +58,7 @@ FIELD_ALIASES: dict[str, list[str]] = {
     "salary": ["salary", "compensation", "pay", "salary_range"],
     "job_id": ["job_id", "jobId", "requisition_id", "req_id", "opening_id"],
     "category": ["category", "product_type", "breadcrumb", "breadcrumbs", "category_path"],
+    "gender": ["gender", "target_gender", "targetGender"],
     "sku": ["sku", "item_id", "id"],
     "availability": ["availability", "in_stock", "stock_status", "inStock"],
     "rating": ["rating", "average_rating", "score", "rating_value"],
@@ -100,6 +101,7 @@ CANONICAL_SCHEMAS: dict[str, list[str]] = {
         "rating",
         "review_count",
         "category",
+        "gender",
         "color",
         "size",
         "materials",
@@ -208,6 +210,30 @@ SURFACE_FIELD_REPAIR_TARGETS = {"ecommerce_detail": ("price", "title", "image_ur
 ECOMMERCE_DETAIL_JS_STATE_PRIORITY_FIELDS = frozenset(
     {"variants", "price", "currency", "original_price", "sku", "title", "availability", "brand", "image_url", "size", "color", "stock_quantity"}
 )
+ECOMMERCE_DETAIL_FIELD_FACT_TYPES = {
+    "availability": "offer.availability",
+    "brand": "product.brand",
+    "category": "product.category",
+    "currency": "offer.currency",
+    "description": "product.description",
+    "gtin": "product.gtin",
+    "image": "asset.image_url",
+    "image_url": "asset.image_url",
+    "mpn": "product.mpn",
+    "name": "product.title",
+    "original_price": "offer.original_price",
+    "price": "offer.price",
+    "sku": "product.sku",
+    "title": "product.title",
+    "url": "product.url",
+}
+REQUESTED_FIELD_DOM_SELECTOR_TEMPLATES = (
+    '[itemprop="{field}"]',
+    '[data-field="{field}"]',
+    '[data-field-name="{field}"]',
+    ".{field}",
+    ".{dash_field}",
+)
 
 TITLE_STRUCTURED_VALUE_KEYS = ("values", "title", "name", "label", "text", "value")
 PRICE_DICT_PREFERRED_KEYS = (
@@ -259,6 +285,7 @@ REQUESTED_FIELD_ALIAS_BASES = {
         "dimensions",
         "remote",
         "requirements",
+        "gender",
     )
 }
 REQUESTED_FIELD_ALIAS_EXTRAS = {

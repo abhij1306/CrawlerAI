@@ -6,10 +6,9 @@ import json
 from typing import Any, Mapping, Sequence
 
 from app.models.crawl_run import CrawlRecord, CrawlRun
+from app.services.extraction.contracts import ExtractionResult
 from app.services.db_utils import mapping_or_empty
 from app.services.shared.field_coerce import object_list as _object_list
-from app.services.public_record_firewall import public_record_data_for_surface
-from app.services.export.schema import build_source_trace
 from app.services.observability.browser_artifact import shape_browser_artifact
 from app.services.observability.run_trace import RunTrace
 from app.services.config import observability as obs_config
@@ -19,7 +18,6 @@ from app.services.artifact_store import (
     persist_png_artifact,
     persist_png_artifact_from_file,
 )
-from app.services.publish.metadata import refresh_record_commit_metadata
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -159,41 +157,50 @@ async def persist_run_trace(
 
 def build_extraction_decision_payload(
     *,
-    verdict: str,
+    result: ExtractionResult,
     persisted_count: int,
-    records: Sequence[Mapping[str, Any]],
-    replay: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
-    return {
-        "schema_version": "extraction_decision.v1",
-        "verdict": str(verdict or ""),
-        "record_count": len(records),
-        "persisted_count": int(persisted_count or 0),
-        "replay": _extraction_replay_summary(replay),
-        "records": [_extraction_decision_record(record) for record in records],
-    }
+    payload = result.model_dump(mode="json", exclude_none=True)
+    payload["persisted_count"] = int(persisted_count or 0)
+    return payload
 
 
 async def persist_extraction_decision_artifact(
     *,
     run_id: int,
     source_url: str,
-    verdict: str,
     persisted_count: int,
-    records: Sequence[Mapping[str, Any]],
+    result: ExtractionResult,
     acquisition_result=None,
 ) -> str:
-    artifacts = (
-        mapping_or_empty(getattr(acquisition_result, "artifacts", {}))
-        if acquisition_result is not None
-        else {}
-    )
     payload = build_extraction_decision_payload(
-        verdict=verdict,
+        result=result,
         persisted_count=persisted_count,
-        records=records,
-        replay=mapping_or_empty(artifacts.get("extraction_replay")),
     )
+    component_payloads = {
+        "capture": result.bundle_id,
+        "evidence": payload.get("evidence", []),
+        "graph": payload.get("graph", {}),
+        "target": payload.get("target", {}),
+        "findings": payload.get("findings", []),
+        "decisions": payload.get("decisions", []),
+        "records": payload.get("records", []),
+        "verdict": {
+            "verdict": result.verdict,
+            "retry_request": payload.get("retry_request"),
+            "metrics": payload.get("metrics", {}),
+            "persisted_count": int(persisted_count or 0),
+        },
+    }
+    paths: dict[str, str] = {}
+    for suffix, component in component_payloads.items():
+        paths[suffix] = await asyncio.to_thread(
+            persist_json_artifact,
+            run_id=run_id,
+            source_url=source_url,
+            suffix=suffix,
+            payload=component,
+        )
     path = await asyncio.to_thread(
         persist_json_artifact,
         run_id=run_id,
@@ -207,6 +214,12 @@ async def persist_extraction_decision_artifact(
             key="extraction_decision",
             path=path,
         )
+        for key, component_path in paths.items():
+            _merge_browser_artifact_path(
+                acquisition_result,
+                key=f"extraction_{key}",
+                path=component_path,
+            )
     return path
 
 
@@ -230,20 +243,6 @@ def _extraction_decision_record(record: Mapping[str, Any]) -> dict[str, Any]:
         if value not in (None, "", [], {}):
             payload[key.removeprefix("_")] = _json_safe(value)
     return payload
-
-
-def _extraction_replay_summary(replay: Mapping[str, Any] | None) -> dict[str, Any]:
-    payload = mapping_or_empty(replay)
-    evidence = payload.get("evidence")
-    decisions = payload.get("decisions")
-    findings = payload.get("findings")
-    return {
-        "surface": payload.get("surface"),
-        "verdict": payload.get("verdict"),
-        "evidence_count": len(evidence) if isinstance(evidence, list) else 0,
-        "decision_count": len(decisions) if isinstance(decisions, list) else 0,
-        "finding_count": len(findings) if isinstance(findings, list) else 0,
-    }
 
 
 def _json_safe(value: Any) -> Any:
@@ -389,12 +388,11 @@ async def persist_extracted_records(
         preliminary_source_url = str(
             raw_record.get("source_url") or acquisition_result.final_url
         )
-        data, rejected_public_fields = public_record_data_for_surface(
-            raw_record,
-            surface=run.surface,
-            page_url=preliminary_source_url,
-            requested_fields=list(run.requested_fields or []),
-        )
+        data = {
+            str(key): value
+            for key, value in raw_record.items()
+            if not str(key).startswith("_") and value not in (None, "", [], {})
+        }
         if not data:
             continue
         if "listing" in str(run.surface or "") and not data.get("url"):
@@ -404,8 +402,6 @@ async def persist_extracted_records(
         )
         identity_source_url = str(data.get("url") or record_source_url)
         identity_key = _record_identity_key(identity_source_url)
-        if rejected_public_fields:
-            raw_record["_rejected_public_fields"] = rejected_public_fields
         content_fingerprint = _record_content_fingerprint(
             data,
             identity_source_url=identity_source_url,
@@ -421,11 +417,41 @@ async def persist_extracted_records(
             }.items()
             if value not in (None, "", [], {})
         }
-        source_trace = build_source_trace(
-            acquisition_result,
-            raw_record,
-            data=data,
-        )
+        selector_traces = mapping_or_empty(raw_record.get("_selector_traces"))
+        lineage = mapping_or_empty(raw_record.get("_lineage"))
+        source_trace = {
+            "acquisition": {
+                "method": str(getattr(acquisition_result, "method", "") or ""),
+                "final_url": str(
+                    getattr(acquisition_result, "final_url", "") or ""
+                ),
+                "status_code": getattr(acquisition_result, "status_code", None),
+                "browser_diagnostics": mapping_or_empty(
+                    getattr(acquisition_result, "browser_diagnostics", {})
+                ),
+            },
+            "lineage": lineage,
+            "field_sources": mapping_or_empty(raw_record.get("_field_sources")),
+            "field_discovery": {
+                field_name: {
+                    "status": "found",
+                    "value": value,
+                    "sources": [
+                        str(
+                            mapping_or_empty(selector_traces.get(field_name)).get(
+                                "selector_source"
+                            )
+                            or mapping_or_empty(lineage.get(field_name)).get("rule_id")
+                            or "extraction"
+                        )
+                    ],
+                    "selector_trace": mapping_or_empty(
+                        selector_traces.get(field_name)
+                    ),
+                }
+                for field_name, value in data.items()
+            },
+        }
         existing_record = existing_records_by_identity.get(identity_key or "")
         if identity_key and identity_key in seen_identities:
             if existing_record and not _stored_record_matches(
@@ -447,15 +473,6 @@ async def persist_extracted_records(
                     raw_html_path=raw_html_path,
                     content_fingerprint=content_fingerprint,
                 )
-                for field_name, value in data.items():
-                    refresh_record_commit_metadata(
-                        existing_record,
-                        run=run,
-                        field_name=field_name,
-                        value=value,
-                        source_label=str(record.get("_source") or "extraction"),
-                        preserve_existing_sources=True,
-                    )
                 await session.flush()
                 persisted += 1
             continue
@@ -474,14 +491,5 @@ async def persist_extracted_records(
         )
         session.add(crawl_record)
         await session.flush()
-        for field_name, value in data.items():
-            refresh_record_commit_metadata(
-                crawl_record,
-                run=run,
-                field_name=field_name,
-                value=value,
-                source_label=str(record.get("_source") or "extraction"),
-                preserve_existing_sources=True,
-            )
         persisted += 1
     return persisted
