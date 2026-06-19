@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.services.observability.browser_artifact import (
+from app.observability.browser_artifact import (
     derive_browser_profile_fields,
     shape_browser_artifact,
 )

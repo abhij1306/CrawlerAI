@@ -6,22 +6,22 @@ from pathlib import Path
 import pytest
 
 from app.schemas.crawl import CrawlCreate
-from app.services.adapters.base import AdapterResult
-from app.services.public_api.extraction_service import _internal_surface
-from app.services.extraction.contracts import (
+from app.connectors.adapters.base import AdapterResult
+from app.connectors.public_api.extraction_service import _internal_surface
+from app.extraction.contracts import (
     CommerceDetailRecord,
     Evidence,
     ExtractionResult,
     PublicRecord,
 )
-from app.services.extraction.documents import DocumentStore
-from app.services.extraction.json_walk import walk_json
-from app.services.extraction.surfaces import Surface, parse_surface
+from app.extraction.documents import DocumentStore
+from app.extraction.json_walk import walk_json
+from app.extraction.surfaces import Surface, parse_surface
 
 
 ROOT = Path(__file__).resolve().parents[2]
 APP_ROOT = ROOT / "app"
-EXTRACTION_ROOT = ROOT / "app" / "services" / "extraction"
+EXTRACTION_ROOT = ROOT / "app" / "extraction"
 pytestmark = pytest.mark.unit
 
 
@@ -163,13 +163,13 @@ def test_extraction_package_stays_within_architecture_limits() -> None:
 
 def test_obsolete_pipeline_semantic_owners_are_deleted() -> None:
     forbidden_files = {
-        APP_ROOT / "services" / "pipeline" / "direct_record_fallback.py",
-        APP_ROOT / "services" / "pipeline" / "extraction_retry_decision.py",
-        APP_ROOT / "services" / "pipeline" / "listing_escalation_decision.py",
+        APP_ROOT / "crawl" / "pipeline" / "direct_record_fallback.py",
+        APP_ROOT / "crawl" / "pipeline" / "extraction_retry_decision.py",
+        APP_ROOT / "crawl" / "pipeline" / "listing_escalation_decision.py",
     }
     assert not any(path.exists() for path in forbidden_files)
     pipeline_text = (
-        APP_ROOT / "services" / "pipeline" / "extraction_loop.py"
+        APP_ROOT / "crawl" / "pipeline" / "extraction_loop.py"
     ).read_text(encoding="utf-8")
     for term in (
         "validate_record_for_surface",

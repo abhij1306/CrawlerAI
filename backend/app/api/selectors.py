@@ -18,7 +18,7 @@ from app.schemas.selectors import (
     SelectorTestResponse,
     SelectorUpdateRequest,
 )
-from app.services.selectors_runtime import (
+from app.core.records.selectors_runtime import (
     build_preview_html,
     create_selector_record,
     delete_domain_selector_records,
@@ -30,8 +30,8 @@ from app.services.selectors_runtime import (
     test_selector,
     update_selector_record,
 )
-from app.services.url_safety import SecurityError, validate_public_target
-from app.services.acquisition.playwright_compat import (
+from app.core.url_safety import SecurityError, validate_public_target
+from app.acquisition.playwright_compat import (
     PlaywrightError,
     PlaywrightTimeoutError,
     is_recoverable_playwright_error,

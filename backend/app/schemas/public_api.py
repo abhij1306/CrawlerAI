@@ -5,7 +5,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
-from app.services.config.public_api import (
+from app.core.config.public_api import (
     PUBLIC_API_DEFAULT_MAX_WAIT_SECONDS,
     PUBLIC_API_MAX_BATCH_URLS,
     PUBLIC_API_MAX_WAIT_SECONDS,

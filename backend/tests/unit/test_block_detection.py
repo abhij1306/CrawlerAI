@@ -4,8 +4,8 @@ from copy import deepcopy
 
 import pytest
 
-from app.services.acquisition.runtime import classify_blocked_page
-from app.services.fetch.fetch_context import is_blocked_html
+from app.acquisition.runtime import classify_blocked_page
+from app.acquisition.fetch.fetch_context import is_blocked_html
 
 
 @pytest.mark.unit
@@ -158,7 +158,7 @@ def test_classify_blocked_page_detects_access_forbidden_title() -> None:
 def test_classify_blocked_page_uses_configured_challenge_element_markers(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from app.services.acquisition import runtime
+    from app.acquisition import runtime
 
     signatures = deepcopy(runtime.BLOCK_SIGNATURES)
     signatures["challenge_elements"] = {

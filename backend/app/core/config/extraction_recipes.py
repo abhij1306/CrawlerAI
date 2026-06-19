@@ -1,0 +1,101 @@
+from __future__ import annotations
+
+ECOMMERCE_LISTING_CARD_SELECTORS: tuple[str, ...] = (
+    "[data-product-id]",
+    "[data-testid*='product' i]",
+    "[class~='product']",
+    "[class*='product-card' i]",
+    "[class*='product-tile' i]",
+    "[class*='productitem' i]",
+    "[class*='product-item' i]",
+    "article",
+    "li",
+)
+
+ECOMMERCE_LISTING_TITLE_SELECTORS: tuple[str, ...] = (
+    "[data-testid*='title' i]",
+    "[class*='title' i]",
+    "[class*='name' i]",
+    "h2",
+    "h3",
+    "a[title]",
+    "a",
+)
+
+ECOMMERCE_LISTING_URL_SELECTORS: tuple[str, ...] = ("a[href]",)
+
+ECOMMERCE_LISTING_PRICE_SELECTORS: tuple[str, ...] = (
+    "[data-price]",
+    "[class*='price' i]",
+    "[data-testid*='price' i]",
+)
+
+ECOMMERCE_LISTING_IMAGE_SELECTORS: tuple[str, ...] = (
+    "img[src]",
+    "img[data-src]",
+    "source[srcset]",
+)
+
+JOB_DETAIL_TITLE_SELECTORS: tuple[str, ...] = (
+    "h1",
+    "[data-testid*='title' i]",
+    "[class*='job-title' i]",
+)
+
+JOB_DETAIL_COMPANY_SELECTORS: tuple[str, ...] = (
+    "[data-testid*='company' i]",
+    "[class*='company' i]",
+    "[itemprop='hiringOrganization']",
+)
+
+JOB_DETAIL_LOCATION_SELECTORS: tuple[str, ...] = (
+    "[data-testid*='location' i]",
+    "[class*='location' i]",
+    "[itemprop='jobLocation']",
+)
+
+JOB_DETAIL_DESCRIPTION_SELECTORS: tuple[str, ...] = (
+    "[data-testid*='description' i]",
+    "[class*='description' i]",
+    "[itemprop='description']",
+    "main",
+)
+
+JOB_DETAIL_APPLY_SELECTORS: tuple[str, ...] = (
+    "a[href*='apply' i]",
+    "a[href*='application' i]",
+)
+
+JOB_LISTING_CARD_SELECTORS: tuple[str, ...] = (
+    "[data-job-id]",
+    "[data-testid*='job' i]",
+    "[class*='job-card' i]",
+    "[class*='job-item' i]",
+    "[class*='job-post' i]",
+    "[class*='posting' i]",
+    "article",
+    "li",
+)
+
+JOB_LISTING_TITLE_SELECTORS: tuple[str, ...] = (
+    "[data-testid*='title' i]",
+    "[class*='title' i]",
+    ".body--medium",
+    "h2",
+    "h3",
+    "a[title]",
+    "a",
+)
+
+JOB_LISTING_URL_SELECTORS: tuple[str, ...] = ("a[href]",)
+
+JOB_LISTING_COMPANY_SELECTORS: tuple[str, ...] = (
+    "[data-testid*='company' i]",
+    "[class*='company' i]",
+)
+
+JOB_LISTING_LOCATION_SELECTORS: tuple[str, ...] = (
+    "[data-testid*='location' i]",
+    "[class*='location' i]",
+    ".body__secondary",
+)

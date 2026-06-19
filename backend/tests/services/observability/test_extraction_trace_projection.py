@@ -4,10 +4,10 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.services.extraction import Surface, extract
-from app.services.extraction.replay import fixture_request_from_inputs
-from app.services.observability.run_trace import RunTrace
-from app.services.pipeline.extraction_loop import _record_extraction_trace
+from app.extraction import Surface, extract
+from app.extraction.replay import fixture_request_from_inputs
+from app.observability.run_trace import RunTrace
+from app.crawl.pipeline.extraction_loop import _record_extraction_trace
 
 
 pytestmark = pytest.mark.unit

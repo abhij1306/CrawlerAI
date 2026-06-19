@@ -16,8 +16,8 @@ from pydantic import (
     model_validator,
 )
 from app.schemas.selectors import SelectorRecordResponse
-from app.services.extraction.surfaces import parse_surface
-from app.services.publish.verdict import run_health_verdict
+from app.extraction.surfaces import parse_surface
+from app.persistence.publish.verdict import run_health_verdict
 
 _DISPLAY_HIDDEN_RECORD_FIELDS = {"record_type"}
 

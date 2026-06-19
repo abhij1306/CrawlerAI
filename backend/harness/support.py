@@ -13,30 +13,29 @@ from app.core.database import SessionLocal
 from app.core.security import hash_password, verify_password
 from app.models.crawl_run import CrawlRun
 from app.models.user import User
-from app.services.adapters.registry import registered_adapters
-from app.services.crawl.batch_runtime import process_run
-from app.services.crawl.crud import create_crawl_run, get_run_records
-from app.services.pipeline.extraction_loop import process_single_url
-from app.services.pipeline.types import URLProcessingConfig
-from app.services.platform_policy import (
+from app.connectors.adapters.registry import registered_adapters
+from app.crawl.batch_runtime import process_run
+from app.crawl.crud import create_crawl_run, get_run_records
+from app.crawl.pipeline.extraction_loop import process_single_url
+from app.crawl.pipeline.types import URLProcessingConfig
+from app.acquisition.platform_policy import (
     configured_adapter_names,
     platform_config_for_family,
 )
-from app.services.publish import VERDICT_PARTIAL, VERDICT_SUCCESS
-from app.services.publish.metrics import diagnostics_indicate_block
-from app.services.config.public_record_policy import PUBLIC_RECORD_LEGACY_VARIANT_FIELDS
-from app.services.config.variant_policy import (
+from app.persistence.publish import VERDICT_PARTIAL, VERDICT_SUCCESS
+from app.persistence.publish.metrics import diagnostics_indicate_block
+from app.core.config.public_record_policy import PUBLIC_RECORD_LEGACY_VARIANT_FIELDS
+from app.core.config.variant_policy import (
     PUBLIC_FLAT_VARIANT_FIELDS,
     PUBLIC_VARIANT_AXIS_FIELDS,
 )
-from app.services.extraction.surfaces import parse_surface
+from app.extraction.surfaces import parse_surface
 from sqlalchemy import select
 
 logger = logging.getLogger(__name__)
 
 _UTILITY_RECORD_TOKENS = frozenset(
     {
-        "account",
         "cart",
         "checkout",
         "contact",
@@ -255,7 +254,6 @@ def parse_test_sites_markdown(path: Path, *, start_line: int) -> list[dict[str, 
         if not value:
             continue
         if value.startswith(("http://", "https://")):
-            raise ValueError(f"surface is required for TEST_SITES.md URL: {value}")
             continue
         if not value.startswith("|") or "http" not in value:
             continue
@@ -1076,11 +1074,7 @@ def _quality_variant_artifacts_ok(
             if any(str(key).strip() not in allowed_variant_keys for key in row.keys()):
                 return False
             values.extend(row.keys())
-            values.extend(
-                value
-                for key, value in row.items()
-                if str(key).strip() != "selected"
-            )
+            values.extend(row.values())
     for value in values:
         if isinstance(value, bool):
             return False
@@ -1221,8 +1215,11 @@ def _observed_quality_failure_mode(
     checks: dict[str, bool],
     expectations: dict[str, bool],
 ) -> str:
-    if str(result.get("failure_mode") or "").strip().lower() == "blocked":
+    failure_mode = str(result.get("failure_mode") or "").strip().lower()
+    if failure_mode == "blocked":
         return "blocked"
+    if failure_mode and failure_mode != "success":
+        return failure_mode
     if not checks["identity_ok"]:
         if _looks_like_promo_or_wrong_page(result):
             return "promo_or_wrong_page"

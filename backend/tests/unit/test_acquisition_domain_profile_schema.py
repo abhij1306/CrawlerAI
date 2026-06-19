@@ -3,12 +3,12 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from app.services.acquisition.domain_profile_schema import (
+from app.acquisition.domain_profile_schema import (
     DomainProfileV2,
     SelectorRule,
     parse_domain_profile_v2,
 )
-from app.services.config.domain_profiles import DOMAIN_PROFILE_SCHEMA_VERSION
+from app.core.config.domain_profiles import DOMAIN_PROFILE_SCHEMA_VERSION
 
 
 @pytest.mark.unit

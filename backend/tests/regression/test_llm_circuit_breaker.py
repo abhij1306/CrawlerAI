@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.services.llm import circuit_breaker as llm_circuit_breaker
+from app.connectors.llm import circuit_breaker as llm_circuit_breaker
 
 
 @pytest.mark.regression

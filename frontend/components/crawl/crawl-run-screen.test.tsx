@@ -923,7 +923,7 @@ describe('CrawlRunScreen', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: 'Logs' }));
 
-    expect(await screen.findByText('40%')).toBeInTheDocument();
+    expect(await screen.findByText('100%')).toBeInTheDocument();
     expect(screen.getByText('0m 42s')).toBeInTheDocument();
   });
 

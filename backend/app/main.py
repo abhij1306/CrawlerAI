@@ -56,13 +56,11 @@ from app.core.telemetry import (
     reset_correlation_id,
     set_correlation_id,
 )
-from app.services.acquisition import (
-    close_shared_http_client,
-    shutdown_browser_runtime,
-    validate_cookie_policy_config,
-)
-from app.services.auth_service import bootstrap_admin_user
-from app.services.config.auth_security import (
+from app.acquisition.browser_runtime import shutdown_browser_runtime
+from app.acquisition.cookie_store import validate_cookie_policy_config
+from app.acquisition.lifecycle import close_shared_http_client
+from app.core.auth_service import bootstrap_admin_user
+from app.core.config.auth_security import (
     API_ALLOWED_CORS_METHODS,
     SECURITY_HEADER_CONTENT_TYPE_OPTIONS,
     SECURITY_HEADER_FRAME_OPTIONS,
@@ -73,16 +71,16 @@ from app.services.config.auth_security import (
     path_requires_no_store,
     secure_transport_required,
 )
-from app.services.config.runtime_settings import crawler_runtime_settings
-from app.services.crawl.service import recover_stale_local_runs
-from app.services.llm.provider_client import close_llm_provider_clients
+from app.core.config.runtime_settings import crawler_runtime_settings
+from app.crawl.service import recover_stale_local_runs
+from app.connectors.llm.provider_client import close_llm_provider_clients
 from app.api.public.common import PublicApiError, public_error_response
 from app.api.public.rate_limit import consume_public_rate_limit, public_rate_scope
-from app.services.config.public_api import (
+from app.core.config.public_api import (
     PUBLIC_API_ERROR_INVALID_API_KEY,
     PUBLIC_API_ERROR_RATE_LIMITED,
 )
-from app.services.observability.run_audit import ensure_run_audit_registered
+from app.observability.run_audit import ensure_run_audit_registered
 
 logger = logging.getLogger("app")
 _PUBLIC_API_PREFIX = "/api/v1"

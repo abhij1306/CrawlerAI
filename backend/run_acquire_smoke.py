@@ -19,13 +19,13 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from app.core.config import settings
-from app.services.acquisition.acquirer import (
+from app.acquisition.acquirer import (
     AcquisitionRequest,
     acquire,
 )
-from app.services.acquisition.runtime import is_blocked_html
-from app.services.acquisition_plan import AcquisitionPlan
-from app.services.platform_policy import detect_platform_family
+from app.acquisition.runtime import is_blocked_html
+from app.acquisition.runtime_plan import AcquisitionPlan
+from app.acquisition.platform_policy import detect_platform_family
 
 from harness.support import require_explicit_surface
 

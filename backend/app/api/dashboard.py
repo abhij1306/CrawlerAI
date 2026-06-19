@@ -6,7 +6,7 @@ from typing import Annotated
 from app.core.dependencies import get_current_user, get_db, require_admin
 from app.models.user import User
 from app.schemas.crawl import CrawlRunResponse, DashboardResponse
-from app.services.dashboard_service import (
+from app.crawl.dashboard_service import (
     build_dashboard,
     build_operational_metrics,
     reset_application_data,

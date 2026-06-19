@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from math import ceil
 from time import monotonic
 
-from app.services.config.public_api import (
+from app.core.config.public_api import (
     PUBLIC_API_BURST_WINDOW_SECONDS,
     PUBLIC_API_EXTRACT_BURST_LIMIT,
     PUBLIC_API_EXTRACT_RATE_LIMIT,

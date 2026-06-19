@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.services.acquisition.playwright_compat import (
+from app.acquisition.playwright_compat import (
     PLAYWRIGHT_RECOVERABLE_ERRORS,
     PlaywrightError,
     is_recoverable_playwright_error,

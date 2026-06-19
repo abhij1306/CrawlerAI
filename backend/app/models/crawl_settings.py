@@ -6,11 +6,11 @@ from dataclasses import dataclass, field
 from typing import Any
 from urllib.parse import urlparse
 
-from app.services.acquisition_plan import AcquisitionPlan
-from app.services.crawl.utils import normalize_target_url, resolve_traversal_mode
-from app.services.config.domain_profiles import INTERNAL_API_ENDPOINTS_PROFILE_KEY
-from app.services.extraction.surfaces import parse_surface
-from app.services.config.runtime_settings import crawler_runtime_settings
+from app.acquisition.runtime_plan import AcquisitionPlan
+from app.crawl.utils import normalize_target_url, resolve_traversal_mode
+from app.core.config.domain_profiles import INTERNAL_API_ENDPOINTS_PROFILE_KEY
+from app.extraction.surfaces import parse_surface
+from app.core.config.runtime_settings import crawler_runtime_settings
 
 _BROWSER_ENGINE_VALUES = {"auto", "patchright", "real_chrome"}
 _LEGACY_HANDOFF_ELIGIBLE_KEY = "prefer_curl_handoff"
@@ -434,7 +434,7 @@ class CrawlRunSettings:
         profile["proxy_profile"] = proxy_profile
         profile["locality_profile"] = self.locality_profile()
         if self.data.get(INTERNAL_API_ENDPOINTS_PROFILE_KEY) is not None:
-            from app.services.crawl.profile.normalization import normalize_internal_api_endpoints
+            from app.crawl.profile.normalization import normalize_internal_api_endpoints
 
             profile[INTERNAL_API_ENDPOINTS_PROFILE_KEY] = normalize_internal_api_endpoints(
                 self.data.get(INTERNAL_API_ENDPOINTS_PROFILE_KEY)
@@ -479,7 +479,7 @@ class CrawlRunSettings:
         normalized["diagnostics_profile"] = self.diagnostics_profile()
         normalized["acquisition_contract"] = self.acquisition_contract()
         if self.data.get(INTERNAL_API_ENDPOINTS_PROFILE_KEY) is not None:
-            from app.services.crawl.profile.normalization import normalize_internal_api_endpoints
+            from app.crawl.profile.normalization import normalize_internal_api_endpoints
 
             normalized[INTERNAL_API_ENDPOINTS_PROFILE_KEY] = normalize_internal_api_endpoints(
                 self.data.get(INTERNAL_API_ENDPOINTS_PROFILE_KEY)

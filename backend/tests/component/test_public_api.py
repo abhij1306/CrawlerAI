@@ -42,14 +42,14 @@ from app.models.api_key import ApiKey
 from app.models.crawl_run import CrawlRecord
 from app.models.domain_memory import DomainMemory, DomainRunProfile
 from app.models.user import User
-from app.services.auth_service import create_user
-from app.services.config import auth_security
-from app.services.config.public_api import (
+from app.core.auth_service import create_user
+from app.core.config import auth_security
+from app.core.config.public_api import (
     PUBLIC_API_ERROR_API_KEY_REQUIRED,
     PUBLIC_API_ERROR_AUTH_UNAVAILABLE,
     PUBLIC_API_INTERNAL_ECOMMERCE_SURFACE,
 )
-from app.services.config.runtime_settings import crawler_runtime_settings
+from app.core.config.runtime_settings import crawler_runtime_settings
 
 
 
@@ -875,7 +875,7 @@ async def test_public_extract_runs_http_only_and_shapes_record(
         yield db_session
 
     monkeypatch.setattr(
-        "app.services.public_api.extraction_service.process_single_url",
+        "app.connectors.public_api.extraction_service.process_single_url",
         _fake_process_single_url,
     )
     app.dependency_overrides[get_db] = _override_db
@@ -986,7 +986,7 @@ async def test_public_extract_rejects_auto_surface(
         yield db_session
 
     monkeypatch.setattr(
-        "app.services.public_api.extraction_service.process_single_url",
+        "app.connectors.public_api.extraction_service.process_single_url",
         _fake_process_single_url,
     )
     app.dependency_overrides[get_db] = _override_db

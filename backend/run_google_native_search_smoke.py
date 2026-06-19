@@ -20,17 +20,17 @@ from pathlib import Path
 from urllib.parse import urlencode
 
 from app.core.config import settings
-from app.services.acquisition.browser_recovery import (
+from app.acquisition.browser_recovery import (
     emit_browser_behavior_activity,
     type_text_like_human,
 )
-from app.services.acquisition.browser_runtime import (
+from app.acquisition.browser_runtime import (
     get_browser_runtime,
     shutdown_browser_runtime,
 )
-from app.services.acquisition.dom_runtime import get_page_html
-from app.services.acquisition.runtime import classify_blocked_page_async
-from app.services.config.product_intelligence import (
+from app.acquisition.dom_runtime import get_page_html
+from app.acquisition.runtime import classify_blocked_page_async
+from app.core.config.product_intelligence import (
     GOOGLE_NATIVE_BROWSER_ENGINE,
     GOOGLE_NATIVE_HOME_URL,
     GOOGLE_NATIVE_NAVIGATION_TIMEOUT_MS,
@@ -41,8 +41,8 @@ from app.services.config.product_intelligence import (
     GOOGLE_NATIVE_SEARCH_URL,
     GOOGLE_NATIVE_SUBMIT_KEY,
 )
-from app.services.product_intelligence.discovery import _parse_google_native_results
-from app.services.product_intelligence.matching import source_domain
+from app.intelligence.discovery import _parse_google_native_results
+from app.intelligence.matching import source_domain
 
 
 def _utc_stamp() -> str:

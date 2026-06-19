@@ -11,8 +11,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.models.data_enrichment import EnrichedProduct
 from app.models.crawl_run import CrawlRecord
 from app.schemas.data_enrichment import DataEnrichmentJobDetailResponse
-from app.services.llm.types import LLMTaskResult
-from app.services.config.data_enrichment import (
+from app.connectors.llm.types import LLMTaskResult
+from app.core.config.data_enrichment import (
     DATA_ENRICHMENT_COLOR_FAMILY_ALIASES,
     DATA_ENRICHMENT_STATUS_DEGRADED,
     DATA_ENRICHMENT_STATUS_ENRICHED,
@@ -22,7 +22,7 @@ from app.services.config.data_enrichment import (
     DATA_ENRICHMENT_TAXONOMY_CONTEXT_ONLY_TOKENS,
     DATA_ENRICHMENT_TAXONOMY_VERSION,
 )
-from app.services.data_enrichment.service import (
+from app.enrichment.service import (
     ai_discovery_allowed_tags_for_product,
     run_job,
     build_deterministic_enrichment,
@@ -31,15 +31,15 @@ from app.services.data_enrichment.service import (
     get_data_enrichment_job,
     list_data_enrichment_jobs,
 )
-from app.services.data_enrichment import shopify_catalog
-from app.services.data_enrichment.deterministic import normalize_price
-from app.services.data_enrichment.deterministic import (
+from app.enrichment import shopify_catalog
+from app.enrichment.deterministic import normalize_price
+from app.enrichment.deterministic import (
     category_match_values,
     category_url_context,
     percentage_material_parse,
     plausible_size_value,
 )
-from app.services.data_enrichment.shopify_catalog import (
+from app.enrichment.shopify_catalog import (
     accessory_path_conflict,
     normalize_taxonomy_token,
     special_token_conflict,
@@ -275,7 +275,7 @@ async def test_data_enrichment_job_commits_running_before_product_work(
         await release.wait()
 
     monkeypatch.setattr(
-        "app.services.data_enrichment.service._enrich_product",
+        "app.enrichment.service._enrich_product",
         _blocking_enrich_product,
     )
 
@@ -344,7 +344,7 @@ async def test_data_enrichment_commits_product_progress_between_records(
         await release.wait()
 
     monkeypatch.setattr(
-        "app.services.data_enrichment.service._enrich_product",
+        "app.enrichment.service._enrich_product",
         _blocking_second_product,
     )
 
@@ -759,7 +759,7 @@ async def test_data_enrichment_rolls_back_after_sqlalchemy_product_failure(
 
     monkeypatch.setattr(db_session, "rollback", counted_rollback)
     monkeypatch.setattr(
-        "app.services.data_enrichment.service._enrich_product",
+        "app.enrichment.service._enrich_product",
         _as_async(fake_enrich_product),
     )
 
@@ -828,7 +828,7 @@ async def test_data_enrichment_llm_does_not_overwrite_deterministic_fields(
         )
 
     monkeypatch.setattr(
-        "app.services.data_enrichment.service.run_prompt_task",
+        "app.enrichment.service.run_prompt_task",
         _as_async(fake_run_prompt_task),
     )
     run = await create_test_run(
@@ -913,7 +913,7 @@ async def test_data_enrichment_llm_filters_ai_discovery_tags_to_allowed_evidence
         )
 
     monkeypatch.setattr(
-        "app.services.data_enrichment.service.run_prompt_task",
+        "app.enrichment.service.run_prompt_task",
         _as_async(fake_run_prompt_task),
     )
     run = await create_test_run(
@@ -1000,7 +1000,7 @@ async def test_data_enrichment_llm_ignores_non_dict_payload(
         return LLMTaskResult(payload="bad-payload")
 
     monkeypatch.setattr(
-        "app.services.data_enrichment.service.run_prompt_task",
+        "app.enrichment.service.run_prompt_task",
         _as_async(fake_run_prompt_task),
     )
     run = await create_test_run(

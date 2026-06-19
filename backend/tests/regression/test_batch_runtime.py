@@ -5,18 +5,18 @@ import asyncio
 import pytest
 
 from app.models.crawl_settings import CrawlRunSettings
-from app.services.crawl import batch_runtime as batch_runtime_module
-from app.services.crawl.batch_runtime import (
+from app.crawl import batch_runtime as batch_runtime_module
+from app.crawl.batch_runtime import (
     _parallel_url_concurrency,
     _parallel_worker_record_limit,
     process_run,
 )
-from app.services.config.sitemap import SITEMAP_DEFAULT_MAX_URLS
-from app.services.acquisition.acquirer import AcquisitionResult
-from app.services.crawl.crud import create_crawl_run, get_run_records
+from app.core.config.sitemap import SITEMAP_DEFAULT_MAX_URLS
+from app.acquisition.acquirer import AcquisitionResult
+from app.crawl.crud import create_crawl_run, get_run_records
 from app.models.crawl_run import CrawlLog, CrawlRecord
-from app.services.pipeline.types import URLProcessingResult
-from app.services.robots_policy import (
+from app.crawl.pipeline.types import URLProcessingResult
+from app.crawl.robots_policy import (
     ROBOTS_ALLOWED,
     ROBOTS_FETCH_FAILURE,
     ROBOTS_MISSING,
@@ -171,7 +171,7 @@ async def test_process_run_persists_detail_records(
             status_code=200,
         )
 
-    monkeypatch.setattr("app.services.pipeline.extraction_loop.acquire", _fake_acquire)
+    monkeypatch.setattr("app.crawl.pipeline.extraction_loop.acquire", _fake_acquire)
 
     await process_run(db_session, run.id)
     await db_session.refresh(run)
@@ -211,7 +211,7 @@ async def test_process_run_marks_empty_listing_as_listing_detection_failed(
             status_code=200,
         )
 
-    monkeypatch.setattr("app.services.pipeline.extraction_loop.acquire", _fake_acquire)
+    monkeypatch.setattr("app.crawl.pipeline.extraction_loop.acquire", _fake_acquire)
 
     await process_run(db_session, run.id)
     await db_session.refresh(run)
@@ -260,7 +260,7 @@ async def test_process_run_tracks_failure_reason_counts(
         )
 
     monkeypatch.setattr(
-        "app.services.crawl.batch_runtime.process_single_url",
+        "app.crawl.batch_runtime.process_single_url",
         _fake_process_single_url,
     )
 
@@ -318,7 +318,7 @@ async def test_process_run_starts_with_fresh_batch_progress(
         )
 
     monkeypatch.setattr(
-        "app.services.crawl.batch_runtime.process_single_url",
+        "app.crawl.batch_runtime.process_single_url",
         _fake_process_single_url,
     )
 
@@ -367,7 +367,7 @@ async def test_process_run_defaults_to_sequential_batch_url_processing(
         )
 
     monkeypatch.setattr(
-        "app.services.crawl.batch_runtime.process_single_url",
+        "app.crawl.batch_runtime.process_single_url",
         _fake_process_single_url,
     )
 
@@ -441,7 +441,7 @@ async def test_process_run_uses_url_batch_concurrency_setting(
         )
 
     monkeypatch.setattr(
-        "app.services.crawl.batch_runtime.process_single_url",
+        "app.crawl.batch_runtime.process_single_url",
         _fake_process_single_url,
     )
 
@@ -517,14 +517,14 @@ async def test_process_run_runs_same_domain_batch_urls_in_parallel(
         )
 
     monkeypatch.setattr(
-        "app.services.crawl.batch_runtime.process_single_url",
+        "app.crawl.batch_runtime.process_single_url",
         _fake_process_single_url,
     )
     session_factory = async_sessionmaker(
         bind=db_session.bind,
         expire_on_commit=False,
     )
-    monkeypatch.setattr("app.services.crawl.batch_runtime.SessionLocal", session_factory)
+    monkeypatch.setattr("app.crawl.batch_runtime.SessionLocal", session_factory)
 
     await process_run(db_session, run.id)
 
@@ -576,14 +576,14 @@ async def test_parallel_run_does_not_mislabel_nested_timeout_as_url_deadline(
         )
 
     monkeypatch.setattr(
-        "app.services.crawl.batch_runtime.process_single_url",
+        "app.crawl.batch_runtime.process_single_url",
         _fake_process_single_url,
     )
     session_factory = async_sessionmaker(
         bind=db_session.bind,
         expire_on_commit=False,
     )
-    monkeypatch.setattr("app.services.crawl.batch_runtime.SessionLocal", session_factory)
+    monkeypatch.setattr("app.crawl.batch_runtime.SessionLocal", session_factory)
 
     await process_run(db_session, run.id)
     logs = (
@@ -665,7 +665,7 @@ async def test_process_run_aggregates_quality_summary_from_url_metrics(
         )
 
     monkeypatch.setattr(
-        "app.services.crawl.batch_runtime.process_single_url",
+        "app.crawl.batch_runtime.process_single_url",
         _fake_process_single_url,
     )
 
@@ -716,8 +716,8 @@ async def test_process_run_blocks_disallowed_url_before_acquire(
     async def _unexpected_acquire(request):
         raise AssertionError(f"acquire should not run for {request.url}")
 
-    monkeypatch.setattr("app.services.pipeline.extraction_loop.check_url_crawlability", _disallow)
-    monkeypatch.setattr("app.services.pipeline.extraction_loop.acquire", _unexpected_acquire)
+    monkeypatch.setattr("app.crawl.pipeline.extraction_loop.check_url_crawlability", _disallow)
+    monkeypatch.setattr("app.crawl.pipeline.extraction_loop.acquire", _unexpected_acquire)
 
     await process_run(db_session, run.id)
     await db_session.refresh(run)
@@ -767,8 +767,8 @@ async def test_process_run_ignores_robots_when_disabled_in_settings(
             status_code=200,
         )
 
-    monkeypatch.setattr("app.services.pipeline.extraction_loop.check_url_crawlability", _disallow)
-    monkeypatch.setattr("app.services.pipeline.extraction_loop.acquire", _fake_acquire)
+    monkeypatch.setattr("app.crawl.pipeline.extraction_loop.check_url_crawlability", _disallow)
+    monkeypatch.setattr("app.crawl.pipeline.extraction_loop.acquire", _fake_acquire)
 
     await process_run(db_session, run.id)
     await db_session.refresh(run)
@@ -820,8 +820,8 @@ async def test_process_run_continues_when_robots_allows_or_fails_open(
             status_code=200,
         )
 
-    monkeypatch.setattr("app.services.pipeline.extraction_loop.check_url_crawlability", _allow)
-    monkeypatch.setattr("app.services.pipeline.extraction_loop.acquire", _fake_acquire)
+    monkeypatch.setattr("app.crawl.pipeline.extraction_loop.check_url_crawlability", _allow)
+    monkeypatch.setattr("app.crawl.pipeline.extraction_loop.acquire", _fake_acquire)
 
     await process_run(db_session, run.id)
     await db_session.refresh(run)
@@ -858,7 +858,7 @@ async def test_process_run_enforces_url_timeout_from_settings(
         raise AssertionError("timeout should fire before this returns")
 
     monkeypatch.setattr(
-        "app.services.crawl.batch_runtime.process_single_url",
+        "app.crawl.batch_runtime.process_single_url",
         _slow_process_single_url,
     )
 
@@ -904,7 +904,7 @@ async def test_process_run_default_timeout_includes_acquisition_slack(
         )
 
     monkeypatch.setattr(
-        "app.services.crawl.batch_runtime.process_single_url",
+        "app.crawl.batch_runtime.process_single_url",
         _slow_process_single_url,
     )
 
@@ -950,7 +950,7 @@ async def test_process_batch_run_preserves_requested_fields_for_every_url(
             status_code=200,
         )
 
-    monkeypatch.setattr("app.services.pipeline.extraction_loop.acquire", _fake_acquire)
+    monkeypatch.setattr("app.crawl.pipeline.extraction_loop.acquire", _fake_acquire)
 
     await process_run(db_session, run.id)
 
@@ -998,7 +998,7 @@ async def test_process_batch_run_preserves_proxy_list_for_every_url(
             status_code=200,
         )
 
-    monkeypatch.setattr("app.services.pipeline.extraction_loop.acquire", _fake_acquire)
+    monkeypatch.setattr("app.crawl.pipeline.extraction_loop.acquire", _fake_acquire)
 
     await process_run(db_session, run.id)
 
@@ -1042,7 +1042,7 @@ async def test_process_batch_run_preserves_exact_requested_section_labels_for_ev
             status_code=200,
         )
 
-    monkeypatch.setattr("app.services.pipeline.extraction_loop.acquire", _fake_acquire)
+    monkeypatch.setattr("app.crawl.pipeline.extraction_loop.acquire", _fake_acquire)
 
     await process_run(db_session, run.id)
 
@@ -1103,12 +1103,12 @@ async def test_process_batch_run_resolves_urls_from_sitemap_settings(
         )
 
     monkeypatch.setattr(
-        "app.services.crawl.batch_runtime.resolve_category_urls_from_sitemap",
+        "app.crawl.batch_runtime.resolve_category_urls_from_sitemap",
         _fake_resolve_category_urls_from_sitemap,
         raising=False,
     )
     monkeypatch.setattr(
-        "app.services.crawl.batch_runtime.process_single_url",
+        "app.crawl.batch_runtime.process_single_url",
         _fake_process_single_url,
     )
 
@@ -1161,12 +1161,12 @@ async def test_process_batch_run_defaults_bad_sitemap_max_urls(
         return URLProcessingResult(records=[], verdict="success")
 
     monkeypatch.setattr(
-        "app.services.crawl.batch_runtime.resolve_category_urls_from_sitemap",
+        "app.crawl.batch_runtime.resolve_category_urls_from_sitemap",
         _fake_resolve_category_urls_from_sitemap,
         raising=False,
     )
     monkeypatch.setattr(
-        "app.services.crawl.batch_runtime.process_single_url",
+        "app.crawl.batch_runtime.process_single_url",
         _fake_process_single_url,
     )
 
@@ -1208,7 +1208,7 @@ async def test_process_batch_run_marks_failed_when_sitemap_resolution_fails(
         )
 
     monkeypatch.setattr(
-        "app.services.crawl.batch_runtime.resolve_category_urls_from_sitemap",
+        "app.crawl.batch_runtime.resolve_category_urls_from_sitemap",
         _fake_resolve_category_urls_from_sitemap,
         raising=False,
     )
@@ -1268,12 +1268,12 @@ async def test_process_batch_run_enables_homepage_fallback_for_auto_surface(
         return URLProcessingResult(records=[], verdict="success")
 
     monkeypatch.setattr(
-        "app.services.crawl.batch_runtime.resolve_category_urls_from_sitemap",
+        "app.crawl.batch_runtime.resolve_category_urls_from_sitemap",
         _fake_resolve_category_urls_from_sitemap,
         raising=False,
     )
     monkeypatch.setattr(
-        "app.services.crawl.batch_runtime.process_single_url",
+        "app.crawl.batch_runtime.process_single_url",
         _fake_process_single_url,
     )
 
@@ -1330,7 +1330,7 @@ async def test_process_run_continues_after_sqlalchemy_url_error(
         )
 
     monkeypatch.setattr(
-        "app.services.crawl.batch_runtime.process_single_url",
+        "app.crawl.batch_runtime.process_single_url",
         _poisoned_process_single_url,
     )
 
@@ -1383,11 +1383,11 @@ async def test_process_run_continues_when_failure_log_persistence_fails(
         raise PendingRollbackError("failure log flush failed")
 
     monkeypatch.setattr(
-        "app.services.crawl.batch_runtime.process_single_url",
+        "app.crawl.batch_runtime.process_single_url",
         _failing_process_single_url,
     )
     monkeypatch.setattr(
-        "app.services.crawl.batch_runtime._persist_url_failure_log",
+        "app.crawl.batch_runtime._persist_url_failure_log",
         _failing_failure_log,
     )
 
@@ -1437,11 +1437,11 @@ async def test_process_run_continues_when_failure_log_persistence_raises_non_sql
         raise ValueError("unexpected recovery failure")
 
     monkeypatch.setattr(
-        "app.services.crawl.batch_runtime.process_single_url",
+        "app.crawl.batch_runtime.process_single_url",
         _failing_process_single_url,
     )
     monkeypatch.setattr(
-        "app.services.crawl.batch_runtime._persist_url_failure_log",
+        "app.crawl.batch_runtime._persist_url_failure_log",
         _failing_failure_log,
     )
 
@@ -1493,7 +1493,7 @@ async def test_process_run_records_browser_exception_diagnostics_and_continues(
         )
 
     monkeypatch.setattr(
-        "app.services.crawl.batch_runtime.process_single_url",
+        "app.crawl.batch_runtime.process_single_url",
         _fake_process_single_url,
     )
 
@@ -1553,7 +1553,7 @@ async def test_process_run_continues_after_generic_browser_driver_error(
         )
 
     monkeypatch.setattr(
-        "app.services.crawl.batch_runtime.process_single_url",
+        "app.crawl.batch_runtime.process_single_url",
         _fake_process_single_url,
     )
 

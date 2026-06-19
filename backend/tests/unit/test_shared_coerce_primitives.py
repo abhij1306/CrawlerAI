@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.services.shared.coerce_primitives import (
+from app.core.shared.coerce_primitives import (
     coerce_int,
     is_blank,
     object_dict,

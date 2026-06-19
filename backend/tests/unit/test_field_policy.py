@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.services.field_policy import (
+from app.core.records.field_policy import (
     browser_retry_target_fields_for_surface,
     canonical_requested_fields,
     exact_requested_field_key,

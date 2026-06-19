@@ -8,25 +8,25 @@ from types import SimpleNamespace
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.services.fetch import fetch_context as crawl_fetch_runtime
+from app.acquisition.fetch import fetch_context as crawl_fetch_runtime
 
 from app.models.domain_memory import DomainCookieMemory
-from app.services.acquisition import browser_identity, browser_storage_state
-from app.services.acquisition import browser_background_tasks
-from app.services.acquisition import browser_proxy_bridge
-from app.services.acquisition import browser_pool_page as acquisition_browser_pool_page
-from app.services.acquisition import cookie_store
-from app.services.acquisition import host_protection_memory
-from app.services.acquisition import browser_pool as acquisition_browser_pool
-from app.services.acquisition.browser_readiness import analyze_html
-from app.services.acquisition.browser_proxy_config import build_browser_proxy_config
-from app.services.acquisition import browser_runtime as acquisition_browser_runtime
-from app.services.acquisition.runtime import (
+from app.acquisition import browser_identity, browser_storage_state
+from app.acquisition import browser_background_tasks
+from app.acquisition import browser_proxy_bridge
+from app.acquisition import browser_pool_page as acquisition_browser_pool_page
+from app.acquisition import cookie_store
+from app.acquisition import host_protection_memory
+from app.acquisition import browser_pool as acquisition_browser_pool
+from app.acquisition.browser_readiness import analyze_html
+from app.acquisition.browser_proxy_config import build_browser_proxy_config
+from app.acquisition import browser_runtime as acquisition_browser_runtime
+from app.acquisition.runtime import (
     has_extractable_dom_meaningful_detail_signals,
     has_extractable_listing_signals,
 )
-from app.services.config.runtime_settings import crawler_runtime_settings
-from app.services.domain_utils import is_special_use_domain, normalize_domain
+from app.core.config.runtime_settings import crawler_runtime_settings
+from app.core.domain_utils import is_special_use_domain, normalize_domain
 
 
 _PASSWORD_KEY = "pass" + "word"

@@ -197,7 +197,23 @@ function matchesSiteUrl(record: CrawlRecord, siteUrl: string) {
       candidates.add(text);
     }
   }
-  return candidates.has(siteUrl);
+  if (candidates.has(siteUrl)) {
+    return true;
+  }
+  const normalizedSiteUrl = canonicalLogMatchUrl(siteUrl);
+  return Array.from(candidates).some((candidate) => canonicalLogMatchUrl(candidate) === normalizedSiteUrl);
+}
+
+function canonicalLogMatchUrl(value: string) {
+  try {
+    const parsed = new URL(value);
+    parsed.hash = '';
+    parsed.search = '';
+    parsed.pathname = parsed.pathname.replace(/\/+$/, '') || '/';
+    return parsed.toString();
+  } catch {
+    return value.trim();
+  }
 }
 
 function siteLabel(url: string, index: number | null, total: number | null) {

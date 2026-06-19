@@ -9,7 +9,7 @@ from sqlalchemy.exc import OperationalError
 
 from app.core.dependencies import get_db, require_admin
 from app.main import app
-from app.services import dashboard_service
+from app.crawl import dashboard_service
 from app.models.domain_memory import (
     DomainCookieMemory,
     DomainFieldFeedback,
@@ -27,14 +27,14 @@ from app.models.crawl_run import CrawlLog, CrawlRecord, CrawlRun
 from app.models.review import ReviewPromotion
 from app.models.llm import LLMCostLog
 from app.models.user import User
-from app.services.acquisition.host_protection_memory import (
+from app.acquisition.host_protection_memory import (
     load_host_protection_policy,
     note_host_hard_block,
     note_host_usable_fetch,
     reset_host_protection_memory,
 )
-from app.services.crawl.crud import create_crawl_run
-from app.services.dashboard_service import (
+from app.crawl.crud import create_crawl_run
+from app.crawl.dashboard_service import (
     reset_application_data,
     reset_crawl_data,
     reset_domain_memory,
@@ -142,7 +142,7 @@ async def test_split_reset_crawl_data_and_domain_memory_preserve_the_other_scope
     workspace_tmp_path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from app.services import dashboard_service
+    from app.crawl import dashboard_service
 
     artifacts_dir = workspace_tmp_path / "artifacts"
     cookies_dir = workspace_tmp_path / "cookies"
@@ -318,7 +318,7 @@ def test_reset_directory_skips_locked_celery_worker_logs_without_error(
 
     monkeypatch.setattr(Path, "unlink", _unlink)
 
-    with caplog.at_level(logging.WARNING, logger="app.services.dashboard_service"):
+    with caplog.at_level(logging.WARNING, logger="app.crawl.dashboard_service"):
         removed = dashboard_service._reset_directory(artifacts_dir)
 
     assert removed == 1
@@ -341,7 +341,7 @@ async def test_reset_application_data_rolls_back_when_domain_memory_reset_fails(
     test_user,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from app.services import dashboard_service
+    from app.crawl import dashboard_service
 
     run = await create_crawl_run(
         db_session,

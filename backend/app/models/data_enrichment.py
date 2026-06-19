@@ -14,7 +14,7 @@ from app.models.crawl_run import (
     USERS_FK,
     UpdatedAtMixin,
 )
-from app.services.config.data_enrichment import DATA_ENRICHMENT_STATUS_PENDING
+from app.core.config.data_enrichment import DATA_ENRICHMENT_STATUS_PENDING
 
 DATA_ENRICHMENT_JOBS_FK = "data_enrichment_jobs.id"
 CRAWL_RECORD_FK = "crawl_records.id"

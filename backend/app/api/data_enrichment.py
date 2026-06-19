@@ -12,8 +12,8 @@ from app.schemas.data_enrichment import (
     DataEnrichmentJobDetailResponse,
     DataEnrichmentJobResponse,
 )
-from app.services.crawl.access_service import AccessDeniedError
-from app.services.data_enrichment.service import (
+from app.crawl.access_service import AccessDeniedError
+from app.enrichment.service import (
     build_data_enrichment_job_payload,
     create_data_enrichment_job,
     get_data_enrichment_job,

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.services.acquisition.browser_diagnostics import browser_failure_kind
+from app.acquisition.browser_diagnostics import browser_failure_kind
 
 
 @pytest.mark.unit

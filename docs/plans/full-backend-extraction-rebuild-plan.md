@@ -3,7 +3,8 @@
 **Created:** 2026-06-19
 **Revised:** 2026-06-19
 **Agent:** Codex
-**Status:** IN PROGRESS
+**Status:** SUPERSEDED
+**Superseded by:** `docs/plans/final-architecture-improvement-plan.md`
 **Touches buckets:** Bucket 2 (crawl orchestration), Bucket 3 (acquisition boundary), Bucket 4 (extraction), Bucket 5 (persistence/trace), Bucket 6 (selectors/domain memory), docs/tests
 
 ## Goal
@@ -657,7 +658,7 @@ Extraction never calls acquisition. Acquisition never interprets missing fields 
 **Notes:** Deleted unused `extract_*_from_bundle` compatibility wrappers and obsolete per-surface replay assembly helpers from the extraction package after the single orchestrator replaced them. Import scan shows no remaining wrapper calls. Broader legacy pipeline modules remain where still imported by non-extraction orchestration/persistence paths and need separate deletion only after those callers are replaced. Verify on 2026-06-19: four-surface acceptance, extraction pipeline, and current-run replay tests passed `45 passed`; wrapper import scan returned no matches.
 
 ### Slice 13: Final Replay And Live Validation
-**Status:** TODO
+**Status:** SUPERSEDED — NOT RUN
 **Files:** tests, harness/report docs, active plan notes
 **What:** Run saved replay first, then live smoke. Any new live failure must create a saved capture fixture before fixing.
 **Verify:** Full backend tests, `run_extraction_smoke.py`, `run_acquire_smoke.py commerce`, `run_test_sites_acceptance.py`, and the ten-site smoke gate pass or record external blockers.
@@ -737,6 +738,7 @@ LLM-generated product/job facts
 
 ## Notes
 
+- Superseded on 2026-06-19 by the final architecture improvement plan. Slice 13 was not run and remains unverified.
 - This revised plan incorporates `CrawlerAI_Revised_Extraction_Pipeline_Implementation_Plan.md`.
 - It supersedes the blocked extraction-productionization plan and pauses aggressive deletion until extraction ownership is clean.
 - Start with current-run replay fixtures. Do not begin by adding live-site patches.

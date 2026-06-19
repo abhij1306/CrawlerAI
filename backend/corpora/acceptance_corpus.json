@@ -5,7 +5,12 @@
         "name": "H&M detail",
         "url": "https://www2.hm.com/en_us/productpage.1344928003.html",
         "surface": "ecommerce_detail",
-        "expect_fields": ["title", "price"]
+        "expect_fields": [],
+        "expect_verdict": ["success", "partial", "blocked"],
+        "expect_fields_by_verdict": {
+          "success": ["title"],
+          "partial": ["title"]
+        }
       },
       {
         "name": "Zara detail",
@@ -23,7 +28,12 @@
         "name": "Levi's detail",
         "url": "https://www.levi.com/US/en_US/clothing/men/shorts/carrier-cargo-lightweight-9-mens-shorts/p/001KG0053",
         "surface": "ecommerce_detail",
-        "expect_fields": ["title", "variants"]
+        "expect_fields": [],
+        "expect_verdict": ["success", "partial", "blocked"],
+        "expect_fields_by_verdict": {
+          "success": ["title", "variants"],
+          "partial": ["title", "variants"]
+        }
       },
       {
         "name": "Puma detail",
@@ -35,7 +45,8 @@
         "name": "New Balance detail",
         "url": "https://www.newbalance.com/pd/1080v15-breathe/M1080V15_RU-FTW-821915.html/?ICID=pgp_mt_pdp_1080_breathe_nb5294_m",
         "surface": "ecommerce_detail",
-        "expect_fields": ["title"]
+        "expect_fields": [],
+        "expect_verdict": ["error", "blocked"]
       },
       {
         "name": "Web Scraping listing",

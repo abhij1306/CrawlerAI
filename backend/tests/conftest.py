@@ -21,10 +21,10 @@ from app.core import database as app_database
 from app.core.database import Base
 from app.core.security import hash_password
 from app.models.user import User
-from app.services.config.runtime_settings import crawler_runtime_settings
-from app.services.crawl.crud import create_crawl_run
-from app.services.fetch.fetch_context import reset_fetch_runtime_state
-from app.services.acquisition.pacing import reset_pacing_state
+from app.core.config.runtime_settings import crawler_runtime_settings
+from app.crawl.crud import create_crawl_run
+from app.acquisition.fetch.fetch_context import reset_fetch_runtime_state
+from app.acquisition.pacing import reset_pacing_state
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
@@ -172,7 +172,7 @@ def _stub_public_dns_resolution(monkeypatch: pytest.MonkeyPatch):
         return ["93.184.216.34"]
 
     monkeypatch.setattr(
-        "app.services.url_safety._resolve_host_ips",
+        "app.core.url_safety._resolve_host_ips",
         _resolve,
     )
 
@@ -223,7 +223,7 @@ async def db_session(monkeypatch: pytest.MonkeyPatch):
         expire_on_commit=False,
         class_=AsyncSession,
     )
-    from app.services.crawl import batch_runtime
+    from app.crawl import batch_runtime
 
     monkeypatch.setattr(batch_runtime, "SessionLocal", session_factory)
     async with session_factory() as session:

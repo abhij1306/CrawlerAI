@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.services.shared.url_utils import (
+from app.core.shared.url_utils import (
     ensure_scheme,
     identity_token,
     is_placeholder_image_url,

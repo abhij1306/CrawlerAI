@@ -12,7 +12,7 @@ from app.models.product_intelligence import (
 )
 from app.models.crawl_run import CrawlRecord
 from app.schemas.product_intelligence import ProductIntelligenceDiscoveryRequest
-from app.services.config.product_intelligence import (
+from app.core.config.product_intelligence import (
     GOOGLE_NATIVE_HOME_URL,
     PRODUCT_INTELLIGENCE_CANDIDATE_STATUS_CRAWL_QUEUED,
     PRODUCT_INTELLIGENCE_CANDIDATE_STATUS_CRAWL_TIMEOUT,
@@ -20,8 +20,8 @@ from app.services.config.product_intelligence import (
     ProductIntelligenceSettings,
     product_intelligence_settings,
 )
-from app.services.llm.config_service import get_prompt_task
-from app.services.product_intelligence.discovery import (
+from app.connectors.llm.config_service import get_prompt_task
+from app.intelligence.discovery import (
     SearchResult,
     google_native_blocked,
     google_native_session,
@@ -32,8 +32,8 @@ from app.services.product_intelligence.discovery import (
     classify_source_type,
     discover_candidates,
 )
-from app.services.product_intelligence import discovery as discovery_module
-from app.services.product_intelligence.matching import (
+from app.intelligence import discovery as discovery_module
+from app.intelligence.matching import (
     build_search_result_intelligence,
     extract_product_snapshot,
     extract_search_result_snapshot,
@@ -41,9 +41,9 @@ from app.services.product_intelligence.matching import (
     normalize_brand,
     score_candidate,
 )
-from app.services.llm.circuit_breaker import LLMErrorCategory
-from app.services.llm.types import LLMTaskResult
-from app.services.product_intelligence.service import (
+from app.connectors.llm.circuit_breaker import LLMErrorCategory
+from app.connectors.llm.types import LLMTaskResult
+from app.intelligence.service import (
     backfill_candidate_brand,
     poll_candidate_and_score,
     resolve_source_snapshot,
@@ -838,11 +838,11 @@ async def test_google_native_session_reuses_single_page_across_queries(monkeypat
         )
 
     monkeypatch.setattr(
-        "app.services.product_intelligence.discovery.get_browser_runtime",
+        "app.intelligence.discovery.get_browser_runtime",
         _fake_runtime,
     )
     monkeypatch.setattr(
-        "app.services.product_intelligence.discovery.get_page_html",
+        "app.intelligence.discovery.get_page_html",
         _fake_html,
     )
 
@@ -927,11 +927,11 @@ async def test_google_native_session_stops_after_google_sorry_page(monkeypatch) 
         return html_by_query.get(last_query, "")
 
     monkeypatch.setattr(
-        "app.services.product_intelligence.discovery.get_browser_runtime",
+        "app.intelligence.discovery.get_browser_runtime",
         _fake_runtime,
     )
     monkeypatch.setattr(
-        "app.services.product_intelligence.discovery.get_page_html",
+        "app.intelligence.discovery.get_page_html",
         _fake_html,
     )
     html_by_query["blue shoe"] = """
@@ -979,7 +979,7 @@ async def test_resolve_source_snapshot_skips_llm_when_brand_present(monkeypatch)
         raise AssertionError("LLM must not be called when brand already resolved")
 
     monkeypatch.setattr(
-        "app.services.product_intelligence.service.run_prompt_task",
+        "app.intelligence.service.run_prompt_task",
         fake_run_prompt_task,
     )
 
@@ -1001,7 +1001,7 @@ async def test_resolve_source_snapshot_skips_llm_when_disabled(monkeypatch) -> N
         raise AssertionError("LLM must not be called when llm_enabled is False")
 
     monkeypatch.setattr(
-        "app.services.product_intelligence.service.run_prompt_task",
+        "app.intelligence.service.run_prompt_task",
         fake_run_prompt_task,
     )
 
@@ -1031,7 +1031,7 @@ async def test_resolve_source_snapshot_uses_llm_brand_when_confident(monkeypatch
         )
 
     monkeypatch.setattr(
-        "app.services.product_intelligence.service.run_prompt_task",
+        "app.intelligence.service.run_prompt_task",
         fake_run_prompt_task,
     )
 
@@ -1063,7 +1063,7 @@ async def test_resolve_source_snapshot_drops_low_confidence_llm_brand(monkeypatc
         )
 
     monkeypatch.setattr(
-        "app.services.product_intelligence.service.run_prompt_task",
+        "app.intelligence.service.run_prompt_task",
         fake_run_prompt_task,
     )
 
@@ -1088,7 +1088,7 @@ async def test_resolve_source_snapshot_swallows_llm_error(monkeypatch) -> None:
         )
 
     monkeypatch.setattr(
-        "app.services.product_intelligence.service.run_prompt_task",
+        "app.intelligence.service.run_prompt_task",
         fake_run_prompt_task,
     )
 
@@ -1109,7 +1109,7 @@ async def test_resolve_source_snapshot_skips_llm_when_no_inputs(monkeypatch) -> 
         raise AssertionError("LLM must not be called without title or url")
 
     monkeypatch.setattr(
-        "app.services.product_intelligence.service.run_prompt_task",
+        "app.intelligence.service.run_prompt_task",
         fake_run_prompt_task,
     )
 
@@ -1147,7 +1147,7 @@ async def test_backfill_candidate_brand_skips_when_disabled(monkeypatch) -> None
         raise AssertionError("LLM must not be called when llm_enabled is False")
 
     monkeypatch.setattr(
-        "app.services.product_intelligence.service.run_prompt_task",
+        "app.intelligence.service.run_prompt_task",
         fake_run_prompt_task,
     )
 
@@ -1170,7 +1170,7 @@ async def test_backfill_candidate_brand_skips_when_brand_present(monkeypatch) ->
         raise AssertionError("LLM must not be called when candidate brand is set")
 
     monkeypatch.setattr(
-        "app.services.product_intelligence.service.run_prompt_task",
+        "app.intelligence.service.run_prompt_task",
         fake_run_prompt_task,
     )
 
@@ -1197,7 +1197,7 @@ async def test_backfill_candidate_brand_applies_llm_brand_and_rescores(monkeypat
         )
 
     monkeypatch.setattr(
-        "app.services.product_intelligence.service.run_prompt_task",
+        "app.intelligence.service.run_prompt_task",
         fake_run_prompt_task,
     )
 
@@ -1233,7 +1233,7 @@ async def test_backfill_candidate_brand_drops_low_confidence(monkeypatch) -> Non
         )
 
     monkeypatch.setattr(
-        "app.services.product_intelligence.service.run_prompt_task",
+        "app.intelligence.service.run_prompt_task",
         fake_run_prompt_task,
     )
 
@@ -1260,7 +1260,7 @@ async def test_backfill_candidate_brand_handles_llm_error(monkeypatch) -> None:
         )
 
     monkeypatch.setattr(
-        "app.services.product_intelligence.service.run_prompt_task",
+        "app.intelligence.service.run_prompt_task",
         fake_run_prompt_task,
     )
 
@@ -1292,7 +1292,7 @@ async def test_product_intelligence_discovery_preserves_serpapi_payload(monkeypa
         ]
 
     monkeypatch.setattr(
-        "app.services.product_intelligence.discovery._search_results",
+        "app.intelligence.discovery._search_results",
         fake_search_results,
     )
 
@@ -1657,7 +1657,7 @@ async def test_product_intelligence_discovery_passes_pool_limit_to_search(monkey
         ]
 
     monkeypatch.setattr(
-        "app.services.product_intelligence.discovery._search_results",
+        "app.intelligence.discovery._search_results",
         fake_search_results,
     )
     monkeypatch.setattr(product_intelligence_settings, "discovery_pool_multiplier", 4)
@@ -1689,7 +1689,7 @@ async def test_product_intelligence_discovery_keeps_multiple_listings_per_domain
         ]
 
     monkeypatch.setattr(
-        "app.services.product_intelligence.discovery._search_results",
+        "app.intelligence.discovery._search_results",
         fake_search_results,
     )
 
@@ -1729,7 +1729,7 @@ async def test_product_intelligence_discovery_prioritizes_brand_site_over_aggreg
         ]
 
     monkeypatch.setattr(
-        "app.services.product_intelligence.discovery._search_results",
+        "app.intelligence.discovery._search_results",
         fake_search_results,
     )
     monkeypatch.setattr(product_intelligence_settings, "discovery_pool_multiplier", 4)
@@ -1770,7 +1770,7 @@ async def test_product_intelligence_discovery_skips_invalid_result_urls(monkeypa
         ]
 
     monkeypatch.setattr(
-        "app.services.product_intelligence.discovery._search_results",
+        "app.intelligence.discovery._search_results",
         fake_search_results,
     )
 
@@ -2095,15 +2095,15 @@ async def test_product_intelligence_discovery_keeps_search_delay_while_filling_p
         recorded_delays.append(delay)
 
     monkeypatch.setattr(
-        "app.services.product_intelligence.discovery.build_search_queries",
+        "app.intelligence.discovery.build_search_queries",
         lambda product, *, source_domain_value: ["query one", "query two"],
     )
     monkeypatch.setattr(
-        "app.services.product_intelligence.discovery._search_results",
+        "app.intelligence.discovery._search_results",
         fake_search_results,
     )
     monkeypatch.setattr(
-        "app.services.product_intelligence.discovery.asyncio.sleep",
+        "app.intelligence.discovery.asyncio.sleep",
         fake_sleep,
     )
     monkeypatch.setattr(product_intelligence_settings, "search_delay_ms", 25)
@@ -2147,15 +2147,15 @@ async def test_product_intelligence_discovery_fills_requested_count_after_strong
         recorded_delays.append(delay)
 
     monkeypatch.setattr(
-        "app.services.product_intelligence.discovery.build_search_queries",
+        "app.intelligence.discovery.build_search_queries",
         lambda product, *, source_domain_value: ["query one", "query two"],
     )
     monkeypatch.setattr(
-        "app.services.product_intelligence.discovery._search_results",
+        "app.intelligence.discovery._search_results",
         fake_search_results,
     )
     monkeypatch.setattr(
-        "app.services.product_intelligence.discovery.asyncio.sleep",
+        "app.intelligence.discovery.asyncio.sleep",
         fake_sleep,
     )
     monkeypatch.setattr(product_intelligence_settings, "search_delay_ms", 25)
@@ -2263,7 +2263,7 @@ async def test_product_intelligence_discovery_preview_returns_source_and_payload
         ]
 
     monkeypatch.setattr(
-        "app.services.product_intelligence.discovery._search_results",
+        "app.intelligence.discovery._search_results",
         fake_search_results,
     )
 
@@ -2347,11 +2347,11 @@ async def test_product_intelligence_discovery_preview_skips_search_result_llm_en
         )
 
     monkeypatch.setattr(
-        "app.services.product_intelligence.discovery._search_results",
+        "app.intelligence.discovery._search_results",
         fake_search_results,
     )
     monkeypatch.setattr(
-        "app.services.product_intelligence.service.run_prompt_task",
+        "app.intelligence.service.run_prompt_task",
         fake_run_prompt_task,
     )
 
@@ -2397,7 +2397,7 @@ async def test_product_intelligence_discovery_prefers_row_source_url_for_query_e
         ]
 
     monkeypatch.setattr(
-        "app.services.product_intelligence.discovery._search_results",
+        "app.intelligence.discovery._search_results",
         fake_search_results,
     )
 
@@ -2472,7 +2472,7 @@ async def test_product_intelligence_discovery_uses_product_url_from_listing_reco
         ]
 
     monkeypatch.setattr(
-        "app.services.product_intelligence.discovery._search_results",
+        "app.intelligence.discovery._search_results",
         fake_search_results,
     )
 
@@ -2529,7 +2529,7 @@ async def test_product_intelligence_discovery_reuses_one_query_runner_for_multip
             return False
 
     monkeypatch.setattr(
-        "app.services.product_intelligence.service.shared_query_runner",
+        "app.intelligence.service.shared_query_runner",
         lambda provider: _Runner(),
     )
 
@@ -2586,7 +2586,7 @@ async def test_product_intelligence_discovery_returns_max_urls_per_input_source(
         ]
 
     monkeypatch.setattr(
-        "app.services.product_intelligence.discovery._search_results",
+        "app.intelligence.discovery._search_results",
         fake_search_results,
     )
 
@@ -2636,7 +2636,7 @@ async def test_product_intelligence_discovery_source_count_excludes_private_labe
         ]
 
     monkeypatch.setattr(
-        "app.services.product_intelligence.discovery._search_results",
+        "app.intelligence.discovery._search_results",
         fake_search_results,
     )
 
@@ -2693,7 +2693,7 @@ async def test_product_intelligence_discovery_defaults_private_label_mode_to_exc
         ]
 
     monkeypatch.setattr(
-        "app.services.product_intelligence.discovery._search_results",
+        "app.intelligence.discovery._search_results",
         fake_search_results,
     )
 
@@ -2748,7 +2748,7 @@ async def test_product_intelligence_discovery_searches_title_only_sources(
         ]
 
     monkeypatch.setattr(
-        "app.services.product_intelligence.discovery._search_results",
+        "app.intelligence.discovery._search_results",
         fake_search_results,
     )
 
@@ -2831,7 +2831,7 @@ async def test_product_intelligence_candidate_poll_marks_timeout(
 
 @pytest.mark.component
 def test_manufacturer_style_code_decomposes_composite_sku() -> None:
-    from app.services.product_intelligence.matching import manufacturer_style_code
+    from app.intelligence.matching import manufacturer_style_code
 
     # Belk composite SKU = numeric retailer prefix + manufacturer style core.
     assert manufacturer_style_code("3900462FV5285") == "fv5285"
@@ -2946,7 +2946,7 @@ def test_score_candidate_brand_resolved_from_candidate_evidence() -> None:
 
 @pytest.mark.component
 def test_candidate_dedupe_key_collapses_size_and_color_variants() -> None:
-    from app.services.product_intelligence.candidate_urls import candidate_dedupe_key
+    from app.intelligence.candidate_urls import candidate_dedupe_key
 
     key_a = candidate_dedupe_key(
         "https://www.dsw.com/product/x/582039?size=10&width=Medium&cm_mmc=CSE"

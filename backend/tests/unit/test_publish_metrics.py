@@ -4,8 +4,8 @@ import pytest
 
 from types import SimpleNamespace
 
-from app.services.publish.metadata import refresh_record_commit_metadata
-from app.services.publish.metrics import build_url_metrics, diagnostics_indicate_block
+from app.persistence.publish.metadata import refresh_record_commit_metadata
+from app.persistence.publish.metrics import build_url_metrics, diagnostics_indicate_block
 
 
 @pytest.mark.unit

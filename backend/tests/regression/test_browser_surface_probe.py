@@ -3,9 +3,9 @@ from __future__ import annotations
 from pathlib import Path
 import pytest
 
-from app.services.acquisition import browser_identity
-from app.services.acquisition import browser_pool as acquisition_browser_pool
-from app.services.acquisition import browser_runtime as acquisition_browser_runtime
+from app.acquisition import browser_identity
+from app.acquisition import browser_pool as acquisition_browser_pool
+from app.acquisition import browser_runtime as acquisition_browser_runtime
 import run_browser_surface_probe as probe
 
 

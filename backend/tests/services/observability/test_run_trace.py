@@ -8,8 +8,8 @@ from __future__ import annotations
 
 import pytest
 
-from app.services.config import observability as obs_config
-from app.services.observability.run_trace import (
+from app.core.config import observability as obs_config
+from app.observability.run_trace import (
     NullRunTrace,
     RunTrace,
     high_value_fields,

@@ -25,7 +25,7 @@ from harness.support import (
     status_for_result,
     timeout_owner_for_mode,
 )
-from app.services.acquisition import shutdown_browser_runtime
+from app.acquisition.browser_runtime import shutdown_browser_runtime
 
 DEFAULT_TEST_SITES_PATH = Path(__file__).resolve().parent.parent / "TEST_SITES.md"
 DEFAULT_REPORT_DIR = Path("artifacts/test_sites_acceptance")
