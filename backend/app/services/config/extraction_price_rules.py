@@ -2,17 +2,9 @@ from __future__ import annotations
 
 import re
 from decimal import Decimal
-from pathlib import Path
 from typing import Any
 
-from app.services.config._export_data import load_export_data
-
-_EXPORTS_PATH = Path(__file__).with_name("extraction_rules.exports.json")
-_STATIC_EXPORTS: dict[str, Any] = {
-    name: value
-    for name, value in load_export_data(str(_EXPORTS_PATH)).items()
-    if not name.startswith("_")
-}
+_STATIC_EXPORTS: dict[str, Any] = {}
 
 
 def _static_export_tuple(key: str, default: tuple[Any, ...] = ()) -> tuple[Any, ...]:

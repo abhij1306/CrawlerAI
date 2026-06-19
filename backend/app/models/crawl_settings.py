@@ -8,10 +8,8 @@ from urllib.parse import urlparse
 
 from app.services.acquisition_plan import AcquisitionPlan
 from app.services.crawl.utils import normalize_target_url, resolve_traversal_mode
-from app.services.config.domain_profiles import (
-    AUTO_SURFACE,
-    INTERNAL_API_ENDPOINTS_PROFILE_KEY,
-)
+from app.services.config.domain_profiles import INTERNAL_API_ENDPOINTS_PROFILE_KEY
+from app.services.extraction.surfaces import parse_surface
 from app.services.config.runtime_settings import crawler_runtime_settings
 
 _BROWSER_ENGINE_VALUES = {"auto", "patchright", "real_chrome"}
@@ -450,12 +448,9 @@ class CrawlRunSettings:
         max_records: int | None = None,
         adapter_recovery_enabled: bool = False,
     ) -> AcquisitionPlan:
-        surface_check = "" if surface is None else str(surface)
-        normalized_surface = surface_check.strip().lower()
-        if not normalized_surface or normalized_surface == AUTO_SURFACE:
-            raise ValueError(f"Surface must be explicit, got: {surface!r}")
+        normalized_surface = parse_surface(surface).value
         return AcquisitionPlan(
-            surface=surface,
+            surface=normalized_surface,
             proxy_list=tuple(self.proxy_list()),
             traversal_mode=self.traversal_mode(),
             max_pages=self.max_pages(),

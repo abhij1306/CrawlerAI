@@ -16,6 +16,7 @@ from pydantic import (
     model_validator,
 )
 from app.schemas.selectors import SelectorRecordResponse
+from app.services.extraction.surfaces import parse_surface
 from app.services.publish.verdict import run_health_verdict
 
 _DISPLAY_HIDDEN_RECORD_FIELDS = {"record_type"}
@@ -33,6 +34,11 @@ class CrawlCreate(BaseModel):
     settings: dict = Field(default_factory=dict)
     requested_fields: list[str] = Field(default_factory=list)
     additional_fields: list[str] = Field(default_factory=list)
+
+    @field_validator("surface")
+    @classmethod
+    def _validate_surface(cls, value: str) -> str:
+        return parse_surface(value).value
 
 
 class CrawlRunResponse(BaseModel):

@@ -11,8 +11,8 @@ from urllib.parse import urlparse
 from pydantic import BaseModel, Field
 
 from app.services.config.runtime_settings import crawler_runtime_settings
-from app.services.config.surface_hints import GENERIC_PLATFORM_URL_TOKENS, surface_group
 from app.services.domain_utils import normalize_domain
+from app.services.extraction.surfaces import Surface, parse_surface
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +43,7 @@ class JSStateExtractorConfig(BaseModel):
     state_keys: list[str] = Field(default_factory=list)
     root_paths: dict[str, list[list[str]]] = Field(default_factory=dict)
     field_paths: dict[str, list[list[str]]] = Field(default_factory=dict)
-    field_jmespaths: dict[str, str | list[str]] = Field(default_factory=dict)
+    configured_field_paths: dict[str, str | list[str]] = Field(default_factory=dict)
 
 
 class PlatformRegistryDocument(BaseModel):
@@ -259,10 +259,6 @@ def detect_platform_family(url: str, html: str = "") -> str | None:
         if any(pattern in normalized_url for pattern in url_patterns):
             return config.family
 
-    if any(token in normalized_url for token in GENERIC_PLATFORM_URL_TOKENS["job"]):
-        return "generic_jobs"
-    if any(token in normalized_url for token in GENERIC_PLATFORM_URL_TOKENS["ecommerce"]):
-        return "generic_commerce"
     return None
 
 
@@ -399,14 +395,14 @@ def listing_readiness_domains() -> dict[str, list[str]]:
 
 
 def _resolve_http_browser_escalation_policy(surface: str | None) -> dict[str, bool]:
-    normalized_surface = str(surface or "").strip().lower()
-    group = surface_group(normalized_surface)
+    try:
+        selected = parse_surface(surface)
+    except ValueError:
+        selected = None
     return {
         "js_shell_without_detail_signals": True,
-        "missing_detail_signals": bool(group and normalized_surface.endswith("_detail")),
-        "listing_shell_without_listing_signals": bool(
-            group and normalized_surface.endswith("_listing")
-        ),
+        "missing_detail_signals": selected in {Surface.ECOMMERCE_DETAIL, Surface.JOB_DETAIL},
+        "listing_shell_without_listing_signals": selected in {Surface.ECOMMERCE_LISTING, Surface.JOB_LISTING},
     }
 
 

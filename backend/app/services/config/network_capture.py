@@ -3,9 +3,6 @@ from __future__ import annotations
 import re
 from typing import Final
 
-from app.services.config.network_payload_specs import endpoint_type_path_tokens
-
-
 NETWORK_PAYLOAD_NOISE_DOMAINS: Final[tuple[str, ...]] = (
     "cdndex.io",
     "cookielaw.org",
@@ -67,9 +64,24 @@ NETWORK_PAYLOAD_NOISE_URL_RE: Final[re.Pattern[str]] = re.compile(
     re.I,
 )
 
-ENDPOINT_TYPE_PATH_TOKENS: Final[dict[str, dict[str, tuple[str, ...]]]] = (
-    endpoint_type_path_tokens()
-)
+ENDPOINT_TYPE_PATH_TOKENS: Final[dict[str, dict[str, tuple[str, ...]]]] = {
+    "ecommerce_detail": {
+        "graphql": ("/graphql", "graphql?"),
+        "product_api": ("/product", "/products", "/catalog", "/pdp"),
+    },
+    "ecommerce_listing": {
+        "graphql": ("/graphql", "graphql?"),
+        "product_api": ("/search", "/collection", "/collections", "/catalog"),
+    },
+    "job_detail": {
+        "graphql": ("/graphql", "graphql?"),
+        "job_api": ("/job", "/jobs", "/posting", "/requisition"),
+    },
+    "job_listing": {
+        "graphql": ("/graphql", "graphql?"),
+        "job_api": ("/jobs", "/search", "/postings", "/requisitions"),
+    },
+}
 
 GRAPHQL_PATH_TOKENS: Final[tuple[str, ...]] = (
     "/graphql",

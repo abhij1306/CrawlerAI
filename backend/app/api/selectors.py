@@ -5,7 +5,6 @@ from typing import Annotated, NoReturn
 from urllib.parse import urlparse
 
 import httpx
-from soupsieve import SelectorSyntaxError
 
 from app.core.dependencies import get_current_user, get_db
 from app.models.user import User
@@ -181,7 +180,7 @@ async def selectors_suggest(
             expected_columns=list(payload.expected_columns or []),
             surface=payload.surface,
         )
-    except (ValueError, SecurityError, SelectorSyntaxError) as exc:
+    except (ValueError, SecurityError) as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except (TimeoutError, PlaywrightTimeoutError) as exc:
         logger.warning("Timed out suggesting selectors", exc_info=True)
@@ -213,10 +212,8 @@ async def selectors_test(
         result = await test_selector(
             url=str(payload.url),
             css_selector=payload.css_selector,
-            xpath=payload.xpath,
-            regex=payload.regex,
         )
-    except (ValueError, SecurityError, SelectorSyntaxError) as exc:
+    except (ValueError, SecurityError) as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except (TimeoutError, PlaywrightTimeoutError) as exc:
         logger.warning("Timed out testing selector", exc_info=True)

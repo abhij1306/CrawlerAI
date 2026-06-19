@@ -316,8 +316,6 @@ class CrawlerRuntimeSettings(BaseSettings):
     browser_readiness_visible_text_min: int = 120
     interruptible_wait_poll_ms: int = 250
     cooperative_sleep_poll_ms: int = 250
-    selector_regex_timeout_seconds: float = 0.05
-    selector_regex_max_pattern_length: int = 512
     browser_shutdown_timeout_seconds: float = 10.0
     traversal_locator_visible_timeout_ms: int = 250
     traversal_scroll_into_view_timeout_ms: int = 2000
@@ -378,10 +376,6 @@ class CrawlerRuntimeSettings(BaseSettings):
     llm_direct_record_extraction_min_records: int = 3
     llm_direct_record_extraction_min_populated_fields_per_record: float = 3.0
     llm_confidence_threshold: float = 0.55
-    selector_self_heal_enabled: bool = False
-    selector_self_heal_min_confidence: float = 0.55
-    selector_self_heal_cache_enabled: bool = False
-    selector_synthesis_max_html_chars: int = 200000
     raw_json_surface_field_overlap_ratio: float = 0.25
     raw_json_surface_field_overlap_absolute: int = 2
     adapter_payload_identity_min_token_length: int = 6
@@ -559,8 +553,6 @@ class CrawlerRuntimeSettings(BaseSettings):
             raise ValueError(
                 "run_health_failed_error_rate must be >= run_health_degraded_error_rate"
             )
-        for field_name in ("selector_self_heal_min_confidence",):
-            _require_unit_interval(field_name, getattr(self, field_name))
         for field_name in (
             "browser_navigation_networkidle_primary_budget_ratio",
             "origin_warmup_max_budget_ratio",
@@ -569,10 +561,6 @@ class CrawlerRuntimeSettings(BaseSettings):
         if not str(self.host_memory_ttl_seconds_key or "").strip():
             raise ValueError("host_memory_ttl_seconds_key must not be blank")
         _require_positive("detail_max_variant_axes", self.detail_max_variant_axes)
-        _require_positive(
-            "selector_regex_max_pattern_length",
-            self.selector_regex_max_pattern_length,
-        )
         _require_non_negative(
             "detail_max_variant_matrix_cells",
             self.detail_max_variant_matrix_cells,

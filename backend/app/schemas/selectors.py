@@ -18,8 +18,6 @@ class SelectorRecordResponse(BaseModel):
     surface: str
     field_name: str
     css_selector: str | None = None
-    xpath: str | None = None
-    regex: str | None = None
     status: str = "validated"
     sample_value: str | None = None
     source: str = "domain_memory"
@@ -34,8 +32,6 @@ class SelectorCreateRequest(BaseModel):
     surface: str = "generic"
     field_name: str
     css_selector: str | None = None
-    xpath: str | None = None
-    regex: str | None = None
     status: str | None = None
     sample_value: str | None = None
     source: str | None = None
@@ -44,19 +40,14 @@ class SelectorCreateRequest(BaseModel):
 
     @model_validator(mode="after")
     def _require_selector(self) -> "SelectorCreateRequest":
-        if not any(
-            str(value or "").strip()
-            for value in (self.css_selector, self.xpath, self.regex)
-        ):
-            raise ValueError("At least one of css_selector, xpath, or regex is required")
+        if not str(self.css_selector or "").strip():
+            raise ValueError("css_selector is required")
         return self
 
 
 class SelectorUpdateRequest(BaseModel):
     field_name: str | None = None
     css_selector: str | None = None
-    xpath: str | None = None
-    regex: str | None = None
     status: str | None = None
     sample_value: str | None = None
     source: str | None = None
@@ -67,16 +58,11 @@ class SelectorUpdateRequest(BaseModel):
 class SelectorTestRequest(BaseModel):
     url: HttpUrl | str
     css_selector: str | None = None
-    xpath: str | None = None
-    regex: str | None = None
 
     @model_validator(mode="after")
     def _require_selector(self) -> "SelectorTestRequest":
-        if not any(
-            str(value or "").strip()
-            for value in (self.css_selector, self.xpath, self.regex)
-        ):
-            raise ValueError("At least one of css_selector, xpath, or regex is required")
+        if not str(self.css_selector or "").strip():
+            raise ValueError("css_selector is required")
         return self
 
 
@@ -89,8 +75,6 @@ class SelectorTestResponse(BaseModel):
 class SelectorSuggestionRecord(BaseModel):
     field_name: str | None = None
     css_selector: str | None = None
-    xpath: str | None = None
-    regex: str | None = None
     sample_value: str | None = None
     source: str | None = None
 

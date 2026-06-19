@@ -19,11 +19,7 @@ from app.services.config.domain_profiles import (
 )
 from app.services.config.runtime_settings import crawler_runtime_settings
 from app.services.domain_utils import normalize_domain
-from app.services.extract.network_listing_mapper import (
-    extract_listing_rows_from_network,
-    network_listing_payload_has_replay_safe_urls,
-)
-from app.services.network_payload_mapper import map_network_payloads_to_fields
+from app.services.extraction.json_walk import walk_json
 from app.services.url_safety import validate_public_target
 
 logger = logging.getLogger(__name__)
@@ -252,25 +248,48 @@ def payload_extracts_surface(
     requested_fields: list[str],
 ) -> bool:
     if "listing" in surface:
-        if not network_listing_payload_has_replay_safe_urls(payload):
-            return False
-        return bool(
-            extract_listing_rows_from_network(
-                [payload],
-                page_url=page_url,
-                surface=surface,
-                max_records=1,
-            )
-        )
+        return _payload_has_listing_row(payload, page_url=page_url)
     if "detail" in surface:
-        return bool(
-            map_network_payloads_to_fields(
-                [payload],
-                surface=surface,
-                page_url=page_url,
-                requested_fields=requested_fields,
-            )
-        )
+        return _payload_has_detail_object(payload, surface=surface, requested_fields=requested_fields)
+    return False
+
+
+def _payload_has_listing_row(payload: dict[str, object], *, page_url: str) -> bool:
+    page_domain = normalize_domain(page_url)
+    for node in walk_json(payload.get("body", payload)):
+        if not isinstance(node.value, dict):
+            continue
+        row = node.value
+        title = row.get("title") or row.get("name") or row.get("jobTitle")
+        url = row.get("url") or row.get("href") or row.get("link") or row.get("applyUrl")
+        if not title or not url:
+            continue
+        text_url = str(url)
+        if text_url.startswith("/"):
+            return True
+        if normalize_domain(text_url) == page_domain:
+            return True
+    return False
+
+
+def _payload_has_detail_object(
+    payload: dict[str, object],
+    *,
+    surface: str,
+    requested_fields: list[str],
+) -> bool:
+    requested = {str(field or "").strip().lower() for field in requested_fields if str(field or "").strip()}
+    commerce_keys = {"name", "title", "sku", "price", "pricecurrency", "currency", "offers"}
+    job_keys = {"title", "jobtitle", "hiringorganization", "company", "joblocation", "location"}
+    key_set = job_keys if "job" in surface else commerce_keys
+    for node in walk_json(payload.get("body", payload)):
+        if not isinstance(node.value, dict):
+            continue
+        keys = {str(key or "").strip().lower() for key in node.value}
+        if requested and keys & requested:
+            return True
+        if keys & key_set:
+            return True
     return False
 
 

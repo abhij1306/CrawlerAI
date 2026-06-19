@@ -1,55 +1,22 @@
-"""Static field mappings.
-
-Alias consumers prefer exact canonical field keys before alias fallbacks.
-"""
+"""Code-owned field names and aliases for the four explicit surfaces."""
 
 from __future__ import annotations
 
 import re
-from pathlib import Path
 from typing import Any
 
-from app.services.config._export_data import load_export_data
-
-_EXPORTS_PATH = Path(__file__).with_name("field_mappings.exports.json")
-_STATIC_EXPORTS = {
-    name: value
-    for name, value in load_export_data(str(_EXPORTS_PATH)).items()
-    if not name.startswith("_")
-}
-locals().update(
-    {
-        name: value if value is not None else ()
-        for name, value in _STATIC_EXPORTS.items()
-    }
-)
-FIELD_ALIASES: dict[str, list[str]] = {
-    str(name): list(values)
-    for name, values in dict(_STATIC_EXPORTS.get("FIELD_ALIASES") or {}).items()
-}
-CANONICAL_SCHEMAS = dict(_STATIC_EXPORTS.get("CANONICAL_SCHEMAS") or {})
-PROMPT_REGISTRY = {
-    **dict(_STATIC_EXPORTS.get("PROMPT_REGISTRY") or {}),
-    "run_diagnosis": {
-        "response_type": "object",
-        "system_file": "run_diagnosis.system.txt",
-        "user_file": "run_diagnosis.user.txt",
-    },
-}
-
-COLOR_FIELD = "color"
 TITLE_FIELD = "title"
-SIZE_FIELD = "size"
-WIDTH_FIELD = "width"
-WEIGHT_FIELD = "weight"
-PRICE_FIELD = "price"
-CURRENCY_FIELD = "currency"
 URL_FIELD = "url"
 APPLY_URL_FIELD = "apply_url"
 CANONICAL_URL_FIELD = "canonical_url"
+PRICE_FIELD = "price"
+CURRENCY_FIELD = "currency"
 IMAGE_URL_FIELD = "image_url"
 ADDITIONAL_IMAGES_FIELD = "additional_images"
-PRODUCT_ID_FIELD = "product_id"
+COLOR_FIELD = "color"
+SIZE_FIELD = "size"
+WEIGHT_FIELD = "weight"
+WIDTH_FIELD = "width"
 AVAILABILITY_FIELD = "availability"
 STOCK_QUANTITY_FIELD = "stock_quantity"
 VARIANTS_FIELD = "variants"
@@ -58,17 +25,191 @@ VARIANT_AXES_FIELD = "variant_axes"
 SELECTED_VARIANT_FIELD = "selected_variant"
 BARCODE_FIELD = "barcode"
 SKU_FIELD = "sku"
+PRODUCT_ID_FIELD = "product_id"
 ROUTE_BARCODE_TO_SKU = True
+
+FIELD_ALIASES: dict[str, list[str]] = {
+    "title": ["title", "name", "job_title", "position", "headline", "productName"],
+    "url": [
+        "url",
+        "link",
+        "href",
+        "canonical_url",
+        "product_url",
+        "pdp_url",
+        "detail_url",
+        "workUrl",
+        "listingUrl",
+        "positionURI",
+    ],
+    "price": ["price", "amount", "cost", "current_price", "lowPrice"],
+    "original_price": ["compare_at_price", "list_price", "regular_price", "was_price", "original_price"],
+    "currency": ["currency", "currency_code", "price_currency"],
+    "brand": ["brand", "manufacturer", "manufacturer_name", "brand_name", "designer"],
+    "image_url": ["image", "image_url", "thumbnail", "img", "photo", "featured_image", "primary_image"],
+    "additional_images": ["images", "gallery", "product_images", "media", "photos", "assets"],
+    "color": ["color", "colors", "color_name", "finish", "colour"],
+    "size": ["size", "sizes", "variant_size"],
+    "variants": ["variants", "variant_rows", "variant_matrix"],
+    "materials": ["materials", "material", "fabric", "composition", "fabric_content"],
+    "care": ["care", "care_instructions", "product_care"],
+    "company": ["company", "company_name", "organization", "employer", "hiring_organization"],
+    "location": ["location", "job_location", "city", "region"],
+    "salary": ["salary", "compensation", "pay", "salary_range"],
+    "job_id": ["job_id", "jobId", "requisition_id", "req_id", "opening_id"],
+    "category": ["category", "product_type", "breadcrumb", "breadcrumbs", "category_path"],
+    "sku": ["sku", "item_id", "id"],
+    "availability": ["availability", "in_stock", "stock_status", "inStock"],
+    "rating": ["rating", "average_rating", "score", "rating_value"],
+    "review_count": ["review_count", "total_reviews", "num_reviews", "numberOfReviews"],
+    "stock_quantity": ["stock_quantity", "inventory_quantity", "quantity_available"],
+    "posted_date": ["posted_date", "date_posted", "posted_at"],
+    "apply_url": ["apply_url", "application_url", "job_url"],
+    "responsibilities": ["responsibilities", "duties", "job_duties"],
+    "qualifications": ["qualifications", "minimum_requirements", "preferred_qualifications"],
+    "benefits": ["benefits", "job_benefits", "perks", "what_we_offer"],
+    "skills": ["skills", "job_skills", "competencies"],
+    "remote": ["remote", "work_from_home", "wfh", "telecommute"],
+    "job_type": ["job_type", "employment_type", "type"],
+    "specifications": ["specifications", "details", "technical_details"],
+    "product_details": ["product_details", "product details"],
+    "features": ["features", "highlights", "key_features"],
+    "dimensions": ["dimensions", "sizing", "measurements"],
+    "summary": ["summary", "excerpt", "description"],
+    "requirements": ["requirements", "job_requirements", "prerequisites"],
+    "description": ["description", "product description", "product_description"],
+    "tables": ["tables", "table", "data_tables", "spec_tables"],
+}
+
+CANONICAL_SCHEMAS: dict[str, list[str]] = {
+    "ecommerce_detail": [
+        "title",
+        "canonical_url",
+        "brand",
+        "sku",
+        "barcode",
+        "product_id",
+        "part_number",
+        "price",
+        "original_price",
+        "currency",
+        "availability",
+        "image_url",
+        "additional_images",
+        "description",
+        "rating",
+        "review_count",
+        "category",
+        "color",
+        "size",
+        "materials",
+        "care",
+        "features",
+        "specifications",
+        "product_details",
+        "tags",
+        "variants",
+        "variant_count",
+        "tables",
+    ],
+    "ecommerce_listing": [
+        "title",
+        "brand",
+        "sku",
+        "price",
+        "original_price",
+        "currency",
+        "availability",
+        "image_url",
+        "color",
+        "size",
+        "description",
+        "rating",
+        "review_count",
+        "url",
+    ],
+    "job_detail": [
+        "title",
+        "company",
+        "location",
+        "salary",
+        "job_type",
+        "posted_date",
+        "apply_url",
+        "description",
+        "requirements",
+        "responsibilities",
+        "qualifications",
+        "benefits",
+        "skills",
+        "remote",
+        "tables",
+    ],
+    "job_listing": [
+        "title",
+        "job_id",
+        "company",
+        "location",
+        "salary",
+        "job_type",
+        "posted_date",
+        "department",
+        "description",
+        "url",
+        "apply_url",
+    ],
+}
+
+PROMPT_REGISTRY = {
+    "direct_record_extraction": {
+        "response_type": "array",
+        "system_file": "direct_record_extraction.system.txt",
+        "user_file": "direct_record_extraction.user.txt",
+    },
+    "field_cleanup_review": {
+        "response_type": "object",
+        "system_file": "field_cleanup_review.system.txt",
+        "user_file": "field_cleanup_review.user.txt",
+    },
+    "missing_field_extraction": {
+        "response_type": "object",
+        "system_file": "missing_field_extraction.system.txt",
+        "user_file": "missing_field_extraction.user.txt",
+    },
+    "run_diagnosis": {
+        "response_type": "object",
+        "system_file": "run_diagnosis.system.txt",
+        "user_file": "run_diagnosis.user.txt",
+    },
+}
+
 NAVIGATION_URL_FIELDS = frozenset({URL_FIELD, APPLY_URL_FIELD, CANONICAL_URL_FIELD})
 BRAND_LIKE_FIELDS = frozenset({"brand", "company", "dealer_name", "vendor"})
-TITLE_STRUCTURED_VALUE_KEYS = (
-    "values",
-    "title",
-    "name",
-    "label",
-    "text",
-    "value",
+INTERNAL_ONLY_FIELDS = frozenset({"_source", "_score", "slug", "_raw_item"})
+OPEN_FIELD_SURFACES = frozenset()
+NORMALIZER_BOOLEAN_FIELDS = frozenset({"remote"})
+NORMALIZER_DECIMAL_FIELDS = frozenset(
+    {"discount_amount", "discount_percentage", "original_price", "price", "rating", "sale_price", "salary_max", "salary_min"}
 )
+NORMALIZER_INTEGER_FIELDS = frozenset(
+    {"image_count", "job_id", "quantity", "rating_count", "reading_time", "reply_count", "review_count", "stock_quantity", "variant_count", "view_count", "word_count"}
+)
+NORMALIZER_LIST_TEXT_FIELDS = frozenset({"additional_images", "features", "tags"})
+DOM_HIGH_VALUE_FIELDS = {
+    "ecommerce_detail": frozenset({"description", "product_details", "additional_images", "specifications"}),
+    "job_detail": frozenset({"description", "qualifications", "responsibilities"}),
+}
+DOM_OPTIONAL_CUE_FIELDS = {
+    "ecommerce_detail": frozenset({"care", "dimensions", "features", "materials"}),
+    "job_detail": frozenset({"benefits", "requirements", "skills"}),
+}
+SURFACE_BROWSER_RETRY_TARGETS = {"ecommerce_detail": ("price", "currency", "title", "image_url")}
+SURFACE_FIELD_REPAIR_TARGETS = {"ecommerce_detail": ("price", "title", "image_url")}
+ECOMMERCE_DETAIL_JS_STATE_PRIORITY_FIELDS = frozenset(
+    {"variants", "price", "currency", "original_price", "sku", "title", "availability", "brand", "image_url", "size", "color", "stock_quantity"}
+)
+
+TITLE_STRUCTURED_VALUE_KEYS = ("values", "title", "name", "label", "text", "value")
 PRICE_DICT_PREFERRED_KEYS = (
     "formattedPrice",
     "displayPrice",
@@ -77,170 +218,64 @@ PRICE_DICT_PREFERRED_KEYS = (
     "currentValue",
     "lowPrice",
     "minPrice",
-    "minValue",
     "highPrice",
-    "maxPrice",
-    "maxValue",
     "value",
 )
 UNICODE_ESCAPE_RE = re.compile(r"\\u([0-9a-fA-F]{4})")
 ECOMMERCE_SURFACE_EXTRA_ALIASES = {
-    "capacity": (
-        "capacity_l",
-        "capacity_liter",
-        "capacity_litre",
-        "capacity_liters",
-        "capacity_litres",
-    ),
+    "capacity": ("capacity_l", "capacity_liter", "capacity_litre", "capacity_liters", "capacity_litres"),
     "energy_rating": ("energy_rating", "energy_star_rating", "star_rating"),
 }
-JOB_SURFACE_EXTRA_ALIASES = {
-    "job_type": ("type", "employment_type", "commitment", "work_type"),
-}
+JOB_SURFACE_EXTRA_ALIASES = {"job_type": ("type", "employment_type", "commitment", "work_type")}
 ECOMMERCE_CATEGORY_ALIAS_REMOVALS = frozenset({"type", "job_type", "employment_type"})
 ECOMMERCE_CATEGORY_ALIAS_ADDITIONS = ("product_type",)
-NORMALIZER_LIST_TEXT_FIELDS = frozenset(
-    {*_STATIC_EXPORTS.get("NORMALIZER_LIST_TEXT_FIELDS", ()), "features"}
-)
-ECOMMERCE_DETAIL_JS_STATE_PRIORITY_FIELDS = frozenset(
-    field_name
-    for field_name in _STATIC_EXPORTS.get("ECOMMERCE_DETAIL_JS_STATE_FIELDS", ())
-    if field_name not in {PRODUCT_ID_FIELD, IMAGE_URL_FIELD, ADDITIONAL_IMAGES_FIELD}
-)
 VARIANT_AXIS_FIELD_NAMES = (
     COLOR_FIELD,
     SIZE_FIELD,
     "type",
-    "switches",
     "fit",
     "style",
     "material",
     "finish",
     "pattern",
-    "scent",
-    "flavor",
     "capacity",
-    "length",
     WIDTH_FIELD,
 )
 REQUESTED_FIELD_PREFIXES = ("product_", "item_", "job_")
-HTML_SECTION_FIELDS = frozenset(
-    {"responsibilities", "qualifications", "benefits", "skills"}
-)
+HTML_SECTION_FIELDS = frozenset({"responsibilities", "qualifications", "benefits", "skills"})
 REQUESTED_FIELD_ALIAS_BASES = {
-    "responsibilities": FIELD_ALIASES.get("responsibilities", []),
-    "qualifications": FIELD_ALIASES.get("qualifications", []),
-    "benefits": FIELD_ALIASES.get("benefits", []),
-    "skills": FIELD_ALIASES.get("skills", []),
-    "summary": FIELD_ALIASES.get("summary", []),
-    "specifications": FIELD_ALIASES.get("specifications", []),
-    "product_details": FIELD_ALIASES.get("product_details", []),
-    "features": FIELD_ALIASES.get("features", []),
-    "materials": FIELD_ALIASES.get("materials", []),
-    "material": FIELD_ALIASES.get("materials", []),
-    "care": FIELD_ALIASES.get("care", []),
-    "dimensions": FIELD_ALIASES.get("dimensions", []),
-    "remote": FIELD_ALIASES.get("remote", []),
-    "requirements": FIELD_ALIASES.get("requirements", []),
-    "country_of_origin": [
-        "country of origin",
-        "country_of_origin",
-        "origin",
-        "made in",
-        "manufactured in",
-        "importer",
-        "importer_info",
-        "importer name and address",
-    ],
-    "color_variants": FIELD_ALIASES.get("color_variants", []),
-    "gender": FIELD_ALIASES.get("gender", []),
+    key: FIELD_ALIASES.get(key, [])
+    for key in (
+        "responsibilities",
+        "qualifications",
+        "benefits",
+        "skills",
+        "summary",
+        "specifications",
+        "product_details",
+        "features",
+        "materials",
+        "care",
+        "dimensions",
+        "remote",
+        "requirements",
+    )
 }
 REQUESTED_FIELD_ALIAS_EXTRAS = {
-    "responsibilities": (
-        "job responsibilities",
-        "key responsibilities",
-        "job duties",
-        "what you'll do",
-        "what_you_ll_do",
-        "what_you_will_do",
-        "role responsibilities",
-    ),
-    "qualifications": (
-        "job qualifications",
-        "job_qualification",
-        "should have",
-        "you should have",
-        "minimum requirements",
-        "minimum_requirements",
-        "preferred qualifications",
-        "preferred_qualifications",
-        "who you are",
-        "what we're looking for",
-    ),
-    "benefits": (
-        "job benefits",
-        "perks",
-        "why you'll love this job",
-        "life at stripe",
-        "what we offer",
-    ),
-    "skills": ("job skills", "job_skills", "experience", "what you'll bring"),
-    "summary": ("description", "our opportunity", "about the role", "about the team"),
-    "specifications": (
-        "specs",
-        "spec",
-        "technical details",
-        "tech specs",
-        "the details",
-    ),
-    "product_details": ("product detail",),
+    "responsibilities": ("job responsibilities", "key responsibilities", "what you'll do"),
+    "qualifications": ("job qualifications", "should have", "minimum requirements", "who you are"),
+    "benefits": ("job benefits", "perks", "what we offer"),
+    "skills": ("job skills", "experience", "what you'll bring"),
+    "summary": ("description", "about the role", "about the team"),
+    "specifications": ("specs", "technical details"),
     "features": ("key features",),
     "materials": ("fabrics", "material composition"),
-    "material": ("fabrics", "material composition"),
-    "care": ("care instructions", "washing instructions"),
+    "care": ("care instructions",),
 }
-_EXTRA_EXPORTS = [
-    "AVAILABLE_SIZES_FIELD",
-    "APPLY_URL_FIELD",
-    "AVAILABILITY_FIELD",
-    "BARCODE_FIELD",
-    "BRAND_LIKE_FIELDS",
-    "CANONICAL_URL_FIELD",
-    "COLOR_FIELD",
-    "CURRENCY_FIELD",
-    "ECOMMERCE_DETAIL_JS_STATE_PRIORITY_FIELDS",
-    "IMAGE_URL_FIELD",
-    "NORMALIZER_LIST_TEXT_FIELDS",
-    "PRICE_FIELD",
-    "PRICE_DICT_PREFERRED_KEYS",
-    "PRODUCT_ID_FIELD",
-    "HTML_SECTION_FIELDS",
-    "REQUESTED_FIELD_ALIAS_BASES",
-    "REQUESTED_FIELD_ALIAS_EXTRAS",
-    "REQUESTED_FIELD_PREFIXES",
-    "ROUTE_BARCODE_TO_SKU",
-    "SELECTED_VARIANT_FIELD",
-    "SIZE_FIELD",
-    "SKU_FIELD",
-    "STOCK_QUANTITY_FIELD",
-    "TITLE_FIELD",
-    "TITLE_STRUCTURED_VALUE_KEYS",
-    "UNICODE_ESCAPE_RE",
-    "URL_FIELD",
-    "VARIANTS_FIELD",
-    "VARIANT_AXES_FIELD",
-    "VARIANT_AXIS_FIELD_NAMES",
-    "WEIGHT_FIELD",
-    "WIDTH_FIELD",
-]
 
 
 def __getattr__(name: str) -> Any:
-    try:
-        value = _STATIC_EXPORTS[name]
-    except KeyError as exc:
-        raise AttributeError(name) from exc
-    return value if value is not None else ()
+    raise AttributeError(name)
 
 
-__all__ = sorted(list(_STATIC_EXPORTS.keys()) + _EXTRA_EXPORTS)
+__all__ = sorted(name for name in globals() if name.isupper())

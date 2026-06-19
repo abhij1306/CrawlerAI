@@ -17,7 +17,6 @@ from app.services.domain_memory_service import (
     load_domain_selector_rules,
 )
 from app.services.domain_utils import normalize_domain
-from app.services.extract.record_overlay import overlay_record
 from app.services.field_policy import repair_target_fields_for_surface
 from app.services.pipeline.extract_records import extract_records
 from app.services.pipeline.runtime_helpers import (
@@ -48,7 +47,7 @@ async def _extract_records_for_acquisition(
     acquisition_result = fetched.acquisition_result
     if not _browser_result_is_extractable(acquisition_result):
         return [], []
-    await _populate_adapter_records(context, acquisition_result)
+    await _populate_adapter_artifacts(context, acquisition_result)
     _assign_platform_family(acquisition_result)
 
     fetched.url_metrics = build_url_metrics(
@@ -76,15 +75,14 @@ async def _extract_records_for_acquisition(
     return records, selector_rules
 
 
-async def _populate_adapter_records(
+async def _populate_adapter_artifacts(
     context: _URLProcessingContext,
     acquisition_result: AcquisitionResult,
 ) -> None:
-    acquisition_result.adapter_records = []
     acquisition_result.adapter_name = None
     acquisition_result.adapter_source_type = None
 
-    adapter_results = []
+    adapter_results: list[AdapterResult] = []
     adapter_proxy = next(
         (
             str(proxy).strip()
@@ -120,14 +118,9 @@ async def _populate_adapter_records(
                 context.surface,
                 **adapter_kwargs,
             )
-            if adapter_result is not None and list(adapter_result.records or []):
+            if adapter_result is not None and list(adapter_result.artifacts or []):
                 adapter_results.append(adapter_result)
-                if _adapter_result_satisfies_listing_context(
-                    context,
-                    acquisition_result=acquisition_result,
-                    adapter_result=adapter_result,
-                ):
-                    break
+                break
         set_logfire_attributes(
             span,
             adapter_result_count=len(adapter_results),
@@ -137,12 +130,12 @@ async def _populate_adapter_records(
                 if str(result.adapter_name or "").strip()
             ],
             record_count=sum(
-                len(list(result.records or [])) for result in adapter_results
+                len(list(result.artifacts or [])) for result in adapter_results
             ),
         )
     adapter_result = _best_adapter_result(adapter_results)
     if (
-        adapter_result is None or not list(adapter_result.records or [])
+        adapter_result is None or not list(adapter_result.artifacts or [])
     ) and _effective_blocked(acquisition_result):
         adapter_result = await try_blocked_adapter_recovery(
             acquisition_result.final_url,
@@ -158,8 +151,10 @@ async def _populate_adapter_records(
             ),
             proxy_list=list(context.config.proxy_list or []),
         )
-    if adapter_result is not None and list(adapter_result.records or []):
-        acquisition_result.adapter_records = list(adapter_result.records or [])
+    if adapter_result is not None and list(adapter_result.artifacts or []):
+        artifacts = mapping_or_empty(getattr(acquisition_result, "artifacts", {}))
+        artifacts["adapter_artifacts"] = list(adapter_result.artifacts or [])
+        acquisition_result.artifacts = artifacts
         acquisition_result.adapter_name = adapter_result.adapter_name or None
         acquisition_result.adapter_source_type = adapter_result.source_type or None
 
@@ -170,32 +165,11 @@ def _best_adapter_result(adapter_results: list[AdapterResult]) -> AdapterResult 
     best = max(
         adapter_results,
         key=lambda result: _adapter_result_score(
-            list(getattr(result, "records", []) or [])
+            list(getattr(result, "artifacts", []) or [])
         ),
     )
-    merged_records: dict[str, dict[str, object]] = {}
-    unsourced_records: list[dict[str, object]] = []
-    seen_unsourced: set[str] = set()
-    for result in sorted(
-        adapter_results,
-        key=lambda item: _adapter_result_score(list(item.records or [])),
-        reverse=True,
-    ):
-        for record in list(result.records or []):
-            if not isinstance(record, dict):
-                continue
-            url = str(record.get("url") or "").strip()
-            if not url:
-                fingerprint = json.dumps(record, sort_keys=True, default=str)
-                if fingerprint in seen_unsourced:
-                    continue
-                seen_unsourced.add(fingerprint)
-                unsourced_records.append(dict(record))
-                continue
-            existing = merged_records.setdefault(url, {})
-            merged_records[url] = overlay_record(existing, record)
     return AdapterResult(
-        records=[*merged_records.values(), *unsourced_records],
+        artifacts=list(best.artifacts or []),
         source_type=best.source_type,
         adapter_name=best.adapter_name,
     )
@@ -212,51 +186,6 @@ def _adapter_result_score(records: list[object]) -> tuple[int, int]:
             if not str(key).startswith("_")
         )
     return len(records), populated
-
-
-def _adapter_result_satisfies_listing_context(
-    context: _URLProcessingContext,
-    *,
-    acquisition_result: AcquisitionResult,
-    adapter_result: AdapterResult,
-) -> bool:
-    if "listing" not in str(context.surface or "").strip().lower():
-        return False
-    record_count = len(list(adapter_result.records or []))
-    if record_count <= 0:
-        return False
-    min_items = max(1, int(crawler_runtime_settings.listing_min_items))
-    target = max(min_items, int(context.config.max_records or min_items))
-    diagnostics = mapping_or_empty(
-        getattr(acquisition_result, "browser_diagnostics", {})
-    )
-    rendered_count = _positive_int(diagnostics.get("rendered_listing_fragment_count"))
-    if rendered_count <= 0:
-        evidence = mapping_or_empty(diagnostics.get("extractable_listing_evidence"))
-        rendered_count = _positive_int(evidence.get("rendered_listing_fragments"))
-    if rendered_count > 0:
-        target = max(min_items, min(target, rendered_count))
-    return record_count >= target
-
-
-def _positive_int(value: object) -> int:
-    if isinstance(value, bool):
-        return int(value)
-    if isinstance(value, int):
-        return max(0, value)
-    if isinstance(value, float):
-        import math
-
-        if not math.isfinite(value):
-            return 0
-        return max(0, int(value))
-    if not isinstance(value, (str, bytes, bytearray)):
-        return 0
-    try:
-        parsed = int(value)
-    except (TypeError, ValueError):
-        return 0
-    return max(0, parsed)
 
 
 def _adapter_browser_artifact_htmls(
@@ -306,7 +235,7 @@ def _adapter_network_payload_inputs(
 
 
 def _adapter_payload_identity_tokens(page_url: str) -> set[str]:
-    from app.services.extract.detail.identity.core import detail_identity_codes_from_url
+    from app.services.url_identity import detail_identity_codes_from_url
 
     min_length = max(
         0, int(crawler_runtime_settings.adapter_payload_identity_min_token_length)
@@ -361,7 +290,9 @@ async def _run_record_extraction(
         run_id=context.run.id,
         domain=normalize_domain(acquisition_result.final_url),
         surface=context.surface,
-        adapter_record_count=len(acquisition_result.adapter_records or []),
+        adapter_artifact_count=len(
+            list(mapping_or_empty(getattr(acquisition_result, "artifacts", {})).get("adapter_artifacts") or [])
+        ),
         network_payload_count=len(acquisition_result.network_payloads or []),
         selector_rule_count=len(selector_rules or []),
     ) as span:
@@ -374,7 +305,6 @@ async def _run_record_extraction(
                 max_records=context.config.max_records,
                 requested_page_url=context.url,
                 requested_fields=list(context.requested_fields),
-                adapter_records=acquisition_result.adapter_records,
                 network_payloads=acquisition_result.network_payloads,
                 artifacts=acquisition_result.artifacts,
                 selector_rules=selector_rules,
@@ -418,7 +348,6 @@ async def _extract_records_from_preserved_browser_html(
             max_records=context.config.max_records,
             requested_page_url=context.url,
             requested_fields=list(context.requested_fields),
-            adapter_records=acquisition_result.adapter_records,
             network_payloads=acquisition_result.network_payloads,
             artifacts=acquisition_result.artifacts,
             selector_rules=selector_rules,

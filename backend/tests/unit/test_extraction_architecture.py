@@ -1,0 +1,132 @@
+from __future__ import annotations
+
+import ast
+from pathlib import Path
+
+import pytest
+
+from app.schemas.crawl import CrawlCreate
+from app.services.adapters.base import AdapterResult
+from app.services.public_api.extraction_service import _internal_surface
+from app.services.extraction.contracts import Evidence
+from app.services.extraction.documents import DocumentStore
+from app.services.extraction.json_walk import walk_json
+from app.services.extraction.surfaces import Surface, parse_surface
+
+
+ROOT = Path(__file__).resolve().parents[2]
+APP_ROOT = ROOT / "app"
+EXTRACTION_ROOT = ROOT / "app" / "services" / "extraction"
+pytestmark = pytest.mark.unit
+
+
+def _python_files(root: Path) -> list[Path]:
+    return [
+        path
+        for path in root.rglob("*.py")
+        if "__pycache__" not in path.parts
+    ]
+
+
+def test_surface_enum_is_exact_contract() -> None:
+    assert {surface.value for surface in Surface} == {
+        "ecommerce_listing",
+        "ecommerce_detail",
+        "job_listing",
+        "job_detail",
+    }
+    with pytest.raises(ValueError):
+        parse_surface("auto")
+    with pytest.raises(ValueError):
+        CrawlCreate(run_type="crawl", url="https://example.com", surface="auto")
+    with pytest.raises(Exception):
+        _internal_surface("ecommerce")
+
+
+def test_new_extraction_imports_forbidden_parser_stack_only_in_document_store() -> None:
+    forbidden = {"bs4", "lxml", "extruct", "glom", "jmespath"}
+    for path in _python_files(EXTRACTION_ROOT):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        imports: set[str] = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                imports.update(alias.name.split(".", 1)[0] for alias in node.names)
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                imports.add(node.module.split(".", 1)[0])
+        assert imports.isdisjoint(forbidden), path
+        if path.name != "documents.py":
+            assert "selectolax" not in imports, path
+
+
+def test_current_ecommerce_detail_path_uses_document_store_parser_only() -> None:
+    forbidden = {"bs4", "lxml", "extruct", "glom", "jmespath", "selectolax"}
+    for path in _python_files(EXTRACTION_ROOT):
+        if path.name == "documents.py":
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        imports: set[str] = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                imports.update(alias.name.split(".", 1)[0] for alias in node.names)
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                imports.add(node.module.split(".", 1)[0])
+        assert imports.isdisjoint(forbidden), path
+
+
+def test_document_store_parses_each_html_artifact_once() -> None:
+    store = DocumentStore({"page": "<html><body><h1>One</h1></body></html>"})
+    first = store.html("page")
+    second = store.html("page")
+    assert first is second
+    assert first.css_first("h1").text() == "One"
+
+
+def test_json_walker_emits_json_pointer_paths() -> None:
+    nodes = list(walk_json({"@type": "Product", "offers": [{"price": "10"}]}))
+    by_pointer = {node.pointer: node for node in nodes}
+    assert "/offers/0/price" in by_pointer
+    assert by_pointer["/offers/0/price"].ancestor_schema_types == ("Product",)
+
+
+def test_evidence_requires_subject_id() -> None:
+    assert Evidence.model_fields["subject_id"].is_required()
+
+
+def test_adapter_result_cannot_publish_public_records() -> None:
+    result = AdapterResult(records=[{"title": "Adapter Widget"}], adapter_name="legacy")
+    assert result.records == []
+    assert result.artifacts == [
+        {
+            "artifact_type": "adapter_json",
+            "source_type": "adapter",
+            "adapter_name": "legacy",
+            "body": {"title": "Adapter Widget"},
+        }
+    ]
+
+
+def test_surface_inference_modules_are_deleted() -> None:
+    forbidden_files = {
+        APP_ROOT / "services" / "surface_resolver.py",
+        APP_ROOT / "services" / "config" / "surface_detection.py",
+        APP_ROOT / "services" / "config" / "surface_hints.py",
+        APP_ROOT / "services" / "extract" / "detail",
+        APP_ROOT / "services" / "listing_extractor.py",
+        APP_ROOT / "services" / "extract" / "listing_candidate_ranking.py",
+        APP_ROOT / "services" / "extract" / "listing_card_fragments.py",
+        APP_ROOT / "services" / "extract" / "listing_integrity_gate.py",
+        APP_ROOT / "services" / "extract" / "network_listing_mapper.py",
+        APP_ROOT / "services" / "extract" / "structured_listing_handler.py",
+    }
+    assert not any(path.exists() for path in forbidden_files)
+    forbidden_terms = {
+        "resolve_auto_surface",
+        "resolve_surface",
+        "infer_surface_from_body",
+        "AUTO_SURFACE",
+        "surface_group",
+    }
+    for path in _python_files(APP_ROOT):
+        text = path.read_text(encoding="utf-8")
+        for term in forbidden_terms:
+            assert term not in text, path

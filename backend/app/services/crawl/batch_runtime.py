@@ -167,18 +167,7 @@ def _safe_sitemap_max_urls(value: object) -> int:
 
 
 def _allow_sitemap_homepage_fallback(run: CrawlRun, settings_view) -> bool:
-    requested_surface = str(run.surface or "").strip().lower()
-    if requested_surface == "auto":
-        return True
-    resolution = settings_view.get("surface_resolution")
-    if not isinstance(resolution, dict):
-        return False
-    evidence = resolution.get("evidence")
-    if not isinstance(evidence, list):
-        return False
-    return "requested_surface:auto" in {
-        str(item).strip().lower() for item in evidence if item
-    }
+    return False
 
 
 async def _resolve_run_urls(run: CrawlRun, settings_view) -> list[str]:

@@ -3,32 +3,44 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from pathlib import Path
 from types import MappingProxyType
 
-from app.services.config._export_data import load_export_data
 from app.services.config.field_mappings import (
     APPLY_URL_FIELD,
     CANONICAL_URL_FIELD,
     URL_FIELD,
 )
 
-_EXPORTS_PATH = Path(__file__).with_name("field_mappings.exports.json")
-_STATIC_EXPORTS = load_export_data(str(_EXPORTS_PATH))
-
-PUBLIC_RECORD_DEFAULT_EXCLUDED_FIELDS: Mapping[str, Sequence[str]] = _STATIC_EXPORTS[
-    "PUBLIC_RECORD_DEFAULT_EXCLUDED_FIELDS"
-]
-PUBLIC_RECORD_DETAIL_CANONICAL_QUERY_KEYS: tuple[str, ...] = _STATIC_EXPORTS[
-    "PUBLIC_RECORD_DETAIL_CANONICAL_QUERY_KEYS"
-]
-PUBLIC_RECORD_DETAIL_CANONICAL_QUERY_PREFIXES: tuple[str, ...] = _STATIC_EXPORTS[
-    "PUBLIC_RECORD_DETAIL_CANONICAL_QUERY_PREFIXES"
-]
-PUBLIC_RECORD_URL_BLOCKED_PATH_MARKERS: tuple[str, ...] = _STATIC_EXPORTS[
-    "PUBLIC_RECORD_URL_BLOCKED_PATH_MARKERS"
-]
-PUBLIC_RECORD_URL_MAX_LENGTH: int = _STATIC_EXPORTS["PUBLIC_RECORD_URL_MAX_LENGTH"]
+PUBLIC_RECORD_DEFAULT_EXCLUDED_FIELDS: Mapping[str, Sequence[str]] = {
+    "ecommerce_detail": (
+        "canonical_url",
+        "created_at",
+        "image_count",
+        "published_at",
+        "updated_at",
+    )
+}
+PUBLIC_RECORD_DETAIL_CANONICAL_QUERY_KEYS: tuple[str, ...] = (
+    "color",
+    "colour",
+    "productId",
+    "product_id",
+    "productid",
+    "sku",
+    "size",
+    "variant",
+)
+PUBLIC_RECORD_DETAIL_CANONICAL_QUERY_PREFIXES: tuple[str, ...] = ("dwvar_",)
+PUBLIC_RECORD_URL_BLOCKED_PATH_MARKERS: tuple[str, ...] = (
+    "/api/",
+    "/event/",
+    "/events/",
+    "/tracking/",
+    "/analytics/",
+    "/beacon/",
+    "/click",
+)
+PUBLIC_RECORD_URL_MAX_LENGTH = 2048
 
 PUBLIC_RECORD_CANONICAL_SURFACE = "ecommerce_detail"
 PUBLIC_RECORD_CANONICAL_URL_FIELDS = frozenset(

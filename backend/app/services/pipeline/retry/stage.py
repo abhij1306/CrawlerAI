@@ -197,6 +197,8 @@ async def retry_patchright_detail_rejection_with_real_chrome(
         retry_reason=resolved_retry_reason,
         forced_browser_engine="real_chrome",
     )
+    if retry_result is None:
+        return None
     _merge_browser_diagnostics(
         retry_result,
         {"retry_reason": resolved_retry_reason},
@@ -298,7 +300,6 @@ def apply_detail_rejection_guard(
             context.surface,
             list(context.requested_fields),
             requested_page_url=context.url,
-            adapter_records=acquisition_result.adapter_records,
             network_payloads=acquisition_result.network_payloads,
             selector_rules=selector_rules,
             extraction_runtime_snapshot=context.run.settings_view.extraction_runtime_snapshot(),
@@ -377,6 +378,8 @@ async def retry_empty_extraction_with_browser(
     browser_result = await _acquire_browser_retry_result(
         context, fetched, retry_reason="empty_extraction"
     )
+    if browser_result is None:
+        return records, selector_rules
     fetched.acquisition_result = browser_result
     retry_records, retry_selector_rules = await _extract_records_for_acquisition(
         context, fetched
@@ -437,6 +440,8 @@ async def retry_low_quality_extraction_with_browser(
         )
     except (RuntimeError, ValueError, TypeError, OSError):
         return records, selector_rules
+    if browser_result is None:
+        return records, selector_rules
     fetched.acquisition_result = browser_result
     return await _extract_records_for_acquisition(context, fetched)
 
@@ -458,7 +463,7 @@ async def retry_listing_integrity_with_stronger_tier(
 
     acquisition_result = fetched.acquisition_result
 
-    # Retrieve the gate decision from artifacts (attached by listing_extractor
+            # Retrieve the gate decision from artifacts (attached by extraction)
     # via _attach_gate_decision_to_artifacts during extract_listing_records).
     artifacts = mapping_or_empty(
         getattr(acquisition_result, "artifacts", {})
@@ -575,8 +580,9 @@ async def retry_listing_integrity_with_stronger_tier(
         retry_reason="listing_integrity_promo_cluster",
         forced_browser_engine=forced_engine,
     )
+    if retry_result is None:
+        return records, selector_rules
     fetched.acquisition_result = retry_result
-    context.listing_integrity_retry_count += 1
 
     # --- Re-run extraction (Ranker + Gate re-evaluate on new observation) ---
     retry_records, retry_selector_rules = await _extract_records_for_acquisition(
@@ -674,6 +680,21 @@ async def _acquire_browser_retry_result(
     forced_browser_engine: str | None = None,
 ):
     acquisition_result = fetched.acquisition_result
+    evidence = PageEvidence.from_acquisition_result(acquisition_result)
+    if evidence.browser_attempted:
+        await _log_pipeline_event(
+            context,
+            "info",
+            f"Skipping browser retry for {context.url}: browser already attempted",
+        )
+        return None
+    if context.browser_escalation_count >= 1:
+        await _log_pipeline_event(
+            context,
+            "info",
+            f"Skipping browser retry for {context.url}: browser retry budget exhausted",
+        )
+        return None
     remaining_budget_seconds = remaining_url_budget_seconds(context)
     profile_updates: dict[str, object] = {
         "fetch_mode": "browser_only",
@@ -692,7 +713,11 @@ async def _acquire_browser_retry_result(
         from app.services.pipeline import extraction_loop
 
         acquire_impl = getattr(extraction_loop, "acquire", acquire)
-        return await acquire_impl(retry_request)
+        context.browser_escalation_count += 1
+        result = await acquire_impl(retry_request)
+        if retry_reason == "listing_integrity_promo_cluster":
+            context.listing_integrity_retry_count += 1
+        return result
     except (RuntimeError, ValueError, TypeError, OSError) as exc:
         _merge_browser_diagnostics(
             acquisition_result,

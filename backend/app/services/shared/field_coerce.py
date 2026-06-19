@@ -37,7 +37,7 @@ from app.services.config.public_record_policy import (
     PUBLIC_RECORD_PRODUCT_TYPE_NOISE_TOKENS,
 )
 from app.services.config.variant_policy import OPTION_SCALAR_FIELDS
-from app.services.config.surface_hints import detail_path_hints
+from app.services.config.url_path_markers import detail_path_markers
 from app.services.field_policy import (
     normalize_field_key,
 )
@@ -106,8 +106,8 @@ __all__ = (
     "strip_tracking_query_params",
 )
 
-PRODUCT_URL_HINTS = detail_path_hints("ecommerce_detail")
-JOB_URL_HINTS = detail_path_hints("job_detail")
+PRODUCT_URL_HINTS = detail_path_markers("ecommerce_detail")
+JOB_URL_HINTS = detail_path_markers("job_detail")
 _FIELD_ALIASES = FIELD_ALIASES
 _OPTION_VALUE_SUFFIX_NOISE_RE = compile_regex_patterns(
     VARIANT_OPTION_VALUE_SUFFIX_NOISE_PATTERNS or ()

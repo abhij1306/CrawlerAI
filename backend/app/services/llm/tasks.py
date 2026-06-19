@@ -28,7 +28,6 @@ from app.services.llm.errors import ERROR_PREFIX, LLMErrorCategory, classify_err
 from app.services.llm.payloads import parse_payload, validate_task_payload
 from app.services.llm.prompt_rendering import (
     enforce_token_limit,
-    extract_structured_data,
     safe_truncate_for_prompt,
     stringify_prompt_value,
     truncate_html,
@@ -265,47 +264,6 @@ async def run_prompt_task(
     )
     await store_cached_llm_result(cache_key, result)
     return _finish(result)
-
-
-async def discover_xpath_candidates(
-    session: AsyncSession,
-    *,
-    run_id: int,
-    domain: str,
-    url: str,
-    html_text: str,
-    missing_fields: list[str],
-    existing_values: dict[str, object],
-) -> tuple[list[dict], str | None]:
-    structured_data = extract_structured_data(html_text)
-    structured_data_json = truncate_json_literal(
-        structured_data,
-        llm_runtime_settings.existing_values_max_chars * 2,
-    )
-    result = await run_prompt_task(
-        session,
-        task_type="xpath_discovery",
-        run_id=run_id,
-        domain=domain,
-        variables={
-            "url": url,
-            "missing_fields_json": json.dumps(missing_fields),
-            "existing_values_json": truncate_json_literal(
-                existing_values,
-                llm_runtime_settings.existing_values_max_chars,
-            ),
-            "structured_data_json": structured_data_json,
-            "html_snippet": truncate_html(
-                html_text,
-                llm_runtime_settings.html_snippet_max_chars,
-                anchors=missing_fields,
-            ),
-        },
-    )
-    payload = result.payload
-    return (payload if isinstance(payload, list) else []), (
-        result.error_message or None
-    )
 
 
 async def extract_records_directly(

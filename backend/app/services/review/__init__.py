@@ -246,19 +246,10 @@ def _selector_signature(
 
 
 def _saved_selector_signature(row: dict[str, object]) -> tuple[str, str, str]:
-    if row.get("css_selector"):
-        selector_kind = "css_selector"
-        selector_value = row.get("css_selector")
-    elif row.get("xpath"):
-        selector_kind = "xpath"
-        selector_value = row.get("xpath")
-    else:
-        selector_kind = "regex"
-        selector_value = row.get("regex")
     return _selector_signature(
         field_name=row.get("field_name"),
-        selector_kind=selector_kind,
-        selector_value=selector_value,
+        selector_kind="css_selector",
+        selector_value=row.get("css_selector"),
     )
 
 
@@ -425,7 +416,7 @@ def _collect_selector_candidates(
             if (
                 payload_map.get("status") == "found"
                 and payload_map.get("value") not in (None, "", [], {})
-                and selector_kind == "xpath"
+                and selector_kind == "css_selector"
                 and selector_value
             ):
                 learning_key = (
@@ -667,13 +658,11 @@ async def promote_domain_recipe_selectors(
         selector_kind = str(row.get("selector_kind") or "").strip()
         selector_value = str(row.get("selector_value") or "").strip()
         field_name = normalize_field_key(str(row.get("field_name") or ""))
-        if not field_name or not selector_kind or not selector_value:
+        if not field_name or selector_kind != "css_selector" or not selector_value:
             continue
         payload = {
             "field_name": field_name,
-            "css_selector": selector_value if selector_kind == "css_selector" else None,
-            "xpath": selector_value if selector_kind == "xpath" else None,
-            "regex": selector_value if selector_kind == "regex" else None,
+            "css_selector": selector_value,
             "sample_value": row.get("sample_value"),
             "source": "domain_recipe",
             "source_run_id": run.id,
@@ -744,6 +733,8 @@ async def apply_domain_recipe_field_action(
     selector_value = str(action.get("selector_value") or "").strip()
     if not field_name or action_name not in {"keep", "reject"}:
         raise ValueError("Invalid domain recipe field action.")
+    if selector_kind and selector_kind != "css_selector":
+        raise ValueError("Only css_selector domain recipe actions are supported.")
 
     source_kind = "selector" if selector_kind and selector_value else "field_source"
     source_value = selector_value or None
@@ -768,13 +759,7 @@ async def apply_domain_recipe_field_action(
                 surface=run.surface,
             )
             for row in existing:
-                matched_value = (
-                    row.get("css_selector")
-                    if selector_kind == "css_selector"
-                    else row.get("xpath")
-                    if selector_kind == "xpath"
-                    else row.get("regex")
-                )
+                matched_value = row.get("css_selector")
                 if (
                     normalize_field_key(str(row.get("field_name") or "")) == field_name
                     and str(matched_value or "").strip() == selector_value

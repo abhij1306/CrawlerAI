@@ -691,7 +691,7 @@
               ]
             ]
           },
-          "field_jmespaths": {
+          "configured_field_paths": {
             "title": [
               "title",
               "name.en",

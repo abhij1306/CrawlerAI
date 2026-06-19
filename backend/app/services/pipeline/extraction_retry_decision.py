@@ -30,22 +30,19 @@ from app.services.config.pipeline_reasons import (
     STATIC_DETAIL_SHELL_MISMATCH_REASON,
 )
 from app.services.config.runtime_settings import crawler_runtime_settings
-from app.services.extract.detail.identity.core import (
+from app.services.url_identity import (
     detail_title_from_url,
     detail_url_looks_like_product,
     detail_url_is_collection_like,
     detail_url_is_utility,
     semantic_detail_identity_tokens,
-)
-from app.services.extract.detail.identity.shell_filter import (
     title_looks_like_brand_shell,
 )
-from app.services.extract.variant_choice_traversal import variant_dom_cues_present
 from app.services.field_policy import (
     browser_retry_target_fields_for_surface,
     repair_target_fields_for_surface,
 )
-from app.services.dom.selector_engine import requested_content_extractability
+from app.services.css_extractability import requested_content_extractability
 from app.services.pipeline.runtime_helpers import effective_blocked
 
 NORMALIZED_STATIC_DETAIL_SHELL_HEADING_PHRASES = {
@@ -346,7 +343,7 @@ def _empty_detail_extraction_has_static_evidence(
         return False
     soup = BeautifulSoup(html, "html.parser")
     extractability = requested_content_extractability(
-        soup,
+        html,
         surface=surface,
         requested_fields=requested_fields,
         selector_rules=selector_rules,
@@ -438,7 +435,7 @@ def _missing_fields_have_static_html_evidence(
     missing_fields: list[str],
 ) -> bool:
     extractability = requested_content_extractability(
-        soup,
+        str(soup),
         surface=surface,
         requested_fields=missing_fields,
         selector_rules=[],
@@ -468,6 +465,25 @@ def _missing_fields_have_static_html_evidence(
         return True
     if normalized_missing & set(VARIANT_FIELDS) and variant_dom_cues_present(soup):
         return True
+    return False
+
+
+def variant_dom_cues_present(soup: BeautifulSoup) -> bool:
+    selectors = (
+        "select[name*='size' i]",
+        "select[name*='color' i]",
+        "[data-option-name]",
+        "[aria-label*='size' i]",
+        "[aria-label*='color' i]",
+        "button[class*='size' i]",
+        "button[class*='color' i]",
+    )
+    for selector in selectors:
+        try:
+            if soup.select_one(selector):
+                return True
+        except Exception:
+            continue
     return False
 
 

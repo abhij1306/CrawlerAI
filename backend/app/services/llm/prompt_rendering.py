@@ -5,7 +5,6 @@ from typing import Any
 
 from app.services.config.llm_runtime import llm_runtime_settings
 from app.services.extraction_html_helpers import prune_html_tree
-from app.services.structured_sources import harvest_js_state_objects, parse_json_ld
 from bs4 import BeautifulSoup, Tag
 
 
@@ -28,6 +27,38 @@ def extract_structured_data(html_text: str) -> dict[str, object]:
         if key == "__NEXT_DATA__" and isinstance(value, dict):
             structured[key] = value
     return structured
+
+
+def parse_json_ld(soup: BeautifulSoup) -> list[object]:
+    rows: list[object] = []
+    for script in soup.select('script[type*="ld+json"]'):
+        text = script.string or script.get_text(" ", strip=True)
+        if not str(text or "").strip():
+            continue
+        try:
+            payload = json.loads(str(text))
+        except json.JSONDecodeError:
+            continue
+        if isinstance(payload, list):
+            rows.extend(payload)
+        else:
+            rows.append(payload)
+    return rows
+
+
+def harvest_js_state_objects(soup: BeautifulSoup, html_text: str) -> dict[str, object]:
+    del html_text
+    states: dict[str, object] = {}
+    for script in soup.select('script[type="application/json"], script#__NEXT_DATA__'):
+        key = str(script.get("id") or "application_json").strip() or "application_json"
+        text = script.string or script.get_text(" ", strip=True)
+        if not str(text or "").strip():
+            continue
+        try:
+            states[key] = json.loads(str(text))
+        except json.JSONDecodeError:
+            continue
+    return states
 
 
 def truncate_html(

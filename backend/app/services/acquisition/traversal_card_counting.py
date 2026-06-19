@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import re
 from typing import TYPE_CHECKING, Any, cast
 from urllib.parse import urljoin, urlsplit
 
@@ -28,13 +29,6 @@ from app.services.acquisition.dom_runtime import get_page_html
 from app.services.config.extraction_rules import LISTING_CARD_URL_ATTRS
 from app.services.config.runtime_settings import crawler_runtime_settings
 from app.services.config.selectors import CARD_SELECTORS
-from app.services.extract.listing_card_fragments import (
-    heuristic_listing_card_count_from_html,
-    listing_node_attr,
-    listing_node_css,
-    listing_selector_is_weak,
-    select_listing_fragment_nodes,
-)
 
 if TYPE_CHECKING:
     from app.services.acquisition.traversal_types import TraversalResult
@@ -100,7 +94,7 @@ async def count_listing_cards(
                 count = max(0, int(raw_count or 0))
             except (TypeError, ValueError):
                 count = 0
-            if listing_selector_is_weak(str(selector or "")):
+            if _listing_selector_is_weak(str(selector or "")):
                 weak_count = max(weak_count, count)
             else:
                 strong_count = max(strong_count, count)
@@ -130,7 +124,7 @@ async def count_listing_cards(
 
 
 async def _heuristic_card_count(page: Page, *, surface: str) -> int:
-    return heuristic_listing_card_count_from_html(
+    return _heuristic_listing_card_count_from_html(
         await get_page_html(page, flatten_shadow=False),
         surface=surface,
     )
@@ -146,7 +140,7 @@ def _unique_listing_card_identity_count_from_html(
         return 0
     parser = LexborHTMLParser(html)
     identities: set[str] = set()
-    for card in select_listing_fragment_nodes(
+    for card in _select_listing_fragment_nodes(
         parser,
         surface=surface,
         limit=max(1, int(crawler_runtime_settings.listing_fallback_fragment_limit)),
@@ -159,11 +153,11 @@ def _unique_listing_card_identity_count_from_html(
 
 def _listing_card_identity(card: _SelectolaxNode, *, page_url: str) -> str:
     selectors = ",".join(f"[{attr_name}]" for attr_name in LISTING_CARD_URL_ATTRS)
-    candidates = [card, *listing_node_css(card, selectors)]
+    candidates = [card, *_listing_node_css(card, selectors)]
     page_path = str(urlsplit(page_url).path or "").rstrip("/").lower()
     for candidate in candidates:
         for attr_name in LISTING_CARD_URL_ATTRS:
-            raw_value = listing_node_attr(candidate, str(attr_name))
+            raw_value = _listing_node_attr(candidate, str(attr_name))
             if not raw_value:
                 continue
             resolved = urljoin(page_url, raw_value)
@@ -179,6 +173,77 @@ def _listing_card_identity(card: _SelectolaxNode, *, page_url: str) -> str:
                 continue
             return f"{host}{path}"
     return ""
+
+
+def _listing_node_attr(node: _SelectolaxNode, name: str) -> str:
+    try:
+        return str(node.attributes.get(name) or "").strip()
+    except Exception:
+        return ""
+
+
+def _listing_node_css(node, selector: str) -> list[_SelectolaxNode]:
+    try:
+        return list(node.css(selector))
+    except Exception:
+        return []
+
+
+def _listing_selector_is_weak(selector: str) -> bool:
+    lowered = str(selector or "").lower()
+    return lowered in {"li", "article", "section", "div"} or lowered.endswith(" li")
+
+
+def _select_listing_fragment_nodes(
+    parser: LexborHTMLParser,
+    *,
+    surface: str,
+    limit: int,
+) -> list[_SelectolaxNode]:
+    del surface
+    selectors = [
+        "[data-product-id]",
+        "[data-sku]",
+        ".product-card",
+        ".product-tile",
+        "[class*='product-card' i]",
+        "[class*='product-tile' i]",
+        ".job-card",
+        "[class*='job-card' i]",
+        "article",
+        "li",
+    ]
+    out: list[_SelectolaxNode] = []
+    seen: set[str] = set()
+    for selector in selectors:
+        for node in _listing_node_css(parser, selector):
+            html = str(getattr(node, "html", "") or "")
+            if html in seen:
+                continue
+            seen.add(html)
+            if _base_listing_fragment_score(node) > 0:
+                out.append(node)
+                if len(out) >= limit:
+                    return out
+    return out
+
+
+def _heuristic_listing_card_count_from_html(html: str, *, surface: str) -> int:
+    if not str(html or "").strip():
+        return 0
+    parser = LexborHTMLParser(str(html))
+    return len(_select_listing_fragment_nodes(parser, surface=surface, limit=500))
+
+
+def _base_listing_fragment_score(node: _SelectolaxNode) -> int:
+    anchors = _listing_node_css(node, "a[href]")
+    text = re.sub(r"\s+", " ", str(node.text(separator=" ", strip=True) or "")).strip()
+    if not anchors or len(text) < 4:
+        return 0
+    score = 1
+    if _listing_node_css(node, "img, [data-price], .price, [class*='price' i]"):
+        score += 1
+    return score
 
 
 async def page_snapshot(page: Page, *, surface: str) -> dict[str, Any]:

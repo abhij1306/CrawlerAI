@@ -1,186 +1,227 @@
 from __future__ import annotations
 
-from pathlib import Path
-import logging
-import re
-from typing import Any
+ANCHOR_SELECTOR = "a[href]"
 
-from app.services.config._export_data import load_export_data
-
-logger = logging.getLogger(__name__)
-_EXPORTS_PATH = Path(__file__).with_name("selectors.exports.json")
-_STATIC_EXPORTS = {
-    name: value
-    for name, value in load_export_data(str(_EXPORTS_PATH)).items()
-    if not name.startswith("_")
-}
-locals().update(
-    {
-        name: value if value is not None else ()
-        for name, value in _STATIC_EXPORTS.items()
-    }
-)
-
-SELECTOR_SELF_HEAL_TARGET_LIMIT = 6
-SELECTOR_SELF_HEAL_DEFAULT_MIN_CONFIDENCE = 0.55
-if "SELECTOR_SYNTHESIS_KEEP_WORTHY_TAGS" in _STATIC_EXPORTS:
-    logger.warning(
-        "Ignoring exported SELECTOR_SYNTHESIS_KEEP_WORTHY_TAGS; value is code-owned"
-    )
-# Code-owned final retention allow-list for interactive selector synthesis tags.
-SELECTOR_SYNTHESIS_KEEP_WORTHY_TAGS = frozenset({"button", "input", "select"})
-
-XPATH_ALLOWED_FUNCTIONS = frozenset(
-    {
-        "comment",
-        "concat",
-        "contains",
-        "last",
-        "normalize-space",
-        "node",
-        "not",
-        "position",
-        "processing-instruction",
-        "starts-with",
-        "string",
-        "text",
-    }
-)
-XPATH_DISALLOWED_PATTERNS = (
-    (re.compile(r"\|"), "XPath unions are not supported"),
-    (
-        re.compile(
-            r"(?<![\w-])(ancestor|ancestor-or-self|descendant-or-self|following|following-sibling|namespace|preceding|preceding-sibling|self)::"
-        ),
-        "XPath axis is not allowed",
+CARD_SELECTORS: dict[str, tuple[str, ...]] = {
+    "ecommerce": (
+        "[data-component-type='s-search-result']",
+        ".s-item",
+        "a[href*='/products/']",
+        "a[href*='/product/']",
+        ".product-card",
+        ".product-item",
+        ".product-tile",
+        ".product-grid-item",
+        "[data-testid='product-card']",
+        "[data-test-id='product-card']",
+        "[data-product-id]",
+        "[itemscope][itemtype*='Product']",
+        "[class*='productcard' i]",
+        "[class*='product-tile']",
+        "[class*='search-result-item']",
+        "[data-testid*='product' i]",
+        "[data-test*='product' i]",
+        "[class*='product-card--loaded']",
+        "[data-hydrated='true'][class*='product' i]",
     ),
-    (re.compile(r"\$[A-Za-z_][\w.-]*"), "XPath variables are not allowed"),
+    "article": (
+        ".post-card",
+        ".post-item",
+        ".blog-entry",
+        ".news-item",
+        "[class*='article-card' i]",
+    ),
+    "jobs": (
+        "[data-qa-id='search-result']",
+        ".job_seen_beacon",
+        ".base-card",
+        ".job-card",
+        ".job-listing",
+        ".job-result",
+        ".posting",
+        "[data-testid='job-card']",
+        ".jobsearch-ResultsList > div",
+        "li.jobs-search__results-list-item",
+        "li[data-testid='careers-search-result-listing']",
+        "div.job_listing",
+        "tr.job-row",
+        "div[data-job-id]",
+        ".opening",
+    ),
+}
+
+ECOMMERCE_READY_CARD_SELECTORS = CARD_SELECTORS["ecommerce"]
+
+COOKIE_CONSENT_SELECTORS = (
+    "button#onetrust-accept-btn-handler",
+    "button#CybotCookiebotDialogBodyLevelButtonLevelOptinAllowAll",
+    "#truste-consent-button",
+    "[data-consent='accept']",
+    "[data-consent-action='accept']",
+    "[data-accept='true']",
+    "[data-testid='cookie-accept']",
+    "[data-testid='consent-accept']",
+    ".cookie-consent-accept",
+    "#cookieConsentAccept",
+    ".fc-button.fc-cta-consent",
+    ".fc-button.fc-cta-accept",
+    "[id*='accept' i][id*='cookie' i]",
+    "[class*='accept' i][class*='cookie' i]",
+    "[id*='consent' i][id*='accept' i]",
+    "[class*='consent' i][class*='accept' i]",
+    "[aria-label='Accept Cookies']",
+    "[aria-label='Accept all']",
+    "button:has-text('Accept All')",
+    "button:has-text('Accept Cookies')",
+    "button:has-text('I Accept')",
+    "button:has-text('Agree')",
 )
-XPATH_FUNCTION_PATTERN = re.compile(r"(?<![:\w-])([A-Za-z_][\w.-]*)\s*\(")
-SELECTOR_SYNTHESIS_ALLOWED_ATTRS = frozenset(
-    {
-        "aria-label",
-        "class",
-        "data-price",
-        "data-product-id",
-        "data-sku",
-        "data-testid",
-        "data-variant-id",
-        "href",
-        "id",
-        "itemprop",
-        "name",
-        "shadowrootmode",
-        "slot",
-        "value",
-    }
+
+PAGINATION_SELECTORS = {
+    "load_more": (
+        "button:has-text('Load More')",
+        "button:has-text('Show More')",
+        "button:has-text('View All')",
+        "button:has-text('See more')",
+        "a:has-text('Load More')",
+        "a:has-text('Show More')",
+        "[data-testid='load-more']",
+        "[data-testid*='load-more' i]",
+        "[data-test-id*='load-more' i]",
+        ".load-more",
+    ),
+    "next_page": (
+        "a[rel='next']",
+        "a[aria-label*='next' i]",
+        "a[title*='next' i]",
+        "a:has-text('Next')",
+        "button[aria-label*='next' i]",
+    ),
+}
+
+LOCATION_INTERSTITIAL_CONTAINER_SELECTORS = (
+    "[aria-modal='true'][class*='location' i]",
+    "[aria-modal='true'][id*='location' i]",
+    "[aria-modal='true'][class*='postal' i]",
+    "[aria-modal='true'][id*='postal' i]",
+    "[aria-modal='true'][class*='zip' i]",
+    "[aria-modal='true'][id*='zip' i]",
+    "[role='dialog'][class*='location' i]",
+    "[role='dialog'][id*='location' i]",
+    "[role='dialog'][class*='postal' i]",
+    "[role='dialog'][id*='postal' i]",
+    "[role='dialog'][class*='zip' i]",
+    "[role='dialog'][id*='zip' i]",
+    ".modal[class*='location' i]",
+    ".modal[id*='location' i]",
+    ".overlay[class*='location' i]",
+    ".overlay[id*='location' i]",
 )
-SELECTOR_SYNTHESIS_DROP_TAGS = frozenset({"script", "style", "noscript", "svg"})
-# Preliminary low-value filter; overlap is intentional because keep-worthy tags
-# survive only when _keep_low_value_node sees useful attrs/tokens.
-SELECTOR_SYNTHESIS_LOW_VALUE_TAGS = frozenset(
-    {
-        "nav",
-        "footer",
-        "aside",
-        "button",
-        "textarea",
-        "input",
-        "select",
-        "iframe",
-        "canvas",
-    }
+
+LOCATION_INTERSTITIAL_DISMISS_SELECTORS = (
+    "button[aria-label='Close']",
+    "button[aria-label='close']",
+    "[role='button'][aria-label='Close']",
+    "[role='button'][aria-label='close']",
 )
-SELECTOR_SYNTHESIS_KEEP_ATTRS = frozenset(
-    {"data-variant-id", "data-product-id", "data-price", "value"}
+
+LOCATION_INTERSTITIAL_DISMISS_TEXT_TOKENS = (
+    "not now",
+    "maybe later",
+    "continue",
+    "continue without location",
+    "skip",
+    "no thanks",
 )
-SELECTOR_SYNTHESIS_KEEP_TOKENS = frozenset({"buy", "cart", "pdp", "product", "variant"})
-NON_CONTENT_TAGS = frozenset({"script", "style", "noscript", "template", "head"})
-XPATH_NON_CONTENT_ANCESTOR_TAGS = frozenset(
-    tag for tag in NON_CONTENT_TAGS if tag != "head"
+
+LOCATION_INTERSTITIAL_TEXT_TOKENS = (
+    "choose your location",
+    "select your location",
+    "set your location",
+    "enter your zip",
+    "enter zip code",
+    "zip code",
+    "postal code",
+    "use my location",
+    "deliver to",
+    "store location",
 )
-LISTING_FIELD_SELECTORS: dict[str, list[str]] = {
-    "title": [
+
+LISTING_CAPTURE_STRUCTURAL_ANCESTOR_SELECTORS = (
+    "header",
+    "footer",
+    "nav",
+    '[role="navigation"]',
+    '[role="banner"]',
+    '[role="contentinfo"]',
+    "dialog",
+    '[role="dialog"]',
+    "aside",
+)
+
+LISTING_VISUAL_CANDIDATE_CONTAINER_SELECTORS = (
+    "article",
+    "li",
+    "section",
+    '[role="listitem"]',
+    '[data-testid*="product" i]',
+    '[class*="product" i]',
+    '[class*="card" i]',
+    '[class*="tile" i]',
+    '[class*="item" i]',
+    '[class*="result" i]',
+)
+
+LISTING_VISUAL_CAPTURE_SELECTORS = (
+    "a[href]",
+    "img[src]",
+    "h1",
+    "h2",
+    "h3",
+    "h4",
+    '[itemprop="name"]',
+    '[class*="price" i]',
+    '[data-testid*="price" i]',
+    '[aria-label*="price" i]',
+    '[class*="title" i]',
+    '[data-testid*="title" i]',
+    '[data-testid*="name" i]',
+)
+
+LISTING_FIELD_SELECTORS: dict[str, tuple[str, ...]] = {
+    "title": (
         "[itemprop='name']",
         "[class*='title']",
-        "[class*='Title']",
         "[data-testid*='title']",
         "[data-testid*='name']",
         "a[href]",
-    ],
-    "price": [
+    ),
+    "price": (
         "[itemprop='price']",
         "[class*='price']",
-        "[class*='Price']",
         "[data-testid*='price']",
         "[data-price]",
-        "[aria-label*='price']",
-    ],
-    "brand": [
-        "[itemprop='brand']",
-        "[class*='brand']",
-        "[class*='Brand']",
-        "[data-testid*='brand']",
-        "[aria-label*='brand']",
-    ],
-    "image_url": [
+    ),
+    "image_url": (
         "[itemprop='image']",
         "img[src]",
         "[class*='image']",
-        "[class*='Image']",
         "[data-testid*='image']",
-    ],
-    "rating": [
-        "[itemprop='ratingValue']",
-        "[class*='rating']",
-        "[class*='Rating']",
-        "[class*='stars']",
-        "[data-testid*='rating']",
-    ],
-    "review_count": [
-        "[itemprop='reviewCount']",
-        "[class*='review-count']",
-        "[class*='ReviewCount']",
-        "[data-testid*='review']",
-    ],
-    "availability": [
-        "[itemprop='availability']",
-        "[class*='stock']",
-        "[data-availability]",
-        "[data-testid*='avail']",
-    ],
-    "sku": [
-        "[itemprop='sku']",
-        "[data-sku]",
-        "[class*='sku']",
-    ],
+    ),
 }
 
-
-def __getattr__(name: str) -> Any:
-    try:
-        value = _STATIC_EXPORTS[name]
-    except KeyError as exc:
-        raise AttributeError(name) from exc
-    return value if value is not None else ()
-
-
-__all__ = sorted(
-    set(_STATIC_EXPORTS.keys())
-    | {
-        "XPATH_ALLOWED_FUNCTIONS",
-        "XPATH_DISALLOWED_PATTERNS",
-        "XPATH_FUNCTION_PATTERN",
-        "SELECTOR_SYNTHESIS_ALLOWED_ATTRS",
-        "SELECTOR_SYNTHESIS_DROP_TAGS",
-        "SELECTOR_SYNTHESIS_KEEP_ATTRS",
-        "SELECTOR_SYNTHESIS_KEEP_TOKENS",
-        "SELECTOR_SELF_HEAL_DEFAULT_MIN_CONFIDENCE",
-        "SELECTOR_SELF_HEAL_TARGET_LIMIT",
-        "SELECTOR_SYNTHESIS_KEEP_WORTHY_TAGS",
-        "SELECTOR_SYNTHESIS_LOW_VALUE_TAGS",
-        "NON_CONTENT_TAGS",
-        "XPATH_NON_CONTENT_ANCESTOR_TAGS",
-        "LISTING_FIELD_SELECTORS",
-    }
-)
+__all__ = [
+    "ANCHOR_SELECTOR",
+    "CARD_SELECTORS",
+    "COOKIE_CONSENT_SELECTORS",
+    "ECOMMERCE_READY_CARD_SELECTORS",
+    "LISTING_CAPTURE_STRUCTURAL_ANCESTOR_SELECTORS",
+    "LISTING_FIELD_SELECTORS",
+    "LISTING_VISUAL_CANDIDATE_CONTAINER_SELECTORS",
+    "LISTING_VISUAL_CAPTURE_SELECTORS",
+    "LOCATION_INTERSTITIAL_CONTAINER_SELECTORS",
+    "LOCATION_INTERSTITIAL_DISMISS_SELECTORS",
+    "LOCATION_INTERSTITIAL_DISMISS_TEXT_TOKENS",
+    "LOCATION_INTERSTITIAL_TEXT_TOKENS",
+    "PAGINATION_SELECTORS",
+]

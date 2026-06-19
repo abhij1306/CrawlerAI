@@ -5,7 +5,6 @@ import json
 import pytest
 from app.models.crawl_run import CrawlRecord
 from app.services import record_export_service
-from app.services.pipeline.extract_records import extract_records
 from app.services.record_export_service import (
     build_json_export_response,
     stream_export_artifacts_json,
@@ -265,43 +264,3 @@ def test_clean_export_data_keeps_variant_payloads_but_hides_internal_fields() ->
         "variant_axes": {"color": ["Black"]},
         "selected_variant": {"sku": "W-1", "color": "Black"},
     }
-
-
-@pytest.mark.component
-def test_listing_adapter_records_use_shared_surface_normalization() -> None:
-    rows = extract_records(
-        "<html><body></body></html>",
-        "https://www.glossier.com/en-in/collections/makeup",
-        "ecommerce_listing",
-        max_records=5,
-        adapter_records=[
-            {
-                "title": "Boy Brow",
-                "brand": "Glossier",
-                "url": "https://www.glossier.com/en-in/products/boy-brow",
-                "image_url": "https://cdn.example.com/boy-brow-1.jpg",
-                "additional_images": [
-                    "https://cdn.example.com/boy-brow-2.jpg",
-                ],
-                "price": "2400",
-                "availability": "in_stock",
-                "description": "<p>Inspired by the flexible formula of mustache pomade.</p>",
-                "variants": [
-                    {"sku": "BBR-378-00-00", "title": "Dark Brown"},
-                ],
-                "variant_axes": {"shade": ["Dark Brown"]},
-                "selected_variant": {"sku": "BBR-378-00-00"},
-                "_source": "shopify_adapter",
-            }
-        ],
-    )
-
-    assert len(rows) == 1
-    record = rows[0]
-    assert record["title"] == "Boy Brow"
-    assert (
-        record["description"] == "Inspired by the flexible formula of mustache pomade."
-    )
-    assert record["_source"] == "shopify_adapter"
-    assert "additional_images" not in record
-    assert "variants" not in record

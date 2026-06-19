@@ -37,21 +37,21 @@ FLAG_BASELINE_TIMING_BREACH = "baseline_timing_breach"
 FLAG_BASELINE_VERDICT_REGRESSION = "baseline_verdict_regression"
 
 # Owning files (from docs/CODEBASE_MAP.md).
-OWNER_DETAIL_TIERS = "backend/app/services/extract/detail/assembly/tiers.py"
+OWNER_EXTRACTION_ENGINE = "backend/app/services/extraction/engine.py"
+OWNER_EXTRACTION_VALIDATION = "backend/app/services/extraction/validation"
+OWNER_RECORD_ASSEMBLY = "backend/app/services/extraction/materialization"
 OWNER_BLOCK_CLASSIFY = "backend/app/services/acquisition/browser_result_builder.py"
-OWNER_LISTING_EXTRACTOR = "backend/app/services/listing_extractor.py"
-OWNER_DETAIL_EXTRACTOR = "backend/app/services/detail_extractor.py"
-OWNER_RECORD_ASSEMBLY = (
-    "backend/app/services/extract/detail/assembly/record_assembly.py"
-)
+OWNER_LISTING_EXTRACTOR = "backend/app/services/extraction/listing.py"
 OWNER_CRAWL_ENGINE = "backend/app/services/crawl_engine.py"
 OWNER_DOMAIN_PROFILE = "backend/app/services/crawl/profile"
+OWNER_DETAIL_EXTRACTOR = "backend/app/services/extraction/pipeline.py"
+OWNER_DETAIL_TIERS = "backend/app/services/extraction/engine.py"
 
 # Rule metadata keyed by flag code.
 AUDIT_RULES: dict[str, dict[str, str]] = {
     FLAG_DOM_SKIPPED_WITH_VARIANT_CUES: {
         "invariant": "Rule 3 (Extraction — DOM tier skipped before variant cues consumed)",
-        "owner": OWNER_DETAIL_TIERS,
+        "owner": OWNER_EXTRACTION_ENGINE,
         "severity": FLAG_SEVERITY_HIGH,
         "symptom": "DOM tier skipped while variants are missing and variant cues exist",
     },
@@ -69,13 +69,13 @@ AUDIT_RULES: dict[str, dict[str, str]] = {
     },
     FLAG_HIGH_VALUE_FIELD_MISSING: {
         "invariant": "Rule 3 (Extraction — high-value field missing without repair/diagnostic)",
-        "owner": OWNER_DETAIL_EXTRACTOR,
+        "owner": OWNER_EXTRACTION_VALIDATION,
         "severity": FLAG_SEVERITY_MEDIUM,
         "symptom": "requested/default high-value field missing from the persisted record",
     },
     FLAG_DETAIL_ON_LISTING_SEED: {
         "invariant": "Rule 7 (Detail extraction rejected a listing/category seed)",
-        "owner": OWNER_RECORD_ASSEMBLY,
+        "owner": OWNER_EXTRACTION_VALIDATION,
         "severity": FLAG_SEVERITY_MEDIUM,
         "symptom": "detail run rejected the URL as a listing/category seed",
     },

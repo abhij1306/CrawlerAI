@@ -27,75 +27,82 @@ from app.services.acquisition.runtime import is_blocked_html
 from app.services.acquisition_plan import AcquisitionPlan
 from app.services.platform_policy import detect_platform_family
 
-from harness.support import infer_surface
+from harness.support import require_explicit_surface
 
-BATCHES: dict[str, list[tuple[str, str]]] = {
+BATCHES: dict[str, list[tuple[str, str, str]]] = {
     "api": [
-        ("Allbirds products.json", "https://www.allbirds.com/products.json"),
+        ("Allbirds products.json", "https://www.allbirds.com/products.json", "ecommerce_listing"),
         (
             "OpenFoodFacts sodas.json",
             "https://world.openfoodfacts.org/category/sodas.json",
+            "ecommerce_listing",
         ),
-        ("Remotive API", "https://remotive.com/api/remote-jobs"),
-        ("RemoteOK API", "https://remoteok.com/api"),
+        ("Remotive API", "https://remotive.com/api/remote-jobs", "job_listing"),
+        ("RemoteOK API", "https://remoteok.com/api", "job_listing"),
     ],
     "commerce": [
-        ("Allbirds PDP", "https://www.allbirds.com/products/mens-wool-runners"),
-        ("Allbirds listing", "https://www.allbirds.com/collections/mens"),
-        ("Gymshark listing", "https://www.gymshark.com/collections/all-products"),
-        ("Puma mens listing", "https://us.puma.com/us/en/men/shop-all-mens"),
-        ("Converse mens listing", "https://www.converse.com/shop/mens-shoes"),
-        ("UnderArmour mens listing", "https://www.underarmour.com/en-us/c/mens/"),
+        ("Allbirds PDP", "https://www.allbirds.com/products/mens-wool-runners", "ecommerce_detail"),
+        ("Allbirds listing", "https://www.allbirds.com/collections/mens", "ecommerce_listing"),
+        ("Gymshark listing", "https://www.gymshark.com/collections/all-products", "ecommerce_listing"),
+        ("Puma mens listing", "https://us.puma.com/us/en/men/shop-all-mens", "ecommerce_listing"),
+        ("Converse mens listing", "https://www.converse.com/shop/mens-shoes", "ecommerce_listing"),
+        ("UnderArmour mens listing", "https://www.underarmour.com/en-us/c/mens/", "ecommerce_listing"),
     ],
     "jobs": [
-        ("Greenhouse board", "https://boards.greenhouse.io/embed/job_board?for=stripe"),
-        ("Lever board", "https://jobs.lever.co/reddit"),
-        ("Remotive jobs page", "https://remotive.com/remote-jobs"),
-        ("RemoteOK jobs page", "https://remoteok.com/remote-dev-jobs"),
-        ("Himalayas detail", "https://himalayas.app/jobs/product-designer/runway"),
+        ("Greenhouse board", "https://boards.greenhouse.io/embed/job_board?for=stripe", "job_listing"),
+        ("Lever board", "https://jobs.lever.co/reddit", "job_listing"),
+        ("Remotive jobs page", "https://remotive.com/remote-jobs", "job_listing"),
+        ("RemoteOK jobs page", "https://remoteok.com/remote-dev-jobs", "job_listing"),
+        ("Himalayas detail", "https://himalayas.app/jobs/product-designer/runway", "job_detail"),
     ],
     "hard": [
         (
             "Footlocker mens shoes",
             "https://www.footlocker.com/category/mens/shoes.html",
+            "ecommerce_listing",
         ),
         (
             "John Lewis electricals",
             "https://www.johnlewis.com/browse/electricals/c6000014",
+            "ecommerce_listing",
         ),
-        ("Nike mens shoes", "https://www.nike.com/w/mens-shoes-nik1zy7ok"),
-        ("Dyson air treatment", "https://www.dyson.in/air-treatment"),
+        ("Nike mens shoes", "https://www.nike.com/w/mens-shoes-nik1zy7ok", "ecommerce_listing"),
+        ("Dyson air treatment", "https://www.dyson.in/air-treatment", "ecommerce_listing"),
     ],
     "ats": [
         (
             "Greenhouse Doordash",
             "https://boards.greenhouse.io/embed/job_board?for=doordash",
+            "job_listing",
         ),
         (
             "Greenhouse Notion",
             "https://boards.greenhouse.io/embed/job_board?for=notion",
+            "job_listing",
         ),
-        ("Lever Figma", "https://jobs.lever.co/figma"),
-        ("Lever Linear", "https://jobs.lever.co/linear"),
+        ("Lever Figma", "https://jobs.lever.co/figma", "job_listing"),
+        ("Lever Linear", "https://jobs.lever.co/linear", "job_listing"),
     ],
     "specialist": [
-        ("Adafruit PDP", "https://www.adafruit.com/product/5700"),
-        ("SparkFun PDP", "https://www.sparkfun.com/products/19030"),
+        ("Adafruit PDP", "https://www.adafruit.com/product/5700", "ecommerce_detail"),
+        ("SparkFun PDP", "https://www.sparkfun.com/products/19030", "ecommerce_detail"),
         (
             "McMaster listing",
             "https://www.mcmaster.com/pipe-fittings/high-pressure-stainless-steel-threaded-pipe-fittings/",
+            "ecommerce_listing",
         ),
         (
             "B&H Sony PDP",
             "https://www.bhphotovideo.com/c/product/1730114-REG/sony_ilce_7rm5_b_alpha_a7r_v_mirrorless.html",
+            "ecommerce_detail",
         ),
     ],
 }
 
 
-async def _run_one(run_id: int, name: str, url: str, timeout_seconds: int) -> dict:
+async def _run_one(run_id: int, name: str, url: str, surface: str, timeout_seconds: int) -> dict:
     started = time.perf_counter()
-    surface = infer_surface(url)
+    surface = require_explicit_surface(surface)
     try:
         result = await asyncio.wait_for(
             acquire(
@@ -147,9 +154,9 @@ async def _run_batch(
     batch_name: str, timeout_seconds: int, *, start_run_id: int
 ) -> list[dict]:
     results: list[dict] = []
-    for offset, (name, url) in enumerate(BATCHES[batch_name], start=1):
+    for offset, (name, url, surface) in enumerate(BATCHES[batch_name], start=1):
         results.append(
-            await _run_one(start_run_id + offset - 1, name, url, timeout_seconds)
+            await _run_one(start_run_id + offset - 1, name, url, surface, timeout_seconds)
         )
     return results
 

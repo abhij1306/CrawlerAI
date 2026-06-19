@@ -14,87 +14,25 @@ from harness_support import (
     build_explicit_sites,
     classify_failure_mode,
     evaluate_quality,
-    infer_surface,
     load_site_set,
     parse_test_sites_markdown,
+    require_explicit_surface,
 )
 
 
 @pytest.mark.regression
-def test_infer_surface_prefers_explicit_surface() -> None:
-    assert infer_surface("https://example.com/collections", explicit_surface="job_listing") == "job_listing"
+def test_require_explicit_surface_rejects_missing_surface() -> None:
+    assert require_explicit_surface("job_listing") == "job_listing"
+    with pytest.raises(ValueError, match="surface is required"):
+        require_explicit_surface()
 
 
 @pytest.mark.regression
-def test_infer_surface_classifies_job_and_commerce_urls() -> None:
-    assert infer_surface("https://example.com/careers") == "job_listing"
-    assert infer_surface("https://example.com/products/widget-1") == "ecommerce_detail"
-    assert (
-        infer_surface(
-            "https://secure7.saashr.com/ta/6208610.careers?ein_id=1&career_portal_id=2&ShowJob=587687242"
-        )
-        == "job_detail"
-    )
-
-
-@pytest.mark.regression
-def test_infer_surface_handles_acceptance_critical_hosts() -> None:
-    assert infer_surface("https://www.usajobs.gov/search/results/?k=software+engineer&p=1") == "job_listing"
-    assert infer_surface("https://www.indeed.com/search?q=data+engineer") == "job_listing"
-    assert infer_surface("https://startup.jobs/") == "job_listing"
-    assert (
-        infer_surface(
-            "https://www.autozone.com/motor-oil-and-transmission-fluid/motor-oil/mobil-1/mobil-1-extended-performance-full-synthetic-motor-oil-5w-30-5-quart/881036_0_0"
-        )
-        == "ecommerce_detail"
-    )
-    assert (
-        infer_surface(
-            "https://books.toscrape.com/catalogue/a-light-in-the-attic_1000/index.html"
-        )
-        == "ecommerce_detail"
-    )
-    assert (
-        infer_surface("https://www.vitacost.com/vitacost-vitamin-d3-mini-gels")
-        == "ecommerce_detail"
-    )
-    assert (
-        infer_surface("https://www.rockler.com/rockler-table-saw-crosscut-sled")
-        == "ecommerce_detail"
-    )
-    for url in (
-        "https://www.nordstrom.com/s/nike-air-force-1-07-basketball-sneaker-men/7507996",
-        "https://www.nike.com/t/air-force-1-07-mens-shoes-jBrhbr/CW2288-111",
-        "https://www.apple.com/shop/buy-iphone/iphone-16",
-        "https://www.calvinklein.us/en/men/accessories/bags/structured-commuter-bag/198629014314.html",
-        "https://usa.tommy.com/en/women/shoes-accessories/shoes/script-monogram-espadrille-sandal/TZ001658-420.html?journey=women-shoesandacc-shoes-sandalsandslides",
-        "https://www.jcrew.com/in/m/womens/categories/clothing/pants/wide-leg/ME988?display=standard&fit=Classic&colorProductCode=CI939&colorCode=BR8825",
-        "https://www.freepeople.com/shop/win-win-sports-bra/?color=272",
-        "https://www.mytheresa.com/int/en/women/valentino-garavani-loco-small-floral-linen-top-handle-bag-beige-p01155657",
-        "https://www.bluenile.com/engagement-rings/design-your-own-ring/classic-four-prong-solitaire-engagement-ring-in-platinum-item-194156",
-        "https://arcteryx.com/ca/en/shop/mens/norvan-ld-4-gtx-shoe-0397",
-    ):
-        assert infer_surface(url) == "ecommerce_detail"
-
-
-@pytest.mark.regression
-def test_parse_test_sites_markdown_reads_urls_from_tail(tmp_path: Path) -> None:
+def test_parse_test_sites_markdown_rejects_untyped_tail_urls(tmp_path: Path) -> None:
     path = tmp_path / "TEST_SITES.md"
     path.write_text("ignore\nhttps://example.com/careers\nnot a url\nhttps://shop.example.com/collections\n", encoding="utf-8")
-    rows = parse_test_sites_markdown(path, start_line=2)
-
-    assert rows == [
-        {
-            "name": "https://example.com/careers",
-            "url": "https://example.com/careers",
-            "surface": "job_listing",
-        },
-        {
-            "name": "https://shop.example.com/collections",
-            "url": "https://shop.example.com/collections",
-            "surface": "ecommerce_listing",
-        },
-    ]
+    with pytest.raises(ValueError, match="surface is required"):
+        parse_test_sites_markdown(path, start_line=2)
 
 
 @pytest.mark.regression
@@ -269,7 +207,6 @@ def test_classify_failure_mode_flags_missing_adapter_registration() -> None:
         "platform_family": "ultipro_ukg",
         "surface": "job_listing",
         "adapter_name": None,
-        "adapter_records": 0,
         "records": 0,
     }
 
@@ -291,7 +228,6 @@ def test_classify_failure_mode_treats_browser_challenge_diagnostics_as_blocked()
         },
         "surface": "ecommerce_listing",
         "records": 0,
-        "adapter_records": 0,
     }
 
     assert classify_failure_mode(result) == "blocked"

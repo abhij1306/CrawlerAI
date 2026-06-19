@@ -84,7 +84,6 @@ class AcquisitionResult:
     platform_family: str | None = None
     json_data: dict[str, object] | list[object] | None = None
     headers: dict[str, str] = field(default_factory=dict)
-    adapter_records: list[dict[str, object]] = field(default_factory=list)
     adapter_name: str | None = None
     adapter_source_type: str | None = None
     network_payloads: list[dict[str, object]] = field(default_factory=list)

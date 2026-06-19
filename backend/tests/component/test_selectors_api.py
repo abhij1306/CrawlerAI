@@ -148,7 +148,7 @@ async def test_selectors_api_lists_all_domain_records_when_surface_is_omitted(
         "/api/selectors",
         json={
             "domain": "example.com",
-            "surface": "generic",
+            "surface": "job_detail",
             "field_name": "title",
             "css_selector": "h1",
         },
@@ -168,7 +168,7 @@ async def test_selectors_api_lists_all_domain_records_when_surface_is_omitted(
         for row in list_response.json()
     } == {
         ("ecommerce_detail", "price"),
-        ("generic", "title"),
+        ("job_detail", "title"),
     }
 
 
@@ -199,7 +199,7 @@ async def test_selectors_api_summary_returns_per_surface_counts(
         "/api/selectors",
         json={
             "domain": "example.com",
-            "surface": "generic",
+            "surface": "job_detail",
             "field_name": "brand",
             "css_selector": ".brand",
         },
@@ -211,18 +211,18 @@ async def test_selectors_api_summary_returns_per_surface_counts(
     summary_response = await selector_api_client.get("/api/selectors/summary")
     filtered_response = await selector_api_client.get(
         "/api/selectors/summary",
-        params={"domain": "example.com", "surface": "generic", "limit": 1, "offset": 0},
+        params={"domain": "example.com", "surface": "job_detail", "limit": 1, "offset": 0},
     )
 
     assert summary_response.status_code == 200
     assert filtered_response.status_code == 200
-    assert filtered_response.json()[0]["surface"] == "generic"
+    assert filtered_response.json()[0]["surface"] == "job_detail"
     assert {
         (row["domain"], row["surface"], row["selector_count"])
         for row in summary_response.json()
     } == {
         ("example.com", "ecommerce_detail", 2),
-        ("example.com", "generic", 1),
+        ("example.com", "job_detail", 1),
     }
 
 

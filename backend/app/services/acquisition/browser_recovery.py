@@ -10,9 +10,9 @@ from typing import Any, Callable
 from app.services.config.runtime_settings import crawler_runtime_settings
 from app.services.config.selectors import (
     ANCHOR_SELECTOR,
+    CARD_SELECTORS,
     LISTING_CAPTURE_STRUCTURAL_ANCESTOR_SELECTORS,
 )
-from app.services.extract.listing_card_fragments import listing_capture_selectors
 
 logger = logging.getLogger(__name__)
 
@@ -523,7 +523,7 @@ async def capture_rendered_listing_fragments(
             {
                 "limit": int(limit),
                 "anchorSelector": ANCHOR_SELECTOR,
-                "selectors": listing_capture_selectors(str(surface or "")),
+                "selectors": _listing_capture_selectors(str(surface or "")),
                 "structuralAncestorSelectors": list(
                     LISTING_CAPTURE_STRUCTURAL_ANCESTOR_SELECTORS
                 ),
@@ -536,3 +536,9 @@ async def capture_rendered_listing_fragments(
     return [
         str(item).strip() for item in snapshot[: int(limit)] if str(item or "").strip()
     ]
+
+
+def _listing_capture_selectors(surface: str) -> list[str]:
+    group = "jobs" if str(surface or "").strip().lower().startswith("job_") else "ecommerce"
+    selectors = CARD_SELECTORS.get(group, []) if isinstance(CARD_SELECTORS, dict) else []
+    return [str(selector).strip() for selector in selectors if str(selector).strip()]
