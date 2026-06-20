@@ -16,15 +16,15 @@ These rules override any plan doc, any inline comment, and any agent reasoning a
 ## 1. Config and Constants — Zero Tolerance
 
 **Rule:** Every string token, timeout value, threshold, field name, URL pattern, and numeric constant
-that controls runtime behavior lives in `app/services/config/`. Nowhere else.
+that controls runtime behavior lives in `app/core/config/`. Nowhere else.
 
 **VIOLATION signatures — if your code matches any of these, it is wrong:**
-- A `.py` file outside `app/services/config/` contains a string like `"shopify"`, `"greenhouse"`, `"DataDome"`, a URL pattern, a timeout integer, or a field name as a bare constant
+- A `.py` file outside `app/core/config/` contains a string like `"shopify"`, `"greenhouse"`, `"DataDome"`, a URL pattern, a timeout integer, or a field name as a bare constant
 - A new `constants.py`, `config.py`, or `settings.py` file is created inside any bucket folder
 - The same threshold or token appears in two different files
 - A dict or constant inside a service module silently overrides what `app/core/config.py` controls via env
 
-**Fix:** Move the constant to the appropriate file in `app/services/config/` and import it. If no appropriate file exists, extend the nearest one. Do not create a new config file without confirming no existing config file can absorb it.
+**Fix:** Move the constant to the appropriate file in `app/core/config/` and import it. If no appropriate file exists, extend the nearest one. Do not create a new config file without confirming no existing config file can absorb it.
 
 ---
 
@@ -79,7 +79,7 @@ For ecommerce detail, missing high-value fields such as `price`, `title`, and `i
 
 Ecommerce detail candidate admission must reject semantic artifacts before ranking. BreadcrumbList JSON-LD is not a detail category source. DOM breadcrumbs may provide category only after UI/root labels and product-title suffixes are removed. Price repair may correct 100x cent/magnitude drift only when visible DOM, same-product variant evidence, or an explicit host/currency conflict corroborates the smaller value; host name alone must not divide integral prices by 100. Installment/payment-plan prices, promo variant values, hex-only color values, system SKUs, structural IDs, placeholder product types, raw list-string text, related-product variants, and whole-value non-product guide/glossary text must not win as canonical fields.
 
-Public ecommerce detail output has a flat variant contract. Persisted/exported `variants` rows may contain only public transport fields (`sku`, `price`, `currency`, `url`, `image_url`, `availability`, `stock_quantity`) plus configured public variant axes from `app/services/config/field_mappings.py` (`PUBLIC_VARIANT_AXIS_FIELDS`), plus top-level `variant_count`. Public output must not expose `selected_variant`, `variant_axes`, `available_sizes`, `option_*`, variant `title`, nested `option_values`, or variant-only identity helpers. If legacy rows are still present internally, the public boundary must flatten and strip them before persistence/export.
+Public ecommerce detail output has a flat variant contract. Persisted/exported `variants` rows may contain only public transport fields (`sku`, `price`, `currency`, `url`, `image_url`, `availability`, `stock_quantity`) plus configured public variant axes from `app/core/config/field_mappings.py` (`PUBLIC_VARIANT_AXIS_FIELDS`), plus top-level `variant_count`. Public output must not expose `selected_variant`, `variant_axes`, `available_sizes`, `option_*`, variant `title`, nested `option_values`, or variant-only identity helpers. If legacy rows are still present internally, the public boundary must flatten and strip them before persistence/export.
 
 Complete variant offers are semantic data, not transport duplication. Public-contract shaping must not delete inherited `price`, `currency`, or `availability` after the resolver makes them explicit. Product/variant consensus and offer inheritance belong to `extract/detail/resolution.py`; findings belong to `extract/detail/validation.py`.
 
@@ -265,7 +265,7 @@ Detail extraction must also reject collection/category URLs that expose product-
 - Browser-to-HTTP handoff may only reuse sanitized engine-scoped session state on the same proxy identity. If proxy affinity cannot be proven, skip handoff and stay browser-first.
 - Host browser-first memory is for repeated hard blocks, not one noisy challenge hit.
 - When launching real-Chrome for detail fetches and no reusable engine-scoped `real_chrome` domain state exists, acquisition may warm the site origin before direct PDP navigation; once reusable `real_chrome` domain state exists, later fetches skip warmup.
-- Real Chrome is not challenge-exempt. If warmup or the direct PDP nav lands on a challenge shell, acquisition must still run the bounded challenge wait/activity/retry loop (defined in `app/services/config/acquisition_policy.py`) before declaring the page blocked.
+- Real Chrome is not challenge-exempt. If warmup or the direct PDP nav lands on a challenge shell, acquisition must still run the bounded challenge wait/activity/retry loop (defined in `app/core/config/acquisition_policy.py`) before declaring the page blocked.
 - Learned acquisition contracts live in editable `DomainRunProfile` memory scoped by normalized `(domain, surface)`. They own durable engine choice and handoff eligibility; explicit run settings always override them.
 - Future crawls must reuse the successful acquisition/data-extraction path and learned selectors for the domain/surface without fresh experimentation unless the user explicitly changes settings, enables experimentation, resets learned memory, or the contract becomes stale.
 - Only contracts with `handoff_eligible=true` may trigger curl handoff. Browser success alone is not enough; rendered extraction (DOM-tier fields used), traversal (link discovery from rendered page), or network-payload dependence (intercepted XHR/fetch bodies) must disable handoff.
@@ -276,7 +276,7 @@ Detail extraction must also reject collection/category URLs that expose product-
 - **Handoff timeout is capped at `browser_http_handoff_timeout_seconds` (default 3s), not the full HTTP timeout.**
   Handoff is speculative — it tries to skip the browser entirely using stored cookies. If the WAF hangs or slow-rejects, the full `http_timeout_seconds` (10s) would burn before the browser even starts launching. On WAF-heavy sites this caused 20–26s total acquisition delay (handoff timeout + cold browser launch). The dedicated short timeout ensures handoff either succeeds fast or fails fast, keeping browser-first paths responsive.
 - Host protection memory is short-TTL block/backoff memory only. It may bias browser-first safety, but it must not become the durable owner of engine preference or handoff eligibility.
-- After the configured acquisition-contract stale threshold (defined in `app/services/config/domain_memory.py` as `CONTRACT_STALE_FAILURE_COUNT`) of consecutive non-blocked zero-data failures, the contract is marked stale. Stale contracts must not keep forcing browser engine or curl handoff choices.
+- After the configured acquisition-contract stale threshold (defined in `app/core/config/domain_memory.py` as `CONTRACT_STALE_FAILURE_COUNT`) of consecutive non-blocked zero-data failures, the contract is marked stale. Stale contracts must not keep forcing browser engine or curl handoff choices.
 
 **Why this is here:**
 Static cleanup advice to persist/reuse more browser state caused a real regression on 2026-04-23. The crawler started replaying PerimeterX challenge state (`_px*`, `pxcts`, PX localStorage) across runs, which poisoned acquisition on multiple sites. Any future "simplification" of cookie memory must preserve this guard and its regression tests.

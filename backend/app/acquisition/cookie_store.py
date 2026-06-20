@@ -26,6 +26,7 @@ from app.core.config.cookie_settings import (
 )
 from app.core.domain_utils import normalize_domain
 from app.core.shared.field_coerce import object_list as _object_list
+from app.core.shared.coerce_primitives import positive_int
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -59,19 +60,9 @@ _CHALLENGE_COOKIE_NAME_EXACT = {
     for value in _STORAGE_STATE_SIGNATURES.get("cookie_name_exact", [])
     if str(value or "").strip()
 }
-_CHALLENGE_LOCAL_STORAGE_NAME_TOKENS = tuple(
-    str(value or "").strip().lower()
-    for value in _STORAGE_STATE_SIGNATURES.get("local_storage_name_tokens", [])
-    if str(value or "").strip()
-)
 _CHALLENGE_COOKIE_VALUE_TOKENS = tuple(
     str(value or "").strip().lower()
     for value in _STORAGE_STATE_SIGNATURES.get("cookie_value_tokens", [])
-    if str(value or "").strip()
-)
-_CHALLENGE_LOCAL_STORAGE_VALUE_TOKENS = tuple(
-    str(value or "").strip().lower()
-    for value in _STORAGE_STATE_SIGNATURES.get("local_storage_value_tokens", [])
     if str(value or "").strip()
 )
 
@@ -86,7 +77,7 @@ async def load_storage_state_for_run(
     *,
     browser_engine: str | None = None,
 ) -> dict[str, object] | None:
-    normalized_run_id = _normalized_run_id(run_id)
+    normalized_run_id = positive_int(run_id)
     if normalized_run_id is None:
         return None
     validate_cookie_policy_config()
@@ -187,7 +178,7 @@ async def persist_storage_state_for_run(
     *,
     browser_engine: str | None = None,
 ) -> None:
-    normalized_run_id = _normalized_run_id(run_id)
+    normalized_run_id = positive_int(run_id)
     if normalized_run_id is None or not isinstance(storage_state, Mapping):
         return
     validate_cookie_policy_config()
@@ -317,21 +308,16 @@ async def list_domain_cookie_memory(
                 "id": row.id,
                 "domain": _domain_from_storage_key(row.domain),
                 "browser_engine": _storage_row_browser_engine(row),
-                "cookie_count": _storage_state_cookie_count(row.storage_state),
-                "origin_count": _storage_state_origin_count(row.storage_state),
+                "cookie_count": _storage_state_entry_count(
+                    row.storage_state.get("cookies") if isinstance(row.storage_state, Mapping) else None
+                ),
+                "origin_count": _storage_state_entry_count(
+                    row.storage_state.get("origins") if isinstance(row.storage_state, Mapping) else None
+                ),
                 "updated_at": row.updated_at,
             }
         )
     return payload
-
-
-def _normalized_run_id(run_id: int | None) -> int | None:
-    if run_id is None:
-        return None
-    try:
-        return int(run_id)
-    except (TypeError, ValueError):
-        return None
 
 
 def _storage_state_fingerprint(
@@ -479,18 +465,6 @@ def _normalize_storage_state(storage_state: Mapping[str, object]) -> dict[str, o
     }
 
 
-def _storage_state_cookie_count(storage_state: object) -> int:
-    if not isinstance(storage_state, Mapping):
-        return 0
-    return _storage_state_entry_count(storage_state.get("cookies"))
-
-
-def _storage_state_origin_count(storage_state: object) -> int:
-    if not isinstance(storage_state, Mapping):
-        return 0
-    return _storage_state_entry_count(storage_state.get("origins"))
-
-
 def _storage_state_entry_count(value: object) -> int:
     if isinstance(value, Collection) and not isinstance(
         value,
@@ -610,46 +584,6 @@ def _storage_row_browser_engine(row: DomainCookieMemory) -> str:
     )
 
 
-def _normalize_origins(value: object) -> list[dict[str, object]]:
-    origins: list[dict[str, object]] = []
-    rows = (
-        list(value)
-        if isinstance(value, Iterable) and not isinstance(value, (str, bytes, bytearray, Mapping))
-        else _object_list(value)
-    )
-    for item in rows:
-        if not isinstance(item, Mapping):
-            continue
-        origin = str(_sanitize_storage_state_scalar(item.get("origin")) or "").strip()
-        if not origin:
-            continue
-        local_storage_rows: list[dict[str, str]] = []
-        raw_entries = item.get("localStorage")
-        entries = (
-            list(raw_entries)
-            if isinstance(raw_entries, Iterable)
-            and not isinstance(raw_entries, (str, bytes, bytearray, Mapping))
-            else _object_list(raw_entries)
-        )
-        for entry in entries:
-            if not isinstance(entry, Mapping):
-                continue
-            name = str(_sanitize_storage_state_scalar(entry.get("name")) or "").strip()
-            if not name:
-                continue
-            # Do not replay anti-bot localStorage across future runs.
-            if _local_storage_entry_is_challenge_state(entry):
-                continue
-            local_storage_rows.append(
-                {
-                    "name": name,
-                    "value": str(_sanitize_storage_state_scalar(entry.get("value")) or ""),
-                }
-            )
-        origins.append({"origin": origin, "localStorage": local_storage_rows})
-    return origins
-
-
 def _sanitize_storage_state_scalar(value: object) -> object:
     if isinstance(value, str):
         return value.replace("\x00", "")
@@ -672,22 +606,6 @@ def _cookie_is_challenge_state(cookie: Mapping[str, object]) -> bool:
     if not value:
         return False
     return any(token in value for token in _CHALLENGE_COOKIE_VALUE_TOKENS)
-
-
-def _local_storage_name_is_challenge_state(value: object) -> bool:
-    lowered = str(value or "").strip().lower()
-    if not lowered:
-        return False
-    return any(token in lowered for token in _CHALLENGE_LOCAL_STORAGE_NAME_TOKENS)
-
-
-def _local_storage_entry_is_challenge_state(entry: Mapping[str, object]) -> bool:
-    if _local_storage_name_is_challenge_state(entry.get("name")):
-        return True
-    value = str(entry.get("value") or "").strip().lower()
-    if not value:
-        return False
-    return any(token in value for token in _CHALLENGE_LOCAL_STORAGE_VALUE_TOKENS)
 
 
 def _clone_storage_state(
@@ -721,8 +639,7 @@ def _http_cookie_pairs_for_url(
     url: str | None,
     storage_state: Mapping[str, object],
 ) -> list[tuple[str, str]]:
-    host = _cookie_target_host(url)
-    path = _cookie_target_path(url)
+    host, path = _cookie_target(url)
     candidates: list[tuple[int, int, str, str]] = []
     for cookie in _object_list(storage_state.get("cookies")):
         if not isinstance(cookie, Mapping):
@@ -755,20 +672,15 @@ def _http_cookie_pairs_for_url(
     ]
 
 
-def _cookie_target_host(url: str | None) -> str:
+def _cookie_target(url: str | None) -> tuple[str, str]:
     normalized = str(url or "").strip()
     if not normalized:
-        return ""
+        return "", "/"
     parsed = urlparse(normalized if "://" in normalized else f"//{normalized}")
-    return str(parsed.hostname or "").strip().lower()
-
-
-def _cookie_target_path(url: str | None) -> str:
-    normalized = str(url or "").strip()
-    if not normalized:
-        return "/"
-    parsed = urlparse(normalized if "://" in normalized else f"//{normalized}")
-    return str(parsed.path or "/").strip() or "/"
+    return (
+        str(parsed.hostname or "").strip().lower(),
+        str(parsed.path or "/").strip() or "/",
+    )
 
 
 def _cookie_domain_matches(host: str, domain: str) -> bool:

@@ -10,7 +10,6 @@ from app.acquisition.runtime_plan import AcquisitionPlan
 from app.acquisition.policy import AcquisitionPolicy
 from app.acquisition.policy_middleware import PolicyMiddleware
 from app.acquisition.internal_api_replay import replay_internal_api_endpoints
-from app.connectors.adapters.registry import normalize_adapter_acquisition_url
 from app.core.config.domain_profiles import INTERNAL_API_ENDPOINTS_PROFILE_KEY
 from app.crawl.utils import normalize_target_url
 from app.acquisition.fetch.fetch_context import fetch_page
@@ -212,9 +211,7 @@ async def _emit_event(on_event: Any, level: str, message: str) -> None:
 
 async def acquire(request: AcquisitionRequest) -> AcquisitionResult:
     requested_url = normalize_target_url(request.url)
-    effective_url = (
-        await normalize_adapter_acquisition_url(requested_url) or requested_url
-    )
+    effective_url = requested_url
     runtime_policy = resolve_platform_runtime_policy(
         effective_url,
         surface=request.surface,
@@ -235,39 +232,71 @@ async def acquire(request: AcquisitionRequest) -> AcquisitionResult:
     profile_endpoints = request.acquisition_profile.get(
         INTERNAL_API_ENDPOINTS_PROFILE_KEY
     )
+    acquisition_result = await _acquire_from_internal_api_replay(
+        request,
+        effective_url=effective_url,
+        platform_family=runtime_policy.get("family"),
+        profile_endpoints=profile_endpoints,
+    )
+    if acquisition_result is not None:
+        await policy_middleware.after_fetch(acquisition_result)
+        return acquisition_result
+    acquisition_result = await _acquire_from_fetch_page(
+        request,
+        effective_url=effective_url,
+        acquisition_policy=acquisition_policy,
+        browser_reason=browser_reason,
+    )
+    await policy_middleware.after_fetch(acquisition_result)
+    return acquisition_result
+
+
+async def _acquire_from_internal_api_replay(
+    request: AcquisitionRequest,
+    *,
+    effective_url: str,
+    platform_family: object,
+    profile_endpoints: object,
+) -> AcquisitionResult | None:
     replay_payload = await replay_internal_api_endpoints(
         page_url=effective_url,
         surface=request.surface,
         endpoints=profile_endpoints if isinstance(profile_endpoints, list) else [],
         requested_fields=list(request.requested_fields),
     )
-    if replay_payload is not None:
-        replay_url = str(replay_payload.get("url") or effective_url)
-        raw_status = replay_payload.get("status")
-        status_code = int(raw_status) if isinstance(raw_status, (int, str)) else 200
-        acquisition_result = AcquisitionResult(
-            request=request,
-            final_url=effective_url,
-            html="",
-            method="api_replay",
-            status_code=status_code,
-            content_type=str(
-                replay_payload.get("content_type") or "application/json"
-            ),
-            blocked=False,
-            platform_family=runtime_policy.get("family"),
-            headers={},
-            network_payloads=[replay_payload],
-            browser_diagnostics={
-                "internal_api_replay": True,
-                "internal_api_replay_url": replay_url,
-                "network_payload_count": 1,
-                "extraction_source": "network_payload_first",
-            },
-            artifacts={},
-        )
-        await policy_middleware.after_fetch(acquisition_result)
-        return acquisition_result
+    if replay_payload is None:
+        return None
+    replay_url = str(replay_payload.get("url") or effective_url)
+    raw_status = replay_payload.get("status")
+    status_code = int(raw_status) if isinstance(raw_status, (int, str)) else 200
+    return AcquisitionResult(
+        request=request,
+        final_url=effective_url,
+        html="",
+        method="api_replay",
+        status_code=status_code,
+        content_type=str(replay_payload.get("content_type") or "application/json"),
+        blocked=False,
+        platform_family=str(platform_family) if platform_family else None,
+        headers={},
+        network_payloads=[replay_payload],
+        browser_diagnostics={
+            "internal_api_replay": True,
+            "internal_api_replay_url": replay_url,
+            "network_payload_count": 1,
+            "extraction_source": "network_payload_first",
+        },
+        artifacts={},
+    )
+
+
+async def _acquire_from_fetch_page(
+    request: AcquisitionRequest,
+    *,
+    effective_url: str,
+    acquisition_policy: AcquisitionPolicy,
+    browser_reason: str | None,
+) -> AcquisitionResult:
     result = await fetch_page(
         effective_url,
         run_id=request.run_id,
@@ -296,7 +325,7 @@ async def acquire(request: AcquisitionRequest) -> AcquisitionResult:
         forced_browser_engine=acquisition_policy.forced_browser_engine,
         on_event=request.on_event,
     )
-    acquisition_result = AcquisitionResult(
+    return AcquisitionResult(
         request=request,
         final_url=result.final_url,
         html=result.html,
@@ -310,8 +339,6 @@ async def acquire(request: AcquisitionRequest) -> AcquisitionResult:
         browser_diagnostics=dict(getattr(result, "browser_diagnostics", {}) or {}),
         artifacts=dict(getattr(result, "artifacts", {}) or {}),
     )
-    await policy_middleware.after_fetch(acquisition_result)
-    return acquisition_result
 
 
 def _merge_context_profiles(

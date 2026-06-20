@@ -446,7 +446,6 @@ class CrawlRunSettings:
         *,
         surface: str,
         max_records: int | None = None,
-        adapter_recovery_enabled: bool = False,
     ) -> AcquisitionPlan:
         normalized_surface = parse_surface(surface).value
         return AcquisitionPlan(
@@ -457,7 +456,6 @@ class CrawlRunSettings:
             max_scrolls=self.max_scrolls(),
             max_records=max_records if max_records is not None else self.max_records(),
             sleep_ms=self.sleep_ms(),
-            adapter_recovery_enabled=adapter_recovery_enabled,
         )
 
     def with_updates(self, **updates: Any) -> CrawlRunSettings:

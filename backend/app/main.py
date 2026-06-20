@@ -58,7 +58,8 @@ from app.core.telemetry import (
 )
 from app.acquisition.browser_runtime import shutdown_browser_runtime
 from app.acquisition.cookie_store import validate_cookie_policy_config
-from app.acquisition.lifecycle import close_shared_http_client
+from app.acquisition.http_client import close_shared_http_client as close_acquisition_http_client
+from app.acquisition.runtime import close_shared_http_client as close_runtime_http_client
 from app.core.auth_service import bootstrap_admin_user
 from app.core.config.auth_security import (
     API_ALLOWED_CORS_METHODS,
@@ -126,7 +127,8 @@ async def lifespan(_fastapi_app: FastAPI):
     finally:
         await shutdown_run_dispatchers()
         await shutdown_browser_runtime()
-        await close_shared_http_client()
+        await close_runtime_http_client()
+        await close_acquisition_http_client()
         await close_llm_provider_clients()
         await close_redis()
         await dispose_engine()

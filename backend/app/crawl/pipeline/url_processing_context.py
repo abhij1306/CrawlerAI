@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass, field
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -23,7 +24,6 @@ class URLProcessingContext:
     started_at_monotonic: float
     requested_fields: list[str] = field(default_factory=list)
     surface: str = ""
-    listing_integrity_retry_count: int = 0
     browser_escalation_count: int = 0
     trace: RunTrace | None = field(default=None)
 
@@ -147,4 +147,52 @@ def resolved_url_processing_config(
         ),
         update_run_state=update_run_state,
         persist_logs=persist_logs,
+    )
+
+
+def build_url_processing_context(
+    *,
+    session: AsyncSession,
+    run: CrawlRun,
+    url: str,
+    config: URLProcessingConfig | None,
+    url_timeout_seconds: float | None,
+    proxy_list: list[str] | None,
+    traversal_mode: str | None,
+    max_pages: int | None,
+    max_scrolls: int | None,
+    max_records: int | None,
+    sleep_ms: int | None,
+    update_run_state: bool,
+    persist_logs: bool,
+) -> URLProcessingContext:
+    settings_view = run.settings_view
+    resolved_timeout = (
+        float(url_timeout_seconds)
+        if url_timeout_seconds is not None
+        else settings_view.url_timeout_seconds()
+        if settings_view.get("url_timeout_seconds") not in (None, "")
+        else crawler_runtime_settings.default_url_process_timeout_seconds()
+    )
+    resolved_config = resolved_url_processing_config(
+        config,
+        surface=run.surface,
+        proxy_list=proxy_list if proxy_list is not None else settings_view.proxy_list(),
+        traversal_mode=traversal_mode if traversal_mode is not None else settings_view.traversal_mode(),
+        max_pages=max_pages if max_pages is not None else settings_view.max_pages(),
+        max_scrolls=max_scrolls if max_scrolls is not None else settings_view.max_scrolls(),
+        max_records=max_records if max_records is not None else settings_view.max_records(),
+        sleep_ms=sleep_ms if sleep_ms is not None else settings_view.sleep_ms(),
+        update_run_state=update_run_state,
+        persist_logs=persist_logs,
+    )
+    return URLProcessingContext(
+        session=session,
+        run=run,
+        url=url,
+        config=resolved_config,
+        url_timeout_seconds=float(resolved_timeout),
+        started_at_monotonic=time.monotonic(),
+        requested_fields=list(run.requested_fields or []),
+        surface=run.surface,
     )

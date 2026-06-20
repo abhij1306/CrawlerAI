@@ -1,16 +1,10 @@
 from __future__ import annotations
 
 import asyncio
-import inspect
-import json
 
 from app.acquisition.acquirer import AcquisitionResult
-from app.acquisition.runtime_plan import AcquisitionPlan
 from app.core.logfire_integration import logfire_span, set_logfire_attributes
-from app.connectors.adapters.base import AdapterResult
-from app.connectors.adapters.registry import run_adapter, try_blocked_adapter_recovery
 from app.crawl.profile import record_acquisition_contract_outcome
-from app.core.config.runtime_settings import crawler_runtime_settings
 from app.core.db_utils import mapping_or_empty
 from app.crawl.domain_memory_service import (
     compose_runtime_selector_rules,
@@ -37,7 +31,6 @@ from .url_processing_context import (
 )
 
 __all__ = (
-    "best_adapter_result",
     "extract_records_for_acquisition",
     "update_acquisition_contract_memory",
 )
@@ -48,7 +41,6 @@ async def _extract_records_for_acquisition(
     fetched: _FetchedURLStage,
 ) -> tuple[ExtractionResult, list[dict[str, object]]]:
     acquisition_result = fetched.acquisition_result
-    await _populate_adapter_artifacts(context, acquisition_result)
     _assign_platform_family(acquisition_result)
 
     fetched.url_metrics = build_url_metrics(
@@ -74,190 +66,6 @@ async def _extract_records_for_acquisition(
         if fallback_result is not None and fallback_result.records:
             result = fallback_result
     return result, selector_rules
-
-
-async def _populate_adapter_artifacts(
-    context: _URLProcessingContext,
-    acquisition_result: AcquisitionResult,
-) -> None:
-    acquisition_result.adapter_name = None
-    acquisition_result.adapter_source_type = None
-
-    adapter_results: list[AdapterResult] = []
-    adapter_proxy = next(
-        (
-            str(proxy).strip()
-            for proxy in context.config.proxy_list or []
-            if str(proxy).strip()
-        ),
-        None,
-    )
-    with logfire_span(
-        "extract.tier.adapter",
-        run_id=context.run.id,
-        domain=normalize_domain(acquisition_result.final_url),
-        surface=context.surface,
-        proxy_configured=bool(adapter_proxy),
-    ) as span:
-        for html in [
-            str(acquisition_result.html or ""),
-            *_adapter_browser_artifact_htmls(acquisition_result),
-            *_adapter_network_payload_inputs(acquisition_result),
-        ]:
-            from app.crawl.pipeline import extraction_loop
-
-            adapter_runner = getattr(extraction_loop, "run_adapter", run_adapter)
-            adapter_kwargs = (
-                {"proxy": adapter_proxy}
-                if adapter_proxy
-                and "proxy" in inspect.signature(adapter_runner).parameters
-                else {}
-            )
-            adapter_result = await adapter_runner(
-                acquisition_result.final_url,
-                html,
-                context.surface,
-                **adapter_kwargs,
-            )
-            if adapter_result is not None and list(adapter_result.artifacts or []):
-                adapter_results.append(adapter_result)
-                break
-        set_logfire_attributes(
-            span,
-            adapter_result_count=len(adapter_results),
-            adapter_names=[
-                str(result.adapter_name or "")
-                for result in adapter_results
-                if str(result.adapter_name or "").strip()
-            ],
-            record_count=sum(
-                len(list(result.artifacts or [])) for result in adapter_results
-            ),
-        )
-    adapter_result = _best_adapter_result(adapter_results)
-    if (
-        adapter_result is None or not list(adapter_result.artifacts or [])
-    ) and _effective_blocked(acquisition_result):
-        adapter_result = await try_blocked_adapter_recovery(
-            acquisition_result.final_url,
-            AcquisitionPlan(
-                surface=context.surface,
-                proxy_list=tuple(context.config.proxy_list or []),
-                traversal_mode=context.config.traversal_mode,
-                max_pages=context.config.max_pages,
-                max_scrolls=context.config.max_scrolls,
-                max_records=context.config.max_records,
-                sleep_ms=context.config.sleep_ms,
-                adapter_recovery_enabled=True,
-            ),
-            proxy_list=list(context.config.proxy_list or []),
-        )
-    if adapter_result is not None and list(adapter_result.artifacts or []):
-        artifacts = mapping_or_empty(getattr(acquisition_result, "artifacts", {}))
-        artifacts["adapter_artifacts"] = list(adapter_result.artifacts or [])
-        acquisition_result.artifacts = artifacts
-        acquisition_result.adapter_name = adapter_result.adapter_name or None
-        acquisition_result.adapter_source_type = adapter_result.source_type or None
-
-
-def _best_adapter_result(adapter_results: list[AdapterResult]) -> AdapterResult | None:
-    if not adapter_results:
-        return None
-    best = max(
-        adapter_results,
-        key=lambda result: _adapter_result_score(
-            list(getattr(result, "artifacts", []) or [])
-        ),
-    )
-    return AdapterResult(
-        artifacts=list(best.artifacts or []),
-        source_type=best.source_type,
-        adapter_name=best.adapter_name,
-    )
-
-
-def _adapter_result_score(records: list[object]) -> tuple[int, int]:
-    populated = 0
-    for record in records:
-        if not isinstance(record, dict):
-            continue
-        populated += sum(
-            value not in (None, "", [], {})
-            for key, value in record.items()
-            if not str(key).startswith("_")
-        )
-    return len(records), populated
-
-
-def _adapter_browser_artifact_htmls(
-    acquisition_result: AcquisitionResult,
-) -> list[str]:
-    artifacts = mapping_or_empty(getattr(acquisition_result, "artifacts", {}))
-    seen = {str(getattr(acquisition_result, "html", "") or "").strip()}
-    htmls: list[str] = []
-    for value in (
-        artifacts.get("full_rendered_html"),
-        _rendered_listing_fragments_html(artifacts.get("rendered_listing_fragments")),
-    ):
-        html = str(value or "").strip()
-        if not html or html in seen:
-            continue
-        seen.add(html)
-        htmls.append(html)
-    return htmls
-
-
-def _adapter_network_payload_inputs(
-    acquisition_result: AcquisitionResult,
-) -> list[str]:
-    inputs: list[str] = []
-    seen: set[str] = set()
-    identity_tokens = _adapter_payload_identity_tokens(acquisition_result.final_url)
-    for payload in list(getattr(acquisition_result, "network_payloads", []) or []):
-        if not isinstance(payload, dict):
-            continue
-        body = payload.get("body")
-        if body in (None, "", [], {}):
-            continue
-        try:
-            serialized = json.dumps(body, ensure_ascii=True, separators=(",", ":"))
-        except (TypeError, ValueError):
-            continue
-        serialized_key = serialized.casefold()
-        if identity_tokens and not any(
-            token in serialized_key for token in identity_tokens
-        ):
-            continue
-        if not serialized or serialized in seen:
-            continue
-        seen.add(serialized)
-        inputs.append(serialized)
-    return inputs
-
-
-def _adapter_payload_identity_tokens(page_url: str) -> set[str]:
-    from app.core.records.url_identity import detail_identity_codes_from_url
-
-    min_length = max(
-        0, int(crawler_runtime_settings.adapter_payload_identity_min_token_length)
-    )
-    return {
-        str(token).casefold()
-        for token in detail_identity_codes_from_url(page_url)
-        if len(str(token or "").strip()) >= min_length
-    }
-
-
-def _rendered_listing_fragments_html(value: object) -> str:
-    if not isinstance(value, list):
-        return ""
-    fragments = [
-        fragment for fragment in (str(item or "").strip() for item in value) if fragment
-    ]
-    if not fragments:
-        return ""
-    joined = "\n".join(fragments)
-    return f"<html><body>{joined}</body></html>"
 
 
 def _assign_platform_family(acquisition_result: AcquisitionResult) -> None:
@@ -457,11 +265,4 @@ async def _update_acquisition_contract_memory(
 
 
 extract_records_for_acquisition = _extract_records_for_acquisition
-best_adapter_result = _best_adapter_result
 update_acquisition_contract_memory = _update_acquisition_contract_memory
-
-
-def _record_list(value: object) -> list[dict[str, object]]:
-    if not isinstance(value, list):
-        return []
-    return [record for record in value if isinstance(record, dict)]

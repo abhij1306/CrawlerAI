@@ -598,11 +598,6 @@ async def process_run(session: AsyncSession, run_id: int) -> None:
         await _process_run_with_span(session, run_id, run_span)
 
 
-async def process_run_async(run_id: int) -> None:
-    async with SessionLocal() as session:
-        await process_run(session, run_id)
-
-
 async def _process_run_with_span(
     session: AsyncSession,
     run_id: int,

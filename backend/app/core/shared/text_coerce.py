@@ -53,6 +53,23 @@ def clean_text(value: object) -> str:
     return whitespace_re.sub(" ", text)
 
 
+def bounded_unique_strings(
+    value: object, *, max_items: int, max_chars: int
+) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    rows: list[str] = []
+    seen: set[str] = set()
+    for item in value:
+        text = clean_text(item)[:max_chars]
+        if text and (key := text.casefold()) not in seen:
+            seen.add(key)
+            rows.append(text)
+        if len(rows) >= max_items:
+            break
+    return rows
+
+
 def _decode_common_escaped_text(value: str) -> str:
     text = str(value or "")
     if "\\" not in text:

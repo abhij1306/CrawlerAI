@@ -482,10 +482,6 @@ async def close_shared_http_client() -> None:
             await client.aclose()
 
 
-def _clear_shared_clients_for_testing() -> None:
-    _SHARED_HTTP_CLIENTS.clear()
-
-
 async def http_fetch(
     url: str,
     timeout_seconds: float,

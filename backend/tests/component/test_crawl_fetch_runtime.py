@@ -29,7 +29,6 @@ from app.acquisition.runtime import (
 )
 from app.core.config.pipeline_reasons import (
     BROWSER_ESCALATION_SKIPPED_INSUFFICIENT_BUDGET,
-    REQUESTED_FIELDS_BROWSER_REASON,
 )
 from tests.fixtures.http_mocks import FakeBodyResponse
 
@@ -948,11 +947,10 @@ async def test_fetch_page_preserves_requested_fields_on_browser_first_path(
 
 @pytest.mark.asyncio
 @pytest.mark.component
-async def test_fetch_page_uses_browser_first_for_detail_requested_fields(
+async def test_fetch_page_does_not_use_browser_first_for_detail_requested_fields(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    captured_requested_fields: list[str] = []
-    browser_reasons: list[str] = []
+    browser_called = False
     http_called = False
 
     @_as_async
@@ -963,7 +961,12 @@ async def test_fetch_page_uses_browser_first_for_detail_requested_fields(
         return PageFetchResult(
             url="https://example.com/products/widget",
             final_url="https://example.com/products/widget",
-            html="<html><body>http</body></html>",
+            html=(
+                "<html><head><script type='application/ld+json'>"
+                '{"@context":"https://schema.org","@type":"Product",'
+                '"name":"Widget","offers":{"price":"19.99","priceCurrency":"USD"}}'
+                "</script></head><body><h1>Widget</h1></body></html>"
+            ),
             status_code=200,
             method="curl_cffi",
         )
@@ -984,9 +987,9 @@ async def test_fetch_page_uses_browser_first_for_detail_requested_fields(
             proxies,
             _kwargs,
         )
-        nonlocal captured_requested_fields
-        captured_requested_fields = list(requested_fields or [])
-        browser_reasons.append(reason)
+        del requested_fields, reason
+        nonlocal browser_called
+        browser_called = True
         return PageFetchResult(
             url="https://example.com/products/widget",
             final_url="https://example.com/products/widget",
@@ -1008,10 +1011,9 @@ async def test_fetch_page_uses_browser_first_for_detail_requested_fields(
         requested_fields=["CAS Number", "Molecular Formula"],
     )
 
-    assert result.method == "browser"
-    assert captured_requested_fields == ["CAS Number", "Molecular Formula"]
-    assert browser_reasons == [REQUESTED_FIELDS_BROWSER_REASON]
-    assert http_called is False
+    assert result.method == "curl_cffi"
+    assert http_called is True
+    assert browser_called is False
 
 
 @pytest.mark.asyncio

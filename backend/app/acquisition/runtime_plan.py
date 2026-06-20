@@ -14,7 +14,6 @@ class AcquisitionPlanUpdates(TypedDict, total=False):
     max_scrolls: int
     max_records: int
     sleep_ms: int
-    adapter_recovery_enabled: bool
 
 
 @dataclass(slots=True)
@@ -26,7 +25,6 @@ class AcquisitionPlan:
     max_scrolls: int = crawler_runtime_settings.default_max_scrolls
     max_records: int = crawler_runtime_settings.default_max_records
     sleep_ms: int = crawler_runtime_settings.min_request_delay_ms
-    adapter_recovery_enabled: bool = False
 
     def with_updates(self, **updates: Unpack[AcquisitionPlanUpdates]) -> "AcquisitionPlan":
         return replace(self, **updates)

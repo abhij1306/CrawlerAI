@@ -1,4 +1,4 @@
-import { apiClient, getApiBaseUrl } from './client';
+import { apiClient, getApiBaseUrl } from '@/api/client';
 import {
   userSchema,
   crawlRunSchema,

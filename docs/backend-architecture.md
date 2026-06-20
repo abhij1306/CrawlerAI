@@ -166,8 +166,6 @@ Primary files:
 - `crawl/site_link_discovery.py`
 - `crawl/profile/*`
 - `pipeline/core.py`
-- `pipeline/direct_record_fallback.py`
-- `pipeline/extraction_retry_decision.py`
 - `pipeline/record_extraction_stage.py`
 - `pipeline/retry/stage.py`
 - `pipeline/types.py`
@@ -202,7 +200,7 @@ Current live behavior:
 - `pipeline/extraction_loop.py` stays the per-URL stage orchestrator; record extraction, acquisition-contract memory, retry families, direct-record LLM fallback, browser diagnostics merge, typed result objects, and public failure-state persistence live in dedicated pipeline helper modules
 - Data Enrichment is separate from the crawl pipeline: it reads persisted ecommerce detail `CrawlRecord` rows, writes `EnrichedProduct` rows, and only updates source-record enrichment status metadata.
 - Product monitoring, product alerts, in-app monitor notifications, and alert MCP wrappers are deleted surfaces. There are no monitor scheduler loops, alert routes, public alert routes, notification models, or monitor-owned run callbacks.
-- Public API v1 is a lightweight FastAPI surface under `/api/v1` for Railway-style single-process deployment. API keys are dashboard-owned rows in `ApiKey`; public auth and rate limits are keyed by API key, not client IP. `POST /api/v1/extract` creates a normal single-URL crawl and runs one URL inline with HTTP-only settings, disabled LLM/browser/traversal/screenshots/network capture, and a capped timeout. Batch extraction remains deferred with structured `WORKER_REQUIRED`. `GET /api/v1/domains/{domain}` reads existing `DomainMemory`, `DomainRunProfile`, and recent crawl rows without probing the target. `app/mcp_server/*` is a stateless FastMCP wrapper over `/api/v1` and does not import crawl services.
+- Public API v1 is a lightweight FastAPI surface under `/api/v1` for Railway-style single-process deployment. API keys are dashboard-owned rows in `ApiKey`; public auth and rate limits are keyed by API key, not client IP. `POST /api/v1/extract` creates a normal single-URL crawl and runs one URL inline with HTTP-only settings, disabled LLM/browser/traversal/screenshots/network capture, and a capped timeout. Batch extraction remains deferred with structured `WORKER_REQUIRED`. `GET /api/v1/domains/{domain}` reads existing `DomainMemory`, `DomainRunProfile`, and recent crawl rows without probing the target. `app/mcp_server/*` is a stateless FastMCP wrapper over `/api/v1` and does not import crawl orchestration internals.
 - Alembic is reset for a fresh-start project: `backend/alembic/versions/` intentionally contains one clean baseline migration.
 
 ### 6.3 Acquisition and browser runtime
@@ -261,9 +259,9 @@ Current live behavior:
 - successful acquisition paths can autosave an editable `DomainRunProfile.acquisition_contract`; future runs may reuse a proven browser engine, mark whether curl-cookie handoff is actually eligible, and record whether rendering, traversal, or network payloads were required. Host memory no longer owns the durable success path; it only biases short-lived protection/backoff choices.
 - browser diagnostics now persist explicit lane identity (`browser_engine`, `browser_profile`, launch mode, native-context flag, stealth-enabled flag) so metrics and audits can distinguish shaped Chromium from native real Chrome without inferring from free-form logs
 - traversal is explicit and separate from browser escalation; only explicit traversal modes are supported
-- JSON-expected acquisition now stays in `acquisition/http_client.py`; adapters consume decoded payloads instead of compensating for transport quirks
+- JSON-expected acquisition now stays in `acquisition/http_client.py`; concrete connectors must consume decoded payloads instead of compensating for transport quirks
 - browser network interception is bounded through a small response-queue worker pool with per-endpoint payload budgets instead of untracked background tasks
-- adapter-owned acquisition URL normalization now runs before runtime policy selection, so platform-specific URL cleanup stays in adapters instead of generic acquisition code
+- platform-specific acquisition URL normalization is not active in the hot path; future connectors may produce artifacts but product-detail URLs still use normal acquisition and extraction
 - browser diagnostics now classify `browser_reason` and `browser_outcome`, record phase timings and HTML bytes, and preserve failed browser-attempt evidence even when the final acquisition method stays HTTP
 - browser diagnostics now also expose rendered-listing evidence counts (`rendered_listing_fragment_count`, `listing_visual_element_count`) plus stage-aware browser failures (`failure_stage`, `timeout_phase`) so browser-heavy listing regressions can be triaged without replaying the whole run
 - rendered-listing-fragment capture and visual-element capture are now bounded by a dedicated runtime timeout and recorded in `phase_timings_ms` (`rendered_listing_fragment_capture`, `listing_visual_capture`) so heavy browser pages cannot stall the whole acquisition tail indefinitely
@@ -338,12 +336,11 @@ Primary files:
 - `public_record_firewall.py`
 - `extract/variant_normalization/`
 - `extract/*`
-- `adapters/*`
 
 Responsibilities:
 
 - choose listing vs detail path
-- run platform adapters
+- consume connector artifacts when a concrete artifact-only connector exists
 - parse JSON-LD, embedded JSON, JS state, microdata, Open Graph, and network payloads
 - extract field values from structured sources and DOM
 - normalize field values before publish
@@ -357,8 +354,7 @@ Important implemented features:
 - generic ghost-route payload fallback now rejects multi-record listing envelopes for detail surfaces, so paginated product-list APIs cannot masquerade as a single detail payload just because one row happens to expose product-like keys
 - tracking-parameter stripping is live in field-value normalization via `w3lib`
 - tracking URL cleanup has its own owner in `field_url_normalization.py`; generic value coercion stays in `field_value_core.py`
-- platform registry config in `config/platforms.json` now owns adapter registration metadata, network signatures, JS-state mappings, and listing-readiness selectors/waits
-- extraction runtime now short-circuits raw XML sitemap/listing payloads into deterministic URL records before HTML DOM parsing, which keeps sitemap targets out of the expensive BeautifulSoup listing path
+- platform registry config in `config/platforms.json` owns platform metadata, network signatures, JS-state mappings, and listing-readiness selectors/waits
 - ecommerce detail title selection now ranks structured sources ahead of raw DOM headings, rejects noisy DOM `<h1>/<title>` values such as promo or generic-results text, and only promotes fallback titles when the replacement source is materially stronger
 - ecommerce detail extraction now drops low-signal site-shell records when the surviving title still resolves to site-brand chrome and no real product anchors survive, preventing stale SPA/detail misses from being persisted as false product successes
 - ecommerce-detail extraction now threads the originally requested PDP URL through materialization so same-site utility redirects can either preserve the requested product identity when the product metadata still matches or drop the row entirely when the utility page is carrying mismatched stale product data
@@ -547,7 +543,7 @@ The normal records API hides:
 
 ## 9. Product Intelligence Discovery
 
-Product Intelligence lives under `app/services/product_intelligence/` and remains upstream of candidate crawl/export paths. SerpAPI discovery is Shopping-first: `engine=google_shopping` results are parsed, Immersive Product store links are expanded, then organic results remain as fallback evidence. Candidate ranking prefers exact identifiers, Shopping product-group evidence, and title overlap before source-type authority, so a strong marketplace match can outrank a weak brand-site adjacent product without adding extra search queries.
+Product Intelligence lives under `app/intelligence/` and remains upstream of candidate crawl/export paths. SerpAPI discovery is Shopping-first: `engine=google_shopping` results are parsed, Immersive Product store links are expanded, then organic results remain as fallback evidence. Candidate ranking prefers exact identifiers, Shopping product-group evidence, and title overlap before source-type authority, so a strong marketplace match can outrank a weak brand-site adjacent product without adding extra search queries.
 
 Belk brand inference uses data files under `app/data/product_intelligence/`, with `belk_brands.txt` for longest-match brand inference from Belk source titles/URLs and `belk_exclusive_brands.txt` for private-label exclusion. Belk detail extraction preserves UPC-like `sku_upc` values as public `barcode`/Product Intelligence `gtin` evidence while keeping retailer SKU/product ID separate. Confidence scoring is deterministic and evidence-based: title similarity, brand match, valid GTIN/barcode match, retailer SKU match, MPN/style match, Shopping product-group evidence, price band, and source authority are scored separately so the UI can explain why a candidate URL is strong or weak.
 

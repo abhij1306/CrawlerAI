@@ -1,7 +1,7 @@
 """Canonical config for the self-healing observability / run-audit layer.
 
-All tunables for run tracing and auditing live here (INVARIANT Rule 1). Service
-code in ``app/services/observability/*`` imports from this module and must not
+All tunables for run tracing and auditing live here (INVARIANT Rule 1). Runtime
+code in ``app/observability/*`` imports from this module and must not
 define its own thresholds, artifact names, or token constants.
 """
 

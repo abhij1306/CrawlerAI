@@ -13,7 +13,6 @@ from app.acquisition.browser_readiness import (
     looks_like_low_content_shell,
 )
 from app.acquisition.browser_page_helpers import (
-    capture_listing_visual_elements,
     detail_expansion_can_skip,
     detail_expansion_extractability,
     dismiss_safe_location_interstitial,
@@ -28,14 +27,10 @@ from app.acquisition.browser_page_helpers import (
 from app.acquisition.browser_page_helpers import BeautifulSoup
 from app.acquisition.dom_runtime import get_page_html
 from app.acquisition.browser_recovery import (
-    capture_rendered_listing_fragments,
     recover_browser_challenge,
 )
-from app.acquisition.runtime import (
-    BlockPageClassification,
-    classify_blocked_page_async,
-)
-from app.acquisition import browser_result_builder as _browser_result_builder
+from app.acquisition.runtime import classify_blocked_page_async
+from app.acquisition.browser_result_builder import finalize_browser_fetch
 from app.core.config.selectors import (
     CARD_SELECTORS,
 )
@@ -45,34 +40,6 @@ from app.acquisition.platform_policy import (
 )
 
 logger = logging.getLogger(__name__)
-
-__all__ = [
-    "BlockPageClassification",
-    "BrowserFinalizeInput",
-    "dismiss_safe_location_interstitial",
-    "finalize_browser_fetch",
-    "location_interstitial_detected",
-    "page_might_have_location_interstitial",
-]
-
-_capture_listing_visual_elements = capture_listing_visual_elements
-build_browser_diagnostics = _browser_result_builder.build_browser_diagnostics
-build_browser_artifacts = _browser_result_builder.build_browser_artifacts
-BrowserFinalizeInput = _browser_result_builder.BrowserFinalizeInput
-
-
-def _detail_expansion_extractability(*args, **kwargs):
-    kwargs.setdefault(
-        "requested_content_extractability_impl",
-        requested_content_extractability,
-    )
-    kwargs.setdefault("beautiful_soup_factory", BeautifulSoup)
-    return detail_expansion_extractability(*args, **kwargs)
-
-
-def _detail_expansion_can_skip(*args, **kwargs):
-    return detail_expansion_can_skip(*args, **kwargs)
-
 
 def _generic_card_selectors_for_surface(surface: str | None) -> list[str]:
     if not isinstance(CARD_SELECTORS, dict):
@@ -96,10 +63,7 @@ def _generic_card_selectors_for_surface(surface: str | None) -> list[str]:
 
 
 def remaining_timeout_factory(deadline: float):
-    def _remaining() -> float:
-        return max(2.0, deadline - time.perf_counter())
-
-    return _remaining
+    return lambda: max(2.0, deadline - time.perf_counter())
 
 
 def _is_navigation_interrupted_error(exc: Exception) -> bool:
@@ -186,15 +150,11 @@ async def navigate_browser_page_impl(
     crawler_runtime_settings,
     elapsed_ms,
 ):
-    navigation_wait_until = (
-        str((readiness_policy or {}).get("navigation_wait_until") or "domcontentloaded")
-        .strip()
-        .lower()
-    )
+    navigation_wait_until = str(
+        (readiness_policy or {}).get("navigation_wait_until") or "domcontentloaded"
+    ).strip().lower()
     total_timeout_ms = int(timeout_seconds * 1000)
-    primary_timeout_cap_ms = int(
-        crawler_runtime_settings.browser_navigation_domcontentloaded_timeout_ms
-    )
+    primary_timeout_cap_ms = int(crawler_runtime_settings.browser_navigation_domcontentloaded_timeout_ms)
     if navigation_wait_until == "networkidle":
         primary_timeout_cap_ms = min(
             int(crawler_runtime_settings.browser_navigation_networkidle_timeout_ms),
@@ -213,57 +173,40 @@ async def navigate_browser_page_impl(
         total_timeout_ms,
         int(crawler_runtime_settings.browser_navigation_min_final_commit_timeout_ms),
     )
+    fallback_strategy = (
+        "domcontentloaded" if navigation_wait_until == "networkidle" else "commit"
+    )
+    fallback_timeout = (
+        min(
+            total_timeout_ms,
+            int(crawler_runtime_settings.browser_navigation_domcontentloaded_timeout_ms),
+        )
+        if fallback_strategy == "domcontentloaded"
+        else fallback_timeout_ms
+    )
+    attempts = [
+        (navigation_wait_until, goto_timeout_ms),
+        (fallback_strategy, fallback_timeout),
+    ]
+    if fallback_strategy != "commit":
+        attempts.append(("commit", fallback_timeout_ms))
     navigation_strategy = navigation_wait_until
     navigation_started_at = time.perf_counter()
     try:
-        response = await _goto_with_interrupted_navigation_recovery(
-            page,
-            url=url,
-            wait_until=navigation_wait_until,
-            timeout_ms=goto_timeout_ms,
-        )
-    except (PlaywrightTimeoutError, PlaywrightError):
-        fallback_strategy = (
-            "domcontentloaded" if navigation_wait_until == "networkidle" else "commit"
-        )
-        navigation_strategy = fallback_strategy
-        try:
-            fallback_timeout = (
-                min(
-                    total_timeout_ms,
-                    int(
-                        crawler_runtime_settings.browser_navigation_domcontentloaded_timeout_ms
-                    ),
+        for index, (strategy, attempt_timeout_ms) in enumerate(attempts):
+            navigation_strategy = strategy
+            try:
+                response = await _goto_with_interrupted_navigation_recovery(
+                    page, url=url, wait_until=strategy, timeout_ms=attempt_timeout_ms
                 )
-                if fallback_strategy == "domcontentloaded"
-                else fallback_timeout_ms
-            )
-            response = await _goto_with_interrupted_navigation_recovery(
-                page,
-                url=url,
-                wait_until=fallback_strategy,
-                timeout_ms=fallback_timeout,
-            )
-        except Exception as exc:
-            if fallback_strategy != "commit":
-                navigation_strategy = "commit"
-                try:
-                    response = await _goto_with_interrupted_navigation_recovery(
-                        page,
-                        url=url,
-                        wait_until="commit",
-                        timeout_ms=fallback_timeout_ms,
-                    )
-                except Exception as final_exc:
-                    phase_timings_ms["navigation"] = elapsed_ms(navigation_started_at)
-                    setattr(
-                        final_exc, "browser_phase_timings_ms", dict(phase_timings_ms)
-                    )
-                    setattr(
-                        final_exc, "browser_navigation_strategy", navigation_strategy
-                    )
+                break
+            except Exception as exc:
+                if index == 0 and not isinstance(
+                    exc, (PlaywrightTimeoutError, PlaywrightError)
+                ):
                     raise
-            else:
+                if index + 1 < len(attempts):
+                    continue
                 phase_timings_ms["navigation"] = elapsed_ms(navigation_started_at)
                 setattr(exc, "browser_phase_timings_ms", dict(phase_timings_ms))
                 setattr(exc, "browser_navigation_strategy", navigation_strategy)
@@ -549,13 +492,15 @@ async def settle_browser_page_impl(
         }
         phase_timings_ms["expansion"] = 0
     else:
-        initial_extractability = _detail_expansion_extractability(
+        initial_extractability = detail_expansion_extractability(
             html=cached_html or "",
             soup=cached_analysis.soup if cached_analysis is not None else None,
             surface=surface or "",
             requested_fields=requested_fields,
+            requested_content_extractability_impl=requested_content_extractability,
+            beautiful_soup_factory=BeautifulSoup,
         )
-        skip_expansion, skip_reason = _detail_expansion_can_skip(
+        skip_expansion, skip_reason = detail_expansion_can_skip(
             initial_extractability,
             surface=surface,
             requested_fields=requested_fields,
@@ -589,11 +534,13 @@ async def settle_browser_page_impl(
                 stage="after_detail_expansion",
                 probe=current_probe,
             )
-            expansion_diagnostics["extractability"] = _detail_expansion_extractability(
+            expansion_diagnostics["extractability"] = detail_expansion_extractability(
                 html=cached_html or "",
                 soup=cached_analysis.soup if cached_analysis is not None else None,
                 surface=surface or "",
                 requested_fields=requested_fields,
+                requested_content_extractability_impl=requested_content_extractability,
+                beautiful_soup_factory=BeautifulSoup,
             )
     return (
         current_probe,
@@ -719,40 +666,6 @@ def resolve_browser_fetch_policy(
     )
     readiness_override = readiness_policy.get("listing_override")
     return traversal_active, readiness_policy, readiness_override
-
-
-_ready_probe_supports_fast_finalize = (
-    _browser_result_builder._ready_probe_supports_fast_finalize
-)
-
-
-async def _capture_listing_artifact_with_timeout(*args, **kwargs):
-    kwargs.setdefault("logger_impl", logger)
-    # skipcq: PYL-E1125 - wrapper preserves test monkeypatch seam and forwards required keywords.
-    return await _browser_result_builder._capture_listing_artifact_with_timeout(
-        *args,
-        **kwargs,
-    )
-
-
-async def finalize_browser_fetch(*args, **kwargs):
-    kwargs.setdefault("build_browser_diagnostics_impl", build_browser_diagnostics)
-    kwargs.setdefault("build_browser_artifacts_impl", build_browser_artifacts)
-    kwargs.setdefault(
-        "capture_rendered_listing_fragments_impl",
-        capture_rendered_listing_fragments,
-    )
-    kwargs.setdefault(
-        "capture_listing_visual_elements_impl",
-        _capture_listing_visual_elements,
-    )
-    kwargs.setdefault(
-        "ready_probe_supports_fast_finalize_impl",
-        _ready_probe_supports_fast_finalize,
-    )
-    kwargs.setdefault("logger_impl", logger)
-    # skipcq: PYL-E1125 - wrapper injects defaults while callers provide finalize dependencies.
-    return await _browser_result_builder.finalize_browser_fetch(*args, **kwargs)
 
 
 def append_readiness_probe(

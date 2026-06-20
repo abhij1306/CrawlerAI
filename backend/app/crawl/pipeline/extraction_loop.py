@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import time
 
 from app.core.logfire_integration import logfire_span, set_logfire_attributes
 from app.models.crawl_run import CrawlRun
@@ -14,12 +13,11 @@ from app.acquisition.host_protection_memory import note_host_hard_block
 from app.acquisition.runtime import is_non_retryable_http_status
 from app.core.config import observability as obs_config
 from app.core.config.pipeline_reasons import NON_RETRYABLE_HTTP_STATUS_REASON
-from app.core.config.runtime_settings import crawler_runtime_settings
 from app.core.db_utils import mapping_or_empty
+from app.core.shared.number_coerce import as_int
 from app.core.shared.field_coerce import object_list as _object_list
 from app.crawl.domain_memory_service import load_domain_selector_rules
 from app.core.domain_utils import normalize_domain
-from app.connectors.adapters.registry import run_adapter
 from app.acquisition.platform_policy import detect_platform_family
 from app.crawl.pipeline.extract_records import extract_records_for_acquisition_result
 from app.persistence.publish import (
@@ -47,8 +45,8 @@ from .persistence import (
     persist_extracted_records,
     persist_run_trace,
 )
+from app.persistence.url_results import upsert_url_result
 from .record_extraction_stage import (
-    best_adapter_result,
     extract_records_for_acquisition,
     update_acquisition_contract_memory,
 )
@@ -74,6 +72,7 @@ from .url_processing_context import (
     ExtractedURLStage as _ExtractedURLStage,
     FetchedURLStage as _FetchedURLStage,
     URLProcessingContext as _URLProcessingContext,
+    build_url_processing_context as _build_url_processing_context,
     resolved_url_processing_config as _resolved_url_processing_config,
 )
 
@@ -83,7 +82,6 @@ __all__ = [
     "STAGE_NORMALIZE",
     "STAGE_PERSIST",
     "URLProcessingContext",
-    "best_adapter_result",
     "detect_platform_family",
     "load_domain_selector_rules",
     "mark_run_failed",
@@ -91,7 +89,6 @@ __all__ = [
     "process_single_url",
     "real_chrome_browser_available",
     "resolved_url_processing_config",
-    "run_adapter",
 ]
 
 acquire = _acquire
@@ -118,41 +115,20 @@ async def process_single_url(
 ) -> URLProcessingResult:
     del checkpoint
     settings_view = run.settings_view
-    resolved_url_timeout_seconds = (
-        float(url_timeout_seconds)
-        if url_timeout_seconds is not None
-        else settings_view.url_timeout_seconds()
-        if settings_view.get("url_timeout_seconds") not in (None, "")
-        else crawler_runtime_settings.default_url_process_timeout_seconds()
-    )
-    context = _URLProcessingContext(
+    context = _build_url_processing_context(
         session=session,
         run=run,
         url=url,
-        config=_resolved_url_processing_config(
-            config,
-            surface=run.surface,
-            proxy_list=proxy_list
-            if proxy_list is not None
-            else settings_view.proxy_list(),
-            traversal_mode=traversal_mode
-            if traversal_mode is not None
-            else settings_view.traversal_mode(),
-            max_pages=max_pages if max_pages is not None else settings_view.max_pages(),
-            max_scrolls=max_scrolls
-            if max_scrolls is not None
-            else settings_view.max_scrolls(),
-            max_records=max_records
-            if max_records is not None
-            else settings_view.max_records(),
-            sleep_ms=sleep_ms if sleep_ms is not None else settings_view.sleep_ms(),
-            update_run_state=update_run_state,
-            persist_logs=persist_logs,
-        ),
-        url_timeout_seconds=float(resolved_url_timeout_seconds),
-        started_at_monotonic=time.monotonic(),
-        requested_fields=list(run.requested_fields or []),
-        surface=run.surface,
+        config=config,
+        url_timeout_seconds=url_timeout_seconds,
+        proxy_list=proxy_list,
+        traversal_mode=traversal_mode,
+        max_pages=max_pages,
+        max_scrolls=max_scrolls,
+        max_records=max_records,
+        sleep_ms=sleep_ms,
+        update_run_state=update_run_state,
+        persist_logs=persist_logs,
     )
     try:
         with logfire_span(
@@ -433,7 +409,7 @@ def _record_acquire_timeline(
                 "strategy": diagnostics.get("navigation_strategy"),
                 "reason": diagnostics.get("browser_reason"),
             },
-            duration_ms=_as_int(timings.get("navigation")),
+            duration_ms=as_int(timings.get("navigation")),
         )
         for probe in _object_list(diagnostics.get("readiness_probes")):
             if isinstance(probe, dict):
@@ -458,9 +434,9 @@ def _record_acquire_timeline(
             trace.record_acquire_event(
                 obs_config.ACQUIRE_EVENT_INTERSTITIAL,
                 detail={"status": interstitial.get("status")},
-                duration_ms=_as_int(timings.get(interstitial_timing_key)),
+                duration_ms=as_int(timings.get(interstitial_timing_key)),
             )
-        challenge_wait = _as_int(timings.get("challenge_wait"))
+        challenge_wait = as_int(timings.get("challenge_wait"))
         if challenge_wait:
             trace.record_acquire_event(
                 obs_config.ACQUIRE_EVENT_CHALLENGE,
@@ -607,13 +583,23 @@ async def _run_persistence_stage(
             blocked=_effective_blocked(acquisition_result),
         )
         await _enter_stage(context, STAGE_PERSIST)
+        url_result = await upsert_url_result(
+            context.session,
+            run=context.run,
+            requested_url=context.url,
+            acquisition_result=acquisition_result,
+            extraction_result=extraction_result,
+            record_count=0,
+        )
         persisted_count = await persist_extracted_records(
             context.session,
             context.run,
             extracted_records,
             acquisition_result=acquisition_result,
+            url_result_id=url_result.id,
             raw_html_path=raw_html_path,
         )
+        url_result.record_count = persisted_count
         set_logfire_attributes(
             span,
             persisted_count=persisted_count,
@@ -636,29 +622,13 @@ async def _run_persistence_stage(
         and persisted_count == 0
     ):
         verdict = VERDICT_LISTING_FAILED
-    await persist_extraction_decision_artifact(
-        run_id=context.run.id,
-        source_url=acquisition_result.final_url,
+    await _publish_url_result_artifacts(
+        context,
+        extracted,
+        url_result=url_result,
         persisted_count=persisted_count,
-        result=extraction_result,
-        acquisition_result=acquisition_result,
+        verdict=verdict,
     )
-    trace = context.trace
-    if trace is not None:
-        diagnostics = mapping_or_empty(
-            getattr(acquisition_result, "browser_diagnostics", {})
-        )
-        failure_reason = mapping_or_empty(extracted.fetched.url_metrics).get(
-            "failure_reason"
-        ) or diagnostics.get("failure_reason")
-        trace.record_extraction_rejection(str(failure_reason or "").strip() or None)
-        trace.record_verdict(verdict)
-        await persist_run_trace(
-            run_id=context.run.id,
-            source_url=acquisition_result.final_url,
-            trace=trace,
-            flagged=verdict not in obs_config.TRACE_SUCCESS_VERDICTS,
-        )
     await update_acquisition_contract_memory(
         context,
         acquisition_result=acquisition_result,
@@ -676,23 +646,40 @@ async def _run_persistence_stage(
     )
 
 
+async def _publish_url_result_artifacts(
+    context: _URLProcessingContext,
+    extracted: _ExtractedURLStage,
+    *,
+    url_result,
+    persisted_count: int,
+    verdict: str,
+) -> None:
+    acquisition_result = extracted.fetched.acquisition_result
+    manifest_uri = await persist_extraction_decision_artifact(
+        run_id=context.run.id,
+        source_url=acquisition_result.final_url,
+        persisted_count=persisted_count,
+        result=extracted.result,
+        acquisition_result=acquisition_result,
+    )
+    url_result.manifest_uri = manifest_uri or None
+    url_result.verdict = verdict
+    await context.session.flush()
+    if context.trace is None:
+        return
+    diagnostics = mapping_or_empty(getattr(acquisition_result, "browser_diagnostics", {}))
+    failure_reason = mapping_or_empty(extracted.fetched.url_metrics).get(
+        "failure_reason"
+    ) or diagnostics.get("failure_reason")
+    context.trace.record_extraction_rejection(str(failure_reason or "").strip() or None)
+    context.trace.record_verdict(verdict)
+    await persist_run_trace(
+        run_id=context.run.id,
+        source_url=acquisition_result.final_url,
+        trace=context.trace,
+        flagged=verdict not in obs_config.TRACE_SUCCESS_VERDICTS,
+    )
+
+
 URLProcessingContext = _URLProcessingContext
 resolved_url_processing_config = _resolved_url_processing_config
-
-
-def _as_int(value: object) -> int | None:
-    if value in (None, ""):
-        return None
-    try:
-        return int(float(value))  # type: ignore[arg-type]
-    except (TypeError, ValueError):
-        return None
-
-
-def _as_float(value: object) -> float | None:
-    if value in (None, ""):
-        return None
-    try:
-        return float(value)  # type: ignore[arg-type]
-    except (TypeError, ValueError):
-        return None

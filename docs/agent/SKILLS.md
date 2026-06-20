@@ -12,10 +12,9 @@ cd backend
 $env:PYTHONPATH='.'
 
 .\.venv\Scripts\python.exe -m pytest tests -q
-.\.venv\Scripts\python.exe -m pytest tests/services/test_crawl_engine.py -q
-.\.venv\Scripts\python.exe -m pytest tests/services/test_crawl_fetch_runtime.py -q
-.\.venv\Scripts\python.exe -m pytest tests/services/test_selector_pipeline_integration.py -q
-.\.venv\Scripts\python.exe -m pytest tests/services/test_selectors_api.py -q
+.\.venv\Scripts\python.exe -m pytest tests/unit/test_extraction_pipeline.py -q
+.\.venv\Scripts\python.exe -m pytest tests/unit/test_extraction_architecture.py -q
+.\.venv\Scripts\python.exe -m pytest tests/unit/test_final_architecture_ownership.py -q
 .\.venv\Scripts\python.exe -m pytest tests/test_harness_support.py -q
 
 .\.venv\Scripts\python.exe run_acquire_smoke.py commerce
@@ -34,12 +33,12 @@ Use the smallest relevant verify step first, then broaden if shared behavior cha
    - structured: `structured_sources.py`
    - adapter: `adapters/[platform].py`
    - JS state: `js_state_mapper.py`
-   - network payload: `network_payload_mapper.py` + `config/network_payload_specs.py`
-   - DOM: `detail_extractor.py` or `listing_extractor.py`
-   - alias or eligibility: `config/field_mappings.py`, `field_policy.py`
-   - normalization: `field_value_core.py` or `field_value_*.py`
+   - network payload: extraction network mapper + `core/config/network_payload_specs.py`
+   - DOM: `app/extraction/pipeline.py` and extraction collectors
+   - alias or eligibility: `core/config/field_mappings.py`, `core/records/field_policy.py`
+   - normalization: `core/records/*` coercion owners
 3. Fix it there. Do not patch downstream.
-4. Run `pytest tests/services/test_crawl_engine.py -q`
+4. Run the smallest matching extraction unit/replay test.
 5. Run `pytest tests -q`
 6. Update the active plan slice if one exists.
 
@@ -50,8 +49,8 @@ Never fix extraction bugs in `pipeline/core.py`, `publish/verdict.py`, or `publi
 ## Add a New Extraction Field
 
 1. Identify the surface.
-2. Add aliases in `services/config/field_mappings.py`.
-3. Add eligibility in `services/field_policy.py`.
+2. Add aliases in `core/config/field_mappings.py`.
+3. Add eligibility in `core/records/field_policy.py`.
 4. Add extraction at the right owner:
    - structured: `structured_sources.py`
    - detail DOM: `detail_extractor.py`
@@ -63,13 +62,13 @@ Never fix extraction bugs in `pipeline/core.py`, `publish/verdict.py`, or `publi
 
 ---
 
-## Add a New Platform Adapter
+## Add a New Platform Connector
 
-1. Add metadata to `services/config/platforms.json`.
-2. Create `services/adapters/[platform].py`.
-3. Register it in `services/adapters/registry.py`.
-4. Add payload specs in `services/config/network_payload_specs.py` if needed.
-5. Run `python run_acquire_smoke.py [platform_keyword]`
+1. Add metadata to `core/config/platforms.json`.
+2. Create a provider module under `connectors/` only when it produces artifacts from documented/public platform APIs.
+3. Route product-detail URLs through normal acquisition and extraction; connectors must not publish public records or set verdicts.
+4. Add payload specs in `core/config/network_payload_specs.py` if needed.
+5. Add focused offline tests and replay fixtures. Live smoke remains the final user-run gate for this architecture plan.
 
 Do not hardcode platform names in generic runtime paths.
 
@@ -99,12 +98,12 @@ Do not hardcode platform names in generic runtime paths.
 
 ## Modify Selector Self-Heal
 
-- Owner: `services/selector_self_heal.py`
+- Owner: selector/domain-memory code under `app/crawl` and `app/core/records`
 - Run only when requested fields are still missing.
 - Persist only validated improvements.
 - Do not synthesize if existing domain memory already satisfies the request.
 
-Trace: `pipeline/core.py` -> `apply_selector_self_heal()` -> `selector_self_heal.py` -> `domain_memory_service.py`
+Trace: `crawl/pipeline/*` -> selector runtime -> `crawl/domain_memory_service.py`
 
 Test: `tests/services/test_selector_pipeline_integration.py`
 
@@ -140,7 +139,7 @@ Do not use docs as changelogs.
 1. Update `services/field_policy.py`
 2. Update `services/field_value_core.py`
 3. Update `app/schemas/crawl.py`
-4. Update `services/config/field_mappings.py`
+4. Update `core/config/field_mappings.py`
 5. Update frontend surface selection
 6. Update `docs/backend-architecture.md`
 
