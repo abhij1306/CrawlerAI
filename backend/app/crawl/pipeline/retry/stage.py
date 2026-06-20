@@ -71,9 +71,6 @@ async def build_acquisition_request(
     plan = resolved.acquisition_plan(
         surface=context.surface,
         max_records=context.config.max_records,
-        adapter_recovery_enabled=context.config.resolved_acquisition_plan(
-            surface=context.surface
-        ).adapter_recovery_enabled,
     )
     plan = _apply_context_plan_overrides(plan, context, settings_view)
     profile = apply_acquisition_contract_to_profile(

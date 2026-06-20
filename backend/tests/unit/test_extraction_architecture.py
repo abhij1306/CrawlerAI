@@ -6,7 +6,6 @@ from pathlib import Path
 import pytest
 
 from app.schemas.crawl import CrawlCreate
-from app.connectors.adapters.base import AdapterResult
 from app.connectors.public_api.extraction_service import _internal_surface
 from app.extraction.contracts import (
     CommerceDetailRecord,
@@ -104,17 +103,9 @@ def test_evidence_requires_subject_id() -> None:
     assert Evidence.model_fields["subject_id"].is_required()
 
 
-def test_adapter_result_cannot_publish_public_records() -> None:
-    result = AdapterResult(records=[{"title": "Adapter Widget"}], adapter_name="legacy")
-    assert result.records == []
-    assert result.artifacts == [
-        {
-            "artifact_type": "adapter_json",
-            "source_type": "adapter",
-            "adapter_name": "legacy",
-            "body": {"title": "Adapter Widget"},
-        }
-    ]
+def test_legacy_record_producing_adapters_are_deleted() -> None:
+    adapter_dir = APP_ROOT / "connectors" / "adapters"
+    assert not any(adapter_dir.glob("*.py"))
 
 
 def test_surface_inference_modules_are_deleted() -> None:
@@ -166,6 +157,8 @@ def test_obsolete_pipeline_semantic_owners_are_deleted() -> None:
         APP_ROOT / "crawl" / "pipeline" / "direct_record_fallback.py",
         APP_ROOT / "crawl" / "pipeline" / "extraction_retry_decision.py",
         APP_ROOT / "crawl" / "pipeline" / "listing_escalation_decision.py",
+        APP_ROOT / "crawl" / "pipeline" / "raw_json.py",
+        APP_ROOT / "crawl" / "pipeline" / "sitemap.py",
     }
     assert not any(path.exists() for path in forbidden_files)
     pipeline_text = (

@@ -11,6 +11,7 @@ TEST_SITES.md
 TEST_SITES copy.md
 .codacy/
 .kilo/
+traffic-policy.yml
 
 .hypothesis/
 .scannerwork/

@@ -48,6 +48,8 @@ from app.core.records.field_url_normalization import (
     is_concatenated_url,
 )
 
+_SKIP_FIELD = object()
+
 
 def public_record_data_for_surface(
     record: dict[str, Any],
@@ -57,35 +59,11 @@ def public_record_data_for_surface(
     requested_fields: list[str] | None = None,
 ) -> tuple[dict[str, Any], dict[str, str]]:
     normalized_surface = str(surface or "").strip().lower()
-    allowed_fields = {
-        str(field_name).strip()
-        for field_name in list(CANONICAL_SCHEMAS.get(normalized_surface, []))
-        if str(field_name).strip()
-    }
-    allowed_fields.add(URL_FIELD)
-    open_field_passthrough = (
-        normalized_surface
-        in {
-            normalize_field_key(surface_name)
-            for surface_name in tuple(OPEN_FIELD_SURFACES or ())
-        }
-        and normalize_field_key(record.get("_extraction_mode")) == "table_rows"
+    allowed_fields, explicit_fields, open_field_passthrough = _public_field_policy(
+        record,
+        normalized_surface=normalized_surface,
+        requested_fields=requested_fields,
     )
-    explicit_fields = {
-        normalize_field_key(field_name)
-        for field_name in canonical_requested_fields(requested_fields or [])
-        if normalize_field_key(field_name)
-    }
-    allowed_fields.update(explicit_fields)
-    default_excluded = _default_excluded_fields_for_surface(normalized_surface)
-    ecommerce_contract_excluded = {
-        normalize_field_key(value)
-        for value in (
-            *tuple(PUBLIC_RECORD_ECOMMERCE_DROPPED_FIELDS or ()),
-            *tuple(PUBLIC_RECORD_LEGACY_VARIANT_FIELDS or ()),
-        )
-        if normalize_field_key(value)
-    }
     data: dict[str, Any] = {}
     rejected: dict[str, str] = {}
     for raw_field_name, raw_value in dict(record or {}).items():
@@ -94,65 +72,151 @@ def public_record_data_for_surface(
             continue
         if raw_value in (None, "", [], {}):
             continue
-        if (
-            normalized_surface.startswith("ecommerce_")
-            and field_name in ecommerce_contract_excluded
-        ):
-            # Contract-excluded ecommerce fields stay internal even when requested.
-            rejected[str(raw_field_name)] = "public_contract_excluded"
+        rejection = _policy_rejection_reason(
+            field_name,
+            normalized_surface=normalized_surface,
+            explicit_fields=explicit_fields,
+            allowed_fields=allowed_fields,
+            open_field_passthrough=open_field_passthrough,
+        )
+        if rejection:
+            rejected[str(raw_field_name)] = rejection
             continue
-        if field_name in default_excluded and field_name not in explicit_fields:
-            rejected[str(raw_field_name)] = "default_public_field_excluded"
+        coerced = _coerce_public_field(
+            record,
+            data=data,
+            field_name=field_name,
+            raw_value=raw_value,
+            page_url=page_url,
+            allowed_fields=allowed_fields,
+        )
+        if coerced is _SKIP_FIELD:
+            rejected[str(raw_field_name)] = "routed_to_sku"
             continue
-        if field_name not in allowed_fields and not open_field_passthrough:
-            rejected[str(raw_field_name)] = "field_not_allowed_for_surface"
-            continue
-        if field_name == VARIANTS_FIELD:
-            coerced = flatten_variants_for_public_output(raw_value, page_url=page_url)
-        else:
-            coerced = coerce_field_value(field_name, raw_value, page_url)
         if coerced in (None, "", [], {}):
-            if field_name == BARCODE_FIELD and ROUTE_BARCODE_TO_SKU:
-                routed_sku = coerce_field_value(SKU_FIELD, raw_value, page_url)
-                if (
-                    routed_sku not in (None, "", [], {})
-                    and SKU_FIELD in allowed_fields
-                    and record.get(SKU_FIELD) in (None, "", [], {})
-                    and _public_record_field_shape_valid(SKU_FIELD, routed_sku)
-                ):
-                    data[SKU_FIELD] = routed_sku
-                    rejected[str(raw_field_name)] = "routed_to_sku"
-                    continue
             rejected[str(raw_field_name)] = "empty_after_coercion"
             continue
-        if not _public_record_field_shape_valid(field_name, coerced):
-            rejected[str(raw_field_name)] = "invalid_field_shape"
+        canonical_value, rejection = _validate_and_canonicalize_public_field(
+            field_name,
+            coerced,
+            surface=normalized_surface,
+        )
+        if rejection:
+            rejected[str(raw_field_name)] = rejection
             continue
-        if (
-            field_name in URL_FIELDS
-            and isinstance(coerced, str)
-            and is_concatenated_url(coerced)
-        ):
-            rejected[str(raw_field_name)] = "concatenated_url"
-            continue
-        if field_name in NAVIGATION_URL_FIELDS and not public_navigation_url_safe(
-            coerced
-        ):
-            rejected[str(raw_field_name)] = "unsafe_navigation_url"
-            continue
-        if field_name in NAVIGATION_URL_FIELDS:
-            coerced = canonical_public_record_url(
-                coerced,
-                surface=normalized_surface,
-                field_name=field_name,
-            )
-            if coerced in (None, "", [], {}):
-                rejected[str(raw_field_name)] = "empty_after_canonical_url"
-                continue
-        data[field_name] = coerced
+        data[field_name] = canonical_value
     if normalized_surface.startswith("ecommerce_") and VARIANTS_FIELD in data:
         enforce_flat_variant_public_contract(data, page_url=page_url)
     return finalize_record(data, surface=surface), rejected
+
+
+def _public_field_policy(
+    record: dict[str, Any],
+    *,
+    normalized_surface: str,
+    requested_fields: list[str] | None,
+) -> tuple[set[str], set[str], bool]:
+    allowed_fields = {
+        str(field_name).strip()
+        for field_name in list(CANONICAL_SCHEMAS.get(normalized_surface, []))
+        if str(field_name).strip()
+    }
+    allowed_fields.add(URL_FIELD)
+    explicit_fields = {
+        normalize_field_key(field_name)
+        for field_name in canonical_requested_fields(requested_fields or [])
+        if normalize_field_key(field_name)
+    }
+    allowed_fields.update(explicit_fields)
+    open_field_passthrough = (
+        normalized_surface
+        in {
+            normalize_field_key(surface_name)
+            for surface_name in tuple(OPEN_FIELD_SURFACES or ())
+        }
+        and normalize_field_key(record.get("_extraction_mode")) == "table_rows"
+    )
+    return allowed_fields, explicit_fields, open_field_passthrough
+
+
+def _policy_rejection_reason(
+    field_name: str,
+    *,
+    normalized_surface: str,
+    explicit_fields: set[str],
+    allowed_fields: set[str],
+    open_field_passthrough: bool,
+) -> str | None:
+    ecommerce_excluded = {
+        normalize_field_key(value)
+        for value in (
+            *tuple(PUBLIC_RECORD_ECOMMERCE_DROPPED_FIELDS or ()),
+            *tuple(PUBLIC_RECORD_LEGACY_VARIANT_FIELDS or ()),
+        )
+        if normalize_field_key(value)
+    }
+    if normalized_surface.startswith("ecommerce_") and field_name in ecommerce_excluded:
+        return "public_contract_excluded"
+    default_excluded = _default_excluded_fields_for_surface(normalized_surface)
+    if field_name in default_excluded and field_name not in explicit_fields:
+        return "default_public_field_excluded"
+    if field_name not in allowed_fields and not open_field_passthrough:
+        return "field_not_allowed_for_surface"
+    return None
+
+
+def _coerce_public_field(
+    record: dict[str, Any],
+    *,
+    data: dict[str, Any],
+    field_name: str,
+    raw_value: object,
+    page_url: str,
+    allowed_fields: set[str],
+) -> object:
+    coerced = (
+        flatten_variants_for_public_output(raw_value, page_url=page_url)
+        if field_name == VARIANTS_FIELD
+        else coerce_field_value(field_name, raw_value, page_url)
+    )
+    if coerced not in (None, "", [], {}):
+        return coerced
+    if field_name != BARCODE_FIELD or not ROUTE_BARCODE_TO_SKU:
+        return coerced
+    routed_sku = coerce_field_value(SKU_FIELD, raw_value, page_url)
+    if (
+        routed_sku not in (None, "", [], {})
+        and SKU_FIELD in allowed_fields
+        and record.get(SKU_FIELD) in (None, "", [], {})
+        and _public_record_field_shape_valid(SKU_FIELD, routed_sku)
+    ):
+        data[SKU_FIELD] = routed_sku
+        return _SKIP_FIELD
+    return coerced
+
+
+def _validate_and_canonicalize_public_field(
+    field_name: str,
+    coerced: object,
+    *,
+    surface: str,
+) -> tuple[object, str | None]:
+    if not _public_record_field_shape_valid(field_name, coerced):
+        return coerced, "invalid_field_shape"
+    if field_name in URL_FIELDS and isinstance(coerced, str) and is_concatenated_url(coerced):
+        return coerced, "concatenated_url"
+    if field_name in NAVIGATION_URL_FIELDS and not public_navigation_url_safe(coerced):
+        return coerced, "unsafe_navigation_url"
+    if field_name not in NAVIGATION_URL_FIELDS:
+        return coerced, None
+    canonical = canonical_public_record_url(
+        coerced,
+        surface=surface,
+        field_name=field_name,
+    )
+    if canonical in (None, "", [], {}):
+        return canonical, "empty_after_canonical_url"
+    return canonical, None
 
 
 def flatten_variants_for_public_output(

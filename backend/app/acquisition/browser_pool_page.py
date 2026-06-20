@@ -8,7 +8,7 @@ import logging
 
 from app.acquisition import cookie_store
 from app.acquisition.browser_background_tasks import await_without_cancelling
-from app.acquisition.browser_pool_spec import persist_context_storage_state
+from app.acquisition.browser_storage_state import persist_context_storage_state
 from app.acquisition.browser_proxy_config import normalized_proxy_value
 from app.acquisition.browser_storage_state import (
     DOMAIN_STORAGE_PERSIST_ATTR,

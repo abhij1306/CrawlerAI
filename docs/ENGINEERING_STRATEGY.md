@@ -28,15 +28,15 @@ Engineering constraints for CrawlerAI. Defines how code should be shaped and how
 | # | Bucket | Primary Files |
 |---|--------|---------------|
 | 1 | API + Bootstrap | `app/main.py`, `app/api/*`, `app/core/*` |
-| 2 | Crawl Ingestion + Orchestration | `crawl_ingestion_service.py`, `crawl_service.py`, `crawl_crud.py`, `_batch_runtime.py`, `pipeline/*` |
-| 3 | Acquisition + Browser Runtime | `acquisition/*`, `crawl_fetch_runtime.py`, `robots_policy.py`, `url_safety.py` |
-| 4 | Extraction | `crawl_engine.py`, `detail_extractor.py`, `listing_extractor.py`, `structured_sources.py`, `js_state_mapper.py`, `network_payload_mapper.py`, `adapters/*`, `extract/*` |
-| 5 | Publish + Persistence | `publish/*`, `artifact_store.py`, `pipeline/persistence.py` |
-| 6 | Review + Selectors + Domain Memory | `review/__init__.py`, `selectors_runtime.py`, `selector_self_heal.py`, `domain_memory_service.py` |
-| 7 | LLM Admin + Runtime | `llm_runtime.py`, `llm_provider_client.py`, `llm_config_service.py`, `llm_cache.py`, `llm_circuit_breaker.py`, `llm_tasks.py` |
-| 8 | Data Enrichment     | `api/data_enrichment.py`, `data_enrichment/service.py`, `data_enrichment/shopify_catalog.py`, `models/crawl.py` |
+| 2 | Crawl Ingestion + Orchestration | `app/crawl/*`, `app/workers/*` |
+| 3 | Acquisition + Browser Runtime | `app/acquisition/*`, `app/core/url_safety.py` |
+| 4 | Extraction | `app/extraction/*`, `app/core/records/*` |
+| 5 | Publish + Persistence | `app/persistence/*`, `app/crawl/pipeline/persistence.py` |
+| 6 | Review + Selectors + Domain Memory | `app/crawl/review/*`, `app/core/records/selectors_runtime.py`, `app/crawl/domain_memory_service.py` |
+| 7 | LLM Admin + Runtime | `app/connectors/llm/*` |
+| 8 | Data Enrichment | `app/api/data_enrichment.py`, `app/enrichment/*`, `app/models/data_enrichment.py` |
 
-Config tunables for all buckets → `app/services/config/*`
+Config tunables for all buckets → `app/core/config/*`
 
 **If new code does not clearly belong to one bucket, stop and decide before writing.**
 
@@ -46,7 +46,7 @@ Config tunables for all buckets → `app/services/config/*`
 
 1. **One obvious home per concern.** `config/field_mappings.py` is the single location for all field aliases. `field_policy.py` owns field eligibility. `crawl_fetch_runtime.py` owns fetch behavior. `crawl_engine.py` is the extraction facade.
 
-2. **Generic code stays generic.** Platform-specific behavior goes in `adapters/[platform].py` or `config/platforms.json`. Specs and tunables go in `app/services/config/*`.
+2. **Generic code stays generic.** Platform-specific behavior goes in `app/connectors/*` provider modules or declarative `app/core/config/platforms.json`; product-detail pages still use normal acquisition/extraction. Specs and tunables go in `app/core/config/*`.
 
 3. **Architecture must stay grep-friendly.** A failure must be traceable to one subsystem in one grep session. Avoid new layers whose main effect is hiding the call path.
 
@@ -63,7 +63,7 @@ They are listed so agents recognize and stop them — not just understand the pr
 
 ### AP-1: Inline config
 Adding `TIMEOUT = 30` or `PLATFORM_RETRIES = 3` directly in service/extractor code.
-**Fix:** Move to `app/services/config/` and import it.
+**Fix:** Move to `app/core/config/` and import it.
 
 ### AP-2: Downstream compensation
 Adding a fallback in `publish/verdict.py` or `pipeline/persistence.py` to handle malformed field values that should have been caught upstream.
@@ -75,7 +75,7 @@ Defining field alias dicts in `detail_extractor.py` or `listing_extractor.py` se
 
 ### AP-4: Hardcoded platform names in generic paths
 `if "shopify" in url` or `if "greenhouse" in host` inside `crawl_fetch_runtime.py`, `crawl_engine.py`, or any generic service.
-**Fix:** Platform detection belongs in `adapters/registry.py` via `can_handle()` or in `config/platforms.json`.
+**Fix:** Platform detection belongs in declarative `app/core/config/platforms.json` or a concrete connector module. Generic runtime paths must not branch on platform names.
 
 ### AP-5: New cross-cutting layer
 Creating `manager.py`, `registry2.py`, `helpers.py`, or `utils_new.py` instead of placing code in the existing subsystem.
@@ -117,7 +117,7 @@ The actual cause of missing variants and missing prices is 3 specific bugs:
 
 **Bug 3 — Backfill calls not made after early exit.** `_backfill_detail_price_from_html` and variant backfill must be called before every return path in `build_detail_record`, not just after the full tier sequence.
 
-**Visible PDP price gaps stay upstream.** If a rendered product detail page has a visible display-price block but structured data omits price, add or tune selector config in `app/services/config/extraction_rules.py` and backfill in `detail_extractor.py`. Do not repair prices in persistence, export, or verdict code. Detail extraction must still reject category/collection URLs with product-tile prices instead of fabricating a PDP record.
+**Visible PDP price gaps stay upstream.** If a rendered product detail page has a visible display-price block but structured data omits price, add or tune selector config in `app/core/config/extraction_rules.py` and backfill in extraction. Do not repair prices in persistence, export, or verdict code. Detail extraction must still reject category/collection URLs with product-tile prices instead of fabricating a PDP record.
 
 **Violation to avoid:** Adding browser interaction (click probes, Playwright variant walks) before verifying these 3 fixes. The probe is only justified for `stateful_dom` sites that still fail after all 3 bugs are fixed.
 
@@ -125,9 +125,9 @@ The actual cause of missing variants and missing prices is 3 specific bugs:
 Creating a new `constants.py`, `config.py`, or inline dict inside a bucket folder
 because "there was no obvious place" to put a constant.
 
-**Violation looks like:** `services/extraction/constants.py`, `acquisition/config.py`, a `FIELD_NAMES = [...]` dict at the top of `detail_extractor.py`.
+**Violation looks like:** `extraction/constants.py`, `acquisition/config.py`, a `FIELD_NAMES = [...]` dict at the top of extraction runtime code.
 
-**Fix:** Before creating any config-like file or constant, grep `app/services/config/` for an appropriate home. The correct home almost always exists. If it does not, extend the nearest file — do not create a new one without explicit confirmation.
+**Fix:** Before creating any config-like file or constant, grep `app/core/config/` for an appropriate home. The correct home almost always exists. If it does not, extend the nearest file — do not create a new one without explicit confirmation.
 
 ### AP-14: Plan burial — writing plans without executing them
 Creating plan documents, audit reports, and remediation specs without running a verification test afterward.
@@ -163,7 +163,7 @@ Adding local product-universe dictionaries for enrichment categories, materials,
 
 **Violation looks like:** `DATA_ENRICHMENT_TAXONOMY_TOKEN_ALIASES`, `matching sets -> outfit sets`, a growing list of material names in config, or a color catalog copied into service code.
 
-**Fix:** Use canonical config data at `backend/app/data/enrichment/shopify_categories.json` for category paths and category attribute handles, and `backend/app/data/enrichment/shopify_attributes.json` for Shopify-defined attribute values. Put service logic in `backend/app/services/data_enrichment/shopify_catalog.py` and use it to improve generic matching mechanics (taxonomy paths, category attribute handles, normalized tokens). Local config may strip UI noise or define source-field lookup, but it must not become a shadow product taxonomy. Owner: `data_enrichment/` subsystem (config data under `app/data/enrichment/`, service code under `app/services/data_enrichment/`).
+**Fix:** Use canonical config data at `backend/app/data/enrichment/shopify_categories.json` for category paths and category attribute handles, and `backend/app/data/enrichment/shopify_attributes.json` for Shopify-defined attribute values. Put service logic in `backend/app/enrichment/shopify_catalog.py` and use it to improve generic matching mechanics (taxonomy paths, category attribute handles, normalized tokens). Local config may strip UI noise or define source-field lookup, but it must not become a shadow product taxonomy. Owner: `enrichment/` subsystem.
 
 ### AP-19: Duplicate public-field cleanup helpers
 Adding per-field cleanup in adapters, enrichment, exports, or UI because a bad `barcode`, `gender`, `brand`, `product_type`, or structural title leaked through.
@@ -183,7 +183,7 @@ Backfilling parent `price`, `currency`, `availability`, `color`, `size`, or `ima
 
 Loading JSON config and writing each key into `globals()` makes config invisible to static analysis and easy to break silently.
 
-**Violation looks like:** `for name, value in exports.items(): globals()[name] = value` in `app/services/config/*`.
+**Violation looks like:** `for name, value in exports.items(): globals()[name] = value` in `app/core/config/*`.
 
 **Fix:** Keep exported config in an explicit typed mapping, define code-owned constants directly, and expose compatibility values through deliberate module `__getattr__`/`__all__` only when needed.
 

@@ -54,7 +54,7 @@ Read these only when relevant:
 ## Always-On Rules
 
 1. Config does not live in service code.
-   Strings, thresholds, tokens, field names, and runtime tunables belong in `app/services/config/*`.
+   Strings, thresholds, tokens, field names, and runtime tunables belong in `app/core/config/*`.
 
 2. Fix upstream, not downstream.
    Do not compensate in `publish/*`, `pipeline/*`, or exports for bugs caused in acquisition or extraction.

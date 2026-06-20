@@ -4,7 +4,7 @@ import logging
 import re
 from collections.abc import Collection, Sequence
 from decimal import Decimal, InvalidOperation
-from functools import lru_cache
+from functools import lru_cache, partial
 from urllib.parse import urlparse
 
 from app.core.config.data_enrichment import (
@@ -32,7 +32,6 @@ from app.core.config.data_enrichment import (
 )
 from app.enrichment.shopify_catalog import (
     attribute_lookup_keys,
-    category_attribute_handles as shopify_category_attribute_handles,
     load_attribute_repository_data,
     load_taxonomy_index as load_shopify_taxonomy_index,
     repository_terms,
@@ -48,6 +47,7 @@ from app.core.shared.field_coerce import (
     strip_html_tags,
     text_or_none,
 )
+from app.core.shared.coerce_primitives import object_dict, object_list
 
 
 logger = logging.getLogger(__name__)
@@ -137,9 +137,7 @@ def build_deterministic_enrichment(
     }
 
 
-def normalize_price(
-    data: dict[str, object], *, source_url: str
-) -> dict[str, object] | None:
+def normalize_price(data: dict[str, object], *, source_url: str) -> dict[str, object] | None:
     raw_price = first_present(
         data,
         *DATA_ENRICHMENT_PRICE_EFFECTIVE_FIELDS,
@@ -291,9 +289,7 @@ def has_size_context(data: dict[str, object]) -> bool:
     return any(term_present(context, term) for term in DATA_ENRICHMENT_SIZE_CONTEXT_TERMS)
 
 
-def normalize_materials(
-    data: dict[str, object], *, terms: dict[str, object]
-) -> list[str] | None:
+def normalize_materials(data: dict[str, object], *, terms: dict[str, object]) -> list[str] | None:
     material_terms = term_dict(terms, "material_terms")
     found: list[str] = []
     seen: set[str] = set()
@@ -340,27 +336,15 @@ def percentage_material_parse(text: str) -> list[str]:
     materials: list[str] = []
     material_token = r"[a-z]+(?:-[a-z]+)?"  # nosec B105
     material_phrase = rf"{material_token}(?:\s+{material_token}){{0,4}}"
-    pattern = re.compile(DATA_ENRICHMENT_MATERIAL_PERCENTAGE_RE, re.I)
-    for match in pattern.finditer(text):
-        material = clean_percentage_material(match.group("material"))
-        if material:
-            materials.append(material)
-    reverse_pattern = re.compile(
+    patterns = (
+        DATA_ENRICHMENT_MATERIAL_PERCENTAGE_RE,
         rf"\b(?P<material>{material_phrase})\s*(?P<percent>\d{{1,3}}(?:\.\d+)?)\s*(?:%|percent)\b",
-        re.I,
-    )
-    for match in reverse_pattern.finditer(text):
-        material = clean_percentage_material(match.group("material"))
-        if material:
-            materials.append(material)
-    word_pattern = re.compile(
         rf"\b(?P<percent>\d{{1,3}}(?:\.\d+)?)\s*percent\s*(?P<material>{material_phrase})\b",
-        re.I,
     )
-    for match in word_pattern.finditer(text):
-        material = clean_percentage_material(match.group("material"))
-        if material:
-            materials.append(material)
+    for pattern in patterns:
+        for match in re.finditer(pattern, text, re.I):
+            if material := clean_percentage_material(match.group("material")):
+                materials.append(material)
     return materials
 
 
@@ -446,19 +430,12 @@ def top_taxonomy_candidates(
     )
 
 
-def match_category_path(data: dict[str, object]) -> dict[str, object] | None:
-    candidates = top_taxonomy_candidates(data, limit=1)
-    return candidates[0] if candidates else None
-
-
 def category_match_values(data: dict[str, object]) -> list[object]:
-    values: list[object] = []
-    for key in ("category", "product_type", "title", "url_category_context"):
-        value = first_present(data, key)
-        if value in (None, "", [], {}):
-            continue
-        values.append(value)
-    return values
+    return [
+        value
+        for key in ("category", "product_type", "title", "url_category_context")
+        if (value := data.get(key)) not in (None, "", [], {})
+    ]
 
 
 def build_seo_keywords(
@@ -563,64 +540,11 @@ def keyword_stem_key(value: str) -> str:
 
 
 def title_bigrams(tokens: list[str], unigrams: set[str]) -> list[str]:
-    phrases: list[str] = []
-    seen: set[str] = set()
-    for index in range(len(tokens) - 1):
-        first = tokens[index]
-        second = tokens[index + 1]
-        if first not in unigrams or second not in unigrams:
-            continue
-        phrase = clean_text(f"{first} {second}").casefold()
-        if not phrase or phrase in seen:
-            continue
-        seen.add(phrase)
-        phrases.append(phrase)
-    return phrases
-
-
-def normalize_audience_values(
-    value: object, *, allowed_values: list[str]
-) -> list[str] | None:
-    if not allowed_values:
-        return None
-    terms: dict[str, object] = {
-        clean_text(item).casefold(): [clean_text(item).casefold()]
-        for item in allowed_values
-        if clean_text(item)
-    }
-    normalized: list[str] = []
-    seen: set[str] = set()
-    values: list[object] = list(string_list(value, max_items=10, max_chars=60))
-    for item in split_values(values):
-        canonical = normalize_from_terms([item], terms)
-        if not canonical:
-            continue
-        key = canonical.casefold()
-        if key in seen:
-            continue
-        seen.add(key)
-        normalized.append(canonical)
-    return normalized or None
-
-
-def category_attribute_values(
-    category_path: str | None,
-    attribute_handle: str,
-) -> list[str]:
-    normalized_handle = str(attribute_handle or "").replace("-", "_")
-    if not category_path:
-        return []
-    category_handles = set(category_attribute_handles(category_path))
-    if normalized_handle not in category_handles:
-        return []
-    repository = load_attribute_repository()
-    attributes_by_handle = object_dict(repository.get("attributes_by_handle"))
-    attribute = object_dict(attributes_by_handle.get(normalized_handle))
-    return [
-        clean_text(item)
-        for item in object_list(attribute.get("values"))
-        if clean_text(item)
-    ]
+    return list(dict.fromkeys(
+        clean_text(f"{first} {second}").casefold()
+        for first, second in zip(tokens, tokens[1:], strict=False)
+        if first in unigrams and second in unigrams
+    ))
 
 
 def product_attribute_diagnostics(
@@ -643,7 +567,8 @@ def product_attribute_diagnostics(
     present: list[str] = []
     missing: list[str] = []
     for attribute in attributes:
-        if product_attribute_value(data, attribute) in (None, "", [], {}):
+        value = first_present(data, *attribute_lookup_keys(attribute))
+        if value in (None, "", [], {}):
             missing.append(attribute)
         else:
             present.append(attribute)
@@ -653,171 +578,94 @@ def product_attribute_diagnostics(
         "required_attributes": required,
         "recommended_attributes": recommended,
     }
-
-
-def product_attribute_value(data: dict[str, object], attribute: str) -> object | None:
-    keys = attribute_lookup_keys(attribute)
-    return first_present(data, *keys)
-
-
-def category_attribute_handles(category_path: str | None) -> list[str]:
-    return shopify_category_attribute_handles(category_path, load_taxonomy_index())
-
-
 def candidate_values(data: dict[str, object], *keys: str) -> list[object]:
-    values: list[object] = []
-    for key in keys:
-        value = data.get(key)
-        if value in (None, "", [], {}):
-            continue
-        if isinstance(value, dict):
-            values.extend(flatten_dict_values(value))
-        elif isinstance(value, list):
-            values.extend(flatten_list_values(value))
-        else:
-            values.append(value)
-    return values
+    return _candidate_values(data, keys)
 
 
 def targeted_candidate_values(
     data: dict[str, object], target_keys: Collection[str], *keys: str
 ) -> list[object]:
-    normalized_targets = {str(key).casefold() for key in target_keys}
+    return _candidate_values(data, keys, {str(key).casefold() for key in target_keys})
+
+
+def _candidate_values(
+    data: dict[str, object], keys: Sequence[str], target_keys: set[str] | None = None
+) -> list[object]:
     values: list[object] = []
     for key in keys:
         value = data.get(key)
         if value in (None, "", [], {}):
             continue
-        if isinstance(value, dict):
-            values.extend(flatten_targeted_dict_values(value, normalized_targets))
-        elif isinstance(value, list):
-            values.extend(flatten_targeted_list_values(value, normalized_targets))
+        if isinstance(value, (dict, list)):
+            values.extend(_flatten_values(value, target_keys=target_keys))
         else:
             values.append(value)
     return values
 
 
-def flatten_dict_values(
-    value: dict[str, object], max_depth: int | None = None
-) -> list[object]:
-    if max_depth is None:
-        max_depth = data_enrichment_settings.candidate_flatten_max_depth
-    if max_depth <= 0:
-        return []
-    values: list[object] = []
-    for item in value.values():
-        if isinstance(item, dict):
-            values.extend(flatten_dict_values(item, max_depth - 1))
-        elif isinstance(item, list):
-            values.extend(flatten_list_values(item, max_depth - 1))
-        else:
-            values.append(item)
-    return values
+def flatten_values(value: object, max_depth: int | None = None) -> list[object]:
+    return _flatten_values(value, max_depth=max_depth)
 
 
-def flatten_list_values(
-    value: list[object], max_depth: int | None = None
-) -> list[object]:
-    if max_depth is None:
-        max_depth = data_enrichment_settings.candidate_flatten_max_depth
-    if max_depth <= 0:
-        return []
-    values: list[object] = []
-    for item in value:
-        if isinstance(item, dict):
-            values.extend(flatten_dict_values(item, max_depth - 1))
-        elif isinstance(item, list):
-            values.extend(flatten_list_values(item, max_depth - 1))
-        else:
-            values.append(item)
-    return values
-
-
-def flatten_targeted_dict_values(
-    value: dict[str, object],
+def flatten_targeted_values(
+    value: object,
     target_keys: set[str],
     max_depth: int | None = None,
 ) -> list[object]:
+    return _flatten_values(value, max_depth=max_depth, target_keys=target_keys)
+
+
+def _flatten_values(
+    value: object,
+    *,
+    max_depth: int | None = None,
+    target_keys: set[str] | None = None,
+) -> list[object]:
     if max_depth is None:
         max_depth = data_enrichment_settings.candidate_flatten_max_depth
     if max_depth <= 0:
         return []
     values: list[object] = []
-    for key, item in value.items():
-        if str(key).casefold() in target_keys and item not in (None, "", [], {}):
-            if isinstance(item, dict):
-                values.extend(flatten_dict_values(item, max_depth - 1))
-            elif isinstance(item, list):
-                values.extend(flatten_list_values(item, max_depth - 1))
-            else:
-                values.append(item)
+    items = value.items() if isinstance(value, dict) else enumerate(value) if isinstance(value, list) else ()
+    for key, item in items:
+        if target_keys is not None and str(key).casefold() in target_keys:
+            if item not in (None, "", [], {}):
+                values.extend(
+                    _flatten_values(item, max_depth=max_depth - 1)
+                    if isinstance(item, (dict, list))
+                    else [item]
+                )
             continue
-        if isinstance(item, dict):
-            values.extend(
-                flatten_targeted_dict_values(item, target_keys, max_depth - 1)
-            )
-        elif isinstance(item, list):
-            values.extend(
-                flatten_targeted_list_values(item, target_keys, max_depth - 1)
-            )
-    return values
-
-
-def flatten_targeted_list_values(
-    value: list[object],
-    target_keys: set[str],
-    max_depth: int | None = None,
-) -> list[object]:
-    if max_depth is None:
-        max_depth = data_enrichment_settings.candidate_flatten_max_depth
-    if max_depth <= 0:
-        return []
-    values: list[object] = []
-    for item in value:
-        if isinstance(item, dict):
-            values.extend(
-                flatten_targeted_dict_values(item, target_keys, max_depth - 1)
-            )
-        elif isinstance(item, list):
-            values.extend(
-                flatten_targeted_list_values(item, target_keys, max_depth - 1)
-            )
+        if isinstance(item, (dict, list)):
+            values.extend(_flatten_values(
+                item, max_depth=max_depth - 1, target_keys=target_keys
+            ))
+        elif target_keys is None:
+            values.append(item)
     return values
 
 
 def split_values(values: list[object]) -> list[str]:
-    rows: list[str] = []
-    for value in values:
-        text = clean_text(value)
-        if not text:
-            continue
-        rows.extend(
-            clean_text(part)
-            for part in re.split(r"[,/|;·]", text)
-            if clean_text(part)
-        )
-    return rows
+    return [
+        cleaned
+        for value in values
+        if (text := clean_text(value))
+        for part in re.split(r"[,/|;·]", text)
+        if (cleaned := clean_text(part))
+    ]
 
 
 def tokens(value: object) -> list[str]:
-    return [
-        token
-        for token in token_re.findall(clean_text(strip_html_tags(value)).casefold())
-        if token
-    ]
+    return token_re.findall(clean_text(strip_html_tags(value)).casefold())
 
 
 def keyword_tokens(value: object, stopwords: set[str]) -> list[str]:
-    return [
-        token for token in tokens(value) if len(token) >= 3 and token not in stopwords
-    ]
+    return [token for token in tokens(value) if len(token) >= 3 and token not in stopwords]
 
 
 def term_present(text: str, term: object) -> bool:
     normalized = clean_text(term).casefold()
-    if not normalized:
-        return False
-    return (
+    return bool(normalized) and (
         re.search(rf"(?<![a-z0-9]){re.escape(normalized)}(?![a-z0-9])", text)
         is not None
     )
@@ -847,36 +695,5 @@ def without_empty(value: dict[str, object]) -> dict[str, object]:
     return {key: item for key, item in value.items() if item not in (None, "", [], {})}
 
 
-def object_dict(value: object) -> dict[str, object]:
-    return value if isinstance(value, dict) else {}
-
-
-def object_list(value: object) -> list[object]:
-    return value if isinstance(value, list) else []
-
-
-def string_list(value: object, *, max_items: int, max_chars: int) -> list[str]:
-    if not isinstance(value, list):
-        return []
-    rows: list[str] = []
-    seen: set[str] = set()
-    for item in value:
-        text = clean_text(item)[:max_chars]
-        key = text.casefold()
-        if not text or key in seen:
-            continue
-        seen.add(key)
-        rows.append(text)
-        if len(rows) >= max_items:
-            break
-    return rows
-
-
-@lru_cache(maxsize=1)
-def load_attribute_repository() -> dict[str, object]:
-    return load_attribute_repository_data(data_enrichment_settings.attributes_path)
-
-
-@lru_cache(maxsize=1)
-def load_taxonomy_index():
-    return load_shopify_taxonomy_index(data_enrichment_settings.taxonomy_path)
+load_attribute_repository = partial(load_attribute_repository_data, data_enrichment_settings.attributes_path)
+load_taxonomy_index = partial(load_shopify_taxonomy_index, data_enrichment_settings.taxonomy_path)

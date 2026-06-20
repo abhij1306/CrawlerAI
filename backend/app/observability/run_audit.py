@@ -396,23 +396,20 @@ def _audit_traces(
             for entry in field_provenance:
                 if not isinstance(entry, dict):
                     continue
-                if str(entry.get("field") or "") != "variants":
-                    continue
-                if entry.get("present") is not False:
+                if str(entry.get("field") or "") != "variants" or entry.get("present") is not False:
                     continue
                 winning_source = str(entry.get("winning_source") or "").strip()
                 if not winning_source:
                     continue
-                flags.append(
-                    _flag(
-                        FLAG_VARIANT_CANDIDATE_DROPPED,
-                        evidence={
-                            "winning_source": winning_source,
-                            "note": entry.get("note"),
-                            "value_shape": entry.get("value_shape"),
-                        },
-                        url=str(trace.get("url") or ""),
-                    )
+                flags.append(_flag(
+                    FLAG_VARIANT_CANDIDATE_DROPPED,
+                    evidence={
+                        "winning_source": winning_source,
+                        "note": entry.get("note"),
+                        "value_shape": entry.get("value_shape"),
+                    },
+                    url=str(trace.get("url") or ""),
+                )
                 )
         rejection_reason = str(extraction.get("rejection_reason") or "").strip()
         if not rejection_reason:
@@ -436,14 +433,10 @@ def _audit_traces(
             flags.append(_flag(FLAG_DETAIL_ON_LISTING_SEED, evidence=evidence, url=url))
             flagged_rejections.add((url, rejection_reason))
         elif rejection_reason == "detail_identity_mismatch":
-            flags.append(
-                _flag(FLAG_DETAIL_IDENTITY_REJECTED, evidence=evidence, url=url)
-            )
+            flags.append(_flag(FLAG_DETAIL_IDENTITY_REJECTED, evidence=evidence, url=url))
             flagged_rejections.add((url, rejection_reason))
         elif rejection_reason == "challenge_shell":
-            flags.append(
-                _flag(FLAG_ACQUISITION_CHALLENGE_BLOCKED, evidence=evidence, url=url)
-            )
+            flags.append(_flag(FLAG_ACQUISITION_CHALLENGE_BLOCKED, evidence=evidence, url=url))
             flagged_rejections.add((url, rejection_reason))
 
     pages_dir = _run_pages_dir(run_id)
@@ -475,22 +468,17 @@ def _audit_traces(
                     url=final_url,
                 )
             )
-        blocked = (
-            bool(host_outcome.get("blocked"))
-            or verdict in obs_config.AUDIT_BLOCKED_VERDICTS
-        )
-        # usable_content but the run/host says blocked -> Rule 6 contradiction.
+        blocked = bool(host_outcome.get("blocked")) or verdict in obs_config.AUDIT_BLOCKED_VERDICTS
         if outcome == "usable_content" and blocked:
-            flags.append(
-                _flag(
-                    FLAG_USABLE_CONTENT_BUT_BLOCKED,
-                    evidence={
-                        "browser_outcome": outcome,
-                        "host_result": host_outcome.get("result"),
-                        "verdict": verdict,
-                    },
-                    url=final_url,
-                )
+            flags.append(_flag(
+                FLAG_USABLE_CONTENT_BUT_BLOCKED,
+                evidence={
+                    "browser_outcome": outcome,
+                    "host_result": host_outcome.get("result"),
+                    "verdict": verdict,
+                },
+                url=final_url,
+            )
             )
     return flags
 

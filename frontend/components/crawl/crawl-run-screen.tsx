@@ -26,7 +26,7 @@ import {
 } from '../ui/patterns';
 import { Badge, Button, Card } from '../ui/primitives';
 import { api } from '../../lib/api';
-import { getApiWebSocketBaseUrl } from '../../lib/api/client';
+import { getApiWebSocketBaseUrl } from '@/api/client';
 import type { CrawlLog, CrawlRecord, ResultSummaryQualityLevel } from '../../lib/api/types';
 import { CRAWL_DEFAULTS } from '../../lib/constants/crawl-defaults';
 import { ACTIVE_STATUSES } from '../../lib/constants/crawl-statuses';

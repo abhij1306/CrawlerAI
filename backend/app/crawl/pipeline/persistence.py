@@ -98,6 +98,7 @@ def _fingerprint_value(value: object) -> object:
 def _stored_record_matches(
     row: CrawlRecord,
     *,
+    url_result_id: int | None,
     source_url: str,
     data: dict[str, object],
     raw_data: dict[str, object],
@@ -106,6 +107,8 @@ def _stored_record_matches(
     content_fingerprint: str | None,
 ) -> bool:
     return (
+        row.url_result_id == url_result_id
+        and
         row.source_url == source_url
         and row.data == data
         and row.raw_data == raw_data
@@ -118,6 +121,7 @@ def _stored_record_matches(
 def _update_stored_record(
     row: CrawlRecord,
     *,
+    url_result_id: int | None,
     source_url: str,
     data: dict[str, object],
     raw_data: dict[str, object],
@@ -126,6 +130,7 @@ def _update_stored_record(
     raw_html_path: str | None,
     content_fingerprint: str | None,
 ) -> None:
+    row.url_result_id = url_result_id
     row.source_url = source_url
     row.data = data
     row.raw_data = raw_data
@@ -356,128 +361,56 @@ async def persist_extracted_records(
     records: list[dict[str, object]],
     *,
     acquisition_result,
+    url_result_id: int | None = None,
     raw_html_path: str | None = None,
 ) -> int:
     persisted = 0
-    candidate_identity_keys = {
-        identity_key
-        for record in records
-        for identity_key in (
-            _record_identity_key(
-                str(
-                    dict(record).get("url")
-                    or dict(record).get("source_url")
-                    or acquisition_result.final_url
-                )
-            ),
-        )
-        if identity_key
-    }
-    existing_records_by_identity: dict[str, CrawlRecord] = {}
-    if candidate_identity_keys:
-        existing_records_by_identity = {
-            str(row.url_identity_key): row
-            for row in (
-                await session.scalars(
-                    select(CrawlRecord).where(
-                        CrawlRecord.run_id == run.id,
-                        CrawlRecord.url_identity_key.in_(candidate_identity_keys),
-                    )
-                )
-            )
-            if row.url_identity_key
-        }
+    existing_records_by_identity = await _load_existing_records_by_identity(
+        session,
+        run_id=run.id,
+        identity_keys=_candidate_identity_keys(records, acquisition_result),
+    )
     seen_identities: set[str] = set(existing_records_by_identity)
     for record in records:
         raw_record = dict(record)
-        preliminary_source_url = str(
-            raw_record.get("source_url") or acquisition_result.final_url
-        )
-        unfiltered_data = {
-            str(key): value
-            for key, value in raw_record.items()
-            if not str(key).startswith("_") and value not in (None, "", [], {})
-        }
-        data, rejected_public_fields = public_record_data_for_surface(
-            unfiltered_data,
-            surface=str(run.surface or ""),
-            page_url=str(getattr(acquisition_result, "final_url", "") or preliminary_source_url),
-            requested_fields=list(run.requested_fields or []),
+        preliminary_source_url = str(raw_record.get("source_url") or acquisition_result.final_url)
+        data, rejected_public_fields = _public_data_for_record(
+            raw_record,
+            run=run,
+            acquisition_result=acquisition_result,
+            preliminary_source_url=preliminary_source_url,
         )
         if not data:
             continue
         if "listing" in str(run.surface or "") and not data.get("url"):
             continue
-        record_source_url = str(
-            data.get("source_url") or acquisition_result.final_url
-        )
+        record_source_url = str(data.get("source_url") or acquisition_result.final_url)
         identity_source_url = str(data.get("url") or record_source_url)
         identity_key = _record_identity_key(identity_source_url)
-        content_fingerprint = _record_content_fingerprint(
-            data,
-            identity_source_url=identity_source_url,
+        content_fingerprint = _record_content_fingerprint(data, identity_source_url=identity_source_url)
+        discovered_data = _discovered_data_for_record(
+            raw_record,
+            data=data,
+            run=run,
+            rejected_public_fields=rejected_public_fields,
         )
-        confidence = mapping_or_empty(record.get("_confidence")) or score_record_confidence(
-            {**data, "_field_sources": mapping_or_empty(raw_record.get("_field_sources"))},
-            surface=str(run.surface or ""),
-            requested_fields=list(run.requested_fields or []),
+        lineage = _record_lineage(
+            raw_record,
+            data=data,
+            acquisition_result=acquisition_result,
+            preliminary_source_url=preliminary_source_url,
         )
-        discovered_data = {
-            key: value
-            for key, value in {
-                "confidence": confidence,
-                "field_repair": mapping_or_empty(record.get("_field_repair")),
-                "manifest_trace": mapping_or_empty(record.get("_manifest_trace")),
-                "semantic": mapping_or_empty(record.get("_semantic")),
-                "review_bucket": _object_list(record.get("_review_bucket")),
-                "rejected_public_fields": rejected_public_fields,
-            }.items()
-            if value not in (None, "", [], {})
-        }
-        selector_traces = mapping_or_empty(raw_record.get("_selector_traces"))
-        lineage = _public_lineage_for_data(
-            mapping_or_empty(raw_record.get("_lineage")),
-            raw_record=raw_record,
-            public_data=data,
-            page_url=str(getattr(acquisition_result, "final_url", "") or preliminary_source_url),
+        source_trace = _source_trace_for_record(
+            raw_record,
+            data=data,
+            acquisition_result=acquisition_result,
+            lineage=lineage,
         )
-        source_trace = {
-            "acquisition": {
-                "method": str(getattr(acquisition_result, "method", "") or ""),
-                "final_url": str(
-                    getattr(acquisition_result, "final_url", "") or ""
-                ),
-                "status_code": getattr(acquisition_result, "status_code", None),
-                "browser_diagnostics": mapping_or_empty(
-                    getattr(acquisition_result, "browser_diagnostics", {})
-                ),
-            },
-            "lineage": lineage,
-            "field_sources": mapping_or_empty(raw_record.get("_field_sources")),
-            "field_discovery": {
-                field_name: {
-                    "status": "found",
-                    "value": value,
-                    "sources": [
-                        str(
-                            mapping_or_empty(selector_traces.get(field_name)).get(
-                                "selector_source"
-                            )
-                            or mapping_or_empty(lineage.get(field_name)).get("rule_id")
-                            or "extraction"
-                        )
-                    ],
-                    "selector_trace": mapping_or_empty(
-                        selector_traces.get(field_name)
-                    ),
-                }
-                for field_name, value in data.items()
-            },
-        }
         existing_record = existing_records_by_identity.get(identity_key or "")
         if identity_key and identity_key in seen_identities:
             if existing_record and not _stored_record_matches(
                 existing_record,
+                url_result_id=url_result_id,
                 source_url=record_source_url,
                 data=data,
                 raw_data=raw_record,
@@ -487,6 +420,7 @@ async def persist_extracted_records(
             ):
                 _update_stored_record(
                     existing_record,
+                    url_result_id=url_result_id,
                     source_url=record_source_url,
                     data=data,
                     raw_data=raw_record,
@@ -501,6 +435,7 @@ async def persist_extracted_records(
         if identity_key is not None:
             seen_identities.add(identity_key)
         crawl_record = CrawlRecord(
+            url_result_id=url_result_id,
             run_id=run.id,
             source_url=record_source_url,
             url_identity_key=identity_key,
@@ -515,6 +450,150 @@ async def persist_extracted_records(
         await session.flush()
         persisted += 1
     return persisted
+
+
+def _candidate_identity_keys(
+    records: list[dict[str, object]],
+    acquisition_result,
+) -> set[str]:
+    return {
+        identity_key
+        for record in records
+        for identity_key in (
+            _record_identity_key(
+                str(
+                    dict(record).get("url")
+                    or dict(record).get("source_url")
+                    or acquisition_result.final_url
+                )
+            ),
+        )
+        if identity_key
+    }
+
+
+async def _load_existing_records_by_identity(
+    session: AsyncSession,
+    *,
+    run_id: int,
+    identity_keys: set[str],
+) -> dict[str, CrawlRecord]:
+    if not identity_keys:
+        return {}
+    return {
+        str(row.url_identity_key): row
+        for row in (
+            await session.scalars(
+                select(CrawlRecord).where(
+                    CrawlRecord.run_id == run_id,
+                    CrawlRecord.url_identity_key.in_(identity_keys),
+                )
+            )
+        )
+        if row.url_identity_key
+    }
+
+
+def _public_data_for_record(
+    raw_record: dict[str, object],
+    *,
+    run: CrawlRun,
+    acquisition_result,
+    preliminary_source_url: str,
+) -> tuple[dict[str, object], dict[str, object]]:
+    unfiltered_data = {
+        str(key): value
+        for key, value in raw_record.items()
+        if not str(key).startswith("_") and value not in (None, "", [], {})
+    }
+    return public_record_data_for_surface(
+        unfiltered_data,
+        surface=str(run.surface or ""),
+        page_url=str(getattr(acquisition_result, "final_url", "") or preliminary_source_url),
+        requested_fields=list(run.requested_fields or []),
+    )
+
+
+def _discovered_data_for_record(
+    raw_record: dict[str, object],
+    *,
+    data: dict[str, object],
+    run: CrawlRun,
+    rejected_public_fields: dict[str, object],
+) -> dict[str, object]:
+    confidence = mapping_or_empty(
+        raw_record.get("_confidence")
+    ) or score_record_confidence(
+        {**data, "_field_sources": mapping_or_empty(raw_record.get("_field_sources"))},
+        surface=str(run.surface or ""),
+        requested_fields=list(run.requested_fields or []),
+    )
+    return {
+        key: value
+        for key, value in {
+            "confidence": confidence,
+            "field_repair": mapping_or_empty(raw_record.get("_field_repair")),
+            "manifest_trace": mapping_or_empty(raw_record.get("_manifest_trace")),
+            "semantic": mapping_or_empty(raw_record.get("_semantic")),
+            "review_bucket": _object_list(raw_record.get("_review_bucket")),
+            "rejected_public_fields": rejected_public_fields,
+        }.items()
+        if value not in (None, "", [], {})
+    }
+
+
+def _source_trace_for_record(
+    raw_record: dict[str, object],
+    *,
+    data: dict[str, object],
+    acquisition_result,
+    lineage: dict[str, object],
+) -> dict[str, object]:
+    selector_traces = mapping_or_empty(raw_record.get("_selector_traces"))
+    return {
+        "acquisition": {
+            "method": str(getattr(acquisition_result, "method", "") or ""),
+            "final_url": str(getattr(acquisition_result, "final_url", "") or ""),
+            "status_code": getattr(acquisition_result, "status_code", None),
+            "browser_diagnostics": mapping_or_empty(
+                getattr(acquisition_result, "browser_diagnostics", {})
+            ),
+        },
+        "lineage": lineage,
+        "field_sources": mapping_or_empty(raw_record.get("_field_sources")),
+        "field_discovery": {
+            field_name: {
+                "status": "found",
+                "value": value,
+                "sources": [
+                    str(
+                        mapping_or_empty(selector_traces.get(field_name)).get(
+                            "selector_source"
+                        )
+                        or mapping_or_empty(lineage.get(field_name)).get("rule_id")
+                        or "extraction"
+                    )
+                ],
+                "selector_trace": mapping_or_empty(selector_traces.get(field_name)),
+            }
+            for field_name, value in data.items()
+        },
+    }
+
+
+def _record_lineage(
+    raw_record: dict[str, object],
+    *,
+    data: dict[str, object],
+    acquisition_result,
+    preliminary_source_url: str,
+) -> dict[str, object]:
+    return _public_lineage_for_data(
+        mapping_or_empty(raw_record.get("_lineage")),
+        raw_record=raw_record,
+        public_data=data,
+        page_url=str(getattr(acquisition_result, "final_url", "") or preliminary_source_url),
+    )
 
 
 def _public_lineage_for_data(

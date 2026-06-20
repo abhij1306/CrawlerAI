@@ -69,17 +69,16 @@ from app.acquisition.browser_stage_runner import (
 )
 from app.acquisition.browser_pool import (
     SharedBrowserRuntime,
-    block_unneeded_route as _block_unneeded_route,
     browser_runtime_snapshot as _browser_runtime_snapshot_impl,
     get_browser_runtime as _get_browser_runtime_impl,
     patchright_browser_available,
     real_chrome_browser_available,
-    real_chrome_candidate_paths as _real_chrome_candidate_paths,
+    _real_chrome_candidate_paths,
     real_chrome_executable_path,
     shutdown_browser_runtime as _shutdown_browser_runtime_impl,
     shutdown_browser_runtime_sync as _shutdown_browser_runtime_sync_impl,
-    temporary_browser_page,
 )
+from app.acquisition.browser_route_blocking import block_unneeded_route as _block_unneeded_route
 from app.acquisition import cookie_store
 from app.acquisition.dom_runtime import get_page_html
 from app.acquisition.runtime import (
@@ -99,11 +98,6 @@ from app.core.config.browser_fingerprint_profiles import (
     WARMUP_VENDOR_BLOCK_PREFIX,
 )
 from app.core.config.runtime_settings import (
-    # Public compatibility exports for callers that still import these via __all__.
-    BROWSER_CAPTURE_MAX_NETWORK_PAYLOAD_BYTES,
-    BROWSER_CAPTURE_MAX_NETWORK_PAYLOADS,
-    BROWSER_CAPTURE_QUEUE_SIZE,
-    BROWSER_CAPTURE_WORKERS,
     crawler_runtime_settings,
     proxy_rotation_mode,
 )
@@ -214,7 +208,7 @@ def _browser_proxy_mode(
 ) -> str:
     if not proxy:
         return "direct"
-    if proxied_page_factory is temporary_browser_page:
+    if proxied_page_factory is None:
         return "launch"
     return "page"
 
@@ -311,7 +305,7 @@ async def browser_fetch(
     max_records: int | None = None,
     on_event=None,
     runtime_provider=get_browser_runtime,
-    proxied_page_factory=temporary_browser_page,
+    proxied_page_factory=None,
     blocked_html_checker=is_blocked_html_async,
 ) -> PageFetchResult:
     normalized_domain = normalize_domain(url)
@@ -629,7 +623,7 @@ async def _resolve_browser_fetch_page_context(
     allow_storage_state: bool,
     phase_timings_ms: dict[str, int],
 ):
-    if proxy and proxied_page_factory is not temporary_browser_page:
+    if proxy and proxied_page_factory is not None:
         page_context = _resolve_proxied_page_factory(
             proxied_page_factory,
             proxy=proxy,
@@ -1024,9 +1018,7 @@ async def _close_unexpected_popup(page: Any, *, on_event=None) -> None:
 
 
 __all__ = [
-    "SharedBrowserRuntime", "BROWSER_CAPTURE_MAX_NETWORK_PAYLOADS",
-    "BROWSER_CAPTURE_MAX_NETWORK_PAYLOAD_BYTES", "BROWSER_CAPTURE_QUEUE_SIZE",
-    "BROWSER_CAPTURE_WORKERS", "NetworkPayloadReadResult", "browser_fetch",
+    "SharedBrowserRuntime", "NetworkPayloadReadResult", "browser_fetch",
     "build_browser_diagnostics_contract",
     "browser_runtime_snapshot", "block_unneeded_route",
     "build_failed_browser_diagnostics", "capture_browser_screenshot",
@@ -1037,5 +1029,4 @@ __all__ = [
     "real_chrome_browser_available", "real_chrome_candidate_paths",
     "real_chrome_executable_path", "should_capture_network_payload",
     "shutdown_browser_runtime", "shutdown_browser_runtime_sync",
-    "temporary_browser_page",
 ]

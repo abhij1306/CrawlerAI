@@ -2,9 +2,11 @@ from __future__ import annotations
 
 __all__ = [
     "coerce_int",
+    "bounded_int",
     "is_blank",
     "object_dict",
     "object_list",
+    "positive_int",
     "safe_int",
     "string_list",
 ]
@@ -55,9 +57,18 @@ def safe_int(value: object, *, default: int | None = None) -> int | None:
 def coerce_int(value: object, *, default: int = 0) -> int:
     if isinstance(value, bool):
         return default
-    if isinstance(value, int):
-        return value
+    if isinstance(value, (int, float)):
+        return int(value)
     try:
         return int(str(value).strip())
     except (ValueError, TypeError):
         return default
+
+
+def positive_int(value: object) -> int | None:
+    parsed = coerce_int(value)
+    return parsed if parsed > 0 else None
+
+
+def bounded_int(value: object, default: int, *, ceiling: int) -> int:
+    return min(max(1, coerce_int(value, default=default)), int(ceiling))

@@ -72,6 +72,32 @@ describe('apiClient', () => {
     expect(firstUrl).not.toEqual('');
   });
 
+  it('does not retry mutation network failures', async () => {
+    const fetchMock = vi.fn().mockRejectedValue(new Error('offline'));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { apiClient } = await import('./client');
+    await expect(apiClient.post('/api/crawls', { url: 'https://example.com' })).rejects.toThrow(
+      'offline',
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('forwards AbortSignal and request identifiers', async () => {
+    const controller = new AbortController();
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { apiClient } = await import('./client');
+    await apiClient.get('/api/ping', { signal: controller.signal, requestId: 'request-test' });
+
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    expect(init.signal).toBe(controller.signal);
+    expect(new Headers(init.headers).get('X-Request-ID')).toBe('request-test');
+  });
+
   it('httpErrorStatus reads status from ApiError and duck-typed errors', async () => {
     const { ApiError, httpErrorStatus } = await import('./client');
     const apiErr = new ApiError('x', 403, '{}');
@@ -81,7 +107,7 @@ describe('apiClient', () => {
   });
 
   it('preserves review bucket evidence metadata during validation', async () => {
-    const { crawlRecordSchema, strictValidate } = await import('./schemas');
+    const { crawlRecordSchema, strictValidate } = await import('../../lib/api/schemas');
     const parsed = strictValidate(
       crawlRecordSchema,
       {

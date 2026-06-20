@@ -3,13 +3,24 @@ from __future__ import annotations
 import pytest
 
 from app.core.shared.coerce_primitives import (
+    bounded_int,
     coerce_int,
     is_blank,
     object_dict,
     object_list,
+    positive_int,
     safe_int,
     string_list,
 )
+
+
+def test_integer_bounds_and_positive_coercion() -> None:
+    assert positive_int(3.9) == 3
+    assert positive_int(0) is None
+    assert positive_int("bad") is None
+    assert bounded_int(0, 10, ceiling=20) == 1
+    assert bounded_int(30, 10, ceiling=20) == 20
+    assert bounded_int("bad", 10, ceiling=20) == 10
 
 
 @pytest.mark.unit

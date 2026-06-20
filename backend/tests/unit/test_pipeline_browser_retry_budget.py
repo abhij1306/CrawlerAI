@@ -57,7 +57,6 @@ async def test_browser_retry_result_allows_only_one_escalation(monkeypatch) -> N
         started_at_monotonic=time.monotonic(),
         requested_fields=[],
         browser_escalation_count=0,
-        listing_integrity_retry_count=0,
     )
     fetched = SimpleNamespace(acquisition_result=_result(), url_metrics={})
 
@@ -91,7 +90,6 @@ async def test_browser_retry_result_skips_when_browser_already_attempted(monkeyp
         started_at_monotonic=time.monotonic(),
         requested_fields=[],
         browser_escalation_count=0,
-        listing_integrity_retry_count=0,
     )
     fetched = SimpleNamespace(acquisition_result=_result("browser"), url_metrics={})
 

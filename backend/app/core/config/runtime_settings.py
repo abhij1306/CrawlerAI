@@ -373,14 +373,8 @@ class CrawlerRuntimeSettings(BaseSettings):
     browser_preference_min_successes: int = 2
     acquisition_artifact_ttl_seconds: int = 86400
     acquisition_artifact_cleanup_interval_seconds: int = 300
-    llm_direct_record_extraction_min_records: int = 3
-    llm_direct_record_extraction_min_populated_fields_per_record: float = 3.0
     llm_confidence_threshold: float = 0.55
-    raw_json_surface_field_overlap_ratio: float = 0.25
-    raw_json_surface_field_overlap_absolute: int = 2
-    adapter_payload_identity_min_token_length: int = 6
     browser_retry_min_remaining_seconds: float = 20.0
-    low_quality_browser_retry_min_remaining_seconds: float | None = None
     acquisition_contract_stale_failure_threshold: int = 2
     detail_max_variant_axes: int = 3
     detail_max_variant_rows: int = 0
@@ -388,9 +382,6 @@ class CrawlerRuntimeSettings(BaseSettings):
     detail_max_variant_matrix_cells: int = 200
     listing_candidate_strong_score_threshold: int = 18
     listing_cohort_homogeneity_min_ratio: float = 0.6
-    listing_integrity_min_records: int = 2
-    listing_integrity_escalation_enabled: bool = True
-    listing_integrity_escalation_retry_max_per_run: int = 1
     robots_cache_size: int = 512
     robots_cache_ttl: float = 3600.0
     robots_fetch_user_agent: str = "CrawlerAI"
@@ -414,13 +405,6 @@ class CrawlerRuntimeSettings(BaseSettings):
         if self.max_url_process_timeout_seconds < self.url_process_timeout_seconds:
             raise ValueError(
                 "max_url_process_timeout_seconds must be >= url_process_timeout_seconds"
-            )
-        if (
-            "browser_retry_min_remaining_seconds" not in explicitly_set
-            and self.low_quality_browser_retry_min_remaining_seconds is not None
-        ):
-            self.browser_retry_min_remaining_seconds = (
-                self.low_quality_browser_retry_min_remaining_seconds
             )
         _require_non_negative(
             "proxy_failure_cooldown_base_ms",
@@ -449,7 +433,6 @@ class CrawlerRuntimeSettings(BaseSettings):
             "internal_api_replay_max_endpoints",
             "browser_capture_queue_join_timeout_ms",
             "browser_artifact_capture_timeout_ms",
-            "adapter_payload_identity_min_token_length",
             "browser_launch_timeout_seconds",
             "browser_context_slot_timeout_seconds",
         ):
@@ -463,11 +446,6 @@ class CrawlerRuntimeSettings(BaseSettings):
             "browser_retry_min_remaining_seconds",
         ):
             _require_non_negative(field_name, getattr(self, field_name))
-        if self.low_quality_browser_retry_min_remaining_seconds is not None:
-            _require_non_negative(
-                "low_quality_browser_retry_min_remaining_seconds",
-                self.low_quality_browser_retry_min_remaining_seconds,
-            )
         _require_non_negative(
             "browser_behavior_scroll_steps",
             self.browser_behavior_scroll_steps,
@@ -576,13 +554,6 @@ class CrawlerRuntimeSettings(BaseSettings):
             "listing_cohort_homogeneity_min_ratio",
             self.listing_cohort_homogeneity_min_ratio,
         )
-        _require_non_negative(
-            "listing_integrity_min_records", self.listing_integrity_min_records
-        )
-        _require_non_negative(
-            "listing_integrity_escalation_retry_max_per_run",
-            self.listing_integrity_escalation_retry_max_per_run,
-        )
         _require_positive(
             "api_rate_limit_max_requests", self.api_rate_limit_max_requests
         )
@@ -631,21 +602,6 @@ class CrawlerRuntimeSettings(BaseSettings):
 
 
 crawler_runtime_settings = CrawlerRuntimeSettings()
-
-# Compatibility exports: these are import-time snapshots. Use the functions below
-# when tests or runtime code need values patched through crawler_runtime_settings.
-BROWSER_CAPTURE_MAX_NETWORK_PAYLOADS = (
-    crawler_runtime_settings.browser_capture_max_network_payloads
-)
-BROWSER_CAPTURE_MAX_NETWORK_PAYLOAD_BYTES = (
-    crawler_runtime_settings.browser_capture_max_network_payload_bytes
-)
-BROWSER_CAPTURE_TOTAL_NETWORK_PAYLOAD_BYTES = (
-    crawler_runtime_settings.browser_capture_total_network_payload_bytes
-)
-BROWSER_CAPTURE_QUEUE_SIZE = BROWSER_CAPTURE_MAX_NETWORK_PAYLOADS * 2
-BROWSER_CAPTURE_WORKERS = crawler_runtime_settings.browser_capture_workers
-
 
 def browser_capture_max_network_payloads() -> int:
     return crawler_runtime_settings.browser_capture_max_network_payloads

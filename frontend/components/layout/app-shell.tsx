@@ -23,7 +23,7 @@ import {
 } from 'lucide-react';
 
 import { api } from '../../lib/api';
-import { httpErrorStatus } from '../../lib/api/client';
+import { httpErrorStatus } from '@/api/client';
 import { STORAGE_KEYS } from '../../lib/constants/storage-keys';
 import { trapFocus } from '../../lib/focus-trap';
 import { cn } from '../../lib/utils';

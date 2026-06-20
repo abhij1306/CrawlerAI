@@ -1,7 +1,7 @@
 """Audit rule table: symptom -> violated INVARIANT rule -> owning file.
 
 Config-only (INVARIANT Rule 1). The audit engine in
-``app/services/observability/run_audit.py`` imports these and must not inline
+``app/observability/run_audit.py`` imports these and must not inline
 rule strings, owner paths, or severities.
 
 Each rule maps a deterministic symptom (computed from the RunTrace, browser.json,
@@ -37,15 +37,15 @@ FLAG_BASELINE_TIMING_BREACH = "baseline_timing_breach"
 FLAG_BASELINE_VERDICT_REGRESSION = "baseline_verdict_regression"
 
 # Owning files (from docs/CODEBASE_MAP.md).
-OWNER_EXTRACTION_ENGINE = "backend/app/services/extraction/engine.py"
-OWNER_EXTRACTION_VALIDATION = "backend/app/services/extraction/validation"
-OWNER_RECORD_ASSEMBLY = "backend/app/services/extraction/materialization"
-OWNER_BLOCK_CLASSIFY = "backend/app/services/acquisition/browser_result_builder.py"
-OWNER_LISTING_EXTRACTOR = "backend/app/services/extraction/listing.py"
-OWNER_CRAWL_ENGINE = "backend/app/services/crawl_engine.py"
-OWNER_DOMAIN_PROFILE = "backend/app/services/crawl/profile"
-OWNER_DETAIL_EXTRACTOR = "backend/app/services/extraction/pipeline.py"
-OWNER_DETAIL_TIERS = "backend/app/services/extraction/engine.py"
+OWNER_EXTRACTION_ENGINE = "backend/app/extraction/engine.py"
+OWNER_EXTRACTION_VALIDATION = "backend/app/extraction/validation.py"
+OWNER_RECORD_ASSEMBLY = "backend/app/extraction/materialization.py"
+OWNER_BLOCK_CLASSIFY = "backend/app/acquisition/browser_result_builder.py"
+OWNER_LISTING_EXTRACTOR = "backend/app/extraction/pipeline.py"
+OWNER_CRAWL_ENGINE = "backend/app/crawl/pipeline/record_extraction_stage.py"
+OWNER_DOMAIN_PROFILE = "backend/app/crawl/profile"
+OWNER_DETAIL_EXTRACTOR = "backend/app/extraction/pipeline.py"
+OWNER_DETAIL_TIERS = "backend/app/extraction/engine.py"
 
 # Rule metadata keyed by flag code.
 AUDIT_RULES: dict[str, dict[str, str]] = {

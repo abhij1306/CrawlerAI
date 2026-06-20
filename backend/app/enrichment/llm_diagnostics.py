@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 from app.models.data_enrichment import EnrichedProduct
-from app.enrichment.deterministic import string_list
 from app.core.shared.field_coerce import text_or_none
+from app.core.shared.text_coerce import bounded_unique_strings as string_list
 
 
 def build_llm_diagnostics(

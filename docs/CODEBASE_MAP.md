@@ -38,7 +38,7 @@ If a file is not listed, assume it is a helper under a listed owner.
 
 | File | Purpose |
 |---|---|
-| `config.py` | Pydantic settings from `.env` |
+| `config/` | Pydantic settings, policy modules, declarative recipes, and runtime tunables |
 | `database.py` | Async SQLAlchemy engine and session factory |
 | `redis.py` | Shared Redis connection |
 | `security.py` | JWT, password hashing, encryption |
@@ -53,7 +53,8 @@ If a file is not listed, assume it is a helper under a listed owner.
 | `User` | `user.py` | account, role, token version |
 | `ApiKey` | `api_key.py` | public API bearer-key ownership and validation |
 | `CrawlRun` | `crawl_run.py` | run state, surface, settings, summary |
-| `CrawlRecord` | `crawl_run.py` | extracted record payload and provenance |
+| `CrawlUrlResult` | `crawl_run.py` | canonical per-URL acquisition/extraction verdict, manifest pointer, and record count |
+| `CrawlRecord` | `crawl_run.py` | extracted record payload and URL-result-linked provenance |
 | `CrawlLog` | `crawl_run.py` | run logs |
 | `DomainMemory` | `domain_memory.py` | selector memory scoped by `(domain, surface)` |
 | `DomainRunProfile` | `domain_memory.py` | reusable execution defaults scoped by `(domain, surface)` |
@@ -79,18 +80,18 @@ Public API schemas live in `api_key.py` and `public_api.py`.
 | `crawl/ingestion_service.py` | Validate and normalize `CrawlCreate`, stamp run snapshots |
 | `crawl/service.py` | `dispatch_run()` entry — delegates to `dispatch/` strategy |
 | `crawl/crud.py` | DB create and state transitions |
-| `dispatch/` | `RunDispatcher` protocol + `LocalRunDispatcher` + `CeleryRunDispatcher` |
+| `workers/` | Celery entry adapters |
 | `crawl/profile/*` | Reusable domain run-profile normalization, merge, persistence, and acquisition-contract learning |
 | `crawl/events.py` | WebSocket log emission |
-| `product_intelligence/*` | Product web discovery, candidate URL admission/dedupe, brand registry loading, candidate crawl orchestration, deterministic match scoring |
+| `intelligence/*` | Product web discovery, candidate URL admission/dedupe, brand registry loading, candidate crawl orchestration, deterministic match scoring |
 | `../data/product_intelligence/*` | Product Intelligence brand registry data, including Belk brand and exclusive/private-label lists |
-| `data_enrichment/service.py` | On-demand enrichment job orchestration and persistence for ecommerce detail records |
+| `enrichment/service.py` | On-demand enrichment job orchestration and persistence for ecommerce detail records |
 | `crawl/category_discovery.py` | Shared Crawl Studio category discovery response assembly for one or more seed URLs |
-| `public_api/extraction_service.py` | Public HTTP-only single-product extraction wrapper over normal crawl creation and per-URL pipeline processing |
-| `public_api/domain_info_service.py` | Read-only public domain readiness view over domain memory, run profiles, and recent crawl rows |
-| `data_enrichment/deterministic.py` | Deterministic enrichment normalization, taxonomy matching, and product attribute diagnostics |
-| `data_enrichment/llm_diagnostics.py` | Data enrichment LLM rejection and skip-reason diagnostics |
-| `data_enrichment/shopify_catalog.py` | Shopify taxonomy and attribute repository loading/matching |
+| `connectors/public_api/extraction_service.py` | Public HTTP-only single-product extraction wrapper over normal crawl creation and per-URL pipeline processing |
+| `connectors/public_api/domain_info_service.py` | Read-only public domain readiness view over domain memory, run profiles, and recent crawl rows |
+| `enrichment/deterministic.py` | Deterministic enrichment normalization, taxonomy matching, and product attribute diagnostics |
+| `enrichment/llm_diagnostics.py` | Data enrichment LLM rejection and skip-reason diagnostics |
+| `enrichment/shopify_catalog.py` | Shopify taxonomy and attribute repository loading/matching |
 | `crawl/batch_runtime.py` | URL orchestration, per-URL session ownership, concurrency, progress, pause, kill checks |
 | `crawl/sitemap_resolver.py`, `crawl/site_link_discovery.py` | Static sitemap/homepage category discovery plus rendered same-origin site-link fallback |
 | `tasks.py` | Celery task entry |
@@ -101,8 +102,6 @@ Public API schemas live in `api_key.py` and `public_api.py`.
 | `pipeline/persistence.py` | `CrawlRecord` writes, dedupe, summaries |
 | `pipeline/runtime_helpers.py` | Typed stage helpers, browser diagnostics merge, failure-state persistence |
 | `pipeline/run_complete_callbacks.py` | Single run-complete callback registration point for post-run observability hooks |
-| `pipeline/direct_record_fallback.py` | Non-detail direct-record and explicit LLM gap-fill fallback; ecommerce detail is guarded |
-| `pipeline/extraction_retry_decision.py` | Empty-extraction browser retry decisions |
 | `pipeline/types.py` | Pipeline typed objects |
 
 Flow:
@@ -146,14 +145,14 @@ Flow:
 | `robots_policy.py` | robots.txt policy |
 | `url_safety.py` | SSRF and public-target validation |
 
-Import rule: import `fetch_page` from `app.services.fetch.fetch_context` directly.
+Import rule: import `fetch_page` from `app.acquisition.fetch.fetch_context` directly.
 
 Canonical config owner:
 
 | File | Purpose |
 |---|---|
-| `config/runtime_settings.py` | browser runtime tunables and launch args |
-| `config/browser_fingerprint_profiles.py` | static browser identity/profile constants |
+| `core/config/runtime_settings.py` | browser runtime tunables and launch args |
+| `core/config/browser_fingerprint_profiles.py` | static browser identity/profile constants |
 
 ---
 
@@ -189,13 +188,11 @@ Canonical config owner:
 | `public_record_firewall.py` | Final public persisted-data schema/value firewall |
 | `field_value_*.py` | Per-field normalization helpers |
 | `field_policy.py` | Field eligibility by surface |
-| `adapters/registry.py` | Adapter resolution |
-| `adapters/[platform].py` | Platform-specific extraction |
 | `extract/listing_card_fragments.py` | Canonical listing-fragment discovery, scoring, and listing-card heuristics shared by traversal, browser artifact capture, and listing extraction |
 | `extract/listing_candidate_ranking.py` | Listing candidate admission, support signals, utility rejection, dedupe, and set ranking |
 | `extract/structured_listing_handler.py` | Structured JSON-LD listing record extraction and typed/untyped listing payload gating |
 | `extract/network_listing_mapper.py` | Network listing rows and network-to-listing price/brand/currency backfill |
-| `extract/record_overlay.py` | Primary-wins record overlay helper shared by adapter, JS-state, and listing merges |
+| `extract/record_overlay.py` | Primary-wins record overlay helper shared by JS-state, network, structured, and listing merges |
 | `extract/table_extractor.py` | Meaningful table detection, filtering, context resolution, and structured table output |
 | `extract/detail/assembly/tiers.py` | Detail tier execution order, DOM skip decision, and finalization transitions |
 | `extract/detail/assembly/candidate_collection.py` | Detail candidate admission, evidence-backed arbitration, and field evidence summaries |
@@ -241,18 +238,17 @@ Canonical config owners:
 
 | File | Purpose |
 |---|---|
-| `config/field_mappings.py` | canonical schemas, field aliases, and primitive field-name constants |
-| `config/js_state_field_specs.py` | JS-state product and variant field mapping specs |
-| `config/public_record_policy.py` | Public persisted/exported record exclusions, URL safety, and identity value policy |
-| `config/variant_policy.py` | Public variant axes, flat variant transport fields, and variant axis aliases |
-| `config/extraction_rules/` | extraction/runtime selector tokens split by common, image, detail, variant, listing/structured, and job concerns |
-| `config/extraction_price_rules.py` | Detail price selectors, JSON-LD price fields, currency decimal places, and price repair thresholds |
-| `config/variant_migration_rules.py` | Variant migration selectors, validation thresholds, and residual noise/url gates |
-| `config/selectors.py` | DOM selectors |
-| `config/platforms.json` | adapter metadata, signatures, JS mappings, readiness selectors |
-| `config/network_payload_specs.py` | payload specs and endpoint tokens |
-| `config/data_enrichment.py` | data enrichment statuses, limits, and taxonomy file path |
-| `config/public_api.py` | public API key prefixes, envelopes, error codes, rate limits, extraction caps, MCP env names, and static capabilities |
+| `core/config/field_mappings.py` | canonical schemas, field aliases, and primitive field-name constants |
+| `core/config/js_state_field_specs.py` | JS-state product and variant field mapping specs |
+| `core/config/public_record_policy.py` | Public persisted/exported record exclusions, URL safety, and identity value policy |
+| `core/config/variant_policy.py` | Public variant axes, flat variant transport fields, and variant axis aliases |
+| `core/config/extraction_rules/` | extraction/runtime selector tokens split by common, image, detail, variant, listing/structured, and job concerns |
+| `core/config/extraction_price_rules.py` | Detail price selectors, JSON-LD price fields, currency decimal places, and price repair thresholds |
+| `core/config/selectors.py` | DOM selectors |
+| `core/config/platforms.json` | platform metadata, signatures, JS mappings, readiness selectors |
+| `core/config/network_payload_specs.py` | payload specs and endpoint tokens |
+| `core/config/data_enrichment.py` | data enrichment statuses, limits, and taxonomy file path |
+| `core/config/public_api.py` | public API key prefixes, envelopes, error codes, rate limits, extraction caps, MCP env names, and static capabilities |
 
 ### `mcp_server/` — hosted MCP wrapper
 
@@ -345,7 +341,7 @@ All selector memory is scoped by normalized `(domain, surface)`.
 
 ## Quick Guardrails
 
-- Config belongs in `services/config/*`
+- Config belongs in `core/config/*`
 - Fix extraction upstream, not in publish or persistence
 - Do not create `_helpers.py`, `_utils.py`, or compat stubs
 - Do not hardcode platforms in generic paths

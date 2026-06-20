@@ -3,7 +3,8 @@ from __future__ import annotations
 import re
 
 from app.models.data_enrichment import EnrichedProduct
-from app.enrichment.deterministic import category_attribute_handles
+from app.enrichment.deterministic import load_taxonomy_index
+from app.enrichment.shopify_catalog import category_attribute_handles
 from app.core.shared.field_coerce import clean_text
 
 
@@ -20,7 +21,10 @@ def ai_discovery_allowed_tags_for_product(product: EnrichedProduct) -> list[str]
         (90, product.category_path),
         *(
             (85, value)
-            for value in category_attribute_handles(product.category_path)
+            for value in category_attribute_handles(
+                product.category_path,
+                load_taxonomy_index(),
+            )
             if product.category_path
         ),
         (70, product.color_family),
