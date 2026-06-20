@@ -3,6 +3,8 @@ import { RefreshCw, XCircle } from 'lucide-react';
 import type { ComponentType } from 'react';
 import { useState } from 'react';
 
+import { queryKeys } from '@/api/query-keys';
+
 import { api } from '../../lib/api';
 import type { ActiveJob } from '../../lib/api/types';
 import { formatJobsTimestamp as formatTimestamp, formatTimeHms } from '../../lib/format/date';
@@ -34,7 +36,7 @@ export default function JobsPage() {
   const [pendingAction, setPendingAction] = useState('');
   const [actionError, setActionError] = useState('');
   const jobsQuery = useQuery({
-    queryKey: ['jobs'],
+    queryKey: queryKeys.jobs.active(),
     queryFn: api.listJobs,
     refetchInterval: 5000,
   });

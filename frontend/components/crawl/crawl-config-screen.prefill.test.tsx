@@ -9,27 +9,28 @@ import { CrawlConfigScreen } from './crawl-config-screen';
 
 const {
   replaceMock,
-  refreshMock,
   createCsvCrawlMock,
   createCrawlMock,
   getDomainRunProfileMock,
   listSelectorsMock,
+  updateSelectorMock,
 } = vi.hoisted(() => ({
   replaceMock: vi.fn(),
-  refreshMock: vi.fn(),
   createCsvCrawlMock: vi.fn(),
   createCrawlMock: vi.fn(),
   getDomainRunProfileMock: vi.fn(),
   listSelectorsMock: vi.fn(),
+  updateSelectorMock: vi.fn(),
 }));
 
-vi.mock('@/routing/navigation', () => ({
-  usePathname: () => '/crawl',
-  useRouter: () => ({
-    replace: replaceMock,
-    refresh: refreshMock,
-  }),
-}));
+vi.mock('react-router-dom', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('react-router-dom')>();
+  return {
+    ...actual,
+    useLocation: () => ({ pathname: '/crawl', search: '', hash: '', state: null, key: 'test' }),
+    useNavigate: () => replaceMock,
+  };
+});
 
 vi.mock('../../lib/api', () => ({
   api: {
@@ -37,6 +38,7 @@ vi.mock('../../lib/api', () => ({
     createCrawl: createCrawlMock,
     getDomainRunProfile: getDomainRunProfileMock,
     listSelectors: listSelectorsMock,
+    updateSelector: updateSelectorMock,
   },
 }));
 
@@ -73,13 +75,44 @@ async function expectDomainProfileLookup(
 ): Promise<void> {
   await waitFor(
     () => {
-      expect(getDomainRunProfileMock).toHaveBeenCalledWith({
-        url,
-        surface,
-      });
+      expect(getDomainRunProfileMock).toHaveBeenCalledWith(
+        { url, surface },
+        { signal: expect.any(AbortSignal) },
+      );
     },
     { timeout: UI_DELAYS.DEBOUNCE_MS * 6 },
   );
+}
+
+function savedProfile(hostMemoryTtlSeconds: number) {
+  return {
+    version: 1,
+    fetch_profile: {
+      fetch_mode: 'browser_only' as const,
+      extraction_source: 'raw_html' as const,
+      js_mode: 'auto' as const,
+      include_iframes: false,
+      traversal_mode: null,
+      request_delay_ms: 500,
+      host_memory_ttl_seconds: hostMemoryTtlSeconds,
+      max_pages: 10,
+      max_scrolls: 10,
+    },
+    locality_profile: {
+      geo_country: 'auto',
+      language_hint: null,
+      currency_hint: null,
+    },
+    diagnostics_profile: {
+      capture_html: true,
+      capture_screenshot: false,
+      capture_network: 'matched_only' as const,
+      capture_response_headers: true,
+      capture_browser_diagnostics: true,
+    },
+    source_run_id: 11,
+    saved_at: '2026-04-23T00:00:00Z',
+  };
 }
 
 describe('CrawlConfigScreen bulk prefill', () => {
@@ -94,6 +127,7 @@ describe('CrawlConfigScreen bulk prefill', () => {
     });
     listSelectorsMock.mockResolvedValue([]);
     createCrawlMock.mockResolvedValue({ run_id: 321 });
+    updateSelectorMock.mockResolvedValue({});
   });
   it('restores the jobs domain from batch prefill storage', async () => {
     globalThis.sessionStorage.setItem(
@@ -109,11 +143,8 @@ describe('CrawlConfigScreen bulk prefill', () => {
       'https://jobs.example.com/posting/1',
     );
     await waitFor(() => {
-      expect(`${globalThis.location.pathname}${globalThis.location.search}`).toBe(
-        '/crawl?module=pdp&mode=batch',
-      );
+      expect(replaceMock).toHaveBeenCalledWith('/crawl?module=pdp&mode=batch', { replace: true });
     });
-    expect(replaceMock).not.toHaveBeenCalled();
 
     await waitFor(() => {
       expect(screen.getByRole('combobox', { name: 'Domain' })).toHaveTextContent('Jobs');
@@ -149,7 +180,10 @@ describe('CrawlConfigScreen bulk prefill', () => {
 
     await expectDomainProfileLookup('https://example.com/collections/chairs');
     await waitFor(() => {
-      expect(listSelectorsMock).toHaveBeenCalledWith({ domain: 'example.com' });
+      expect(listSelectorsMock).toHaveBeenCalledWith(
+        { domain: 'example.com', surface: 'ecommerce_listing' },
+        { signal: expect.any(AbortSignal) },
+      );
     });
 
     fireEvent.click(screen.getByRole('button', { name: 'Advanced' }));
@@ -164,34 +198,7 @@ describe('CrawlConfigScreen bulk prefill', () => {
     getDomainRunProfileMock.mockResolvedValue({
       domain: 'example.com',
       surface: 'ecommerce_listing',
-      saved_run_profile: {
-        version: 1,
-        fetch_profile: {
-          fetch_mode: 'browser_only',
-          extraction_source: 'raw_html',
-          js_mode: 'auto',
-          include_iframes: false,
-          traversal_mode: null,
-          request_delay_ms: 500,
-          host_memory_ttl_seconds: 1800,
-          max_pages: 10,
-          max_scrolls: 10,
-        },
-        locality_profile: {
-          geo_country: 'auto',
-          language_hint: null,
-          currency_hint: null,
-        },
-        diagnostics_profile: {
-          capture_html: true,
-          capture_screenshot: false,
-          capture_network: 'matched_only',
-          capture_response_headers: true,
-          capture_browser_diagnostics: true,
-        },
-        source_run_id: 11,
-        saved_at: '2026-04-23T00:00:00Z',
-      },
+      saved_run_profile: savedProfile(1800),
     });
 
     renderConfigScreen();
@@ -208,6 +215,102 @@ describe('CrawlConfigScreen bulk prefill', () => {
     expect(screen.getByLabelText('Host memory TTL seconds')).toHaveValue(1800);
   });
 
+  it('resets a saved profile while a different domain profile is loading', async () => {
+    let resolveSecondProfile!: (value: unknown) => void;
+    getDomainRunProfileMock.mockImplementation(({ url }: { url: string }) => {
+      if (url.includes('first.example')) {
+        return Promise.resolve({
+          domain: 'first.example',
+          surface: 'ecommerce_listing',
+          saved_run_profile: savedProfile(1800),
+        });
+      }
+      return new Promise((resolve) => {
+        resolveSecondProfile = resolve;
+      });
+    });
+
+    renderConfigScreen();
+    enterTargetUrl('https://first.example/collections/chairs');
+    fireEvent.click(screen.getByRole('button', { name: 'Advanced' }));
+    await waitFor(() => {
+      expect(screen.getByLabelText('Host memory TTL seconds')).toHaveValue(1800);
+    });
+
+    enterTargetUrl('https://second.example/collections/desks');
+    await waitFor(() => {
+      expect(getDomainRunProfileMock).toHaveBeenCalledWith(
+        {
+          url: 'https://second.example/collections/desks',
+          surface: 'ecommerce_listing',
+        },
+        { signal: expect.any(AbortSignal) },
+      );
+    });
+    expect(screen.getByLabelText('Host memory TTL seconds')).toHaveValue(null);
+
+    resolveSecondProfile({
+      domain: 'second.example',
+      surface: 'ecommerce_listing',
+      saved_run_profile: null,
+    });
+  });
+
+  it('preserves explicit profile edits when a saved profile resolves later', async () => {
+    let resolveProfile!: (value: unknown) => void;
+    getDomainRunProfileMock.mockReturnValue(
+      new Promise((resolve) => {
+        resolveProfile = resolve;
+      }),
+    );
+
+    renderConfigScreen();
+    enterTargetUrl('https://example.com/collections/chairs');
+    await waitFor(() => expect(getDomainRunProfileMock).toHaveBeenCalled());
+    fireEvent.click(screen.getByRole('button', { name: 'Advanced' }));
+    fireEvent.change(screen.getByLabelText('Host memory TTL seconds'), {
+      target: { value: '600' },
+    });
+
+    resolveProfile({
+      domain: 'example.com',
+      surface: 'ecommerce_listing',
+      saved_run_profile: savedProfile(1800),
+    });
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Host memory TTL seconds')).toHaveValue(600);
+    });
+  });
+
+  it('invalidates and refetches the active selector query after saving', async () => {
+    listSelectorsMock.mockResolvedValue([
+      {
+        id: 7,
+        domain: 'example.com',
+        surface: 'ecommerce_listing',
+        field_name: 'price',
+        css_selector: '.product-price',
+        xpath: null,
+        regex: null,
+        status: 'validated',
+        source: 'domain_memory',
+        is_active: true,
+        created_at: '2026-04-23T00:00:00Z',
+        updated_at: '2026-04-23T00:00:00Z',
+      },
+    ]);
+
+    renderConfigScreen();
+    enterTargetUrl('https://example.com/collections/chairs');
+    fireEvent.click(screen.getByRole('button', { name: 'Advanced' }));
+    expect(await screen.findByDisplayValue('price')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Save to Memory' }));
+
+    await waitFor(() => expect(updateSelectorMock).toHaveBeenCalledWith(7, expect.any(Object)));
+    await waitFor(() => expect(listSelectorsMock.mock.calls.length).toBeGreaterThanOrEqual(3));
+  });
+
   it('refreshes the route after launching a crawl so the new run screen loads immediately', async () => {
     renderConfigScreen();
 
@@ -217,8 +320,7 @@ describe('CrawlConfigScreen bulk prefill', () => {
 
     await waitFor(() => {
       expect(createCrawlMock).toHaveBeenCalled();
-      expect(replaceMock).toHaveBeenCalledWith('/crawl?run_id=321');
-      expect(refreshMock).toHaveBeenCalledTimes(1);
+      expect(replaceMock).toHaveBeenCalledWith('/crawl?run_id=321', { replace: true });
     });
   });
 

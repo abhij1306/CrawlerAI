@@ -1,33 +1,15 @@
-import { useQuery } from '@tanstack/react-query';
-import Image from '@/routing/image';
-import Link from '@/routing/link';
-import type { Route } from '@/routing/link';
-import { usePathname, useRouter } from '@/routing/navigation';
+import { ChevronLeft, ChevronRight, Trash2 } from 'lucide-react';
+import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useEffect, useRef, useState } from 'react';
-import type { ComponentType, ReactNode } from 'react';
-import {
-  BrainCircuit,
-  BriefcaseBusiness,
-  ChevronLeft,
-  ChevronRight,
-  Clock3,
-  DatabaseZap,
-  FileChartColumn,
-  Grid2x2,
-  Network,
-  SearchCheck,
-  Settings2,
-  ShieldCheck,
-  Trash2,
-  WandSparkles,
-} from 'lucide-react';
+import type { ReactNode } from 'react';
 
 import { api } from '../../lib/api';
 import { httpErrorStatus } from '@/api/client';
 import { STORAGE_KEYS } from '../../lib/constants/storage-keys';
 import { trapFocus } from '../../lib/focus-trap';
 import { cn } from '../../lib/utils';
-import { getAuthSessionQueryOptions, isAuthRoute } from './auth-session-query';
+import { navGroups, routeMetadataForPath } from '../../src/app/route-registry';
+import { useSession } from '../../src/app/session';
 import { Button } from '../ui/button';
 import { ConfirmDialog } from '../ui/confirm-dialog';
 import type { TopBarState } from './top-bar-context';
@@ -36,62 +18,10 @@ import { ThemeToggle } from '../ui/theme-toggle';
 import './app-shell.module.css';
 import './auth-shell.module.css';
 
-const navGroups = [
-  {
-    label: 'Primary',
-    items: [
-      { href: '/dashboard', label: 'Dashboard', icon: Grid2x2 },
-      { href: '/crawl', label: 'Crawl Studio', icon: WandSparkles },
-      { href: '/runs', label: 'History', icon: Clock3 },
-      { href: '/jobs', label: 'Jobs', icon: BriefcaseBusiness },
-    ],
-  },
-  {
-    label: 'Operations',
-    items: [{ href: '/run-trace', label: 'Run Trace', icon: Network }],
-  },
-  {
-    label: 'Intelligence',
-    items: [
-      { href: '/data-enrichment', label: 'Data Enrichment', icon: FileChartColumn },
-      { href: '/product-intelligence', label: 'Product Intelligence', icon: BrainCircuit },
-    ],
-  },
-  {
-    label: 'Memory',
-    items: [
-      { href: '/selectors', label: 'Selector Tool', icon: SearchCheck, exactMatch: true },
-      { href: '/domain-memory', label: 'Domain Memory', icon: DatabaseZap },
-    ],
-  },
-  {
-    label: 'Admin',
-    items: [
-      { href: '/admin/users', label: 'Users', icon: ShieldCheck },
-      { href: '/admin/llm', label: 'LLM Config', icon: Settings2 },
-    ],
-  },
-] as const satisfies ReadonlyArray<{
-  label: string;
-  items: ReadonlyArray<{
-    href: string;
-    label: string;
-    icon: ComponentType<{ className?: string }>;
-    exactMatch?: boolean;
-  }>;
-}>;
-
-function isNavItemActive(
-  pathname: string,
-  item: (typeof navGroups)[number]['items'][number],
-): boolean {
-  if ('exactMatch' in item && item.exactMatch) {
-    return pathname === item.href;
-  }
-  return pathname === item.href || pathname.startsWith(`${item.href}/`);
+function isNavItemActive(pathname: string, item: (typeof navGroups)[number]['items'][number]) {
+  if (item.nav?.exact) return pathname === item.path;
+  return pathname === item.path || pathname.startsWith(`${item.path}/`);
 }
-
-const navItemCount = navGroups.reduce((total, group) => total + group.items.length, 0);
 
 const resetDialogCopy = {
   title: 'Reset workspace data',
@@ -103,89 +33,9 @@ const resetDialogCopy = {
 const resetForbiddenMessage =
   'The API refused reset (admin-only on an older backend build, or a stale session). Stop and restart the FastAPI server so it loads the latest code, then try again, or sign out and sign back in.';
 
-export function AppShell({ children }: Readonly<{ children: ReactNode }>) {
-  const pathname = usePathname();
-  const router = useRouter();
-  const authRoute = isAuthRoute(pathname);
-
-  const authQuery = useQuery(getAuthSessionQueryOptions(pathname));
-
-  useEffect(() => {
-    if (!authRoute && authQuery.error && httpErrorStatus(authQuery.error) === 401) {
-      router.replace('/login');
-    }
-  }, [authQuery.error, authRoute, router]);
-
-  if (authRoute) {
-    return <AuthShell>{children}</AuthShell>;
-  }
-
-  if (authQuery.isPending) {
-    return (
-      <div className="app-shell-root">
-        <div className="app-shell-grid">
-          <aside className="app-sidebar">
-            <div className="app-sidebar-header">
-              <LogoMark />
-            </div>
-            <div className="app-sidebar-nav">
-              {Array.from({ length: navItemCount }, (_, index) => (
-                <div key={index} className="skeleton h-8 w-full rounded-md" />
-              ))}
-            </div>
-          </aside>
-          <div className="app-main-col">
-            <div className="app-topbar">
-              <div className="skeleton h-4 w-36" />
-            </div>
-            <main className="app-page-frame">
-              <div className="app-page-inner page-stack-lg">
-                <div className="grid grid-cols-4 gap-3">
-                  {Array.from({ length: 4 }, (_, index) => (
-                    <div
-                      key={index}
-                      className="border-border card-gradient space-y-3 rounded-lg border p-4"
-                    >
-                      <div className="skeleton h-3 w-20" />
-                      <div className="skeleton h-8 w-28" />
-                    </div>
-                  ))}
-                </div>
-                <div className="skeleton h-72 w-full rounded-lg" />
-              </div>
-            </main>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (authQuery.error && httpErrorStatus(authQuery.error) === 401) {
-    return (
-      <div className="app-shell-feedback">
-        <div className="border-border card-gradient max-w-sm rounded-lg border p-6 text-center">
-          <p className="type-subheading">Session expired</p>
-          <p className="text-secondary mt-1.5 text-sm leading-relaxed">Redirecting to login…</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (authQuery.error) {
-    return (
-      <div className="app-shell-feedback">
-        <div className="border-border card-gradient max-w-sm rounded-lg border p-6 text-center">
-          <p className="type-subheading">Unable to load session</p>
-          <p className="text-secondary mt-1.5 text-sm leading-relaxed">
-            Refresh to retry, or sign in again if the session expired.
-          </p>
-          <div className="mt-4 flex justify-center">
-            <ThemeToggle compact />
-          </div>
-        </div>
-      </div>
-    );
-  }
+export function AppShell({ children }: Readonly<{ children?: ReactNode }>) {
+  const { pathname } = useLocation();
+  const session = useSession();
 
   return (
     <TopBarProvider>
@@ -197,9 +47,9 @@ export function AppShell({ children }: Readonly<{ children: ReactNode }>) {
           Skip to main content
         </a>
         <div className="app-shell-grid">
-          <Sidebar pathname={pathname} />
-          <ShellContent pathname={pathname} canResetWorkspace={authQuery.data?.role === 'admin'}>
-            {children}
+          <Sidebar pathname={pathname} isAdmin={session.role === 'admin'} />
+          <ShellContent pathname={pathname} canResetWorkspace={session.role === 'admin'}>
+            {children ?? <Outlet />}
           </ShellContent>
         </div>
       </div>
@@ -207,7 +57,7 @@ export function AppShell({ children }: Readonly<{ children: ReactNode }>) {
   );
 }
 
-function AuthShell({ children }: Readonly<{ children: ReactNode }>) {
+export function AuthShell({ children }: Readonly<{ children?: ReactNode }>) {
   return (
     <div className="auth-shell">
       <div className="auth-shell-card">
@@ -217,7 +67,7 @@ function AuthShell({ children }: Readonly<{ children: ReactNode }>) {
           </div>
           <ThemeToggle compact />
         </div>
-        {children}
+        {children ?? <Outlet />}
       </div>
     </div>
   );
@@ -228,7 +78,7 @@ function LogoMark({
   auth = false,
 }: Readonly<{ collapsed?: boolean; auth?: boolean }>) {
   const mark = (
-    <Image
+    <img
       src="/crawlerai-logo.svg"
       className="app-logo-image"
       alt=""
@@ -258,7 +108,7 @@ function LogoMark({
 }
 
 // skipcq: JS-0067
-function Sidebar({ pathname }: Readonly<{ pathname: string }>) {
+function Sidebar({ pathname, isAdmin }: Readonly<{ pathname: string; isAdmin: boolean }>) {
   const [collapsed, setCollapsed] = useState(() => {
     if (typeof window === 'undefined') return false;
     const stored = window.localStorage.getItem(STORAGE_KEYS.SIDEBAR_COLLAPSED);
@@ -290,17 +140,17 @@ function Sidebar({ pathname }: Readonly<{ pathname: string }>) {
       </div>
 
       <nav id="app-sidebar-navigation" className="app-sidebar-nav" aria-label="Main navigation">
-        {navGroups.map((group) => (
+        {navGroups.filter((group) => isAdmin || group.label !== 'Admin').map((group) => (
           <div key={group.label} className="app-sidebar-group">
             <div className="space-y-1">
               {group.items.map((item) => {
                 const active = isNavItemActive(pathname, item);
-                const Icon = item.icon;
+                const Icon = item.nav!.icon;
                 return (
                   <Link
-                    key={item.href}
-                    href={item.href as Route}
-                    title={collapsed ? item.label : undefined}
+                    key={item.path}
+                    to={item.path}
+                    title={collapsed ? item.nav!.label : undefined}
                     className={cn(
                       'app-nav-item relative',
                       active && 'is-active',
@@ -308,7 +158,7 @@ function Sidebar({ pathname }: Readonly<{ pathname: string }>) {
                     )}
                   >
                     <Icon className="app-nav-icon" />
-                    {!collapsed && <span className="truncate">{item.label}</span>}
+                    {!collapsed && <span className="truncate">{item.nav!.label}</span>}
                   </Link>
                 );
               })}
@@ -339,7 +189,7 @@ function ShellContent({
 }: Readonly<{ children: ReactNode; pathname: string; canResetWorkspace: boolean }>) {
   const header = useTopBarHeader();
   const topBar = header?.pathKey === pathname ? header : getFallbackHeader(pathname);
-  const router = useRouter();
+  const navigate = useNavigate();
   const [resetPending, setResetPending] = useState(false);
   const [resetDialogOpen, setResetDialogOpen] = useState(false);
   const [resetError, setResetError] = useState('');
@@ -398,7 +248,7 @@ function ShellContent({
     } catch (error) {
       const status = httpErrorStatus(error);
       if (status === 401) {
-        router.replace('/login');
+        navigate('/login', { replace: true });
         return;
       }
       if (status === 403) {
@@ -477,50 +327,5 @@ function ShellContent({
 }
 
 function getFallbackHeader(pathname: string): TopBarState {
-  if (pathname.startsWith('/dashboard'))
-    return {
-      title: 'Dashboard',
-      description: 'Overview of crawler activity across your workspace.',
-    };
-  if (pathname.startsWith('/crawl'))
-    return {
-      title: 'Crawl Studio',
-      description: 'Configure sources, run jobs, and monitor execution.',
-    };
-  if (pathname.startsWith('/data-enrichment'))
-    return {
-      title: 'Data Enrichment',
-      description: 'Normalize ecommerce detail records into discovery fields.',
-    };
-  if (pathname.startsWith('/product-intelligence'))
-    return {
-      title: 'Product Intelligence',
-      description: 'Find matching product pages and compare prices.',
-    };
-  if (pathname.startsWith('/run-trace'))
-    return {
-      title: 'Run Trace',
-      description: 'Inspect acquire timeline, extraction tiers, and auto-flagged bugs for a run.',
-    };
-  if (pathname.startsWith('/runs/'))
-    return {
-      title: 'Run Details',
-      description: 'Inspect a crawl run, logs, and extracted output.',
-    };
-  if (pathname.startsWith('/runs'))
-    return { title: 'Run History', description: 'Review and manage previously submitted crawls.' };
-  if (pathname.startsWith('/domain-memory'))
-    return {
-      title: 'Domain Memory',
-      description: 'Inspect learned selectors and saved run profiles by domain and surface.',
-    };
-  if (pathname.startsWith('/selectors'))
-    return { title: 'Selector Tool', description: 'Suggest, test, and validate field selectors.' };
-  if (pathname.startsWith('/admin/users'))
-    return { title: 'Users', description: 'Manage workspace access and roles.' };
-  if (pathname.startsWith('/admin/llm'))
-    return { title: 'LLM Config', description: 'Control provider settings and prompts.' };
-  if (pathname.startsWith('/jobs'))
-    return { title: 'Jobs', description: 'Review worker activity and queued work.' };
-  return { title: 'CrawlerAI' };
+  return routeMetadataForPath(pathname);
 }

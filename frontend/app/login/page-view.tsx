@@ -1,4 +1,4 @@
-import { useRouter } from '@/routing/navigation';
+import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { FormEvent, useState } from 'react';
 
@@ -8,7 +8,7 @@ import { Button, Field, Input, Subtitle, Title } from '../../components/ui/primi
 import { api } from '../../lib/api';
 
 export default function LoginPage() {
-  const router = useRouter();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -23,7 +23,7 @@ export default function LoginPage() {
       setError('');
       const response = await api.login(email, password);
       queryClient.setQueryData(AUTH_SESSION_QUERY_KEY, response.user);
-      router.replace('/dashboard');
+      navigate('/dashboard', { replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Login failed');
     } finally {

@@ -1,0 +1,87 @@
+import type { RefObject } from 'react';
+import { ChevronsDown, Clock } from 'lucide-react';
+
+import type { CrawlLog, CrawlRecord, CrawlRun } from '../../lib/api/types';
+import { ACTIVE_STATUSES } from '../../lib/constants/crawl-statuses';
+import { Card } from '../ui/primitives';
+import { LogTerminal } from './log-terminal';
+import { ActionButton } from './shared';
+
+type RunLiveWorkspaceProps = {
+  run: CrawlRun | undefined;
+  logs: CrawlLog[];
+  records: CrawlRecord[];
+  elapsedLabel: string;
+  socketOnline: boolean;
+  liveJumpAvailable: boolean;
+  viewportRef: RefObject<HTMLDivElement | null>;
+  killPending: boolean;
+  onJumpToLatest: () => void;
+  onKill: () => void;
+};
+
+export function RunLiveWorkspace({
+  run,
+  logs,
+  records,
+  elapsedLabel,
+  socketOnline,
+  liveJumpAvailable,
+  viewportRef,
+  killPending,
+  onJumpToLatest,
+  onKill,
+}: Readonly<RunLiveWorkspaceProps>) {
+  return (
+    <Card className="section-card overflow-hidden">
+      <header className="border-border flex h-10 items-center justify-between border-b bg-[color-mix(in_srgb,var(--bg-alt)_40%,var(--bg-panel))] px-4">
+        <span className="type-label-mono text-secondary flex items-center gap-2">
+          Live Log Stream
+          {socketOnline ? (
+            <span
+              className="bg-success inline-block size-1.5 animate-pulse rounded-full"
+              aria-label="Connected"
+            />
+          ) : (
+            <span
+              className="bg-muted inline-block size-1.5 rounded-full"
+              aria-label="Disconnected"
+            />
+          )}
+        </span>
+        <div className="flex items-center gap-3">
+          {run ? (
+            <span className="border-divider bg-background-elevated text-foreground type-body inline-flex h-8 items-center gap-1.5 rounded-sm border px-3 tabular-nums">
+              <Clock className="size-3.5" />
+              {elapsedLabel}
+            </span>
+          ) : null}
+
+          {liveJumpAvailable ? (
+            <button
+              type="button"
+              onClick={onJumpToLatest}
+              className="bg-background-alt shadow-card type-control inline-flex items-center gap-1 rounded-md px-2.5 py-1.5"
+            >
+              <ChevronsDown className="size-3.5" aria-hidden="true" />
+              Jump to Latest
+            </button>
+          ) : null}
+          <ActionButton
+            label={killPending ? 'Killing...' : 'Hard Kill'}
+            onClick={onKill}
+            disabled={!run || !ACTIVE_STATUSES.has(run.status) || killPending}
+            danger
+          />
+        </div>
+      </header>
+      <LogTerminal
+        logs={logs}
+        records={records}
+        requestedFields={run?.requested_fields ?? []}
+        live
+        viewportRef={viewportRef}
+      />
+    </Card>
+  );
+}

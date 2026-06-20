@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 
+import { queryKeys } from '@/api/query-keys';
 import type { CrawlRun } from '../../lib/api/types';
 import { ACTIVE_STATUSES, TERMINAL_STATUSES } from '../../lib/constants/crawl-statuses';
 
@@ -90,7 +91,7 @@ export function useTerminalRecordSync({
   const retryEnabled = enabled && retryAttempts < retryLimit;
 
   useQuery({
-    queryKey: ['crawl-terminal-record-sync', syncKey],
+    queryKey: queryKeys.runs.terminalRecordSync(syncKey),
     queryFn: async () => {
       setRetryState((current) => ({
         key: syncKey,

@@ -5,7 +5,7 @@ import { Network, Search } from 'lucide-react';
 import { InlineAlert, PageHeader } from '../../components/ui/patterns';
 import { Badge, Button, Card, Input } from '../../components/ui/primitives';
 import { api } from '../../lib/api';
-import { httpErrorStatus } from '../../lib/api/client';
+import { httpErrorStatus } from '@/api/client';
 import type { RunAuditFlag, RunObservability, RunTraceArtifact } from '../../lib/api/types';
 
 function severityTone(severity: string): 'danger' | 'warning' | 'neutral' {

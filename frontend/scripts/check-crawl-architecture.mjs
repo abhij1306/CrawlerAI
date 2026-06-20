@@ -7,11 +7,31 @@ const root = process.cwd();
 const checks = [
   {
     file: 'components/crawl/crawl-run-screen.tsx',
-    maxLines: 1400,
+    maxLines: 400,
   },
   {
     file: 'components/crawl/crawl-config-screen.tsx',
-    maxLines: 1500,
+    maxLines: 350,
+  },
+  {
+    file: 'components/crawl/use-crawl-field-actions.ts',
+    maxLines: 230,
+  },
+  {
+    file: 'components/crawl/use-crawl-domain-memory.ts',
+    maxLines: 210,
+  },
+  {
+    file: 'components/crawl/crawl-advanced-execution.tsx',
+    maxLines: 220,
+  },
+  {
+    file: 'components/crawl/crawl-advanced-limits.tsx',
+    maxLines: 190,
+  },
+  {
+    file: 'components/crawl/crawl-advanced-diagnostics.tsx',
+    maxLines: 170,
   },
 ];
 
@@ -34,20 +54,34 @@ function read(relativePath) {
   }
 }
 
-function importsAppDynamic(content) {
+function dynamicallyImportsHeavyCrawlScreens(content) {
   const source = ts.createSourceFile(
-    'app/crawl/page.tsx',
+    'app/crawl/page-view.tsx',
     content,
     ts.ScriptTarget.Latest,
     true,
     ts.ScriptKind.TSX,
   );
-  return source.statements.some(
-    (statement) =>
-      ts.isImportDeclaration(statement) &&
-      ts.isStringLiteral(statement.moduleSpecifier) &&
-      statement.moduleSpecifier.text === '@/routing/dynamic',
-  );
+  const requiredImports = new Set([
+    '../../components/crawl/crawl-config-screen',
+    '../../components/crawl/crawl-run-screen',
+  ]);
+  const discoveredImports = new Set();
+
+  function visit(node) {
+    if (
+      ts.isCallExpression(node) &&
+      node.expression.kind === ts.SyntaxKind.ImportKeyword &&
+      node.arguments.length === 1 &&
+      ts.isStringLiteral(node.arguments[0])
+    ) {
+      discoveredImports.add(node.arguments[0].text);
+    }
+    ts.forEachChild(node, visit);
+  }
+
+  visit(source);
+  return [...requiredImports].every((modulePath) => discoveredImports.has(modulePath));
 }
 
 function hasManualDateNowFieldId(content) {
@@ -180,17 +214,51 @@ if (
     'components/crawl/crawl-run-screen.tsx must use TanStack Query refetchInterval for server polling.',
   );
 }
+if (
+  cleanedRunScreen !== null &&
+  /\buseQuery\s*\(|\bnew\s+WebSocket\s*\(|\bapi\s*\./.test(cleanedRunScreen)
+) {
+  failures.push(
+    'components/crawl/crawl-run-screen.tsx must delegate queries, websocket transport, and API mutations to feature hooks.',
+  );
+}
+if (cleanedRunScreen !== null && /\bestimateDataQuality\b/.test(cleanedRunScreen)) {
+  failures.push(
+    'components/crawl/crawl-run-screen.tsx must consume backend quality instead of estimating semantic quality in the page owner.',
+  );
+}
 
 const configScreen = read('components/crawl/crawl-config-screen.tsx');
+const cleanedConfigScreen = configScreen === null ? null : stripCommentsAndStrings(configScreen);
 if (configScreen !== null && hasManualDateNowFieldId(configScreen)) {
   failures.push(
     'components/crawl/crawl-config-screen.tsx must not build manual field IDs from Date.now/current.length.',
   );
 }
+if (
+  cleanedConfigScreen !== null &&
+  /\buseQuery\s*\(|\bapi\s*\.|\buseLayoutEffect\s*\(|\bwindow\.sessionStorage\b/.test(
+    cleanedConfigScreen,
+  )
+) {
+  failures.push(
+    'components/crawl/crawl-config-screen.tsx must delegate queries, API mutations, and route-prefill synchronization to feature hooks.',
+  );
+}
 
 const crawlPage = read('app/crawl/page-view.tsx');
-if (crawlPage !== null && !importsAppDynamic(crawlPage)) {
-  failures.push('app/crawl/page-view.tsx must dynamic-import heavy crawl screens.');
+if (crawlPage !== null && !dynamicallyImportsHeavyCrawlScreens(crawlPage)) {
+  failures.push(
+    'app/crawl/page-view.tsx must dynamic-import both crawl-config-screen and crawl-run-screen.',
+  );
+}
+
+const routeSync = read('components/crawl/use-crawl-route-sync.ts');
+const cleanedRouteSync = routeSync === null ? null : stripCommentsAndStrings(routeSync);
+if (cleanedRouteSync !== null && /\bhistory\s*\.\s*(?:pushState|replaceState)\s*\(/.test(cleanedRouteSync)) {
+  failures.push(
+    'components/crawl/use-crawl-route-sync.ts must use React Router navigation instead of writing browser history directly.',
+  );
 }
 
 if (failures.length) {

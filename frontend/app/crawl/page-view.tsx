@@ -1,6 +1,5 @@
-import dynamic from '@/routing/dynamic';
-import { useSearchParams } from '@/routing/navigation';
-import { Suspense } from 'react';
+import { lazy, Suspense } from 'react';
+import { useSearchParams } from 'react-router-dom';
 
 import { Skeleton } from '../../components/ui/primitives';
 import {
@@ -19,26 +18,25 @@ const crawlScreenLoading = () => (
   </main>
 );
 
-const CrawlConfigScreen = dynamic(
-  () =>
-    import('../../components/crawl/crawl-config-screen').then((module) => module.CrawlConfigScreen),
-  { loading: crawlScreenLoading, ssr: false },
+const CrawlConfigScreen = lazy(() =>
+  import('../../components/crawl/crawl-config-screen').then((module) => ({
+    default: module.CrawlConfigScreen,
+  })),
 );
-const CrawlRunScreen = dynamic(
-  () => import('../../components/crawl/crawl-run-screen').then((module) => module.CrawlRunScreen),
-  { loading: crawlScreenLoading, ssr: false },
+const CrawlRunScreen = lazy(() =>
+  import('../../components/crawl/crawl-run-screen').then((module) => ({
+    default: module.CrawlRunScreen,
+  })),
 );
 
 function CrawlPageContent() {
-  const searchParams = useSearchParams();
+  const [searchParams] = useSearchParams();
   const runId =
     Number(
       searchParams.get('run_id') || searchParams.get('runId') || searchParams.get('runid') || 0,
     ) || null;
 
-  if (runId !== null) {
-    return <CrawlRunScreen key={runId} runId={runId} />;
-  }
+  if (runId !== null) return <CrawlRunScreen key={runId} runId={runId} />;
 
   return (
     <CrawlConfigScreen
@@ -51,9 +49,5 @@ function CrawlPageContent() {
 }
 
 export default function CrawlPage() {
-  return (
-    <Suspense fallback={crawlScreenLoading()}>
-      <CrawlPageContent />
-    </Suspense>
-  );
+  return <Suspense fallback={crawlScreenLoading()}><CrawlPageContent /></Suspense>;
 }

@@ -1,6 +1,16 @@
 import { describe, expect, it } from 'vitest';
 
-import { isSpecialUseDomain } from './domain';
+import { isSafeHttpUrl, isSpecialUseDomain } from './domain';
+
+describe('isSafeHttpUrl', () => {
+  it('accepts only absolute HTTP and HTTPS URLs', () => {
+    expect(isSafeHttpUrl('https://example.com/product')).toBe(true);
+    expect(isSafeHttpUrl('http://example.com/product')).toBe(true);
+    expect(isSafeHttpUrl('javascript:alert(1)')).toBe(false);
+    expect(isSafeHttpUrl('data:text/html,hello')).toBe(false);
+    expect(isSafeHttpUrl('/relative/path')).toBe(false);
+  });
+});
 
 describe('isSpecialUseDomain', () => {
   it('keeps bracketed IPv6 literals intact when stripping ports', () => {

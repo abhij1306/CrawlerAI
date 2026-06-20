@@ -15,6 +15,15 @@ export function getNormalizedDomain(url: string) {
   }
 }
 
+export function isSafeHttpUrl(value: string) {
+  try {
+    const protocol = new URL(value).protocol;
+    return protocol === 'http:' || protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
 const SPECIAL_USE_HOSTNAMES = new Set(['localhost', 'localhost.localdomain']);
 
 const SPECIAL_USE_SUFFIXES = ['.example', '.invalid', '.local', '.localhost'];

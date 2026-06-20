@@ -1,7 +1,7 @@
 import { Award, CheckCircle2, Clock, LucideIcon } from 'lucide-react';
 import { Children, isValidElement, useEffectEvent, useLayoutEffect } from 'react';
 import type { ReactNode } from 'react';
-import { usePathname } from '@/routing/navigation';
+import { useLocation } from 'react-router-dom';
 
 import { useTopBarStore } from '../layout/top-bar-context';
 import { cn } from '../../lib/utils';
@@ -68,7 +68,7 @@ export function PageHeader({
   actions?: ReactNode;
 }>) {
   const { setHeader } = useTopBarStore();
-  const pathname = usePathname();
+  const { pathname } = useLocation();
   const signature = `${stableNodeSignature(title)}::${description ?? ''}::${stableNodeSignature(actions)}`;
   const syncHeader = useEffectEvent(() => {
     setHeader({ pathKey: pathname, title, description, actions });
@@ -106,10 +106,10 @@ export function SectionHeader({
   );
 }
 
-type TabBarOption = { value: string; label: ReactNode; icon?: ReactNode };
+type TabBarOption<T extends string> = { value: T; label: ReactNode; icon?: ReactNode };
 
 /* ─── TabBar — sliding CSS indicator, no flash ──────────────────────────── */
-export function TabBar({
+export function TabBar<T extends string>({
   value,
   onChange,
   options,
@@ -119,9 +119,9 @@ export function TabBar({
   size = 'md',
   fullWidth = false,
 }: Readonly<{
-  value: string;
-  onChange: (value: string) => void;
-  options: TabBarOption[];
+  value: T;
+  onChange: (value: T) => void;
+  options: ReadonlyArray<TabBarOption<T>>;
   compact?: boolean;
   className?: string;
   variant?: 'pill' | 'underline';
@@ -210,7 +210,7 @@ export function TabBar({
   );
 }
 
-function tabBarOptionContent(option: TabBarOption, gapClass: string) {
+function tabBarOptionContent<T extends string>(option: TabBarOption<T>, gapClass: string) {
   if (!option.icon) return option.label;
   return (
     <span className={cn('inline-flex items-center', gapClass)}>

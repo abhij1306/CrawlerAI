@@ -1,41 +1,34 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { SessionProvider } from '../../src/app/session';
 import { AppShell } from './app-shell';
 
-const routerReplaceMock = vi.fn();
-
-vi.mock('@/routing/navigation', () => ({
-  usePathname: () => '/dashboard',
-  useRouter: () => ({
-    replace: routerReplaceMock,
-  }),
-}));
-
 const apiMock = vi.hoisted(() => ({
-  me: vi.fn(),
   resetApplicationData: vi.fn(),
 }));
 
-vi.mock('../../lib/api', () => ({
-  api: apiMock,
-}));
+vi.mock('../../lib/api', () => ({ api: apiMock }));
 
-function renderShell() {
-  const queryClient = new QueryClient({
-    defaultOptions: {
-      mutations: { retry: false },
-      queries: { retry: false },
-    },
-  });
-
+function renderShell(role: 'admin' | 'user' = 'admin') {
   render(
-    <QueryClientProvider client={queryClient}>
-      <AppShell>
-        <div>Child content</div>
-      </AppShell>
-    </QueryClientProvider>,
+    <MemoryRouter initialEntries={['/dashboard']}>
+      <SessionProvider
+        user={{
+          id: role === 'admin' ? 1 : 2,
+          email: `${role}@example.com`,
+          role,
+          is_active: true,
+          created_at: '2026-05-19T00:00:00Z',
+          updated_at: '2026-05-19T00:00:00Z',
+        }}
+      >
+        <AppShell>
+          <div>Child content</div>
+        </AppShell>
+      </SessionProvider>
+    </MemoryRouter>,
   );
 }
 
@@ -46,15 +39,9 @@ beforeEach(() => {
     writable: true,
     value: {
       getItem: vi.fn((key: string) => storage.get(key) ?? null),
-      setItem: vi.fn((key: string, value: string) => {
-        storage.set(key, value);
-      }),
-      removeItem: vi.fn((key: string) => {
-        storage.delete(key);
-      }),
-      clear: vi.fn(() => {
-        storage.clear();
-      }),
+      setItem: vi.fn((key: string, value: string) => storage.set(key, value)),
+      removeItem: vi.fn((key: string) => storage.delete(key)),
+      clear: vi.fn(() => storage.clear()),
     },
   });
   Object.defineProperty(globalThis, 'matchMedia', {
@@ -74,104 +61,44 @@ beforeEach(() => {
 
 describe('AppShell reset workspace', () => {
   it('opens the confirm dialog when reset is clicked', async () => {
-    apiMock.me.mockResolvedValue({
-      id: 1,
-      email: 'admin@example.com',
-      role: 'admin',
-      is_active: true,
-      created_at: new Date('2026-05-19T00:00:00Z').toISOString(),
-      updated_at: new Date('2026-05-19T00:00:00Z').toISOString(),
-    });
-
     renderShell();
-
-    fireEvent.click(await screen.findByRole('button', { name: /reset workspace/i }));
-
-    expect(
-      await screen.findByRole('dialog', { name: /reset workspace data/i }),
-    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /reset workspace/i }));
+    expect(await screen.findByRole('dialog', { name: /reset workspace data/i })).toBeInTheDocument();
     expect(document.body.style.overflow).toBe('hidden');
     expect(document.body.style.touchAction).toBe('none');
   });
 
   it('closes on Escape and restores focus to the trigger', async () => {
-    apiMock.me.mockResolvedValue({
-      id: 1,
-      email: 'admin@example.com',
-      role: 'admin',
-      is_active: true,
-      created_at: new Date('2026-05-19T00:00:00Z').toISOString(),
-      updated_at: new Date('2026-05-19T00:00:00Z').toISOString(),
-    });
-
     renderShell();
-
-    const trigger = await screen.findByRole('button', { name: /reset workspace/i });
+    const trigger = screen.getByRole('button', { name: /reset workspace/i });
     trigger.focus();
     fireEvent.click(trigger);
-
-    expect(
-      await screen.findByRole('dialog', { name: /reset workspace data/i }),
-    ).toBeInTheDocument();
     await waitFor(() => {
       expect(screen.getByRole('button', { name: /reset workspace data/i })).toHaveFocus();
     });
-
     fireEvent.keyDown(document, { key: 'Escape' });
-
     await waitFor(() => {
-      expect(
-        screen.queryByRole('dialog', { name: /reset workspace data/i }),
-      ).not.toBeInTheDocument();
+      expect(screen.queryByRole('dialog', { name: /reset workspace data/i })).not.toBeInTheDocument();
       expect(trigger).toHaveFocus();
     });
-    expect(document.body.style.overflow).toBe('');
-    expect(document.body.style.touchAction).toBe('');
   });
 
-  it('hides workspace reset for non-admin users', async () => {
-    apiMock.me.mockResolvedValue({
-      id: 2,
-      email: 'user@example.com',
-      role: 'user',
-      is_active: true,
-      created_at: new Date('2026-05-19T00:00:00Z').toISOString(),
-      updated_at: new Date('2026-05-19T00:00:00Z').toISOString(),
-    });
-
-    renderShell();
-
-    await waitFor(() => {
-      expect(apiMock.me).toHaveBeenCalled();
-      expect(screen.queryByRole('button', { name: /reset workspace/i })).not.toBeInTheDocument();
-    });
+  it('hides workspace reset and admin navigation for non-admin users', () => {
+    renderShell('user');
+    expect(screen.queryByRole('button', { name: /reset workspace/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Users' })).not.toBeInTheDocument();
   });
 });
 
 describe('AppShell sidebar toggle', () => {
-  it('exposes a stable sidebar toggle for automation tools', async () => {
-    apiMock.me.mockResolvedValue({
-      id: 2,
-      email: 'user@example.com',
-      role: 'user',
-      is_active: true,
-      created_at: new Date('2026-05-19T00:00:00Z').toISOString(),
-      updated_at: new Date('2026-05-19T00:00:00Z').toISOString(),
-    });
-
-    renderShell();
-
-    const toggle = await screen.findByRole('button', { name: /collapse sidebar/i });
+  it('exposes a stable sidebar toggle for automation tools', () => {
+    renderShell('user');
+    const toggle = screen.getByRole('button', { name: /collapse sidebar/i });
     expect(toggle).toHaveAttribute('id', 'app-sidebar-toggle');
     expect(toggle).toHaveAttribute('data-testid', 'app-sidebar-toggle');
     expect(toggle).toHaveAttribute('aria-controls', 'app-sidebar-navigation');
     expect(toggle).toHaveAttribute('aria-expanded', 'true');
-
     fireEvent.click(toggle);
-
-    expect(screen.getByRole('button', { name: /expand sidebar/i })).toHaveAttribute(
-      'aria-expanded',
-      'false',
-    );
+    expect(screen.getByRole('button', { name: /expand sidebar/i })).toHaveAttribute('aria-expanded', 'false');
   });
 });

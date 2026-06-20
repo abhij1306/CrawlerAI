@@ -1,4 +1,4 @@
-import Link from '@/routing/link';
+import { Link } from 'react-router-dom';
 
 import { InlineAlert } from '../../components/ui/patterns';
 import { Subtitle, Title } from '../../components/ui/primitives';
@@ -12,7 +12,7 @@ export default function RegisterPage() {
       </div>
       <InlineAlert message="Use the bootstrap admin account from your backend environment (BOOTSTRAP_ADMIN_ONCE, DEFAULT_ADMIN_EMAIL, DEFAULT_ADMIN_PASSWORD). Public registration will be re-enabled for production multi-tenant deployments." />
       <div>
-        <Link className="text-accent hover:text-accent-hover text-sm font-normal" href="/login">
+        <Link className="text-accent hover:text-accent-hover text-sm font-normal" to="/login">
           {' '}
           Back to sign in
         </Link>

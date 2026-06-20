@@ -1,21 +1,8 @@
 import type { ReactNode } from 'react';
 
 import { Button } from '../ui/primitives';
-import {
-  AdditionalFieldInput,
-  CsvFileField,
-  FieldEditorHeader,
-  ManualFieldEditor,
-  SettingSection,
-  SliderRow,
-  SitemapConfigFields,
-  TargetUrlField,
-} from './form-fields';
 import type { FieldRow, FieldRowMessageTone, ValidationState } from './form-fields';
-import { LogTerminal } from './log-terminal';
 import { buildLogSiteGroups, getLogStage } from './log-terminal-utils';
-import { RecordThumbnail } from './record-thumbnail';
-import { RecordsTable } from './records-table';
 import type {
   CrawlDomain,
   CrawlLog,
@@ -106,22 +93,7 @@ export {
   validateAdditionalFieldName,
 };
 export type { QualityLevel, QualitySnapshot };
-export {
-  AdditionalFieldInput,
-  CsvFileField,
-  FieldEditorHeader,
-  LogTerminal,
-  ManualFieldEditor,
-  RecordsTable,
-  RecordThumbnail,
-  SettingSection,
-  SliderRow,
-  SitemapConfigFields,
-  TargetUrlField,
-  buildLogSiteGroups,
-  getLogStage,
-  scrollViewportToBottom,
-};
+export { buildLogSiteGroups, getLogStage, scrollViewportToBottom };
 export type { FieldRow, FieldRowMessageTone, ValidationState };
 
 export type CrawlTab = 'category' | 'pdp';
@@ -136,7 +108,7 @@ export type PendingDispatch = {
   additionalFields: string[];
   csvFile: File | null;
 };
-export type OutputTabKey = 'table' | 'json' | 'logs' | 'learning' | 'run_config';
+export type OutputTabKey = 'table' | 'json' | 'logs' | 'learning';
 
 export function selectorWinnerLabel(selectorKind: string | null | undefined): string {
   const normalized = String(selectorKind || '')

@@ -1,6 +1,6 @@
 # Frontend Architecture
 
-> Last updated: 2026-05-28
+> Last updated: 2026-06-20
 
 This document describes the live frontend structure, what it actually calls in the backend, and the remaining client/backend drift that should stay visible.
 
@@ -24,14 +24,15 @@ Key client libraries:
 Runtime notes:
 
 - Vite boots the app through `src/main.tsx`.
-- `src/router.tsx` owns browser routes and redirect shims.
-- `src/routing/` owns router-compatible replacements for link, navigation, dynamic import, and image helpers.
+- `src/app/app.tsx` owns the React Router data router, nested access guards, and redirect shims.
+- `src/app/route-registry.ts` owns lazy route modules, access policy, page metadata, and navigation metadata.
+- Legacy routing, dynamic-import, link, and image compatibility wrappers have been removed.
 - `VITE_API_BASE_URL` is the frontend API base URL.
 - Production security headers and CSP are owned by the static hosting boundary, not frontend service code.
 
 ## 2. Route Map
 
-Vite maps routes in `frontend/src/router.tsx`:
+The data router in `frontend/src/app/app.tsx` maps these routes:
 
 - `/` -> redirect-style entry page
 - `/login`
@@ -42,7 +43,7 @@ Vite maps routes in `frontend/src/router.tsx`:
 - `/crawl/pdp`
 - `/crawl/bulk`
 - `/runs`
-- `/runs/[run_id]`
+- `/runs/:run_id`
 - `/jobs`
 - `/selectors`
 - `/domain-memory`
@@ -53,7 +54,7 @@ Important route behavior:
 
 - `/crawl` switches between config mode and run workspace based on `run_id`
 - `/crawl/category`, `/crawl/pdp`, and `/crawl/bulk` are route shims into `/crawl?...`
-- `/runs/[run_id]` routes back into the crawl workspace
+- `/runs/:run_id` routes back into the crawl workspace
 
 ## 3. Main Frontend Subsystems
 
@@ -62,7 +63,9 @@ Important route behavior:
 Primary files:
 
 - `components/layout/app-shell.tsx`
-- `src/router.tsx`
+- `src/app/app.tsx`
+- `src/app/route-registry.ts`
+- `src/app/auth-guards.tsx`
 - `src/main.tsx`
 - `components/layout/app-shell.module.css`
 - `components/layout/auth-shell.module.css`
@@ -72,8 +75,8 @@ Primary files:
 
 Responsibilities:
 
-- Vite app bootstrap and route table
-- session gating
+- Vite app bootstrap and lazy route table
+- session and admin gating outside the visual shell
 - shell layout and nav
 - auth-route vs app-route split
 - header state
@@ -83,13 +86,18 @@ Responsibilities:
 
 Primary files:
 
-- `lib/api/client.ts`
+- `src/api/client.ts`
+- `src/api/errors.ts`
+- `src/api/query-client.ts`
+- `src/api/query-keys.ts`
 - `lib/api/index.ts`
 - `lib/api/types.ts`
 
 Responsibilities:
 
-- all backend HTTP calls
+- HTTP transport, bounded GET retry, abort signals, and request IDs
+- one query-key factory and application query defaults
+- typed endpoint facade for backend calls
 - API typing
 - auth-aware fetch wrapper
 - URL helpers for review HTML and selector preview HTML
@@ -102,6 +110,10 @@ Primary files:
 
 - `components/crawl/crawl-config-screen.tsx`
 - `components/crawl/use-crawl-config.ts`
+- `components/crawl/use-crawl-domain-memory.ts`
+- `components/crawl/use-crawl-field-actions.ts`
+- `components/crawl/use-crawl-route-sync.ts`
+- `components/crawl/use-crawl-submission.ts`
 - `components/crawl/domain-surface-config.ts`
 - `components/crawl/crawl.module.css`
 - `components/crawl/shared.tsx`
@@ -110,7 +122,8 @@ Primary files:
 Responsibilities:
 
 - choose domain/surface tab/mode
-- own Crawl Studio form validation and manual field arrays through React Hook Form and Zod
+- orchestrate focused route, domain-memory, field-action, and submission hooks
+- own Crawl Studio form validation and stable manual field arrays through React Hook Form and Zod
 - derive surface from the domain/tab dispatch map
 - build dispatch payload
 - collect advanced settings and additional fields
@@ -135,7 +148,9 @@ Primary files:
 - `components/crawl/crawl-run-screen.tsx`
 - `components/crawl/use-run-workspace.ts`
 - `components/crawl/use-run-polling.ts`
-- `components/crawl/crawl-run-store.ts`
+- `components/crawl/use-run-log-stream.ts`
+- `components/crawl/use-run-records.ts`
+- `components/crawl/use-run-actions.ts`
 - `components/crawl/shared.tsx`
 
 Responsibilities:
@@ -145,13 +160,13 @@ Responsibilities:
 - consume websocket logs when available
 - show quality/verdict/progress signals
 - expose pause/resume/kill and export actions
-- keep run workspace UI coordination in the crawl Zustand store, not in server-query state
+- keep server state in TanStack Query, URL-owned output-tab state in search params, and temporary UI state local
 
 Important live data features:
 
 - run records use cleaned `data`, `review_bucket`, and `source_trace`
 - provenance API is typed and available through `getRecordProvenance`
-- log websocket fallback is built into the screen
+- log websocket fallback is isolated in `use-run-log-stream.ts`
 
 ### 3.5 Operator surfaces
 
@@ -287,14 +302,18 @@ Frontend tests currently cover:
 - crawl run screen
 - shared crawl helpers
 - run polling
+- domain-profile switching and dirty-edit preservation
+- selector hydration/cache invalidation
+- output-tab URL state
+- central request abort/retry behavior
 
 There is also Playwright e2e coverage under `frontend/e2e`.
 
 ## 8. Architectural Notes
 
 - The frontend is intentionally thin on domain logic; the backend owns crawl semantics.
-- `lib/api/index.ts` should remain the single access layer for backend calls.
-- `components/crawl/shared.tsx` is a real shared hub and should not quietly become a second application framework.
+- `src/api/client.ts` owns transport; `lib/api/index.ts` remains the typed endpoint facade.
+- `components/crawl/shared.tsx` owns only remaining crawl-wide types and cohesive helpers. Heavy form, table, and terminal components are imported from their direct owners.
 - `components/ui/patterns.tsx` now owns the shared operator-page section framing (`SectionCard`, `SurfaceSection`, `MutedPanelMessage`) so dashboard/admin/tool pages do not hand-roll their own section chrome.
 - `components/ui/dialog.tsx` owns destructive confirmations; browser `alert()` and `confirm()` are not used in app/components code.
 - `components/ui/table.module.css` owns compact and commerce table styling while table call sites keep grep-friendly class names during migration.

@@ -4,7 +4,7 @@ import '@fontsource-variable/geist/index.css';
 import '@fontsource-variable/geist-mono/index.css';
 
 import '../app/globals.css';
-import { ViteApp } from './router';
+import { App } from './app/app';
 
 const root = document.getElementById('root');
 
@@ -14,6 +14,6 @@ if (!root) {
 
 createRoot(root).render(
   <StrictMode>
-    <ViteApp />
+    <App />
   </StrictMode>,
 );
