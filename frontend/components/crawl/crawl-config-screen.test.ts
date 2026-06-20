@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { buildDispatch, inferRunTypeHint } from './crawl-config-logic';
 import type { FieldRow } from './shared';
 import type { CrawlConfig, DomainRunProfile } from '../../lib/api/types';
+import { crawlConfigSchema, transformFormToSubmission } from './use-crawl-config';
 
 type DomainRunProfileOverrides = {
   version?: number;
@@ -302,6 +303,37 @@ describe('buildDispatch', () => {
     expect(dispatch.settings.fetch_profile).toMatchObject({
       traversal_mode: null,
     });
+  });
+
+  it('preserves CSV input and detail surface in the dispatch', () => {
+    const file = new File(['url\nhttps://example.com/p/1'], 'products.csv', {
+      type: 'text/csv',
+    });
+    const dispatch = buildDispatch(
+      baseConfig({ module: 'pdp', mode: 'csv', target_url: '', csv_file: file }),
+      [],
+      { runProfile: baseProfile() },
+    );
+
+    expect(dispatch.runType).toBe('csv');
+    expect(dispatch.surface).toBe('ecommerce_detail');
+    expect(dispatch.csvFile).toBe(file);
+  });
+
+  it('rejects one invalid URL in a batch submission', () => {
+    const result = crawlConfigSchema.safeParse(
+      transformFormToSubmission({
+        mode: 'batch',
+        targetUrl: '',
+        bulkUrls: 'https://example.com/p/1\nnot-a-url',
+        maxRecords: '100',
+      }),
+    );
+
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues[0]?.message).toBe('Every URL must be valid.');
+    }
   });
 
   it('submits category sitemap as listing batch without explicit urls', () => {

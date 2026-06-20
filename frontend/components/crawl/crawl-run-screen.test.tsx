@@ -12,13 +12,23 @@ import { storeProductIntelligencePrefill } from './crawl-run-prefill';
 const replaceMock = vi.fn();
 const pushMock = vi.fn();
 
-vi.mock('@/routing/navigation', () => ({
-  usePathname: () => '/runs/42',
-  useRouter: () => ({
-    push: pushMock,
-    replace: replaceMock,
-  }),
-}));
+vi.mock('react-router-dom', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('react-router-dom')>();
+  const React = await import('react');
+  return {
+    ...actual,
+    useLocation: () => ({ pathname: '/crawl', search: '?run_id=42', hash: '', state: null, key: 'test' }),
+    useNavigate: () => (to: string, options?: { replace?: boolean }) =>
+      options?.replace ? replaceMock(to, options) : pushMock(to),
+    useSearchParams: () => {
+      const [params, setParamsState] = React.useState(() => new URLSearchParams('run_id=42'));
+      const setParams = React.useCallback((nextParams: URLSearchParams | ((current: URLSearchParams) => URLSearchParams)) => {
+        setParamsState((current: URLSearchParams) => typeof nextParams === 'function' ? new URLSearchParams(nextParams(current)) : new URLSearchParams(nextParams));
+      }, []);
+      return [params, setParams] as const;
+    },
+  };
+});
 
 const apiMock = vi.hoisted(() => ({
   getCrawl: vi.fn(),
@@ -352,7 +362,7 @@ describe('CrawlRunScreen', () => {
     );
     fireEvent.click(productButton);
 
-    expect(replaceMock).toHaveBeenCalledWith('/product-intelligence');
+    expect(pushMock).toHaveBeenCalledWith('/product-intelligence');
     expect(
       JSON.parse(window.sessionStorage.getItem('product-intelligence-prefill-v1') || '{}'),
     ).toEqual({
@@ -410,7 +420,7 @@ describe('CrawlRunScreen', () => {
     );
     fireEvent.click(productButton);
 
-    expect(replaceMock).toHaveBeenCalledWith('/product-intelligence');
+    expect(pushMock).toHaveBeenCalledWith('/product-intelligence');
     expect(
       JSON.parse(window.sessionStorage.getItem('product-intelligence-prefill-v1') || '{}'),
     ).toMatchObject({
@@ -571,14 +581,22 @@ describe('CrawlRunScreen', () => {
 
     renderRunScreen();
     await waitFor(() => {
-      expect(apiMock.getRecords).toHaveBeenCalledWith(101, { page: 1, limit: 100 });
+      expect(apiMock.getRecords).toHaveBeenCalledWith(
+        101,
+        { page: 1, limit: 100 },
+        { signal: expect.any(AbortSignal) },
+      );
     });
 
     const loadMoreButton = await screen.findByRole('button', { name: 'Load More' });
     fireEvent.click(loadMoreButton);
 
     await waitFor(() => {
-      expect(apiMock.getRecords).toHaveBeenCalledWith(101, { page: 1, limit: 200 });
+      expect(apiMock.getRecords).toHaveBeenCalledWith(
+        101,
+        { page: 1, limit: 200 },
+        { signal: expect.any(AbortSignal) },
+      );
     });
 
     await waitFor(() => {
@@ -595,9 +613,11 @@ describe('CrawlRunScreen', () => {
     expect(
       await screen.findByText(
         (content) =>
-          content.includes('Unable to refresh') && content.includes('records fetch failed'),
+          content.includes('Unable to refresh records') &&
+          content.includes('Refresh failed. Retry to restore current data.'),
       ),
     ).toBeInTheDocument();
+    expect(screen.queryByText(/records fetch failed/)).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Retry failed panels' })).toBeInTheDocument();
   });
 
@@ -625,7 +645,11 @@ describe('CrawlRunScreen', () => {
     renderRunScreenWithClient(queryClient);
 
     await waitFor(() => {
-      expect(apiMock.getRecords).toHaveBeenCalledWith(101, { page: 1, limit: 100 });
+      expect(apiMock.getRecords).toHaveBeenCalledWith(
+        101,
+        { page: 1, limit: 100 },
+        { signal: expect.any(AbortSignal) },
+      );
     });
 
     await waitFor(() => {
@@ -658,7 +682,11 @@ describe('CrawlRunScreen', () => {
     expect(await screen.findByText('Item 1')).toBeInTheDocument();
 
     await waitFor(() => {
-      expect(apiMock.getRecords).toHaveBeenCalledWith(101, { page: 1, limit: 100 });
+      expect(apiMock.getRecords).toHaveBeenCalledWith(
+        101,
+        { page: 1, limit: 100 },
+        { signal: expect.any(AbortSignal) },
+      );
     });
   });
 
@@ -695,7 +723,11 @@ describe('CrawlRunScreen', () => {
     renderRunScreen();
 
     await waitFor(() => {
-      expect(apiMock.getRecords).toHaveBeenCalledWith(101, { page: 1, limit: 100 });
+      expect(apiMock.getRecords).toHaveBeenCalledWith(
+        101,
+        { page: 1, limit: 100 },
+        { signal: expect.any(AbortSignal) },
+      );
     });
 
     await new Promise((resolve) => window.setTimeout(resolve, POLLING_INTERVALS.RECORDS_MS + 100));
@@ -743,8 +775,8 @@ describe('CrawlRunScreen', () => {
     await waitFor(() => {
       expect(apiMock.getRecords.mock.calls).toEqual(
         expect.arrayContaining([
-          [101, { page: 1, limit: 100 }],
-          [101, { limit: 100 }],
+          [101, { page: 1, limit: 100 }, { signal: expect.any(AbortSignal) }],
+          [101, { limit: 100 }, { signal: expect.any(AbortSignal) }],
         ]),
       );
     });
@@ -789,7 +821,11 @@ describe('CrawlRunScreen', () => {
     renderRunScreen();
 
     await waitFor(() => {
-      expect(apiMock.getRecords).toHaveBeenCalledWith(101, { page: 1, limit: 100 });
+      expect(apiMock.getRecords).toHaveBeenCalledWith(
+        101,
+        { page: 1, limit: 100 },
+        { signal: expect.any(AbortSignal) },
+      );
     });
 
     await new Promise((resolve) => window.setTimeout(resolve, POLLING_INTERVALS.RECORDS_MS + 100));
@@ -967,7 +1003,7 @@ describe('CrawlRunScreen', () => {
     const batchButton = await screen.findByRole('button', { name: 'Batch Crawl (1)' });
     fireEvent.click(batchButton);
 
-    expect(replaceMock).toHaveBeenCalledWith('/crawl?module=pdp&mode=batch');
+    expect(pushMock).toHaveBeenCalledWith('/crawl?module=pdp&mode=batch');
     expect(window.sessionStorage.getItem('bulk-crawl-prefill-v1')).toBe(
       JSON.stringify({
         domain: 'jobs',
@@ -1016,7 +1052,7 @@ describe('CrawlRunScreen', () => {
     const batchButton = await screen.findByRole('button', { name: 'Batch Crawl (2)' });
     fireEvent.click(batchButton);
 
-    expect(replaceMock).toHaveBeenCalledWith('/crawl?module=pdp&mode=batch');
+    expect(pushMock).toHaveBeenCalledWith('/crawl?module=pdp&mode=batch');
     expect(window.sessionStorage.getItem('bulk-crawl-prefill-v1')).toBe(
       JSON.stringify({
         domain: 'commerce',

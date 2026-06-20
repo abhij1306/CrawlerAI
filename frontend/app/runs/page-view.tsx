@@ -1,6 +1,7 @@
-import Link from '@/routing/link';
-import type { Route } from '@/routing/link';
+import { Link } from 'react-router-dom';
 import { useReducer } from 'react';
+
+import { queryKeys } from '@/api/query-keys';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowRightCircle, Copy, ExternalLink, Plus, Trash2 } from 'lucide-react';
 
@@ -126,7 +127,7 @@ function RunRow({
           <div className="flex min-w-0 items-center gap-2">
             <Tooltip content={run.url} align="start">
               <Link
-                href={`/crawl?run_id=${run.id}`}
+                to={`/crawl?run_id=${run.id}`}
                 className="link-accent text-primary block max-w-[280px] truncate font-medium no-underline transition-colors"
               >
                 {domain || `Run #${run.id}`}
@@ -195,7 +196,7 @@ function RunRow({
       <TableCell className="text-right whitespace-nowrap">
         <div className="flex items-center justify-end gap-1.5 px-0 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
           <Button variant="action" size="sm" asChild>
-            <Link href={`/crawl?run_id=${run.id}` as Route}>
+            <Link to={`/crawl?run_id=${run.id}`}>
               Open
               <ArrowRightCircle className="ml-1 size-3" />
             </Link>
@@ -231,7 +232,11 @@ export default function RunsPage() {
   } = state;
 
   const query = useQuery({
-    queryKey: ['runs', appliedDomainFilter, appliedStatusFilter],
+    queryKey: queryKeys.runs.list({
+      url_search: appliedDomainFilter,
+      status: appliedStatusFilter,
+      limit: 50,
+    }),
     queryFn: () =>
       api.listCrawls({
         limit: 50,
@@ -246,8 +251,7 @@ export default function RunsPage() {
       dispatch({ type: 'deleteStarted', runId });
     },
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ['runs'] });
-      await queryClient.invalidateQueries({ queryKey: ['memory-runs'] });
+      await queryClient.invalidateQueries({ queryKey: queryKeys.runs.all });
       dispatch({ type: 'deleteSucceeded' });
     },
     onError: (error) => {
@@ -276,7 +280,7 @@ export default function RunsPage() {
       <PageHeader
         title="Run History"
         actions={
-          <Link href="/crawl" className="no-underline">
+          <Link to="/crawl" className="no-underline">
             <Button variant="action" size="sm">
               <Plus className="size-3.5" />
               New Crawl

@@ -1,8 +1,8 @@
 import { useQuery } from '@tanstack/react-query';
-import type { Route } from '@/routing/link';
-import Link from '@/routing/link';
+import { Link } from 'react-router-dom';
 import { useState } from 'react';
 import { Activity, ArrowUpRight, Globe, Hash, LayoutDashboard, RefreshCw } from 'lucide-react';
+import { queryKeys } from '@/api/query-keys';
 import { Badge, Button } from '../../components/ui/primitives';
 import {
   DataRegionEmpty,
@@ -75,7 +75,7 @@ function RunActivityRow({ run }: Readonly<{ run: CrawlRun }>) {
 
   return (
     <Link
-      href={`/crawl?run_id=${run.id}` as Route}
+      to={`/crawl?run_id=${run.id}`}
       className="group hover:bg-background-alt flex items-center gap-3 rounded-lg p-2 no-underline transition-colors"
     >
       <StatusDot tone={runExecutionTone(run.status, run.result_summary)} />
@@ -103,7 +103,7 @@ function RunActivityRow({ run }: Readonly<{ run: CrawlRun }>) {
 /* ─── Page ───────────────────────────────────────────────────────────────── */
 export default function DashboardPage() {
   const { data, isLoading, refetch } = useQuery({
-    queryKey: ['dashboard'],
+    queryKey: queryKeys.dashboard(),
     queryFn: api.dashboard,
   });
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -190,7 +190,7 @@ export default function DashboardPage() {
           title="Recent Runs"
           description="Last 10 jobs"
           action={
-            <Link href="/runs" className="link-accent type-control no-underline hover:underline">
+            <Link to="/runs" className="link-accent type-control no-underline hover:underline">
               View all
             </Link>
           }

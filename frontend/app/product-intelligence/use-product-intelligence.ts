@@ -1,8 +1,8 @@
 import { useQuery } from '@tanstack/react-query';
-import type { Route } from '@/routing/link';
-import { useRouter } from '@/routing/navigation';
+import { useNavigate } from 'react-router-dom';
 import { useMemo, useState } from 'react';
 
+import { queryKeys } from '@/api/query-keys';
 import type { HistoryItem } from '../../components/ui/history-drawer';
 import { api } from '../../lib/api';
 import type { ProductIntelligenceDiscoveryResponse } from '../../lib/api/types';
@@ -19,7 +19,7 @@ import {
 } from './product-intelligence-utils';
 
 export function useProductIntelligence() {
-  const router = useRouter();
+  const navigate = useNavigate();
   const [initialPrefill] = useState(loadPrefillPayload);
   const prefill = initialPrefill.payload;
   const [options, setOptions] = useState(DEFAULT_OPTIONS);
@@ -42,14 +42,14 @@ export function useProductIntelligence() {
     'all',
   );
   const jobsQuery = useQuery({
-    queryKey: ['product-intelligence-jobs'],
+    queryKey: queryKeys.productIntelligence.jobs(),
     queryFn: () => api.listProductIntelligenceJobs({ limit: 20 }),
   });
   const sourceRecords = prefill.records ?? [];
   const defaultJobId = sourceRecords.length ? null : (jobsQuery.data?.[0]?.id ?? null);
   const resolvedActiveJobId = activeJobId ?? defaultJobId;
   const detailQuery = useQuery({
-    queryKey: ['product-intelligence-job', resolvedActiveJobId],
+    queryKey: queryKeys.productIntelligence.detail(resolvedActiveJobId ?? 0),
     queryFn: () => api.getProductIntelligenceJob(resolvedActiveJobId ?? 0),
     enabled: resolvedActiveJobId !== null,
   });
@@ -205,7 +205,7 @@ export function useProductIntelligence() {
       STORAGE_KEYS.BULK_PREFILL,
       JSON.stringify({ domain: 'commerce', urls: uniqueSelectedUrls }),
     );
-    router.replace('/crawl?module=pdp&mode=batch' as Route);
+    navigate('/crawl?module=pdp&mode=batch', { replace: true });
   }
 
   function toggleAllUrls() {

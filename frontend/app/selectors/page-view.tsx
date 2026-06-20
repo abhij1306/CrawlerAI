@@ -4,7 +4,7 @@ import { useReducer } from 'react';
 import { EmptyPanel, InlineAlert, PageHeader, SectionCard } from '../../components/ui/patterns';
 import { Badge, Button, Dropdown, Field, Input, Textarea } from '../../components/ui/primitives';
 import { api } from '../../lib/api';
-import { httpErrorStatus } from '../../lib/api/client';
+import { httpErrorStatus } from '@/api/client';
 import type {
   SelectorCreatePayload,
   SelectorRecord,

@@ -7,6 +7,7 @@ import { formatCellDisplay, humanizeFieldName, stringifyCell } from '../../lib/c
 import { readRecordValue } from '../../lib/crawl/record-utils';
 import { TableBody, TableCell, TableRow } from '../ui/table';
 import { RecordThumbnail } from './record-thumbnail';
+import { isSafeHttpUrl } from '../../lib/format/domain';
 
 const IMAGE_KEYS = new Set(['image_url', 'image', 'thumbnail', 'img']);
 const TITLE_KEYS = new Set(['title', 'name', 'product_name', 'product title']);
@@ -108,8 +109,7 @@ function RecordCell({ col, record }: Readonly<{ col: string; record: CrawlRecord
     );
   }
   if (URL_KEYS.has(colKey)) {
-    const isSafe = raw.startsWith('http://') || raw.startsWith('https://');
-    if (isSafe) {
+    if (isSafeHttpUrl(raw)) {
       return (
         <a
           href={raw}

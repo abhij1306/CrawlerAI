@@ -4,9 +4,13 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { TopBarProvider } from '../layout/top-bar-context';
 import { PageHeader, RunSummaryChips } from './patterns';
 
-vi.mock('@/routing/navigation', () => ({
-  usePathname: () => '/crawl',
-}));
+vi.mock('react-router-dom', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('react-router-dom')>();
+  return {
+    ...actual,
+    useLocation: () => ({ pathname: '/crawl', search: '', hash: '', state: null, key: 'test' }),
+  };
+});
 
 describe('RunSummaryChips', () => {
   afterEach(() => {

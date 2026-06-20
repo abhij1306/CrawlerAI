@@ -32,7 +32,7 @@ export type AppRoute = {
   };
 };
 
-export const appRoutes = [
+export const appRoutes: readonly AppRoute[] = [
   {
     id: 'login', path: '/login', access: 'public',
     lazy: () => import('../../app/login/page-view'), metadata: { title: 'Sign in' },
@@ -107,7 +107,7 @@ export const appRoutes = [
     metadata: { title: 'LLM Config', description: 'Control provider settings and prompts.' },
     nav: { group: 'Admin', label: 'LLM Config', icon: Settings2 },
   },
-] as const satisfies readonly AppRoute[];
+];
 
 const groupOrder = ['Primary', 'Operations', 'Intelligence', 'Memory', 'Admin'] as const;
 

@@ -16,8 +16,14 @@ export const queryKeys = {
     list: (filters: RunListFilters = {}) => ['runs', 'list', filters] as const,
     detail: (runId: number) => ['runs', 'detail', runId] as const,
     records: (runId: number) => ['runs', 'records', runId] as const,
+    tableRecords: (runId: number, limit: number) =>
+      ['runs', 'records', runId, 'table', limit] as const,
+    jsonRecords: (runId: number, limit: number) =>
+      ['runs', 'records', runId, 'json', limit] as const,
     logs: (runId: number) => ['runs', 'logs', runId] as const,
     recipe: (runId: number) => ['runs', 'recipe', runId] as const,
+    terminalRecordSync: (syncKey: string | null) =>
+      ['runs', 'terminal-record-sync', syncKey] as const,
   },
   jobs: {
     all: ['jobs'] as const,
@@ -27,6 +33,11 @@ export const queryKeys = {
     all: ['selectors'] as const,
     list: ({ domain = '', surface = '' }: SelectorFilters = {}) =>
       ['selectors', 'list', domain, surface] as const,
+  },
+  domainRunProfiles: {
+    all: ['domain-run-profiles'] as const,
+    detail: (domain: string, surface: string) =>
+      ['domain-run-profiles', 'detail', domain, surface] as const,
   },
   domainMemory: {
     all: ['domain-memory'] as const,
@@ -44,7 +55,7 @@ export const queryKeys = {
     detail: (jobId: number) => ['data-enrichment', 'detail', jobId] as const,
   },
   admin: {
-    users: () => ['admin', 'users'] as const,
+    users: (filters: RunListFilters = {}) => ['admin', 'users', filters] as const,
     llmProviders: () => ['admin', 'llm', 'providers'] as const,
     llmConfigs: () => ['admin', 'llm', 'configs'] as const,
     llmCosts: () => ['admin', 'llm', 'costs'] as const,

@@ -1,4 +1,4 @@
-# AGENTS.md — Invoro Session Bootstrap
+# AGENTS.md — CrawlerAI Session Bootstrap
 
 Speak tersely in caveman style: short, direct, low-fluff sentences; keep technical accuracy and full task context.
 
@@ -6,7 +6,7 @@ Speak tersely in caveman style: short, direct, low-fluff sentences; keep technic
 
 ## What This Project Is
 
-Invoro is a deterministic crawl, extraction, review, and export system for ecommerce, jobs, automobiles, and tabular targets.
+CrawlerAI is a deterministic crawl, extraction, review, and export system for ecommerce, jobs, automobiles, and tabular targets.
 
 - Backend: FastAPI + PostgreSQL + Redis + Celery + Playwright
 - Frontend: Next.js

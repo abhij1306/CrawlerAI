@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import { useMemo, useState } from 'react';
 
+import { queryKeys } from '@/api/query-keys';
 import { api } from '../../../lib/api';
 import type { Paginated, User } from '../../../lib/api/types';
 import { formatAdminUserDate as formatDate } from '../../../lib/format/date';
@@ -30,7 +31,7 @@ export default function AdminUsersPage() {
   const [pendingUserId, setPendingUserId] = useState<number | null>(null);
   const [updateError, setUpdateError] = useState('');
   const usersQuery = useQuery<Paginated<User>>({
-    queryKey: ['users', search, status],
+    queryKey: queryKeys.admin.users({ search, status }),
     queryFn: () =>
       api.listUsers({
         search: search.trim() || undefined,

@@ -1,17 +1,11 @@
-import type { CrawlLog } from '../../lib/api/types';
-import { mergeLogs } from './shared';
-
 export type RecipeActionPendingKey = `field:${string}:${'keep' | 'reject'}`;
 export type RunActionPendingKey = 'kill';
 
 export type CrawlRunLocalState = {
   recipeActionPending: RecipeActionPendingKey | null;
   recipeActionError: string;
-  liveJumpAvailable: boolean;
   runActionPending: RunActionPendingKey | null;
   runActionError: string;
-  socketLogItems: CrawlLog[];
-  logSocketConnected: boolean;
   sessionStartMs: number;
 };
 
@@ -22,21 +16,14 @@ export type CrawlRunLocalAction =
   | { type: 'runActionStarted'; pendingKey: RunActionPendingKey }
   | { type: 'runActionErrorCleared' }
   | { type: 'runActionFailed'; message: string }
-  | { type: 'runActionFinished' }
-  | { type: 'runChanged'; sessionStartMs: number }
-  | { type: 'liveJumpChanged'; available: boolean }
-  | { type: 'logSocketConnectionChanged'; connected: boolean }
-  | { type: 'socketLogReceived'; log: CrawlLog };
+  | { type: 'runActionFinished' };
 
 export function buildInitialCrawlRunLocalState(): CrawlRunLocalState {
   return {
     recipeActionPending: null,
     recipeActionError: '',
-    liveJumpAvailable: false,
     runActionPending: null,
     runActionError: '',
-    socketLogItems: [],
-    logSocketConnected: false,
     sessionStartMs: Date.now(),
   };
 }
@@ -60,19 +47,5 @@ export function crawlRunLocalReducer(
       return { ...state, runActionError: action.message };
     case 'runActionFinished':
       return { ...state, runActionPending: null };
-    case 'runChanged':
-      return {
-        ...state,
-        liveJumpAvailable: false,
-        socketLogItems: [],
-        logSocketConnected: false,
-        sessionStartMs: action.sessionStartMs,
-      };
-    case 'liveJumpChanged':
-      return { ...state, liveJumpAvailable: action.available };
-    case 'logSocketConnectionChanged':
-      return { ...state, logSocketConnected: action.connected };
-    case 'socketLogReceived':
-      return { ...state, socketLogItems: mergeLogs(state.socketLogItems, [action.log]) };
   }
 }

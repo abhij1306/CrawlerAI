@@ -7,6 +7,33 @@ import { describe, expect, it } from 'vitest';
 
 const scriptPath = join(process.cwd(), 'scripts', 'check-crawl-architecture.mjs');
 
+const requiredOwnerFiles = [
+  'use-crawl-field-actions.ts',
+  'use-crawl-domain-memory.ts',
+  'use-crawl-route-sync.ts',
+  'crawl-advanced-execution.tsx',
+  'crawl-advanced-limits.tsx',
+  'crawl-advanced-diagnostics.tsx',
+];
+
+function writeRequiredOwners(workspace: string) {
+  for (const file of requiredOwnerFiles) {
+    writeFileSync(join(workspace, 'components', 'crawl', file), 'export {};\n', 'utf8');
+  }
+}
+
+function writeLazyCrawlPage(workspace: string) {
+  writeFileSync(
+    join(workspace, 'app', 'crawl', 'page-view.tsx'),
+    [
+      "const ConfigScreen = lazy(() => import('../../components/crawl/crawl-config-screen'));",
+      "const RunScreen = lazy(() => import('../../components/crawl/crawl-run-screen'));",
+      'export default function Page() { return <><ConfigScreen /><RunScreen /></>; }',
+    ].join('\n'),
+    'utf8',
+  );
+}
+
 describe('check-crawl-architecture', () => {
   it('ignores refetchPanels inside nested template literals', () => {
     const workspace = mkdtempSync(join(tmpdir(), 'crawl-architecture-'));
@@ -29,15 +56,8 @@ describe('check-crawl-architecture', () => {
         'export function CrawlConfigScreen() { return <div />; }\n',
         'utf8',
       );
-      writeFileSync(
-        join(workspace, 'app', 'crawl', 'page-view.tsx'),
-        [
-          "import dynamic from '@/routing/dynamic';",
-          "const Screen = dynamic(() => import('../../components/crawl/crawl-run-screen'));",
-          'export default function Page() { return <Screen />; }',
-        ].join('\n'),
-        'utf8',
-      );
+      writeRequiredOwners(workspace);
+      writeLazyCrawlPage(workspace);
 
       expect(() => {
         execFileSync(process.execPath, [scriptPath], {
@@ -71,15 +91,8 @@ describe('check-crawl-architecture', () => {
         'export function CrawlConfigScreen() { return <div />; }\n',
         'utf8',
       );
-      writeFileSync(
-        join(workspace, 'app', 'crawl', 'page-view.tsx'),
-        [
-          "import dynamic from '@/routing/dynamic';",
-          "const Screen = dynamic(() => import('../../components/crawl/crawl-run-screen'));",
-          'export default function Page() { return <Screen />; }',
-        ].join('\n'),
-        'utf8',
-      );
+      writeRequiredOwners(workspace);
+      writeLazyCrawlPage(workspace);
 
       expect(() => {
         execFileSync(process.execPath, [scriptPath], {
@@ -87,6 +100,40 @@ describe('check-crawl-architecture', () => {
           stdio: 'pipe',
         });
       }).toThrow(/must use TanStack Query refetchInterval/);
+    } finally {
+      rmSync(workspace, { recursive: true, force: true });
+    }
+  });
+
+  it('flags direct browser-history writes in route synchronization', () => {
+    const workspace = mkdtempSync(join(tmpdir(), 'crawl-architecture-'));
+    try {
+      mkdirSync(join(workspace, 'components', 'crawl'), { recursive: true });
+      mkdirSync(join(workspace, 'app', 'crawl'), { recursive: true });
+      writeFileSync(
+        join(workspace, 'components', 'crawl', 'crawl-run-screen.tsx'),
+        'export function CrawlRunScreen() { return <div />; }\n',
+        'utf8',
+      );
+      writeFileSync(
+        join(workspace, 'components', 'crawl', 'crawl-config-screen.tsx'),
+        'export function CrawlConfigScreen() { return <div />; }\n',
+        'utf8',
+      );
+      writeRequiredOwners(workspace);
+      writeFileSync(
+        join(workspace, 'components', 'crawl', 'use-crawl-route-sync.ts'),
+        "window.history.replaceState(null, '', '/crawl');\n",
+        'utf8',
+      );
+      writeLazyCrawlPage(workspace);
+
+      expect(() => {
+        execFileSync(process.execPath, [scriptPath], {
+          cwd: workspace,
+          stdio: 'pipe',
+        });
+      }).toThrow(/must use React Router navigation/);
     } finally {
       rmSync(workspace, { recursive: true, force: true });
     }

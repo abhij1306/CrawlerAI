@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ExternalLink, History, Loader2, Play, RefreshCcw } from 'lucide-react';
 import { useMemo, useReducer, useState } from 'react';
 
+import { queryKeys } from '@/api/query-keys';
 import { HistoryDrawer, type HistoryItem } from '../../components/ui/history-drawer';
 
 import {
@@ -98,7 +99,7 @@ export default function DataEnrichmentPage() {
     .filter((id): id is number => typeof id === 'number');
 
   const jobsQuery = useQuery({
-    queryKey: ['data-enrichment-jobs'],
+    queryKey: queryKeys.dataEnrichment.jobs(),
     queryFn: () => api.listDataEnrichmentJobs({ limit: 20 }),
     refetchInterval: 4000,
   });
@@ -116,7 +117,7 @@ export default function DataEnrichmentPage() {
   const defaultJobId = sourceRecords.length ? null : (jobsQuery.data?.[0]?.id ?? null);
   const resolvedJobId = activeJobId ?? defaultJobId;
   const detailQuery = useQuery({
-    queryKey: ['data-enrichment-job', resolvedJobId],
+    queryKey: queryKeys.dataEnrichment.detail(resolvedJobId ?? 0),
     queryFn: () => api.getDataEnrichmentJob(resolvedJobId ?? 0),
     enabled: resolvedJobId !== null,
     refetchInterval: (query) => {
@@ -151,8 +152,8 @@ export default function DataEnrichmentPage() {
     onSuccess: async (job) => {
       dispatch({ type: 'jobCreated', jobId: job.id });
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['data-enrichment-jobs'] }),
-        queryClient.invalidateQueries({ queryKey: ['data-enrichment-job', job.id] }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.dataEnrichment.jobs() }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.dataEnrichment.detail(job.id) }),
       ]);
     },
     onError: (mutationError) => {

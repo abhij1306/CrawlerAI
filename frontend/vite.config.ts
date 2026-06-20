@@ -22,7 +22,7 @@ export default defineConfig({
   },
   build: {
     target: 'esnext',
-    sourcemap: isProduction ? 'hidden' : true,
+    sourcemap: !isProduction,
     cssCodeSplit: true,
     chunkSizeWarningLimit: 500,
     rollupOptions: {

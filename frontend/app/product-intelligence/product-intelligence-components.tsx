@@ -1,5 +1,4 @@
 import { Copy, Download, Loader2, X } from 'lucide-react';
-import Image from '@/routing/image';
 import React from 'react';
 
 import { Badge, Button } from '../../components/ui/primitives';
@@ -22,13 +21,10 @@ export function ExternalCandidateImage({
   className: string;
 }>) {
   return (
-    <Image
+    <img
       src={src}
       alt={alt}
-      className={className}
-      fill
-      sizes="(max-width: 768px) 50vw, 180px"
-      unoptimized
+      className={`absolute inset-0 ${className}`}
       onError={hideBrokenImage}
     />
   );

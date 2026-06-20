@@ -3,7 +3,7 @@
 **Audit source:** latest `main` branch of `abhij1306/CrawlerAI` and `docs/feature specs/frontend-audit.md`  
 **Objective:** simplify the frontend into a production-ready operator application by removing duplicate ownership, stale compatibility layers, contract drift, and oversized workflow components—without deleting useful capabilities.  
 **Architecture style:** React + Vite modular frontend, feature-oriented, API-driven  
-**Status:** authoritative implementation plan
+**Status:** CLOSED for the 2026-06-20 productionization scope. Strategic follow-ups are recorded in `frontend-architecture-productionization-closure.md`.
 
 ---
 
