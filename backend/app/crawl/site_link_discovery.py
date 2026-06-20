@@ -21,8 +21,7 @@ from app.core.config.sitemap import (
     SITEMAP_CATEGORY_ANCHOR_TEXT_TOKENS,
 )
 from app.core.config.url_path_markers import detail_path_markers
-from app.crawl.sitemap_resolver import (
-    SitemapResolutionResult,
+from app.crawl.sitemap_nav import (
     build_category_nav_tree,
     category_link_rejected,
     category_origin_key,
@@ -31,6 +30,7 @@ from app.crawl.sitemap_resolver import (
     looks_like_category_url,
     strip_url_fragment,
 )
+from app.crawl.sitemap_resolver import SitemapResolutionResult
 from app.crawl.utils import normalize_target_url, text_has_token
 from app.acquisition.fetch.fetch_context import fetch_page
 from app.core.shared.url_utils import absolute_url

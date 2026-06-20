@@ -22,11 +22,18 @@ class JsStateCollector:
         return tuple(out)
 
 
-def network_row(bundle: CaptureBundle, artifact_id: str, path: str, obj: dict) -> list[Evidence]:
+def network_row(
+    bundle: CaptureBundle,
+    artifact_id: str,
+    path: str,
+    obj: dict,
+    *,
+    collector_id: str = "js_state",
+) -> list[Evidence]:
     mapping = {"title": "product.title", "name": "product.title", "brand": "product.brand", "sku": "product.sku", "price": "offer.price", "currency": "offer.currency", "available": "offer.availability", "availability": "offer.availability", "image": "asset.image_url", "imageUrl": "asset.image_url"}
     out: list[Evidence] = []
     if _looks_like_variant(obj):
-        return _variant_row(bundle, artifact_id, path, obj)
+        return _variant_row(bundle, artifact_id, path, obj, collector_id=collector_id)
     if not any(key in obj for key in mapping):
         return out
     group = f"offer:{artifact_id}:{path}" if any(key in obj for key in ("price", "currency", "available", "availability")) else None
@@ -46,11 +53,18 @@ def network_row(bundle: CaptureBundle, artifact_id: str, path: str, obj: dict) -
         if value in (None, "", [], {}):
             continue
         hint = EntityHint(entity_type="offer" if fact.startswith("offer.") else "asset" if fact.startswith("asset.") else "product", sku=str(obj.get("sku") or "").strip() or None)
-        out.append(evidence(bundle, artifact_id, "js_state", fact, value, SourceLocator(kind="script_path", value=f"{path}/{key}"), group_id=group if fact.startswith("offer.") else None, hint=hint, directness="embedded", confidence=0.8, parent_subject_id=product_subject if fact.startswith(("offer.", "asset.")) else None))
+        out.append(evidence(bundle, artifact_id, collector_id, fact, value, SourceLocator(kind="script_path", value=f"{path}/{key}"), group_id=group if fact.startswith("offer.") else None, hint=hint, directness="embedded", confidence=0.8, parent_subject_id=product_subject if fact.startswith(("offer.", "asset.")) else None))
     return out
 
 
-def _variant_row(bundle: CaptureBundle, artifact_id: str, path: str, obj: dict) -> list[Evidence]:
+def _variant_row(
+    bundle: CaptureBundle,
+    artifact_id: str,
+    path: str,
+    obj: dict,
+    *,
+    collector_id: str,
+) -> list[Evidence]:
     if not _looks_like_variant(obj):
         return []
     variant_id = _variant_identity_value(obj)
@@ -78,11 +92,11 @@ def _variant_row(bundle: CaptureBundle, artifact_id: str, path: str, obj: dict) 
     ).subject_id
     fields = _variant_fields(obj)
     out = [
-        evidence(bundle, artifact_id, "js_state", fact, value, SourceLocator(kind="script_path", value=f"{path}/{name}"), group_id=group, hint=hint, directness="embedded", confidence=0.82, subject_id=subject_id, parent_subject_id=product_subject)
+        evidence(bundle, artifact_id, collector_id, fact, value, SourceLocator(kind="script_path", value=f"{path}/{name}"), group_id=group, hint=hint, directness="embedded", confidence=0.82, subject_id=subject_id, parent_subject_id=product_subject)
         for name, fact, value in fields
         if value not in (None, "", [], {})
     ]
-    out.extend(_variant_offer(bundle, artifact_id, path, obj, hint, subject_id))
+    out.extend(_variant_offer(bundle, artifact_id, path, obj, hint, subject_id, collector_id=collector_id))
     return out
 
 
@@ -140,7 +154,16 @@ def _variant_fields(obj: dict) -> list[tuple[str, str, object]]:
     return [(name, fact, _scalar_value(value)) for name, fact, value in raw]
 
 
-def _variant_offer(bundle: CaptureBundle, artifact_id: str, path: str, obj: dict, hint: EntityHint, variant_subject_id: str) -> list[Evidence]:
+def _variant_offer(
+    bundle: CaptureBundle,
+    artifact_id: str,
+    path: str,
+    obj: dict,
+    hint: EntityHint,
+    variant_subject_id: str,
+    *,
+    collector_id: str,
+) -> list[Evidence]:
     group = f"offer:{artifact_id}:{path}"
     rows = [
         ("price", "offer.price", _first(obj, "price", "currentPrice", "salePrice")),
@@ -162,7 +185,7 @@ def _variant_offer(bundle: CaptureBundle, artifact_id: str, path: str, obj: dict
         ),
     ]
     return [
-        evidence(bundle, artifact_id, "js_state", fact, _scalar_value(value), SourceLocator(kind="script_path", value=f"{path}/{name}"), group_id=group, hint=hint, directness="embedded", confidence=0.82, parent_subject_id=variant_subject_id)
+        evidence(bundle, artifact_id, collector_id, fact, _scalar_value(value), SourceLocator(kind="script_path", value=f"{path}/{name}"), group_id=group, hint=hint, directness="embedded", confidence=0.82, parent_subject_id=variant_subject_id)
         for name, fact, value in rows
         if _scalar_value(value) not in (None, "", [], {})
     ]

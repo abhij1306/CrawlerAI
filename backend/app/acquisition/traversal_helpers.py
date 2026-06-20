@@ -5,10 +5,7 @@ import time
 from typing import TYPE_CHECKING
 from urllib.parse import urlsplit
 
-from app.acquisition.dom_runtime import (
-    get_page_html,
-    wait_for_dom_mutation_settle as _dom_wait_for_dom_mutation_settle,
-)
+from app.acquisition.dom_runtime import get_page_html, wait_for_dom_mutation_settle
 from app.acquisition.playwright_compat import (
     PlaywrightError,
     PlaywrightTimeoutError,
@@ -33,10 +30,6 @@ _RECOVERABLE_ERRORS = (PlaywrightError, PlaywrightTimeoutError)
 if TYPE_CHECKING:
     from app.acquisition.traversal_types import TraversalResult
 
-
-async def _wait_for_dom_mutation_settle(page, **kwargs):
-    # skipcq: PYL-E1125 - wrapper forwards caller-provided keyword-only timeout values.
-    await _dom_wait_for_dom_mutation_settle(page, **kwargs)
 
 async def _append_html_fragment(
     page,
@@ -360,7 +353,7 @@ async def _settle_after_action(
             page.url,
             exc_info=True,
         )
-    await _wait_for_dom_mutation_settle(
+    await wait_for_dom_mutation_settle(
         page,
         quiet_window_ms=min(500, max(100, wait_ms // 4)),
         timeout_ms=wait_ms,
@@ -490,5 +483,4 @@ looks_like_next_page_control = _looks_like_next_page_control
 page_matches_block_challenge = _page_matches_block_challenge
 remaining_timeout_ms = _remaining_timeout_ms
 settle_after_action = _settle_after_action
-wait_for_traversal_dom_mutation_settle = _wait_for_dom_mutation_settle
 wait_for_transition = _wait_for_transition

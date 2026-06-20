@@ -5,7 +5,6 @@ from dataclasses import dataclass, field, replace
 from types import MappingProxyType
 from typing import TypedDict, Unpack
 
-from app.acquisition.runtime_plan import AcquisitionPlan
 from app.core.config.browser_fingerprint_profiles import (
     RETRY_REASON_BROWSER_LABELS,
 )
@@ -244,4 +243,4 @@ def _normalized_retry_reason(value: object) -> str | None:
     return normalized or None
 
 
-__all__ = ["AcquisitionPlan", "AcquisitionPolicy"]
+__all__ = ["AcquisitionPolicy"]

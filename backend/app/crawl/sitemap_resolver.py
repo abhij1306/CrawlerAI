@@ -8,7 +8,7 @@ from urllib.parse import urlsplit, urlunsplit
 
 from defusedxml import ElementTree
 import httpx
-from bs4 import BeautifulSoup, Tag
+from bs4 import BeautifulSoup
 
 from app.core.config.sitemap import (
     SITEMAP_DEFAULT_FILTER_KEYWORD,
@@ -35,14 +35,6 @@ from app.crawl.sitemap_nav import (
     _origin_key,
     _reject_homepage_candidate,
     _strip_fragment,
-    build_category_nav_tree,
-    category_labels_by_url_from_tree,
-    category_link_rejected,
-    category_origin_key,
-    category_url_key,
-    has_category_anchor_signal,
-    looks_like_category_url,
-    strip_url_fragment,
 )
 from app.crawl.utils import normalize_target_url
 from app.core.shared.url_utils import absolute_url

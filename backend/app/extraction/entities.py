@@ -4,22 +4,27 @@ from collections import defaultdict
 from pydantic import Field
 from app.extraction.contracts import CaptureBundle, Evidence, FrozenModel, OptionAxis, OptionValue, ProductOptionCatalog
 from app.extraction.ids import stable_id
+
 class ProductEntity(FrozenModel):
     entity_id: str; identity_evidence_ids: tuple[str, ...]
     attribute_evidence: dict[str, tuple[str, ...]]
     variant_ids: tuple[str, ...]; offer_ids: tuple[str, ...]; asset_ids: tuple[str, ...]
+
 class VariantEntity(FrozenModel):
     entity_id: str; product_entity_id: str; identity_key: str
     source_subject_ids: tuple[str, ...] = (); identity_evidence_ids: tuple[str, ...]
     option_values: dict[str, str]; attribute_evidence: dict[str, tuple[str, ...]]
     offer_ids: tuple[str, ...]; asset_ids: tuple[str, ...]; selected: bool
+
 class OfferEntity(FrozenModel):
     entity_id: str; product_entity_id: str; variant_entity_id: str | None
     group_id: str; request_context_id: str
     fact_evidence: dict[str, tuple[str, ...]]
+
 class AssetEntity(FrozenModel):
     entity_id: str; product_entity_id: str; variant_entity_id: str | None
     url_evidence_ids: tuple[str, ...]
+
 class EntitySet(FrozenModel):
     products: tuple[ProductEntity, ...] = ()
     variants: tuple[VariantEntity, ...] = ()
@@ -247,7 +252,7 @@ def _variant_identity_keys(rows: list[Evidence]) -> set[str]:
 
 
 def _rows_from_structured_variant_object(rows: list[Evidence]) -> bool:
-    return any(row.collector_id in {"jsonld", "js_state", "network_json", "adapter"} and row.fact_type.startswith("variant.option.") for row in rows)
+    return any(row.collector_id in {"jsonld", "js_state", "network", "adapter"} and row.fact_type.startswith("variant.option.") for row in rows)
 def _preferred_variant_key(keys: set[str]) -> str:
     for prefix in ("id:", "sku:", "gtin:", "url:", "options:"):
         match = sorted(key for key in keys if key.startswith(prefix))

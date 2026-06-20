@@ -29,6 +29,7 @@ from app.core.domain_utils import normalize_domain
 from app.core.records.field_policy import repair_target_fields_for_surface
 from app.connectors.llm.prompt_rendering import truncate_html, truncate_json_literal
 from app.connectors.llm.tasks import run_prompt_task
+from app.persistence.record_artifacts import RecordArtifacts, load_record_artifacts
 
 logger = logging.getLogger(__name__)
 
@@ -68,9 +69,14 @@ async def diagnose_run(
     high_value = repair_target_fields_for_surface(
         surface, list(getattr(run, "requested_fields", []) or [])
     )
-    record_fields = _record_field_presence(primary)
+    record_artifacts = (
+        await load_record_artifacts(session, primary)
+        if primary is not None
+        else RecordArtifacts(status="missing")
+    )
+    record_fields = _record_field_presence(primary, artifacts=record_artifacts)
     trace_payload = _load_trace(run_id, url)
-    html_snippet = _load_html_snippet(primary, anchors=high_value)
+    html_snippet = record_artifacts.html
 
     try:
         result = await run_prompt_task(
@@ -147,10 +153,16 @@ def _verdict(run: CrawlRun) -> str:
     return str(summary.get("extraction_verdict") or "").strip().lower()
 
 
-def _record_field_presence(record: CrawlRecord | None) -> dict[str, Any]:
+def _record_field_presence(
+    record: CrawlRecord | None,
+    *,
+    artifacts: RecordArtifacts | None = None,
+) -> dict[str, Any]:
     if record is None:
         return {}
-    data = mapping_or_empty(getattr(record, "data", {}))
+    data = mapping_or_empty(
+        artifacts.data if artifacts is not None else getattr(record, "data", {})
+    )
     presence: dict[str, Any] = {}
     for key, value in data.items():
         if str(key).startswith("_"):
@@ -183,31 +195,6 @@ def _load_trace(run_id: int, url: str) -> dict[str, Any]:
     if fallback_payload is not None:
         return fallback_payload
     return {}
-
-
-def _load_html_snippet(record: CrawlRecord | None, *, anchors: list[str]) -> str:
-    if record is None:
-        return ""
-    raw_html_path = str(getattr(record, "raw_html_path", "") or "").strip()
-    if not raw_html_path:
-        return ""
-    try:
-        artifacts_root = Path(settings.artifacts_dir).resolve()
-        resolved = Path(raw_html_path).resolve()
-    except OSError:
-        return ""
-    # Path-traversal guard: only read files inside the artifacts directory. A
-    # poisoned raw_html_path must never let the diagnosis read arbitrary local
-    # files and forward them to the LLM (INVARIANT Rule 10 — observe-only).
-    if not resolved.is_relative_to(artifacts_root):
-        logger.warning(
-            "Refusing to read raw_html_path outside artifacts dir: %s", raw_html_path
-        )
-        return ""
-    try:
-        return resolved.read_text(encoding="utf-8", errors="ignore")
-    except OSError:
-        return ""
 
 
 def _read_json(path: Path) -> Any:

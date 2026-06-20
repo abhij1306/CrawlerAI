@@ -846,11 +846,8 @@ async def expand_all_interactive_elements(
     *,
     surface: str = "",
     requested_fields: list[str] | None = None,
-    checkpoint: Any = None,
     max_elapsed_ms: int | None = None,
 ) -> dict[str, object]:
-    # checkpoint is deprecated API compatibility only; callers should use max_elapsed_ms.
-    del checkpoint
     return await expand_all_interactive_elements_impl(
         page,
         surface=surface,

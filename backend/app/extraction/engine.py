@@ -1,12 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any, Callable, Literal, cast
 
 from app.extraction.contracts import (
     Decision,
     Evidence,
-    ExtractionMetrics,
     ExtractionRequest,
     ExtractionResult,
     Finding,
@@ -53,6 +52,17 @@ from app.extraction.targeting import (
 )
 from app.extraction.validation import validate as validate_ecommerce_detail
 
+ExtractionVerdict = Literal[
+    "success",
+    "partial",
+    "review",
+    "invalid",
+    "empty",
+    "blocked",
+    "error",
+    "wrong_surface",
+]
+
 
 @dataclass(frozen=True)
 class SurfaceRuntime:
@@ -77,7 +87,7 @@ def extract(request: ExtractionRequest) -> ExtractionResult:
     findings = runtime.validate(step_graph, target, normalized, request, spec)
     resolution = runtime.resolve(step_graph, normalized, findings, request, spec)
     records = runtime.materialize(step_graph, resolution, normalized, findings, request, spec)
-    verdict = runtime.assess(records, resolution, findings, request, spec)
+    verdict = cast(ExtractionVerdict, runtime.assess(records, resolution, findings, request, spec))
     decisions = _decisions(resolution)
     graph = _entity_graph(graph_state, normalized, spec)
     return ExtractionResult(
@@ -254,12 +264,15 @@ def _materialize_listing(
     spec: SurfaceSpec,
 ) -> tuple[PublicRecord, ...]:
     del graph, findings, spec
-    return tuple(
-        materialize_ecommerce_listing(
-            list(evidence),
-            list(decisions),
-            max_records=request.max_records,
-        )
+    return cast(
+        tuple[PublicRecord, ...],
+        tuple(
+            materialize_ecommerce_listing(
+                list(evidence),
+                list(decisions),
+                max_records=request.max_records,
+            )
+        ),
     )
 
 

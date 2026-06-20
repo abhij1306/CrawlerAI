@@ -11,6 +11,7 @@ import pytest
 from patchright.async_api import Error as PlaywrightError
 
 from app.acquisition.fetch import fetch_context as crawl_fetch_runtime
+from app.acquisition.fetch import browser_policy
 from app.acquisition import (
     browser_background_tasks,
     browser_capture,
@@ -668,7 +669,7 @@ def test_saved_real_chrome_contract_skips_patchright(
 
 @pytest.mark.component
 def test_durable_vendor_block_limits_browser_engine_attempts() -> None:
-    attempts = crawl_fetch_runtime._durable_vendor_block_engine_attempts(
+    attempts = browser_policy.durable_vendor_block_engine_attempts(
         engine_attempts=["real_chrome", "patchright"],
         host_policy=HostProtectionPolicy(
             host="example.com",
@@ -684,7 +685,7 @@ def test_durable_vendor_block_limits_browser_engine_attempts() -> None:
 
 @pytest.mark.component
 def test_durable_vendor_block_keeps_http_block_engine_attempts() -> None:
-    attempts = crawl_fetch_runtime._durable_vendor_block_engine_attempts(
+    attempts = browser_policy.durable_vendor_block_engine_attempts(
         engine_attempts=["patchright", "real_chrome"],
         host_policy=HostProtectionPolicy(
             host="example.com",
@@ -1412,7 +1413,7 @@ async def test_fetch_page_preserves_proxy_list_on_browser_first_path(
 
 @pytest.mark.component
 def test_resolve_proxy_attempts_preserves_order_and_deduplicates() -> None:
-    proxies = crawl_fetch_runtime._resolve_proxy_attempts(
+    proxies = browser_policy.resolve_proxy_attempts(
         [
             "socks5://proxy-b",
             "http://proxy-a",
@@ -1439,7 +1440,7 @@ def test_attach_proxy_run_session_replaces_existing_session_marker() -> None:
 
 @pytest.mark.component
 def test_resolve_proxy_attempts_does_not_rewrite_proxy_session_by_default() -> None:
-    proxies = crawl_fetch_runtime._resolve_proxy_attempts(
+    proxies = browser_policy.resolve_proxy_attempts(
         [
             "socks5://user-session-oldvalue:pass@rp.scrapegw.com:6060",
             "socks5://user-session-other:pass@rp.scrapegw.com:6060",
@@ -1457,7 +1458,7 @@ def test_resolve_proxy_attempts_does_not_rewrite_proxy_session_by_default() -> N
 def test_resolve_proxy_attempts_rewrites_proxy_session_when_explicitly_enabled() -> (
     None
 ):
-    proxies = crawl_fetch_runtime._resolve_proxy_attempts(
+    proxies = browser_policy.resolve_proxy_attempts(
         [
             "socks5://user-session-oldvalue:pass@rp.scrapegw.com:6060",
             "socks5://user-session-other:pass@rp.scrapegw.com:6060",
@@ -2552,6 +2553,100 @@ async def test_fetch_page_attempts_curl_once_before_httpx_fallback(
     assert result.method == "httpx"
     assert len(curl_calls) == 1
     assert http_calls == ["https://example.com/products/widget"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_http_only_fetch_uses_canonical_plan_and_attempt_results(
+    monkeypatch: pytest.MonkeyPatch,
+    patch_settings,
+) -> None:
+    await crawl_fetch_runtime.reset_fetch_runtime_state()
+    patch_settings()
+
+    @_as_async
+    def _failing_curl(url: str, timeout: float, *, proxy: str | None = None):
+        del url, timeout, proxy
+        raise httpx.ConnectTimeout("curl timed out")
+
+    @_as_async
+    def _http_success(url: str, timeout: float, *, proxy: str | None = None):
+        del timeout, proxy
+        return PageFetchResult(
+            url=url,
+            final_url=url,
+            html="<html><body>planned-httpx</body></html>",
+            status_code=200,
+            method="httpx",
+            blocked=False,
+        )
+
+    monkeypatch.setattr(crawl_fetch_runtime, "_curl_fetch", _failing_curl)
+    monkeypatch.setattr(crawl_fetch_runtime, "_http_fetch", _http_success)
+
+    result = await crawl_fetch_runtime.fetch_page(
+        "https://example.com/products/widget",
+        surface="ecommerce_detail",
+        fetch_mode="http_only",
+    )
+
+    canonical_result = result.acquisition_diagnostics["result"]
+    assert result.method == "httpx"
+    assert [attempt["outcome"] for attempt in canonical_result["attempts"]] == [
+        "error",
+        "success",
+    ]
+    assert canonical_result["selected_attempt_id"] == canonical_result["attempts"][1][
+        "attempt_id"
+    ]
+    assert result.acquisition_diagnostics["termination_reason"] == "attempt_selected"
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_http_only_transport_exhaustion_does_not_fall_back_to_browser(
+    monkeypatch: pytest.MonkeyPatch,
+    patch_settings,
+) -> None:
+    await crawl_fetch_runtime.reset_fetch_runtime_state()
+    patch_settings()
+    browser_called = False
+
+    @_as_async
+    def _failing_curl(url: str, timeout: float, *, proxy: str | None = None):
+        del url, timeout, proxy
+        raise httpx.ConnectTimeout("curl timed out")
+
+    @_as_async
+    def _failing_http(url: str, timeout: float, *, proxy: str | None = None):
+        del url, timeout, proxy
+        raise httpx.ConnectError("httpx failed")
+
+    @_as_async
+    def _unexpected_browser(*args, **kwargs):
+        del args, kwargs
+        nonlocal browser_called
+        browser_called = True
+        raise AssertionError("http_only must not run a browser attempt")
+
+    monkeypatch.setattr(crawl_fetch_runtime, "_curl_fetch", _failing_curl)
+    monkeypatch.setattr(crawl_fetch_runtime, "_http_fetch", _failing_http)
+    monkeypatch.setattr(crawl_fetch_runtime, "run_browser_attempts", _unexpected_browser)
+
+    with pytest.raises(httpx.ConnectError, match="httpx failed") as exc_info:
+        await crawl_fetch_runtime.fetch_page(
+            "https://example.com/products/widget",
+            surface="ecommerce_detail",
+            fetch_mode="http_only",
+        )
+
+    diagnostics = exc_info.value.acquisition_diagnostics
+    assert diagnostics["termination_reason"] == "http_transports_exhausted"
+    assert [attempt["outcome"] for attempt in diagnostics["result"]["attempts"]] == [
+        "error",
+        "error",
+    ]
+    assert browser_called is False
 
 
 @pytest.mark.asyncio
@@ -3949,7 +4044,7 @@ async def test_fetch_page_surfaces_browser_error_when_http_exhausts_and_browser_
 
 @pytest.mark.asyncio
 @pytest.mark.component
-async def test_reset_fetch_runtime_state_closes_adapter_and_runtime_http_clients(
+async def test_reset_fetch_runtime_state_closes_canonical_runtime_resources(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     calls: list[str] = []
@@ -3961,10 +4056,6 @@ async def test_reset_fetch_runtime_state_closes_adapter_and_runtime_http_clients
     @_as_async
     def _fake_close_runtime_http_client() -> None:
         calls.append("runtime_http")
-
-    @_as_async
-    def _fake_close_adapter_http_client() -> None:
-        calls.append("adapter_http")
 
     @_as_async
     def _fake_reset_pacing_state() -> None:
@@ -3994,12 +4085,6 @@ async def test_reset_fetch_runtime_state_closes_adapter_and_runtime_http_clients
         "close_shared_http_client",
         _fake_close_runtime_http_client,
     )
-    monkeypatch.setattr(
-        crawl_fetch_runtime,
-        "close_adapter_shared_http_client",
-        _fake_close_adapter_http_client,
-    )
-
     await crawl_fetch_runtime.reset_fetch_runtime_state()
 
     assert calls == [
@@ -4007,5 +4092,4 @@ async def test_reset_fetch_runtime_state_closes_adapter_and_runtime_http_clients
         "cookie_store",
         "pacing",
         "runtime_http",
-        "adapter_http",
     ]

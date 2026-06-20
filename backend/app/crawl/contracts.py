@@ -35,7 +35,7 @@ class UrlResult(BaseModel):
     record_ids: tuple[int, ...] = ()
     error: str | None = None
 
-    @computed_field
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def verdict(self) -> Verdict:
         return self.extraction_verdict

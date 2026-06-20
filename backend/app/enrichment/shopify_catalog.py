@@ -44,6 +44,17 @@ class TaxonomyIndex:
     id_lookup: dict[str, dict[str, object]]
 
 
+@dataclass(frozen=True, slots=True)
+class TaxonomyEvidenceTokens:
+    primary: set[str]
+    secondary: set[str]
+    tertiary: set[str]
+
+    @property
+    def all(self) -> set[str]:
+        return self.primary | self.secondary | self.tertiary
+
+
 def normalize_category_path(value: object) -> str:
     return " > ".join(
         " ".join(tokenize_text(part))
@@ -176,25 +187,60 @@ def top_taxonomy_candidates(
             return [exact_match]
     phrase_match = phrase_leaf_category_match(candidate_values, taxonomy_index)
 
-    primary_tokens = pool_tokens(data, candidate_value_loader, "category", "product_type")
-    secondary_tokens = pool_tokens(data, candidate_value_loader, "title")
-    tertiary_tokens = pool_tokens(
-        data,
-        candidate_value_loader,
-        "brand",
-        "materials",
-        "material",
-        "tags",
-        "product_attributes",
-        "specifications",
-        "url_category_context",
+    evidence = TaxonomyEvidenceTokens(
+        primary=pool_tokens(
+            data,
+            candidate_value_loader,
+            "category",
+            "product_type",
+        ),
+        secondary=pool_tokens(data, candidate_value_loader, "title"),
+        tertiary=pool_tokens(
+            data,
+            candidate_value_loader,
+            "brand",
+            "materials",
+            "material",
+            "tags",
+            "product_attributes",
+            "specifications",
+            "url_category_context",
+        ),
     )
-    if not primary_tokens and not secondary_tokens and not tertiary_tokens:
+    if not evidence.all:
         return [phrase_match] if phrase_match else []
 
-    scored: list[dict[str, object]] = []
+    scored = _score_taxonomy_categories(
+        taxonomy_index,
+        evidence=evidence,
+        category_match_threshold=category_match_threshold,
+    )
     if phrase_match:
-        scored.append(phrase_match)
+        scored.insert(0, phrase_match)
+    if not scored:
+        token_match = leaf_token_category_match(
+            candidate_values,
+            taxonomy_index,
+            eligible_tokens=evidence.primary | evidence.secondary,
+        )
+        return [token_match] if token_match else []
+    scored.sort(
+        key=lambda item: (
+            -score_float(item.get("score")),
+            len(str(item.get("category_path") or "")),
+            str(item.get("category_path") or ""),
+        )
+    )
+    return scored[:limit]
+
+
+def _score_taxonomy_categories(
+    taxonomy_index: TaxonomyIndex,
+    *,
+    evidence: TaxonomyEvidenceTokens,
+    category_match_threshold: float,
+) -> list[dict[str, object]]:
+    scored: list[dict[str, object]] = []
     for item in taxonomy_index.categories:
         category_tokens = set(
             string_iterable(item.get("path_match_tokens"))
@@ -204,26 +250,29 @@ def top_taxonomy_candidates(
         if not category_tokens:
             continue
         if taxonomy_candidate_conflicts(
-            primary_tokens | secondary_tokens | tertiary_tokens,
+            evidence.all,
             item.get("category_path"),
-            product_tokens=primary_tokens | secondary_tokens,
+            product_tokens=evidence.primary | evidence.secondary,
         ):
             continue
-        primary_score = weighted_overlap(primary_tokens, category_tokens)
-        if primary_score and not has_product_kind_overlap(primary_tokens, category_tokens):
+        primary_score = weighted_overlap(evidence.primary, category_tokens)
+        if primary_score and not has_product_kind_overlap(
+            evidence.primary,
+            category_tokens,
+        ):
             continue
-        secondary_score = weighted_overlap(secondary_tokens, category_tokens)
-        tertiary_score = weighted_overlap(tertiary_tokens, category_tokens)
+        secondary_score = weighted_overlap(evidence.secondary, category_tokens)
+        tertiary_score = weighted_overlap(evidence.tertiary, category_tokens)
         category_evidence_score = weighted_overlap(
             category_tokens,
-            primary_tokens | secondary_tokens | tertiary_tokens,
+            evidence.all,
         )
         attribute_score = weighted_overlap(
-            primary_tokens | secondary_tokens | tertiary_tokens,
+            evidence.all,
             attribute_tokens,
         )
         primary_attribute_score = weighted_product_overlap(
-            primary_tokens,
+            evidence.primary,
             attribute_tokens,
         )
         score = (
@@ -234,9 +283,7 @@ def top_taxonomy_candidates(
             + (attribute_score * 0.3)
             + (primary_attribute_score * 0.5)
         )
-        evidence_tokens = (
-            primary_tokens | secondary_tokens | tertiary_tokens
-        ) & category_tokens
+        evidence_tokens = evidence.all & category_tokens
         enough_sparse_evidence = len(
             evidence_tokens - DATA_ENRICHMENT_TAXONOMY_CONTEXT_ONLY_TOKENS
         ) >= 2
@@ -256,21 +303,7 @@ def top_taxonomy_candidates(
                 source="scored_match",
             )
         )
-    if not scored:
-        token_match = leaf_token_category_match(
-            candidate_values,
-            taxonomy_index,
-            eligible_tokens=primary_tokens | secondary_tokens,
-        )
-        return [token_match] if token_match else []
-    scored.sort(
-        key=lambda item: (
-            -score_float(item.get("score")),
-            len(str(item.get("category_path") or "")),
-            str(item.get("category_path") or ""),
-        )
-    )
-    return scored[:limit]
+    return scored
 
 
 def phrase_leaf_category_match(

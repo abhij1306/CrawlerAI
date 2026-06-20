@@ -11,7 +11,6 @@ from app.acquisition.acquirer import (
 )
 from app.acquisition.browser_runtime import build_failed_browser_diagnostics
 from app.acquisition.policy import AcquisitionPolicy
-from app.core.config.runtime_settings import crawler_runtime_settings
 from app.crawl.profile import (
     apply_acquisition_contract_to_profile,
     resolve_url_acquisition_recipe,

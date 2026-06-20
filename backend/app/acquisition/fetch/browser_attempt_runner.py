@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Coroutine
+from typing import Any
 from dataclasses import dataclass
 
 from app.acquisition.browser_proxy_config import display_proxy, proxy_scheme
@@ -25,13 +26,12 @@ from app.acquisition.host_protection_memory import (
 )
 from app.acquisition.runtime import PageFetchResult
 from app.core.config.runtime_settings import (
-    crawler_runtime_settings,
     proxy_rotation_mode,
 )
 
 logger = logging.getLogger(__name__)
 
-BrowserFetch = Callable[..., Awaitable[PageFetchResult]]
+BrowserFetch = Callable[..., Coroutine[Any, Any, PageFetchResult]]
 BrowserEngineAttempts = Callable[
     ...,
     list[str],
@@ -65,7 +65,7 @@ class BrowserAttemptDependencies:
     update_host_result_memory: Callable[..., Awaitable[None]]
     emit_fetch_event: EmitFetchEvent
     load_host_protection_policy: Callable[..., Awaitable[HostProtectionPolicy]]
-    note_host_hard_block: Callable[..., Awaitable[None]]
+    note_host_hard_block: Callable[..., Awaitable[object]]
     wait_for_host_slot: Callable[..., Awaitable[None]]
 
 
@@ -103,6 +103,11 @@ class BrowserAttemptRunner:
             ttl_seconds=self.context.host_memory_ttl_seconds,
         )
 
+    def _active_host_policy(self) -> HostProtectionPolicy:
+        if self.active_host_policy is None:
+            raise RuntimeError("active host policy not loaded")
+        return self.active_host_policy
+
     async def _run_proxy_attempt(
         self,
         proxy_index: int,
@@ -112,7 +117,7 @@ class BrowserAttemptRunner:
         escalation_lane = browser_escalation_lane(
             context=self.context,
             reason=self.reason,
-            host_policy=self.active_host_policy,
+            host_policy=self._active_host_policy(),
             proxy=proxy,
         )
         engine_index = 0
@@ -139,11 +144,11 @@ class BrowserAttemptRunner:
     def _engine_attempts(self, proxy: str | None) -> list[str]:
         attempts = self.deps.browser_engine_attempts(
             context=self.context,
-            host_policy=self.active_host_policy,
+            host_policy=self._active_host_policy(),
         )
         return durable_vendor_block_engine_attempts(
             engine_attempts=attempts,
-            host_policy=self.active_host_policy,
+            host_policy=self._active_host_policy(),
             forced_engine=self.context.forced_browser_engine,
         )
 
@@ -156,7 +161,7 @@ class BrowserAttemptRunner:
         engine_attempts: list[str],
         escalation_lane: str,
     ) -> PageFetchResult | None:
-        policy_snapshot = host_policy_snapshot(self.active_host_policy)
+        policy_snapshot = host_policy_snapshot(self._active_host_policy())
         await self._raise_if_no_budget(engine, engine_index, engine_attempts, "start")
         try:
             await self.deps.wait_for_host_slot(
@@ -203,7 +208,7 @@ class BrowserAttemptRunner:
             browser_engine=engine,
             engine_index=engine_index,
             engine_attempts=engine_attempts,
-            host_policy=self.active_host_policy,
+            host_policy=self._active_host_policy(),
         )
         if remaining <= 0:
             raise TimeoutError(
@@ -227,7 +232,7 @@ class BrowserAttemptRunner:
             browser_engine=engine,
             engine_index=engine_index,
             engine_attempts=engine_attempts,
-            host_policy=self.active_host_policy,
+            host_policy=self._active_host_policy(),
         )
         return await browser_fetch_with_wall_clock_timeout(
             self.deps.browser_fetch,
@@ -361,7 +366,7 @@ class BrowserAttemptRunner:
             engine_attempts=engine_attempts,
             attempted_engine=attempted_engine,
             context=self.context,
-            host_policy=self.active_host_policy,
+            host_policy=self._active_host_policy(),
         )
         if engine_index < len(refreshed):
             return refreshed

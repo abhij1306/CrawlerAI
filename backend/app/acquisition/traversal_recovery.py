@@ -5,6 +5,9 @@ import logging
 import re
 from typing import TYPE_CHECKING
 
+from app.acquisition.dom_runtime import (
+    wait_for_dom_mutation_settle as _wait_for_dom_mutation_settle,
+)
 from app.acquisition.playwright_compat import (
     PlaywrightError,
     PlaywrightTimeoutError,
@@ -15,7 +18,6 @@ from app.acquisition.traversal_helpers import (
     looks_like_next_page_control as _looks_like_next_page_control,
     looks_like_paginate_control,
     remaining_timeout_ms as _remaining_timeout_ms,
-    wait_for_traversal_dom_mutation_settle as _wait_for_dom_mutation_settle,
 )
 from app.core.config.extraction_rules import TRAVERSAL_LISTING_RECOVERY_ACTIONS
 from app.core.config.runtime_settings import crawler_runtime_settings
@@ -507,6 +509,3 @@ async def _restore_overlays(page) -> None:
         )
     except _RECOVERABLE_ERRORS:
         logger.debug("Traversal overlay restore JS failed", exc_info=True)
-
-
-find_aom_actionable_locator = _find_aom_actionable_locator

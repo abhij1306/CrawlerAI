@@ -6,21 +6,15 @@ import logging
 import re
 from dataclasses import dataclass
 from typing import Awaitable, Callable
-from urllib.parse import parse_qs, urlencode, urljoin, urlsplit
+from urllib.parse import parse_qs, urlsplit
 
-from bs4 import BeautifulSoup
 import httpx
-
-from app.acquisition.runtime import classify_blocked_page
 from app.acquisition.browser_runtime import get_browser_runtime, real_chrome_browser_available
 from app.acquisition.dom_runtime import get_page_html
 from app.core.config.product_intelligence import (
     AGGREGATOR_DOMAINS,
     BRAND_DOMAIN_MAP,
     DISCOVERY_SOURCE_TYPE_PRIORITY,
-    DISCOVERY_GENERIC_PRODUCT_TOKENS,
-    DISCOVERY_TITLE_MISMATCH_MIN_DISTINCTIVE_TOKENS,
-    DISCOVERY_TITLE_MISMATCH_MIN_OVERLAP_RATIO,
     MARKETPLACE_DOMAINS,
     RETAILER_DOMAINS,
     SEARCH_EXCLUDED_DOMAIN_PREFIX,
@@ -55,36 +49,9 @@ from app.core.config.product_intelligence import (
     SOURCE_TYPE_MARKETPLACE,
     SOURCE_TYPE_RETAILER,
     SOURCE_TYPE_UNKNOWN,
-    GOOGLE_NATIVE_BROWSER_ENGINE,
-    GOOGLE_NATIVE_BLOCKED_HTML_PATTERNS,
-    GOOGLE_NATIVE_BLOCKED_CLASSIFICATION_OFFSET,
-    GOOGLE_NATIVE_BLOCKED_URL_PATTERNS,
-    GOOGLE_NATIVE_HOME_URL,
-    GOOGLE_NATIVE_IGNORED_DOMAINS,
-    GOOGLE_NATIVE_NAVIGATION_TIMEOUT_MS,
-    GOOGLE_NATIVE_PROVIDER_PAYLOAD,
-    GOOGLE_NATIVE_QUERY_PARAM,
-    GOOGLE_NATIVE_REDIRECT_PATH,
-    GOOGLE_NATIVE_REDIRECT_TARGET_PARAM,
-    GOOGLE_NATIVE_RESULT_COUNT_PARAM,
-    GOOGLE_NATIVE_RESULT_LINK_SELECTOR,
-    GOOGLE_NATIVE_RESULT_WAIT_MS,
-    GOOGLE_NATIVE_SEARCH_INPUT_SELECTOR,
-    GOOGLE_NATIVE_SEARCH_URL,
-    GOOGLE_NATIVE_SUBMIT_KEY,
-    GOOGLE_NATIVE_THUMBNAIL_ANCESTOR_DEPTH,
-    GOOGLE_NATIVE_THUMBNAIL_MIN_SRC_LENGTH,
-    GOOGLE_NATIVE_TITLE_SELECTOR,
-    GOOGLE_NATIVE_TYPING_EXTRA_WAIT_MS,
     product_intelligence_settings,
 )
-from app.core.shared.field_coerce import clean_text
-from app.intelligence.candidate_urls import (
-    candidate_dedupe_key,
-    clean_result_url,
-    looks_like_product_detail_url,
-    normalized_compare_url,
-)
+from app.intelligence.candidate_urls import candidate_dedupe_key, clean_result_url
 import app.intelligence.discovery_support as discovery_support
 from app.intelligence.discovery_support import (
     _candidate_has_shopping_group,
@@ -99,23 +66,16 @@ from app.intelligence.discovery_support import (
     _identity_field,
     _identity_token_match,
     _join_query_parts,
-    _limit_query_tokens,
     _query_identifier_value,
-    _query_text,
     _same_source_url,
     _source_excluded_domains,
     _source_excluded_urls,
-    _strip_query_prefix,
     _title_without_brand,
     _parse_google_native_results,
     _quoted,
 )
 from app.intelligence.discovery_types import SearchResult
-from app.intelligence.matching import (
-    manufacturer_style_code,
-    normalize_brand,
-    source_domain,
-)
+from app.intelligence.matching import normalize_brand, source_domain
 
 logger = logging.getLogger(__name__)
 

@@ -20,8 +20,7 @@ from pathlib import Path
 
 from app.acquisition.acquirer import AcquisitionRequest, acquire
 from app.acquisition.runtime import is_blocked_html
-from app.acquisition.runtime_plan import AcquisitionPlan
-from app.connectors.adapters.registry import run_adapter
+from app.acquisition.runtime_plan import AcquisitionIntent
 from app.extraction import extract, parse_surface
 from app.extraction.replay import request_from_acquisition_result
 from app.acquisition.platform_policy import detect_platform_family
@@ -206,7 +205,7 @@ async def _run_one(site: dict, run_id: int, timeout_seconds: int) -> dict:
                 AcquisitionRequest(
                     run_id=run_id,
                     url=url,
-                    plan=AcquisitionPlan(
+                    plan=AcquisitionIntent(
                         surface=surface,
                         traversal_mode=str(site.get("traversal_mode") or "").strip()
                         or None,
@@ -223,10 +222,6 @@ async def _run_one(site: dict, run_id: int, timeout_seconds: int) -> dict:
             if acquisition.content_type.startswith("text/html")
             else False
         )
-        adapter_result = None
-        if acquisition.content_type.startswith("text/html"):
-            adapter_result = await run_adapter(url, acquisition.html or "", surface)
-
         result.update(
             {
                 "method": acquisition.method,
@@ -236,8 +231,8 @@ async def _run_one(site: dict, run_id: int, timeout_seconds: int) -> dict:
                 "html_len": len(acquisition.html or ""),
                 "network_payloads": len(acquisition.network_payloads or []),
                 "blocked": blocked,
-                "adapter_name": adapter_result.adapter_name if adapter_result else None,
-                "adapter_records": len(adapter_result.artifacts) if adapter_result else 0,
+                "adapter_name": None,
+                "adapter_records": 0,
                 "browser_diagnostics": dict(acquisition.browser_diagnostics or {}),
             }
         )
@@ -247,10 +242,6 @@ async def _run_one(site: dict, run_id: int, timeout_seconds: int) -> dict:
             result["note"] = "JSON response; extraction corpus checks skipped"
             return result
 
-        if adapter_result and adapter_result.artifacts:
-            acquisition.artifacts["adapter_artifacts"] = list(
-                adapter_result.artifacts
-            )
         extraction_result = extract(
             request_from_acquisition_result(
                 parse_surface(surface),

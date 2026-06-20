@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import re
 from pathlib import Path
 
 import pytest
@@ -41,8 +42,15 @@ LONG_FUNCTION_DEBT = {
     ("crawl/batch_runtime.py", "_process_urls_in_parallel"),
     ("crawl/pipeline/run_progress.py", "_merge_run_acquisition_metrics"),
     ("crawl/review/__init__.py", "build_domain_recipe_payload"),
-    ("enrichment/shopify_catalog.py", "top_taxonomy_candidates"),
     ("intelligence/matching.py", "score_candidate"),
+}
+
+LEGACY_RECORD_FIELD_COMPATIBILITY_OWNERS = {
+    "core response shaping": "schemas/crawl.py",
+    "initial persistence": "crawl/pipeline/persistence.py",
+    "commit metadata writer": "persistence/publish/metadata.py",
+    "review annotation writer": "crawl/review/__init__.py",
+    "accepted-value annotation writer": "crawl/crud.py",
 }
 
 
@@ -56,6 +64,19 @@ def _class_owners(class_name: str) -> set[str]:
         ):
             owners.add(path.relative_to(APP_ROOT).as_posix())
     return owners
+
+
+def _function_parameter_names(relative_path: str, function_name: str) -> set[str]:
+    path = APP_ROOT / relative_path
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        if node.name != function_name:
+            continue
+        arguments = (*node.args.posonlyargs, *node.args.args, *node.args.kwonlyargs)
+        return {argument.arg for argument in arguments}
+    raise AssertionError(f"Function not found: {relative_path}:{function_name}")
 
 
 def test_no_new_oversized_modules() -> None:
@@ -78,6 +99,37 @@ def test_no_new_long_functions() -> None:
             if node.end_lineno - node.lineno + 1 > 100:
                 long_functions.add((path.relative_to(APP_ROOT).as_posix(), node.name))
     assert long_functions <= LONG_FUNCTION_DEBT
+
+
+def test_legacy_record_columns_have_no_new_direct_consumers() -> None:
+    pattern = re.compile(
+        r"\b(?:record|row)\.(?:raw_data|discovered_data|source_trace|raw_html_path)\b"
+    )
+    owners = {
+        path.relative_to(APP_ROOT).as_posix()
+        for path in APP_ROOT.rglob("*.py")
+        if pattern.search(path.read_text(encoding="utf-8"))
+    }
+    assert owners <= set(LEGACY_RECORD_FIELD_COMPATIBILITY_OWNERS.values())
+
+
+@pytest.mark.parametrize(
+    ("relative_path", "loader_name"),
+    (
+        ("api/records.py", "load_canonical_record_views"),
+        ("connectors/public_api/extraction_service.py", "load_record_artifacts"),
+        ("crawl/review/__init__.py", "load_record_artifacts"),
+        ("observability/run_audit.py", "load_canonical_record_views"),
+        ("observability/run_llm_diagnosis.py", "load_record_artifacts"),
+        ("persistence/record_export_service.py", "load_record_artifacts"),
+    ),
+)
+def test_legacy_record_consumers_enter_through_canonical_reader(
+    relative_path: str,
+    loader_name: str,
+) -> None:
+    source = (APP_ROOT / relative_path).read_text(encoding="utf-8")
+    assert loader_name in source
 
 
 def test_config_is_owned_by_core_package() -> None:
@@ -155,20 +207,46 @@ def test_legacy_services_package_is_deleted() -> None:
     assert not (APP_ROOT / "services").exists()
 
 
+def test_dead_acquisition_http_adapter_is_deleted() -> None:
+    assert not (APP_ROOT / "acquisition" / "http_client.py").exists()
+
+
+def test_runtime_compatibility_aliases_are_retired() -> None:
+    import app.acquisition.acquirer as acquirer
+    import app.acquisition.runtime_plan as runtime_plan
+    import app.acquisition.traversal_helpers as traversal_helpers
+    import app.acquisition.traversal_recovery as traversal_recovery
+
+    assert not hasattr(runtime_plan, "AcquisitionPlan")
+    assert not hasattr(runtime_plan, "AcquisitionPlanUpdates")
+    assert not hasattr(acquirer, "AcquisitionResult")
+    assert "checkpoint" not in acquirer.AcquisitionRequest.__dataclass_fields__
+    assert not hasattr(traversal_helpers, "_wait_for_dom_mutation_settle")
+    assert not hasattr(
+        traversal_helpers,
+        "wait_for_traversal_dom_mutation_settle",
+    )
+    assert not hasattr(traversal_recovery, "find_aom_actionable_locator")
+
+
+def test_dead_checkpoint_parameters_are_retired() -> None:
+    assert "checkpoint" not in _function_parameter_names(
+        "crawl/pipeline/extraction_loop.py",
+        "process_single_url",
+    )
+    assert "checkpoint" not in _function_parameter_names(
+        "acquisition/browser_detail.py",
+        "expand_all_interactive_elements",
+    )
+
+
 @pytest.mark.parametrize(
     ("class_name", "allowed"),
     (
-        (
-            "AcquisitionPlan",
-            {"acquisition/contracts.py", "acquisition/runtime_plan.py"},
-        ),
-        (
-            "AcquisitionResult",
-            {
-                "acquisition/contracts.py",
-                "acquisition/acquirer.py",
-            },
-        ),
+        ("AcquisitionPlan", {"acquisition/contracts.py"}),
+        ("AcquisitionIntent", {"acquisition/runtime_plan.py"}),
+        ("AcquisitionResult", {"acquisition/contracts.py"}),
+        ("PageAcquisitionResult", {"acquisition/acquirer.py"}),
         ("AttemptSpec", {"acquisition/contracts.py"}),
         ("AttemptResult", {"acquisition/contracts.py"}),
         ("CapabilityRequest", {"extraction/contracts.py"}),

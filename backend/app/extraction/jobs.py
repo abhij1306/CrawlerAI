@@ -304,10 +304,10 @@ def _has_wrong_surface_product_schema(doc: HtmlDocument) -> bool:
 
 def _jsonld_value(value: object, *, page_url: str, fact_type: str) -> str | None:
     if fact_type in {"job.url", "job.apply_url"}:
-        text = text_value(value)
-        return urljoin(page_url, text) if text else None
-    text = _clean_text(text_value(value))
-    return text or None
+        url_text = text_value(value)
+        return urljoin(page_url, url_text) if url_text else None
+    cleaned = _clean_text(text_value(value))
+    return cleaned or None
 
 
 def _jsonld_location(value: object) -> str | None:

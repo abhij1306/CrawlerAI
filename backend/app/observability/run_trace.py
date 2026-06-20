@@ -189,6 +189,45 @@ class RunTrace:
             )
         )
 
+    def record_acquisition_attempts(
+        self,
+        attempts: list[object],
+        *,
+        selected_attempt_id: object = None,
+    ) -> bool:
+        selected = str(selected_attempt_id or "").strip()
+        recorded = False
+        for attempt in attempts:
+            if not isinstance(attempt, dict):
+                continue
+            raw_diagnostics = attempt.get("diagnostics")
+            diagnostics = raw_diagnostics if isinstance(raw_diagnostics, dict) else {}
+            transport = str(diagnostics.get("transport") or "").strip().lower()
+            if transport not in {"curl", "httpx"}:
+                continue
+            attempt_id = str(attempt.get("attempt_id") or "").strip()
+            raw_duration = diagnostics.get("duration_ms")
+            try:
+                duration_ms = int(raw_duration) if raw_duration is not None else None
+            except (TypeError, ValueError):
+                duration_ms = None
+            self.record_acquire_event(
+                obs_config.ACQUIRE_EVENT_HTTP_FETCH,
+                detail={
+                    "attempt_id": attempt_id or None,
+                    "transport": transport,
+                    "method": diagnostics.get("method"),
+                    "outcome": attempt.get("outcome"),
+                    "status_code": attempt.get("status_code"),
+                    "proxy": diagnostics.get("proxy"),
+                    "error": attempt.get("error"),
+                    "selected": bool(attempt_id and attempt_id == selected),
+                },
+                duration_ms=duration_ms,
+            )
+            recorded = True
+        return recorded
+
     def record_host_outcome(self, outcome: dict[str, Any]) -> None:
         self.host_outcome = dict(outcome or {})
 
@@ -374,6 +413,14 @@ class NullRunTrace(RunTrace):
         duration_ms: int | None = None,
     ) -> None:
         return None
+
+    def record_acquisition_attempts(
+        self,
+        attempts: list[object],
+        *,
+        selected_attempt_id: object = None,
+    ) -> bool:
+        return False
 
     def record_host_outcome(self, outcome: dict[str, Any]) -> None:
         return None

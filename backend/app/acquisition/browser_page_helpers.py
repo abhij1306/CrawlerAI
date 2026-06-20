@@ -116,7 +116,7 @@ def _listing_html_detail_anchor_count(
     soup = BeautifulSoup(str(html or ""), HTML_PARSER)
     detail_markers = tuple(
         str(marker or "").strip().lower()
-        for marker in detail_path_markers(surface)
+        for marker in detail_path_markers(surface or "")
         if str(marker or "").strip()
     )
     count = 0

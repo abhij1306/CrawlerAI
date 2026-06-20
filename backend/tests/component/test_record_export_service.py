@@ -196,7 +196,11 @@ async def test_export_streamers_preserve_order_across_paged_reads(
         "https://example.com/b",
         "https://example.com/c",
     ]
-    assert record_export_service.export_record_from_row(rows[0]).field_discovery[
+    assert record_export_service.export_record_from_row(
+        rows[0],
+        data=dict(rows[0].data),
+        source_trace=dict(rows[0].source_trace),
+    ).field_discovery[
         "title"
     ].value == {"native": 1}
 

@@ -6,8 +6,8 @@ from dataclasses import dataclass, field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.crawl_run import CrawlRun
-from app.acquisition.acquirer import AcquisitionResult
-from app.acquisition.runtime_plan import AcquisitionPlan
+from app.acquisition.acquirer import PageAcquisitionResult
+from app.acquisition.runtime_plan import AcquisitionIntent
 from app.core.config.runtime_settings import crawler_runtime_settings
 from app.extraction.contracts import ExtractionResult
 from app.observability.run_trace import RunTrace, new_run_trace
@@ -40,7 +40,7 @@ class URLProcessingContext:
 @dataclass(slots=True)
 class FetchedURLStage:
     context: URLProcessingContext
-    acquisition_result: AcquisitionResult
+    acquisition_result: PageAcquisitionResult
     url_metrics: dict[str, object]
 
 
@@ -121,7 +121,7 @@ def resolved_url_processing_config(
             min_value=0,
         )
         return URLProcessingConfig.from_acquisition_plan(
-            AcquisitionPlan(
+            AcquisitionIntent(
                 surface=surface,
                 proxy_list=tuple(resolved_proxy_list),
                 traversal_mode=resolved_traversal_mode,
@@ -136,7 +136,7 @@ def resolved_url_processing_config(
             record_writer=config.record_writer,
         )
     return URLProcessingConfig.from_acquisition_plan(
-        AcquisitionPlan(
+        AcquisitionIntent(
             surface=surface,
             proxy_list=tuple(list(proxy_list or [])),
             traversal_mode=traversal_mode,

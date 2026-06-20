@@ -3,15 +3,20 @@ from __future__ import annotations
 from app.models.crawl_run import CrawlRecord
 from app.core.db_utils import mapping_or_empty
 from app.core.shared.field_coerce import object_list, safe_int
+from app.persistence.record_artifacts import RecordArtifacts
 
 __all__ = ("collect_evidence_review",)
 
 
-def collect_evidence_review(records: list[CrawlRecord]) -> dict[str, object]:
+def collect_evidence_review(
+    records: list[CrawlRecord],
+    *,
+    artifacts_by_id: dict[int, RecordArtifacts],
+) -> dict[str, object]:
     fields: list[dict[str, object]] = []
     findings: list[dict[str, object]] = []
     for record in records:
-        source_trace = mapping_or_empty(record.source_trace)
+        source_trace = dict(artifacts_by_id[record.id].source_trace)
         for field_name, payload in mapping_or_empty(
             source_trace.get("field_discovery")
         ).items():

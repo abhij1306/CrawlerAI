@@ -1,19 +1,4 @@
-"""From-scratch run auditor (read-only).
-
-Runs at ``on_run_complete`` for every finished run. Reads the per-URL RunTrace
-artifacts, the persisted records, and the run summary, applies deterministic
-symptom rules grounded in INVARIANTS.md, and writes
-``artifacts/runs/<id>/audit/flags.json``. Each flag points at the owning file
-from CODEBASE_MAP plus an evidence reference into the trace.
-
-Hard contract: observe-only. This module never mutates records, verdicts,
-selector memory, domain contracts, or any extraction state. It only reads and
-writes its own audit artifact.
-
-This is written from scratch and does NOT build on
-``backend/run_json_issue_audit.py`` (that script is retired; at most a secondary
-record-quality input later).
-"""
+"""Read-only run auditor over canonical records and trace artifacts."""
 
 from __future__ import annotations
 
@@ -51,6 +36,7 @@ from app.observability.baseline import (
     update_baseline,
 )
 from app.crawl.pipeline.run_complete_callbacks import register_run_complete_callback
+from app.persistence.record_artifacts import CanonicalRecordView, load_canonical_record_views
 
 logger = logging.getLogger(__name__)
 
@@ -78,8 +64,10 @@ async def audit_run_complete(run_id: int) -> None:
                 .scalars()
                 .all()
             )
-            flags = build_run_flags(run, list(records), update_baselines=True)
-            diagnosis = await _maybe_diagnose(session, run, list(records), flags)
+            record_rows = list(records)
+            record_views = await load_canonical_record_views(session, record_rows)
+            flags = build_run_flags(run, record_views, update_baselines=True)
+            diagnosis = await _maybe_diagnose(session, run, record_rows, flags)
             _write_flags(run_id, flags, diagnosis_status=diagnosis)
     except Exception:
         logger.exception("Run audit failed for run=%s", run_id)
@@ -116,7 +104,7 @@ async def _maybe_diagnose(
 
 def build_run_flags(
     run: CrawlRun,
-    records: list[CrawlRecord],
+    records: list[CanonicalRecordView],
     *,
     update_baselines: bool = False,
 ) -> list[dict[str, Any]]:
@@ -171,7 +159,7 @@ def build_run_flags(
 
 def _audit_baseline_drift(
     run: CrawlRun,
-    records: list[CrawlRecord],
+    records: list[CanonicalRecordView],
     *,
     surface: str,
     verdict: str,
@@ -216,7 +204,7 @@ def _audit_baseline_drift(
 
 def _audit_trace_baseline_drift(
     run: CrawlRun,
-    records: list[CrawlRecord],
+    records: list[CanonicalRecordView],
     *,
     default_surface: str,
     default_verdict: str,
@@ -263,7 +251,7 @@ def _audit_trace_baseline_drift(
     return flags
 
 
-def _run_domain(run: CrawlRun, records: list[CrawlRecord]) -> str:
+def _run_domain(run: CrawlRun, records: list[CanonicalRecordView]) -> str:
     for record in records:
         domain = normalize_domain(str(getattr(record, "source_url", "") or ""))
         if domain:
@@ -271,7 +259,7 @@ def _run_domain(run: CrawlRun, records: list[CrawlRecord]) -> str:
     return normalize_domain(str(getattr(run, "url", "") or ""))
 
 
-def _observed_tiers(records: list[CrawlRecord]) -> list[str]:
+def _observed_tiers(records: list[CanonicalRecordView]) -> list[str]:
     for record in records:
         source_trace = mapping_or_empty(getattr(record, "source_trace", {}))
         extraction = mapping_or_empty(source_trace.get("extraction"))
@@ -282,7 +270,7 @@ def _observed_tiers(records: list[CrawlRecord]) -> list[str]:
 
 
 def _observed_high_value_fields(
-    records: list[CrawlRecord],
+    records: list[CanonicalRecordView],
     high_value: list[str],
 ) -> list[str]:
     present: set[str] = set()
@@ -295,7 +283,7 @@ def _observed_high_value_fields(
     return sorted(present)
 
 
-def _observed_engine(records: list[CrawlRecord]) -> str:
+def _observed_engine(records: list[CanonicalRecordView]) -> str:
     for record in records:
         source_trace = mapping_or_empty(getattr(record, "source_trace", {}))
         acquisition = mapping_or_empty(source_trace.get("acquisition"))
@@ -328,7 +316,7 @@ def _observed_total_acquire_ms(run_id: int) -> int | None:
 
 
 def _audit_record(
-    record: CrawlRecord,
+    record: CanonicalRecordView,
     *,
     surface: str,
     high_value: list[str],
@@ -391,26 +379,7 @@ def _audit_traces(
     flagged_rejections: set[tuple[str, str]] = set()
     for trace in traces or _read_trace_artifacts(run_id):
         extraction = mapping_or_empty(trace.get("extraction"))
-        field_provenance = extraction.get("field_provenance")
-        if isinstance(field_provenance, list):
-            for entry in field_provenance:
-                if not isinstance(entry, dict):
-                    continue
-                if str(entry.get("field") or "") != "variants" or entry.get("present") is not False:
-                    continue
-                winning_source = str(entry.get("winning_source") or "").strip()
-                if not winning_source:
-                    continue
-                flags.append(_flag(
-                    FLAG_VARIANT_CANDIDATE_DROPPED,
-                    evidence={
-                        "winning_source": winning_source,
-                        "note": entry.get("note"),
-                        "value_shape": entry.get("value_shape"),
-                    },
-                    url=str(trace.get("url") or ""),
-                )
-                )
+        flags.extend(_audit_variant_provenance(trace, extraction))
         rejection_reason = str(extraction.get("rejection_reason") or "").strip()
         if not rejection_reason:
             continue
@@ -433,10 +402,14 @@ def _audit_traces(
             flags.append(_flag(FLAG_DETAIL_ON_LISTING_SEED, evidence=evidence, url=url))
             flagged_rejections.add((url, rejection_reason))
         elif rejection_reason == "detail_identity_mismatch":
-            flags.append(_flag(FLAG_DETAIL_IDENTITY_REJECTED, evidence=evidence, url=url))
+            flags.append(
+                _flag(FLAG_DETAIL_IDENTITY_REJECTED, evidence=evidence, url=url)
+            )
             flagged_rejections.add((url, rejection_reason))
         elif rejection_reason == "challenge_shell":
-            flags.append(_flag(FLAG_ACQUISITION_CHALLENGE_BLOCKED, evidence=evidence, url=url))
+            flags.append(
+                _flag(FLAG_ACQUISITION_CHALLENGE_BLOCKED, evidence=evidence, url=url)
+            )
             flagged_rejections.add((url, rejection_reason))
 
     pages_dir = _run_pages_dir(run_id)
@@ -468,18 +441,52 @@ def _audit_traces(
                     url=final_url,
                 )
             )
-        blocked = bool(host_outcome.get("blocked")) or verdict in obs_config.AUDIT_BLOCKED_VERDICTS
+        blocked = (
+            bool(host_outcome.get("blocked"))
+            or verdict in obs_config.AUDIT_BLOCKED_VERDICTS
+        )
         if outcome == "usable_content" and blocked:
-            flags.append(_flag(
-                FLAG_USABLE_CONTENT_BUT_BLOCKED,
+            flags.append(
+                _flag(
+                    FLAG_USABLE_CONTENT_BUT_BLOCKED,
+                    evidence={
+                        "browser_outcome": outcome,
+                        "host_result": host_outcome.get("result"),
+                        "verdict": verdict,
+                    },
+                    url=final_url,
+                )
+            )
+    return flags
+
+
+def _audit_variant_provenance(
+    trace: dict[str, Any],
+    extraction: dict[str, Any],
+) -> list[dict[str, Any]]:
+    flags: list[dict[str, Any]] = []
+    field_provenance = extraction.get("field_provenance")
+    if not isinstance(field_provenance, list):
+        return flags
+    for entry in field_provenance:
+        if not isinstance(entry, dict):
+            continue
+        if str(entry.get("field") or "") != "variants" or entry.get("present") is not False:
+            continue
+        winning_source = str(entry.get("winning_source") or "").strip()
+        if not winning_source:
+            continue
+        flags.append(
+            _flag(
+                FLAG_VARIANT_CANDIDATE_DROPPED,
                 evidence={
-                    "browser_outcome": outcome,
-                    "host_result": host_outcome.get("result"),
-                    "verdict": verdict,
+                    "winning_source": winning_source,
+                    "note": entry.get("note"),
+                    "value_shape": entry.get("value_shape"),
                 },
-                url=final_url,
+                url=str(trace.get("url") or ""),
             )
-            )
+        )
     return flags
 
 
@@ -525,11 +532,11 @@ def _browser_artifact_for_trace(trace: dict[str, Any]) -> dict[str, Any] | None:
 
 
 def _records_by_url(
-    records: list[CrawlRecord],
+    records: list[CanonicalRecordView],
     *,
     surface: str,
-) -> dict[str, list[CrawlRecord]]:
-    grouped: dict[str, list[CrawlRecord]] = {}
+) -> dict[str, list[CanonicalRecordView]]:
+    grouped: dict[str, list[CanonicalRecordView]] = {}
     for record in records:
         key = _url_compare_key(
             str(getattr(record, "source_url", "") or ""),
@@ -690,9 +697,4 @@ def _write_flags(
     )
     return str(path)
 
-
-__all__ = [
-    "audit_run_complete",
-    "build_run_flags",
-    "ensure_run_audit_registered",
-]
+__all__ = ["audit_run_complete", "build_run_flags", "ensure_run_audit_registered"]

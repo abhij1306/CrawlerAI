@@ -1,13 +1,15 @@
-"""Initialize the database by applying Alembic migrations."""
+"""Initialize the rebuild database with the single baseline migration."""
 import asyncio
 
+from app.core.database import ensure_database_schema
 from app.core.migrations import apply_pending_migrations_async
 
 
 async def init_database():
-    """Upgrade the configured database to the latest schema revision."""
+    """Apply the baseline revision and reconcile ORM-owned columns."""
     await apply_pending_migrations_async()
-    print("Database migrations applied successfully!")
+    await ensure_database_schema()
+    print("Database schema initialized successfully!")
 
 
 if __name__ == "__main__":

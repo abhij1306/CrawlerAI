@@ -6,6 +6,7 @@ from app.core.shared.field_coerce import object_list as _object_list
 from app.core.shared.field_coerce import safe_int as _safe_int
 from app.models.crawl_run import CrawlRecord, CrawlRun
 from app.models.domain_memory import DomainFieldFeedback
+from app.persistence.record_artifacts import RecordArtifacts
 
 
 def selector_signature(
@@ -33,6 +34,7 @@ def derive_acquisition_info(
     records: list[CrawlRecord],
     *,
     run: CrawlRun,
+    artifacts_by_id: dict[int, RecordArtifacts],
 ) -> dict[str, object]:
     browser_required = False
     actual_fetch_method: str | None = None
@@ -46,7 +48,7 @@ def derive_acquisition_info(
         "browser_required": False,
     }
     for record in records:
-        source_trace = mapping_or_empty(record.source_trace)
+        source_trace = _source_trace(record, artifacts_by_id)
         acquisition = mapping_or_empty(source_trace.get("acquisition"))
         browser_diagnostics = mapping_or_empty(acquisition.get("browser_diagnostics"))
         if actual_fetch_method is None:
@@ -95,6 +97,7 @@ def collect_selector_candidates(
     saved_selectors: list[dict[str, object]],
     run: CrawlRun,
     feedback_index: dict[tuple[str, str, str], DomainFieldFeedback],
+    artifacts_by_id: dict[int, RecordArtifacts],
 ) -> tuple[dict[str, dict[str, object]], dict[tuple[str, str, str], dict[str, object]]]:
     saved_selector_index = {
         saved_selector_signature(row): row for row in saved_selectors
@@ -109,6 +112,7 @@ def collect_selector_candidates(
             feedback_index=feedback_index,
             selector_candidates=selector_candidates,
             field_learning=field_learning,
+            artifacts_by_id=artifacts_by_id,
         )
     if selector_candidates:
         return selector_candidates, field_learning
@@ -129,8 +133,9 @@ def _collect_record_selector_candidates(
     feedback_index: dict[tuple[str, str, str], DomainFieldFeedback],
     selector_candidates: dict[str, dict[str, object]],
     field_learning: dict[tuple[str, str, str], dict[str, object]],
+    artifacts_by_id: dict[int, RecordArtifacts],
 ) -> None:
-    source_trace = mapping_or_empty(record.source_trace)
+    source_trace = _source_trace(record, artifacts_by_id)
     field_discovery = mapping_or_empty(source_trace.get("field_discovery"))
     for field_name, payload in field_discovery.items():
         payload_map = payload if isinstance(payload, dict) else {}
@@ -165,6 +170,13 @@ def _collect_record_selector_candidates(
             saved_selector_index=saved_selector_index,
             selector_candidates=selector_candidates,
         )
+
+
+def _source_trace(
+    record: CrawlRecord,
+    artifacts_by_id: dict[int, RecordArtifacts],
+) -> dict[str, object]:
+    return dict(artifacts_by_id[record.id].source_trace)
 
 
 def _collect_field_learning(

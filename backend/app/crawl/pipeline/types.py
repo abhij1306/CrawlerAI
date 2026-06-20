@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
-from app.acquisition.runtime_plan import AcquisitionPlan
+from app.acquisition.runtime_plan import AcquisitionIntent
 from app.core.config.runtime_settings import crawler_runtime_settings
 
 
@@ -21,7 +21,7 @@ class RecordWriter(Protocol):
 
 @dataclass(slots=True)
 class URLProcessingConfig:
-    acquisition_plan: AcquisitionPlan | None = None
+    acquisition_plan: AcquisitionIntent | None = None
     proxy_list: list[str] = field(default_factory=list)
     traversal_mode: str | None = None
     max_pages: int = crawler_runtime_settings.default_max_pages
@@ -35,7 +35,7 @@ class URLProcessingConfig:
 
     def __post_init__(self) -> None:
         if self.acquisition_plan is None:
-            self.acquisition_plan = AcquisitionPlan(
+            self.acquisition_plan = AcquisitionIntent(
                 surface="",
                 proxy_list=tuple(self.proxy_list),
                 traversal_mode=self.traversal_mode,
@@ -49,7 +49,7 @@ class URLProcessingConfig:
     @classmethod
     def from_acquisition_plan(
         cls,
-        plan: AcquisitionPlan,
+        plan: AcquisitionIntent,
         *,
         update_run_state: bool = True,
         persist_logs: bool = True,
@@ -64,15 +64,17 @@ class URLProcessingConfig:
             record_writer=record_writer,
         )
 
-    def resolved_acquisition_plan(self, *, surface: str) -> AcquisitionPlan:
+    def resolved_acquisition_plan(self, *, surface: str) -> AcquisitionIntent:
         if self.acquisition_plan is None:
             # Defensive for unusual construction paths; __post_init__ normally sets this.
-            self.acquisition_plan = AcquisitionPlan(surface=str(surface or "").strip())
+            self.acquisition_plan = AcquisitionIntent(
+                surface=str(surface or "").strip()
+            )
         if self.acquisition_plan.surface == str(surface or "").strip():
             return self.acquisition_plan
         return self.acquisition_plan.with_updates(surface=str(surface or "").strip())
 
-    def _sync_from_plan(self, plan: AcquisitionPlan) -> None:
+    def _sync_from_plan(self, plan: AcquisitionIntent) -> None:
         self.proxy_list = list(plan.proxy_list)
         self.traversal_mode = plan.traversal_mode
         self.max_pages = plan.max_pages

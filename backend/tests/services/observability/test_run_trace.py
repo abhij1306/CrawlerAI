@@ -186,6 +186,7 @@ def test_flag_forces_full_tier_even_on_success():
 def test_null_trace_is_noop_and_serializes_empty_timeline():
     null = NullRunTrace()
     null.record_acquire_event("navigation")
+    assert null.record_acquisition_attempts([]) is False
     null.record_field_candidate("price", source="dom", won=True)
     null.record_verdict("empty")
     payload = null.to_dict()

@@ -4,7 +4,7 @@ import logging
 
 from app.core.database import SessionLocal
 from app.models.crawl_run import CrawlLog, CrawlRun
-from app.acquisition.acquirer import AcquisitionResult, PageEvidence
+from app.acquisition.acquirer import PageAcquisitionResult, PageEvidence
 from app.crawl.state import TERMINAL_STATUSES, CrawlStatus, update_run_status
 from app.core.db_utils import mapping_or_empty
 from app.core.records.field_policy import normalize_requested_field
@@ -75,14 +75,14 @@ async def set_stage(
 
 logger = logging.getLogger(__name__)
 
-def browser_attempted(acquisition_result: AcquisitionResult) -> bool:
+def browser_attempted(acquisition_result: PageAcquisitionResult) -> bool:
     return PageEvidence.from_acquisition_result(acquisition_result).browser_attempted
 
-def browser_outcome(acquisition_result: AcquisitionResult) -> str:
+def browser_outcome(acquisition_result: PageAcquisitionResult) -> str:
     return PageEvidence.from_acquisition_result(acquisition_result).browser_outcome
 
 
-def browser_launch_log_message(acquisition_result: AcquisitionResult) -> str:
+def browser_launch_log_message(acquisition_result: PageAcquisitionResult) -> str:
     diagnostics = mapping_or_empty(getattr(acquisition_result, "browser_diagnostics", {}))
     engine = str(diagnostics.get("browser_engine") or "chromium").strip().lower() or "chromium"
     launch_mode = str(diagnostics.get("browser_launch_mode") or "").strip().lower()
@@ -95,12 +95,12 @@ def browser_launch_log_message(acquisition_result: AcquisitionResult) -> str:
     return f"Launched {launch_mode} browser ({', '.join(details)})"
 
 
-def effective_blocked(acquisition_result: AcquisitionResult) -> bool:
+def effective_blocked(acquisition_result: PageAcquisitionResult) -> bool:
     return is_effectively_blocked(acquisition_result)
 
 
 def suppress_empty_downstream_record_logs(
-    acquisition_result: AcquisitionResult,
+    acquisition_result: PageAcquisitionResult,
     records: list[dict[str, object]],
 ) -> bool:
     return not records and effective_blocked(acquisition_result)
@@ -115,13 +115,13 @@ def screenshot_required(browser_outcome: str) -> bool:
         "render_timeout",
     }
 
-def browser_result_is_extractable(acquisition_result: AcquisitionResult) -> bool:
+def browser_result_is_extractable(acquisition_result: PageAcquisitionResult) -> bool:
     if getattr(acquisition_result, "method", "") != "browser":
         return True
     return browser_outcome(acquisition_result) in {"", "usable_content"}
 
 def merge_browser_diagnostics(
-    acquisition_result: AcquisitionResult,
+    acquisition_result: PageAcquisitionResult,
     diagnostics: dict[str, object],
 ) -> None:
     merged = mapping_or_empty(getattr(acquisition_result, "browser_diagnostics", {}))
@@ -130,7 +130,7 @@ def merge_browser_diagnostics(
 
 
 def record_detail_expansion_extraction_outcome(
-    acquisition_result: AcquisitionResult,
+    acquisition_result: PageAcquisitionResult,
     records: list[dict[str, object]],
     *,
     requested_fields: list[str],

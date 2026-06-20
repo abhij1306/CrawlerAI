@@ -17,6 +17,43 @@ def is_effectively_blocked(acquisition_result) -> bool:
     return PageEvidence.from_acquisition_result(acquisition_result).indicates_block
 
 
+def _acquisition_attempt_metrics(acquisition_result) -> dict[str, object]:
+    diagnostics = getattr(acquisition_result, "acquisition_diagnostics", {})
+    if not isinstance(diagnostics, dict):
+        return {}
+    canonical_result = diagnostics.get("result")
+    if not isinstance(canonical_result, dict):
+        return {}
+    raw_attempts = canonical_result.get("attempts")
+    attempts = raw_attempts if isinstance(raw_attempts, list) else []
+    summaries: list[dict[str, object]] = []
+    for attempt in attempts:
+        if not isinstance(attempt, dict):
+            continue
+        attempt_diagnostics = attempt.get("diagnostics")
+        details = attempt_diagnostics if isinstance(attempt_diagnostics, dict) else {}
+        summaries.append(
+            {
+                "attempt_id": attempt.get("attempt_id"),
+                "transport": details.get("transport"),
+                "method": details.get("method"),
+                "outcome": attempt.get("outcome"),
+                "status_code": attempt.get("status_code"),
+                "proxy": details.get("proxy"),
+                "duration_ms": details.get("duration_ms"),
+                "error": attempt.get("error"),
+            }
+        )
+    return {
+        "acquisition_plan_id": canonical_result.get("plan_id"),
+        "acquisition_attempt_count": len(summaries),
+        "acquisition_attempts": summaries,
+        "acquisition_selected_attempt_id": canonical_result.get("selected_attempt_id"),
+        "acquisition_outcome": canonical_result.get("outcome"),
+        "acquisition_termination_reason": diagnostics.get("termination_reason"),
+    }
+
+
 def build_url_metrics(
     acquisition_result,
     *,
@@ -63,6 +100,7 @@ def build_url_metrics(
         else None
     )
     return {
+        **_acquisition_attempt_metrics(acquisition_result),
         "method": acquisition_result.method,
         "browser_fetch_method": browser_fetch_method,
         "status_code": acquisition_result.status_code,

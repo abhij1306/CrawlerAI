@@ -30,6 +30,7 @@ from app.persistence.record_export_service import (
     build_tables_csv_export_response,
     export_record_provenance,
 )
+from app.persistence.record_artifacts import load_canonical_record_views
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -71,7 +72,11 @@ async def records_list(
         page=page,
         limit=limit,
     )
-    serialized_rows = await asyncio.to_thread(serialize_crawl_record_responses, rows)
+    record_views = await load_canonical_record_views(session, rows)
+    serialized_rows = await asyncio.to_thread(
+        serialize_crawl_record_responses,
+        record_views,
+    )
     return PaginatedResponse(
         items=serialized_rows,
         meta=PaginationMeta(page=page, limit=limit, total=total),

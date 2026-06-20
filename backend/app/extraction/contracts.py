@@ -158,6 +158,8 @@ class Evidence(FrozenModel):
 
 @runtime_checkable
 class ArtifactReader(Protocol):
+    document_store: Any
+
     def read_text(self, artifact: ArtifactRef) -> str: ...
 
     def read_json(self, artifact: ArtifactRef) -> JsonValue: ...

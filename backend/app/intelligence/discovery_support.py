@@ -1,14 +1,14 @@
 from __future__ import annotations
 
-import asyncio
 import contextlib
 import logging
 import re
+from typing import TYPE_CHECKING
 from urllib.parse import parse_qs, urlencode, urljoin, urlsplit
 
 from bs4 import BeautifulSoup
 
-from app.acquisition.browser_runtime import get_browser_runtime, real_chrome_browser_available
+from app.acquisition.browser_runtime import get_browser_runtime
 from app.acquisition.dom_runtime import get_page_html
 from app.acquisition.runtime import classify_blocked_page
 from app.core.config.product_intelligence import (
@@ -36,8 +36,6 @@ from app.core.config.product_intelligence import (
     GOOGLE_NATIVE_THUMBNAIL_MIN_SRC_LENGTH,
     GOOGLE_NATIVE_TITLE_SELECTOR,
     GOOGLE_NATIVE_TYPING_EXTRA_WAIT_MS,
-    SEARCH_EXCLUDED_DOMAIN_PREFIX,
-    SEARCH_SITE_PREFIX,
     product_intelligence_settings,
 )
 from app.core.shared.field_coerce import clean_text
@@ -48,6 +46,9 @@ from app.intelligence.candidate_urls import (
 )
 from app.intelligence.discovery_types import SearchResult
 from app.intelligence.matching import manufacturer_style_code, normalize_brand, source_domain
+
+if TYPE_CHECKING:
+    from app.intelligence.discovery import DiscoveredCandidate
 
 
 logger = logging.getLogger(__name__)

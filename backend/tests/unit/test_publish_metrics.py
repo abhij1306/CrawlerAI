@@ -161,6 +161,83 @@ def test_build_url_metrics_keeps_platform_family_separate_from_adapter_name() ->
 
 
 @pytest.mark.unit
+def test_build_url_metrics_projects_canonical_attempt_history() -> None:
+    acquisition_result = SimpleNamespace(
+        method="httpx",
+        status_code=200,
+        blocked=False,
+        final_url="https://example.com/products/widget-prime",
+        network_payloads=[],
+        adapter_name=None,
+        platform_family=None,
+        browser_diagnostics={},
+        acquisition_diagnostics={
+            "termination_reason": "attempt_selected",
+            "result": {
+                "plan_id": "plan-1",
+                "selected_attempt_id": "attempt-2",
+                "outcome": "success",
+                "attempts": [
+                    {
+                        "attempt_id": "attempt-1",
+                        "outcome": "error",
+                        "status_code": None,
+                        "error": "ConnectTimeout: curl timed out",
+                        "diagnostics": {
+                            "transport": "curl",
+                            "proxy": "direct",
+                            "duration_ms": 9,
+                        },
+                    },
+                    {
+                        "attempt_id": "attempt-2",
+                        "outcome": "success",
+                        "status_code": 200,
+                        "error": None,
+                        "diagnostics": {
+                            "transport": "httpx",
+                            "method": "httpx",
+                            "proxy": "direct",
+                            "duration_ms": 12,
+                        },
+                    },
+                ],
+            },
+        },
+    )
+
+    metrics = build_url_metrics(acquisition_result, requested_fields=["title"])
+
+    assert metrics["acquisition_plan_id"] == "plan-1"
+    assert metrics["acquisition_attempt_count"] == 2
+    assert metrics["acquisition_selected_attempt_id"] == "attempt-2"
+    assert metrics["acquisition_outcome"] == "success"
+    assert metrics["acquisition_termination_reason"] == "attempt_selected"
+    assert metrics["acquisition_attempts"] == [
+        {
+            "attempt_id": "attempt-1",
+            "transport": "curl",
+            "method": None,
+            "outcome": "error",
+            "status_code": None,
+            "proxy": "direct",
+            "duration_ms": 9,
+            "error": "ConnectTimeout: curl timed out",
+        },
+        {
+            "attempt_id": "attempt-2",
+            "transport": "httpx",
+            "method": "httpx",
+            "outcome": "success",
+            "status_code": 200,
+            "proxy": "direct",
+            "duration_ms": 12,
+            "error": None,
+        },
+    ]
+
+
+@pytest.mark.unit
 def test_diagnostics_indicate_block_preserves_ready_usable_content_despite_provider_evidence() -> None:
     diagnostics = {
         "browser_outcome": "usable_content",

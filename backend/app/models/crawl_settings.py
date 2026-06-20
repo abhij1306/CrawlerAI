@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from typing import Any
 from urllib.parse import urlparse
 
-from app.acquisition.runtime_plan import AcquisitionPlan
+from app.acquisition.runtime_plan import AcquisitionIntent
 from app.crawl.utils import normalize_target_url, resolve_traversal_mode
 from app.core.config.domain_profiles import INTERNAL_API_ENDPOINTS_PROFILE_KEY
 from app.extraction.surfaces import parse_surface
@@ -446,9 +446,9 @@ class CrawlRunSettings:
         *,
         surface: str,
         max_records: int | None = None,
-    ) -> AcquisitionPlan:
+    ) -> AcquisitionIntent:
         normalized_surface = parse_surface(surface).value
-        return AcquisitionPlan(
+        return AcquisitionIntent(
             surface=normalized_surface,
             proxy_list=tuple(self.proxy_list()),
             traversal_mode=self.traversal_mode(),

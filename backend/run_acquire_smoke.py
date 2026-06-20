@@ -24,7 +24,7 @@ from app.acquisition.acquirer import (
     acquire,
 )
 from app.acquisition.runtime import is_blocked_html
-from app.acquisition.runtime_plan import AcquisitionPlan
+from app.acquisition.runtime_plan import AcquisitionIntent
 from app.acquisition.platform_policy import detect_platform_family
 
 from harness.support import require_explicit_surface
@@ -109,7 +109,7 @@ async def _run_one(run_id: int, name: str, url: str, surface: str, timeout_secon
                 AcquisitionRequest(
                     run_id=run_id,
                     url=url,
-                    plan=AcquisitionPlan(
+                    plan=AcquisitionIntent(
                         surface=surface,
                         max_pages=3,
                         max_scrolls=3,

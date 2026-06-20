@@ -9,7 +9,7 @@ from app.main import app
 from app.models.domain_memory import DomainFieldFeedback
 from app.crawl.batch_runtime import process_run
 from app.acquisition.cookie_store import persist_storage_state_for_domain
-from app.acquisition.acquirer import AcquisitionResult
+from app.acquisition.acquirer import PageAcquisitionResult
 from app.crawl.crud import create_crawl_run
 from app.crawl.domain_memory_service import save_domain_memory
 
@@ -140,7 +140,7 @@ async def test_crawls_domain_recipe_routes_round_trip(
     )
 
     async def _fake_acquire(request):
-        return AcquisitionResult(
+        return PageAcquisitionResult(
             request=request,
             final_url=request.url,
             html="""
@@ -403,7 +403,7 @@ async def test_domain_run_profile_contract_autosaves_real_chrome_success(
     )
 
     async def _fake_acquire(request):
-        return AcquisitionResult(
+        return PageAcquisitionResult(
             request=request,
             final_url=request.url,
             html="<html><body><h1>Real Chrome Widget</h1></body></html>",

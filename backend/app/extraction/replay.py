@@ -41,7 +41,8 @@ def fixture_bundle_from_inputs(html: str, page_url: str, requested_url: str | No
         body = payload.get("body") if isinstance(payload, dict) else payload
         payloads[artifact_id] = body
         refs.append(ArtifactRef(artifact_id=artifact_id, artifact_type="network_json", content_sha256=content_sha256(json.dumps(body, sort_keys=True, default=str)), storage_uri=f"memory://{artifact_id}", media_type="application/json"))
-    adapter_artifacts = list((artifacts or {}).get("adapter_artifacts") or [])
+    adapter_value = (artifacts or {}).get("adapter_artifacts")
+    adapter_artifacts = list(adapter_value) if isinstance(adapter_value, list) else []
     if adapter_artifacts:
         payloads["adapter_artifacts"] = adapter_artifacts
     for index, artifact in enumerate(adapter_artifacts):
@@ -51,11 +52,9 @@ def fixture_bundle_from_inputs(html: str, page_url: str, requested_url: str | No
         body = artifact.get("body", artifact)
         payloads[artifact_id] = body
         refs.append(ArtifactRef(artifact_id=artifact_id, artifact_type="network_json", content_sha256=content_sha256(json.dumps(body, sort_keys=True, default=str)), storage_uri=f"memory://{artifact_id}", media_type="application/json"))
-    css_rules = [
-        dict(row)
-        for row in list((artifacts or {}).get("css_field_rules") or [])
-        if isinstance(row, dict)
-    ]
+    css_value = (artifacts or {}).get("css_field_rules")
+    css_rows = css_value if isinstance(css_value, list) else []
+    css_rules = [dict(row) for row in css_rows if isinstance(row, dict)]
     if css_rules:
         payloads["css_field_rules"] = css_rules
         refs.append(ArtifactRef(artifact_id="css_field_rules", artifact_type="css_recipe", content_sha256=content_sha256(json.dumps(css_rules, sort_keys=True, default=str)), storage_uri="memory://css_field_rules", media_type="application/json"))

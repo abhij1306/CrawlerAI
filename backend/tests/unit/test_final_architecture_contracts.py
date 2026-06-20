@@ -15,7 +15,6 @@ from app.crawl.contracts import RunSummary, UrlResult
 from app.extraction.contracts import CapabilityRequest
 from app.persistence.contracts import (
     ArtifactManifest,
-    ArtifactReference,
     AttemptArtifactSet,
     ExtractionArtifactSet,
 )

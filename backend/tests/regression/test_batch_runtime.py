@@ -12,7 +12,7 @@ from app.crawl.batch_runtime import (
     process_run,
 )
 from app.core.config.sitemap import SITEMAP_DEFAULT_MAX_URLS
-from app.acquisition.acquirer import AcquisitionResult
+from app.acquisition.acquirer import PageAcquisitionResult
 from app.crawl.crud import create_crawl_run, get_run_records
 from app.models.crawl_run import CrawlLog, CrawlRecord
 from app.crawl.pipeline.types import URLProcessingResult
@@ -163,7 +163,7 @@ async def test_process_run_persists_detail_records(
     )
 
     async def _fake_acquire(request):
-        return AcquisitionResult(
+        return PageAcquisitionResult(
             request=request,
             final_url=request.url,
             html=_detail_html(),
@@ -203,7 +203,7 @@ async def test_process_run_marks_empty_listing_as_listing_detection_failed(
     )
 
     async def _fake_acquire(request):
-        return AcquisitionResult(
+        return PageAcquisitionResult(
             request=request,
             final_url=request.url,
             html=_listing_shell_html(),
@@ -759,7 +759,7 @@ async def test_process_run_ignores_robots_when_disabled_in_settings(
 
     async def _fake_acquire(request):
         acquire_calls.append(request.url)
-        return AcquisitionResult(
+        return PageAcquisitionResult(
             request=request,
             final_url=request.url,
             html=_detail_html(),
@@ -812,7 +812,7 @@ async def test_process_run_continues_when_robots_allows_or_fails_open(
 
     async def _fake_acquire(request):
         acquire_calls.append(request.url)
-        return AcquisitionResult(
+        return PageAcquisitionResult(
             request=request,
             final_url=request.url,
             html=_detail_html(),
@@ -942,7 +942,7 @@ async def test_process_batch_run_preserves_requested_fields_for_every_url(
 
     async def _fake_acquire(request):
         captured_requested_fields.append(list(request.requested_fields))
-        return AcquisitionResult(
+        return PageAcquisitionResult(
             request=request,
             final_url=request.url,
             html=_detail_html(),
@@ -990,7 +990,7 @@ async def test_process_batch_run_preserves_proxy_list_for_every_url(
 
     async def _fake_acquire(request):
         captured_proxy_lists.append(list(request.proxy_list))
-        return AcquisitionResult(
+        return PageAcquisitionResult(
             request=request,
             final_url=request.url,
             html=_detail_html(),
@@ -1034,7 +1034,7 @@ async def test_process_batch_run_preserves_exact_requested_section_labels_for_ev
 
     async def _fake_acquire(request):
         captured_requested_fields.append(list(request.requested_fields))
-        return AcquisitionResult(
+        return PageAcquisitionResult(
             request=request,
             final_url=request.url,
             html=_detail_html(),

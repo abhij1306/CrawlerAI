@@ -6,7 +6,7 @@ import logging
 from typing import Any, cast
 
 import httpx
-from app.acquisition.runtime_plan import AcquisitionPlan
+from app.acquisition.runtime_plan import AcquisitionIntent
 from app.acquisition.policy import AcquisitionPolicy
 from app.acquisition.policy_middleware import PolicyMiddleware
 from app.acquisition.internal_api_replay import replay_internal_api_endpoints
@@ -22,14 +22,13 @@ logger = logging.getLogger(__name__)
 class AcquisitionRequest:
     run_id: int
     url: str
-    plan: AcquisitionPlan
+    plan: AcquisitionIntent
     requested_fields: list[str] = field(default_factory=list)
     requested_field_selectors: dict[str, list[dict[str, object]]] = field(
         default_factory=dict
     )
     acquisition_profile: dict[str, object] = field(default_factory=dict)
     policy: AcquisitionPolicy | None = None
-    checkpoint: Any = None
     on_event: Any = None
     attempt_timeout_seconds: float | None = None
 
@@ -72,7 +71,7 @@ class AcquisitionRequest:
 
 
 @dataclass(slots=True)
-class AcquisitionResult:
+class PageAcquisitionResult:
     request: AcquisitionRequest
     final_url: str
     html: str
@@ -88,6 +87,7 @@ class AcquisitionResult:
     network_payloads: list[dict[str, object]] = field(default_factory=list)
     browser_diagnostics: dict[str, object] = field(default_factory=dict)
     artifacts: dict[str, object] = field(default_factory=dict)
+    acquisition_diagnostics: dict[str, object] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
@@ -98,7 +98,7 @@ class PageEvidence:
 
     @classmethod
     def from_acquisition_result(
-        cls, acquisition_result: AcquisitionResult
+        cls, acquisition_result: PageAcquisitionResult
     ) -> "PageEvidence":
         diagnostics = getattr(acquisition_result, "browser_diagnostics", {})
         return cls(
@@ -209,7 +209,7 @@ async def _emit_event(on_event: Any, level: str, message: str) -> None:
         return
 
 
-async def acquire(request: AcquisitionRequest) -> AcquisitionResult:
+async def acquire(request: AcquisitionRequest) -> PageAcquisitionResult:
     requested_url = normalize_target_url(request.url)
     effective_url = requested_url
     runtime_policy = resolve_platform_runtime_policy(
@@ -257,7 +257,7 @@ async def _acquire_from_internal_api_replay(
     effective_url: str,
     platform_family: object,
     profile_endpoints: object,
-) -> AcquisitionResult | None:
+) -> PageAcquisitionResult | None:
     replay_payload = await replay_internal_api_endpoints(
         page_url=effective_url,
         surface=request.surface,
@@ -269,7 +269,7 @@ async def _acquire_from_internal_api_replay(
     replay_url = str(replay_payload.get("url") or effective_url)
     raw_status = replay_payload.get("status")
     status_code = int(raw_status) if isinstance(raw_status, (int, str)) else 200
-    return AcquisitionResult(
+    return PageAcquisitionResult(
         request=request,
         final_url=effective_url,
         html="",
@@ -296,7 +296,7 @@ async def _acquire_from_fetch_page(
     effective_url: str,
     acquisition_policy: AcquisitionPolicy,
     browser_reason: str | None,
-) -> AcquisitionResult:
+) -> PageAcquisitionResult:
     result = await fetch_page(
         effective_url,
         run_id=request.run_id,
@@ -325,7 +325,7 @@ async def _acquire_from_fetch_page(
         forced_browser_engine=acquisition_policy.forced_browser_engine,
         on_event=request.on_event,
     )
-    return AcquisitionResult(
+    return PageAcquisitionResult(
         request=request,
         final_url=result.final_url,
         html=result.html,
@@ -338,6 +338,9 @@ async def _acquire_from_fetch_page(
         network_payloads=list(getattr(result, "network_payloads", []) or []),
         browser_diagnostics=dict(getattr(result, "browser_diagnostics", {}) or {}),
         artifacts=dict(getattr(result, "artifacts", {}) or {}),
+        acquisition_diagnostics=dict(
+            getattr(result, "acquisition_diagnostics", {}) or {}
+        ),
     )
 
 

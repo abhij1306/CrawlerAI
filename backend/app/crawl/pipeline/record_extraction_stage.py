@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 
-from app.acquisition.acquirer import AcquisitionResult
+from app.acquisition.acquirer import PageAcquisitionResult
 from app.core.logfire_integration import logfire_span, set_logfire_attributes
 from app.crawl.profile import record_acquisition_contract_outcome
 from app.core.db_utils import mapping_or_empty
@@ -17,7 +17,6 @@ from app.crawl.pipeline.extract_records import (
     extract_records_for_acquisition_result,
 )
 from app.crawl.pipeline.runtime_helpers import (
-    browser_result_is_extractable as _browser_result_is_extractable,
     effective_blocked as _effective_blocked,
     log_pipeline_event as _log_pipeline_event,
     merge_browser_diagnostics as _merge_browser_diagnostics,
@@ -68,7 +67,7 @@ async def _extract_records_for_acquisition(
     return result, selector_rules
 
 
-def _assign_platform_family(acquisition_result: AcquisitionResult) -> None:
+def _assign_platform_family(acquisition_result: PageAcquisitionResult) -> None:
     from app.crawl.pipeline import extraction_loop
 
     detect_family = getattr(
@@ -88,7 +87,7 @@ def _assign_platform_family(acquisition_result: AcquisitionResult) -> None:
 async def _run_record_extraction(
     context: _URLProcessingContext,
     *,
-    acquisition_result: AcquisitionResult,
+    acquisition_result: PageAcquisitionResult,
     selector_rules: list[dict[str, object]],
 ) -> ExtractionResult:
     from app.crawl.pipeline import extraction_loop
@@ -104,7 +103,12 @@ async def _run_record_extraction(
         domain=normalize_domain(acquisition_result.final_url),
         surface=context.surface,
         adapter_artifact_count=len(
-            list(mapping_or_empty(getattr(acquisition_result, "artifacts", {})).get("adapter_artifacts") or [])
+            value
+            if isinstance(
+                value := mapping_or_empty(getattr(acquisition_result, "artifacts", {})).get("adapter_artifacts"),
+                list,
+            )
+            else []
         ),
         network_payload_count=len(acquisition_result.network_payloads or []),
         selector_rule_count=len(selector_rules or []),

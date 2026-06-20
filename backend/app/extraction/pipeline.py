@@ -19,6 +19,7 @@ from app.core.config.extraction_rules import (
     NORMALIZER_AVAILABILITY_TOKENS,
 )
 from app.extraction.contracts import ArtifactReader, CaptureBundle, EntityHint, Evidence, FACT_TYPES, SourceLocator
+from app.extraction.contracts import CommerceDetailRecord
 from app.extraction.ids import stable_id
 from app.extraction.materialization import materialize
 from app.core.records.field_policy import normalize_field_key
@@ -75,7 +76,7 @@ def materialize_ecommerce_detail(
     entities,
     resolution,
     evidence: tuple[Evidence, ...],
-) -> dict[str, object]:
+) -> CommerceDetailRecord:
     return materialize(entities, resolution, evidence)
 
 

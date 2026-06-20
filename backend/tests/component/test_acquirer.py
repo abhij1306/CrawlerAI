@@ -16,7 +16,7 @@ from app.acquisition.internal_api_replay import (
     payload_extracts_surface,
 )
 from app.acquisition.policy import AcquisitionPolicy
-from app.acquisition.runtime_plan import AcquisitionPlan
+from app.acquisition.runtime_plan import AcquisitionIntent
 from app.crawl.utils import collect_target_urls, normalize_target_url, parse_csv_urls
 
 
@@ -86,6 +86,7 @@ async def test_acquire_returns_public_headers_as_plain_dict(
                 "network_payloads": [],
                 "browser_diagnostics": {},
                 "artifacts": {},
+                "acquisition_diagnostics": {"result": {"plan_id": "plan-1"}},
             },
         )()
 
@@ -98,13 +99,14 @@ async def test_acquire_returns_public_headers_as_plain_dict(
         AcquisitionRequest(
             run_id=1,
             url="https://example.com",
-            plan=AcquisitionPlan(surface="ecommerce_detail"),
+            plan=AcquisitionIntent(surface="ecommerce_detail"),
             on_event=_on_event,
         )
     )
 
     assert result.headers == {"content-type": "text/html"}
     assert isinstance(result.headers, dict)
+    assert result.acquisition_diagnostics["result"]["plan_id"] == "plan-1"
     assert events == [
         ("info", "Acquiring https://example.com"),
         ("info", "Launched headless browser (chromium, proxy: direct)"),
@@ -150,7 +152,7 @@ async def test_acquire_strips_pasted_encoded_url_suffix_before_fetch(
                 "https://www.harrods.com/en-gb/p/"
                 "brinkhaus-emperor-100percent-arctic-duck-down-duvet-85-tog-000000000004579693%22,"
             ),
-            plan=AcquisitionPlan(surface="ecommerce_detail"),
+            plan=AcquisitionIntent(surface="ecommerce_detail"),
         )
     )
 
@@ -296,7 +298,7 @@ async def test_acquire_translates_policy_to_fetch_runtime_knobs(
         AcquisitionRequest(
             run_id=9,
             url="https://example.com/products/widget",
-            plan=AcquisitionPlan(
+            plan=AcquisitionIntent(
                 surface="ecommerce_detail",
                 proxy_list=("http://proxy.example",),
             ),
@@ -377,7 +379,7 @@ async def test_acquire_uses_internal_api_replay_before_page_fetch(
         AcquisitionRequest(
             run_id=92,
             url="https://example.com/products/replay-widget",
-            plan=AcquisitionPlan(surface="ecommerce_detail"),
+            plan=AcquisitionIntent(surface="ecommerce_detail"),
             requested_fields=["title", "price"],
             acquisition_profile={
                 "internal_api_endpoints": [
@@ -467,7 +469,7 @@ async def test_acquire_persists_runtime_policy_updates_on_result_request(
         AcquisitionRequest(
             run_id=9,
             url="https://example.com/products/widget",
-            plan=AcquisitionPlan(surface="ecommerce_detail"),
+            plan=AcquisitionIntent(surface="ecommerce_detail"),
         )
     )
 
@@ -532,7 +534,7 @@ async def test_acquire_applies_runtime_locality_defaults_without_overriding_expl
         AcquisitionRequest(
             run_id=10,
             url="https://www.belk.com/p/widget",
-            plan=AcquisitionPlan(surface="ecommerce_detail"),
+            plan=AcquisitionIntent(surface="ecommerce_detail"),
             acquisition_profile={
                 "locality_profile": {
                     "language_hint": "fr-CA",

@@ -43,7 +43,7 @@ def lineage(decision: Decision | None = None, derived: DerivedFact | None = None
     }
 
 
-def materialize(entities: EntitySet, resolution: ResolutionResult, evidence: tuple[Evidence, ...]) -> dict[str, object]:
+def materialize(entities: EntitySet, resolution: ResolutionResult, evidence: tuple[Evidence, ...]) -> CommerceDetailRecord:
     by_id = {ev.evidence_id: ev for ev in evidence}
     derived = {(item.entity_id, item.fact_type): item for item in resolution.derived_facts}
     record: dict[str, object] = {}
@@ -91,13 +91,22 @@ def _cohere_parent_availability(
     evidence_ids = tuple(
         str(evidence_id)
         for row in variant_lineage
-        for evidence_id in dict(row.get("availability") or {}).get("evidence_ids", ())
+        for evidence_id in _lineage_evidence_ids(row.get("availability"))
     )
     record["availability"] = "in_stock" if "in_stock" in availability else "out_of_stock"
     lineages["availability"] = {
         "rule_id": "variant_availability_aggregate",
         "evidence_ids": list(dict.fromkeys(evidence_ids)),
     }
+
+
+def _lineage_evidence_ids(value: object) -> tuple[object, ...]:
+    if not isinstance(value, dict):
+        return ()
+    evidence_ids = value.get("evidence_ids")
+    if isinstance(evidence_ids, (list, tuple)):
+        return tuple(evidence_ids)
+    return ()
 
 
 def _variants(

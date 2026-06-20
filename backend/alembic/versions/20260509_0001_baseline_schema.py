@@ -136,6 +136,32 @@ _UPGRADE_SQL: tuple[str, ...] = (
     "CREATE INDEX ix_crawl_runs_status ON crawl_runs (status)",
     "CREATE INDEX ix_crawl_runs_user_id ON crawl_runs (user_id)",
     """
+    CREATE TABLE crawl_url_results (
+        id SERIAL NOT NULL,
+        run_id INTEGER NOT NULL,
+        requested_url TEXT NOT NULL,
+        normalized_url TEXT NOT NULL,
+        final_url TEXT NOT NULL DEFAULT '',
+        surface VARCHAR(40) NOT NULL,
+        generation INTEGER NOT NULL DEFAULT 1,
+        acquisition_outcome VARCHAR(24) NOT NULL DEFAULT 'empty',
+        verdict VARCHAR(24) NOT NULL DEFAULT 'empty',
+        extraction_version VARCHAR(32) NOT NULL DEFAULT 'extraction.v1',
+        bundle_id VARCHAR(128),
+        manifest_uri TEXT,
+        record_count INTEGER NOT NULL DEFAULT 0,
+        error TEXT,
+        updated_at TIMESTAMP WITH TIME ZONE NOT NULL,
+        created_at TIMESTAMP WITH TIME ZONE NOT NULL,
+        completed_at TIMESTAMP WITH TIME ZONE,
+        PRIMARY KEY (id),
+        FOREIGN KEY(run_id) REFERENCES crawl_runs (id) ON DELETE CASCADE
+    )
+    """,
+    "CREATE INDEX ix_crawl_url_results_run_id ON crawl_url_results (run_id)",
+    "CREATE INDEX ix_crawl_url_results_verdict ON crawl_url_results (verdict)",
+    "CREATE UNIQUE INDEX uq_crawl_url_results_identity ON crawl_url_results (run_id, normalized_url, surface, generation)",
+    """
     CREATE TABLE crawl_logs (
         id SERIAL NOT NULL,
         run_id INTEGER NOT NULL,
@@ -150,6 +176,7 @@ _UPGRADE_SQL: tuple[str, ...] = (
     """
     CREATE TABLE crawl_records (
         id SERIAL NOT NULL,
+        url_result_id INTEGER,
         run_id INTEGER NOT NULL,
         source_url TEXT NOT NULL,
         url_identity_key VARCHAR(64),
@@ -163,12 +190,14 @@ _UPGRADE_SQL: tuple[str, ...] = (
         enriched_at TIMESTAMP WITH TIME ZONE,
         created_at TIMESTAMP WITH TIME ZONE NOT NULL,
         PRIMARY KEY (id),
+        FOREIGN KEY(url_result_id) REFERENCES crawl_url_results (id) ON DELETE CASCADE,
         FOREIGN KEY(run_id) REFERENCES crawl_runs (id) ON DELETE CASCADE
     )
     """,
     "CREATE INDEX ix_crawl_records_enrichment_status ON crawl_records (enrichment_status)",
     "CREATE INDEX ix_crawl_records_run_content_fp ON crawl_records (run_id, content_fingerprint)",
     "CREATE INDEX ix_crawl_records_run_id ON crawl_records (run_id)",
+    "CREATE INDEX ix_crawl_records_url_result_id ON crawl_records (url_result_id)",
     "CREATE UNIQUE INDEX uq_crawl_records_run_identity ON crawl_records (run_id, url_identity_key) WHERE url_identity_key IS NOT NULL",
     """
     CREATE TABLE data_enrichment_jobs (
@@ -407,6 +436,7 @@ _DOWNGRADE_TABLES: tuple[str, ...] = (
     "domain_field_feedback",
     "data_enrichment_jobs",
     "crawl_records",
+    "crawl_url_results",
     "crawl_logs",
     "crawl_runs",
     "users",

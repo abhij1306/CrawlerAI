@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.public.common import PublicApiError
 from app.models.crawl_run import CrawlRecord
+from app.persistence.record_artifacts import RecordArtifacts, load_record_artifacts
 from app.schemas.public_api import PublicExtractRequest
 from app.core.config.public_api import (
     PUBLIC_API_DEFAULT_FIELDS_BY_SURFACE,
@@ -139,9 +140,11 @@ async def extract_public_product(
         await mark_run_failed(session, run.id, exc.message)
         raise
     update_run_status(run, CrawlStatus.COMPLETED)
+    record_artifacts = await load_record_artifacts(session, record)
     await session.commit()
     return _shape_record_response(
         record,
+        artifacts=record_artifacts,
         requested_fields=requested_fields,
         surface=surface,
     )
@@ -270,13 +273,19 @@ async def _first_record(session: AsyncSession, *, run_id: int) -> CrawlRecord | 
 def _shape_record_response(
     record: CrawlRecord,
     *,
+    artifacts: RecordArtifacts,
     requested_fields: list[str],
     surface: str,
 ) -> dict[str, Any]:
-    data = dict(record.data or {})
+    data = dict(artifacts.data)
     fields = {field: data.get(field) for field in requested_fields if field in data}
-    source_trace = dict(record.source_trace or {})
-    crawl_method = _crawl_method(record, source_trace=source_trace)
+    source_trace = dict(
+        artifacts.source_trace
+    )
+    crawl_method = _crawl_method(
+        source_trace=source_trace,
+        artifacts=artifacts,
+    )
     return {
         "url": record.source_url,
         "surface": public_surface_for_internal(surface),
@@ -286,11 +295,15 @@ def _shape_record_response(
     }
 
 
-def _crawl_method(record: CrawlRecord, *, source_trace: dict[str, Any]) -> str:
+def _crawl_method(
+    *,
+    source_trace: dict[str, Any],
+    artifacts: RecordArtifacts,
+) -> str:
     for payload in (
         source_trace,
-        dict(record.discovered_data or {}),
-        dict(record.raw_data or {}),
+        dict(artifacts.discovered_data),
+        dict(artifacts.raw_data),
     ):
         for key in ("crawl_method", "fetch_method", "acquisition_method", "method"):
             value = str(payload.get(key) or "").strip().lower()

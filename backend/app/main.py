@@ -47,7 +47,7 @@ from app.core.metrics import (
 )
 from app.core.rate_limit import client_identifier_from_request, consume_sliding_window_limit
 from app.core.redis import close_redis
-from app.core.database import SessionLocal, dispose_engine
+from app.core.database import SessionLocal, dispose_engine, ensure_database_schema
 from app.core.public_auth import authenticate_public_api_key
 from app.core.telemetry import (
     configure_logging,
@@ -58,7 +58,6 @@ from app.core.telemetry import (
 )
 from app.acquisition.browser_runtime import shutdown_browser_runtime
 from app.acquisition.cookie_store import validate_cookie_policy_config
-from app.acquisition.http_client import close_shared_http_client as close_acquisition_http_client
 from app.acquisition.runtime import close_shared_http_client as close_runtime_http_client
 from app.core.auth_service import bootstrap_admin_user
 from app.core.config.auth_security import (
@@ -113,6 +112,7 @@ async def lifespan(_fastapi_app: FastAPI):
     except RuntimeError:
         logger.debug("Asyncio exception filter not installed; no running loop")
     validate_cookie_policy_config()
+    await ensure_database_schema()
     async with SessionLocal() as session:
         await bootstrap_admin_user(session)
         recovered = await recover_stale_local_runs(session)
@@ -128,7 +128,6 @@ async def lifespan(_fastapi_app: FastAPI):
         await shutdown_run_dispatchers()
         await shutdown_browser_runtime()
         await close_runtime_http_client()
-        await close_acquisition_http_client()
         await close_llm_provider_clients()
         await close_redis()
         await dispose_engine()

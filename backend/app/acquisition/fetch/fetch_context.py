@@ -27,9 +27,6 @@ from app.acquisition.cookie_store import (
     clear_cookie_store_cache,
     export_cookie_header_for_domain,
 )
-from app.acquisition.http_client import (
-    close_shared_http_client as close_adapter_shared_http_client,
-)
 from app.acquisition.pacing import (
     apply_protected_host_backoff,
     reset_pacing_state,
@@ -46,36 +43,26 @@ from app.acquisition.runtime import (
     is_non_retryable_http_status,
     should_escalate_to_browser,
 )
-from app.acquisition.traversal import should_run_traversal
-from app.core.config.runtime_settings import (
-    crawler_runtime_settings,
-    proxy_rotation_mode,
-)
+from app.core.config.runtime_settings import crawler_runtime_settings
 from app.core.config.pipeline_reasons import (
     BROWSER_ESCALATION_SKIPPED_INSUFFICIENT_BUDGET,
 )
 from app.acquisition.platform_policy import resolve_platform_runtime_policy
+from app.acquisition.fetch.planned_http import run_planned_http_only
 from app.acquisition.fetch.browser_policy import (
     browser_engine_attempts as _browser_engine_attempts_impl,
     browser_escalation_allowed as _browser_escalation_allowed,
-    browser_escalation_lane as _browser_escalation_lane,
     browser_escalation_proxies as _browser_escalation_proxies,
     browser_first_decision as _browser_first_decision,
     browser_first_reason as _browser_first_reason,
     attach_browser_attempt_diagnostics as _attach_browser_attempt_diagnostics,
     attach_exception_browser_diagnostics as _attach_exception_browser_diagnostics,
-    durable_vendor_block_engine_attempts as _durable_vendor_block_engine_attempts,
     extract_vendor_from_reason as _extract_vendor_from_reason,
     hard_browser_requirement as _hard_browser_requirement,
-    host_policy_snapshot as _host_policy_snapshot,
     is_vendor_block_reason as _is_vendor_block_reason,
-    normalize_fetch_mode as _normalize_fetch_mode,
-    normalize_proxy_profile as _normalize_proxy_profile,
     resolve_browser_reason as _resolve_browser_reason,
-    resolve_proxy_attempts as _resolve_proxy_attempts,
     vendor_confirmed_block as _vendor_confirmed_block,
 )
-from app.acquisition.fetch.browser_attempt import browser_fetch_kwargs, browser_fetch_with_wall_clock_timeout
 from app.acquisition.fetch.browser_attempt_runner import (
     BrowserAttemptDependencies,
     BrowserAttemptRunner,
@@ -166,7 +153,6 @@ async def reset_fetch_runtime_state() -> None:
     await clear_cookie_store_cache()
     await reset_pacing_state()
     await close_shared_http_client()
-    await close_adapter_shared_http_client()
 
 
 def _remaining_browser_timeout_seconds(context: _FetchRuntimeContext) -> float:
@@ -308,6 +294,9 @@ async def fetch_page(
             )
             return handoff_result
 
+    if context.fetch_mode == "http_only":
+        return await _run_http_only_acquisition(context)
+
     http_result, vendor_block_confirmed = await _run_http_fetch_chain(context)
     if http_result is not None:
         return http_result
@@ -316,6 +305,21 @@ async def fetch_page(
     if context.last_error is not None:
         return await _run_final_browser_fallback(context, browser_reason=call.browser_reason)
     raise RuntimeError(f"Failed to fetch {call.url}")
+
+
+async def _run_http_only_acquisition(
+    context: _FetchRuntimeContext,
+) -> PageFetchResult:
+    return await run_planned_http_only(
+        context,
+        curl_fetcher=_curl_fetch,
+        http_fetcher=_http_fetch,
+        attempt_http_fetch=_attempt_http_fetch,
+        handle_http_result=_handle_http_result,
+        resolve_http_timeout=_resolve_http_timeout,
+        remaining_timeout_seconds=_remaining_browser_timeout_seconds,
+        force_httpx=bool(crawler_runtime_settings.force_httpx),
+    )
 
 
 async def _try_browser_first_acquisition(
@@ -721,8 +725,13 @@ async def _attempt_http_fetch(
     *,
     fetcher,
     proxy: str | None,
+    timeout_seconds: float | None = None,
 ) -> PageFetchResult | object:
-    http_timeout = _resolve_http_timeout(context)
+    http_timeout = (
+        _resolve_http_timeout(context)
+        if timeout_seconds is None
+        else max(0.001, float(timeout_seconds))
+    )
     await _emit_fetch_event(
         context.on_event,
         "info",
@@ -776,6 +785,7 @@ async def _handle_http_result(
     *,
     result: PageFetchResult,
     proxy: str | None,
+    allow_browser_escalation: bool = True,
 ) -> tuple[PageFetchResult | object | None, bool]:
     vendor = _vendor_confirmed_block(result)
     if vendor or bool(result.blocked):
@@ -795,7 +805,7 @@ async def _handle_http_result(
     )
     if should_browser_escalate and (vendor or bool(result.blocked)):
         await _record_http_block_memory(context, result=result, proxy=proxy, vendor=vendor)
-    if _http_browser_escalation_allowed(
+    if allow_browser_escalation and _http_browser_escalation_allowed(
         context,
         should_browser_escalate=should_browser_escalate,
         runtime_policy=result_runtime_policy,

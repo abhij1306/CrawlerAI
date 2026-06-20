@@ -3,8 +3,8 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from app.acquisition.acquirer import AcquisitionRequest, AcquisitionResult
-from app.acquisition.runtime_plan import AcquisitionPlan
+from app.acquisition.acquirer import AcquisitionRequest, PageAcquisitionResult
+from app.acquisition.runtime_plan import AcquisitionIntent
 from app.extraction import Surface, extract
 from app.extraction.contracts import CommerceDetailRecord, ExtractionRequest
 from app.extraction.contracts import Evidence
@@ -52,6 +52,7 @@ def _extract(
     *,
     max_records: int = 1,
     artifacts: dict[str, object] | None = None,
+    network_payloads: tuple[dict[str, object], ...] = (),
 ):
     return extract(
         fixture_request_from_inputs(
@@ -60,6 +61,7 @@ def _extract(
             page_url,
             max_records=max_records,
             artifacts=artifacts,
+            network_payloads=network_payloads,
         )
     )
 
@@ -210,11 +212,11 @@ def test_extraction_request_has_no_artifact_payloads_field() -> None:
 
 
 def test_runtime_capture_bundle_uses_acquisition_metadata() -> None:
-    acquisition = AcquisitionResult(
+    acquisition = PageAcquisitionResult(
         request=AcquisitionRequest(
             run_id=42,
             url="https://shop.test/products/trail-shoe",
-            plan=AcquisitionPlan(surface="ecommerce_detail"),
+            plan=AcquisitionIntent(surface="ecommerce_detail"),
         ),
         final_url="https://shop.test/products/trail-shoe",
         html=HTML,
@@ -260,6 +262,26 @@ def test_offer_price_without_currency_is_not_published() -> None:
     assert "PRICE_WITHOUT_CURRENCY" in {finding.rule_id for finding in result.findings}
 
 
+def test_uncorroborated_cent_magnitude_price_is_not_silently_repaired() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        "<main><h1>Runner Tee</h1></main>",
+        "https://shop.test/products/runner-tee",
+        network_payloads=(
+            {
+                "body": {
+                    "name": "Runner Tee",
+                    "url": "https://shop.test/products/runner-tee",
+                    "price": "3499",
+                    "currency": "USD",
+                }
+            },
+        ),
+    )
+    assert result.records[0]["price"] == "3499.00"
+    assert result.records[0]["currency"] == "USD"
+
+
 def test_slug_only_detail_output_is_review_not_success() -> None:
     result = _extract(
         "ecommerce_detail",
@@ -283,6 +305,32 @@ def test_access_denied_shell_does_not_succeed() -> None:
         "https://us.louisvuitton.com/eng-us/products/bootleg-pants-nvprod7220319v/1AJUPQ",
     )
     assert result.verdict == "error"
+    assert result.retry_request is not None
+    assert result.retry_request.reason == "http_shell"
+
+
+def test_shell_title_with_offer_data_does_not_publish_record() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <html>
+          <head>
+            <script type="application/ld+json">
+            {
+              "@type": "Product",
+              "name": "Error page",
+              "url": "https://shop.test/products/error-page",
+              "offers": {"price": "99", "priceCurrency": "USD"}
+            }
+            </script>
+          </head>
+          <body><h1>Error page</h1></body>
+        </html>
+        """,
+        "https://shop.test/products/error-page",
+    )
+    assert result.verdict == "error"
+    assert result.records == ()
     assert result.retry_request is not None
     assert result.retry_request.reason == "http_shell"
 
@@ -654,6 +702,130 @@ def test_variant_identity_merges_sources_and_materializes_child_offer() -> None:
     ]
     assert result.graph.entity_counts["variant"] == 1
     assert result.records[0]["_lineage"]["variants"][0]["price"]
+
+
+def test_js_state_later_product_object_backfills_missing_variant_rows() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        "<main><h1>Bootleg Pants</h1></main>",
+        "https://shop.test/products/bootleg-pants",
+        artifacts={
+            "js_state_objects": {
+                "bootstrap": {
+                    "name": "Bootleg Pants",
+                    "price": "1290",
+                    "currency": "USD",
+                },
+                "hydration": {
+                    "product": {
+                        "name": "Bootleg Pants",
+                        "url": "https://shop.test/products/bootleg-pants",
+                        "variants": [
+                            {
+                                "variantId": "black-s",
+                                "sku": "BP-BLK-S",
+                                "color": "Black",
+                                "size": "S",
+                                "price": {"value": "1290"},
+                                "currency": "USD",
+                            },
+                            {
+                                "variantId": "black-m",
+                                "sku": "BP-BLK-M",
+                                "color": "Black",
+                                "size": "M",
+                                "price": {"value": "1290"},
+                                "currency": "USD",
+                            },
+                        ],
+                    }
+                },
+            }
+        },
+    )
+    assert result.records[0]["variants"] == [
+        {
+            "variant_id": "black-s",
+            "sku": "BP-BLK-S",
+            "price": "1290.00",
+            "currency": "USD",
+            "color": "Black",
+            "size": "S",
+        },
+        {
+            "variant_id": "black-m",
+            "sku": "BP-BLK-M",
+            "price": "1290.00",
+            "currency": "USD",
+            "color": "Black",
+            "size": "M",
+        },
+    ]
+
+
+def test_network_variant_offer_rows_materialize_with_lineage() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        "<main><h1>Runner Tee</h1></main>",
+        "https://shop.test/products/runner-tee",
+        network_payloads=(
+            {
+                "body": {
+                    "data": {
+                        "product": {
+                            "name": "Runner Tee",
+                            "url": "https://shop.test/products/runner-tee",
+                            "variants": [
+                                {
+                                    "variantId": "navy-s",
+                                    "sku": "RT-NV-S",
+                                    "color": "Navy",
+                                    "size": "S",
+                                    "price": "35",
+                                    "currency": "USD",
+                                    "available": True,
+                                },
+                                {
+                                    "variantId": "navy-m",
+                                    "sku": "RT-NV-M",
+                                    "color": "Navy",
+                                    "size": "M",
+                                    "price": "35",
+                                    "currency": "USD",
+                                    "available": False,
+                                },
+                            ],
+                        }
+                    }
+                }
+            },
+        ),
+    )
+    assert result.records[0]["variants"] == [
+        {
+            "variant_id": "navy-s",
+            "sku": "RT-NV-S",
+            "price": "35.00",
+            "currency": "USD",
+            "availability": "in_stock",
+            "color": "Navy",
+            "size": "S",
+        },
+        {
+            "variant_id": "navy-m",
+            "sku": "RT-NV-M",
+            "price": "35.00",
+            "currency": "USD",
+            "availability": "out_of_stock",
+            "color": "Navy",
+            "size": "M",
+        },
+    ]
+    assert result.records[0]["_lineage"]["variants"][0]["availability"]
+    assert any(
+        item.artifact_id == "network_0" and item.collector_id == "network"
+        for item in result.evidence
+    )
 
 
 def test_mixed_numeric_and_string_identity_values_do_not_crash() -> None:

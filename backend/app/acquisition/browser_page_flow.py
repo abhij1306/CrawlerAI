@@ -15,10 +15,7 @@ from app.acquisition.browser_readiness import (
 from app.acquisition.browser_page_helpers import (
     detail_expansion_can_skip,
     detail_expansion_extractability,
-    dismiss_safe_location_interstitial,
-    location_interstitial_detected,
     normalize_listing_recovery_mode as _normalize_listing_recovery_mode,
-    page_might_have_location_interstitial,
     select_primary_browser_html as _select_primary_browser_html,
 )
 from app.acquisition.browser_page_helpers import (
@@ -30,7 +27,6 @@ from app.acquisition.browser_recovery import (
     recover_browser_challenge,
 )
 from app.acquisition.runtime import classify_blocked_page_async
-from app.acquisition.browser_result_builder import finalize_browser_fetch
 from app.core.config.selectors import (
     CARD_SELECTORS,
 )

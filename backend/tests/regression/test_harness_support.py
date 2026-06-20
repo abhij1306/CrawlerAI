@@ -9,7 +9,7 @@ from sqlalchemy import select
 import harness_support
 import run_test_sites_acceptance
 from app.core.security import hash_password, verify_password
-from app.acquisition.runtime_plan import AcquisitionPlan
+from app.acquisition.runtime_plan import AcquisitionIntent
 from harness_support import (
     build_explicit_sites,
     classify_failure_mode,
@@ -100,6 +100,22 @@ def test_build_explicit_sites_rejects_mismatched_surface_count() -> None:
             ["https://example.com/products/widget-prime"],
             explicit_surfaces=["ecommerce_detail", "ecommerce_listing"],
         )
+
+
+@pytest.mark.regression
+def test_unavailable_configured_adapters_uses_config_without_legacy_registry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        harness_support,
+        "configured_adapter_names",
+        lambda: ("bullhorn", "icims"),
+    )
+
+    assert harness_support.unavailable_configured_adapters() == {
+        "bullhorn",
+        "icims",
+    }
 
 
 @pytest.mark.regression
@@ -1003,7 +1019,7 @@ async def test_run_site_harness_supports_acquisition_only_mode(
 
     class _FakeSettingsView:
         def acquisition_plan(self, *, surface: str):
-            return AcquisitionPlan(surface=surface)
+            return AcquisitionIntent(surface=surface)
 
     async def _fake_create_crawl_run(session, user_id, payload):
         del session, user_id
@@ -1068,7 +1084,7 @@ async def test_run_site_harness_surfaces_challenge_summary_in_acquisition_only_m
 
     class _FakeSettingsView:
         def acquisition_plan(self, *, surface: str):
-            return AcquisitionPlan(surface=surface)
+            return AcquisitionIntent(surface=surface)
 
     async def _fake_create_crawl_run(session, user_id, payload):
         del session, user_id

@@ -169,12 +169,16 @@ def build_source_trace(
     return trace
 
 
-def export_record_from_row(row: CrawlRecord) -> ExportRecord:
-    source_trace = row.source_trace if isinstance(row.source_trace, dict) else {}
+def export_record_from_row(
+    row: CrawlRecord,
+    *,
+    data: dict[str, object],
+    source_trace: dict[str, object],
+) -> ExportRecord:
     return ExportRecord.model_validate(
         {
             "source_url": row.source_url,
-            "data": clean_export_data(row.data if isinstance(row.data, dict) else {}),
+            "data": clean_export_data(data),
             "acquisition": source_trace.get("acquisition") or {},
             "extraction": source_trace.get("extraction") or {},
             "field_discovery": source_trace.get("field_discovery") or {},

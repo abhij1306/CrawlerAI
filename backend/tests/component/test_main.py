@@ -10,6 +10,7 @@ from app.main import (
     sanitize_header_name,
     sanitize_header_value,
     correlation_middleware,
+    lifespan,
 )
 
 
@@ -192,3 +193,47 @@ def test_install_asyncio_exception_filter_preserves_original_context_for_previou
     loop.handler(loop, context)
 
     assert previous_calls == [(loop, context)]
+
+
+@pytest.mark.component
+async def test_lifespan_creates_schema_before_bootstrap(monkeypatch) -> None:
+    calls: list[str] = []
+
+    class SessionContext:
+        async def __aenter__(self):
+            calls.append("session")
+            return object()
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return None
+
+    async def _schema() -> None:
+        calls.append("schema")
+
+    async def _bootstrap(_session) -> None:
+        calls.append("bootstrap")
+
+    async def _recover(_session) -> int:
+        calls.append("recover")
+        return 0
+
+    async def _noop_async() -> None:
+        return None
+
+    monkeypatch.setattr("app.main.ensure_database_schema", _schema)
+    monkeypatch.setattr("app.main.SessionLocal", lambda: SessionContext())
+    monkeypatch.setattr("app.main.bootstrap_admin_user", _bootstrap)
+    monkeypatch.setattr("app.main.recover_stale_local_runs", _recover)
+    monkeypatch.setattr("app.main.ensure_run_audit_registered", lambda: calls.append("audit"))
+    monkeypatch.setattr("app.main.shutdown_run_dispatchers", _noop_async)
+    monkeypatch.setattr("app.main.shutdown_browser_runtime", _noop_async)
+    monkeypatch.setattr("app.main.close_runtime_http_client", _noop_async)
+    monkeypatch.setattr("app.main.close_llm_provider_clients", _noop_async)
+    monkeypatch.setattr("app.main.close_redis", _noop_async)
+    monkeypatch.setattr("app.main.dispose_engine", _noop_async)
+
+    async with lifespan(None):
+        calls.append("yield")
+
+    assert calls[:5] == ["schema", "session", "bootstrap", "recover", "audit"]
+    assert "yield" in calls

@@ -5,9 +5,11 @@ import logging
 from collections.abc import AsyncIterator
 
 from app.core.config import settings
+from sqlalchemy import inspect, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy.schema import CreateColumn
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +37,34 @@ SessionLocal = async_sessionmaker(
     class_=AsyncSession,
     autoflush=False,
 )
+
+
+async def ensure_database_schema() -> None:
+    """Create ORM-owned tables for rebuild deployments without Alembic files."""
+    import app.models  # noqa: F401  # register model metadata
+
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
+        await connection.run_sync(_create_missing_columns)
+
+
+def _create_missing_columns(connection) -> None:
+    inspector = inspect(connection)
+    existing_tables = set(inspector.get_table_names())
+    preparer = connection.dialect.identifier_preparer
+    for table in Base.metadata.sorted_tables:
+        if table.name not in existing_tables:
+            continue
+        existing_columns = {
+            row["name"] for row in inspector.get_columns(table.name, schema=table.schema)
+        }
+        for column in table.columns:
+            if column.name in existing_columns:
+                continue
+            column_sql = str(CreateColumn(column).compile(dialect=connection.dialect))
+            table_sql = preparer.format_table(table)
+            logger.warning("Adding missing database column %s.%s", table.name, column.name)
+            connection.execute(text(f"ALTER TABLE {table_sql} ADD COLUMN {column_sql}"))
 
 
 async def dispose_engine() -> None:

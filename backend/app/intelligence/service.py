@@ -4,7 +4,7 @@ import asyncio
 import logging
 from datetime import UTC, datetime
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import SessionLocal
@@ -14,23 +14,14 @@ from app.models.product_intelligence import (
     ProductIntelligenceMatch,
     ProductIntelligenceSourceProduct,
 )
-from app.models.crawl_run import CrawlRecord, CrawlRun
+from app.models.crawl_run import CrawlRun
 from app.models.user import User
 from app.core.config.product_intelligence import (
     ADMIN_ROLE,
-    CRAWL_RUN_FINAL_STATUSES,
     ECOMMERCE_DETAIL_SURFACE,
     PRIVATE_LABEL_EXCLUDE,
-    PRIVATE_LABEL_FLAG,
-    PRIVATE_LABEL_INCLUDE,
-    PRODUCT_INTELLIGENCE_BRAND_INFERENCE_LLM_TASK,
-    PRODUCT_INTELLIGENCE_LLM_TASK,
-    PRODUCT_INTELLIGENCE_CANDIDATE_STATUS_CRAWL_COMPLETE,
     PRODUCT_INTELLIGENCE_CANDIDATE_STATUS_CRAWL_QUEUED,
     PRODUCT_INTELLIGENCE_CANDIDATE_STATUS_CRAWL_TIMEOUT,
-    PRODUCT_INTELLIGENCE_CANDIDATE_STATUS_DISCOVERED,
-    PRODUCT_INTELLIGENCE_CANDIDATE_STATUS_FAILED,
-    PRODUCT_INTELLIGENCE_CANDIDATE_STATUS_NO_RECORDS,
     PRODUCT_INTELLIGENCE_JOB_STATUS_COMPLETE,
     PRODUCT_INTELLIGENCE_JOB_STATUS_FAILED,
     PRODUCT_INTELLIGENCE_JOB_STATUS_QUEUED,
@@ -41,8 +32,8 @@ from app.core.config.product_intelligence import (
     RUN_TYPE_CRAWL,
     product_intelligence_settings,
 )
-from app.crawl.access_service import require_accessible_record, require_accessible_run
-from app.crawl.crud import create_crawl_run, get_run_records
+from app.crawl.access_service import require_accessible_run
+from app.crawl.crud import create_crawl_run
 from app.crawl.service import dispatch_run
 from app.core.domain_utils import normalize_domain
 from app.connectors.llm.runtime import run_prompt_task

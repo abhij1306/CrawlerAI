@@ -1,6 +1,7 @@
 from __future__ import annotations
 import logging
 from datetime import UTC, datetime
+from typing import cast
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -527,7 +528,7 @@ async def _load_source_records(
     record_ids = _source_record_ids(payload)
     if record_ids:
         records: list[CrawlRecord] = []
-        for record_id in record_ids[: int(options["max_source_records"])]:
+        for record_id in record_ids[: cast(int, options["max_source_records"])]:
             records.append(
                 await require_accessible_record(session, record_id=record_id, user=user)
             )
@@ -543,7 +544,7 @@ async def _load_source_records(
                 select(CrawlRecord)
                 .where(CrawlRecord.run_id == run.id)
                 .order_by(CrawlRecord.id)
-                .limit(int(options["max_source_records"]))
+                .limit(cast(int, options["max_source_records"]))
             )
         ).all()
     )

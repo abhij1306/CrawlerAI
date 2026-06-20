@@ -41,7 +41,8 @@ def _product(bundle: CaptureBundle, artifact_id: str, obj: dict[str, Any], path:
         for key, fact in fields.items()
         if text_value(obj.get(key))
     ]
-    images = obj.get("image") if isinstance(obj.get("image"), list) else [obj.get("image")]
+    raw_image = obj.get("image")
+    images = raw_image if isinstance(raw_image, list) else [raw_image]
     for idx, url in enumerate(text_value(item) for item in images if text_value(item)):
         out.append(evidence(bundle, artifact_id, "jsonld", "asset.image_url", url, SourceLocator(kind="json_pointer", value=f"{path}/image/{idx}"), hint=EntityHint(entity_type="asset"), directness="embedded", confidence=0.85, parent_subject_id=product_subject))
     out.extend(_offers(bundle, artifact_id, obj.get("offers"), path, hint, product_subject))

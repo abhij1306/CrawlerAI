@@ -36,6 +36,7 @@ from app.persistence.publish.quality_gate import (
     export_quality_headers,
     export_quality_report,
 )
+from app.persistence.record_artifacts import RecordArtifacts, load_record_artifacts
 from app.schemas.crawl import CrawlRecordProvenanceResponse
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -177,7 +178,21 @@ async def export_record_provenance(
     user: User,
 ) -> CrawlRecordProvenanceResponse:
     record = await require_accessible_record(session, record_id=record_id, user=user)
-    return CrawlRecordProvenanceResponse.model_validate(record, from_attributes=True)
+    artifacts = await load_record_artifacts(session, record)
+    return CrawlRecordProvenanceResponse.model_validate(
+        {
+            "id": record.id,
+            "run_id": record.run_id,
+            "source_url": record.source_url,
+            "raw_data": dict(artifacts.raw_data),
+            "discovered_data": dict(artifacts.discovered_data),
+            "source_trace": dict(artifacts.source_trace),
+            "enrichment_status": record.enrichment_status,
+            "enriched_at": record.enriched_at,
+            "raw_html_path": artifacts.raw_html_path,
+            "created_at": record.created_at,
+        }
+    )
 
 
 async def _stream_export_rows(session: AsyncSession, run_id: int):
@@ -201,7 +216,12 @@ async def stream_export_json(session: AsyncSession, run_id: int):
     async for row in _stream_export_rows(session, run_id):
         if not first:
             yield ",\n"
-        export_record = export_record_from_row(row)
+        artifacts = await load_record_artifacts(session, row)
+        export_record = export_record_from_row(
+            row,
+            data=dict(artifacts.data),
+            source_trace=dict(artifacts.source_trace),
+        )
         yield json.dumps(export_record.data, indent=2)
         first = False
     yield "\n]"
@@ -210,7 +230,12 @@ async def stream_export_json(session: AsyncSession, run_id: int):
 async def stream_export_csv(session: AsyncSession, run_id: int):
     fieldnames: set[str] = set()
     async for row in _stream_export_rows(session, run_id):
-        export_record = export_record_from_row(row)
+        artifacts = await load_record_artifacts(session, row)
+        export_record = export_record_from_row(
+            row,
+            data=dict(artifacts.data),
+            source_trace=dict(artifacts.source_trace),
+        )
         if not export_record.data:
             continue
         fieldnames.update(export_record.data.keys())
@@ -226,7 +251,12 @@ async def stream_export_csv(session: AsyncSession, run_id: int):
     buffer.seek(0)
     buffer.truncate(0)
     async for row in _stream_export_rows(session, run_id):
-        export_record = export_record_from_row(row)
+        artifacts = await load_record_artifacts(session, row)
+        export_record = export_record_from_row(
+            row,
+            data=dict(artifacts.data),
+            source_trace=dict(artifacts.source_trace),
+        )
         if not export_record.data:
             continue
         writer.writerow(export_record.data)
@@ -238,7 +268,8 @@ async def stream_export_csv(session: AsyncSession, run_id: int):
 async def stream_export_tables_csv(session: AsyncSession, run_id: int):
     table_rows: list[dict] = []
     async for row in _stream_export_rows(session, run_id):
-        table_rows.extend(artifact_table_rows(row))
+        artifacts = await load_record_artifacts(session, row)
+        table_rows.extend(artifact_table_rows(row, artifacts=artifacts))
     async for chunk in stream_table_rows_csv(table_rows):
         yield chunk
 
@@ -293,7 +324,11 @@ async def stream_export_artifacts_json(session: AsyncSession, run_id: int):
     async for row in _stream_export_rows(session, run_id):
         if not first:
             yield ",\n"
-        yield json.dumps(record_artifact_bundle(row), indent=2)
+        artifacts = await load_record_artifacts(session, row)
+        yield json.dumps(
+            record_artifact_bundle(row, artifacts=artifacts),
+            indent=2,
+        )
         first = False
     yield "\n]"
 
@@ -302,8 +337,12 @@ def clean_export_data(data: dict) -> dict:
     return _clean_export_data(data)
 
 
-def artifact_table_rows(row: CrawlRecord) -> list[dict]:
-    source_trace = row.source_trace if isinstance(row.source_trace, dict) else {}
+def artifact_table_rows(
+    row: CrawlRecord,
+    *,
+    artifacts: RecordArtifacts,
+) -> list[dict]:
+    source_trace = dict(artifacts.source_trace)
     manifest_trace = source_trace.get("manifest_trace")
     manifest_trace_map = manifest_trace if isinstance(manifest_trace, dict) else {}
     tables = manifest_trace_map.get("tables")
@@ -348,9 +387,13 @@ def artifact_table_rows(row: CrawlRecord) -> list[dict]:
     return flattened
 
 
-def record_artifact_bundle(row: CrawlRecord) -> dict[str, object]:
-    raw_data = _record_export_source(row)
-    source_trace = row.source_trace if isinstance(row.source_trace, dict) else {}
+def record_artifact_bundle(
+    row: CrawlRecord,
+    *,
+    artifacts: RecordArtifacts,
+) -> dict[str, object]:
+    raw_data = _record_export_source(artifacts)
+    source_trace = dict(artifacts.source_trace)
     manifest_trace = _object_dict(source_trace.get("manifest_trace"))
     cleaned = clean_export_data(raw_data)
     json_ld_rows = _object_list(manifest_trace.get("json_ld"))
@@ -369,7 +412,7 @@ def record_artifact_bundle(row: CrawlRecord) -> dict[str, object]:
         "record_id": row.id,
         "source_url": row.source_url,
         "structured_record": cleaned or None,
-        "table_rows": artifact_table_rows(row) or None,
+        "table_rows": artifact_table_rows(row, artifacts=artifacts) or None,
         "page_summary": {
             k: v for k, v in page_summary.items() if v not in (None, "", [], {})
         }
@@ -386,11 +429,11 @@ def export_headers(metadata: dict[str, int | bool]) -> dict[str, str]:
     }
 
 
-def _record_export_source(row: CrawlRecord) -> dict[str, object]:
-    raw = row.raw_data if isinstance(row.raw_data, dict) else {}
+def _record_export_source(artifacts: RecordArtifacts) -> dict[str, object]:
+    raw = dict(artifacts.raw_data)
     if raw:
         return dict(raw)
-    return dict(row.data) if isinstance(row.data, dict) else {}
+    return dict(artifacts.data)
 
 
 def _sanitize_export_data(data: dict[str, object]) -> dict[str, object]:
@@ -457,5 +500,3 @@ def _stringify_export_value(value: object) -> str:
     else:
         text = json.dumps(value, ensure_ascii=False)
     return text.replace("\r\n", "\n").replace("\u00a0", " ").strip()
-
-

@@ -540,5 +540,6 @@ async def capture_rendered_listing_fragments(
 
 def _listing_capture_selectors(surface: str) -> list[str]:
     group = "jobs" if str(surface or "").strip().lower().startswith("job_") else "ecommerce"
-    selectors = CARD_SELECTORS.get(group, []) if isinstance(CARD_SELECTORS, dict) else []
-    return [str(selector).strip() for selector in selectors if str(selector).strip()]
+    selectors: object = CARD_SELECTORS.get(group, []) if isinstance(CARD_SELECTORS, dict) else []
+    rows = selectors if isinstance(selectors, list) else []
+    return [str(selector).strip() for selector in rows if str(selector).strip()]

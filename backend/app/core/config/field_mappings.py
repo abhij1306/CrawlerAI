@@ -188,7 +188,7 @@ PROMPT_REGISTRY = {
 NAVIGATION_URL_FIELDS = frozenset({URL_FIELD, APPLY_URL_FIELD, CANONICAL_URL_FIELD})
 BRAND_LIKE_FIELDS = frozenset({"brand", "company", "dealer_name", "vendor"})
 INTERNAL_ONLY_FIELDS = frozenset({"_source", "_score", "slug", "_raw_item"})
-OPEN_FIELD_SURFACES = frozenset()
+OPEN_FIELD_SURFACES: frozenset[str] = frozenset()
 NORMALIZER_BOOLEAN_FIELDS = frozenset({"remote"})
 NORMALIZER_DECIMAL_FIELDS = frozenset(
     {"discount_amount", "discount_percentage", "original_price", "price", "rating", "sale_price", "salary_max", "salary_min"}

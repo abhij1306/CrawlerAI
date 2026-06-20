@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from pathlib import Path
 
 from app.models.domain_memory import (
     DomainCookieMemory,
@@ -27,6 +26,7 @@ from app.persistence.publish import (
     load_domain_field_mapping,
     refresh_record_commit_metadata,
 )
+from app.persistence.record_artifacts import RecordArtifacts, load_record_artifacts
 from app.core.records.schema_service import load_resolved_schema
 from app.crawl.review.evidence import collect_evidence_review
 from app.crawl.review.domain_recipe_support import (
@@ -52,6 +52,7 @@ async def build_review_payload(session: AsyncSession, run_id: int) -> dict | Non
         select(CrawlRecord).where(CrawlRecord.run_id == run_id)
     )
     records = list(records_result.scalars().all())
+    artifacts_by_id = await _load_record_artifact_views(session, records)
     domain = normalize_domain(run.url)
     canonical_fields = (await load_resolved_schema(session, run.surface, domain)).fields
     domain_mapping = await load_domain_field_mapping(
@@ -69,16 +70,16 @@ async def build_review_payload(session: AsyncSession, run_id: int) -> dict | Non
     )
     discovered_field_names: set[str] = set()
     for record in records:
-        for row in _review_bucket_rows(record):
+        for row in _review_bucket_rows(artifacts_by_id[record.id]):
             key = str(row.get("key") or "").strip()
             if key:
                 discovered_field_names.add(key)
     if not discovered_field_names:
         for record in records:
             for src in (
-                mapping_or_empty(record.discovered_data),
-                mapping_or_empty(record.raw_data),
-                mapping_or_empty(record.data),
+                mapping_or_empty(artifacts_by_id[record.id].discovered_data),
+                mapping_or_empty(artifacts_by_id[record.id].raw_data),
+                mapping_or_empty(artifacts_by_id[record.id].data),
             ):
                 for key, val in src.items():
                     if (
@@ -110,7 +111,11 @@ async def load_review_html(session: AsyncSession, run_id: int) -> str:
         select(CrawlRecord).where(CrawlRecord.run_id == run_id)
     )
     records = list(records_result.scalars().all())
-    return _load_review_html(records)
+    for record in records:
+        artifacts = await load_record_artifacts(session, record)
+        if artifacts.html:
+            return artifacts.html
+    return ""
 
 
 async def save_review(
@@ -208,33 +213,22 @@ async def save_review(
     }
 
 
-def _load_review_html(records: list[CrawlRecord]) -> str:
-    for record in records:
-        html = _load_record_html(record)
-        if html:
-            return html
-    return ""
-
-
-def _load_record_html(record: CrawlRecord) -> str:
-    raw_path = str(record.raw_html_path or "").strip()
-    if not raw_path:
-        return ""
-    path = Path(raw_path)
-    if not path.exists() or not path.is_file():
-        return ""
-    try:
-        return path.read_text(encoding="utf-8", errors="replace")
-    except OSError:
-        return ""
-
-
-def _review_bucket_rows(record: CrawlRecord) -> list[dict]:
-    discovered_data = mapping_or_empty(record.discovered_data)
+def _review_bucket_rows(artifacts: RecordArtifacts) -> list[dict]:
+    discovered_data = mapping_or_empty(artifacts.discovered_data)
     rows = discovered_data.get("review_bucket")
     if not isinstance(rows, list):
         return []
     return [row for row in rows if isinstance(row, dict)]
+
+
+async def _load_record_artifact_views(
+    session: AsyncSession,
+    records: list[CrawlRecord],
+) -> dict[int, RecordArtifacts]:
+    return {
+        record.id: await load_record_artifacts(session, record)
+        for record in records
+    }
 
 
 async def _promote_review_bucket_fields(
@@ -254,8 +248,9 @@ async def _promote_review_bucket_fields(
         select(CrawlRecord).where(CrawlRecord.run_id == run.id)
     )
     records = list(records_result.scalars().all())
+    artifacts_by_id = await _load_record_artifact_views(session, records)
     for record in records:
-        review_bucket = _review_bucket_rows(record)
+        review_bucket = _review_bucket_rows(artifacts_by_id[record.id])
         if not review_bucket:
             continue
 
@@ -323,6 +318,7 @@ async def build_domain_recipe_payload(
         .order_by(CrawlRecord.id.asc())
     )
     records = list(records_result.scalars().all())
+    artifacts_by_id = await _load_record_artifact_views(session, records)
     domain = normalize_domain(run.url)
     saved_selectors = await list_selector_records(
         session,
@@ -340,7 +336,7 @@ async def build_domain_recipe_payload(
             str(field_name)
             for record in records
             for field_name, payload in mapping_or_empty(
-                mapping_or_empty(record.source_trace).get("field_discovery")
+                artifacts_by_id[record.id].source_trace.get("field_discovery")
             ).items()
             if isinstance(payload, dict) and payload.get("status") == "found"
         }
@@ -365,8 +361,13 @@ async def build_domain_recipe_payload(
         saved_selectors=saved_selectors,
         run=run,
         feedback_index=feedback_index,
+        artifacts_by_id=artifacts_by_id,
     )
-    acquisition_info = derive_acquisition_info(records, run=run)
+    acquisition_info = derive_acquisition_info(
+        records,
+        run=run,
+        artifacts_by_id=artifacts_by_id,
+    )
     actual_fetch_method = acquisition_info["actual_fetch_method"]
     browser_reason = acquisition_info["browser_reason"]
     acquisition_summary = acquisition_info["acquisition_summary"]
@@ -411,7 +412,10 @@ async def build_domain_recipe_payload(
                 str(row.get("selector_value") or ""),
             ),
         ),
-        "evidence_review": collect_evidence_review(records),
+        "evidence_review": collect_evidence_review(
+            records,
+            artifacts_by_id=artifacts_by_id,
+        ),
         "affordance_candidates": affordance_candidates,
         "saved_selectors": saved_selectors,
         "saved_run_profile": (
@@ -686,4 +690,3 @@ def _serialize_feedback_record(row: DomainFieldFeedback) -> dict[str, object]:
         ],
         "created_at": row.created_at,
     }
-

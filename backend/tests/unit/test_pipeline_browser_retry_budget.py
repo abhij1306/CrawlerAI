@@ -5,8 +5,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.acquisition.acquirer import AcquisitionRequest, AcquisitionResult
-from app.acquisition.runtime_plan import AcquisitionPlan
+from app.acquisition.acquirer import AcquisitionRequest, PageAcquisitionResult
+from app.acquisition.runtime_plan import AcquisitionIntent
 from app.crawl.pipeline import extraction_loop
 from app.crawl.pipeline.retry import stage
 
@@ -15,12 +15,12 @@ def _request() -> AcquisitionRequest:
     return AcquisitionRequest(
         run_id=1,
         url="https://example.com/item",
-        plan=AcquisitionPlan(surface="ecommerce_detail"),
+        plan=AcquisitionIntent(surface="ecommerce_detail"),
     )
 
 
-def _result(method: str = "curl_cffi") -> AcquisitionResult:
-    return AcquisitionResult(
+def _result(method: str = "curl_cffi") -> PageAcquisitionResult:
+    return PageAcquisitionResult(
         request=_request(),
         final_url="https://example.com/item",
         html="<html></html>",

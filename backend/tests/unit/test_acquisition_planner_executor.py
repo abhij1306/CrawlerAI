@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -37,6 +38,39 @@ def test_browser_only_plan_preserves_both_engines() -> None:
         "patchright",
         "real_chrome",
     ]
+
+
+def test_http_only_plan_expands_proxies_in_transport_major_order() -> None:
+    plan = AcquisitionPlanner().plan(
+        PlanningRequest(
+            url="https://shop.test/p/1",
+            surface="ecommerce_detail",
+            mode="http_only",
+            proxies=(None, "http://proxy.test:8080"),
+            deadline=datetime.now(UTC) + timedelta(seconds=20),
+        )
+    )
+
+    assert [(attempt.transport, attempt.proxy) for attempt in plan.attempts] == [
+        ("curl", None),
+        ("curl", "http://proxy.test:8080"),
+        ("httpx", None),
+        ("httpx", "http://proxy.test:8080"),
+    ]
+
+
+def test_force_httpx_removes_curl_attempts_from_http_only_plan() -> None:
+    plan = AcquisitionPlanner().plan(
+        PlanningRequest(
+            url="https://shop.test/p/1",
+            surface="ecommerce_detail",
+            mode="http_only",
+            force_httpx=True,
+            deadline=datetime.now(UTC) + timedelta(seconds=20),
+        )
+    )
+
+    assert [attempt.transport for attempt in plan.attempts] == ["httpx"]
 
 
 async def test_executor_converts_transport_errors_to_attempt_results() -> None:
@@ -85,3 +119,46 @@ async def test_executor_skips_attempt_after_global_deadline() -> None:
     assert result.outcome == "skipped"
     assert result.error == "global_deadline_exhausted"
     assert called is False
+
+
+def test_attempt_execution_clips_timeout_to_global_deadline() -> None:
+    plan = AcquisitionPlanner().plan(
+        PlanningRequest(
+            url="https://shop.test/p/1",
+            surface="ecommerce_detail",
+            mode="http_only",
+            deadline=datetime.now(UTC) + timedelta(seconds=20),
+        )
+    )
+    execution = AttemptExecution(
+        spec=plan.attempts[0],
+        url="https://shop.test/p/1",
+        deadline=datetime.now(UTC) + timedelta(seconds=1),
+    )
+
+    assert 0 < execution.timeout_seconds <= 1
+
+
+async def test_executor_bounds_running_attempt_by_global_deadline() -> None:
+    async def slow_transport(_execution: AttemptExecution) -> AttemptResult:
+        await asyncio.sleep(1)
+        raise AssertionError("attempt should be cancelled by the executor deadline")
+
+    plan = AcquisitionPlanner().plan(
+        PlanningRequest(
+            url="https://shop.test/p/1",
+            surface="ecommerce_detail",
+            mode="http_only",
+            deadline=datetime.now(UTC) + timedelta(milliseconds=100),
+        )
+    )
+    executor = AttemptExecutor({"curl": slow_transport})
+
+    result = await executor.execute(
+        plan.attempts[0],
+        url="https://shop.test/p/1",
+        deadline=plan.deadline,
+    )
+
+    assert result.outcome == "error"
+    assert result.error == "attempt_deadline_exhausted"

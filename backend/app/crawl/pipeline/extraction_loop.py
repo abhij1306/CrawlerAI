@@ -2,31 +2,27 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from typing import Literal, cast
 
 from app.core.logfire_integration import logfire_span, set_logfire_attributes
 from app.models.crawl_run import CrawlRun
-from app.acquisition.acquirer import AcquisitionResult
+from app.acquisition.acquirer import PageAcquisitionResult
 from app.acquisition.acquirer import acquire as _acquire
 from app.acquisition.browser_fetch_support import browser_page_load_elapsed_ms
 from app.acquisition.browser_runtime import real_chrome_browser_available
 from app.acquisition.host_protection_memory import note_host_hard_block
-from app.acquisition.runtime import is_non_retryable_http_status
 from app.core.config import observability as obs_config
-from app.core.config.pipeline_reasons import NON_RETRYABLE_HTTP_STATUS_REASON
 from app.core.db_utils import mapping_or_empty
 from app.core.shared.number_coerce import as_int
 from app.core.shared.field_coerce import object_list as _object_list
 from app.crawl.domain_memory_service import load_domain_selector_rules
 from app.core.domain_utils import normalize_domain
 from app.acquisition.platform_policy import detect_platform_family
-from app.crawl.pipeline.extract_records import extract_records_for_acquisition_result
 from app.persistence.publish import (
     VERDICT_BLOCKED,
     VERDICT_EMPTY,
     VERDICT_ERROR,
     VERDICT_LISTING_FAILED,
-    VERDICT_PARTIAL,
-    VERDICT_SUCCESS,
     build_url_metrics,
     compute_verdict,
     finalize_url_metrics,
@@ -38,14 +34,16 @@ from app.crawl.robots_policy import (
 )
 from sqlalchemy.ext.asyncio import AsyncSession
 
+UrlVerdict = Literal["success", "partial", "review", "invalid", "empty", "blocked", "error", "wrong_surface", "listing_failed"]
+
 from .retry import build_acquisition_request, retry_extraction_request_with_browser
 from .persistence import (
     persist_acquisition_artifacts,
-    persist_extraction_decision_artifact,
     persist_extracted_records,
     persist_run_trace,
 )
 from app.persistence.url_results import upsert_url_result
+from app.persistence.url_result_artifacts import publish_url_result_artifacts
 from .record_extraction_stage import (
     extract_records_for_acquisition,
     update_acquisition_contract_memory,
@@ -58,7 +56,6 @@ from .runtime_helpers import (
     browser_attempted as _browser_attempted,
     browser_launch_log_message as _browser_launch_log_message,
     browser_outcome as _browser_outcome,
-    browser_result_is_extractable as _browser_result_is_extractable,
     effective_blocked as _effective_blocked,
     mark_run_failed,
     record_detail_expansion_extraction_outcome as _record_detail_expansion_extraction_outcome,
@@ -108,12 +105,10 @@ async def process_single_url(
     max_scrolls: int | None = None,
     max_records: int | None = None,
     sleep_ms: int | None = None,
-    checkpoint=None,
     update_run_state: bool = True,
     persist_logs: bool = True,
-    prefetched_acquisition: AcquisitionResult | None = None,
+    prefetched_acquisition: PageAcquisitionResult | None = None,
 ) -> URLProcessingResult:
-    del checkpoint
     settings_view = run.settings_view
     context = _build_url_processing_context(
         session=session,
@@ -279,7 +274,7 @@ def _pipeline_acquisition_event_logger(
 async def _run_acquisition_stage(
     context: _URLProcessingContext,
     *,
-    prefetched_acquisition: AcquisitionResult | None,
+    prefetched_acquisition: PageAcquisitionResult | None,
 ) -> _FetchedURLStage:
     with logfire_span(
         "pipeline.acquire",
@@ -390,6 +385,10 @@ def _record_acquire_timeline(
     if host_outcome:
         trace.record_host_outcome(host_outcome)
 
+    if method != "browser" and _record_planned_acquisition_attempts(
+        trace, acquisition_result
+    ):
+        return
     if method != "browser":
         trace.record_acquire_event(
             obs_config.ACQUIRE_EVENT_HTTP_FETCH,
@@ -452,6 +451,17 @@ def _record_acquire_timeline(
                     "engine": diagnostics.get("browser_engine"),
                 },
             )
+
+
+def _record_planned_acquisition_attempts(trace, acquisition_result) -> bool:
+    acquisition_diagnostics = mapping_or_empty(
+        getattr(acquisition_result, "acquisition_diagnostics", {})
+    )
+    canonical_result = mapping_or_empty(acquisition_diagnostics.get("result"))
+    return trace.record_acquisition_attempts(
+        _object_list(canonical_result.get("attempts")),
+        selected_attempt_id=canonical_result.get("selected_attempt_id"),
+    )
 
 
 def _build_prefetch_only_result(
@@ -591,7 +601,7 @@ async def _run_persistence_stage(
             extraction_result=extraction_result,
             record_count=0,
         )
-        persisted_count = await persist_extracted_records(
+        persisted_batch = await persist_extracted_records(
             context.session,
             context.run,
             extracted_records,
@@ -599,13 +609,14 @@ async def _run_persistence_stage(
             url_result_id=url_result.id,
             raw_html_path=raw_html_path,
         )
+        persisted_count = persisted_batch.record_count
         url_result.record_count = persisted_count
         set_logfire_attributes(
             span,
             persisted_count=persisted_count,
             artifact_path=str(raw_html_path or ""),
         )
-    verdict = extraction_result.verdict
+    verdict = cast(UrlVerdict, extraction_result.verdict)
     if not _suppress_empty_downstream_record_logs(
         acquisition_result,
         extracted_records,
@@ -621,12 +632,13 @@ async def _run_persistence_stage(
         and "listing" in context.surface
         and persisted_count == 0
     ):
-        verdict = VERDICT_LISTING_FAILED
+        verdict = cast(UrlVerdict, VERDICT_LISTING_FAILED)
     await _publish_url_result_artifacts(
         context,
         extracted,
         url_result=url_result,
-        persisted_count=persisted_count,
+        record_count=persisted_count,
+        persisted_records=persisted_batch.records,
         verdict=verdict,
     )
     await update_acquisition_contract_memory(
@@ -651,18 +663,22 @@ async def _publish_url_result_artifacts(
     extracted: _ExtractedURLStage,
     *,
     url_result,
-    persisted_count: int,
+    record_count: int,
+    persisted_records,
     verdict: str,
 ) -> None:
     acquisition_result = extracted.fetched.acquisition_result
-    manifest_uri = await persist_extraction_decision_artifact(
+    published = await asyncio.to_thread(
+        publish_url_result_artifacts,
         run_id=context.run.id,
-        source_url=acquisition_result.final_url,
-        persisted_count=persisted_count,
-        result=extracted.result,
+        url_result_id=url_result.id,
         acquisition_result=acquisition_result,
+        extraction_result=extracted.result,
+        record_count=record_count,
+        persisted_records=persisted_records,
     )
-    url_result.manifest_uri = manifest_uri or None
+    url_result.manifest_uri = published.reference.uri
+    url_result.bundle_id = published.manifest.bundle_id
     url_result.verdict = verdict
     await context.session.flush()
     if context.trace is None:

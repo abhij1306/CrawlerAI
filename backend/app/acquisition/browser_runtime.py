@@ -34,14 +34,16 @@ from app.acquisition.browser_storage_state import (
 )
 from app.acquisition.browser_page_flow import (
     append_readiness_probe,
-    finalize_browser_fetch,
     navigate_browser_page_impl,
     remaining_timeout_factory,
     resolve_browser_fetch_policy as resolve_browser_fetch_policy_impl,
     serialize_browser_page_content_impl,
     settle_browser_page_impl,
 )
-from app.acquisition.browser_result_builder import BrowserFinalizeInput
+from app.acquisition.browser_result_builder import (
+    BrowserFinalizeInput,
+    finalize_browser_fetch,
+)
 from app.acquisition.browser_proxy_config import (
     display_proxy as _display_proxy,
 )

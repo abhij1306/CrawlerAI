@@ -13,7 +13,6 @@ from app.core.database import SessionLocal
 from app.core.security import hash_password, verify_password
 from app.models.crawl_run import CrawlRun
 from app.models.user import User
-from app.connectors.adapters.registry import registered_adapters
 from app.crawl.batch_runtime import process_run
 from app.crawl.crud import create_crawl_run, get_run_records
 from app.crawl.pipeline.extraction_loop import process_single_url
@@ -299,9 +298,9 @@ def parse_test_sites_markdown(path: Path, *, start_line: int) -> list[dict[str, 
 
 
 def unavailable_configured_adapters() -> set[str]:
-    return set(configured_adapter_names()) - {
-        adapter.name for adapter in registered_adapters()
-    }
+    # The legacy adapter registry was a no-op and has been retired. Configured
+    # names remain diagnostic expectations until concrete connectors exist.
+    return set(configured_adapter_names())
 
 
 def timeout_owner_for_mode(mode: str) -> str:

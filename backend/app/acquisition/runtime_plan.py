@@ -6,7 +6,7 @@ from typing import TypedDict, Unpack
 from app.core.config.runtime_settings import crawler_runtime_settings
 
 
-class AcquisitionPlanUpdates(TypedDict, total=False):
+class AcquisitionIntentUpdates(TypedDict, total=False):
     surface: str
     proxy_list: tuple[str, ...]
     traversal_mode: str | None
@@ -17,7 +17,7 @@ class AcquisitionPlanUpdates(TypedDict, total=False):
 
 
 @dataclass(slots=True)
-class AcquisitionPlan:
+class AcquisitionIntent:
     surface: str
     proxy_list: tuple[str, ...] = ()
     traversal_mode: str | None = None
@@ -26,5 +26,11 @@ class AcquisitionPlan:
     max_records: int = crawler_runtime_settings.default_max_records
     sleep_ms: int = crawler_runtime_settings.min_request_delay_ms
 
-    def with_updates(self, **updates: Unpack[AcquisitionPlanUpdates]) -> "AcquisitionPlan":
+    def with_updates(
+        self,
+        **updates: Unpack[AcquisitionIntentUpdates],
+    ) -> "AcquisitionIntent":
         return replace(self, **updates)
+
+
+__all__ = ["AcquisitionIntent", "AcquisitionIntentUpdates"]
