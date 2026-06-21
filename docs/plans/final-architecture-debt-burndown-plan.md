@@ -10,7 +10,7 @@
 
 Finish the backend modular-monolith cutover, remove every current architecture debt-ledger exception, and close the generic detail and listing crawl-quality failures found in the latest reports without adding site-specific runtime branches or downstream repair. Done means one traceable owner per runtime decision, deterministic replay produces complete and honest typed records, listing runs return product rows instead of navigation/support links, the architecture ratchets pass with no oversized-module or long-function allowlist, the configured offline suite passes, and the plan remains active as `AWAITING USER 100-SITE GATE` until the user runs the final live gate.
 
-This document supersedes `docs/plans/final-architecture-improvement-plan.md`. It absorbs only that plan's verified results and carries forward its unresolved work. An implementation agent must read `docs/plans/ACTIVE.md`, this plan, `AGENTS.md`, and only the canonical docs named by the active slice. Do not repeat the repository-wide audit unless code changes make a recorded fact impossible.
+This document supersedes `docs/plans/final-architecture-improvement-plan.md`. It absorbs only that plan's verified results and carries forward its unresolved work. This is the final implementation plan for this debt cycle. Do not create another plan for the same architecture debt; execute these slices to closure. An implementation agent starts from `docs/plans/ACTIVE.md`, this plan, and `AGENTS.md`. The slice guidance below is self-contained; open fallback docs only when code has drifted, an invariant is disputed, or a slice explicitly changes a public contract beyond what is described here.
 
 ## Authority and Evidence
 
@@ -19,11 +19,11 @@ Use sources in this order:
 1. Current code and tests at branch `debt-burndown-20260620`, audited committed HEAD `553dd794b9ef498c0d9a7e9cfc8034e7f6a6614c`.
 2. `AGENTS.md`, `docs/INVARIANTS.md`, `docs/BUSINESS_LOGIC.md`, `docs/CODEBASE_MAP.md`, and `docs/ENGINEERING_STRATEGY.md`.
 3. This plan's verified audit and decisions.
-4. The attached 93-record detail issue report and the later Arcteryx/Belk/Intimissimi listing reports as symptom evidence.
+4. The attached 93-record detail issue report and the later Arcteryx/Belk/Intimissimi listing reports as current symptom evidence.
 5. `docs/feature specs/CrawlerAI_Final_App_Architecture_Simplification_and_Hardening_Plan_REVISED.md` as design rationale only.
-6. `backend/tests/fixtures/extraction/current_run` only for the pages it actually contains.
+6. Local artifact packet: `backend/tests/fixtures/extraction/current_run` plus the user-supplied pasted outputs.
 
-The fixture set is older than the current architecture. Its `audit/flags.json` still names an `app/services` owner and covers one New Balance missing-field case. Do not treat it as a current 93-record or listing baseline. The attachments are symptom evidence, not replay evidence. Add small synthetic regressions or saved capture replays only when the captured artifact exists locally; never create expected-output fixtures from a URL report alone.
+The local artifact packet is accepted as the current handoff evidence for this plan. It is not a complete 93-record replay baseline, and it does not need to be made one before implementation starts. HTML fixtures are intentionally absent from `backend/tests/fixtures/extraction/current_run`; do not add or commit large saved HTML files for this plan. Use the available `*.trace.json`, `*.browser.json`, and `*.extraction.json` files plus focused synthetic regressions for the generic failure class. Never create broad expected-output fixtures from URL reports alone.
 
 ## Current Verified Baseline
 
@@ -49,7 +49,7 @@ Current hard debt:
 - `backend/tests/unit/test_extraction_architecture.py` already enforces extraction at no more than 24 files, 5,500 LOC, 400 lines per file, and 60 lines per function.
 - `backend/pytest.ini` defaults to `-m "unit or component"`; regression verification commands in this plan explicitly override the marker expression.
 - Latest focused verification after the parser-ownership slice: Ruff passed and 158 targeted tests passed.
-- Last reported configured full offline suite before the latest parser commit: 827 passed, 151 deselected. It is historical evidence, not proof that the current full tree passes.
+- Last known configured full offline suite before this handoff: 827 passed, 151 deselected. Treat this as context only; Slice 12 must rerun the complete offline suite.
 
 ### Committed work already present; preserve and do not redo
 
@@ -144,7 +144,7 @@ These are listing failures, not detail extraction failures. Fix discovery/card a
 - Do not force a price for quote-only, region-gated, unavailable, or blocked pages.
 - Do not turn a blocked shell into success. Correct outcome is blocked/error plus preserved diagnostics.
 - Do not add browser clicking until structured, network, and static DOM evidence paths are exhausted and explicit stateful controls remain.
-- Do not add a broad 93-record expected-output fixture. Use minimal generic regressions and available replay artifacts.
+- Do not add a broad 93-record expected-output fixture. Use minimal generic regressions and available JSON artifacts.
 - Do not add Arcteryx, Belk, or Intimissimi hostname branches. The fix must be generic category/listing URL admission and listing-card evidence ranking.
 
 ## Target Runtime Ownership
@@ -189,7 +189,7 @@ Do not introduce speculative `RunCoordinator` or `UrlProcessor` classes. The exi
 
 ## Quantitative Gates
 
-Replace the stale arbitrary “25% file deletion” and old 58,109-LOC target with budgets tied to audited owners and retained capabilities.
+Replace the arbitrary “25% file deletion” and old 58,109-LOC target with budgets tied to audited owners and retained capabilities.
 
 | Scope | Current LOC | Final maximum |
 |---|---:|---:|
@@ -211,7 +211,7 @@ Rules:
 
 ## Do Not Touch
 
-- Do not reset, checkout, stash, stage, commit, or discard unrelated dirty changes.
+- Do not reset, checkout, stash, or discard unrelated working-tree changes.
 - Do not restore or further alter the unrelated deleted docs except when the user explicitly requests it.
 - Do not change frontend behavior in this plan. The additive API field may be rendered by existing dynamic record views; frontend work requires evidence of a broken contract.
 - Do not run live URLs, smoke scripts, `run_*smoke.py`, browser probes, or the 100-site gate.
@@ -225,9 +225,9 @@ Rules:
 For every slice:
 
 1. Read only the listed owner files, nearby tests, and named canonical docs.
-2. Run the listed grep/reference audit before adding a symbol or file.
+2. Use the listed locator commands only to confirm symbols have not moved before editing.
 3. Add the smallest regression that fails for the audited generic cause.
-4. Implement upstream; delete replaced logic and stale tests in the same slice.
+4. Implement upstream; delete replaced logic and obsolete tests in the same slice.
 5. Run the slice verify command once after implementation; rerun only failures.
 6. Inspect the slice diff and current LOC/function ledger.
 7. Mark the slice `DONE` only when every slice acceptance item and verify step passes.
@@ -237,9 +237,42 @@ For every slice:
 
 This section exists to reduce repeated broad audits. Treat it as the implementation map unless a slice's local code has changed since this plan was written.
 
-### Global grep commands before edits
+### Environment and verification setup
 
-Run only the grep group for the slice being implemented:
+Use these commands exactly from the repository root unless a slice says otherwise:
+
+```powershell
+# If imports or tools are missing, repair the local backend environment first.
+.\backend\bootstrap-dev.ps1
+
+# Type check. Important: pass the backend mypy config when running from repo root.
+.\backend\.venv\Scripts\python.exe -m mypy --config-file backend\pyproject.toml `
+  backend\app `
+  backend\harness_support.py `
+  backend\run_acquire_smoke.py `
+  backend\run_browser_surface_probe.py `
+  backend\run_extraction_smoke.py `
+  backend\run_test_sites_acceptance.py
+
+# Focused lint for changed backend Python files.
+.\backend\.venv\Scripts\python.exe -m ruff check <changed-python-files>
+```
+
+Why this matters: running mypy from the repo root without `--config-file backend\pyproject.toml` can ignore backend overrides and report missing third-party stubs such as `defusedxml` or `celery.signals`. That is an environment invocation error, not architecture debt. Do not work around it by adding ignores in production files.
+
+For pytest, run from `C:\Projects\CrawlerAI\backend` when using the slice commands:
+
+```powershell
+cd C:\Projects\CrawlerAI\backend
+$env:PYTHONPATH='.'
+.\.venv\Scripts\python.exe -m pytest <slice-tests> -q
+```
+
+Do not run smoke/live commands from this plan. The only live gate is Slice 13 and it is user-owned.
+
+### Global locator commands before edits
+
+Run only the locator group for the slice being implemented:
 
 ```powershell
 # Slice 1 acquisition attempt ownership
@@ -443,7 +476,7 @@ Use structured/JS state with one ID-only variant, one complete variant, one pare
 
 **Status:** DONE
 **Files:** this plan, `docs/plans/ACTIVE.md`, `docs/plans/final-architecture-improvement-plan.md`
-**What:** Recomputed code/LOC/function debt, audited current extraction/acquisition/persistence owners, classified the attached failures, retired stale targets, and made this the sole active plan.
+**What:** Recomputed code/LOC/function debt, audited current extraction/acquisition/persistence owners, classified the attached failures, retired superseded targets, and made this the sole active plan.
 **Acceptance:** Baselines and decisions above match the committed baseline; prior plan is marked superseded; no production code changed.
 **Verify:** `git diff --check -- docs/plans/ACTIVE.md docs/plans/final-architecture-debt-burndown-plan.md docs/plans/final-architecture-improvement-plan.md`
 
@@ -451,8 +484,8 @@ Use structured/JS state with one ID-only variant, one complete variant, one pare
 
 **Status:** IN PROGRESS — IMPLEMENTATION NOT STARTED
 **Owners:** `acquisition/contracts.py`, `planner.py`, `executor.py`, `fetch/fetch_context.py`, `fetch/planned_http.py`, `fetch/browser_attempt_runner.py`, `fetch/browser_attempt.py`, `fetch/browser_policy.py`, `fetch/types.py`, `acquirer.py`, `connectors/public_api/extraction_service.py`
-**Read:** `docs/INVARIANTS.md` Rules 5, 6, 9, 13; acquisition section of `docs/CODEBASE_MAP.md`.
-**Reference audit:** `AcquisitionPlan`, `AttemptSpec`, `AttemptResult`, `AcquisitionResult`, `run_planned_http_only`, `_run_browser_attempts`, `run_browser_attempts`, `_run_http_fetch_chain`, handoff helpers, and all `fetch_page` callers.
+**Fallback docs:** `docs/INVARIANTS.md` Rules 5, 6, 9, 13; acquisition section of `docs/CODEBASE_MAP.md`.
+**Known audited scope:** `AcquisitionPlan`, `AttemptSpec`, `AttemptResult`, `AcquisitionResult`, `run_planned_http_only`, `_run_browser_attempts`, `run_browser_attempts`, `_run_http_fetch_chain`, handoff helpers, and all `fetch_page` callers.
 
 **Implement:**
 
@@ -490,8 +523,8 @@ $env:PYTHONPATH='.'
 
 **Status:** TODO
 **Owners:** `browser_runtime.py`, `browser_fetch_support.py`, `browser_page_flow.py`, `browser_page_helpers.py`, `browser_detail.py`, new `browser_accessibility.py`, `browser_readiness.py`, `browser_recovery.py`, `browser_result_builder.py`, `runtime.py`, `traversal.py`, `traversal_recovery.py`, `traversal_card_counting.py`
-**Read:** `docs/INVARIANTS.md` Rules 5, 6, 13 and `docs/ENGINEERING_STRATEGY.md` AP-16/AP-17.
-**Reference audit:** all functions in the acquisition portion of the long-function ledger; `HtmlAnalysis`, `HtmlDocument`, parser constructors, expansion entry points, warmup state, popup guards, readiness probes, traversal stop reasons.
+**Fallback docs:** `docs/INVARIANTS.md` Rules 5, 6, 13 and `docs/ENGINEERING_STRATEGY.md` AP-16/AP-17.
+**Known audited scope:** all functions in the acquisition portion of the long-function ledger; `HtmlAnalysis`, `HtmlDocument`, parser constructors, expansion entry points, warmup state, popup guards, readiness probes, traversal stop reasons.
 
 **Implement:**
 
@@ -508,7 +541,7 @@ $env:PYTHONPATH='.'
 - Acquisition package <=15,400 LOC.
 - Every acquisition long-function entry is removed; no replacement exceeds 100 lines.
 - No expansion click can target header/nav/footer/site chrome or navigate away from requested detail identity.
-- Readiness, block, listing, and final extraction reuse matching HTML documents; changed snapshots never reuse stale trees.
+- Readiness, block, listing, and final extraction reuse matching HTML documents; changed snapshots never reuse mismatched trees.
 - Usable content still overrides provider noise; bounded challenge/warmup/close behavior remains intact.
 
 **Verify:**
@@ -530,8 +563,8 @@ $env:PYTHONPATH='.'
 
 **Status:** TODO
 **Owners:** `crawl/sitemap_resolver.py`, `crawl/site_link_discovery.py`, `crawl/sitemap_nav.py`, `extraction/listing.py`, `core/config/sitemap.py`, `core/config/extraction_recipes.py`, `core/config/extraction_rules/_common.py`, `core/records/url_identity.py`, listing tests
-**Read:** `docs/INVARIANTS.md` Rules 1, 2, 7, 8, 13; listing/discovery ownership in `docs/CODEBASE_MAP.md`; user-supplied listing reports.
-**Reference audit:** `resolve_category_urls_from_sitemap_result`, rendered site-link validation, homepage/category candidate scoring, category nav tree labels, listing card selectors, listing URL validation, listing title selector order, `LISTING_TITLE_CTA_TITLES`, utility/category/detail URL markers, and all tests covering site-link discovery, sitemap resolver, and ecommerce listing extraction.
+**Fallback docs:** `docs/INVARIANTS.md` Rules 1, 2, 7, 8, 13; listing/discovery ownership in `docs/CODEBASE_MAP.md`; user-supplied listing reports.
+**Known audited scope:** `resolve_category_urls_from_sitemap_result`, rendered site-link validation, homepage/category candidate scoring, category nav tree labels, listing card selectors, listing URL validation, listing title selector order, `LISTING_TITLE_CTA_TITLES`, utility/category/detail URL markers, and all tests covering site-link discovery, sitemap resolver, and ecommerce listing extraction.
 
 **Implement:**
 
@@ -577,8 +610,8 @@ $env:PYTHONPATH='.'
 
 **Status:** TODO
 **Owners:** `extraction/collectors/url.py`, `dom.py`, `metadata.py`, `js_state.py`, `jsonld.py`, `pipeline.py`, `entities.py`, `resolution.py`, `validation.py`, `core/records/url_identity.py`, `core/config/field_mappings.py`, `core/config/extraction_rules/_detail.py`
-**Read:** `docs/INVARIANTS.md` Rules 3, 6, 7, 13; extraction sections of `docs/BUSINESS_LOGIC.md`.
-**Reference audit:** all `product.title`, `product.brand`, `product.description`, source-key mappings, URL-title fallbacks, shell/title quality rules, and selected-public-value validation.
+**Fallback docs:** `docs/INVARIANTS.md` Rules 3, 6, 7, 13; extraction sections of `docs/BUSINESS_LOGIC.md`.
+**Known audited scope:** all `product.title`, `product.brand`, `product.description`, source-key mappings, URL-title fallbacks, shell/title quality rules, and selected-public-value validation.
 
 **Implement:**
 
@@ -622,8 +655,8 @@ $env:PYTHONPATH='.'
 
 **Status:** TODO
 **Owners:** `extraction/contracts.py`, `entities.py`, `resolution.py`, `materialization.py`, asset collectors, `core/config/extraction_rules/_images.py`, `core/config/field_mappings.py`, `schemas/crawl.py`, `persistence/export/*`, record APIs/review serializers
-**Read:** `docs/INVARIANTS.md` Rules 3, 8, 13 and public API/output sections of `docs/BUSINESS_LOGIC.md`.
-**Reference audit:** `AssetDecision`, all asset facts/entities, every `image_url`/`additional_images` reader and serializer, primary-image reject tokens, URL normalization and asset dedupe.
+**Fallback docs:** `docs/INVARIANTS.md` Rules 3, 8, 13 and public API/output sections of `docs/BUSINESS_LOGIC.md`.
+**Known audited scope:** `AssetDecision`, all asset facts/entities, every `image_url`/`additional_images` reader and serializer, primary-image reject tokens, URL normalization and asset dedupe.
 
 **Implement:**
 
@@ -659,8 +692,8 @@ $env:PYTHONPATH='.'
 
 **Status:** TODO
 **Owners:** `extraction/collectors/js_state.py`, `jsonld.py`, `dom.py`, `entities.py`, `resolution.py`, `validation.py`, `materialization.py`, `result_building.py`, existing variant/config owners
-**Read:** `docs/INVARIANTS.md` Rule 3 first, then Rules 6, 7, 13; `docs/ENGINEERING_STRATEGY.md` AP-12/AP-20.
-**Reference audit:** all early returns, recursive object traversal, variant identity/grouping, parent/variant offers, price/currency pairing, selected-variant references, DOM cue gates, and capability requests.
+**Fallback docs:** `docs/INVARIANTS.md` Rule 3 first, then Rules 6, 7, 13; `docs/ENGINEERING_STRATEGY.md` AP-12/AP-20.
+**Known audited scope:** all early returns, recursive object traversal, variant identity/grouping, parent/variant offers, price/currency pairing, selected-variant references, DOM cue gates, and capability requests.
 
 **Implement:**
 
@@ -697,8 +730,8 @@ $env:PYTHONPATH='.'
 
 **Status:** TODO
 **Owners:** `crawl/pipeline/persistence.py`, `persistence/url_result_artifacts.py`, `record_artifacts.py`, `record_export_service.py`, `publish/metadata.py`, `crawl/crud.py`, `crawl/review/*`, `schemas/crawl.py`, `observability/run_audit.py`, `models/crawl_run.py`, migration only if required
-**Read:** `docs/INVARIANTS.md` Rules 4, 8, 14; persistence/review sections of `docs/CODEBASE_MAP.md` and `docs/BUSINESS_LOGIC.md`.
-**Reference audit:** every read/write of the four legacy columns, `RecordArtifacts` dual-read behavior, review bucket mutation, field discovery/coverage, LLM suggestion acceptance, manifest/provenance readers.
+**Fallback docs:** `docs/INVARIANTS.md` Rules 4, 8, 14; persistence/review sections of `docs/CODEBASE_MAP.md` and `docs/BUSINESS_LOGIC.md`.
+**Known audited scope:** every read/write of the four legacy columns, `RecordArtifacts` dual-read behavior, review bucket mutation, field discovery/coverage, LLM suggestion acceptance, manifest/provenance readers.
 
 **Implement:**
 
@@ -737,8 +770,8 @@ $env:PYTHONPATH='.'
 
 **Status:** TODO
 **Owners:** `crawl/batch_runtime.py`, `crawl/pipeline/extraction_loop.py`, `run_progress.py`, existing failure/runtime helpers, worker adapters
-**Read:** `docs/INVARIANTS.md` Rules 5, 6, 14; crawl flow in `docs/CODEBASE_MAP.md`.
-**Reference audit:** `process_run`, `process_single_url`, URL session creation/rollback, parallel task ownership, progress summaries, pause/kill/heartbeat paths, duplicate state transitions.
+**Fallback docs:** `docs/INVARIANTS.md` Rules 5, 6, 14; crawl flow in `docs/CODEBASE_MAP.md`.
+**Known audited scope:** `process_run`, `process_single_url`, URL session creation/rollback, parallel task ownership, progress summaries, pause/kill/heartbeat paths, duplicate state transitions.
 
 **Implement:**
 
@@ -773,8 +806,8 @@ $env:PYTHONPATH='.'
 
 **Status:** TODO
 **Owners:** `core/config/runtime_settings.py`, existing domain config modules, `core/records/confidence.py`, config/architecture tests
-**Read:** `docs/ENGINEERING_STRATEGY.md` AP-1/AP-10/AP-11/AP-13/AP-21/AP-22.
-**Reference audit:** all runtime settings imports and profile-default application; duplicate extraction key mappings; confidence inputs/consumers.
+**Fallback docs:** `docs/ENGINEERING_STRATEGY.md` AP-1/AP-10/AP-11/AP-13/AP-21/AP-22.
+**Known audited scope:** all runtime settings imports and profile-default application; duplicate extraction key mappings; confidence inputs/consumers.
 
 **Implement:**
 
@@ -807,8 +840,8 @@ $env:PYTHONPATH='.'
 
 **Status:** TODO
 **Owners:** `crawl/review/__init__.py`, existing review support modules, `intelligence/matching.py`, `enrichment/shopify_catalog.py`, new `shopify_repository.py`, `enrichment/deterministic.py`, `service.py`
-**Read:** `docs/INVARIANTS.md` Rules 8, 9, 10, 13; `docs/ENGINEERING_STRATEGY.md` AP-17/AP-18.
-**Reference audit:** long review/intelligence functions, Shopify catalog imports, repository file loads, taxonomy/matching duplicates, LLM boundaries.
+**Fallback docs:** `docs/INVARIANTS.md` Rules 8, 9, 10, 13; `docs/ENGINEERING_STRATEGY.md` AP-17/AP-18.
+**Known audited scope:** long review/intelligence functions, Shopify catalog imports, repository file loads, taxonomy/matching duplicates, LLM boundaries.
 
 **Implement:**
 
@@ -843,15 +876,15 @@ $env:PYTHONPATH='.'
 
 **Status:** TODO
 **Owners:** `connectors/llm/tasks.py`, existing provider/config/cost owners and tests
-**Read:** `docs/INVARIANTS.md` Rule 10; LLM section of `docs/BUSINESS_LOGIC.md`.
-**Reference audit:** `run_prompt_task`, direct/missing-field/review modes, provider calls, cost logging, circuit breaker, fallback/error paths.
+**Fallback docs:** `docs/INVARIANTS.md` Rule 10; LLM section of `docs/BUSINESS_LOGIC.md`.
+**Known audited scope:** `run_prompt_task`, direct/missing-field/review modes, provider calls, cost logging, circuit breaker, fallback/error paths.
 
 **Implement:**
 
 - Split provider invocation, response validation, cost recording, and visible failure projection.
 - Preserve explicit dual gate: run setting and active LLM config.
 - LLM remains gap fill/adjudication only; deterministic values and conflicts win.
-- Delete duplicate prompt/result shaping and stale task wrappers.
+- Delete duplicate prompt/result shaping and obsolete task wrappers.
 
 **Slice acceptance:**
 
@@ -875,8 +908,8 @@ $env:PYTHONPATH='.'
 
 **Status:** TODO
 **Owners:** architecture tests, canonical docs, this plan, `ACTIVE.md`; production files only for defects revealed by verification
-**Read:** all canonical docs listed under Authority; do not reread historical plans/audits.
-**Reference audit:** deleted symbols/modules, all architecture allowlists, cross-module private imports, config placement, package/file/function counts, legacy fields, public contracts.
+**Fallback docs:** canonical docs listed under Authority only when final verification reveals a contract/doc mismatch; do not reread superseded plans/audits.
+**Known audited scope:** deleted symbols/modules, all architecture allowlists, cross-module private imports, config placement, package/file/function counts, legacy fields, public contracts.
 
 **Implement:**
 
@@ -941,6 +974,7 @@ If the gate passes, mark this plan `DONE` and update `ACTIVE.md` to `No active p
 ## Handoff Notes
 
 - Start at Slice 1. Do not reopen the global audit.
+- Do not create another architecture plan for these issues. If new evidence appears, attach it to the owning slice's notes and continue this plan.
 - Before editing, inspect the current working-tree diff for the slice files and preserve user work.
 - Recompute only the slice's file/function counts after edits; recompute the full ledger in Slice 12.
 - Do not mark a slice done from code inspection alone. Run its exact verify command.
