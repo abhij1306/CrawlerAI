@@ -145,6 +145,33 @@ BROWSER_SURFACE_PROBE_HIGH_ENTROPY_HINTS = (
 BROWSER_SURFACE_PROBE_TIMEZONE_ALIASES = {
     "Asia/Calcutta": "Asia/Kolkata",
 }
+BROWSER_SURFACE_PROBE_COUNTRY_NAMES = {
+    "AU": "Australia",
+    "CA": "Canada",
+    "DE": "Germany",
+    "FR": "France",
+    "GB": "United Kingdom",
+    "IN": "India",
+    "NL": "Netherlands",
+    "SG": "Singapore",
+    "US": "United States",
+}
+BROWSER_SURFACE_PROBE_COUNTRY_TIMEZONES = {
+    "AU": ("Australia/Sydney", "Australia/Melbourne", "Australia/Perth"),
+    "CA": ("America/Toronto", "America/Vancouver", "America/Montreal"),
+    "DE": ("Europe/Berlin",),
+    "FR": ("Europe/Paris",),
+    "GB": ("Europe/London",),
+    "IN": ("Asia/Kolkata",),
+    "NL": ("Europe/Amsterdam",),
+    "SG": ("Asia/Singapore",),
+    "US": (
+        "America/New_York",
+        "America/Chicago",
+        "America/Denver",
+        "America/Los_Angeles",
+    ),
+}
 
 BROWSER_SURFACE_PROBE_SANNYSOFT_LABELS = {
     "webdriver": ("webdriver",),

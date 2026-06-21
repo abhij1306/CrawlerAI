@@ -13,8 +13,6 @@ from pathlib import Path
 from typing import Any, Sequence
 from urllib.parse import urlparse
 
-import pytz  # type: ignore[import-untyped]
-
 from app.core.database import SessionLocal
 from app.acquisition.runtime import (
     classify_block_from_headers,
@@ -31,6 +29,8 @@ from app.acquisition.browser_runtime import (
 )
 from app.core.config.browser_surface_probe import (
     BROWSER_SURFACE_PROBE_CREEPJS_LABELS,
+    BROWSER_SURFACE_PROBE_COUNTRY_NAMES,
+    BROWSER_SURFACE_PROBE_COUNTRY_TIMEZONES,
     BROWSER_SURFACE_PROBE_FONT_TEST_STRINGS,
     BROWSER_SURFACE_PROBE_HIGH_ENTROPY_HINTS,
     BROWSER_SURFACE_PROBE_KEYWORD_GROUPS,
@@ -74,7 +74,7 @@ _WHITESPACE_RE = re.compile(r"\s+")
 _NON_ALNUM_RE = re.compile(r"[^a-z0-9]+")
 _COUNTRY_CODE_BY_NAME = {
     _NON_ALNUM_RE.sub(" ", name.lower()).strip(): code
-    for code, name in pytz.country_names.items()
+    for code, name in BROWSER_SURFACE_PROBE_COUNTRY_NAMES.items()
 }
 _COUNTRY_CODE_BY_NAME.update(
     {
@@ -134,7 +134,9 @@ def _int_list(value: object) -> list[int]:
 
 
 def _dict_rows(value: object) -> list[dict[str, object]]:
-    return [_object_dict(item) for item in _object_list(value) if isinstance(item, dict)]
+    return [
+        _object_dict(item) for item in _object_list(value) if isinstance(item, dict)
+    ]
 
 
 def _coerce_locality_profile(
@@ -155,7 +157,9 @@ def _coerce_locality_profile(
     }
 
 
-async def _load_run_runtime_source(run_id: int, *, browser_engine: str) -> RuntimeSource:
+async def _load_run_runtime_source(
+    run_id: int, *, browser_engine: str
+) -> RuntimeSource:
     async with SessionLocal() as session:
         run = await get_run(session, run_id)
     if run is None:
@@ -191,7 +195,9 @@ def _load_explicit_runtime_source(
     if proxy_profile_path:
         raw = json.loads(Path(proxy_profile_path).read_text(encoding="utf-8"))
         proxy_profile = _coerce_proxy_profile(raw)
-    proxy_list = [_normalize_space(value) for value in proxies if _normalize_space(value)]
+    proxy_list = [
+        _normalize_space(value) for value in proxies if _normalize_space(value)
+    ]
     enabled = bool(proxy_list) or bool(proxy_profile.get("enabled"))
     if enabled:
         proxy_profile = dict(proxy_profile)
@@ -218,7 +224,9 @@ async def _resolve_runtime_source(args: argparse.Namespace) -> RuntimeSource:
     if args.run_id is not None and (explicit_proxies or args.proxy_profile_json):
         raise ValueError("Provide either --run-id or explicit proxy flags, not both")
     if args.run_id is not None:
-        return await _load_run_runtime_source(args.run_id, browser_engine=args.browser_engine)
+        return await _load_run_runtime_source(
+            args.run_id, browser_engine=args.browser_engine
+        )
     return _load_explicit_runtime_source(
         proxies=explicit_proxies,
         proxy_profile_path=args.proxy_profile_json,
@@ -236,7 +244,11 @@ def _masked_proxy_inventory(proxy_list: list[str]) -> list[str]:
 
 
 def _report_root(base_dir: str | None) -> Path:
-    base = Path(base_dir) if base_dir else Path(__file__).resolve().parent / "artifacts" / _BUNDLE_DIRNAME
+    base = (
+        Path(base_dir)
+        if base_dir
+        else Path(__file__).resolve().parent / "artifacts" / _BUNDLE_DIRNAME
+    )
     return base
 
 
@@ -283,7 +295,9 @@ def _looks_like_networkish_ipv4(value: str) -> bool:
     return False
 
 
-def _clean_ip_values(values: list[str], *, known_versions: list[int] | None = None) -> list[str]:
+def _clean_ip_values(
+    values: list[str], *, known_versions: list[int] | None = None
+) -> list[str]:
     version_set = {int(value) for value in (known_versions or [])}
     cleaned: list[str] = []
     for value in values:
@@ -349,7 +363,11 @@ def _normalize_snapshot_row(row: object) -> dict[str, object] | None:
         return None
     raw_cells = row.get("cells")
     cells = (
-        [_normalize_space(value) for value in list(raw_cells) if _normalize_space(value)]
+        [
+            _normalize_space(value)
+            for value in list(raw_cells)
+            if _normalize_space(value)
+        ]
         if isinstance(raw_cells, list)
         else []
     )
@@ -413,7 +431,9 @@ def _extract_labeled_values(
     lines: list[str],
     label_map: dict[str, tuple[str, ...]],
 ) -> dict[str, list[str]]:
-    normalized_lines = [_normalize_space(value) for value in lines if _normalize_space(value)]
+    normalized_lines = [
+        _normalize_space(value) for value in lines if _normalize_space(value)
+    ]
     aliases = _label_alias_set(label_map)
     extracted: dict[str, list[str]] = {}
     for key, raw_aliases in label_map.items():
@@ -631,7 +651,9 @@ def _sannysoft_signal_rows(rows: list[dict[str, object]]) -> dict[str, object]:
                 categorized.setdefault(key, []).append(row_payload)
         if _looks_like_truthy_risk(value):
             failed_rows.append(row_payload)
-    signal_values = _flatten_signal_values(categorized) + _flatten_signal_values(failed_rows)
+    signal_values = _flatten_signal_values(categorized) + _flatten_signal_values(
+        failed_rows
+    )
     return {
         "matched_rows": categorized,
         "failed_rows": failed_rows,
@@ -665,7 +687,9 @@ def _generic_line_signals(
 
 def _extract_pixelscan(snapshot: dict[str, object]) -> dict[str, object]:
     lines = [str(value) for value in _object_list(snapshot.get("lines"))]
-    payload = _generic_line_signals(lines=lines, label_map=BROWSER_SURFACE_PROBE_PIXELSCAN_LABELS)
+    payload = _generic_line_signals(
+        lines=lines, label_map=BROWSER_SURFACE_PROBE_PIXELSCAN_LABELS
+    )
     labeled_values = _object_dict(payload.get("labeled_values"))
     payload["country_values"] = _flatten_signal_values(labeled_values.get("country"))
     payload["ip_values"] = _clean_ip_values(
@@ -678,8 +702,12 @@ def _extract_pixelscan(snapshot: dict[str, object]) -> dict[str, object]:
             "ip_time": labeled_values.get("ip_time"),
         }
     )
-    payload["proxy_values"] = _flatten_signal_values(labeled_values.get("proxy_verdict"))
-    payload["language_values"] = _flatten_signal_values(labeled_values.get("language_headers"))
+    payload["proxy_values"] = _flatten_signal_values(
+        labeled_values.get("proxy_verdict")
+    )
+    payload["language_values"] = _flatten_signal_values(
+        labeled_values.get("language_headers")
+    )
     payload["screen_values"] = _flatten_signal_values(labeled_values.get("screen_size"))
     payload["webgl_values"] = _flatten_signal_values(labeled_values.get("webgl"))
     return payload
@@ -687,7 +715,9 @@ def _extract_pixelscan(snapshot: dict[str, object]) -> dict[str, object]:
 
 def _extract_creepjs(snapshot: dict[str, object]) -> dict[str, object]:
     lines = [str(value) for value in _object_list(snapshot.get("lines"))]
-    payload = _generic_line_signals(lines=lines, label_map=BROWSER_SURFACE_PROBE_CREEPJS_LABELS)
+    payload = _generic_line_signals(
+        lines=lines, label_map=BROWSER_SURFACE_PROBE_CREEPJS_LABELS
+    )
     labeled_values = _object_dict(payload.get("labeled_values"))
     payload["fp_id_values"] = _flatten_signal_values(labeled_values.get("fp_id"))
     payload["fuzzy_fp_id_values"] = _flatten_signal_values(
@@ -729,7 +759,9 @@ def _country_code_from_value(value: str | None) -> str | None:
     return None
 
 
-def _timezone_matches_country(timezone_name: str | None, country_code: str | None) -> bool | None:
+def _timezone_matches_country(
+    timezone_name: str | None, country_code: str | None
+) -> bool | None:
     normalized_timezone = _normalize_space(timezone_name)
     normalized_timezone = str(
         BROWSER_SURFACE_PROBE_TIMEZONE_ALIASES.get(
@@ -740,7 +772,7 @@ def _timezone_matches_country(timezone_name: str | None, country_code: str | Non
     normalized_country = _normalize_space(country_code).upper()
     if not normalized_timezone or not normalized_country:
         return None
-    timezone_list = tuple(pytz.country_timezones.get(normalized_country, ()))
+    timezone_list = BROWSER_SURFACE_PROBE_COUNTRY_TIMEZONES.get(normalized_country, ())
     if not timezone_list:
         return None
     return normalized_timezone in timezone_list
@@ -801,7 +833,9 @@ def _consensus_baseline(per_site: dict[str, dict[str, object]]) -> dict[str, obj
     drift: dict[str, list[object]] = {}
     for key in keys:
         values = [payload.get(key) for payload in per_site.values()]
-        normalized_values = [value for value in values if value not in (None, "", [], {})]
+        normalized_values = [
+            value for value in values if value not in (None, "", [], {})
+        ]
         consensus[key] = _coalesce(normalized_values)
         unique_values = []
         seen_serialized: set[str] = set()
@@ -880,7 +914,9 @@ def _target_root_cause(
         or _coalesce(
             [
                 _coalesce(
-                    _object_list(_object_dict(payload.get("classification")).get("provider_hits"))
+                    _object_list(
+                        _object_dict(payload.get("classification")).get("provider_hits")
+                    )
                 )
                 for payload in [browser, *transport_payloads]
             ]
@@ -896,11 +932,15 @@ def _target_root_cause(
                 "geo_identity": mismatch,
                 "httpx": {
                     "status_code": transport_payloads[0].get("status_code"),
-                    "outcome": _object_dict(transport_payloads[0].get("classification")).get("outcome"),
+                    "outcome": _object_dict(
+                        transport_payloads[0].get("classification")
+                    ).get("outcome"),
                 },
                 "curl_cffi": {
                     "status_code": transport_payloads[1].get("status_code"),
-                    "outcome": _object_dict(transport_payloads[1].get("classification")).get("outcome"),
+                    "outcome": _object_dict(
+                        transport_payloads[1].get("classification")
+                    ).get("outcome"),
                 },
                 "browser": {
                     "status_code": browser.get("status_code"),
@@ -910,7 +950,10 @@ def _target_root_cause(
             },
         }
     if browser_blocked and transport_ok:
-        if mismatch.get("timezone_country_match") is False or mismatch.get("locale_country_match") is False:
+        if (
+            mismatch.get("timezone_country_match") is False
+            or mismatch.get("locale_country_match") is False
+        ):
             return {
                 "category": "browser_geo_identity_mismatch",
                 "confidence": "high",
@@ -1015,8 +1058,12 @@ def build_findings(report: dict[str, object]) -> list[dict[str, object]]:
     pixelscan_country_code = _country_code_from_value(str(pixelscan_country or ""))
     observed_geo_country = None
     for diagnostic in target_diagnostics:
-        diagnostic_geo = _object_dict(_object_dict(_object_dict(diagnostic).get("geo")).get("consensus"))
-        observed_geo_country = _country_code_from_value(str(diagnostic_geo.get("country") or ""))
+        diagnostic_geo = _object_dict(
+            _object_dict(_object_dict(diagnostic).get("geo")).get("consensus")
+        )
+        observed_geo_country = _country_code_from_value(
+            str(diagnostic_geo.get("country") or "")
+        )
         if observed_geo_country:
             break
     geo_provider_drift = bool(
@@ -1040,7 +1087,9 @@ def build_findings(report: dict[str, object]) -> list[dict[str, object]]:
             }
         )
     timezone_value = str(consensus.get("timezone") or "")
-    timezone_country_match = _timezone_matches_country(timezone_value, pixelscan_country_code)
+    timezone_country_match = _timezone_matches_country(
+        timezone_value, pixelscan_country_code
+    )
     if timezone_country_match is False and not geo_provider_drift:
         findings.append(
             {
@@ -1077,11 +1126,15 @@ def build_findings(report: dict[str, object]) -> list[dict[str, object]]:
     extracted_versions: list[int] = []
     for site in sites.values():
         extracted_versions.extend(
-            _int_list(_object_dict(_object_dict(site).get("extracted")).get("signal_versions"))
+            _int_list(
+                _object_dict(_object_dict(site).get("extracted")).get("signal_versions")
+            )
         )
     extracted_versions = sorted(set(extracted_versions))
-    if baseline_versions and extracted_versions and any(
-        version not in baseline_versions for version in extracted_versions
+    if (
+        baseline_versions
+        and extracted_versions
+        and any(version not in baseline_versions for version in extracted_versions)
     ):
         findings.append(
             {
@@ -1105,7 +1158,9 @@ def build_findings(report: dict[str, object]) -> list[dict[str, object]]:
         _object_dict(creepjs.get("extracted")).get("keyword_hits")
     )
     webdriver_evidence.extend(_string_list(creepjs_keyword_hits.get("webdriver")))
-    webdriver_evidence = [value for value in webdriver_evidence if _looks_like_truthy_risk(value)]
+    webdriver_evidence = [
+        value for value in webdriver_evidence if _looks_like_truthy_risk(value)
+    ]
     if webdriver_evidence:
         findings.append(
             {
@@ -1120,7 +1175,9 @@ def build_findings(report: dict[str, object]) -> list[dict[str, object]]:
     creepjs_extracted = _object_dict(creepjs.get("extracted"))
     headless_evidence.extend(_string_list(creepjs_extracted.get("headless_hits")))
     headless_evidence.extend(
-        _string_list(_object_dict(creepjs_extracted.get("keyword_hits")).get("headless"))
+        _string_list(
+            _object_dict(creepjs_extracted.get("keyword_hits")).get("headless")
+        )
     )
     filtered_headless_evidence: list[str] = []
     for value in headless_evidence:
@@ -1239,12 +1296,9 @@ def build_findings(report: dict[str, object]) -> list[dict[str, object]]:
         )
 
     behavioral = _object_dict(consensus.get("behavioral_smoke"))
-    if (
-        behavioral
-        and (
-            behavioral.get("mouse_isTrusted") is False
-            or behavioral.get("click_isTrusted") is False
-        )
+    if behavioral and (
+        behavioral.get("mouse_isTrusted") is False
+        or behavioral.get("click_isTrusted") is False
     ):
         findings.append(
             {
@@ -1291,7 +1345,16 @@ def build_findings(report: dict[str, object]) -> list[dict[str, object]]:
                 "evidence": sorted(set(public_site_ips)),
             }
         )
-    if len({code for value in site_countries if (code := _country_code_from_value(value))}) > 1:
+    if (
+        len(
+            {
+                code
+                for value in site_countries
+                if (code := _country_code_from_value(value))
+            }
+        )
+        > 1
+    ):
         findings.append(
             {
                 "severity": "warn",
@@ -1346,7 +1409,9 @@ def _site_artifacts(base_dir: Path, site_id: str) -> dict[str, Path]:
     }
 
 
-def _site_signal_payload(site_id: str, snapshot: dict[str, object]) -> dict[str, object]:
+def _site_signal_payload(
+    site_id: str, snapshot: dict[str, object]
+) -> dict[str, object]:
     if site_id == "sannysoft":
         return _sannysoft_signal_rows(_dict_rows(snapshot.get("rows")))
     if site_id == "pixelscan":
@@ -1411,7 +1476,9 @@ def _failed_target_diagnostic(*, url: str, error: str) -> dict[str, object]:
 def _text_snippet_from_html(html: str) -> str:
     text = re.sub(r"<[^>]+>", " ", str(html or ""))
     text = _WHITESPACE_RE.sub(" ", text).strip()
-    return _truncate_text(text, limit=int(BROWSER_SURFACE_PROBE_TARGET_VISIBLE_TEXT_SNIPPET_LIMIT))
+    return _truncate_text(
+        text, limit=int(BROWSER_SURFACE_PROBE_TARGET_VISIBLE_TEXT_SNIPPET_LIMIT)
+    )
 
 
 def _target_artifacts(base_dir: Path, target_id: str, variant: str) -> dict[str, Path]:
@@ -1431,7 +1498,10 @@ def _write_target_body_artifact(path: Path, body: str) -> None:
 
 def _selected_headers(headers: Any) -> dict[str, str]:
     normalized = copy_headers(headers)
-    allowlist = {str(value).strip().lower() for value in BROWSER_SURFACE_PROBE_TARGET_RESPONSE_HEADER_ALLOWLIST}
+    allowlist = {
+        str(value).strip().lower()
+        for value in BROWSER_SURFACE_PROBE_TARGET_RESPONSE_HEADER_ALLOWLIST
+    }
     selected: dict[str, str] = {}
     for key, value in normalized.multi_items():
         lowered = str(key or "").strip().lower()
@@ -1444,7 +1514,9 @@ def _selected_headers(headers: Any) -> dict[str, str]:
     return selected
 
 
-def _classification_payload(*, html: str, status_code: int, headers: Any) -> dict[str, object]:
+def _classification_payload(
+    *, html: str, status_code: int, headers: Any
+) -> dict[str, object]:
     classification = classify_blocked_page(html, status_code)
     return {
         "blocked": bool(classification.blocked),
@@ -1483,9 +1555,7 @@ def _geo_payload_from_text(text: str) -> dict[str, object]:
         ),
         "timezone": _normalize_space(timezone),
         "org": _normalize_space(
-            payload.get("org")
-            or payload.get("isp")
-            or connection.get("org")
+            payload.get("org") or payload.get("isp") or connection.get("org")
         ),
         "raw": payload,
     }
@@ -1640,7 +1710,10 @@ async def _browser_cookie_names(page: Any, final_url: str) -> list[str]:
 
 
 def _challenge_cookie_names(cookie_names: list[str]) -> list[str]:
-    tokens = tuple(str(token).strip().lower() for token in BROWSER_SURFACE_PROBE_TARGET_CHALLENGE_COOKIE_TOKENS)
+    tokens = tuple(
+        str(token).strip().lower()
+        for token in BROWSER_SURFACE_PROBE_TARGET_CHALLENGE_COOKIE_TOKENS
+    )
     return [
         name
         for name in cookie_names
@@ -1687,7 +1760,9 @@ async def _target_browser_payload(
         if response is not None:
             status_attr = getattr(response, "status", None)
             try:
-                status_code = int(status_attr() if callable(status_attr) else status_attr or 0)
+                status_code = int(
+                    status_attr() if callable(status_attr) else status_attr or 0
+                )
             except Exception:
                 status_code = 0
         cookie_names = await _browser_cookie_names(page, final_url or url)
@@ -1708,11 +1783,15 @@ async def _target_browser_payload(
             "baseline": baseline,
             "snapshot_summary": {
                 "line_count": snapshot.get("line_count", 0),
-                "line_count_raw": snapshot.get("line_count_raw", snapshot.get("line_count", 0)),
+                "line_count_raw": snapshot.get(
+                    "line_count_raw", snapshot.get("line_count", 0)
+                ),
                 "lines": _object_list(snapshot.get("lines")),
             },
             "visible_text_snippet": _truncate_text(
-                " ".join(str(line) for line in _object_list(snapshot.get("lines"))[:12]),
+                " ".join(
+                    str(line) for line in _object_list(snapshot.get("lines"))[:12]
+                ),
                 limit=int(BROWSER_SURFACE_PROBE_TARGET_VISIBLE_TEXT_SNIPPET_LIMIT),
             ),
             "cookie_names": cookie_names,
@@ -1839,7 +1918,9 @@ def _failed_site_payload(
         "error": error,
         "error_message": error,
         "artifacts": {
-            "screenshot": artifacts["screenshot"].name if artifacts["screenshot"].exists() else None,
+            "screenshot": artifacts["screenshot"].name
+            if artifacts["screenshot"].exists()
+            else None,
             "html": artifacts["html"].name if artifacts["html"].exists() else None,
         },
         "baseline": {},
@@ -1871,10 +1952,14 @@ async def _probe_site(
                 try:
                     await _navigate_probe_target(page, url)
                     behavioral_smoke = await _collect_behavioral_smoke(page)
-                    baseline = await _collect_baseline(page, behavioral_smoke=behavioral_smoke)
+                    baseline = await _collect_baseline(
+                        page, behavioral_smoke=behavioral_smoke
+                    )
                     snapshot = await _collect_page_snapshot(page)
                     html = await page.content()
-                    await page.screenshot(path=str(artifacts["screenshot"]), full_page=True)
+                    await page.screenshot(
+                        path=str(artifacts["screenshot"]), full_page=True
+                    )
                     artifacts["html"].write_text(html, encoding="utf-8")
                     extracted = _site_signal_payload(site_id, snapshot)
                     validation_warnings = _site_validation_warnings(site_id, snapshot)
@@ -1894,13 +1979,19 @@ async def _probe_site(
                         "baseline": baseline,
                         "snapshot_summary": {
                             "line_count": snapshot.get("line_count", 0),
-                            "line_count_raw": snapshot.get("line_count_raw", snapshot.get("line_count", 0)),
+                            "line_count_raw": snapshot.get(
+                                "line_count_raw", snapshot.get("line_count", 0)
+                            ),
                             "lines": _object_list(snapshot.get("lines")),
                             "row_count": snapshot.get("row_count", 0),
-                            "row_count_raw": snapshot.get("row_count_raw", snapshot.get("row_count", 0)),
+                            "row_count_raw": snapshot.get(
+                                "row_count_raw", snapshot.get("row_count", 0)
+                            ),
                             "rows": _object_list(snapshot.get("rows")),
                             "has_creep_object": bool(snapshot.get("has_creep_object")),
-                            "has_fingerprint_object": bool(snapshot.get("has_fingerprint_object")),
+                            "has_fingerprint_object": bool(
+                                snapshot.get("has_fingerprint_object")
+                            ),
                         },
                         "extracted": extracted,
                     }
@@ -2019,7 +2110,9 @@ async def build_report(
             "source_kind": runtime_source.source_kind,
             "run_id": runtime_source.run_id,
             "selected_proxy_mask": _display_proxy(runtime_source.selected_proxy),
-            "proxy_inventory_masked": _masked_proxy_inventory(runtime_source.proxy_list),
+            "proxy_inventory_masked": _masked_proxy_inventory(
+                runtime_source.proxy_list
+            ),
             "proxy_profile": runtime_source.proxy_profile,
             "locality_profile": runtime_source.locality_profile,
         },
