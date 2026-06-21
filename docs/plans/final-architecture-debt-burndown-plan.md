@@ -3,7 +3,7 @@
 **Created:** 2026-06-21
 **Agent:** Codex
 **Status:** IN PROGRESS
-**Current slice:** Slice 1 — Canonical Acquisition Attempt Ownership
+**Current slice:** Slice 2 — Browser Runtime, Readiness, Interaction, and Traversal Debt
 **Touches buckets:** acquisition/browser runtime, extraction and public record contracts, persistence/artifacts/review, crawl orchestration, core config/record quality, intelligence, enrichment, connectors, tests, canonical architecture docs
 
 ## Goal
@@ -482,7 +482,7 @@ Use structured/JS state with one ID-only variant, one complete variant, one pare
 
 ### Slice 1: Canonical Acquisition Attempt Ownership
 
-**Status:** IN PROGRESS — IMPLEMENTATION NOT STARTED
+**Status:** DONE — VERIFIED 2026-06-21
 **Owners:** `acquisition/contracts.py`, `planner.py`, `executor.py`, `fetch/fetch_context.py`, `fetch/planned_http.py`, `fetch/browser_attempt_runner.py`, `fetch/browser_attempt.py`, `fetch/browser_policy.py`, `fetch/types.py`, `acquirer.py`, `connectors/public_api/extraction_service.py`
 **Fallback docs:** `docs/INVARIANTS.md` Rules 5, 6, 9, 13; acquisition section of `docs/CODEBASE_MAP.md`.
 **Known audited scope:** `AcquisitionPlan`, `AttemptSpec`, `AttemptResult`, `AcquisitionResult`, `run_planned_http_only`, `_run_browser_attempts`, `run_browser_attempts`, `_run_http_fetch_chain`, handoff helpers, and all `fetch_page` callers.
@@ -503,7 +503,15 @@ Use structured/JS state with one ID-only variant, one complete variant, one pare
 - No requested-field-only browser trigger returns.
 - No acquisition allowlist entry is added.
 
-**Handoff:** Global audit and plan activation are complete. No Slice 1 production or test edit has started.
+**Handoff:** Slice 1 complete.
+
+- Files changed: `acquisition/fetch/fetch_context.py`, `acquisition/fetch/planned_http.py`, `acquisition/fetch/browser_attempt_runner.py`, `connectors/public_api/extraction_service.py`, `tests/component/test_crawl_fetch_runtime.py`, `tests/unit/test_final_architecture_ownership.py`, `docs/plans/ACTIVE.md`, and this plan.
+- Deletions: no files deleted; duplicate HTTP/proxy loops and handoff/result-policy bodies were removed from `fetch_context.py`.
+- LOC/function delta: `fetch_context.py` 987 -> 632 lines; `extract_public_product` 111 -> 40 lines; `planned_http.py` and `browser_attempt_runner.py` now own the moved attempt mechanics and remain below the oversized-module threshold.
+- Verification: `189 passed` for the exact Slice 1 command on 2026-06-21.
+- Debt removed: `acquisition/fetch/fetch_context.py` removed from `OVERSIZED_MODULE_DEBT`; `connectors/public_api/extraction_service.py::extract_public_product` removed from `LONG_FUNCTION_DEBT`.
+- Remaining debt: Slice 2 browser runtime/detail/readiness/traversal long-function and oversized-module entries remain.
+- Next slice: Slice 2 — Browser Runtime, Readiness, Interaction, and Traversal Debt.
 
 **Verify:**
 

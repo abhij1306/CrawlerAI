@@ -3,7 +3,7 @@
 **Current:** Final Architecture Debt Burn-Down and Crawl Quality Closure → `docs/plans/final-architecture-debt-burndown-plan.md`
 **Status:** IN PROGRESS
 **Started:** 2026-06-21
-**Current slice:** Slice 1 — Canonical Acquisition Attempt Ownership
+**Current slice:** Slice 2 — Browser Runtime, Readiness, Interaction, and Traversal Debt
 
 ## Queue
 

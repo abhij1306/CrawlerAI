@@ -52,6 +52,42 @@ async def extract_public_product(
             status_code=422,
         )
     requested_fields = _public_requested_fields(payload.fields, surface=surface)
+    run = await _create_public_run(
+        session,
+        user_id=user_id,
+        url=url,
+        surface=surface,
+        requested_fields=requested_fields,
+        max_wait_seconds=payload.options.max_wait_seconds,
+    )
+    result = await _run_public_extraction(
+        session,
+        run=run,
+        url=url,
+        max_wait_seconds=payload.options.max_wait_seconds,
+        surface=surface,
+    )
+    record = await _load_public_record_or_fail(session, run=run, result=result)
+    update_run_status(run, CrawlStatus.COMPLETED)
+    record_artifacts = await load_record_artifacts(session, record)
+    await session.commit()
+    return _shape_record_response(
+        record,
+        artifacts=record_artifacts,
+        requested_fields=requested_fields,
+        surface=surface,
+    )
+
+
+async def _create_public_run(
+    session: AsyncSession,
+    *,
+    user_id: int,
+    url: str,
+    surface: str,
+    requested_fields: list[str],
+    max_wait_seconds: int,
+):
     run = await create_crawl_run(
         session,
         user_id,
@@ -61,7 +97,7 @@ async def extract_public_product(
             "surface": surface,
             "requested_fields": requested_fields,
             "settings": _public_http_only_settings(
-                payload.options.max_wait_seconds,
+                max_wait_seconds,
                 surface=surface,
             ),
         },
@@ -69,7 +105,17 @@ async def extract_public_product(
     update_run_status(run, CrawlStatus.RUNNING)
     await log_event(session, run.id, "info", "Starting public HTTP-only extraction")
     await session.commit()
+    return run
 
+
+async def _run_public_extraction(
+    session: AsyncSession,
+    *,
+    run,
+    url: str,
+    max_wait_seconds: int,
+    surface: str,
+):
     try:
         config = URLProcessingConfig.from_acquisition_plan(
             run.settings_view.acquisition_plan(surface=surface, max_records=1),
@@ -78,13 +124,13 @@ async def extract_public_product(
         )
         result = await asyncio.wait_for(
             process_single_url(session=session, run=run, url=url, config=config),
-            timeout=float(payload.options.max_wait_seconds),
+            timeout=float(max_wait_seconds),
         )
     except TimeoutError as exc:
         await mark_run_failed(
             session,
             run.id,
-            f"Public extraction timed out after {payload.options.max_wait_seconds}s",
+            f"Public extraction timed out after {max_wait_seconds}s",
         )
         raise PublicApiError(
             PUBLIC_API_ERROR_TIMEOUT,
@@ -106,7 +152,10 @@ async def extract_public_product(
             status_code=500,
             details={"error_type": type(exc).__name__},
         ) from exc
+    return result
 
+
+async def _load_public_record_or_fail(session: AsyncSession, *, run, result) -> CrawlRecord:
     try:
         verdict = str(getattr(result, "verdict", "") or "")
         metrics = dict(getattr(result, "url_metrics", {}) or {})
@@ -139,15 +188,7 @@ async def extract_public_product(
     except PublicApiError as exc:
         await mark_run_failed(session, run.id, exc.message)
         raise
-    update_run_status(run, CrawlStatus.COMPLETED)
-    record_artifacts = await load_record_artifacts(session, record)
-    await session.commit()
-    return _shape_record_response(
-        record,
-        artifacts=record_artifacts,
-        requested_fields=requested_fields,
-        surface=surface,
-    )
+    return record
 
 
 def _validate_url(value: str) -> str:

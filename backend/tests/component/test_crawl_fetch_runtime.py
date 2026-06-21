@@ -11,7 +11,7 @@ import pytest
 from patchright.async_api import Error as PlaywrightError
 
 from app.acquisition.fetch import fetch_context as crawl_fetch_runtime
-from app.acquisition.fetch import browser_policy
+from app.acquisition.fetch import browser_policy, planned_http
 from app.acquisition import (
     browser_background_tasks,
     browser_capture,
@@ -1156,8 +1156,8 @@ async def test_handle_http_result_retries_browser_after_browser_first_failure_an
         _fake_run_browser_attempts,
     )
     monkeypatch.setattr(
-        crawl_fetch_runtime,
-        "_browser_escalation_allowed",
+        planned_http,
+        "browser_escalation_allowed",
         lambda **_kwargs: True,
     )
     monkeypatch.setattr(crawl_fetch_runtime, "apply_protected_host_backoff", AsyncMock())

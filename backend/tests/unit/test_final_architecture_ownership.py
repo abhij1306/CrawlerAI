@@ -12,7 +12,6 @@ APP_ROOT = Path(__file__).resolve().parents[2] / "app"
 OVERSIZED_MODULE_DEBT = {
     "acquisition/browser_detail.py",
     "acquisition/browser_runtime.py",
-    "acquisition/fetch/fetch_context.py",
     "crawl/batch_runtime.py",
     "enrichment/shopify_catalog.py",
 }
@@ -33,7 +32,6 @@ LONG_FUNCTION_DEBT = {
     ("acquisition/traversal_recovery.py", "click_with_retry"),
     ("acquisition/traversal_recovery.py", "dismiss_overlays_if_needed"),
     ("connectors/llm/tasks.py", "run_prompt_task"),
-    ("connectors/public_api/extraction_service.py", "extract_public_product"),
     ("core/config/runtime_settings.py", "_apply_profile_defaults"),
     ("core/records/confidence.py", "score_record_confidence"),
     ("crawl/batch_runtime.py", "_process_run_with_span"),
