@@ -11,9 +11,13 @@ from app.extraction.contracts import (
     RejectedEvidence,
     ResolutionResult,
 )
+from app.core.config.variant_policy import (
+    DETAIL_PARENT_INHERITED_OFFER_FIELDS,
+    DETAIL_PARENT_OFFER_INHERITANCE_RULE_ID,
+)
+from app.core.shared.url_utils import is_utility_image_url
 from app.extraction.entities import AssetEntity, EntitySet, OfferEntity, VariantEntity
 from app.extraction.ids import stable_id
-from app.core.config.extraction_rules._images import PRIMARY_IMAGE_REJECT_URL_TOKENS
 
 
 def resolve(
@@ -32,6 +36,7 @@ def resolve(
         decisions.extend(_resolve_variant(variant, by_id, findings))
     for offer in entities.offers:
         decisions.extend(_resolve_offer(offer, by_id, findings))
+    decisions.extend(_inherit_variant_offer_decisions(entities, decisions))
     for asset in entities.assets:
         decisions.append(_resolve_asset(asset, by_id, findings))
     resolved = {
@@ -63,18 +68,31 @@ def _resolve_variant(
     )
 
 
-def _resolve_offer(
-    offer: OfferEntity,
-    evidence_by_id: dict[str, Evidence],
-    findings: tuple[Finding, ...],
-) -> tuple[Decision, ...]:
-    if not offer.fact_evidence.get("offer.price") or not offer.fact_evidence.get(
-        "offer.currency"
-    ):
-        return ()
+def _resolve_offer(offer: OfferEntity, evidence_by_id: dict[str, Evidence], findings: tuple[Finding, ...]) -> tuple[Decision, ...]:
+    incomplete_parent = offer.variant_entity_id is None and not (offer.fact_evidence.get("offer.price") and offer.fact_evidence.get("offer.currency"))
+    blocked = {"offer.price", "offer.currency", "offer.original_price"} if incomplete_parent else set()
     return tuple(
         _resolve_scalar(offer.entity_id, fact, ids, evidence_by_id, findings)
         for fact, ids in sorted(offer.fact_evidence.items())
+        if fact not in blocked
+    )
+
+
+def _inherit_variant_offer_decisions(entities: EntitySet, decisions: list[Decision]) -> tuple[Decision, ...]:
+    facts = tuple(f"offer.{field}" for field in DETAIL_PARENT_INHERITED_OFFER_FIELDS)
+    resolved = {(item.entity_id, item.fact_type): item for item in decisions if item.status == "resolved"}
+    parents = [offer for offer in entities.offers if offer.variant_entity_id is None]
+    parent = max(parents, key=lambda offer: (sum((offer.entity_id, fact) in resolved for fact in facts), offer.entity_id), default=None)
+    if parent is None:
+        return ()
+    direct = {(offer.variant_entity_id, fact) for offer in entities.offers if offer.variant_entity_id for fact in facts if (offer.entity_id, fact) in resolved}
+    return tuple(
+        resolved[(parent.entity_id, fact)].model_copy(update={"decision_id": stable_id("decision", variant.entity_id, fact, "parent_inheritance"), "entity_id": variant.entity_id, "rejected": (), "rule_id": DETAIL_PARENT_OFFER_INHERITANCE_RULE_ID})
+        for variant in entities.variants
+        for fact in facts
+        if (variant.option_values or variant.identity_key.startswith(("sku:", "gtin:")))
+        and (variant.entity_id, fact) not in direct
+        and (parent.entity_id, fact) in resolved
     )
 
 
@@ -113,8 +131,7 @@ def _resolve_asset(
 
 
 def _invalid_primary_asset_url(value: object) -> bool:
-    text = str(value or "").casefold()
-    return any(token in text for token in PRIMARY_IMAGE_REJECT_URL_TOKENS)
+    return is_utility_image_url(value)
 
 
 def _resolve_product_assets(
@@ -296,20 +313,17 @@ def _derived(
             value = f"{float(str(ev.value).replace(',', '')):.2f}"
         except (TypeError, ValueError):
             continue
+        rule_id = decision.rule_id if decision.rule_id == DETAIL_PARENT_OFFER_INHERITANCE_RULE_ID else "NORMALIZE_MONEY_PRECISION"
         out.append(
             DerivedFact(
                 derived_fact_id=stable_id(
-                    "derived",
-                    "NORMALIZE_MONEY_PRECISION",
-                    decision.entity_id,
-                    decision.fact_type,
-                    value,
+                    "derived", rule_id, decision.entity_id, decision.fact_type, value
                 ),
                 entity_id=decision.entity_id,
                 fact_type=decision.fact_type,
                 value=value,
                 input_evidence_ids=decision.accepted_evidence_ids,
-                rule_id="NORMALIZE_MONEY_PRECISION",
+                rule_id=rule_id,
             )
         )
     return tuple(out)
@@ -331,6 +345,7 @@ def _invalid(ev: Evidence) -> bool:
             "invalid_gtin",
             "placeholder_text",
             "tracking_url",
+            "truncated_title",
         }
     )
 

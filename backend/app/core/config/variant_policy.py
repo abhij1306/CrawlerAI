@@ -225,6 +225,92 @@ AXIS_NAME_ALIASES = {
     if normalized_alias and normalized_canonical
 }
 OPTION_SCALAR_FIELDS = frozenset(PUBLIC_VARIANT_AXIS_FIELDS)
+VARIANT_SKU_VALUE_KEYS = ("sku", "skuCode", "sku_code", "stockKeepingUnit")
+VARIANT_DIRECT_OPTION_FIELD_AXES = {
+    "size": "size",
+    "sizeDescription": "size",
+    "displaySize": "size",
+    "color": "color",
+    "colour": "color",
+    "colorName": "color",
+    "displayColor": "color",
+    "shade": "color",
+    "shadeName": "color",
+    "width": "width",
+    "length": "length",
+    "material": "material",
+    "style": "style",
+    "capacity": "capacity",
+    "quantity": "quantity",
+}
+VARIANT_OPTION_CONTAINER_KEYS = (
+    "attributes",
+    "variationValues",
+    "variationAttributes",
+    "selectedOptions",
+    "options",
+    "productOptions",
+    "dimensions",
+)
+VARIANT_OPTION_AXIS_KEYS = (
+    "name",
+    "label",
+    "displayName",
+    "attributeName",
+    "optionName",
+    "variationType",
+    "type",
+)
+VARIANT_OPTION_VALUE_KEYS = (
+    "value",
+    "displayValue",
+    "optionValue",
+    "selectedValue",
+    "variationValue",
+    "shadeName",
+    "name",
+    "label",
+)
+VARIANT_SCALAR_VALUE_KEYS = (
+    "value",
+    "text",
+    "name",
+    "label",
+    "displayValue",
+    "optionValue",
+    "selectedValue",
+    "variationValue",
+    "amount",
+    "current",
+    "currentPrice",
+    "salePrice",
+    "listPrice",
+    "price",
+)
+VARIANT_OFFER_PRICE_KEYS = ("price", "currentPrice", "salePrice", "priceInfo", "pricing")
+VARIANT_OFFER_ORIGINAL_PRICE_KEYS = (
+    "originalPrice",
+    "regularPrice",
+    "listPrice",
+    "compareAtPrice",
+)
+VARIANT_OFFER_CURRENCY_KEYS = ("currency", "currencyCode", "priceCurrency")
+VARIANT_OFFER_AVAILABILITY_KEYS = (
+    "availability",
+    "available",
+    "inStock",
+    "isAvailable",
+    "isInStock",
+    "inventoryStatus",
+    "purchasable",
+    "isPurchasable",
+)
+VARIANT_OFFER_STOCK_KEYS = (
+    "stock_quantity",
+    "stockQuantity",
+    "inventory",
+    "inventoryQuantity",
+)
 
 
 def variant_state_values_are_geographic(values: object) -> bool:

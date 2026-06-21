@@ -316,6 +316,78 @@ def test_structured_title_outranks_filename_and_internal_id_url_title() -> None:
     assert result.verdict == "success"
 
 
+@pytest.mark.parametrize(
+    ("page_url", "html"),
+    (
+        ("https://kith.com/products/st40002-02000", "<main><h1>st40002 02000</h1></main>"),
+        (
+            "https://www.target.com/p/tobago-stripe-blue-twin-duvet-cover-set/-/A-1002150742",
+            "<main><h1>A 1002150739</h1></main>",
+        ),
+        (
+            "https://www.firstcry.com/babyhug/denim-set/22346676/product-detail",
+            "<main><h1>product detail</h1></main>",
+        ),
+        (
+            "https://www.amazon.com/example/dp/B0F5Y3X8PP/?th=1",
+            "<main><h1>Not Added</h1></main>",
+        ),
+        (
+            "https://www.adidas.com/us/stan-smith-shoes/M20324.html",
+            "<main><h1>4D</h1></main>",
+        ),
+        (
+            "https://shop.lululemon.com/p/jackets/_/prod10930188",
+            "<main><h1>prod10930188</h1></main>",
+        ),
+        (
+            "https://www.ralphlauren.global/in/en/the-iconic-cotton-chino-ball-cap-650310.html",
+            "<html><body></body></html>",
+        ),
+    ),
+)
+def test_identifier_placeholder_and_filename_titles_do_not_materialize(
+    page_url: str,
+    html: str,
+) -> None:
+    result = _extract(
+        "ecommerce_detail",
+        html,
+        page_url,
+        requested_fields=("title",),
+    )
+
+    assert result.records[0].get("title") is None
+    assert any(
+        finding.rule_id == "MISSING_CONTRACT_FIELD"
+        and finding.metadata.get("field") == "title"
+        for finding in result.findings
+    )
+    assert result.verdict in {"partial", "review"}
+
+
+def test_truncated_title_loses_to_more_complete_url_identity() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        "<main><h1>iPhone</h1></main>",
+        "https://www.backmarket.com/en-us/p/iphone-15-plus",
+    )
+
+    assert result.records[0]["title"].casefold() == "iphone 15 plus"
+    assert result.records[0]["title"] != "iPhone"
+    assert result.verdict == "review"
+
+
+def test_natural_title_with_model_number_remains_admissible() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        "<main><h1>Levi 501 Jeans</h1></main>",
+        "https://shop.test/products/levi-501-jeans",
+    )
+
+    assert result.records[0]["title"] == "Levi 501 Jeans"
+
+
 def test_measurements_navigation_title_cannot_produce_success() -> None:
     result = _extract(
         "ecommerce_detail",
@@ -573,6 +645,126 @@ def test_ecommerce_listing_filters_docs_utility_links() -> None:
         max_records=5,
     )
     assert [row["title"] for row in result.records] == ["Trail Shoe"]
+
+
+def test_ecommerce_listing_rejects_site_chrome_and_unproven_category_links() -> None:
+    result = _extract(
+        "ecommerce_listing",
+        """
+        <header>
+          <nav>
+            <ul>
+              <li><a href="/customer-service/">Customer Service</a></li>
+              <li><a href="/ca/en/c/womens/">Women</a></li>
+            </ul>
+          </nav>
+        </header>
+        <main>
+          <ul class="category-links">
+            <li><a href="/ca/en/c/mens/footwear/">Men's Footwear</a></li>
+            <li><a href="#">Store Directory</a></li>
+          </ul>
+          <article class="product-card">
+            <a href="/ca/en/shop/mens/norvan-ld-4-shoe" title="Norvan LD 4 Shoe">
+              <img src="/images/norvan.jpg">
+            </a>
+            <span class="price">$200.00</span>
+          </article>
+        </main>
+        <footer>
+          <ul><li><a href="/returns/">Returns</a></li></ul>
+        </footer>
+        """,
+        "https://shop.test/ca/en/c/mens/footwear-run/wid-example",
+        max_records=20,
+    )
+
+    assert [row["title"] for row in result.records] == ["Norvan LD 4 Shoe"]
+    assert [row["url"] for row in result.records] == [
+        "https://shop.test/ca/en/shop/mens/norvan-ld-4-shoe"
+    ]
+
+
+def test_ecommerce_listing_keeps_generic_card_with_price_and_detail_link() -> None:
+    result = _extract(
+        "ecommerce_listing",
+        """
+        <main>
+          <ul>
+            <li>
+              <a href="/p/trail-shoe" title="Trail Shoe">Trail Shoe</a>
+              <span class="price">$99.00</span>
+            </li>
+          </ul>
+        </main>
+        """,
+        "https://shop.test/category/shoes",
+        max_records=5,
+    )
+
+    assert [row["title"] for row in result.records] == ["Trail Shoe"]
+
+
+def test_ecommerce_listing_reads_product_tile_metadata_after_image_link() -> None:
+    result = _extract(
+        "ecommerce_listing",
+        """
+        <main>
+          <article
+            class="product-tile"
+            data-tile-type="product"
+            data-cnstrc-item-name="Classic Fit Pants"
+            data-cnstrc-item-id="SKU123"
+          >
+            <a href="/p/classic-fit-pants/SKU123.html">
+              <img src="/images/classic-fit-pants.jpg" alt="Classic Fit Pants">
+            </a>
+            <a href="/p/classic-fit-pants/SKU123.html">Classic Fit Pants</a>
+            <span>31-Inch Inseam</span>
+            <span>$42.95</span>
+          </article>
+        </main>
+        """,
+        "https://shop.test/men/pants/",
+        max_records=5,
+    )
+
+    assert len(result.records) == 1
+    assert result.records[0]["title"] == "Classic Fit Pants"
+    assert result.records[0]["url"] == "https://shop.test/p/classic-fit-pants/SKU123.html"
+    assert result.records[0]["price"] == "$42.95"
+    assert (
+        result.records[0]["image_url"]
+        == "https://shop.test/images/classic-fit-pants.jpg"
+    )
+
+
+def test_ecommerce_listing_accepts_same_site_subdomain_detail_url() -> None:
+    result = _extract(
+        "ecommerce_listing",
+        """
+        <main>
+          <article class="product-card">
+            <a href="https://www.shop.test/products/trail-shoe" title="Trail Shoe">
+              <img src="/images/trail-shoe.jpg">
+            </a>
+            <span class="price">$120.00</span>
+          </article>
+          <article class="product-card">
+            <a href="https://external.test/products/other" title="Other Shoe">
+              <img src="/images/other-shoe.jpg">
+            </a>
+            <span class="price">$90.00</span>
+          </article>
+        </main>
+        """,
+        "https://m.shop.test/collections/shoes",
+        max_records=5,
+    )
+
+    assert [row["url"] for row in result.records] == [
+        "https://www.shop.test/products/trail-shoe"
+    ]
 
 
 def test_ecommerce_listing_rejects_selected_state_as_product_title() -> None:
@@ -933,6 +1125,143 @@ def test_variant_identity_merges_sources_and_materializes_child_offer() -> None:
     ]
     assert result.graph.entity_counts["variant"] == 1
     assert result.records[0]["_lineage"]["variants"][0]["price"]
+
+
+def test_js_state_variant_sku_aliases_materialize_public_sku() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        "<main><h1>Runner Shoe</h1></main>",
+        "https://shop.test/products/runner-shoe",
+        artifacts={
+            "js_state_objects": {
+                "product": {
+                    "name": "Runner Shoe",
+                    "url": "https://shop.test/products/runner-shoe",
+                    "variants": [
+                        {
+                            "variantId": "runner-blue-9",
+                            "skuCode": "NK-RUN-BLU-9",
+                            "color": "Blue",
+                            "size": "9",
+                            "price": "120",
+                            "currency": "USD",
+                        }
+                    ],
+                }
+            }
+        },
+    )
+
+    assert result.records[0]["variants"][0]["sku"] == "NK-RUN-BLU-9"
+
+
+def test_nested_variant_options_money_inventory_and_sku_aliases_materialize() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        "<main><h1>Velvet Lip Color</h1></main>",
+        "https://shop.test/products/velvet-lip-color",
+        artifacts={
+            "js_state_objects": {
+                "product": {
+                    "name": "Velvet Lip Color",
+                    "url": "https://shop.test/products/velvet-lip-color",
+                    "variants": [
+                        {
+                            "variantId": "rose-mini",
+                            "skuCode": "LIP-ROSE-MINI",
+                            "variationType": "Shade",
+                            "variationValue": "Rosewood",
+                            "sizeDescription": "0.1 oz",
+                            "priceInfo": {
+                                "currentPrice": {
+                                    "amount": "28",
+                                    "currencyCode": "USD"
+                                }
+                            },
+                            "inventory": {"inventoryStatus": "IN_STOCK"}
+                        }
+                    ]
+                }
+            }
+        },
+    )
+
+    assert result.records[0]["variants"] == [
+        {
+            "variant_id": "rose-mini",
+            "sku": "LIP-ROSE-MINI",
+            "price": "28.00",
+            "currency": "USD",
+            "availability": "in_stock",
+            "color": "Rosewood",
+            "size": "0.1 oz",
+        }
+    ]
+
+
+def test_variant_offer_inherits_parent_commercial_facts_but_keeps_child_availability() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "ProductGroup",
+          "name": "Court Shoe",
+          "url": "https://shop.test/products/court-shoe",
+          "offers": {
+            "@type": "Offer",
+            "price": "95",
+            "priceCurrency": "USD",
+            "availability": "https://schema.org/OutOfStock"
+          },
+          "hasVariant": [
+            {
+              "@type": "Product",
+              "sku": "COURT-WHT-8",
+              "color": "White",
+              "size": "8",
+              "offers": {
+                "@type": "Offer",
+                "availability": "https://schema.org/InStock"
+              }
+            },
+            {
+              "@type": "Product",
+              "sku": "COURT-WHT-9",
+              "color": "White",
+              "size": "9"
+            }
+          ]
+        }
+        </script>
+        """,
+        "https://shop.test/products/court-shoe",
+    )
+
+    variants = result.records[0]["variants"]
+    assert variants == [
+        {
+            "sku": "COURT-WHT-8",
+            "price": "95.00",
+            "currency": "USD",
+            "availability": "in_stock",
+            "color": "White",
+            "size": "8",
+        },
+        {
+            "sku": "COURT-WHT-9",
+            "price": "95.00",
+            "currency": "USD",
+            "availability": "out_of_stock",
+            "color": "White",
+            "size": "9",
+        },
+    ]
+    lineage = result.records[0]["_lineage"]["variants"]
+    assert lineage[0]["price"]["rule_id"] == "PARENT_OFFER_TO_VARIANT"
+    assert lineage[0]["availability"]["rule_id"] != "PARENT_OFFER_TO_VARIANT"
+    assert lineage[1]["availability"]["rule_id"] == "PARENT_OFFER_TO_VARIANT"
 
 
 def test_js_state_later_product_object_backfills_missing_variant_rows() -> None:
@@ -1485,6 +1814,101 @@ def test_product_asset_decision_materializes_primary_and_additional_images() -> 
         "PRODUCT_ASSET_ADDITIONAL",
         "PRODUCT_ASSET_ADDITIONAL",
     ]
+
+
+def test_product_asset_filter_rejects_utility_carrier_flag_and_template_urls() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <script type="application/ld+json">
+        {
+          "@type": "Product",
+          "name": "Trail Shoe",
+          "url": "https://shop.test/products/trail-shoe",
+          "image": [
+            "https://cdn.shop.test/products/trail-shoe-main.jpg",
+            "https://cdn.shop.test/products/trail-shoe-side.jpg",
+            "https://cdn.shop.test/payments/Afterpay.svg",
+            "https://cdn.shop.test/carriers/att.png",
+            "https://cdn.shop.test/ui/left-arrow.svg",
+            "https://cdn.shop.test/ui/edit.abcdef12.svg",
+            "https://cdn.shop.test/flags/us.png",
+            "https://cdn.shop.test/products/trail-shoe.jpg?w={width}"
+          ],
+          "offers": {"price": "10", "priceCurrency": "USD"}
+        }
+        </script>
+        """,
+        "https://shop.test/products/trail-shoe",
+    )
+
+    record = result.records[0]
+    assert record["image_url"] == "https://cdn.shop.test/products/trail-shoe-main.jpg"
+    assert record["additional_images"] == [
+        "https://cdn.shop.test/products/trail-shoe-side.jpg",
+    ]
+
+
+def test_dom_product_gallery_excludes_recommendations_accessories_and_flags() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <script type="application/ld+json">
+        {
+          "@type": "Product",
+          "name": "Trail Shoe",
+          "url": "https://shop.test/products/trail-shoe",
+          "offers": {"price": "10", "priceCurrency": "USD"}
+        }
+        </script>
+        <main>
+          <section class="product-gallery">
+            <img src="https://cdn.shop.test/products/trail-shoe-main.jpg">
+            <img src="https://cdn.shop.test/products/trail-shoe-side.jpg">
+          </section>
+          <section class="product-recommendations">
+            <img src="https://cdn.shop.test/products/day-pack-main.jpg">
+          </section>
+          <section class="complete-the-look accessories">
+            <img src="https://cdn.shop.test/products/shoe-cleaner.jpg">
+          </section>
+          <aside class="carrier-logos">
+            <img src="https://cdn.shop.test/carriers/verizon.png">
+          </aside>
+        </main>
+        <footer><img src="https://cdn.shop.test/flags/gb.png"></footer>
+        """,
+        "https://shop.test/products/trail-shoe",
+    )
+
+    record = result.records[0]
+    assert record["image_url"] == "https://cdn.shop.test/products/trail-shoe-main.jpg"
+    assert record["additional_images"] == [
+        "https://cdn.shop.test/products/trail-shoe-side.jpg",
+    ]
+
+
+def test_single_admissible_main_image_remains_a_dom_fallback() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <script type="application/ld+json">
+        {
+          "@type": "Product",
+          "name": "Trail Shoe",
+          "url": "https://shop.test/products/trail-shoe",
+          "offers": {"price": "10", "priceCurrency": "USD"}
+        }
+        </script>
+        <main><img src="https://cdn.shop.test/products/trail-shoe-main.jpg"></main>
+        """,
+        "https://shop.test/products/trail-shoe",
+    )
+
+    assert (
+        result.records[0]["image_url"]
+        == "https://cdn.shop.test/products/trail-shoe-main.jpg"
+    )
 
 
 def test_asset_urls_are_normalized_and_deduped_without_dropping_variant_params() -> None:

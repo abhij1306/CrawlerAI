@@ -8,7 +8,7 @@ from app.core.config.field_mappings import (
     ECOMMERCE_STRUCTURED_SOURCE_FACT_TYPES,
 )
 from app.core.config.extraction_rules import VARIANT_JS_STATE_NON_VARIANT_TYPENAME_TOKENS
-from app.core.config.variant_policy import AXIS_NAME_ALIASES
+from app.core.config.variant_policy import AXIS_NAME_ALIASES, VARIANT_DIRECT_OPTION_FIELD_AXES, VARIANT_OFFER_AVAILABILITY_KEYS, VARIANT_OFFER_CURRENCY_KEYS, VARIANT_OFFER_ORIGINAL_PRICE_KEYS, VARIANT_OFFER_PRICE_KEYS, VARIANT_OFFER_STOCK_KEYS, VARIANT_OPTION_AXIS_KEYS, VARIANT_OPTION_CONTAINER_KEYS, VARIANT_OPTION_VALUE_KEYS, VARIANT_SCALAR_VALUE_KEYS, VARIANT_SKU_VALUE_KEYS
 from app.extraction.collectors._helpers import evidence, json_objects
 from app.extraction.contracts import CaptureBundle, EntityHint, Evidence, SourceLocator
 from app.extraction.ids import stable_id
@@ -121,7 +121,7 @@ def _variant_row(
     if not _looks_like_variant(obj):
         return []
     variant_id = _variant_identity_value(obj)
-    sku = str(_scalar_value(obj.get("sku") or obj.get("skuId") or obj.get("sku_id") or "") or "").strip()
+    sku = str(_scalar_value(_first(obj, *VARIANT_SKU_VALUE_KEYS)) or "").strip()
     hint = EntityHint(
         entity_type="variant",
         variant_id=variant_id,
@@ -171,12 +171,7 @@ def _variant_row(
 
 
 def _looks_like_variant(obj: dict) -> bool:
-    identity = _variant_identity_value(obj) is not None or _scalar_value(obj.get("sku")) not in (
-        None,
-        "",
-        [],
-        {},
-    )
+    identity = _variant_identity_value(obj) is not None or _scalar_value(_first(obj, *VARIANT_SKU_VALUE_KEYS)) not in (None, "", [], {})
     option_count = len(_variant_options(obj))
     variant_specific_identity = any(_scalar_value(obj.get(key)) not in (None, "", [], {}) for key in ("variantId", "variant_id", "skuId", "sku_id"))
     commercial = any(
@@ -204,7 +199,7 @@ def _variant_fields(obj: dict) -> list[tuple[str, str, object]]:
     selected = bool(obj.get("selected") or obj.get("isSelected")) if "selected" in obj or "isSelected" in obj else None
     raw = [
         ("id", "variant.id", _variant_identity_value(obj)),
-        ("sku", "variant.sku", obj.get("sku")),
+        ("sku", "variant.sku", _first(obj, *VARIANT_SKU_VALUE_KEYS)),
         ("url", "variant.url", obj.get("url")),
         ("selected", "variant.selected", selected),
     ]
@@ -224,22 +219,22 @@ def _variant_offer(
 ) -> list[Evidence]:
     group = f"offer:{artifact_id}:{path}"
     rows = [
-        ("price", "offer.price", _first(obj, "price", "currentPrice", "salePrice")),
+        ("price", "offer.price", _first(obj, *VARIANT_OFFER_PRICE_KEYS)),
         (
             "original_price",
             "offer.original_price",
-            _first(obj, "originalPrice", "regularPrice", "listPrice", "compareAtPrice"),
+            _first(obj, *VARIANT_OFFER_ORIGINAL_PRICE_KEYS),
         ),
-        ("currency", "offer.currency", _first(obj, "currency", "currencyCode")),
+        ("currency", "offer.currency", _first(obj, *VARIANT_OFFER_CURRENCY_KEYS)),
         (
             "availability",
             "offer.availability",
-            _availability_value(_first(obj, "availability", "available", "inStock", "isAvailable")),
+            _availability_value(_first(obj, *VARIANT_OFFER_AVAILABILITY_KEYS)),
         ),
         (
             "stock_quantity",
             "offer.stock_quantity",
-            _first(obj, "stock_quantity", "stockQuantity", "inventory", "inventoryQuantity"),
+            _first(obj, *VARIANT_OFFER_STOCK_KEYS),
         ),
     ]
     return [
@@ -263,7 +258,7 @@ def _variant_offer(
 
 def _scalar_value(value):
     if isinstance(value, dict):
-        for key in ("value", "text", "name", "amount", "currentPrice", "price"):
+        for key in VARIANT_SCALAR_VALUE_KEYS:
             if value.get(key) not in (None, "", [], {}):
                 return _scalar_value(value.get(key))
         return ""
@@ -274,8 +269,10 @@ def _scalar_value(value):
 
 def _first(obj: dict, *keys: str):
     for key in keys:
-        value = obj.get(key)
-        if value not in (None, "", [], {}):
+        if (value := obj.get(key)) not in (None, "", [], {}):
+            return value
+    for source in obj.values():
+        if isinstance(source, dict) and (value := _first(source, *keys)) not in (None, "", [], {}):
             return value
     return None
 
@@ -296,32 +293,15 @@ def _availability_value(value: object) -> object:
 
 def _variant_options(obj: dict) -> list[tuple[str, str, object]]:
     rows: list[tuple[str, str, object]] = []
-    direct_axes = {
-        "size": "size",
-        "color": "color",
-        "colour": "color",
-        "width": "width",
-        "length": "length",
-        "material": "material",
-        "style": "style",
-        "capacity": "capacity",
-        "quantity": "quantity",
-    }
-    for key, axis in direct_axes.items():
+    for key, axis in VARIANT_DIRECT_OPTION_FIELD_AXES.items():
         value = _scalar_value(obj.get(key))
         if value not in (None, "", [], {}):
             rows.append((key, axis, value))
 
-    for key in (
-        "attributes",
-        "variationValues",
-        "variationAttributes",
-        "selectedOptions",
-        "options",
-        "productOptions",
-        "dimensions",
-    ):
+    for key in VARIANT_OPTION_CONTAINER_KEYS:
         rows.extend(_option_rows_from_value(key, obj.get(key)))
+    if "variationType" in obj:
+        rows.extend(_option_rows_from_value("variation", [obj]))
     return _dedupe_options(rows)
 
 
@@ -339,25 +319,9 @@ def _option_rows_from_value(prefix: str, value: object) -> list[tuple[str, str, 
         for index, item in enumerate(value):
             if not isinstance(item, dict):
                 continue
-            raw_axis = _first(
-                item,
-                "name",
-                "label",
-                "displayName",
-                "attributeName",
-                "optionName",
-                "type",
-            )
+            raw_axis = _first(item, *VARIANT_OPTION_AXIS_KEYS)
             axis = _canonical_axis(raw_axis)
-            option_value = _first(
-                item,
-                "value",
-                "displayValue",
-                "optionValue",
-                "selectedValue",
-                "name",
-                "label",
-            )
+            option_value = _first(item, *VARIANT_OPTION_VALUE_KEYS)
             if axis and option_value not in (None, "", [], {}):
                 rows.append((f"{prefix}/{index}", axis, _scalar_value(option_value)))
         return rows

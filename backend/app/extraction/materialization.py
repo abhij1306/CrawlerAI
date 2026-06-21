@@ -9,6 +9,7 @@ from app.extraction.contracts import (
     Evidence,
     ResolutionResult,
 )
+from app.core.config.variant_policy import DETAIL_PARENT_OFFER_INHERITANCE_RULE_ID
 from app.extraction.entities import EntitySet
 
 PUBLIC_MAP = {
@@ -103,7 +104,11 @@ def _cohere_parent_availability(
     *,
     expected_variant_count: int,
 ) -> None:
-    if len(variants) != expected_variant_count:
+    if len(variants) != expected_variant_count or any(
+        isinstance(row.get("availability"), dict)
+        and row["availability"].get("rule_id") == DETAIL_PARENT_OFFER_INHERITANCE_RULE_ID
+        for row in variant_lineage
+    ):
         return
     availability = [str(row.get("availability") or "") for row in variants]
     if not availability or any(value not in {"in_stock", "out_of_stock"} for value in availability):
@@ -202,7 +207,7 @@ def _variant_public_row(variant, decisions, derived, by_id, offer, asset) -> tup
             lineage_row[field] = lineage(decision=decision)
     row.update(variant.option_values)
     _variant_option_lineage(variant, decisions, lineage_row)
-    _variant_offer_fields(row, lineage_row, offer, decisions, derived, by_id)
+    _variant_offer_fields(row, lineage_row, variant, offer, decisions, derived, by_id)
     _variant_asset_field(row, lineage_row, asset, decisions, by_id)
     return row, lineage_row
 
@@ -214,14 +219,13 @@ def _variant_option_lineage(variant, decisions, lineage_row: dict[str, object]) 
             lineage_row[fact_type.rsplit(".", 1)[-1]] = lineage(decision=decision)
 
 
-def _variant_offer_fields(row, lineage_row, offer, decisions, derived, by_id) -> None:
-    if offer is None:
-        return
+def _variant_offer_fields(row, lineage_row, variant, offer, decisions, derived, by_id) -> None:
     for fact, field in {"offer.price": "price", "offer.currency": "currency", "offer.original_price": "original_price", "offer.availability": "availability", "offer.stock_quantity": "stock_quantity"}.items():
-        decision = decisions.get((offer.entity_id, fact))
+        decision = decisions.get((offer.entity_id, fact)) if offer else None
+        decision = decision or decisions.get((variant.entity_id, fact))
         if not decision or not decision.accepted_evidence_ids:
             continue
-        value = derived.get((offer.entity_id, fact))
+        value = derived.get((decision.entity_id, fact))
         row[field] = value.value if value is not None else by_id[decision.accepted_evidence_ids[0]].value
         lineage_row[field] = lineage(derived=value) if value else lineage(decision=decision)
 

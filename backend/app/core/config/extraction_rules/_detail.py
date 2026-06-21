@@ -74,10 +74,12 @@ DETAIL_SHELL_TITLE_VALUES = frozenset(
     }
 )
 DETAIL_SHELL_TITLE_KEYS = frozenset(" ".join(re.findall(r"[a-z0-9]+", value.casefold())) for value in DETAIL_SHELL_TITLE_VALUES)
-DETAIL_TITLE_REJECT_VALUES = frozenset({"description", "details", "measurements", "navigation", "overview", "product details", "reviews", "shipping", "size guide", "specifications"}) | DETAIL_LOW_SIGNAL_TITLE_VALUES
+DETAIL_TITLE_REJECT_VALUES = frozenset({"description", "details", "measurements", "navigation", "not added", "overview", "product detail", "product details", "reviews", "shipping", "size guide", "specifications"}) | DETAIL_LOW_SIGNAL_TITLE_VALUES
 DETAIL_TITLE_CODE_ONLY_PATTERN = r"^(?=.{4,40}$)(?=.*\d)[A-Za-z0-9._-]+$"
+DETAIL_TITLE_IDENTIFIER_ONLY_PATTERN = r"^(?=.{2,80}$)(?=.*\d)(?:[A-Za-z]{0,4}\d[A-Za-z0-9]*|[A-Za-z]|\d+)(?:[\s._-]+(?:[A-Za-z]{0,4}\d[A-Za-z0-9]*|[A-Za-z]|\d+))*$"
 DETAIL_TITLE_PATH_EXTENSION_PATTERN = r"\.(?:aspx?|html?|php)$"
 DETAIL_TITLE_SEO_POLLUTION_PATTERN = r"(?:\s[|\u2013\u2014]\s|\s+-\s+\$?\d|\bshop\s+online\b|\$\d+(?:\.\d{2})?)"
+DETAIL_TITLE_TRAILING_CODE_PATTERN = r"(?:^|[\s_-])\d{4,}$"
 DETAIL_TITLE_URL_TOKEN_MIN_OVERLAP = 1
 DETAIL_LOW_SIGNAL_PRODUCT_TYPE_VALUES = frozenset({"criteoproductrail", "giftoption", "promotionalcallout"}) | frozenset(_STATIC_EXPORTS.get("DETAIL_LOW_SIGNAL_PRODUCT_TYPE_VALUES_EXTRA", ()))
 DETAIL_ARTIFACT_PRODUCT_TYPE_VALUES = frozenset(
@@ -568,8 +570,10 @@ _LOCAL_EXPORTS = (
     "DETAIL_SHELL_TITLE_KEYS",
     "DETAIL_TITLE_REJECT_VALUES",
     "DETAIL_TITLE_CODE_ONLY_PATTERN",
+    "DETAIL_TITLE_IDENTIFIER_ONLY_PATTERN",
     "DETAIL_TITLE_PATH_EXTENSION_PATTERN",
     "DETAIL_TITLE_SEO_POLLUTION_PATTERN",
+    "DETAIL_TITLE_TRAILING_CODE_PATTERN",
     "DETAIL_TITLE_URL_TOKEN_MIN_OVERLAP",
     "DETAIL_LOW_SIGNAL_PRODUCT_TYPE_VALUES",
     "DETAIL_ARTIFACT_PRODUCT_TYPE_VALUES",

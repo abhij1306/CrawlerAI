@@ -187,7 +187,10 @@ _ACQUISITION_INT_TOTALS = {
 
 
 def _count_map(value: object) -> dict[str, int]:
-    return {str(key): as_int(value) for key, value in mapping_or_empty(value).items()}
+    return {
+        str(key): as_int(item_value)
+        for key, item_value in mapping_or_empty(value).items()
+    }
 
 
 def _bump_counter(current: object, bucket: str, key: object) -> dict[str, int]:

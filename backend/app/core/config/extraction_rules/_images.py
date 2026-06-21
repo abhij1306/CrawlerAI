@@ -79,25 +79,73 @@ AMAZON_IMAGE_LOW_RES_MAX_DIMENSION = 999
 VARIANT_UI_NOISE_EXACT_MATCH_MAX_LENGTH = 8
 PRIMARY_IMAGE_REJECT_URL_TOKENS = frozenset(
     {
-        "benefit-icon",
-        "placeholder",
-        "logo",
+        "afterpay",
         "badge",
+        "benefit-icon",
+        "carrier-logo",
         "discount",
         "email",
         "icon",
+        "klarna",
         "loader",
-        "swatch",
+        "logo",
         "no-image",
         "no_image",
         "payment",
-        "sprite",
-        "testimonial",
-        "tracking",
+        "paypal",
+        "pixel",
+        "placeholder",
         "quote",
         "schedule",
-        "pixel",
+        "sprite",
+        "swatch",
+        "testimonial",
+        "tracking",
         "1x1",
+    }
+)
+PRODUCT_ASSET_REJECT_URL_PATTERNS = (
+    r"(?:^|[/_.-])(?:att|tmobile|verizon)(?:[/_.-]|$)",
+    r"(?:^|[/_.-])(?:left|right)[_-]?arrow(?:[/_.-]|$)",
+    r"(?:^|[/_.-])chevrons?(?:[/_.-]|$)",
+    r"(?:^|/)edit(?:\.[a-f0-9]{6,})?\.svg(?:$|[?#])",
+    r"/flags?/[a-z]{2}(?:[-_][a-z]{2})?\.(?:png|svg|webp)(?:$|[?#])",
+    r"\{[a-z_][a-z0-9_]*\}",
+)
+DETAIL_DOM_IMAGE_POSITIVE_SCOPE_TOKENS = frozenset(
+    {
+        "gallery",
+        "hero",
+        "media-gallery",
+        "pdp",
+        "product-gallery",
+        "product-image",
+        "product-media",
+        "productgallery",
+        "productimage",
+        "productmedia",
+        "slider",
+        "zoom",
+    }
+)
+DETAIL_DOM_IMAGE_NEGATIVE_SCOPE_TOKENS = frozenset(
+    {
+        "accessor",
+        "also-like",
+        "benefit",
+        "complete-look",
+        "cross-sell",
+        "footer",
+        "header",
+        "nav",
+        "payment",
+        "recommend",
+        "recent",
+        "related",
+        "review",
+        "shop-look",
+        "upsell",
+        "you-may",
     }
 )
 
@@ -116,8 +164,11 @@ _LOCAL_EXPORTS = (
     "DETAIL_IMAGE_COLORWAY_CODE_PATTERN",
     "DETAIL_IMAGE_PRODUCT_CODE_PATTERN",
     "DETAIL_IMAGE_VIEW_CODE_PATTERN",
+    "DETAIL_DOM_IMAGE_NEGATIVE_SCOPE_TOKENS",
+    "DETAIL_DOM_IMAGE_POSITIVE_SCOPE_TOKENS",
     "EXPORT_IMAGE_URL_SUFFIXES", "LOW_RES_SWATCH_IMAGE_PATH_PATTERN",
-    "PRIMARY_IMAGE_REJECT_URL_TOKENS", "SHOPIFY_IMAGE_FILE_PATH_PATTERN",
+    "PRIMARY_IMAGE_REJECT_URL_TOKENS", "PRODUCT_ASSET_REJECT_URL_PATTERNS",
+    "SHOPIFY_IMAGE_FILE_PATH_PATTERN",
     "VARIANT_UI_NOISE_EXACT_MATCH_MAX_LENGTH",
 )
 __all__ = sorted((*_common_exports.__all__, *_LOCAL_EXPORTS))

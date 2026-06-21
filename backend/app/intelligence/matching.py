@@ -119,21 +119,43 @@ def score_candidate(
     candidate: dict[str, object],
     source_type: str,
 ) -> dict[str, object]:
-    reasons: dict[str, object] = {}
-    score = 0.0
     source_title = str(source.get("title") or "")
     candidate_title = str(candidate.get("title") or "")
+    score, reasons, title_similarity = _score_base_signals(
+        source=source,
+        candidate=candidate,
+        source_type=source_type,
+        source_title=source_title,
+        candidate_title=candidate_title,
+    )
+    score, reasons = _apply_identity_floor(
+        score=score,
+        reasons=reasons,
+        source_type=source_type,
+        title_similarity=title_similarity,
+    )
+    final_score = round(min(max(score, 0.0), 1.0), 4)
+    return {"score": final_score, "label": score_label(final_score), "reasons": reasons}
+
+
+def _score_base_signals(
+    *,
+    source: dict[str, object],
+    candidate: dict[str, object],
+    source_type: str,
+    source_title: str,
+    candidate_title: str,
+) -> tuple[float, dict[str, object], float]:
+    """Compute additive/subtractive signals and retain unrounded title similarity."""
+    reasons: dict[str, object] = {}
+    score = 0.0
+
     title_similarity = _title_similarity(source_title, candidate_title)
     score += title_similarity * MATCH_SCORE_WEIGHTS["title_similarity"]
     reasons["title_similarity"] = round(title_similarity, 4)
 
     source_brand = normalize_brand(source.get("brand"))
     candidate_brand = normalize_brand(candidate.get("brand"))
-    # Evidence-based brand resolution (deterministic). The registry only canonicalizes brand
-    # aliases; it does not gate matching. When the candidate brand could not be resolved but
-    # the candidate's own text (title/description/snippet/source/url) states the source brand,
-    # trust that evidence. This unblocks matching for products whose brand is not pre-listed
-    # in BRAND_DOMAIN_MAP/registry. No brand is fabricated without candidate-side evidence.
     if not candidate_brand and source_brand and _candidate_mentions_source_brand(source, candidate):
         candidate_brand = source_brand
         reasons["brand_from_candidate_evidence"] = True
@@ -147,10 +169,6 @@ def score_candidate(
         score += MATCH_SCORE_WEIGHTS["gtin_match"]
     reasons["gtin_match"] = gtin_match
 
-    # Manufacturer style/model code is the universal cross-retailer identity for branded
-    # goods (e.g. Nike "FV5285"). An exact match is a GTIN-class signal. Belk SKU/style and
-    # other internal-only identifiers are still NOT scored as raw strings; only the decomposed
-    # manufacturer code is. See INVARIANTS Product Intelligence identity contract.
     style_code_match = _style_code_match(source, candidate)
     if style_code_match:
         score += MATCH_SCORE_WEIGHTS["style_code_match"]
@@ -172,14 +190,14 @@ def score_candidate(
         score += MATCH_SCORE_WEIGHTS["price_band"]
     reasons["price_band_match"] = price_match
 
-    raw_authority_bonus = float(SOURCE_TYPE_AUTHORITY_BONUS.get(str(source_type or ""), 0.0))
-    if source_type == SOURCE_TYPE_BRAND_DTC:
-        authority_bonus = raw_authority_bonus
-    else:
-        authority_bonus = min(
-            raw_authority_bonus,
-            MATCH_SCORE_WEIGHTS["source_authority"],
-        )
+    raw_authority_bonus = float(
+        SOURCE_TYPE_AUTHORITY_BONUS.get(str(source_type or ""), 0.0)
+    )
+    authority_bonus = (
+        raw_authority_bonus
+        if source_type == SOURCE_TYPE_BRAND_DTC
+        else min(raw_authority_bonus, MATCH_SCORE_WEIGHTS["source_authority"])
+    )
     score += authority_bonus
     reasons["source_authority_bonus"] = round(authority_bonus, 4)
 
@@ -188,13 +206,30 @@ def score_candidate(
         score -= MATCH_VARIANT_MISMATCH_PENALTY
     reasons["variant_mismatch"] = variant_mismatch
 
-    # Identity ladder (deterministic, no LLM). Highest-confidence identity signal wins the
-    # floor and the recorded match_basis: GTIN > manufacturer style-code > brand-DTC own
-    # listing > brand-exact + strong title > brand-exact + distinctive model token >
-    # brand-exact + medium title. Search-result payloads almost never carry a UPC, so the
-    # manufacturer style-code and the distinctive model token are the real cross-retailer
-    # signals. Colorway/size differences are the SAME model, not a variant mismatch, so the
-    # spec guard below only caps genuine spec conflicts (capacity / "N-in-1").
+    return score, reasons, title_similarity
+
+
+def _apply_identity_floor(
+    *,
+    score: float,
+    reasons: dict[str, object],
+    source_type: str,
+    title_similarity: float,
+) -> tuple[float, dict[str, object]]:
+    """Apply the identity-ladder floor/cap and record match_basis in reasons.
+
+    Identity ladder (deterministic, no LLM). Highest-confidence identity signal wins:
+    GTIN > manufacturer style-code > brand-DTC own listing > brand-exact + strong
+    title > brand-exact + distinctive model token > brand-exact + medium title.
+    A wrong-variant cap fires last so it cannot be lifted by any floor.
+    """
+    brand_match: bool = bool(reasons.get("brand_match"))
+    gtin_match: bool = bool(reasons.get("gtin_match"))
+    style_code_match: bool = bool(reasons.get("style_code_match"))
+    model_token_match: bool = bool(reasons.get("model_token_match"))
+    price_match: bool = bool(reasons.get("price_band_match"))
+    variant_mismatch: bool = bool(reasons.get("variant_mismatch"))
+
     match_basis = MATCH_BASIS_TITLE
     if gtin_match and brand_match and title_similarity >= 0.45:
         score = max(score, MATCH_SCORE_FLOOR_GTIN)
@@ -207,7 +242,11 @@ def score_candidate(
         )
         score = max(score, floor)
         match_basis = MATCH_BASIS_STYLE_CODE
-    elif source_type == SOURCE_TYPE_BRAND_DTC and brand_match and title_similarity >= MATCH_DTC_MIN_TITLE_SIM:
+    elif (
+        source_type == SOURCE_TYPE_BRAND_DTC
+        and brand_match
+        and title_similarity >= MATCH_DTC_MIN_TITLE_SIM
+    ):
         # Brand's own listing always ranks highest.
         score = max(score, MATCH_SCORE_FLOOR_BRAND_DTC)
         match_basis = MATCH_BASIS_BRAND_DTC
@@ -224,7 +263,11 @@ def score_candidate(
         # source title and a verbose retailer title share little raw overlap.
         score = max(score, MATCH_SCORE_FLOOR_MODEL_BRAND)
         match_basis = MATCH_BASIS_MODEL_BRAND
-    elif not variant_mismatch and brand_match and title_similarity >= MATCH_TITLE_SIM_MEDIUM:
+    elif (
+        not variant_mismatch
+        and brand_match
+        and title_similarity >= MATCH_TITLE_SIM_MEDIUM
+    ):
         score = max(score, MATCH_SCORE_FLOOR_BRAND_TITLE_MEDIUM)
         match_basis = MATCH_BASIS_BRAND_TITLE
 
@@ -232,13 +275,7 @@ def score_candidate(
     if variant_mismatch:
         score = min(score, MATCH_VARIANT_MISMATCH_SCORE_CAP)
     reasons["match_basis"] = match_basis
-
-    final_score = round(min(max(score, 0.0), 1.0), 4)
-    return {
-        "score": final_score,
-        "label": score_label(final_score),
-        "reasons": reasons,
-    }
+    return score, reasons
 
 
 def extract_search_result_snapshot(

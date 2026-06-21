@@ -20,6 +20,8 @@ from app.core.config.extraction_rules import (
     CDN_IMAGE_QUERY_PARAMS,
     GIF_BASE64_PREFIX,
     PLACEHOLDER_IMAGE_URL_PATTERNS,
+    PRIMARY_IMAGE_REJECT_URL_TOKENS,
+    PRODUCT_ASSET_REJECT_URL_PATTERNS,
     UNRESOLVED_TEMPLATE_URL_TOKENS,
     URL_DETECTION_TOKENS,
 )
@@ -41,6 +43,7 @@ __all__ = [
     "variant_url_with_param",
     "ensure_scheme",
     "is_placeholder_image_url",
+    "is_utility_image_url",
     "_ensure_scheme",
     "_is_placeholder_image_url",
 ]
@@ -57,6 +60,16 @@ placeholder_image_url_tokens = tuple(
     token.lower()
     for token in tuple(PLACEHOLDER_IMAGE_URL_PATTERNS or ())
     if str(token).strip()
+)
+product_asset_reject_url_tokens = tuple(
+    str(token).strip().casefold()
+    for token in tuple(PRIMARY_IMAGE_REJECT_URL_TOKENS or ())
+    if str(token).strip()
+)
+product_asset_reject_url_patterns = tuple(
+    str(pattern).strip()
+    for pattern in tuple(PRODUCT_ASSET_REJECT_URL_PATTERNS or ())
+    if str(pattern).strip()
 )
 
 
@@ -306,6 +319,18 @@ def _is_placeholder_image_url(value: str) -> bool:
     if not lowered:
         return False
     return any(token in lowered for token in placeholder_image_url_tokens)
+
+
+def is_utility_image_url(value: object) -> bool:
+    text = unquote(str(value or "").strip()).casefold()
+    if not text:
+        return False
+    if any(token in text for token in product_asset_reject_url_tokens):
+        return True
+    return any(
+        re.search(pattern, text, flags=re.IGNORECASE)
+        for pattern in product_asset_reject_url_patterns
+    )
 
 
 def _trim_trailing_url_candidate(value: str) -> str:

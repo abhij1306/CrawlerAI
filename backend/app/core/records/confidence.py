@@ -26,21 +26,70 @@ def score_record_confidence(
     requested_fields: list[str] | None = None,
 ) -> dict[str, Any]:
     normalized_surface = str(surface or "").strip().lower()
+    weights = _surface_weights(normalized_surface)
+    field_sources = _normalized_field_sources(record)
+    score, total_weight, present_fields, missing_fields, penalties, source_tier_weights = (
+        _score_weighted_fields(record, normalized_surface, weights, field_sources)
+    )
+    alias_map = get_surface_field_aliases(normalized_surface)
+    field_sources_by_key = {
+        normalize_field_key(fn): fn for fn in field_sources if normalize_field_key(fn)
+    }
+    score, total_weight, missing_fields, requested_found_total, raw_requested, requested = (
+        _apply_requested_field_bonus(
+            record=record,
+            normalized_surface=normalized_surface,
+            requested_fields=requested_fields,
+            field_sources=field_sources,
+            alias_map=alias_map,
+            field_sources_by_key=field_sources_by_key,
+            score=score,
+            total_weight=total_weight,
+            missing_fields=missing_fields,
+        )
+    )
+    return _assemble_confidence_result(
+        score=score,
+        total_weight=total_weight,
+        present_fields=present_fields,
+        missing_fields=missing_fields,
+        penalties=penalties,
+        source_tier_weights=source_tier_weights,
+        raw_requested=raw_requested,
+        requested=requested,
+        requested_found_total=requested_found_total,
+    )
+
+
+def _surface_weights(normalized_surface: str) -> dict[str, float]:
     weights = dict(SURFACE_WEIGHTS.get(normalized_surface) or {})
     if not weights:
         weights = dict.fromkeys(
             ("title", "description", "image_url", "price", "company", "location"),
             1.0,
         )
+    return weights
 
+
+def _score_weighted_fields(
+    record: dict[str, Any],
+    normalized_surface: str,
+    weights: dict[str, float],
+    field_sources: dict[str, list[str]],
+) -> tuple[
+    float,
+    float,
+    list[str],
+    list[str],
+    list[dict[str, Any]],
+    defaultdict[str, float],
+]:
     total_weight = sum(weights.values()) or 1.0
     score = 0.0
     present_fields: list[str] = []
     missing_fields: list[str] = []
     penalties: list[dict[str, Any]] = []
     source_tier_weights: defaultdict[str, float] = defaultdict(float)
-    field_sources = _normalized_field_sources(record)
-
     for field_name, weight in weights.items():
         value = record.get(field_name)
         if value in (None, "", [], {}):
@@ -64,56 +113,71 @@ def score_record_confidence(
         score += weight * source_quality * (1.0 - penalty_total)
         source_tier_weights[tier_name] += weight
         penalties.extend(penalty_items)
+    return score, total_weight, present_fields, missing_fields, penalties, source_tier_weights
 
+
+def _apply_requested_field_bonus(
+    *,
+    record: dict[str, Any],
+    normalized_surface: str,
+    requested_fields: list[str] | None,
+    field_sources: dict[str, list[str]],
+    alias_map: dict[str, list[str]],
+    field_sources_by_key: dict[str, str],
+    score: float,
+    total_weight: float,
+    missing_fields: list[str],
+) -> tuple[float, float, list[str], int, list[str], list[str]]:
     raw_requested = [
-        " ".join(str(field_name or "").split()).strip()
-        for field_name in requested_fields or []
-        if " ".join(str(field_name or "").split()).strip()
+        " ".join(str(fn or "").split()).strip()
+        for fn in requested_fields or []
+        if " ".join(str(fn or "").split()).strip()
     ]
     requested = repair_target_fields_for_surface(normalized_surface, raw_requested)
-    field_sources_by_key = {
-        normalize_field_key(field_name): field_name
-        for field_name in field_sources
-        if normalize_field_key(field_name)
-    }
-    alias_map = get_surface_field_aliases(normalized_surface)
     requested_match_keys = _requested_match_keys(
-        requested=requested,
-        raw_requested=raw_requested,
-        alias_map=alias_map,
+        requested=requested, raw_requested=raw_requested, alias_map=alias_map
     )
     requested_matches = [
         match
-        for field_name in requested_match_keys
+        for fn in requested_match_keys
         if (match := _resolve_requested_field_match(
-            record,
-            field_name=field_name,
-            alias_map=alias_map,
+            record, field_name=fn, alias_map=alias_map,
             field_sources_by_key=field_sources_by_key,
         )) is not None
     ]
-    for field_name in requested:
+    for fn in requested:
         if _resolve_requested_field_match(
-            record,
-            field_name=field_name,
-            alias_map=alias_map,
+            record, field_name=fn, alias_map=alias_map,
             field_sources_by_key=field_sources_by_key,
-        ) is None and field_name not in missing_fields:
-            missing_fields.append(field_name)
+        ) is None and fn not in missing_fields:
+            missing_fields.append(fn)
     requested_found_total = len(requested_matches)
     if requested:
-        requested_bonus = 0.0
-        for _requested_key, actual_field_name in requested_matches:
-            source_quality, _ = _field_source_quality(
-                field_sources.get(actual_field_name),
+        requested_bonus = sum(
+            _field_source_quality(
+                field_sources.get(actual_fn),
                 fallback_source=record.get("_source"),
-            )
-            requested_bonus += source_quality / max(len(requested), 1)
+            )[0] / max(len(requested), 1)
+            for _rk, actual_fn in requested_matches
+        )
         score += 0.15 * requested_bonus
         total_weight += 0.15
+    return score, total_weight, missing_fields, requested_found_total, raw_requested, requested
 
+
+def _assemble_confidence_result(
+    *,
+    score: float,
+    total_weight: float,
+    present_fields: list[str],
+    missing_fields: list[str],
+    penalties: list[dict[str, Any]],
+    source_tier_weights: defaultdict[str, float],
+    raw_requested: list[str],
+    requested: list[str],
+    requested_found_total: int,
+) -> dict[str, Any]:
     normalized_score = round(max(0.0, min(score / total_weight, 1.0)), 4)
-    source_reasoning = _source_reasoning(source_tier_weights)
     return {
         "score": normalized_score,
         "level": _confidence_level(normalized_score),
@@ -129,7 +193,7 @@ def score_record_confidence(
             }
             for item in penalties
         ],
-        "source_tier": source_reasoning,
+        "source_tier": _source_reasoning(source_tier_weights),
     }
 
 

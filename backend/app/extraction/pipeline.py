@@ -22,9 +22,11 @@ from app.core.config.extraction_rules import (
     CURRENCY_SYMBOL_MAP,
     DETAIL_SHELL_TITLE_KEYS,
     DETAIL_TITLE_CODE_ONLY_PATTERN,
+    DETAIL_TITLE_IDENTIFIER_ONLY_PATTERN,
     DETAIL_TITLE_PATH_EXTENSION_PATTERN,
     DETAIL_TITLE_REJECT_VALUES,
     DETAIL_TITLE_SEO_POLLUTION_PATTERN,
+    DETAIL_TITLE_TRAILING_CODE_PATTERN,
     DETAIL_TITLE_URL_TOKEN_MIN_OVERLAP,
     NORMALIZER_AVAILABILITY_TOKENS,
 )
@@ -199,12 +201,23 @@ def normalize_evidence(evidence: Evidence, *, page_url: str) -> Evidence:
 def _title_flags(evidence: Evidence, *, value: str, page_url: str) -> set[str]:
     flags: set[str] = set()
     key = " ".join(re.findall(r"[a-z0-9]+", value.casefold()))
+    url_title_key = " ".join(
+        re.findall(r"[a-z0-9]+", detail_title_from_url(page_url).casefold())
+    )
     if evidence.collector_id == "url":
         flags.add("url_derived_title")
     if re.search(DETAIL_TITLE_PATH_EXTENSION_PATTERN, str(evidence.raw_value), re.IGNORECASE):
         flags.add("filename_title")
-    if re.fullmatch(DETAIL_TITLE_CODE_ONLY_PATTERN, value.strip()):
+    if re.fullmatch(DETAIL_TITLE_CODE_ONLY_PATTERN, value.strip()) or re.fullmatch(
+        DETAIL_TITLE_IDENTIFIER_ONLY_PATTERN, value.strip()
+    ):
         flags.add("code_only_title")
+    if (
+        evidence.collector_id == "url"
+        and key == url_title_key
+        and re.search(DETAIL_TITLE_TRAILING_CODE_PATTERN, value.strip(), re.IGNORECASE)
+    ):
+        flags.add("filename_title")
     if key in DETAIL_SHELL_TITLE_KEYS:
         flags.add("shell_title")
     if key in DETAIL_TITLE_REJECT_VALUES:
@@ -214,6 +227,8 @@ def _title_flags(evidence: Evidence, *, value: str, page_url: str) -> set[str]:
     url_tokens = set(semantic_detail_identity_tokens(page_url))
     title_tokens = {token for token in re.findall(r"[a-z0-9]+", value.casefold()) if len(token) >= 3}
     overlap = len(url_tokens & title_tokens)
+    if len(title_tokens) == 1 and len(url_tokens) >= 2 and title_tokens < url_tokens:
+        flags.add("truncated_title")
     if url_tokens and title_tokens:
         flags.add("title_url_match" if overlap >= DETAIL_TITLE_URL_TOKEN_MIN_OVERLAP else "title_url_mismatch")
     return flags

@@ -34,8 +34,8 @@ from app.enrichment.deterministic import (
     normalize_from_terms,
     normalize_materials,
     normalize_sizes,
-    without_empty,
 )
+from app.core.shared.value_walk import without_empty
 from app.core.shared.text_coerce import bounded_unique_strings as string_list
 from app.enrichment.discovery_tags import (
     ai_discovery_allowed_tags_for_product,
@@ -44,9 +44,7 @@ from app.enrichment.discovery_tags import (
 from app.enrichment.llm_diagnostics import build_llm_diagnostics
 from app.enrichment.shopify_catalog import (
     category_attribute_handles,
-    repository_terms,
     taxonomy_reference_for_category_path,
-    term_dict,
 )
 from app.core.shared.field_coerce import (
     clean_text,
@@ -380,7 +378,7 @@ def _apply_llm_payload(
 ) -> list[str]:
     applied: list[str] = []
     repository = load_attribute_repository()
-    terms = repository_terms(repository)
+    terms = object_dict(repository.get("normalization_terms"))
     category_path = text_or_none(payload.get("category_path"))
     if product.category_path is None and category_path:
         if taxonomy_reference := taxonomy_reference_for_category_path(
@@ -399,7 +397,7 @@ def _apply_llm_payload(
         raw_value = payload.get(field_name)
         normalized = normalize_from_terms(
             string_list(raw_value, max_items=1, max_chars=60) or [raw_value],
-            term_dict(terms, term_name),
+            object_dict(terms.get(term_name)),
         )
         if normalized:
             setattr(product, field_name, normalized)
@@ -425,7 +423,9 @@ def _apply_llm_payload(
         size_system = text_or_none(payload.get("size_system"))
         known_systems = {
             str(key)
-            for key in object_dict(term_dict(terms, "size_systems").get("systems"))
+            for key in object_dict(
+                object_dict(terms.get("size_systems")).get("systems")
+            )
         }
         if size_system and size_system in known_systems:
             product.size_system = size_system
@@ -437,12 +437,24 @@ def _apply_llm_payload(
         if materials_normalized:
             product.materials_normalized = materials_normalized
             applied.append("materials_normalized")
+    applied.extend(
+        _apply_semantic_llm_fields(product, payload, allowed_tags=allowed_tags)
+    )
+    product.taxonomy_version = DATA_ENRICHMENT_TAXONOMY_VERSION
+    return applied
+
+
+def _apply_semantic_llm_fields(
+    product: EnrichedProduct,
+    payload: dict[str, object],
+    *,
+    allowed_tags: list[str] | None,
+) -> list[str]:
+    applied: list[str] = []
+    allowed = set(allowed_tags or ai_discovery_allowed_tags_for_product(product))
     for field_name in (
-        "intent_attributes",
-        "audience",
-        "style_tags",
-        "ai_discovery_tags",
-        "suggested_bundles",
+        "intent_attributes", "audience", "style_tags",
+        "ai_discovery_tags", "suggested_bundles",
     ):
         max_chars = (
             data_enrichment_settings.llm_semantic_list_item_chars
@@ -451,26 +463,20 @@ def _apply_llm_payload(
         )
         values = string_list(payload.get(field_name), max_items=10, max_chars=max_chars)
         if field_name == "ai_discovery_tags":
-            allowed = set(allowed_tags or ai_discovery_allowed_tags_for_product(product))
-            kept: list[str] = []
-            discarded: list[dict[str, str]] = []
-            for value in values:
-                slug = discovery_tag_slug(value)
-                if slug and slug in allowed:
-                    kept.append(slug)
-                elif slug:
-                    discarded.append({"value": str(value), "slug": slug})
+            pairs = [(str(value), discovery_tag_slug(value)) for value in values]
+            discarded = [
+                {"value": value, "slug": slug}
+                for value, slug in pairs if slug and slug not in allowed
+            ]
+            values = [slug for _value, slug in pairs if slug and slug in allowed]
             if discarded:
                 logger.warning(
                     "Discarded unsupported ai_discovery_tags for product_id=%s: %s",
-                    product.id,
-                    discarded,
+                    product.id, discarded,
                 )
-            values = kept
         setattr(product, field_name, values or None)
         if values:
             applied.append(field_name)
-    product.taxonomy_version = DATA_ENRICHMENT_TAXONOMY_VERSION
     return applied
 
 

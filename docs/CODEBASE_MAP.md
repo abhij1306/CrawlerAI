@@ -91,7 +91,8 @@ Public API schemas live in `api_key.py` and `public_api.py`.
 | `connectors/public_api/domain_info_service.py` | Read-only public domain readiness view over domain memory, run profiles, and recent crawl rows |
 | `enrichment/deterministic.py` | Deterministic enrichment normalization, taxonomy matching, and product attribute diagnostics |
 | `enrichment/llm_diagnostics.py` | Data enrichment LLM rejection and skip-reason diagnostics |
-| `enrichment/shopify_catalog.py` | Shopify taxonomy and attribute repository loading/matching |
+| `enrichment/shopify_catalog.py` | Shopify taxonomy scoring, matching, and exact-conflict policy |
+| `enrichment/shopify_repository.py` | Shopify taxonomy/attribute JSON loading, normalization, and lookup indexes |
 | `crawl/batch_runtime.py` | URL orchestration, per-URL session ownership, concurrency, progress, pause, kill checks |
 | `crawl/sitemap_resolver.py`, `crawl/site_link_discovery.py` | Static sitemap/homepage category discovery plus rendered same-origin site-link fallback |
 | `tasks.py` | Celery task entry |

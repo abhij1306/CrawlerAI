@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from app.models.domain_memory import (
     DomainCookieMemory,
     DomainFieldFeedback,
+    DomainRunProfile,
 )
 from app.models.crawl_run import CrawlRecord, CrawlRun
 from app.models.review import ReviewPromotion
@@ -284,6 +285,50 @@ async def build_domain_recipe_payload(
     *,
     run: CrawlRun,
 ) -> dict[str, object]:
+    records, artifacts_by_id, domain = await _load_recipe_context(session, run)
+    saved_selectors = await list_selector_records(
+        session, domain=domain, surface=run.surface
+    )
+    found_fields, requested_fields = _resolve_recipe_fields(
+        run, records, artifacts_by_id
+    )
+    feedback_index = await _latest_field_feedback_index(
+        session, domain=domain, surface=run.surface
+    )
+    selector_candidates, field_learning = collect_selector_candidates(
+        records,
+        saved_selectors=saved_selectors,
+        run=run,
+        feedback_index=feedback_index,
+        artifacts_by_id=artifacts_by_id,
+    )
+    acquisition_info = derive_acquisition_info(
+        records, run=run, artifacts_by_id=artifacts_by_id
+    )
+    saved_profile_record = await load_domain_run_profile(
+        session, domain=domain, surface=run.surface
+    )
+    cookie_memory_exists = await _domain_cookie_memory_exists(session, domain=domain)
+    return _assemble_recipe_payload(
+        run=run,
+        domain=domain,
+        records=records,
+        artifacts_by_id=artifacts_by_id,
+        requested_fields=requested_fields,
+        found_fields=found_fields,
+        acquisition_info=acquisition_info,
+        selector_candidates=selector_candidates,
+        field_learning=field_learning,
+        saved_selectors=saved_selectors,
+        saved_profile_record=saved_profile_record,
+        cookie_memory_exists=cookie_memory_exists,
+    )
+
+
+async def _load_recipe_context(
+    session: AsyncSession,
+    run: CrawlRun,
+) -> tuple[list[CrawlRecord], dict[int, RecordArtifacts], str]:
     records_result = await session.execute(
         select(CrawlRecord)
         .where(CrawlRecord.run_id == run.id)
@@ -291,12 +336,14 @@ async def build_domain_recipe_payload(
     )
     records = list(records_result.scalars().all())
     artifacts_by_id = await _load_record_artifact_views(session, records)
-    domain = normalize_domain(run.url)
-    saved_selectors = await list_selector_records(
-        session,
-        domain=domain,
-        surface=run.surface,
-    )
+    return records, artifacts_by_id, normalize_domain(run.url)
+
+
+def _resolve_recipe_fields(
+    run: CrawlRun,
+    records: list[CrawlRecord],
+    artifacts_by_id: dict[int, RecordArtifacts],
+) -> tuple[list[str], list[str]]:
     found_fields = sorted(
         {
             str(field_name)
@@ -319,53 +366,41 @@ async def build_domain_recipe_payload(
     if not found_fields and requested_fields:
         dom_patterns = mapping_or_empty(EXTRACTION_RULES.get("dom_patterns"))
         found_fields = sorted(
-            field_name
-            for field_name in requested_fields
-            if str(dom_patterns.get(field_name) or "").strip()
+            f for f in requested_fields if str(dom_patterns.get(f) or "").strip()
         )
-    feedback_index = await _latest_field_feedback_index(
-        session,
-        domain=domain,
-        surface=run.surface,
-    )
-    selector_candidates, field_learning = collect_selector_candidates(
-        records,
-        saved_selectors=saved_selectors,
-        run=run,
-        feedback_index=feedback_index,
-        artifacts_by_id=artifacts_by_id,
-    )
-    acquisition_info = derive_acquisition_info(
-        records,
-        run=run,
-        artifacts_by_id=artifacts_by_id,
-    )
+    return found_fields, requested_fields
+
+
+def _assemble_recipe_payload(
+    *,
+    run: CrawlRun,
+    domain: str,
+    records: list[CrawlRecord],
+    artifacts_by_id: dict[int, RecordArtifacts],
+    requested_fields: list[str],
+    found_fields: list[str],
+    acquisition_info: dict[str, object],
+    selector_candidates: dict[str, dict[str, object]],
+    field_learning: dict[tuple[str, str, str], dict[str, object]],
+    saved_selectors: list[dict[str, object]],
+    saved_profile_record: DomainRunProfile | None,
+    cookie_memory_exists: bool,
+) -> dict[str, object]:
     actual_fetch_method = acquisition_info["actual_fetch_method"]
-    browser_reason = acquisition_info["browser_reason"]
-    acquisition_summary = acquisition_info["acquisition_summary"]
-    affordance_candidates = acquisition_info["affordance_candidates"]
-    saved_profile_record = await load_domain_run_profile(
-        session,
-        domain=domain,
-        surface=run.surface,
-    )
-    cookie_memory_exists = await _domain_cookie_memory_exists(session, domain=domain)
     return {
         "run_id": run.id,
         "domain": domain,
         "surface": run.surface,
         "requested_field_coverage": {
             "requested": requested_fields,
-            "found": [field for field in requested_fields if field in found_fields],
-            "missing": [
-                field for field in requested_fields if field not in found_fields
-            ],
+            "found": [f for f in requested_fields if f in found_fields],
+            "missing": [f for f in requested_fields if f not in found_fields],
         },
         "acquisition_evidence": {
             "actual_fetch_method": actual_fetch_method,
             "browser_used": actual_fetch_method == "browser",
-            "browser_reason": browser_reason,
-            "acquisition_summary": acquisition_summary,
+            "browser_reason": acquisition_info["browser_reason"],
+            "acquisition_summary": acquisition_info["acquisition_summary"],
             "cookie_memory_available": cookie_memory_exists,
         },
         "field_learning": sorted(
@@ -385,10 +420,9 @@ async def build_domain_recipe_payload(
             ),
         ),
         "evidence_review": collect_evidence_review(
-            records,
-            artifacts_by_id=artifacts_by_id,
+            records, artifacts_by_id=artifacts_by_id
         ),
-        "affordance_candidates": affordance_candidates,
+        "affordance_candidates": acquisition_info["affordance_candidates"],
         "saved_selectors": saved_selectors,
         "saved_run_profile": (
             dict(saved_profile_record.profile or {})

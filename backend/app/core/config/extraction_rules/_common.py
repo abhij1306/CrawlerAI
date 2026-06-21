@@ -259,7 +259,7 @@ LISTING_MERCHANDISING_TITLE_PREFIXES = ("shop ", "view all ", "browse ")
 LISTING_NAVIGATION_TITLE_HINTS = frozenset({"home", "menu", "account", "cart"})
 LISTING_SHELL_FRAMEWORK_TOKENS = ("__next", "nuxt", "data-reactroot", "skeleton")
 LISTING_TITLE_CTA_TITLES = frozenset(
-    {"shop now", "learn more", "view all", "see more", "load more"}
+    {"shop now", "learn more", "view all", "view product", "see more", "load more"}
 )
 LISTING_TITLE_CONTROL_ATTRIBUTES = (
     "aria-checked",

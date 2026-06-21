@@ -3,7 +3,7 @@
 **Created:** 2026-06-21
 **Agent:** Codex
 **Status:** IN PROGRESS
-**Current slice:** Slice 9 — Config and Confidence Ownership
+**Current slice:** Slice 10 — package LOC closure pending; Slices 9 and 11 await verification
 **Touches buckets:** acquisition/browser runtime, extraction and public record contracts, persistence/artifacts/review, crawl orchestration, core config/record quality, intelligence, enrichment, connectors, tests, canonical architecture docs
 
 ## Goal
@@ -839,7 +839,7 @@ $env:PYTHONPATH='.'
 
 ### Slice 9: Config and Confidence Ownership
 
-**Status:** TODO
+**Status:** IMPLEMENTED — AWAITING VERIFY
 **Owners:** `core/config/runtime_settings.py`, existing domain config modules, `core/records/confidence.py`, config/architecture tests
 **Fallback docs:** `docs/ENGINEERING_STRATEGY.md` AP-1/AP-10/AP-11/AP-13/AP-21/AP-22.
 **Known audited scope:** all runtime settings imports and profile-default application; duplicate extraction key mappings; confidence inputs/consumers.
@@ -873,7 +873,7 @@ $env:PYTHONPATH='.'
 
 ### Slice 10: Review, Intelligence, and Enrichment Owner Closure
 
-**Status:** TODO
+**Status:** PARTIAL — PACKAGE LOC CLOSURE PENDING
 **Owners:** `crawl/review/__init__.py`, existing review support modules, `intelligence/matching.py`, `enrichment/shopify_catalog.py`, new `shopify_repository.py`, `enrichment/deterministic.py`, `service.py`
 **Fallback docs:** `docs/INVARIANTS.md` Rules 8, 9, 10, 13; `docs/ENGINEERING_STRATEGY.md` AP-17/AP-18.
 **Known audited scope:** long review/intelligence functions, Shopify catalog imports, repository file loads, taxonomy/matching duplicates, LLM boundaries.
@@ -909,7 +909,7 @@ $env:PYTHONPATH='.'
 
 ### Slice 11: LLM Connector Task Closure
 
-**Status:** TODO
+**Status:** IMPLEMENTED — AWAITING VERIFY
 **Owners:** `connectors/llm/tasks.py`, existing provider/config/cost owners and tests
 **Fallback docs:** `docs/INVARIANTS.md` Rule 10; LLM section of `docs/BUSINESS_LOGIC.md`.
 **Known audited scope:** `run_prompt_task`, direct/missing-field/review modes, provider calls, cost logging, circuit breaker, fallback/error paths.

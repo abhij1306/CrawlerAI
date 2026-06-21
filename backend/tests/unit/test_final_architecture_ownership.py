@@ -9,16 +9,8 @@ import pytest
 pytestmark = pytest.mark.unit
 
 APP_ROOT = Path(__file__).resolve().parents[2] / "app"
-OVERSIZED_MODULE_DEBT = {
-    "enrichment/shopify_catalog.py",
-}
-LONG_FUNCTION_DEBT = {
-    ("connectors/llm/tasks.py", "run_prompt_task"),
-    ("core/config/runtime_settings.py", "_apply_profile_defaults"),
-    ("core/records/confidence.py", "score_record_confidence"),
-    ("crawl/review/__init__.py", "build_domain_recipe_payload"),
-    ("intelligence/matching.py", "score_candidate"),
-}
+OVERSIZED_MODULE_DEBT: set[str] = set()
+LONG_FUNCTION_DEBT: set[tuple[str, str]] = set()
 
 LEGACY_RECORD_FIELD_COMPATIBILITY_OWNERS = {
     "core response shaping": "schemas/crawl.py",

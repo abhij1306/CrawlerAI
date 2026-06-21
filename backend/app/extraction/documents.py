@@ -17,6 +17,12 @@ class HtmlNode:
     def css(self, selector: str) -> tuple[HtmlNode, ...]:
         return tuple(HtmlNode(self.artifact_id, node) for node in self.node.css(selector))
 
+    def safe_css(self, selector: str) -> tuple[HtmlNode, ...]:
+        try:
+            return self.css(selector)
+        except Exception:
+            return ()
+
     def css_first(self, selector: str) -> HtmlNode | None:
         node = self.node.css_first(selector)
         return HtmlNode(self.artifact_id, node) if node is not None else None

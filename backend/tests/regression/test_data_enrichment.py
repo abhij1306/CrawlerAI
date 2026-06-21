@@ -41,12 +41,12 @@ from app.enrichment.deterministic import (
 )
 from app.enrichment.shopify_catalog import (
     accessory_path_conflict,
-    normalize_taxonomy_token,
     special_token_conflict,
     sport_specific_conflict,
     taxonomy_candidate_conflicts,
     toys_vs_sports_conflict,
 )
+from app.enrichment.shopify_repository import TaxonomyIndex, normalize_taxonomy_token
 
 BACKEND_ROOT = Path(__file__).resolve().parents[2]
 
@@ -522,7 +522,7 @@ def test_data_enrichment_taxonomy_path_phrase_uses_index_lookup() -> None:
         "category_path": "Apparel & Accessories > Clothing > Outerwear > Coats & Jackets",
         "attribute_handles": [],
     }
-    taxonomy_index = shopify_catalog.TaxonomyIndex(
+    taxonomy_index = TaxonomyIndex(
         version=DATA_ENRICHMENT_TAXONOMY_VERSION,
         categories=(),
         exact_lookup={},
@@ -550,7 +550,7 @@ def test_data_enrichment_taxonomy_path_phrase_allows_token_subset_match() -> Non
         "path_match_tokens": {"apparel", "accessory", "clothing", "outerwear", "coat", "jacket"},
         "attribute_handles": [],
     }
-    taxonomy_index = shopify_catalog.TaxonomyIndex(
+    taxonomy_index = TaxonomyIndex(
         version=DATA_ENRICHMENT_TAXONOMY_VERSION,
         categories=(row,),
         exact_lookup={},
@@ -578,7 +578,7 @@ def test_data_enrichment_taxonomy_path_phrase_rejects_generic_subset_match() -> 
         "path_match_tokens": {"apparel", "accessory", "clothing", "outerwear", "coat", "jacket"},
         "attribute_handles": [],
     }
-    taxonomy_index = shopify_catalog.TaxonomyIndex(
+    taxonomy_index = TaxonomyIndex(
         version=DATA_ENRICHMENT_TAXONOMY_VERSION,
         categories=(row,),
         exact_lookup={},
@@ -604,7 +604,7 @@ def test_data_enrichment_taxonomy_path_phrase_does_not_reject_valid_accessory_te
         "path_match_tokens": {"apparel", "accessory", "clothing"},
         "attribute_handles": [],
     }
-    taxonomy_index = shopify_catalog.TaxonomyIndex(
+    taxonomy_index = TaxonomyIndex(
         version=DATA_ENRICHMENT_TAXONOMY_VERSION,
         categories=(row,),
         exact_lookup={},

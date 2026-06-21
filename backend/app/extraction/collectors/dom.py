@@ -4,6 +4,8 @@ import re
 
 from app.extraction.collectors._helpers import evidence, html_doc
 from app.core.config.extraction_rules import (
+    DETAIL_DOM_IMAGE_NEGATIVE_SCOPE_TOKENS,
+    DETAIL_DOM_IMAGE_POSITIVE_SCOPE_TOKENS,
     VARIANT_DOM_MAX_LABEL_LENGTH,
     VARIANT_DOM_NOISE_PHRASES,
     VARIANT_DOM_SIZE_LABEL_PATTERN,
@@ -18,6 +20,9 @@ from app.core.config.field_mappings import (
 from app.extraction.contracts import CaptureBundle, EntityHint, Evidence, SourceLocator
 from app.extraction.ids import stable_id
 from app.core.records.field_policy import normalize_requested_field
+from app.core.shared.url_utils import is_utility_image_url
+
+_IMAGE_SCOPE_ATTRIBUTES = ("id", "class", "data-testid", "data-component", "data-section", "aria-label", "role")
 
 
 class DomCollector:
@@ -39,12 +44,44 @@ class DomCollector:
                 hint = EntityHint(entity_type="offer" if fact.startswith("offer.") else "product")
                 subject_id = group if fact.startswith("offer.") else product_subject
                 out.append(evidence(bundle, "dom", "dom", fact, value, SourceLocator(kind="css_selector", value=selector), group_id=group, hint=hint, confidence=0.6, subject_id=subject_id, parent_subject_id=product_subject if fact.startswith("offer.") else None))
-        for img in doc.css("main img[src], img[data-product-image][src]"):
+        for img, confidence in _product_image_nodes(doc):
             src = str(img.attribute("src") or "").strip()
-            if src:
-                out.append(evidence(bundle, "dom", "dom", "asset.image_url", src, SourceLocator(kind="css_selector", value="img[src]"), hint=EntityHint(entity_type="asset"), confidence=0.55, parent_subject_id=product_subject))
+            locator = SourceLocator(kind="css_selector", value=img.stable_locator(), preview=src[:120])
+            out.append(evidence(bundle, "dom", "dom", "asset.image_url", src, locator, hint=EntityHint(entity_type="asset"), confidence=confidence, parent_subject_id=product_subject))
         out.extend(_variant_controls(bundle, doc, product_subject))
         return tuple(out)
+
+
+def _product_image_nodes(doc) -> tuple[tuple[object, float], ...]:
+    candidates: list[tuple[object, str]] = []
+    seen: set[int] = set()
+    for node in doc.css("main img[src], img[data-product-image][src]"):
+        identity = node.identity()
+        src = str(node.attribute("src") or "").strip()
+        if identity in seen or node.is_hidden() or not src or is_utility_image_url(src):
+            continue
+        seen.add(identity)
+        context = _image_scope_context(node)
+        if not any(token in context for token in DETAIL_DOM_IMAGE_NEGATIVE_SCOPE_TOKENS):
+            candidates.append((node, context))
+    scoped = [
+        node for node, context in candidates
+        if node.attribute("data-product-image") is not None
+        or any(token in context for token in DETAIL_DOM_IMAGE_POSITIVE_SCOPE_TOKENS)
+    ]
+    if scoped:
+        return tuple((node, 0.58) for node in scoped)
+    # Ambiguous galleries are precision-biased: without product-scope cues,
+    # return no image instead of guessing among recommendations or chrome.
+    return ((candidates[0][0], 0.5),) if len(candidates) == 1 else ()
+
+
+def _image_scope_context(node) -> str:
+    return " ".join(
+        str(current.attribute(attribute) or "").casefold()
+        for current in (node, *node.ancestors()[:8])
+        for attribute in _IMAGE_SCOPE_ATTRIBUTES
+    )
 
 
 def collect_requested_fields(

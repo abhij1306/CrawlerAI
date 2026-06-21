@@ -12,6 +12,15 @@ ECOMMERCE_LISTING_CARD_SELECTORS: tuple[str, ...] = (
     "li",
 )
 
+ECOMMERCE_LISTING_SCOPE_SELECTORS: tuple[str, ...] = (
+    "main",
+    "[role='main']",
+    "#pageContent",
+    ".main-content",
+)
+
+ECOMMERCE_LISTING_GENERIC_CARD_SELECTORS = frozenset({"article", "li"})
+
 ECOMMERCE_LISTING_TITLE_SELECTORS: tuple[str, ...] = (
     "[data-testid*='title' i]",
     "[class*='title' i]",
@@ -20,6 +29,14 @@ ECOMMERCE_LISTING_TITLE_SELECTORS: tuple[str, ...] = (
     "h3",
     "a[title]",
     "a",
+)
+
+ECOMMERCE_LISTING_TITLE_ATTRIBUTES: tuple[str, ...] = (
+    "title",
+    "aria-label",
+    "data-cnstrc-item-name",
+    "data-product-name",
+    "data-item-name",
 )
 
 ECOMMERCE_LISTING_URL_SELECTORS: tuple[str, ...] = ("a[href]",)

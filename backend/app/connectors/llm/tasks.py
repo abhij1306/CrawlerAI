@@ -50,24 +50,234 @@ async def run_prompt_task(
     config_snapshot: dict[str, Any] | None = None,
 ) -> LLMTaskResult:
     started_at = time.monotonic()
-
-    def _finish(result: LLMTaskResult) -> LLMTaskResult:
-        provider_label = str(result.provider or "unknown")
-        outcome = "success" if not result.error_message else "error"
-        record_llm_task_outcome(
-            task_type=task_type,
-            provider=provider_label,
-            outcome=outcome,
-            error_category=str(result.error_category or LLMErrorCategory.NONE),
+    resolved = await _resolve_prompt_task(
+        session,
+        task_type=task_type,
+        run_id=run_id,
+        config_snapshot=config_snapshot,
+        variables=variables,
+    )
+    if isinstance(resolved, LLMTaskResult):
+        return _observe_prompt_task_result(
+            resolved, task_type=task_type, started_at=started_at
         )
-        observe_llm_task_duration(
-            task_type=task_type,
-            provider=provider_label,
-            outcome=outcome,
-            seconds=time.monotonic() - started_at,
+    config, task, system_prompt, safe_user_prompt = resolved
+    provider = str(config.get("provider") or "")
+    model = str(config.get("model") or "")
+    response_type = str(task.get("response_type") or "object")
+    cache_key = _prompt_cache_key(
+        task_type, domain, config, task, system_prompt, safe_user_prompt, variables
+    )
+    cached_result = await load_cached_llm_result(cache_key)
+    if cached_result is not None:
+        return _observe_prompt_task_result(
+            cached_result, task_type=task_type, started_at=started_at
         )
-        return result
+    if not await reserve_run_llm_call(run_id, budget_scope=budget_scope):
+        return _observe_prompt_task_result(
+            _budget_exceeded_result(
+                provider=provider,
+                model=model,
+                run_id=run_id,
+                budget_scope=budget_scope,
+            ),
+            task_type=task_type,
+            started_at=started_at,
+        )
+    raw, input_tokens, output_tokens = await _call_provider(
+        config=config,
+        system_prompt=system_prompt,
+        safe_user_prompt=safe_user_prompt,
+        timeout_seconds=timeout_seconds,
+    )
+    if raw.startswith(ERROR_PREFIX):
+        result = await _failure_result(
+            session,
+            run_id=run_id,
+            task_type=task_type,
+            domain=domain,
+            provider=provider,
+            model=model,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            error_message=raw,
+            error_category=classify_error(raw),
+        )
+        return _observe_prompt_task_result(
+            result, task_type=task_type, started_at=started_at
+        )
+    parsed = await _parse_and_validate_payload(
+        session,
+        raw=raw,
+        task=task,
+        task_type=task_type,
+        domain=domain,
+        provider=provider,
+        model=model,
+        run_id=run_id,
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        response_type=response_type,
+    )
+    if isinstance(parsed, LLMTaskResult):
+        return _observe_prompt_task_result(
+            parsed, task_type=task_type, started_at=started_at
+        )
+    result = await _successful_prompt_result(
+        session,
+        parsed=parsed,
+        cache_key=cache_key,
+        run_id=run_id,
+        task_type=task_type,
+        domain=domain,
+        provider=provider,
+        model=model,
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+    )
+    return _observe_prompt_task_result(
+        result, task_type=task_type, started_at=started_at
+    )
 
+
+def _prompt_cache_key(
+    task_type: str,
+    domain: str,
+    config: dict[str, Any],
+    task: dict[str, Any],
+    system_prompt: str,
+    user_prompt: str,
+    variables: dict[str, Any],
+) -> str:
+    return build_llm_cache_key(
+        task_type=task_type,
+        domain=domain,
+        provider=str(config.get("provider") or ""),
+        model=str(config.get("model") or ""),
+        response_type=str(task.get("response_type") or "object"),
+        data_key=str(task.get("data_key") or ""),
+        system_prompt=system_prompt,
+        user_prompt=user_prompt,
+        variables=variables,
+    )
+
+
+def _observe_prompt_task_result(
+    result: LLMTaskResult, *, task_type: str, started_at: float
+) -> LLMTaskResult:
+    provider = str(result.provider or "unknown")
+    outcome = "success" if not result.error_message else "error"
+    record_llm_task_outcome(
+        task_type=task_type,
+        provider=provider,
+        outcome=outcome,
+        error_category=str(result.error_category or LLMErrorCategory.NONE),
+    )
+    observe_llm_task_duration(
+        task_type=task_type,
+        provider=provider,
+        outcome=outcome,
+        seconds=time.monotonic() - started_at,
+    )
+    return result
+
+
+def _budget_exceeded_result(
+    *, provider: str, model: str, run_id: int | None, budget_scope: str | None
+) -> LLMTaskResult:
+    scope_label = budget_scope or f"crawl run {run_id}"
+    return LLMTaskResult(
+        payload=None,
+        provider=provider,
+        model=model,
+        error_message=(
+            "Error: LLM call budget exceeded for "
+            f"{scope_label}; max={llm_runtime_settings.llm_max_calls_per_run}"
+        ),
+        error_category=LLMErrorCategory.BUDGET_EXCEEDED,
+    )
+
+
+async def _failure_result(
+    session: AsyncSession,
+    *,
+    run_id: int | None,
+    task_type: str,
+    domain: str,
+    provider: str,
+    model: str,
+    input_tokens: int,
+    output_tokens: int,
+    error_message: str,
+    error_category: LLMErrorCategory,
+) -> LLMTaskResult:
+    await record_llm_cost_log(
+        session,
+        run_id=run_id,
+        task_type=task_type,
+        domain=domain,
+        provider=provider,
+        model=model,
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        error_message=error_message,
+        error_category=error_category,
+    )
+    return LLMTaskResult(
+        payload=None,
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        provider=provider,
+        model=model,
+        error_message=error_message,
+        error_category=error_category,
+    )
+
+
+async def _successful_prompt_result(
+    session: AsyncSession,
+    *,
+    parsed: object,
+    cache_key: str,
+    run_id: int | None,
+    task_type: str,
+    domain: str,
+    provider: str,
+    model: str,
+    input_tokens: int,
+    output_tokens: int,
+) -> LLMTaskResult:
+    await record_llm_cost_log(
+        session,
+        run_id=run_id,
+        task_type=task_type,
+        domain=domain,
+        provider=provider,
+        model=model,
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+    )
+    normalized_payload = parsed if isinstance(parsed, (dict, list)) else None
+    result = LLMTaskResult(
+        payload=normalized_payload,
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        provider=provider,
+        model=model,
+    )
+    await store_cached_llm_result(cache_key, result)
+    return result
+
+
+async def _resolve_prompt_task(
+    session: AsyncSession,
+    *,
+    task_type: str,
+    run_id: int | None,
+    config_snapshot: dict[str, Any] | None,
+    variables: dict[str, Any],
+) -> LLMTaskResult | tuple[dict[str, Any], dict[str, Any], str, str]:
+    """Resolve config, task definition, and rendered prompts. Returns early LLMTaskResult on any failure."""
     config = await resolve_run_config(
         session,
         run_id=run_id,
@@ -76,70 +286,41 @@ async def run_prompt_task(
     )
     task = get_prompt_task(task_type)
     if config is None:
-        return _finish(
-            LLMTaskResult(
-                payload=None,
-                error_message=f"No LLM config available for task {task_type}",
-                error_category=LLMErrorCategory.MISSING_CONFIG,
-            )
+        return LLMTaskResult(
+            payload=None,
+            error_message=f"No LLM config available for task {task_type}",
+            error_category=LLMErrorCategory.MISSING_CONFIG,
         )
     if task is None:
-        return _finish(
-            LLMTaskResult(
-                payload=None,
-                error_message=f"No prompt registered for task {task_type}",
-                error_category=LLMErrorCategory.MISSING_CONFIG,
-            )
+        return LLMTaskResult(
+            payload=None,
+            error_message=f"No prompt registered for task {task_type}",
+            error_category=LLMErrorCategory.MISSING_CONFIG,
         )
-
     system_prompt = load_prompt_file(str(task.get("system_file") or ""))
     user_template = load_prompt_file(str(task.get("user_file") or ""))
     if not system_prompt.strip() or not user_template.strip():
-        return _finish(
-            LLMTaskResult(
-                payload=None,
-                error_message=f"Prompt files missing for task {task_type}",
-                error_category=LLMErrorCategory.MISSING_CONFIG,
-            )
+        return LLMTaskResult(
+            payload=None,
+            error_message=f"Prompt files missing for task {task_type}",
+            error_category=LLMErrorCategory.MISSING_CONFIG,
         )
-
-    rendered_user_prompt = Template(user_template).safe_substitute(
+    rendered = Template(user_template).safe_substitute(
         {key: stringify_prompt_value(value) for key, value in variables.items()}
     )
-    safe_user_prompt = enforce_token_limit(rendered_user_prompt)
+    return config, task, system_prompt, enforce_token_limit(rendered)
+
+
+async def _call_provider(
+    *,
+    config: dict[str, Any],
+    system_prompt: str,
+    safe_user_prompt: str,
+    timeout_seconds: float | None,
+) -> tuple[str, int, int]:
+    """Call the provider with optional timeout; return (raw_text, input_tokens, output_tokens)."""
     provider = str(config.get("provider") or "")
     model = str(config.get("model") or "")
-    response_type = str(task.get("response_type") or "object")
-    cache_key = build_llm_cache_key(
-        task_type=task_type,
-        domain=domain,
-        provider=provider,
-        model=model,
-        response_type=response_type,
-        data_key=str(task.get("data_key") or ""),
-        system_prompt=system_prompt,
-        user_prompt=safe_user_prompt,
-        variables=variables,
-    )
-    cached_result = await load_cached_llm_result(cache_key)
-    if cached_result is not None:
-        return _finish(cached_result)
-
-    if not await reserve_run_llm_call(run_id, budget_scope=budget_scope):
-        scope_label = budget_scope or f"crawl run {run_id}"
-        return _finish(
-            LLMTaskResult(
-                payload=None,
-                provider=provider,
-                model=model,
-                error_message=(
-                    "Error: LLM call budget exceeded for "
-                    f"{scope_label}; max={llm_runtime_settings.llm_max_calls_per_run}"
-                ),
-                error_category=LLMErrorCategory.BUDGET_EXCEEDED,
-            )
-        )
-
     provider_call = call_provider_with_retry(
         provider=provider,
         model=model,
@@ -152,44 +333,30 @@ async def run_prompt_task(
     )
     try:
         if timeout_seconds and timeout_seconds > 0:
-            raw, input_tokens, output_tokens = await asyncio.wait_for(
-                provider_call,
-                timeout=float(timeout_seconds),
-            )
-        else:
-            raw, input_tokens, output_tokens = await provider_call
+            return await asyncio.wait_for(provider_call, timeout=float(timeout_seconds))
+        return await provider_call
     except TimeoutError:
-        raw, input_tokens, output_tokens = "Error: LLM provider call timed out", 0, 0
-    if raw.startswith(ERROR_PREFIX):
-        error_category = classify_error(raw)
-        await _record_cost(
-            session,
-            run_id=run_id,
-            task_type=task_type,
-            domain=domain,
-            provider=provider,
-            model=model,
-            input_tokens=input_tokens,
-            output_tokens=output_tokens,
-            error_message=raw,
-            error_category=error_category,
-        )
-        return _finish(
-            LLMTaskResult(
-                payload=None,
-                input_tokens=input_tokens,
-                output_tokens=output_tokens,
-                provider=provider,
-                model=model,
-                error_message=raw,
-                error_category=error_category,
-            )
-        )
+        return "Error: LLM provider call timed out", 0, 0
 
+
+async def _parse_and_validate_payload(
+    session: AsyncSession,
+    *,
+    raw: str,
+    task: dict[str, Any],
+    task_type: str,
+    domain: str,
+    provider: str,
+    model: str,
+    run_id: int | None,
+    input_tokens: int,
+    output_tokens: int,
+    response_type: str,
+) -> LLMTaskResult | object:
+    """Parse raw LLM text, unwrap data_key, validate schema. Returns error LLMTaskResult or payload."""
     payload: object = parse_payload(raw, response_type=response_type)
     if payload is None:
-        error_message = PARSE_PROVIDER_JSON_ERROR
-        await _record_cost(
+        return await _failure_result(
             session,
             run_id=run_id,
             task_type=task_type,
@@ -198,29 +365,16 @@ async def run_prompt_task(
             model=model,
             input_tokens=input_tokens,
             output_tokens=output_tokens,
-            error_message=error_message,
+            error_message=PARSE_PROVIDER_JSON_ERROR,
             error_category=LLMErrorCategory.PARSE_FAILURE,
         )
-        return _finish(
-            LLMTaskResult(
-                payload=None,
-                input_tokens=input_tokens,
-                output_tokens=output_tokens,
-                provider=provider,
-                model=model,
-                error_message=error_message,
-                error_category=LLMErrorCategory.PARSE_FAILURE,
-            )
-        )
-
     if isinstance(payload, dict) and task.get("data_key"):
         inner = payload.get(str(task["data_key"]))
         if isinstance(inner, (dict, list)):
             payload = inner
     payload, validation_error = validate_task_payload(task_type, payload)
     if validation_error is not None:
-        error_message = f"Error: {validation_error}"
-        await _record_cost(
+        return await _failure_result(
             session,
             run_id=run_id,
             task_type=task_type,
@@ -229,41 +383,10 @@ async def run_prompt_task(
             model=model,
             input_tokens=input_tokens,
             output_tokens=output_tokens,
-            error_message=error_message,
+            error_message=f"Error: {validation_error}",
             error_category=LLMErrorCategory.VALIDATION_FAILURE,
         )
-        return _finish(
-            LLMTaskResult(
-                payload=None,
-                input_tokens=input_tokens,
-                output_tokens=output_tokens,
-                provider=provider,
-                model=model,
-                error_message=error_message,
-                error_category=LLMErrorCategory.VALIDATION_FAILURE,
-            )
-        )
-
-    await _record_cost(
-        session,
-        run_id=run_id,
-        task_type=task_type,
-        domain=domain,
-        provider=provider,
-        model=model,
-        input_tokens=input_tokens,
-        output_tokens=output_tokens,
-    )
-    normalized_payload = payload if isinstance(payload, (dict, list)) else None
-    result = LLMTaskResult(
-        payload=normalized_payload,
-        input_tokens=input_tokens,
-        output_tokens=output_tokens,
-        provider=provider,
-        model=model,
-    )
-    await store_cached_llm_result(cache_key, result)
-    return _finish(result)
+    return payload
 
 
 async def extract_records_directly(
@@ -385,31 +508,4 @@ async def review_field_candidates(
     payload = result.payload
     return (payload if isinstance(payload, dict) else {}), (
         result.error_message or None
-    )
-
-
-async def _record_cost(
-    session: AsyncSession,
-    *,
-    run_id: int | None,
-    task_type: str,
-    domain: str,
-    provider: str,
-    model: str,
-    input_tokens: int,
-    output_tokens: int,
-    error_message: str = "",
-    error_category: LLMErrorCategory = LLMErrorCategory.NONE,
-) -> None:
-    await record_llm_cost_log(
-        session,
-        run_id=run_id,
-        task_type=task_type,
-        domain=domain,
-        provider=provider,
-        model=model,
-        input_tokens=input_tokens,
-        output_tokens=output_tokens,
-        error_message=error_message,
-        error_category=error_category,
     )
