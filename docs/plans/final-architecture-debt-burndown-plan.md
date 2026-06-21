@@ -3,7 +3,7 @@
 **Created:** 2026-06-21
 **Agent:** Codex
 **Status:** IN PROGRESS
-**Current slice:** Slice 7 — Canonical Provenance and Legacy Column Retirement
+**Current slice:** Slice 9 — Config and Confidence Ownership
 **Touches buckets:** acquisition/browser runtime, extraction and public record contracts, persistence/artifacts/review, crawl orchestration, core config/record quality, intelligence, enrichment, connectors, tests, canonical architecture docs
 
 ## Goal
@@ -763,7 +763,7 @@ $env:PYTHONPATH='.'
 
 ### Slice 7: Canonical Provenance and Legacy Column Retirement
 
-**Status:** TODO
+**Status:** DONE — VERIFIED 2026-06-21
 **Owners:** `crawl/pipeline/persistence.py`, `persistence/url_result_artifacts.py`, `record_artifacts.py`, `record_export_service.py`, `publish/metadata.py`, `crawl/crud.py`, `crawl/review/*`, `schemas/crawl.py`, `observability/run_audit.py`, `models/crawl_run.py`, migration only if required
 **Fallback docs:** `docs/INVARIANTS.md` Rules 4, 8, 14; persistence/review sections of `docs/CODEBASE_MAP.md` and `docs/BUSINESS_LOGIC.md`.
 **Known audited scope:** every read/write of the four legacy columns, `RecordArtifacts` dual-read behavior, review bucket mutation, field discovery/coverage, LLM suggestion acceptance, manifest/provenance readers.
@@ -803,7 +803,7 @@ $env:PYTHONPATH='.'
 
 ### Slice 8: Crawl Run Ownership, URL Sessions, and Progress Debt
 
-**Status:** TODO
+**Status:** DONE — VERIFIED 2026-06-21
 **Owners:** `crawl/batch_runtime.py`, `crawl/pipeline/extraction_loop.py`, `run_progress.py`, existing failure/runtime helpers, worker adapters
 **Fallback docs:** `docs/INVARIANTS.md` Rules 5, 6, 14; crawl flow in `docs/CODEBASE_MAP.md`.
 **Known audited scope:** `process_run`, `process_single_url`, URL session creation/rollback, parallel task ownership, progress summaries, pause/kill/heartbeat paths, duplicate state transitions.
@@ -1024,3 +1024,23 @@ If the gate passes, mark this plan `DONE` and update `ACTIVE.md` to `No active p
 - Verify passed: Slice 6 exact command `82 passed`; backend Ruff `app tests` passed; scoped Mypy passed for changed backend app files; frontend `npm.cmd run typecheck`, `npm.cmd run lint`, and `npm.cmd run format:check` passed.
 - Remaining debt: no Slice 6-specific test failure remains. Architecture debt ledger still continues with Slice 7 provenance and later slices.
 - Next slice: Slice 7 — Canonical Provenance and Legacy Column Retirement.
+
+### Slice 7 completion note — 2026-06-21
+
+- Retired still-valid mutable provenance writes from `publish/metadata.py`, review promotion, accepted-field commits, and LLM suggestion acceptance; accepted values now update `record.data` only.
+- Kept legacy column fallback read-only through existing canonical artifact readers and narrowed the architecture allowlist to response shaping only.
+- Files changed: `backend/app/crawl/crud.py`, `backend/app/crawl/review/__init__.py`, `backend/app/persistence/publish/__init__.py`, `backend/app/persistence/publish/metadata.py`, `backend/tests/component/test_crawl_service.py`, `backend/tests/component/test_review_service.py`, `backend/tests/unit/test_final_architecture_ownership.py`, `backend/tests/unit/test_publish_metrics.py`, `docs/plans/ACTIVE.md`, and this plan.
+- Deletions: removed `refresh_record_commit_metadata` and its mutation tests.
+- Verify passed: Slice 7 exact command `89 passed`.
+- Remaining debt: legacy schema response shaping still exists until compatibility/migration scope is explicit.
+- Next slice: Slice 8 — Crawl Run Ownership, URL Sessions, and Progress Debt.
+
+### Slice 8 completion note — 2026-06-21
+
+- Split URL failure recovery and URL-owned session execution into pipeline helpers while keeping `process_run` as run lifecycle owner and `process_single_url` as URL workflow owner.
+- Split batch parallel result recording, sequential URL processing, control checkpoints, and run finalization; consolidated run acquisition metric totals by concern.
+- Files changed: `backend/app/crawl/batch_runtime.py`, `backend/app/crawl/pipeline/run_progress.py`, `backend/app/crawl/pipeline/url_failure_recovery.py`, `backend/app/crawl/pipeline/url_worker.py`, `backend/tests/unit/test_final_architecture_ownership.py`, `docs/plans/ACTIVE.md`, and this plan.
+- Deletions: removed `crawl/batch_runtime.py` from oversized-module debt and removed the three crawl long-function debt entries.
+- Verify passed: Slice 8 exact command `101 passed`.
+- Remaining debt: crawl package final LOC ledger remains for Slice 12; Slice 8-specific owner checks pass.
+- Next slice: Slice 9 — Config and Confidence Ownership.

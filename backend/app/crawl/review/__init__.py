@@ -24,7 +24,6 @@ from app.core.shared.field_coerce import (
 from app.core.records.normalizers import normalize_value
 from app.persistence.publish import (
     load_domain_field_mapping,
-    refresh_record_commit_metadata,
 )
 from app.persistence.record_artifacts import RecordArtifacts, load_record_artifacts
 from app.core.records.schema_service import load_resolved_schema
@@ -278,33 +277,6 @@ async def _promote_review_bucket_fields(
             normalized_value = normalize_value(output_field, row.get("value"))
             data[output_field] = normalized_value
         record.data = data
-
-        discovered_data = dict(mapping_or_empty(record.discovered_data))
-        mapped_source_fields = {
-            source_field for source_field in normalized_mapping if source_field
-        }
-        discovered_data["review_bucket"] = [
-            row
-            for row in remaining_rows
-            if (key_norm := normalize_field_key(row.get("key")))
-            not in mapped_source_fields
-            or mapping_or_empty(record.data).get(normalized_mapping.get(key_norm, ""))
-            not in (None, "", [], {})
-        ]
-        record.discovered_data = {
-            key: value
-            for key, value in discovered_data.items()
-            if value not in (None, "", [], {})
-        }
-
-        for output_field, _row in selected_values.items():
-            refresh_record_commit_metadata(
-                record,
-                run=run,
-                field_name=output_field,
-                value=data[output_field],
-                source_label="review_promotion",
-            )
 
 
 async def build_domain_recipe_payload(

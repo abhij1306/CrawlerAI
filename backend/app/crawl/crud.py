@@ -17,7 +17,6 @@ from app.crawl.profile import (
 from app.core.domain_utils import normalize_domain
 from app.persistence.publish import (
     load_domain_requested_fields,
-    refresh_record_commit_metadata,
 )
 from app.crawl.state import ACTIVE_STATUSES, CrawlStatus
 from app.models.crawl_settings import normalize_crawl_settings
@@ -286,20 +285,6 @@ async def commit_selected_fields(
         data = dict(record.data or {})
         data[field_name] = normalized_value
         record.data = data
-
-        refresh_record_commit_metadata(
-            record, run=db_run, field_name=field_name, value=normalized_value
-        )
-
-        source_trace = dict(record.source_trace or {})
-        llm_suggestions = dict(source_trace.get("llm_cleanup_suggestions") or {})
-        if field_name in llm_suggestions:
-            suggestion = dict(llm_suggestions[field_name])
-            suggestion["status"] = "accepted"
-            suggestion["accepted_value"] = normalized_value
-            llm_suggestions[field_name] = suggestion
-            source_trace["llm_cleanup_suggestions"] = llm_suggestions
-            record.source_trace = source_trace
 
         updated_fields += 1
         updated_record_ids.add(record_id)

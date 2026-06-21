@@ -4,7 +4,6 @@ import pytest
 
 from types import SimpleNamespace
 
-from app.persistence.publish.metadata import refresh_record_commit_metadata
 from app.persistence.publish.metrics import build_url_metrics, diagnostics_indicate_block
 
 
@@ -319,21 +318,3 @@ def test_diagnostics_indicate_block_keeps_strong_challenge_over_ready_probe() ->
     }
 
     assert diagnostics_indicate_block(diagnostics) is True
-
-@pytest.mark.unit
-def test_refresh_record_commit_metadata_filters_empty_requested_fields() -> None:
-    record = SimpleNamespace(source_trace={}, discovered_data={})
-    run = SimpleNamespace(requested_fields=["title", "", None, "  "])
-
-    refresh_record_commit_metadata(
-        record,
-        run=run,
-        field_name="title",
-        value="Widget Prime",
-    )
-
-    assert record.discovered_data["requested_field_coverage"] == {
-        "requested": 1,
-        "found": 1,
-        "missing": [],
-    }

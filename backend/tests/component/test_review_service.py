@@ -130,7 +130,7 @@ async def test_save_review_persists_mapping_and_promotes_values(
     assert result["field_mapping"] == {"material_notes": "materials"}
     assert "materials" in result["canonical_fields"]
     assert record.data["materials"] == "Cotton blend"
-    assert "review_bucket" not in record.discovered_data
+    assert record.discovered_data["review_bucket"][0]["key"] == "material_notes"
     assert promotion.field_mapping == {"material_notes": "materials"}
     assert promotion.approved_schema["fields"] == result["canonical_fields"]
     assert promotion.approved_schema["saved_at"]
