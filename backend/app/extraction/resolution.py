@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from app.extraction.contracts import (
+    AssetDecision,
     Decision,
     DerivedFact,
     Evidence,
@@ -40,6 +41,7 @@ def resolve(
         if len(entities.products) == 1
         else None,
         decisions=tuple(decisions),
+        asset_decisions=_resolve_product_assets(entities.assets, by_id),
         derived_facts=_derived(decisions, by_id),
         unresolved_fact_types=tuple(sorted(required - resolved)),
         blocking_finding_ids=tuple(
@@ -111,6 +113,110 @@ def _resolve_asset(
 def _invalid_primary_asset_url(value: object) -> bool:
     text = str(value or "").casefold()
     return any(token in text for token in PRIMARY_IMAGE_REJECT_URL_TOKENS)
+
+
+def _resolve_product_assets(
+    assets: tuple[AssetEntity, ...],
+    evidence_by_id: dict[str, Evidence],
+) -> tuple[AssetDecision, ...]:
+    ranked = [
+        (rank, asset, accepted)
+        for asset in assets
+        if asset.variant_entity_id is None
+        for accepted in [_accepted_asset_evidence(asset, evidence_by_id)]
+        for rank in [_asset_rank(asset, accepted, evidence_by_id)]
+    ]
+    valid = [
+        (rank, asset, accepted)
+        for rank, asset, accepted in ranked
+        if accepted and not _invalid_primary_asset_url(asset.url)
+    ]
+    valid.sort(key=lambda item: item[0])
+    decisions: list[AssetDecision] = []
+    seen: set[str] = set()
+    for index, (_rank_value, asset, accepted) in enumerate(valid):
+        if asset.identity_key in seen:
+            continue
+        seen.add(asset.identity_key)
+        decisions.append(
+            AssetDecision(
+                asset_entity_id=asset.entity_id,
+                url=asset.url,
+                accepted_evidence_ids=(accepted.evidence_id,),
+                role="primary" if not decisions else "additional",
+                rank=index,
+                rule_id=(
+                    "PRODUCT_ASSET_PRIMARY"
+                    if not decisions
+                    else "PRODUCT_ASSET_ADDITIONAL"
+                ),
+            )
+        )
+    rejected = [
+        AssetDecision(
+            asset_entity_id=asset.entity_id,
+            url=asset.url,
+            accepted_evidence_ids=(),
+            role="rejected",
+            rank=len(valid) + index,
+            rule_id="PRODUCT_ASSET_REJECT",
+            rejection_reasons=("invalid_primary_asset",),
+        )
+        for index, (_rank_value, asset, accepted) in enumerate(ranked)
+        if accepted and _invalid_primary_asset_url(asset.url)
+    ]
+    return tuple(decisions + rejected)
+
+
+def _accepted_asset_evidence(
+    asset: AssetEntity,
+    evidence_by_id: dict[str, Evidence],
+) -> Evidence | None:
+    candidates = [
+        evidence_by_id[eid] for eid in asset.url_evidence_ids if eid in evidence_by_id
+    ]
+    if not candidates:
+        return None
+    return sorted(candidates, key=_rank)[0]
+
+
+def _asset_rank(
+    asset: AssetEntity,
+    accepted: Evidence | None,
+    evidence_by_id: dict[str, Evidence],
+) -> tuple[int, int, tuple[int, int, float, str] | tuple[int, int, int, float, str], str]:
+    if accepted is None:
+        return (99, 99, (99, 99, 0.0, ""), asset.entity_id)
+    role = _asset_role_rank(asset.url)
+    source_order = min(
+        (
+            _asset_source_order(evidence_by_id[eid])
+            for eid in asset.url_evidence_ids
+            if eid in evidence_by_id
+        ),
+        default=99,
+    )
+    source_rank = min(
+        (_rank(evidence_by_id[eid]) for eid in asset.url_evidence_ids if eid in evidence_by_id),
+        default=_rank(accepted),
+    )
+    return role, source_order, source_rank, asset.entity_id
+
+
+def _asset_role_rank(url: str) -> int:
+    text = str(url or "").casefold()
+    if any(token in text for token in ("main", "primary", "hero", "pdp")):
+        return 0
+    if any(token in text for token in ("product", "detail", "gallery", "diagram")):
+        return 1
+    return 2
+
+
+def _asset_source_order(ev: Evidence) -> int:
+    for token in reversed(str(ev.locator.value or "").replace("[", "/").replace("]", "").split("/")):
+        if token.isdigit():
+            return int(token)
+    return 99
 
 
 def _resolve_scalar(

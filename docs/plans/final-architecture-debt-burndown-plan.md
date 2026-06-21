@@ -3,7 +3,7 @@
 **Created:** 2026-06-21
 **Agent:** Codex
 **Status:** IN PROGRESS
-**Current slice:** Slice 5 — Product Asset Selection and Additional Images Contract
+**Current slice:** Slice 6 — Offer Integrity, Variant Completeness, and Honest Diagnostics
 **Touches buckets:** acquisition/browser runtime, extraction and public record contracts, persistence/artifacts/review, crawl orchestration, core config/record quality, intelligence, enrichment, connectors, tests, canonical architecture docs
 
 ## Goal
@@ -29,17 +29,17 @@ The local artifact packet is accepted as the current handoff evidence for this p
 
 Measured on 2026-06-21 from committed HEAD `553dd794b9ef498c0d9a7e9cfc8034e7f6a6614c`:
 
-| Scope | Python files | Physical LOC |
-|---|---:|---:|
-| `backend/app` | 303 | 64,901 |
-| `acquisition` | 49 | 16,613 |
-| `core` | 82 | 14,777 |
-| `crawl` | 38 | 9,596 |
-| `extraction` | 24 | 4,743 |
-| `intelligence` | 8 | 3,330 |
-| `enrichment` | 6 | 2,427 |
-| `connectors` | 17 | 2,815 |
-| `persistence` | 17 | 2,424 |
+| Scope          | Python files | Physical LOC |
+| -------------- | -----------: | -----------: |
+| `backend/app`  |          303 |       64,901 |
+| `acquisition`  |           49 |       16,613 |
+| `core`         |           82 |       14,777 |
+| `crawl`        |           38 |        9,596 |
+| `extraction`   |           24 |        4,743 |
+| `intelligence` |            8 |        3,330 |
+| `enrichment`   |            6 |        2,427 |
+| `connectors`   |           17 |        2,815 |
+| `persistence`  |           17 |        2,424 |
 
 Current hard debt:
 
@@ -67,13 +67,13 @@ Current hard debt:
 
 ### Oversized modules
 
-| Current owner | Current LOC | Required target | Planned correction |
-|---|---:|---:|---|
-| `acquisition/browser_detail.py` | 898 | <=650 | Keep detail-expansion orchestration here; move the distinct accessibility-tree implementation to the named `browser_accessibility.py` owner; delete `*_impl` pass-through wrappers. |
-| `acquisition/browser_runtime.py` | 1,025 | <=650 | Keep browser fetch orchestration and stable exports; move launch/warmup/popup mechanics to existing `browser_fetch_support.py`; split fetch into bounded phases. |
-| `acquisition/fetch/fetch_context.py` | 987 | <=650 | Make `fetch_page()` a thin mode/final-result facade; move attempt mechanics into existing planner/executor, `planned_http.py`, and `browser_attempt_runner.py`; delete aliases and duplicate retry loops. |
-| `crawl/batch_runtime.py` | 820 | <=650 | Keep run lifecycle and URL-session ownership; extract no new coordinator layer; consolidate URL failure/session/progress helpers with their existing owners. |
-| `enrichment/shopify_catalog.py` | 929 | <=650 | Separate repository I/O/index lookup into the named `shopify_repository.py` owner; retain scoring/matching in `shopify_catalog.py`; require net package LOC reduction. |
+| Current owner                        | Current LOC | Required target | Planned correction                                                                                                                                                                                        |
+| ------------------------------------ | ----------: | --------------: | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `acquisition/browser_detail.py`      |         898 |           <=650 | Keep detail-expansion orchestration here; move the distinct accessibility-tree implementation to the named `browser_accessibility.py` owner; delete `*_impl` pass-through wrappers.                       |
+| `acquisition/browser_runtime.py`     |       1,025 |           <=650 | Keep browser fetch orchestration and stable exports; move launch/warmup/popup mechanics to existing `browser_fetch_support.py`; split fetch into bounded phases.                                          |
+| `acquisition/fetch/fetch_context.py` |         987 |           <=650 | Make `fetch_page()` a thin mode/final-result facade; move attempt mechanics into existing planner/executor, `planned_http.py`, and `browser_attempt_runner.py`; delete aliases and duplicate retry loops. |
+| `crawl/batch_runtime.py`             |         820 |           <=650 | Keep run lifecycle and URL-session ownership; extract no new coordinator layer; consolidate URL failure/session/progress helpers with their existing owners.                                              |
+| `enrichment/shopify_catalog.py`      |         929 |           <=650 | Separate repository I/O/index lookup into the named `shopify_repository.py` owner; retain scoring/matching in `shopify_catalog.py`; require net package LOC reduction.                                    |
 
 The two named new modules are permitted because they establish distinct owners, not because they reduce line counts. No other production module may be created without amending this plan and proving unique ownership plus net deletion.
 
@@ -81,25 +81,25 @@ The two named new modules are permitted because they establish distinct owners, 
 
 Every entry below must be removed from `LONG_FUNCTION_DEBT`; do not replace it with a new >100-line function.
 
-| Subsystem | Functions | Required decomposition |
-|---|---|---|
-| Detail interaction | `expand_all_interactive_elements_impl`, `expand_interactive_elements_via_accessibility_impl` | Separate candidate discovery, safety admission, action execution, settle, and diagnostics. Remove wrapper/implementation duplication. |
-| Browser page flow | `settle_browser_page_impl` | Named readiness, network-idle, platform-wait, and expansion phases operating on one snapshot state. |
-| Browser artifacts | `_capture_listing_visual_elements` | Module-owned page script plus typed response normalization; no hidden extraction decisions. |
-| Challenge recovery | `recover_browser_challenge`, `_emit_challenge_activity` | Poll/classify, bounded activity, retry-navigation, and event projection phases. |
-| Browser finalization | `BrowserAcquisitionResultBuilder.build` | Classification, event emission, artifact capture, and result assembly methods. |
-| Browser runtime | `browser_fetch`, `_maybe_warm_origin_before_navigation` | Launch, navigate/settle/serialize, finalize, and warmup lifecycle phases. |
-| Block classification | `classify_blocked_page` | Evidence collection and policy decision; preserve usable-content-over-provider-noise invariant. |
-| Listing traversal | `_run_scroll_traversal`, `_run_load_more_traversal`, `_run_paginate_traversal` | Mode-specific action loops with shared progress/stop updates only where behavior is identical. |
-| Traversal recovery | `click_with_retry`, `dismiss_overlays_if_needed` | Attempt, settle, and diagnostic phases. |
-| LLM connector | `run_prompt_task` | Provider invocation, response validation, cost recording, and failure projection. |
-| Public extraction connector | `extract_public_product` | Request admission, normal crawl execution, and response mapping; no second extractor. |
-| Runtime config | `_apply_profile_defaults` | Domain-specific default application inside existing config ownership. |
-| Confidence | `score_record_confidence` | Field scoring, penalty calculation, and aggregate result. |
-| Batch runtime | `_process_urls_in_parallel`, `_process_run_with_span` | Task scheduling/result collection and run setup/finalization. |
-| Run progress | `_merge_run_acquisition_metrics` | Timing, method/outcome, and browser metrics reducers. |
-| Review | `build_domain_recipe_payload` | Load, coverage, selector, and response assembly using canonical artifacts. |
-| Intelligence | `score_candidate` | Typed deterministic feature calculation and final policy decision. |
+| Subsystem                   | Functions                                                                                    | Required decomposition                                                                                                                |
+| --------------------------- | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| Detail interaction          | `expand_all_interactive_elements_impl`, `expand_interactive_elements_via_accessibility_impl` | Separate candidate discovery, safety admission, action execution, settle, and diagnostics. Remove wrapper/implementation duplication. |
+| Browser page flow           | `settle_browser_page_impl`                                                                   | Named readiness, network-idle, platform-wait, and expansion phases operating on one snapshot state.                                   |
+| Browser artifacts           | `_capture_listing_visual_elements`                                                           | Module-owned page script plus typed response normalization; no hidden extraction decisions.                                           |
+| Challenge recovery          | `recover_browser_challenge`, `_emit_challenge_activity`                                      | Poll/classify, bounded activity, retry-navigation, and event projection phases.                                                       |
+| Browser finalization        | `BrowserAcquisitionResultBuilder.build`                                                      | Classification, event emission, artifact capture, and result assembly methods.                                                        |
+| Browser runtime             | `browser_fetch`, `_maybe_warm_origin_before_navigation`                                      | Launch, navigate/settle/serialize, finalize, and warmup lifecycle phases.                                                             |
+| Block classification        | `classify_blocked_page`                                                                      | Evidence collection and policy decision; preserve usable-content-over-provider-noise invariant.                                       |
+| Listing traversal           | `_run_scroll_traversal`, `_run_load_more_traversal`, `_run_paginate_traversal`               | Mode-specific action loops with shared progress/stop updates only where behavior is identical.                                        |
+| Traversal recovery          | `click_with_retry`, `dismiss_overlays_if_needed`                                             | Attempt, settle, and diagnostic phases.                                                                                               |
+| LLM connector               | `run_prompt_task`                                                                            | Provider invocation, response validation, cost recording, and failure projection.                                                     |
+| Public extraction connector | `extract_public_product`                                                                     | Request admission, normal crawl execution, and response mapping; no second extractor.                                                 |
+| Runtime config              | `_apply_profile_defaults`                                                                    | Domain-specific default application inside existing config ownership.                                                                 |
+| Confidence                  | `score_record_confidence`                                                                    | Field scoring, penalty calculation, and aggregate result.                                                                             |
+| Batch runtime               | `_process_urls_in_parallel`, `_process_run_with_span`                                        | Task scheduling/result collection and run setup/finalization.                                                                         |
+| Run progress                | `_merge_run_acquisition_metrics`                                                             | Timing, method/outcome, and browser metrics reducers.                                                                                 |
+| Review                      | `build_domain_recipe_payload`                                                                | Load, coverage, selector, and response assembly using canonical artifacts.                                                            |
+| Intelligence                | `score_candidate`                                                                            | Typed deterministic feature calculation and final policy decision.                                                                    |
 
 ## Audited Crawl-Quality Findings
 
@@ -115,19 +115,19 @@ These passing unit cases do not prove the reported sites are fixed. They are inv
 
 ### Open generic defects and decided owners
 
-| Failure class | Audited cause | Owner and required correction |
-|---|---|---|
-| Filename/ID/nav/SEO title pollution | URL collector emits raw leaf including extension/IDs; evidence normalization has no title-quality flags; scalar resolution ranks source/directness but not semantic title admissibility. | `extraction/collectors/url.py`, `pipeline.normalize_evidence`, `resolution.py`, with title tokens/patterns in existing `core/config/extraction_rules/_detail.py`. Reject filename/ID/nav candidates; clean SEO suffix only when a higher-confidence product identity remains. |
-| Missing metadata despite captured evidence | JS/network mapping is shallow, inline, and admits arbitrary dictionaries with generic keys; some canonical source-key aliases are absent; missing-field validation sees evidence presence, not necessarily resolved public output. | `core/config/field_mappings.py`, extraction collectors, entity linking, validation. Map all objects deterministically, require product/offer context, and validate selected public values after resolution. |
-| Utility/placeholder primary image | Asset decisions are made independently per URL, then materialization writes the same `image_url` field repeatedly, making iteration order a hidden product-level selector. Reject tokens are incomplete. | `entities.py`, `resolution.py`, `materialization.py`, existing `AssetDecision`, and `_images.py`. Perform one product-level asset selection with deterministic role/rank and lineage. |
-| No additional images field | `additional_images` is an existing canonical alias, but `CommerceDetailRecord` exposes only `image_url`; collected gallery assets are discarded as public output. | Additive typed contract in `extraction/contracts.py`; materialize ordered deduped gallery URLs; propagate through schemas/API/export/review. |
-| Raw spaces or unsafe image URLs | Asset normalization only joins URLs; it does not canonicalize path encoding before identity/dedupe. | Canonical URL normalization before asset entity identity. Preserve query semantics and reject non-HTTP(S)/data/utility assets. |
-| Zero/year/100x price errors | Recursive JS/network mapping can treat generic `price` keys as product offers; zero remains admissible; price/currency coupling is enforced only after entity grouping; arbitrary magnitude repair is intentionally absent. | Collector admission and offer grouping in extraction. Reject non-positive prices, require contextual product/offer evidence, preserve price/currency atomicity, and emit contradictions instead of guessing scale. |
-| ID-only or URL-only public variants | Variant entity creation accepts stable identity with little commercial/option evidence; materialization emits any nonempty row; parent offer facts are not inherited to variants. | `collectors/js_state.py`, `jsonld.py`, `entities.py`, `validation.py`, `materialization.py`. Require identity plus option/offer evidence for public rows; retain rejected evidence in findings; inherit only explicitly product-wide nonconflicting offer facts with lineage. |
-| Missing variants | Deterministic collectors can only publish captured evidence. A reported regional SKU structure is not permission to synthesize variants. | Exhaust structured/network/DOM evidence and request one rendered capability when explicit variant cues exist. If still absent, emit an explicit finding and partial/review verdict. |
-| Listing discovery returns navigation/support links | Category discovery scores category-looking and nav anchors, and rendered/static fallback can keep broad same-origin links without proving listing-card/product-link density. Belk examples include customer-service, policies, stores, registry, wish-list, and broad department links mixed with one requested category. Arcteryx examples include nav taxonomy, app, athlete, and unrelated category links when a specific footwear-run listing was requested. | `crawl/sitemap_resolver.py`, `crawl/site_link_discovery.py`, `crawl/sitemap_nav.py`, and `core/config/sitemap.py`. Require product-listing evidence for selected ecommerce listing URLs, demote site-chrome/nav-only buckets, keep requested branch affinity when a seed is already category-specific, and expose rejected-link diagnostics instead of returning utility URLs. |
-| Listing records use swatch/control text as title | `extraction/listing.py` picks the first configured title selector inside a broad card (`article`, `li`, generic product class) and accepts `title`/text from color controls. Intimissimi examples show valid product URLs/prices/images paired with `Cor selecionada` from a selected-color control. | `extraction/listing.py`, `core/config/extraction_recipes.py`, `core/config/extraction_rules/_common.py`, and existing text/url identity helpers. Select title evidence from product-link/name scope, reject CTA/swatch/control/aria state labels, require title-to-product-url or image/price/card context agreement, and keep the row partial/rejected when no product title exists. |
-| Legacy provenance ownership | Initial writes stopped, but active writers remain in `persistence/publish/metadata.py`, `crawl/crud.py`, and review promotion; schemas and observability still dual-read ORM columns. | Canonical artifacts plus derived read models. Review acceptance is represented by existing review/domain-feedback ownership and logs, not mutable extraction provenance. |
+| Failure class                                      | Audited cause                                                                                                                                                                                                                                                                                                                                                                                                                                                    | Owner and required correction                                                                                                                                                                                                                                                                                                                                                         |
+| -------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Filename/ID/nav/SEO title pollution                | URL collector emits raw leaf including extension/IDs; evidence normalization has no title-quality flags; scalar resolution ranks source/directness but not semantic title admissibility.                                                                                                                                                                                                                                                                         | `extraction/collectors/url.py`, `pipeline.normalize_evidence`, `resolution.py`, with title tokens/patterns in existing `core/config/extraction_rules/_detail.py`. Reject filename/ID/nav candidates; clean SEO suffix only when a higher-confidence product identity remains.                                                                                                         |
+| Missing metadata despite captured evidence         | JS/network mapping is shallow, inline, and admits arbitrary dictionaries with generic keys; some canonical source-key aliases are absent; missing-field validation sees evidence presence, not necessarily resolved public output.                                                                                                                                                                                                                               | `core/config/field_mappings.py`, extraction collectors, entity linking, validation. Map all objects deterministically, require product/offer context, and validate selected public values after resolution.                                                                                                                                                                           |
+| Utility/placeholder primary image                  | Asset decisions are made independently per URL, then materialization writes the same `image_url` field repeatedly, making iteration order a hidden product-level selector. Reject tokens are incomplete.                                                                                                                                                                                                                                                         | `entities.py`, `resolution.py`, `materialization.py`, existing `AssetDecision`, and `_images.py`. Perform one product-level asset selection with deterministic role/rank and lineage.                                                                                                                                                                                                 |
+| No additional images field                         | `additional_images` is an existing canonical alias, but `CommerceDetailRecord` exposes only `image_url`; collected gallery assets are discarded as public output.                                                                                                                                                                                                                                                                                                | Additive typed contract in `extraction/contracts.py`; materialize ordered deduped gallery URLs; propagate through schemas/API/export/review.                                                                                                                                                                                                                                          |
+| Raw spaces or unsafe image URLs                    | Asset normalization only joins URLs; it does not canonicalize path encoding before identity/dedupe.                                                                                                                                                                                                                                                                                                                                                              | Canonical URL normalization before asset entity identity. Preserve query semantics and reject non-HTTP(S)/data/utility assets.                                                                                                                                                                                                                                                        |
+| Zero/year/100x price errors                        | Recursive JS/network mapping can treat generic `price` keys as product offers; zero remains admissible; price/currency coupling is enforced only after entity grouping; arbitrary magnitude repair is intentionally absent.                                                                                                                                                                                                                                      | Collector admission and offer grouping in extraction. Reject non-positive prices, require contextual product/offer evidence, preserve price/currency atomicity, and emit contradictions instead of guessing scale.                                                                                                                                                                    |
+| ID-only or URL-only public variants                | Variant entity creation accepts stable identity with little commercial/option evidence; materialization emits any nonempty row; parent offer facts are not inherited to variants.                                                                                                                                                                                                                                                                                | `collectors/js_state.py`, `jsonld.py`, `entities.py`, `validation.py`, `materialization.py`. Require identity plus option/offer evidence for public rows; retain rejected evidence in findings; inherit only explicitly product-wide nonconflicting offer facts with lineage.                                                                                                         |
+| Missing variants                                   | Deterministic collectors can only publish captured evidence. A reported regional SKU structure is not permission to synthesize variants.                                                                                                                                                                                                                                                                                                                         | Exhaust structured/network/DOM evidence and request one rendered capability when explicit variant cues exist. If still absent, emit an explicit finding and partial/review verdict.                                                                                                                                                                                                   |
+| Listing discovery returns navigation/support links | Category discovery scores category-looking and nav anchors, and rendered/static fallback can keep broad same-origin links without proving listing-card/product-link density. Belk examples include customer-service, policies, stores, registry, wish-list, and broad department links mixed with one requested category. Arcteryx examples include nav taxonomy, app, athlete, and unrelated category links when a specific footwear-run listing was requested. | `crawl/sitemap_resolver.py`, `crawl/site_link_discovery.py`, `crawl/sitemap_nav.py`, and `core/config/sitemap.py`. Require product-listing evidence for selected ecommerce listing URLs, demote site-chrome/nav-only buckets, keep requested branch affinity when a seed is already category-specific, and expose rejected-link diagnostics instead of returning utility URLs.        |
+| Listing records use swatch/control text as title   | `extraction/listing.py` picks the first configured title selector inside a broad card (`article`, `li`, generic product class) and accepts `title`/text from color controls. Intimissimi examples show valid product URLs/prices/images paired with `Cor selecionada` from a selected-color control.                                                                                                                                                             | `extraction/listing.py`, `core/config/extraction_recipes.py`, `core/config/extraction_rules/_common.py`, and existing text/url identity helpers. Select title evidence from product-link/name scope, reject CTA/swatch/control/aria state labels, require title-to-product-url or image/price/card context agreement, and keep the row partial/rejected when no product title exists. |
+| Legacy provenance ownership                        | Initial writes stopped, but active writers remain in `persistence/publish/metadata.py`, `crawl/crud.py`, and review promotion; schemas and observability still dual-read ORM columns.                                                                                                                                                                                                                                                                            | Canonical artifacts plus derived read models. Review acceptance is represented by existing review/domain-feedback ownership and logs, not mutable extraction provenance.                                                                                                                                                                                                              |
 
 ### Listing symptom reports to cover
 
@@ -191,16 +191,16 @@ Do not introduce speculative `RunCoordinator` or `UrlProcessor` classes. The exi
 
 Replace the arbitrary “25% file deletion” and old 58,109-LOC target with budgets tied to audited owners and retained capabilities.
 
-| Scope | Current LOC | Final maximum |
-|---|---:|---:|
-| `backend/app` | 64,901 | 62,600 |
-| `acquisition` | 16,613 | 15,400 |
-| `crawl` | 9,596 | 9,250 |
-| `core` | 14,777 | 14,500 |
-| `enrichment` | 2,427 | 2,150 |
-| `connectors` | 2,815 | 2,700 |
-| `intelligence` | 3,330 | 3,250 |
-| `extraction` | 4,743 | 5,500 existing hard cap |
+| Scope          | Current LOC |           Final maximum |
+| -------------- | ----------: | ----------------------: |
+| `backend/app`  |      64,901 |                  62,600 |
+| `acquisition`  |      16,613 |                  15,400 |
+| `crawl`        |       9,596 |                   9,250 |
+| `core`         |      14,777 |                  14,500 |
+| `enrichment`   |       2,427 |                   2,150 |
+| `connectors`   |       2,815 |                   2,700 |
+| `intelligence` |       3,330 |                   3,250 |
+| `extraction`   |       4,743 | 5,500 existing hard cap |
 
 Rules:
 
@@ -311,23 +311,23 @@ rg -n "run_prompt_task|llm_enabled|LLMConfig|cost|provider|circuit|prompt task|m
 
 ### Embedded owner map
 
-| Concern | Current owner | What it owns | What it must not own |
-|---|---|---|---|
-| Batch lifecycle | `crawl/batch_runtime.py` | run setup, URL scheduling, terminal run status, pause/kill/heartbeat | per-URL extraction decisions, DB writes for another URL, browser policy |
-| Per-URL workflow | `crawl/pipeline/extraction_loop.py` | acquire -> extract -> normalize -> persist sequencing for one URL | transport loops, field repair, export shaping |
-| Acquisition facade | `acquisition/acquirer.py` | translating pipeline request to fetch runtime and canonical acquisition result | crawl DB writes, extraction, review |
-| Attempt planning | `acquisition/planner.py`, `acquisition/fetch/browser_policy.py` | explicit attempt list, engine/proxy/handoff/browser retry admission | browser mechanics, result materialization, hidden retries |
-| Attempt execution | `acquisition/executor.py`, `fetch/planned_http.py`, `fetch/browser_attempt_runner.py` | one `AttemptSpec` -> one `AttemptResult` | deciding the next attempt after execution |
-| Browser mechanics | `browser_runtime.py`, `browser_fetch_support.py`, `browser_page_flow.py`, `browser_result_builder.py` | launch/navigate/settle/serialize/finalize observations | field extraction or record decisions |
-| Browser interaction | `browser_detail.py`, `browser_accessibility.py` after Slice 2, `traversal.py`, `traversal_recovery.py` | bounded observation-producing clicks/scroll/load-more/pagination | direct field assignment or site-specific rescue |
-| Listing discovery | `crawl/sitemap_resolver.py`, `crawl/site_link_discovery.py`, `crawl/sitemap_nav.py` | choosing category/listing URLs from sitemap/homepage/rendered links | persisted record rows, detail extraction, product intelligence |
-| Listing extraction | `extraction/listing.py` | listing-card evidence -> decisions -> `CommerceListingRecord` rows | category discovery, detail fallback, export cleanup |
-| Detail extraction | `extraction/engine.py`, collectors, `entities.py`, `resolution.py`, `validation.py`, `materialization.py` | evidence collection, entity linking, deterministic resolution, findings, typed records | acquisition retries, persistence repair, LLM-generated values |
-| Public record boundary | extraction contracts, schemas, APIs, export/review serializers | typed public fields and lineage transport | post-hoc semantic repair |
-| Provenance/artifacts | `persistence/record_artifacts.py`, `persistence/url_result_artifacts.py`, `crawl/pipeline/persistence.py` | immutable artifacts, manifests, DB writes | extraction fact mutation |
-| Review/domain feedback | `crawl/review/*`, `models/review.py`, `DomainFieldFeedback` | review payloads and user-approved feedback | mutating immutable extraction provenance |
-| Config | `core/config/*` | thresholds, tokens, selectors, field aliases, runtime tunables | service-local constants |
-| LLM | `connectors/llm/*`, `llm/*` | explicit, degradable backfill/adjudication when enabled | primary extraction, deterministic overwrite |
+| Concern                | Current owner                                                                                             | What it owns                                                                           | What it must not own                                                    |
+| ---------------------- | --------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| Batch lifecycle        | `crawl/batch_runtime.py`                                                                                  | run setup, URL scheduling, terminal run status, pause/kill/heartbeat                   | per-URL extraction decisions, DB writes for another URL, browser policy |
+| Per-URL workflow       | `crawl/pipeline/extraction_loop.py`                                                                       | acquire -> extract -> normalize -> persist sequencing for one URL                      | transport loops, field repair, export shaping                           |
+| Acquisition facade     | `acquisition/acquirer.py`                                                                                 | translating pipeline request to fetch runtime and canonical acquisition result         | crawl DB writes, extraction, review                                     |
+| Attempt planning       | `acquisition/planner.py`, `acquisition/fetch/browser_policy.py`                                           | explicit attempt list, engine/proxy/handoff/browser retry admission                    | browser mechanics, result materialization, hidden retries               |
+| Attempt execution      | `acquisition/executor.py`, `fetch/planned_http.py`, `fetch/browser_attempt_runner.py`                     | one `AttemptSpec` -> one `AttemptResult`                                               | deciding the next attempt after execution                               |
+| Browser mechanics      | `browser_runtime.py`, `browser_fetch_support.py`, `browser_page_flow.py`, `browser_result_builder.py`     | launch/navigate/settle/serialize/finalize observations                                 | field extraction or record decisions                                    |
+| Browser interaction    | `browser_detail.py`, `browser_accessibility.py` after Slice 2, `traversal.py`, `traversal_recovery.py`    | bounded observation-producing clicks/scroll/load-more/pagination                       | direct field assignment or site-specific rescue                         |
+| Listing discovery      | `crawl/sitemap_resolver.py`, `crawl/site_link_discovery.py`, `crawl/sitemap_nav.py`                       | choosing category/listing URLs from sitemap/homepage/rendered links                    | persisted record rows, detail extraction, product intelligence          |
+| Listing extraction     | `extraction/listing.py`                                                                                   | listing-card evidence -> decisions -> `CommerceListingRecord` rows                     | category discovery, detail fallback, export cleanup                     |
+| Detail extraction      | `extraction/engine.py`, collectors, `entities.py`, `resolution.py`, `validation.py`, `materialization.py` | evidence collection, entity linking, deterministic resolution, findings, typed records | acquisition retries, persistence repair, LLM-generated values           |
+| Public record boundary | extraction contracts, schemas, APIs, export/review serializers                                            | typed public fields and lineage transport                                              | post-hoc semantic repair                                                |
+| Provenance/artifacts   | `persistence/record_artifacts.py`, `persistence/url_result_artifacts.py`, `crawl/pipeline/persistence.py` | immutable artifacts, manifests, DB writes                                              | extraction fact mutation                                                |
+| Review/domain feedback | `crawl/review/*`, `models/review.py`, `DomainFieldFeedback`                                               | review payloads and user-approved feedback                                             | mutating immutable extraction provenance                                |
+| Config                 | `core/config/*`                                                                                           | thresholds, tokens, selectors, field aliases, runtime tunables                         | service-local constants                                                 |
+| LLM                    | `connectors/llm/*`, `llm/*`                                                                               | explicit, degradable backfill/adjudication when enabled                                | primary extraction, deterministic overwrite                             |
 
 ### Generic failure templates to convert into tests
 
@@ -343,9 +343,15 @@ Use these patterns for small synthetic regressions. Do not snapshot whole extern
 </nav>
 <main>
   <section class="product-grid">
-    <a class="product-card" href="/products/trail-shoe-1"><span>Trail Shoe 1</span><span>$120</span></a>
-    <a class="product-card" href="/products/trail-shoe-2"><span>Trail Shoe 2</span><span>$130</span></a>
-    <a class="product-card" href="/products/trail-shoe-3"><span>Trail Shoe 3</span><span>$140</span></a>
+    <a class="product-card" href="/products/trail-shoe-1"
+      ><span>Trail Shoe 1</span><span>$120</span></a
+    >
+    <a class="product-card" href="/products/trail-shoe-2"
+      ><span>Trail Shoe 2</span><span>$130</span></a
+    >
+    <a class="product-card" href="/products/trail-shoe-3"
+      ><span>Trail Shoe 3</span><span>$140</span></a
+    >
   </section>
 </main>
 ```
@@ -356,9 +362,11 @@ Expected: product/category URL kept only when listing evidence is present; suppo
 
 ```html
 <li class="product-card">
-  <a class="product-link" href="/blusa-verde/p"><img src="/p.jpg"></a>
+  <a class="product-link" href="/blusa-verde/p"><img src="/p.jpg" /></a>
   <button aria-label="Cor selecionada" title="Cor selecionada"></button>
-  <a class="product-name" href="/blusa-verde/p">Blusa de Manga Comprida em Lã Merino</a>
+  <a class="product-name" href="/blusa-verde/p"
+    >Blusa de Manga Comprida em Lã Merino</a
+  >
   <span class="price">399</span>
 </li>
 ```
@@ -416,11 +424,12 @@ Use structured/JS state with one ID-only variant, one complete variant, one pare
 
 #### Slice 5 notes: asset and `additional_images`
 
-- `AssetDecision` currently exists but product-level primary selection is not yet enforced. Either use it or replace it with one generic decision shape; do not leave dead parallel contracts.
-- Materialization must write `image_url` exactly once from the selected primary decision.
+- Completed 2026-06-21. `AssetDecision` now carries product asset URL, role, rank, rule ID, and accepted evidence for one ordered product-level asset selection.
+- Materialization writes `image_url` exactly once from the selected primary decision.
 - `additional_images` is additive and backward-compatible. Absence/empty list is valid when no secondary product image exists.
-- Normalize asset URL identity before dedupe; preserve meaningful query params but encode unsafe spaces.
-- Reject utility assets by role/context, not extension alone. Legitimate SVG product art must remain possible.
+- Asset URL identity is normalized before entity dedupe; path spaces are encoded, transform params are ignored for identity, and meaningful params are preserved.
+- Utility/placeholder SVG/GIF assets are rejected by role/context tokens, not extension alone. Legitimate product SVG art remains admissible.
+- Exact slice verification: `92 passed`. Full offline unit/component/regression suite: `988 passed, 1 deselected`. Repo-wide Mypy, Ruff, and frontend Prettier passed.
 
 #### Slice 6 notes: offers and variants
 
@@ -679,7 +688,7 @@ $env:PYTHONPATH='.'
 
 ### Slice 5: Product Asset Selection and Additional Images Contract
 
-**Status:** IN PROGRESS
+**Status:** DONE — VERIFIED 2026-06-21
 **Owners:** `extraction/contracts.py`, `entities.py`, `resolution.py`, `materialization.py`, asset collectors, `core/config/extraction_rules/_images.py`, `core/config/field_mappings.py`, `schemas/crawl.py`, `persistence/export/*`, record APIs/review serializers
 **Fallback docs:** `docs/INVARIANTS.md` Rules 3, 8, 13 and public API/output sections of `docs/BUSINESS_LOGIC.md`.
 **Known audited scope:** `AssetDecision`, all asset facts/entities, every `image_url`/`additional_images` reader and serializer, primary-image reject tokens, URL normalization and asset dedupe.
@@ -716,7 +725,7 @@ $env:PYTHONPATH='.'
 
 ### Slice 6: Offer Integrity, Variant Completeness, and Honest Diagnostics
 
-**Status:** TODO
+**Status:** TODO — NEXT
 **Owners:** `extraction/collectors/js_state.py`, `jsonld.py`, `dom.py`, `entities.py`, `resolution.py`, `validation.py`, `materialization.py`, `result_building.py`, existing variant/config owners
 **Fallback docs:** `docs/INVARIANTS.md` Rule 3 first, then Rules 6, 7, 13; `docs/ENGINEERING_STRATEGY.md` AP-12/AP-20.
 **Known audited scope:** all early returns, recursive object traversal, variant identity/grouping, parent/variant offers, price/currency pairing, selected-variant references, DOM cue gates, and capability requests.

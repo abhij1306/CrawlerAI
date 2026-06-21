@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from collections import defaultdict
+
 from pydantic import Field
+from app.core.shared.url_utils import asset_url_identity
 from app.extraction.contracts import (
     CaptureBundle,
     Evidence,
@@ -48,6 +50,8 @@ class AssetEntity(FrozenModel):
     entity_id: str
     product_entity_id: str
     variant_entity_id: str | None
+    url: str
+    identity_key: str
     url_evidence_ids: tuple[str, ...]
 
 
@@ -336,24 +340,21 @@ def _link_assets(
     product_by_subject: dict[str, str],
     variants: tuple[VariantEntity, ...],
 ) -> tuple[AssetEntity, ...]:
-    groups: dict[str, list[Evidence]] = defaultdict(list)
+    groups: dict[str, list[tuple[Evidence, str]]] = defaultdict(list)
     for ev in evidence:
         if ev.fact_type == "asset.image_url":
-            groups[str(ev.value)].append(ev)
+            normalized = asset_url_identity(ev.value)
+            if normalized is not None:
+                url, identity_key = normalized
+                groups[identity_key].append((ev, url))
     assets: list[AssetEntity] = []
-    for url, rows in sorted(groups.items()):
+    for identity_key, asset_rows in sorted(groups.items()):
+        rows = [ev for ev, _url in asset_rows]
         variant_id = _variant_for(rows, variants)
         product_id = _product_for_child(rows, product_by_subject, variants, variant_id)
         if product_id is None:
             continue
-        assets.append(
-            AssetEntity(
-                entity_id=stable_id("asset", product_id, url),
-                product_entity_id=product_id,
-                variant_entity_id=variant_id,
-                url_evidence_ids=tuple(sorted(ev.evidence_id for ev in rows)),
-            )
-        )
+        assets.append(AssetEntity(entity_id=stable_id("asset", product_id, identity_key), product_entity_id=product_id, variant_entity_id=variant_id, url=asset_rows[0][1], identity_key=identity_key, url_evidence_ids=tuple(sorted(ev.evidence_id for ev in rows))))
     return tuple(assets)
 
 

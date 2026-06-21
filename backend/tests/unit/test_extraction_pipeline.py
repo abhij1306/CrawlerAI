@@ -1356,6 +1356,81 @@ def test_utility_image_cannot_beat_product_image() -> None:
     )
 
 
+def test_product_asset_decision_materializes_primary_and_additional_images() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <html>
+          <head>
+            <meta property="og:image" content="https://shop.test/assets/logo.svg">
+            <script type="application/ld+json">
+            {
+              "@type": "Product",
+              "name": "Trail Shoe",
+              "url": "https://shop.test/products/trail-shoe",
+              "image": [
+                "https://shop.test/products/trail-shoe-main.jpg",
+                "https://shop.test/products/trail-shoe-side.jpg",
+                "https://shop.test/assets/payment-visa.gif",
+                "https://shop.test/products/trail-shoe-diagram.svg"
+              ],
+              "offers": {"price": "10", "priceCurrency": "USD"}
+            }
+            </script>
+          </head>
+          <body>
+            <img src="https://shop.test/assets/loader.gif">
+            <img src="https://shop.test/products/trail-shoe-dom.jpg">
+          </body>
+        </html>
+        """,
+        "https://shop.test/products/trail-shoe",
+    )
+
+    record = result.records[0]
+    assert record["image_url"] == "https://shop.test/products/trail-shoe-main.jpg"
+    assert record["additional_images"] == [
+        "https://shop.test/products/trail-shoe-side.jpg",
+        "https://shop.test/products/trail-shoe-diagram.svg",
+    ]
+    lineage = record["_lineage"]
+    assert lineage["image_url"]["rule_id"] == "PRODUCT_ASSET_PRIMARY"
+    assert lineage["image_url"]["evidence_ids"]
+    assert [item["rule_id"] for item in lineage["additional_images"]] == [
+        "PRODUCT_ASSET_ADDITIONAL",
+        "PRODUCT_ASSET_ADDITIONAL",
+    ]
+
+
+def test_asset_urls_are_normalized_and_deduped_without_dropping_variant_params() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <script type="application/ld+json">
+        {
+          "@type": "Product",
+          "name": "Trail Shoe",
+          "url": "https://shop.test/products/trail-shoe",
+          "image": [
+            "https://cdn.shop.test/images/Trail Shoe.jpg?width=800",
+            "https://cdn.shop.test/images/Trail%20Shoe.jpg?width=1200",
+            "https://cdn.shop.test/images/Trail Shoe.jpg?color=red&width=800"
+          ],
+          "offers": {"price": "10", "priceCurrency": "USD"}
+        }
+        </script>
+        """,
+        "https://shop.test/products/trail-shoe",
+    )
+
+    record = result.records[0]
+    assert record["image_url"] == "https://cdn.shop.test/images/Trail%20Shoe.jpg?width=800"
+    assert record["additional_images"] == [
+        "https://cdn.shop.test/images/Trail%20Shoe.jpg?color=red&width=800",
+    ]
+    assert record["image_url"] not in record["additional_images"]
+
+
 def test_missing_requested_field_has_visible_finding() -> None:
     result = extract(
         fixture_request_from_inputs(

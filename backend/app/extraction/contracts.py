@@ -205,8 +205,11 @@ class OfferDecision(FrozenModel):
 
 class AssetDecision(FrozenModel):
     asset_entity_id: str | None
+    url: str | None = None
     accepted_evidence_ids: tuple[str, ...]
     role: str = "primary"
+    rank: int = 0
+    rule_id: str = "PRODUCT_ASSET_SELECTION"
     rejection_reasons: tuple[str, ...] = ()
 
 
@@ -229,6 +232,7 @@ class ProductOptionCatalog(FrozenModel):
 class ResolutionResult(FrozenModel):
     primary_product_entity_id: str | None
     decisions: tuple[Decision, ...]
+    asset_decisions: tuple[AssetDecision, ...] = ()
     derived_facts: tuple[DerivedFact, ...]
     unresolved_fact_types: tuple[str, ...]
     blocking_finding_ids: tuple[str, ...]
@@ -331,6 +335,7 @@ class CommerceDetailRecord(PublicRecord):
     original_price: JsonValue | None = None
     availability: str | None = None
     image_url: str | None = None
+    additional_images: tuple[str, ...] = ()
     variants: tuple[CommerceVariantRecord, ...] = ()
 
 

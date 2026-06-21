@@ -7,6 +7,7 @@ from app.core.shared.url_utils import (
     identity_token,
     is_placeholder_image_url,
     absolute_url,
+    asset_url_identity,
     extract_urls,
     same_host,
 )
@@ -37,6 +38,18 @@ def test_ensure_scheme_preserves_relative_and_existing_scheme() -> None:
     assert ensure_scheme("/path") == "/path"
     assert ensure_scheme("javascript:void(0)") == "javascript:void(0)"
     assert ensure_scheme("http://example.com") == "http://example.com"
+
+
+@pytest.mark.unit
+def test_asset_url_identity_encodes_paths_and_keeps_meaningful_params() -> None:
+    assert asset_url_identity("https://cdn.test/i/Trail Shoe.jpg?width=800") == (
+        "https://cdn.test/i/Trail%20Shoe.jpg?width=800",
+        "https://cdn.test/i/Trail%20Shoe.jpg",
+    )
+    assert asset_url_identity("https://cdn.test/i/Trail%20Shoe.jpg?color=red&width=800") == (
+        "https://cdn.test/i/Trail%20Shoe.jpg?color=red&width=800",
+        "https://cdn.test/i/Trail%20Shoe.jpg?color=red",
+    )
 
 
 @pytest.mark.unit

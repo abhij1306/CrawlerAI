@@ -83,10 +83,21 @@ PRIMARY_IMAGE_REJECT_URL_TOKENS = frozenset(
         "placeholder",
         "logo",
         "badge",
+        "discount",
+        "email",
+        "icon",
+        "loader",
         "swatch",
+        "no-image",
+        "no_image",
+        "payment",
         "sprite",
+        "testimonial",
         "tracking",
+        "quote",
+        "schedule",
         "pixel",
+        "1x1",
     }
 )
 

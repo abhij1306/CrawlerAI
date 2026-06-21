@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from app.extraction.contracts import (
+    AssetDecision,
     CommerceDetailRecord,
     CommerceVariantRecord,
     Decision,
@@ -23,7 +24,6 @@ PUBLIC_MAP = {
     "offer.currency": "currency",
     "offer.original_price": "original_price",
     "offer.availability": "availability",
-    "asset.image_url": "image_url",
 }
 
 
@@ -73,6 +73,7 @@ def materialize(
                 "selector_source": accepted.collector_id,
                 "sample_value": accepted.value,
             }
+    _materialize_product_assets(record, lineages, resolution.asset_decisions)
     if not record.get("url"):
         record["url"] = canonical_url
         lineages["url"] = {"rule_id": "canonical_capture_url", "evidence_ids": []}
@@ -203,7 +204,7 @@ def _variant_offer_fields(row, lineage_row, offer, decisions, derived, by_id) ->
 def _variant_asset_field(row, lineage_row, asset, decisions, by_id) -> None:
     decision = decisions.get((asset.entity_id, "asset.image_url")) if asset else None
     if decision and decision.accepted_evidence_ids:
-        row["image_url"] = by_id[decision.accepted_evidence_ids[0]].value
+        row["image_url"] = asset.url
         lineage_row["image_url"] = lineage(decision=decision)
 
 
@@ -223,3 +224,39 @@ def _typed_detail_record(record: dict[str, object]) -> CommerceDetailRecord:
             if isinstance(row, dict)
         )
     return CommerceDetailRecord.model_validate(cleaned)
+
+
+def _materialize_product_assets(
+    record: dict[str, object],
+    lineages: dict[str, object],
+    asset_decisions: tuple[AssetDecision, ...],
+) -> None:
+    selected = [item for item in asset_decisions if item.url and item.accepted_evidence_ids]
+    primary = next((item for item in selected if item.role == "primary"), None)
+    if primary is None:
+        return
+    record["image_url"] = primary.url
+    lineages["image_url"] = _asset_lineage(primary)
+    primary_url = str(primary.url)
+    additional: list[str] = []
+    additional_lineage: list[dict[str, object]] = []
+    for item in selected:
+        if item.role != "additional" or str(item.url) == primary_url:
+            continue
+        if str(item.url) in additional:
+            continue
+        additional.append(str(item.url))
+        additional_lineage.append(_asset_lineage(item))
+    if additional:
+        record["additional_images"] = tuple(additional)
+        lineages["additional_images"] = additional_lineage
+
+
+def _asset_lineage(decision: AssetDecision) -> dict[str, object]:
+    return {
+        "asset_entity_id": decision.asset_entity_id,
+        "evidence_ids": list(decision.accepted_evidence_ids),
+        "rank": decision.rank,
+        "role": decision.role,
+        "rule_id": decision.rule_id,
+    }

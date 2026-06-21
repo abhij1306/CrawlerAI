@@ -1,10 +1,23 @@
 from __future__ import annotations
 
 import re
-from urllib.parse import parse_qsl, unquote, urlencode, urljoin, urlparse, urlunparse
+from urllib.parse import (
+    parse_qsl,
+    quote,
+    unquote,
+    urlencode,
+    urljoin,
+    urlparse,
+    urlsplit,
+    urlunparse,
+    urlunsplit,
+)
 
 from app.core.config.extraction_rules import (
     BARE_HOST_URL_RE,
+    CDN_IMAGE_PATH_SUFFIX_PATTERN,
+    CDN_IMAGE_QUERY_KEY_PATTERNS,
+    CDN_IMAGE_QUERY_PARAMS,
     GIF_BASE64_PREFIX,
     PLACEHOLDER_IMAGE_URL_PATTERNS,
     UNRESOLVED_TEMPLATE_URL_TOKENS,
@@ -15,6 +28,7 @@ from app.core.shared.text_coerce import clean_text
 
 __all__ = [
     "absolute_url",
+    "asset_url_identity",
     "clean_color_tokens",
     "extract_urls",
     "identity_token",
@@ -78,6 +92,47 @@ def variant_url_with_param(page_url: str, variant_id: str) -> str:
         if parsed.scheme and parsed.netloc
         else absolute_url(str(page_url or ""), composed) or ""
     )
+
+
+def asset_url_identity(value: object) -> tuple[str, str] | None:
+    parsed = urlsplit(str(value or "").strip())
+    if parsed.scheme.casefold() not in {"http", "https"} or not parsed.netloc:
+        return None
+    path = quote(unquote(parsed.path), safe="/:@")
+    url = urlunsplit(
+        (parsed.scheme.casefold(), parsed.netloc.casefold(), path, parsed.query, "")
+    )
+    identity_query = urlencode(
+        sorted(
+            (key, val)
+            for key, val in parse_qsl(parsed.query, keep_blank_values=True)
+            if not _is_image_transform_query_key(key)
+        ),
+        doseq=True,
+    )
+    identity_path = re.sub(
+        CDN_IMAGE_PATH_SUFFIX_PATTERN,
+        "",
+        path,
+        flags=re.IGNORECASE,
+    )
+    identity = urlunsplit(
+        (
+            parsed.scheme.casefold(),
+            parsed.netloc.casefold(),
+            identity_path,
+            identity_query,
+            "",
+        )
+    )
+    return url, identity
+
+
+def _is_image_transform_query_key(key: str) -> bool:
+    lowered = key.casefold()
+    if lowered in CDN_IMAGE_QUERY_PARAMS:
+        return True
+    return any(re.match(pattern, key) for pattern in CDN_IMAGE_QUERY_KEY_PATTERNS)
 
 
 def _origin_relative_url(base_url: str, candidate: str) -> str:
