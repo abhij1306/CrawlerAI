@@ -140,31 +140,33 @@ function Sidebar({ pathname, isAdmin }: Readonly<{ pathname: string; isAdmin: bo
       </div>
 
       <nav id="app-sidebar-navigation" className="app-sidebar-nav" aria-label="Main navigation">
-        {navGroups.filter((group) => isAdmin || group.label !== 'Admin').map((group) => (
-          <div key={group.label} className="app-sidebar-group">
-            <div className="space-y-1">
-              {group.items.map((item) => {
-                const active = isNavItemActive(pathname, item);
-                const Icon = item.nav!.icon;
-                return (
-                  <Link
-                    key={item.path}
-                    to={item.path}
-                    title={collapsed ? item.nav!.label : undefined}
-                    className={cn(
-                      'app-nav-item relative',
-                      active && 'is-active',
-                      collapsed && 'is-collapsed',
-                    )}
-                  >
-                    <Icon className="app-nav-icon" />
-                    {!collapsed && <span className="truncate">{item.nav!.label}</span>}
-                  </Link>
-                );
-              })}
+        {navGroups
+          .filter((group) => isAdmin || group.label !== 'Admin')
+          .map((group) => (
+            <div key={group.label} className="app-sidebar-group">
+              <div className="space-y-1">
+                {group.items.map((item) => {
+                  const active = isNavItemActive(pathname, item);
+                  const Icon = item.nav!.icon;
+                  return (
+                    <Link
+                      key={item.path}
+                      to={item.path}
+                      title={collapsed ? item.nav!.label : undefined}
+                      className={cn(
+                        'app-nav-item relative',
+                        active && 'is-active',
+                        collapsed && 'is-collapsed',
+                      )}
+                    >
+                      <Icon className="app-nav-icon" />
+                      {!collapsed && <span className="truncate">{item.nav!.label}</span>}
+                    </Link>
+                  );
+                })}
+              </div>
             </div>
-          </div>
-        ))}
+          ))}
       </nav>
 
       {!collapsed && (

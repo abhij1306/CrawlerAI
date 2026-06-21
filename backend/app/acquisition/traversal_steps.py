@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from urllib.parse import urljoin
 
+from app.acquisition.browser_capture import PlaywrightError, PlaywrightTimeoutError
 from app.acquisition.traversal_card_counting import (
     is_marginal_card_gain,
     page_snapshot,
@@ -283,17 +284,20 @@ async def advance_paginate(
         )
         if timeout_ms <= 0:
             return TraversalStep("budget_exceeded")
-        await page.goto(
-            intended_url,
-            wait_until="domcontentloaded",
-            timeout=timeout_ms,
-        )
-        await wait_for_transition(
-            page,
-            previous_url=current_url,
-            navigation_expected=True,
-            deadline_at=deadline_at,
-        )
+        try:
+            await page.goto(
+                intended_url,
+                wait_until="domcontentloaded",
+                timeout=timeout_ms,
+            )
+            await wait_for_transition(
+                page,
+                previous_url=current_url,
+                navigation_expected=True,
+                deadline_at=deadline_at,
+            )
+        except (PlaywrightError, PlaywrightTimeoutError):
+            return TraversalStep("paginate_navigation_failed")
     else:
         if not await click_with_retry(
             page,

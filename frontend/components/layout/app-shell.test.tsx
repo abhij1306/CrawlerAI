@@ -63,7 +63,9 @@ describe('AppShell reset workspace', () => {
   it('opens the confirm dialog when reset is clicked', async () => {
     renderShell();
     fireEvent.click(screen.getByRole('button', { name: /reset workspace/i }));
-    expect(await screen.findByRole('dialog', { name: /reset workspace data/i })).toBeInTheDocument();
+    expect(
+      await screen.findByRole('dialog', { name: /reset workspace data/i }),
+    ).toBeInTheDocument();
     expect(document.body.style.overflow).toBe('hidden');
     expect(document.body.style.touchAction).toBe('none');
   });
@@ -78,7 +80,9 @@ describe('AppShell reset workspace', () => {
     });
     fireEvent.keyDown(document, { key: 'Escape' });
     await waitFor(() => {
-      expect(screen.queryByRole('dialog', { name: /reset workspace data/i })).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole('dialog', { name: /reset workspace data/i }),
+      ).not.toBeInTheDocument();
       expect(trigger).toHaveFocus();
     });
   });
@@ -99,6 +103,9 @@ describe('AppShell sidebar toggle', () => {
     expect(toggle).toHaveAttribute('aria-controls', 'app-sidebar-navigation');
     expect(toggle).toHaveAttribute('aria-expanded', 'true');
     fireEvent.click(toggle);
-    expect(screen.getByRole('button', { name: /expand sidebar/i })).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.getByRole('button', { name: /expand sidebar/i })).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    );
   });
 });

@@ -117,13 +117,16 @@ export const api = {
     form.append('settings_json', JSON.stringify(payload.settings));
     return apiClient.postForm<{ run_id: number; url_count: number }>('/api/crawls/csv', form);
   },
-  listCrawls: async (params?: {
-    status?: string;
-    run_type?: string;
-    url_search?: string;
-    page?: number;
-    limit?: number;
-  }, options?: ApiRequestOptions) => {
+  listCrawls: async (
+    params?: {
+      status?: string;
+      run_type?: string;
+      url_search?: string;
+      page?: number;
+      limit?: number;
+    },
+    options?: ApiRequestOptions,
+  ) => {
     const query = new URLSearchParams();
     if (params?.status) query.set('status', params.status);
     if (params?.run_type) query.set('run_type', params.run_type);
@@ -350,10 +353,7 @@ export const api = {
     const res = await apiClient.patch<User>(`/api/users/${userId}`, payload);
     return strictValidate(userSchema, res, `updateUser(${userId})`);
   },
-  listSelectors: (
-    params?: { domain?: string; surface?: string },
-    options?: ApiRequestOptions,
-  ) => {
+  listSelectors: (params?: { domain?: string; surface?: string }, options?: ApiRequestOptions) => {
     const query = new URLSearchParams();
     if (params?.domain) query.set('domain', params.domain);
     if (params?.surface) query.set('surface', params.surface);

@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.public.common import PublicApiError
-from app.models.crawl_run import CrawlRecord
+from app.models.crawl_run import CrawlRecord, CrawlRun
 from app.persistence.record_artifacts import RecordArtifacts, load_record_artifacts
 from app.schemas.public_api import PublicExtractRequest
 from app.core.config.public_api import (
@@ -32,7 +32,7 @@ from app.extraction.surfaces import parse_surface, public_surface_for_internal
 from app.core.records.field_policy import canonical_fields_for_surface, normalize_field_key
 from app.crawl.pipeline.extraction_loop import process_single_url
 from app.crawl.pipeline.runtime_helpers import log_event, mark_run_failed
-from app.crawl.pipeline.types import URLProcessingConfig
+from app.crawl.pipeline.types import URLProcessingConfig, URLProcessingResult
 from app.acquisition.platform_policy import resolve_platform_runtime_policy
 from app.persistence.publish import VERDICT_BLOCKED, VERDICT_ERROR, VERDICT_EMPTY
 
@@ -87,7 +87,7 @@ async def _create_public_run(
     surface: str,
     requested_fields: list[str],
     max_wait_seconds: int,
-):
+) -> CrawlRun:
     run = await create_crawl_run(
         session,
         user_id,
@@ -115,7 +115,7 @@ async def _run_public_extraction(
     url: str,
     max_wait_seconds: int,
     surface: str,
-):
+) -> URLProcessingResult:
     try:
         config = URLProcessingConfig.from_acquisition_plan(
             run.settings_view.acquisition_plan(surface=surface, max_records=1),

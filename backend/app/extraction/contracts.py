@@ -52,7 +52,18 @@ OFFER_FACTS = frozenset(
     }
 )
 ASSET_FACTS = frozenset({"asset.image_url", "asset.role", "asset.variant_association"})
-OPTION_FACTS = frozenset({"option.size", "option.color", "option.width", "option.length", "option.material", "option.style", "option.capacity", "option.quantity"})
+OPTION_FACTS = frozenset(
+    {
+        "option.size",
+        "option.color",
+        "option.width",
+        "option.length",
+        "option.material",
+        "option.style",
+        "option.capacity",
+        "option.quantity",
+    }
+)
 FACT_TYPES = PRODUCT_FACTS | VARIANT_FACTS | OFFER_FACTS | ASSET_FACTS | OPTION_FACTS
 
 
@@ -171,7 +182,9 @@ class Collector(Protocol):
     collector_id: str
     collector_version: str
 
-    def collect(self, bundle: CaptureBundle, artifacts: ArtifactReader) -> tuple[Evidence, ...]: ...
+    def collect(
+        self, bundle: CaptureBundle, artifacts: ArtifactReader
+    ) -> tuple[Evidence, ...]: ...
 
 
 class RejectedEvidence(FrozenModel):
@@ -236,11 +249,20 @@ class AssetDecision(FrozenModel):
     rejection_reasons: tuple[str, ...] = ()
 
 
-class OptionValue(FrozenModel): value: str; evidence_ids: tuple[str, ...] = ()
+class OptionValue(FrozenModel):
+    value: str
+    evidence_ids: tuple[str, ...] = ()
 
-class OptionAxis(FrozenModel): axis: str; values: tuple[OptionValue, ...] = ()
 
-class ProductOptionCatalog(FrozenModel): product_entity_id: str; axes: tuple[OptionAxis, ...] = (); evidence_ids: tuple[str, ...] = ()
+class OptionAxis(FrozenModel):
+    axis: str
+    values: tuple[OptionValue, ...] = ()
+
+
+class ProductOptionCatalog(FrozenModel):
+    product_entity_id: str
+    axes: tuple[OptionAxis, ...] = ()
+    evidence_ids: tuple[str, ...] = ()
 
 
 class ResolutionResult(FrozenModel):
@@ -272,9 +294,13 @@ class TargetSelection(FrozenModel):
 class CapabilityRequest(FrozenModel):
     schema_version: Literal["capability-request.v1"] = "capability-request.v1"
     required: bool = False
-    reason: Literal["dynamic_content_missing", "explicit_variants_missing", "http_shell"]
+    reason: Literal[
+        "dynamic_content_missing", "explicit_variants_missing", "http_shell"
+    ]
     required_artifacts: tuple[str, ...] = ()
     max_attempts: int = Field(default=1, ge=1, le=1)
+
+
 RetryRequest = CapabilityRequest
 
 
@@ -388,7 +414,14 @@ class ExtractionResult(FrozenModel):
     findings: tuple[Finding, ...] = ()
     decisions: tuple[Decision, ...] = ()
     verdict: Literal[
-        "success", "partial", "review", "invalid", "empty", "blocked", "error", "wrong_surface"
+        "success",
+        "partial",
+        "review",
+        "invalid",
+        "empty",
+        "blocked",
+        "error",
+        "wrong_surface",
     ]
     retry_request: RetryRequest | None = None
     metrics: ExtractionMetrics = Field(default_factory=ExtractionMetrics)

@@ -4,12 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import type { CrawlRecord, CrawlRun } from '../../lib/api/types';
 import { STORAGE_KEYS } from '../../lib/constants/storage-keys';
 import { storeDataEnrichmentPrefill, storeProductIntelligencePrefill } from './crawl-run-prefill';
-import {
-  extractRecordUrl,
-  inferDomainFromSurface,
-  isListingRun,
-  uniqueStrings,
-} from './shared';
+import { extractRecordUrl, inferDomainFromSurface, isListingRun, uniqueStrings } from './shared';
 
 type UseRunFollowUpActionsOptions = {
   run: CrawlRun | undefined;

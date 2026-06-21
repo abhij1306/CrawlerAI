@@ -17,14 +17,27 @@ vi.mock('react-router-dom', async (importOriginal) => {
   const React = await import('react');
   return {
     ...actual,
-    useLocation: () => ({ pathname: '/crawl', search: '?run_id=42', hash: '', state: null, key: 'test' }),
+    useLocation: () => ({
+      pathname: '/crawl',
+      search: '?run_id=42',
+      hash: '',
+      state: null,
+      key: 'test',
+    }),
     useNavigate: () => (to: string, options?: { replace?: boolean }) =>
       options?.replace ? replaceMock(to, options) : pushMock(to),
     useSearchParams: () => {
       const [params, setParamsState] = React.useState(() => new URLSearchParams('run_id=42'));
-      const setParams = React.useCallback((nextParams: URLSearchParams | ((current: URLSearchParams) => URLSearchParams)) => {
-        setParamsState((current: URLSearchParams) => typeof nextParams === 'function' ? new URLSearchParams(nextParams(current)) : new URLSearchParams(nextParams));
-      }, []);
+      const setParams = React.useCallback(
+        (nextParams: URLSearchParams | ((current: URLSearchParams) => URLSearchParams)) => {
+          setParamsState((current: URLSearchParams) =>
+            typeof nextParams === 'function'
+              ? new URLSearchParams(nextParams(current))
+              : new URLSearchParams(nextParams),
+          );
+        },
+        [],
+      );
       return [params, setParams] as const;
     },
   };

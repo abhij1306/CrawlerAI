@@ -37,7 +37,8 @@ class _ReadinessSnapshotCache:
             analysis = self.analyses.get(snapshot_hash)
             if analysis is None or not analysis.matches_html(refreshed_html or ""):
                 analysis = await asyncio.to_thread(analyze_html, refreshed_html or "")
-            assert analysis is not None
+            if analysis is None:
+                raise RuntimeError("browser readiness analysis was not produced")
             self.analyses[snapshot_hash] = analysis
             self.html = refreshed_html
             self.analysis = analysis

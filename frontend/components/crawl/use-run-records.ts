@@ -83,10 +83,7 @@ export function useRunRecords({
   );
 
   const summaryRecordsFromRun = Number(run?.result_summary?.record_count ?? 0) || 0;
-  const knownTableRecordsTotal = Math.max(
-    tableTotal,
-    tableRecordsQuery.data?.meta?.total ?? 0,
-  );
+  const knownTableRecordsTotal = Math.max(tableTotal, tableRecordsQuery.data?.meta?.total ?? 0);
   const terminalRecordsExpected =
     terminal && (summaryRecordsFromRun > 0 || verdict === 'success' || verdict === 'partial');
   const terminalRecordsNeedSync =

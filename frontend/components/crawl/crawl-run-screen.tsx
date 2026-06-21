@@ -7,11 +7,7 @@ import { extractionVerdict } from './shared';
 import { RunLearningPanel } from './run-learning-panel';
 import { RunLiveWorkspace } from './run-live-workspace';
 import { RunLogsOutput } from './run-logs-output';
-import {
-  JSON_PREVIEW_INCREMENT,
-  RunJsonOutput,
-  RunTableOutput,
-} from './run-records-output';
+import { JSON_PREVIEW_INCREMENT, RunJsonOutput, RunTableOutput } from './run-records-output';
 import {
   RunLoadError,
   RunLoadingState,
@@ -212,10 +208,7 @@ function CrawlRunWorkspace({ runId }: Readonly<CrawlRunScreenProps>) {
 
       {showRunLoadingState ? <RunLoadingState runId={runId} /> : null}
 
-      <RunPanelErrorState
-        panels={panelRefreshErrors}
-        onRetry={() => void retryFailedPanels()}
-      />
+      <RunPanelErrorState panels={panelRefreshErrors} onRetry={() => void retryFailedPanels()} />
       {!showRunLoadingState && !terminal ? (
         <RunLiveWorkspace
           run={run}
@@ -274,65 +267,63 @@ function CrawlRunWorkspace({ runId }: Readonly<CrawlRunScreenProps>) {
           }
         >
           <>
-                  {outputTab === 'table' ? (
-                    <RunTableOutput
-                      loading={tableRecordsQuery.isLoading}
-                      records={filteredTableRecords}
-                      visibleColumns={visibleColumns}
-                      selectedIds={visibleSelectedIds}
-                      total={tableTotal}
-                      hasMore={hasMoreTableRecords}
-                      emptyState={emptyRecordsState}
-                      onSelectAll={(checked) =>
-                        setSelectedIds(
-                          checked ? filteredTableRecords.map((record) => record.id) : [],
-                        )
-                      }
-                      onToggleRow={(id, checked) =>
-                        setSelectedIds((current) =>
-                          checked
-                            ? Array.from(new Set([...current, id]))
-                            : current.filter((value) => value !== id),
-                        )
-                      }
-                      onLoadMore={() => setTablePage((current) => current + 1)}
-                    />
-                  ) : null}
+            {outputTab === 'table' ? (
+              <RunTableOutput
+                loading={tableRecordsQuery.isLoading}
+                records={filteredTableRecords}
+                visibleColumns={visibleColumns}
+                selectedIds={visibleSelectedIds}
+                total={tableTotal}
+                hasMore={hasMoreTableRecords}
+                emptyState={emptyRecordsState}
+                onSelectAll={(checked) =>
+                  setSelectedIds(checked ? filteredTableRecords.map((record) => record.id) : [])
+                }
+                onToggleRow={(id, checked) =>
+                  setSelectedIds((current) =>
+                    checked
+                      ? Array.from(new Set([...current, id]))
+                      : current.filter((value) => value !== id),
+                  )
+                }
+                onLoadMore={() => setTablePage((current) => current + 1)}
+              />
+            ) : null}
 
-                  {outputTab === 'json' ? (
-                    <RunJsonOutput
-                      records={records}
-                      recordsJson={recordsJson}
-                      visibleCount={jsonRecords.length}
-                      total={recordsTotal}
-                      hasMore={hasMoreJsonRecords}
-                      fetchCapReached={recordsFetchCapReached}
-                      onLoadMore={() =>
-                        setJsonVisibleCount((current) => current + JSON_PREVIEW_INCREMENT)
-                      }
-                    />
-                  ) : null}
+            {outputTab === 'json' ? (
+              <RunJsonOutput
+                records={records}
+                recordsJson={recordsJson}
+                visibleCount={jsonRecords.length}
+                total={recordsTotal}
+                hasMore={hasMoreJsonRecords}
+                fetchCapReached={recordsFetchCapReached}
+                onLoadMore={() =>
+                  setJsonVisibleCount((current) => current + JSON_PREVIEW_INCREMENT)
+                }
+              />
+            ) : null}
 
-                  {outputTab === 'logs' ? (
-                    <RunLogsOutput
-                      logs={logs}
-                      records={batchSourceRecords}
-                      requestedFields={run?.requested_fields ?? []}
-                      viewportRef={logViewportRef}
-                    />
-                  ) : null}
+            {outputTab === 'logs' ? (
+              <RunLogsOutput
+                logs={logs}
+                records={batchSourceRecords}
+                requestedFields={run?.requested_fields ?? []}
+                viewportRef={logViewportRef}
+              />
+            ) : null}
 
-                  {outputTab === 'learning' ? (
-                    <div className="min-h-[55vh] space-y-4">
-                      <RunLearningPanel
-                        loading={domainRecipeQuery.isLoading}
-                        recipe={domainRecipe}
-                        pendingKey={recipeActionPending}
-                        error={recipeActionError}
-                        onFieldAction={applyFieldAction}
-                      />
-                    </div>
-                  ) : null}
+            {outputTab === 'learning' ? (
+              <div className="min-h-[55vh] space-y-4">
+                <RunLearningPanel
+                  loading={domainRecipeQuery.isLoading}
+                  recipe={domainRecipe}
+                  pendingKey={recipeActionPending}
+                  error={recipeActionError}
+                  onFieldAction={applyFieldAction}
+                />
+              </div>
+            ) : null}
           </>
         </RunTerminalShell>
       ) : null}

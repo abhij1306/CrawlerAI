@@ -201,7 +201,9 @@ function matchesSiteUrl(record: CrawlRecord, siteUrl: string) {
     return true;
   }
   const normalizedSiteUrl = canonicalLogMatchUrl(siteUrl);
-  return Array.from(candidates).some((candidate) => canonicalLogMatchUrl(candidate) === normalizedSiteUrl);
+  return Array.from(candidates).some(
+    (candidate) => canonicalLogMatchUrl(candidate) === normalizedSiteUrl,
+  );
 }
 
 function canonicalLogMatchUrl(value: string) {

@@ -347,12 +347,13 @@ def _matches_requested_branch(url: str, requested_branch: tuple[str, ...]) -> bo
 def _looks_like_locale_segment(value: str) -> bool:
     cleaned = str(value or "").replace("_", "-").casefold()
     return (
-        len(cleaned) == 2
-        and cleaned.isalpha()
-        or len(cleaned) == 5
-        and cleaned[2] == "-"
-        and cleaned[:2].isalpha()
-        and cleaned[3:].isalpha()
+        (len(cleaned) == 2 and cleaned.isalpha())
+        or (
+            len(cleaned) == 5
+            and cleaned[2] == "-"
+            and cleaned[:2].isalpha()
+            and cleaned[3:].isalpha()
+        )
     )
 
 

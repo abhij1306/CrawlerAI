@@ -33,8 +33,7 @@ export function useRunLogStream({
     queryFn: ({ signal }) =>
       api.getCrawlLogs(runId, { limit: CRAWL_DEFAULTS.MAX_LIVE_LOGS }, { signal }),
     enabled,
-    refetchInterval:
-      live && enabled && !socketConnected ? POLLING_INTERVALS.ACTIVE_JOB_MS : false,
+    refetchInterval: live && enabled && !socketConnected ? POLLING_INTERVALS.ACTIVE_JOB_MS : false,
     refetchIntervalInBackground: false,
   });
   const { refetch } = query;
@@ -52,12 +51,7 @@ export function useRunLogStream({
 
   useEffect(() => {
     const isJsdom = typeof navigator !== 'undefined' && /jsdom/i.test(navigator.userAgent);
-    if (
-      !enabled ||
-      typeof window === 'undefined' ||
-      typeof WebSocket === 'undefined' ||
-      isJsdom
-    ) {
+    if (!enabled || typeof window === 'undefined' || typeof WebSocket === 'undefined' || isJsdom) {
       return;
     }
 
@@ -103,8 +97,7 @@ export function useRunLogStream({
         return;
       }
       const atBottom =
-        node.scrollHeight - node.scrollTop - node.clientHeight <
-        CRAWL_DEFAULTS.SCROLL_THRESHOLD_PX;
+        node.scrollHeight - node.scrollTop - node.clientHeight < CRAWL_DEFAULTS.SCROLL_THRESHOLD_PX;
       if (atBottom) {
         node.scrollTop = node.scrollHeight;
         setLiveJumpAvailable(false);

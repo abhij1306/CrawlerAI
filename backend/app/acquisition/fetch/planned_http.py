@@ -302,7 +302,7 @@ async def _attempt_http_fetch(
         if proxy is not None:
             return await fetcher(context.url, http_timeout, proxy=proxy)
         return await fetcher(context.url, http_timeout)
-    except (httpx.HTTPError, OSError, RuntimeError) as exc:
+    except (httpx.HTTPError, OSError) as exc:
         context.last_error = exc
         logger.debug(
             "Fetch failure for %s via %s (%s)",
@@ -422,7 +422,7 @@ async def run_browser_http_handoff(
                 cookie_header=cookie_header,
             )
             if result is None:
-                return None
+                continue
             if not bool(result.blocked) and not await deps.should_escalate_to_browser(
                 result,
                 surface=context.surface,

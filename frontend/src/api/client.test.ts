@@ -85,9 +85,11 @@ describe('apiClient', () => {
 
   it('forwards AbortSignal and request identifiers', async () => {
     const controller = new AbortController();
-    const fetchMock = vi.fn().mockResolvedValue(
-      new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } }),
-    );
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } }),
+      );
     vi.stubGlobal('fetch', fetchMock);
 
     const { apiClient } = await import('./client');

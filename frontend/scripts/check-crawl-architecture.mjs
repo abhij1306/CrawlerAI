@@ -255,7 +255,10 @@ if (crawlPage !== null && !dynamicallyImportsHeavyCrawlScreens(crawlPage)) {
 
 const routeSync = read('components/crawl/use-crawl-route-sync.ts');
 const cleanedRouteSync = routeSync === null ? null : stripCommentsAndStrings(routeSync);
-if (cleanedRouteSync !== null && /\bhistory\s*\.\s*(?:pushState|replaceState)\s*\(/.test(cleanedRouteSync)) {
+if (
+  cleanedRouteSync !== null &&
+  /\bhistory\s*\.\s*(?:pushState|replaceState)\s*\(/.test(cleanedRouteSync)
+) {
   failures.push(
     'components/crawl/use-crawl-route-sync.ts must use React Router navigation instead of writing browser history directly.',
   );

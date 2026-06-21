@@ -62,10 +62,13 @@ export function useCrawlDomainMemory({
   const profileQuery = useQuery({
     queryKey: queryKeys.domainRunProfiles.detail(deferredTargetDomain, deferredSurface),
     queryFn: ({ signal }) =>
-      api.getDomainRunProfile({
-        url: deferredTargetUrl,
-        surface: deferredSurface,
-      }, { signal }),
+      api.getDomainRunProfile(
+        {
+          url: deferredTargetUrl,
+          surface: deferredSurface,
+        },
+        { signal },
+      ),
     enabled: queryEnabled,
     staleTime: 30_000,
   });
@@ -76,10 +79,7 @@ export function useCrawlDomainMemory({
       surface: deferredSurface,
     }),
     queryFn: ({ signal }) =>
-      api.listSelectors(
-        { domain: deferredTargetDomain, surface: deferredSurface },
-        { signal },
-      ),
+      api.listSelectors({ domain: deferredTargetDomain, surface: deferredSurface }, { signal }),
     enabled: queryEnabled,
     staleTime: 30_000,
   });
