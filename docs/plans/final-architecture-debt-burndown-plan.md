@@ -578,7 +578,7 @@ $env:PYTHONPATH='.'
 
 ### Slice 3: Listing Discovery and Listing Card Integrity
 
-**Status:** TODO
+**Status:** DONE
 **Owners:** `crawl/sitemap_resolver.py`, `crawl/site_link_discovery.py`, `crawl/sitemap_nav.py`, `extraction/listing.py`, `core/config/sitemap.py`, `core/config/extraction_recipes.py`, `core/config/extraction_rules/_common.py`, `core/records/url_identity.py`, listing tests
 **Fallback docs:** `docs/INVARIANTS.md` Rules 1, 2, 7, 8, 13; listing/discovery ownership in `docs/CODEBASE_MAP.md`; user-supplied listing reports.
 **Known audited scope:** `resolve_category_urls_from_sitemap_result`, rendered site-link validation, homepage/category candidate scoring, category nav tree labels, listing card selectors, listing URL validation, listing title selector order, `LISTING_TITLE_CTA_TITLES`, utility/category/detail URL markers, and all tests covering site-link discovery, sitemap resolver, and ecommerce listing extraction.
@@ -622,6 +622,14 @@ $env:PYTHONPATH='.'
   tests\acceptance\test_replay_sites.py `
   -q
 ```
+
+**Results (2026-06-21):**
+
+- Exact Slice 3 verification: `83 passed`.
+- Ruff and mypy passed for all changed production/test files.
+- Static sitemap, homepage, and rendered discovery now share generic utility admission. Rendered discovery preserves requested branch affinity and validation no longer restores candidates without listing evidence.
+- Listing cards resolve and validate the product URL before title selection. Titles must come from the product-link/name scope and control, swatch, selected-state, CTA, navigation, and utility evidence is rejected.
+- Added only generic regressions. No hostname-specific branch or downstream cleanup was added.
 
 ### Slice 4: Product Identity, Title Quality, and Metadata Admission
 

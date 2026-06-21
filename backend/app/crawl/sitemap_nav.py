@@ -183,7 +183,11 @@ def _looks_like_detail_link(slug: str, *, depth: int, anchor_words: int) -> bool
 
 def _looks_like_category_url(url: str) -> bool:
     path = urlsplit(url).path.lower()
-    if any(token in path for token in SITEMAP_CATEGORY_EXCLUDED_PATH_TOKENS):
+    excluded_tokens = (
+        *SITEMAP_CATEGORY_EXCLUDED_PATH_TOKENS,
+        *SITEMAP_HOMEPAGE_FALLBACK_EXCLUDED_PATH_TOKENS,
+    )
+    if _path_has_excluded_token(path, excluded_tokens):
         return False
     if any(token in path for token in SITEMAP_CATEGORY_PATH_TOKENS):
         return True
@@ -237,7 +241,21 @@ def _reject_homepage_candidate(candidate_url: str) -> bool:
         return True
     if any(path.endswith(ext) for ext in SITEMAP_HOMEPAGE_FALLBACK_EXCLUDED_EXTENSIONS):
         return True
-    return any(token in path for token in SITEMAP_HOMEPAGE_FALLBACK_EXCLUDED_PATH_TOKENS)
+    return _path_has_excluded_token(
+        path,
+        SITEMAP_HOMEPAGE_FALLBACK_EXCLUDED_PATH_TOKENS,
+    )
+
+
+def _path_has_excluded_token(path: str, tokens: tuple[str, ...]) -> bool:
+    for token in tokens:
+        start = path.find(token)
+        if start < 0:
+            continue
+        end = start + len(token)
+        if end == len(path) or token.endswith("/") or path[end] in "/-_":
+            return True
+    return False
 
 
 def _path_depth(path: str) -> int:

@@ -11,7 +11,15 @@ from app.core.config.extraction_recipes import (
     ECOMMERCE_LISTING_TITLE_SELECTORS,
     ECOMMERCE_LISTING_URL_SELECTORS,
 )
-from app.core.config.extraction_rules import LISTING_UTILITY_URL_TOKENS
+from app.core.config.extraction_rules import (
+    LISTING_NAVIGATION_TITLE_HINTS,
+    LISTING_TITLE_CONTROL_ATTRIBUTES,
+    LISTING_TITLE_CONTROL_MARKERS,
+    LISTING_TITLE_CTA_TITLES,
+    LISTING_UTILITY_TITLE_PATTERNS,
+    LISTING_UTILITY_URL_TOKENS,
+    LISTING_WEAK_TITLES,
+)
 from app.extraction.collectors._helpers import evidence
 from app.extraction.contracts import (
     ArtifactReader,
@@ -98,13 +106,18 @@ def _card_evidence(
     card_index: int,
 ) -> list[Evidence]:
     rows: list[Evidence] = []
-    title = _first_text(card, ECOMMERCE_LISTING_TITLE_SELECTORS)
-    url = _first_attr(card, ECOMMERCE_LISTING_URL_SELECTORS, "href")
+    product_link = _first_node_with_attr(
+        card,
+        ECOMMERCE_LISTING_URL_SELECTORS,
+        "href",
+    )
+    url = product_link.attribute("href") if product_link else None
     price = _first_price(card)
     image_url = _first_image(card)
     product_url = urljoin(page_url, url) if url else None
     if product_url and not _valid_listing_product_url(product_url, page_url):
         product_url = None
+    title = _listing_product_title(card, product_link) if product_url else None
     absolute_image_url = urljoin(page_url, image_url) if image_url else None
     for fact_type, value, selector, confidence in (
         ("product.title", title, "title", 0.72),
@@ -254,6 +267,69 @@ def _first_text(card: HtmlNode, selectors: tuple[str, ...]) -> str | None:
         text = _clean_text(node.attribute("title") or node.text(separator=" ", strip=True))
         if text:
             return text
+    return None
+
+
+def _listing_product_title(card: HtmlNode, product_link: HtmlNode | None) -> str | None:
+    if product_link is not None:
+        link_title = _clean_text(product_link.attribute("title"))
+        if _admissible_listing_title(link_title, product_link):
+            return link_title
+        nested = _first_admissible_text(product_link, ECOMMERCE_LISTING_TITLE_SELECTORS)
+        if nested:
+            return nested
+        link_text = _clean_text(product_link.text(separator=" ", strip=True))
+        if _admissible_listing_title(link_text, product_link):
+            return link_text
+    return _first_admissible_text(card, ECOMMERCE_LISTING_TITLE_SELECTORS)
+
+
+def _first_admissible_text(
+    scope: HtmlNode,
+    selectors: tuple[str, ...],
+) -> str | None:
+    for selector in selectors:
+        node = scope.css_first(selector)
+        if node is None or node.is_hidden():
+            continue
+        text = _clean_text(node.attribute("title") or node.text(separator=" ", strip=True))
+        if _admissible_listing_title(text, node):
+            return text
+    return None
+
+
+def _admissible_listing_title(value: str | None, node: HtmlNode) -> bool:
+    if not value or _title_node_is_control(node):
+        return False
+    normalized = value.casefold().strip()
+    if normalized in (
+        LISTING_TITLE_CTA_TITLES
+        | LISTING_NAVIGATION_TITLE_HINTS
+        | LISTING_WEAK_TITLES
+    ):
+        return False
+    return not any(re.search(pattern, normalized) for pattern in LISTING_UTILITY_TITLE_PATTERNS)
+
+
+def _title_node_is_control(node: HtmlNode) -> bool:
+    if any(node.attribute(name) is not None for name in LISTING_TITLE_CONTROL_ATTRIBUTES):
+        return True
+    attributes = " ".join(
+        str(node.attribute(name) or "").casefold()
+        for name in ("class", "data-testid", "id", "role")
+    )
+    return any(marker in attributes for marker in LISTING_TITLE_CONTROL_MARKERS)
+
+
+def _first_node_with_attr(
+    card: HtmlNode,
+    selectors: tuple[str, ...],
+    attr: str,
+) -> HtmlNode | None:
+    for selector in selectors:
+        node = card.css_first(selector)
+        if node is not None and not node.is_hidden() and node.attribute(attr):
+            return node
     return None
 
 

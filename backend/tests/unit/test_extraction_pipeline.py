@@ -432,6 +432,86 @@ def test_ecommerce_listing_filters_docs_utility_links() -> None:
     assert [row["title"] for row in result.records] == ["Trail Shoe"]
 
 
+def test_ecommerce_listing_rejects_selected_state_as_product_title() -> None:
+    result = _extract(
+        "ecommerce_listing",
+        """
+        <main>
+          <article class="product-card">
+            <button class="product-title" aria-selected="true">Cor selecionada</button>
+            <a href="/products/linen-pant" aria-label="View product">
+              <img src="/images/linen-pant.jpg">
+            </a>
+            <span class="price">$79.00</span>
+          </article>
+        </main>
+        """,
+        "https://shop.test/collections/pants",
+        max_records=5,
+    )
+
+    assert not result.records
+
+
+def test_ecommerce_listing_uses_title_from_product_link_scope() -> None:
+    result = _extract(
+        "ecommerce_listing",
+        """
+        <main>
+          <article class="product-card">
+            <button class="product-title" aria-selected="true">Selected blue</button>
+            <a href="/products/linen-pant" title="Linen Pant">Shop now</a>
+            <span class="price">$79.00</span>
+          </article>
+        </main>
+        """,
+        "https://shop.test/collections/pants",
+        max_records=5,
+    )
+
+    assert [row["title"] for row in result.records] == ["Linen Pant"]
+
+
+def test_ecommerce_listing_rejects_utility_url_families() -> None:
+    utility_paths = (
+        "/support/product-care",
+        "/legal/accessibility",
+        "/stores/city-directory",
+        "/gift-registry/create",
+        "/mobile-app/download",
+        "/athletes/team",
+        "/ambassadors/join",
+    )
+    cards = "".join(
+        f'<article class="product-card"><a href="{path}"><h2>Trail Shoe</h2></a></article>'
+        for path in utility_paths
+    )
+    result = _extract(
+        "ecommerce_listing",
+        f"<main>{cards}</main>",
+        "https://shop.test/collections/all",
+        max_records=20,
+    )
+
+    assert not result.records
+
+
+def test_ecommerce_listing_rejects_utility_label_as_title() -> None:
+    result = _extract(
+        "ecommerce_listing",
+        """
+        <article class="product-card">
+          <a href="/products/trail-shoe" title="Customer Service">Learn more</a>
+          <span class="price">$99.00</span>
+        </article>
+        """,
+        "https://shop.test/collections/all",
+        max_records=5,
+    )
+
+    assert not result.records
+
+
 def test_js_state_dict_values_do_not_crash_dedupe() -> None:
     artifacts = {
         "js_state_objects": {

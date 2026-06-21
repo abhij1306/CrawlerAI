@@ -261,21 +261,40 @@ LISTING_SHELL_FRAMEWORK_TOKENS = ("__next", "nuxt", "data-reactroot", "skeleton"
 LISTING_TITLE_CTA_TITLES = frozenset(
     {"shop now", "learn more", "view all", "see more", "load more"}
 )
+LISTING_TITLE_CONTROL_ATTRIBUTES = (
+    "aria-checked",
+    "aria-pressed",
+    "aria-selected",
+)
+LISTING_TITLE_CONTROL_MARKERS = (
+    "color-option",
+    "selected-color",
+    "selected_color",
+    "swatch",
+)
 LISTING_UTILITY_TITLE_PATTERNS = (
-    r"^(?:shop now|learn more|view all|load more|sign in|account|cart)$",
+    r"^(?:shop now|learn more|view all|load more|sign in|account|cart|customer service|help|privacy|registry|store locator|support|terms)$",
 )
 LISTING_UTILITY_URL_TOKENS = (
     "/account",
+    "/ambassador",
+    "/athlete",
     "/cart",
     "/checkout",
     "/file-download",
+    "/gift-registry",
     "/login",
+    "/legal",
     "/mcp-tools",
+    "/mobile-app",
     "/reviews",
     "/signin",
     "/sitemap",
+    "/store",
+    "/support",
     "/testimonials",
     "/wishlist",
+    "/registry",
     "/api/",
     "/docs",
 )
@@ -500,6 +519,8 @@ __all__ = [
     "LISTING_NAVIGATION_TITLE_HINTS",
     "LISTING_SHELL_FRAMEWORK_TOKENS",
     "LISTING_TITLE_CTA_TITLES",
+    "LISTING_TITLE_CONTROL_ATTRIBUTES",
+    "LISTING_TITLE_CONTROL_MARKERS",
     "LISTING_UTILITY_TITLE_PATTERNS",
     "LISTING_UTILITY_URL_TOKENS",
     "LISTING_WEAK_TITLES",
