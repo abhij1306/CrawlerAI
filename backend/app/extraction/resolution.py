@@ -22,21 +22,29 @@ def resolve(
     decisions: list[Decision] = []
     for product in entities.products:
         for fact, ids in sorted(product.attribute_evidence.items()):
-            decisions.append(_resolve_scalar(product.entity_id, fact, ids, by_id, findings))
+            decisions.append(
+                _resolve_scalar(product.entity_id, fact, ids, by_id, findings)
+            )
     for variant in entities.variants:
         decisions.extend(_resolve_variant(variant, by_id, findings))
     for offer in entities.offers:
         decisions.extend(_resolve_offer(offer, by_id, findings))
     for asset in entities.assets:
         decisions.append(_resolve_asset(asset, by_id, findings))
-    resolved = {decision.fact_type for decision in decisions if decision.status == "resolved"}
+    resolved = {
+        decision.fact_type for decision in decisions if decision.status == "resolved"
+    }
     required = {"product.url", "product.title"}
     return ResolutionResult(
-        primary_product_entity_id=entities.products[0].entity_id if len(entities.products) == 1 else None,
+        primary_product_entity_id=entities.products[0].entity_id
+        if len(entities.products) == 1
+        else None,
         decisions=tuple(decisions),
         derived_facts=_derived(decisions, by_id),
         unresolved_fact_types=tuple(sorted(required - resolved)),
-        blocking_finding_ids=tuple(sorted(f.finding_id for f in findings if f.blocking)),
+        blocking_finding_ids=tuple(
+            sorted(f.finding_id for f in findings if f.blocking)
+        ),
     )
 
 
@@ -56,7 +64,9 @@ def _resolve_offer(
     evidence_by_id: dict[str, Evidence],
     findings: tuple[Finding, ...],
 ) -> tuple[Decision, ...]:
-    if not offer.fact_evidence.get("offer.price") or not offer.fact_evidence.get("offer.currency"):
+    if not offer.fact_evidence.get("offer.price") or not offer.fact_evidence.get(
+        "offer.currency"
+    ):
         return ()
     return tuple(
         _resolve_scalar(offer.entity_id, fact, ids, evidence_by_id, findings)
@@ -69,9 +79,15 @@ def _resolve_asset(
     evidence_by_id: dict[str, Evidence],
     findings: tuple[Finding, ...],
 ) -> Decision:
-    if any(_invalid_primary_asset_url(evidence_by_id[eid].value) for eid in asset.url_evidence_ids if eid in evidence_by_id):
+    if any(
+        _invalid_primary_asset_url(evidence_by_id[eid].value)
+        for eid in asset.url_evidence_ids
+        if eid in evidence_by_id
+    ):
         return Decision(
-            decision_id=stable_id("decision", asset.entity_id, "asset.image_url", asset.url_evidence_ids),
+            decision_id=stable_id(
+                "decision", asset.entity_id, "asset.image_url", asset.url_evidence_ids
+            ),
             entity_id=asset.entity_id,
             fact_type="asset.image_url",
             accepted_evidence_ids=(),
@@ -83,7 +99,13 @@ def _resolve_asset(
             rule_id="PRIMARY_ASSET_REJECTION",
             status="unresolved",
         )
-    return _resolve_scalar(asset.entity_id, "asset.image_url", asset.url_evidence_ids, evidence_by_id, findings)
+    return _resolve_scalar(
+        asset.entity_id,
+        "asset.image_url",
+        asset.url_evidence_ids,
+        evidence_by_id,
+        findings,
+    )
 
 
 def _invalid_primary_asset_url(value: object) -> bool:
@@ -100,7 +122,9 @@ def _resolve_scalar(
 ) -> Decision:
     candidates = sorted((evidence_by_id[eid] for eid in ids if eid in evidence_by_id), key=_rank)
     blocking = {eid for finding in findings if finding.blocking for eid in finding.evidence_ids}
-    admissible = [ev for ev in candidates if ev.evidence_id not in blocking and not _invalid(ev)]
+    admissible = [
+        ev for ev in candidates if ev.evidence_id not in blocking and not _invalid(ev)
+    ]
     finding_ids = tuple(f.finding_id for f in findings if set(f.evidence_ids) & set(ids))
     if not admissible:
         return Decision(
@@ -111,7 +135,9 @@ def _resolve_scalar(
             rejected=tuple(
                 RejectedEvidence(
                     evidence_id=ev.evidence_id,
-                    reason="blocked_by_finding" if ev.evidence_id in blocking else "invalid_value",
+                    reason="blocked_by_finding"
+                    if ev.evidence_id in blocking
+                    else "invalid_value",
                 )
                 for ev in candidates
             ),
@@ -128,21 +154,34 @@ def _resolve_scalar(
         rejected=tuple(
             RejectedEvidence(
                 evidence_id=ev.evidence_id,
-                reason="stable_tiebreak" if _rank(ev) == _rank(winner) else "lower_confidence",
+                reason="stable_tiebreak"
+                if _rank(ev) == _rank(winner)
+                else "lower_confidence",
             )
             for ev in candidates
             if ev.evidence_id != winner.evidence_id
         ),
         finding_ids=finding_ids,
-        rule_id="SCALAR_LEXICOGRAPHIC",
+        rule_id=(
+            "TITLE_URL_REVIEW_ONLY"
+            if fact_type == "product.title" and "url_derived_title" in winner.flags
+            else "TITLE_SEMANTIC_RANKING"
+            if fact_type == "product.title"
+            else "SCALAR_LEXICOGRAPHIC"
+        ),
         status="resolved",
     )
 
 
-def _derived(decisions: list[Decision], by_id: dict[str, Evidence]) -> tuple[DerivedFact, ...]:
+def _derived(
+    decisions: list[Decision], by_id: dict[str, Evidence]
+) -> tuple[DerivedFact, ...]:
     out: list[DerivedFact] = []
     for decision in decisions:
-        if decision.fact_type not in {"offer.price", "offer.original_price"} or not decision.accepted_evidence_ids:
+        if (
+            decision.fact_type not in {"offer.price", "offer.original_price"}
+            or not decision.accepted_evidence_ids
+        ):
             continue
         ev = by_id[decision.accepted_evidence_ids[0]]
         try:
@@ -151,7 +190,13 @@ def _derived(decisions: list[Decision], by_id: dict[str, Evidence]) -> tuple[Der
             continue
         out.append(
             DerivedFact(
-                derived_fact_id=stable_id("derived", "NORMALIZE_MONEY_PRECISION", decision.entity_id, decision.fact_type, value),
+                derived_fact_id=stable_id(
+                    "derived",
+                    "NORMALIZE_MONEY_PRECISION",
+                    decision.entity_id,
+                    decision.fact_type,
+                    value,
+                ),
                 entity_id=decision.entity_id,
                 fact_type=decision.fact_type,
                 value=value,
@@ -163,10 +208,24 @@ def _derived(decisions: list[Decision], by_id: dict[str, Evidence]) -> tuple[Der
 
 
 def _invalid(ev: Evidence) -> bool:
-    return bool(set(ev.flags) & {"invalid_decimal", "invalid_currency", "invalid_gtin", "placeholder_text", "tracking_url"})
+    return bool(
+        set(ev.flags)
+        & {
+            "code_only_title",
+            "filename_title",
+            "generic_title",
+            "invalid_decimal",
+            "invalid_currency",
+            "invalid_gtin",
+            "placeholder_text",
+            "tracking_url",
+        }
+    )
 
 
-def _rank(ev: Evidence) -> tuple[int, int, float, str]:
+def _rank(
+    ev: Evidence,
+) -> tuple[int, int, float, str] | tuple[int, int, int, float, str]:
     directness = {"direct": 0, "embedded": 1, "inferred": 2}.get(ev.directness, 3)
     reliability = {
         "jsonld": 0,
@@ -175,6 +234,19 @@ def _rank(ev: Evidence) -> tuple[int, int, float, str]:
         "network": 3,
         "opengraph": 4,
         "dom": 5,
+        "css_recipe": 5,
         "url": 6,
     }.get(ev.collector_id, 7)
+    if ev.fact_type == "product.title":
+        if "shell_title" in ev.flags:
+            return -1, 0, reliability, -float(ev.confidence), ev.evidence_id
+        pollution = int("seo_title_pollution" in ev.flags)
+        url_disagreement = int("title_url_mismatch" in ev.flags)
+        return (
+            pollution,
+            url_disagreement,
+            reliability,
+            -float(ev.confidence),
+            ev.evidence_id,
+        )
     return directness, reliability, -float(ev.confidence), ev.evidence_id

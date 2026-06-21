@@ -50,7 +50,10 @@ from app.extraction.targeting import (
     select_commerce_target as _select_commerce_target,
     select_subject_targets as _select_subject_targets,
 )
-from app.extraction.validation import validate as validate_ecommerce_detail
+from app.extraction.validation import (
+    validate as validate_ecommerce_detail,
+    validate_selected_contract_fields,
+)
 
 ExtractionVerdict = Literal[
     "success",
@@ -70,10 +73,41 @@ class SurfaceRuntime:
     normalize: Callable[[tuple[Evidence, ...], ExtractionRequest, SurfaceSpec], tuple[Evidence, ...]]
     build_graph: Callable[[tuple[Evidence, ...], ExtractionRequest, SurfaceSpec], Any]
     select_target: Callable[[Any, tuple[Evidence, ...], ExtractionRequest, SurfaceSpec], TargetSelection]
-    validate: Callable[[Any, TargetSelection, tuple[Evidence, ...], ExtractionRequest, SurfaceSpec], tuple[Finding, ...]]
-    resolve: Callable[[Any, tuple[Evidence, ...], tuple[Finding, ...], ExtractionRequest, SurfaceSpec], Any]
-    materialize: Callable[[Any, Any, tuple[Evidence, ...], tuple[Finding, ...], ExtractionRequest, SurfaceSpec], tuple[PublicRecord, ...]]
-    assess: Callable[[tuple[PublicRecord, ...], Any, tuple[Finding, ...], ExtractionRequest, SurfaceSpec], str]
+    validate: Callable[
+        [Any, TargetSelection, tuple[Evidence, ...], ExtractionRequest, SurfaceSpec],
+        tuple[Finding, ...],
+    ]
+    resolve: Callable[
+        [
+            Any,
+            tuple[Evidence, ...],
+            tuple[Finding, ...],
+            ExtractionRequest,
+            SurfaceSpec,
+        ],
+        Any,
+    ]
+    materialize: Callable[
+        [
+            Any,
+            Any,
+            tuple[Evidence, ...],
+            tuple[Finding, ...],
+            ExtractionRequest,
+            SurfaceSpec,
+        ],
+        tuple[PublicRecord, ...],
+    ]
+    assess: Callable[
+        [
+            tuple[PublicRecord, ...],
+            Any,
+            tuple[Finding, ...],
+            ExtractionRequest,
+            SurfaceSpec,
+        ],
+        str,
+    ]
 
 
 def extract(request: ExtractionRequest) -> ExtractionResult:
@@ -87,6 +121,11 @@ def extract(request: ExtractionRequest) -> ExtractionResult:
     findings = runtime.validate(step_graph, target, normalized, request, spec)
     resolution = runtime.resolve(step_graph, normalized, findings, request, spec)
     records = runtime.materialize(step_graph, resolution, normalized, findings, request, spec)
+    if spec.surface == Surface.ECOMMERCE_DETAIL:
+        findings = (
+            *findings,
+            *validate_selected_contract_fields(records, request.requested_fields),
+        )
     verdict = cast(ExtractionVerdict, runtime.assess(records, resolution, findings, request, spec))
     decisions = _decisions(resolution)
     graph = _entity_graph(graph_state, normalized, spec)
@@ -345,44 +384,8 @@ def _assess_records(
 
 
 _SURFACE_RUNTIMES: dict[Surface, SurfaceRuntime] = {
-    Surface.ECOMMERCE_DETAIL: SurfaceRuntime(
-        collect=_collect_detail,
-        normalize=_normalize_detail,
-        build_graph=_build_commerce_graph,
-        select_target=_select_commerce_target,
-        validate=_validate_detail,
-        resolve=_resolve_detail,
-        materialize=_materialize_detail,
-        assess=_assess_detail,
-    ),
-    Surface.ECOMMERCE_LISTING: SurfaceRuntime(
-        collect=_collect_listing,
-        normalize=_identity_normalize,
-        build_graph=_build_subject_graph,
-        select_target=_select_subject_targets,
-        validate=_validate_none,
-        resolve=_resolve_listing,
-        materialize=_materialize_listing,
-        assess=_assess_records,
-    ),
-    Surface.JOB_DETAIL: SurfaceRuntime(
-        collect=_collect_job_detail,
-        normalize=_identity_normalize,
-        build_graph=_build_subject_graph,
-        select_target=_select_subject_targets,
-        validate=_validate_job_detail,
-        resolve=_resolve_job_detail,
-        materialize=_materialize_job_detail,
-        assess=_assess_records,
-    ),
-    Surface.JOB_LISTING: SurfaceRuntime(
-        collect=_collect_job_listing,
-        normalize=_identity_normalize,
-        build_graph=_build_subject_graph,
-        select_target=_select_subject_targets,
-        validate=_validate_none,
-        resolve=_resolve_job_listing,
-        materialize=_materialize_job_listing,
-        assess=_assess_records,
-    ),
+    Surface.ECOMMERCE_DETAIL: SurfaceRuntime(collect=_collect_detail, normalize=_normalize_detail, build_graph=_build_commerce_graph, select_target=_select_commerce_target, validate=_validate_detail, resolve=_resolve_detail, materialize=_materialize_detail, assess=_assess_detail),
+    Surface.ECOMMERCE_LISTING: SurfaceRuntime(collect=_collect_listing, normalize=_identity_normalize, build_graph=_build_subject_graph, select_target=_select_subject_targets, validate=_validate_none, resolve=_resolve_listing, materialize=_materialize_listing, assess=_assess_records),
+    Surface.JOB_DETAIL: SurfaceRuntime(collect=_collect_job_detail, normalize=_identity_normalize, build_graph=_build_subject_graph, select_target=_select_subject_targets, validate=_validate_job_detail, resolve=_resolve_job_detail, materialize=_materialize_job_detail, assess=_assess_records),
+    Surface.JOB_LISTING: SurfaceRuntime(collect=_collect_job_listing, normalize=_identity_normalize, build_graph=_build_subject_graph, select_target=_select_subject_targets, validate=_validate_none, resolve=_resolve_job_listing, materialize=_materialize_job_listing, assess=_assess_records),
 }

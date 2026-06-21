@@ -53,6 +53,7 @@ def _extract(
     max_records: int = 1,
     artifacts: dict[str, object] | None = None,
     network_payloads: tuple[dict[str, object], ...] = (),
+    requested_fields: tuple[str, ...] = (),
 ):
     return extract(
         fixture_request_from_inputs(
@@ -62,6 +63,7 @@ def _extract(
             max_records=max_records,
             artifacts=artifacts,
             network_payloads=network_payloads,
+            requested_fields=requested_fields,
         )
     )
 
@@ -289,8 +291,139 @@ def test_slug_only_detail_output_is_review_not_success() -> None:
         "https://www.zara.com/us/en/rustic-cotton-t-shirt-p04424306.html",
     )
     assert result.records
-    assert result.records[0]["title"] == "rustic cotton t shirt p04424306.html"
+    assert result.records[0]["title"] == "rustic cotton t shirt p04424306"
     assert result.verdict == "review"
+
+
+def test_structured_title_outranks_filename_and_internal_id_url_title() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <script type="application/ld+json">
+        {
+          "@type": "Product",
+          "name": "Linen Travel Shirt",
+          "url": "https://shop.test/products/99107606086.html",
+          "offers": {"price": "89", "priceCurrency": "USD"}
+        }
+        </script>
+        <main><h1>Linen Travel Shirt</h1></main>
+        """,
+        "https://shop.test/products/99107606086.html",
+    )
+
+    assert result.records[0]["title"] == "Linen Travel Shirt"
+    assert result.verdict == "success"
+
+
+def test_measurements_navigation_title_cannot_produce_success() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <main>
+          <h1>Measurements</h1>
+          <div data-price="89">89</div>
+          <div data-currency="USD">USD</div>
+        </main>
+        """,
+        "https://shop.test/products/99107606086.html",
+    )
+
+    assert result.verdict != "success"
+    assert not result.records or result.records[0].get("title") != "Measurements"
+
+
+def test_clean_h1_outranks_polluted_seo_title() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <head><meta property="og:title" content="Trail Shoe | Shop Online - $129.00"></head>
+        <main><h1>Trail Shoe</h1><div data-price="129">129</div><div data-currency="USD">USD</div></main>
+        """,
+        "https://shop.test/products/trail-shoe.html",
+    )
+
+    assert result.records[0]["title"] == "Trail Shoe"
+
+
+def test_arbitrary_nested_price_object_cannot_create_offer() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        "<main><h1>Trail Shoe</h1></main>",
+        "https://shop.test/products/trail-shoe",
+        artifacts={
+            "js_state_objects": {"analytics": {"price": "999", "currency": "USD"}}
+        },
+    )
+
+    assert result.records[0].get("price") is None
+    assert result.records[0].get("currency") is None
+
+
+def test_missing_field_finding_uses_selected_public_value() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <script type="application/ld+json">
+        {"@type": "Product", "name": "Trail Shoe", "brand": "N/A"}
+        </script>
+        """,
+        "https://shop.test/products/trail-shoe",
+        requested_fields=("brand",),
+    )
+
+    brand_findings = [
+        finding
+        for finding in result.findings
+        if finding.rule_id == "MISSING_CONTRACT_FIELD"
+        and finding.metadata.get("field") == "brand"
+    ]
+    assert result.records[0].get("brand") is None
+    assert len(brand_findings) == 1
+
+
+def test_network_product_aliases_require_context_and_map_canonical_fields() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        "<main><h1>Fallback</h1></main>",
+        "https://shop.test/products/trail-shoe",
+        network_payloads=(
+            {
+                "body": {
+                    "product": {
+                        "productName": "Trail Shoe",
+                        "brand": {"name": "Invoro"},
+                        "productDescription": "Built for long trail days.",
+                        "price": "129",
+                        "currencyCode": "USD",
+                        "inStock": True,
+                        "images": [
+                            "https://shop.test/images/trail-1.jpg",
+                            "https://shop.test/images/trail-2.jpg",
+                        ],
+                    }
+                }
+            },
+        ),
+    )
+
+    record = result.records[0]
+    assert record["title"] == "Trail Shoe"
+    assert record["brand"] == "Invoro"
+    assert record["description"] == "Built for long trail days."
+    assert record["price"] == "129.00"
+    assert record["currency"] == "USD"
+    assert record["availability"] == "in_stock"
+    image_urls = {
+        str(item.value)
+        for item in result.evidence
+        if item.fact_type == "asset.image_url"
+    }
+    assert image_urls == {
+        "https://shop.test/images/trail-1.jpg",
+        "https://shop.test/images/trail-2.jpg",
+    }
+    assert record["image_url"] in image_urls
 
 
 def test_access_denied_shell_does_not_succeed() -> None:
@@ -336,9 +469,19 @@ def test_punctuated_shell_title_with_offer_data_does_not_publish_record() -> Non
 
 
 def test_order_and_duplicate_independence() -> None:
-    duplicate = HTML.replace("</head>", HTML.split("<script", 1)[1].join(["<script", "</head>"]))
-    first = tuple(_extract("ecommerce_detail", HTML, "https://shop.test/products/trail-shoe").records)
-    second = tuple(_extract("ecommerce_detail", duplicate, "https://shop.test/products/trail-shoe").records)
+    duplicate = HTML.replace(
+        "</head>", HTML.split("<script", 1)[1].join(["<script", "</head>"])
+    )
+    first = tuple(
+        _extract(
+            "ecommerce_detail", HTML, "https://shop.test/products/trail-shoe"
+        ).records
+    )
+    second = tuple(
+        _extract(
+            "ecommerce_detail", duplicate, "https://shop.test/products/trail-shoe"
+        ).records
+    )
     assert first == second
 
 
@@ -627,13 +770,17 @@ def test_product_group_variants_have_lineage_and_parent_subjects() -> None:
     }
     </script>
     """
-    result = _extract("ecommerce_detail", html, "https://shop.test/products/everyday-tee")
+    result = _extract(
+        "ecommerce_detail", html, "https://shop.test/products/everyday-tee"
+    )
     assert result.verdict == "partial"
     assert result.records[0]["variants"] == [
         {"sku": "TEE-BLK-S", "color": "Black", "size": "S"},
         {"sku": "TEE-BLK-M", "color": "Black", "size": "M"},
     ]
-    variant_evidence = [item for item in result.evidence if item.fact_type.startswith("variant.")]
+    variant_evidence = [
+        item for item in result.evidence if item.fact_type.startswith("variant.")
+    ]
     assert variant_evidence
     assert all(item.subject_id for item in variant_evidence)
     assert all(item.parent_subject_id for item in variant_evidence)
@@ -727,10 +874,14 @@ def test_dom_option_controls_do_not_materialize_sellable_variants() -> None:
       <button data-option-name="color">Black</button>
     </main>
     """
-    result = _extract("ecommerce_detail", html, "https://shop.test/products/everyday-tee")
+    result = _extract(
+        "ecommerce_detail", html, "https://shop.test/products/everyday-tee"
+    )
     assert result.records
     assert not result.records[0].get("variants")
-    option_evidence = [item for item in result.evidence if item.fact_type.startswith("option.")]
+    option_evidence = [
+        item for item in result.evidence if item.fact_type.startswith("option.")
+    ]
     assert option_evidence
     assert result.graph.entity_counts["option"] == 3
 
@@ -990,7 +1141,9 @@ def test_job_detail_cutover_materializes_with_lineage() -> None:
     assert all(item.surface.value == "job_detail" for item in result.evidence)
 
 
-def test_job_detail_wrong_surface_product_returns_error_without_commerce_aliases() -> None:
+def test_job_detail_wrong_surface_product_returns_error_without_commerce_aliases() -> (
+    None
+):
     html = """
     <script type="application/ld+json">
     {
@@ -1051,7 +1204,10 @@ def test_job_listing_cutover_materializes_with_lineage() -> None:
         max_records=5,
     )
     assert result.verdict == "success"
-    assert {row["title"] for row in result.records} == {"Backend Engineer", "Data Engineer"}
+    assert {row["title"] for row in result.records} == {
+        "Backend Engineer",
+        "Data Engineer",
+    }
     assert all(row["_lineage"]["title"] for row in result.records)
     assert all(item.subject_id for item in result.evidence)
     assert all(item.surface.value == "job_listing" for item in result.evidence)
@@ -1147,8 +1303,14 @@ def test_parent_availability_is_coherent_with_complete_variant_matrix() -> None:
     )
     record = result.records[0]
     assert record["availability"] == "in_stock"
-    assert record["_lineage"]["availability"]["rule_id"] == "variant_availability_aggregate"
-    assert any(finding.rule_id == "PARENT_VARIANT_AVAILABILITY_CONFLICT" for finding in result.findings)
+    assert (
+        record["_lineage"]["availability"]["rule_id"]
+        == "variant_availability_aggregate"
+    )
+    assert any(
+        finding.rule_id == "PARENT_VARIANT_AVAILABILITY_CONFLICT"
+        for finding in result.findings
+    )
 
 
 def test_detail_url_falls_back_to_canonical_capture_url() -> None:
@@ -1188,7 +1350,10 @@ def test_utility_image_cannot_beat_product_image() -> None:
         """,
         "https://shop.test/products/trail-shoe",
     )
-    assert result.records[0]["image_url"] == "https://shop.test/products/trail-shoe-main.jpg"
+    assert (
+        result.records[0]["image_url"]
+        == "https://shop.test/products/trail-shoe-main.jpg"
+    )
 
 
 def test_missing_requested_field_has_visible_finding() -> None:
@@ -1200,7 +1365,11 @@ def test_missing_requested_field_has_visible_finding() -> None:
             requested_fields=("brand",),
         )
     )
-    findings = [finding for finding in result.findings if finding.rule_id == "MISSING_CONTRACT_FIELD"]
+    findings = [
+        finding
+        for finding in result.findings
+        if finding.rule_id == "MISSING_CONTRACT_FIELD"
+    ]
     assert any(finding.metadata.get("field") == "brand" for finding in findings)
     assert result.verdict in {"partial", "review"}
 

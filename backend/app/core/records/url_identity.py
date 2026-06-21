@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import re
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
+
+from app.core.config.extraction_rules import DETAIL_TITLE_PATH_EXTENSION_PATTERN
 
 _UTILITY_TOKENS = frozenset(
     {
@@ -45,7 +47,10 @@ _DETAIL_MARKERS = (
 
 def detail_identity_codes_from_url(url: str) -> tuple[str, ...]:
     parsed = urlparse(str(url or ""))
-    values = [parsed.path.rsplit("/", 1)[-1], *[part for part in parsed.query.split("&")]]
+    values = [
+        parsed.path.rsplit("/", 1)[-1],
+        *[part for part in parsed.query.split("&")],
+    ]
     out: list[str] = []
     for value in values:
         normalized = re.sub(r"[^A-Za-z0-9]+", "", value).upper()
@@ -56,7 +61,8 @@ def detail_identity_codes_from_url(url: str) -> tuple[str, ...]:
 
 def detail_title_from_url(url: str) -> str:
     parsed = urlparse(str(url or ""))
-    leaf = parsed.path.strip("/").rsplit("/", 1)[-1]
+    leaf = unquote(parsed.path.strip("/").rsplit("/", 1)[-1])
+    leaf = re.sub(DETAIL_TITLE_PATH_EXTENSION_PATTERN, "", leaf, flags=re.IGNORECASE)
     return re.sub(r"[-_]+", " ", leaf).strip()
 
 

@@ -3,7 +3,7 @@
 **Created:** 2026-06-21
 **Agent:** Codex
 **Status:** IN PROGRESS
-**Current slice:** Slice 2 — Browser Runtime, Readiness, Interaction, and Traversal Debt
+**Current slice:** Slice 5 — Product Asset Selection and Additional Images Contract
 **Touches buckets:** acquisition/browser runtime, extraction and public record contracts, persistence/artifacts/review, crawl orchestration, core config/record quality, intelligence, enrichment, connectors, tests, canonical architecture docs
 
 ## Goal
@@ -412,6 +412,7 @@ Use structured/JS state with one ID-only variant, one complete variant, one pare
 - JS/network collectors need product/offer context before generic keys become product facts. A random dict with `price` or `title` is not enough.
 - Move source-key aliases to `core/config/field_mappings.py`; collectors should not own field vocabulary.
 - Validation must inspect selected public output after resolution, not only raw evidence presence.
+- Completed 2026-06-21. Implemented title-quality admission/ranking, URL title extension cleanup, config-owned structured source aliases, JS/network product/offer context gates, selected-public-value missing-field findings, and JSON-LD page-product identity linkage. Exact slice verification: `75 passed`. Full offline suite requested by user: `985 passed, 1 deselected`. Repo-wide Mypy, Ruff, and Prettier passed.
 
 #### Slice 5 notes: asset and `additional_images`
 
@@ -633,7 +634,7 @@ $env:PYTHONPATH='.'
 
 ### Slice 4: Product Identity, Title Quality, and Metadata Admission
 
-**Status:** TODO
+**Status:** DONE
 **Owners:** `extraction/collectors/url.py`, `dom.py`, `metadata.py`, `js_state.py`, `jsonld.py`, `pipeline.py`, `entities.py`, `resolution.py`, `validation.py`, `core/records/url_identity.py`, `core/config/field_mappings.py`, `core/config/extraction_rules/_detail.py`
 **Fallback docs:** `docs/INVARIANTS.md` Rules 3, 6, 7, 13; extraction sections of `docs/BUSINESS_LOGIC.md`.
 **Known audited scope:** all `product.title`, `product.brand`, `product.description`, source-key mappings, URL-title fallbacks, shell/title quality rules, and selected-public-value validation.
@@ -678,7 +679,7 @@ $env:PYTHONPATH='.'
 
 ### Slice 5: Product Asset Selection and Additional Images Contract
 
-**Status:** TODO
+**Status:** IN PROGRESS
 **Owners:** `extraction/contracts.py`, `entities.py`, `resolution.py`, `materialization.py`, asset collectors, `core/config/extraction_rules/_images.py`, `core/config/field_mappings.py`, `schemas/crawl.py`, `persistence/export/*`, record APIs/review serializers
 **Fallback docs:** `docs/INVARIANTS.md` Rules 3, 8, 13 and public API/output sections of `docs/BUSINESS_LOGIC.md`.
 **Known audited scope:** `AssetDecision`, all asset facts/entities, every `image_url`/`additional_images` reader and serializer, primary-image reject tokens, URL normalization and asset dedupe.

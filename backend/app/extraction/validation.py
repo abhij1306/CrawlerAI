@@ -3,11 +3,8 @@ from __future__ import annotations
 from collections import Counter
 from decimal import Decimal, InvalidOperation
 
-from app.core.config.field_mappings import (
-    ECOMMERCE_DETAIL_FIELD_FACT_TYPES,
-    SURFACE_FIELD_REPAIR_TARGETS,
-)
-from app.extraction.contracts import Evidence, Finding
+from app.core.config.field_mappings import SURFACE_FIELD_REPAIR_TARGETS
+from app.extraction.contracts import Evidence, Finding, PublicRecord
 from app.extraction.entities import EntitySet
 from app.extraction.ids import stable_id
 
@@ -22,26 +19,29 @@ def validate(
         *_validate_variants(entities),
         *_validate_offers(evidence, entities),
         *_validate_availability_consistency(evidence, entities),
-        *_validate_contract_fields(evidence, requested_fields),
         *_validate_output(entities),
     )
 
 
-def _validate_contract_fields(
-    evidence: tuple[Evidence, ...],
+def validate_selected_contract_fields(
+    records: tuple[PublicRecord, ...],
     requested_fields: tuple[str, ...],
 ) -> tuple[Finding, ...]:
     contract_fields = tuple(
         dict.fromkeys(
-            (*SURFACE_FIELD_REPAIR_TARGETS.get("ecommerce_detail", ()), *requested_fields)
+            (
+                *SURFACE_FIELD_REPAIR_TARGETS.get("ecommerce_detail", ()),
+                *requested_fields,
+            )
         )
     )
-    facts = {ev.fact_type for ev in evidence if ev.value not in (None, "", [], {})}
+    record = records[0] if records else None
     findings: list[Finding] = []
     for field in contract_fields:
-        fact_type = ECOMMERCE_DETAIL_FIELD_FACT_TYPES.get(field)
-        present = fact_type in facts if fact_type else field == "variants" and any(
-            fact.startswith("variant.") for fact in facts
+        public_field = "image_url" if field == "image" else field
+        present = bool(
+            record is not None
+            and record.get(public_field) not in (None, "", [], {}, ())
         )
         if present:
             continue
@@ -58,10 +58,20 @@ def _validate_contract_fields(
     return tuple(findings)
 
 
-def _validate_identity(evidence: tuple[Evidence, ...], entities: EntitySet) -> tuple[Finding, ...]:
+def _validate_identity(
+    evidence: tuple[Evidence, ...], entities: EntitySet
+) -> tuple[Finding, ...]:
     if not entities.products:
-        ids = tuple(sorted(ev.evidence_id for ev in evidence if ev.fact_type.startswith("product.")))
-        return (_finding("MISSING_PRODUCT_IDENTITY", (), ids, "No primary product entity.", True),)
+        ids = tuple(
+            sorted(
+                ev.evidence_id for ev in evidence if ev.fact_type.startswith("product.")
+            )
+        )
+        return (
+            _finding(
+                "MISSING_PRODUCT_IDENTITY", (), ids, "No primary product entity.", True
+            ),
+        )
     if len(entities.products) > 1:
         return (
             _finding(
@@ -90,7 +100,9 @@ def _validate_variants(entities: EntitySet) -> tuple[Finding, ...]:
     return ()
 
 
-def _validate_offers(evidence: tuple[Evidence, ...], entities: EntitySet) -> tuple[Finding, ...]:
+def _validate_offers(
+    evidence: tuple[Evidence, ...], entities: EntitySet
+) -> tuple[Finding, ...]:
     by_id = {ev.evidence_id: ev for ev in evidence}
     out: list[Finding] = []
     for offer in entities.offers:
@@ -136,13 +148,20 @@ def _validate_availability_consistency(
     entities: EntitySet,
 ) -> tuple[Finding, ...]:
     by_id = {ev.evidence_id: ev for ev in evidence}
-    parent_offers = [offer for offer in entities.offers if offer.variant_entity_id is None]
-    variant_offers = [offer for offer in entities.offers if offer.variant_entity_id is not None]
-    if not entities.variants or not parent_offers or len(variant_offers) < len(entities.variants):
+    parent_offers = [
+        offer for offer in entities.offers if offer.variant_entity_id is None
+    ]
+    variant_offers = [
+        offer for offer in entities.offers if offer.variant_entity_id is not None
+    ]
+    if (
+        not entities.variants
+        or not parent_offers
+        or len(variant_offers) < len(entities.variants)
+    ):
         return ()
     child_ids = [
-        offer.fact_evidence.get("offer.availability", ())
-        for offer in variant_offers
+        offer.fact_evidence.get("offer.availability", ()) for offer in variant_offers
     ]
     if any(not ids for ids in child_ids):
         return ()
@@ -151,7 +170,11 @@ def _validate_availability_consistency(
         return ()
     aggregate = "in_stock" if "in_stock" in child_values else "out_of_stock"
     parent_ids = parent_offers[0].fact_evidence.get("offer.availability", ())
-    if not parent_ids or parent_ids[0] not in by_id or str(by_id[parent_ids[0]].value) == aggregate:
+    if (
+        not parent_ids
+        or parent_ids[0] not in by_id
+        or str(by_id[parent_ids[0]].value) == aggregate
+    ):
         return ()
     evidence_ids = tuple(parent_ids) + tuple(eid for ids in child_ids for eid in ids)
     return (

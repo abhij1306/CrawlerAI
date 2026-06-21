@@ -3,6 +3,7 @@ from __future__ import annotations
 from urllib.parse import parse_qsl, urlsplit
 
 from app.core.config.extraction_rules._variants import VARIANT_URL_AXIS_PARAMS
+from app.core.records.url_identity import detail_title_from_url
 from app.extraction.collectors._helpers import evidence
 from app.extraction.contracts import CaptureBundle, EntityHint, Evidence, SourceLocator
 
@@ -14,7 +15,7 @@ class UrlCollector:
     def collect(self, bundle: CaptureBundle, artifacts) -> tuple[Evidence, ...]:
         del artifacts
         parsed = urlsplit(bundle.final_url or bundle.requested_url)
-        title = parsed.path.strip("/").split("/")[-1].replace("-", " ").replace("_", " ").strip()
+        title = detail_title_from_url(bundle.final_url or bundle.requested_url)
         if not title:
             return ()
         product_hint = EntityHint(entity_type="product", url=bundle.final_url)
@@ -44,7 +45,9 @@ class UrlCollector:
                 subject_id=product_url.subject_id,
             ),
         ]
-        rows.extend(_selected_variant_from_query(bundle, parsed.query, product_url.subject_id))
+        rows.extend(
+            _selected_variant_from_query(bundle, parsed.query, product_url.subject_id)
+        )
         return tuple(rows)
 
 

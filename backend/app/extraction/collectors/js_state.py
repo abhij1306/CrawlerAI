@@ -1,5 +1,12 @@
 from __future__ import annotations
 
+from typing import Literal
+from app.core.config.field_mappings import (
+    ECOMMERCE_IMAGE_SOURCE_KEYS,
+    ECOMMERCE_OFFER_CONTEXT_PATH_TOKENS,
+    ECOMMERCE_PRODUCT_CONTEXT_SOURCE_KEYS,
+    ECOMMERCE_STRUCTURED_SOURCE_FACT_TYPES,
+)
 from app.core.config.extraction_rules import VARIANT_JS_STATE_NON_VARIANT_TYPENAME_TOKENS
 from app.core.config.variant_policy import AXIS_NAME_ALIASES
 from app.extraction.collectors._helpers import evidence, json_objects
@@ -30,13 +37,17 @@ def network_row(
     *,
     collector_id: str = "js_state",
 ) -> list[Evidence]:
-    mapping = {"title": "product.title", "name": "product.title", "brand": "product.brand", "sku": "product.sku", "price": "offer.price", "currency": "offer.currency", "available": "offer.availability", "availability": "offer.availability", "image": "asset.image_url", "imageUrl": "asset.image_url"}
     out: list[Evidence] = []
     if _looks_like_variant(obj):
         return _variant_row(bundle, artifact_id, path, obj, collector_id=collector_id)
-    if not any(key in obj for key in mapping):
+    mapped_keys = tuple(key for key in ECOMMERCE_STRUCTURED_SOURCE_FACT_TYPES if key in obj)
+    if not mapped_keys:
         return out
-    group = f"offer:{artifact_id}:{path}" if any(key in obj for key in ("price", "currency", "available", "availability")) else None
+    product_context = _has_product_context(path, obj)
+    offer_context = _has_offer_context(path, obj, product_context=product_context)
+    if not product_context and not offer_context:
+        return out
+    group = f"offer:{artifact_id}:{path}" if offer_context else None
     product_subject = evidence(
         bundle,
         "url",
@@ -48,13 +59,55 @@ def network_row(
         directness="inferred",
         confidence=0.0,
     ).subject_id
-    for key, fact in mapping.items():
-        value = _scalar_value(obj.get(key))
-        if value in (None, "", [], {}):
+    for key in mapped_keys:
+        fact = ECOMMERCE_STRUCTURED_SOURCE_FACT_TYPES[key]
+        if fact.startswith("product.") and not product_context:
             continue
-        hint = EntityHint(entity_type="offer" if fact.startswith("offer.") else "asset" if fact.startswith("asset.") else "product", sku=str(obj.get("sku") or "").strip() or None)
-        out.append(evidence(bundle, artifact_id, collector_id, fact, value, SourceLocator(kind="script_path", value=f"{path}/{key}"), group_id=group if fact.startswith("offer.") else None, hint=hint, directness="embedded", confidence=0.8, parent_subject_id=product_subject if fact.startswith(("offer.", "asset.")) else None))
+        if fact.startswith("offer.") and not offer_context:
+            continue
+        for index, value in enumerate(_source_values(key, obj.get(key))):
+            if value in (None, "", [], {}):
+                continue
+            entity_type: Literal["offer", "asset", "product"] = "offer" if fact.startswith("offer.") else "asset" if fact.startswith("asset.") else "product"
+            hint = EntityHint(entity_type=entity_type, sku=str(obj.get("sku") or "").strip() or None)
+            suffix = f"/{index}" if key in ECOMMERCE_IMAGE_SOURCE_KEYS else ""
+            out.append(
+                evidence(
+                    bundle,
+                    artifact_id,
+                    collector_id,
+                    fact,
+                    value,
+                    SourceLocator(kind="script_path", value=f"{path}/{key}{suffix}"),
+                    group_id=group if fact.startswith("offer.") else None,
+                    hint=hint,
+                    directness="embedded",
+                    confidence=0.8,
+                    parent_subject_id=product_subject if fact.startswith(("offer.", "asset.")) else None,
+                )
+            )
     return out
+
+
+def _has_product_context(path: str, obj: dict) -> bool:
+    keys = set(obj)
+    type_name = str(obj.get("@type") or obj.get("type") or "").casefold()
+    path_tokens = {token.casefold() for token in str(path).replace("[", "/").split("/") if token}
+    product_keys = keys & ECOMMERCE_PRODUCT_CONTEXT_SOURCE_KEYS
+    complete_offer = "price" in keys and bool(keys & {"currency", "currencyCode"})
+    return "product" in type_name or bool(path_tokens & {"product", "products"}) or len(product_keys) >= 2 or (bool(product_keys & {"name", "productName", "title"}) and complete_offer)
+
+
+def _has_offer_context(path: str, obj: dict, *, product_context: bool) -> bool:
+    type_name = str(obj.get("@type") or obj.get("type") or "").casefold()
+    path_tokens = {token.casefold() for token in str(path).replace("[", "/").split("/") if token}
+    return product_context or "offer" in type_name or bool(path_tokens & ECOMMERCE_OFFER_CONTEXT_PATH_TOKENS)
+
+
+def _source_values(key: str, value: object) -> tuple[object, ...]:
+    if key in ECOMMERCE_IMAGE_SOURCE_KEYS and isinstance(value, list):
+        return tuple(_scalar_value(item) for item in value)
+    return (_scalar_value(value),)
 
 
 def _variant_row(
@@ -73,12 +126,16 @@ def _variant_row(
         entity_type="variant",
         variant_id=variant_id,
         sku=sku or None,
-        selected=bool(obj.get("selected") or obj.get("isSelected"))
-        if "selected" in obj or "isSelected" in obj
-        else None,
+        selected=bool(obj.get("selected") or obj.get("isSelected")) if "selected" in obj or "isSelected" in obj else None,
     )
     group = f"variant:{artifact_id}:{path}"
-    subject_id = stable_id("subject", bundle.bundle_id, artifact_id, "variant", hint.variant_id or sku or group)
+    subject_id = stable_id(
+        "subject",
+        bundle.bundle_id,
+        artifact_id,
+        "variant",
+        hint.variant_id or sku or group,
+    )
     product_subject = evidence(
         bundle,
         "url",
@@ -92,7 +149,20 @@ def _variant_row(
     ).subject_id
     fields = _variant_fields(obj)
     out = [
-        evidence(bundle, artifact_id, collector_id, fact, value, SourceLocator(kind="script_path", value=f"{path}/{name}"), group_id=group, hint=hint, directness="embedded", confidence=0.82, subject_id=subject_id, parent_subject_id=product_subject)
+        evidence(
+            bundle,
+            artifact_id,
+            collector_id,
+            fact,
+            value,
+            SourceLocator(kind="script_path", value=f"{path}/{name}"),
+            group_id=group,
+            hint=hint,
+            directness="embedded",
+            confidence=0.82,
+            subject_id=subject_id,
+            parent_subject_id=product_subject,
+        )
         for name, fact, value in fields
         if value not in (None, "", [], {})
     ]
@@ -108,10 +178,7 @@ def _looks_like_variant(obj: dict) -> bool:
         {},
     )
     option_count = len(_variant_options(obj))
-    variant_specific_identity = any(
-        _scalar_value(obj.get(key)) not in (None, "", [], {})
-        for key in ("variantId", "variant_id", "skuId", "sku_id")
-    )
+    variant_specific_identity = any(_scalar_value(obj.get(key)) not in (None, "", [], {}) for key in ("variantId", "variant_id", "skuId", "sku_id"))
     commercial = any(
         _scalar_value(obj.get(key)) not in (None, "", [], {})
         for key in (
@@ -130,27 +197,18 @@ def _looks_like_variant(obj: dict) -> bool:
     if any(token in type_name for token in VARIANT_JS_STATE_NON_VARIANT_TYPENAME_TOKENS):
         return False
     typed = "variant" in type_name
-    return (identity and (option_count > 0 or variant_specific_identity or (commercial and typed))) or (
-        typed and option_count >= 2
-    )
+    return (identity and (option_count > 0 or variant_specific_identity or (commercial and typed))) or (typed and option_count >= 2)
 
 
 def _variant_fields(obj: dict) -> list[tuple[str, str, object]]:
-    selected = (
-        bool(obj.get("selected") or obj.get("isSelected"))
-        if "selected" in obj or "isSelected" in obj
-        else None
-    )
+    selected = bool(obj.get("selected") or obj.get("isSelected")) if "selected" in obj or "isSelected" in obj else None
     raw = [
         ("id", "variant.id", _variant_identity_value(obj)),
         ("sku", "variant.sku", obj.get("sku")),
         ("url", "variant.url", obj.get("url")),
         ("selected", "variant.selected", selected),
     ]
-    raw.extend(
-        (name, f"variant.option.{axis}", value)
-        for name, axis, value in _variant_options(obj)
-    )
+    raw.extend((name, f"variant.option.{axis}", value) for name, axis, value in _variant_options(obj))
     return [(name, fact, _scalar_value(value)) for name, fact, value in raw]
 
 
@@ -185,7 +243,19 @@ def _variant_offer(
         ),
     ]
     return [
-        evidence(bundle, artifact_id, collector_id, fact, _scalar_value(value), SourceLocator(kind="script_path", value=f"{path}/{name}"), group_id=group, hint=hint, directness="embedded", confidence=0.82, parent_subject_id=variant_subject_id)
+        evidence(
+            bundle,
+            artifact_id,
+            collector_id,
+            fact,
+            _scalar_value(value),
+            SourceLocator(kind="script_path", value=f"{path}/{name}"),
+            group_id=group,
+            hint=hint,
+            directness="embedded",
+            confidence=0.82,
+            parent_subject_id=variant_subject_id,
+        )
         for name, fact, value in rows
         if _scalar_value(value) not in (None, "", [], {})
     ]
@@ -316,7 +386,9 @@ def _canonical_axis(value: object) -> str | None:
     return None
 
 
-def _dedupe_options(rows: list[tuple[str, str, object]]) -> list[tuple[str, str, object]]:
+def _dedupe_options(
+    rows: list[tuple[str, str, object]],
+) -> list[tuple[str, str, object]]:
     seen: set[tuple[str, str]] = set()
     out: list[tuple[str, str, object]] = []
     for name, axis, value in rows:

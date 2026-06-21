@@ -38,7 +38,7 @@ def _detail_html() -> str:
           "name": "Widget Prime",
           "description": "A deterministic widget",
           "sku": "W-100",
-          "offers": {"price": "19.99", "availability": "InStock"}
+          "offers": {"price": "19.99", "priceCurrency": "USD", "availability": "InStock"}
         }
         </script>
       </head>
@@ -1234,7 +1234,7 @@ async def test_process_batch_run_marks_failed_when_sitemap_resolution_fails(
 
 @pytest.mark.asyncio
 @pytest.mark.regression
-async def test_process_batch_run_enables_homepage_fallback_for_auto_surface(
+async def test_process_batch_run_keeps_homepage_fallback_disabled_for_explicit_surface(
     db_session: AsyncSession,
     test_user,
     monkeypatch: pytest.MonkeyPatch,
@@ -1244,7 +1244,7 @@ async def test_process_batch_run_enables_homepage_fallback_for_auto_surface(
         test_user.id,
         {
             "run_type": "batch",
-            "surface": "auto",
+            "surface": "ecommerce_listing",
             "url": "https://example.com",
             "settings": {
                 "sitemap_domain": "example.com",
@@ -1279,7 +1279,7 @@ async def test_process_batch_run_enables_homepage_fallback_for_auto_surface(
 
     await process_run(db_session, run.id)
 
-    assert resolved_flags == [True]
+    assert resolved_flags == [False]
 
 
 @pytest.mark.asyncio

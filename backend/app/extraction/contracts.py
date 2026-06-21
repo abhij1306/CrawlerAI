@@ -9,60 +9,21 @@ from app.extraction.surfaces import Surface
 JsonValue = Any
 
 PRODUCT_FACTS = frozenset(
-    {
-        "product.url",
-        "product.title",
-        "product.brand",
-        "product.description",
-        "product.category",
-        "product.product_type",
-        "product.sku",
-        "product.mpn",
-        "product.gtin",
-        "product.materials",
-        "product.color",
-        "product.size",
-    }
+    f"product.{field}"
+    for field in ("url", "title", "brand", "description", "category", "product_type", "sku", "mpn", "gtin", "materials", "color", "size")
 )
 VARIANT_FACTS = frozenset(
-    {
-        "variant.id",
-        "variant.sku",
-        "variant.gtin",
-        "variant.url",
-        "variant.selected",
-        "variant.option.size",
-        "variant.option.color",
-        "variant.option.width",
-        "variant.option.length",
-        "variant.option.material",
-        "variant.option.style",
-        "variant.option.capacity",
-        "variant.option.quantity",
-    }
+    f"variant.{field}"
+    for field in ("id", "sku", "gtin", "url", "selected", "option.size", "option.color", "option.width", "option.length", "option.material", "option.style", "option.capacity", "option.quantity")
 )
 OFFER_FACTS = frozenset(
-    {
-        "offer.price",
-        "offer.currency",
-        "offer.original_price",
-        "offer.availability",
-        "offer.stock_quantity",
-        "offer.seller",
-    }
+    f"offer.{field}"
+    for field in ("price", "currency", "original_price", "availability", "stock_quantity", "seller")
 )
 ASSET_FACTS = frozenset({"asset.image_url", "asset.role", "asset.variant_association"})
 OPTION_FACTS = frozenset(
-    {
-        "option.size",
-        "option.color",
-        "option.width",
-        "option.length",
-        "option.material",
-        "option.style",
-        "option.capacity",
-        "option.quantity",
-    }
+    f"option.{field}"
+    for field in ("size", "color", "width", "length", "material", "style", "capacity", "quantity")
 )
 FACT_TYPES = PRODUCT_FACTS | VARIANT_FACTS | OFFER_FACTS | ASSET_FACTS | OPTION_FACTS
 
