@@ -43,7 +43,13 @@ def lineage(decision: Decision | None = None, derived: DerivedFact | None = None
     }
 
 
-def materialize(entities: EntitySet, resolution: ResolutionResult, evidence: tuple[Evidence, ...]) -> CommerceDetailRecord:
+def materialize(
+    entities: EntitySet,
+    resolution: ResolutionResult,
+    evidence: tuple[Evidence, ...],
+    *,
+    canonical_url: str,
+) -> CommerceDetailRecord:
     by_id = {ev.evidence_id: ev for ev in evidence}
     derived = {(item.entity_id, item.fact_type): item for item in resolution.derived_facts}
     record: dict[str, object] = {}
@@ -67,6 +73,9 @@ def materialize(entities: EntitySet, resolution: ResolutionResult, evidence: tup
                 "selector_source": accepted.collector_id,
                 "sample_value": accepted.value,
             }
+    if not record.get("url"):
+        record["url"] = canonical_url
+        lineages["url"] = {"rule_id": "canonical_capture_url", "evidence_ids": []}
     variants, variant_lineage = _variants(entities, resolution, by_id)
     if variants:
         record["variants"] = variants

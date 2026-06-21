@@ -28,7 +28,7 @@ from app.models.product_intelligence import (
 from app.models.review import ReviewPromotion
 from app.models.llm import LLMCostLog
 from app.acquisition.cookie_store import clear_cookie_store_cache
-from app.acquisition.pacing import reset_pacing_state
+from app.acquisition.rate_limiter import reset_pacing_state
 from app.acquisition.fetch.fetch_context import reset_fetch_runtime_state
 from app.crawl.state import ACTIVE_STATUSES
 from app.crawl.robots_policy import reset_robots_policy_cache

@@ -76,8 +76,10 @@ def materialize_ecommerce_detail(
     entities,
     resolution,
     evidence: tuple[Evidence, ...],
+    *,
+    canonical_url: str,
 ) -> CommerceDetailRecord:
-    return materialize(entities, resolution, evidence)
+    return materialize(entities, resolution, evidence, canonical_url=canonical_url)
 
 
 def assess_ecommerce_detail_quality(

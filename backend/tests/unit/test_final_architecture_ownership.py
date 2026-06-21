@@ -13,7 +13,6 @@ OVERSIZED_MODULE_DEBT = {
     "acquisition/browser_detail.py",
     "acquisition/browser_runtime.py",
     "acquisition/fetch/fetch_context.py",
-    "acquisition/runtime.py",
     "crawl/batch_runtime.py",
     "enrichment/shopify_catalog.py",
 }
@@ -22,7 +21,6 @@ LONG_FUNCTION_DEBT = {
     ("acquisition/browser_detail.py", "expand_interactive_elements_via_accessibility_impl"),
     ("acquisition/browser_page_flow.py", "settle_browser_page_impl"),
     ("acquisition/browser_page_helpers.py", "_capture_listing_visual_elements"),
-    ("acquisition/browser_readiness.py", "probe_browser_readiness_impl"),
     ("acquisition/browser_recovery.py", "_emit_challenge_activity"),
     ("acquisition/browser_recovery.py", "recover_browser_challenge"),
     ("acquisition/browser_result_builder.py", "build"),
@@ -47,7 +45,6 @@ LONG_FUNCTION_DEBT = {
 
 LEGACY_RECORD_FIELD_COMPATIBILITY_OWNERS = {
     "core response shaping": "schemas/crawl.py",
-    "initial persistence": "crawl/pipeline/persistence.py",
     "commit metadata writer": "persistence/publish/metadata.py",
     "review annotation writer": "crawl/review/__init__.py",
     "accepted-value annotation writer": "crawl/crud.py",
@@ -143,6 +140,17 @@ def test_acquisition_is_owned_by_top_level_package() -> None:
     assert (APP_ROOT / "acquisition" / "executor.py").is_file()
     assert not (APP_ROOT / "services" / "acquisition").exists()
     assert not (APP_ROOT / "services" / "fetch").exists()
+
+
+def test_acquisition_does_not_construct_beautifulsoup_trees() -> None:
+    acquisition_root = APP_ROOT / "acquisition"
+    for path in acquisition_root.rglob("*.py"):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                assert all(alias.name.split(".", 1)[0] != "bs4" for alias in node.names), path
+            if isinstance(node, ast.ImportFrom) and node.module:
+                assert node.module.split(".", 1)[0] != "bs4", path
 
 
 def test_requested_fields_do_not_initiate_browser_acquisition() -> None:

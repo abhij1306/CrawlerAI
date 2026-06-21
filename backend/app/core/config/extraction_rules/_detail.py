@@ -1,5 +1,7 @@
 from __future__ import annotations
 # ruff: noqa: F401,F403,F405
+
+import re
 # pylint: disable=wildcard-import,unused-wildcard-import
 
 from . import _common as _common_exports
@@ -70,6 +72,10 @@ DETAIL_SHELL_TITLE_VALUES = frozenset(
         "accès refusé",
         "accès refusé. nous vous invitons à revenir plus tard pour effectuer votre achat.",
     }
+)
+DETAIL_SHELL_TITLE_KEYS = frozenset(
+    " ".join(re.findall(r"[a-z0-9]+", value.casefold()))
+    for value in DETAIL_SHELL_TITLE_VALUES
 )
 DETAIL_LOW_SIGNAL_PRODUCT_TYPE_VALUES = frozenset(
     {"criteoproductrail", "giftoption", "promotionalcallout"}

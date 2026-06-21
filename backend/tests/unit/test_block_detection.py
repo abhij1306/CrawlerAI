@@ -455,6 +455,51 @@ def test_classify_blocked_page_blocks_human_verification_title_without_extractab
 
 
 @pytest.mark.unit
+def test_classify_blocked_page_blocks_punctuated_generic_error_shell() -> None:
+    html = """
+    <html>
+      <head><title>Oops, Something Went Wrong.</title></head>
+      <body><main><h1>Oops, Something Went Wrong.</h1></main></body>
+    </html>
+    """
+
+    classification = classify_blocked_page(html, 200)
+
+    assert classification.blocked is True
+    assert classification.outcome == "challenge_page"
+    assert "oops something went wrong" in classification.title_matches
+
+
+@pytest.mark.unit
+def test_classify_blocked_page_ignores_generic_error_copy_on_real_product_page() -> None:
+    html = """
+    <html>
+      <head>
+        <title>Trail Shoe</title>
+        <script type="application/ld+json">
+        {
+          "@type": "Product",
+          "name": "Trail Shoe",
+          "offers": {"price": "10", "priceCurrency": "USD"}
+        }
+        </script>
+      </head>
+      <body>
+        <main>
+          <h1>Trail Shoe</h1>
+          <p>Oops, something went wrong while loading recommendations.</p>
+          <button>Add to cart</button>
+        </main>
+      </body>
+    </html>
+    """
+
+    classification = classify_blocked_page(html, 200)
+
+    assert classification.blocked is False
+
+
+@pytest.mark.unit
 def test_classify_blocked_page_blocks_akamai_bot_failover_checkout_shell() -> None:
     html = """
     <html>

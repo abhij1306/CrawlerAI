@@ -3,7 +3,9 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+from collections.abc import Mapping
 from dataclasses import dataclass, field
+from types import MappingProxyType
 from typing import Any, cast
 
 from app.models.crawl_run import CrawlRecord, CrawlRun
@@ -32,6 +34,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 class PersistedRecordBatch:
     changed_count: int
     records: tuple[CrawlRecord, ...]
+    provenance: tuple[Mapping[str, object], ...] = ()
 
     @property
     def record_count(self) -> int:
@@ -44,11 +47,11 @@ class _RecordPersistenceState:
     run: CrawlRun
     acquisition_result: Any
     url_result_id: int | None
-    raw_html_path: str | None
     existing_by_identity: dict[str, CrawlRecord]
     seen_identities: set[str]
     changed_count: int = 0
     records: list[CrawlRecord] = field(default_factory=list)
+    provenance: list[Mapping[str, object]] = field(default_factory=list)
 
 
 def _merge_browser_diagnostics(
@@ -108,19 +111,12 @@ def _stored_record_matches(
     url_result_id: int | None,
     source_url: str,
     data: dict[str, object],
-    raw_data: dict[str, object],
-    source_trace: dict[str, object],
-    raw_html_path: str | None,
     content_fingerprint: str | None,
 ) -> bool:
     return (
         row.url_result_id == url_result_id
-        and
-        row.source_url == source_url
+        and row.source_url == source_url
         and row.data == data
-        and row.raw_data == raw_data
-        and row.source_trace == source_trace
-        and row.raw_html_path == raw_html_path
         and row.content_fingerprint == content_fingerprint
     )
 
@@ -131,19 +127,11 @@ def _update_stored_record(
     url_result_id: int | None,
     source_url: str,
     data: dict[str, object],
-    raw_data: dict[str, object],
-    discovered_data: dict[str, object],
-    source_trace: dict[str, object],
-    raw_html_path: str | None,
     content_fingerprint: str | None,
 ) -> None:
     row.url_result_id = url_result_id
     row.source_url = source_url
     row.data = data
-    row.raw_data = raw_data
-    row.discovered_data = discovered_data
-    row.source_trace = source_trace
-    row.raw_html_path = raw_html_path
     row.content_fingerprint = content_fingerprint
 
 
@@ -279,7 +267,6 @@ async def persist_extracted_records(
     *,
     acquisition_result,
     url_result_id: int | None = None,
-    raw_html_path: str | None = None,
 ) -> PersistedRecordBatch:
     existing_records_by_identity = await _load_existing_records_by_identity(
         session,
@@ -291,7 +278,6 @@ async def persist_extracted_records(
         run=run,
         acquisition_result=acquisition_result,
         url_result_id=url_result_id,
-        raw_html_path=raw_html_path,
         existing_by_identity=existing_records_by_identity,
         seen_identities=set(existing_records_by_identity),
     )
@@ -300,6 +286,7 @@ async def persist_extracted_records(
     return PersistedRecordBatch(
         changed_count=state.changed_count,
         records=tuple(state.records),
+        provenance=tuple(state.provenance),
     )
 
 
@@ -368,15 +355,19 @@ async def _persist_extracted_record(
         url_identity_key=identity_key,
         content_fingerprint=content_fingerprint,
         data=data,
-        raw_data=raw_record,
-        discovered_data=discovered_data,
-        source_trace=source_trace,
-        raw_html_path=state.raw_html_path,
     )
     state.session.add(crawl_record)
     await state.session.flush()
     state.changed_count += 1
     state.records.append(crawl_record)
+    state.provenance.append(
+        _record_provenance_payload(
+            crawl_record,
+            raw_data=raw_record,
+            discovered_data=discovered_data,
+            source_trace=source_trace,
+        )
+    )
 
 
 async def _update_existing_record(
@@ -397,9 +388,6 @@ async def _update_existing_record(
         url_result_id=state.url_result_id,
         source_url=source_url,
         data=data,
-        raw_data=raw_data,
-        source_trace=source_trace,
-        raw_html_path=state.raw_html_path,
         content_fingerprint=content_fingerprint,
     ):
         _update_stored_record(
@@ -407,15 +395,42 @@ async def _update_existing_record(
             url_result_id=state.url_result_id,
             source_url=source_url,
             data=data,
-            raw_data=raw_data,
-            discovered_data=discovered_data,
-            source_trace=source_trace,
-            raw_html_path=state.raw_html_path,
             content_fingerprint=content_fingerprint,
         )
         await state.session.flush()
         state.changed_count += 1
     state.records.append(existing_record)
+    state.provenance.append(
+        _record_provenance_payload(
+            existing_record,
+            raw_data=raw_data,
+            discovered_data=discovered_data,
+            source_trace=source_trace,
+        )
+    )
+
+
+def _record_provenance_payload(
+    record: CrawlRecord,
+    *,
+    raw_data: Mapping[str, object],
+    discovered_data: Mapping[str, object],
+    source_trace: Mapping[str, object],
+) -> Mapping[str, object]:
+    values = {
+        "record_id": getattr(record, "id", None),
+        "url_result_id": record.url_result_id,
+        "source_url": record.source_url,
+        "url_identity_key": record.url_identity_key,
+        "content_fingerprint": record.content_fingerprint,
+        "data": dict(record.data or {}),
+        "raw_data": dict(raw_data),
+        "discovered_data": dict(discovered_data),
+        "source_trace": dict(source_trace),
+    }
+    return MappingProxyType(
+        {key: value for key, value in values.items() if value not in (None, "", [], {})}
+    )
 
 
 def _candidate_identity_keys(

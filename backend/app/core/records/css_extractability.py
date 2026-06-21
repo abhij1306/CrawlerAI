@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from app.extraction.documents import DocumentStore, HtmlDocument, HtmlNode
+from app.extraction.documents import HtmlDocument, HtmlNode
 from app.core.records.field_policy import (
     exact_requested_field_key,
     normalize_field_key,
@@ -10,14 +10,13 @@ from app.core.shared.field_coerce import clean_text, surface_fields
 
 
 def requested_content_extractability(
-    html: str,
+    document: HtmlDocument,
     *,
     surface: str,
     requested_fields: list[str] | None,
     selector_rules: list[dict[str, object]] | None = None,
     probe_fields: list[str] | tuple[str, ...] | set[str] | None = None,
 ) -> dict[str, object]:
-    doc = DocumentStore({"html": html}).html("html")
     requested = {
         normalized
         for value in requested_fields or []
@@ -40,11 +39,11 @@ def requested_content_extractability(
     )
     field_scope = set(fields)
     recipe_fields = _recipe_fields_with_content(
-        doc,
+        document,
         selector_rules=selector_rules,
         field_scope=field_scope,
     )
-    heuristic_fields = _heuristic_fields_with_content(doc, field_scope)
+    heuristic_fields = _heuristic_fields_with_content(document, field_scope)
     extractable_fields = recipe_fields | heuristic_fields
     matched_requested_fields = sorted(requested & extractable_fields)
     return {

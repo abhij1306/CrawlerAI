@@ -11,6 +11,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from patchright.async_api import (
+    Error as PlaywrightError,
+    TimeoutError as PlaywrightTimeoutError,
+)
+
 from app.core.config import settings
 from app.acquisition.browser_background_tasks import (
     register_eviction_cleanup_task,
@@ -39,6 +44,27 @@ from app.core.config.runtime_settings import (
 from app.acquisition.platform_policy import classify_network_endpoint_family
 
 logger = logging.getLogger(__name__)
+
+PLAYWRIGHT_RECOVERABLE_ERRORS: tuple[type[Exception], ...] = (
+    PlaywrightError,
+    PlaywrightTimeoutError,
+)
+_RECOVERABLE_RUNTIME_ERROR_PATTERNS = (
+    "event loop is closed",
+    "browser has been closed",
+    "target closed",
+    "connection closed",
+    "session closed",
+)
+
+
+def is_recoverable_playwright_error(exc: Exception) -> bool:
+    if isinstance(exc, (*PLAYWRIGHT_RECOVERABLE_ERRORS, ConnectionResetError, OSError)):
+        return True
+    return isinstance(exc, RuntimeError) and any(
+        pattern in str(exc).lower() for pattern in _RECOVERABLE_RUNTIME_ERROR_PATTERNS
+    )
+
 
 @dataclass(slots=True)
 class BrowserNetworkCaptureSummary:

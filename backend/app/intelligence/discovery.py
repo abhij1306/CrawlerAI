@@ -73,8 +73,8 @@ from app.intelligence.discovery_support import (
     _title_without_brand,
     _parse_google_native_results,
     _quoted,
+    SearchResult,
 )
-from app.intelligence.discovery_types import SearchResult
 from app.intelligence.matching import normalize_brand, source_domain
 
 logger = logging.getLogger(__name__)

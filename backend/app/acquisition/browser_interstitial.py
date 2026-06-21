@@ -13,7 +13,7 @@ import asyncio
 import logging
 from typing import Any
 
-from app.acquisition.browser_readiness import HtmlAnalysis, analyze_html
+from app.acquisition.browser_readiness import analyze_html
 from app.core.config.runtime_settings import crawler_runtime_settings
 from app.core.config.selectors import (
     LOCATION_INTERSTITIAL_CONTAINER_SELECTORS,
@@ -21,6 +21,7 @@ from app.core.config.selectors import (
     LOCATION_INTERSTITIAL_DISMISS_TEXT_TOKENS,
     LOCATION_INTERSTITIAL_TEXT_TOKENS,
 )
+from app.extraction.documents import HtmlAnalysis
 
 try:
     from patchright.async_api import Error as PlaywrightError
@@ -50,7 +51,7 @@ def location_interstitial_detected(
     analysis: HtmlAnalysis | None = None,
 ) -> bool:
     analysis = analysis or analyze_html(str(html or ""))
-    soup = analysis.soup
+    document = analysis.document
     text = analysis.normalized_text.lower()
     tokens = _string_config_list(LOCATION_INTERSTITIAL_TEXT_TOKENS)
     matched_tokens = [
@@ -61,16 +62,16 @@ def location_interstitial_detected(
     selectors = _string_config_list(LOCATION_INTERSTITIAL_CONTAINER_SELECTORS)
     for selector in selectors:
         try:
-            if soup.select_one(selector) is not None:
+            if document.css_first(selector) is not None:
                 return True
         except Exception:
             logger.debug(
                 "Invalid location interstitial selector=%s", selector, exc_info=True
             )
-    for node in soup.select(
+    for node in document.css(
         "[aria-modal='true'], [role='dialog'], .modal, .popup, .overlay"
     ):
-        node_text = " ".join(node.get_text(" ", strip=True).lower().split())
+        node_text = " ".join(node.text().lower().split())
         if any(token in node_text for token in matched_tokens):
             return True
     return len(matched_tokens) >= 2

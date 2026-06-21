@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass, replace
-import inspect
 import logging
 import time
 from typing import Any, cast
@@ -17,10 +16,11 @@ from app.acquisition.browser_page_helpers import (
     location_interstitial_detected,
     object_int as _object_int,
 )
-from app.acquisition.browser_readiness import HtmlAnalysis
+from app.acquisition.browser_readiness import analyze_html
 from app.acquisition.browser_recovery import capture_rendered_listing_fragments
 from app.acquisition.runtime import BlockPageClassification, copy_headers
 from app.core.config.runtime_settings import crawler_runtime_settings
+from app.extraction.documents import HtmlAnalysis
 from app.acquisition.platform_policy import resolve_platform_runtime_policy
 
 logger = logging.getLogger(__name__)
@@ -56,7 +56,6 @@ class BrowserAcquisitionResultBuilder:
         self,
         payload: BrowserFinalizeInput,
         *,
-        blocked_html_checker,
         classify_blocked_page_async,
         classify_low_content_reason,
         classify_browser_outcome,
@@ -71,7 +70,6 @@ class BrowserAcquisitionResultBuilder:
         logger_impl,
     ) -> None:
         self.payload = payload
-        self.blocked_html_checker = blocked_html_checker
         self.classify_blocked_page_async = classify_blocked_page_async
         self.classify_low_content_reason = classify_low_content_reason
         self.classify_browser_outcome = classify_browser_outcome
@@ -106,6 +104,11 @@ class BrowserAcquisitionResultBuilder:
             payload_capture_started_at
         )
         html_bytes = len(payload.html.encode("utf-8"))
+        if (
+            payload.html_analysis is None
+            or not payload.html_analysis.matches_html(payload.html)
+        ):
+            payload.html_analysis = await asyncio.to_thread(analyze_html, payload.html)
         fast_finalize = self.ready_probe_supports_fast_finalize(
             payload.readiness_probes,
             surface=payload.surface,
@@ -123,22 +126,16 @@ class BrowserAcquisitionResultBuilder:
             location_interstitial_present = False
         else:
             blocked_classification = await self.classify_blocked_page_async(
-                payload.html, status_code
+                payload.html,
+                status_code,
+                analysis=payload.html_analysis,
             )
-            blocked_result = self.blocked_html_checker(payload.html, status_code)
-            if inspect.isawaitable(blocked_result):
-                blocked_result = await blocked_result
-            blocked = bool(blocked_classification.blocked) or bool(blocked_result)
-            if blocked and not blocked_classification.blocked:
-                blocked_classification = BlockPageClassification(
-                    blocked=True,
-                    outcome="challenge_page",
-                    evidence=["blocked_html_checker"],
-                )
+            blocked = bool(blocked_classification.blocked)
             challenge_evidence = list(blocked_classification.evidence or [])
             low_content_reason = self.classify_low_content_reason(
                 payload.html,
                 html_bytes=html_bytes,
+                analysis=payload.html_analysis,
             )
             location_interstitial_present = location_interstitial_detected(
                 payload.html, analysis=payload.html_analysis
@@ -149,6 +146,7 @@ class BrowserAcquisitionResultBuilder:
             blocked=blocked,
             block_classification=blocked_classification,
             traversal_result=payload.traversal_result,
+            analysis=payload.html_analysis,
         )
         if location_interstitial_present:
             blocked = True
@@ -253,6 +251,7 @@ class BrowserAcquisitionResultBuilder:
                 payload.html,
                 surface=payload.surface,
             ).get("family"),
+            "html_document": payload.html_analysis.document,
         }
 
     async def _emit_events(self, *, browser_outcome: str, blocked: bool) -> None:
@@ -299,6 +298,7 @@ class BrowserAcquisitionResultBuilder:
         low_content_reason = self.classify_low_content_reason(
             payload.html,
             html_bytes=html_bytes,
+            analysis=payload.html_analysis,
         )
         self.logger.warning(
             "Browser acquisition outcome=%s url=%s html_bytes=%s low_content_reason=%s probes=%s",
@@ -588,7 +588,6 @@ def _ready_probe_supports_fast_finalize(
 async def finalize_browser_fetch(
     payload: BrowserFinalizeInput,
     *,
-    blocked_html_checker,
     classify_blocked_page_async,
     classify_low_content_reason,
     classify_browser_outcome,
@@ -604,7 +603,6 @@ async def finalize_browser_fetch(
 ) -> dict[str, object]:
     builder = BrowserAcquisitionResultBuilder(
         payload,
-        blocked_html_checker=blocked_html_checker,
         classify_blocked_page_async=classify_blocked_page_async,
         classify_low_content_reason=classify_low_content_reason,
         classify_browser_outcome=classify_browser_outcome,

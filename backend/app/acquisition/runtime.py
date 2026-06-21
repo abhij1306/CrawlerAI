@@ -2,60 +2,37 @@ from __future__ import annotations
 
 import asyncio
 import inspect
-import json
-from collections.abc import Iterable, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 import logging
 import re
-from typing import Any, cast
+from typing import Any
 
 import httpx
-from bs4 import BeautifulSoup
 
-from app.acquisition.browser_readiness import HtmlAnalysis, analyze_html
+from app.acquisition.browser_readiness import (
+    analyze_extractable_content,
+    analyze_html,
+)
 from app.core.config import settings
 from app.core.config.block_signatures import BLOCK_SIGNATURES
 from app.core.config.content_types import HTML_CONTENT_TYPE
-from app.core.config.extraction_rules import (
-    ACTION_BUY_NOW,
-    BROWSER_DETAIL_READINESS_HINTS,
-    CONTENT_SURFACE_FORUM_BODY_SELECTORS,
-    CONTENT_DETAIL_MIN_BODY_TEXT_LENGTH,
-    CONTENT_SURFACE_PROTECTED_DESCENDANT_SELECTORS,
-    DETAIL_SHELL_FRAMEWORK_TOKENS,
-    DETAIL_SHELL_PRODUCT_DATA_TOKENS,
-    DETAIL_SHELL_STATE_TOKENS,
-    JS_REQUIRED_PLACEHOLDER_PHRASES,
-    LISTING_DETAIL_URL_MARKERS,
-    LISTING_CLIENT_RENDERED_SHELL_HINTS,
-    LISTING_SHELL_FRAMEWORK_TOKENS,
-)
+from app.core.config.extraction_rules._detail import DETAIL_SHELL_TITLE_KEYS
 from app.core.config.runtime_settings import crawler_runtime_settings
 from app.core.db_utils import mapping_or_empty
-from app.core.shared.field_coerce import clean_text
+from app.core.shared.text_coerce import slug_tokens
 from app.core.records.network_resolution import (
     address_family_preference,
     build_async_http_client,
     default_request_headers,
 )
+from app.extraction.documents import HtmlAnalysis, HtmlDocument
 from app.acquisition.platform_policy import resolve_platform_runtime_policy
 
 logger = logging.getLogger(__name__)
 
 _SHARED_HTTP_CLIENTS: dict[tuple[str | None, str], httpx.AsyncClient] = {}
 _SHARED_HTTP_CLIENT_LOCK = asyncio.Lock()
-_ECOMMERCE_DETAIL_READINESS_HINTS = tuple(
-    str(item).strip().lower()
-    for item in (
-        (
-            BROWSER_DETAIL_READINESS_HINTS.get("ecommerce")
-            if isinstance(BROWSER_DETAIL_READINESS_HINTS, Mapping)
-            else []
-        )
-        or []
-    )
-    if str(item).strip()
-)
 
 
 @dataclass(slots=True)
@@ -73,6 +50,7 @@ class PageFetchResult:
     browser_diagnostics: dict[str, object] = field(default_factory=dict)
     artifacts: dict[str, object] = field(default_factory=dict)
     acquisition_diagnostics: dict[str, object] = field(default_factory=dict)
+    html_document: HtmlDocument | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -203,16 +181,16 @@ def classify_blocked_page(
         return BlockPageClassification(blocked=False, outcome="empty")
 
     analysis = analysis or analyze_html(html)
-    soup = analysis.soup
+    document = analysis.document
     visible_text = analysis.visible_text.lower()
     title_text = analysis.title_text.lower()
-    has_extractable_content = _has_extractable_detail_signals(
-        html,
-        analysis=analysis,
-    ) or _has_extractable_listing_signals(
+    normalized_title = " ".join(slug_tokens(title_text))
+    shell_title = normalized_title if normalized_title in DETAIL_SHELL_TITLE_KEYS else ""
+    content_signals = analyze_extractable_content(
         html,
         analysis=analysis,
     )
+    has_extractable_content = content_signals.detail or content_signals.listing
 
     title_patterns = _string_sequence(BLOCK_SIGNATURES.get("title_regexes"))
     title_matches: list[str] = []
@@ -229,6 +207,8 @@ def classify_blocked_page(
                 raw_pattern,
                 exc,
             )
+    if shell_title and shell_title not in title_matches:
+        title_matches.append(shell_title)
 
     strong_markers = [
         str(marker or "").strip().lower()
@@ -274,7 +254,7 @@ def classify_blocked_page(
         if str(item.get("marker") or "").strip()
         and str(item.get("marker") or "").strip().lower() in lowered
     }
-    challenge_element_hits = set(_challenge_element_hits(soup, lowered))
+    challenge_element_hits = set(_challenge_element_hits(document, lowered))
     hard_strong_hits = strong_hits - content_tolerant_strong_markers
     evidence = [
         *base_evidence,
@@ -297,6 +277,7 @@ def classify_blocked_page(
                 or title_matches
             )
         )
+        or (shell_title and not has_extractable_content)
         or "access denied" in strong_hits
         or (
             "just a moment" in strong_hits
@@ -346,14 +327,11 @@ def _http_content_is_extractable(
     *,
     analysis: HtmlAnalysis | None = None,
 ) -> bool:
-    parsed = analysis or analyze_html(html)
-    return _has_extractable_detail_signals(
+    signals = analyze_extractable_content(
         html,
-        analysis=parsed,
-    ) or _has_extractable_listing_signals(
-        html,
-        analysis=parsed,
+        analysis=analysis,
     )
+    return signals.detail or signals.listing
 
 
 def _content_aware_http_blocked(
@@ -403,20 +381,24 @@ def should_escalate_to_browser(
     if not isinstance(escalation_policy, Mapping):
         escalation_policy = {}
     analysis = analyze_html(result.html)
-    has_detail_signals = _has_extractable_detail_signals(result.html, analysis=analysis)
-    has_listing_signals = _has_extractable_listing_signals(
-        result.html, analysis=analysis
+    content_signals = analyze_extractable_content(
+        result.html,
+        analysis=analysis,
+        url=result.final_url or result.url,
+        status_code=result.status_code,
     )
+    has_detail_signals = content_signals.detail
+    has_listing_signals = content_signals.listing
     if (
         bool(escalation_policy.get("js_shell_without_detail_signals", True))
-        and _looks_like_js_shell(result.html, analysis=analysis)
+        and content_signals.js_shell
         and not has_detail_signals
     ):
         return True
     if (
         bool(escalation_policy.get("listing_shell_without_listing_signals"))
         and not has_listing_signals
-        and _looks_like_listing_shell(result, analysis=analysis)
+        and content_signals.listing_shell
     ):
         return True
     if bool(escalation_policy.get("missing_detail_signals")) and not has_detail_signals:
@@ -431,8 +413,15 @@ async def is_blocked_html_async(html: str, status_code: int) -> bool:
 async def classify_blocked_page_async(
     html: str,
     status_code: int,
+    *,
+    analysis: HtmlAnalysis | None = None,
 ) -> BlockPageClassification:
-    return await asyncio.to_thread(classify_blocked_page, html, status_code)
+    return await asyncio.to_thread(
+        classify_blocked_page,
+        html,
+        status_code,
+        analysis=analysis,
+    )
 
 
 async def should_escalate_to_browser_async(
@@ -560,7 +549,7 @@ def _curl_fetch_sync(
         if crawler_runtime_settings.curl_impersonate_target is None
         else crawler_runtime_settings.curl_impersonate_target
     ).strip()
-    impersonate_target = cast(Any, raw_impersonate_target or None)
+    impersonate_target = raw_impersonate_target or None
     request_headers = default_request_headers()
     normalized_cookie_header = str(cookie_header or "").strip()
     if normalized_cookie_header:
@@ -593,253 +582,6 @@ def _curl_fetch_sync(
         headers=response_headers,
     )
 
-
-def _looks_like_js_shell(html: str, *, analysis: HtmlAnalysis | None = None) -> bool:
-    parsed = analysis or analyze_html(html)
-    if _looks_like_js_required_placeholder(parsed):
-        return True
-    if len(parsed.visible_text) > 120:
-        return False
-    root = parsed.soup.find(id=re.compile(r"root|app|__next", re.I))
-    scripts = parsed.soup.find_all("script")
-    return root is not None and len(scripts) >= 3
-
-
-def _has_extractable_detail_signals(
-    html: str,
-    *,
-    analysis: HtmlAnalysis | None = None,
-) -> bool:
-    parsed = analysis or analyze_html(html)
-    if not parsed.html or _looks_like_js_required_placeholder(parsed):
-        return False
-    for payload in parse_json_ld(parsed.soup):
-        if not isinstance(payload, dict):
-            continue
-        raw_type = payload.get("@type")
-        normalized_type = (
-            " ".join(raw_type) if isinstance(raw_type, list) else str(raw_type or "")
-        ).lower()
-        if any(
-            token in normalized_type
-            for token in (
-                "product",
-                "productgroup",
-                "jobposting",
-            )
-        ):
-            return True
-    js_states = harvest_js_state_objects(parsed.soup, parsed.html)
-    if any(_state_payload_has_content(payload) for payload in js_states.values()):
-        return True
-    if _has_extractable_dom_detail_signals(parsed):
-        return True
-    if _has_extractable_dom_meaningful_detail_signals(parsed):
-        return True
-    lowered_html = parsed.lowered_html
-    lowered_text = parsed.normalized_text.lower()
-    if "load in the app" in lowered_text or "loads in the app" in lowered_text:
-        return False
-    if any(token in lowered_html for token in DETAIL_SHELL_STATE_TOKENS):
-        return True
-    return any(
-        token in lowered_html for token in DETAIL_SHELL_FRAMEWORK_TOKENS
-    ) and any(token in lowered_html for token in DETAIL_SHELL_PRODUCT_DATA_TOKENS)
-
-
-def parse_json_ld(soup: BeautifulSoup) -> list[object]:
-    rows: list[object] = []
-    for script in soup.select('script[type*="ld+json"]'):
-        text = script.string or script.get_text(" ", strip=True)
-        if not str(text or "").strip():
-            continue
-        try:
-            payload = json.loads(str(text))
-        except json.JSONDecodeError:
-            continue
-        if isinstance(payload, list):
-            rows.extend(payload)
-        else:
-            rows.append(payload)
-    return rows
-
-
-def harvest_js_state_objects(soup: BeautifulSoup | None, html: str) -> dict[str, object]:
-    parsed = soup or BeautifulSoup(str(html or ""), "html.parser")
-    states: dict[str, object] = {}
-    for script in parsed.select('script[type="application/json"], script#__NEXT_DATA__'):
-        key = str(script.get("id") or "application_json").strip() or "application_json"
-        text = script.string or script.get_text(" ", strip=True)
-        if not str(text or "").strip():
-            continue
-        try:
-            states[key] = json.loads(str(text))
-        except json.JSONDecodeError:
-            continue
-    return states
-
-
-def _has_extractable_dom_detail_signals(analysis: HtmlAnalysis) -> bool:
-    if not analysis.h1_present:
-        return False
-    lowered_text = analysis.normalized_text.lower()
-    detail_hint_hits = sum(
-        1 for hint in _ECOMMERCE_DETAIL_READINESS_HINTS if hint in lowered_text
-    )
-    if ACTION_BUY_NOW.strip().lower() in lowered_text:
-        detail_hint_hits += 1
-    has_product_anchor = bool(
-        analysis.soup.find(
-            attrs=cast(Any, {
-                "content": re.compile(r"\bproduct\b", re.I),
-                "property": re.compile(r"og:type", re.I),
-            })
-        )
-    )
-    has_price_anchor = bool(
-        analysis.soup.find(
-            attrs=cast(Any, {
-                "content": re.compile(
-                    r"(?:[$€£₹]\s*)?\d{1,3}(?:,\d{3})*(?:[.,]\d{1,2})?|(?:[$€£₹]\s*)?\d+(?:[.,]\d{1,2})?",
-                    re.I,
-                ),
-                "property": re.compile(r"(?:product:)?price", re.I),
-            })
-        )
-        or analysis.soup.find(attrs=cast(Any, {"itemprop": re.compile(r"price", re.I)}))
-        or re.search(r"(?:[$€£₹]\s*)\d+(?:[.,]\d{2})?", analysis.normalized_text)
-    )
-    if (
-        "load in the app" in lowered_text or "loads in the app" in lowered_text
-    ) and not (has_product_anchor or has_price_anchor):
-        return False
-    if detail_hint_hits >= int(crawler_runtime_settings.detail_field_signal_min_count):
-        if analysis.soup.select_one("main h1, article h1, [role='main'] h1"):
-            return True
-        return has_product_anchor or has_price_anchor
-    return detail_hint_hits > 0 and has_product_anchor
-
-
-def _has_extractable_dom_meaningful_detail_signals(analysis: HtmlAnalysis) -> bool:
-    if not analysis.h1_present:
-        return False
-    heading = analysis.soup.select_one("main h1, article h1, [role='main'] h1, h1")
-    heading_text = clean_text(heading.get_text(" ", strip=True)) if heading else ""
-    if not heading_text:
-        return False
-    for selector in (
-        *CONTENT_SURFACE_FORUM_BODY_SELECTORS,
-        *CONTENT_SURFACE_PROTECTED_DESCENDANT_SELECTORS,
-    ):
-        try:
-            nodes: Iterable[Any] = analysis.soup.select(selector)
-        except Exception:
-            nodes = []
-        for node in nodes:
-            body_text = clean_text(node.get_text(" ", strip=True))
-            if not body_text or body_text == heading_text:
-                continue
-            body_without_heading = clean_text(
-                re.sub(re.escape(heading_text), " ", body_text, flags=re.I)
-            )
-            if not body_without_heading:
-                continue
-            if (
-                "load in the app" in body_without_heading.lower()
-                or "loads in the app" in body_without_heading.lower()
-            ):
-                continue
-            if node.find(("p", "div", "li", "article", "section", "span")) is not None:
-                return True
-            if len(body_without_heading) >= CONTENT_DETAIL_MIN_BODY_TEXT_LENGTH:
-                return True
-    return False
-
-
-def _has_extractable_listing_signals(
-    html: str,
-    *,
-    analysis: HtmlAnalysis | None = None,
-) -> bool:
-    parsed = analysis or analyze_html(html)
-    if not parsed.html or _looks_like_js_required_placeholder(parsed):
-        return False
-    typed_listing_count = 0
-    for payload in parse_json_ld(parsed.soup):
-        if not isinstance(payload, dict):
-            continue
-        raw_type = payload.get("@type")
-        normalized_type = (
-            " ".join(raw_type) if isinstance(raw_type, list) else str(raw_type or "")
-        ).lower()
-        if "itemlist" in normalized_type or "listitem" in normalized_type:
-            return True
-        if any(token in normalized_type for token in ("product", "jobposting")):
-            typed_listing_count += 1
-    if typed_listing_count >= max(2, int(crawler_runtime_settings.listing_min_items)):
-        return True
-    detail_like_anchor_count = 0
-    for anchor in parsed.soup.find_all("a", href=True):
-        href = str(anchor.get("href") or "").strip().lower()
-        if any(marker in href for marker in LISTING_DETAIL_URL_MARKERS):
-            detail_like_anchor_count += 1
-            if detail_like_anchor_count >= 3:
-                return True
-    return False
-
-
-def _looks_like_listing_shell(
-    result: PageFetchResult,
-    *,
-    analysis: HtmlAnalysis | None = None,
-) -> bool:
-    parsed = analysis or analyze_html(result.html)
-    if _looks_like_js_required_placeholder(parsed):
-        return True
-    lowered_surface = str(result.final_url or result.url or "").strip().lower()
-    lowered_html = parsed.lowered_html
-    if "#/" in lowered_surface:
-        return True
-    if int(result.status_code or 0) == 202:
-        return True
-    root = parsed.soup.find(id=re.compile(r"root|app|__next", re.I))
-    script_count = len(parsed.soup.find_all("script"))
-    if len(parsed.visible_text) > 400:
-        return any(
-            token in lowered_html for token in LISTING_CLIENT_RENDERED_SHELL_HINTS
-        )
-    if root is None and script_count < 3:
-        return False
-    return any(token in lowered_html for token in LISTING_SHELL_FRAMEWORK_TOKENS)
-
-
-def _looks_like_js_required_placeholder(parsed: HtmlAnalysis) -> bool:
-    combined_text = clean_text(f"{parsed.title_text} {parsed.visible_text}").lower()
-    if not combined_text:
-        return False
-    if not any(phrase in combined_text for phrase in JS_REQUIRED_PLACEHOLDER_PHRASES):
-        return False
-    return bool(parsed.soup.find("noscript")) or len(parsed.visible_text) <= 400
-
-
-def _state_payload_has_content(payload: Any) -> bool:
-    if isinstance(payload, dict):
-        if not payload:
-            return False
-        meaningful_keys = {
-            key
-            for key, value in payload.items()
-            if value not in (None, "", [], {})
-            and str(key or "").strip().lower() not in {"config", "env", "locale"}
-        }
-        if meaningful_keys:
-            return True
-        return any(_state_payload_has_content(value) for value in payload.values())
-    if isinstance(payload, list):
-        return any(_state_payload_has_content(item) for item in payload[:10])
-    return payload not in (None, "")
-
-
 def _mapping_sequence(value: object) -> list[dict[object, object]]:
     if not isinstance(value, list):
         return []
@@ -852,7 +594,10 @@ def _string_sequence(value: object) -> list[str]:
     return [str(item) for item in value]
 
 
-def _challenge_element_hits(soup: BeautifulSoup, lowered_html: str) -> list[str]:
+def _challenge_element_hits(
+    document: HtmlDocument,
+    lowered_html: str,
+) -> list[str]:
     challenge_elements = mapping_or_empty(BLOCK_SIGNATURES.get("challenge_elements"))
     iframe_src_markers = _marker_map_from_config(
         challenge_elements, "iframe_src_markers"
@@ -866,17 +611,17 @@ def _challenge_element_hits(soup: BeautifulSoup, lowered_html: str) -> list[str]
     )
     html_markers = _marker_map_from_config(challenge_elements, "html_markers")
     hits: list[str] = []
-    for iframe in soup.find_all("iframe"):
-        src = str(iframe.get("src") or "").strip().lower()
-        title = str(iframe.get("title") or "").strip().lower()
+    for iframe in document.css("iframe"):
+        src = str(iframe.attribute("src") or "").strip().lower()
+        title = str(iframe.attribute("title") or "").strip().lower()
         for marker, hit in iframe_src_markers.items():
             if marker in src:
                 hits.append(hit)
         for marker, hit in iframe_title_markers.items():
             if marker in title:
                 hits.append(hit)
-    for script in soup.find_all("script"):
-        src = str(script.get("src") or "").strip().lower()
+    for script in document.css("script"):
+        src = str(script.attribute("src") or "").strip().lower()
         for marker, hit in script_src_markers.items():
             if marker in src:
                 hits.append(hit)
@@ -897,28 +642,6 @@ def _marker_map_from_config(
     }
 
 
-def has_extractable_dom_meaningful_detail_signals(
-    value: HtmlAnalysis | str | object,
-    *,
-    analysis: HtmlAnalysis | None = None,
-) -> bool:
-    if analysis is not None:
-        parsed = analysis
-    elif isinstance(value, HtmlAnalysis):
-        parsed = value
-    else:
-        parsed = analyze_html(str(value or ""))
-    return _has_extractable_dom_meaningful_detail_signals(parsed)
-
-
-def has_extractable_listing_signals(
-    html: str,
-    *,
-    analysis: HtmlAnalysis | None = None,
-) -> bool:
-    return _has_extractable_listing_signals(html, analysis=analysis)
-
-
 __all__ = [
     "BlockPageClassification",
     "NetworkPayloadReadResult",
@@ -936,8 +659,6 @@ __all__ = [
     "is_non_retryable_http_status",
     "is_browser_recoverable_http_status",
     "is_retryable_http_status",
-    "has_extractable_dom_meaningful_detail_signals",
-    "has_extractable_listing_signals",
     "should_escalate_to_browser",
     "should_escalate_to_browser_async",
 ]

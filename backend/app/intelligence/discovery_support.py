@@ -3,6 +3,7 @@ from __future__ import annotations
 import contextlib
 import logging
 import re
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 from urllib.parse import parse_qs, urlencode, urljoin, urlsplit
 
@@ -44,7 +45,6 @@ from app.intelligence.candidate_urls import (
     looks_like_product_detail_url,
     normalized_compare_url,
 )
-from app.intelligence.discovery_types import SearchResult
 from app.intelligence.matching import manufacturer_style_code, normalize_brand, source_domain
 
 if TYPE_CHECKING:
@@ -52,6 +52,12 @@ if TYPE_CHECKING:
 
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(slots=True)
+class SearchResult:
+    url: str
+    payload: dict[str, object]
 
 
 @contextlib.asynccontextmanager

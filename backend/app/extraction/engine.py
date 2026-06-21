@@ -250,8 +250,13 @@ def _materialize_detail(
     request: ExtractionRequest,
     spec: SurfaceSpec,
 ) -> tuple[PublicRecord, ...]:
-    del findings, request, spec
-    record = materialize_ecommerce_detail(graph, resolution, evidence)
+    del findings, spec
+    record = materialize_ecommerce_detail(
+        graph,
+        resolution,
+        evidence,
+        canonical_url=request.capture.final_url or request.capture.requested_url,
+    )
     return (record,) if record else ()
 
 

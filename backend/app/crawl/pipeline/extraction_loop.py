@@ -34,8 +34,6 @@ from app.crawl.robots_policy import (
 )
 from sqlalchemy.ext.asyncio import AsyncSession
 
-UrlVerdict = Literal["success", "partial", "review", "invalid", "empty", "blocked", "error", "wrong_surface", "listing_failed"]
-
 from .retry import build_acquisition_request, retry_extraction_request_with_browser
 from .persistence import (
     persist_acquisition_artifacts,
@@ -72,6 +70,8 @@ from .url_processing_context import (
     build_url_processing_context as _build_url_processing_context,
     resolved_url_processing_config as _resolved_url_processing_config,
 )
+
+UrlVerdict = Literal["success", "partial", "review", "invalid", "empty", "blocked", "error", "wrong_surface", "listing_failed"]
 
 __all__ = [
     "STAGE_ACQUIRE",
@@ -155,7 +155,7 @@ async def process_single_url(
                 return result
             await _enter_stage(context, STAGE_EXTRACT)
             extracted = await _run_extraction_stage(context, fetched)
-            extracted = await _run_normalization_stage(context, extracted)
+            await _enter_stage(context, STAGE_NORMALIZE)
             result = await _run_persistence_stage(context, extracted)
             result_metrics = mapping_or_empty(result.url_metrics)
             set_logfire_attributes(
@@ -556,14 +556,6 @@ def _record_extraction_trace(
     )
 
 
-async def _run_normalization_stage(
-    context: _URLProcessingContext,
-    extracted: _ExtractedURLStage,
-) -> _ExtractedURLStage:
-    await _enter_stage(context, STAGE_NORMALIZE)
-    return extracted
-
-
 # skipcq: PY-R1000
 async def _run_persistence_stage(
     context: _URLProcessingContext,
@@ -607,7 +599,6 @@ async def _run_persistence_stage(
             extracted_records,
             acquisition_result=acquisition_result,
             url_result_id=url_result.id,
-            raw_html_path=raw_html_path,
         )
         persisted_count = persisted_batch.record_count
         url_result.record_count = persisted_count
@@ -638,7 +629,7 @@ async def _run_persistence_stage(
         extracted,
         url_result=url_result,
         record_count=persisted_count,
-        persisted_records=persisted_batch.records,
+        record_provenance=persisted_batch.provenance,
         verdict=verdict,
     )
     await update_acquisition_contract_memory(
@@ -664,7 +655,7 @@ async def _publish_url_result_artifacts(
     *,
     url_result,
     record_count: int,
-    persisted_records,
+    record_provenance,
     verdict: str,
 ) -> None:
     acquisition_result = extracted.fetched.acquisition_result
@@ -675,7 +666,7 @@ async def _publish_url_result_artifacts(
         acquisition_result=acquisition_result,
         extraction_result=extracted.result,
         record_count=record_count,
-        persisted_records=persisted_records,
+        record_provenance=record_provenance,
     )
     url_result.manifest_uri = published.reference.uri
     url_result.bundle_id = published.manifest.bundle_id

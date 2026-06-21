@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Iterable
+import hashlib
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -26,6 +27,19 @@ class HtmlNode:
     def attribute(self, name: str) -> str | None:
         value = self.node.attributes.get(name)
         return str(value) if value is not None else None
+
+    def attributes(self) -> Mapping[str, str]:
+        return {str(key): str(value) for key, value in self.node.attributes.items()}
+
+    def identity(self) -> int:
+        return int(self.node.mem_id)
+
+    def json(self) -> object:
+        text = self.text()
+        try:
+            return json.loads(text) if text.strip() else None
+        except json.JSONDecodeError:
+            return None
 
     def ancestors(self) -> tuple[HtmlNode, ...]:
         nodes: list[HtmlNode] = []
@@ -78,6 +92,7 @@ class HtmlDocument:
     def __init__(self, artifact_id: str, html: str) -> None:
         self.artifact_id = artifact_id
         self._html = html
+        self.content_hash = hashlib.sha256(html.encode("utf-8")).hexdigest()
         self._parser = LexborHTMLParser(html)
 
     def css(self, selector: str) -> tuple[HtmlNode, ...]:
@@ -87,11 +102,75 @@ class HtmlDocument:
         node = self._parser.css_first(selector)
         return HtmlNode(self.artifact_id, node) if node is not None else None
 
+    def safe_css(self, selector: str) -> tuple[HtmlNode, ...]:
+        try:
+            return self.css(selector)
+        except Exception:
+            return ()
+
     def text(self) -> str:
         return self._parser.text(separator=" ", strip=True)
 
+    def visible_text(self) -> str:
+        root = self._parser.body or self._parser.root
+        if root is None:
+            return ""
+        pieces: list[str] = []
+        for node in root.traverse(include_text=True):
+            if not node.is_text_node:
+                continue
+            parent = node.parent
+            hidden = False
+            while parent is not None:
+                if str(parent.tag or "").lower() in {"script", "style", "noscript"}:
+                    hidden = True
+                    break
+                parent = parent.parent
+            if not hidden:
+                text = str(node.text() or "").strip()
+                if text:
+                    pieces.append(text)
+        return " ".join(" ".join(pieces).split())
+
     def html(self) -> str:
         return self._html
+
+    def matches_html(self, html: str) -> bool:
+        text = str(html or "")
+        return (
+            self.content_hash == hashlib.sha256(text.encode("utf-8")).hexdigest()
+            and self._html == text
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class HtmlAnalysis:
+    html: str
+    lowered_html: str
+    document: HtmlDocument
+    visible_text: str
+    normalized_text: str
+    title_text: str
+    h1_present: bool
+
+    @classmethod
+    def from_html(cls, html: str) -> HtmlAnalysis:
+        text = str(html or "")
+        document = HtmlDocument("html", text)
+        visible_text = document.visible_text()
+        title = document.css_first("title")
+        return cls(
+            html=text,
+            lowered_html=text.lower(),
+            document=document,
+            visible_text=visible_text,
+            normalized_text=" ".join(visible_text.split()),
+            title_text=" ".join((title.text() if title else "").split()),
+            h1_present=document.css_first("h1") is not None,
+        )
+
+    def matches_html(self, html: str) -> bool:
+        return self.document.matches_html(html)
 
 
 @dataclass(frozen=True)
@@ -101,9 +180,18 @@ class JsonDocument:
 
 
 class DocumentStore:
-    def __init__(self, payloads: dict[str, Any]) -> None:
+    def __init__(
+        self,
+        payloads: dict[str, Any],
+        *,
+        html_documents: Mapping[str, HtmlDocument] | None = None,
+    ) -> None:
         self._payloads = dict(payloads)
-        self._html_cache: dict[str, HtmlDocument] = {}
+        self._html_cache = {
+            artifact_id: document
+            for artifact_id, document in (html_documents or {}).items()
+            if document.matches_html(str(self._payloads.get(artifact_id) or ""))
+        }
         self._json_cache: dict[str, JsonDocument] = {}
 
     def html(self, artifact_id: str) -> HtmlDocument:

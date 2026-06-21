@@ -4,20 +4,18 @@ import asyncio
 import logging
 from typing import Any
 
-from bs4 import BeautifulSoup
 from patchright.async_api import Error as PlaywrightError
 from patchright.async_api import TimeoutError as PlaywrightTimeoutError
 
 from app.acquisition.browser_capture import is_response_closed_error
+from app.acquisition.dom_runtime import get_page_html
 from app.acquisition.browser_interstitial import (
     dismiss_safe_location_interstitial as _interstitial_dismiss,
     location_interstitial_detected as _interstitial_detected,
     page_might_have_location_interstitial as _interstitial_page_probe,
 )
-from app.acquisition.browser_readiness import HtmlAnalysis
 from app.core.config.extraction_rules import (
     ECOMMERCE_DETAIL_SURFACE,
-    HTML_PARSER,
     LISTING_BRAND_SELECTORS,
     LISTING_UTILITY_URL_TOKENS,
     LISTING_VISUAL_PRICE_REGEX_PATTERN,
@@ -35,6 +33,7 @@ from app.core.config.selectors import (
 from app.core.config.runtime_settings import crawler_runtime_settings
 from app.core.config.url_path_markers import detail_path_markers
 from app.core.records.css_extractability import requested_content_extractability
+from app.extraction.documents import HtmlAnalysis, HtmlDocument
 
 logger = logging.getLogger(__name__)
 
@@ -65,66 +64,112 @@ def _select_primary_browser_html(
     *,
     surface: str | None,
     traversal_result,
-    traversal_html: str,
-    rendered_html: str,
+    traversal_analysis: HtmlAnalysis,
+    rendered_analysis: HtmlAnalysis,
     listing_min_items: int,
-) -> str:
+) -> tuple[str, HtmlAnalysis]:
+    traversal_html = traversal_analysis.html
+    rendered_html = rendered_analysis.html
     if traversal_result is None or not getattr(traversal_result, "activated", False):
-        return traversal_html or rendered_html
+        selected = traversal_analysis if traversal_html else rendered_analysis
+        return selected.html, selected
     if "listing" not in str(surface or "").strip().lower():
-        return traversal_html or rendered_html
+        selected = traversal_analysis if traversal_html else rendered_analysis
+        return selected.html, selected
     if not str(rendered_html or "").strip():
-        return traversal_html
+        return traversal_html, traversal_analysis
     if not str(traversal_html or "").strip():
-        return rendered_html
+        return rendered_html, rendered_analysis
     progress_events = int(getattr(traversal_result, "progress_events", 0) or 0)
     card_count = int(getattr(traversal_result, "card_count", 0) or 0)
     stop_reason = str(getattr(traversal_result, "stop_reason", "") or "").strip()
     rendered_signal_count = _listing_html_detail_anchor_count(
-        rendered_html,
+        rendered_analysis.document,
         surface=surface,
     )
     traversal_signal_count = _listing_html_detail_anchor_count(
-        traversal_html,
+        traversal_analysis.document,
         surface=surface,
     )
     if rendered_signal_count > traversal_signal_count:
-        return rendered_html
+        return rendered_html, rendered_analysis
     if progress_events > 0 and (
         card_count >= max(1, int(listing_min_items))
         or traversal_signal_count >= max(2, rendered_signal_count)
     ):
-        return traversal_html
+        return traversal_html, traversal_analysis
     if card_count >= max(1, int(listing_min_items)):
-        return rendered_html
+        return rendered_html, rendered_analysis
     if stop_reason.endswith("_blocked") and traversal_signal_count >= max(
         2,
         int(listing_min_items),
     ):
-        return traversal_html
+        return traversal_html, traversal_analysis
     if stop_reason.endswith(
         ("_not_found", "_no_progress", "_click_failed", "_blocked")
     ):
-        return rendered_html
-    return traversal_html
+        return rendered_html, rendered_analysis
+    return traversal_html, traversal_analysis
 
 def _listing_html_detail_anchor_count(
-    html: str,
+    document: HtmlDocument,
     *,
     surface: str | None,
 ) -> int:
-    soup = BeautifulSoup(str(html or ""), HTML_PARSER)
     detail_markers = tuple(
         str(marker or "").strip().lower()
         for marker in detail_path_markers(surface or "")
         if str(marker or "").strip()
     )
     count = 0
-    for anchor in soup.find_all("a", href=True):
-        href = str(anchor.get("href") or "").strip().lower()
+    for anchor in document.css("a[href]"):
+        href = str(anchor.attribute("href") or "").strip().lower()
         if any(marker in href for marker in detail_markers):
             count += 1
     return count
+
+
+async def _select_traversal_snapshot(
+    *,
+    surface: str | None,
+    traversal_result,
+    traversal_html: str,
+    rendered_html: str,
+) -> tuple[str, HtmlAnalysis]:
+    rendered_analysis = await asyncio.to_thread(HtmlAnalysis.from_html, rendered_html)
+    traversal_analysis = (
+        rendered_analysis
+        if rendered_analysis.matches_html(traversal_html)
+        else await asyncio.to_thread(HtmlAnalysis.from_html, traversal_html)
+    )
+    return _select_primary_browser_html(
+        surface=surface,
+        traversal_result=traversal_result,
+        traversal_analysis=traversal_analysis,
+        rendered_analysis=rendered_analysis,
+        listing_min_items=int(crawler_runtime_settings.listing_min_items),
+    )
+
+
+async def _resolve_rendered_snapshot(
+    page: Any,
+    *,
+    prefetched_html: str | None,
+    prefetched_analysis: HtmlAnalysis | None,
+    flatten_shadow: bool,
+) -> tuple[str, str, HtmlAnalysis]:
+    html = str(prefetched_html or "")
+    if not html.strip() and prefetched_analysis is not None:
+        html = prefetched_analysis.html
+    if not html.strip():
+        html = await get_page_html(page, flatten_shadow=flatten_shadow)
+    analysis = (
+        prefetched_analysis
+        if prefetched_analysis is not None
+        and prefetched_analysis.matches_html(html)
+        else await asyncio.to_thread(HtmlAnalysis.from_html, html)
+    )
+    return html, html, analysis
 
 def _normalize_listing_recovery_mode(value: object) -> str | None:
     normalized = str(value or "").strip().lower().replace("-", "_").replace(" ", "_")
@@ -134,24 +179,20 @@ def _normalize_listing_recovery_mode(value: object) -> str | None:
 
 def _detail_expansion_extractability(
     *,
-    html: str,
-    soup: BeautifulSoup | None = None,
+    document: HtmlDocument | None,
     surface: str,
     requested_fields: list[str] | None,
     requested_content_extractability_impl=requested_content_extractability,
-    beautiful_soup_factory=BeautifulSoup,
 ) -> dict[str, object]:
-    if soup is None and not str(html or "").strip():
+    if document is None or not document.html().strip():
         return {
             "verified": False,
             "matched_requested_fields": [],
             "extractable_fields": [],
             "section_fields": [],
         }
-    if soup is None:
-        soup = beautiful_soup_factory(str(html or ""), HTML_PARSER)
     return requested_content_extractability_impl(
-        str(html or "") or str(soup),
+        document,
         surface=surface,
         requested_fields=requested_fields,
         probe_fields=_detail_expansion_probe_fields(
@@ -401,6 +442,8 @@ async def _capture_listing_visual_elements(
 
 object_int = _object_int
 select_primary_browser_html = _select_primary_browser_html
+select_traversal_snapshot = _select_traversal_snapshot
+resolve_rendered_snapshot = _resolve_rendered_snapshot
 normalize_listing_recovery_mode = _normalize_listing_recovery_mode
 detail_expansion_extractability = _detail_expansion_extractability
 detail_expansion_can_skip = _detail_expansion_can_skip

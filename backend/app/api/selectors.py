@@ -31,7 +31,7 @@ from app.core.records.selectors_runtime import (
     update_selector_record,
 )
 from app.core.url_safety import SecurityError, validate_public_target
-from app.acquisition.playwright_compat import (
+from app.acquisition.browser_capture import (
     PlaywrightError,
     PlaywrightTimeoutError,
     is_recoverable_playwright_error,

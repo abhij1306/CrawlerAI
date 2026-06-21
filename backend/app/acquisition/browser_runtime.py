@@ -54,7 +54,6 @@ from app.acquisition.browser_fetch_support import (
     dismiss_browser_interstitial,
     emit_page_loaded_event,
 )
-from app.acquisition import browser_readiness as _browser_readiness
 from app.acquisition.browser_readiness import (
     classify_browser_outcome,
     classify_low_content_reason,
@@ -87,7 +86,6 @@ from app.acquisition.runtime import (
     NetworkPayloadReadResult,
     classify_blocked_page_async,
     PageFetchResult,
-    is_blocked_html_async,
 )
 from app.acquisition.traversal import (
     execute_listing_traversal,
@@ -129,10 +127,6 @@ get_browser_runtime = _get_browser_runtime_impl
 shutdown_browser_runtime = _shutdown_browser_runtime_impl
 shutdown_browser_runtime_sync = _shutdown_browser_runtime_sync_impl
 browser_runtime_snapshot = _browser_runtime_snapshot_impl
-
-
-async def listing_card_signal_count(page: Any, *, surface: str) -> int:
-    return await _browser_readiness.listing_card_signal_count(page, surface=surface)
 
 
 block_unneeded_route = _block_unneeded_route
@@ -308,7 +302,6 @@ async def browser_fetch(
     on_event=None,
     runtime_provider=get_browser_runtime,
     proxied_page_factory=None,
-    blocked_html_checker=is_blocked_html_async,
 ) -> PageFetchResult:
     normalized_domain = normalize_domain(url)
     normalized_engine = _normalize_browser_engine(browser_engine)
@@ -479,6 +472,7 @@ async def browser_fetch(
                     traversal_result,
                     rendered_html,
                     listing_recovery_diagnostics,
+                    serialized_analysis,
                 ) = await _run_browser_stage(
                     stage="serialize",
                     page=page,
@@ -536,9 +530,7 @@ async def browser_fetch(
                             listing_recovery_diagnostics=listing_recovery_diagnostics,
                             payload_capture=payload_capture,
                             html=html,
-                            html_analysis=prefetched_analysis
-                            if html == prefetched_html
-                            else None,
+                            html_analysis=serialized_analysis,
                             traversal_result=traversal_result,
                             rendered_html=rendered_html,
                             interstitial_diagnostics=interstitial_diagnostics,
@@ -546,7 +538,6 @@ async def browser_fetch(
                             started_at=started_at,
                             capture_screenshot=bool(capture_screenshot),
                         ),
-                        blocked_html_checker=blocked_html_checker,
                         classify_blocked_page_async=classify_blocked_page_async,
                         classify_low_content_reason=classify_low_content_reason,
                         classify_browser_outcome=classify_browser_outcome,
@@ -1026,7 +1017,7 @@ __all__ = [
     "build_failed_browser_diagnostics", "capture_browser_screenshot",
     "classify_network_endpoint", "classify_browser_outcome",
     "get_browser_runtime",
-    "listing_card_signal_count", "looks_like_low_content_shell",
+    "looks_like_low_content_shell",
     "patchright_browser_available", "read_network_payload_body",
     "real_chrome_browser_available", "real_chrome_candidate_paths",
     "real_chrome_executable_path", "should_capture_network_payload",

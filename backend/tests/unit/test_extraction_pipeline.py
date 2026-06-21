@@ -309,7 +309,7 @@ def test_access_denied_shell_does_not_succeed() -> None:
     assert result.retry_request.reason == "http_shell"
 
 
-def test_shell_title_with_offer_data_does_not_publish_record() -> None:
+def test_punctuated_shell_title_with_offer_data_does_not_publish_record() -> None:
     result = _extract(
         "ecommerce_detail",
         """
@@ -318,16 +318,16 @@ def test_shell_title_with_offer_data_does_not_publish_record() -> None:
             <script type="application/ld+json">
             {
               "@type": "Product",
-              "name": "Error page",
-              "url": "https://shop.test/products/error-page",
+              "name": "Oops, Something Went Wrong.",
+              "url": "https://shop.test/products/trail-shoe",
               "offers": {"price": "99", "priceCurrency": "USD"}
             }
             </script>
           </head>
-          <body><h1>Error page</h1></body>
+          <body><h1>Oops, Something Went Wrong.</h1></body>
         </html>
         """,
-        "https://shop.test/products/error-page",
+        "https://shop.test/products/trail-shoe",
     )
     assert result.verdict == "error"
     assert result.records == ()
@@ -1072,6 +1072,7 @@ def test_parent_availability_is_coherent_with_complete_variant_matrix() -> None:
 
 
 def test_detail_url_falls_back_to_canonical_capture_url() -> None:
+    canonical_url = "https://shop.test/products/trail-shoe"
     result = _extract(
         "ecommerce_detail",
         """
@@ -1079,9 +1080,13 @@ def test_detail_url_falls_back_to_canonical_capture_url() -> None:
         {"@type": "Product", "name": "Trail Shoe", "offers": {"price": "10", "priceCurrency": "USD"}}
         </script>
         """,
-        "https://shop.test/products/trail-shoe",
+        canonical_url,
     )
-    assert result.records[0]["url"] == "https://shop.test/products/trail-shoe"
+    assert len(result.records) == 1
+    typed = CommerceDetailRecord.model_validate(result.records[0])
+    assert CommerceDetailRecord.model_fields["url"].is_required()
+    assert typed.url == canonical_url
+    assert result.records[0]["url"] == canonical_url
 
 
 def test_utility_image_cannot_beat_product_image() -> None:

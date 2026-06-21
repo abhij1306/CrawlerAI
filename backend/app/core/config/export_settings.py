@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 MAX_RECORD_PAGE_SIZE = 1000
-ARTIFACT_STORAGE_BACKEND = "local"
 EXPORT_PAGING_HEADER = "X-Export-Paging"
 EXPORT_TOTAL_HEADER = "X-Export-Total"
 EXPORT_PARTIAL_HEADER = "X-Export-Partial"

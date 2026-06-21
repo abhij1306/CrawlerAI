@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 from app.acquisition.dom_runtime import (
     wait_for_dom_mutation_settle as _wait_for_dom_mutation_settle,
 )
-from app.acquisition.playwright_compat import (
+from app.acquisition.browser_capture import (
     PlaywrightError,
     PlaywrightTimeoutError,
     is_recoverable_playwright_error,

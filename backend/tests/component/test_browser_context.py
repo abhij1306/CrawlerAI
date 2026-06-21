@@ -18,13 +18,11 @@ from app.acquisition import browser_pool_page as acquisition_browser_pool_page
 from app.acquisition import cookie_store
 from app.acquisition import host_protection_memory
 from app.acquisition import browser_pool as acquisition_browser_pool
-from app.acquisition.browser_readiness import analyze_html
+from app.acquisition.browser_readiness import analyze_extractable_content, analyze_html
+from app.acquisition.browser_page_helpers import detail_expansion_extractability
 from app.acquisition.browser_proxy_config import build_browser_proxy_config
 from app.acquisition import browser_runtime as acquisition_browser_runtime
-from app.acquisition.runtime import (
-    has_extractable_dom_meaningful_detail_signals,
-    has_extractable_listing_signals,
-)
+from app.acquisition import browser_page_flow
 from app.core.config.runtime_settings import crawler_runtime_settings
 from app.core.domain_utils import is_special_use_domain, normalize_domain
 
@@ -89,7 +87,90 @@ def test_meaningful_detail_signals_accept_body_without_paragraph() -> None:
         """
     )
 
-    assert has_extractable_dom_meaningful_detail_signals(analysis) is True
+    assert analyze_extractable_content(analysis.html, analysis=analysis).meaningful_detail is True
+
+
+@pytest.mark.component
+def test_detail_extractability_reuses_readiness_document() -> None:
+    analysis = analyze_html(
+        "<html><body><main><h1>Trail Shoe</h1><p data-price='49'>$49.00</p></main></body></html>"
+    )
+
+    result = detail_expansion_extractability(
+        document=analysis.document,
+        surface="ecommerce_detail",
+        requested_fields=["title", "price"],
+    )
+
+    assert result["verified"] is True
+    assert result["matched_requested_fields"] == ["price", "title"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+@pytest.mark.parametrize(
+    ("snapshots", "expected_parse_count"),
+    ((["<html>A</html>", "<html>A</html>"], 1),
+     (["<html>A</html>", "<html>B</html>"], 2)),
+)
+async def test_browser_settle_parses_once_per_unique_snapshot(
+    monkeypatch,
+    snapshots: list[str],
+    expected_parse_count: int,
+) -> None:
+    parse_count = 0
+    original_analyze_html = browser_page_flow.analyze_html
+
+    def counting_analyze_html(html: str):
+        nonlocal parse_count
+        parse_count += 1
+        return original_analyze_html(html)
+
+    class _Page:
+        async def wait_for_function(self, *_args, **_kwargs) -> None:
+            return None
+
+    html_reads = iter(snapshots)
+    probe_count = 0
+
+    async def get_page_html_impl(_page) -> str:
+        return next(html_reads)
+
+    async def probe_browser_readiness(_page, **_kwargs) -> dict[str, object]:
+        nonlocal probe_count
+        probe_count += 1
+        return {
+            "is_ready": probe_count > 1,
+            "structured_data_present": False,
+        }
+
+    monkeypatch.setattr(browser_page_flow, "analyze_html", counting_analyze_html)
+    monkeypatch.setattr(
+        crawler_runtime_settings,
+        "browser_navigation_optimistic_wait_ms",
+        100,
+    )
+
+    result = await browser_page_flow.settle_browser_page_impl(
+        _Page(),
+        url="https://example.test/table",
+        surface="table",
+        requested_fields=None,
+        timeout_seconds=1,
+        readiness_override=None,
+        readiness_policy={},
+        phase_timings_ms={},
+        crawler_runtime_settings=crawler_runtime_settings,
+        get_page_html_impl=get_page_html_impl,
+        probe_browser_readiness=probe_browser_readiness,
+        wait_for_listing_readiness=None,
+        expand_detail_content_if_needed=None,
+        append_readiness_probe=lambda probes, **probe: probes.append(probe),
+        elapsed_ms=lambda _started: 0,
+    )
+
+    assert parse_count == expected_parse_count
+    assert result[-2] == snapshots[-1]
 
 
 @pytest.mark.component
@@ -101,8 +182,12 @@ def test_meaningful_detail_signals_reject_empty_and_heading_only_body() -> None:
         "<html><body><main><h1>Thread</h1><div>Thread</div></main></body></html>"
     )
 
-    assert has_extractable_dom_meaningful_detail_signals(empty_analysis) is False
-    assert has_extractable_dom_meaningful_detail_signals(heading_only_analysis) is False
+    assert analyze_extractable_content(
+        empty_analysis.html, analysis=empty_analysis
+    ).meaningful_detail is False
+    assert analyze_extractable_content(
+        heading_only_analysis.html, analysis=heading_only_analysis
+    ).meaningful_detail is False
 
 
 @pytest.mark.component
@@ -116,7 +201,7 @@ def test_meaningful_detail_signals_accept_common_descendant() -> None:
         """
     )
 
-    assert has_extractable_dom_meaningful_detail_signals(analysis) is True
+    assert analyze_extractable_content(analysis.html, analysis=analysis).meaningful_detail is True
 
 
 @pytest.mark.component
@@ -132,8 +217,8 @@ def test_listing_signals_detect_item_list_and_ignore_non_list_type() -> None:
     </script></body></html>
     """
 
-    assert has_extractable_listing_signals(item_list_html) is True
-    assert has_extractable_listing_signals(non_list_html) is False
+    assert analyze_extractable_content(item_list_html).listing is True
+    assert analyze_extractable_content(non_list_html).listing is False
 
 
 @pytest.mark.component
@@ -147,9 +232,9 @@ def test_listing_signals_respect_typed_item_threshold(monkeypatch) -> None:
         )
         return f"<html><body>{payloads}</body></html>"
 
-    assert has_extractable_listing_signals(typed_products(2)) is False
-    assert has_extractable_listing_signals(typed_products(3)) is True
-    assert has_extractable_listing_signals(typed_products(4)) is True
+    assert analyze_extractable_content(typed_products(2)).listing is False
+    assert analyze_extractable_content(typed_products(3)).listing is True
+    assert analyze_extractable_content(typed_products(4)).listing is True
 
 
 @pytest.mark.component
@@ -160,7 +245,7 @@ def test_listing_signals_detect_list_item_type() -> None:
     </script></body></html>
     """
 
-    assert has_extractable_listing_signals(html) is True
+    assert analyze_extractable_content(html).listing is True
 
 @pytest.mark.component
 def test_is_special_use_domain_ignores_ports() -> None:

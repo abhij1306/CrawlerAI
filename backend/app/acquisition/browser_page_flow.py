@@ -8,7 +8,6 @@ from patchright.async_api import Error as PlaywrightError
 from patchright.async_api import TimeoutError as PlaywrightTimeoutError
 
 from app.acquisition.browser_readiness import (
-    HtmlAnalysis,
     analyze_html,
     looks_like_low_content_shell,
 )
@@ -16,12 +15,9 @@ from app.acquisition.browser_page_helpers import (
     detail_expansion_can_skip,
     detail_expansion_extractability,
     normalize_listing_recovery_mode as _normalize_listing_recovery_mode,
-    select_primary_browser_html as _select_primary_browser_html,
+    resolve_rendered_snapshot as _resolve_rendered_snapshot,
+    select_traversal_snapshot as _select_traversal_snapshot,
 )
-from app.acquisition.browser_page_helpers import (
-    requested_content_extractability,
-)
-from app.acquisition.browser_page_helpers import BeautifulSoup
 from app.acquisition.dom_runtime import get_page_html
 from app.acquisition.browser_recovery import (
     recover_browser_challenge,
@@ -30,10 +26,11 @@ from app.acquisition.runtime import classify_blocked_page_async
 from app.core.config.selectors import (
     CARD_SELECTORS,
 )
-from app.core.config.runtime_settings import crawler_runtime_settings
 from app.acquisition.platform_policy import (
     resolve_browser_readiness_policy,
 )
+from app.extraction.documents import HtmlAnalysis
+from app.extraction.ids import content_sha256
 
 logger = logging.getLogger(__name__)
 
@@ -258,20 +255,32 @@ async def settle_browser_page_impl(
     readiness_probes: list[dict[str, object]] = []
     cached_html: str | None = None
     cached_analysis: HtmlAnalysis | None = None
+    snapshot_analyses: dict[str, HtmlAnalysis] = {}
 
     async def _cached_probe(*, refresh_html: bool = False) -> dict[str, object]:
         nonlocal cached_html, cached_analysis
         if refresh_html or cached_html is None:
-            cached_html = await get_page_html_impl(page)
-            cached_analysis = analyze_html(cached_html or "")
+            refreshed_html = await get_page_html_impl(page)
+            snapshot_hash = content_sha256(refreshed_html or "")
+            cached_analysis = snapshot_analyses.get(snapshot_hash)
+            if cached_analysis is None or not cached_analysis.matches_html(
+                refreshed_html or ""
+            ):
+                cached_analysis = await asyncio.to_thread(
+                    analyze_html,
+                    refreshed_html or "",
+                )
+                snapshot_analyses[snapshot_hash] = cached_analysis
+            cached_html = refreshed_html
         elif cached_analysis is None:
-            cached_analysis = analyze_html(cached_html or "")
+            cached_analysis = await asyncio.to_thread(analyze_html, cached_html or "")
         return await probe_browser_readiness(
             page,
             url=url,
             surface=surface,
             listing_override=readiness_override,
             html=cached_html,
+            analysis=cached_analysis,
         )
 
     current_probe = await _cached_probe(refresh_html=True)
@@ -489,12 +498,11 @@ async def settle_browser_page_impl(
         phase_timings_ms["expansion"] = 0
     else:
         initial_extractability = detail_expansion_extractability(
-            html=cached_html or "",
-            soup=cached_analysis.soup if cached_analysis is not None else None,
+            document=(
+                cached_analysis.document if cached_analysis is not None else None
+            ),
             surface=surface or "",
             requested_fields=requested_fields,
-            requested_content_extractability_impl=requested_content_extractability,
-            beautiful_soup_factory=BeautifulSoup,
         )
         skip_expansion, skip_reason = detail_expansion_can_skip(
             initial_extractability,
@@ -531,12 +539,11 @@ async def settle_browser_page_impl(
                 probe=current_probe,
             )
             expansion_diagnostics["extractability"] = detail_expansion_extractability(
-                html=cached_html or "",
-                soup=cached_analysis.soup if cached_analysis is not None else None,
+                document=(
+                    cached_analysis.document if cached_analysis is not None else None
+                ),
                 surface=surface or "",
                 requested_fields=requested_fields,
-                requested_content_extractability_impl=requested_content_extractability,
-                beautiful_soup_factory=BeautifulSoup,
             )
     return (
         current_probe,
@@ -617,33 +624,31 @@ async def serialize_browser_page_content_impl(
             page,
             flatten_shadow=should_flatten_shadow,
         )
-        html = _select_primary_browser_html(
+        html, html_analysis = await _select_traversal_snapshot(
             surface=surface,
             traversal_result=traversal_result,
             traversal_html=traversal_html,
             rendered_html=rendered_html,
-            listing_min_items=int(crawler_runtime_settings.listing_min_items),
         )
     else:
         html = ""
+        html_analysis = None
     phase_timings_ms["traversal"] = elapsed_ms(traversal_started_at)
     serialization_started_at = time.perf_counter()
     if traversal_result is None:
-        html = str(prefetched_html or "")
-        if not html.strip() and prefetched_analysis is not None:
-            html = prefetched_analysis.html
-        if not html.strip():
-            html = await get_page_html(
-                page,
-                flatten_shadow=should_flatten_shadow,
-            )
-        rendered_html = html
+        html, rendered_html, html_analysis = await _resolve_rendered_snapshot(
+            page,
+            prefetched_html=prefetched_html,
+            prefetched_analysis=prefetched_analysis,
+            flatten_shadow=should_flatten_shadow,
+        )
     phase_timings_ms["content_serialization"] = elapsed_ms(serialization_started_at)
     return (
         html,
         traversal_result,
         rendered_html,
         listing_recovery_diagnostics,
+        html_analysis,
     )
 
 

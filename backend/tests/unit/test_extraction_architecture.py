@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -13,8 +14,9 @@ from app.extraction.contracts import (
     ExtractionResult,
     PublicRecord,
 )
-from app.extraction.documents import DocumentStore
+from app.extraction.documents import DocumentStore, HtmlDocument
 from app.extraction.json_walk import walk_json
+from app.extraction.replay import request_from_acquisition_result
 from app.extraction.surfaces import Surface, parse_surface
 
 
@@ -90,6 +92,48 @@ def test_document_store_parses_each_html_artifact_once() -> None:
     second = store.html("page")
     assert first is second
     assert first.css_first("h1").text() == "One"
+
+
+def test_document_store_reuses_matching_canonical_document_only() -> None:
+    html = "<html><body><h1>One</h1></body></html>"
+    document = HtmlDocument("page", html)
+    matching = DocumentStore(
+        {"page": html},
+        html_documents={"page": document},
+    )
+    changed = DocumentStore(
+        {"page": html.replace("One", "Two")},
+        html_documents={"page": document},
+    )
+
+    assert matching.html("page") is document
+    assert changed.html("page") is not document
+    assert changed.html("page").css_first("h1").text() == "Two"
+
+
+def test_runtime_replay_reuses_matching_browser_document() -> None:
+    html = "<html><body><h1>Trail Shoe</h1></body></html>"
+    document = HtmlDocument("html", html)
+    acquisition = SimpleNamespace(
+        html=html,
+        html_document=document,
+        final_url="https://shop.test/products/trail-shoe",
+        request=SimpleNamespace(run_id=7),
+        status_code=200,
+        method="browser",
+        blocked=False,
+        network_payloads=[],
+        artifacts={},
+    )
+
+    request = request_from_acquisition_result(
+        Surface.ECOMMERCE_DETAIL,
+        acquisition,
+        requested_url=acquisition.final_url,
+        max_records=1,
+    )
+
+    assert request.artifact_reader.document_store.html("html") is document
 
 
 def test_json_walker_emits_json_pointer_paths() -> None:

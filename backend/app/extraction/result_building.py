@@ -3,7 +3,8 @@ from __future__ import annotations
 from collections import Counter
 from typing import Any
 
-from app.core.config.extraction_rules._detail import DETAIL_SHELL_TITLE_VALUES
+from app.core.config.extraction_rules._detail import DETAIL_SHELL_TITLE_KEYS
+from app.core.shared.text_coerce import slug_tokens
 from app.extraction.contracts import (
     Decision,
     EntityGraph,
@@ -49,8 +50,8 @@ def retry_request(
 
 
 def is_shell_record(record: PublicRecord | None) -> bool:
-    title = " ".join(str(record.get("title") or "").casefold().split()) if record else ""
-    return bool(title and title in DETAIL_SHELL_TITLE_VALUES)
+    title = " ".join(slug_tokens(record.get("title"))) if record else ""
+    return bool(title and title in DETAIL_SHELL_TITLE_KEYS)
 
 
 def entity_graph(

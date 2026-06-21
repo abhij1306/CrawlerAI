@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 from urllib.parse import urlsplit
 
 from app.acquisition.dom_runtime import get_page_html, wait_for_dom_mutation_settle
-from app.acquisition.playwright_compat import (
+from app.acquisition.browser_capture import (
     PlaywrightError,
     PlaywrightTimeoutError,
 )

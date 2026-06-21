@@ -9,15 +9,23 @@ from app.extraction.contracts import (
     ExtractionRequest,
     RequestContext,
 )
-from app.extraction.documents import DocumentStore
+from app.extraction.documents import DocumentStore, HtmlDocument
 from app.extraction.ids import content_sha256, stable_id
 from app.extraction.surfaces import Surface
 
 
 class MemoryArtifactReader:
-    def __init__(self, payloads: dict[str, Any]):
+    def __init__(
+        self,
+        payloads: dict[str, Any],
+        *,
+        html_documents: dict[str, HtmlDocument] | None = None,
+    ):
         self._payloads = payloads
-        self.document_store = DocumentStore(payloads)
+        self.document_store = DocumentStore(
+            payloads,
+            html_documents=html_documents,
+        )
 
     def read_text(self, artifact: ArtifactRef) -> str:
         return str(self._payloads.get(artifact.artifact_id) or "")
@@ -29,7 +37,7 @@ class MemoryArtifactReader:
         return artifact_id in self._payloads
 
 
-def fixture_bundle_from_inputs(html: str, page_url: str, requested_url: str | None, network_payloads: list[dict[str, object]] | None = None, artifacts: dict[str, object] | None = None) -> tuple[CaptureBundle, MemoryArtifactReader]:
+def fixture_bundle_from_inputs(html: str, page_url: str, requested_url: str | None, network_payloads: list[dict[str, object]] | None = None, artifacts: dict[str, object] | None = None, html_document: HtmlDocument | None = None) -> tuple[CaptureBundle, MemoryArtifactReader]:
     payloads: dict[str, Any] = {"html": html}
     refs = [ArtifactRef(artifact_id="html", artifact_type="rendered_html", content_sha256=content_sha256(html), storage_uri="memory://html", media_type="text/html")]
     js_state = (artifacts or {}).get("js_state_objects")
@@ -59,7 +67,10 @@ def fixture_bundle_from_inputs(html: str, page_url: str, requested_url: str | No
         payloads["css_field_rules"] = css_rules
         refs.append(ArtifactRef(artifact_id="css_field_rules", artifact_type="css_recipe", content_sha256=content_sha256(json.dumps(css_rules, sort_keys=True, default=str)), storage_uri="memory://css_field_rules", media_type="application/json"))
     bundle = CaptureBundle(schema_version="capture.v1", bundle_id=stable_id("bundle", requested_url or page_url, page_url, html[:80]), run_id=0, requested_url=requested_url or page_url, final_url=page_url, request_context=RequestContext(context_id=stable_id("ctx", requested_url or page_url)), artifacts=tuple(refs), acquisition_outcome="ok")
-    return bundle, MemoryArtifactReader(payloads)
+    return bundle, MemoryArtifactReader(
+        payloads,
+        html_documents={"html": html_document} if html_document is not None else None,
+    )
 
 
 def fixture_request_from_inputs(
@@ -103,6 +114,7 @@ def request_from_acquisition_result(
     run_id = int(getattr(getattr(acquisition_result, "request", None), "run_id", 0) or 0)
     network_payloads = list(getattr(acquisition_result, "network_payloads", []) or [])
     artifacts = dict(getattr(acquisition_result, "artifacts", {}) or {})
+    html_document = getattr(acquisition_result, "html_document", None)
     if selector_rules:
         artifacts["css_field_rules"] = list(selector_rules)
     bundle, reader = _bundle_from_runtime_inputs(
@@ -115,6 +127,7 @@ def request_from_acquisition_result(
         blocked=bool(getattr(acquisition_result, "blocked", False)),
         network_payloads=network_payloads,
         artifacts=artifacts,
+        html_document=html_document if isinstance(html_document, HtmlDocument) else None,
     )
     return ExtractionRequest(
         surface=surface,
@@ -136,6 +149,7 @@ def _bundle_from_runtime_inputs(
     blocked: bool,
     network_payloads: list[dict[str, object]] | None = None,
     artifacts: dict[str, object] | None = None,
+    html_document: HtmlDocument | None = None,
 ) -> tuple[CaptureBundle, MemoryArtifactReader]:
     bundle, reader = fixture_bundle_from_inputs(
         html,
@@ -143,6 +157,7 @@ def _bundle_from_runtime_inputs(
         requested_url,
         network_payloads=network_payloads,
         artifacts=artifacts,
+        html_document=html_document,
     )
     refs = tuple(
         ref.model_copy(

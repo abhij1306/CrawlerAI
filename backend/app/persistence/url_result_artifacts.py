@@ -32,7 +32,7 @@ def publish_url_result_artifacts(
     acquisition_result: Any,
     extraction_result: Any,
     record_count: int,
-    persisted_records: Sequence[Any] = (),
+    record_provenance: Sequence[Mapping[str, object]] = (),
     root_dir: Path | None = None,
 ) -> PublishedUrlArtifacts:
     repository = ArtifactRepository(root_dir=root_dir or settings.artifacts_dir)
@@ -55,7 +55,7 @@ def publish_url_result_artifacts(
         url_result_id=url_result_id,
         extraction_result=extraction_result,
         record_count=record_count,
-        persisted_records=persisted_records,
+        record_provenance=record_provenance,
     )
     bundle_id = str(getattr(extraction_result, "bundle_id", "") or "").strip()
     if not bundle_id:
@@ -278,7 +278,7 @@ def _persist_extraction_artifacts(
     url_result_id: int,
     extraction_result: Any,
     record_count: int,
-    persisted_records: Sequence[Any],
+    record_provenance: Sequence[Mapping[str, object]],
 ) -> tuple[ArtifactReference, ...]:
     payload = extraction_result.model_dump(mode="json", exclude_none=True)
     payload["record_count"] = int(record_count or 0)
@@ -290,9 +290,7 @@ def _persist_extraction_artifacts(
         "findings.json": payload.get("findings", []),
         "decisions.json": payload.get("decisions", []),
         "records.json": payload.get("records", []),
-        "record-provenance.json": [
-            _persisted_record_payload(record) for record in persisted_records
-        ],
+        "record-provenance.json": list(record_provenance),
         "verdict.json": {
             "verdict": payload.get("verdict"),
             "retry_request": payload.get("retry_request"),
@@ -311,24 +309,6 @@ def _persist_extraction_artifacts(
         )
         for name, component in components.items()
     )
-
-
-def _persisted_record_payload(record: Any) -> dict[str, object]:
-    return {
-        key: value
-        for key, value in {
-            "record_id": getattr(record, "id", None),
-            "url_result_id": getattr(record, "url_result_id", None),
-            "source_url": getattr(record, "source_url", ""),
-            "url_identity_key": getattr(record, "url_identity_key", None),
-            "content_fingerprint": getattr(record, "content_fingerprint", None),
-            "data": _mapping(getattr(record, "data", {})),
-            "raw_data": _mapping(getattr(record, "raw_data", {})),
-            "discovered_data": _mapping(getattr(record, "discovered_data", {})),
-            "source_trace": _mapping(getattr(record, "source_trace", {})),
-        }.items()
-        if value not in (None, "", [], {})
-    }
 
 
 def _persist_text(

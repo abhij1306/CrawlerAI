@@ -331,7 +331,7 @@ class CommerceVariantRecord(PublicRecord):
 
 
 class CommerceDetailRecord(PublicRecord):
-    url: str | None = None
+    url: str
     title: str | None = None
     brand: str | None = None
     description: str | None = None
@@ -388,14 +388,7 @@ class ExtractionResult(FrozenModel):
     findings: tuple[Finding, ...] = ()
     decisions: tuple[Decision, ...] = ()
     verdict: Literal[
-        "success",
-        "partial",
-        "review",
-        "invalid",
-        "empty",
-        "blocked",
-        "error",
-        "wrong_surface",
+        "success", "partial", "review", "invalid", "empty", "blocked", "error", "wrong_surface"
     ]
     retry_request: RetryRequest | None = None
     metrics: ExtractionMetrics = Field(default_factory=ExtractionMetrics)

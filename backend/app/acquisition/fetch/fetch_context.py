@@ -27,7 +27,7 @@ from app.acquisition.cookie_store import (
     clear_cookie_store_cache,
     export_cookie_header_for_domain,
 )
-from app.acquisition.pacing import (
+from app.acquisition.rate_limiter import (
     apply_protected_host_backoff,
     reset_pacing_state,
     wait_for_host_slot,
@@ -144,7 +144,6 @@ _browser_fetch = partial(
     browser_fetch,
     runtime_provider=get_browser_runtime,
     proxied_page_factory=None,
-    blocked_html_checker=is_blocked_html_async,
 )
 
 

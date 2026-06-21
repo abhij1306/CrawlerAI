@@ -24,7 +24,7 @@ from app.models.user import User
 from app.core.config.runtime_settings import crawler_runtime_settings
 from app.crawl.crud import create_crawl_run
 from app.acquisition.fetch.fetch_context import reset_fetch_runtime_state
-from app.acquisition.pacing import reset_pacing_state
+from app.acquisition.rate_limiter import reset_pacing_state
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 

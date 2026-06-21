@@ -14,6 +14,7 @@ from app.core.config.domain_profiles import INTERNAL_API_ENDPOINTS_PROFILE_KEY
 from app.crawl.utils import normalize_target_url
 from app.acquisition.fetch.fetch_context import fetch_page
 from app.acquisition.platform_policy import resolve_platform_runtime_policy
+from app.extraction.documents import HtmlDocument
 
 logger = logging.getLogger(__name__)
 
@@ -88,6 +89,7 @@ class PageAcquisitionResult:
     browser_diagnostics: dict[str, object] = field(default_factory=dict)
     artifacts: dict[str, object] = field(default_factory=dict)
     acquisition_diagnostics: dict[str, object] = field(default_factory=dict)
+    html_document: HtmlDocument | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -341,6 +343,7 @@ async def _acquire_from_fetch_page(
         acquisition_diagnostics=dict(
             getattr(result, "acquisition_diagnostics", {}) or {}
         ),
+        html_document=getattr(result, "html_document", None),
     )
 
 

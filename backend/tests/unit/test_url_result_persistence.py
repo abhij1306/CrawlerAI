@@ -4,7 +4,7 @@ import hashlib
 import json
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 
@@ -309,29 +309,29 @@ def _publish_record_reader_fixture(
             "metrics": {},
         },
     )
-    records = (
-        SimpleNamespace(
-            id=27,
-            url_result_id=9,
-            source_url="https://example.test/products/widget",
-            url_identity_key="identity-widget",
-            content_fingerprint="fp-widget",
-            data={"title": "Widget"},
-            raw_data={"title": "Widget raw"},
-            discovered_data={"confidence": 0.8},
-            source_trace={"acquisition": {"method": "curl"}},
-        ),
-        SimpleNamespace(
-            id=28,
-            url_result_id=9,
-            source_url="https://example.test/products/second",
-            url_identity_key="identity-second",
-            content_fingerprint="fp-second",
-            data={"title": "Second"},
-            raw_data={"title": "Second raw"},
-            discovered_data={"confidence": 0.9},
-            source_trace={"acquisition": {"method": "httpx"}},
-        ),
+    provenance = (
+        {
+            "record_id": 27,
+            "url_result_id": 9,
+            "source_url": "https://example.test/products/widget",
+            "url_identity_key": "identity-widget",
+            "content_fingerprint": "fp-widget",
+            "data": {"title": "Widget"},
+            "raw_data": {"title": "Widget raw"},
+            "discovered_data": {"confidence": 0.8},
+            "source_trace": {"acquisition": {"method": "curl"}},
+        },
+        {
+            "record_id": 28,
+            "url_result_id": 9,
+            "source_url": "https://example.test/products/second",
+            "url_identity_key": "identity-second",
+            "content_fingerprint": "fp-second",
+            "data": {"title": "Second"},
+            "raw_data": {"title": "Second raw"},
+            "discovered_data": {"confidence": 0.9},
+            "source_trace": {"acquisition": {"method": "httpx"}},
+        },
     )
     return publish_url_result_artifacts(
         run_id=7,
@@ -339,7 +339,7 @@ def _publish_record_reader_fixture(
         acquisition_result=acquisition,
         extraction_result=extraction,
         record_count=2,
-        persisted_records=records,
+        record_provenance=provenance,
         root_dir=tmp_path,
     )
 
@@ -392,17 +392,17 @@ def test_canonical_url_artifacts_publish_attempts_and_extraction_components(
         bundle_id="bundle-42",
         model_dump=lambda **_: dict(extraction_payload),
     )
-    persisted_record = SimpleNamespace(
-        id=27,
-        url_result_id=9,
-        source_url="https://example.test/products/widget",
-        url_identity_key="identity-42",
-        content_fingerprint="content-42",
-        data={"title": "Widget"},
-        raw_data={"title": "Widget", "_source": "json_ld"},
-        discovered_data={"confidence": {"score": 0.98}},
-        source_trace={"acquisition": {"method": "httpx"}},
-    )
+    provenance = {
+        "record_id": 27,
+        "url_result_id": 9,
+        "source_url": "https://example.test/products/widget",
+        "url_identity_key": "identity-42",
+        "content_fingerprint": "content-42",
+        "data": {"title": "Widget"},
+        "raw_data": {"title": "Widget", "_source": "json_ld"},
+        "discovered_data": {"confidence": {"score": 0.98}},
+        "source_trace": {"acquisition": {"method": "httpx"}},
+    }
 
     published = publish_url_result_artifacts(
         run_id=7,
@@ -410,7 +410,7 @@ def test_canonical_url_artifacts_publish_attempts_and_extraction_components(
         acquisition_result=acquisition,
         extraction_result=extraction,
         record_count=1,
-        persisted_records=(persisted_record,),
+        record_provenance=(provenance,),
         root_dir=tmp_path,
     )
 
@@ -530,9 +530,10 @@ def test_stored_record_match_requires_url_result_link() -> None:
         run_id=1,
         source_url="https://example.test/p",
         data={"url": "https://example.test/p"},
-        raw_data={"url": "https://example.test/p"},
-        source_trace={},
-        raw_html_path="artifact.html",
+        raw_data={"legacy": True},
+        discovered_data={"legacy": True},
+        source_trace={"legacy": True},
+        raw_html_path="legacy.html",
         content_fingerprint="fp",
     )
 
@@ -541,9 +542,6 @@ def test_stored_record_match_requires_url_result_link() -> None:
         url_result_id=99,
         source_url="https://example.test/p",
         data={"url": "https://example.test/p"},
-        raw_data={"url": "https://example.test/p"},
-        source_trace={},
-        raw_html_path="artifact.html",
         content_fingerprint="fp",
     )
 
@@ -552,14 +550,50 @@ def test_stored_record_match_requires_url_result_link() -> None:
         url_result_id=99,
         source_url="https://example.test/p",
         data={"url": "https://example.test/p"},
-        raw_data={"url": "https://example.test/p"},
-        discovered_data={},
-        source_trace={},
-        raw_html_path="artifact.html",
         content_fingerprint="fp",
     )
 
     assert row.url_result_id == 99
+    assert row.raw_data == {"legacy": True}
+    assert row.discovered_data == {"legacy": True}
+    assert row.source_trace == {"legacy": True}
+    assert row.raw_html_path == "legacy.html"
+
+
+@pytest.mark.asyncio
+async def test_active_record_write_keeps_legacy_columns_at_defaults() -> None:
+    session = SimpleNamespace(
+        scalars=AsyncMock(return_value=[]),
+        add=Mock(),
+        flush=AsyncMock(),
+    )
+    run = SimpleNamespace(id=1, surface="ecommerce_detail", requested_fields=[])
+    acquisition = SimpleNamespace(
+        final_url="https://example.test/products/widget",
+        method="httpx",
+        status_code=200,
+        browser_diagnostics={},
+    )
+    raw_record = {
+        "url": acquisition.final_url,
+        "title": "Widget",
+        "_field_sources": {"title": "json_ld"},
+    }
+
+    batch = await record_persistence.persist_extracted_records(
+        session,
+        run,
+        [raw_record],
+        acquisition_result=acquisition,
+        url_result_id=9,
+    )
+
+    row = batch.records[0]
+    assert row.raw_data in (None, {})
+    assert row.discovered_data in (None, {})
+    assert row.source_trace in (None, {})
+    assert row.raw_html_path is None
+    assert batch.provenance[0]["raw_data"] == raw_record
 
 
 def test_persisted_record_batch_separates_writes_from_authoritative_count() -> None:

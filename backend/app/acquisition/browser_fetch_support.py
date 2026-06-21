@@ -12,6 +12,7 @@ from app.acquisition.browser_diagnostics import (
 from app.acquisition.browser_page_helpers import dismiss_safe_location_interstitial
 from app.acquisition.runtime import PageFetchResult, copy_headers
 from app.core.shared.field_coerce import clean_text
+from app.extraction.documents import HtmlDocument
 
 
 def browser_page_load_elapsed_ms(phase_timings_ms: Mapping[str, object]) -> int:
@@ -101,6 +102,11 @@ def build_browser_fetch_result(
         network_payloads=_network_payload_rows(finalized.get("network_payloads")),
         browser_diagnostics=diagnostics,
         artifacts=_mapping_value(finalized.get("artifacts")),
+        html_document=(
+            finalized.get("html_document")
+            if isinstance(finalized.get("html_document"), HtmlDocument)
+            else None
+        ),
     )
 
 
