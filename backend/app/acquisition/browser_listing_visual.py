@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+from html import escape
 import logging
+import re
 from typing import Any, TypedDict
 
 from patchright.async_api import Error as PlaywrightError
@@ -140,6 +142,45 @@ def _capture_args() -> dict[str, object]:
     }
 
 
+def listing_visual_elements_html(snapshot: object) -> str:
+    groups: dict[str, list[dict[str, object]]] = {}
+    if isinstance(snapshot, list):
+        for item in snapshot:
+            if isinstance(item, dict) and (href := " ".join(str(item.get("href") or "").split())):
+                groups.setdefault(href, []).append(item)
+    cards: list[str] = []
+    for index, (href, items) in enumerate(groups.items()):
+        labels: list[str] = []
+        images: list[str] = []
+        prices: list[str] = []
+        for item in items:
+            for key in ("title", "ariaLabel", "alt", "text"):
+                value = " ".join(str(item.get(key) or "").split())
+                prices.extend(
+                    price for price in re.findall(LISTING_VISUAL_PRICE_REGEX_PATTERN, value, re.I)
+                    if price not in prices
+                )
+                label = re.sub(
+                    LISTING_VISUAL_PRICE_REGEX_PATTERN, " ", value, flags=re.I
+                ).strip(" |-–—")
+                if label and label not in labels:
+                    labels.append(label)
+            src = " ".join(str(item.get("src") or "").split())
+            if src and src not in images:
+                images.append(src)
+        if not labels:
+            continue
+        escaped_href = escape(href, quote=True)
+        links = "".join(
+            f'<a href="{escaped_href}" title="{escape(label, quote=True)}">{escape(label)}</a>'
+            for label in labels
+        )
+        image_html = "".join(f'<img src="{escape(src, quote=True)}">' for src in images)
+        price_html = "".join(f'<span class="price">{escape(price)}</span>' for price in prices)
+        cards.append(f'<article data-product-id="visual-{index}">{links}{image_html}{price_html}</article>')
+    return f"<main>{''.join(cards)}</main>" if cards else ""
+
+
 def _normalize_snapshot(snapshot: object) -> list[ListingVisualElement]:
     if not isinstance(snapshot, list):
         return []
@@ -193,4 +234,8 @@ async def capture_listing_visual_elements(
     return [dict(item) for item in _normalize_snapshot(snapshot)]
 
 
-__all__ = ["ListingVisualElement", "capture_listing_visual_elements"]
+__all__ = [
+    "ListingVisualElement",
+    "capture_listing_visual_elements",
+    "listing_visual_elements_html",
+]

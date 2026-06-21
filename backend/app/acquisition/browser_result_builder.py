@@ -11,14 +11,12 @@ from patchright.async_api import Error as PlaywrightError
 from patchright.async_api import TimeoutError as PlaywrightTimeoutError
 
 from app.acquisition.browser_capture import is_response_closed_error
-from app.acquisition.browser_page_helpers import (
-    capture_listing_visual_elements as _capture_listing_visual_elements,
-    location_interstitial_detected,
-    object_int as _object_int,
-)
+from app.acquisition.browser_listing_visual import listing_visual_elements_html
+from app.acquisition.browser_page_helpers import capture_listing_visual_elements as _capture_listing_visual_elements, location_interstitial_detected, object_int as _object_int
 from app.acquisition.browser_readiness import analyze_html
 from app.acquisition.browser_recovery import capture_rendered_listing_fragments
 from app.acquisition.runtime import BlockPageClassification, copy_headers
+from app.core.config.extraction_recipes import ECOMMERCE_LISTING_VISUAL_ARTIFACT_ID, ECOMMERCE_LISTING_VISUAL_HTML_ARTIFACT_ID
 from app.core.config.runtime_settings import crawler_runtime_settings
 from app.extraction.documents import HtmlAnalysis
 from app.acquisition.platform_policy import resolve_platform_runtime_policy
@@ -473,8 +471,7 @@ class BrowserAcquisitionResultBuilder:
         return artifacts, capture_diagnostics
 
 async def _capture_listing_artifact_with_timeout(
-    operation,
-    *,
+    operation, *,
     stage: str,
     url: str,
     item_kind: str = "mapping",
@@ -614,7 +611,9 @@ def build_browser_artifacts(
     if rendered_listing_fragments is not None:
         artifacts["rendered_listing_fragments"] = rendered_listing_fragments
     if listing_visual_elements is not None:
-        artifacts["listing_visual_elements"] = listing_visual_elements
+        artifacts[ECOMMERCE_LISTING_VISUAL_ARTIFACT_ID] = listing_visual_elements
+        if visual_html := listing_visual_elements_html(listing_visual_elements):
+            artifacts[ECOMMERCE_LISTING_VISUAL_HTML_ARTIFACT_ID] = visual_html
     if traversal_result is not None and traversal_result.activated:
         artifacts["traversal_composed_html"] = traversal_result.compose_html()
         artifacts["full_rendered_html"] = rendered_html

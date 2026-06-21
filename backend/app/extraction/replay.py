@@ -3,6 +3,11 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from app.core.config.extraction_recipes import (
+    ECOMMERCE_LISTING_FRAGMENT_ARTIFACT_ID,
+    ECOMMERCE_LISTING_VISUAL_HTML_ARTIFACT_ID,
+)
+
 from app.extraction.contracts import (
     ArtifactRef,
     CaptureBundle,
@@ -66,6 +71,17 @@ def fixture_bundle_from_inputs(html: str, page_url: str, requested_url: str | No
     if css_rules:
         payloads["css_field_rules"] = css_rules
         refs.append(ArtifactRef(artifact_id="css_field_rules", artifact_type="css_recipe", content_sha256=content_sha256(json.dumps(css_rules, sort_keys=True, default=str)), storage_uri="memory://css_field_rules", media_type="application/json"))
+    listing_artifacts = artifacts or {}
+    fragments = listing_artifacts.get(ECOMMERCE_LISTING_FRAGMENT_ARTIFACT_ID)
+    fragment_values = [str(value).strip() for value in fragments if str(value or "").strip()] if isinstance(fragments, list) else []
+    visual_html = str(listing_artifacts.get(ECOMMERCE_LISTING_VISUAL_HTML_ARTIFACT_ID) or "").strip()
+    for artifact_id, artifact_html in (
+        (ECOMMERCE_LISTING_FRAGMENT_ARTIFACT_ID, f"<main>{''.join(fragment_values)}</main>" if fragment_values else ""),
+        (ECOMMERCE_LISTING_VISUAL_HTML_ARTIFACT_ID, visual_html),
+    ):
+        if artifact_html:
+            payloads[artifact_id] = artifact_html
+            refs.append(ArtifactRef(artifact_id=artifact_id, artifact_type="rendered_html", content_sha256=content_sha256(artifact_html), storage_uri=f"memory://{artifact_id}", media_type="text/html"))
     bundle = CaptureBundle(schema_version="capture.v1", bundle_id=stable_id("bundle", requested_url or page_url, page_url, html[:80]), run_id=0, requested_url=requested_url or page_url, final_url=page_url, request_context=RequestContext(context_id=stable_id("ctx", requested_url or page_url)), artifacts=tuple(refs), acquisition_outcome="ok")
     return bundle, MemoryArtifactReader(
         payloads,

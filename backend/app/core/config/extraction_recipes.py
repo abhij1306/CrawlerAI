@@ -2,6 +2,9 @@ from __future__ import annotations
 
 ECOMMERCE_LISTING_CARD_SELECTORS: tuple[str, ...] = (
     "[data-product-id]",
+    "[data-cnstrc-item-id]",
+    "[data-cnstrc-item-name]",
+    "[data-tile-type='product' i]",
     "[data-testid*='product' i]",
     "[class~='product']",
     "[class*='product-card' i]",
@@ -20,6 +23,14 @@ ECOMMERCE_LISTING_SCOPE_SELECTORS: tuple[str, ...] = (
 )
 
 ECOMMERCE_LISTING_GENERIC_CARD_SELECTORS = frozenset({"article", "li"})
+ECOMMERCE_LISTING_FRAGMENT_ARTIFACT_ID = "rendered_listing_fragments"
+ECOMMERCE_LISTING_VISUAL_ARTIFACT_ID = "listing_visual_elements"
+ECOMMERCE_LISTING_VISUAL_HTML_ARTIFACT_ID = "listing_visual_html"
+ECOMMERCE_LISTING_HTML_ARTIFACT_IDS = (
+    "html",
+    ECOMMERCE_LISTING_FRAGMENT_ARTIFACT_ID,
+    ECOMMERCE_LISTING_VISUAL_HTML_ARTIFACT_ID,
+)
 
 ECOMMERCE_LISTING_TITLE_SELECTORS: tuple[str, ...] = (
     "[data-testid*='title' i]",

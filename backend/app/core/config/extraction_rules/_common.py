@@ -283,6 +283,7 @@ LISTING_UTILITY_URL_TOKENS = (
     "/checkout",
     "/file-download",
     "/gift-registry",
+    "/help/",
     "/login",
     "/legal",
     "/mcp-tools",
@@ -298,7 +299,18 @@ LISTING_UTILITY_URL_TOKENS = (
     "/api/",
     "/docs",
 )
-LISTING_WEAK_TITLES = frozenset({"product", "item", "image", "details"})
+LISTING_WEAK_TITLES = frozenset(
+    {
+        "best seller",
+        "bestseller",
+        "details",
+        "image",
+        "item",
+        "new color",
+        "new colour",
+        "product",
+    }
+)
 LOW_CONTENT_SHELL_PHRASES = (
     "enable javascript",
     "just a moment",

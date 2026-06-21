@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from app.core.config import settings
+from app.core.config.extraction_recipes import ECOMMERCE_LISTING_VISUAL_HTML_ARTIFACT_ID
 from app.persistence.artifacts import ArtifactRepository
 from app.persistence.contracts import (
     ArtifactManifest,
@@ -179,6 +180,7 @@ def _persist_runtime_artifacts(
     text_artifacts = {
         "traversal_composed_html": "traversal.html",
         "full_rendered_html": "rendered.html",
+        ECOMMERCE_LISTING_VISUAL_HTML_ARTIFACT_ID: "listing-visual.html",
     }
     json_artifacts = {
         "rendered_listing_fragments": "listing-fragments.json",

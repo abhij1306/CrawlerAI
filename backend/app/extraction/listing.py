@@ -7,6 +7,7 @@ from urllib.parse import urljoin, urlparse
 from app.core.config.extraction_recipes import (
     ECOMMERCE_LISTING_CARD_SELECTORS,
     ECOMMERCE_LISTING_GENERIC_CARD_SELECTORS,
+    ECOMMERCE_LISTING_HTML_ARTIFACT_IDS,
     ECOMMERCE_LISTING_IMAGE_SELECTORS,
     ECOMMERCE_LISTING_PRICE_SELECTORS,
     ECOMMERCE_LISTING_SCOPE_SELECTORS,
@@ -43,47 +44,28 @@ from app.core.records.field_url_normalization import same_site
 from app.core.records.url_identity import listing_detail_like_path, listing_url_is_structural
 
 
-def collect_ecommerce_listing(
-    bundle: CaptureBundle,
-    reader: ArtifactReader,
-) -> list[Evidence]:
-    doc = reader.document_store.html("html")
-    return _collect_listing_evidence(bundle, doc, page_url=bundle.final_url)
+def collect_ecommerce_listing(bundle: CaptureBundle, reader: ArtifactReader) -> list[Evidence]:
+    rows: list[Evidence] = []
+    for artifact_id in ECOMMERCE_LISTING_HTML_ARTIFACT_IDS:
+        if reader.exists(artifact_id):
+            doc = reader.document_store.html(artifact_id)
+            rows.extend(_collect_listing_evidence(bundle, doc, page_url=bundle.final_url))
+    return rows
 
 
 def resolve_ecommerce_listing(evidence_rows: list[Evidence]) -> list[Decision]:
     return _resolve_listing_decisions(evidence_rows)
 
 
-def materialize_ecommerce_listing(
-    evidence_rows: list[Evidence],
-    decisions: list[Decision],
-    *,
-    max_records: int,
-) -> list[CommerceListingRecord]:
-    return [
-        CommerceListingRecord.model_validate(row)
-        for row in _materialize_listing_records(
-            evidence_rows,
-            decisions,
-            max_records=max_records,
-        )
-    ]
+def materialize_ecommerce_listing(evidence_rows: list[Evidence], decisions: list[Decision], *, max_records: int) -> list[CommerceListingRecord]:
+    rows = _materialize_listing_records(evidence_rows, decisions, max_records=max_records)
+    return [CommerceListingRecord.model_validate(row) for row in rows]
 
 
-def _collect_listing_evidence(
-    bundle: CaptureBundle,
-    doc: HtmlDocument,
-    *,
-    page_url: str,
-) -> list[Evidence]:
+def _collect_listing_evidence(bundle: CaptureBundle, doc: HtmlDocument, *, page_url: str) -> list[Evidence]:
     rows: list[Evidence] = []
     seen_cards: set[str] = set()
-    scopes = tuple(
-        node
-        for selector in ECOMMERCE_LISTING_SCOPE_SELECTORS
-        for node in doc.safe_css(selector)
-    ) or (doc,)
+    scopes = tuple(node for selector in ECOMMERCE_LISTING_SCOPE_SELECTORS for node in doc.safe_css(selector)) or (doc,)
     for selector in ECOMMERCE_LISTING_CARD_SELECTORS:
         for scope in scopes:
             for index, card in enumerate(scope.safe_css(selector)):
@@ -93,16 +75,9 @@ def _collect_listing_evidence(
                 if card_key in seen_cards:
                     continue
                 seen_cards.add(card_key)
-                subject_id = stable_id("subject", bundle.bundle_id, "product", len(seen_cards))
-                card_rows = _card_evidence(
-                    bundle,
-                    card,
-                    page_url=page_url,
-                    subject_id=subject_id,
-                    card_selector=selector,
-                    card_index=index,
-                )
-                if _has_required_listing_facts(card_rows):
+                subject_id = stable_id("subject", bundle.bundle_id, doc.artifact_id, "product", len(seen_cards))
+                card_rows = _card_evidence(bundle, card, page_url=page_url, subject_id=subject_id, card_selector=selector, card_index=index)
+                if {"product.title", "product.url"} <= {row.fact_type for row in card_rows}:
                     rows.extend(card_rows)
     return rows
 
@@ -118,17 +93,9 @@ def _card_evidence(
 ) -> list[Evidence]:
     rows: list[Evidence] = []
     selector_price = _first_price(card)
-    strong_card = (
-        card_selector not in ECOMMERCE_LISTING_GENERIC_CARD_SELECTORS
-        or selector_price is not None
-        or _node_has_image(card)
-    )
+    strong_card = card_selector not in ECOMMERCE_LISTING_GENERIC_CARD_SELECTORS or selector_price is not None or _node_has_image(card)
     price = selector_price or _first_price(card, allow_text_scan=strong_card)
-    product_link, product_url = _listing_product_link(
-        card,
-        page_url=page_url,
-        strong_card=strong_card,
-    )
+    product_link, product_url = _listing_product_link(card, page_url=page_url, strong_card=strong_card)
     image_url = _first_image(card)
     title = _listing_product_title(card, product_link) if product_url else None
     absolute_image_url = urljoin(page_url, image_url) if image_url else None
@@ -140,20 +107,8 @@ def _card_evidence(
     ):
         if not value:
             continue
-        rows.append(
-            _listing_evidence(
-                bundle,
-                fact_type=fact_type,
-                value=value,
-                subject_id=subject_id,
-                locator=SourceLocator(
-                    kind="css_selector",
-                    value=f"{card_selector}:nth-match({card_index + 1}) {selector}",
-                    preview=str(value)[:120],
-                ),
-                confidence=confidence,
-            )
-        )
+        locator = SourceLocator(kind="css_selector", value=f"{card_selector}:nth-match({card_index + 1}) {selector}", preview=str(value)[:120])
+        rows.append(_listing_evidence(bundle, artifact_id=card.artifact_id, fact_type=fact_type, value=value, subject_id=subject_id, locator=locator, confidence=confidence))
     return rows
 
 
@@ -208,6 +163,7 @@ def _listing_product_link(
 def _listing_evidence(
     bundle: CaptureBundle,
     *,
+    artifact_id: str,
     fact_type: str,
     value: object,
     subject_id: str,
@@ -215,29 +171,8 @@ def _listing_evidence(
     confidence: float,
 ) -> Evidence:
     entity_type = "offer" if fact_type.startswith("offer.") else "asset" if fact_type.startswith("asset.") else "product"
-    return evidence(
-        bundle,
-        "html",
-        "ecommerce_listing_css",
-        fact_type,
-        value,
-        locator,
-        group_id=subject_id,
-        hint=EntityHint(entity_type=entity_type),  # type: ignore[arg-type]
-        confidence=confidence,
-    ).model_copy(
-        update={
-            "surface": Surface.ECOMMERCE_LISTING,
-            "subject_id": subject_id,
-            "parent_subject_id": None,
-            "directness": "direct",
-        }
-    )
-
-
-def _has_required_listing_facts(rows: list[Evidence]) -> bool:
-    facts = {row.fact_type for row in rows}
-    return "product.title" in facts and "product.url" in facts
+    row = evidence(bundle, artifact_id, "ecommerce_listing_css", fact_type, value, locator, group_id=subject_id, hint=EntityHint(entity_type=entity_type), confidence=confidence)  # type: ignore[arg-type]
+    return row.model_copy(update={"surface": Surface.ECOMMERCE_LISTING, "subject_id": subject_id, "parent_subject_id": None, "directness": "direct"})
 
 
 def _resolve_listing_decisions(evidence_rows: list[Evidence]) -> list[Decision]:
@@ -283,12 +218,7 @@ def _materialize_listing_records(
     by_id = {row.evidence_id: row for row in evidence_rows}
     rows_by_subject: dict[str, dict[str, Any]] = {}
     lineage_by_subject: dict[str, dict[str, object]] = {}
-    field_map = {
-        "product.title": "title",
-        "product.url": "url",
-        "offer.price": "price",
-        "asset.image_url": "image_url",
-    }
+    field_map = {"product.title": "title", "product.url": "url", "offer.price": "price", "asset.image_url": "image_url"}
     for decision in decisions:
         field = field_map.get(decision.fact_type)
         if not field or not decision.accepted_evidence_ids:
@@ -338,31 +268,31 @@ def _first_admissible_attribute(node: HtmlNode) -> str | None:
     return None
 
 
-def _first_admissible_text(
-    scope: HtmlNode,
-    selectors: tuple[str, ...],
-) -> str | None:
+def _first_admissible_text(scope: HtmlNode, selectors: tuple[str, ...]) -> str | None:
     for selector in selectors:
-        node = scope.css_first(selector)
-        if node is None or node.is_hidden():
-            continue
-        text = _clean_text(node.attribute("title") or node.text(separator=" ", strip=True))
-        if _admissible_listing_title(text, node):
-            return text
+        for node in scope.css(selector):
+            if node.is_hidden():
+                continue
+            text = _clean_text(node.attribute("title") or node.text(separator=" ", strip=True))
+            if _admissible_listing_title(text, node):
+                return text
     return None
 
 
 def _admissible_listing_title(value: str | None, node: HtmlNode) -> bool:
-    if not value or _title_node_is_control(node):
+    return not _title_node_is_control(node) and _admissible_listing_text(value)
+
+
+def _admissible_listing_text(value: str | None) -> bool:
+    if not value:
         return False
     normalized = value.casefold().strip()
-    if normalized in (
-        LISTING_TITLE_CTA_TITLES
-        | LISTING_NAVIGATION_TITLE_HINTS
-        | LISTING_WEAK_TITLES
-    ):
+    if re.fullmatch(LISTING_VISUAL_PRICE_REGEX_PATTERN, value.strip(), re.IGNORECASE):
         return False
-    return not any(re.search(pattern, normalized) for pattern in LISTING_UTILITY_TITLE_PATTERNS)
+    rejected = LISTING_TITLE_CTA_TITLES | LISTING_NAVIGATION_TITLE_HINTS | LISTING_WEAK_TITLES
+    return normalized not in rejected and not any(
+        re.search(pattern, normalized) for pattern in LISTING_UTILITY_TITLE_PATTERNS
+    )
 
 
 def _title_node_is_control(node: HtmlNode) -> bool:
@@ -387,10 +317,7 @@ def _first_image(card: HtmlNode) -> str | None:
 
 
 def _node_has_image(node: HtmlNode) -> bool:
-    return any(
-        node.css_first(image_selector) is not None
-        for image_selector in ECOMMERCE_LISTING_IMAGE_SELECTORS
-    )
+    return any(node.css_first(selector) is not None for selector in ECOMMERCE_LISTING_IMAGE_SELECTORS)
 
 
 def _link_has_title_signal(link: HtmlNode) -> bool:
@@ -419,21 +346,18 @@ def _first_price(card: HtmlNode, *, allow_text_scan: bool = False) -> str | None
 
 
 def _clean_text(value: object) -> str | None:
-    text = re.sub(r"\s+", " ", str(value or "")).strip()
-    return text or None
+    return re.sub(r"\s+", " ", str(value or "")).strip() or None
 
 
 def _clean_price(value: object) -> str | None:
-    text = _clean_text(value)
-    if not text:
-        return None
-    match = re.search(r"([$€£₹]?\s*\d[\d,]*(?:\.\d{1,2})?)", text)
-    return match.group(1).replace(",", "").strip() if match else None
+    if text := _clean_text(value):
+        match = re.search(r"([$€£₹]?\s*\d[\d,]*(?:\.\d{1,2})?)", text)
+        return match.group(1).replace(",", "").strip() if match else None
+    return None
 
 
 def _clean_visual_price(value: object) -> str | None:
-    text = _clean_text(value)
-    if not text:
-        return None
-    match = re.search(LISTING_VISUAL_PRICE_REGEX_PATTERN, text)
-    return match.group(0).replace(",", "").strip() if match else None
+    if text := _clean_text(value):
+        match = re.search(LISTING_VISUAL_PRICE_REGEX_PATTERN, text)
+        return match.group(0).replace(",", "").strip() if match else None
+    return None

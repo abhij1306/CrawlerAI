@@ -4,6 +4,8 @@ import pytest
 from pydantic import ValidationError
 
 from app.acquisition.acquirer import AcquisitionRequest, PageAcquisitionResult
+from app.acquisition.browser_listing_visual import listing_visual_elements_html
+from app.acquisition.browser_result_builder import build_browser_artifacts
 from app.acquisition.runtime_plan import AcquisitionIntent
 from app.extraction import Surface, extract
 from app.extraction.contracts import CommerceDetailRecord, ExtractionRequest
@@ -211,6 +213,30 @@ def test_jsonld_aggregate_offer_low_price_materializes() -> None:
 
 def test_extraction_request_has_no_artifact_payloads_field() -> None:
     assert "artifact_payloads" not in ExtractionRequest.model_fields
+
+
+def test_listing_visual_capture_builds_extractable_html_artifact() -> None:
+    product_url = "https://shop.test/p/classic-pants/SKU123.html"
+    rows = [
+        {"href": product_url, "ariaLabel": "View product"},
+        {"href": product_url, "src": "https://shop.test/classic.jpg", "alt": "Classic Pants"},
+        {"href": product_url, "text": "$42.95"},
+    ]
+
+    expected = listing_visual_elements_html(rows)
+    artifacts = build_browser_artifacts(
+        screenshot_path="",
+        traversal_result=None,
+        html="",
+        rendered_html=None,
+        rendered_listing_fragments=[],
+        listing_visual_elements=rows,
+    )
+
+    assert artifacts["listing_visual_html"] == expected
+    assert f'href="{product_url}"' in expected
+    assert "Classic Pants" in expected
+    assert "$42.95" in expected
 
 
 def test_runtime_capture_bundle_uses_acquisition_metadata() -> None:
@@ -710,8 +736,7 @@ def test_ecommerce_listing_reads_product_tile_metadata_after_image_link() -> Non
         "ecommerce_listing",
         """
         <main>
-          <article
-            class="product-tile"
+          <div
             data-tile-type="product"
             data-cnstrc-item-name="Classic Fit Pants"
             data-cnstrc-item-id="SKU123"
@@ -722,7 +747,7 @@ def test_ecommerce_listing_reads_product_tile_metadata_after_image_link() -> Non
             <a href="/p/classic-fit-pants/SKU123.html">Classic Fit Pants</a>
             <span>31-Inch Inseam</span>
             <span>$42.95</span>
-          </article>
+          </div>
         </main>
         """,
         "https://shop.test/men/pants/",
@@ -737,6 +762,35 @@ def test_ecommerce_listing_reads_product_tile_metadata_after_image_link() -> Non
         result.records[0]["image_url"]
         == "https://shop.test/images/classic-fit-pants.jpg"
     )
+
+
+def test_ecommerce_listing_uses_browser_visual_artifact_when_html_has_no_cards() -> None:
+    product_url = "https://shop.test/p/classic-fit-pants/SKU123.html"
+    result = _extract(
+        "ecommerce_listing",
+        "<main><h1>Men's Pants</h1></main>",
+        "https://shop.test/men/pants/",
+        max_records=5,
+        artifacts={
+            "listing_visual_html": (
+                '<main><article data-product-id="visual-0">'
+                f'<a href="{product_url}" title="View product">View product</a>'
+                f'<a href="{product_url}" title="Classic Fit Pants">Classic Fit Pants</a>'
+                '<img src="https://shop.test/images/classic-fit-pants.jpg">'
+                '<span class="price">$42.95</span>'
+                '</article></main>'
+            )
+        },
+    )
+
+    assert len(result.records) == 1
+    assert result.records[0]["title"] == "Classic Fit Pants"
+    assert result.records[0]["url"] == product_url
+    assert result.records[0]["price"] == "$42.95"
+    assert result.records[0]["image_url"] == (
+        "https://shop.test/images/classic-fit-pants.jpg"
+    )
+    assert {row.artifact_id for row in result.evidence} == {"listing_visual_html"}
 
 
 def test_ecommerce_listing_accepts_same_site_subdomain_detail_url() -> None:
@@ -807,12 +861,36 @@ def test_ecommerce_listing_uses_title_from_product_link_scope() -> None:
     assert [row["title"] for row in result.records] == ["Linen Pant"]
 
 
+@pytest.mark.parametrize("badge", ("New colour", "Best seller"))
+def test_ecommerce_listing_skips_merchandising_badge_for_product_title(
+    badge: str,
+) -> None:
+    result = _extract(
+        "ecommerce_listing",
+        f"""
+        <main>
+          <article class="product-card">
+            <a href="/shop/mens/kragg-shoe-0078"><span>{badge}</span></a>
+            <a href="/shop/mens/kragg-shoe-0078"><h2>Kragg Shoe Men's</h2></a>
+            <img src="/images/kragg-shoe.jpg">
+            <span class="price">$180.00</span>
+          </article>
+        </main>
+        """,
+        "https://shop.test/ca/en/c/mens/footwear",
+        max_records=5,
+    )
+
+    assert [row["title"] for row in result.records] == ["Kragg Shoe Men's"]
+
+
 def test_ecommerce_listing_rejects_utility_url_families() -> None:
     utility_paths = (
         "/support/product-care",
         "/legal/accessibility",
         "/stores/city-directory",
         "/gift-registry/create",
+        "/ca/en/help/product-care",
         "/mobile-app/download",
         "/athletes/team",
         "/ambassadors/join",
