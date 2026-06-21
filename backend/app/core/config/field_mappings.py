@@ -380,6 +380,13 @@ ECOMMERCE_JSONLD_OFFER_FACT_TYPES = {
     "priceCurrency": "offer.currency",
     "seller": "offer.seller",
 }
+ECOMMERCE_JSONLD_VARIANT_FACT_TYPES = {
+    "sku": "variant.sku",
+    "gtin": "variant.gtin",
+    "url": "variant.url",
+    "color": "variant.option.color",
+    "size": "variant.option.size",
+}
 REQUESTED_FIELD_DOM_SELECTOR_TEMPLATES = (
     '[itemprop="{field}"]',
     '[data-field="{field}"]',

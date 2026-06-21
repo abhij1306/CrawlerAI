@@ -3,7 +3,7 @@
 **Created:** 2026-06-21
 **Agent:** Codex
 **Status:** IN PROGRESS
-**Current slice:** Slice 6 — Offer Integrity, Variant Completeness, and Honest Diagnostics
+**Current slice:** Slice 7 — Canonical Provenance and Legacy Column Retirement
 **Touches buckets:** acquisition/browser runtime, extraction and public record contracts, persistence/artifacts/review, crawl orchestration, core config/record quality, intelligence, enrichment, connectors, tests, canonical architecture docs
 
 ## Goal
@@ -725,7 +725,7 @@ $env:PYTHONPATH='.'
 
 ### Slice 6: Offer Integrity, Variant Completeness, and Honest Diagnostics
 
-**Status:** TODO — NEXT
+**Status:** DONE — VERIFIED 2026-06-21
 **Owners:** `extraction/collectors/js_state.py`, `jsonld.py`, `dom.py`, `entities.py`, `resolution.py`, `validation.py`, `materialization.py`, `result_building.py`, existing variant/config owners
 **Fallback docs:** `docs/INVARIANTS.md` Rule 3 first, then Rules 6, 7, 13; `docs/ENGINEERING_STRATEGY.md` AP-12/AP-20.
 **Known audited scope:** all early returns, recursive object traversal, variant identity/grouping, parent/variant offers, price/currency pairing, selected-variant references, DOM cue gates, and capability requests.
@@ -1014,3 +1014,13 @@ If the gate passes, mark this plan `DONE` and update `ACTIVE.md` to `No active p
 - Recompute only the slice's file/function counts after edits; recompute the full ledger in Slice 12.
 - Do not mark a slice done from code inspection alone. Run its exact verify command.
 - Stop after one coherent slice. Record files changed, deletions, test result, LOC delta, remaining debt, and next slice here.
+
+### Slice 6 completion note — 2026-06-21
+
+- Fixed still-valid review findings in traversal pagination diagnostics, JSON-LD variant mapping config ownership, test return annotation style, and frontend crawl route sync import semantics.
+- Implemented Slice 6 guards in existing owners: non-positive offer prices are rejected with `NON_POSITIVE_PRICE`; ID/URL-only variants are omitted from public rows and surfaced as `INCOMPLETE_VARIANT_EVIDENCE`; parent availability aggregation requires a complete public variant matrix; explicit variant browser retry now requires captured DOM option cues.
+- Files changed: `backend/app/acquisition/traversal_steps.py`, `backend/app/core/config/field_mappings.py`, `backend/app/extraction/collectors/dom.py`, `backend/app/extraction/collectors/jsonld.py`, `backend/app/extraction/engine.py`, `backend/app/extraction/materialization.py`, `backend/app/extraction/resolution.py`, `backend/app/extraction/result_building.py`, `backend/app/extraction/validation.py`, `backend/tests/unit/test_extraction_pipeline.py`, `frontend/components/crawl/use-crawl-route-sync.ts`, `docs/plans/ACTIVE.md`, and this plan.
+- Deletions: none. Production diff is bounded to existing owners plus one config mapping.
+- Verify passed: Slice 6 exact command `82 passed`; backend Ruff `app tests` passed; scoped Mypy passed for changed backend app files; frontend `npm.cmd run typecheck`, `npm.cmd run lint`, and `npm.cmd run format:check` passed.
+- Remaining debt: no Slice 6-specific test failure remains. Architecture debt ledger still continues with Slice 7 provenance and later slices.
+- Next slice: Slice 7 — Canonical Provenance and Legacy Column Retirement.

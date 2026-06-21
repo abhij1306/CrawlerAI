@@ -3,7 +3,7 @@
 **Current:** Final Architecture Debt Burn-Down and Crawl Quality Closure → `docs/plans/final-architecture-debt-burndown-plan.md`
 **Status:** IN PROGRESS
 **Started:** 2026-06-21
-**Current slice:** Slice 6 — Offer Integrity, Variant Completeness, and Honest Diagnostics
+**Current slice:** Slice 7 — Canonical Provenance and Legacy Column Retirement
 
 ## Queue
 
@@ -19,6 +19,7 @@
 - Slice 3 completed on 2026-06-21: exact verification `83 passed`; changed-file Ruff and mypy passed.
 - Slice 4 completed on 2026-06-21: exact verification `75 passed`; full offline unit/component/regression suite passed with `985 passed, 1 deselected`; repo-wide Ruff, Mypy, and Prettier passed.
 - Slice 5 completed on 2026-06-21: exact verification `92 passed`; full offline unit/component/regression suite passed with `988 passed, 1 deselected`; repo-wide Ruff, Mypy, and frontend Prettier passed.
+- Slice 6 completed on 2026-06-21: exact verification `82 passed`; backend Ruff and scoped Mypy passed; frontend typecheck, lint, and Prettier check passed.
 - Slice 2 completed on 2026-06-21: exact verification `247 passed`; changed-file Ruff and mypy passed. Recursive acquisition LOC remains above the final package budget and is recorded in the active plan.
 - `docs/plans/final-architecture-improvement-plan.md` was superseded on 2026-06-21. Verified results and unresolved debt were audited into the active standalone plan.
 - The Full Backend Extraction Rebuild plan was superseded on 2026-06-19. Live acceptance now belongs only to Slice 13 of the active plan.

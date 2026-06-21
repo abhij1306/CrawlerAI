@@ -290,6 +290,9 @@ async def advance_paginate(
                 wait_until="domcontentloaded",
                 timeout=timeout_ms,
             )
+        except (PlaywrightError, PlaywrightTimeoutError):
+            return TraversalStep("paginate_navigation_failed")
+        try:
             await wait_for_transition(
                 page,
                 previous_url=current_url,
@@ -297,7 +300,7 @@ async def advance_paginate(
                 deadline_at=deadline_at,
             )
         except (PlaywrightError, PlaywrightTimeoutError):
-            return TraversalStep("paginate_navigation_failed")
+            return TraversalStep("paginate_transition_timeout")
     else:
         if not await click_with_retry(
             page,

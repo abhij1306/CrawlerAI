@@ -113,7 +113,7 @@ def _requested_node_value(node, fact_type: str) -> str:
 def _variant_controls(bundle: CaptureBundle, doc, product_subject: str) -> list[Evidence]:
     out: list[Evidence] = []
     for axis, selectors in {
-        "size": ('select[name*="size" i] option', '[data-option-name*="size" i]', '[aria-label*="size" i]'),
+        "size": ('select[name*="size" i] option', 'select option', '[data-option-name*="size" i]', '[aria-label*="size" i]'),
         "color": ('select[name*="color" i] option', '[data-option-name*="color" i]', '[aria-label*="color" i]'),
     }.items():
         seen: set[str] = set()

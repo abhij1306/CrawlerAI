@@ -81,7 +81,13 @@ def materialize(
     if variants:
         record["variants"] = variants
         lineages["variants"] = variant_lineage
-        _cohere_parent_availability(record, lineages, variants, variant_lineage)
+        _cohere_parent_availability(
+            record,
+            lineages,
+            variants,
+            variant_lineage,
+            expected_variant_count=len(entities.variants),
+        )
     if lineages:
         record["_lineage"] = lineages
     if selector_traces:
@@ -94,7 +100,11 @@ def _cohere_parent_availability(
     lineages: dict[str, object],
     variants: list[dict[str, object]],
     variant_lineage: list[dict[str, object]],
+    *,
+    expected_variant_count: int,
 ) -> None:
+    if len(variants) != expected_variant_count:
+        return
     availability = [str(row.get("availability") or "") for row in variants]
     if not availability or any(value not in {"in_stock", "out_of_stock"} for value in availability):
         return
@@ -147,7 +157,7 @@ def _variants(
             offer_by_variant.get(variant.entity_id),
             asset_by_variant.get(variant.entity_id),
         )
-        if row:
+        if _publishable_variant_row(variant, row):
             rows.append(row)
             lineage_rows.append(lineage_row)
     ordered = sorted(
@@ -160,6 +170,21 @@ def _variants(
         ),
     )
     return [row for row, _ in ordered], [item for _, item in ordered]
+
+
+def _publishable_variant_row(variant, row: dict[str, object]) -> bool:
+    if not variant.identity_key:
+        return False
+    return _has_variant_option(row) or _has_variant_commercial_fact(row)
+
+
+def _has_variant_option(row: dict[str, object]) -> bool:
+    transport_fields = {"variant_id", "sku", "gtin", "url", "image_url", "price", "currency", "availability", "stock_quantity"}
+    return any(key not in transport_fields and value not in (None, "", [], {}, ()) for key, value in row.items())
+
+
+def _has_variant_commercial_fact(row: dict[str, object]) -> bool:
+    return any(row.get(field) not in (None, "", [], {}, ()) for field in ("price", "currency", "availability", "stock_quantity"))
 
 
 def _variant_public_row(variant, decisions, derived, by_id, offer, asset) -> tuple[dict[str, object], dict[str, object]]:

@@ -1141,9 +1141,7 @@ def test_job_detail_cutover_materializes_with_lineage() -> None:
     assert all(item.surface.value == "job_detail" for item in result.evidence)
 
 
-def test_job_detail_wrong_surface_product_returns_error_without_commerce_aliases() -> (
-    None
-):
+def test_job_detail_wrong_surface_product_returns_error_without_commerce_aliases() -> None:
     html = """
     <script type="application/ld+json">
     {
@@ -1313,6 +1311,93 @@ def test_parent_availability_is_coherent_with_complete_variant_matrix() -> None:
     )
 
 
+def test_incomplete_variant_identity_is_diagnostic_not_public_row() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "ProductGroup",
+          "name": "Everyday Tee",
+          "url": "https://shop.test/products/everyday-tee",
+          "offers": {"price": "20", "priceCurrency": "USD"},
+          "hasVariant": [
+            {"@type": "Product", "url": "https://shop.test/products/everyday-tee?variant=1"}
+          ]
+        }
+        </script>
+        """,
+        "https://shop.test/products/everyday-tee",
+    )
+    assert not result.records[0].get("variants")
+    assert any(
+        finding.rule_id == "INCOMPLETE_VARIANT_EVIDENCE"
+        for finding in result.findings
+    )
+
+
+def test_non_positive_price_is_not_successful_public_price() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "Product",
+          "name": "Trial Pack",
+          "url": "https://shop.test/products/trial-pack",
+          "offers": {"price": "0.00", "priceCurrency": "USD"}
+        }
+        </script>
+        """,
+        "https://shop.test/products/trial-pack",
+    )
+    assert result.records[0].get("price") is None
+    assert result.verdict != "success"
+    assert any(finding.rule_id == "NON_POSITIVE_PRICE" for finding in result.findings)
+
+
+def test_parent_availability_does_not_override_incomplete_variant_matrix() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "ProductGroup",
+          "name": "Everyday Tee",
+          "url": "https://shop.test/products/everyday-tee",
+          "offers": {
+            "price": "20",
+            "priceCurrency": "USD",
+            "availability": "https://schema.org/OutOfStock"
+          },
+          "hasVariant": [
+            {
+              "@type": "Product",
+              "sku": "TEE-S",
+              "size": "S",
+              "offers": {
+                "price": "20",
+                "priceCurrency": "USD",
+                "availability": "https://schema.org/InStock"
+              }
+            },
+            {"@type": "Product", "url": "https://shop.test/products/everyday-tee?variant=2"}
+          ]
+        }
+        </script>
+        """,
+        "https://shop.test/products/everyday-tee",
+    )
+    assert result.records[0]["availability"] == "out_of_stock"
+    assert (
+        result.records[0]["_lineage"]["availability"]["rule_id"]
+        != "variant_availability_aggregate"
+    )
+
+
 def test_detail_url_falls_back_to_canonical_capture_url() -> None:
     canonical_url = "https://shop.test/products/trail-shoe"
     result = _extract(
@@ -1467,3 +1552,16 @@ def test_missing_requested_variants_requests_one_rendered_capability() -> None:
     assert result.retry_request is not None
     assert result.retry_request.reason == "explicit_variants_missing"
     assert result.retry_request.max_attempts == 1
+
+
+def test_missing_requested_variants_without_dom_cues_does_not_request_browser() -> None:
+    result = extract(
+        fixture_request_from_inputs(
+            Surface.ECOMMERCE_DETAIL,
+            "<main><h1>Everyday Tee</h1></main>",
+            "https://shop.test/products/everyday-tee",
+            requested_fields=("variants",),
+        )
+    )
+    assert not result.records[0].get("variants")
+    assert result.retry_request is None

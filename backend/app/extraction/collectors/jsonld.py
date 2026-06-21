@@ -6,6 +6,7 @@ from urllib.parse import parse_qs, urlsplit
 from app.core.config.field_mappings import (
     ECOMMERCE_JSONLD_OFFER_FACT_TYPES,
     ECOMMERCE_JSONLD_PRODUCT_FACT_TYPES,
+    ECOMMERCE_JSONLD_VARIANT_FACT_TYPES,
 )
 from app.core.config.extraction_rules import (
     VARIANT_JSONLD_NAME_OPTION_SEPARATOR,
@@ -160,13 +161,7 @@ def _variants(
         )
         group = f"variant:{artifact_id}:{path}/hasVariant/{index}"
         subject_id = group
-        for key, fact in {
-            "sku": "variant.sku",
-            "gtin": "variant.gtin",
-            "url": "variant.url",
-            "color": "variant.option.color",
-            "size": "variant.option.size",
-        }.items():
+        for key, fact in ECOMMERCE_JSONLD_VARIANT_FACT_TYPES.items():
             value = _variant_color(row) if key == "color" else text_value(row.get(key))
             if value:
                 out.append(

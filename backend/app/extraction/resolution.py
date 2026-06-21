@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from decimal import Decimal, InvalidOperation
+
 from app.extraction.contracts import (
     AssetDecision,
     Decision,
@@ -314,6 +316,10 @@ def _derived(
 
 
 def _invalid(ev: Evidence) -> bool:
+    if ev.fact_type in {"offer.price", "offer.original_price"} and _non_positive_money(
+        ev.value
+    ):
+        return True
     return bool(
         set(ev.flags)
         & {
@@ -327,6 +333,13 @@ def _invalid(ev: Evidence) -> bool:
             "tracking_url",
         }
     )
+
+
+def _non_positive_money(value: object) -> bool:
+    try:
+        return Decimal(str(value)) <= 0
+    except (InvalidOperation, ValueError):
+        return False
 
 
 def _rank(

@@ -31,10 +31,11 @@ def retry_request(
     verdict: str,
     records: tuple[PublicRecord, ...],
     request: ExtractionRequest,
+    evidence: tuple[Evidence, ...] = (),
 ) -> RetryRequest | None:
     if "variants" in request.requested_fields and not any(
         record.get("variants") for record in records
-    ):
+    ) and _explicit_variant_dom_cues(evidence):
         return RetryRequest(
             required=not request.capture.browser_attempted,
             reason="explicit_variants_missing",
@@ -46,6 +47,13 @@ def retry_request(
         required=not request.capture.browser_attempted,
         reason="http_shell",
         required_artifacts=("rendered_html",),
+    )
+
+
+def _explicit_variant_dom_cues(evidence: tuple[Evidence, ...]) -> bool:
+    return any(
+        row.collector_id == "dom" and row.fact_type.startswith("option.")
+        for row in evidence
     )
 
 

@@ -86,18 +86,47 @@ def _validate_identity(
 
 
 def _validate_variants(entities: EntitySet) -> tuple[Finding, ...]:
+    out: list[Finding] = []
     keys = [variant.identity_key for variant in entities.variants]
     if any(count > 1 for count in Counter(keys).values()):
-        return (
+        out.append(
             _finding(
                 "DUPLICATE_VARIANT_IDENTITY",
                 tuple(v.entity_id for v in entities.variants),
                 (),
                 "Duplicate variant identity.",
                 True,
-            ),
+            )
         )
-    return ()
+    for variant in entities.variants:
+        if _publishable_variant(variant, entities):
+            continue
+        out.append(
+            _finding(
+                "INCOMPLETE_VARIANT_EVIDENCE",
+                (variant.entity_id,),
+                variant.identity_evidence_ids,
+                "Variant evidence has identity but no option or commercial fact.",
+                False,
+            )
+        )
+    return tuple(out)
+
+
+def _publishable_variant(variant, entities: EntitySet) -> bool:
+    if variant.option_values:
+        return True
+    commercial_facts = {
+        "offer.price",
+        "offer.currency",
+        "offer.availability",
+        "offer.stock_quantity",
+    }
+    return any(
+        offer.variant_entity_id == variant.entity_id
+        and bool(commercial_facts & set(offer.fact_evidence))
+        for offer in entities.offers
+    )
 
 
 def _validate_offers(
@@ -130,6 +159,16 @@ def _validate_offers(
             )
         current = _decimal(offer.fact_evidence.get("offer.price", ()), by_id)
         original = _decimal(offer.fact_evidence.get("offer.original_price", ()), by_id)
+        if current is not None and current <= 0:
+            out.append(
+                _finding(
+                    "NON_POSITIVE_PRICE",
+                    (offer.entity_id,),
+                    offer.fact_evidence.get("offer.price", ()),
+                    "Offer price must be positive.",
+                    False,
+                )
+            )
         if current is not None and original is not None and original < current:
             out.append(
                 _finding(

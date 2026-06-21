@@ -139,7 +139,7 @@ def extract(request: ExtractionRequest) -> ExtractionResult:
         decisions=decisions,
         records=records if verdict in {"success", "partial", "review"} else (),
         verdict=verdict,
-        retry_request=_retry_request(verdict, records, request),
+        retry_request=_retry_request(verdict, records, request, normalized),
         metrics=_metrics(normalized, graph, target, findings, decisions, records, verdict),
     )
 
