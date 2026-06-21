@@ -3,7 +3,7 @@
 **Current:** Final Architecture Debt Burn-Down and Crawl Quality Closure → `docs/plans/final-architecture-debt-burndown-plan.md`
 **Status:** IN PROGRESS
 **Started:** 2026-06-21
-**Current slice:** Slice 2 — Browser Runtime, Readiness, Interaction, and Traversal Debt
+**Current slice:** Slice 3 — Listing Discovery and Listing Card Integrity
 
 ## Queue
 
@@ -17,5 +17,6 @@
 
 ## Previously Completed
 
+- Slice 2 completed on 2026-06-21: exact verification `247 passed`; changed-file Ruff and mypy passed. Recursive acquisition LOC remains above the final package budget and is recorded in the active plan.
 - `docs/plans/final-architecture-improvement-plan.md` was superseded on 2026-06-21. Verified results and unresolved debt were audited into the active standalone plan.
 - The Full Backend Extraction Rebuild plan was superseded on 2026-06-19. Live acceptance now belongs only to Slice 13 of the active plan.

@@ -5,6 +5,7 @@ import logging
 import secrets
 import time
 from contextlib import suppress
+from dataclasses import dataclass
 from typing import Any, Callable
 
 from app.core.config.runtime_settings import crawler_runtime_settings
@@ -15,6 +16,144 @@ from app.core.config.selectors import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(slots=True)
+class _ChallengeRecoveryContext:
+    page: Any
+    url: str
+    response: Any
+    status_code: int
+    phase_timings_ms: dict[str, int]
+    elapsed_ms: Callable[[float], int]
+    classify_blocked_page: Any
+    get_page_html: Any
+    looks_like_low_content_shell: Any
+
+
+async def _run_before_deadline(
+    awaitable_factory: Callable[[], Any],
+    *,
+    deadline: float,
+) -> Any | None:
+    remaining_seconds = deadline - time.perf_counter()
+    if remaining_seconds <= 0:
+        return None
+    task = asyncio.create_task(awaitable_factory())
+    try:
+        return await asyncio.wait_for(task, timeout=remaining_seconds)
+    except asyncio.CancelledError:
+        task.cancel()
+        with suppress(asyncio.CancelledError):
+            await task
+        raise
+    except asyncio.TimeoutError:
+        if not task.done():
+            task.cancel()
+            with suppress(asyncio.CancelledError):
+                await task
+        return None
+
+
+async def _check_challenge_state(
+    context: _ChallengeRecoveryContext,
+) -> tuple[Any | None, bool]:
+    recovered_status = _recovered_html_status_code(context.status_code)
+    html = await context.get_page_html(context.page)
+    classification = await context.classify_blocked_page(html, recovered_status)
+    if _challenge_has_cleared(
+        html,
+        status_code=recovered_status,
+        classification=classification,
+        looks_like_low_content_shell=context.looks_like_low_content_shell,
+    ):
+        return _response_for_recovered_page(
+            context.response,
+            context.status_code,
+        ), False
+    return None, _is_terminal_hard_block(classification)
+
+
+async def _poll_challenge(
+    context: _ChallengeRecoveryContext,
+    *,
+    max_wait_seconds: float,
+    poll_ms: int,
+) -> tuple[Any | None, bool, float]:
+    started_at = time.perf_counter()
+    deadline = started_at + max_wait_seconds
+    terminal_hard_block = False
+    recovered = None
+    while time.perf_counter() < deadline:
+        state = await _run_before_deadline(
+            lambda: _check_challenge_state(context),
+            deadline=deadline,
+        )
+        if state is not None:
+            recovered, terminal_hard_block = state
+            if recovered is not None or terminal_hard_block:
+                break
+        await _run_before_deadline(
+            lambda: _emit_challenge_activity(context.page),
+            deadline=deadline,
+        )
+        state = await _run_before_deadline(
+            lambda: _check_challenge_state(context),
+            deadline=deadline,
+        )
+        if state is not None:
+            recovered, terminal_hard_block = state
+            if recovered is not None or terminal_hard_block:
+                break
+        remaining_ms = max(0, int((deadline - time.perf_counter()) * 1000))
+        if remaining_ms <= 0:
+            break
+        await context.page.wait_for_timeout(min(poll_ms, remaining_ms))
+    context.phase_timings_ms["challenge_wait"] = context.elapsed_ms(started_at)
+    return recovered, terminal_hard_block, deadline
+
+
+async def _retry_challenge_navigation(
+    context: _ChallengeRecoveryContext,
+    *,
+    deadline: float,
+    navigation_timeout_ms: int,
+) -> Any:
+    started_at = time.perf_counter()
+    remaining_budget_ms = max(500, int((deadline - started_at) * 1000))
+    try:
+        retried_response = await context.page.goto(
+            context.url,
+            wait_until="domcontentloaded",
+            timeout=min(remaining_budget_ms, int(navigation_timeout_ms)),
+        )
+    except Exception:
+        context.phase_timings_ms["challenge_retry"] = context.elapsed_ms(started_at)
+        return context.response
+    context.phase_timings_ms["challenge_retry"] = context.elapsed_ms(started_at)
+    retry_status = int(
+        getattr(retried_response, "status", context.status_code) or context.status_code
+    )
+    try:
+        html = await context.get_page_html(context.page)
+        classification = await context.classify_blocked_page(
+            html,
+            _recovered_html_status_code(retry_status),
+        )
+    except Exception:
+        return context.response
+    if not _challenge_has_cleared(
+        html,
+        status_code=_recovered_html_status_code(retry_status),
+        classification=classification,
+        looks_like_low_content_shell=context.looks_like_low_content_shell,
+    ):
+        return context.response
+    return _response_for_recovered_page(
+        retried_response if retried_response is not None else context.response,
+        retry_status,
+        navigation_strategy="domcontentloaded",
+    )
 
 
 async def recover_browser_challenge(
@@ -34,137 +173,46 @@ async def recover_browser_challenge(
     get_page_html,
     looks_like_low_content_shell=None,
 ):
-    _browser_engine = _browser_engine or browser_engine
-    del _browser_engine
+    del browser_engine, _browser_engine, timeout_seconds
     phase_timings_ms.setdefault("challenge_wait", 0)
     phase_timings_ms.setdefault("challenge_retry", 0)
     max_wait_seconds = max(0.0, float(challenge_wait_max_seconds or 0))
     if max_wait_seconds <= 0:
         return response
     status_code = int(getattr(response, "status", 0) or 0)
+    context = _ChallengeRecoveryContext(
+        page=page,
+        url=url,
+        response=response,
+        status_code=status_code,
+        phase_timings_ms=phase_timings_ms,
+        elapsed_ms=elapsed_ms,
+        classify_blocked_page=classify_blocked_page,
+        get_page_html=get_page_html,
+        looks_like_low_content_shell=looks_like_low_content_shell,
+    )
     initial_html = await get_page_html(page)
-    classification = await classify_blocked_page(initial_html, status_code)
+    initial_classification = await classify_blocked_page(initial_html, status_code)
     if _challenge_has_cleared(
         initial_html,
         status_code=status_code,
-        classification=classification,
+        classification=initial_classification,
         looks_like_low_content_shell=looks_like_low_content_shell,
     ):
         return response
-
-    wait_started_at = time.perf_counter()
-    poll_ms = max(100, int(challenge_poll_interval_ms))
-    deadline = wait_started_at + max_wait_seconds
-    terminal_hard_block = False
-
-    async def _check_cleared() -> Any | None:
-        # Re-read the DOM and re-classify on every poll. A provider shell
-        # (Akamai/DataDome/PerimeterX) clears by swapping in real content, so
-        # the HTML check is the source of truth; we must not gate it on a
-        # provider cookie or a page that has already swapped to product
-        # content would be ignored until the budget is exhausted.
-        html = await get_page_html(page)
-        classification = await classify_blocked_page(
-            html, _recovered_html_status_code(status_code)
-        )
-        if _challenge_has_cleared(
-            html,
-            status_code=_recovered_html_status_code(status_code),
-            classification=classification,
-            looks_like_low_content_shell=looks_like_low_content_shell,
-        ):
-            phase_timings_ms["challenge_wait"] = elapsed_ms(wait_started_at)
-            return _response_for_recovered_page(response, status_code)
-        nonlocal terminal_hard_block
-        terminal_hard_block = _is_terminal_hard_block(classification)
-        return None
-
-    async def _run_before_deadline(awaitable_factory: Callable[[], Any]) -> Any | None:
-        remaining_seconds = deadline - time.perf_counter()
-        if remaining_seconds <= 0:
-            return None
-        task = asyncio.create_task(awaitable_factory())
-        try:
-            return await asyncio.wait_for(task, timeout=remaining_seconds)
-        except asyncio.CancelledError:
-            task.cancel()
-            with suppress(asyncio.CancelledError):
-                _ = await task
-            raise
-        except asyncio.TimeoutError:
-            if not task.done():
-                task.cancel()
-                with suppress(asyncio.CancelledError):
-                    _ = await task
-            return None
-
-    while time.perf_counter() < deadline:
-        recovered = await _run_before_deadline(_check_cleared)
-        if recovered is not None:
-            return recovered
-        # A terminal "Access Denied" page (title/strong evidence, no active
-        # challenge markers) will never clear by waiting. Stop early so engine
-        # escalation is not delayed by the full challenge budget.
-        if terminal_hard_block:
-            break
-
-        await _run_before_deadline(lambda: _emit_challenge_activity(page))
-
-        # Re-check immediately after activity: challenge activity is ~2s and the
-        # provider often clears during it. Catching the clear here avoids burning
-        # another poll interval (and a needless engine escalation) on a page that
-        # is already usable.
-        recovered = await _run_before_deadline(_check_cleared)
-        if recovered is not None:
-            return recovered
-        if terminal_hard_block:
-            break
-
-        remaining_ms = max(0, int((deadline - time.perf_counter()) * 1000))
-        if remaining_ms <= 0:
-            break
-        await page.wait_for_timeout(min(poll_ms, remaining_ms))
-    phase_timings_ms["challenge_wait"] = elapsed_ms(wait_started_at)
-
-    # A terminal hard block ("Access Denied") will not clear on a fresh reload
-    # either; skip the retry-goto and let engine escalation take over immediately.
-    if terminal_hard_block:
-        return response
-
-    retry_started_at = time.perf_counter()
-    remaining_budget_ms = max(500, int((deadline - retry_started_at) * 1000))
-    try:
-        retried_response = await page.goto(
-            url,
-            wait_until="domcontentloaded",
-            timeout=min(remaining_budget_ms, int(navigation_timeout_ms)),
-        )
-    except Exception:
-        phase_timings_ms["challenge_retry"] = elapsed_ms(retry_started_at)
-        return response
-    phase_timings_ms["challenge_retry"] = elapsed_ms(retry_started_at)
-    retry_status_code = int(
-        getattr(retried_response, "status", status_code) or status_code
+    recovered, terminal_block, deadline = await _poll_challenge(
+        context,
+        max_wait_seconds=max_wait_seconds,
+        poll_ms=max(100, int(challenge_poll_interval_ms)),
     )
-    try:
-        retry_html = await get_page_html(page)
-        retry_classification = await classify_blocked_page(
-            retry_html,
-            _recovered_html_status_code(retry_status_code),
-        )
-    except Exception:
+    if recovered is not None:
+        return recovered
+    if terminal_block:
         return response
-    if not _challenge_has_cleared(
-        retry_html,
-        status_code=_recovered_html_status_code(retry_status_code),
-        classification=retry_classification,
-        looks_like_low_content_shell=looks_like_low_content_shell,
-    ):
-        return response
-    return _response_for_recovered_page(
-        retried_response if retried_response is not None else response,
-        retry_status_code,
-        navigation_strategy="domcontentloaded",
+    return await _retry_challenge_navigation(
+        context,
+        deadline=deadline,
+        navigation_timeout_ms=navigation_timeout_ms,
     )
 
 
@@ -241,112 +289,139 @@ def _response_for_recovered_page(
     return response
 
 
-async def _emit_challenge_activity(page: Any) -> None:
-    mouse = getattr(page, "mouse", None)
-    if mouse is None:
-        return
+@dataclass(frozen=True, slots=True)
+class _ChallengeActivitySettings:
+    steps: int
+    edge_padding: int
+    jitter_moves: int
+    jitter_delta_px: int
+    pause_min_ms: int
+    pause_jitter_ms: int
+    scroll_px: int
+
+
+def _challenge_activity_settings() -> _ChallengeActivitySettings:
+    settings = crawler_runtime_settings
+    return _ChallengeActivitySettings(
+        steps=max(1, int(settings.challenge_activity_mouse_steps or 1)),
+        edge_padding=max(0, int(settings.challenge_activity_edge_padding_px or 0)),
+        jitter_moves=max(1, int(settings.challenge_activity_jitter_moves or 1)),
+        jitter_delta_px=max(1, int(settings.challenge_activity_jitter_delta_px or 1)),
+        pause_min_ms=max(0, int(settings.challenge_activity_pause_min_ms or 0)),
+        pause_jitter_ms=max(0, int(settings.challenge_activity_pause_jitter_ms or 0)),
+        scroll_px=max(0, int(settings.challenge_activity_scroll_px or 0)),
+    )
+
+
+async def _challenge_viewport(page: Any) -> tuple[int, int] | None:
     try:
         viewport = await page.evaluate(
             """() => ({
-                width: Math.max(
-                    window.innerWidth || 0,
-                    document.documentElement?.clientWidth || 0,
-                    document.body?.clientWidth || 0,
-                ),
-                height: Math.max(
-                    window.innerHeight || 0,
-                    document.documentElement?.clientHeight || 0,
-                    document.body?.clientHeight || 0,
-                ),
+                width: Math.max(window.innerWidth || 0, document.documentElement?.clientWidth || 0, document.body?.clientWidth || 0),
+                height: Math.max(window.innerHeight || 0, document.documentElement?.clientHeight || 0, document.body?.clientHeight || 0),
             })"""
         )
     except Exception:
-        return
+        return None
     if not isinstance(viewport, dict):
-        return
-    width = max(1, int(viewport.get("width") or 0))
-    height = max(1, int(viewport.get("height") or 0))
-    steps = max(1, int(crawler_runtime_settings.challenge_activity_mouse_steps or 1))
-    edge_padding = max(
-        0, int(crawler_runtime_settings.challenge_activity_edge_padding_px or 0)
+        return None
+    return (
+        max(1, int(viewport.get("width") or 0)),
+        max(1, int(viewport.get("height") or 0)),
     )
-    jitter_moves = max(
-        1, int(crawler_runtime_settings.challenge_activity_jitter_moves or 1)
+
+
+def _next_mouse_target(
+    current_x: int,
+    current_y: int,
+    *,
+    width: int,
+    height: int,
+    settings: _ChallengeActivitySettings,
+) -> tuple[int, int]:
+    delta = settings.jitter_delta_px
+    return (
+        _clamp_mouse_coordinate(
+            current_x + secrets.randbelow(delta * 2) - delta,
+            width,
+            settings.edge_padding,
+        ),
+        _clamp_mouse_coordinate(
+            current_y + secrets.randbelow(delta * 2) - delta,
+            height,
+            settings.edge_padding,
+        ),
     )
-    jitter_delta_px = max(
-        1, int(crawler_runtime_settings.challenge_activity_jitter_delta_px or 1)
-    )
-    pause_min_ms = max(
-        0, int(crawler_runtime_settings.challenge_activity_pause_min_ms or 0)
-    )
-    pause_jitter_ms = max(
-        0, int(crawler_runtime_settings.challenge_activity_pause_jitter_ms or 0)
-    )
-    scroll_px = max(0, int(crawler_runtime_settings.challenge_activity_scroll_px or 0))
+
+
+async def _move_challenge_mouse(
+    page: Any,
+    mouse: Any,
+    *,
+    width: int,
+    height: int,
+    settings: _ChallengeActivitySettings,
+) -> None:
     move = getattr(mouse, "move", None)
-    if callable(move):
-        try:
-            start_x_offset = secrets.randbelow(400) - 200
-            start_y_offset = secrets.randbelow(300) - 150
-            current_x = _clamp_mouse_coordinate(
-                (width // 2) + start_x_offset,
-                width,
-                edge_padding,
+    if not callable(move):
+        return
+    current_x = _clamp_mouse_coordinate(
+        (width // 2) + secrets.randbelow(400) - 200,
+        width,
+        settings.edge_padding,
+    )
+    current_y = _clamp_mouse_coordinate(
+        (height // 2) + secrets.randbelow(300) - 150,
+        height,
+        settings.edge_padding,
+    )
+    await move(current_x, current_y)
+    _mark_mouse_move(mouse)
+    for _ in range(settings.jitter_moves):
+        target_x, target_y = _next_mouse_target(
+            current_x,
+            current_y,
+            width=width,
+            height=height,
+            settings=settings,
+        )
+        for step_index in range(1, settings.steps + 1):
+            progress = step_index / settings.steps
+            x = round(current_x + (target_x - current_x) * progress + secrets.randbelow(7) - 3)
+            y = round(current_y + (target_y - current_y) * progress + secrets.randbelow(7) - 3)
+            await move(
+                _clamp_mouse_coordinate(x, width, settings.edge_padding),
+                _clamp_mouse_coordinate(y, height, settings.edge_padding),
             )
-            current_y = _clamp_mouse_coordinate(
-                (height // 2) + start_y_offset,
-                height,
-                edge_padding,
-            )
-            await move(current_x, current_y)
             _mark_mouse_move(mouse)
-            for _ in range(jitter_moves):
-                target_x = _clamp_mouse_coordinate(
-                    current_x
-                    + secrets.randbelow(jitter_delta_px * 2)
-                    - jitter_delta_px,
-                    width,
-                    edge_padding,
-                )
-                target_y = _clamp_mouse_coordinate(
-                    current_y
-                    + secrets.randbelow(jitter_delta_px * 2)
-                    - jitter_delta_px,
-                    height,
-                    edge_padding,
-                )
-                for step_index in range(1, steps + 1):
-                    progress = step_index / steps
-                    noise_x = secrets.randbelow(7) - 3
-                    noise_y = secrets.randbelow(7) - 3
-                    inter_x = _clamp_mouse_coordinate(
-                        round(current_x + (target_x - current_x) * progress + noise_x),
-                        width,
-                        edge_padding,
-                    )
-                    inter_y = _clamp_mouse_coordinate(
-                        round(current_y + (target_y - current_y) * progress + noise_y),
-                        height,
-                        edge_padding,
-                    )
-                    await move(inter_x, inter_y)
-                    _mark_mouse_move(mouse)
-                    await page.wait_for_timeout(secrets.randbelow(15) + 5)
-                current_x = target_x
-                current_y = target_y
-                pause_ms = pause_min_ms
-                if pause_jitter_ms:
-                    pause_ms += secrets.randbelow(pause_jitter_ms)
-                if pause_ms > 0:
-                    await page.wait_for_timeout(pause_ms)
-        except Exception:
-            return
-    wheel = getattr(mouse, "wheel", None)
-    if callable(wheel) and scroll_px:
-        try:
-            await wheel(0, scroll_px)
-        except Exception:
-            return
+            await page.wait_for_timeout(secrets.randbelow(15) + 5)
+        current_x, current_y = target_x, target_y
+        pause_ms = settings.pause_min_ms
+        if settings.pause_jitter_ms:
+            pause_ms += secrets.randbelow(settings.pause_jitter_ms)
+        if pause_ms > 0:
+            await page.wait_for_timeout(pause_ms)
+
+
+async def _emit_challenge_activity(page: Any) -> None:
+    mouse = getattr(page, "mouse", None)
+    viewport = await _challenge_viewport(page) if mouse is not None else None
+    if mouse is None or viewport is None:
+        return
+    settings = _challenge_activity_settings()
+    try:
+        await _move_challenge_mouse(
+            page,
+            mouse,
+            width=viewport[0],
+            height=viewport[1],
+            settings=settings,
+        )
+        wheel = getattr(mouse, "wheel", None)
+        if callable(wheel) and settings.scroll_px:
+            await wheel(0, settings.scroll_px)
+    except Exception:
+        return
 
 
 async def emit_browser_behavior_activity(page: Any) -> dict[str, object]:

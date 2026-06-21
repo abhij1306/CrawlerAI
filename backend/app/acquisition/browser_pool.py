@@ -81,7 +81,7 @@ def patchright_browser_available() -> bool:
     return True
 
 
-def _real_chrome_candidate_paths() -> tuple[str, ...]:
+def real_chrome_candidate_paths() -> tuple[str, ...]:
     configured = str(crawler_runtime_settings.browser_real_chrome_executable_path or "").strip()
     if configured:
         return (configured,)
@@ -98,7 +98,7 @@ def _real_chrome_candidate_paths() -> tuple[str, ...]:
 def real_chrome_executable_path() -> str | None:
     if not crawler_runtime_settings.browser_real_chrome_enabled:
         return None
-    return next((candidate for candidate in _real_chrome_candidate_paths() if Path(candidate).is_file()), None)
+    return next((candidate for candidate in real_chrome_candidate_paths() if Path(candidate).is_file()), None)
 
 
 def real_chrome_browser_available() -> bool:

@@ -529,7 +529,7 @@ $env:PYTHONPATH='.'
 
 ### Slice 2: Browser Runtime, Readiness, Interaction, and Traversal Debt
 
-**Status:** TODO
+**Status:** DONE
 **Owners:** `browser_runtime.py`, `browser_fetch_support.py`, `browser_page_flow.py`, `browser_page_helpers.py`, `browser_detail.py`, new `browser_accessibility.py`, `browser_readiness.py`, `browser_recovery.py`, `browser_result_builder.py`, `runtime.py`, `traversal.py`, `traversal_recovery.py`, `traversal_card_counting.py`
 **Fallback docs:** `docs/INVARIANTS.md` Rules 5, 6, 13 and `docs/ENGINEERING_STRATEGY.md` AP-16/AP-17.
 **Known audited scope:** all functions in the acquisition portion of the long-function ledger; `HtmlAnalysis`, `HtmlDocument`, parser constructors, expansion entry points, warmup state, popup guards, readiness probes, traversal stop reasons.
@@ -566,6 +566,15 @@ $env:PYTHONPATH='.'
   tests\unit\test_final_architecture_ownership.py `
   -q
 ```
+
+**Results (2026-06-21):**
+
+- Exact Slice 2 verification: `247 passed`.
+- Expanded focused verification including `test_acquirer.py`: `267 passed`.
+- Ruff: all 20 changed/new Python files passed. Mypy: all 17 changed/new production files passed.
+- `browser_runtime.py` remains the stable facade. No acquisition import cycles were found. Public owner APIs replaced new private cross-module reach-ins while legacy facade monkeypatch names remain available.
+- All Slice 2 acquisition long-function and oversized-module ledger entries are resolved. Largest changed module is `browser_result_builder.py` at 700 lines; no changed production function exceeds 100 lines.
+- Recursive acquisition physical LOC is 17,423. The 15,400 package target is not met because Slice 1 introduced the `acquisition/fetch` subpackage and the inherited Slice 2 split added net physical LOC. This remains quantitative debt for the final architecture gate; it is not hidden by treating moved files as deletion.
 
 ### Slice 3: Listing Discovery and Listing Card Integrity
 

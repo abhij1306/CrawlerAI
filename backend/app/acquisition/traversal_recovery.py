@@ -26,12 +26,51 @@ from app.core.config.selectors import COOKIE_CONSENT_SELECTORS, PAGINATION_SELEC
 logger = logging.getLogger(__name__)
 _RECOVERABLE_ERRORS = (PlaywrightError, PlaywrightTimeoutError)
 _POTENTIALLY_RECOVERABLE_ERRORS = (*_RECOVERABLE_ERRORS, RuntimeError, OSError)
+_CENTER_SCROLL_SCRIPT = """(node) => {
+    if (node instanceof Element) {
+        node.scrollIntoView({ block: 'center', behavior: 'instant' });
+    }
+}"""
+_MUTE_INTERCEPTING_OVERLAYS_SCRIPT = """(target) => {
+    if (!(target instanceof Element)) return 0;
+    const rect = target.getBoundingClientRect();
+    if (!rect.width || !rect.height) return 0;
+    const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+    const cx = clamp(rect.left + (rect.width / 2), 1, Math.max(1, window.innerWidth - 1));
+    const cy = clamp(rect.top + Math.min(rect.height / 2, 24), 1, Math.max(1, window.innerHeight - 1));
+    const hints = ['cookie', 'consent', 'modal', 'overlay', 'dialog', 'popup', 'banner', 'interstitial', 'backdrop'];
+    let muted = 0;
+    for (const node of document.elementsFromPoint(cx, cy)) {
+        if (!(node instanceof Element)) continue;
+        if (node === target || node.contains(target)) break;
+        const style = window.getComputedStyle(node);
+        const nodeRect = node.getBoundingClientRect();
+        const zIndex = Number.parseInt(style.zIndex || '0', 10);
+        const signature = [
+            node.id || '', node.className || '', node.getAttribute('role') || '',
+            node.getAttribute('aria-label') || '', node.getAttribute('aria-modal') || '',
+        ].join(' ').toLowerCase();
+        const overlayLike = node.getAttribute('aria-modal') === 'true'
+            || style.position === 'fixed' || style.position === 'sticky'
+            || zIndex >= 100 || hints.some((hint) => signature.includes(hint));
+        const coversPoint = nodeRect.width > 0 && nodeRect.height > 0
+            && cx >= nodeRect.left && cx <= nodeRect.right
+            && cy >= nodeRect.top && cy <= nodeRect.bottom;
+        if (!overlayLike || !coversPoint) continue;
+        node.setAttribute('data-crawlwise-orig-pointer-events', node.style.pointerEvents || '');
+        node.setAttribute('data-crawlwise-orig-z-index', node.style.zIndex || '');
+        node.style.setProperty('pointer-events', 'none', 'important');
+        node.style.setProperty('z-index', '-1', 'important');
+        muted += 1;
+    }
+    return muted;
+}"""
 
 if TYPE_CHECKING:
     from app.acquisition.traversal_types import TraversalResult
 
 
-async def _find_actionable_locator(page, selector_group: str):
+async def find_actionable_locator(page, selector_group: str):
     selectors = PAGINATION_SELECTORS.get(selector_group) if isinstance(PAGINATION_SELECTORS, dict) else []
     for selector in selectors or []:
         locator = page.locator(str(selector)).first
@@ -144,7 +183,7 @@ async def recover_listing_page_content(
             diagnostics["status"] = "interaction_limit_reached"
             break
         locator = (
-            await _find_actionable_locator(page, "next_page")
+            await find_actionable_locator(page, "next_page")
             if action_name == "next_page"
             else await _find_aom_actionable_locator(
                 page,
@@ -235,28 +274,7 @@ async def _find_aom_actionable_locator(
                 continue
     return None
 
-async def click_with_retry(
-    page,
-    locator,
-    *,
-    result: TraversalResult,
-    deadline_at: float | None = None,
-) -> bool:
-    """Attempt to click a locator with progressive fallbacks.
-
-    Strategy:
-    1. Scroll element to viewport center to escape sticky headers/footers.
-    2. Normal click with configurable timeout.
-    3. On interception/timeout: dismiss overlays and retry with force=True.
-    4. Final fallback: JavaScript node.click().
-    """
-    click_timeout_ms = _remaining_timeout_ms(
-        deadline_at,
-        int(crawler_runtime_settings.traversal_click_timeout_ms),
-    )
-    if click_timeout_ms <= 0:
-        return False
-    # Step 1: Scroll element to center viewport to avoid sticky header overlap
+async def _prepare_click_target(page, locator) -> bool:
     try:
         await locator.scroll_into_view_if_needed(
             timeout=int(crawler_runtime_settings.traversal_scroll_into_view_timeout_ms)
@@ -268,13 +286,7 @@ async def click_with_retry(
         if not await locator_still_resolves(locator):
             return False
     try:
-        await locator.evaluate(
-            """(node) => {
-                if (node instanceof Element) {
-                    node.scrollIntoView({ block: 'center', behavior: 'instant' });
-                }
-            }"""
-        )
+        await locator.evaluate(_CENTER_SCROLL_SCRIPT)
     except _POTENTIALLY_RECOVERABLE_ERRORS as exc:
         if not is_recoverable_playwright_error(exc):
             raise
@@ -283,67 +295,85 @@ async def click_with_retry(
             page.url,
             exc_info=True,
         )
-        if not await locator_still_resolves(locator):
-            return False
+        return await locator_still_resolves(locator)
+    return True
 
-    # Step 2: Normal click
-    first_exc = None
+
+async def _try_locator_click(locator, *, timeout_ms: int, force: bool = False):
     try:
-        await locator.click(timeout=click_timeout_ms)
-        return True
+        if force:
+            await locator.click(timeout=timeout_ms, force=True)
+        else:
+            await locator.click(timeout=timeout_ms)
+        return True, None
     except _POTENTIALLY_RECOVERABLE_ERRORS as exc:
         if not is_recoverable_playwright_error(exc):
             raise
-        first_exc = exc
-        if not await locator_still_resolves(locator):
-            return False
-        logger.debug(
-            "Traversal normal click failed (%s); trying overlay dismissal + force",
-            type(exc).__name__,
-        )
-        result.click_retries += 1
+        return False, exc
 
-    # Step 3: Dismiss overlays then force-click (overlays are restored after)
-    await dismiss_overlays_if_needed(page, locator=locator, result=result)
-    force_exc = None
-    try:
-        await locator.click(timeout=click_timeout_ms, force=True)
-        await _restore_overlays(page)
-        return True
-    except _POTENTIALLY_RECOVERABLE_ERRORS as exc:
-        if not is_recoverable_playwright_error(exc):
-            raise
-        force_exc = exc
-        if not await locator_still_resolves(locator):
-            return False
-        logger.debug(
-            "Traversal force click failed (%s); trying JS click",
-            type(exc).__name__,
-        )
-        result.click_retries += 1
-    await _restore_overlays(page)
 
-    # Step 4: JavaScript fallback
+async def _try_javascript_click(page, locator, *, timeout_ms: int):
     try:
-        await locator.evaluate(
-            "(node) => node instanceof HTMLElement && node.click()"
-        )
+        await locator.evaluate("(node) => node instanceof HTMLElement && node.click()")
         await _wait_for_dom_mutation_settle(
             page,
-            quiet_window_ms=min(500, max(100, click_timeout_ms // 5)),
-            timeout_ms=min(2000, click_timeout_ms),
+            quiet_window_ms=min(500, max(100, timeout_ms // 5)),
+            timeout_ms=min(2000, timeout_ms),
         )
-        return True
-    except _POTENTIALLY_RECOVERABLE_ERRORS as js_exc:
-        if not is_recoverable_playwright_error(js_exc):
+        return True, None
+    except _POTENTIALLY_RECOVERABLE_ERRORS as exc:
+        if not is_recoverable_playwright_error(exc):
             raise
-        logger.warning(
-            "Traversal all click strategies failed: normal=%s force=%s js=%s",
-            type(first_exc).__name__,
-            type(force_exc).__name__,
-            type(js_exc).__name__,
-        )
+        return False, exc
+
+
+async def click_with_retry(
+    page,
+    locator,
+    *,
+    result: TraversalResult,
+    deadline_at: float | None = None,
+) -> bool:
+    click_timeout_ms = _remaining_timeout_ms(
+        deadline_at,
+        int(crawler_runtime_settings.traversal_click_timeout_ms),
+    )
+    if click_timeout_ms <= 0 or not await _prepare_click_target(page, locator):
         return False
+    clicked, first_exc = await _try_locator_click(locator, timeout_ms=click_timeout_ms)
+    if clicked:
+        return True
+    if not await locator_still_resolves(locator):
+        return False
+    result.click_retries += 1
+    await dismiss_overlays_if_needed(page, locator=locator, result=result)
+    try:
+        clicked, force_exc = await _try_locator_click(
+            locator,
+            timeout_ms=click_timeout_ms,
+            force=True,
+        )
+    finally:
+        await _restore_overlays(page)
+    if clicked:
+        return True
+    if not await locator_still_resolves(locator):
+        return False
+    result.click_retries += 1
+    clicked, js_exc = await _try_javascript_click(
+        page,
+        locator,
+        timeout_ms=click_timeout_ms,
+    )
+    if clicked:
+        return True
+    logger.warning(
+        "Traversal all click strategies failed: normal=%s force=%s js=%s",
+        type(first_exc).__name__,
+        type(force_exc).__name__,
+        type(js_exc).__name__,
+    )
+    return False
 
 async def locator_still_resolves(locator) -> bool:
     counter = getattr(locator, "count", None)
@@ -364,104 +394,43 @@ async def locator_still_resolves(locator) -> bool:
             await asyncio.sleep(0)
     return False
 
-async def dismiss_overlays_if_needed(
-    page,
-    *,
-    locator,
-    result: TraversalResult,
-) -> None:
-    """Temporarily hide intercepting overlays and dismiss cookie banners.
-
-    Only elements that actually sit above the click target are muted. This
-    avoids the previous broad mutation of structural tags like `header` /
-    `nav`, which can interfere with delegated SPA event handling.
-    """
-    dismissed_any = False
+async def _mute_intercepting_overlays(locator) -> bool:
     try:
-        muted_count = await locator.evaluate(
-            """
-            (target) => {
-                if (!(target instanceof Element)) {
-                    return 0;
-                }
-                const rect = target.getBoundingClientRect();
-                if (!rect.width || !rect.height) {
-                    return 0;
-                }
-                const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
-                const cx = clamp(rect.left + (rect.width / 2), 1, Math.max(1, window.innerWidth - 1));
-                const cy = clamp(rect.top + Math.min(rect.height / 2, 24), 1, Math.max(1, window.innerHeight - 1));
-                const hints = ['cookie', 'consent', 'modal', 'overlay', 'dialog', 'popup', 'banner', 'interstitial', 'backdrop'];
-                let muted = 0;
-                for (const node of document.elementsFromPoint(cx, cy)) {
-                    if (!(node instanceof Element)) {
-                        continue;
-                    }
-                    if (node === target || node.contains(target)) {
-                        break;
-                    }
-                    const style = window.getComputedStyle(node);
-                    const rect = node.getBoundingClientRect();
-                    const zIndex = Number.parseInt(style.zIndex || '0', 10);
-                    const signature = [
-                        node.id || '',
-                        node.className || '',
-                        node.getAttribute('role') || '',
-                        node.getAttribute('aria-label') || '',
-                        node.getAttribute('aria-modal') || '',
-                    ].join(' ').toLowerCase();
-                    const overlayLike =
-                        node.getAttribute('aria-modal') === 'true' ||
-                        style.position === 'fixed' ||
-                        style.position === 'sticky' ||
-                        zIndex >= 100 ||
-                        hints.some((hint) => signature.includes(hint));
-                    const coversPoint =
-                        rect.width > 0 &&
-                        rect.height > 0 &&
-                        cx >= rect.left &&
-                        cx <= rect.right &&
-                        cy >= rect.top &&
-                        cy <= rect.bottom;
-                    if (!overlayLike || !coversPoint) {
-                        continue;
-                    }
-                    node.setAttribute('data-crawlwise-orig-pointer-events', node.style.pointerEvents || '');
-                    node.setAttribute('data-crawlwise-orig-z-index', node.style.zIndex || '');
-                    node.style.setProperty('pointer-events', 'none', 'important');
-                    node.style.setProperty('z-index', '-1', 'important');
-                    muted += 1;
-                }
-                return muted;
-            }
-            """
-        )
-        dismissed_any = int(muted_count or 0) > 0
+        muted_count = await locator.evaluate(_MUTE_INTERCEPTING_OVERLAYS_SCRIPT)
     except _RECOVERABLE_ERRORS:
         logger.debug("Traversal overlay dismissal JS failed", exc_info=True)
-    consent_selectors = (
+        return False
+    return int(muted_count or 0) > 0
+
+
+async def _dismiss_cookie_consent(page) -> bool:
+    selectors = (
         list(COOKIE_CONSENT_SELECTORS)
         if isinstance(COOKIE_CONSENT_SELECTORS, (list, tuple))
         else []
     )
-    for selector in consent_selectors[:5]:
+    for selector in selectors[:5]:
         try:
-            btn = page.locator(str(selector)).first
-            if await btn.count() > 0 and await btn.is_visible(
-                timeout=int(crawler_runtime_settings.traversal_cookie_consent_visible_timeout_ms)
+            button = page.locator(str(selector)).first
+            if await button.count() == 0 or not await button.is_visible(
+                timeout=int(
+                    crawler_runtime_settings.traversal_cookie_consent_visible_timeout_ms
+                )
             ):
-                await btn.click(
-                    timeout=int(crawler_runtime_settings.traversal_cookie_consent_click_timeout_ms),
-                    force=True,
-                )
-                await _wait_for_dom_mutation_settle(
-                    page,
-                    quiet_window_ms=150,
-                    timeout_ms=750,
-                )
-                dismissed_any = True
-                logger.info("Traversal dismissed cookie consent via %s", selector)
-                break
+                continue
+            await button.click(
+                timeout=int(
+                    crawler_runtime_settings.traversal_cookie_consent_click_timeout_ms
+                ),
+                force=True,
+            )
+            await _wait_for_dom_mutation_settle(
+                page,
+                quiet_window_ms=150,
+                timeout_ms=750,
+            )
+            logger.info("Traversal dismissed cookie consent via %s", selector)
+            return True
         except _RECOVERABLE_ERRORS:
             logger.debug(
                 "Traversal cookie consent dismissal probe failed selector=%s url=%s",
@@ -469,8 +438,18 @@ async def dismiss_overlays_if_needed(
                 page.url,
                 exc_info=True,
             )
-            continue
-    if dismissed_any:
+    return False
+
+
+async def dismiss_overlays_if_needed(
+    page,
+    *,
+    locator,
+    result: TraversalResult,
+) -> None:
+    muted = await _mute_intercepting_overlays(locator)
+    consent_dismissed = await _dismiss_cookie_consent(page)
+    if muted or consent_dismissed:
         result.overlays_dismissed = True
 
 async def _restore_overlays(page) -> None:

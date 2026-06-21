@@ -22,7 +22,7 @@ from app.acquisition.browser_readiness import analyze_extractable_content, analy
 from app.acquisition.browser_page_helpers import detail_expansion_extractability
 from app.acquisition.browser_proxy_config import build_browser_proxy_config
 from app.acquisition import browser_runtime as acquisition_browser_runtime
-from app.acquisition import browser_page_flow
+from app.acquisition import browser_settle
 from app.core.config.runtime_settings import crawler_runtime_settings
 from app.core.domain_utils import is_special_use_domain, normalize_domain
 
@@ -119,7 +119,7 @@ async def test_browser_settle_parses_once_per_unique_snapshot(
     expected_parse_count: int,
 ) -> None:
     parse_count = 0
-    original_analyze_html = browser_page_flow.analyze_html
+    original_analyze_html = browser_settle.analyze_html
 
     def counting_analyze_html(html: str):
         nonlocal parse_count
@@ -144,14 +144,14 @@ async def test_browser_settle_parses_once_per_unique_snapshot(
             "structured_data_present": False,
         }
 
-    monkeypatch.setattr(browser_page_flow, "analyze_html", counting_analyze_html)
+    monkeypatch.setattr(browser_settle, "analyze_html", counting_analyze_html)
     monkeypatch.setattr(
         crawler_runtime_settings,
         "browser_navigation_optimistic_wait_ms",
         100,
     )
 
-    result = await browser_page_flow.settle_browser_page_impl(
+    result = await browser_settle.settle_browser_page(
         _Page(),
         url="https://example.test/table",
         surface="table",

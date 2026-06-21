@@ -5,22 +5,19 @@ import inspect
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 import logging
-import re
 from typing import Any, cast
 
 import httpx
 
-from app.acquisition.browser_readiness import (
-    analyze_extractable_content,
-    analyze_html,
+from app.acquisition.browser_block_detection import (
+    BlockPageClassification,
+    classify_blocked_page as _classify_blocked_page,
 )
+from app.acquisition.browser_readiness import analyze_extractable_content, analyze_html
 from app.core.config import settings
 from app.core.config.block_signatures import BLOCK_SIGNATURES
 from app.core.config.content_types import HTML_CONTENT_TYPE
-from app.core.config.extraction_rules._detail import DETAIL_SHELL_TITLE_KEYS
 from app.core.config.runtime_settings import crawler_runtime_settings
-from app.core.db_utils import mapping_or_empty
-from app.core.shared.text_coerce import slug_tokens
 from app.core.records.network_resolution import (
     address_family_preference,
     build_async_http_client,
@@ -33,6 +30,20 @@ logger = logging.getLogger(__name__)
 
 _SHARED_HTTP_CLIENTS: dict[tuple[str | None, str], httpx.AsyncClient] = {}
 _SHARED_HTTP_CLIENT_LOCK = asyncio.Lock()
+
+
+def classify_blocked_page(
+    html: str,
+    status_code: int,
+    *,
+    analysis: HtmlAnalysis | None = None,
+) -> BlockPageClassification:
+    return _classify_blocked_page(
+        html,
+        status_code,
+        analysis=analysis,
+        signatures=BLOCK_SIGNATURES,
+    )
 
 
 @dataclass(slots=True)
@@ -58,19 +69,6 @@ class NetworkPayloadReadResult:
     body: bytes | None
     outcome: str
     error: str | None = None
-
-
-@dataclass(frozen=True, slots=True)
-class BlockPageClassification:
-    blocked: bool
-    outcome: str
-    evidence: list[str] = field(default_factory=list)
-    provider_hits: list[str] = field(default_factory=list)
-    active_provider_hits: list[str] = field(default_factory=list)
-    strong_hits: list[str] = field(default_factory=list)
-    weak_hits: list[str] = field(default_factory=list)
-    title_matches: list[str] = field(default_factory=list)
-    challenge_element_hits: list[str] = field(default_factory=list)
 
 
 _BOT_VENDOR_HEADER_MARKERS: tuple[tuple[str, str, str], ...] = (
@@ -144,182 +142,6 @@ def classify_block_from_headers(headers: Any) -> str | None:
             continue
         return vendor
     return None
-
-
-def classify_blocked_page(
-    html: str,
-    status_code: int,
-    *,
-    analysis: HtmlAnalysis | None = None,
-) -> BlockPageClassification:
-    code = int(status_code or 0)
-    forced_blocked = False
-    forced_outcome = ""
-    base_evidence: list[str] = []
-    if code == 401:
-        return BlockPageClassification(
-            blocked=False,
-            outcome="auth_wall",
-            evidence=[f"http_status:{code}"],
-        )
-    if code == 429:
-        forced_blocked = True
-        forced_outcome = "rate_limited"
-        base_evidence.append(f"http_status:{code}")
-    if code == 403:
-        forced_blocked = True
-        forced_outcome = "challenge_page"
-        base_evidence.append(f"http_status:{code}")
-    lowered = str(html or "").lower()
-    if not lowered.strip():
-        if forced_blocked:
-            return BlockPageClassification(
-                blocked=True,
-                outcome=forced_outcome,
-                evidence=base_evidence,
-            )
-        return BlockPageClassification(blocked=False, outcome="empty")
-
-    analysis = analysis or analyze_html(html)
-    document = analysis.document
-    visible_text = analysis.visible_text.lower()
-    title_text = analysis.title_text.lower()
-    normalized_title = " ".join(slug_tokens(title_text))
-    shell_title = normalized_title if normalized_title in DETAIL_SHELL_TITLE_KEYS else ""
-    content_signals = analyze_extractable_content(
-        html,
-        analysis=analysis,
-    )
-    has_extractable_content = content_signals.detail or content_signals.listing
-
-    title_patterns = _string_sequence(BLOCK_SIGNATURES.get("title_regexes"))
-    title_matches: list[str] = []
-    for pattern in title_patterns:
-        raw_pattern = str(pattern or "").strip()
-        if not raw_pattern:
-            continue
-        try:
-            if re.search(raw_pattern, title_text, re.IGNORECASE):
-                title_matches.append(raw_pattern)
-        except re.error as exc:
-            logger.warning(
-                "Skipping invalid block signature title regex %r: %s",
-                raw_pattern,
-                exc,
-            )
-    if shell_title and shell_title not in title_matches:
-        title_matches.append(shell_title)
-
-    strong_markers = [
-        str(marker or "").strip().lower()
-        for marker in mapping_or_empty(
-            BLOCK_SIGNATURES.get("browser_challenge_strong_markers")
-        ).keys()
-        if str(marker or "").strip()
-    ]
-    weak_markers = [
-        str(marker or "").strip().lower()
-        for marker in mapping_or_empty(
-            BLOCK_SIGNATURES.get("browser_challenge_weak_markers")
-        ).keys()
-        if str(marker or "").strip()
-    ]
-    content_tolerant_strong_markers = {
-        str(marker or "").strip().lower()
-        for marker in _string_sequence(
-            BLOCK_SIGNATURES.get("content_tolerant_strong_markers")
-        )
-        if str(marker or "").strip()
-    }
-    provider_markers = [
-        str(marker or "").strip().lower()
-        for marker in _string_sequence(BLOCK_SIGNATURES.get("provider_markers"))
-        if str(marker or "").strip()
-    ]
-
-    strong_hits = {
-        marker
-        for marker in strong_markers
-        if marker in visible_text or marker in title_text
-    }
-    weak_hits = {
-        marker
-        for marker in weak_markers
-        if marker in visible_text or marker in title_text
-    }
-    provider_hits = {marker for marker in provider_markers if marker in lowered}
-    active_provider_hits = {
-        str(item.get("marker") or "").strip().lower()
-        for item in _mapping_sequence(BLOCK_SIGNATURES.get("active_provider_markers"))
-        if str(item.get("marker") or "").strip()
-        and str(item.get("marker") or "").strip().lower() in lowered
-    }
-    challenge_element_hits = set(_challenge_element_hits(document, lowered))
-    hard_strong_hits = strong_hits - content_tolerant_strong_markers
-    evidence = [
-        *base_evidence,
-        *sorted(f"title:{pattern}" for pattern in title_matches),
-        *sorted(f"strong:{marker}" for marker in strong_hits),
-        *sorted(f"weak:{marker}" for marker in weak_hits),
-        *sorted(f"provider:{marker}" for marker in provider_hits),
-        *sorted(f"active_provider:{marker}" for marker in active_provider_hits),
-        *sorted(f"challenge_element:{marker}" for marker in challenge_element_hits),
-    ]
-
-    blocked = forced_blocked or bool(
-        len(hard_strong_hits) >= 2
-        or (
-            hard_strong_hits
-            and (
-                provider_hits
-                or active_provider_hits
-                or challenge_element_hits
-                or title_matches
-            )
-        )
-        or (shell_title and not has_extractable_content)
-        or "access denied" in strong_hits
-        or (
-            "just a moment" in strong_hits
-            and (
-                "cloudflare" in provider_hits
-                or "cf-challenge" in provider_hits
-                or "cf-browser-verification" in active_provider_hits
-            )
-        )
-        or (challenge_element_hits and (provider_hits or active_provider_hits))
-        or (title_matches and challenge_element_hits)
-        or (hard_strong_hits and weak_hits and provider_hits)
-        or (
-            "captcha" in strong_hits
-            and provider_hits
-            and (not has_extractable_content or bool(title_matches))
-        )
-    )
-    if (
-        blocked
-        and has_extractable_content
-        and not title_matches
-        and (not hard_strong_hits or hard_strong_hits <= {"captcha"})
-    ):
-        blocked = False
-    return BlockPageClassification(
-        blocked=blocked,
-        outcome=(
-            forced_outcome
-            if blocked and forced_blocked
-            else "challenge_page"
-            if blocked
-            else "ok"
-        ),
-        evidence=evidence,
-        provider_hits=sorted(provider_hits),
-        active_provider_hits=sorted(active_provider_hits),
-        strong_hits=sorted(strong_hits),
-        weak_hits=sorted(weak_hits),
-        title_matches=title_matches,
-        challenge_element_hits=sorted(challenge_element_hits),
-    )
 
 
 def _http_content_is_extractable(
@@ -582,68 +404,11 @@ def _curl_fetch_sync(
         headers=response_headers,
     )
 
-def _mapping_sequence(value: object) -> list[dict[object, object]]:
-    if not isinstance(value, list):
-        return []
-    return [dict(item) for item in value if isinstance(item, dict)]
-
-
-def _string_sequence(value: object) -> list[str]:
-    if not isinstance(value, list):
-        return []
-    return [str(item) for item in value]
-
-
-def _challenge_element_hits(
-    document: HtmlDocument,
-    lowered_html: str,
-) -> list[str]:
-    challenge_elements = mapping_or_empty(BLOCK_SIGNATURES.get("challenge_elements"))
-    iframe_src_markers = _marker_map_from_config(
-        challenge_elements, "iframe_src_markers"
-    )
-    iframe_title_markers = _marker_map_from_config(
-        challenge_elements,
-        "iframe_title_markers",
-    )
-    script_src_markers = _marker_map_from_config(
-        challenge_elements, "script_src_markers"
-    )
-    html_markers = _marker_map_from_config(challenge_elements, "html_markers")
-    hits: list[str] = []
-    for iframe in document.css("iframe"):
-        src = str(iframe.attribute("src") or "").strip().lower()
-        title = str(iframe.attribute("title") or "").strip().lower()
-        for marker, hit in iframe_src_markers.items():
-            if marker in src:
-                hits.append(hit)
-        for marker, hit in iframe_title_markers.items():
-            if marker in title:
-                hits.append(hit)
-    for script in document.css("script"):
-        src = str(script.attribute("src") or "").strip().lower()
-        for marker, hit in script_src_markers.items():
-            if marker in src:
-                hits.append(hit)
-    for marker, hit in html_markers.items():
-        if marker in lowered_html:
-            hits.append(hit)
-    return hits
-
-
-def _marker_map_from_config(
-    source: Mapping[str, object],
-    key: str,
-) -> dict[str, str]:
-    return {
-        str(marker or "").strip().lower(): str(hit or "").strip()
-        for marker, hit in mapping_or_empty(source.get(key)).items()
-        if str(marker or "").strip() and str(hit or "").strip()
-    }
 
 
 __all__ = [
     "BlockPageClassification",
+    "BLOCK_SIGNATURES",
     "NetworkPayloadReadResult",
     "classify_block_from_headers",
     "classify_blocked_page",

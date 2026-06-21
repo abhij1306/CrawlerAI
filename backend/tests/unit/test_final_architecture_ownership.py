@@ -10,27 +10,10 @@ pytestmark = pytest.mark.unit
 
 APP_ROOT = Path(__file__).resolve().parents[2] / "app"
 OVERSIZED_MODULE_DEBT = {
-    "acquisition/browser_detail.py",
-    "acquisition/browser_runtime.py",
     "crawl/batch_runtime.py",
     "enrichment/shopify_catalog.py",
 }
 LONG_FUNCTION_DEBT = {
-    ("acquisition/browser_detail.py", "expand_all_interactive_elements_impl"),
-    ("acquisition/browser_detail.py", "expand_interactive_elements_via_accessibility_impl"),
-    ("acquisition/browser_page_flow.py", "settle_browser_page_impl"),
-    ("acquisition/browser_page_helpers.py", "_capture_listing_visual_elements"),
-    ("acquisition/browser_recovery.py", "_emit_challenge_activity"),
-    ("acquisition/browser_recovery.py", "recover_browser_challenge"),
-    ("acquisition/browser_result_builder.py", "build"),
-    ("acquisition/browser_runtime.py", "_maybe_warm_origin_before_navigation"),
-    ("acquisition/browser_runtime.py", "browser_fetch"),
-    ("acquisition/runtime.py", "classify_blocked_page"),
-    ("acquisition/traversal.py", "_run_load_more_traversal"),
-    ("acquisition/traversal.py", "_run_paginate_traversal"),
-    ("acquisition/traversal.py", "_run_scroll_traversal"),
-    ("acquisition/traversal_recovery.py", "click_with_retry"),
-    ("acquisition/traversal_recovery.py", "dismiss_overlays_if_needed"),
     ("connectors/llm/tasks.py", "run_prompt_task"),
     ("core/config/runtime_settings.py", "_apply_profile_defaults"),
     ("core/records/confidence.py", "score_record_confidence"),
