@@ -1,20 +1,19 @@
 # Active Plan
 
-**Current:** Final Architecture Improvement and Quality Hardening → `docs/plans/final-architecture-improvement-plan.md`
-**Status:** IN PROGRESS — HANDOFF PREPARED
-**Started:** 2026-06-19
-**Current slice:** Slice 9 — Architecture Gate And Deletion
+**Current:** Final Architecture Debt Burn-Down and Crawl Quality Closure → `docs/plans/final-architecture-debt-burndown-plan.md`
+**Status:** IN PROGRESS
+**Started:** 2026-06-21
+**Current slice:** Slice 1 — Canonical Acquisition Attempt Ownership
 
 ## Queue
 
-- Finish Slice 9 size gates: 6 non-data modules exceed 700 physical lines; 25 functions exceed 100 lines.
-- Then finish Slice 6 legacy persistence-field retirement.
-- Then rerun Slice 13 final verification and move to awaiting user 100-site gate.
-- Run focused offline tests per change and the full offline suite at final handoff. Never run smoke/live commands.
+- Execute one slice at a time from the active plan; do not repeat its repository-wide audit.
+- Run the slice's focused offline tests, then stop and record the handoff.
+- Run the complete offline unit/component/regression suite only in Slice 12.
+- Never run smoke/live commands. Slice 13 belongs to the user.
 
 
 ## Previously Completed
 
-The Full Backend Extraction Rebuild plan was superseded on 2026-06-19. Its completed slices are absorbed by the current plan; its unrun live-validation slice remains unverified.
-
-
+- `docs/plans/final-architecture-improvement-plan.md` was superseded on 2026-06-21. Verified results and unresolved debt were audited into the active standalone plan.
+- The Full Backend Extraction Rebuild plan was superseded on 2026-06-19. Its unrun live-validation slice remains unverified.

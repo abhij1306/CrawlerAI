@@ -6,7 +6,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 import logging
 import re
-from typing import Any
+from typing import Any, cast
 
 import httpx
 
@@ -549,7 +549,7 @@ def _curl_fetch_sync(
         if crawler_runtime_settings.curl_impersonate_target is None
         else crawler_runtime_settings.curl_impersonate_target
     ).strip()
-    impersonate_target = raw_impersonate_target or None
+    impersonate_target = cast(Any, raw_impersonate_target or None)
     request_headers = default_request_headers()
     normalized_cookie_header = str(cookie_header or "").strip()
     if normalized_cookie_header:

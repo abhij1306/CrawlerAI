@@ -266,21 +266,25 @@ async def settle_browser_page_impl(
             if cached_analysis is None or not cached_analysis.matches_html(
                 refreshed_html or ""
             ):
-                cached_analysis = await asyncio.to_thread(
+                new_analysis = await asyncio.to_thread(
                     analyze_html,
                     refreshed_html or "",
                 )
-                snapshot_analyses[snapshot_hash] = cached_analysis
+                cached_analysis = new_analysis
+                snapshot_analyses[snapshot_hash] = new_analysis
             cached_html = refreshed_html
         elif cached_analysis is None:
             cached_analysis = await asyncio.to_thread(analyze_html, cached_html or "")
+        analysis_for_probe = cached_analysis
+        if analysis_for_probe is None:
+            raise RuntimeError("browser readiness analysis was not produced")
         return await probe_browser_readiness(
             page,
             url=url,
             surface=surface,
             listing_override=readiness_override,
             html=cached_html,
-            analysis=cached_analysis,
+            analysis=analysis_for_probe,
         )
 
     current_probe = await _cached_probe(refresh_html=True)

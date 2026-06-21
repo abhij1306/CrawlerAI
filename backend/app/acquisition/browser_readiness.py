@@ -258,7 +258,7 @@ def _has_meaningful_detail_dom(analysis: HtmlAnalysis) -> bool:
         try:
             nodes = analysis.document.css(selector)
         except Exception:
-            nodes = []
+            nodes = ()
         for node in nodes:
             body = clean_text(
                 re.sub(
@@ -379,6 +379,8 @@ async def probe_browser_readiness(
     html_text = html if html is not None else await get_page_html(page)
     if analysis is None or not analysis.matches_html(html_text or ""):
         analysis = await asyncio.to_thread(analyze_html, html_text or "")
+    if analysis is None:
+        raise RuntimeError("browser readiness analysis was not produced")
     visible_text_length = len(analysis.normalized_text)
     is_detail = "detail" in surface
     is_listing = "listing" in surface
@@ -522,7 +524,7 @@ def _ecommerce_ready_card_count(document: HtmlDocument) -> tuple[int, bool]:
         try:
             nodes = document.css(selector)
         except Exception:
-            nodes = []
+            nodes = ()
         for node in nodes:
             candidates_present = True
             node_id = node.identity()

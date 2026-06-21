@@ -2,7 +2,7 @@
 
 **Created:** 2026-06-19
 **Agent:** Codex
-**Status:** IN PROGRESS
+**Status:** SUPERSEDED 2026-06-21 by `docs/plans/final-architecture-debt-burndown-plan.md`
 **Touches buckets:** all backend runtime ownership buckets, persistence models/migrations, tests, canonical docs
 
 ## Goal

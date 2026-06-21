@@ -89,6 +89,8 @@ def build_browser_fetch_result(
     diagnostics: dict[str, object],
 ) -> PageFetchResult:
     content_type = finalized.get("content_type")
+    raw_html_document = finalized.get("html_document")
+    html_document = raw_html_document if isinstance(raw_html_document, HtmlDocument) else None
     return PageFetchResult(
         url=url,
         final_url=final_url,
@@ -102,11 +104,7 @@ def build_browser_fetch_result(
         network_payloads=_network_payload_rows(finalized.get("network_payloads")),
         browser_diagnostics=diagnostics,
         artifacts=_mapping_value(finalized.get("artifacts")),
-        html_document=(
-            finalized.get("html_document")
-            if isinstance(finalized.get("html_document"), HtmlDocument)
-            else None
-        ),
+        html_document=html_document,
     )
 
 

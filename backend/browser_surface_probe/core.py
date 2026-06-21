@@ -1662,7 +1662,6 @@ async def _target_browser_payload(
         run_id=run_id,
         locality_profile=locality_profile,
         allow_storage_state=False,
-        inject_init_script=True,
     ) as page:
         response = await page.goto(
             url,
@@ -1868,7 +1867,6 @@ async def _probe_site(
                 run_id=run_id,
                 locality_profile=locality_profile,
                 allow_storage_state=False,
-                inject_init_script=True,
             ) as page:
                 try:
                     await _navigate_probe_target(page, url)
