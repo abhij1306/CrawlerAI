@@ -235,6 +235,8 @@ VARIANT_SKU_VALUE_KEYS = (
     "sku_code",
     "skuId",
     "sku_id",
+    "merchSkuId",
+    "merch_sku_id",
     "stockKeepingUnit",
 )
 VARIANT_URL_VALUE_KEYS = ("url", "productUrl", "product_url", "pdpUrl", "pdp_url")
@@ -249,12 +251,43 @@ EMBEDDED_STATE_GLOBAL_KEYS = (
     "__PRELOADED_STATE__",
     "__NUXT__",
     "__NG_STATE__",
+    "SDG.Data.productJson",
+    "_RestockRocketConfig.product",
+    "meta",
 )
+EMBEDDED_STATE_PRODUCT_META_KEY = "meta"
+EMBEDDED_STATE_PRODUCT_META_CONTAINER_KEY = "product"
+EMBEDDED_STATE_PRODUCT_META_VARIANTS_KEY = "variants"
 EMBEDDED_STATE_MAX_SCRIPTS = 120
 EMBEDDED_STATE_MAX_SCRIPT_CHARS = 10_000_000
 EMBEDDED_STATE_MAX_DEPTH = 24
 EMBEDDED_STATE_MAX_NODES = 100_000
 EMBEDDED_STATE_MAX_LIST_ITEMS = 5_000
+VARIANT_MERCH_SKU_ID_KEYS = ("merchSkuId", "merch_sku_id")
+VARIANT_MERCH_SKU_SIZE_KEYS = ("label", "localizedLabel")
+VARIANT_CHILD_COLLECTION_KEYS = (
+    "variants",
+    "variations",
+    "sizes",
+    "skus",
+    "skuData",
+    "sku_data",
+)
+VARIANT_PARENT_OPTION_CHILD_KEYS = ("variants", "variations")
+VARIANT_PRODUCT_MAP_PATH_TOKENS = frozenset({"products"})
+VARIANT_PRODUCT_MAP_KEY_MIN_LENGTH = 4
+VARIANT_NESTED_URL_VALUE_KEYS = ("url", "canonicalUrl", "canonical_url", "path")
+VARIANT_SHOPIFY_SIZE_KEYS = ("public_title", "untranslatedTitle")
+VARIANT_SIZE_LIKE_PATTERN = (
+    r"^(?:"
+    r"(?:\d+(?:\.\d+)?)(?:\s*[-/]\s*\d+(?:\.\d+)?)?"
+    r"|(?:X{0,4}[SML]|[2-9]X[SL])"
+    r"|(?:ONE\s*SIZE|O/S|OS|ONE)"
+    r")$"
+)
+VARIANT_POSITIONAL_OPTION_KEYS = ("option1", "option2", "option3")
+VARIANT_POSITIONAL_NUMERIC_SIZE_MIN = 1.0
+VARIANT_POSITIONAL_NUMERIC_SIZE_MAX = 99.0
 VARIANT_STRUCTURED_PATH_TOKENS = frozenset(
     {"variant", "variants", "variation", "variations", "sku", "skus", "skudata"}
 )

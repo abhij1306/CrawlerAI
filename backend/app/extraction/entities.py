@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import defaultdict
 
 from pydantic import Field
+from app.core.records.url_identity import detail_url_resource_identity
 from app.core.shared.url_utils import asset_url_identity
 from app.extraction.contracts import (
     CaptureBundle,
@@ -194,12 +195,19 @@ def _merge_url_only_groups(
 
 
 def _product_identities(rows: list[Evidence]) -> set[tuple[str, str]]:
-    return {
+    identities = {
         (row.fact_type, str(row.value))
         for row in rows
         if row.fact_type
         in {"product.gtin", "product.mpn", "product.sku", "product.url"}
     }
+    identities.update(
+        ("product.url_resource", resource_identity)
+        for row in rows
+        if row.fact_type == "product.url"
+        and (resource_identity := detail_url_resource_identity(str(row.value)))
+    )
+    return identities
 
 
 def _product_by_subject(

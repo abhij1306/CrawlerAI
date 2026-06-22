@@ -27,6 +27,14 @@ DETAIL_IDENTITY_QUERY_KEYS = frozenset(
 DETAIL_IDENTITY_QUERY_PREFIXES = tuple(PUBLIC_RECORD_DETAIL_CANONICAL_QUERY_PREFIXES)
 
 DETAIL_BRAND_BOILERPLATE_VALUES = frozenset({"we"})
+DETAIL_BRAND_CATEGORY_PATTERN = (
+    r"^(?:men(?:'s|s)?|women(?:'s|s)?|boys?|girls?|kids?)\s+"
+    r"(?:[a-z0-9&'\-]+\s+){0,5}"
+    r"(?:shirts?|shorts?|shoes?|sneakers?|dresses?|pants?|jeans?|jackets?|hoodies?|tops?|tees?|t-?shirts?)$"
+)
+DETAIL_MICRODATA_NON_PRODUCT_ITEMTYPE_TOKENS = frozenset(
+    {"breadcrumblist", "listitem"}
+)
 DETAIL_DESCRIPTION_UI_PATTERNS = (
     r"^\s*(?:please\s+)?(?:choose|select)\s+(?:(?:a|your|the)\s+)?(?:fabric|material|finish|color|colour|size)\b",
     r"^\s*(?:fabric|material|finish|color|colour|size)\s+selection\b",
@@ -52,15 +60,27 @@ DETAIL_LOW_SIGNAL_TITLE_VALUES = frozenset(
         "frequently bought together",
         "added to cart",
         "clothing",
+        "boy",
+        "boys",
+        "girl",
+        "girls",
+        "men",
+        "women",
+        "hats & caps",
+        "mens footwear sneakers",
         "mens shoes",
         "men's shoes",
         "pick up today",
         "plp",
         "size",
+        "stylehint app",
+        "t shirts",
+        "tread pdp compose page",
         "us",
         "womens shoes",
         "women's shoes",
         "shoes",
+        "short sleeved t shirts",
         # Generic gender-plus-category title leak when real title selector fails (LUISAVIAROMA DQ-9).
         "kids boys",
         "kids girls",
@@ -93,6 +113,7 @@ DETAIL_SHELL_TITLE_KEYS = frozenset(
 )
 DETAIL_SHELL_TITLE_FLAG = "shell_title"
 DETAIL_SHELL_FINDING_RULE_ID = "HTTP_SHELL_TITLE"
+VARIANT_COLOR_BRAND_CONFLICT_FLAG = "brand_as_variant_color"
 DETAIL_TITLE_REJECTION_FLAGS = frozenset(
     {
         "code_only_title",
@@ -119,6 +140,7 @@ DETAIL_TITLE_REJECT_VALUES = (
             "shipping",
             "size guide",
             "specifications",
+            "x",
         }
     )
     | DETAIL_LOW_SIGNAL_TITLE_VALUES

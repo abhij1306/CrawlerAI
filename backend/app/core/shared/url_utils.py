@@ -22,6 +22,8 @@ from app.core.config.extraction_rules import (
     GIF_BASE64_PREFIX,
     PLACEHOLDER_IMAGE_URL_PATTERNS,
     PRIMARY_IMAGE_REJECT_URL_TOKENS,
+    PRODUCT_ASSET_HIGH_RES_QUERY_MIN_DIMENSION,
+    PRODUCT_ASSET_LOW_RES_QUERY_MAX_DIMENSION,
     PRODUCT_ASSET_REJECT_URL_PATTERNS,
     UNRESOLVED_TEMPLATE_URL_TOKENS,
     URL_DETECTION_TOKENS,
@@ -35,6 +37,7 @@ __all__ = [
     "clean_color_tokens",
     "extract_urls",
     "identity_token",
+    "low_resolution_asset_urls",
     "same_host",
     "suffix_after_prefix",
     "terminal_text",
@@ -340,6 +343,31 @@ def is_utility_image_url(value: object) -> bool:
     return any(
         re.search(pattern, text, flags=re.IGNORECASE)
         for pattern in product_asset_reject_url_patterns
+    )
+
+
+def low_resolution_asset_urls(values: tuple[str, ...]) -> frozenset[str]:
+    dimensions = {value: _image_query_dimensions(value) for value in values}
+    if not any(
+        any(size >= PRODUCT_ASSET_HIGH_RES_QUERY_MIN_DIMENSION for size in sizes)
+        for sizes in dimensions.values()
+    ):
+        return frozenset()
+    return frozenset(
+        value
+        for value, sizes in dimensions.items()
+        if sizes and max(sizes) <= PRODUCT_ASSET_LOW_RES_QUERY_MAX_DIMENSION
+    )
+
+
+def _image_query_dimensions(value: object) -> tuple[int, ...]:
+    dimension_keys = {"w", "width", "wid", "imwidth", "h", "height", "hei"}
+    return tuple(
+        int(raw_value)
+        for key, raw_value in parse_qsl(
+            urlparse(str(value or "")).query, keep_blank_values=False
+        )
+        if key.casefold() in dimension_keys and str(raw_value).isdigit()
     )
 
 

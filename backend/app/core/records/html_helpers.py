@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 
 from bs4 import BeautifulSoup
 from bs4.element import Comment, NavigableString, PageElement, Tag
@@ -105,10 +105,13 @@ def embedded_state_payloads(
     global_keys: tuple[str, ...],
     max_scripts: int,
     max_script_chars: int,
+    exclude_node: Callable[[object], bool] | None = None,
 ) -> Iterable[tuple[str, object]]:
     seen_nodes: set[int] = set()
     for index, node in enumerate(document.safe_css(selector)[:max_scripts]):
         seen_nodes.add(node.identity())
+        if exclude_node is not None and exclude_node(node):
+            continue
         text = str(node.text(separator="", strip=True) or "")[:max_script_chars]
         try:
             data = json.loads(text)
@@ -121,6 +124,8 @@ def embedded_state_payloads(
         if remaining <= 0 or node.identity() in seen_nodes:
             continue
         remaining -= 1
+        if exclude_node is not None and exclude_node(node):
+            continue
         text = str(node.text(separator="", strip=True) or "")[:max_script_chars]
         yield from _assigned_state_payloads(text, global_keys, index)
 

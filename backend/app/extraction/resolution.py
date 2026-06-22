@@ -11,11 +11,15 @@ from app.extraction.contracts import (
     RejectedEvidence,
     ResolutionResult,
 )
+from app.core.config.extraction_price_rules import (
+    DETAIL_PRICE_CURRENCY_COLLECTOR_PRIORITY,
+)
 from app.core.config.extraction_rules import (
     DETAIL_TITLE_MEASUREMENT_FLAG,
     DETAIL_TITLE_REJECTION_FLAGS,
     INVALID_AVAILABILITY_EVIDENCE_FLAG,
     PRODUCT_ASSET_IDENTITY_FACT_TYPES,
+    VARIANT_COLOR_BRAND_CONFLICT_FLAG,
 )
 from app.core.config.field_mappings import INVALID_SCALAR_TYPE_EVIDENCE_FLAG
 from app.core.config.variant_policy import (
@@ -23,7 +27,7 @@ from app.core.config.variant_policy import (
     DETAIL_PARENT_OFFER_INHERITANCE_RULE_ID,
 )
 from app.core.records.url_identity import conflicting_product_asset_urls
-from app.core.shared.url_utils import is_utility_image_url
+from app.core.shared.url_utils import is_utility_image_url, low_resolution_asset_urls
 from app.extraction.entities import AssetEntity, EntitySet, OfferEntity, VariantEntity
 from app.extraction.ids import stable_id
 
@@ -44,25 +48,34 @@ def resolve(
         decisions.extend(_resolve_variant(variant, by_id, findings))
     for offer in entities.offers:
         decisions.extend(_resolve_offer(offer, by_id, findings))
-    decisions.extend(_inherit_variant_offer_decisions(entities, decisions))
+    primary_offer_entity_id = _preferred_parent_offer_id(entities, decisions, by_id)
+    decisions.extend(
+        _inherit_variant_offer_decisions(
+            entities,
+            decisions,
+            primary_offer_entity_id=primary_offer_entity_id,
+        )
+    )
     for asset in entities.assets:
         decisions.append(_resolve_asset(asset, by_id, findings))
     resolved = {
         decision.fact_type for decision in decisions if decision.status == "resolved"
     }
     required = {"product.url", "product.title"}
+    asset_urls = tuple(asset.url for asset in entities.assets)
     conflicting_urls = conflicting_product_asset_urls(
         tuple(
             ev.value
             for ev in evidence
             if ev.fact_type in PRODUCT_ASSET_IDENTITY_FACT_TYPES
         ),
-        tuple(asset.url for asset in entities.assets),
-    )
+        asset_urls,
+    ) | low_resolution_asset_urls(asset_urls)
     return ResolutionResult(
         primary_product_entity_id=entities.products[0].entity_id
         if len(entities.products) == 1
         else None,
+        primary_offer_entity_id=primary_offer_entity_id,
         decisions=tuple(decisions),
         asset_decisions=_resolve_product_assets(
             entities.assets, by_id, conflicting_urls
@@ -107,8 +120,61 @@ def _resolve_offer(
     )
 
 
+def _preferred_parent_offer_id(
+    entities: EntitySet,
+    decisions: list[Decision],
+    evidence_by_id: dict[str, Evidence],
+) -> str | None:
+    resolved = {
+        (decision.entity_id, decision.fact_type): decision
+        for decision in decisions
+        if decision.status == "resolved" and decision.accepted_evidence_ids
+    }
+    source_priority = {
+        collector_id: index
+        for index, collector_id in enumerate(
+            DETAIL_PRICE_CURRENCY_COLLECTOR_PRIORITY
+        )
+    }
+
+    def score(offer: OfferEntity) -> tuple[int, int, int, int, str]:
+        price = resolved.get((offer.entity_id, "offer.price"))
+        currency = resolved.get((offer.entity_id, "offer.currency"))
+        pair = tuple(
+            evidence_by_id[decision.accepted_evidence_ids[0]]
+            for decision in (price, currency)
+            if decision is not None
+            and decision.accepted_evidence_ids[0] in evidence_by_id
+        )
+        collectors = {row.collector_id for row in pair}
+        complete = price is not None and currency is not None
+        source_rank = max(
+            (source_priority.get(row.collector_id, len(source_priority)) for row in pair),
+            default=len(source_priority) + 1,
+        )
+        resolved_fact_count = sum(
+            (offer.entity_id, fact_type) in resolved
+            for fact_type in offer.fact_evidence
+        )
+        return (
+            0 if complete else 1,
+            0 if len(collectors) == 1 and pair else 1,
+            source_rank,
+            -resolved_fact_count,
+            offer.entity_id,
+        )
+
+    parents = tuple(
+        offer for offer in entities.offers if offer.variant_entity_id is None
+    )
+    return min(parents, key=score).entity_id if parents else None
+
+
 def _inherit_variant_offer_decisions(
-    entities: EntitySet, decisions: list[Decision]
+    entities: EntitySet,
+    decisions: list[Decision],
+    *,
+    primary_offer_entity_id: str | None,
 ) -> tuple[Decision, ...]:
     facts = tuple(f"offer.{field}" for field in DETAIL_PARENT_INHERITED_OFFER_FIELDS)
     resolved = {
@@ -116,14 +182,14 @@ def _inherit_variant_offer_decisions(
         for item in decisions
         if item.status == "resolved"
     }
-    parents = [offer for offer in entities.offers if offer.variant_entity_id is None]
-    parent = max(
-        parents,
-        key=lambda offer: (
-            sum((offer.entity_id, fact) in resolved for fact in facts),
-            offer.entity_id,
+    parent = next(
+        (
+            offer
+            for offer in entities.offers
+            if offer.entity_id == primary_offer_entity_id
+            and offer.variant_entity_id is None
         ),
-        default=None,
+        None,
     )
     if parent is None:
         return ()
@@ -426,15 +492,18 @@ def _invalid(ev: Evidence) -> bool:
         & {
             "brand_boilerplate",
             "brand_url",
+            "category_as_brand",
             "description_ui_pollution",
             "invalid_decimal",
             "invalid_currency",
             INVALID_AVAILABILITY_EVIDENCE_FLAG,
             INVALID_SCALAR_TYPE_EVIDENCE_FLAG,
             "invalid_gtin",
+            "non_detail_product_url",
             DETAIL_TITLE_MEASUREMENT_FLAG,
             "placeholder_text",
             "tracking_url",
+            VARIANT_COLOR_BRAND_CONFLICT_FLAG,
         }
     )
 

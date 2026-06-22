@@ -104,6 +104,17 @@ def _metadata_evidence(
         if fact_type.startswith("offer.")
         else None
     )
+    product_subject = evidence(
+        bundle,
+        "url",
+        "url",
+        "product.url",
+        bundle.final_url,
+        SourceLocator(kind="url_component", value="url"),
+        hint=EntityHint(entity_type="product", url=bundle.final_url),
+        directness="inferred",
+        confidence=0.0,
+    ).subject_id
     return evidence(
         bundle,
         collector_id,
@@ -114,4 +125,5 @@ def _metadata_evidence(
         group_id=group,
         hint=EntityHint(entity_type=entity_type),
         confidence=confidence,
+        parent_subject_id=product_subject if entity_type in {"offer", "asset"} else None,
     )

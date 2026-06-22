@@ -160,6 +160,67 @@ def test_jsonld_product_group_uses_shade_as_color_axis() -> None:
     ]
 
 
+def test_gender_microdata_title_and_brand_as_variant_color_are_rejected() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <script type="application/ld+json">
+        [
+          {
+            "@type":"ProductGroup",
+            "name":"Nylon tank top - Barrow - Boys | Luisaviaroma",
+            "brand":"Barrow",
+            "url":"https://shop.test/en-in/p/barrow/kids-boys/83I-UKD027",
+            "offers":{"price":"7028","priceCurrency":"INR"}
+          },
+          {
+            "@type":"Product",
+            "isVariantOf":{"@id":"https://shop.test/en-in/p/barrow/kids-boys/83I-UKD027"},
+            "sku":"83I-UKD027-MDgw0-5610",
+            "size":"8Y",
+            "color":"Barrow",
+            "offers":{"price":"7028","priceCurrency":"INR"}
+          },
+          {
+            "@type":"Product",
+            "isVariantOf":{"@id":"https://shop.test/en-in/p/barrow/kids-boys/83I-UKD027"},
+            "sku":"83I-UKD027-MDgw0-5612",
+            "size":"12Y",
+            "color":"Barrow",
+            "offers":{"price":"7028","priceCurrency":"INR"}
+          }
+        ]
+        </script>
+        <span itemprop="name">Short-sleeved T-shirts</span>
+        <main><h1>Barrow Nylon tank top</h1></main>
+        """,
+        "https://shop.test/en-in/p/barrow/kids-boys/83I-UKD027",
+    )
+
+    record = result.records[0]
+    assert record["title"] == "Barrow Nylon tank top"
+    assert {row["size"] for row in record["variants"]} == {"8Y", "12Y"}
+    assert all("color" not in row for row in record["variants"])
+
+
+def test_jsonld_sibling_products_linked_to_group_materialize_as_variants() -> None:
+    html = """
+    <script type="application/ld+json">
+    [
+      {"@type":"ProductGroup","name":"Kids Tank Top","url":"https://shop.test/products/kids-tank","productGroupID":"TANK-1"},
+      {"@type":"Product","IS_VARIANT_OF":{"@id":"https://shop.test/products/kids-tank"},"sku":"TANK-8","color":"Green","size":"8Y","offers":{"price":"70","priceCurrency":"USD","availability":"https://schema.org/InStock"}},
+      {"@type":"Product","IS_VARIANT_OF":{"@id":"https://shop.test/products/kids-tank"},"sku":"TANK-12","color":"Green","size":"12Y","offers":{"price":"70","priceCurrency":"USD","availability":"https://schema.org/InStock"}}
+    ]
+    </script>
+    """.replace("IS_VARIANT_OF", "is" + "VariantOf")
+    result = _extract("ecommerce_detail", html, "https://shop.test/products/kids-tank")
+
+    assert result.records[0]["variants"] == [
+        {"sku":"TANK-12","price":"70.00","currency":"USD","availability":"in_stock","color":"Green","size":"12Y"},
+        {"sku":"TANK-8","price":"70.00","currency":"USD","availability":"in_stock","color":"Green","size":"8Y"},
+    ]
+
+
 def test_jsonld_one_axis_variants_with_child_offers_materialize() -> None:
     html = """
     <script type="application/ld+json">
@@ -225,6 +286,104 @@ def test_js_state_image_dimensions_do_not_materialize_as_variants() -> None:
         }
     ]
     assert result.decisions
+
+
+def test_identity_only_variant_with_inherited_currency_is_not_published() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <script type="application/ld+json">
+        {"@type":"Product","name":"Cross Training Tread","url":"https://shop.test/products/tread","offers":{"priceCurrency":"USD"}}
+        </script>
+        """,
+        "https://shop.test/products/tread",
+        network_payloads=(
+            {
+                "body": {
+                    "product": {
+                        "name": "Cross Training Tread",
+                        "url": "https://shop.test/products/tread",
+                        "currency": "USD",
+                        "variants": [
+                            {"id": "price-id-1"},
+                            {"id": "price-id-2"},
+                        ],
+                    }
+                }
+            },
+        ),
+    )
+
+    assert not result.records[0].get("variants")
+
+
+def test_js_state_media_id_and_width_do_not_materialize_as_variant() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        "<main><h1>Lip Balm</h1></main>",
+        "https://shop.test/products/lip-balm",
+        artifacts={
+            "js_state_objects": {
+                "product": {
+                    "name": "Lip Balm",
+                    "url": "https://shop.test/products/lip-balm",
+                    "price": 18,
+                    "currency": "USD",
+                    "media": [
+                        {
+                            "id": "33841425055989",
+                            "width": 916,
+                            "src": "https://cdn.shop.test/lip-balm.jpg",
+                        }
+                    ],
+                }
+            }
+        },
+    )
+
+    assert not result.records[0].get("variants")
+    assert all(
+        row.fact_type != "variant.option.width"
+        for row in result.evidence
+    )
+
+
+def test_responsive_layout_dimensions_do_not_materialize_as_variants() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <script type="application/ld+json">
+        {
+          "@type": "Product",
+          "name": "Rustic Cotton T-Shirt",
+          "url": "https://shop.test/products/rustic-cotton-t-shirt",
+          "offers": {"price": "14.90", "priceCurrency": "USD"}
+        }
+        </script>
+        """,
+        "https://shop.test/products/rustic-cotton-t-shirt",
+        network_payloads=(
+            {
+                "body": {
+                    "categories": [
+                        {
+                            "sdui": {
+                                "responsiveLayouts": [
+                                    {
+                                        "id": "layout-card-1",
+                                        "dimensions": {"width": 358, "height": 640},
+                                    }
+                                ]
+                            }
+                        }
+                    ]
+                }
+            },
+        ),
+    )
+
+    assert result.records[0]["price"] == "14.90"
+    assert not result.records[0].get("variants")
 
 
 def test_jsonld_aggregate_offer_low_price_materializes() -> None:
@@ -604,6 +763,97 @@ def test_parent_price_band_corroborates_different_variant_minor_unit_prices() ->
     } >= {4170000, 5250000, 5940000}
 
 
+def test_parent_currency_outranks_stray_dom_currency_for_variant_scale() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <script type="application/ld+json">
+        {"@context":"https://schema.org","@type":"Product","name":"Luna Bag","url":"https://shop.test/products/luna-bag","offers":{"price":"59500","priceCurrency":"INR"}}
+        </script>
+        <main><h1>Luna Bag</h1><div class="price">USD 595.00</div></main>
+        """,
+        "https://shop.test/products/luna-bag",
+        artifacts={"js_state_objects":{"product":{"name":"Luna Bag","url":"https://shop.test/products/luna-bag","variants":[
+            {"variantId":"luna-small","sku":"LUNA-S","size":"S","price":4170000,"currency":"INR"},
+            {"variantId":"luna-large","sku":"LUNA-L","size":"L","price":5950000,"currency":"INR"}
+        ]}}},
+    )
+
+    assert result.records[0]["price"] == "59500.00"
+    assert {row["size"]: row["price"] for row in result.records[0]["variants"]} == {
+        "S": "41700.00",
+        "L": "59500.00",
+    }
+
+
+def test_ten_x_peer_does_not_scale_normal_major_unit_price() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <script type="application/ld+json">
+        {"@context":"https://schema.org","@type":"Product","name":"Arrival Shorts","url":"https://shop.test/products/arrival-shorts","offers":{"price":"20","priceCurrency":"USD"},"hasVariant":[{"@type":"Product","sku":"ARRIVAL-3XL","size":"3XL","offers":{"price":"20","priceCurrency":"USD"}}]}
+        </script>
+        """,
+        "https://shop.test/products/arrival-shorts",
+        artifacts={"js_state_objects":{"productData":{"name":"Arrival Shorts","getTheLookProducts":[{"name":"Related Socks","variants":[{"variantId":"related-socks","sku":"SOCKS-S","size":"S","price":2,"currency":"USD"}]}]}}},
+    )
+
+    assert result.records[0]["price"] == "20.00"
+    assert result.records[0]["variants"][0]["price"] == "20.00"
+
+
+def test_primary_structured_offer_outranks_conflicting_secondary_currency() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <meta property="product:price:amount" content="1400.00">
+        <meta property="product:price:currency" content="USD">
+        <script type="application/ld+json">
+        {"@context":"https://schema.org","@type":"Product","name":"Lip Balm","url":"https://shop.test/en-in/products/lip-balm","image":"https://shop.test/lip-balm.jpg","offers":{"price":"1400","priceCurrency":"INR"}}
+        </script>
+        <script>
+        var meta = {"product":{"id":721,"variants":[{"id":412,"price":180000,"sku":"BALM-BDAY","public_title":"Birthday"}]},"page":{"pageType":"product"}};
+        </script>
+        """,
+        "https://shop.test/en-in/products/lip-balm",
+    )
+
+    record = result.records[0]
+    assert record["price"] == "1400.00"
+    assert record["currency"] == "INR"
+    assert record["variants"][0]["price"] == "1800.00"
+    assert record["variants"][0]["currency"] == "INR"
+
+
+def test_uniform_variant_offer_populates_missing_parent_offer() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <script type="application/ld+json">
+        {
+          "@context":"https://schema.org",
+          "@type":"ProductGroup",
+          "name":"Kids Tank",
+          "url":"https://shop.test/products/kids-tank",
+          "image":"https://shop.test/kids-tank.jpg",
+          "hasVariant":[
+            {"@type":"Product","sku":"TANK-S","size":"S","offers":{"price":"70","priceCurrency":"USD"}},
+            {"@type":"Product","sku":"TANK-M","size":"M","offers":{"price":"70","priceCurrency":"USD"}}
+          ]
+        }
+        </script>
+        """,
+        "https://shop.test/products/kids-tank",
+    )
+
+    record = result.records[0]
+    assert record["price"] == "70.00"
+    assert record["currency"] == "USD"
+    assert record["_lineage"]["price"]["rule_id"] == (
+        "uniform_variant_offer_aggregate"
+    )
+
+
 def test_same_offer_formatted_price_corroborates_raw_minor_unit_price() -> None:
     result = _extract(
         "ecommerce_detail",
@@ -814,6 +1064,35 @@ def test_transient_title_uses_semantic_url_segment() -> None:
 
     assert result.records[0]["title"] == "Sparkling Prebiotic Beverage"
     assert result.verdict == "review"
+
+
+@pytest.mark.parametrize(
+    ("bad_title", "page_url", "expected"),
+    (
+        ("T-Shirts", "https://shop.test/en-in/p/barrow/kids-boys/83I-UKD027", None),
+        ("Hats & Caps", "https://shop.test/us/en/products/wide-brim-sun-hat/E455957", "wide brim sun hat"),
+        ("Tread PDP - Compose Page", "https://shop.test/shop/tread", "tread"),
+        ("mens footwear sneakers", "https://shop.test/products/st40002-02000", None),
+        ("X", "https://shop.test/p/womens-chill-river-midi-dress-1933601.html", None),
+    ),
+)
+def test_taxonomy_and_cms_titles_use_semantic_url_identity(
+    bad_title: str,
+    page_url: str,
+    expected: str | None,
+) -> None:
+    result = _extract(
+        "ecommerce_detail",
+        f"<main><h1>{bad_title}</h1></main>",
+        page_url,
+        requested_fields=("title",),
+    )
+
+    if expected is None:
+        assert result.records[0].get("title") is None
+    else:
+        assert result.records[0]["title"] == expected
+    assert result.verdict in {"partial", "review"}
 
 
 def test_measurement_title_uses_semantic_url_segment() -> None:
@@ -1611,6 +1890,112 @@ def test_same_product_variant_url_remains_materialized() -> None:
     assert result.records[0]["variants"][0]["size"] == "S"
 
 
+def test_shopify_numeric_option1_materializes_as_size() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        "<main><h1>Trail Shoe</h1></main>",
+        "https://shop.test/products/trail-shoe",
+        artifacts={"js_state_objects":{"product":{"name":"Trail Shoe","url":"https://shop.test/products/trail-shoe","price":100,"currency":"USD","variants":[{"id":"shoe-8","sku":"SHOE-8","option1":"8","title":"8","price":100,"currency":"USD"},{"id":"shoe-85","sku":"SHOE-85","option1":"8.5","title":"8.5","price":100,"currency":"USD"}]}}},
+    )
+
+    assert [row["size"] for row in result.records[0]["variants"]] == ["8", "8.5"]
+
+
+def test_merch_sku_label_materializes_sku_and_size() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        "<main><h1>Air Force 1</h1></main>",
+        "https://shop.test/products/air-force-1",
+        artifacts={"js_state_objects":{"product":{"name":"Air Force 1","url":"https://shop.test/products/air-force-1","price":115,"currency":"USD","skus":[{"merchSkuId":"sku-6","label":"6","localizedLabel":"M 6 / W 7.5","productCode":"CW2288-111","availability":"IN_STOCK"},{"merchSkuId":"sku-65","label":"6.5","localizedLabel":"M 6.5 / W 8","productCode":"CW2288-111","availability":"IN_STOCK"}]}}},
+    )
+
+    variants = result.records[0]["variants"]
+    assert [(row["sku"], row["size"]) for row in variants] == [
+        ("sku-6", "6"),
+        ("sku-65", "6.5"),
+    ]
+
+
+def test_product_container_sizes_use_matching_product_offer_only() -> None:
+    page_url = "https://shop.test/products/air-force-1/CW2288-111"
+    matching_product = {
+        "id": "13071857",
+        "colorDescription": "White/White",
+        "pdpUrl": {"url": page_url},
+        "prices": {"currentPrice": 115, "currency": "USD"},
+        "productInfo": {"title": "Air Force 1", "url": page_url},
+        "sizes": [
+            {"merchSkuId": "white-8", "label": "8", "status": "ACTIVE"},
+            {"merchSkuId": "white-9", "label": "9", "status": "ACTIVE"},
+        ],
+    }
+    result = _extract(
+        "ecommerce_detail",
+        "<main><h1>Air Force 1</h1></main>",
+        page_url,
+        artifacts={
+            "js_state_objects": {
+                "props": {
+                    "pageProps": {
+                        "colorwayImages": [
+                            {
+                                "id": "13071857",
+                                "url": page_url,
+                                "colorDescription": "White/White",
+                            },
+                            {
+                                "id": "13071848",
+                                "url": "https://shop.test/products/air-force-1/CW2288-001",
+                                "colorDescription": "Black/Black",
+                            },
+                        ],
+                        "productGroups": [
+                            {
+                                "products": {
+                                    "CW2288-111": matching_product,
+                                    "CW2288-001": {
+                                        "id": "13071848",
+                                        "colorDescription": "Black/Black",
+                                        "pdpUrl": {
+                                            "url": "https://shop.test/products/air-force-1/CW2288-001"
+                                        },
+                                        "prices": {
+                                            "currentPrice": 120,
+                                            "currency": "USD",
+                                        },
+                                        "productInfo": {
+                                            "title": "Air Force 1",
+                                            "url": "https://shop.test/products/air-force-1/CW2288-001",
+                                        },
+                                        "sizes": [
+                                            {
+                                                "merchSkuId": "black-8",
+                                                "label": "8",
+                                                "status": "ACTIVE",
+                                            }
+                                        ],
+                                    },
+                                }
+                            }
+                        ],
+                        "selectedProduct": matching_product,
+                    }
+                }
+            }
+        },
+    )
+
+    record = result.records[0]
+    assert record["price"] == "115.00"
+    assert record["currency"] == "USD"
+    assert record["variants"] == [
+        {"sku": "white-8", "price": "115.00", "currency": "USD", "size": "8"},
+        {"sku": "white-9", "price": "115.00", "currency": "USD", "size": "9"},
+    ]
+    assert all(row.get("sku") != "black-8" for row in record["variants"])
+    assert all("color" not in row for row in record["variants"])
+
+
 def test_variant_placeholder_axis_labels_are_removed() -> None:
     result = _extract(
         "ecommerce_detail",
@@ -1707,6 +2092,146 @@ def test_js_state_numeric_availability_flags_materialize_as_stock_states() -> No
     ]
 
 
+def test_shopify_meta_assignment_materializes_default_variant() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <script type="application/ld+json">
+        {"@context":"https://schema.org","@type":"Product","name":"Black Bracelet","url":"https://shop.test/products/black-bracelet","offers":{"price":"8.00","priceCurrency":"USD"}}
+        </script>
+        <script>
+        var meta = {"product":{"id":721,"variants":[{"id":412,"price":800,"sku":"BRACELET-BLK","title":"Default Title"}]},"page":{"pageType":"product"}};
+        </script>
+        """,
+        "https://shop.test/products/black-bracelet",
+    )
+
+    assert result.records[0]["variants"] == [
+        {
+            "variant_id": "412",
+            "sku": "BRACELET-BLK",
+            "price": "8.00",
+            "currency": "USD",
+        }
+    ]
+
+
+def test_shopify_vendor_and_public_title_materialize_brand_and_size() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <script type="application/ld+json">
+        {"@context":"https://schema.org","@type":"Product","name":"Graphic Tee","url":"https://shop.test/products/graphic-tee","image":"https://shop.test/graphic-tee.jpg","offers":{"price":"19.98","priceCurrency":"USD"}}
+        </script>
+        <span itemprop="brand">Mens Short Sleeve Shirt</span>
+        <script>
+        var meta = {"product":{"id":721,"vendor":"JORDAN","variants":[{"id":412,"price":1998,"sku":"TEE-XS","public_title":"XS"}]},"page":{"pageType":"product"}};
+        </script>
+        """,
+        "https://shop.test/products/graphic-tee",
+    )
+
+    assert result.records[0]["brand"] == "JORDAN"
+    assert result.records[0]["variants"][0]["size"] == "XS"
+    assert result.records[0]["variants"][0]["price"] == "19.98"
+    assert any(
+        row.fact_type == "product.brand"
+        and row.value == "Mens Short Sleeve Shirt"
+        and "category_as_brand" in row.flags
+        for row in result.evidence
+    )
+
+
+def test_richer_shopify_product_axis_outranks_compact_meta_fallback() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <script type="application/ld+json">
+        {"@context":"https://schema.org","@type":"Product","name":"Lip Balm","url":"https://shop.test/products/lip-balm","offers":{"price":"18","priceCurrency":"USD"}}
+        </script>
+        <script>
+        var meta = {"product":{"id":721,"variants":[{"id":412,"price":1800,"sku":"BALM-BDAY","public_title":"Birthday"}]},"page":{"pageType":"product"}};
+        </script>
+        <script>
+        SDG.Data.productJson = {
+          "id": 721,
+          "title": "Lip Balm",
+          "options": ["Flavor"],
+          "variants": [
+            {"id":412,"price":1800,"sku":"BALM-BDAY","public_title":"Birthday","option1":"Birthday","options":["Birthday"]}
+          ]
+        };
+        </script>
+        """,
+        "https://shop.test/products/lip-balm",
+    )
+
+    variant = result.records[0]["variants"][0]
+    assert variant["flavor"] == "Birthday"
+    assert "size" not in variant
+    assert "style" not in variant
+
+
+def test_compact_shopify_non_size_public_title_uses_style_fallback() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <script type="application/ld+json">
+        {"@context":"https://schema.org","@type":"Product","name":"Lip Balm","url":"https://shop.test/products/lip-balm","offers":{"price":"18","priceCurrency":"USD"}}
+        </script>
+        <script>
+        var meta = {"product":{"id":721,"variants":[{"id":412,"price":1800,"sku":"BALM-BDAY","public_title":"Birthday"}]},"page":{"pageType":"product"}};
+        </script>
+        """,
+        "https://shop.test/products/lip-balm",
+    )
+
+    variant = result.records[0]["variants"][0]
+    assert variant["style"] == "Birthday"
+    assert "size" not in variant
+
+
+def test_internal_brand_hierarchy_materializes_leaf_brand() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <script type="application/ld+json">
+        {"@context":"https://schema.org","@type":"Product","name":"Bambino Plus","url":"https://shop.test/products/bambino-plus","image":"https://shop.test/bambino.jpg","offers":{"price":"499.95","priceCurrency":"USD"}}
+        </script>
+        """,
+        "https://shop.test/products/bambino-plus",
+        network_payloads=(
+            {
+                "body": {
+                    "product": {
+                        "name": "Bambino Plus",
+                        "url": "https://shop.test/products/bambino-plus",
+                        "brand": "breville-parent/breville",
+                    }
+                }
+            },
+        ),
+    )
+
+    assert result.records[0]["brand"] == "Breville"
+
+
+def test_nested_product_config_does_not_publish_product_fields() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <main><h1>Espresso Machine</h1></main>
+        <script>
+        window.__INITIAL_STATE__ = {"product":{"config":{"fabricGuide":{"name":"Guide","description":"Configuration copy","brand":"Retailer"}}}};
+        </script>
+        """,
+        "https://shop.test/products/espresso-machine",
+    )
+
+    assert result.records[0].get("brand") is None
+    assert result.records[0].get("description") is None
+
+
 def test_embedded_next_state_variants_materialize_without_state_artifact() -> None:
     result = _extract(
         "ecommerce_detail",
@@ -1800,6 +2325,82 @@ def test_unrelated_application_json_does_not_create_variant() -> None:
 
     assert not result.records[0].get("variants")
     assert result.records[0].get("price") is None
+
+
+def test_embedded_product_json_in_recommendation_scope_is_ignored() -> None:
+    page_url = "https://shop.test/products/luna-bag"
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <script type="application/ld+json">
+        {
+          "@type": "Product",
+          "name": "Luna Bag",
+          "sku": "LUNA-RED",
+          "url": "https://shop.test/products/luna-bag",
+          "image": "https://cdn.shop.test/luna-bag-main.jpg",
+          "offers": {"price": "594", "priceCurrency": "USD"}
+        }
+        </script>
+        <main>
+          <script id="__NEXT_DATA__" type="application/json">
+          {
+            "product": {
+              "name": "Luna Bag",
+              "url": "https://shop.test/products/luna-bag",
+              "variants": [
+                {"id": "luna-red", "sku": "LUNA-RED", "color": "Red", "size": "O/S", "current_price": "594", "currency_code": "USD", "available": true},
+                {"id": "luna-black", "sku": "LUNA-BLACK", "color": "Black", "size": "O/S", "current_price": "594", "currency_code": "USD", "available": true}
+              ]
+            }
+          }
+          </script>
+          <section class="pairs-well-with product-recommendations">
+            <script type="application/json" class="pww-product-json">
+            {
+              "title": "Ruched Handkerchief Dress",
+              "handle": "ruched-handkerchief-dress",
+              "images": ["https://cdn.shop.test/ruched-dress-main.jpg"],
+              "variants": [
+                {"id": "dress-4", "sku": "DRESS-4", "color": "Stone", "size": "4", "price": "417", "currency": "USD", "available": true}
+              ]
+            }
+            </script>
+          </section>
+        </main>
+        """,
+        page_url,
+    )
+
+    record = result.records[0]
+    assert record["title"] == "Luna Bag"
+    assert record["image_url"] == "https://cdn.shop.test/luna-bag-main.jpg"
+    assert record["variants"] == [
+        {
+            "variant_id": "luna-black",
+            "sku": "LUNA-BLACK",
+            "price": "594.00",
+            "currency": "USD",
+            "availability": "in_stock",
+            "color": "Black",
+            "size": "O/S",
+        },
+        {
+            "variant_id": "luna-red",
+            "sku": "LUNA-RED",
+            "price": "594.00",
+            "currency": "USD",
+            "availability": "in_stock",
+            "color": "Red",
+            "size": "O/S",
+        },
+    ]
+    assert all(
+        "dress" not in str(row.value).casefold()
+        and "ruched" not in str(row.value).casefold()
+        for row in result.evidence
+        if row.collector_id == "js_state"
+    )
 
 
 def test_embedded_variants_inherit_parent_jsonld_offer() -> None:
@@ -2793,6 +3394,22 @@ def test_detail_url_falls_back_to_canonical_capture_url() -> None:
     assert result.records[0]["url"] == canonical_url
 
 
+def test_detail_product_url_outranks_storefront_root_and_brand_tagline_is_trimmed() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <meta property="og:url" content="https://shop.test">
+        <script type="application/ld+json">
+        {"@type":"Product","name":"Arrival Shorts","brand":"Gymshark | We Do Gym","url":"https://shop.test/products/arrival-shorts","image":"https://shop.test/arrival-shorts.jpg","offers":{"price":"20","priceCurrency":"USD"}}
+        </script>
+        """,
+        "https://shop.test/products/arrival-shorts",
+    )
+
+    assert result.records[0]["url"] == "https://shop.test/products/arrival-shorts"
+    assert result.records[0]["brand"] == "Gymshark"
+
+
 def test_utility_image_cannot_beat_product_image() -> None:
     result = _extract(
         "ecommerce_detail",
@@ -2907,6 +3524,73 @@ def test_js_state_related_products_do_not_contaminate_product_assets() -> None:
     ]
 
 
+def test_network_recommendation_products_do_not_contaminate_detail_record() -> None:
+    page_url = "https://shop.test/products/breville-bambino-plus"
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <script type="application/ld+json">
+        {
+          "@type": "Product",
+          "name": "Breville Bambino Plus",
+          "brand": "Breville",
+          "url": "https://shop.test/products/breville-bambino-plus",
+          "image": [
+            "https://cdn.shop.test/breville-bambino-plus-main.jpg",
+            "https://cdn.shop.test/breville-bambino-plus-side.jpg"
+          ],
+          "offers": {"price": "499.95", "priceCurrency": "USD"}
+        }
+        </script>
+        """,
+        page_url,
+        network_payloads=(
+            {
+                "body": {
+                    "placements": [
+                        {
+                            "products": [
+                                {
+                                    "name": "DeLonghi Classic Espresso Machine",
+                                    "url": "products/delonghi-classic-espresso-machine/",
+                                    "image": "202618/0006/delonghi-classic-espresso-machine-1-h.jpg",
+                                    "price": "199.95",
+                                    "currency": "USD",
+                                }
+                            ]
+                        }
+                    ],
+                    "links": [
+                        {
+                            "name": "Cuisinart Espresso Bar Slim Espresso Machine",
+                            "image": "wcm/202610/0027/img15",
+                            "price": "249.95",
+                            "currency": "USD",
+                        }
+                    ],
+                }
+            },
+        ),
+    )
+
+    record = result.records[0]
+    assert record["title"] == "Breville Bambino Plus"
+    assert record["brand"] == "Breville"
+    assert record["price"] == "499.95"
+    assert record["image_url"] == (
+        "https://cdn.shop.test/breville-bambino-plus-main.jpg"
+    )
+    assert record["additional_images"] == [
+        "https://cdn.shop.test/breville-bambino-plus-side.jpg"
+    ]
+    assert all(
+        not {"delonghi", "cuisinart", "img15"}
+        & set(str(row.value).casefold().replace("/", " ").split())
+        for row in result.evidence
+        if row.collector_id == "network"
+    )
+
+
 def test_valid_shopify_gallery_images_remain_materialized() -> None:
     result = _extract(
         "ecommerce_detail",
@@ -2934,6 +3618,41 @@ def test_valid_shopify_gallery_images_remain_materialized() -> None:
     assert record["additional_images"] == [
         "https://cdn.shopify.com/s/files/1/0001/files/hoodie-back.jpg?v=2"
     ]
+
+
+def test_structured_gallery_rejects_semantic_cross_product_images() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <script type="application/ld+json">
+        {
+          "@type": "Product",
+          "name": "Breville Bambino Plus Espresso Machine",
+          "url": "https://shop.test/products/breville-the-bambino-plus",
+          "image": [
+            "https://cdn.shop.test/breville-bambino-plus-espresso-machine-main.jpg",
+            "https://cdn.shop.test/breville-bambino-plus-espresso-machine-side.jpg",
+            "https://cdn.shop.test/breville-bambino-espresso-machine-detail.jpg",
+            "https://cdn.shop.test/breville-juice-fountain-cold-xl.jpg",
+            "https://cdn.shop.test/breville-toast-select-luxe-2-slice-toaster.jpg",
+            "https://cdn.shop.test/red-front.jpg"
+          ],
+          "offers": {"price": "499.95", "priceCurrency": "USD"}
+        }
+        </script>
+        """,
+        "https://shop.test/products/breville-the-bambino-plus",
+    )
+
+    record = result.records[0]
+    assert record["image_url"] == (
+        "https://cdn.shop.test/breville-bambino-plus-espresso-machine-main.jpg"
+    )
+    assert set(record["additional_images"]) == {
+        "https://cdn.shop.test/breville-bambino-plus-espresso-machine-side.jpg",
+        "https://cdn.shop.test/breville-bambino-espresso-machine-detail.jpg",
+        "https://cdn.shop.test/red-front.jpg",
+    }
 
 
 def test_structured_gallery_rejects_conflicting_product_codes() -> None:
@@ -3022,6 +3741,36 @@ def test_structured_gallery_rejects_conflicting_numeric_product_ids() -> None:
     assert record["additional_images"] == [
         "https://cdn.shop.test/images/210397084-2.jpg"
     ]
+
+
+def test_banner_ugc_and_video_still_assets_are_rejected() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <script type="application/ld+json">
+        {
+          "@type": "Product",
+          "name": "Premium Linen Shirt",
+          "url": "https://shop.test/products/premium-linen-shirt",
+          "image": [
+            "https://cdn.shop.test/products/premium-linen-shirt-main.jpg",
+            "https://cdn.shop.test/sub_banners/womens-accessories-handbags.jpg",
+            "https://api.shop.test/ugc/SR_NETWORK_IMAGES/stylehint.png",
+            "https://api.shop.test/ugc/v1/images/ugc_stylehint_user_123",
+            "https://embed-ssl.wistia.com/deliveries/video-still.jpg"
+          ],
+          "offers": {"price": "49.90", "priceCurrency": "USD"}
+        }
+        </script>
+        """,
+        "https://shop.test/products/premium-linen-shirt",
+    )
+
+    record = result.records[0]
+    assert record["image_url"] == (
+        "https://cdn.shop.test/products/premium-linen-shirt-main.jpg"
+    )
+    assert not record.get("additional_images")
 
 
 def test_video_thumbnail_is_not_a_product_gallery_asset() -> None:
@@ -3124,8 +3873,13 @@ def test_product_asset_filter_rejects_utility_carrier_flag_and_template_urls() -
             "https://cdn.shop.test/ui/edit.abcdef12.svg",
             "https://cdn.shop.test/ui/pig.310ddaac.svg",
             "https://cdn.shop.test/ui/Combined_Shape__2_.svg",
+            "https://cdn.shop.test/ui/Order.svg",
+            "https://cdn.shop.test/payments/mastercard-card.svg",
+            "https://cdn.shop.test/reviews/Surfacing_Reviews_Landing_Page_on_PDP.jpg",
             "https://cdn.shop.test/images/__IMAGE_PARAMS__/trail-shoe.jpg",
             "https://cdn.shop.test/ab/images/dp/",
+            "https://shop.test/collections/shoes/products/Trail%20Shoe",
+            "https://cdn.shop.test/products/trail-shoe/format%26cs%3Dsrgb",
             "https://cdn.shop.test/flags/us.png",
             "https://cdn.shop.test/category/summer-collection-banner.jpg",
             "https://cdn.shop.test/dropdown/toy-directory-thumbnail.jpg",
@@ -3142,6 +3896,35 @@ def test_product_asset_filter_rejects_utility_carrier_flag_and_template_urls() -
     assert record["image_url"] == "https://cdn.shop.test/products/trail-shoe-main.jpg"
     assert record["additional_images"] == [
         "https://cdn.shop.test/products/trail-shoe-side.jpg",
+    ]
+
+
+def test_product_asset_filter_rejects_tiny_peer_and_transparent_placeholder() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <script type="application/ld+json">
+        {
+          "@type": "Product",
+          "name": "Rustic Cotton T-Shirt",
+          "url": "https://shop.test/products/rustic-cotton-t-shirt",
+          "image": [
+            "https://cdn.shop.test/assets/opaque-main.jpg?w=1920",
+            "https://cdn.shop.test/assets/opaque-side.jpg?w=1600",
+            "https://cdn.shop.test/assets/a1b2c3.jpg?w=66",
+            "https://cdn.shop.test/images/transparent-background.png"
+          ],
+          "offers": {"price": "14.90", "priceCurrency": "USD"}
+        }
+        </script>
+        """,
+        "https://shop.test/products/rustic-cotton-t-shirt",
+    )
+
+    record = result.records[0]
+    assert record["image_url"] == "https://cdn.shop.test/assets/opaque-main.jpg?w=1920"
+    assert record["additional_images"] == [
+        "https://cdn.shop.test/assets/opaque-side.jpg?w=1600"
     ]
 
 
@@ -3289,6 +4072,22 @@ def test_missing_requested_field_has_visible_finding() -> None:
     ]
     assert any(finding.metadata.get("field") == "brand" for finding in findings)
     assert result.verdict in {"partial", "review"}
+
+
+def test_missing_core_detail_fields_request_one_rendered_capability() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        "<main><h1>Espresso Machine</h1></main>",
+        "https://shop.test/products/espresso-machine",
+    )
+
+    assert result.retry_request is not None
+    assert result.retry_request.reason == "dynamic_content_missing"
+    assert result.retry_request.required_artifacts == (
+        "rendered_html",
+        "network_payloads",
+    )
+    assert result.retry_request.max_attempts == 1
 
 
 def test_missing_requested_variants_requests_one_rendered_capability() -> None:

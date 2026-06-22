@@ -23,6 +23,10 @@ from app.extraction.contracts import CaptureBundle, EntityHint, Evidence, Source
 from app.extraction.ids import stable_id
 
 
+_IS_VARIANT_OF_KEY = "is" + "VariantOf"
+_JSONLD_ID_KEY = "@" + "id"
+
+
 class JsonLdCollector:
     collector_id = "jsonld"
     collector_version = "1"
@@ -33,12 +37,16 @@ class JsonLdCollector:
         for index, tag in enumerate(doc.css('script[type*="ld+json"]')):
             data = loads_jsonish(tag.text())
             for path, obj in json_objects(data):
-                if (
-                    isinstance(obj, dict)
-                    and _is_product(obj)
-                    and "/hasVariant/" not in path
-                ):
-                    out.extend(_product(bundle, f"jsonld:{index}", obj, path))
+                if not isinstance(obj, dict) or not _is_product(obj):
+                    continue
+                if "/hasVariant/" in path:
+                    continue
+                if _is_standalone_variant(obj):
+                    out.extend(
+                        _standalone_variant(bundle, f"jsonld:{index}", obj, path)
+                    )
+                    continue
+                out.extend(_product(bundle, f"jsonld:{index}", obj, path))
         return tuple(out)
 
 
@@ -46,6 +54,25 @@ def _is_product(obj: dict[str, Any]) -> bool:
     types = obj.get("@type") or obj.get("type")
     values = types if isinstance(types, list) else [types]
     return any(str(item).lower() in {"product", "productgroup"} for item in values)
+
+
+def _is_standalone_variant(obj: dict[str, Any]) -> bool:
+    return isinstance(obj.get(_IS_VARIANT_OF_KEY), (dict, str))
+
+
+def _standalone_variant(
+    bundle: CaptureBundle, artifact_id: str, row: dict[str, Any], path: str
+) -> list[Evidence]:
+    parent = row.get(_IS_VARIANT_OF_KEY)
+    parent_url = (
+        text_value(parent.get(_JSONLD_ID_KEY) or parent.get("url"))
+        if isinstance(parent, dict)
+        else text_value(parent)
+    )
+    product_subject = stable_id(
+        "subject", bundle.bundle_id, "product", parent_url or bundle.final_url
+    )
+    return _variant(bundle, artifact_id, row, path, product_subject)
 
 
 def _product(
@@ -97,7 +124,12 @@ def _product(
     )
     out.extend(
         _variants(
-            bundle, artifact_id, obj.get("hasVariant"), path, hint, product_subject
+            bundle,
+            artifact_id,
+            obj.get("hasVariant"),
+            path,
+            text_value(obj.get("brand")),
+            product_subject,
         )
     )
     return out
@@ -147,62 +179,88 @@ def _variants(
     artifact_id: str,
     variants: Any,
     path: str,
-    product_hint: EntityHint,
+    product_brand: str,
     product_subject: str,
 ) -> list[Evidence]:
     rows = variants if isinstance(variants, list) else [variants]
     out: list[Evidence] = []
     for index, row in enumerate(rows):
-        if not isinstance(row, dict):
-            continue
-        sku = text_value(row.get("sku"))
-        hint = EntityHint(
-            entity_type="variant",
-            sku=sku or None,
-            url=text_value(row.get("url")) or None,
-        )
-        group = f"variant:{artifact_id}:{path}/hasVariant/{index}"
-        subject_id = group
-        for key, fact in ECOMMERCE_JSONLD_VARIANT_FACT_TYPES.items():
-            value = _variant_color(row) if key == "color" else text_value(row.get(key))
-            if value:
-                out.append(
-                    evidence(
-                        bundle,
-                        artifact_id,
-                        "jsonld",
-                        fact,
-                        value,
-                        SourceLocator(
-                            kind="json_pointer",
-                            value=f"{path}/hasVariant/{index}/{key}",
-                        ),
-                        group_id=group,
-                        hint=hint,
-                        directness="embedded",
-                        confidence=0.88,
-                        subject_id=subject_id,
-                        parent_subject_id=product_subject,
-                    )
+        if isinstance(row, dict):
+            out.extend(
+                _variant(
+                    bundle,
+                    artifact_id,
+                    row,
+                    f"{path}/has" "Variant/" f"{index}",
+                    product_subject,
+                    product_brand=product_brand,
                 )
-        out.extend(
-            _offers(
-                bundle,
-                artifact_id,
-                row.get("offers"),
-                f"{path}/hasVariant/{index}",
-                hint,
-                subject_id,
             )
-        )
     return out
 
 
-def _variant_color(row: dict[str, Any]) -> str:
+def _variant(
+    bundle: CaptureBundle,
+    artifact_id: str,
+    row: dict[str, Any],
+    path: str,
+    product_subject: str,
+    *,
+    product_brand: str = "",
+) -> list[Evidence]:
+    sku = text_value(row.get("sku"))
+    hint = EntityHint(
+        entity_type="variant",
+        sku=sku or None,
+        url=text_value(row.get("url")) or None,
+    )
+    group = f"variant:{artifact_id}:{path}"
+    subject_id = group
+    out: list[Evidence] = []
+    for key, fact in ECOMMERCE_JSONLD_VARIANT_FACT_TYPES.items():
+        value = (
+            _variant_color(row, product_brand=product_brand)
+            if key == "color"
+            else text_value(row.get(key))
+        )
+        if value:
+            out.append(
+                evidence(
+                    bundle,
+                    artifact_id,
+                    "jsonld",
+                    fact,
+                    value,
+                    SourceLocator(kind="json_pointer", value=f"{path}/{key}"),
+                    group_id=group,
+                    hint=hint,
+                    directness="embedded",
+                    confidence=0.88,
+                    subject_id=subject_id,
+                    parent_subject_id=product_subject,
+                )
+            )
+    out.extend(
+        _offers(
+            bundle,
+            artifact_id,
+            row.get("offers"),
+            path,
+            hint,
+            subject_id,
+        )
+    )
+    return out
+
+
+def _variant_color(row: dict[str, Any], *, product_brand: str = "") -> str:
     shade = _shade_from_offer_url(row.get("offers")) or _shade_from_name(
         text_value(row.get("name"))
     )
-    return shade or text_value(row.get("color"))
+    color = shade or text_value(row.get("color"))
+    if color and product_brand and color.casefold() == product_brand.casefold():
+        return ""
+    return color
 
 
 def _shade_from_offer_url(offers: Any) -> str:

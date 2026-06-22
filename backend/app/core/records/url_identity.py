@@ -8,6 +8,10 @@ from app.core.config.extraction_rules import (
     DETAIL_IMAGE_IDENTITY_NUMERIC_MIN_LENGTH,
     DETAIL_IMAGE_OPAQUE_HEX_MIN_LENGTH,
     DETAIL_TITLE_PATH_EXTENSION_PATTERN,
+    PRODUCT_ASSET_SEMANTIC_MIN_ANCHORED_ASSETS,
+    PRODUCT_ASSET_SEMANTIC_MIN_DESCRIPTIVE_TOKENS,
+    PRODUCT_ASSET_SEMANTIC_MIN_MATCH_TOKENS,
+    PRODUCT_ASSET_SEMANTIC_NOISE_TOKENS,
     VARIANT_CROSS_PRODUCT_URL_MAX_TOKEN_OVERLAP_RATIO,
     DETAIL_URL_TITLE_CODE_PATTERN,
     DETAIL_URL_TITLE_FALLBACK_MIN_TOKENS,
@@ -58,7 +62,7 @@ _DETAIL_MARKERS = (
 def detail_identity_codes_from_url(url: str) -> tuple[str, ...]:
     parsed = urlparse(str(url or ""))
     values = [
-        parsed.path.rsplit("/", 1)[-1],
+        parsed.path.rstrip("/").rsplit("/", 1)[-1],
         *[part for part in parsed.query.split("&")],
     ]
     out: list[str] = []
@@ -127,6 +131,16 @@ def detail_urls_conflict(parent_url: str, candidate_url: str) -> bool:
     return overlap <= VARIANT_CROSS_PRODUCT_URL_MAX_TOKEN_OVERLAP_RATIO
 
 
+def detail_url_resource_identity(url: str) -> str:
+    text = str(url or "").strip()
+    if not text or not detail_url_looks_like_product(text):
+        return ""
+    parsed = urlparse(text)
+    host = str(parsed.hostname or "").casefold().strip(".")
+    path = unquote(parsed.path).casefold().rstrip("/")
+    return f"{host}{path}" if host and path else ""
+
+
 def detail_url_looks_like_product(url: str) -> bool:
     path = urlparse(str(url or "").lower()).path
     return any(marker in path for marker in _DETAIL_MARKERS)
@@ -175,14 +189,56 @@ def conflicting_product_asset_urls(
     for value in product_values:
         product_tokens.update(_commerce_identity_tokens(value))
     asset_tokens = {url: _commerce_identity_tokens(url) for url in asset_urls}
-    if not product_tokens or not any(
-        product_tokens & tokens for tokens in asset_tokens.values()
-    ):
+    code_conflicts = (
+        frozenset(
+            url
+            for url, tokens in asset_tokens.items()
+            if tokens and product_tokens.isdisjoint(tokens)
+        )
+        if product_tokens
+        and any(product_tokens & tokens for tokens in asset_tokens.values())
+        else frozenset()
+    )
+    return code_conflicts | _semantic_product_asset_conflicts(
+        product_values, asset_urls
+    )
+
+
+def _semantic_product_asset_conflicts(
+    product_values: tuple[object, ...], asset_urls: tuple[str, ...]
+) -> frozenset[str]:
+    product_tokens = {
+        token
+        for value in product_values
+        for token in semantic_detail_identity_tokens(str(value or ""))
+        if token not in PRODUCT_ASSET_SEMANTIC_NOISE_TOKENS
+    }
+    if len(product_tokens) < PRODUCT_ASSET_SEMANTIC_MIN_MATCH_TOKENS:
+        return frozenset()
+    asset_tokens = {url: _asset_semantic_tokens(url) for url in asset_urls}
+    anchored = sum(
+        len(product_tokens & tokens) >= PRODUCT_ASSET_SEMANTIC_MIN_MATCH_TOKENS
+        for tokens in asset_tokens.values()
+    )
+    if anchored < PRODUCT_ASSET_SEMANTIC_MIN_ANCHORED_ASSETS:
         return frozenset()
     return frozenset(
         url
         for url, tokens in asset_tokens.items()
-        if tokens and product_tokens.isdisjoint(tokens)
+        if len(tokens) >= PRODUCT_ASSET_SEMANTIC_MIN_DESCRIPTIVE_TOKENS
+        and len(product_tokens & tokens) < PRODUCT_ASSET_SEMANTIC_MIN_MATCH_TOKENS
+    )
+
+
+def _asset_semantic_tokens(value: object) -> frozenset[str]:
+    parsed = urlparse(unquote(str(value or "")))
+    filename = parsed.path.rstrip("/").rsplit("/", 1)[-1]
+    stem = filename.rsplit(".", 1)[0]
+    return frozenset(
+        token
+        for token in semantic_identity_tokens(stem)
+        if token not in PRODUCT_ASSET_SEMANTIC_NOISE_TOKENS
+        and not token.isdigit()
     )
 
 

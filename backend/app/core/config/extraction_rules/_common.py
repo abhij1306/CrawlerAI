@@ -84,6 +84,10 @@ ECOMMERCE_CONTEXT_NOISE_PATH_TOKENS = frozenset(
         "also_bought",
         "crosssell",
         "cross_sell",
+        "colorwayimages",
+        "colorway_images",
+        "getthelookproducts",
+        "links",
         "peoplealsobought",
         "people_also_bought",
         "recommendations",
@@ -93,6 +97,8 @@ ECOMMERCE_CONTEXT_NOISE_PATH_TOKENS = frozenset(
         "related_products",
         "recentlyviewed",
         "recently_viewed",
+        "responsivelayouts",
+        "responsive_layouts",
         "similarproducts",
         "similar_products",
         "suggestedproducts",
@@ -101,6 +107,23 @@ ECOMMERCE_CONTEXT_NOISE_PATH_TOKENS = frozenset(
         "up_sell",
         "youmayalsolike",
         "you_may_also_like",
+    }
+)
+ECOMMERCE_EMBEDDED_STATE_NOISE_SCOPE_TOKENS = frozenset(
+    {
+        "alsobought",
+        "completethelook",
+        "crosssell",
+        "pairswellwith",
+        "productrecommendation",
+        "recommendation",
+        "recentlyviewed",
+        "relatedproduct",
+        "shopthelook",
+        "similarproduct",
+        "suggestedproduct",
+        "upsell",
+        "youmayalsolike",
     }
 )
 VARIANT_AXIS_EXCLUDED_SINGLE_TOKENS = frozenset({"color", "colour", "fit", "size"})
@@ -512,6 +535,7 @@ __all__ = [
     "DETAIL_SURFACE_KEYWORD",
     "ECOMMERCE_DETAIL_SURFACE",
     "ECOMMERCE_CONTEXT_NOISE_PATH_TOKENS",
+    "ECOMMERCE_EMBEDDED_STATE_NOISE_SCOPE_TOKENS",
     "VARIANT_AXIS_EXCLUDED_SINGLE_TOKENS",
     "VARIANT_COLOR_AXIS_TOKENS",
     "VARIANT_SIZE_AXIS_TOKENS",

@@ -70,6 +70,40 @@ DETAIL_IMAGE_OPAQUE_HEX_MIN_LENGTH = 8
 PRODUCT_ASSET_IDENTITY_FACT_TYPES = frozenset(
     {"product.gtin", "product.mpn", "product.sku", "product.url"}
 )
+PRODUCT_ASSET_SEMANTIC_MIN_MATCH_TOKENS = 2
+PRODUCT_ASSET_SEMANTIC_MIN_ANCHORED_ASSETS = 2
+PRODUCT_ASSET_SEMANTIC_MIN_DESCRIPTIVE_TOKENS = 3
+PRODUCT_ASSET_LOW_RES_QUERY_MAX_DIMENSION = 128
+PRODUCT_ASSET_HIGH_RES_QUERY_MIN_DIMENSION = 512
+PRODUCT_ASSET_SEMANTIC_NOISE_TOKENS = frozenset(
+    {
+        "alt",
+        "alternate",
+        "back",
+        "bottom",
+        "detail",
+        "front",
+        "hero",
+        "image",
+        "img",
+        "large",
+        "left",
+        "lifestyle",
+        "main",
+        "model",
+        "original",
+        "product",
+        "right",
+        "side",
+        "small",
+        "the",
+        "thumbnail",
+        "thumb",
+        "top",
+        "view",
+        "zoom",
+    }
+)
 DETAIL_IMAGE_COLORWAY_CODE_PATTERN = r"(?:^|[_-])\d{4,8}_([A-Z0-9]{2,5})(?:[_\-.]|$)"
 DETAIL_IMAGE_VIEW_CODE_PATTERN = r"^[A-Z]\d+$"
 AMAZON_IMAGE_CDN_HOSTS = frozenset(
@@ -105,6 +139,8 @@ PRIMARY_IMAGE_REJECT_URL_TOKENS = frozenset(
         "swatch",
         "testimonial",
         "tracking",
+        "transparent-background",
+        "transparent_background",
         "1x1",
     }
 )
@@ -118,8 +154,17 @@ PRODUCT_ASSET_REJECT_URL_PATTERNS = (
     r"(?:^|/)[a-z][a-z0-9_-]*\.[a-f0-9]{6,}\.svg(?:$|[?#])",
     r"(?:^|[/_.-])combined[_-]?shape(?:[/_.-]|$)",
     r"(?:^|[/_.-])checkout(?:[/_.-]|$).*\.svg(?:$|[?#])",
+    r"(?:^|/)order\.svg(?:$|[?#])",
+    r"(?:^|[/_.-])(?:visa|mastercard|amex|paypal|applepay|afterpay|klarna)[_-]?(?:card|logo|lockup)(?:[/_.-]|$).*\.svg(?:$|[?#])",
+    r"(?:^|[/_.-])surfacing[_-]?reviews?(?:[/_.-]|$)",
+    r"(?:^|/)sub[_-]?banners?(?:/|$)",
+    r"(?:^|/)ugc(?:/|_|$)",
+    r"(?:^|[/_.-])stylehint(?:[/_.-]|$)",
+    r"(?:^|//)embed-ssl\.wistia\.com/deliveries/",
     r"/flags?/[a-z]{2}(?:[-_][a-z]{2})?\.(?:png|svg|webp)(?:$|[?#])",
     r"/(?:assets?|images?|img|media|dp)/?(?:[?#].*)?$",
+    r"/(?:collections/[^/?#]+/)?products/[^/?#.]+(?:$|[?#])",
+    r"/(?:format|quality|width|height)(?:%26|&)[a-z0-9_%=&.-]+(?:$|[?#])",
     r"__[a-z][a-z0-9_]*__",
     r"\{[a-z_][a-z0-9_]*\}",
 )
@@ -186,7 +231,13 @@ _LOCAL_EXPORTS = (
     "LOW_RES_SWATCH_IMAGE_PATH_PATTERN",
     "PRIMARY_IMAGE_REJECT_URL_TOKENS",
     "PRODUCT_ASSET_REJECT_URL_PATTERNS",
+    "PRODUCT_ASSET_HIGH_RES_QUERY_MIN_DIMENSION",
     "PRODUCT_ASSET_IDENTITY_FACT_TYPES",
+    "PRODUCT_ASSET_LOW_RES_QUERY_MAX_DIMENSION",
+    "PRODUCT_ASSET_SEMANTIC_MIN_ANCHORED_ASSETS",
+    "PRODUCT_ASSET_SEMANTIC_MIN_DESCRIPTIVE_TOKENS",
+    "PRODUCT_ASSET_SEMANTIC_MIN_MATCH_TOKENS",
+    "PRODUCT_ASSET_SEMANTIC_NOISE_TOKENS",
     "SHOPIFY_IMAGE_FILE_PATH_PATTERN",
     "VARIANT_UI_NOISE_EXACT_MATCH_MAX_LENGTH",
 )

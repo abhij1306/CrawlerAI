@@ -85,20 +85,22 @@ def _select_product_by_url(
     by_id = {row.evidence_id: row for row in evidence}
     wanted = {request.capture.final_url, request.capture.requested_url}
     complete_offer_products = _products_with_complete_offers(graph)
-    scored: list[tuple[int, str]] = []
+    scored: list[tuple[tuple[int, int, int, int, int], str]] = []
     for product in graph.products:
         urls = {
             str(by_id[evidence_id].value)
             for evidence_id in product.attribute_evidence.get("product.url", ())
             if evidence_id in by_id
         }
-        score = 100 if urls & wanted else 0
-        score += 120 if product.entity_id in complete_offer_products else 0
-        score += 20 if product.offer_ids else 0
-        score += 10 if product.attribute_evidence.get("product.title") else 0
-        score += len(product.attribute_evidence)
-        if score:
-            scored.append((score, product.entity_id))
+        rank = (
+            int(bool(urls & wanted)),
+            int(product.entity_id in complete_offer_products),
+            int(bool(product.offer_ids)),
+            int(bool(product.attribute_evidence.get("product.title"))),
+            len(product.attribute_evidence),
+        )
+        if any(rank):
+            scored.append((rank, product.entity_id))
     return max(scored, key=lambda item: (item[0], item[1]))[1] if scored else None
 
 

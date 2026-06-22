@@ -60,8 +60,18 @@ def materialize(
     record: dict[str, object] = {}
     lineages: dict[str, object] = {}
     selector_traces: dict[str, object] = {}
+    parent_entity_ids = {
+        entity_id
+        for entity_id in (
+            resolution.primary_product_entity_id,
+            resolution.primary_offer_entity_id,
+        )
+        if entity_id
+    }
     for decision in resolution.decisions:
         field = PUBLIC_MAP.get(decision.fact_type)
+        if decision.entity_id not in parent_entity_ids:
+            continue
         if (
             not field
             or decision.status != "resolved"
@@ -91,6 +101,13 @@ def materialize(
     if variants:
         record["variants"] = variants
         lineages["variants"] = variant_lineage
+        _cohere_parent_offer(
+            record,
+            lineages,
+            variants,
+            variant_lineage,
+            expected_variant_count=len(entities.variants),
+        )
         _cohere_parent_availability(
             record,
             lineages,
@@ -103,6 +120,43 @@ def materialize(
     if selector_traces:
         record["_selector_traces"] = selector_traces
     return _typed_detail_record(record)
+
+
+def _cohere_parent_offer(
+    record: dict[str, object],
+    lineages: dict[str, object],
+    variants: list[dict[str, object]],
+    variant_lineage: list[dict[str, object]],
+    *,
+    expected_variant_count: int,
+) -> None:
+    if len(variants) != expected_variant_count:
+        return
+    for field in ("price", "currency", "original_price"):
+        if record.get(field) not in (None, "", [], {}, ()):
+            continue
+        values = [row.get(field) for row in variants]
+        if not values or any(value in (None, "", [], {}, ()) for value in values):
+            continue
+        if len({str(value) for value in values}) != 1:
+            continue
+        field_lineage = [row.get(field) for row in variant_lineage]
+        if any(
+            isinstance(item, dict)
+            and item.get("rule_id") == DETAIL_PARENT_OFFER_INHERITANCE_RULE_ID
+            for item in field_lineage
+        ):
+            continue
+        evidence_ids = tuple(
+            str(evidence_id)
+            for item in field_lineage
+            for evidence_id in _lineage_evidence_ids(item)
+        )
+        record[field] = values[0]
+        lineages[field] = {
+            "rule_id": "uniform_variant_offer_aggregate",
+            "evidence_ids": list(dict.fromkeys(evidence_ids)),
+        }
 
 
 def _cohere_parent_availability(
@@ -224,7 +278,7 @@ def _has_variant_option(row: dict[str, object]) -> bool:
 def _has_variant_commercial_fact(row: dict[str, object]) -> bool:
     return any(
         row.get(field) not in (None, "", [], {}, ())
-        for field in ("price", "currency", "availability", "stock_quantity")
+        for field in ("price", "availability", "stock_quantity")
     )
 
 
@@ -243,18 +297,29 @@ def _variant_public_row(
         if decision and decision.accepted_evidence_ids:
             row[field] = by_id[decision.accepted_evidence_ids[0]].value
             lineage_row[field] = lineage(decision=decision)
-    row.update(variant.option_values)
-    _variant_option_lineage(variant, decisions, lineage_row)
+    _variant_option_fields(row, lineage_row, variant, decisions, by_id)
     _variant_offer_fields(row, lineage_row, variant, offer, decisions, derived, by_id)
     _variant_asset_field(row, lineage_row, asset, decisions, by_id)
     return row, lineage_row
 
 
-def _variant_option_lineage(variant, decisions, lineage_row: dict[str, object]) -> None:
-    for fact, decision in decisions.items():
-        entity_id, fact_type = fact
-        if entity_id == variant.entity_id and fact_type.startswith("variant.option."):
-            lineage_row[fact_type.rsplit(".", 1)[-1]] = lineage(decision=decision)
+def _variant_option_fields(
+    row: dict[str, object],
+    lineage_row: dict[str, object],
+    variant,
+    decisions,
+    by_id,
+) -> None:
+    for (entity_id, fact_type), decision in decisions.items():
+        if (
+            entity_id != variant.entity_id
+            or not fact_type.startswith("variant.option.")
+            or not decision.accepted_evidence_ids
+        ):
+            continue
+        field = fact_type.rsplit(".", 1)[-1]
+        row[field] = by_id[decision.accepted_evidence_ids[0]].value
+        lineage_row[field] = lineage(decision=decision)
 
 
 def _variant_offer_fields(

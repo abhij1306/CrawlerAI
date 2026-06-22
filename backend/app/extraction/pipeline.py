@@ -17,10 +17,15 @@ from app.extraction.collectors.metadata import (
 )
 from app.extraction.collectors.url import UrlCollector
 from app.core.config import field_mappings
+from app.core.config.extraction_price_rules import (
+    DETAIL_PRICE_CURRENCY_COLLECTOR_PRIORITY,
+    DETAIL_PRICE_PAGE_CORROBORATION_COLLECTORS,
+)
 from app.core.config.extraction_rules import (
     AVAILABILITY_URL_MAP,
     CURRENCY_SYMBOL_MAP,
     DETAIL_BRAND_BOILERPLATE_VALUES,
+    DETAIL_BRAND_CATEGORY_PATTERN,
     DETAIL_DESCRIPTION_UI_PATTERNS,
     DETAIL_SHELL_TITLE_FLAG,
     DETAIL_SHELL_TITLE_KEYS,
@@ -39,6 +44,7 @@ from app.core.config.extraction_rules import (
     DETAIL_TITLE_URL_TOKEN_MIN_OVERLAP,
     INVALID_AVAILABILITY_EVIDENCE_FLAG,
     NORMALIZER_AVAILABILITY_TOKENS,
+    VARIANT_COLOR_BRAND_CONFLICT_FLAG,
 )
 from app.extraction.contracts import (
     ArtifactReader,
@@ -54,10 +60,12 @@ from app.extraction.materialization import materialize
 from app.core.records.field_policy import normalize_field_key
 from app.core.records.url_identity import (
     detail_title_from_url,
+    detail_url_looks_like_product,
     semantic_detail_identity_tokens,
     semantic_identity_tokens,
 )
 from app.core.shared.field_coerce_price import repair_price_unit
+from app.core.shared.field_coerce_text import coerce_brand_text
 from app.extraction.entities import EntitySet
 
 
@@ -95,6 +103,7 @@ def normalize_ecommerce_detail(
     evidence: tuple[Evidence, ...], *, page_url: str
 ) -> tuple[Evidence, ...]:
     normalized = tuple(normalize_evidence(ev, page_url=page_url) for ev in evidence)
+    normalized = _flag_variant_color_brand_conflicts(normalized)
     return _dedupe_equivalent(
         normalized
         + tuple(
@@ -104,6 +113,62 @@ def normalize_ecommerce_detail(
             if derived is not None
         )
     )
+
+
+def _flag_variant_color_brand_conflicts(
+    evidence: tuple[Evidence, ...],
+) -> tuple[Evidence, ...]:
+    brands = {
+        str(row.value).strip().casefold()
+        for row in evidence
+        if row.fact_type == "product.brand" and str(row.value).strip()
+    }
+    color_rows = tuple(
+        row for row in evidence if row.fact_type == "variant.option.color"
+    )
+    color_subjects = {row.subject_id for row in color_rows if row.subject_id}
+    color_values = {
+        str(row.value).strip().casefold()
+        for row in color_rows
+        if str(row.value).strip()
+    }
+    conflicting = (
+        len(color_subjects) >= 2
+        and len(color_values) == 1
+        and bool(color_values & brands)
+    )
+    if not conflicting:
+        return evidence
+    return tuple(
+        row.model_copy(
+            update={"flags": tuple(sorted({*row.flags, VARIANT_COLOR_BRAND_CONFLICT_FLAG}))}
+        )
+        if row.fact_type == "variant.option.color"
+        and str(row.value).strip().casefold() in brands
+        else row
+        for row in evidence
+    )
+
+
+def _preferred_price_currency(rows: tuple[Evidence, ...]) -> str | None:
+    priority = {
+        collector_id: index
+        for index, collector_id in enumerate(DETAIL_PRICE_CURRENCY_COLLECTOR_PRIORITY)
+    }
+    valid = tuple(
+        row
+        for row in rows
+        if str(row.value or "").strip() and "invalid_currency" not in row.flags
+    )
+    if not valid:
+        return None
+    best_rank = min(priority.get(row.collector_id, len(priority)) for row in valid)
+    values = {
+        str(row.value).strip().upper()
+        for row in valid
+        if priority.get(row.collector_id, len(priority)) == best_rank
+    }
+    return next(iter(values)) if len(values) == 1 else None
 
 
 def normalize_ecommerce_price_units(
@@ -116,21 +181,20 @@ def normalize_ecommerce_price_units(
         for ids in offer.fact_evidence.values()
         for eid in ids
     }
-    currencies_by_offer = {
-        offer.entity_id: {
-            str(by_id[eid].value).upper()
+    currency_rows_by_offer = {
+        offer.entity_id: tuple(
+            by_id[eid]
             for eid in offer.fact_evidence.get("offer.currency", ())
             if eid in by_id and "invalid_currency" not in by_id[eid].flags
-        }
+        )
         for offer in entities.offers
     }
-    product_currencies = {
-        product.entity_id: set().union(
-            *(
-                currencies_by_offer.get(offer.entity_id, set())
-                for offer in entities.offers
-                if offer.product_entity_id == product.entity_id
-            )
+    product_currency_rows = {
+        product.entity_id: tuple(
+            row
+            for offer in entities.offers
+            if offer.product_entity_id == product.entity_id
+            for row in currency_rows_by_offer.get(offer.entity_id, ())
         )
         for product in entities.products
     }
@@ -144,11 +208,13 @@ def normalize_ecommerce_price_units(
         offer = offer_by_evidence.get(row.evidence_id)
         if offer is None:
             continue
-        currencies = currencies_by_offer.get(offer.entity_id) or product_currencies.get(
-            offer.product_entity_id, set()
+        currency = _preferred_price_currency(
+            currency_rows_by_offer.get(offer.entity_id, ())
+        ) or _preferred_price_currency(
+            product_currency_rows.get(offer.product_entity_id, ())
         )
-        if len(currencies) == 1:
-            currency_by_evidence[row.evidence_id] = next(iter(currencies))
+        if currency:
+            currency_by_evidence[row.evidence_id] = currency
     peer_values: dict[str, object] = {}
     for row in price_rows:
         repaired = repair_price_unit(
@@ -173,11 +239,21 @@ def normalize_ecommerce_price_units(
             for other in price_rows
             if other.evidence_id != row.evidence_id
             and other.fact_type == row.fact_type
-            and (other_offer := offer_by_evidence.get(other.evidence_id)) is not None
-            and other_offer.product_entity_id == offer.product_entity_id
             and (
-                other.collector_id != row.collector_id
-                or other_offer.entity_id == offer.entity_id
+                (
+                    (other_offer := offer_by_evidence.get(other.evidence_id)) is not None
+                    and other_offer.product_entity_id == offer.product_entity_id
+                    and (
+                        other.collector_id != row.collector_id
+                        or other_offer.entity_id == offer.entity_id
+                    )
+                )
+                or (
+                    offer_by_evidence.get(other.evidence_id) is None
+                    and other.collector_id
+                    in DETAIL_PRICE_PAGE_CORROBORATION_COLLECTORS
+                    and "invalid_decimal" not in other.flags
+                )
             )
         )
         repaired = repair_price_unit(
@@ -298,6 +374,13 @@ def normalize_evidence(evidence: Evidence, *, page_url: str) -> Evidence:
         "asset.image_url",
     } and isinstance(value, str):
         value = urljoin(page_url, value)
+    if (
+        evidence.fact_type == "product.url"
+        and isinstance(value, str)
+        and detail_url_looks_like_product(page_url)
+        and not detail_url_looks_like_product(value)
+    ):
+        flags.add("non_detail_product_url")
     if evidence.fact_type == "offer.currency" and isinstance(value, str):
         value = value.upper()
         if not re.fullmatch(r"[A-Z]{3}", value):
@@ -324,11 +407,14 @@ def normalize_evidence(evidence: Evidence, *, page_url: str) -> Evidence:
     ):
         flags.add(field_mappings.INVALID_SCALAR_TYPE_EVIDENCE_FLAG)
     if evidence.fact_type == "product.brand" and isinstance(value, str):
+        value = coerce_brand_text(_normalize_brand_hierarchy(value)) or value
         parsed_brand = urlsplit(value)
         if parsed_brand.scheme.casefold() in {"http", "https"} and parsed_brand.netloc:
             flags.add("brand_url")
         if value.casefold() in DETAIL_BRAND_BOILERPLATE_VALUES:
             flags.add("brand_boilerplate")
+        if re.fullmatch(DETAIL_BRAND_CATEGORY_PATTERN, value, re.IGNORECASE):
+            flags.add("category_as_brand")
     if evidence.fact_type == "product.description" and isinstance(value, str):
         if any(
             re.search(pattern, value, re.IGNORECASE)
@@ -346,6 +432,21 @@ def normalize_evidence(evidence: Evidence, *, page_url: str) -> Evidence:
     if evidence.fact_type == "product.title" and isinstance(value, str):
         flags.update(_title_flags(evidence, value=value, page_url=page_url))
     return evidence.model_copy(update={"value": value, "flags": tuple(sorted(flags))})
+
+
+def _normalize_brand_hierarchy(value: str) -> str:
+    parts = [part.strip() for part in value.split("/") if part.strip()]
+    if len(parts) < 2 or not all(re.fullmatch(r"[A-Za-z0-9&'._-]+", part) for part in parts):
+        return value
+    leaf = parts[-1]
+    leaf_key = re.sub(r"[^a-z0-9]+", "", leaf.casefold())
+    parent_keys = [
+        re.sub(r"[^a-z0-9]+", "", part.casefold().removesuffix("-parent"))
+        for part in parts[:-1]
+    ]
+    if not leaf_key or not any(leaf_key == parent or leaf_key in parent for parent in parent_keys):
+        return value
+    return " ".join(token.capitalize() for token in re.split(r"[-_]+", leaf) if token)
 
 
 def _title_flags(evidence: Evidence, *, value: str, page_url: str) -> set[str]:

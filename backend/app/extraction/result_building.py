@@ -46,6 +46,36 @@ def retry_request(
             reason="explicit_variants_missing",
             required_artifacts=("rendered_html", "network_payloads"),
         )
+    requested_core_fields = {
+        "image_url" if field == "image" else field
+        for field in request.requested_fields
+        if field in {"title", "price", "currency", "image", "image_url"}
+    }
+    if (
+        request.surface.value == "ecommerce_detail"
+        and verdict in {"partial", "review"}
+        and records
+        and not request.capture.browser_attempted
+        and (not request.requested_fields or requested_core_fields)
+    ):
+        record = records[0]
+        target_core_fields = requested_core_fields or {
+            "title",
+            "price",
+            "currency",
+            "image_url",
+        }
+        missing_core_fields = tuple(
+            field
+            for field in target_core_fields
+            if record.get(field) in (None, "", [], {}, ())
+        )
+        if missing_core_fields:
+            return RetryRequest(
+                required=True,
+                reason="dynamic_content_missing",
+                required_artifacts=("rendered_html", "network_payloads"),
+            )
     shell_detected = any(is_shell_record(record) for record in records) or any(
         DETAIL_SHELL_TITLE_FLAG in row.flags for row in evidence
     )

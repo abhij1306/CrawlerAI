@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Literal
 from app.core.config.field_mappings import (
     ECOMMERCE_IMAGE_SOURCE_KEYS,
@@ -9,11 +10,15 @@ from app.core.config.field_mappings import (
 )
 from app.core.config.extraction_rules import (
     ECOMMERCE_CONTEXT_NOISE_PATH_TOKENS,
+    ECOMMERCE_EMBEDDED_STATE_NOISE_SCOPE_TOKENS,
     VARIANT_JS_STATE_NON_VARIANT_TYPENAME_TOKENS,
 )
 from app.core.config import variant_policy
 from app.core.records.html_helpers import bounded_json_objects, embedded_state_payloads
-from app.core.records.url_identity import detail_urls_conflict
+from app.core.records.url_identity import (
+    detail_identity_codes_from_url,
+    detail_urls_conflict,
+)
 from app.core.shared.field_coerce import (
     sanitize_option_scalar,
     variant_option_value_is_opaque_numeric,
@@ -31,7 +36,7 @@ class JsStateCollector:
     def collect(self, bundle: CaptureBundle, artifacts) -> tuple[Evidence, ...]:
         out: list[Evidence] = []
         for artifact_id, root_path, data in _state_payloads(bundle, artifacts):
-            objects = (
+            objects = tuple(
                 json_objects(data)
                 if not root_path
                 else bounded_json_objects(
@@ -41,10 +46,17 @@ class JsStateCollector:
                     max_list_items=variant_policy.EMBEDDED_STATE_MAX_LIST_ITEMS,
                 )
             )
+            axis_hints = _variant_axis_hints(objects)
             for path, obj in objects:
                 if isinstance(obj, dict):
+                    enriched = _with_parent_variant_axes(obj, axis_hints.get(path, ()))
                     out.extend(
-                        network_row(bundle, artifact_id, f"{root_path}{path}", obj)
+                        network_row(
+                            bundle,
+                            artifact_id,
+                            f"{root_path}{path}",
+                            enriched,
+                        )
                     )
         return tuple(out)
 
@@ -54,14 +66,150 @@ def _state_payloads(bundle: CaptureBundle, artifacts):
         if ref.artifact_type == "js_state":
             yield ref.artifact_id, "", artifacts.read_json(ref)
     _, document = html_doc(bundle, artifacts)
-    for root_path, data in embedded_state_payloads(
-        document,
-        selector=variant_policy.EMBEDDED_STATE_SCRIPT_SELECTOR,
-        global_keys=variant_policy.EMBEDDED_STATE_GLOBAL_KEYS,
-        max_scripts=variant_policy.EMBEDDED_STATE_MAX_SCRIPTS,
-        max_script_chars=variant_policy.EMBEDDED_STATE_MAX_SCRIPT_CHARS,
-    ):
+    payloads = tuple(
+        embedded_state_payloads(
+            document,
+            selector=variant_policy.EMBEDDED_STATE_SCRIPT_SELECTOR,
+            global_keys=variant_policy.EMBEDDED_STATE_GLOBAL_KEYS,
+            max_scripts=variant_policy.EMBEDDED_STATE_MAX_SCRIPTS,
+            max_script_chars=variant_policy.EMBEDDED_STATE_MAX_SCRIPT_CHARS,
+            exclude_node=_embedded_state_node_is_noise,
+        )
+    )
+    meta_segment = f"/{variant_policy.EMBEDDED_STATE_PRODUCT_META_KEY}/"
+    richer_variant_ids = {
+        variant_id
+        for root_path, data in payloads
+        if meta_segment not in root_path
+        for variant_id in _payload_variant_ids(data)
+    }
+    for root_path, data in payloads:
+        if _is_unrelated_meta_payload(
+            root_path,
+            data,
+            richer_variant_ids=richer_variant_ids,
+        ):
+            continue
         yield document.artifact_id, root_path, data
+
+
+def _embedded_state_node_is_noise(node: object) -> bool:
+    scoped_nodes = (node, *getattr(node, "ancestors")())
+    for scoped_node in scoped_nodes:
+        attribute = getattr(scoped_node, "attribute")
+        scope = " ".join(
+            str(attribute(name) or "")
+            for name in (
+                "class",
+                "id",
+                "data-section-type",
+                "data-testid",
+                "aria-label",
+            )
+        )
+        normalized = "".join(char for char in scope.casefold() if char.isalnum())
+        if any(
+            token in normalized
+            for token in ECOMMERCE_EMBEDDED_STATE_NOISE_SCOPE_TOKENS
+        ):
+            return True
+    return False
+
+
+def _is_unrelated_meta_payload(
+    root_path: str,
+    data: object,
+    *,
+    richer_variant_ids: set[str],
+) -> bool:
+    meta_segment = f"/{variant_policy.EMBEDDED_STATE_PRODUCT_META_KEY}/"
+    if meta_segment not in root_path:
+        return False
+    if not isinstance(data, dict):
+        return True
+    product = data.get(variant_policy.EMBEDDED_STATE_PRODUCT_META_CONTAINER_KEY)
+    if not (
+        isinstance(product, dict)
+        and isinstance(
+            product.get(variant_policy.EMBEDDED_STATE_PRODUCT_META_VARIANTS_KEY), list
+        )
+    ):
+        return True
+    compact_ids = set(_payload_variant_ids(product))
+    return bool(compact_ids and compact_ids <= richer_variant_ids)
+
+
+def _payload_variant_ids(data: object) -> tuple[str, ...]:
+    rows = bounded_json_objects(
+        data,
+        max_depth=variant_policy.EMBEDDED_STATE_MAX_DEPTH,
+        max_nodes=variant_policy.EMBEDDED_STATE_MAX_NODES,
+        max_list_items=variant_policy.EMBEDDED_STATE_MAX_LIST_ITEMS,
+    )
+    return tuple(
+        variant_id
+        for path, obj in rows
+        if isinstance(obj, dict)
+        and _path_tokens(path) & variant_policy.VARIANT_STRUCTURED_PATH_TOKENS
+        for variant_id in [_variant_identity_value(obj)]
+        if variant_id
+    )
+
+
+def _variant_axis_hints(
+    objects: tuple[tuple[str, object], ...],
+) -> dict[str, tuple[str, ...]]:
+    hints: dict[str, tuple[str, ...]] = {}
+    for parent_path, parent in objects:
+        if not isinstance(parent, dict):
+            continue
+        axes = _parent_option_axes(parent)
+        if not axes:
+            continue
+        for child_key in variant_policy.VARIANT_PARENT_OPTION_CHILD_KEYS:
+            children = parent.get(child_key)
+            if not isinstance(children, list):
+                continue
+            for index, child in enumerate(children):
+                if isinstance(child, dict):
+                    hints[f"{parent_path}/{child_key}/{index}"] = axes
+    return hints
+
+
+def _parent_option_axes(obj: dict) -> tuple[str, ...]:
+    raw_options = obj.get("options")
+    if not isinstance(raw_options, list) or not raw_options:
+        return ()
+    axes: list[str] = []
+    for raw_option in raw_options:
+        raw_axis = (
+            _first(raw_option, *variant_policy.VARIANT_OPTION_AXIS_KEYS)
+            if isinstance(raw_option, dict)
+            else raw_option
+        )
+        axis = _canonical_axis(raw_axis)
+        if axis is None:
+            return ()
+        axes.append(axis)
+    return tuple(axes)
+
+
+def _with_parent_variant_axes(obj: dict, axes: tuple[str, ...]) -> dict:
+    if not axes or obj.get("selectedOptions"):
+        return obj
+    values = [
+        _scalar_value(obj.get(key))
+        for key in variant_policy.VARIANT_POSITIONAL_OPTION_KEYS
+    ]
+    if not any(value not in (None, "", [], {}) for value in values):
+        raw_options = obj.get("options")
+        values = list(raw_options) if isinstance(raw_options, list) else []
+    selected = [
+        {"name": axis, "value": value}
+        for axis, value in zip(axes, values, strict=False)
+        if value not in (None, "", [], {}) and not isinstance(value, dict)
+    ]
+    return {**obj, "selectedOptions": selected} if selected else obj
 
 
 def network_row(
@@ -75,6 +223,8 @@ def network_row(
     out: list[Evidence] = []
     if _path_tokens(path) & ECOMMERCE_CONTEXT_NOISE_PATH_TOKENS:
         return out
+    if _path_product_identity_conflicts(bundle.final_url, path):
+        return out
     if _has_only_opaque_numeric_options(obj):
         return out
     if _looks_like_variant(obj, path=path):
@@ -85,6 +235,8 @@ def network_row(
         key for key in ECOMMERCE_STRUCTURED_SOURCE_FACT_TYPES if key in obj
     )
     if not mapped_keys:
+        return out
+    if _product_url_conflicts(bundle.final_url, obj):
         return out
     product_context = _has_product_context(path, obj)
     offer_context = _has_offer_context(path, obj, product_context=product_context)
@@ -148,19 +300,69 @@ def _path_tokens(path: str) -> set[str]:
 
 
 def _variant_url_conflicts(page_url: str, obj: dict) -> bool:
-    candidate = _scalar_value(_first(obj, *variant_policy.VARIANT_URL_VALUE_KEYS))
-    return bool(candidate and detail_urls_conflict(page_url, str(candidate)))
+    candidate = _url_value(obj)
+    return bool(candidate and detail_urls_conflict(page_url, candidate))
+
+
+def _product_url_conflicts(page_url: str, obj: dict) -> bool:
+    candidate = _url_value(obj)
+    return bool(candidate and detail_urls_conflict(page_url, candidate))
+
+
+def _url_value(obj: dict) -> str:
+    candidate = _first(obj, *variant_policy.VARIANT_URL_VALUE_KEYS)
+    if isinstance(candidate, dict):
+        candidate = _first(candidate, *variant_policy.VARIANT_NESTED_URL_VALUE_KEYS)
+    scalar = _scalar_value(candidate)
+    return scalar.strip() if isinstance(scalar, str) else ""
+
+
+def _path_product_identity_conflicts(page_url: str, path: str) -> bool:
+    parent_codes = set(detail_identity_codes_from_url(page_url))
+    if not parent_codes:
+        return False
+    parts = tuple(
+        part
+        for part in str(path).replace("[", "/").replace("]", "/").split("/")
+        if part
+    )
+    for index, part in enumerate(parts[:-1]):
+        if part.casefold() not in variant_policy.VARIANT_PRODUCT_MAP_PATH_TOKENS:
+            continue
+        candidate = parts[index + 1]
+        normalized = "".join(char for char in candidate if char.isalnum()).upper()
+        if (
+            len(normalized) < variant_policy.VARIANT_PRODUCT_MAP_KEY_MIN_LENGTH
+            or not any(char.isalpha() for char in normalized)
+            or not any(char.isdigit() for char in normalized)
+        ):
+            continue
+        if not any(
+            left == normalized or left in normalized or normalized in left
+            for left in parent_codes
+        ):
+            return True
+    return False
 
 
 def _has_product_context(path: str, obj: dict) -> bool:
     keys = set(obj)
     type_name = str(obj.get("@type") or obj.get("type") or "").casefold()
     path_tokens = _path_tokens(path)
+    path_parts = tuple(token for token in str(path).replace(".", "/").split("/") if token)
+    direct_product_path = bool(path_parts and path_parts[-1].casefold() in {"product", "products"})
     product_keys = keys & ECOMMERCE_PRODUCT_CONTEXT_SOURCE_KEYS
     complete_offer = "price" in keys and bool(keys & {"currency", "currencyCode"})
+    if (
+        "config" in path_tokens
+        and not direct_product_path
+        and not complete_offer
+        and not bool(keys & {"sku", "url", "productUrl", "product_url"})
+    ):
+        return False
     return (
         "product" in type_name
-        or bool(path_tokens & {"product", "products"})
+        or direct_product_path
         or len(product_keys) >= 2
         or (bool(product_keys & {"name", "productName", "title"}) and complete_offer)
     )
@@ -246,6 +448,8 @@ def _variant_row(
 
 
 def _looks_like_variant(obj: dict, *, path: str = "") -> bool:
+    if _has_variant_children(obj):
+        return False
     sku = _scalar_value(_first(obj, *variant_policy.VARIANT_SKU_VALUE_KEYS))
     identity = _variant_identity_value(obj) is not None or sku not in (None, "", [], {})
     option_count = len(_variant_options(obj))
@@ -274,12 +478,28 @@ def _looks_like_variant(obj: dict, *, path: str = "") -> bool:
     return (
         identity
         and (
-            option_count > 0
+            (
+                option_count > 0
+                and (
+                    typed
+                    or variant_path
+                    or variant_specific_identity
+                    or commercial
+                    or sku not in (None, "", [], {})
+                )
+            )
             or variant_specific_identity
             or (commercial and (typed or variant_path))
             or (variant_path and sku not in (None, "", [], {}))
         )
         or (typed and option_count >= 2)
+    )
+
+
+def _has_variant_children(obj: dict) -> bool:
+    return any(
+        isinstance(obj.get(key), list) and bool(obj.get(key))
+        for key in variant_policy.VARIANT_CHILD_COLLECTION_KEYS
     )
 
 
@@ -445,9 +665,62 @@ def _raw_variant_options(obj: dict) -> list[tuple[str, str, object]]:
             rows.append((key, axis, value))
     for key in variant_policy.VARIANT_OPTION_CONTAINER_KEYS:
         rows.extend(_option_rows_from_value(key, obj.get(key)))
+    if not any(axis == "size" for _name, axis, _value in rows):
+        rows.extend(_merch_sku_size_rows(obj))
+    if not any(axis == "size" for _name, axis, _value in rows):
+        rows.extend(_positional_numeric_size_rows(obj))
+    if not rows:
+        rows.extend(_shopify_fallback_rows(obj))
     if "variationType" in obj:
         rows.extend(_option_rows_from_value("variation", [obj]))
     return rows
+
+
+def _merch_sku_size_rows(obj: dict) -> list[tuple[str, str, object]]:
+    if not any(
+        _scalar_value(obj.get(key)) not in (None, "", [], {})
+        for key in variant_policy.VARIANT_MERCH_SKU_ID_KEYS
+    ):
+        return []
+    for key in variant_policy.VARIANT_MERCH_SKU_SIZE_KEYS:
+        value = _scalar_value(obj.get(key))
+        if value not in (None, "", [], {}):
+            return [(key, "size", value)]
+    return []
+
+
+def _shopify_fallback_rows(obj: dict) -> list[tuple[str, str, object]]:
+    for key in variant_policy.VARIANT_SHOPIFY_SIZE_KEYS:
+        value = _scalar_value(obj.get(key))
+        text = str(value or "").strip()
+        if text:
+            axis = (
+                "size"
+                if re.fullmatch(
+                    variant_policy.VARIANT_SIZE_LIKE_PATTERN,
+                    text,
+                    flags=re.IGNORECASE,
+                )
+                else "style"
+            )
+            return [(key, axis, value)]
+    return []
+
+
+def _positional_numeric_size_rows(obj: dict) -> list[tuple[str, str, object]]:
+    for key in variant_policy.VARIANT_POSITIONAL_OPTION_KEYS:
+        value = _scalar_value(obj.get(key))
+        text = str(value or "").strip()
+        if not text or text.count(".") > 1 or not text.replace(".", "", 1).isdigit():
+            continue
+        numeric = float(text)
+        if (
+            variant_policy.VARIANT_POSITIONAL_NUMERIC_SIZE_MIN
+            <= numeric
+            <= variant_policy.VARIANT_POSITIONAL_NUMERIC_SIZE_MAX
+        ):
+            return [(key, "size", value)]
+    return []
 
 
 def _clean_variant_option_value(axis: str, value: object) -> str | None:
@@ -499,16 +772,7 @@ def _canonical_axis(value: object) -> str | None:
     axis = variant_policy.AXIS_NAME_ALIASES.get(normalized, normalized)
     if axis in {"colour"}:
         return "color"
-    if axis in {
-        "size",
-        "color",
-        "width",
-        "length",
-        "material",
-        "style",
-        "capacity",
-        "quantity",
-    }:
+    if axis in variant_policy.PUBLIC_VARIANT_AXIS_FIELDS:
         return axis
     return None
 

@@ -369,12 +369,15 @@ ECOMMERCE_STRUCTURED_SOURCE_FACT_TYPES = {
     "brandName": PRODUCT_BRAND_FACT_TYPE,
     "currency": OFFER_CURRENCY_FACT_TYPE,
     "currencyCode": OFFER_CURRENCY_FACT_TYPE,
+    "currentPrice": OFFER_PRICE_FACT_TYPE,
+    "current_price": OFFER_PRICE_FACT_TYPE,
     "description": PRODUCT_DESCRIPTION_FACT_TYPE,
     "image": ASSET_IMAGE_URL_FACT_TYPE,
     "imageUrl": ASSET_IMAGE_URL_FACT_TYPE,
     "images": ASSET_IMAGE_URL_FACT_TYPE,
     "inStock": OFFER_AVAILABILITY_FACT_TYPE,
     "manufacturer": PRODUCT_BRAND_FACT_TYPE,
+    "vendor": PRODUCT_BRAND_FACT_TYPE,
     "name": PRODUCT_TITLE_FACT_TYPE,
     "price": OFFER_PRICE_FACT_TYPE,
     "productDescription": PRODUCT_DESCRIPTION_FACT_TYPE,
@@ -392,6 +395,7 @@ ECOMMERCE_PRODUCT_CONTEXT_SOURCE_KEYS = frozenset(
         "imageUrl",
         "images",
         "manufacturer",
+        "vendor",
         "name",
         "productDescription",
         "productName",
@@ -401,7 +405,7 @@ ECOMMERCE_PRODUCT_CONTEXT_SOURCE_KEYS = frozenset(
     }
 )
 ECOMMERCE_OFFER_CONTEXT_PATH_TOKENS = frozenset(
-    {"offer", "offers", "pricing", "product", "products", "variant", "variants"}
+    {"offer", "offers", "price", "prices", "pricing", "variant", "variants"}
 )
 ECOMMERCE_IMAGE_SOURCE_KEYS = frozenset({"image", "imageUrl", "images"})
 ECOMMERCE_MICRODATA_FACT_TYPES = {

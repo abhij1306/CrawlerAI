@@ -4,6 +4,7 @@ from typing import Any, Literal, Protocol, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict, Field, SerializeAsAny
 
+from app.core.config.variant_policy import PUBLIC_VARIANT_AXIS_FIELDS
 from app.extraction.surfaces import Surface
 
 JsonValue = Any
@@ -26,22 +27,10 @@ PRODUCT_FACTS = frozenset(
     )
 )
 VARIANT_FACTS = frozenset(
-    f"variant.{field}"
-    for field in (
-        "id",
-        "sku",
-        "gtin",
-        "url",
-        "selected",
-        "option.size",
-        "option.color",
-        "option.width",
-        "option.length",
-        "option.material",
-        "option.style",
-        "option.capacity",
-        "option.quantity",
-    )
+    {
+        *(f"variant.{field}" for field in ("id", "sku", "gtin", "url", "selected")),
+        *(f"variant.option.{axis}" for axis in PUBLIC_VARIANT_AXIS_FIELDS),
+    }
 )
 OFFER_FACTS = frozenset(
     f"offer.{field}"
@@ -56,17 +45,7 @@ OFFER_FACTS = frozenset(
 )
 ASSET_FACTS = frozenset({"asset.image_url", "asset.role", "asset.variant_association"})
 OPTION_FACTS = frozenset(
-    f"option.{field}"
-    for field in (
-        "size",
-        "color",
-        "width",
-        "length",
-        "material",
-        "style",
-        "capacity",
-        "quantity",
-    )
+    f"option.{axis}" for axis in PUBLIC_VARIANT_AXIS_FIELDS
 )
 FACT_TYPES = PRODUCT_FACTS | VARIANT_FACTS | OFFER_FACTS | ASSET_FACTS | OPTION_FACTS
 
@@ -274,6 +253,7 @@ class ProductOptionCatalog(FrozenModel):
 
 class ResolutionResult(FrozenModel):
     primary_product_entity_id: str | None
+    primary_offer_entity_id: str | None = None
     decisions: tuple[Decision, ...]
     asset_decisions: tuple[AssetDecision, ...] = ()
     derived_facts: tuple[DerivedFact, ...]
