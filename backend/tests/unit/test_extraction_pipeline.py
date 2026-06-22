@@ -120,6 +120,22 @@ def test_jsonld_brand_reference_url_is_not_public_brand() -> None:
     )
 
 
+def test_ecommerce_detail_homepage_does_not_materialize_promotional_product() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <main>
+          <h1>All Mens Sale</h1>
+          <img src="https://cdn.shop.test/promotions/sale-card.jpg">
+          <button>Leggings Size Guide</button>
+        </main>
+        """,
+        "https://shop.test/",
+    )
+
+    assert result.records == ()
+
+
 def test_jsonld_product_group_uses_shade_as_color_axis() -> None:
     html = """
     <script type="application/ld+json">
@@ -201,6 +217,24 @@ def test_gender_microdata_title_and_brand_as_variant_color_are_rejected() -> Non
     assert record["title"] == "Barrow Nylon tank top"
     assert {row["size"] for row in record["variants"]} == {"8Y", "12Y"}
     assert all("color" not in row for row in record["variants"])
+
+
+def test_internal_product_card_title_is_rejected_for_visible_product_heading() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <script type="application/json">
+        {"componentName":"Tread-Plus Product Card","description":"Internal CMS card"}
+        </script>
+        <main>
+          <h1>Cross Training Tread</h1>
+          <img src="https://cdn.shop.test/products/cross-training-tread-main.jpg">
+        </main>
+        """,
+        "https://shop.test/shop/tread",
+    )
+
+    assert result.records[0]["title"] == "Cross Training Tread"
 
 
 def test_jsonld_sibling_products_linked_to_group_materialize_as_variants() -> None:
@@ -462,6 +496,32 @@ def test_runtime_capture_bundle_uses_acquisition_metadata() -> None:
         not artifact.storage_uri.startswith("memory://")
         for artifact in request.capture.artifacts
     )
+
+
+def test_not_found_detail_does_not_publish_url_only_fallback_record() -> None:
+    url = "https://shop.test/p/poppi-prebiotic-soda/-/A-88886187"
+    acquisition = PageAcquisitionResult(
+        request=AcquisitionRequest(
+            run_id=43,
+            url=url,
+            plan=AcquisitionIntent(surface="ecommerce_detail"),
+        ),
+        final_url=url,
+        html="<main><div>Product Grid</div></main>",
+        method="browser",
+        status_code=404,
+        artifacts={},
+    )
+    request = request_from_acquisition_result(
+        Surface.ECOMMERCE_DETAIL,
+        acquisition,
+        requested_url=url,
+        max_records=1,
+    )
+
+    result = extract(request)
+
+    assert result.records == ()
 
 
 def test_evidence_is_immutable() -> None:
@@ -2536,6 +2596,53 @@ def test_typed_commerce_detail_record_round_trip_preserves_variants() -> None:
     assert dumped["_lineage"]["variants"]
 
 
+def test_network_product_id_selects_requested_detail_product() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        "<main></main>",
+        "https://shop.test/men/product/adidas-originals/black-samba-og-sneakers/15199881",
+        network_payloads=(
+            {
+                "body": {
+                    "products": [
+                        {
+                            "productId": "18701561",
+                            "productName": "Black & White Out Of Office Calf Leather Sneakers",
+                            "brandName": "Off-White",
+                            "finalPrice": 429,
+                            "currency": "USD",
+                        },
+                        {
+                            "productId": "15199881",
+                            "productName": "Black Samba OG Sneakers",
+                            "brandName": "adidas Originals",
+                            "finalPrice": 100,
+                            "currency": "USD",
+                        },
+                    ]
+                }
+            },
+        ),
+    )
+
+    assert result.records[0]["title"] == "Black Samba OG Sneakers"
+    assert result.records[0]["brand"] == "adidas Originals"
+
+
+def test_url_mismatched_product_title_cannot_win_detail_resolution() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <script type="application/json">
+        {"products":[{"productName":"Black Warped Logo Short Sleeve T-shirt","brand":"ASICS"}]}
+        </script>
+        """,
+        "https://shop.test/men/product/adidas-originals/black-samba-og-sneakers/15199881",
+    )
+
+    assert result.records[0]["title"] == "black samba og sneakers"
+
+
 def test_related_product_root_cannot_overwrite_selected_detail_entity() -> None:
     html = """
     <script type="application/ld+json">
@@ -3757,7 +3864,8 @@ def test_banner_ugc_and_video_still_assets_are_rejected() -> None:
             "https://cdn.shop.test/sub_banners/womens-accessories-handbags.jpg",
             "https://api.shop.test/ugc/SR_NETWORK_IMAGES/stylehint.png",
             "https://api.shop.test/ugc/v1/images/ugc_stylehint_user_123",
-            "https://embed-ssl.wistia.com/deliveries/video-still.jpg"
+            "https://embed-ssl.wistia.com/deliveries/video-still.jpg",
+            "https://image.shop.test/catalog/related-item._AC_SS300_V1_.jpg"
           ],
           "offers": {"price": "49.90", "priceCurrency": "USD"}
         }
@@ -4054,6 +4162,36 @@ def test_asset_urls_are_normalized_and_deduped_without_dropping_variant_params()
         "https://cdn.shop.test/images/Trail%20Shoe.jpg?color=red&width=800",
     ]
     assert record["image_url"] not in record["additional_images"]
+
+
+def test_https_asset_wins_over_equivalent_http_url() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <script type="application/ld+json">
+        {
+          "@type": "Product",
+          "name": "Pavlova Boots",
+          "url": "https://shop.test/products/pavlova-boots",
+          "image": [
+            "http://cdn.shop.test/products/pavlova-boots-01.jpg?width=1200",
+            "https://cdn.shop.test/products/pavlova-boots-01.jpg?width=1800",
+            "https://cdn.shop.test/products/pavlova-boots-02.jpg?width=1800"
+          ],
+          "offers": {"price": "1865", "priceCurrency": "USD"}
+        }
+        </script>
+        """,
+        "https://shop.test/products/pavlova-boots",
+    )
+
+    record = result.records[0]
+    assert record["image_url"] == (
+        "https://cdn.shop.test/products/pavlova-boots-01.jpg?width=1800"
+    )
+    assert record["additional_images"] == [
+        "https://cdn.shop.test/products/pavlova-boots-02.jpg?width=1800"
+    ]
 
 
 def test_missing_requested_field_has_visible_finding() -> None:

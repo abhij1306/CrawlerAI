@@ -32,6 +32,7 @@ CDN_IMAGE_QUERY_PARAMS = _string_frozenset(
         "bgcolor",
         "bga",
         "bgc",
+        "crop",
         "dpr",
         "qlt",
         "q",
@@ -73,7 +74,7 @@ PRODUCT_ASSET_IDENTITY_FACT_TYPES = frozenset(
 PRODUCT_ASSET_SEMANTIC_MIN_MATCH_TOKENS = 2
 PRODUCT_ASSET_SEMANTIC_MIN_ANCHORED_ASSETS = 2
 PRODUCT_ASSET_SEMANTIC_MIN_DESCRIPTIVE_TOKENS = 3
-PRODUCT_ASSET_LOW_RES_QUERY_MAX_DIMENSION = 128
+PRODUCT_ASSET_LOW_RES_QUERY_MAX_DIMENSION = 256
 PRODUCT_ASSET_HIGH_RES_QUERY_MIN_DIMENSION = 512
 PRODUCT_ASSET_SEMANTIC_NOISE_TOKENS = frozenset(
     {
@@ -161,6 +162,7 @@ PRODUCT_ASSET_REJECT_URL_PATTERNS = (
     r"(?:^|/)ugc(?:/|_|$)",
     r"(?:^|[/_.-])stylehint(?:[/_.-]|$)",
     r"(?:^|//)embed-ssl\.wistia\.com/deliveries/",
+    r"\._AC_SS\d+_V\d_\.(?:avif|jpe?g|png|webp)(?:$|[?#])",
     r"/flags?/[a-z]{2}(?:[-_][a-z]{2})?\.(?:png|svg|webp)(?:$|[?#])",
     r"/(?:assets?|images?|img|media|dp)/?(?:[?#].*)?$",
     r"/(?:collections/[^/?#]+/)?products/[^/?#.]+(?:$|[?#])",

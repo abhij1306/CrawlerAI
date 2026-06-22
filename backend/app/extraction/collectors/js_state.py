@@ -6,6 +6,7 @@ from app.core.config.field_mappings import (
     ECOMMERCE_IMAGE_SOURCE_KEYS,
     ECOMMERCE_OFFER_CONTEXT_PATH_TOKENS,
     ECOMMERCE_PRODUCT_CONTEXT_SOURCE_KEYS,
+    ECOMMERCE_PRODUCT_IDENTITY_SOURCE_KEYS,
     ECOMMERCE_STRUCTURED_SOURCE_FACT_TYPES,
 )
 from app.core.config.extraction_rules import (
@@ -270,8 +271,18 @@ def network_row(
                 if fact.startswith("asset.")
                 else "product"
             )
+            product_identity = next(
+                (
+                    str(obj.get(identity_key) or "").strip()
+                    for identity_key in ECOMMERCE_PRODUCT_IDENTITY_SOURCE_KEYS
+                    if str(obj.get(identity_key) or "").strip()
+                ),
+                None,
+            )
             hint = EntityHint(
-                entity_type=entity_type, sku=str(obj.get("sku") or "").strip() or None
+                entity_type=entity_type,
+                product_id=product_identity if entity_type == "product" else None,
+                sku=str(obj.get("sku") or "").strip() or None,
             )
             suffix = f"/{index}" if key in ECOMMERCE_IMAGE_SOURCE_KEYS else ""
             out.append(

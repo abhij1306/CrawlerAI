@@ -111,6 +111,7 @@ DETAIL_SHELL_TITLE_KEYS = frozenset(
     " ".join(re.findall(r"[a-z0-9]+", value.casefold()))
     for value in DETAIL_SHELL_TITLE_VALUES
 )
+DETAIL_NOT_FOUND_HTTP_STATUS_CODES = frozenset({404, 410})
 DETAIL_SHELL_TITLE_FLAG = "shell_title"
 DETAIL_SHELL_FINDING_RULE_ID = "HTTP_SHELL_TITLE"
 VARIANT_COLOR_BRAND_CONFLICT_FLAG = "brand_as_variant_color"
@@ -122,8 +123,13 @@ DETAIL_TITLE_REJECTION_FLAGS = frozenset(
         "measurement_title",
         "placeholder_text",
         DETAIL_SHELL_TITLE_FLAG,
+        "title_url_mismatch",
         "truncated_title",
     }
+)
+DETAIL_TITLE_REJECT_SUFFIXES = (
+    " compose page",
+    " product card",
 )
 DETAIL_TITLE_REJECT_VALUES = (
     frozenset(
@@ -152,7 +158,7 @@ DETAIL_TITLE_SEO_POLLUTION_PATTERN = (
     r"(?:\s[|\u2013\u2014]\s|\s+-\s+\$?\d|\bshop\s+online\b|\$\d+(?:\.\d{2})?)"
 )
 DETAIL_TITLE_TRAILING_CODE_PATTERN = r"(?:^|[\s_-])\d{4,}$"
-DETAIL_TITLE_URL_TOKEN_MIN_OVERLAP = 1
+DETAIL_TITLE_URL_TOKEN_MIN_OVERLAP = 2
 DETAIL_TITLE_SEO_PREFIXES = ("buy ", "shop ")
 DETAIL_TITLE_SEO_PREFIX_MIN_WORDS = 8
 DETAIL_TITLE_UI_INSTRUCTION_TOKENS = frozenset(

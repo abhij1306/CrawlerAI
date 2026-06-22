@@ -8,6 +8,7 @@ from app.extraction.contracts import (
     RejectedEntity,
     TargetSelection,
 )
+from app.core.records.url_identity import detail_identity_codes_from_url
 from app.extraction.entities import EntitySet
 from app.extraction.surfaces import SurfaceSpec
 
@@ -84,16 +85,30 @@ def _select_product_by_url(
 ) -> str | None:
     by_id = {row.evidence_id: row for row in evidence}
     wanted = {request.capture.final_url, request.capture.requested_url}
+    wanted_product_ids = {
+        code
+        for url in wanted
+        for code in detail_identity_codes_from_url(url)
+    }
     complete_offer_products = _products_with_complete_offers(graph)
-    scored: list[tuple[tuple[int, int, int, int, int], str]] = []
+    scored: list[tuple[tuple[int, int, int, int, int, int], str]] = []
     for product in graph.products:
         urls = {
             str(by_id[evidence_id].value)
             for evidence_id in product.attribute_evidence.get("product.url", ())
             if evidence_id in by_id
         }
+        product_ids = {
+            str(by_id[evidence_id].entity_hint.product_id)
+            for evidence_ids in product.attribute_evidence.values()
+            for evidence_id in evidence_ids
+            if evidence_id in by_id
+            and by_id[evidence_id].entity_hint is not None
+            and by_id[evidence_id].entity_hint.product_id
+        }
         rank = (
             int(bool(urls & wanted)),
+            int(bool(product_ids & wanted_product_ids)),
             int(product.entity_id in complete_offer_products),
             int(bool(product.offer_ids)),
             int(bool(product.attribute_evidence.get("product.title"))),

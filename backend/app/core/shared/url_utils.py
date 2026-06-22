@@ -140,7 +140,7 @@ def asset_url_identity(value: object) -> tuple[str, str] | None:
     )
     identity = urlunsplit(
         (
-            parsed.scheme.casefold(),
+            "https",
             parsed.netloc.casefold(),
             identity_path,
             identity_query,

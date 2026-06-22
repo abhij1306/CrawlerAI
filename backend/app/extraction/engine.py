@@ -2,8 +2,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any, Callable, Literal, cast
+from urllib.parse import urlsplit
 
-from app.core.config.extraction_rules import DETAIL_SHELL_FINDING_RULE_ID
+from app.core.config.extraction_rules import (
+    DETAIL_NOT_FOUND_HTTP_STATUS_CODES,
+    DETAIL_SHELL_FINDING_RULE_ID,
+)
 from app.extraction.contracts import (
     Decision,
     Evidence,
@@ -314,11 +318,28 @@ def _materialize_detail(
     spec: SurfaceSpec,
 ) -> tuple[PublicRecord, ...]:
     del findings, spec
+    canonical_url = request.capture.final_url or request.capture.requested_url
+    if urlsplit(canonical_url).path in {"", "/"}:
+        return ()
+    if request.capture.http_status in DETAIL_NOT_FOUND_HTTP_STATUS_CODES:
+        evidence_by_id = {row.evidence_id: row for row in evidence}
+        accepted_title_ids = {
+            evidence_id
+            for decision in resolution.decisions
+            if decision.fact_type == "product.title" and decision.status == "resolved"
+            for evidence_id in decision.accepted_evidence_ids
+        }
+        if not any(
+            "url_derived_title" not in evidence_by_id[evidence_id].flags
+            for evidence_id in accepted_title_ids
+            if evidence_id in evidence_by_id
+        ):
+            return ()
     record = materialize_ecommerce_detail(
         graph,
         resolution,
         evidence,
-        canonical_url=request.capture.final_url or request.capture.requested_url,
+        canonical_url=canonical_url,
     )
     return (record,) if record else ()
 

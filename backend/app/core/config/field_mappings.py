@@ -386,6 +386,13 @@ ECOMMERCE_STRUCTURED_SOURCE_FACT_TYPES = {
     "title": PRODUCT_TITLE_FACT_TYPE,
     "url": PRODUCT_URL_FACT_TYPE,
 }
+ECOMMERCE_PRODUCT_IDENTITY_SOURCE_KEYS = (
+    "productId",
+    "productID",
+    "product_id",
+    "productCode",
+    "product_code",
+)
 ECOMMERCE_PRODUCT_CONTEXT_SOURCE_KEYS = frozenset(
     {
         "brand",

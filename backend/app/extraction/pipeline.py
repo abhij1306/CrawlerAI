@@ -34,6 +34,7 @@ from app.core.config.extraction_rules import (
     DETAIL_TITLE_MEASUREMENT_FLAG,
     DETAIL_TITLE_MEASUREMENT_PATTERN,
     DETAIL_TITLE_PATH_EXTENSION_PATTERN,
+    DETAIL_TITLE_REJECT_SUFFIXES,
     DETAIL_TITLE_REJECT_VALUES,
     DETAIL_TITLE_SEO_POLLUTION_PATTERN,
     DETAIL_TITLE_SEO_PREFIXES,
@@ -475,7 +476,9 @@ def _title_flags(evidence: Evidence, *, value: str, page_url: str) -> set[str]:
         flags.add("filename_title")
     if key in DETAIL_SHELL_TITLE_KEYS:
         flags.add(DETAIL_SHELL_TITLE_FLAG)
-    if key in DETAIL_TITLE_REJECT_VALUES:
+    if key in DETAIL_TITLE_REJECT_VALUES or value.casefold().endswith(
+        DETAIL_TITLE_REJECT_SUFFIXES
+    ):
         flags.add("generic_title")
     words = re.findall(r"[a-z0-9]+", value.casefold())
     if re.search(DETAIL_TITLE_SEO_POLLUTION_PATTERN, value, re.IGNORECASE) or (
@@ -500,9 +503,14 @@ def _title_flags(evidence: Evidence, *, value: str, page_url: str) -> set[str]:
     ):
         flags.add("truncated_title")
     if url_tokens and title_tokens:
+        required_overlap = min(
+            DETAIL_TITLE_URL_TOKEN_MIN_OVERLAP,
+            len(url_tokens),
+            len(title_tokens),
+        )
         flags.add(
             "title_url_match"
-            if overlap >= DETAIL_TITLE_URL_TOKEN_MIN_OVERLAP
+            if overlap >= required_overlap
             else "title_url_mismatch"
         )
     return flags

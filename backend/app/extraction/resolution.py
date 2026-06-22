@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from decimal import Decimal, InvalidOperation
+from urllib.parse import urlsplit
 
 from app.extraction.contracts import (
     AssetDecision,
@@ -27,7 +28,11 @@ from app.core.config.variant_policy import (
     DETAIL_PARENT_OFFER_INHERITANCE_RULE_ID,
 )
 from app.core.records.url_identity import conflicting_product_asset_urls
-from app.core.shared.url_utils import is_utility_image_url, low_resolution_asset_urls
+from app.core.shared.url_utils import (
+    asset_url_identity,
+    is_utility_image_url,
+    low_resolution_asset_urls,
+)
 from app.extraction.entities import AssetEntity, EntitySet, OfferEntity, VariantEntity
 from app.extraction.ids import stable_id
 
@@ -39,10 +44,22 @@ def resolve(
 ) -> ResolutionResult:
     by_id = {ev.evidence_id: ev for ev in evidence}
     decisions: list[Decision] = []
+    rejected_product_subjects = _url_mismatched_product_subjects(evidence)
     for product in entities.products:
         for fact, ids in sorted(product.attribute_evidence.items()):
+            eligible_ids = tuple(
+                evidence_id
+                for evidence_id in ids
+                if by_id[evidence_id].subject_id not in rejected_product_subjects
+            )
             decisions.append(
-                _resolve_scalar(product.entity_id, fact, ids, by_id, findings)
+                _resolve_scalar(
+                    product.entity_id,
+                    fact,
+                    eligible_ids,
+                    by_id,
+                    findings,
+                )
             )
     for variant in entities.variants:
         decisions.extend(_resolve_variant(variant, by_id, findings))
@@ -62,8 +79,13 @@ def resolve(
         decision.fact_type for decision in decisions if decision.status == "resolved"
     }
     required = {"product.url", "product.title"}
-    asset_urls = tuple(asset.url for asset in entities.assets)
-    conflicting_urls = conflicting_product_asset_urls(
+    asset_urls = tuple(
+        str(by_id[evidence_id].value)
+        for asset in entities.assets
+        for evidence_id in asset.url_evidence_ids
+        if evidence_id in by_id
+    )
+    rejected_asset_urls = conflicting_product_asset_urls(
         tuple(
             ev.value
             for ev in evidence
@@ -71,6 +93,9 @@ def resolve(
         ),
         asset_urls,
     ) | low_resolution_asset_urls(asset_urls)
+    conflicting_urls = frozenset(
+        _normalized_asset_url(value) for value in rejected_asset_urls
+    )
     return ResolutionResult(
         primary_product_entity_id=entities.products[0].entity_id
         if len(entities.products) == 1
@@ -85,6 +110,21 @@ def resolve(
         blocking_finding_ids=tuple(
             sorted(f.finding_id for f in findings if f.blocking)
         ),
+    )
+
+
+def _url_mismatched_product_subjects(
+    evidence: tuple[Evidence, ...],
+) -> frozenset[str]:
+    title_flags_by_subject: dict[str, set[str]] = {}
+    for row in evidence:
+        if row.fact_type != "product.title" or not row.subject_id:
+            continue
+        title_flags_by_subject.setdefault(row.subject_id, set()).update(row.flags)
+    return frozenset(
+        subject_id
+        for subject_id, flags in title_flags_by_subject.items()
+        if "title_url_mismatch" in flags and "title_url_match" not in flags
     )
 
 
@@ -277,8 +317,8 @@ def _resolve_product_assets(
         (rank, asset, accepted)
         for rank, asset, accepted in ranked
         if accepted
-        and asset.url not in conflicting_urls
-        and not _invalid_primary_asset_url(asset.url)
+        and _resolved_asset_url(accepted) not in conflicting_urls
+        and not _invalid_primary_asset_url(_resolved_asset_url(accepted))
     ]
     valid.sort(key=lambda item: item[0])
     decisions: list[AssetDecision] = []
@@ -290,7 +330,7 @@ def _resolve_product_assets(
         decisions.append(
             AssetDecision(
                 asset_entity_id=asset.entity_id,
-                url=asset.url,
+                url=_resolved_asset_url(accepted),
                 accepted_evidence_ids=(accepted.evidence_id,),
                 role="primary" if not decisions else "additional",
                 rank=index,
@@ -312,9 +352,18 @@ def _resolve_product_assets(
             rejection_reasons=("invalid_primary_asset",),
         )
         for index, (_rank_value, asset, accepted) in enumerate(ranked)
-        if accepted and _invalid_primary_asset_url(asset.url)
+        if accepted and _invalid_primary_asset_url(_resolved_asset_url(accepted))
     ]
     return tuple(decisions + rejected)
+
+
+def _normalized_asset_url(value: object) -> str:
+    normalized = asset_url_identity(value)
+    return normalized[0] if normalized else str(value)
+
+
+def _resolved_asset_url(evidence: Evidence) -> str:
+    return _normalized_asset_url(evidence.value)
 
 
 def _accepted_asset_evidence(
@@ -326,7 +375,13 @@ def _accepted_asset_evidence(
     ]
     if not candidates:
         return None
-    return sorted(candidates, key=_rank)[0]
+    return sorted(
+        candidates,
+        key=lambda row: (
+            int(urlsplit(str(row.value)).scheme.casefold() != "https"),
+            _rank(row),
+        ),
+    )[0]
 
 
 def _asset_rank(
@@ -334,11 +389,15 @@ def _asset_rank(
     accepted: Evidence | None,
     evidence_by_id: dict[str, Evidence],
 ) -> tuple[
-    int, int, tuple[int, int, float, str] | tuple[int, int, int, float, str], str
+    int,
+    int,
+    int,
+    tuple[int, int, float, str] | tuple[int, int, int, float, str],
+    str,
 ]:
     if accepted is None:
         return (99, 99, (99, 99, 0.0, ""), asset.entity_id)
-    role = _asset_role_rank(asset.url)
+    role = _asset_role_rank(str(accepted.value))
     source_order = min(
         (
             _asset_source_order(evidence_by_id[eid])
@@ -355,7 +414,10 @@ def _asset_rank(
         ),
         default=_rank(accepted),
     )
-    return role, source_order, source_rank, asset.entity_id
+    insecure_scheme = int(
+        urlsplit(str(accepted.value)).scheme.casefold() != "https"
+    )
+    return role, source_order, insecure_scheme, source_rank, asset.entity_id
 
 
 def _asset_role_rank(url: str) -> int:
