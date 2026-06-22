@@ -8,6 +8,11 @@ from app.core.config.extraction_rules import (
     DETAIL_IMAGE_IDENTITY_NUMERIC_MIN_LENGTH,
     DETAIL_IMAGE_OPAQUE_HEX_MIN_LENGTH,
     DETAIL_TITLE_PATH_EXTENSION_PATTERN,
+    VARIANT_CROSS_PRODUCT_URL_MAX_TOKEN_OVERLAP_RATIO,
+    DETAIL_URL_TITLE_CODE_PATTERN,
+    DETAIL_URL_TITLE_FALLBACK_MIN_TOKENS,
+    DETAIL_URL_TITLE_IGNORED_SEGMENTS,
+    DETAIL_URL_TITLE_LOCALE_PATTERN,
 )
 
 _UTILITY_TOKENS = frozenset(
@@ -64,11 +69,62 @@ def detail_identity_codes_from_url(url: str) -> tuple[str, ...]:
     return tuple(out)
 
 
+def _detail_url_title_segment_is_code(value: str) -> bool:
+    if re.fullmatch(DETAIL_URL_TITLE_CODE_PATTERN, value) is None:
+        return False
+    tokens = re.findall(r"[A-Za-z0-9]+", value)
+    word_tokens = [token for token in tokens if token.isalpha() and len(token) >= 3]
+    short_model_tokens = [
+        token
+        for token in tokens
+        if re.fullmatch(r"(?:[A-Za-z]+\d{1,3}|\d{1,3})", token)
+    ]
+    return not (
+        len(word_tokens) >= 2
+        or (word_tokens and short_model_tokens)
+    )
+
+
 def detail_title_from_url(url: str) -> str:
     parsed = urlparse(str(url or ""))
-    leaf = unquote(parsed.path.strip("/").rsplit("/", 1)[-1])
-    leaf = re.sub(DETAIL_TITLE_PATH_EXTENSION_PATTERN, "", leaf, flags=re.IGNORECASE)
-    return re.sub(r"[-_]+", " ", leaf).strip()
+    segments = [unquote(part) for part in parsed.path.strip("/").split("/") if part]
+    for offset, segment in enumerate(reversed(segments)):
+        candidate = re.sub(
+            DETAIL_TITLE_PATH_EXTENSION_PATTERN, "", segment, flags=re.IGNORECASE
+        )
+        title = re.sub(r"[-_]+", " ", candidate).strip()
+        key = " ".join(re.findall(r"[a-z0-9]+", title.casefold()))
+        if not title or key in DETAIL_URL_TITLE_IGNORED_SEGMENTS:
+            continue
+        if re.fullmatch(DETAIL_URL_TITLE_LOCALE_PATTERN, candidate):
+            continue
+        if _detail_url_title_segment_is_code(candidate):
+            continue
+        if offset and len(semantic_identity_tokens(title)) < DETAIL_URL_TITLE_FALLBACK_MIN_TOKENS:
+            continue
+        return title
+    return ""
+
+
+def detail_urls_conflict(parent_url: str, candidate_url: str) -> bool:
+    parent_codes = set(detail_identity_codes_from_url(parent_url))
+    candidate_codes = set(detail_identity_codes_from_url(candidate_url))
+    if not parent_codes or not candidate_codes:
+        return False
+    if any(
+        left == right or left in right or right in left
+        for left in parent_codes
+        for right in candidate_codes
+    ):
+        return False
+    parent_tokens = set(semantic_detail_identity_tokens(parent_url))
+    candidate_tokens = set(semantic_detail_identity_tokens(candidate_url))
+    if not parent_tokens or not candidate_tokens:
+        return False
+    overlap = len(parent_tokens & candidate_tokens) / len(
+        parent_tokens | candidate_tokens
+    )
+    return overlap <= VARIANT_CROSS_PRODUCT_URL_MAX_TOKEN_OVERLAP_RATIO
 
 
 def detail_url_looks_like_product(url: str) -> bool:
@@ -86,9 +142,16 @@ def detail_url_is_utility(url: str) -> bool:
     return any(f"/{token}" in path for token in _UTILITY_TOKENS)
 
 
+def semantic_identity_tokens(value: str) -> tuple[str, ...]:
+    return tuple(
+        token
+        for token in re.findall(r"[a-z0-9]+", str(value or "").casefold())
+        if len(token) >= 3 or (token.isdigit() and len(token) >= 2)
+    )
+
+
 def semantic_detail_identity_tokens(url: str) -> tuple[str, ...]:
-    title = detail_title_from_url(url)
-    return tuple(token for token in re.split(r"\W+", title.lower()) if len(token) >= 3)
+    return semantic_identity_tokens(detail_title_from_url(url))
 
 
 def conflicting_product_asset_urls(

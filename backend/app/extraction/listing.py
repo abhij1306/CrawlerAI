@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import urljoin, urlparse
 
 from app.core.config.extraction_recipes import (
@@ -227,7 +227,7 @@ def _listing_evidence(
     locator: SourceLocator,
     confidence: float,
 ) -> Evidence:
-    entity_type = (
+    entity_type: Literal["offer", "asset", "product"] = (
         "offer"
         if fact_type.startswith("offer.")
         else "asset"
@@ -244,7 +244,7 @@ def _listing_evidence(
         group_id=subject_id,
         hint=EntityHint(entity_type=entity_type),
         confidence=confidence,
-    )  # type: ignore[arg-type]
+    )
     return row.model_copy(
         update={
             "surface": Surface.ECOMMERCE_LISTING,

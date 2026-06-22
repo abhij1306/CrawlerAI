@@ -1,4 +1,4 @@
-import { useDeferredValue, useMemo } from 'react';
+import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 
 import { queryKeys } from '@/api/query-keys';
@@ -56,28 +56,30 @@ export function useRunRecords({
   const {
     data: jsonRecordsData,
     error: jsonRecordsError,
+    isLoading: isJsonRecordsLoading,
     refetch: refetchJsonRecords,
   } = useQuery({
     queryKey: queryKeys.runs.jsonRecords(runId, recordsFetchLimit),
     queryFn: ({ signal }) => api.getRecords(runId, { limit: recordsFetchLimit }, { signal }),
-    enabled: shouldFetchJsonRecords,
+    enabled: Boolean(run) && shouldFetchJsonRecords,
     refetchInterval: live && shouldFetchJsonRecords ? POLLING_INTERVALS.ACTIVE_JOB_MS : false,
     refetchIntervalInBackground: false,
     refetchOnMount: 'always',
   });
 
-  const records = useMemo(() => jsonRecordsData?.items ?? [], [jsonRecordsData?.items]);
+  const jsonRecordsSource =
+    jsonRecordsData ?? (shouldFetchJsonRecords ? tableRecordsData : undefined);
+  const records = useMemo(() => jsonRecordsSource?.items ?? [], [jsonRecordsSource?.items]);
   const tableRecords = useMemo(
     () => tableRecordsData?.items ?? [],
     [tableRecordsData?.items],
   );
   const tableTotal = tableRecordsData?.meta?.total ?? tableRecords.length;
-  const recordsTotal = jsonRecordsData?.meta?.total ?? records.length;
+  const recordsTotal = jsonRecordsSource?.meta?.total ?? records.length;
   const jsonRecords = useMemo(
     () => records.slice(0, Math.min(records.length, jsonVisibleCount)),
     [jsonVisibleCount, records],
   );
-  const deferredJsonRecords = useDeferredValue(jsonRecords);
   const recordsFetchCapReached = records.length >= recordsFetchLimit && recordsFetchLimit >= 800;
   const hasMoreTableRecords = tableRecords.length < tableTotal;
   const hasMoreJsonRecords =
@@ -86,9 +88,9 @@ export function useRunRecords({
   const recordsJson = useMemo(
     () =>
       outputTab === 'json'
-        ? JSON.stringify(deferredJsonRecords.map(cleanRecordForDisplay), null, 2)
+        ? JSON.stringify(jsonRecords.map(cleanRecordForDisplay), null, 2)
         : '',
-    [deferredJsonRecords, outputTab],
+    [jsonRecords, outputTab],
   );
 
   const summaryRecordsFromRun = Number(run?.result_summary?.record_count ?? 0) || 0;
@@ -117,6 +119,7 @@ export function useRunRecords({
     },
     jsonRecordsQuery: {
       error: jsonRecordsError,
+      isLoading: isJsonRecordsLoading && !jsonRecordsSource,
       refetch: refetchJsonRecords,
     },
     records,

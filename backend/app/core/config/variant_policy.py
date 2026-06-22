@@ -12,6 +12,7 @@ from app.core.config.field_mappings import (
     BARCODE_FIELD,
     COLOR_FIELD,
     CURRENCY_FIELD,
+    ECOMMERCE_DISPLAY_PRICE_SOURCE_KEYS,
     IMAGE_URL_FIELD,
     PRICE_FIELD,
     SIZE_FIELD,
@@ -236,6 +237,7 @@ VARIANT_SKU_VALUE_KEYS = (
     "sku_id",
     "stockKeepingUnit",
 )
+VARIANT_URL_VALUE_KEYS = ("url", "productUrl", "product_url", "pdpUrl", "pdp_url")
 VARIANT_IMAGE_DIMENSION_MIN_PX = 100
 EMBEDDED_STATE_SCRIPT_SELECTOR = (
     'script[type="application/json"], '
@@ -317,6 +319,7 @@ VARIANT_SCALAR_VALUE_KEYS = (
     "optionValue",
     "selectedValue",
     "variationValue",
+    *ECOMMERCE_DISPLAY_PRICE_SOURCE_KEYS,
     *DETAIL_EXPLICIT_MINOR_UNIT_PRICE_FIELDS,
     "amount",
     "current",
@@ -325,6 +328,7 @@ VARIANT_SCALAR_VALUE_KEYS = (
     "listPrice",
     "price",
 )
+VARIANT_OFFER_DISPLAY_PRICE_KEYS = ECOMMERCE_DISPLAY_PRICE_SOURCE_KEYS
 VARIANT_OFFER_PRICE_KEYS = (
     "price",
     "currentPrice",

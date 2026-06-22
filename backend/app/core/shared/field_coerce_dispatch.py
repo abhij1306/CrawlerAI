@@ -155,7 +155,7 @@ def _coerce_option_scalar_value(field_name: str, value: object) -> str | None:
         ]
         if filtered:
             scalar_input = filtered
-    return _field_coerce()._sanitize_option_scalar(
+    return _field_coerce().sanitize_option_scalar(
         field_name,
         _field_coerce().coerce_structured_scalar(
             scalar_input,

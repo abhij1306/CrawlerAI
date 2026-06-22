@@ -424,7 +424,9 @@ def _invalid(ev: Evidence) -> bool:
     return bool(
         flags
         & {
+            "brand_boilerplate",
             "brand_url",
+            "description_ui_pollution",
             "invalid_decimal",
             "invalid_currency",
             INVALID_AVAILABILITY_EVIDENCE_FLAG,
@@ -459,10 +461,10 @@ def _rank(
         "url": 6,
     }.get(ev.collector_id, 7)
     if ev.fact_type == "product.title":
-        pollution = int("seo_title_pollution" in ev.flags)
-        url_disagreement = int(
-            "title_url_mismatch" in ev.flags or "truncated_title" in ev.flags
+        pollution = int(
+            "seo_title_pollution" in ev.flags or "truncated_title" in ev.flags
         )
+        url_disagreement = int("title_url_mismatch" in ev.flags)
         return (
             pollution,
             url_disagreement,

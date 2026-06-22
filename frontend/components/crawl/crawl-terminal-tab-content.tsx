@@ -8,6 +8,7 @@ import type { RecipeActionPendingKey } from './use-run-recipe-actions';
 export interface CrawlTerminalTabContentProps {
   outputTab: string;
   tableRecordsLoading: boolean;
+  jsonRecordsLoading: boolean;
   filteredTableRecords: CrawlRecord[];
   visibleColumns: string[];
   visibleSelectedIds: number[];
@@ -43,6 +44,7 @@ export interface CrawlTerminalTabContentProps {
 export function CrawlTerminalTabContent({
   outputTab,
   tableRecordsLoading,
+  jsonRecordsLoading,
   filteredTableRecords,
   visibleColumns,
   visibleSelectedIds,
@@ -96,12 +98,14 @@ export function CrawlTerminalTabContent({
   if (outputTab === 'json') {
     return (
       <RunJsonOutput
+        loading={jsonRecordsLoading}
         records={records}
         recordsJson={recordsJson}
         visibleCount={jsonRecordsLength}
         total={recordsTotal}
         hasMore={hasMoreJsonRecords}
         fetchCapReached={recordsFetchCapReached}
+        emptyState={emptyRecordsState}
         onLoadMore={() =>
           setJsonVisibleCount((current) => current + JSON_PREVIEW_INCREMENT)
         }

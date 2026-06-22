@@ -298,6 +298,7 @@ function CrawlRunWorkspace({ runId }: Readonly<CrawlRunScreenProps>) {
           <CrawlTerminalTabContent
             outputTab={outputTab}
             tableRecordsLoading={tableRecordsQuery.isLoading}
+            jsonRecordsLoading={jsonRecordsQuery.isLoading}
             filteredTableRecords={filteredTableRecords}
             visibleColumns={visibleColumns}
             visibleSelectedIds={visibleSelectedIds}

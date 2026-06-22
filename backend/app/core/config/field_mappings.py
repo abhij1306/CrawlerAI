@@ -36,6 +36,14 @@ ASSET_IMAGE_URL_FACT_TYPE = "asset.image_url"
 OFFER_AVAILABILITY_FACT_TYPE = "offer.availability"
 OFFER_CURRENCY_FACT_TYPE = "offer.currency"
 OFFER_PRICE_FACT_TYPE = "offer.price"
+ECOMMERCE_DISPLAY_PRICE_SOURCE_KEYS = (
+    "formattedPrice",
+    "formatted_price",
+    "displayPrice",
+    "display_price",
+    "priceText",
+    "price_text",
+)
 PRODUCT_BRAND_FACT_TYPE = "product.brand"
 PRODUCT_DESCRIPTION_FACT_TYPE = "product.description"
 PRODUCT_GTIN_FACT_TYPE = "product.gtin"
@@ -354,6 +362,7 @@ ECOMMERCE_INTEGER_IDENTIFIER_FACT_TYPES = frozenset(
 INVALID_SCALAR_TYPE_EVIDENCE_FLAG = "invalid_scalar_type"
 ECOMMERCE_STRUCTURED_SOURCE_FACT_TYPES = {
     **dict.fromkeys(DETAIL_EXPLICIT_MINOR_UNIT_PRICE_FIELDS, OFFER_PRICE_FACT_TYPE),
+    **dict.fromkeys(ECOMMERCE_DISPLAY_PRICE_SOURCE_KEYS, OFFER_PRICE_FACT_TYPE),
     "availability": OFFER_AVAILABILITY_FACT_TYPE,
     "available": OFFER_AVAILABILITY_FACT_TYPE,
     "brand": PRODUCT_BRAND_FACT_TYPE,

@@ -26,6 +26,11 @@ DETAIL_IDENTITY_QUERY_KEYS = frozenset(
 )
 DETAIL_IDENTITY_QUERY_PREFIXES = tuple(PUBLIC_RECORD_DETAIL_CANONICAL_QUERY_PREFIXES)
 
+DETAIL_BRAND_BOILERPLATE_VALUES = frozenset({"we"})
+DETAIL_DESCRIPTION_UI_PATTERNS = (
+    r"^\s*(?:please\s+)?(?:choose|select)\s+(?:(?:a|your|the)\s+)?(?:fabric|material|finish|color|colour|size)\b",
+    r"^\s*(?:fabric|material|finish|color|colour|size)\s+selection\b",
+)
 DETAIL_LOW_SIGNAL_LONG_TEXT_VALUES = frozenset(
     {
         "description",
@@ -45,9 +50,14 @@ DETAIL_LOW_SIGNAL_TITLE_VALUES = frozenset(
     {
         "6 easy payments",
         "frequently bought together",
+        "added to cart",
+        "clothing",
         "mens shoes",
         "men's shoes",
+        "pick up today",
         "plp",
+        "size",
+        "us",
         "womens shoes",
         "women's shoes",
         "shoes",
@@ -121,6 +131,35 @@ DETAIL_TITLE_SEO_POLLUTION_PATTERN = (
 )
 DETAIL_TITLE_TRAILING_CODE_PATTERN = r"(?:^|[\s_-])\d{4,}$"
 DETAIL_TITLE_URL_TOKEN_MIN_OVERLAP = 1
+DETAIL_TITLE_SEO_PREFIXES = ("buy ", "shop ")
+DETAIL_TITLE_SEO_PREFIX_MIN_WORDS = 8
+DETAIL_TITLE_UI_INSTRUCTION_TOKENS = frozenset(
+    {"assembly", "delivery", "faq", "faqs", "fee", "variation"}
+)
+DETAIL_TITLE_UI_INSTRUCTION_MIN_HITS = 3
+DETAIL_URL_TITLE_IGNORED_SEGMENTS = frozenset(
+    {
+        "boys",
+        "girls",
+        "kids boys",
+        "kids girls",
+        "men",
+        "p",
+        "pd",
+        "dp",
+        "product",
+        "product detail",
+        "productpage",
+        "products",
+        "shop",
+        "women",
+    }
+)
+DETAIL_URL_TITLE_CODE_PATTERN = (
+    r"^(?=.{2,48}$)(?=.*\d)[A-Za-z0-9]+(?:[-_.][A-Za-z0-9]+){0,2}$"
+)
+DETAIL_URL_TITLE_LOCALE_PATTERN = r"^[A-Za-z]{2}(?:[-_][A-Za-z]{2})?$"
+DETAIL_URL_TITLE_FALLBACK_MIN_TOKENS = 2
 DETAIL_LOW_SIGNAL_PRODUCT_TYPE_VALUES = frozenset(
     {"criteoproductrail", "giftoption", "promotionalcallout"}
 ) | frozenset(_STATIC_EXPORTS.get("DETAIL_LOW_SIGNAL_PRODUCT_TYPE_VALUES_EXTRA", ()))

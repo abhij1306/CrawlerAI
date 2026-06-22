@@ -2,7 +2,6 @@ import { Copy } from 'lucide-react';
 
 import type { CrawlRecord } from '../../lib/api/types';
 import { CRAWL_DEFAULTS } from '../../lib/constants/crawl-defaults';
-import { syntaxHighlightJsonNodes } from '../../lib/ui/syntax';
 import { DataRegionEmpty, DataRegionLoading, InlineAlert } from '../ui/patterns';
 import { Button } from '../ui/primitives';
 import { copyJson } from '../../lib/crawl/record-utils';
@@ -80,24 +79,46 @@ export function RunTableOutput({
 }
 
 type RunJsonOutputProps = {
+  loading: boolean;
   records: CrawlRecord[];
   recordsJson: string;
   visibleCount: number;
   total: number;
   hasMore: boolean;
   fetchCapReached: boolean;
+  emptyState: EmptyRecordsState;
   onLoadMore: () => void;
 };
 
 export function RunJsonOutput({
+  loading,
   records,
   recordsJson,
   visibleCount,
   total,
   hasMore,
   fetchCapReached,
+  emptyState,
   onLoadMore,
 }: Readonly<RunJsonOutputProps>) {
+  if (loading && !records.length) {
+    return (
+      <div className="min-h-[55vh]">
+        <DataRegionLoading count={5} className="px-0" />
+      </div>
+    );
+  }
+
+  if (!records.length) {
+    return (
+      <DataRegionEmpty
+        title={emptyState.title}
+        description={emptyState.description}
+        className="min-h-[55vh] px-0"
+      />
+    );
+  }
+
   return (
     <div className="relative min-h-[55vh]">
       <div className="absolute top-2 right-2 z-10 flex items-center gap-2">
@@ -107,7 +128,7 @@ export function RunJsonOutput({
         </Button>
       </div>
       <pre className="crawl-terminal crawl-terminal-json max-h-[72vh] min-h-[55vh]">
-        {syntaxHighlightJsonNodes(recordsJson)}
+        {recordsJson}
       </pre>
       {hasMore ? (
         <div className="surface-muted text-muted type-body mt-2 flex items-center justify-between rounded-md px-6 py-2">
@@ -129,4 +150,4 @@ export function RunJsonOutput({
   );
 }
 
-export const JSON_PREVIEW_INCREMENT = CRAWL_DEFAULTS.TABLE_PAGE_SIZE * 4;
+export const JSON_PREVIEW_INCREMENT = CRAWL_DEFAULTS.TABLE_PAGE_SIZE;

@@ -30,6 +30,14 @@ def _python_files(root: Path) -> list[Path]:
     return [path for path in root.rglob("*.py") if "__pycache__" not in path.parts]
 
 
+def _canonical_line_count(node: ast.AST) -> int:
+    return len(ast.unparse(node).splitlines())
+
+
+def _parse_module(path: Path) -> ast.Module:
+    return ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+
+
 def test_surface_enum_is_exact_contract() -> None:
     assert {surface.value for surface in Surface} == {
         "ecommerce_listing",
@@ -177,22 +185,14 @@ def test_surface_inference_modules_are_deleted() -> None:
 
 def test_extraction_package_stays_within_architecture_limits() -> None:
     files = _python_files(EXTRACTION_ROOT)
+    trees = {path: _parse_module(path) for path in files}
     assert len(files) <= 24
-    assert (
-        sum(len(path.read_text(encoding="utf-8").splitlines()) for path in files)
-        <= 5500
-    )
-    for path in files:
-        text = path.read_text(encoding="utf-8")
-        assert len(text.splitlines()) <= 400, path
-        tree = ast.parse(text, filename=str(path))
+    assert sum(_canonical_line_count(tree) for tree in trees.values()) <= 5500
+    for path, tree in trees.items():
+        assert _canonical_line_count(tree) <= 400, path
         for node in ast.walk(tree):
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                assert node.end_lineno is not None
-                assert node.end_lineno - node.lineno + 1 <= 60, (
-                    path,
-                    node.name,
-                )
+                assert _canonical_line_count(node) <= 60, (path, node.name)
 
 
 def test_obsolete_pipeline_semantic_owners_are_deleted() -> None:

@@ -27,7 +27,12 @@ from app.core.config.extraction_rules import (
     TRACKING_PIXEL_PATTERN,
     URL_FIELDS as URL_FIELDS,
     VARIANT_COLOR_CODELIKE_TOKEN_PATTERN,
+    VARIANT_OPAQUE_NUMERIC_OPTION_AXES,
+    VARIANT_OPAQUE_NUMERIC_OPTION_MIN_DIGITS,
+    VARIANT_OPTION_VALUE_EXACT_NOISE_TOKENS,
     VARIANT_OPTION_VALUE_SUFFIX_NOISE_PATTERNS,
+    VARIANT_PLACEHOLDER_PREFIXES,
+    VARIANT_PLACEHOLDER_VALUES,
 )
 from app.core.config.field_mappings import (
     FIELD_ALIASES,
@@ -101,9 +106,11 @@ __all__ = (
     "infer_brand_from_product_url",
     "infer_brand_from_title_marker",
     "is_title_noise",
+    "sanitize_option_scalar",
     "same_host",
     "strip_html_tags",
     "strip_tracking_query_params",
+    "variant_option_value_is_opaque_numeric",
 )
 
 PRODUCT_URL_HINTS = detail_path_markers("ecommerce_detail")
@@ -409,7 +416,19 @@ _SHORT_COLOR_ALLOWLIST = frozenset(
 )
 
 
-def _sanitize_option_scalar(field_name: str, value: object) -> str | None:
+def variant_option_value_is_opaque_numeric(
+    field_name: str, value: object
+) -> bool:
+    text = coerce_text(value)
+    return bool(
+        field_name in VARIANT_OPAQUE_NUMERIC_OPTION_AXES
+        and text
+        and text.isdigit()
+        and len(text) >= VARIANT_OPAQUE_NUMERIC_OPTION_MIN_DIGITS
+    )
+
+
+def sanitize_option_scalar(field_name: str, value: object) -> str | None:
     text = coerce_text(value)
     if not text:
         return None
@@ -436,6 +455,18 @@ def _sanitize_option_scalar(field_name: str, value: object) -> str | None:
                 flags=re.I,
             )
         cleaned = clean_text(cleaned)
+        key = cleaned.casefold()
+        axis_aliases = {field_name.casefold()}
+        if field_name == "color":
+            axis_aliases.add("colour")
+        if (
+            key in axis_aliases
+            or key in VARIANT_PLACEHOLDER_VALUES
+            or key in VARIANT_OPTION_VALUE_EXACT_NOISE_TOKENS
+            or any(key.startswith(prefix) for prefix in VARIANT_PLACEHOLDER_PREFIXES)
+            or variant_option_value_is_opaque_numeric(field_name, cleaned)
+        ):
+            return None
     if field_name == "color":
         if _SMALL_NUMERIC_RE.fullmatch(cleaned):
             return None

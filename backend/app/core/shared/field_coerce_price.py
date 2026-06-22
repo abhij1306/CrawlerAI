@@ -11,6 +11,7 @@ from app.core.config.extraction_price_rules import (
     DETAIL_CORROBORATED_PRICE_SCALE_FLAG,
     DETAIL_EXPLICIT_MINOR_UNIT_PRICE_FLAG,
     DETAIL_EXPLICIT_MINOR_UNIT_PRICE_KEYS,
+    DETAIL_PARENT_VARIANT_PRICE_RATIO_MAX_DECIMAL,
     DETAIL_PRICE_COMPARISON_TOLERANCE,
     DETAIL_VISIBLE_PRICE_MAGNITUDE_RATIOS_DECIMAL,
 )
@@ -179,7 +180,14 @@ def repair_price_unit(
     for ratio in DETAIL_VISIBLE_PRICE_MAGNITUDE_RATIOS_DECIMAL:
         candidate = amount / ratio
         if any(
-            abs(peer - candidate) <= DETAIL_PRICE_COMPARISON_TOLERANCE for peer in peers
+            abs(peer - candidate) <= DETAIL_PRICE_COMPARISON_TOLERANCE
+            or (
+                peer > 0
+                and candidate > 0
+                and max(peer, candidate) / min(peer, candidate)
+                <= DETAIL_PARENT_VARIANT_PRICE_RATIO_MAX_DECIMAL
+            )
+            for peer in peers
         ):
             return format(candidate, "f"), DETAIL_CORROBORATED_PRICE_SCALE_FLAG
     return None

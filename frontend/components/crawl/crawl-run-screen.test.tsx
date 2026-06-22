@@ -12,6 +12,7 @@ import { storeProductIntelligencePrefill } from './crawl-run-prefill';
 
 const replaceMock = vi.fn();
 const pushMock = vi.fn();
+const routeMock = vi.hoisted(() => ({ searchParams: 'run_id=42' }));
 
 vi.mock('react-router-dom', async (importOriginal) => {
   const actual = await importOriginal<typeof import('react-router-dom')>();
@@ -20,7 +21,7 @@ vi.mock('react-router-dom', async (importOriginal) => {
     ...actual,
     useLocation: () => ({
       pathname: '/crawl',
-      search: '?run_id=42',
+      search: `?${routeMock.searchParams}`,
       hash: '',
       state: null,
       key: 'test',
@@ -28,7 +29,9 @@ vi.mock('react-router-dom', async (importOriginal) => {
     useNavigate: () => (to: string, options?: { replace?: boolean }) =>
       options?.replace ? replaceMock(to, options) : pushMock(to),
     useSearchParams: () => {
-      const [params, setParamsState] = React.useState(() => new URLSearchParams('run_id=42'));
+      const [params, setParamsState] = React.useState(
+        () => new URLSearchParams(routeMock.searchParams),
+      );
       const setParams = React.useCallback(
         (nextParams: URLSearchParams | ((current: URLSearchParams) => URLSearchParams)) => {
           setParamsState((current: URLSearchParams) =>
@@ -317,6 +320,7 @@ describe('CrawlRunScreen', () => {
   beforeEach(() => {
     originalUserAgentDescriptor = Object.getOwnPropertyDescriptor(window.navigator, 'userAgent');
     vi.clearAllMocks();
+    routeMock.searchParams = 'run_id=42';
     MockWebSocket.instances = [];
     window.sessionStorage.clear();
     vi.stubGlobal('WebSocket', MockWebSocket as unknown as typeof WebSocket);
@@ -665,6 +669,34 @@ describe('CrawlRunScreen', () => {
     expect(await screen.findByRole('button', { name: /Table \(2\)/ })).toBeInTheDocument();
   });
 
+  it('waits for run detail before loading a direct JSON route', async () => {
+    routeMock.searchParams = 'run_id=42&output=json';
+    let resolveRun!: (run: CrawlRun) => void;
+    apiMock.getCrawl.mockReturnValue(
+      new Promise<CrawlRun>((resolve) => {
+        resolveRun = resolve;
+      }),
+    );
+
+    renderRunScreen();
+
+    expect(await screen.findByText('Loading Crawl')).toBeInTheDocument();
+    expect(apiMock.getRecords).not.toHaveBeenCalled();
+
+    await act(async () => {
+      resolveRun(terminalRun(101));
+    });
+
+    await waitFor(() => {
+      expect(apiMock.getRecords).toHaveBeenCalledWith(
+        101,
+        { limit: 50 },
+        { signal: expect.any(AbortSignal) },
+      );
+    });
+    expect(await screen.findByText(/"title": "Item 1"/)).toBeInTheDocument();
+  });
+
   it('refetches table records on mount even if the cache contains a fresh empty page', async () => {
     const queryClient = new QueryClient({
       defaultOptions: {
@@ -986,8 +1018,29 @@ describe('CrawlRunScreen', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: 'Logs' }));
 
-    expect(await screen.findByText('100%')).toBeInTheDocument();
+    expect(await screen.findByText('40%')).toBeInTheDocument();
     expect(screen.getByText('0m 42s')).toBeInTheDocument();
+  });
+
+  it('stops a serial URL timer when the next URL starts', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-04-08T10:00:10Z'));
+
+    render(
+      <LogTerminal
+        live
+        logs={[
+          makeLog(1, 'Starting crawl run for https://example.com/p/1 (1/2)'),
+          {
+            ...makeLog(2, 'Starting crawl run for https://example.com/p/2 (2/2)'),
+            created_at: new Date('2026-04-08T10:00:06Z').toISOString(),
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.getByText('0m 06s')).toBeInTheDocument();
+    expect(screen.getByText('0m 04s')).toBeInTheDocument();
   });
 
   it('ticks duration for every active parallel site group', () => {
@@ -998,8 +1051,8 @@ describe('CrawlRunScreen', () => {
       <LogTerminal
         live
         logs={[
-          makeLog(1, 'Starting crawl run for https://example.com/p/1 (1/2)'),
-          makeLog(2, 'Starting crawl run for https://example.com/p/2 (2/2)'),
+          makeLog(1, '[url:https://example.com/p/1] Acquiring page'),
+          makeLog(2, '[url:https://example.com/p/2] Acquiring page'),
         ]}
       />,
     );

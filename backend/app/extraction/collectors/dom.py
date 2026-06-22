@@ -6,6 +6,8 @@ from app.extraction.collectors._helpers import evidence, html_doc
 from app.core.config.extraction_rules import (
     DETAIL_DOM_IMAGE_NEGATIVE_SCOPE_TOKENS,
     DETAIL_DOM_IMAGE_POSITIVE_SCOPE_TOKENS,
+    DETAIL_IMAGE_SRCSET_ATTRS,
+    DETAIL_IMAGE_URL_ATTRS,
     VARIANT_DOM_MAX_LABEL_LENGTH,
     VARIANT_DOM_NOISE_PHRASES,
     VARIANT_DOM_SIZE_LABEL_PATTERN,
@@ -87,7 +89,7 @@ class DomCollector:
                     )
                 )
         for img, confidence in _product_image_nodes(doc):
-            src = str(img.attribute("src") or "").strip()
+            src = _image_node_url(img)
             locator = SourceLocator(
                 kind="css_selector", value=img.stable_locator(), preview=src[:120]
             )
@@ -111,9 +113,14 @@ class DomCollector:
 def _product_image_nodes(doc) -> tuple[tuple[HtmlNode, float], ...]:
     candidates: list[tuple[HtmlNode, str]] = []
     seen: set[int] = set()
-    for node in doc.css("main img[src], img[data-product-image][src]"):
+    for node in doc.css(
+        "main img[src], main img[data-src], main img[data-lazy-src], "
+        "main img[data-original], main img[data-image], main img[srcset], "
+        "main img[data-srcset], main source[srcset], main source[data-srcset], "
+        "img[data-product-image][src], img[data-product-image][data-src]"
+    ):
         identity = node.identity()
-        src = str(node.attribute("src") or "").strip()
+        src = _image_node_url(node)
         if identity in seen or node.is_hidden() or not src or is_utility_image_url(src):
             continue
         seen.add(identity)
@@ -131,6 +138,35 @@ def _product_image_nodes(doc) -> tuple[tuple[HtmlNode, float], ...]:
     if scoped:
         return tuple((node, 0.58) for node in scoped)
     return tuple((node, 0.5) for node, _ in candidates)
+
+
+def _image_node_url(node: HtmlNode) -> str:
+    for attribute in DETAIL_IMAGE_URL_ATTRS:
+        value = str(node.attribute(attribute) or "").strip()
+        if value and not is_utility_image_url(value):
+            return value
+    for attribute in DETAIL_IMAGE_SRCSET_ATTRS:
+        value = _largest_srcset_url(str(node.attribute(attribute) or ""))
+        if value and not is_utility_image_url(value):
+            return value
+    return ""
+
+
+def _largest_srcset_url(value: str) -> str:
+    ranked: list[tuple[float, int, str]] = []
+    for index, raw_candidate in enumerate(str(value or "").split(",")):
+        parts = raw_candidate.strip().rsplit(None, 1)
+        if not parts or not parts[0]:
+            continue
+        url = parts[0]
+        rank = float(index)
+        if len(parts) == 2 and parts[1][-1:].casefold() in {"w", "x"}:
+            try:
+                rank = float(parts[1][:-1])
+            except ValueError:
+                pass
+        ranked.append((rank, index, url))
+    return max(ranked, default=(0.0, 0, ""))[2]
 
 
 def _image_scope_context(node: HtmlNode) -> str:

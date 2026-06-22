@@ -13,6 +13,12 @@ from app.core.config.extraction_rules import (
 )
 from app.core.config import variant_policy
 from app.core.records.html_helpers import bounded_json_objects, embedded_state_payloads
+from app.core.records.url_identity import detail_urls_conflict
+from app.core.shared.field_coerce import (
+    sanitize_option_scalar,
+    variant_option_value_is_opaque_numeric,
+)
+from app.core.shared.url_utils import extract_urls
 from app.extraction.collectors._helpers import evidence, html_doc, json_objects
 from app.extraction.contracts import CaptureBundle, EntityHint, Evidence, SourceLocator
 from app.extraction.ids import stable_id
@@ -69,7 +75,11 @@ def network_row(
     out: list[Evidence] = []
     if _path_tokens(path) & ECOMMERCE_CONTEXT_NOISE_PATH_TOKENS:
         return out
+    if _has_only_opaque_numeric_options(obj):
+        return out
     if _looks_like_variant(obj, path=path):
+        if _variant_url_conflicts(bundle.final_url, obj):
+            return out
         return _variant_row(bundle, artifact_id, path, obj, collector_id=collector_id)
     mapped_keys = tuple(
         key for key in ECOMMERCE_STRUCTURED_SOURCE_FACT_TYPES if key in obj
@@ -137,6 +147,11 @@ def _path_tokens(path: str) -> set[str]:
     return {token.casefold() for token in normalized.split("/") if token}
 
 
+def _variant_url_conflicts(page_url: str, obj: dict) -> bool:
+    candidate = _scalar_value(_first(obj, *variant_policy.VARIANT_URL_VALUE_KEYS))
+    return bool(candidate and detail_urls_conflict(page_url, str(candidate)))
+
+
 def _has_product_context(path: str, obj: dict) -> bool:
     keys = set(obj)
     type_name = str(obj.get("@type") or obj.get("type") or "").casefold()
@@ -162,8 +177,8 @@ def _has_offer_context(path: str, obj: dict, *, product_context: bool) -> bool:
 
 
 def _source_values(key: str, value: object) -> tuple[object, ...]:
-    if key in ECOMMERCE_IMAGE_SOURCE_KEYS and isinstance(value, list):
-        return tuple(_scalar_value(item) for item in value)
+    if key in ECOMMERCE_IMAGE_SOURCE_KEYS:
+        return tuple(extract_urls(value, ""))
     return (_scalar_value(value),)
 
 
@@ -277,7 +292,11 @@ def _variant_fields(obj: dict) -> list[tuple[str, str, object]]:
     raw = [
         ("id", "variant.id", _variant_identity_value(obj)),
         ("sku", "variant.sku", _first(obj, *variant_policy.VARIANT_SKU_VALUE_KEYS)),
-        ("url", "variant.url", obj.get("url")),
+        (
+            "url",
+            "variant.url",
+            _first(obj, *variant_policy.VARIANT_URL_VALUE_KEYS),
+        ),
         ("selected", "variant.selected", selected),
     ]
     raw.extend(
@@ -303,6 +322,11 @@ def _variant_offer(
             _first_key(obj, *variant_policy.VARIANT_OFFER_PRICE_KEYS) or "price",
             "offer.price",
             _first(obj, *variant_policy.VARIANT_OFFER_PRICE_KEYS),
+        ),
+        *(
+            (key, "offer.price", obj.get(key))
+            for key in variant_policy.VARIANT_OFFER_DISPLAY_PRICE_KEYS
+            if obj.get(key) not in (None, "", [], {})
         ),
         (
             _first_key(obj, *variant_policy.VARIANT_OFFER_ORIGINAL_PRICE_KEYS)
@@ -405,17 +429,41 @@ def _variant_identity_value(obj: dict) -> str | None:
 
 
 def _variant_options(obj: dict) -> list[tuple[str, str, object]]:
+    cleaned: list[tuple[str, str, object]] = []
+    for name, axis, value in _raw_variant_options(obj):
+        option_value = _clean_variant_option_value(axis, value)
+        if option_value is not None:
+            cleaned.append((name, axis, option_value))
+    return _dedupe_options(cleaned)
+
+
+def _raw_variant_options(obj: dict) -> list[tuple[str, str, object]]:
     rows: list[tuple[str, str, object]] = []
     for key, axis in variant_policy.VARIANT_DIRECT_OPTION_FIELD_AXES.items():
         value = _scalar_value(obj.get(key))
         if value not in (None, "", [], {}):
             rows.append((key, axis, value))
-
     for key in variant_policy.VARIANT_OPTION_CONTAINER_KEYS:
         rows.extend(_option_rows_from_value(key, obj.get(key)))
     if "variationType" in obj:
         rows.extend(_option_rows_from_value("variation", [obj]))
-    return _dedupe_options(rows)
+    return rows
+
+
+def _clean_variant_option_value(axis: str, value: object) -> str | None:
+    return sanitize_option_scalar(axis, _scalar_value(value))
+
+
+def _has_only_opaque_numeric_options(obj: dict) -> bool:
+    rows = [
+        (axis, str(_scalar_value(value) or "").strip())
+        for _name, axis, value in _raw_variant_options(obj)
+        if str(_scalar_value(value) or "").strip()
+    ]
+    return len(rows) >= 2 and all(
+        variant_option_value_is_opaque_numeric(axis, value)
+        for axis, value in rows
+    )
 
 
 def _option_rows_from_value(

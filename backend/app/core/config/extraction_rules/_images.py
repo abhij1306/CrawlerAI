@@ -108,6 +108,7 @@ PRIMARY_IMAGE_REJECT_URL_TOKENS = frozenset(
         "1x1",
     }
 )
+DETAIL_IMAGE_SRCSET_ATTRS = ("srcset", "data-srcset")
 PRODUCT_ASSET_REJECT_URL_PATTERNS = (
     r"(?:^|[/_.-])(?:att|tmobile|verizon)(?:[/_.-]|$)",
     r"(?:^|[/_.-])(?:left|right)[_-]?arrow(?:[/_.-]|$)",
@@ -115,7 +116,11 @@ PRODUCT_ASSET_REJECT_URL_PATTERNS = (
     r"(?:^|/)edit(?:\.[a-f0-9]{6,})?\.svg(?:$|[?#])",
     r"(?:^|//)(?:i\.ytimg\.com|img\.youtube\.com)/vi/",
     r"(?:^|/)[a-z][a-z0-9_-]*\.[a-f0-9]{6,}\.svg(?:$|[?#])",
+    r"(?:^|[/_.-])combined[_-]?shape(?:[/_.-]|$)",
+    r"(?:^|[/_.-])checkout(?:[/_.-]|$).*\.svg(?:$|[?#])",
     r"/flags?/[a-z]{2}(?:[-_][a-z]{2})?\.(?:png|svg|webp)(?:$|[?#])",
+    r"/(?:assets?|images?|img|media|dp)/?(?:[?#].*)?$",
+    r"__[a-z][a-z0-9_]*__",
     r"\{[a-z_][a-z0-9_]*\}",
 )
 DETAIL_DOM_IMAGE_POSITIVE_SCOPE_TOKENS = frozenset(
@@ -173,6 +178,7 @@ _LOCAL_EXPORTS = (
     "DETAIL_IMAGE_IDENTITY_NUMERIC_MIN_LENGTH",
     "DETAIL_IMAGE_OPAQUE_HEX_MIN_LENGTH",
     "DETAIL_IMAGE_PRODUCT_CODE_PATTERN",
+    "DETAIL_IMAGE_SRCSET_ATTRS",
     "DETAIL_IMAGE_VIEW_CODE_PATTERN",
     "DETAIL_DOM_IMAGE_NEGATIVE_SCOPE_TOKENS",
     "DETAIL_DOM_IMAGE_POSITIVE_SCOPE_TOKENS",

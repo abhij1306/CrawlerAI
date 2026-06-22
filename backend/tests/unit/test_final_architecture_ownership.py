@@ -29,9 +29,17 @@ def _class_owners(class_name: str) -> set[str]:
     return owners
 
 
+def _canonical_line_count(node: ast.AST) -> int:
+    return len(ast.unparse(node).splitlines())
+
+
+def _parse_module(path: Path) -> ast.Module:
+    return ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+
+
 def _function_parameter_names(relative_path: str, function_name: str) -> set[str]:
     path = APP_ROOT / relative_path
-    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    tree = _parse_module(path)
     for node in ast.walk(tree):
         if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             continue
@@ -46,7 +54,7 @@ def test_no_new_oversized_modules() -> None:
     oversized = {
         path.relative_to(APP_ROOT).as_posix()
         for path in APP_ROOT.rglob("*.py")
-        if len(path.read_text(encoding="utf-8").splitlines()) > 700
+        if _canonical_line_count(_parse_module(path)) > 700
     }
     assert oversized <= OVERSIZED_MODULE_DEBT
 
@@ -54,12 +62,11 @@ def test_no_new_oversized_modules() -> None:
 def test_no_new_long_functions() -> None:
     long_functions: set[tuple[str, str]] = set()
     for path in APP_ROOT.rglob("*.py"):
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        tree = _parse_module(path)
         for node in ast.walk(tree):
             if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 continue
-            assert node.end_lineno is not None
-            if node.end_lineno - node.lineno + 1 > 100:
+            if _canonical_line_count(node) > 100:
                 long_functions.add((path.relative_to(APP_ROOT).as_posix(), node.name))
     assert long_functions <= LONG_FUNCTION_DEBT
 

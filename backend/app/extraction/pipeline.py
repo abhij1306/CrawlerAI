@@ -20,6 +20,8 @@ from app.core.config import field_mappings
 from app.core.config.extraction_rules import (
     AVAILABILITY_URL_MAP,
     CURRENCY_SYMBOL_MAP,
+    DETAIL_BRAND_BOILERPLATE_VALUES,
+    DETAIL_DESCRIPTION_UI_PATTERNS,
     DETAIL_SHELL_TITLE_FLAG,
     DETAIL_SHELL_TITLE_KEYS,
     DETAIL_TITLE_CODE_ONLY_PATTERN,
@@ -29,7 +31,11 @@ from app.core.config.extraction_rules import (
     DETAIL_TITLE_PATH_EXTENSION_PATTERN,
     DETAIL_TITLE_REJECT_VALUES,
     DETAIL_TITLE_SEO_POLLUTION_PATTERN,
+    DETAIL_TITLE_SEO_PREFIXES,
+    DETAIL_TITLE_SEO_PREFIX_MIN_WORDS,
     DETAIL_TITLE_TRAILING_CODE_PATTERN,
+    DETAIL_TITLE_UI_INSTRUCTION_MIN_HITS,
+    DETAIL_TITLE_UI_INSTRUCTION_TOKENS,
     DETAIL_TITLE_URL_TOKEN_MIN_OVERLAP,
     INVALID_AVAILABILITY_EVIDENCE_FLAG,
     NORMALIZER_AVAILABILITY_TOKENS,
@@ -49,6 +55,7 @@ from app.core.records.field_policy import normalize_field_key
 from app.core.records.url_identity import (
     detail_title_from_url,
     semantic_detail_identity_tokens,
+    semantic_identity_tokens,
 )
 from app.core.shared.field_coerce_price import repair_price_unit
 from app.extraction.entities import EntitySet
@@ -166,9 +173,12 @@ def normalize_ecommerce_price_units(
             for other in price_rows
             if other.evidence_id != row.evidence_id
             and other.fact_type == row.fact_type
-            and other.collector_id != row.collector_id
             and (other_offer := offer_by_evidence.get(other.evidence_id)) is not None
             and other_offer.product_entity_id == offer.product_entity_id
+            and (
+                other.collector_id != row.collector_id
+                or other_offer.entity_id == offer.entity_id
+            )
         )
         repaired = repair_price_unit(
             row.value,
@@ -317,6 +327,14 @@ def normalize_evidence(evidence: Evidence, *, page_url: str) -> Evidence:
         parsed_brand = urlsplit(value)
         if parsed_brand.scheme.casefold() in {"http", "https"} and parsed_brand.netloc:
             flags.add("brand_url")
+        if value.casefold() in DETAIL_BRAND_BOILERPLATE_VALUES:
+            flags.add("brand_boilerplate")
+    if evidence.fact_type == "product.description" and isinstance(value, str):
+        if any(
+            re.search(pattern, value, re.IGNORECASE)
+            for pattern in DETAIL_DESCRIPTION_UI_PATTERNS
+        ):
+            flags.add("description_ui_pollution")
     if evidence.fact_type in {"product.gtin", "variant.gtin"} and isinstance(
         value, str
     ):
@@ -358,12 +376,19 @@ def _title_flags(evidence: Evidence, *, value: str, page_url: str) -> set[str]:
         flags.add(DETAIL_SHELL_TITLE_FLAG)
     if key in DETAIL_TITLE_REJECT_VALUES:
         flags.add("generic_title")
-    if re.search(DETAIL_TITLE_SEO_POLLUTION_PATTERN, value, re.IGNORECASE):
+    words = re.findall(r"[a-z0-9]+", value.casefold())
+    if re.search(DETAIL_TITLE_SEO_POLLUTION_PATTERN, value, re.IGNORECASE) or (
+        len(words) >= DETAIL_TITLE_SEO_PREFIX_MIN_WORDS
+        and value.casefold().startswith(DETAIL_TITLE_SEO_PREFIXES)
+    ):
         flags.add("seo_title_pollution")
+    if (
+        len(set(words) & DETAIL_TITLE_UI_INSTRUCTION_TOKENS)
+        >= DETAIL_TITLE_UI_INSTRUCTION_MIN_HITS
+    ):
+        flags.add("generic_title")
     url_tokens = set(semantic_detail_identity_tokens(page_url))
-    title_tokens = {
-        token for token in re.findall(r"[a-z0-9]+", value.casefold()) if len(token) >= 3
-    }
+    title_tokens = set(semantic_identity_tokens(value))
     overlap = len(url_tokens & title_tokens)
     missing_url_tokens = url_tokens - title_tokens
     if (
