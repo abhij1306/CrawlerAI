@@ -27,11 +27,7 @@ pytestmark = pytest.mark.unit
 
 
 def _python_files(root: Path) -> list[Path]:
-    return [
-        path
-        for path in root.rglob("*.py")
-        if "__pycache__" not in path.parts
-    ]
+    return [path for path in root.rglob("*.py") if "__pycache__" not in path.parts]
 
 
 def test_surface_enum_is_exact_contract() -> None:
@@ -182,7 +178,10 @@ def test_surface_inference_modules_are_deleted() -> None:
 def test_extraction_package_stays_within_architecture_limits() -> None:
     files = _python_files(EXTRACTION_ROOT)
     assert len(files) <= 24
-    assert sum(len(path.read_text(encoding="utf-8").splitlines()) for path in files) <= 5500
+    assert (
+        sum(len(path.read_text(encoding="utf-8").splitlines()) for path in files)
+        <= 5500
+    )
     for path in files:
         text = path.read_text(encoding="utf-8")
         assert len(text.splitlines()) <= 400, path
@@ -205,9 +204,9 @@ def test_obsolete_pipeline_semantic_owners_are_deleted() -> None:
         APP_ROOT / "crawl" / "pipeline" / "sitemap.py",
     }
     assert not any(path.exists() for path in forbidden_files)
-    pipeline_text = (
-        APP_ROOT / "crawl" / "pipeline" / "extraction_loop.py"
-    ).read_text(encoding="utf-8")
+    pipeline_text = (APP_ROOT / "crawl" / "pipeline" / "extraction_loop.py").read_text(
+        encoding="utf-8"
+    )
     for term in (
         "validate_record_for_surface",
         "_quality_verdict",

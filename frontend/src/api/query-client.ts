@@ -2,7 +2,7 @@ import { QueryClient } from '@tanstack/react-query';
 
 import { httpErrorStatus, isAbortError } from './errors';
 
-export function shouldRetryQuery(failureCount: number, error: unknown) {
+function shouldRetryQuery(failureCount: number, error: unknown) {
   if (failureCount >= 2 || isAbortError(error)) return false;
   const status = httpErrorStatus(error);
   if (status === undefined) return true;

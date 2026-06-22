@@ -56,7 +56,9 @@ async def recover_url_failure(
             session.expire(run)
             await session.refresh(run)
         except Exception:
-            logger.debug("Failed to refresh run during URL failure recovery", exc_info=True)
+            logger.debug(
+                "Failed to refresh run during URL failure recovery", exc_info=True
+            )
             await rollback_url_session(session, context="failed run refresh recovery")
     recovery_error: Exception | None = None
     try:

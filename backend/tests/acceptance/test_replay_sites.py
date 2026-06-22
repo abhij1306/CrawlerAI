@@ -149,8 +149,12 @@ ACCEPTANCE_SITES = (
 )
 
 
-@pytest.mark.parametrize("site", ACCEPTANCE_SITES, ids=[site["name"] for site in ACCEPTANCE_SITES])
-def test_acceptance_replay_site_output_and_traceability(site: dict[str, object]) -> None:
+@pytest.mark.parametrize(
+    "site", ACCEPTANCE_SITES, ids=[site["name"] for site in ACCEPTANCE_SITES]
+)
+def test_acceptance_replay_site_output_and_traceability(
+    site: dict[str, object],
+) -> None:
     result = extract(
         fixture_request_from_inputs(
             site["surface"],
@@ -193,9 +197,9 @@ def test_acceptance_replay_site_output_and_traceability(site: dict[str, object])
 
     min_variants = int(expected.get("min_variants") or 0)
     if min_variants:
-        variants = result.records[0].model_dump(
-            mode="json", exclude_none=True
-        ).get("variants")
+        variants = (
+            result.records[0].model_dump(mode="json", exclude_none=True).get("variants")
+        )
         assert isinstance(variants, list)
         assert len(variants) >= min_variants
         variant_evidence = [

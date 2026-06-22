@@ -39,7 +39,7 @@ const LOW_SIGNAL_VALUE_TOKENS = new Set([
   '-',
 ]);
 
-export function isIdentityField(field: string) {
+function isIdentityField(field: string) {
   const normalized = normalizeField(field);
   return QUALITY_IDENTITY_FIELD_PATTERNS.some((pattern) => pattern.test(normalized));
 }
@@ -69,6 +69,15 @@ export function isInformativeValue(value: unknown): boolean {
   }
 
   return rendered.length >= 2;
+}
+
+
+export function qualityLevelFromScore(score: number): QualityLevel {
+  if (!Number.isFinite(score)) return 'unknown';
+  const normalized = score > 1 && score <= 100 ? score / 100 : Math.max(0, Math.min(score, 1));
+  if (normalized >= 0.8) return 'high';
+  if (normalized >= 0.5) return 'medium';
+  return 'low';
 }
 
 export function scoreRecordQuality(record: CrawlRecord, visibleColumns: string[]) {
@@ -184,21 +193,11 @@ export function estimateDataQuality(
   return { level: 'low', score, populatedCells, totalCells };
 }
 
-export function qualityTone(level: QualityLevel) {
-  if (level === 'high') return 'success';
-  if (level === 'medium') return 'warning';
-  if (level === 'low') return 'danger';
-  return 'neutral';
-}
+
 
 export function humanizeQuality(level: QualityLevel) {
   if (level === 'unknown') return 'Unknown';
   return level.charAt(0).toUpperCase() + level.slice(1);
 }
 
-export function qualityLevelFromScore(score: number): QualityLevel {
-  if (!Number.isFinite(score)) return 'unknown';
-  if (score >= 0.8) return 'high';
-  if (score >= 0.5) return 'medium';
-  return 'low';
-}
+

@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import logging
 import re
-from functools import lru_cache, partial
+from collections.abc import Sequence
+from decimal import Decimal, InvalidOperation
+from functools import partial
 from urllib.parse import urlparse
 
 from app.core.config.data_enrichment import (
@@ -33,14 +35,9 @@ from app.enrichment.shopify_repository import (
     load_taxonomy_index as load_shopify_taxonomy_index,
 )
 from app.core.shared.currency_hints import currency_hint_from_page_url
-from app.core.shared.field_coerce import (
-    clean_text,
-    extract_currency_code,
-    strip_html_tags,
-    text_or_none,
-)
+from app.core.shared.field_coerce import clean_text, extract_currency_code, text_or_none
 from app.core.shared.coerce_primitives import object_dict, object_list
-from app.core.shared.material_terms import normalize_materials, percentage_material_parse
+from app.core.shared.material_terms import normalize_materials
 from app.core.shared.value_walk import (
     candidate_values,
     decimal_text,
@@ -140,7 +137,9 @@ def build_deterministic_enrichment(
     }
 
 
-def normalize_price(data: dict[str, object], *, source_url: str) -> dict[str, object] | None:
+def normalize_price(
+    data: dict[str, object], *, source_url: str
+) -> dict[str, object] | None:
     raw_price = first_present(
         data,
         *DATA_ENRICHMENT_PRICE_EFFECTIVE_FIELDS,
@@ -172,7 +171,9 @@ def normalize_price(data: dict[str, object], *, source_url: str) -> dict[str, ob
         return None
     normalized: dict[str, object] = {"amount": float(amount), "currency": currency}
     sale_amount = decimal_text(first_present(data, "sale_price", "discounted_price"))
-    original_amount = decimal_text(first_present(data, *DATA_ENRICHMENT_PRICE_ORIGINAL_FIELDS))
+    original_amount = decimal_text(
+        first_present(data, *DATA_ENRICHMENT_PRICE_ORIGINAL_FIELDS)
+    )
     if sale_amount is not None:
         normalized["sale_price"] = float(sale_amount)
     if original_amount is not None:
@@ -206,9 +207,7 @@ def normalize_sizes(
         ),
     ]
     category_supports_size = (
-        category_supports_attribute(category_match, "size")
-        if category_match
-        else False
+        category_supports_attribute(category_match, "size") if category_match else False
     )
     size_context = has_size_context(data)
     if not values and not category_supports_size:
@@ -289,7 +288,9 @@ def has_size_context(data: dict[str, object]) -> bool:
     )
     if not context:
         return False
-    return any(term_present(context, term) for term in DATA_ENRICHMENT_SIZE_CONTEXT_TERMS)
+    return any(
+        term_present(context, term) for term in DATA_ENRICHMENT_SIZE_CONTEXT_TERMS
+    )
 
 
 def normalize_from_terms(
@@ -301,15 +302,17 @@ def normalize_from_terms(
             continue
         if lowered in terms and not isinstance(terms[lowered], list):
             return str(terms[lowered])
-        for canonical, tokens in terms.items():
-            if isinstance(tokens, str):
-                if term_present(lowered, canonical) or term_present(lowered, tokens):
-                    return tokens
-            elif isinstance(tokens, list):
+        for canonical, term_tokens in terms.items():
+            if isinstance(term_tokens, str):
+                if term_present(lowered, canonical) or term_present(
+                    lowered, term_tokens
+                ):
+                    return term_tokens
+            elif isinstance(term_tokens, list):
                 canonical_text = clean_text(canonical).casefold().replace(" ", "_")
                 lowered_key = lowered.replace(" ", "_")
                 if canonical_text == lowered_key or any(
-                    term_present(lowered, token) for token in tokens
+                    term_present(lowered, token) for token in term_tokens
                 ):
                     return str(canonical)
     return None
@@ -350,9 +353,9 @@ def build_seo_keywords(
     stopwords = {
         str(item).casefold()
         for item in object_list(
-            object_dict(
-                load_attribute_repository().get("normalization_terms")
-            ).get("seo_stopwords")
+            object_dict(load_attribute_repository().get("normalization_terms")).get(
+                "seo_stopwords"
+            )
         )
     }
     raw_parts = [
@@ -405,9 +408,7 @@ def category_url_context(source_url: object) -> str | None:
         if not path:
             return None
         segments = [
-            segment.strip().casefold()
-            for segment in path.split("/")
-            if segment.strip()
+            segment.strip().casefold() for segment in path.split("/") if segment.strip()
         ]
         for marker in DATA_ENRICHMENT_CATEGORY_URL_CONTEXT_MARKERS:
             if marker not in segments:
@@ -442,11 +443,13 @@ def keyword_stem_key(value: str) -> str:
 
 
 def title_bigrams(tokens: list[str], unigrams: set[str]) -> list[str]:
-    return list(dict.fromkeys(
-        clean_text(f"{first} {second}").casefold()
-        for first, second in zip(tokens, tokens[1:], strict=False)
-        if first in unigrams and second in unigrams
-    ))
+    return list(
+        dict.fromkeys(
+            clean_text(f"{first} {second}").casefold()
+            for first, second in zip(tokens, tokens[1:], strict=False)
+            if first in unigrams and second in unigrams
+        )
+    )
 
 
 def product_attribute_diagnostics(
@@ -480,5 +483,11 @@ def product_attribute_diagnostics(
         "required_attributes": required,
         "recommended_attributes": recommended,
     }
-load_attribute_repository = partial(load_attribute_repository_data, data_enrichment_settings.attributes_path)
-load_taxonomy_index = partial(load_shopify_taxonomy_index, data_enrichment_settings.taxonomy_path)
+
+
+load_attribute_repository = partial(
+    load_attribute_repository_data, data_enrichment_settings.attributes_path
+)
+load_taxonomy_index = partial(
+    load_shopify_taxonomy_index, data_enrichment_settings.taxonomy_path
+)

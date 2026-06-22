@@ -22,7 +22,9 @@ async def block_unneeded_route(route: Any) -> None:
     if resource_type in BLOCKED_BROWSER_RESOURCE_TYPES or any(
         token in request_url for token in BLOCKED_BROWSER_ROUTE_TOKENS
     ):
-        await _abort_or_continue(route, resource_type=resource_type, request_url=request_url)
+        await _abort_or_continue(
+            route, resource_type=resource_type, request_url=request_url
+        )
         return
     await _continue_route(route, request_url=request_url, protected=False)
 
@@ -47,7 +49,9 @@ async def _continue_route(route: Any, *, request_url: str, protected: bool) -> N
             )
 
 
-async def _abort_or_continue(route: Any, *, resource_type: str, request_url: str) -> None:
+async def _abort_or_continue(
+    route: Any, *, resource_type: str, request_url: str
+) -> None:
     try:
         await route.abort()
         return

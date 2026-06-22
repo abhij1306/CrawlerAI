@@ -30,8 +30,12 @@ from app.core.config.public_record_policy import (
 from app.core.config.variant_policy import (
     PUBLIC_FLAT_VARIANT_FIELDS,
     PUBLIC_VARIANT_AXIS_FIELDS,
+    VARIANT_IMAGE_DIMENSION_MIN_PX,
 )
-from app.core.records.field_policy import canonical_requested_fields, normalize_field_key
+from app.core.records.field_policy import (
+    canonical_requested_fields,
+    normalize_field_key,
+)
 from app.core.shared.field_coerce import (
     IMAGE_FIELDS,
     LONG_TEXT_FIELDS,
@@ -203,7 +207,11 @@ def _validate_and_canonicalize_public_field(
 ) -> tuple[object, str | None]:
     if not _public_record_field_shape_valid(field_name, coerced):
         return coerced, "invalid_field_shape"
-    if field_name in URL_FIELDS and isinstance(coerced, str) and is_concatenated_url(coerced):
+    if (
+        field_name in URL_FIELDS
+        and isinstance(coerced, str)
+        and is_concatenated_url(coerced)
+    ):
         return coerced, "concatenated_url"
     if field_name in NAVIGATION_URL_FIELDS and not public_navigation_url_safe(coerced):
         return coerced, "unsafe_navigation_url"
@@ -247,7 +255,7 @@ def flatten_variants_for_public_output(
 
 
 def _public_variant_row_is_sellable(row: dict[str, object]) -> bool:
-    if not row:
+    if not row or _variant_row_is_image_dimension_artifact(row):
         return False
     transport_fields = {
         "variant_id",
@@ -270,12 +278,21 @@ def _public_variant_row_is_sellable(row: dict[str, object]) -> bool:
     return len(axes) >= 2
 
 
+def _variant_row_is_image_dimension_artifact(row: dict[str, object]) -> bool:
+    if set(row) - {"variant_id", "width"}:
+        return False
+    width = str(row.get("width") or "").strip()
+    return width.isdigit() and int(width) >= VARIANT_IMAGE_DIMENSION_MIN_PX
+
+
 def enforce_flat_variant_public_contract(
     record: dict[str, Any],
     *,
     page_url: str = "",
 ) -> None:
-    variants = flatten_variants_for_public_output(record.get(VARIANTS_FIELD), page_url=page_url)
+    variants = flatten_variants_for_public_output(
+        record.get(VARIANTS_FIELD), page_url=page_url
+    )
     if variants:
         record[VARIANTS_FIELD] = variants
         record["variant_count"] = len(variants)

@@ -28,25 +28,35 @@ def score_record_confidence(
     normalized_surface = str(surface or "").strip().lower()
     weights = _surface_weights(normalized_surface)
     field_sources = _normalized_field_sources(record)
-    score, total_weight, present_fields, missing_fields, penalties, source_tier_weights = (
-        _score_weighted_fields(record, normalized_surface, weights, field_sources)
-    )
+    (
+        score,
+        total_weight,
+        present_fields,
+        missing_fields,
+        penalties,
+        source_tier_weights,
+    ) = _score_weighted_fields(record, normalized_surface, weights, field_sources)
     alias_map = get_surface_field_aliases(normalized_surface)
     field_sources_by_key = {
         normalize_field_key(fn): fn for fn in field_sources if normalize_field_key(fn)
     }
-    score, total_weight, missing_fields, requested_found_total, raw_requested, requested = (
-        _apply_requested_field_bonus(
-            record=record,
-            normalized_surface=normalized_surface,
-            requested_fields=requested_fields,
-            field_sources=field_sources,
-            alias_map=alias_map,
-            field_sources_by_key=field_sources_by_key,
-            score=score,
-            total_weight=total_weight,
-            missing_fields=missing_fields,
-        )
+    (
+        score,
+        total_weight,
+        missing_fields,
+        requested_found_total,
+        raw_requested,
+        requested,
+    ) = _apply_requested_field_bonus(
+        record=record,
+        normalized_surface=normalized_surface,
+        requested_fields=requested_fields,
+        field_sources=field_sources,
+        alias_map=alias_map,
+        field_sources_by_key=field_sources_by_key,
+        score=score,
+        total_weight=total_weight,
+        missing_fields=missing_fields,
     )
     return _assemble_confidence_result(
         score=score,
@@ -113,7 +123,14 @@ def _score_weighted_fields(
         score += weight * source_quality * (1.0 - penalty_total)
         source_tier_weights[tier_name] += weight
         penalties.extend(penalty_items)
-    return score, total_weight, present_fields, missing_fields, penalties, source_tier_weights
+    return (
+        score,
+        total_weight,
+        present_fields,
+        missing_fields,
+        penalties,
+        source_tier_weights,
+    )
 
 
 def _apply_requested_field_bonus(
@@ -140,16 +157,27 @@ def _apply_requested_field_bonus(
     requested_matches = [
         match
         for fn in requested_match_keys
-        if (match := _resolve_requested_field_match(
-            record, field_name=fn, alias_map=alias_map,
-            field_sources_by_key=field_sources_by_key,
-        )) is not None
+        if (
+            match := _resolve_requested_field_match(
+                record,
+                field_name=fn,
+                alias_map=alias_map,
+                field_sources_by_key=field_sources_by_key,
+            )
+        )
+        is not None
     ]
     for fn in requested:
-        if _resolve_requested_field_match(
-            record, field_name=fn, alias_map=alias_map,
-            field_sources_by_key=field_sources_by_key,
-        ) is None and fn not in missing_fields:
+        if (
+            _resolve_requested_field_match(
+                record,
+                field_name=fn,
+                alias_map=alias_map,
+                field_sources_by_key=field_sources_by_key,
+            )
+            is None
+            and fn not in missing_fields
+        ):
             missing_fields.append(fn)
     requested_found_total = len(requested_matches)
     if requested:
@@ -157,12 +185,20 @@ def _apply_requested_field_bonus(
             _field_source_quality(
                 field_sources.get(actual_fn),
                 fallback_source=record.get("_source"),
-            )[0] / max(len(requested), 1)
+            )[0]
+            / max(len(requested), 1)
             for _rk, actual_fn in requested_matches
         )
         score += 0.15 * requested_bonus
         total_weight += 0.15
-    return score, total_weight, missing_fields, requested_found_total, raw_requested, requested
+    return (
+        score,
+        total_weight,
+        missing_fields,
+        requested_found_total,
+        raw_requested,
+        requested,
+    )
 
 
 def _assemble_confidence_result(
@@ -183,7 +219,9 @@ def _assemble_confidence_result(
         "level": _confidence_level(normalized_score),
         "present_fields": present_fields,
         "missing_fields": missing_fields,
-        "requested_fields_total": len(raw_requested) if raw_requested else len(requested),
+        "requested_fields_total": len(raw_requested)
+        if raw_requested
+        else len(requested),
         "requested_fields_found_best": requested_found_total,
         "penalties": [
             {
@@ -254,7 +292,12 @@ def _resolve_requested_field_match(
         if record.get(candidate_key) not in (None, "", [], {}):
             return (field_name, candidate_key)
         source_field_name = field_sources_by_key.get(candidate_key)
-        if source_field_name and record.get(source_field_name) not in (None, "", [], {}):
+        if source_field_name and record.get(source_field_name) not in (
+            None,
+            "",
+            [],
+            {},
+        ):
             return (field_name, source_field_name)
     return None
 
@@ -317,9 +360,7 @@ def _field_penalties(
                 {"field": field_name, "kind": "generic_title", "weight": 0.25}
             )
         elif len(text) < 4:
-            penalties.append(
-                {"field": field_name, "kind": "too_short", "weight": 0.35}
-            )
+            penalties.append({"field": field_name, "kind": "too_short", "weight": 0.35})
 
     if field_name in {"description", "responsibilities", "qualifications"}:
         if len(text) < 40:
@@ -332,10 +373,12 @@ def _field_penalties(
             {"field": field_name, "kind": "non_numeric_value", "weight": 0.45}
         )
 
-    if field_name in {"image_url", "apply_url", "url"} and text and not _URLISH_RE.match(text):
-        penalties.append(
-            {"field": field_name, "kind": "non_url_value", "weight": 0.45}
-        )
+    if (
+        field_name in {"image_url", "apply_url", "url"}
+        and text
+        and not _URLISH_RE.match(text)
+    ):
+        penalties.append({"field": field_name, "kind": "non_url_value", "weight": 0.45})
 
     if surface == "ecommerce_detail" and field_name == "availability":
         if lowered in {"maybe", "unknown", "n/a"}:
@@ -381,10 +424,14 @@ def _source_reasoning(source_tier_weights: dict[str, float]) -> dict[str, Any]:
 
 def _text_value(value: Any) -> str:
     if isinstance(value, list):
-        return " ".join(str(item or "").strip() for item in value if str(item or "").strip()).strip()
+        return " ".join(
+            str(item or "").strip() for item in value if str(item or "").strip()
+        ).strip()
     if isinstance(value, dict):
         return " ".join(
-            str(item or "").strip() for item in value.values() if str(item or "").strip()
+            str(item or "").strip()
+            for item in value.values()
+            if str(item or "").strip()
         ).strip()
     return str(value or "").strip()
 

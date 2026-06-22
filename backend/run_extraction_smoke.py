@@ -257,7 +257,9 @@ async def _run_one(site: dict, run_id: int, timeout_seconds: int) -> dict:
             record.model_dump(mode="json", exclude_none=True)
             for record in extraction_result.records
         ]
-        verdict = str(getattr(extraction_result.verdict, "value", extraction_result.verdict))
+        verdict = str(
+            getattr(extraction_result.verdict, "value", extraction_result.verdict)
+        )
         expected_verdicts = _expected_verdicts(site)
         result["verdict"] = verdict
 

@@ -56,14 +56,17 @@ def _create_missing_columns(connection) -> None:
         if table.name not in existing_tables:
             continue
         existing_columns = {
-            row["name"] for row in inspector.get_columns(table.name, schema=table.schema)
+            row["name"]
+            for row in inspector.get_columns(table.name, schema=table.schema)
         }
         for column in table.columns:
             if column.name in existing_columns:
                 continue
             column_sql = str(CreateColumn(column).compile(dialect=connection.dialect))
             table_sql = preparer.format_table(table)
-            logger.warning("Adding missing database column %s.%s", table.name, column.name)
+            logger.warning(
+                "Adding missing database column %s.%s", table.name, column.name
+            )
             connection.execute(text(f"ALTER TABLE {table_sql} ADD COLUMN {column_sql}"))
 
 

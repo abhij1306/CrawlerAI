@@ -25,7 +25,9 @@ def _elapsed_ms(started_at: float) -> int:
 
 def _snapshot_timeout_seconds() -> float:
     try:
-        value = float(crawler_runtime_settings.browser_accessibility_snapshot_timeout_seconds)
+        value = float(
+            crawler_runtime_settings.browser_accessibility_snapshot_timeout_seconds
+        )
     except (TypeError, ValueError):
         value = float(
             crawler_runtime_settings.__class__.model_fields[
@@ -75,7 +77,9 @@ async def _read_accessibility_snapshot(
     accessibility = getattr(page, "accessibility", None)
     snapshot_fn = getattr(accessibility, "snapshot", None)
     if snapshot_fn is None:
-        diagnostics.update(status=DETAIL_EXPANSION_STATUS_SKIPPED, reason="accessibility_unavailable")
+        diagnostics.update(
+            status=DETAIL_EXPANSION_STATUS_SKIPPED, reason="accessibility_unavailable"
+        )
         return None
     diagnostics["attempted"] = True
     try:
@@ -101,9 +105,13 @@ def _prioritize_candidates(
     if len(candidates) <= limit:
         return candidates
     if keywords:
-        matching = [item for item in candidates if any(word in item[1] for word in keywords)]
+        matching = [
+            item for item in candidates if any(word in item[1] for word in keywords)
+        ]
         matching_set = set(matching)
-        candidates = matching + [item for item in candidates if item not in matching_set]
+        candidates = matching + [
+            item for item in candidates if item not in matching_set
+        ]
     diagnostics["skipped_count"] = len(candidates) - limit
     return candidates[:limit]
 
@@ -155,7 +163,9 @@ async def _click_accessibility_candidate(
         raise RuntimeError("get_by_role_unavailable")
     locator = locator_factory(role, name=name, exact=True)
     locator = getattr(locator, "first", locator)
-    if not await _locator_is_actionable(locator, visibility_timeout_ms=visibility_timeout_ms):
+    if not await _locator_is_actionable(
+        locator, visibility_timeout_ms=visibility_timeout_ms
+    ):
         return False
     await locator.click(timeout=click_timeout_ms)
     wait_ms = int(crawler_runtime_settings.accordion_expand_wait_ms)
@@ -219,7 +229,9 @@ async def expand_interactive_elements_via_accessibility(
     clicked: list[str] = []
     failures: list[str] = []
     for role, name in candidates:
-        if max_elapsed_ms is not None and _elapsed_ms(started_at) >= int(max_elapsed_ms):
+        if max_elapsed_ms is not None and _elapsed_ms(started_at) >= int(
+            max_elapsed_ms
+        ):
             diagnostics["status"] = DETAIL_EXPANSION_STATUS_TIME_BUDGET_REACHED
             break
         try:
@@ -227,8 +239,12 @@ async def expand_interactive_elements_via_accessibility(
                 page,
                 role=role,
                 name=name,
-                click_timeout_ms=int(crawler_runtime_settings.detail_expand_click_timeout_ms),
-                visibility_timeout_ms=int(crawler_runtime_settings.detail_expand_visibility_timeout_ms),
+                click_timeout_ms=int(
+                    crawler_runtime_settings.detail_expand_click_timeout_ms
+                ),
+                visibility_timeout_ms=int(
+                    crawler_runtime_settings.detail_expand_visibility_timeout_ms
+                ),
             ):
                 clicked.append(name)
         except Exception as exc:

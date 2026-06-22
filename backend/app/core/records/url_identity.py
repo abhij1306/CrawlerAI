@@ -3,7 +3,12 @@ from __future__ import annotations
 import re
 from urllib.parse import unquote, urlparse
 
-from app.core.config.extraction_rules import DETAIL_TITLE_PATH_EXTENSION_PATTERN
+from app.core.config.extraction_rules import (
+    DETAIL_IMAGE_IDENTITY_ALNUM_MIN_LENGTH,
+    DETAIL_IMAGE_IDENTITY_NUMERIC_MIN_LENGTH,
+    DETAIL_IMAGE_OPAQUE_HEX_MIN_LENGTH,
+    DETAIL_TITLE_PATH_EXTENSION_PATTERN,
+)
 
 _UTILITY_TOKENS = frozenset(
     {
@@ -84,6 +89,60 @@ def detail_url_is_utility(url: str) -> bool:
 def semantic_detail_identity_tokens(url: str) -> tuple[str, ...]:
     title = detail_title_from_url(url)
     return tuple(token for token in re.split(r"\W+", title.lower()) if len(token) >= 3)
+
+
+def conflicting_product_asset_urls(
+    product_values: tuple[object, ...], asset_urls: tuple[str, ...]
+) -> frozenset[str]:
+    """Return asset URLs that conflict with available product identity evidence.
+
+    A URL is marked conflicting only when at least one peer asset shares a product
+    identity token while that URL has identity tokens but shares none. This
+    conditional, some-but-not-all match prevents false positives when no asset can
+    be tied to the product identity at all.
+
+    Args:
+        product_values: Product URLs or identifiers used to derive identity tokens.
+        asset_urls: Candidate asset URLs to compare with those product tokens.
+
+    Returns:
+        A frozenset containing candidate URLs with conflicting identity tokens.
+    """
+    product_tokens: set[str] = set()
+    for value in product_values:
+        product_tokens.update(_commerce_identity_tokens(value))
+    asset_tokens = {url: _commerce_identity_tokens(url) for url in asset_urls}
+    if not product_tokens or not any(
+        product_tokens & tokens for tokens in asset_tokens.values()
+    ):
+        return frozenset()
+    return frozenset(
+        url
+        for url, tokens in asset_tokens.items()
+        if tokens and product_tokens.isdisjoint(tokens)
+    )
+
+
+def _commerce_identity_tokens(value: object) -> frozenset[str]:
+    parsed = urlparse(unquote(str(value or "")))
+    terminal = f"{parsed.path.rsplit('/', 1)[-1]}&{parsed.query}".casefold()
+    tokens: set[str] = set()
+    for token in re.findall(r"[a-z0-9]+", terminal):
+        if (
+            len(token) >= DETAIL_IMAGE_OPAQUE_HEX_MIN_LENGTH
+            and any(char.isalpha() for char in token)
+            and re.fullmatch(r"[a-f0-9]+", token)
+        ):
+            continue
+        if token.isdigit() and len(token) >= DETAIL_IMAGE_IDENTITY_NUMERIC_MIN_LENGTH:
+            tokens.add(token)
+        elif (
+            len(token) >= DETAIL_IMAGE_IDENTITY_ALNUM_MIN_LENGTH
+            and any(char.isalpha() for char in token)
+            and any(char.isdigit() for char in token)
+        ):
+            tokens.add(token)
+    return frozenset(tokens)
 
 
 def title_looks_like_brand_shell(title: str, url: str = "") -> bool:

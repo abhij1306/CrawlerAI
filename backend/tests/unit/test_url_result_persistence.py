@@ -468,9 +468,7 @@ def test_canonical_url_artifacts_publish_attempts_and_extraction_components(
         }
     ]
     references = [
-        artifact
-        for attempt in manifest.attempts
-        for artifact in attempt.artifacts
+        artifact for attempt in manifest.attempts for artifact in attempt.artifacts
     ] + list(manifest.extraction.artifacts)
     assert all(repository.reference_exists(reference) for reference in references)
 
@@ -522,6 +520,37 @@ def test_acquisition_outcome_is_not_extraction_verdict_recomputed() -> None:
         )
         == "empty"
     )
+
+
+def test_detail_record_identity_collapses_revision_query_only() -> None:
+    bare = "https://www.zara.com/us/en/rustic-cotton-t-shirt-p04424306.html"
+    revision = f"{bare}?v1=527078510"
+
+    assert record_persistence._record_identity_key(
+        bare,
+        surface="ecommerce_detail",
+    ) == record_persistence._record_identity_key(
+        revision,
+        surface="ecommerce_detail",
+    )
+    assert record_persistence._record_identity_key(
+        "https://shop.test/product?pid=123",
+        surface="ecommerce_detail",
+    ) != record_persistence._record_identity_key(
+        "https://shop.test/product?pid=456",
+        surface="ecommerce_detail",
+    )
+
+
+def test_candidate_identity_lookup_uses_canonical_detail_url() -> None:
+    bare = "https://www.zara.com/us/en/rustic-cotton-t-shirt-p04424306.html"
+    keys = record_persistence._candidate_identity_keys(
+        [{"url": bare}, {"url": f"{bare}?v2=527078510"}],
+        SimpleNamespace(final_url=bare),
+        surface="ecommerce_detail",
+    )
+
+    assert len(keys) == 1
 
 
 def test_stored_record_match_requires_url_result_link() -> None:

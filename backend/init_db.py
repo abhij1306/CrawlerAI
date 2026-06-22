@@ -1,4 +1,5 @@
 """Initialize the rebuild database with the single baseline migration."""
+
 import asyncio
 
 from app.core.database import ensure_database_schema

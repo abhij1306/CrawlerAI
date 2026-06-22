@@ -19,9 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 logger = logging.getLogger(__name__)
 
 _PROMPTS_DIR = Path(__file__).resolve().parents[2] / "data" / "prompts"
-_CONFIG_SNAPSHOT_REQUIRED_KEYS = frozenset(
-    {"provider", "model"}
-)
+_CONFIG_SNAPSHOT_REQUIRED_KEYS = frozenset({"provider", "model"})
 _LLM_PROVIDER_DEFINITIONS = (
     {
         "provider": "mistral",
@@ -82,7 +80,10 @@ def get_prompt_task(task_type: str) -> dict | None:
         (name, registry.get(normalized))
         for name, registry in (
             ("DATA_ENRICHMENT_PROMPT_REGISTRY", DATA_ENRICHMENT_PROMPT_REGISTRY),
-            ("PRODUCT_INTELLIGENCE_PROMPT_REGISTRY", PRODUCT_INTELLIGENCE_PROMPT_REGISTRY),
+            (
+                "PRODUCT_INTELLIGENCE_PROMPT_REGISTRY",
+                PRODUCT_INTELLIGENCE_PROMPT_REGISTRY,
+            ),
             ("PROMPT_REGISTRY", PROMPT_REGISTRY),
         )
         if normalized in registry
@@ -169,20 +170,28 @@ async def resolve_run_config(
     if isinstance(config_snapshot, dict):
         for candidate in [task_type, "general"]:
             config_value = config_snapshot.get(candidate)
-            if isinstance(config_value, dict) and validate_config_snapshot(config_value):
+            if isinstance(config_value, dict) and validate_config_snapshot(
+                config_value
+            ):
                 return config_value
             if isinstance(config_value, dict):
-                logger.warning("Ignoring malformed LLM config snapshot for %s", candidate)
+                logger.warning(
+                    "Ignoring malformed LLM config snapshot for %s", candidate
+                )
     if run_id is not None:
         run = await session.get(CrawlRun, run_id)
         if run is not None:
             snapshot = run.settings_view.llm_config_snapshot()
             for candidate in [task_type, "general"]:
                 config_snapshot = snapshot.get(candidate)
-                if isinstance(config_snapshot, dict) and validate_config_snapshot(config_snapshot):
+                if isinstance(config_snapshot, dict) and validate_config_snapshot(
+                    config_snapshot
+                ):
                     return config_snapshot
                 if isinstance(config_snapshot, dict):
-                    logger.warning("Ignoring malformed run LLM config snapshot for %s", candidate)
+                    logger.warning(
+                        "Ignoring malformed run LLM config snapshot for %s", candidate
+                    )
     config = await resolve_active_config(session, task_type)
     if config is None:
         return None
@@ -209,8 +218,7 @@ def resolve_provider_api_key(*, provider: str, encrypted_value: str) -> str:
 
 def llm_provider_catalog() -> list[dict[str, Any]]:
     return [
-        _provider_catalog_entry(definition)
-        for definition in _LLM_PROVIDER_DEFINITIONS
+        _provider_catalog_entry(definition) for definition in _LLM_PROVIDER_DEFINITIONS
     ]
 
 

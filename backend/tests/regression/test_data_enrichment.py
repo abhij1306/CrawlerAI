@@ -33,10 +33,10 @@ from app.enrichment.service import (
 )
 from app.enrichment import shopify_catalog
 from app.enrichment.deterministic import normalize_price
+from app.core.shared.material_terms import percentage_material_parse
 from app.enrichment.deterministic import (
     category_match_values,
     category_url_context,
-    percentage_material_parse,
     plausible_size_value,
 )
 from app.enrichment.shopify_catalog import (
@@ -389,7 +389,9 @@ def test_plausible_size_value_accepts_known_numeric_system_before_strong_gate() 
 
 @pytest.mark.regression
 def test_percentage_material_parse_trims_context_near_percentage() -> None:
-    assert percentage_material_parse("Made with cotton 60 percent and polyester 40%.") == [
+    assert percentage_material_parse(
+        "Made with cotton 60 percent and polyester 40%."
+    ) == [
         "cotton",
         "polyester",
     ]
@@ -547,7 +549,14 @@ def test_data_enrichment_taxonomy_path_phrase_allows_token_subset_match() -> Non
         "category_id": "gid://shopify/TaxonomyCategory/aa-1-10-2",
         "category_path": "Apparel & Accessories > Clothing > Outerwear > Coats & Jackets",
         "leaf": "Coats & Jackets",
-        "path_match_tokens": {"apparel", "accessory", "clothing", "outerwear", "coat", "jacket"},
+        "path_match_tokens": {
+            "apparel",
+            "accessory",
+            "clothing",
+            "outerwear",
+            "coat",
+            "jacket",
+        },
         "attribute_handles": [],
     }
     taxonomy_index = TaxonomyIndex(
@@ -575,7 +584,14 @@ def test_data_enrichment_taxonomy_path_phrase_rejects_generic_subset_match() -> 
         "category_id": "gid://shopify/TaxonomyCategory/aa-1-10-2",
         "category_path": "Apparel & Accessories > Clothing > Outerwear > Coats & Jackets",
         "leaf": "Coats & Jackets",
-        "path_match_tokens": {"apparel", "accessory", "clothing", "outerwear", "coat", "jacket"},
+        "path_match_tokens": {
+            "apparel",
+            "accessory",
+            "clothing",
+            "outerwear",
+            "coat",
+            "jacket",
+        },
         "attribute_handles": [],
     }
     taxonomy_index = TaxonomyIndex(
@@ -597,7 +613,9 @@ def test_data_enrichment_taxonomy_path_phrase_rejects_generic_subset_match() -> 
 
 
 @pytest.mark.regression
-def test_data_enrichment_taxonomy_path_phrase_does_not_reject_valid_accessory_term() -> None:
+def test_data_enrichment_taxonomy_path_phrase_does_not_reject_valid_accessory_term() -> (
+    None
+):
     row = {
         "category_id": "gid://shopify/TaxonomyCategory/aa-1-10",
         "category_path": "Apparel & Accessories > Clothing Accessories",
@@ -639,7 +657,9 @@ def test_data_enrichment_color_aliases_cover_common_retail_names() -> None:
 
 @pytest.mark.regression
 def test_data_enrichment_context_only_tokens_exclude_product_terms() -> None:
-    assert not {"s", "single", "star"} & set(DATA_ENRICHMENT_TAXONOMY_CONTEXT_ONLY_TOKENS)
+    assert not {"s", "single", "star"} & set(
+        DATA_ENRICHMENT_TAXONOMY_CONTEXT_ONLY_TOKENS
+    )
 
 
 @pytest.mark.regression

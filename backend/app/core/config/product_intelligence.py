@@ -284,7 +284,10 @@ BRAND_DOMAIN_MAP = {
     "under armour": "underarmour.com",
     "wrangler": "wrangler.com",
 }
-BRAND_DOMAIN_MAP = {**_load_brand_domain_file(_BELK_BRAND_URLS_FILE), **BRAND_DOMAIN_MAP}
+BRAND_DOMAIN_MAP = {
+    **_load_brand_domain_file(_BELK_BRAND_URLS_FILE),
+    **BRAND_DOMAIN_MAP,
+}
 
 PRIVATE_LABEL_BRANDS = {
     "belk",
@@ -383,15 +386,65 @@ PRODUCT_STYLE_CODE_MIN_LENGTH = 5
 # identifiers. Used to isolate the distinctive model-name token (after brand removal) so a
 # shared distinctive token (e.g. "promina", "bedford") signals a model-level match while a
 # shared generic word (e.g. "walking", "shoes") does not.
-MATCH_GENERIC_PRODUCT_TOKENS = frozenset({
-    "athletic", "boot", "boots", "boys", "casual", "chino", "chinos", "classic",
-    "comfort", "cushioning", "dress", "extra", "fit", "flat", "front", "girls",
-    "gym", "kid", "kids", "ladies", "lace", "leather", "loafer", "loafers", "low",
-    "men", "mens", "pant", "pants", "regular", "running", "sandal", "sandals",
-    "shoe", "shoes", "short", "shorts", "size", "skinny", "slim", "slip", "sneaker",
-    "sneakers", "stretch", "straight", "top", "training", "trainer", "trainers",
-    "up", "walking", "wide", "women", "womens", "workout",
-})
+MATCH_GENERIC_PRODUCT_TOKENS = frozenset(
+    {
+        "athletic",
+        "boot",
+        "boots",
+        "boys",
+        "casual",
+        "chino",
+        "chinos",
+        "classic",
+        "comfort",
+        "cushioning",
+        "dress",
+        "extra",
+        "fit",
+        "flat",
+        "front",
+        "girls",
+        "gym",
+        "kid",
+        "kids",
+        "ladies",
+        "lace",
+        "leather",
+        "loafer",
+        "loafers",
+        "low",
+        "men",
+        "mens",
+        "pant",
+        "pants",
+        "regular",
+        "running",
+        "sandal",
+        "sandals",
+        "shoe",
+        "shoes",
+        "short",
+        "shorts",
+        "size",
+        "skinny",
+        "slim",
+        "slip",
+        "sneaker",
+        "sneakers",
+        "stretch",
+        "straight",
+        "top",
+        "training",
+        "trainer",
+        "trainers",
+        "up",
+        "walking",
+        "wide",
+        "women",
+        "womens",
+        "workout",
+    }
+)
 # Confidence floors for manufacturer-code / model-level identity (deterministic). Ranked
 # just below GTIN (0.92) for an exact style-code match; a brand-exact + distinctive model
 # token is a strong model-level match. Model-level matching requires a brand anchor: a
@@ -418,12 +471,37 @@ MATCH_BASIS_TITLE = "title"
 # params (e.g. "?size=13", "?activeColor=002", tracking tokens). Collapsing them stops one
 # product at N sizes from consuming N per-product candidate slots. Identity-bearing params
 # (e.g. "product", "productId") are intentionally NOT stripped.
-DISCOVERY_VOLATILE_QUERY_PARAMS = frozenset({
-    "_country", "activecolor", "active_color", "cawidth", "clr", "cm_mmc", "cm_ven",
-    "color", "colour", "dwvar", "dwvar_color", "fbclid", "gclid", "link_id", "msclkid",
-    "ranmid", "show_expr", "size", "srsltid", "utm_campaign", "utm_content",
-    "utm_medium", "utm_source", "utm_term", "variant", "vid", "width",
-})
+DISCOVERY_VOLATILE_QUERY_PARAMS = frozenset(
+    {
+        "_country",
+        "activecolor",
+        "active_color",
+        "cawidth",
+        "clr",
+        "cm_mmc",
+        "cm_ven",
+        "color",
+        "colour",
+        "dwvar",
+        "dwvar_color",
+        "fbclid",
+        "gclid",
+        "link_id",
+        "msclkid",
+        "ranmid",
+        "show_expr",
+        "size",
+        "srsltid",
+        "utm_campaign",
+        "utm_content",
+        "utm_medium",
+        "utm_source",
+        "utm_term",
+        "variant",
+        "vid",
+        "width",
+    }
+)
 
 # Confidence floors and thresholds. Search-result payloads (SerpAPI/Google) almost
 # never carry a UPC/GTIN, and Belk SKU/style numbers are meaningless to external
@@ -515,7 +593,9 @@ class ProductIntelligenceSettings(BaseSettings):
 
     @model_validator(mode="after")
     def _validate(self) -> "ProductIntelligenceSettings":
-        self.default_search_provider = str(self.default_search_provider or "").strip().lower()
+        self.default_search_provider = (
+            str(self.default_search_provider or "").strip().lower()
+        )
         if self.default_search_provider not in {
             SEARCH_PROVIDER_SERPAPI,
             SEARCH_PROVIDER_GOOGLE_NATIVE,

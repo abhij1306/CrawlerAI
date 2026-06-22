@@ -129,6 +129,7 @@ async def _list_domain_run_profile_responses(
         for row in rows
     ]
 
+
 @router.get("/domain-memory/cookies")
 async def crawls_domain_memory_cookies(
     session: Annotated[AsyncSession, Depends(get_db)],
@@ -167,7 +168,9 @@ async def crawls_domain_recipe(
     return DomainRecipeResponse.model_validate(payload)
 
 
-@router.post("/{run_id:int}/domain-recipe/promote-selectors", responses=RUN_NOT_FOUND_RESPONSE)
+@router.post(
+    "/{run_id:int}/domain-recipe/promote-selectors", responses=RUN_NOT_FOUND_RESPONSE
+)
 async def crawls_promote_domain_recipe_selectors(
     run_id: int,
     payload: DomainRecipePromoteSelectorsRequest,
@@ -182,7 +185,9 @@ async def crawls_promote_domain_recipe_selectors(
     )
 
 
-@router.post("/{run_id:int}/domain-recipe/save-run-profile", responses=RUN_NOT_FOUND_RESPONSE)
+@router.post(
+    "/{run_id:int}/domain-recipe/save-run-profile", responses=RUN_NOT_FOUND_RESPONSE
+)
 async def crawls_save_domain_run_profile(
     run_id: int,
     payload: DomainRecipeSaveRunProfileRequest,
@@ -197,7 +202,9 @@ async def crawls_save_domain_run_profile(
     )
 
 
-@router.post("/{run_id:int}/domain-recipe/field-action", responses=RUN_NOT_FOUND_RESPONSE)
+@router.post(
+    "/{run_id:int}/domain-recipe/field-action", responses=RUN_NOT_FOUND_RESPONSE
+)
 async def crawls_domain_recipe_field_action(
     run_id: int,
     payload: DomainRecipeFieldActionRequest,

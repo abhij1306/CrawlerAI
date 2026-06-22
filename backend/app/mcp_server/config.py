@@ -18,7 +18,9 @@ def api_key() -> str:
 
 
 def api_base_url() -> str:
-    return os.environ.get(PUBLIC_API_MCP_BASE_URL_ENV, PUBLIC_API_MCP_DEFAULT_BASE_URL).rstrip("/")
+    return os.environ.get(
+        PUBLIC_API_MCP_BASE_URL_ENV, PUBLIC_API_MCP_DEFAULT_BASE_URL
+    ).rstrip("/")
 
 
 def bind_host() -> str:

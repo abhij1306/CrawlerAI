@@ -71,7 +71,17 @@ from .url_processing_context import (
     resolved_url_processing_config as _resolved_url_processing_config,
 )
 
-UrlVerdict = Literal["success", "partial", "review", "invalid", "empty", "blocked", "error", "wrong_surface", "listing_failed"]
+UrlVerdict = Literal[
+    "success",
+    "partial",
+    "review",
+    "invalid",
+    "empty",
+    "blocked",
+    "error",
+    "wrong_surface",
+    "listing_failed",
+]
 
 __all__ = [
     "STAGE_ACQUIRE",
@@ -514,7 +524,10 @@ async def _run_extraction_stage_observed(
     )
     _record_detail_expansion_extraction_outcome(
         acquisition_result,
-        [record.model_dump(mode="json", exclude_none=True) for record in result.records],
+        [
+            record.model_dump(mode="json", exclude_none=True)
+            for record in result.records
+        ],
         requested_fields=list(context.requested_fields),
     )
     result = await retry_extraction_request_with_browser(
@@ -674,7 +687,9 @@ async def _publish_url_result_artifacts(
     await context.session.flush()
     if context.trace is None:
         return
-    diagnostics = mapping_or_empty(getattr(acquisition_result, "browser_diagnostics", {}))
+    diagnostics = mapping_or_empty(
+        getattr(acquisition_result, "browser_diagnostics", {})
+    )
     failure_reason = mapping_or_empty(extracted.fetched.url_metrics).get(
         "failure_reason"
     ) or diagnostics.get("failure_reason")

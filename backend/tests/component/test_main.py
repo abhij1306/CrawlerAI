@@ -167,7 +167,9 @@ def test_install_asyncio_exception_filter_delegates_unknown_errors() -> None:
 
 
 @pytest.mark.component
-def test_install_asyncio_exception_filter_preserves_original_context_for_previous_handler() -> None:
+def test_install_asyncio_exception_filter_preserves_original_context_for_previous_handler() -> (
+    None
+):
     previous_calls: list[object] = []
 
     class FakeLoop:
@@ -175,7 +177,9 @@ def test_install_asyncio_exception_filter_preserves_original_context_for_previou
             self.handler = None
 
         def get_exception_handler(self):
-            return lambda inner_loop, context: previous_calls.append((inner_loop, context))
+            return lambda inner_loop, context: previous_calls.append(
+                (inner_loop, context)
+            )
 
         def set_exception_handler(self, handler) -> None:
             self.handler = handler
@@ -224,7 +228,9 @@ async def test_lifespan_creates_schema_before_bootstrap(monkeypatch) -> None:
     monkeypatch.setattr("app.main.SessionLocal", lambda: SessionContext())
     monkeypatch.setattr("app.main.bootstrap_admin_user", _bootstrap)
     monkeypatch.setattr("app.main.recover_stale_local_runs", _recover)
-    monkeypatch.setattr("app.main.ensure_run_audit_registered", lambda: calls.append("audit"))
+    monkeypatch.setattr(
+        "app.main.ensure_run_audit_registered", lambda: calls.append("audit")
+    )
     monkeypatch.setattr("app.main.shutdown_run_dispatchers", _noop_async)
     monkeypatch.setattr("app.main.shutdown_browser_runtime", _noop_async)
     monkeypatch.setattr("app.main.close_runtime_http_client", _noop_async)

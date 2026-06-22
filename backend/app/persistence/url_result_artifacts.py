@@ -112,9 +112,7 @@ def _persist_acquisition_artifacts(
                     getattr(acquisition_result, "content_type", "") or ""
                 ),
                 "blocked": bool(getattr(acquisition_result, "blocked", False)),
-                "platform_family": getattr(
-                    acquisition_result, "platform_family", None
-                ),
+                "platform_family": getattr(acquisition_result, "platform_family", None),
                 "adapter_name": getattr(acquisition_result, "adapter_name", None),
                 "browser_diagnostics": browser_diagnostics,
                 "acquisition_diagnostics": acquisition_diagnostics,
@@ -133,9 +131,7 @@ def _persist_acquisition_artifacts(
                 payload=json_data,
             )
         )
-    network_payloads = list(
-        getattr(acquisition_result, "network_payloads", []) or []
-    )
+    network_payloads = list(getattr(acquisition_result, "network_payloads", []) or [])
     if network_payloads:
         references.append(
             _persist_json(
@@ -224,9 +220,7 @@ def _persist_attempt_sets(
     diagnostics = _mapping(getattr(acquisition_result, "acquisition_diagnostics", {}))
     canonical_result = _mapping(diagnostics.get("result"))
     rows = [row for row in _object_list(canonical_result.get("attempts")) if row]
-    selected_attempt_id = str(
-        canonical_result.get("selected_attempt_id") or ""
-    ).strip()
+    selected_attempt_id = str(canonical_result.get("selected_attempt_id") or "").strip()
     if not rows:
         attempt_id = str(getattr(acquisition_result, "method", "") or "acquisition")
         return (

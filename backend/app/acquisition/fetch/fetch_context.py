@@ -68,10 +68,12 @@ from app.acquisition.fetch.context_builder import (
 )
 from app.acquisition.fetch.types import FetchPageCall, FetchRuntimeContext
 from app.core.shared.url_utils import ensure_scheme
+
 logger = logging.getLogger(__name__)
 
 _FetchRuntimeContext = FetchRuntimeContext
 _FetchPageCall = FetchPageCall
+
 
 async def _emit_fetch_event(on_event: Any | None, level: str, message: str) -> None:
     if not callable(on_event):
@@ -200,7 +202,6 @@ def _patchright_probe_cap_applies(
     return expected_vendor == last_vendor
 
 
-
 async def fetch_page(
     url: str,
     *,
@@ -298,7 +299,9 @@ async def fetch_page(
     if vendor_block_confirmed and context.last_error is not None:
         raise context.last_error
     if context.last_error is not None:
-        return await _run_final_browser_fallback(context, browser_reason=call.browser_reason)
+        return await _run_final_browser_fallback(
+            context, browser_reason=call.browser_reason
+        )
     raise RuntimeError(f"Failed to fetch {call.url}")
 
 
@@ -362,7 +365,9 @@ async def _record_browser_first_failure(
             exc=exc,
         )
     _attach_exception_browser_diagnostics(exc, context.last_browser_attempt_diagnostics)
-    if context.fetch_mode == "browser_only" or _hard_browser_requirement(context=context):
+    if context.fetch_mode == "browser_only" or _hard_browser_requirement(
+        context=context
+    ):
         raise exc
     await _emit_fetch_event(
         context.on_event,
@@ -522,7 +527,12 @@ def _http_attempt_dependencies() -> HttpAttemptDependencies:
 async def _run_http_fetch_chain(
     context: _FetchRuntimeContext,
 ) -> tuple[PageFetchResult | None, bool]:
-    result, vendor_block_confirmed, _diagnostics, _attempt_results = await run_planned_http_chain(
+    (
+        result,
+        vendor_block_confirmed,
+        _diagnostics,
+        _attempt_results,
+    ) = await run_planned_http_chain(
         context,
         deps=_http_attempt_dependencies(),
         force_httpx=bool(crawler_runtime_settings.force_httpx),

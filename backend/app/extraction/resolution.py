@@ -11,10 +11,18 @@ from app.extraction.contracts import (
     RejectedEvidence,
     ResolutionResult,
 )
+from app.core.config.extraction_rules import (
+    DETAIL_TITLE_MEASUREMENT_FLAG,
+    DETAIL_TITLE_REJECTION_FLAGS,
+    INVALID_AVAILABILITY_EVIDENCE_FLAG,
+    PRODUCT_ASSET_IDENTITY_FACT_TYPES,
+)
+from app.core.config.field_mappings import INVALID_SCALAR_TYPE_EVIDENCE_FLAG
 from app.core.config.variant_policy import (
     DETAIL_PARENT_INHERITED_OFFER_FIELDS,
     DETAIL_PARENT_OFFER_INHERITANCE_RULE_ID,
 )
+from app.core.records.url_identity import conflicting_product_asset_urls
 from app.core.shared.url_utils import is_utility_image_url
 from app.extraction.entities import AssetEntity, EntitySet, OfferEntity, VariantEntity
 from app.extraction.ids import stable_id
@@ -43,12 +51,22 @@ def resolve(
         decision.fact_type for decision in decisions if decision.status == "resolved"
     }
     required = {"product.url", "product.title"}
+    conflicting_urls = conflicting_product_asset_urls(
+        tuple(
+            ev.value
+            for ev in evidence
+            if ev.fact_type in PRODUCT_ASSET_IDENTITY_FACT_TYPES
+        ),
+        tuple(asset.url for asset in entities.assets),
+    )
     return ResolutionResult(
         primary_product_entity_id=entities.products[0].entity_id
         if len(entities.products) == 1
         else None,
         decisions=tuple(decisions),
-        asset_decisions=_resolve_product_assets(entities.assets, by_id),
+        asset_decisions=_resolve_product_assets(
+            entities.assets, by_id, conflicting_urls
+        ),
         derived_facts=_derived(decisions, by_id),
         unresolved_fact_types=tuple(sorted(required - resolved)),
         blocking_finding_ids=tuple(
@@ -68,9 +86,20 @@ def _resolve_variant(
     )
 
 
-def _resolve_offer(offer: OfferEntity, evidence_by_id: dict[str, Evidence], findings: tuple[Finding, ...]) -> tuple[Decision, ...]:
-    incomplete_parent = offer.variant_entity_id is None and not (offer.fact_evidence.get("offer.price") and offer.fact_evidence.get("offer.currency"))
-    blocked = {"offer.price", "offer.currency", "offer.original_price"} if incomplete_parent else set()
+def _resolve_offer(
+    offer: OfferEntity,
+    evidence_by_id: dict[str, Evidence],
+    findings: tuple[Finding, ...],
+) -> tuple[Decision, ...]:
+    incomplete_parent = offer.variant_entity_id is None and not (
+        offer.fact_evidence.get("offer.price")
+        and offer.fact_evidence.get("offer.currency")
+    )
+    blocked = (
+        {"offer.price", "offer.currency", "offer.original_price"}
+        if incomplete_parent
+        else set()
+    )
     return tuple(
         _resolve_scalar(offer.entity_id, fact, ids, evidence_by_id, findings)
         for fact, ids in sorted(offer.fact_evidence.items())
@@ -78,19 +107,51 @@ def _resolve_offer(offer: OfferEntity, evidence_by_id: dict[str, Evidence], find
     )
 
 
-def _inherit_variant_offer_decisions(entities: EntitySet, decisions: list[Decision]) -> tuple[Decision, ...]:
+def _inherit_variant_offer_decisions(
+    entities: EntitySet, decisions: list[Decision]
+) -> tuple[Decision, ...]:
     facts = tuple(f"offer.{field}" for field in DETAIL_PARENT_INHERITED_OFFER_FIELDS)
-    resolved = {(item.entity_id, item.fact_type): item for item in decisions if item.status == "resolved"}
+    resolved = {
+        (item.entity_id, item.fact_type): item
+        for item in decisions
+        if item.status == "resolved"
+    }
     parents = [offer for offer in entities.offers if offer.variant_entity_id is None]
-    parent = max(parents, key=lambda offer: (sum((offer.entity_id, fact) in resolved for fact in facts), offer.entity_id), default=None)
+    parent = max(
+        parents,
+        key=lambda offer: (
+            sum((offer.entity_id, fact) in resolved for fact in facts),
+            offer.entity_id,
+        ),
+        default=None,
+    )
     if parent is None:
         return ()
-    direct = {(offer.variant_entity_id, fact) for offer in entities.offers if offer.variant_entity_id for fact in facts if (offer.entity_id, fact) in resolved}
+    direct = {
+        (offer.variant_entity_id, fact)
+        for offer in entities.offers
+        if offer.variant_entity_id
+        for fact in facts
+        if (offer.entity_id, fact) in resolved
+    }
     return tuple(
-        resolved[(parent.entity_id, fact)].model_copy(update={"decision_id": stable_id("decision", variant.entity_id, fact, "parent_inheritance"), "entity_id": variant.entity_id, "rejected": (), "rule_id": DETAIL_PARENT_OFFER_INHERITANCE_RULE_ID})
+        resolved[(parent.entity_id, fact)].model_copy(
+            update={
+                "decision_id": stable_id(
+                    "decision", variant.entity_id, fact, "parent_inheritance"
+                ),
+                "entity_id": variant.entity_id,
+                "rejected": (),
+                "rule_id": DETAIL_PARENT_OFFER_INHERITANCE_RULE_ID,
+            }
+        )
         for variant in entities.variants
         for fact in facts
-        if (variant.option_values or variant.identity_key.startswith(("sku:", "gtin:")))
+        if (
+            variant.option_values
+            or variant.identity_key.startswith(("sku:", "gtin:"))
+            or (variant.entity_id, "variant.sku") in resolved
+        )
         and (variant.entity_id, fact) not in direct
         and (parent.entity_id, fact) in resolved
     )
@@ -137,6 +198,7 @@ def _invalid_primary_asset_url(value: object) -> bool:
 def _resolve_product_assets(
     assets: tuple[AssetEntity, ...],
     evidence_by_id: dict[str, Evidence],
+    conflicting_urls: frozenset[str],
 ) -> tuple[AssetDecision, ...]:
     ranked = [
         (rank, asset, accepted)
@@ -148,7 +210,9 @@ def _resolve_product_assets(
     valid = [
         (rank, asset, accepted)
         for rank, asset, accepted in ranked
-        if accepted and not _invalid_primary_asset_url(asset.url)
+        if accepted
+        and asset.url not in conflicting_urls
+        and not _invalid_primary_asset_url(asset.url)
     ]
     valid.sort(key=lambda item: item[0])
     decisions: list[AssetDecision] = []
@@ -203,7 +267,9 @@ def _asset_rank(
     asset: AssetEntity,
     accepted: Evidence | None,
     evidence_by_id: dict[str, Evidence],
-) -> tuple[int, int, tuple[int, int, float, str] | tuple[int, int, int, float, str], str]:
+) -> tuple[
+    int, int, tuple[int, int, float, str] | tuple[int, int, int, float, str], str
+]:
     if accepted is None:
         return (99, 99, (99, 99, 0.0, ""), asset.entity_id)
     role = _asset_role_rank(asset.url)
@@ -216,7 +282,11 @@ def _asset_rank(
         default=99,
     )
     source_rank = min(
-        (_rank(evidence_by_id[eid]) for eid in asset.url_evidence_ids if eid in evidence_by_id),
+        (
+            _rank(evidence_by_id[eid])
+            for eid in asset.url_evidence_ids
+            if eid in evidence_by_id
+        ),
         default=_rank(accepted),
     )
     return role, source_order, source_rank, asset.entity_id
@@ -232,7 +302,9 @@ def _asset_role_rank(url: str) -> int:
 
 
 def _asset_source_order(ev: Evidence) -> int:
-    for token in reversed(str(ev.locator.value or "").replace("[", "/").replace("]", "").split("/")):
+    for token in reversed(
+        str(ev.locator.value or "").replace("[", "/").replace("]", "").split("/")
+    ):
         if token.isdigit():
             return int(token)
     return 99
@@ -245,12 +317,18 @@ def _resolve_scalar(
     evidence_by_id: dict[str, Evidence],
     findings: tuple[Finding, ...],
 ) -> Decision:
-    candidates = sorted((evidence_by_id[eid] for eid in ids if eid in evidence_by_id), key=_rank)
-    blocking = {eid for finding in findings if finding.blocking for eid in finding.evidence_ids}
+    candidates = sorted(
+        (evidence_by_id[eid] for eid in ids if eid in evidence_by_id), key=_rank
+    )
+    blocking = {
+        eid for finding in findings if finding.blocking for eid in finding.evidence_ids
+    }
     admissible = [
         ev for ev in candidates if ev.evidence_id not in blocking and not _invalid(ev)
     ]
-    finding_ids = tuple(f.finding_id for f in findings if set(f.evidence_ids) & set(ids))
+    finding_ids = tuple(
+        f.finding_id for f in findings if set(f.evidence_ids) & set(ids)
+    )
     if not admissible:
         return Decision(
             decision_id=stable_id("decision", entity_id, fact_type, ids),
@@ -313,7 +391,11 @@ def _derived(
             value = f"{float(str(ev.value).replace(',', '')):.2f}"
         except (TypeError, ValueError):
             continue
-        rule_id = decision.rule_id if decision.rule_id == DETAIL_PARENT_OFFER_INHERITANCE_RULE_ID else "NORMALIZE_MONEY_PRECISION"
+        rule_id = (
+            decision.rule_id
+            if decision.rule_id == DETAIL_PARENT_OFFER_INHERITANCE_RULE_ID
+            else "NORMALIZE_MONEY_PRECISION"
+        )
         out.append(
             DerivedFact(
                 derived_fact_id=stable_id(
@@ -334,18 +416,23 @@ def _invalid(ev: Evidence) -> bool:
         ev.value
     ):
         return True
+    flags = set(ev.flags)
+    if ev.fact_type == "product.title" and flags & (
+        DETAIL_TITLE_REJECTION_FLAGS - {"truncated_title"}
+    ):
+        return True
     return bool(
-        set(ev.flags)
+        flags
         & {
-            "code_only_title",
-            "filename_title",
-            "generic_title",
+            "brand_url",
             "invalid_decimal",
             "invalid_currency",
+            INVALID_AVAILABILITY_EVIDENCE_FLAG,
+            INVALID_SCALAR_TYPE_EVIDENCE_FLAG,
             "invalid_gtin",
+            DETAIL_TITLE_MEASUREMENT_FLAG,
             "placeholder_text",
             "tracking_url",
-            "truncated_title",
         }
     )
 
@@ -372,10 +459,10 @@ def _rank(
         "url": 6,
     }.get(ev.collector_id, 7)
     if ev.fact_type == "product.title":
-        if "shell_title" in ev.flags:
-            return -1, 0, reliability, -float(ev.confidence), ev.evidence_id
         pollution = int("seo_title_pollution" in ev.flags)
-        url_disagreement = int("title_url_mismatch" in ev.flags)
+        url_disagreement = int(
+            "title_url_mismatch" in ev.flags or "truncated_title" in ev.flags
+        )
         return (
             pollution,
             url_disagreement,

@@ -5,6 +5,10 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from app.core.config.extraction_price_rules import (
+    DETAIL_EXPLICIT_MINOR_UNIT_PRICE_FIELDS,
+)
+
 TITLE_FIELD = "title"
 URL_FIELD = "url"
 APPLY_URL_FIELD = "apply_url"
@@ -27,6 +31,20 @@ BARCODE_FIELD = "barcode"
 SKU_FIELD = "sku"
 PRODUCT_ID_FIELD = "product_id"
 ROUTE_BARCODE_TO_SKU = True
+
+ASSET_IMAGE_URL_FACT_TYPE = "asset.image_url"
+OFFER_AVAILABILITY_FACT_TYPE = "offer.availability"
+OFFER_CURRENCY_FACT_TYPE = "offer.currency"
+OFFER_PRICE_FACT_TYPE = "offer.price"
+PRODUCT_BRAND_FACT_TYPE = "product.brand"
+PRODUCT_DESCRIPTION_FACT_TYPE = "product.description"
+PRODUCT_GTIN_FACT_TYPE = "product.gtin"
+PRODUCT_MPN_FACT_TYPE = "product.mpn"
+PRODUCT_SKU_FACT_TYPE = "product.sku"
+PRODUCT_TITLE_FACT_TYPE = "product.title"
+PRODUCT_URL_FACT_TYPE = "product.url"
+VARIANT_GTIN_FACT_TYPE = "variant.gtin"
+VARIANT_SKU_FACT_TYPE = "variant.sku"
 
 FIELD_ALIASES: dict[str, list[str]] = {
     "title": ["title", "name", "job_title", "position", "headline", "productName"],
@@ -286,42 +304,75 @@ ECOMMERCE_DETAIL_JS_STATE_PRIORITY_FIELDS = frozenset(
     }
 )
 ECOMMERCE_DETAIL_FIELD_FACT_TYPES = {
-    "availability": "offer.availability",
-    "brand": "product.brand",
+    "availability": OFFER_AVAILABILITY_FACT_TYPE,
+    "brand": PRODUCT_BRAND_FACT_TYPE,
     "category": "product.category",
-    "currency": "offer.currency",
-    "description": "product.description",
-    "gtin": "product.gtin",
-    "image": "asset.image_url",
-    "image_url": "asset.image_url",
-    "mpn": "product.mpn",
-    "name": "product.title",
+    "currency": OFFER_CURRENCY_FACT_TYPE,
+    "description": PRODUCT_DESCRIPTION_FACT_TYPE,
+    "gtin": PRODUCT_GTIN_FACT_TYPE,
+    "image": ASSET_IMAGE_URL_FACT_TYPE,
+    "image_url": ASSET_IMAGE_URL_FACT_TYPE,
+    "mpn": PRODUCT_MPN_FACT_TYPE,
+    "name": PRODUCT_TITLE_FACT_TYPE,
     "original_price": "offer.original_price",
-    "price": "offer.price",
-    "sku": "product.sku",
-    "title": "product.title",
-    "url": "product.url",
+    "price": OFFER_PRICE_FACT_TYPE,
+    "sku": PRODUCT_SKU_FACT_TYPE,
+    "title": PRODUCT_TITLE_FACT_TYPE,
+    "url": PRODUCT_URL_FACT_TYPE,
 }
+ECOMMERCE_TYPED_STRING_FACT_TYPES = frozenset(
+    {
+        ASSET_IMAGE_URL_FACT_TYPE,
+        OFFER_AVAILABILITY_FACT_TYPE,
+        OFFER_CURRENCY_FACT_TYPE,
+        PRODUCT_BRAND_FACT_TYPE,
+        "product.category",
+        PRODUCT_DESCRIPTION_FACT_TYPE,
+        PRODUCT_GTIN_FACT_TYPE,
+        PRODUCT_MPN_FACT_TYPE,
+        PRODUCT_SKU_FACT_TYPE,
+        PRODUCT_TITLE_FACT_TYPE,
+        PRODUCT_URL_FACT_TYPE,
+        VARIANT_GTIN_FACT_TYPE,
+        "variant.id",
+        VARIANT_SKU_FACT_TYPE,
+        "variant.url",
+    }
+)
+# Integer identifier fact types are a strict subset of the typed string facts.
+# They receive special int-to-str conversion before general string validation.
+ECOMMERCE_INTEGER_IDENTIFIER_FACT_TYPES = frozenset(
+    {
+        PRODUCT_GTIN_FACT_TYPE,
+        PRODUCT_MPN_FACT_TYPE,
+        PRODUCT_SKU_FACT_TYPE,
+        VARIANT_GTIN_FACT_TYPE,
+        "variant.id",
+        VARIANT_SKU_FACT_TYPE,
+    }
+)
+INVALID_SCALAR_TYPE_EVIDENCE_FLAG = "invalid_scalar_type"
 ECOMMERCE_STRUCTURED_SOURCE_FACT_TYPES = {
-    "availability": "offer.availability",
-    "available": "offer.availability",
-    "brand": "product.brand",
-    "brandName": "product.brand",
-    "currency": "offer.currency",
-    "currencyCode": "offer.currency",
-    "description": "product.description",
-    "image": "asset.image_url",
-    "imageUrl": "asset.image_url",
-    "images": "asset.image_url",
-    "inStock": "offer.availability",
-    "manufacturer": "product.brand",
-    "name": "product.title",
-    "price": "offer.price",
-    "productDescription": "product.description",
-    "productName": "product.title",
-    "sku": "product.sku",
-    "title": "product.title",
-    "url": "product.url",
+    **dict.fromkeys(DETAIL_EXPLICIT_MINOR_UNIT_PRICE_FIELDS, OFFER_PRICE_FACT_TYPE),
+    "availability": OFFER_AVAILABILITY_FACT_TYPE,
+    "available": OFFER_AVAILABILITY_FACT_TYPE,
+    "brand": PRODUCT_BRAND_FACT_TYPE,
+    "brandName": PRODUCT_BRAND_FACT_TYPE,
+    "currency": OFFER_CURRENCY_FACT_TYPE,
+    "currencyCode": OFFER_CURRENCY_FACT_TYPE,
+    "description": PRODUCT_DESCRIPTION_FACT_TYPE,
+    "image": ASSET_IMAGE_URL_FACT_TYPE,
+    "imageUrl": ASSET_IMAGE_URL_FACT_TYPE,
+    "images": ASSET_IMAGE_URL_FACT_TYPE,
+    "inStock": OFFER_AVAILABILITY_FACT_TYPE,
+    "manufacturer": PRODUCT_BRAND_FACT_TYPE,
+    "name": PRODUCT_TITLE_FACT_TYPE,
+    "price": OFFER_PRICE_FACT_TYPE,
+    "productDescription": PRODUCT_DESCRIPTION_FACT_TYPE,
+    "productName": PRODUCT_TITLE_FACT_TYPE,
+    "sku": PRODUCT_SKU_FACT_TYPE,
+    "title": PRODUCT_TITLE_FACT_TYPE,
+    "url": PRODUCT_URL_FACT_TYPE,
 }
 ECOMMERCE_PRODUCT_CONTEXT_SOURCE_KEYS = frozenset(
     {
@@ -345,44 +396,44 @@ ECOMMERCE_OFFER_CONTEXT_PATH_TOKENS = frozenset(
 )
 ECOMMERCE_IMAGE_SOURCE_KEYS = frozenset({"image", "imageUrl", "images"})
 ECOMMERCE_MICRODATA_FACT_TYPES = {
-    "availability": "offer.availability",
-    "brand": "product.brand",
-    "description": "product.description",
-    "image": "asset.image_url",
-    "name": "product.title",
-    "price": "offer.price",
-    "priceCurrency": "offer.currency",
-    "sku": "product.sku",
+    "availability": OFFER_AVAILABILITY_FACT_TYPE,
+    "brand": PRODUCT_BRAND_FACT_TYPE,
+    "description": PRODUCT_DESCRIPTION_FACT_TYPE,
+    "image": ASSET_IMAGE_URL_FACT_TYPE,
+    "name": PRODUCT_TITLE_FACT_TYPE,
+    "price": OFFER_PRICE_FACT_TYPE,
+    "priceCurrency": OFFER_CURRENCY_FACT_TYPE,
+    "sku": PRODUCT_SKU_FACT_TYPE,
 }
 ECOMMERCE_OPENGRAPH_FACT_TYPES = {
-    "og:description": "product.description",
-    "og:image": "asset.image_url",
-    "og:title": "product.title",
-    "og:url": "product.url",
-    "product:brand": "product.brand",
-    "product:price:amount": "offer.price",
-    "product:price:currency": "offer.currency",
+    "og:description": PRODUCT_DESCRIPTION_FACT_TYPE,
+    "og:image": ASSET_IMAGE_URL_FACT_TYPE,
+    "og:title": PRODUCT_TITLE_FACT_TYPE,
+    "og:url": PRODUCT_URL_FACT_TYPE,
+    "product:brand": PRODUCT_BRAND_FACT_TYPE,
+    "product:price:amount": OFFER_PRICE_FACT_TYPE,
+    "product:price:currency": OFFER_CURRENCY_FACT_TYPE,
 }
 ECOMMERCE_JSONLD_PRODUCT_FACT_TYPES = {
-    "brand": "product.brand",
-    "description": "product.description",
-    "gtin": "product.gtin",
-    "manufacturer": "product.brand",
-    "mpn": "product.mpn",
-    "name": "product.title",
-    "sku": "product.sku",
-    "url": "product.url",
+    "brand": PRODUCT_BRAND_FACT_TYPE,
+    "description": PRODUCT_DESCRIPTION_FACT_TYPE,
+    "gtin": PRODUCT_GTIN_FACT_TYPE,
+    "manufacturer": PRODUCT_BRAND_FACT_TYPE,
+    "mpn": PRODUCT_MPN_FACT_TYPE,
+    "name": PRODUCT_TITLE_FACT_TYPE,
+    "sku": PRODUCT_SKU_FACT_TYPE,
+    "url": PRODUCT_URL_FACT_TYPE,
 }
 ECOMMERCE_JSONLD_OFFER_FACT_TYPES = {
-    "availability": "offer.availability",
-    "lowPrice": "offer.price",
-    "price": "offer.price",
-    "priceCurrency": "offer.currency",
+    "availability": OFFER_AVAILABILITY_FACT_TYPE,
+    "lowPrice": OFFER_PRICE_FACT_TYPE,
+    "price": OFFER_PRICE_FACT_TYPE,
+    "priceCurrency": OFFER_CURRENCY_FACT_TYPE,
     "seller": "offer.seller",
 }
 ECOMMERCE_JSONLD_VARIANT_FACT_TYPES = {
-    "sku": "variant.sku",
-    "gtin": "variant.gtin",
+    "sku": VARIANT_SKU_FACT_TYPE,
+    "gtin": VARIANT_GTIN_FACT_TYPE,
     "url": "variant.url",
     "color": "variant.option.color",
     "size": "variant.option.size",

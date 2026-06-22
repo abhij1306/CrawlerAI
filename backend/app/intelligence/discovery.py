@@ -9,7 +9,10 @@ from typing import Awaitable, Callable
 from urllib.parse import parse_qs, urlsplit
 
 import httpx
-from app.acquisition.browser_runtime import get_browser_runtime, real_chrome_browser_available
+from app.acquisition.browser_runtime import (
+    get_browser_runtime,
+    real_chrome_browser_available,
+)
 from app.acquisition.dom_runtime import get_page_html
 from app.core.config.product_intelligence import (
     AGGREGATOR_DOMAINS,
@@ -125,7 +128,9 @@ def build_search_queries(
 
     if brand and title:
         if query_identifier:
-            queries.append(_join_query_parts(brand_query, title, _quoted(query_identifier)))
+            queries.append(
+                _join_query_parts(brand_query, title, _quoted(query_identifier))
+            )
         queries.append(_join_query_parts(brand_query, title))
 
     if title and not brand:
@@ -149,7 +154,11 @@ async def discover_candidates(
     queries = build_search_queries(product, source_domain_value=source_domain_value)
     if not queries:
         return []
-    provider_name = str(provider or product_intelligence_settings.default_search_provider).strip().lower()
+    provider_name = (
+        str(provider or product_intelligence_settings.default_search_provider)
+        .strip()
+        .lower()
+    )
     pool_limit = max(
         max_candidates,
         max_candidates * product_intelligence_settings.discovery_pool_multiplier,
@@ -167,6 +176,7 @@ async def discover_candidates(
             res = await target_runner(q, lim)
             query_cache[normalized_q] = res
             return res
+
         return cached_run_query
 
     if run_query is not None:
@@ -229,11 +239,16 @@ async def _collect_candidates(
             if _same_source_url(normalized_url, source_urls):
                 continue
             domain = source_domain(normalized_url)
-            if not _domain_allowed(domain, allowed_domains, excluded_domains, source_domains):
+            if not _domain_allowed(
+                domain, allowed_domains, excluded_domains, source_domains
+            ):
                 continue
             if not _candidate_matches_product(product, normalized_url, result.payload):
                 continue
-            if domain_counts.get(domain, 0) >= product_intelligence_settings.max_urls_per_result_domain:
+            if (
+                domain_counts.get(domain, 0)
+                >= product_intelligence_settings.max_urls_per_result_domain
+            ):
                 continue
             seen.add(dedupe_key)
             domain_counts[domain] = domain_counts.get(domain, 0) + 1
@@ -249,7 +264,9 @@ async def _collect_candidates(
                 )
             )
             if len(candidates) >= pool_limit:
-                return _rank_discovered_candidates(candidates, product=product)[:max_candidates]
+                return _rank_discovered_candidates(candidates, product=product)[
+                    :max_candidates
+                ]
         if (
             product_intelligence_settings.search_delay_ms > 0
             and len(candidates) < pool_limit
@@ -276,6 +293,7 @@ async def shared_query_runner(provider: str):
         return await _search_results(provider, query, limit=limit)
 
     yield _http_run
+
 
 def classify_source_type(domain: str, product: dict[str, object]) -> str:
     normalized_domain = str(domain or "").removeprefix("www.").lower()
@@ -310,25 +328,42 @@ def _rank_discovered_candidates(
     )
 
 
-async def _search_results(provider: str, query: str, *, limit: int | None = None) -> list[SearchResult]:
-    logger.info("Product intelligence search dispatch provider=%r query=%r limit=%s", provider, query, limit)
+async def _search_results(
+    provider: str, query: str, *, limit: int | None = None
+) -> list[SearchResult]:
+    logger.info(
+        "Product intelligence search dispatch provider=%r query=%r limit=%s",
+        provider,
+        query,
+        limit,
+    )
     if provider == SEARCH_PROVIDER_SERPAPI:
         if not product_intelligence_settings.serpapi_key:
-            logger.warning("Product intelligence SerpAPI discovery skipped: missing API key")
+            logger.warning(
+                "Product intelligence SerpAPI discovery skipped: missing API key"
+            )
             return []
         return await _search_serpapi(query, limit=limit)
-    logger.warning("Product intelligence discovery received unknown provider: %r", provider)
+    logger.warning(
+        "Product intelligence discovery received unknown provider: %r", provider
+    )
     return []
 
 
-async def _search_serpapi(query: str, *, limit: int | None = None) -> list[SearchResult]:
+async def _search_serpapi(
+    query: str, *, limit: int | None = None
+) -> list[SearchResult]:
     shopping_query = _shopping_query(query)
     brand_scoped_query = _brand_scoped_query(query)
 
     # 1. Google Shopping is the most precise matching engine. Execute it first.
-    shopping_raw = await _search_serpapi_engine(shopping_query, engine=SERPAPI_SHOPPING_ENGINE, limit=limit)
+    shopping_raw = await _search_serpapi_engine(
+        shopping_query, engine=SERPAPI_SHOPPING_ENGINE, limit=limit
+    )
     shopping_results = _parse_serpapi_shopping_results(shopping_raw)
-    immersive_results = await _expand_serpapi_immersive_results(shopping_raw, limit=limit)
+    immersive_results = await _expand_serpapi_immersive_results(
+        shopping_raw, limit=limit
+    )
 
     dtc_results: list[SearchResult] = []
     if brand_scoped_query:
@@ -339,12 +374,16 @@ async def _search_serpapi(query: str, *, limit: int | None = None) -> list[Searc
         )
         dtc_results = _parse_serpapi_organic_results(dtc_raw)
 
-    results = _dedupe_search_results([*dtc_results, *immersive_results, *shopping_results])
+    results = _dedupe_search_results(
+        [*dtc_results, *immersive_results, *shopping_results]
+    )
 
     # 2. Only fallback to broad organic web searches when brand-site lookup
     # did not produce a candidate and shopping coverage still looks thin.
     if len(results) < 2 and not dtc_results:
-        organic_raw = await _search_serpapi_engine(shopping_query, engine=SERPAPI_ENGINE, limit=limit)
+        organic_raw = await _search_serpapi_engine(
+            shopping_query, engine=SERPAPI_ENGINE, limit=limit
+        )
         organic_results = _parse_serpapi_organic_results(organic_raw)
         results = _dedupe_search_results([*dtc_results, *results, *organic_results])
 
@@ -363,13 +402,19 @@ def _shopping_query(query: str) -> str:
 
 def _brand_scoped_query(query: str) -> str:
     tokens = str(query or "").split()
-    return str(query or "").strip() if any(token.lower().startswith(SEARCH_SITE_PREFIX) for token in tokens) else ""
+    return (
+        str(query or "").strip()
+        if any(token.lower().startswith(SEARCH_SITE_PREFIX) for token in tokens)
+        else ""
+    )
 
 
 def _query_has_identifier(query: str) -> bool:
     for token in str(query or "").split():
         lowered = token.strip().strip('"').casefold()
-        if lowered.startswith(SEARCH_SITE_PREFIX) or lowered.startswith(SEARCH_EXCLUDED_DOMAIN_PREFIX):
+        if lowered.startswith(SEARCH_SITE_PREFIX) or lowered.startswith(
+            SEARCH_EXCLUDED_DOMAIN_PREFIX
+        ):
             continue
         compact = re.sub(r"[^a-z0-9]+", "", lowered)
         if len(compact) >= 5 and any(char.isdigit() for char in compact):
@@ -395,12 +440,16 @@ async def _search_serpapi_engine(
     if limit is not None:
         params[SERPAPI_RESULT_COUNT_PARAM] = str(max(1, int(limit)))
     try:
-        async with httpx.AsyncClient(timeout=product_intelligence_settings.search_timeout_seconds) as client:
+        async with httpx.AsyncClient(
+            timeout=product_intelligence_settings.search_timeout_seconds
+        ) as client:
             response = await client.get(SERPAPI_SEARCH_URL, params=params)
             response.raise_for_status()
             payload = response.json()
     except (httpx.HTTPError, ValueError, OSError) as exc:
-        logger.warning("Product intelligence SerpAPI discovery failed engine=%s: %s", engine, exc)
+        logger.warning(
+            "Product intelligence SerpAPI discovery failed engine=%s: %s", engine, exc
+        )
         return {}
     return payload if isinstance(payload, dict) else {}
 
@@ -413,7 +462,9 @@ async def _expand_serpapi_immersive_results(
     rows = payload.get(SERPAPI_SHOPPING_RESULTS_FIELD)
     if not isinstance(rows, list):
         return []
-    max_products = int(product_intelligence_settings.serpapi_immersive_products_per_query)
+    max_products = int(
+        product_intelligence_settings.serpapi_immersive_products_per_query
+    )
     if max_products <= 0:
         return []
     results: list[SearchResult] = []
@@ -433,12 +484,16 @@ async def _expand_serpapi_immersive_results(
     return results
 
 
-async def _search_serpapi_immersive_product(item: dict[str, object]) -> dict[str, object]:
+async def _search_serpapi_immersive_product(
+    item: dict[str, object],
+) -> dict[str, object]:
     params = _serpapi_immersive_params(item)
     if not params:
         return {}
     try:
-        async with httpx.AsyncClient(timeout=product_intelligence_settings.search_timeout_seconds) as client:
+        async with httpx.AsyncClient(
+            timeout=product_intelligence_settings.search_timeout_seconds
+        ) as client:
             response = await client.get(SERPAPI_SEARCH_URL, params=params)
             response.raise_for_status()
             payload = response.json()
@@ -557,7 +612,9 @@ def _parse_serpapi_immersive_results(
         "brand": product.get("brand"),
         "rating": product.get("rating"),
         "reviews": product.get("reviews"),
-        "description": product.get("description") or about_data.get("description") or "",
+        "description": product.get("description")
+        or about_data.get("description")
+        or "",
     }
 
     for position, store in enumerate(store_rows, start=1):
@@ -571,7 +628,12 @@ def _parse_serpapi_immersive_results(
                 url=url,
                 payload={
                     "provider": "serpapi_immersive",
-                    "title": str(store.get("title") or product.get("title") or parent_data.get("title") or ""),
+                    "title": str(
+                        store.get("title")
+                        or product.get("title")
+                        or parent_data.get("title")
+                        or ""
+                    ),
                     "snippet": str(product.get("description") or ""),
                     "source": str(store.get("name") or ""),
                     "price": store.get("price"),
@@ -580,11 +642,17 @@ def _parse_serpapi_immersive_results(
                     "position": position,
                     "product_id": product.get("product_id")
                     or parent_data.get(SERPAPI_SHOPPING_PRODUCT_ID_FIELD),
-                    "product_link": parent_data.get(SERPAPI_SHOPPING_PRODUCT_LINK_FIELD),
+                    "product_link": parent_data.get(
+                        SERPAPI_SHOPPING_PRODUCT_LINK_FIELD
+                    ),
                     "rating": store.get("rating") or product.get("rating"),
                     "reviews": store.get("reviews") or product.get("reviews"),
                     "delivery": store.get("shipping") or "",
-                    "raw": {"store": store, "product": pruned_product, "parent": parent_data},
+                    "raw": {
+                        "store": store,
+                        "product": pruned_product,
+                        "parent": parent_data,
+                    },
                 },
             )
         )
@@ -608,8 +676,14 @@ def _parse_serpapi_immersive_results(
                         "position": len(results) + 1,
                         "product_id": product.get("product_id")
                         or parent_data.get(SERPAPI_SHOPPING_PRODUCT_ID_FIELD),
-                        "product_link": parent_data.get(SERPAPI_SHOPPING_PRODUCT_LINK_FIELD),
-                        "raw": {"about_the_product": about, "product": pruned_product, "parent": parent_data},
+                        "product_link": parent_data.get(
+                            SERPAPI_SHOPPING_PRODUCT_LINK_FIELD
+                        ),
+                        "raw": {
+                            "about_the_product": about,
+                            "product": pruned_product,
+                            "parent": parent_data,
+                        },
                     },
                 )
             )
@@ -636,6 +710,7 @@ def _dedupe_search_results(results: list[SearchResult]) -> list[SearchResult]:
         seen.add(cleaned)
         deduped.append(SearchResult(url=cleaned, payload=result.payload))
     return deduped
+
 
 google_native_blocked = _google_native_blocked
 parse_google_native_results = _parse_google_native_results

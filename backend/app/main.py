@@ -45,7 +45,10 @@ from app.core.metrics import (
     check_redis,
     render_prometheus_metrics,
 )
-from app.core.rate_limit import client_identifier_from_request, consume_sliding_window_limit
+from app.core.rate_limit import (
+    client_identifier_from_request,
+    consume_sliding_window_limit,
+)
 from app.core.redis import close_redis
 from app.core.database import SessionLocal, dispose_engine, ensure_database_schema
 from app.core.public_auth import authenticate_public_api_key
@@ -58,7 +61,9 @@ from app.core.telemetry import (
 )
 from app.acquisition.browser_runtime import shutdown_browser_runtime
 from app.acquisition.cookie_store import validate_cookie_policy_config
-from app.acquisition.runtime import close_shared_http_client as close_runtime_http_client
+from app.acquisition.runtime import (
+    close_shared_http_client as close_runtime_http_client,
+)
 from app.core.auth_service import bootstrap_admin_user
 from app.core.config.auth_security import (
     API_ALLOWED_CORS_METHODS,
@@ -461,7 +466,9 @@ async def correlation_middleware(request: Request, call_next) -> Response:
 
 
 @app.exception_handler(PublicApiError)
-async def public_api_error_handler(request: Request, exc: PublicApiError) -> JSONResponse:
+async def public_api_error_handler(
+    request: Request, exc: PublicApiError
+) -> JSONResponse:
     if request.url.path.startswith(_PUBLIC_API_PREFIX):
         return public_error_response(
             request,
@@ -478,7 +485,9 @@ async def public_http_exception_handler(
     request: Request, exc: StarletteHTTPException
 ) -> JSONResponse:
     if not request.url.path.startswith(_PUBLIC_API_PREFIX):
-        return JSONResponse({"detail": exc.detail}, status_code=exc.status_code, headers=exc.headers)
+        return JSONResponse(
+            {"detail": exc.detail}, status_code=exc.status_code, headers=exc.headers
+        )
     detail: dict[str, Any] = exc.detail if isinstance(exc.detail, dict) else {}
     if detail.get("status") == "error":
         return JSONResponse(detail, status_code=exc.status_code, headers=exc.headers)
@@ -486,10 +495,19 @@ async def public_http_exception_handler(
     nested: dict[str, Any] = nested_raw if isinstance(nested_raw, dict) else {}
     return public_error_response(
         request,
-        code=str(detail.get("code") or nested.get("code") or PUBLIC_API_ERROR_INVALID_API_KEY),
-        message=str(detail.get("message") or nested.get("message") or exc.detail or "Request failed"),
+        code=str(
+            detail.get("code") or nested.get("code") or PUBLIC_API_ERROR_INVALID_API_KEY
+        ),
+        message=str(
+            detail.get("message")
+            or nested.get("message")
+            or exc.detail
+            or "Request failed"
+        ),
         status_code=exc.status_code,
-        details=detail.get("details") if isinstance(detail.get("details"), dict) else {},
+        details=detail.get("details")
+        if isinstance(detail.get("details"), dict)
+        else {},
         headers=dict(exc.headers) if exc.headers else None,
     )
 
@@ -511,12 +529,12 @@ async def public_validation_exception_handler(
 
 
 @app.exception_handler(Exception)
-async def unhandled_exception_handler(request: Request, _exc: Exception) -> JSONResponse:
+async def unhandled_exception_handler(
+    request: Request, _exc: Exception
+) -> JSONResponse:
     """Catch-all so unhandled errors return 500 JSON instead of crashing
     the Starlette BaseHTTPMiddleware task-group (ExceptionGroup on 3.14)."""
-    logger.exception(
-        "Unhandled exception on %s %s", request.method, request.url.path
-    )
+    logger.exception("Unhandled exception on %s %s", request.method, request.url.path)
     if request.url.path.startswith(_PUBLIC_API_PREFIX):
         return public_error_response(
             request,
@@ -524,9 +542,7 @@ async def unhandled_exception_handler(request: Request, _exc: Exception) -> JSON
             message="An unexpected error occurred.",
             status_code=500,
         )
-    return JSONResponse(
-        {"detail": "Internal server error"}, status_code=500
-    )
+    return JSONResponse({"detail": "Internal server error"}, status_code=500)
 
 
 async def _health_checks() -> dict[str, bool]:

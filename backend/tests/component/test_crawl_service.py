@@ -1301,8 +1301,12 @@ async def test_run_with_local_session_preserves_original_process_run_error(
         raise ValueError("write failed")
 
     monkeypatch.setattr(local_dispatch_module, "SessionLocal", _FakeSessionLocal)
-    monkeypatch.setattr(local_dispatch_module, "_batch_process_run", _failing_process_run)
-    monkeypatch.setattr(local_dispatch_module, "mark_run_failed", _failing_mark_run_failed)
+    monkeypatch.setattr(
+        local_dispatch_module, "_batch_process_run", _failing_process_run
+    )
+    monkeypatch.setattr(
+        local_dispatch_module, "mark_run_failed", _failing_mark_run_failed
+    )
 
     with caplog.at_level(logging.ERROR):
         with pytest.raises(RuntimeError, match="process exploded") as exc_info:

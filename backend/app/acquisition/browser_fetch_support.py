@@ -1,4 +1,5 @@
 """Small browser-fetch assembly helpers."""
+
 from __future__ import annotations
 
 import asyncio
@@ -33,7 +34,10 @@ from app.core.config.browser_fingerprint_profiles import (
     WARMUP_ELIGIBLE_BROWSER_REASONS,
     WARMUP_VENDOR_BLOCK_PREFIX,
 )
-from app.core.config.runtime_settings import crawler_runtime_settings, proxy_rotation_mode
+from app.core.config.runtime_settings import (
+    crawler_runtime_settings,
+    proxy_rotation_mode,
+)
 from app.core.domain_utils import normalize_domain
 from app.core.shared.field_coerce import clean_text
 from app.extraction.documents import HtmlDocument
@@ -201,7 +205,9 @@ def build_browser_fetch_result(
 ) -> PageFetchResult:
     content_type = finalized.get("content_type")
     raw_html_document = finalized.get("html_document")
-    html_document = raw_html_document if isinstance(raw_html_document, HtmlDocument) else None
+    html_document = (
+        raw_html_document if isinstance(raw_html_document, HtmlDocument) else None
+    )
     return PageFetchResult(
         url=url,
         final_url=final_url,

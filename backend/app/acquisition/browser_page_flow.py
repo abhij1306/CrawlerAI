@@ -25,6 +25,7 @@ from app.extraction.documents import HtmlAnalysis
 
 logger = logging.getLogger(__name__)
 
+
 def remaining_timeout_factory(deadline: float):
     return lambda: max(2.0, deadline - time.perf_counter())
 
@@ -113,11 +114,15 @@ async def navigate_browser_page(
     crawler_runtime_settings,
     elapsed_ms,
 ):
-    navigation_wait_until = str(
-        (readiness_policy or {}).get("navigation_wait_until") or "domcontentloaded"
-    ).strip().lower()
+    navigation_wait_until = (
+        str((readiness_policy or {}).get("navigation_wait_until") or "domcontentloaded")
+        .strip()
+        .lower()
+    )
     total_timeout_ms = int(timeout_seconds * 1000)
-    primary_timeout_cap_ms = int(crawler_runtime_settings.browser_navigation_domcontentloaded_timeout_ms)
+    primary_timeout_cap_ms = int(
+        crawler_runtime_settings.browser_navigation_domcontentloaded_timeout_ms
+    )
     if navigation_wait_until == "networkidle":
         primary_timeout_cap_ms = min(
             int(crawler_runtime_settings.browser_navigation_networkidle_timeout_ms),
@@ -142,7 +147,9 @@ async def navigate_browser_page(
     fallback_timeout = (
         min(
             total_timeout_ms,
-            int(crawler_runtime_settings.browser_navigation_domcontentloaded_timeout_ms),
+            int(
+                crawler_runtime_settings.browser_navigation_domcontentloaded_timeout_ms
+            ),
         )
         if fallback_strategy == "domcontentloaded"
         else fallback_timeout_ms

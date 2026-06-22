@@ -151,9 +151,7 @@ VARIANT_PLACEHOLDER_VALUES = frozenset(
 )
 VARIANT_PLACEHOLDER_PREFIXES = ("please select", "open ", "select ")
 VARIANT_DOM_MAX_LABEL_LENGTH = 80
-VARIANT_DOM_SIZE_LABEL_PATTERN = (
-    r"^size\s+(?P<value>[a-z0-9][a-z0-9 .+/-]{0,12})\s*:"
-)
+VARIANT_DOM_SIZE_LABEL_PATTERN = r"^size\s+(?P<value>[a-z0-9][a-z0-9 .+/-]{0,12})\s*:"
 VARIANT_DOM_NOISE_PHRASES = (
     "expand color swatches",
     "view larger image",

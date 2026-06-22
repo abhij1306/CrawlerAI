@@ -7,9 +7,13 @@ from app.core.config.field_mappings import (
     ECOMMERCE_PRODUCT_CONTEXT_SOURCE_KEYS,
     ECOMMERCE_STRUCTURED_SOURCE_FACT_TYPES,
 )
-from app.core.config.extraction_rules import VARIANT_JS_STATE_NON_VARIANT_TYPENAME_TOKENS
-from app.core.config.variant_policy import AXIS_NAME_ALIASES, VARIANT_DIRECT_OPTION_FIELD_AXES, VARIANT_OFFER_AVAILABILITY_KEYS, VARIANT_OFFER_CURRENCY_KEYS, VARIANT_OFFER_ORIGINAL_PRICE_KEYS, VARIANT_OFFER_PRICE_KEYS, VARIANT_OFFER_STOCK_KEYS, VARIANT_OPTION_AXIS_KEYS, VARIANT_OPTION_CONTAINER_KEYS, VARIANT_OPTION_VALUE_KEYS, VARIANT_SCALAR_VALUE_KEYS, VARIANT_SKU_VALUE_KEYS
-from app.extraction.collectors._helpers import evidence, json_objects
+from app.core.config.extraction_rules import (
+    ECOMMERCE_CONTEXT_NOISE_PATH_TOKENS,
+    VARIANT_JS_STATE_NON_VARIANT_TYPENAME_TOKENS,
+)
+from app.core.config import variant_policy
+from app.core.records.html_helpers import bounded_json_objects, embedded_state_payloads
+from app.extraction.collectors._helpers import evidence, html_doc, json_objects
 from app.extraction.contracts import CaptureBundle, EntityHint, Evidence, SourceLocator
 from app.extraction.ids import stable_id
 
@@ -19,14 +23,39 @@ class JsStateCollector:
     collector_version = "1"
 
     def collect(self, bundle: CaptureBundle, artifacts) -> tuple[Evidence, ...]:
-        payloads = [ref for ref in bundle.artifacts if ref.artifact_type == "js_state"]
         out: list[Evidence] = []
-        for ref in payloads:
-            data = artifacts.read_json(ref)
-            for path, obj in json_objects(data):
+        for artifact_id, root_path, data in _state_payloads(bundle, artifacts):
+            objects = (
+                json_objects(data)
+                if not root_path
+                else bounded_json_objects(
+                    data,
+                    max_depth=variant_policy.EMBEDDED_STATE_MAX_DEPTH,
+                    max_nodes=variant_policy.EMBEDDED_STATE_MAX_NODES,
+                    max_list_items=variant_policy.EMBEDDED_STATE_MAX_LIST_ITEMS,
+                )
+            )
+            for path, obj in objects:
                 if isinstance(obj, dict):
-                    out.extend(network_row(bundle, ref.artifact_id, path, obj))
+                    out.extend(
+                        network_row(bundle, artifact_id, f"{root_path}{path}", obj)
+                    )
         return tuple(out)
+
+
+def _state_payloads(bundle: CaptureBundle, artifacts):
+    for ref in bundle.artifacts:
+        if ref.artifact_type == "js_state":
+            yield ref.artifact_id, "", artifacts.read_json(ref)
+    _, document = html_doc(bundle, artifacts)
+    for root_path, data in embedded_state_payloads(
+        document,
+        selector=variant_policy.EMBEDDED_STATE_SCRIPT_SELECTOR,
+        global_keys=variant_policy.EMBEDDED_STATE_GLOBAL_KEYS,
+        max_scripts=variant_policy.EMBEDDED_STATE_MAX_SCRIPTS,
+        max_script_chars=variant_policy.EMBEDDED_STATE_MAX_SCRIPT_CHARS,
+    ):
+        yield document.artifact_id, root_path, data
 
 
 def network_row(
@@ -38,9 +67,13 @@ def network_row(
     collector_id: str = "js_state",
 ) -> list[Evidence]:
     out: list[Evidence] = []
-    if _looks_like_variant(obj):
+    if _path_tokens(path) & ECOMMERCE_CONTEXT_NOISE_PATH_TOKENS:
+        return out
+    if _looks_like_variant(obj, path=path):
         return _variant_row(bundle, artifact_id, path, obj, collector_id=collector_id)
-    mapped_keys = tuple(key for key in ECOMMERCE_STRUCTURED_SOURCE_FACT_TYPES if key in obj)
+    mapped_keys = tuple(
+        key for key in ECOMMERCE_STRUCTURED_SOURCE_FACT_TYPES if key in obj
+    )
     if not mapped_keys:
         return out
     product_context = _has_product_context(path, obj)
@@ -68,8 +101,16 @@ def network_row(
         for index, value in enumerate(_source_values(key, obj.get(key))):
             if value in (None, "", [], {}):
                 continue
-            entity_type: Literal["offer", "asset", "product"] = "offer" if fact.startswith("offer.") else "asset" if fact.startswith("asset.") else "product"
-            hint = EntityHint(entity_type=entity_type, sku=str(obj.get("sku") or "").strip() or None)
+            entity_type: Literal["offer", "asset", "product"] = (
+                "offer"
+                if fact.startswith("offer.")
+                else "asset"
+                if fact.startswith("asset.")
+                else "product"
+            )
+            hint = EntityHint(
+                entity_type=entity_type, sku=str(obj.get("sku") or "").strip() or None
+            )
             suffix = f"/{index}" if key in ECOMMERCE_IMAGE_SOURCE_KEYS else ""
             out.append(
                 evidence(
@@ -83,25 +124,41 @@ def network_row(
                     hint=hint,
                     directness="embedded",
                     confidence=0.8,
-                    parent_subject_id=product_subject if fact.startswith(("offer.", "asset.")) else None,
+                    parent_subject_id=product_subject
+                    if fact.startswith(("offer.", "asset."))
+                    else None,
                 )
             )
     return out
 
 
+def _path_tokens(path: str) -> set[str]:
+    normalized = str(path).replace("[", "/").replace("]", "/").replace(".", "/")
+    return {token.casefold() for token in normalized.split("/") if token}
+
+
 def _has_product_context(path: str, obj: dict) -> bool:
     keys = set(obj)
     type_name = str(obj.get("@type") or obj.get("type") or "").casefold()
-    path_tokens = {token.casefold() for token in str(path).replace("[", "/").split("/") if token}
+    path_tokens = _path_tokens(path)
     product_keys = keys & ECOMMERCE_PRODUCT_CONTEXT_SOURCE_KEYS
     complete_offer = "price" in keys and bool(keys & {"currency", "currencyCode"})
-    return "product" in type_name or bool(path_tokens & {"product", "products"}) or len(product_keys) >= 2 or (bool(product_keys & {"name", "productName", "title"}) and complete_offer)
+    return (
+        "product" in type_name
+        or bool(path_tokens & {"product", "products"})
+        or len(product_keys) >= 2
+        or (bool(product_keys & {"name", "productName", "title"}) and complete_offer)
+    )
 
 
 def _has_offer_context(path: str, obj: dict, *, product_context: bool) -> bool:
     type_name = str(obj.get("@type") or obj.get("type") or "").casefold()
-    path_tokens = {token.casefold() for token in str(path).replace("[", "/").split("/") if token}
-    return product_context or "offer" in type_name or bool(path_tokens & ECOMMERCE_OFFER_CONTEXT_PATH_TOKENS)
+    path_tokens = _path_tokens(path)
+    return (
+        product_context
+        or "offer" in type_name
+        or bool(path_tokens & ECOMMERCE_OFFER_CONTEXT_PATH_TOKENS)
+    )
 
 
 def _source_values(key: str, value: object) -> tuple[object, ...]:
@@ -111,22 +168,21 @@ def _source_values(key: str, value: object) -> tuple[object, ...]:
 
 
 def _variant_row(
-    bundle: CaptureBundle,
-    artifact_id: str,
-    path: str,
-    obj: dict,
-    *,
-    collector_id: str,
+    bundle: CaptureBundle, artifact_id: str, path: str, obj: dict, *, collector_id: str
 ) -> list[Evidence]:
-    if not _looks_like_variant(obj):
+    if not _looks_like_variant(obj, path=path):
         return []
     variant_id = _variant_identity_value(obj)
-    sku = str(_scalar_value(_first(obj, *VARIANT_SKU_VALUE_KEYS)) or "").strip()
+    sku = str(
+        _scalar_value(_first(obj, *variant_policy.VARIANT_SKU_VALUE_KEYS)) or ""
+    ).strip()
     hint = EntityHint(
         entity_type="variant",
         variant_id=variant_id,
         sku=sku or None,
-        selected=bool(obj.get("selected") or obj.get("isSelected")) if "selected" in obj or "isSelected" in obj else None,
+        selected=bool(obj.get("selected") or obj.get("isSelected"))
+        if "selected" in obj or "isSelected" in obj
+        else None,
     )
     group = f"variant:{artifact_id}:{path}"
     subject_id = stable_id(
@@ -166,44 +222,68 @@ def _variant_row(
         for name, fact, value in fields
         if value not in (None, "", [], {})
     ]
-    out.extend(_variant_offer(bundle, artifact_id, path, obj, hint, subject_id, collector_id=collector_id))
+    out.extend(
+        _variant_offer(
+            bundle, artifact_id, path, obj, hint, subject_id, collector_id=collector_id
+        )
+    )
     return out
 
 
-def _looks_like_variant(obj: dict) -> bool:
-    identity = _variant_identity_value(obj) is not None or _scalar_value(_first(obj, *VARIANT_SKU_VALUE_KEYS)) not in (None, "", [], {})
+def _looks_like_variant(obj: dict, *, path: str = "") -> bool:
+    sku = _scalar_value(_first(obj, *variant_policy.VARIANT_SKU_VALUE_KEYS))
+    identity = _variant_identity_value(obj) is not None or sku not in (None, "", [], {})
     option_count = len(_variant_options(obj))
-    variant_specific_identity = any(_scalar_value(obj.get(key)) not in (None, "", [], {}) for key in ("variantId", "variant_id", "skuId", "sku_id"))
-    commercial = any(
+    variant_specific_identity = any(
         _scalar_value(obj.get(key)) not in (None, "", [], {})
-        for key in (
-            "price",
-            "currentPrice",
-            "salePrice",
-            "currency",
-            "currencyCode",
-            "availability",
-            "available",
-            "inStock",
-            "isAvailable",
+        for key in ("variantId", "variant_id", "skuId", "sku_id")
+    )
+    commercial = any(
+        _scalar_value(_first(obj, *keys)) not in (None, "", [], {})
+        for keys in (
+            variant_policy.VARIANT_OFFER_PRICE_KEYS,
+            variant_policy.VARIANT_OFFER_CURRENCY_KEYS,
+            variant_policy.VARIANT_OFFER_AVAILABILITY_KEYS,
+            variant_policy.VARIANT_OFFER_STOCK_KEYS,
         )
     )
     type_name = str(obj.get("type") or obj.get("__typename") or "").lower()
-    if any(token in type_name for token in VARIANT_JS_STATE_NON_VARIANT_TYPENAME_TOKENS):
+    if any(
+        token in type_name for token in VARIANT_JS_STATE_NON_VARIANT_TYPENAME_TOKENS
+    ):
         return False
     typed = "variant" in type_name
-    return (identity and (option_count > 0 or variant_specific_identity or (commercial and typed))) or (typed and option_count >= 2)
+    variant_path = bool(
+        _path_tokens(path) & variant_policy.VARIANT_STRUCTURED_PATH_TOKENS
+    )
+    return (
+        identity
+        and (
+            option_count > 0
+            or variant_specific_identity
+            or (commercial and (typed or variant_path))
+            or (variant_path and sku not in (None, "", [], {}))
+        )
+        or (typed and option_count >= 2)
+    )
 
 
 def _variant_fields(obj: dict) -> list[tuple[str, str, object]]:
-    selected = bool(obj.get("selected") or obj.get("isSelected")) if "selected" in obj or "isSelected" in obj else None
+    selected = (
+        bool(obj.get("selected") or obj.get("isSelected"))
+        if "selected" in obj or "isSelected" in obj
+        else None
+    )
     raw = [
         ("id", "variant.id", _variant_identity_value(obj)),
-        ("sku", "variant.sku", _first(obj, *VARIANT_SKU_VALUE_KEYS)),
+        ("sku", "variant.sku", _first(obj, *variant_policy.VARIANT_SKU_VALUE_KEYS)),
         ("url", "variant.url", obj.get("url")),
         ("selected", "variant.selected", selected),
     ]
-    raw.extend((name, f"variant.option.{axis}", value) for name, axis, value in _variant_options(obj))
+    raw.extend(
+        (name, f"variant.option.{axis}", value)
+        for name, axis, value in _variant_options(obj)
+    )
     return [(name, fact, _scalar_value(value)) for name, fact, value in raw]
 
 
@@ -219,22 +299,33 @@ def _variant_offer(
 ) -> list[Evidence]:
     group = f"offer:{artifact_id}:{path}"
     rows = [
-        ("price", "offer.price", _first(obj, *VARIANT_OFFER_PRICE_KEYS)),
         (
-            "original_price",
+            _first_key(obj, *variant_policy.VARIANT_OFFER_PRICE_KEYS) or "price",
+            "offer.price",
+            _first(obj, *variant_policy.VARIANT_OFFER_PRICE_KEYS),
+        ),
+        (
+            _first_key(obj, *variant_policy.VARIANT_OFFER_ORIGINAL_PRICE_KEYS)
+            or "original_price",
             "offer.original_price",
-            _first(obj, *VARIANT_OFFER_ORIGINAL_PRICE_KEYS),
+            _first(obj, *variant_policy.VARIANT_OFFER_ORIGINAL_PRICE_KEYS),
         ),
-        ("currency", "offer.currency", _first(obj, *VARIANT_OFFER_CURRENCY_KEYS)),
         (
-            "availability",
+            _first_key(obj, *variant_policy.VARIANT_OFFER_CURRENCY_KEYS) or "currency",
+            "offer.currency",
+            _first(obj, *variant_policy.VARIANT_OFFER_CURRENCY_KEYS),
+        ),
+        (
+            _first_key(obj, *variant_policy.VARIANT_OFFER_AVAILABILITY_KEYS)
+            or "availability",
             "offer.availability",
-            _availability_value(_first(obj, *VARIANT_OFFER_AVAILABILITY_KEYS)),
+            _first(obj, *variant_policy.VARIANT_OFFER_AVAILABILITY_KEYS),
         ),
         (
-            "stock_quantity",
+            _first_key(obj, *variant_policy.VARIANT_OFFER_STOCK_KEYS)
+            or "stock_quantity",
             "offer.stock_quantity",
-            _first(obj, *VARIANT_OFFER_STOCK_KEYS),
+            _first(obj, *variant_policy.VARIANT_OFFER_STOCK_KEYS),
         ),
     ]
     return [
@@ -258,22 +349,50 @@ def _variant_offer(
 
 def _scalar_value(value):
     if isinstance(value, dict):
-        for key in VARIANT_SCALAR_VALUE_KEYS:
+        for key in variant_policy.VARIANT_SCALAR_VALUE_KEYS:
             if value.get(key) not in (None, "", [], {}):
                 return _scalar_value(value.get(key))
         return ""
     if isinstance(value, list):
-        return " ".join(str(_scalar_value(item)) for item in value if _scalar_value(item)).strip()
+        return " ".join(
+            str(_scalar_value(item)) for item in value if _scalar_value(item)
+        ).strip()
     return value
 
 
-def _first(obj: dict, *keys: str):
+def _first(obj: dict, *keys: str, depth: int = 0):
+    if depth >= variant_policy.EMBEDDED_STATE_MAX_DEPTH:
+        return None
     for key in keys:
         if (value := obj.get(key)) not in (None, "", [], {}):
             return value
     for source in obj.values():
-        if isinstance(source, dict) and (value := _first(source, *keys)) not in (None, "", [], {}):
+        if isinstance(source, dict) and (
+            value := _first(source, *keys, depth=depth + 1)
+        ) not in (
+            None,
+            "",
+            [],
+            {},
+        ):
             return value
+    return None
+
+
+def _first_key(obj: dict, *keys: str) -> str | None:
+    for key in keys:
+        value = obj.get(key)
+        if value in (None, "", [], {}):
+            continue
+        if isinstance(value, dict):
+            return _first_key(value, *keys) or key
+        return key
+    for source in obj.values():
+        if not isinstance(source, dict):
+            continue
+        nested_key = _first_key(source, *keys)
+        if nested_key:
+            return nested_key
     return None
 
 
@@ -285,27 +404,23 @@ def _variant_identity_value(obj: dict) -> str | None:
     return None
 
 
-def _availability_value(value: object) -> object:
-    if isinstance(value, bool):
-        return "in_stock" if value else "out_of_stock"
-    return value
-
-
 def _variant_options(obj: dict) -> list[tuple[str, str, object]]:
     rows: list[tuple[str, str, object]] = []
-    for key, axis in VARIANT_DIRECT_OPTION_FIELD_AXES.items():
+    for key, axis in variant_policy.VARIANT_DIRECT_OPTION_FIELD_AXES.items():
         value = _scalar_value(obj.get(key))
         if value not in (None, "", [], {}):
             rows.append((key, axis, value))
 
-    for key in VARIANT_OPTION_CONTAINER_KEYS:
+    for key in variant_policy.VARIANT_OPTION_CONTAINER_KEYS:
         rows.extend(_option_rows_from_value(key, obj.get(key)))
     if "variationType" in obj:
         rows.extend(_option_rows_from_value("variation", [obj]))
     return _dedupe_options(rows)
 
 
-def _option_rows_from_value(prefix: str, value: object) -> list[tuple[str, str, object]]:
+def _option_rows_from_value(
+    prefix: str, value: object
+) -> list[tuple[str, str, object]]:
     if isinstance(value, dict):
         rows: list[tuple[str, str, object]] = []
         for raw_axis, raw_value in value.items():
@@ -319,9 +434,9 @@ def _option_rows_from_value(prefix: str, value: object) -> list[tuple[str, str, 
         for index, item in enumerate(value):
             if not isinstance(item, dict):
                 continue
-            raw_axis = _first(item, *VARIANT_OPTION_AXIS_KEYS)
+            raw_axis = _first(item, *variant_policy.VARIANT_OPTION_AXIS_KEYS)
             axis = _canonical_axis(raw_axis)
-            option_value = _first(item, *VARIANT_OPTION_VALUE_KEYS)
+            option_value = _first(item, *variant_policy.VARIANT_OPTION_VALUE_KEYS)
             if axis and option_value not in (None, "", [], {}):
                 rows.append((f"{prefix}/{index}", axis, _scalar_value(option_value)))
         return rows
@@ -333,7 +448,7 @@ def _canonical_axis(value: object) -> str | None:
     if not text:
         return None
     normalized = "_".join(text.lower().replace("&", " ").replace("-", " ").split())
-    axis = AXIS_NAME_ALIASES.get(normalized, normalized)
+    axis = variant_policy.AXIS_NAME_ALIASES.get(normalized, normalized)
     if axis in {"colour"}:
         return "color"
     if axis in {

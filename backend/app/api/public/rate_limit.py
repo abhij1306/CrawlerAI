@@ -75,7 +75,9 @@ async def consume_public_rate_limit(
                 now=now,
                 window_seconds=PUBLIC_API_BURST_WINDOW_SECONDS,
             )
-            retry_after = max(1, min(value for value in (minute_retry, burst_retry) if value > 0))
+            retry_after = max(
+                1, min(value for value in (minute_retry, burst_retry) if value > 0)
+            )
             return PublicRateLimitResult(
                 allowed=False,
                 limit=minute_limit,
@@ -88,7 +90,9 @@ async def consume_public_rate_limit(
         burst_bucket.append(now)
         while len(buckets) > PUBLIC_API_RATE_LIMIT_MAX_BUCKETS:
             buckets.popitem(last=False)
-        remaining = min(minute_limit - len(minute_bucket), burst_limit - len(burst_bucket))
+        remaining = min(
+            minute_limit - len(minute_bucket), burst_limit - len(burst_bucket)
+        )
         reset_seconds = _retry_after(
             minute_bucket,
             now=now,

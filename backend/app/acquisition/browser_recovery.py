@@ -387,8 +387,12 @@ async def _move_challenge_mouse(
         )
         for step_index in range(1, settings.steps + 1):
             progress = step_index / settings.steps
-            x = round(current_x + (target_x - current_x) * progress + secrets.randbelow(7) - 3)
-            y = round(current_y + (target_y - current_y) * progress + secrets.randbelow(7) - 3)
+            x = round(
+                current_x + (target_x - current_x) * progress + secrets.randbelow(7) - 3
+            )
+            y = round(
+                current_y + (target_y - current_y) * progress + secrets.randbelow(7) - 3
+            )
             await move(
                 _clamp_mouse_coordinate(x, width, settings.edge_padding),
                 _clamp_mouse_coordinate(y, height, settings.edge_padding),
@@ -614,7 +618,11 @@ async def capture_rendered_listing_fragments(
 
 
 def _listing_capture_selectors(surface: str) -> list[str]:
-    group = "jobs" if str(surface or "").strip().lower().startswith("job_") else "ecommerce"
-    selectors: object = CARD_SELECTORS.get(group, []) if isinstance(CARD_SELECTORS, dict) else []
+    group = (
+        "jobs" if str(surface or "").strip().lower().startswith("job_") else "ecommerce"
+    )
+    selectors: object = (
+        CARD_SELECTORS.get(group, []) if isinstance(CARD_SELECTORS, dict) else []
+    )
     rows = selectors if isinstance(selectors, list) else []
     return [str(selector).strip() for selector in rows if str(selector).strip()]

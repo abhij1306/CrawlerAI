@@ -38,7 +38,6 @@ from app.core.shared.text_coerce import (
 )
 
 
-
 def _field_coerce() -> Any:
     from app.core.shared import field_coerce
 
@@ -195,7 +194,9 @@ def _coerce_structured_multi_value(field_name: str, value: object) -> list[str] 
     return deduped or None
 
 
-def _coerce_list_value(field_name: str, value: list[object], page_url: str) -> list[object] | None:
+def _coerce_list_value(
+    field_name: str, value: list[object], page_url: str
+) -> list[object] | None:
     normalized_rows: list[object] = []
     for item in value:
         normalized_value = cast(object, coerce_field_value(field_name, item, page_url))

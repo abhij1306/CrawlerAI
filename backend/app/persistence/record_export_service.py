@@ -461,9 +461,7 @@ def _dedupe_image_values(
     if primary:
         seen.add(primary.lower())
     if isinstance(value, str):
-        candidates: list[object] = [
-            part for part in value.split(", ") if part.strip()
-        ]
+        candidates: list[object] = [part for part in value.split(", ") if part.strip()]
     else:
         candidates = (
             list(value)

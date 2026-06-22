@@ -114,6 +114,7 @@ async def shutdown_run_dispatchers() -> None:
                 await result
         except Exception:
             logger.warning(
-                "Error shutting down dispatcher %s", type(dispatcher).__name__,
+                "Error shutting down dispatcher %s",
+                type(dispatcher).__name__,
                 exc_info=True,
             )

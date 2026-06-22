@@ -187,7 +187,9 @@ def test_classify_blocked_page_uses_configured_challenge_element_markers(
 
 
 @pytest.mark.unit
-def test_classify_blocked_page_preserves_usable_listing_content_despite_vendor_markers() -> None:
+def test_classify_blocked_page_preserves_usable_listing_content_despite_vendor_markers() -> (
+    None
+):
     html = """
     <html>
       <head>
@@ -223,7 +225,9 @@ def test_classify_blocked_page_preserves_usable_listing_content_despite_vendor_m
 
 
 @pytest.mark.unit
-def test_classify_blocked_page_preserves_extractable_content_on_403_without_strong_hits() -> None:
+def test_classify_blocked_page_preserves_extractable_content_on_403_without_strong_hits() -> (
+    None
+):
     html = """
     <html>
       <head>
@@ -256,7 +260,9 @@ def test_classify_blocked_page_preserves_extractable_content_on_403_without_stro
 
 
 @pytest.mark.unit
-def test_classify_blocked_page_preserves_extractable_listing_with_captcha_provider_markers_only() -> None:
+def test_classify_blocked_page_preserves_extractable_listing_with_captcha_provider_markers_only() -> (
+    None
+):
     html = """
     <html>
       <head><title>adidas Sneakers | Shop Stadium Goods</title></head>
@@ -281,7 +287,9 @@ def test_classify_blocked_page_preserves_extractable_listing_with_captcha_provid
 
 
 @pytest.mark.unit
-def test_classify_blocked_page_preserves_dom_heavy_detail_content_despite_challenge_iframe() -> None:
+def test_classify_blocked_page_preserves_dom_heavy_detail_content_despite_challenge_iframe() -> (
+    None
+):
     html = """
     <html>
       <head>
@@ -309,7 +317,9 @@ def test_classify_blocked_page_preserves_dom_heavy_detail_content_despite_challe
 
 
 @pytest.mark.unit
-def test_classify_blocked_page_preserves_detail_content_despite_provider_markers() -> None:
+def test_classify_blocked_page_preserves_detail_content_despite_provider_markers() -> (
+    None
+):
     html = """
     <html>
       <head>
@@ -339,7 +349,9 @@ def test_classify_blocked_page_preserves_detail_content_despite_provider_markers
 
 
 @pytest.mark.unit
-def test_classify_blocked_page_preserves_listing_content_despite_provider_markers() -> None:
+def test_classify_blocked_page_preserves_listing_content_despite_provider_markers() -> (
+    None
+):
     html = """
     <html>
       <head>
@@ -394,7 +406,9 @@ def test_classify_blocked_page_keeps_captcha_detail_gate_blocked() -> None:
 
 
 @pytest.mark.unit
-def test_classify_blocked_page_blocks_captcha_provider_page_without_extractable_content() -> None:
+def test_classify_blocked_page_blocks_captcha_provider_page_without_extractable_content() -> (
+    None
+):
     html = """
     <html>
       <head><title>Security Check</title></head>
@@ -413,7 +427,9 @@ def test_classify_blocked_page_blocks_captcha_provider_page_without_extractable_
 
 
 @pytest.mark.unit
-def test_classify_blocked_page_blocks_robot_gate_title_without_extractable_content() -> None:
+def test_classify_blocked_page_blocks_robot_gate_title_without_extractable_content() -> (
+    None
+):
     html = """
     <html>
       <head><title>Let us know you're not a robot - Sam's Club</title></head>
@@ -434,7 +450,9 @@ def test_classify_blocked_page_blocks_robot_gate_title_without_extractable_conte
 
 
 @pytest.mark.unit
-def test_classify_blocked_page_blocks_human_verification_title_without_extractable_content() -> None:
+def test_classify_blocked_page_blocks_human_verification_title_without_extractable_content() -> (
+    None
+):
     html = """
     <html>
       <head><title>Human Verification</title></head>
@@ -471,7 +489,9 @@ def test_classify_blocked_page_blocks_punctuated_generic_error_shell() -> None:
 
 
 @pytest.mark.unit
-def test_classify_blocked_page_ignores_generic_error_copy_on_real_product_page() -> None:
+def test_classify_blocked_page_ignores_generic_error_copy_on_real_product_page() -> (
+    None
+):
     html = """
     <html>
       <head>

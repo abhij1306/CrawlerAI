@@ -119,9 +119,7 @@ def _settings_fetch_mode(settings_view) -> str:
     try:
         fetch_profile_attr = getattr(settings_view, "fetch_profile", None)
         fetch_profile = (
-            fetch_profile_attr()
-            if callable(fetch_profile_attr)
-            else fetch_profile_attr
+            fetch_profile_attr() if callable(fetch_profile_attr) else fetch_profile_attr
         )
     except (AttributeError, TypeError, ValueError):
         fetch_profile = None
@@ -318,13 +316,18 @@ async def _process_urls_in_parallel(
     concurrency = _parallel_url_concurrency(total_urls, settings_view)
     record_limit = _parallel_worker_record_limit(max_records, concurrency)
     await log_event(
-        session, run.id, "info", f"Processing {total_urls} URL(s) with concurrency={concurrency}"
+        session,
+        run.id,
+        "info",
+        f"Processing {total_urls} URL(s) with concurrency={concurrency}",
     )
     await session.commit()
     semaphore = asyncio.Semaphore(concurrency)
     run_id = int(run.id)
 
-    async def _guarded(idx: int, url: str, record_limit: int) -> tuple[int, str, URLProcessingResult]:
+    async def _guarded(
+        idx: int, url: str, record_limit: int
+    ) -> tuple[int, str, URLProcessingResult]:
         async with semaphore:
             return await process_url_in_owned_session(
                 session_factory=SessionLocal,
@@ -365,7 +368,9 @@ async def _process_urls_in_parallel(
     try:
         pending = set(tasks)
         while pending:
-            done, pending = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
+            done, pending = await asyncio.wait(
+                pending, return_when=asyncio.FIRST_COMPLETED
+            )
             for task in done:
                 await _record_task_result(task)
 
@@ -420,7 +425,9 @@ async def _log_sequential_url_start(
             f"Resolved {total_urls} seed URL(s), domain policy: standard",
         )
         return
-    await log_event(session, run.id, "info", f"Starting crawl run for {url} ({idx}/{total_urls})")
+    await log_event(
+        session, run.id, "info", f"Starting crawl run for {url} ({idx}/{total_urls})"
+    )
 
 
 async def _process_urls_sequential(

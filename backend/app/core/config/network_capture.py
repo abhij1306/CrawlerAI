@@ -27,9 +27,7 @@ BLOCKED_BROWSER_ROUTE_TOKENS: Final[tuple[str, ...]] = (
     "snapchat",
 )
 
-BLOCKED_BROWSER_RESOURCE_TYPES: Final[tuple[str, ...]] = (
-    "media",
-)
+BLOCKED_BROWSER_RESOURCE_TYPES: Final[tuple[str, ...]] = ("media",)
 
 PROTECTED_CHALLENGE_ROUTE_TOKENS: Final[tuple[str, ...]] = (
     "akamai",
@@ -95,9 +93,7 @@ GRAPHQL_PATH_TOKENS: Final[tuple[str, ...]] = (
     "graphql?",
 )
 
-NETWORK_PAYLOAD_STREAMING_CONTENT_TYPES: Final[tuple[str, ...]] = (
-    "text/x-component",
-)
+NETWORK_PAYLOAD_STREAMING_CONTENT_TYPES: Final[tuple[str, ...]] = ("text/x-component",)
 
 NETWORK_PAYLOAD_JSON_CONTENT_TYPE_HINTS: Final[tuple[str, ...]] = (
     "application/json",

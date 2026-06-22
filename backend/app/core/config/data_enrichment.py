@@ -353,9 +353,7 @@ DATA_ENRICHMENT_MATERIAL_CONTEXT_STRIP_PATTERNS = (
     r"\bdo\s+not\s+iron\b.*$",
     r"\bdry clean\b.*$",
 )
-DATA_ENRICHMENT_MATERIAL_PERCENTAGE_RE = (
-    r"\b(?P<percent>\d{1,3}(?:\.\d+)?)\s*%\s*(?P<material>[a-z]+(?:-[a-z]+)?(?:\s+[a-z]+(?:-[a-z]+)?){0,4})\b"
-)
+DATA_ENRICHMENT_MATERIAL_PERCENTAGE_RE = r"\b(?P<percent>\d{1,3}(?:\.\d+)?)\s*%\s*(?P<material>[a-z]+(?:-[a-z]+)?(?:\s+[a-z]+(?:-[a-z]+)?){0,4})\b"
 """Taxonomy conflict blocks.
 
 ``context_terms`` are positive source-text cues. ``path_terms`` are taxonomy

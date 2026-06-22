@@ -10,6 +10,7 @@ from typing import Any, cast
 
 from app.models.crawl_run import CrawlRecord, CrawlRun
 from app.core.records.confidence import score_record_confidence
+from app.core.records.field_url_normalization import canonical_public_record_url
 from app.extraction.contracts import ExtractionResult
 from app.core.db_utils import mapping_or_empty
 from app.core.records.public_record_firewall import (
@@ -63,8 +64,11 @@ def _merge_browser_diagnostics(
     acquisition_result.browser_diagnostics = merged
 
 
-def _record_identity_key(source_url: str) -> str | None:
-    text = str(source_url or "").strip()
+def _record_identity_key(source_url: str, *, surface: str | None = None) -> str | None:
+    canonical = canonical_public_record_url(
+        source_url, surface=surface, field_name="url"
+    )
+    text = str(canonical or source_url or "").strip()
     if not text:
         return None
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
@@ -83,7 +87,9 @@ def _record_content_fingerprint(
     }
     if not values:
         values = {"url": _fingerprint_value(identity_source_url)}
-    payload = json.dumps(values, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
+    payload = json.dumps(
+        values, ensure_ascii=True, sort_keys=True, separators=(",", ":")
+    )
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
@@ -206,10 +212,13 @@ async def _persist_browser_artifacts(
     surface: str | None = None,
     blocked: bool = False,
 ) -> None:
-
-    diagnostics = mapping_or_empty(getattr(acquisition_result, "browser_diagnostics", {}))
+    diagnostics = mapping_or_empty(
+        getattr(acquisition_result, "browser_diagnostics", {})
+    )
     artifacts = dict(mapping_or_empty(getattr(acquisition_result, "artifacts", {})))
-    screenshot_path_source = str(artifacts.pop("browser_screenshot_path", "") or "").strip()
+    screenshot_path_source = str(
+        artifacts.pop("browser_screenshot_path", "") or ""
+    ).strip()
     screenshot_bytes = artifacts.pop("browser_screenshot_png", b"")
     screenshot_path = ""
     if screenshot_required:
@@ -271,7 +280,11 @@ async def persist_extracted_records(
     existing_records_by_identity = await _load_existing_records_by_identity(
         session,
         run_id=run.id,
-        identity_keys=_candidate_identity_keys(records, acquisition_result),
+        identity_keys=_candidate_identity_keys(
+            records,
+            acquisition_result,
+            surface=str(run.surface or ""),
+        ),
     )
     state = _RecordPersistenceState(
         session=session,
@@ -304,13 +317,14 @@ async def _persist_extracted_record(
         acquisition_result=acquisition_result,
         preliminary_source_url=preliminary_source_url,
     )
-    if not data or (
-        "listing" in str(state.run.surface or "") and not data.get("url")
-    ):
+    if not data or ("listing" in str(state.run.surface or "") and not data.get("url")):
         return
     record_source_url = str(data.get("source_url") or acquisition_result.final_url)
     identity_source_url = str(data.get("url") or record_source_url)
-    identity_key = _record_identity_key(identity_source_url)
+    identity_key = _record_identity_key(
+        identity_source_url,
+        surface=str(state.run.surface or ""),
+    )
     content_fingerprint = _record_content_fingerprint(
         data,
         identity_source_url=identity_source_url,
@@ -436,6 +450,8 @@ def _record_provenance_payload(
 def _candidate_identity_keys(
     records: list[dict[str, object]],
     acquisition_result,
+    *,
+    surface: str | None = None,
 ) -> set[str]:
     return {
         identity_key
@@ -446,7 +462,8 @@ def _candidate_identity_keys(
                     dict(record).get("url")
                     or dict(record).get("source_url")
                     or acquisition_result.final_url
-                )
+                ),
+                surface=surface,
             ),
         )
         if identity_key
@@ -492,7 +509,9 @@ def _public_data_for_record(
         public_record_data_for_surface(
             unfiltered_data,
             surface=str(run.surface or ""),
-            page_url=str(getattr(acquisition_result, "final_url", "") or preliminary_source_url),
+            page_url=str(
+                getattr(acquisition_result, "final_url", "") or preliminary_source_url
+            ),
             requested_fields=list(run.requested_fields or []),
         ),
     )
@@ -576,7 +595,9 @@ def _record_lineage(
         mapping_or_empty(raw_record.get("_lineage")),
         raw_record=raw_record,
         public_data=data,
-        page_url=str(getattr(acquisition_result, "final_url", "") or preliminary_source_url),
+        page_url=str(
+            getattr(acquisition_result, "final_url", "") or preliminary_source_url
+        ),
     )
 
 

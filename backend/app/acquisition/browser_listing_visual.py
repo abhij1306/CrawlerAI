@@ -146,7 +146,9 @@ def listing_visual_elements_html(snapshot: object) -> str:
     groups: dict[str, list[dict[str, object]]] = {}
     if isinstance(snapshot, list):
         for item in snapshot:
-            if isinstance(item, dict) and (href := " ".join(str(item.get("href") or "").split())):
+            if isinstance(item, dict) and (
+                href := " ".join(str(item.get("href") or "").split())
+            ):
                 groups.setdefault(href, []).append(item)
     cards: list[str] = []
     for index, (href, items) in enumerate(groups.items()):
@@ -157,7 +159,10 @@ def listing_visual_elements_html(snapshot: object) -> str:
             for key in ("title", "ariaLabel", "alt", "text"):
                 value = " ".join(str(item.get(key) or "").split())
                 prices.extend(
-                    price for price in re.findall(LISTING_VISUAL_PRICE_REGEX_PATTERN, value, re.I)
+                    price
+                    for price in re.findall(
+                        LISTING_VISUAL_PRICE_REGEX_PATTERN, value, re.I
+                    )
                     if price not in prices
                 )
                 label = re.sub(
@@ -176,8 +181,12 @@ def listing_visual_elements_html(snapshot: object) -> str:
             for label in labels
         )
         image_html = "".join(f'<img src="{escape(src, quote=True)}">' for src in images)
-        price_html = "".join(f'<span class="price">{escape(price)}</span>' for price in prices)
-        cards.append(f'<article data-product-id="visual-{index}">{links}{image_html}{price_html}</article>')
+        price_html = "".join(
+            f'<span class="price">{escape(price)}</span>' for price in prices
+        )
+        cards.append(
+            f'<article data-product-id="visual-{index}">{links}{image_html}{price_html}</article>'
+        )
     return f"<main>{''.join(cards)}</main>" if cards else ""
 
 

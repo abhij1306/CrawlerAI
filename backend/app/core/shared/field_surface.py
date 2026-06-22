@@ -96,7 +96,9 @@ def _surface_field_type_error(
     value: object,
     scalar_list_fields: set[str],
 ) -> str | None:
-    if normalized_field in STRUCTURED_OBJECT_LIST_FIELDS and not isinstance(value, list):
+    if normalized_field in STRUCTURED_OBJECT_LIST_FIELDS and not isinstance(
+        value, list
+    ):
         return f"{field_name} expected list"
     if normalized_field in STRUCTURED_OBJECT_FIELDS and not isinstance(value, dict):
         return f"{field_name} expected object"

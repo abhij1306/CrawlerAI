@@ -26,10 +26,13 @@ def test_absolute_url_repairs_relative_and_bare_host_values() -> None:
         "https://cdn.example.com"
     )
     assert absolute_url("https://example.com", "") == ""
-    assert absolute_url(
-        "https://www.carhartt.com/en-eu/c/men/t-shirts/short-sleeved/eum3000076",
-        "en-eu/p/irvine-relaxed-truck-t-shirt/107455",
-    ) == "https://www.carhartt.com/en-eu/p/irvine-relaxed-truck-t-shirt/107455"
+    assert (
+        absolute_url(
+            "https://www.carhartt.com/en-eu/c/men/t-shirts/short-sleeved/eum3000076",
+            "en-eu/p/irvine-relaxed-truck-t-shirt/107455",
+        )
+        == "https://www.carhartt.com/en-eu/p/irvine-relaxed-truck-t-shirt/107455"
+    )
 
 
 @pytest.mark.unit
@@ -46,7 +49,9 @@ def test_asset_url_identity_encodes_paths_and_keeps_meaningful_params() -> None:
         "https://cdn.test/i/Trail%20Shoe.jpg?width=800",
         "https://cdn.test/i/Trail%20Shoe.jpg",
     )
-    assert asset_url_identity("https://cdn.test/i/Trail%20Shoe.jpg?color=red&width=800") == (
+    assert asset_url_identity(
+        "https://cdn.test/i/Trail%20Shoe.jpg?color=red&width=800"
+    ) == (
         "https://cdn.test/i/Trail%20Shoe.jpg?color=red&width=800",
         "https://cdn.test/i/Trail%20Shoe.jpg?color=red",
     )

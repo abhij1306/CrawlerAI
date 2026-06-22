@@ -3,11 +3,9 @@ import { useMemo, useState } from 'react';
 import { HistoryDrawer } from '../ui/history-drawer';
 import { parseApiDate } from '../../lib/format/date';
 import { extractionVerdict } from './shared';
+import { CrawlTerminalTabContent } from './crawl-terminal-tab-content';
 
-import { RunLearningPanel } from './run-learning-panel';
 import { RunLiveWorkspace } from './run-live-workspace';
-import { RunLogsOutput } from './run-logs-output';
-import { JSON_PREVIEW_INCREMENT, RunJsonOutput, RunTableOutput } from './run-records-output';
 import {
   RunLoadError,
   RunLoadingState,
@@ -36,6 +34,7 @@ export function CrawlRunScreen({ runId }: Readonly<CrawlRunScreenProps>) {
   return <CrawlRunWorkspace key={runId} runId={runId} />;
 }
 
+// skipcq: JS-0067 -- pure orchestrator: all UI in named sub-components, all data in custom hooks
 function CrawlRunWorkspace({ runId }: Readonly<CrawlRunScreenProps>) {
   const navigate = useNavigate();
   const [sessionStartMs] = useState(() => Date.now());
@@ -104,7 +103,10 @@ function CrawlRunWorkspace({ runId }: Readonly<CrawlRunScreenProps>) {
     live,
     refetchRun: refetchRunQuery,
   });
-  const domainRecipeQuery = useRunRecipe(runId, showRunLearningTab);
+  const domainRecipeQuery = useRunRecipe(
+    runId,
+    showRunLearningTab && outputTab === 'learning',
+  );
   const { refetch: refetchDomainRecipeQuery } = domainRecipeQuery;
   const domainRecipe = domainRecipeQuery.data;
   const {
@@ -124,7 +126,7 @@ function CrawlRunWorkspace({ runId }: Readonly<CrawlRunScreenProps>) {
     runId,
     refreshQueries: [runQuery, logsQuery, tableRecordsQuery, jsonRecordsQuery],
   });
-  const { items: historyItems } = useRunHistory();
+  const { items: historyItems, prepareRun: prepareHistoryRun } = useRunHistory();
 
   const elapsedLabel = useMemo(() => {
     const elapsedMs = Math.max(0, localNow - effectiveStartMs);
@@ -198,6 +200,66 @@ function CrawlRunWorkspace({ runId }: Readonly<CrawlRunScreenProps>) {
     navigate('/crawl?module=category&mode=single');
   }
 
+  const terminalActions = useMemo(() => (
+    <RunWorkspaceActions
+      showBatch={listingRun && batchFromResultsUrls.length > 0}
+      batchLabel={batchFromResultsLabel}
+      showProductIntelligence={
+        (listingRun || ecommerceDetailRun) && productIntelligenceRecords.length > 0
+      }
+      productIntelligenceLabel={productIntelligenceLabel}
+      showDataEnrichment={ecommerceDetailRun && dataEnrichmentRecords.length > 0}
+      dataEnrichmentLabel={dataEnrichmentLabel}
+      onBatch={startBatchCrawl}
+      onProductIntelligence={startProductIntelligence}
+      onDataEnrichment={startDataEnrichment}
+      onDownloadCsv={() => downloadExport('csv')}
+      onDownloadJson={() => downloadExport('json')}
+      onHistory={() => setHistoryOpen(true)}
+    />
+  ), [
+    listingRun,
+    batchFromResultsUrls.length,
+    batchFromResultsLabel,
+    ecommerceDetailRun,
+    productIntelligenceRecords.length,
+    productIntelligenceLabel,
+    dataEnrichmentRecords.length,
+    dataEnrichmentLabel,
+    startBatchCrawl,
+    startProductIntelligence,
+    startDataEnrichment,
+    downloadExport,
+    setHistoryOpen,
+  ]);
+
+  const terminalTabs = useMemo(() => (
+    <RunOutputTabs
+      value={outputTab}
+      recordCount={summary.records}
+      showLearning={showRunLearningTab}
+      onChange={setOutputTab}
+    />
+  ), [outputTab, summary.records, showRunLearningTab, setOutputTab]);
+
+  const terminalSummary = useMemo(() => (
+    <RunOutputSummary
+      llmRequested={llmSummary.requested}
+      llmTouchedRecords={llmSummary.touchedRecords}
+      llmTouchedFields={llmSummary.touchedFields}
+      duration={summary.duration}
+      verdict={verdict}
+      quality={completedQualityLevel}
+    />
+  ), [
+    llmSummary.requested,
+    llmSummary.touchedRecords,
+    llmSummary.touchedFields,
+    summary.duration,
+    verdict,
+    completedQualityLevel,
+  ]);
+
   if (runQuery.error) {
     return <RunLoadError error={runQuery.error} onNewCrawl={resetToConfig} />;
   }
@@ -229,102 +291,38 @@ function CrawlRunWorkspace({ runId }: Readonly<CrawlRunScreenProps>) {
           run={run}
           runErrorMessage={runErrorMessage}
           actionError={runActionError}
-          actions={
-            <RunWorkspaceActions
-              showBatch={listingRun && batchFromResultsUrls.length > 0}
-              batchLabel={batchFromResultsLabel}
-              showProductIntelligence={
-                (listingRun || ecommerceDetailRun) && productIntelligenceRecords.length > 0
-              }
-              productIntelligenceLabel={productIntelligenceLabel}
-              showDataEnrichment={ecommerceDetailRun && dataEnrichmentRecords.length > 0}
-              dataEnrichmentLabel={dataEnrichmentLabel}
-              onBatch={startBatchCrawl}
-              onProductIntelligence={startProductIntelligence}
-              onDataEnrichment={startDataEnrichment}
-              onDownloadCsv={() => downloadExport('csv')}
-              onDownloadJson={() => downloadExport('json')}
-              onHistory={() => setHistoryOpen(true)}
-            />
-          }
-          tabs={
-            <RunOutputTabs
-              value={outputTab}
-              recordCount={summary.records}
-              showLearning={showRunLearningTab}
-              onChange={setOutputTab}
-            />
-          }
-          summary={
-            <RunOutputSummary
-              llmRequested={llmSummary.requested}
-              llmTouchedRecords={llmSummary.touchedRecords}
-              llmTouchedFields={llmSummary.touchedFields}
-              duration={summary.duration}
-              verdict={verdict}
-              quality={completedQualityLevel}
-            />
-          }
+          actions={terminalActions}
+          tabs={terminalTabs}
+          summary={terminalSummary}
         >
-          <>
-            {outputTab === 'table' ? (
-              <RunTableOutput
-                loading={tableRecordsQuery.isLoading}
-                records={filteredTableRecords}
-                visibleColumns={visibleColumns}
-                selectedIds={visibleSelectedIds}
-                total={tableTotal}
-                hasMore={hasMoreTableRecords}
-                emptyState={emptyRecordsState}
-                onSelectAll={(checked) =>
-                  setSelectedIds(checked ? filteredTableRecords.map((record) => record.id) : [])
-                }
-                onToggleRow={(id, checked) =>
-                  setSelectedIds((current) =>
-                    checked
-                      ? Array.from(new Set([...current, id]))
-                      : current.filter((value) => value !== id),
-                  )
-                }
-                onLoadMore={() => setTablePage((current) => current + 1)}
-              />
-            ) : null}
-
-            {outputTab === 'json' ? (
-              <RunJsonOutput
-                records={records}
-                recordsJson={recordsJson}
-                visibleCount={jsonRecords.length}
-                total={recordsTotal}
-                hasMore={hasMoreJsonRecords}
-                fetchCapReached={recordsFetchCapReached}
-                onLoadMore={() =>
-                  setJsonVisibleCount((current) => current + JSON_PREVIEW_INCREMENT)
-                }
-              />
-            ) : null}
-
-            {outputTab === 'logs' ? (
-              <RunLogsOutput
-                logs={logs}
-                records={batchSourceRecords}
-                requestedFields={run?.requested_fields ?? []}
-                viewportRef={logViewportRef}
-              />
-            ) : null}
-
-            {outputTab === 'learning' ? (
-              <div className="min-h-[55vh] space-y-4">
-                <RunLearningPanel
-                  loading={domainRecipeQuery.isLoading}
-                  recipe={domainRecipe}
-                  pendingKey={recipeActionPending}
-                  error={recipeActionError}
-                  onFieldAction={applyFieldAction}
-                />
-              </div>
-            ) : null}
-          </>
+          <CrawlTerminalTabContent
+            outputTab={outputTab}
+            tableRecordsLoading={tableRecordsQuery.isLoading}
+            filteredTableRecords={filteredTableRecords}
+            visibleColumns={visibleColumns}
+            visibleSelectedIds={visibleSelectedIds}
+            tableTotal={tableTotal}
+            hasMoreTableRecords={hasMoreTableRecords}
+            emptyRecordsState={emptyRecordsState}
+            setSelectedIds={setSelectedIds}
+            setTablePage={setTablePage}
+            records={records}
+            recordsJson={recordsJson}
+            jsonRecordsLength={jsonRecords.length}
+            recordsTotal={recordsTotal}
+            hasMoreJsonRecords={hasMoreJsonRecords}
+            recordsFetchCapReached={recordsFetchCapReached}
+            setJsonVisibleCount={setJsonVisibleCount}
+            logs={logs}
+            batchSourceRecords={batchSourceRecords}
+            requestedFields={run?.requested_fields ?? []}
+            logViewportRef={logViewportRef}
+            domainRecipeLoading={domainRecipeQuery.isLoading}
+            domainRecipe={domainRecipe}
+            recipeActionPending={recipeActionPending}
+            recipeActionError={recipeActionError}
+            applyFieldAction={applyFieldAction}
+          />
         </RunTerminalShell>
       ) : null}
       <HistoryDrawer
@@ -332,9 +330,13 @@ function CrawlRunWorkspace({ runId }: Readonly<CrawlRunScreenProps>) {
         onClose={() => setHistoryOpen(false)}
         items={historyItems}
         activeId={runId}
-        onSelect={(id) => navigate(`/crawl?run_id=${id}`)}
+        onSelect={(id) => {
+          prepareHistoryRun(id);
+          navigate(`/crawl?run_id=${id}`);
+        }}
         title="Crawl History"
       />
     </div>
   );
 }
+

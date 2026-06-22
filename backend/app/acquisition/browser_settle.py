@@ -97,7 +97,11 @@ def _generic_card_selectors_for_surface(surface: str | None) -> list[str]:
     if not isinstance(CARD_SELECTORS, dict):
         return []
     normalized = str(surface or "").strip().lower()
-    groups = ("jobs",) if normalized == "jobs" or normalized.startswith("job_") else ("ecommerce",)
+    groups = (
+        ("jobs",)
+        if normalized == "jobs" or normalized.startswith("job_")
+        else ("ecommerce",)
+    )
     selectors: list[str] = []
     for group in groups:
         for selector in CARD_SELECTORS.get(group) or []:

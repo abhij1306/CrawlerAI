@@ -22,7 +22,9 @@ class PublicApiClient:
         params: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         if not self.api_key:
-            return _tool_error("API_KEY_MISSING", f"{PUBLIC_API_MCP_API_KEY_ENV} is required")
+            return _tool_error(
+                "API_KEY_MISSING", f"{PUBLIC_API_MCP_API_KEY_ENV} is required"
+            )
         async with httpx.AsyncClient(timeout=30) as client:
             response = await client.request(
                 method,

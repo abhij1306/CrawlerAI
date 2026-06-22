@@ -121,9 +121,7 @@ async def _upgrade_password_hash(
     )
     async with isolated_session_factory() as isolated_session:
         await isolated_session.execute(
-            update(User)
-            .where(User.id == user.id)
-            .values(hashed_password=new_hash)
+            update(User).where(User.id == user.id).values(hashed_password=new_hash)
         )
         await isolated_session.commit()
     set_committed_value(user, "hashed_password", new_hash)

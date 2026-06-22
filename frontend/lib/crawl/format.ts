@@ -1,7 +1,6 @@
 import { formatTimeHms, parseApiDate } from '../format/date';
-import type { CrawlRun } from '../api/types';
-
 export { formatTimeHms, parseApiDate };
+import type { CrawlRun } from '../api/types';
 
 export function parseLines(value: string) {
   return value
@@ -35,7 +34,7 @@ export function stringifyCell(value: unknown) {
   return JSON.stringify(value);
 }
 
-export function decodeUrlForDisplay(value: string) {
+function decodeUrlForDisplay(value: string) {
   const text = decodeEscapedTextForDisplay(String(value || '')).trim();
   if (!/^https?:\/\//i.test(text)) return text;
   try {
@@ -105,14 +104,7 @@ export function humanizeFieldName(value: string) {
   return normalized.charAt(0).toUpperCase() + normalized.slice(1);
 }
 
-export function presentCandidateValue(value: unknown) {
-  const trimmed = stringifyCell(value).trim();
-  if (!trimmed) return '';
-  const schemaMatch = trimmed.match(/^https?:\/\/schema\.org\/([A-Za-z]+)$/i);
-  if (!schemaMatch) return trimmed;
-  const token = schemaMatch[1].replace(/([a-z])([A-Z])/g, '$1 $2');
-  return token.charAt(0).toUpperCase() + token.slice(1);
-}
+
 
 export function isEmptyCandidateValue(value: unknown) {
   if (value === null || value === undefined) return true;
@@ -145,10 +137,7 @@ export function formatDurationMs(durationMs?: number | null) {
   return `${m}m ${s}s`;
 }
 
-export function progressPercent(run: CrawlRun | undefined) {
-  const value = typeof run?.result_summary?.progress === 'number' ? run.result_summary.progress : 0;
-  return Math.min(100, Math.max(0, value));
-}
+
 
 export function extractionVerdict(run: CrawlRun | undefined) {
   const verdict = String(run?.result_summary?.extraction_verdict ?? '')
@@ -157,31 +146,9 @@ export function extractionVerdict(run: CrawlRun | undefined) {
   return verdict || 'unknown';
 }
 
-export function extractionVerdictTone(verdict: string) {
-  if (verdict === 'success') return 'success';
-  if (verdict === 'partial') return 'warning';
-  if (verdict === 'schema_miss' || verdict === 'listing_detection_failed' || verdict === 'empty')
-    return 'warning';
-  if (verdict === 'blocked' || verdict === 'proxy_exhausted' || verdict === 'error')
-    return 'danger';
-  return 'neutral';
-}
+
 
 export function humanizeVerdict(verdict: string) {
   return verdict.replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
-export function formatShortUrlLabel(url: string) {
-  try {
-    const parsed = new URL(url);
-    const domain = parsed.hostname.replace(/^www\./, '');
-    const parts = parsed.pathname.split('/').filter(Boolean);
-    const lastPart = parts.at(-1) || '';
-    if (parts.length > 1) {
-      return `${domain}/.../${lastPart}`;
-    }
-    return domain + (lastPart ? `/${lastPart}` : '');
-  } catch {
-    return url.length > 40 ? url.slice(0, 40) + '...' : url;
-  }
-}

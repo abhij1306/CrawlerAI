@@ -129,10 +129,14 @@ async def test_persist_url_failure_log_prefixes_url_for_parallel_ui(
         log_message=f"URL processing failed for {url}: RuntimeError: navigation failed",
     )
     logs = (
-        await db_session.execute(
-            select(CrawlLog).where(CrawlLog.run_id == run.id).order_by(CrawlLog.id)
+        (
+            await db_session.execute(
+                select(CrawlLog).where(CrawlLog.run_id == run.id).order_by(CrawlLog.id)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
 
     if logs[-1].level != "warning":
         pytest.fail(f"expected warning log, got {logs[-1].level!r}")
@@ -587,10 +591,14 @@ async def test_parallel_run_does_not_mislabel_nested_timeout_as_url_deadline(
 
     await process_run(db_session, run.id)
     logs = (
-        await db_session.execute(
-            select(CrawlLog).where(CrawlLog.run_id == run.id).order_by(CrawlLog.id)
+        (
+            await db_session.execute(
+                select(CrawlLog).where(CrawlLog.run_id == run.id).order_by(CrawlLog.id)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     messages = [log.message for log in logs]
 
     assert any(
@@ -599,8 +607,7 @@ async def test_parallel_run_does_not_mislabel_nested_timeout_as_url_deadline(
         for message in messages
     )
     assert not any(
-        f"URL processing timed out for {failing_url}" in message
-        for message in messages
+        f"URL processing timed out for {failing_url}" in message for message in messages
     )
 
 
@@ -716,8 +723,12 @@ async def test_process_run_blocks_disallowed_url_before_acquire(
     async def _unexpected_acquire(request):
         raise AssertionError(f"acquire should not run for {request.url}")
 
-    monkeypatch.setattr("app.crawl.pipeline.extraction_loop.check_url_crawlability", _disallow)
-    monkeypatch.setattr("app.crawl.pipeline.extraction_loop.acquire", _unexpected_acquire)
+    monkeypatch.setattr(
+        "app.crawl.pipeline.extraction_loop.check_url_crawlability", _disallow
+    )
+    monkeypatch.setattr(
+        "app.crawl.pipeline.extraction_loop.acquire", _unexpected_acquire
+    )
 
     await process_run(db_session, run.id)
     await db_session.refresh(run)
@@ -767,7 +778,9 @@ async def test_process_run_ignores_robots_when_disabled_in_settings(
             status_code=200,
         )
 
-    monkeypatch.setattr("app.crawl.pipeline.extraction_loop.check_url_crawlability", _disallow)
+    monkeypatch.setattr(
+        "app.crawl.pipeline.extraction_loop.check_url_crawlability", _disallow
+    )
     monkeypatch.setattr("app.crawl.pipeline.extraction_loop.acquire", _fake_acquire)
 
     await process_run(db_session, run.id)
@@ -782,7 +795,9 @@ async def test_process_run_ignores_robots_when_disabled_in_settings(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("robots_outcome", [ROBOTS_ALLOWED, ROBOTS_MISSING, ROBOTS_FETCH_FAILURE])
+@pytest.mark.parametrize(
+    "robots_outcome", [ROBOTS_ALLOWED, ROBOTS_MISSING, ROBOTS_FETCH_FAILURE]
+)
 @pytest.mark.regression
 async def test_process_run_continues_when_robots_allows_or_fails_open(
     db_session: AsyncSession,
@@ -820,7 +835,9 @@ async def test_process_run_continues_when_robots_allows_or_fails_open(
             status_code=200,
         )
 
-    monkeypatch.setattr("app.crawl.pipeline.extraction_loop.check_url_crawlability", _allow)
+    monkeypatch.setattr(
+        "app.crawl.pipeline.extraction_loop.check_url_crawlability", _allow
+    )
     monkeypatch.setattr("app.crawl.pipeline.extraction_loop.acquire", _fake_acquire)
 
     await process_run(db_session, run.id)
@@ -1216,10 +1233,14 @@ async def test_process_batch_run_marks_failed_when_sitemap_resolution_fails(
     await process_run(db_session, run.id)
     await db_session.refresh(run)
     logs = (
-        await db_session.execute(
-            select(CrawlLog.message).where(CrawlLog.run_id == run.id)
+        (
+            await db_session.execute(
+                select(CrawlLog.message).where(CrawlLog.run_id == run.id)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
 
     assert run.status == "failed"
     assert run.completed_at is not None

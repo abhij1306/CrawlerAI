@@ -79,10 +79,16 @@ def build_observation(
 ) -> dict[str, Any]:
     """Normalize a single run into a comparable observation."""
     return {
-        "tiers": sorted({str(t).strip().lower() for t in completed_tiers if str(t).strip()}),
-        "fields": sorted({str(f).strip().lower() for f in fields_present if str(f).strip()}),
+        "tiers": sorted(
+            {str(t).strip().lower() for t in completed_tiers if str(t).strip()}
+        ),
+        "fields": sorted(
+            {str(f).strip().lower() for f in fields_present if str(f).strip()}
+        ),
         "engine": str(engine or "").strip().lower(),
-        "total_acquire_ms": int(total_acquire_ms) if total_acquire_ms is not None else None,
+        "total_acquire_ms": int(total_acquire_ms)
+        if total_acquire_ms is not None
+        else None,
         "verdict": str(verdict or "").strip().lower(),
     }
 
@@ -131,7 +137,10 @@ def compare_to_baseline(
         flags.append(
             _drift_flag(
                 FLAG_BASELINE_ENGINE_CHANGED,
-                evidence={"baseline_engine": baseline_engine, "engine": observed_engine},
+                evidence={
+                    "baseline_engine": baseline_engine,
+                    "engine": observed_engine,
+                },
             )
         )
 
@@ -145,7 +154,10 @@ def compare_to_baseline(
         flags.append(
             _drift_flag(
                 FLAG_BASELINE_VERDICT_REGRESSION,
-                evidence={"baseline_verdict": baseline_verdict, "verdict": observed_verdict},
+                evidence={
+                    "baseline_verdict": baseline_verdict,
+                    "verdict": observed_verdict,
+                },
             )
         )
 
@@ -214,7 +226,9 @@ def update_baseline(
     prior_avg = existing.get("avg_acquire_ms")
     if isinstance(observed_timing, (int, float)):
         if isinstance(prior_avg, (int, float)) and samples > 0:
-            new_avg: float | None = (prior_avg * samples + observed_timing) / (samples + 1)
+            new_avg: float | None = (prior_avg * samples + observed_timing) / (
+                samples + 1
+            )
         else:
             new_avg = float(observed_timing)
     else:

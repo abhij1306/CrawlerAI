@@ -4,7 +4,10 @@ import pytest
 
 from types import SimpleNamespace
 
-from app.persistence.publish.metrics import build_url_metrics, diagnostics_indicate_block
+from app.persistence.publish.metrics import (
+    build_url_metrics,
+    diagnostics_indicate_block,
+)
 
 
 @pytest.mark.unit
@@ -65,7 +68,9 @@ def test_build_url_metrics_promotes_traversal_diagnostics() -> None:
 
 
 @pytest.mark.unit
-def test_build_url_metrics_keeps_failed_browser_attempts_when_final_method_is_http() -> None:
+def test_build_url_metrics_keeps_failed_browser_attempts_when_final_method_is_http() -> (
+    None
+):
     acquisition_result = SimpleNamespace(
         method="curl_cffi",
         status_code=200,
@@ -237,7 +242,9 @@ def test_build_url_metrics_projects_canonical_attempt_history() -> None:
 
 
 @pytest.mark.unit
-def test_diagnostics_indicate_block_preserves_ready_usable_content_despite_provider_evidence() -> None:
+def test_diagnostics_indicate_block_preserves_ready_usable_content_despite_provider_evidence() -> (
+    None
+):
     diagnostics = {
         "browser_outcome": "usable_content",
         "challenge_evidence": ["provider:cloudflare"],
@@ -249,7 +256,9 @@ def test_diagnostics_indicate_block_preserves_ready_usable_content_despite_provi
 
 
 @pytest.mark.unit
-def test_diagnostics_indicate_block_preserves_usable_content_despite_active_provider_evidence() -> None:
+def test_diagnostics_indicate_block_preserves_usable_content_despite_active_provider_evidence() -> (
+    None
+):
     diagnostics = {
         "browser_outcome": "usable_content",
         "challenge_evidence": ["active_provider:akamai"],
@@ -261,7 +270,9 @@ def test_diagnostics_indicate_block_preserves_usable_content_despite_active_prov
 
 
 @pytest.mark.unit
-def test_diagnostics_indicate_block_flags_active_provider_without_ready_content() -> None:
+def test_diagnostics_indicate_block_flags_active_provider_without_ready_content() -> (
+    None
+):
     diagnostics = {
         "browser_outcome": "usable_content",
         "challenge_evidence": [
@@ -276,7 +287,9 @@ def test_diagnostics_indicate_block_flags_active_provider_without_ready_content(
 
 
 @pytest.mark.unit
-def test_diagnostics_indicate_block_preserves_ready_usable_content_despite_challenge_iframe() -> None:
+def test_diagnostics_indicate_block_preserves_ready_usable_content_despite_challenge_iframe() -> (
+    None
+):
     diagnostics = {
         "browser_outcome": "usable_content",
         "challenge_evidence": [
@@ -292,7 +305,9 @@ def test_diagnostics_indicate_block_preserves_ready_usable_content_despite_chall
 
 
 @pytest.mark.unit
-def test_diagnostics_indicate_block_flags_usable_content_with_strong_challenge_evidence() -> None:
+def test_diagnostics_indicate_block_flags_usable_content_with_strong_challenge_evidence() -> (
+    None
+):
     diagnostics = {
         "browser_outcome": "usable_content",
         "challenge_evidence": [

@@ -6,7 +6,12 @@ from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import SessionLocal
-from app.core.shared.coerce_primitives import bounded_int, object_dict, object_list, positive_int
+from app.core.shared.coerce_primitives import (
+    bounded_int,
+    object_dict,
+    object_list,
+    positive_int,
+)
 from app.models.data_enrichment import DataEnrichmentJob, EnrichedProduct
 from app.models.crawl_run import CrawlRecord, CrawlRun
 from app.models.user import User
@@ -56,6 +61,7 @@ from app.connectors.llm.config_service import snapshot_active_configs
 from app.intelligence.matching import source_domain
 
 logger = logging.getLogger(__name__)
+
 
 async def create_data_enrichment_job(
     session: AsyncSession,
@@ -260,6 +266,8 @@ async def run_job(session: AsyncSession, job: DataEnrichmentJob) -> None:
         "llm_enabled": llm_enabled,
     }
     await session.commit()
+
+
 async def _enrich_product(
     session: AsyncSession,
     *,
@@ -370,6 +378,8 @@ async def _run_llm_enrichment(
         "provider": result.provider or "",
         "model": result.model or "",
     }
+
+
 def _apply_llm_payload(
     product: EnrichedProduct,
     payload: dict[str, object],
@@ -453,8 +463,11 @@ def _apply_semantic_llm_fields(
     applied: list[str] = []
     allowed = set(allowed_tags or ai_discovery_allowed_tags_for_product(product))
     for field_name in (
-        "intent_attributes", "audience", "style_tags",
-        "ai_discovery_tags", "suggested_bundles",
+        "intent_attributes",
+        "audience",
+        "style_tags",
+        "ai_discovery_tags",
+        "suggested_bundles",
     ):
         max_chars = (
             data_enrichment_settings.llm_semantic_list_item_chars
@@ -466,13 +479,15 @@ def _apply_semantic_llm_fields(
             pairs = [(str(value), discovery_tag_slug(value)) for value in values]
             discarded = [
                 {"value": value, "slug": slug}
-                for value, slug in pairs if slug and slug not in allowed
+                for value, slug in pairs
+                if slug and slug not in allowed
             ]
             values = [slug for _value, slug in pairs if slug and slug in allowed]
             if discarded:
                 logger.warning(
                     "Discarded unsupported ai_discovery_tags for product_id=%s: %s",
-                    product.id, discarded,
+                    product.id,
+                    discarded,
                 )
         setattr(product, field_name, values or None)
         if values:
@@ -480,12 +495,16 @@ def _apply_semantic_llm_fields(
     return applied
 
 
-def _category_match_for_product_path(category_path: str | None) -> dict[str, object] | None:
+def _category_match_for_product_path(
+    category_path: str | None,
+) -> dict[str, object] | None:
     if not category_path:
         return None
-    if not (reference := taxonomy_reference_for_category_path(
-        category_path, load_taxonomy_index()
-    )):
+    if not (
+        reference := taxonomy_reference_for_category_path(
+            category_path, load_taxonomy_index()
+        )
+    ):
         return None
     return {
         "category_path": str(reference.get("category_path") or category_path),
@@ -622,7 +641,9 @@ def _taxonomy_candidate_context(candidate: dict[str, object]) -> dict[str, objec
             "taxonomy_version": candidate.get("taxonomy_version")
             or taxonomy_reference.get("taxonomy_version")
             or DATA_ENRICHMENT_TAXONOMY_VERSION,
-            "attribute_handles": object_list(taxonomy_reference.get("attribute_handles")),
+            "attribute_handles": object_list(
+                taxonomy_reference.get("attribute_handles")
+            ),
         }
     )
 
@@ -638,7 +659,9 @@ def _taxonomy_hint(
     else:
         candidate_paths = ", ".join(
             str(item.get("category_path") or "")
-            for item in category_candidates[: data_enrichment_settings.llm_taxonomy_hint_count]
+            for item in category_candidates[
+                : data_enrichment_settings.llm_taxonomy_hint_count
+            ]
             if str(item.get("category_path") or "").strip()
         )
         guidance = f"Prefer one of these candidates when supported by evidence: {candidate_paths}."
@@ -676,6 +699,8 @@ def _normalized_options(value: object) -> dict[str, object]:
         "taxonomy_version": DATA_ENRICHMENT_TAXONOMY_VERSION,
         "max_concurrency": data_enrichment_settings.max_concurrency,
     }
+
+
 def _clear_enriched_fields(product: EnrichedProduct) -> None:
     for field_name in (
         "price_normalized",

@@ -98,13 +98,13 @@ def selector_rules_from_memory(memory: DomainMemory | None) -> list[dict[str, ob
         fallback_rules.append(
             _normalized_selector_rule(
                 {
-                "id": next_id,
-                "field_name": str(field_name or "").strip().lower(),
-                "css_selector": payload.get("css_selector") or payload.get("css"),
-                "sample_value": payload.get("sample_value"),
-                "source": payload.get("source") or "domain_memory",
-                "status": payload.get("status") or "validated",
-                "is_active": bool(payload.get("is_active", True)),
+                    "id": next_id,
+                    "field_name": str(field_name or "").strip().lower(),
+                    "css_selector": payload.get("css_selector") or payload.get("css"),
+                    "sample_value": payload.get("sample_value"),
+                    "source": payload.get("source") or "domain_memory",
+                    "status": payload.get("status") or "validated",
+                    "is_active": bool(payload.get("is_active", True)),
                 }
             )
         )

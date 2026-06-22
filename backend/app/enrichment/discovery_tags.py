@@ -9,7 +9,9 @@ from app.core.shared.field_coerce import clean_text
 
 
 def ai_discovery_allowed_tags_for_product(product: EnrichedProduct) -> list[str]:
-    seo_keywords = product.seo_keywords if isinstance(product.seo_keywords, list) else []
+    seo_keywords = (
+        product.seo_keywords if isinstance(product.seo_keywords, list) else []
+    )
     materials = (
         product.materials_normalized
         if isinstance(product.materials_normalized, list)

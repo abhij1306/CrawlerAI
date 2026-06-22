@@ -9,7 +9,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.crawl_run import CrawlRun
 from app.models.domain_memory import DomainMemory, DomainRunProfile
 from app.schemas.public_api import PublicDomainInfo
-from app.core.config.public_api import PUBLIC_API_INTERNAL_ECOMMERCE_SURFACE, PUBLIC_API_SURFACE_ECOMMERCE
+from app.core.config.public_api import (
+    PUBLIC_API_INTERNAL_ECOMMERCE_SURFACE,
+    PUBLIC_API_SURFACE_ECOMMERCE,
+)
 from app.crawl.domain_memory_service import selector_rules_from_memory
 from app.core.domain_utils import normalize_domain
 
@@ -70,7 +73,9 @@ async def _last_crawled_at(session: AsyncSession, domain: str) -> datetime | Non
 
 
 def _has_active_selectors(memory: DomainMemory | None) -> bool:
-    return any(bool(row.get("is_active", True)) for row in selector_rules_from_memory(memory))
+    return any(
+        bool(row.get("is_active", True)) for row in selector_rules_from_memory(memory)
+    )
 
 
 def _acquisition_profile(profile: DomainRunProfile | None) -> str:

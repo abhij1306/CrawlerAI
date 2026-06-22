@@ -68,9 +68,10 @@ async def test_domain_recipe_exposes_confusing_evidence_without_internal_graph(
     assert recipe["evidence_review"]["fields"][0]["winning_evidence_ids"] == [
         "ev_000001"
     ]
-    assert recipe["evidence_review"]["validation_findings"][0][
-        "suggested_action"
-    ] == "review_request_context"
+    assert (
+        recipe["evidence_review"]["validation_findings"][0]["suggested_action"]
+        == "review_request_context"
+    )
     assert "_evidence_graph" not in recipe["evidence_review"]
 
 
@@ -257,7 +258,9 @@ async def test_save_review_excludes_falsy_normalized_new_fields(
             return ""
         return text
 
-    monkeypatch.setattr("app.crawl.review.load_resolved_schema", _fake_load_resolved_schema)
+    monkeypatch.setattr(
+        "app.crawl.review.load_resolved_schema", _fake_load_resolved_schema
+    )
     monkeypatch.setattr(
         "app.crawl.review.normalize_review_target",
         _fake_normalize_review_target,
@@ -322,9 +325,15 @@ async def test_promote_domain_recipe_selectors_matches_existing_selectors_by_kin
         create_calls.append(dict(kwargs))
         return {"id": 12, **dict(kwargs.get("payload") or {})}
 
-    monkeypatch.setattr("app.crawl.review.list_selector_records", _fake_list_selector_records)
-    monkeypatch.setattr("app.crawl.review.update_selector_record", _fake_update_selector_record)
-    monkeypatch.setattr("app.crawl.review.create_selector_record", _fake_create_selector_record)
+    monkeypatch.setattr(
+        "app.crawl.review.list_selector_records", _fake_list_selector_records
+    )
+    monkeypatch.setattr(
+        "app.crawl.review.update_selector_record", _fake_update_selector_record
+    )
+    monkeypatch.setattr(
+        "app.crawl.review.create_selector_record", _fake_create_selector_record
+    )
 
     rows = await promote_domain_recipe_selectors(
         db_session,
@@ -378,9 +387,15 @@ async def test_promote_domain_recipe_selectors_skips_invalid_existing_selector_i
         create_calls.append(dict(kwargs))
         return {"id": 12, **dict(kwargs.get("payload") or {})}
 
-    monkeypatch.setattr("app.crawl.review.list_selector_records", _fake_list_selector_records)
-    monkeypatch.setattr("app.crawl.review.update_selector_record", _fake_update_selector_record)
-    monkeypatch.setattr("app.crawl.review.create_selector_record", _fake_create_selector_record)
+    monkeypatch.setattr(
+        "app.crawl.review.list_selector_records", _fake_list_selector_records
+    )
+    monkeypatch.setattr(
+        "app.crawl.review.update_selector_record", _fake_update_selector_record
+    )
+    monkeypatch.setattr(
+        "app.crawl.review.create_selector_record", _fake_create_selector_record
+    )
 
     rows = await promote_domain_recipe_selectors(
         db_session,
@@ -447,7 +462,9 @@ async def test_apply_domain_recipe_field_action_reject_deactivates_saved_selecto
             await db_session.execute(
                 select(DomainFieldFeedback).order_by(DomainFieldFeedback.id.asc())
             )
-        ).scalars().all()
+        )
+        .scalars()
+        .all()
     )
     memory = await load_domain_memory(
         db_session,
@@ -489,9 +506,7 @@ async def test_apply_domain_recipe_field_action_skips_invalid_source_record_ids(
 
     feedback_row = (
         await db_session.execute(
-            select(DomainFieldFeedback)
-            .order_by(DomainFieldFeedback.id.desc())
-            .limit(1)
+            select(DomainFieldFeedback).order_by(DomainFieldFeedback.id.desc()).limit(1)
         )
     ).scalar_one()
 
@@ -566,7 +581,9 @@ async def test_apply_domain_recipe_field_action_rolls_back_staged_mutations_on_e
         )
         raise ValueError("selector promotion failed")
 
-    monkeypatch.setattr("app.crawl.review.promote_domain_recipe_selectors", _failing_promote)
+    monkeypatch.setattr(
+        "app.crawl.review.promote_domain_recipe_selectors", _failing_promote
+    )
 
     with pytest.raises(ValueError, match="selector promotion failed"):
         await apply_domain_recipe_field_action(
@@ -591,7 +608,9 @@ async def test_apply_domain_recipe_field_action_rolls_back_staged_mutations_on_e
             await db_session.execute(
                 select(DomainFieldFeedback).order_by(DomainFieldFeedback.id.asc())
             )
-        ).scalars().all()
+        )
+        .scalars()
+        .all()
     )
 
     assert memory is None

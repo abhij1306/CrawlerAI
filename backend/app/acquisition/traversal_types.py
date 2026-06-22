@@ -40,11 +40,7 @@ class TraversalResult:
         if not self.activated:
             return "\n".join(texts)
         sections = [
-            (
-                f'<section data-traversal-fragment="{index}">\n'
-                f"{text}\n"
-                "</section>"
-            )
+            (f'<section data-traversal-fragment="{index}">\n{text}\n</section>')
             for index, text in enumerate(texts, start=1)
         ]
         return "<html><body>\n" + "\n".join(sections) + "\n</body></html>"

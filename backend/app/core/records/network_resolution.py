@@ -16,14 +16,18 @@ _CHROME_MAJOR_VERSION_RE = re.compile(r"Chrome/(\d+)\.")
 
 
 def address_family_preference() -> AddressFamilyPreference:
-    value = str(
-        getattr(
-            crawler_runtime_settings,
-            "network_address_family_preference",
-            "auto",
+    value = (
+        str(
+            getattr(
+                crawler_runtime_settings,
+                "network_address_family_preference",
+                "auto",
+            )
+            or "auto"
         )
-        or "auto"
-    ).strip().lower()
+        .strip()
+        .lower()
+    )
     if value == "ipv4":
         return "ipv4"
     if value == "ipv6":

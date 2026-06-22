@@ -167,7 +167,9 @@ def _collect_block_evidence(
     visible_text = analysis.visible_text.lower()
     title_text = analysis.title_text.lower()
     normalized_title = " ".join(slug_tokens(title_text))
-    shell_title = normalized_title if normalized_title in DETAIL_SHELL_TITLE_KEYS else ""
+    shell_title = (
+        normalized_title if normalized_title in DETAIL_SHELL_TITLE_KEYS else ""
+    )
     content_signals = analyze_extractable_content(html, analysis=analysis)
     strong_hits = _configured_marker_hits(
         "browser_challenge_strong_markers",
@@ -262,10 +264,7 @@ def _classification_from_evidence(evidence: _BlockEvidence) -> BlockPageClassifi
         blocked
         and evidence.has_extractable_content
         and not evidence.title_matches
-        and (
-            not evidence.hard_strong_hits
-            or evidence.hard_strong_hits <= {"captcha"}
-        )
+        and (not evidence.hard_strong_hits or evidence.hard_strong_hits <= {"captcha"})
     ):
         blocked = False
     evidence_rows = [

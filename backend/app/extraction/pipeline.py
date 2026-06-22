@@ -4,7 +4,7 @@ import re
 from decimal import Decimal, InvalidOperation
 import json
 from typing import Any
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlsplit
 
 from app.extraction.collectors._helpers import evidence as make_evidence
 from app.extraction.collectors.dom import DomCollector, collect_requested_fields
@@ -16,29 +16,33 @@ from app.extraction.collectors.metadata import (
     OpenGraphCollector,
 )
 from app.extraction.collectors.url import UrlCollector
-from app.core.config.field_mappings import ECOMMERCE_DETAIL_FIELD_FACT_TYPES
+from app.core.config import field_mappings
 from app.core.config.extraction_rules import (
     AVAILABILITY_URL_MAP,
     CURRENCY_SYMBOL_MAP,
+    DETAIL_SHELL_TITLE_FLAG,
     DETAIL_SHELL_TITLE_KEYS,
     DETAIL_TITLE_CODE_ONLY_PATTERN,
     DETAIL_TITLE_IDENTIFIER_ONLY_PATTERN,
+    DETAIL_TITLE_MEASUREMENT_FLAG,
+    DETAIL_TITLE_MEASUREMENT_PATTERN,
     DETAIL_TITLE_PATH_EXTENSION_PATTERN,
     DETAIL_TITLE_REJECT_VALUES,
     DETAIL_TITLE_SEO_POLLUTION_PATTERN,
     DETAIL_TITLE_TRAILING_CODE_PATTERN,
     DETAIL_TITLE_URL_TOKEN_MIN_OVERLAP,
+    INVALID_AVAILABILITY_EVIDENCE_FLAG,
     NORMALIZER_AVAILABILITY_TOKENS,
 )
 from app.extraction.contracts import (
     ArtifactReader,
     CaptureBundle,
+    CommerceDetailRecord,
     EntityHint,
     Evidence,
     FACT_TYPES,
     SourceLocator,
 )
-from app.extraction.contracts import CommerceDetailRecord
 from app.extraction.ids import stable_id
 from app.extraction.materialization import materialize
 from app.core.records.field_policy import normalize_field_key
@@ -46,6 +50,8 @@ from app.core.records.url_identity import (
     detail_title_from_url,
     semantic_detail_identity_tokens,
 )
+from app.core.shared.field_coerce_price import repair_price_unit
+from app.extraction.entities import EntitySet
 
 
 def collect_ecommerce_detail(
@@ -55,13 +61,14 @@ def collect_ecommerce_detail(
     requested_fields: tuple[str, ...] = (),
 ) -> tuple[Evidence, ...]:
     return (
-        tuple(ev for collector in default_collectors() for ev in collector.collect(bundle, reader) if ev.fact_type in FACT_TYPES)
-        + tuple(_css_recipe_evidence(bundle, reader))
-        + collect_requested_fields(
-            bundle,
-            reader,
-            requested_fields,
+        tuple(
+            ev
+            for collector in default_collectors()
+            for ev in collector.collect(bundle, reader)
+            if ev.fact_type in FACT_TYPES
         )
+        + tuple(_css_recipe_evidence(bundle, reader))
+        + collect_requested_fields(bundle, reader, requested_fields)
     )
 
 
@@ -78,28 +85,125 @@ def default_collectors():
 
 
 def normalize_ecommerce_detail(
-    evidence: tuple[Evidence, ...],
-    *,
-    page_url: str,
+    evidence: tuple[Evidence, ...], *, page_url: str
 ) -> tuple[Evidence, ...]:
     normalized = tuple(normalize_evidence(ev, page_url=page_url) for ev in evidence)
-    return _dedupe_equivalent(normalized + tuple(derived for ev in normalized for derived in (_currency_from_price_symbol(ev),) if derived is not None))
+    return _dedupe_equivalent(
+        normalized
+        + tuple(
+            derived
+            for ev in normalized
+            for derived in (_currency_from_price_symbol(ev),)
+            if derived is not None
+        )
+    )
+
+
+def normalize_ecommerce_price_units(
+    evidence: tuple[Evidence, ...], entities: EntitySet
+) -> tuple[Evidence, ...]:
+    by_id = {row.evidence_id: row for row in evidence}
+    offer_by_evidence = {
+        eid: offer
+        for offer in entities.offers
+        for ids in offer.fact_evidence.values()
+        for eid in ids
+    }
+    currencies_by_offer = {
+        offer.entity_id: {
+            str(by_id[eid].value).upper()
+            for eid in offer.fact_evidence.get("offer.currency", ())
+            if eid in by_id and "invalid_currency" not in by_id[eid].flags
+        }
+        for offer in entities.offers
+    }
+    product_currencies = {
+        product.entity_id: set().union(
+            *(
+                currencies_by_offer.get(offer.entity_id, set())
+                for offer in entities.offers
+                if offer.product_entity_id == product.entity_id
+            )
+        )
+        for product in entities.products
+    }
+    price_rows = tuple(
+        row
+        for row in evidence
+        if row.fact_type in {"offer.price", "offer.original_price"}
+    )
+    currency_by_evidence: dict[str, str] = {}
+    for row in price_rows:
+        offer = offer_by_evidence.get(row.evidence_id)
+        if offer is None:
+            continue
+        currencies = currencies_by_offer.get(offer.entity_id) or product_currencies.get(
+            offer.product_entity_id, set()
+        )
+        if len(currencies) == 1:
+            currency_by_evidence[row.evidence_id] = next(iter(currencies))
+    peer_values: dict[str, object] = {}
+    for row in price_rows:
+        repaired = repair_price_unit(
+            row.value,
+            source_key=row.locator.value,
+            currency=currency_by_evidence.get(row.evidence_id, ""),
+        )
+        peer_values[row.evidence_id] = repaired[0] if repaired else row.value
+    repaired_rows: list[Evidence] = []
+    for row in evidence:
+        offer = offer_by_evidence.get(row.evidence_id)
+        currency = currency_by_evidence.get(row.evidence_id)
+        if (
+            offer is None
+            or currency is None
+            or row.fact_type not in {"offer.price", "offer.original_price"}
+        ):
+            repaired_rows.append(row)
+            continue
+        peers = tuple(
+            peer_values[other.evidence_id]
+            for other in price_rows
+            if other.evidence_id != row.evidence_id
+            and other.fact_type == row.fact_type
+            and other.collector_id != row.collector_id
+            and (other_offer := offer_by_evidence.get(other.evidence_id)) is not None
+            and other_offer.product_entity_id == offer.product_entity_id
+        )
+        repaired = repair_price_unit(
+            row.value,
+            source_key=row.locator.value,
+            currency=currency,
+            corroborating_values=peers,
+        )
+        if repaired is None:
+            repaired_rows.append(row)
+            continue
+        value, rule_id = repaired
+        repaired_rows.append(
+            row.model_copy(
+                update={
+                    "value": value,
+                    "flags": tuple(sorted(set(row.flags) | {rule_id})),
+                    "metadata": {
+                        **dict(row.metadata),
+                        "price_unit_rule": rule_id,
+                        "price_unit_source_key": row.locator.value,
+                    },
+                }
+            )
+        )
+    return tuple(repaired_rows)
 
 
 def materialize_ecommerce_detail(
-    entities,
-    resolution,
-    evidence: tuple[Evidence, ...],
-    *,
-    canonical_url: str,
+    entities, resolution, evidence: tuple[Evidence, ...], *, canonical_url: str
 ) -> CommerceDetailRecord:
     return materialize(entities, resolution, evidence, canonical_url=canonical_url)
 
 
 def assess_ecommerce_detail_quality(
-    record: dict[str, object],
-    resolution,
-    bundle: CaptureBundle,
+    record: dict[str, object], resolution, bundle: CaptureBundle
 ) -> str:
     if bundle.acquisition_outcome in {"error", "blocked"}:
         return bundle.acquisition_outcome
@@ -113,7 +217,12 @@ def assess_ecommerce_detail_quality(
         return "review"
     if _title_is_review_only(resolution):
         return "review"
-    if record.get("url") and record.get("title") and _has_complete_public_offer(record) and not resolution.unresolved_fact_types:
+    if (
+        record.get("url")
+        and record.get("title")
+        and _has_complete_public_offer(record)
+        and not resolution.unresolved_fact_types
+    ):
         return "success"
     return "partial" if record.get("title") or record.get("price") else "review"
 
@@ -135,24 +244,27 @@ def _only_slug_identity(record: dict[str, object]) -> bool:
         "description",
         "variants",
     }
-    if any(record.get(field) not in (None, "", [], {}, ()) for field in commerce_fields):
+    if any(
+        record.get(field) not in (None, "", [], {}, ()) for field in commerce_fields
+    ):
         return False
     return title.casefold() == detail_title_from_url(url).casefold()
 
 
 def _has_complete_public_offer(record: dict[str, object]) -> bool:
-    if record.get("price") not in (None, "", [], {}, ()) and record.get("currency") not in (
-        None,
-        "",
-        [],
-        {},
-        (),
-    ):
+    if record.get("price") not in (None, "", [], {}, ()) and record.get(
+        "currency"
+    ) not in (None, "", [], {}, ()):
         return True
     variants = record.get("variants")
     if not isinstance(variants, (list, tuple)):
         return False
-    return any(isinstance(row, dict) and row.get("price") not in (None, "", [], {}, ()) and row.get("currency") not in (None, "", [], {}, ()) for row in variants)
+    return any(
+        isinstance(row, dict)
+        and row.get("price") not in (None, "", [], {}, ())
+        and row.get("currency") not in (None, "", [], {}, ())
+        for row in variants
+    )
 
 
 def _title_is_review_only(resolution) -> bool:
@@ -185,9 +297,29 @@ def normalize_evidence(evidence: Evidence, *, page_url: str) -> Evidence:
     if evidence.fact_type == "offer.availability":
         if isinstance(value, bool):
             value = "in_stock" if value else "out_of_stock"
+        elif isinstance(value, (int, float)) and value in {0, 1}:
+            value = "in_stock" if value == 1 else "out_of_stock"
         elif isinstance(value, str):
             value = _availability(value)
-    if evidence.fact_type in {"product.gtin", "variant.gtin"} and isinstance(value, str):
+        else:
+            flags.add(INVALID_AVAILABILITY_EVIDENCE_FLAG)
+    if (
+        evidence.fact_type in field_mappings.ECOMMERCE_INTEGER_IDENTIFIER_FACT_TYPES
+        and type(value) is int
+    ):
+        value = str(value)
+    if (
+        evidence.fact_type in field_mappings.ECOMMERCE_TYPED_STRING_FACT_TYPES
+        and not isinstance(value, str)
+    ):
+        flags.add(field_mappings.INVALID_SCALAR_TYPE_EVIDENCE_FLAG)
+    if evidence.fact_type == "product.brand" and isinstance(value, str):
+        parsed_brand = urlsplit(value)
+        if parsed_brand.scheme.casefold() in {"http", "https"} and parsed_brand.netloc:
+            flags.add("brand_url")
+    if evidence.fact_type in {"product.gtin", "variant.gtin"} and isinstance(
+        value, str
+    ):
         value = re.sub(r"\D+", "", value)
         if value and len(value) not in {8, 12, 13, 14}:
             flags.add("invalid_gtin")
@@ -206,12 +338,16 @@ def _title_flags(evidence: Evidence, *, value: str, page_url: str) -> set[str]:
     )
     if evidence.collector_id == "url":
         flags.add("url_derived_title")
-    if re.search(DETAIL_TITLE_PATH_EXTENSION_PATTERN, str(evidence.raw_value), re.IGNORECASE):
+    if re.search(
+        DETAIL_TITLE_PATH_EXTENSION_PATTERN, str(evidence.raw_value), re.IGNORECASE
+    ):
         flags.add("filename_title")
     if re.fullmatch(DETAIL_TITLE_CODE_ONLY_PATTERN, value.strip()) or re.fullmatch(
         DETAIL_TITLE_IDENTIFIER_ONLY_PATTERN, value.strip()
     ):
         flags.add("code_only_title")
+    if re.fullmatch(DETAIL_TITLE_MEASUREMENT_PATTERN, value.strip(), re.IGNORECASE):
+        flags.add(DETAIL_TITLE_MEASUREMENT_FLAG)
     if (
         evidence.collector_id == "url"
         and key == url_title_key
@@ -219,18 +355,30 @@ def _title_flags(evidence: Evidence, *, value: str, page_url: str) -> set[str]:
     ):
         flags.add("filename_title")
     if key in DETAIL_SHELL_TITLE_KEYS:
-        flags.add("shell_title")
+        flags.add(DETAIL_SHELL_TITLE_FLAG)
     if key in DETAIL_TITLE_REJECT_VALUES:
         flags.add("generic_title")
     if re.search(DETAIL_TITLE_SEO_POLLUTION_PATTERN, value, re.IGNORECASE):
         flags.add("seo_title_pollution")
     url_tokens = set(semantic_detail_identity_tokens(page_url))
-    title_tokens = {token for token in re.findall(r"[a-z0-9]+", value.casefold()) if len(token) >= 3}
+    title_tokens = {
+        token for token in re.findall(r"[a-z0-9]+", value.casefold()) if len(token) >= 3
+    }
     overlap = len(url_tokens & title_tokens)
-    if len(title_tokens) == 1 and len(url_tokens) >= 2 and title_tokens < url_tokens:
+    missing_url_tokens = url_tokens - title_tokens
+    if (
+        len(title_tokens) == 1
+        and len(url_tokens) >= 2
+        and title_tokens < url_tokens
+        and any(any(char.isdigit() for char in token) for token in missing_url_tokens)
+    ):
         flags.add("truncated_title")
     if url_tokens and title_tokens:
-        flags.add("title_url_match" if overlap >= DETAIL_TITLE_URL_TOKEN_MIN_OVERLAP else "title_url_mismatch")
+        flags.add(
+            "title_url_match"
+            if overlap >= DETAIL_TITLE_URL_TOKEN_MIN_OVERLAP
+            else "title_url_mismatch"
+        )
     return flags
 
 
@@ -242,7 +390,9 @@ def _availability(value: str) -> str:
         return mapped
     normalized = re.sub(r"[^a-z0-9]+", " ", key).strip()
     for public_value, tokens in NORMALIZER_AVAILABILITY_TOKENS.items():
-        if normalized in {re.sub(r"[^a-z0-9]+", " ", token).strip() for token in tokens}:
+        if normalized in {
+            re.sub(r"[^a-z0-9]+", " ", token).strip() for token in tokens
+        }:
             return public_value
     return text
 
@@ -259,7 +409,11 @@ def _money(value: Any, flags: set[str]) -> str:
 def _currency_from_price_symbol(evidence: Evidence) -> Evidence | None:
     if evidence.fact_type != "offer.price" or not isinstance(evidence.raw_value, str):
         return None
-    currencies = {str(currency) for symbol, currency in CURRENCY_SYMBOL_MAP.items() if str(symbol) in evidence.raw_value}
+    currencies = {
+        str(currency)
+        for symbol, currency in CURRENCY_SYMBOL_MAP.items()
+        if str(symbol) in evidence.raw_value
+    }
     if len(currencies) != 1:
         return None
     currency = currencies.pop()
@@ -307,18 +461,24 @@ def _dedupe_equivalent(evidence: tuple[Evidence, ...]) -> tuple[Evidence, ...]:
 
 
 def _css_recipe_evidence(bundle, reader) -> tuple[Evidence, ...]:
-    rules_ref = next((ref for ref in bundle.artifacts if ref.artifact_id == "css_field_rules"), None)
+    rules_ref = next(
+        (ref for ref in bundle.artifacts if ref.artifact_id == "css_field_rules"), None
+    )
     rules = reader.read_json(rules_ref) if rules_ref is not None else []
     if not isinstance(rules, list):
         return ()
     doc = reader.document_store.html("html")
-    product_subject_id = stable_id("subject", bundle.bundle_id, "product", bundle.final_url)
+    product_subject_id = stable_id(
+        "subject", bundle.bundle_id, "product", bundle.final_url
+    )
     rows: list[Evidence] = []
     for row in rules:
         if not isinstance(row, dict) or not bool(row.get("is_active", True)):
             continue
         selector = str(row.get("css_selector") or "").strip()
-        fact_type = ECOMMERCE_DETAIL_FIELD_FACT_TYPES.get(normalize_field_key(str(row.get("field_name") or "")))
+        fact_type = field_mappings.ECOMMERCE_DETAIL_FIELD_FACT_TYPES.get(
+            normalize_field_key(str(row.get("field_name") or ""))
+        )
         if not selector or not fact_type:
             continue
         try:
@@ -336,7 +496,9 @@ def _css_recipe_evidence(bundle, reader) -> tuple[Evidence, ...]:
             parent_subject_id, group_id = None, "product"
             if fact_type.startswith("offer."):
                 hint = EntityHint(entity_type="offer", url=bundle.final_url)
-                subject_id = stable_id("subject", bundle.bundle_id, "offer", bundle.final_url)
+                subject_id = stable_id(
+                    "subject", bundle.bundle_id, "offer", bundle.final_url
+                )
                 parent_subject_id = product_subject_id
                 group_id = "offer"
             elif fact_type.startswith("asset."):
@@ -346,8 +508,14 @@ def _css_recipe_evidence(bundle, reader) -> tuple[Evidence, ...]:
                 group_id = "asset"
             rows.append(
                 make_evidence(
-                    bundle, "css_field_rules", "css_recipe", fact_type, value,
-                    SourceLocator(kind="css_selector", value=selector, preview=str(value)[:120]),
+                    bundle,
+                    "css_field_rules",
+                    "css_recipe",
+                    fact_type,
+                    value,
+                    SourceLocator(
+                        kind="css_selector", value=selector, preview=str(value)[:120]
+                    ),
                     hint=hint,
                     group_id=group_id,
                     confidence=0.86,

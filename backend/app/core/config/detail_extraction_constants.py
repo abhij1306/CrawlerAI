@@ -34,9 +34,7 @@ DETAIL_STATIC_NOT_FOUND_TITLE_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"^error\s+page$", re.I),
     re.compile(r"^your\s+ai-generated\s+outfit$", re.I),
     re.compile(r"^oops,?\s+something\s+went\s+wrong\.?$", re.I),
-    re.compile(
-        r"^oops!? the page you['’]re looking for can['’]t be found\.?$", re.I
-    ),
+    re.compile(r"^oops!? the page you['’]re looking for can['’]t be found\.?$", re.I),
     re.compile(r"\bpage\s+not\s+found\b", re.I),
     re.compile(r"\bnothing\s+to\s+see\s+here\b", re.I),
     re.compile(r"\bproduct\s+not\s+found\b", re.I),

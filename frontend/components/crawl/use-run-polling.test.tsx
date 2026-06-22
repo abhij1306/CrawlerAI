@@ -34,19 +34,30 @@ function SyncHarness({ run, terminal, refetch }: Readonly<SyncHarnessProps>) {
 }
 
 describe('useTerminalSync', () => {
-  it('refetches once per terminal sync key and reruns when key changes', async () => {
+  it('refetches only after an observed active run becomes terminal', async () => {
     const refetch = vi.fn().mockResolvedValue(undefined);
-    const run = makeTerminalRun();
-    const { rerender } = render(<SyncHarness run={run} terminal refetch={refetch} />);
+    const terminalRun = makeTerminalRun();
+    const activeRun = makeTerminalRun({
+      status: 'running',
+      completed_at: null,
+      updated_at: new Date('2026-04-08T10:04:00Z').toISOString(),
+    });
+    const { rerender } = render(
+      <SyncHarness run={terminalRun} terminal refetch={refetch} />,
+    );
 
+    expect(refetch).not.toHaveBeenCalled();
+
+    rerender(<SyncHarness run={activeRun} terminal={false} refetch={refetch} />);
+    expect(refetch).not.toHaveBeenCalled();
+
+    rerender(<SyncHarness run={terminalRun} terminal refetch={refetch} />);
     await waitFor(() => {
       expect(refetch).toHaveBeenCalledTimes(1);
     });
 
-    rerender(<SyncHarness run={run} terminal refetch={refetch} />);
-    await waitFor(() => {
-      expect(refetch).toHaveBeenCalledTimes(1);
-    });
+    rerender(<SyncHarness run={terminalRun} terminal refetch={refetch} />);
+    expect(refetch).toHaveBeenCalledTimes(1);
 
     rerender(
       <SyncHarness

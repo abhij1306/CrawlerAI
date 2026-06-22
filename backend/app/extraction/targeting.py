@@ -46,7 +46,9 @@ def select_subject_targets(
     return TargetSelection(
         status="resolved" if roots else "missing",
         root_entity_ids=tuple(roots),
-        selected_root_entity_id=roots[0] if spec.cardinality == "one" and roots else None,
+        selected_root_entity_id=roots[0]
+        if spec.cardinality == "one" and roots
+        else None,
     )
 
 

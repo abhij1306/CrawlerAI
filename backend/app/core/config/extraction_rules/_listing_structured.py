@@ -147,9 +147,7 @@ JOB_POSTING_PATH_MARKERS = tuple(
         )
     )
 )
-JOB_LISTING_HUB_TITLE_PREFIXES = (
-    "remote ",
-)
+JOB_LISTING_HUB_TITLE_PREFIXES = ("remote ",)
 JOB_LISTING_HUB_TITLE_SUFFIXES = (
     " jobs",
     " careers",
@@ -176,9 +174,7 @@ DETAIL_MODEL_NUMBER_TOKEN_PATTERNS = (
     ),
     r"(?<![A-Za-z0-9])\d{5,}(?![A-Za-z0-9])",
 )
-DETAIL_MODEL_SMALL_NUMERIC_TOKEN_PATTERN = (
-    r"(?<![A-Za-z0-9])\d{1,4}(?![A-Za-z0-9])"  # nosec B105
-)
+DETAIL_MODEL_SMALL_NUMERIC_TOKEN_PATTERN = r"(?<![A-Za-z0-9])\d{1,4}(?![A-Za-z0-9])"  # nosec B105
 DETAIL_MODEL_CONFLICT_MIN_SHARED_WORDS = 2
 REMOTE_BOOLEAN_TRUE_TOKENS = frozenset(
     {"true", "1", "yes", "remote", "fully remote", "work from home", "telecommute"}
@@ -223,6 +219,8 @@ DETAIL_CROSS_PRODUCT_TEXT_GENERIC_TOKENS = frozenset(
     }
 )
 DETAIL_TITLE_DIMENSION_SIZE_PATTERN = r"\b\d{2,}(?:\.\d+)?\s*(?:\"|in\.?|inch|inches)"
+DETAIL_TITLE_MEASUREMENT_FLAG = "measurement_title"
+DETAIL_TITLE_MEASUREMENT_PATTERN = r"^\d+(?:\.\d+)?\s*(?:(?:to|-)\s*\d+(?:\.\d+)?\s*)?(?:kg|g|lbs?|oz|cm|mm|ml|l|inches?|in|ft)$"
 DETAIL_DOM_SCALAR_SIZE_PATTERN = (
     r"\bsize\b\s*[:\-]?\s*"
     r"("
@@ -473,6 +471,7 @@ VARIANT_OPTION_VALUE_SUFFIX_NOISE_PATTERNS = tuple(
         )
     )
 )
+INVALID_AVAILABILITY_EVIDENCE_FLAG = "invalid_availability"
 AVAILABILITY_URL_MAP = {
     "https://schema.org/instock": "in_stock",
     "http://schema.org/instock": "in_stock",

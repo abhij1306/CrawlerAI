@@ -31,7 +31,11 @@ from harness.support import require_explicit_surface
 
 BATCHES: dict[str, list[tuple[str, str, str]]] = {
     "api": [
-        ("Allbirds products.json", "https://www.allbirds.com/products.json", "ecommerce_listing"),
+        (
+            "Allbirds products.json",
+            "https://www.allbirds.com/products.json",
+            "ecommerce_listing",
+        ),
         (
             "OpenFoodFacts sodas.json",
             "https://world.openfoodfacts.org/category/sodas.json",
@@ -41,19 +45,51 @@ BATCHES: dict[str, list[tuple[str, str, str]]] = {
         ("RemoteOK API", "https://remoteok.com/api", "job_listing"),
     ],
     "commerce": [
-        ("Allbirds PDP", "https://www.allbirds.com/products/mens-wool-runners", "ecommerce_detail"),
-        ("Allbirds listing", "https://www.allbirds.com/collections/mens", "ecommerce_listing"),
-        ("Gymshark listing", "https://www.gymshark.com/collections/all-products", "ecommerce_listing"),
-        ("Puma mens listing", "https://us.puma.com/us/en/men/shop-all-mens", "ecommerce_listing"),
-        ("Converse mens listing", "https://www.converse.com/shop/mens-shoes", "ecommerce_listing"),
-        ("UnderArmour mens listing", "https://www.underarmour.com/en-us/c/mens/", "ecommerce_listing"),
+        (
+            "Allbirds PDP",
+            "https://www.allbirds.com/products/mens-wool-runners",
+            "ecommerce_detail",
+        ),
+        (
+            "Allbirds listing",
+            "https://www.allbirds.com/collections/mens",
+            "ecommerce_listing",
+        ),
+        (
+            "Gymshark listing",
+            "https://www.gymshark.com/collections/all-products",
+            "ecommerce_listing",
+        ),
+        (
+            "Puma mens listing",
+            "https://us.puma.com/us/en/men/shop-all-mens",
+            "ecommerce_listing",
+        ),
+        (
+            "Converse mens listing",
+            "https://www.converse.com/shop/mens-shoes",
+            "ecommerce_listing",
+        ),
+        (
+            "UnderArmour mens listing",
+            "https://www.underarmour.com/en-us/c/mens/",
+            "ecommerce_listing",
+        ),
     ],
     "jobs": [
-        ("Greenhouse board", "https://boards.greenhouse.io/embed/job_board?for=stripe", "job_listing"),
+        (
+            "Greenhouse board",
+            "https://boards.greenhouse.io/embed/job_board?for=stripe",
+            "job_listing",
+        ),
         ("Lever board", "https://jobs.lever.co/reddit", "job_listing"),
         ("Remotive jobs page", "https://remotive.com/remote-jobs", "job_listing"),
         ("RemoteOK jobs page", "https://remoteok.com/remote-dev-jobs", "job_listing"),
-        ("Himalayas detail", "https://himalayas.app/jobs/product-designer/runway", "job_detail"),
+        (
+            "Himalayas detail",
+            "https://himalayas.app/jobs/product-designer/runway",
+            "job_detail",
+        ),
     ],
     "hard": [
         (
@@ -66,8 +102,16 @@ BATCHES: dict[str, list[tuple[str, str, str]]] = {
             "https://www.johnlewis.com/browse/electricals/c6000014",
             "ecommerce_listing",
         ),
-        ("Nike mens shoes", "https://www.nike.com/w/mens-shoes-nik1zy7ok", "ecommerce_listing"),
-        ("Dyson air treatment", "https://www.dyson.in/air-treatment", "ecommerce_listing"),
+        (
+            "Nike mens shoes",
+            "https://www.nike.com/w/mens-shoes-nik1zy7ok",
+            "ecommerce_listing",
+        ),
+        (
+            "Dyson air treatment",
+            "https://www.dyson.in/air-treatment",
+            "ecommerce_listing",
+        ),
     ],
     "ats": [
         (
@@ -100,7 +144,9 @@ BATCHES: dict[str, list[tuple[str, str, str]]] = {
 }
 
 
-async def _run_one(run_id: int, name: str, url: str, surface: str, timeout_seconds: int) -> dict:
+async def _run_one(
+    run_id: int, name: str, url: str, surface: str, timeout_seconds: int
+) -> dict:
     started = time.perf_counter()
     surface = require_explicit_surface(surface)
     try:
@@ -156,7 +202,9 @@ async def _run_batch(
     results: list[dict] = []
     for offset, (name, url, surface) in enumerate(BATCHES[batch_name], start=1):
         results.append(
-            await _run_one(start_run_id + offset - 1, name, url, surface, timeout_seconds)
+            await _run_one(
+                start_run_id + offset - 1, name, url, surface, timeout_seconds
+            )
         )
     return results
 

@@ -28,7 +28,9 @@ PUBLIC_MAP = {
 }
 
 
-def lineage(decision: Decision | None = None, derived: DerivedFact | None = None) -> dict[str, object]:
+def lineage(
+    decision: Decision | None = None, derived: DerivedFact | None = None
+) -> dict[str, object]:
     if derived is not None:
         return {
             "derived_fact_id": derived.derived_fact_id,
@@ -52,21 +54,28 @@ def materialize(
     canonical_url: str,
 ) -> CommerceDetailRecord:
     by_id = {ev.evidence_id: ev for ev in evidence}
-    derived = {(item.entity_id, item.fact_type): item for item in resolution.derived_facts}
+    derived = {
+        (item.entity_id, item.fact_type): item for item in resolution.derived_facts
+    }
     record: dict[str, object] = {}
     lineages: dict[str, object] = {}
     selector_traces: dict[str, object] = {}
     for decision in resolution.decisions:
         field = PUBLIC_MAP.get(decision.fact_type)
-        if not field or decision.status != "resolved" or not decision.accepted_evidence_ids:
+        if (
+            not field
+            or decision.status != "resolved"
+            or not decision.accepted_evidence_ids
+        ):
             continue
         value = derived.get((decision.entity_id, decision.fact_type))
         accepted = by_id[decision.accepted_evidence_ids[0]]
         record[field] = value.value if value is not None else accepted.value
-        lineages[field] = lineage(derived=value) if value else lineage(decision=decision)
-        if (
-            accepted.locator.kind == "css_selector"
-            and not accepted.metadata.get("derived_by")
+        lineages[field] = (
+            lineage(derived=value) if value else lineage(decision=decision)
+        )
+        if accepted.locator.kind == "css_selector" and not accepted.metadata.get(
+            "derived_by"
         ):
             selector_traces[field] = {
                 "selector_kind": "css_selector",
@@ -105,20 +114,25 @@ def _cohere_parent_availability(
     expected_variant_count: int,
 ) -> None:
     if len(variants) != expected_variant_count or any(
-        isinstance(row.get("availability"), dict)
-        and row["availability"].get("rule_id") == DETAIL_PARENT_OFFER_INHERITANCE_RULE_ID
+        isinstance(availability_lineage := row.get("availability"), dict)
+        and availability_lineage.get("rule_id")
+        == DETAIL_PARENT_OFFER_INHERITANCE_RULE_ID
         for row in variant_lineage
     ):
         return
     availability = [str(row.get("availability") or "") for row in variants]
-    if not availability or any(value not in {"in_stock", "out_of_stock"} for value in availability):
+    if not availability or any(
+        value not in {"in_stock", "out_of_stock"} for value in availability
+    ):
         return
     evidence_ids = tuple(
         str(evidence_id)
         for row in variant_lineage
         for evidence_id in _lineage_evidence_ids(row.get("availability"))
     )
-    record["availability"] = "in_stock" if "in_stock" in availability else "out_of_stock"
+    record["availability"] = (
+        "in_stock" if "in_stock" in availability else "out_of_stock"
+    )
     lineages["availability"] = {
         "rule_id": "variant_availability_aggregate",
         "evidence_ids": list(dict.fromkeys(evidence_ids)),
@@ -139,8 +153,14 @@ def _variants(
     resolution: ResolutionResult,
     by_id: dict[str, Evidence],
 ) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
-    decisions = {(d.entity_id, d.fact_type): d for d in resolution.decisions if d.status == "resolved"}
-    derived = {(item.entity_id, item.fact_type): item for item in resolution.derived_facts}
+    decisions = {
+        (d.entity_id, d.fact_type): d
+        for d in resolution.decisions
+        if d.status == "resolved"
+    }
+    derived = {
+        (item.entity_id, item.fact_type): item for item in resolution.derived_facts
+    }
     rows: list[dict[str, object]] = []
     lineage_rows: list[dict[str, object]] = []
     offer_by_variant = {
@@ -184,15 +204,33 @@ def _publishable_variant_row(variant, row: dict[str, object]) -> bool:
 
 
 def _has_variant_option(row: dict[str, object]) -> bool:
-    transport_fields = {"variant_id", "sku", "gtin", "url", "image_url", "price", "currency", "availability", "stock_quantity"}
-    return any(key not in transport_fields and value not in (None, "", [], {}, ()) for key, value in row.items())
+    transport_fields = {
+        "variant_id",
+        "sku",
+        "gtin",
+        "url",
+        "image_url",
+        "price",
+        "currency",
+        "availability",
+        "stock_quantity",
+    }
+    return any(
+        key not in transport_fields and value not in (None, "", [], {}, ())
+        for key, value in row.items()
+    )
 
 
 def _has_variant_commercial_fact(row: dict[str, object]) -> bool:
-    return any(row.get(field) not in (None, "", [], {}, ()) for field in ("price", "currency", "availability", "stock_quantity"))
+    return any(
+        row.get(field) not in (None, "", [], {}, ())
+        for field in ("price", "currency", "availability", "stock_quantity")
+    )
 
 
-def _variant_public_row(variant, decisions, derived, by_id, offer, asset) -> tuple[dict[str, object], dict[str, object]]:
+def _variant_public_row(
+    variant, decisions, derived, by_id, offer, asset
+) -> tuple[dict[str, object], dict[str, object]]:
     row: dict[str, object] = {}
     lineage_row: dict[str, object] = {}
     for fact, field in {
@@ -219,15 +257,29 @@ def _variant_option_lineage(variant, decisions, lineage_row: dict[str, object]) 
             lineage_row[fact_type.rsplit(".", 1)[-1]] = lineage(decision=decision)
 
 
-def _variant_offer_fields(row, lineage_row, variant, offer, decisions, derived, by_id) -> None:
-    for fact, field in {"offer.price": "price", "offer.currency": "currency", "offer.original_price": "original_price", "offer.availability": "availability", "offer.stock_quantity": "stock_quantity"}.items():
+def _variant_offer_fields(
+    row, lineage_row, variant, offer, decisions, derived, by_id
+) -> None:
+    for fact, field in {
+        "offer.price": "price",
+        "offer.currency": "currency",
+        "offer.original_price": "original_price",
+        "offer.availability": "availability",
+        "offer.stock_quantity": "stock_quantity",
+    }.items():
         decision = decisions.get((offer.entity_id, fact)) if offer else None
         decision = decision or decisions.get((variant.entity_id, fact))
         if not decision or not decision.accepted_evidence_ids:
             continue
         value = derived.get((decision.entity_id, fact))
-        row[field] = value.value if value is not None else by_id[decision.accepted_evidence_ids[0]].value
-        lineage_row[field] = lineage(derived=value) if value else lineage(decision=decision)
+        row[field] = (
+            value.value
+            if value is not None
+            else by_id[decision.accepted_evidence_ids[0]].value
+        )
+        lineage_row[field] = (
+            lineage(derived=value) if value else lineage(decision=decision)
+        )
 
 
 def _variant_asset_field(row, lineage_row, asset, decisions, by_id) -> None:
@@ -244,7 +296,9 @@ def _size_sort_key(value: object) -> tuple[int, str]:
 
 
 def _typed_detail_record(record: dict[str, object]) -> CommerceDetailRecord:
-    cleaned = {key: value for key, value in record.items() if value not in (None, "", [], {})}
+    cleaned = {
+        key: value for key, value in record.items() if value not in (None, "", [], {})
+    }
     variants = cleaned.get("variants")
     if isinstance(variants, list):
         cleaned["variants"] = tuple(
@@ -260,7 +314,9 @@ def _materialize_product_assets(
     lineages: dict[str, object],
     asset_decisions: tuple[AssetDecision, ...],
 ) -> None:
-    selected = [item for item in asset_decisions if item.url and item.accepted_evidence_ids]
+    selected = [
+        item for item in asset_decisions if item.url and item.accepted_evidence_ids
+    ]
     primary = next((item for item in selected if item.role == "primary"), None)
     if primary is None:
         return

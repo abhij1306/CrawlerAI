@@ -53,5 +53,3 @@ async def test_list_and_revoke_api_keys_are_user_scoped(db_session, test_user) -
 async def test_create_api_key_rejects_empty_name(db_session, test_user) -> None:
     with pytest.raises(ValueError, match="must not be empty"):
         await create_api_key(db_session, user_id=test_user.id, name=" ")
-
-

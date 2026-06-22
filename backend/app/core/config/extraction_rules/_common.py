@@ -32,7 +32,7 @@ _STATIC_EXPORTS: dict[str, Any] = {}
 HYDRATED_STATE_PATTERNS = tuple(
     dict.fromkeys(
         [
-            *( 
+            *(
                 value
                 for value in _STATIC_EXPORTS.get("HYDRATED_STATE_PATTERNS", ())
                 if str(value).strip()
@@ -78,6 +78,31 @@ TRACKING_PIXEL_PATTERNS = (
 )
 DETAIL_SURFACE_KEYWORD = "detail"
 ECOMMERCE_DETAIL_SURFACE = "ecommerce_detail"
+ECOMMERCE_CONTEXT_NOISE_PATH_TOKENS = frozenset(
+    {
+        "alsobought",
+        "also_bought",
+        "crosssell",
+        "cross_sell",
+        "peoplealsobought",
+        "people_also_bought",
+        "recommendations",
+        "recommended",
+        "related",
+        "relatedproducts",
+        "related_products",
+        "recentlyviewed",
+        "recently_viewed",
+        "similarproducts",
+        "similar_products",
+        "suggestedproducts",
+        "suggested_products",
+        "upsell",
+        "up_sell",
+        "youmayalsolike",
+        "you_may_also_like",
+    }
+)
 VARIANT_AXIS_EXCLUDED_SINGLE_TOKENS = frozenset({"color", "colour", "fit", "size"})
 VARIANT_COLOR_AXIS_TOKENS = frozenset({"color", "colour"})
 VARIANT_SIZE_AXIS_TOKENS = frozenset({"fit", "size"})
@@ -450,6 +475,7 @@ def _string_frozenset(value: object) -> frozenset[str]:
         return frozenset()
     return frozenset(str(item).strip() for item in values if str(item).strip())
 
+
 __all__ = [
     "annotations",
     "re",
@@ -485,6 +511,7 @@ __all__ = [
     "TRACKING_PIXEL_PATTERNS",
     "DETAIL_SURFACE_KEYWORD",
     "ECOMMERCE_DETAIL_SURFACE",
+    "ECOMMERCE_CONTEXT_NOISE_PATH_TOKENS",
     "VARIANT_AXIS_EXCLUDED_SINGLE_TOKENS",
     "VARIANT_COLOR_AXIS_TOKENS",
     "VARIANT_SIZE_AXIS_TOKENS",

@@ -425,8 +425,12 @@ class CrawlerRuntimeSettings(BaseSettings):
             "acquisition_artifact_cleanup_interval_seconds",
         ):
             _require_non_negative(field_name, getattr(self, field_name))
-        _require_positive("host_memory_ttl_min_seconds", self.host_memory_ttl_min_seconds)
-        _require_positive("host_memory_ttl_max_seconds", self.host_memory_ttl_max_seconds)
+        _require_positive(
+            "host_memory_ttl_min_seconds", self.host_memory_ttl_min_seconds
+        )
+        _require_positive(
+            "host_memory_ttl_max_seconds", self.host_memory_ttl_max_seconds
+        )
         if self.host_memory_ttl_max_seconds < self.host_memory_ttl_min_seconds:
             raise ValueError(
                 "host_memory_ttl_max_seconds must be >= host_memory_ttl_min_seconds"
@@ -434,7 +438,9 @@ class CrawlerRuntimeSettings(BaseSettings):
         if not str(self.host_memory_ttl_seconds_key or "").strip():
             raise ValueError("host_memory_ttl_seconds_key must not be blank")
         _require_positive("detail_max_variant_axes", self.detail_max_variant_axes)
-        _require_non_negative("detail_max_variant_matrix_cells", self.detail_max_variant_matrix_cells)
+        _require_non_negative(
+            "detail_max_variant_matrix_cells", self.detail_max_variant_matrix_cells
+        )
         _require_non_negative("detail_max_variant_rows", self.detail_max_variant_rows)
         if self.detail_max_variant_rows > 0:
             required_cells = self.detail_max_variant_rows * self.detail_max_variant_axes
@@ -517,8 +523,12 @@ class CrawlerRuntimeSettings(BaseSettings):
         self.worker_orphan_recovery_grace_seconds = max(
             int(self.worker_orphan_recovery_grace_seconds), 60
         )
-        _require_positive("api_rate_limit_max_requests", self.api_rate_limit_max_requests)
-        _require_positive("api_rate_limit_window_seconds", self.api_rate_limit_window_seconds)
+        _require_positive(
+            "api_rate_limit_max_requests", self.api_rate_limit_max_requests
+        )
+        _require_positive(
+            "api_rate_limit_window_seconds", self.api_rate_limit_window_seconds
+        )
         _require_positive("api_rate_limit_max_clients", self.api_rate_limit_max_clients)
 
     def _validate_crawl_and_run_settings(self) -> None:
@@ -526,7 +536,9 @@ class CrawlerRuntimeSettings(BaseSettings):
             raise ValueError("min_max_pages must be >= 1")
         if self.max_max_pages < self.min_max_pages:
             raise ValueError("max_max_pages must be >= min_max_pages")
-        _require_unit_interval("llm_confidence_threshold", self.llm_confidence_threshold)
+        _require_unit_interval(
+            "llm_confidence_threshold", self.llm_confidence_threshold
+        )
         if self.run_quality_threshold_high < self.run_quality_threshold_medium:
             raise ValueError(
                 "run_quality_threshold_high must be >= run_quality_threshold_medium"
@@ -584,6 +596,7 @@ class CrawlerRuntimeSettings(BaseSettings):
 
 
 crawler_runtime_settings = CrawlerRuntimeSettings()
+
 
 def browser_capture_max_network_payloads() -> int:
     return crawler_runtime_settings.browser_capture_max_network_payloads

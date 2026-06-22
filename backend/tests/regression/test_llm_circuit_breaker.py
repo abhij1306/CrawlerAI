@@ -16,9 +16,11 @@ def test_record_local_failure_uses_default_threshold_when_setting_is_none(
         None,
     )
 
-    default_threshold = type(
-        llm_circuit_breaker.llm_runtime_settings
-    ).model_fields["circuit_failure_threshold"].default
+    default_threshold = (
+        type(llm_circuit_breaker.llm_runtime_settings)
+        .model_fields["circuit_failure_threshold"]
+        .default
+    )
 
     for _ in range(default_threshold):
         llm_circuit_breaker._record_local_failure(
@@ -64,9 +66,12 @@ async def test_record_failure_normalizes_none_threshold_for_redis(
         llm_circuit_breaker.LLMErrorCategory.TIMEOUT,
     )
 
-    assert seen_args[6] == type(
-        llm_circuit_breaker.llm_runtime_settings
-    ).model_fields["circuit_failure_threshold"].default
+    assert (
+        seen_args[6]
+        == type(llm_circuit_breaker.llm_runtime_settings)
+        .model_fields["circuit_failure_threshold"]
+        .default
+    )
 
 
 @pytest.mark.regression

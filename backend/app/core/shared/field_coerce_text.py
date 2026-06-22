@@ -1,4 +1,5 @@
 """Text identity coercion helpers for public field shaping."""
+
 from __future__ import annotations
 
 import re

@@ -4,7 +4,10 @@ import re
 from difflib import SequenceMatcher
 from urllib.parse import urlsplit
 
-from app.core.shared.field_coerce import infer_brand_from_product_url, infer_brand_from_title_marker
+from app.core.shared.field_coerce import (
+    infer_brand_from_product_url,
+    infer_brand_from_title_marker,
+)
 from app.core.config.product_intelligence import (
     BRAND_ALIAS_MAP,
     BRAND_DOMAIN_MAP,
@@ -69,7 +72,9 @@ def normalize_brand(value: object) -> str:
 
 
 def is_private_label(brand: object) -> bool:
-    return normalize_brand(brand) in PRIVATE_LABEL_BRANDS or is_belk_exclusive_brand(brand)
+    return normalize_brand(brand) in PRIVATE_LABEL_BRANDS or is_belk_exclusive_brand(
+        brand
+    )
 
 
 def source_domain(url: object) -> str:
@@ -100,15 +105,23 @@ def extract_product_snapshot(record: object) -> dict[str, object]:
         "brand": str(brand or "").strip(),
         "normalized_brand": normalize_brand(brand),
         "price": price,
-        "currency": str(_first_present(data, SOURCE_CURRENCY_FIELDS) or _currency_from_price(price_value) or "").strip(),
+        "currency": str(
+            _first_present(data, SOURCE_CURRENCY_FIELDS)
+            or _currency_from_price(price_value)
+            or ""
+        ).strip(),
         "image_url": str(_first_present(data, SOURCE_IMAGE_FIELDS) or "").strip(),
         "url": str(source_url or "").strip(),
         "sku": sku_value,
         "mpn": mpn_value,
         "gtin": gtin_value,
         "style": style_value,
-        "style_code": manufacturer_style_code(sku_value, style_value, mpn_value, gtin_value=gtin_value),
-        "availability": str(_first_present(data, SOURCE_AVAILABILITY_FIELDS) or "").strip(),
+        "style_code": manufacturer_style_code(
+            sku_value, style_value, mpn_value, gtin_value=gtin_value
+        ),
+        "availability": str(
+            _first_present(data, SOURCE_AVAILABILITY_FIELDS) or ""
+        ).strip(),
         "raw": data,
     }
 
@@ -156,10 +169,16 @@ def _score_base_signals(
 
     source_brand = normalize_brand(source.get("brand"))
     candidate_brand = normalize_brand(candidate.get("brand"))
-    if not candidate_brand and source_brand and _candidate_mentions_source_brand(source, candidate):
+    if (
+        not candidate_brand
+        and source_brand
+        and _candidate_mentions_source_brand(source, candidate)
+    ):
         candidate_brand = source_brand
         reasons["brand_from_candidate_evidence"] = True
-    brand_match = bool(source_brand and candidate_brand and source_brand == candidate_brand)
+    brand_match = bool(
+        source_brand and candidate_brand and source_brand == candidate_brand
+    )
     if brand_match:
         score += MATCH_SCORE_WEIGHTS["brand_match"]
     reasons["brand_match"] = brand_match
@@ -250,7 +269,11 @@ def _apply_identity_floor(
         # Brand's own listing always ranks highest.
         score = max(score, MATCH_SCORE_FLOOR_BRAND_DTC)
         match_basis = MATCH_BASIS_BRAND_DTC
-    elif not variant_mismatch and brand_match and title_similarity >= MATCH_TITLE_SIM_HIGH:
+    elif (
+        not variant_mismatch
+        and brand_match
+        and title_similarity >= MATCH_TITLE_SIM_HIGH
+    ):
         floor = (
             MATCH_SCORE_FLOOR_BRAND_TITLE_PRICE_HIGH
             if price_match
@@ -298,9 +321,15 @@ def extract_search_result_snapshot(
         source=merged.get("source"),
     )
     candidate_sku = str(_first_present(merged, ("sku",)) or "").strip()
-    candidate_mpn = str(_first_present(merged, ("mpn", "model", "model_number", "part_number")) or "").strip()
-    candidate_gtin = str(_first_present(merged, ("gtin", "barcode", "sku_upc", "upc", "ean")) or "").strip()
-    candidate_style = str(_first_present(merged, ("style", "style_id", "product_id")) or "").strip()
+    candidate_mpn = str(
+        _first_present(merged, ("mpn", "model", "model_number", "part_number")) or ""
+    ).strip()
+    candidate_gtin = str(
+        _first_present(merged, ("gtin", "barcode", "sku_upc", "upc", "ean")) or ""
+    ).strip()
+    candidate_style = str(
+        _first_present(merged, ("style", "style_id", "product_id")) or ""
+    ).strip()
     return {
         "title": str(merged.get("title") or "").strip(),
         "brand": brand,
@@ -308,7 +337,9 @@ def extract_search_result_snapshot(
         "price": _as_float(price_value),
         "currency": _currency_from_price(price_value),
         "description": str(description or "").strip(),
-        "image_url": str(_first_present(merged, ("thumbnail", "image", "favicon")) or "").strip(),
+        "image_url": str(
+            _first_present(merged, ("thumbnail", "image", "favicon")) or ""
+        ).strip(),
         "url": str(url or merged.get("link") or "").strip(),
         "sku": candidate_sku,
         "mpn": candidate_mpn,
@@ -328,7 +359,9 @@ def extract_search_result_snapshot(
         ),
         "availability": str(merged.get("availability") or "").strip(),
         "snippet": str(merged.get("snippet") or "").strip(),
-        "source": str(merged.get("source") or merged.get("displayed_link") or domain or "").strip(),
+        "source": str(
+            merged.get("source") or merged.get("displayed_link") or domain or ""
+        ).strip(),
         "product_id": str(merged.get("product_id") or "").strip(),
         "product_link": str(merged.get("product_link") or "").strip(),
         "provider": str(merged.get("provider") or "").strip(),
@@ -364,11 +397,18 @@ def build_search_result_intelligence(
         url=candidate_url,
         domain=candidate_domain,
     )
-    if not normalize_brand(canonical.get("brand")) and _candidate_mentions_source_brand(source, canonical):
+    if not normalize_brand(canonical.get("brand")) and _candidate_mentions_source_brand(
+        source, canonical
+    ):
         canonical["brand"] = str(source.get("brand") or "").strip()
         canonical["normalized_brand"] = normalize_brand(canonical["brand"])
-    deterministic = score_candidate(source=source, candidate=canonical, source_type=source_type)
-    provider = str((candidate_payload or {}).get("provider") or "search").strip().lower() or "search"
+    deterministic = score_candidate(
+        source=source, candidate=canonical, source_type=source_type
+    )
+    provider = (
+        str((candidate_payload or {}).get("provider") or "search").strip().lower()
+        or "search"
+    )
     return {
         "canonical_record": canonical,
         "confidence_score": deterministic["score"],
@@ -419,7 +459,9 @@ def _infer_brand(
     if registry_prefix_brand:
         return registry_prefix_brand
     if _is_belk_source(source_url, domain, source):
-        belk_brand = infer_belk_brand(_url_path_text(source_url), title, snippet, source)
+        belk_brand = infer_belk_brand(
+            _url_path_text(source_url), title, snippet, source
+        )
         if belk_brand:
             return belk_brand
     return infer_brand_from_product_url(url=str(source_url or ""), title=title) or ""
@@ -447,10 +489,16 @@ def _url_path_text(value: object) -> str:
 
 
 def _infer_known_brand(*values: object) -> str:
-    haystack = " ".join(str(value or "") for value in values).casefold().replace("-", " ")
+    haystack = (
+        " ".join(str(value or "") for value in values).casefold().replace("-", " ")
+    )
     normalized = re.sub(r"[^a-z0-9]+", " ", haystack)
     compact = re.sub(r"[^a-z0-9]+", "", haystack)
-    known_brands = {*BRAND_ALIAS_MAP.values(), *BRAND_ALIAS_MAP.keys(), *BRAND_DOMAIN_MAP.keys()}
+    known_brands = {
+        *BRAND_ALIAS_MAP.values(),
+        *BRAND_ALIAS_MAP.keys(),
+        *BRAND_DOMAIN_MAP.keys(),
+    }
     for brand in sorted(known_brands, key=len, reverse=True):
         normalized_brand = brand.replace("-", " ")
         compact_brand = re.sub(r"[^a-z0-9]+", "", normalized_brand)
@@ -494,11 +542,12 @@ def _title_similarity(left: str, right: str) -> float:
     larger_coverage = len(intersection) / larger_size if larger_size > 0 else 0.0
     size_balance = smaller_size / larger_size if larger_size > 0 else 0.0
 
-    sequence = SequenceMatcher(
-        None,
-        " ".join(sorted(left_tokens)),
-        " ".join(sorted(right_tokens))
-    ).ratio() * size_balance
+    sequence = (
+        SequenceMatcher(
+            None, " ".join(sorted(left_tokens)), " ".join(sorted(right_tokens))
+        ).ratio()
+        * size_balance
+    )
 
     # Reward near-complete descriptive expansions, but only when the larger title is
     # also mostly covered and the overlap carries real specificity.
@@ -592,7 +641,9 @@ def _model_token_match(source: dict[str, object], candidate: dict[str, object]) 
     truncated candidate cannot promote itself.
     """
     source_tokens = _distinctive_model_tokens(source.get("title"), source.get("brand"))
-    candidate_tokens = _distinctive_model_tokens(candidate.get("title"), candidate.get("brand"))
+    candidate_tokens = _distinctive_model_tokens(
+        candidate.get("title"), candidate.get("brand")
+    )
     if not source_tokens or not candidate_tokens:
         return False
     shared = source_tokens & candidate_tokens
@@ -658,7 +709,10 @@ def _price_within_band(left: object, right: object) -> bool:
     right_price = _as_float(right)
     if left_price is None or right_price is None or left_price <= 0 or right_price <= 0:
         return False
-    return abs(left_price - right_price) / left_price <= product_intelligence_settings.price_band_ratio
+    return (
+        abs(left_price - right_price) / left_price
+        <= product_intelligence_settings.price_band_ratio
+    )
 
 
 def _as_float(value: object) -> float | None:

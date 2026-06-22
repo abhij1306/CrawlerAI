@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable, Literal, cast
 
+from app.core.config.extraction_rules import DETAIL_SHELL_FINDING_RULE_ID
 from app.extraction.contracts import (
     Decision,
     Evidence,
@@ -35,6 +36,7 @@ from app.extraction.pipeline import (
     collect_ecommerce_detail,
     materialize_ecommerce_detail,
     normalize_ecommerce_detail,
+    normalize_ecommerce_price_units,
 )
 from app.extraction.resolution import resolve as resolve_ecommerce_detail
 from app.extraction.result_building import (
@@ -70,9 +72,13 @@ ExtractionVerdict = Literal[
 @dataclass(frozen=True)
 class SurfaceRuntime:
     collect: Callable[[ExtractionRequest, SurfaceSpec], tuple[Evidence, ...]]
-    normalize: Callable[[tuple[Evidence, ...], ExtractionRequest, SurfaceSpec], tuple[Evidence, ...]]
+    normalize: Callable[
+        [tuple[Evidence, ...], ExtractionRequest, SurfaceSpec], tuple[Evidence, ...]
+    ]
     build_graph: Callable[[tuple[Evidence, ...], ExtractionRequest, SurfaceSpec], Any]
-    select_target: Callable[[Any, tuple[Evidence, ...], ExtractionRequest, SurfaceSpec], TargetSelection]
+    select_target: Callable[
+        [Any, tuple[Evidence, ...], ExtractionRequest, SurfaceSpec], TargetSelection
+    ]
     validate: Callable[
         [Any, TargetSelection, tuple[Evidence, ...], ExtractionRequest, SurfaceSpec],
         tuple[Finding, ...],
@@ -118,15 +124,21 @@ def extract(request: ExtractionRequest) -> ExtractionResult:
     graph_state = runtime.build_graph(normalized, request, spec)
     target = runtime.select_target(graph_state, normalized, request, spec)
     step_graph = _scoped_graph_for_steps(graph_state, target)
+    if spec.surface == Surface.ECOMMERCE_DETAIL:
+        normalized = normalize_ecommerce_price_units(normalized, step_graph)
     findings = runtime.validate(step_graph, target, normalized, request, spec)
     resolution = runtime.resolve(step_graph, normalized, findings, request, spec)
-    records = runtime.materialize(step_graph, resolution, normalized, findings, request, spec)
+    records = runtime.materialize(
+        step_graph, resolution, normalized, findings, request, spec
+    )
     if spec.surface == Surface.ECOMMERCE_DETAIL:
         findings = (
             *findings,
             *validate_selected_contract_fields(records, request.requested_fields),
         )
-    verdict = cast(ExtractionVerdict, runtime.assess(records, resolution, findings, request, spec))
+    verdict = cast(
+        ExtractionVerdict, runtime.assess(records, resolution, findings, request, spec)
+    )
     decisions = _decisions(resolution)
     graph = _entity_graph(graph_state, normalized, spec)
     return ExtractionResult(
@@ -140,7 +152,9 @@ def extract(request: ExtractionRequest) -> ExtractionResult:
         records=records if verdict in {"success", "partial", "review"} else (),
         verdict=verdict,
         retry_request=_retry_request(verdict, records, request, normalized),
-        metrics=_metrics(normalized, graph, target, findings, decisions, records, verdict),
+        metrics=_metrics(
+            normalized, graph, target, findings, decisions, records, verdict
+        ),
     )
 
 
@@ -153,7 +167,9 @@ def _identity_normalize(
     return evidence
 
 
-def _collect_detail(request: ExtractionRequest, spec: SurfaceSpec) -> tuple[Evidence, ...]:
+def _collect_detail(
+    request: ExtractionRequest, spec: SurfaceSpec
+) -> tuple[Evidence, ...]:
     del spec
     return collect_ecommerce_detail(
         request.capture,
@@ -162,17 +178,23 @@ def _collect_detail(request: ExtractionRequest, spec: SurfaceSpec) -> tuple[Evid
     )
 
 
-def _collect_listing(request: ExtractionRequest, spec: SurfaceSpec) -> tuple[Evidence, ...]:
+def _collect_listing(
+    request: ExtractionRequest, spec: SurfaceSpec
+) -> tuple[Evidence, ...]:
     del spec
     return tuple(collect_ecommerce_listing(request.capture, request.artifact_reader))
 
 
-def _collect_job_detail(request: ExtractionRequest, spec: SurfaceSpec) -> tuple[Evidence, ...]:
+def _collect_job_detail(
+    request: ExtractionRequest, spec: SurfaceSpec
+) -> tuple[Evidence, ...]:
     del spec
     return tuple(collect_job_detail(request.capture, request.artifact_reader))
 
 
-def _collect_job_listing(request: ExtractionRequest, spec: SurfaceSpec) -> tuple[Evidence, ...]:
+def _collect_job_listing(
+    request: ExtractionRequest, spec: SurfaceSpec
+) -> tuple[Evidence, ...]:
     del spec
     return tuple(collect_job_listing(request.capture, request.artifact_reader))
 
@@ -234,7 +256,9 @@ def _validate_job_detail(
     spec: SurfaceSpec,
 ) -> tuple[Finding, ...]:
     del graph, target, evidence, spec
-    return wrong_surface_findings_for_job_detail(request.capture, request.artifact_reader)
+    return wrong_surface_findings_for_job_detail(
+        request.capture, request.artifact_reader
+    )
 
 
 def _resolve_detail(
@@ -359,9 +383,11 @@ def _assess_detail(
     request: ExtractionRequest,
     spec: SurfaceSpec,
 ) -> str:
-    del findings, spec
+    del spec
     record = records[0] if records else None
-    if _is_shell_record(record):
+    if _is_shell_record(record) or any(
+        finding.rule_id == DETAIL_SHELL_FINDING_RULE_ID for finding in findings
+    ):
         return "error"
     return assess_ecommerce_detail_quality(
         record.model_dump(mode="python") if record is not None else {},
@@ -384,8 +410,44 @@ def _assess_records(
 
 
 _SURFACE_RUNTIMES: dict[Surface, SurfaceRuntime] = {
-    Surface.ECOMMERCE_DETAIL: SurfaceRuntime(collect=_collect_detail, normalize=_normalize_detail, build_graph=_build_commerce_graph, select_target=_select_commerce_target, validate=_validate_detail, resolve=_resolve_detail, materialize=_materialize_detail, assess=_assess_detail),
-    Surface.ECOMMERCE_LISTING: SurfaceRuntime(collect=_collect_listing, normalize=_identity_normalize, build_graph=_build_subject_graph, select_target=_select_subject_targets, validate=_validate_none, resolve=_resolve_listing, materialize=_materialize_listing, assess=_assess_records),
-    Surface.JOB_DETAIL: SurfaceRuntime(collect=_collect_job_detail, normalize=_identity_normalize, build_graph=_build_subject_graph, select_target=_select_subject_targets, validate=_validate_job_detail, resolve=_resolve_job_detail, materialize=_materialize_job_detail, assess=_assess_records),
-    Surface.JOB_LISTING: SurfaceRuntime(collect=_collect_job_listing, normalize=_identity_normalize, build_graph=_build_subject_graph, select_target=_select_subject_targets, validate=_validate_none, resolve=_resolve_job_listing, materialize=_materialize_job_listing, assess=_assess_records),
+    Surface.ECOMMERCE_DETAIL: SurfaceRuntime(
+        collect=_collect_detail,
+        normalize=_normalize_detail,
+        build_graph=_build_commerce_graph,
+        select_target=_select_commerce_target,
+        validate=_validate_detail,
+        resolve=_resolve_detail,
+        materialize=_materialize_detail,
+        assess=_assess_detail,
+    ),
+    Surface.ECOMMERCE_LISTING: SurfaceRuntime(
+        collect=_collect_listing,
+        normalize=_identity_normalize,
+        build_graph=_build_subject_graph,
+        select_target=_select_subject_targets,
+        validate=_validate_none,
+        resolve=_resolve_listing,
+        materialize=_materialize_listing,
+        assess=_assess_records,
+    ),
+    Surface.JOB_DETAIL: SurfaceRuntime(
+        collect=_collect_job_detail,
+        normalize=_identity_normalize,
+        build_graph=_build_subject_graph,
+        select_target=_select_subject_targets,
+        validate=_validate_job_detail,
+        resolve=_resolve_job_detail,
+        materialize=_materialize_job_detail,
+        assess=_assess_records,
+    ),
+    Surface.JOB_LISTING: SurfaceRuntime(
+        collect=_collect_job_listing,
+        normalize=_identity_normalize,
+        build_graph=_build_subject_graph,
+        select_target=_select_subject_targets,
+        validate=_validate_none,
+        resolve=_resolve_job_listing,
+        materialize=_materialize_job_listing,
+        assess=_assess_records,
+    ),
 }

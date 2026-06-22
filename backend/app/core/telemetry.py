@@ -14,6 +14,7 @@ from uuid import uuid4
 structlog: Any | None = None
 try:
     import structlog as _structlog
+
     structlog = _structlog
 except ImportError:  # pragma: no cover - optional dependency fallback
     pass
@@ -28,9 +29,8 @@ __all__ = [
 ]
 
 _correlation_id_ctx: ContextVar[str | None] = ContextVar("correlation_id", default=None)
-_ASYNCIO_EXCEPTION_FILTERS: "weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, object]" = (
-    weakref.WeakKeyDictionary()
-)
+_ASYNCIO_EXCEPTION_FILTERS: "weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, object]" = weakref.WeakKeyDictionary()
+
 
 def _add_correlation_id(
     logger: object,
@@ -54,12 +54,15 @@ def configure_logging() -> None:
         )
         return
 
-    shared_processors = cast(list[Any], [
-        structlog.stdlib.add_logger_name,
-        structlog.stdlib.add_log_level,
-        _add_correlation_id,
-        structlog.processors.TimeStamper(fmt="iso", utc=True),
-    ])
+    shared_processors = cast(
+        list[Any],
+        [
+            structlog.stdlib.add_logger_name,
+            structlog.stdlib.add_log_level,
+            _add_correlation_id,
+            structlog.processors.TimeStamper(fmt="iso", utc=True),
+        ],
+    )
     formatter = structlog.stdlib.ProcessorFormatter(
         foreign_pre_chain=shared_processors,
         processors=[
@@ -104,7 +107,10 @@ def _is_known_windows_pipe_reset(
     if not isinstance(exc, ConnectionResetError):
         return False
     winerror = getattr(exc, "winerror", None)
-    if winerror not in {None, 10054} and getattr(exc, "errno", None) != errno.ECONNRESET:
+    if (
+        winerror not in {None, 10054}
+        and getattr(exc, "errno", None) != errno.ECONNRESET
+    ):
         return False
     message = str(context.get("message") or "")
     handle = str(context.get("handle") or "")

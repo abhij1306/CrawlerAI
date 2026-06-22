@@ -56,7 +56,9 @@ def _product(
         sku=text_value(obj.get("sku")) or None,
         url=text_value(obj.get("url")) or None,
     )
-    product_subject = stable_id("subject", bundle.bundle_id, "product", hint.url or bundle.final_url)
+    product_subject = stable_id(
+        "subject", bundle.bundle_id, "product", hint.url or bundle.final_url
+    )
     out = [
         evidence(
             bundle,

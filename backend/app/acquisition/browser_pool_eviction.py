@@ -61,7 +61,11 @@ def _ttl_candidates(
         for key, runtime in tuple(pool.items()):
             active_and_queued, last_used = runtime.eviction_key()
             normalized_key = _normalized_pool_key(pool_name, key)
-            if active_and_queued == 0 and normalized_key is not None and runtime.idle_seconds() >= idle_ttl_seconds:
+            if (
+                active_and_queued == 0
+                and normalized_key is not None
+                and runtime.idle_seconds() >= idle_ttl_seconds
+            ):
                 rows.append((pool_name, normalized_key, runtime, last_used))
     return rows
 
@@ -70,7 +74,9 @@ def _remaining_idle_candidates(
     pools: tuple[tuple[str, dict[Any, Any]], ...],
     excluded: list[EvictionCandidate],
 ) -> list[EvictionCandidate]:
-    excluded_keys = {(pool_name, key) for pool_name, key, _runtime, _last_used in excluded}
+    excluded_keys = {
+        (pool_name, key) for pool_name, key, _runtime, _last_used in excluded
+    }
     rows: list[EvictionCandidate] = []
     for pool_name, pool in pools:
         for key, runtime in tuple(pool.items()):

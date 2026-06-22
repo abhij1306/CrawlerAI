@@ -33,4 +33,3 @@ async def test_apply_protected_host_backoff_extends_wait_window(
 
     assert sleeps
     assert sleeps[-1] >= 1.5
-

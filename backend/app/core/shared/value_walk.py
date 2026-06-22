@@ -91,7 +91,9 @@ def tokens(value: object) -> list[str]:
 
 
 def keyword_tokens(value: object, stopwords: set[str]) -> list[str]:
-    return [token for token in tokens(value) if len(token) >= 3 and token not in stopwords]
+    return [
+        token for token in tokens(value) if len(token) >= 3 and token not in stopwords
+    ]
 
 
 def term_present(text: str, term: object) -> bool:

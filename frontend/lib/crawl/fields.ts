@@ -35,9 +35,6 @@ export function uniqueRequestedFields(values: string[]) {
   return deduped;
 }
 
-export function uniqueNumbers(values: number[]) {
-  return Array.from(new Set(values));
-}
 
 export function uniqueStrings(values: string[]) {
   return Array.from(

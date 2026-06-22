@@ -124,7 +124,9 @@ async def _run_record_extraction(
         adapter_artifact_count=len(
             value
             if isinstance(
-                value := mapping_or_empty(getattr(acquisition_result, "artifacts", {})).get("adapter_artifacts"),
+                value := mapping_or_empty(
+                    getattr(acquisition_result, "artifacts", {})
+                ).get("adapter_artifacts"),
                 list,
             )
             else []
@@ -283,7 +285,9 @@ async def _update_acquisition_contract_memory(
         verdict=verdict,
         blocked=_effective_blocked(acquisition_result),
         page_url=getattr(acquisition_result, "final_url", "") or context.url,
-        network_payloads=list(getattr(acquisition_result, "network_payloads", []) or []),
+        network_payloads=list(
+            getattr(acquisition_result, "network_payloads", []) or []
+        ),
     )
 
 

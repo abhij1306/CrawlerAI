@@ -255,9 +255,13 @@ def validate_extraction_contract(contract_rows: list[dict]) -> None:
         if not field_name:
             errors.append(f"Row {index}: field_name is required")
         if not css_selector:
-            errors.append(f"Row {index} ({field_name or 'unnamed'}): css_selector is required")
+            errors.append(
+                f"Row {index} ({field_name or 'unnamed'}): css_selector is required"
+            )
         if str(row.get("xpath") or "").strip() or str(row.get("regex") or "").strip():
-            errors.append(f"Row {index} ({field_name or 'unnamed'}): only css_selector is supported")
+            errors.append(
+                f"Row {index} ({field_name or 'unnamed'}): only css_selector is supported"
+            )
 
     if errors:
         raise ValueError("; ".join(errors))

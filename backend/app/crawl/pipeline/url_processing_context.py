@@ -178,10 +178,16 @@ def build_url_processing_context(
         config,
         surface=run.surface,
         proxy_list=proxy_list if proxy_list is not None else settings_view.proxy_list(),
-        traversal_mode=traversal_mode if traversal_mode is not None else settings_view.traversal_mode(),
+        traversal_mode=traversal_mode
+        if traversal_mode is not None
+        else settings_view.traversal_mode(),
         max_pages=max_pages if max_pages is not None else settings_view.max_pages(),
-        max_scrolls=max_scrolls if max_scrolls is not None else settings_view.max_scrolls(),
-        max_records=max_records if max_records is not None else settings_view.max_records(),
+        max_scrolls=max_scrolls
+        if max_scrolls is not None
+        else settings_view.max_scrolls(),
+        max_records=max_records
+        if max_records is not None
+        else settings_view.max_records(),
         sleep_ms=sleep_ms if sleep_ms is not None else settings_view.sleep_ms(),
         update_run_state=update_run_state,
         persist_logs=persist_logs,

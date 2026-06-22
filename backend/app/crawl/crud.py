@@ -33,6 +33,7 @@ from app.core.url_safety import ensure_public_crawl_targets
 from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+
 async def create_crawl_run(
     session: AsyncSession, user_id: int, payload: dict
 ) -> CrawlRun:
@@ -125,30 +126,26 @@ async def list_runs(
 ) -> tuple[list[CrawlRun], int]:
     page = max(1, page)
     query = select(CrawlRun)
-    count_query = select(func.count()).select_from(CrawlRun)
     if user_id is not None:
         query = query.where(CrawlRun.user_id == user_id)
-        count_query = count_query.where(CrawlRun.user_id == user_id)
     if status:
         query = query.where(CrawlRun.status == status)
-        count_query = count_query.where(CrawlRun.status == status)
     if run_type:
         query = query.where(CrawlRun.run_type == run_type)
-        count_query = count_query.where(CrawlRun.run_type == run_type)
     if url_search:
         escaped = escape_like_pattern(url_search.lower())
         pattern = f"%{escaped}%"
         query = query.where(func.lower(CrawlRun.url).like(pattern, escape="\\"))
-        count_query = count_query.where(
-            func.lower(CrawlRun.url).like(pattern, escape="\\")
-        )
-    total = int((await session.execute(count_query)).scalar() or 0)
+    # Single query: data + total via window function — eliminates the serial count round-trip
     result = await session.execute(
-        query.order_by(CrawlRun.created_at.desc())
+        query.add_columns(func.count().over().label("total"))
+        .order_by(CrawlRun.created_at.desc())
         .offset((page - 1) * limit)
         .limit(limit)
     )
-    return list(result.scalars().all()), total
+    rows = result.all()
+    total = int(rows[0][1]) if rows else 0
+    return [row[0] for row in rows], total
 
 
 async def get_run(session: AsyncSession, run_id: int) -> CrawlRun | None:

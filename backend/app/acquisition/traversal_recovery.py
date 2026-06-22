@@ -71,14 +71,20 @@ if TYPE_CHECKING:
 
 
 async def find_actionable_locator(page, selector_group: str):
-    selectors = PAGINATION_SELECTORS.get(selector_group) if isinstance(PAGINATION_SELECTORS, dict) else []
+    selectors = (
+        PAGINATION_SELECTORS.get(selector_group)
+        if isinstance(PAGINATION_SELECTORS, dict)
+        else []
+    )
     for selector in selectors or []:
         locator = page.locator(str(selector)).first
         try:
             if await locator.count() == 0:
                 continue
             if not await locator.is_visible(
-                timeout=int(crawler_runtime_settings.traversal_locator_visible_timeout_ms)
+                timeout=int(
+                    crawler_runtime_settings.traversal_locator_visible_timeout_ms
+                )
             ):
                 continue
             if await locator.is_disabled():
@@ -133,7 +139,9 @@ async def _find_generic_next_page_locator(page):
             if selector == "link[rel='next']":
                 continue
             if not await locator.is_visible(
-                timeout=int(crawler_runtime_settings.traversal_locator_visible_timeout_ms)
+                timeout=int(
+                    crawler_runtime_settings.traversal_locator_visible_timeout_ms
+                )
             ):
                 continue
             if await locator.is_disabled():
@@ -143,7 +151,9 @@ async def _find_generic_next_page_locator(page):
                 or await _looks_like_next_page_control(locator)
             ):
                 continue
-            logger.info("Traversal generic next-page selector=%s url=%s", selector, page.url)
+            logger.info(
+                "Traversal generic next-page selector=%s url=%s", selector, page.url
+            )
             return locator
         except _RECOVERABLE_ERRORS:
             logger.debug(
@@ -216,14 +226,13 @@ async def recover_listing_page_content(
             )
     if diagnostics["status"] == "attempted":
         diagnostics["status"] = (
-            "recovered"
-            if clicked_count > 0
-            else "no_actionable_elements"
+            "recovered" if clicked_count > 0 else "no_actionable_elements"
         )
     diagnostics["clicked_count"] = clicked_count
     diagnostics["actions_taken"] = actions_taken
     diagnostics["click_retries"] = helper_result.click_retries
     return diagnostics
+
 
 async def _find_aom_actionable_locator(
     page,
@@ -249,7 +258,9 @@ async def _find_aom_actionable_locator(
             candidate = locator.nth(index)
             try:
                 if not await candidate.is_visible(
-                    timeout=int(crawler_runtime_settings.traversal_locator_visible_timeout_ms)
+                    timeout=int(
+                        crawler_runtime_settings.traversal_locator_visible_timeout_ms
+                    )
                 ):
                     continue
                 if await candidate.is_disabled():
@@ -273,6 +284,7 @@ async def _find_aom_actionable_locator(
                 )
                 continue
     return None
+
 
 async def _prepare_click_target(page, locator) -> bool:
     try:
@@ -375,6 +387,7 @@ async def click_with_retry(
     )
     return False
 
+
 async def locator_still_resolves(locator) -> bool:
     counter = getattr(locator, "count", None)
     if not callable(counter):
@@ -393,6 +406,7 @@ async def locator_still_resolves(locator) -> bool:
         if attempt == 0:
             await asyncio.sleep(0)
     return False
+
 
 async def _mute_intercepting_overlays(locator) -> bool:
     try:
@@ -451,6 +465,7 @@ async def dismiss_overlays_if_needed(
     consent_dismissed = await _dismiss_cookie_consent(page)
     if muted or consent_dismissed:
         result.overlays_dismissed = True
+
 
 async def _restore_overlays(page) -> None:
     """Restore overlay elements to their original inline styles after a click."""

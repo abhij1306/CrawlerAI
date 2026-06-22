@@ -46,6 +46,7 @@ def _safe_log_extra_token(value: object) -> str:
     text = str(value or "")[:128]
     return _LOG_EXTRA_TOKEN_RE.sub("_", text)
 
+
 def redis_is_enabled() -> bool:
     if not settings.redis_state_enabled:
         return False
@@ -56,10 +57,7 @@ def _temporarily_disable_redis(_exc: Exception) -> None:
     now = time.monotonic()
     _redis_failure_state.disabled_until = now + _DISABLE_COOLDOWN_SECONDS
     _redis_failure_state.total += 1
-    if (
-        now - _redis_failure_state.last_disable_log_at
-        >= _DISABLE_COOLDOWN_SECONDS
-    ):
+    if now - _redis_failure_state.last_disable_log_at >= _DISABLE_COOLDOWN_SECONDS:
         logger.warning(
             "Redis unavailable; disabling shared state for %.0fs",
             _DISABLE_COOLDOWN_SECONDS,

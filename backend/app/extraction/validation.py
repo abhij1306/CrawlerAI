@@ -3,6 +3,11 @@ from __future__ import annotations
 from collections import Counter
 from decimal import Decimal, InvalidOperation
 
+from app.core.config.extraction_rules import (
+    DETAIL_SHELL_FINDING_RULE_ID,
+    DETAIL_SHELL_TITLE_FLAG,
+    DETAIL_TITLE_REJECTION_FLAGS,
+)
 from app.core.config.field_mappings import SURFACE_FIELD_REPAIR_TARGETS
 from app.extraction.contracts import Evidence, Finding, PublicRecord
 from app.extraction.entities import EntitySet
@@ -16,6 +21,7 @@ def validate(
 ) -> tuple[Finding, ...]:
     return (
         *_validate_identity(evidence, entities),
+        *_validate_shell_title(evidence, entities),
         *_validate_variants(entities),
         *_validate_offers(evidence, entities),
         *_validate_availability_consistency(evidence, entities),
@@ -83,6 +89,39 @@ def _validate_identity(
             ),
         )
     return ()
+
+
+def _validate_shell_title(
+    evidence: tuple[Evidence, ...], entities: EntitySet
+) -> tuple[Finding, ...]:
+    if len(entities.products) != 1:
+        return ()
+    product = entities.products[0]
+    by_id = {row.evidence_id: row for row in evidence}
+    titles = tuple(
+        by_id[eid]
+        for eid in product.attribute_evidence.get("product.title", ())
+        if eid in by_id
+    )
+    shell_ids = tuple(
+        row.evidence_id for row in titles if DETAIL_SHELL_TITLE_FLAG in row.flags
+    )
+    has_admissible_title = any(
+        row.collector_id != "url"
+        and not set(row.flags).intersection(DETAIL_TITLE_REJECTION_FLAGS)
+        for row in titles
+    )
+    if not shell_ids or has_admissible_title:
+        return ()
+    return (
+        _finding(
+            DETAIL_SHELL_FINDING_RULE_ID,
+            (product.entity_id,),
+            shell_ids,
+            "Selected product title evidence is an HTTP or transient UI shell.",
+            True,
+        ),
+    )
 
 
 def _validate_variants(entities: EntitySet) -> tuple[Finding, ...]:

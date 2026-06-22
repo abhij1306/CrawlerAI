@@ -56,9 +56,7 @@ CDN_IMAGE_PATH_SUFFIX_PATTERN = (
     r"|/t_(?:default|thumbnail|pdp_\d+_v\d+|web_pdp_\d+_v\d+)"
     r")(?=\.[a-z0-9]+$|/|$)"
 )
-SHOPIFY_IMAGE_FILE_PATH_PATTERN = (
-    r"(?:^|/)(?:cdn/shop/files|s/files/(?:[^/]+/)*files)/(?P<filename>[^/?#]+)(?:[?#].*)?$"
-)
+SHOPIFY_IMAGE_FILE_PATH_PATTERN = r"(?:^|/)(?:cdn/shop/files|s/files/(?:[^/]+/)*files)/(?P<filename>[^/?#]+)(?:[?#].*)?$"
 BROKEN_FETCH_IMAGE_PATH_PATTERN = (
     r"/image/(?:fetch|upload)/"
     r"(?:[a-z]{1,5}_[a-z0-9:.,-]+|[a-z]+:[a-z0-9:.,-]+|[a-z]+)"
@@ -66,6 +64,12 @@ BROKEN_FETCH_IMAGE_PATH_PATTERN = (
 )
 LOW_RES_SWATCH_IMAGE_PATH_PATTERN = r"(?:^|/)[^/?#]+_[a-z0-9]{3}_s(?:$|\?)"
 DETAIL_IMAGE_PRODUCT_CODE_PATTERN = r"(?:^|/)([A-Z]{2,4}\d{2,6})(?:/|[_\-.])"
+DETAIL_IMAGE_IDENTITY_ALNUM_MIN_LENGTH = 6
+DETAIL_IMAGE_IDENTITY_NUMERIC_MIN_LENGTH = 7
+DETAIL_IMAGE_OPAQUE_HEX_MIN_LENGTH = 8
+PRODUCT_ASSET_IDENTITY_FACT_TYPES = frozenset(
+    {"product.gtin", "product.mpn", "product.sku", "product.url"}
+)
 DETAIL_IMAGE_COLORWAY_CODE_PATTERN = r"(?:^|[_-])\d{4,8}_([A-Z0-9]{2,5})(?:[_\-.]|$)"
 DETAIL_IMAGE_VIEW_CODE_PATTERN = r"^[A-Z]\d+$"
 AMAZON_IMAGE_CDN_HOSTS = frozenset(
@@ -109,6 +113,8 @@ PRODUCT_ASSET_REJECT_URL_PATTERNS = (
     r"(?:^|[/_.-])(?:left|right)[_-]?arrow(?:[/_.-]|$)",
     r"(?:^|[/_.-])chevrons?(?:[/_.-]|$)",
     r"(?:^|/)edit(?:\.[a-f0-9]{6,})?\.svg(?:$|[?#])",
+    r"(?:^|//)(?:i\.ytimg\.com|img\.youtube\.com)/vi/",
+    r"(?:^|/)[a-z][a-z0-9_-]*\.[a-f0-9]{6,}\.svg(?:$|[?#])",
     r"/flags?/[a-z]{2}(?:[-_][a-z]{2})?\.(?:png|svg|webp)(?:$|[?#])",
     r"\{[a-z_][a-z0-9_]*\}",
 )
@@ -156,18 +162,25 @@ _LOCAL_EXPORTS = (
     "AMAZON_IMAGE_CDN_HOSTS",
     "AMAZON_IMAGE_LOW_RES_MAX_DIMENSION",
     "AMAZON_IMAGE_LOW_RES_SUFFIX_PATTERN",
-    "BARE_HOST_URL_RE", "BROKEN_FETCH_IMAGE_PATH_PATTERN",
+    "BARE_HOST_URL_RE",
+    "BROKEN_FETCH_IMAGE_PATH_PATTERN",
     "CDN_IMAGE_PATH_SUFFIX_PATTERN",
     "CDN_IMAGE_QUERY_KEY_PATTERNS",
     "CDN_IMAGE_QUERY_PARAMS",
     "CDN_IMAGE_TRANSFORM_SUFFIX_PATTERN",
     "DETAIL_IMAGE_COLORWAY_CODE_PATTERN",
+    "DETAIL_IMAGE_IDENTITY_ALNUM_MIN_LENGTH",
+    "DETAIL_IMAGE_IDENTITY_NUMERIC_MIN_LENGTH",
+    "DETAIL_IMAGE_OPAQUE_HEX_MIN_LENGTH",
     "DETAIL_IMAGE_PRODUCT_CODE_PATTERN",
     "DETAIL_IMAGE_VIEW_CODE_PATTERN",
     "DETAIL_DOM_IMAGE_NEGATIVE_SCOPE_TOKENS",
     "DETAIL_DOM_IMAGE_POSITIVE_SCOPE_TOKENS",
-    "EXPORT_IMAGE_URL_SUFFIXES", "LOW_RES_SWATCH_IMAGE_PATH_PATTERN",
-    "PRIMARY_IMAGE_REJECT_URL_TOKENS", "PRODUCT_ASSET_REJECT_URL_PATTERNS",
+    "EXPORT_IMAGE_URL_SUFFIXES",
+    "LOW_RES_SWATCH_IMAGE_PATH_PATTERN",
+    "PRIMARY_IMAGE_REJECT_URL_TOKENS",
+    "PRODUCT_ASSET_REJECT_URL_PATTERNS",
+    "PRODUCT_ASSET_IDENTITY_FACT_TYPES",
     "SHOPIFY_IMAGE_FILE_PATH_PATTERN",
     "VARIANT_UI_NOISE_EXACT_MATCH_MAX_LENGTH",
 )

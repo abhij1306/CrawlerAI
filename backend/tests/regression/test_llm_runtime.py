@@ -41,7 +41,9 @@ def test_estimate_cost_usd_uses_configured_mistral_rates() -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.regression
-async def test_provider_retry_retries_rate_limit(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_provider_retry_retries_rate_limit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     calls = 0
 
     async def fake_call_provider(**_kwargs):
@@ -65,7 +67,11 @@ async def test_provider_retry_retries_rate_limit(monkeypatch: pytest.MonkeyPatch
     monkeypatch.setattr(provider_client, "record_failure", fake_record_failure)
     monkeypatch.setattr(provider_client, "record_success", fake_record_success)
 
-    result, input_tokens, output_tokens = await provider_client.call_provider_with_retry(
+    (
+        result,
+        input_tokens,
+        output_tokens,
+    ) = await provider_client.call_provider_with_retry(
         provider="groq",
         model=MODEL_GROQ,
         api_key="key",
@@ -148,7 +154,9 @@ async def test_run_prompt_task_returns_validated_payload(
     monkeypatch.setattr(
         "app.connectors.llm.tasks.resolve_run_config", fake_resolve_run_config
     )
-    monkeypatch.setattr("app.connectors.llm.tasks.get_prompt_task", fake_get_prompt_task)
+    monkeypatch.setattr(
+        "app.connectors.llm.tasks.get_prompt_task", fake_get_prompt_task
+    )
     monkeypatch.setattr(
         "app.connectors.llm.tasks.load_prompt_file", fake_load_prompt_file
     )
@@ -221,7 +229,9 @@ async def test_run_prompt_task_returns_typed_provider_failure(
     monkeypatch.setattr(
         "app.connectors.llm.tasks.resolve_run_config", fake_resolve_run_config
     )
-    monkeypatch.setattr("app.connectors.llm.tasks.get_prompt_task", fake_get_prompt_task)
+    monkeypatch.setattr(
+        "app.connectors.llm.tasks.get_prompt_task", fake_get_prompt_task
+    )
     monkeypatch.setattr(
         "app.connectors.llm.tasks.load_prompt_file", fake_load_prompt_file
     )
@@ -303,7 +313,9 @@ async def test_run_prompt_task_blocks_uncached_provider_calls_over_run_cap(
     monkeypatch.setattr(
         "app.connectors.llm.tasks.resolve_run_config", fake_resolve_run_config
     )
-    monkeypatch.setattr("app.connectors.llm.tasks.get_prompt_task", fake_get_prompt_task)
+    monkeypatch.setattr(
+        "app.connectors.llm.tasks.get_prompt_task", fake_get_prompt_task
+    )
     monkeypatch.setattr(
         "app.connectors.llm.tasks.load_prompt_file", lambda _path: "Return JSON."
     )
@@ -383,7 +395,9 @@ async def test_run_prompt_task_budget_scope_is_independent_from_run_cap(
     monkeypatch.setattr(
         "app.connectors.llm.tasks.resolve_run_config", fake_resolve_run_config
     )
-    monkeypatch.setattr("app.connectors.llm.tasks.get_prompt_task", fake_get_prompt_task)
+    monkeypatch.setattr(
+        "app.connectors.llm.tasks.get_prompt_task", fake_get_prompt_task
+    )
     monkeypatch.setattr(
         "app.connectors.llm.tasks.load_prompt_file", lambda _path: "Return JSON."
     )
@@ -461,7 +475,9 @@ async def test_run_prompt_task_returns_timeout_when_provider_exceeds_call_timeou
     monkeypatch.setattr(
         "app.connectors.llm.tasks.resolve_run_config", fake_resolve_run_config
     )
-    monkeypatch.setattr("app.connectors.llm.tasks.get_prompt_task", fake_get_prompt_task)
+    monkeypatch.setattr(
+        "app.connectors.llm.tasks.get_prompt_task", fake_get_prompt_task
+    )
     monkeypatch.setattr(
         "app.connectors.llm.tasks.load_prompt_file", lambda _path: "Return JSON."
     )
@@ -536,7 +552,9 @@ async def test_run_prompt_task_validates_direct_record_extraction_array_payload(
     monkeypatch.setattr(
         "app.connectors.llm.tasks.resolve_run_config", fake_resolve_run_config
     )
-    monkeypatch.setattr("app.connectors.llm.tasks.get_prompt_task", fake_get_prompt_task)
+    monkeypatch.setattr(
+        "app.connectors.llm.tasks.get_prompt_task", fake_get_prompt_task
+    )
     monkeypatch.setattr(
         "app.connectors.llm.tasks.load_prompt_file", fake_load_prompt_file
     )
@@ -601,7 +619,9 @@ async def test_run_prompt_task_rejects_invalid_product_intelligence_enrichment(
     monkeypatch.setattr(
         "app.connectors.llm.tasks.resolve_run_config", fake_resolve_run_config
     )
-    monkeypatch.setattr("app.connectors.llm.tasks.get_prompt_task", fake_get_prompt_task)
+    monkeypatch.setattr(
+        "app.connectors.llm.tasks.get_prompt_task", fake_get_prompt_task
+    )
     monkeypatch.setattr(
         "app.connectors.llm.tasks.load_prompt_file", fake_load_prompt_file
     )
@@ -665,12 +685,15 @@ async def test_run_prompt_task_rejects_unknown_product_intelligence_reason_keys(
     monkeypatch.setattr(
         "app.connectors.llm.tasks.resolve_run_config", fake_resolve_run_config
     )
-    monkeypatch.setattr("app.connectors.llm.tasks.get_prompt_task", fake_get_prompt_task)
+    monkeypatch.setattr(
+        "app.connectors.llm.tasks.get_prompt_task", fake_get_prompt_task
+    )
     monkeypatch.setattr(
         "app.connectors.llm.tasks.load_prompt_file", lambda _path: "Return JSON."
     )
     monkeypatch.setattr(
-        "app.connectors.llm.tasks.call_provider_with_retry", fake_call_provider_with_retry
+        "app.connectors.llm.tasks.call_provider_with_retry",
+        fake_call_provider_with_retry,
     )
     monkeypatch.setattr(
         "app.connectors.llm.tasks.load_cached_llm_result", fake_load_cached_llm_result

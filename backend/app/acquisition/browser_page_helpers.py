@@ -19,6 +19,7 @@ from app.core.config.url_path_markers import detail_path_markers
 from app.core.records.css_extractability import requested_content_extractability
 from app.extraction.documents import HtmlAnalysis, HtmlDocument
 
+
 def _object_int(value: object, default: int = 0) -> int:
     if isinstance(value, bool):
         return int(value)
@@ -29,11 +30,14 @@ def _object_int(value: object, default: int = 0) -> int:
     except (TypeError, ValueError):
         return default
 
+
 async def page_might_have_location_interstitial(page: Any) -> bool:
     return await _interstitial_page_probe(page)
 
+
 async def dismiss_safe_location_interstitial(page: Any) -> dict[str, object]:
     return await _interstitial_dismiss(page)
+
 
 def location_interstitial_detected(
     html: str,
@@ -41,6 +45,7 @@ def location_interstitial_detected(
     analysis: HtmlAnalysis | None = None,
 ) -> bool:
     return _interstitial_detected(html, analysis=analysis)
+
 
 def _select_primary_browser_html(
     *,
@@ -92,6 +97,7 @@ def _select_primary_browser_html(
     ):
         return rendered_html, rendered_analysis
     return traversal_html, traversal_analysis
+
 
 def _listing_html_detail_anchor_count(
     document: HtmlDocument,
@@ -147,17 +153,18 @@ async def _resolve_rendered_snapshot(
         html = await get_page_html(page, flatten_shadow=flatten_shadow)
     analysis = (
         prefetched_analysis
-        if prefetched_analysis is not None
-        and prefetched_analysis.matches_html(html)
+        if prefetched_analysis is not None and prefetched_analysis.matches_html(html)
         else await asyncio.to_thread(HtmlAnalysis.from_html, html)
     )
     return html, html, analysis
+
 
 def _normalize_listing_recovery_mode(value: object) -> str | None:
     normalized = str(value or "").strip().lower().replace("-", "_").replace(" ", "_")
     if normalized.endswith("_retry"):
         normalized = normalized[: -len("_retry")]
     return normalized or None
+
 
 def _detail_expansion_extractability(
     *,
@@ -183,19 +190,30 @@ def _detail_expansion_extractability(
         ),
     )
 
+
 def _detail_expansion_probe_fields(
     *,
     surface: str,
     requested_fields: list[str] | None,
 ) -> list[str] | None:
     if requested_fields:
-        return sorted({str(field_name).strip() for field_name in requested_fields if str(field_name).strip()}) or None
+        return (
+            sorted(
+                {
+                    str(field_name).strip()
+                    for field_name in requested_fields
+                    if str(field_name).strip()
+                }
+            )
+            or None
+        )
     normalized_surface = str(surface or "").strip().lower()
     probe_fields = {
         *set(DOM_HIGH_VALUE_FIELDS.get(normalized_surface) or ()),
         *set(DOM_OPTIONAL_CUE_FIELDS.get(normalized_surface) or ()),
     }
     return sorted(probe_fields) or None
+
 
 def _detail_expansion_can_skip(
     extractability: dict[str, object],
@@ -234,7 +252,10 @@ def _ready_probe_has_detail_content(
     probe = readiness_probe if isinstance(readiness_probe, dict) else {}
     visible_text_length = _object_int(probe.get("visible_text_length"))
     visible_text_min = int(crawler_runtime_settings.browser_readiness_visible_text_min)
-    if bool(probe.get("structured_data_present")) and visible_text_length >= visible_text_min:
+    if (
+        bool(probe.get("structured_data_present"))
+        and visible_text_length >= visible_text_min
+    ):
         return True
     detail_hint_count = _object_int(probe.get("detail_hint_count"))
     if (
@@ -243,6 +264,7 @@ def _ready_probe_has_detail_content(
     ):
         return True
     return bool(probe.get("h1_present")) and visible_text_length >= visible_text_min
+
 
 async def _capture_listing_visual_elements(
     page: Any,

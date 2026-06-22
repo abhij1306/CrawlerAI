@@ -10,20 +10,63 @@ JsonValue = Any
 
 PRODUCT_FACTS = frozenset(
     f"product.{field}"
-    for field in ("url", "title", "brand", "description", "category", "product_type", "sku", "mpn", "gtin", "materials", "color", "size")
+    for field in (
+        "url",
+        "title",
+        "brand",
+        "description",
+        "category",
+        "product_type",
+        "sku",
+        "mpn",
+        "gtin",
+        "materials",
+        "color",
+        "size",
+    )
 )
 VARIANT_FACTS = frozenset(
     f"variant.{field}"
-    for field in ("id", "sku", "gtin", "url", "selected", "option.size", "option.color", "option.width", "option.length", "option.material", "option.style", "option.capacity", "option.quantity")
+    for field in (
+        "id",
+        "sku",
+        "gtin",
+        "url",
+        "selected",
+        "option.size",
+        "option.color",
+        "option.width",
+        "option.length",
+        "option.material",
+        "option.style",
+        "option.capacity",
+        "option.quantity",
+    )
 )
 OFFER_FACTS = frozenset(
     f"offer.{field}"
-    for field in ("price", "currency", "original_price", "availability", "stock_quantity", "seller")
+    for field in (
+        "price",
+        "currency",
+        "original_price",
+        "availability",
+        "stock_quantity",
+        "seller",
+    )
 )
 ASSET_FACTS = frozenset({"asset.image_url", "asset.role", "asset.variant_association"})
 OPTION_FACTS = frozenset(
     f"option.{field}"
-    for field in ("size", "color", "width", "length", "material", "style", "capacity", "quantity")
+    for field in (
+        "size",
+        "color",
+        "width",
+        "length",
+        "material",
+        "style",
+        "capacity",
+        "quantity",
+    )
 )
 FACT_TYPES = PRODUCT_FACTS | VARIANT_FACTS | OFFER_FACTS | ASSET_FACTS | OPTION_FACTS
 

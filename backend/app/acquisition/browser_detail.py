@@ -63,7 +63,9 @@ def requested_field_tokens(requested_fields: list[str] | None) -> tuple[str, ...
         aliases = [exact_key]
         normalized = normalize_requested_field(str(field_name or ""))
         if normalized:
-            aliases.extend(NORMALIZED_REQUESTED_FIELD_ALIASES.get(normalized, [normalized]))
+            aliases.extend(
+                NORMALIZED_REQUESTED_FIELD_ALIASES.get(normalized, [normalized])
+            )
         for alias in aliases:
             for token in re.split(r"[_\W]+", str(alias or "")):
                 cleaned = token.strip().lower()
@@ -79,7 +81,9 @@ def detail_expansion_keywords(
     requested_fields: list[str] | None = None,
 ) -> tuple[str, ...]:
     lowered = str(surface or "").strip().lower()
-    family = "ecommerce" if "ecommerce" in lowered else "job" if "job" in lowered else ""
+    family = (
+        "ecommerce" if "ecommerce" in lowered else "job" if "job" in lowered else ""
+    )
     keywords = list(_DETAIL_EXPAND_KEYWORDS.get(family, ()))
     keywords.extend(DETAIL_EXPAND_KEYWORD_EXTENSIONS.get(family, ()))
     keywords.extend(requested_field_tokens(requested_fields))
@@ -139,7 +143,12 @@ def _requested_match_priority(
         str(snapshot.get(key) or "").strip().lower()
         for key in ("label", "aria_controls", "data_qa_action", "href")
     )
-    return (0 if requested_keywords and any(word in probe for word in requested_keywords) else 1, label)
+    return (
+        0
+        if requested_keywords and any(word in probe for word in requested_keywords)
+        else 1,
+        label,
+    )
 
 
 def _new_dom_diagnostics(max_elapsed_ms: int | None) -> dict[str, object]:
@@ -205,12 +214,17 @@ async def _candidate_rows(
             continue
         rows.append(
             (
-                _requested_match_priority(snapshot, requested_keywords=requested_keywords),
+                _requested_match_priority(
+                    snapshot, requested_keywords=requested_keywords
+                ),
                 handle,
                 snapshot,
             )
         )
-    return [(handle, snapshot) for _, handle, snapshot in sorted(rows, key=lambda row: row[0])]
+    return [
+        (handle, snapshot)
+        for _, handle, snapshot in sorted(rows, key=lambda row: row[0])
+    ]
 
 
 def _candidate_is_admitted(
@@ -229,30 +243,103 @@ def _candidate_is_admitted(
     class_name = str(snapshot.get("class_name") or "").strip().lower()
     tag_name = str(snapshot.get("tag_name") or "").strip().lower()
     href = str(snapshot.get("href") or "").strip().lower()
-    keyword_probe = " ".join(part for part in (label, probe, data_action, class_name) if part)
-    requested_probe = " ".join(part for part in (label, aria_controls, data_action) if part)
-    size_toggle = any(token in f"{data_action} {class_name}" for token in ("size selector", "size-selector", "open-size-selector"))
-    requested_match = bool(requested_keywords and any(word in requested_probe for word in requested_keywords))
+    keyword_probe = " ".join(
+        part for part in (label, probe, data_action, class_name) if part
+    )
+    requested_probe = " ".join(
+        part for part in (label, aria_controls, data_action) if part
+    )
+    size_toggle = any(
+        token in f"{data_action} {class_name}"
+        for token in ("size selector", "size-selector", "open-size-selector")
+    )
+    requested_match = bool(
+        requested_keywords
+        and any(word in requested_probe for word in requested_keywords)
+    )
     fallback_match = any(word in requested_probe for word in keywords)
-    generic_toggle = bool(requested_fields and aria_controls and label in BROWSER_REQUESTED_DETAIL_GENERIC_TOGGLE_LABELS)
+    generic_toggle = bool(
+        requested_fields
+        and aria_controls
+        and label in BROWSER_REQUESTED_DETAIL_GENERIC_TOGGLE_LABELS
+    )
     generic_match = any(word in keyword_probe for word in keywords)
-    navigational = tag_name == "a" and bool(href) and not href.startswith(("#", "javascript:", "mailto:", "tel:")) and not aria_controls and not size_toggle
-    blocked = any(token in keyword_probe for token in DETAIL_BLOCKED_TOKENS) and not size_toggle
-    unwanted = any(token in keyword_probe for token in ("add-to-wishlist", "gallery", "media-zoom", "thumbnail", "wishlist"))
-    expandable_selector = selector in {"summary", "details > summary", "[aria-expanded='false']", "button[aria-controls]", "[role='button'][aria-controls]", "[role='tab'][aria-controls]"}
-    expandable = expandable_selector or aria_expanded == "false" or bool(aria_controls) or tag_name == "summary" or requested_match or generic_match
-    in_chrome = bool(snapshot.get("inside_header") or snapshot.get("inside_nav") or snapshot.get("inside_footer"))
+    navigational = (
+        tag_name == "a"
+        and bool(href)
+        and not href.startswith(("#", "javascript:", "mailto:", "tel:"))
+        and not aria_controls
+        and not size_toggle
+    )
+    blocked = (
+        any(token in keyword_probe for token in DETAIL_BLOCKED_TOKENS)
+        and not size_toggle
+    )
+    unwanted = any(
+        token in keyword_probe
+        for token in (
+            "add-to-wishlist",
+            "gallery",
+            "media-zoom",
+            "thumbnail",
+            "wishlist",
+        )
+    )
+    expandable_selector = selector in {
+        "summary",
+        "details > summary",
+        "[aria-expanded='false']",
+        "button[aria-controls]",
+        "[role='button'][aria-controls]",
+        "[role='tab'][aria-controls]",
+    }
+    expandable = (
+        expandable_selector
+        or aria_expanded == "false"
+        or bool(aria_controls)
+        or tag_name == "summary"
+        or requested_match
+        or generic_match
+    )
+    in_chrome = bool(
+        snapshot.get("inside_header")
+        or snapshot.get("inside_nav")
+        or snapshot.get("inside_footer")
+    )
     chrome_blocked = in_chrome and not bool(snapshot.get("inside_main"))
-    aside_blocked = bool(snapshot.get("inside_aside")) and not (aria_controls or aria_expanded == "false" or requested_match or fallback_match or generic_match or size_toggle)
-    requested_blocked = bool(requested_fields) and not (requested_match or fallback_match or generic_toggle or size_toggle)
-    admitted = bool(snapshot.get("visible")) and bool(snapshot.get("actionable")) and not (navigational or blocked or unwanted or chrome_blocked or aside_blocked or requested_blocked) and expandable
+    aside_blocked = bool(snapshot.get("inside_aside")) and not (
+        aria_controls
+        or aria_expanded == "false"
+        or requested_match
+        or fallback_match
+        or generic_match
+        or size_toggle
+    )
+    requested_blocked = bool(requested_fields) and not (
+        requested_match or fallback_match or generic_toggle or size_toggle
+    )
+    admitted = (
+        bool(snapshot.get("visible"))
+        and bool(snapshot.get("actionable"))
+        and not (
+            navigational
+            or blocked
+            or unwanted
+            or chrome_blocked
+            or aside_blocked
+            or requested_blocked
+        )
+        and expandable
+    )
     return admitted, (label or probe, aria_controls, tag_name), label or probe
 
 
 async def _click_dom_candidate(page: Any, handle: Any) -> None:
     await handle.scroll_into_view_if_needed()
     try:
-        await handle.click(timeout=int(crawler_runtime_settings.detail_expand_click_timeout_ms))
+        await handle.click(
+            timeout=int(crawler_runtime_settings.detail_expand_click_timeout_ms)
+        )
     except Exception:
         await handle.evaluate("(node) => node instanceof HTMLElement && node.click()")
     wait_ms = int(crawler_runtime_settings.accordion_expand_wait_ms)
@@ -279,7 +366,9 @@ async def _expand_selector(
     except Exception as exc:
         failures.append(f"locator_failed:{selector}:{exc}")
         return []
-    diagnostics["buttons_found"] = _coerce_int(diagnostics["buttons_found"]) + len(candidates)
+    diagnostics["buttons_found"] = _coerce_int(diagnostics["buttons_found"]) + len(
+        candidates
+    )
     rows = await _candidate_rows(
         candidates,
         requested_keywords=requested_keywords,
@@ -330,7 +419,13 @@ async def expand_all_interactive_elements(
     seen: set[tuple[str, str, str]] = set()
     requested_keywords = requested_field_tokens(requested_fields)
     keywords = detail_expansion_keywords(surface, requested_fields=requested_fields)
-    limit = max(0, min(int(crawler_runtime_settings.detail_expand_max_interactions), int(crawler_runtime_settings.accordion_expand_max)))
+    limit = max(
+        0,
+        min(
+            int(crawler_runtime_settings.detail_expand_max_interactions),
+            int(crawler_runtime_settings.accordion_expand_max),
+        ),
+    )
     selectors = _ordered_detail_expand_selectors(
         [str(item).strip() for item in DETAIL_EXPAND_SELECTORS if str(item).strip()],
         requested_keywords=requested_keywords,
@@ -403,11 +498,17 @@ async def expand_detail_content_if_needed(
             page,
             surface=surface,
             requested_fields=requested_fields,
-            max_elapsed_ms=int(crawler_runtime_settings.detail_aom_expand_max_elapsed_ms),
+            max_elapsed_ms=int(
+                crawler_runtime_settings.detail_aom_expand_max_elapsed_ms
+            ),
         )
-    clicked = _coerce_int(dom.get("clicked_count")) + _coerce_int(aom.get("clicked_count"))
+    clicked = _coerce_int(dom.get("clicked_count")) + _coerce_int(
+        aom.get("clicked_count")
+    )
     return {
-        "status": DETAIL_EXPANSION_STATUS_EXPANDED if clicked else DETAIL_EXPANSION_STATUS_ATTEMPTED,
+        "status": DETAIL_EXPANSION_STATUS_EXPANDED
+        if clicked
+        else DETAIL_EXPANSION_STATUS_ATTEMPTED,
         "reason": "missing_detail_content",
         "clicked_count": clicked,
         "expanded_elements": [
@@ -460,7 +561,9 @@ async def _interactive_handle_attr(handle: Any, attr_name: str) -> str:
 
 async def _interactive_handle_tag_name(handle: Any) -> str:
     try:
-        value = await handle.evaluate("(node) => node instanceof Element ? node.tagName.toLowerCase() : ''")
+        value = await handle.evaluate(
+            "(node) => node instanceof Element ? node.tagName.toLowerCase() : ''"
+        )
     except Exception:
         return ""
     return " ".join(str(value or "").split()).strip().lower()
@@ -517,7 +620,13 @@ async def interactive_candidate_snapshot(handle: Any) -> dict[str, object]:
     context_flags = await _interactive_handle_context_flags(handle)
     return {
         "label": label,
-        "probe": " ".join(part for part in (label, aria_label, title, data_action, data_testid) if part).strip().lower(),
+        "probe": " ".join(
+            part
+            for part in (label, aria_label, title, data_action, data_testid)
+            if part
+        )
+        .strip()
+        .lower(),
         "aria_label": aria_label,
         "title": title,
         "href": await _interactive_handle_attr(handle, "href"),

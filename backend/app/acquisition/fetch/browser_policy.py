@@ -263,9 +263,13 @@ def browser_engine_attempts(
     ):
         return engines
     if host_policy.patchright_blocked and host_policy.prefer_browser:
-        return _prefer_engine_first(_append_engine_once(engines, "real_chrome"), "real_chrome")
+        return _prefer_engine_first(
+            _append_engine_once(engines, "real_chrome"), "real_chrome"
+        )
     if host_policy.real_chrome_success and host_policy.prefer_browser:
-        return _prefer_engine_first(_append_engine_once(engines, "real_chrome"), "real_chrome")
+        return _prefer_engine_first(
+            _append_engine_once(engines, "real_chrome"), "real_chrome"
+        )
     if (
         host_policy.request_blocked
         or host_policy.prefer_browser

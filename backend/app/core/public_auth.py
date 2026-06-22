@@ -102,7 +102,9 @@ async def get_public_api_user(
 ) -> User:
     user_id = getattr(request.state, "public_api_user_id", None)
     if user_id is None:
-        principal = await authenticate_public_api_key(session, authorization, touch=True)
+        principal = await authenticate_public_api_key(
+            session, authorization, touch=True
+        )
         user_id = principal.user_id
         request.state.public_api_key_id = principal.api_key_id
         request.state.public_api_user_id = principal.user_id

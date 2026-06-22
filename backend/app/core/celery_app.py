@@ -26,6 +26,7 @@ except (
                 return _decorate(dargs[0])
             return _decorate
 
+
 from app.core.config import settings
 from app.core.logfire_integration import instrument_celery
 

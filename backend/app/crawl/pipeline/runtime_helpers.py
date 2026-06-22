@@ -75,16 +75,23 @@ async def set_stage(
 
 logger = logging.getLogger(__name__)
 
+
 def browser_attempted(acquisition_result: PageAcquisitionResult) -> bool:
     return PageEvidence.from_acquisition_result(acquisition_result).browser_attempted
+
 
 def browser_outcome(acquisition_result: PageAcquisitionResult) -> str:
     return PageEvidence.from_acquisition_result(acquisition_result).browser_outcome
 
 
 def browser_launch_log_message(acquisition_result: PageAcquisitionResult) -> str:
-    diagnostics = mapping_or_empty(getattr(acquisition_result, "browser_diagnostics", {}))
-    engine = str(diagnostics.get("browser_engine") or "chromium").strip().lower() or "chromium"
+    diagnostics = mapping_or_empty(
+        getattr(acquisition_result, "browser_diagnostics", {})
+    )
+    engine = (
+        str(diagnostics.get("browser_engine") or "chromium").strip().lower()
+        or "chromium"
+    )
     launch_mode = str(diagnostics.get("browser_launch_mode") or "").strip().lower()
     if not launch_mode:
         launch_mode = "headless"
@@ -105,6 +112,7 @@ def suppress_empty_downstream_record_logs(
 ) -> bool:
     return not records and effective_blocked(acquisition_result)
 
+
 def screenshot_required(browser_outcome: str) -> bool:
     return browser_outcome in {
         "challenge_page",
@@ -115,10 +123,12 @@ def screenshot_required(browser_outcome: str) -> bool:
         "render_timeout",
     }
 
+
 def browser_result_is_extractable(acquisition_result: PageAcquisitionResult) -> bool:
     if getattr(acquisition_result, "method", "") != "browser":
         return True
     return browser_outcome(acquisition_result) in {"", "usable_content"}
+
 
 def merge_browser_diagnostics(
     acquisition_result: PageAcquisitionResult,
@@ -135,12 +145,17 @@ def record_detail_expansion_extraction_outcome(
     *,
     requested_fields: list[str],
 ) -> None:
-    if str(getattr(acquisition_result, "method", "") or "").strip().lower() != "browser":
+    if (
+        str(getattr(acquisition_result, "method", "") or "").strip().lower()
+        != "browser"
+    ):
         return
     browser_diagnostics = mapping_or_empty(
         getattr(acquisition_result, "browser_diagnostics", {})
     )
-    detail_expansion = dict(mapping_or_empty(browser_diagnostics.get("detail_expansion")))
+    detail_expansion = dict(
+        mapping_or_empty(browser_diagnostics.get("detail_expansion"))
+    )
     try:
         clicked_count = int(str(detail_expansion.get("clicked_count", 0) or 0))
     except (TypeError, ValueError):
@@ -175,12 +190,13 @@ def record_detail_expansion_extraction_outcome(
     acquisition_result.browser_diagnostics = browser_diagnostics
 
 
-
 async def mark_run_failed(session: AsyncSession, run_id: int, error_msg: str) -> None:
     try:
         await session.rollback()
     except SQLAlchemyError:
-        logger.debug("Session rollback failed before failure persistence", exc_info=True)
+        logger.debug(
+            "Session rollback failed before failure persistence", exc_info=True
+        )
     try:
         await persist_failure_state(session, run_id, error_msg)
         return
@@ -200,6 +216,7 @@ async def mark_run_failed(session: AsyncSession, run_id: int, error_msg: str) ->
             extra={"run_id": run_id},
         )
         return
+
 
 async def persist_failure_state(
     session: AsyncSession,

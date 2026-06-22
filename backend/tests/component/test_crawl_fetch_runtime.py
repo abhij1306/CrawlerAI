@@ -714,9 +714,7 @@ async def test_real_chrome_cookie_contract_tries_curl_cffi_handoff_first(
         return "session=ok"
 
     @_as_async
-    def _curl_fetch(
-        request_url, timeout_seconds, *, proxy=None, cookie_header=None
-    ):
+    def _curl_fetch(request_url, timeout_seconds, *, proxy=None, cookie_header=None):
         return PageFetchResult(
             url=request_url,
             final_url=request_url,
@@ -775,9 +773,7 @@ async def test_curl_handoff_failure_falls_back_to_real_chrome(
         return "session=bad"
 
     @_as_async
-    def _curl_fetch(
-        request_url, timeout_seconds, *, proxy=None, cookie_header=None
-    ):
+    def _curl_fetch(request_url, timeout_seconds, *, proxy=None, cookie_header=None):
         return PageFetchResult(
             url=request_url,
             final_url=request_url,
@@ -1160,7 +1156,9 @@ async def test_handle_http_result_retries_browser_after_browser_first_failure_an
         "browser_escalation_allowed",
         lambda **_kwargs: True,
     )
-    monkeypatch.setattr(crawl_fetch_runtime, "apply_protected_host_backoff", AsyncMock())
+    monkeypatch.setattr(
+        crawl_fetch_runtime, "apply_protected_host_backoff", AsyncMock()
+    )
     monkeypatch.setattr(crawl_fetch_runtime, "note_host_hard_block", AsyncMock())
     monkeypatch.setattr(
         crawl_fetch_runtime,
@@ -1194,9 +1192,7 @@ async def test_fetch_page_browser_only_skips_http_fetchers(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     @_as_async
-    def _unexpected_curl(
-        url: str, timeout_seconds: float, *, proxy: str | None = None
-    ):
+    def _unexpected_curl(url: str, timeout_seconds: float, *, proxy: str | None = None):
         raise AssertionError(
             f"curl should not run for browser_only: {url} {timeout_seconds} {proxy}"
         )
@@ -1322,9 +1318,7 @@ async def test_fetch_page_prefers_browser_from_learned_host_memory(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     @_as_async
-    def _unexpected_curl(
-        url: str, timeout_seconds: float, *, proxy: str | None = None
-    ):
+    def _unexpected_curl(url: str, timeout_seconds: float, *, proxy: str | None = None):
         raise AssertionError(
             f"http should be skipped for learned browser-first host: {url} {timeout_seconds} {proxy}"
         )
@@ -2126,9 +2120,7 @@ async def test_should_escalate_to_browser_async_uses_thread_offload(
         calls.append(func.__name__)
         return func(*args, **kwargs)
 
-    monkeypatch.setattr(
-        "app.acquisition.runtime.asyncio.to_thread", _fake_to_thread
-    )
+    monkeypatch.setattr("app.acquisition.runtime.asyncio.to_thread", _fake_to_thread)
 
     result = await should_escalate_to_browser_async(
         PageFetchResult(
@@ -2458,7 +2450,6 @@ async def test_fetch_page_uses_browser_for_js_disabled_placeholder_shell(
 async def test_fetch_page_falls_back_to_httpx_after_curl_transport_errors(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-
     @_as_async
     def _failing_curl(url: str, timeout: float, *, proxy: str | None = None):
         del proxy
@@ -2596,9 +2587,10 @@ async def test_http_only_fetch_uses_canonical_plan_and_attempt_results(
         "error",
         "success",
     ]
-    assert canonical_result["selected_attempt_id"] == canonical_result["attempts"][1][
-        "attempt_id"
-    ]
+    assert (
+        canonical_result["selected_attempt_id"]
+        == canonical_result["attempts"][1]["attempt_id"]
+    )
     assert result.acquisition_diagnostics["termination_reason"] == "attempt_selected"
 
 
@@ -2631,7 +2623,9 @@ async def test_http_only_transport_exhaustion_does_not_fall_back_to_browser(
 
     monkeypatch.setattr(crawl_fetch_runtime, "_curl_fetch", _failing_curl)
     monkeypatch.setattr(crawl_fetch_runtime, "_http_fetch", _failing_http)
-    monkeypatch.setattr(crawl_fetch_runtime, "run_browser_attempts", _unexpected_browser)
+    monkeypatch.setattr(
+        crawl_fetch_runtime, "run_browser_attempts", _unexpected_browser
+    )
 
     with pytest.raises(httpx.ConnectError, match="httpx failed") as exc_info:
         await crawl_fetch_runtime.fetch_page(
@@ -2830,9 +2824,7 @@ async def test_fetch_page_stops_http_waterfall_after_vendor_confirmed_block(
     browser_proxies: list[str | None] = []
 
     @_as_async
-    def _vendor_blocked_curl(
-        url: str, timeout: float, *, proxy: str | None = None
-    ):
+    def _vendor_blocked_curl(url: str, timeout: float, *, proxy: str | None = None):
         del timeout
         curl_proxies.append(proxy)
         return PageFetchResult(
@@ -3265,14 +3257,17 @@ async def test_fetch_page_emits_http_strategy_and_escalation_events(
 
     assert result.method == "browser"
     messages = [message for _level, message in events]
-    assert any(message.startswith("Acquisition strategy: http-first") for message in messages)
     assert any(
-        "curl=primary, httpx_fallback=on_transport_failure"
-        in message
+        message.startswith("Acquisition strategy: http-first") for message in messages
+    )
+    assert any(
+        "curl=primary, httpx_fallback=on_transport_failure" in message
         for message in messages
     )
     assert any("HTTP fetch via" in message for message in messages)
-    assert any("Escalating to browser after HTTP result" in message for message in messages)
+    assert any(
+        "Escalating to browser after HTTP result" in message for message in messages
+    )
 
 
 @pytest.mark.asyncio
@@ -3368,7 +3363,7 @@ async def test_fetch_page_retries_patchright_http2_protocol_error_with_real_chro
         browser_engines.append(engine)
         if engine == "patchright":
             raise PlaywrightError(
-                f'Page.goto: net::ERR_HTTP2_PROTOCOL_ERROR at {request_url}'
+                f"Page.goto: net::ERR_HTTP2_PROTOCOL_ERROR at {request_url}"
             )
         return PageFetchResult(
             url=request_url,
@@ -3386,7 +3381,9 @@ async def test_fetch_page_retries_patchright_http2_protocol_error_with_real_chro
     monkeypatch.setattr(crawl_fetch_runtime, "_curl_fetch", _failing_curl)
     monkeypatch.setattr(crawl_fetch_runtime, "_http_fetch", _failing_http)
     monkeypatch.setattr(crawl_fetch_runtime, "_browser_fetch", _browser_fetch)
-    monkeypatch.setattr(crawl_fetch_runtime, "real_chrome_browser_available", lambda: True)
+    monkeypatch.setattr(
+        crawl_fetch_runtime, "real_chrome_browser_available", lambda: True
+    )
 
     try:
         result = await crawl_fetch_runtime.fetch_page(
@@ -3815,7 +3812,9 @@ async def test_fetch_page_returns_http_result_when_browser_escalation_budget_is_
     monkeypatch.setattr(crawl_fetch_runtime, "_browser_fetch", _unexpected_browser)
     monkeypatch.setattr(crawl_fetch_runtime, "wait_for_host_slot", AsyncMock())
     monkeypatch.setattr(crawl_fetch_runtime, "note_host_hard_block", AsyncMock())
-    monkeypatch.setattr(crawl_fetch_runtime, "apply_protected_host_backoff", AsyncMock())
+    monkeypatch.setattr(
+        crawl_fetch_runtime, "apply_protected_host_backoff", AsyncMock()
+    )
     monkeypatch.setattr(crawl_fetch_runtime, "_update_host_result_memory", AsyncMock())
 
     result = await crawl_fetch_runtime.fetch_page(
@@ -4010,7 +4009,6 @@ async def test_http_fetch_surfaces_dns_failure_without_hidden_ipv4_retry(
 async def test_fetch_page_surfaces_browser_error_when_http_exhausts_and_browser_fails(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-
     curl_error = httpx.ConnectError("getaddrinfo failed")
     httpx_error = httpx.ReadTimeout("httpx fallback timed out")
     browser_error = RuntimeError("browser launch failed")

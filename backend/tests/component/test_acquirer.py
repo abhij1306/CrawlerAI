@@ -233,7 +233,9 @@ def test_acquisition_policy_profile_maps_are_read_only() -> None:
 
 
 @pytest.mark.component
-def test_page_evidence_keeps_usable_content_with_vendor_block_reason_out_of_challenge_shell() -> None:
+def test_page_evidence_keeps_usable_content_with_vendor_block_reason_out_of_challenge_shell() -> (
+    None
+):
     evidence = PageEvidence.from_browser_diagnostics(
         {
             "browser_reason": "vendor-block:akamai",
@@ -406,14 +408,20 @@ async def test_acquire_uses_internal_api_replay_before_page_fetch(
 @pytest.mark.asyncio
 @pytest.mark.component
 async def test_internal_api_replay_rejects_non_https_and_private_ip() -> None:
-    assert await _is_safe_replay_url(
-        "http://example.com/api/products.json",
-        page_url="https://example.com/products",
-    ) is False
-    assert await _is_safe_replay_url(
-        "https://127.0.0.1/api/products.json",
-        page_url="https://127.0.0.1/products",
-    ) is False
+    assert (
+        await _is_safe_replay_url(
+            "http://example.com/api/products.json",
+            page_url="https://example.com/products",
+        )
+        is False
+    )
+    assert (
+        await _is_safe_replay_url(
+            "https://127.0.0.1/api/products.json",
+            page_url="https://127.0.0.1/products",
+        )
+        is False
+    )
 
 
 @pytest.mark.component

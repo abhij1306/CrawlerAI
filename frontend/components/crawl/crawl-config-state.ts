@@ -17,7 +17,6 @@ export const RUN_SETUP_ROW_CLASS =
   'grid gap-2 md:grid-cols-[110px_minmax(0,1fr)] md:items-center md:gap-3';
 export const RUN_SETUP_CONTROL_CLASS = 'flex md:justify-self-end w-full md:w-auto';
 export const RUN_SETUP_LABEL_CLASS = 'flex min-w-0 h-[var(--control-height)] items-center gap-3';
-export const RUN_SETUP_STACK_CLASS = 'flex flex-col gap-3';
 export const ADVANCED_CONTROL_ROW_CLASS =
   'grid gap-1.5 md:grid-cols-[140px_minmax(0,1fr)] md:items-center md:gap-3';
 export const ADVANCED_COLUMN_CLASS = 'flex flex-col gap-4';
@@ -231,7 +230,7 @@ function normalizeTabForDomain(domain: CrawlDomain, tab: CrawlTab): CrawlTab {
   return tabs.some((entry) => entry.value === tab) ? tab : (tabs[0]?.value ?? 'category');
 }
 
-export function buildInitialRouteState({
+function buildInitialRouteState({
   requestedTab,
   requestedCategoryMode,
   requestedPdpMode,
@@ -245,7 +244,7 @@ export function buildInitialRouteState({
   };
 }
 
-export function crawlRouteReducer(
+function crawlRouteReducer(
   state: CrawlRouteState,
   action: CrawlRouteAction,
 ): CrawlRouteState {

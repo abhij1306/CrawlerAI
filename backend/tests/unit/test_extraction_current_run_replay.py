@@ -75,4 +75,7 @@ def test_frozen_json_artifacts_preserve_original_known_failures() -> None:
     assert original["new_balance"]["records"][0]["public_fields"]["title"] == (
         "Oops! Something went wrong"
     )
-    assert original["levis"]["records"][0]["public_fields"].get("variants") in (None, [])
+    assert original["levis"]["records"][0]["public_fields"].get("variants") in (
+        None,
+        [],
+    )

@@ -13,7 +13,9 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 config = context.config
 config.set_main_option("sqlalchemy.url", settings.database_url)
 
-if config.config_file_name is not None:  # skipcq: PY-A6006 - Alembic controls migration logging setup.
+if (
+    config.config_file_name is not None
+):  # skipcq: PY-A6006 - Alembic controls migration logging setup.
     fileConfig(config.config_file_name)
 
 target_metadata = Base.metadata

@@ -53,7 +53,9 @@ async def test_check_url_crawlability_blocks_url_when_robots_disallows(
 
     _patch_client(monkeypatch, _response)
 
-    result = await robots_policy.check_url_crawlability("https://example.com/private/page")
+    result = await robots_policy.check_url_crawlability(
+        "https://example.com/private/page"
+    )
 
     assert result.allowed is False
     assert result.outcome == robots_policy.ROBOTS_DISALLOWED

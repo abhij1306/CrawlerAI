@@ -207,7 +207,9 @@ def test_build_findings_surfaces_webdriver_headless_and_webrtc() -> None:
 @pytest.mark.regression
 def test_build_findings_ignores_expected_chrome_runtime_object_marker() -> None:
     report = _report()
-    report["baseline"]["consensus"]["automation_globals"] = ["chrome.runtime.typeof=object"]
+    report["baseline"]["consensus"]["automation_globals"] = [
+        "chrome.runtime.typeof=object"
+    ]
 
     categories = _finding_categories(report)
 
@@ -321,7 +323,9 @@ def test_build_findings_flags_screen_and_viewport_drift() -> None:
 
 @pytest.mark.regression
 def test_build_findings_flags_target_precontent_block() -> None:
-    report = _report(timezone="America/New_York", locale="en-US", pixelscan_country="United States")
+    report = _report(
+        timezone="America/New_York", locale="en-US", pixelscan_country="United States"
+    )
     report["target_diagnostics"] = [_target_diagnostic()]
     categories = _finding_categories(report)
     assert "target_precontent_block" in categories
@@ -346,7 +350,11 @@ def test_build_findings_flags_browser_geo_identity_mismatch() -> None:
 
 @pytest.mark.regression
 def test_validated_target_url_rejects_non_http_and_local_targets() -> None:
-    for url in ("file:///etc/passwd", "http://localhost/admin", "http://127.0.0.1/admin"):
+    for url in (
+        "file:///etc/passwd",
+        "http://localhost/admin",
+        "http://127.0.0.1/admin",
+    ):
         with pytest.raises(ValueError):
             probe._validated_target_url(url)
 
@@ -395,9 +403,15 @@ async def test_build_report_ignores_runtime_page_init_script_path(
 
         async def evaluate(self, script, *_args, **_kwargs):
             script_text = str(script)
-            if "__crawlerProbeBehavioralSmoke" in script_text and "ready: true" in script_text:
+            if (
+                "__crawlerProbeBehavioralSmoke" in script_text
+                and "ready: true" in script_text
+            ):
                 return {"ready": True, "x": 24, "y": 24}
-            if "__crawlerProbeBehavioralSmoke" in script_text and "mouse_isTrusted" in script_text:
+            if (
+                "__crawlerProbeBehavioralSmoke" in script_text
+                and "mouse_isTrusted" in script_text
+            ):
                 return {"mouse_isTrusted": True, "click_isTrusted": True}
             if "getHighEntropyValues" in script_text:
                 return {
@@ -417,7 +431,10 @@ async def test_build_report_ignores_runtime_page_init_script_path(
                     "viewport": {"width": 1280, "height": 720},
                     "webgl": {"vendor": "Google", "renderer": "ANGLE"},
                     "automation_globals": [],
-                    "behavioral_smoke": {"mouse_isTrusted": True, "click_isTrusted": True},
+                    "behavioral_smoke": {
+                        "mouse_isTrusted": True,
+                        "click_isTrusted": True,
+                    },
                     "webrtc_ips": [],
                     "timestamp": "2026-04-24T00:00:00Z",
                 }
@@ -459,7 +476,9 @@ async def test_build_report_ignores_runtime_page_init_script_path(
     runtime._browser = FakeBrowser()
     runtime._playwright = object()
 
-    async def _fake_runtime_provider(*, proxy: str | None = None, browser_engine: str = "chromium"):
+    async def _fake_runtime_provider(
+        *, proxy: str | None = None, browser_engine: str = "chromium"
+    ):
         del proxy, browser_engine
         return runtime
 
@@ -500,7 +519,11 @@ async def test_build_report_ignores_runtime_page_init_script_path(
             identity_run_id=123,
             proxy_list=[],
             proxy_profile={},
-            locality_profile={"geo_country": "auto", "language_hint": None, "currency_hint": None},
+            locality_profile={
+                "geo_country": "auto",
+                "language_hint": None,
+                "currency_hint": None,
+            },
             selected_proxy=None,
             selected_proxy_index=None,
             browser_engine="chromium",
@@ -532,7 +555,9 @@ async def test_build_report_keeps_partial_report_when_site_context_fails(
         def snapshot(self) -> dict[str, object]:
             return {"ready": True}
 
-    async def _fake_runtime_provider(*, proxy: str | None = None, browser_engine: str = "chromium"):
+    async def _fake_runtime_provider(
+        *, proxy: str | None = None, browser_engine: str = "chromium"
+    ):
         del proxy, browser_engine
         return FakeRuntime()
 
@@ -557,7 +582,11 @@ async def test_build_report_keeps_partial_report_when_site_context_fails(
             identity_run_id=123,
             proxy_list=[],
             proxy_profile={},
-            locality_profile={"geo_country": "auto", "language_hint": None, "currency_hint": None},
+            locality_profile={
+                "geo_country": "auto",
+                "language_hint": None,
+                "currency_hint": None,
+            },
             selected_proxy=None,
             selected_proxy_index=None,
             browser_engine="chromium",
@@ -583,13 +612,17 @@ async def test_build_report_keeps_invalid_target_urls_as_failed_diagnostics(
         def snapshot(self) -> dict[str, object]:
             return {"ready": True}
 
-    async def _fake_runtime_provider(*, proxy: str | None = None, browser_engine: str = "chromium"):
+    async def _fake_runtime_provider(
+        *, proxy: str | None = None, browser_engine: str = "chromium"
+    ):
         del proxy, browser_engine
         return FakeRuntime()
 
     async def _fake_target_diagnostic(*args, **kwargs):
         del args, kwargs
-        return _target_diagnostic(browser_blocked=False, httpx_blocked=False, curl_blocked=False)
+        return _target_diagnostic(
+            browser_blocked=False, httpx_blocked=False, curl_blocked=False
+        )
 
     monkeypatch.setattr(probe, "BROWSER_SURFACE_PROBE_TARGETS", ())
     monkeypatch.setattr(probe, "_run_target_diagnostic", _fake_target_diagnostic)
@@ -601,7 +634,11 @@ async def test_build_report_keeps_invalid_target_urls_as_failed_diagnostics(
             identity_run_id=123,
             proxy_list=[],
             proxy_profile={},
-            locality_profile={"geo_country": "auto", "language_hint": None, "currency_hint": None},
+            locality_profile={
+                "geo_country": "auto",
+                "language_hint": None,
+                "currency_hint": None,
+            },
             selected_proxy=None,
             selected_proxy_index=None,
             browser_engine="chromium",
@@ -616,7 +653,10 @@ async def test_build_report_keeps_invalid_target_urls_as_failed_diagnostics(
         "https://www.chewy.com/b/dry-food-294",
     ]
     assert report["target_diagnostics"][0]["browser"]["status"] == "failed"
-    assert "target URL host must not be local" in report["target_diagnostics"][0]["browser"]["error"]
+    assert (
+        "target URL host must not be local"
+        in report["target_diagnostics"][0]["browser"]["error"]
+    )
     assert report["target_diagnostics"][1]["browser"]["status"] == "ok"
 
 
@@ -630,7 +670,9 @@ async def test_build_report_keeps_partial_target_diagnostics_when_one_target_fai
         def snapshot(self) -> dict[str, object]:
             return {"ready": True}
 
-    async def _fake_runtime_provider(*, proxy: str | None = None, browser_engine: str = "chromium"):
+    async def _fake_runtime_provider(
+        *, proxy: str | None = None, browser_engine: str = "chromium"
+    ):
         del proxy, browser_engine
         return FakeRuntime()
 
@@ -653,13 +695,20 @@ async def test_build_report_keeps_partial_target_diagnostics_when_one_target_fai
             identity_run_id=123,
             proxy_list=[],
             proxy_profile={},
-            locality_profile={"geo_country": "auto", "language_hint": None, "currency_hint": None},
+            locality_profile={
+                "geo_country": "auto",
+                "language_hint": None,
+                "currency_hint": None,
+            },
             selected_proxy=None,
             selected_proxy_index=None,
             browser_engine="chromium",
         ),
         report_dir=tmp_path,
-        target_urls=["https://example.com/broken", "https://www.chewy.com/b/dry-food-294"],
+        target_urls=[
+            "https://example.com/broken",
+            "https://www.chewy.com/b/dry-food-294",
+        ],
         runtime_provider=_fake_runtime_provider,
     )
 
@@ -668,7 +717,10 @@ async def test_build_report_keeps_partial_target_diagnostics_when_one_target_fai
         "https://www.chewy.com/b/dry-food-294",
     ]
     assert report["target_diagnostics"][0]["browser"]["status"] == "failed"
-    assert "RuntimeError: target fetch failed" in report["target_diagnostics"][0]["browser"]["error"]
+    assert (
+        "RuntimeError: target fetch failed"
+        in report["target_diagnostics"][0]["browser"]["error"]
+    )
     assert report["target_diagnostics"][1]["browser"]["status"] == "ok"
 
 

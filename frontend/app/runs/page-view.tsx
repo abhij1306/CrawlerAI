@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { useReducer } from 'react';
+import { useEffect, useReducer, useRef } from 'react';
 
 import { queryKeys } from '@/api/query-keys';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -65,6 +65,13 @@ const initialRunsPageState: RunsPageState = {
   actionError: '',
   deleteTarget: null,
 };
+
+function preloadCrawlRunRoute() {
+  return Promise.all([
+    import('../crawl/page-view'),
+    import('../../components/crawl/crawl-run-screen'),
+  ]);
+}
 
 function runsPageReducer(state: RunsPageState, action: RunsPageAction): RunsPageState {
   switch (action.type) {
@@ -220,6 +227,7 @@ function RunRow({
 /* ─── Page ───────────────────────────────────────────────────────────────── */
 export default function RunsPage() {
   const queryClient = useQueryClient();
+  const crawlRunRoutePreloadStatusRef = useRef<'idle' | 'pending' | 'complete'>('idle');
   const [state, dispatch] = useReducer(runsPageReducer, initialRunsPageState);
   const {
     domainFilter,
@@ -231,7 +239,11 @@ export default function RunsPage() {
     deleteTarget,
   } = state;
 
-  const query = useQuery({
+  const {
+    data: queryData,
+    isLoading: isQueryLoading,
+    isError: isQueryError,
+  } = useQuery({
     queryKey: queryKeys.runs.list({
       url_search: appliedDomainFilter,
       status: appliedStatusFilter,
@@ -244,6 +256,26 @@ export default function RunsPage() {
         url_search: appliedDomainFilter || undefined,
       }),
   });
+
+  useEffect(() => {
+    const runs = queryData?.items ?? [];
+    if (!runs.length) return;
+
+    for (const run of runs) {
+      queryClient.setQueryData<CrawlRun>(queryKeys.runs.detail(run.id), (current) => current ?? run);
+    }
+    if (crawlRunRoutePreloadStatusRef.current === 'idle') {
+      crawlRunRoutePreloadStatusRef.current = 'pending';
+      void preloadCrawlRunRoute().then(
+        () => {
+          crawlRunRoutePreloadStatusRef.current = 'complete';
+        },
+        () => {
+          crawlRunRoutePreloadStatusRef.current = 'idle';
+        },
+      );
+    }
+  }, [queryClient, queryData?.items]);
 
   const deleteMutation = useMutation({
     mutationFn: (runId: number) => api.deleteCrawl(runId),
@@ -265,7 +297,7 @@ export default function RunsPage() {
     },
   });
 
-  const visibleRuns = query.data?.items ?? [];
+  const visibleRuns = queryData?.items ?? [];
 
   function applyFilters() {
     dispatch({ type: 'filtersApplied' });
@@ -333,10 +365,10 @@ export default function RunsPage() {
       {/* ── Table ── */}
       <TableSurface>
         {(() => {
-          if (query.isError) {
+          if (isQueryError) {
             return <DataRegionError message="Unable to load run history." />;
           }
-          if (query.isLoading) {
+          if (isQueryLoading) {
             return <DataRegionLoading count={8} />;
           }
           if (!visibleRuns.length) {
@@ -380,7 +412,7 @@ export default function RunsPage() {
       {/* Total count */}
       {visibleRuns.length > 0 && (
         <p className="table-footer-rail rounded-md px-4 py-2">
-          Showing {visibleRuns.length} of {query.data?.meta?.total ?? visibleRuns.length} runs
+          Showing {visibleRuns.length} of {queryData?.meta?.total ?? visibleRuns.length} runs
         </p>
       )}
       <ConfirmDialog

@@ -79,6 +79,7 @@ def test_materializes_once_with_lineage_and_quality() -> None:
     record = result.records[0] if result.records else None
     assert record is not None
     assert record["title"] == "Trail Shoe"
+    assert record["brand"] == "Invoro"
     assert record["price"] == "129.00"
     assert record["currency"] == "USD"
     assert record["availability"] == "in_stock"
@@ -86,6 +87,37 @@ def test_materializes_once_with_lineage_and_quality() -> None:
     assert record["_lineage"]["price"]["derived_fact_id"]
     assert result.evidence
     assert "selected" not in record["variants"][0]
+
+
+def test_jsonld_brand_reference_url_is_not_public_brand() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "Product",
+          "name": "Basin Convertible Pants",
+          "brand": {
+            "@type": "Brand",
+            "@id": "https://shop.test/en-us#brand"
+          },
+          "url": "https://shop.test/products/basin-convertible-pants",
+          "offers": {"price": "130", "priceCurrency": "USD"}
+        }
+        </script>
+        """,
+        "https://shop.test/products/basin-convertible-pants",
+    )
+
+    assert result.records
+    assert result.records[0].get("brand") is None
+    assert all(
+        evidence.value != "https://shop.test/en-us#brand"
+        or "brand_url" in evidence.flags
+        for evidence in result.evidence
+        if evidence.fact_type == "product.brand"
+    )
 
 
 def test_jsonld_product_group_uses_shade_as_color_axis() -> None:
@@ -219,7 +251,11 @@ def test_listing_visual_capture_builds_extractable_html_artifact() -> None:
     product_url = "https://shop.test/p/classic-pants/SKU123.html"
     rows = [
         {"href": product_url, "ariaLabel": "View product"},
-        {"href": product_url, "src": "https://shop.test/classic.jpg", "alt": "Classic Pants"},
+        {
+            "href": product_url,
+            "src": "https://shop.test/classic.jpg",
+            "alt": "Classic Pants",
+        },
         {"href": product_url, "text": "$42.95"},
     ]
 
@@ -310,6 +346,269 @@ def test_uncorroborated_cent_magnitude_price_is_not_silently_repaired() -> None:
     assert result.records[0]["currency"] == "USD"
 
 
+def test_explicit_usd_minor_unit_price_is_converted_to_major_units() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        "<main><h1>Road Hoodie</h1></main>",
+        "https://shop.test/products/road-hoodie",
+        network_payloads=(
+            {
+                "body": {
+                    "product": {
+                        "name": "Road Hoodie",
+                        "url": "https://shop.test/products/road-hoodie",
+                        "priceInCents": 13875,
+                        "currency": "USD",
+                    }
+                }
+            },
+        ),
+    )
+
+    assert result.records[0]["price"] == "138.75"
+    assert any(
+        item.fact_type == "offer.price"
+        and item.raw_value == 13875
+        and "explicit_minor_unit_price" in item.flags
+        for item in result.evidence
+    )
+
+
+def test_explicit_inr_minor_unit_variant_price_is_converted_to_major_units() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        "<main><h1>Studio Jacket</h1></main>",
+        "https://shop.test/products/studio-jacket",
+        artifacts={
+            "js_state_objects": {
+                "product": {
+                    "name": "Studio Jacket",
+                    "url": "https://shop.test/products/studio-jacket",
+                    "variants": [
+                        {
+                            "variantId": "black-m",
+                            "sku": "STUDIO-BLK-M",
+                            "size": "M",
+                            "priceInPaise": 2820000,
+                            "currency": "INR",
+                        }
+                    ],
+                }
+            }
+        },
+    )
+
+    assert result.records[0]["variants"][0]["price"] == "28200.00"
+    assert any(
+        item.fact_type == "offer.price"
+        and item.raw_value == 2820000
+        and "explicit_minor_unit_price" in item.flags
+        for item in result.evidence
+    )
+
+
+def test_nested_variant_minor_unit_price_is_converted_to_major_units() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        "<main><h1>Road Hoodie</h1></main>",
+        "https://shop.test/products/road-hoodie",
+        artifacts={
+            "js_state_objects": {
+                "product": {
+                    "name": "Road Hoodie",
+                    "url": "https://shop.test/products/road-hoodie",
+                    "variants": [
+                        {
+                            "variantId": "brown-m",
+                            "sku": "ROAD-BRN-M",
+                            "size": "M",
+                            "priceInfo": {
+                                "priceInCents": 13875,
+                                "currencyCode": "USD",
+                            },
+                        }
+                    ],
+                }
+            }
+        },
+    )
+
+    assert result.records[0]["variants"][0]["price"] == "138.75"
+    assert any(
+        item.fact_type == "offer.price"
+        and item.raw_value == 13875
+        and item.locator.value.endswith("/priceInCents")
+        and "explicit_minor_unit_price" in item.flags
+        for item in result.evidence
+    )
+
+
+def test_zero_decimal_currency_explicit_minor_key_is_not_divided() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        "<main><h1>Tokyo Jacket</h1></main>",
+        "https://shop.test/products/tokyo-jacket",
+        network_payloads=(
+            {
+                "body": {
+                    "product": {
+                        "name": "Tokyo Jacket",
+                        "url": "https://shop.test/products/tokyo-jacket",
+                        "priceInCents": 13875,
+                        "currency": "JPY",
+                    }
+                }
+            },
+        ),
+    )
+
+    assert result.records[0]["price"] == "13875.00"
+    assert not any(
+        "explicit_minor_unit_price" in item.flags
+        for item in result.evidence
+        if item.fact_type == "offer.price"
+    )
+
+
+def test_decimal_major_unit_price_remains_unchanged() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        "<main><h1>Studio Jacket</h1></main>",
+        "https://shop.test/products/studio-jacket",
+        network_payloads=(
+            {
+                "body": {
+                    "product": {
+                        "name": "Studio Jacket",
+                        "url": "https://shop.test/products/studio-jacket",
+                        "price": "28200.50",
+                        "currency": "INR",
+                    }
+                }
+            },
+        ),
+    )
+
+    assert result.records[0]["price"] == "28200.50"
+    assert not any(
+        "explicit_minor_unit_price" in item.flags
+        or "corroborated_price_scale" in item.flags
+        for item in result.evidence
+        if item.fact_type == "offer.price"
+    )
+
+
+def test_independent_parent_price_corroborates_variant_minor_unit_scale() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "Product",
+          "name": "Road Hoodie",
+          "url": "https://shop.test/products/road-hoodie",
+          "offers": {"price": "138.75", "priceCurrency": "USD"}
+        }
+        </script>
+        """,
+        "https://shop.test/products/road-hoodie",
+        artifacts={
+            "js_state_objects": {
+                "product": {
+                    "name": "Road Hoodie",
+                    "url": "https://shop.test/products/road-hoodie",
+                    "variants": [
+                        {
+                            "variantId": "brown-m",
+                            "sku": "ROAD-BRN-M",
+                            "size": "M",
+                            "price": 13875,
+                            "currency": "USD",
+                        }
+                    ],
+                }
+            }
+        },
+    )
+
+    assert result.records[0]["price"] == "138.75"
+    assert result.records[0]["variants"][0]["price"] == "138.75"
+    assert any(
+        item.fact_type == "offer.price"
+        and item.raw_value == 13875
+        and "corroborated_price_scale" in item.flags
+        for item in result.evidence
+    )
+
+
+def test_uncorroborated_expensive_inr_price_is_not_divided() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        "<main><h1>Collector Handbag</h1></main>",
+        "https://shop.test/products/collector-handbag",
+        network_payloads=(
+            {
+                "body": {
+                    "product": {
+                        "name": "Collector Handbag",
+                        "url": "https://shop.test/products/collector-handbag",
+                        "price": 2820000,
+                        "currency": "INR",
+                    }
+                }
+            },
+        ),
+    )
+
+    assert result.records[0]["price"] == "2820000.00"
+
+
+def test_parent_current_price_does_not_scale_variant_original_price() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "Product",
+          "name": "Road Hoodie",
+          "url": "https://shop.test/products/road-hoodie",
+          "offers": {"price": "138.75", "priceCurrency": "USD"}
+        }
+        </script>
+        """,
+        "https://shop.test/products/road-hoodie",
+        artifacts={
+            "js_state_objects": {
+                "product": {
+                    "name": "Road Hoodie",
+                    "url": "https://shop.test/products/road-hoodie",
+                    "variants": [
+                        {
+                            "variantId": "brown-m",
+                            "sku": "ROAD-BRN-M",
+                            "size": "M",
+                            "price": "150",
+                            "originalPrice": 13875,
+                            "currency": "USD",
+                        }
+                    ],
+                }
+            }
+        },
+    )
+
+    variant = result.records[0]["variants"][0]
+    assert variant["price"] == "150.00"
+    assert variant["original_price"] == "13875.00"
+    assert not any(
+        "corroborated_price_scale" in item.flags
+        for item in result.evidence
+        if item.fact_type == "offer.original_price"
+    )
+
+
 def test_slug_only_detail_output_is_review_not_success() -> None:
     result = _extract(
         "ecommerce_detail",
@@ -345,7 +644,10 @@ def test_structured_title_outranks_filename_and_internal_id_url_title() -> None:
 @pytest.mark.parametrize(
     ("page_url", "html"),
     (
-        ("https://kith.com/products/st40002-02000", "<main><h1>st40002 02000</h1></main>"),
+        (
+            "https://kith.com/products/st40002-02000",
+            "<main><h1>st40002 02000</h1></main>",
+        ),
         (
             "https://www.target.com/p/tobago-stripe-blue-twin-duvet-cover-set/-/A-1002150742",
             "<main><h1>A 1002150739</h1></main>",
@@ -357,6 +659,10 @@ def test_structured_title_outranks_filename_and_internal_id_url_title() -> None:
         (
             "https://www.amazon.com/example/dp/B0F5Y3X8PP/?th=1",
             "<main><h1>Not Added</h1></main>",
+        ),
+        (
+            "https://www.firstcry.com/babyhug/denim-set/22346676/product-detail",
+            "<main><h1>14 to 18 Kg</h1></main>",
         ),
         (
             "https://www.adidas.com/us/stan-smith-shoes/M20324.html",
@@ -383,13 +689,59 @@ def test_identifier_placeholder_and_filename_titles_do_not_materialize(
         requested_fields=("title",),
     )
 
-    assert result.records[0].get("title") is None
+    assert not result.records or result.records[0].get("title") is None
     assert any(
         finding.rule_id == "MISSING_CONTRACT_FIELD"
         and finding.metadata.get("field") == "title"
         for finding in result.findings
     )
     assert result.verdict in {"partial", "review"}
+
+
+def test_slug_only_detail_stub_routes_to_review_not_partial() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        "<html><body></body></html>",
+        "https://shop.test/products/breville-the-bambino-plus",
+    )
+
+    assert result.records
+    assert result.records[0]["title"] == "breville the bambino plus"
+    assert result.verdict == "review"
+
+
+def test_shell_h1_cannot_outrank_structured_product_title() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "Product",
+          "name": "Fresh Foam X 1080v15",
+          "url": "https://shop.test/products/fresh-foam-x-1080v15",
+          "offers": {"price": "165", "priceCurrency": "USD"}
+        }
+        </script>
+        <main><h1>Oops! Something went wrong</h1></main>
+        """,
+        "https://shop.test/products/fresh-foam-x-1080v15",
+    )
+
+    assert result.records[0]["title"] == "Fresh Foam X 1080v15"
+    assert result.verdict == "success"
+
+
+def test_transient_cart_action_title_does_not_materialize() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        "<main><h1>Adding to Cart...</h1></main>",
+        "https://www.amazon.com/example/dp/B0F5Y3X8PP/?th=1",
+        requested_fields=("title",),
+    )
+
+    assert not result.records
+    assert result.verdict != "success"
 
 
 def test_truncated_title_loses_to_more_complete_url_identity() -> None:
@@ -756,7 +1108,9 @@ def test_ecommerce_listing_reads_product_tile_metadata_after_image_link() -> Non
 
     assert len(result.records) == 1
     assert result.records[0]["title"] == "Classic Fit Pants"
-    assert result.records[0]["url"] == "https://shop.test/p/classic-fit-pants/SKU123.html"
+    assert (
+        result.records[0]["url"] == "https://shop.test/p/classic-fit-pants/SKU123.html"
+    )
     assert result.records[0]["price"] == "$42.95"
     assert (
         result.records[0]["image_url"]
@@ -764,7 +1118,9 @@ def test_ecommerce_listing_reads_product_tile_metadata_after_image_link() -> Non
     )
 
 
-def test_ecommerce_listing_uses_browser_visual_artifact_when_html_has_no_cards() -> None:
+def test_ecommerce_listing_uses_browser_visual_artifact_when_html_has_no_cards() -> (
+    None
+):
     product_url = "https://shop.test/p/classic-fit-pants/SKU123.html"
     result = _extract(
         "ecommerce_listing",
@@ -778,7 +1134,7 @@ def test_ecommerce_listing_uses_browser_visual_artifact_when_html_has_no_cards()
                 f'<a href="{product_url}" title="Classic Fit Pants">Classic Fit Pants</a>'
                 '<img src="https://shop.test/images/classic-fit-pants.jpg">'
                 '<span class="price">$42.95</span>'
-                '</article></main>'
+                "</article></main>"
             )
         },
     )
@@ -1007,6 +1363,7 @@ def test_js_state_nested_variant_options_and_offer_materialize() -> None:
     assert result.records[0]["variants"] == [
         {
             "variant_id": "sku-blue-m",
+            "sku": "sku-blue-m",
             "price": "19.00",
             "currency": "USD",
             "availability": "out_of_stock",
@@ -1023,6 +1380,240 @@ def test_js_state_nested_variant_options_and_offer_materialize() -> None:
             "size": "S",
         },
     ]
+
+
+def test_js_state_numeric_availability_flags_materialize_as_stock_states() -> None:
+    artifacts = {
+        "js_state_objects": {
+            "variants": [
+                {
+                    "__typename": "ProductVariant",
+                    "variantId": "shoe-8",
+                    "sku": "SHOE-8",
+                    "size": "8",
+                    "availability": 0,
+                },
+                {
+                    "__typename": "ProductVariant",
+                    "variantId": "shoe-9",
+                    "sku": "SHOE-9",
+                    "size": "9",
+                    "availability": 1,
+                },
+            ]
+        }
+    }
+
+    result = _extract(
+        "ecommerce_detail",
+        "<html><body><h1>Classic Shoe</h1></body></html>",
+        "https://shop.test/products/classic-shoe",
+        artifacts=artifacts,
+    )
+
+    assert result.records[0]["variants"] == [
+        {
+            "variant_id": "shoe-8",
+            "sku": "SHOE-8",
+            "availability": "out_of_stock",
+            "size": "8",
+        },
+        {
+            "variant_id": "shoe-9",
+            "sku": "SHOE-9",
+            "availability": "in_stock",
+            "size": "9",
+        },
+    ]
+
+
+def test_embedded_next_state_variants_materialize_without_state_artifact() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <html><head>
+          <script id="__NEXT_DATA__" type="application/json">
+          {
+            "props": {"pageProps": {"product": {
+              "name": "Everyday Tee",
+              "variants": [
+                {
+                  "id": "tee-black-s",
+                  "sku": "TEE-BLK-S",
+                  "size": "S",
+                  "current_price": "30",
+                  "currency_code": "USD",
+                  "availableForSale": true
+                }
+              ]
+            }}}
+          }
+          </script>
+        </head><body><h1>Everyday Tee</h1></body></html>
+        """,
+        "https://shop.test/products/everyday-tee",
+    )
+
+    assert result.records[0]["variants"] == [
+        {
+            "variant_id": "tee-black-s",
+            "sku": "TEE-BLK-S",
+            "price": "30.00",
+            "currency": "USD",
+            "availability": "in_stock",
+            "size": "S",
+        }
+    ]
+
+
+def test_embedded_preloaded_state_variant_aliases_materialize() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <html><head><script>
+        window.__PRELOADED_STATE__ = {
+          "product": {
+            "name": "Runner Shoe",
+            "skuData": [
+              {
+                "id": "runner-blue-9",
+                "skuId": "NK-RUN-BLU-9",
+                "nikeSize": "9",
+                "colorway": "Blue",
+                "current_price": "120",
+                "currency_code": "USD",
+                "available": 1
+              }
+            ]
+          }
+        };
+        </script></head><body><h1>Runner Shoe</h1></body></html>
+        """,
+        "https://shop.test/products/runner-shoe",
+    )
+
+    assert result.records[0]["variants"] == [
+        {
+            "variant_id": "NK-RUN-BLU-9",
+            "sku": "NK-RUN-BLU-9",
+            "price": "120.00",
+            "currency": "USD",
+            "availability": "in_stock",
+            "color": "Blue",
+            "size": "9",
+        }
+    ]
+
+
+def test_unrelated_application_json_does_not_create_variant() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <html><head>
+          <script type="application/json">
+          {"analytics": {"id": "event-1", "price": "999", "currency": "USD"}}
+          </script>
+        </head><body><h1>Everyday Tee</h1></body></html>
+        """,
+        "https://shop.test/products/everyday-tee",
+    )
+
+    assert not result.records[0].get("variants")
+    assert result.records[0].get("price") is None
+
+
+def test_embedded_variants_inherit_parent_jsonld_offer() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "Product",
+          "name": "Stan Smith Shoes",
+          "url": "https://shop.test/products/stan-smith",
+          "offers": {
+            "@type": "Offer",
+            "price": "110",
+            "priceCurrency": "USD",
+            "availability": "https://schema.org/InStock"
+          }
+        }
+        </script>
+        <script id="__NEXT_DATA__" type="application/json">
+        {
+          "props": {"pageProps": {"product": {"variants": [
+            {"id": "stan-8", "sku": "M20324-8", "size": "8"},
+            {"id": "stan-9", "sku": "M20324-9", "size": "9"}
+          ]}}}
+        }
+        </script>
+        """,
+        "https://shop.test/products/stan-smith",
+    )
+
+    assert result.records[0]["variants"] == [
+        {
+            "variant_id": "stan-8",
+            "sku": "M20324-8",
+            "price": "110.00",
+            "currency": "USD",
+            "availability": "in_stock",
+            "size": "8",
+        },
+        {
+            "variant_id": "stan-9",
+            "sku": "M20324-9",
+            "price": "110.00",
+            "currency": "USD",
+            "availability": "in_stock",
+            "size": "9",
+        },
+    ]
+    lineage = result.records[0]["_lineage"]["variants"]
+    assert all(row["price"]["rule_id"] == "PARENT_OFFER_TO_VARIANT" for row in lineage)
+
+
+def test_id_preferred_variant_with_sku_inherits_parent_offer_without_options() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "Product",
+          "name": "Stan Smith Shoes",
+          "url": "https://shop.test/products/stan-smith",
+          "offers": {
+            "@type": "Offer",
+            "price": "110",
+            "priceCurrency": "USD",
+            "availability": "https://schema.org/InStock"
+          }
+        }
+        </script>
+        <script id="__NEXT_DATA__" type="application/json">
+        {
+          "props": {"pageProps": {"product": {"variants": [
+            {"id": "stan-white", "sku": "M20324-WHT"}
+          ]}}}
+        }
+        </script>
+        """,
+        "https://shop.test/products/stan-smith",
+    )
+
+    assert result.records[0]["variants"] == [
+        {
+            "variant_id": "stan-white",
+            "sku": "M20324-WHT",
+            "price": "110.00",
+            "currency": "USD",
+            "availability": "in_stock",
+        }
+    ]
+    lineage = result.records[0]["_lineage"]["variants"][0]
+    assert lineage["price"]["rule_id"] == "PARENT_OFFER_TO_VARIANT"
 
 
 def test_product_group_variants_have_lineage_and_parent_subjects() -> None:
@@ -1251,14 +1842,11 @@ def test_nested_variant_options_money_inventory_and_sku_aliases_materialize() ->
                             "variationValue": "Rosewood",
                             "sizeDescription": "0.1 oz",
                             "priceInfo": {
-                                "currentPrice": {
-                                    "amount": "28",
-                                    "currencyCode": "USD"
-                                }
+                                "currentPrice": {"amount": "28", "currencyCode": "USD"}
                             },
-                            "inventory": {"inventoryStatus": "IN_STOCK"}
+                            "inventory": {"inventoryStatus": "IN_STOCK"},
                         }
-                    ]
+                    ],
                 }
             }
         },
@@ -1277,7 +1865,9 @@ def test_nested_variant_options_money_inventory_and_sku_aliases_materialize() ->
     ]
 
 
-def test_variant_offer_inherits_parent_commercial_facts_but_keeps_child_availability() -> None:
+def test_variant_offer_inherits_parent_commercial_facts_but_keeps_child_availability() -> (
+    None
+):
     result = _extract(
         "ecommerce_detail",
         """
@@ -1489,6 +2079,105 @@ def test_mixed_numeric_and_string_identity_values_do_not_crash() -> None:
     assert record["sku"] in {123, "123"}
 
 
+def test_boolean_product_title_is_rejected_before_typed_materialization() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        "<html><body></body></html>",
+        "https://shop.test/products/classic-suede",
+        artifacts={
+            "js_state_objects": {
+                "product": {
+                    "title": True,
+                    "price": "90",
+                    "currency": "USD",
+                }
+            }
+        },
+    )
+
+    assert result.records
+    assert result.records[0].get("title") is not True
+    assert not isinstance(result.records[0].get("title"), bool)
+    assert any(
+        item.fact_type == "product.title"
+        and item.value is True
+        and "invalid_scalar_type" in item.flags
+        for item in result.evidence
+    )
+
+
+def test_integer_variant_url_is_rejected_before_typed_materialization() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        "<main><h1>Old Skool Shoe</h1></main>",
+        "https://shop.test/products/old-skool-shoe",
+        artifacts={
+            "js_state_objects": {
+                "variants": [
+                    {
+                        "__typename": "ProductVariant",
+                        "variantId": "black-9",
+                        "sku": "OLD-SKOOL-BLK-9",
+                        "size": "9",
+                        "url": 1079,
+                    }
+                ]
+            }
+        },
+    )
+
+    variant = result.records[0]["variants"][0]
+    assert variant["sku"] == "OLD-SKOOL-BLK-9"
+    assert "url" not in variant
+    assert any(
+        item.fact_type == "variant.url"
+        and item.value == 1079
+        and "invalid_scalar_type" in item.flags
+        for item in result.evidence
+    )
+
+
+def test_valid_string_title_url_and_boolean_availability_remain_unchanged() -> None:
+    variant_url = "https://shop.test/products/classic-suede?variant=black-9"
+    result = _extract(
+        "ecommerce_detail",
+        "<main><h1>Fallback Title</h1></main>",
+        "https://shop.test/products/classic-suede",
+        artifacts={
+            "js_state_objects": {
+                "product": {
+                    "title": "Classic Suede",
+                    "price": "90",
+                    "currency": "USD",
+                    "variants": [
+                        {
+                            "__typename": "ProductVariant",
+                            "variantId": "black-9",
+                            "sku": "CLASSIC-BLK-9",
+                            "size": "9",
+                            "url": variant_url,
+                            "available": True,
+                        }
+                    ],
+                }
+            }
+        },
+    )
+
+    assert result.records[0]["title"] == "Classic Suede"
+    assert result.records[0]["variants"] == [
+        {
+            "variant_id": "black-9",
+            "sku": "CLASSIC-BLK-9",
+            "price": "90.00",
+            "currency": "USD",
+            "url": variant_url,
+            "availability": "in_stock",
+            "size": "9",
+        }
+    ]
+
+
 def test_adapter_artifact_flows_through_evidence_engine() -> None:
     result = _extract(
         "ecommerce_detail",
@@ -1548,7 +2237,9 @@ def test_job_detail_cutover_materializes_with_lineage() -> None:
     assert all(item.surface.value == "job_detail" for item in result.evidence)
 
 
-def test_job_detail_wrong_surface_product_returns_error_without_commerce_aliases() -> None:
+def test_job_detail_wrong_surface_product_returns_error_without_commerce_aliases() -> (
+    None
+):
     html = """
     <script type="application/ld+json">
     {
@@ -1739,8 +2430,7 @@ def test_incomplete_variant_identity_is_diagnostic_not_public_row() -> None:
     )
     assert not result.records[0].get("variants")
     assert any(
-        finding.rule_id == "INCOMPLETE_VARIANT_EVIDENCE"
-        for finding in result.findings
+        finding.rule_id == "INCOMPLETE_VARIANT_EVIDENCE" for finding in result.findings
     )
 
 
@@ -1894,6 +2584,248 @@ def test_product_asset_decision_materializes_primary_and_additional_images() -> 
     ]
 
 
+def test_js_state_related_products_do_not_contaminate_product_assets() -> None:
+    product_url = "https://www.backmarket.com/en-us/p/iphone-15-plus"
+    result = _extract(
+        "ecommerce_detail",
+        "<main><h1>iPhone 15 Plus</h1></main>",
+        product_url,
+        artifacts={
+            "js_state_objects": {
+                "product": {
+                    "name": "iPhone 15 Plus",
+                    "url": product_url,
+                    "images": [
+                        "https://cdn.backmarket.test/iphone-15-plus-front.jpg",
+                        "https://cdn.backmarket.test/iphone-15-plus-back.jpg",
+                    ],
+                    "price": "799",
+                    "currency": "USD",
+                },
+                "relatedProducts": [
+                    {
+                        "name": "PlayStation 4 Console",
+                        "url": "https://www.backmarket.com/en-us/p/playstation-4",
+                        "image": (
+                            "https://cdn.backmarket.test/"
+                            "playstation_4_-_2_manettes_et_plus_noir.jpg"
+                        ),
+                        "price": "199",
+                        "currency": "USD",
+                    }
+                ],
+            }
+        },
+    )
+
+    record = result.records[0]
+    assert record["image_url"] == (
+        "https://cdn.backmarket.test/iphone-15-plus-front.jpg"
+    )
+    assert record["additional_images"] == [
+        "https://cdn.backmarket.test/iphone-15-plus-back.jpg"
+    ]
+
+
+def test_valid_shopify_gallery_images_remain_materialized() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <script type="application/ld+json">
+        {
+          "@type": "Product",
+          "name": "Follow The Road Pullover Hoodie",
+          "url": "https://shop.test/products/follow-the-road-pullover-hoodie",
+          "image": [
+            "https://cdn.shopify.com/s/files/1/0001/files/hoodie-front.jpg?v=1",
+            "https://cdn.shopify.com/s/files/1/0001/files/hoodie-back.jpg?v=2"
+          ],
+          "offers": {"price": "120", "priceCurrency": "USD"}
+        }
+        </script>
+        """,
+        "https://shop.test/products/follow-the-road-pullover-hoodie",
+    )
+
+    record = result.records[0]
+    assert record["image_url"] == (
+        "https://cdn.shopify.com/s/files/1/0001/files/hoodie-front.jpg?v=1"
+    )
+    assert record["additional_images"] == [
+        "https://cdn.shopify.com/s/files/1/0001/files/hoodie-back.jpg?v=2"
+    ]
+
+
+def test_structured_gallery_rejects_conflicting_product_codes() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <script type="application/ld+json">
+        {
+          "@type": "Product",
+          "name": "Dime Soft Rock Crewneck",
+          "url": "https://shop.test/products/dime-soft-rock-crewneck-dime2sp2542blk",
+          "sku": "DIME2SP2542BLK",
+          "image": [
+            "https://cdn.shop.test/files/DIME2SP2542BLK-1.jpg",
+            "https://cdn.shop.test/files/DIME2SP2542BLK-2.jpg",
+            "https://cdn.shop.test/files/M20324-01.jpg",
+            "https://cdn.shop.test/files/FZ4675-744_01.jpg"
+          ],
+          "offers": {"price": "120", "priceCurrency": "USD"}
+        }
+        </script>
+        """,
+        "https://shop.test/products/dime-soft-rock-crewneck-dime2sp2542blk",
+    )
+
+    record = result.records[0]
+    assert record["image_url"] == "https://cdn.shop.test/files/DIME2SP2542BLK-1.jpg"
+    assert record["additional_images"] == [
+        "https://cdn.shop.test/files/DIME2SP2542BLK-2.jpg"
+    ]
+
+
+def test_structured_gallery_uses_product_identity_not_first_image_as_anchor() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <script type="application/ld+json">
+        {
+          "@type": "Product",
+          "name": "Dime Soft Rock Crewneck",
+          "url": "https://shop.test/products/dime-soft-rock-crewneck-dime2sp2542blk",
+          "sku": "DIME2SP2542BLK",
+          "image": [
+            "https://cdn.shop.test/files/M20324-01.jpg",
+            "https://cdn.shop.test/files/DIME2SP2542BLK-1.jpg",
+            "https://cdn.shop.test/files/DIME2SP2542BLK-2.jpg"
+          ],
+          "offers": {"price": "120", "priceCurrency": "USD"}
+        }
+        </script>
+        """,
+        "https://shop.test/products/dime-soft-rock-crewneck-dime2sp2542blk",
+    )
+
+    record = result.records[0]
+    assert record["image_url"] == "https://cdn.shop.test/files/DIME2SP2542BLK-1.jpg"
+    assert record["additional_images"] == [
+        "https://cdn.shop.test/files/DIME2SP2542BLK-2.jpg"
+    ]
+
+
+def test_structured_gallery_rejects_conflicting_numeric_product_ids() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <script type="application/ld+json">
+        {
+          "@type": "Product",
+          "name": "Lightweight Barrel Pants",
+          "url": "https://shop.test/products/lightweight-barrel-pants/prd/210397084",
+          "image": [
+            "https://cdn.shop.test/images/210397084-1.jpg",
+            "https://cdn.shop.test/images/210397084-2.jpg",
+            "https://cdn.shop.test/images/209999999-1.jpg",
+            "https://cdn.shop.test/images/208888888-2.jpg"
+          ],
+          "offers": {"price": "65", "priceCurrency": "USD"}
+        }
+        </script>
+        """,
+        "https://shop.test/products/lightweight-barrel-pants/prd/210397084",
+    )
+
+    record = result.records[0]
+    assert record["image_url"] == "https://cdn.shop.test/images/210397084-1.jpg"
+    assert record["additional_images"] == [
+        "https://cdn.shop.test/images/210397084-2.jpg"
+    ]
+
+
+def test_video_thumbnail_is_not_a_product_gallery_asset() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <script type="application/ld+json">
+        {
+          "@type": "Product",
+          "name": "Arizona Sandal",
+          "url": "https://shop.test/products/arizona-sandal",
+          "image": [
+            "https://cdn.shop.test/images/arizona-main.jpg",
+            "https://cdn.shop.test/images/arizona-side.jpg",
+            "https://i.ytimg.com/vi/UaGZUwhd5ZU/default.jpg"
+          ],
+          "offers": {"price": "115", "priceCurrency": "USD"}
+        }
+        </script>
+        """,
+        "https://shop.test/products/arizona-sandal",
+    )
+
+    record = result.records[0]
+    assert record["image_url"] == "https://cdn.shop.test/images/arizona-main.jpg"
+    assert record["additional_images"] == [
+        "https://cdn.shop.test/images/arizona-side.jpg"
+    ]
+
+
+def test_unanchored_alphanumeric_gallery_is_preserved() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <script type="application/ld+json">
+        {
+          "@type": "Product",
+          "name": "Studio Jacket",
+          "url": "https://shop.test/products/studio-jacket",
+          "image": [
+            "https://cdn.shop.test/images/studio123-front.jpg",
+            "https://cdn.shop.test/images/editorial456-back.jpg"
+          ],
+          "offers": {"price": "180", "priceCurrency": "USD"}
+        }
+        </script>
+        """,
+        "https://shop.test/products/studio-jacket",
+    )
+
+    record = result.records[0]
+    assert record["image_url"] == "https://cdn.shop.test/images/studio123-front.jpg"
+    assert record["additional_images"] == [
+        "https://cdn.shop.test/images/editorial456-back.jpg"
+    ]
+
+
+def test_opaque_structured_gallery_is_preserved_without_identity_anchor() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <script type="application/ld+json">
+        {
+          "@type": "Product",
+          "name": "Studio Jacket",
+          "url": "https://shop.test/products/studio-jacket",
+          "image": [
+            "https://cdn.shop.test/images/4f8c9d2a7b31-front.jpg",
+            "https://cdn.shop.test/images/7a2e1c8d9f44-back.jpg"
+          ],
+          "offers": {"price": "180", "priceCurrency": "USD"}
+        }
+        </script>
+        """,
+        "https://shop.test/products/studio-jacket",
+    )
+
+    record = result.records[0]
+    assert record["image_url"] == "https://cdn.shop.test/images/4f8c9d2a7b31-front.jpg"
+    assert record["additional_images"] == [
+        "https://cdn.shop.test/images/7a2e1c8d9f44-back.jpg"
+    ]
+
+
 def test_product_asset_filter_rejects_utility_carrier_flag_and_template_urls() -> None:
     result = _extract(
         "ecommerce_detail",
@@ -1910,7 +2842,10 @@ def test_product_asset_filter_rejects_utility_carrier_flag_and_template_urls() -
             "https://cdn.shop.test/carriers/att.png",
             "https://cdn.shop.test/ui/left-arrow.svg",
             "https://cdn.shop.test/ui/edit.abcdef12.svg",
+            "https://cdn.shop.test/ui/pig.310ddaac.svg",
             "https://cdn.shop.test/flags/us.png",
+            "https://cdn.shop.test/category/summer-collection-banner.jpg",
+            "https://cdn.shop.test/dropdown/toy-directory-thumbnail.jpg",
             "https://cdn.shop.test/products/trail-shoe.jpg?w={width}"
           ],
           "offers": {"price": "10", "priceCurrency": "USD"}
@@ -1989,7 +2924,9 @@ def test_single_admissible_main_image_remains_a_dom_fallback() -> None:
     )
 
 
-def test_asset_urls_are_normalized_and_deduped_without_dropping_variant_params() -> None:
+def test_asset_urls_are_normalized_and_deduped_without_dropping_variant_params() -> (
+    None
+):
     result = _extract(
         "ecommerce_detail",
         """
@@ -2011,7 +2948,9 @@ def test_asset_urls_are_normalized_and_deduped_without_dropping_variant_params()
     )
 
     record = result.records[0]
-    assert record["image_url"] == "https://cdn.shop.test/images/Trail%20Shoe.jpg?width=800"
+    assert (
+        record["image_url"] == "https://cdn.shop.test/images/Trail%20Shoe.jpg?width=800"
+    )
     assert record["additional_images"] == [
         "https://cdn.shop.test/images/Trail%20Shoe.jpg?color=red&width=800",
     ]

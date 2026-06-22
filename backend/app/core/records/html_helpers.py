@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from collections.abc import Iterator
+import json
+import re
+from collections.abc import Iterable, Iterator
 
 from bs4 import BeautifulSoup
 from bs4.element import Comment, NavigableString, PageElement, Tag
@@ -90,14 +92,81 @@ def prune_html_tree(
         tag.attrs = {
             key: value
             for key, value in attrs.items()
-            if (
-                key in allowed_attr_set
-                if allowed_attrs is not None
-                else True
-            )
+            if (key in allowed_attr_set if allowed_attrs is not None else True)
             and (attr_filter(key, value) if attr_filter else True)
         }
     return soup
+
+
+def embedded_state_payloads(
+    document,
+    *,
+    selector: str,
+    global_keys: tuple[str, ...],
+    max_scripts: int,
+    max_script_chars: int,
+) -> Iterable[tuple[str, object]]:
+    seen_nodes: set[int] = set()
+    for index, node in enumerate(document.safe_css(selector)[:max_scripts]):
+        seen_nodes.add(node.identity())
+        text = str(node.text(separator="", strip=True) or "")[:max_script_chars]
+        try:
+            data = json.loads(text)
+        except (TypeError, ValueError):
+            continue
+        state_key = str(node.attribute("id") or "application_json").strip()
+        yield f"/embedded/{state_key}/{index}", data
+    remaining = max(0, max_scripts - len(seen_nodes))
+    for index, node in enumerate(document.safe_css("script")[:max_scripts]):
+        if remaining <= 0 or node.identity() in seen_nodes:
+            continue
+        remaining -= 1
+        text = str(node.text(separator="", strip=True) or "")[:max_script_chars]
+        yield from _assigned_state_payloads(text, global_keys, index)
+
+
+def _assigned_state_payloads(
+    text: str, global_keys: tuple[str, ...], script_index: int
+) -> Iterable[tuple[str, object]]:
+    decoder = json.JSONDecoder()
+    for state_key in global_keys:
+        pattern = re.compile(
+            rf"(?<![\w$])(?:window\s*\.\s*)?{re.escape(state_key)}\s*=\s*"
+        )
+        for match in pattern.finditer(text):
+            try:
+                value, _ = decoder.raw_decode(text[match.end() :])
+            except (TypeError, ValueError):
+                continue
+            yield f"/embedded/{state_key}/{script_index}", value
+            break
+
+
+def bounded_json_objects(
+    value: object,
+    *,
+    max_depth: int,
+    max_nodes: int,
+    max_list_items: int,
+) -> Iterable[tuple[str, object]]:
+    stack: list[tuple[str, object, int]] = [("", value, 0)]
+    visited = 0
+    while stack and visited < max_nodes:
+        path, current, depth = stack.pop()
+        visited += 1
+        if isinstance(current, dict):
+            yield path, current
+            if depth >= max_depth:
+                continue
+            stack.extend(
+                (f"{path}/{key}", child, depth + 1)
+                for key, child in reversed(list(current.items()))
+            )
+        elif isinstance(current, list) and depth < max_depth:
+            stack.extend(
+                (f"{path}/{index}", child, depth + 1)
+                for index, child in reversed(list(enumerate(current[:max_list_items])))
+            )
 
 
 def extract_job_sections(html: str) -> dict[str, str]:
@@ -126,7 +195,9 @@ def extract_job_sections(html: str) -> dict[str, str]:
         value = " ".join(collected).strip()
         if not value:
             continue
-        combined_parts = [mapped_value, value] if (mapped_value := mapped.get(section)) else [value]
+        combined_parts = (
+            [mapped_value, value] if (mapped_value := mapped.get(section)) else [value]
+        )
         combined = " ".join(
             piece for piece in combined_parts if str(piece or "").strip()
         )

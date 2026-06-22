@@ -19,7 +19,9 @@ class ArtifactReference(FrozenModel):
     @classmethod
     def validate_sha256(cls, value: str) -> str:
         normalized = value.strip().lower()
-        if len(normalized) != 64 or any(char not in "0123456789abcdef" for char in normalized):
+        if len(normalized) != 64 or any(
+            char not in "0123456789abcdef" for char in normalized
+        ):
             raise ValueError("sha256 must be 64 hexadecimal characters")
         return normalized
 

@@ -25,7 +25,8 @@ def export_quality_report(
     failed_fields = [
         field_name
         for field_name, report in field_reports.items()
-        if float(report["fill_rate"]) < export_settings.EXPORT_REQUIRED_FIELD_MIN_FILL_RATE
+        if float(report["fill_rate"])
+        < export_settings.EXPORT_REQUIRED_FIELD_MIN_FILL_RATE
     ]
     return {
         "passed": not failed_fields,

@@ -56,6 +56,7 @@ async def _append_html_fragment(
             break
     result.html_fragments.append((value, is_fallback))
 
+
 async def looks_like_paginate_control(locator) -> bool:
     try:
         inspection = await locator.evaluate(
@@ -126,18 +127,22 @@ async def looks_like_paginate_control(locator) -> bool:
         or bool(inspection.get("is_button_like"))
     ):
         return True
-    if bool(inspection.get("pagination_container")) and bool(
-        inspection.get("follows_current_page")
-    ) and (
-        bool(inspection.get("arrow_only"))
-        or bool(inspection.get("raw_href"))
-        or bool(inspection.get("is_button_like"))
-        or bool(inspection.get("has_click_handler"))
+    if (
+        bool(inspection.get("pagination_container"))
+        and bool(inspection.get("follows_current_page"))
+        and (
+            bool(inspection.get("arrow_only"))
+            or bool(inspection.get("raw_href"))
+            or bool(inspection.get("is_button_like"))
+            or bool(inspection.get("has_click_handler"))
+        )
     ):
         return True
-    if bool(inspection.get("pagination_container")) and bool(
-        inspection.get("sibling_page_numbers")
-    ) and bool(inspection.get("arrow_only")):
+    if (
+        bool(inspection.get("pagination_container"))
+        and bool(inspection.get("sibling_page_numbers"))
+        and bool(inspection.get("arrow_only"))
+    ):
         return True
     if bool(inspection.get("pagination_text")) and (
         bool(inspection.get("has_click_handler"))
@@ -146,6 +151,7 @@ async def looks_like_paginate_control(locator) -> bool:
     ):
         return True
     return False
+
 
 async def _looks_like_next_page_control(locator) -> bool:
     try:
@@ -186,12 +192,14 @@ async def _looks_like_next_page_control(locator) -> bool:
         return False
     return any(token in text for token in ("next", "older", "more", ">", "›", "»"))
 
+
 async def _page_matches_block_challenge(page) -> bool:
     html = await get_page_html(page, flatten_shadow=False)
     if not html:
         return False
     classification = await classify_blocked_page_async(html, 200)
     return bool(classification.blocked)
+
 
 def _bounded_traversal_fragment_html(
     html: str,
@@ -227,6 +235,7 @@ def _bounded_traversal_fragment_html(
         parts.extend(card_fragments)
         parts.append("</div>")
     return "\n".join(parts)
+
 
 def _collect_structured_script_fragments(
     parser: LexborHTMLParser,
@@ -264,6 +273,7 @@ def _collect_structured_script_fragments(
         fragments.append(fragment)
         used_bytes += fragment_bytes
     return fragments
+
 
 def _collect_listing_card_fragments(
     parser: LexborHTMLParser,
@@ -322,8 +332,10 @@ def _listing_fragment_score(node) -> int:
         pass
     return score
 
+
 def _fragments_bytes(fragments: list[str]) -> int:
     return sum(len(fragment.encode("utf-8")) for fragment in fragments if fragment)
+
 
 async def _settle_after_action(
     page,
@@ -346,7 +358,9 @@ async def _settle_after_action(
             exc_info=True,
         )
     try:
-        await page.wait_for_load_state("domcontentloaded", timeout=min(1500, wait_ms * 2))
+        await page.wait_for_load_state(
+            "domcontentloaded", timeout=min(1500, wait_ms * 2)
+        )
     except _RECOVERABLE_ERRORS:
         logger.debug(
             "Traversal domcontentloaded settle wait failed url=%s",
@@ -358,6 +372,7 @@ async def _settle_after_action(
         quiet_window_ms=min(500, max(100, wait_ms // 4)),
         timeout_ms=wait_ms,
     )
+
 
 async def _wait_for_transition(
     page,
@@ -374,6 +389,7 @@ async def _wait_for_transition(
         deadline_at=deadline_at,
     )
     await _settle_after_action(page, deadline_at=deadline_at, timeout_ms=timeout_ms)
+
 
 async def _wait_for_navigation_if_changed(
     page,
@@ -401,6 +417,7 @@ async def _wait_for_navigation_if_changed(
             await _wait_for_domcontentloaded(page, deadline_at=deadline_at)
             return
 
+
 async def _wait_for_domcontentloaded(page, *, deadline_at: float | None) -> None:
     timeout_ms = _remaining_timeout_ms(
         deadline_at,
@@ -417,16 +434,21 @@ async def _wait_for_domcontentloaded(page, *, deadline_at: float | None) -> None
         logger.debug("Traversal domcontentloaded wait failed", exc_info=True)
         return
 
+
 def _deadline_reached(deadline_at: float | None) -> bool:
     return deadline_at is not None and time.monotonic() >= deadline_at
 
-def _remaining_timeout_ms(deadline_at: float | None, default_ms: int, *, min_ms: int = 500) -> int:
+
+def _remaining_timeout_ms(
+    deadline_at: float | None, default_ms: int, *, min_ms: int = 500
+) -> int:
     if deadline_at is None:
         return max(min_ms, int(default_ms))
     remaining_ms = int((deadline_at - time.monotonic()) * 1000)
     if remaining_ms <= 0:
         return 0
     return max(min_ms, min(int(default_ms), remaining_ms))
+
 
 async def _emit_event(on_event, level: str, message: str) -> None:
     if on_event is None:
@@ -435,6 +457,7 @@ async def _emit_event(on_event, level: str, message: str) -> None:
         await on_event(level, message)
     except (RuntimeError, TypeError, ValueError):
         logger.debug("Traversal event callback failed", exc_info=True)
+
 
 def is_same_origin(current_url: str, next_url: str) -> bool:
     current = urlsplit(str(current_url or ""))
@@ -454,14 +477,20 @@ def is_same_origin(current_url: str, next_url: str) -> bool:
     # Also compare the first path segment to prevent cross-tenant bleed
     # on path-based multi-tenant architectures (e.g. myworkdayjobs.com/TenantA).
     if _requires_path_tenant_boundary(current_url, next_url):
-        current_first = (str(current.path or "").strip("/").split("/") + [""])[0].lower()
-        next_first = (str(next_value.path or "").strip("/").split("/") + [""])[0].lower()
+        current_first = (str(current.path or "").strip("/").split("/") + [""])[
+            0
+        ].lower()
+        next_first = (str(next_value.path or "").strip("/").split("/") + [""])[
+            0
+        ].lower()
         if current_first and next_first and current_first != next_first:
             return False
     return True
 
+
 def _host_without_port(netloc: str) -> str:
     return str(netloc or "").split(":", 1)[0].lower()
+
 
 def _requires_path_tenant_boundary(current_url: str, next_url: str) -> bool:
     current_family = path_tenant_boundary_family(current_url)

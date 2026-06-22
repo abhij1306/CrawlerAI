@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import re
 
+from app.core.config.extraction_price_rules import (
+    DETAIL_EXPLICIT_MINOR_UNIT_PRICE_FIELDS,
+)
 from app.core.config.field_mappings import (
     AVAILABILITY_FIELD,
     BARCODE_FIELD,
@@ -225,15 +228,49 @@ AXIS_NAME_ALIASES = {
     if normalized_alias and normalized_canonical
 }
 OPTION_SCALAR_FIELDS = frozenset(PUBLIC_VARIANT_AXIS_FIELDS)
-VARIANT_SKU_VALUE_KEYS = ("sku", "skuCode", "sku_code", "stockKeepingUnit")
+VARIANT_SKU_VALUE_KEYS = (
+    "sku",
+    "skuCode",
+    "sku_code",
+    "skuId",
+    "sku_id",
+    "stockKeepingUnit",
+)
+VARIANT_IMAGE_DIMENSION_MIN_PX = 100
+EMBEDDED_STATE_SCRIPT_SELECTOR = (
+    'script[type="application/json"], '
+    "script#__NEXT_DATA__, script#__NUXT_DATA__, script#__NG_STATE__"
+)
+EMBEDDED_STATE_GLOBAL_KEYS = (
+    "__INITIAL_STATE__",
+    "INITIAL_STATE",
+    "__PRELOADED_STATE__",
+    "__NUXT__",
+    "__NG_STATE__",
+)
+EMBEDDED_STATE_MAX_SCRIPTS = 120
+EMBEDDED_STATE_MAX_SCRIPT_CHARS = 10_000_000
+EMBEDDED_STATE_MAX_DEPTH = 24
+EMBEDDED_STATE_MAX_NODES = 100_000
+EMBEDDED_STATE_MAX_LIST_ITEMS = 5_000
+VARIANT_STRUCTURED_PATH_TOKENS = frozenset(
+    {"variant", "variants", "variation", "variations", "sku", "skus", "skudata"}
+)
 VARIANT_DIRECT_OPTION_FIELD_AXES = {
     "size": "size",
     "sizeDescription": "size",
     "displaySize": "size",
+    "localizedSize": "size",
+    "nikeSize": "size",
+    "sizeLabel": "size",
+    "sizeName": "size",
     "color": "color",
     "colour": "color",
     "colorName": "color",
     "displayColor": "color",
+    "colorDisplayName": "color",
+    "colorDescription": "color",
+    "colorway": "color",
     "shade": "color",
     "shadeName": "color",
     "width": "width",
@@ -280,6 +317,7 @@ VARIANT_SCALAR_VALUE_KEYS = (
     "optionValue",
     "selectedValue",
     "variationValue",
+    *DETAIL_EXPLICIT_MINOR_UNIT_PRICE_FIELDS,
     "amount",
     "current",
     "currentPrice",
@@ -287,14 +325,28 @@ VARIANT_SCALAR_VALUE_KEYS = (
     "listPrice",
     "price",
 )
-VARIANT_OFFER_PRICE_KEYS = ("price", "currentPrice", "salePrice", "priceInfo", "pricing")
+VARIANT_OFFER_PRICE_KEYS = (
+    "price",
+    "currentPrice",
+    "current_price",
+    "salePrice",
+    "sale_price",
+    *DETAIL_EXPLICIT_MINOR_UNIT_PRICE_FIELDS,
+    "priceInfo",
+    "pricing",
+)
 VARIANT_OFFER_ORIGINAL_PRICE_KEYS = (
     "originalPrice",
     "regularPrice",
     "listPrice",
     "compareAtPrice",
 )
-VARIANT_OFFER_CURRENCY_KEYS = ("currency", "currencyCode", "priceCurrency")
+VARIANT_OFFER_CURRENCY_KEYS = (
+    "currency",
+    "currencyCode",
+    "currency_code",
+    "priceCurrency",
+)
 VARIANT_OFFER_AVAILABILITY_KEYS = (
     "availability",
     "available",
@@ -304,6 +356,9 @@ VARIANT_OFFER_AVAILABILITY_KEYS = (
     "inventoryStatus",
     "purchasable",
     "isPurchasable",
+    "availableForSale",
+    "sellable",
+    "isSellable",
 )
 VARIANT_OFFER_STOCK_KEYS = (
     "stock_quantity",
@@ -338,7 +393,9 @@ FLAT_VARIANT_KEYS: tuple[str, ...] = (
     AVAILABILITY_FIELD,
     STOCK_QUANTITY_FIELD,
 )
-PUBLIC_FLAT_VARIANT_FIELDS = frozenset((*PUBLIC_VARIANT_AXIS_FIELDS, *FLAT_VARIANT_KEYS))
+PUBLIC_FLAT_VARIANT_FIELDS = frozenset(
+    (*PUBLIC_VARIANT_AXIS_FIELDS, *FLAT_VARIANT_KEYS)
+)
 SCENT_DOMINANT_URL_TOKENS = frozenset({"body-mist"})
 DETAIL_VARIANT_SIZE_MIN_FOR_NUMERIC_PARENT_DROP = 2
 VARIANT_PARENT_SHARED_FIELDS: tuple[str, ...] = (

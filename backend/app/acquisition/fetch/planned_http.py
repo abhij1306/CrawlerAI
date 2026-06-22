@@ -16,6 +16,7 @@ from app.acquisition.fetch.browser_policy import (
     hard_browser_requirement,
     vendor_confirmed_block,
 )
+
 # Planned HTTP emits canonical attempt diagnostics. Runtime
 # AcquisitionIntent/PageAcquisitionResult are different page-flow contracts.
 from app.acquisition.contracts import (
@@ -62,7 +63,12 @@ async def run_planned_http_only(
     deps: HttpAttemptDependencies,
     force_httpx: bool,
 ) -> PageFetchResult:
-    result, _vendor_block_confirmed, diagnostics, attempt_results = await run_planned_http_chain(
+    (
+        result,
+        _vendor_block_confirmed,
+        diagnostics,
+        attempt_results,
+    ) = await run_planned_http_chain(
         context,
         deps=deps,
         force_httpx=force_httpx,
@@ -126,7 +132,9 @@ async def run_planned_http_chain(
         if selected is None:
             continue
         page_result, attempt_vendor_block_confirmed = selected
-        vendor_block_confirmed = vendor_block_confirmed or attempt_vendor_block_confirmed
+        vendor_block_confirmed = (
+            vendor_block_confirmed or attempt_vendor_block_confirmed
+        )
         page_result.acquisition_diagnostics = _planned_acquisition_diagnostics(
             plan,
             attempt_results,
@@ -134,7 +142,12 @@ async def run_planned_http_chain(
             outcome=_acquisition_outcome(attempt_result.outcome),
             termination_reason="attempt_selected",
         )
-        return page_result, vendor_block_confirmed, dict(page_result.acquisition_diagnostics), attempt_results
+        return (
+            page_result,
+            vendor_block_confirmed,
+            dict(page_result.acquisition_diagnostics),
+            attempt_results,
+        )
 
     diagnostics = _planned_acquisition_diagnostics(
         plan,
@@ -179,7 +192,9 @@ async def _execute_planned_http_attempt(
     allow_browser_escalation: bool,
 ) -> AttemptResult:
     started_at = datetime.now(UTC)
-    fetcher = deps.curl_fetcher if execution.spec.transport == "curl" else deps.http_fetcher
+    fetcher = (
+        deps.curl_fetcher if execution.spec.transport == "curl" else deps.http_fetcher
+    )
     timeout_seconds = min(
         float(deps.resolve_http_timeout(context)),
         execution.timeout_seconds,
@@ -243,7 +258,10 @@ async def _execute_planned_http_attempt(
             error="http_result_not_selected",
         )
 
-    page_results[execution.spec.attempt_id] = (handled_result, bool(vendor_block_confirmed))
+    page_results[execution.spec.attempt_id] = (
+        handled_result,
+        bool(vendor_block_confirmed),
+    )
     completed_at = datetime.now(UTC)
     return AttemptResult(
         attempt_id=execution.spec.attempt_id,
@@ -344,7 +362,9 @@ async def handle_planned_http_result(
         runtime_policy=result_runtime_policy,
     )
     if should_browser_escalate and (vendor or bool(result.blocked)):
-        await _record_http_block_memory(context, result=result, proxy=proxy, vendor=vendor, deps=deps)
+        await _record_http_block_memory(
+            context, result=result, proxy=proxy, vendor=vendor, deps=deps
+        )
     if allow_browser_escalation and _http_browser_escalation_allowed(
         context,
         should_browser_escalate=should_browser_escalate,
@@ -411,7 +431,9 @@ async def run_browser_http_handoff(
         if proxy is not None:
             continue
         for engine in engines:
-            cookie_header = await _handoff_cookie_header(context, deps=deps, engine=engine)
+            cookie_header = await _handoff_cookie_header(
+                context, deps=deps, engine=engine
+            )
             if not cookie_header:
                 continue
             result = await _run_handoff_curl(

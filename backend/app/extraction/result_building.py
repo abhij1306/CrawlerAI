@@ -3,7 +3,10 @@ from __future__ import annotations
 from collections import Counter
 from typing import Any
 
-from app.core.config.extraction_rules._detail import DETAIL_SHELL_TITLE_KEYS
+from app.core.config.extraction_rules._detail import (
+    DETAIL_SHELL_TITLE_FLAG,
+    DETAIL_SHELL_TITLE_KEYS,
+)
 from app.core.shared.text_coerce import slug_tokens
 from app.extraction.contracts import (
     Decision,
@@ -33,15 +36,20 @@ def retry_request(
     request: ExtractionRequest,
     evidence: tuple[Evidence, ...] = (),
 ) -> RetryRequest | None:
-    if "variants" in request.requested_fields and not any(
-        record.get("variants") for record in records
-    ) and _explicit_variant_dom_cues(evidence):
+    if (
+        "variants" in request.requested_fields
+        and not any(record.get("variants") for record in records)
+        and _explicit_variant_dom_cues(evidence)
+    ):
         return RetryRequest(
             required=not request.capture.browser_attempted,
             reason="explicit_variants_missing",
             required_artifacts=("rendered_html", "network_payloads"),
         )
-    if verdict != "error" or not any(is_shell_record(record) for record in records):
+    shell_detected = any(is_shell_record(record) for record in records) or any(
+        DETAIL_SHELL_TITLE_FLAG in row.flags for row in evidence
+    )
+    if verdict != "error" or not shell_detected:
         return None
     return RetryRequest(
         required=not request.capture.browser_attempted,
@@ -107,10 +115,7 @@ def metrics(
 ) -> ExtractionMetrics:
     lineage_fields = sum(len(dict(record.get("_lineage") or {})) for record in records)
     public_fields = sum(
-        sum(
-            not str(key).startswith("_")
-            for key in record.model_dump(mode="python")
-        )
+        sum(not str(key).startswith("_") for key in record.model_dump(mode="python"))
         for record in records
     )
     return ExtractionMetrics(

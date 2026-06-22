@@ -26,6 +26,7 @@ from app.extraction.documents import HtmlAnalysis
 try:
     from patchright.async_api import Error as PlaywrightError
 except ImportError:  # pragma: no cover
+
     class PlaywrightError(Exception):  # type: ignore[no-redef]
         pass
 

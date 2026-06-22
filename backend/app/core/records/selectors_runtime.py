@@ -39,7 +39,9 @@ async def fetch_selector_document(url: str) -> dict[str, object]:
     html = result.html
     promoted = False
     visited = {final_url}
-    for _ in range(max(1, int(crawler_runtime_settings.iframe_promotion_max_candidates))):
+    for _ in range(
+        max(1, int(crawler_runtime_settings.iframe_promotion_max_candidates))
+    ):
         candidate_url = _primary_iframe_candidate(final_url, html)
         if not candidate_url or candidate_url in visited:
             break
@@ -58,7 +60,9 @@ async def fetch_selector_document(url: str) -> dict[str, object]:
 def build_preview_html(*, source_url: str, html: str) -> str:
     base = f'<base href="{_html_attr(source_url)}">'
     if re.search(r"<head\b[^>]*>", html or "", flags=re.I):
-        return re.sub(r"(<head\b[^>]*>)", rf"\1{base}", str(html or ""), count=1, flags=re.I)
+        return re.sub(
+            r"(<head\b[^>]*>)", rf"\1{base}", str(html or ""), count=1, flags=re.I
+        )
     return f"<html><head>{base}</head><body>{html or ''}</body></html>"
 
 
@@ -107,8 +111,12 @@ def _selector_record_from_memory(
     domain: str | None = None,
     surface: str | None = None,
 ) -> dict[str, object]:
-    resolved_domain = domain if domain is not None else (memory.domain if memory else "")
-    resolved_surface = surface if surface is not None else (memory.surface if memory else "")
+    resolved_domain = (
+        domain if domain is not None else (memory.domain if memory else "")
+    )
+    resolved_surface = (
+        surface if surface is not None else (memory.surface if memory else "")
+    )
     return {
         **dict(row),
         "id": _coerce_int(row.get("id"), default=0),

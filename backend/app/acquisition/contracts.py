@@ -70,6 +70,9 @@ class AcquisitionResult(FrozenModel):
     @model_validator(mode="after")
     def validate_selected_attempt(self) -> "AcquisitionResult":
         attempt_ids = {attempt.attempt_id for attempt in self.attempts}
-        if self.selected_attempt_id is not None and self.selected_attempt_id not in attempt_ids:
+        if (
+            self.selected_attempt_id is not None
+            and self.selected_attempt_id not in attempt_ids
+        ):
             raise ValueError("selected_attempt_id must identify an attempt result")
         return self

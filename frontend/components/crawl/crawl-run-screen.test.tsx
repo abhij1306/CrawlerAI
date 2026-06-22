@@ -1,7 +1,8 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { queryKeys } from '@/api/query-keys';
 import type { CrawlLog, CrawlRecord, CrawlRun, DomainRecipe } from '../../lib/api/types';
 import { POLLING_INTERVALS } from '../../lib/constants/timing';
 import { TopBarProvider } from '../layout/top-bar-context';
@@ -45,6 +46,7 @@ vi.mock('react-router-dom', async (importOriginal) => {
 
 const apiMock = vi.hoisted(() => ({
   getCrawl: vi.fn(),
+  listCrawls: vi.fn(),
   getRecords: vi.fn(),
   getCrawlLogs: vi.fn(),
   killCrawl: vi.fn(),
@@ -323,6 +325,10 @@ describe('CrawlRunScreen', () => {
       value: 'Mozilla/5.0',
     });
     apiMock.getCrawl.mockResolvedValue(terminalRun(101));
+    apiMock.listCrawls.mockResolvedValue({
+      items: [],
+      meta: { page: 1, limit: 20, total: 0 },
+    });
     apiMock.getRecords.mockImplementation(
       (_runId: number, params?: { page?: number; limit?: number }) => {
         const limit = params?.limit ?? 100;
@@ -618,7 +624,7 @@ describe('CrawlRunScreen', () => {
   });
 
   it('shows recoverable panel refresh errors when records polling fails', async () => {
-    apiMock.getRecords.mockRejectedValueOnce(new Error('records fetch failed'));
+    apiMock.getRecords.mockRejectedValue(new Error('records fetch failed'));
 
     renderRunScreen();
 
@@ -634,6 +640,31 @@ describe('CrawlRunScreen', () => {
     expect(screen.getByRole('button', { name: 'Retry failed panels' })).toBeInTheDocument();
   });
 
+  it('starts loading table records before run detail resolves', async () => {
+    let resolveRun!: (run: CrawlRun) => void;
+    apiMock.getCrawl.mockReturnValue(
+      new Promise<CrawlRun>((resolve) => {
+        resolveRun = resolve;
+      }),
+    );
+
+    renderRunScreen();
+
+    await waitFor(() => {
+      expect(apiMock.getRecords).toHaveBeenCalledWith(
+        101,
+        { page: 1, limit: 100 },
+        { signal: expect.any(AbortSignal) },
+      );
+    });
+    expect(apiMock.getDomainRecipe).not.toHaveBeenCalled();
+
+    await act(async () => {
+      resolveRun(terminalRun(101));
+    });
+    expect(await screen.findByRole('button', { name: /Table \(2\)/ })).toBeInTheDocument();
+  });
+
   it('refetches table records on mount even if the cache contains a fresh empty page', async () => {
     const queryClient = new QueryClient({
       defaultOptions: {
@@ -644,8 +675,8 @@ describe('CrawlRunScreen', () => {
       },
     });
 
-    queryClient.setQueryData(['crawl-run', 101], terminalRun(101));
-    queryClient.setQueryData(['crawl-records-table', 101, 1], {
+    queryClient.setQueryData(queryKeys.runs.detail(101), terminalRun(101));
+    queryClient.setQueryData(queryKeys.runs.tableRecords(101, 100), {
       items: [],
       meta: { page: 1, limit: 100, total: 0 },
     });
@@ -685,22 +716,16 @@ describe('CrawlRunScreen', () => {
       meta: { page: 1, limit: 100, total: 2 },
     };
 
-    queryClient.setQueryData(['crawl-run', 101], terminalRun(101));
-    queryClient.setQueryData(['crawl-records-table', 101, 1], cachedRows);
+    queryClient.setQueryData(queryKeys.runs.detail(101), terminalRun(101));
+    queryClient.setQueryData(queryKeys.runs.tableRecords(101, 100), cachedRows);
 
     apiMock.getRecords.mockResolvedValue(cachedRows);
 
     renderRunScreenWithClient(queryClient);
 
     expect(await screen.findByText('Item 1')).toBeInTheDocument();
-
-    await waitFor(() => {
-      expect(apiMock.getRecords).toHaveBeenCalledWith(
-        101,
-        { page: 1, limit: 100 },
-        { signal: expect.any(AbortSignal) },
-      );
-    });
+    expect(apiMock.getCrawl).not.toHaveBeenCalled();
+    expect(apiMock.getRecords).not.toHaveBeenCalled();
   });
 
   it('refetches recent completed runs when summary records are present but the first table fetch is empty', async () => {
@@ -754,7 +779,7 @@ describe('CrawlRunScreen', () => {
     });
   });
 
-  it('retries both table and JSON record queries during terminal reconciliation', async () => {
+  it('retries table records without preloading inactive JSON records', async () => {
     apiMock.getCrawl.mockResolvedValue({
       ...terminalRun(101),
       updated_at: '2026-04-08T10:05:00Z',
@@ -786,20 +811,9 @@ describe('CrawlRunScreen', () => {
     renderRunScreen();
 
     await waitFor(() => {
-      expect(apiMock.getRecords.mock.calls).toEqual(
-        expect.arrayContaining([
-          [101, { page: 1, limit: 100 }, { signal: expect.any(AbortSignal) }],
-          [101, { limit: 100 }, { signal: expect.any(AbortSignal) }],
-        ]),
-      );
-    });
-
-    await new Promise((resolve) => window.setTimeout(resolve, POLLING_INTERVALS.RECORDS_MS + 100));
-
-    await waitFor(() => {
       expect(tableCalls).toBeGreaterThanOrEqual(2);
-      expect(jsonCalls).toBeGreaterThanOrEqual(2);
     });
+    expect(jsonCalls).toBe(0);
   });
 
   it('reconciles older completed runs when the first table fetch is empty but records are expected', async () => {
@@ -1111,10 +1125,11 @@ describe('CrawlRunScreen', () => {
 
     expect(await screen.findByRole('button', { name: 'Learning' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Run Config' })).not.toBeInTheDocument();
+    expect(apiMock.getDomainRecipe).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole('button', { name: 'Learning' }));
     expect(await screen.findByRole('heading', { name: 'Run Learning' })).toBeInTheDocument();
-    expect(screen.getAllByRole('button', { name: 'Keep' }).length).toBeGreaterThan(0);
+    expect((await screen.findAllByRole('button', { name: 'Keep' })).length).toBeGreaterThan(0);
   });
 
   it('renders learning as XPath winners without extracted values', async () => {
@@ -1145,8 +1160,7 @@ describe('CrawlRunScreen', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: 'Learning' }));
     expect(await screen.findByRole('heading', { name: 'Run Learning' })).toBeInTheDocument();
-    const keepButtons = screen.getAllByRole('button', { name: 'Keep' });
-    const rejectButtons = screen.getAllByRole('button', { name: 'Reject' });
+    const keepButtons = await screen.findAllByRole('button', { name: 'Keep' });
 
     fireEvent.click(keepButtons[0]);
     await waitFor(() => {
@@ -1159,6 +1173,7 @@ describe('CrawlRunScreen', () => {
       });
     });
 
+    const rejectButtons = await screen.findAllByRole('button', { name: 'Reject' });
     fireEvent.click(rejectButtons[0]);
     await waitFor(() => {
       expect(apiMock.applyDomainRecipeFieldAction).toHaveBeenCalledWith(101, {

@@ -18,6 +18,7 @@ from app.core.config.extraction_rules import (
     CDN_IMAGE_PATH_SUFFIX_PATTERN,
     CDN_IMAGE_QUERY_KEY_PATTERNS,
     CDN_IMAGE_QUERY_PARAMS,
+    DETAIL_NON_PRODUCT_IMAGE_URL_HINTS,
     GIF_BASE64_PREFIX,
     PLACEHOLDER_IMAGE_URL_PATTERNS,
     PRIMARY_IMAGE_REJECT_URL_TOKENS,
@@ -70,6 +71,11 @@ product_asset_reject_url_patterns = tuple(
     str(pattern).strip()
     for pattern in tuple(PRODUCT_ASSET_REJECT_URL_PATTERNS or ())
     if str(pattern).strip()
+)
+non_product_image_url_hints = tuple(
+    str(hint).strip().casefold()
+    for hint in tuple(DETAIL_NON_PRODUCT_IMAGE_URL_HINTS or ())
+    if str(hint).strip()
 )
 
 
@@ -295,7 +301,9 @@ def extract_urls(value: object, page_url: str) -> list[str]:
             continue
         if _is_placeholder_image_url(candidate) or _is_template_url(candidate):
             continue
-        if is_concatenated_url(candidate) and not _looks_like_image_fetch_proxy_url(candidate):
+        if is_concatenated_url(candidate) and not _looks_like_image_fetch_proxy_url(
+            candidate
+        ):
             continue
         seen.add(normalized)
         deduped.append(candidate)
@@ -326,6 +334,8 @@ def is_utility_image_url(value: object) -> bool:
     if not text:
         return False
     if any(token in text for token in product_asset_reject_url_tokens):
+        return True
+    if any(hint in text for hint in non_product_image_url_hints):
         return True
     return any(
         re.search(pattern, text, flags=re.IGNORECASE)

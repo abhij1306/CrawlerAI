@@ -791,19 +791,9 @@ export const LogTerminal = memo(function LogTerminal({
             return (
               <section key={group.key} id={siteDomId(group.key)} className="overflow-hidden">
                 <div
-                  role="button"
-                  tabIndex={0}
-                  aria-expanded={expanded}
-                  aria-label={`${expanded ? 'Collapse' : 'Expand'} logs for ${group.url || group.label}`}
                   onClick={() => toggleGroup(group.key)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault();
-                      toggleGroup(group.key);
-                    }
-                  }}
                   className={cn(
-                    'group/row grid w-full cursor-pointer items-center gap-3 px-6 py-1 text-left text-xs transition-colors outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-inset',
+                    'group/row grid w-full cursor-pointer items-center gap-3 px-6 py-1 text-left text-xs transition-colors border-none bg-transparent p-0 text-inherit font-inherit',
                     isRunEventGroup
                       ? 'grid-cols-[32px_minmax(280px,1fr)_auto_minmax(260px,1.4fr)_60px]'
                       : 'grid-cols-[32px_minmax(280px,2fr)_75px_80px_85px_auto_minmax(200px,1.2fr)_80px_70px]',
@@ -912,7 +902,19 @@ export const LogTerminal = memo(function LogTerminal({
                       )}
                     </div>
                   ) : null}
-                  <div className="flex items-center justify-end gap-1.5 pr-2">
+                  <button
+                    type="button"
+                    aria-expanded={expanded}
+                    aria-label={`${expanded ? 'Collapse' : 'Expand'} logs for ${group.url || group.label}`}
+                    disabled={
+                      live && groups.length > 0 && group.key === groups[groups.length - 1].key
+                    }
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      toggleGroup(group.key);
+                    }}
+                    className="focus-visible:ring-accent flex items-center justify-end gap-1.5 pr-2 focus-visible:ring-2 focus-visible:outline-none disabled:cursor-default"
+                  >
                     <span className="text-muted font-mono text-xs uppercase">
                       {live && groups.length > 0 && group.key === groups[groups.length - 1].key ? (
                         <span className="text-accent flex items-center gap-1.5 font-semibold">
@@ -940,7 +942,7 @@ export const LogTerminal = memo(function LogTerminal({
                         )}
                       />
                     )}
-                  </div>
+                  </button>
                 </div>
 
                 {expanded ? (

@@ -17,11 +17,15 @@ from app.core.shared.value_walk import candidate_values, term_present
 logger = logging.getLogger(__name__)
 
 
-def normalize_materials(data: dict[str, object], *, terms: dict[str, object]) -> list[str] | None:
-    material_terms = {
-        str(key): value
-        for key, value in dict(terms.get("material_terms") or {}).items()
-    }
+def normalize_materials(
+    data: dict[str, object], *, terms: dict[str, object]
+) -> list[str] | None:
+    raw_material_terms = terms.get("material_terms")
+    material_terms = (
+        {str(key): value for key, value in raw_material_terms.items()}
+        if isinstance(raw_material_terms, dict)
+        else {}
+    )
     found: list[str] = []
     seen: set[str] = set()
     for value in candidate_values(data, *DATA_ENRICHMENT_MATERIAL_PRIMARY_FIELDS):
@@ -50,7 +54,9 @@ def collect_material_matches(
     for canonical, tokens in material_terms.items():
         if canonical in seen:
             continue
-        if isinstance(tokens, list) and any(term_present(text, token) for token in tokens):
+        if isinstance(tokens, list) and any(
+            term_present(text, token) for token in tokens
+        ):
             found.append(str(canonical))
             seen.add(str(canonical))
 
@@ -76,7 +82,12 @@ def percentage_material_parse(text: str) -> list[str]:
     )
     for pattern in patterns:
         for match in re.finditer(pattern, text, re.I):
-            if material := clean_percentage_material(match.group("material")):
+            try:
+                material_value = match.group("material")
+                match.group("percent")
+            except (AttributeError, IndexError):
+                continue
+            if material := clean_percentage_material(material_value):
                 materials.append(material)
     return materials
 

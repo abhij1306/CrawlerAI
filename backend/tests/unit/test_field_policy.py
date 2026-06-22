@@ -49,7 +49,9 @@ def test_preserve_requested_fields_keeps_user_input_raw() -> None:
 
 @pytest.mark.unit
 def test_canonical_requested_fields_normalizes_aliases_for_runtime_matching() -> None:
-    assert canonical_requested_fields(["product measurements", "care instructions"]) == [
+    assert canonical_requested_fields(
+        ["product measurements", "care instructions"]
+    ) == [
         "dimensions",
         "care",
     ]

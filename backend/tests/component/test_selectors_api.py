@@ -82,7 +82,9 @@ async def test_selectors_api_preview_test_and_suggest(
         assert kwargs["css_selector"] == ".price"
         return {"matched_value": "$19.99", "count": 1, "selector_used": ".price"}
 
-    async def _fake_suggest(session, *, url: str, expected_columns: list[str], surface: str | None):
+    async def _fake_suggest(
+        session, *, url: str, expected_columns: list[str], surface: str | None
+    ):
         del session
         assert expected_columns == ["title"]
         return {
@@ -109,7 +111,7 @@ async def test_selectors_api_preview_test_and_suggest(
         params={"url": "https://example.com/products/widget"},
     )
     assert preview_response.status_code == 200
-    assert "<base href=\"https://example.com/products/widget\"" in preview_response.text
+    assert '<base href="https://example.com/products/widget"' in preview_response.text
 
     test_response = await selector_api_client.post(
         "/api/selectors/test",
@@ -127,7 +129,10 @@ async def test_selectors_api_preview_test_and_suggest(
         },
     )
     assert suggest_response.status_code == 200
-    assert suggest_response.json()["suggestions"]["title"][0]["css_selector"] == ".custom-title"
+    assert (
+        suggest_response.json()["suggestions"]["title"][0]["css_selector"]
+        == ".custom-title"
+    )
 
 
 @pytest.mark.asyncio
@@ -163,10 +168,7 @@ async def test_selectors_api_lists_all_domain_records_when_surface_is_omitted(
     )
 
     assert list_response.status_code == 200
-    assert {
-        (row["surface"], row["field_name"])
-        for row in list_response.json()
-    } == {
+    assert {(row["surface"], row["field_name"]) for row in list_response.json()} == {
         ("ecommerce_detail", "price"),
         ("job_detail", "title"),
     }
@@ -211,7 +213,12 @@ async def test_selectors_api_summary_returns_per_surface_counts(
     summary_response = await selector_api_client.get("/api/selectors/summary")
     filtered_response = await selector_api_client.get(
         "/api/selectors/summary",
-        params={"domain": "example.com", "surface": "job_detail", "limit": 1, "offset": 0},
+        params={
+            "domain": "example.com",
+            "surface": "job_detail",
+            "limit": 1,
+            "offset": 0,
+        },
     )
 
     assert summary_response.status_code == 200
@@ -264,7 +271,9 @@ async def test_selectors_api_error_handling(
     async def _fake_suggest_runtime_error(*args, **kwargs):
         raise RuntimeError("browser has been closed")
 
-    monkeypatch.setattr("app.api.selectors.suggest_selectors", _fake_suggest_runtime_error)
+    monkeypatch.setattr(
+        "app.api.selectors.suggest_selectors", _fake_suggest_runtime_error
+    )
     suggest_response3 = await selector_api_client.post(
         "/api/selectors/suggest",
         json={

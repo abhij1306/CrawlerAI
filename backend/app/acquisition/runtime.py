@@ -405,7 +405,6 @@ def _curl_fetch_sync(
     )
 
 
-
 __all__ = [
     "BlockPageClassification",
     "BLOCK_SIGNATURES",

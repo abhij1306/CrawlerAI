@@ -10,6 +10,7 @@ _STATIC_EXPORTS: dict[str, Any] = {}
 def _static_export_tuple(key: str, default: tuple[Any, ...] = ()) -> tuple[Any, ...]:
     return tuple(_STATIC_EXPORTS.get(key, default) or ())
 
+
 DETAIL_PRICE_CENT_MAGNITUDE_RATIO = 100
 DETAIL_PRICE_MAGNITUDE_EPSILON = 0.01
 DETAIL_PRICE_COMPARISON_TOLERANCE = Decimal("0.01")
@@ -36,6 +37,30 @@ CURRENCY_DECIMAL_PLACES = {
     "XOF": 0,
     "XPF": 0,
 }
+DETAIL_EXPLICIT_MINOR_UNIT_PRICE_FIELDS = (
+    "priceInCents",
+    "price_in_cents",
+    "priceCents",
+    "price_cents",
+    "amountInCents",
+    "amount_in_cents",
+    "priceInPaise",
+    "price_in_paise",
+    "pricePaise",
+    "price_paise",
+    "amountInPaise",
+    "amount_in_paise",
+    "priceMinorUnits",
+    "price_minor_units",
+    "amountMinorUnits",
+    "amount_minor_units",
+)
+DETAIL_EXPLICIT_MINOR_UNIT_PRICE_KEYS = frozenset(
+    re.sub(r"[^a-z0-9]+", "", field.casefold())
+    for field in DETAIL_EXPLICIT_MINOR_UNIT_PRICE_FIELDS
+)
+DETAIL_EXPLICIT_MINOR_UNIT_PRICE_FLAG = "explicit_minor_unit_price"
+DETAIL_CORROBORATED_PRICE_SCALE_FLAG = "corroborated_price_scale"
 
 DETAIL_ORIGINAL_PRICE_SELECTORS = (
     *_static_export_tuple("DETAIL_ORIGINAL_PRICE_SELECTORS"),
@@ -179,8 +204,12 @@ __all__ = [
     "DEFAULT_DECIMAL_PLACES",
     "DETAIL_AUTHORITATIVE_PRICE_SOURCE_SET",
     "DETAIL_CENT_BASED_PRICE_CURRENCY_SET",
+    "DETAIL_CORROBORATED_PRICE_SCALE_FLAG",
     "DETAIL_CURRENCY_JSONLD_RE",
     "DETAIL_CURRENT_PRICE_SELECTORS",
+    "DETAIL_EXPLICIT_MINOR_UNIT_PRICE_FIELDS",
+    "DETAIL_EXPLICIT_MINOR_UNIT_PRICE_FLAG",
+    "DETAIL_EXPLICIT_MINOR_UNIT_PRICE_KEYS",
     "DETAIL_INSTALLMENT_PRICE_TEXT_TOKENS_NORMALIZED",
     "DETAIL_JSONLD_CURRENCY_FIELDS",
     "DETAIL_JSONLD_GRAPH_FIELDS",

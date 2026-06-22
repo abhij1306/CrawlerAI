@@ -103,7 +103,9 @@ class BrowserAttemptRunner:
         self._start_plan()
         self.active_host_policy = await self._load_active_host_policy()
         self.context.host_policy = self.active_host_policy
-        for proxy_index, proxy in enumerate(list(self.proxies or self.context.proxies), start=1):
+        for proxy_index, proxy in enumerate(
+            list(self.proxies or self.context.proxies), start=1
+        ):
             result = await self._run_proxy_attempt(proxy_index, proxy)
             if result is not None:
                 return result
@@ -159,7 +161,10 @@ class BrowserAttemptRunner:
 
     def _start_plan(self) -> None:
         self.plan_started_at = datetime.now(UTC)
-        remaining = max(0.001, float(self.context.deadline_monotonic - asyncio.get_running_loop().time()))
+        remaining = max(
+            0.001,
+            float(self.context.deadline_monotonic - asyncio.get_running_loop().time()),
+        )
         self.plan_deadline = self.plan_started_at + timedelta(seconds=remaining)
         plan_key = f"{self.context.url}|browser|{self.plan_started_at.isoformat()}"
         self.plan_id = sha256(plan_key.encode("utf-8")).hexdigest()[:20]
@@ -245,16 +250,18 @@ class BrowserAttemptRunner:
         exc = TimeoutError(attempt_result.error or "browser attempt failed")
         setattr(exc, "browser_failure_stage", "attempt")
         self.last_browser_error = exc
-        self.context.last_browser_attempt_diagnostics = build_failed_browser_diagnostics(
-            browser_reason=self.reason,
-            exc=exc,
-            proxy=proxy,
-            proxy_attempt_index=proxy_index,
-            browser_engine=engine,
-            browser_binary=engine,
-            bridge_used=proxy_scheme(proxy) in {"socks5", "socks5h"},
-            escalation_lane=escalation_lane,
-            host_policy_snapshot=host_policy_snapshot(self._active_host_policy()),
+        self.context.last_browser_attempt_diagnostics = (
+            build_failed_browser_diagnostics(
+                browser_reason=self.reason,
+                exc=exc,
+                proxy=proxy,
+                proxy_attempt_index=proxy_index,
+                browser_engine=engine,
+                browser_binary=engine,
+                bridge_used=proxy_scheme(proxy) in {"socks5", "socks5h"},
+                escalation_lane=escalation_lane,
+                host_policy_snapshot=host_policy_snapshot(self._active_host_policy()),
+            )
         )
         attach_exception_browser_diagnostics(
             self.last_browser_error,
@@ -311,7 +318,9 @@ class BrowserAttemptRunner:
         started_at = datetime.now(UTC)
         policy_snapshot = host_policy_snapshot(self._active_host_policy())
         try:
-            await self._raise_if_no_budget(engine, engine_index, engine_attempts, "start")
+            await self._raise_if_no_budget(
+                engine, engine_index, engine_attempts, "start"
+            )
             await self.deps.wait_for_host_slot(
                 self.context.url,
                 ttl_seconds=self.context.host_memory_ttl_seconds,
@@ -377,7 +386,9 @@ class BrowserAttemptRunner:
             status_code=getattr(result, "status_code", None),
             started_at=started_at,
             completed_at=datetime.now(UTC),
-            diagnostics=dict(diagnostics or getattr(result, "browser_diagnostics", {}) or {}),
+            diagnostics=dict(
+                diagnostics or getattr(result, "browser_diagnostics", {}) or {}
+            ),
             error=error,
         )
 
@@ -477,18 +488,22 @@ class BrowserAttemptRunner:
         policy_snapshot: dict[str, object],
     ) -> None:
         self.last_browser_error = exc
-        self.context.last_browser_attempt_diagnostics = build_failed_browser_diagnostics(
-            browser_reason=self.reason,
-            exc=exc,
-            proxy=proxy,
-            proxy_attempt_index=proxy_index,
-            browser_engine=engine,
-            browser_binary=engine,
-            bridge_used=proxy_scheme(proxy) in {"socks5", "socks5h"},
-            escalation_lane=escalation_lane,
-            host_policy_snapshot=policy_snapshot,
+        self.context.last_browser_attempt_diagnostics = (
+            build_failed_browser_diagnostics(
+                browser_reason=self.reason,
+                exc=exc,
+                proxy=proxy,
+                proxy_attempt_index=proxy_index,
+                browser_engine=engine,
+                browser_binary=engine,
+                bridge_used=proxy_scheme(proxy) in {"socks5", "socks5h"},
+                escalation_lane=escalation_lane,
+                host_policy_snapshot=policy_snapshot,
+            )
         )
-        attach_exception_browser_diagnostics(exc, self.context.last_browser_attempt_diagnostics)
+        attach_exception_browser_diagnostics(
+            exc, self.context.last_browser_attempt_diagnostics
+        )
         logger.debug(
             "Browser fetch failed for %s via %s engine=%s",
             self.context.url,

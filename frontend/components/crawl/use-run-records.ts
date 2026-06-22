@@ -30,15 +30,20 @@ export function useRunRecords({
   jsonVisibleCount,
   verdict,
 }: Readonly<UseRunRecordsOptions>) {
-  const shouldFetchTableRecords = Boolean(run) && outputTab === 'table';
-  const shouldFetchJsonRecords = Boolean(run) && outputTab === 'json';
+  const shouldFetchTableRecords = outputTab === 'table';
+  const shouldFetchJsonRecords = outputTab === 'json';
   const recordsFetchLimit = Math.min(
     800,
     Math.max(CRAWL_DEFAULTS.TABLE_PAGE_SIZE * 2, jsonVisibleCount),
   );
   const tableRecordsLimit = CRAWL_DEFAULTS.TABLE_PAGE_SIZE * 4 * tablePage;
 
-  const tableRecordsQuery = useQuery({
+  const {
+    data: tableRecordsData,
+    error: tableRecordsError,
+    isLoading: isTableRecordsLoading,
+    refetch: refetchTableRecords,
+  } = useQuery({
     queryKey: queryKeys.runs.tableRecords(runId, tableRecordsLimit),
     queryFn: ({ signal }) =>
       api.getRecords(runId, { page: 1, limit: tableRecordsLimit }, { signal }),
@@ -48,7 +53,11 @@ export function useRunRecords({
     refetchOnMount: 'always',
   });
 
-  const jsonRecordsQuery = useQuery({
+  const {
+    data: jsonRecordsData,
+    error: jsonRecordsError,
+    refetch: refetchJsonRecords,
+  } = useQuery({
     queryKey: queryKeys.runs.jsonRecords(runId, recordsFetchLimit),
     queryFn: ({ signal }) => api.getRecords(runId, { limit: recordsFetchLimit }, { signal }),
     enabled: shouldFetchJsonRecords,
@@ -57,13 +66,13 @@ export function useRunRecords({
     refetchOnMount: 'always',
   });
 
-  const records = useMemo(() => jsonRecordsQuery.data?.items ?? [], [jsonRecordsQuery.data?.items]);
+  const records = useMemo(() => jsonRecordsData?.items ?? [], [jsonRecordsData?.items]);
   const tableRecords = useMemo(
-    () => tableRecordsQuery.data?.items ?? [],
-    [tableRecordsQuery.data?.items],
+    () => tableRecordsData?.items ?? [],
+    [tableRecordsData?.items],
   );
-  const tableTotal = tableRecordsQuery.data?.meta?.total ?? tableRecords.length;
-  const recordsTotal = jsonRecordsQuery.data?.meta?.total ?? records.length;
+  const tableTotal = tableRecordsData?.meta?.total ?? tableRecords.length;
+  const recordsTotal = jsonRecordsData?.meta?.total ?? records.length;
   const jsonRecords = useMemo(
     () => records.slice(0, Math.min(records.length, jsonVisibleCount)),
     [jsonVisibleCount, records],
@@ -83,7 +92,7 @@ export function useRunRecords({
   );
 
   const summaryRecordsFromRun = Number(run?.result_summary?.record_count ?? 0) || 0;
-  const knownTableRecordsTotal = Math.max(tableTotal, tableRecordsQuery.data?.meta?.total ?? 0);
+  const knownTableRecordsTotal = Math.max(tableTotal, tableRecordsData?.meta?.total ?? 0);
   const terminalRecordsExpected =
     terminal && (summaryRecordsFromRun > 0 || verdict === 'success' || verdict === 'partial');
   const terminalRecordsNeedSync =
@@ -95,16 +104,21 @@ export function useRunRecords({
     retryLimit: RETRY_LIMITS.TERMINAL_RECORDS_RETRY_LIMIT,
     runId,
     summaryRecordsFromRun,
-    recordsFetchLimit,
     tableRecordsLimit,
     updatedAt: run?.updated_at ?? null,
-    refetchJsonRecords: jsonRecordsQuery.refetch,
-    refetchTableRecords: tableRecordsQuery.refetch,
+    refetchTableRecords,
   });
 
   return {
-    tableRecordsQuery,
-    jsonRecordsQuery,
+    tableRecordsQuery: {
+      error: tableRecordsError,
+      isLoading: isTableRecordsLoading,
+      refetch: refetchTableRecords,
+    },
+    jsonRecordsQuery: {
+      error: jsonRecordsError,
+      refetch: refetchJsonRecords,
+    },
     records,
     tableRecords,
     tableTotal,

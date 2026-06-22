@@ -15,10 +15,8 @@ type TerminalRecordSyncOptions = {
   retryLimit: number;
   runId: number;
   summaryRecordsFromRun: number;
-  recordsFetchLimit: number;
   tableRecordsLimit: number;
   updatedAt: string | null;
-  refetchJsonRecords: () => Promise<unknown>;
   refetchTableRecords: () => Promise<unknown>;
 };
 
@@ -46,12 +44,22 @@ export function useTerminalSync(
   queries: ReadonlyArray<RefetchableQuery>,
 ) {
   const terminalSyncRef = useRef<string | null>(null);
+  const liveRunIdRef = useRef<number | null>(null);
   const queriesRef = useRef(queries);
 
   useEffect(() => {
     queriesRef.current = queries;
-    if (!run || !terminal) {
+    if (!run) {
+      liveRunIdRef.current = null;
       terminalSyncRef.current = null;
+      return;
+    }
+    if (ACTIVE_STATUSES.has(run.status)) {
+      liveRunIdRef.current = run.id;
+      terminalSyncRef.current = null;
+      return;
+    }
+    if (!terminal || liveRunIdRef.current !== run.id) {
       return;
     }
 
@@ -71,10 +79,8 @@ export function useTerminalRecordSync({
   retryLimit,
   runId,
   summaryRecordsFromRun,
-  recordsFetchLimit,
   tableRecordsLimit,
   updatedAt,
-  refetchJsonRecords,
   refetchTableRecords,
 }: Readonly<TerminalRecordSyncOptions>) {
   const [retryState, setRetryState] = useState<{
@@ -83,9 +89,7 @@ export function useTerminalRecordSync({
   }>({ attempts: 0, key: null });
 
   const syncKey = enabled
-    ? [runId, updatedAt ?? '', summaryRecordsFromRun, recordsFetchLimit, tableRecordsLimit].join(
-        ':',
-      )
+    ? [runId, updatedAt ?? '', summaryRecordsFromRun, tableRecordsLimit].join(':')
     : null;
   const retryAttempts = retryState.key === syncKey ? retryState.attempts : 0;
   const retryEnabled = enabled && retryAttempts < retryLimit;
@@ -97,7 +101,7 @@ export function useTerminalRecordSync({
         key: syncKey,
         attempts: current.key === syncKey ? current.attempts + 1 : 1,
       }));
-      await Promise.allSettled([refetchTableRecords(), refetchJsonRecords()]);
+      await refetchTableRecords();
       return null;
     },
     enabled: retryEnabled,

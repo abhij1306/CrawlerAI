@@ -160,7 +160,9 @@ def _score_taxonomy_categories(
             string_iterable(item.get("path_match_tokens"))
             or tokenize_text(item.get("category_path"))
         )
-        attribute_tokens = set(string_iterable(item.get("attribute_match_tokens"))) - category_tokens
+        attribute_tokens = (
+            set(string_iterable(item.get("attribute_match_tokens"))) - category_tokens
+        )
         if not category_tokens:
             continue
         if taxonomy_candidate_conflicts(
@@ -198,9 +200,9 @@ def _score_taxonomy_categories(
             + (primary_attribute_score * 0.5)
         )
         evidence_tokens = evidence.all & category_tokens
-        enough_sparse_evidence = len(
-            evidence_tokens - DATA_ENRICHMENT_TAXONOMY_CONTEXT_ONLY_TOKENS
-        ) >= 2
+        enough_sparse_evidence = (
+            len(evidence_tokens - DATA_ENRICHMENT_TAXONOMY_CONTEXT_ONLY_TOKENS) >= 2
+        )
         if (
             primary_score == 0
             and primary_attribute_score == 0
@@ -238,7 +240,9 @@ def phrase_leaf_category_match(
             leaf_matches = [
                 item
                 for item in leaf_matches
-                if not taxonomy_candidate_conflicts(source_tokens, item.get("category_path"))
+                if not taxonomy_candidate_conflicts(
+                    source_tokens, item.get("category_path")
+                )
             ]
             for item in leaf_matches:
                 candidates.append(
@@ -289,21 +293,30 @@ def phrase_path_category_match(
         # and do not conflict; the post-filter prefers non-accessory paths.
         leaf_tokens_by_path = {
             str(item.get("category_path") or ""): set(
-                tokenize_text(item.get("leaf") or clean_text(item.get("category_path")).split(">")[-1])
+                tokenize_text(
+                    item.get("leaf")
+                    or clean_text(item.get("category_path")).split(">")[-1]
+                )
             )
             for item in taxonomy_index.categories
         }
         matches = [
             item
             for item in taxonomy_index.categories
-            if phrase_tokens <= normalized_token_set(
-                string_iterable(item.get("path_match_tokens"))
+            if phrase_tokens
+            <= normalized_token_set(string_iterable(item.get("path_match_tokens")))
+            and bool(
+                phrase_tokens
+                & leaf_tokens_by_path[str(item.get("category_path") or "")]
             )
-            and bool(phrase_tokens & leaf_tokens_by_path[str(item.get("category_path") or "")])
-            and not taxonomy_candidate_conflicts(source_tokens, item.get("category_path"))
+            and not taxonomy_candidate_conflicts(
+                source_tokens, item.get("category_path")
+            )
         ]
     non_accessory_matches = [
-        item for item in matches if not taxonomy_accessory_path(clean_text(item.get("category_path")).casefold())
+        item
+        for item in matches
+        if not taxonomy_accessory_path(clean_text(item.get("category_path")).casefold())
     ]
     if non_accessory_matches:
         matches = non_accessory_matches
@@ -340,7 +353,9 @@ def leaf_token_category_match(
         leaf_matches = [
             item
             for item in leaf_matches
-            if not taxonomy_candidate_conflicts(source_tokens, item.get("category_path"))
+            if not taxonomy_candidate_conflicts(
+                source_tokens, item.get("category_path")
+            )
         ]
         if len(leaf_matches) != 1:
             continue
@@ -416,11 +431,7 @@ def taxonomy_candidate_conflicts(
 
 
 def normalized_token_set(values: Iterable[object]) -> set[str]:
-    return {
-        token
-        for value in values
-        if (token := normalize_taxonomy_token(value))
-    }
+    return {token for value in values if (token := normalize_taxonomy_token(value))}
 
 
 def accessory_path_conflict(path_text: str, evidence_tokens: set[str]) -> bool:
@@ -536,7 +547,9 @@ def weighted_overlap(source_tokens: set[str], category_tokens: set[str]) -> floa
     return len(overlap) / len(source_tokens)
 
 
-def weighted_product_overlap(source_tokens: set[str], category_tokens: set[str]) -> float:
+def weighted_product_overlap(
+    source_tokens: set[str], category_tokens: set[str]
+) -> float:
     product_tokens = {
         token
         for token in source_tokens
@@ -545,7 +558,9 @@ def weighted_product_overlap(source_tokens: set[str], category_tokens: set[str])
     return weighted_overlap(product_tokens, category_tokens)
 
 
-def has_product_kind_overlap(source_tokens: set[str], category_tokens: set[str]) -> bool:
+def has_product_kind_overlap(
+    source_tokens: set[str], category_tokens: set[str]
+) -> bool:
     overlap = source_tokens & category_tokens
     if not overlap:
         return False

@@ -21,8 +21,10 @@ try:
     from patchright.async_api import Error as PlaywrightError
     from patchright.async_api import Page
 except ImportError:  # pragma: no cover
+
     class PlaywrightError(Exception):  # type: ignore[no-redef]
         pass
+
     Page = Any  # type: ignore[assignment,misc]
 
 from app.acquisition.dom_runtime import get_page_html
@@ -39,13 +41,19 @@ logger = logging.getLogger(__name__)
 async def count_listing_cards(
     page: Page, *, surface: str, allow_heuristic: bool = True
 ) -> int:
-    selector_group = "jobs" if str(surface or "").strip().lower().startswith("job_") else "ecommerce"
-    selectors = CARD_SELECTORS.get(selector_group) if isinstance(CARD_SELECTORS, dict) else []
+    selector_group = (
+        "jobs" if str(surface or "").strip().lower().startswith("job_") else "ecommerce"
+    )
+    selectors = (
+        CARD_SELECTORS.get(selector_group) if isinstance(CARD_SELECTORS, dict) else []
+    )
     normalized_selectors = [
         str(selector).strip() for selector in selectors or [] if str(selector).strip()
     ]
     if not normalized_selectors:
-        return await _heuristic_card_count(page, surface=surface) if allow_heuristic else 0
+        return (
+            await _heuristic_card_count(page, surface=surface) if allow_heuristic else 0
+        )
     try:
         selector_counts = await page.evaluate(
             """
@@ -145,7 +153,9 @@ def _unique_listing_card_identity_count_from_html(
         surface=surface,
         limit=max(1, int(crawler_runtime_settings.listing_fallback_fragment_limit)),
     ):
-        identity = _listing_card_identity(cast(_SelectolaxNode, card), page_url=page_url)
+        identity = _listing_card_identity(
+            cast(_SelectolaxNode, card), page_url=page_url
+        )
         if identity:
             identities.add(identity)
     return len(identities)
@@ -298,23 +308,23 @@ async def page_snapshot(page: Page, *, surface: str) -> dict[str, Any]:
     )
     return {
         "card_count": card_count,
-        "content_signature": _content_signature(snapshot.pop("content_signature_source", "")),
+        "content_signature": _content_signature(
+            snapshot.pop("content_signature_source", "")
+        ),
         **snapshot,
     }
 
 
-def snapshot_progressed(
-    previous: dict[str, Any], current: dict[str, Any]
-) -> bool:
+def snapshot_progressed(previous: dict[str, Any], current: dict[str, Any]) -> bool:
     if int(current.get("card_count", 0)) > int(previous.get("card_count", 0)):
         return True
     if str(current.get("content_signature") or "") != str(
         previous.get("content_signature") or ""
     ):
         return True
-    if int(current.get("scroll_height", 0)) >= int(previous.get("scroll_height", 0)) + int(
-        crawler_runtime_settings.traversal_force_probe_min_advance_px
-    ):
+    if int(current.get("scroll_height", 0)) >= int(
+        previous.get("scroll_height", 0)
+    ) + int(crawler_runtime_settings.traversal_force_probe_min_advance_px):
         return True
     return False
 
@@ -331,7 +341,9 @@ def paginate_snapshot_progressed(
     return snapshot_progressed(previous, current)
 
 
-def is_marginal_card_gain(*, card_gain: int, best_gain: int, current_count: int) -> bool:
+def is_marginal_card_gain(
+    *, card_gain: int, best_gain: int, current_count: int
+) -> bool:
     if card_gain <= 0:
         return False
     if current_count < max(6, int(crawler_runtime_settings.listing_min_items) * 3):
@@ -354,7 +366,11 @@ def paginate_fragment_budget_reached(
             target = int(target_records)
         except (TypeError, ValueError):
             target = 0
-        if target > 0 and int(current_count if current_count is not None else result.card_count) < target:
+        if (
+            target > 0
+            and int(current_count if current_count is not None else result.card_count)
+            < target
+        ):
             return False
     fragment_budget = max(
         8_192,

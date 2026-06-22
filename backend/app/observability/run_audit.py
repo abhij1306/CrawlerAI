@@ -36,7 +36,10 @@ from app.observability.baseline import (
     update_baseline,
 )
 from app.crawl.pipeline.run_complete_callbacks import register_run_complete_callback
-from app.persistence.record_artifacts import CanonicalRecordView, load_canonical_record_views
+from app.persistence.record_artifacts import (
+    CanonicalRecordView,
+    load_canonical_record_views,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -471,7 +474,10 @@ def _audit_variant_provenance(
     for entry in field_provenance:
         if not isinstance(entry, dict):
             continue
-        if str(entry.get("field") or "") != "variants" or entry.get("present") is not False:
+        if (
+            str(entry.get("field") or "") != "variants"
+            or entry.get("present") is not False
+        ):
             continue
         winning_source = str(entry.get("winning_source") or "").strip()
         if not winning_source:
@@ -696,5 +702,6 @@ def _write_flags(
         encoding="utf-8",
     )
     return str(path)
+
 
 __all__ = ["audit_run_complete", "build_run_flags", "ensure_run_audit_registered"]

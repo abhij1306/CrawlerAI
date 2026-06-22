@@ -114,18 +114,20 @@ def test_acquisition_does_not_construct_beautifulsoup_trees() -> None:
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):
-                assert all(alias.name.split(".", 1)[0] != "bs4" for alias in node.names), path
+                assert all(
+                    alias.name.split(".", 1)[0] != "bs4" for alias in node.names
+                ), path
             if isinstance(node, ast.ImportFrom) and node.module:
                 assert node.module.split(".", 1)[0] != "bs4", path
 
 
 def test_requested_fields_do_not_initiate_browser_acquisition() -> None:
-    policy_text = (
-        APP_ROOT / "acquisition" / "fetch" / "browser_policy.py"
-    ).read_text(encoding="utf-8")
-    fetch_text = (
-        APP_ROOT / "acquisition" / "fetch" / "fetch_context.py"
-    ).read_text(encoding="utf-8")
+    policy_text = (APP_ROOT / "acquisition" / "fetch" / "browser_policy.py").read_text(
+        encoding="utf-8"
+    )
+    fetch_text = (APP_ROOT / "acquisition" / "fetch" / "fetch_context.py").read_text(
+        encoding="utf-8"
+    )
     for forbidden in (
         "requested_detail_fields_require_browser",
         "REQUESTED_FIELDS_BROWSER_REASON",

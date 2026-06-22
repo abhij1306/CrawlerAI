@@ -149,7 +149,9 @@ async def resolve_category_urls_with_site_links(
             return static_result
         if static_error is not None:
             raise static_error
-        raise ValueError(f"Unable to resolve sitemap for {_normalize_homepage_url(domain)}")
+        raise ValueError(
+            f"Unable to resolve sitemap for {_normalize_homepage_url(domain)}"
+        )
 
     try:
         discover_rendered_category_links = importlib.import_module(
@@ -204,11 +206,15 @@ async def resolve_category_urls_from_sitemap_result(
     allow_homepage_fallback: bool = False,
     category_only: bool = False,
 ) -> SitemapResolutionResult:
-    keyword = str(
-        filter_keyword
-        if filter_keyword is not None
-        else SITEMAP_DEFAULT_FILTER_KEYWORD
-    ).strip().lower()
+    keyword = (
+        str(
+            filter_keyword
+            if filter_keyword is not None
+            else SITEMAP_DEFAULT_FILTER_KEYWORD
+        )
+        .strip()
+        .lower()
+    )
     limit = max(1, int(max_urls or SITEMAP_DEFAULT_MAX_URLS))
     homepage_url = _normalize_homepage_url(domain)
     last_sitemap_error: ValueError | None = None
@@ -229,8 +235,12 @@ async def resolve_category_urls_from_sitemap_result(
                     limit=limit,
                     category_only=category_only,
                 )
-                sitemap_result.diagnostics.setdefault("sitemap_attempts", sitemap_attempts)
-                sitemap_result.diagnostics.setdefault("static_status", "sitemap_success")
+                sitemap_result.diagnostics.setdefault(
+                    "sitemap_attempts", sitemap_attempts
+                )
+                sitemap_result.diagnostics.setdefault(
+                    "static_status", "sitemap_success"
+                )
                 break
             except ValueError as exc:
                 last_sitemap_error = exc
@@ -306,7 +316,9 @@ async def _augment_thin_sitemap_with_homepage(
         return sitemap_result
     if not sitemap_result.urls:
         homepage_result.diagnostics.setdefault("sitemap_attempts", sitemap_attempts)
-        homepage_result.diagnostics.setdefault("static_status", "homepage_fallback_success")
+        homepage_result.diagnostics.setdefault(
+            "static_status", "homepage_fallback_success"
+        )
         return homepage_result
     merged = _merge_dedupe_urls(sitemap_result.urls, homepage_result.urls, limit=limit)
     labels = _labels_by_url_from_tree(homepage_result.nav_tree or [])
@@ -368,8 +380,7 @@ async def _resolve_sitemap_urls(
         child_urls = [
             loc.text.strip()
             for sitemap in root_xml.findall(f"{{{SITEMAP_NS}}}sitemap")
-            if (loc := sitemap.find(f"{{{SITEMAP_NS}}}loc")) is not None
-            and loc.text
+            if (loc := sitemap.find(f"{{{SITEMAP_NS}}}loc")) is not None and loc.text
         ]
         if not child_urls:
             raise ValueError(f"No child sitemaps found in {root_url}.")
@@ -487,9 +498,7 @@ async def _resolve_homepage_urls(
         raise ValueError(f"No candidate links found on homepage {homepage_url}.")
     urls = [candidate.url for candidate in candidates]
     labels = {
-        candidate.url: candidate.label
-        for candidate in candidates
-        if candidate.label
+        candidate.url: candidate.label for candidate in candidates if candidate.label
     }
     return SitemapResolutionResult(
         urls=urls,
@@ -596,15 +605,12 @@ async def _extract_homepage_candidate_entries(
             keyword=keyword,
             anchor=anchor,
         )
-        category_signal = (
-            category_only and _has_category_homepage_signal(candidate_url, anchor)
+        category_signal = category_only and _has_category_homepage_signal(
+            candidate_url, anchor
         )
         if not classification and not category_signal:
             continue
-        if category_only and (
-            classification != "listing"
-            and not category_signal
-        ):
+        if category_only and (classification != "listing" and not category_signal):
             continue
         if validations >= SITEMAP_HOMEPAGE_FALLBACK_MAX_VALIDATIONS:
             break

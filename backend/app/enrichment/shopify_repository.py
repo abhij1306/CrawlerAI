@@ -63,9 +63,7 @@ def normalize_category_path(value: object) -> str:
 
 def string_iterable(value: object) -> list[str]:
     return [
-        item
-        for item in string_list(value, accept_iterable=True, strip=True)
-        if item
+        item for item in string_list(value, accept_iterable=True, strip=True) if item
     ]
 
 
@@ -121,7 +119,9 @@ def _attribute_by_name(
         return {}
     values = [value for item in matches for value in _attribute_values(item)]
     if merge:
-        values = list({value.casefold(): value for value in reversed(values)}.values())[::-1]
+        values = list({value.casefold(): value for value in reversed(values)}.values())[
+            ::-1
+        ]
     elif values:
         values = _attribute_values(matches[0])
     return {
@@ -151,8 +151,13 @@ def _color_family_terms(
     )
     terms: dict[str, list[str]] = {}
     for canonical, aliases in DATA_ENRICHMENT_COLOR_FAMILY_ALIASES.items():
-        allowed = [alias for alias in aliases if clean_text(alias).casefold() in source_values]
-        if clean_text(canonical).casefold() in source_values and canonical not in allowed:
+        allowed = [
+            alias for alias in aliases if clean_text(alias).casefold() in source_values
+        ]
+        if (
+            clean_text(canonical).casefold() in source_values
+            and canonical not in allowed
+        ):
             allowed.insert(0, canonical)
         if allowed:
             terms[canonical] = list(dict.fromkeys(allowed))
@@ -173,7 +178,9 @@ def _size_systems(attribute: dict[str, object]) -> dict[str, object]:
             base_name = clean_text(re.sub(r"\s*\([A-Za-z0-9]+\)\s*$", "", value))
             if base_name:
                 aliases[base_name.casefold()] = canonical
-            target = "alpha" if re.fullmatch(r"[A-Z]{1,4}|\d+XL", canonical) else "numeric"
+            target = (
+                "alpha" if re.fullmatch(r"[A-Z]{1,4}|\d+XL", canonical) else "numeric"
+            )
             if target == "alpha" or canonical.isdigit():
                 systems[target].add(canonical.casefold())
         if value.casefold() == "one size":
@@ -181,13 +188,18 @@ def _size_systems(attribute: dict[str, object]) -> dict[str, object]:
             systems["alpha"].add("os")
         if value.isdigit():
             systems["numeric"].add(value.casefold())
-    return {"aliases": aliases, "systems": {key: sorted(values) for key, values in systems.items()}}
+    return {
+        "aliases": aliases,
+        "systems": {key: sorted(values) for key, values in systems.items()},
+    }
 
 
 @lru_cache(maxsize=16)
 def load_attribute_repository_data(path: Path) -> dict[str, object]:
     raw = _load_json_dict(path)
-    attributes = [item for item in object_list(raw.get("attributes")) if isinstance(item, dict)]
+    attributes = [
+        item for item in object_list(raw.get("attributes")) if isinstance(item, dict)
+    ]
     by_handle = {
         str(item.get("handle") or "").replace("-", "_"): {
             "name": str(item.get("name") or ""),
@@ -213,12 +225,14 @@ def load_attribute_repository_data(path: Path) -> dict[str, object]:
         "version": str(raw.get("version") or ""),
         "normalization_terms": {
             "availability_terms": {
-                key: list(values) for key, values in DATA_ENRICHMENT_AVAILABILITY_TERMS.items()
+                key: list(values)
+                for key, values in DATA_ENRICHMENT_AVAILABILITY_TERMS.items()
             },
             "audience_terms": audience_terms,
             "color_families": _color_family_terms(color, attributes),
             "gender_terms": {
-                key: list(values) for key, values in DATA_ENRICHMENT_GENDER_ALIASES.items()
+                key: list(values)
+                for key, values in DATA_ENRICHMENT_GENDER_ALIASES.items()
             },
             "material_terms": material_terms,
             "seo_stopwords": list(DATA_ENRICHMENT_SEO_STOPWORDS),
@@ -230,7 +244,11 @@ def load_attribute_repository_data(path: Path) -> dict[str, object]:
 
 def _taxonomy_path_phrases(item: dict[str, object]) -> list[str]:
     phrases = taxonomy_phrases(tokenize_text(item.get("normalized_path")))
-    parts = [part for part in clean_text(item.get("category_path")).split(">") if part.strip()]
+    parts = [
+        part
+        for part in clean_text(item.get("category_path")).split(">")
+        if part.strip()
+    ]
     if len(parts) < 2:
         return phrases
     for root_token in tokenize_text(parts[0]):

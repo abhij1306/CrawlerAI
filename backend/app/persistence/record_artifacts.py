@@ -75,7 +75,9 @@ async def load_record_artifacts(
         if manifest.url_result_id != int(url_result_id):
             raise ValueError("artifact manifest URL-result identity mismatch")
         references = _references_by_name(manifest)
-        provenance = _read_json_list(repository, references.get("record-provenance.json"))
+        provenance = _read_json_list(
+            repository, references.get("record-provenance.json")
+        )
         row = _match_provenance_row(record, provenance)
         return RecordArtifacts(
             status="canonical",
@@ -120,9 +122,7 @@ def _references_by_name(
     manifest: ArtifactManifest,
 ) -> dict[str, ArtifactReference]:
     references = [
-        artifact
-        for attempt in manifest.attempts
-        for artifact in attempt.artifacts
+        artifact for attempt in manifest.attempts for artifact in attempt.artifacts
     ]
     references.extend(manifest.extraction.artifacts)
     by_name: dict[str, ArtifactReference] = {}

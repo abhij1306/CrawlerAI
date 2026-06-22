@@ -99,25 +99,35 @@ def analyze_extractable_content(
     )
     meaningful_detail = _has_meaningful_detail_dom(parsed)
     dom_detail = _has_detail_dom_signals(parsed)
-    app_only = any(phrase in parsed.normalized_text.lower() for phrase in ("load in the app", "loads in the app"))
+    app_only = any(
+        phrase in parsed.normalized_text.lower()
+        for phrase in ("load in the app", "loads in the app")
+    )
     token_detail = any(
         token in parsed.lowered_html for token in DETAIL_SHELL_STATE_TOKENS
     ) or (
         any(token in parsed.lowered_html for token in DETAIL_SHELL_FRAMEWORK_TOKENS)
-        and any(token in parsed.lowered_html for token in DETAIL_SHELL_PRODUCT_DATA_TOKENS)
+        and any(
+            token in parsed.lowered_html for token in DETAIL_SHELL_PRODUCT_DATA_TOKENS
+        )
     )
     detail = bool(
         parsed.html
         and not placeholder
-        and (structured_detail or state_content or dom_detail or meaningful_detail or (token_detail and not app_only))
+        and (
+            structured_detail
+            or state_content
+            or dom_detail
+            or meaningful_detail
+            or (token_detail and not app_only)
+        )
     )
     listing = bool(
         parsed.html
         and not placeholder
         and (
             structured_listing
-            or typed_count
-            >= max(2, int(crawler_runtime_settings.listing_min_items))
+            or typed_count >= max(2, int(crawler_runtime_settings.listing_min_items))
             or _detail_like_anchor_count(parsed.document) >= 3
         )
     )
@@ -136,7 +146,8 @@ def analyze_extractable_content(
     )
     if not listing_shell and len(parsed.visible_text) > 400:
         listing_shell = any(
-            token in parsed.lowered_html for token in LISTING_CLIENT_RENDERED_SHELL_HINTS
+            token in parsed.lowered_html
+            for token in LISTING_CLIENT_RENDERED_SHELL_HINTS
         )
     elif not listing_shell and (root_present or script_count >= 3):
         listing_shell = any(
@@ -172,9 +183,7 @@ def _structured_content_signals(
                 token in normalized
                 for token in ("product", "productgroup", "jobposting")
             )
-            listing |= any(
-                token in normalized for token in ("itemlist", "listitem")
-            )
+            listing |= any(token in normalized for token in ("itemlist", "listitem"))
             typed_count += int(
                 any(token in normalized for token in ("product", "jobposting"))
             )
@@ -231,7 +240,9 @@ def _has_detail_dom_signals(analysis: HtmlAnalysis) -> bool:
             analysis.normalized_text,
         )
     )
-    app_only = any(phrase in lowered_text for phrase in ("load in the app", "loads in the app"))
+    app_only = any(
+        phrase in lowered_text for phrase in ("load in the app", "loads in the app")
+    )
     if app_only and not (product_anchor or price_anchor):
         return False
     if hint_count >= int(crawler_runtime_settings.detail_field_signal_min_count):
@@ -244,9 +255,7 @@ def _has_detail_dom_signals(analysis: HtmlAnalysis) -> bool:
 
 
 def _has_meaningful_detail_dom(analysis: HtmlAnalysis) -> bool:
-    heading = analysis.document.css_first(
-        "main h1, article h1, [role='main'] h1, h1"
-    )
+    heading = analysis.document.css_first("main h1, article h1, [role='main'] h1, h1")
     heading_text = clean_text(heading.text()) if heading else ""
     if not heading_text:
         return False
@@ -274,7 +283,10 @@ def _has_meaningful_detail_dom(analysis: HtmlAnalysis) -> bool:
             ):
                 continue
             descendants = node.css_first("p, div, li, article, section, span")
-            if descendants is not None or len(body) >= CONTENT_DETAIL_MIN_BODY_TEXT_LENGTH:
+            if (
+                descendants is not None
+                or len(body) >= CONTENT_DETAIL_MIN_BODY_TEXT_LENGTH
+            ):
                 return True
     return False
 
@@ -395,7 +407,9 @@ async def probe_browser_readiness(
     detail_title_matches_url = _detail_title_matches_url(
         url,
         analysis.title_text,
-        min_matches=int(crawler_runtime_settings.browser_detail_title_url_token_min_count),
+        min_matches=int(
+            crawler_runtime_settings.browser_detail_title_url_token_min_count
+        ),
     )
     detail_like = (
         analysis.h1_present
@@ -433,7 +447,8 @@ async def probe_browser_readiness(
         )
         has_identity = bool(
             analysis.h1_present
-            or detail_hints >= int(crawler_runtime_settings.detail_field_signal_min_count)
+            or detail_hints
+            >= int(crawler_runtime_settings.detail_field_signal_min_count)
             or detail_title_matches_url
         )
         is_ready = bool(
@@ -474,9 +489,7 @@ async def listing_card_signal_count(
         if analysis is None:
             html = await get_page_html(page)
             analysis = await asyncio.to_thread(analyze_html, html)
-        ready_count, candidates_present = _ecommerce_ready_card_count(
-            analysis.document
-        )
+        ready_count, candidates_present = _ecommerce_ready_card_count(analysis.document)
         if ready_count <= 0:
             if candidates_present:
                 return 0
@@ -554,8 +567,7 @@ def _ecommerce_node_has_product_evidence(node: HtmlNode) -> bool:
     )
     product_signature = bool(_ECOMMERCE_READY_PRODUCT_ATTR_RE.search(signature))
     has_product_id = bool(
-        attrs.get("data-product-id")
-        or node.css_first("[data-product-id]")
+        attrs.get("data-product-id") or node.css_first("[data-product-id]")
     )
     itemtype = str(attrs.get("itemtype") or "")
     has_product_itemtype = "product" in itemtype.lower() or bool(

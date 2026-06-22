@@ -226,8 +226,7 @@ async def _load_record_artifact_views(
     records: list[CrawlRecord],
 ) -> dict[int, RecordArtifacts]:
     return {
-        record.id: await load_record_artifacts(session, record)
-        for record in records
+        record.id: await load_record_artifacts(session, record) for record in records
     }
 
 

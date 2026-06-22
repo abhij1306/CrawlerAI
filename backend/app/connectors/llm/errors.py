@@ -26,10 +26,29 @@ class LLMErrorCategory(StrEnum):
     MISSING_CONFIG = "missing_config"
 
 
-_DETERMINISTIC_CLIENT_ERROR_CODES = frozenset({
-    "400", "402", "405", "406", "409", "410", "411", "413", "414",
-    "415", "416", "417", "418", "421", "422", "424", "426", "428", "431",
-})
+_DETERMINISTIC_CLIENT_ERROR_CODES = frozenset(
+    {
+        "400",
+        "402",
+        "405",
+        "406",
+        "409",
+        "410",
+        "411",
+        "413",
+        "414",
+        "415",
+        "416",
+        "417",
+        "418",
+        "421",
+        "422",
+        "424",
+        "426",
+        "428",
+        "431",
+    }
+)
 
 
 def classify_error(raw: str) -> LLMErrorCategory:

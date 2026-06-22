@@ -30,7 +30,9 @@ class PolicyMiddleware:
     async def before_fetch(self, request: Any) -> None:
         await wait_for_host_slot(
             request.url,
-            ttl_seconds=request.policy.host_memory_ttl_seconds if request.policy else None,
+            ttl_seconds=request.policy.host_memory_ttl_seconds
+            if request.policy
+            else None,
         )
         self._record("pre_fetch", "paced", "domain_rate_limiter", request.url)
 

@@ -1,9 +1,19 @@
 """Price and currency coercion helpers for public field shaping."""
+
 from __future__ import annotations
 
 import re
 from decimal import Decimal, InvalidOperation
 
+from app.core.config.extraction_price_rules import (
+    CURRENCY_DECIMAL_PLACES,
+    DEFAULT_DECIMAL_PLACES,
+    DETAIL_CORROBORATED_PRICE_SCALE_FLAG,
+    DETAIL_EXPLICIT_MINOR_UNIT_PRICE_FLAG,
+    DETAIL_EXPLICIT_MINOR_UNIT_PRICE_KEYS,
+    DETAIL_PRICE_COMPARISON_TOLERANCE,
+    DETAIL_VISIBLE_PRICE_MAGNITUDE_RATIOS_DECIMAL,
+)
 from app.core.config.extraction_rules import (
     CURRENCY_ALIAS_PATTERNS,
     CURRENCY_CODES,
@@ -16,7 +26,11 @@ CURRENCY_SYMBOL_PATTERN = (
     "|".join(
         re.escape(symbol)
         for symbol in sorted(
-            (str(symbol) for symbol in dict(CURRENCY_SYMBOL_MAP or {}).keys() if symbol),
+            (
+                str(symbol)
+                for symbol in dict(CURRENCY_SYMBOL_MAP or {}).keys()
+                if symbol
+            ),
             key=len,
             reverse=True,
         )
@@ -133,6 +147,42 @@ def decimal_for_shared_price(value: object) -> Decimal | None:
         return Decimal(normalized).quantize(Decimal("0.01"))
     except (InvalidOperation, ValueError):
         return None
+
+
+def repair_price_unit(
+    value: object,
+    *,
+    source_key: str,
+    currency: str,
+    corroborating_values: tuple[object, ...] = (),
+) -> tuple[str, str] | None:
+    amount = decimal_for_shared_price(value)
+    currency_code = str(currency or "").strip().upper()
+    if amount is None or not currency_code:
+        return None
+    decimal_places = CURRENCY_DECIMAL_PLACES.get(currency_code, DEFAULT_DECIMAL_PLACES)
+    source_token = re.sub(
+        r"[^a-z0-9]+", "", str(source_key).rsplit("/", 1)[-1].casefold()
+    )
+    if source_token in DETAIL_EXPLICIT_MINOR_UNIT_PRICE_KEYS:
+        divisor = Decimal(10) ** decimal_places
+        if divisor == 1:
+            return None
+        return format(amount / divisor, "f"), DETAIL_EXPLICIT_MINOR_UNIT_PRICE_FLAG
+    if decimal_places == 0 or amount != amount.to_integral_value():
+        return None
+    peers = tuple(
+        peer
+        for peer in (decimal_for_shared_price(item) for item in corroborating_values)
+        if peer is not None
+    )
+    for ratio in DETAIL_VISIBLE_PRICE_MAGNITUDE_RATIOS_DECIMAL:
+        candidate = amount / ratio
+        if any(
+            abs(peer - candidate) <= DETAIL_PRICE_COMPARISON_TOLERANCE for peer in peers
+        ):
+            return format(candidate, "f"), DETAIL_CORROBORATED_PRICE_SCALE_FLAG
+    return None
 
 
 def _normalize_shared_price_decimal_text(value: str) -> str:

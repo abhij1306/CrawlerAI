@@ -239,13 +239,6 @@ export function ProgressBar({ percent }: Readonly<{ percent: number }>) {
   );
 }
 
-/* ─── MetricGrid ─────────────────────────────────────────────────────────── */
-export function MetricGrid({ children }: Readonly<{ children: ReactNode }>) {
-  return (
-    <div className="stagger-children grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{children}</div>
-  );
-}
-
 /* ─── EmptyPanel ─────────────────────────────────────────────────────────── */
 export function EmptyPanel({
   title,
@@ -339,17 +332,6 @@ export function SkeletonRows({
       {Array.from({ length: count }, (_, i) => (
         <Skeleton key={i} className="h-8 w-full" />
       ))}
-    </div>
-  );
-}
-
-/* ─── MetricSkeleton ─────────────────────────────────────────────────────── */
-export function MetricSkeleton() {
-  return (
-    <div className="border-border card-gradient relative space-y-2 overflow-hidden rounded-lg border p-4">
-      <Skeleton className="h-3 w-20" />
-      <Skeleton className="mt-2 h-9 w-28" />
-      <Skeleton className="h-3 w-16" />
     </div>
   );
 }

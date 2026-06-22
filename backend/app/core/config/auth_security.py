@@ -18,7 +18,9 @@ AUTH_NO_STORE_PATH_PREFIXES = ("/api/auth/",)
 
 
 def cors_allowed_headers(request_id_header: str) -> list[str]:
-    normalized = str(request_id_header or "").replace("\r", "").replace("\n", "").strip()
+    normalized = (
+        str(request_id_header or "").replace("\r", "").replace("\n", "").strip()
+    )
     headers = list(API_ALLOWED_CORS_HEADER_BASE)
     if normalized and normalized not in headers:
         headers.append(normalized)

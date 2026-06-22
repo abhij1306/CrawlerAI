@@ -66,7 +66,9 @@ async def apply_protected_host_backoff(
     async with _HOST_PACING_LOCK:
         _prune_expired_hosts(now=now, ttl_seconds=resolved_ttl_seconds)
         next_allowed_at = _HOST_NEXT_ALLOWED_AT.get(host, now)
-        _HOST_NEXT_ALLOWED_AT[host] = max(next_allowed_at, now + protected_interval_seconds)
+        _HOST_NEXT_ALLOWED_AT[host] = max(
+            next_allowed_at, now + protected_interval_seconds
+        )
         _enforce_host_cache_limit()
 
 
@@ -77,7 +79,9 @@ async def record_fetch_outcome(
     blocked: bool,
     ttl_seconds: int | None = None,
 ) -> bool:
-    if blocked or int(status_code or 0) in set(crawler_runtime_settings.http_retry_status_codes):
+    if blocked or int(status_code or 0) in set(
+        crawler_runtime_settings.http_retry_status_codes
+    ):
         await apply_protected_host_backoff(_url, ttl_seconds=ttl_seconds)
         return True
     return False

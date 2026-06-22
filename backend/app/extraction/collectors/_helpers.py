@@ -15,11 +15,15 @@ from app.extraction.ids import stable_id
 
 
 def first_artifact(bundle: CaptureBundle, artifact_type: str):
-    return next((item for item in bundle.artifacts if item.artifact_type == artifact_type), None)
+    return next(
+        (item for item in bundle.artifacts if item.artifact_type == artifact_type), None
+    )
 
 
 def html_doc(bundle: CaptureBundle, reader) -> tuple[str, HtmlDocument]:
-    artifact = first_artifact(bundle, "rendered_html") or first_artifact(bundle, "http_html")
+    artifact = first_artifact(bundle, "rendered_html") or first_artifact(
+        bundle, "http_html"
+    )
     html = reader.read_text(artifact) if artifact else ""
     artifact_id = artifact.artifact_id if artifact else "html"
     store = getattr(reader, "document_store", None)
@@ -41,8 +45,20 @@ def evidence(
     hint = kwargs.get("hint")
     directness = str(kwargs.get("directness") or "direct")
     confidence = float(kwargs.get("confidence", 0.7))
-    eid = stable_id("ev", bundle.bundle_id, artifact_id, collector_id, fact_type, value, locator.value, group_id)
-    subject_id = str(kwargs.get("subject_id") or _subject_id(bundle, fact_type, value, group_id, hint))
+    eid = stable_id(
+        "ev",
+        bundle.bundle_id,
+        artifact_id,
+        collector_id,
+        fact_type,
+        value,
+        locator.value,
+        group_id,
+    )
+    subject_id = str(
+        kwargs.get("subject_id")
+        or _subject_id(bundle, fact_type, value, group_id, hint)
+    )
     parent_subject_id = kwargs.get("parent_subject_id")
     return Evidence(
         evidence_id=eid,
@@ -78,7 +94,12 @@ def _subject_id(
         or bundle.requested_url
     )
     if hint is not None and hint.entity_type == "variant":
-        return stable_id("subject", bundle.bundle_id, "variant", group_id or hint.variant_id or product_key)
+        return stable_id(
+            "subject",
+            bundle.bundle_id,
+            "variant",
+            group_id or hint.variant_id or product_key,
+        )
     if hint is not None and hint.entity_type == "offer":
         return stable_id("subject", bundle.bundle_id, "offer", group_id or product_key)
     if hint is not None and hint.entity_type == "asset":
@@ -86,7 +107,9 @@ def _subject_id(
     if hint is not None and hint.entity_type == "job":
         return stable_id("subject", bundle.bundle_id, "job", product_key)
     if fact_type.startswith("variant."):
-        return stable_id("subject", bundle.bundle_id, "variant", group_id or product_key)
+        return stable_id(
+            "subject", bundle.bundle_id, "variant", group_id or product_key
+        )
     if fact_type.startswith("offer."):
         return stable_id("subject", bundle.bundle_id, "offer", group_id or product_key)
     if fact_type.startswith("asset."):

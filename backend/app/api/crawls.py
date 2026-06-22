@@ -251,7 +251,9 @@ async def crawls_detail(
 
 
 @router.delete(
-    "/{run_id:int}", status_code=status.HTTP_204_NO_CONTENT, responses=RUN_CONFLICT_RESPONSE
+    "/{run_id:int}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    responses=RUN_CONFLICT_RESPONSE,
 )
 async def crawls_delete(
     run_id: int,
@@ -339,12 +341,15 @@ async def crawls_resume(
 
 @router.post(
     "/{run_id:int}/kill",
-    responses=cast(ResponseSpec, {
-        status.HTTP_404_NOT_FOUND: {"description": RUN_NOT_FOUND_DETAIL},
-        status.HTTP_409_CONFLICT: {
-            "description": "Run cannot be killed in its current state"
+    responses=cast(
+        ResponseSpec,
+        {
+            status.HTTP_404_NOT_FOUND: {"description": RUN_NOT_FOUND_DETAIL},
+            status.HTTP_409_CONFLICT: {
+                "description": "Run cannot be killed in its current state"
+            },
         },
-    }),
+    ),
 )
 async def crawls_kill(
     run_id: int,
@@ -361,10 +366,13 @@ async def crawls_kill(
 
 @router.post(
     "/{run_id:int}/cancel",
-    responses=cast(ResponseSpec, {
-        status.HTTP_404_NOT_FOUND: {"description": RUN_NOT_FOUND_DETAIL},
-        status.HTTP_409_CONFLICT: {"description": RUN_CONFLICT_DETAIL},
-    }),
+    responses=cast(
+        ResponseSpec,
+        {
+            status.HTTP_404_NOT_FOUND: {"description": RUN_NOT_FOUND_DETAIL},
+            status.HTTP_409_CONFLICT: {"description": RUN_CONFLICT_DETAIL},
+        },
+    ),
 )
 async def crawls_cancel(
     run_id: int,

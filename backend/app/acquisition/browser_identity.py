@@ -55,7 +55,9 @@ def _deheadless_user_agent(browser_major_version: int | None) -> str:
     return template.format(major=int(major))
 
 
-def _coherent_chrome_client_hint_headers(browser_major_version: int | None) -> dict[str, str]:
+def _coherent_chrome_client_hint_headers(
+    browser_major_version: int | None,
+) -> dict[str, str]:
     """Build sec-ch-ua headers consistent with the de-headlessified UA + host OS."""
     major = int(browser_major_version or DEHEADLESS_UA_FALLBACK_MAJOR)
     platform_label = CHROME_CLIENT_HINT_PLATFORM_BY_HOST_OS.get(
@@ -132,10 +134,15 @@ def build_playwright_context_spec(
                 normalized_key = str(key)
                 if value is None:
                     continue
-                if normalized_key == "extra_http_headers" and isinstance(value, Mapping):
+                if normalized_key == "extra_http_headers" and isinstance(
+                    value, Mapping
+                ):
                     context_options["extra_http_headers"] = {
                         **dict(context_options.get("extra_http_headers") or {}),
-                        **{str(header): str(header_value) for header, header_value in value.items()},
+                        **{
+                            str(header): str(header_value)
+                            for header, header_value in value.items()
+                        },
                     }
                     continue
                 context_options[normalized_key] = value

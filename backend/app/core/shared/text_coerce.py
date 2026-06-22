@@ -43,7 +43,9 @@ tracking_token_re = re.compile(str(DETAIL_TRACKING_TOKEN_PATTERN), re.I)
 _LISTING_UTILITY_TITLE_REGEXES = tuple(
     re.compile(pattern, re.I) for pattern in LISTING_UTILITY_TITLE_PATTERNS
 )
-_NULL_TEXT_VALUES = frozenset({"nan", "none", "null", "undefined", "n/a", "na", "- / null"})
+_NULL_TEXT_VALUES = frozenset(
+    {"nan", "none", "null", "undefined", "n/a", "na", "- / null"}
+)
 
 
 def clean_text(value: object) -> str:
@@ -109,7 +111,10 @@ def is_title_noise(title: object) -> bool:
     if "star" in lowered and RATING_RE.search(lowered) and len(cleaned.split()) <= 4:
         return True
     cta_normalized = re.sub(r"[\s.。…]+$", "", lowered)
-    if lowered in LISTING_TITLE_CTA_TITLES or cta_normalized in LISTING_TITLE_CTA_TITLES:
+    if (
+        lowered in LISTING_TITLE_CTA_TITLES
+        or cta_normalized in LISTING_TITLE_CTA_TITLES
+    ):
         return True
     if lowered in DETAIL_LOW_SIGNAL_TITLE_VALUES:
         return True

@@ -29,7 +29,10 @@ from app.core.config.public_api import (
 from app.crawl.crud import create_crawl_run
 from app.crawl.state import CrawlStatus, update_run_status
 from app.extraction.surfaces import parse_surface, public_surface_for_internal
-from app.core.records.field_policy import canonical_fields_for_surface, normalize_field_key
+from app.core.records.field_policy import (
+    canonical_fields_for_surface,
+    normalize_field_key,
+)
 from app.crawl.pipeline.extraction_loop import process_single_url
 from app.crawl.pipeline.runtime_helpers import log_event, mark_run_failed
 from app.crawl.pipeline.types import URLProcessingConfig, URLProcessingResult
@@ -155,7 +158,9 @@ async def _run_public_extraction(
     return result
 
 
-async def _load_public_record_or_fail(session: AsyncSession, *, run, result) -> CrawlRecord:
+async def _load_public_record_or_fail(
+    session: AsyncSession, *, run, result
+) -> CrawlRecord:
     try:
         verdict = str(getattr(result, "verdict", "") or "")
         metrics = dict(getattr(result, "url_metrics", {}) or {})
@@ -297,7 +302,9 @@ def _browser_was_required(metrics: dict[str, Any]) -> bool:
     diagnostics = metrics.get("browser_diagnostics")
     if isinstance(diagnostics, dict) and diagnostics.get("browser_attempted"):
         return True
-    failure_reason = str(metrics.get("failure_reason") or metrics.get("browser_outcome") or "")
+    failure_reason = str(
+        metrics.get("failure_reason") or metrics.get("browser_outcome") or ""
+    )
     return "render" in failure_reason.lower() or "browser" in failure_reason.lower()
 
 
@@ -320,9 +327,7 @@ def _shape_record_response(
 ) -> dict[str, Any]:
     data = dict(artifacts.data)
     fields = {field: data.get(field) for field in requested_fields if field in data}
-    source_trace = dict(
-        artifacts.source_trace
-    )
+    source_trace = dict(artifacts.source_trace)
     crawl_method = _crawl_method(
         source_trace=source_trace,
         artifacts=artifacts,

@@ -51,7 +51,7 @@ export function profileSearchText(profile: DomainRunProfileRecord) {
     .toLowerCase();
 }
 
-export function defaultDomainRunProfile(): DomainRunProfile {
+function defaultDomainRunProfile(): DomainRunProfile {
   return {
     version: 1,
     fetch_profile: {

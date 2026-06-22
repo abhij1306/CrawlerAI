@@ -22,6 +22,7 @@ from app.core.config.public_record_policy import (
     PUBLIC_RECORD_CANONICAL_SURFACE,
     PUBLIC_RECORD_CANONICAL_URL_FIELDS,
     PUBLIC_RECORD_DETAIL_CANONICAL_QUERY_KEYS,
+    PUBLIC_RECORD_DETAIL_CANONICAL_QUERY_PATTERNS,
     PUBLIC_RECORD_DETAIL_CANONICAL_QUERY_PREFIXES,
 )
 
@@ -33,6 +34,8 @@ _URL_SCHEME_RE = re.compile(str(URL_CONCATENATION_SCHEME_PATTERN), re.I)
 _URL_CONCAT_ALLOWED_PREFIX_SEPARATORS = tuple(
     str(value) for value in (URL_CONCATENATION_ALLOWED_PREFIX_SEPARATORS or ())
 )
+
+
 def _text_or_none(value: object) -> str | None:
     text = str(value or "").strip()
     return text or None
@@ -62,6 +65,7 @@ def same_site(base_url: str, candidate_url: str) -> bool:
     candidate_site = registrable_host(candidate_url)
     return bool(candidate_site) and candidate_site == base_site
 
+
 def _surface_needs_tracking_strip(surface: str | None) -> bool:
     normalized_surface = str(surface or "").strip().lower()
     return normalized_surface.startswith(tuple(TRACKING_STRIP_SURFACE_PREFIXES or ()))
@@ -76,8 +80,7 @@ def strip_tracking_query_params(url: object) -> str | None:
         return text
     query_pairs = parse_qsl(parsed.query, keep_blank_values=True)
     has_detail_context_tracking = any(
-        _is_tracking_detail_context_key(key)
-        for key, _ in query_pairs
+        _is_tracking_detail_context_key(key) for key, _ in query_pairs
     )
     removable_keys: list[str] = []
     for key, value in query_pairs:
@@ -90,18 +93,15 @@ def strip_tracking_query_params(url: object) -> str | None:
     if not removable_keys:
         return text
     removable = set(removable_keys)
-    kept_pairs = [
-        (key, value)
-        for key, value in query_pairs
-        if key not in removable
-    ]
+    kept_pairs = [(key, value) for key, value in query_pairs if key not in removable]
     return urlunparse(parsed._replace(query=urlencode(kept_pairs, doseq=True)))
 
 
 def _is_tracking_query_key(key: str) -> bool:
     lowered = key.lower()
-    return lowered in TRACKING_PARAM_EXACT_KEYS | TRACKING_DETAIL_CONTEXT_EXACT_KEYS or any(
-        lowered.startswith(prefix) for prefix in TRACKING_PARAM_PREFIXES
+    return (
+        lowered in TRACKING_PARAM_EXACT_KEYS | TRACKING_DETAIL_CONTEXT_EXACT_KEYS
+        or any(lowered.startswith(prefix) for prefix in TRACKING_PARAM_PREFIXES)
     )
 
 
@@ -116,14 +116,20 @@ def _is_short_tracking_flag(
     has_detail_context_tracking: bool,
 ) -> bool:
     lowered = key.lower()
-    if not has_detail_context_tracking or lowered in TRACKING_PRESERVED_SHORT_QUERY_KEYS:
+    if (
+        not has_detail_context_tracking
+        or lowered in TRACKING_PRESERVED_SHORT_QUERY_KEYS
+    ):
         return False
     if len(lowered) > int(MAX_TRACKING_KEY_LENGTH):
         return False
     normalized_value = str(value or "").strip().lower()
     if len(normalized_value) > int(MAX_TRACKING_VALUE_LENGTH):
         return False
-    if normalized_value and _SHORT_TRACKING_VALUE_RE.fullmatch(normalized_value) is None:
+    if (
+        normalized_value
+        and _SHORT_TRACKING_VALUE_RE.fullmatch(normalized_value) is None
+    ):
         return False
     return True
 
@@ -184,12 +190,19 @@ def canonical_public_record_url(
         for prefix in tuple(PUBLIC_RECORD_DETAIL_CANONICAL_QUERY_PREFIXES or ())
         if str(prefix or "").strip()
     )
+    remove_patterns = tuple(
+        re.compile(str(pattern or "").strip(), re.I)
+        for pattern in tuple(PUBLIC_RECORD_DETAIL_CANONICAL_QUERY_PATTERNS or ())
+        if str(pattern or "").strip()
+    )
     kept_pairs = []
     changed = False
     for key, value in parse_qsl(parsed.query, keep_blank_values=True):
         lowered = str(key or "").strip().lower()
-        if lowered in remove_keys or any(
-            lowered.startswith(prefix) for prefix in remove_prefixes
+        if (
+            lowered in remove_keys
+            or any(lowered.startswith(prefix) for prefix in remove_prefixes)
+            or any(pattern.fullmatch(lowered) for pattern in remove_patterns)
         ):
             changed = True
             continue

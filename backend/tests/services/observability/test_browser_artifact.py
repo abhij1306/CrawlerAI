@@ -134,7 +134,9 @@ def test_interstitial_dismissal_kept_when_dismissed():
 
 
 def test_prefetch_host_snapshot_replaced_with_honest_outcome():
-    shaped = shape_browser_artifact(_run33_like(), surface="ecommerce_detail", blocked=False)
+    shaped = shape_browser_artifact(
+        _run33_like(), surface="ecommerce_detail", blocked=False
+    )
     assert "host_policy_snapshot" not in shaped
     outcome = shaped["host_outcome"]
     # usable_content + not blocked => honest success, no misleading false flags

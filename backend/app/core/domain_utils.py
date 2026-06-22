@@ -46,9 +46,8 @@ def normalize_domain(url: str) -> str:
     host = (parsed.netloc or "").lower().strip()
     if parsed.hostname:
         hostname = parsed.hostname.lower().strip()
-        if (
-            (parsed.scheme == "http" and parsed.port == 80)
-            or (parsed.scheme == "https" and parsed.port == 443)
+        if (parsed.scheme == "http" and parsed.port == 80) or (
+            parsed.scheme == "https" and parsed.port == 443
         ):
             host = hostname
         elif parsed.port is not None:

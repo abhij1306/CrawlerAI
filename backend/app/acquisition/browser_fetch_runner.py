@@ -222,9 +222,10 @@ def _build_payload_capture(surface: str) -> BrowserNetworkCapture:
 def _should_run_behavior_realism(state: BrowserFetchState) -> bool:
     if not bool(crawler_runtime_settings.browser_behavior_realism_enabled):
         return False
-    if (
-        normalize_browser_engine(state.runtime_engine) != REAL_CHROME_BROWSER_ENGINE
-        and bool(crawler_runtime_settings.browser_behavior_real_chrome_only)
+    if normalize_browser_engine(
+        state.runtime_engine
+    ) != REAL_CHROME_BROWSER_ENGINE and bool(
+        crawler_runtime_settings.browser_behavior_real_chrome_only
     ):
         return False
     reason = str(state.request.browser_reason or "").strip().lower()
@@ -234,7 +235,9 @@ def _should_run_behavior_realism(state: BrowserFetchState) -> bool:
     )
 
 
-async def _run_behavior_realism(page: Any, state: BrowserFetchState) -> dict[str, object]:
+async def _run_behavior_realism(
+    page: Any, state: BrowserFetchState
+) -> dict[str, object]:
     if not _should_run_behavior_realism(state):
         return {}
     timeout_seconds = max(
@@ -272,11 +275,13 @@ async def _configure_page(
     if not request.capture_screenshot:
         with suppress(Exception):
             await page.route("**/*", block_unneeded_route)
-    traversal_active, readiness_policy, readiness_override = resolve_browser_fetch_policy(
-        url=request.url,
-        surface=state.normalized_surface,
-        traversal_mode=request.traversal_mode,
-        should_run_traversal=should_run_traversal,
+    traversal_active, readiness_policy, readiness_override = (
+        resolve_browser_fetch_policy(
+            url=request.url,
+            surface=state.normalized_surface,
+            traversal_mode=request.traversal_mode,
+            should_run_traversal=should_run_traversal,
+        )
     )
     pause_ms = max(0, int(crawler_runtime_settings.browser_first_nav_pause_ms))
     if pause_ms > 0 and state.normalized_surface.startswith("ecommerce_"):
@@ -537,7 +542,16 @@ async def _run_page_lifecycle(
         readiness_policy=readiness_policy,
         readiness_override=readiness_override,
     )
-    current_probe, probes, timed_out, skip_reason, readiness_diag, expansion_diag, prefetched_html, prefetched_analysis = settled
+    (
+        current_probe,
+        probes,
+        timed_out,
+        skip_reason,
+        readiness_diag,
+        expansion_diag,
+        prefetched_html,
+        prefetched_analysis,
+    ) = settled
     del current_probe
     serialized = await _run_serialization(
         page,
@@ -586,7 +600,9 @@ async def _execute_browser_fetch(state: BrowserFetchState) -> PageFetchResult:
         state.phase_timings_ms["page_acquire"] = _elapsed_ms(acquired_at)
         await _prepare_launch_context(state, runtime)
         started_at = time.perf_counter()
-        remaining = remaining_timeout_factory(started_at + float(request.timeout_seconds))
+        remaining = remaining_timeout_factory(
+            started_at + float(request.timeout_seconds)
+        )
         payload_capture: BrowserNetworkCapture | None = None
         popup_registrations: list[tuple[Any, str, Any]] = []
         try:
