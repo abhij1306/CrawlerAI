@@ -119,6 +119,61 @@ def infer_brand_from_title_marker(title: object) -> str | None:
     return brand
 
 
+def infer_brand_from_page_identity(
+    *,
+    url: str,
+    title: object,
+    evidence_values: tuple[object, ...],
+    existing_brands: tuple[object, ...] = (),
+) -> str | None:
+    text = clean_text(title)
+    host = urlparse(str(url or "")).hostname or ""
+    labels = [
+        label
+        for label in host.casefold().split(".")
+        if label not in {"", "www", "shop", "store", "us", "usa", "uk", "in", "com", "co", "net", "org"}
+    ]
+    if not text or not labels:
+        return None
+    host_label = max(labels, key=len)
+    host_words = slug_tokens(host_label)
+    compact_host = "".join(host_words)
+    suffixes = ("beauty", "cosmetics", "official", "online", "shop", "store")
+    compact_core = next(
+        (compact_host[: -len(suffix)] for suffix in suffixes if compact_host.endswith(suffix)),
+        compact_host,
+    )
+    corpus = " ".join(clean_text(value) for value in evidence_values if clean_text(value))
+    corpus_words = corpus.split()
+    title_words = text.split()
+    title_tokens = slug_tokens(text)
+    existing = tuple(clean_text(value) for value in existing_brands if clean_text(value))
+    if existing and title_words:
+        first = "".join(slug_tokens(existing[0]))
+        if first == compact_core and len(title_words) >= 2 and title_words[1].isupper():
+            return " ".join(title_words[:2])
+    for size in range(min(LISTING_BRAND_MAX_WORDS, len(corpus_words)), 0, -1):
+        for start in range(len(corpus_words) - size + 1):
+            candidate = " ".join(corpus_words[start : start + size]).strip(" |-–—")
+            if "".join(slug_tokens(candidate)) in {compact_host, compact_core}:
+                return candidate
+    for brand in existing:
+        compact_brand = "".join(slug_tokens(brand))
+        if compact_brand and compact_core.startswith(compact_brand):
+            remainder = compact_core[len(compact_brand) :]
+            if remainder and remainder.isalpha():
+                return f"{brand} {remainder.capitalize()}"
+    if title_tokens and title_words:
+        first = title_tokens[0]
+        path_tokens = slug_tokens(urlparse(str(url or "")).path)
+        corroborations = sum(first in slug_tokens(value) for value in evidence_values)
+        if compact_core == compact_host and first in path_tokens and corroborations >= 2:
+            return title_words[0]
+    if compact_core and any(compact_core in "".join(slug_tokens(value)) for value in evidence_values):
+        return compact_core.capitalize()
+    return None
+
+
 def infer_brand_from_product_url(*, url: str, title: object) -> str | None:
     title_parts = slug_tokens(title)
     if len(title_parts) < 2:

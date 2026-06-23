@@ -34,6 +34,8 @@ class _BlockEvidence:
     forced_outcome: str
     base_evidence: list[str]
     has_extractable_content: bool
+    has_listing_content: bool
+    has_product_identity: bool
     shell_title: str
     title_matches: list[str]
     strong_hits: set[str]
@@ -154,6 +156,43 @@ def _configured_marker_hits(
     }
 
 
+def _has_product_identity_content(analysis: HtmlAnalysis) -> bool:
+    heading = analysis.document.css_first("main h1, article h1, [role='main'] h1, h1")
+    heading_text = " ".join(slug_tokens(heading.text() if heading else ""))
+    if heading_text and not any(
+        marker in heading_text
+        for marker in (
+            "captcha",
+            "access denied",
+            "access forbidden",
+            "human verification",
+            "just a moment",
+            "security check",
+        )
+    ):
+        return True
+    product_types = {"product", "productmodel"}
+    for script in analysis.document.safe_css('script[type*="ld+json"]'):
+        try:
+            payload = script.json()
+        except (TypeError, ValueError):
+            continue
+        rows = payload if isinstance(payload, list) else [payload]
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            raw_type = row.get("@type")
+            values = raw_type if isinstance(raw_type, list) else [raw_type]
+            if any(
+                str(value or "").strip().lower() in product_types for value in values
+            ):
+                return True
+    return any(
+        str(node.attribute("content") or "").strip().lower() == "product"
+        for node in analysis.document.safe_css('[property="og:type"][content]')
+    )
+
+
 def _collect_block_evidence(
     html: str,
     *,
@@ -206,6 +245,8 @@ def _collect_block_evidence(
         forced_outcome=forced_outcome,
         base_evidence=base_evidence,
         has_extractable_content=content_signals.detail or content_signals.listing,
+        has_listing_content=content_signals.listing,
+        has_product_identity=_has_product_identity_content(analysis),
         shell_title=shell_title,
         title_matches=_title_block_matches(
             title_text,
@@ -248,6 +289,7 @@ def _block_policy_matches(evidence: _BlockEvidence) -> bool:
             )
         )
         or (elements and (providers or active))
+        or (active and strong and not evidence.has_extractable_content)
         or (titles and elements)
         or (hard and evidence.weak_hits and providers)
         or (

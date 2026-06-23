@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from decimal import Decimal, InvalidOperation
+from urllib.parse import urlparse
 
 from app.extraction.contracts import (
     AssetDecision,
@@ -121,13 +122,7 @@ def materialize(
     if variants:
         record["variants"] = variants
         lineages["variants"] = variant_lineage
-        _cohere_parent_offer(
-            record,
-            lineages,
-            variants,
-            variant_lineage,
-            expected_variant_count=len(entities.variants),
-        )
+        _cohere_parent_offer(record, lineages, variants, variant_lineage)
         _cohere_parent_availability(
             record,
             lineages,
@@ -314,7 +309,11 @@ def _recover_offer_prices(
     lineages: dict[str, object],
     candidates: list[tuple[object, Decision, DerivedFact | None]],
 ) -> None:
-    if record.get("price") not in (None, "", [], {}, ()) or not candidates:
+    if (
+        record.get("price") not in (None, "", [], {}, ())
+        or record.get("currency") in (None, "", [], {}, ())
+        or not candidates
+    ):
         return
     parsed: list[Decimal] = []
     for value, _decision, _derived in candidates:
@@ -360,11 +359,8 @@ def _cohere_parent_offer(
     lineages: dict[str, object],
     variants: list[dict[str, object]],
     variant_lineage: list[dict[str, object]],
-    *,
-    expected_variant_count: int,
 ) -> None:
-    if len(variants) != expected_variant_count:
-        return
+    variants, variant_lineage = _leaf_variant_rows(variants, variant_lineage)
     for field in ("price", "currency", "original_price"):
         values = [row.get(field) for row in variants]
         if not values or any(value in (None, "", [], {}, ()) for value in values):
@@ -386,10 +382,6 @@ def _cohere_parent_offer(
             record["price_max"] = format(maximum, ".2f")
             aggregate_rule = "minimum_variant_price_aggregate"
         parent_value_present = record.get(field) not in (None, "", [], {}, ())
-        if parent_value_present and (
-            field != "price" or aggregate_rule != "minimum_variant_price_aggregate"
-        ):
-            continue
         field_lineage = [row.get(field) for row in variant_lineage]
         if any(
             isinstance(item, dict)
@@ -406,12 +398,33 @@ def _cohere_parent_offer(
             "rule_id": aggregate_rule,
             "evidence_ids": list(dict.fromkeys(evidence_ids)),
         }
-        if not parent_value_present:
-            record[field] = aggregate_value
-            lineages[field] = lineage_value
         if field == "price" and record.get("price_min") != record.get("price_max"):
             lineages["price_min"] = lineage_value
             lineages["price_max"] = lineage_value
+        if parent_value_present and len(unique_values) != 1:
+            continue
+        record[field] = aggregate_value
+        lineages[field] = lineage_value
+
+
+def _leaf_variant_rows(
+    variants: list[dict[str, object]],
+    lineage: list[dict[str, object]],
+) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
+    option_fields = ("color", "size", "style", "material", "gender")
+    depths = [
+        sum(row.get(field) not in (None, "", [], {}, ()) for field in option_fields)
+        for row in variants
+    ]
+    maximum = max(depths, default=0)
+    if maximum <= 0:
+        return variants, lineage
+    selected = [
+        (row, lineage_row)
+        for row, lineage_row, depth in zip(variants, lineage, depths)
+        if depth == maximum
+    ]
+    return [row for row, _ in selected], [row for _, row in selected]
 
 
 def _cohere_parent_availability(
@@ -498,7 +511,7 @@ def _variants(
             asset_by_variant.get(variant.entity_id),
         )
         if _publishable_variant_row(variant, row) and not _variant_url_conflicts(
-            product_url, str(row.get("url") or "")
+            product_url, str(row.get("url") or ""), row
         ):
             rows.append(row)
             lineage_rows.append(lineage_row)
@@ -539,7 +552,11 @@ def _offer_completeness_rank(offer) -> tuple[int, int, int, str]:
     return has_availability, present, evidence_count, str(offer.entity_id)
 
 
-def _variant_url_conflicts(product_url: str, variant_url: str) -> bool:
+def _variant_url_conflicts(
+    product_url: str,
+    variant_url: str,
+    row: dict[str, object],
+) -> bool:
     if not product_url or not variant_url or product_url == variant_url:
         return False
     product_tokens = set(semantic_identity_tokens(detail_title_from_url(product_url)))
@@ -549,7 +566,17 @@ def _variant_url_conflicts(product_url: str, variant_url: str) -> bool:
     overlap_ratio = len(product_tokens & variant_tokens) / min(
         len(product_tokens), len(variant_tokens)
     )
-    return overlap_ratio <= VARIANT_CROSS_PRODUCT_URL_MAX_TOKEN_OVERLAP_RATIO
+    if overlap_ratio <= VARIANT_CROSS_PRODUCT_URL_MAX_TOKEN_OVERLAP_RATIO:
+        return True
+    if urlparse(product_url).path.rstrip("/") == urlparse(variant_url).path.rstrip("/"):
+        return False
+    option_tokens = {
+        token
+        for field in ("color", "size", "style", "material", "gender")
+        for token in semantic_identity_tokens(str(row.get(field) or ""))
+    }
+    unexplained = (variant_tokens - product_tokens) - option_tokens
+    return bool(unexplained)
 
 
 def _publishable_variant_row(variant, row: dict[str, object]) -> bool:

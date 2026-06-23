@@ -4,7 +4,8 @@ from collections import defaultdict
 import re
 from typing import Any
 
-from app.core.config.extraction_rules import SOURCE_TIERS, SURFACE_WEIGHTS
+from app.core.config.extraction_rules import SOURCE_TIERS
+from app.core.config.field_mappings import CANONICAL_SCHEMAS
 from app.core.records.field_policy import (
     get_surface_field_aliases,
     normalize_field_key,
@@ -26,7 +27,10 @@ def score_record_confidence(
     requested_fields: list[str] | None = None,
 ) -> dict[str, Any]:
     normalized_surface = str(surface or "").strip().lower()
-    weights = _surface_weights(normalized_surface)
+    weights = _surface_field_weights(
+        normalized_surface,
+        requested_fields=requested_fields,
+    )
     field_sources = _normalized_field_sources(record)
     (
         score,
@@ -71,14 +75,19 @@ def score_record_confidence(
     )
 
 
-def _surface_weights(normalized_surface: str) -> dict[str, float]:
-    weights = dict(SURFACE_WEIGHTS.get(normalized_surface) or {})
-    if not weights:
-        weights = dict.fromkeys(
-            ("title", "description", "image_url", "price", "company", "location"),
-            1.0,
-        )
-    return weights
+def _surface_field_weights(
+    normalized_surface: str,
+    *,
+    requested_fields: list[str] | None,
+) -> dict[str, float]:
+    requested = repair_target_fields_for_surface(
+        normalized_surface,
+        requested_fields or [],
+    )
+    fields = requested or list(CANONICAL_SCHEMAS.get(normalized_surface) or [])
+    if not fields:
+        fields = ["title", "description", "image_url", "price", "company", "location"]
+    return dict.fromkeys(fields, 1.0)
 
 
 def _score_weighted_fields(
@@ -154,30 +163,22 @@ def _apply_requested_field_bonus(
     requested_match_keys = _requested_match_keys(
         requested=requested, raw_requested=raw_requested, alias_map=alias_map
     )
+    requested_match_cache = {
+        fn: _resolve_requested_field_match(
+            record,
+            field_name=fn,
+            alias_map=alias_map,
+            field_sources_by_key=field_sources_by_key,
+        )
+        for fn in dict.fromkeys((*requested_match_keys, *requested))
+    }
     requested_matches = [
         match
         for fn in requested_match_keys
-        if (
-            match := _resolve_requested_field_match(
-                record,
-                field_name=fn,
-                alias_map=alias_map,
-                field_sources_by_key=field_sources_by_key,
-            )
-        )
-        is not None
+        if (match := requested_match_cache[fn]) is not None
     ]
     for fn in requested:
-        if (
-            _resolve_requested_field_match(
-                record,
-                field_name=fn,
-                alias_map=alias_map,
-                field_sources_by_key=field_sources_by_key,
-            )
-            is None
-            and fn not in missing_fields
-        ):
+        if requested_match_cache[fn] is None and fn not in missing_fields:
             missing_fields.append(fn)
     requested_found_total = len(requested_matches)
     if requested:

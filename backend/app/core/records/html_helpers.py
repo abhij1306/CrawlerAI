@@ -138,17 +138,46 @@ def _assigned_state_payloads(
     text: str, global_keys: tuple[str, ...], script_index: int
 ) -> Iterable[tuple[str, object]]:
     decoder = json.JSONDecoder()
+    seen_offsets: set[int] = set()
     for state_key in global_keys:
         pattern = re.compile(
             rf"(?<![\w$])(?:window\s*\.\s*)?{re.escape(state_key)}\s*=\s*"
         )
         for match in pattern.finditer(text):
-            try:
-                value, _ = decoder.raw_decode(text[match.end() :])
-            except (TypeError, ValueError):
+            payload = _decode_assigned_json(text, match.end(), decoder)
+            if payload is None:
                 continue
-            yield f"/embedded/{state_key}/{script_index}", value
+            seen_offsets.add(match.end())
+            yield f"/embedded/{state_key}/{script_index}", payload
             break
+    dotted = re.compile(
+        r"(?<![\w$])(?:window\s*\.\s*)?"
+        r"(?P<key>[A-Za-z_$][\w$]*(?:\s*\.\s*[A-Za-z_$][\w$]*){2,})"
+        r"\s*=\s*"
+    )
+    for match in dotted.finditer(text):
+        if match.end() in seen_offsets:
+            continue
+        payload = _decode_assigned_json(text, match.end(), decoder)
+        if payload is None:
+            continue
+        state_key = re.sub(r"\s*\.\s*", ".", match.group("key"))
+        yield f"/embedded/{state_key}/{script_index}", payload
+
+
+def _decode_assigned_json(
+    text: str,
+    offset: int,
+    decoder: json.JSONDecoder,
+) -> object | None:
+    remainder = text[offset:].lstrip()
+    if not remainder.startswith(("{", "[")):
+        return None
+    try:
+        value, _ = decoder.raw_decode(remainder)
+    except (TypeError, ValueError):
+        return None
+    return value
 
 
 def bounded_json_objects(

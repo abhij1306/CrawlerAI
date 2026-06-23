@@ -26,7 +26,36 @@ DETAIL_IDENTITY_QUERY_KEYS = frozenset(
 )
 DETAIL_IDENTITY_QUERY_PREFIXES = tuple(PUBLIC_RECORD_DETAIL_CANONICAL_QUERY_PREFIXES)
 
-DETAIL_BRAND_BOILERPLATE_VALUES = frozenset({"we"})
+DETAIL_BRAND_BOILERPLATE_VALUES = frozenset(
+    {
+        "at",
+        "black",
+        "blue",
+        "brand",
+        "brown",
+        "fragrance",
+        "green",
+        "grey",
+        "india",
+        "more",
+        "red",
+        "refurbished",
+        "register",
+        "the",
+        "we",
+        "white",
+    }
+)
+DETAIL_BRAND_WEAK_SINGLE_TOKEN_PATTERN = (
+    r"^(?:"
+    r"beige|black|blue|brown|clear|cream|gold|gray|green|grey|navy|orange|"
+    r"pink|purple|red|silver|tan|white|yellow|"
+    r"brand|designer|fragrance|manufacturer|register|refurbished|sale|shop|store"
+    r")$"
+)
+DETAIL_BRAND_FRAGMENT_PATTERN = (
+    r"^(?:and|at|by|for|from|in|more|of|on|the|to|with|&\s*more)$"
+)
 DETAIL_BRAND_DOM_SELECTORS = (
     "main [data-brand]",
     "main [data-brand-name]",
@@ -189,9 +218,9 @@ DETAIL_TITLE_REJECT_VALUES = (
 )
 DETAIL_TITLE_CODE_ONLY_PATTERN = r"^(?=.{4,40}$)(?=.*\d)[A-Za-z0-9._-]+$"
 DETAIL_TITLE_IDENTIFIER_ONLY_PATTERN = r"^(?=.{2,80}$)(?=.*\d)(?:[A-Za-z]{0,4}\d[A-Za-z0-9]*|[A-Za-z]|\d+)(?:[\s._-]+(?:[A-Za-z]{0,4}\d[A-Za-z0-9]*|[A-Za-z]|\d+))*$"
-DETAIL_TITLE_PATH_EXTENSION_PATTERN = r"\.(?:aspx?|html?|php)$"
+DETAIL_TITLE_PATH_EXTENSION_PATTERN = r"\.(?:aspx?|html?|jsp|php)$"
 DETAIL_TITLE_ENDPOINT_FILENAME_PATTERN = (
-    r"^(?:product|detail|pdp|item|catalog|view)(?:\.(?:do|action|aspx?|html?|php))?$"
+    r"^(?:product|detail|pdp|item|catalog|view)(?:\.(?:do|action|aspx?|html?|jsp|php))?$"
 )
 DETAIL_TITLE_GENERIC_CATEGORY_VALUES = frozenset(
     {

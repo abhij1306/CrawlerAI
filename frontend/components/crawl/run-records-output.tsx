@@ -5,6 +5,7 @@ import { CRAWL_DEFAULTS } from '../../lib/constants/crawl-defaults';
 import { DataRegionEmpty, DataRegionLoading, InlineAlert } from '../ui/patterns';
 import { Button } from '../ui/primitives';
 import { copyJson } from '../../lib/crawl/record-utils';
+import { syntaxHighlightJsonNodes } from '../../lib/ui/syntax';
 import { RecordsTable } from './records-table';
 
 type EmptyRecordsState = {
@@ -128,7 +129,8 @@ export function RunJsonOutput({
         </Button>
       </div>
       <pre className="crawl-terminal crawl-terminal-json max-h-[72vh] min-h-[55vh]">
-        {recordsJson}
+        <span className="sr-only">{recordsJson}</span>
+        <span aria-hidden="true">{syntaxHighlightJsonNodes(recordsJson)}</span>
       </pre>
       {hasMore ? (
         <div className="surface-muted text-muted type-body mt-2 flex items-center justify-between rounded-md px-6 py-2">

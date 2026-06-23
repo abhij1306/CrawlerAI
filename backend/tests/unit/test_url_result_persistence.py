@@ -177,8 +177,7 @@ async def test_record_artifact_reader_rejects_tampered_canonical_bundle(
     manifest = repository.load_manifest(published.reference.uri)
     page = next(
         artifact
-        for attempt in manifest.attempts
-        for artifact in attempt.artifacts
+        for artifact in manifest.extraction.artifacts
         if artifact.name == "page.html"
     )
     repository.resolve_uri(page.uri).write_text("tampered", encoding="utf-8")
@@ -235,44 +234,6 @@ async def test_record_artifact_reader_falls_back_only_without_manifest(
     assert artifacts.html == "<html>legacy</html>"
     assert artifacts.raw_data == {"legacy": True}
     session.get.assert_not_awaited()
-
-
-@pytest.mark.parametrize(
-    "diagnostics, message",
-    (
-        (
-            {
-                "result": {
-                    "selected_attempt_id": "missing",
-                    "attempts": [{"attempt_id": "attempt-1"}],
-                }
-            },
-            "selected acquisition attempt",
-        ),
-        (
-            {
-                "result": {
-                    "selected_attempt_id": "attempt-1",
-                    "attempts": [
-                        {"attempt_id": "attempt-1"},
-                        {"attempt_id": "attempt-1"},
-                    ],
-                }
-            },
-            "duplicate acquisition attempt",
-        ),
-    ),
-)
-def test_url_artifact_publisher_rejects_inconsistent_attempt_identity(
-    tmp_path: Path,
-    diagnostics: dict[str, object],
-    message: str,
-) -> None:
-    with pytest.raises(ValueError, match=message):
-        _publish_record_reader_fixture(
-            tmp_path,
-            acquisition_diagnostics=diagnostics,
-        )
 
 
 def _publish_record_reader_fixture(
@@ -344,7 +305,7 @@ def _publish_record_reader_fixture(
     )
 
 
-def test_canonical_url_artifacts_publish_attempts_and_extraction_components(
+def test_canonical_url_artifacts_publish_compact_bundle(
     tmp_path: Path,
 ) -> None:
     screenshot = tmp_path / "browser.png"
@@ -418,43 +379,20 @@ def test_canonical_url_artifacts_publish_attempts_and_extraction_components(
     manifest = repository.load_manifest(published.reference.uri)
     assert published.reference.uri == "runs/7/results/9/manifest.json"
     assert manifest.bundle_id == "bundle-42"
-    assert [attempt.attempt_id for attempt in manifest.attempts] == [
-        "attempt-1",
-        "attempt-2",
-    ]
-    first_names = {item.name for item in manifest.attempts[0].artifacts}
-    selected_names = {item.name for item in manifest.attempts[1].artifacts}
-    assert first_names == {"attempt-01-attempt-1.json"}
-    assert {
-        "attempt-02-attempt-2.json",
-        "page.html",
-        "acquisition.json",
-        "response.json",
-        "network.json",
-        "rendered.html",
-        "listing-visual-elements.json",
-        "screenshot.png",
-    } <= selected_names
+    assert manifest.attempts == ()
     extraction_names = {item.name for item in manifest.extraction.artifacts}
     assert extraction_names == {
-        "capture.json",
-        "evidence.json",
-        "graph.json",
-        "target.json",
-        "findings.json",
-        "decisions.json",
+        "page.html",
+        "screenshot.png",
+        "summary.json",
         "records.json",
-        "record-provenance.json",
-        "verdict.json",
-        "extraction.json",
     }
-    provenance_reference = next(
-        item
-        for item in manifest.extraction.artifacts
-        if item.name == "record-provenance.json"
+    records_reference = next(
+        item for item in manifest.extraction.artifacts if item.name == "records.json"
     )
-    provenance = repository.read_json(provenance_reference.uri)
-    assert provenance == [
+    records_payload = repository.read_json(records_reference.uri)
+    assert records_payload["records"] == [{"title": "Widget"}]
+    assert records_payload["provenance"] == [
         {
             "content_fingerprint": "content-42",
             "data": {"title": "Widget"},
@@ -467,10 +405,10 @@ def test_canonical_url_artifacts_publish_attempts_and_extraction_components(
             "url_result_id": 9,
         }
     ]
-    references = [
-        artifact for attempt in manifest.attempts for artifact in attempt.artifacts
-    ] + list(manifest.extraction.artifacts)
-    assert all(repository.reference_exists(reference) for reference in references)
+    assert all(
+        repository.reference_exists(reference)
+        for reference in manifest.extraction.artifacts
+    )
 
 
 def test_url_result_values_keep_extraction_verdict_as_canonical() -> None:

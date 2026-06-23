@@ -1,29 +1,32 @@
 # Active Plan
 
 **Current:** Final Architecture Debt Burn-Down and Crawl Quality Closure → `docs/plans/final-architecture-debt-burndown-plan.md`
-**Status:** IN PROGRESS — SLICE 13 FAILED; QUALITY SLICES REOPENED
+**Status:** IN PROGRESS — FINAL 97-SITE REMEDIATION
 **Started:** 2026-06-21
-**Current slice:** Q1-Q8 reopened. Current dirty fixes now cover description/image/Q8 gate guards, QD-03 honest missing-field verdicts, QD-05 conservative brand recovery, QD-06 metadata/document-title recovery, QD-09 price-currency atomicity and stock-backed availability, QD-10 mixed parent/variant price-range semantics, and QD-11 explicit structured variant-name size recovery. Corpus-specific proof and any remaining recovery gaps remain pending.
+**Current slice:** Slices 1-6 implemented and offline-validated. Slice 7 is complete for offline validation; live 97-site acceptance remains user-owned and pending.
 
 ## Queue
 
-- Execute one quality slice at a time from the active plan; do not repeat its repository-wide audit.
-- Keep one tracker only. Assign every new output failure a `QD-*` ID in the active plan and attach it to Q1-Q8; do not create another plan.
-- Use the frozen 91-record JSON, existing artifacts, and synthetic fixtures for Q0-Q8. Do not run a full catalog after each fix.
-- Run focused offline tests per slice, the complete offline unit/component/regression suite only in Slice 12, and one user-owned full live gate only in Slice 13.
-- Slices 9-12 are verified. Backend Ruff, Mypy, architecture gates, and the complete offline unit/component/regression suite pass. Frontend Prettier, typecheck, and lint pass after the user-authorized repository formatting pass.
-- Use `.\backend\.venv\Scripts\python.exe -m mypy --config-file backend\pyproject.toml ...` when type-checking from repo root.
-- Slice 13 evidence is now supplied by the user. The 97-site result contains 92 records and fails the quality gate: 25 missing availability, 19 missing brand, 18 missing price, 19 missing currency, 5 missing image, 10 missing description, 4 missing title, 10 mixed parent/variant price families, 86 variants without availability, one exact primary/gallery duplicate, one cross-product gallery, one navigation primary image, one malformed primary image URL, and one 71px primary image.
-- Reopen only Q1-Q8 under the existing QD-01 through QD-13 tracker. Do not create a new plan.
+- Use `output.json` as the authoritative failing output for this remediation cycle.
+- Use stored crawl diagnostics only to trace a listed failure's root cause.
+- Do not rebuild, expand, re-audit, or replace the final bug list.
+- Slices 1-6 are implemented against generic upstream extraction and resolution boundaries.
+- The user authorized end-to-end offline validation on 2026-06-23. Do not run a live crawl or acceptance gate.
+- Do not rerun the 97-site crawl during implementation.
+- Preserve completed architecture work and previously verified results.
+- Fix generic upstream causes only. No site-specific product values, URL exceptions, output patches, or persistence/export corrections.
+- Slice 7 offline validation passed: Ruff, Mypy, 404 unit tests, 520 component/regression tests, and focused remediation regressions.
+- The cycle remains open only for the user-run 97-site acceptance crawl.
 
-## Quality Reopen
+## Final Remaining Scope
 
-- 2026-06-23: latest supplied catalog contains 91 records and reopens output-quality closure. Baseline: 22 missing availability, 19 missing brand, 17 missing price, 17 missing currency, 6 missing images, 6 missing descriptions, 2 missing titles, 6 exact-320-character descriptions, 10 mixed parent/variant price families, and 1 primary/gallery duplicate.
-- Q0-Q8 are the only tracker for the new findings. Earlier Slice 4-6 tests remain valid invariant guards but no longer prove catalog closure.
-- 2026-06-23 reopen validation: repo-wide Ruff passed; Mypy passed for `315 source files` including the harness gate owner; full offline unit/component/regression selection passed with `1,123 passed, 4 deselected`. Focused Q8 validation passed with `7 passed`.
-- 2026-06-23 incremental QD-09/QD-10 validation: focused quality suite `tests/unit/test_description_quality.py tests/unit/test_shared_url_utils.py tests/unit/test_extraction_pipeline.py tests/unit/test_catalog_quality_audit.py -q` passed with `195 passed, 3 deselected`; repo-wide `ruff check app harness tests` passed; `mypy --config-file pyproject.toml app harness/quality_evaluator.py` passed for `315 source files`; full offline `pytest tests -q -m "unit or component or regression"` passed with `1,125 passed, 4 deselected`; `git diff --check` passed.
-- The latest 92-record audit is now an input to the offline quality gate. It reports all QD-01 through QD-13 unresolved and blocks the older frozen manifest from producing a false clean result. QD-09/QD-10 now have additional focused regressions but the plan remains `IN PROGRESS` until all reopened QD categories close against offline evidence.
-- 2026-06-23 incremental QD-03/QD-05/QD-06/QD-09/QD-11 work: missing default contract fields now prevent clean `success`; `<title>`, standard meta, and Twitter card metadata can recover admissible title/description/brand/image evidence; registered/trademark title markers can recover brand; explicit stock quantity derives availability; explicit JSON-LD variant-name segments can recover size without Cartesian synthesis. Focused quality set passed with `212 passed, 3 deselected`; repo-wide Ruff passed; Mypy passed for `315 source files`; full offline suite passed with `1,131 passed, 4 deselected`; `git diff --check` passed.
+1. Blocked-page and shell-record integrity.
+2. Brand quality and product-brand association.
+3. Title and description quality.
+4. Image identity and image quality.
+5. Missing-field recovery and incomplete-record truthfulness.
+6. Variant boundaries, axes, availability, and pricing.
+7. Final offline validation preparation and later user-owned 97-site acceptance crawl.
 
 ## Previously Completed
 

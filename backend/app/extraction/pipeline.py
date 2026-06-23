@@ -75,6 +75,8 @@ from app.core.records.url_identity import (
 from app.core.shared.field_coerce_price import repair_price_unit
 from app.core.shared.field_coerce_text import (
     coerce_brand_text,
+    infer_brand_from_page_identity,
+    infer_brand_from_product_url,
     infer_brand_from_title_host,
     infer_brand_from_title_marker,
 )
@@ -121,12 +123,16 @@ def normalize_ecommerce_detail(
         for row in (
             _currency_from_price_symbol(ev),
             _brand_from_title_host(ev, page_url=page_url),
+            _brand_from_product_url(ev, page_url=page_url),
             _brand_from_title_marker(ev),
             _availability_from_stock_quantity(ev),
         )
         if row is not None
     )
-    combined = _flag_variant_color_brand_conflicts(normalized + derived)
+    page_brand = _brand_from_page_identity(normalized, page_url=page_url)
+    combined = normalized + derived + ((page_brand,) if page_brand else ())
+    combined = _flag_variant_color_brand_conflicts(combined)
+    combined = _flag_brand_identity_conflicts(combined, page_brand=page_brand)
     return _dedupe_equivalent(combined)
 
 
@@ -188,6 +194,75 @@ def _flag_variant_color_brand_conflicts(
         if conflicts(row)
         else row
         for row in evidence
+    )
+
+
+def _flag_brand_identity_conflicts(
+    evidence: tuple[Evidence, ...],
+    *,
+    page_brand: Evidence | None = None,
+) -> tuple[Evidence, ...]:
+    titles_by_subject: dict[str, set[str]] = {}
+    for row in evidence:
+        if row.fact_type != "product.title" or not row.subject_id:
+            continue
+        title = " ".join(re.findall(r"[a-z0-9]+", str(row.value).casefold()))
+        if title:
+            titles_by_subject.setdefault(row.subject_id, set()).add(title)
+
+    def conflict(row: Evidence) -> bool:
+        if row.fact_type != "product.brand" or not row.subject_id:
+            return False
+        brand = " ".join(re.findall(r"[a-z0-9]+", str(row.value).casefold()))
+        page_value = str(page_brand.value).casefold() if page_brand else ""
+        return bool(
+            brand
+            and (
+                brand in titles_by_subject.get(row.subject_id, set())
+                or (page_value and str(row.value).casefold() != page_value)
+            )
+        )
+
+    return tuple(
+        row.model_copy(
+            update={"flags": tuple(sorted({*row.flags, "product_name_as_brand"}))}
+        )
+        if conflict(row)
+        else row
+        for row in evidence
+    )
+
+
+def _brand_from_page_identity(
+    evidence: tuple[Evidence, ...], *, page_url: str
+) -> Evidence | None:
+    title = next((row for row in evidence if row.fact_type == "product.title"), None)
+    if title is None:
+        return None
+    brand = infer_brand_from_page_identity(
+        url=page_url,
+        title=title.value,
+        evidence_values=tuple(
+            row.value
+            for row in evidence
+            if row.fact_type not in {"product.url", "variant.url"}
+        ),
+        existing_brands=tuple(
+            row.value for row in evidence if row.fact_type == "product.brand"
+        ),
+    )
+    if not brand:
+        return None
+    return title.model_copy(
+        update={
+            "evidence_id": stable_id("ev", title.evidence_id, "page_brand", brand),
+            "fact_type": "product.brand",
+            "raw_value": brand,
+            "value": brand,
+            "confidence": min(float(title.confidence), 0.82),
+            "directness": "inferred",
+            "metadata": {**dict(title.metadata), "derived_by": "page_identity"},
+        }
     )
 
 
@@ -469,12 +544,17 @@ def normalize_evidence(evidence: Evidence, *, page_url: str) -> Evidence:
     if evidence.fact_type == "product.description" and isinstance(value, str):
         if len(value) in DETAIL_DESCRIPTION_HARD_BOUNDARY_LENGTHS:
             flags.add("description_hard_boundary")
+        tail = value.rstrip()
+        if tail.endswith("...") or (tail and ord(tail[-1]) == 8230):
+            flags.add("description_truncated_ellipsis")
         if len(value) >= 120 and re.search(
             DETAIL_DESCRIPTION_INCOMPLETE_ENDING_PATTERN,
             value,
             re.IGNORECASE,
         ):
             flags.add("description_incomplete_ending")
+        if re.search(r",\s*[a-z]{2,5}$", tail, re.IGNORECASE):
+            flags.add("description_truncated_fragment")
         if any(
             re.search(pattern, value, re.IGNORECASE)
             for pattern in DETAIL_DESCRIPTION_UI_PATTERNS
@@ -664,6 +744,36 @@ def _brand_from_title_host(
             "metadata": {
                 **dict(evidence.metadata),
                 "derived_by": "brand_from_title_host",
+                "input_evidence_id": evidence.evidence_id,
+            },
+        }
+    )
+
+
+def _brand_from_product_url(
+    evidence: Evidence, *, page_url: str
+) -> Evidence | None:
+    if evidence.fact_type != "product.title":
+        return None
+    if not (brand := infer_brand_from_product_url(url=page_url, title=evidence.value)):
+        return None
+    return evidence.model_copy(
+        update={
+            "evidence_id": stable_id(
+                "ev",
+                evidence.bundle_id,
+                evidence.evidence_id,
+                "brand_from_product_url",
+                brand,
+            ),
+            "fact_type": "product.brand",
+            "raw_value": brand,
+            "value": brand,
+            "confidence": min(float(evidence.confidence), 0.74),
+            "directness": "inferred",
+            "metadata": {
+                **dict(evidence.metadata),
+                "derived_by": "brand_from_product_url",
                 "input_evidence_id": evidence.evidence_id,
             },
         }

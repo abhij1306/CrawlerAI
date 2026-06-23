@@ -58,6 +58,8 @@ class DomCollector:
         ]
         for selector, fact in selectors:
             for tag in doc.css(selector):
+                if _is_commercial_variant_control(tag):
+                    continue
                 attr = (
                     "data-price"
                     if "price" in selector
@@ -111,6 +113,7 @@ class DomCollector:
                     parent_subject_id=product_subject,
                 )
             )
+        out.extend(_commercial_variant_controls(bundle, doc, product_subject))
         out.extend(_variant_controls(bundle, doc, product_subject))
         return tuple(out)
 
@@ -298,6 +301,85 @@ def _requested_node_value(node, fact_type: str) -> str:
         if value:
             return value
     return " ".join(node.text().split()).strip()
+
+
+def _is_commercial_variant_control(node: HtmlNode) -> bool:
+    return bool(
+        node.attribute("data-size")
+        and node.attribute("data-sku")
+        and (node.attribute("data-price") or node.attribute("data-currency"))
+    )
+
+
+def _commercial_variant_controls(
+    bundle: CaptureBundle, doc, product_subject: str
+) -> list[Evidence]:
+    rows: list[Evidence] = []
+    selector = "[data-size][data-sku][data-price], [data-size][data-sku][data-currency]"
+    for node in doc.css(selector):
+        size = _variant_value(str(node.attribute("data-size") or ""), axis="size")
+        sku = str(node.attribute("data-sku") or "").strip()
+        if not size or not sku:
+            continue
+        hint = EntityHint(entity_type="variant", sku=sku, option_values={"size": size})
+        variant_subject = stable_id(
+            "subject", bundle.bundle_id, "dom", "variant", sku
+        )
+        variant_group = f"variant:dom:{sku}"
+        locator = SourceLocator(
+            kind="css_selector", value=node.stable_locator(), preview=size[:120]
+        )
+        variant_fields = (
+            ("variant.sku", sku),
+            ("variant.option.size", size),
+        )
+        for fact_type, value in variant_fields:
+            rows.append(
+                evidence(
+                    bundle,
+                    "dom",
+                    "dom",
+                    fact_type,
+                    value,
+                    locator,
+                    group_id=variant_group,
+                    hint=hint,
+                    confidence=0.76,
+                    subject_id=variant_subject,
+                    parent_subject_id=product_subject,
+                )
+            )
+        offer_group = f"offer:dom:{sku}"
+        stock = str(node.attribute("data-stock") or "").strip().casefold()
+        offer_fields = (
+            ("offer.price", str(node.attribute("data-price") or "").strip()),
+            ("offer.currency", str(node.attribute("data-currency") or "").strip()),
+            (
+                "offer.availability",
+                "in_stock" if stock in {"1", "true", "yes"} else "out_of_stock"
+                if stock in {"0", "false", "no"}
+                else "",
+            ),
+        )
+        for fact_type, value in offer_fields:
+            if not value:
+                continue
+            rows.append(
+                evidence(
+                    bundle,
+                    "dom",
+                    "dom",
+                    fact_type,
+                    value,
+                    locator,
+                    group_id=offer_group,
+                    hint=hint,
+                    confidence=0.76,
+                    subject_id=stable_id("subject", bundle.bundle_id, offer_group),
+                    parent_subject_id=variant_subject,
+                )
+            )
+    return rows
 
 
 def _variant_controls(

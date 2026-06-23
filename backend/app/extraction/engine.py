@@ -11,6 +11,7 @@ from app.core.config.extraction_rules import (
 from app.core.records.url_identity import detail_url_is_locale_root
 from app.extraction.contracts import (
     Decision,
+    EntityGraph,
     Evidence,
     ExtractionRequest,
     ExtractionResult,
@@ -20,6 +21,7 @@ from app.extraction.contracts import (
     TargetSelection,
 )
 from app.extraction.entities import EntitySet, build_entities
+from app.extraction.ids import stable_id
 from app.extraction.jobs import (
     collect_job_detail,
     collect_job_listing,
@@ -126,6 +128,8 @@ def extract(request: ExtractionRequest) -> ExtractionResult:
     runtime = _SURFACE_RUNTIMES[spec.surface]
     evidence = runtime.collect(request, spec)
     normalized = runtime.normalize(evidence, request, spec)
+    if request.capture.blocked:
+        return _blocked_extraction_result(request, normalized)
     graph_state = runtime.build_graph(normalized, request, spec)
     target = runtime.select_target(graph_state, normalized, request, spec)
     step_graph = _scoped_graph_for_steps(graph_state, target)
@@ -161,6 +165,59 @@ def extract(request: ExtractionRequest) -> ExtractionResult:
         retry_request=_retry_request(verdict, records, request, normalized),
         metrics=_metrics(
             normalized, graph, target, findings, decisions, records, verdict
+        ),
+    )
+
+
+def _blocked_extraction_result(
+    request: ExtractionRequest,
+    evidence: tuple[Evidence, ...],
+) -> ExtractionResult:
+    finding = Finding(
+        finding_id=stable_id(
+            "finding",
+            request.capture.bundle_id,
+            "ACQUISITION_BLOCKED",
+            request.capture.acquisition_outcome,
+        ),
+        rule_id="ACQUISITION_BLOCKED",
+        severity="critical",
+        scope="page",
+        entity_ids=(),
+        evidence_ids=tuple(row.evidence_id for row in evidence),
+        message=(
+            "Acquisition ended on a blocked or challenge page; "
+            "public records were suppressed."
+        ),
+        blocking=True,
+        metadata={
+            "acquisition_outcome": request.capture.acquisition_outcome,
+            "http_status": request.capture.http_status,
+            "browser_attempted": request.capture.browser_attempted,
+        },
+    )
+    graph = EntityGraph()
+    target = TargetSelection(status="missing")
+    findings = (finding,)
+    return ExtractionResult(
+        surface=request.surface,
+        bundle_id=request.capture.bundle_id,
+        evidence=evidence,
+        graph=graph,
+        target=target,
+        findings=findings,
+        decisions=(),
+        records=(),
+        verdict="blocked",
+        retry_request=None,
+        metrics=_metrics(
+            evidence,
+            graph,
+            target,
+            findings,
+            (),
+            (),
+            "blocked",
         ),
     )
 
@@ -425,8 +482,9 @@ def _assess_detail(
         ),
         0.0,
     )
+    dumped_record = record.model_dump(mode="python") if record is not None else {}
     verdict = assess_ecommerce_detail_quality(
-        record.model_dump(mode="python") if record is not None else {},
+        dumped_record,
         resolution,
         request.capture,
         requested_fields=request.requested_fields,
@@ -434,7 +492,7 @@ def _assess_detail(
     if (
         verdict in {"success", "partial"}
         and completeness <= 0.4
-        and not (record and record.get("variants"))
+        and not dumped_record.get("variants")
     ):
         return "review"
     if verdict == "success" and any(

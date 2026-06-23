@@ -75,10 +75,25 @@ async def load_record_artifacts(
         if manifest.url_result_id != int(url_result_id):
             raise ValueError("artifact manifest URL-result identity mismatch")
         references = _references_by_name(manifest)
-        provenance = _read_json_list(
-            repository, references.get("record-provenance.json")
+        summary = _read_json_mapping(repository, references.get("summary.json"))
+        provenance = _read_compact_provenance(
+            repository,
+            references.get("records.json"),
         )
+        if not provenance:
+            provenance = _read_json_list(
+                repository,
+                references.get("record-provenance.json"),
+            )
         row = _match_provenance_row(record, provenance)
+        acquisition = {
+            **_read_json_mapping(repository, references.get("acquisition.json")),
+            **_mapping(summary.get("acquisition")),
+        }
+        extraction = {
+            **_read_json_mapping(repository, references.get("extraction.json")),
+            **_mapping(summary.get("extraction")),
+        }
         return RecordArtifacts(
             status="canonical",
             html=_read_text(repository, references.get("page.html")),
@@ -86,14 +101,8 @@ async def load_record_artifacts(
             raw_data=_mapping(row.get("raw_data")),
             discovered_data=_mapping(row.get("discovered_data")),
             source_trace=_mapping(row.get("source_trace")),
-            acquisition=_read_json_mapping(
-                repository,
-                references.get("acquisition.json"),
-            ),
-            extraction=_read_json_mapping(
-                repository,
-                references.get("extraction.json"),
-            ),
+            acquisition=acquisition,
+            extraction=extraction,
         )
     except (OSError, TypeError, ValueError):
         return RecordArtifacts(status="invalid")
@@ -193,6 +202,21 @@ def _read_text(
     reference: ArtifactReference | None,
 ) -> str:
     return repository.read_text(reference.uri) if reference is not None else ""
+
+
+def _read_compact_provenance(
+    repository: ArtifactRepository,
+    reference: ArtifactReference | None,
+) -> list[Mapping[str, object]]:
+    if reference is None:
+        return []
+    payload = repository.read_json(reference.uri)
+    if not isinstance(payload, Mapping):
+        return []
+    rows = payload.get("provenance", [])
+    if not isinstance(rows, list):
+        raise ValueError("compact records provenance must be a list")
+    return [item for item in rows if isinstance(item, Mapping)]
 
 
 def _read_json_list(

@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import json
+
 import pytest
 from pydantic import ValidationError
 
 from app.acquisition.acquirer import AcquisitionRequest, PageAcquisitionResult
+from app.acquisition.browser_block_detection import classify_blocked_page
 from app.acquisition.browser_listing_visual import listing_visual_elements_html
 from app.acquisition.browser_result_builder import build_browser_artifacts
 from app.acquisition.runtime_plan import AcquisitionIntent
@@ -69,6 +72,269 @@ def _extract(
             requested_fields=requested_fields,
         )
     )
+
+
+def test_active_provider_shell_without_product_identity_is_blocked() -> None:
+    marker = "px-" "captcha"
+    classification = classify_blocked_page(
+        f"<html><body><div id='{marker}'>{marker}</div></body></html>",
+        200,
+    )
+
+    assert classification.blocked is True
+    assert classification.outcome == "challenge_page"
+    assert marker in classification.active_provider_hits
+
+
+def test_active_provider_marker_does_not_hide_product_identity() -> None:
+    marker = "px-" "captcha"
+    classification = classify_blocked_page(
+        f"""
+        <html>
+          <head>
+            <script type="application/ld+json">
+            {{
+              "@context": "https://schema.org",
+              "@type": "Product",
+              "name": "Trail Shoe"
+            }}
+            </script>
+          </head>
+          <body>
+            <main><h1>Trail Shoe</h1></main>
+            <div>{marker}</div>
+          </body>
+        </html>
+        """,
+        200,
+    )
+
+    assert classification.blocked is False
+    assert classification.outcome == "ok"
+
+
+def test_blocked_capture_does_not_publish_public_records() -> None:
+    marker = "px-" "captcha"
+    request = fixture_request_from_inputs(
+        Surface.ECOMMERCE_DETAIL,
+        f"<html><body><div data-description='{marker}'>{marker}</div></body></html>",
+        "https://shop.test/products/challenge-shell",
+    )
+    blocked_capture = request.capture.model_copy(
+        update={
+            "blocked": True,
+            "acquisition_outcome": "challenge_page",
+            "browser_attempted": True,
+        }
+    )
+
+    result = extract(request.model_copy(update={"capture": blocked_capture}))
+
+    assert result.verdict == "blocked"
+    assert result.records == ()
+    assert any(
+        finding.rule_id == "ACQUISITION_BLOCKED" and finding.blocking
+        for finding in result.findings
+    )
+
+
+def test_weak_brand_token_is_not_published() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "Product",
+          "name": "Mostro Ecstasy Sneakers",
+          "brand": "green",
+          "description": "A complete product description for a low-profile sneaker.",
+          "image": "https://shop.test/images/mostro.jpg",
+          "url": "https://shop.test/products/mostro-ecstasy"
+        }
+        </script>
+        """,
+        "https://shop.test/products/mostro-ecstasy",
+    )
+
+    assert result.records
+    assert result.records[0].get("brand") is None
+    assert result.verdict in {"partial", "review"}
+
+
+def test_product_name_cannot_be_published_as_brand() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "Product",
+          "name": "Millennium Falcon",
+          "brand": "Millennium Falcon",
+          "description": "A detailed building set description for collectors.",
+          "image": "https://shop.test/images/millennium-falcon.jpg",
+          "url": "https://shop.test/products/millennium-falcon"
+        }
+        </script>
+        """,
+        "https://shop.test/products/millennium-falcon",
+    )
+
+    assert result.records
+    assert result.records[0].get("brand") is None
+
+
+def test_valid_multiword_brand_is_preserved() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "Product",
+          "name": "Curve Wide Leg Pants",
+          "brand": "ASOS DESIGN",
+          "description": "Wide-leg pants with a structured drape and soft finish.",
+          "image": "https://shop.test/images/curve-pants.jpg",
+          "url": "https://shop.test/products/curve-wide-leg-pants"
+        }
+        </script>
+        """,
+        "https://shop.test/products/curve-wide-leg-pants",
+    )
+
+    assert result.records[0]["brand"] == "ASOS DESIGN"
+
+
+def test_ellipsis_description_is_rejected_when_complete_evidence_exists() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <head>
+          <meta name="description" content="Complete product description with three durable balls supplied in protective tubes.">
+          <script type="application/ld+json">
+          {
+            "@context": "https://schema.org",
+            "@type": "Product",
+            "name": "Padel Balls",
+            "brand": "KUIKMA",
+            "description": "This tri-pack contains 3 tubes of 3...",
+            "image": "https://shop.test/images/padel-balls.jpg",
+            "url": "https://shop.test/products/padel-balls"
+          }
+          </script>
+        </head>
+        """,
+        "https://shop.test/products/padel-balls",
+    )
+
+    assert result.records
+    assert result.records[0]["description"].startswith("Complete product description")
+
+
+def test_product_url_can_recover_brand_prefix() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "Product",
+          "name": "Structured Commuter Backpack",
+          "description": "A structured commuter backpack with padded storage.",
+          "image": "https://shop.test/images/commuter-backpack.jpg",
+          "url": "https://shop.test/products/calvin-klein-structured-commuter-backpack"
+        }
+        </script>
+        """,
+        "https://shop.test/products/calvin-klein-structured-commuter-backpack",
+    )
+
+    assert result.records[0]["brand"] == "Calvin Klein"
+
+
+def test_product_jsp_endpoint_title_is_not_published() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        "<main><h1>product.jsp</h1></main>",
+        "https://shop.test/catalog/product.jsp?id=12345",
+    )
+
+    assert not result.records or result.records[0].get("title") != "product.jsp"
+    assert result.verdict != "success"
+
+
+def test_truncated_comma_fragment_description_loses_to_complete_copy() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <head>
+          <meta name="description" content="Modern, effortless bedding made from breathable cotton for everyday comfort.">
+          <script type="application/ld+json">
+          {
+            "@context": "https://schema.org",
+            "@type": "Product",
+            "name": "Classic Duvet Cover",
+            "brand": "Brooklinen",
+            "description": "Modern, effor",
+            "image": "https://shop.test/images/duvet-cover.jpg",
+            "url": "https://shop.test/products/classic-duvet-cover"
+          }
+          </script>
+        </head>
+        """,
+        "https://shop.test/products/classic-duvet-cover",
+    )
+
+    assert result.records[0]["description"].startswith("Modern, effortless bedding")
+
+
+@pytest.mark.parametrize(
+    ("url", "title", "description", "image", "bad_brand", "expected"),
+    [
+        ("https://ar.puma.com/pd/zapatillas-mostro/397328.html", "Zapatillas Mostro Ecstasy unisex", "PUMA Mostro heritage sneaker.", "https://images.puma.com/397328.png", "green", "PUMA"),
+        ("https://www.aesop.com/candles/aganice/HM03.html", "Aganice Aromatique Candle", "Aesop home fragrance candle.", "https://www.aesop.com/images/Aesop_Aganice.jpg", "Fragrance", "Aesop"),
+        ("https://www.usa.canon.com/shop/p/eos-r5", "EOS R5 Body", "Canon full-frame camera body.", "https://s7d1.scene7.com/is/image/canon/eos-r5", "Register", "Canon"),
+        ("https://www.maccosmetics.com/product/eye-shadow", "Eye Shadow", "Highly pigmented pressed eye shadow.", "https://www.maccosmetics.com/media/eye-shadow.jpg", "& More", "Mac"),
+        ("https://www.karenmillen.com/product/cotton-trouser", "Cotton Utility Button Detail Trouser", "Karen Millen tailored trouser.", "https://media.karenmillen.com/trouser.jpg", "Karen", "Karen Millen"),
+        ("https://www.phase-eight.com/product/lucinda-dress.html", "Lucinda Spot Midi Dress", "Phase Eight occasion dress.", "https://www.phase-eight.com/images/lucinda.jpg", "Phase", "Phase Eight"),
+        ("https://www.calvinklein.us/bags/structured-commuter-bag.html", "Structured Commuter Bag", "Calvin Klein commuter bag.", "https://calvinklein.scene7.com/is/image/CalvinKlein/bag", "Calvin", "Calvin Klein"),
+        ("https://www.asos.com/asos-curve/asos-design-curve-pants/prd/1", "ASOS DESIGN Curve Pants", "ASOS DESIGN curve pants.", "https://images.asos-media.com/products/asos-design-curve-pants/1.jpg", "ASOS", "ASOS DESIGN"),
+        ("https://www.williams-sonoma.com/products/breville-the-bambino-plus/", "Breville Bambino Plus Espresso Machine", "Breville Bambino Plus espresso machine.", "https://assets.wsimgs.com/breville-bambino.jpg", "Breville Bambino", "Breville"),
+        ("https://www.firstcry.com/babyhug/babyhug-denim-top/1/product-detail", "Babyhug Denim Woven Sleeveless Top", "Babyhug denim top for children.", "https://cdn.test/babyhug-denim.jpg", "at", "Babyhug"),
+        ("https://www.therevolverclub.com/products/technics-sl-1200mk7", "Technics SL-1200MK7 Turntable", "Technics direct-drive turntable.", "https://cdn.test/technics-sl1200.jpg", "India | The", "Technics"),
+        ("https://www.lego.com/product/millennium-falcon-75192", "Millennium Falcon", "Travel the LEGO galaxy.", "https://www.lego.com/images/75192.png", "Millennium Falcon", "Lego"),
+        ("https://www.balmainbeauty.com/fragrance/carbone", "Carbone Eau de Parfum", "Balmain musk fragrance.", "https://www.balmainbeauty.com/images/carbone.png", "Fragrance", "Balmain"),
+    ],
+)
+def test_page_identity_replaces_known_weak_or_partial_brand_shapes(
+    url: str,
+    title: str,
+    description: str,
+    image: str,
+    bad_brand: str,
+    expected: str,
+) -> None:
+    result = _extract(
+        "ecommerce_detail",
+        f"""
+        <script type="application/ld+json">
+        {{
+          "@context": "https://schema.org",
+          "@type": "Product",
+          "name": {json.dumps(title)},
+          "brand": {json.dumps(bad_brand)},
+          "description": {json.dumps(description)},
+          "image": {json.dumps(image)},
+          "url": {json.dumps(url)}
+        }}
+        </script>
+        """,
+        url,
+    )
+
+    assert result.records[0]["brand"].casefold() == expected.casefold()
 
 
 def test_materializes_once_with_lineage_and_quality() -> None:
@@ -2182,6 +2448,67 @@ def test_cross_product_variant_url_does_not_materialize() -> None:
     assert not result.records[0].get("variants")
 
 
+def test_dotted_window_product_assignment_materializes_size_variants() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <main><h1>Curve Barrel Pants</h1></main>
+        <script>
+        window.storefront.pdp.config.product = {
+          "id": 210397084,
+          "name": "Curve Barrel Pants",
+          "productCode": "155394360",
+          "url": "https://shop.test/products/curve-barrel-pants/210397084",
+          "variants": [
+            {"variantId": 1, "size": "US 14", "sku": "A14", "isAvailable": true},
+            {"variantId": 2, "size": "US 16", "sku": "A16", "isAvailable": false}
+          ]
+        };
+        </script>
+        """,
+        "https://shop.test/products/curve-barrel-pants/210397084",
+    )
+
+    variants = result.records[0].get("variants") or []
+    assert [(row["size"], row["availability"]) for row in variants] == [
+        ("US 14", "in_stock"),
+        ("US 16", "out_of_stock"),
+    ]
+
+
+def test_related_product_variant_url_with_shared_family_tokens_is_rejected() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        "<main><h1>Shape Tape Concealer</h1></main>",
+        "https://shop.test/p/shape-tape-concealer/base",
+        network_payloads=(
+            {"body": {"product": {
+                "name": "Shape Tape Concealer",
+                "url": "https://shop.test/p/shape-tape-concealer/base",
+                "variants": [
+                    {
+                        "variantId": "base",
+                        "sku": "BASE",
+                        "url": "https://shop.test/p/shape-tape-concealer/base?sku=BASE",
+                        "price": "32",
+                        "currency": "USD",
+                    },
+                    {
+                        "variantId": "creamy",
+                        "sku": "CREAMY",
+                        "url": "https://shop.test/p/shape-tape-creamy-concealer/creamy",
+                        "price": "32",
+                        "currency": "USD",
+                    },
+                ],
+            }}},
+        ),
+    )
+
+    variants = result.records[0].get("variants") or []
+    assert [row["sku"] for row in variants] == ["BASE"]
+
+
 def test_same_product_variant_url_remains_materialized() -> None:
     result = _extract(
         "ecommerce_detail",
@@ -3049,6 +3376,29 @@ def test_noisy_variant_root_cannot_outrank_complete_offer_product() -> None:
     assert not result.records[0].get("variants")
 
 
+def test_commercial_dom_size_controls_materialize_variants() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <main>
+          <h1>Classic Shorts</h1>
+          <button data-size="XS" data-sku="SHORT-XS" data-price="£25.00"
+                  data-currency="GBP" data-stock="1">XS</button>
+          <button data-size="S" data-sku="SHORT-S" data-price="£25.00"
+                  data-currency="GBP" data-stock="0">S</button>
+        </main>
+        """,
+        "https://shop.test/products/classic-shorts",
+    )
+
+    variants = result.records[0]["variants"]
+    assert {(row["size"], row["availability"]) for row in variants} == {
+        ("S", "out_of_stock"),
+        ("XS", "in_stock"),
+    }
+    assert result.records[0].get("sku") is None
+
+
 def test_dom_option_controls_do_not_materialize_sellable_variants() -> None:
     html = """
     <main>
@@ -3720,6 +4070,51 @@ def test_parent_mixed_variant_prices_publish_explicit_range_semantics() -> None:
     assert record["price_min"] == "20.00"
     assert record["price_max"] == "25.00"
     assert record["_lineage"]["price_min"]["rule_id"] == "minimum_variant_price_aggregate"
+
+
+def test_parent_price_uses_leaf_variants_not_color_shell_rows() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "ProductGroup",
+          "name": "Relaxed-Fit Printed T-Shirt",
+          "url": "https://shop.test/products/printed-tee",
+          "offers": {"price": "84.99", "priceCurrency": "USD"},
+          "hasVariant": [
+            {
+              "@type": "Product",
+              "sku": "BLUE",
+              "color": "Blue",
+              "offers": {"price": "84.99", "priceCurrency": "USD"}
+            },
+            {
+              "@type": "Product",
+              "sku": "BLUE-S",
+              "color": "Blue",
+              "size": "S",
+              "offers": {"price": "12.99", "priceCurrency": "USD"}
+            },
+            {
+              "@type": "Product",
+              "sku": "BLUE-M",
+              "color": "Blue",
+              "size": "M",
+              "offers": {"price": "12.99", "priceCurrency": "USD"}
+            }
+          ]
+        }
+        </script>
+        """,
+        "https://shop.test/products/printed-tee",
+    )
+
+    record = result.records[0]
+    assert record["price"] == "12.99"
+    assert record.get("price_min") in (None, "12.99")
+    assert record.get("price_max") in (None, "12.99")
 
 
 def test_parent_availability_is_coherent_with_complete_variant_matrix() -> None:

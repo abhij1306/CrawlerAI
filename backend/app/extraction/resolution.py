@@ -570,10 +570,16 @@ def _invalid(ev: Evidence) -> bool:
         DETAIL_TITLE_REJECTION_FLAGS - {"truncated_title"}
     ):
         return True
+    if ev.fact_type == "product.description" and flags & {
+        "description_truncated_ellipsis",
+        "description_truncated_fragment",
+    }:
+        return True
     return bool(
         flags
         & {
             "brand_boilerplate",
+            "brand_identity_conflict",
             "brand_url",
             "category_as_brand",
             "description_incomplete_ending",
@@ -585,6 +591,7 @@ def _invalid(ev: Evidence) -> bool:
             INVALID_SCALAR_TYPE_EVIDENCE_FLAG,
             "invalid_gtin",
             "non_detail_product_url",
+            "product_name_as_brand",
             DETAIL_TITLE_MEASUREMENT_FLAG,
             "placeholder_text",
             "tracking_url",

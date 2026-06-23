@@ -88,6 +88,8 @@ ECOMMERCE_CONTEXT_NOISE_PATH_TOKENS = frozenset(
         "colorway_images",
         "getthelookproducts",
         "links",
+        "lookproducts",
+        "looks",
         "peoplealsobought",
         "people_also_bought",
         "recommendations",

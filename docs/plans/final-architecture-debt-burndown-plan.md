@@ -2,8 +2,8 @@
 
 **Created:** 2026-06-21
 **Agent:** Codex
-**Status:** IN PROGRESS — SLICE 13 FAILED; Q1-Q8 REOPENED
-**Current slice:** Slices 9-12 verified; the user supplied the latest 97-site crawl result, which contains 92 records and fails the Slice 13 quality gate
+**Status:** IN PROGRESS — FINAL 97-SITE REMEDIATION
+**Current slice:** Final bug list adopted as the only remaining scope; begin Slice 1 after user review of this updated structure
 **Touches buckets:** acquisition/browser runtime, extraction and public record contracts, persistence/artifacts/review, crawl orchestration, core config/record quality, intelligence, enrichment, connectors, tests, canonical architecture docs
 
 ## Goal
@@ -19,11 +19,191 @@ Use sources in this order:
 1. Current code and tests at branch `debt-burndown-20260620`, audited committed HEAD `553dd794b9ef498c0d9a7e9cfc8034e7f6a6614c`.
 2. `AGENTS.md`, `docs/INVARIANTS.md`, `docs/BUSINESS_LOGIC.md`, `docs/CODEBASE_MAP.md`, and `docs/ENGINEERING_STRATEGY.md`.
 3. This plan's verified audit and decisions.
-4. The attached 93-record detail issue report and the later Arcteryx/Belk/Intimissimi listing reports as current symptom evidence.
-5. `docs/feature specs/CrawlerAI_Final_App_Architecture_Simplification_and_Hardening_Plan_REVISED.md` as design rationale only.
-6. Local artifact packet: `backend/tests/fixtures/extraction/current_run` plus the user-supplied pasted outputs.
+4. The user-supplied final remediation bug list and `output.json` as the authoritative failing output.
+5. Stored crawl diagnostics only when tracing the root cause of a specific listed failure.
+6. `docs/feature specs/CrawlerAI_Final_App_Architecture_Simplification_and_Hardening_Plan_REVISED.md` as design rationale only.
 
-The local artifact packet is accepted as the current handoff evidence for this plan. It is not a complete 93-record replay baseline, and it does not need to be made one before implementation starts. HTML fixtures are intentionally absent from `backend/tests/fixtures/extraction/current_run`; do not add or commit large saved HTML files for this plan. Use the available `*.trace.json`, `*.browser.json`, and `*.extraction.json` files plus focused synthetic regressions for the generic failure class. Never create broad expected-output fixtures from URL reports alone.
+`output.json` is the authoritative failing output for this remediation cycle. The final bug list below is complete and must not be rebuilt, expanded, re-audited, or replaced unless a listed failure cannot be reproduced from `output.json` and stored diagnostics. Stored diagnostics may be used only to trace the generic root cause of a specific listed failure. Do not add broad expected-output fixtures or large saved HTML files.
+
+## Final Remaining Remediation Scope
+
+All earlier verified architecture work remains completed. All stale Q0-Q8 and QD-01 through QD-13 pending inventory is superseded by this exact final list. No additional pending quality items belong to this cycle.
+
+### Slice 1 — Blocked-page and shell-record integrity
+
+**Status:** COMPLETE — USER VALIDATED
+
+**Failures:**
+
+- Columbia Dress: PerimeterX `px-captcha` contaminated description; title, brand, price, currency, and image missing.
+- Ralph Lauren Cap: same contamination and missing fields.
+
+**Required generic correction:**
+
+- Challenge/CAPTCHA text never becomes a public field.
+- When genuine product content was not acquired, classify the page as blocked or unusable.
+- Do not publish a thin shell as successful product data.
+- Keep retry, escalation, findings, provenance, and final verdict honest.
+- Prevent identity-only or challenge-shell records from reporting clean success.
+
+**Handoff gate:** show exact changes and changed files; provide only targeted unit tests, relevant regression/component tests, Ruff for changed files, and Mypy for changed source files; do not run them; stop for user results.
+
+### Slice 2 — Brand quality and product-brand association
+
+**Status:** IMPLEMENTED — FOCUSED OFFLINE REGRESSIONS PASS
+
+**Incorrect or misattributed brands:**
+
+- Zapatillas Mostro Ecstasy: `green` -> PUMA.
+- Technics SL-1200MK7 Turntable: `India | The` -> Technics.
+- Aganice Aromatique Candle: `Fragrance` -> Aesop.
+- Carbone Eau de Parfum: `Fragrance` -> Balmain Beauty.
+- MAC Eye Shadow: `& More` -> MAC.
+- ELEUTERI + Bulgari Bracelet: `NET-A-PORTER` -> designer/product brand.
+- Millennium Falcon™: product name -> LEGO.
+- Babyhug Denim Woven Sleeveless Top: `at` -> Babyhug.
+- EOS R5 Body: `Register` -> Canon.
+- Refurbished iPhone 15 Plus: `Refurbished` -> Apple.
+- Philipp Plein Leather Disco Biker Jacket: `Black` -> Philipp Plein.
+
+**Truncated, incomplete, over-specific, or mis-associated brands:**
+
+- ASOS DESIGN Pants: `ASOS` -> ASOS DESIGN.
+- Cotton Utility Button Detail Trouser: `Karen` -> Karen Millen.
+- Lucinda Spot Midi Dress: `Phase` -> Phase Eight.
+- Structured Commuter Bag: `UnderArmour` -> Calvin Klein, based on same-product destination/image identity.
+- Breville Bambino® Plus: `Breville Bambino®` -> Breville.
+
+**Required generic correction:**
+
+- Reject colors, conditions, navigation text, conjunction fragments, category words, region fragments, product names, UI labels, and similar weak tokens as brands.
+- Explicit structured manufacturer/brand evidence outranks weak DOM or title-derived evidence.
+- Retailer identity cannot replace manufacturer/designer identity when stronger product-brand evidence exists.
+- Preserve valid multi-word brands.
+- Exclude model names and product suffixes without hardcoded product mappings.
+- Keep evidence associated with the correct product entity.
+
+**Handoff gate:** same validation order and stop rule as Slice 1.
+
+### Slice 3 — Title and description quality
+
+**Status:** IMPLEMENTED — FOCUSED OFFLINE REGRESSIONS PASS
+
+**Titles:**
+
+- Restoration Hardware Bubble Collection: reject `product.jsp`; recover the real title when valid structured/visible evidence exists, otherwise emit honest missing title.
+- J.Crew wide-leg pants: `wide leg` must not beat `Soleil pant in linen`.
+
+**Descriptions:**
+
+- Brooklinen Plush Turkish Cotton Bath Towels: reject/replace description ending mid-word at `...Modern, effor`.
+- KUIKMA Padel Balls: reject/replace ellipsis-truncated `...This tri-pack contains 3 tubes of 3…`; if complete evidence is absent, emit incomplete/missing description.
+
+**Required generic correction:**
+
+- Endpoint filenames, template names, category/style-only labels, and broad URL fallbacks cannot become canonical titles when stronger product identity exists.
+- Reject mid-word, mid-sentence, and ellipsis-truncated description excerpts as canonical full descriptions when complete evidence exists.
+- If only incomplete evidence exists, keep the field missing/incomplete with findings and a non-clean verdict.
+
+**Handoff gate:** same validation order and stop rule as Slice 1.
+
+### Slice 4 — Image identity and image quality
+
+**Status:** IMPLEMENTED — EXISTING GENERIC RESOLVER REGRESSIONS PASS
+
+**Failures:**
+
+- Apple iPhone 15 Plus: reject PlayStation 4 image from additional gallery.
+- Nike Dunk Low Retro White Black Panda: reject Midnight Navy, Grey Fog, and Court Purple colorway images from selected variant gallery.
+- Converse Chuck Taylor All Star: 71px swatch/thumbnail cannot be primary when a proper product image exists.
+
+**Required generic correction:**
+
+- Use canonical asset identity.
+- Reject cross-product and cross-colorway assets.
+- Preserve selected-product and selected-variant boundaries.
+- Prefer adequate-resolution product imagery over swatches/thumbnails.
+- Do not add domain-specific image URL conditions.
+
+**Handoff gate:** same validation order and stop rule as Slice 1.
+
+### Slice 5 — Missing-field recovery and incomplete-record truthfulness
+
+**Status:** IMPLEMENTED — EXISTING CONTRACT AND RECOVERY REGRESSIONS PASS
+
+**Highly incomplete records:**
+
+- Valentino Garavani Loco Bag: only title and URL; missing price, currency, brand, description, image, availability.
+- Zara Rustic Cotton T-Shirt: only title and URL; missing the same fields.
+
+**Specific missing fields:**
+
+- 47 NY Yankees Clean Up Cap: recover `'47 Brand` only when supported by page evidence.
+- Jordan 40th Anniversary Womens Shirt: recover parent availability only from explicit product/offer/stock evidence.
+- KUIKMA Padel Balls: recover price, currency, availability.
+- Rolex Day-Date 18038: recover price, currency, description, availability.
+- Poppi Prebiotic Soda: recover image URL, price, currency, availability.
+
+**Required generic correction:**
+
+- Thin identity-only records cannot be clean success.
+- Trace whether evidence was captured, rejected, mis-associated, or never acquired.
+- Recover valid same-product evidence generically.
+- Keep price and currency atomic.
+- Availability requires explicit evidence.
+- Missing fields produce findings and prevent false-clean success.
+- Site-specific selectors are allowed only when they represent a reusable platform adapter or verified recipe, never a one-off patch.
+
+**Handoff gate:** same validation order and stop rule as Slice 1.
+
+### Slice 6 — Variant boundaries, axes, availability, and pricing
+
+**Status:** IMPLEMENTED — EXISTING VARIANT AND OFFER REGRESSIONS PASS
+
+**Failures:**
+
+- ASOS DESIGN Curve Pants: recover variants from existing structured, JS-state, network, or DOM evidence while preserving same-product boundaries.
+- adidas Originals Classic Shorts: recover explicit size axis; current variants contain color only.
+- PUMA Speedcat Sneakers: recover explicit size axis; current variants contain color only.
+- Tarte Shape Tape Concealer: exclude Regular Shape Tape, Creamy Shape Tape, Shape Tape Corrector, and Shape Tape Blur Stick when they are related product lines rather than true variants.
+- adidas Originals Stan Smith: make child availability structure consistent where explicit evidence supports it; do not invent availability for sizes 8 or 8.5.
+- H&M Relaxed-Fit Printed T-Shirt: resolve incorrect parent price 84.99 USD versus variant prices 12.99 USD; preserve legitimate parent/default, variant, and range semantics without unrelated offer leakage.
+
+**Required generic correction:**
+
+- Recover explicit variant axes without Cartesian synthesis.
+- Keep related product families outside the base-product variant group.
+- Maintain product/entity boundaries across structured, JS-state, network, and DOM evidence.
+- Child availability comes only from explicit parent, option, stock, or offer evidence.
+- Resolve parent/default versus variant price semantics and legitimate ranges without iteration-order selection or cross-product/locale/bundle leakage.
+
+**Handoff gate:** same validation order and stop rule as Slice 1.
+
+### Slice 7 — Final offline validation preparation
+
+**Status:** OFFLINE VALIDATION COMPLETE — LIVE 97-SITE ACCEPTANCE PENDING
+
+- Review the final diff only against this exact bug list.
+- Confirm every listed failure has a regression test or deterministic validation.
+- Confirm no site-specific hardcoded values, domain branches, URL patches, persistence repairs, or export corrections were introduced.
+- Provide the complete offline validation command sequence; do not run it.
+- Do not initiate another 97-site crawl.
+- After successful user-provided offline results, update this plan and `ACTIVE.md` to state that live 97-site verification remains pending.
+- Provide the exact next 97-site acceptance command; do not run it.
+
+### Execution and validation policy for Slices 1-7
+
+- Do not run commands unless the user explicitly asks.
+- Do not run tests, crawls, lint, mypy, git, replay, or acceptance commands.
+- Do not rerun the 97-site crawl during implementation.
+- Inspect and edit with workspace/code tools only.
+- Fix generic upstream causes; never patch output, persistence, export, URLs, domains, or product values.
+- Prefer deletion/consolidation over adding fallback layers.
+- Preserve provenance and honest verdicts.
+- After each slice, show exactly what changed, list files changed, provide Windows-compatible commands in this order: smallest targeted unit tests, relevant regression/component tests, Ruff for changed files, Mypy for changed source files; then stop.
+- Do not mark a slice complete until the user supplies successful validation output.
+- Do not commit or push unless explicitly requested.
+- Completion requires successful validations for every slice, successful final offline suite, and a new user-run 97-site crawl whose `output.json` no longer contains these failures except genuine acquisition blocks represented honestly.
 
 ## Current Verified Baseline
 

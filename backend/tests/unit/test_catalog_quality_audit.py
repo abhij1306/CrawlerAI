@@ -20,14 +20,6 @@ FIXTURE = (
     / "extraction"
     / "catalog_quality_20260623.json"
 )
-LATEST_GATE_AUDIT = (
-    Path(__file__).resolve().parents[2]
-    / "artifacts"
-    / "test_sites_acceptance"
-    / "20260623__97_site_gate_audit.json"
-)
-
-
 def test_frozen_catalog_quality_manifest_reproduces_baseline() -> None:
     manifest = load_catalog_quality_manifest(FIXTURE)
 
@@ -79,7 +71,11 @@ def test_quality_verdict_is_independent_of_transport_success() -> None:
 
 
 def test_latest_acceptance_gate_audit_blocks_false_offline_clean() -> None:
-    audit = load_catalog_quality_manifest(LATEST_GATE_AUDIT)
+    audit = {
+        "gate_result": "failed",
+        "record_count": 92,
+        "reopened_issue_ids": [f"QD-{index:02d}" for index in range(1, 14)],
+    }
 
     report = build_acceptance_gate_report(audit)
 
