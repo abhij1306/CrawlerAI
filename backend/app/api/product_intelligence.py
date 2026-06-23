@@ -45,9 +45,13 @@ async def product_intelligence_discover(
             payload=payload.model_dump(),
         )
     except (LookupError, AccessDeniedError) as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)
+        ) from exc
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+        ) from exc
     return ProductIntelligenceDiscoveryResponse.model_validate(response)
 
 
@@ -65,9 +69,13 @@ async def product_intelligence_create_job(
             payload=payload.model_dump(),
         )
     except (LookupError, AccessDeniedError) as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)
+        ) from exc
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+        ) from exc
     background_tasks.add_task(run_product_intelligence_job, job.id)
     return ProductIntelligenceJobResponse.model_validate(job, from_attributes=True)
 
@@ -94,7 +102,9 @@ async def product_intelligence_get_job(
     try:
         job = await get_product_intelligence_job(session, user=user, job_id=job_id)
     except LookupError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)
+        ) from exc
     payload = await build_job_payload(session, job=job)
     return ProductIntelligenceJobDetailResponse.model_validate(payload)
 
@@ -116,9 +126,13 @@ async def product_intelligence_review_match(
             action=payload.action,
         )
     except LookupError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)
+        ) from exc
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+        ) from exc
     return {
         "match_id": match.id,
         "review_status": match.review_status,

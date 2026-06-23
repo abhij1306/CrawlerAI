@@ -190,7 +190,7 @@ export function detailOptions(
   };
 }
 
-export function privateLabelMode(value: unknown): ProductIntelligenceOptions['private_label_mode'] {
+function privateLabelMode(value: unknown): ProductIntelligenceOptions['private_label_mode'] {
   return value === 'include' || value === 'exclude' || value === 'flag'
     ? value
     : DEFAULT_OPTIONS.private_label_mode;
@@ -222,16 +222,6 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-export function displayValue(data: Record<string, unknown>, fields: string[]) {
-  for (const field of fields) {
-    const value = data[field];
-    if (value !== undefined && value !== null && value !== '') {
-      return String(value);
-    }
-  }
-  return '';
-}
-
 export function formatPrice(value: unknown, currency = '') {
   const numeric =
     typeof value === 'number' ? value : Number(String(value ?? '').replace(/[^0-9.]+/g, ''));
@@ -240,17 +230,6 @@ export function formatPrice(value: unknown, currency = '') {
   }
   const prefix = currency || '$';
   return `${prefix}${numeric.toFixed(2)}`;
-}
-
-export function formatExtractedPrice(price: unknown, currency: unknown) {
-  if (isEmptyValue(price)) {
-    return '--';
-  }
-  const currencyText = String(currency ?? '').trim();
-  if (typeof price === 'number' && currencyText) {
-    return formatPrice(price, currencyText);
-  }
-  return String(price);
 }
 
 function stringArray(value: unknown) {
@@ -262,10 +241,6 @@ function stringArray(value: unknown) {
         return text ? [text] : [];
       })
     : [];
-}
-
-function isEmptyValue(value: unknown) {
-  return value === undefined || value === null || String(value).trim() === '';
 }
 
 function clampInt(value: unknown, min: number, max: number, fallback: number) {

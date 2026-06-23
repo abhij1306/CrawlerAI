@@ -157,7 +157,9 @@ def _redirect_tempfile_root(monkeypatch: pytest.MonkeyPatch, workspace_tmp_path:
 
 
 @pytest.fixture(autouse=True)
-def _isolate_artifact_storage(monkeypatch: pytest.MonkeyPatch, workspace_tmp_path: Path):
+def _isolate_artifact_storage(
+    monkeypatch: pytest.MonkeyPatch, workspace_tmp_path: Path
+):
     """Redirect artifact writes to a temp directory so tests never pollute the real artifacts/runs/ tree."""
     from app.core.config import settings as app_settings
 

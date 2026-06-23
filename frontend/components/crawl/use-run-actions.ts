@@ -11,10 +11,7 @@ type UseRunActionsOptions = {
   refreshQueries: ReadonlyArray<RefetchableQuery>;
 };
 
-export function useRunActions({
-  runId,
-  refreshQueries,
-}: Readonly<UseRunActionsOptions>) {
+export function useRunActions({ runId, refreshQueries }: Readonly<UseRunActionsOptions>) {
   const [killPending, setKillPending] = useState(false);
   const [error, setError] = useState('');
 

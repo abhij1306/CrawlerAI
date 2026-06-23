@@ -81,8 +81,10 @@ def patchright_browser_available() -> bool:
     return True
 
 
-def _real_chrome_candidate_paths() -> tuple[str, ...]:
-    configured = str(crawler_runtime_settings.browser_real_chrome_executable_path or "").strip()
+def real_chrome_candidate_paths() -> tuple[str, ...]:
+    configured = str(
+        crawler_runtime_settings.browser_real_chrome_executable_path or ""
+    ).strip()
     if configured:
         return (configured,)
     return (
@@ -98,7 +100,14 @@ def _real_chrome_candidate_paths() -> tuple[str, ...]:
 def real_chrome_executable_path() -> str | None:
     if not crawler_runtime_settings.browser_real_chrome_enabled:
         return None
-    return next((candidate for candidate in _real_chrome_candidate_paths() if Path(candidate).is_file()), None)
+    return next(
+        (
+            candidate
+            for candidate in real_chrome_candidate_paths()
+            if Path(candidate).is_file()
+        ),
+        None,
+    )
 
 
 def real_chrome_browser_available() -> bool:
@@ -135,7 +144,9 @@ class SharedBrowserRuntime:
     ) -> None:
         self.max_contexts = max(1, int(max_contexts))
         self.browser_engine = _normalize_browser_engine(browser_engine)
-        self.executable_path, self.browser_binary = _resolve_browser_binary(self.browser_engine)
+        self.executable_path, self.browser_binary = _resolve_browser_binary(
+            self.browser_engine
+        )
         self.engine_available = bool(
             (
                 self.browser_engine
@@ -277,7 +288,9 @@ class SharedBrowserRuntime:
         if self.browser_engine != _REAL_CHROME_BROWSER_ENGINE:
             return
         if not self.executable_path:
-            raise RuntimeError("Real Chrome executable is not available for browser runtime")
+            raise RuntimeError(
+                "Real Chrome executable is not available for browser runtime"
+            )
         launch_kwargs["executable_path"] = self.executable_path
         ignore_default_args = [
             str(arg).strip()
@@ -456,6 +469,7 @@ class SharedBrowserRuntime:
     def _release_context_capacity(self) -> None:
         self._update_active_contexts(-1)
         self._semaphore.release()
+
     async def close(self) -> None:
         async with self._lock:
             await self._close_locked()
@@ -535,7 +549,11 @@ async def get_browser_runtime(
     normalized_proxy = _normalized_proxy_value(proxy)
     normalized_engine = _normalize_browser_engine(browser_engine)
     pool = _BROWSER_POOL.direct if normalized_proxy is None else _BROWSER_POOL.proxied
-    key = normalized_engine if normalized_proxy is None else (normalized_engine, normalized_proxy)
+    key = (
+        normalized_engine
+        if normalized_proxy is None
+        else (normalized_engine, normalized_proxy)
+    )
     runtime = pool.get(key)  # type: ignore[arg-type]
     if runtime is not None:
         runtime.touch()
@@ -642,7 +660,9 @@ def _browser_launch_timeout_seconds() -> float:
 
 
 def _browser_context_slot_timeout_seconds() -> float:
-    return max(0.1, float(crawler_runtime_settings.browser_context_slot_timeout_seconds))
+    return max(
+        0.1, float(crawler_runtime_settings.browser_context_slot_timeout_seconds)
+    )
 
 
 def _browser_new_page_timeout_seconds() -> float:
@@ -671,7 +691,8 @@ async def _wait_for_browser_step(
 
 
 async def _close_browser_context_safely(
-    context: Any, *,
+    context: Any,
+    *,
     on_pending_done: Callable[[asyncio.Task[Any]], None] | None = None,
 ) -> None:
     try:

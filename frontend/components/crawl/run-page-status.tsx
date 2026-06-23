@@ -18,21 +18,22 @@ type RunPageHeaderProps = {
 };
 
 export function RunPageHeader({ run, onNewCrawl }: Readonly<RunPageHeaderProps>) {
-  const title: ReactNode = run?.url && isSafeHttpUrl(run.url) ? (
-    <span className="inline-flex items-baseline gap-1.5">
-      Run Details:{' '}
-      <a
-        href={run.url}
-        target="_blank"
-        rel="noreferrer"
-        className="link-accent type-body leading-inherit underline-offset-2 hover:underline"
-      >
-        {getDomain(run.url).toLowerCase()}
-      </a>
-    </span>
-  ) : (
-    'Crawl Results'
-  );
+  const title: ReactNode =
+    run?.url && isSafeHttpUrl(run.url) ? (
+      <span className="inline-flex items-baseline gap-1.5">
+        Run Details:{' '}
+        <a
+          href={run.url}
+          target="_blank"
+          rel="noreferrer"
+          className="link-accent type-body leading-inherit underline-offset-2 hover:underline"
+        >
+          {getDomain(run.url).toLowerCase()}
+        </a>
+      </span>
+    ) : (
+      'Crawl Results'
+    );
 
   return (
     <PageHeader
@@ -47,9 +48,7 @@ export function RunPageHeader({ run, onNewCrawl }: Readonly<RunPageHeaderProps>)
   );
 }
 
-export function RunLoadError({
-  onNewCrawl,
-}: Readonly<{ error: unknown; onNewCrawl: () => void }>) {
+export function RunLoadError({ onNewCrawl }: Readonly<{ error: unknown; onNewCrawl: () => void }>) {
   return (
     <div className="page-stack">
       <PageHeader
@@ -103,8 +102,7 @@ export function RunPanelErrorState({
           <div className="space-y-1">
             {panels.map((panel) => (
               <div key={panel.key}>
-                Unable to refresh {panel.label}:{' '}
-                Refresh failed. Retry to restore current data.
+                Unable to refresh {panel.label}: Refresh failed. Retry to restore current data.
               </div>
             ))}
           </div>

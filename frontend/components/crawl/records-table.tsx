@@ -194,7 +194,7 @@ export const RecordsTable = memo(function RecordsTable({
   }, [containerNode]);
 
   return (
-    <div className="surface-muted shadow-card max-h-[calc(100vh-272px)] overflow-hidden rounded-lg border">
+    <div className="surface-muted shadow-card relative isolate z-0 max-h-[calc(100vh-272px)] overflow-hidden rounded-lg border">
       <div
         ref={setContainerRef}
         onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}

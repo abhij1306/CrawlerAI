@@ -905,7 +905,7 @@ async def test_delete_run_rejects_active_runs(
 
 @pytest.mark.asyncio
 @pytest.mark.component
-async def test_commit_selected_fields_updates_requested_field_metadata(
+async def test_commit_selected_fields_updates_data_without_provenance_mutation(
     db_session: AsyncSession,
     test_user,
 ) -> None:
@@ -949,12 +949,8 @@ async def test_commit_selected_fields_updates_requested_field_metadata(
     assert updated_fields == 2
     assert record.data["description"] == "Clean text"
     assert record.data["number_of_keys"] == 61
-    assert record.source_trace["field_discovery"]["description"]["status"] == "found"
-    assert record.source_trace["field_discovery"]["number_of_keys"]["value"] == "61"
-    coverage = record.discovered_data["requested_field_coverage"]
-    assert coverage["requested"] >= 1
-    assert coverage["found"] >= 1
-    assert "description" not in coverage["missing"]
+    assert record.source_trace == {}
+    assert record.discovered_data == {}
 
 
 @pytest.mark.asyncio
@@ -1305,8 +1301,12 @@ async def test_run_with_local_session_preserves_original_process_run_error(
         raise ValueError("write failed")
 
     monkeypatch.setattr(local_dispatch_module, "SessionLocal", _FakeSessionLocal)
-    monkeypatch.setattr(local_dispatch_module, "_batch_process_run", _failing_process_run)
-    monkeypatch.setattr(local_dispatch_module, "mark_run_failed", _failing_mark_run_failed)
+    monkeypatch.setattr(
+        local_dispatch_module, "_batch_process_run", _failing_process_run
+    )
+    monkeypatch.setattr(
+        local_dispatch_module, "mark_run_failed", _failing_mark_run_failed
+    )
 
     with caplog.at_level(logging.ERROR):
         with pytest.raises(RuntimeError, match="process exploded") as exc_info:

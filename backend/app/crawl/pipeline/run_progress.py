@@ -153,108 +153,100 @@ def _as_float(value: object) -> float:
         return 0.0
 
 
+_ACQUISITION_BOOL_TOTALS = {
+    "browser_attempted_urls": "browser_attempted",
+    "browser_used_urls": "browser_used",
+    "memory_browser_first_urls": "memory_browser_first",
+    "proxy_used_urls": "proxy_used",
+    "traversal_attempted": "traversal_attempted",
+    "traversal_succeeded": "traversal_succeeded",
+    "traversal_fell_back": "traversal_fell_back",
+}
+_ACQUISITION_INT_TOTALS = {
+    "network_payloads_total": "network_payloads",
+    "promoted_sources_total": "promoted_sources",
+    "frame_sources_total": "frame_sources",
+    "records_total": "record_count",
+    "acquisition_ms_total": "acquisition_ms",
+    "extraction_ms_total": "extraction_ms",
+    "curl_fetch_ms_total": "curl_fetch_ms",
+    "browser_decision_ms_total": "browser_decision_ms",
+    "browser_launch_ms_total": "browser_launch_ms",
+    "browser_origin_warm_ms_total": "browser_origin_warm_ms",
+    "browser_navigation_ms_total": "browser_navigation_ms",
+    "browser_challenge_wait_ms_total": "browser_challenge_wait_ms",
+    "browser_total_ms_total": "browser_total_ms",
+    "request_wait_ms_total": "request_wait_ms",
+    "host_fetch_ms_total": "host_fetch_ms",
+    "host_browser_first_ms_total": "host_browser_first_ms",
+    "host_total_ms_total": "host_total_ms",
+    "pages_collected_total": "pages_collected",
+    "scroll_iterations_total": "scroll_iterations",
+    "pages_scrolled_total": "pages_scrolled",
+}
+
+
+def _count_map(value: object) -> dict[str, int]:
+    return {
+        str(key): as_int(item_value)
+        for key, item_value in mapping_or_empty(value).items()
+    }
+
+
+def _bump_counter(current: object, bucket: str, key: object) -> dict[str, int]:
+    counters = _count_map(mapping_or_empty(current).get(bucket))
+    name = str(key or "").strip()
+    if name:
+        counters[name] = as_int(counters.get(name, 0)) + 1
+    return counters
+
+
+def _merge_bool_totals(
+    current: dict[str, object],
+    url_metrics: dict[str, object],
+) -> dict[str, int]:
+    return {
+        total_key: as_int(current.get(total_key, 0))
+        + int(bool(url_metrics.get(metric_key)))
+        for total_key, metric_key in _ACQUISITION_BOOL_TOTALS.items()
+    }
+
+
+def _merge_int_totals(
+    current: dict[str, object],
+    url_metrics: dict[str, object],
+) -> dict[str, int]:
+    return {
+        total_key: as_int(current.get(total_key, 0))
+        + as_int(url_metrics.get(metric_key, 0))
+        for total_key, metric_key in _ACQUISITION_INT_TOTALS.items()
+    }
+
+
 def _merge_run_acquisition_metrics(
     existing: object,
     url_metrics: dict[str, object],
 ) -> dict[str, object]:
     current = mapping_or_empty(existing)
-    methods = {
-        str(key): as_int(value)
-        for key, value in mapping_or_empty(current.get("methods")).items()
-    }
-    method = str(url_metrics.get("method") or "").strip()
-    if method:
-        methods[method] = as_int(methods.get(method, 0)) + 1
-    platform_families = {
-        str(key): as_int(value)
-        for key, value in mapping_or_empty(current.get("platform_families")).items()
-    }
-    platform_family = str(url_metrics.get("platform_family") or "").strip()
-    if platform_family:
-        platform_families[platform_family] = (
-            as_int(platform_families.get(platform_family, 0)) + 1
-        )
-    failure_reasons = {
-        str(key): as_int(value)
-        for key, value in mapping_or_empty(current.get("failure_reasons")).items()
-    }
-    failure_reason = str(url_metrics.get("failure_reason") or "").strip()
-    if failure_reason:
-        failure_reasons[failure_reason] = (
-            as_int(failure_reasons.get(failure_reason, 0)) + 1
-        )
-
     summary = {
-        "methods": methods,
-        "platform_families": platform_families,
-        "failure_reasons": failure_reasons,
-        "browser_attempted_urls": as_int(current.get("browser_attempted_urls", 0))
-        + int(bool(url_metrics.get("browser_attempted"))),
-        "browser_used_urls": as_int(current.get("browser_used_urls", 0))
-        + int(bool(url_metrics.get("browser_used"))),
-        "memory_browser_first_urls": as_int(current.get("memory_browser_first_urls", 0))
-        + int(bool(url_metrics.get("memory_browser_first"))),
-        "proxy_used_urls": as_int(current.get("proxy_used_urls", 0))
-        + int(bool(url_metrics.get("proxy_used"))),
-        "network_payloads_total": as_int(current.get("network_payloads_total", 0))
-        + as_int(url_metrics.get("network_payloads", 0)),
-        "promoted_sources_total": as_int(current.get("promoted_sources_total", 0))
-        + as_int(url_metrics.get("promoted_sources", 0)),
-        "frame_sources_total": as_int(current.get("frame_sources_total", 0))
-        + as_int(url_metrics.get("frame_sources", 0)),
+        "methods": _bump_counter(current, "methods", url_metrics.get("method")),
+        "platform_families": _bump_counter(
+            current,
+            "platform_families",
+            url_metrics.get("platform_family"),
+        ),
+        "failure_reasons": _bump_counter(
+            current,
+            "failure_reasons",
+            url_metrics.get("failure_reason"),
+        ),
+        **_merge_bool_totals(current, url_metrics),
+        **_merge_int_totals(current, url_metrics),
         "host_wait_seconds_total": round(
             _as_float(current.get("host_wait_seconds_total", 0.0))
             + _as_float(url_metrics.get("host_wait_seconds", 0.0)),
             3,
         ),
-        "records_total": as_int(current.get("records_total", 0))
-        + as_int(url_metrics.get("record_count", 0)),
-        "acquisition_ms_total": as_int(current.get("acquisition_ms_total", 0))
-        + as_int(url_metrics.get("acquisition_ms", 0)),
-        "extraction_ms_total": as_int(current.get("extraction_ms_total", 0))
-        + as_int(url_metrics.get("extraction_ms", 0)),
-        "curl_fetch_ms_total": as_int(current.get("curl_fetch_ms_total", 0))
-        + as_int(url_metrics.get("curl_fetch_ms", 0)),
-        "browser_decision_ms_total": as_int(current.get("browser_decision_ms_total", 0))
-        + as_int(url_metrics.get("browser_decision_ms", 0)),
-        "browser_launch_ms_total": as_int(current.get("browser_launch_ms_total", 0))
-        + as_int(url_metrics.get("browser_launch_ms", 0)),
-        "browser_origin_warm_ms_total": as_int(
-            current.get("browser_origin_warm_ms_total", 0)
-        )
-        + as_int(url_metrics.get("browser_origin_warm_ms", 0)),
-        "browser_navigation_ms_total": as_int(
-            current.get("browser_navigation_ms_total", 0)
-        )
-        + as_int(url_metrics.get("browser_navigation_ms", 0)),
-        "browser_challenge_wait_ms_total": as_int(
-            current.get("browser_challenge_wait_ms_total", 0)
-        )
-        + as_int(url_metrics.get("browser_challenge_wait_ms", 0)),
-        "browser_total_ms_total": as_int(current.get("browser_total_ms_total", 0))
-        + as_int(url_metrics.get("browser_total_ms", 0)),
-        "request_wait_ms_total": as_int(current.get("request_wait_ms_total", 0))
-        + as_int(url_metrics.get("request_wait_ms", 0)),
-        "host_fetch_ms_total": as_int(current.get("host_fetch_ms_total", 0))
-        + as_int(url_metrics.get("host_fetch_ms", 0)),
-        "host_browser_first_ms_total": as_int(
-            current.get("host_browser_first_ms_total", 0)
-        )
-        + as_int(url_metrics.get("host_browser_first_ms", 0)),
-        "host_total_ms_total": as_int(current.get("host_total_ms_total", 0))
-        + as_int(url_metrics.get("host_total_ms", 0)),
-        "pages_collected_total": as_int(current.get("pages_collected_total", 0))
-        + as_int(url_metrics.get("pages_collected", 0)),
-        "scroll_iterations_total": as_int(current.get("scroll_iterations_total", 0))
-        + as_int(url_metrics.get("scroll_iterations", 0)),
-        "pages_scrolled_total": as_int(current.get("pages_scrolled_total", 0))
-        + as_int(url_metrics.get("pages_scrolled", 0)),
-        "traversal_attempted": as_int(current.get("traversal_attempted", 0))
-        + int(bool(url_metrics.get("traversal_attempted"))),
-        "traversal_succeeded": as_int(current.get("traversal_succeeded", 0))
-        + int(bool(url_metrics.get("traversal_succeeded"))),
-        "traversal_fell_back": as_int(current.get("traversal_fell_back", 0))
-        + int(bool(url_metrics.get("traversal_fell_back"))),
     }
     traversal_mode = str(url_metrics.get("traversal_mode_used") or "").strip()
     if traversal_mode:

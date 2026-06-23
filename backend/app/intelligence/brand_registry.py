@@ -14,7 +14,10 @@ _MIN_BRAND_KEY_LENGTH = 3
 @lru_cache(maxsize=1)
 def belk_brand_entries() -> tuple[tuple[str, str], ...]:
     return _dedupe_entries(
-        (*_load_brand_entries(_BELK_BRANDS_FILE), *_load_brand_entries(_BELK_EXCLUSIVE_BRANDS_FILE))
+        (
+            *_load_brand_entries(_BELK_BRANDS_FILE),
+            *_load_brand_entries(_BELK_EXCLUSIVE_BRANDS_FILE),
+        )
     )
 
 
@@ -41,7 +44,10 @@ def infer_belk_brand(*values: object) -> str:
         compact_no_and_key = no_and_key.replace(" ", "")
         if len(compact_key) >= _MIN_COMPACT_MATCH_LENGTH and compact_key in compact:
             return display
-        if len(compact_no_and_key) >= _MIN_COMPACT_MATCH_LENGTH and compact_no_and_key in compact:
+        if (
+            len(compact_no_and_key) >= _MIN_COMPACT_MATCH_LENGTH
+            and compact_no_and_key in compact
+        ):
             return display
     return ""
 
@@ -79,10 +85,14 @@ def _load_brand_entries(path: Path) -> tuple[tuple[str, str], ...]:
             continue
         seen.add(key)
         entries.append((key, display))
-    return tuple(sorted(entries, key=lambda item: (len(item[0]), item[0]), reverse=True))
+    return tuple(
+        sorted(entries, key=lambda item: (len(item[0]), item[0]), reverse=True)
+    )
 
 
-def _dedupe_entries(entries: tuple[tuple[str, str], ...]) -> tuple[tuple[str, str], ...]:
+def _dedupe_entries(
+    entries: tuple[tuple[str, str], ...],
+) -> tuple[tuple[str, str], ...]:
     by_key: dict[str, str] = {}
     for key, display in entries:
         by_key.setdefault(key, display)

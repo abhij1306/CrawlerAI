@@ -42,32 +42,19 @@ logger = logging.getLogger(__name__)
 
 
 async def build_dashboard(session: AsyncSession, *, user_id: int | None = None) -> dict:
-    run_scope = select(CrawlRun)
+    # total_runs + active_runs in one round-trip via aggregate filter
+    counts_stmt = select(
+        func.count().label("total_runs"),
+        func.count()
+        .filter(CrawlRun.status.in_([s.value for s in ACTIVE_STATUSES]))
+        .label("active_runs"),
+    )
     if user_id is not None:
-        run_scope = run_scope.where(CrawlRun.user_id == user_id)
+        counts_stmt = counts_stmt.where(CrawlRun.user_id == user_id)
+    counts_row = (await session.execute(counts_stmt)).one()
+    total_runs = int(counts_row.total_runs or 0)
+    active_runs = int(counts_row.active_runs or 0)
 
-    total_runs = int(
-        (
-            await session.execute(
-                select(func.count()).select_from(run_scope.subquery())
-            )
-        ).scalar()
-        or 0
-    )
-    active_runs = int(
-        (
-            await session.execute(
-                select(func.count()).select_from(
-                    run_scope.where(
-                        CrawlRun.status.in_(
-                            [status.value for status in ACTIVE_STATUSES]
-                        )
-                    ).subquery()
-                )
-            )
-        ).scalar()
-        or 0
-    )
     if user_id is None:
         total_records = int(
             (
@@ -87,15 +74,16 @@ async def build_dashboard(session: AsyncSession, *, user_id: int | None = None) 
             ).scalar()
             or 0
         )
-    recent_result = await session.execute(
-        run_scope.order_by(CrawlRun.created_at.desc()).limit(10)
-    )
+    recent_stmt = select(CrawlRun).order_by(CrawlRun.created_at.desc()).limit(10)
+    if user_id is not None:
+        recent_stmt = recent_stmt.where(CrawlRun.user_id == user_id)
+    recent_result = await session.execute(recent_stmt)
     recent_runs = list(recent_result.scalars().all())
-    domain_rows = await session.execute(
-        select(CrawlRun.url)
-        if user_id is None
-        else select(CrawlRun.url).where(CrawlRun.user_id == user_id)
-    )
+    # Cap to 500 most recent runs — avoids full table scan; sufficient for top-5 domains
+    domain_stmt = select(CrawlRun.url).order_by(CrawlRun.created_at.desc()).limit(500)
+    if user_id is not None:
+        domain_stmt = domain_stmt.where(CrawlRun.user_id == user_id)
+    domain_rows = await session.execute(domain_stmt)
     counts: dict[str, int] = {}
     for url in domain_rows.scalars().all():
         domain = normalize_domain(url or "") or "unknown"
@@ -227,7 +215,9 @@ async def _reset_crawl_runtime_state() -> dict:
         and artifacts_dir.is_relative_to(PROJECT_ROOT.resolve())
         and legacy_artifacts_dir.resolve() != artifacts_dir
     ):
-        artifacts_removed += _reset_directory(legacy_artifacts_dir, create_if_missing=False)
+        artifacts_removed += _reset_directory(
+            legacy_artifacts_dir, create_if_missing=False
+        )
     cookies_removed = _reset_directory(settings.cookie_store_dir)
     return {
         "artifacts_removed": artifacts_removed,
@@ -272,17 +262,11 @@ async def _reset_bucket_db(
     preserved: list[tuple[str, type]] | None = None,
     zeroed: tuple[str, ...] = (),
 ) -> dict[str, int]:
-    counts = {
-        key: await _count_rows(session, model)
-        for key, model in deleted
-    }
+    counts = {key: await _count_rows(session, model) for key, model in deleted}
     counts.update({key: 0 for key in zeroed})
     if preserved:
         counts.update(
-            {
-                key: await _count_rows(session, model)
-                for key, model in preserved
-            }
+            {key: await _count_rows(session, model) for key, model in preserved}
         )
     return counts
 

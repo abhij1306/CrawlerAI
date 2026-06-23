@@ -22,7 +22,7 @@ from app.acquisition.browser_readiness import analyze_extractable_content, analy
 from app.acquisition.browser_page_helpers import detail_expansion_extractability
 from app.acquisition.browser_proxy_config import build_browser_proxy_config
 from app.acquisition import browser_runtime as acquisition_browser_runtime
-from app.acquisition import browser_page_flow
+from app.acquisition import browser_settle
 from app.core.config.runtime_settings import crawler_runtime_settings
 from app.core.domain_utils import is_special_use_domain, normalize_domain
 
@@ -44,7 +44,9 @@ def _credential_url(
     return f"{scheme}://{username}:{secret}@{host}{port_suffix}{path_suffix}"
 
 
-def _authority_with_credentials(*, username: str, secret: str, host: str, port: int) -> str:
+def _authority_with_credentials(
+    *, username: str, secret: str, host: str, port: int
+) -> str:
     return f"{username}:{secret}@{host}:{port}"
 
 
@@ -75,7 +77,6 @@ def test_chromium_browser_binary_is_labeled_chromium() -> None:
     )
 
 
-
 @pytest.mark.component
 def test_meaningful_detail_signals_accept_body_without_paragraph() -> None:
     analysis = analyze_html(
@@ -87,7 +88,10 @@ def test_meaningful_detail_signals_accept_body_without_paragraph() -> None:
         """
     )
 
-    assert analyze_extractable_content(analysis.html, analysis=analysis).meaningful_detail is True
+    assert (
+        analyze_extractable_content(analysis.html, analysis=analysis).meaningful_detail
+        is True
+    )
 
 
 @pytest.mark.component
@@ -110,8 +114,10 @@ def test_detail_extractability_reuses_readiness_document() -> None:
 @pytest.mark.component
 @pytest.mark.parametrize(
     ("snapshots", "expected_parse_count"),
-    ((["<html>A</html>", "<html>A</html>"], 1),
-     (["<html>A</html>", "<html>B</html>"], 2)),
+    (
+        (["<html>A</html>", "<html>A</html>"], 1),
+        (["<html>A</html>", "<html>B</html>"], 2),
+    ),
 )
 async def test_browser_settle_parses_once_per_unique_snapshot(
     monkeypatch,
@@ -119,7 +125,7 @@ async def test_browser_settle_parses_once_per_unique_snapshot(
     expected_parse_count: int,
 ) -> None:
     parse_count = 0
-    original_analyze_html = browser_page_flow.analyze_html
+    original_analyze_html = browser_settle.analyze_html
 
     def counting_analyze_html(html: str):
         nonlocal parse_count
@@ -144,14 +150,14 @@ async def test_browser_settle_parses_once_per_unique_snapshot(
             "structured_data_present": False,
         }
 
-    monkeypatch.setattr(browser_page_flow, "analyze_html", counting_analyze_html)
+    monkeypatch.setattr(browser_settle, "analyze_html", counting_analyze_html)
     monkeypatch.setattr(
         crawler_runtime_settings,
         "browser_navigation_optimistic_wait_ms",
         100,
     )
 
-    result = await browser_page_flow.settle_browser_page_impl(
+    result = await browser_settle.settle_browser_page(
         _Page(),
         url="https://example.test/table",
         surface="table",
@@ -182,12 +188,18 @@ def test_meaningful_detail_signals_reject_empty_and_heading_only_body() -> None:
         "<html><body><main><h1>Thread</h1><div>Thread</div></main></body></html>"
     )
 
-    assert analyze_extractable_content(
-        empty_analysis.html, analysis=empty_analysis
-    ).meaningful_detail is False
-    assert analyze_extractable_content(
-        heading_only_analysis.html, analysis=heading_only_analysis
-    ).meaningful_detail is False
+    assert (
+        analyze_extractable_content(
+            empty_analysis.html, analysis=empty_analysis
+        ).meaningful_detail
+        is False
+    )
+    assert (
+        analyze_extractable_content(
+            heading_only_analysis.html, analysis=heading_only_analysis
+        ).meaningful_detail
+        is False
+    )
 
 
 @pytest.mark.component
@@ -201,7 +213,10 @@ def test_meaningful_detail_signals_accept_common_descendant() -> None:
         """
     )
 
-    assert analyze_extractable_content(analysis.html, analysis=analysis).meaningful_detail is True
+    assert (
+        analyze_extractable_content(analysis.html, analysis=analysis).meaningful_detail
+        is True
+    )
 
 
 @pytest.mark.component
@@ -246,6 +261,7 @@ def test_listing_signals_detect_list_item_type() -> None:
     """
 
     assert analyze_extractable_content(html).listing is True
+
 
 @pytest.mark.component
 def test_is_special_use_domain_ignores_ports() -> None:
@@ -292,7 +308,6 @@ def test_normalize_domain_handles_domain_only_input() -> None:
 @pytest.mark.component
 def test_normalize_domain_strips_credentials_without_password() -> None:
     assert normalize_domain("https://user@example.com/path") == "example.com"
-
 
 
 @pytest.mark.asyncio
@@ -396,7 +411,6 @@ async def test_socks5_auth_bridge_start_is_singleflight(
     assert start_calls == 1
 
 
-
 @pytest.mark.component
 def test_browser_storage_state_persist_policy_rejects_challenge_shell_without_ready_probe() -> (
     None
@@ -416,7 +430,6 @@ def test_browser_storage_state_persist_policy_rejects_challenge_shell_without_re
         )
         is False
     )
-
 
 
 @pytest.mark.asyncio
@@ -1073,18 +1086,15 @@ async def test_shared_browser_runtime_launches_real_chrome_headful_for_fallback(
 
 @pytest.mark.component
 def test_display_proxy_masks_authenticated_proxy_credentials() -> None:
-    assert (
-        acquisition_browser_runtime._display_proxy(
-            _credential_url(
-                scheme="http",
-                username="user-name",
-                secret="pass-word",
-                host="31.58.9.4",
-                port=6077,
-            )
+    assert acquisition_browser_runtime._display_proxy(
+        _credential_url(
+            scheme="http",
+            username="user-name",
+            secret="pass-word",
+            host="31.58.9.4",
+            port=6077,
         )
-        == _masked_proxy_display(scheme="http", host="31.58.9.4", port=6077)
-    )
+    ) == _masked_proxy_display(scheme="http", host="31.58.9.4", port=6077)
 
 
 @pytest.mark.component
@@ -2504,7 +2514,9 @@ async def test_await_without_cancelling_returns_false_when_awaitable_fails() -> 
 
 @pytest.mark.asyncio
 @pytest.mark.component
-async def test_await_without_cancelling_registers_task_when_caller_is_cancelled() -> None:
+async def test_await_without_cancelling_registers_task_when_caller_is_cancelled() -> (
+    None
+):
     release = asyncio.Event()
 
     async def _wait() -> None:
@@ -2812,8 +2824,13 @@ async def test_browser_pool_skip_evicts_runtime_reused_after_candidate_snapshot(
 
 @pytest.mark.component
 def test_browser_launch_args_exclude_detectable_flags() -> None:
-    assert "--disable-component-update" not in crawler_runtime_settings.browser_launch_args
-    assert "--disable-blink-features=AutomationControlled" not in crawler_runtime_settings.browser_launch_args
+    assert (
+        "--disable-component-update" not in crawler_runtime_settings.browser_launch_args
+    )
+    assert (
+        "--disable-blink-features=AutomationControlled"
+        not in crawler_runtime_settings.browser_launch_args
+    )
 
 
 @pytest.mark.asyncio

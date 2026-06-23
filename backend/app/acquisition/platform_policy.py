@@ -216,7 +216,7 @@ def is_job_platform_signal(
 
 def detect_platform_family(url: str, html: str = "") -> str | None:
     normalized_url = str(url or "").strip().lower()
-    normalized_html = str(html or "").lower()[:_platform_detection_html_search_limit()]
+    normalized_html = str(html or "").lower()[: _platform_detection_html_search_limit()]
     domain = normalize_domain(urlparse(normalized_url).netloc)
 
     for config in platform_configs():
@@ -313,7 +313,9 @@ def url_host_matches_platform_family(url: str | None, family: str | None) -> boo
     host = normalize_domain(urlparse(str(url or "")).netloc)
     if not host:
         return False
-    return any(_matches_domain(host, pattern) for pattern in platform_domain_patterns(family))
+    return any(
+        _matches_domain(host, pattern) for pattern in platform_domain_patterns(family)
+    )
 
 
 def requires_path_tenant_boundary_for_family(family: str | None) -> bool:
@@ -402,8 +404,10 @@ def _resolve_http_browser_escalation_policy(surface: str | None) -> dict[str, bo
         selected = None
     return {
         "js_shell_without_detail_signals": True,
-        "missing_detail_signals": selected in {Surface.ECOMMERCE_DETAIL, Surface.JOB_DETAIL},
-        "listing_shell_without_listing_signals": selected in {Surface.ECOMMERCE_LISTING, Surface.JOB_LISTING},
+        "missing_detail_signals": selected
+        in {Surface.ECOMMERCE_DETAIL, Surface.JOB_DETAIL},
+        "listing_shell_without_listing_signals": selected
+        in {Surface.ECOMMERCE_LISTING, Surface.JOB_LISTING},
     }
 
 

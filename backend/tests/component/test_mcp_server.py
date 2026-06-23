@@ -23,13 +23,23 @@ async def test_mcp_tools_call_public_api(monkeypatch: pytest.MonkeyPatch) -> Non
             return False
 
         async def request(self, method, url, *, headers, json=None, params=None):
-            calls.append({"method": method, "url": url, "headers": headers, "json": json, "params": params})
+            calls.append(
+                {
+                    "method": method,
+                    "url": url,
+                    "headers": headers,
+                    "json": json,
+                    "params": params,
+                }
+            )
             return httpx.Response(200, json={"status": "ok", "data": {"ok": True}})
 
     monkeypatch.setattr("app.mcp_server.client.httpx.AsyncClient", _Client)
     client = PublicApiClient(api_key="secret", base_url="https://api.test/api/v1")
 
-    product = await extract_product(client, url="https://example.com/p/1", fields=["price"], use_cache=True)
+    product = await extract_product(
+        client, url="https://example.com/p/1", fields=["price"], use_cache=True
+    )
     domain = await check_domain(client, domain="example.com")
     caps = await list_capabilities()
 
@@ -55,7 +65,9 @@ async def test_mcp_tools_call_public_api(monkeypatch: pytest.MonkeyPatch) -> Non
 
 @pytest.mark.asyncio
 @pytest.mark.component
-async def test_mcp_client_returns_structured_api_error(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_mcp_client_returns_structured_api_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     class _Client:
         def __init__(self, *args, **kwargs):
             pass
@@ -69,11 +81,19 @@ async def test_mcp_client_returns_structured_api_error(monkeypatch: pytest.Monke
         async def request(self, method, url, *, headers, json=None, params=None):
             return httpx.Response(
                 422,
-                json={"status": "error", "error": {"code": "BROWSER_REQUIRED", "message": "Browser needed"}},
+                json={
+                    "status": "error",
+                    "error": {"code": "BROWSER_REQUIRED", "message": "Browser needed"},
+                },
             )
 
     monkeypatch.setattr("app.mcp_server.client.httpx.AsyncClient", _Client)
 
-    result = await PublicApiClient(api_key="secret", base_url="https://api.test/api/v1").request("POST", "/extract")
+    result = await PublicApiClient(
+        api_key="secret", base_url="https://api.test/api/v1"
+    ).request("POST", "/extract")
 
-    assert result == {"status": "error", "error": {"code": "BROWSER_REQUIRED", "message": "Browser needed"}}
+    assert result == {
+        "status": "error",
+        "error": {"code": "BROWSER_REQUIRED", "message": "Browser needed"},
+    }

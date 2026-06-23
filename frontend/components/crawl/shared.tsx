@@ -1,57 +1,31 @@
-import type { ReactNode } from 'react';
-
 import { Button } from '../ui/primitives';
 import type { FieldRow, FieldRowMessageTone, ValidationState } from './form-fields';
 import { buildLogSiteGroups, getLogStage } from './log-terminal-utils';
-import type {
-  CrawlDomain,
-  CrawlLog,
-  CrawlRecord,
-  CrawlRun,
-  CrawlSurface,
-} from '../../lib/api/types';
+import type { CrawlDomain, CrawlLog, CrawlRun, CrawlSurface } from '../../lib/api/types';
 import { CRAWL_DEFAULTS } from '../../lib/constants/crawl-defaults';
 import { SURFACE_DISPATCH } from './domain-surface-config';
-import { cn } from '../../lib/utils';
 import {
-  cleanRequestedField,
   uniqueFields,
-  uniqueNumbers,
   uniqueRequestedFields,
   uniqueStrings,
   validateAdditionalFieldName,
 } from '../../lib/crawl/fields';
 import {
   clampNumber,
-  decodeUrlForDisplay,
   decodeUrlsForDisplay,
   extractionVerdict,
-  extractionVerdictTone,
   formatCellDisplay,
   formatDuration,
   formatDurationMs,
-  humanizeFieldName,
   humanizeVerdict,
-  isEmptyCandidateValue,
   normalizeField,
   parseLines,
-  presentCandidateValue,
-  progressPercent,
-  stringifyCell,
 } from '../../lib/crawl/format';
 import { scrollViewportToBottom } from '../../lib/crawl/scroll';
-import {
-  cleanRecord,
-  cleanRecordForDisplay,
-  copyJson,
-  extractRecordUrl,
-  readRecordValue,
-} from '../../lib/crawl/record-utils';
+import { cleanRecordForDisplay, extractRecordUrl } from '../../lib/crawl/record-utils';
 import {
   estimateDataQuality,
   humanizeQuality,
-  qualityLevelFromScore,
-  qualityTone,
   scoreFieldQuality,
   scoreRecordQuality,
 } from '../../lib/crawl/quality';
@@ -59,35 +33,21 @@ import type { QualityLevel, QualitySnapshot } from '../../lib/crawl/quality';
 
 export {
   clampNumber,
-  cleanRequestedField,
-  cleanRecord,
   cleanRecordForDisplay,
-  copyJson,
-  decodeUrlForDisplay,
   decodeUrlsForDisplay,
   estimateDataQuality,
   extractionVerdict,
-  extractionVerdictTone,
   extractRecordUrl,
   formatCellDisplay,
   formatDuration,
   formatDurationMs,
-  humanizeFieldName,
   humanizeQuality,
   humanizeVerdict,
-  isEmptyCandidateValue,
   normalizeField,
   parseLines,
-  presentCandidateValue,
-  progressPercent,
-  qualityLevelFromScore,
-  qualityTone,
-  readRecordValue,
   scoreFieldQuality,
   scoreRecordQuality,
-  stringifyCell,
   uniqueFields,
-  uniqueNumbers,
   uniqueRequestedFields,
   uniqueStrings,
   validateAdditionalFieldName,
@@ -118,13 +78,6 @@ export function selectorWinnerLabel(selectorKind: string | null | undefined): st
   if (normalized === 'xpath') return 'XPath winner';
   if (normalized === 'css_selector') return 'CSS selector winner';
   return `${selectorKind} winner`;
-}
-
-export function mergeRecords(current: CrawlRecord[], incoming: CrawlRecord[]) {
-  const byId = new Map<number, CrawlRecord>();
-  for (const row of current) byId.set(row.id, row);
-  for (const row of incoming) byId.set(row.id, row);
-  return Array.from(byId.values()).sort((a, b) => a.id - b.id);
 }
 
 export function mergeLogs(current: CrawlLog[], incoming: CrawlLog[]) {
@@ -180,26 +133,6 @@ export function ActionButton({
     >
       {label}
     </Button>
-  );
-}
-
-export function PreviewRow({
-  label,
-  value,
-  mono,
-}: Readonly<{ label: string; value: ReactNode; mono?: boolean }>) {
-  return (
-    <div className="surface-muted flex items-start justify-between gap-4 rounded-md px-3 py-2">
-      <div className="field-label shrink-0">{label}</div>
-      <div
-        className={cn(
-          'type-body-sm text-foreground min-w-0 flex-1 text-right font-normal',
-          mono && 'type-caption-mono !text-foreground font-medium',
-        )}
-      >
-        {value || '--'}
-      </div>
-    </div>
   );
 }
 

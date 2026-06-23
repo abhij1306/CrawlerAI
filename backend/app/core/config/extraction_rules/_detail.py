@@ -26,6 +26,84 @@ DETAIL_IDENTITY_QUERY_KEYS = frozenset(
 )
 DETAIL_IDENTITY_QUERY_PREFIXES = tuple(PUBLIC_RECORD_DETAIL_CANONICAL_QUERY_PREFIXES)
 
+DETAIL_BRAND_BOILERPLATE_VALUES = frozenset(
+    {
+        "at",
+        "black",
+        "blue",
+        "brand",
+        "brown",
+        "fragrance",
+        "green",
+        "grey",
+        "india",
+        "more",
+        "red",
+        "refurbished",
+        "register",
+        "the",
+        "we",
+        "white",
+    }
+)
+DETAIL_BRAND_WEAK_SINGLE_TOKEN_PATTERN = (
+    r"^(?:"
+    r"beige|black|blue|brown|clear|cream|gold|gray|green|grey|navy|orange|"
+    r"pink|purple|red|silver|tan|white|yellow|"
+    r"brand|designer|fragrance|manufacturer|register|refurbished|sale|shop|store"
+    r")$"
+)
+DETAIL_BRAND_FRAGMENT_PATTERN = (
+    r"^(?:and|at|by|for|from|in|more|of|on|the|to|with|&\s*more)$"
+)
+DETAIL_BRAND_DOM_SELECTORS = (
+    "main [data-brand]",
+    "main [data-brand-name]",
+    "main [data-manufacturer]",
+    "main [data-manufacturer-name]",
+    "main [data-designer]",
+    "main [data-designer-name]",
+    "main [itemprop='brand']",
+    "main [itemprop='manufacturer']",
+    "main [class*='product-brand']",
+    "main [class*='product_brand']",
+    "main [data-testid*='brand']",
+    "main [data-testid*='manufacturer']",
+)
+DETAIL_BRAND_DOM_VALUE_ATTRIBUTES = (
+    "data-brand",
+    "data-brand-name",
+    "data-manufacturer",
+    "data-manufacturer-name",
+    "data-designer",
+    "data-designer-name",
+    "content",
+)
+DETAIL_BRAND_VISIBLE_LABEL_PATTERN = (
+    r"^\s*(?:brand|manufacturer|designed\s+by|designer)\s*[:\-]\s*"
+    r"(?P<brand>[^|\n]{1,80})\s*$"
+)
+DETAIL_BRAND_CATEGORY_PATTERN = (
+    r"^(?:men(?:'s|s)?|women(?:'s|s)?|boys?|girls?|kids?)\s+"
+    r"(?:[a-z0-9&'\-]+\s+){0,5}"
+    r"(?:shirts?|shorts?|shoes?|sneakers?|dresses?|pants?|jeans?|jackets?|hoodies?|tops?|tees?|t-?shirts?)$"
+)
+DETAIL_MICRODATA_NON_PRODUCT_ITEMTYPE_TOKENS = frozenset(
+    {"breadcrumblist", "listitem"}
+)
+DETAIL_DESCRIPTION_UI_PATTERNS = (
+    r"^\s*(?:please\s+)?(?:choose|select)\s+(?:(?:a|your|the)\s+)?(?:fabric|material|finish|color|colour|size)\b",
+    r"^\s*(?:fabric|material|finish|color|colour|size)\s+selection\b",
+)
+DETAIL_DESCRIPTION_HARD_BOUNDARY_LENGTHS = frozenset({320})
+DETAIL_DESCRIPTION_INCOMPLETE_ENDING_PATTERN = (
+    r"\b(?:and|or|with|for|to|the|a|an|of|in|on|at|by)\s*$"
+)
+DETAIL_DESCRIPTION_PROMOTIONAL_PATTERNS = (
+    r"\b(?:buy now|free shipping|lowest prices?|exclusive offers?|fast delivery)\b",
+    r"^\s*(?:shop|buy|find)\b.{0,220}\b(?:online|sale|shipping|delivery|price)\b",
+    r"\b(?:search results?|product directory|shopping directory|compare prices?)\b",
+)
 DETAIL_LOW_SIGNAL_LONG_TEXT_VALUES = frozenset(
     {
         "description",
@@ -45,12 +123,29 @@ DETAIL_LOW_SIGNAL_TITLE_VALUES = frozenset(
     {
         "6 easy payments",
         "frequently bought together",
+        "added to cart",
+        "clothing",
+        "boy",
+        "boys",
+        "girl",
+        "girls",
+        "men",
+        "women",
+        "hats & caps",
+        "mens footwear sneakers",
         "mens shoes",
         "men's shoes",
+        "pick up today",
         "plp",
+        "size",
+        "stylehint app",
+        "t shirts",
+        "tread pdp compose page",
+        "us",
         "womens shoes",
         "women's shoes",
         "shoes",
+        "short sleeved t shirts",
         # Generic gender-plus-category title leak when real title selector fails (LUISAVIAROMA DQ-9).
         "kids boys",
         "kids girls",
@@ -69,6 +164,10 @@ DETAIL_SHELL_TITLE_VALUES = frozenset(
         "access denied",
         "access denied. we invite you to return at a later time to complete your purchase.",
         "access forbidden",
+        "add to cart",
+        "adding to bag",
+        "adding to basket",
+        "adding to cart",
         "accès refusé",
         "accès refusé. nous vous invitons à revenir plus tard pour effectuer votre achat.",
     }
@@ -77,6 +176,117 @@ DETAIL_SHELL_TITLE_KEYS = frozenset(
     " ".join(re.findall(r"[a-z0-9]+", value.casefold()))
     for value in DETAIL_SHELL_TITLE_VALUES
 )
+DETAIL_NOT_FOUND_HTTP_STATUS_CODES = frozenset({404, 410})
+DETAIL_SHELL_TITLE_FLAG = "shell_title"
+DETAIL_SHELL_FINDING_RULE_ID = "HTTP_SHELL_TITLE"
+VARIANT_COLOR_BRAND_CONFLICT_FLAG = "brand_as_variant_color"
+DETAIL_TITLE_REJECTION_FLAGS = frozenset(
+    {
+        "code_only_title",
+        "filename_title",
+        "generic_title",
+        "measurement_title",
+        "placeholder_text",
+        DETAIL_SHELL_TITLE_FLAG,
+        "title_url_mismatch",
+        "truncated_title",
+    }
+)
+DETAIL_TITLE_REJECT_SUFFIXES = (
+    " compose page",
+    " product card",
+)
+DETAIL_TITLE_REJECT_VALUES = (
+    frozenset(
+        {
+            "description",
+            "details",
+            "measurements",
+            "navigation",
+            "not added",
+            "overview",
+            "product detail",
+            "product details",
+            "reviews",
+            "shipping",
+            "size guide",
+            "specifications",
+            "x",
+        }
+    )
+    | DETAIL_LOW_SIGNAL_TITLE_VALUES
+)
+DETAIL_TITLE_CODE_ONLY_PATTERN = r"^(?=.{4,40}$)(?=.*\d)[A-Za-z0-9._-]+$"
+DETAIL_TITLE_IDENTIFIER_ONLY_PATTERN = r"^(?=.{2,80}$)(?=.*\d)(?:[A-Za-z]{0,4}\d[A-Za-z0-9]*|[A-Za-z]|\d+)(?:[\s._-]+(?:[A-Za-z]{0,4}\d[A-Za-z0-9]*|[A-Za-z]|\d+))*$"
+DETAIL_TITLE_PATH_EXTENSION_PATTERN = r"\.(?:aspx?|html?|jsp|php)$"
+DETAIL_TITLE_ENDPOINT_FILENAME_PATTERN = (
+    r"^(?:product|detail|pdp|item|catalog|view)(?:\.(?:do|action|aspx?|html?|jsp|php))?$"
+)
+DETAIL_TITLE_GENERIC_CATEGORY_VALUES = frozenset(
+    {
+        "interchangeable lens cameras",
+        "digital cameras",
+        "camera lenses",
+        "mens clothing",
+        "womens clothing",
+        "men's clothing",
+        "women's clothing",
+        "shoes",
+        "footwear",
+        "accessories",
+    }
+)
+DETAIL_TITLE_STYLE_ONLY_TOKENS = frozenset(
+    {
+        "wide",
+        "leg",
+        "slim",
+        "skinny",
+        "straight",
+        "relaxed",
+        "cropped",
+        "oversized",
+        "classic",
+        "regular",
+        "petite",
+        "tall",
+    }
+)
+DETAIL_TITLE_STYLE_ONLY_MAX_WORDS = 2
+DETAIL_TITLE_SEO_POLLUTION_PATTERN = (
+    r"(?:\s[|\u2013\u2014]\s|\s+-\s+\$?\d|\bshop\s+online\b|\$\d+(?:\.\d{2})?)"
+)
+DETAIL_TITLE_TRAILING_CODE_PATTERN = r"(?:^|[\s_-])\d{4,}$"
+DETAIL_TITLE_URL_TOKEN_MIN_OVERLAP = 2
+DETAIL_TITLE_SEO_PREFIXES = ("buy ", "shop ")
+DETAIL_TITLE_SEO_PREFIX_MIN_WORDS = 8
+DETAIL_TITLE_UI_INSTRUCTION_TOKENS = frozenset(
+    {"assembly", "delivery", "faq", "faqs", "fee", "variation"}
+)
+DETAIL_TITLE_UI_INSTRUCTION_MIN_HITS = 3
+DETAIL_URL_TITLE_IGNORED_SEGMENTS = frozenset(
+    {
+        "boys",
+        "girls",
+        "kids boys",
+        "kids girls",
+        "men",
+        "p",
+        "pd",
+        "dp",
+        "product",
+        "product detail",
+        "productpage",
+        "products",
+        "shop",
+        "women",
+    }
+)
+DETAIL_URL_TITLE_CODE_PATTERN = (
+    r"^(?=.{2,48}$)(?=.*\d)[A-Za-z0-9]+(?:[-_.][A-Za-z0-9]+){0,2}$"
+)
+DETAIL_URL_TITLE_LOCALE_PATTERN = r"^[A-Za-z]{2}(?:[-_][A-Za-z]{2})?$"
+DETAIL_URL_TITLE_FALLBACK_MIN_TOKENS = 2
 DETAIL_LOW_SIGNAL_PRODUCT_TYPE_VALUES = frozenset(
     {"criteoproductrail", "giftoption", "promotionalcallout"}
 ) | frozenset(_STATIC_EXPORTS.get("DETAIL_LOW_SIGNAL_PRODUCT_TYPE_VALUES_EXTRA", ()))
@@ -92,7 +302,9 @@ DETAIL_ARTIFACT_PRODUCT_TYPE_VALUES = frozenset(
     }
 )
 TITLE_PROMOTION_EXACT_VALUES = frozenset({"prime"})
-DETAIL_ARTIFACT_PRODUCT_TYPE_PATTERNS = (r"^(?=.*\d)[a-z0-9]+(?:_[a-z0-9]+){2,}$",) + tuple(_STATIC_EXPORTS.get("DETAIL_ARTIFACT_PRODUCT_TYPE_PATTERNS_EXTRA", ()))
+DETAIL_ARTIFACT_PRODUCT_TYPE_PATTERNS = (
+    r"^(?=.*\d)[a-z0-9]+(?:_[a-z0-9]+){2,}$",
+) + tuple(_STATIC_EXPORTS.get("DETAIL_ARTIFACT_PRODUCT_TYPE_PATTERNS_EXTRA", ()))
 DETAIL_ARTIFACT_IDENTIFIER_VALUES = frozenset(
     {"description", "details", "product details", "specification", "specifications"}
 )
@@ -124,9 +336,7 @@ DETAIL_LONG_TEXT_UI_TAIL_PHRASES = (
     "more details",
     "learn more",
 )
-DETAIL_LONG_TEXT_UI_TAIL_PREFIXES = (
-    "learn more about ",
-)
+DETAIL_LONG_TEXT_UI_TAIL_PREFIXES = ("learn more about ",)
 DETAIL_LONG_TEXT_LEADING_ATTRIBUTE_BLOB_PATTERN = (
     r"^(?:[a-zA-Z][\w:-]*\s*=\s*(?:\"[^\"]*\"|'[^']*')\s*){1,8}"
 )
@@ -176,9 +386,7 @@ DETAIL_LONG_TEXT_UI_TAIL_MIN_PRODUCT_WORDS = 4
 DETAIL_LONG_TEXT_MAX_SECTION_BLOCKS = 24
 DETAIL_LONG_TEXT_MAX_SECTION_CHARS = 12000
 DETAIL_MATERIALS_POLLUTION_TOKENS = ("care", "reviews")
-DETAIL_MATERIALS_SECTION_TAIL_PATTERNS = (
-    r"\breviews?\s*\(\s*\d+\s*\)",
-)
+DETAIL_MATERIALS_SECTION_TAIL_PATTERNS = (r"\breviews?\s*\(\s*\d+\s*\)",)
 DETAIL_MATERIALS_COMPOSITION_PATTERN = (
     r"\d{1,3}\s*%\s*[A-Za-z][A-Za-z\u00C0-\u017F\s\-]{2,40}"
 )
@@ -264,7 +472,9 @@ DETAIL_QUOTED_COLOR_PATTERN = (
 DETAIL_BRAND_TITLE_PREFIX_MAX_WORDS = 3
 DETAIL_BRAND_PREFIX_CONTINUATION_TOKENS = frozenset({"hilfiger", "originals"})
 DETAIL_BRAND_NUMERIC_PREFIX_ALLOWLIST = frozenset({"47"})
-DETAIL_BRAND_TITLE_SUFFIX_PATTERN = r"\s[-\u2013\u2014]\s(?P<brand>[A-Z][A-Za-z0-9&'.\-\s]{1,40})$"
+DETAIL_BRAND_TITLE_SUFFIX_PATTERN = (
+    r"\s[-\u2013\u2014]\s(?P<brand>[A-Z][A-Za-z0-9&'.\-\s]{1,40})$"
+)
 DETAIL_BRAND_HOST_FALLBACKS = {
     "aesop": "Aesop",
     "apple": "Apple",
@@ -272,7 +482,9 @@ DETAIL_BRAND_HOST_FALLBACKS = {
     "phase-eight": "Phase Eight",
     "vans": "Vans",
 }
-DETAIL_BRAND_HOST_FALLBACKS.update(_STATIC_EXPORTS.get("DETAIL_BRAND_HOST_FALLBACKS_EXTRA", {}))
+DETAIL_BRAND_HOST_FALLBACKS.update(
+    _STATIC_EXPORTS.get("DETAIL_BRAND_HOST_FALLBACKS_EXTRA", {})
+)
 DETAIL_BRAND_DESCRIPTION_PATTERNS = (
     r"\bfrom\s+(?P<brand>[A-Z][A-Za-z0-9&'.-]{2,}(?:\s+[A-Z][A-Za-z0-9&'.-]{2,}){0,2})['’]s\b",
     r"\b(?P<brand>[A-Z][A-Za-z0-9&'.-]{2,}(?:\s+[A-Z][A-Za-z0-9&'.-]{2,}){0,2})['’]s\s+upcoming\b",
@@ -583,68 +795,20 @@ DETAIL_GENDER_TERMS = {
     ),
 }
 
-_LOCAL_EXPORTS = (
-    "DETAIL_IDENTITY_QUERY_KEYS", "DETAIL_IDENTITY_QUERY_PREFIXES",
-    "DETAIL_LOW_SIGNAL_LONG_TEXT_VALUES", "DETAIL_LOW_SIGNAL_TITLE_VALUES",
-    "DETAIL_SHELL_TITLE_VALUES",
-    "DETAIL_LOW_SIGNAL_PRODUCT_TYPE_VALUES", "DETAIL_ARTIFACT_PRODUCT_TYPE_VALUES",
-    "TITLE_PROMOTION_EXACT_VALUES", "DETAIL_ARTIFACT_PRODUCT_TYPE_PATTERNS",
-    "DETAIL_ARTIFACT_IDENTIFIER_VALUES", "DETAIL_ARTIFACT_PRICE_VALUES",
-    "DETAIL_ARTIFACT_SKU_PREFIXES", "CATEGORY_PLACEHOLDER_VALUES",
-    "DETAIL_CATEGORY_UI_TOKENS", "DETAIL_CATEGORY_LABEL_PREFIXES",
-    "DETAIL_CATEGORY_BRANCH_STOP_TOKENS", "DETAIL_LONG_TEXT_UI_TAIL_PHRASES",
-    "DETAIL_LONG_TEXT_UI_TAIL_PREFIXES",
-    "DETAIL_LONG_TEXT_LEADING_ATTRIBUTE_BLOB_PATTERN",
-    "DETAIL_LONG_TEXT_TRUNCATED_TAIL_TOKENS", "DETAIL_VARIANT_SIZE_SEQUENCE_MIN_COUNT",
-    "DETAIL_LEGAL_TAIL_PATTERNS", "LONG_TEXT_MIN_WORDS", "LONG_TEXT_MAX_WORDS",
-    "TOKEN_MIN_LEN_DISTINCTIVE", "TOKEN_MIN_LEN_CHUNK", "LONG_TEXT_PREFIXES",
-    "DETAIL_NOISE_PREFIXES", "DETAIL_LONG_TEXT_UI_TAIL_MIN_PRODUCT_WORDS",
-    "DETAIL_LONG_TEXT_MAX_SECTION_BLOCKS", "DETAIL_LONG_TEXT_MAX_SECTION_CHARS",
-    "DETAIL_MATERIALS_POLLUTION_TOKENS", "DETAIL_MATERIALS_SECTION_TAIL_PATTERNS",
-    "DETAIL_MATERIALS_COMPOSITION_PATTERN",
-    "DETAIL_MATERIALS_EDITORIAL_HEAD_THRESHOLD",
-    "DETAIL_MATERIALS_EDITORIAL_LENGTH_THRESHOLD", "DETAIL_GUIDE_GLOSSARY_TEXT_PATTERNS",
-    "DETAIL_GUIDE_GLOSSARY_HEADING_TOKENS", "DETAIL_GUIDE_GLOSSARY_HEADING_MIN_HITS",
-    "DETAIL_LONG_TEXT_DISCLAIMER_PATTERNS", "DETAIL_LONG_TEXT_SUBSTRING_REMOVE_PATTERNS",
-    "DETAIL_LONG_TEXT_REPEATED_PROMPTS", "DETAIL_COOKIE_DISCLOSURE_TEXT_PATTERNS",
-    "DETAIL_TRACKING_TOKEN_PATTERN", "SMALL_NUMERIC_PATTERN", "TRACKING_PIXEL_PATTERN",
-    "COLOR_KEYWORD_PATTERN", "DETAIL_QUOTED_COLOR_PATTERN",
-    "DETAIL_BRAND_TITLE_PREFIX_MAX_WORDS", "DETAIL_BRAND_PREFIX_CONTINUATION_TOKENS",
-    "DETAIL_BRAND_NUMERIC_PREFIX_ALLOWLIST", "DETAIL_BRAND_TITLE_SUFFIX_PATTERN",
-    "DETAIL_BRAND_HOST_FALLBACKS", "DETAIL_BRAND_DESCRIPTION_PATTERNS",
-    "DETAIL_BRAND_SUFFIX_REJECT_TOKENS", "DETAIL_BRAND_PREFIX_STOP_TOKENS",
-    "GIF_BASE64_PREFIX", "URL_DETECTION_TOKENS", "YEAR_SLUG_PATTERN",
-    "PRODUCT_SLUG_MIN_TERMINAL_TOKENS", "GENDER_ARTIFACT_WORDS",
-    "GENDER_ARTIFACT_PATTERN", "GENDER_KEYWORD_TOKENS", "GENDER_POSSESSIVE_PATTERN",
-    "STANDARD_SIZE_VALUES", "VARIANT_TITLE_STOPWORDS", "DOM_VARIANT_GROUP_LIMIT",
-    "DOM_VARIANT_CARTESIAN_COMBO_LIMIT", "DETAIL_EXPANSION_STATUS_ATTEMPTED",
-    "DETAIL_EXPANSION_STATUS_EXPANDED", "DETAIL_EXPANSION_STATUS_INTERACTION_FAILED",
-    "DETAIL_EXPANSION_STATUS_INTERACTION_LIMIT_REACHED", "DETAIL_EXPANSION_STATUS_NO_MATCHES",
-    "DETAIL_EXPANSION_STATUS_SKIPPED", "DETAIL_EXPANSION_STATUS_TIME_BUDGET_REACHED",
-    "UNRESOLVED_TEMPLATE_URL_TOKENS", "DETAIL_VARIANT_ARTIFACT_VALUE_TOKENS",
-    "AVAILABILITY_IN_STOCK", "AVAILABILITY_OUT_OF_STOCK", "AVAILABILITY_UNKNOWN",
-    "MATERIAL_KEYWORDS", "ORG_SUFFIXES", "NOISY_PRODUCT_ATTRIBUTE_KEYS",
-    "DETAIL_TEXT_SCOPE_SELECTORS", "DETAIL_TEXT_SCOPE_PRIORITY_TOKENS",
-    "DETAIL_TEXT_SCOPE_EXCLUDE_TOKENS", "DETAIL_CROSS_PRODUCT_CONTAINER_TOKENS",
-    "DETAIL_TEXT_HIDDEN_STYLE_TOKENS", "DETAIL_VARIANT_CONTEXT_NOISE_TOKENS",
-    "VARIANT_CONTEXT_NOISE_ANCESTOR_DEPTH", "VARIANT_CONTEXT_NOISE_ANCESTOR_DEPTH_FALLBACK",
-    "VARIANT_CONTEXT_NOISE_ANCESTOR_DEPTH_DEFAULT", "DETAIL_VARIANT_SCOPE_SELECTOR",
-    "VARIANT_SCOPE_MAX_ROOTS", "DETAIL_LOW_SIGNAL_PRICE_VISIBLE_MIN_DELTA",
-    "DETAIL_LOW_SIGNAL_PRICE_VISIBLE_RATIO", "DETAIL_LOW_SIGNAL_SALE_PRICE_RATIO_MAX",
-    "DETAIL_IMAGE_RAW_SOUP_FALLBACK_MAX_WINNING_IMAGES", "DETAIL_IMAGE_URL_ATTRS",
-    "INLINE_SCALAR_LABEL_MAX_LEN", "INLINE_SCALAR_VALUE_MAX_LEN",
-    "INLINE_SCALAR_ALLOWED_FIELDS", "SCALAR_FIELD_MAX_OPTION_TOKENS",
-    "SHADE_CODE_COLOR_MIN_TOKENS", "SCALAR_FIELD_POLLUTION_VALUES",
-    "DETAIL_SIZE_GUIDE_ALLOWED_HEADER_KEYS", "DETAIL_SIZE_GUIDE_CONTEXT_TOKENS",
-    "DETAIL_TITLE_TRAILING_SIZE_VALUES", "DETAIL_TITLE_LEADING_SKU_PREFIX_PATTERN",
-    "MULTI_PART_PUBLIC_SUFFIXES", "VARIANT_OPTION_LABEL_MAX_WORDS",
-    "DETAIL_BREADCRUMB_ROOT_LABELS", "DETAIL_BREADCRUMB_SELECTORS",
-    "DETAIL_BREADCRUMB_CONTAINER_SELECTORS", "DETAIL_BREADCRUMB_SEPARATOR_LABELS",
-    "DETAIL_BREADCRUMB_LABEL_PREFIXES", "DETAIL_BREADCRUMB_NOISE_ICON_PATTERNS",
-    "DETAIL_BREADCRUMB_JSONLD_TYPES", "DETAIL_BREADCRUMB_MIN_LABEL_LENGTH",
-    "DETAIL_BREADCRUMB_TITLE_DUPLICATE_RATIO", "STRUCTURED_CANDIDATE_TRAVERSAL_LIMIT",
-    "STRUCTURED_CANDIDATE_LIST_SLICE", "DETAIL_CATEGORY_SOURCE_RANKS",
-    "DETAIL_GENDER_TERMS",
+_IMPORTED_EXPORTS = frozenset(
+    {
+        "PUBLIC_RECORD_DETAIL_CANONICAL_QUERY_KEYS",
+        "PUBLIC_RECORD_DETAIL_CANONICAL_QUERY_PREFIXES",
+    }
+)
+_LOCAL_EXPORTS = tuple(
+    name
+    for name in globals()
+    if name.isupper()
+    and not name.startswith("_")
+    and name not in _common_exports.__all__
+    and name not in _images_exports.__all__
+    and name not in _IMPORTED_EXPORTS
 )
 
 __all__ = sorted((*_common_exports.__all__, *_images_exports.__all__, *_LOCAL_EXPORTS))

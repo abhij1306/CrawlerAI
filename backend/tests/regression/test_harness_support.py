@@ -30,12 +30,17 @@ def test_require_explicit_surface_rejects_missing_surface() -> None:
 @pytest.mark.regression
 def test_parse_test_sites_markdown_skips_untyped_tail_urls(tmp_path: Path) -> None:
     path = tmp_path / "TEST_SITES.md"
-    path.write_text("ignore\nhttps://example.com/careers\nnot a url\nhttps://shop.example.com/collections\n", encoding="utf-8")
+    path.write_text(
+        "ignore\nhttps://example.com/careers\nnot a url\nhttps://shop.example.com/collections\n",
+        encoding="utf-8",
+    )
     assert parse_test_sites_markdown(path, start_line=2) == []
 
 
 @pytest.mark.regression
-def test_parse_test_sites_markdown_reads_urls_from_markdown_tables(tmp_path: Path) -> None:
+def test_parse_test_sites_markdown_reads_urls_from_markdown_tables(
+    tmp_path: Path,
+) -> None:
     fixture = tmp_path / "TEST_SITES.md"
     fixture.write_text(
         "\n".join(
@@ -229,7 +234,9 @@ def test_classify_failure_mode_flags_missing_adapter_registration() -> None:
 
 
 @pytest.mark.regression
-def test_classify_failure_mode_treats_browser_challenge_diagnostics_as_blocked() -> None:
+def test_classify_failure_mode_treats_browser_challenge_diagnostics_as_blocked() -> (
+    None
+):
     result = {
         "ok": False,
         "blocked": False,
@@ -301,7 +308,9 @@ def test_classify_failure_mode_rejects_oops_not_found_titles() -> None:
 
 
 @pytest.mark.regression
-def test_classify_failure_mode_reports_utility_chrome_as_success_reporting_only() -> None:
+def test_classify_failure_mode_reports_utility_chrome_as_success_reporting_only() -> (
+    None
+):
     result = {
         "verdict": "success",
         "records": 1,
@@ -330,7 +339,9 @@ def test_classify_failure_mode_rejects_detail_identity_mismatches() -> None:
 
 
 @pytest.mark.regression
-def test_classify_failure_mode_rejects_fragment_backed_detail_identity_mismatches() -> None:
+def test_classify_failure_mode_rejects_fragment_backed_detail_identity_mismatches() -> (
+    None
+):
     result = {
         "verdict": "success",
         "records": 1,
@@ -360,7 +371,9 @@ def test_classify_failure_mode_rejects_same_site_wrong_product_slug() -> None:
 
 
 @pytest.mark.regression
-def test_classify_failure_mode_does_not_infer_detail_identity_mismatch_without_requested_url() -> None:
+def test_classify_failure_mode_does_not_infer_detail_identity_mismatch_without_requested_url() -> (
+    None
+):
     result = {
         "verdict": "success",
         "records": 1,
@@ -786,7 +799,9 @@ def test_evaluate_quality_flags_listing_chrome_noise() -> None:
 
 
 @pytest.mark.regression
-def test_evaluate_quality_flags_listing_sample_window_without_real_product_rows() -> None:
+def test_evaluate_quality_flags_listing_sample_window_without_real_product_rows() -> (
+    None
+):
     site = {
         "url": "https://www.customink.com/products/sweatshirts/hoodies/71",
         "surface": "ecommerce_listing",
@@ -840,7 +855,9 @@ def test_evaluate_quality_flags_listing_sample_window_without_real_product_rows(
 
 
 @pytest.mark.regression
-def test_evaluate_quality_accepts_non_utility_listing_rows_without_price_when_field_coverage_is_strong() -> None:
+def test_evaluate_quality_accepts_non_utility_listing_rows_without_price_when_field_coverage_is_strong() -> (
+    None
+):
     site = {
         "url": "https://www.sigmaaldrich.com/IN/en/products/chemistry-and-biochemicals/biochemicals/antibiotics",
         "surface": "ecommerce_listing",

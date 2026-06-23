@@ -23,9 +23,7 @@ def _build_nav_tree(
     labels_by_url: Mapping[str, str | None] | None = None,
 ) -> list[dict[str, object]]:
     labels = {
-        _url_key(url): label
-        for url, label in (labels_by_url or {}).items()
-        if label
+        _url_key(url): label for url, label in (labels_by_url or {}).items() if label
     }
     url_by_key = {_url_key(url): url for url in urls}
     roots: list[dict[str, object]] = []
@@ -55,7 +53,8 @@ def _build_nav_tree(
             node = siblings.get(segment.lower())
             if node is None:
                 node = {
-                    "label": labels.get(prefix_key) or _label_from_path_segment(segment),
+                    "label": labels.get(prefix_key)
+                    or _label_from_path_segment(segment),
                     "children": [],
                 }
                 siblings[segment.lower()] = node
@@ -157,7 +156,9 @@ def _classify_homepage_candidate(
     if _looks_like_category_url(candidate_url) or _has_category_homepage_signal(
         candidate_url, anchor
     ):
-        return "listing", 300 + nav_boost + category_path_boost + (25 if keyword_hit else 0)
+        return "listing", 300 + nav_boost + category_path_boost + (
+            25 if keyword_hit else 0
+        )
     if _looks_like_detail_link(slug, depth=depth, anchor_words=anchor_words):
         return "detail", 120 + (25 if keyword_hit else 0)
     return "", 0
@@ -183,7 +184,11 @@ def _looks_like_detail_link(slug: str, *, depth: int, anchor_words: int) -> bool
 
 def _looks_like_category_url(url: str) -> bool:
     path = urlsplit(url).path.lower()
-    if any(token in path for token in SITEMAP_CATEGORY_EXCLUDED_PATH_TOKENS):
+    excluded_tokens = (
+        *SITEMAP_CATEGORY_EXCLUDED_PATH_TOKENS,
+        *SITEMAP_HOMEPAGE_FALLBACK_EXCLUDED_PATH_TOKENS,
+    )
+    if _path_has_excluded_token(path, excluded_tokens):
         return False
     if any(token in path for token in SITEMAP_CATEGORY_PATH_TOKENS):
         return True
@@ -193,7 +198,9 @@ def _looks_like_category_url(url: str) -> bool:
     if any(segment.isdigit() for segment in segments):
         return False
     segment_text = " ".join(segment.replace("-", " ") for segment in segments)
-    if any(token in segment_text for token in SITEMAP_CATEGORY_ANCHOR_TEXT_EXCLUDED_TOKENS):
+    if any(
+        token in segment_text for token in SITEMAP_CATEGORY_ANCHOR_TEXT_EXCLUDED_TOKENS
+    ):
         return False
     category_segments = {
         token
@@ -216,9 +223,14 @@ def _has_category_homepage_signal(url: str, anchor: Tag) -> bool:
     text = " ".join(anchor.stripped_strings).strip().lower()
     if not text:
         return False
-    if any(text_has_token(text, token) for token in SITEMAP_CATEGORY_ANCHOR_TEXT_EXCLUDED_TOKENS):
+    if any(
+        text_has_token(text, token)
+        for token in SITEMAP_CATEGORY_ANCHOR_TEXT_EXCLUDED_TOKENS
+    ):
         return False
-    return any(text_has_token(text, token) for token in SITEMAP_CATEGORY_ANCHOR_TEXT_TOKENS)
+    return any(
+        text_has_token(text, token) for token in SITEMAP_CATEGORY_ANCHOR_TEXT_TOKENS
+    )
 
 
 def _looks_like_locale_path(path: str) -> bool:
@@ -237,12 +249,28 @@ def _reject_homepage_candidate(candidate_url: str) -> bool:
         return True
     if any(path.endswith(ext) for ext in SITEMAP_HOMEPAGE_FALLBACK_EXCLUDED_EXTENSIONS):
         return True
-    return any(token in path for token in SITEMAP_HOMEPAGE_FALLBACK_EXCLUDED_PATH_TOKENS)
+    return _path_has_excluded_token(
+        path,
+        SITEMAP_HOMEPAGE_FALLBACK_EXCLUDED_PATH_TOKENS,
+    )
+
+
+def _path_has_excluded_token(path: str, tokens: tuple[str, ...]) -> bool:
+    for token in tokens:
+        start = path.find(token)
+        if start < 0:
+            continue
+        end = start + len(token)
+        if end == len(path) or token.endswith("/") or path[end] in "/-_":
+            return True
+    return False
 
 
 def _path_depth(path: str) -> int:
     parts = [
-        part for part in path.split("/") if part and not _looks_like_locale_segment(part)
+        part
+        for part in path.split("/")
+        if part and not _looks_like_locale_segment(part)
     ]
     return len(parts)
 

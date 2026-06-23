@@ -33,13 +33,19 @@ SITE_LINK_DISCOVERY_CARD_SELECTOR_HINTS = (
 # blog/news hubs are valid listing targets for those surfaces.
 SITEMAP_HOMEPAGE_FALLBACK_EXCLUDED_PATH_TOKENS = (
     "/account",
+    "/app",
     "/apps",
+    "/athlete",
+    "/athletes",
     "/auth",
+    "/ambassador",
+    "/ambassadors",
     "/cart",
     "/client-service",
     "/checkout",
     "/contact",
     "/customer-service",
+    "/catalog/ads",
     "/digital-card",
     "/experience",
     "/faq",
@@ -48,6 +54,8 @@ SITEMAP_HOMEPAGE_FALLBACK_EXCLUDED_PATH_TOKENS = (
     "/login",
     "/logout",
     "/legal",
+    "/gift-registry",
+    "/mobile-app",
     "/myorders",
     "/order",
     "/payment",
@@ -56,6 +64,7 @@ SITEMAP_HOMEPAGE_FALLBACK_EXCLUDED_PATH_TOKENS = (
     "/privacy",
     "/refund",
     "/register",
+    "/registry",
     "/returns",
     "/search",
     "/shipping",
@@ -67,6 +76,7 @@ SITEMAP_HOMEPAGE_FALLBACK_EXCLUDED_PATH_TOKENS = (
     "/store-locator",
     "/stores",
     "/wishlist",
+    "/vendor-resources",
 )
 SITEMAP_HOMEPAGE_FALLBACK_EXCLUDED_EXTENSIONS = (
     ".avif",
@@ -157,7 +167,9 @@ SITEMAP_CATEGORY_ANCHOR_TEXT_TOKENS = (
 SITEMAP_CATEGORY_ANCHOR_TEXT_EXCLUDED_TOKENS = (
     "account",
     "address",
+    "ambassador",
     "app",
+    "athlete",
     "bag",
     "cart",
     "country",
@@ -170,12 +182,14 @@ SITEMAP_CATEGORY_ANCHOR_TEXT_EXCLUDED_TOKENS = (
     "order",
     "payment",
     "privacy",
+    "registry",
     "saved",
     "sign in",
     "store",
     "support",
     "terms",
     "wishlist",
+    "vendor resources",
 )
 # Long department/category labels on retail navs ("Home & Kitchen Storage
 # & Organization") routinely exceed 6 words. Use 10 to keep real categories

@@ -3,11 +3,20 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Awaitable, Callable, Coroutine
+from datetime import UTC, datetime, timedelta
+from hashlib import sha256
 from typing import Any
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from app.acquisition.browser_proxy_config import display_proxy, proxy_scheme
 from app.acquisition.browser_runtime import build_failed_browser_diagnostics
+from app.acquisition.contracts import (
+    AcquisitionPlan,
+    AcquisitionResult,
+    AttemptResult,
+    AttemptSpec,
+)
+from app.acquisition.executor import AttemptExecution, AttemptExecutor
 from app.acquisition.fetch.browser_attempt import (
     browser_fetch_kwargs,
     browser_fetch_with_wall_clock_timeout,
@@ -83,11 +92,20 @@ class BrowserAttemptRunner:
     last_browser_error: Exception | None = None
     last_blocked_result: PageFetchResult | None = None
     active_host_policy: HostProtectionPolicy | None = None
+    plan_id: str = ""
+    plan_started_at: datetime | None = None
+    plan_deadline: datetime | None = None
+    attempt_specs: list[AttemptSpec] = field(default_factory=list)
+    attempt_results: list[AttemptResult] = field(default_factory=list)
+    latest_page_result: PageFetchResult | None = None
 
     async def run(self) -> PageFetchResult:
+        self._start_plan()
         self.active_host_policy = await self._load_active_host_policy()
         self.context.host_policy = self.active_host_policy
-        for proxy_index, proxy in enumerate(list(self.proxies or self.context.proxies), start=1):
+        for proxy_index, proxy in enumerate(
+            list(self.proxies or self.context.proxies), start=1
+        ):
             result = await self._run_proxy_attempt(proxy_index, proxy)
             if result is not None:
                 return result
@@ -141,6 +159,16 @@ class BrowserAttemptRunner:
             )
         return None
 
+    def _start_plan(self) -> None:
+        self.plan_started_at = datetime.now(UTC)
+        remaining = max(
+            0.001,
+            float(self.context.deadline_monotonic - asyncio.get_running_loop().time()),
+        )
+        self.plan_deadline = self.plan_started_at + timedelta(seconds=remaining)
+        plan_key = f"{self.context.url}|browser|{self.plan_started_at.isoformat()}"
+        self.plan_id = sha256(plan_key.encode("utf-8")).hexdigest()[:20]
+
     def _engine_attempts(self, proxy: str | None) -> list[str]:
         attempts = self.deps.browser_engine_attempts(
             context=self.context,
@@ -161,9 +189,138 @@ class BrowserAttemptRunner:
         engine_attempts: list[str],
         escalation_lane: str,
     ) -> PageFetchResult | None:
+        spec = self._attempt_spec(
+            proxy=proxy,
+            engine=engine,
+            engine_index=engine_index,
+            engine_attempts=engine_attempts,
+        )
+
+        async def _adapter(execution: AttemptExecution) -> AttemptResult:
+            return await self._execute_browser_attempt(
+                execution,
+                proxy_index=proxy_index,
+                proxy=proxy,
+                engine=engine,
+                engine_index=engine_index,
+                engine_attempts=engine_attempts,
+                escalation_lane=escalation_lane,
+            )
+
+        attempt_result = await AttemptExecutor({engine: _adapter}).execute(
+            spec,
+            url=self.context.url,
+            deadline=self._plan_deadline(),
+        )
+        self.attempt_results.append(attempt_result)
+        if attempt_result.outcome == "success" and self.latest_page_result is not None:
+            self._attach_acquisition_diagnostics(
+                self.latest_page_result,
+                selected_attempt_id=attempt_result.attempt_id,
+                outcome="success",
+                termination_reason="attempt_selected",
+            )
+            return self.latest_page_result
+        if attempt_result.outcome == "blocked" and self.latest_page_result is not None:
+            self._attach_acquisition_diagnostics(
+                self.latest_page_result,
+                selected_attempt_id=attempt_result.attempt_id,
+                outcome="blocked",
+                termination_reason="attempt_blocked",
+            )
+        if attempt_result.outcome == "error" and self.last_browser_error is None:
+            self._record_executor_attempt_error(
+                attempt_result,
+                proxy=proxy,
+                proxy_index=proxy_index,
+                engine=engine,
+                escalation_lane=escalation_lane,
+            )
+        return None
+
+    def _record_executor_attempt_error(
+        self,
+        attempt_result: AttemptResult,
+        *,
+        proxy: str | None,
+        proxy_index: int,
+        engine: str,
+        escalation_lane: str,
+    ) -> None:
+        exc = TimeoutError(attempt_result.error or "browser attempt failed")
+        setattr(exc, "browser_failure_stage", "attempt")
+        self.last_browser_error = exc
+        self.context.last_browser_attempt_diagnostics = (
+            build_failed_browser_diagnostics(
+                browser_reason=self.reason,
+                exc=exc,
+                proxy=proxy,
+                proxy_attempt_index=proxy_index,
+                browser_engine=engine,
+                browser_binary=engine,
+                bridge_used=proxy_scheme(proxy) in {"socks5", "socks5h"},
+                escalation_lane=escalation_lane,
+                host_policy_snapshot=host_policy_snapshot(self._active_host_policy()),
+            )
+        )
+        attach_exception_browser_diagnostics(
+            self.last_browser_error,
+            self.context.last_browser_attempt_diagnostics,
+        )
+
+    def _attempt_spec(
+        self,
+        *,
+        proxy: str | None,
+        engine: str,
+        engine_index: int,
+        engine_attempts: list[str],
+    ) -> AttemptSpec:
+        timeout = self.deps.browser_attempt_timeout_seconds(
+            self.context,
+            reason=self.reason,
+            browser_engine=engine,
+            engine_index=engine_index,
+            engine_attempts=engine_attempts,
+            host_policy=self._active_host_policy(),
+        )
+        spec = AttemptSpec(
+            attempt_id=f"{self.plan_id}-{len(self.attempt_specs) + 1}-{engine}",
+            transport=engine,  # type: ignore[arg-type]
+            proxy=proxy,
+            warmup=True,
+            interaction=bool(self.requested_fields or self.context.requested_fields),
+            traversal_mode=self.context.traversal_mode,
+            required_artifacts=("html",),
+            timeout_seconds=max(0.001, float(timeout)),
+            reason=self.reason,
+        )
+        self.attempt_specs.append(spec)
+        return spec
+
+    def _plan_deadline(self) -> datetime:
+        if self.plan_deadline is None:
+            self._start_plan()
+        assert self.plan_deadline is not None
+        return self.plan_deadline
+
+    async def _execute_browser_attempt(
+        self,
+        execution: AttemptExecution,
+        *,
+        proxy_index: int,
+        proxy: str | None,
+        engine: str,
+        engine_index: int,
+        engine_attempts: list[str],
+        escalation_lane: str,
+    ) -> AttemptResult:
+        started_at = datetime.now(UTC)
         policy_snapshot = host_policy_snapshot(self._active_host_policy())
-        await self._raise_if_no_budget(engine, engine_index, engine_attempts, "start")
         try:
+            await self._raise_if_no_budget(
+                engine, engine_index, engine_attempts, "start"
+            )
             await self.deps.wait_for_host_slot(
                 self.context.url,
                 ttl_seconds=self.context.host_memory_ttl_seconds,
@@ -178,10 +335,21 @@ class BrowserAttemptRunner:
                 policy_snapshot=policy_snapshot,
             )
             self._stamp_attempt_diagnostics(result, proxy, proxy_index, engine_index)
+            self.latest_page_result = result
             if bool(result.blocked):
                 await self._record_blocked_result(result)
-                return None
-            return result
+                return self._attempt_result(
+                    execution,
+                    started_at=started_at,
+                    outcome="blocked",
+                    result=result,
+                )
+            return self._attempt_result(
+                execution,
+                started_at=started_at,
+                outcome="success",
+                result=result,
+            )
         except Exception as exc:
             await self._record_attempt_exception(
                 exc,
@@ -193,7 +361,36 @@ class BrowserAttemptRunner:
                 escalation_lane=escalation_lane,
                 policy_snapshot=policy_snapshot,
             )
-            return None
+            return self._attempt_result(
+                execution,
+                started_at=started_at,
+                outcome="error",
+                error=f"{type(exc).__name__}: {exc}",
+                diagnostics=self.context.last_browser_attempt_diagnostics,
+            )
+
+    @staticmethod
+    def _attempt_result(
+        execution: AttemptExecution,
+        *,
+        started_at: datetime,
+        outcome: str,
+        result: PageFetchResult | None = None,
+        error: str | None = None,
+        diagnostics: dict[str, object] | None = None,
+    ) -> AttemptResult:
+        return AttemptResult(
+            attempt_id=execution.spec.attempt_id,
+            outcome=outcome,  # type: ignore[arg-type]
+            final_url=str(getattr(result, "final_url", "") or ""),
+            status_code=getattr(result, "status_code", None),
+            started_at=started_at,
+            completed_at=datetime.now(UTC),
+            diagnostics=dict(
+                diagnostics or getattr(result, "browser_diagnostics", {}) or {}
+            ),
+            error=error,
+        )
 
     async def _raise_if_no_budget(
         self,
@@ -291,18 +488,22 @@ class BrowserAttemptRunner:
         policy_snapshot: dict[str, object],
     ) -> None:
         self.last_browser_error = exc
-        self.context.last_browser_attempt_diagnostics = build_failed_browser_diagnostics(
-            browser_reason=self.reason,
-            exc=exc,
-            proxy=proxy,
-            proxy_attempt_index=proxy_index,
-            browser_engine=engine,
-            browser_binary=engine,
-            bridge_used=proxy_scheme(proxy) in {"socks5", "socks5h"},
-            escalation_lane=escalation_lane,
-            host_policy_snapshot=policy_snapshot,
+        self.context.last_browser_attempt_diagnostics = (
+            build_failed_browser_diagnostics(
+                browser_reason=self.reason,
+                exc=exc,
+                proxy=proxy,
+                proxy_attempt_index=proxy_index,
+                browser_engine=engine,
+                browser_binary=engine,
+                bridge_used=proxy_scheme(proxy) in {"socks5", "socks5h"},
+                escalation_lane=escalation_lane,
+                host_policy_snapshot=policy_snapshot,
+            )
         )
-        attach_exception_browser_diagnostics(exc, self.context.last_browser_attempt_diagnostics)
+        attach_exception_browser_diagnostics(
+            exc, self.context.last_browser_attempt_diagnostics
+        )
         logger.debug(
             "Browser fetch failed for %s via %s engine=%s",
             self.context.url,
@@ -387,11 +588,75 @@ class BrowserAttemptRunner:
 
     def _final_result_or_error(self) -> PageFetchResult:
         if self.last_blocked_result is not None:
+            self._attach_acquisition_diagnostics(
+                self.last_blocked_result,
+                selected_attempt_id=(
+                    self.attempt_results[-1].attempt_id
+                    if self.attempt_results
+                    else None
+                ),
+                outcome="blocked",
+                termination_reason="browser_attempts_blocked",
+            )
             return self.last_blocked_result
         if self.last_browser_error is not None:
             attach_exception_browser_diagnostics(
                 self.last_browser_error,
                 self.context.last_browser_attempt_diagnostics,
             )
+            setattr(
+                self.last_browser_error,
+                "acquisition_diagnostics",
+                self._acquisition_diagnostics(
+                    selected_attempt_id=None,
+                    outcome="error",
+                    termination_reason="browser_attempts_exhausted",
+                ),
+            )
             raise self.last_browser_error
         raise RuntimeError(f"Failed to fetch {self.context.url} in browser")
+
+    def _attach_acquisition_diagnostics(
+        self,
+        result: PageFetchResult,
+        *,
+        selected_attempt_id: str | None,
+        outcome: str,
+        termination_reason: str,
+    ) -> None:
+        result.acquisition_diagnostics = self._acquisition_diagnostics(
+            selected_attempt_id=selected_attempt_id,
+            outcome=outcome,
+            termination_reason=termination_reason,
+        )
+
+    def _acquisition_diagnostics(
+        self,
+        *,
+        selected_attempt_id: str | None,
+        outcome: str,
+        termination_reason: str,
+    ) -> dict[str, object]:
+        plan = AcquisitionPlan(
+            plan_id=self.plan_id or "browser-plan",
+            attempts=tuple(self.attempt_specs),
+            created_at=self.plan_started_at or datetime.now(UTC),
+            deadline=self._plan_deadline(),
+        )
+        canonical_result = AcquisitionResult(
+            plan_id=plan.plan_id,
+            attempts=tuple(self.attempt_results),
+            selected_attempt_id=selected_attempt_id,
+            outcome=outcome,  # type: ignore[arg-type]
+        )
+        plan_payload = plan.model_dump(mode="json")
+        plan_attempts = plan_payload.get("attempts")
+        if isinstance(plan_attempts, list):
+            for attempt in plan_attempts:
+                if isinstance(attempt, dict):
+                    attempt["proxy"] = display_proxy(attempt.get("proxy"))
+        return {
+            "plan": plan_payload,
+            "result": canonical_result.model_dump(mode="json"),
+            "termination_reason": termination_reason,
+        }

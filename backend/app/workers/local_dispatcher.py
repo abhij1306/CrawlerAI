@@ -122,9 +122,7 @@ class LocalRunDispatcher:
 
     async def dispatch(self, session: AsyncSession, run: CrawlRun) -> CrawlRun:
         run_id = int(run.id)
-        loaded_run, current = await _load_run_with_normalized_status(
-            session, run_id
-        )
+        loaded_run, current = await _load_run_with_normalized_status(session, run_id)
         if current not in {CrawlStatus.PENDING, CrawlStatus.RUNNING}:
             raise ValueError(f"Cannot dispatch run in state: {current.value}")
         task_id = _new_task_id(run_id)

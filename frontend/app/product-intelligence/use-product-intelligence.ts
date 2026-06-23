@@ -41,36 +41,35 @@ export function useProductIntelligence() {
   const [confidenceFilter, setConfidenceFilter] = useState<'all' | 'high' | 'medium' | 'low'>(
     'all',
   );
-  const jobsQuery = useQuery({
+  const { data: jobsData, refetch: refetchJobs } = useQuery({
     queryKey: queryKeys.productIntelligence.jobs(),
     queryFn: () => api.listProductIntelligenceJobs({ limit: 20 }),
   });
   const sourceRecords = prefill.records ?? [];
-  const defaultJobId = sourceRecords.length ? null : (jobsQuery.data?.[0]?.id ?? null);
+  const defaultJobId = sourceRecords.length ? null : (jobsData?.[0]?.id ?? null);
   const resolvedActiveJobId = activeJobId ?? defaultJobId;
-  const detailQuery = useQuery({
+  const { data: detailData } = useQuery({
     queryKey: queryKeys.productIntelligence.detail(resolvedActiveJobId ?? 0),
     queryFn: () => api.getProductIntelligenceJob(resolvedActiveJobId ?? 0),
     enabled: resolvedActiveJobId !== null,
   });
   const historyItems: HistoryItem[] = useMemo(
     () =>
-      (jobsQuery.data ?? []).map((job) => ({
+      (jobsData ?? []).map((job) => ({
         id: job.id,
         status: job.status,
         created_at: job.created_at,
         label: job.source_run_id ? `From Run #${job.source_run_id}` : 'Direct Input',
         meta: `${Number(job.summary?.candidate_count ?? 0)} URLs found`,
       })),
-    [jobsQuery.data],
+    [jobsData],
   );
   const detailHydratedOptions = useMemo(
-    () => (detailQuery.data ? detailOptions(detailQuery.data.job.options) : DEFAULT_OPTIONS),
-    [detailQuery.data],
+    () => (detailData ? detailOptions(detailData.job.options) : DEFAULT_OPTIONS),
+    [detailData],
   );
-  const discovery =
-    discoveryOverride ?? (detailQuery.data ? detailToDiscovery(detailQuery.data) : null);
-  const effectiveOptions = optionsEdited || !detailQuery.data ? options : detailHydratedOptions;
+  const discovery = discoveryOverride ?? (detailData ? detailToDiscovery(detailData) : null);
+  const effectiveOptions = optionsEdited || !detailData ? options : detailHydratedOptions;
   const effectiveAllowedDomainsText = optionsEdited
     ? allowedDomainsText
     : detailHydratedOptions.allowed_domains.join('\n');
@@ -79,8 +78,8 @@ export function useProductIntelligence() {
     : detailHydratedOptions.excluded_domains.join('\n');
   const visibleSourceRecords = sourceRecords.length
     ? sourceRecords
-    : detailQuery.data
-      ? detailQuery.data.source_products.map((source) => ({
+    : detailData
+      ? detailData.source_products.map((source) => ({
           id: source.source_record_id,
           run_id: source.source_run_id,
           source_url: source.source_url,
@@ -91,7 +90,7 @@ export function useProductIntelligence() {
     ? (prefill.source_run_id ??
       sourceRecords.find((record) => typeof record.run_id === 'number')?.run_id ??
       null)
-    : (detailQuery.data?.job.source_run_id ??
+    : (detailData?.job.source_run_id ??
       visibleSourceRecords.find((record) => typeof record.run_id === 'number')?.run_id ??
       prefill.source_run_id ??
       null);
@@ -185,7 +184,7 @@ export function useProductIntelligence() {
       setAllowedDomainsText(nextOptions.allowed_domains.join('\n'));
       setExcludedDomainsText(nextOptions.excluded_domains.join('\n'));
       setOptionsEdited(false);
-      await jobsQuery.refetch();
+      await refetchJobs();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Unable to discover candidates.');
     } finally {

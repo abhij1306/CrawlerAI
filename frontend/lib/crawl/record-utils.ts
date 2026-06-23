@@ -1,10 +1,5 @@
 import type { CrawlRecord } from '../api/types';
-import {
-  decodeUrlsForDisplay,
-  formatCellDisplay,
-  isEmptyCandidateValue,
-  stringifyCell,
-} from './format';
+import { decodeUrlsForDisplay, stringifyCell } from './format';
 
 export function extractRecordUrl(record: CrawlRecord) {
   const value = record.data?.url ?? record.raw_data?.url ?? record.source_url;
@@ -24,7 +19,7 @@ export function copyJson(records: CrawlRecord[]) {
   void navigator.clipboard.writeText(JSON.stringify(records.map(cleanRecordForDisplay), null, 2));
 }
 
-export function cleanRecord(record: CrawlRecord) {
+function cleanRecord(record: CrawlRecord) {
   return Object.fromEntries(
     Object.entries(record.data ?? {}).filter(
       ([key, value]) =>
@@ -38,12 +33,4 @@ export function cleanRecord(record: CrawlRecord) {
 
 export function cleanRecordForDisplay(record: CrawlRecord) {
   return decodeUrlsForDisplay(cleanRecord(record));
-}
-
-export function cellDisplayForRecord(record: CrawlRecord, field: string) {
-  return formatCellDisplay(readRecordValue(record, field));
-}
-
-export function recordHasValue(record: CrawlRecord, field: string) {
-  return !isEmptyCandidateValue(readRecordValue(record, field));
 }

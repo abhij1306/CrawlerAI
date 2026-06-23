@@ -3,7 +3,10 @@ from __future__ import annotations
 from collections import Counter
 from typing import Any
 
-from app.core.config.extraction_rules._detail import DETAIL_SHELL_TITLE_KEYS
+from app.core.config.extraction_rules._detail import (
+    DETAIL_SHELL_TITLE_FLAG,
+    DETAIL_SHELL_TITLE_KEYS,
+)
 from app.core.shared.text_coerce import slug_tokens
 from app.extraction.contracts import (
     Decision,
@@ -31,21 +34,81 @@ def retry_request(
     verdict: str,
     records: tuple[PublicRecord, ...],
     request: ExtractionRequest,
+    evidence: tuple[Evidence, ...] = (),
 ) -> RetryRequest | None:
-    if "variants" in request.requested_fields and not any(
-        record.get("variants") for record in records
+    if (
+        request.surface.value == "ecommerce_detail"
+        and _explicit_variant_dom_cues(evidence)
+        and _variant_controls_incomplete(records, evidence)
     ):
         return RetryRequest(
             required=not request.capture.browser_attempted,
             reason="explicit_variants_missing",
             required_artifacts=("rendered_html", "network_payloads"),
         )
-    if verdict != "error" or not any(is_shell_record(record) for record in records):
+    requested_core_fields = {
+        "image_url" if field == "image" else field
+        for field in request.requested_fields
+        if field in {"title", "price", "currency", "image", "image_url"}
+    }
+    if (
+        request.surface.value == "ecommerce_detail"
+        and verdict in {"partial", "review"}
+        and records
+        and not request.capture.browser_attempted
+        and (not request.requested_fields or requested_core_fields)
+    ):
+        record = records[0]
+        target_core_fields = requested_core_fields or {
+            "title",
+            "price",
+            "currency",
+            "image_url",
+        }
+        missing_core_fields = tuple(
+            field
+            for field in target_core_fields
+            if record.get(field) in (None, "", [], {}, ())
+        )
+        if missing_core_fields:
+            return RetryRequest(
+                required=True,
+                reason="dynamic_content_missing",
+                required_artifacts=("rendered_html", "network_payloads"),
+            )
+    shell_detected = any(is_shell_record(record) for record in records) or any(
+        DETAIL_SHELL_TITLE_FLAG in row.flags for row in evidence
+    )
+    if verdict != "error" or not shell_detected:
         return None
     return RetryRequest(
         required=not request.capture.browser_attempted,
         reason="http_shell",
         required_artifacts=("rendered_html",),
+    )
+
+
+def _explicit_variant_dom_cues(evidence: tuple[Evidence, ...]) -> bool:
+    return any(
+        row.collector_id == "dom" and row.fact_type.startswith("option.")
+        for row in evidence
+    )
+
+
+def _variant_controls_incomplete(
+    records: tuple[PublicRecord, ...], evidence: tuple[Evidence, ...]
+) -> bool:
+    variants = tuple(records[0].get("variants") or ()) if records else ()
+    axes = {
+        row.fact_type.removeprefix("option.")
+        for row in evidence
+        if row.collector_id == "dom" and row.fact_type.startswith("option.")
+    }
+    if not variants:
+        return True
+    return any(
+        any(variant.get(axis) in (None, "", [], {}, ()) for variant in variants)
+        for axis in axes
     )
 
 
@@ -99,11 +162,16 @@ def metrics(
 ) -> ExtractionMetrics:
     lineage_fields = sum(len(dict(record.get("_lineage") or {})) for record in records)
     public_fields = sum(
-        sum(
-            not str(key).startswith("_")
-            for key in record.model_dump(mode="python")
-        )
+        sum(not str(key).startswith("_") for key in record.model_dump(mode="python"))
         for record in records
+    )
+    completeness_score = next(
+        (
+            float(finding.metadata.get("score", 0.0))
+            for finding in findings
+            if finding.rule_id == "RECORD_COMPLETENESS"
+        ),
+        0.0,
     )
     return ExtractionMetrics(
         evidence_count=len(evidence),
@@ -119,5 +187,6 @@ def metrics(
         public_lineage_coverage=(
             lineage_fields / public_fields if public_fields else 0.0
         ),
+        completeness_score=completeness_score,
         verdict=verdict,
     )

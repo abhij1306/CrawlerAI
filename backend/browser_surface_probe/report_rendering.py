@@ -124,9 +124,7 @@ def build_agent_summary(report: dict[str, object]) -> dict[str, object]:
             "canvas_data_url_prefix": object_dict(consensus.get("canvas")).get(
                 "data_url_prefix"
             ),
-            "audio_fingerprint": object_dict(consensus.get("audio")).get(
-                "fingerprint"
-            ),
+            "audio_fingerprint": object_dict(consensus.get("audio")).get("fingerprint"),
             "webgl_vendor": object_dict(consensus.get("webgl")).get("vendor"),
             "webgl_renderer": object_dict(consensus.get("webgl")).get("renderer"),
             "fonts_count": len(object_list(consensus.get("fonts"))),

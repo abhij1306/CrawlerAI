@@ -2,11 +2,15 @@ from __future__ import annotations
 
 import json
 import hashlib
+import logging
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
 from selectolax.lexbor import LexborHTMLParser, LexborNode
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -15,7 +19,16 @@ class HtmlNode:
     node: LexborNode
 
     def css(self, selector: str) -> tuple[HtmlNode, ...]:
-        return tuple(HtmlNode(self.artifact_id, node) for node in self.node.css(selector))
+        return tuple(
+            HtmlNode(self.artifact_id, node) for node in self.node.css(selector)
+        )
+
+    def safe_css(self, selector: str) -> tuple[HtmlNode, ...]:
+        try:
+            return self.css(selector)
+        except Exception:
+            logger.debug("CSS selector evaluation failed for %r", selector, exc_info=True)
+            return ()
 
     def css_first(self, selector: str) -> HtmlNode | None:
         node = self.node.css_first(selector)
@@ -96,7 +109,9 @@ class HtmlDocument:
         self._parser = LexborHTMLParser(html)
 
     def css(self, selector: str) -> tuple[HtmlNode, ...]:
-        return tuple(HtmlNode(self.artifact_id, node) for node in self._parser.css(selector))
+        return tuple(
+            HtmlNode(self.artifact_id, node) for node in self._parser.css(selector)
+        )
 
     def css_first(self, selector: str) -> HtmlNode | None:
         node = self._parser.css_first(selector)
@@ -106,6 +121,7 @@ class HtmlDocument:
         try:
             return self.css(selector)
         except Exception:
+            logger.debug("CSS selector evaluation failed for %r", selector, exc_info=True)
             return ()
 
     def text(self) -> str:
@@ -196,7 +212,9 @@ class DocumentStore:
 
     def html(self, artifact_id: str) -> HtmlDocument:
         if artifact_id not in self._html_cache:
-            self._html_cache[artifact_id] = HtmlDocument(artifact_id, self.text(artifact_id))
+            self._html_cache[artifact_id] = HtmlDocument(
+                artifact_id, self.text(artifact_id)
+            )
         return self._html_cache[artifact_id]
 
     def json(self, artifact_id: str) -> JsonDocument:

@@ -363,6 +363,10 @@ async def test_resolver_category_only_filters_non_category_urls(
                   <url><loc>https://example.com/products/shoe-123</loc></url>
                   <url><loc>https://example.com/pages/about</loc></url>
                   <url><loc>https://example.com/shop/sale</loc></url>
+                  <url><loc>https://example.com/collections/athletes</loc></url>
+                  <url><loc>https://example.com/collections/gift-registry</loc></url>
+                  <url><loc>https://example.com/collections/mobile-app</loc></url>
+                  <url><loc>https://example.com/collections/store-directory</loc></url>
                 </urlset>""",
             ),
         }

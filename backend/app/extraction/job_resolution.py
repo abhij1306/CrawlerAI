@@ -121,9 +121,7 @@ def _decision(
     candidates = sorted(rows, key=lambda row: (-row.confidence, row.evidence_id))
     accepted = candidates[0]
     return Decision(
-        decision_id=stable_id(
-            "decision", entity_id, fact_type, accepted.evidence_id
-        ),
+        decision_id=stable_id("decision", entity_id, fact_type, accepted.evidence_id),
         entity_id=entity_id,
         fact_type=fact_type,
         accepted_evidence_ids=(accepted.evidence_id,),

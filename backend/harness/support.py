@@ -155,9 +155,7 @@ def build_explicit_sites(
     explicit_surfaces: list[str] | None = None,
 ) -> list[dict[str, str]]:
     normalized_urls = [
-        str(value or "").strip()
-        for value in (urls or [])
-        if str(value or "").strip()
+        str(value or "").strip() for value in (urls or []) if str(value or "").strip()
     ]
     normalized_surfaces = [
         str(value or "").strip()
@@ -747,7 +745,7 @@ def _listing_contract(rows: Sequence[object]) -> dict[str, object]:
     price_present_count = 0
     numeric_price_count = 0
     sampled = 0
-    for row in (rows or []):
+    for row in rows or []:
         data = dict(getattr(row, "data", {}) or {})
         sampled += 1
         row_url = str(data.get("url") or "").strip()

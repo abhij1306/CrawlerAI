@@ -31,6 +31,7 @@ PUBLIC_RECORD_DETAIL_CANONICAL_QUERY_KEYS: tuple[str, ...] = (
     "variant",
 )
 PUBLIC_RECORD_DETAIL_CANONICAL_QUERY_PREFIXES: tuple[str, ...] = ("dwvar_",)
+PUBLIC_RECORD_DETAIL_CANONICAL_QUERY_PATTERNS: tuple[str, ...] = (r"^v\d+$",)
 PUBLIC_RECORD_URL_BLOCKED_PATH_MARKERS: tuple[str, ...] = (
     "/api/",
     "/event/",

@@ -1,12 +1,29 @@
 from __future__ import annotations
 
 import re
-from urllib.parse import parse_qsl, unquote, urlencode, urljoin, urlparse, urlunparse
+from urllib.parse import (
+    parse_qsl,
+    quote,
+    unquote,
+    urlencode,
+    urljoin,
+    urlparse,
+    urlsplit,
+    urlunparse,
+    urlunsplit,
+)
 
 from app.core.config.extraction_rules import (
     BARE_HOST_URL_RE,
+    CDN_IMAGE_PATH_SUFFIX_PATTERN,
+    CDN_IMAGE_QUERY_KEY_PATTERNS,
+    CDN_IMAGE_QUERY_PARAMS,
+    DETAIL_NON_PRODUCT_IMAGE_URL_HINTS,
     GIF_BASE64_PREFIX,
     PLACEHOLDER_IMAGE_URL_PATTERNS,
+    PRIMARY_IMAGE_REJECT_URL_TOKENS,
+    PRODUCT_ASSET_LOW_RES_QUERY_MAX_DIMENSION,
+    PRODUCT_ASSET_REJECT_URL_PATTERNS,
     UNRESOLVED_TEMPLATE_URL_TOKENS,
     URL_DETECTION_TOKENS,
 )
@@ -15,9 +32,11 @@ from app.core.shared.text_coerce import clean_text
 
 __all__ = [
     "absolute_url",
+    "asset_url_identity",
     "clean_color_tokens",
     "extract_urls",
     "identity_token",
+    "low_resolution_asset_urls",
     "same_host",
     "suffix_after_prefix",
     "terminal_text",
@@ -27,6 +46,7 @@ __all__ = [
     "variant_url_with_param",
     "ensure_scheme",
     "is_placeholder_image_url",
+    "is_utility_image_url",
     "_ensure_scheme",
     "_is_placeholder_image_url",
 ]
@@ -43,6 +63,21 @@ placeholder_image_url_tokens = tuple(
     token.lower()
     for token in tuple(PLACEHOLDER_IMAGE_URL_PATTERNS or ())
     if str(token).strip()
+)
+product_asset_reject_url_tokens = tuple(
+    str(token).strip().casefold()
+    for token in tuple(PRIMARY_IMAGE_REJECT_URL_TOKENS or ())
+    if str(token).strip()
+)
+product_asset_reject_url_patterns = tuple(
+    str(pattern).strip()
+    for pattern in tuple(PRODUCT_ASSET_REJECT_URL_PATTERNS or ())
+    if str(pattern).strip()
+)
+non_product_image_url_hints = tuple(
+    str(hint).strip().casefold()
+    for hint in tuple(DETAIL_NON_PRODUCT_IMAGE_URL_HINTS or ())
+    if str(hint).strip()
 )
 
 
@@ -78,6 +113,59 @@ def variant_url_with_param(page_url: str, variant_id: str) -> str:
         if parsed.scheme and parsed.netloc
         else absolute_url(str(page_url or ""), composed) or ""
     )
+
+
+def asset_url_identity(value: object) -> tuple[str, str] | None:
+    parsed = urlsplit(str(value or "").strip())
+    if parsed.scheme.casefold() not in {"http", "https"} or not parsed.netloc:
+        return None
+    path = quote(unquote(parsed.path), safe="/:@")
+    url = urlunsplit(
+        (parsed.scheme.casefold(), parsed.netloc.casefold(), path, parsed.query, "")
+    )
+    identity_query = urlencode(
+        sorted(
+            (key, val)
+            for key, val in parse_qsl(parsed.query, keep_blank_values=True)
+            if not _is_image_transform_query_key(key)
+        ),
+        doseq=True,
+    )
+    identity_path = re.sub(
+        CDN_IMAGE_PATH_SUFFIX_PATTERN,
+        "",
+        path,
+        flags=re.IGNORECASE,
+    )
+    identity_path = re.sub(
+        r"(/image/upload/)(?:[^/]*(?:,|_|:)[^/]*/)+(global/)",
+        r"\1\2",
+        identity_path,
+        flags=re.IGNORECASE,
+    )
+    identity_path = re.sub(
+        r"(/images/)(?:(?:t_[^/]+|dpr_[^/]+|(?:c|f|g|h|q|w)_[^/]+)/)+(v\d+/)",
+        r"\1\2",
+        identity_path,
+        flags=re.IGNORECASE,
+    )
+    identity = urlunsplit(
+        (
+            "https",
+            parsed.netloc.casefold(),
+            identity_path,
+            identity_query,
+            "",
+        )
+    )
+    return url, identity
+
+
+def _is_image_transform_query_key(key: str) -> bool:
+    lowered = key.casefold()
+    if lowered in CDN_IMAGE_QUERY_PARAMS:
+        return True
+    return any(re.match(pattern, key) for pattern in CDN_IMAGE_QUERY_KEY_PATTERNS)
 
 
 def _origin_relative_url(base_url: str, candidate: str) -> str:
@@ -227,7 +315,9 @@ def extract_urls(value: object, page_url: str) -> list[str]:
             continue
         if _is_placeholder_image_url(candidate) or _is_template_url(candidate):
             continue
-        if is_concatenated_url(candidate) and not _looks_like_image_fetch_proxy_url(candidate):
+        if is_concatenated_url(candidate) and not _looks_like_image_fetch_proxy_url(
+            candidate
+        ):
             continue
         seen.add(normalized)
         deduped.append(candidate)
@@ -251,6 +341,43 @@ def _is_placeholder_image_url(value: str) -> bool:
     if not lowered:
         return False
     return any(token in lowered for token in placeholder_image_url_tokens)
+
+
+def is_utility_image_url(value: object) -> bool:
+    text = unquote(str(value or "").strip()).casefold()
+    if not text:
+        return False
+    if any(token in text for token in product_asset_reject_url_tokens):
+        return True
+    if any(hint in text for hint in non_product_image_url_hints):
+        return True
+    return any(
+        re.search(pattern, text, flags=re.IGNORECASE)
+        for pattern in product_asset_reject_url_patterns
+    )
+
+
+def low_resolution_asset_urls(values: tuple[str, ...]) -> frozenset[str]:
+    dimensions = {value: _image_query_dimensions(value) for value in values}
+    return frozenset(
+        value
+        for value, sizes in dimensions.items()
+        if sizes and max(sizes) <= PRODUCT_ASSET_LOW_RES_QUERY_MAX_DIMENSION
+    )
+
+
+def _image_query_dimensions(value: object) -> tuple[int, ...]:
+    dimension_keys = {
+        "w", "width", "wid", "imwidth", "sw",
+        "h", "height", "hei", "sh",
+    }
+    return tuple(
+        int(raw_value)
+        for key, raw_value in parse_qsl(
+            urlparse(str(value or "")).query, keep_blank_values=False
+        )
+        if key.casefold() in dimension_keys and str(raw_value).isdigit()
+    )
 
 
 def _trim_trailing_url_candidate(value: str) -> str:

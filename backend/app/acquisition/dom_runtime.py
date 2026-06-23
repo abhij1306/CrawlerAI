@@ -74,7 +74,9 @@ _MUTATION_SETTLE_SCRIPT = """
 async def get_page_html(page, *, flatten_shadow: bool = True) -> str:
     if flatten_shadow:
         await flatten_shadow_dom(page)
-    retry_budget = max(0, int(crawler_runtime_settings.browser_error_retry_attempts or 0))
+    retry_budget = max(
+        0, int(crawler_runtime_settings.browser_error_retry_attempts or 0)
+    )
     delay_ms = max(0, int(crawler_runtime_settings.browser_error_retry_delay_ms or 0))
     last_exc: Exception | None = None
     for attempt in range(retry_budget + 1):
@@ -145,17 +147,20 @@ async def _outer_html_fallback(page) -> str:
 def _is_retryable_page_content_error(exc: Exception) -> bool:
     message = str(exc or "").lower()
     class_name = type(exc).__name__.lower()
-    return any(
-        marker in message
-        for marker in (
-            "connection closed while reading from the driver",
-            "unable to retrieve content because the page is navigating",
-            "page is navigating and changing the content",
-            "target closed",
-            "page closed",
-            "browser has been closed",
+    return (
+        any(
+            marker in message
+            for marker in (
+                "connection closed while reading from the driver",
+                "unable to retrieve content because the page is navigating",
+                "page is navigating and changing the content",
+                "target closed",
+                "page closed",
+                "browser has been closed",
+            )
         )
-    ) or "targetclosed" in class_name
+        or "targetclosed" in class_name
+    )
 
 
 async def wait_for_dom_mutation_settle(

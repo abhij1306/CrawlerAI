@@ -65,4 +65,6 @@ def detail_path_markers(surface: str) -> tuple[str, ...]:
 
 
 def all_detail_path_markers() -> tuple[str, ...]:
-    return tuple(dict.fromkeys((*ECOMMERCE_DETAIL_PATH_MARKERS, *JOB_DETAIL_PATH_MARKERS)))
+    return tuple(
+        dict.fromkeys((*ECOMMERCE_DETAIL_PATH_MARKERS, *JOB_DETAIL_PATH_MARKERS))
+    )

@@ -117,7 +117,9 @@ async def create_product_intelligence_job(
 ) -> ProductIntelligenceJob:
     options = _normalized_options(payload.get("options"))
     source_run_id = _as_int(payload.get("source_run_id"))
-    source_rows = await _load_source_rows(session, user=user, payload=payload, options=options)
+    source_rows = await _load_source_rows(
+        session, user=user, payload=payload, options=options
+    )
     if not source_rows:
         raise ValueError("Product Intelligence needs at least one source product")
     if source_run_id is not None:
@@ -138,7 +140,13 @@ async def create_product_intelligence_job(
     await session.flush()
 
     llm_enabled = bool(options.get("llm_enrichment_enabled"))
-    for row in source_rows[: _option_int(options, "max_source_products", default=product_intelligence_settings.max_source_products)]:
+    for row in source_rows[
+        : _option_int(
+            options,
+            "max_source_products",
+            default=product_intelligence_settings.max_source_products,
+        )
+    ]:
         snapshot = await _resolve_source_snapshot(
             session,
             raw=_row_data_payload(row),
@@ -178,7 +186,10 @@ async def run_product_intelligence_job(job_id: int) -> None:
         if job.status != PRODUCT_INTELLIGENCE_JOB_STATUS_QUEUED:
             return
         job.status = PRODUCT_INTELLIGENCE_JOB_STATUS_RUNNING
-        job.summary = {**dict(job.summary or {}), "started_at": datetime.now(UTC).isoformat()}
+        job.summary = {
+            **dict(job.summary or {}),
+            "started_at": datetime.now(UTC).isoformat(),
+        }
         await session.commit()
         try:
             await _run_job(session, job)
@@ -212,7 +223,11 @@ async def list_product_intelligence_jobs(
     user: User,
     limit: int = 25,
 ) -> list[ProductIntelligenceJob]:
-    statement = select(ProductIntelligenceJob).order_by(ProductIntelligenceJob.id.desc()).limit(limit)
+    statement = (
+        select(ProductIntelligenceJob)
+        .order_by(ProductIntelligenceJob.id.desc())
+        .limit(limit)
+    )
     if user.role != ADMIN_ROLE:
         statement = statement.where(ProductIntelligenceJob.user_id == user.id)
     return list((await session.scalars(statement)).all())
@@ -245,7 +260,11 @@ async def review_product_intelligence_match(
     match = await session.get(ProductIntelligenceMatch, match_id)
     if match is None or match.job_id != job_id:
         raise LookupError("Product Intelligence match not found")
-    if action not in {PRODUCT_INTELLIGENCE_REVIEW_ACCEPTED, PRODUCT_INTELLIGENCE_REVIEW_REJECTED, PRODUCT_INTELLIGENCE_REVIEW_PENDING}:
+    if action not in {
+        PRODUCT_INTELLIGENCE_REVIEW_ACCEPTED,
+        PRODUCT_INTELLIGENCE_REVIEW_REJECTED,
+        PRODUCT_INTELLIGENCE_REVIEW_PENDING,
+    }:
         raise ValueError("Invalid review action")
     match.review_status = action
     await session.commit()
@@ -281,7 +300,9 @@ async def build_job_payload(
             await session.scalars(
                 select(ProductIntelligenceMatch)
                 .where(ProductIntelligenceMatch.job_id == job.id)
-                .order_by(ProductIntelligenceMatch.score.desc(), ProductIntelligenceMatch.id)
+                .order_by(
+                    ProductIntelligenceMatch.score.desc(), ProductIntelligenceMatch.id
+                )
             )
         ).all()
     )
@@ -301,7 +322,9 @@ async def discover_product_intelligence_candidates(
 ) -> dict[str, object]:
     options = _normalized_options(payload.get("options"))
     source_run_id = _as_int(payload.get("source_run_id"))
-    source_rows = await _load_source_rows(session, user=user, payload=payload, options=options)
+    source_rows = await _load_source_rows(
+        session, user=user, payload=payload, options=options
+    )
     if not source_rows:
         raise ValueError("Product Intelligence needs at least one source product")
     if source_run_id is not None:
@@ -324,7 +347,10 @@ async def discover_product_intelligence_candidates(
                 llm_enabled=llm_enabled,
             )
             resolved_snapshots[index] = snapshot
-            if is_private_label(snapshot.get("brand")) and options["private_label_mode"] == PRIVATE_LABEL_EXCLUDE:
+            if (
+                is_private_label(snapshot.get("brand"))
+                and options["private_label_mode"] == PRIVATE_LABEL_EXCLUDE
+            ):
                 continue
             processed_source_count += 1
             source_url_value = _resolved_source_url(row, snapshot)
@@ -458,12 +484,21 @@ async def _run_job(session: AsyncSession, job: ProductIntelligenceJob) -> None:
             )
         ).all()
     )
-    
+
     candidates_to_poll = []
-    
+
     async with shared_query_runner(str(options["search_provider"])) as run_query:
-        for source in sources[: _option_int(options, "max_source_products", default=product_intelligence_settings.max_source_products)]:
-            if source.is_private_label and options["private_label_mode"] == PRIVATE_LABEL_EXCLUDE:
+        for source in sources[
+            : _option_int(
+                options,
+                "max_source_products",
+                default=product_intelligence_settings.max_source_products,
+            )
+        ]:
+            if (
+                source.is_private_label
+                and options["private_label_mode"] == PRIVATE_LABEL_EXCLUDE
+            ):
                 continue
             source_payload = _source_product_payload(source)
             source_domain_value = normalize_domain(source.source_url)
@@ -493,11 +528,11 @@ async def _run_job(session: AsyncSession, job: ProductIntelligenceJob) -> None:
                 )
                 session.add(candidate)
                 await session.flush()
-                
+
                 # Non-blocking dispatch to queue/background crawler
                 await _create_candidate_crawl(session, job, candidate, options=options)
                 candidates_to_poll.append(candidate)
-    
+
     # Commit changes before entering sequential status checking loops
     await session.commit()
 
@@ -549,12 +584,17 @@ async def _poll_candidate_and_score(
     job: ProductIntelligenceJob,
     candidate: ProductIntelligenceCandidate,
 ) -> None:
-    deadline = asyncio.get_running_loop().time() + product_intelligence_settings.candidate_poll_seconds
+    deadline = (
+        asyncio.get_running_loop().time()
+        + product_intelligence_settings.candidate_poll_seconds
+    )
     while asyncio.get_running_loop().time() <= deadline:
         scored = await _score_candidate_if_ready(session, job, candidate)
         if scored:
             return
-        await asyncio.sleep(product_intelligence_settings.candidate_poll_interval_seconds)
+        await asyncio.sleep(
+            product_intelligence_settings.candidate_poll_interval_seconds
+        )
     candidate.status = PRODUCT_INTELLIGENCE_CANDIDATE_STATUS_CRAWL_TIMEOUT
     await _update_job_summary(session, job)
     await session.flush()
@@ -575,8 +615,6 @@ async def _score_completed_candidates(
     )
     for candidate in candidates:
         await _score_candidate_if_ready(session, job, candidate)
-
-
 
 
 backfill_candidate_brand = _backfill_candidate_brand

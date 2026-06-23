@@ -11,7 +11,7 @@ from app.crawl.domain_memory_service import (
     load_domain_selector_rules,
 )
 from app.core.domain_utils import normalize_domain
-from app.core.records.field_policy import repair_target_fields_for_surface
+from app.core.records.field_policy import acquisition_contract_fields_for_surface
 from app.extraction import extract, parse_surface
 from app.extraction.contracts import ExtractionResult
 from app.extraction.replay import request_from_acquisition_result
@@ -124,7 +124,9 @@ async def _run_record_extraction(
         adapter_artifact_count=len(
             value
             if isinstance(
-                value := mapping_or_empty(getattr(acquisition_result, "artifacts", {})).get("adapter_artifacts"),
+                value := mapping_or_empty(
+                    getattr(acquisition_result, "artifacts", {})
+                ).get("adapter_artifacts"),
                 list,
             )
             else []
@@ -274,7 +276,7 @@ async def _update_acquisition_contract_memory(
         method=getattr(acquisition_result, "method", None),
         browser_engine=str(diagnostics.get("browser_engine") or "").strip().lower(),
         browser_diagnostics=dict(diagnostics),
-        requested_fields=repair_target_fields_for_surface(
+        requested_fields=acquisition_contract_fields_for_surface(
             context.surface,
             list(context.requested_fields),
         ),
@@ -283,7 +285,9 @@ async def _update_acquisition_contract_memory(
         verdict=verdict,
         blocked=_effective_blocked(acquisition_result),
         page_url=getattr(acquisition_result, "final_url", "") or context.url,
-        network_payloads=list(getattr(acquisition_result, "network_payloads", []) or []),
+        network_payloads=list(
+            getattr(acquisition_result, "network_payloads", []) or []
+        ),
     )
 
 

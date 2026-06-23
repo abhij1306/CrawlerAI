@@ -30,8 +30,7 @@ async def llm_providers(
     _: Annotated[object, Depends(require_admin)],
 ) -> list[LLMProviderCatalogResponse]:
     return [
-        LLMProviderCatalogResponse.model_validate(row)
-        for row in llm_provider_catalog()
+        LLMProviderCatalogResponse.model_validate(row) for row in llm_provider_catalog()
     ]
 
 
@@ -42,7 +41,9 @@ async def llm_configs(
     include_unsupported: Annotated[bool, Query()] = False,
 ) -> list[LLMConfigResponse]:
     normalized_provider = func.lower(LLMConfig.provider)
-    statement = select(LLMConfig).order_by(LLMConfig.task_type.asc(), LLMConfig.created_at.desc())
+    statement = select(LLMConfig).order_by(
+        LLMConfig.task_type.asc(), LLMConfig.created_at.desc()
+    )
     if not include_unsupported:
         unsupported_count = int(
             await session.scalar(
@@ -57,7 +58,9 @@ async def llm_configs(
                 "LLM config listing excluded %d unsupported provider records",
                 unsupported_count,
             )
-        statement = statement.where(normalized_provider.in_(tuple(SUPPORTED_LLM_PROVIDERS)))
+        statement = statement.where(
+            normalized_provider.in_(tuple(SUPPORTED_LLM_PROVIDERS))
+        )
     result = await session.execute(statement)
     return [_serialize_llm_config(row) for row in result.scalars().all()]
 
@@ -74,7 +77,9 @@ async def llm_config_create(
     config = LLMConfig(
         provider=payload.provider.strip().lower(),
         model=payload.model.strip(),
-        api_key_encrypted=encrypt_secret(payload.api_key.strip()) if payload.api_key else "",
+        api_key_encrypted=encrypt_secret(payload.api_key.strip())
+        if payload.api_key
+        else "",
         task_type=payload.task_type.strip(),
         per_domain_daily_budget_usd=payload.per_domain_daily_budget_usd,
         global_session_budget_usd=payload.global_session_budget_usd,
@@ -95,7 +100,9 @@ async def llm_config_update(
 ) -> LLMConfigResponse:
     config = await session.get(LLMConfig, config_id)
     if config is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="LLM config not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="LLM config not found"
+        )
     changes = payload.model_dump(exclude_none=True)
     if "provider" in changes:
         _validate_provider(str(changes["provider"]))
@@ -104,7 +111,11 @@ async def llm_config_update(
         await _deactivate_task_configs(session, next_task_type, exclude_id=config.id)
     for key, value in changes.items():
         if key == "api_key":
-            config.api_key_encrypted = encrypt_secret(str(value).strip()) if str(value).strip() else config.api_key_encrypted
+            config.api_key_encrypted = (
+                encrypt_secret(str(value).strip())
+                if str(value).strip()
+                else config.api_key_encrypted
+            )
             continue
         setattr(config, key, value)
     await session.commit()
@@ -120,7 +131,9 @@ async def llm_config_delete(
 ) -> None:
     config = await session.get(LLMConfig, config_id)
     if config is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="LLM config not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="LLM config not found"
+        )
     await session.delete(config)
     await session.commit()
 
@@ -154,7 +167,9 @@ async def llm_cost_log(
     _: Annotated[object, Depends(require_admin)],
 ) -> list[LLMCostLogResponse]:
     result = await session.execute(
-        select(LLMCostLog).order_by(LLMCostLog.created_at.desc(), LLMCostLog.id.desc()).limit(100)
+        select(LLMCostLog)
+        .order_by(LLMCostLog.created_at.desc(), LLMCostLog.id.desc())
+        .limit(100)
     )
     return [
         LLMCostLogResponse.model_validate(row, from_attributes=True)
@@ -168,7 +183,9 @@ async def _deactivate_task_configs(
     *,
     exclude_id: int | None = None,
 ) -> None:
-    result = await session.execute(select(LLMConfig).where(LLMConfig.task_type == task_type))
+    result = await session.execute(
+        select(LLMConfig).where(LLMConfig.task_type == task_type)
+    )
     for row in result.scalars().all():
         if exclude_id is not None and row.id == exclude_id:
             continue

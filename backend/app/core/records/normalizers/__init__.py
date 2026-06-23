@@ -98,12 +98,21 @@ def normalize_decimal_price(
         return None
     if isinstance(value, dict):
         val = None
-        for k in ("value", "amount", "price", "standard_price", "list_price", "listPrice"):
+        for k in (
+            "value",
+            "amount",
+            "price",
+            "standard_price",
+            "list_price",
+            "listPrice",
+        ):
             if k in value:
                 val = value[k]
                 break
         if val is not None and not isinstance(val, (dict, list, tuple, set)):
-            return normalize_decimal_price(val, interpret_integral_as_cents=interpret_integral_as_cents)
+            return normalize_decimal_price(
+                val, interpret_integral_as_cents=interpret_integral_as_cents
+            )
         return None
     text = _normalize_text(value)
     if not text:
@@ -184,7 +193,9 @@ def _normalize_int(value: object) -> int | str:
     if match is None:
         return ""
     try:
-        return int(Decimal(match.group(0).translate(str.maketrans(_UNICODE_MINUS_CHARS, "-"))))
+        return int(
+            Decimal(match.group(0).translate(str.maketrans(_UNICODE_MINUS_CHARS, "-")))
+        )
     except (InvalidOperation, ValueError):
         return ""
 

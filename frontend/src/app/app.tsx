@@ -1,10 +1,5 @@
 import type { RouteObject } from 'react-router-dom';
-import {
-  Navigate,
-  RouterProvider,
-  createBrowserRouter,
-  useParams,
-} from 'react-router-dom';
+import { Navigate, RouterProvider, createBrowserRouter, useParams } from 'react-router-dom';
 
 import { AppShell, AuthShell } from '../../components/layout/app-shell';
 import { QueryProvider } from '../../components/ui/query-provider';

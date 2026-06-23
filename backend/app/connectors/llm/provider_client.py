@@ -10,7 +10,11 @@ from app.core.config.llm_runtime import (
     SUPPORTED_LLM_PROVIDERS,
     llm_runtime_settings,
 )
-from app.connectors.llm.circuit_breaker import circuit_is_open, record_failure, record_success
+from app.connectors.llm.circuit_breaker import (
+    circuit_is_open,
+    record_failure,
+    record_success,
+)
 from app.connectors.llm.config_service import provider_env_key
 from app.connectors.llm.errors import ERROR_PREFIX, LLMErrorCategory, classify_error
 

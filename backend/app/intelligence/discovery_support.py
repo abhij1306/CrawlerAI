@@ -45,7 +45,11 @@ from app.intelligence.candidate_urls import (
     looks_like_product_detail_url,
     normalized_compare_url,
 )
-from app.intelligence.matching import manufacturer_style_code, normalize_brand, source_domain
+from app.intelligence.matching import (
+    manufacturer_style_code,
+    normalize_brand,
+    source_domain,
+)
 
 if TYPE_CHECKING:
     from app.intelligence.discovery import DiscoveredCandidate
@@ -67,16 +71,26 @@ async def _google_native_session():
     blocked = False
 
     async with runtime.page(domain=source_domain(GOOGLE_NATIVE_HOME_URL)) as page:
+
         async def _run(query: str, limit: int) -> list[SearchResult]:
             nonlocal blocked
             normalized_query = str(query or "").strip()
             if blocked or not normalized_query:
                 return []
             result_limit = min(
-                max(1, int(limit or product_intelligence_settings.google_native_max_results)),
+                max(
+                    1,
+                    int(
+                        limit or product_intelligence_settings.google_native_max_results
+                    ),
+                ),
                 int(product_intelligence_settings.google_native_max_results),
             )
-            logger.info("Product intelligence search dispatch provider='google_native' query=%r limit=%s", normalized_query, limit)
+            logger.info(
+                "Product intelligence search dispatch provider='google_native' query=%r limit=%s",
+                normalized_query,
+                limit,
+            )
             try:
                 await page.goto(
                     GOOGLE_NATIVE_HOME_URL,
@@ -108,12 +122,16 @@ async def _google_native_session():
                 html = await get_page_html(page)
                 current_url = _page_url(page)
             except Exception as exc:
-                logger.warning("Product intelligence native Google query failed: %s", exc)
+                logger.warning(
+                    "Product intelligence native Google query failed: %s", exc
+                )
                 return []
 
             if _google_native_blocked(current_url, html):
                 blocked = True
-                logger.warning("Product intelligence native Google query blocked by challenge page; stopping searches for this session")
+                logger.warning(
+                    "Product intelligence native Google query blocked by challenge page; stopping searches for this session"
+                )
                 return []
 
             return _parse_google_native_results(html, limit=result_limit)
@@ -143,7 +161,9 @@ def _google_native_blocked(url: str, html: str) -> bool:
     if any(pattern in normalized_url for pattern in GOOGLE_NATIVE_BLOCKED_URL_PATTERNS):
         return True
     normalized_html = str(html or "").lower()
-    if any(pattern in normalized_html for pattern in GOOGLE_NATIVE_BLOCKED_HTML_PATTERNS):
+    if any(
+        pattern in normalized_html for pattern in GOOGLE_NATIVE_BLOCKED_HTML_PATTERNS
+    ):
         return True
     classification = classify_blocked_page(
         str(html or ""), GOOGLE_NATIVE_BLOCKED_CLASSIFICATION_OFFSET
@@ -163,9 +183,7 @@ def _parse_google_native_results(html: str, *, limit: int) -> list[SearchResult]
             continue
 
         domain = source_domain(url).removeprefix("www.").lower()
-        if any(
-            _domain_matches(domain, item) for item in GOOGLE_NATIVE_IGNORED_DOMAINS
-        ):
+        if any(_domain_matches(domain, item) for item in GOOGLE_NATIVE_IGNORED_DOMAINS):
             continue
         title = _google_native_anchor_title(anchor, url=url)
         if not title:
@@ -226,14 +244,17 @@ def _google_native_result_url(href: str) -> str:
     if parsed.scheme in {"http", "https"}:
         host = (parsed.hostname or "").lower()
         if (
-            (host == "google.com" or host.endswith(".google.com"))
-            and parsed.path == GOOGLE_NATIVE_REDIRECT_PATH
-        ):
-            target = parse_qs(parsed.query).get(GOOGLE_NATIVE_REDIRECT_TARGET_PARAM, [""])[0]
+            host == "google.com" or host.endswith(".google.com")
+        ) and parsed.path == GOOGLE_NATIVE_REDIRECT_PATH:
+            target = parse_qs(parsed.query).get(
+                GOOGLE_NATIVE_REDIRECT_TARGET_PARAM, [""]
+            )[0]
             return clean_result_url(target)
         return clean_result_url(raw)
     if raw.startswith(GOOGLE_NATIVE_REDIRECT_PATH):
-        target = parse_qs(urlsplit(raw).query).get(GOOGLE_NATIVE_REDIRECT_TARGET_PARAM, [""])[0]
+        target = parse_qs(urlsplit(raw).query).get(
+            GOOGLE_NATIVE_REDIRECT_TARGET_PARAM, [""]
+        )[0]
         return clean_result_url(target)
     if raw.startswith("/"):
         return clean_result_url(urljoin(GOOGLE_NATIVE_HOME_URL, raw))
@@ -320,18 +341,16 @@ def _has_conflicting_numeric_identity(
         product.get("gtin"),
     )
     candidate_tokens = _identity_tokens(candidate_text)
-    return bool(source_tokens and candidate_tokens and not (source_tokens & candidate_tokens))
+    return bool(
+        source_tokens and candidate_tokens and not (source_tokens & candidate_tokens)
+    )
 
 
 def _identity_tokens(*values: object) -> set[str]:
     tokens: set[str] = set()
     for value in values:
         raw = str(value or "").casefold()
-        parts = [
-            token
-            for token in re.split(r"[^a-z0-9]+", raw)
-            if token
-        ]
+        parts = [token for token in re.split(r"[^a-z0-9]+", raw) if token]
         compact = re.sub(r"[^a-z0-9]+", "", raw)
         if (
             1 < len(parts) <= 3
@@ -394,7 +413,9 @@ def _domain_allowed(
     if not normalized:
         return False
     excluded = {item.removeprefix("www.").lower() for item in excluded_domains if item}
-    excluded.update(item.removeprefix("www.").lower() for item in source_domains if item)
+    excluded.update(
+        item.removeprefix("www.").lower() for item in source_domains if item
+    )
     if any(_domain_matches(normalized, item) for item in excluded):
         return False
     allowed = {item.removeprefix("www.").lower() for item in allowed_domains if item}
@@ -414,7 +435,9 @@ def _source_excluded_domains(
 def _source_excluded_urls(product: dict[str, object]) -> set[str]:
     return {
         normalized
-        for normalized in (normalized_compare_url(url) for url in _source_url_values(product))
+        for normalized in (
+            normalized_compare_url(url) for url in _source_url_values(product)
+        )
         if normalized
     }
 
@@ -514,19 +537,23 @@ def _query_identifier_value(product: dict[str, object]) -> str:
 def _looks_like_manufacturer_identifier(value: object) -> bool:
     text = str(value or "").strip()
     compact = re.sub(r"[^a-z0-9]+", "", text.casefold())
-    return bool(compact and any(char.isalpha() for char in compact) and any(char.isdigit() for char in compact))
+    return bool(
+        compact
+        and any(char.isalpha() for char in compact)
+        and any(char.isdigit() for char in compact)
+    )
 
 
 def _query_tokens(value: object) -> list[str]:
     return [
-        token
-        for token in re.split(r"[^a-z0-9]+", str(value or "").casefold())
-        if token
+        token for token in re.split(r"[^a-z0-9]+", str(value or "").casefold()) if token
     ]
 
 
 def _candidate_rank_text(candidate: DiscoveredCandidate) -> str:
-    return " ".join(part for part in (_search_result_text(candidate.payload), candidate.url) if part)
+    return " ".join(
+        part for part in (_search_result_text(candidate.payload), candidate.url) if part
+    )
 
 
 def _candidate_has_shopping_group(candidate: DiscoveredCandidate) -> bool:
@@ -541,19 +568,29 @@ def _candidate_title_overlap(
     product: dict[str, object],
     candidate: DiscoveredCandidate,
 ) -> float:
-    source_tokens = _distinctive_title_tokens(product.get("title"), product.get("brand"))
-    candidate_tokens = _distinctive_title_tokens(_candidate_rank_text(candidate), product.get("brand"))
+    source_tokens = _distinctive_title_tokens(
+        product.get("title"), product.get("brand")
+    )
+    candidate_tokens = _distinctive_title_tokens(
+        _candidate_rank_text(candidate), product.get("brand")
+    )
     if not source_tokens or not candidate_tokens:
         return 0.0
-    return len(source_tokens & candidate_tokens) / max(min(len(source_tokens), len(candidate_tokens)), 1)
+    return len(source_tokens & candidate_tokens) / max(
+        min(len(source_tokens), len(candidate_tokens)), 1
+    )
 
 
 def _candidate_model_token_match(
     product: dict[str, object],
     candidate: DiscoveredCandidate,
 ) -> bool:
-    source_tokens = _distinctive_title_tokens(product.get("title"), product.get("brand"))
-    candidate_tokens = _distinctive_title_tokens(_candidate_rank_text(candidate), product.get("brand"))
+    source_tokens = _distinctive_title_tokens(
+        product.get("title"), product.get("brand")
+    )
+    candidate_tokens = _distinctive_title_tokens(
+        _candidate_rank_text(candidate), product.get("brand")
+    )
     return bool(source_tokens and candidate_tokens and source_tokens & candidate_tokens)
 
 
@@ -562,7 +599,7 @@ def _quoted(value: object) -> str:
     if not text:
         return ""
     text = " ".join(text.replace('"', '\\"').split())
-    return f"\"{text}\"" if text else ""
+    return f'"{text}"' if text else ""
 
 
 def _join_query_parts(*parts: str) -> str:

@@ -9,45 +9,11 @@ import pytest
 pytestmark = pytest.mark.unit
 
 APP_ROOT = Path(__file__).resolve().parents[2] / "app"
-OVERSIZED_MODULE_DEBT = {
-    "acquisition/browser_detail.py",
-    "acquisition/browser_runtime.py",
-    "acquisition/fetch/fetch_context.py",
-    "crawl/batch_runtime.py",
-    "enrichment/shopify_catalog.py",
-}
-LONG_FUNCTION_DEBT = {
-    ("acquisition/browser_detail.py", "expand_all_interactive_elements_impl"),
-    ("acquisition/browser_detail.py", "expand_interactive_elements_via_accessibility_impl"),
-    ("acquisition/browser_page_flow.py", "settle_browser_page_impl"),
-    ("acquisition/browser_page_helpers.py", "_capture_listing_visual_elements"),
-    ("acquisition/browser_recovery.py", "_emit_challenge_activity"),
-    ("acquisition/browser_recovery.py", "recover_browser_challenge"),
-    ("acquisition/browser_result_builder.py", "build"),
-    ("acquisition/browser_runtime.py", "_maybe_warm_origin_before_navigation"),
-    ("acquisition/browser_runtime.py", "browser_fetch"),
-    ("acquisition/runtime.py", "classify_blocked_page"),
-    ("acquisition/traversal.py", "_run_load_more_traversal"),
-    ("acquisition/traversal.py", "_run_paginate_traversal"),
-    ("acquisition/traversal.py", "_run_scroll_traversal"),
-    ("acquisition/traversal_recovery.py", "click_with_retry"),
-    ("acquisition/traversal_recovery.py", "dismiss_overlays_if_needed"),
-    ("connectors/llm/tasks.py", "run_prompt_task"),
-    ("connectors/public_api/extraction_service.py", "extract_public_product"),
-    ("core/config/runtime_settings.py", "_apply_profile_defaults"),
-    ("core/records/confidence.py", "score_record_confidence"),
-    ("crawl/batch_runtime.py", "_process_run_with_span"),
-    ("crawl/batch_runtime.py", "_process_urls_in_parallel"),
-    ("crawl/pipeline/run_progress.py", "_merge_run_acquisition_metrics"),
-    ("crawl/review/__init__.py", "build_domain_recipe_payload"),
-    ("intelligence/matching.py", "score_candidate"),
-}
+OVERSIZED_MODULE_DEBT: set[str] = set()
+LONG_FUNCTION_DEBT: set[tuple[str, str]] = set()
 
 LEGACY_RECORD_FIELD_COMPATIBILITY_OWNERS = {
     "core response shaping": "schemas/crawl.py",
-    "commit metadata writer": "persistence/publish/metadata.py",
-    "review annotation writer": "crawl/review/__init__.py",
-    "accepted-value annotation writer": "crawl/crud.py",
 }
 
 
@@ -63,9 +29,17 @@ def _class_owners(class_name: str) -> set[str]:
     return owners
 
 
+def _canonical_line_count(node: ast.AST) -> int:
+    return len(ast.unparse(node).splitlines())
+
+
+def _parse_module(path: Path) -> ast.Module:
+    return ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+
+
 def _function_parameter_names(relative_path: str, function_name: str) -> set[str]:
     path = APP_ROOT / relative_path
-    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    tree = _parse_module(path)
     for node in ast.walk(tree):
         if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             continue
@@ -76,11 +50,40 @@ def _function_parameter_names(relative_path: str, function_name: str) -> set[str
     raise AssertionError(f"Function not found: {relative_path}:{function_name}")
 
 
+PACKAGE_LOC_BUDGETS = {
+    "acquisition": 15_400,
+    "crawl": 9_250,
+    "core": 14_500,
+    "enrichment": 2_150,
+    "connectors": 2_700,
+    "intelligence": 3_250,
+    "extraction": 5_500,
+}
+TOTAL_APP_LOC_BUDGET = 62_600
+
+
+def test_production_package_loc_budgets() -> None:
+    app_trees = {
+        path: _parse_module(path)
+        for path in APP_ROOT.rglob("*.py")
+        if "__pycache__" not in path.parts
+    }
+    assert sum(_canonical_line_count(tree) for tree in app_trees.values()) <= TOTAL_APP_LOC_BUDGET
+    for package, budget in PACKAGE_LOC_BUDGETS.items():
+        package_root = APP_ROOT / package
+        package_total = sum(
+            _canonical_line_count(tree)
+            for path, tree in app_trees.items()
+            if package_root in path.parents
+        )
+        assert package_total <= budget, (package, package_total, budget)
+
+
 def test_no_new_oversized_modules() -> None:
     oversized = {
         path.relative_to(APP_ROOT).as_posix()
         for path in APP_ROOT.rglob("*.py")
-        if len(path.read_text(encoding="utf-8").splitlines()) > 700
+        if _canonical_line_count(_parse_module(path)) > 700
     }
     assert oversized <= OVERSIZED_MODULE_DEBT
 
@@ -88,12 +91,11 @@ def test_no_new_oversized_modules() -> None:
 def test_no_new_long_functions() -> None:
     long_functions: set[tuple[str, str]] = set()
     for path in APP_ROOT.rglob("*.py"):
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        tree = _parse_module(path)
         for node in ast.walk(tree):
             if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 continue
-            assert node.end_lineno is not None
-            if node.end_lineno - node.lineno + 1 > 100:
+            if _canonical_line_count(node) > 100:
                 long_functions.add((path.relative_to(APP_ROOT).as_posix(), node.name))
     assert long_functions <= LONG_FUNCTION_DEBT
 
@@ -148,18 +150,20 @@ def test_acquisition_does_not_construct_beautifulsoup_trees() -> None:
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):
-                assert all(alias.name.split(".", 1)[0] != "bs4" for alias in node.names), path
+                assert all(
+                    alias.name.split(".", 1)[0] != "bs4" for alias in node.names
+                ), path
             if isinstance(node, ast.ImportFrom) and node.module:
                 assert node.module.split(".", 1)[0] != "bs4", path
 
 
 def test_requested_fields_do_not_initiate_browser_acquisition() -> None:
-    policy_text = (
-        APP_ROOT / "acquisition" / "fetch" / "browser_policy.py"
-    ).read_text(encoding="utf-8")
-    fetch_text = (
-        APP_ROOT / "acquisition" / "fetch" / "fetch_context.py"
-    ).read_text(encoding="utf-8")
+    policy_text = (APP_ROOT / "acquisition" / "fetch" / "browser_policy.py").read_text(
+        encoding="utf-8"
+    )
+    fetch_text = (APP_ROOT / "acquisition" / "fetch" / "fetch_context.py").read_text(
+        encoding="utf-8"
+    )
     for forbidden in (
         "requested_detail_fields_require_browser",
         "REQUESTED_FIELDS_BROWSER_REASON",

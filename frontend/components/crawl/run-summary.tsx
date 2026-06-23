@@ -109,8 +109,7 @@ export function useRunSummary({
     llmSummary,
     summary,
     qualityLevel: backendQualityLevel(run),
-    runErrorMessage:
-      typeof run?.result_summary?.error === 'string' ? run.result_summary.error : '',
+    runErrorMessage: typeof run?.result_summary?.error === 'string' ? run.result_summary.error : '',
     emptyRecordsState:
       verdict === 'blocked'
         ? {

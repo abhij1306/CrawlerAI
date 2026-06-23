@@ -13,7 +13,9 @@ class ProductIntelligenceOptions(BaseModel):
         default=10,
         ge=1,
         le=500,
-        validation_alias=AliasChoices("max_source_products", "max_sources", "max_source"),
+        validation_alias=AliasChoices(
+            "max_source_products", "max_sources", "max_source"
+        ),
     )
     max_candidates_per_product: int = Field(
         default=2,
@@ -44,15 +46,23 @@ class ProductIntelligenceSourceRecordInput(BaseModel):
 class ProductIntelligenceJobCreate(BaseModel):
     source_run_id: int | None = None
     source_record_ids: list[int] = Field(default_factory=list)
-    source_records: list[ProductIntelligenceSourceRecordInput] = Field(default_factory=list)
-    options: ProductIntelligenceOptions = Field(default_factory=ProductIntelligenceOptions)
+    source_records: list[ProductIntelligenceSourceRecordInput] = Field(
+        default_factory=list
+    )
+    options: ProductIntelligenceOptions = Field(
+        default_factory=ProductIntelligenceOptions
+    )
 
 
 class ProductIntelligenceDiscoveryRequest(BaseModel):
     source_run_id: int | None = None
     source_record_ids: list[int] = Field(default_factory=list)
-    source_records: list[ProductIntelligenceSourceRecordInput] = Field(default_factory=list)
-    options: ProductIntelligenceOptions = Field(default_factory=ProductIntelligenceOptions)
+    source_records: list[ProductIntelligenceSourceRecordInput] = Field(
+        default_factory=list
+    )
+    options: ProductIntelligenceOptions = Field(
+        default_factory=ProductIntelligenceOptions
+    )
 
 
 class ProductIntelligenceReviewRequest(BaseModel):
@@ -138,7 +148,9 @@ class ProductIntelligenceMatchResponse(BaseModel):
 
 class ProductIntelligenceJobDetailResponse(BaseModel):
     job: ProductIntelligenceJobResponse
-    source_products: list[ProductIntelligenceSourceProductResponse] = Field(default_factory=list)
+    source_products: list[ProductIntelligenceSourceProductResponse] = Field(
+        default_factory=list
+    )
     candidates: list[ProductIntelligenceCandidateResponse] = Field(default_factory=list)
     matches: list[ProductIntelligenceMatchResponse] = Field(default_factory=list)
 
@@ -167,4 +179,6 @@ class ProductIntelligenceDiscoveryResponse(BaseModel):
     source_count: int
     candidate_count: int
     search_provider: str = ""
-    candidates: list[ProductIntelligenceDiscoveredCandidateResponse] = Field(default_factory=list)
+    candidates: list[ProductIntelligenceDiscoveredCandidateResponse] = Field(
+        default_factory=list
+    )

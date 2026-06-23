@@ -20,7 +20,9 @@ def build_browser_proxy_config(proxy: str | None) -> dict[str, str] | None:
         return None
     parsed = urlparse(raw_proxy)
     if not parsed.scheme:
-        raise ValueError("Browser proxy must include a scheme such as http:// or socks5://")
+        raise ValueError(
+            "Browser proxy must include a scheme such as http:// or socks5://"
+        )
     normalized_scheme = str(parsed.scheme or "").strip().lower()
     if normalized_scheme not in _SUPPORTED_BROWSER_PROXY_SCHEMES:
         raise ValueError(

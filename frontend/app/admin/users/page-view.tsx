@@ -30,7 +30,12 @@ export default function AdminUsersPage() {
   const [status, setStatus] = useState<StatusFilter>('all');
   const [pendingUserId, setPendingUserId] = useState<number | null>(null);
   const [updateError, setUpdateError] = useState('');
-  const usersQuery = useQuery<Paginated<User>>({
+  const {
+    data: usersData,
+    isLoading: isUsersLoading,
+    error: usersError,
+    refetch: refetchUsers,
+  } = useQuery<Paginated<User>>({
     queryKey: queryKeys.admin.users({ search, status }),
     queryFn: () =>
       api.listUsers({
@@ -39,14 +44,14 @@ export default function AdminUsersPage() {
       }),
   });
 
-  const users = useMemo(() => usersQuery.data?.items ?? [], [usersQuery.data?.items]);
+  const users = useMemo(() => usersData?.items ?? [], [usersData?.items]);
 
   async function updateUser(userId: number, payload: Partial<Pick<User, 'role' | 'is_active'>>) {
     setPendingUserId(userId);
     try {
       setUpdateError('');
       await api.updateUser(userId, payload);
-      await usersQuery.refetch();
+      await refetchUsers();
     } catch (error) {
       setUpdateError(error instanceof Error ? error.message : 'Unable to update user.');
     } finally {
@@ -55,7 +60,7 @@ export default function AdminUsersPage() {
   }
 
   let usersContent: ReactNode;
-  if (usersQuery.isLoading) {
+  if (isUsersLoading) {
     usersContent = <DataRegionLoading count={6} />;
   } else if (users.length) {
     usersContent = (
@@ -160,11 +165,9 @@ export default function AdminUsersPage() {
           />
         </div>
         {updateError ? <InlineAlert message={updateError} /> : null}
-        {usersQuery.error ? (
+        {usersError ? (
           <InlineAlert
-            message={
-              usersQuery.error instanceof Error ? usersQuery.error.message : 'Failed to load users.'
-            }
+            message={usersError instanceof Error ? usersError.message : 'Failed to load users.'}
           />
         ) : null}
 

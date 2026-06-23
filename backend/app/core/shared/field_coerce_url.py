@@ -1,4 +1,5 @@
 """URL coercion and tracking-cleanup helpers for field shaping."""
+
 from __future__ import annotations
 
 from app.core.config.extraction_rules import IMAGE_FIELDS, URL_FIELDS
@@ -14,7 +15,9 @@ from app.core.shared.url_utils import (
 )
 
 
-def coerce_url_field_value(field_name: str, value: object, page_url: str) -> object | None:
+def coerce_url_field_value(
+    field_name: str, value: object, page_url: str
+) -> object | None:
     urls = extract_urls(value, page_url)
     if field_name == ADDITIONAL_IMAGES_FIELD:
         return urls or None

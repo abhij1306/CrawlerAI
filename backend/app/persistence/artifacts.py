@@ -29,7 +29,13 @@ class ArtifactRepository:
         safe_name = Path(name).name
         if not safe_name or safe_name != name:
             raise ValueError("artifact name must be a plain file name")
-        relative = Path("runs") / str(max(run_id, 0)) / "results" / str(url_result_id) / safe_name
+        relative = (
+            Path("runs")
+            / str(max(run_id, 0))
+            / "results"
+            / str(url_result_id)
+            / safe_name
+        )
         target = self.resolve_uri(relative.as_posix())
         self._atomic_write(target, bytes(content))
         return ArtifactReference(
@@ -93,9 +99,7 @@ class ArtifactRepository:
 
     def _validate_manifest_references(self, manifest: ArtifactManifest) -> None:
         references = [
-            artifact
-            for attempt in manifest.attempts
-            for artifact in attempt.artifacts
+            artifact for attempt in manifest.attempts for artifact in attempt.artifacts
         ]
         references.extend(manifest.extraction.artifacts)
         attempt_ids = [attempt.attempt_id for attempt in manifest.attempts]

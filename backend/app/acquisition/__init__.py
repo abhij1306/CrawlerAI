@@ -6,4 +6,5 @@ from app.acquisition.contracts import (
     AttemptResult,
     AttemptSpec,
 )
+
 __all__ = ["AcquisitionPlan", "AcquisitionResult", "AttemptResult", "AttemptSpec"]

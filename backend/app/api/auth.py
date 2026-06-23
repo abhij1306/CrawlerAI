@@ -50,7 +50,9 @@ def _auth_client_id_from_request(request: Request) -> str:
     )
 
 
-async def _enforce_auth_rate_limit(request: Request, route_group: str) -> Response | None:
+async def _enforce_auth_rate_limit(
+    request: Request, route_group: str
+) -> Response | None:
     crawler_state = getattr(request.app.state, "crawler", None)
     if crawler_state is None:
         raise RuntimeError("FastAPI app state.crawler must be initialized")

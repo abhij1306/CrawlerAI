@@ -71,7 +71,9 @@ def test_run_task_in_worker_loop_installs_asyncio_exception_filter(
 
     monkeypatch.setattr(tasks.asyncio, "new_event_loop", lambda: loop)
     monkeypatch.setattr(tasks.asyncio, "set_event_loop", event_loops.append)
-    monkeypatch.setattr(tasks, "install_asyncio_exception_filter", installed_loops.append)
+    monkeypatch.setattr(
+        tasks, "install_asyncio_exception_filter", installed_loops.append
+    )
 
     tasks._run_task_in_worker_loop(42)
 

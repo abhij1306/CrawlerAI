@@ -1,23 +1,10 @@
 from __future__ import annotations
 
-import json
-import logging
 import math
-import re
 from collections.abc import Iterable
 from dataclasses import dataclass
-from functools import lru_cache
-from pathlib import Path
-from typing import Any
 
 from app.core.config.data_enrichment import (
-    DATA_ENRICHMENT_AUDIENCE_ALIASES,
-    DATA_ENRICHMENT_AVAILABILITY_TERMS,
-    DATA_ENRICHMENT_COLOR_FAMILY_ALIASES,
-    DATA_ENRICHMENT_GENDER_ALIASES,
-    DATA_ENRICHMENT_SEO_STOPWORDS,
-    DATA_ENRICHMENT_SHOPIFY_ATTRIBUTE_CRAWL_FIELDS,
-    DATA_ENRICHMENT_SHOPIFY_NORMALIZATION_ATTRIBUTE_NAMES,
     DATA_ENRICHMENT_TAXONOMY_ACCESSORY_EVIDENCE_TERMS,
     DATA_ENRICHMENT_TAXONOMY_ACCESSORY_PATH_TERMS,
     DATA_ENRICHMENT_TAXONOMY_CONTEXT_BLOCKS,
@@ -28,20 +15,16 @@ from app.core.config.data_enrichment import (
     DATA_ENRICHMENT_TAXONOMY_TOY_EVIDENCE_TERMS,
     DATA_ENRICHMENT_TAXONOMY_VERSION,
 )
-from app.core.shared.field_coerce import clean_text, strip_html_tags
-
-_token_re = re.compile(r"[a-z0-9]+")
-logger = logging.getLogger(__name__)
-
-
-@dataclass(frozen=True, slots=True)
-class TaxonomyIndex:
-    version: str
-    categories: tuple[dict[str, object], ...]
-    exact_lookup: dict[str, dict[str, object]]
-    leaf_lookup: dict[str, tuple[dict[str, object], ...]]
-    path_phrase_lookup: dict[str, tuple[dict[str, object], ...]]
-    id_lookup: dict[str, dict[str, object]]
+from app.core.shared.coerce_primitives import object_list
+from app.core.shared.field_coerce import clean_text
+from app.enrichment.shopify_repository import (
+    TaxonomyIndex,
+    normalize_category_path,
+    normalize_taxonomy_token,
+    string_iterable,
+    taxonomy_phrases,
+    tokenize_text,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -53,75 +36,6 @@ class TaxonomyEvidenceTokens:
     @property
     def all(self) -> set[str]:
         return self.primary | self.secondary | self.tertiary
-
-
-def normalize_category_path(value: object) -> str:
-    return " > ".join(
-        " ".join(tokenize_text(part))
-        for part in clean_text(value).split(">")
-        if tokenize_text(part)
-    )
-
-
-def tokenize_text(value: object) -> list[str]:
-    return [
-        normalized
-        for token in _token_re.findall(clean_text(strip_html_tags(value)).casefold())
-        if token != "s" and (normalized := normalize_taxonomy_token(token))  # nosec B105
-    ]
-
-
-def normalize_taxonomy_token(value: object) -> str:
-    """Normalize taxonomy match tokens.
-
-    Rules: preserve one-letter size tokens, map handbag leaves to Shopify bag
-    wording, singularize common English plurals, and leave other tokens intact.
-    """
-    token = str(value or "").strip().casefold()
-    if token in {"handbag", "handbags"}:
-        return "bag"
-    if len(token) > 4 and token.endswith("ies"):
-        return f"{token[:-3]}y"
-    if len(token) > 4 and token.endswith("sses"):
-        return token[:-2]
-    if len(token) > 4 and token.endswith(("xes", "ches", "shes")):
-        return token[:-2]
-    if len(token) > 3 and token.endswith("s") and not token.endswith("ss"):
-        return token[:-1]
-    return token
-
-
-def object_iterable(value: object) -> list[object]:
-    if isinstance(value, Iterable) and not isinstance(value, (str, bytes, dict)):
-        return list(value)
-    return []
-
-
-def string_iterable(value: object) -> list[str]:
-    return [str(item).strip() for item in object_iterable(value) if str(item).strip()]
-
-
-def repository_terms(repository: dict[str, object]) -> dict[str, object]:
-    terms = repository.get("normalization_terms")
-    return dict(terms) if isinstance(terms, dict) else {}
-
-
-def term_dict(terms: dict[str, object], key: str) -> dict[str, object]:
-    value = terms.get(key)
-    return dict(value) if isinstance(value, dict) else {}
-
-
-def attribute_lookup_keys(attribute: str) -> tuple[str, ...]:
-    normalized = str(attribute or "").strip().replace("-", "_")
-    explicit = DATA_ENRICHMENT_SHOPIFY_ATTRIBUTE_CRAWL_FIELDS.get(normalized)
-    if explicit:
-        return tuple(str(item) for item in explicit)
-    variants = [normalized]
-    if normalized.endswith("_type"):
-        variants.append(normalized[:-5])
-    if normalized.startswith("target_"):
-        variants.append(normalized.replace("target_", "", 1))
-    return tuple(dict.fromkeys(item for item in variants if item))
 
 
 def category_attribute_handles(
@@ -246,7 +160,9 @@ def _score_taxonomy_categories(
             string_iterable(item.get("path_match_tokens"))
             or tokenize_text(item.get("category_path"))
         )
-        attribute_tokens = set(string_iterable(item.get("attribute_match_tokens"))) - category_tokens
+        attribute_tokens = (
+            set(string_iterable(item.get("attribute_match_tokens"))) - category_tokens
+        )
         if not category_tokens:
             continue
         if taxonomy_candidate_conflicts(
@@ -284,9 +200,9 @@ def _score_taxonomy_categories(
             + (primary_attribute_score * 0.5)
         )
         evidence_tokens = evidence.all & category_tokens
-        enough_sparse_evidence = len(
-            evidence_tokens - DATA_ENRICHMENT_TAXONOMY_CONTEXT_ONLY_TOKENS
-        ) >= 2
+        enough_sparse_evidence = (
+            len(evidence_tokens - DATA_ENRICHMENT_TAXONOMY_CONTEXT_ONLY_TOKENS) >= 2
+        )
         if (
             primary_score == 0
             and primary_attribute_score == 0
@@ -324,7 +240,9 @@ def phrase_leaf_category_match(
             leaf_matches = [
                 item
                 for item in leaf_matches
-                if not taxonomy_candidate_conflicts(source_tokens, item.get("category_path"))
+                if not taxonomy_candidate_conflicts(
+                    source_tokens, item.get("category_path")
+                )
             ]
             for item in leaf_matches:
                 candidates.append(
@@ -375,21 +293,30 @@ def phrase_path_category_match(
         # and do not conflict; the post-filter prefers non-accessory paths.
         leaf_tokens_by_path = {
             str(item.get("category_path") or ""): set(
-                tokenize_text(item.get("leaf") or clean_text(item.get("category_path")).split(">")[-1])
+                tokenize_text(
+                    item.get("leaf")
+                    or clean_text(item.get("category_path")).split(">")[-1]
+                )
             )
             for item in taxonomy_index.categories
         }
         matches = [
             item
             for item in taxonomy_index.categories
-            if phrase_tokens <= normalized_token_set(
-                string_iterable(item.get("path_match_tokens"))
+            if phrase_tokens
+            <= normalized_token_set(string_iterable(item.get("path_match_tokens")))
+            and bool(
+                phrase_tokens
+                & leaf_tokens_by_path[str(item.get("category_path") or "")]
             )
-            and bool(phrase_tokens & leaf_tokens_by_path[str(item.get("category_path") or "")])
-            and not taxonomy_candidate_conflicts(source_tokens, item.get("category_path"))
+            and not taxonomy_candidate_conflicts(
+                source_tokens, item.get("category_path")
+            )
         ]
     non_accessory_matches = [
-        item for item in matches if not taxonomy_accessory_path(clean_text(item.get("category_path")).casefold())
+        item
+        for item in matches
+        if not taxonomy_accessory_path(clean_text(item.get("category_path")).casefold())
     ]
     if non_accessory_matches:
         matches = non_accessory_matches
@@ -402,20 +329,6 @@ def phrase_path_category_match(
         )
     )
     return category_match_payload(matches[0], score=0.87, source="path_phrase")
-
-
-def taxonomy_phrases(tokens: list[str]) -> list[str]:
-    phrases: list[str] = []
-    seen: set[str] = set()
-    max_width = min(5, len(tokens))
-    for width in range(max_width, 1, -1):
-        for index in range(len(tokens) - width + 1):
-            phrase = " ".join(tokens[index : index + width])
-            if phrase in seen:
-                continue
-            seen.add(phrase)
-            phrases.append(phrase)
-    return phrases
 
 
 def leaf_token_category_match(
@@ -440,7 +353,9 @@ def leaf_token_category_match(
         leaf_matches = [
             item
             for item in leaf_matches
-            if not taxonomy_candidate_conflicts(source_tokens, item.get("category_path"))
+            if not taxonomy_candidate_conflicts(
+                source_tokens, item.get("category_path")
+            )
         ]
         if len(leaf_matches) != 1:
             continue
@@ -516,11 +431,7 @@ def taxonomy_candidate_conflicts(
 
 
 def normalized_token_set(values: Iterable[object]) -> set[str]:
-    return {
-        token
-        for value in values
-        if (token := normalize_taxonomy_token(value))
-    }
+    return {token for value in values if (token := normalize_taxonomy_token(value))}
 
 
 def accessory_path_conflict(path_text: str, evidence_tokens: set[str]) -> bool:
@@ -593,257 +504,6 @@ def taxonomy_reference_for_category_path(
     )
 
 
-@lru_cache(maxsize=16)
-def load_attribute_repository_data(path: Path) -> dict[str, object]:
-    raw = load_json_dict(path)
-    raw_attributes = [
-        item for item in object_list(raw.get("attributes")) if isinstance(item, dict)
-    ]
-    attribute_lookup = {
-        str(item.get("handle") or "").replace("-", "_"): {
-            "name": str(item.get("name") or ""),
-            "handle": str(item.get("handle") or ""),
-            "values": [
-                str(value.get("name") or "")
-                for value in object_list(item.get("values"))
-                if isinstance(value, dict) and str(value.get("name") or "").strip()
-            ],
-        }
-        for item in raw_attributes
-        if str(item.get("handle") or "").strip()
-    }
-    color_attribute = merged_attribute_by_name(
-        raw_attributes,
-        DATA_ENRICHMENT_SHOPIFY_NORMALIZATION_ATTRIBUTE_NAMES["color"],
-    )
-    color_families = shopify_color_family_terms(color_attribute, raw_attributes)
-    size_attribute = attribute_by_name(
-        raw_attributes,
-        DATA_ENRICHMENT_SHOPIFY_NORMALIZATION_ATTRIBUTE_NAMES["size"],
-    )
-    audience_attribute = attribute_by_name(
-        raw_attributes,
-        DATA_ENRICHMENT_SHOPIFY_NORMALIZATION_ATTRIBUTE_NAMES["audience"],
-    )
-    size_systems = shopify_size_systems(size_attribute)
-    # Audience falls back only to audience-specific aliases; gender terms stay separate.
-    audience_terms = shopify_attribute_terms(audience_attribute) or {
-        key: list(values)
-        for key, values in DATA_ENRICHMENT_AUDIENCE_ALIASES.items()
-    }
-    material_terms = shopify_material_terms(
-        raw_attributes,
-        DATA_ENRICHMENT_SHOPIFY_NORMALIZATION_ATTRIBUTE_NAMES["fabric"],
-        DATA_ENRICHMENT_SHOPIFY_NORMALIZATION_ATTRIBUTE_NAMES["material"],
-    )
-    return {
-        "version": str(raw.get("version") or ""),
-        "normalization_terms": {
-            "availability_terms": {
-                key: list(values)
-                for key, values in DATA_ENRICHMENT_AVAILABILITY_TERMS.items()
-            },
-            "audience_terms": audience_terms,
-            "color_families": color_families,
-            "gender_terms": {
-                key: list(values)
-                for key, values in DATA_ENRICHMENT_GENDER_ALIASES.items()
-            },
-            "material_terms": material_terms,
-            "seo_stopwords": list(DATA_ENRICHMENT_SEO_STOPWORDS),
-            "size_systems": size_systems,
-        },
-        "attributes_by_handle": attribute_lookup,
-    }
-
-
-@lru_cache(maxsize=16)
-def load_taxonomy_index(path: Path) -> TaxonomyIndex:
-    raw = load_json_dict(path)
-    rows: list[dict[str, object]] = []
-    exact_lookup: dict[str, dict[str, object]] = {}
-    leaf_lookup: dict[str, list[dict[str, object]]] = {}
-    path_phrase_lookup: dict[str, list[dict[str, object]]] = {}
-    id_lookup: dict[str, dict[str, object]] = {}
-    for vertical in object_list(raw.get("verticals")):
-        if not isinstance(vertical, dict):
-            continue
-        for category in object_list(vertical.get("categories")):
-            if not isinstance(category, dict):
-                continue
-            category_id = str(category.get("id") or "").strip()
-            category_path = clean_text(category.get("full_name"))
-            normalized_path = normalize_category_path(category_path)
-            leaf = normalize_category_path(category.get("name"))
-            if not category_id or not category_path or not normalized_path:
-                continue
-            row: dict[str, Any] = {
-                "category_id": category_id,
-                "category_path": category_path,
-                "normalized_path": normalized_path,
-                "leaf": leaf,
-                "attribute_handles": [
-                    str(item.get("handle") or "").replace("-", "_")
-                    for item in object_list(category.get("attributes"))
-                    if isinstance(item, dict) and str(item.get("handle") or "").strip()
-                ],
-            }
-            row["path_match_tokens"] = set(tokenize_text(row["category_path"]))
-            row["attribute_match_tokens"] = category_attribute_match_tokens(row)
-            rows.append(row)
-            exact_lookup[normalized_path] = row
-            if leaf:
-                leaf_lookup.setdefault(leaf, []).append(row)
-            for phrase in taxonomy_path_lookup_phrases(row):
-                path_phrase_lookup.setdefault(phrase, []).append(row)
-            id_lookup[category_id] = row
-    return TaxonomyIndex(
-        version=str(raw.get("version") or ""),
-        categories=tuple(rows),
-        exact_lookup=exact_lookup,
-        leaf_lookup={key: tuple(value) for key, value in leaf_lookup.items()},
-        path_phrase_lookup={key: tuple(value) for key, value in path_phrase_lookup.items()},
-        id_lookup=id_lookup,
-    )
-
-
-def taxonomy_path_lookup_phrases(item: dict[str, object]) -> list[str]:
-    phrases = taxonomy_phrases(tokenize_text(item.get("normalized_path")))
-    parts = [part for part in clean_text(item.get("category_path")).split(">") if part.strip()]
-    if len(parts) < 2:
-        return phrases
-    root_tokens = tokenize_text(parts[0])
-    leaf_tokens = tokenize_text(parts[-1])
-    for root_token in root_tokens:
-        if root_token in DATA_ENRICHMENT_TAXONOMY_CONTEXT_ONLY_TOKENS:
-            continue
-        for leaf_token in leaf_tokens:
-            if leaf_token in DATA_ENRICHMENT_TAXONOMY_CONTEXT_ONLY_TOKENS:
-                continue
-            phrases.append(f"{leaf_token} {root_token}")
-            phrases.append(f"{root_token} {leaf_token}")
-    return list(dict.fromkeys(phrases))
-
-
-def attribute_by_name(
-    attributes: list[dict[str, object]], name: str
-) -> dict[str, object]:
-    normalized_name = str(name or "").strip().casefold()
-    for item in attributes:
-        if str(item.get("name") or "").strip().casefold() == normalized_name:
-            values = [
-                str(value.get("name") or "")
-                for value in object_list(item.get("values"))
-                if isinstance(value, dict) and str(value.get("name") or "").strip()
-            ]
-            return {
-                "name": str(item.get("name") or ""),
-                "handle": str(item.get("handle") or ""),
-                "values": values,
-            }
-    return {}
-
-
-def merged_attribute_by_name(
-    attributes: list[dict[str, object]], name: str
-) -> dict[str, object]:
-    normalized_name = str(name or "").strip().casefold()
-    values: list[str] = []
-    seen: set[str] = set()
-    handle = ""
-    for item in attributes:
-        if str(item.get("name") or "").strip().casefold() != normalized_name:
-            continue
-        if not handle:
-            handle = str(item.get("handle") or "")
-        for value in object_list(item.get("values")):
-            if not isinstance(value, dict):
-                continue
-            cleaned = str(value.get("name") or "").strip()
-            if cleaned and cleaned.casefold() not in seen:
-                seen.add(cleaned.casefold())
-                values.append(cleaned)
-    if not values:
-        return {}
-    return {"name": str(name or ""), "handle": handle, "values": values}
-
-
-def shopify_material_terms(
-    attributes: list[dict[str, object]], *names: str
-) -> dict[str, list[str]]:
-    values: dict[str, list[str]] = {}
-    for name in names:
-        attribute = attribute_by_name(attributes, name)
-        for value in object_list(attribute.get("values")):
-            cleaned = clean_text(value).casefold()
-            if cleaned:
-                values.setdefault(cleaned, [cleaned])
-    return values
-
-
-def shopify_attribute_terms(attribute: dict[str, object]) -> dict[str, list[str]]:
-    values: dict[str, list[str]] = {}
-    for value in object_list(attribute.get("values")):
-        cleaned = clean_text(value).casefold()
-        if cleaned:
-            values[cleaned] = [cleaned]
-    return values
-
-
-def shopify_color_family_terms(
-    attribute: dict[str, object],
-    attributes: list[dict[str, object]],
-) -> dict[str, list[str]]:
-    source_values = set(shopify_attribute_terms(attribute).keys())
-    for item in attributes:
-        for value in object_list(item.get("values")):
-            if isinstance(value, dict) and clean_text(value.get("name")):
-                source_values.add(clean_text(value.get("name")).casefold())
-    if not source_values:
-        return {}
-    terms: dict[str, list[str]] = {}
-    for canonical, aliases in DATA_ENRICHMENT_COLOR_FAMILY_ALIASES.items():
-        allowed = [alias for alias in aliases if clean_text(alias).casefold() in source_values]
-        if clean_text(canonical).casefold() in source_values and canonical not in allowed:
-            allowed.insert(0, canonical)
-        if allowed:
-            terms[canonical] = list(dict.fromkeys(allowed))
-    return terms
-
-
-def shopify_size_systems(attribute: dict[str, object]) -> dict[str, object]:
-    aliases: dict[str, str] = {}
-    alpha_values: set[str] = set()
-    numeric_values: set[str] = set()
-    for value in object_list(attribute.get("values")):
-        cleaned = clean_text(value)
-        if not cleaned:
-            continue
-        match = re.search(r"\(([A-Za-z0-9]+)\)\s*$", cleaned)
-        canonical = match.group(1).upper() if match else ""
-        if canonical:
-            aliases[cleaned.casefold()] = canonical
-            base_name = clean_text(re.sub(r"\s*\([A-Za-z0-9]+\)\s*$", "", cleaned))
-            if base_name:
-                aliases[base_name.casefold()] = canonical
-            if re.fullmatch(r"[A-Z]{1,4}|\d+XL", canonical):
-                alpha_values.add(canonical.casefold())
-            elif canonical.isdigit():
-                numeric_values.add(canonical.casefold())
-        if cleaned.casefold() == "one size":
-            aliases[cleaned.casefold()] = "OS"
-            alpha_values.add("os")
-        if cleaned.isdigit():
-            numeric_values.add(cleaned.casefold())
-    return {
-        "aliases": aliases,
-        "systems": {
-            "alpha": sorted(alpha_values),
-            "numeric": sorted(numeric_values),
-        },
-    }
-
-
 def category_match_payload(
     item: dict[str, object], *, score: float, source: str
 ) -> dict[str, object]:
@@ -878,18 +538,6 @@ def pool_tokens(
     return tokens
 
 
-def category_attribute_match_tokens(item: dict[str, Any]) -> set[str]:
-    return set(
-        tokenize_text(
-            " ".join(
-                str(handle)
-                for handle in object_iterable(item.get("attribute_handles"))
-                if str(handle).strip()
-            )
-        )
-    )
-
-
 def weighted_overlap(source_tokens: set[str], category_tokens: set[str]) -> float:
     if not source_tokens or not category_tokens:
         return 0.0
@@ -899,7 +547,9 @@ def weighted_overlap(source_tokens: set[str], category_tokens: set[str]) -> floa
     return len(overlap) / len(source_tokens)
 
 
-def weighted_product_overlap(source_tokens: set[str], category_tokens: set[str]) -> float:
+def weighted_product_overlap(
+    source_tokens: set[str], category_tokens: set[str]
+) -> float:
     product_tokens = {
         token
         for token in source_tokens
@@ -908,22 +558,12 @@ def weighted_product_overlap(source_tokens: set[str], category_tokens: set[str])
     return weighted_overlap(product_tokens, category_tokens)
 
 
-def has_product_kind_overlap(source_tokens: set[str], category_tokens: set[str]) -> bool:
+def has_product_kind_overlap(
+    source_tokens: set[str], category_tokens: set[str]
+) -> bool:
     overlap = source_tokens & category_tokens
     if not overlap:
         return False
     return any(
         token not in DATA_ENRICHMENT_TAXONOMY_CONTEXT_ONLY_TOKENS for token in overlap
     )
-
-
-def load_json_dict(path: Path) -> dict[str, object]:
-    with Path(path).open("r", encoding="utf-8") as handle:
-        payload = json.load(handle)
-    if not isinstance(payload, dict):
-        raise ValueError(f"Data enrichment JSON must be an object: {path}")
-    return payload
-
-
-def object_list(value: object) -> list[object]:
-    return list(value) if isinstance(value, (list, tuple)) else []

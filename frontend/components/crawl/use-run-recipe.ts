@@ -8,6 +8,5 @@ export function useRunRecipe(runId: number, enabled: boolean) {
     queryKey: queryKeys.runs.recipe(runId),
     queryFn: ({ signal }) => api.getDomainRecipe(runId, { signal }),
     enabled,
-    refetchOnMount: 'always',
   });
 }

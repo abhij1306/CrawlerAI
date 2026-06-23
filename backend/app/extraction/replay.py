@@ -3,6 +3,11 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from app.core.config.extraction_recipes import (
+    ECOMMERCE_LISTING_FRAGMENT_ARTIFACT_ID,
+    ECOMMERCE_LISTING_VISUAL_HTML_ARTIFACT_ID,
+)
+
 from app.extraction.contracts import (
     ArtifactRef,
     CaptureBundle,
@@ -37,18 +42,53 @@ class MemoryArtifactReader:
         return artifact_id in self._payloads
 
 
-def fixture_bundle_from_inputs(html: str, page_url: str, requested_url: str | None, network_payloads: list[dict[str, object]] | None = None, artifacts: dict[str, object] | None = None, html_document: HtmlDocument | None = None) -> tuple[CaptureBundle, MemoryArtifactReader]:
+def fixture_bundle_from_inputs(
+    html: str,
+    page_url: str,
+    requested_url: str | None,
+    network_payloads: list[dict[str, object]] | None = None,
+    artifacts: dict[str, object] | None = None,
+    html_document: HtmlDocument | None = None,
+) -> tuple[CaptureBundle, MemoryArtifactReader]:
     payloads: dict[str, Any] = {"html": html}
-    refs = [ArtifactRef(artifact_id="html", artifact_type="rendered_html", content_sha256=content_sha256(html), storage_uri="memory://html", media_type="text/html")]
+    refs = [
+        ArtifactRef(
+            artifact_id="html",
+            artifact_type="rendered_html",
+            content_sha256=content_sha256(html),
+            storage_uri="memory://html",
+            media_type="text/html",
+        )
+    ]
     js_state = (artifacts or {}).get("js_state_objects")
     if isinstance(js_state, dict):
         payloads["js_state"] = js_state
-        refs.append(ArtifactRef(artifact_id="js_state", artifact_type="js_state", content_sha256=content_sha256(json.dumps(js_state, sort_keys=True, default=str)), storage_uri="memory://js_state", media_type="application/json"))
+        refs.append(
+            ArtifactRef(
+                artifact_id="js_state",
+                artifact_type="js_state",
+                content_sha256=content_sha256(
+                    json.dumps(js_state, sort_keys=True, default=str)
+                ),
+                storage_uri="memory://js_state",
+                media_type="application/json",
+            )
+        )
     for index, payload in enumerate(network_payloads or []):
         artifact_id = f"network_{index}"
         body = payload.get("body") if isinstance(payload, dict) else payload
         payloads[artifact_id] = body
-        refs.append(ArtifactRef(artifact_id=artifact_id, artifact_type="network_json", content_sha256=content_sha256(json.dumps(body, sort_keys=True, default=str)), storage_uri=f"memory://{artifact_id}", media_type="application/json"))
+        refs.append(
+            ArtifactRef(
+                artifact_id=artifact_id,
+                artifact_type="network_json",
+                content_sha256=content_sha256(
+                    json.dumps(body, sort_keys=True, default=str)
+                ),
+                storage_uri=f"memory://{artifact_id}",
+                media_type="application/json",
+            )
+        )
     adapter_value = (artifacts or {}).get("adapter_artifacts")
     adapter_artifacts = list(adapter_value) if isinstance(adapter_value, list) else []
     if adapter_artifacts:
@@ -59,14 +99,73 @@ def fixture_bundle_from_inputs(html: str, page_url: str, requested_url: str | No
         artifact_id = f"adapter_{index}"
         body = artifact.get("body", artifact)
         payloads[artifact_id] = body
-        refs.append(ArtifactRef(artifact_id=artifact_id, artifact_type="network_json", content_sha256=content_sha256(json.dumps(body, sort_keys=True, default=str)), storage_uri=f"memory://{artifact_id}", media_type="application/json"))
+        refs.append(
+            ArtifactRef(
+                artifact_id=artifact_id,
+                artifact_type="network_json",
+                content_sha256=content_sha256(
+                    json.dumps(body, sort_keys=True, default=str)
+                ),
+                storage_uri=f"memory://{artifact_id}",
+                media_type="application/json",
+            )
+        )
     css_value = (artifacts or {}).get("css_field_rules")
     css_rows = css_value if isinstance(css_value, list) else []
     css_rules = [dict(row) for row in css_rows if isinstance(row, dict)]
     if css_rules:
         payloads["css_field_rules"] = css_rules
-        refs.append(ArtifactRef(artifact_id="css_field_rules", artifact_type="css_recipe", content_sha256=content_sha256(json.dumps(css_rules, sort_keys=True, default=str)), storage_uri="memory://css_field_rules", media_type="application/json"))
-    bundle = CaptureBundle(schema_version="capture.v1", bundle_id=stable_id("bundle", requested_url or page_url, page_url, html[:80]), run_id=0, requested_url=requested_url or page_url, final_url=page_url, request_context=RequestContext(context_id=stable_id("ctx", requested_url or page_url)), artifacts=tuple(refs), acquisition_outcome="ok")
+        refs.append(
+            ArtifactRef(
+                artifact_id="css_field_rules",
+                artifact_type="css_recipe",
+                content_sha256=content_sha256(
+                    json.dumps(css_rules, sort_keys=True, default=str)
+                ),
+                storage_uri="memory://css_field_rules",
+                media_type="application/json",
+            )
+        )
+    listing_artifacts = artifacts or {}
+    fragments = listing_artifacts.get(ECOMMERCE_LISTING_FRAGMENT_ARTIFACT_ID)
+    fragment_values = (
+        [str(value).strip() for value in fragments if str(value or "").strip()]
+        if isinstance(fragments, list)
+        else []
+    )
+    visual_html = str(
+        listing_artifacts.get(ECOMMERCE_LISTING_VISUAL_HTML_ARTIFACT_ID) or ""
+    ).strip()
+    for artifact_id, artifact_html in (
+        (
+            ECOMMERCE_LISTING_FRAGMENT_ARTIFACT_ID,
+            f"<main>{''.join(fragment_values)}</main>" if fragment_values else "",
+        ),
+        (ECOMMERCE_LISTING_VISUAL_HTML_ARTIFACT_ID, visual_html),
+    ):
+        if artifact_html:
+            payloads[artifact_id] = artifact_html
+            refs.append(
+                ArtifactRef(
+                    artifact_id=artifact_id,
+                    artifact_type="rendered_html",
+                    content_sha256=content_sha256(artifact_html),
+                    storage_uri=f"memory://{artifact_id}",
+                    media_type="text/html",
+                )
+            )
+    bundle = CaptureBundle(
+        schema_version="capture.v1",
+        bundle_id=stable_id("bundle", requested_url or page_url, page_url, html[:80]),
+        run_id=0,
+        requested_url=requested_url or page_url,
+        final_url=page_url,
+        request_context=RequestContext(
+            context_id=stable_id("ctx", requested_url or page_url)
+        ),
+        artifacts=tuple(refs),
+        acquisition_outcome="ok",
+    )
     return bundle, MemoryArtifactReader(
         payloads,
         html_documents={"html": html_document} if html_document is not None else None,
@@ -111,7 +210,9 @@ def request_from_acquisition_result(
 ) -> ExtractionRequest:
     html = str(getattr(acquisition_result, "html", "") or "")
     final_url = str(getattr(acquisition_result, "final_url", "") or requested_url)
-    run_id = int(getattr(getattr(acquisition_result, "request", None), "run_id", 0) or 0)
+    run_id = int(
+        getattr(getattr(acquisition_result, "request", None), "run_id", 0) or 0
+    )
     network_payloads = list(getattr(acquisition_result, "network_payloads", []) or [])
     artifacts = dict(getattr(acquisition_result, "artifacts", {}) or {})
     html_document = getattr(acquisition_result, "html_document", None)
@@ -127,7 +228,9 @@ def request_from_acquisition_result(
         blocked=bool(getattr(acquisition_result, "blocked", False)),
         network_payloads=network_payloads,
         artifacts=artifacts,
-        html_document=html_document if isinstance(html_document, HtmlDocument) else None,
+        html_document=html_document
+        if isinstance(html_document, HtmlDocument)
+        else None,
     )
     return ExtractionRequest(
         surface=surface,
@@ -167,13 +270,17 @@ def _bundle_from_runtime_inputs(
         )
         for ref in bundle.artifacts
     )
-    outcome = "blocked" if blocked else "error" if _is_error_status(status_code) else "ok"
+    outcome = (
+        "blocked" if blocked else "error" if _is_error_status(status_code) else "ok"
+    )
     return (
         bundle.model_copy(
             update={
                 "bundle_id": stable_id("bundle", run_id, requested_url, page_url),
                 "run_id": run_id,
-                "http_status": int(status_code) if isinstance(status_code, int) else None,
+                "http_status": int(status_code)
+                if isinstance(status_code, int)
+                else None,
                 "acquisition_method": method or None,
                 "artifacts": refs,
                 "acquisition_outcome": outcome,

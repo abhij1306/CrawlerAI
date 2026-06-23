@@ -2,17 +2,46 @@ from __future__ import annotations
 
 import pytest
 
+from app.core.records.url_identity import (
+    conflicting_product_asset_urls,
+    detail_title_from_url,
+    detail_url_resource_identity,
+)
 from app.core.shared.url_utils import (
     ensure_scheme,
     identity_token,
     is_placeholder_image_url,
+    is_utility_image_url,
+    low_resolution_asset_urls,
     absolute_url,
+    asset_url_identity,
     extract_urls,
     same_host,
 )
 
 
 @pytest.mark.unit
+def test_opaque_terminal_detail_segment_does_not_fall_back_to_category_title() -> None:
+    assert detail_title_from_url(
+        "https://kith.test/collections/mens-footwear-sneakers/products/st40002-02000"
+    ) == ""
+    assert detail_title_from_url(
+        "https://shop.test/womens/categories/clothing/pants/wide-leg/ME988"
+    ) == ""
+    assert detail_title_from_url("https://shop.test/browse/product.do?pid=887835012") == ""
+
+
+def test_descriptive_html_detail_url_has_resource_identity() -> None:
+    url = (
+        "https://www.endclothing.com/us/"
+        "47-ny-yankees-clean-up-cap-b-rgw17gws-vn.html?queryID=tracking"
+    )
+    assert detail_url_resource_identity(url) == (
+        "www.endclothing.com/us/"
+        "47-ny-yankees-clean-up-cap-b-rgw17gws-vn.html"
+    )
+
+
 def test_absolute_url_repairs_relative_and_bare_host_values() -> None:
     assert absolute_url("https://example.com/a/page", "../p") == "https://example.com/p"
     assert absolute_url("https://example.com/a/page", "?q=1") == (
@@ -25,10 +54,13 @@ def test_absolute_url_repairs_relative_and_bare_host_values() -> None:
         "https://cdn.example.com"
     )
     assert absolute_url("https://example.com", "") == ""
-    assert absolute_url(
-        "https://www.carhartt.com/en-eu/c/men/t-shirts/short-sleeved/eum3000076",
-        "en-eu/p/irvine-relaxed-truck-t-shirt/107455",
-    ) == "https://www.carhartt.com/en-eu/p/irvine-relaxed-truck-t-shirt/107455"
+    assert (
+        absolute_url(
+            "https://www.carhartt.com/en-eu/c/men/t-shirts/short-sleeved/eum3000076",
+            "en-eu/p/irvine-relaxed-truck-t-shirt/107455",
+        )
+        == "https://www.carhartt.com/en-eu/p/irvine-relaxed-truck-t-shirt/107455"
+    )
 
 
 @pytest.mark.unit
@@ -37,6 +69,45 @@ def test_ensure_scheme_preserves_relative_and_existing_scheme() -> None:
     assert ensure_scheme("/path") == "/path"
     assert ensure_scheme("javascript:void(0)") == "javascript:void(0)"
     assert ensure_scheme("http://example.com") == "http://example.com"
+
+
+@pytest.mark.unit
+def test_asset_url_identity_encodes_paths_and_keeps_meaningful_params() -> None:
+    assert asset_url_identity("https://cdn.test/i/Trail Shoe.jpg?width=800") == (
+        "https://cdn.test/i/Trail%20Shoe.jpg?width=800",
+        "https://cdn.test/i/Trail%20Shoe.jpg",
+    )
+    assert asset_url_identity(
+        "https://cdn.test/i/Trail%20Shoe.jpg?color=red&width=800"
+    ) == (
+        "https://cdn.test/i/Trail%20Shoe.jpg?color=red&width=800",
+        "https://cdn.test/i/Trail%20Shoe.jpg?color=red",
+    )
+
+
+@pytest.mark.unit
+def test_asset_url_identity_ignores_cdn_path_transforms() -> None:
+    vans_thumbnail = (
+        "https://assets.vans.com/images/t_Thumbnail/v1769548026/"
+        "VN000E9TBPG-ALT1/Old-Skool-Shoe-VANS-ALT1.png"
+    )
+    vans_large = (
+        "https://assets.vans.com/images/t_img/c_fill,g_center,f_auto,h_2500,w_2000/"
+        "v1769548026/VN000E9TBPG-ALT1/Old-Skool-Shoe-VANS-ALT1.png"
+    )
+    puma_large = (
+        "https://images.puma.com/image/upload/"
+        "f_auto,q_auto,b_rgb:fafafa,w_2000,h_2000/global/406329/02/fnd/IND/fmt/png/"
+        "Speedcat-Sneakers"
+    )
+    puma_small = (
+        "https://images.puma.com/image/upload/"
+        "f_auto,q_auto,b_rgb:fafafa,w_600,h_600/global/406329/02/fnd/IND/fmt/png/"
+        "Speedcat-Sneakers"
+    )
+
+    assert asset_url_identity(vans_thumbnail)[1] == asset_url_identity(vans_large)[1]
+    assert asset_url_identity(puma_large)[1] == asset_url_identity(puma_small)[1]
 
 
 @pytest.mark.unit
@@ -84,6 +155,29 @@ def test_shopify_no_image_storefront_asset_is_rejected() -> None:
 
 
 @pytest.mark.unit
+def test_navigation_and_label_only_image_urls_are_rejected() -> None:
+    assert is_utility_image_url(
+        "https://cdn.test/images/MegaNavPromo_WhatsNew.jpg"
+    )
+    assert is_utility_image_url(
+        "https://cdn.test/products/pants/Front%20view"
+    )
+
+
+def test_single_low_resolution_primary_candidate_is_rejected() -> None:
+    image = "https://cdn.test/product.jpg?sw=71"
+    assert low_resolution_asset_urls((image,)) == frozenset({image})
+
+
+def test_single_descriptive_foreign_gallery_asset_is_rejected() -> None:
+    opaque = "https://cdn.test/6bdb04d9-1f2b-4511-a911.jpg"
+    foreign = "https://cdn.test/sourcing_images/playstation_4_two_controllers.jpg"
+    assert conflicting_product_asset_urls(
+        ("iPhone 15 Plus Unlocked", "https://shop.test/iphone-15-plus"),
+        (opaque, foreign),
+    ) == frozenset({foreign})
+
+
 def test_identity_token_does_not_singularize_double_s_words() -> None:
     assert identity_token("dress") == "dress"
     assert identity_token("glass") == "glass"

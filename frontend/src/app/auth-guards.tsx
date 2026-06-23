@@ -19,13 +19,13 @@ function SessionLoading() {
 
 export function RequireSession() {
   const location = useLocation();
-  const sessionQuery = useQuery(getAuthSessionQueryOptions());
+  const { isPending, error, data } = useQuery(getAuthSessionQueryOptions());
 
-  if (sessionQuery.isPending) return <SessionLoading />;
-  if (httpErrorStatus(sessionQuery.error) === 401) {
+  if (isPending) return <SessionLoading />;
+  if (httpErrorStatus(error) === 401) {
     return <Navigate to="/login" replace state={{ from: location }} />;
   }
-  if (sessionQuery.error || !sessionQuery.data) {
+  if (error || !data) {
     return (
       <div className="app-shell-feedback" role="alert">
         <div className="border-border card-gradient max-w-sm rounded-lg border p-6 text-center">
@@ -42,7 +42,7 @@ export function RequireSession() {
   }
 
   return (
-    <SessionProvider user={sessionQuery.data}>
+    <SessionProvider user={data}>
       <Outlet />
     </SessionProvider>
   );

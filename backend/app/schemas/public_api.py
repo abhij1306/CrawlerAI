@@ -45,7 +45,6 @@ class PublicBatchExtractRequest(BaseModel):
     webhook_url: str | None = None
 
 
-
 class PublicProductExtraction(BaseModel):
     url: str
     surface: str

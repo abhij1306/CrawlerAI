@@ -126,7 +126,9 @@ async def test_authenticate_user_rehash_does_not_commit_unrelated_changes(
         class_=AsyncSession,
     )
     async with observer_factory() as observer_session:
-        observed_other_user = await observer_session.get(type(other_user), other_user.id)
+        observed_other_user = await observer_session.get(
+            type(other_user), other_user.id
+        )
 
     assert authenticated is not None
     assert observed_other_user is not None

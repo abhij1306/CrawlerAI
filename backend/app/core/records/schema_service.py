@@ -7,11 +7,15 @@ from datetime import UTC, datetime, timedelta
 from app.models.review import ReviewPromotion
 from app.core.config.runtime_settings import crawler_runtime_settings
 from app.core.domain_utils import normalize_domain
-from app.core.records.field_policy import canonical_fields_for_surface, field_allowed_for_surface
+from app.core.records.field_policy import (
+    canonical_fields_for_surface,
+    field_allowed_for_surface,
+)
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 _SCHEMA_MAX_AGE = timedelta(days=crawler_runtime_settings.schema_max_age_days)
+
 
 @dataclass
 class ResolvedSchema:
@@ -65,7 +69,9 @@ def _snapshot_to_resolved(
     saved_at_dt = _parse_saved_at(saved_at)
     stale = bool(saved_at_dt and datetime.now(UTC) - saved_at_dt > _SCHEMA_MAX_AGE)
     stored_fields_raw = payload.get("fields")
-    stored_fields_list = stored_fields_raw if isinstance(stored_fields_raw, list) else []
+    stored_fields_list = (
+        stored_fields_raw if isinstance(stored_fields_raw, list) else []
+    )
     stored_fields = _dedupe_fields(
         field
         for field in stored_fields_list
@@ -73,7 +79,9 @@ def _snapshot_to_resolved(
     )
     baseline_fields_raw = payload.get("baseline_fields")
     baseline_fields_list = (
-        baseline_fields_raw if isinstance(baseline_fields_raw, list) else baseline_fields
+        baseline_fields_raw
+        if isinstance(baseline_fields_raw, list)
+        else baseline_fields
     )
     baseline = _dedupe_fields(
         field
@@ -83,9 +91,7 @@ def _snapshot_to_resolved(
     new_fields_raw = payload.get("new_fields")
     new_fields_list = new_fields_raw if isinstance(new_fields_raw, list) else []
     new_fields = _dedupe_fields(
-        field
-        for field in new_fields_list
-        if field_allowed_for_surface(surface, field)
+        field for field in new_fields_list if field_allowed_for_surface(surface, field)
     )
     deprecated_fields_raw = payload.get("deprecated_fields")
     deprecated_fields_list = (
@@ -138,9 +144,7 @@ async def load_resolved_schema(
         if field_allowed_for_surface(surface, field)
     )
     normalized_domain = normalize_domain(domain)
-    normalized_explicit = _dedupe_fields(
-        explicit_fields or []
-    )
+    normalized_explicit = _dedupe_fields(explicit_fields or [])
     if not normalized_domain:
         fields = _dedupe_fields([*baseline_fields, *normalized_explicit])
         return ResolvedSchema(
@@ -171,5 +175,3 @@ async def load_resolved_schema(
         snapshot=snapshot if isinstance(snapshot, dict) else None,
         explicit_fields=normalized_explicit,
     )
-
-

@@ -228,10 +228,11 @@ function recordConfidence(record: CrawlRecord): { score: number; level: string }
   if (!Number.isFinite(score)) {
     return null;
   }
+  const normalizedScore = normalizeConfidenceScore(score);
   return {
-    score,
+    score: normalizedScore,
     level:
-      String(payload.level || qualityLevelFromScore(score))
+      String(payload.level || qualityLevelFromScore(normalizedScore))
         .trim()
         .toLowerCase() || 'unknown',
   };
@@ -246,21 +247,8 @@ function groupConfidence(group: LogSiteGroup): { score: number; level: string } 
   }
   const average = scores.reduce((total, item) => total + item.score, 0) / scores.length;
   return {
-    score: normalizeConfidenceScore(average),
-    level: String(qualityLevelFromScore(normalizeConfidenceScore(average))),
-  };
-}
-
-function confidenceFromCoverage(
-  coverage: ReturnType<typeof groupFieldCoverage>,
-): { score: number; level: string } | null {
-  if (!coverage.totalCount) {
-    return null;
-  }
-  const score = Math.max(0, Math.min(coverage.foundCount / coverage.totalCount, 1));
-  return {
-    score,
-    level: String(qualityLevelFromScore(score)),
+    score: average,
+    level: String(qualityLevelFromScore(average)),
   };
 }
 
@@ -272,23 +260,6 @@ function normalizeConfidenceScore(score: number) {
     return score / 100;
   }
   return Math.max(0, Math.min(score, 1));
-}
-
-function displayConfidence(
-  backendConfidence: ReturnType<typeof groupConfidence>,
-  coverageConfidence: ReturnType<typeof confidenceFromCoverage>,
-) {
-  const candidates = [backendConfidence, coverageConfidence].filter(
-    (value): value is { score: number; level: string } => value !== null,
-  );
-  if (!candidates.length) {
-    return null;
-  }
-  const score = Math.max(...candidates.map((item) => normalizeConfidenceScore(item.score)));
-  return {
-    score,
-    level: String(qualityLevelFromScore(score)),
-  };
 }
 
 function numberOrNull(value: unknown) {
@@ -336,18 +307,60 @@ function groupDurationMs(group: LogSiteGroup, activeNowMs?: number): number | nu
   return Math.max(0, Math.max(...endCandidatesMs) - startedMs);
 }
 
-function groupStillActive(group: LogSiteGroup) {
-  if (!group.url) {
-    return false;
-  }
-  const lastMessage = sanitizeLogMessage(group.logs.at(-1)?.message ?? '').toLowerCase();
-  return !(
+const URL_TERMINAL_MESSAGE_PATTERN =
+  /\b(processing failed|timed out|stopped after reaching max_records|(?:extracted|yielded)\s+0\s+records?|no (?:public )?records? extracted|rejected detail extraction)\b/i;
+
+function groupHasTerminalOutcome(group: LogSiteGroup) {
+  return (
+    !group.url ||
+    group.records.length > 0 ||
     group.stageLogs.persistence.length > 0 ||
     group.hasError ||
-    lastMessage.includes('processing failed') ||
-    lastMessage.includes('timed out') ||
-    lastMessage.includes('stopped after reaching max_records')
+    group.logs.some((log) => URL_TERMINAL_MESSAGE_PATTERN.test(sanitizeLogMessage(log.message)))
   );
+}
+
+function activeSiteGroupKeys(groups: LogSiteGroup[], live: boolean) {
+  const activeKeys = new Set<string>();
+  if (!live) {
+    return activeKeys;
+  }
+
+  let latestSerialGroup: LogSiteGroup | null = null;
+  for (const group of groups) {
+    if (groupHasTerminalOutcome(group)) {
+      continue;
+    }
+    if (group.key.startsWith('site:prefixed:')) {
+      activeKeys.add(group.key);
+    } else {
+      latestSerialGroup = group;
+    }
+  }
+  if (latestSerialGroup) {
+    activeKeys.add(latestSerialGroup.key);
+  }
+  return activeKeys;
+}
+
+function serialGroupEndMsByKey(groups: LogSiteGroup[]) {
+  const endMsByKey = new Map<string, number>();
+  let nextStartMs: number | null = null;
+  for (let index = groups.length - 1; index >= 0; index -= 1) {
+    const group = groups[index];
+    if (!group.url || group.key.startsWith('site:prefixed:')) {
+      continue;
+    }
+    if (nextStartMs !== null) {
+      endMsByKey.set(group.key, nextStartMs);
+    }
+    const createdAt = group.logs[0]?.created_at;
+    const startMs = createdAt ? parseApiDate(createdAt).getTime() : Number.NaN;
+    if (Number.isFinite(startMs)) {
+      nextStartMs = startMs;
+    }
+  }
+  return endMsByKey;
 }
 
 function groupFieldCoverage(group: LogSiteGroup, requestedFields: string[]) {
@@ -578,6 +591,12 @@ export const LogTerminal = memo(function LogTerminal({
     () => groups.filter((group) => group.hasError || group.hasWarning),
     [groups],
   );
+  const activeGroupKeys = useMemo(() => activeSiteGroupKeys(groups, live), [groups, live]);
+  const activeGroupKey = useMemo(
+    () => [...groups].reverse().find((group) => activeGroupKeys.has(group.key))?.key ?? null,
+    [activeGroupKeys, groups],
+  );
+  const inferredSerialEndMsByKey = useMemo(() => serialGroupEndMsByKey(groups), [groups]);
   const activePeekedGroupKey = useMemo(
     () =>
       peekedGroupKey && groups.some((group) => group.key === peekedGroupKey)
@@ -600,11 +619,11 @@ export const LogTerminal = memo(function LogTerminal({
     if (expandedGroupPreference === null) {
       return null;
     }
-    if (live && groups.length > 0) {
-      return groups[groups.length - 1].key;
+    if (activeGroupKey) {
+      return activeGroupKey;
     }
     return issueGroups[0]?.key ?? null;
-  }, [expandedGroupPreference, groups, issueGroups, live]);
+  }, [activeGroupKey, expandedGroupPreference, groups, issueGroups]);
   const safePeekedRecordIndex = peekedGroup
     ? Math.min(peekedRecordIndex, Math.max(peekedGroup.records.length - 1, 0))
     : 0;
@@ -678,7 +697,7 @@ export const LogTerminal = memo(function LogTerminal({
   };
 
   const toggleGroup = (groupKey: string) => {
-    if (live && groups.length > 0 && groupKey === groups[groups.length - 1].key) {
+    if (groupKey === activeGroupKey) {
       return;
     }
     setExpandedGroupPreference((current) => (current === groupKey ? null : groupKey));
@@ -772,17 +791,17 @@ export const LogTerminal = memo(function LogTerminal({
       >
         {groups.length ? (
           groups.map((group, index) => {
-            const activeKey = live && groups.length > 0 ? groups[groups.length - 1].key : null;
-            const expanded = expandedGroupKey === group.key || group.key === activeKey;
+            const expanded = expandedGroupKey === group.key || group.key === activeGroupKey;
             const isRunEventGroup = !group.url;
             const payload = payloadSnapshot(group);
             const coverage = groupFieldCoverage(group, requestedFields);
-            const confidence = displayConfidence(
-              groupConfidence(group),
-              confidenceFromCoverage(coverage),
-            );
-            const activeGroup = live && (group.key === activeKey || groupStillActive(group));
-            const durationMs = groupDurationMs(group, activeGroup ? nowMs : undefined);
+            const confidence = groupConfidence(group);
+            const activeGroup = activeGroupKeys.has(group.key);
+            const inferredEndMs =
+              !activeGroup && !groupHasTerminalOutcome(group)
+                ? inferredSerialEndMsByKey.get(group.key)
+                : undefined;
+            const durationMs = groupDurationMs(group, activeGroup ? nowMs : inferredEndMs);
             const lastLog = group.logs.at(-1);
             const summaryLog =
               [...group.logs].reverse().find((log) => !isPersistenceSummaryLog(log.message)) ??
@@ -791,19 +810,8 @@ export const LogTerminal = memo(function LogTerminal({
             return (
               <section key={group.key} id={siteDomId(group.key)} className="overflow-hidden">
                 <div
-                  role="button"
-                  tabIndex={0}
-                  aria-expanded={expanded}
-                  aria-label={`${expanded ? 'Collapse' : 'Expand'} logs for ${group.url || group.label}`}
-                  onClick={() => toggleGroup(group.key)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault();
-                      toggleGroup(group.key);
-                    }
-                  }}
                   className={cn(
-                    'group/row grid w-full cursor-pointer items-center gap-3 px-6 py-1 text-left text-xs transition-colors outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-inset',
+                    'group/row font-inherit grid w-full items-center gap-3 border-none bg-transparent px-6 py-2 text-left text-xs text-inherit transition-colors',
                     isRunEventGroup
                       ? 'grid-cols-[32px_minmax(280px,1fr)_auto_minmax(260px,1.4fr)_60px]'
                       : 'grid-cols-[32px_minmax(280px,2fr)_75px_80px_85px_auto_minmax(200px,1.2fr)_80px_70px]',
@@ -912,9 +920,19 @@ export const LogTerminal = memo(function LogTerminal({
                       )}
                     </div>
                   ) : null}
-                  <div className="flex items-center justify-end gap-1.5 pr-2">
+                  <button
+                    type="button"
+                    aria-expanded={expanded}
+                    aria-label={`${expanded ? 'Collapse' : 'Expand'} logs for ${group.url || group.label}`}
+                    disabled={group.key === activeGroupKey}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      toggleGroup(group.key);
+                    }}
+                    className="focus-visible:ring-accent flex items-center justify-end gap-1.5 pr-2 focus-visible:ring-2 focus-visible:outline-none disabled:cursor-default"
+                  >
                     <span className="text-muted font-mono text-xs uppercase">
-                      {live && groups.length > 0 && group.key === groups[groups.length - 1].key ? (
+                      {group.key === activeGroupKey ? (
                         <span className="text-accent flex items-center gap-1.5 font-semibold">
                           <span className="relative flex size-1.5">
                             <span className="bg-accent absolute inline-flex h-full w-full animate-ping rounded-full opacity-75"></span>
@@ -928,11 +946,7 @@ export const LogTerminal = memo(function LogTerminal({
                         'More'
                       )}
                     </span>
-                    {!(
-                      live &&
-                      groups.length > 0 &&
-                      group.key === groups[groups.length - 1].key
-                    ) && (
+                    {group.key !== activeGroupKey && (
                       <ChevronDown
                         className={cn(
                           'text-muted size-3.5 transition-transform duration-200',
@@ -940,7 +954,7 @@ export const LogTerminal = memo(function LogTerminal({
                         )}
                       />
                     )}
-                  </div>
+                  </button>
                 </div>
 
                 {expanded ? (

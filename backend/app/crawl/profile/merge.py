@@ -43,15 +43,11 @@ def _merge_profile_section(
 ) -> dict[str, object]:
     explicit_section_raw = explicit_settings.get(key)
     explicit_section = (
-        dict(explicit_section_raw)
-        if isinstance(explicit_section_raw, dict)
-        else {}
+        dict(explicit_section_raw) if isinstance(explicit_section_raw, dict) else {}
     )
     default_section_raw = default_settings.get(key)
     default_section = (
-        dict(default_section_raw)
-        if isinstance(default_section_raw, dict)
-        else {}
+        dict(default_section_raw) if isinstance(default_section_raw, dict) else {}
     )
     merged = dict(saved_section)
     if not saved_section and explicit_section:
@@ -124,9 +120,7 @@ def merge_saved_run_profile(
     ignore_default_equivalent_values: bool,
 ) -> dict[str, object]:
     merged = (
-        dict(explicit_settings or {})
-        if isinstance(explicit_settings, dict)
-        else {}
+        dict(explicit_settings or {}) if isinstance(explicit_settings, dict) else {}
     )
     saved = dict(saved_profile or {}) if isinstance(saved_profile, dict) else {}
     if not saved:
@@ -202,12 +196,18 @@ def merge_saved_run_profile(
     )
     if saved_endpoints or explicit_endpoints:
         endpoints_by_key = {
-            (str(endpoint.get("method") or ""), str(endpoint.get("url") or "")): endpoint
+            (
+                str(endpoint.get("method") or ""),
+                str(endpoint.get("url") or ""),
+            ): endpoint
             for endpoint in saved_endpoints
         }
         endpoints_by_key.update(
             {
-                (str(endpoint.get("method") or ""), str(endpoint.get("url") or "")): endpoint
+                (
+                    str(endpoint.get("method") or ""),
+                    str(endpoint.get("url") or ""),
+                ): endpoint
                 for endpoint in explicit_endpoints
             }
         )

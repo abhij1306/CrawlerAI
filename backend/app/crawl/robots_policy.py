@@ -43,6 +43,7 @@ class _RobotsSnapshot:
 
 _INIT_LOCK = threading.Lock()
 
+
 def _get_lock() -> asyncio.Lock:
     global _ROBOTS_CACHE_LOCK
     if _ROBOTS_CACHE_LOCK is None:
@@ -70,7 +71,9 @@ def _get_tracked_tasks() -> set[asyncio.Task["_RobotsSnapshot"]]:
     return _ROBOTS_FETCH_TASKS
 
 
-def _track_fetch_task(task: asyncio.Task["_RobotsSnapshot"]) -> asyncio.Task["_RobotsSnapshot"]:
+def _track_fetch_task(
+    task: asyncio.Task["_RobotsSnapshot"],
+) -> asyncio.Task["_RobotsSnapshot"]:
     tracked = _get_tracked_tasks()
     tracked.add(task)
     task.add_done_callback(lambda finished: tracked.discard(finished))

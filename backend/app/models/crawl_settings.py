@@ -234,12 +234,16 @@ class CrawlRunSettings:
     def acquisition_contract(self) -> dict[str, object]:
         stored = _mapping(self.data.get("acquisition_contract"))
         fetch_profile = _mapping(self.data.get("fetch_profile"))
-        fetch_mode = str(
-            fetch_profile.get("fetch_mode", self.data.get("fetch_mode") or "")
-        ).strip().lower()
+        fetch_mode = (
+            str(fetch_profile.get("fetch_mode", self.data.get("fetch_mode") or ""))
+            .strip()
+            .lower()
+        )
         browser_only = fetch_mode == "browser_only"
         handoff_eligible = bool(
-            stored.get("handoff_eligible", stored.get(_LEGACY_HANDOFF_ELIGIBLE_KEY, False))
+            stored.get(
+                "handoff_eligible", stored.get(_LEGACY_HANDOFF_ELIGIBLE_KEY, False)
+            )
         )
         if browser_only:
             handoff_eligible = False
@@ -285,9 +289,7 @@ class CrawlRunSettings:
             "handoff_cookie_engine": (
                 "auto"
                 if browser_only
-                else str(stored.get("handoff_cookie_engine") or "auto")
-                .strip()
-                .lower()
+                else str(stored.get("handoff_cookie_engine") or "auto").strip().lower()
                 or "auto"
             ),
             "required_rendering": bool(stored.get("required_rendering", False)),
@@ -436,8 +438,10 @@ class CrawlRunSettings:
         if self.data.get(INTERNAL_API_ENDPOINTS_PROFILE_KEY) is not None:
             from app.crawl.profile.normalization import normalize_internal_api_endpoints
 
-            profile[INTERNAL_API_ENDPOINTS_PROFILE_KEY] = normalize_internal_api_endpoints(
-                self.data.get(INTERNAL_API_ENDPOINTS_PROFILE_KEY)
+            profile[INTERNAL_API_ENDPOINTS_PROFILE_KEY] = (
+                normalize_internal_api_endpoints(
+                    self.data.get(INTERNAL_API_ENDPOINTS_PROFILE_KEY)
+                )
             )
         return profile
 
@@ -479,8 +483,10 @@ class CrawlRunSettings:
         if self.data.get(INTERNAL_API_ENDPOINTS_PROFILE_KEY) is not None:
             from app.crawl.profile.normalization import normalize_internal_api_endpoints
 
-            normalized[INTERNAL_API_ENDPOINTS_PROFILE_KEY] = normalize_internal_api_endpoints(
-                self.data.get(INTERNAL_API_ENDPOINTS_PROFILE_KEY)
+            normalized[INTERNAL_API_ENDPOINTS_PROFILE_KEY] = (
+                normalize_internal_api_endpoints(
+                    self.data.get(INTERNAL_API_ENDPOINTS_PROFILE_KEY)
+                )
             )
         normalized["max_pages"] = self.max_pages()
         normalized["max_scrolls"] = self.max_scrolls()

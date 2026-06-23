@@ -49,5 +49,9 @@ function CrawlPageContent() {
 }
 
 export default function CrawlPage() {
-  return <Suspense fallback={crawlScreenLoading()}><CrawlPageContent /></Suspense>;
+  return (
+    <Suspense fallback={crawlScreenLoading()}>
+      <CrawlPageContent />
+    </Suspense>
+  );
 }

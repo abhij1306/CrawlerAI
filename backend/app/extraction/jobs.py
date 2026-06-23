@@ -16,7 +16,12 @@ from app.core.config.extraction_recipes import (
     JOB_LISTING_TITLE_SELECTORS,
     JOB_LISTING_URL_SELECTORS,
 )
-from app.extraction.collectors._helpers import evidence, json_objects, loads_jsonish, text_value
+from app.extraction.collectors._helpers import (
+    evidence,
+    json_objects,
+    loads_jsonish,
+    text_value,
+)
 from app.extraction.contracts import (
     ArtifactReader,
     CaptureBundle,
@@ -59,7 +64,9 @@ def collect_job_detail(bundle: CaptureBundle, reader: ArtifactReader) -> list[Ev
     ]
 
 
-def collect_job_listing(bundle: CaptureBundle, reader: ArtifactReader) -> list[Evidence]:
+def collect_job_listing(
+    bundle: CaptureBundle, reader: ArtifactReader
+) -> list[Evidence]:
     doc = reader.document_store.html("html")
     return _collect_job_listing_evidence(bundle, doc, page_url=bundle.final_url)
 
@@ -223,10 +230,30 @@ def _collect_dom_job_evidence(
     rows: list[Evidence] = []
     for fact_type, value, selector, confidence in (
         ("job.title", _first_text(doc, JOB_DETAIL_TITLE_SELECTORS), "title", 0.72),
-        ("job.company", _first_text(doc, JOB_DETAIL_COMPANY_SELECTORS), "company", 0.62),
-        ("job.location", _first_text(doc, JOB_DETAIL_LOCATION_SELECTORS), "location", 0.62),
-        ("job.description", _first_text(doc, JOB_DETAIL_DESCRIPTION_SELECTORS), "description", 0.55),
-        ("job.apply_url", _first_url(doc, JOB_DETAIL_APPLY_SELECTORS, page_url=page_url), "apply_url", 0.66),
+        (
+            "job.company",
+            _first_text(doc, JOB_DETAIL_COMPANY_SELECTORS),
+            "company",
+            0.62,
+        ),
+        (
+            "job.location",
+            _first_text(doc, JOB_DETAIL_LOCATION_SELECTORS),
+            "location",
+            0.62,
+        ),
+        (
+            "job.description",
+            _first_text(doc, JOB_DETAIL_DESCRIPTION_SELECTORS),
+            "description",
+            0.55,
+        ),
+        (
+            "job.apply_url",
+            _first_url(doc, JOB_DETAIL_APPLY_SELECTORS, page_url=page_url),
+            "apply_url",
+            0.66,
+        ),
         ("job.url", page_url, "page_url", 0.5),
     ):
         if not value:
@@ -239,7 +266,9 @@ def _collect_dom_job_evidence(
                 fact_type=fact_type,
                 value=value,
                 subject_id=subject_id,
-                locator=SourceLocator(kind="css_selector", value=selector, preview=str(value)[:120]),
+                locator=SourceLocator(
+                    kind="css_selector", value=selector, preview=str(value)[:120]
+                ),
                 confidence=confidence,
                 directness="direct",
             )
@@ -334,7 +363,9 @@ def _first_text(doc: HtmlDocument, selectors: tuple[str, ...]) -> str | None:
         node = doc.css_first(selector)
         if node is None or node.is_hidden():
             continue
-        text = _clean_text(node.attribute("content") or node.text(separator=" ", strip=True))
+        text = _clean_text(
+            node.attribute("content") or node.text(separator=" ", strip=True)
+        )
         if text:
             return text
     return None
@@ -345,13 +376,17 @@ def _first_node_text(node: HtmlNode, selectors: tuple[str, ...]) -> str | None:
         child = node.css_first(selector)
         if child is None or child.is_hidden():
             continue
-        text = _clean_text(child.attribute("title") or child.text(separator=" ", strip=True))
+        text = _clean_text(
+            child.attribute("title") or child.text(separator=" ", strip=True)
+        )
         if text:
             return text
     return None
 
 
-def _first_node_attr(node: HtmlNode, selectors: tuple[str, ...], attr: str) -> str | None:
+def _first_node_attr(
+    node: HtmlNode, selectors: tuple[str, ...], attr: str
+) -> str | None:
     for selector in selectors:
         child = node.css_first(selector)
         if child is None or child.is_hidden():
@@ -362,7 +397,9 @@ def _first_node_attr(node: HtmlNode, selectors: tuple[str, ...], attr: str) -> s
     return None
 
 
-def _first_url(doc: HtmlDocument, selectors: tuple[str, ...], *, page_url: str) -> str | None:
+def _first_url(
+    doc: HtmlDocument, selectors: tuple[str, ...], *, page_url: str
+) -> str | None:
     for selector in selectors:
         node = doc.css_first(selector)
         if node is None or node.is_hidden():

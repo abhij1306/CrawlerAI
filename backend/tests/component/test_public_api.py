@@ -52,17 +52,17 @@ from app.core.config.public_api import (
 from app.core.config.runtime_settings import crawler_runtime_settings
 
 
-
 @pytest.fixture
 async def public_api_client(db_session):
     async def _override_db():
         yield db_session
 
     app.dependency_overrides[get_db] = _override_db
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://testserver"
+    ) as client:
         yield client
     app.dependency_overrides.clear()
-
 
 
 # from backend/tests/services/test_auth_api.py
@@ -181,8 +181,12 @@ async def test_auth_specific_rate_limit_rejects_before_generic_limit(
     clear_auth_rate_limit_buckets_for_testing()
     try:
         monkeypatch.setattr(crawler_runtime_settings, "api_rate_limit_enabled", True)
-        monkeypatch.setattr(crawler_runtime_settings, "api_rate_limit_max_requests", 100)
-        monkeypatch.setattr(crawler_runtime_settings, "api_rate_limit_window_seconds", 60)
+        monkeypatch.setattr(
+            crawler_runtime_settings, "api_rate_limit_max_requests", 100
+        )
+        monkeypatch.setattr(
+            crawler_runtime_settings, "api_rate_limit_window_seconds", 60
+        )
         monkeypatch.setattr(crawler_runtime_settings, "api_rate_limit_max_clients", 100)
         monkeypatch.setattr(auth_security, "AUTH_LOGIN_RATE_LIMIT", 1)
 
@@ -533,8 +537,6 @@ def _password_field_name(*, hashed: bool = False) -> str:
     return ("hashed_" if hashed else "") + "pass" + "word"
 
 
-
-
 @pytest.mark.asyncio
 @pytest.mark.component
 async def test_public_api_requires_api_key(public_api_client: AsyncClient) -> None:
@@ -557,7 +559,9 @@ async def test_api_key_crud_returns_plaintext_once(db_session, test_user) -> Non
 
     app.dependency_overrides[get_db] = _override_db
     app.dependency_overrides[get_current_user] = _override_user
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://testserver"
+    ) as client:
         created = await client.post("/api/api-keys", json={"name": "Railway"})
         listed = await client.get("/api/api-keys")
     app.dependency_overrides.clear()
@@ -732,7 +736,9 @@ async def test_public_rate_limit_is_keyed_by_api_key(
         yield db_session
 
     app.dependency_overrides[get_db] = _override_db
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://testserver"
+    ) as client:
         headers = {"Authorization": f"Bearer {raw_key}"}
         first = await client.get("/api/v1/capabilities", headers=headers)
         second = await client.get("/api/v1/capabilities", headers=headers)
@@ -765,14 +771,24 @@ def test_retry_after_rounds_up_remaining_window() -> None:
 @pytest.mark.component
 async def test_public_batch_extract_is_deferred(db_session, test_user) -> None:
     raw_key = "crawlerai_batch_key"
-    db_session.add(ApiKey(user_id=test_user.id, name="batch", key_prefix="crawlerai", key_hash=hash_api_key(raw_key), is_active=True))
+    db_session.add(
+        ApiKey(
+            user_id=test_user.id,
+            name="batch",
+            key_prefix="crawlerai",
+            key_hash=hash_api_key(raw_key),
+            is_active=True,
+        )
+    )
     await db_session.commit()
 
     async def _override_db():
         yield db_session
 
     app.dependency_overrides[get_db] = _override_db
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://testserver"
+    ) as client:
         response = await client.post(
             "/api/v1/extract/batch",
             headers={"Authorization": f"Bearer {raw_key}"},
@@ -789,12 +805,29 @@ async def test_public_batch_extract_is_deferred(db_session, test_user) -> None:
 @pytest.mark.component
 async def test_public_domain_info_reads_domain_memory(db_session, test_user) -> None:
     raw_key = "crawlerai_domain_key"
-    db_session.add(ApiKey(user_id=test_user.id, name="domain", key_prefix="crawlerai", key_hash=hash_api_key(raw_key), is_active=True))
+    db_session.add(
+        ApiKey(
+            user_id=test_user.id,
+            name="domain",
+            key_prefix="crawlerai",
+            key_hash=hash_api_key(raw_key),
+            is_active=True,
+        )
+    )
     db_session.add(
         DomainMemory(
             domain="example.com",
             surface="ecommerce_detail",
-            selectors={"rules": [{"id": 1, "field_name": "title", "css_selector": "h1", "is_active": True}]},
+            selectors={
+                "rules": [
+                    {
+                        "id": 1,
+                        "field_name": "title",
+                        "css_selector": "h1",
+                        "is_active": True,
+                    }
+                ]
+            },
         )
     )
     db_session.add(
@@ -811,7 +844,9 @@ async def test_public_domain_info_reads_domain_memory(db_session, test_user) -> 
 
     app.dependency_overrides[get_db] = _override_db
     try:
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://testserver"
+        ) as client:
             response = await client.get(
                 "/api/v1/domains/example.com",
                 headers={"Authorization": f"Bearer {raw_key}"},
@@ -855,7 +890,11 @@ async def test_public_extract_runs_http_only_and_shapes_record(
             CrawlRecord(
                 run_id=run.id,
                 source_url=url,
-                data={"title": "Example Shoe", "price": 129.99, "availability": "in_stock"},
+                data={
+                    "title": "Example Shoe",
+                    "price": 129.99,
+                    "availability": "in_stock",
+                },
                 raw_data={},
                 discovered_data={"acquisition_method": "httpx"},
                 source_trace={"fetch_method": "http"},
@@ -880,7 +919,9 @@ async def test_public_extract_runs_http_only_and_shapes_record(
     )
     app.dependency_overrides[get_db] = _override_db
     try:
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://testserver"
+        ) as client:
             response = await client.post(
                 "/api/v1/extract",
                 headers={"Authorization": f"Bearer {raw_key}"},
@@ -908,7 +949,9 @@ async def test_public_extract_runs_http_only_and_shapes_record(
 
 @pytest.mark.asyncio
 @pytest.mark.component
-async def test_public_extract_rejects_unsupported_surface(db_session, test_user) -> None:
+async def test_public_extract_rejects_unsupported_surface(
+    db_session, test_user
+) -> None:
     raw_key = "crawlerai_extract_surface_key"
     db_session.add(
         ApiKey(
@@ -926,7 +969,9 @@ async def test_public_extract_rejects_unsupported_surface(db_session, test_user)
 
     app.dependency_overrides[get_db] = _override_db
     try:
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://testserver"
+        ) as client:
             response = await client.post(
                 "/api/v1/extract",
                 headers={"Authorization": f"Bearer {raw_key}"},
@@ -991,7 +1036,9 @@ async def test_public_extract_rejects_auto_surface(
     )
     app.dependency_overrides[get_db] = _override_db
     try:
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://testserver"
+        ) as client:
             response = await client.post(
                 "/api/v1/extract",
                 headers={"Authorization": f"Bearer {raw_key}"},
@@ -1007,9 +1054,19 @@ async def test_public_extract_rejects_auto_surface(
 # from backend/tests/services/test_public_watch_api.py
 @pytest.mark.asyncio
 @pytest.mark.component
-async def test_public_watches_route_is_not_registered_after_alert_rename(db_session, test_user) -> None:
+async def test_public_watches_route_is_not_registered_after_alert_rename(
+    db_session, test_user
+) -> None:
     raw_key = "crawlerai_watch_key"
-    db_session.add(ApiKey(user_id=test_user.id, name="watch", key_prefix="crawlerai", key_hash=hash_api_key(raw_key), is_active=True))
+    db_session.add(
+        ApiKey(
+            user_id=test_user.id,
+            name="watch",
+            key_prefix="crawlerai",
+            key_hash=hash_api_key(raw_key),
+            is_active=True,
+        )
+    )
     await db_session.commit()
 
     async def _override_db():
@@ -1017,7 +1074,9 @@ async def test_public_watches_route_is_not_registered_after_alert_rename(db_sess
 
     app.dependency_overrides[get_db] = _override_db
     try:
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://testserver"
+        ) as client:
             response = await client.get(
                 "/api/v1/watches",
                 headers={"Authorization": f"Bearer {raw_key}"},

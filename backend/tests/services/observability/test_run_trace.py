@@ -111,8 +111,7 @@ def test_detail_diagnostic_fields_are_traced_when_not_requested():
 
     payload = trace.to_dict()
     provenance = {
-        entry["field"]: entry
-        for entry in payload["extraction"]["field_provenance"]
+        entry["field"]: entry for entry in payload["extraction"]["field_provenance"]
     }
 
     assert "variants" in payload["diagnostic_fields"]

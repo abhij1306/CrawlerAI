@@ -36,12 +36,8 @@ export function dashboardStatusLabel(status: string): string {
   return DASHBOARD_STATUS_CONFIG[status]?.label ?? status;
 }
 
-export function runsStatusTone(status: string): Exclude<Tone, 'info'> {
+function runsStatusTone(status: string): Exclude<Tone, 'info'> {
   return RUNS_STATUS_CONFIG[status]?.tone ?? 'neutral';
-}
-
-export function runsStatusDot(status: string): string {
-  return RUNS_STATUS_CONFIG[status]?.dot ?? 'var(--text-muted)';
 }
 
 export function jobsStatusTone(status: string): Exclude<Tone, 'info'> {
@@ -60,27 +56,8 @@ export function dashboardStatusBarColor(status: string): string {
   return 'var(--text-muted)';
 }
 
-export function dashboardStatusDotColor(status: string): string {
-  const tone = dashboardStatusTone(status);
-  if (tone === 'success') return 'var(--success)';
-  if (tone === 'danger') return 'var(--danger)';
-  if (tone === 'warning') return 'var(--warning)';
-  if (tone === 'neutral') return 'var(--text-muted)';
-  return 'var(--accent)';
-}
-
 export function isSubduedStatus(status: string): boolean {
   return status === 'completed' || status === 'killed';
-}
-
-/** Completed / killed / partial verdicts use flat (text-only) badges. */
-export function isFlatStatus(status: string, summary?: RunSummaryLike): boolean {
-  if (status === 'killed') return true;
-  if (status !== 'completed') return false;
-  const verdict = String(summary?.extraction_verdict ?? '')
-    .trim()
-    .toLowerCase();
-  return verdict === 'partial' || verdict === '';
 }
 
 export function humanizeStatus(status: string): string {
@@ -108,15 +85,6 @@ export function runExecutionTone(status: string, summary?: RunSummaryLike): Excl
     return 'warning';
   }
   return 'success';
-}
-
-export function runExecutionDot(status: string, summary?: RunSummaryLike): string {
-  const tone = runExecutionTone(status, summary);
-  if (tone === 'success') return 'var(--success)';
-  if (tone === 'danger') return 'var(--danger)';
-  if (tone === 'warning') return 'var(--warning)';
-  if (tone === 'accent') return 'var(--accent)';
-  return 'var(--text-muted)';
 }
 
 export function runExecutionLabel(status: string, summary?: RunSummaryLike): string {

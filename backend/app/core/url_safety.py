@@ -142,18 +142,23 @@ async def _validate_endpoint_host(
     )
 
 
-async def _resolve_host_ips(hostname: str, port: int, *, label: str = "Target") -> list[str]:
+async def _resolve_host_ips(
+    hostname: str, port: int, *, label: str = "Target"
+) -> list[str]:
     attempts = max(1, int(crawler_runtime_settings.dns_resolution_retries) + 1)
     families = dns_resolution_families()
-    records: list[
-        tuple[
-            socket.AddressFamily,
-            socket.SocketKind,
-            int,
-            str,
-            tuple[str, int] | tuple[str, int, int, int],
+    records: (
+        list[
+            tuple[
+                socket.AddressFamily,
+                socket.SocketKind,
+                int,
+                str,
+                tuple[str, int] | tuple[str, int, int, int],
+            ]
         ]
-    ] | None = None
+        | None
+    ) = None
     last_error: socket.gaierror | None = None
     for attempt in range(1, attempts + 1):
         for family in families:
@@ -188,7 +193,9 @@ async def _resolve_host_ips(hostname: str, port: int, *, label: str = "Target") 
                 max(0, crawler_runtime_settings.dns_resolution_retry_delay_ms) / 1000
             )
             continue
-        raise ValueError(f"{label} host could not be resolved: {hostname}") from last_error
+        raise ValueError(
+            f"{label} host could not be resolved: {hostname}"
+        ) from last_error
 
     resolved: list[str] = []
     seen: set[str] = set()

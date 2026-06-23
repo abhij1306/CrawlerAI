@@ -145,7 +145,9 @@ def normalize_internal_api_endpoints(value: object) -> list[dict[str, object]]:
         if not isinstance(item, Mapping):
             continue
         url = _clean_str(item.get(INTERNAL_API_ENDPOINT_URL_KEY))
-        method = str(item.get(INTERNAL_API_ENDPOINT_METHOD_KEY) or "GET").strip().upper()
+        method = (
+            str(item.get(INTERNAL_API_ENDPOINT_METHOD_KEY) or "GET").strip().upper()
+        )
         if not url or method not in INTERNAL_API_ENDPOINT_ALLOWED_METHODS:
             continue
         key = (method, url)
@@ -183,7 +185,9 @@ def _coerce_country(value: object) -> str:
 def normalize_acquisition_contract(value: object) -> dict[str, object]:
     payload = dict(value or {}) if isinstance(value, Mapping) else {}
     handoff_eligible = bool(
-        payload.get("handoff_eligible", payload.get(_LEGACY_HANDOFF_ELIGIBLE_KEY, False))
+        payload.get(
+            "handoff_eligible", payload.get(_LEGACY_HANDOFF_ELIGIBLE_KEY, False)
+        )
     )
     last_quality_success = payload.get("last_quality_success")
     if isinstance(last_quality_success, Mapping):
@@ -231,7 +235,9 @@ def normalize_acquisition_contract(value: object) -> dict[str, object]:
         ),
         "required_rendering": bool(payload.get("required_rendering", False)),
         "required_traversal": bool(payload.get("required_traversal", False)),
-        "required_network_payloads": bool(payload.get("required_network_payloads", False)),
+        "required_network_payloads": bool(
+            payload.get("required_network_payloads", False)
+        ),
         "last_quality_success": normalized_success,
         "stale_after_failures": {
             "failure_count": _coerce_int_clamped(
@@ -308,8 +314,12 @@ def normalize_domain_run_profile(
         },
         "locality_profile": {
             "geo_country": _coerce_country(locality_profile.get("geo_country")),
-            "language_hint": _coerce_nullable_text(locality_profile.get("language_hint")),
-            "currency_hint": _coerce_nullable_text(locality_profile.get("currency_hint")),
+            "language_hint": _coerce_nullable_text(
+                locality_profile.get("language_hint")
+            ),
+            "currency_hint": _coerce_nullable_text(
+                locality_profile.get("currency_hint")
+            ),
         },
         "diagnostics_profile": {
             "capture_html": bool(diagnostics_profile.get("capture_html", True)),

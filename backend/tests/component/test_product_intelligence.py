@@ -105,7 +105,9 @@ def test_product_intelligence_query_prefers_upc_over_mpn_as_identifier() -> None
 
 
 @pytest.mark.component
-def test_product_intelligence_query_strips_repeated_brand_and_targets_brand_domain() -> None:
+def test_product_intelligence_query_strips_repeated_brand_and_targets_brand_domain() -> (
+    None
+):
     queries = build_search_queries(
         {
             "brand": "Wrangler�",
@@ -135,7 +137,9 @@ def test_product_intelligence_query_targets_configured_belk_brand_domains() -> N
 
 
 @pytest.mark.component
-def test_product_intelligence_query_keeps_brand_in_all_queries_when_brand_exists() -> None:
+def test_product_intelligence_query_keeps_brand_in_all_queries_when_brand_exists() -> (
+    None
+):
     queries = build_search_queries(
         {
             "brand": "Mamaearth",
@@ -173,7 +177,9 @@ def test_product_intelligence_dtc_score_does_not_promote_short_subset_titles() -
 
 
 @pytest.mark.component
-def test_product_intelligence_query_prefers_clean_brand_query_before_buy_for_aggregator_sources() -> None:
+def test_product_intelligence_query_prefers_clean_brand_query_before_buy_for_aggregator_sources() -> (
+    None
+):
     queries = build_search_queries(
         {
             "brand": "Asaya",
@@ -192,7 +198,9 @@ def test_product_intelligence_query_prefers_clean_brand_query_before_buy_for_agg
 
 
 @pytest.mark.component
-def test_product_intelligence_query_uses_brandless_fallback_only_when_brand_missing() -> None:
+def test_product_intelligence_query_uses_brandless_fallback_only_when_brand_missing() -> (
+    None
+):
     queries = build_search_queries(
         {
             "title": "Vit. C Daily Glow Cream 150g",
@@ -203,7 +211,7 @@ def test_product_intelligence_query_uses_brandless_fallback_only_when_brand_miss
     )
 
     assert queries
-    assert any('MC150G' in query for query in queries)
+    assert any("MC150G" in query for query in queries)
     assert all("mamaearth" not in query for query in queries)
     assert queries[0] == '"Vit. C Daily Glow Cream 150g" "MC150G"'
     assert queries[1] == '"Vit. C Daily Glow Cream 150g" buy'
@@ -211,7 +219,9 @@ def test_product_intelligence_query_uses_brandless_fallback_only_when_brand_miss
 
 
 @pytest.mark.component
-def test_product_intelligence_query_ignores_numeric_style_but_allows_alphanumeric_style() -> None:
+def test_product_intelligence_query_ignores_numeric_style_but_allows_alphanumeric_style() -> (
+    None
+):
     numeric_queries = build_search_queries(
         {
             "brand": "Wrangler",
@@ -272,7 +282,9 @@ def test_product_intelligence_variant_spec_mismatch_caps_score() -> None:
 
 
 @pytest.mark.component
-def test_product_intelligence_brand_title_match_reaches_high_without_identifier() -> None:
+def test_product_intelligence_brand_title_match_reaches_high_without_identifier() -> (
+    None
+):
     # Search payloads rarely carry a UPC; a brand-exact + strong-title retailer match
     # must still reach the auto-accept (high) band.
     result = score_candidate(
@@ -429,7 +441,9 @@ def test_product_intelligence_scorer_keeps_weak_title_only_uncertain() -> None:
 
 
 @pytest.mark.component
-def test_product_intelligence_uses_source_brand_when_candidate_title_mentions_it() -> None:
+def test_product_intelligence_uses_source_brand_when_candidate_title_mentions_it() -> (
+    None
+):
     intelligence = build_search_result_intelligence(
         source={
             "title": "Wrangler Relaxed Bootcut Jeans",
@@ -487,7 +501,10 @@ def test_product_intelligence_normalizes_childrenswear_brand_alias() -> None:
 def test_product_intelligence_normalizes_common_brand_aliases() -> None:
     assert normalize_brand("Kenneth Cole Reaction") == "kenneth cole"
     assert normalize_brand("Tommy Bahama®") == "tommy bahama"
-    assert normalize_brand("Collection by Michael Strahan ™") == "collection by michael strahan"
+    assert (
+        normalize_brand("Collection by Michael Strahan ™")
+        == "collection by michael strahan"
+    )
 
 
 @pytest.mark.component
@@ -504,7 +521,9 @@ def test_product_intelligence_infers_brand_from_source_url() -> None:
 
 
 @pytest.mark.component
-def test_product_intelligence_query_uses_brand_and_currency_inferred_from_belk_slug() -> None:
+def test_product_intelligence_query_uses_brand_and_currency_inferred_from_belk_slug() -> (
+    None
+):
     snapshot = extract_product_snapshot(
         {
             "url": "https://www.belk.com/p/modern-southern-home--checkerboard-quilt-set/710097411786005.html",
@@ -518,7 +537,7 @@ def test_product_intelligence_query_uses_brand_and_currency_inferred_from_belk_s
     assert snapshot["normalized_brand"] == "modern southern home"
     assert snapshot["currency"] == "USD"
     assert queries
-    assert 'modern southern home' in queries[0]
+    assert "modern southern home" in queries[0]
 
 
 @pytest.mark.component
@@ -596,7 +615,9 @@ def test_product_intelligence_search_result_snapshot_keeps_description() -> None
 
 
 @pytest.mark.component
-def test_product_intelligence_search_result_snapshot_infers_known_brand_from_compact_domain() -> None:
+def test_product_intelligence_search_result_snapshot_infers_known_brand_from_compact_domain() -> (
+    None
+):
     snapshot = extract_search_result_snapshot(
         {"title": "Bifold RFID Wallet", "snippet": "Leather wallet."},
         url="https://www.kennethcole.com/collections/kenneth-cole-reaction",
@@ -608,7 +629,9 @@ def test_product_intelligence_search_result_snapshot_infers_known_brand_from_com
 
 
 @pytest.mark.component
-def test_product_intelligence_search_result_snapshot_tries_brand_from_title_marker() -> None:
+def test_product_intelligence_search_result_snapshot_tries_brand_from_title_marker() -> (
+    None
+):
     snapshot = extract_search_result_snapshot(
         {
             "title": "Crown & Ivy™ Hydrangea Vase",
@@ -657,7 +680,9 @@ def test_product_intelligence_settings_rejects_unknown_provider() -> None:
 @pytest.mark.component
 def test_product_intelligence_settings_rejects_legacy_duckduckgo_provider() -> None:
     with pytest.raises(ValueError):
-        ProductIntelligenceSettings(_env_file=None, default_search_provider="duckduckgo")
+        ProductIntelligenceSettings(
+            _env_file=None, default_search_provider="duckduckgo"
+        )
 
 
 @pytest.mark.component
@@ -779,7 +804,9 @@ def test_google_native_intelligence_keeps_provider_label() -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.component
-async def test_google_native_session_reuses_single_page_across_queries(monkeypatch) -> None:
+async def test_google_native_session_reuses_single_page_across_queries(
+    monkeypatch,
+) -> None:
     actions: list[str] = []
     current_url = GOOGLE_NATIVE_HOME_URL
     last_query = ""
@@ -971,7 +998,9 @@ def test_product_intelligence_brand_inference_prompt_registered() -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.component
-async def test_resolve_source_snapshot_skips_llm_when_brand_present(monkeypatch) -> None:
+async def test_resolve_source_snapshot_skips_llm_when_brand_present(
+    monkeypatch,
+) -> None:
     calls: list[str] = []
 
     async def fake_run_prompt_task(*args, **kwargs):
@@ -985,7 +1014,11 @@ async def test_resolve_source_snapshot_skips_llm_when_brand_present(monkeypatch)
 
     snapshot = await resolve_source_snapshot(
         session=None,  # never used because LLM path is gated off
-        raw={"brand": "Levis", "title": "Men 511 Slim Fit Jeans", "url": "https://www.belk.com/p/1.html"},
+        raw={
+            "brand": "Levis",
+            "title": "Men 511 Slim Fit Jeans",
+            "url": "https://www.belk.com/p/1.html",
+        },
         llm_enabled=True,
     )
 
@@ -1007,7 +1040,10 @@ async def test_resolve_source_snapshot_skips_llm_when_disabled(monkeypatch) -> N
 
     snapshot = await resolve_source_snapshot(
         session=None,
-        raw={"title": "Wundermost Bodysuit", "url": "https://shop.example.com/products/wundermost.html"},
+        raw={
+            "title": "Wundermost Bodysuit",
+            "url": "https://shop.example.com/products/wundermost.html",
+        },
         llm_enabled=False,
     )
 
@@ -1017,7 +1053,9 @@ async def test_resolve_source_snapshot_skips_llm_when_disabled(monkeypatch) -> N
 
 @pytest.mark.asyncio
 @pytest.mark.component
-async def test_resolve_source_snapshot_uses_llm_brand_when_confident(monkeypatch) -> None:
+async def test_resolve_source_snapshot_uses_llm_brand_when_confident(
+    monkeypatch,
+) -> None:
     captured: dict[str, object] = {}
 
     async def fake_run_prompt_task(session, *, task_type, run_id, domain, variables):
@@ -1025,7 +1063,11 @@ async def test_resolve_source_snapshot_uses_llm_brand_when_confident(monkeypatch
         captured["domain"] = domain
         captured["variables"] = variables
         return LLMTaskResult(
-            payload={"brand": "Lululemon", "confidence": 0.92, "rationale": "DTC URL match"},
+            payload={
+                "brand": "Lululemon",
+                "confidence": 0.92,
+                "rationale": "DTC URL match",
+            },
             provider="groq",
             model="llama",
         )
@@ -1054,10 +1096,16 @@ async def test_resolve_source_snapshot_uses_llm_brand_when_confident(monkeypatch
 
 @pytest.mark.asyncio
 @pytest.mark.component
-async def test_resolve_source_snapshot_drops_low_confidence_llm_brand(monkeypatch) -> None:
+async def test_resolve_source_snapshot_drops_low_confidence_llm_brand(
+    monkeypatch,
+) -> None:
     async def fake_run_prompt_task(session, *, task_type, run_id, domain, variables):
         return LLMTaskResult(
-            payload={"brand": "MaybeBrand", "confidence": 0.2, "rationale": "weak signal"},
+            payload={
+                "brand": "MaybeBrand",
+                "confidence": 0.2,
+                "rationale": "weak signal",
+            },
             provider="groq",
             model="llama",
         )
@@ -1122,7 +1170,9 @@ async def test_resolve_source_snapshot_skips_llm_when_no_inputs(monkeypatch) -> 
     assert snapshot["brand"] == ""
 
 
-def _build_candidate_intelligence(*, brand: str = "", title: str = "Wundermost Bodysuit") -> dict[str, object]:
+def _build_candidate_intelligence(
+    *, brand: str = "", title: str = "Wundermost Bodysuit"
+) -> dict[str, object]:
     return {
         "canonical_record": {
             "title": title,
@@ -1188,10 +1238,16 @@ async def test_backfill_candidate_brand_skips_when_brand_present(monkeypatch) ->
 
 @pytest.mark.asyncio
 @pytest.mark.component
-async def test_backfill_candidate_brand_applies_llm_brand_and_rescores(monkeypatch) -> None:
+async def test_backfill_candidate_brand_applies_llm_brand_and_rescores(
+    monkeypatch,
+) -> None:
     async def fake_run_prompt_task(session, *, task_type, run_id, domain, variables):
         return LLMTaskResult(
-            payload={"brand": "Lululemon", "confidence": 0.91, "rationale": "DTC URL match"},
+            payload={
+                "brand": "Lululemon",
+                "confidence": 0.91,
+                "rationale": "DTC URL match",
+            },
             provider="groq",
             model="llama",
         )
@@ -1278,8 +1334,12 @@ async def test_backfill_candidate_brand_handles_llm_error(monkeypatch) -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.component
-async def test_product_intelligence_discovery_preserves_serpapi_payload(monkeypatch) -> None:
-    async def fake_search_results(provider: str, query: str, *, limit: int | None = None) -> list[SearchResult]:
+async def test_product_intelligence_discovery_preserves_serpapi_payload(
+    monkeypatch,
+) -> None:
+    async def fake_search_results(
+        provider: str, query: str, *, limit: int | None = None
+    ) -> list[SearchResult]:
         return [
             SearchResult(
                 url="https://www.levi.com/p/04511.html",
@@ -1337,7 +1397,10 @@ def test_product_intelligence_parses_serpapi_shopping_payload() -> None:
         }
     )
 
-    assert results[0].url == "https://www.example.com/p/crown-ivy-floral-midi-dress/123.html"
+    assert (
+        results[0].url
+        == "https://www.example.com/p/crown-ivy-floral-midi-dress/123.html"
+    )
     assert results[0].payload["provider"] == "serpapi_shopping"
     assert results[0].payload["product_id"] == "987654321"
     assert results[0].payload["extracted_price"] == pytest.approx(49.99)
@@ -1375,17 +1438,24 @@ def test_product_intelligence_parses_serpapi_immersive_store_links() -> None:
     assert results[0].url == "https://www.levi.com/p/04511.html"
     assert results[0].payload["provider"] == "serpapi_immersive"
     assert results[0].payload["product_id"] == "immersive-product-id"
-    assert results[0].payload["product_link"] == "https://www.google.com/search?ibp=oshop&q=levi"
+    assert (
+        results[0].payload["product_link"]
+        == "https://www.google.com/search?ibp=oshop&q=levi"
+    )
     assert results[0].payload["extracted_price"] == pytest.approx(69.5)
 
 
 @pytest.mark.asyncio
 @pytest.mark.component
-async def test_product_intelligence_serpapi_searches_brand_organic_then_shopping(monkeypatch) -> None:
+async def test_product_intelligence_serpapi_searches_brand_organic_then_shopping(
+    monkeypatch,
+) -> None:
     engines: list[str] = []
     queries: list[str] = []
 
-    async def fake_engine(query: str, *, engine: str, limit: int | None = None) -> dict[str, object]:
+    async def fake_engine(
+        query: str, *, engine: str, limit: int | None = None
+    ) -> dict[str, object]:
         del limit
         engines.append(engine)
         queries.append(query)
@@ -1430,10 +1500,14 @@ async def test_product_intelligence_serpapi_searches_brand_organic_then_shopping
 
 @pytest.mark.asyncio
 @pytest.mark.component
-async def test_product_intelligence_serpapi_expands_immersive_store_links(monkeypatch) -> None:
+async def test_product_intelligence_serpapi_expands_immersive_store_links(
+    monkeypatch,
+) -> None:
     engines: list[str] = []
 
-    async def fake_engine(query: str, *, engine: str, limit: int | None = None) -> dict[str, object]:
+    async def fake_engine(
+        query: str, *, engine: str, limit: int | None = None
+    ) -> dict[str, object]:
         del query, limit
         engines.append(engine)
         if engine == "google_shopping":
@@ -1468,7 +1542,9 @@ async def test_product_intelligence_serpapi_expands_immersive_store_links(monkey
         }
 
     monkeypatch.setattr(discovery_module, "_search_serpapi_engine", fake_engine)
-    monkeypatch.setattr(discovery_module, "_search_serpapi_immersive_product", fake_immersive)
+    monkeypatch.setattr(
+        discovery_module, "_search_serpapi_immersive_product", fake_immersive
+    )
 
     results = await discovery_module._search_serpapi(
         "columbia big tall tamiami II SS Shirt",
@@ -1476,17 +1552,24 @@ async def test_product_intelligence_serpapi_expands_immersive_store_links(monkey
     )
 
     assert engines == ["google_shopping"]
-    assert results[0].url == "https://www.columbia.com/p/mens-pfg-tamiami-ii-short-sleeve-shirt-big-FM7253.html"
+    assert (
+        results[0].url
+        == "https://www.columbia.com/p/mens-pfg-tamiami-ii-short-sleeve-shirt-big-FM7253.html"
+    )
     assert results[0].payload["provider"] == "serpapi_immersive"
     assert results[0].payload["product_id"] == "immersive-product-id"
 
 
 @pytest.mark.asyncio
 @pytest.mark.component
-async def test_product_intelligence_serpapi_runs_identifier_organic_without_immersive(monkeypatch) -> None:
+async def test_product_intelligence_serpapi_runs_identifier_organic_without_immersive(
+    monkeypatch,
+) -> None:
     engines: list[str] = []
 
-    async def fake_engine(query: str, *, engine: str, limit: int | None = None) -> dict[str, object]:
+    async def fake_engine(
+        query: str, *, engine: str, limit: int | None = None
+    ) -> dict[str, object]:
         del limit
         engines.append(engine)
         if engine == "google_shopping":
@@ -1535,7 +1618,9 @@ async def test_product_intelligence_serpapi_keeps_brand_site_lookup_when_shoppin
 ) -> None:
     engines: list[tuple[str, str]] = []
 
-    async def fake_engine(query: str, *, engine: str, limit: int | None = None) -> dict[str, object]:
+    async def fake_engine(
+        query: str, *, engine: str, limit: int | None = None
+    ) -> dict[str, object]:
         del limit
         engines.append((engine, query))
         if engine == "google_shopping":
@@ -1592,7 +1677,9 @@ def test_product_intelligence_serpapi_shopping_query_strips_site_filters() -> No
 
 
 @pytest.mark.component
-def test_product_intelligence_parses_serpapi_immersive_limit_before_about_link() -> None:
+def test_product_intelligence_parses_serpapi_immersive_limit_before_about_link() -> (
+    None
+):
     results = parse_serpapi_immersive_results(
         {
             "product_results": {
@@ -1621,7 +1708,9 @@ def test_product_intelligence_parses_serpapi_immersive_limit_before_about_link()
 
 
 @pytest.mark.component
-def test_product_intelligence_parses_serpapi_immersive_when_about_payload_is_not_a_dict() -> None:
+def test_product_intelligence_parses_serpapi_immersive_when_about_payload_is_not_a_dict() -> (
+    None
+):
     results = parse_serpapi_immersive_results(
         {
             "product_results": {
@@ -1647,13 +1736,19 @@ def test_product_intelligence_parses_serpapi_immersive_when_about_payload_is_not
 
 @pytest.mark.asyncio
 @pytest.mark.component
-async def test_product_intelligence_discovery_passes_pool_limit_to_search(monkeypatch) -> None:
+async def test_product_intelligence_discovery_passes_pool_limit_to_search(
+    monkeypatch,
+) -> None:
     limits: list[int | None] = []
 
-    async def fake_search_results(provider: str, query: str, *, limit: int | None = None) -> list[SearchResult]:
+    async def fake_search_results(
+        provider: str, query: str, *, limit: int | None = None
+    ) -> list[SearchResult]:
         limits.append(limit)
         return [
-            SearchResult(url="https://www.levi.com/p/04511.html", payload={"title": "Levi 511"}),
+            SearchResult(
+                url="https://www.levi.com/p/04511.html", payload={"title": "Levi 511"}
+            ),
         ]
 
     monkeypatch.setattr(
@@ -1677,15 +1772,25 @@ async def test_product_intelligence_discovery_passes_pool_limit_to_search(monkey
 
 @pytest.mark.asyncio
 @pytest.mark.component
-async def test_product_intelligence_discovery_keeps_multiple_listings_per_domain(monkeypatch) -> None:
+async def test_product_intelligence_discovery_keeps_multiple_listings_per_domain(
+    monkeypatch,
+) -> None:
     # A product can be listed by multiple third-party sellers on one marketplace,
     # so discovery must keep more than one distinct listing per domain (bounded only
     # by the user's max_candidates request), not collapse to one per domain.
-    async def fake_search_results(provider: str, query: str, *, limit: int | None = None) -> list[SearchResult]:
+    async def fake_search_results(
+        provider: str, query: str, *, limit: int | None = None
+    ) -> list[SearchResult]:
         return [
-            SearchResult(url="https://www.ebay.com/itm/1", payload={"title": "Levi 511"}),
-            SearchResult(url="https://www.ebay.com/itm/2", payload={"title": "Levi 511 sale"}),
-            SearchResult(url="https://www.macys.com/p/1.html", payload={"title": "Levi 511"}),
+            SearchResult(
+                url="https://www.ebay.com/itm/1", payload={"title": "Levi 511"}
+            ),
+            SearchResult(
+                url="https://www.ebay.com/itm/2", payload={"title": "Levi 511 sale"}
+            ),
+            SearchResult(
+                url="https://www.macys.com/p/1.html", payload={"title": "Levi 511"}
+            ),
         ]
 
     monkeypatch.setattr(
@@ -1715,17 +1820,34 @@ async def test_product_intelligence_discovery_keeps_multiple_listings_per_domain
 
 @pytest.mark.asyncio
 @pytest.mark.component
-async def test_product_intelligence_discovery_prioritizes_brand_site_over_aggregator_pool(monkeypatch) -> None:
-    async def fake_search_results(provider: str, query: str, *, limit: int | None = None) -> list[SearchResult]:
+async def test_product_intelligence_discovery_prioritizes_brand_site_over_aggregator_pool(
+    monkeypatch,
+) -> None:
+    async def fake_search_results(
+        provider: str, query: str, *, limit: int | None = None
+    ) -> list[SearchResult]:
         if "site:levi.com" in query:
             return [
-                SearchResult(url="https://thesummitbirmingham.com/buy/product/511", payload={"title": "Levi 511"}),
-                SearchResult(url="https://www.hamiltonplace.com/products/product/511", payload={"title": "Levi 511"}),
-                SearchResult(url="https://www.coolspringsgalleria.com/products/product/511", payload={"title": "Levi 511"}),
+                SearchResult(
+                    url="https://thesummitbirmingham.com/buy/product/511",
+                    payload={"title": "Levi 511"},
+                ),
+                SearchResult(
+                    url="https://www.hamiltonplace.com/products/product/511",
+                    payload={"title": "Levi 511"},
+                ),
+                SearchResult(
+                    url="https://www.coolspringsgalleria.com/products/product/511",
+                    payload={"title": "Levi 511"},
+                ),
             ]
         return [
-            SearchResult(url="https://www.levi.com/p/04511.html", payload={"title": "Levi 511"}),
-            SearchResult(url="https://www.macys.com/p/04511.html", payload={"title": "Levi 511"}),
+            SearchResult(
+                url="https://www.levi.com/p/04511.html", payload={"title": "Levi 511"}
+            ),
+            SearchResult(
+                url="https://www.macys.com/p/04511.html", payload={"title": "Levi 511"}
+            ),
         ]
 
     monkeypatch.setattr(
@@ -1752,8 +1874,12 @@ async def test_product_intelligence_discovery_prioritizes_brand_site_over_aggreg
 
 @pytest.mark.asyncio
 @pytest.mark.component
-async def test_product_intelligence_discovery_skips_invalid_result_urls(monkeypatch) -> None:
-    async def fake_search_results(provider: str, query: str, *, limit: int | None = None) -> list[SearchResult]:
+async def test_product_intelligence_discovery_skips_invalid_result_urls(
+    monkeypatch,
+) -> None:
+    async def fake_search_results(
+        provider: str, query: str, *, limit: int | None = None
+    ) -> list[SearchResult]:
         return [
             SearchResult(
                 url="javascript:void(0)",
@@ -1789,7 +1915,9 @@ async def test_product_intelligence_discovery_skips_invalid_result_urls(monkeypa
 
 @pytest.mark.asyncio
 @pytest.mark.component
-async def test_product_intelligence_discovery_rejects_listing_urls_from_serpapi() -> None:
+async def test_product_intelligence_discovery_rejects_listing_urls_from_serpapi() -> (
+    None
+):
     async def fake_run_query(query: str, limit: int) -> list[SearchResult]:
         del query, limit
         return [
@@ -1875,7 +2003,9 @@ async def test_product_intelligence_discovery_rejects_html_listing_urls() -> Non
 
 @pytest.mark.asyncio
 @pytest.mark.component
-async def test_product_intelligence_discovery_keeps_matching_slug_without_detail_marker() -> None:
+async def test_product_intelligence_discovery_keeps_matching_slug_without_detail_marker() -> (
+    None
+):
     async def fake_run_query(query: str, limit: int) -> list[SearchResult]:
         del query, limit
         return [
@@ -1910,7 +2040,9 @@ async def test_product_intelligence_discovery_keeps_matching_slug_without_detail
 
 @pytest.mark.asyncio
 @pytest.mark.component
-async def test_product_intelligence_discovery_allows_marketplace_item_ids_when_title_matches() -> None:
+async def test_product_intelligence_discovery_allows_marketplace_item_ids_when_title_matches() -> (
+    None
+):
     async def fake_run_query(query: str, limit: int) -> list[SearchResult]:
         del query, limit
         return [
@@ -1990,7 +2122,9 @@ async def test_product_intelligence_discovery_rejects_editorial_brand_pages() ->
 
 @pytest.mark.asyncio
 @pytest.mark.component
-async def test_product_intelligence_discovery_rejects_unrelated_google_native_products() -> None:
+async def test_product_intelligence_discovery_rejects_unrelated_google_native_products() -> (
+    None
+):
     async def fake_run_query(query: str, limit: int) -> list[SearchResult]:
         del query, limit
         return [
@@ -2034,7 +2168,9 @@ async def test_product_intelligence_discovery_rejects_unrelated_google_native_pr
 
 @pytest.mark.asyncio
 @pytest.mark.component
-async def test_product_intelligence_discovery_rejects_google_native_source_domain_and_url() -> None:
+async def test_product_intelligence_discovery_rejects_google_native_source_domain_and_url() -> (
+    None
+):
     async def fake_run_query(query: str, limit: int) -> list[SearchResult]:
         assert "belk.com" not in query
         del limit
@@ -2079,16 +2215,25 @@ async def test_product_intelligence_discovery_rejects_google_native_source_domai
 
 @pytest.mark.asyncio
 @pytest.mark.component
-async def test_product_intelligence_discovery_keeps_search_delay_while_filling_pool(monkeypatch) -> None:
+async def test_product_intelligence_discovery_keeps_search_delay_while_filling_pool(
+    monkeypatch,
+) -> None:
     recorded_delays: list[float] = []
 
-    async def fake_search_results(provider: str, query: str, *, limit: int | None = None) -> list[SearchResult]:
+    async def fake_search_results(
+        provider: str, query: str, *, limit: int | None = None
+    ) -> list[SearchResult]:
         if query == "query one":
             return [
-                SearchResult(url="https://www.levi.com/p/04511.html", payload={"title": "Levi 511"}),
+                SearchResult(
+                    url="https://www.levi.com/p/04511.html",
+                    payload={"title": "Levi 511"},
+                ),
             ]
         return [
-            SearchResult(url="https://www.macys.com/p/04511.html", payload={"title": "Levi 511"}),
+            SearchResult(
+                url="https://www.macys.com/p/04511.html", payload={"title": "Levi 511"}
+            ),
         ]
 
     async def fake_sleep(delay: float) -> None:
@@ -2125,11 +2270,15 @@ async def test_product_intelligence_discovery_keeps_search_delay_while_filling_p
 
 @pytest.mark.asyncio
 @pytest.mark.component
-async def test_product_intelligence_discovery_fills_requested_count_after_strong_first_query_brand_dtc(monkeypatch) -> None:
+async def test_product_intelligence_discovery_fills_requested_count_after_strong_first_query_brand_dtc(
+    monkeypatch,
+) -> None:
     seen_queries: list[str] = []
     recorded_delays: list[float] = []
 
-    async def fake_search_results(provider: str, query: str, *, limit: int | None = None) -> list[SearchResult]:
+    async def fake_search_results(
+        provider: str, query: str, *, limit: int | None = None
+    ) -> list[SearchResult]:
         del provider, limit
         seen_queries.append(query)
         if query == "query one":
@@ -2140,7 +2289,9 @@ async def test_product_intelligence_discovery_fills_requested_count_after_strong
                 )
             ]
         return [
-            SearchResult(url="https://www.macys.com/p/04511.html", payload={"title": "Levi 511"}),
+            SearchResult(
+                url="https://www.macys.com/p/04511.html", payload={"title": "Levi 511"}
+            ),
         ]
 
     async def fake_sleep(delay: float) -> None:
@@ -2254,7 +2405,9 @@ async def test_product_intelligence_discovery_preview_returns_source_and_payload
     await db_session.commit()
     await db_session.refresh(record)
 
-    async def fake_search_results(provider: str, query: str, *, limit: int | None = None) -> list[SearchResult]:
+    async def fake_search_results(
+        provider: str, query: str, *, limit: int | None = None
+    ) -> list[SearchResult]:
         return [
             SearchResult(
                 url="https://www.ralphlauren.com/men-clothing-jeans/varick/123.html",
@@ -2287,8 +2440,13 @@ async def test_product_intelligence_discovery_preview_returns_source_and_payload
     assert isinstance(response["job_id"], int)
     assert response["candidates"][0]["source_brand"] == "ralph lauren"
     assert response["candidates"][0]["payload"]["provider"] == "serpapi"
-    assert response["candidates"][0]["intelligence"]["canonical_record"]["title"] == "Varick jean"
-    assert response["candidates"][0]["intelligence"]["canonical_record"]["price"] is None
+    assert (
+        response["candidates"][0]["intelligence"]["canonical_record"]["title"]
+        == "Varick jean"
+    )
+    assert (
+        response["candidates"][0]["intelligence"]["canonical_record"]["price"] is None
+    )
     assert response["candidates"][0]["intelligence"]["confidence_score"] >= 0
     persisted_match = await db_session.scalar(
         select(ProductIntelligenceMatch).where(
@@ -2327,12 +2485,17 @@ async def test_product_intelligence_discovery_preview_skips_search_result_llm_en
     await db_session.commit()
     await db_session.refresh(record)
 
-    async def fake_search_results(provider: str, query: str, *, limit: int | None = None) -> list[SearchResult]:
+    async def fake_search_results(
+        provider: str, query: str, *, limit: int | None = None
+    ) -> list[SearchResult]:
         del provider, query, limit
         return [
             SearchResult(
                 url="https://www.levi.com/p/04511.html",
-                payload={"provider": "serpapi", "title": "Levi's Men 511 Slim Fit Jeans"},
+                payload={
+                    "provider": "serpapi",
+                    "title": "Levi's Men 511 Slim Fit Jeans",
+                },
             )
         ]
 
@@ -2386,7 +2549,9 @@ async def test_product_intelligence_discovery_prefers_row_source_url_for_query_e
 ) -> None:
     seen_queries: list[str] = []
 
-    async def fake_search_results(provider: str, query: str, *, limit: int | None = None) -> list[SearchResult]:
+    async def fake_search_results(
+        provider: str, query: str, *, limit: int | None = None
+    ) -> list[SearchResult]:
         del provider, limit
         seen_queries.append(query)
         return [
@@ -2427,7 +2592,10 @@ async def test_product_intelligence_discovery_prefers_row_source_url_for_query_e
     assert seen_queries
     assert all("myntra.com" not in query for query in seen_queries)
     assert all("belk.com" not in query for query in seen_queries)
-    assert response["candidates"][0]["source_url"] == "https://www.myntra.com/p/shoes/example-item.html"
+    assert (
+        response["candidates"][0]["source_url"]
+        == "https://www.myntra.com/p/shoes/example-item.html"
+    )
 
 
 @pytest.mark.asyncio
@@ -2461,13 +2629,18 @@ async def test_product_intelligence_discovery_uses_product_url_from_listing_reco
 
     seen_queries: list[str] = []
 
-    async def fake_search_results(provider: str, query: str, *, limit: int | None = None) -> list[SearchResult]:
+    async def fake_search_results(
+        provider: str, query: str, *, limit: int | None = None
+    ) -> list[SearchResult]:
         del provider, limit
         seen_queries.append(query)
         return [
             SearchResult(
                 url="https://www.wrangler.com/shop/relaxed-bootcut-jeans.html",
-                payload={"provider": "serpapi", "title": "Wrangler Relaxed Bootcut Jeans"},
+                payload={
+                    "provider": "serpapi",
+                    "title": "Wrangler Relaxed Bootcut Jeans",
+                },
             )
         ]
 
@@ -2519,7 +2692,11 @@ async def test_product_intelligence_discovery_reuses_one_query_runner_for_multip
                 return [
                     SearchResult(
                         url=f"https://www.levi.com/p/{token}.html",
-                        payload={"provider": "google_native", "title": f"Product {token} 511 Jeans", "price": "$55.00"},
+                        payload={
+                            "provider": "google_native",
+                            "title": f"Product {token} 511 Jeans",
+                            "price": "$55.00",
+                        },
                     )
                 ]
 
@@ -2575,14 +2752,31 @@ async def test_product_intelligence_discovery_returns_max_urls_per_input_source(
     test_user,
     monkeypatch,
 ) -> None:
-    async def fake_search_results(provider: str, query: str, *, limit: int | None = None) -> list[SearchResult]:
+    async def fake_search_results(
+        provider: str, query: str, *, limit: int | None = None
+    ) -> list[SearchResult]:
         quoted = query.split('"')
-        title_source = quoted[3] if len(quoted) > 3 else quoted[1] if len(quoted) > 1 else quoted[0]
+        title_source = (
+            quoted[3]
+            if len(quoted) > 3
+            else quoted[1]
+            if len(quoted) > 1
+            else quoted[0]
+        )
         title_token = title_source.split()[0]
         return [
-            SearchResult(url=f"https://www.levi.com/p/{title_token}.html", payload={"provider": provider, "title": title_token}),
-            SearchResult(url=f"https://www.macys.com/p/{title_token}.html", payload={"provider": provider, "title": title_token}),
-            SearchResult(url=f"https://www.nordstrom.com/p/{title_token}.html", payload={"provider": provider, "title": title_token}),
+            SearchResult(
+                url=f"https://www.levi.com/p/{title_token}.html",
+                payload={"provider": provider, "title": title_token},
+            ),
+            SearchResult(
+                url=f"https://www.macys.com/p/{title_token}.html",
+                payload={"provider": provider, "title": title_token},
+            ),
+            SearchResult(
+                url=f"https://www.nordstrom.com/p/{title_token}.html",
+                payload={"provider": provider, "title": title_token},
+            ),
         ]
 
     monkeypatch.setattr(
@@ -2616,7 +2810,12 @@ async def test_product_intelligence_discovery_returns_max_urls_per_input_source(
 
     assert response["source_count"] == 4
     assert response["candidate_count"] == 12
-    assert {candidate["source_index"] for candidate in response["candidates"]} == {0, 1, 2, 3}
+    assert {candidate["source_index"] for candidate in response["candidates"]} == {
+        0,
+        1,
+        2,
+        3,
+    }
 
 
 @pytest.mark.asyncio
@@ -2626,7 +2825,9 @@ async def test_product_intelligence_discovery_source_count_excludes_private_labe
     test_user,
     monkeypatch,
 ) -> None:
-    async def fake_search_results(provider: str, query: str, *, limit: int | None = None) -> list[SearchResult]:
+    async def fake_search_results(
+        provider: str, query: str, *, limit: int | None = None
+    ) -> list[SearchResult]:
         del query
         return [
             SearchResult(
@@ -2683,7 +2884,9 @@ async def test_product_intelligence_discovery_defaults_private_label_mode_to_exc
     test_user,
     monkeypatch,
 ) -> None:
-    async def fake_search_results(provider: str, query: str, *, limit: int | None = None) -> list[SearchResult]:
+    async def fake_search_results(
+        provider: str, query: str, *, limit: int | None = None
+    ) -> list[SearchResult]:
         del query
         return [
             SearchResult(
@@ -2739,19 +2942,29 @@ async def test_product_intelligence_discovery_searches_title_only_sources(
     test_user,
     monkeypatch,
 ) -> None:
-    async def fake_search_results(provider: str, query: str, *, limit: int | None = None) -> list[SearchResult]:
+    async def fake_search_results(
+        provider: str, query: str, *, limit: int | None = None
+    ) -> list[SearchResult]:
         title_token = query.split()[0]
         return [
-            SearchResult(url=f"https://www.example-retailer.com/p/{title_token}-1.html", payload={"provider": provider, "title": title_token}),
-            SearchResult(url=f"https://www.example-brand.com/p/{title_token}-2.html", payload={"provider": provider, "title": title_token}),
-            SearchResult(url=f"https://www.example-market.com/p/{title_token}-3.html", payload={"provider": provider, "title": title_token}),
+            SearchResult(
+                url=f"https://www.example-retailer.com/p/{title_token}-1.html",
+                payload={"provider": provider, "title": title_token},
+            ),
+            SearchResult(
+                url=f"https://www.example-brand.com/p/{title_token}-2.html",
+                payload={"provider": provider, "title": title_token},
+            ),
+            SearchResult(
+                url=f"https://www.example-market.com/p/{title_token}-3.html",
+                payload={"provider": provider, "title": title_token},
+            ),
         ]
 
     monkeypatch.setattr(
         "app.intelligence.discovery._search_results",
         fake_search_results,
     )
-
 
     response = await discover_product_intelligence_candidates(
         db_session,
@@ -2865,7 +3078,9 @@ def test_score_candidate_style_code_match_reaches_auto_accept() -> None:
         url="https://www.ebay.com/itm/123",
         domain="ebay.com",
     )
-    result = score_candidate(source=source, candidate=candidate, source_type="marketplace")
+    result = score_candidate(
+        source=source, candidate=candidate, source_type="marketplace"
+    )
 
     assert result["reasons"]["style_code_match"] is True
     assert result["reasons"]["match_basis"] == "style_code"
@@ -2878,7 +3093,11 @@ def test_score_candidate_model_token_brand_is_model_level_match() -> None:
     # Terse source vs verbose candidate: raw title overlap is low, but brand-exact plus the
     # distinctive model token ("promina") is a deterministic model-level match.
     source = extract_product_snapshot(
-        {"title": "Men's Promina Sneakers", "brand": "Nike\u00ae", "sku": "3900462FV5285"}
+        {
+            "title": "Men's Promina Sneakers",
+            "brand": "Nike\u00ae",
+            "sku": "3900462FV5285",
+        }
     )
     candidate = extract_search_result_snapshot(
         {
@@ -2902,14 +3121,24 @@ def test_score_candidate_same_brand_different_model_not_promoted() -> None:
     # Same brand, different model: the distinctive model token does not overlap, so this
     # must not reach the model-level floor.
     source = extract_product_snapshot(
-        {"title": "Men's Promina Sneakers", "brand": "Nike\u00ae", "sku": "3900462FV5285"}
+        {
+            "title": "Men's Promina Sneakers",
+            "brand": "Nike\u00ae",
+            "sku": "3900462FV5285",
+        }
     )
     candidate = extract_search_result_snapshot(
-        {"title": "Nike Air Force 1 Low Men's Shoes", "source": "Nike", "provider": "serpapi"},
+        {
+            "title": "Nike Air Force 1 Low Men's Shoes",
+            "source": "Nike",
+            "provider": "serpapi",
+        },
         url="https://www.nike.com/t/air-force-1-low",
         domain="nike.com",
     )
-    result = score_candidate(source=source, candidate=candidate, source_type="brand_dtc")
+    result = score_candidate(
+        source=source, candidate=candidate, source_type="brand_dtc"
+    )
 
     assert result["reasons"]["model_token_match"] is False
     assert result["score"] < 0.82
@@ -2921,7 +3150,9 @@ def test_score_candidate_truncated_candidate_does_not_self_promote() -> None:
     # source even when they share a family token.
     source = {"title": "Samsung Galaxy S24 Ultra 512GB", "brand": "Samsung"}
     candidate = {"title": "Samsung Galaxy", "brand": "Samsung"}
-    result = score_candidate(source=source, candidate=candidate, source_type=SOURCE_TYPE_BRAND_DTC)
+    result = score_candidate(
+        source=source, candidate=candidate, source_type=SOURCE_TYPE_BRAND_DTC
+    )
 
     assert result["reasons"]["model_token_match"] is False
     assert result["score"] < 0.82
@@ -2931,7 +3162,11 @@ def test_score_candidate_truncated_candidate_does_not_self_promote() -> None:
 def test_score_candidate_brand_resolved_from_candidate_evidence() -> None:
     # Brand not in the registry, but the candidate title states it: matching must still fire
     # via candidate-side evidence (registry only canonicalizes; it does not gate).
-    source = {"title": "Northbound Trail Daypack 25L", "brand": "Northbound", "price": 80.0}
+    source = {
+        "title": "Northbound Trail Daypack 25L",
+        "brand": "Northbound",
+        "price": 80.0,
+    }
     candidate = {
         "title": "Northbound Trail Daypack 25L Olive",
         "brand": "",
@@ -2959,9 +3194,7 @@ def test_candidate_dedupe_key_collapses_size_and_color_variants() -> None:
     key_c = candidate_dedupe_key(
         "https://www.lyst.com/shoes/x/?product=SEECFLM&size=10"
     )
-    key_d = candidate_dedupe_key(
-        "https://www.lyst.com/shoes/x/?product=OTHER&size=11"
-    )
+    key_d = candidate_dedupe_key("https://www.lyst.com/shoes/x/?product=OTHER&size=11")
     assert key_c != key_d
 
 

@@ -122,6 +122,7 @@ async def test_validate_proxy_endpoint_uses_proxy_resolution_label(
     with pytest.raises(ValueError, match="Proxy host could not be resolved"):
         await url_safety.validate_proxy_endpoint("http://proxy.example:8080")
 
+
 @pytest.mark.asyncio
 @pytest.mark.component
 @pytest.mark.parametrize(

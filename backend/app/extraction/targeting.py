@@ -8,6 +8,10 @@ from app.extraction.contracts import (
     RejectedEntity,
     TargetSelection,
 )
+from app.core.records.url_identity import (
+    detail_identity_codes_from_url,
+    detail_url_resource_identity,
+)
 from app.extraction.entities import EntitySet
 from app.extraction.surfaces import SurfaceSpec
 
@@ -46,7 +50,9 @@ def select_subject_targets(
     return TargetSelection(
         status="resolved" if roots else "missing",
         root_entity_ids=tuple(roots),
-        selected_root_entity_id=roots[0] if spec.cardinality == "one" and roots else None,
+        selected_root_entity_id=roots[0]
+        if spec.cardinality == "one" and roots
+        else None,
     )
 
 
@@ -72,6 +78,11 @@ def scoped_graph(graph_state: Any, target: TargetSelection) -> Any:
             asset for asset in graph_state.assets if asset.product_entity_id == selected
         ),
         product_option_metadata=graph_state.product_option_metadata,
+        option_catalogs=tuple(
+            catalog
+            for catalog in graph_state.option_catalogs
+            if catalog.product_entity_id == selected
+        ),
     )
 
 
@@ -82,21 +93,48 @@ def _select_product_by_url(
 ) -> str | None:
     by_id = {row.evidence_id: row for row in evidence}
     wanted = {request.capture.final_url, request.capture.requested_url}
+    wanted_product_ids = {
+        code
+        for url in wanted
+        for code in detail_identity_codes_from_url(url)
+    }
+    wanted_resource_ids = {
+        resource_id
+        for url in wanted
+        if (resource_id := detail_url_resource_identity(url))
+    }
     complete_offer_products = _products_with_complete_offers(graph)
-    scored: list[tuple[int, str]] = []
+    scored: list[tuple[tuple[int, int, int, int, int, int, int], str]] = []
     for product in graph.products:
         urls = {
             str(by_id[evidence_id].value)
             for evidence_id in product.attribute_evidence.get("product.url", ())
             if evidence_id in by_id
         }
-        score = 100 if urls & wanted else 0
-        score += 120 if product.entity_id in complete_offer_products else 0
-        score += 20 if product.offer_ids else 0
-        score += 10 if product.attribute_evidence.get("product.title") else 0
-        score += len(product.attribute_evidence)
-        if score:
-            scored.append((score, product.entity_id))
+        product_ids = {
+            str(hint.product_id)
+            for evidence_ids in product.attribute_evidence.values()
+            for evidence_id in evidence_ids
+            if evidence_id in by_id
+            and (hint := by_id[evidence_id].entity_hint) is not None
+            and hint.product_id
+        }
+        resource_ids = {
+            resource_id
+            for url in urls
+            if (resource_id := detail_url_resource_identity(url))
+        }
+        rank = (
+            int(bool(resource_ids & wanted_resource_ids)),
+            int(bool(urls & wanted)),
+            int(bool(product_ids & wanted_product_ids)),
+            int(product.entity_id in complete_offer_products),
+            int(bool(product.offer_ids)),
+            int(bool(product.attribute_evidence.get("product.title"))),
+            len(product.attribute_evidence),
+        )
+        if any(rank):
+            scored.append((rank, product.entity_id))
     return max(scored, key=lambda item: (item[0], item[1]))[1] if scored else None
 
 

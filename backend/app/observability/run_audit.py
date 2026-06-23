@@ -28,7 +28,7 @@ from app.core.config.audit_rules import (
 from app.core.db_utils import mapping_or_empty
 from app.core.domain_utils import normalize_domain
 from app.core.records.field_url_normalization import canonical_public_record_url
-from app.core.records.field_policy import repair_target_fields_for_surface
+from app.core.records.field_policy import acquisition_contract_fields_for_surface
 from app.observability.baseline import (
     build_observation,
     compare_to_baseline,
@@ -36,7 +36,10 @@ from app.observability.baseline import (
     update_baseline,
 )
 from app.crawl.pipeline.run_complete_callbacks import register_run_complete_callback
-from app.persistence.record_artifacts import CanonicalRecordView, load_canonical_record_views
+from app.persistence.record_artifacts import (
+    CanonicalRecordView,
+    load_canonical_record_views,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -471,7 +474,10 @@ def _audit_variant_provenance(
     for entry in field_provenance:
         if not isinstance(entry, dict):
             continue
-        if str(entry.get("field") or "") != "variants" or entry.get("present") is not False:
+        if (
+            str(entry.get("field") or "") != "variants"
+            or entry.get("present") is not False
+        ):
             continue
         winning_source = str(entry.get("winning_source") or "").strip()
         if not winning_source:
@@ -622,7 +628,7 @@ def _flag(code: str, *, evidence: dict[str, Any], url: str = "") -> dict[str, An
 
 
 def _high_value_fields(surface: str, requested_fields: list[str]) -> list[str]:
-    resolved = repair_target_fields_for_surface(surface, requested_fields)
+    resolved = acquisition_contract_fields_for_surface(surface, requested_fields)
     if resolved:
         return resolved
     return list(obs_config.HIGH_VALUE_FIELD_FLOOR)
@@ -696,5 +702,6 @@ def _write_flags(
         encoding="utf-8",
     )
     return str(path)
+
 
 __all__ = ["audit_run_complete", "build_run_flags", "ensure_run_audit_registered"]

@@ -38,9 +38,7 @@ class AcquisitionPlanner:
         plan_key = f"{request.url}|{request.surface}|{created_at.isoformat()}"
         plan_id = sha256(plan_key.encode("utf-8")).hexdigest()[:20]
         attempt_inputs = tuple(
-            (transport, proxy)
-            for transport in transports
-            for proxy in proxies
+            (transport, proxy) for transport in transports for proxy in proxies
         )
         attempts = tuple(
             AttemptSpec(
@@ -48,7 +46,8 @@ class AcquisitionPlanner:
                 transport=transport,
                 proxy=proxy,
                 warmup=request.warmup and transport in {"patchright", "real_chrome"},
-                interaction=request.interaction and transport in {"patchright", "real_chrome"},
+                interaction=request.interaction
+                and transport in {"patchright", "real_chrome"},
                 traversal_mode=request.traversal_mode,
                 required_artifacts=request.required_artifacts,
                 timeout_seconds=remaining,
@@ -86,4 +85,8 @@ class AcquisitionPlanner:
 
     @staticmethod
     def _reason(index: int, transport: str) -> str:
-        return "initial_http" if index == 1 and transport == "curl" else f"fallback_{transport}"
+        return (
+            "initial_http"
+            if index == 1 and transport == "curl"
+            else f"fallback_{transport}"
+        )

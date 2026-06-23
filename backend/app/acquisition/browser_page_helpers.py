@@ -1,41 +1,24 @@
 from __future__ import annotations
 
 import asyncio
-import logging
 from typing import Any
 
-from patchright.async_api import Error as PlaywrightError
-from patchright.async_api import TimeoutError as PlaywrightTimeoutError
-
-from app.acquisition.browser_capture import is_response_closed_error
 from app.acquisition.dom_runtime import get_page_html
 from app.acquisition.browser_interstitial import (
     dismiss_safe_location_interstitial as _interstitial_dismiss,
     location_interstitial_detected as _interstitial_detected,
     page_might_have_location_interstitial as _interstitial_page_probe,
 )
-from app.core.config.extraction_rules import (
-    ECOMMERCE_DETAIL_SURFACE,
-    LISTING_BRAND_SELECTORS,
-    LISTING_UTILITY_URL_TOKENS,
-    LISTING_VISUAL_PRICE_REGEX_PATTERN,
-)
+from app.core.config.extraction_rules import ECOMMERCE_DETAIL_SURFACE
 from app.core.config.field_mappings import (
     DOM_HIGH_VALUE_FIELDS,
     DOM_OPTIONAL_CUE_FIELDS,
-)
-from app.core.config.selectors import (
-    ANCHOR_SELECTOR,
-    LISTING_CAPTURE_STRUCTURAL_ANCESTOR_SELECTORS,
-    LISTING_VISUAL_CANDIDATE_CONTAINER_SELECTORS,
-    LISTING_VISUAL_CAPTURE_SELECTORS,
 )
 from app.core.config.runtime_settings import crawler_runtime_settings
 from app.core.config.url_path_markers import detail_path_markers
 from app.core.records.css_extractability import requested_content_extractability
 from app.extraction.documents import HtmlAnalysis, HtmlDocument
 
-logger = logging.getLogger(__name__)
 
 def _object_int(value: object, default: int = 0) -> int:
     if isinstance(value, bool):
@@ -47,11 +30,14 @@ def _object_int(value: object, default: int = 0) -> int:
     except (TypeError, ValueError):
         return default
 
+
 async def page_might_have_location_interstitial(page: Any) -> bool:
     return await _interstitial_page_probe(page)
 
+
 async def dismiss_safe_location_interstitial(page: Any) -> dict[str, object]:
     return await _interstitial_dismiss(page)
+
 
 def location_interstitial_detected(
     html: str,
@@ -59,6 +45,7 @@ def location_interstitial_detected(
     analysis: HtmlAnalysis | None = None,
 ) -> bool:
     return _interstitial_detected(html, analysis=analysis)
+
 
 def _select_primary_browser_html(
     *,
@@ -110,6 +97,7 @@ def _select_primary_browser_html(
     ):
         return rendered_html, rendered_analysis
     return traversal_html, traversal_analysis
+
 
 def _listing_html_detail_anchor_count(
     document: HtmlDocument,
@@ -165,17 +153,18 @@ async def _resolve_rendered_snapshot(
         html = await get_page_html(page, flatten_shadow=flatten_shadow)
     analysis = (
         prefetched_analysis
-        if prefetched_analysis is not None
-        and prefetched_analysis.matches_html(html)
+        if prefetched_analysis is not None and prefetched_analysis.matches_html(html)
         else await asyncio.to_thread(HtmlAnalysis.from_html, html)
     )
     return html, html, analysis
+
 
 def _normalize_listing_recovery_mode(value: object) -> str | None:
     normalized = str(value or "").strip().lower().replace("-", "_").replace(" ", "_")
     if normalized.endswith("_retry"):
         normalized = normalized[: -len("_retry")]
     return normalized or None
+
 
 def _detail_expansion_extractability(
     *,
@@ -201,19 +190,30 @@ def _detail_expansion_extractability(
         ),
     )
 
+
 def _detail_expansion_probe_fields(
     *,
     surface: str,
     requested_fields: list[str] | None,
 ) -> list[str] | None:
     if requested_fields:
-        return sorted({str(field_name).strip() for field_name in requested_fields if str(field_name).strip()}) or None
+        return (
+            sorted(
+                {
+                    str(field_name).strip()
+                    for field_name in requested_fields
+                    if str(field_name).strip()
+                }
+            )
+            or None
+        )
     normalized_surface = str(surface or "").strip().lower()
     probe_fields = {
         *set(DOM_HIGH_VALUE_FIELDS.get(normalized_surface) or ()),
         *set(DOM_OPTIONAL_CUE_FIELDS.get(normalized_surface) or ()),
     }
     return sorted(probe_fields) or None
+
 
 def _detail_expansion_can_skip(
     extractability: dict[str, object],
@@ -252,7 +252,10 @@ def _ready_probe_has_detail_content(
     probe = readiness_probe if isinstance(readiness_probe, dict) else {}
     visible_text_length = _object_int(probe.get("visible_text_length"))
     visible_text_min = int(crawler_runtime_settings.browser_readiness_visible_text_min)
-    if bool(probe.get("structured_data_present")) and visible_text_length >= visible_text_min:
+    if (
+        bool(probe.get("structured_data_present"))
+        and visible_text_length >= visible_text_min
+    ):
         return True
     detail_hint_count = _object_int(probe.get("detail_hint_count"))
     if (
@@ -262,182 +265,17 @@ def _ready_probe_has_detail_content(
         return True
     return bool(probe.get("h1_present")) and visible_text_length >= visible_text_min
 
+
 async def _capture_listing_visual_elements(
     page: Any,
     *,
     surface: str | None,
 ) -> list[dict[str, object]]:
-    if "listing" not in str(surface or "").strip().lower():
-        return []
-    try:
-        snapshot = await page.evaluate(
-            """(args) => {
-                const anchorSelector = String(args?.anchorSelector || '');
-                const detailUrlHints = Array.isArray(args?.detailUrlHints) ? args.detailUrlHints : [];
-                const utilityUrlTokens = Array.isArray(args?.utilityUrlTokens) ? args.utilityUrlTokens : [];
-                const brandSelectors = Array.isArray(args?.brandSelectors) ? args.brandSelectors : [];
-                const selectors = [...(Array.isArray(args?.captureSelectors) ? args.captureSelectors : []), ...brandSelectors];
-                const structuralAncestorSelectors = Array.isArray(args?.structuralAncestorSelectors) ? args.structuralAncestorSelectors : [];
-                const candidateContainerSelectors = Array.isArray(args?.candidateContainerSelectors) ? args.candidateContainerSelectors : [];
-                const seenNodes = new Set();
-                const rows = [];
-                // Extend currencies in LISTING_VISUAL_PRICE_REGEX_PATTERN.
-                const priceRegex = new RegExp(String(args?.priceRegexPattern || ''), 'i');
-                const isDataImage = (value) => /^data:/i.test(String(value || ''));
-                for (const selector of selectors) {
-                    for (const node of document.querySelectorAll(selector)) {
-                        if (!(node instanceof HTMLElement) || !node.isConnected) {
-                            continue;
-                        }
-                        if (seenNodes.has(node)) {
-                            continue;
-                        }
-                        seenNodes.add(node);
-                        const rect = node.getBoundingClientRect();
-                        if (rect.width <= 0 || rect.height <= 0) {
-                            continue;
-                        }
-                        const style = window.getComputedStyle(node);
-                        if (
-                            style.display === 'none' ||
-                            style.visibility === 'hidden' ||
-                            style.pointerEvents === 'none'
-                        ) {
-                            continue;
-                        }
-                        if (structuralAncestorSelectors.some((selector) => node.closest(selector))) {
-                            continue;
-                        }
-                        const toAbsolute = (value) => {
-                            if (!value || /^(#|javascript:)/i.test(value)) return '';
-                            try { return new URL(value, location.href).href; } catch { return ''; }
-                        };
-                        const normalizedText = (value) => String(value || '').replace(/\\s+/g, ' ').trim();
-                        const text = normalizedText(node.innerText || node.textContent || '').slice(0, 240);
-                        const alt = normalizedText(node.getAttribute('alt') || '').slice(0, 240);
-                        const ariaLabel = normalizedText(node.getAttribute('aria-label') || '').slice(0, 240);
-                        const title = normalizedText(node.getAttribute('title') || '').slice(0, 240);
-                        const src = toAbsolute(node.getAttribute('src') || '');
-                        const directHref = toAbsolute(node.getAttribute('href') || '');
-                        const closestAnchor = anchorSelector ? node.closest(anchorSelector) : null;
-                        let href = directHref || toAbsolute(closestAnchor?.getAttribute('href') || '');
-                        if (!href) {
-                            const candidateContainerSelector = candidateContainerSelectors.join(',');
-                            const container = candidateContainerSelector ? node.closest(candidateContainerSelector) : node;
-                            const hintedAnchor = anchorSelector ? Array.from(container?.querySelectorAll?.(anchorSelector) || []).find((candidate) => {
-                                const candidateHref = String(candidate?.getAttribute?.('href') || '').toLowerCase();
-                                return detailUrlHints.some((hint) => candidateHref.includes(hint));
-                            }) : null;
-                            href = toAbsolute(hintedAnchor?.getAttribute('href') || '');
-                        }
-                        const loweredHref = href.toLowerCase();
-                        const isDetailHref = detailUrlHints.some((hint) => loweredHref.includes(hint));
-                        const isUtilityHref = utilityUrlTokens.some((token) => loweredHref.includes(token));
-                        if (isUtilityHref && !isDetailHref) {
-                            continue;
-                        }
-                        if (
-                            href &&
-                            !isDetailHref &&
-                            /^https?:\\/\\/[^/]+\\/?$/i.test(href)
-                        ) {
-                            continue;
-                        }
-                        const combinedText = normalizedText([text, alt, ariaLabel, title].filter(Boolean).join(' '));
-                        const hasPriceSignal = priceRegex.test(combinedText);
-                        const titleLike =
-                            combinedText.length >= 6 &&
-                            combinedText.length <= 180 &&
-                            !hasPriceSignal &&
-                            !/^(skip to|sign in|shop now|learn more|view all)$/i.test(combinedText);
-                        const largeImage = node.tagName.toLowerCase() === 'img' && Boolean(src) && !isDataImage(src) && rect.width >= 120 && rect.height >= 120;
-                        const genericImageLabel = /^(?:product|products?|logo|icon|image)$/i.test(combinedText);
-                        const likelyMerchandise = isDetailHref || hasPriceSignal || titleLike || largeImage;
-                        if (!likelyMerchandise) {
-                            continue;
-                        }
-                        if (!href && !hasPriceSignal) {
-                            continue;
-                        }
-                        if (genericImageLabel && !isDetailHref && !hasPriceSignal) {
-                            continue;
-                        }
-                        let score = 0;
-                        if (isDetailHref) score += 14;
-                        if (hasPriceSignal) score += 10;
-                        if (titleLike) score += 7;
-                        if (largeImage) score += 6;
-                        if (href) score += 2;
-                        if (node.tagName.toLowerCase() === 'a') score += 1;
-                        if (combinedText.length >= 12 && combinedText.length <= 120) score += 2;
-                        score -= Math.max(0, Math.floor(Math.max(0, rect.y) / 450));
-                        rows.push({
-                            tag: node.tagName.toLowerCase(),
-                            text,
-                            href,
-                            src,
-                            alt,
-                            ariaLabel,
-                            title,
-                            x: Math.round(rect.x),
-                            y: Math.round(rect.y),
-                            width: Math.round(rect.width),
-                            height: Math.round(rect.height),
-                            score,
-                        });
-                    }
-                }
-                rows.sort((left, right) => {
-                    const scoreDelta = Number(right.score || 0) - Number(left.score || 0);
-                    if (scoreDelta !== 0) return scoreDelta;
-                    const yDelta = Number(left.y || 0) - Number(right.y || 0);
-                    if (yDelta !== 0) return yDelta;
-                    return Number(left.x || 0) - Number(right.x || 0);
-                });
-                return rows.slice(0, 300);
-            }""",
-            {
-                "detailUrlHints": [
-                    hint.lower() for hint in detail_path_markers("ecommerce_detail")
-                ],
-                "utilityUrlTokens": [
-                    token.lower() for token in LISTING_UTILITY_URL_TOKENS
-                ],
-                "brandSelectors": list(LISTING_BRAND_SELECTORS),
-                "anchorSelector": ANCHOR_SELECTOR,
-                "captureSelectors": list(LISTING_VISUAL_CAPTURE_SELECTORS),
-                "candidateContainerSelectors": list(
-                    LISTING_VISUAL_CANDIDATE_CONTAINER_SELECTORS
-                ),
-                "structuralAncestorSelectors": list(
-                    LISTING_CAPTURE_STRUCTURAL_ANCESTOR_SELECTORS
-                ),
-                "priceRegexPattern": LISTING_VISUAL_PRICE_REGEX_PATTERN,
-            },
-        )
-    except asyncio.CancelledError:
-        raise
-    except PlaywrightTimeoutError:
-        logger.warning("Timed out while capturing listing visual elements")
-        return []
-    except PlaywrightError as exc:
-        logger.debug(
-            "Failed to capture listing visual elements status=%s",
-            "closed" if is_response_closed_error(exc) else "playwright_error",
-            exc_info=True,
-        )
-        return []
-    except Exception:
-        logger.exception("Failed to capture listing visual elements unexpectedly")
-        return []
-    if not isinstance(snapshot, list):
-        return []
-    rows: list[dict[str, object]] = []
-    for item in snapshot[:300]:
-        if not isinstance(item, dict):
-            continue
-        rows.append(dict(item))
-    return rows
+    from app.acquisition.browser_listing_visual import (
+        capture_listing_visual_elements,
+    )
+
+    return await capture_listing_visual_elements(page, surface=surface)
 
 
 object_int = _object_int

@@ -38,7 +38,6 @@ from app.core.shared.text_coerce import (
 )
 
 
-
 def _field_coerce() -> Any:
     from app.core.shared import field_coerce
 
@@ -156,7 +155,7 @@ def _coerce_option_scalar_value(field_name: str, value: object) -> str | None:
         ]
         if filtered:
             scalar_input = filtered
-    return _field_coerce()._sanitize_option_scalar(
+    return _field_coerce().sanitize_option_scalar(
         field_name,
         _field_coerce().coerce_structured_scalar(
             scalar_input,
@@ -195,7 +194,9 @@ def _coerce_structured_multi_value(field_name: str, value: object) -> list[str] 
     return deduped or None
 
 
-def _coerce_list_value(field_name: str, value: list[object], page_url: str) -> list[object] | None:
+def _coerce_list_value(
+    field_name: str, value: list[object], page_url: str
+) -> list[object] | None:
     normalized_rows: list[object] = []
     for item in value:
         normalized_value = cast(object, coerce_field_value(field_name, item, page_url))

@@ -33,7 +33,9 @@ async def runtime_page(
     normalized_proxy = normalized_proxy_value(proxy)
     if runtime.launch_proxy is None:
         if normalized_proxy is not None:
-            raise RuntimeError("Proxied browser pages require a launch-owned browser runtime")
+            raise RuntimeError(
+                "Proxied browser pages require a launch-owned browser runtime"
+            )
     elif normalized_proxy not in {None, runtime.launch_proxy}:
         raise RuntimeError("Browser runtime proxy does not match requested proxy")
     runtime.touch()

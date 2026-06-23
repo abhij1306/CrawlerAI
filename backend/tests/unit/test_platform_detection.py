@@ -24,7 +24,9 @@ def test_detect_platform_family_for_real_client_ats_urls() -> None:
         == "workday"
     )
     assert (
-        detect_platform_family("https://ats.rippling.com/en-GB/inhance-technologies/jobs")
+        detect_platform_family(
+            "https://ats.rippling.com/en-GB/inhance-technologies/jobs"
+        )
         == "rippling"
     )
     assert (
@@ -93,7 +95,9 @@ def test_resolve_listing_readiness_override_uses_platform_registry_config() -> N
 
 
 @pytest.mark.unit
-def test_detect_platform_family_ignores_html_marker_matches_on_unrelated_domains() -> None:
+def test_detect_platform_family_ignores_html_marker_matches_on_unrelated_domains() -> (
+    None
+):
     html = """
     <html>
       <head>
@@ -115,15 +119,25 @@ def test_detect_platform_family_ignores_html_marker_matches_on_unrelated_domains
 
 
 @pytest.mark.unit
-def test_platform_registry_does_not_treat_detection_only_families_as_job_adapters() -> None:
-    assert detect_platform_family("https://ats.rippling.com/en-GB/acme/jobs") == "rippling"
+def test_platform_registry_does_not_treat_detection_only_families_as_job_adapters() -> (
+    None
+):
+    assert (
+        detect_platform_family("https://ats.rippling.com/en-GB/acme/jobs") == "rippling"
+    )
     assert is_job_platform_signal(platform_family="rippling") is False
 
 
 @pytest.mark.unit
 def test_detect_platform_family_for_stable_spa_canaries() -> None:
-    assert detect_platform_family("https://practicesoftwaretesting.com/#/shop") == "practicesoftwaretesting"
-    assert detect_platform_family("https://demo.spreecommerce.org/products") == "spree_commerce"
+    assert (
+        detect_platform_family("https://practicesoftwaretesting.com/#/shop")
+        == "practicesoftwaretesting"
+    )
+    assert (
+        detect_platform_family("https://demo.spreecommerce.org/products")
+        == "spree_commerce"
+    )
     assert detect_platform_family("https://demo.saleor.io/products") == "saleor"
 
 
@@ -160,7 +174,9 @@ def test_detect_platform_family_truncates_html_before_regex_scan(
 
 
 @pytest.mark.unit
-def test_resolve_browser_readiness_policy_requires_networkidle_for_platform_traversal_or_detail() -> None:
+def test_resolve_browser_readiness_policy_requires_networkidle_for_platform_traversal_or_detail() -> (
+    None
+):
     platform_policy = resolve_browser_readiness_policy(
         "https://smithnephew.wd5.myworkdayjobs.com/External",
     )

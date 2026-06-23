@@ -1,4 +1,4 @@
-import { useDeferredValue, useMemo } from 'react';
+import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 
 import { queryKeys } from '@/api/query-keys';
@@ -30,15 +30,20 @@ export function useRunRecords({
   jsonVisibleCount,
   verdict,
 }: Readonly<UseRunRecordsOptions>) {
-  const shouldFetchTableRecords = Boolean(run) && outputTab === 'table';
-  const shouldFetchJsonRecords = Boolean(run) && outputTab === 'json';
+  const shouldFetchTableRecords = outputTab === 'table';
+  const shouldFetchJsonRecords = outputTab === 'json';
   const recordsFetchLimit = Math.min(
     800,
     Math.max(CRAWL_DEFAULTS.TABLE_PAGE_SIZE * 2, jsonVisibleCount),
   );
   const tableRecordsLimit = CRAWL_DEFAULTS.TABLE_PAGE_SIZE * 4 * tablePage;
 
-  const tableRecordsQuery = useQuery({
+  const {
+    data: tableRecordsData,
+    error: tableRecordsError,
+    isLoading: isTableRecordsLoading,
+    refetch: refetchTableRecords,
+  } = useQuery({
     queryKey: queryKeys.runs.tableRecords(runId, tableRecordsLimit),
     queryFn: ({ signal }) =>
       api.getRecords(runId, { page: 1, limit: tableRecordsLimit }, { signal }),
@@ -48,27 +53,30 @@ export function useRunRecords({
     refetchOnMount: 'always',
   });
 
-  const jsonRecordsQuery = useQuery({
+  const {
+    data: jsonRecordsData,
+    error: jsonRecordsError,
+    isLoading: isJsonRecordsLoading,
+    refetch: refetchJsonRecords,
+  } = useQuery({
     queryKey: queryKeys.runs.jsonRecords(runId, recordsFetchLimit),
     queryFn: ({ signal }) => api.getRecords(runId, { limit: recordsFetchLimit }, { signal }),
-    enabled: shouldFetchJsonRecords,
+    enabled: Boolean(run) && shouldFetchJsonRecords,
     refetchInterval: live && shouldFetchJsonRecords ? POLLING_INTERVALS.ACTIVE_JOB_MS : false,
     refetchIntervalInBackground: false,
     refetchOnMount: 'always',
   });
 
-  const records = useMemo(() => jsonRecordsQuery.data?.items ?? [], [jsonRecordsQuery.data?.items]);
-  const tableRecords = useMemo(
-    () => tableRecordsQuery.data?.items ?? [],
-    [tableRecordsQuery.data?.items],
-  );
-  const tableTotal = tableRecordsQuery.data?.meta?.total ?? tableRecords.length;
-  const recordsTotal = jsonRecordsQuery.data?.meta?.total ?? records.length;
+  const jsonRecordsSource =
+    jsonRecordsData ?? (shouldFetchJsonRecords ? tableRecordsData : undefined);
+  const records = useMemo(() => jsonRecordsSource?.items ?? [], [jsonRecordsSource?.items]);
+  const tableRecords = useMemo(() => tableRecordsData?.items ?? [], [tableRecordsData?.items]);
+  const tableTotal = tableRecordsData?.meta?.total ?? tableRecords.length;
+  const recordsTotal = jsonRecordsSource?.meta?.total ?? records.length;
   const jsonRecords = useMemo(
     () => records.slice(0, Math.min(records.length, jsonVisibleCount)),
     [jsonVisibleCount, records],
   );
-  const deferredJsonRecords = useDeferredValue(jsonRecords);
   const recordsFetchCapReached = records.length >= recordsFetchLimit && recordsFetchLimit >= 800;
   const hasMoreTableRecords = tableRecords.length < tableTotal;
   const hasMoreJsonRecords =
@@ -76,17 +84,12 @@ export function useRunRecords({
     (records.length < recordsTotal && !recordsFetchCapReached);
   const recordsJson = useMemo(
     () =>
-      outputTab === 'json'
-        ? JSON.stringify(deferredJsonRecords.map(cleanRecordForDisplay), null, 2)
-        : '',
-    [deferredJsonRecords, outputTab],
+      outputTab === 'json' ? JSON.stringify(jsonRecords.map(cleanRecordForDisplay), null, 2) : '',
+    [jsonRecords, outputTab],
   );
 
   const summaryRecordsFromRun = Number(run?.result_summary?.record_count ?? 0) || 0;
-  const knownTableRecordsTotal = Math.max(
-    tableTotal,
-    tableRecordsQuery.data?.meta?.total ?? 0,
-  );
+  const knownTableRecordsTotal = Math.max(tableTotal, tableRecordsData?.meta?.total ?? 0);
   const terminalRecordsExpected =
     terminal && (summaryRecordsFromRun > 0 || verdict === 'success' || verdict === 'partial');
   const terminalRecordsNeedSync =
@@ -98,16 +101,22 @@ export function useRunRecords({
     retryLimit: RETRY_LIMITS.TERMINAL_RECORDS_RETRY_LIMIT,
     runId,
     summaryRecordsFromRun,
-    recordsFetchLimit,
     tableRecordsLimit,
     updatedAt: run?.updated_at ?? null,
-    refetchJsonRecords: jsonRecordsQuery.refetch,
-    refetchTableRecords: tableRecordsQuery.refetch,
+    refetchTableRecords,
   });
 
   return {
-    tableRecordsQuery,
-    jsonRecordsQuery,
+    tableRecordsQuery: {
+      error: tableRecordsError,
+      isLoading: isTableRecordsLoading,
+      refetch: refetchTableRecords,
+    },
+    jsonRecordsQuery: {
+      error: jsonRecordsError,
+      isLoading: isJsonRecordsLoading && !jsonRecordsSource,
+      refetch: refetchJsonRecords,
+    },
     records,
     tableRecords,
     tableTotal,

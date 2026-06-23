@@ -35,15 +35,22 @@ import { Badge, Button } from '../../components/ui/primitives';
 export default function JobsPage() {
   const [pendingAction, setPendingAction] = useState('');
   const [actionError, setActionError] = useState('');
-  const jobsQuery = useQuery({
+  const {
+    data: jobsData,
+    dataUpdatedAt: jobsDataUpdatedAt,
+    isLoading: isJobsLoading,
+    isError: isJobsError,
+    refetch: refetchJobs,
+  } = useQuery({
     queryKey: queryKeys.jobs.active(),
     queryFn: api.listJobs,
     refetchInterval: 5000,
   });
 
-  const jobs = jobsQuery.data ?? [];
-  const lastRefreshed = jobsQuery.dataUpdatedAt
-    ? formatTimeHms(new Date(jobsQuery.dataUpdatedAt).toISOString())
+  const jobs = jobsData ?? [];
+
+  const lastRefreshed = jobsDataUpdatedAt
+    ? formatTimeHms(new Date(jobsDataUpdatedAt).toISOString())
     : '--';
 
   async function runAction(runId: number) {
@@ -52,7 +59,7 @@ export default function JobsPage() {
     try {
       setActionError('');
       await api.killCrawl(runId);
-      await jobsQuery.refetch();
+      await refetchJobs();
     } catch (error) {
       setActionError(error instanceof Error ? error.message : `Unable to ${action} run ${runId}.`);
     } finally {
@@ -68,12 +75,7 @@ export default function JobsPage() {
         actions={
           <div className="flex items-center gap-3">
             <span className="type-caption">Last refreshed {lastRefreshed}</span>
-            <Button
-              variant="neutral"
-              type="button"
-              size="sm"
-              onClick={() => void jobsQuery.refetch()}
-            >
+            <Button variant="neutral" type="button" size="sm" onClick={() => void refetchJobs()}>
               <RefreshCw className="size-3.5" />
               Refresh
             </Button>
@@ -88,9 +90,9 @@ export default function JobsPage() {
       >
         {actionError ? <InlineAlert message={actionError} /> : null}
 
-        {jobsQuery.isLoading ? (
+        {isJobsLoading ? (
           <DataRegionLoading count={6} />
-        ) : jobsQuery.isError ? (
+        ) : isJobsError ? (
           <DataRegionError message="Failed to load jobs." />
         ) : jobs.length ? (
           <div className="border-border overflow-x-auto rounded-md border">

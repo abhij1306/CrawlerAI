@@ -1,273 +1,1469 @@
-# Plan: CrawlerAI Debt Burn-Down And Crawl Quality Fix
+# Plan: Final Architecture Debt Burn-Down and Crawl Quality Closure
 
-## Summary
+**Created:** 2026-06-21
+**Agent:** Codex
+**Status:** IN PROGRESS — FINAL 97-SITE REMEDIATION
+**Current slice:** Final bug list adopted as the only remaining scope; begin Slice 1 after user review of this updated structure
+**Touches buckets:** acquisition/browser runtime, extraction and public record contracts, persistence/artifacts/review, crawl orchestration, core config/record quality, intelligence, enrichment, connectors, tests, canonical architecture docs
 
-Goal: make backend smaller and more correct. Not prettier. Not more fixtures.
+## Goal
 
-Implement by debugging real failure classes, deleting duplicate paths, and shrinking bloated modules. New code must replace more code than it adds.
+Finish the backend modular-monolith cutover, remove every current architecture debt-ledger exception, and close the generic detail and listing crawl-quality failures found in the latest reports without adding site-specific runtime branches or downstream repair. Done means one traceable owner per runtime decision, deterministic replay produces complete and honest typed records, listing runs return product rows instead of navigation/support links, the architecture ratchets pass with no oversized-module or long-function allowlist, the configured offline suite passes, and the plan remains active as `AWAITING USER 100-SITE GATE` until the user runs the final live gate.
 
-Current measured state:
-- `backend/app`: 64,957 lines / 309 Python files
-- Biggest bloat: `acquisition` 16,739 LOC, `core` 14,773 LOC, `crawl` 9,609 LOC
-- Current hard debt: 6 modules over 700 lines, 25 functions over 100 lines
-- Active-plan blockers: Slice 6 legacy persistence fields, Slice 9 LOC/function gates, Slice 13 final verification
+This document supersedes `docs/plans/final-architecture-improvement-plan.md`. It absorbs only that plan's verified results and carries forward its unresolved work. This is the final implementation plan for this debt cycle. Do not create another plan for the same architecture debt; execute these slices to closure. An implementation agent starts from `docs/plans/ACTIVE.md`, this plan, and `AGENTS.md`. The slice guidance below is self-contained; open fallback docs only when code has drifted, an invariant is disputed, or a slice explicitly changes a public contract beyond what is described here.
 
-## Hard Rules
+## Authority and Evidence
 
-- No broad “quality fixture manifest” work.
-- No site-specific runtime branches.
-- No downstream cleanup in publish/export/persistence for extraction bugs.
-- No new compatibility layer.
-- No new package unless it deletes or replaces a larger one.
-- Every slice must reduce or hold net production LOC.
-- Tests must be targeted regressions around broken behavior, not snapshot hoards.
+Use sources in this order:
+
+1. Current code and tests at branch `debt-burndown-20260620`, audited committed HEAD `553dd794b9ef498c0d9a7e9cfc8034e7f6a6614c`.
+2. `AGENTS.md`, `docs/INVARIANTS.md`, `docs/BUSINESS_LOGIC.md`, `docs/CODEBASE_MAP.md`, and `docs/ENGINEERING_STRATEGY.md`.
+3. This plan's verified audit and decisions.
+4. The user-supplied final remediation bug list and `output.json` as the authoritative failing output.
+5. Stored crawl diagnostics only when tracing the root cause of a specific listed failure.
+6. `docs/feature specs/CrawlerAI_Final_App_Architecture_Simplification_and_Hardening_Plan_REVISED.md` as design rationale only.
+
+`output.json` is the authoritative failing output for this remediation cycle. The final bug list below is complete and must not be rebuilt, expanded, re-audited, or replaced unless a listed failure cannot be reproduced from `output.json` and stored diagnostics. Stored diagnostics may be used only to trace the generic root cause of a specific listed failure. Do not add broad expected-output fixtures or large saved HTML files.
+
+## Final Remaining Remediation Scope
+
+All earlier verified architecture work remains completed. All stale Q0-Q8 and QD-01 through QD-13 pending inventory is superseded by this exact final list. No additional pending quality items belong to this cycle.
+
+### Slice 1 — Blocked-page and shell-record integrity
+
+**Status:** COMPLETE — USER VALIDATED
+
+**Failures:**
+
+- Columbia Dress: PerimeterX `px-captcha` contaminated description; title, brand, price, currency, and image missing.
+- Ralph Lauren Cap: same contamination and missing fields.
+
+**Required generic correction:**
+
+- Challenge/CAPTCHA text never becomes a public field.
+- When genuine product content was not acquired, classify the page as blocked or unusable.
+- Do not publish a thin shell as successful product data.
+- Keep retry, escalation, findings, provenance, and final verdict honest.
+- Prevent identity-only or challenge-shell records from reporting clean success.
+
+**Handoff gate:** show exact changes and changed files; provide only targeted unit tests, relevant regression/component tests, Ruff for changed files, and Mypy for changed source files; do not run them; stop for user results.
+
+### Slice 2 — Brand quality and product-brand association
+
+**Status:** IMPLEMENTED — FOCUSED OFFLINE REGRESSIONS PASS
+
+**Incorrect or misattributed brands:**
+
+- Zapatillas Mostro Ecstasy: `green` -> PUMA.
+- Technics SL-1200MK7 Turntable: `India | The` -> Technics.
+- Aganice Aromatique Candle: `Fragrance` -> Aesop.
+- Carbone Eau de Parfum: `Fragrance` -> Balmain Beauty.
+- MAC Eye Shadow: `& More` -> MAC.
+- ELEUTERI + Bulgari Bracelet: `NET-A-PORTER` -> designer/product brand.
+- Millennium Falcon™: product name -> LEGO.
+- Babyhug Denim Woven Sleeveless Top: `at` -> Babyhug.
+- EOS R5 Body: `Register` -> Canon.
+- Refurbished iPhone 15 Plus: `Refurbished` -> Apple.
+- Philipp Plein Leather Disco Biker Jacket: `Black` -> Philipp Plein.
+
+**Truncated, incomplete, over-specific, or mis-associated brands:**
+
+- ASOS DESIGN Pants: `ASOS` -> ASOS DESIGN.
+- Cotton Utility Button Detail Trouser: `Karen` -> Karen Millen.
+- Lucinda Spot Midi Dress: `Phase` -> Phase Eight.
+- Structured Commuter Bag: `UnderArmour` -> Calvin Klein, based on same-product destination/image identity.
+- Breville Bambino® Plus: `Breville Bambino®` -> Breville.
+
+**Required generic correction:**
+
+- Reject colors, conditions, navigation text, conjunction fragments, category words, region fragments, product names, UI labels, and similar weak tokens as brands.
+- Explicit structured manufacturer/brand evidence outranks weak DOM or title-derived evidence.
+- Retailer identity cannot replace manufacturer/designer identity when stronger product-brand evidence exists.
+- Preserve valid multi-word brands.
+- Exclude model names and product suffixes without hardcoded product mappings.
+- Keep evidence associated with the correct product entity.
+
+**Handoff gate:** same validation order and stop rule as Slice 1.
+
+### Slice 3 — Title and description quality
+
+**Status:** IMPLEMENTED — FOCUSED OFFLINE REGRESSIONS PASS
+
+**Titles:**
+
+- Restoration Hardware Bubble Collection: reject `product.jsp`; recover the real title when valid structured/visible evidence exists, otherwise emit honest missing title.
+- J.Crew wide-leg pants: `wide leg` must not beat `Soleil pant in linen`.
+
+**Descriptions:**
+
+- Brooklinen Plush Turkish Cotton Bath Towels: reject/replace description ending mid-word at `...Modern, effor`.
+- KUIKMA Padel Balls: reject/replace ellipsis-truncated `...This tri-pack contains 3 tubes of 3…`; if complete evidence is absent, emit incomplete/missing description.
+
+**Required generic correction:**
+
+- Endpoint filenames, template names, category/style-only labels, and broad URL fallbacks cannot become canonical titles when stronger product identity exists.
+- Reject mid-word, mid-sentence, and ellipsis-truncated description excerpts as canonical full descriptions when complete evidence exists.
+- If only incomplete evidence exists, keep the field missing/incomplete with findings and a non-clean verdict.
+
+**Handoff gate:** same validation order and stop rule as Slice 1.
+
+### Slice 4 — Image identity and image quality
+
+**Status:** IMPLEMENTED — EXISTING GENERIC RESOLVER REGRESSIONS PASS
+
+**Failures:**
+
+- Apple iPhone 15 Plus: reject PlayStation 4 image from additional gallery.
+- Nike Dunk Low Retro White Black Panda: reject Midnight Navy, Grey Fog, and Court Purple colorway images from selected variant gallery.
+- Converse Chuck Taylor All Star: 71px swatch/thumbnail cannot be primary when a proper product image exists.
+
+**Required generic correction:**
+
+- Use canonical asset identity.
+- Reject cross-product and cross-colorway assets.
+- Preserve selected-product and selected-variant boundaries.
+- Prefer adequate-resolution product imagery over swatches/thumbnails.
+- Do not add domain-specific image URL conditions.
+
+**Handoff gate:** same validation order and stop rule as Slice 1.
+
+### Slice 5 — Missing-field recovery and incomplete-record truthfulness
+
+**Status:** IMPLEMENTED — EXISTING CONTRACT AND RECOVERY REGRESSIONS PASS
+
+**Highly incomplete records:**
+
+- Valentino Garavani Loco Bag: only title and URL; missing price, currency, brand, description, image, availability.
+- Zara Rustic Cotton T-Shirt: only title and URL; missing the same fields.
+
+**Specific missing fields:**
+
+- 47 NY Yankees Clean Up Cap: recover `'47 Brand` only when supported by page evidence.
+- Jordan 40th Anniversary Womens Shirt: recover parent availability only from explicit product/offer/stock evidence.
+- KUIKMA Padel Balls: recover price, currency, availability.
+- Rolex Day-Date 18038: recover price, currency, description, availability.
+- Poppi Prebiotic Soda: recover image URL, price, currency, availability.
+
+**Required generic correction:**
+
+- Thin identity-only records cannot be clean success.
+- Trace whether evidence was captured, rejected, mis-associated, or never acquired.
+- Recover valid same-product evidence generically.
+- Keep price and currency atomic.
+- Availability requires explicit evidence.
+- Missing fields produce findings and prevent false-clean success.
+- Site-specific selectors are allowed only when they represent a reusable platform adapter or verified recipe, never a one-off patch.
+
+**Handoff gate:** same validation order and stop rule as Slice 1.
+
+### Slice 6 — Variant boundaries, axes, availability, and pricing
+
+**Status:** IMPLEMENTED — EXISTING VARIANT AND OFFER REGRESSIONS PASS
+
+**Failures:**
+
+- ASOS DESIGN Curve Pants: recover variants from existing structured, JS-state, network, or DOM evidence while preserving same-product boundaries.
+- adidas Originals Classic Shorts: recover explicit size axis; current variants contain color only.
+- PUMA Speedcat Sneakers: recover explicit size axis; current variants contain color only.
+- Tarte Shape Tape Concealer: exclude Regular Shape Tape, Creamy Shape Tape, Shape Tape Corrector, and Shape Tape Blur Stick when they are related product lines rather than true variants.
+- adidas Originals Stan Smith: make child availability structure consistent where explicit evidence supports it; do not invent availability for sizes 8 or 8.5.
+- H&M Relaxed-Fit Printed T-Shirt: resolve incorrect parent price 84.99 USD versus variant prices 12.99 USD; preserve legitimate parent/default, variant, and range semantics without unrelated offer leakage.
+
+**Required generic correction:**
+
+- Recover explicit variant axes without Cartesian synthesis.
+- Keep related product families outside the base-product variant group.
+- Maintain product/entity boundaries across structured, JS-state, network, and DOM evidence.
+- Child availability comes only from explicit parent, option, stock, or offer evidence.
+- Resolve parent/default versus variant price semantics and legitimate ranges without iteration-order selection or cross-product/locale/bundle leakage.
+
+**Handoff gate:** same validation order and stop rule as Slice 1.
+
+### Slice 7 — Final offline validation preparation
+
+**Status:** OFFLINE VALIDATION COMPLETE — LIVE 97-SITE ACCEPTANCE PENDING
+
+- Review the final diff only against this exact bug list.
+- Confirm every listed failure has a regression test or deterministic validation.
+- Confirm no site-specific hardcoded values, domain branches, URL patches, persistence repairs, or export corrections were introduced.
+- Provide the complete offline validation command sequence; do not run it.
+- Do not initiate another 97-site crawl.
+- After successful user-provided offline results, update this plan and `ACTIVE.md` to state that live 97-site verification remains pending.
+- Provide the exact next 97-site acceptance command; do not run it.
+
+### Execution and validation policy for Slices 1-7
+
+- Do not run commands unless the user explicitly asks.
+- Do not run tests, crawls, lint, mypy, git, replay, or acceptance commands.
+- Do not rerun the 97-site crawl during implementation.
+- Inspect and edit with workspace/code tools only.
+- Fix generic upstream causes; never patch output, persistence, export, URLs, domains, or product values.
+- Prefer deletion/consolidation over adding fallback layers.
+- Preserve provenance and honest verdicts.
+- After each slice, show exactly what changed, list files changed, provide Windows-compatible commands in this order: smallest targeted unit tests, relevant regression/component tests, Ruff for changed files, Mypy for changed source files; then stop.
+- Do not mark a slice complete until the user supplies successful validation output.
+- Do not commit or push unless explicitly requested.
+- Completion requires successful validations for every slice, successful final offline suite, and a new user-run 97-site crawl whose `output.json` no longer contains these failures except genuine acquisition blocks represented honestly.
+
+## Current Verified Baseline
+
+Measured on 2026-06-21 from committed HEAD `553dd794b9ef498c0d9a7e9cfc8034e7f6a6614c`:
+
+| Scope          | Python files | Physical LOC |
+| -------------- | -----------: | -----------: |
+| `backend/app`  |          303 |       64,901 |
+| `acquisition`  |           49 |       16,613 |
+| `core`         |           82 |       14,777 |
+| `crawl`        |           38 |        9,596 |
+| `extraction`   |           24 |        4,743 |
+| `intelligence` |            8 |        3,330 |
+| `enrichment`   |            6 |        2,427 |
+| `connectors`   |           17 |        2,815 |
+| `persistence`  |           17 |        2,424 |
+
+Current hard debt:
+
+- 5 production modules exceed 700 physical lines.
+- 24 production functions exceed 100 physical lines.
+- `backend/tests/unit/test_final_architecture_ownership.py` is the current shrinking debt ledger.
+- `backend/tests/unit/test_extraction_architecture.py` already enforces extraction at no more than 24 files, 5,500 LOC, 400 lines per file, and 60 lines per function.
+- `backend/pytest.ini` defaults to `-m "unit or component"`; regression verification commands in this plan explicitly override the marker expression.
+- Latest focused verification after the parser-ownership slice: Ruff passed and 158 targeted tests passed.
+- Last known configured full offline suite before this handoff: 827 passed, 151 deselected. Treat this as context only; Slice 12 must rerun the complete offline suite.
+
+### Committed work already present; preserve and do not redo
+
+- Canonical detail URL fallback and required `CommerceDetailRecord.url`.
+- Punctuation-tolerant error-shell title handling.
+- Initial persistence no longer writes the four legacy provenance columns; immutable provenance is handed to `record-provenance.json`.
+- Browser readiness uses the canonical `HtmlDocument`/Lexbor tree; acquisition has no BeautifulSoup construction.
+- Browser readiness, detail extractability, and final extraction reuse a matching parsed document by content hash.
+- `acquisition/runtime.py` is below 700 lines and is no longer oversized debt.
+- Pass-through modules already deleted: acquisition pacing/Playwright compatibility, pipeline extraction wrapper, run-config snapshot wrapper, discovery type wrapper, and storage factory.
+- `backend/tests/regression/test_batch_runtime.py` had no diff at audit time.
+- Existing unrelated documentation state must be preserved; do not reset user-owned files to make this plan easier.
+
+## Audited Architecture Debt Ledger
+
+### Oversized modules
+
+| Current owner                        | Current LOC | Required target | Planned correction                                                                                                                                                                                        |
+| ------------------------------------ | ----------: | --------------: | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `acquisition/browser_detail.py`      |         898 |           <=650 | Keep detail-expansion orchestration here; move the distinct accessibility-tree implementation to the named `browser_accessibility.py` owner; delete `*_impl` pass-through wrappers.                       |
+| `acquisition/browser_runtime.py`     |       1,025 |           <=650 | Keep browser fetch orchestration and stable exports; move launch/warmup/popup mechanics to existing `browser_fetch_support.py`; split fetch into bounded phases.                                          |
+| `acquisition/fetch/fetch_context.py` |         987 |           <=650 | Make `fetch_page()` a thin mode/final-result facade; move attempt mechanics into existing planner/executor, `planned_http.py`, and `browser_attempt_runner.py`; delete aliases and duplicate retry loops. |
+| `crawl/batch_runtime.py`             |         820 |           <=650 | Keep run lifecycle and URL-session ownership; extract no new coordinator layer; consolidate URL failure/session/progress helpers with their existing owners.                                              |
+| `enrichment/shopify_catalog.py`      |         929 |           <=650 | Separate repository I/O/index lookup into the named `shopify_repository.py` owner; retain scoring/matching in `shopify_catalog.py`; require net package LOC reduction.                                    |
+
+The two named new modules are permitted because they establish distinct owners, not because they reduce line counts. No other production module may be created without amending this plan and proving unique ownership plus net deletion.
+
+### Long-function debt
+
+Every entry below must be removed from `LONG_FUNCTION_DEBT`; do not replace it with a new >100-line function.
+
+| Subsystem                   | Functions                                                                                    | Required decomposition                                                                                                                |
+| --------------------------- | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| Detail interaction          | `expand_all_interactive_elements_impl`, `expand_interactive_elements_via_accessibility_impl` | Separate candidate discovery, safety admission, action execution, settle, and diagnostics. Remove wrapper/implementation duplication. |
+| Browser page flow           | `settle_browser_page_impl`                                                                   | Named readiness, network-idle, platform-wait, and expansion phases operating on one snapshot state.                                   |
+| Browser artifacts           | `_capture_listing_visual_elements`                                                           | Module-owned page script plus typed response normalization; no hidden extraction decisions.                                           |
+| Challenge recovery          | `recover_browser_challenge`, `_emit_challenge_activity`                                      | Poll/classify, bounded activity, retry-navigation, and event projection phases.                                                       |
+| Browser finalization        | `BrowserAcquisitionResultBuilder.build`                                                      | Classification, event emission, artifact capture, and result assembly methods.                                                        |
+| Browser runtime             | `browser_fetch`, `_maybe_warm_origin_before_navigation`                                      | Launch, navigate/settle/serialize, finalize, and warmup lifecycle phases.                                                             |
+| Block classification        | `classify_blocked_page`                                                                      | Evidence collection and policy decision; preserve usable-content-over-provider-noise invariant.                                       |
+| Listing traversal           | `_run_scroll_traversal`, `_run_load_more_traversal`, `_run_paginate_traversal`               | Mode-specific action loops with shared progress/stop updates only where behavior is identical.                                        |
+| Traversal recovery          | `click_with_retry`, `dismiss_overlays_if_needed`                                             | Attempt, settle, and diagnostic phases.                                                                                               |
+| LLM connector               | `run_prompt_task`                                                                            | Provider invocation, response validation, cost recording, and failure projection.                                                     |
+| Public extraction connector | `extract_public_product`                                                                     | Request admission, normal crawl execution, and response mapping; no second extractor.                                                 |
+| Runtime config              | `_apply_profile_defaults`                                                                    | Domain-specific default application inside existing config ownership.                                                                 |
+| Confidence                  | `score_record_confidence`                                                                    | Field scoring, penalty calculation, and aggregate result.                                                                             |
+| Batch runtime               | `_process_urls_in_parallel`, `_process_run_with_span`                                        | Task scheduling/result collection and run setup/finalization.                                                                         |
+| Run progress                | `_merge_run_acquisition_metrics`                                                             | Timing, method/outcome, and browser metrics reducers.                                                                                 |
+| Review                      | `build_domain_recipe_payload`                                                                | Load, coverage, selector, and response assembly using canonical artifacts.                                                            |
+| Intelligence                | `score_candidate`                                                                            | Typed deterministic feature calculation and final policy decision.                                                                    |
+
+## Audited Crawl-Quality Findings
+
+### Already guarded; preserve
+
+- A punctuated `Oops, Something Went Wrong.` shell is blocked even when fake product offers exist.
+- A missing extracted detail URL falls back to the canonical capture URL.
+- Parent availability is aggregated from a complete variant availability matrix and records lineage.
+- Missing requested/default contract fields emit `MISSING_CONTRACT_FIELD` findings.
+- An uncorroborated cent/magnitude value is not silently divided or repaired.
+
+These passing unit cases do not prove the reported sites are fixed. They are invariant guards only.
+
+### Open generic defects and decided owners
+
+| Failure class                                      | Audited cause                                                                                                                                                                                                                                                                                                                                                                                                                                                    | Owner and required correction                                                                                                                                                                                                                                                                                                                                                         |
+| -------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Filename/ID/nav/SEO title pollution                | URL collector emits raw leaf including extension/IDs; evidence normalization has no title-quality flags; scalar resolution ranks source/directness but not semantic title admissibility.                                                                                                                                                                                                                                                                         | `extraction/collectors/url.py`, `pipeline.normalize_evidence`, `resolution.py`, with title tokens/patterns in existing `core/config/extraction_rules/_detail.py`. Reject filename/ID/nav candidates; clean SEO suffix only when a higher-confidence product identity remains.                                                                                                         |
+| Missing metadata despite captured evidence         | JS/network mapping is shallow, inline, and admits arbitrary dictionaries with generic keys; some canonical source-key aliases are absent; missing-field validation sees evidence presence, not necessarily resolved public output.                                                                                                                                                                                                                               | `core/config/field_mappings.py`, extraction collectors, entity linking, validation. Map all objects deterministically, require product/offer context, and validate selected public values after resolution.                                                                                                                                                                           |
+| Utility/placeholder primary image                  | Asset decisions are made independently per URL, then materialization writes the same `image_url` field repeatedly, making iteration order a hidden product-level selector. Reject tokens are incomplete.                                                                                                                                                                                                                                                         | `entities.py`, `resolution.py`, `materialization.py`, existing `AssetDecision`, and `_images.py`. Perform one product-level asset selection with deterministic role/rank and lineage.                                                                                                                                                                                                 |
+| No additional images field                         | `additional_images` is an existing canonical alias, but `CommerceDetailRecord` exposes only `image_url`; collected gallery assets are discarded as public output.                                                                                                                                                                                                                                                                                                | Additive typed contract in `extraction/contracts.py`; materialize ordered deduped gallery URLs; propagate through schemas/API/export/review.                                                                                                                                                                                                                                          |
+| Raw spaces or unsafe image URLs                    | Asset normalization only joins URLs; it does not canonicalize path encoding before identity/dedupe.                                                                                                                                                                                                                                                                                                                                                              | Canonical URL normalization before asset entity identity. Preserve query semantics and reject non-HTTP(S)/data/utility assets.                                                                                                                                                                                                                                                        |
+| Zero/year/100x price errors                        | Recursive JS/network mapping can treat generic `price` keys as product offers; zero remains admissible; price/currency coupling is enforced only after entity grouping; arbitrary magnitude repair is intentionally absent.                                                                                                                                                                                                                                      | Collector admission and offer grouping in extraction. Reject non-positive prices, require contextual product/offer evidence, preserve price/currency atomicity, and emit contradictions instead of guessing scale.                                                                                                                                                                    |
+| ID-only or URL-only public variants                | Variant entity creation accepts stable identity with little commercial/option evidence; materialization emits any nonempty row; parent offer facts are not inherited to variants.                                                                                                                                                                                                                                                                                | `collectors/js_state.py`, `jsonld.py`, `entities.py`, `validation.py`, `materialization.py`. Require identity plus option/offer evidence for public rows; retain rejected evidence in findings; inherit only explicitly product-wide nonconflicting offer facts with lineage.                                                                                                         |
+| Missing variants                                   | Deterministic collectors can only publish captured evidence. A reported regional SKU structure is not permission to synthesize variants.                                                                                                                                                                                                                                                                                                                         | Exhaust structured/network/DOM evidence and request one rendered capability when explicit variant cues exist. If still absent, emit an explicit finding and partial/review verdict.                                                                                                                                                                                                   |
+| Listing discovery returns navigation/support links | Category discovery scores category-looking and nav anchors, and rendered/static fallback can keep broad same-origin links without proving listing-card/product-link density. Belk examples include customer-service, policies, stores, registry, wish-list, and broad department links mixed with one requested category. Arcteryx examples include nav taxonomy, app, athlete, and unrelated category links when a specific footwear-run listing was requested. | `crawl/sitemap_resolver.py`, `crawl/site_link_discovery.py`, `crawl/sitemap_nav.py`, and `core/config/sitemap.py`. Require product-listing evidence for selected ecommerce listing URLs, demote site-chrome/nav-only buckets, keep requested branch affinity when a seed is already category-specific, and expose rejected-link diagnostics instead of returning utility URLs.        |
+| Listing records use swatch/control text as title   | `extraction/listing.py` picks the first configured title selector inside a broad card (`article`, `li`, generic product class) and accepts `title`/text from color controls. Intimissimi examples show valid product URLs/prices/images paired with `Cor selecionada` from a selected-color control.                                                                                                                                                             | `extraction/listing.py`, `core/config/extraction_recipes.py`, `core/config/extraction_rules/_common.py`, and existing text/url identity helpers. Select title evidence from product-link/name scope, reject CTA/swatch/control/aria state labels, require title-to-product-url or image/price/card context agreement, and keep the row partial/rejected when no product title exists. |
+| Legacy provenance ownership                        | Initial writes stopped, but active writers remain in `persistence/publish/metadata.py`, `crawl/crud.py`, and review promotion; schemas and observability still dual-read ORM columns.                                                                                                                                                                                                                                                                            | Canonical artifacts plus derived read models. Review acceptance is represented by existing review/domain-feedback ownership and logs, not mutable extraction provenance.                                                                                                                                                                                                              |
+
+### Listing symptom reports to cover
+
+- Arcteryx requested footwear-run/category context produced broad navigation taxonomy and utility links: `Get the App`, `Athletes & Ambassadors`, `ACCESSORIES`, `PACKS`, `WOMEN`, unrelated category branches, and many `/wid-*` category URLs.
+- Belk mens-pants/category context produced customer-service, legal/compliance, vendor resources, stores, registry/wish-list, and unrelated promo/category URLs alongside actual category URLs.
+- Intimissimi listing rows had plausible product URLs, images, and prices, but every title was `Cor selecionada`, a color-selection state label rather than a product name.
+
+These are listing failures, not detail extraction failures. Fix discovery/card admission upstream. Do not patch exports, product intelligence, or persistence to hide them.
+
+### Explicit non-fixes
+
+- Do not enforce global SKU/MPN uniqueness. Numeric prefixes can legitimately collide across retailers and product domains. Act only if one record's lineage points to another product's captured evidence.
+- Do not infer brand from hostname, URL, retailer, or category when no product-side evidence exists. Missing brand plus a finding is better than fabrication.
+- Do not force a price for quote-only, region-gated, unavailable, or blocked pages.
+- Do not turn a blocked shell into success. Correct outcome is blocked/error plus preserved diagnostics.
+- Do not add browser clicking until structured, network, and static DOM evidence paths are exhausted and explicit stateful controls remain.
+- Do not add a broad 93-record expected-output fixture. Use minimal generic regressions and available JSON artifacts.
+- Do not add Arcteryx, Belk, or Intimissimi hostname branches. The fix must be generic category/listing URL admission and listing-card evidence ranking.
+
+## Target Runtime Ownership
+
+```text
+crawl/batch_runtime.process_run                 run lifecycle and URL scheduling
+  -> crawl/pipeline/extraction_loop.process_single_url
+       -> acquisition/acquirer.acquire          page acquisition facade
+          -> acquisition/planner                finite attempt plan for every mode
+          -> acquisition/executor               one typed AttemptResult per attempt
+          -> acquisition/fetch/*                transport mechanics only
+       -> extraction/engine.extract             evidence -> entities -> decisions -> typed records
+       -> crawl/pipeline/persistence             database writes only
+       -> persistence/ArtifactRepository         canonical immutable artifacts/manifests
+```
+
+Do not introduce speculative `RunCoordinator` or `UrlProcessor` classes. The existing functions are the owners; make their typed inputs/outputs clear and small.
+
+## Global Acceptance Criteria
+
+- [ ] Every HTTP, Patchright, Real Chrome, handoff, warmup, and browser retry is represented by one `AttemptSpec` and one terminal `AttemptResult` in the canonical `AcquisitionResult`.
+- [ ] `fetch_page()` and `browser_fetch()` orchestrate existing owners; neither reimplements planner policy, extraction, or persistence.
+- [ ] Explicit `surface`, traversal, proxy, diagnostics, and `llm_enabled` controls remain unchanged.
+- [ ] No BeautifulSoup construction exists under `app/acquisition`; no duplicate full-document parse is introduced.
+- [ ] Detail URL, shell, title, asset, offer, availability, and variant decisions have deterministic lineage or visible findings.
+- [ ] Ecommerce listing discovery returns only listing/category URLs with product-listing evidence or strong requested-branch affinity; customer-service, policy, store, registry, app, athlete, and other site-chrome URLs are rejected with diagnostics.
+- [ ] Ecommerce listing records require a product URL plus an admissible product title from product-link/name scope. Swatch, selected-color, CTA, aria-state, nav, and utility labels cannot become row titles.
+- [ ] `CommerceDetailRecord.additional_images` is an additive ordered tuple/list contract; `image_url` remains backward compatible as the primary image.
+- [ ] No ID-only variant row is public. Missing non-inferable SKU/offer fields produce findings, not fabricated values.
+- [ ] Persistence, publish, export, review, and observability do not reinterpret extraction facts or URL verdicts.
+- [ ] No active runtime write remains to `CrawlRecord.raw_data`, `discovered_data`, `source_trace`, or `raw_html_path`.
+- [ ] Legacy readers are removed after canonical artifact coverage is proven; any temporary dual-read owner is explicit and shrinking.
+- [ ] `app.services` and deleted compatibility modules remain absent.
+- [ ] No hostname/site-name branch is added to generic acquisition, extraction, pipeline, publish, or export code.
+- [ ] No non-data production module exceeds 700 lines; the five named owners are at or below 650.
+- [ ] No production function exceeds 100 lines; `LONG_FUNCTION_DEBT` is empty.
+- [ ] No architecture allowlist is widened.
+- [ ] Production LOC budgets and extraction shape gates pass.
+- [ ] Ruff and the complete offline unit/component/regression suite pass.
+- [ ] No smoke, browser probe, or live acceptance is run by implementation agents.
+- [ ] After offline closure, this plan and `ACTIVE.md` say `AWAITING USER 100-SITE GATE`, not `DONE`.
 
 ## Quantitative Gates
 
-Required before handoff:
-- `backend/app` production LOC below 58,109, the pre-rebuild baseline.
-- Stretch target: below 55,000 LOC.
-- `acquisition` below 12,000 LOC.
-- `crawl` below 7,500 LOC.
-- `core` below 12,500 LOC.
-- Zero non-data modules over 700 lines.
-- Zero functions over 100 lines unless the allowlist has written justification and is smaller than today.
-- Remove at least 25% of current production Python files where they are wrappers, pass-throughs, stale config, or duplicate owners.
-- Full offline pytest passes.
+Replace the arbitrary “25% file deletion” and old 58,109-LOC target with budgets tied to audited owners and retained capabilities.
 
-## Slice 1: Debt Map And Deletion Pass
-
-Start with deletion, not refactor.
-
-Find and remove:
-- pass-through wrappers
-- unused config exports
-- dead adapter/connector leftovers
-- compatibility aliases
-- duplicate normalizers
-- duplicate acquisition/browser policy helpers
-- stale tests tied to deleted internals
-
-Verify:
-```powershell
-cd backend
-$env:PYTHONPATH='.'
-.\.venv\Scripts\python.exe -m pytest tests\unit\test_final_architecture_ownership.py -q
-```
-
-Acceptance:
-- production LOC drops
-- no `app.services`
-- no new long files/functions
-
-## Slice 2: Persistence Field Retirement
-
-Finish active Slice 6.
-
-Retire active use of:
-- `raw_data`
-- `discovered_data`
-- `source_trace`
-- `raw_html_path`
-
-Move remaining readers to canonical artifact/result readers. Keep migration/backfill only if needed for old DB rows.
-
-Verify:
-```powershell
-cd backend
-$env:PYTHONPATH='.'
-.\.venv\Scripts\python.exe -m pytest tests\unit\test_replay_persistence_guard.py tests\unit\test_final_architecture_ownership.py -q
-```
-
-Acceptance:
-- persistence stores canonical result only
-- no semantic repair in persistence
-- legacy-field allowlist shrinks
-
-## Slice 3: Acquisition LOC Collapse
-
-Shrink the largest owner first.
-
-Targets:
-- `acquisition/browser_runtime.py`
-- `acquisition/fetch/fetch_context.py`
-- `acquisition/runtime.py`
-- `acquisition/browser_detail.py`
-
-Delete or merge duplicate logic around:
-- browser escalation
-- block classification
-- warmup
-- retry budget
-- fetch context shaping
-- browser settle/capture handoff
-
-Keep only one path:
-`AcquisitionPlanner -> AttemptExecutor -> CaptureBundle -> ExtractionEngine`
-
-Verify:
-```powershell
-cd backend
-$env:PYTHONPATH='.'
-.\.venv\Scripts\python.exe -m pytest tests\component\test_acquirer.py tests\component\test_crawl_fetch_runtime.py tests\unit\test_acquisition_planner_executor.py -q
-```
-
-Acceptance:
-- acquisition below 12,000 LOC
-- no function over 100 lines in acquisition
-- browser fallback always has `AttemptResult`
-- no requested-field browser trigger path returns
-
-## Slice 4: Crawl Runtime Collapse
-
-Shrink orchestration.
-
-Targets:
-- `crawl/batch_runtime.py`
-- `crawl/pipeline/extraction_loop.py`
-- `crawl/pipeline/persistence.py`
-- `crawl/pipeline/run_progress.py`
-
-Delete duplicate state handling. Keep owners:
-- `RunCoordinator`: run lifecycle
-- `UrlProcessor`: one URL workflow
-- repository/persistence: storage only
-
-Fix session/transaction boundaries while shrinking.
-
-Verify:
-```powershell
-cd backend
-$env:PYTHONPATH='.'
-.\.venv\Scripts\python.exe -m pytest tests\regression\test_batch_runtime.py tests\component\test_crawl_service.py -q
-```
-
-Acceptance:
-- crawl below 7,500 LOC
-- batch failure stays URL-local
-- no duplicate records on retry/restart
-- run progress computed from one source
-
-## Slice 5: Output Bug Debugging
-
-Use attached crawl output as debug list, not fixture inventory.
-
-Debug and fix shared causes for:
-- blocked page marked success: Dick’s “Oops” shell
-- missing root URL on product rows
-- missing brand/price/currency/image/availability with no diagnostic
-- title polluted by URL filename, product ID, nav text, or SEO boilerplate
-- primary image chosen from placeholder/UI/logo/payment/loader assets
-- parent availability contradicting variants
-- variant rows missing identity/offer fields when evidence exists
-- category text winning as brand
-- impossible `0.00` or 100x price drift
-
-Likely owners:
-- acquisition shell/block classifier
-- extraction candidate admission
-- detail identity/title resolver
-- asset role classifier
-- offer resolver
-- variant resolver
-- confidence scorer
-
-Verify with small regression tests per fixed shared cause. Use 1-2 examples each. No giant fixture file.
-
-## Slice 6: Core And Config Shrink
-
-Shrink `core` by deleting stale config/data glue.
-
-Targets:
-- `core/config/runtime_settings.py`
-- `core/config/extraction_rules/*`
-- duplicate field coercion / record normalizer paths
+| Scope          | Current LOC |           Final maximum |
+| -------------- | ----------: | ----------------------: |
+| `backend/app`  |      64,901 |                  62,600 |
+| `acquisition`  |      16,613 |                  15,400 |
+| `crawl`        |       9,596 |                   9,250 |
+| `core`         |      14,777 |                  14,500 |
+| `enrichment`   |       2,427 |                   2,150 |
+| `connectors`   |       2,815 |                   2,700 |
+| `intelligence` |       3,330 |                   3,250 |
+| `extraction`   |       4,743 | 5,500 existing hard cap |
 
 Rules:
-- config values stay in `app/core/config`
-- duplicated generated exports go
-- one owner for public field validation
-- no semantic record repair outside extraction
 
-Verify:
-```powershell
-cd backend
-$env:PYTHONPATH='.'
-.\.venv\Scripts\python.exe -m pytest tests\unit\test_extraction_architecture.py tests\unit\test_final_architecture_ownership.py -q
-```
+- Feature slices may temporarily add extraction contract/test code, but each architecture slice must delete more production LOC than it adds.
+- Named file moves do not count as debt reduction. Package and total LOC must fall.
+- File count has no arbitrary target. Delete wrappers/dead owners; keep cohesive capability owners.
+- Add these package budgets to `test_final_architecture_ownership.py` before final closure. Do not add a permanently failing target test at the start of a slice.
 
-Acceptance:
-- `core` below 12,500 LOC
-- runtime settings split or trimmed
-- stale extraction/config code reduced
+## Do Not Touch
 
-## Slice 7: Intelligence And Enrichment Trim
+- Do not reset, checkout, stash, or discard unrelated working-tree changes.
+- Do not restore or further alter the unrelated deleted docs except when the user explicitly requests it.
+- Do not change frontend behavior in this plan. The additive API field may be rendered by existing dynamic record views; frontend work requires evidence of a broken contract.
+- Do not run live URLs, smoke scripts, `run_*smoke.py`, browser probes, or the 100-site gate.
+- Do not introduce LangGraph, a second product scraper, a second verdict owner, or LLM-generated extraction facts.
+- Do not move constants/tunables into service code. Extend existing `app/core/config/*` owners.
+- Do not create generic `manager`, `utils2`, `helpers2`, compatibility, or line-count-only modules.
+- Do not edit `backend/tests/regression/test_batch_runtime.py` outside Slice 8; preserve its existing behavior and add assertions only when the crawl contract changes.
 
-Keep product features. Delete bloat.
+## Slice Execution Protocol
 
-Targets:
-- `intelligence/matching.py`
-- `intelligence/discovery.py`
-- `enrichment/shopify_catalog.py`
-- `enrichment/service.py`
-- `enrichment/deterministic.py`
+For every slice:
 
-Actions:
-- split scorer into small pure feature functions only if net LOC drops
-- remove unused enrichment wrappers
-- keep Shopify taxonomy data separate from runtime logic
-- remove duplicate flatteners/material parsers
+1. Read only the listed owner files, nearby tests, and named canonical docs.
+2. Use the listed locator commands only to confirm symbols have not moved before editing.
+3. Add the smallest regression that fails for the audited generic cause.
+4. Implement upstream; delete replaced logic and obsolete tests in the same slice.
+5. Run the slice verify command once after implementation; rerun only failures.
+6. Inspect the slice diff and current LOC/function ledger.
+7. Mark the slice `DONE` only when every slice acceptance item and verify step passes.
+8. Stop after one slice and hand off exact results in this document's Notes.
 
-Verify:
-```powershell
-cd backend
-$env:PYTHONPATH='.'
-.\.venv\Scripts\python.exe -m pytest tests\component\test_product_intelligence.py tests\component\test_data_enrichment.py -q
-```
+## Standalone Implementation Guidance
 
-Acceptance:
-- no enrichment/intelligence function over 100 lines
-- no independent product-detail scraper
-- LLM cannot override deterministic conflicts
+This section exists to reduce repeated broad audits. Treat it as the implementation map unless a slice's local code has changed since this plan was written.
 
-## Slice 8: Final Gate
+### Environment and verification setup
 
-Run final offline suite only.
+Use these commands exactly from the repository root unless a slice says otherwise:
 
 ```powershell
-cd backend
-$env:PYTHONPATH='.'
-.\.venv\Scripts\python.exe -m pytest tests -q
+# If imports or tools are missing, repair the local backend environment first.
+.\backend\bootstrap-dev.ps1
+
+# Type check. Important: pass the backend mypy config when running from repo root.
+.\backend\.venv\Scripts\python.exe -m mypy --config-file backend\pyproject.toml `
+  backend\app `
+  backend\harness_support.py `
+  backend\run_acquire_smoke.py `
+  backend\run_browser_surface_probe.py `
+  backend\run_extraction_smoke.py `
+  backend\run_test_sites_acceptance.py
+
+# Focused lint for changed backend Python files.
+.\backend\.venv\Scripts\python.exe -m ruff check <changed-python-files>
 ```
 
-Then update plan docs:
-- mark old active plan superseded
-- mark this plan awaiting user 100-site gate
-- record final LOC/file/function counts
-- record remaining justified exceptions, if any
+Why this matters: running mypy from the repo root without `--config-file backend\pyproject.toml` can ignore backend overrides and report missing third-party stubs such as `defusedxml` or `celery.signals`. That is an environment invocation error, not architecture debt. Do not work around it by adding ignores in production files.
 
-Do not run live smoke.
+For pytest, run from `C:\Projects\CrawlerAI\backend` when using the slice commands:
 
-## Public API / Contract Changes
+```powershell
+cd C:\Projects\CrawlerAI\backend
+$env:PYTHONPATH='.'
+.\.venv\Scripts\python.exe -m pytest <slice-tests> -q
+```
 
-None intended.
+Do not run smoke/live commands from this plan. The only live gate is Slice 13 and it is user-owned.
 
-Allowed internal changes:
-- remove legacy persistence fields from active readers
-- shrink allowlists in architecture tests
-- delete dead compatibility symbols
-- keep public endpoint response field names stable
+### Global locator commands before edits
 
-## Test Strategy
+Run only the locator group for the slice being implemented:
 
-Use tests to prove behavior, not archive outputs.
+```powershell
+# Slice 1 acquisition attempt ownership
+rg -n "AcquisitionPlan|AttemptSpec|AttemptResult|AcquisitionResult|fetch_page|run_planned_http_only|run_browser_attempts|browser_attempt|handoff|engine_attempt|proxy" backend\app\acquisition backend\app\connectors\public_api backend\tests -S
 
-Required test groups:
-- architecture ownership and LOC gate tests
-- persistence canonical reader tests
-- acquisition fallback/block/shell tests
-- extraction identity/title/image/offer/variant tests
-- batch idempotency/retry tests
-- full offline backend pytest
+# Slice 2 browser/runtime debt
+rg -n "browser_fetch|settle_browser_page|expand_all_interactive|accessibility|capture_listing_visual|recover_browser_challenge|classify_blocked_page|_run_scroll_traversal|_run_load_more_traversal|_run_paginate_traversal|click_with_retry|dismiss_overlays" backend\app\acquisition backend\tests -S
 
-No broad crawl-output fixture dump. Add only minimal regressions for the shared bug being fixed.
+# Slice 3 listing discovery and listing rows
+rg -n "resolve_category_urls|discover_rendered_category_links|HomepageCandidate|SiteLinkCandidate|category_only|listing_url_is_structural|collect_ecommerce_listing|ECOMMERCE_LISTING|LISTING_TITLE_CTA|selected|swatch|aria-label" backend\app\crawl backend\app\extraction backend\app\core backend\tests -S
+
+# Slice 4 detail identity/title/metadata
+rg -n "product.title|product.brand|product.description|detail_title_from_url|title_looks|SOURCE_PRIORITY|normalize_evidence|JsonLdCollector|OpenGraphCollector|MicrodataCollector|JsStateCollector|NetworkCollector|UrlCollector|MISSING_CONTRACT_FIELD" backend\app\extraction backend\app\core backend\tests -S
+
+# Slice 5 assets/additional_images
+rg -n "AssetDecision|asset.image_url|image_url|additional_images|PRIMARY_IMAGE|placeholder|logo|swatch|sprite|gallery|media|srcset" backend\app backend\tests -S
+
+# Slice 6 offers/variants
+rg -n "variant|variants|selected_variant|offer.price|offer.currency|availability|price|currency|early return|DOM cue|backfill|INCOMPLETE_VARIANT|parent" backend\app\extraction backend\app\core backend\tests -S
+
+# Slice 7 provenance
+rg -n "raw_data|discovered_data|source_trace|raw_html_path|record-provenance|RecordArtifacts|field_discovery|requested_field_coverage|review_bucket|ReviewPromotion|DomainFieldFeedback" backend\app backend\tests -S
+
+# Slice 8 crawl runtime
+rg -n "process_run|process_single_url|_process_urls_in_parallel|_process_run_with_span|URL session|heartbeat|pause|kill|record limit|PendingRollback|_merge_run_acquisition_metrics" backend\app\crawl backend\tests -S
+
+# Slice 9 config/confidence
+rg -n "_apply_profile_defaults|runtime_settings|score_record_confidence|confidence|profile defaults|field_mappings|public_record_policy" backend\app\core backend\tests -S
+
+# Slice 10 review/intelligence/enrichment
+rg -n "build_domain_recipe_payload|score_candidate|shopify_catalog|shopify_categories|shopify_attributes|taxonomy|exact conflict|brand registry" backend\app\crawl backend\app\intelligence backend\app\enrichment backend\tests -S
+
+# Slice 11 LLM
+rg -n "run_prompt_task|llm_enabled|LLMConfig|cost|provider|circuit|prompt task|missing fields|adjudication" backend\app\connectors backend\app\llm backend\app\core backend\tests -S
+```
+
+### Embedded owner map
+
+| Concern                | Current owner                                                                                             | What it owns                                                                           | What it must not own                                                    |
+| ---------------------- | --------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| Batch lifecycle        | `crawl/batch_runtime.py`                                                                                  | run setup, URL scheduling, terminal run status, pause/kill/heartbeat                   | per-URL extraction decisions, DB writes for another URL, browser policy |
+| Per-URL workflow       | `crawl/pipeline/extraction_loop.py`                                                                       | acquire -> extract -> normalize -> persist sequencing for one URL                      | transport loops, field repair, export shaping                           |
+| Acquisition facade     | `acquisition/acquirer.py`                                                                                 | translating pipeline request to fetch runtime and canonical acquisition result         | crawl DB writes, extraction, review                                     |
+| Attempt planning       | `acquisition/planner.py`, `acquisition/fetch/browser_policy.py`                                           | explicit attempt list, engine/proxy/handoff/browser retry admission                    | browser mechanics, result materialization, hidden retries               |
+| Attempt execution      | `acquisition/executor.py`, `fetch/planned_http.py`, `fetch/browser_attempt_runner.py`                     | one `AttemptSpec` -> one `AttemptResult`                                               | deciding the next attempt after execution                               |
+| Browser mechanics      | `browser_runtime.py`, `browser_fetch_support.py`, `browser_page_flow.py`, `browser_result_builder.py`     | launch/navigate/settle/serialize/finalize observations                                 | field extraction or record decisions                                    |
+| Browser interaction    | `browser_detail.py`, `browser_accessibility.py` after Slice 2, `traversal.py`, `traversal_recovery.py`    | bounded observation-producing clicks/scroll/load-more/pagination                       | direct field assignment or site-specific rescue                         |
+| Listing discovery      | `crawl/sitemap_resolver.py`, `crawl/site_link_discovery.py`, `crawl/sitemap_nav.py`                       | choosing category/listing URLs from sitemap/homepage/rendered links                    | persisted record rows, detail extraction, product intelligence          |
+| Listing extraction     | `extraction/listing.py`                                                                                   | listing-card evidence -> decisions -> `CommerceListingRecord` rows                     | category discovery, detail fallback, export cleanup                     |
+| Detail extraction      | `extraction/engine.py`, collectors, `entities.py`, `resolution.py`, `validation.py`, `materialization.py` | evidence collection, entity linking, deterministic resolution, findings, typed records | acquisition retries, persistence repair, LLM-generated values           |
+| Public record boundary | extraction contracts, schemas, APIs, export/review serializers                                            | typed public fields and lineage transport                                              | post-hoc semantic repair                                                |
+| Provenance/artifacts   | `persistence/record_artifacts.py`, `persistence/url_result_artifacts.py`, `crawl/pipeline/persistence.py` | immutable artifacts, manifests, DB writes                                              | extraction fact mutation                                                |
+| Review/domain feedback | `crawl/review/*`, `models/review.py`, `DomainFieldFeedback`                                               | review payloads and user-approved feedback                                             | mutating immutable extraction provenance                                |
+| Config                 | `core/config/*`                                                                                           | thresholds, tokens, selectors, field aliases, runtime tunables                         | service-local constants                                                 |
+| LLM                    | `connectors/llm/*`, `llm/*`                                                                               | explicit, degradable backfill/adjudication when enabled                                | primary extraction, deterministic overwrite                             |
+
+### Generic failure templates to convert into tests
+
+Use these patterns for small synthetic regressions. Do not snapshot whole external pages unless a replay artifact already exists.
+
+#### Listing discovery utility spillover
+
+```html
+<nav>
+  <a href="/customer-service/">Contact Us</a>
+  <a href="/stores/">Find a Store</a>
+  <a href="/c/mens/footwear-run/wid-kjyr4dq9">Run</a>
+</nav>
+<main>
+  <section class="product-grid">
+    <a class="product-card" href="/products/trail-shoe-1"
+      ><span>Trail Shoe 1</span><span>$120</span></a
+    >
+    <a class="product-card" href="/products/trail-shoe-2"
+      ><span>Trail Shoe 2</span><span>$130</span></a
+    >
+    <a class="product-card" href="/products/trail-shoe-3"
+      ><span>Trail Shoe 3</span><span>$140</span></a
+    >
+  </section>
+</main>
+```
+
+Expected: product/category URL kept only when listing evidence is present; support/store URLs rejected with diagnostics.
+
+#### Listing title swatch/control pollution
+
+```html
+<li class="product-card">
+  <a class="product-link" href="/blusa-verde/p"><img src="/p.jpg" /></a>
+  <button aria-label="Cor selecionada" title="Cor selecionada"></button>
+  <a class="product-name" href="/blusa-verde/p"
+    >Blusa de Manga Comprida em Lã Merino</a
+  >
+  <span class="price">399</span>
+</li>
+```
+
+Expected: title is product name, never `Cor selecionada`. If product-name evidence is absent, reject/partial the row rather than publishing a control label.
+
+#### Detail title pollution
+
+Use one record with URL leaf `foo-product-123.html`, one bad candidate `123.html` or `Measurements`, and one valid structured/H1 product name. Expected: valid product title wins; if no valid title exists, missing-title finding is visible.
+
+#### Utility image pollution
+
+Use assets for product photo, logo, loader GIF, payment badge, swatch, quote/testimonial, and placeholder. Expected: one deterministic primary product image; additional product images exclude primary and utilities.
+
+#### Variant/offer integrity
+
+Use structured/JS state with one ID-only variant, one complete variant, one parent-wide offer, and one conflicting child offer. Expected: ID-only evidence becomes finding; complete variant publishes; inherited offer facts are explicit and lineage-backed only when nonconflicting.
+
+### Slice-specific implementation notes
+
+#### Slice 1 notes: canonical acquisition attempts
+
+- Current pain: `fetch_context.py` still acts as facade, policy owner, retry executor, result assembler, and diagnostic projector. It should become a thin owner that calls planner/executor and selects the final acquisition result.
+- Existing contracts to preserve: `AttemptSpec`, `AttemptResult`, `AcquisitionPlan`, `AcquisitionResult`. Extend them only if every attempt needs the field.
+- Do not create a second browser policy object. Use current browser-policy functions and make them return explicit specs/results.
+- Main invariant: no retry without a visible planned attempt and no terminal page result without a terminal `AttemptResult`.
+- Delete target: aliases, duplicated retry loops, and local dict diagnostics that duplicate typed attempt fields.
+
+#### Slice 2 notes: browser debt
+
+- Keep `browser_runtime.browser_fetch` as public orchestration entry; split private phases.
+- `browser_page_flow` should own navigation/readiness/serialization phases. `browser_readiness` owns classification helpers. `browser_result_builder` owns result assembly.
+- `browser_detail.py` keeps high-level detail expansion. Move accessibility-tree scanning/action admission into `browser_accessibility.py` because it is a distinct browser observation owner.
+- `browser_page_helpers._capture_listing_visual_elements` is observation only. It may emit typed visual/card facts for diagnostics; it must not choose product fields.
+- Traversal loops must remain mode-specific. Shared helpers are allowed only for identical stop/progress accounting.
+
+#### Slice 3 notes: listing discovery and rows
+
+- Discovery and extraction are separate. Discovery chooses URLs to crawl; `extraction/listing.py` chooses rows on a listing page.
+- Static sitemap/homepage fallback can return category URLs when category signals are strong. Rendered discovery must validate thin/broad candidates with product-listing evidence before returning them.
+- Use generic utility tokens in `core/config/sitemap.py` or existing URL identity helpers. Do not hardcode example domains.
+- If a seed is already a deep category/listing URL, preserve branch affinity: sibling/child paths may be valid, unrelated top-level nav branches should need stronger listing evidence.
+- In `extraction/listing.py`, pick product URL before title. Prefer title from the same anchor or a nearby product-name node; treat swatches/buttons/aria-selected labels as title noise.
+- Existing broad selectors (`article`, `li`) are allowed only if row admission proves product URL plus product title. They must not turn nav list items into product rows.
+- Tests should assert both accepted rows and rejected diagnostics/reasons where current APIs expose them.
+
+#### Slice 4 notes: detail identity/title/metadata
+
+- Bad titles come from URL fallback, DOM tabs/headings, filenames, IDs, nav text, and SEO boilerplate. Fix candidate admission/ranking before materialization.
+- URL-derived titles are low-confidence review evidence only. They should not win over weak but semantically valid product evidence unless configured rules support it.
+- JS/network collectors need product/offer context before generic keys become product facts. A random dict with `price` or `title` is not enough.
+- Move source-key aliases to `core/config/field_mappings.py`; collectors should not own field vocabulary.
+- Validation must inspect selected public output after resolution, not only raw evidence presence.
+- Completed 2026-06-21. Implemented title-quality admission/ranking, URL title extension cleanup, config-owned structured source aliases, JS/network product/offer context gates, selected-public-value missing-field findings, and JSON-LD page-product identity linkage. Exact slice verification: `75 passed`. Full offline suite requested by user: `985 passed, 1 deselected`. Repo-wide Mypy, Ruff, and Prettier passed.
+
+#### Slice 5 notes: asset and `additional_images`
+
+- Completed 2026-06-21. `AssetDecision` now carries product asset URL, role, rank, rule ID, and accepted evidence for one ordered product-level asset selection.
+- Materialization writes `image_url` exactly once from the selected primary decision.
+- `additional_images` is additive and backward-compatible. Absence/empty list is valid when no secondary product image exists.
+- Asset URL identity is normalized before entity dedupe; path spaces are encoded, transform params are ignored for identity, and meaningful params are preserved.
+- Utility/placeholder SVG/GIF assets are rejected by role/context tokens, not extension alone. Legitimate product SVG art remains admissible.
+- Exact slice verification: `92 passed`. Full offline unit/component/regression suite: `988 passed, 1 deselected`. Repo-wide Mypy, Ruff, and frontend Prettier passed.
+
+#### Slice 6 notes: offers and variants
+
+- Do not synthesize variants. Publish only captured, stable, sellable/product-relevant variant facts.
+- ID-only/URL-only variants become findings, not rows.
+- Price/currency/availability are atomic offer facts. Keep contradictions visible.
+- Parent-wide offer inheritance must be explicit and nonconflicting; no silent deletion of duplicate-looking child fields after resolution.
+- Browser capability request for variants is allowed only when explicit variant DOM cues exist and captured deterministic evidence is incomplete.
+
+#### Slice 7 notes: provenance
+
+- Four legacy columns are `raw_data`, `discovered_data`, `source_trace`, and `raw_html_path`.
+- Current direction: immutable artifacts and manifests are canonical; derived read models can be built from them.
+- Stop writes first, then remove readers/exposure after compatibility coverage exists.
+- Review acceptance belongs to review/domain-feedback models/logs. It must not mutate immutable extraction provenance.
+- Migration/backfill is allowed only when tested; no silent column removal if old rows still need read fallback.
+
+#### Slice 8 notes: crawl runtime
+
+- Keep one DB session/transaction per URL. Never let a failed URL poison the run orchestration session.
+- Local mode concurrency is exactly 1 when Celery dispatch is disabled.
+- Split scheduling/result collection and setup/finalization without inventing `RunCoordinator` or `UrlProcessor`.
+- Preserve record limits, restart/idempotency, pause/cancel, heartbeat, sitemap/category discovery, and URL-local failures.
+
+#### Slice 9 notes: config and confidence
+
+- `_apply_profile_defaults` is long because it applies multiple domains. Split by existing settings domains; do not create parallel settings sources.
+- All runtime strings/tokens/thresholds stay in `core/config/*`.
+- Confidence is diagnostic. It cannot mutate records, verdicts, or field values.
+
+#### Slice 10 notes: review/intelligence/enrichment
+
+- Review payloads must read canonical artifacts/provenance and domain feedback; no mutable extraction provenance.
+- `score_candidate` must preserve the identity ladder from `docs/INVARIANTS.md` Rule 16.
+- Shopify repository I/O/indexing can move to `shopify_repository.py`; taxonomy scoring stays in `shopify_catalog.py`.
+- Enrichment cannot clean extraction pollution. If enrichment sees bad title/category/brand, fix extraction upstream.
+
+#### Slice 11 notes: LLM
+
+- `run_prompt_task` should split provider call, response validation, cost log, and visible failure projection.
+- LLM remains dual-gated by run setting and active config.
+- LLM can adjudicate/fill allowed gaps only; deterministic evidence wins unless a separate conflict-review path exists.
+
+#### Slice 12 notes: final ratchet
+
+- Remove all debt allowlist entries. Do not replace them with new names.
+- Add package LOC budgets to `test_final_architecture_ownership.py`.
+- Run Ruff once, then the complete offline suite with regression marker included.
+- Update docs only for implemented ownership/contract changes. Do not rewrite historical rationale.
+
+## Latest Output Quality Reopen — 2026-06-23
+
+The earlier Slice 4-6 regressions protected known generic invariants, but the latest supplied catalog proves that the end-to-end output is not yet closed. This is not a new plan. The evidence and work below are appended to this active plan and block final closure.
+
+### Frozen 91-record baseline
+
+Source: the user-supplied 91-record JSON catalog plus the issue list supplied on 2026-06-23. This packet is the canonical offline baseline for the quality reopen.
+
+| Signal | Baseline observed |
+| --- | ---: |
+| Records | 91 |
+| Missing `availability` | 22 |
+| Missing `brand` | 19 |
+| Missing `price` | 17 |
+| Missing `currency` | 17 |
+| Missing `image_url` | 6 |
+| Missing `description` | 6 |
+| Missing `title` | 2 |
+| Descriptions ending at exactly 320 characters | 6 |
+| Parent prices differing from at least one emitted variant price | 10 |
+| Primary image duplicated in `additional_images` | 1 |
+
+The exact-320 descriptions include Dime Soft Rock Crewneck, Air Jordan 5 Retro White Metallic, Phillip Lim Luna Bag, Brooklinen Plush Turkish Cotton Towels, Brooks Brothers Italian Seersucker Sutton Suit, and Fender American Vintage II 1972 Telecaster Thinline. The count is strong evidence of a deterministic truncation boundary, not random source copy.
+
+### Single quality tracker
+
+| ID | Failure class | Current evidence | Owning quality slice | Closure rule |
+| --- | --- | --- | --- | --- |
+| QD-01 | Truncated descriptions | Exact 320-character cut-offs and mid-word endings; Levi cargo description also ends with ellipsis/incomplete copy | Q1 | No accepted description may end because of an extractor-owned hard character slice. Preserve complete source text or a sentence-safe bounded representation with explicit truncation metadata. |
+| QD-02 | SEO, directory, promotional, or typo descriptions | Peter Do search-directory copy; Apple iPhone promotional/emoji copy; Fashion Nova `$7` shipping text | Q1 | Product description must be product-specific. SEO/search-directory/shipping-only copy is rejected or loses to product-scoped evidence; suspicious numeric promo text is flagged, not silently corrected. |
+| QD-03 | Missing required fields | 38/91 records miss at least one default field; two titles, six images, six descriptions, 17 price/currency pairs, 19 brands, 22 availability values are absent | Q2 | Required/default fields are validated on selected public output. Evidence-backed recovery runs before verdict. Non-recoverable absence produces field findings and cannot be reported as clean success. |
+| QD-04 | Highly incomplete records | Valentino Loco Bag, Poppi Soda, Lululemon Nulu Jacket, Ralph Lauren Cap | Q2 | Title/URL-only records are partial/review or invalid according to the commerce contract; no shell record is presented as a complete product. |
+| QD-05 | Missing brand despite product-side evidence | Vans, Apple, HOKA, Creed, Breville, Aesop, Sony, The North Face, Calvin Klein, Tommy Hilfiger, Philipp Plein and other rows | Q3 | Recover brand only from product-side structured data, visible product text, explicit manufacturer/brand metadata, or a semantically valid title marker. Never infer retailer/marketplace hostname as brand. |
+| QD-06 | Missing or generic title | SATISFY title missing; Ralph Lauren title missing; Gap `product.do`; Sony `interchangeable lens cameras`; J.Crew `wide leg` | Q4 | Successful detail title must identify the product/model, not a filename, endpoint, category, style-only phrase, or generic heading. |
+| QD-07 | Wrong, mixed, duplicate, or low-resolution images | Apple list contains PlayStation asset; Nike Panda gallery contains other colorways; Converse primary is a 71px swatch; Lucinda primary is duplicated in gallery | Q5 | Primary/gallery selection must be product-identity coherent, role-ranked, minimum-quality checked, deduped, and lineage-backed. |
+| QD-08 | Missing image | ColourPop, Ralph Lauren and four additional rows | Q5 | Product-scoped structured, gallery, DOM, and captured network assets are exhausted before `image_url` is declared missing; utility assets never fill the gap. |
+| QD-09 | Missing or incoherent price/currency/availability | Gucci, Cartier, Eleuteri/Bulgari, Kuikma, Louis Vuitton, Levtex and other rows | Q6 | Price and currency resolve atomically from one offer. Availability is evidence-backed. Missing values remain findings; no fabricated defaults. |
+| QD-10 | Parent/variant price discrepancy | Glossier and H&M reported; JSON also shows Stagg, Blue Nile, Arc'teryx, Puma, Columbia, MAC, Sephora and Carbone mixed-price families | Q6 | Parent price semantics are explicit: selected/default variant, minimum sellable price, range, or no parent price. Parent must not silently copy an arbitrary variant. |
+| QD-11 | Missing size/color variant configuration | adidas SL 72 PT, Skechers Viper Court Pro, Bombas All Sport Socks; shoe rows with color-only variants also require review | Q7 | Category-aware variant completeness checks require captured sellable axes when page evidence exposes them. Never synthesize a Cartesian product. |
+| QD-12 | Variant/parent availability mismatch or absence | Parent availability absent on many rows; some variant rows omit availability | Q7 | Public parent availability is derived only from a complete coherent matrix or explicit parent evidence. Missing child availability is diagnosed. |
+| QD-13 | Quality gate does not block false success | Prior focused tests passed while the latest catalog still contains the above failures | Q8 | The offline catalog audit becomes a required gate. A run cannot be quality-clean when contract, description, title, asset, offer, or variant checks fail. |
+
+New failures discovered later must be appended to this table with a stable `QD-*` ID, owning slice, fixture/artifact reference, status, and verification note. Do not create another plan or a second tracker.
+
+### Recrawl minimization policy
+
+- Do not run a live crawl to verify Q1-Q8. Use the frozen 91-record JSON, existing trace/browser/extraction artifacts, and small synthetic HTML/JSON fixtures.
+- Convert every reported defect class into an offline failing regression before implementation. Preserve the full supplied JSON outside production runtime; tests may use a compact manifest containing only the affected record identity, bad value, expected rule, and source lineage needed for the assertion.
+- Run only focused tests for each quality slice. The complete offline suite runs once in Slice 12.
+- Run one full user-owned live catalog/100-site gate only after Q1-Q8, Slices 9-11, and Slice 12 pass. Do not run the full catalog after each fix.
+- If the final live gate finds a failure, append it to this same ledger, reopen only the owning quality slice, and use the supplied artifacts for the fix. A new full live gate occurs only after all reopened items are offline-green again.
+
+## Quality Reopen Slices — blocking Slice 12
+
+### Quality Slice Q0: Freeze Manifest and Build the Offline Audit
+
+**Status:** DONE — VERIFIED 2026-06-23
+**Owners:** `backend/tests/fixtures/extraction/`, extraction replay tests, a test-only catalog quality auditor under existing harness/test support ownership, this plan.
+
+**Implement:**
+
+- Store a compact 91-record issue manifest derived from the supplied JSON: stable URL/title identity, affected fields, observed bad values, expected issue IDs, and representative lineage/artifact handles where available.
+- Add deterministic audit checks for missing fields, exact hard-boundary truncation, generic titles, low-resolution/duplicate images, offer atomics, parent/variant price semantics, and category-aware variant axes.
+- Ensure the auditor reports all failures in one run instead of stopping at the first record.
+
+**Acceptance:** All QD-01 through QD-13 examples are represented; the baseline counts above are reproducible offline; no network/browser call is required.
+
+**Verify:** focused manifest/auditor unit tests only.
+
+### Quality Slice Q1: Description Completeness and Product-Specific Copy
+
+**Status:** REOPENED — LATEST GATE FAILED; DIRTY FIXES UNDER VALIDATION
+**Owners:** detail collectors, `extraction/pipeline.py`, `resolution.py`, `core/shared/text_coerce.py`, `core/config/extraction_rules/_detail.py`, validation/findings.
+
+**Implement:**
+
+- Locate and remove extractor-owned fixed-length slicing that produces the 320-character boundary. Length limits belong in config and may not cut mid-word/mid-sentence without explicit `truncated=true` lineage.
+- Rank full product-scoped structured/DOM/network descriptions above meta snippets and search-directory copy.
+- Add generic rejection/admission for search-result prose, shipping/discount-only copy, emoji-heavy marketplace promotions, and tab/UI text.
+- Preserve legitimate long descriptions and multilingual copy; do not rewrite source claims or silently repair suspected typos such as `$7` to `$75`.
+
+**Acceptance:** The six exact-320 examples are complete or explicitly diagnosed; Peter Do and Apple promo copy cannot win over product-specific evidence; no source-only typo is fabricated away.
+
+**Verify:** extraction pipeline, text coercion, current-run replay, and public-record firewall tests.
+
+### Quality Slice Q2: Required-Field Recovery and Honest Record Completeness
+
+**Status:** REOPENED — PENDING LATEST-CORPUS CLOSURE
+**Owners:** source-key mappings, collectors, entity linking, resolution, `validation.py`, result building, quality verdict/harness checks.
+
+**Implement:**
+
+- Define the commerce detail default contract once: `title`, canonical `url`, `price`+`currency` when a sellable offer exists, `brand`, `description`, `image_url`, and `availability` when exposed.
+- Perform evidence-backed backfill across structured, metadata, DOM, captured network, and variant/parent entities before final validation.
+- Validate the selected public record, not raw evidence presence.
+- Add a completeness score and explicit field findings; highly incomplete records cannot receive a clean quality verdict.
+
+**Acceptance:** Baseline missing-field counts fall only through admissible evidence. Valentino, Poppi, Lululemon, and Ralph Lauren shell records are rejected/partial until contract evidence exists.
+
+**Verify:** extraction validation/result-building tests and harness quality tests.
+
+### Quality Slice Q3: Product-Side Brand Recovery
+
+**Status:** REOPENED — PENDING LATEST-CORPUS CLOSURE
+**Owners:** `field_mappings.py`, metadata/JSON-LD/JS/network/DOM collectors, brand coercion, resolution.
+
+**Implement:**
+
+- Expand generic brand/manufacturer aliases and nested object handling.
+- Admit explicit visible patterns such as `Brand`, `Manufacturer`, `Designed by`, and title markers only when product identity remains after removing the brand token.
+- Reject category, retailer, seller, breadcrumb, and hostname values as brand unless the page explicitly identifies them as the product brand.
+- Preserve evidence and confidence for inferred-from-title brand values.
+
+**Acceptance:** Reported major-brand rows recover when product-side evidence exists; marketplace/retailer names are not fabricated as brands; absent evidence stays missing with a finding.
+
+**Verify:** field mapping, brand coercion, extraction pipeline, and replay tests.
+
+### Quality Slice Q4: Specific Product Title Resolution
+
+**Status:** REOPENED — PENDING LATEST-CORPUS CLOSURE
+**Owners:** URL/metadata/DOM/structured collectors, `pipeline.normalize_evidence`, `resolution.py`, title rules in `_detail.py`.
+
+**Implement:**
+
+- Extend generic title rejection for endpoint filenames (`product.do`), category labels, model-family headings, style-only phrases, and incomplete single-token titles.
+- Prefer model/SKU-bearing structured title or product H1 when it agrees with canonical URL/product identifiers.
+- Keep URL-derived text review-only and never let a query endpoint name become title.
+- Emit a visible `MISSING_OR_GENERIC_TITLE` finding when no admissible title exists.
+
+**Acceptance:** SATISFY and Ralph Lauren no longer omit recoverable titles; Gap, Sony and J.Crew examples cannot pass with the reported generic title values.
+
+**Verify:** title-quality extraction, URL identity, validation, and current-run replay tests.
+
+### Quality Slice Q5: Image Identity, Relevance, Resolution, and Gallery Integrity
+
+**Status:** REOPENED — LATEST GATE FAILED; DIRTY FIXES UNDER VALIDATION
+**Owners:** image collectors, asset entity/decision owners, `_images.py`, URL utilities, materialization.
+
+**Implement:**
+
+- Add product identity agreement between image URL/alt/context and selected product title/SKU/style/color.
+- Reject cross-product assets in mixed recommendation/carousel payloads; a gallery image must belong to the same product family and selected color unless explicitly represented as a variant asset.
+- Enforce configurable minimum intrinsic/requested dimensions for primary images and demote swatch/thumbnail transforms when a larger equivalent exists.
+- Deduplicate primary/gallery by normalized asset identity, including transform-equivalent URLs.
+- Preserve missing image rather than selecting an unrelated utility/recommendation asset.
+
+**Acceptance:** Apple PlayStation, Nike other-colorway, Converse 71px swatch, and Lucinda duplicate regressions pass; ColourPop/Ralph Lauren recover only admissible images.
+
+**Verify:** image URL utilities, asset resolution/materialization, API/export/review serialization tests.
+
+### Quality Slice Q6: Offer, Price, Currency, and Availability Semantics
+
+**Status:** REOPENED — PENDING LATEST-CORPUS CLOSURE
+**Owners:** offer collectors, `entities.py`, `resolution.py`, `validation.py`, `materialization.py`, price/variant config.
+
+**Implement:**
+
+- Keep price and currency atomic within one offer and carry selected/default/variant identity.
+- Define explicit parent-price strategies: selected/default variant when proven, otherwise lowest sellable price plus range metadata when variants legitimately differ, otherwise no parent price with a contradiction finding.
+- Distinguish sale/original price from different variant prices; never combine them by iteration order.
+- Recover parent availability from explicit parent evidence or a complete coherent variant matrix only.
+- Flag missing price/currency on sellable pages and avoid forcing values on quote-only/region-gated/blocked pages.
+
+**Acceptance:** Glossier, H&M and the eight additional mixed-price families resolve deterministically; Levtex and other missing offer fields are recovered or honestly diagnosed; no arbitrary parent price remains.
+
+**Verify:** offer/variant extraction, price coercion, materialization, validation, and replay tests.
+
+### Quality Slice Q7: Category-Aware Variant Axis Completeness
+
+**Status:** REOPENED — PENDING LATEST-CORPUS CLOSURE
+**Owners:** JS state/JSON-LD/DOM/network variant collectors, variant policy, resolution, validation, browser capability request gating.
+
+**Implement:**
+
+- Determine expected axes from explicit page controls/schema and conservative product category cues: footwear/apparel normally require size when size controls exist; color is required only when exposed as a sellable axis.
+- Exhaust structured/network/static DOM evidence before one bounded rendered capability request when explicit controls exist.
+- Keep variants only when identity plus option/commercial evidence exists; do not synthesize combinations.
+- Emit `EXPECTED_VARIANT_AXIS_MISSING`, `VARIANT_AVAILABILITY_MISSING`, and matrix completeness findings.
+
+**Acceptance:** adidas SL 72 PT, Skechers Viper Court Pro, Bombas socks, and color-only shoe cases are complete when evidence exists or become partial/review with precise findings.
+
+**Verify:** extraction pipeline, variant policy, browser retry-budget, and current-run replay tests.
+
+### Quality Slice Q8: Unified Catalog Quality Gate and Release Readiness
+
+**Status:** REOPENED — LATEST GATE NOW BLOCKS FALSE CLEAN
+**Owners:** extraction validation, harness quality checks, replay acceptance, architecture tests, this plan.
+
+**Implement:**
+
+- Aggregate QD checks into one deterministic per-record and catalog-level quality report with issue IDs, counts, affected URLs, and lineage pointers.
+- Make quality verdict independent of transport success. Any unresolved blocker in title, required fields, description truncation, image identity, offer atomics, or variant integrity blocks `quality_clean`.
+- Compare the generated report against the frozen baseline and require every known issue to be either fixed or explicitly classified as source-unavailable/blocked with findings.
+- Record the final offline issue count in this plan before Slice 12.
+
+**Acceptance:** Zero unresolved QD blockers in the frozen manifest; no regression hidden by aggregate success; Q0-Q8 all carry verification notes.
+
+**Reopen note (2026-06-23):** The older frozen manifest remains historical evidence only. The latest 92-record failed-gate audit is now consumed by the offline gate and reports all QD-01 through QD-13 as unresolved. Focused verification: `7 passed` in `tests/unit/test_catalog_quality_audit.py`; focused Ruff passed. Q8 cannot return clean from self-declared manifest resolutions while the latest gate is failed.
+
+**Verify:** full quality-auditor/replay set only. Do not run live URLs.
+
+## Slices
+
+### Slice 0: Audit, Standalone Plan, and Activation
+
+**Status:** DONE
+**Files:** this plan, `docs/plans/ACTIVE.md`, `docs/plans/final-architecture-improvement-plan.md`
+**What:** Recomputed code/LOC/function debt, audited current extraction/acquisition/persistence owners, classified the attached failures, retired superseded targets, and made this the sole active plan.
+**Acceptance:** Baselines and decisions above match the committed baseline; prior plan is marked superseded; no production code changed.
+**Verify:** `git diff --check -- docs/plans/ACTIVE.md docs/plans/final-architecture-debt-burndown-plan.md docs/plans/final-architecture-improvement-plan.md`
+
+### Slice 1: Canonical Acquisition Attempt Ownership
+
+**Status:** DONE — VERIFIED 2026-06-21
+**Owners:** `acquisition/contracts.py`, `planner.py`, `executor.py`, `fetch/fetch_context.py`, `fetch/planned_http.py`, `fetch/browser_attempt_runner.py`, `fetch/browser_attempt.py`, `fetch/browser_policy.py`, `fetch/types.py`, `acquirer.py`, `connectors/public_api/extraction_service.py`
+**Fallback docs:** `docs/INVARIANTS.md` Rules 5, 6, 9, 13; acquisition section of `docs/CODEBASE_MAP.md`.
+**Known audited scope:** `AcquisitionPlan`, `AttemptSpec`, `AttemptResult`, `AcquisitionResult`, `run_planned_http_only`, `_run_browser_attempts`, `run_browser_attempts`, `_run_http_fetch_chain`, handoff helpers, and all `fetch_page` callers.
+
+**Implement:**
+
+- Extend the existing planner to describe all auto/browser/handoff attempts, not only HTTP-only mode.
+- Execute every transport through `AttemptExecutor`; browser runner performs mechanics for one planned attempt and returns its page result plus terminal attempt result.
+- Make `fetch_page()` select the canonical result and attach one complete plan/result diagnostic payload.
+- Delete duplicate engine/proxy loops, alias exports, and policy decisions from `fetch_context.py` after their callers move.
+- Keep public extraction on normal acquisition/extraction; split its request admission and response mapping without creating another scraper.
+
+**Slice acceptance:**
+
+- `fetch_context.py` <=650 lines; `extract_public_product` <=100 lines.
+- Every started attempt terminates exactly once as success/blocked/empty/error/skipped.
+- Global deadline, retry floor, proxy identity, engine-specific storage, user controls, and host memory behavior remain covered.
+- No requested-field-only browser trigger returns.
+- No acquisition allowlist entry is added.
+
+**Handoff:** Slice 1 complete.
+
+- Files changed: `acquisition/fetch/fetch_context.py`, `acquisition/fetch/planned_http.py`, `acquisition/fetch/browser_attempt_runner.py`, `connectors/public_api/extraction_service.py`, `tests/component/test_crawl_fetch_runtime.py`, `tests/unit/test_final_architecture_ownership.py`, `docs/plans/ACTIVE.md`, and this plan.
+- Deletions: no files deleted; duplicate HTTP/proxy loops and handoff/result-policy bodies were removed from `fetch_context.py`.
+- LOC/function delta: `fetch_context.py` 987 -> 632 lines; `extract_public_product` 111 -> 40 lines; `planned_http.py` and `browser_attempt_runner.py` now own the moved attempt mechanics and remain below the oversized-module threshold.
+- Verification: `189 passed` for the exact Slice 1 command on 2026-06-21.
+- Debt removed: `acquisition/fetch/fetch_context.py` removed from `OVERSIZED_MODULE_DEBT`; `connectors/public_api/extraction_service.py::extract_public_product` removed from `LONG_FUNCTION_DEBT`.
+- Remaining debt: Slice 2 browser runtime/detail/readiness/traversal long-function and oversized-module entries remain.
+- Next slice: Slice 2 — Browser Runtime, Readiness, Interaction, and Traversal Debt.
+
+**Verify:**
+
+```powershell
+cd C:\Projects\CrawlerAI\backend
+$env:PYTHONPATH='.'
+.\.venv\Scripts\python.exe -m pytest `
+  tests\unit\test_acquisition_planner_executor.py `
+  tests\component\test_acquirer.py `
+  tests\component\test_crawl_fetch_runtime.py `
+  tests\component\test_public_api.py `
+  tests\unit\test_final_architecture_ownership.py `
+  -q
+```
+
+### Slice 2: Browser Runtime, Readiness, Interaction, and Traversal Debt
+
+**Status:** DONE
+**Owners:** `browser_runtime.py`, `browser_fetch_support.py`, `browser_page_flow.py`, `browser_page_helpers.py`, `browser_detail.py`, new `browser_accessibility.py`, `browser_readiness.py`, `browser_recovery.py`, `browser_result_builder.py`, `runtime.py`, `traversal.py`, `traversal_recovery.py`, `traversal_card_counting.py`
+**Fallback docs:** `docs/INVARIANTS.md` Rules 5, 6, 13 and `docs/ENGINEERING_STRATEGY.md` AP-16/AP-17.
+**Known audited scope:** all functions in the acquisition portion of the long-function ledger; `HtmlAnalysis`, `HtmlDocument`, parser constructors, expansion entry points, warmup state, popup guards, readiness probes, traversal stop reasons.
+
+**Implement:**
+
+- Make `browser_runtime.browser_fetch` a phase orchestrator; existing support/page-flow/result owners perform mechanics.
+- Move launch/warmup/popup lifecycle into public APIs in existing `browser_fetch_support.py`; remove private cross-module reach-ins.
+- Keep DOM detail expansion in `browser_detail.py`; move accessibility-tree expansion and its candidates/snapshots to `browser_accessibility.py`; delete `*_impl` wrappers.
+- Split readiness settle phases while preserving one parsed tree per unique snapshot and no BeautifulSoup under acquisition.
+- Split challenge and traversal loops by action/poll/progress/finalization without combining mode-specific behavior.
+- Keep page-side listing visual capture as a module-owned script plus typed normalization; it remains observation, not extraction.
+
+**Slice acceptance:**
+
+- `browser_runtime.py` <=650; `browser_detail.py` <=650; `browser_page_flow.py` <=650.
+- Acquisition package <=15,400 LOC.
+- Every acquisition long-function entry is removed; no replacement exceeds 100 lines.
+- No expansion click can target header/nav/footer/site chrome or navigate away from requested detail identity.
+- Readiness, block, listing, and final extraction reuse matching HTML documents; changed snapshots never reuse mismatched trees.
+- Usable content still overrides provider noise; bounded challenge/warmup/close behavior remains intact.
+
+**Verify:**
+
+```powershell
+cd C:\Projects\CrawlerAI\backend
+$env:PYTHONPATH='.'
+.\.venv\Scripts\python.exe -m pytest `
+  tests\component\test_browser_context.py `
+  tests\component\test_crawl_fetch_runtime.py `
+  tests\unit\test_block_detection.py `
+  tests\unit\test_browser_failure_kind.py `
+  tests\unit\test_pipeline_browser_retry_budget.py `
+  tests\unit\test_final_architecture_ownership.py `
+  -q
+```
+
+**Results (2026-06-21):**
+
+- Exact Slice 2 verification: `247 passed`.
+- Expanded focused verification including `test_acquirer.py`: `267 passed`.
+- Ruff: all 20 changed/new Python files passed. Mypy: all 17 changed/new production files passed.
+- `browser_runtime.py` remains the stable facade. No acquisition import cycles were found. Public owner APIs replaced new private cross-module reach-ins while legacy facade monkeypatch names remain available.
+- All Slice 2 acquisition long-function and oversized-module ledger entries are resolved. Largest changed module is `browser_result_builder.py` at 700 lines; no changed production function exceeds 100 lines.
+- Recursive acquisition physical LOC is 17,423. The 15,400 package target is not met because Slice 1 introduced the `acquisition/fetch` subpackage and the inherited Slice 2 split added net physical LOC. This remains quantitative debt for the final architecture gate; it is not hidden by treating moved files as deletion.
+
+### Slice 3: Listing Discovery and Listing Card Integrity
+
+**Status:** DONE
+**Owners:** `crawl/sitemap_resolver.py`, `crawl/site_link_discovery.py`, `crawl/sitemap_nav.py`, `extraction/listing.py`, `core/config/sitemap.py`, `core/config/extraction_recipes.py`, `core/config/extraction_rules/_common.py`, `core/records/url_identity.py`, listing tests
+**Fallback docs:** `docs/INVARIANTS.md` Rules 1, 2, 7, 8, 13; listing/discovery ownership in `docs/CODEBASE_MAP.md`; user-supplied listing reports.
+**Known audited scope:** `resolve_category_urls_from_sitemap_result`, rendered site-link validation, homepage/category candidate scoring, category nav tree labels, listing card selectors, listing URL validation, listing title selector order, `LISTING_TITLE_CTA_TITLES`, utility/category/detail URL markers, and all tests covering site-link discovery, sitemap resolver, and ecommerce listing extraction.
+
+**Implement:**
+
+- Treat the supplied Arcteryx, Belk, and Intimissimi outputs as symptoms only; create small generic fixtures that reproduce the failure classes without host branches.
+- In static and rendered category discovery, require ecommerce listing evidence before returning broad same-origin links when `category_only`/ecommerce listing discovery is active: product-card density, product-detail-link density, price/image/card signals, or explicit requested-branch affinity.
+- Demote or reject utility/site-chrome links: customer service, policy/legal/compliance, contact, FAQ, returns/shipping, stores/store locator, registry/wish list, app, athletes/ambassadors, vendor resources, catalog/ads, on-page `#` anchors, and marketing quizzes when they lack product-listing evidence.
+- Preserve valid category/listing URLs even when the link appears inside nav, but only when path/category signal plus listing evidence or requested-branch affinity is present.
+- In listing-card extraction, choose the product URL first, then choose title evidence from the same product-link/name scope. Reject selected-color/swatch/control/CTA/aria-state labels such as `Cor selecionada`.
+- Require title evidence to agree with product URL/card context enough to avoid product rows with valid URL/price/image but non-product title.
+- Keep failure honest: zero accepted product rows remains `listing_detection_failed`; rejected candidates carry diagnostics, not fake rows.
+
+**Regression classes:**
+
+- rendered category discovery rejects support/legal/store/registry/app/athlete links but keeps valid category links with product-listing evidence;
+- category-specific seed does not broaden to unrelated top-level nav branches when requested branch affinity exists;
+- listing card with product URL/price/image and selected-color label does not publish `Cor selecionada` as title;
+- listing card with a valid product link/title still publishes normally;
+- utility `#` anchors and same-page store-directory links are rejected.
+
+**Slice acceptance:**
+
+- No host/site branches for Arcteryx, Belk, or Intimissimi.
+- Discovery diagnostics count rejected utility/nav candidates by reason.
+- Ecommerce listing output cannot contain customer-service/legal/store/registry/app/athlete/site-chrome URLs.
+- Ecommerce listing output cannot contain swatch/control/selected-state titles.
+- Listing and detail surfaces stay separate; no detail fallback or downstream cleanup is added.
+- Existing category discovery behavior for legitimate category URLs remains covered.
+
+**Verify:**
+
+```powershell
+cd C:\Projects\CrawlerAI\backend
+$env:PYTHONPATH='.'
+.\.venv\Scripts\python.exe -m pytest `
+  tests\component\test_site_link_discovery.py `
+  tests\component\test_sitemap_resolver.py `
+  tests\unit\test_extraction_pipeline.py `
+  tests\acceptance\test_replay_sites.py `
+  -q
+```
+
+**Results (2026-06-21):**
+
+- Exact Slice 3 verification: `83 passed`.
+- Ruff and mypy passed for all changed production/test files.
+- Static sitemap, homepage, and rendered discovery now share generic utility admission. Rendered discovery preserves requested branch affinity and validation no longer restores candidates without listing evidence.
+- Listing cards resolve and validate the product URL before title selection. Titles must come from the product-link/name scope and control, swatch, selected-state, CTA, navigation, and utility evidence is rejected.
+- Added only generic regressions. No hostname-specific branch or downstream cleanup was added.
+
+### Slice 4: Product Identity, Title Quality, and Metadata Admission
+
+**Status:** DONE
+**Owners:** `extraction/collectors/url.py`, `dom.py`, `metadata.py`, `js_state.py`, `jsonld.py`, `pipeline.py`, `entities.py`, `resolution.py`, `validation.py`, `core/records/url_identity.py`, `core/config/field_mappings.py`, `core/config/extraction_rules/_detail.py`
+**Fallback docs:** `docs/INVARIANTS.md` Rules 3, 6, 7, 13; extraction sections of `docs/BUSINESS_LOGIC.md`.
+**Known audited scope:** all `product.title`, `product.brand`, `product.description`, source-key mappings, URL-title fallbacks, shell/title quality rules, and selected-public-value validation.
+
+**Implement:**
+
+- Add evidence flags/admission for filename extensions, code-only leaves, nav/tab/measurement titles, shell titles, and generic headings.
+- Score title candidates by semantic product identity, URL-token agreement, source reliability, and pollution; do not clean a bad candidate into a fabricated title.
+- Keep URL-derived title as low-confidence review evidence only; strip `.html`/query noise before comparison.
+- Move source-key aliases out of collectors into `field_mappings.py`; add generic description, currency, availability, image-array, and brand-object mappings.
+- Require JS/network product or offer context before generic keys create entities/offers.
+- Validate resolved selected public values, not only raw evidence presence.
+
+**Regression classes:**
+
+- filename/ID title versus valid structured/H1 title;
+- `Measurements`/navigation title rejected;
+- SEO suffix/price removed only when product title evidence remains;
+- arbitrary nested `price` object cannot create a product offer;
+- missing brand/price/image remains missing with a finding when no evidence exists.
+
+**Slice acceptance:**
+
+- No host/site branches.
+- No filename, internal ID, generic tab, or navigation title can produce success.
+- Brand is never inferred from retailer/hostname alone.
+- Missing default/requested fields produce one visible field finding after resolution.
+- Extraction shape gates remain within 24 files/5,500 LOC/400 lines/60-line functions.
+
+**Verify:**
+
+```powershell
+cd C:\Projects\CrawlerAI\backend
+$env:PYTHONPATH='.'
+.\.venv\Scripts\python.exe -m pytest `
+  tests\unit\test_extraction_pipeline.py `
+  tests\unit\test_extraction_architecture.py `
+  tests\unit\test_extraction_current_run_replay.py `
+  tests\unit\test_public_record_firewall.py `
+  -q
+```
+
+### Slice 5: Product Asset Selection and Additional Images Contract
+
+**Status:** DONE — VERIFIED 2026-06-21
+**Owners:** `extraction/contracts.py`, `entities.py`, `resolution.py`, `materialization.py`, asset collectors, `core/config/extraction_rules/_images.py`, `core/config/field_mappings.py`, `schemas/crawl.py`, `persistence/export/*`, record APIs/review serializers
+**Fallback docs:** `docs/INVARIANTS.md` Rules 3, 8, 13 and public API/output sections of `docs/BUSINESS_LOGIC.md`.
+**Known audited scope:** `AssetDecision`, all asset facts/entities, every `image_url`/`additional_images` reader and serializer, primary-image reject tokens, URL normalization and asset dedupe.
+
+**Implement:**
+
+- Use the existing `AssetDecision` contract for one product-level ordered asset decision; delete it if a single generic `Decision` representation fully replaces it, but do not keep both unused.
+- Normalize HTTP(S) asset URLs before entity identity; encode path spaces safely and dedupe transform-equivalent URLs without deleting meaningful variant parameters.
+- Rank structured/product-scoped/direct assets above DOM-wide assets; reject placeholders, 1x1/pixel/no-image, logo, payment, discount, loader, arrows/icons, testimonial/quote, schedule/email, and unrelated promotional assets using generic role signals.
+- Materialize `image_url` once from the primary decision. Materialize ordered, deduped, admissible non-primary product assets as `additional_images` excluding the primary.
+- Add backward-compatible `additional_images` to typed record, schemas, API, export, review, and lineage.
+
+**Slice acceptance:**
+
+- Asset iteration order cannot change the primary image.
+- Primary and additional assets carry accepted evidence IDs and role/rank rule IDs.
+- Utility SVG/GIF and placeholder cases are rejected; a legitimate product SVG is not rejected solely by extension.
+- `additional_images` is absent/empty when no secondary evidence exists and never duplicates `image_url`.
+- Existing consumers of `image_url` remain compatible.
+
+**Verify:**
+
+```powershell
+cd C:\Projects\CrawlerAI\backend
+$env:PYTHONPATH='.'
+.\.venv\Scripts\python.exe -m pytest `
+  tests\unit\test_extraction_pipeline.py `
+  tests\unit\test_extraction_architecture.py `
+  tests\component\test_records_api.py `
+  tests\component\test_record_export_service.py `
+  tests\component\test_review_service.py `
+  -q
+```
+
+### Slice 6: Offer Integrity, Variant Completeness, and Honest Diagnostics
+
+**Status:** DONE — VERIFIED 2026-06-21
+**Owners:** `extraction/collectors/js_state.py`, `jsonld.py`, `dom.py`, `entities.py`, `resolution.py`, `validation.py`, `materialization.py`, `result_building.py`, existing variant/config owners
+**Fallback docs:** `docs/INVARIANTS.md` Rule 3 first, then Rules 6, 7, 13; `docs/ENGINEERING_STRATEGY.md` AP-12/AP-20.
+**Known audited scope:** all early returns, recursive object traversal, variant identity/grouping, parent/variant offers, price/currency pairing, selected-variant references, DOM cue gates, and capability requests.
+
+**Implement:**
+
+- Preserve full recursive source traversal and later-object backfill; no first-object or early-return loss.
+- Admit price only with product/offer context; reject non-positive price; keep magnitude changes forbidden without independent corroboration.
+- Resolve price/currency/availability atomically within one offer entity.
+- Publish a variant only when it has stable identity plus at least one option or commercial fact. Preserve ID-only evidence in an `INCOMPLETE_VARIANT_EVIDENCE` finding.
+- Inherit product-wide price/currency/availability to variants only when the offer is explicitly parent-wide, no child evidence conflicts, and lineage names the inheritance rule.
+- Keep missing SKU/color/size honest when not inferable. No Cartesian variant fabrication.
+- Request one rendered capability only when explicit variant DOM cues exist and deterministic captured evidence remains incomplete.
+
+**Slice acceptance:**
+
+- No public variant is ID-only or URL-only.
+- Explicit sellable variants retain all available identity, option, offer, availability, URL, and image evidence.
+- Parent availability is coherent only for a complete variant matrix; incomplete matrices do not override parent evidence.
+- `0.00` cannot be a successful product price; year-like or 100x values are rejected/flagged unless corroborated, never guessed.
+- Missing regional variants remain partial/review with findings if capture contains no variant evidence.
+
+**Verify:**
+
+```powershell
+cd C:\Projects\CrawlerAI\backend
+$env:PYTHONPATH='.'
+.\.venv\Scripts\python.exe -m pytest `
+  tests\unit\test_extraction_pipeline.py `
+  tests\unit\test_extraction_current_run_replay.py `
+  tests\unit\test_pipeline_browser_retry_budget.py `
+  tests\unit\test_extraction_architecture.py `
+  -q
+```
+
+### Slice 7: Canonical Provenance and Legacy Column Retirement
+
+**Status:** DONE — VERIFIED 2026-06-21
+**Owners:** `crawl/pipeline/persistence.py`, `persistence/url_result_artifacts.py`, `record_artifacts.py`, `record_export_service.py`, `publish/metadata.py`, `crawl/crud.py`, `crawl/review/*`, `schemas/crawl.py`, `observability/run_audit.py`, `models/crawl_run.py`, migration only if required
+**Fallback docs:** `docs/INVARIANTS.md` Rules 4, 8, 14; persistence/review sections of `docs/CODEBASE_MAP.md` and `docs/BUSINESS_LOGIC.md`.
+**Known audited scope:** every read/write of the four legacy columns, `RecordArtifacts` dual-read behavior, review bucket mutation, field discovery/coverage, LLM suggestion acceptance, manifest/provenance readers.
+
+**Implement:**
+
+- Make canonical record provenance/artifacts the source for raw evidence, lineage, acquisition diagnostics, field discovery, review candidates, and requested coverage.
+- Derive field-discovery/coverage from extraction lineage plus current `record.data`; stop `publish/metadata.py` writes.
+- Derive remaining review candidates from immutable provenance minus existing ReviewPromotion/DomainFieldFeedback decisions; stop review-bucket mutation.
+- Record accepted user/LLM edits through existing review/domain-feedback ownership and logs; do not mutate immutable extraction provenance.
+- Move all active consumers to `RecordArtifacts`; keep legacy-column fallback read-only only for old rows until a coverage test proves artifact availability.
+- Remove ORM/schema/API exposure and physical columns only after the slice's compatibility fixture proves old-row reads or the migration/backfill is explicit. No silent data loss.
+
+**Slice acceptance:**
+
+- Zero active writes to all four legacy columns.
+- Architecture owner allowlist for legacy fields is empty or contains only a single documented old-row loader pending the same slice's migration.
+- Current records read canonical artifacts; old-row compatibility behavior is tested.
+- Persistence remains storage-only and does not repair fields/verdicts.
+- Artifact writes remain atomic, hashed, manifest-last, and replayable.
+
+**Verify:**
+
+```powershell
+cd C:\Projects\CrawlerAI\backend
+$env:PYTHONPATH='.'
+.\.venv\Scripts\python.exe -m pytest `
+  tests\unit\test_url_result_persistence.py `
+  tests\unit\test_replay_persistence_guard.py `
+  tests\unit\test_publish_metrics.py `
+  tests\unit\test_crawl_schemas.py `
+  tests\component\test_record_export_service.py `
+  tests\component\test_review_service.py `
+  tests\unit\test_final_architecture_ownership.py `
+  -q
+```
+
+### Slice 8: Crawl Run Ownership, URL Sessions, and Progress Debt
+
+**Status:** DONE — VERIFIED 2026-06-21
+**Owners:** `crawl/batch_runtime.py`, `crawl/pipeline/extraction_loop.py`, `run_progress.py`, existing failure/runtime helpers, worker adapters
+**Fallback docs:** `docs/INVARIANTS.md` Rules 5, 6, 14; crawl flow in `docs/CODEBASE_MAP.md`.
+**Known audited scope:** `process_run`, `process_single_url`, URL session creation/rollback, parallel task ownership, progress summaries, pause/kill/heartbeat paths, duplicate state transitions.
+
+**Implement:**
+
+- Keep `process_run` as run lifecycle owner and `process_single_url` as URL workflow owner; do not add coordinator classes.
+- Split parallel scheduling from result collection and run setup from finalization.
+- Preserve one DB session/transaction per URL in serial and parallel modes; orchestration session never performs URL persistence.
+- Consolidate acquisition metric merging by concern and delete duplicate progress shaping.
+- Preserve sitemap/category discovery, pause/cancel, heartbeat, restart/idempotency, record limits, and URL-local failures.
+
+**Slice acceptance:**
+
+- `batch_runtime.py` <=650; three crawl long-function entries removed.
+- Crawl package <=9,250 LOC.
+- A failed URL flush/timeout does not poison the run or later URLs.
+- Local mode concurrency remains 1; record limits remain deterministic.
+- Restart/duplicate delivery cannot duplicate records or regress terminal run state.
+- `test_batch_runtime.py` behavior remains intact; edits are limited to new/changed contract assertions.
+
+**Verify:**
+
+```powershell
+cd C:\Projects\CrawlerAI\backend
+$env:PYTHONPATH='.'
+.\.venv\Scripts\python.exe -m pytest `
+  tests\regression\test_batch_runtime.py `
+  tests\component\test_crawl_service.py `
+  tests\unit\test_final_architecture_ownership.py `
+  -q -m "unit or component or regression"
+```
+
+### Slice 9: Config and Confidence Ownership
+
+**Status:** COMPLETE — VERIFIED 2026-06-23
+**Owners:** `core/config/runtime_settings.py`, existing domain config modules, `core/records/confidence.py`, config/architecture tests
+**Fallback docs:** `docs/ENGINEERING_STRATEGY.md` AP-1/AP-10/AP-11/AP-13/AP-21/AP-22.
+**Known audited scope:** all runtime settings imports and profile-default application; duplicate extraction key mappings; confidence inputs/consumers.
+
+**Implement:**
+
+- Split `_apply_profile_defaults` into existing acquisition/extraction/storage/worker/observability/intelligence/enrichment domain views while retaining one application settings object.
+- Remove orphaned settings and duplicate exports only after caller search; do not create parallel config sources.
+- Split confidence field scoring, penalties, and aggregation; confidence remains diagnostic and cannot mutate extraction values/verdicts.
+- Add source-key mappings needed by Slices 3-5 only to canonical config owners.
+
+**Slice acceptance:**
+
+- Both long functions removed; no import-time `globals()` config mutation added.
+- Core package <=14,500 LOC.
+- Runtime settings remain environment-driven and explicit user controls unchanged.
+- Confidence output is deterministic for identical typed input.
+
+**Verify:**
+
+```powershell
+cd C:\Projects\CrawlerAI\backend
+$env:PYTHONPATH='.'
+.\.venv\Scripts\python.exe -m pytest `
+  tests\unit\test_config_security.py `
+  tests\unit\test_public_record_firewall.py `
+  tests\unit\test_publish_metrics.py `
+  tests\unit\test_final_architecture_ownership.py `
+  -q
+```
+
+### Slice 10: Review, Intelligence, and Enrichment Owner Closure
+
+**Status:** COMPLETE — VERIFIED 2026-06-23
+**Owners:** `crawl/review/__init__.py`, existing review support modules, `intelligence/matching.py`, `enrichment/shopify_catalog.py`, new `shopify_repository.py`, `enrichment/deterministic.py`, `service.py`
+**Fallback docs:** `docs/INVARIANTS.md` Rules 8, 9, 10, 13; `docs/ENGINEERING_STRATEGY.md` AP-17/AP-18.
+**Known audited scope:** long review/intelligence functions, Shopify catalog imports, repository file loads, taxonomy/matching duplicates, LLM boundaries.
+
+**Implement:**
+
+- Split review recipe load/coverage/selector/response phases using existing support owners; no mutable extraction provenance.
+- Split intelligence deterministic features from final score policy without changing identity ladder or exact-conflict behavior.
+- Move Shopify JSON repository loading/index/lookup into `shopify_repository.py`; keep taxonomy scoring/matching in `shopify_catalog.py`; delete duplicate token/flatten helpers.
+- Keep candidate product pages on normal acquisition/extraction. Keep enrichment unable to change extraction facts/verdicts.
+
+**Slice acceptance:**
+
+- `shopify_catalog.py` <=650 and enrichment package <=2,150 LOC; new repository file has no scoring policy.
+- Review and score long-function entries removed.
+- Intelligence <=3,250 LOC.
+- GTIN/style exact conflicts remain deterministic; LLM cannot override them.
+- No local shadow taxonomy or product-detail scraper is introduced.
+
+**Verify:**
+
+```powershell
+cd C:\Projects\CrawlerAI\backend
+$env:PYTHONPATH='.'
+.\.venv\Scripts\python.exe -m pytest `
+  tests\component\test_review_service.py `
+  tests\component\test_crawls_api_domain_recipe.py `
+  tests\component\test_product_intelligence.py `
+  tests\regression\test_data_enrichment.py `
+  tests\unit\test_final_architecture_ownership.py `
+  -q -m "unit or component or regression"
+```
+
+### Slice 11: LLM Connector Task Closure
+
+**Status:** COMPLETE — VERIFIED 2026-06-23
+**Owners:** `connectors/llm/tasks.py`, existing provider/config/cost owners and tests
+**Fallback docs:** `docs/INVARIANTS.md` Rule 10; LLM section of `docs/BUSINESS_LOGIC.md`.
+**Known audited scope:** `run_prompt_task`, direct/missing-field/review modes, provider calls, cost logging, circuit breaker, fallback/error paths.
+
+**Implement:**
+
+- Split provider invocation, response validation, cost recording, and visible failure projection.
+- Preserve explicit dual gate: run setting and active LLM config.
+- LLM remains gap fill/adjudication only; deterministic values and conflicts win.
+- Delete duplicate prompt/result shaping and obsolete task wrappers.
+
+**Slice acceptance:**
+
+- `run_prompt_task` <=100; connectors <=2,700 LOC.
+- Provider timeout/error is visible and degradable.
+- No LLM call occurs when disabled; no deterministic value is silently replaced.
+
+**Verify:**
+
+```powershell
+cd C:\Projects\CrawlerAI\backend
+$env:PYTHONPATH='.'
+.\.venv\Scripts\python.exe -m pytest `
+  tests\regression\test_llm_runtime.py `
+  tests\regression\test_llm_circuit_breaker.py `
+  tests\component\test_llm_config_service.py `
+  -q -m "unit or component or regression"
+```
+
+### Slice 12: Final Architecture Ratchet, Offline Suite, and Documentation
+
+**Status:** PARTIAL — BACKEND COMPLETE; FRONTEND PRETTIER CHECK BLOCKED BY PRE-EXISTING FILES
+**Owners:** architecture tests, canonical docs, this plan, `ACTIVE.md`; production files only for defects revealed by verification
+**Fallback docs:** canonical docs listed under Authority only when final verification reveals a contract/doc mismatch; do not reread superseded plans/audits.
+**Known audited scope:** deleted symbols/modules, all architecture allowlists, cross-module private imports, config placement, package/file/function counts, legacy fields, public contracts.
+
+**Implement:**
+
+- Remove all five oversized and all 24 long-function debt entries. Do not replace them with new allowlist entries.
+- Add exact package LOC budgets from this plan to the architecture ratchet.
+- Confirm extraction shape gates, no `app.services`, no acquisition `bs4`, no site branches, and no deleted compatibility symbols.
+- Update canonical docs only for ownership/contract changes actually implemented, including `additional_images` and any named new owners.
+- Run Ruff once and the complete offline unit/component/regression suite once; rerun only failures.
+- Record final counts and verification in Notes.
+
+**Slice acceptance:**
+
+- Every global acceptance checkbox is satisfied except the user live gate.
+- `OVERSIZED_MODULE_DEBT` and `LONG_FUNCTION_DEBT` are empty.
+- Package and total LOC budgets pass.
+- Full offline suite passes with regression marker included.
+- Plan status becomes `IN PROGRESS — AWAITING USER 100-SITE GATE`; `ACTIVE.md` still points here.
+
+**Verify:**
+
+```powershell
+cd C:\Projects\CrawlerAI\backend
+$env:PYTHONPATH='.'
+.\.venv\Scripts\python.exe -m ruff check app tests
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+.\.venv\Scripts\python.exe -m pytest tests -q -m "unit or component or regression"
+```
+
+### Slice 13: User 100-Site Gate
+
+**Status:** FAILED — USER-SUPPLIED 97-SITE RESULT REVIEWED
+**Owner:** user/operator
+**Prerequisite:** Q0-Q8 complete, Slices 9-11 closed, and Slice 12 offline closure. This is the only full live catalog/100-site crawl gate for the closure cycle.
+
+The user supplied the latest 97-site crawl result on 2026-06-23. The payload parses to 92 product records, so five attempted sites have no record in the supplied output. The result fails the quality acceptance criteria and reopens Q1-Q8 under the existing QD-01 through QD-13 tracker. Audit summary: `backend/artifacts/test_sites_acceptance/20260623__97_site_gate_audit.json`.
+
+**Acceptance:**
+
+- Zero successful shell/error pages.
+- Zero missing canonical detail URLs.
+- Zero primary images classified as placeholder, utility, logo, payment, loader, navigation, testimonial, or unrelated promo assets.
+- `additional_images` is populated only from product-scoped admissible evidence and contains no primary duplicate.
+- Zero filename/ID/nav/tab titles among successful detail records.
+- Zero non-positive successful prices and zero silent uncorroborated magnitude repairs.
+- Zero contradictory parent availability for complete variant matrices.
+- Zero unexplained loss of explicit captured variants; incomplete evidence has findings.
+- Missing metadata without admissible evidence remains missing with visible findings, never fabricated.
+- Zero extractor-owned mid-word/mid-sentence description truncation; any source-limited excerpt is explicitly diagnosed.
+- Zero generic endpoint/category/style-only titles among successful detail records.
+- Zero cross-product, wrong-colorway, transform-duplicate, or below-threshold primary images when a better captured product asset exists.
+- Parent price semantics are explicit for every mixed-price variant family; no iteration-order price selection.
+- Sized apparel/footwear with captured size controls cannot be quality-clean without resolved size variants or an explicit missing-axis finding.
+- The catalog quality report contains zero unresolved `QD-*` blockers.
+- Where comparable, p50/p95 acquisition latency does not regress more than 10% from the supplied prior gate.
+
+If the gate passes, mark this plan `DONE` and update `ACTIVE.md` to `No active plan.` If it fails, reopen only the owning slice using supplied artifacts; do not start another architecture plan.
+
+## Required Documentation Updates
+
+- [ ] `docs/CODEBASE_MAP.md` — named new owners and moved responsibilities.
+- [ ] `docs/INVARIANTS.md` — additive `additional_images`/asset-role contract and any new violation signatures.
+- [ ] `docs/BUSINESS_LOGIC.md` — title/asset/variant decision ownership if behavior changed.
+- [ ] `docs/ENGINEERING_STRATEGY.md` — only if implementation reveals a new recurring anti-pattern not already covered.
+- [ ] `docs/backend-architecture.md` — final acquisition attempt flow, provenance ownership, and public record contract.
+- [ ] `AGENTS.md` — only if bootstrap routing or always-on warnings change; keep it terse.
+- [ ] Revised feature specification — mark implementation status or supersession; do not rewrite historical rationale.
+
+## Handoff Notes
+
+- Resume at Quality Slice Q0. Do not reopen the repository-wide architecture audit.
+- Do not create another architecture or quality plan. If new evidence appears, assign a `QD-*` ID, append it to the single quality tracker above, attach it to the owning quality slice, and continue this plan.
+- Do not run full live catalogs between quality slices. Build and verify against the frozen JSON/artifacts; reserve the one full live crawl for Slice 13 after all offline gates pass.
+- Before editing, inspect the current working-tree diff for the slice files and preserve user work.
+- Recompute only the slice's file/function counts after edits; recompute the full ledger in Slice 12.
+- Do not mark a slice done from code inspection alone. Run its exact verify command.
+- Stop after one coherent slice. Record files changed, deletions, test result, LOC delta, remaining debt, and next slice here.
+
+### Slice 6 completion note — 2026-06-21
+
+- Fixed still-valid review findings in traversal pagination diagnostics, JSON-LD variant mapping config ownership, test return annotation style, and frontend crawl route sync import semantics.
+- Implemented Slice 6 guards in existing owners: non-positive offer prices are rejected with `NON_POSITIVE_PRICE`; ID/URL-only variants are omitted from public rows and surfaced as `INCOMPLETE_VARIANT_EVIDENCE`; parent availability aggregation requires a complete public variant matrix; explicit variant browser retry now requires captured DOM option cues.
+- Files changed: `backend/app/acquisition/traversal_steps.py`, `backend/app/core/config/field_mappings.py`, `backend/app/extraction/collectors/dom.py`, `backend/app/extraction/collectors/jsonld.py`, `backend/app/extraction/engine.py`, `backend/app/extraction/materialization.py`, `backend/app/extraction/resolution.py`, `backend/app/extraction/result_building.py`, `backend/app/extraction/validation.py`, `backend/tests/unit/test_extraction_pipeline.py`, `frontend/components/crawl/use-crawl-route-sync.ts`, `docs/plans/ACTIVE.md`, and this plan.
+- Deletions: none. Production diff is bounded to existing owners plus one config mapping.
+- Verify passed: Slice 6 exact command `82 passed`; backend Ruff `app tests` passed; scoped Mypy passed for changed backend app files; frontend `npm.cmd run typecheck`, `npm.cmd run lint`, and `npm.cmd run format:check` passed.
+- Remaining debt: no Slice 6-specific test failure remains. Architecture debt ledger still continues with Slice 7 provenance and later slices.
+- Next slice: Slice 7 — Canonical Provenance and Legacy Column Retirement.
+
+### Slice 7 completion note — 2026-06-21
+
+- Retired still-valid mutable provenance writes from `publish/metadata.py`, review promotion, accepted-field commits, and LLM suggestion acceptance; accepted values now update `record.data` only.
+- Kept legacy column fallback read-only through existing canonical artifact readers and narrowed the architecture allowlist to response shaping only.
+- Files changed: `backend/app/crawl/crud.py`, `backend/app/crawl/review/__init__.py`, `backend/app/persistence/publish/__init__.py`, `backend/app/persistence/publish/metadata.py`, `backend/tests/component/test_crawl_service.py`, `backend/tests/component/test_review_service.py`, `backend/tests/unit/test_final_architecture_ownership.py`, `backend/tests/unit/test_publish_metrics.py`, `docs/plans/ACTIVE.md`, and this plan.
+- Deletions: removed `refresh_record_commit_metadata` and its mutation tests.
+- Verify passed: Slice 7 exact command `89 passed`.
+- Remaining debt: legacy schema response shaping still exists until compatibility/migration scope is explicit.
+- Next slice: Slice 8 — Crawl Run Ownership, URL Sessions, and Progress Debt.
+
+### Slice 8 completion note — 2026-06-21
+
+- Split URL failure recovery and URL-owned session execution into pipeline helpers while keeping `process_run` as run lifecycle owner and `process_single_url` as URL workflow owner.
+- Split batch parallel result recording, sequential URL processing, control checkpoints, and run finalization; consolidated run acquisition metric totals by concern.
+- Files changed: `backend/app/crawl/batch_runtime.py`, `backend/app/crawl/pipeline/run_progress.py`, `backend/app/crawl/pipeline/url_failure_recovery.py`, `backend/app/crawl/pipeline/url_worker.py`, `backend/tests/unit/test_final_architecture_ownership.py`, `docs/plans/ACTIVE.md`, and this plan.
+- Deletions: removed `crawl/batch_runtime.py` from oversized-module debt and removed the three crawl long-function debt entries.
+- Verify passed: Slice 8 exact command `101 passed`.
+- Remaining debt: crawl package final LOC ledger remains for Slice 12; Slice 8-specific owner checks pass.
+- Next slice: Slice 9 — Config and Confidence Ownership.
+
+### Slice 9 completion note — 2026-06-23
+
+- Exact focused verification passed: `52 passed` for config security, public-record firewall, publish metrics, and final architecture ownership.
+- Scoped Ruff passed. Scoped Mypy passed for `runtime_settings.py` and `confidence.py`.
+- Canonical architecture LOC gate confirms core remains below the 14,500-line budget and no long-function/config mutation debt remains.
+
+### Slice 10 completion note — 2026-06-23
+
+- Exact focused verification initially found one regression in domain acquisition-contract field coverage: repair-only default fields were being persisted as acquisition success requirements.
+- Fixed the owning policy/profile path by adding canonical `SURFACE_ACQUISITION_CONTRACT_FIELDS` config and `acquisition_contract_fields_for_surface`; repair targets remain unchanged for extraction quality.
+- Exact focused verification then passed: `183 passed` across review, domain recipe, product intelligence, enrichment regression, and architecture ownership tests.
+- Canonical LOC gates pass: `shopify_catalog.py` 271 lines, enrichment 1,045 lines, intelligence 1,751 lines. No long-function or oversized-module debt remains.
+
+### Slice 11 completion note — 2026-06-23
+
+- Exact focused verification passed: `29 passed` across LLM runtime, circuit breaker, and config service tests.
+- Canonical LOC gate confirms connectors 1,469 lines and `run_prompt_task` remains below 100 canonical lines.
+
+### Slice 12 verification note — 2026-06-23
+
+- Added exact package and total canonical LOC budgets to `test_final_architecture_ownership.py`; architecture ownership gate passed with `34 passed`.
+- Complete offline suite passed in marker partitions due tool runtime limits: `449 unit`, `521 component`, and `150 regression` = `1,120 passed`; one test remained outside the requested offline marker set.
+- A unit regression exposed observability using extraction repair targets as audit-required fields. Fixed `run_audit.py` to use the canonical acquisition-contract field set; focused regression `2 passed`, then the unit partition passed.
+- Backend Ruff passed. Venv Mypy initially found one loop-variable inference defect in `core/records/html_helpers.py`; renamed the Tag loop variable in the owning helper. Final Mypy passed for `314 source files`.
+- Frontend typecheck and lint passed. Repository Prettier check failed on 25 pre-existing frontend files, including unrelated dirty `frontend/components/crawl/log-terminal.tsx`. Those files were not reformatted or overwritten.
+- Slice 12 completed on 2026-06-23 after the user-authorized Prettier pass: frontend format check, typecheck, and lint all passed; backend Ruff and Mypy passed; the complete offline unit/component/regression selection passed with `1,120 passed, 1 deselected`.
+- Slice 13 failed on 2026-06-23 using the user-supplied latest 97-site output. Parsed result: 92 records; 25 missing availability, 19 missing brand, 18 missing price, 19 missing currency, 5 missing primary image, 10 missing description, 4 missing title, 10 parent/variant mixed-price families, 86 variants without availability, and one exact primary/gallery duplicate.
+- Confirmed qualitative blockers include a PlayStation image in an iPhone gallery, a Lululemon navigation promo used as primary image, a malformed Louis Vuitton image URL ending in `/Front view`, a Converse primary image requested at 71px, and a 319-character description ending mid-sentence with `Easy On and`.
+- Q1-Q8 are reopened. The plan remains active and must not be marked `DONE` until these failures are fixed offline and a new user gate passes.
+- Reopen validation after the current dirty description/image fixes and Q8 gate correction: `python -m ruff check app harness tests` passed; `python -m mypy --config-file pyproject.toml app harness/quality_evaluator.py` passed for `315 source files`; `python -m pytest tests -q -m "unit or component or regression"` passed with `1,123 passed, 4 deselected`. The plan remains `IN PROGRESS`; this proves offline consistency only, not QD closure against the latest corpus.
+- Incremental QD-09/QD-10 closure work on 2026-06-23: variant price-only offers no longer publish incoherent public variant prices after inheritance; complete mixed variant families now expose explicit `price_min`/`price_max` range lineage without overwriting a stronger parent/default price. Added focused regressions in `tests/unit/test_extraction_pipeline.py` for price/currency atomicity and mixed parent/variant price-range semantics.
+- Incremental verification after QD-09/QD-10 work: focused quality suite passed with `195 passed, 3 deselected`; `python -m ruff check app harness tests` passed; `python -m mypy --config-file pyproject.toml app harness/quality_evaluator.py` passed for `315 source files`; `python -m pytest tests -q -m "unit or component or regression"` passed with `1,125 passed, 4 deselected`; `git diff --check` passed. The plan remains `IN PROGRESS`; latest-run title, brand, required-field recovery, variant-axis, and corpus-specific QD closure are still not done.
+- Incremental QD-03/QD-05/QD-06/QD-09/QD-11 work on 2026-06-23: final detail assessment now downgrades any record with `MISSING_CONTRACT_FIELD` from clean `success`; DOM document title and standard/Twitter metadata are admissible low-priority recovery evidence; explicit registered/trademark markers derive brand evidence; stock quantity derives availability; explicit JSON-LD variant-name segments derive size without synthesizing combinations. Updated the batch runtime success fixture to satisfy the full default detail contract instead of weakening retry behavior.
+- Verification after this increment: focused quality set `tests/unit/test_description_quality.py tests/unit/test_shared_url_utils.py tests/unit/test_extraction_pipeline.py tests/unit/test_catalog_quality_audit.py tests/unit/test_field_policy.py -q` passed with `212 passed, 3 deselected`; `python -m ruff check app harness tests` passed; `python -m mypy --config-file pyproject.toml app harness/quality_evaluator.py` passed for `315 source files`; `python -m pytest tests -q -m "unit or component or regression"` passed with `1,131 passed, 4 deselected`; `git diff --check` passed. The plan remains `IN PROGRESS`; no live crawl was run and corpus-specific closure is still required before `AWAITING USER 100-SITE GATE`.

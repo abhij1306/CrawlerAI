@@ -101,7 +101,9 @@ async def _replay_endpoint(
     surface: str,
     requested_fields: list[str],
 ) -> dict[str, object] | None:
-    method = str(endpoint.get(INTERNAL_API_ENDPOINT_METHOD_KEY) or "GET").strip().upper()
+    method = (
+        str(endpoint.get(INTERNAL_API_ENDPOINT_METHOD_KEY) or "GET").strip().upper()
+    )
     url = str(endpoint.get(INTERNAL_API_ENDPOINT_URL_KEY) or "").strip()
     if method not in INTERNAL_API_ENDPOINT_ALLOWED_METHODS or not url:
         return None
@@ -255,7 +257,9 @@ def payload_extracts_surface(
     if "listing" in surface:
         return _payload_has_listing_row(payload, page_url=page_url)
     if "detail" in surface:
-        return _payload_has_detail_object(payload, surface=surface, requested_fields=requested_fields)
+        return _payload_has_detail_object(
+            payload, surface=surface, requested_fields=requested_fields
+        )
     return False
 
 
@@ -266,7 +270,9 @@ def _payload_has_listing_row(payload: dict[str, object], *, page_url: str) -> bo
             continue
         row = node.value
         title = row.get("title") or row.get("name") or row.get("jobTitle")
-        url = row.get("url") or row.get("href") or row.get("link") or row.get("applyUrl")
+        url = (
+            row.get("url") or row.get("href") or row.get("link") or row.get("applyUrl")
+        )
         if not title or not url:
             continue
         text_url = str(url)
@@ -283,9 +289,28 @@ def _payload_has_detail_object(
     surface: str,
     requested_fields: list[str],
 ) -> bool:
-    requested = {str(field or "").strip().lower() for field in requested_fields if str(field or "").strip()}
-    commerce_keys = {"name", "title", "sku", "price", "pricecurrency", "currency", "offers"}
-    job_keys = {"title", "jobtitle", "hiringorganization", "company", "joblocation", "location"}
+    requested = {
+        str(field or "").strip().lower()
+        for field in requested_fields
+        if str(field or "").strip()
+    }
+    commerce_keys = {
+        "name",
+        "title",
+        "sku",
+        "price",
+        "pricecurrency",
+        "currency",
+        "offers",
+    }
+    job_keys = {
+        "title",
+        "jobtitle",
+        "hiringorganization",
+        "company",
+        "joblocation",
+        "location",
+    }
     key_set = job_keys if "job" in surface else commerce_keys
     for node in walk_json(payload.get("body", payload)):
         if not isinstance(node.value, dict):
@@ -306,7 +331,15 @@ def _blocked_replay_path(url: str) -> bool:
 
 
 def _commerce_detail_keys_are_product_like(keys: set[str]) -> bool:
-    strong_keys = {"sku", "price", "pricecurrency", "currency", "offers", "variants", "hasvariant"}
+    strong_keys = {
+        "sku",
+        "price",
+        "pricecurrency",
+        "currency",
+        "offers",
+        "variants",
+        "hasvariant",
+    }
     return bool(keys & strong_keys)
 
 

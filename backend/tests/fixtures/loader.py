@@ -24,7 +24,9 @@ def read_optional_artifact_text(
     for candidate in candidates:
         if candidate.exists():
             return candidate.read_text(encoding="utf-8", errors="ignore")
-    pytest.skip(f"artifact fixture missing: {candidates[0] if candidates else artifact_path}")
+    pytest.skip(
+        f"artifact fixture missing: {candidates[0] if candidates else artifact_path}"
+    )
     raise RuntimeError("pytest.skip did not abort execution")
 
 

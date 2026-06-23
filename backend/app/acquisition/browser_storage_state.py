@@ -122,14 +122,16 @@ def mark_storage_state_persist_policy(
         setattr(context, RUN_STORAGE_PERSIST_ATTR, persist_run_storage_state)
     except Exception:
         logger.debug(
-            "Failed to set %s on browser context", RUN_STORAGE_PERSIST_ATTR,
+            "Failed to set %s on browser context",
+            RUN_STORAGE_PERSIST_ATTR,
             exc_info=True,
         )
     try:
         setattr(context, DOMAIN_STORAGE_PERSIST_ATTR, persist_domain_storage_state)
     except Exception:
         logger.debug(
-            "Failed to set %s on browser context", DOMAIN_STORAGE_PERSIST_ATTR,
+            "Failed to set %s on browser context",
+            DOMAIN_STORAGE_PERSIST_ATTR,
             exc_info=True,
         )
 

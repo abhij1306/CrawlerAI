@@ -28,19 +28,24 @@ export function useRunLogStream({
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const cursorRef = useRef<number | undefined>(undefined);
 
-  const query = useQuery({
+  const {
+    data: queryData,
+    error: queryError,
+    isFetched: hasFetchedInitialLogs,
+    isLoading: isQueryLoading,
+    refetch,
+  } = useQuery({
     queryKey: queryKeys.runs.logs(runId),
     queryFn: ({ signal }) =>
       api.getCrawlLogs(runId, { limit: CRAWL_DEFAULTS.MAX_LIVE_LOGS }, { signal }),
     enabled,
-    refetchInterval:
-      live && enabled && !socketConnected ? POLLING_INTERVALS.ACTIVE_JOB_MS : false,
+    refetchInterval: live && enabled && !socketConnected ? POLLING_INTERVALS.ACTIVE_JOB_MS : false,
     refetchIntervalInBackground: false,
   });
-  const { refetch } = query;
+
   const logs = useMemo(
-    () => mergeLogs(query.data ?? [], socketLogItems),
-    [query.data, socketLogItems],
+    () => mergeLogs(queryData ?? [], socketLogItems),
+    [queryData, socketLogItems],
   );
   const lastLogId = logs.at(-1)?.id;
 
@@ -54,6 +59,7 @@ export function useRunLogStream({
     const isJsdom = typeof navigator !== 'undefined' && /jsdom/i.test(navigator.userAgent);
     if (
       !enabled ||
+      !hasFetchedInitialLogs ||
       typeof window === 'undefined' ||
       typeof WebSocket === 'undefined' ||
       isJsdom
@@ -91,7 +97,7 @@ export function useRunLogStream({
     };
 
     return () => socket.close();
-  }, [enabled, refetch, refetchRun, runId]);
+  }, [enabled, hasFetchedInitialLogs, refetch, refetchRun, runId]);
 
   useEffect(() => {
     if (!live || !viewportRef.current) {
@@ -103,8 +109,7 @@ export function useRunLogStream({
         return;
       }
       const atBottom =
-        node.scrollHeight - node.scrollTop - node.clientHeight <
-        CRAWL_DEFAULTS.SCROLL_THRESHOLD_PX;
+        node.scrollHeight - node.scrollTop - node.clientHeight < CRAWL_DEFAULTS.SCROLL_THRESHOLD_PX;
       if (atBottom) {
         node.scrollTop = node.scrollHeight;
         setLiveJumpAvailable(false);
@@ -121,7 +126,11 @@ export function useRunLogStream({
   }
 
   return {
-    query,
+    query: {
+      error: queryError,
+      refetch,
+      isLoading: isQueryLoading,
+    },
     logs,
     socketConnected,
     online: enabled && socketConnected,

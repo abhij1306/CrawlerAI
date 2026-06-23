@@ -2,9 +2,16 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any, Callable, Literal, cast
+from urllib.parse import urlsplit
 
+from app.core.config.extraction_rules import (
+    DETAIL_NOT_FOUND_HTTP_STATUS_CODES,
+    DETAIL_SHELL_FINDING_RULE_ID,
+)
+from app.core.records.url_identity import detail_url_is_locale_root
 from app.extraction.contracts import (
     Decision,
+    EntityGraph,
     Evidence,
     ExtractionRequest,
     ExtractionResult,
@@ -14,6 +21,7 @@ from app.extraction.contracts import (
     TargetSelection,
 )
 from app.extraction.entities import EntitySet, build_entities
+from app.extraction.ids import stable_id
 from app.extraction.jobs import (
     collect_job_detail,
     collect_job_listing,
@@ -35,6 +43,7 @@ from app.extraction.pipeline import (
     collect_ecommerce_detail,
     materialize_ecommerce_detail,
     normalize_ecommerce_detail,
+    normalize_ecommerce_price_units,
 )
 from app.extraction.resolution import resolve as resolve_ecommerce_detail
 from app.extraction.result_building import (
@@ -50,7 +59,10 @@ from app.extraction.targeting import (
     select_commerce_target as _select_commerce_target,
     select_subject_targets as _select_subject_targets,
 )
-from app.extraction.validation import validate as validate_ecommerce_detail
+from app.extraction.validation import (
+    validate as validate_ecommerce_detail,
+    validate_selected_contract_fields,
+)
 
 ExtractionVerdict = Literal[
     "success",
@@ -67,13 +79,48 @@ ExtractionVerdict = Literal[
 @dataclass(frozen=True)
 class SurfaceRuntime:
     collect: Callable[[ExtractionRequest, SurfaceSpec], tuple[Evidence, ...]]
-    normalize: Callable[[tuple[Evidence, ...], ExtractionRequest, SurfaceSpec], tuple[Evidence, ...]]
+    normalize: Callable[
+        [tuple[Evidence, ...], ExtractionRequest, SurfaceSpec], tuple[Evidence, ...]
+    ]
     build_graph: Callable[[tuple[Evidence, ...], ExtractionRequest, SurfaceSpec], Any]
-    select_target: Callable[[Any, tuple[Evidence, ...], ExtractionRequest, SurfaceSpec], TargetSelection]
-    validate: Callable[[Any, TargetSelection, tuple[Evidence, ...], ExtractionRequest, SurfaceSpec], tuple[Finding, ...]]
-    resolve: Callable[[Any, tuple[Evidence, ...], tuple[Finding, ...], ExtractionRequest, SurfaceSpec], Any]
-    materialize: Callable[[Any, Any, tuple[Evidence, ...], tuple[Finding, ...], ExtractionRequest, SurfaceSpec], tuple[PublicRecord, ...]]
-    assess: Callable[[tuple[PublicRecord, ...], Any, tuple[Finding, ...], ExtractionRequest, SurfaceSpec], str]
+    select_target: Callable[
+        [Any, tuple[Evidence, ...], ExtractionRequest, SurfaceSpec], TargetSelection
+    ]
+    validate: Callable[
+        [Any, TargetSelection, tuple[Evidence, ...], ExtractionRequest, SurfaceSpec],
+        tuple[Finding, ...],
+    ]
+    resolve: Callable[
+        [
+            Any,
+            tuple[Evidence, ...],
+            tuple[Finding, ...],
+            ExtractionRequest,
+            SurfaceSpec,
+        ],
+        Any,
+    ]
+    materialize: Callable[
+        [
+            Any,
+            Any,
+            tuple[Evidence, ...],
+            tuple[Finding, ...],
+            ExtractionRequest,
+            SurfaceSpec,
+        ],
+        tuple[PublicRecord, ...],
+    ]
+    assess: Callable[
+        [
+            tuple[PublicRecord, ...],
+            Any,
+            tuple[Finding, ...],
+            ExtractionRequest,
+            SurfaceSpec,
+        ],
+        str,
+    ]
 
 
 def extract(request: ExtractionRequest) -> ExtractionResult:
@@ -81,13 +128,28 @@ def extract(request: ExtractionRequest) -> ExtractionResult:
     runtime = _SURFACE_RUNTIMES[spec.surface]
     evidence = runtime.collect(request, spec)
     normalized = runtime.normalize(evidence, request, spec)
+    if request.capture.blocked:
+        return _blocked_extraction_result(request, normalized)
     graph_state = runtime.build_graph(normalized, request, spec)
     target = runtime.select_target(graph_state, normalized, request, spec)
     step_graph = _scoped_graph_for_steps(graph_state, target)
+    if spec.surface == Surface.ECOMMERCE_DETAIL:
+        normalized = normalize_ecommerce_price_units(normalized, step_graph)
     findings = runtime.validate(step_graph, target, normalized, request, spec)
     resolution = runtime.resolve(step_graph, normalized, findings, request, spec)
-    records = runtime.materialize(step_graph, resolution, normalized, findings, request, spec)
-    verdict = cast(ExtractionVerdict, runtime.assess(records, resolution, findings, request, spec))
+    records = runtime.materialize(
+        step_graph, resolution, normalized, findings, request, spec
+    )
+    if spec.surface == Surface.ECOMMERCE_DETAIL:
+        findings = (
+            *findings,
+            *validate_selected_contract_fields(
+                records, request.requested_fields, normalized
+            ),
+        )
+    verdict = cast(
+        ExtractionVerdict, runtime.assess(records, resolution, findings, request, spec)
+    )
     decisions = _decisions(resolution)
     graph = _entity_graph(graph_state, normalized, spec)
     return ExtractionResult(
@@ -100,8 +162,63 @@ def extract(request: ExtractionRequest) -> ExtractionResult:
         decisions=decisions,
         records=records if verdict in {"success", "partial", "review"} else (),
         verdict=verdict,
-        retry_request=_retry_request(verdict, records, request),
-        metrics=_metrics(normalized, graph, target, findings, decisions, records, verdict),
+        retry_request=_retry_request(verdict, records, request, normalized),
+        metrics=_metrics(
+            normalized, graph, target, findings, decisions, records, verdict
+        ),
+    )
+
+
+def _blocked_extraction_result(
+    request: ExtractionRequest,
+    evidence: tuple[Evidence, ...],
+) -> ExtractionResult:
+    finding = Finding(
+        finding_id=stable_id(
+            "finding",
+            request.capture.bundle_id,
+            "ACQUISITION_BLOCKED",
+            request.capture.acquisition_outcome,
+        ),
+        rule_id="ACQUISITION_BLOCKED",
+        severity="critical",
+        scope="page",
+        entity_ids=(),
+        evidence_ids=tuple(row.evidence_id for row in evidence),
+        message=(
+            "Acquisition ended on a blocked or challenge page; "
+            "public records were suppressed."
+        ),
+        blocking=True,
+        metadata={
+            "acquisition_outcome": request.capture.acquisition_outcome,
+            "http_status": request.capture.http_status,
+            "browser_attempted": request.capture.browser_attempted,
+        },
+    )
+    graph = EntityGraph()
+    target = TargetSelection(status="missing")
+    findings = (finding,)
+    return ExtractionResult(
+        surface=request.surface,
+        bundle_id=request.capture.bundle_id,
+        evidence=evidence,
+        graph=graph,
+        target=target,
+        findings=findings,
+        decisions=(),
+        records=(),
+        verdict="blocked",
+        retry_request=None,
+        metrics=_metrics(
+            evidence,
+            graph,
+            target,
+            findings,
+            (),
+            (),
+            "blocked",
+        ),
     )
 
 
@@ -114,7 +231,9 @@ def _identity_normalize(
     return evidence
 
 
-def _collect_detail(request: ExtractionRequest, spec: SurfaceSpec) -> tuple[Evidence, ...]:
+def _collect_detail(
+    request: ExtractionRequest, spec: SurfaceSpec
+) -> tuple[Evidence, ...]:
     del spec
     return collect_ecommerce_detail(
         request.capture,
@@ -123,17 +242,23 @@ def _collect_detail(request: ExtractionRequest, spec: SurfaceSpec) -> tuple[Evid
     )
 
 
-def _collect_listing(request: ExtractionRequest, spec: SurfaceSpec) -> tuple[Evidence, ...]:
+def _collect_listing(
+    request: ExtractionRequest, spec: SurfaceSpec
+) -> tuple[Evidence, ...]:
     del spec
     return tuple(collect_ecommerce_listing(request.capture, request.artifact_reader))
 
 
-def _collect_job_detail(request: ExtractionRequest, spec: SurfaceSpec) -> tuple[Evidence, ...]:
+def _collect_job_detail(
+    request: ExtractionRequest, spec: SurfaceSpec
+) -> tuple[Evidence, ...]:
     del spec
     return tuple(collect_job_detail(request.capture, request.artifact_reader))
 
 
-def _collect_job_listing(request: ExtractionRequest, spec: SurfaceSpec) -> tuple[Evidence, ...]:
+def _collect_job_listing(
+    request: ExtractionRequest, spec: SurfaceSpec
+) -> tuple[Evidence, ...]:
     del spec
     return tuple(collect_job_listing(request.capture, request.artifact_reader))
 
@@ -195,7 +320,9 @@ def _validate_job_detail(
     spec: SurfaceSpec,
 ) -> tuple[Finding, ...]:
     del graph, target, evidence, spec
-    return wrong_surface_findings_for_job_detail(request.capture, request.artifact_reader)
+    return wrong_surface_findings_for_job_detail(
+        request.capture, request.artifact_reader
+    )
 
 
 def _resolve_detail(
@@ -251,13 +378,34 @@ def _materialize_detail(
     spec: SurfaceSpec,
 ) -> tuple[PublicRecord, ...]:
     del findings, spec
+    canonical_url = request.capture.final_url or request.capture.requested_url
+    if urlsplit(canonical_url).path in {"", "/"} or detail_url_is_locale_root(
+        canonical_url
+    ):
+        return ()
+    if request.capture.http_status in DETAIL_NOT_FOUND_HTTP_STATUS_CODES:
+        evidence_by_id = {row.evidence_id: row for row in evidence}
+        accepted_title_ids = {
+            evidence_id
+            for decision in resolution.decisions
+            if decision.fact_type == "product.title" and decision.status == "resolved"
+            for evidence_id in decision.accepted_evidence_ids
+        }
+        if not any(
+            "url_derived_title" not in evidence_by_id[evidence_id].flags
+            for evidence_id in accepted_title_ids
+            if evidence_id in evidence_by_id
+        ):
+            return ()
     record = materialize_ecommerce_detail(
         graph,
         resolution,
         evidence,
-        canonical_url=request.capture.final_url or request.capture.requested_url,
+        canonical_url=canonical_url,
     )
-    return (record,) if record else ()
+    if record is None or detail_url_is_locale_root(str(record.url or "")):
+        return ()
+    return (record,)
 
 
 def _materialize_listing(
@@ -320,15 +468,44 @@ def _assess_detail(
     request: ExtractionRequest,
     spec: SurfaceSpec,
 ) -> str:
-    del findings, spec
+    del spec
     record = records[0] if records else None
-    if _is_shell_record(record):
+    if _is_shell_record(record) or any(
+        finding.rule_id == DETAIL_SHELL_FINDING_RULE_ID for finding in findings
+    ):
         return "error"
-    return assess_ecommerce_detail_quality(
-        record.model_dump(mode="python") if record is not None else {},
+    completeness = next(
+        (
+            float(finding.metadata.get("score", 0.0))
+            for finding in findings
+            if finding.rule_id == "RECORD_COMPLETENESS"
+        ),
+        0.0,
+    )
+    dumped_record = record.model_dump(mode="python") if record is not None else {}
+    verdict = assess_ecommerce_detail_quality(
+        dumped_record,
         resolution,
         request.capture,
+        requested_fields=request.requested_fields,
     )
+    if (
+        verdict in {"success", "partial"}
+        and completeness <= 0.4
+        and not dumped_record.get("variants")
+    ):
+        return "review"
+    if verdict == "success" and any(
+        finding.rule_id
+        in {
+            "EXPECTED_VARIANT_AXIS_MISSING",
+            "MISSING_CONTRACT_FIELD",
+            "VARIANT_AVAILABILITY_MISSING",
+        }
+        for finding in findings
+    ):
+        return "partial"
+    return verdict
 
 
 def _assess_records(

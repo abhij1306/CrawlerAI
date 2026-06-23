@@ -6,18 +6,12 @@ import { STORAGE_KEYS } from '../../lib/constants/storage-keys';
 import { trackEvent } from '../../lib/telemetry/events';
 import type { CategoryMode, CrawlTab, PdpMode } from './shared';
 import { uniqueRequestedFields } from './shared';
-import type {
-  bindCrawlConfigLocalDispatch,
-  CrawlRouteAction,
-} from './crawl-config-state';
-import { isBulkPrefill } from './crawl-config-state';
+import type { CrawlRouteAction } from './crawl-config-state';
+import { bindCrawlConfigLocalDispatch, isBulkPrefill } from './crawl-config-state';
 import { DOMAIN_OPTIONS } from './domain-surface-config';
 import type { CrawlConfigFormValues } from './use-crawl-config';
 
-type LocalDispatch = Pick<
-  ReturnType<typeof bindCrawlConfigLocalDispatch>,
-  'setAdditionalFields'
->;
+type LocalDispatch = Pick<ReturnType<typeof bindCrawlConfigLocalDispatch>, 'setAdditionalFields'>;
 
 type UseCrawlRouteSyncOptions = {
   requestedUrl: string;

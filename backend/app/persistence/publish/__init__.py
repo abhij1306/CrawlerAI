@@ -3,7 +3,6 @@ from __future__ import annotations
 from app.persistence.publish.metadata import (
     load_domain_field_mapping,
     load_domain_requested_fields,
-    refresh_record_commit_metadata,
 )
 from app.persistence.publish.metrics import (
     build_acquisition_profile,
@@ -40,6 +39,5 @@ __all__ = [
     "is_effectively_blocked",
     "load_domain_field_mapping",
     "load_domain_requested_fields",
-    "refresh_record_commit_metadata",
     "run_health_verdict",
 ]

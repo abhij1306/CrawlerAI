@@ -87,10 +87,13 @@ class CrawlRecordResponse(BaseModel):
     raw_html_path: str | None = None
     created_at: datetime
 
-    @field_validator("data", "raw_data", "discovered_data", "source_trace", mode="before")
+    @field_validator(
+        "data", "raw_data", "discovered_data", "source_trace", mode="before"
+    )
     @classmethod
     def _coerce_dict_payload(cls, value: object) -> dict:
         return _dict_payload(value)
+
 
 class DashboardResponse(BaseModel):
     total_runs: int
@@ -219,7 +222,9 @@ class DomainFieldFeedbackRecordResponse(BaseModel):
 
 
 class DomainRunFetchProfile(BaseModel):
-    fetch_mode: Literal["auto", "http_only", "browser_only", "http_then_browser"] = "auto"
+    fetch_mode: Literal["auto", "http_only", "browser_only", "http_then_browser"] = (
+        "auto"
+    )
     extraction_source: Literal[
         "raw_html",
         "rendered_dom",
@@ -228,12 +233,15 @@ class DomainRunFetchProfile(BaseModel):
     ] = "raw_html"
     js_mode: Literal["auto", "enabled", "disabled"] = "auto"
     include_iframes: bool = False
-    traversal_mode: Literal[
-        "scroll",
-        "load_more",
-        "view_all",
-        "paginate",
-    ] | None = None
+    traversal_mode: (
+        Literal[
+            "scroll",
+            "load_more",
+            "view_all",
+            "paginate",
+        ]
+        | None
+    ) = None
     request_delay_ms: int = Field(default=100, ge=0, le=60_000)
     max_pages: int = Field(default=5, ge=1, le=100)
     max_scrolls: int = Field(default=8, ge=0, le=100)
@@ -284,6 +292,7 @@ class CategoryDiscoveryResponse(BaseModel):
     diagnostics: dict[str, object] = Field(default_factory=dict)
     total_found: int
     limit: int
+
 
 class DomainRunLocalityProfile(BaseModel):
     geo_country: str = "auto"
@@ -341,10 +350,18 @@ class DomainRunInternalApiEndpoint(BaseModel):
 class DomainRunProfilePayload(BaseModel):
     version: int = 1
     fetch_profile: DomainRunFetchProfile = Field(default_factory=DomainRunFetchProfile)
-    locality_profile: DomainRunLocalityProfile = Field(default_factory=DomainRunLocalityProfile)
-    diagnostics_profile: DomainRunDiagnosticsProfile = Field(default_factory=DomainRunDiagnosticsProfile)
-    acquisition_contract: DomainRunAcquisitionContract = Field(default_factory=DomainRunAcquisitionContract)
-    internal_api_endpoints: list[DomainRunInternalApiEndpoint] = Field(default_factory=list)
+    locality_profile: DomainRunLocalityProfile = Field(
+        default_factory=DomainRunLocalityProfile
+    )
+    diagnostics_profile: DomainRunDiagnosticsProfile = Field(
+        default_factory=DomainRunDiagnosticsProfile
+    )
+    acquisition_contract: DomainRunAcquisitionContract = Field(
+        default_factory=DomainRunAcquisitionContract
+    )
+    internal_api_endpoints: list[DomainRunInternalApiEndpoint] = Field(
+        default_factory=list
+    )
     source_run_id: int | None = None
     saved_at: datetime | None = None
 
@@ -354,10 +371,16 @@ class DomainRecipeResponse(BaseModel):
     domain: str
     surface: str
     requested_field_coverage: DomainRecipeRequestedCoverage
-    acquisition_evidence: DomainRecipeAcquisitionEvidence = Field(default_factory=DomainRecipeAcquisitionEvidence)
+    acquisition_evidence: DomainRecipeAcquisitionEvidence = Field(
+        default_factory=DomainRecipeAcquisitionEvidence
+    )
     field_learning: list[DomainRecipeFieldLearningItem] = Field(default_factory=list)
-    selector_candidates: list[DomainRecipeSelectorCandidate] = Field(default_factory=list)
-    affordance_candidates: DomainRecipeAffordanceCandidates = Field(default_factory=DomainRecipeAffordanceCandidates)
+    selector_candidates: list[DomainRecipeSelectorCandidate] = Field(
+        default_factory=list
+    )
+    affordance_candidates: DomainRecipeAffordanceCandidates = Field(
+        default_factory=DomainRecipeAffordanceCandidates
+    )
     saved_selectors: list[SelectorRecordResponse] = Field(default_factory=list)
     saved_run_profile: DomainRunProfilePayload | None = None
 
@@ -613,7 +636,7 @@ def _normalize_review_bucket(
                     "key": field_name,
                     "value": field_value,
                     "source": key,
-                }
+                },
             )
     return rows
 
@@ -664,7 +687,9 @@ def _stable_review_value_fingerprint(value: object) -> str:
 
 def serialize_crawl_record_response(value: object) -> CrawlRecordResponse:
     record = CrawlRecordResponse.model_validate(value, from_attributes=True)
-    manifest_trace = _extract_manifest_trace(record.source_trace, record.discovered_data)
+    manifest_trace = _extract_manifest_trace(
+        record.source_trace, record.discovered_data
+    )
     record.data = {
         key: item
         for key, item in record.data.items()

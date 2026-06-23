@@ -30,6 +30,7 @@ from app.core.shared.coerce_primitives import positive_int
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+
 def validate_cookie_policy_config() -> None:
     if settings.cookie_store_dir.exists() and not settings.cookie_store_dir.is_dir():
         raise ValueError(
@@ -125,16 +126,16 @@ async def load_storage_state_for_domain(
                 browser_engine=normalized_engine,
             )
     result = await session.execute(
-            select(DomainCookieMemory)
-            .where(
-                DomainCookieMemory.domain.in_(
-                    _domain_storage_lookup_keys(
-                        normalized_domain,
-                        browser_engine=normalized_engine,
-                    )
+        select(DomainCookieMemory)
+        .where(
+            DomainCookieMemory.domain.in_(
+                _domain_storage_lookup_keys(
+                    normalized_domain,
+                    browser_engine=normalized_engine,
                 )
             )
-            .order_by(DomainCookieMemory.updated_at.desc(), DomainCookieMemory.id.desc())
+        )
+        .order_by(DomainCookieMemory.updated_at.desc(), DomainCookieMemory.id.desc())
     )
     rows = list(result.scalars().all())
     for row in rows:
@@ -290,9 +291,9 @@ async def list_domain_cookie_memory(
                 session=owned_session,
             )
     statement = select(DomainCookieMemory).order_by(
-            DomainCookieMemory.domain.asc(),
-            DomainCookieMemory.updated_at.desc(),
-            DomainCookieMemory.id.desc(),
+        DomainCookieMemory.domain.asc(),
+        DomainCookieMemory.updated_at.desc(),
+        DomainCookieMemory.id.desc(),
     )
     if normalized_domain:
         statement = statement.where(
@@ -309,10 +310,14 @@ async def list_domain_cookie_memory(
                 "domain": _domain_from_storage_key(row.domain),
                 "browser_engine": _storage_row_browser_engine(row),
                 "cookie_count": _storage_state_entry_count(
-                    row.storage_state.get("cookies") if isinstance(row.storage_state, Mapping) else None
+                    row.storage_state.get("cookies")
+                    if isinstance(row.storage_state, Mapping)
+                    else None
                 ),
                 "origin_count": _storage_state_entry_count(
-                    row.storage_state.get("origins") if isinstance(row.storage_state, Mapping) else None
+                    row.storage_state.get("origins")
+                    if isinstance(row.storage_state, Mapping)
+                    else None
                 ),
                 "updated_at": row.updated_at,
             }
@@ -358,10 +363,7 @@ def _domain_storage_key(
     if not normalized_domain:
         return ""
     if normalized_engine and normalized_engine != DEFAULT_STORAGE_STATE_ENGINE:
-        return (
-            f"{normalized_engine}{DOMAIN_STORAGE_SCOPE_SEPARATOR}"
-            f"{normalized_domain}"
-        )
+        return f"{normalized_engine}{DOMAIN_STORAGE_SCOPE_SEPARATOR}{normalized_domain}"
     return normalized_domain
 
 
@@ -377,7 +379,9 @@ def _domain_storage_lookup_keys(
     if normalized_engine == DEFAULT_STORAGE_STATE_ENGINE:
         return (normalized_domain,)
     if normalized_engine:
-        return (_domain_storage_key(normalized_domain, browser_engine=normalized_engine),)
+        return (
+            _domain_storage_key(normalized_domain, browser_engine=normalized_engine),
+        )
     return (
         normalized_domain,
         *(
@@ -421,9 +425,7 @@ def _read_storage_state_file(path: Path) -> dict[str, object] | None:
 
 def _write_storage_state_file(path: Path, storage_state: Mapping[str, object]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp_path = path.with_name(
-        f".{path.name}.{os.getpid()}.{time.monotonic_ns()}.tmp"
-    )
+    tmp_path = path.with_name(f".{path.name}.{os.getpid()}.{time.monotonic_ns()}.tmp")
     payload = json.dumps(storage_state, ensure_ascii=True, indent=2, sort_keys=True)
     try:
         with tmp_path.open("w", encoding="utf-8") as handle:
@@ -499,7 +501,8 @@ def _normalize_cookies(value: object) -> list[dict[str, object]]:
     cookies_by_key: dict[tuple[str, str, str], dict[str, object]] = {}
     rows = (
         list(value)
-        if isinstance(value, Iterable) and not isinstance(value, (str, bytes, bytearray, Mapping))
+        if isinstance(value, Iterable)
+        and not isinstance(value, (str, bytes, bytearray, Mapping))
         else _object_list(value)
     )
     for item in rows:
@@ -517,7 +520,11 @@ def _normalize_cookies(value: object) -> list[dict[str, object]]:
         if _cookie_is_challenge_state(cookie):
             continue
         expires = cookie.get("expires")
-        if isinstance(expires, (int, float)) and float(expires) > 0 and float(expires) <= now:
+        if (
+            isinstance(expires, (int, float))
+            and float(expires) > 0
+            and float(expires) <= now
+        ):
             continue
         key = (
             str(cookie.get("name") or "").strip().lower(),
@@ -535,7 +542,9 @@ def _normalized_browser_engine(value: object) -> str | None:
     return None
 
 
-def _storage_state_browser_engine(storage_state: Mapping[str, object] | object) -> str | None:
+def _storage_state_browser_engine(
+    storage_state: Mapping[str, object] | object,
+) -> str | None:
     if not isinstance(storage_state, Mapping):
         return None
     metadata = storage_state.get(STORAGE_STATE_META_KEY)
@@ -695,6 +704,10 @@ def _cookie_path_matches(request_path: str, cookie_path: str) -> bool:
         return True
     if not normalized_request_path.startswith(normalized_cookie_path):
         return False
-    return normalized_cookie_path.endswith("/") or normalized_request_path[
-        len(normalized_cookie_path) : len(normalized_cookie_path) + 1
-    ] == "/"
+    return (
+        normalized_cookie_path.endswith("/")
+        or normalized_request_path[
+            len(normalized_cookie_path) : len(normalized_cookie_path) + 1
+        ]
+        == "/"
+    )

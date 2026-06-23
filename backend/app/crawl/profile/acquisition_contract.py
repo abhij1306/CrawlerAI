@@ -8,7 +8,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.acquisition.internal_api_replay import learned_internal_api_endpoints
 from app.core.config.domain_profiles import INTERNAL_API_ENDPOINTS_PROFILE_KEY
 from app.core.config.runtime_settings import crawler_runtime_settings
-from app.persistence.publish import VERDICT_BLOCKED, VERDICT_EMPTY, VERDICT_LISTING_FAILED
+from app.persistence.publish import (
+    VERDICT_BLOCKED,
+    VERDICT_EMPTY,
+    VERDICT_LISTING_FAILED,
+)
 
 from .normalization import (
     _BROWSER_ENGINE_VALUES,
@@ -45,11 +49,15 @@ def apply_acquisition_contract_to_profile(
         profile["acquisition_contract_stale"] = True
         return profile
     engine = str(normalized.get("preferred_browser_engine") or "auto").strip().lower()
-    cookie_engine = str(normalized.get("handoff_cookie_engine") or "auto").strip().lower()
+    cookie_engine = (
+        str(normalized.get("handoff_cookie_engine") or "auto").strip().lower()
+    )
     if bool(normalized.get("prefer_browser")) or browser_only:
         profile["prefer_browser"] = True
         profile.setdefault("browser_reason", "acquisition-contract")
-    if engine in {"patchright", "real_chrome"} and not profile.get("forced_browser_engine"):
+    if engine in {"patchright", "real_chrome"} and not profile.get(
+        "forced_browser_engine"
+    ):
         profile["forced_browser_engine"] = engine
     if bool(normalized.get("handoff_eligible")) and not browser_only:
         profile["prefer_curl_handoff"] = True
@@ -107,7 +115,9 @@ def build_success_acquisition_contract(
     handoff_engine = preferred_engine if handoff_eligible else "auto"
     requested = list(requested_fields or [])
     requested_set = set(requested)
-    covered_fields = [field for field in list(found_fields or []) if field in requested_set]
+    covered_fields = [
+        field for field in list(found_fields or []) if field in requested_set
+    ]
     covered_set = set(covered_fields)
     return normalize_acquisition_contract(
         {
@@ -126,9 +136,7 @@ def build_success_acquisition_contract(
                     "requested": requested,
                     "found": covered_fields,
                     "missing": [
-                        field
-                        for field in requested
-                        if field not in covered_set
+                        field for field in requested if field not in covered_set
                     ],
                 },
                 "source_run_id": int(source_run_id or 0),
@@ -247,7 +255,8 @@ async def record_acquisition_contract_outcome(
                 for record in records
                 if isinstance(record, dict)
                 for field_name, value in record.items()
-                if not str(field_name).startswith("_") and value not in (None, "", [], {})
+                if not str(field_name).startswith("_")
+                and value not in (None, "", [], {})
             }
         )
         saved_profile = await save_learned_acquisition_contract(

@@ -34,7 +34,9 @@ class LocalArtifactStorage:
         if not normalized_suffix:
             return ""
         base_path = self._artifact_base_path(run_id=run_id, source_url=source_url)
-        artifact_path = base_path.with_name(f"{base_path.name}.{normalized_suffix}.json")
+        artifact_path = base_path.with_name(
+            f"{base_path.name}.{normalized_suffix}.json"
+        )
         artifact_path.write_text(
             json.dumps(payload, ensure_ascii=True, indent=2, sort_keys=True),
             encoding="utf-8",
@@ -86,5 +88,7 @@ class LocalArtifactStorage:
         safe_run_id = max(int(run_id or 0), 0)
         artifact_dir = self._root_dir / "runs" / str(safe_run_id) / "pages"
         artifact_dir.mkdir(parents=True, exist_ok=True)
-        url_hash = hashlib.sha256(str(source_url or "").encode("utf-8")).hexdigest()[:16]
+        url_hash = hashlib.sha256(str(source_url or "").encode("utf-8")).hexdigest()[
+            :16
+        ]
         return artifact_dir / url_hash

@@ -58,9 +58,7 @@ def test_encrypt_secret_roundtrip_uses_sha256_key_derivation(monkeypatch) -> Non
 def test_decrypt_secret_supports_legacy_padded_key_derivation(monkeypatch) -> None:
     raw_key = "short-but-stable-test-key"
     monkeypatch.setattr(security.settings, "encryption_key", raw_key)
-    legacy_key = base64.urlsafe_b64encode(
-        raw_key.encode("utf-8").ljust(32, b"0")[:32]
-    )
+    legacy_key = base64.urlsafe_b64encode(raw_key.encode("utf-8").ljust(32, b"0")[:32])
     encrypted = Fernet(legacy_key).encrypt(b"provider-secret").decode("utf-8")
 
     assert security.decrypt_secret(encrypted) == "provider-secret"

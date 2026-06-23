@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import logging
 import re
-from collections.abc import Collection, Sequence
+from collections.abc import Sequence
 from decimal import Decimal, InvalidOperation
-from functools import lru_cache, partial
+from functools import partial
 from urllib.parse import urlparse
 
 from app.core.config.data_enrichment import (
@@ -16,10 +16,6 @@ from app.core.config.data_enrichment import (
     DATA_ENRICHMENT_COLOR_CANDIDATE_FIELDS,
     DATA_ENRICHMENT_COLOR_CANDIDATE_SOURCES,
     DATA_ENRICHMENT_COLOR_CANDIDATE_TARGETS,
-    DATA_ENRICHMENT_MATERIAL_CONTEXT_STRIP_PATTERNS,
-    DATA_ENRICHMENT_MATERIAL_FALLBACK_FIELDS,
-    DATA_ENRICHMENT_MATERIAL_PERCENTAGE_RE,
-    DATA_ENRICHMENT_MATERIAL_PRIMARY_FIELDS,
     DATA_ENRICHMENT_PRICE_EFFECTIVE_FIELDS,
     DATA_ENRICHMENT_PRICE_ORIGINAL_FIELDS,
     DATA_ENRICHMENT_SHOPIFY_ATTRIBUTE_CRAWL_FIELDS,
@@ -31,27 +27,31 @@ from app.core.config.data_enrichment import (
     data_enrichment_settings,
 )
 from app.enrichment.shopify_catalog import (
+    top_taxonomy_candidates as shopify_top_taxonomy_candidates,
+)
+from app.enrichment.shopify_repository import (
     attribute_lookup_keys,
     load_attribute_repository_data,
     load_taxonomy_index as load_shopify_taxonomy_index,
-    repository_terms,
-    term_dict,
-    top_taxonomy_candidates as shopify_top_taxonomy_candidates,
 )
-from app.core.shared.regex_patterns import compile_regex_patterns
 from app.core.shared.currency_hints import currency_hint_from_page_url
-from app.core.records.normalizers import normalize_decimal_price
-from app.core.shared.field_coerce import (
-    clean_text,
-    extract_currency_code,
-    strip_html_tags,
-    text_or_none,
-)
+from app.core.shared.field_coerce import clean_text, extract_currency_code, text_or_none
 from app.core.shared.coerce_primitives import object_dict, object_list
+from app.core.shared.material_terms import normalize_materials
+from app.core.shared.value_walk import (
+    candidate_values,
+    decimal_text,
+    first_present,
+    keyword_tokens,
+    split_values,
+    targeted_candidate_values,
+    term_present,
+    tokens,
+    without_empty,
+)
 
 
 logger = logging.getLogger(__name__)
-token_re = re.compile(r"[a-z0-9]+")
 price_range_re = re.compile(
     r"\s*[^\d+-]*([+-]?\d[\d,]*(?:\.\d+)?)\s*(?:to|[-–])\s*"
     r"[^\d+-]*([+-]?\d[\d,]*(?:\.\d+)?)(?:\s*(?:[$€£¥]|usd|eur|gbp|cad|aud|inr|each|ea|per|unit|piece|pc|pcs))?\s*",
@@ -67,7 +67,7 @@ def build_deterministic_enrichment(
         attribute_data["url_category_context"] = url_context
     price_normalized = normalize_price(data, source_url=source_url)
     repository = load_attribute_repository()
-    terms = repository_terms(repository)
+    terms = object_dict(repository.get("normalization_terms"))
     category_candidates = top_taxonomy_candidates(attribute_data)
     category_match = category_candidates[0] if category_candidates else None
     category_path = (
@@ -85,7 +85,7 @@ def build_deterministic_enrichment(
                 *DATA_ENRICHMENT_COLOR_CANDIDATE_SOURCES,
             ),
         ],
-        term_dict(terms, "color_families"),
+        object_dict(terms.get("color_families")),
     )
     size_normalized, size_system = normalize_sizes(
         data,
@@ -97,7 +97,7 @@ def build_deterministic_enrichment(
             data,
             *DATA_ENRICHMENT_SHOPIFY_ATTRIBUTE_CRAWL_FIELDS["gender"],
         ),
-        term_dict(terms, "gender_terms"),
+        object_dict(terms.get("gender_terms")),
     )
     materials_normalized = normalize_materials(data, terms=terms)
     availability_normalized = normalize_from_terms(
@@ -109,7 +109,7 @@ def build_deterministic_enrichment(
                 *DATA_ENRICHMENT_AVAILABILITY_CANDIDATE_SOURCES,
             ),
         ],
-        term_dict(terms, "availability_terms"),
+        object_dict(terms.get("availability_terms")),
     )
     seo_keywords = build_seo_keywords(
         data,
@@ -137,7 +137,9 @@ def build_deterministic_enrichment(
     }
 
 
-def normalize_price(data: dict[str, object], *, source_url: str) -> dict[str, object] | None:
+def normalize_price(
+    data: dict[str, object], *, source_url: str
+) -> dict[str, object] | None:
     raw_price = first_present(
         data,
         *DATA_ENRICHMENT_PRICE_EFFECTIVE_FIELDS,
@@ -169,7 +171,9 @@ def normalize_price(data: dict[str, object], *, source_url: str) -> dict[str, ob
         return None
     normalized: dict[str, object] = {"amount": float(amount), "currency": currency}
     sale_amount = decimal_text(first_present(data, "sale_price", "discounted_price"))
-    original_amount = decimal_text(first_present(data, *DATA_ENRICHMENT_PRICE_ORIGINAL_FIELDS))
+    original_amount = decimal_text(
+        first_present(data, *DATA_ENRICHMENT_PRICE_ORIGINAL_FIELDS)
+    )
     if sale_amount is not None:
         normalized["sale_price"] = float(sale_amount)
     if original_amount is not None:
@@ -183,7 +187,7 @@ def normalize_sizes(
     terms: dict[str, object],
     category_match: dict[str, object] | None = None,
 ) -> tuple[list[str] | None, str | None]:
-    size_config = term_dict(terms, "size_systems")
+    size_config = object_dict(terms.get("size_systems"))
     aliases_value = size_config.get("aliases")
     aliases_dict = aliases_value if isinstance(aliases_value, dict) else {}
     aliases = {str(k).casefold(): str(v) for k, v in aliases_dict.items()}
@@ -203,9 +207,7 @@ def normalize_sizes(
         ),
     ]
     category_supports_size = (
-        category_supports_attribute(category_match, "size")
-        if category_match
-        else False
+        category_supports_attribute(category_match, "size") if category_match else False
     )
     size_context = has_size_context(data)
     if not values and not category_supports_size:
@@ -286,110 +288,9 @@ def has_size_context(data: dict[str, object]) -> bool:
     )
     if not context:
         return False
-    return any(term_present(context, term) for term in DATA_ENRICHMENT_SIZE_CONTEXT_TERMS)
-
-
-def normalize_materials(data: dict[str, object], *, terms: dict[str, object]) -> list[str] | None:
-    material_terms = term_dict(terms, "material_terms")
-    found: list[str] = []
-    seen: set[str] = set()
-    values = candidate_values(data, *DATA_ENRICHMENT_MATERIAL_PRIMARY_FIELDS)
-    fallback_values = candidate_values(data, *DATA_ENRICHMENT_MATERIAL_FALLBACK_FIELDS)
-    for value in values:
-        lowered = clean_text(strip_html_tags(value)).casefold()
-        collect_material_matches(lowered, material_terms, found, seen)
-    for value in fallback_values:
-        lowered = clean_text(strip_html_tags(value)).casefold()
-        collect_material_percentage_matches(lowered, material_terms, found, seen)
-        collect_material_matches(
-            strip_material_context_noise(lowered), material_terms, found, seen
-        )
-    return found or None
-
-
-def collect_material_matches(
-    text: str,
-    material_terms: dict[str, object],
-    found: list[str],
-    seen: set[str],
-) -> None:
-    collect_material_percentage_matches(text, material_terms, found, seen)
-    for canonical, tokens in material_terms.items():
-        if canonical in seen:
-            continue
-        if isinstance(tokens, list) and any(term_present(text, token) for token in tokens):
-            found.append(str(canonical))
-            seen.add(str(canonical))
-
-
-def collect_material_percentage_matches(
-    text: str,
-    material_terms: dict[str, object],
-    found: list[str],
-    seen: set[str],
-) -> None:
-    for material in percentage_material_parse(text):
-        add_material_match(material, material_terms, found, seen)
-
-
-def percentage_material_parse(text: str) -> list[str]:
-    materials: list[str] = []
-    material_token = r"[a-z]+(?:-[a-z]+)?"  # nosec B105
-    material_phrase = rf"{material_token}(?:\s+{material_token}){{0,4}}"
-    patterns = (
-        DATA_ENRICHMENT_MATERIAL_PERCENTAGE_RE,
-        rf"\b(?P<material>{material_phrase})\s*(?P<percent>\d{{1,3}}(?:\.\d+)?)\s*(?:%|percent)\b",
-        rf"\b(?P<percent>\d{{1,3}}(?:\.\d+)?)\s*percent\s*(?P<material>{material_phrase})\b",
+    return any(
+        term_present(context, term) for term in DATA_ENRICHMENT_SIZE_CONTEXT_TERMS
     )
-    for pattern in patterns:
-        for match in re.finditer(pattern, text, re.I):
-            if material := clean_percentage_material(match.group("material")):
-                materials.append(material)
-    return materials
-
-
-def clean_percentage_material(value: object) -> str:
-    material = clean_text(value).casefold()
-    material = re.sub(r"^(?:and|or|with|of|made\s+with|made\s+of)\s+", "", material)
-    material = re.sub(r"^.*\b(?:with|of|contains|composition|fabric)\s+", "", material)
-    material = re.split(r"\b(?:and|or|plus)\b|[,.;:/()]", material, maxsplit=1)[0]
-    return clean_text(material)
-
-
-def add_material_match(
-    value: str,
-    material_terms: dict[str, object],
-    found: list[str],
-    seen: set[str],
-) -> None:
-    normalized = clean_text(value).casefold()
-    for canonical, tokens in material_terms.items():
-        if canonical in seen:
-            continue
-        if normalized == str(canonical).casefold() or (
-            isinstance(tokens, list)
-            and any(term_present(normalized, token) for token in tokens)
-        ):
-            found.append(str(canonical))
-            seen.add(str(canonical))
-            return
-
-
-@lru_cache(maxsize=1)
-def compiled_material_strip_patterns() -> tuple[re.Pattern[str], ...]:
-    return compile_regex_patterns(
-        tuple(DATA_ENRICHMENT_MATERIAL_CONTEXT_STRIP_PATTERNS or ()),
-        logger=logger,
-        warning_message="Skipping invalid material strip pattern: %r",
-        skip_blank=False,
-    )
-
-
-def strip_material_context_noise(value: str) -> str:
-    cleaned = value
-    for pattern in compiled_material_strip_patterns():
-        cleaned = pattern.sub("", cleaned)
-    return clean_text(cleaned)
 
 
 def normalize_from_terms(
@@ -401,15 +302,17 @@ def normalize_from_terms(
             continue
         if lowered in terms and not isinstance(terms[lowered], list):
             return str(terms[lowered])
-        for canonical, tokens in terms.items():
-            if isinstance(tokens, str):
-                if term_present(lowered, canonical) or term_present(lowered, tokens):
-                    return tokens
-            elif isinstance(tokens, list):
+        for canonical, term_tokens in terms.items():
+            if isinstance(term_tokens, str):
+                if term_present(lowered, canonical) or term_present(
+                    lowered, term_tokens
+                ):
+                    return term_tokens
+            elif isinstance(term_tokens, list):
                 canonical_text = clean_text(canonical).casefold().replace(" ", "_")
                 lowered_key = lowered.replace(" ", "_")
                 if canonical_text == lowered_key or any(
-                    term_present(lowered, token) for token in tokens
+                    term_present(lowered, token) for token in term_tokens
                 ):
                     return str(canonical)
     return None
@@ -450,7 +353,9 @@ def build_seo_keywords(
     stopwords = {
         str(item).casefold()
         for item in object_list(
-            repository_terms(load_attribute_repository()).get("seo_stopwords")
+            object_dict(load_attribute_repository().get("normalization_terms")).get(
+                "seo_stopwords"
+            )
         )
     }
     raw_parts = [
@@ -503,9 +408,7 @@ def category_url_context(source_url: object) -> str | None:
         if not path:
             return None
         segments = [
-            segment.strip().casefold()
-            for segment in path.split("/")
-            if segment.strip()
+            segment.strip().casefold() for segment in path.split("/") if segment.strip()
         ]
         for marker in DATA_ENRICHMENT_CATEGORY_URL_CONTEXT_MARKERS:
             if marker not in segments:
@@ -540,11 +443,13 @@ def keyword_stem_key(value: str) -> str:
 
 
 def title_bigrams(tokens: list[str], unigrams: set[str]) -> list[str]:
-    return list(dict.fromkeys(
-        clean_text(f"{first} {second}").casefold()
-        for first, second in zip(tokens, tokens[1:], strict=False)
-        if first in unigrams and second in unigrams
-    ))
+    return list(
+        dict.fromkeys(
+            clean_text(f"{first} {second}").casefold()
+            for first, second in zip(tokens, tokens[1:], strict=False)
+            if first in unigrams and second in unigrams
+        )
+    )
 
 
 def product_attribute_diagnostics(
@@ -578,122 +483,11 @@ def product_attribute_diagnostics(
         "required_attributes": required,
         "recommended_attributes": recommended,
     }
-def candidate_values(data: dict[str, object], *keys: str) -> list[object]:
-    return _candidate_values(data, keys)
 
 
-def targeted_candidate_values(
-    data: dict[str, object], target_keys: Collection[str], *keys: str
-) -> list[object]:
-    return _candidate_values(data, keys, {str(key).casefold() for key in target_keys})
-
-
-def _candidate_values(
-    data: dict[str, object], keys: Sequence[str], target_keys: set[str] | None = None
-) -> list[object]:
-    values: list[object] = []
-    for key in keys:
-        value = data.get(key)
-        if value in (None, "", [], {}):
-            continue
-        if isinstance(value, (dict, list)):
-            values.extend(_flatten_values(value, target_keys=target_keys))
-        else:
-            values.append(value)
-    return values
-
-
-def flatten_values(value: object, max_depth: int | None = None) -> list[object]:
-    return _flatten_values(value, max_depth=max_depth)
-
-
-def flatten_targeted_values(
-    value: object,
-    target_keys: set[str],
-    max_depth: int | None = None,
-) -> list[object]:
-    return _flatten_values(value, max_depth=max_depth, target_keys=target_keys)
-
-
-def _flatten_values(
-    value: object,
-    *,
-    max_depth: int | None = None,
-    target_keys: set[str] | None = None,
-) -> list[object]:
-    if max_depth is None:
-        max_depth = data_enrichment_settings.candidate_flatten_max_depth
-    if max_depth <= 0:
-        return []
-    values: list[object] = []
-    items = value.items() if isinstance(value, dict) else enumerate(value) if isinstance(value, list) else ()
-    for key, item in items:
-        if target_keys is not None and str(key).casefold() in target_keys:
-            if item not in (None, "", [], {}):
-                values.extend(
-                    _flatten_values(item, max_depth=max_depth - 1)
-                    if isinstance(item, (dict, list))
-                    else [item]
-                )
-            continue
-        if isinstance(item, (dict, list)):
-            values.extend(_flatten_values(
-                item, max_depth=max_depth - 1, target_keys=target_keys
-            ))
-        elif target_keys is None:
-            values.append(item)
-    return values
-
-
-def split_values(values: list[object]) -> list[str]:
-    return [
-        cleaned
-        for value in values
-        if (text := clean_text(value))
-        for part in re.split(r"[,/|;·]", text)
-        if (cleaned := clean_text(part))
-    ]
-
-
-def tokens(value: object) -> list[str]:
-    return token_re.findall(clean_text(strip_html_tags(value)).casefold())
-
-
-def keyword_tokens(value: object, stopwords: set[str]) -> list[str]:
-    return [token for token in tokens(value) if len(token) >= 3 and token not in stopwords]
-
-
-def term_present(text: str, term: object) -> bool:
-    normalized = clean_text(term).casefold()
-    return bool(normalized) and (
-        re.search(rf"(?<![a-z0-9]){re.escape(normalized)}(?![a-z0-9])", text)
-        is not None
-    )
-
-
-def decimal_text(value: object) -> Decimal | None:
-    normalized = normalize_decimal_price(value)
-    if normalized is None:
-        normalized = normalize_decimal_price(value, interpret_integral_as_cents=False)
-    if normalized is None:
-        return None
-    try:
-        return Decimal(normalized)
-    except (InvalidOperation, ValueError):
-        return None
-
-
-def first_present(data: dict[str, object], *keys: str) -> object | None:
-    for key in keys:
-        value = data.get(key)
-        if value not in (None, "", [], {}):
-            return value
-    return None
-
-
-def without_empty(value: dict[str, object]) -> dict[str, object]:
-    return {key: item for key, item in value.items() if item not in (None, "", [], {})}
-
-
-load_attribute_repository = partial(load_attribute_repository_data, data_enrichment_settings.attributes_path)
-load_taxonomy_index = partial(load_shopify_taxonomy_index, data_enrichment_settings.taxonomy_path)
+load_attribute_repository = partial(
+    load_attribute_repository_data, data_enrichment_settings.attributes_path
+)
+load_taxonomy_index = partial(
+    load_shopify_taxonomy_index, data_enrichment_settings.taxonomy_path
+)

@@ -20,6 +20,7 @@ def build_alembic_config() -> Config:
     config.set_main_option("sqlalchemy.url", settings.database_url)
     return config
 
+
 def apply_pending_migrations() -> None:
     config = build_alembic_config()
     logger.info("Applying database migrations to head")

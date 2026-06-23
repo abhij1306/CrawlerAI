@@ -32,7 +32,7 @@ _STATIC_EXPORTS: dict[str, Any] = {}
 HYDRATED_STATE_PATTERNS = tuple(
     dict.fromkeys(
         [
-            *( 
+            *(
                 value
                 for value in _STATIC_EXPORTS.get("HYDRATED_STATE_PATTERNS", ())
                 if str(value).strip()
@@ -78,6 +78,56 @@ TRACKING_PIXEL_PATTERNS = (
 )
 DETAIL_SURFACE_KEYWORD = "detail"
 ECOMMERCE_DETAIL_SURFACE = "ecommerce_detail"
+ECOMMERCE_CONTEXT_NOISE_PATH_TOKENS = frozenset(
+    {
+        "alsobought",
+        "also_bought",
+        "crosssell",
+        "cross_sell",
+        "colorwayimages",
+        "colorway_images",
+        "getthelookproducts",
+        "links",
+        "lookproducts",
+        "looks",
+        "peoplealsobought",
+        "people_also_bought",
+        "recommendations",
+        "recommended",
+        "related",
+        "relatedproducts",
+        "related_products",
+        "recentlyviewed",
+        "recently_viewed",
+        "responsivelayouts",
+        "responsive_layouts",
+        "similarproducts",
+        "similar_products",
+        "suggestedproducts",
+        "suggested_products",
+        "upsell",
+        "up_sell",
+        "youmayalsolike",
+        "you_may_also_like",
+    }
+)
+ECOMMERCE_EMBEDDED_STATE_NOISE_SCOPE_TOKENS = frozenset(
+    {
+        "alsobought",
+        "completethelook",
+        "crosssell",
+        "pairswellwith",
+        "productrecommendation",
+        "recommendation",
+        "recentlyviewed",
+        "relatedproduct",
+        "shopthelook",
+        "similarproduct",
+        "suggestedproduct",
+        "upsell",
+        "youmayalsolike",
+    }
+)
 VARIANT_AXIS_EXCLUDED_SINGLE_TOKENS = frozenset({"color", "colour", "fit", "size"})
 VARIANT_COLOR_AXIS_TOKENS = frozenset({"color", "colour"})
 VARIANT_SIZE_AXIS_TOKENS = frozenset({"fit", "size"})
@@ -259,27 +309,58 @@ LISTING_MERCHANDISING_TITLE_PREFIXES = ("shop ", "view all ", "browse ")
 LISTING_NAVIGATION_TITLE_HINTS = frozenset({"home", "menu", "account", "cart"})
 LISTING_SHELL_FRAMEWORK_TOKENS = ("__next", "nuxt", "data-reactroot", "skeleton")
 LISTING_TITLE_CTA_TITLES = frozenset(
-    {"shop now", "learn more", "view all", "see more", "load more"}
+    {"shop now", "learn more", "view all", "view product", "see more", "load more"}
+)
+LISTING_TITLE_CONTROL_ATTRIBUTES = (
+    "aria-checked",
+    "aria-pressed",
+    "aria-selected",
+)
+LISTING_TITLE_CONTROL_MARKERS = (
+    "color-option",
+    "selected-color",
+    "selected_color",
+    "swatch",
 )
 LISTING_UTILITY_TITLE_PATTERNS = (
-    r"^(?:shop now|learn more|view all|load more|sign in|account|cart)$",
+    r"^(?:shop now|learn more|view all|load more|sign in|account|cart|customer service|help|privacy|registry|store locator|support|terms)$",
 )
 LISTING_UTILITY_URL_TOKENS = (
     "/account",
+    "/ambassador",
+    "/athlete",
     "/cart",
     "/checkout",
     "/file-download",
+    "/gift-registry",
+    "/help/",
     "/login",
+    "/legal",
     "/mcp-tools",
+    "/mobile-app",
     "/reviews",
     "/signin",
     "/sitemap",
+    "/store",
+    "/support",
     "/testimonials",
     "/wishlist",
+    "/registry",
     "/api/",
     "/docs",
 )
-LISTING_WEAK_TITLES = frozenset({"product", "item", "image", "details"})
+LISTING_WEAK_TITLES = frozenset(
+    {
+        "best seller",
+        "bestseller",
+        "details",
+        "image",
+        "item",
+        "new color",
+        "new colour",
+        "product",
+    }
+)
 LOW_CONTENT_SHELL_PHRASES = (
     "enable javascript",
     "just a moment",
@@ -419,6 +500,7 @@ def _string_frozenset(value: object) -> frozenset[str]:
         return frozenset()
     return frozenset(str(item).strip() for item in values if str(item).strip())
 
+
 __all__ = [
     "annotations",
     "re",
@@ -454,6 +536,8 @@ __all__ = [
     "TRACKING_PIXEL_PATTERNS",
     "DETAIL_SURFACE_KEYWORD",
     "ECOMMERCE_DETAIL_SURFACE",
+    "ECOMMERCE_CONTEXT_NOISE_PATH_TOKENS",
+    "ECOMMERCE_EMBEDDED_STATE_NOISE_SCOPE_TOKENS",
     "VARIANT_AXIS_EXCLUDED_SINGLE_TOKENS",
     "VARIANT_COLOR_AXIS_TOKENS",
     "VARIANT_SIZE_AXIS_TOKENS",
@@ -500,6 +584,8 @@ __all__ = [
     "LISTING_NAVIGATION_TITLE_HINTS",
     "LISTING_SHELL_FRAMEWORK_TOKENS",
     "LISTING_TITLE_CTA_TITLES",
+    "LISTING_TITLE_CONTROL_ATTRIBUTES",
+    "LISTING_TITLE_CONTROL_MARKERS",
     "LISTING_UTILITY_TITLE_PATTERNS",
     "LISTING_UTILITY_URL_TOKENS",
     "LISTING_WEAK_TITLES",

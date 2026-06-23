@@ -405,7 +405,8 @@ async def _load_row(
                 select(HostProtectionMemory)
                 .where(HostProtectionMemory.host == host)
                 .order_by(
-                    HostProtectionMemory.updated_at.desc(), HostProtectionMemory.id.desc()
+                    HostProtectionMemory.updated_at.desc(),
+                    HostProtectionMemory.id.desc(),
                 )
                 .limit(1)
             )

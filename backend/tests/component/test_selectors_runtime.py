@@ -42,7 +42,9 @@ async def test_create_selector_record_uses_global_unique_ids(db_session) -> None
 
 @pytest.mark.asyncio
 @pytest.mark.component
-async def test_create_selector_record_normalizes_duplicate_ids_before_append(db_session) -> None:
+async def test_create_selector_record_normalizes_duplicate_ids_before_append(
+    db_session,
+) -> None:
     await save_domain_memory(
         db_session,
         domain="one.example",
@@ -95,7 +97,9 @@ async def test_fetch_selector_document_rejects_private_targets() -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.component
-async def test_update_selector_record_returns_committed_memory_timestamps(db_session) -> None:
+async def test_update_selector_record_returns_committed_memory_timestamps(
+    db_session,
+) -> None:
     created = await create_selector_record(
         db_session,
         domain="example.com",

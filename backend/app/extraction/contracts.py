@@ -4,55 +4,49 @@ from typing import Any, Literal, Protocol, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict, Field, SerializeAsAny
 
+from app.core.config.variant_policy import PUBLIC_VARIANT_AXIS_FIELDS
 from app.extraction.surfaces import Surface
 
 JsonValue = Any
 
 PRODUCT_FACTS = frozenset(
-    {
-        "product.url",
-        "product.title",
-        "product.brand",
-        "product.description",
-        "product.category",
-        "product.product_type",
-        "product.sku",
-        "product.mpn",
-        "product.gtin",
-        "product.materials",
-        "product.color",
-        "product.size",
-    }
+    f"product.{field}"
+    for field in (
+        "url",
+        "title",
+        "brand",
+        "description",
+        "category",
+        "product_type",
+        "sku",
+        "mpn",
+        "gtin",
+        "materials",
+        "color",
+        "size",
+    )
 )
 VARIANT_FACTS = frozenset(
     {
-        "variant.id",
-        "variant.sku",
-        "variant.gtin",
-        "variant.url",
-        "variant.selected",
-        "variant.option.size",
-        "variant.option.color",
-        "variant.option.width",
-        "variant.option.length",
-        "variant.option.material",
-        "variant.option.style",
-        "variant.option.capacity",
-        "variant.option.quantity",
+        *(f"variant.{field}" for field in ("id", "sku", "gtin", "url", "selected")),
+        *(f"variant.option.{axis}" for axis in PUBLIC_VARIANT_AXIS_FIELDS),
     }
 )
 OFFER_FACTS = frozenset(
-    {
-        "offer.price",
-        "offer.currency",
-        "offer.original_price",
-        "offer.availability",
-        "offer.stock_quantity",
-        "offer.seller",
-    }
+    f"offer.{field}"
+    for field in (
+        "price",
+        "currency",
+        "original_price",
+        "availability",
+        "stock_quantity",
+        "seller",
+    )
 )
 ASSET_FACTS = frozenset({"asset.image_url", "asset.role", "asset.variant_association"})
-OPTION_FACTS = frozenset({"option.size", "option.color", "option.width", "option.length", "option.material", "option.style", "option.capacity", "option.quantity"})
+OPTION_FACTS = frozenset(
+    f"option.{axis}" for axis in PUBLIC_VARIANT_AXIS_FIELDS
+)
 FACT_TYPES = PRODUCT_FACTS | VARIANT_FACTS | OFFER_FACTS | ASSET_FACTS | OPTION_FACTS
 
 
@@ -171,7 +165,9 @@ class Collector(Protocol):
     collector_id: str
     collector_version: str
 
-    def collect(self, bundle: CaptureBundle, artifacts: ArtifactReader) -> tuple[Evidence, ...]: ...
+    def collect(
+        self, bundle: CaptureBundle, artifacts: ArtifactReader
+    ) -> tuple[Evidence, ...]: ...
 
 
 class RejectedEvidence(FrozenModel):
@@ -231,21 +227,35 @@ class OfferDecision(FrozenModel):
 
 class AssetDecision(FrozenModel):
     asset_entity_id: str | None
+    url: str | None = None
     accepted_evidence_ids: tuple[str, ...]
     role: str = "primary"
+    rank: int = 0
+    rule_id: str = "PRODUCT_ASSET_SELECTION"
     rejection_reasons: tuple[str, ...] = ()
 
 
-class OptionValue(FrozenModel): value: str; evidence_ids: tuple[str, ...] = ()
+class OptionValue(FrozenModel):
+    value: str
+    evidence_ids: tuple[str, ...] = ()
 
-class OptionAxis(FrozenModel): axis: str; values: tuple[OptionValue, ...] = ()
 
-class ProductOptionCatalog(FrozenModel): product_entity_id: str; axes: tuple[OptionAxis, ...] = (); evidence_ids: tuple[str, ...] = ()
+class OptionAxis(FrozenModel):
+    axis: str
+    values: tuple[OptionValue, ...] = ()
+
+
+class ProductOptionCatalog(FrozenModel):
+    product_entity_id: str
+    axes: tuple[OptionAxis, ...] = ()
+    evidence_ids: tuple[str, ...] = ()
 
 
 class ResolutionResult(FrozenModel):
     primary_product_entity_id: str | None
+    primary_offer_entity_id: str | None = None
     decisions: tuple[Decision, ...]
+    asset_decisions: tuple[AssetDecision, ...] = ()
     derived_facts: tuple[DerivedFact, ...]
     unresolved_fact_types: tuple[str, ...]
     blocking_finding_ids: tuple[str, ...]
@@ -272,9 +282,13 @@ class TargetSelection(FrozenModel):
 class CapabilityRequest(FrozenModel):
     schema_version: Literal["capability-request.v1"] = "capability-request.v1"
     required: bool = False
-    reason: Literal["dynamic_content_missing", "explicit_variants_missing", "http_shell"]
+    reason: Literal[
+        "dynamic_content_missing", "explicit_variants_missing", "http_shell"
+    ]
     required_artifacts: tuple[str, ...] = ()
     max_attempts: int = Field(default=1, ge=1, le=1)
+
+
 RetryRequest = CapabilityRequest
 
 
@@ -287,6 +301,7 @@ class ExtractionMetrics(FrozenModel):
     selected_root_ids: tuple[str, ...] = ()
     variant_count: int = 0
     public_lineage_coverage: float = 0.0
+    completeness_score: float = 0.0
     verdict: str | None = None
 
 
@@ -340,10 +355,13 @@ class CommerceDetailRecord(PublicRecord):
     mpn: str | None = None
     gtin: str | None = None
     price: JsonValue | None = None
+    price_min: JsonValue | None = None
+    price_max: JsonValue | None = None
     currency: str | None = None
     original_price: JsonValue | None = None
     availability: str | None = None
     image_url: str | None = None
+    additional_images: tuple[str, ...] = ()
     variants: tuple[CommerceVariantRecord, ...] = ()
 
 
@@ -388,7 +406,14 @@ class ExtractionResult(FrozenModel):
     findings: tuple[Finding, ...] = ()
     decisions: tuple[Decision, ...] = ()
     verdict: Literal[
-        "success", "partial", "review", "invalid", "empty", "blocked", "error", "wrong_surface"
+        "success",
+        "partial",
+        "review",
+        "invalid",
+        "empty",
+        "blocked",
+        "error",
+        "wrong_surface",
     ]
     retry_request: RetryRequest | None = None
     metrics: ExtractionMetrics = Field(default_factory=ExtractionMetrics)

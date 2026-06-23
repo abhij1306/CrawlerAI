@@ -23,10 +23,14 @@ def browser_runtime_snapshot_from_runtimes(
     return {
         "ready": any(bool(snapshot.get("ready")) for snapshot in snapshots),
         "size": sum(_int_or_zero(snapshot.get("size")) for snapshot in snapshots),
-        "max_size": sum(_snapshot_count(snapshot, "max_size", "capacity") for snapshot in snapshots),
+        "max_size": sum(
+            _snapshot_count(snapshot, "max_size", "capacity") for snapshot in snapshots
+        ),
         "active": sum(_int_or_zero(snapshot.get("active")) for snapshot in snapshots),
         "queued": sum(_int_or_zero(snapshot.get("queued")) for snapshot in snapshots),
-        "capacity": sum(_snapshot_count(snapshot, "capacity", "max_size") for snapshot in snapshots),
+        "capacity": sum(
+            _snapshot_count(snapshot, "capacity", "max_size") for snapshot in snapshots
+        ),
         "total_contexts_created": sum(
             _int_or_zero(snapshot.get("total_contexts_created"))
             for snapshot in snapshots
@@ -38,7 +42,9 @@ def browser_runtime_snapshot_from_runtimes(
     }
 
 
-def _snapshot_count(snapshot: dict[str, object], primary_key: str, fallback_key: str) -> int:
+def _snapshot_count(
+    snapshot: dict[str, object], primary_key: str, fallback_key: str
+) -> int:
     primary = _int_or_zero(snapshot.get(primary_key))
     if primary:
         return primary

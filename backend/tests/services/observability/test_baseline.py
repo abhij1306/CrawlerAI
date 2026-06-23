@@ -67,7 +67,9 @@ def test_tier_regression_flagged():
     baseline = _seed()
     flags = baseline_mod.compare_to_baseline(
         baseline,
-        _obs(completed_tiers=["authoritative", "structured_data", "js_state"]),  # no dom
+        _obs(
+            completed_tiers=["authoritative", "structured_data", "js_state"]
+        ),  # no dom
     )
     codes = {f["code"] for f in flags}
     assert audit_rules.FLAG_BASELINE_TIER_REGRESSION in codes

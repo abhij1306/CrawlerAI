@@ -35,7 +35,10 @@ def _has_high_detail_findings(records: Sequence[Mapping[str, Any]] | None) -> bo
         for finding in findings:
             if not isinstance(finding, Mapping):
                 continue
-            if str(finding.get("severity") or "").strip().lower() in {"high", "critical"}:
+            if str(finding.get("severity") or "").strip().lower() in {
+                "high",
+                "critical",
+            }:
                 return True
     return False
 

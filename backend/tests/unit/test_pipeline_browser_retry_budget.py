@@ -79,7 +79,9 @@ async def test_browser_retry_result_allows_only_one_escalation(monkeypatch) -> N
 
 @pytest.mark.asyncio
 @pytest.mark.unit
-async def test_browser_retry_result_skips_when_browser_already_attempted(monkeypatch) -> None:
+async def test_browser_retry_result_skips_when_browser_already_attempted(
+    monkeypatch,
+) -> None:
     async def fake_log(*args, **kwargs):
         return None
 

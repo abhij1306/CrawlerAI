@@ -79,6 +79,81 @@ async def test_rendered_discovery_harvests_category_links_and_rejects_utility(
 
 @pytest.mark.asyncio
 @pytest.mark.component
+async def test_rendered_discovery_rejects_utility_families_and_unrelated_branch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def _fake_fetch(url: str, **_kwargs: object) -> _FetchResult:
+        return _FetchResult(
+            final_url=url,
+            html="""
+            <nav>
+              <a href="/women/bags">Bags</a>
+              <a href="/men/shoes">Men Shoes</a>
+              <a href="/support/contact">Support</a>
+              <a href="/legal/accessibility">Accessibility</a>
+              <a href="/store-directory">Store Directory</a>
+              <a href="/gift-registry">Registry</a>
+              <a href="/mobile-app">App</a>
+              <a href="/app">Download App</a>
+              <a href="/athletes/team">Athletes</a>
+              <a href="/ambassadors">Ambassadors</a>
+              <a href="/vendor-resources">Vendor Resources</a>
+              <a href="/catalog/ads">Catalog Ads</a>
+              <a href="#stores">Stores</a>
+            </nav>
+            """,
+        )
+
+    monkeypatch.setattr(
+        "app.crawl.site_link_discovery.validate_public_target",
+        _valid_target,
+    )
+
+    result = await discover_rendered_category_links(
+        "https://example.com/women",
+        limit=20,
+        max_depth=0,
+        fetch_page_impl=_fake_fetch,
+    )
+
+    assert result.urls == ["https://example.com/women/bags"]
+    assert result.diagnostics["rejected"]["unrelated_branch"] == 1
+    assert result.diagnostics["rejected"]["utility_or_asset"] == 10
+    assert result.diagnostics["rejected"]["self_url"] == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_rendered_validation_does_not_restore_unvalidated_navigation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def _fake_fetch(url: str, **_kwargs: object) -> _FetchResult:
+        if url == "https://example.com":
+            return _FetchResult(
+                final_url=url,
+                html="<nav><a href='/collections/bags'>Bags</a></nav>",
+            )
+        return _FetchResult(final_url=url, html="<main><h1>Bags guide</h1></main>")
+
+    monkeypatch.setattr(
+        "app.crawl.site_link_discovery.validate_public_target",
+        _valid_target,
+    )
+
+    result = await discover_rendered_category_links(
+        "https://example.com",
+        limit=5,
+        max_depth=0,
+        validate_candidates=True,
+        fetch_page_impl=_fake_fetch,
+    )
+
+    assert result.urls == []
+    assert result.diagnostics["rejected"]["validation_no_listing_signal"] == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
 async def test_rendered_discovery_follows_nested_category_links(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

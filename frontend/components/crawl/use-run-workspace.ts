@@ -8,7 +8,12 @@ import { POLLING_INTERVALS } from '../../lib/constants/timing';
 import { useRunStatusFlags } from './use-run-polling';
 
 export function useRunWorkspace(runId: number) {
-  const runQuery = useQuery({
+  const {
+    data: run,
+    error,
+    isLoading,
+    refetch,
+  } = useQuery({
     queryKey: queryKeys.runs.detail(runId),
     queryFn: ({ signal }) => api.getCrawl(runId, { signal }),
     refetchInterval: (query) => {
@@ -20,11 +25,14 @@ export function useRunWorkspace(runId: number) {
     refetchIntervalInBackground: false,
     refetchOnMount: 'always',
   });
-  const run = runQuery.data;
   const { live, terminal } = useRunStatusFlags(run);
 
   return {
-    runQuery,
+    runQuery: {
+      error,
+      isLoading,
+      refetch,
+    },
     run,
     live,
     terminal,

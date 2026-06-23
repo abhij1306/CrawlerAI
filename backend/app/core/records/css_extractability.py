@@ -47,7 +47,9 @@ def requested_content_extractability(
     extractable_fields = recipe_fields | heuristic_fields
     matched_requested_fields = sorted(requested & extractable_fields)
     return {
-        "verified": bool(matched_requested_fields or (not requested and extractable_fields)),
+        "verified": bool(
+            matched_requested_fields or (not requested and extractable_fields)
+        ),
         "matched_requested_fields": matched_requested_fields,
         "extractable_fields": sorted(extractable_fields),
         "section_fields": [],
@@ -75,7 +77,9 @@ def _recipe_fields_with_content(
     return fields
 
 
-def _heuristic_fields_with_content(doc: HtmlDocument, field_scope: set[str]) -> set[str]:
+def _heuristic_fields_with_content(
+    doc: HtmlDocument, field_scope: set[str]
+) -> set[str]:
     selectors = {
         "title": ("h1", "[itemprop='name']", "[data-testid*='title' i]"),
         "name": ("h1", "[itemprop='name']"),

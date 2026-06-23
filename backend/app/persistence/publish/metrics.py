@@ -89,11 +89,12 @@ def build_url_metrics(
     browser_attempted = bool(browser_diagnostics.get("browser_attempted")) or (
         acquisition_result.method == "browser"
     )
-    memory_browser_first = (
-        str(browser_diagnostics.get("browser_reason") or "").strip().lower()
-        in {"host-preference", "acquisition-contract"}
+    memory_browser_first = str(
+        browser_diagnostics.get("browser_reason") or ""
+    ).strip().lower() in {"host-preference", "acquisition-contract"}
+    browser_engine = (
+        str(browser_diagnostics.get("browser_engine") or "").strip().lower() or None
     )
-    browser_engine = str(browser_diagnostics.get("browser_engine") or "").strip().lower() or None
     browser_fetch_method = (
         f"browser:{browser_engine}"
         if acquisition_result.method == "browser" and browser_engine
@@ -136,7 +137,8 @@ def build_url_metrics(
         "traversal_stop_reason": browser_diagnostics.get("traversal_stop_reason"),
         "traversal_attempted": bool(requested_traversal_mode),
         "traversal_succeeded": progress_events > 0,
-        "traversal_fell_back": bool(requested_traversal_mode) and not traversal_activated,
+        "traversal_fell_back": bool(requested_traversal_mode)
+        and not traversal_activated,
         "traversal_fallback_used": bool(
             browser_diagnostics.get("traversal_fallback_used")
         ),

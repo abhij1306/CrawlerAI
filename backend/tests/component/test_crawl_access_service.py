@@ -79,6 +79,6 @@ async def test_require_accessible_record_checks_parent_run_owner(
     with pytest.raises(AccessDeniedError, match="Run not found"):
         await require_accessible_record(db_session, record_id=record.id, user=other)
     with pytest.raises(AccessDeniedError, match="Record not found"):
-        await require_accessible_record(db_session, record_id=record.id + 999, user=test_user)
-
-
+        await require_accessible_record(
+            db_session, record_id=record.id + 999, user=test_user
+        )

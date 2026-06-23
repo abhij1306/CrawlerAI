@@ -14,6 +14,7 @@ from app.core.config.field_mappings import (
     REQUESTED_FIELD_ALIAS_BASES,
     REQUESTED_FIELD_ALIAS_EXTRAS,
     REQUESTED_FIELD_PREFIXES,
+    SURFACE_ACQUISITION_CONTRACT_FIELDS,
     SURFACE_BROWSER_RETRY_TARGETS,
     SURFACE_FIELD_REPAIR_TARGETS,
 )
@@ -60,7 +61,9 @@ def field_allowed_for_surface(
 
 
 def _extend_ecommerce_aliases(aliases: dict[str, list[str]]) -> dict[str, list[str]]:
-    ecommerce_aliases = {canonical: list(values) for canonical, values in aliases.items()}
+    ecommerce_aliases = {
+        canonical: list(values) for canonical, values in aliases.items()
+    }
     for field_name, field_aliases in ECOMMERCE_SURFACE_EXTRA_ALIASES.items():
         bucket = ecommerce_aliases.setdefault(field_name, [])
         for alias in field_aliases:
@@ -111,10 +114,14 @@ def _split_camel_case(text: str) -> list[str]:
     for index, char in enumerate(text):
         previous = text[index - 1] if index else ""
         next_char = text[index + 1] if index + 1 < len(text) else ""
-        if index and char.isupper() and (
-            previous.islower()
-            or previous.isdigit()
-            or (previous.isupper() and next_char.islower())
+        if (
+            index
+            and char.isupper()
+            and (
+                previous.islower()
+                or previous.isdigit()
+                or (previous.isupper() and next_char.islower())
+            )
         ):
             separated.append("_")
         separated.append(char.lower())
@@ -263,6 +270,18 @@ def repair_target_fields_for_surface(
         normalized,
         requested_fields,
         SURFACE_FIELD_REPAIR_TARGETS.get(normalized),
+    )
+
+
+def acquisition_contract_fields_for_surface(
+    surface: str,
+    requested_fields: Iterable[str] | None,
+) -> list[str]:
+    normalized = str(surface or "").strip().lower()
+    return _surface_requested_defaults_union(
+        normalized,
+        requested_fields,
+        SURFACE_ACQUISITION_CONTRACT_FIELDS.get(normalized),
     )
 
 

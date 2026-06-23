@@ -83,7 +83,9 @@ async def test_ok_diagnosis_shaped_from_llm(monkeypatch):
         return LLMTaskResult(
             payload={
                 "summary": "price came from js_state; variants missing",
-                "field_provenance": [{"field": "price", "source": "js_state", "note": ""}],
+                "field_provenance": [
+                    {"field": "price", "source": "js_state", "note": ""}
+                ],
                 "likely_root_cause": "DOM tier skipped before variant cues",
                 "missing_field_reasons": [
                     {"field": "variants", "source": "", "note": "dom skipped"}

@@ -118,7 +118,9 @@ def build_source_trace(
             "status": "found",
             "value": value,
             "sources": _string_list(
-                field_sources.get(str(key), [str(record.get("_source") or "extraction")])
+                field_sources.get(
+                    str(key), [str(record.get("_source") or "extraction")]
+                )
             ),
         }
         selector_trace = selector_traces.get(str(key))
@@ -139,8 +141,12 @@ def build_source_trace(
             "blocked": acquisition_result.blocked,
             "adapter_name": acquisition_result.adapter_name,
             "adapter_source_type": acquisition_result.adapter_source_type,
-            "network_payload_count": len(list(acquisition_result.network_payloads or [])),
-            "browser_diagnostics": mapping_or_empty(acquisition_result.browser_diagnostics),
+            "network_payload_count": len(
+                list(acquisition_result.network_payloads or [])
+            ),
+            "browser_diagnostics": mapping_or_empty(
+                acquisition_result.browser_diagnostics
+            ),
         },
         "extraction": {
             "source": str(record.get("_source") or "extraction"),

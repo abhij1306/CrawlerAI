@@ -104,6 +104,7 @@ async def discover_rendered_category_links(
     fetched_keys: set[str] = set()
     queued_keys: set[str] = {category_url_key(normalized_seed)}
     candidates: dict[str, SiteLinkCandidate] = {}
+    requested_branch = _category_branch(normalized_seed)
 
     while queue and len(fetched_keys) < bounded_pages:
         page_url, depth = queue.popleft()
@@ -144,6 +145,7 @@ async def discover_rendered_category_links(
             origin=origin,
             depth=depth,
             diagnostics=diagnostics,
+            requested_branch=requested_branch,
         )
         for candidate in page_candidates:
             existing = candidates.get(candidate.url)
@@ -170,7 +172,9 @@ async def discover_rendered_category_links(
         )
     selected = ranked[:bounded_limit]
     urls = [candidate.url for candidate in selected]
-    labels = {candidate.url: candidate.label for candidate in selected if candidate.label}
+    labels = {
+        candidate.url: candidate.label for candidate in selected if candidate.label
+    }
     return SitemapResolutionResult(
         urls=urls,
         source="rendered_site_links",
@@ -186,6 +190,7 @@ def _extract_rendered_candidates(
     origin: tuple[str, str, int],
     depth: int,
     diagnostics: SiteLinkDiscoveryDiagnostics,
+    requested_branch: tuple[str, ...] = (),
 ) -> list[SiteLinkCandidate]:
     soup = BeautifulSoup(html or "", "html.parser")
     candidates: list[SiteLinkCandidate] = []
@@ -207,6 +212,12 @@ def _extract_rendered_candidates(
             continue
         if category_link_rejected(candidate_url):
             diagnostics.reject("utility_or_asset")
+            continue
+        if requested_branch and not _matches_requested_branch(
+            candidate_url,
+            requested_branch,
+        ):
+            diagnostics.reject("unrelated_branch")
             continue
         label = _anchor_label(anchor)
         score, reason = _score_candidate(candidate_url, anchor, label)
@@ -244,7 +255,9 @@ def _score_candidate(url: str, anchor: Tag, label: str | None) -> tuple[int, str
     if anchor.find_parent(("nav", "header", "menu")) is not None:
         score += 25
         reasons.append("nav")
-    if any(text_has_token(text, token) for token in SITEMAP_CATEGORY_ANCHOR_TEXT_TOKENS):
+    if any(
+        text_has_token(text, token) for token in SITEMAP_CATEGORY_ANCHOR_TEXT_TOKENS
+    ):
         score += 40
         reasons.append("category_text")
     if path.count("/") > 4:
@@ -257,7 +270,9 @@ def _score_candidate(url: str, anchor: Tag, label: str | None) -> tuple[int, str
     return score, "+".join(reasons)
 
 
-def _rank_candidates(candidates: Iterable[SiteLinkCandidate]) -> list[SiteLinkCandidate]:
+def _rank_candidates(
+    candidates: Iterable[SiteLinkCandidate],
+) -> list[SiteLinkCandidate]:
     best: dict[str, SiteLinkCandidate] = {}
     for candidate in candidates:
         if not isinstance(candidate, SiteLinkCandidate):
@@ -315,13 +330,41 @@ async def _validate_ranked_candidates(
             )
         else:
             diagnostics.reject("validation_no_listing_signal")
-    return kept if kept else ranked
+    return kept
+
+
+def _category_branch(url: str) -> tuple[str, ...]:
+    segments = tuple(
+        segment.casefold()
+        for segment in urlsplit(url).path.split("/")
+        if segment and not _looks_like_locale_segment(segment)
+    )
+    return segments
+
+
+def _matches_requested_branch(url: str, requested_branch: tuple[str, ...]) -> bool:
+    candidate = _category_branch(url)
+    return bool(candidate) and (
+        candidate[: len(requested_branch)] == requested_branch
+        or requested_branch[-1] in candidate
+    )
+
+
+def _looks_like_locale_segment(value: str) -> bool:
+    cleaned = str(value or "").replace("_", "-").casefold()
+    return (len(cleaned) == 2 and cleaned.isalpha()) or (
+        len(cleaned) == 5
+        and cleaned[2] == "-"
+        and cleaned[:2].isalpha()
+        and cleaned[3:].isalpha()
+    )
 
 
 def _html_has_listing_signals(html: str) -> bool:
     soup = BeautifulSoup(html or "", "html.parser")
     productish_nodes = sum(
-        len(soup.select(selector)) for selector in SITE_LINK_DISCOVERY_CARD_SELECTOR_HINTS
+        len(soup.select(selector))
+        for selector in SITE_LINK_DISCOVERY_CARD_SELECTOR_HINTS
     )
     product_links = [
         anchor

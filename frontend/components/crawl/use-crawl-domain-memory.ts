@@ -59,27 +59,36 @@ export function useCrawlDomainMemory({
   const queryEnabled =
     singleUrlMode && deferredLookupReady && Boolean(deferredTargetDomain && deferredSurface);
 
-  const profileQuery = useQuery({
+  const {
+    data: profileData,
+    isSuccess: isProfileSuccess,
+    isError: isProfileError,
+  } = useQuery({
     queryKey: queryKeys.domainRunProfiles.detail(deferredTargetDomain, deferredSurface),
     queryFn: ({ signal }) =>
-      api.getDomainRunProfile({
-        url: deferredTargetUrl,
-        surface: deferredSurface,
-      }, { signal }),
+      api.getDomainRunProfile(
+        {
+          url: deferredTargetUrl,
+          surface: deferredSurface,
+        },
+        { signal },
+      ),
     enabled: queryEnabled,
     staleTime: 30_000,
   });
 
-  const selectorsQuery = useQuery({
+  const {
+    data: selectorsData,
+    isSuccess: isSelectorsSuccess,
+    isError: isSelectorsError,
+    error: selectorsError,
+  } = useQuery({
     queryKey: queryKeys.selectors.list({
       domain: deferredTargetDomain,
       surface: deferredSurface,
     }),
     queryFn: ({ signal }) =>
-      api.listSelectors(
-        { domain: deferredTargetDomain, surface: deferredSurface },
-        { signal },
-      ),
+      api.listSelectors({ domain: deferredTargetDomain, surface: deferredSurface }, { signal }),
     enabled: queryEnabled,
     staleTime: 30_000,
   });
@@ -101,8 +110,8 @@ export function useCrawlDomainMemory({
 
   useEffect(() => {
     if (!queryEnabled) return;
-    if (profileQuery.isSuccess && profileQuery.data) {
-      const response = profileQuery.data;
+    if (isProfileSuccess && profileData) {
+      const response = profileData;
       const savedProfile = response.saved_run_profile;
       localDispatch.setSavedProfileDomain(response.domain);
       if (savedProfile && !profileDirtyRef.current) {
@@ -122,24 +131,18 @@ export function useCrawlDomainMemory({
       if (!savedProfile && !profileDirtyRef.current) {
         localDispatch.setRunProfile(defaultRunProfile());
       }
-    } else if (profileQuery.isError) {
+    } else if (isProfileError) {
       localDispatch.setSavedProfileLoaded(false);
       localDispatch.setSavedProfileDomain('');
       localDispatch.setSavedProfileMessage('');
     }
-  }, [
-    localDispatch,
-    profileQuery.data,
-    profileQuery.isError,
-    profileQuery.isSuccess,
-    queryEnabled,
-  ]);
+  }, [localDispatch, profileData, isProfileError, isProfileSuccess, queryEnabled]);
 
   useEffect(() => {
     if (!queryEnabled) return;
     localDispatch.setFieldConfigError('');
-    if (selectorsQuery.isSuccess && selectorsQuery.data) {
-      const matchingRecords = selectRelevantSelectorRecords(selectorsQuery.data, deferredSurface);
+    if (isSelectorsSuccess && selectorsData) {
+      const matchingRecords = selectRelevantSelectorRecords(selectorsData, deferredSurface);
       if (!matchingRecords.length) {
         setFieldRows((current) => stripDomainMemoryFieldRows(current));
         return;
@@ -147,21 +150,19 @@ export function useCrawlDomainMemory({
       const incomingRows = matchingRecords.map(buildFieldRowFromSelectorRecord);
       setFieldRows((current) => mergeFieldRows(stripDomainMemoryFieldRows(current), incomingRows));
       localDispatch.setFieldRowMessages({});
-    } else if (selectorsQuery.isError) {
+    } else if (isSelectorsError) {
       localDispatch.setFieldConfigError(
-        selectorsQuery.error instanceof Error
-          ? selectorsQuery.error.message
-          : 'Unable to load domain memory.',
+        selectorsError instanceof Error ? selectorsError.message : 'Unable to load domain memory.',
       );
     }
   }, [
     deferredSurface,
     localDispatch,
     queryEnabled,
-    selectorsQuery.data,
-    selectorsQuery.error,
-    selectorsQuery.isError,
-    selectorsQuery.isSuccess,
+    selectorsData,
+    selectorsError,
+    isSelectorsError,
+    isSelectorsSuccess,
     setFieldRows,
   ]);
 

@@ -1,4 +1,5 @@
 """Text identity coercion helpers for public field shaping."""
+
 from __future__ import annotations
 
 import re
@@ -62,6 +63,38 @@ _SKU_DRAFT_PREFIX_RE = re.compile(
 _BARCODE_SEPARATOR_RE = re.compile(r"[\s-]+")
 
 
+def infer_brand_from_title_host(*, title: object, url: str) -> str | None:
+    text = clean_text(title)
+    host = urlparse(str(url or "")).hostname or ""
+    if not text or not host:
+        return None
+    ignored_labels = {"www", "shop", "store", "us", "usa", "uk", "in", "com", "co", "net", "org"}
+    labels = [
+        label
+        for label in host.casefold().split(".")
+        if label and label not in ignored_labels
+    ]
+    if not labels:
+        return None
+    host_token = max(
+        (re.sub(r"[^a-z0-9]+", "", label) for label in labels),
+        key=len,
+        default="",
+    )
+    title_tokens = slug_tokens(text)
+    if not host_token or not title_tokens:
+        return None
+    original_words = text.split()
+    for size in range(min(LISTING_BRAND_MAX_WORDS, len(title_tokens)), 0, -1):
+        for start in range(0, len(title_tokens) - size + 1):
+            candidate = title_tokens[start : start + size]
+            if "".join(candidate) != host_token:
+                continue
+            original = " ".join(original_words[start : start + size]).strip(" |-–—")
+            return original or None
+    return None
+
+
 def infer_brand_from_title_marker(title: object) -> str | None:
     text = clean_text(title)
     if not text:
@@ -84,6 +117,64 @@ def infer_brand_from_title_marker(title: object) -> str | None:
     if not brand or len(slug_tokens(brand)) > LISTING_BRAND_MAX_WORDS:
         return None
     return brand
+
+
+def infer_brand_from_page_identity(
+    *,
+    url: str,
+    title: object,
+    evidence_values: tuple[object, ...],
+    existing_brands: tuple[object, ...] = (),
+) -> str | None:
+    text = clean_text(title)
+    host = urlparse(str(url or "")).hostname or ""
+    labels = [
+        label
+        for label in host.casefold().split(".")
+        if label not in {"", "www", "shop", "store", "us", "usa", "uk", "in", "com", "co", "net", "org"}
+    ]
+    if not text or not labels:
+        return None
+    host_label = max(labels, key=len)
+    host_words = slug_tokens(host_label)
+    compact_host = "".join(host_words)
+    suffixes = ("beauty", "cosmetics", "official", "online", "shop", "store")
+    compact_core = next(
+        (compact_host[: -len(suffix)] for suffix in suffixes if compact_host.endswith(suffix)),
+        compact_host,
+    )
+    generic_host = compact_core in {"example", "invalid", "localhost", "test"}
+    corpus = " ".join(clean_text(value) for value in evidence_values if clean_text(value))
+    corpus_words = corpus.split()
+    title_words = text.split()
+    title_tokens = slug_tokens(text)
+    existing = tuple(clean_text(value) for value in existing_brands if clean_text(value))
+    if existing and title_words:
+        first = "".join(slug_tokens(existing[0]))
+        if first == compact_core and len(title_words) >= 2 and title_words[1].isupper():
+            return " ".join(title_words[:2])
+    for size in range(min(LISTING_BRAND_MAX_WORDS, len(corpus_words)), 0, -1):
+        for start in range(len(corpus_words) - size + 1):
+            candidate = " ".join(corpus_words[start : start + size]).strip(" |-–—")
+            if "".join(slug_tokens(candidate)) in {compact_host, compact_core}:
+                return candidate
+    for brand in existing:
+        compact_brand = "".join(slug_tokens(brand))
+        if compact_brand and compact_core.startswith(compact_brand):
+            remainder = compact_core[len(compact_brand) :]
+            if remainder and remainder.isalpha():
+                return f"{brand} {remainder.capitalize()}"
+    if not generic_host and compact_core and any(
+        compact_core in "".join(slug_tokens(value)) for value in evidence_values
+    ):
+        return compact_core.capitalize()
+    if not generic_host and title_tokens and title_words:
+        first = title_tokens[0]
+        path_tokens = slug_tokens(urlparse(str(url or "")).path)
+        corroborations = sum(first in slug_tokens(value) for value in evidence_values)
+        if first in path_tokens and corroborations >= 2:
+            return title_words[0]
+    return None
 
 
 def infer_brand_from_product_url(*, url: str, title: object) -> str | None:
