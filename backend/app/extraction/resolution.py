@@ -80,25 +80,35 @@ def recover_non_retailer_brand(
     current_tokens = set(semantic_identity_tokens(current))
     if current and (not current_tokens or not current_tokens <= host_tokens):
         return
-    candidates: dict[str, tuple[str, Decision]] = {}
-    for decision in resolution.decisions:
-        if (
-            decision.fact_type != "product.brand"
-            or decision.status != "resolved"
-            or not decision.accepted_evidence_ids
-        ):
+    candidates: dict[str, tuple[str, tuple[str, ...], str | None]] = {}
+    for evidence in evidence_by_id.values():
+        if evidence.fact_type != "product.brand" or _invalid(evidence):
             continue
-        value = str(evidence_by_id[decision.accepted_evidence_ids[0]].value or "").strip()
+        value = str(evidence.value or "").strip()
         tokens = set(semantic_identity_tokens(value))
-        if value and tokens and not tokens <= host_tokens:
-            candidates[value.casefold()] = (value, decision)
+        if not value or not tokens or tokens <= host_tokens:
+            continue
+        key = value.casefold()
+        evidence_ids = tuple(
+            dict.fromkeys((*candidates.get(key, (value, (), None))[1], evidence.evidence_id))
+        )
+        decision_id = next(
+            (
+                decision.decision_id
+                for decision in resolution.decisions
+                if decision.fact_type == "product.brand"
+                and evidence.evidence_id in decision.accepted_evidence_ids
+            ),
+            None,
+        )
+        candidates[key] = (value, evidence_ids, decision_id)
     if len(candidates) != 1:
         return
-    value, decision = next(iter(candidates.values()))
+    value, evidence_ids, decision_id = next(iter(candidates.values()))
     record["brand"] = value
     lineages["brand"] = {
-        "decision_id": decision.decision_id,
-        "evidence_ids": list(decision.accepted_evidence_ids),
+        "decision_id": decision_id,
+        "evidence_ids": list(evidence_ids),
         "rule_id": "non_retailer_brand_recovery",
     }
 

@@ -36,29 +36,54 @@ def retry_request(
     request: ExtractionRequest,
     evidence: tuple[Evidence, ...] = (),
 ) -> RetryRequest | None:
-    if (
-        request.surface.value == "ecommerce_detail"
-        and _explicit_variant_dom_cues(evidence)
-        and _variant_controls_incomplete(records, evidence)
-    ):
+    shell_detected = any(is_shell_record(record) for record in records) or any(
+        DETAIL_SHELL_TITLE_FLAG in row.flags for row in evidence
+    )
+    if verdict == "error" and shell_detected:
         return RetryRequest(
             required=not request.capture.browser_attempted,
+            reason="http_shell",
+            required_artifacts=("rendered_html",),
+        )
+    ecommerce_detail = request.surface.value == "ecommerce_detail"
+    explicit_variants = "variants" in request.requested_fields
+    if (
+        ecommerce_detail
+        and not request.capture.browser_attempted
+        and (
+            (_explicit_variant_dom_cues(evidence) and _variant_controls_incomplete(records, evidence))
+            or (explicit_variants and _variants_missing_or_incomplete(records))
+        )
+    ):
+        return RetryRequest(
+            required=True,
             reason="explicit_variants_missing",
             required_artifacts=("rendered_html", "network_payloads"),
         )
     requested_core_fields = {
         "image_url" if field == "image" else field
         for field in request.requested_fields
-        if field in {"title", "price", "currency", "image", "image_url"}
+        if field
+        in {
+            "title",
+            "brand",
+            "description",
+            "price",
+            "currency",
+            "image",
+            "image_url",
+            "additional_images",
+            "sku",
+            "availability",
+        }
     }
     if (
-        request.surface.value == "ecommerce_detail"
-        and verdict in {"partial", "review"}
-        and records
+        ecommerce_detail
+        and verdict in {"error", "partial", "review"}
         and not request.capture.browser_attempted
-        and (not request.requested_fields or requested_core_fields)
+        and (not request.requested_fields or requested_core_fields or not records)
     ):
-        record = records[0]
+        record = records[0] if records else PublicRecord()
         target_core_fields = requested_core_fields or {
             "title",
             "price",
@@ -70,28 +95,35 @@ def retry_request(
             for field in target_core_fields
             if record.get(field) in (None, "", [], {}, ())
         )
-        if missing_core_fields:
+        if missing_core_fields or not records:
             return RetryRequest(
                 required=True,
                 reason="dynamic_content_missing",
                 required_artifacts=("rendered_html", "network_payloads"),
             )
-    shell_detected = any(is_shell_record(record) for record in records) or any(
-        DETAIL_SHELL_TITLE_FLAG in row.flags for row in evidence
-    )
-    if verdict != "error" or not shell_detected:
-        return None
-    return RetryRequest(
-        required=not request.capture.browser_attempted,
-        reason="http_shell",
-        required_artifacts=("rendered_html",),
-    )
+    return None
 
 
 def _explicit_variant_dom_cues(evidence: tuple[Evidence, ...]) -> bool:
     return any(
         row.collector_id == "dom" and row.fact_type.startswith("option.")
         for row in evidence
+    )
+
+
+def _variants_missing_or_incomplete(records: tuple[PublicRecord, ...]) -> bool:
+    if not records:
+        return True
+    variants = tuple(records[0].get("variants") or ())
+    if not variants:
+        return True
+    return any(
+        not isinstance(variant, dict)
+        or all(
+            variant.get(field) in (None, "", [], {}, ())
+            for field in ("variant_id", "sku", "size", "color", "style")
+        )
+        for variant in variants
     )
 
 

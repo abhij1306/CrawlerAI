@@ -87,6 +87,22 @@ def test_promotional_search_copy_cannot_become_product_description() -> None:
     )
 
 
+@pytest.mark.parametrize(
+    "description",
+    [
+        "Buy Arizona Birko-Flor at Birkenstock US.",
+        "Web PDP Default Layout, Mix and Match Carousel on Home Categories",
+        "Find Velcro Strap Set-up Blazer / Pants and more items on grailed.com",
+    ],
+)
+def test_generic_ui_and_retailer_copy_cannot_become_description(
+    description: str,
+) -> None:
+    result = _extract(_product_html(description=description))
+
+    assert result.records[0].get("description") is None
+
+
 def test_description_ending_with_incomplete_connector_is_rejected() -> None:
     incomplete = (
         "Step into the spotlight with this bracelet. It is comfortable, durable, "

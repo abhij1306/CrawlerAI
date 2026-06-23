@@ -5273,7 +5273,7 @@ def test_variant_offer_without_availability_emits_finding() -> None:
     )
 
 
-def test_missing_requested_variants_without_dom_cues_does_not_request_browser() -> None:
+def test_missing_requested_variants_without_dom_cues_requests_browser() -> None:
     result = extract(
         fixture_request_from_inputs(
             Surface.ECOMMERCE_DETAIL,
@@ -5283,4 +5283,5 @@ def test_missing_requested_variants_without_dom_cues_does_not_request_browser() 
         )
     )
     assert not result.records[0].get("variants")
-    assert result.retry_request is None
+    assert result.retry_request is not None
+    assert result.retry_request.reason == "explicit_variants_missing"

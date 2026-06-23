@@ -195,6 +195,8 @@ def infer_brand_from_product_url(*, url: str, title: object) -> str | None:
             if path_tokens[start : start + len(title_parts)] != title_parts:
                 continue
             brand_tokens = path_tokens[:start]
+            while brand_tokens and brand_tokens[0].isdigit():
+                brand_tokens = brand_tokens[1:]
             if (
                 not brand_tokens
                 or len(brand_tokens) > LISTING_BRAND_MAX_WORDS
@@ -202,6 +204,19 @@ def infer_brand_from_product_url(*, url: str, title: object) -> str | None:
             ):
                 continue
             return " ".join(token.capitalize() for token in brand_tokens)
+        title_anchor = title_parts[: min(2, len(title_parts))]
+        for start in range(1, len(path_tokens) - len(title_anchor) + 1):
+            if path_tokens[start : start + len(title_anchor)] != title_anchor:
+                continue
+            brand_tokens = path_tokens[:start]
+            while brand_tokens and brand_tokens[0].isdigit():
+                brand_tokens = brand_tokens[1:]
+            if (
+                brand_tokens
+                and len(brand_tokens) <= LISTING_BRAND_MAX_WORDS
+                and all(re.search(r"[a-z]", token) for token in brand_tokens)
+            ):
+                return " ".join(token.capitalize() for token in brand_tokens)
     return None
 
 

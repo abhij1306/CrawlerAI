@@ -1,6 +1,45 @@
 {
   "platforms": [
     {
+      "family": "us_commerce_localized",
+      "domain_patterns": [
+        "bombas.com",
+        "kith.com",
+        "31philliplim.com"
+      ],
+      "requires_browser": false,
+      "locality_profile": {
+        "geo_country": "US",
+        "language_hint": "en-US",
+        "currency_hint": "USD",
+        "timezone_id": "America/New_York"
+      }
+    },
+    {
+      "family": "dynamic_commerce_detail",
+      "domain_patterns": [
+        "converse.com",
+        "target.com",
+        "endclothing.com",
+        "shoepalace.com",
+        "puravidabracelets.com",
+        "christianlouboutin.com",
+        "colourpop.com"
+      ],
+      "requires_browser": true,
+      "locality_profile": {
+        "geo_country": "US",
+        "language_hint": "en-US",
+        "currency_hint": "USD",
+        "timezone_id": "America/New_York"
+      },
+      "browser_context_profile": {
+        "service_workers": "allow",
+        "permissions": [],
+        "color_scheme": null
+      }
+    },
+    {
       "family": "bullhorn",
       "domain_patterns": [
         "bullhornstaffing.com"

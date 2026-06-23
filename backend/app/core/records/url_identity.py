@@ -260,13 +260,23 @@ def conflicting_product_asset_urls(
 def _short_numeric_product_asset_conflicts(
     product_values: tuple[object, ...], asset_urls: tuple[str, ...]
 ) -> frozenset[str]:
+    product_text = " ".join(unquote(str(value or "")) for value in product_values)
     product_codes = {
         token
-        for value in product_values
-        for token in re.findall(r"\d+", unquote(str(value or "")))
+        for token in re.findall(r"\d+", product_text)
         if DETAIL_IMAGE_SHORT_STYLE_CODE_MIN_LENGTH
         <= len(token)
         <= DETAIL_IMAGE_SHORT_STYLE_CODE_MAX_LENGTH
+    }
+    product_suffixes = {
+        token
+        for token in re.findall(r"\d+", product_text)
+        if 2 <= len(token) <= 4
+    }
+    product_style_tokens = {
+        token
+        for value in product_values
+        for token in _commerce_identity_tokens(value)
     }
     asset_codes = {
         url: {
@@ -281,15 +291,27 @@ def _short_numeric_product_asset_conflicts(
         }
         for url in asset_urls
     }
-    anchored_codes = product_codes & {
+    exact_anchors = product_codes & {
         token for codes in asset_codes.values() for token in codes
     }
-    if not anchored_codes:
+    suffix_anchors = {
+        suffix
+        for suffix in product_suffixes
+        if any(
+            code.endswith(suffix)
+            and product_style_tokens & _commerce_identity_tokens(url)
+            for url, codes in asset_codes.items()
+            for code in codes
+        )
+    }
+    if not exact_anchors and not suffix_anchors:
         return frozenset()
     return frozenset(
         url
         for url, codes in asset_codes.items()
-        if codes and anchored_codes.isdisjoint(codes)
+        if codes
+        and exact_anchors.isdisjoint(codes)
+        and not any(code.endswith(suffix) for code in codes for suffix in suffix_anchors)
     )
 
 

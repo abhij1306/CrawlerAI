@@ -96,6 +96,7 @@ DETAIL_DESCRIPTION_UI_PATTERNS = (
     r"^\s*(?:fabric|material|finish|color|colour|size)\s+selection\b",
     r"^\s*read\s+reviews?\s+and\s+buy\b",
     r"\bchoose\s+from\s+(?:contactless|same[- ]day|drive[- ]up|order\s+pickup)\b",
+    r"\b(?:web\s+pdp|default\s+layout|mix\s+and\s+match\s+carousel|home\s+categories)\b",
 )
 DETAIL_DESCRIPTION_HARD_BOUNDARY_LENGTHS = frozenset({320})
 DETAIL_DESCRIPTION_INCOMPLETE_ENDING_PATTERN = (
@@ -103,10 +104,12 @@ DETAIL_DESCRIPTION_INCOMPLETE_ENDING_PATTERN = (
 )
 DETAIL_DESCRIPTION_PROMOTIONAL_PATTERNS = (
     r"\b(?:buy now|free shipping|lowest prices?|exclusive offers?|fast delivery)\b",
-    r"^\s*(?:shop|buy|find|browse)\b.{0,220}\b(?:online|sale|shipping|delivery|price|today|shop\s+now)\b",
+    r"^\s*(?:shop|buy|find|browse)\b.{0,220}\b(?:online|sale|shipping|delivery|price|today|shop\s+now|more\s+items?)\b",
     r"^\s*searching\s+for\b.{0,220}\b(?:we(?:'|’)ve\s+got|shop|discover)\b",
     r"\b(?:search results?|product directory|shopping directory|compare prices?)\b",
     r"\bget\s+your\s+pair\s+of\b.{0,120}\bnow\b",
+    r"^\s*buy\b.{0,180}\bat\b.{0,80}\b(?:us|uk|online|store)\b",
+    r"^\s*find\b.{0,180}\band\s+more\s+items?\s+on\b",
 )
 DETAIL_LOW_SIGNAL_LONG_TEXT_VALUES = frozenset(
     {
