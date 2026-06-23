@@ -362,6 +362,7 @@ class CommerceDetailRecord(PublicRecord):
     availability: str | None = None
     image_url: str | None = None
     additional_images: tuple[str, ...] = ()
+    variant_count: int = 0
     variants: tuple[CommerceVariantRecord, ...] = ()
 
 

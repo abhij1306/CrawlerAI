@@ -94,6 +94,8 @@ DETAIL_MICRODATA_NON_PRODUCT_ITEMTYPE_TOKENS = frozenset(
 DETAIL_DESCRIPTION_UI_PATTERNS = (
     r"^\s*(?:please\s+)?(?:choose|select)\s+(?:(?:a|your|the)\s+)?(?:fabric|material|finish|color|colour|size)\b",
     r"^\s*(?:fabric|material|finish|color|colour|size)\s+selection\b",
+    r"^\s*read\s+reviews?\s+and\s+buy\b",
+    r"\bchoose\s+from\s+(?:contactless|same[- ]day|drive[- ]up|order\s+pickup)\b",
 )
 DETAIL_DESCRIPTION_HARD_BOUNDARY_LENGTHS = frozenset({320})
 DETAIL_DESCRIPTION_INCOMPLETE_ENDING_PATTERN = (
@@ -101,8 +103,10 @@ DETAIL_DESCRIPTION_INCOMPLETE_ENDING_PATTERN = (
 )
 DETAIL_DESCRIPTION_PROMOTIONAL_PATTERNS = (
     r"\b(?:buy now|free shipping|lowest prices?|exclusive offers?|fast delivery)\b",
-    r"^\s*(?:shop|buy|find)\b.{0,220}\b(?:online|sale|shipping|delivery|price)\b",
+    r"^\s*(?:shop|buy|find|browse)\b.{0,220}\b(?:online|sale|shipping|delivery|price|today|shop\s+now)\b",
+    r"^\s*searching\s+for\b.{0,220}\b(?:we(?:'|’)ve\s+got|shop|discover)\b",
     r"\b(?:search results?|product directory|shopping directory|compare prices?)\b",
+    r"\bget\s+your\s+pair\s+of\b.{0,120}\bnow\b",
 )
 DETAIL_LOW_SIGNAL_LONG_TEXT_VALUES = frozenset(
     {
@@ -218,6 +222,10 @@ DETAIL_TITLE_REJECT_VALUES = (
 )
 DETAIL_TITLE_CODE_ONLY_PATTERN = r"^(?=.{4,40}$)(?=.*\d)[A-Za-z0-9._-]+$"
 DETAIL_TITLE_IDENTIFIER_ONLY_PATTERN = r"^(?=.{2,80}$)(?=.*\d)(?:[A-Za-z]{0,4}\d[A-Za-z0-9]*|[A-Za-z]|\d+)(?:[\s._-]+(?:[A-Za-z]{0,4}\d[A-Za-z0-9]*|[A-Za-z]|\d+))*$"
+DETAIL_TITLE_INTERNAL_SYSTEM_PATTERN = (
+    r"^(?=.{12,120}$)(?=.*\d)(?=(?:.*\b(?:core|eva|unit|variant|style|model|base)\b){2,})"
+    r"(?:[a-z0-9]+[\s_-]+){3,}[a-z0-9]+$"
+)
 DETAIL_TITLE_PATH_EXTENSION_PATTERN = r"\.(?:aspx?|html?|jsp|php)$"
 DETAIL_TITLE_ENDPOINT_FILENAME_PATTERN = (
     r"^(?:product|detail|pdp|item|catalog|view)(?:\.(?:do|action|aspx?|html?|jsp|php))?$"

@@ -18,7 +18,12 @@ from app.core.config.extraction_rules import (
 from app.core.config.variant_policy import DETAIL_PARENT_OFFER_INHERITANCE_RULE_ID
 from app.core.records.url_identity import detail_title_from_url, semantic_identity_tokens
 from app.core.shared.field_coerce import sanitize_option_scalar
+from app.core.shared.url_utils import public_asset_delivery_url
 from app.extraction.entities import EntitySet, OfferEntity
+from app.extraction.resolution import (
+    inherit_variant_id_from_sku,
+    recover_non_retailer_brand,
+)
 
 PUBLIC_MAP = {
     "product.url": "url",
@@ -109,6 +114,7 @@ def materialize(
         by_id,
         derived,
     )
+    recover_non_retailer_brand(record, lineages, resolution, by_id, canonical_url)
     _materialize_product_assets(record, lineages, resolution.asset_decisions)
     if not record.get("url"):
         record["url"] = canonical_url
@@ -120,6 +126,7 @@ def materialize(
         product_url=str(record.get("url") or canonical_url),
     )
     if variants:
+        record["variant_count"] = len(variants)
         record["variants"] = variants
         lineages["variants"] = variant_lineage
         _cohere_parent_offer(record, lineages, variants, variant_lineage)
@@ -138,11 +145,38 @@ def materialize(
         by_id,
         derived,
     )
+    field_sources = _field_sources_from_lineage(lineages, by_id)
+    if field_sources:
+        record["_field_sources"] = field_sources
     if lineages:
         record["_lineage"] = lineages
     if selector_traces:
         record["_selector_traces"] = selector_traces
     return _typed_detail_record(record)
+
+
+def _field_sources_from_lineage(
+    lineages: dict[str, object],
+    evidence_by_id: dict[str, Evidence],
+) -> dict[str, list[str]]:
+    sources: dict[str, list[str]] = {}
+    for field_name, raw_lineage in lineages.items():
+        if not isinstance(raw_lineage, dict):
+            continue
+        evidence_ids = raw_lineage.get("evidence_ids")
+        if not isinstance(evidence_ids, list):
+            continue
+        collector_ids: list[str] = []
+        for evidence_id in evidence_ids:
+            evidence = evidence_by_id.get(str(evidence_id))
+            collector_id = str(getattr(evidence, "collector_id", "") or "").strip()
+            if collector_id and collector_id not in collector_ids:
+                collector_ids.append(collector_id)
+        if collector_ids:
+            sources[field_name] = collector_ids
+    if "url" in lineages and "url" not in sources:
+        sources["url"] = ["url"]
+    return sources
 
 
 def _recover_unique_same_product_scalars(
@@ -361,13 +395,21 @@ def _cohere_parent_offer(
     variant_lineage: list[dict[str, object]],
 ) -> None:
     variants, variant_lineage = _leaf_variant_rows(variants, variant_lineage)
-    for field in ("price", "currency", "original_price"):
+    for field in ("price", "currency", "original_price", "sku"):
         values = [row.get(field) for row in variants]
-        if not values or any(value in (None, "", [], {}, ()) for value in values):
+        if (
+            (field == "sku" and len(variants) != 1)
+            or not values
+            or any(value in (None, "", [], {}, ()) for value in values)
+        ):
             continue
         unique_values = {str(value) for value in values}
         aggregate_value: object = values[0]
-        aggregate_rule = "uniform_variant_offer_aggregate"
+        aggregate_rule = (
+            "single_variant_sku_to_parent"
+            if field == "sku"
+            else "uniform_variant_offer_aggregate"
+        )
         if len(unique_values) != 1:
             if field != "price":
                 continue
@@ -631,6 +673,7 @@ def _variant_public_row(
         if decision and decision.accepted_evidence_ids:
             row[field] = by_id[decision.accepted_evidence_ids[0]].value
             lineage_row[field] = lineage(decision=decision)
+    inherit_variant_id_from_sku(row, lineage_row)
     _variant_option_fields(row, lineage_row, variant, decisions, by_id)
     _variant_offer_fields(row, lineage_row, variant, offer, decisions, derived, by_id)
     _variant_asset_field(row, lineage_row, asset, decisions, by_id)
@@ -746,17 +789,20 @@ def _materialize_product_assets(
     primary = next((item for item in selected if item.role == "primary"), None)
     if primary is None:
         return
-    record["image_url"] = primary.url
+    primary_url = public_asset_delivery_url(primary.url)
+    if not primary_url:
+        return
+    record["image_url"] = primary_url
     lineages["image_url"] = _asset_lineage(primary)
-    primary_url = str(primary.url)
     additional: list[str] = []
     additional_lineage: list[dict[str, object]] = []
     for item in selected:
-        if item.role != "additional" or str(item.url) == primary_url:
+        candidate_url = public_asset_delivery_url(item.url)
+        if item.role != "additional" or not candidate_url or candidate_url == primary_url:
             continue
-        if str(item.url) in additional:
+        if candidate_url in additional:
             continue
-        additional.append(str(item.url))
+        additional.append(candidate_url)
         additional_lineage.append(_asset_lineage(item))
     if additional:
         record["additional_images"] = tuple(additional)

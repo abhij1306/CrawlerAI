@@ -6,6 +6,8 @@ from urllib.parse import unquote, urlparse
 from app.core.config.extraction_rules import (
     DETAIL_IMAGE_IDENTITY_ALNUM_MIN_LENGTH,
     DETAIL_IMAGE_IDENTITY_NUMERIC_MIN_LENGTH,
+    DETAIL_IMAGE_SHORT_STYLE_CODE_MAX_LENGTH,
+    DETAIL_IMAGE_SHORT_STYLE_CODE_MIN_LENGTH,
     DETAIL_IMAGE_OPAQUE_HEX_MIN_LENGTH,
     DETAIL_TITLE_ENDPOINT_FILENAME_PATTERN,
     DETAIL_TITLE_PATH_EXTENSION_PATTERN,
@@ -248,8 +250,46 @@ def conflicting_product_asset_urls(
         and any(product_tokens & tokens for tokens in asset_tokens.values())
         else frozenset()
     )
-    return code_conflicts | _semantic_product_asset_conflicts(
-        product_values, asset_urls
+    return (
+        code_conflicts
+        | _semantic_product_asset_conflicts(product_values, asset_urls)
+        | _short_numeric_product_asset_conflicts(product_values, asset_urls)
+    )
+
+
+def _short_numeric_product_asset_conflicts(
+    product_values: tuple[object, ...], asset_urls: tuple[str, ...]
+) -> frozenset[str]:
+    product_codes = {
+        token
+        for value in product_values
+        for token in re.findall(r"\d+", unquote(str(value or "")))
+        if DETAIL_IMAGE_SHORT_STYLE_CODE_MIN_LENGTH
+        <= len(token)
+        <= DETAIL_IMAGE_SHORT_STYLE_CODE_MAX_LENGTH
+    }
+    asset_codes = {
+        url: {
+            token
+            for token in re.findall(
+                r"\d+",
+                urlparse(unquote(str(url or ""))).path.rsplit("/", 1)[-1],
+            )
+            if DETAIL_IMAGE_SHORT_STYLE_CODE_MIN_LENGTH
+            <= len(token)
+            <= DETAIL_IMAGE_SHORT_STYLE_CODE_MAX_LENGTH
+        }
+        for url in asset_urls
+    }
+    anchored_codes = product_codes & {
+        token for codes in asset_codes.values() for token in codes
+    }
+    if not anchored_codes:
+        return frozenset()
+    return frozenset(
+        url
+        for url, codes in asset_codes.items()
+        if codes and anchored_codes.isdisjoint(codes)
     )
 
 

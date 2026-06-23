@@ -36,6 +36,7 @@ from app.core.config.extraction_rules import (
     DETAIL_TITLE_ENDPOINT_FILENAME_PATTERN,
     DETAIL_TITLE_GENERIC_CATEGORY_VALUES,
     DETAIL_TITLE_IDENTIFIER_ONLY_PATTERN,
+    DETAIL_TITLE_INTERNAL_SYSTEM_PATTERN,
     DETAIL_TITLE_MEASUREMENT_FLAG,
     DETAIL_TITLE_MEASUREMENT_PATTERN,
     DETAIL_TITLE_PATH_EXTENSION_PATTERN,
@@ -579,8 +580,12 @@ def _title_flags(evidence: Evidence, *, value: str, page_url: str) -> set[str]:
         DETAIL_TITLE_ENDPOINT_FILENAME_PATTERN, value.strip(), re.IGNORECASE
     ):
         flags.add("filename_title")
-    if re.fullmatch(DETAIL_TITLE_CODE_ONLY_PATTERN, value.strip()) or re.fullmatch(
-        DETAIL_TITLE_IDENTIFIER_ONLY_PATTERN, value.strip()
+    if (
+        re.fullmatch(DETAIL_TITLE_CODE_ONLY_PATTERN, value.strip())
+        or re.fullmatch(DETAIL_TITLE_IDENTIFIER_ONLY_PATTERN, value.strip())
+        or re.fullmatch(
+            DETAIL_TITLE_INTERNAL_SYSTEM_PATTERN, value.strip(), re.IGNORECASE
+        )
     ):
         flags.add("code_only_title")
     if re.fullmatch(DETAIL_TITLE_MEASUREMENT_PATTERN, value.strip(), re.IGNORECASE):

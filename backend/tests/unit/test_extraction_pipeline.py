@@ -352,6 +352,8 @@ def test_materializes_once_with_lineage_and_quality() -> None:
     assert record["availability"] == "in_stock"
     assert result.verdict == "success"
     assert record["_lineage"]["price"]["derived_fact_id"]
+    assert record["_field_sources"]["title"] == ["jsonld"]
+    assert record["_field_sources"]["price"] == ["jsonld"]
     assert result.evidence
     assert "selected" not in record["variants"][0]
 
@@ -632,6 +634,7 @@ def test_jsonld_product_group_uses_shade_as_color_axis() -> None:
     result = _extract("ecommerce_detail", html, "https://shop.test/products/eye-shadow")
     assert result.records[0]["variants"] == [
         {
+            "variant_id": "MY6RPE",
             "sku": "MY6RPE",
             "price": "25.00",
             "currency": "USD",
@@ -716,8 +719,8 @@ def test_jsonld_sibling_products_linked_to_group_materialize_as_variants() -> No
     result = _extract("ecommerce_detail", html, "https://shop.test/products/kids-tank")
 
     assert result.records[0]["variants"] == [
-        {"sku":"TANK-12","price":"70.00","currency":"USD","availability":"in_stock","color":"Green","size":"12Y"},
-        {"sku":"TANK-8","price":"70.00","currency":"USD","availability":"in_stock","color":"Green","size":"8Y"},
+        {"variant_id":"TANK-12","sku":"TANK-12","price":"70.00","currency":"USD","availability":"in_stock","color":"Green","size":"12Y"},
+        {"variant_id":"TANK-8","sku":"TANK-8","price":"70.00","currency":"USD","availability":"in_stock","color":"Green","size":"8Y"},
     ]
 
 
@@ -778,6 +781,7 @@ def test_js_state_image_dimensions_do_not_materialize_as_variants() -> None:
     )
     assert result.records[0]["variants"] == [
         {
+            "variant_id": "2775096",
             "sku": "2775096",
             "price": "24.00",
             "currency": "USD",
@@ -2635,8 +2639,8 @@ def test_product_container_sizes_use_matching_product_offer_only() -> None:
     assert record["price"] == "115.00"
     assert record["currency"] == "USD"
     assert record["variants"] == [
-        {"sku": "white-8", "price": "115.00", "currency": "USD", "size": "8"},
-        {"sku": "white-9", "price": "115.00", "currency": "USD", "size": "9"},
+        {"variant_id": "white-8", "sku": "white-8", "price": "115.00", "currency": "USD", "size": "8"},
+        {"variant_id": "white-9", "sku": "white-9", "price": "115.00", "currency": "USD", "size": "9"},
     ]
     assert all(row.get("sku") != "black-8" for row in record["variants"])
     assert all("color" not in row for row in record["variants"])
@@ -3242,8 +3246,8 @@ def test_product_group_variants_have_lineage_and_parent_subjects() -> None:
     )
     assert result.verdict == "partial"
     assert result.records[0]["variants"] == [
-        {"sku": "TEE-BLK-S", "color": "Black", "size": "S"},
-        {"sku": "TEE-BLK-M", "color": "Black", "size": "M"},
+        {"variant_id": "TEE-BLK-S", "sku": "TEE-BLK-S", "color": "Black", "size": "S"},
+        {"variant_id": "TEE-BLK-M", "sku": "TEE-BLK-M", "color": "Black", "size": "M"},
     ]
     variant_evidence = [
         item for item in result.evidence if item.fact_type.startswith("variant.")
@@ -3586,6 +3590,7 @@ def test_variant_offer_inherits_parent_commercial_facts_but_keeps_child_availabi
     variants = result.records[0]["variants"]
     assert variants == [
         {
+            "variant_id": "COURT-WHT-8",
             "sku": "COURT-WHT-8",
             "price": "95.00",
             "currency": "USD",
@@ -3594,6 +3599,7 @@ def test_variant_offer_inherits_parent_commercial_facts_but_keeps_child_availabi
             "size": "8",
         },
         {
+            "variant_id": "COURT-WHT-9",
             "sku": "COURT-WHT-9",
             "price": "95.00",
             "currency": "USD",

@@ -200,21 +200,20 @@ async def _run_one(site: dict, run_id: int, timeout_seconds: int) -> dict:
     }
 
     try:
-        acquisition = await asyncio.wait_for(
-            acquire(
-                AcquisitionRequest(
-                    run_id=run_id,
-                    url=url,
-                    plan=AcquisitionIntent(
-                        surface=surface,
-                        traversal_mode=str(site.get("traversal_mode") or "").strip()
-                        or None,
-                        max_pages=5,
-                        max_scrolls=5,
-                    ),
-                    requested_fields=list(site.get("expect_fields") or []),
-                )
+        acquisition_request = AcquisitionRequest(
+            run_id=run_id,
+            url=url,
+            plan=AcquisitionIntent(
+                surface=surface,
+                traversal_mode=str(site.get("traversal_mode") or "").strip()
+                or None,
+                max_pages=5,
+                max_scrolls=5,
             ),
+            requested_fields=list(site.get("expect_fields") or []),
+        )
+        acquisition = await asyncio.wait_for(
+            acquire(acquisition_request),
             timeout=timeout_seconds,
         )
         blocked = (
@@ -253,6 +252,43 @@ async def _run_one(site: dict, run_id: int, timeout_seconds: int) -> dict:
                 ),
             )
         )
+        retry_request = extraction_result.retry_request
+        if (
+            retry_request is not None
+            and retry_request.required
+            and acquisition.method != "browser"
+        ):
+            acquisition = await asyncio.wait_for(
+                acquire(
+                    acquisition_request.with_profile_updates(
+                        fetch_mode="browser_only",
+                        prefer_browser=True,
+                        retry_reason=retry_request.reason,
+                    )
+                ),
+                timeout=timeout_seconds,
+            )
+            result.update(
+                {
+                    "method": acquisition.method,
+                    "status_code": acquisition.status_code,
+                    "content_type": acquisition.content_type,
+                    "html_len": len(acquisition.html or ""),
+                    "network_payloads": len(acquisition.network_payloads or []),
+                    "browser_diagnostics": dict(acquisition.browser_diagnostics or {}),
+                }
+            )
+            extraction_result = extract(
+                request_from_acquisition_result(
+                    parse_surface(surface),
+                    acquisition,
+                    requested_url=url,
+                    max_records=int(site.get("max_records") or 50),
+                    requested_fields=tuple(
+                        str(field) for field in site.get("expect_fields") or []
+                    ),
+                )
+            )
         records = [
             record.model_dump(mode="json", exclude_none=True)
             for record in extraction_result.records

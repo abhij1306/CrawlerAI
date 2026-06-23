@@ -37,6 +37,7 @@ __all__ = [
     "extract_urls",
     "identity_token",
     "low_resolution_asset_urls",
+    "public_asset_delivery_url",
     "same_host",
     "suffix_after_prefix",
     "terminal_text",
@@ -159,6 +160,22 @@ def asset_url_identity(value: object) -> tuple[str, str] | None:
         )
     )
     return url, identity
+
+
+def public_asset_delivery_url(value: object) -> str | None:
+    """Return a safe HTTPS asset URL while preserving encoded path/query data."""
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    decoded = unquote(raw)
+    nested_start = max(decoded.rfind("http://"), decoded.rfind("https://"))
+    candidate = decoded[nested_start:] if nested_start > 0 else raw
+    normalized = asset_url_identity(candidate)
+    if normalized is None:
+        return None
+    delivery_url, _identity = normalized
+    parsed = urlsplit(delivery_url)
+    return urlunsplit(("https", parsed.netloc, parsed.path, parsed.query, ""))
 
 
 def _is_image_transform_query_key(key: str) -> bool:

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from decimal import Decimal, InvalidOperation
-from urllib.parse import parse_qsl, urlsplit
+from urllib.parse import parse_qsl, urlparse, urlsplit
 
 from app.extraction.contracts import (
     AssetDecision,
@@ -28,7 +28,10 @@ from app.core.config.variant_policy import (
     DETAIL_PARENT_INHERITED_OFFER_FIELDS,
     DETAIL_PARENT_OFFER_INHERITANCE_RULE_ID,
 )
-from app.core.records.url_identity import conflicting_product_asset_urls
+from app.core.records.url_identity import (
+    conflicting_product_asset_urls,
+    semantic_identity_tokens,
+)
 from app.core.shared.url_utils import (
     asset_url_identity,
     is_utility_image_url,
@@ -36,6 +39,66 @@ from app.core.shared.url_utils import (
 )
 from app.extraction.entities import AssetEntity, EntitySet, OfferEntity, VariantEntity
 from app.extraction.ids import stable_id
+
+
+def inherit_variant_id_from_sku(
+    row: dict[str, object], lineage_row: dict[str, object]
+) -> None:
+    sku = row.get("sku")
+    if row.get("variant_id") not in (None, "", [], {}, ()) or sku in (
+        None,
+        "",
+        [],
+        {},
+        (),
+    ):
+        return
+    row["variant_id"] = sku
+    lineage_row["variant_id"] = {
+        **dict(lineage_row.get("sku") or {}),
+        "rule_id": "variant_id_from_unique_sku",
+    }
+
+
+def recover_non_retailer_brand(
+    record: dict[str, object],
+    lineages: dict[str, object],
+    resolution: ResolutionResult,
+    evidence_by_id: dict[str, Evidence],
+    canonical_url: str,
+) -> None:
+    current = str(record.get("brand") or "").strip()
+    host = (urlparse(str(record.get("url") or canonical_url)).hostname or "").casefold()
+    host_tokens = {
+        token
+        for label in host.split(".")
+        for token in semantic_identity_tokens(label)
+        if token not in {"www", "shop", "store", "com", "co", "net", "org", "in"}
+    }
+    current_tokens = set(semantic_identity_tokens(current))
+    if current and (not current_tokens or not current_tokens <= host_tokens):
+        return
+    candidates: dict[str, tuple[str, Decision]] = {}
+    for decision in resolution.decisions:
+        if (
+            decision.fact_type != "product.brand"
+            or decision.status != "resolved"
+            or not decision.accepted_evidence_ids
+        ):
+            continue
+        value = str(evidence_by_id[decision.accepted_evidence_ids[0]].value or "").strip()
+        tokens = set(semantic_identity_tokens(value))
+        if value and tokens and not tokens <= host_tokens:
+            candidates[value.casefold()] = (value, decision)
+    if len(candidates) != 1:
+        return
+    value, decision = next(iter(candidates.values()))
+    record["brand"] = value
+    lineages["brand"] = {
+        "decision_id": decision.decision_id,
+        "evidence_ids": list(decision.accepted_evidence_ids),
+        "rule_id": "non_retailer_brand_recovery",
+    }
 
 
 def resolve(
@@ -637,6 +700,17 @@ def _rank(
         boundary_excerpt = int("description_hard_boundary" in ev.flags)
         return (
             boundary_excerpt,
+            directness,
+            reliability,
+            -float(ev.confidence),
+            ev.evidence_id,
+        )
+    if ev.fact_type == "offer.currency":
+        explicit_price_symbol = int(
+            str(ev.metadata.get("derived_by") or "") != "currency_from_price_symbol"
+        )
+        return (
+            explicit_price_symbol,
             directness,
             reliability,
             -float(ev.confidence),

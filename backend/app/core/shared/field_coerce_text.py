@@ -7,6 +7,7 @@ from urllib.parse import urlparse
 
 from app.core.config.extraction_rules import (
     BARE_HOST_URL_RE,
+    DETAIL_TITLE_INTERNAL_SYSTEM_PATTERN,
     LISTING_BRAND_MAX_WORDS,
 )
 from app.core.config.public_record_policy import (
@@ -313,6 +314,8 @@ def coerce_sku(value: object) -> str | None:
     if had_draft_prefix and re.fullmatch(r"\d{10,}", cleaned):
         return None
     if _looks_like_tracking_hash_sku(cleaned):
+        return None
+    if re.fullmatch(DETAIL_TITLE_INTERNAL_SYSTEM_PATTERN, cleaned, re.IGNORECASE):
         return None
     return cleaned or None
 

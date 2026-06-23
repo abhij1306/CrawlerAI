@@ -76,3 +76,60 @@ def test_confidence_drops_when_a_requested_field_is_missing() -> None:
 
     assert incomplete_score["score"] < complete_score["score"]
     assert "brand" in incomplete_score["missing_fields"]
+
+
+def test_confidence_accepts_actual_collector_source_names() -> None:
+    requested_fields = [
+        "title",
+        "brand",
+        "description",
+        "image_url",
+        "price",
+        "currency",
+        "availability",
+        "url",
+    ]
+    record = {
+        "title": "Soft Rock Crewneck",
+        "brand": "Dime",
+        "description": "A heavyweight cotton crewneck with ribbed trims and embroidered branding.",
+        "image_url": "https://example.com/product.jpg",
+        "price": "64.00",
+        "currency": "EUR",
+        "availability": "out_of_stock",
+        "url": "https://example.com/products/soft-rock-crewneck",
+        "_field_sources": {field: ["jsonld"] for field in requested_fields},
+    }
+
+    confidence = score_record_confidence(
+        record,
+        surface="ecommerce_detail",
+        requested_fields=requested_fields,
+    )
+
+    assert confidence["score"] >= 0.9
+    assert confidence["components"]["source_reliability"]["ratio"] == 0.9
+    assert confidence["source_tier"]["dominant"] == "structured"
+
+
+def test_confidence_does_not_invent_a_source_score_when_provenance_is_missing() -> None:
+    requested_fields = ["title", "price", "brand"]
+    record = {
+        "title": "Example Product",
+        "price": "49.00",
+        "brand": "Example",
+    }
+
+    confidence = score_record_confidence(
+        record,
+        surface="ecommerce_detail",
+        requested_fields=requested_fields,
+    )
+
+    source_component = confidence["components"]["source_reliability"]
+    assert source_component["applicable"] is False
+    assert source_component["points"] == 0.0
+    assert confidence["source_tier"]["dominant"] == "unknown"
+    assert confidence["formula"] == (
+        "65% field coverage + 25% source reliability + 10% value validity"
+    )

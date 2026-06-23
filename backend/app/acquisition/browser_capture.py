@@ -486,7 +486,69 @@ def _decode_network_payload(
     try:
         return json.loads(text)
     except json.JSONDecodeError:
+        return _repair_truncated_json_prefix(text)
+
+
+def _repair_truncated_json_prefix(text: str) -> object | None:
+    candidate = str(text or "").strip()
+    if not candidate.startswith(("{", "[")):
         return None
+    in_string = False
+    escaped = False
+    string_start = -1
+    for index, char in enumerate(candidate):
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+            continue
+        if char == '"':
+            in_string = True
+            string_start = index
+    if in_string and string_start >= 0:
+        candidate = candidate[:string_start]
+    for _attempt in range(24):
+        candidate = candidate.rstrip().rstrip(",:")
+        if not candidate:
+            return None
+        stack: list[str] = []
+        in_string = False
+        escaped = False
+        valid = True
+        for char in candidate:
+            if in_string:
+                if escaped:
+                    escaped = False
+                elif char == "\\":
+                    escaped = True
+                elif char == '"':
+                    in_string = False
+                continue
+            if char == '"':
+                in_string = True
+            elif char in "[{":
+                stack.append(char)
+            elif char in "]}":
+                expected = "[" if char == "]" else "{"
+                if not stack or stack.pop() != expected:
+                    valid = False
+                    break
+        if valid and not in_string:
+            repaired = candidate + "".join(
+                "]" if opener == "[" else "}" for opener in reversed(stack)
+            )
+            try:
+                return json.loads(repaired)
+            except json.JSONDecodeError:
+                pass
+        comma_index = candidate.rfind(",")
+        if comma_index < 0:
+            return None
+        candidate = candidate[:comma_index]
+    return None
 
 
 def _decode_rsc_payload(text: str) -> object | None:
