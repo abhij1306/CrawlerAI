@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from decimal import Decimal, InvalidOperation
 from urllib.parse import parse_qsl, urlparse, urlsplit
 
@@ -54,8 +55,9 @@ def inherit_variant_id_from_sku(
     ):
         return
     row["variant_id"] = sku
+    sku_lineage = lineage_row.get("sku")
     lineage_row["variant_id"] = {
-        **dict(lineage_row.get("sku") or {}),
+        **(dict(sku_lineage) if isinstance(sku_lineage, Mapping) else {}),
         "rule_id": "variant_id_from_unique_sku",
     }
 
