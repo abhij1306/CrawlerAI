@@ -367,7 +367,10 @@ def low_resolution_asset_urls(values: tuple[str, ...]) -> frozenset[str]:
 
 
 def _image_query_dimensions(value: object) -> tuple[int, ...]:
-    dimension_keys = {"w", "width", "wid", "imwidth", "h", "height", "hei"}
+    dimension_keys = {
+        "w", "width", "wid", "imwidth", "sw",
+        "h", "height", "hei", "sh",
+    }
     return tuple(
         int(raw_value)
         for key, raw_value in parse_qsl(

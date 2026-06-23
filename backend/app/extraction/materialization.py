@@ -401,7 +401,7 @@ def _cohere_parent_offer(
         if field == "price" and record.get("price_min") != record.get("price_max"):
             lineages["price_min"] = lineage_value
             lineages["price_max"] = lineage_value
-        if parent_value_present and len(unique_values) != 1:
+        if parent_value_present and (len(variants) < 2 or len(unique_values) != 1):
             continue
         record[field] = aggregate_value
         lineages[field] = lineage_value

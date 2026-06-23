@@ -303,6 +303,10 @@ def _asset_semantic_tokens(value: object) -> frozenset[str]:
         for token in semantic_identity_tokens(stem)
         if token not in PRODUCT_ASSET_SEMANTIC_NOISE_TOKENS
         and not token.isdigit()
+        and not (
+            len(token) >= DETAIL_IMAGE_OPAQUE_HEX_MIN_LENGTH
+            and re.fullmatch(r"[a-f0-9]+", token)
+        )
     )
 
 

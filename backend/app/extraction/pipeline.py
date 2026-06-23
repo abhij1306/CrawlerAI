@@ -131,104 +131,76 @@ def normalize_ecommerce_detail(
     )
     page_brand = _brand_from_page_identity(normalized, page_url=page_url)
     combined = normalized + derived + ((page_brand,) if page_brand else ())
-    combined = _flag_variant_color_brand_conflicts(combined)
-    combined = _flag_brand_identity_conflicts(combined, page_brand=page_brand)
-    return _dedupe_equivalent(combined)
+    return _dedupe_equivalent(_flag_brand_conflicts(combined, page_brand=page_brand))
 
 
-def _flag_variant_color_brand_conflicts(
-    evidence: tuple[Evidence, ...],
+def _flag_brand_conflicts(
+    evidence: tuple[Evidence, ...], *, page_brand: Evidence | None
 ) -> tuple[Evidence, ...]:
     brand_rows = tuple(row for row in evidence if row.fact_type == "product.brand")
-    brands = {
-        str(row.value).strip().casefold()
-        for row in brand_rows
-        if str(row.value).strip()
-    }
+    brands = {str(row.value).strip().casefold() for row in brand_rows if str(row.value).strip()}
     structured_brands = {
         str(row.value).strip().casefold()
         for row in brand_rows
         if row.collector_id in {"adapter", "jsonld", "js_state", "network"}
         and str(row.value).strip()
     }
-    title_values = tuple(
-        str(row.value).strip().casefold()
-        for row in evidence
-        if row.fact_type == "product.title" and str(row.value).strip()
-    )
-    color_rows = tuple(
-        row for row in evidence if row.fact_type == "variant.option.color"
-    )
-    color_subjects = {row.subject_id for row in color_rows if row.subject_id}
-    color_values = {
-        str(row.value).strip().casefold()
-        for row in color_rows
-        if str(row.value).strip()
+    subject_titles = {
+        (row.subject_id, " ".join(re.findall(r"[a-z0-9]+", str(row.value).casefold())))
+        for row in evidence if row.fact_type == "product.title" and row.subject_id
     }
-    conflicting_color_axis = (
-        len(color_subjects) >= 2
-        and len(color_values) == 1
-        and bool(color_values & brands)
+    color_rows = tuple(row for row in evidence if row.fact_type == "variant.option.color")
+    color_values = {str(row.value).strip().casefold() for row in color_rows if str(row.value).strip()}
+    conflicting_color_axis = len({row.subject_id for row in color_rows if row.subject_id}) >= 2 and len(color_values) == 1 and bool(color_values & brands)
+    page_value = str(page_brand.value).casefold() if page_brand else ""
+    support_values = tuple(
+        re.sub(r"[^a-z0-9]+", "", str(row.value).casefold())
+        for row in evidence if row.fact_type != "product.brand"
     )
+    page_compact = re.sub(r"[^a-z0-9]+", "", page_value)
+    page_support = sum(page_compact in candidate for candidate in support_values)
 
-    def conflicts(row: Evidence) -> bool:
+    def conflict_flag(row: Evidence) -> str | None:
         value = str(row.value).strip().casefold()
         if row.fact_type == "variant.option.color":
-            return conflicting_color_axis and value in brands
-        if row.fact_type != "product.brand" or not structured_brands:
-            return False
-        if value in structured_brands:
-            return False
-        title_suffix = any(
-            title == value
-            or title.endswith(f" {value}")
-            or title.endswith(f"- {value}")
-            for title in title_values
-        )
-        return value in color_values or title_suffix
-
-    return tuple(
-        row.model_copy(
-            update={"flags": tuple(sorted({*row.flags, VARIANT_COLOR_BRAND_CONFLICT_FLAG}))}
-        )
-        if conflicts(row)
-        else row
-        for row in evidence
-    )
-
-
-def _flag_brand_identity_conflicts(
-    evidence: tuple[Evidence, ...],
-    *,
-    page_brand: Evidence | None = None,
-) -> tuple[Evidence, ...]:
-    titles_by_subject: dict[str, set[str]] = {}
-    for row in evidence:
-        if row.fact_type != "product.title" or not row.subject_id:
-            continue
-        title = " ".join(re.findall(r"[a-z0-9]+", str(row.value).casefold()))
-        if title:
-            titles_by_subject.setdefault(row.subject_id, set()).add(title)
-
-    def conflict(row: Evidence) -> bool:
-        if row.fact_type != "product.brand" or not row.subject_id:
-            return False
-        brand = " ".join(re.findall(r"[a-z0-9]+", str(row.value).casefold()))
-        page_value = str(page_brand.value).casefold() if page_brand else ""
-        return bool(
-            brand
+            return VARIANT_COLOR_BRAND_CONFLICT_FLAG if conflicting_color_axis and value in brands else None
+        if row.fact_type != "product.brand":
+            return None
+        normalized = " ".join(re.findall(r"[a-z0-9]+", value))
+        partial_page_brand = bool(
+            page_value
+            and value != page_value
             and (
-                brand in titles_by_subject.get(row.subject_id, set())
-                or (page_value and str(row.value).casefold() != page_value)
+                "brand_boilerplate" in row.flags
+                or normalized in page_value
+                or page_value in normalized
+                or (
+                    row.collector_id != "dom"
+                    and page_support >= 2
+                    and page_support > sum(
+                        re.sub(r"[^a-z0-9]+", "", value) in candidate
+                        for candidate in support_values
+                    )
+                )
             )
         )
+        if normalized and (
+            (row.subject_id, normalized) in subject_titles or partial_page_brand
+        ):
+            return "product_name_as_brand"
+        if structured_brands and value not in structured_brands:
+            title_suffix = any(
+                (title := str(item.value).strip().casefold()) == value
+                or title.endswith(f" {value}")
+                or title.endswith(f"- {value}")
+                for item in evidence if item.fact_type == "product.title"
+            )
+            if value in color_values or title_suffix:
+                return VARIANT_COLOR_BRAND_CONFLICT_FLAG
+        return None
 
     return tuple(
-        row.model_copy(
-            update={"flags": tuple(sorted({*row.flags, "product_name_as_brand"}))}
-        )
-        if conflict(row)
-        else row
+        row.model_copy(update={"flags": tuple(sorted({*row.flags, flag}))}) if (flag := conflict_flag(row)) else row
         for row in evidence
     )
 
@@ -245,7 +217,7 @@ def _brand_from_page_identity(
         evidence_values=tuple(
             row.value
             for row in evidence
-            if row.fact_type not in {"product.url", "variant.url"}
+            if row.fact_type not in {"product.title", "product.url", "variant.url"}
         ),
         existing_brands=tuple(
             row.value for row in evidence if row.fact_type == "product.brand"

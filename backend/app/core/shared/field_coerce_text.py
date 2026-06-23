@@ -143,6 +143,7 @@ def infer_brand_from_page_identity(
         (compact_host[: -len(suffix)] for suffix in suffixes if compact_host.endswith(suffix)),
         compact_host,
     )
+    generic_host = compact_core in {"example", "invalid", "localhost", "test"}
     corpus = " ".join(clean_text(value) for value in evidence_values if clean_text(value))
     corpus_words = corpus.split()
     title_words = text.split()
@@ -163,14 +164,16 @@ def infer_brand_from_page_identity(
             remainder = compact_core[len(compact_brand) :]
             if remainder and remainder.isalpha():
                 return f"{brand} {remainder.capitalize()}"
-    if title_tokens and title_words:
+    if not generic_host and compact_core and any(
+        compact_core in "".join(slug_tokens(value)) for value in evidence_values
+    ):
+        return compact_core.capitalize()
+    if not generic_host and title_tokens and title_words:
         first = title_tokens[0]
         path_tokens = slug_tokens(urlparse(str(url or "")).path)
         corroborations = sum(first in slug_tokens(value) for value in evidence_values)
-        if compact_core == compact_host and first in path_tokens and corroborations >= 2:
+        if first in path_tokens and corroborations >= 2:
             return title_words[0]
-    if compact_core and any(compact_core in "".join(slug_tokens(value)) for value in evidence_values):
-        return compact_core.capitalize()
     return None
 
 
