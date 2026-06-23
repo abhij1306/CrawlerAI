@@ -142,7 +142,8 @@ def _cohere_parent_offer(
     *,
     expected_variant_count: int,
 ) -> None:
-    del expected_variant_count
+    if len(variants) != expected_variant_count:
+        return
     for field in ("price", "currency", "original_price"):
         if record.get(field) not in (None, "", [], {}, ()):
             continue
@@ -156,9 +157,14 @@ def _cohere_parent_offer(
             if field != "price":
                 continue
             try:
-                aggregate_value = format(min(Decimal(value) for value in unique_values), ".2f")
+                decimal_values = tuple(Decimal(value) for value in unique_values)
+                minimum = min(decimal_values)
+                maximum = max(decimal_values)
             except (InvalidOperation, TypeError, ValueError):
                 continue
+            aggregate_value = format(minimum, ".2f")
+            record["price_min"] = format(minimum, ".2f")
+            record["price_max"] = format(maximum, ".2f")
             aggregate_rule = "minimum_variant_price_aggregate"
         field_lineage = [row.get(field) for row in variant_lineage]
         if any(
@@ -173,10 +179,14 @@ def _cohere_parent_offer(
             for evidence_id in _lineage_evidence_ids(item)
         )
         record[field] = aggregate_value
-        lineages[field] = {
+        lineage_value = {
             "rule_id": aggregate_rule,
             "evidence_ids": list(dict.fromkeys(evidence_ids)),
         }
+        lineages[field] = lineage_value
+        if field == "price" and record.get("price_min") != record.get("price_max"):
+            lineages["price_min"] = lineage_value
+            lineages["price_max"] = lineage_value
 
 
 def _cohere_parent_availability(
@@ -381,12 +391,9 @@ def _variant_option_fields(
         for field in ("variant_id", "sku", "gtin")
         if str(row.get(field) or "").strip()
     }
-    fields_by_value: dict[str, set[str]] = {}
-    for field, value, _decision in candidates:
-        fields_by_value.setdefault(value.casefold(), set()).add(field)
     for field, value, decision in candidates:
         normalized = value.casefold()
-        if normalized in identity_values or len(fields_by_value[normalized]) > 1:
+        if normalized in identity_values:
             continue
         row[field] = value
         lineage_row[field] = lineage(decision=decision)

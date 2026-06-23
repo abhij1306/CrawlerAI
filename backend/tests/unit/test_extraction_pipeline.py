@@ -89,6 +89,133 @@ def test_materializes_once_with_lineage_and_quality() -> None:
     assert "selected" not in record["variants"][0]
 
 
+def test_detail_contract_reports_selected_record_completeness() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "Product",
+          "name": "Loco Bag",
+          "url": "https://shop.test/products/loco-bag"
+        }
+        </script>
+        """,
+        "https://shop.test/products/loco-bag",
+    )
+
+    assert result.records
+    assert result.verdict == "review"
+    assert result.metrics.completeness_score == pytest.approx(0.4)
+    missing_fields = {
+        finding.metadata.get("field")
+        for finding in result.findings
+        if finding.rule_id == "MISSING_CONTRACT_FIELD"
+    }
+    assert missing_fields == {"brand", "description", "image_url"}
+    completeness = next(
+        finding
+        for finding in result.findings
+        if finding.rule_id == "RECORD_COMPLETENESS"
+    )
+    assert completeness.metadata["missing_fields"] == (
+        "brand",
+        "description",
+        "image_url",
+    )
+
+
+def test_sellable_offer_requires_atomic_price_and_currency_contract() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "Product",
+          "name": "Complete Product",
+          "brand": "Invoro",
+          "description": "A complete product description with durable materials.",
+          "image": "https://shop.test/i/complete.jpg",
+          "url": "https://shop.test/products/complete",
+          "offers": {"price": "49"}
+        }
+        </script>
+        """,
+        "https://shop.test/products/complete",
+    )
+
+    assert result.verdict == "partial"
+    missing_fields = {
+        finding.metadata.get("field")
+        for finding in result.findings
+        if finding.rule_id == "MISSING_CONTRACT_FIELD"
+    }
+    assert {"price", "currency"} <= missing_fields
+
+
+def test_explicit_visible_product_brand_label_is_collected() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <main>
+          <h1>Classic Slip-On Shoe</h1>
+          <div class="product-brand">Brand: Vans</div>
+          <img data-product-image src="https://shop.test/i/slip-on.jpg">
+          <div data-price="65"></div>
+          <div data-currency="USD"></div>
+        </main>
+        """,
+        "https://shop.test/products/classic-slip-on-shoe",
+    )
+
+    assert result.records[0]["brand"] == "Vans"
+    assert any(
+        row.fact_type == "product.brand"
+        and row.value == "Vans"
+        and row.collector_id == "dom"
+        for row in result.evidence
+    )
+
+
+def test_designed_by_data_attribute_recovers_product_brand() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <main>
+          <h1>Luna Leather Bag</h1>
+          <span data-designer-name="3.1 Phillip Lim"></span>
+          <img data-product-image src="https://shop.test/i/luna.jpg">
+        </main>
+        """,
+        "https://shop.test/products/luna-leather-bag",
+    )
+
+    assert result.records[0]["brand"] == "3.1 Phillip Lim"
+
+
+def test_jsonld_manufacturer_name_alias_recovers_nested_brand() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "Product",
+          "name": "Cinema Camera",
+          "manufacturerName": "Sony",
+          "url": "https://shop.test/products/cinema-camera",
+          "image": "https://shop.test/i/camera.jpg"
+        }
+        </script>
+        """,
+        "https://shop.test/products/cinema-camera",
+    )
+
+    assert result.records[0]["brand"] == "Sony"
+
+
 def test_jsonld_brand_reference_url_is_not_public_brand() -> None:
     result = _extract(
         "ecommerce_detail",
@@ -1104,6 +1231,10 @@ def test_structured_title_outranks_filename_and_internal_id_url_title() -> None:
             "https://www.ralphlauren.global/in/en/the-iconic-cotton-chino-ball-cap-650310.html",
             "<html><body></body></html>",
         ),
+        (
+            "https://shop.test/product.do?id=12345",
+            "<main><h1>product.do</h1></main>",
+        ),
     ),
 )
 def test_identifier_placeholder_and_filename_titles_do_not_materialize(
@@ -1121,6 +1252,10 @@ def test_identifier_placeholder_and_filename_titles_do_not_materialize(
     assert any(
         finding.rule_id == "MISSING_CONTRACT_FIELD"
         and finding.metadata.get("field") == "title"
+        for finding in result.findings
+    )
+    assert any(
+        finding.rule_id == "MISSING_OR_GENERIC_TITLE"
         for finding in result.findings
     )
     assert result.verdict in {"partial", "review"}
@@ -1158,6 +1293,21 @@ def test_transient_title_uses_semantic_url_segment() -> None:
         ("Tread PDP - Compose Page", "https://shop.test/shop/tread", "tread"),
         ("mens footwear sneakers", "https://shop.test/products/st40002-02000", None),
         ("X", "https://shop.test/p/womens-chill-river-midi-dress-1933601.html", None),
+        (
+            "Interchangeable Lens Cameras",
+            "https://shop.test/cameras/alpha-7-iv-full-frame-camera/ILCE7M4-B",
+            "alpha 7 iv full frame camera",
+        ),
+        (
+            "Wide Leg",
+            "https://shop.test/p/wide-leg-cropped-jean/BT123",
+            "wide leg cropped jean",
+        ),
+        (
+            "Satisfy",
+            "https://shop.test/products/satisfy-cloudmerino-running-tee",
+            "satisfy cloudmerino running tee",
+        ),
     ),
 )
 def test_taxonomy_and_cms_titles_use_semantic_url_identity(
@@ -4289,12 +4439,42 @@ def test_asset_urls_are_normalized_and_deduped_without_dropping_variant_params()
 
     record = result.records[0]
     assert (
-        record["image_url"] == "https://cdn.shop.test/images/Trail%20Shoe.jpg?width=800"
+        record["image_url"] == "https://cdn.shop.test/images/Trail%20Shoe.jpg?width=1200"
     )
     assert record["additional_images"] == [
         "https://cdn.shop.test/images/Trail%20Shoe.jpg?color=red&width=800",
     ]
     assert record["image_url"] not in record["additional_images"]
+
+
+def test_larger_transform_wins_for_same_asset_identity() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <script type="application/ld+json">
+        {
+          "@type": "Product",
+          "name": "Chuck 70 Canvas",
+          "url": "https://shop.test/products/chuck-70-canvas",
+          "image": [
+            "https://cdn.shop.test/products/chuck-70-canvas.jpg?width=71",
+            "https://cdn.shop.test/products/chuck-70-canvas.jpg?width=1600",
+            "https://cdn.shop.test/products/chuck-70-canvas-side.jpg?width=1400"
+          ],
+          "offers": {"price": "95", "priceCurrency": "USD"}
+        }
+        </script>
+        """,
+        "https://shop.test/products/chuck-70-canvas",
+    )
+
+    record = result.records[0]
+    assert record["image_url"] == (
+        "https://cdn.shop.test/products/chuck-70-canvas.jpg?width=1600"
+    )
+    assert record["additional_images"] == [
+        "https://cdn.shop.test/products/chuck-70-canvas-side.jpg?width=1400"
+    ]
 
 
 def test_https_asset_wins_over_equivalent_http_url() -> None:
@@ -4325,6 +4505,46 @@ def test_https_asset_wins_over_equivalent_http_url() -> None:
     assert record["additional_images"] == [
         "https://cdn.shop.test/products/pavlova-boots-02.jpg?width=1800"
     ]
+
+
+def test_variant_price_range_materializes_lowest_price_and_bounds() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "ProductGroup",
+          "name": "Cloud Tee",
+          "url": "https://shop.test/products/cloud-tee",
+          "hasVariant": [
+            {
+              "@type": "Product",
+              "sku": "TEE-S",
+              "size": "S",
+              "offers": {"price": "20", "priceCurrency": "USD"}
+            },
+            {
+              "@type": "Product",
+              "sku": "TEE-L",
+              "size": "L",
+              "offers": {"price": "24", "priceCurrency": "USD"}
+            }
+          ]
+        }
+        </script>
+        """,
+        "https://shop.test/products/cloud-tee",
+    )
+
+    record = result.records[0]
+    assert record["price"] == "20.00"
+    assert record["price_min"] == "20.00"
+    assert record["price_max"] == "24.00"
+    assert record["currency"] == "USD"
+    assert record["_lineage"]["price"]["rule_id"] == (
+        "minimum_variant_price_aggregate"
+    )
 
 
 def test_missing_requested_field_has_visible_finding() -> None:
@@ -4361,6 +4581,24 @@ def test_missing_core_detail_fields_request_one_rendered_capability() -> None:
     assert result.retry_request.max_attempts == 1
 
 
+def test_explicit_variant_controls_request_rendered_capability_without_field_request() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <main>
+          <h1>Everyday Tee</h1>
+          <label>Size</label><select><option>S</option><option>M</option></select>
+        </main>
+        """,
+        "https://shop.test/products/everyday-tee",
+    )
+
+    assert not result.records[0].get("variants")
+    assert result.retry_request is not None
+    assert result.retry_request.reason == "explicit_variants_missing"
+    assert result.retry_request.max_attempts == 1
+
+
 def test_missing_requested_variants_requests_one_rendered_capability() -> None:
     result = extract(
         fixture_request_from_inputs(
@@ -4379,6 +4617,52 @@ def test_missing_requested_variants_requests_one_rendered_capability() -> None:
     assert result.retry_request is not None
     assert result.retry_request.reason == "explicit_variants_missing"
     assert result.retry_request.max_attempts == 1
+
+
+def test_explicit_size_axis_missing_from_variants_has_visible_finding() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "ProductGroup",
+          "name": "Court Shoe",
+          "url": "https://shop.test/products/court-shoe",
+          "hasVariant": [
+            {"@type": "Product", "sku": "COURT-BLK", "color": "Black"},
+            {"@type": "Product", "sku": "COURT-WHT", "color": "White"}
+          ]
+        }
+        </script>
+        <main>
+          <label>Size</label><select><option>8</option><option>9</option></select>
+        </main>
+        """,
+        "https://shop.test/products/court-shoe",
+    )
+
+    finding = next(
+        item
+        for item in result.findings
+        if item.rule_id == "EXPECTED_VARIANT_AXIS_MISSING"
+    )
+    assert finding.metadata["axis"] == "size"
+    assert finding.metadata["missing_variant_count"] == 2
+    assert result.verdict in {"partial", "review"}
+
+
+def test_variant_offer_without_availability_emits_finding() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        '<script type="application/ld+json">{"@type":"ProductGroup","name":"Performance Sock","url":"https://shop.test/products/performance-sock","hasVariant":[{"@type":"Product","sku":"SOCK-M","size":"M","offers":{"price":"18","priceCurrency":"USD"}}]}</script>',
+        "https://shop.test/products/performance-sock",
+    )
+
+    assert any(
+        item.rule_id == "VARIANT_AVAILABILITY_MISSING"
+        for item in result.findings
+    )
 
 
 def test_missing_requested_variants_without_dom_cues_does_not_request_browser() -> None:

@@ -1,8 +1,5 @@
 import type { CrawlRecord } from '../api/types';
-import {
-  decodeUrlsForDisplay,
-  stringifyCell,
-} from './format';
+import { decodeUrlsForDisplay, stringifyCell } from './format';
 
 export function extractRecordUrl(record: CrawlRecord) {
   const value = record.data?.url ?? record.raw_data?.url ?? record.source_url;

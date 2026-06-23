@@ -70,10 +70,7 @@ export function useRunRecords({
   const jsonRecordsSource =
     jsonRecordsData ?? (shouldFetchJsonRecords ? tableRecordsData : undefined);
   const records = useMemo(() => jsonRecordsSource?.items ?? [], [jsonRecordsSource?.items]);
-  const tableRecords = useMemo(
-    () => tableRecordsData?.items ?? [],
-    [tableRecordsData?.items],
-  );
+  const tableRecords = useMemo(() => tableRecordsData?.items ?? [], [tableRecordsData?.items]);
   const tableTotal = tableRecordsData?.meta?.total ?? tableRecords.length;
   const recordsTotal = jsonRecordsSource?.meta?.total ?? records.length;
   const jsonRecords = useMemo(
@@ -87,9 +84,7 @@ export function useRunRecords({
     (records.length < recordsTotal && !recordsFetchCapReached);
   const recordsJson = useMemo(
     () =>
-      outputTab === 'json'
-        ? JSON.stringify(jsonRecords.map(cleanRecordForDisplay), null, 2)
-        : '',
+      outputTab === 'json' ? JSON.stringify(jsonRecords.map(cleanRecordForDisplay), null, 2) : '',
     [jsonRecords, outputTab],
   );
 

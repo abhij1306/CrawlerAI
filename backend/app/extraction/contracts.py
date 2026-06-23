@@ -301,6 +301,7 @@ class ExtractionMetrics(FrozenModel):
     selected_root_ids: tuple[str, ...] = ()
     variant_count: int = 0
     public_lineage_coverage: float = 0.0
+    completeness_score: float = 0.0
     verdict: str | None = None
 
 
@@ -354,6 +355,8 @@ class CommerceDetailRecord(PublicRecord):
     mpn: str | None = None
     gtin: str | None = None
     price: JsonValue | None = None
+    price_min: JsonValue | None = None
+    price_max: JsonValue | None = None
     currency: str | None = None
     original_price: JsonValue | None = None
     availability: str | None = None

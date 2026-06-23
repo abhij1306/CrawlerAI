@@ -28,7 +28,7 @@ from app.core.config.audit_rules import (
 from app.core.db_utils import mapping_or_empty
 from app.core.domain_utils import normalize_domain
 from app.core.records.field_url_normalization import canonical_public_record_url
-from app.core.records.field_policy import repair_target_fields_for_surface
+from app.core.records.field_policy import acquisition_contract_fields_for_surface
 from app.observability.baseline import (
     build_observation,
     compare_to_baseline,
@@ -628,7 +628,7 @@ def _flag(code: str, *, evidence: dict[str, Any], url: str = "") -> dict[str, An
 
 
 def _high_value_fields(surface: str, requested_fields: list[str]) -> list[str]:
-    resolved = repair_target_fields_for_surface(surface, requested_fields)
+    resolved = acquisition_contract_fields_for_surface(surface, requested_fields)
     if resolved:
         return resolved
     return list(obs_config.HIGH_VALUE_FIELD_FLOOR)

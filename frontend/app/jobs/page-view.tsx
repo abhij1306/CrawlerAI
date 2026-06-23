@@ -75,12 +75,7 @@ export default function JobsPage() {
         actions={
           <div className="flex items-center gap-3">
             <span className="type-caption">Last refreshed {lastRefreshed}</span>
-            <Button
-              variant="neutral"
-              type="button"
-              size="sm"
-              onClick={() => void refetchJobs()}
-            >
+            <Button variant="neutral" type="button" size="sm" onClick={() => void refetchJobs()}>
               <RefreshCw className="size-3.5" />
               Refresh
             </Button>

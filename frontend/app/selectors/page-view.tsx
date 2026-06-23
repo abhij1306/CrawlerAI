@@ -175,13 +175,7 @@ function selectorsPageReducer(
 // skipcq: JS-0067
 function useSelectorsWorkspace() {
   const [state, dispatch] = useReducer(selectorsPageReducer, INITIAL_SELECTORS_PAGE_STATE);
-  const {
-    url,
-    loadedUrl,
-    resolvedSurface,
-    expectedColumns,
-    rows,
-  } = state;
+  const { url, loadedUrl, resolvedSurface, expectedColumns, rows } = state;
 
   const parsedColumns = parseExpectedColumns(expectedColumns);
   const domain = getNormalizedDomain(loadedUrl);
@@ -899,7 +893,6 @@ function isDuplicateSelectorError(error: unknown): boolean {
 
 // ── SelectorFieldRow sub-component ────────────────────────────────────────────────────
 
-
 interface SelectorFieldRowProps {
   row: SelectorRow;
   message: RowMessage | undefined;
@@ -1000,11 +993,21 @@ function SelectorFieldRow({
         </Field>
 
         <div className="flex flex-wrap items-center gap-3">
-          <Button type="button" variant="neutral" onClick={onRedetect} disabled={activeDetectKey === row.key}>
+          <Button
+            type="button"
+            variant="neutral"
+            onClick={onRedetect}
+            disabled={activeDetectKey === row.key}
+          >
             <Sparkles className="size-3.5" />
             {activeDetectKey === row.key ? 'Detecting…' : 'Auto-detect'}
           </Button>
-          <Button type="button" variant="neutral" onClick={onTest} disabled={activeTestKey === row.key}>
+          <Button
+            type="button"
+            variant="neutral"
+            onClick={onTest}
+            disabled={activeTestKey === row.key}
+          >
             <Search className="size-3.5" />
             {activeTestKey === row.key ? 'Testing...' : 'Test'}
           </Button>

@@ -42,9 +42,7 @@ describe('useTerminalSync', () => {
       completed_at: null,
       updated_at: new Date('2026-04-08T10:04:00Z').toISOString(),
     });
-    const { rerender } = render(
-      <SyncHarness run={terminalRun} terminal refetch={refetch} />,
-    );
+    const { rerender } = render(<SyncHarness run={terminalRun} terminal refetch={refetch} />);
 
     expect(refetch).not.toHaveBeenCalled();
 

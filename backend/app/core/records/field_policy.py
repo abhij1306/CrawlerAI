@@ -14,6 +14,7 @@ from app.core.config.field_mappings import (
     REQUESTED_FIELD_ALIAS_BASES,
     REQUESTED_FIELD_ALIAS_EXTRAS,
     REQUESTED_FIELD_PREFIXES,
+    SURFACE_ACQUISITION_CONTRACT_FIELDS,
     SURFACE_BROWSER_RETRY_TARGETS,
     SURFACE_FIELD_REPAIR_TARGETS,
 )
@@ -269,6 +270,18 @@ def repair_target_fields_for_surface(
         normalized,
         requested_fields,
         SURFACE_FIELD_REPAIR_TARGETS.get(normalized),
+    )
+
+
+def acquisition_contract_fields_for_surface(
+    surface: str,
+    requested_fields: Iterable[str] | None,
+) -> list[str]:
+    normalized = str(surface or "").strip().lower()
+    return _surface_requested_defaults_union(
+        normalized,
+        requested_fields,
+        SURFACE_ACQUISITION_CONTRACT_FIELDS.get(normalized),
     )
 
 

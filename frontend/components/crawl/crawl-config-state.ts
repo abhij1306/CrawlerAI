@@ -244,10 +244,7 @@ function buildInitialRouteState({
   };
 }
 
-function crawlRouteReducer(
-  state: CrawlRouteState,
-  action: CrawlRouteAction,
-): CrawlRouteState {
+function crawlRouteReducer(state: CrawlRouteState, action: CrawlRouteAction): CrawlRouteState {
   switch (action.type) {
     case 'syncRequestedRoute':
       return {

@@ -37,9 +37,9 @@ def retry_request(
     evidence: tuple[Evidence, ...] = (),
 ) -> RetryRequest | None:
     if (
-        "variants" in request.requested_fields
-        and not any(record.get("variants") for record in records)
+        request.surface.value == "ecommerce_detail"
         and _explicit_variant_dom_cues(evidence)
+        and _variant_controls_incomplete(records, evidence)
     ):
         return RetryRequest(
             required=not request.capture.browser_attempted,
@@ -92,6 +92,23 @@ def _explicit_variant_dom_cues(evidence: tuple[Evidence, ...]) -> bool:
     return any(
         row.collector_id == "dom" and row.fact_type.startswith("option.")
         for row in evidence
+    )
+
+
+def _variant_controls_incomplete(
+    records: tuple[PublicRecord, ...], evidence: tuple[Evidence, ...]
+) -> bool:
+    variants = tuple(records[0].get("variants") or ()) if records else ()
+    axes = {
+        row.fact_type.removeprefix("option.")
+        for row in evidence
+        if row.collector_id == "dom" and row.fact_type.startswith("option.")
+    }
+    if not variants:
+        return True
+    return any(
+        any(variant.get(axis) in (None, "", [], {}, ()) for variant in variants)
+        for axis in axes
     )
 
 
@@ -148,6 +165,14 @@ def metrics(
         sum(not str(key).startswith("_") for key in record.model_dump(mode="python"))
         for record in records
     )
+    completeness_score = next(
+        (
+            float(finding.metadata.get("score", 0.0))
+            for finding in findings
+            if finding.rule_id == "RECORD_COMPLETENESS"
+        ),
+        0.0,
+    )
     return ExtractionMetrics(
         evidence_count=len(evidence),
         entity_counts=graph.entity_counts,
@@ -162,5 +187,6 @@ def metrics(
         public_lineage_coverage=(
             lineage_fields / public_fields if public_fields else 0.0
         ),
+        completeness_score=completeness_score,
         verdict=verdict,
     )

@@ -68,8 +68,7 @@ export function useProductIntelligence() {
     () => (detailData ? detailOptions(detailData.job.options) : DEFAULT_OPTIONS),
     [detailData],
   );
-  const discovery =
-    discoveryOverride ?? (detailData ? detailToDiscovery(detailData) : null);
+  const discovery = discoveryOverride ?? (detailData ? detailToDiscovery(detailData) : null);
   const effectiveOptions = optionsEdited || !detailData ? options : detailHydratedOptions;
   const effectiveAllowedDomainsText = optionsEdited
     ? allowedDomainsText

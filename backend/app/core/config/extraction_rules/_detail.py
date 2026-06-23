@@ -27,6 +27,33 @@ DETAIL_IDENTITY_QUERY_KEYS = frozenset(
 DETAIL_IDENTITY_QUERY_PREFIXES = tuple(PUBLIC_RECORD_DETAIL_CANONICAL_QUERY_PREFIXES)
 
 DETAIL_BRAND_BOILERPLATE_VALUES = frozenset({"we"})
+DETAIL_BRAND_DOM_SELECTORS = (
+    "main [data-brand]",
+    "main [data-brand-name]",
+    "main [data-manufacturer]",
+    "main [data-manufacturer-name]",
+    "main [data-designer]",
+    "main [data-designer-name]",
+    "main [itemprop='brand']",
+    "main [itemprop='manufacturer']",
+    "main [class*='product-brand']",
+    "main [class*='product_brand']",
+    "main [data-testid*='brand']",
+    "main [data-testid*='manufacturer']",
+)
+DETAIL_BRAND_DOM_VALUE_ATTRIBUTES = (
+    "data-brand",
+    "data-brand-name",
+    "data-manufacturer",
+    "data-manufacturer-name",
+    "data-designer",
+    "data-designer-name",
+    "content",
+)
+DETAIL_BRAND_VISIBLE_LABEL_PATTERN = (
+    r"^\s*(?:brand|manufacturer|designed\s+by|designer)\s*[:\-]\s*"
+    r"(?P<brand>[^|\n]{1,80})\s*$"
+)
 DETAIL_BRAND_CATEGORY_PATTERN = (
     r"^(?:men(?:'s|s)?|women(?:'s|s)?|boys?|girls?|kids?)\s+"
     r"(?:[a-z0-9&'\-]+\s+){0,5}"
@@ -38,6 +65,12 @@ DETAIL_MICRODATA_NON_PRODUCT_ITEMTYPE_TOKENS = frozenset(
 DETAIL_DESCRIPTION_UI_PATTERNS = (
     r"^\s*(?:please\s+)?(?:choose|select)\s+(?:(?:a|your|the)\s+)?(?:fabric|material|finish|color|colour|size)\b",
     r"^\s*(?:fabric|material|finish|color|colour|size)\s+selection\b",
+)
+DETAIL_DESCRIPTION_HARD_BOUNDARY_LENGTHS = frozenset({320})
+DETAIL_DESCRIPTION_PROMOTIONAL_PATTERNS = (
+    r"\b(?:buy now|free shipping|lowest prices?|exclusive offers?|fast delivery)\b",
+    r"^\s*(?:shop|buy|find)\b.{0,220}\b(?:online|sale|shipping|delivery|price)\b",
+    r"\b(?:search results?|product directory|shopping directory|compare prices?)\b",
 )
 DETAIL_LOW_SIGNAL_LONG_TEXT_VALUES = frozenset(
     {
@@ -154,6 +187,40 @@ DETAIL_TITLE_REJECT_VALUES = (
 DETAIL_TITLE_CODE_ONLY_PATTERN = r"^(?=.{4,40}$)(?=.*\d)[A-Za-z0-9._-]+$"
 DETAIL_TITLE_IDENTIFIER_ONLY_PATTERN = r"^(?=.{2,80}$)(?=.*\d)(?:[A-Za-z]{0,4}\d[A-Za-z0-9]*|[A-Za-z]|\d+)(?:[\s._-]+(?:[A-Za-z]{0,4}\d[A-Za-z0-9]*|[A-Za-z]|\d+))*$"
 DETAIL_TITLE_PATH_EXTENSION_PATTERN = r"\.(?:aspx?|html?|php)$"
+DETAIL_TITLE_ENDPOINT_FILENAME_PATTERN = (
+    r"^(?:product|detail|pdp|item|catalog|view)(?:\.(?:do|action|aspx?|html?|php))?$"
+)
+DETAIL_TITLE_GENERIC_CATEGORY_VALUES = frozenset(
+    {
+        "interchangeable lens cameras",
+        "digital cameras",
+        "camera lenses",
+        "mens clothing",
+        "womens clothing",
+        "men's clothing",
+        "women's clothing",
+        "shoes",
+        "footwear",
+        "accessories",
+    }
+)
+DETAIL_TITLE_STYLE_ONLY_TOKENS = frozenset(
+    {
+        "wide",
+        "leg",
+        "slim",
+        "skinny",
+        "straight",
+        "relaxed",
+        "cropped",
+        "oversized",
+        "classic",
+        "regular",
+        "petite",
+        "tall",
+    }
+)
+DETAIL_TITLE_STYLE_ONLY_MAX_WORDS = 2
 DETAIL_TITLE_SEO_POLLUTION_PATTERN = (
     r"(?:\s[|\u2013\u2014]\s|\s+-\s+\$?\d|\bshop\s+online\b|\$\d+(?:\.\d{2})?)"
 )

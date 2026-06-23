@@ -106,9 +106,7 @@ export function CrawlTerminalTabContent({
         hasMore={hasMoreJsonRecords}
         fetchCapReached={recordsFetchCapReached}
         emptyState={emptyRecordsState}
-        onLoadMore={() =>
-          setJsonVisibleCount((current) => current + JSON_PREVIEW_INCREMENT)
-        }
+        onLoadMore={() => setJsonVisibleCount((current) => current + JSON_PREVIEW_INCREMENT)}
       />
     );
   }

@@ -167,9 +167,7 @@ export default function AdminUsersPage() {
         {updateError ? <InlineAlert message={updateError} /> : null}
         {usersError ? (
           <InlineAlert
-            message={
-              usersError instanceof Error ? usersError.message : 'Failed to load users.'
-            }
+            message={usersError instanceof Error ? usersError.message : 'Failed to load users.'}
           />
         ) : null}
 

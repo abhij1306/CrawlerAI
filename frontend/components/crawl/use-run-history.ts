@@ -31,10 +31,7 @@ export function useRunHistory() {
     (runId: number) => {
       const run = queryData?.items.find((candidate) => candidate.id === runId);
       if (!run) return;
-      queryClient.setQueryData<CrawlRun>(
-        queryKeys.runs.detail(runId),
-        (current) => current ?? run,
-      );
+      queryClient.setQueryData<CrawlRun>(queryKeys.runs.detail(runId), (current) => current ?? run);
     },
     [queryClient, queryData?.items],
   );

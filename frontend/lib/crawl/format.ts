@@ -104,8 +104,6 @@ export function humanizeFieldName(value: string) {
   return normalized.charAt(0).toUpperCase() + normalized.slice(1);
 }
 
-
-
 export function isEmptyCandidateValue(value: unknown) {
   if (value === null || value === undefined) return true;
   if (typeof value === 'string') return value.trim().length === 0;
@@ -137,8 +135,6 @@ export function formatDurationMs(durationMs?: number | null) {
   return `${m}m ${s}s`;
 }
 
-
-
 export function extractionVerdict(run: CrawlRun | undefined) {
   const verdict = String(run?.result_summary?.extraction_verdict ?? '')
     .trim()
@@ -146,9 +142,6 @@ export function extractionVerdict(run: CrawlRun | undefined) {
   return verdict || 'unknown';
 }
 
-
-
 export function humanizeVerdict(verdict: string) {
   return verdict.replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase());
 }
-

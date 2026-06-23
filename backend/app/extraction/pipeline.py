@@ -26,10 +26,14 @@ from app.core.config.extraction_rules import (
     CURRENCY_SYMBOL_MAP,
     DETAIL_BRAND_BOILERPLATE_VALUES,
     DETAIL_BRAND_CATEGORY_PATTERN,
+    DETAIL_DESCRIPTION_HARD_BOUNDARY_LENGTHS,
+    DETAIL_DESCRIPTION_PROMOTIONAL_PATTERNS,
     DETAIL_DESCRIPTION_UI_PATTERNS,
     DETAIL_SHELL_TITLE_FLAG,
     DETAIL_SHELL_TITLE_KEYS,
     DETAIL_TITLE_CODE_ONLY_PATTERN,
+    DETAIL_TITLE_ENDPOINT_FILENAME_PATTERN,
+    DETAIL_TITLE_GENERIC_CATEGORY_VALUES,
     DETAIL_TITLE_IDENTIFIER_ONLY_PATTERN,
     DETAIL_TITLE_MEASUREMENT_FLAG,
     DETAIL_TITLE_MEASUREMENT_PATTERN,
@@ -39,6 +43,8 @@ from app.core.config.extraction_rules import (
     DETAIL_TITLE_SEO_POLLUTION_PATTERN,
     DETAIL_TITLE_SEO_PREFIXES,
     DETAIL_TITLE_SEO_PREFIX_MIN_WORDS,
+    DETAIL_TITLE_STYLE_ONLY_MAX_WORDS,
+    DETAIL_TITLE_STYLE_ONLY_TOKENS,
     DETAIL_TITLE_TRAILING_CODE_PATTERN,
     DETAIL_TITLE_UI_INSTRUCTION_MIN_HITS,
     DETAIL_TITLE_UI_INSTRUCTION_TOKENS,
@@ -308,10 +314,16 @@ def assess_ecommerce_detail_quality(
         return "review"
     if _title_is_review_only(resolution):
         return "review"
+    requested_fields_present = all(
+        record.get("image_url" if field == "image" else field)
+        not in (None, "", [], {}, ())
+        for field in requested_fields
+    )
     if (
         record.get("url")
         and record.get("title")
         and _has_complete_public_offer(record)
+        and requested_fields_present
         and not resolution.unresolved_fact_types
     ):
         return "success"
@@ -421,11 +433,18 @@ def normalize_evidence(evidence: Evidence, *, page_url: str) -> Evidence:
         if re.fullmatch(DETAIL_BRAND_CATEGORY_PATTERN, value, re.IGNORECASE):
             flags.add("category_as_brand")
     if evidence.fact_type == "product.description" and isinstance(value, str):
+        if len(value) in DETAIL_DESCRIPTION_HARD_BOUNDARY_LENGTHS:
+            flags.add("description_hard_boundary")
         if any(
             re.search(pattern, value, re.IGNORECASE)
             for pattern in DETAIL_DESCRIPTION_UI_PATTERNS
         ):
             flags.add("description_ui_pollution")
+        if any(
+            re.search(pattern, value, re.IGNORECASE)
+            for pattern in DETAIL_DESCRIPTION_PROMOTIONAL_PATTERNS
+        ):
+            flags.add("description_promotional_copy")
     if evidence.fact_type in {"product.gtin", "variant.gtin"} and isinstance(
         value, str
     ):
@@ -464,6 +483,8 @@ def _title_flags(evidence: Evidence, *, value: str, page_url: str) -> set[str]:
         flags.add("url_derived_title")
     if re.search(
         DETAIL_TITLE_PATH_EXTENSION_PATTERN, str(evidence.raw_value), re.IGNORECASE
+    ) or re.fullmatch(
+        DETAIL_TITLE_ENDPOINT_FILENAME_PATTERN, value.strip(), re.IGNORECASE
     ):
         flags.add("filename_title")
     if re.fullmatch(DETAIL_TITLE_CODE_ONLY_PATTERN, value.strip()) or re.fullmatch(
@@ -480,11 +501,18 @@ def _title_flags(evidence: Evidence, *, value: str, page_url: str) -> set[str]:
         flags.add("filename_title")
     if key in DETAIL_SHELL_TITLE_KEYS:
         flags.add(DETAIL_SHELL_TITLE_FLAG)
-    if key in DETAIL_TITLE_REJECT_VALUES or value.casefold().endswith(
-        DETAIL_TITLE_REJECT_SUFFIXES
+    if (
+        key in DETAIL_TITLE_REJECT_VALUES
+        or key in DETAIL_TITLE_GENERIC_CATEGORY_VALUES
+        or value.casefold().endswith(DETAIL_TITLE_REJECT_SUFFIXES)
     ):
         flags.add("generic_title")
     words = re.findall(r"[a-z0-9]+", value.casefold())
+    if (
+        0 < len(words) <= DETAIL_TITLE_STYLE_ONLY_MAX_WORDS
+        and set(words) <= DETAIL_TITLE_STYLE_ONLY_TOKENS
+    ):
+        flags.add("generic_title")
     if re.search(DETAIL_TITLE_SEO_POLLUTION_PATTERN, value, re.IGNORECASE) or (
         len(words) >= DETAIL_TITLE_SEO_PREFIX_MIN_WORDS
         and value.casefold().startswith(DETAIL_TITLE_SEO_PREFIXES)
@@ -498,12 +526,10 @@ def _title_flags(evidence: Evidence, *, value: str, page_url: str) -> set[str]:
     url_tokens = set(semantic_detail_identity_tokens(page_url))
     title_tokens = set(semantic_identity_tokens(value))
     overlap = len(url_tokens & title_tokens)
-    missing_url_tokens = url_tokens - title_tokens
     if (
         len(title_tokens) == 1
         and len(url_tokens) >= 2
         and title_tokens < url_tokens
-        and any(any(char.isdigit() for char in token) for token in missing_url_tokens)
     ):
         flags.add("truncated_title")
     if url_tokens and title_tokens:

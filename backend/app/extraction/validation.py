@@ -8,7 +8,11 @@ from app.core.config.extraction_rules import (
     DETAIL_SHELL_TITLE_FLAG,
     DETAIL_TITLE_REJECTION_FLAGS,
 )
-from app.core.config.field_mappings import SURFACE_FIELD_REPAIR_TARGETS
+from app.core.config.field_mappings import (
+    ECOMMERCE_DETAIL_DEFAULT_CONTRACT_FIELDS,
+    ECOMMERCE_DETAIL_EXPOSED_AVAILABILITY_FIELD,
+    ECOMMERCE_DETAIL_SELLABLE_OFFER_FIELDS,
+)
 from app.extraction.contracts import Evidence, Finding, PublicRecord
 from app.extraction.entities import EntitySet
 from app.extraction.ids import stable_id
@@ -22,6 +26,7 @@ def validate(
     return (
         *_validate_identity(evidence, entities),
         *_validate_shell_title(evidence, entities),
+        *_validate_descriptions(evidence, entities),
         *_validate_variants(entities),
         *_validate_offers(evidence, entities),
         *_validate_availability_consistency(evidence, entities),
@@ -32,16 +37,30 @@ def validate(
 def validate_selected_contract_fields(
     records: tuple[PublicRecord, ...],
     requested_fields: tuple[str, ...],
+    evidence: tuple[Evidence, ...] = (),
 ) -> tuple[Finding, ...]:
+    record = records[0] if records else None
+    sellable_offer_exposed = _sellable_offer_exposed(record, evidence)
+    availability_exposed = _availability_exposed(record, evidence)
+    conditional_fields = (
+        ECOMMERCE_DETAIL_SELLABLE_OFFER_FIELDS if sellable_offer_exposed else ()
+    )
+    availability_fields = (
+        (ECOMMERCE_DETAIL_EXPOSED_AVAILABILITY_FIELD,)
+        if availability_exposed
+        else ()
+    )
     contract_fields = tuple(
         dict.fromkeys(
             (
-                *SURFACE_FIELD_REPAIR_TARGETS.get("ecommerce_detail", ()),
+                *ECOMMERCE_DETAIL_DEFAULT_CONTRACT_FIELDS,
+                *conditional_fields,
+                *availability_fields,
                 *requested_fields,
             )
         )
     )
-    record = records[0] if records else None
+    missing_fields: list[str] = []
     findings: list[Finding] = []
     for field in contract_fields:
         public_field = "image_url" if field == "image" else field
@@ -51,6 +70,7 @@ def validate_selected_contract_fields(
         )
         if present:
             continue
+        missing_fields.append(field)
         findings.append(
             _finding(
                 "MISSING_CONTRACT_FIELD",
@@ -61,7 +81,79 @@ def validate_selected_contract_fields(
                 metadata={"field": field},
             )
         )
+    present_count = len(contract_fields) - len(missing_fields)
+    score = present_count / len(contract_fields) if contract_fields else 0.0
+    if record is None or record.get("title") in (None, "", [], {}, ()):
+        rejected_title_ids = tuple(
+            row.evidence_id
+            for row in evidence
+            if row.fact_type == "product.title"
+            and (
+                row.collector_id == "url"
+                or bool(set(row.flags).intersection(DETAIL_TITLE_REJECTION_FLAGS))
+            )
+        )
+        findings.append(
+            _finding(
+                "MISSING_OR_GENERIC_TITLE",
+                (),
+                rejected_title_ids,
+                "No admissible product-specific title was selected.",
+                False,
+                metadata={"field": "title"},
+            )
+        )
+    findings.append(
+        _finding(
+            "RECORD_COMPLETENESS",
+            (),
+            (),
+            f"Selected public record completeness is {score:.3f}.",
+            False,
+            metadata={
+                "score": score,
+                "present_count": present_count,
+                "required_count": len(contract_fields),
+                "missing_fields": tuple(missing_fields),
+                "contract_fields": contract_fields,
+            },
+        )
+    )
     return tuple(findings)
+
+
+def _sellable_offer_exposed(
+    record: PublicRecord | None, evidence: tuple[Evidence, ...]
+) -> bool:
+    if record is not None and any(
+        record.get(field) not in (None, "", [], {}, ())
+        for field in ("price", "currency", "original_price", "variants")
+    ):
+        return True
+    return any(
+        row.fact_type in {"offer.price", "offer.currency", "offer.original_price"}
+        and "invalid_decimal" not in row.flags
+        and "invalid_currency" not in row.flags
+        for row in evidence
+    )
+
+
+def _availability_exposed(
+    record: PublicRecord | None, evidence: tuple[Evidence, ...]
+) -> bool:
+    if record is not None and record.get("availability") not in (
+        None,
+        "",
+        [],
+        {},
+        (),
+    ):
+        return True
+    return any(
+        row.fact_type == "offer.availability"
+        and "invalid_availability" not in row.flags
+        for row in evidence
+    )
 
 
 def _validate_identity(
@@ -124,8 +216,54 @@ def _validate_shell_title(
     )
 
 
+def _validate_descriptions(
+    evidence: tuple[Evidence, ...], entities: EntitySet
+) -> tuple[Finding, ...]:
+    if len(entities.products) != 1:
+        return ()
+    product = entities.products[0]
+    by_id = {row.evidence_id: row for row in evidence}
+    descriptions = tuple(
+        by_id[eid]
+        for eid in product.attribute_evidence.get("product.description", ())
+        if eid in by_id
+    )
+    findings: list[Finding] = []
+    boundary_ids = tuple(
+        row.evidence_id
+        for row in descriptions
+        if "description_hard_boundary" in row.flags
+    )
+    if boundary_ids:
+        findings.append(
+            _finding(
+                "DESCRIPTION_HARD_BOUNDARY",
+                (product.entity_id,),
+                boundary_ids,
+                "Description length matches a known extractor/source excerpt boundary.",
+                False,
+            )
+        )
+    promotional_ids = tuple(
+        row.evidence_id
+        for row in descriptions
+        if "description_promotional_copy" in row.flags
+    )
+    if promotional_ids:
+        findings.append(
+            _finding(
+                "DESCRIPTION_PROMOTIONAL_COPY",
+                (product.entity_id,),
+                promotional_ids,
+                "Description evidence is promotional, shipping, search, or directory copy.",
+                False,
+            )
+        )
+    return tuple(findings)
+
+
 def _validate_variants(entities: EntitySet) -> tuple[Finding, ...]:
-    out: list[Finding] = []
+    out: list[Finding] = list(_validate_expected_variant_axes(entities))
     keys = [variant.identity_key for variant in entities.variants]
     if any(count > 1 for count in Counter(keys).values()):
         out.append(
@@ -149,7 +287,95 @@ def _validate_variants(entities: EntitySet) -> tuple[Finding, ...]:
                 False,
             )
         )
+    out.extend(_validate_variant_availability(entities))
     return tuple(out)
+
+
+def _validate_expected_variant_axes(entities: EntitySet) -> tuple[Finding, ...]:
+    findings: list[Finding] = []
+    variants_by_product = {
+        product.entity_id: tuple(
+            variant
+            for variant in entities.variants
+            if variant.product_entity_id == product.entity_id
+        )
+        for product in entities.products
+    }
+    for catalog in entities.option_catalogs:
+        variants = variants_by_product.get(catalog.product_entity_id, ())
+        for axis in catalog.axes:
+            expected_values = tuple(
+                value.value for value in axis.values if str(value.value).strip()
+            )
+            if len(set(expected_values)) < 2:
+                continue
+            missing = tuple(
+                variant.entity_id
+                for variant in variants
+                if not str(variant.option_values.get(axis.axis) or "").strip()
+            )
+            if variants and not missing:
+                continue
+            evidence_ids = tuple(
+                evidence_id
+                for value in axis.values
+                for evidence_id in value.evidence_ids
+            )
+            findings.append(
+                _finding(
+                    "EXPECTED_VARIANT_AXIS_MISSING",
+                    missing or (catalog.product_entity_id,),
+                    evidence_ids,
+                    f"Explicit variant axis {axis.axis!r} is not complete in public variants.",
+                    False,
+                    metadata={
+                        "axis": axis.axis,
+                        "expected_values": expected_values,
+                        "variant_count": len(variants),
+                        "missing_variant_count": len(missing) if variants else 0,
+                    },
+                )
+            )
+    return tuple(findings)
+
+
+def _validate_variant_availability(entities: EntitySet) -> tuple[Finding, ...]:
+    parent_has_availability = any(
+        offer.variant_entity_id is None
+        and bool(offer.fact_evidence.get("offer.availability"))
+        for offer in entities.offers
+    )
+    findings: list[Finding] = []
+    for variant in entities.variants:
+        offers = tuple(
+            offer for offer in entities.offers if offer.variant_entity_id == variant.entity_id
+        )
+        sellable = any(
+            offer.fact_evidence.get("offer.price")
+            and offer.fact_evidence.get("offer.currency")
+            for offer in offers
+        )
+        has_availability = any(
+            offer.fact_evidence.get("offer.availability") for offer in offers
+        )
+        if not sellable or has_availability or parent_has_availability:
+            continue
+        findings.append(
+            _finding(
+                "VARIANT_AVAILABILITY_MISSING",
+                (variant.entity_id,),
+                tuple(
+                    evidence_id
+                    for offer in offers
+                    for fact in ("offer.price", "offer.currency")
+                    for evidence_id in offer.fact_evidence.get(fact, ())
+                ),
+                "Sellable variant has no availability evidence.",
+                False,
+                metadata={"variant_identity": variant.identity_key},
+            )
+        )
+    return tuple(findings)
 
 
 def _publishable_variant(variant, entities: EntitySet) -> bool:

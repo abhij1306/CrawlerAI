@@ -4,6 +4,9 @@ import re
 
 from app.extraction.collectors._helpers import evidence, html_doc
 from app.core.config.extraction_rules import (
+    DETAIL_BRAND_DOM_SELECTORS,
+    DETAIL_BRAND_DOM_VALUE_ATTRIBUTES,
+    DETAIL_BRAND_VISIBLE_LABEL_PATTERN,
     DETAIL_DOM_IMAGE_NEGATIVE_SCOPE_TOKENS,
     DETAIL_DOM_IMAGE_POSITIVE_SCOPE_TOKENS,
     DETAIL_IMAGE_SRCSET_ATTRS,
@@ -88,6 +91,7 @@ class DomCollector:
                         else None,
                     )
                 )
+        out.extend(_product_brand_evidence(bundle, doc, product_subject))
         for img, confidence in _product_image_nodes(doc):
             src = _image_node_url(img)
             locator = SourceLocator(
@@ -108,6 +112,59 @@ class DomCollector:
             )
         out.extend(_variant_controls(bundle, doc, product_subject))
         return tuple(out)
+
+
+def _product_brand_evidence(
+    bundle: CaptureBundle, doc, product_subject: str
+) -> tuple[Evidence, ...]:
+    rows: list[Evidence] = []
+    seen: set[str] = set()
+    for selector in DETAIL_BRAND_DOM_SELECTORS:
+        for node in doc.css(selector):
+            if node.is_hidden():
+                continue
+            value = _brand_node_value(node)
+            key = value.casefold()
+            if not value or key in seen:
+                continue
+            seen.add(key)
+            rows.append(
+                evidence(
+                    bundle,
+                    "dom",
+                    "dom",
+                    "product.brand",
+                    value,
+                    SourceLocator(
+                        kind="css_selector",
+                        value=node.stable_locator(),
+                        preview=value[:120],
+                    ),
+                    hint=EntityHint(entity_type="product"),
+                    confidence=0.72,
+                    subject_id=product_subject,
+                    metadata={"brand_evidence_kind": "explicit_product_label"},
+                )
+            )
+    return tuple(rows)
+
+
+def _brand_node_value(node: HtmlNode) -> str:
+    for attribute in DETAIL_BRAND_DOM_VALUE_ATTRIBUTES:
+        value = str(node.attribute(attribute) or "").strip()
+        if value:
+            return value
+    text = " ".join(str(node.text() or "").split())
+    match = re.fullmatch(DETAIL_BRAND_VISIBLE_LABEL_PATTERN, text, re.IGNORECASE)
+    if match is not None:
+        return str(match.group("brand") or "").strip()
+    context = " ".join(
+        str(node.attribute(attribute) or "").casefold()
+        for attribute in ("class", "id", "data-testid", "itemprop")
+    )
+    if any(token in context for token in ("product-brand", "product_brand", "manufacturer")):
+        return text if 0 < len(text) <= 80 else ""
+    return ""
 
 
 def _product_image_nodes(doc) -> tuple[tuple[HtmlNode, float], ...]:

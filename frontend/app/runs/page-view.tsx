@@ -262,7 +262,10 @@ export default function RunsPage() {
     if (!runs.length) return;
 
     for (const run of runs) {
-      queryClient.setQueryData<CrawlRun>(queryKeys.runs.detail(run.id), (current) => current ?? run);
+      queryClient.setQueryData<CrawlRun>(
+        queryKeys.runs.detail(run.id),
+        (current) => current ?? run,
+      );
     }
     if (crawlRunRoutePreloadStatusRef.current === 'idle') {
       crawlRunRoutePreloadStatusRef.current = 'pending';

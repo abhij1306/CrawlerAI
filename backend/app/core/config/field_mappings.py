@@ -77,7 +77,18 @@ FIELD_ALIASES: dict[str, list[str]] = {
         "original_price",
     ],
     "currency": ["currency", "currency_code", "price_currency"],
-    "brand": ["brand", "manufacturer", "manufacturer_name", "brand_name", "designer"],
+    "brand": [
+        "brand",
+        "brand_name",
+        "brandName",
+        "brand_label",
+        "manufacturer",
+        "manufacturer_name",
+        "manufacturerName",
+        "designer",
+        "designer_name",
+        "designerName",
+    ],
     "image_url": [
         "image",
         "image_url",
@@ -291,10 +302,28 @@ DOM_OPTIONAL_CUE_FIELDS = {
     "ecommerce_detail": frozenset({"care", "dimensions", "features", "materials"}),
     "job_detail": frozenset({"benefits", "requirements", "skills"}),
 }
+ECOMMERCE_DETAIL_DEFAULT_CONTRACT_FIELDS = (
+    "title",
+    "url",
+    "brand",
+    "description",
+    "image_url",
+)
+ECOMMERCE_DETAIL_SELLABLE_OFFER_FIELDS = ("price", "currency")
+ECOMMERCE_DETAIL_EXPOSED_AVAILABILITY_FIELD = "availability"
 SURFACE_BROWSER_RETRY_TARGETS = {
     "ecommerce_detail": ("price", "currency", "title", "image_url")
 }
-SURFACE_FIELD_REPAIR_TARGETS = {"ecommerce_detail": ("price", "title", "image_url")}
+SURFACE_ACQUISITION_CONTRACT_FIELDS = {
+    "ecommerce_detail": ("title", "price", "image_url")
+}
+SURFACE_FIELD_REPAIR_TARGETS = {
+    "ecommerce_detail": (
+        *ECOMMERCE_DETAIL_DEFAULT_CONTRACT_FIELDS,
+        *ECOMMERCE_DETAIL_SELLABLE_OFFER_FIELDS,
+        ECOMMERCE_DETAIL_EXPOSED_AVAILABILITY_FIELD,
+    )
+}
 ECOMMERCE_DETAIL_JS_STATE_PRIORITY_FIELDS = frozenset(
     {
         "variants",
@@ -367,6 +396,8 @@ ECOMMERCE_STRUCTURED_SOURCE_FACT_TYPES = {
     "available": OFFER_AVAILABILITY_FACT_TYPE,
     "brand": PRODUCT_BRAND_FACT_TYPE,
     "brandName": PRODUCT_BRAND_FACT_TYPE,
+    "brand_label": PRODUCT_BRAND_FACT_TYPE,
+    "brandLabel": PRODUCT_BRAND_FACT_TYPE,
     "currency": OFFER_CURRENCY_FACT_TYPE,
     "currencyCode": OFFER_CURRENCY_FACT_TYPE,
     "currentPrice": OFFER_PRICE_FACT_TYPE,
@@ -377,6 +408,11 @@ ECOMMERCE_STRUCTURED_SOURCE_FACT_TYPES = {
     "images": ASSET_IMAGE_URL_FACT_TYPE,
     "inStock": OFFER_AVAILABILITY_FACT_TYPE,
     "manufacturer": PRODUCT_BRAND_FACT_TYPE,
+    "manufacturer_name": PRODUCT_BRAND_FACT_TYPE,
+    "manufacturerName": PRODUCT_BRAND_FACT_TYPE,
+    "designer": PRODUCT_BRAND_FACT_TYPE,
+    "designer_name": PRODUCT_BRAND_FACT_TYPE,
+    "designerName": PRODUCT_BRAND_FACT_TYPE,
     "vendor": PRODUCT_BRAND_FACT_TYPE,
     "name": PRODUCT_TITLE_FACT_TYPE,
     "price": OFFER_PRICE_FACT_TYPE,
@@ -397,11 +433,18 @@ ECOMMERCE_PRODUCT_CONTEXT_SOURCE_KEYS = frozenset(
     {
         "brand",
         "brandName",
+        "brand_label",
+        "brandLabel",
         "description",
         "image",
         "imageUrl",
         "images",
         "manufacturer",
+        "manufacturer_name",
+        "manufacturerName",
+        "designer",
+        "designer_name",
+        "designerName",
         "vendor",
         "name",
         "productDescription",
@@ -439,6 +482,8 @@ ECOMMERCE_JSONLD_PRODUCT_FACT_TYPES = {
     "description": PRODUCT_DESCRIPTION_FACT_TYPE,
     "gtin": PRODUCT_GTIN_FACT_TYPE,
     "manufacturer": PRODUCT_BRAND_FACT_TYPE,
+    "manufacturerName": PRODUCT_BRAND_FACT_TYPE,
+    "designer": PRODUCT_BRAND_FACT_TYPE,
     "mpn": PRODUCT_MPN_FACT_TYPE,
     "name": PRODUCT_TITLE_FACT_TYPE,
     "sku": PRODUCT_SKU_FACT_TYPE,

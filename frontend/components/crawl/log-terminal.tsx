@@ -810,18 +810,8 @@ export const LogTerminal = memo(function LogTerminal({
             return (
               <section key={group.key} id={siteDomId(group.key)} className="overflow-hidden">
                 <div
-                  role="button"
-                  tabIndex={0}
-                  aria-expanded={expanded}
-                  onClick={() => toggleGroup(group.key)}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter' || event.key === ' ') {
-                      event.preventDefault();
-                      toggleGroup(group.key);
-                    }
-                  }}
                   className={cn(
-                    'group/row grid w-full cursor-pointer items-center gap-3 border-none bg-transparent px-6 py-2 text-left text-xs font-inherit text-inherit transition-colors',
+                    'group/row font-inherit grid w-full items-center gap-3 border-none bg-transparent px-6 py-2 text-left text-xs text-inherit transition-colors',
                     isRunEventGroup
                       ? 'grid-cols-[32px_minmax(280px,1fr)_auto_minmax(260px,1.4fr)_60px]'
                       : 'grid-cols-[32px_minmax(280px,2fr)_75px_80px_85px_auto_minmax(200px,1.2fr)_80px_70px]',

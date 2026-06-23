@@ -139,7 +139,9 @@ def extract(request: ExtractionRequest) -> ExtractionResult:
     if spec.surface == Surface.ECOMMERCE_DETAIL:
         findings = (
             *findings,
-            *validate_selected_contract_fields(records, request.requested_fields),
+            *validate_selected_contract_fields(
+                records, request.requested_fields, normalized
+            ),
         )
     verdict = cast(
         ExtractionVerdict, runtime.assess(records, resolution, findings, request, spec)
@@ -415,12 +417,33 @@ def _assess_detail(
         finding.rule_id == DETAIL_SHELL_FINDING_RULE_ID for finding in findings
     ):
         return "error"
-    return assess_ecommerce_detail_quality(
+    completeness = next(
+        (
+            float(finding.metadata.get("score", 0.0))
+            for finding in findings
+            if finding.rule_id == "RECORD_COMPLETENESS"
+        ),
+        0.0,
+    )
+    verdict = assess_ecommerce_detail_quality(
         record.model_dump(mode="python") if record is not None else {},
         resolution,
         request.capture,
         requested_fields=request.requested_fields,
     )
+    if (
+        verdict in {"success", "partial"}
+        and completeness <= 0.4
+        and not (record and record.get("variants"))
+    ):
+        return "review"
+    if verdict == "success" and any(
+        finding.rule_id
+        in {"EXPECTED_VARIANT_AXIS_MISSING", "VARIANT_AVAILABILITY_MISSING"}
+        for finding in findings
+    ):
+        return "partial"
+    return verdict
 
 
 def _assess_records(

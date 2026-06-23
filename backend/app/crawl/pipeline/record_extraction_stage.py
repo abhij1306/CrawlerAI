@@ -11,7 +11,7 @@ from app.crawl.domain_memory_service import (
     load_domain_selector_rules,
 )
 from app.core.domain_utils import normalize_domain
-from app.core.records.field_policy import repair_target_fields_for_surface
+from app.core.records.field_policy import acquisition_contract_fields_for_surface
 from app.extraction import extract, parse_surface
 from app.extraction.contracts import ExtractionResult
 from app.extraction.replay import request_from_acquisition_result
@@ -276,7 +276,7 @@ async def _update_acquisition_contract_memory(
         method=getattr(acquisition_result, "method", None),
         browser_engine=str(diagnostics.get("browser_engine") or "").strip().lower(),
         browser_diagnostics=dict(diagnostics),
-        requested_fields=repair_target_fields_for_surface(
+        requested_fields=acquisition_contract_fields_for_surface(
             context.surface,
             list(context.requested_fields),
         ),

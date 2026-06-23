@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from decimal import Decimal, InvalidOperation
-from urllib.parse import urlsplit
+from urllib.parse import parse_qsl, urlsplit
 
 from app.extraction.contracts import (
     AssetDecision,
@@ -240,6 +240,11 @@ def _inherit_variant_offer_decisions(
         if offer.variant_entity_id
         for fact in facts
         if (offer.entity_id, fact) in resolved
+    } | {
+        (variant.entity_id, fact)
+        for variant in entities.variants
+        for fact in facts
+        if (variant.entity_id, fact) in resolved
     }
     return tuple(
         resolved[(parent.entity_id, fact)].model_copy(
@@ -382,9 +387,22 @@ def _accepted_asset_evidence(
         candidates,
         key=lambda row: (
             int(urlsplit(str(row.value)).scheme.casefold() != "https"),
+            -_asset_requested_dimension(row.value),
             _rank(row),
         ),
     )[0]
+
+
+def _asset_requested_dimension(value: object) -> int:
+    dimension_keys = {"w", "width", "wid", "imwidth", "h", "height", "hei"}
+    dimensions = [
+        int(raw_value)
+        for key, raw_value in parse_qsl(
+            urlsplit(str(value or "")).query, keep_blank_values=False
+        )
+        if key.casefold() in dimension_keys and str(raw_value).isdigit()
+    ]
+    return max(dimensions, default=0)
 
 
 def _asset_rank(
@@ -558,6 +576,7 @@ def _invalid(ev: Evidence) -> bool:
             "brand_boilerplate",
             "brand_url",
             "category_as_brand",
+            "description_promotional_copy",
             "description_ui_pollution",
             "invalid_decimal",
             "invalid_currency",
@@ -602,6 +621,15 @@ def _rank(
         return (
             pollution,
             url_disagreement,
+            reliability,
+            -float(ev.confidence),
+            ev.evidence_id,
+        )
+    if ev.fact_type == "product.description":
+        boundary_excerpt = int("description_hard_boundary" in ev.flags)
+        return (
+            boundary_excerpt,
+            directness,
             reliability,
             -float(ev.confidence),
             ev.evidence_id,

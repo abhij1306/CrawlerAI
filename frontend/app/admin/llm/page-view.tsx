@@ -376,8 +376,7 @@ function CreateConfigCard({
             value={form.provider}
             onChange={(provider) => {
               const nextModel =
-                providers.find((row) => row.provider === provider)?.recommended_models?.[0] ??
-                '';
+                providers.find((row) => row.provider === provider)?.recommended_models?.[0] ?? '';
               dispatch({ type: 'setCustomModelSelected', selected: false });
               dispatch({
                 type: 'patchForm',
@@ -453,12 +452,7 @@ function CreateConfigCard({
       </div>
 
       <div className="flex flex-wrap gap-2">
-        <Button
-          type="button"
-          variant="neutral"
-          onClick={onTest}
-          disabled={testing}
-        >
+        <Button type="button" variant="neutral" onClick={onTest} disabled={testing}>
           <PlugZap className="size-3.5" />
           {testing ? 'Testing…' : 'Test Connection'}
         </Button>
@@ -555,15 +549,9 @@ function CostLogCard({ costLog, nowMs }: Readonly<CostLogCardProps>) {
             <Table className="table-auto">
               <TableHeader>
                 <TableRow className="border-divider/50">
-                  <TableHead className="w-[118px] text-[10px] tracking-[0.08em]">
-                    Usage
-                  </TableHead>
-                  <TableHead className="w-[170px] text-[10px] tracking-[0.08em]">
-                    Task
-                  </TableHead>
-                  <TableHead className="w-[160px] text-[10px] tracking-[0.08em]">
-                    Target
-                  </TableHead>
+                  <TableHead className="w-[118px] text-[10px] tracking-[0.08em]">Usage</TableHead>
+                  <TableHead className="w-[170px] text-[10px] tracking-[0.08em]">Task</TableHead>
+                  <TableHead className="w-[160px] text-[10px] tracking-[0.08em]">Target</TableHead>
                   <TableHead className="text-[10px] tracking-[0.08em]">Provider</TableHead>
                   <TableHead className="w-[110px] text-right text-[10px] tracking-[0.08em]">
                     Time
@@ -602,10 +590,7 @@ function CostLogCard({ costLog, nowMs }: Readonly<CostLogCardProps>) {
                           </span>
                         </TableCell>
 
-                        <TableCell
-                          className="py-3"
-                          title={entry.domain || `Run #${entry.run_id}`}
-                        >
+                        <TableCell className="py-3" title={entry.domain || `Run #${entry.run_id}`}>
                           <span className="text-foreground/80 block truncate">
                             {entry.domain || (entry.run_id ? `Run #${entry.run_id}` : 'system')}
                           </span>

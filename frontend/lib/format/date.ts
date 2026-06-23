@@ -64,5 +64,3 @@ export function formatTimeHms(value: string) {
     second: '2-digit',
   });
 }
-
-

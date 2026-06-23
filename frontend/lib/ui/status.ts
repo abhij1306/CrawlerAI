@@ -56,13 +56,9 @@ export function dashboardStatusBarColor(status: string): string {
   return 'var(--text-muted)';
 }
 
-
-
 export function isSubduedStatus(status: string): boolean {
   return status === 'completed' || status === 'killed';
 }
-
-
 
 export function humanizeStatus(status: string): string {
   return String(status || '')
@@ -90,8 +86,6 @@ export function runExecutionTone(status: string, summary?: RunSummaryLike): Excl
   }
   return 'success';
 }
-
-
 
 export function runExecutionLabel(status: string, summary?: RunSummaryLike): string {
   if (status !== 'completed') {

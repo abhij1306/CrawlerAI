@@ -75,6 +75,11 @@ def scoped_graph(graph_state: Any, target: TargetSelection) -> Any:
             asset for asset in graph_state.assets if asset.product_entity_id == selected
         ),
         product_option_metadata=graph_state.product_option_metadata,
+        option_catalogs=tuple(
+            catalog
+            for catalog in graph_state.option_catalogs
+            if catalog.product_entity_id == selected
+        ),
     )
 
 

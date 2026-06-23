@@ -1,14 +1,7 @@
-
-
 import { Button } from '../ui/primitives';
 import type { FieldRow, FieldRowMessageTone, ValidationState } from './form-fields';
 import { buildLogSiteGroups, getLogStage } from './log-terminal-utils';
-import type {
-  CrawlDomain,
-  CrawlLog,
-  CrawlRun,
-  CrawlSurface,
-} from '../../lib/api/types';
+import type { CrawlDomain, CrawlLog, CrawlRun, CrawlSurface } from '../../lib/api/types';
 import { CRAWL_DEFAULTS } from '../../lib/constants/crawl-defaults';
 import { SURFACE_DISPATCH } from './domain-surface-config';
 import {
@@ -29,10 +22,7 @@ import {
   parseLines,
 } from '../../lib/crawl/format';
 import { scrollViewportToBottom } from '../../lib/crawl/scroll';
-import {
-  cleanRecordForDisplay,
-  extractRecordUrl,
-} from '../../lib/crawl/record-utils';
+import { cleanRecordForDisplay, extractRecordUrl } from '../../lib/crawl/record-utils';
 import {
   estimateDataQuality,
   humanizeQuality,
@@ -90,7 +80,6 @@ export function selectorWinnerLabel(selectorKind: string | null | undefined): st
   return `${selectorKind} winner`;
 }
 
-
 export function mergeLogs(current: CrawlLog[], incoming: CrawlLog[]) {
   const byId = new Map<number, CrawlLog>();
   for (const row of current) byId.set(row.id, row);
@@ -146,7 +135,6 @@ export function ActionButton({
     </Button>
   );
 }
-
 
 function inferRunModule(run?: CrawlRun): CrawlTab | null {
   if (!run) {

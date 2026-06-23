@@ -16,7 +16,9 @@
             dark = window.matchMedia('(prefers-color-scheme:dark)').matches;
           }
         } catch {
-          dark = typeof window.matchMedia === 'function' && window.matchMedia('(prefers-color-scheme:dark)').matches;
+          dark =
+            typeof window.matchMedia === 'function' &&
+            window.matchMedia('(prefers-color-scheme:dark)').matches;
         }
         document.documentElement.dataset.theme = dark ? 'dark' : 'light';
       })();

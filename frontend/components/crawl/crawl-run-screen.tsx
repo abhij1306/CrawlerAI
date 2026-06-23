@@ -103,10 +103,7 @@ function CrawlRunWorkspace({ runId }: Readonly<CrawlRunScreenProps>) {
     live,
     refetchRun: refetchRunQuery,
   });
-  const domainRecipeQuery = useRunRecipe(
-    runId,
-    showRunLearningTab && outputTab === 'learning',
-  );
+  const domainRecipeQuery = useRunRecipe(runId, showRunLearningTab && outputTab === 'learning');
   const { refetch: refetchDomainRecipeQuery } = domainRecipeQuery;
   const domainRecipe = domainRecipeQuery.data;
   const {
@@ -200,65 +197,74 @@ function CrawlRunWorkspace({ runId }: Readonly<CrawlRunScreenProps>) {
     navigate('/crawl?module=category&mode=single');
   }
 
-  const terminalActions = useMemo(() => (
-    <RunWorkspaceActions
-      showBatch={listingRun && batchFromResultsUrls.length > 0}
-      batchLabel={batchFromResultsLabel}
-      showProductIntelligence={
-        (listingRun || ecommerceDetailRun) && productIntelligenceRecords.length > 0
-      }
-      productIntelligenceLabel={productIntelligenceLabel}
-      showDataEnrichment={ecommerceDetailRun && dataEnrichmentRecords.length > 0}
-      dataEnrichmentLabel={dataEnrichmentLabel}
-      onBatch={startBatchCrawl}
-      onProductIntelligence={startProductIntelligence}
-      onDataEnrichment={startDataEnrichment}
-      onDownloadCsv={() => downloadExport('csv')}
-      onDownloadJson={() => downloadExport('json')}
-      onHistory={() => setHistoryOpen(true)}
-    />
-  ), [
-    listingRun,
-    batchFromResultsUrls.length,
-    batchFromResultsLabel,
-    ecommerceDetailRun,
-    productIntelligenceRecords.length,
-    productIntelligenceLabel,
-    dataEnrichmentRecords.length,
-    dataEnrichmentLabel,
-    startBatchCrawl,
-    startProductIntelligence,
-    startDataEnrichment,
-    downloadExport,
-    setHistoryOpen,
-  ]);
+  const terminalActions = useMemo(
+    () => (
+      <RunWorkspaceActions
+        showBatch={listingRun && batchFromResultsUrls.length > 0}
+        batchLabel={batchFromResultsLabel}
+        showProductIntelligence={
+          (listingRun || ecommerceDetailRun) && productIntelligenceRecords.length > 0
+        }
+        productIntelligenceLabel={productIntelligenceLabel}
+        showDataEnrichment={ecommerceDetailRun && dataEnrichmentRecords.length > 0}
+        dataEnrichmentLabel={dataEnrichmentLabel}
+        onBatch={startBatchCrawl}
+        onProductIntelligence={startProductIntelligence}
+        onDataEnrichment={startDataEnrichment}
+        onDownloadCsv={() => downloadExport('csv')}
+        onDownloadJson={() => downloadExport('json')}
+        onHistory={() => setHistoryOpen(true)}
+      />
+    ),
+    [
+      listingRun,
+      batchFromResultsUrls.length,
+      batchFromResultsLabel,
+      ecommerceDetailRun,
+      productIntelligenceRecords.length,
+      productIntelligenceLabel,
+      dataEnrichmentRecords.length,
+      dataEnrichmentLabel,
+      startBatchCrawl,
+      startProductIntelligence,
+      startDataEnrichment,
+      downloadExport,
+      setHistoryOpen,
+    ],
+  );
 
-  const terminalTabs = useMemo(() => (
-    <RunOutputTabs
-      value={outputTab}
-      recordCount={summary.records}
-      showLearning={showRunLearningTab}
-      onChange={setOutputTab}
-    />
-  ), [outputTab, summary.records, showRunLearningTab, setOutputTab]);
+  const terminalTabs = useMemo(
+    () => (
+      <RunOutputTabs
+        value={outputTab}
+        recordCount={summary.records}
+        showLearning={showRunLearningTab}
+        onChange={setOutputTab}
+      />
+    ),
+    [outputTab, summary.records, showRunLearningTab, setOutputTab],
+  );
 
-  const terminalSummary = useMemo(() => (
-    <RunOutputSummary
-      llmRequested={llmSummary.requested}
-      llmTouchedRecords={llmSummary.touchedRecords}
-      llmTouchedFields={llmSummary.touchedFields}
-      duration={summary.duration}
-      verdict={verdict}
-      quality={completedQualityLevel}
-    />
-  ), [
-    llmSummary.requested,
-    llmSummary.touchedRecords,
-    llmSummary.touchedFields,
-    summary.duration,
-    verdict,
-    completedQualityLevel,
-  ]);
+  const terminalSummary = useMemo(
+    () => (
+      <RunOutputSummary
+        llmRequested={llmSummary.requested}
+        llmTouchedRecords={llmSummary.touchedRecords}
+        llmTouchedFields={llmSummary.touchedFields}
+        duration={summary.duration}
+        verdict={verdict}
+        quality={completedQualityLevel}
+      />
+    ),
+    [
+      llmSummary.requested,
+      llmSummary.touchedRecords,
+      llmSummary.touchedFields,
+      summary.duration,
+      verdict,
+      completedQualityLevel,
+    ],
+  );
 
   if (runQuery.error) {
     return <RunLoadError error={runQuery.error} onNewCrawl={resetToConfig} />;
@@ -340,4 +346,3 @@ function CrawlRunWorkspace({ runId }: Readonly<CrawlRunScreenProps>) {
     </div>
   );
 }
-

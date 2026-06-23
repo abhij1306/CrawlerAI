@@ -82,18 +82,18 @@ def prune_html_tree(
     drop_tag_set = {str(tag).lower() for tag in drop_tags}
     for node in soup.find_all(string=lambda value: isinstance(value, Comment)):
         node.extract()
-    for node in soup.find_all(True):
-        if not isinstance(node, Tag):
+    for tag in soup.find_all(True):
+        if not isinstance(tag, Tag):
             continue
-        tag_name = str(node.name or "").lower()
-        if tag_name in drop_tag_set and not (preserve_tag and preserve_tag(node)):
-            node.decompose()
+        tag_name = str(tag.name or "").lower()
+        if tag_name in drop_tag_set and not (preserve_tag and preserve_tag(tag)):
+            tag.decompose()
             continue
-        attrs = node.attrs
+        attrs = tag.attrs
         if not isinstance(attrs, dict):
-            node.attrs = {}
+            tag.attrs = {}
             continue
-        node.attrs = {
+        tag.attrs = {
             key: value
             for key, value in attrs.items()
             if (key in allowed_attr_set if allowed_attrs is not None else True)

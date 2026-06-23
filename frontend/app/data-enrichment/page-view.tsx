@@ -131,8 +131,7 @@ export default function DataEnrichmentPage() {
       return status === 'pending' || status === 'running' ? 2500 : false;
     },
   });
-  const activeJob =
-    detailData?.job ?? jobsData?.find((job) => job.id === resolvedJobId) ?? null;
+  const activeJob = detailData?.job ?? jobsData?.find((job) => job.id === resolvedJobId) ?? null;
   const isRunning = activeJob?.status === 'pending' || activeJob?.status === 'running';
 
   const products = detailData?.enriched_products ?? [];
@@ -325,8 +324,6 @@ function formatValue(value: unknown): string {
   return String(value);
 }
 
-
-
 interface EnrichedProductSidebarProps {
   products: EnrichedProduct[];
   resolvedProductId: number | null;
@@ -433,12 +430,18 @@ function EnrichedProductDetail({ product }: Readonly<EnrichedProductDetailProps>
               Core Attributes
             </h3>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
-              <KVTile label="Price (Normalized)" value={formatValue(product.price_normalized) || '--'} />
+              <KVTile
+                label="Price (Normalized)"
+                value={formatValue(product.price_normalized) || '--'}
+              />
               <KVTile label="Color Family" value={product.color_family || '--'} />
               <KVTile label="Size Normalized" value={product.size_normalized?.join(', ') || '--'} />
               <KVTile label="Size System" value={product.size_system || '--'} />
               <KVTile label="Gender Normalized" value={product.gender_normalized || '--'} />
-              <KVTile label="Materials Normalized" value={product.materials_normalized?.join(', ') || '--'} />
+              <KVTile
+                label="Materials Normalized"
+                value={product.materials_normalized?.join(', ') || '--'}
+              />
               <KVTile label="Availability" value={product.availability_normalized || '--'} />
             </div>
           </div>
@@ -466,10 +469,14 @@ function EnrichedProductDetail({ product }: Readonly<EnrichedProductDetailProps>
                   product.intent_attributes?.length ? (
                     <div className="flex flex-wrap gap-1.5 pt-1">
                       {product.intent_attributes.map((attr) => (
-                        <Badge key={attr} tone="accent" className="text-xs font-normal">{attr}</Badge>
+                        <Badge key={attr} tone="accent" className="text-xs font-normal">
+                          {attr}
+                        </Badge>
                       ))}
                     </div>
-                  ) : '--'
+                  ) : (
+                    '--'
+                  )
                 }
               />
               <KVTile
@@ -478,10 +485,14 @@ function EnrichedProductDetail({ product }: Readonly<EnrichedProductDetailProps>
                   product.style_tags?.length ? (
                     <div className="flex flex-wrap gap-1.5 pt-1">
                       {product.style_tags.map((tag) => (
-                        <Badge key={tag} tone="neutral" className="text-xs font-normal">{tag}</Badge>
+                        <Badge key={tag} tone="neutral" className="text-xs font-normal">
+                          {tag}
+                        </Badge>
                       ))}
                     </div>
-                  ) : '--'
+                  ) : (
+                    '--'
+                  )
                 }
               />
               <KVTile
@@ -490,10 +501,14 @@ function EnrichedProductDetail({ product }: Readonly<EnrichedProductDetailProps>
                   product.ai_discovery_tags?.length ? (
                     <div className="flex flex-wrap gap-1.5 pt-1">
                       {product.ai_discovery_tags.map((tag) => (
-                        <Badge key={tag} tone="info" className="text-xs font-normal">{tag}</Badge>
+                        <Badge key={tag} tone="info" className="text-xs font-normal">
+                          {tag}
+                        </Badge>
                       ))}
                     </div>
-                  ) : '--'
+                  ) : (
+                    '--'
+                  )
                 }
               />
               <KVTile
@@ -502,10 +517,14 @@ function EnrichedProductDetail({ product }: Readonly<EnrichedProductDetailProps>
                   product.suggested_bundles?.length ? (
                     <div className="flex flex-wrap gap-1.5 pt-1">
                       {product.suggested_bundles.map((bundle) => (
-                        <Badge key={bundle} tone="success" className="text-xs font-normal">{bundle}</Badge>
+                        <Badge key={bundle} tone="success" className="text-xs font-normal">
+                          {bundle}
+                        </Badge>
                       ))}
                     </div>
-                  ) : '--'
+                  ) : (
+                    '--'
+                  )
                 }
               />
             </div>
@@ -524,7 +543,9 @@ function EnrichedProductDetail({ product }: Readonly<EnrichedProductDetailProps>
                         </span>
                       ))}
                     </div>
-                  ) : '--'
+                  ) : (
+                    '--'
+                  )
                 }
               />
             </div>

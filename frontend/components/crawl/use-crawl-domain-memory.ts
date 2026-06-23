@@ -136,13 +136,7 @@ export function useCrawlDomainMemory({
       localDispatch.setSavedProfileDomain('');
       localDispatch.setSavedProfileMessage('');
     }
-  }, [
-    localDispatch,
-    profileData,
-    isProfileError,
-    isProfileSuccess,
-    queryEnabled,
-  ]);
+  }, [localDispatch, profileData, isProfileError, isProfileSuccess, queryEnabled]);
 
   useEffect(() => {
     if (!queryEnabled) return;
@@ -158,9 +152,7 @@ export function useCrawlDomainMemory({
       localDispatch.setFieldRowMessages({});
     } else if (isSelectorsError) {
       localDispatch.setFieldConfigError(
-        selectorsError instanceof Error
-          ? selectorsError.message
-          : 'Unable to load domain memory.',
+        selectorsError instanceof Error ? selectorsError.message : 'Unable to load domain memory.',
       );
     }
   }, [

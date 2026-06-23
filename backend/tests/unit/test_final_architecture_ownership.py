@@ -50,6 +50,35 @@ def _function_parameter_names(relative_path: str, function_name: str) -> set[str
     raise AssertionError(f"Function not found: {relative_path}:{function_name}")
 
 
+PACKAGE_LOC_BUDGETS = {
+    "acquisition": 15_400,
+    "crawl": 9_250,
+    "core": 14_500,
+    "enrichment": 2_150,
+    "connectors": 2_700,
+    "intelligence": 3_250,
+    "extraction": 5_500,
+}
+TOTAL_APP_LOC_BUDGET = 62_600
+
+
+def test_production_package_loc_budgets() -> None:
+    app_trees = {
+        path: _parse_module(path)
+        for path in APP_ROOT.rglob("*.py")
+        if "__pycache__" not in path.parts
+    }
+    assert sum(_canonical_line_count(tree) for tree in app_trees.values()) <= TOTAL_APP_LOC_BUDGET
+    for package, budget in PACKAGE_LOC_BUDGETS.items():
+        package_root = APP_ROOT / package
+        package_total = sum(
+            _canonical_line_count(tree)
+            for path, tree in app_trees.items()
+            if package_root in path.parents
+        )
+        assert package_total <= budget, (package, package_total, budget)
+
+
 def test_no_new_oversized_modules() -> None:
     oversized = {
         path.relative_to(APP_ROOT).as_posix()

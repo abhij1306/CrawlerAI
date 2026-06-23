@@ -243,7 +243,6 @@ function stringArray(value: unknown) {
     : [];
 }
 
-
 function clampInt(value: unknown, min: number, max: number, fallback: number) {
   const parsed = Number.parseInt(String(value), 10);
   if (!Number.isFinite(parsed)) {

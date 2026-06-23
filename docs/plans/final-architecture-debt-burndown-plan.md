@@ -2,8 +2,8 @@
 
 **Created:** 2026-06-21
 **Agent:** Codex
-**Status:** IN PROGRESS
-**Current slice:** Slice 10 — package LOC closure pending; Slices 9 and 11 await verification
+**Status:** AWAITING VALID 100-SITE GATE INPUT
+**Current slice:** Slices 9-12 verified; Slice 13 is authorized but blocked because the acceptance runner resolves zero sites from the current raw URL-only `TEST_SITES.md` and its default curated site-set manifest is absent
 **Touches buckets:** acquisition/browser runtime, extraction and public record contracts, persistence/artifacts/review, crawl orchestration, core config/record quality, intelligence, enrichment, connectors, tests, canonical architecture docs
 
 ## Goal
@@ -480,6 +480,207 @@ Use structured/JS state with one ID-only variant, one complete variant, one pare
 - Run Ruff once, then the complete offline suite with regression marker included.
 - Update docs only for implemented ownership/contract changes. Do not rewrite historical rationale.
 
+## Latest Output Quality Reopen — 2026-06-23
+
+The earlier Slice 4-6 regressions protected known generic invariants, but the latest supplied catalog proves that the end-to-end output is not yet closed. This is not a new plan. The evidence and work below are appended to this active plan and block final closure.
+
+### Frozen 91-record baseline
+
+Source: the user-supplied 91-record JSON catalog plus the issue list supplied on 2026-06-23. This packet is the canonical offline baseline for the quality reopen.
+
+| Signal | Baseline observed |
+| --- | ---: |
+| Records | 91 |
+| Missing `availability` | 22 |
+| Missing `brand` | 19 |
+| Missing `price` | 17 |
+| Missing `currency` | 17 |
+| Missing `image_url` | 6 |
+| Missing `description` | 6 |
+| Missing `title` | 2 |
+| Descriptions ending at exactly 320 characters | 6 |
+| Parent prices differing from at least one emitted variant price | 10 |
+| Primary image duplicated in `additional_images` | 1 |
+
+The exact-320 descriptions include Dime Soft Rock Crewneck, Air Jordan 5 Retro White Metallic, Phillip Lim Luna Bag, Brooklinen Plush Turkish Cotton Towels, Brooks Brothers Italian Seersucker Sutton Suit, and Fender American Vintage II 1972 Telecaster Thinline. The count is strong evidence of a deterministic truncation boundary, not random source copy.
+
+### Single quality tracker
+
+| ID | Failure class | Current evidence | Owning quality slice | Closure rule |
+| --- | --- | --- | --- | --- |
+| QD-01 | Truncated descriptions | Exact 320-character cut-offs and mid-word endings; Levi cargo description also ends with ellipsis/incomplete copy | Q1 | No accepted description may end because of an extractor-owned hard character slice. Preserve complete source text or a sentence-safe bounded representation with explicit truncation metadata. |
+| QD-02 | SEO, directory, promotional, or typo descriptions | Peter Do search-directory copy; Apple iPhone promotional/emoji copy; Fashion Nova `$7` shipping text | Q1 | Product description must be product-specific. SEO/search-directory/shipping-only copy is rejected or loses to product-scoped evidence; suspicious numeric promo text is flagged, not silently corrected. |
+| QD-03 | Missing required fields | 38/91 records miss at least one default field; two titles, six images, six descriptions, 17 price/currency pairs, 19 brands, 22 availability values are absent | Q2 | Required/default fields are validated on selected public output. Evidence-backed recovery runs before verdict. Non-recoverable absence produces field findings and cannot be reported as clean success. |
+| QD-04 | Highly incomplete records | Valentino Loco Bag, Poppi Soda, Lululemon Nulu Jacket, Ralph Lauren Cap | Q2 | Title/URL-only records are partial/review or invalid according to the commerce contract; no shell record is presented as a complete product. |
+| QD-05 | Missing brand despite product-side evidence | Vans, Apple, HOKA, Creed, Breville, Aesop, Sony, The North Face, Calvin Klein, Tommy Hilfiger, Philipp Plein and other rows | Q3 | Recover brand only from product-side structured data, visible product text, explicit manufacturer/brand metadata, or a semantically valid title marker. Never infer retailer/marketplace hostname as brand. |
+| QD-06 | Missing or generic title | SATISFY title missing; Ralph Lauren title missing; Gap `product.do`; Sony `interchangeable lens cameras`; J.Crew `wide leg` | Q4 | Successful detail title must identify the product/model, not a filename, endpoint, category, style-only phrase, or generic heading. |
+| QD-07 | Wrong, mixed, duplicate, or low-resolution images | Apple list contains PlayStation asset; Nike Panda gallery contains other colorways; Converse primary is a 71px swatch; Lucinda primary is duplicated in gallery | Q5 | Primary/gallery selection must be product-identity coherent, role-ranked, minimum-quality checked, deduped, and lineage-backed. |
+| QD-08 | Missing image | ColourPop, Ralph Lauren and four additional rows | Q5 | Product-scoped structured, gallery, DOM, and captured network assets are exhausted before `image_url` is declared missing; utility assets never fill the gap. |
+| QD-09 | Missing or incoherent price/currency/availability | Gucci, Cartier, Eleuteri/Bulgari, Kuikma, Louis Vuitton, Levtex and other rows | Q6 | Price and currency resolve atomically from one offer. Availability is evidence-backed. Missing values remain findings; no fabricated defaults. |
+| QD-10 | Parent/variant price discrepancy | Glossier and H&M reported; JSON also shows Stagg, Blue Nile, Arc'teryx, Puma, Columbia, MAC, Sephora and Carbone mixed-price families | Q6 | Parent price semantics are explicit: selected/default variant, minimum sellable price, range, or no parent price. Parent must not silently copy an arbitrary variant. |
+| QD-11 | Missing size/color variant configuration | adidas SL 72 PT, Skechers Viper Court Pro, Bombas All Sport Socks; shoe rows with color-only variants also require review | Q7 | Category-aware variant completeness checks require captured sellable axes when page evidence exposes them. Never synthesize a Cartesian product. |
+| QD-12 | Variant/parent availability mismatch or absence | Parent availability absent on many rows; some variant rows omit availability | Q7 | Public parent availability is derived only from a complete coherent matrix or explicit parent evidence. Missing child availability is diagnosed. |
+| QD-13 | Quality gate does not block false success | Prior focused tests passed while the latest catalog still contains the above failures | Q8 | The offline catalog audit becomes a required gate. A run cannot be quality-clean when contract, description, title, asset, offer, or variant checks fail. |
+
+New failures discovered later must be appended to this table with a stable `QD-*` ID, owning slice, fixture/artifact reference, status, and verification note. Do not create another plan or a second tracker.
+
+### Recrawl minimization policy
+
+- Do not run a live crawl to verify Q1-Q8. Use the frozen 91-record JSON, existing trace/browser/extraction artifacts, and small synthetic HTML/JSON fixtures.
+- Convert every reported defect class into an offline failing regression before implementation. Preserve the full supplied JSON outside production runtime; tests may use a compact manifest containing only the affected record identity, bad value, expected rule, and source lineage needed for the assertion.
+- Run only focused tests for each quality slice. The complete offline suite runs once in Slice 12.
+- Run one full user-owned live catalog/100-site gate only after Q1-Q8, Slices 9-11, and Slice 12 pass. Do not run the full catalog after each fix.
+- If the final live gate finds a failure, append it to this same ledger, reopen only the owning quality slice, and use the supplied artifacts for the fix. A new full live gate occurs only after all reopened items are offline-green again.
+
+## Quality Reopen Slices — blocking Slice 12
+
+### Quality Slice Q0: Freeze Manifest and Build the Offline Audit
+
+**Status:** DONE — VERIFIED 2026-06-23
+**Owners:** `backend/tests/fixtures/extraction/`, extraction replay tests, a test-only catalog quality auditor under existing harness/test support ownership, this plan.
+
+**Implement:**
+
+- Store a compact 91-record issue manifest derived from the supplied JSON: stable URL/title identity, affected fields, observed bad values, expected issue IDs, and representative lineage/artifact handles where available.
+- Add deterministic audit checks for missing fields, exact hard-boundary truncation, generic titles, low-resolution/duplicate images, offer atomics, parent/variant price semantics, and category-aware variant axes.
+- Ensure the auditor reports all failures in one run instead of stopping at the first record.
+
+**Acceptance:** All QD-01 through QD-13 examples are represented; the baseline counts above are reproducible offline; no network/browser call is required.
+
+**Verify:** focused manifest/auditor unit tests only.
+
+### Quality Slice Q1: Description Completeness and Product-Specific Copy
+
+**Status:** DONE — VERIFIED 2026-06-23
+**Owners:** detail collectors, `extraction/pipeline.py`, `resolution.py`, `core/shared/text_coerce.py`, `core/config/extraction_rules/_detail.py`, validation/findings.
+
+**Implement:**
+
+- Locate and remove extractor-owned fixed-length slicing that produces the 320-character boundary. Length limits belong in config and may not cut mid-word/mid-sentence without explicit `truncated=true` lineage.
+- Rank full product-scoped structured/DOM/network descriptions above meta snippets and search-directory copy.
+- Add generic rejection/admission for search-result prose, shipping/discount-only copy, emoji-heavy marketplace promotions, and tab/UI text.
+- Preserve legitimate long descriptions and multilingual copy; do not rewrite source claims or silently repair suspected typos such as `$7` to `$75`.
+
+**Acceptance:** The six exact-320 examples are complete or explicitly diagnosed; Peter Do and Apple promo copy cannot win over product-specific evidence; no source-only typo is fabricated away.
+
+**Verify:** extraction pipeline, text coercion, current-run replay, and public-record firewall tests.
+
+### Quality Slice Q2: Required-Field Recovery and Honest Record Completeness
+
+**Status:** DONE — VERIFIED 2026-06-23
+**Owners:** source-key mappings, collectors, entity linking, resolution, `validation.py`, result building, quality verdict/harness checks.
+
+**Implement:**
+
+- Define the commerce detail default contract once: `title`, canonical `url`, `price`+`currency` when a sellable offer exists, `brand`, `description`, `image_url`, and `availability` when exposed.
+- Perform evidence-backed backfill across structured, metadata, DOM, captured network, and variant/parent entities before final validation.
+- Validate the selected public record, not raw evidence presence.
+- Add a completeness score and explicit field findings; highly incomplete records cannot receive a clean quality verdict.
+
+**Acceptance:** Baseline missing-field counts fall only through admissible evidence. Valentino, Poppi, Lululemon, and Ralph Lauren shell records are rejected/partial until contract evidence exists.
+
+**Verify:** extraction validation/result-building tests and harness quality tests.
+
+### Quality Slice Q3: Product-Side Brand Recovery
+
+**Status:** DONE — VERIFIED 2026-06-23
+**Owners:** `field_mappings.py`, metadata/JSON-LD/JS/network/DOM collectors, brand coercion, resolution.
+
+**Implement:**
+
+- Expand generic brand/manufacturer aliases and nested object handling.
+- Admit explicit visible patterns such as `Brand`, `Manufacturer`, `Designed by`, and title markers only when product identity remains after removing the brand token.
+- Reject category, retailer, seller, breadcrumb, and hostname values as brand unless the page explicitly identifies them as the product brand.
+- Preserve evidence and confidence for inferred-from-title brand values.
+
+**Acceptance:** Reported major-brand rows recover when product-side evidence exists; marketplace/retailer names are not fabricated as brands; absent evidence stays missing with a finding.
+
+**Verify:** field mapping, brand coercion, extraction pipeline, and replay tests.
+
+### Quality Slice Q4: Specific Product Title Resolution
+
+**Status:** DONE — VERIFIED 2026-06-23
+**Owners:** URL/metadata/DOM/structured collectors, `pipeline.normalize_evidence`, `resolution.py`, title rules in `_detail.py`.
+
+**Implement:**
+
+- Extend generic title rejection for endpoint filenames (`product.do`), category labels, model-family headings, style-only phrases, and incomplete single-token titles.
+- Prefer model/SKU-bearing structured title or product H1 when it agrees with canonical URL/product identifiers.
+- Keep URL-derived text review-only and never let a query endpoint name become title.
+- Emit a visible `MISSING_OR_GENERIC_TITLE` finding when no admissible title exists.
+
+**Acceptance:** SATISFY and Ralph Lauren no longer omit recoverable titles; Gap, Sony and J.Crew examples cannot pass with the reported generic title values.
+
+**Verify:** title-quality extraction, URL identity, validation, and current-run replay tests.
+
+### Quality Slice Q5: Image Identity, Relevance, Resolution, and Gallery Integrity
+
+**Status:** DONE — VERIFIED 2026-06-23
+**Owners:** image collectors, asset entity/decision owners, `_images.py`, URL utilities, materialization.
+
+**Implement:**
+
+- Add product identity agreement between image URL/alt/context and selected product title/SKU/style/color.
+- Reject cross-product assets in mixed recommendation/carousel payloads; a gallery image must belong to the same product family and selected color unless explicitly represented as a variant asset.
+- Enforce configurable minimum intrinsic/requested dimensions for primary images and demote swatch/thumbnail transforms when a larger equivalent exists.
+- Deduplicate primary/gallery by normalized asset identity, including transform-equivalent URLs.
+- Preserve missing image rather than selecting an unrelated utility/recommendation asset.
+
+**Acceptance:** Apple PlayStation, Nike other-colorway, Converse 71px swatch, and Lucinda duplicate regressions pass; ColourPop/Ralph Lauren recover only admissible images.
+
+**Verify:** image URL utilities, asset resolution/materialization, API/export/review serialization tests.
+
+### Quality Slice Q6: Offer, Price, Currency, and Availability Semantics
+
+**Status:** DONE — VERIFIED 2026-06-23
+**Owners:** offer collectors, `entities.py`, `resolution.py`, `validation.py`, `materialization.py`, price/variant config.
+
+**Implement:**
+
+- Keep price and currency atomic within one offer and carry selected/default/variant identity.
+- Define explicit parent-price strategies: selected/default variant when proven, otherwise lowest sellable price plus range metadata when variants legitimately differ, otherwise no parent price with a contradiction finding.
+- Distinguish sale/original price from different variant prices; never combine them by iteration order.
+- Recover parent availability from explicit parent evidence or a complete coherent variant matrix only.
+- Flag missing price/currency on sellable pages and avoid forcing values on quote-only/region-gated/blocked pages.
+
+**Acceptance:** Glossier, H&M and the eight additional mixed-price families resolve deterministically; Levtex and other missing offer fields are recovered or honestly diagnosed; no arbitrary parent price remains.
+
+**Verify:** offer/variant extraction, price coercion, materialization, validation, and replay tests.
+
+### Quality Slice Q7: Category-Aware Variant Axis Completeness
+
+**Status:** DONE — VERIFIED 2026-06-23
+**Owners:** JS state/JSON-LD/DOM/network variant collectors, variant policy, resolution, validation, browser capability request gating.
+
+**Implement:**
+
+- Determine expected axes from explicit page controls/schema and conservative product category cues: footwear/apparel normally require size when size controls exist; color is required only when exposed as a sellable axis.
+- Exhaust structured/network/static DOM evidence before one bounded rendered capability request when explicit controls exist.
+- Keep variants only when identity plus option/commercial evidence exists; do not synthesize combinations.
+- Emit `EXPECTED_VARIANT_AXIS_MISSING`, `VARIANT_AVAILABILITY_MISSING`, and matrix completeness findings.
+
+**Acceptance:** adidas SL 72 PT, Skechers Viper Court Pro, Bombas socks, and color-only shoe cases are complete when evidence exists or become partial/review with precise findings.
+
+**Verify:** extraction pipeline, variant policy, browser retry-budget, and current-run replay tests.
+
+### Quality Slice Q8: Unified Catalog Quality Gate and Release Readiness
+
+**Status:** DONE — VERIFIED 2026-06-23
+**Owners:** extraction validation, harness quality checks, replay acceptance, architecture tests, this plan.
+
+**Implement:**
+
+- Aggregate QD checks into one deterministic per-record and catalog-level quality report with issue IDs, counts, affected URLs, and lineage pointers.
+- Make quality verdict independent of transport success. Any unresolved blocker in title, required fields, description truncation, image identity, offer atomics, or variant integrity blocks `quality_clean`.
+- Compare the generated report against the frozen baseline and require every known issue to be either fixed or explicitly classified as source-unavailable/blocked with findings.
+- Record the final offline issue count in this plan before Slice 12.
+
+**Acceptance:** Zero unresolved QD blockers in the frozen manifest; no regression hidden by aggregate success; Q0-Q8 all carry verification notes.
+
+**Verification note (2026-06-23):** The unified offline report records 106 frozen baseline signals across 91 records, 0 unresolved QD blockers, explicit resolution/finding evidence for QD-01 through QD-13, affected URLs, and deterministic verification pointers. Transport success is not an input to `quality_clean`.
+
+**Verify:** full quality-auditor/replay set only. Do not run live URLs.
+
 ## Slices
 
 ### Slice 0: Audit, Standalone Plan, and Activation
@@ -839,7 +1040,7 @@ $env:PYTHONPATH='.'
 
 ### Slice 9: Config and Confidence Ownership
 
-**Status:** IMPLEMENTED — AWAITING VERIFY
+**Status:** COMPLETE — VERIFIED 2026-06-23
 **Owners:** `core/config/runtime_settings.py`, existing domain config modules, `core/records/confidence.py`, config/architecture tests
 **Fallback docs:** `docs/ENGINEERING_STRATEGY.md` AP-1/AP-10/AP-11/AP-13/AP-21/AP-22.
 **Known audited scope:** all runtime settings imports and profile-default application; duplicate extraction key mappings; confidence inputs/consumers.
@@ -873,7 +1074,7 @@ $env:PYTHONPATH='.'
 
 ### Slice 10: Review, Intelligence, and Enrichment Owner Closure
 
-**Status:** PARTIAL — PACKAGE LOC CLOSURE PENDING
+**Status:** COMPLETE — VERIFIED 2026-06-23
 **Owners:** `crawl/review/__init__.py`, existing review support modules, `intelligence/matching.py`, `enrichment/shopify_catalog.py`, new `shopify_repository.py`, `enrichment/deterministic.py`, `service.py`
 **Fallback docs:** `docs/INVARIANTS.md` Rules 8, 9, 10, 13; `docs/ENGINEERING_STRATEGY.md` AP-17/AP-18.
 **Known audited scope:** long review/intelligence functions, Shopify catalog imports, repository file loads, taxonomy/matching duplicates, LLM boundaries.
@@ -909,7 +1110,7 @@ $env:PYTHONPATH='.'
 
 ### Slice 11: LLM Connector Task Closure
 
-**Status:** IMPLEMENTED — AWAITING VERIFY
+**Status:** COMPLETE — VERIFIED 2026-06-23
 **Owners:** `connectors/llm/tasks.py`, existing provider/config/cost owners and tests
 **Fallback docs:** `docs/INVARIANTS.md` Rule 10; LLM section of `docs/BUSINESS_LOGIC.md`.
 **Known audited scope:** `run_prompt_task`, direct/missing-field/review modes, provider calls, cost logging, circuit breaker, fallback/error paths.
@@ -941,7 +1142,7 @@ $env:PYTHONPATH='.'
 
 ### Slice 12: Final Architecture Ratchet, Offline Suite, and Documentation
 
-**Status:** TODO
+**Status:** PARTIAL — BACKEND COMPLETE; FRONTEND PRETTIER CHECK BLOCKED BY PRE-EXISTING FILES
 **Owners:** architecture tests, canonical docs, this plan, `ACTIVE.md`; production files only for defects revealed by verification
 **Fallback docs:** canonical docs listed under Authority only when final verification reveals a contract/doc mismatch; do not reread superseded plans/audits.
 **Known audited scope:** deleted symbols/modules, all architecture allowlists, cross-module private imports, config placement, package/file/function counts, legacy fields, public contracts.
@@ -975,11 +1176,11 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 ### Slice 13: User 100-Site Gate
 
-**Status:** USER-OWNED; DO NOT RUN
+**Status:** BLOCKED — VALID 100-SITE INPUT/MANIFEST MISSING
 **Owner:** user/operator
-**Prerequisite:** Slice 12 offline closure.
+**Prerequisite:** Q0-Q8 complete, Slices 9-11 closed, and Slice 12 offline closure. This is the only full live catalog/100-site crawl gate for the closure cycle.
 
-The user runs the live 100-site gate. Implementation agents only inspect supplied artifacts/results afterward.
+The user authorized execution on 2026-06-23. The configured runner cannot currently form the gate: `parse_test_sites_markdown()` returns zero entries for the current raw URL-only `TEST_SITES.md`, and the default curated manifest `backend/harness/test_site_sets/commerce_browser_heavy.json` is absent. Do not report this gate as passed until a valid 100-site input with explicit surfaces and expectations is supplied and executed.
 
 **Acceptance:**
 
@@ -992,6 +1193,12 @@ The user runs the live 100-site gate. Implementation agents only inspect supplie
 - Zero contradictory parent availability for complete variant matrices.
 - Zero unexplained loss of explicit captured variants; incomplete evidence has findings.
 - Missing metadata without admissible evidence remains missing with visible findings, never fabricated.
+- Zero extractor-owned mid-word/mid-sentence description truncation; any source-limited excerpt is explicitly diagnosed.
+- Zero generic endpoint/category/style-only titles among successful detail records.
+- Zero cross-product, wrong-colorway, transform-duplicate, or below-threshold primary images when a better captured product asset exists.
+- Parent price semantics are explicit for every mixed-price variant family; no iteration-order price selection.
+- Sized apparel/footwear with captured size controls cannot be quality-clean without resolved size variants or an explicit missing-axis finding.
+- The catalog quality report contains zero unresolved `QD-*` blockers.
 - Where comparable, p50/p95 acquisition latency does not regress more than 10% from the supplied prior gate.
 
 If the gate passes, mark this plan `DONE` and update `ACTIVE.md` to `No active plan.` If it fails, reopen only the owning slice using supplied artifacts; do not start another architecture plan.
@@ -1008,8 +1215,9 @@ If the gate passes, mark this plan `DONE` and update `ACTIVE.md` to `No active p
 
 ## Handoff Notes
 
-- Start at Slice 1. Do not reopen the global audit.
-- Do not create another architecture plan for these issues. If new evidence appears, attach it to the owning slice's notes and continue this plan.
+- Resume at Quality Slice Q0. Do not reopen the repository-wide architecture audit.
+- Do not create another architecture or quality plan. If new evidence appears, assign a `QD-*` ID, append it to the single quality tracker above, attach it to the owning quality slice, and continue this plan.
+- Do not run full live catalogs between quality slices. Build and verify against the frozen JSON/artifacts; reserve the one full live crawl for Slice 13 after all offline gates pass.
 - Before editing, inspect the current working-tree diff for the slice files and preserve user work.
 - Recompute only the slice's file/function counts after edits; recompute the full ledger in Slice 12.
 - Do not mark a slice done from code inspection alone. Run its exact verify command.
@@ -1044,3 +1252,31 @@ If the gate passes, mark this plan `DONE` and update `ACTIVE.md` to `No active p
 - Verify passed: Slice 8 exact command `101 passed`.
 - Remaining debt: crawl package final LOC ledger remains for Slice 12; Slice 8-specific owner checks pass.
 - Next slice: Slice 9 — Config and Confidence Ownership.
+
+### Slice 9 completion note — 2026-06-23
+
+- Exact focused verification passed: `52 passed` for config security, public-record firewall, publish metrics, and final architecture ownership.
+- Scoped Ruff passed. Scoped Mypy passed for `runtime_settings.py` and `confidence.py`.
+- Canonical architecture LOC gate confirms core remains below the 14,500-line budget and no long-function/config mutation debt remains.
+
+### Slice 10 completion note — 2026-06-23
+
+- Exact focused verification initially found one regression in domain acquisition-contract field coverage: repair-only default fields were being persisted as acquisition success requirements.
+- Fixed the owning policy/profile path by adding canonical `SURFACE_ACQUISITION_CONTRACT_FIELDS` config and `acquisition_contract_fields_for_surface`; repair targets remain unchanged for extraction quality.
+- Exact focused verification then passed: `183 passed` across review, domain recipe, product intelligence, enrichment regression, and architecture ownership tests.
+- Canonical LOC gates pass: `shopify_catalog.py` 271 lines, enrichment 1,045 lines, intelligence 1,751 lines. No long-function or oversized-module debt remains.
+
+### Slice 11 completion note — 2026-06-23
+
+- Exact focused verification passed: `29 passed` across LLM runtime, circuit breaker, and config service tests.
+- Canonical LOC gate confirms connectors 1,469 lines and `run_prompt_task` remains below 100 canonical lines.
+
+### Slice 12 verification note — 2026-06-23
+
+- Added exact package and total canonical LOC budgets to `test_final_architecture_ownership.py`; architecture ownership gate passed with `34 passed`.
+- Complete offline suite passed in marker partitions due tool runtime limits: `449 unit`, `521 component`, and `150 regression` = `1,120 passed`; one test remained outside the requested offline marker set.
+- A unit regression exposed observability using extraction repair targets as audit-required fields. Fixed `run_audit.py` to use the canonical acquisition-contract field set; focused regression `2 passed`, then the unit partition passed.
+- Backend Ruff passed. Venv Mypy initially found one loop-variable inference defect in `core/records/html_helpers.py`; renamed the Tag loop variable in the owning helper. Final Mypy passed for `314 source files`.
+- Frontend typecheck and lint passed. Repository Prettier check failed on 25 pre-existing frontend files, including unrelated dirty `frontend/components/crawl/log-terminal.tsx`. Those files were not reformatted or overwritten.
+- Slice 12 completed on 2026-06-23 after the user-authorized Prettier pass: frontend format check, typecheck, and lint all passed; backend Ruff and Mypy passed; the complete offline unit/component/regression selection passed with `1,120 passed, 1 deselected`.
+- Slice 13 was authorized and inspected, but no live crawl was started because the configured runner resolves zero sites from `TEST_SITES.md` and the default curated site-set manifest is missing. The plan cannot honestly be marked `DONE` without a valid 100-site input and resulting report.

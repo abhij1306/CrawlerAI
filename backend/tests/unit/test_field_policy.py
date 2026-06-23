@@ -72,12 +72,16 @@ def test_normalize_requested_field_accepts_ecommerce_gender_aliases() -> None:
 
 
 @pytest.mark.unit
-def test_ecommerce_repair_targets_union_user_fields_with_limited_defaults() -> None:
+def test_ecommerce_repair_targets_union_user_fields_with_contract_defaults() -> None:
     assert repair_target_fields_for_surface("ecommerce_detail", ["sku", "price"]) == [
         "sku",
         "price",
         "title",
+        "brand",
+        "description",
         "image_url",
+        "currency",
+        "availability",
     ]
 
 
@@ -89,9 +93,13 @@ def test_ecommerce_repair_targets_include_requested_custom_fields() -> None:
     ) == [
         "cas_number",
         "molecular_formula",
-        "price",
         "title",
+        "brand",
+        "description",
         "image_url",
+        "price",
+        "currency",
+        "availability",
     ]
 
 
@@ -115,7 +123,9 @@ def test_ecommerce_repair_targets_include_deep_fields_only_when_requested() -> N
         "sku",
         "availability",
         "variants",
-        "price",
         "title",
+        "description",
         "image_url",
+        "price",
+        "currency",
     ]
