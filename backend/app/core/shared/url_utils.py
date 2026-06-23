@@ -138,6 +138,18 @@ def asset_url_identity(value: object) -> tuple[str, str] | None:
         path,
         flags=re.IGNORECASE,
     )
+    identity_path = re.sub(
+        r"(/image/upload/)(?:[^/]*(?:,|_|:)[^/]*/)+(global/)",
+        r"\1\2",
+        identity_path,
+        flags=re.IGNORECASE,
+    )
+    identity_path = re.sub(
+        r"(/images/)(?:(?:t_[^/]+|dpr_[^/]+|(?:c|f|g|h|q|w)_[^/]+)/)+(v\d+/)",
+        r"\1\2",
+        identity_path,
+        flags=re.IGNORECASE,
+    )
     identity = urlunsplit(
         (
             "https",

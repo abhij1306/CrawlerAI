@@ -524,9 +524,7 @@ def _discovered_data_for_record(
     run: CrawlRun,
     rejected_public_fields: dict[str, object],
 ) -> dict[str, object]:
-    confidence = mapping_or_empty(
-        raw_record.get("_confidence")
-    ) or score_record_confidence(
+    confidence = score_record_confidence(
         {**data, "_field_sources": mapping_or_empty(raw_record.get("_field_sources"))},
         surface=str(run.surface or ""),
         requested_fields=list(run.requested_fields or []),

@@ -22,6 +22,7 @@ from app.core.config.extraction_rules import (
     PRODUCT_ASSET_IDENTITY_FACT_TYPES,
     VARIANT_COLOR_BRAND_CONFLICT_FLAG,
 )
+from app.core.config.extraction_rules._images import PRODUCT_ASSET_MAX_COUNT
 from app.core.config.field_mappings import INVALID_SCALAR_TYPE_EVIDENCE_FLAG
 from app.core.config.variant_policy import (
     DETAIL_PARENT_INHERITED_OFFER_FIELDS,
@@ -324,6 +325,8 @@ def _resolve_product_assets(
     decisions: list[AssetDecision] = []
     seen: set[str] = set()
     for index, (_rank_value, asset, accepted) in enumerate(valid):
+        if len(decisions) >= PRODUCT_ASSET_MAX_COUNT:
+            break
         if asset.identity_key in seen:
             continue
         seen.add(asset.identity_key)
@@ -396,7 +399,7 @@ def _asset_rank(
     str,
 ]:
     if accepted is None:
-        return (99, 99, (99, 99, 0.0, ""), asset.entity_id)
+        return (99, 99, 99, (99, 99, 0.0, ""), asset.entity_id)
     role = _asset_role_rank(str(accepted.value))
     source_order = min(
         (

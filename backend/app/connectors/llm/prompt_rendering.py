@@ -5,7 +5,7 @@ from typing import Any
 
 from app.core.config.llm_runtime import llm_runtime_settings
 from app.core.records.html_helpers import prune_html_tree
-from bs4 import BeautifulSoup, Tag
+from bs4 import BeautifulSoup, NavigableString, Tag
 
 
 def extract_structured_data(html_text: str) -> dict[str, object]:
@@ -79,7 +79,8 @@ def truncate_html(
 def render_html_text(value: str) -> str:
     soup = BeautifulSoup(str(value or ""), "html.parser")
     for node in soup.find_all("br"):
-        node.replace_with("\n")
+        if isinstance(node, Tag):
+            node.replace_with(NavigableString("\n"))
     lines: list[str] = []
     seen: set[str] = set()
     block_tags = [
@@ -321,9 +322,9 @@ def _prune_html_for_llm(html_text: str) -> str:
         attr_filter=_keep_attr,
         preserve_tag=_preserve_tag,
     )
-    for tag in soup.find_all(True):
-        if tag.get("style"):
-            del tag["style"]
+    for node in soup.find_all(True):
+        if isinstance(node, Tag) and node.get("style"):
+            del node["style"]
     return str(soup)
 
 

@@ -8,6 +8,7 @@ from app.core.config.extraction_rules import (
     DETAIL_NOT_FOUND_HTTP_STATUS_CODES,
     DETAIL_SHELL_FINDING_RULE_ID,
 )
+from app.core.records.url_identity import detail_url_is_locale_root
 from app.extraction.contracts import (
     Decision,
     Evidence,
@@ -319,7 +320,9 @@ def _materialize_detail(
 ) -> tuple[PublicRecord, ...]:
     del findings, spec
     canonical_url = request.capture.final_url or request.capture.requested_url
-    if urlsplit(canonical_url).path in {"", "/"}:
+    if urlsplit(canonical_url).path in {"", "/"} or detail_url_is_locale_root(
+        canonical_url
+    ):
         return ()
     if request.capture.http_status in DETAIL_NOT_FOUND_HTTP_STATUS_CODES:
         evidence_by_id = {row.evidence_id: row for row in evidence}
@@ -341,7 +344,9 @@ def _materialize_detail(
         evidence,
         canonical_url=canonical_url,
     )
-    return (record,) if record else ()
+    if record is None or detail_url_is_locale_root(str(record.url or "")):
+        return ()
+    return (record,)
 
 
 def _materialize_listing(
@@ -414,6 +419,7 @@ def _assess_detail(
         record.model_dump(mode="python") if record is not None else {},
         resolution,
         request.capture,
+        requested_fields=request.requested_fields,
     )
 
 

@@ -136,6 +136,30 @@ def test_ecommerce_detail_homepage_does_not_materialize_promotional_product() ->
     assert result.records == ()
 
 
+def test_ecommerce_detail_locale_root_does_not_materialize_embedded_products() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <script type="application/json">
+        {
+          "product": {
+            "name": "NY Yankees Clean Up Cap",
+            "price": "35",
+            "currency": "USD",
+            "variants": [
+              {"variantId": "shoe", "sku": "U9929NF", "size": "UK 4 UK 5"}
+            ]
+          }
+        }
+        </script>
+        """,
+        "https://shop.test/us/",
+    )
+
+    assert result.records == ()
+    assert result.verdict == "empty"
+
+
 def test_jsonld_product_group_uses_shade_as_color_axis() -> None:
     html = """
     <script type="application/ld+json">
@@ -2082,6 +2106,54 @@ def test_variant_placeholder_axis_labels_are_removed() -> None:
     assert "size" not in variant
 
 
+def test_variant_axes_equal_to_identity_are_not_published() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        "<main><h1>Teddy T-Shirt</h1></main>",
+        "https://shop.test/products/teddy-t-shirt",
+        artifacts={"js_state_objects": {"product": {
+            "name": "Teddy T-Shirt",
+            "url": "https://shop.test/products/teddy-t-shirt",
+            "variants": [{
+                "variantId": "teddy-blue",
+                "sku": "JMTS01771",
+                "color": "JMTS01771",
+                "size": "JMTS01771",
+                "price": "95",
+                "currency": "USD",
+            }],
+        }}},
+    )
+
+    variant = result.records[0]["variants"][0]
+    assert variant["sku"] == "JMTS01771"
+    assert "color" not in variant
+    assert "size" not in variant
+
+
+def test_compact_alphanumeric_color_codes_are_not_published() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        "<main><h1>Soleil Pant</h1></main>",
+        "https://shop.test/products/soleil-pant",
+        artifacts={"js_state_objects": {"product": {
+            "name": "Soleil Pant",
+            "url": "https://shop.test/products/soleil-pant",
+            "variants": [{
+                "variantId": "soleil-code",
+                "sku": "ME988",
+                "color": "EM0212",
+                "price": "128",
+                "currency": "USD",
+            }],
+        }}},
+    )
+
+    variant = result.records[0]["variants"][0]
+    assert variant["sku"] == "ME988"
+    assert "color" not in variant
+
+
 def test_opaque_numeric_variant_option_rows_do_not_materialize() -> None:
     result = _extract(
         "ecommerce_detail",
@@ -2104,6 +2176,37 @@ def test_opaque_numeric_variant_option_rows_do_not_materialize() -> None:
     )
 
     assert result.records[0]["price"] == "80.00"
+    assert not result.records[0].get("variants")
+
+
+def test_multiple_commercial_rows_without_variant_options_are_not_published() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        "<main><h1>Connected Treadmill</h1></main>",
+        "https://shop.test/products/connected-treadmill",
+        artifacts={"js_state_objects": {"product": {
+            "name": "Connected Treadmill",
+            "url": "https://shop.test/products/connected-treadmill",
+            "price": "2995",
+            "currency": "USD",
+            "variants": [
+                {
+                    "variantId": "base-package",
+                    "sku": "BASE-PKG",
+                    "price": "2995",
+                    "currency": "USD",
+                },
+                {
+                    "variantId": "warranty-package",
+                    "sku": "WARRANTY-48M",
+                    "price": "499",
+                    "currency": "USD",
+                },
+            ],
+        }}},
+    )
+
+    assert result.records[0]["price"] == "2995.00"
     assert not result.records[0].get("variants")
 
 
@@ -3877,6 +3980,36 @@ def test_banner_ugc_and_video_still_assets_are_rejected() -> None:
     record = result.records[0]
     assert record["image_url"] == (
         "https://cdn.shop.test/products/premium-linen-shirt-main.jpg"
+    )
+    assert not record.get("additional_images")
+
+
+def test_measurement_palette_review_and_sales_badge_assets_are_rejected() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <script type="application/ld+json">
+        {
+          "@type": "Product",
+          "name": "Velcro Strap Set-up Blazer Pants",
+          "url": "https://shop.test/products/velcro-strap-set-up",
+          "image": [
+            "https://media-assets.shop.test/prd/listing/46751774/product-main.jpg",
+            "https://media-assets.shop.test/prd/measurement-type/3aa45206cf50493aaf9fbe60fdc235ac",
+            "https://media-assets.shop.test/prd/colors/beige.png",
+            "https://cdn-yotpo-images-production.yotpo.com/Product/911368921/766183162/square.jpg",
+            "https://images.shop.test/assets/SellingFastLightMode.gif"
+          ],
+          "offers": {"price": "1012", "priceCurrency": "USD"}
+        }
+        </script>
+        """,
+        "https://shop.test/products/velcro-strap-set-up",
+    )
+
+    record = result.records[0]
+    assert record["image_url"] == (
+        "https://media-assets.shop.test/prd/listing/46751774/product-main.jpg"
     )
     assert not record.get("additional_images")
 

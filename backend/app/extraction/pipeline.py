@@ -290,7 +290,11 @@ def materialize_ecommerce_detail(
 
 
 def assess_ecommerce_detail_quality(
-    record: dict[str, object], resolution, bundle: CaptureBundle
+    record: dict[str, object],
+    resolution,
+    bundle: CaptureBundle,
+    *,
+    requested_fields: tuple[str, ...] = (),
 ) -> str:
     if bundle.acquisition_outcome in {"error", "blocked"}:
         return bundle.acquisition_outcome

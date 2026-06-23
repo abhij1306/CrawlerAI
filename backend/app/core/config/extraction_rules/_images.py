@@ -69,11 +69,12 @@ DETAIL_IMAGE_IDENTITY_ALNUM_MIN_LENGTH = 6
 DETAIL_IMAGE_IDENTITY_NUMERIC_MIN_LENGTH = 7
 DETAIL_IMAGE_OPAQUE_HEX_MIN_LENGTH = 8
 PRODUCT_ASSET_IDENTITY_FACT_TYPES = frozenset(
-    {"product.gtin", "product.mpn", "product.sku", "product.url"}
+    {"product.gtin", "product.mpn", "product.sku", "product.title", "product.url"}
 )
 PRODUCT_ASSET_SEMANTIC_MIN_MATCH_TOKENS = 2
-PRODUCT_ASSET_SEMANTIC_MIN_ANCHORED_ASSETS = 2
+PRODUCT_ASSET_SEMANTIC_MIN_ANCHORED_ASSETS = 1
 PRODUCT_ASSET_SEMANTIC_MIN_DESCRIPTIVE_TOKENS = 3
+PRODUCT_ASSET_MAX_COUNT = 24
 PRODUCT_ASSET_LOW_RES_QUERY_MAX_DIMENSION = 256
 PRODUCT_ASSET_HIGH_RES_QUERY_MIN_DIMENSION = 512
 PRODUCT_ASSET_SEMANTIC_NOISE_TOKENS = frozenset(
@@ -136,6 +137,7 @@ PRIMARY_IMAGE_REJECT_URL_TOKENS = frozenset(
         "placeholder",
         "quote",
         "schedule",
+        "sellingfastlightmode",
         "sprite",
         "swatch",
         "testimonial",
@@ -152,6 +154,10 @@ PRODUCT_ASSET_REJECT_URL_PATTERNS = (
     r"(?:^|[/_.-])chevrons?(?:[/_.-]|$)",
     r"(?:^|/)edit(?:\.[a-f0-9]{6,})?\.svg(?:$|[?#])",
     r"(?:^|//)(?:i\.ytimg\.com|img\.youtube\.com)/vi/",
+    r"(?:^|//)cdn-yotpo-images-production\.yotpo\.com/",
+    r"(?:^|/)prd/measurement-type(?:/|$)",
+    r"(?:^|/)prd/colors/[^/?#]+\.(?:png|svg|webp)(?:$|[?#])",
+    r"(?:^|[/_.-])selling[_-]?fast[_-]?light[_-]?mode(?:[/_.-]|$).*\.gif(?:$|[?#])",
     r"(?:^|/)[a-z][a-z0-9_-]*\.[a-f0-9]{6,}\.svg(?:$|[?#])",
     r"(?:^|[/_.-])combined[_-]?shape(?:[/_.-]|$)",
     r"(?:^|[/_.-])checkout(?:[/_.-]|$).*\.svg(?:$|[?#])",

@@ -146,6 +146,22 @@ def detail_url_looks_like_product(url: str) -> bool:
     return any(marker in path for marker in _DETAIL_MARKERS)
 
 
+def detail_url_is_locale_root(url: str) -> bool:
+    parts = [part for part in urlparse(str(url or "")).path.split("/") if part]
+    if len(parts) != 1:
+        return False
+    locale = parts[0]
+    return bool(
+        (len(locale) == 2 and locale.isalpha())
+        or (
+            len(locale) == 5
+            and locale[2] in {"-", "_"}
+            and locale[:2].isalpha()
+            and locale[3:].isalpha()
+        )
+    )
+
+
 def detail_url_is_collection_like(url: str) -> bool:
     parts = [part for part in urlparse(str(url or "").lower()).path.split("/") if part]
     return bool(parts and parts[-1] in _COLLECTION_TOKENS)
@@ -210,7 +226,7 @@ def _semantic_product_asset_conflicts(
     product_tokens = {
         token
         for value in product_values
-        for token in semantic_detail_identity_tokens(str(value or ""))
+        for token in _product_asset_semantic_tokens(value)
         if token not in PRODUCT_ASSET_SEMANTIC_NOISE_TOKENS
     }
     if len(product_tokens) < PRODUCT_ASSET_SEMANTIC_MIN_MATCH_TOKENS:
@@ -228,6 +244,14 @@ def _semantic_product_asset_conflicts(
         if len(tokens) >= PRODUCT_ASSET_SEMANTIC_MIN_DESCRIPTIVE_TOKENS
         and len(product_tokens & tokens) < PRODUCT_ASSET_SEMANTIC_MIN_MATCH_TOKENS
     )
+
+
+def _product_asset_semantic_tokens(value: object) -> tuple[str, ...]:
+    text = str(value or "").strip()
+    parsed = urlparse(text)
+    if parsed.scheme and parsed.netloc:
+        return semantic_detail_identity_tokens(text)
+    return semantic_identity_tokens(text)
 
 
 def _asset_semantic_tokens(value: object) -> frozenset[str]:

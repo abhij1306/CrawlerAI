@@ -51,13 +51,15 @@ def html_to_text(value: str, *, preserve_block_breaks: bool = False) -> str:
     soup = BeautifulSoup(str(value or ""), "html.parser")
     for node in soup.find_all(["script", "style"]):
         node.decompose()
-    for tag in soup.find_all(_HTML_TEXT_BLOCK_TAGS):
-        if tag.name == "br":
-            tag.replace_with("\n")
+    for node in soup.find_all(_HTML_TEXT_BLOCK_TAGS):
+        if not isinstance(node, Tag):
             continue
-        if tag.contents:
-            tag.insert_before("\n")
-            tag.append("\n")
+        if node.name == "br":
+            node.replace_with(NavigableString("\n"))
+            continue
+        if node.contents:
+            node.insert_before(NavigableString("\n"))
+            node.append(NavigableString("\n"))
     rows = [
         " ".join(str(line or "").split()).strip()
         for line in soup.get_text("\n").splitlines()
@@ -80,16 +82,18 @@ def prune_html_tree(
     drop_tag_set = {str(tag).lower() for tag in drop_tags}
     for node in soup.find_all(string=lambda value: isinstance(value, Comment)):
         node.extract()
-    for tag in soup.find_all(True):
-        tag_name = str(tag.name or "").lower()
-        if tag_name in drop_tag_set and not (preserve_tag and preserve_tag(tag)):
-            tag.decompose()
+    for node in soup.find_all(True):
+        if not isinstance(node, Tag):
             continue
-        attrs = getattr(tag, "attrs", None)
+        tag_name = str(node.name or "").lower()
+        if tag_name in drop_tag_set and not (preserve_tag and preserve_tag(node)):
+            node.decompose()
+            continue
+        attrs = node.attrs
         if not isinstance(attrs, dict):
-            tag.attrs = {}
+            node.attrs = {}
             continue
-        tag.attrs = {
+        node.attrs = {
             key: value
             for key, value in attrs.items()
             if (key in allowed_attr_set if allowed_attrs is not None else True)

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from decimal import Decimal, InvalidOperation
+
 from app.extraction.contracts import (
     AssetDecision,
     CommerceDetailRecord,
@@ -9,7 +11,12 @@ from app.extraction.contracts import (
     Evidence,
     ResolutionResult,
 )
+from app.core.config.extraction_rules import (
+    VARIANT_CROSS_PRODUCT_URL_MAX_TOKEN_OVERLAP_RATIO,
+)
 from app.core.config.variant_policy import DETAIL_PARENT_OFFER_INHERITANCE_RULE_ID
+from app.core.records.url_identity import detail_title_from_url, semantic_identity_tokens
+from app.core.shared.field_coerce import sanitize_option_scalar
 from app.extraction.entities import EntitySet
 
 PUBLIC_MAP = {
@@ -97,7 +104,12 @@ def materialize(
     if not record.get("url"):
         record["url"] = canonical_url
         lineages["url"] = {"rule_id": "canonical_capture_url", "evidence_ids": []}
-    variants, variant_lineage = _variants(entities, resolution, by_id)
+    variants, variant_lineage = _variants(
+        entities,
+        resolution,
+        by_id,
+        product_url=str(record.get("url") or canonical_url),
+    )
     if variants:
         record["variants"] = variants
         lineages["variants"] = variant_lineage
@@ -130,16 +142,24 @@ def _cohere_parent_offer(
     *,
     expected_variant_count: int,
 ) -> None:
-    if len(variants) != expected_variant_count:
-        return
+    del expected_variant_count
     for field in ("price", "currency", "original_price"):
         if record.get(field) not in (None, "", [], {}, ()):
             continue
         values = [row.get(field) for row in variants]
         if not values or any(value in (None, "", [], {}, ()) for value in values):
             continue
-        if len({str(value) for value in values}) != 1:
-            continue
+        unique_values = {str(value) for value in values}
+        aggregate_value: object = values[0]
+        aggregate_rule = "uniform_variant_offer_aggregate"
+        if len(unique_values) != 1:
+            if field != "price":
+                continue
+            try:
+                aggregate_value = format(min(Decimal(value) for value in unique_values), ".2f")
+            except (InvalidOperation, TypeError, ValueError):
+                continue
+            aggregate_rule = "minimum_variant_price_aggregate"
         field_lineage = [row.get(field) for row in variant_lineage]
         if any(
             isinstance(item, dict)
@@ -152,9 +172,9 @@ def _cohere_parent_offer(
             for item in field_lineage
             for evidence_id in _lineage_evidence_ids(item)
         )
-        record[field] = values[0]
+        record[field] = aggregate_value
         lineages[field] = {
-            "rule_id": "uniform_variant_offer_aggregate",
+            "rule_id": aggregate_rule,
             "evidence_ids": list(dict.fromkeys(evidence_ids)),
         }
 
@@ -206,6 +226,8 @@ def _variants(
     entities: EntitySet,
     resolution: ResolutionResult,
     by_id: dict[str, Evidence],
+    *,
+    product_url: str,
 ) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
     decisions = {
         (d.entity_id, d.fact_type): d
@@ -236,9 +258,19 @@ def _variants(
             offer_by_variant.get(variant.entity_id),
             asset_by_variant.get(variant.entity_id),
         )
-        if _publishable_variant_row(variant, row):
+        if _publishable_variant_row(variant, row) and not _variant_url_conflicts(
+            product_url, str(row.get("url") or "")
+        ):
             rows.append(row)
             lineage_rows.append(lineage_row)
+    if len(rows) > 1:
+        filtered = [
+            (row, lineage_row)
+            for row, lineage_row in zip(rows, lineage_rows)
+            if _has_variant_option(row)
+        ]
+        rows = [row for row, _lineage_row in filtered]
+        lineage_rows = [lineage_row for _row, lineage_row in filtered]
     ordered = sorted(
         zip(rows, lineage_rows),
         key=lambda item: (
@@ -251,10 +283,29 @@ def _variants(
     return [row for row, _ in ordered], [item for _, item in ordered]
 
 
+def _variant_url_conflicts(product_url: str, variant_url: str) -> bool:
+    if not product_url or not variant_url or product_url == variant_url:
+        return False
+    product_tokens = set(semantic_identity_tokens(detail_title_from_url(product_url)))
+    variant_tokens = set(semantic_identity_tokens(detail_title_from_url(variant_url)))
+    if len(product_tokens) < 2 or len(variant_tokens) < 2:
+        return False
+    overlap_ratio = len(product_tokens & variant_tokens) / min(
+        len(product_tokens), len(variant_tokens)
+    )
+    return overlap_ratio <= VARIANT_CROSS_PRODUCT_URL_MAX_TOKEN_OVERLAP_RATIO
+
+
 def _publishable_variant_row(variant, row: dict[str, object]) -> bool:
     if not variant.identity_key:
         return False
-    return _has_variant_option(row) or _has_variant_commercial_fact(row)
+    if _has_variant_option(row):
+        return True
+    has_explicit_identity = any(
+        row.get(field) not in (None, "", [], {}, ())
+        for field in ("variant_id", "sku", "gtin", "url")
+    )
+    return has_explicit_identity and _has_variant_commercial_fact(row)
 
 
 def _has_variant_option(row: dict[str, object]) -> bool:
@@ -310,6 +361,7 @@ def _variant_option_fields(
     decisions,
     by_id,
 ) -> None:
+    candidates: list[tuple[str, str, Decision]] = []
     for (entity_id, fact_type), decision in decisions.items():
         if (
             entity_id != variant.entity_id
@@ -318,7 +370,25 @@ def _variant_option_fields(
         ):
             continue
         field = fact_type.rsplit(".", 1)[-1]
-        row[field] = by_id[decision.accepted_evidence_ids[0]].value
+        value = sanitize_option_scalar(
+            field, by_id[decision.accepted_evidence_ids[0]].value
+        )
+        if value is not None:
+            candidates.append((field, value, decision))
+
+    identity_values = {
+        str(row.get(field) or "").strip().casefold()
+        for field in ("variant_id", "sku", "gtin")
+        if str(row.get(field) or "").strip()
+    }
+    fields_by_value: dict[str, set[str]] = {}
+    for field, value, _decision in candidates:
+        fields_by_value.setdefault(value.casefold(), set()).add(field)
+    for field, value, decision in candidates:
+        normalized = value.casefold()
+        if normalized in identity_values or len(fields_by_value[normalized]) > 1:
+            continue
+        row[field] = value
         lineage_row[field] = lineage(decision=decision)
 
 

@@ -58,6 +58,31 @@ def test_asset_url_identity_encodes_paths_and_keeps_meaningful_params() -> None:
 
 
 @pytest.mark.unit
+def test_asset_url_identity_ignores_cdn_path_transforms() -> None:
+    vans_thumbnail = (
+        "https://assets.vans.com/images/t_Thumbnail/v1769548026/"
+        "VN000E9TBPG-ALT1/Old-Skool-Shoe-VANS-ALT1.png"
+    )
+    vans_large = (
+        "https://assets.vans.com/images/t_img/c_fill,g_center,f_auto,h_2500,w_2000/"
+        "v1769548026/VN000E9TBPG-ALT1/Old-Skool-Shoe-VANS-ALT1.png"
+    )
+    puma_large = (
+        "https://images.puma.com/image/upload/"
+        "f_auto,q_auto,b_rgb:fafafa,w_2000,h_2000/global/406329/02/fnd/IND/fmt/png/"
+        "Speedcat-Sneakers"
+    )
+    puma_small = (
+        "https://images.puma.com/image/upload/"
+        "f_auto,q_auto,b_rgb:fafafa,w_600,h_600/global/406329/02/fnd/IND/fmt/png/"
+        "Speedcat-Sneakers"
+    )
+
+    assert asset_url_identity(vans_thumbnail)[1] == asset_url_identity(vans_large)[1]
+    assert asset_url_identity(puma_large)[1] == asset_url_identity(puma_small)[1]
+
+
+@pytest.mark.unit
 def test_same_host_and_extract_urls_trim_malformed_candidates() -> None:
     assert same_host("https://example.com/a", "https://example.com/b")
     assert not same_host("https://example.com/a", "https://other.test/b")

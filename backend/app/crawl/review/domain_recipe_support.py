@@ -114,8 +114,6 @@ def collect_selector_candidates(
             field_learning=field_learning,
             artifacts_by_id=artifacts_by_id,
         )
-    if selector_candidates:
-        return selector_candidates, field_learning
     _collect_fallback_selector_candidates(
         saved_selectors,
         run=run,

@@ -99,12 +99,12 @@ def _select_product_by_url(
             if evidence_id in by_id
         }
         product_ids = {
-            str(by_id[evidence_id].entity_hint.product_id)
+            str(hint.product_id)
             for evidence_ids in product.attribute_evidence.values()
             for evidence_id in evidence_ids
             if evidence_id in by_id
-            and by_id[evidence_id].entity_hint is not None
-            and by_id[evidence_id].entity_hint.product_id
+            and (hint := by_id[evidence_id].entity_hint) is not None
+            and hint.product_id
         }
         rank = (
             int(bool(urls & wanted)),

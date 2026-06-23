@@ -420,12 +420,13 @@ def variant_option_value_is_opaque_numeric(
     field_name: str, value: object
 ) -> bool:
     text = coerce_text(value)
-    return bool(
+    if not (
         field_name in VARIANT_OPAQUE_NUMERIC_OPTION_AXES
         and text
         and text.isdigit()
-        and len(text) >= VARIANT_OPAQUE_NUMERIC_OPTION_MIN_DIGITS
-    )
+    ):
+        return False
+    return field_name == "color" or len(text) >= VARIANT_OPAQUE_NUMERIC_OPTION_MIN_DIGITS
 
 
 def sanitize_option_scalar(field_name: str, value: object) -> str | None:
@@ -471,6 +472,11 @@ def sanitize_option_scalar(field_name: str, value: object) -> str | None:
         if _SMALL_NUMERIC_RE.fullmatch(cleaned):
             return None
         if _TRACKING_PIXEL_RE.fullmatch(cleaned):
+            return None
+        if (
+            _variant_color_codelike_token_re.fullmatch(cleaned)
+            and _COLOR_KEYWORD_RE.search(cleaned) is None
+        ):
             return None
         if _color_value_is_opaque_code(cleaned):
             return None
