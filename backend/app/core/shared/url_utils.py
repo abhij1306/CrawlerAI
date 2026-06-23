@@ -22,7 +22,6 @@ from app.core.config.extraction_rules import (
     GIF_BASE64_PREFIX,
     PLACEHOLDER_IMAGE_URL_PATTERNS,
     PRIMARY_IMAGE_REJECT_URL_TOKENS,
-    PRODUCT_ASSET_HIGH_RES_QUERY_MIN_DIMENSION,
     PRODUCT_ASSET_LOW_RES_QUERY_MAX_DIMENSION,
     PRODUCT_ASSET_REJECT_URL_PATTERNS,
     UNRESOLVED_TEMPLATE_URL_TOKENS,
@@ -360,11 +359,6 @@ def is_utility_image_url(value: object) -> bool:
 
 def low_resolution_asset_urls(values: tuple[str, ...]) -> frozenset[str]:
     dimensions = {value: _image_query_dimensions(value) for value in values}
-    if not any(
-        any(size >= PRODUCT_ASSET_HIGH_RES_QUERY_MIN_DIMENSION for size in sizes)
-        for sizes in dimensions.values()
-    ):
-        return frozenset()
     return frozenset(
         value
         for value, sizes in dimensions.items()

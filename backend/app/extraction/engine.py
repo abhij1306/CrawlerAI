@@ -439,7 +439,11 @@ def _assess_detail(
         return "review"
     if verdict == "success" and any(
         finding.rule_id
-        in {"EXPECTED_VARIANT_AXIS_MISSING", "VARIANT_AVAILABILITY_MISSING"}
+        in {
+            "EXPECTED_VARIANT_AXIS_MISSING",
+            "MISSING_CONTRACT_FIELD",
+            "VARIANT_AVAILABILITY_MISSING",
+        }
         for finding in findings
     ):
         return "partial"

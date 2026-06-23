@@ -74,6 +74,7 @@ from app.core.shared.field_coerce_price import (
 from app.core.shared.field_coerce_text import (
     coerce_brand_text as coerce_brand_text,
     infer_brand_from_product_url as infer_brand_from_product_url,
+    infer_brand_from_title_host as infer_brand_from_title_host,
     infer_brand_from_title_marker as infer_brand_from_title_marker,
 )
 from app.core.shared.field_coerce_url import (
@@ -104,6 +105,7 @@ __all__ = (
     "extract_price_text",
     "extract_urls",
     "infer_brand_from_product_url",
+    "infer_brand_from_title_host",
     "infer_brand_from_title_marker",
     "is_title_noise",
     "sanitize_option_scalar",

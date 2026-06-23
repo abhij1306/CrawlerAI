@@ -51,6 +51,7 @@ class DomCollector:
         )
         selectors = [
             ("h1", "product.title"),
+            ("head title", "product.title"),
             ("[data-price]", "offer.price"),
             ("[data-currency]", "offer.currency"),
             ("[data-sku]", "product.sku"),

@@ -7,7 +7,10 @@ from app.core.config.extraction_rules import (
     DETAIL_IMAGE_IDENTITY_ALNUM_MIN_LENGTH,
     DETAIL_IMAGE_IDENTITY_NUMERIC_MIN_LENGTH,
     DETAIL_IMAGE_OPAQUE_HEX_MIN_LENGTH,
+    DETAIL_TITLE_ENDPOINT_FILENAME_PATTERN,
     DETAIL_TITLE_PATH_EXTENSION_PATTERN,
+    DETAIL_TITLE_STYLE_ONLY_MAX_WORDS,
+    DETAIL_TITLE_STYLE_ONLY_TOKENS,
     PRODUCT_ASSET_SEMANTIC_MIN_ANCHORED_ASSETS,
     PRODUCT_ASSET_SEMANTIC_MIN_DESCRIPTIVE_TOKENS,
     PRODUCT_ASSET_SEMANTIC_MIN_MATCH_TOKENS,
@@ -92,6 +95,26 @@ def _detail_url_title_segment_is_code(value: str) -> bool:
 def detail_title_from_url(url: str) -> str:
     parsed = urlparse(str(url or ""))
     segments = [unquote(part) for part in parsed.path.strip("/").split("/") if part]
+    if segments:
+        terminal = re.sub(
+            DETAIL_TITLE_PATH_EXTENSION_PATTERN,
+            "",
+            segments[-1],
+            flags=re.IGNORECASE,
+        )
+        if _detail_url_title_segment_is_code(terminal):
+            previous = segments[-2] if len(segments) >= 2 else ""
+            previous_tokens = semantic_identity_tokens(previous)
+            collection_code_shape = bool(
+                re.search(r"/(?:collections?|categories?)/.+/products?/[^/]+/?$", parsed.path, re.IGNORECASE)
+            )
+            style_only_parent = bool(
+                previous_tokens
+                and len(previous_tokens) <= DETAIL_TITLE_STYLE_ONLY_MAX_WORDS
+                and set(previous_tokens) <= DETAIL_TITLE_STYLE_ONLY_TOKENS
+            )
+            if collection_code_shape or style_only_parent:
+                return ""
     for offset, segment in enumerate(reversed(segments)):
         candidate = re.sub(
             DETAIL_TITLE_PATH_EXTENSION_PATTERN, "", segment, flags=re.IGNORECASE
@@ -104,6 +127,10 @@ def detail_title_from_url(url: str) -> str:
             continue
         if _detail_url_title_segment_is_code(candidate):
             continue
+        if offset == 0 and re.fullmatch(
+            DETAIL_TITLE_ENDPOINT_FILENAME_PATTERN, title, re.IGNORECASE
+        ):
+            return ""
         if offset and len(semantic_identity_tokens(title)) < DETAIL_URL_TITLE_FALLBACK_MIN_TOKENS:
             continue
         return title
@@ -143,7 +170,13 @@ def detail_url_resource_identity(url: str) -> str:
 
 def detail_url_looks_like_product(url: str) -> bool:
     path = urlparse(str(url or "").lower()).path
-    return any(marker in path for marker in _DETAIL_MARKERS)
+    if any(marker in path for marker in _DETAIL_MARKERS):
+        return True
+    segment = unquote(path.rstrip("/").rsplit("/", 1)[-1])
+    if not segment.endswith((".html", ".htm")):
+        return False
+    title = re.sub(DETAIL_TITLE_PATH_EXTENSION_PATTERN, "", segment, flags=re.IGNORECASE)
+    return len(semantic_identity_tokens(title)) >= DETAIL_URL_TITLE_FALLBACK_MIN_TOKENS
 
 
 def detail_url_is_locale_root(url: str) -> bool:
@@ -236,14 +269,21 @@ def _semantic_product_asset_conflicts(
         len(product_tokens & tokens) >= PRODUCT_ASSET_SEMANTIC_MIN_MATCH_TOKENS
         for tokens in asset_tokens.values()
     )
-    if anchored < PRODUCT_ASSET_SEMANTIC_MIN_ANCHORED_ASSETS:
-        return frozenset()
-    return frozenset(
+    conflicts = frozenset(
         url
         for url, tokens in asset_tokens.items()
         if len(tokens) >= PRODUCT_ASSET_SEMANTIC_MIN_DESCRIPTIVE_TOKENS
         and len(product_tokens & tokens) < PRODUCT_ASSET_SEMANTIC_MIN_MATCH_TOKENS
     )
+    if anchored >= PRODUCT_ASSET_SEMANTIC_MIN_ANCHORED_ASSETS:
+        return conflicts
+    opaque_peer_count = sum(
+        len(tokens) < PRODUCT_ASSET_SEMANTIC_MIN_DESCRIPTIVE_TOKENS
+        for tokens in asset_tokens.values()
+    )
+    if len(conflicts) == 1 and opaque_peer_count >= 1:
+        return conflicts
+    return frozenset()
 
 
 def _product_asset_semantic_tokens(value: object) -> tuple[str, ...]:

@@ -129,6 +129,8 @@ PRIMARY_IMAGE_REJECT_URL_TOKENS = frozenset(
         "klarna",
         "loader",
         "logo",
+        "meganavpromo",
+        "mega-nav-promo",
         "no-image",
         "no_image",
         "payment",
@@ -151,6 +153,7 @@ DETAIL_IMAGE_SRCSET_ATTRS = ("srcset", "data-srcset")
 PRODUCT_ASSET_REJECT_URL_PATTERNS = (
     r"(?:^|[/_.-])(?:att|tmobile|verizon)(?:[/_.-]|$)",
     r"(?:^|[/_.-])(?:left|right)[_-]?arrow(?:[/_.-]|$)",
+    r"/(?:front|back|side|rear|detail)(?:%20|\s)+(?:view|image)(?:$|[?#])",
     r"(?:^|[/_.-])chevrons?(?:[/_.-]|$)",
     r"(?:^|/)edit(?:\.[a-f0-9]{6,})?\.svg(?:$|[?#])",
     r"(?:^|//)(?:i\.ytimg\.com|img\.youtube\.com)/vi/",

@@ -2,8 +2,8 @@
 
 **Created:** 2026-06-21
 **Agent:** Codex
-**Status:** AWAITING VALID 100-SITE GATE INPUT
-**Current slice:** Slices 9-12 verified; Slice 13 is authorized but blocked because the acceptance runner resolves zero sites from the current raw URL-only `TEST_SITES.md` and its default curated site-set manifest is absent
+**Status:** IN PROGRESS — SLICE 13 FAILED; Q1-Q8 REOPENED
+**Current slice:** Slices 9-12 verified; the user supplied the latest 97-site crawl result, which contains 92 records and fails the Slice 13 quality gate
 **Touches buckets:** acquisition/browser runtime, extraction and public record contracts, persistence/artifacts/review, crawl orchestration, core config/record quality, intelligence, enrichment, connectors, tests, canonical architecture docs
 
 ## Goal
@@ -551,7 +551,7 @@ New failures discovered later must be appended to this table with a stable `QD-*
 
 ### Quality Slice Q1: Description Completeness and Product-Specific Copy
 
-**Status:** DONE — VERIFIED 2026-06-23
+**Status:** REOPENED — LATEST GATE FAILED; DIRTY FIXES UNDER VALIDATION
 **Owners:** detail collectors, `extraction/pipeline.py`, `resolution.py`, `core/shared/text_coerce.py`, `core/config/extraction_rules/_detail.py`, validation/findings.
 
 **Implement:**
@@ -567,7 +567,7 @@ New failures discovered later must be appended to this table with a stable `QD-*
 
 ### Quality Slice Q2: Required-Field Recovery and Honest Record Completeness
 
-**Status:** DONE — VERIFIED 2026-06-23
+**Status:** REOPENED — PENDING LATEST-CORPUS CLOSURE
 **Owners:** source-key mappings, collectors, entity linking, resolution, `validation.py`, result building, quality verdict/harness checks.
 
 **Implement:**
@@ -583,7 +583,7 @@ New failures discovered later must be appended to this table with a stable `QD-*
 
 ### Quality Slice Q3: Product-Side Brand Recovery
 
-**Status:** DONE — VERIFIED 2026-06-23
+**Status:** REOPENED — PENDING LATEST-CORPUS CLOSURE
 **Owners:** `field_mappings.py`, metadata/JSON-LD/JS/network/DOM collectors, brand coercion, resolution.
 
 **Implement:**
@@ -599,7 +599,7 @@ New failures discovered later must be appended to this table with a stable `QD-*
 
 ### Quality Slice Q4: Specific Product Title Resolution
 
-**Status:** DONE — VERIFIED 2026-06-23
+**Status:** REOPENED — PENDING LATEST-CORPUS CLOSURE
 **Owners:** URL/metadata/DOM/structured collectors, `pipeline.normalize_evidence`, `resolution.py`, title rules in `_detail.py`.
 
 **Implement:**
@@ -615,7 +615,7 @@ New failures discovered later must be appended to this table with a stable `QD-*
 
 ### Quality Slice Q5: Image Identity, Relevance, Resolution, and Gallery Integrity
 
-**Status:** DONE — VERIFIED 2026-06-23
+**Status:** REOPENED — LATEST GATE FAILED; DIRTY FIXES UNDER VALIDATION
 **Owners:** image collectors, asset entity/decision owners, `_images.py`, URL utilities, materialization.
 
 **Implement:**
@@ -632,7 +632,7 @@ New failures discovered later must be appended to this table with a stable `QD-*
 
 ### Quality Slice Q6: Offer, Price, Currency, and Availability Semantics
 
-**Status:** DONE — VERIFIED 2026-06-23
+**Status:** REOPENED — PENDING LATEST-CORPUS CLOSURE
 **Owners:** offer collectors, `entities.py`, `resolution.py`, `validation.py`, `materialization.py`, price/variant config.
 
 **Implement:**
@@ -649,7 +649,7 @@ New failures discovered later must be appended to this table with a stable `QD-*
 
 ### Quality Slice Q7: Category-Aware Variant Axis Completeness
 
-**Status:** DONE — VERIFIED 2026-06-23
+**Status:** REOPENED — PENDING LATEST-CORPUS CLOSURE
 **Owners:** JS state/JSON-LD/DOM/network variant collectors, variant policy, resolution, validation, browser capability request gating.
 
 **Implement:**
@@ -665,7 +665,7 @@ New failures discovered later must be appended to this table with a stable `QD-*
 
 ### Quality Slice Q8: Unified Catalog Quality Gate and Release Readiness
 
-**Status:** DONE — VERIFIED 2026-06-23
+**Status:** REOPENED — LATEST GATE NOW BLOCKS FALSE CLEAN
 **Owners:** extraction validation, harness quality checks, replay acceptance, architecture tests, this plan.
 
 **Implement:**
@@ -677,7 +677,7 @@ New failures discovered later must be appended to this table with a stable `QD-*
 
 **Acceptance:** Zero unresolved QD blockers in the frozen manifest; no regression hidden by aggregate success; Q0-Q8 all carry verification notes.
 
-**Verification note (2026-06-23):** The unified offline report records 106 frozen baseline signals across 91 records, 0 unresolved QD blockers, explicit resolution/finding evidence for QD-01 through QD-13, affected URLs, and deterministic verification pointers. Transport success is not an input to `quality_clean`.
+**Reopen note (2026-06-23):** The older frozen manifest remains historical evidence only. The latest 92-record failed-gate audit is now consumed by the offline gate and reports all QD-01 through QD-13 as unresolved. Focused verification: `7 passed` in `tests/unit/test_catalog_quality_audit.py`; focused Ruff passed. Q8 cannot return clean from self-declared manifest resolutions while the latest gate is failed.
 
 **Verify:** full quality-auditor/replay set only. Do not run live URLs.
 
@@ -1176,11 +1176,11 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 ### Slice 13: User 100-Site Gate
 
-**Status:** BLOCKED — VALID 100-SITE INPUT/MANIFEST MISSING
+**Status:** FAILED — USER-SUPPLIED 97-SITE RESULT REVIEWED
 **Owner:** user/operator
 **Prerequisite:** Q0-Q8 complete, Slices 9-11 closed, and Slice 12 offline closure. This is the only full live catalog/100-site crawl gate for the closure cycle.
 
-The user authorized execution on 2026-06-23. The configured runner cannot currently form the gate: `parse_test_sites_markdown()` returns zero entries for the current raw URL-only `TEST_SITES.md`, and the default curated manifest `backend/harness/test_site_sets/commerce_browser_heavy.json` is absent. Do not report this gate as passed until a valid 100-site input with explicit surfaces and expectations is supplied and executed.
+The user supplied the latest 97-site crawl result on 2026-06-23. The payload parses to 92 product records, so five attempted sites have no record in the supplied output. The result fails the quality acceptance criteria and reopens Q1-Q8 under the existing QD-01 through QD-13 tracker. Audit summary: `backend/artifacts/test_sites_acceptance/20260623__97_site_gate_audit.json`.
 
 **Acceptance:**
 
@@ -1279,4 +1279,11 @@ If the gate passes, mark this plan `DONE` and update `ACTIVE.md` to `No active p
 - Backend Ruff passed. Venv Mypy initially found one loop-variable inference defect in `core/records/html_helpers.py`; renamed the Tag loop variable in the owning helper. Final Mypy passed for `314 source files`.
 - Frontend typecheck and lint passed. Repository Prettier check failed on 25 pre-existing frontend files, including unrelated dirty `frontend/components/crawl/log-terminal.tsx`. Those files were not reformatted or overwritten.
 - Slice 12 completed on 2026-06-23 after the user-authorized Prettier pass: frontend format check, typecheck, and lint all passed; backend Ruff and Mypy passed; the complete offline unit/component/regression selection passed with `1,120 passed, 1 deselected`.
-- Slice 13 was authorized and inspected, but no live crawl was started because the configured runner resolves zero sites from `TEST_SITES.md` and the default curated site-set manifest is missing. The plan cannot honestly be marked `DONE` without a valid 100-site input and resulting report.
+- Slice 13 failed on 2026-06-23 using the user-supplied latest 97-site output. Parsed result: 92 records; 25 missing availability, 19 missing brand, 18 missing price, 19 missing currency, 5 missing primary image, 10 missing description, 4 missing title, 10 parent/variant mixed-price families, 86 variants without availability, and one exact primary/gallery duplicate.
+- Confirmed qualitative blockers include a PlayStation image in an iPhone gallery, a Lululemon navigation promo used as primary image, a malformed Louis Vuitton image URL ending in `/Front view`, a Converse primary image requested at 71px, and a 319-character description ending mid-sentence with `Easy On and`.
+- Q1-Q8 are reopened. The plan remains active and must not be marked `DONE` until these failures are fixed offline and a new user gate passes.
+- Reopen validation after the current dirty description/image fixes and Q8 gate correction: `python -m ruff check app harness tests` passed; `python -m mypy --config-file pyproject.toml app harness/quality_evaluator.py` passed for `315 source files`; `python -m pytest tests -q -m "unit or component or regression"` passed with `1,123 passed, 4 deselected`. The plan remains `IN PROGRESS`; this proves offline consistency only, not QD closure against the latest corpus.
+- Incremental QD-09/QD-10 closure work on 2026-06-23: variant price-only offers no longer publish incoherent public variant prices after inheritance; complete mixed variant families now expose explicit `price_min`/`price_max` range lineage without overwriting a stronger parent/default price. Added focused regressions in `tests/unit/test_extraction_pipeline.py` for price/currency atomicity and mixed parent/variant price-range semantics.
+- Incremental verification after QD-09/QD-10 work: focused quality suite passed with `195 passed, 3 deselected`; `python -m ruff check app harness tests` passed; `python -m mypy --config-file pyproject.toml app harness/quality_evaluator.py` passed for `315 source files`; `python -m pytest tests -q -m "unit or component or regression"` passed with `1,125 passed, 4 deselected`; `git diff --check` passed. The plan remains `IN PROGRESS`; latest-run title, brand, required-field recovery, variant-axis, and corpus-specific QD closure are still not done.
+- Incremental QD-03/QD-05/QD-06/QD-09/QD-11 work on 2026-06-23: final detail assessment now downgrades any record with `MISSING_CONTRACT_FIELD` from clean `success`; DOM document title and standard/Twitter metadata are admissible low-priority recovery evidence; explicit registered/trademark markers derive brand evidence; stock quantity derives availability; explicit JSON-LD variant-name segments derive size without synthesizing combinations. Updated the batch runtime success fixture to satisfy the full default detail contract instead of weakening retry behavior.
+- Verification after this increment: focused quality set `tests/unit/test_description_quality.py tests/unit/test_shared_url_utils.py tests/unit/test_extraction_pipeline.py tests/unit/test_catalog_quality_audit.py tests/unit/test_field_policy.py -q` passed with `212 passed, 3 deselected`; `python -m ruff check app harness tests` passed; `python -m mypy --config-file pyproject.toml app harness/quality_evaluator.py` passed for `315 source files`; `python -m pytest tests -q -m "unit or component or regression"` passed with `1,131 passed, 4 deselected`; `git diff --check` passed. The plan remains `IN PROGRESS`; no live crawl was run and corpus-specific closure is still required before `AWAITING USER 100-SITE GATE`.

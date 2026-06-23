@@ -576,6 +576,7 @@ def _invalid(ev: Evidence) -> bool:
             "brand_boilerplate",
             "brand_url",
             "category_as_brand",
+            "description_incomplete_ending",
             "description_promotional_copy",
             "description_ui_pollution",
             "invalid_decimal",

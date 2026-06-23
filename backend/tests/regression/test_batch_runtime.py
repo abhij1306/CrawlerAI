@@ -36,7 +36,9 @@ def _detail_html() -> str:
           "@context": "https://schema.org",
           "@type": "Product",
           "name": "Widget Prime",
+          "brand": "Example Works",
           "description": "A deterministic widget",
+          "image": "https://example.com/images/widget-prime.jpg",
           "sku": "W-100",
           "offers": {"price": "19.99", "priceCurrency": "USD", "availability": "InStock"}
         }

@@ -8,7 +8,10 @@ from app.extraction.contracts import (
     RejectedEntity,
     TargetSelection,
 )
-from app.core.records.url_identity import detail_identity_codes_from_url
+from app.core.records.url_identity import (
+    detail_identity_codes_from_url,
+    detail_url_resource_identity,
+)
 from app.extraction.entities import EntitySet
 from app.extraction.surfaces import SurfaceSpec
 
@@ -95,8 +98,13 @@ def _select_product_by_url(
         for url in wanted
         for code in detail_identity_codes_from_url(url)
     }
+    wanted_resource_ids = {
+        resource_id
+        for url in wanted
+        if (resource_id := detail_url_resource_identity(url))
+    }
     complete_offer_products = _products_with_complete_offers(graph)
-    scored: list[tuple[tuple[int, int, int, int, int, int], str]] = []
+    scored: list[tuple[tuple[int, int, int, int, int, int, int], str]] = []
     for product in graph.products:
         urls = {
             str(by_id[evidence_id].value)
@@ -111,7 +119,13 @@ def _select_product_by_url(
             and (hint := by_id[evidence_id].entity_hint) is not None
             and hint.product_id
         }
+        resource_ids = {
+            resource_id
+            for url in urls
+            if (resource_id := detail_url_resource_identity(url))
+        }
         rank = (
+            int(bool(resource_ids & wanted_resource_ids)),
             int(bool(urls & wanted)),
             int(bool(product_ids & wanted_product_ids)),
             int(product.entity_id in complete_offer_products),

@@ -63,6 +63,38 @@ _SKU_DRAFT_PREFIX_RE = re.compile(
 _BARCODE_SEPARATOR_RE = re.compile(r"[\s-]+")
 
 
+def infer_brand_from_title_host(*, title: object, url: str) -> str | None:
+    text = clean_text(title)
+    host = urlparse(str(url or "")).hostname or ""
+    if not text or not host:
+        return None
+    ignored_labels = {"www", "shop", "store", "us", "usa", "uk", "in", "com", "co", "net", "org"}
+    labels = [
+        label
+        for label in host.casefold().split(".")
+        if label and label not in ignored_labels
+    ]
+    if not labels:
+        return None
+    host_token = max(
+        (re.sub(r"[^a-z0-9]+", "", label) for label in labels),
+        key=len,
+        default="",
+    )
+    title_tokens = slug_tokens(text)
+    if not host_token or not title_tokens:
+        return None
+    original_words = text.split()
+    for size in range(min(LISTING_BRAND_MAX_WORDS, len(title_tokens)), 0, -1):
+        for start in range(0, len(title_tokens) - size + 1):
+            candidate = title_tokens[start : start + size]
+            if "".join(candidate) != host_token:
+                continue
+            original = " ".join(original_words[start : start + size]).strip(" |-–—")
+            return original or None
+    return None
+
+
 def infer_brand_from_title_marker(title: object) -> str | None:
     text = clean_text(title)
     if not text:

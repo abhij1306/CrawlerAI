@@ -17,7 +17,7 @@ from app.core.config.extraction_rules import (
 from app.core.config.variant_policy import DETAIL_PARENT_OFFER_INHERITANCE_RULE_ID
 from app.core.records.url_identity import detail_title_from_url, semantic_identity_tokens
 from app.core.shared.field_coerce import sanitize_option_scalar
-from app.extraction.entities import EntitySet
+from app.extraction.entities import EntitySet, OfferEntity
 
 PUBLIC_MAP = {
     "product.url": "url",
@@ -100,6 +100,14 @@ def materialize(
                 "selector_source": accepted.collector_id,
                 "sample_value": accepted.value,
             }
+    _recover_unique_same_product_scalars(
+        record,
+        lineages,
+        entities,
+        resolution,
+        by_id,
+        derived,
+    )
     _materialize_product_assets(record, lineages, resolution.asset_decisions)
     if not record.get("url"):
         record["url"] = canonical_url
@@ -127,11 +135,224 @@ def materialize(
             variant_lineage,
             expected_variant_count=len(entities.variants),
         )
+    _recover_matching_product_offer(
+        record,
+        lineages,
+        entities,
+        resolution,
+        by_id,
+        derived,
+    )
     if lineages:
         record["_lineage"] = lineages
     if selector_traces:
         record["_selector_traces"] = selector_traces
     return _typed_detail_record(record)
+
+
+def _recover_unique_same_product_scalars(
+    record: dict[str, object],
+    lineages: dict[str, object],
+    entities: EntitySet,
+    resolution: ResolutionResult,
+    by_id: dict[str, Evidence],
+    derived: dict[tuple[str, str], DerivedFact],
+) -> None:
+    primary_product_id = resolution.primary_product_entity_id
+    if not primary_product_id:
+        return
+    product_entity_ids = {product.entity_id for product in entities.products}
+    for fact_type, field in PUBLIC_MAP.items():
+        if fact_type.startswith("offer."):
+            continue
+        if record.get(field) not in (None, "", [], {}, ()):
+            continue
+        allowed_entities = product_entity_ids
+        candidates: list[tuple[object, Decision, DerivedFact | None]] = []
+        for decision in resolution.decisions:
+            if (
+                decision.entity_id not in allowed_entities
+                or decision.fact_type != fact_type
+                or decision.status != "resolved"
+                or not decision.accepted_evidence_ids
+            ):
+                continue
+            resolved = derived.get((decision.entity_id, fact_type))
+            value = (
+                resolved.value
+                if resolved is not None
+                else by_id[decision.accepted_evidence_ids[0]].value
+            )
+            if value not in (None, "", [], {}, ()):
+                candidates.append((value, decision, resolved))
+        unique = {str(value).strip().casefold() for value, _decision, _derived in candidates}
+        if len(unique) != 1 or not candidates:
+            continue
+        value, decision, resolved = candidates[0]
+        record[field] = value
+        source_lineage = lineage(derived=resolved) if resolved else lineage(decision=decision)
+        lineages[field] = {
+            **source_lineage,
+            "rule_id": "unique_same_product_scalar_recovery",
+        }
+
+
+def _recover_matching_product_offer(
+    record: dict[str, object],
+    lineages: dict[str, object],
+    entities: EntitySet,
+    resolution: ResolutionResult,
+    by_id: dict[str, Evidence],
+    derived: dict[tuple[str, str], DerivedFact],
+) -> None:
+    selected_title = " ".join(semantic_identity_tokens(str(record.get("title") or "")))
+    if not selected_title:
+        return
+    matching_product_ids: set[str] = set()
+    for decision in resolution.decisions:
+        if (
+            decision.fact_type != "product.title"
+            or decision.status != "resolved"
+            or not decision.accepted_evidence_ids
+        ):
+            continue
+        candidate_title = " ".join(
+            semantic_identity_tokens(
+                str(by_id[decision.accepted_evidence_ids[0]].value or "")
+            )
+        )
+        if candidate_title == selected_title:
+            matching_product_ids.add(decision.entity_id)
+    if resolution.primary_product_entity_id:
+        matching_product_ids.add(resolution.primary_product_entity_id)
+    eligible_offer_ids = {
+        offer.entity_id
+        for offer in entities.offers
+        if offer.product_entity_id in matching_product_ids
+    }
+    candidates: dict[str, list[tuple[object, Decision, DerivedFact | None]]] = {
+        "offer.price": [],
+        "offer.currency": [],
+        "offer.availability": [],
+    }
+    for decision in resolution.decisions:
+        if (
+            decision.entity_id not in eligible_offer_ids
+            or decision.fact_type not in candidates
+            or decision.status != "resolved"
+            or not decision.accepted_evidence_ids
+        ):
+            continue
+        resolved = derived.get((decision.entity_id, decision.fact_type))
+        value = (
+            resolved.value
+            if resolved is not None
+            else by_id[decision.accepted_evidence_ids[0]].value
+        )
+        if value not in (None, "", [], {}, ()):
+            candidates[decision.fact_type].append((value, decision, resolved))
+    _recover_offer_scalar(
+        record,
+        lineages,
+        "currency",
+        candidates["offer.currency"],
+    )
+    _recover_offer_availability(
+        record,
+        lineages,
+        candidates["offer.availability"],
+    )
+    _recover_offer_prices(record, lineages, candidates["offer.price"])
+
+
+def _recover_offer_scalar(
+    record: dict[str, object],
+    lineages: dict[str, object],
+    field: str,
+    candidates: list[tuple[object, Decision, DerivedFact | None]],
+) -> None:
+    if record.get(field) not in (None, "", [], {}, ()) or not candidates:
+        return
+    unique = {str(value).strip() for value, _decision, _derived in candidates}
+    if len(unique) != 1:
+        return
+    value, decision, resolved = candidates[0]
+    source_lineage = lineage(derived=resolved) if resolved else lineage(decision=decision)
+    record[field] = value
+    lineages[field] = {**source_lineage, "rule_id": "matching_product_offer_recovery"}
+
+
+def _recover_offer_availability(
+    record: dict[str, object],
+    lineages: dict[str, object],
+    candidates: list[tuple[object, Decision, DerivedFact | None]],
+) -> None:
+    if record.get("availability") not in (None, "", [], {}, ()) or not candidates:
+        return
+    values = {str(value) for value, _decision, _derived in candidates}
+    if not values <= {"in_stock", "out_of_stock"}:
+        return
+    value = "in_stock" if "in_stock" in values else "out_of_stock"
+    evidence_ids = [
+        evidence_id
+        for _candidate, decision, resolved in candidates
+        for evidence_id in (
+            resolved.input_evidence_ids
+            if resolved is not None
+            else decision.accepted_evidence_ids
+        )
+    ]
+    record["availability"] = value
+    lineages["availability"] = {
+        "rule_id": "matching_product_availability_aggregate",
+        "evidence_ids": list(dict.fromkeys(evidence_ids)),
+    }
+
+
+def _recover_offer_prices(
+    record: dict[str, object],
+    lineages: dict[str, object],
+    candidates: list[tuple[object, Decision, DerivedFact | None]],
+) -> None:
+    if record.get("price") not in (None, "", [], {}, ()) or not candidates:
+        return
+    parsed: list[Decimal] = []
+    for value, _decision, _derived in candidates:
+        try:
+            amount = Decimal(str(value))
+        except (InvalidOperation, TypeError, ValueError):
+            continue
+        if amount > 0:
+            parsed.append(amount)
+    if not parsed:
+        return
+    minimum = min(parsed)
+    maximum = max(parsed)
+    evidence_ids = [
+        evidence_id
+        for _candidate, decision, resolved in candidates
+        for evidence_id in (
+            resolved.input_evidence_ids
+            if resolved is not None
+            else decision.accepted_evidence_ids
+        )
+    ]
+    rule_id = (
+        "matching_product_offer_recovery"
+        if minimum == maximum
+        else "matching_product_price_range_aggregate"
+    )
+    lineage_value = {
+        "rule_id": rule_id,
+        "evidence_ids": list(dict.fromkeys(evidence_ids)),
+    }
+    record["price"] = format(minimum, ".2f")
+    lineages["price"] = lineage_value
+    if minimum != maximum:
+        record["price_min"] = format(minimum, ".2f")
+        record["price_max"] = format(maximum, ".2f")
+        lineages["price_min"] = lineage_value
+        lineages["price_max"] = lineage_value
 
 
 def _cohere_parent_offer(
@@ -145,8 +366,6 @@ def _cohere_parent_offer(
     if len(variants) != expected_variant_count:
         return
     for field in ("price", "currency", "original_price"):
-        if record.get(field) not in (None, "", [], {}, ()):
-            continue
         values = [row.get(field) for row in variants]
         if not values or any(value in (None, "", [], {}, ()) for value in values):
             continue
@@ -166,6 +385,11 @@ def _cohere_parent_offer(
             record["price_min"] = format(minimum, ".2f")
             record["price_max"] = format(maximum, ".2f")
             aggregate_rule = "minimum_variant_price_aggregate"
+        parent_value_present = record.get(field) not in (None, "", [], {}, ())
+        if parent_value_present and (
+            field != "price" or aggregate_rule != "minimum_variant_price_aggregate"
+        ):
+            continue
         field_lineage = [row.get(field) for row in variant_lineage]
         if any(
             isinstance(item, dict)
@@ -178,12 +402,13 @@ def _cohere_parent_offer(
             for item in field_lineage
             for evidence_id in _lineage_evidence_ids(item)
         )
-        record[field] = aggregate_value
         lineage_value = {
             "rule_id": aggregate_rule,
             "evidence_ids": list(dict.fromkeys(evidence_ids)),
         }
-        lineages[field] = lineage_value
+        if not parent_value_present:
+            record[field] = aggregate_value
+            lineages[field] = lineage_value
         if field == "price" and record.get("price_min") != record.get("price_max"):
             lineages["price_min"] = lineage_value
             lineages["price_max"] = lineage_value
@@ -249,11 +474,15 @@ def _variants(
     }
     rows: list[dict[str, object]] = []
     lineage_rows: list[dict[str, object]] = []
-    offer_by_variant = {
-        offer.variant_entity_id: offer
-        for offer in entities.offers
-        if offer.variant_entity_id
-    }
+    offer_by_variant: dict[str, OfferEntity] = {}
+    for offer in entities.offers:
+        if not offer.variant_entity_id:
+            continue
+        current = offer_by_variant.get(offer.variant_entity_id)
+        if current is None or _offer_completeness_rank(offer) > _offer_completeness_rank(
+            current
+        ):
+            offer_by_variant[offer.variant_entity_id] = offer
     asset_by_variant = {
         asset.variant_entity_id: asset
         for asset in entities.assets
@@ -291,6 +520,23 @@ def _variants(
         ),
     )
     return [row for row, _ in ordered], [item for _, item in ordered]
+
+
+def _offer_completeness_rank(offer) -> tuple[int, int, int, str]:
+    fact_evidence = dict(offer.fact_evidence or {})
+    commercial_fields = (
+        "offer.price",
+        "offer.currency",
+        "offer.availability",
+        "offer.stock_quantity",
+    )
+    present = sum(bool(fact_evidence.get(field)) for field in commercial_fields)
+    evidence_count = sum(len(tuple(ids or ())) for ids in fact_evidence.values())
+    has_availability = int(
+        bool(fact_evidence.get("offer.availability"))
+        or bool(fact_evidence.get("offer.stock_quantity"))
+    )
+    return has_availability, present, evidence_count, str(offer.entity_id)
 
 
 def _variant_url_conflicts(product_url: str, variant_url: str) -> bool:
@@ -422,6 +668,17 @@ def _variant_offer_fields(
         lineage_row[field] = (
             lineage(derived=value) if value else lineage(decision=decision)
         )
+    if row.get("price") not in (None, "", [], {}, ()) and row.get("currency") in (
+        None,
+        "",
+        [],
+        {},
+        (),
+    ):
+        row.pop("price", None)
+        row.pop("original_price", None)
+        lineage_row.pop("price", None)
+        lineage_row.pop("original_price", None)
 
 
 def _variant_asset_field(row, lineage_row, asset, decisions, by_id) -> None:

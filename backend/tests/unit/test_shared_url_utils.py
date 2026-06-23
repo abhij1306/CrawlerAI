@@ -2,10 +2,17 @@ from __future__ import annotations
 
 import pytest
 
+from app.core.records.url_identity import (
+    conflicting_product_asset_urls,
+    detail_title_from_url,
+    detail_url_resource_identity,
+)
 from app.core.shared.url_utils import (
     ensure_scheme,
     identity_token,
     is_placeholder_image_url,
+    is_utility_image_url,
+    low_resolution_asset_urls,
     absolute_url,
     asset_url_identity,
     extract_urls,
@@ -14,6 +21,27 @@ from app.core.shared.url_utils import (
 
 
 @pytest.mark.unit
+def test_opaque_terminal_detail_segment_does_not_fall_back_to_category_title() -> None:
+    assert detail_title_from_url(
+        "https://kith.test/collections/mens-footwear-sneakers/products/st40002-02000"
+    ) == ""
+    assert detail_title_from_url(
+        "https://shop.test/womens/categories/clothing/pants/wide-leg/ME988"
+    ) == ""
+    assert detail_title_from_url("https://shop.test/browse/product.do?pid=887835012") == ""
+
+
+def test_descriptive_html_detail_url_has_resource_identity() -> None:
+    url = (
+        "https://www.endclothing.com/us/"
+        "47-ny-yankees-clean-up-cap-b-rgw17gws-vn.html?queryID=tracking"
+    )
+    assert detail_url_resource_identity(url) == (
+        "www.endclothing.com/us/"
+        "47-ny-yankees-clean-up-cap-b-rgw17gws-vn.html"
+    )
+
+
 def test_absolute_url_repairs_relative_and_bare_host_values() -> None:
     assert absolute_url("https://example.com/a/page", "../p") == "https://example.com/p"
     assert absolute_url("https://example.com/a/page", "?q=1") == (
@@ -127,6 +155,29 @@ def test_shopify_no_image_storefront_asset_is_rejected() -> None:
 
 
 @pytest.mark.unit
+def test_navigation_and_label_only_image_urls_are_rejected() -> None:
+    assert is_utility_image_url(
+        "https://cdn.test/images/MegaNavPromo_WhatsNew.jpg"
+    )
+    assert is_utility_image_url(
+        "https://cdn.test/products/pants/Front%20view"
+    )
+
+
+def test_single_low_resolution_primary_candidate_is_rejected() -> None:
+    image = "https://cdn.test/product.jpg?sw=71"
+    assert low_resolution_asset_urls((image,)) == frozenset({image})
+
+
+def test_single_descriptive_foreign_gallery_asset_is_rejected() -> None:
+    opaque = "https://cdn.test/6bdb04d9-1f2b-4511-a911.jpg"
+    foreign = "https://cdn.test/sourcing_images/playstation_4_two_controllers.jpg"
+    assert conflicting_product_asset_urls(
+        ("iPhone 15 Plus Unlocked", "https://shop.test/iphone-15-plus"),
+        (opaque, foreign),
+    ) == frozenset({foreign})
+
+
 def test_identity_token_does_not_singularize_double_s_words() -> None:
     assert identity_token("dress") == "dress"
     assert identity_token("glass") == "glass"

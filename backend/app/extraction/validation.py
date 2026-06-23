@@ -244,6 +244,21 @@ def _validate_descriptions(
                 False,
             )
         )
+    incomplete_ids = tuple(
+        row.evidence_id
+        for row in descriptions
+        if "description_incomplete_ending" in row.flags
+    )
+    if incomplete_ids:
+        findings.append(
+            _finding(
+                "DESCRIPTION_INCOMPLETE_ENDING",
+                (product.entity_id,),
+                incomplete_ids,
+                "Description ends with an incomplete connector or preposition.",
+                False,
+            )
+        )
     promotional_ids = tuple(
         row.evidence_id
         for row in descriptions

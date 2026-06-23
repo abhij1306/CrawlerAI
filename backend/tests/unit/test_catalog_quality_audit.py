@@ -6,6 +6,7 @@ import pytest
 
 from harness.quality_evaluator import (
     audit_catalog_quality_manifest,
+    build_acceptance_gate_report,
     build_catalog_quality_report,
     load_catalog_quality_manifest,
     validate_catalog_quality_manifest,
@@ -18,6 +19,12 @@ FIXTURE = (
     / "fixtures"
     / "extraction"
     / "catalog_quality_20260623.json"
+)
+LATEST_GATE_AUDIT = (
+    Path(__file__).resolve().parents[2]
+    / "artifacts"
+    / "test_sites_acceptance"
+    / "20260623__97_site_gate_audit.json"
 )
 
 
@@ -69,6 +76,33 @@ def test_quality_verdict_is_independent_of_transport_success() -> None:
 
     assert report["quality_clean"] is False
     assert report["unresolved_issue_ids"] == ("QD-06",)
+
+
+def test_latest_acceptance_gate_audit_blocks_false_offline_clean() -> None:
+    audit = load_catalog_quality_manifest(LATEST_GATE_AUDIT)
+
+    report = build_acceptance_gate_report(audit)
+
+    assert report["quality_clean"] is False
+    assert report["gate_result"] == "failed"
+    assert report["record_count"] == 92
+    assert report["unresolved_issue_ids"] == tuple(
+        f"QD-{index:02d}" for index in range(1, 14)
+    )
+    assert report["unresolved_blocker_count"] == 13
+
+
+def test_acceptance_gate_requires_explicit_pass_even_without_signals() -> None:
+    report = build_acceptance_gate_report(
+        {
+            "gate_result": "failed",
+            "record_count": 100,
+            "missing_fields": {},
+        }
+    )
+
+    assert report["quality_clean"] is False
+    assert report["unresolved_issue_ids"] == ()
 
 
 def test_manifest_validation_reports_all_failures() -> None:

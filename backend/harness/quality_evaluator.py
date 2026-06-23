@@ -23,6 +23,7 @@ RESOLVED_CLASSIFICATIONS = frozenset(
 
 __all__ = [
     "audit_catalog_quality_manifest",
+    "build_acceptance_gate_report",
     "build_catalog_quality_report",
     "evaluate_quality",
     "load_catalog_quality_manifest",
@@ -60,6 +61,87 @@ def audit_catalog_quality_manifest(manifest: dict[str, Any]) -> dict[str, int]:
         counts["parent_variant_price_mismatch"] += int(bool(price_mismatch))
         counts["primary_gallery_duplicate"] += int(bool(image_duplicate))
     return counts
+
+
+def build_acceptance_gate_report(audit: dict[str, Any]) -> dict[str, Any]:
+    missing_fields = audit.get("missing_fields") or {}
+    blockers: dict[str, tuple[str, ...]] = {
+        "QD-01": ("description_probable_truncation",),
+        "QD-03": tuple(
+            f"missing_fields.{field_name}" for field_name in MISSING_FIELDS
+        ),
+        "QD-04": ("missing_record_count_vs_claim",),
+        "QD-06": ("missing_fields.title",),
+        "QD-07": (
+            "primary_gallery_exact_duplicate_count",
+            "confirmed_examples.cross_product_gallery",
+            "confirmed_examples.wrong_primary_asset",
+            "confirmed_examples.invalid_primary_url",
+            "confirmed_examples.low_resolution_primary",
+        ),
+        "QD-08": ("missing_fields.image_url",),
+        "QD-09": (
+            "missing_fields.price",
+            "missing_fields.currency",
+            "missing_fields.availability",
+        ),
+        "QD-10": ("parent_variant_price_mismatch_count",),
+        "QD-12": ("missing_variant_availability_count",),
+    }
+    values: dict[str, object] = {
+        "description_probable_truncation": audit.get(
+            "description_probable_truncation"
+        ),
+        "missing_record_count_vs_claim": audit.get("missing_record_count_vs_claim"),
+        "primary_gallery_exact_duplicate_count": audit.get(
+            "primary_gallery_exact_duplicate_count"
+        ),
+        "parent_variant_price_mismatch_count": audit.get(
+            "parent_variant_price_mismatch_count"
+        ),
+        "missing_variant_availability_count": audit.get(
+            "missing_variant_availability_count"
+        ),
+    }
+    for field_name in MISSING_FIELDS:
+        values[f"missing_fields.{field_name}"] = missing_fields.get(field_name)
+    confirmed_examples = audit.get("confirmed_examples") or {}
+    if isinstance(confirmed_examples, dict):
+        for name, value in confirmed_examples.items():
+            values[f"confirmed_examples.{name}"] = value
+
+    issues: list[dict[str, Any]] = []
+    unresolved_ids: list[str] = []
+    for issue_id in EXPECTED_ISSUE_IDS:
+        signals = tuple(
+            signal
+            for signal in blockers.get(issue_id, ())
+            if values.get(signal) not in (None, 0, "", [], {}, ())
+        )
+        if signals:
+            unresolved_ids.append(issue_id)
+        issues.append(
+            {
+                "issue_id": issue_id,
+                "unresolved": bool(signals),
+                "signals": signals,
+            }
+        )
+    reopened = tuple(str(value) for value in audit.get("reopened_issue_ids") or ())
+    for issue_id in reopened:
+        if issue_id in EXPECTED_ISSUE_IDS and issue_id not in unresolved_ids:
+            unresolved_ids.append(issue_id)
+    unresolved = tuple(
+        issue_id for issue_id in EXPECTED_ISSUE_IDS if issue_id in unresolved_ids
+    )
+    return {
+        "quality_clean": not unresolved and str(audit.get("gate_result") or "") == "passed",
+        "gate_result": str(audit.get("gate_result") or "unknown"),
+        "record_count": int(audit.get("record_count") or 0),
+        "unresolved_blocker_count": len(unresolved),
+        "unresolved_issue_ids": unresolved,
+        "issues": tuple(issues),
+    }
 
 
 def build_catalog_quality_report(manifest: dict[str, Any]) -> dict[str, Any]:

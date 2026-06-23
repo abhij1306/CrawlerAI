@@ -85,3 +85,18 @@ def test_promotional_search_copy_cannot_become_product_description() -> None:
         finding.rule_id == "DESCRIPTION_PROMOTIONAL_COPY"
         for finding in result.findings
     )
+
+
+def test_description_ending_with_incomplete_connector_is_rejected() -> None:
+    incomplete = (
+        "Step into the spotlight with this bracelet. It is comfortable, durable, "
+        "easy to wear, and designed to make a bold statement. Easy on and"
+    )
+
+    result = _extract(_product_html(description=incomplete))
+
+    assert result.records[0].get("description") is None
+    assert any(
+        finding.rule_id == "DESCRIPTION_INCOMPLETE_ENDING"
+        for finding in result.findings
+    )

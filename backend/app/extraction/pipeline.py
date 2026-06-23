@@ -27,6 +27,7 @@ from app.core.config.extraction_rules import (
     DETAIL_BRAND_BOILERPLATE_VALUES,
     DETAIL_BRAND_CATEGORY_PATTERN,
     DETAIL_DESCRIPTION_HARD_BOUNDARY_LENGTHS,
+    DETAIL_DESCRIPTION_INCOMPLETE_ENDING_PATTERN,
     DETAIL_DESCRIPTION_PROMOTIONAL_PATTERNS,
     DETAIL_DESCRIPTION_UI_PATTERNS,
     DETAIL_SHELL_TITLE_FLAG,
@@ -72,7 +73,11 @@ from app.core.records.url_identity import (
     semantic_identity_tokens,
 )
 from app.core.shared.field_coerce_price import repair_price_unit
-from app.core.shared.field_coerce_text import coerce_brand_text
+from app.core.shared.field_coerce_text import (
+    coerce_brand_text,
+    infer_brand_from_title_host,
+    infer_brand_from_title_marker,
+)
 from app.extraction.entities import EntitySet
 
 
@@ -110,26 +115,41 @@ def normalize_ecommerce_detail(
     evidence: tuple[Evidence, ...], *, page_url: str
 ) -> tuple[Evidence, ...]:
     normalized = tuple(normalize_evidence(ev, page_url=page_url) for ev in evidence)
-    normalized = _flag_variant_color_brand_conflicts(normalized)
-    return _dedupe_equivalent(
-        normalized
-        + tuple(
-            derived
-            for ev in normalized
-            for derived in (_currency_from_price_symbol(ev),)
-            if derived is not None
+    derived = tuple(
+        row
+        for ev in normalized
+        for row in (
+            _currency_from_price_symbol(ev),
+            _brand_from_title_host(ev, page_url=page_url),
+            _brand_from_title_marker(ev),
+            _availability_from_stock_quantity(ev),
         )
+        if row is not None
     )
+    combined = _flag_variant_color_brand_conflicts(normalized + derived)
+    return _dedupe_equivalent(combined)
 
 
 def _flag_variant_color_brand_conflicts(
     evidence: tuple[Evidence, ...],
 ) -> tuple[Evidence, ...]:
+    brand_rows = tuple(row for row in evidence if row.fact_type == "product.brand")
     brands = {
         str(row.value).strip().casefold()
-        for row in evidence
-        if row.fact_type == "product.brand" and str(row.value).strip()
+        for row in brand_rows
+        if str(row.value).strip()
     }
+    structured_brands = {
+        str(row.value).strip().casefold()
+        for row in brand_rows
+        if row.collector_id in {"adapter", "jsonld", "js_state", "network"}
+        and str(row.value).strip()
+    }
+    title_values = tuple(
+        str(row.value).strip().casefold()
+        for row in evidence
+        if row.fact_type == "product.title" and str(row.value).strip()
+    )
     color_rows = tuple(
         row for row in evidence if row.fact_type == "variant.option.color"
     )
@@ -139,19 +159,33 @@ def _flag_variant_color_brand_conflicts(
         for row in color_rows
         if str(row.value).strip()
     }
-    conflicting = (
+    conflicting_color_axis = (
         len(color_subjects) >= 2
         and len(color_values) == 1
         and bool(color_values & brands)
     )
-    if not conflicting:
-        return evidence
+
+    def conflicts(row: Evidence) -> bool:
+        value = str(row.value).strip().casefold()
+        if row.fact_type == "variant.option.color":
+            return conflicting_color_axis and value in brands
+        if row.fact_type != "product.brand" or not structured_brands:
+            return False
+        if value in structured_brands:
+            return False
+        title_suffix = any(
+            title == value
+            or title.endswith(f" {value}")
+            or title.endswith(f"- {value}")
+            for title in title_values
+        )
+        return value in color_values or title_suffix
+
     return tuple(
         row.model_copy(
             update={"flags": tuple(sorted({*row.flags, VARIANT_COLOR_BRAND_CONFLICT_FLAG}))}
         )
-        if row.fact_type == "variant.option.color"
-        and str(row.value).strip().casefold() in brands
+        if conflicts(row)
         else row
         for row in evidence
     )
@@ -435,6 +469,12 @@ def normalize_evidence(evidence: Evidence, *, page_url: str) -> Evidence:
     if evidence.fact_type == "product.description" and isinstance(value, str):
         if len(value) in DETAIL_DESCRIPTION_HARD_BOUNDARY_LENGTHS:
             flags.add("description_hard_boundary")
+        if len(value) >= 120 and re.search(
+            DETAIL_DESCRIPTION_INCOMPLETE_ENDING_PATTERN,
+            value,
+            re.IGNORECASE,
+        ):
+            flags.add("description_incomplete_ending")
         if any(
             re.search(pattern, value, re.IGNORECASE)
             for pattern in DETAIL_DESCRIPTION_UI_PATTERNS
@@ -568,6 +608,94 @@ def _money(value: Any, flags: set[str]) -> str:
     except (InvalidOperation, ValueError):
         flags.add("invalid_decimal")
         return str(value or "")
+
+
+def _availability_from_stock_quantity(evidence: Evidence) -> Evidence | None:
+    if evidence.fact_type != "offer.stock_quantity":
+        return None
+    try:
+        quantity = Decimal(str(evidence.value).strip())
+    except (InvalidOperation, ValueError):
+        return None
+    availability = "in_stock" if quantity > 0 else "out_of_stock"
+    return evidence.model_copy(
+        update={
+            "evidence_id": stable_id(
+                "ev",
+                evidence.bundle_id,
+                evidence.evidence_id,
+                "availability_from_stock_quantity",
+                availability,
+            ),
+            "fact_type": "offer.availability",
+            "raw_value": availability,
+            "value": availability,
+            "confidence": min(float(evidence.confidence), 0.85),
+            "metadata": {
+                **dict(evidence.metadata),
+                "derived_by": "availability_from_stock_quantity",
+                "input_evidence_id": evidence.evidence_id,
+            },
+        }
+    )
+
+
+def _brand_from_title_host(
+    evidence: Evidence, *, page_url: str
+) -> Evidence | None:
+    if evidence.fact_type != "product.title":
+        return None
+    brand = infer_brand_from_title_host(title=evidence.value, url=page_url)
+    if not brand:
+        return None
+    return evidence.model_copy(
+        update={
+            "evidence_id": stable_id(
+                "ev",
+                evidence.bundle_id,
+                evidence.evidence_id,
+                "brand_from_title_host",
+                brand,
+            ),
+            "fact_type": "product.brand",
+            "raw_value": brand,
+            "value": brand,
+            "confidence": min(float(evidence.confidence), 0.78),
+            "metadata": {
+                **dict(evidence.metadata),
+                "derived_by": "brand_from_title_host",
+                "input_evidence_id": evidence.evidence_id,
+            },
+        }
+    )
+
+
+def _brand_from_title_marker(evidence: Evidence) -> Evidence | None:
+    if evidence.fact_type != "product.title":
+        return None
+    brand = infer_brand_from_title_marker(evidence.value)
+    if not brand:
+        return None
+    return evidence.model_copy(
+        update={
+            "evidence_id": stable_id(
+                "ev",
+                evidence.bundle_id,
+                evidence.evidence_id,
+                "brand_from_title_marker",
+                brand,
+            ),
+            "fact_type": "product.brand",
+            "raw_value": brand,
+            "value": brand,
+            "confidence": min(float(evidence.confidence), 0.8),
+            "metadata": {
+                **dict(evidence.metadata),
+                "derived_by": "brand_from_title_marker",
+                "input_evidence_id": evidence.evidence_id,
+            },
+        }
+    )
 
 
 def _currency_from_price_symbol(evidence: Evidence) -> Evidence | None:

@@ -221,6 +221,8 @@ def _variant(
         value = (
             _variant_color(row, product_brand=product_brand)
             if key == "color"
+            else _variant_size(row)
+            if key == "size"
             else text_value(row.get(key))
         )
         if value:
@@ -251,6 +253,22 @@ def _variant(
         )
     )
     return out
+
+
+def _variant_size(row: dict[str, Any]) -> str:
+    explicit = text_value(row.get("size"))
+    if explicit:
+        return explicit
+    parts = [
+        item.strip()
+        for item in text_value(row.get("name")).split(
+            VARIANT_JSONLD_NAME_OPTION_SEPARATOR
+        )
+    ]
+    if len(parts) < 3:
+        return ""
+    candidate = parts[-1]
+    return candidate if 0 < len(candidate) <= 40 else ""
 
 
 def _variant_color(row: dict[str, Any], *, product_brand: str = "") -> str:
