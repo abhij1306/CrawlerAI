@@ -160,6 +160,28 @@ PRIMARY_IMAGE_REJECT_URL_TOKENS = frozenset(
     }
 )
 DETAIL_IMAGE_SRCSET_ATTRS = ("srcset", "data-srcset")
+PRODUCT_ASSET_CROSS_PRODUCT_PATH_PATTERNS = (
+    r"(?:^|/)sourcing_images(?:/|$)",
+    r"--[a-z]*\d{4,}(?:[._-]|$)",
+)
+PRODUCT_ASSET_GENERIC_PATH_TOKENS = frozenset(
+    {
+        "back",
+        "cdn",
+        "detail",
+        "files",
+        "front",
+        "hero",
+        "image",
+        "images",
+        "main",
+        "media",
+        "product",
+        "products",
+        "side",
+        "view",
+    }
+)
 PRODUCT_ASSET_REJECT_URL_PATTERNS = (
     r"(?:^|[/_.-])(?:att|tmobile|verizon)(?:[/_.-]|$)",
     r"(?:^|[/_.-])(?:left|right)[_-]?arrow(?:[/_.-]|$)",
@@ -186,6 +208,12 @@ PRODUCT_ASSET_REJECT_URL_PATTERNS = (
     r"\._AC_SS\d+_V\d_\.(?:avif|jpe?g|png|webp)(?:$|[?#])",
     r"/flags?/[a-z]{2}(?:[-_][a-z]{2})?\.(?:png|svg|webp)(?:$|[?#])",
     r"/(?:assets?|images?|img|media|dp)/?(?:[?#].*)?$",
+    r"(?:^|[/_.-])customer[_-]?photos?(?:[/_.-]|$)",
+    r"(?:^|[/_.-])camera[_-]?maintenance(?:[/_.-]|$)",
+    r"(?:^|[/_.-])priority[_-]?\d+(?:[/_.-]|$)",
+    r"(?:^|/)pin\.png(?:$|[?#])",
+    r"/alias/[a-z]{2}\.gif(?:$|[?#])",
+    r"/(?:ambiance|worn)(?:%20|\s)+(?:view|image)(?:$|[?#])",
     r"/(?:collections/[^/?#]+/)?products/[^/?#.]+(?:$|[?#])",
     r"/(?:format|quality|width|height)(?:%26|&)[a-z0-9_%=&.-]+(?:$|[?#])",
     r"__[a-z][a-z0-9_]*__",
@@ -259,6 +287,8 @@ _LOCAL_EXPORTS = (
     "EXPORT_IMAGE_URL_SUFFIXES",
     "LOW_RES_SWATCH_IMAGE_PATH_PATTERN",
     "PRIMARY_IMAGE_REJECT_URL_TOKENS",
+    "PRODUCT_ASSET_CROSS_PRODUCT_PATH_PATTERNS",
+    "PRODUCT_ASSET_GENERIC_PATH_TOKENS",
     "PRODUCT_ASSET_REJECT_URL_PATTERNS",
     "PRODUCT_ASSET_HIGH_RES_QUERY_MIN_DIMENSION",
     "PRODUCT_ASSET_IDENTITY_FACT_TYPES",

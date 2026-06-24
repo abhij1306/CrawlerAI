@@ -48,6 +48,7 @@ from app.core.config.extraction_rules import (
     DETAIL_TITLE_SEO_POLLUTION_PATTERN,
     DETAIL_TITLE_SEO_PREFIXES,
     DETAIL_TITLE_SEO_PREFIX_MIN_WORDS,
+    DETAIL_TITLE_SHORT_NAVIGATION_PATTERN,
     DETAIL_TITLE_STYLE_ONLY_MAX_WORDS,
     DETAIL_TITLE_STYLE_ONLY_TOKENS,
     DETAIL_TITLE_TRAILING_CODE_PATTERN,
@@ -474,6 +475,8 @@ def normalize_evidence(evidence: Evidence, *, page_url: str) -> Evidence:
     flags = set(evidence.flags)
     if isinstance(value, str):
         value = re.sub(r"\s+", " ", value).strip()
+    if evidence.fact_type == "asset.image_url" and isinstance(value, str):
+        value = re.sub(r"\s+\d+(?:\.\d+)?[wx]\s*$", "", value, flags=re.IGNORECASE)
     if evidence.fact_type in {
         "product.url",
         "variant.url",
@@ -622,6 +625,8 @@ def _title_flags(evidence: Evidence, *, value: str, page_url: str) -> set[str]:
         0 < len(words) <= DETAIL_TITLE_STYLE_ONLY_MAX_WORDS
         and set(words) <= DETAIL_TITLE_STYLE_ONLY_TOKENS
     ):
+        flags.add("generic_title")
+    if re.fullmatch(DETAIL_TITLE_SHORT_NAVIGATION_PATTERN, value.strip(), re.IGNORECASE):
         flags.add("generic_title")
     if re.search(DETAIL_TITLE_SEO_POLLUTION_PATTERN, value, re.IGNORECASE) or (
         len(words) >= DETAIL_TITLE_SEO_PREFIX_MIN_WORDS

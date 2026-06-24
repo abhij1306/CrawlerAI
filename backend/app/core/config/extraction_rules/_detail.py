@@ -28,16 +28,21 @@ DETAIL_IDENTITY_QUERY_PREFIXES = tuple(PUBLIC_RECORD_DETAIL_CANONICAL_QUERY_PREF
 
 DETAIL_BRAND_BOILERPLATE_VALUES = frozenset(
     {
+        "& more",
         "at",
         "black",
         "blue",
         "brand",
         "brown",
+        "csc",
+        "fifa world cup™",
         "fragrance",
+        "for men",
         "green",
         "grey",
         "girls",
         "india",
+        "india | the",
         "kids",
         "mens",
         "more",
@@ -316,6 +321,9 @@ DETAIL_TITLE_TRAILING_CODE_PATTERN = r"(?:^|[\s_-])\d{4,}$"
 DETAIL_TITLE_URL_TOKEN_MIN_OVERLAP = 2
 DETAIL_TITLE_SEO_PREFIXES = ("buy ", "shop ")
 DETAIL_TITLE_SEO_PREFIX_MIN_WORDS = 8
+DETAIL_TITLE_SHORT_NAVIGATION_PATTERN = (
+    r"^(?:shop|browse|view)\s+(?:graphic\s+)?(?:t-?shirts?|shirts?|tops?|pants?|jeans?|dresses?|shoes?|sneakers?|accessories?)$"
+)
 DETAIL_TITLE_UI_INSTRUCTION_TOKENS = frozenset(
     {"assembly", "delivery", "faq", "faqs", "fee", "variation"}
 )

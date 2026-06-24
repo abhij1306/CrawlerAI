@@ -13,6 +13,7 @@ from app.extraction.contracts import (
     ResolutionResult,
 )
 from app.core.config.extraction_rules import (
+    PRODUCT_ASSET_GENERIC_PATH_TOKENS,
     VARIANT_CROSS_PRODUCT_URL_MAX_TOKEN_OVERLAP_RATIO,
 )
 from app.core.config.variant_policy import (
@@ -42,6 +43,7 @@ PUBLIC_MAP = {
     "offer.original_price": "original_price",
     "offer.availability": "availability",
 }
+
 
 
 def lineage(
@@ -839,13 +841,40 @@ def _typed_detail_record(record: dict[str, object]) -> CommerceDetailRecord:
     return CommerceDetailRecord.model_validate(cleaned)
 
 
+
+
+def _asset_conflicts_with_product(record: dict[str, object], asset_url: str) -> bool:
+    path = urlparse(asset_url).path.casefold()
+    catalog_suffix = path.rsplit("--", 1)[-1] if "--" in path else ""
+    if "sourcing_images" not in path and not any(char.isdigit() for char in catalog_suffix):
+        return False
+    product_tokens = set(
+        semantic_identity_tokens(
+            " ".join(
+                str(record.get(field) or "")
+                for field in ("title", "brand", "url")
+            )
+        )
+    )
+    candidate_tokens = {
+        token
+        for token in semantic_identity_tokens(detail_title_from_url(asset_url))
+        if token not in PRODUCT_ASSET_GENERIC_PATH_TOKENS
+    }
+    if len(product_tokens) < 2 or len(candidate_tokens) < 2:
+        return False
+    return not bool(product_tokens & candidate_tokens)
 def _materialize_product_assets(
     record: dict[str, object],
     lineages: dict[str, object],
     asset_decisions: tuple[AssetDecision, ...],
 ) -> None:
     selected = [
-        item for item in asset_decisions if item.url and item.accepted_evidence_ids
+        item
+        for item in asset_decisions
+        if item.url
+        and item.accepted_evidence_ids
+        and not _asset_conflicts_with_product(record, item.url)
     ]
     primary = next((item for item in selected if item.role == "primary"), None)
     if primary is None:

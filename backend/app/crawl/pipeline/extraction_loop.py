@@ -525,7 +525,7 @@ async def _run_extraction_stage_observed(
     _record_detail_expansion_extraction_outcome(
         acquisition_result,
         [
-            record.model_dump(mode="json", exclude_none=True)
+            _public_record_payload(record, context.surface)
             for record in result.records
         ],
         requested_fields=list(context.requested_fields),
@@ -544,6 +544,13 @@ async def _run_extraction_stage_observed(
     return _ExtractedURLStage(fetched=fetched, result=result)
 
 
+
+
+def _public_record_payload(record, surface: str) -> dict[str, object]:
+    return record.model_dump(
+        mode="json",
+        exclude_none=surface != "ecommerce_detail",
+    )
 def _record_extraction_trace(
     context: _URLProcessingContext,
     result,
@@ -577,7 +584,7 @@ async def _run_persistence_stage(
     acquisition_result = extracted.fetched.acquisition_result
     extraction_result = extracted.result
     extracted_records = [
-        record.model_dump(mode="json", exclude_none=True)
+        _public_record_payload(record, context.surface)
         for record in extraction_result.records
     ]
     with logfire_span(

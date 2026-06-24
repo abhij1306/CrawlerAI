@@ -18,7 +18,9 @@ from app.core.config import variant_policy
 from app.core.records.html_helpers import bounded_json_objects, embedded_state_payloads
 from app.core.records.url_identity import (
     detail_identity_codes_from_url,
+    detail_title_from_url,
     detail_urls_conflict,
+    semantic_identity_tokens,
 )
 from app.core.shared.field_coerce import (
     sanitize_option_scalar,
@@ -229,7 +231,9 @@ def network_row(
     if _has_only_opaque_numeric_options(obj):
         return out
     if _looks_like_variant(obj, path=path):
-        if _variant_url_conflicts(bundle.final_url, obj):
+        if _variant_url_conflicts(bundle.final_url, obj) or _variant_title_conflicts(
+            bundle.final_url, obj
+        ):
             return out
         return _variant_row(bundle, artifact_id, path, obj, collector_id=collector_id)
     mapped_keys = tuple(
@@ -313,6 +317,20 @@ def _path_tokens(path: str) -> set[str]:
 def _variant_url_conflicts(page_url: str, obj: dict) -> bool:
     candidate = _url_value(obj)
     return bool(candidate and detail_urls_conflict(page_url, candidate))
+
+
+def _variant_title_conflicts(page_url: str, obj: dict) -> bool:
+    candidate = _scalar_value(
+        _first(obj, "productName", "product_name", "productTitle", "product_title")
+    )
+    if not isinstance(candidate, str) or not candidate.strip():
+        return False
+    page_tokens = set(semantic_identity_tokens(detail_title_from_url(page_url)))
+    candidate_tokens = set(semantic_identity_tokens(candidate))
+    if len(page_tokens) < 2 or len(candidate_tokens) < 2:
+        return False
+    overlap = len(page_tokens & candidate_tokens)
+    return overlap == 0
 
 
 def _product_url_conflicts(page_url: str, obj: dict) -> bool:
