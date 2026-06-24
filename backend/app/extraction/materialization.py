@@ -15,7 +15,10 @@ from app.extraction.contracts import (
 from app.core.config.extraction_rules import (
     VARIANT_CROSS_PRODUCT_URL_MAX_TOKEN_OVERLAP_RATIO,
 )
-from app.core.config.variant_policy import DETAIL_PARENT_OFFER_INHERITANCE_RULE_ID
+from app.core.config.variant_policy import (
+    DETAIL_PARENT_OFFER_INHERITANCE_RULE_ID,
+    DETAIL_PARENT_VARIANT_PRICE_DRIFT_MAX_RATIO,
+)
 from app.core.records.url_identity import detail_title_from_url, semantic_identity_tokens
 from app.core.shared.field_coerce import sanitize_option_scalar
 from app.core.shared.url_utils import public_asset_delivery_url
@@ -424,6 +427,11 @@ def _cohere_parent_offer(
             record["price_max"] = format(maximum, ".2f")
             aggregate_rule = "minimum_variant_price_aggregate"
         parent_value_present = record.get(field) not in (None, "", [], {}, ())
+        if field == "price" and parent_value_present and len(unique_values) == 1:
+            aggregate_value = _reconcile_near_equal_price(
+                record, lineages, variants, variant_lineage, aggregate_value
+            )
+            unique_values = {str(aggregate_value)}
         field_lineage = [row.get(field) for row in variant_lineage]
         if any(
             isinstance(item, dict)
@@ -448,6 +456,40 @@ def _cohere_parent_offer(
         record[field] = aggregate_value
         lineages[field] = lineage_value
 
+
+
+def _reconcile_near_equal_price(
+    record: dict[str, object],
+    lineages: dict[str, object],
+    variants: list[dict[str, object]],
+    variant_lineage: list[dict[str, object]],
+    aggregate_value: object,
+) -> object:
+    if any(
+        isinstance(item := row.get("price"), dict)
+        and item.get("rule_id") == DETAIL_PARENT_OFFER_INHERITANCE_RULE_ID
+        for row in variant_lineage
+    ):
+        return aggregate_value
+    try:
+        parent_amount = Decimal(str(record["price"]))
+        variant_amount = Decimal(str(aggregate_value))
+        denominator = max(abs(parent_amount), abs(variant_amount))
+        ratio = abs(parent_amount - variant_amount) / denominator if denominator else Decimal("0")
+    except (InvalidOperation, TypeError, ValueError):
+        return aggregate_value
+    if ratio > Decimal(str(DETAIL_PARENT_VARIANT_PRICE_DRIFT_MAX_RATIO)):
+        return aggregate_value
+    value = format(min(parent_amount, variant_amount), ".2f")
+    evidence_ids = list(_lineage_evidence_ids(lineages.get("price")))
+    for row, lineage_row in zip(variants, variant_lineage):
+        evidence_ids.extend(_lineage_evidence_ids(lineage_row.get("price")))
+        row["price"] = value
+        lineage_row["price"] = {
+            "rule_id": "near_equal_parent_variant_price_reconciliation",
+            "evidence_ids": list(dict.fromkeys(evidence_ids)),
+        }
+    return value
 
 def _leaf_variant_rows(
     variants: list[dict[str, object]],
@@ -673,12 +715,31 @@ def _variant_public_row(
         if decision and decision.accepted_evidence_ids:
             row[field] = by_id[decision.accepted_evidence_ids[0]].value
             lineage_row[field] = lineage(decision=decision)
+    _recover_variant_identity_from_key(row, lineage_row, variant.identity_key)
     inherit_variant_id_from_sku(row, lineage_row)
     _variant_option_fields(row, lineage_row, variant, decisions, by_id)
     _variant_offer_fields(row, lineage_row, variant, offer, decisions, derived, by_id)
     _variant_asset_field(row, lineage_row, asset, decisions, by_id)
     return row, lineage_row
 
+
+
+def _recover_variant_identity_from_key(
+    row: dict[str, object], lineage_row: dict[str, object], identity_key: str
+) -> None:
+    prefix, separator, value = str(identity_key or "").partition(":")
+    value = value.strip() if separator else ""
+    if not value:
+        return
+    if prefix == "sku" and row.get("sku") in (None, "", [], {}, ()):
+        row["sku"] = value
+        lineage_row["sku"] = {"rule_id": "variant_sku_from_identity_key", "evidence_ids": []}
+    if prefix == "id" and row.get("variant_id") in (None, "", [], {}, ()):
+        row["variant_id"] = value
+        lineage_row["variant_id"] = {"rule_id": "variant_id_from_identity_key", "evidence_ids": []}
+    if prefix == "gtin" and row.get("gtin") in (None, "", [], {}, ()):
+        row["gtin"] = value
+        lineage_row["gtin"] = {"rule_id": "variant_gtin_from_identity_key", "evidence_ids": []}
 
 def _variant_option_fields(
     row: dict[str, object],

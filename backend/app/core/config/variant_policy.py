@@ -150,6 +150,7 @@ PUBLIC_VARIANT_AXIS_FIELDS: tuple[str, ...] = (
     "usage_limit",
     "tier",
 )
+DETAIL_PARENT_VARIANT_PRICE_DRIFT_MAX_RATIO = 0.01
 GEOGRAPHIC_STATE_VARIANT_MIN_MATCHES = 3
 GEOGRAPHIC_STATE_VARIANT_VALUES: tuple[str, ...] = (
     "alabama",

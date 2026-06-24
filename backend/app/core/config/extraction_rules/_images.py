@@ -71,7 +71,15 @@ DETAIL_IMAGE_SHORT_STYLE_CODE_MIN_LENGTH = 5
 DETAIL_IMAGE_SHORT_STYLE_CODE_MAX_LENGTH = 6
 DETAIL_IMAGE_OPAQUE_HEX_MIN_LENGTH = 8
 PRODUCT_ASSET_IDENTITY_FACT_TYPES = frozenset(
-    {"product.gtin", "product.mpn", "product.sku", "product.title", "product.url"}
+    {
+        "product.gtin",
+        "product.mpn",
+        "product.sku",
+        "product.title",
+        "product.url",
+        "variant.option.color",
+        "variant.option.style",
+    }
 )
 PRODUCT_ASSET_SEMANTIC_MIN_MATCH_TOKENS = 2
 PRODUCT_ASSET_SEMANTIC_MIN_ANCHORED_ASSETS = 1

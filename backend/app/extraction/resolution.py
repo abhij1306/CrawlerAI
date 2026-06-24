@@ -80,35 +80,60 @@ def recover_non_retailer_brand(
     current_tokens = set(semantic_identity_tokens(current))
     if current and (not current_tokens or not current_tokens <= host_tokens):
         return
-    candidates: dict[str, tuple[str, tuple[str, ...], str | None]] = {}
+
+    support_token_sets = tuple(
+        set(semantic_identity_tokens(str(evidence.value or "")))
+        for evidence in evidence_by_id.values()
+        if evidence.fact_type != "product.brand" and not _invalid(evidence)
+    )
+    grouped: dict[tuple[str, ...], dict[str, object]] = {}
     for evidence in evidence_by_id.values():
         if evidence.fact_type != "product.brand" or _invalid(evidence):
             continue
         value = str(evidence.value or "").strip()
-        tokens = set(semantic_identity_tokens(value))
-        if not value or not tokens or tokens <= host_tokens:
+        tokens = tuple(semantic_identity_tokens(value))
+        token_set = set(tokens)
+        if not value or not tokens or token_set <= host_tokens:
             continue
-        key = value.casefold()
-        evidence_ids = tuple(
-            dict.fromkeys((*candidates.get(key, (value, (), None))[1], evidence.evidence_id))
+        row = grouped.setdefault(
+            tokens,
+            {"value": value, "evidence_ids": [], "decision_id": None, "support": 0},
         )
-        decision_id = next(
-            (
-                decision.decision_id
-                for decision in resolution.decisions
-                if decision.fact_type == "product.brand"
-                and evidence.evidence_id in decision.accepted_evidence_ids
-            ),
-            None,
+        row["evidence_ids"].append(evidence.evidence_id)
+        row["support"] = max(
+            int(row["support"]),
+            sum(token_set <= support for support in support_token_sets),
         )
-        candidates[key] = (value, evidence_ids, decision_id)
-    if len(candidates) != 1:
+        if row["decision_id"] is None:
+            row["decision_id"] = next(
+                (
+                    decision.decision_id
+                    for decision in resolution.decisions
+                    if decision.fact_type == "product.brand"
+                    and evidence.evidence_id in decision.accepted_evidence_ids
+                ),
+                None,
+            )
+    if not grouped:
         return
-    value, evidence_ids, decision_id = next(iter(candidates.values()))
-    record["brand"] = value
+    ranked = sorted(
+        grouped.values(),
+        key=lambda row: (
+            -int(row["support"]),
+            -len(row["evidence_ids"]),
+            len(semantic_identity_tokens(str(row["value"]))),
+            str(row["value"]).casefold(),
+        ),
+    )
+    if len(ranked) > 1 and (
+        int(ranked[0]["support"]), len(ranked[0]["evidence_ids"])
+    ) == (int(ranked[1]["support"]), len(ranked[1]["evidence_ids"])):
+        return
+    winner = ranked[0]
+    record["brand"] = winner["value"]
     lineages["brand"] = {
-        "decision_id": decision_id,
-        "evidence_ids": list(evidence_ids),
+        "decision_id": winner["decision_id"],
+        "evidence_ids": list(dict.fromkeys(winner["evidence_ids"])),
         "rule_id": "non_retailer_brand_recovery",
     }
 
@@ -718,11 +743,11 @@ def _rank(
             ev.evidence_id,
         )
     if ev.fact_type == "offer.currency":
-        explicit_price_symbol = int(
-            str(ev.metadata.get("derived_by") or "") != "currency_from_price_symbol"
+        inferred_from_symbol = int(
+            str(ev.metadata.get("derived_by") or "") == "currency_from_price_symbol"
         )
         return (
-            explicit_price_symbol,
+            inferred_from_symbol,
             directness,
             reliability,
             -float(ev.confidence),

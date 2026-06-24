@@ -97,6 +97,10 @@ DETAIL_DESCRIPTION_UI_PATTERNS = (
     r"^\s*read\s+reviews?\s+and\s+buy\b",
     r"\bchoose\s+from\s+(?:contactless|same[- ]day|drive[- ]up|order\s+pickup)\b",
     r"\b(?:web\s+pdp|default\s+layout|mix\s+and\s+match\s+carousel|home\s+categories)\b",
+    r"^\s*expect\s+a\s+(?:quick|fast)\s+response\s+from\s+(?:this|the)\s+seller\b",
+    r"\busually\s+within\s+\d+\s+(?:minutes?|hours?|days?)\b",
+    r"^\s*(?:this|the)\s+seller\s+(?:typically|usually)\s+(?:responds?|ships?)\b",
+    r"^\s*seller\s+(?:response|shipping|dispatch)\s+time\b",
 )
 DETAIL_DESCRIPTION_HARD_BOUNDARY_LENGTHS = frozenset({320})
 DETAIL_DESCRIPTION_INCOMPLETE_ENDING_PATTERN = (
