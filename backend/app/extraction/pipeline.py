@@ -28,6 +28,7 @@ from app.core.config.extraction_rules import (
     DETAIL_BRAND_CATEGORY_PATTERN,
     DETAIL_DESCRIPTION_HARD_BOUNDARY_LENGTHS,
     DETAIL_DESCRIPTION_INCOMPLETE_ENDING_PATTERN,
+    DETAIL_DESCRIPTION_NON_PRODUCT_LOCATOR_TOKENS,
     DETAIL_DESCRIPTION_PROMOTIONAL_PATTERNS,
     DETAIL_DESCRIPTION_UI_PATTERNS,
     DETAIL_SHELL_TITLE_FLAG,
@@ -38,8 +39,10 @@ from app.core.config.extraction_rules import (
     DETAIL_TITLE_IDENTIFIER_ONLY_PATTERN,
     DETAIL_TITLE_INTERNAL_SYSTEM_PATTERN,
     DETAIL_TITLE_MEASUREMENT_FLAG,
+    DETAIL_TITLE_NON_PRODUCT_LOCATOR_TOKENS,
     DETAIL_TITLE_MEASUREMENT_PATTERN,
     DETAIL_TITLE_PATH_EXTENSION_PATTERN,
+    DETAIL_TITLE_REJECTION_FLAGS,
     DETAIL_TITLE_REJECT_SUFFIXES,
     DETAIL_TITLE_REJECT_VALUES,
     DETAIL_TITLE_SEO_POLLUTION_PATTERN,
@@ -148,7 +151,10 @@ def _flag_brand_conflicts(
     }
     subject_titles = {
         (row.subject_id, " ".join(re.findall(r"[a-z0-9]+", str(row.value).casefold())))
-        for row in evidence if row.fact_type == "product.title" and row.subject_id
+        for row in evidence
+        if row.fact_type == "product.title"
+        and row.subject_id
+        and not (set(row.flags) & DETAIL_TITLE_REJECTION_FLAGS)
     }
     color_rows = tuple(row for row in evidence if row.fact_type == "variant.option.color")
     color_values = {str(row.value).strip().casefold() for row in color_rows if str(row.value).strip()}
@@ -176,7 +182,8 @@ def _flag_brand_conflicts(
                 or normalized in page_value
                 or page_value in normalized
                 or (
-                    row.collector_id != "dom"
+                    row.directness == "inferred"
+                    and row.collector_id != "dom"
                     and page_support >= 2
                     and page_support > sum(
                         re.sub(r"[^a-z0-9]+", "", value) in candidate
@@ -515,6 +522,9 @@ def normalize_evidence(evidence: Evidence, *, page_url: str) -> Evidence:
         if re.fullmatch(DETAIL_BRAND_CATEGORY_PATTERN, value, re.IGNORECASE):
             flags.add("category_as_brand")
     if evidence.fact_type == "product.description" and isinstance(value, str):
+        locator_value = str(evidence.locator.value or "").casefold()
+        if any(token in locator_value for token in DETAIL_DESCRIPTION_NON_PRODUCT_LOCATOR_TOKENS):
+            flags.add("description_ui_pollution")
         if len(value) in DETAIL_DESCRIPTION_HARD_BOUNDARY_LENGTHS:
             flags.add("description_hard_boundary")
         tail = value.rstrip()
@@ -547,6 +557,9 @@ def normalize_evidence(evidence: Evidence, *, page_url: str) -> Evidence:
     if isinstance(value, str) and value.lower() in {"n/a", "none", "null", "undefined"}:
         flags.add("placeholder_text")
     if evidence.fact_type == "product.title" and isinstance(value, str):
+        title_locator = str(evidence.locator.value or "").casefold()
+        if any(token in title_locator for token in DETAIL_TITLE_NON_PRODUCT_LOCATOR_TOKENS):
+            flags.add("generic_title")
         flags.update(_title_flags(evidence, value=value, page_url=page_url))
     return evidence.model_copy(update={"value": value, "flags": tuple(sorted(flags))})
 

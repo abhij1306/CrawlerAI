@@ -19,6 +19,7 @@ BLOCK_SIGNATURES = {
         "verify you are human",
         "complete the security check",
         "please complete the captcha",
+        "px-captcha",
         "human verification",
         "enable javascript to view",
         "enable javascript and cookies",

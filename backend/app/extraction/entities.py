@@ -147,6 +147,7 @@ def _link_products(evidence: tuple[Evidence, ...]) -> tuple[ProductEntity, ...]:
         groups[matched].extend(rows)
         group_identities[matched].update(identities)
     _merge_url_only_groups(groups, group_identities)
+    _merge_exact_title_groups(groups, group_identities)
     products: list[ProductEntity] = []
     for identities, rows in sorted(
         zip(group_identities, groups), key=lambda item: str(sorted(item[0]))
@@ -175,6 +176,44 @@ def _link_products(evidence: tuple[Evidence, ...]) -> tuple[ProductEntity, ...]:
             )
         )
     return tuple(products)
+
+
+def _merge_exact_title_groups(
+    groups: list[list[Evidence]],
+    group_identities: list[set[tuple[str, str]]],
+) -> None:
+    identified = [
+        index
+        for index, identities in enumerate(group_identities)
+        if any(kind != "subject" for kind, _value in identities)
+    ]
+    for index in reversed(range(len(groups))):
+        if index in identified or any(kind != "subject" for kind, _value in group_identities[index]):
+            continue
+        titles = _normalized_product_titles(groups[index])
+        if not titles:
+            continue
+        matches = [
+            target
+            for target in identified
+            if target < len(groups) and titles & _normalized_product_titles(groups[target])
+        ]
+        if len(matches) != 1:
+            continue
+        target = matches[0]
+        groups[target].extend(groups.pop(index))
+        group_identities[target].update(group_identities.pop(index))
+        identified = [item - 1 if item > index else item for item in identified if item != index]
+
+
+def _normalized_product_titles(rows: list[Evidence]) -> set[str]:
+    return {
+        " ".join(str(row.value).casefold().split())
+        for row in rows
+        if row.fact_type == "product.title"
+        and str(row.value).strip()
+        and not row.flags
+    }
 
 
 def _merge_url_only_groups(

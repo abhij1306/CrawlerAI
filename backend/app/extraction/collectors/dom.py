@@ -233,7 +233,7 @@ def _largest_srcset_url(value: str) -> str:
 def _image_scope_context(node: HtmlNode) -> str:
     return " ".join(
         str(current.attribute(attribute) or "").casefold()
-        for current in (node, *node.ancestors()[:8])
+        for current in (node, *node.ancestors()[:12])
         for attribute in _IMAGE_SCOPE_ATTRIBUTES
     )
 

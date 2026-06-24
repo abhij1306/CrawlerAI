@@ -218,6 +218,15 @@ def request_from_acquisition_result(
     html_document = getattr(acquisition_result, "html_document", None)
     if selector_rules:
         artifacts["css_field_rules"] = list(selector_rules)
+    browser_outcome = str(
+        getattr(acquisition_result, "browser_outcome", "")
+        or dict(getattr(acquisition_result, "browser_diagnostics", {}) or {}).get("browser_outcome")
+        or ""
+    )
+    blocked = bool(getattr(acquisition_result, "blocked", False)) or browser_outcome in {
+        "challenge_page",
+        "low_content_shell",
+    }
     bundle, reader = _bundle_from_runtime_inputs(
         html,
         final_url,
@@ -225,7 +234,7 @@ def request_from_acquisition_result(
         run_id=run_id,
         status_code=getattr(acquisition_result, "status_code", None),
         method=str(getattr(acquisition_result, "method", "") or ""),
-        blocked=bool(getattr(acquisition_result, "blocked", False)),
+        blocked=blocked,
         network_payloads=network_payloads,
         artifacts=artifacts,
         html_document=html_document

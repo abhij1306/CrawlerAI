@@ -36,12 +36,19 @@ DETAIL_BRAND_BOILERPLATE_VALUES = frozenset(
         "fragrance",
         "green",
         "grey",
+        "girls",
         "india",
+        "kids",
+        "mens",
         "more",
+        "petite",
+        "petites",
         "red",
         "refurbished",
         "register",
         "the",
+        "unisex",
+        "womens",
         "we",
         "white",
     }
@@ -91,6 +98,14 @@ DETAIL_BRAND_CATEGORY_PATTERN = (
 DETAIL_MICRODATA_NON_PRODUCT_ITEMTYPE_TOKENS = frozenset(
     {"breadcrumblist", "listitem"}
 )
+DETAIL_DESCRIPTION_NON_PRODUCT_LOCATOR_TOKENS = (
+    "/public_config/",
+    "/sellerbadges/",
+    "/badges/",
+    "/sustainabilitybadges/",
+    "/fitassistant/",
+    "/breadcrumbs/",
+)
 DETAIL_DESCRIPTION_UI_PATTERNS = (
     r"^\s*(?:please\s+)?(?:choose|select)\s+(?:(?:a|your|the)\s+)?(?:fabric|material|finish|color|colour|size)\b",
     r"^\s*(?:fabric|material|finish|color|colour|size)\s+selection\b",
@@ -101,6 +116,8 @@ DETAIL_DESCRIPTION_UI_PATTERNS = (
     r"\busually\s+within\s+\d+\s+(?:minutes?|hours?|days?)\b",
     r"^\s*(?:this|the)\s+seller\s+(?:typically|usually)\s+(?:responds?|ships?)\b",
     r"^\s*seller\s+(?:response|shipping|dispatch)\s+time\b",
+    r"^\s*px-captcha\s*$",
+    r"\baccess to this page has been denied\b",
 )
 DETAIL_DESCRIPTION_HARD_BOUNDARY_LENGTHS = frozenset({320})
 DETAIL_DESCRIPTION_INCOMPLETE_ENDING_PATTERN = (
@@ -114,6 +131,9 @@ DETAIL_DESCRIPTION_PROMOTIONAL_PATTERNS = (
     r"\bget\s+your\s+pair\s+of\b.{0,120}\bnow\b",
     r"^\s*buy\b.{0,180}\bat\b.{0,80}\b(?:us|uk|online|store)\b",
     r"^\s*find\b.{0,180}\band\s+more\s+items?\s+on\b",
+    r"^items?\s+listed.{0,60}shipped.{0,60}directly\s+from\b",
+    r"\bdirectly\s+from\s+[\w&'.-]+(?:\s+[\w&'.-]+){0,3}\s+hq\s+to\s+you\b",
+    r"^items?\s+listed,?\s+sold\s+and\b",
 )
 DETAIL_LOW_SIGNAL_LONG_TEXT_VALUES = frozenset(
     {
@@ -135,19 +155,32 @@ DETAIL_LOW_SIGNAL_TITLE_VALUES = frozenset(
         "6 easy payments",
         "frequently bought together",
         "added to cart",
+        "cashmere",
         "clothing",
         "boy",
         "boys",
         "girl",
         "girls",
+        "kids",
+        "linen",
         "men",
+        "new",
+        "sale",
+        "swim",
         "women",
         "hats & caps",
+        "home",
         "mens footwear sneakers",
         "mens shoes",
         "men's shoes",
+        "maternity",
+        "petite",
+        "petites",
         "pick up today",
+        "plus",
+        "plus size",
         "plp",
+        "tall",
         "size",
         "stylehint app",
         "t shirts",
@@ -191,6 +224,14 @@ DETAIL_NOT_FOUND_HTTP_STATUS_CODES = frozenset({404, 410})
 DETAIL_SHELL_TITLE_FLAG = "shell_title"
 DETAIL_SHELL_FINDING_RULE_ID = "HTTP_SHELL_TITLE"
 VARIANT_COLOR_BRAND_CONFLICT_FLAG = "brand_as_variant_color"
+DETAIL_TITLE_NON_PRODUCT_LOCATOR_TOKENS = (
+    "/public_config/",
+    "/badges/",
+    "/sellerbadges/",
+    "/sustainabilitybadges/",
+    "/fitassistant/",
+    "/breadcrumbs/",
+)
 DETAIL_TITLE_REJECTION_FLAGS = frozenset(
     {
         "code_only_title",
