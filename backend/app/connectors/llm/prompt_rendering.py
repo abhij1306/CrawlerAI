@@ -5,11 +5,15 @@ from typing import Any
 
 from app.core.config.llm_runtime import llm_runtime_settings
 from app.core.records.html_helpers import prune_html_tree
-from bs4 import BeautifulSoup, NavigableString, Tag
+from app.extraction.documents import HtmlDocument, HtmlNode
 
 
-def extract_structured_data(html_text: str) -> dict[str, object]:
-    soup = BeautifulSoup(html_text, "html.parser")
+def _document(value: str | HtmlDocument, artifact_id: str) -> HtmlDocument:
+    return value if isinstance(value, HtmlDocument) else HtmlDocument(artifact_id, str(value or ""))
+
+
+def extract_structured_data(html_text: str | HtmlDocument) -> dict[str, object]:
+    document = _document(html_text, "llm_structured")
     structured: dict[str, object] = {}
 
     def _append_structured_item(type_name: str, item: dict[str, object]) -> None:
@@ -19,24 +23,24 @@ def extract_structured_data(html_text: str) -> dict[str, object]:
         else:
             structured[type_name] = [item]
 
-    for item in parse_json_ld(soup):
+    for item in parse_json_ld(document):
         if isinstance(item, dict) and item.get("@type"):
             type_name = str(item["@type"]).split("/")[-1]
             _append_structured_item(type_name, item)
-    for key, value in harvest_js_state_objects(soup, html_text).items():
+    for key, value in harvest_js_state_objects(document).items():
         if key == "__NEXT_DATA__" and isinstance(value, dict):
             structured[key] = value
     return structured
 
 
-def parse_json_ld(soup: BeautifulSoup) -> list[object]:
+def parse_json_ld(document: HtmlDocument) -> list[object]:
     rows: list[object] = []
-    for script in soup.select('script[type*="ld+json"]'):
-        text = script.string or script.get_text(" ", strip=True)
-        if not str(text or "").strip():
+    for script in document.safe_css('script[type*="ld+json"]'):
+        text = script.text(separator="", strip=True)
+        if not text.strip():
             continue
         try:
-            payload = json.loads(str(text))
+            payload = json.loads(text)
         except json.JSONDecodeError:
             continue
         if isinstance(payload, list):
@@ -46,16 +50,15 @@ def parse_json_ld(soup: BeautifulSoup) -> list[object]:
     return rows
 
 
-def harvest_js_state_objects(soup: BeautifulSoup, html_text: str) -> dict[str, object]:
-    del html_text
+def harvest_js_state_objects(document: HtmlDocument) -> dict[str, object]:
     states: dict[str, object] = {}
-    for script in soup.select('script[type="application/json"], script#__NEXT_DATA__'):
-        key = str(script.get("id") or "application_json").strip() or "application_json"
-        text = script.string or script.get_text(" ", strip=True)
-        if not str(text or "").strip():
+    for script in document.safe_css('script[type="application/json"], script#__NEXT_DATA__'):
+        key = str(script.attribute("id") or "application_json").strip() or "application_json"
+        text = script.text(separator="", strip=True)
+        if not text.strip():
             continue
         try:
-            states[key] = json.loads(str(text))
+            states[key] = json.loads(text)
         except json.JSONDecodeError:
             continue
     return states
@@ -76,11 +79,8 @@ def truncate_html(
     return (focused or pruned)[:limit]
 
 
-def render_html_text(value: str) -> str:
-    soup = BeautifulSoup(str(value or ""), "html.parser")
-    for node in soup.find_all("br"):
-        if isinstance(node, Tag):
-            node.replace_with(NavigableString("\n"))
+def render_html_text(value: str | HtmlDocument) -> str:
+    document = _document(value, "llm_render")
     lines: list[str] = []
     seen: set[str] = set()
     block_tags = [
@@ -88,10 +88,11 @@ def render_html_text(value: str) -> str:
         for tag in llm_runtime_settings.html_render_block_tags.split(",")
         if tag.strip()
     ]
-    for node in soup.find_all(block_tags):
+    selector = ", ".join(block_tags)
+    for node in document.safe_css(selector):
         text = "\n".join(
             line.strip()
-            for line in node.get_text(separator="\n", strip=True).splitlines()
+            for line in node.text(separator="\n", strip=True).splitlines()
             if line.strip()
         ).strip()
         if not text:
@@ -105,7 +106,7 @@ def render_html_text(value: str) -> str:
         return "\n".join(lines)
     return "\n".join(
         line.strip()
-        for line in soup.get_text(separator="\n", strip=True).splitlines()
+        for line in document.text().splitlines()
         if line.strip()
     ).strip()
 
@@ -292,7 +293,7 @@ def _load_prune_preserved_data_attr_prefixes() -> tuple[str, ...]:
     )
 
 
-def _prune_html_for_llm(html_text: str) -> str:
+def _prune_html_for_llm(html_text: str) -> HtmlDocument:
     stripped_tags = _load_prune_stripped_tags()
     preserved_script_types = _load_prune_preserved_script_types()
     preserved_attrs = _load_prune_preserved_attrs()
@@ -300,13 +301,13 @@ def _prune_html_for_llm(html_text: str) -> str:
     preserved_script_ids = _load_prune_preserved_script_ids()
     strip_attr_prefixes = _load_prune_strip_attr_prefixes()
 
-    def _preserve_tag(tag: Tag) -> bool:
-        if tag.name != "script":
+    def _preserve_tag(tag: HtmlNode) -> bool:
+        if tag.tag() != "script":
             return False
-        script_type = str(tag.get("type") or "").strip().lower()
+        script_type = str(tag.attribute("type") or "").strip().lower()
         return (
             script_type in preserved_script_types
-            or str(tag.get("id") or "") in preserved_script_ids
+            or str(tag.attribute("id") or "") in preserved_script_ids
         )
 
     def _keep_attr(key: str, _value: object) -> bool:
@@ -316,16 +317,15 @@ def _prune_html_for_llm(html_text: str) -> str:
             preserved_data_prefixes=preserved_data_prefixes,
         )
 
-    soup = prune_html_tree(
-        BeautifulSoup(html_text, "html.parser"),
+    document = prune_html_tree(
+        HtmlDocument("llm_pruned", html_text),
         drop_tags=set(stripped_tags),
         attr_filter=_keep_attr,
         preserve_tag=_preserve_tag,
     )
-    for node in soup.find_all(True):
-        if isinstance(node, Tag) and node.get("style"):
-            del node["style"]
-    return str(soup)
+    for node in document.safe_css("[style]"):
+        del node.node.attributes["style"]
+    return document
 
 
 def _should_strip_llm_attr(

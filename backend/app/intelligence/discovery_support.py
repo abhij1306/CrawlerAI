@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 from urllib.parse import parse_qs, urlencode, urljoin, urlsplit
 
-from bs4 import BeautifulSoup
+from app.extraction.documents import HtmlDocument, HtmlNode
 
 from app.acquisition.browser_runtime import get_browser_runtime
 from app.acquisition.dom_runtime import get_page_html
@@ -172,12 +172,12 @@ def _google_native_blocked(url: str, html: str) -> bool:
 
 
 def _parse_google_native_results(html: str, *, limit: int) -> list[SearchResult]:
-    soup = BeautifulSoup(str(html or ""), "html.parser")
+    document = HtmlDocument("google_native_results", str(html or ""))
     results: list[SearchResult] = []
     seen: set[str] = set()
 
-    for anchor in soup.select(GOOGLE_NATIVE_RESULT_LINK_SELECTOR):
-        href = str(anchor.get("href") or "").strip()
+    for anchor in document.safe_css(GOOGLE_NATIVE_RESULT_LINK_SELECTOR):
+        href = str(anchor.attribute("href") or "").strip()
         url = _google_native_result_url(href)
         if not url or url in seen:
             continue
@@ -210,27 +210,23 @@ def _parse_google_native_results(html: str, *, limit: int) -> list[SearchResult]
     return results
 
 
-def _google_native_anchor_title(anchor, *, url: str) -> str:
-    heading = anchor.select_one(GOOGLE_NATIVE_TITLE_SELECTOR)
+def _google_native_anchor_title(anchor: HtmlNode, *, url: str) -> str:
+    heading = anchor.css_first(GOOGLE_NATIVE_TITLE_SELECTOR)
     if heading is not None:
-        return clean_text(heading.get_text(" ", strip=True))
+        return clean_text(heading.text())
     if not looks_like_product_detail_url(url):
         return ""
     for attr in ("aria-label", "title"):
-        value = clean_text(anchor.get(attr))
+        value = clean_text(anchor.attribute(attr))
         if value:
             return value
-    return clean_text(anchor.get_text(" ", strip=True))
+    return clean_text(anchor.text())
 
 
-def _google_native_anchor_thumbnail(anchor) -> str:
-    parent = anchor
-    for _ in range(int(GOOGLE_NATIVE_THUMBNAIL_ANCESTOR_DEPTH)):
-        parent = getattr(parent, "parent", None)
-        if parent is None:
-            break
-        for img in parent.find_all("img"):
-            src = str(img.get("src") or img.get("data-src") or "").strip()
+def _google_native_anchor_thumbnail(anchor: HtmlNode) -> str:
+    for parent in anchor.ancestors()[: int(GOOGLE_NATIVE_THUMBNAIL_ANCESTOR_DEPTH)]:
+        for img in parent.safe_css("img"):
+            src = str(img.attribute("src") or img.attribute("data-src") or "").strip()
             if len(src) >= int(GOOGLE_NATIVE_THUMBNAIL_MIN_SRC_LENGTH):
                 return src
     return ""

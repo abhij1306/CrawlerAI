@@ -37,6 +37,13 @@ class HtmlNode:
     def text(self, *, separator: str = " ", strip: bool = True) -> str:
         return self.node.text(separator=separator, strip=strip)
 
+    def tag(self) -> str:
+        return str(self.node.tag or "").lower()
+
+    def parent(self) -> HtmlNode | None:
+        parent = self.node.parent
+        return HtmlNode(self.artifact_id, parent) if parent is not None else None
+
     def attribute(self, name: str) -> str | None:
         value = self.node.attributes.get(name)
         return str(value) if value is not None else None

@@ -7,7 +7,7 @@ import re
 from typing import Any
 from urllib.parse import urlsplit
 
-from bs4 import BeautifulSoup, Tag
+from app.extraction.documents import HtmlDocument, HtmlNode
 
 from app.core.config.data_enrichment import ECOMMERCE_LISTING_SURFACE
 from app.core.config.sitemap import (
@@ -192,12 +192,12 @@ def _extract_rendered_candidates(
     diagnostics: SiteLinkDiscoveryDiagnostics,
     requested_branch: tuple[str, ...] = (),
 ) -> list[SiteLinkCandidate]:
-    soup = BeautifulSoup(html or "", "html.parser")
+    document = HtmlDocument("site_link_discovery", html or "")
     candidates: list[SiteLinkCandidate] = []
-    anchors = soup.select("a[href]")[:SITE_LINK_DISCOVERY_MAX_LINKS_PER_PAGE]
+    anchors = document.safe_css("a[href]")[:SITE_LINK_DISCOVERY_MAX_LINKS_PER_PAGE]
     page_key = category_url_key(page_url)
     for anchor in anchors:
-        raw_href = anchor.get("href")
+        raw_href = anchor.attribute("href")
         candidate_url = normalize_target_url(
             strip_url_fragment(absolute_url(page_url, raw_href))
         )
@@ -238,7 +238,7 @@ def _extract_rendered_candidates(
     return candidates
 
 
-def _score_candidate(url: str, anchor: Tag, label: str | None) -> tuple[int, str]:
+def _score_candidate(url: str, anchor: HtmlNode, label: str | None) -> tuple[int, str]:
     parsed = urlsplit(url)
     path = parsed.path.lower()
     text = str(label or "").strip().lower()
@@ -252,7 +252,7 @@ def _score_candidate(url: str, anchor: Tag, label: str | None) -> tuple[int, str
     if has_category_anchor_signal(url, anchor):
         score += 130
         reasons.append("category_anchor")
-    if anchor.find_parent(("nav", "header", "menu")) is not None:
+    if any(node.tag() in {"nav", "header", "menu"} for node in anchor.ancestors()):
         score += 25
         reasons.append("nav")
     if any(
@@ -361,20 +361,20 @@ def _looks_like_locale_segment(value: str) -> bool:
 
 
 def _html_has_listing_signals(html: str) -> bool:
-    soup = BeautifulSoup(html or "", "html.parser")
+    document = HtmlDocument("site_link_validation", html or "")
     productish_nodes = sum(
-        len(soup.select(selector))
+        len(document.safe_css(selector))
         for selector in SITE_LINK_DISCOVERY_CARD_SELECTOR_HINTS
     )
     product_links = [
         anchor
-        for anchor in soup.select("a[href]")
+        for anchor in document.safe_css("a[href]")
         if any(
-            token in str(anchor.get("href") or "").lower()
+            token in str(anchor.attribute("href") or "").lower()
             for token in _listing_detail_path_hints
         )
     ]
-    price_hits = len(_PRICE_RE.findall(soup.get_text(" ", strip=True)[:20_000]))
+    price_hits = len(_PRICE_RE.findall(document.visible_text()[:20_000]))
     return productish_nodes >= 4 or (len(product_links) >= 3 and price_hits >= 2)
 
 
@@ -387,10 +387,10 @@ def _anchor_text_rejected(text: str) -> bool:
     )
 
 
-def _anchor_label(anchor: Tag) -> str | None:
-    label = " ".join(anchor.stripped_strings).strip()
+def _anchor_label(anchor: HtmlNode) -> str | None:
+    label = " ".join(anchor.text().split()).strip()
     if not label:
-        label = str(anchor.get("aria-label") or anchor.get("title") or "").strip()
+        label = str(anchor.attribute("aria-label") or anchor.attribute("title") or "").strip()
     if not label:
         return None
     return " ".join(label.split())

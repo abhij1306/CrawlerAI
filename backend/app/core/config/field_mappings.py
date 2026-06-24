@@ -35,6 +35,7 @@ ROUTE_BARCODE_TO_SKU = True
 ASSET_IMAGE_URL_FACT_TYPE = "asset.image_url"
 OFFER_AVAILABILITY_FACT_TYPE = "offer.availability"
 OFFER_CURRENCY_FACT_TYPE = "offer.currency"
+OFFER_ORIGINAL_PRICE_FACT_TYPE = "offer.original_price"
 OFFER_PRICE_FACT_TYPE = "offer.price"
 ECOMMERCE_DISPLAY_PRICE_SOURCE_KEYS = (
     "formattedPrice",

@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from urllib.parse import urlsplit, urlunsplit
 
-from bs4 import Tag
+from app.extraction.documents import HtmlNode
 
 from app.core.config.sitemap import (
     SITEMAP_CATEGORY_ANCHOR_TEXT_EXCLUDED_TOKENS,
@@ -115,7 +115,7 @@ def looks_like_category_url(url: str) -> bool:
     return _looks_like_category_url(url)
 
 
-def has_category_anchor_signal(url: str, anchor: Tag) -> bool:
+def has_category_anchor_signal(url: str, anchor: HtmlNode) -> bool:
     return _has_category_homepage_signal(url, anchor)
 
 
@@ -130,8 +130,8 @@ def _label_from_path_segment(segment: str) -> str:
     return " ".join(word.capitalize() for word in cleaned.split())
 
 
-def _anchor_label(anchor: Tag) -> str | None:
-    label = " ".join(anchor.stripped_strings).strip()
+def _anchor_label(anchor: HtmlNode) -> str | None:
+    label = " ".join(anchor.text().split()).strip()
     if not label:
         return None
     return " ".join(label.split())
@@ -141,17 +141,17 @@ def _classify_homepage_candidate(
     *,
     candidate_url: str,
     keyword: str,
-    anchor: Tag,
+    anchor: HtmlNode,
 ) -> tuple[str, int]:
     path = urlsplit(candidate_url).path.lower().rstrip("/")
     slug = path.rsplit("/", 1)[-1]
     depth = _path_depth(path)
-    anchor_text = " ".join(anchor.stripped_strings).strip().lower()
+    anchor_text = " ".join(anchor.text().split()).strip().lower()
     anchor_words = len([word for word in anchor_text.split() if word])
     keyword_hit = bool(keyword) and (
         keyword in candidate_url.lower() or keyword in anchor_text
     )
-    nav_boost = 12 if anchor.find_parent(("nav", "header")) is not None else 0
+    nav_boost = 12 if any(node.tag() in {"nav", "header"} for node in anchor.ancestors()) else 0
     category_path_boost = _category_path_score_boost(path)
     if _looks_like_category_url(candidate_url) or _has_category_homepage_signal(
         candidate_url, anchor
@@ -214,13 +214,13 @@ def _looks_like_category_url(url: str) -> bool:
     )
 
 
-def _has_category_homepage_signal(url: str, anchor: Tag) -> bool:
+def _has_category_homepage_signal(url: str, anchor: HtmlNode) -> bool:
     if _looks_like_category_url(url):
         return True
     path = urlsplit(url).path.lower().strip("/")
     if not path or _looks_like_locale_path(path):
         return False
-    text = " ".join(anchor.stripped_strings).strip().lower()
+    text = " ".join(anchor.text().split()).strip().lower()
     if not text:
         return False
     if any(

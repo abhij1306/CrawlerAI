@@ -43,6 +43,20 @@ def test_strip_and_coerce_html_text() -> None:
 
 
 @pytest.mark.unit
+def test_html_to_text_does_not_mutate_html_document() -> None:
+    from app.core.records.html_helpers import html_to_text
+    from app.extraction.documents import HtmlDocument
+
+    html = "<style>.hidden{}</style><script>ignore()</script><p>Hello</p>"
+    document = HtmlDocument("source", html)
+
+    assert html_to_text(document) == "Hello"
+    assert len(document.safe_css("script")) == 1
+    assert len(document.safe_css("style")) == 1
+    assert document.html() == html
+
+
+@pytest.mark.unit
 def test_literal_text_lists_and_empty_values() -> None:
     assert coerce_text("['Small', 'Large']") == "Small; Large"
     assert coerce_text("[True, {'bad': 1}, 'Good']") == "Good"

@@ -24,6 +24,7 @@ from app.core.config.extraction_rules import (
     VARIANT_COLOR_BRAND_CONFLICT_FLAG,
 )
 from app.core.config.extraction_rules._images import PRODUCT_ASSET_MAX_COUNT
+from app.core.config import field_mappings
 from app.core.config.field_mappings import INVALID_SCALAR_TYPE_EVIDENCE_FLAG
 from app.core.config.variant_policy import (
     DETAIL_PARENT_INHERITED_OFFER_FIELDS,
@@ -84,11 +85,11 @@ def recover_non_retailer_brand(
     support_token_sets = tuple(
         set(semantic_identity_tokens(str(evidence.value or "")))
         for evidence in evidence_by_id.values()
-        if evidence.fact_type != "product.brand" and not _invalid(evidence)
+        if evidence.fact_type != field_mappings.PRODUCT_BRAND_FACT_TYPE and not _invalid(evidence)
     )
     grouped: dict[tuple[str, ...], dict[str, object]] = {}
     for evidence in evidence_by_id.values():
-        if evidence.fact_type != "product.brand" or _invalid(evidence):
+        if evidence.fact_type != field_mappings.PRODUCT_BRAND_FACT_TYPE or _invalid(evidence):
             continue
         value = str(evidence.value or "").strip()
         tokens = tuple(semantic_identity_tokens(value))
@@ -109,7 +110,7 @@ def recover_non_retailer_brand(
                 (
                     decision.decision_id
                     for decision in resolution.decisions
-                    if decision.fact_type == "product.brand"
+                    if decision.fact_type == field_mappings.PRODUCT_BRAND_FACT_TYPE
                     and evidence.evidence_id in decision.accepted_evidence_ids
                 ),
                 None,
@@ -179,7 +180,7 @@ def resolve(
     resolved = {
         decision.fact_type for decision in decisions if decision.status == "resolved"
     }
-    required = {"product.url", "product.title"}
+    required = {"product.url", field_mappings.PRODUCT_TITLE_FACT_TYPE}
     asset_urls = tuple(
         str(by_id[evidence_id].value)
         for asset in entities.assets
@@ -219,7 +220,7 @@ def _url_mismatched_product_subjects(
 ) -> frozenset[str]:
     title_flags_by_subject: dict[str, set[str]] = {}
     for row in evidence:
-        if row.fact_type != "product.title" or not row.subject_id:
+        if row.fact_type != field_mappings.PRODUCT_TITLE_FACT_TYPE or not row.subject_id:
             continue
         title_flags_by_subject.setdefault(row.subject_id, set()).update(row.flags)
     return frozenset(
@@ -246,11 +247,11 @@ def _resolve_offer(
     findings: tuple[Finding, ...],
 ) -> tuple[Decision, ...]:
     incomplete_parent = offer.variant_entity_id is None and not (
-        offer.fact_evidence.get("offer.price")
-        and offer.fact_evidence.get("offer.currency")
+        offer.fact_evidence.get(field_mappings.OFFER_PRICE_FACT_TYPE)
+        and offer.fact_evidence.get(field_mappings.OFFER_CURRENCY_FACT_TYPE)
     )
     blocked = (
-        {"offer.price", "offer.currency", "offer.original_price"}
+        {field_mappings.OFFER_PRICE_FACT_TYPE, field_mappings.OFFER_CURRENCY_FACT_TYPE, field_mappings.OFFER_ORIGINAL_PRICE_FACT_TYPE}
         if incomplete_parent
         else set()
     )
@@ -279,8 +280,8 @@ def _preferred_parent_offer_id(
     }
 
     def score(offer: OfferEntity) -> tuple[int, int, int, int, str]:
-        price = resolved.get((offer.entity_id, "offer.price"))
-        currency = resolved.get((offer.entity_id, "offer.currency"))
+        price = resolved.get((offer.entity_id, field_mappings.OFFER_PRICE_FACT_TYPE))
+        currency = resolved.get((offer.entity_id, field_mappings.OFFER_CURRENCY_FACT_TYPE))
         pair = tuple(
             evidence_by_id[decision.accepted_evidence_ids[0]]
             for decision in (price, currency)
@@ -381,10 +382,10 @@ def _resolve_asset(
     ):
         return Decision(
             decision_id=stable_id(
-                "decision", asset.entity_id, "asset.image_url", asset.url_evidence_ids
+                "decision", asset.entity_id, field_mappings.ASSET_IMAGE_URL_FACT_TYPE, asset.url_evidence_ids
             ),
             entity_id=asset.entity_id,
-            fact_type="asset.image_url",
+            fact_type=field_mappings.ASSET_IMAGE_URL_FACT_TYPE,
             accepted_evidence_ids=(),
             rejected=tuple(
                 RejectedEvidence(evidence_id=eid, reason="invalid_primary_asset")
@@ -396,7 +397,7 @@ def _resolve_asset(
         )
     return _resolve_scalar(
         asset.entity_id,
-        "asset.image_url",
+        field_mappings.ASSET_IMAGE_URL_FACT_TYPE,
         asset.url_evidence_ids,
         evidence_by_id,
         findings,
@@ -483,14 +484,14 @@ def _accepted_asset_evidence(
     ]
     if not candidates:
         return None
-    return sorted(
+    return min(
         candidates,
         key=lambda row: (
             int(urlsplit(str(row.value)).scheme.casefold() != "https"),
             -_asset_requested_dimension(row.value),
             _rank(row),
         ),
-    )[0]
+    )
 
 
 def _asset_requested_dimension(value: object) -> int:
@@ -513,7 +514,7 @@ def _asset_rank(
     int,
     int,
     int,
-    tuple[int, int, float, str] | tuple[int, int, int, float, str],
+    tuple[int, int, int, float, str],
     str,
 ]:
     if accepted is None:
@@ -598,6 +599,13 @@ def _resolve_scalar(
             status="unresolved",
         )
     winner = admissible[0]
+    rule_id = "SCALAR_LEXICOGRAPHIC"
+    if fact_type == field_mappings.PRODUCT_TITLE_FACT_TYPE:
+        rule_id = (
+            "TITLE_URL_REVIEW_ONLY"
+            if "url_derived_title" in winner.flags
+            else "TITLE_SEMANTIC_RANKING"
+        )
     return Decision(
         decision_id=stable_id("decision", entity_id, fact_type, winner.evidence_id),
         entity_id=entity_id,
@@ -614,13 +622,7 @@ def _resolve_scalar(
             if ev.evidence_id != winner.evidence_id
         ),
         finding_ids=finding_ids,
-        rule_id=(
-            "TITLE_URL_REVIEW_ONLY"
-            if fact_type == "product.title" and "url_derived_title" in winner.flags
-            else "TITLE_SEMANTIC_RANKING"
-            if fact_type == "product.title"
-            else "SCALAR_LEXICOGRAPHIC"
-        ),
+        rule_id=rule_id,
         status="resolved",
     )
 
@@ -631,7 +633,7 @@ def _derived(
     out: list[DerivedFact] = []
     for decision in decisions:
         if (
-            decision.fact_type not in {"offer.price", "offer.original_price"}
+            decision.fact_type not in {field_mappings.OFFER_PRICE_FACT_TYPE, field_mappings.OFFER_ORIGINAL_PRICE_FACT_TYPE}
             or not decision.accepted_evidence_ids
         ):
             continue
@@ -661,12 +663,12 @@ def _derived(
 
 
 def _invalid(ev: Evidence) -> bool:
-    if ev.fact_type in {"offer.price", "offer.original_price"} and _non_positive_money(
+    if ev.fact_type in {field_mappings.OFFER_PRICE_FACT_TYPE, field_mappings.OFFER_ORIGINAL_PRICE_FACT_TYPE} and _non_positive_money(
         ev.value
     ):
         return True
     flags = set(ev.flags)
-    if ev.fact_type == "product.title" and flags & (
+    if ev.fact_type == field_mappings.PRODUCT_TITLE_FACT_TYPE and flags & (
         DETAIL_TITLE_REJECTION_FLAGS - {"truncated_title"}
     ):
         return True
@@ -707,9 +709,7 @@ def _non_positive_money(value: object) -> bool:
         return False
 
 
-def _rank(
-    ev: Evidence,
-) -> tuple[int, int, float, str] | tuple[int, int, int, float, str]:
+def _rank(ev: Evidence) -> tuple[int, int, int, float, str]:
     directness = {"direct": 0, "embedded": 1, "inferred": 2}.get(ev.directness, 3)
     reliability = {
         "jsonld": 0,
@@ -721,7 +721,7 @@ def _rank(
         "css_recipe": 5,
         "url": 6,
     }.get(ev.collector_id, 7)
-    if ev.fact_type == "product.title":
+    if ev.fact_type == field_mappings.PRODUCT_TITLE_FACT_TYPE:
         pollution = int(
             "seo_title_pollution" in ev.flags or "truncated_title" in ev.flags
         )
@@ -742,7 +742,7 @@ def _rank(
             -float(ev.confidence),
             ev.evidence_id,
         )
-    if ev.fact_type == "offer.currency":
+    if ev.fact_type == field_mappings.OFFER_CURRENCY_FACT_TYPE:
         inferred_from_symbol = int(
             str(ev.metadata.get("derived_by") or "") == "currency_from_price_symbol"
         )
@@ -753,4 +753,4 @@ def _rank(
             -float(ev.confidence),
             ev.evidence_id,
         )
-    return directness, reliability, -float(ev.confidence), ev.evidence_id
+    return 0, directness, reliability, -float(ev.confidence), ev.evidence_id

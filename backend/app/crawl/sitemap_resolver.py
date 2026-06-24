@@ -8,7 +8,8 @@ from urllib.parse import urlsplit, urlunsplit
 
 from defusedxml import ElementTree
 import httpx
-from bs4 import BeautifulSoup
+
+from app.extraction.documents import HtmlDocument
 
 from app.core.config.sitemap import (
     SITEMAP_DEFAULT_FILTER_KEYWORD,
@@ -583,14 +584,14 @@ async def _extract_homepage_candidate_entries(
 ) -> list[HomepageCandidate]:
     homepage_origin = _origin_key(homepage_url)
     homepage_normalized = _strip_fragment(homepage_url).rstrip("/")
-    soup = BeautifulSoup(html or "", "html.parser")
+    document = HtmlDocument("sitemap_homepage_fallback", html or "")
     scored_urls: dict[str, tuple[int, str, int, str | None]] = {}
     validations = 0
     for index, anchor in enumerate(
-        soup.select("a[href]")[:SITEMAP_HOMEPAGE_FALLBACK_MAX_ANCHORS]
+        document.safe_css("a[href]")[:SITEMAP_HOMEPAGE_FALLBACK_MAX_ANCHORS]
     ):
         candidate_url = normalize_target_url(
-            _strip_fragment(absolute_url(homepage_url, anchor.get("href")))
+            _strip_fragment(absolute_url(homepage_url, anchor.attribute("href")))
         )
         if not candidate_url:
             continue
