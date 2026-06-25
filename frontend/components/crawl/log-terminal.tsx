@@ -16,7 +16,7 @@ import {
   XCircle,
   Zap,
 } from 'lucide-react';
-import React, { memo, useEffect, useMemo, useRef, useState } from 'react';
+import React, { memo, useEffect, useRef } from 'react';
 import type { RefObject } from 'react';
 
 import type { CrawlLog, CrawlRecord } from '../../lib/api/types';
@@ -35,7 +35,6 @@ import { scrollViewportToBottom } from '../../lib/crawl/scroll';
 import { syntaxHighlightJsonNodes } from '../../lib/ui/syntax';
 import { Button } from '../ui/primitives';
 import {
-  buildLogSiteGroups,
   getLogStage,
   isPersistenceSummaryLog,
   LOG_PATTERNS,
@@ -47,6 +46,8 @@ import {
   TERMINAL_STRINGS,
 } from './log-terminal-utils';
 import type { LogStage, LogSiteGroup } from './log-terminal-utils';
+
+import { useLogTerminalState } from './use-log-terminal-state';
 
 function useLogViewport(_logCount: number, ref?: RefObject<HTMLDivElement | null>) {
   const internalRef = useRef<HTMLDivElement | null>(null);
@@ -307,62 +308,6 @@ function groupDurationMs(group: LogSiteGroup, activeNowMs?: number): number | nu
   return Math.max(0, Math.max(...endCandidatesMs) - startedMs);
 }
 
-const URL_TERMINAL_MESSAGE_PATTERN =
-  /\b(processing failed|timed out|stopped after reaching max_records|(?:extracted|yielded)\s+0\s+records?|no (?:public )?records? extracted|rejected detail extraction)\b/i;
-
-function groupHasTerminalOutcome(group: LogSiteGroup) {
-  return (
-    !group.url ||
-    group.records.length > 0 ||
-    group.stageLogs.persistence.length > 0 ||
-    group.hasError ||
-    group.logs.some((log) => URL_TERMINAL_MESSAGE_PATTERN.test(sanitizeLogMessage(log.message)))
-  );
-}
-
-function activeSiteGroupKeys(groups: LogSiteGroup[], live: boolean) {
-  const activeKeys = new Set<string>();
-  if (!live) {
-    return activeKeys;
-  }
-
-  let latestSerialGroup: LogSiteGroup | null = null;
-  for (const group of groups) {
-    if (groupHasTerminalOutcome(group)) {
-      continue;
-    }
-    if (group.key.startsWith('site:prefixed:')) {
-      activeKeys.add(group.key);
-    } else {
-      latestSerialGroup = group;
-    }
-  }
-  if (latestSerialGroup) {
-    activeKeys.add(latestSerialGroup.key);
-  }
-  return activeKeys;
-}
-
-function serialGroupEndMsByKey(groups: LogSiteGroup[]) {
-  const endMsByKey = new Map<string, number>();
-  let nextStartMs: number | null = null;
-  for (let index = groups.length - 1; index >= 0; index -= 1) {
-    const group = groups[index];
-    if (!group.url || group.key.startsWith('site:prefixed:')) {
-      continue;
-    }
-    if (nextStartMs !== null) {
-      endMsByKey.set(group.key, nextStartMs);
-    }
-    const createdAt = group.logs[0]?.created_at;
-    const startMs = createdAt ? parseApiDate(createdAt).getTime() : Number.NaN;
-    if (Number.isFinite(startMs)) {
-      nextStartMs = startMs;
-    }
-  }
-  return endMsByKey;
-}
-
 function groupFieldCoverage(group: LogSiteGroup, requestedFields: string[]) {
   const requested = uniqueRequestedFields(requestedFields);
   const normalizedRequested = requested.map(normalizeField);
@@ -566,152 +511,26 @@ export const LogTerminal = memo(function LogTerminal({
   viewportRef?: RefObject<HTMLDivElement | null>;
 }>) {
   const ref = useLogViewport(logs.length, viewportRef);
-  const peekPanelRef = useRef<HTMLDivElement | null>(null);
-  const [nowMs, setNowMs] = useState(() => Date.now());
-  const [peekedGroupKey, setPeekedGroupKey] = useState<string | null>(null);
-  const [peekedRecordIndex, setPeekedRecordIndex] = useState(0);
-  const [expandedGroupPreference, setExpandedGroupPreference] = useState<
-    string | null | '__auto__'
-  >('__auto__');
-  const [triageCursor, setTriageCursor] = useState(0);
-  const groups = useMemo(() => buildLogSiteGroups(logs, records), [logs, records]);
-  const siteOrdinalByKey = useMemo(() => {
-    let ordinal = 0;
-    const values = new Map<string, number>();
-    for (const group of groups) {
-      if (!group.url) {
-        continue;
-      }
-      ordinal += 1;
-      values.set(group.key, ordinal);
-    }
-    return values;
-  }, [groups]);
-  const issueGroups = useMemo(
-    () => groups.filter((group) => group.hasError || group.hasWarning),
-    [groups],
-  );
-  const activeGroupKeys = useMemo(() => activeSiteGroupKeys(groups, live), [groups, live]);
-  const activeGroupKey = useMemo(
-    () => [...groups].reverse().find((group) => activeGroupKeys.has(group.key))?.key ?? null,
-    [activeGroupKeys, groups],
-  );
-  const inferredSerialEndMsByKey = useMemo(() => serialGroupEndMsByKey(groups), [groups]);
-  const activePeekedGroupKey = useMemo(
-    () =>
-      peekedGroupKey && groups.some((group) => group.key === peekedGroupKey)
-        ? peekedGroupKey
-        : null,
-    [groups, peekedGroupKey],
-  );
-  const peekedGroup = useMemo(
-    () => groups.find((group) => group.key === activePeekedGroupKey) ?? null,
-    [activePeekedGroupKey, groups],
-  );
-  const expandedGroupKey = useMemo(() => {
-    if (
-      expandedGroupPreference &&
-      expandedGroupPreference !== '__auto__' &&
-      groups.some((group) => group.key === expandedGroupPreference)
-    ) {
-      return expandedGroupPreference;
-    }
-    if (expandedGroupPreference === null) {
-      return null;
-    }
-    if (activeGroupKey) {
-      return activeGroupKey;
-    }
-    return issueGroups[0]?.key ?? null;
-  }, [activeGroupKey, expandedGroupPreference, groups, issueGroups]);
-  const safePeekedRecordIndex = peekedGroup
-    ? Math.min(peekedRecordIndex, Math.max(peekedGroup.records.length - 1, 0))
-    : 0;
-  const peekedRecordJson =
-    peekedGroup && peekedGroup.records[safePeekedRecordIndex]
-      ? JSON.stringify(cleanRecordForDisplay(peekedGroup.records[safePeekedRecordIndex]), null, 2)
-      : '';
-  const safeTriageCursor = issueGroups.length ? Math.min(triageCursor, issueGroups.length - 1) : 0;
-
-  useEffect(() => {
-    if (!live) {
-      return;
-    }
-    const timer = window.setInterval(() => setNowMs(Date.now()), 1000);
-    return () => window.clearInterval(timer);
-  }, [live]);
-
-  useEffect(() => {
-    if (!activePeekedGroupKey) {
-      return;
-    }
-    const handlePointerDown = (event: MouseEvent) => {
-      const panel = peekPanelRef.current;
-      if (!panel) {
-        return;
-      }
-      if (!panel.contains(event.target as Node)) {
-        setPeekedGroupKey(null);
-      }
-    };
-    document.addEventListener('mousedown', handlePointerDown);
-    return () => document.removeEventListener('mousedown', handlePointerDown);
-  }, [activePeekedGroupKey]);
-
-  const timelineTicks = useMemo(() => {
-    if (!groups.length) {
-      return [];
-    }
-    const start = parseApiDate(groups[0].logs[0]?.created_at ?? new Date().toISOString()).getTime();
-    const end = parseApiDate(
-      groups[groups.length - 1].logs.at(-1)?.created_at ??
-        groups[0].logs[0]?.created_at ??
-        new Date().toISOString(),
-    ).getTime();
-    const range = Math.max(1, end - start);
-    return groups.map((group) => {
-      const createdAt = group.logs[0]?.created_at ?? new Date().toISOString();
-      const percent = ((parseApiDate(createdAt).getTime() - start) / range) * 100;
-      return {
-        key: group.key,
-        percent,
-        tone: group.hasError
-          ? 'bg-danger'
-          : group.hasWarning
-            ? 'bg-warning'
-            : group.recordCount > 0
-              ? 'bg-emerald-400'
-              : 'bg-white/15',
-      };
-    });
-  }, [groups]);
-
-  const jumpToGroup = (groupKey: string) => {
-    const el = document.getElementById(siteDomId(groupKey));
-    if (el) {
-      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      el.classList.add('log-entry-highlight');
-      setTimeout(() => el.classList.remove('log-entry-highlight'), 2000);
-    }
-    setExpandedGroupPreference(groupKey);
-  };
-
-  const toggleGroup = (groupKey: string) => {
-    if (groupKey === activeGroupKey) {
-      return;
-    }
-    setExpandedGroupPreference((current) => (current === groupKey ? null : groupKey));
-  };
-
-  const navigateTriage = (dir: 'next' | 'prev') => {
-    if (!issueGroups.length) {
-      return;
-    }
-    const delta = dir === 'next' ? 1 : -1;
-    const nextIndex = (safeTriageCursor + delta + issueGroups.length) % issueGroups.length;
-    setTriageCursor(nextIndex);
-    jumpToGroup(issueGroups[nextIndex].key);
-  };
+  const {
+    activeGroupKey,
+    activeGroupKeys,
+    activePeekedGroupKey,
+    expandedGroupKey,
+    groups,
+    inferredSerialEndMsByKey,
+    jumpToGroup,
+    navigateTriage,
+    nowMs,
+    peekedGroup,
+    peekedRecordJson,
+    peekPanelRef,
+    safePeekedRecordIndex,
+    setPeekedGroupKey,
+    setPeekedRecordIndex,
+    siteOrdinalByKey,
+    timelineTicks,
+    toggleGroup,
+  } = useLogTerminalState({ logs, records, live });
 
   return (
     <div
@@ -797,10 +616,9 @@ export const LogTerminal = memo(function LogTerminal({
             const coverage = groupFieldCoverage(group, requestedFields);
             const confidence = groupConfidence(group);
             const activeGroup = activeGroupKeys.has(group.key);
-            const inferredEndMs =
-              !activeGroup && !groupHasTerminalOutcome(group)
-                ? inferredSerialEndMsByKey.get(group.key)
-                : undefined;
+            const inferredEndMs = !activeGroup
+              ? inferredSerialEndMsByKey.get(group.key)
+              : undefined;
             const durationMs = groupDurationMs(group, activeGroup ? nowMs : inferredEndMs);
             const lastLog = group.logs.at(-1);
             const summaryLog =

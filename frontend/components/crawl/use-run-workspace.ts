@@ -23,7 +23,10 @@ export function useRunWorkspace(runId: number) {
         : false;
     },
     refetchIntervalInBackground: false,
-    refetchOnMount: 'always',
+    refetchOnMount: (query) => {
+      const cachedRun = query.state.data as CrawlRun | undefined;
+      return !cachedRun || ACTIVE_STATUSES.has(cachedRun.status) ? 'always' : false;
+    },
   });
   const { live, terminal } = useRunStatusFlags(run);
 

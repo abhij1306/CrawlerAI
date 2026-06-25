@@ -50,7 +50,10 @@ export function useRunRecords({
     enabled: shouldFetchTableRecords,
     refetchInterval: live && shouldFetchTableRecords ? POLLING_INTERVALS.ACTIVE_JOB_MS : false,
     refetchIntervalInBackground: false,
-    refetchOnMount: 'always',
+    refetchOnMount: (query) => {
+      const cachedPage = query.state.data as { items?: unknown[] } | undefined;
+      return live || !cachedPage?.items?.length ? 'always' : false;
+    },
   });
 
   const {

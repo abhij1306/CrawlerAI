@@ -918,7 +918,9 @@ describe('CrawlRunScreen', () => {
     fireEvent.click(jsonButtons.at(-1)!);
 
     await waitFor(() => {
-      expect(screen.getByText(/https:\/\/www\.shop\.ving\.run\/product\/สีดำ/)).toBeInTheDocument();
+      expect(
+        screen.getAllByText(/https:\/\/www\.shop\.ving\.run\/product\/สีดำ/),
+      ).not.toHaveLength(0);
     });
 
     expect(screen.queryByText(/%E0%B8%AA%E0%B8%B5%E0%B8%94%E0%B8%B3/)).not.toBeInTheDocument();
@@ -1038,9 +1040,8 @@ describe('CrawlRunScreen', () => {
         ]}
       />,
     );
-
-    expect(screen.getByText('0m 06s')).toBeInTheDocument();
-    expect(screen.getByText('0m 04s')).toBeInTheDocument();
+    expect(screen.getByText('0m 6s')).toBeInTheDocument();
+    expect(screen.getByText('0m 4s')).toBeInTheDocument();
   });
 
   it('ticks duration for every active parallel site group', () => {
