@@ -9,7 +9,11 @@ from app.extraction.documents import HtmlDocument, HtmlNode
 
 
 def _document(value: str | HtmlDocument, artifact_id: str) -> HtmlDocument:
-    return value if isinstance(value, HtmlDocument) else HtmlDocument(artifact_id, str(value or ""))
+    return (
+        value
+        if isinstance(value, HtmlDocument)
+        else HtmlDocument(artifact_id, str(value or ""))
+    )
 
 
 def extract_structured_data(html_text: str | HtmlDocument) -> dict[str, object]:
@@ -52,8 +56,13 @@ def parse_json_ld(document: HtmlDocument) -> list[object]:
 
 def harvest_js_state_objects(document: HtmlDocument) -> dict[str, object]:
     states: dict[str, object] = {}
-    for script in document.safe_css('script[type="application/json"], script#__NEXT_DATA__'):
-        key = str(script.attribute("id") or "application_json").strip() or "application_json"
+    for script in document.safe_css(
+        'script[type="application/json"], script#__NEXT_DATA__'
+    ):
+        key = (
+            str(script.attribute("id") or "application_json").strip()
+            or "application_json"
+        )
         text = script.text(separator="", strip=True)
         if not text.strip():
             continue
@@ -105,9 +114,7 @@ def render_html_text(value: str | HtmlDocument) -> str:
     if lines:
         return "\n".join(lines)
     return "\n".join(
-        line.strip()
-        for line in document.text().splitlines()
-        if line.strip()
+        line.strip() for line in document.text().splitlines() if line.strip()
     ).strip()
 
 

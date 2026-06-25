@@ -112,7 +112,9 @@ def score_record_confidence(
         "level": _confidence_level(normalized_score),
         "present_fields": present_fields,
         "missing_fields": missing_fields,
-        "requested_fields_total": len(raw_requested) if raw_requested else len(requested),
+        "requested_fields_total": len(raw_requested)
+        if raw_requested
+        else len(requested),
         "requested_fields_found_best": requested_found_total,
         "penalties": [
             {

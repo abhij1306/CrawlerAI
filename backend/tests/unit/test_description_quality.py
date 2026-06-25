@@ -48,8 +48,7 @@ def test_exact_320_character_description_is_preserved_and_diagnosed() -> None:
 
     assert result.records[0]["description"] == description
     assert any(
-        finding.rule_id == "DESCRIPTION_HARD_BOUNDARY"
-        for finding in result.findings
+        finding.rule_id == "DESCRIPTION_HARD_BOUNDARY" for finding in result.findings
     )
     evidence = [
         row for row in result.evidence if row.fact_type == "product.description"
@@ -82,8 +81,7 @@ def test_promotional_search_copy_cannot_become_product_description() -> None:
 
     assert result.records[0].get("description") is None
     assert any(
-        finding.rule_id == "DESCRIPTION_PROMOTIONAL_COPY"
-        for finding in result.findings
+        finding.rule_id == "DESCRIPTION_PROMOTIONAL_COPY" for finding in result.findings
     )
 
 

@@ -94,9 +94,7 @@ def _select_product_by_url(
     by_id = {row.evidence_id: row for row in evidence}
     wanted = {request.capture.final_url, request.capture.requested_url}
     wanted_product_ids = {
-        code
-        for url in wanted
-        for code in detail_identity_codes_from_url(url)
+        code for url in wanted for code in detail_identity_codes_from_url(url)
     }
     wanted_resource_ids = {
         resource_id

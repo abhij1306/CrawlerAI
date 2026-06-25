@@ -51,7 +51,10 @@ def retry_request(
         ecommerce_detail
         and not request.capture.browser_attempted
         and (
-            (_explicit_variant_dom_cues(evidence) and _variant_controls_incomplete(records, evidence))
+            (
+                _explicit_variant_dom_cues(evidence)
+                and _variant_controls_incomplete(records, evidence)
+            )
             or (explicit_variants and _variants_missing_or_incomplete(records))
         )
     ):

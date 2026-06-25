@@ -1,0 +1,46 @@
+{
+  "version": 1,
+  "artifact_root": "artifacts/runs/1/results",
+  "cases": [
+    {
+      "case_id": "endclothing-cross-product-variants",
+      "url_result_id": 1736,
+      "source_url": "https://www.endclothing.com/us/47-ny-yankees-clean-up-cap-b-rgw17gws-vn.html",
+      "issue_ids": ["QD-05", "QD-09", "QD-11", "QD-12", "QD-13"],
+      "expected_field_states": {
+        "title": "captured_and_resolved",
+        "brand": "captured_but_rejected",
+        "description": "captured_but_rejected",
+        "price": "captured_and_resolved",
+        "currency": "captured_and_resolved",
+        "availability": "captured_but_rejected"
+      },
+      "expected_invariants": {
+        "selected_product_title": "47 NY Yankees Clean Up Cap",
+        "cross_product_variant_skus": ["JQ6823", "JN3708", "11145-91001", "HM31TE011-WHT", "VN000CQAOFW"],
+        "raw_availability_prefix": "https://schema.org/"
+      },
+      "artifact_files": ["records.json", "summary.json", "debug.json", "page.html"]
+    },
+    {
+      "case_id": "target-product-api-unavailable",
+      "url_result_id": 1740,
+      "source_url": "https://www.target.com/p/tobago-stripe-duvet-cover-set-levtex-home/-/A-1002150739?preselect=1002150742#lnk=sametab",
+      "issue_ids": ["QD-03", "QD-09", "QD-11", "QD-12", "QD-13"],
+      "expected_field_states": {
+        "title": "captured_and_resolved",
+        "brand": "captured_but_rejected",
+        "description": "captured_but_rejected",
+        "price": "source_unavailable",
+        "currency": "source_unavailable",
+        "availability": "source_unavailable"
+      },
+      "expected_invariants": {
+        "selected_product_title": "Tobago Stripe Blue Twin/Twin XL Duvet Cover Set - Levtex Home",
+        "blocked_product_api_status": 403,
+        "blocked_product_api_marker": "captchaAbsoluteURL"
+      },
+      "artifact_files": ["records.json", "summary.json", "debug.json", "page.html"]
+    }
+  ]
+}

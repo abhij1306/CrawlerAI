@@ -390,7 +390,9 @@ def _anchor_text_rejected(text: str) -> bool:
 def _anchor_label(anchor: HtmlNode) -> str | None:
     label = " ".join(anchor.text().split()).strip()
     if not label:
-        label = str(anchor.attribute("aria-label") or anchor.attribute("title") or "").strip()
+        label = str(
+            anchor.attribute("aria-label") or anchor.attribute("title") or ""
+        ).strip()
     if not label:
         return None
     return " ".join(label.split())

@@ -220,10 +220,14 @@ def request_from_acquisition_result(
         artifacts["css_field_rules"] = list(selector_rules)
     browser_outcome = str(
         getattr(acquisition_result, "browser_outcome", "")
-        or dict(getattr(acquisition_result, "browser_diagnostics", {}) or {}).get("browser_outcome")
+        or dict(getattr(acquisition_result, "browser_diagnostics", {}) or {}).get(
+            "browser_outcome"
+        )
         or ""
     )
-    blocked = bool(getattr(acquisition_result, "blocked", False)) or browser_outcome in {
+    blocked = bool(
+        getattr(acquisition_result, "blocked", False)
+    ) or browser_outcome in {
         "challenge_page",
         "low_content_shell",
     }

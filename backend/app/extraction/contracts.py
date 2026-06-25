@@ -44,9 +44,7 @@ OFFER_FACTS = frozenset(
     )
 )
 ASSET_FACTS = frozenset({"asset.image_url", "asset.role", "asset.variant_association"})
-OPTION_FACTS = frozenset(
-    f"option.{axis}" for axis in PUBLIC_VARIANT_AXIS_FIELDS
-)
+OPTION_FACTS = frozenset(f"option.{axis}" for axis in PUBLIC_VARIANT_AXIS_FIELDS)
 FACT_TYPES = PRODUCT_FACTS | VARIANT_FACTS | OFFER_FACTS | ASSET_FACTS | OPTION_FACTS
 
 
@@ -142,6 +140,26 @@ class Evidence(FrozenModel):
     surface: Surface = Surface.ECOMMERCE_DETAIL
     subject_id: str
     parent_subject_id: str | None = None
+    subject_scope: Literal[
+        "document",
+        "product",
+        "variant",
+        "offer",
+        "asset",
+        "job",
+        "unknown",
+    ] = "unknown"
+    relation_type: (
+        Literal[
+            "product_variant",
+            "product_offer",
+            "variant_offer",
+            "product_asset",
+            "variant_asset",
+            "job_asset",
+        ]
+        | None
+    ) = None
 
     @property
     def entity_kind(self) -> str:

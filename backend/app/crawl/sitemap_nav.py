@@ -151,7 +151,9 @@ def _classify_homepage_candidate(
     keyword_hit = bool(keyword) and (
         keyword in candidate_url.lower() or keyword in anchor_text
     )
-    nav_boost = 12 if any(node.tag() in {"nav", "header"} for node in anchor.ancestors()) else 0
+    nav_boost = (
+        12 if any(node.tag() in {"nav", "header"} for node in anchor.ancestors()) else 0
+    )
     category_path_boost = _category_path_score_boost(path)
     if _looks_like_category_url(candidate_url) or _has_category_homepage_signal(
         candidate_url, anchor

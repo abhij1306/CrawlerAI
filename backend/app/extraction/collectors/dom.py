@@ -18,6 +18,7 @@ from app.core.config.extraction_rules import (
     VARIANT_PLACEHOLDER_PREFIXES,
     VARIANT_PLACEHOLDER_VALUES,
 )
+from app.core.config import field_mappings
 from app.core.config.field_mappings import (
     ECOMMERCE_DETAIL_FIELD_FACT_TYPES,
     REQUESTED_FIELD_DOM_SELECTOR_TEMPLATES,
@@ -25,7 +26,7 @@ from app.core.config.field_mappings import (
 from app.extraction.contracts import CaptureBundle, EntityHint, Evidence, SourceLocator
 from app.extraction.documents import HtmlNode
 from app.extraction.ids import stable_id
-from app.core.records.field_policy import normalize_requested_field
+from app.core.records.field_policy import normalize_field_key, normalize_requested_field
 from app.core.shared.url_utils import is_utility_image_url
 
 _IMAGE_SCOPE_ATTRIBUTES = (
@@ -92,6 +93,7 @@ class DomCollector:
                         parent_subject_id=product_subject
                         if fact.startswith("offer.")
                         else None,
+                        parent_scope="product" if fact.startswith("offer.") else None,
                     )
                 )
         out.extend(_product_brand_evidence(bundle, doc, product_subject))
@@ -111,6 +113,7 @@ class DomCollector:
                     hint=EntityHint(entity_type="asset"),
                     confidence=confidence,
                     parent_subject_id=product_subject,
+                    parent_scope="product",
                 )
             )
         out.extend(_commercial_variant_controls(bundle, doc, product_subject))
@@ -166,7 +169,9 @@ def _brand_node_value(node: HtmlNode) -> str:
         str(node.attribute(attribute) or "").casefold()
         for attribute in ("class", "id", "data-testid", "itemprop")
     )
-    if any(token in context for token in ("product-brand", "product_brand", "manufacturer")):
+    if any(
+        token in context for token in ("product-brand", "product_brand", "manufacturer")
+    ):
         return text if 0 < len(text) <= 80 else ""
     return ""
 
@@ -322,9 +327,7 @@ def _commercial_variant_controls(
         if not size or not sku:
             continue
         hint = EntityHint(entity_type="variant", sku=sku, option_values={"size": size})
-        variant_subject = stable_id(
-            "subject", bundle.bundle_id, "dom", "variant", sku
-        )
+        variant_subject = stable_id("subject", bundle.bundle_id, "dom", "variant", sku)
         variant_group = f"variant:dom:{sku}"
         locator = SourceLocator(
             kind="css_selector", value=node.stable_locator(), preview=size[:120]
@@ -347,6 +350,7 @@ def _commercial_variant_controls(
                     confidence=0.76,
                     subject_id=variant_subject,
                     parent_subject_id=product_subject,
+                    parent_scope="product",
                 )
             )
         offer_group = f"offer:dom:{sku}"
@@ -356,7 +360,9 @@ def _commercial_variant_controls(
             ("offer.currency", str(node.attribute("data-currency") or "").strip()),
             (
                 "offer.availability",
-                "in_stock" if stock in {"1", "true", "yes"} else "out_of_stock"
+                "in_stock"
+                if stock in {"1", "true", "yes"}
+                else "out_of_stock"
                 if stock in {"0", "false", "no"}
                 else "",
             ),
@@ -377,6 +383,7 @@ def _commercial_variant_controls(
                     confidence=0.76,
                     subject_id=stable_id("subject", bundle.bundle_id, offer_group),
                     parent_subject_id=variant_subject,
+                    parent_scope="variant",
                 )
             )
     return rows
@@ -454,3 +461,85 @@ def _variant_value(value: str, *, axis: str) -> str | None:
     ):
         return None
     return normalized
+
+def css_recipe_evidence(bundle, reader) -> tuple[Evidence, ...]:
+    rules_ref = next(
+        (ref for ref in bundle.artifacts if ref.artifact_id == "css_field_rules"), None
+    )
+    rules = reader.read_json(rules_ref) if rules_ref is not None else []
+    if not isinstance(rules, list):
+        return ()
+    doc = reader.document_store.html("html")
+    product_subject_id = stable_id(
+        "subject", bundle.bundle_id, "product", bundle.final_url
+    )
+    rows: list[Evidence] = []
+    for row in rules:
+        if not isinstance(row, dict) or not bool(row.get("is_active", True)):
+            continue
+        selector = str(row.get("css_selector") or "").strip()
+        fact_type = field_mappings.ECOMMERCE_DETAIL_FIELD_FACT_TYPES.get(
+            normalize_field_key(str(row.get("field_name") or ""))
+        )
+        if not selector or not fact_type:
+            continue
+        try:
+            nodes = doc.css(selector)
+        except Exception:
+            continue
+        for node in nodes[:3]:
+            if node.is_hidden():
+                continue
+            value = _css_node_value(node, fact_type)
+            if value in (None, "", [], {}):
+                continue
+            hint = EntityHint(entity_type="product")
+            subject_id = product_subject_id
+            parent_subject_id, group_id = None, "product"
+            if fact_type.startswith("offer."):
+                hint = EntityHint(entity_type="offer", url=bundle.final_url)
+                subject_id = stable_id(
+                    "subject", bundle.bundle_id, "offer", bundle.final_url
+                )
+                parent_subject_id = product_subject_id
+                group_id = "offer"
+            elif fact_type.startswith("asset."):
+                hint = EntityHint(entity_type="asset", url=bundle.final_url)
+                subject_id = stable_id("subject", bundle.bundle_id, "asset", value)
+                parent_subject_id = product_subject_id
+                group_id = "asset"
+            rows.append(
+                evidence(
+                    bundle,
+                    "css_field_rules",
+                    "css_recipe",
+                    fact_type,
+                    value,
+                    SourceLocator(
+                        kind="css_selector", value=selector, preview=str(value)[:120]
+                    ),
+                    hint=hint,
+                    group_id=group_id,
+                    confidence=0.86,
+                    directness="direct",
+                    subject_id=subject_id,
+                    parent_subject_id=parent_subject_id,
+                )
+            )
+    return tuple(rows)
+
+
+def _css_node_value(node, fact_type: str) -> str | None:
+    attr_order: tuple[str, ...]
+    if fact_type == field_mappings.PRODUCT_URL_FACT_TYPE:
+        attr_order = ("href", "content", "value", "title", "aria-label")
+    elif fact_type == field_mappings.ASSET_IMAGE_URL_FACT_TYPE:
+        attr_order = ("src", "data-src", "content", "href", "alt", "title")
+    else:
+        attr_order = ("content", "value", "title", "aria-label")
+    for attr in attr_order:
+        value = str(node.attribute(attr) or "").strip()
+        if value:
+            return value
+    text = re.sub(r"\s+", " ", node.text(separator=" ", strip=True)).strip()
+    return text or None

@@ -6,8 +6,7 @@ import json
 from typing import Any
 from urllib.parse import urljoin, urlsplit
 
-from app.extraction.collectors._helpers import evidence as make_evidence
-from app.extraction.collectors.dom import DomCollector, collect_requested_fields
+from app.extraction.collectors.dom import DomCollector, collect_requested_fields, css_recipe_evidence
 from app.extraction.collectors.jsonld import JsonLdCollector
 from app.extraction.collectors.js_state import JsStateCollector
 from app.extraction.collectors.metadata import (
@@ -72,7 +71,6 @@ from app.extraction.contracts import (
 )
 from app.extraction.ids import stable_id
 from app.extraction.materialization import materialize
-from app.core.records.field_policy import normalize_field_key
 from app.core.records.url_identity import (
     detail_title_from_url,
     detail_url_looks_like_product,
@@ -103,7 +101,7 @@ def collect_ecommerce_detail(
             for ev in collector.collect(bundle, reader)
             if ev.fact_type in FACT_TYPES
         )
-        + tuple(_css_recipe_evidence(bundle, reader))
+        + tuple(css_recipe_evidence(bundle, reader))
         + collect_requested_fields(bundle, reader, requested_fields)
     )
 
@@ -144,8 +142,16 @@ def normalize_ecommerce_detail(
 def _flag_brand_conflicts(
     evidence: tuple[Evidence, ...], *, page_brand: Evidence | None
 ) -> tuple[Evidence, ...]:
-    brand_rows = tuple(row for row in evidence if row.fact_type == field_mappings.PRODUCT_BRAND_FACT_TYPE)
-    brands = {str(row.value).strip().casefold() for row in brand_rows if str(row.value).strip()}
+    brand_rows = tuple(
+        row
+        for row in evidence
+        if row.fact_type == field_mappings.PRODUCT_BRAND_FACT_TYPE
+    )
+    brands = {
+        str(row.value).strip().casefold()
+        for row in brand_rows
+        if str(row.value).strip()
+    }
     structured_brands = {
         str(row.value).strip().casefold()
         for row in brand_rows
@@ -153,19 +159,35 @@ def _flag_brand_conflicts(
         and str(row.value).strip()
     }
     subject_titles = {
-        (row.subject_id, " ".join(re.findall(DETAIL_LOWER_ALNUM_TOKEN_PATTERN, str(row.value).casefold())))
+        (
+            row.subject_id,
+            " ".join(
+                re.findall(DETAIL_LOWER_ALNUM_TOKEN_PATTERN, str(row.value).casefold())
+            ),
+        )
         for row in evidence
         if row.fact_type == field_mappings.PRODUCT_TITLE_FACT_TYPE
         and row.subject_id
         and not (set(row.flags) & DETAIL_TITLE_REJECTION_FLAGS)
     }
-    color_rows = tuple(row for row in evidence if row.fact_type == "variant.option.color")
-    color_values = {str(row.value).strip().casefold() for row in color_rows if str(row.value).strip()}
-    conflicting_color_axis = len({row.subject_id for row in color_rows if row.subject_id}) >= 2 and len(color_values) == 1 and bool(color_values & brands)
+    color_rows = tuple(
+        row for row in evidence if row.fact_type == "variant.option.color"
+    )
+    color_values = {
+        str(row.value).strip().casefold()
+        for row in color_rows
+        if str(row.value).strip()
+    }
+    conflicting_color_axis = (
+        len({row.subject_id for row in color_rows if row.subject_id}) >= 2
+        and len(color_values) == 1
+        and bool(color_values & brands)
+    )
     page_value = str(page_brand.value).casefold() if page_brand else ""
     support_values = tuple(
         re.sub(DETAIL_NON_LOWER_ALNUM_PATTERN, "", str(row.value).casefold())
-        for row in evidence if row.fact_type != field_mappings.PRODUCT_BRAND_FACT_TYPE
+        for row in evidence
+        if row.fact_type != field_mappings.PRODUCT_BRAND_FACT_TYPE
     )
     page_compact = re.sub(DETAIL_NON_LOWER_ALNUM_PATTERN, "", page_value)
     page_support = sum(page_compact in candidate for candidate in support_values)
@@ -173,7 +195,11 @@ def _flag_brand_conflicts(
     def conflict_flag(row: Evidence) -> str | None:
         value = str(row.value).strip().casefold()
         if row.fact_type == "variant.option.color":
-            return VARIANT_COLOR_BRAND_CONFLICT_FLAG if conflicting_color_axis and value in brands else None
+            return (
+                VARIANT_COLOR_BRAND_CONFLICT_FLAG
+                if conflicting_color_axis and value in brands
+                else None
+            )
         if row.fact_type != field_mappings.PRODUCT_BRAND_FACT_TYPE:
             return None
         normalized = " ".join(re.findall(DETAIL_LOWER_ALNUM_TOKEN_PATTERN, value))
@@ -188,7 +214,8 @@ def _flag_brand_conflicts(
                     row.directness == "inferred"
                     and row.collector_id != "dom"
                     and page_support >= 2
-                    and page_support > sum(
+                    and page_support
+                    > sum(
                         re.sub(DETAIL_NON_LOWER_ALNUM_PATTERN, "", value) in candidate
                         for candidate in support_values
                     )
@@ -204,14 +231,17 @@ def _flag_brand_conflicts(
                 (title := str(item.value).strip().casefold()) == value
                 or title.endswith(f" {value}")
                 or title.endswith(f"- {value}")
-                for item in evidence if item.fact_type == field_mappings.PRODUCT_TITLE_FACT_TYPE
+                for item in evidence
+                if item.fact_type == field_mappings.PRODUCT_TITLE_FACT_TYPE
             )
             if value in color_values or title_suffix:
                 return VARIANT_COLOR_BRAND_CONFLICT_FLAG
         return None
 
     return tuple(
-        row.model_copy(update={"flags": tuple(sorted({*row.flags, flag}))}) if (flag := conflict_flag(row)) else row
+        row.model_copy(update={"flags": tuple(sorted({*row.flags, flag}))})
+        if (flag := conflict_flag(row))
+        else row
         for row in evidence
     )
 
@@ -219,7 +249,14 @@ def _flag_brand_conflicts(
 def _brand_from_page_identity(
     evidence: tuple[Evidence, ...], *, page_url: str
 ) -> Evidence | None:
-    title = next((row for row in evidence if row.fact_type == field_mappings.PRODUCT_TITLE_FACT_TYPE), None)
+    title = next(
+        (
+            row
+            for row in evidence
+            if row.fact_type == field_mappings.PRODUCT_TITLE_FACT_TYPE
+        ),
+        None,
+    )
     if title is None:
         return None
     brand = infer_brand_from_page_identity(
@@ -228,10 +265,17 @@ def _brand_from_page_identity(
         evidence_values=tuple(
             row.value
             for row in evidence
-            if row.fact_type not in {field_mappings.PRODUCT_TITLE_FACT_TYPE, field_mappings.PRODUCT_URL_FACT_TYPE, "variant.url"}
+            if row.fact_type
+            not in {
+                field_mappings.PRODUCT_TITLE_FACT_TYPE,
+                field_mappings.PRODUCT_URL_FACT_TYPE,
+                "variant.url",
+            }
         ),
         existing_brands=tuple(
-            row.value for row in evidence if row.fact_type == field_mappings.PRODUCT_BRAND_FACT_TYPE
+            row.value
+            for row in evidence
+            if row.fact_type == field_mappings.PRODUCT_BRAND_FACT_TYPE
         ),
     )
     if not brand:
@@ -283,7 +327,9 @@ def normalize_ecommerce_price_units(
     currency_rows_by_offer = {
         offer.entity_id: tuple(
             by_id[eid]
-            for eid in offer.fact_evidence.get(field_mappings.OFFER_CURRENCY_FACT_TYPE, ())
+            for eid in offer.fact_evidence.get(
+                field_mappings.OFFER_CURRENCY_FACT_TYPE, ()
+            )
             if eid in by_id and "invalid_currency" not in by_id[eid].flags
         )
         for offer in entities.offers
@@ -300,7 +346,11 @@ def normalize_ecommerce_price_units(
     price_rows = tuple(
         row
         for row in evidence
-        if row.fact_type in {field_mappings.OFFER_PRICE_FACT_TYPE, field_mappings.OFFER_ORIGINAL_PRICE_FACT_TYPE}
+        if row.fact_type
+        in {
+            field_mappings.OFFER_PRICE_FACT_TYPE,
+            field_mappings.OFFER_ORIGINAL_PRICE_FACT_TYPE,
+        }
     )
     currency_by_evidence: dict[str, str] = {}
     for row in price_rows:
@@ -329,7 +379,11 @@ def normalize_ecommerce_price_units(
         if (
             offer is None
             or currency is None
-            or row.fact_type not in {field_mappings.OFFER_PRICE_FACT_TYPE, field_mappings.OFFER_ORIGINAL_PRICE_FACT_TYPE}
+            or row.fact_type
+            not in {
+                field_mappings.OFFER_PRICE_FACT_TYPE,
+                field_mappings.OFFER_ORIGINAL_PRICE_FACT_TYPE,
+            }
         ):
             repaired_rows.append(row)
             continue
@@ -340,7 +394,8 @@ def normalize_ecommerce_price_units(
             and other.fact_type == row.fact_type
             and (
                 (
-                    (other_offer := offer_by_evidence.get(other.evidence_id)) is not None
+                    (other_offer := offer_by_evidence.get(other.evidence_id))
+                    is not None
                     and other_offer.product_entity_id == offer.product_entity_id
                     and (
                         other.collector_id != row.collector_id
@@ -349,8 +404,7 @@ def normalize_ecommerce_price_units(
                 )
                 or (
                     offer_by_evidence.get(other.evidence_id) is None
-                    and other.collector_id
-                    in DETAIL_PRICE_PAGE_CORROBORATION_COLLECTORS
+                    and other.collector_id in DETAIL_PRICE_PAGE_CORROBORATION_COLLECTORS
                     and "invalid_decimal" not in other.flags
                 )
             )
@@ -477,7 +531,9 @@ def normalize_evidence(evidence: Evidence, *, page_url: str) -> Evidence:
     flags = set(evidence.flags)
     if isinstance(value, str):
         value = re.sub(r"\s+", " ", value).strip()
-    if evidence.fact_type == field_mappings.ASSET_IMAGE_URL_FACT_TYPE and isinstance(value, str):
+    if evidence.fact_type == field_mappings.ASSET_IMAGE_URL_FACT_TYPE and isinstance(
+        value, str
+    ):
         value = re.sub(r"\s+\d+(?:\.\d+)?[wx]\s*$", "", value, flags=re.IGNORECASE)
     if evidence.fact_type in {
         field_mappings.PRODUCT_URL_FACT_TYPE,
@@ -492,11 +548,16 @@ def normalize_evidence(evidence: Evidence, *, page_url: str) -> Evidence:
         and not detail_url_looks_like_product(value)
     ):
         flags.add("non_detail_product_url")
-    if evidence.fact_type == field_mappings.OFFER_CURRENCY_FACT_TYPE and isinstance(value, str):
+    if evidence.fact_type == field_mappings.OFFER_CURRENCY_FACT_TYPE and isinstance(
+        value, str
+    ):
         value = value.upper()
         if not re.fullmatch(r"[A-Z]{3}", value):
             flags.add("invalid_currency")
-    if evidence.fact_type in {field_mappings.OFFER_PRICE_FACT_TYPE, field_mappings.OFFER_ORIGINAL_PRICE_FACT_TYPE}:
+    if evidence.fact_type in {
+        field_mappings.OFFER_PRICE_FACT_TYPE,
+        field_mappings.OFFER_ORIGINAL_PRICE_FACT_TYPE,
+    }:
         value = _money(value, flags)
     if evidence.fact_type == field_mappings.OFFER_AVAILABILITY_FACT_TYPE:
         value = _normalize_availability_value(value, flags)
@@ -510,9 +571,14 @@ def normalize_evidence(evidence: Evidence, *, page_url: str) -> Evidence:
         and not isinstance(value, str)
     ):
         flags.add(field_mappings.INVALID_SCALAR_TYPE_EVIDENCE_FLAG)
-    if evidence.fact_type == field_mappings.PRODUCT_BRAND_FACT_TYPE and isinstance(value, str):
+    if evidence.fact_type == field_mappings.PRODUCT_BRAND_FACT_TYPE and isinstance(
+        value, str
+    ):
         value = _normalize_brand_value(value, flags)
-    if evidence.fact_type == field_mappings.PRODUCT_DESCRIPTION_FACT_TYPE and isinstance(value, str):
+    if (
+        evidence.fact_type == field_mappings.PRODUCT_DESCRIPTION_FACT_TYPE
+        and isinstance(value, str)
+    ):
         _flag_description_value(evidence, value, flags)
     if evidence.fact_type in {"product.gtin", "variant.gtin"} and isinstance(
         value, str
@@ -522,9 +588,13 @@ def normalize_evidence(evidence: Evidence, *, page_url: str) -> Evidence:
             flags.add("invalid_gtin")
     if isinstance(value, str) and value.lower() in {"n/a", "none", "null", "undefined"}:
         flags.add("placeholder_text")
-    if evidence.fact_type == field_mappings.PRODUCT_TITLE_FACT_TYPE and isinstance(value, str):
+    if evidence.fact_type == field_mappings.PRODUCT_TITLE_FACT_TYPE and isinstance(
+        value, str
+    ):
         title_locator = str(evidence.locator.value or "").casefold()
-        if any(token in title_locator for token in DETAIL_TITLE_NON_PRODUCT_LOCATOR_TOKENS):
+        if any(
+            token in title_locator for token in DETAIL_TITLE_NON_PRODUCT_LOCATOR_TOKENS
+        ):
             flags.add("generic_title")
         flags.update(_title_flags(evidence, value=value, page_url=page_url))
     return evidence.model_copy(update={"value": value, "flags": tuple(sorted(flags))})
@@ -553,11 +623,12 @@ def _normalize_brand_value(value: str, flags: set[str]) -> str:
     return normalized
 
 
-def _flag_description_value(
-    evidence: Evidence, value: str, flags: set[str]
-) -> None:
+def _flag_description_value(evidence: Evidence, value: str, flags: set[str]) -> None:
     locator_value = str(evidence.locator.value or "").casefold()
-    if any(token in locator_value for token in DETAIL_DESCRIPTION_NON_PRODUCT_LOCATOR_TOKENS):
+    if any(
+        token in locator_value
+        for token in DETAIL_DESCRIPTION_NON_PRODUCT_LOCATOR_TOKENS
+    ):
         flags.add("description_ui_pollution")
     if len(value) in DETAIL_DESCRIPTION_HARD_BOUNDARY_LENGTHS:
         flags.add("description_hard_boundary")
@@ -570,7 +641,10 @@ def _flag_description_value(
         flags.add("description_incomplete_ending")
     if re.search(r",\s*[a-z]{2,5}$", tail, re.IGNORECASE):
         flags.add("description_truncated_fragment")
-    if any(re.search(pattern, value, re.IGNORECASE) for pattern in DETAIL_DESCRIPTION_UI_PATTERNS):
+    if any(
+        re.search(pattern, value, re.IGNORECASE)
+        for pattern in DETAIL_DESCRIPTION_UI_PATTERNS
+    ):
         flags.add("description_ui_pollution")
     if any(
         re.search(pattern, value, re.IGNORECASE)
@@ -581,15 +655,21 @@ def _flag_description_value(
 
 def _normalize_brand_hierarchy(value: str) -> str:
     parts = [part.strip() for part in value.split("/") if part.strip()]
-    if len(parts) < 2 or not all(re.fullmatch(r"[A-Za-z0-9&'._-]+", part) for part in parts):
+    if len(parts) < 2 or not all(
+        re.fullmatch(r"[A-Za-z0-9&'._-]+", part) for part in parts
+    ):
         return value
     leaf = parts[-1]
     leaf_key = re.sub(DETAIL_NON_LOWER_ALNUM_PATTERN, "", leaf.casefold())
     parent_keys = [
-        re.sub(DETAIL_NON_LOWER_ALNUM_PATTERN, "", part.casefold().removesuffix("-parent"))
+        re.sub(
+            DETAIL_NON_LOWER_ALNUM_PATTERN, "", part.casefold().removesuffix("-parent")
+        )
         for part in parts[:-1]
     ]
-    if not leaf_key or not any(leaf_key == parent or leaf_key in parent for parent in parent_keys):
+    if not leaf_key or not any(
+        leaf_key == parent or leaf_key in parent for parent in parent_keys
+    ):
         return value
     return " ".join(token.capitalize() for token in re.split(r"[-_]+", leaf) if token)
 
@@ -598,7 +678,9 @@ def _title_flags(evidence: Evidence, *, value: str, page_url: str) -> set[str]:
     flags: set[str] = set()
     key = " ".join(re.findall(DETAIL_LOWER_ALNUM_TOKEN_PATTERN, value.casefold()))
     url_title_key = " ".join(
-        re.findall(DETAIL_LOWER_ALNUM_TOKEN_PATTERN, detail_title_from_url(page_url).casefold())
+        re.findall(
+            DETAIL_LOWER_ALNUM_TOKEN_PATTERN, detail_title_from_url(page_url).casefold()
+        )
     )
     if evidence.collector_id == "url":
         flags.add("url_derived_title")
@@ -638,7 +720,9 @@ def _title_flags(evidence: Evidence, *, value: str, page_url: str) -> set[str]:
         and set(words) <= DETAIL_TITLE_STYLE_ONLY_TOKENS
     ):
         flags.add("generic_title")
-    if re.fullmatch(DETAIL_TITLE_SHORT_NAVIGATION_PATTERN, value.strip(), re.IGNORECASE):
+    if re.fullmatch(
+        DETAIL_TITLE_SHORT_NAVIGATION_PATTERN, value.strip(), re.IGNORECASE
+    ):
         flags.add("generic_title")
     if re.search(DETAIL_TITLE_SEO_POLLUTION_PATTERN, value, re.IGNORECASE) or (
         len(words) >= DETAIL_TITLE_SEO_PREFIX_MIN_WORDS
@@ -653,11 +737,7 @@ def _title_flags(evidence: Evidence, *, value: str, page_url: str) -> set[str]:
     url_tokens = set(semantic_detail_identity_tokens(page_url))
     title_tokens = set(semantic_identity_tokens(value))
     overlap = len(url_tokens & title_tokens)
-    if (
-        len(title_tokens) == 1
-        and len(url_tokens) >= 2
-        and title_tokens < url_tokens
-    ):
+    if len(title_tokens) == 1 and len(url_tokens) >= 2 and title_tokens < url_tokens:
         flags.add("truncated_title")
     if url_tokens and title_tokens:
         required_overlap = min(
@@ -666,9 +746,7 @@ def _title_flags(evidence: Evidence, *, value: str, page_url: str) -> set[str]:
             len(title_tokens),
         )
         flags.add(
-            "title_url_match"
-            if overlap >= required_overlap
-            else "title_url_mismatch"
+            "title_url_match" if overlap >= required_overlap else "title_url_mismatch"
         )
     return flags
 
@@ -682,7 +760,8 @@ def _availability(value: str) -> str:
     normalized = re.sub(DETAIL_NON_LOWER_ALNUM_PATTERN, " ", key).strip()
     for public_value, tokens in NORMALIZER_AVAILABILITY_TOKENS.items():
         if normalized in {
-            re.sub(DETAIL_NON_LOWER_ALNUM_PATTERN, " ", token).strip() for token in tokens
+            re.sub(DETAIL_NON_LOWER_ALNUM_PATTERN, " ", token).strip()
+            for token in tokens
         }:
             return public_value
     return text
@@ -727,9 +806,7 @@ def _availability_from_stock_quantity(evidence: Evidence) -> Evidence | None:
     )
 
 
-def _brand_from_title_host(
-    evidence: Evidence, *, page_url: str
-) -> Evidence | None:
+def _brand_from_title_host(evidence: Evidence, *, page_url: str) -> Evidence | None:
     if evidence.fact_type != field_mappings.PRODUCT_TITLE_FACT_TYPE:
         return None
     brand = infer_brand_from_title_host(title=evidence.value, url=page_url)
@@ -757,9 +834,7 @@ def _brand_from_title_host(
     )
 
 
-def _brand_from_product_url(
-    evidence: Evidence, *, page_url: str
-) -> Evidence | None:
+def _brand_from_product_url(evidence: Evidence, *, page_url: str) -> Evidence | None:
     if evidence.fact_type != field_mappings.PRODUCT_TITLE_FACT_TYPE:
         return None
     if not (brand := infer_brand_from_product_url(url=page_url, title=evidence.value)):
@@ -816,7 +891,9 @@ def _brand_from_title_marker(evidence: Evidence) -> Evidence | None:
 
 
 def _currency_from_price_symbol(evidence: Evidence) -> Evidence | None:
-    if evidence.fact_type != field_mappings.OFFER_PRICE_FACT_TYPE or not isinstance(evidence.raw_value, str):
+    if evidence.fact_type != field_mappings.OFFER_PRICE_FACT_TYPE or not isinstance(
+        evidence.raw_value, str
+    ):
         return None
     currencies = {
         str(currency)
@@ -867,88 +944,6 @@ def _dedupe_equivalent(evidence: tuple[Evidence, ...]) -> tuple[Evidence, ...]:
         seen.add(key)
         out.append(ev)
     return tuple(out)
-
-
-def _css_recipe_evidence(bundle, reader) -> tuple[Evidence, ...]:
-    rules_ref = next(
-        (ref for ref in bundle.artifacts if ref.artifact_id == "css_field_rules"), None
-    )
-    rules = reader.read_json(rules_ref) if rules_ref is not None else []
-    if not isinstance(rules, list):
-        return ()
-    doc = reader.document_store.html("html")
-    product_subject_id = stable_id(
-        "subject", bundle.bundle_id, "product", bundle.final_url
-    )
-    rows: list[Evidence] = []
-    for row in rules:
-        if not isinstance(row, dict) or not bool(row.get("is_active", True)):
-            continue
-        selector = str(row.get("css_selector") or "").strip()
-        fact_type = field_mappings.ECOMMERCE_DETAIL_FIELD_FACT_TYPES.get(
-            normalize_field_key(str(row.get("field_name") or ""))
-        )
-        if not selector or not fact_type:
-            continue
-        try:
-            nodes = doc.css(selector)
-        except Exception:
-            continue
-        for node in nodes[:3]:
-            if node.is_hidden():
-                continue
-            value = _css_node_value(node, fact_type)
-            if value in (None, "", [], {}):
-                continue
-            hint = EntityHint(entity_type="product")
-            subject_id = product_subject_id
-            parent_subject_id, group_id = None, "product"
-            if fact_type.startswith("offer."):
-                hint = EntityHint(entity_type="offer", url=bundle.final_url)
-                subject_id = stable_id(
-                    "subject", bundle.bundle_id, "offer", bundle.final_url
-                )
-                parent_subject_id = product_subject_id
-                group_id = "offer"
-            elif fact_type.startswith("asset."):
-                hint = EntityHint(entity_type="asset", url=bundle.final_url)
-                subject_id = stable_id("subject", bundle.bundle_id, "asset", value)
-                parent_subject_id = product_subject_id
-                group_id = "asset"
-            rows.append(
-                make_evidence(
-                    bundle,
-                    "css_field_rules",
-                    "css_recipe",
-                    fact_type,
-                    value,
-                    SourceLocator(
-                        kind="css_selector", value=selector, preview=str(value)[:120]
-                    ),
-                    hint=hint,
-                    group_id=group_id,
-                    confidence=0.86,
-                    directness="direct",
-                    subject_id=subject_id,
-                    parent_subject_id=parent_subject_id,
-                )
-            )
-    return tuple(rows)
-
-
-def _css_node_value(node, fact_type: str) -> str | None:
-    if fact_type == field_mappings.PRODUCT_URL_FACT_TYPE:
-        attr_order = ("href", "content", "value", "title", "aria-label")
-    elif fact_type == field_mappings.ASSET_IMAGE_URL_FACT_TYPE:
-        attr_order = ("src", "data-src", "content", "href", "alt", "title")
-    else:
-        attr_order = ("content", "value", "title", "aria-label")
-    for attr in attr_order:
-        value = str(node.attribute(attr) or "").strip()
-        if value:
-            return value
-    text = re.sub(r"\s+", " ", node.text(separator=" ", strip=True)).strip()
-    return text or None
 
 
 def _freeze(value: Any) -> object:

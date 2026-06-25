@@ -27,7 +27,9 @@ class HtmlNode:
         try:
             return self.css(selector)
         except Exception:
-            logger.debug("CSS selector evaluation failed for %r", selector, exc_info=True)
+            logger.debug(
+                "CSS selector evaluation failed for %r", selector, exc_info=True
+            )
             return ()
 
     def css_first(self, selector: str) -> HtmlNode | None:
@@ -128,7 +130,9 @@ class HtmlDocument:
         try:
             return self.css(selector)
         except Exception:
-            logger.debug("CSS selector evaluation failed for %r", selector, exc_info=True)
+            logger.debug(
+                "CSS selector evaluation failed for %r", selector, exc_info=True
+            )
             return ()
 
     def text(self) -> str:

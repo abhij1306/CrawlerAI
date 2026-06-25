@@ -205,8 +205,7 @@ async def _run_one(site: dict, run_id: int, timeout_seconds: int) -> dict:
             url=url,
             plan=AcquisitionIntent(
                 surface=surface,
-                traversal_mode=str(site.get("traversal_mode") or "").strip()
-                or None,
+                traversal_mode=str(site.get("traversal_mode") or "").strip() or None,
                 max_pages=5,
                 max_scrolls=5,
             ),

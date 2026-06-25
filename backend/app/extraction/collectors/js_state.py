@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from typing import Literal
+from typing import Any, Literal
 from app.core.config.field_mappings import (
     ECOMMERCE_IMAGE_SOURCE_KEYS,
     ECOMMERCE_OFFER_CONTEXT_PATH_TOKENS,
@@ -16,8 +16,13 @@ from app.core.config.extraction_rules import (
 )
 from app.core.config import variant_policy
 from app.core.records.html_helpers import bounded_json_objects, embedded_state_payloads
+from app.core.records.js_state_scope import (
+    has_product_context as _has_product_context,
+    path_product_identity_conflicts as _path_product_identity_conflicts,
+    path_tokens as _path_tokens,
+    selected_product_root_paths,
+)
 from app.core.records.url_identity import (
-    detail_identity_codes_from_url,
     detail_title_from_url,
     detail_urls_conflict,
     semantic_identity_tokens,
@@ -50,7 +55,10 @@ class JsStateCollector:
                 )
             )
             axis_hints = _variant_axis_hints(objects)
+            selected_roots = selected_product_root_paths(objects, bundle.final_url)
             for path, obj in objects:
+                if not path_is_within_selected_root(path, selected_roots):
+                    continue
                 if isinstance(obj, dict):
                     enriched = _with_parent_variant_axes(obj, axis_hints.get(path, ()))
                     out.extend(
@@ -112,8 +120,7 @@ def _embedded_state_node_is_noise(node: object) -> bool:
         )
         normalized = "".join(char for char in scope.casefold() if char.isalnum())
         if any(
-            token in normalized
-            for token in ECOMMERCE_EMBEDDED_STATE_NOISE_SCOPE_TOKENS
+            token in normalized for token in ECOMMERCE_EMBEDDED_STATE_NOISE_SCOPE_TOKENS
         ):
             return True
     return False
@@ -215,6 +222,16 @@ def _with_parent_variant_axes(obj: dict, axes: tuple[str, ...]) -> dict:
     return {**obj, "selectedOptions": selected} if selected else obj
 
 
+def path_is_within_selected_root(path: str, selected_roots: tuple[str, ...]) -> bool:
+    if not selected_roots:
+        return True
+    normalized = path.rstrip("/")
+    return any(
+        normalized == root.rstrip("/") or normalized.startswith(root.rstrip("/") + "/")
+        for root in selected_roots
+    )
+
+
 def network_row(
     bundle: CaptureBundle,
     artifact_id: str,
@@ -304,14 +321,12 @@ def network_row(
                     parent_subject_id=product_subject
                     if fact.startswith(("offer.", "asset."))
                     else None,
+                    parent_scope="product"
+                    if fact.startswith(("offer.", "asset."))
+                    else None,
                 )
             )
     return out
-
-
-def _path_tokens(path: str) -> set[str]:
-    normalized = str(path).replace("[", "/").replace("]", "/").replace(".", "/")
-    return {token.casefold() for token in normalized.split("/") if token}
 
 
 def _variant_url_conflicts(page_url: str, obj: dict) -> bool:
@@ -344,57 +359,6 @@ def _url_value(obj: dict) -> str:
         candidate = _first(candidate, *variant_policy.VARIANT_NESTED_URL_VALUE_KEYS)
     scalar = _scalar_value(candidate)
     return scalar.strip() if isinstance(scalar, str) else ""
-
-
-def _path_product_identity_conflicts(page_url: str, path: str) -> bool:
-    parent_codes = set(detail_identity_codes_from_url(page_url))
-    if not parent_codes:
-        return False
-    parts = tuple(
-        part
-        for part in str(path).replace("[", "/").replace("]", "/").split("/")
-        if part
-    )
-    for index, part in enumerate(parts[:-1]):
-        if part.casefold() not in variant_policy.VARIANT_PRODUCT_MAP_PATH_TOKENS:
-            continue
-        candidate = parts[index + 1]
-        normalized = "".join(char for char in candidate if char.isalnum()).upper()
-        if (
-            len(normalized) < variant_policy.VARIANT_PRODUCT_MAP_KEY_MIN_LENGTH
-            or not any(char.isalpha() for char in normalized)
-            or not any(char.isdigit() for char in normalized)
-        ):
-            continue
-        if not any(
-            left == normalized or left in normalized or normalized in left
-            for left in parent_codes
-        ):
-            return True
-    return False
-
-
-def _has_product_context(path: str, obj: dict) -> bool:
-    keys = set(obj)
-    type_name = str(obj.get("@type") or obj.get("type") or "").casefold()
-    path_tokens = _path_tokens(path)
-    path_parts = tuple(token for token in str(path).replace(".", "/").split("/") if token)
-    direct_product_path = bool(path_parts and path_parts[-1].casefold() in {"product", "products"})
-    product_keys = keys & ECOMMERCE_PRODUCT_CONTEXT_SOURCE_KEYS
-    complete_offer = "price" in keys and bool(keys & {"currency", "currencyCode"})
-    if (
-        "config" in path_tokens
-        and not direct_product_path
-        and not complete_offer
-        and not bool(keys & {"sku", "url", "productUrl", "product_url"})
-    ):
-        return False
-    return (
-        "product" in type_name
-        or direct_product_path
-        or len(product_keys) >= 2
-        or (bool(product_keys & {"name", "productName", "title"}) and complete_offer)
-    )
 
 
 def _has_offer_context(path: str, obj: dict, *, product_context: bool) -> bool:
@@ -464,6 +428,7 @@ def _variant_row(
             confidence=0.82,
             subject_id=subject_id,
             parent_subject_id=product_subject,
+            parent_scope="product",
         )
         for name, fact, value in fields
         if value not in (None, "", [], {})
@@ -614,6 +579,7 @@ def _variant_offer(
             directness="embedded",
             confidence=0.82,
             parent_subject_id=variant_subject_id,
+            parent_scope="variant",
         )
         for name, fact, value in rows
         if _scalar_value(value) not in (None, "", [], {})
@@ -763,8 +729,7 @@ def _has_only_opaque_numeric_options(obj: dict) -> bool:
         if str(_scalar_value(value) or "").strip()
     ]
     return len(rows) >= 2 and all(
-        variant_option_value_is_opaque_numeric(axis, value)
-        for axis, value in rows
+        variant_option_value_is_opaque_numeric(axis, value) for axis, value in rows
     )
 
 

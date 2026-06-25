@@ -88,10 +88,7 @@ def _detail_url_title_segment_is_code(value: str) -> bool:
         for token in tokens
         if re.fullmatch(r"(?:[A-Za-z]+\d{1,3}|\d{1,3})", token)
     ]
-    return not (
-        len(word_tokens) >= 2
-        or (word_tokens and short_model_tokens)
-    )
+    return not (len(word_tokens) >= 2 or (word_tokens and short_model_tokens))
 
 
 def detail_title_from_url(url: str) -> str:
@@ -108,7 +105,11 @@ def detail_title_from_url(url: str) -> str:
             previous = segments[-2] if len(segments) >= 2 else ""
             previous_tokens = semantic_identity_tokens(previous)
             collection_code_shape = bool(
-                re.search(r"/(?:collections?|categories?)/.+/products?/[^/]+/?$", parsed.path, re.IGNORECASE)
+                re.search(
+                    r"/(?:collections?|categories?)/.+/products?/[^/]+/?$",
+                    parsed.path,
+                    re.IGNORECASE,
+                )
             )
             style_only_parent = bool(
                 previous_tokens
@@ -133,7 +134,11 @@ def detail_title_from_url(url: str) -> str:
             DETAIL_TITLE_ENDPOINT_FILENAME_PATTERN, title, re.IGNORECASE
         ):
             return ""
-        if offset and len(semantic_identity_tokens(title)) < DETAIL_URL_TITLE_FALLBACK_MIN_TOKENS:
+        if (
+            offset
+            and len(semantic_identity_tokens(title))
+            < DETAIL_URL_TITLE_FALLBACK_MIN_TOKENS
+        ):
             continue
         return title
     return ""
@@ -177,7 +182,9 @@ def detail_url_looks_like_product(url: str) -> bool:
     segment = unquote(path.rstrip("/").rsplit("/", 1)[-1])
     if not segment.endswith((".html", ".htm")):
         return False
-    title = re.sub(DETAIL_TITLE_PATH_EXTENSION_PATTERN, "", segment, flags=re.IGNORECASE)
+    title = re.sub(
+        DETAIL_TITLE_PATH_EXTENSION_PATTERN, "", segment, flags=re.IGNORECASE
+    )
     return len(semantic_identity_tokens(title)) >= DETAIL_URL_TITLE_FALLBACK_MIN_TOKENS
 
 
@@ -269,14 +276,10 @@ def _short_numeric_product_asset_conflicts(
         <= DETAIL_IMAGE_SHORT_STYLE_CODE_MAX_LENGTH
     }
     product_suffixes = {
-        token
-        for token in re.findall(r"\d+", product_text)
-        if 2 <= len(token) <= 4
+        token for token in re.findall(r"\d+", product_text) if 2 <= len(token) <= 4
     }
     product_style_tokens = {
-        token
-        for value in product_values
-        for token in _commerce_identity_tokens(value)
+        token for value in product_values for token in _commerce_identity_tokens(value)
     }
     asset_codes = {
         url: {
@@ -311,7 +314,9 @@ def _short_numeric_product_asset_conflicts(
         for url, codes in asset_codes.items()
         if codes
         and exact_anchors.isdisjoint(codes)
-        and not any(code.endswith(suffix) for code in codes for suffix in suffix_anchors)
+        and not any(
+            code.endswith(suffix) for code in codes for suffix in suffix_anchors
+        )
     )
 
 

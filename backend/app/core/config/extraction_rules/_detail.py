@@ -102,9 +102,7 @@ DETAIL_BRAND_CATEGORY_PATTERN = (
     r"(?:[a-z0-9&'\-]+\s+){0,5}"
     r"(?:shirts?|shorts?|shoes?|sneakers?|dresses?|pants?|jeans?|jackets?|hoodies?|tops?|tees?|t-?shirts?)$"
 )
-DETAIL_MICRODATA_NON_PRODUCT_ITEMTYPE_TOKENS = frozenset(
-    {"breadcrumblist", "listitem"}
-)
+DETAIL_MICRODATA_NON_PRODUCT_ITEMTYPE_TOKENS = frozenset({"breadcrumblist", "listitem"})
 DETAIL_DESCRIPTION_NON_PRODUCT_LOCATOR_TOKENS = (
     "/public_config/",
     "/sellerbadges/",
@@ -282,9 +280,7 @@ DETAIL_TITLE_INTERNAL_SYSTEM_PATTERN = (
     r"(?:[a-z0-9]+[\s_-]+){3,}[a-z0-9]+$"
 )
 DETAIL_TITLE_PATH_EXTENSION_PATTERN = r"\.(?:aspx?|html?|jsp|php)$"
-DETAIL_TITLE_ENDPOINT_FILENAME_PATTERN = (
-    r"^(?:product|detail|pdp|item|catalog|view)(?:\.(?:do|action|aspx?|html?|jsp|php))?$"
-)
+DETAIL_TITLE_ENDPOINT_FILENAME_PATTERN = r"^(?:product|detail|pdp|item|catalog|view)(?:\.(?:do|action|aspx?|html?|jsp|php))?$"
 DETAIL_TITLE_GENERIC_CATEGORY_VALUES = frozenset(
     {
         "interchangeable lens cameras",
@@ -323,9 +319,7 @@ DETAIL_TITLE_TRAILING_CODE_PATTERN = r"(?:^|[\s_-])\d{4,}$"
 DETAIL_TITLE_URL_TOKEN_MIN_OVERLAP = 2
 DETAIL_TITLE_SEO_PREFIXES = ("buy ", "shop ")
 DETAIL_TITLE_SEO_PREFIX_MIN_WORDS = 8
-DETAIL_TITLE_SHORT_NAVIGATION_PATTERN = (
-    r"^(?:shop|browse|view)\s+(?:graphic\s+)?(?:t-?shirts?|shirts?|tops?|pants?|jeans?|dresses?|shoes?|sneakers?|accessories?)$"
-)
+DETAIL_TITLE_SHORT_NAVIGATION_PATTERN = r"^(?:shop|browse|view)\s+(?:graphic\s+)?(?:t-?shirts?|shirts?|tops?|pants?|jeans?|dresses?|shoes?|sneakers?|accessories?)$"
 DETAIL_TITLE_UI_INSTRUCTION_TOKENS = frozenset(
     {"assembly", "delivery", "faq", "faqs", "fee", "variation"}
 )

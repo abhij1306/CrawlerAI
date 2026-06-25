@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from decimal import Decimal, InvalidOperation
+from typing import TypedDict
 from urllib.parse import parse_qsl, urlparse, urlsplit
 
 from app.extraction.contracts import (
@@ -63,6 +64,13 @@ def inherit_variant_id_from_sku(
     }
 
 
+class _BrandCandidate(TypedDict):
+    value: str
+    evidence_ids: list[str]
+    decision_id: str | None
+    support: int
+
+
 def recover_non_retailer_brand(
     record: dict[str, object],
     lineages: dict[str, object],
@@ -85,11 +93,14 @@ def recover_non_retailer_brand(
     support_token_sets = tuple(
         set(semantic_identity_tokens(str(evidence.value or "")))
         for evidence in evidence_by_id.values()
-        if evidence.fact_type != field_mappings.PRODUCT_BRAND_FACT_TYPE and not _invalid(evidence)
+        if evidence.fact_type != field_mappings.PRODUCT_BRAND_FACT_TYPE
+        and not _invalid(evidence)
     )
-    grouped: dict[tuple[str, ...], dict[str, object]] = {}
+    grouped: dict[tuple[str, ...], _BrandCandidate] = {}
     for evidence in evidence_by_id.values():
-        if evidence.fact_type != field_mappings.PRODUCT_BRAND_FACT_TYPE or _invalid(evidence):
+        if evidence.fact_type != field_mappings.PRODUCT_BRAND_FACT_TYPE or _invalid(
+            evidence
+        ):
             continue
         value = str(evidence.value or "").strip()
         tokens = tuple(semantic_identity_tokens(value))
@@ -127,7 +138,8 @@ def recover_non_retailer_brand(
         ),
     )
     if len(ranked) > 1 and (
-        int(ranked[0]["support"]), len(ranked[0]["evidence_ids"])
+        int(ranked[0]["support"]),
+        len(ranked[0]["evidence_ids"]),
     ) == (int(ranked[1]["support"]), len(ranked[1]["evidence_ids"])):
         return
     winner = ranked[0]
@@ -220,7 +232,10 @@ def _url_mismatched_product_subjects(
 ) -> frozenset[str]:
     title_flags_by_subject: dict[str, set[str]] = {}
     for row in evidence:
-        if row.fact_type != field_mappings.PRODUCT_TITLE_FACT_TYPE or not row.subject_id:
+        if (
+            row.fact_type != field_mappings.PRODUCT_TITLE_FACT_TYPE
+            or not row.subject_id
+        ):
             continue
         title_flags_by_subject.setdefault(row.subject_id, set()).update(row.flags)
     return frozenset(
@@ -251,7 +266,11 @@ def _resolve_offer(
         and offer.fact_evidence.get(field_mappings.OFFER_CURRENCY_FACT_TYPE)
     )
     blocked = (
-        {field_mappings.OFFER_PRICE_FACT_TYPE, field_mappings.OFFER_CURRENCY_FACT_TYPE, field_mappings.OFFER_ORIGINAL_PRICE_FACT_TYPE}
+        {
+            field_mappings.OFFER_PRICE_FACT_TYPE,
+            field_mappings.OFFER_CURRENCY_FACT_TYPE,
+            field_mappings.OFFER_ORIGINAL_PRICE_FACT_TYPE,
+        }
         if incomplete_parent
         else set()
     )
@@ -274,14 +293,14 @@ def _preferred_parent_offer_id(
     }
     source_priority = {
         collector_id: index
-        for index, collector_id in enumerate(
-            DETAIL_PRICE_CURRENCY_COLLECTOR_PRIORITY
-        )
+        for index, collector_id in enumerate(DETAIL_PRICE_CURRENCY_COLLECTOR_PRIORITY)
     }
 
     def score(offer: OfferEntity) -> tuple[int, int, int, int, str]:
         price = resolved.get((offer.entity_id, field_mappings.OFFER_PRICE_FACT_TYPE))
-        currency = resolved.get((offer.entity_id, field_mappings.OFFER_CURRENCY_FACT_TYPE))
+        currency = resolved.get(
+            (offer.entity_id, field_mappings.OFFER_CURRENCY_FACT_TYPE)
+        )
         pair = tuple(
             evidence_by_id[decision.accepted_evidence_ids[0]]
             for decision in (price, currency)
@@ -291,7 +310,10 @@ def _preferred_parent_offer_id(
         collectors = {row.collector_id for row in pair}
         complete = price is not None and currency is not None
         source_rank = max(
-            (source_priority.get(row.collector_id, len(source_priority)) for row in pair),
+            (
+                source_priority.get(row.collector_id, len(source_priority))
+                for row in pair
+            ),
             default=len(source_priority) + 1,
         )
         resolved_fact_count = sum(
@@ -382,7 +404,10 @@ def _resolve_asset(
     ):
         return Decision(
             decision_id=stable_id(
-                "decision", asset.entity_id, field_mappings.ASSET_IMAGE_URL_FACT_TYPE, asset.url_evidence_ids
+                "decision",
+                asset.entity_id,
+                field_mappings.ASSET_IMAGE_URL_FACT_TYPE,
+                asset.url_evidence_ids,
             ),
             entity_id=asset.entity_id,
             fact_type=field_mappings.ASSET_IMAGE_URL_FACT_TYPE,
@@ -518,7 +543,7 @@ def _asset_rank(
     str,
 ]:
     if accepted is None:
-        return (99, 99, 99, (99, 99, 0.0, ""), asset.entity_id)
+        return (99, 99, 99, (99, 99, 99, 0.0, ""), asset.entity_id)
     role = _asset_role_rank(str(accepted.value))
     source_order = min(
         (
@@ -536,9 +561,7 @@ def _asset_rank(
         ),
         default=_rank(accepted),
     )
-    insecure_scheme = int(
-        urlsplit(str(accepted.value)).scheme.casefold() != "https"
-    )
+    insecure_scheme = int(urlsplit(str(accepted.value)).scheme.casefold() != "https")
     return role, source_order, insecure_scheme, source_rank, asset.entity_id
 
 
@@ -633,7 +656,11 @@ def _derived(
     out: list[DerivedFact] = []
     for decision in decisions:
         if (
-            decision.fact_type not in {field_mappings.OFFER_PRICE_FACT_TYPE, field_mappings.OFFER_ORIGINAL_PRICE_FACT_TYPE}
+            decision.fact_type
+            not in {
+                field_mappings.OFFER_PRICE_FACT_TYPE,
+                field_mappings.OFFER_ORIGINAL_PRICE_FACT_TYPE,
+            }
             or not decision.accepted_evidence_ids
         ):
             continue
@@ -663,9 +690,10 @@ def _derived(
 
 
 def _invalid(ev: Evidence) -> bool:
-    if ev.fact_type in {field_mappings.OFFER_PRICE_FACT_TYPE, field_mappings.OFFER_ORIGINAL_PRICE_FACT_TYPE} and _non_positive_money(
-        ev.value
-    ):
+    if ev.fact_type in {
+        field_mappings.OFFER_PRICE_FACT_TYPE,
+        field_mappings.OFFER_ORIGINAL_PRICE_FACT_TYPE,
+    } and _non_positive_money(ev.value):
         return True
     flags = set(ev.flags)
     if ev.fact_type == field_mappings.PRODUCT_TITLE_FACT_TYPE and flags & (

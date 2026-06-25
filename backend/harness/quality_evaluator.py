@@ -17,9 +17,10 @@ MISSING_FIELDS = (
 )
 
 EXPECTED_ISSUE_IDS = tuple(f"QD-{index:02d}" for index in range(1, 14))
-RESOLVED_CLASSIFICATIONS = frozenset(
-    {"fixed_offline", "source_unavailable", "blocked"}
+KNOWN_CLASSIFICATIONS = frozenset(
+    {"fixed_offline", "source_unavailable", "blocked", "unresolved"}
 )
+NON_BLOCKING_CLASSIFICATIONS = frozenset({"source_unavailable", "blocked"})
 
 __all__ = [
     "audit_catalog_quality_manifest",
@@ -41,7 +42,9 @@ def audit_catalog_quality_manifest(manifest: dict[str, Any]) -> dict[str, int]:
     if not isinstance(records, list):
         raise ValueError("catalog quality manifest must contain a records list")
     if field_order != list(MISSING_FIELDS):
-        raise ValueError("catalog quality field_order does not match the auditor contract")
+        raise ValueError(
+            "catalog quality field_order does not match the auditor contract"
+        )
 
     counts = {f"missing_{field}": 0 for field in MISSING_FIELDS}
     counts.update(
@@ -53,7 +56,9 @@ def audit_catalog_quality_manifest(manifest: dict[str, Any]) -> dict[str, int]:
     )
     for row in records:
         if not isinstance(row, list) or len(row) != 4:
-            raise ValueError("catalog quality records must be [mask, description_length, price_mismatch, image_duplicate]")
+            raise ValueError(
+                "catalog quality records must be [mask, description_length, price_mismatch, image_duplicate]"
+            )
         missing_mask, description_length, price_mismatch, image_duplicate = row
         for index, field in enumerate(MISSING_FIELDS):
             counts[f"missing_{field}"] += int(bool(int(missing_mask) & (1 << index)))
@@ -67,9 +72,7 @@ def build_acceptance_gate_report(audit: dict[str, Any]) -> dict[str, Any]:
     missing_fields = audit.get("missing_fields") or {}
     blockers: dict[str, tuple[str, ...]] = {
         "QD-01": ("description_probable_truncation",),
-        "QD-03": tuple(
-            f"missing_fields.{field_name}" for field_name in MISSING_FIELDS
-        ),
+        "QD-03": tuple(f"missing_fields.{field_name}" for field_name in MISSING_FIELDS),
         "QD-04": ("missing_record_count_vs_claim",),
         "QD-06": ("missing_fields.title",),
         "QD-07": (
@@ -89,9 +92,7 @@ def build_acceptance_gate_report(audit: dict[str, Any]) -> dict[str, Any]:
         "QD-12": ("missing_variant_availability_count",),
     }
     values: dict[str, object] = {
-        "description_probable_truncation": audit.get(
-            "description_probable_truncation"
-        ),
+        "description_probable_truncation": audit.get("description_probable_truncation"),
         "missing_record_count_vs_claim": audit.get("missing_record_count_vs_claim"),
         "primary_gallery_exact_duplicate_count": audit.get(
             "primary_gallery_exact_duplicate_count"
@@ -135,7 +136,8 @@ def build_acceptance_gate_report(audit: dict[str, Any]) -> dict[str, Any]:
         issue_id for issue_id in EXPECTED_ISSUE_IDS if issue_id in unresolved_ids
     )
     return {
-        "quality_clean": not unresolved and str(audit.get("gate_result") or "") == "passed",
+        "quality_clean": not unresolved
+        and str(audit.get("gate_result") or "") == "passed",
         "gate_result": str(audit.get("gate_result") or "unknown"),
         "record_count": int(audit.get("record_count") or 0),
         "unresolved_blocker_count": len(unresolved),
@@ -156,12 +158,10 @@ def build_catalog_quality_report(manifest: dict[str, Any]) -> dict[str, Any]:
         verification = tuple(
             str(value) for value in resolution.get("verification") or ()
         )
-        affected_urls = tuple(str(value) for value in issue_examples.get(issue_id) or ())
-        unresolved = (
-            classification not in RESOLVED_CLASSIFICATIONS
-            or not findings
-            or (classification == "fixed_offline" and not verification)
+        affected_urls = tuple(
+            str(value) for value in issue_examples.get(issue_id) or ()
         )
+        unresolved = classification not in NON_BLOCKING_CLASSIFICATIONS or not findings
         lineage_pointers = tuple(
             dict.fromkeys(
                 (
@@ -187,9 +187,7 @@ def build_catalog_quality_report(manifest: dict[str, Any]) -> dict[str, Any]:
             )
             row["issue_ids"].append(issue_id)
             row["lineage_pointers"].extend(lineage_pointers)
-    unresolved_ids = tuple(
-        issue["issue_id"] for issue in issues if issue["unresolved"]
-    )
+    unresolved_ids = tuple(issue["issue_id"] for issue in issues if issue["unresolved"])
     baseline_counts = audit_catalog_quality_manifest(manifest)
     return {
         "quality_clean": not unresolved_ids,
@@ -203,9 +201,7 @@ def build_catalog_quality_report(manifest: dict[str, Any]) -> dict[str, Any]:
             {
                 "url": row["url"],
                 "issue_ids": tuple(dict.fromkeys(row["issue_ids"])),
-                "lineage_pointers": tuple(
-                    dict.fromkeys(row["lineage_pointers"])
-                ),
+                "lineage_pointers": tuple(dict.fromkeys(row["lineage_pointers"])),
             }
             for row in records_by_url.values()
         ),
@@ -241,16 +237,21 @@ def validate_catalog_quality_manifest(manifest: dict[str, Any]) -> list[str]:
         missing_resolutions = expected_issue_ids - set(issue_resolutions)
         if missing_resolutions:
             errors.append(
-                "missing issue resolutions: "
-                + ", ".join(sorted(missing_resolutions))
+                "missing issue resolutions: " + ", ".join(sorted(missing_resolutions))
             )
         for issue_id in EXPECTED_ISSUE_IDS:
             resolution = issue_resolutions.get(issue_id)
             if not isinstance(resolution, dict):
                 continue
             classification = resolution.get("classification")
-            if classification not in RESOLVED_CLASSIFICATIONS:
+            if classification not in KNOWN_CLASSIFICATIONS:
+                errors.append(f"{issue_id} has unknown classification")
+            elif classification == "unresolved":
                 errors.append(f"{issue_id} has unresolved classification")
+            elif classification == "fixed_offline":
+                errors.append(
+                    f"{issue_id} fixed_offline remains blocking until replay verification"
+                )
             if not resolution.get("findings"):
                 errors.append(f"{issue_id} has no finding evidence")
             if classification == "fixed_offline" and not resolution.get("verification"):

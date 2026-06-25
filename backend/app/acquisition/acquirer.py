@@ -14,6 +14,7 @@ from app.core.config.domain_profiles import INTERNAL_API_ENDPOINTS_PROFILE_KEY
 from app.crawl.utils import normalize_target_url
 from app.acquisition.fetch.fetch_context import fetch_page
 from app.acquisition.platform_policy import resolve_platform_runtime_policy
+from app.acquisition.source_capabilities import attach_source_capability_diagnostics
 from app.extraction.documents import HtmlDocument
 
 logger = logging.getLogger(__name__)
@@ -241,6 +242,7 @@ async def acquire(request: AcquisitionRequest) -> PageAcquisitionResult:
         profile_endpoints=profile_endpoints,
     )
     if acquisition_result is not None:
+        attach_source_capability_diagnostics(acquisition_result)
         await policy_middleware.after_fetch(acquisition_result)
         return acquisition_result
     acquisition_result = await _acquire_from_fetch_page(
@@ -249,6 +251,7 @@ async def acquire(request: AcquisitionRequest) -> PageAcquisitionResult:
         acquisition_policy=acquisition_policy,
         browser_reason=browser_reason,
     )
+    attach_source_capability_diagnostics(acquisition_result)
     await policy_middleware.after_fetch(acquisition_result)
     return acquisition_result
 

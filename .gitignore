@@ -12,7 +12,7 @@ TEST_SITES copy.md
 .codacy/
 .kilo/
 traffic-policy.yml
-crawleraimcp.ps1
+serena.md
 
 .hypothesis/
 .scannerwork/

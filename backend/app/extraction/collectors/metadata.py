@@ -7,7 +7,11 @@ from app.core.config.field_mappings import (
     ECOMMERCE_OPENGRAPH_FACT_TYPES,
 )
 from app.extraction.collectors._helpers import evidence, html_doc, json_objects
-from app.extraction.collectors.js_state import network_row
+from app.extraction.collectors.js_state import (
+    network_row,
+    path_is_within_selected_root,
+    selected_product_root_paths,
+)
 from app.extraction.contracts import CaptureBundle, EntityHint, Evidence, SourceLocator
 
 
@@ -70,7 +74,11 @@ class NetworkCollector:
         for ref in bundle.artifacts:
             if ref.artifact_type != "network_json":
                 continue
-            for path, obj in json_objects(artifacts.read_json(ref)):
+            objects = tuple(json_objects(artifacts.read_json(ref)))
+            selected_roots = selected_product_root_paths(objects, bundle.final_url)
+            for path, obj in objects:
+                if not path_is_within_selected_root(path, selected_roots):
+                    continue
                 if isinstance(obj, dict):
                     out.extend(
                         network_row(
@@ -125,5 +133,8 @@ def _metadata_evidence(
         group_id=group,
         hint=EntityHint(entity_type=entity_type),
         confidence=confidence,
-        parent_subject_id=product_subject if entity_type in {"offer", "asset"} else None,
+        parent_subject_id=product_subject
+        if entity_type in {"offer", "asset"}
+        else None,
+        parent_scope="product" if entity_type in {"offer", "asset"} else None,
     )

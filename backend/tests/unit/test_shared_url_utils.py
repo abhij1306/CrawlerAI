@@ -22,13 +22,21 @@ from app.core.shared.url_utils import (
 
 @pytest.mark.unit
 def test_opaque_terminal_detail_segment_does_not_fall_back_to_category_title() -> None:
-    assert detail_title_from_url(
-        "https://kith.test/collections/mens-footwear-sneakers/products/st40002-02000"
-    ) == ""
-    assert detail_title_from_url(
-        "https://shop.test/womens/categories/clothing/pants/wide-leg/ME988"
-    ) == ""
-    assert detail_title_from_url("https://shop.test/browse/product.do?pid=887835012") == ""
+    assert (
+        detail_title_from_url(
+            "https://kith.test/collections/mens-footwear-sneakers/products/st40002-02000"
+        )
+        == ""
+    )
+    assert (
+        detail_title_from_url(
+            "https://shop.test/womens/categories/clothing/pants/wide-leg/ME988"
+        )
+        == ""
+    )
+    assert (
+        detail_title_from_url("https://shop.test/browse/product.do?pid=887835012") == ""
+    )
 
 
 def test_descriptive_html_detail_url_has_resource_identity() -> None:
@@ -37,8 +45,7 @@ def test_descriptive_html_detail_url_has_resource_identity() -> None:
         "47-ny-yankees-clean-up-cap-b-rgw17gws-vn.html?queryID=tracking"
     )
     assert detail_url_resource_identity(url) == (
-        "www.endclothing.com/us/"
-        "47-ny-yankees-clean-up-cap-b-rgw17gws-vn.html"
+        "www.endclothing.com/us/47-ny-yankees-clean-up-cap-b-rgw17gws-vn.html"
     )
 
 
@@ -156,12 +163,8 @@ def test_shopify_no_image_storefront_asset_is_rejected() -> None:
 
 @pytest.mark.unit
 def test_navigation_and_label_only_image_urls_are_rejected() -> None:
-    assert is_utility_image_url(
-        "https://cdn.test/images/MegaNavPromo_WhatsNew.jpg"
-    )
-    assert is_utility_image_url(
-        "https://cdn.test/products/pants/Front%20view"
-    )
+    assert is_utility_image_url("https://cdn.test/images/MegaNavPromo_WhatsNew.jpg")
+    assert is_utility_image_url("https://cdn.test/products/pants/Front%20view")
 
 
 def test_single_low_resolution_primary_candidate_is_rejected() -> None:

@@ -29,6 +29,7 @@ def validate(
         *_validate_descriptions(evidence, entities),
         *_validate_variants(entities),
         *_validate_offers(evidence, entities),
+        *_validate_offer_relation_conflicts(evidence),
         *_validate_availability_consistency(evidence, entities),
         *_validate_output(entities),
     )
@@ -46,9 +47,7 @@ def validate_selected_contract_fields(
         ECOMMERCE_DETAIL_SELLABLE_OFFER_FIELDS if sellable_offer_exposed else ()
     )
     availability_fields = (
-        (ECOMMERCE_DETAIL_EXPOSED_AVAILABILITY_FIELD,)
-        if availability_exposed
-        else ()
+        (ECOMMERCE_DETAIL_EXPOSED_AVAILABILITY_FIELD,) if availability_exposed else ()
     )
     contract_fields = tuple(
         dict.fromkeys(
@@ -363,7 +362,9 @@ def _validate_variant_availability(entities: EntitySet) -> tuple[Finding, ...]:
     findings: list[Finding] = []
     for variant in entities.variants:
         offers = tuple(
-            offer for offer in entities.offers if offer.variant_entity_id == variant.entity_id
+            offer
+            for offer in entities.offers
+            if offer.variant_entity_id == variant.entity_id
         )
         sellable = any(
             offer.fact_evidence.get("offer.price")
@@ -460,6 +461,43 @@ def _validate_offers(
                 )
             )
     return tuple(out)
+
+
+def _validate_offer_relation_conflicts(
+    evidence: tuple[Evidence, ...],
+) -> tuple[Finding, ...]:
+    groups: dict[str, list[Evidence]] = {}
+    for row in evidence:
+        if not row.fact_type.startswith("offer."):
+            continue
+        group_id = row.group_id or f"ungrouped:{row.evidence_id}"
+        groups.setdefault(group_id, []).append(row)
+
+    findings: list[Finding] = []
+    for group_id, rows in sorted(groups.items()):
+        relations = {row.relation_type for row in rows if row.relation_type}
+        parent_subject_ids = {row.parent_subject_id for row in rows if row.parent_subject_id}
+        mixed_implicit_ownership = (
+            "variant_offer" in relations
+            and len(parent_subject_ids) > 1
+            and any(row.relation_type is None for row in rows)
+        )
+        if len(relations) <= 1 and not mixed_implicit_ownership:
+            continue
+        findings.append(
+            _finding(
+                "OFFER_RELATION_CONFLICT",
+                (),
+                tuple(sorted(row.evidence_id for row in rows)),
+                "Offer evidence declares conflicting product and variant ownership.",
+                True,
+                metadata={
+                    "group_id": group_id,
+                    "relation_types": tuple(sorted(relations)),
+                },
+            )
+        )
+    return tuple(findings)
 
 
 def _validate_availability_consistency(

@@ -19,6 +19,10 @@ from app.extraction.collectors._helpers import (
     loads_jsonish,
     text_value,
 )
+from app.extraction.collectors.js_state import (
+    path_is_within_selected_root,
+    selected_product_root_paths,
+)
 from app.extraction.contracts import CaptureBundle, EntityHint, Evidence, SourceLocator
 from app.extraction.ids import stable_id
 
@@ -36,7 +40,11 @@ class JsonLdCollector:
         out: list[Evidence] = []
         for index, tag in enumerate(doc.css('script[type*="ld+json"]')):
             data = loads_jsonish(tag.text())
-            for path, obj in json_objects(data):
+            objects = tuple(json_objects(data))
+            selected_roots = selected_product_root_paths(objects, bundle.final_url)
+            for path, obj in objects:
+                if not path_is_within_selected_root(path, selected_roots) and not _is_standalone_variant(obj):
+                    continue
                 if not isinstance(obj, dict) or not _is_product(obj):
                     continue
                 if "/hasVariant/" in path:
@@ -117,6 +125,7 @@ def _product(
                 directness="embedded",
                 confidence=0.85,
                 parent_subject_id=product_subject,
+                parent_scope="product",
             )
         )
     out.extend(
@@ -142,6 +151,7 @@ def _offers(
     path: str,
     hint: EntityHint,
     parent_subject_id: str | None = None,
+    parent_scope: str = "product",
 ) -> list[Evidence]:
     rows = offers if isinstance(offers, list) else [offers]
     out: list[Evidence] = []
@@ -169,6 +179,7 @@ def _offers(
                         confidence=0.9,
                         subject_id=subject_id,
                         parent_subject_id=parent_subject_id,
+                        parent_scope=parent_scope,
                     )
                 )
     return out
@@ -191,7 +202,7 @@ def _variants(
                     bundle,
                     artifact_id,
                     row,
-                    f"{path}/has" "Variant/" f"{index}",
+                    f"{path}/hasVariant/{index}",
                     product_subject,
                     product_brand=product_brand,
                 )
@@ -240,6 +251,7 @@ def _variant(
                     confidence=0.88,
                     subject_id=subject_id,
                     parent_subject_id=product_subject,
+                parent_scope="product",
                 )
             )
     out.extend(
@@ -250,6 +262,7 @@ def _variant(
             path,
             hint,
             subject_id,
+            "variant",
         )
     )
     return out

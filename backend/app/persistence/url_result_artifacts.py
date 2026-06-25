@@ -133,9 +133,7 @@ def _summary_payload(
             "final_url": str(getattr(acquisition_result, "final_url", "") or ""),
             "method": str(getattr(acquisition_result, "method", "") or ""),
             "status_code": getattr(acquisition_result, "status_code", None),
-            "content_type": str(
-                getattr(acquisition_result, "content_type", "") or ""
-            ),
+            "content_type": str(getattr(acquisition_result, "content_type", "") or ""),
             "blocked": bool(getattr(acquisition_result, "blocked", False)),
             "platform_family": getattr(acquisition_result, "platform_family", None),
             "adapter_name": getattr(acquisition_result, "adapter_name", None),

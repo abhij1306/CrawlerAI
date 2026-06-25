@@ -418,17 +418,15 @@ _SHORT_COLOR_ALLOWLIST = frozenset(
 )
 
 
-def variant_option_value_is_opaque_numeric(
-    field_name: str, value: object
-) -> bool:
+def variant_option_value_is_opaque_numeric(field_name: str, value: object) -> bool:
     text = coerce_text(value)
     if not (
-        field_name in VARIANT_OPAQUE_NUMERIC_OPTION_AXES
-        and text
-        and text.isdigit()
+        field_name in VARIANT_OPAQUE_NUMERIC_OPTION_AXES and text and text.isdigit()
     ):
         return False
-    return field_name == "color" or len(text) >= VARIANT_OPAQUE_NUMERIC_OPTION_MIN_DIGITS
+    return (
+        field_name == "color" or len(text) >= VARIANT_OPAQUE_NUMERIC_OPTION_MIN_DIGITS
+    )
 
 
 def sanitize_option_scalar(field_name: str, value: object) -> str | None:

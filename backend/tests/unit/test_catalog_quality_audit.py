@@ -20,12 +20,16 @@ FIXTURE = (
     / "extraction"
     / "catalog_quality_20260623.json"
 )
+
+
 def test_frozen_catalog_quality_manifest_reproduces_baseline() -> None:
     manifest = load_catalog_quality_manifest(FIXTURE)
 
     assert manifest["record_count"] == 91
     assert audit_catalog_quality_manifest(manifest) == manifest["expected_counts"]
-    assert validate_catalog_quality_manifest(manifest) == []
+    validation_errors = validate_catalog_quality_manifest(manifest)
+    assert len(validation_errors) == 13
+    assert all("fixed_offline remains blocking" in error for error in validation_errors)
 
 
 def test_frozen_catalog_quality_manifest_covers_single_issue_tracker() -> None:
@@ -37,17 +41,17 @@ def test_frozen_catalog_quality_manifest_covers_single_issue_tracker() -> None:
     assert all(manifest["issue_examples"].values())
 
 
-def test_catalog_quality_report_is_clean_only_after_every_qd_resolution() -> None:
+def test_catalog_quality_report_does_not_trust_fixed_offline_declarations() -> None:
     manifest = load_catalog_quality_manifest(FIXTURE)
 
     report = build_catalog_quality_report(manifest)
 
-    assert report["quality_clean"] is True
-    assert report["unresolved_blocker_count"] == 0
-    assert report["unresolved_issue_ids"] == ()
-    assert report["baseline_signal_count"] == sum(
-        manifest["expected_counts"].values()
+    assert report["quality_clean"] is False
+    assert report["unresolved_blocker_count"] == 13
+    assert report["unresolved_issue_ids"] == tuple(
+        f"QD-{index:02d}" for index in range(1, 14)
     )
+    assert report["baseline_signal_count"] == sum(manifest["expected_counts"].values())
     assert report["affected_url_count"] > 0
     assert {issue["issue_id"] for issue in report["issues"]} == {
         f"QD-{index:02d}" for index in range(1, 14)
@@ -67,7 +71,10 @@ def test_quality_verdict_is_independent_of_transport_success() -> None:
     report = build_catalog_quality_report(manifest)
 
     assert report["quality_clean"] is False
-    assert report["unresolved_issue_ids"] == ("QD-06",)
+    assert report["unresolved_issue_ids"] == tuple(
+        f"QD-{index:02d}" for index in range(1, 14)
+    )
+    assert "QD-06" in report["unresolved_issue_ids"]
 
 
 def test_latest_acceptance_gate_audit_blocks_false_offline_clean() -> None:
@@ -114,7 +121,7 @@ def test_manifest_validation_reports_all_failures() -> None:
 
     errors = validate_catalog_quality_manifest(manifest)
 
-    assert len(errors) == 5
+    assert any("fixed_offline remains blocking" in error for error in errors)
     assert any("record_count" in error for error in errors)
     assert any("QD-01" in error for error in errors)
     assert any("QD-13 has unresolved" in error for error in errors)

@@ -68,7 +68,10 @@ def test_production_package_loc_budgets() -> None:
         for path in APP_ROOT.rglob("*.py")
         if "__pycache__" not in path.parts
     }
-    assert sum(_canonical_line_count(tree) for tree in app_trees.values()) <= TOTAL_APP_LOC_BUDGET
+    assert (
+        sum(_canonical_line_count(tree) for tree in app_trees.values())
+        <= TOTAL_APP_LOC_BUDGET
+    )
     for package, budget in PACKAGE_LOC_BUDGETS.items():
         package_root = APP_ROOT / package
         package_total = sum(
@@ -162,7 +165,9 @@ def test_application_does_not_import_bs4() -> None:
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):
-                assert all(alias.name.split(".", 1)[0] != "bs4" for alias in node.names), path
+                assert all(
+                    alias.name.split(".", 1)[0] != "bs4" for alias in node.names
+                ), path
             if isinstance(node, ast.ImportFrom) and node.module:
                 assert node.module.split(".", 1)[0] != "bs4", path
 

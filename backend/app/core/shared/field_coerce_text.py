@@ -69,7 +69,19 @@ def infer_brand_from_title_host(*, title: object, url: str) -> str | None:
     host = urlparse(str(url or "")).hostname or ""
     if not text or not host:
         return None
-    ignored_labels = {"www", "shop", "store", "us", "usa", "uk", "in", "com", "co", "net", "org"}
+    ignored_labels = {
+        "www",
+        "shop",
+        "store",
+        "us",
+        "usa",
+        "uk",
+        "in",
+        "com",
+        "co",
+        "net",
+        "org",
+    }
     labels = [
         label
         for label in host.casefold().split(".")
@@ -132,7 +144,21 @@ def infer_brand_from_page_identity(
     labels = [
         label
         for label in host.casefold().split(".")
-        if label not in {"", "www", "shop", "store", "us", "usa", "uk", "in", "com", "co", "net", "org"}
+        if label
+        not in {
+            "",
+            "www",
+            "shop",
+            "store",
+            "us",
+            "usa",
+            "uk",
+            "in",
+            "com",
+            "co",
+            "net",
+            "org",
+        }
     ]
     if not text or not labels:
         return None
@@ -141,15 +167,23 @@ def infer_brand_from_page_identity(
     compact_host = "".join(host_words)
     suffixes = ("beauty", "cosmetics", "official", "online", "shop", "store")
     compact_core = next(
-        (compact_host[: -len(suffix)] for suffix in suffixes if compact_host.endswith(suffix)),
+        (
+            compact_host[: -len(suffix)]
+            for suffix in suffixes
+            if compact_host.endswith(suffix)
+        ),
         compact_host,
     )
     generic_host = compact_core in {"example", "invalid", "localhost", "test"}
-    corpus = " ".join(clean_text(value) for value in evidence_values if clean_text(value))
+    corpus = " ".join(
+        clean_text(value) for value in evidence_values if clean_text(value)
+    )
     corpus_words = corpus.split()
     title_words = text.split()
     title_tokens = slug_tokens(text)
-    existing = tuple(clean_text(value) for value in existing_brands if clean_text(value))
+    existing = tuple(
+        clean_text(value) for value in existing_brands if clean_text(value)
+    )
     if existing and title_words:
         first = "".join(slug_tokens(existing[0]))
         if first == compact_core and len(title_words) >= 2 and title_words[1].isupper():
@@ -165,8 +199,12 @@ def infer_brand_from_page_identity(
             remainder = compact_core[len(compact_brand) :]
             if remainder and remainder.isalpha():
                 return f"{brand} {remainder.capitalize()}"
-    if not generic_host and compact_core and any(
-        compact_core in "".join(slug_tokens(value)) for value in evidence_values
+    if (
+        not generic_host
+        and compact_core
+        and any(
+            compact_core in "".join(slug_tokens(value)) for value in evidence_values
+        )
     ):
         return compact_core.capitalize()
     if not generic_host and title_tokens and title_words:
