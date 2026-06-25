@@ -227,6 +227,24 @@ describe('buildLogSiteGroups', () => {
     expect(groups[1].recordCount).toBe(1);
   });
 
+  it('matches canonical product redirects by stable trailing product id', () => {
+    const records = [
+      makeRecord(1, {
+        title: 'Nordstrom Product',
+        url: 'https://www.nordstrom.com/s/canonical-product-name/7507996?origin=category-personalizedsort',
+      }),
+    ];
+    const logs = [
+      makeLog(1, 'Starting crawl run for https://www.nordstrom.com/s/old-product-name/7507996 (1/1)'),
+      makeLog(2, 'Persisted 1 record(s) for https://www.nordstrom.com/s/old-product-name/7507996'),
+    ];
+
+    const groups = buildLogSiteGroups(logs, records);
+
+    expect(groups).toHaveLength(1);
+    expect(groups[0].recordCount).toBe(1);
+  });
+
   it('attaches truncated leading site logs to the first URL-bearing log', () => {
     const logs = [
       makeLog(1, 'Normalized 1 record(s) for persistence'),

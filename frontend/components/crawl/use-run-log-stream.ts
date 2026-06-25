@@ -59,6 +59,7 @@ export function useRunLogStream({
     const isJsdom = typeof navigator !== 'undefined' && /jsdom/i.test(navigator.userAgent);
     if (
       !enabled ||
+      !live ||
       !hasFetchedInitialLogs ||
       typeof window === 'undefined' ||
       typeof WebSocket === 'undefined' ||
@@ -97,7 +98,7 @@ export function useRunLogStream({
     };
 
     return () => socket.close();
-  }, [enabled, hasFetchedInitialLogs, refetch, refetchRun, runId]);
+  }, [enabled, hasFetchedInitialLogs, live, refetch, refetchRun, runId]);
 
   useEffect(() => {
     if (!live || !viewportRef.current) {

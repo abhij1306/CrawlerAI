@@ -201,9 +201,12 @@ function matchesSiteUrl(record: CrawlRecord, siteUrl: string) {
     return true;
   }
   const normalizedSiteUrl = canonicalLogMatchUrl(siteUrl);
-  return Array.from(candidates).some(
-    (candidate) => canonicalLogMatchUrl(candidate) === normalizedSiteUrl,
-  );
+  return Array.from(candidates).some((candidate) => {
+    if (canonicalLogMatchUrl(candidate) === normalizedSiteUrl) {
+      return true;
+    }
+    return hasSameStablePathIdentity(candidate, siteUrl);
+  });
 }
 
 function canonicalLogMatchUrl(value: string) {
@@ -215,6 +218,39 @@ function canonicalLogMatchUrl(value: string) {
     return parsed.toString();
   } catch {
     return value.trim();
+  }
+}
+
+function hasSameStablePathIdentity(left: string, right: string) {
+  try {
+    const leftUrl = new URL(left);
+    const rightUrl = new URL(right);
+    const leftHost = leftUrl.hostname.replace(/^www\./, '').toLowerCase();
+    const rightHost = rightUrl.hostname.replace(/^www\./, '').toLowerCase();
+    if (leftHost !== rightHost) {
+      return false;
+    }
+
+    const lastSegment = (url: URL) =>
+      decodeURIComponent(url.pathname)
+        .split('/')
+        .filter(Boolean)
+        .at(-1)
+        ?.trim()
+        .toLowerCase() ?? '';
+    const leftId = lastSegment(leftUrl);
+    const rightId = lastSegment(rightUrl);
+
+    // Retail canonical redirects often rewrite the product slug while keeping
+    // the trailing product/SKU identifier stable.
+    return (
+      leftId.length >= 5 &&
+      rightId.length >= 5 &&
+      /\d/.test(leftId) &&
+      leftId === rightId
+    );
+  } catch {
+    return false;
   }
 }
 

@@ -135,7 +135,7 @@ export default function JobsPage() {
                     <TableCell className="text-secondary text-sm">
                       {formatTimestamp(job.started_at)}
                     </TableCell>
-                    <TableCell>
+                    <TableCell style={{ overflow: 'visible', textOverflow: 'clip' }}>
                       <StatusPill status={job.status} />
                     </TableCell>
                     <TableCell>

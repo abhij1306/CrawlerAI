@@ -416,6 +416,10 @@ function groupSummaryMessage(
   if (group.hasError || group.hasWarning) {
     return sanitizeLogMessage(fallbackLog?.message ?? 'No public record extracted');
   }
+  const persistenceLog = group.stageLogs.persistence.at(-1);
+  if (persistenceLog) {
+    return sanitizeLogMessage(persistenceLog.message);
+  }
   return fallbackLog ? sanitizeLogMessage(fallbackLog.message) : TERMINAL_STRINGS.PENDING;
 }
 
@@ -671,7 +675,9 @@ export const LogTerminal = memo(function LogTerminal({
                       >
                         <Database className="text-muted size-3 shrink-0" />
                         <span>
-                          {coverage.foundCount}/{coverage.totalCount || 0}
+                          {group.records.length
+                            ? `${coverage.foundCount}/${coverage.totalCount || 0}`
+                            : '--'}
                         </span>
                       </div>
                       <div

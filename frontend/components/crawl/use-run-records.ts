@@ -30,7 +30,10 @@ export function useRunRecords({
   jsonVisibleCount,
   verdict,
 }: Readonly<UseRunRecordsOptions>) {
-  const shouldFetchTableRecords = outputTab === 'table';
+  // The live/log terminal derives payload previews, coverage, confidence, and
+  // per-URL completion state from persisted records. Keep the lightweight
+  // table records query active whenever that terminal is visible.
+  const shouldFetchTableRecords = live || outputTab === 'table' || outputTab === 'logs';
   const shouldFetchJsonRecords = outputTab === 'json';
   const recordsFetchLimit = Math.min(
     800,
@@ -71,7 +74,7 @@ export function useRunRecords({
   });
 
   const jsonRecordsSource =
-    jsonRecordsData ?? (shouldFetchJsonRecords ? tableRecordsData : undefined);
+    jsonRecordsData ?? tableRecordsData;
   const records = useMemo(() => jsonRecordsSource?.items ?? [], [jsonRecordsSource?.items]);
   const tableRecords = useMemo(() => tableRecordsData?.items ?? [], [tableRecordsData?.items]);
   const tableTotal = tableRecordsData?.meta?.total ?? tableRecords.length;
