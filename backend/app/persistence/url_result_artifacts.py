@@ -172,9 +172,11 @@ def _debug_payload(
             "acquisition_diagnostics": _mapping(
                 getattr(acquisition_result, "acquisition_diagnostics", {})
             ),
-            "response": getattr(acquisition_result, "json_data", None),
-            "network_payloads": list(
-                getattr(acquisition_result, "network_payloads", []) or []
+            "response": _bounded_debug_value(
+                getattr(acquisition_result, "json_data", None)
+            ),
+            "network_payloads": _bounded_debug_value(
+                list(getattr(acquisition_result, "network_payloads", []) or [])
             ),
             "runtime_artifacts": {
                 key: value
@@ -184,8 +186,54 @@ def _debug_payload(
                 if not isinstance(value, bytes)
             },
         },
-        "extraction": dict(extraction),
+        "extraction": _bounded_debug_value(
+            {
+                key: value
+                for key, value in extraction.items()
+                if key not in {"records", "evidence", "graph"}
+            }
+        ),
     }
+
+
+_DEBUG_MAX_STRING_CHARS = 4000
+_DEBUG_MAX_LIST_ITEMS = 20
+_DEBUG_MAX_MAPPING_ITEMS = 50
+_DEBUG_MAX_DEPTH = 6
+
+
+def _bounded_debug_value(value: object, *, depth: int = 0) -> object:
+    if depth >= _DEBUG_MAX_DEPTH:
+        return {"_truncated": True, "reason": "max_depth"}
+    if isinstance(value, str):
+        if len(value) <= _DEBUG_MAX_STRING_CHARS:
+            return value
+        return {
+            "_truncated": True,
+            "original_chars": len(value),
+            "preview": value[:_DEBUG_MAX_STRING_CHARS],
+        }
+    if isinstance(value, Mapping):
+        items = list(value.items())
+        bounded = {
+            str(key): _bounded_debug_value(item, depth=depth + 1)
+            for key, item in items[:_DEBUG_MAX_MAPPING_ITEMS]
+        }
+        if len(items) > _DEBUG_MAX_MAPPING_ITEMS:
+            bounded["_truncated_items"] = len(items) - _DEBUG_MAX_MAPPING_ITEMS
+        return bounded
+    if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
+        items = list(value)
+        bounded_items = [
+            _bounded_debug_value(item, depth=depth + 1)
+            for item in items[:_DEBUG_MAX_LIST_ITEMS]
+        ]
+        if len(items) > _DEBUG_MAX_LIST_ITEMS:
+            bounded_items.append({"_truncated_items": len(items) - _DEBUG_MAX_LIST_ITEMS})
+        return bounded_items
+    if isinstance(value, (bytes, bytearray)):
+        return {"_omitted_bytes": len(value)}
+    return value
 
 
 def _persist_text(

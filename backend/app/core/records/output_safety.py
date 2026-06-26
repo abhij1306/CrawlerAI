@@ -77,6 +77,13 @@ def materialize_product_assets(
             item for item in selected if str(item.url) not in style_conflicting_urls
         ]
     primary = next((item for item in selected if item.role == "primary"), None)
+    if primary is None and selected:
+        primary = max(
+            selected,
+            key=lambda item: _asset_identity_match_score(
+                product_identity_values, str(item.url)
+            ),
+        ).model_copy(update={"role": "primary"})
     if primary is None:
         return
     primary_url = public_asset_delivery_url(primary.url)
@@ -101,6 +108,25 @@ def materialize_product_assets(
     if additional:
         record["additional_images"] = tuple(additional)
         lineages["additional_images"] = additional_lineage
+
+
+def _asset_identity_match_score(
+    product_values: tuple[object, ...], asset_url: str
+) -> tuple[int, int]:
+    product_codes = {
+        token.casefold()
+        for value in product_values
+        for token in re.findall(
+            r"[A-Za-z]{1,8}\d{2,}[A-Za-z0-9]*(?:-\d{2,4})?",
+            str(value or ""),
+        )
+    }
+    normalized_url = re.sub(r"[^a-z0-9]+", "", asset_url.casefold())
+    exact_matches = sum(
+        re.sub(r"[^a-z0-9]+", "", code) in normalized_url
+        for code in product_codes
+    )
+    return exact_matches, -len(asset_url)
 
 
 def _asset_style_code_conflicts(

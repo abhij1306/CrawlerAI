@@ -149,7 +149,46 @@ def normalize_ecommerce_detail(
         + ((normalized_page_brand,) if normalized_page_brand else ())
     )
     return _dedupe_equivalent(
-        _flag_brand_conflicts(combined, page_brand=normalized_page_brand)
+        _flag_ambiguous_dom_prices(
+            _flag_brand_conflicts(combined, page_brand=normalized_page_brand)
+        )
+    )
+
+
+def _flag_ambiguous_dom_prices(evidence: tuple[Evidence, ...]) -> tuple[Evidence, ...]:
+    structured_subjects = {
+        row.subject_id
+        for row in evidence
+        if row.fact_type == field_mappings.OFFER_PRICE_FACT_TYPE
+        and row.collector_id in {"adapter", "jsonld", "js_state", "network"}
+        and row.subject_id
+    }
+    dom_prices_by_subject: dict[str, set[str]] = {}
+    for row in evidence:
+        if (
+            row.fact_type != field_mappings.OFFER_PRICE_FACT_TYPE
+            or row.collector_id != "dom"
+            or not row.subject_id
+            or row.subject_id in structured_subjects
+        ):
+            continue
+        dom_prices_by_subject.setdefault(row.subject_id, set()).add(str(row.value))
+    ambiguous_subjects = {
+        subject_id
+        for subject_id, values in dom_prices_by_subject.items()
+        if len(values) >= 4
+    }
+    if not ambiguous_subjects:
+        return evidence
+    return tuple(
+        row.model_copy(
+            update={"flags": tuple(sorted(set(row.flags) | {"ambiguous_page_price"}))}
+        )
+        if row.fact_type == field_mappings.OFFER_PRICE_FACT_TYPE
+        and row.collector_id == "dom"
+        and row.subject_id in ambiguous_subjects
+        else row
+        for row in evidence
     )
 
 

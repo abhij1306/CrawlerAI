@@ -2090,6 +2090,27 @@ def test_arbitrary_nested_price_object_cannot_create_offer() -> None:
     assert result.records[0].get("currency") is None
 
 
+def test_many_uncorroborated_dom_prices_do_not_create_offer() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <main>
+          <h1>Wild Game Dry Dog Food, 18-lb bag</h1>
+          <span data-price="77.48"></span>
+          <span data-price="53.98"></span>
+          <span data-price="59.98"></span>
+          <span data-price="8.98"></span>
+          <span data-price="4.50"></span>
+        </main>
+        """,
+        "https://shop.test/dp/141791",
+    )
+
+    assert result.records
+    record = result.records[0].model_dump(mode="python", exclude_none=True)
+    assert "price" not in record
+
+
 def test_missing_field_finding_uses_selected_public_value() -> None:
     result = _extract(
         "ecommerce_detail",

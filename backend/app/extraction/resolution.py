@@ -743,6 +743,7 @@ def _invalid(ev: Evidence) -> bool:
     return bool(
         flags
         & {
+            "ambiguous_page_price",
             "brand_boilerplate",
             "brand_identity_conflict",
             "brand_url",
@@ -772,7 +773,7 @@ def _non_positive_money(value: object) -> bool:
         return False
 
 
-def _rank(ev: Evidence) -> tuple[int, int, int, float, str]:
+def _rank(ev: Evidence) -> tuple[object, ...]:
     directness = {"direct": 0, "embedded": 1, "inferred": 2}.get(ev.directness, 3)
     reliability = {
         "jsonld": 0,
@@ -794,6 +795,7 @@ def _rank(ev: Evidence) -> tuple[int, int, int, float, str]:
             url_disagreement,
             reliability,
             -float(ev.confidence),
+            -len(str(ev.value or "")),
             ev.evidence_id,
         )
     if ev.fact_type == "product.description":

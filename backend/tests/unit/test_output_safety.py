@@ -170,3 +170,32 @@ def test_materialize_product_assets_rejects_conflicting_style_code() -> None:
     materialize_product_assets(record, lineages, decisions)
 
     assert "image_url" not in record
+
+
+def test_materialize_product_assets_promotes_first_retained_asset() -> None:
+    record = {
+        "title": "13-Cup Food Processor",
+        "sku": "KFP1318CU",
+        "url": "https://shop.test/p.13-cup-food-processor.KFP1318CU.html",
+    }
+    lineages: dict[str, object] = {}
+    decisions = (
+        AssetDecision(
+            asset_entity_id="bookmark",
+            url="https://shop.test/static/bookmark-icon.png",
+            accepted_evidence_ids=("bookmark",),
+            role="primary",
+        ),
+        AssetDecision(
+            asset_entity_id="product",
+            url="https://shop.test/images/KFP1318CU-feature-chop-shred.jpeg",
+            accepted_evidence_ids=("product",),
+            role="additional",
+        ),
+    )
+
+    materialize_product_assets(record, lineages, decisions)
+
+    assert record["image_url"] == (
+        "https://shop.test/images/KFP1318CU-feature-chop-shred.jpeg"
+    )

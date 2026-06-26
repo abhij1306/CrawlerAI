@@ -226,6 +226,16 @@ def semantic_detail_identity_tokens(url: str) -> tuple[str, ...]:
     return semantic_identity_tokens(detail_title_from_url(url))
 
 
+def _identity_token_sets_overlap(left: set[str], right: set[str]) -> bool:
+    return any(
+        first == second
+        or (min(len(first), len(second)) >= 6 and first.endswith(second))
+        or (min(len(first), len(second)) >= 6 and second.endswith(first))
+        for first in left
+        for second in right
+    )
+
+
 def conflicting_product_asset_urls(
     product_values: tuple[object, ...], asset_urls: tuple[str, ...]
 ) -> frozenset[str]:
@@ -251,10 +261,13 @@ def conflicting_product_asset_urls(
         frozenset(
             url
             for url, tokens in asset_tokens.items()
-            if tokens and product_tokens.isdisjoint(tokens)
+            if tokens and not _identity_token_sets_overlap(product_tokens, tokens)
         )
         if product_tokens
-        and any(product_tokens & tokens for tokens in asset_tokens.values())
+        and any(
+            _identity_token_sets_overlap(product_tokens, tokens)
+            for tokens in asset_tokens.values()
+        )
         else frozenset()
     )
     return (
