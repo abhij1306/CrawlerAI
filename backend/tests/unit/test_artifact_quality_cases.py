@@ -11,8 +11,6 @@ from harness.artifact_quality_cases import (
     validate_artifact_quality_cases,
 )
 
-pytestmark = pytest.mark.unit
-
 BACKEND_ROOT = Path(__file__).resolve().parents[2]
 FIXTURE = (
     Path(__file__).resolve().parents[1]
@@ -20,6 +18,25 @@ FIXTURE = (
     / "extraction"
     / "artifact_quality_cases_20260625.json"
 )
+
+
+def _artifact_captures_available() -> bool:
+    manifest = load_artifact_quality_cases(FIXTURE)
+    root = BACKEND_ROOT / str(manifest.get("artifact_root") or "")
+    return all(
+        (root / str(case.get("url_result_id") or "") / str(name)).is_file()
+        for case in manifest.get("cases") or []
+        for name in case.get("artifact_files") or []
+    )
+
+
+pytestmark = [
+    pytest.mark.regression,
+    pytest.mark.skipif(
+        not _artifact_captures_available(),
+        reason="local crawl artifacts are not committed to the repository",
+    ),
+]
 
 
 def test_artifact_quality_cases_are_valid_and_offline() -> None:
