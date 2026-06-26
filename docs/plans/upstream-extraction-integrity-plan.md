@@ -260,34 +260,39 @@ Public firewall
 **Verify:** No raw availability URL reaches public output; a source variant ID cannot appear as SKU without explicit semantics.
 
 ### Slice 10 — Product-Scoped Asset Graph
-**Status:** TODO  
+**Status:** DONE — VERIFIED 2026-06-26  
 **Files:** asset collectors, entities, asset resolution, image config.  
 **What:** Require product/variant ownership for gallery assets; use role, dimensions, transform identity, alt/style/SKU/color agreement, and container relation. Remove output-stage image conflict filtering.  
-**Verify:** Other-product and unrelated-colorway images are rejected before asset decisions; thumbnails cannot beat adequate product images.
+**Verify:** Other-product and unrelated-colorway images are rejected before asset decisions; thumbnails cannot beat adequate product images.  
+**Notes:** Asset identity and low-resolution conflicts are now explicit rejected asset decisions with deterministic reasons. Output materialization no longer re-evaluates product identity and trusts only accepted upstream decisions. Existing foreign-product, sibling-colorway, transform-deduplication, and thumbnail regressions passed in the focused asset suite: `220 passed, 5 deselected`. Ruff app check passed.
 
 ### Slice 11 — Scalar Admission, Fidelity, and Ranking
-**Status:** TODO  
+**Status:** DONE — VERIFIED 2026-06-26  
 **Files:** DOM, metadata, and structured collectors; shared text coercion; title scorer; text sanitizer; resolution.  
 **What:** Reject color, condition, navigation, control, endpoint, search, and shipping candidates at admission. Preserve complete descriptions and rank only same-product admissible evidence.  
-**Verify:** Values such as `Black`, `Refurbished`, `& More`, `product.do`, selected-option labels, and incomplete snippets cannot become canonical product fields.
+**Verify:** Values such as `Black`, `Refurbished`, `& More`, `product.do`, selected-option labels, and incomplete snippets cannot become canonical product fields.  
+**Notes:** Expanded canonical title rejection for exact color, condition, fragment, navigation, and shipping-only values. Existing endpoint, selected-option, truncated-title, promotional-description, incomplete-ending, and full-description ranking coverage remains green. Focused extraction and description suite passed: `220 passed`. Ruff app check passed.
 
 ### Slice 12 — Honest Completeness, Findings, and Verdicts
-**Status:** TODO  
+**Status:** DONE — VERIFIED 2026-06-26  
 **Files:** validation, result building, engine verdict, harness quality reporting.  
 **What:** Generate field evidence states and separate transport success from data integrity. Block clean success for unresolved identity, offer, asset, or variant integrity while allowing honest partial output for genuine absence.  
-**Verify:** A page with unavailable offer sources is partial with precise reasons; a complete page with valid evidence rejected by extraction is classified as an extraction defect.
+**Verify:** A page with unavailable offer sources is partial with precise reasons; a complete page with valid evidence rejected by extraction is classified as an extraction defect.  
+**Notes:** Extraction results now expose per-field states (`captured_and_resolved`, `captured_but_rejected`, `captured_conflicting`, `source_unavailable`, and `not_present_in_captured_sources`) plus separate `transport_outcome` and `data_integrity`. Acquisition source-capability diagnostics are preserved into capture bundles. Unavailable offer sources produce precise partial states without pretending extraction success, while complete records report clean integrity. Focused extraction/source-capability/description suite passed: `226 passed`. Ruff app check passed.
 
 ### Slice 13 — Remove Downstream Semantic Repair
-**Status:** TODO  
+**Status:** DONE — VERIFIED 2026-06-26  
 **Files:** `output_safety.py`, materialization, public firewall, related tests.  
 **What:** After upstream slices pass, delete title, brand, variant, SKU, image, and availability decision logic from output safety. Keep only allowed-key, type, enum, and empty-value enforcement. Reconcile or remove the current unverified dirty changes rather than layering over them.  
-**Verify:** Materialized public values correspond exactly to decisions, derived facts, and accepted evidence; no post-graph semantic mutation remains.
+**Verify:** Materialized public values correspond exactly to decisions, derived facts, and accepted evidence; no post-graph semantic mutation remains.  
+**Notes:** Removed output-stage title recovery, generic-brand deletion, parent-SKU repair, variant-family filtering, aggregate/repeated-variant suppression, size-inventory repair, and availability token normalization. The public firewall now only enforces canonical availability enums, empty values, row types, lineage shape, and typed-record validation. Deterministic variant-ID inheritance and parent offer/range/availability aggregation remain in materialization with explicit lineage because they are derived public facts, not output-safety repair. Focused output-safety and extraction suite passed: `215 passed, 3 deselected`. Ruff app check passed.
 
 ### Slice 14 — Artifact-Replay Quality Gate
-**Status:** TODO  
+**Status:** DONE — VERIFIED 2026-06-26  
 **Files:** replay harness, catalog quality audit, compact case manifest.  
 **What:** Re-run stored artifacts through the real pipeline and calculate issue status from generated output and findings. Detect cross-entity lineage, enum leaks, identifier conflicts, field-state failures, and public/evidence divergence.  
-**Verify:** The gate fails on current product-boundary and source-availability defects without relying on a manually assigned fixed status, and passes only when replay output satisfies the invariants.
+**Verify:** The gate fails on current product-boundary and source-availability defects without relying on a manually assigned fixed status, and passes only when replay output satisfies the invariants.  
+**Notes:** The compact artifact gate now replays each stored `page.html` and captured network payload set through the real extraction pipeline. Case status is calculated from replayed field states, public records, lineage, findings, enum validity, identifier coherence, and expected product-boundary invariants. The END case remains an automatically detected integrity failure because unrelated variant SKUs survive replay. The Target case is classified as honest `source_unavailable` because the captured blocked product API is proven from debug payloads; missing offer fields are not treated as extraction defects. No manual fixed-status field is used. Focused replay, catalog-quality, and extraction suites passed: `228 passed`. Ruff app and replay-harness checks passed.
 
 ### Slice 15 — Documentation, Offline Validation, and User-Owned Live Gate
 **Status:** TODO  

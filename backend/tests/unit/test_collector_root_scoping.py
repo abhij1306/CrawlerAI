@@ -50,9 +50,9 @@ def test_metadata_url_match_is_not_selected_as_product_root() -> None:
         ),
     )
 
-    assert selected_product_root_paths(
-        objects, "https://shop.test/products/primary"
-    ) == ()
+    assert (
+        selected_product_root_paths(objects, "https://shop.test/products/primary") == ()
+    )
 
 
 def test_nested_variant_url_promotes_to_product_ancestor() -> None:

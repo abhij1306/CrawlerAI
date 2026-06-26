@@ -241,6 +241,9 @@ def request_from_acquisition_result(
         blocked=blocked,
         network_payloads=network_payloads,
         artifacts=artifacts,
+        acquisition_diagnostics=dict(
+            getattr(acquisition_result, "acquisition_diagnostics", {}) or {}
+        ),
         html_document=html_document
         if isinstance(html_document, HtmlDocument)
         else None,
@@ -265,6 +268,7 @@ def _bundle_from_runtime_inputs(
     blocked: bool,
     network_payloads: list[dict[str, object]] | None = None,
     artifacts: dict[str, object] | None = None,
+    acquisition_diagnostics: dict[str, object] | None = None,
     html_document: HtmlDocument | None = None,
 ) -> tuple[CaptureBundle, MemoryArtifactReader]:
     bundle, reader = fixture_bundle_from_inputs(
@@ -299,6 +303,7 @@ def _bundle_from_runtime_inputs(
                 "acquisition_outcome": outcome,
                 "browser_attempted": method == "browser",
                 "blocked": blocked,
+                "acquisition_diagnostics": dict(acquisition_diagnostics or {}),
             }
         ),
         reader,

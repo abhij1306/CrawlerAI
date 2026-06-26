@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 import re
-from typing import Any, Literal
+from typing import Literal
 from app.core.config.field_mappings import (
     ECOMMERCE_IMAGE_SOURCE_KEYS,
     ECOMMERCE_OFFER_CONTEXT_PATH_TOKENS,
-    ECOMMERCE_PRODUCT_CONTEXT_SOURCE_KEYS,
     ECOMMERCE_PRODUCT_IDENTITY_SOURCE_KEYS,
     ECOMMERCE_STRUCTURED_SOURCE_FACT_TYPES,
 )

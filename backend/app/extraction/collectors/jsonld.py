@@ -43,7 +43,9 @@ class JsonLdCollector:
             objects = tuple(json_objects(data))
             selected_roots = selected_product_root_paths(objects, bundle.final_url)
             for path, obj in objects:
-                if not path_is_within_selected_root(path, selected_roots) and not _is_standalone_variant(obj):
+                if not path_is_within_selected_root(
+                    path, selected_roots
+                ) and not _is_standalone_variant(obj):
                     continue
                 if not isinstance(obj, dict) or not _is_product(obj):
                     continue
@@ -251,7 +253,7 @@ def _variant(
                     confidence=0.88,
                     subject_id=subject_id,
                     parent_subject_id=product_subject,
-                parent_scope="product",
+                    parent_scope="product",
                 )
             )
     out.extend(

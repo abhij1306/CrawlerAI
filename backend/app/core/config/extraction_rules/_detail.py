@@ -256,7 +256,11 @@ DETAIL_TITLE_REJECT_SUFFIXES = (
 DETAIL_TITLE_REJECT_VALUES = (
     frozenset(
         {
+            "& more",
+            "black",
             "description",
+            "more",
+            "refurbished",
             "details",
             "measurements",
             "navigation",

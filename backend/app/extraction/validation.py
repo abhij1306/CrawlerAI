@@ -476,7 +476,9 @@ def _validate_offer_relation_conflicts(
     findings: list[Finding] = []
     for group_id, rows in sorted(groups.items()):
         relations = {row.relation_type for row in rows if row.relation_type}
-        parent_subject_ids = {row.parent_subject_id for row in rows if row.parent_subject_id}
+        parent_subject_ids = {
+            row.parent_subject_id for row in rows if row.parent_subject_id
+        }
         mixed_implicit_ownership = (
             "variant_offer" in relations
             and len(parent_subject_ids) > 1

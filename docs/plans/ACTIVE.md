@@ -3,8 +3,8 @@
 **Current:** `docs/plans/upstream-extraction-integrity-plan.md`
 **Status:** IN PROGRESS
 **Started:** 2026-06-25
-**Current slice:** Slice 10 — Product-Scoped Asset Graph
+**Current slice:** Slice 15 — Documentation, Offline Validation, and User-Owned Live Gate
 
 ## Current Work
 
-Slices 1 and 2 are complete. Stored artifacts now determine field states, and acquisition emits source-capability diagnostics that distinguish usable page content from unavailable product-data sources. Slice 3 strengthens evidence scope and explicit relation ownership before entity linking.
+Slices 1–10 are complete and verified offline. Product-scoped asset decisions now own identity, utility, and low-resolution rejection before materialization. Slice 11 moves scalar noise rejection and description fidelity to collector admission and same-product resolution.

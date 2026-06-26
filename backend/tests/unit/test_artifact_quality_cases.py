@@ -6,7 +6,6 @@ from pathlib import Path
 import pytest
 
 from harness.artifact_quality_cases import (
-    _case_signals,
     audit_artifact_quality_cases,
     load_artifact_quality_cases,
     validate_artifact_quality_cases,
@@ -65,9 +64,9 @@ def test_end_case_is_derived_from_stored_record_not_manual_resolution() -> None:
         "JQ6823",
         "VN000CQAOFW",
     )
-    assert end_case["signals"]["raw_availability"].startswith("https://schema.org/")
-    assert end_case["field_states"]["brand"] == "captured_but_rejected"
-    assert end_case["field_states"]["availability"] == "captured_but_rejected"
+    assert end_case["signals"]["enum_leaks"] == ()
+    assert end_case["field_states"]["brand"] == "captured_and_resolved"
+    assert end_case["field_states"]["availability"] == "captured_and_resolved"
     assert end_case["field_state_mismatches"] == ()
     assert "QD-13" in end_case["unresolved_issue_ids"]
 
@@ -90,21 +89,20 @@ def test_target_case_attributes_offer_absence_to_unavailable_product_source() ->
 
 
 def test_selected_product_title_mismatch_is_integrity_failure() -> None:
-    signals = _case_signals(
-        {
-            "expected_invariants": {
-                "selected_product_title": "Expected Product"
-            }
-        },
-        records={
-            "records": [{"title": "Wrong Product"}],
-            "provenance": [{"raw_data": {"title": "Wrong Product", "variants": []}}],
-        },
-        debug={},
+    manifest = deepcopy(load_artifact_quality_cases(FIXTURE))
+    manifest["cases"][1]["expected_invariants"]["selected_product_title"] = (
+        "Expected Product"
     )
 
-    assert signals["selected_product_title_matches"] is False
-    assert signals["integrity_failure"] is True
+    report = audit_artifact_quality_cases(manifest, backend_root=BACKEND_ROOT)
+    target_case = next(
+        case
+        for case in report["cases"]
+        if case["case_id"] == "target-product-api-unavailable"
+    )
+
+    assert target_case["signals"]["selected_product_title_matches"] is False
+    assert target_case["classification"] == "integrity_failure"
 
 
 def test_manifest_validation_rejects_declared_state_that_artifacts_do_not_support() -> (

@@ -199,16 +199,19 @@ def resolve(
         for evidence_id in asset.url_evidence_ids
         if evidence_id in by_id
     )
-    rejected_asset_urls = conflicting_product_asset_urls(
-        tuple(
-            ev.value
-            for ev in evidence
-            if ev.fact_type in PRODUCT_ASSET_IDENTITY_FACT_TYPES
-        ),
-        asset_urls,
-    ) | low_resolution_asset_urls(asset_urls)
     conflicting_urls = frozenset(
-        _normalized_asset_url(value) for value in rejected_asset_urls
+        _normalized_asset_url(value)
+        for value in conflicting_product_asset_urls(
+            tuple(
+                ev.value
+                for ev in evidence
+                if ev.fact_type in PRODUCT_ASSET_IDENTITY_FACT_TYPES
+            ),
+            asset_urls,
+        )
+    )
+    low_resolution_urls = frozenset(
+        _normalized_asset_url(value) for value in low_resolution_asset_urls(asset_urls)
     )
     return ResolutionResult(
         primary_product_entity_id=entities.products[0].entity_id
@@ -217,7 +220,10 @@ def resolve(
         primary_offer_entity_id=primary_offer_entity_id,
         decisions=tuple(decisions),
         asset_decisions=_resolve_product_assets(
-            entities.assets, by_id, conflicting_urls
+            entities.assets,
+            by_id,
+            conflicting_urls,
+            low_resolution_urls,
         ),
         derived_facts=_derived(decisions, by_id),
         unresolved_fact_types=tuple(sorted(required - resolved)),
@@ -437,6 +443,7 @@ def _resolve_product_assets(
     assets: tuple[AssetEntity, ...],
     evidence_by_id: dict[str, Evidence],
     conflicting_urls: frozenset[str],
+    low_resolution_urls: frozenset[str],
 ) -> tuple[AssetDecision, ...]:
     ranked = [
         (rank, asset, accepted)
@@ -449,8 +456,11 @@ def _resolve_product_assets(
         (rank, asset, accepted)
         for rank, asset, accepted in ranked
         if accepted
-        and _resolved_asset_url(accepted) not in conflicting_urls
-        and not _invalid_primary_asset_url(_resolved_asset_url(accepted))
+        and not _asset_rejection_reasons(
+            _resolved_asset_url(accepted),
+            conflicting_urls=conflicting_urls,
+            low_resolution_urls=low_resolution_urls,
+        )
     ]
     valid.sort(key=lambda item: item[0])
     decisions: list[AssetDecision] = []
@@ -478,17 +488,42 @@ def _resolve_product_assets(
     rejected = [
         AssetDecision(
             asset_entity_id=asset.entity_id,
-            url=asset.url,
+            url=_resolved_asset_url(accepted),
             accepted_evidence_ids=(),
             role="rejected",
             rank=len(valid) + index,
             rule_id="PRODUCT_ASSET_REJECT",
-            rejection_reasons=("invalid_primary_asset",),
+            rejection_reasons=_asset_rejection_reasons(
+                _resolved_asset_url(accepted),
+                conflicting_urls=conflicting_urls,
+                low_resolution_urls=low_resolution_urls,
+            ),
         )
         for index, (_rank_value, asset, accepted) in enumerate(ranked)
-        if accepted and _invalid_primary_asset_url(_resolved_asset_url(accepted))
+        if accepted
+        and _asset_rejection_reasons(
+            _resolved_asset_url(accepted),
+            conflicting_urls=conflicting_urls,
+            low_resolution_urls=low_resolution_urls,
+        )
     ]
     return tuple(decisions + rejected)
+
+
+def _asset_rejection_reasons(
+    url: str,
+    *,
+    conflicting_urls: frozenset[str],
+    low_resolution_urls: frozenset[str],
+) -> tuple[str, ...]:
+    reasons: list[str] = []
+    if url in conflicting_urls:
+        reasons.append("product_identity_conflict")
+    if url in low_resolution_urls:
+        reasons.append("low_resolution_transform")
+    if _invalid_primary_asset_url(url):
+        reasons.append("invalid_primary_asset")
+    return tuple(reasons)
 
 
 def _normalized_asset_url(value: object) -> str:

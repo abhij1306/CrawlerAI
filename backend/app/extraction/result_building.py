@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 from collections import Counter
+import typing
 from typing import Any
 
 from app.core.config.extraction_rules._detail import (
     DETAIL_SHELL_TITLE_FLAG,
     DETAIL_SHELL_TITLE_KEYS,
 )
+from app.core.config import field_mappings
 from app.core.shared.text_coerce import slug_tokens
 from app.extraction.contracts import (
     Decision,
@@ -14,6 +16,7 @@ from app.extraction.contracts import (
     Evidence,
     ExtractionMetrics,
     ExtractionRequest,
+    FieldEvidenceState,
     Finding,
     PublicRecord,
     ResolutionResult,
@@ -28,6 +31,99 @@ def decisions(resolution: Any) -> tuple[Decision, ...]:
     if isinstance(resolution, ResolutionResult):
         return resolution.decisions
     return tuple(resolution or ())
+
+
+def field_evidence_states(
+    records: tuple[PublicRecord, ...],
+    evidence: tuple[Evidence, ...],
+    decision_rows: tuple[Decision, ...],
+    request: ExtractionRequest,
+) -> tuple[FieldEvidenceState, ...]:
+    record = records[0] if records else None
+    public_to_fact = {
+        "title": field_mappings.PRODUCT_TITLE_FACT_TYPE,
+        "brand": field_mappings.PRODUCT_BRAND_FACT_TYPE,
+        "description": field_mappings.PRODUCT_DESCRIPTION_FACT_TYPE,
+        "sku": field_mappings.PRODUCT_SKU_FACT_TYPE,
+        "price": field_mappings.OFFER_PRICE_FACT_TYPE,
+        "currency": field_mappings.OFFER_CURRENCY_FACT_TYPE,
+        "availability": field_mappings.OFFER_AVAILABILITY_FACT_TYPE,
+        "image_url": field_mappings.ASSET_IMAGE_URL_FACT_TYPE,
+    }
+    requested = {
+        "image_url" if field == "image" else field for field in request.requested_fields
+    }
+    fields = tuple(dict.fromkeys((*public_to_fact, *sorted(requested))))
+    source_capabilities = dict(request.capture.acquisition_diagnostics or {}).get(
+        "source_capabilities"
+    )
+    affected = set(
+        source_capabilities.get("affected_field_families", ())
+        if isinstance(source_capabilities, dict)
+        else ()
+    )
+    by_fact = {
+        fact: tuple(row for row in evidence if row.fact_type == fact)
+        for fact in set(public_to_fact.values())
+    }
+    decisions_by_fact = {
+        row.fact_type: row
+        for row in decision_rows
+        if row.fact_type in set(public_to_fact.values())
+    }
+    states: list[FieldEvidenceState] = []
+    for field in fields:
+        fact = public_to_fact.get(field)
+        rows = by_fact.get(fact, ()) if fact else ()
+        decision = decisions_by_fact.get(fact) if fact else None
+        present = bool(record and record.get(field) not in (None, "", [], {}, ()))
+        state: typing.Literal[
+            "captured_and_resolved",
+            "captured_but_rejected",
+            "captured_conflicting",
+            "source_unavailable",
+            "not_present_in_captured_sources",
+        ]
+        if present:
+            state = "captured_and_resolved"
+            reasons: tuple[str, ...] = ()
+        elif field in affected or (field == "image_url" and "images" in affected):
+            state = "source_unavailable"
+            reasons = ("product_data_source_unavailable",)
+        elif decision and decision.status == "conflicted":
+            state = "captured_conflicting"
+            reasons = tuple(sorted({item.reason for item in decision.rejected}))
+        elif rows:
+            state = "captured_but_rejected"
+            reasons = tuple(sorted({flag for row in rows for flag in row.flags}))
+        else:
+            state = "not_present_in_captured_sources"
+            reasons = ()
+        states.append(
+            FieldEvidenceState(
+                field=field,
+                state=state,
+                evidence_ids=tuple(row.evidence_id for row in rows),
+                reason_codes=reasons,
+            )
+        )
+    return tuple(states)
+
+
+def data_integrity_status(
+    verdict: str, field_states: tuple[FieldEvidenceState, ...]
+) -> typing.Literal["clean", "partial", "defect", "blocked", "unknown"]:
+    if verdict == "blocked":
+        return "blocked"
+    if any(row.state == "captured_conflicting" for row in field_states):
+        return "defect"
+    if verdict in {"success"}:
+        return "clean"
+    if verdict in {"partial", "review"}:
+        return "partial"
+    if verdict in {"invalid", "error"}:
+        return "defect"
+    return "unknown"
 
 
 def retry_request(

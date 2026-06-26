@@ -105,21 +105,15 @@ A dict or constant inside a service module that silently overrides env-controlle
 The same endpoint tokens, thresholds, or classifier hints defined in two different config modules.
 **Fix:** One canonical config owner. Derive any stage-specific views from it.
 
-### AP-12: Misdiagnosing extraction as winner-takes-all when the real bugs are specific ← MOST COMMON CAUSE OF MISSING VARIANTS
+### AP-12: Repairing resolved data after the evidence graph
 
-The candidate system in `detail_extractor.py` is correctly field-by-field. `_winning_candidates_for_field` selects per-field independently — price and sku can come from different sources simultaneously. **Do not replace or restructure this system.**
+The canonical ecommerce-detail path is evidence ledger → normalization → entity graph → target selection → resolution → materialization → findings/verdict. Each concern has one owner.
 
-The actual cause of missing variants and missing prices is 3 specific bugs:
+**Violation looks like:** output safety rewrites titles, drops brands, repairs SKUs, filters cross-product variants, normalizes raw availability tokens, or chooses replacement assets after resolution. Materialization searches unrelated entities for a value that the resolver did not select. HTTP success is reported as clean data despite unresolved identity, offer, asset, or variant conflicts.
 
-**Bug 1 — Early exit in `build_detail_record` skips the DOM tier.** `_requires_dom_completion` does not check for DOM variant cues before allowing a confidence-threshold early exit. Result: variant controls in the DOM are never collected when JSON-LD fires first. Fix: add `variant_dom_cues_present(soup)` check to `_requires_dom_completion`.
+**Fix:** reject or flag bad evidence during normalization; correct product/offer/variant/asset links in entity construction; select the primary product before resolution; record accepted/rejected evidence in resolver decisions; create explicit derived facts with lineage; let the public firewall enforce only keys, types, enums, empty values, and lineage shape. Keep `transport_outcome`, `data_integrity`, and field evidence states separate.
 
-**Bug 2 — `_map_ecommerce_detail_state` returns on first matching JS state object.** Sites with multiple hydration objects lose variant data from non-first objects. Fix: iterate all objects and backfill variant fields from subsequent ones.
-
-**Bug 3 — Backfill calls not made after early exit.** `_backfill_detail_price_from_html` and variant backfill must be called before every return path in `build_detail_record`, not just after the full tier sequence.
-
-**Visible PDP price gaps stay upstream.** If a rendered product detail page has a visible display-price block but structured data omits price, add or tune selector config in `app/core/config/extraction_rules.py` and backfill in extraction. Do not repair prices in persistence, export, or verdict code. Detail extraction must still reject category/collection URLs with product-tile prices instead of fabricating a PDP record.
-
-**Violation to avoid:** Adding browser interaction (click probes, Playwright variant walks) before verifying these 3 fixes. The probe is only justified for `stateful_dom` sites that still fail after all 3 bugs are fixed.
+Artifact regressions must replay stored HTML and captured network payloads through the real pipeline. A gate based only on old `records.json`, manually assigned fixed status, or fixture-specific expected output is not sufficient.
 
 ### AP-13: Config proliferation ← SECOND MOST COMMON
 Creating a new `constants.py`, `config.py`, or inline dict inside a bucket folder

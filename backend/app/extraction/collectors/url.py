@@ -95,7 +95,7 @@ def _selected_variant_from_query(
                 directness="inferred",
                 confidence=0.5,
                 parent_subject_id=product_subject_id,
-            parent_scope="product",
+                parent_scope="product",
             )
         )
     return rows

@@ -1720,6 +1720,103 @@ def test_identifier_placeholder_and_filename_titles_do_not_materialize(
     assert result.verdict in {"partial", "review"}
 
 
+@pytest.mark.parametrize("bad_title", ("Black", "Refurbished", "& More", "Shipping"))
+def test_option_condition_navigation_and_shipping_titles_are_rejected_at_admission(
+    bad_title: str,
+) -> None:
+    result = _extract(
+        "ecommerce_detail",
+        f"<main><h1>{bad_title}</h1></main>",
+        "https://shop.test/products/real-product-name",
+        requested_fields=("title",),
+    )
+
+    assert result.records[0]["title"] == "real product name"
+    bad_rows = [
+        row
+        for row in result.evidence
+        if row.fact_type == "product.title" and str(row.value) == bad_title
+    ]
+    assert bad_rows
+    assert all("generic_title" in row.flags for row in bad_rows)
+    accepted_ids = {
+        evidence_id
+        for decision in result.decisions
+        if decision.fact_type == "product.title"
+        for evidence_id in decision.accepted_evidence_ids
+    }
+    assert not accepted_ids.intersection(row.evidence_id for row in bad_rows)
+
+
+def test_unavailable_product_source_produces_precise_partial_field_states() -> None:
+    base = fixture_request_from_inputs(
+        Surface.ECOMMERCE_DETAIL,
+        "<main><h1>Unavailable Offer Product</h1></main>",
+        "https://shop.test/products/unavailable-offer-product",
+        requested_fields=("price", "currency", "availability"),
+    )
+    request = base.model_copy(
+        update={
+            "capture": base.capture.model_copy(
+                update={
+                    "acquisition_diagnostics": {
+                        "source_capabilities": {
+                            "product_data_source_unavailable": True,
+                            "affected_field_families": (
+                                "price",
+                                "currency",
+                                "availability",
+                                "variants",
+                            ),
+                        }
+                    }
+                }
+            )
+        }
+    )
+
+    result = extract(request)
+    states = {row.field: row for row in result.field_states}
+
+    assert result.transport_outcome == "ok"
+    assert result.data_integrity == "partial"
+    assert result.verdict in {"partial", "review"}
+    assert states["title"].state == "captured_and_resolved"
+    assert states["price"].state == "source_unavailable"
+    assert states["currency"].state == "source_unavailable"
+    assert states["availability"].state == "source_unavailable"
+    assert states["price"].reason_codes == ("product_data_source_unavailable",)
+
+
+def test_complete_product_reports_clean_integrity_separately_from_transport() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <script type="application/ld+json">
+        {
+          "@type": "Product",
+          "name": "Complete Product",
+          "brand": "Complete Brand",
+          "description": "A complete product-specific description.",
+          "url": "https://shop.test/products/complete-product",
+          "image": "https://cdn.shop.test/complete-product.jpg",
+          "offers": {"price": "10", "priceCurrency": "USD"}
+        }
+        </script>
+        """,
+        "https://shop.test/products/complete-product",
+    )
+    states = {row.field: row.state for row in result.field_states}
+
+    assert result.transport_outcome == "ok"
+    assert result.data_integrity == "clean"
+    assert result.verdict == "success"
+    assert states["title"] == "captured_and_resolved"
+    assert states["price"] == "captured_and_resolved"
+    assert states["currency"] == "captured_and_resolved"
+    assert states["image_url"] == "captured_and_resolved"
+
+
 def test_generic_size_title_uses_semantic_url_segment() -> None:
     result = _extract(
         "ecommerce_detail",

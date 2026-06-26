@@ -95,6 +95,7 @@ class CaptureBundle(FrozenModel):
     acquisition_outcome: str
     browser_attempted: bool = False
     blocked: bool = False
+    acquisition_diagnostics: dict[str, JsonValue] = Field(default_factory=dict)
     captured_at: str | None = None
 
 
@@ -310,6 +311,19 @@ class CapabilityRequest(FrozenModel):
 RetryRequest = CapabilityRequest
 
 
+class FieldEvidenceState(FrozenModel):
+    field: str
+    state: Literal[
+        "captured_and_resolved",
+        "captured_but_rejected",
+        "captured_conflicting",
+        "source_unavailable",
+        "not_present_in_captured_sources",
+    ]
+    evidence_ids: tuple[str, ...] = ()
+    reason_codes: tuple[str, ...] = ()
+
+
 class ExtractionMetrics(FrozenModel):
     collector_count: int = 0
     evidence_count: int = 0
@@ -424,6 +438,11 @@ class ExtractionResult(FrozenModel):
     target: TargetSelection = Field(default_factory=TargetSelection)
     findings: tuple[Finding, ...] = ()
     decisions: tuple[Decision, ...] = ()
+    field_states: tuple[FieldEvidenceState, ...] = ()
+    transport_outcome: str = "unknown"
+    data_integrity: Literal["clean", "partial", "defect", "blocked", "unknown"] = (
+        "unknown"
+    )
     verdict: Literal[
         "success",
         "partial",

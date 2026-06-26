@@ -45,12 +45,12 @@ If it exists, extend it. If a similar version exists, consolidate — do not cre
 
 ## 3. Extraction Model — Field Quality and Repair
 
-**How the detail candidate system works:**
-All tiers (adapter, structured data, JS state, DOM) write through `_add_sourced_candidate`. `CandidateSet` is the single owner of candidate source, tier, index, and evidence ID. The legacy value buckets may support collectors, but must not gain parallel source/evidence arrays or independent arbitration. Field selection remains per-field: price may come from JS state while SKU comes from DOM. Do not replace it with a record-level merge.
+**How ecommerce-detail extraction works:**
+All collectors write immutable `Evidence` rows into one ledger. Normalization may add flags or derived facts, but it must not erase rejected or contradictory evidence. Entity assembly groups evidence into product, offer, variant, and asset entities. Target selection chooses the primary product before canonical field resolution. The resolver owns accepted/rejected evidence IDs and conflict status for each fact. Materialization may only project resolved decisions, explicit derived facts, accepted asset decisions, and canonical capture URL fallback.
 
-After detail candidate resolution, public-field repairs must be recorded as `CandidateSet.field_transforms` before `_evidence_graph` is attached. The graph must expose `field_evidence`, `field_decisions`, `field_transforms`, and graph-only `row_lineage` for final variant rows. Legacy `_transforms` may remain as a temporary trace projection, but it must not be the only record of a production-facing mutation.
+The public firewall is not a semantic repair stage. It may enforce allowed keys, types, canonical enums, empty-value removal, and lineage shape only. Title cleanup, brand rejection, SKU repair, variant-family filtering, image choice, availability normalization, and cross-product rejection belong upstream in collector admission, entity linking, target selection, resolution, or asset decisions.
 
-**Source priority is a resolver tiebreaker (enforced by `SOURCE_PRIORITY` / `_SOURCE_PRIORITY_RANK`):**
+**Source priority is a resolver tiebreaker, not a source discard rule:**
 1. Platform adapter
 2. JSON-LD / Microdata
 3. Network payload intercept
@@ -58,7 +58,9 @@ After detail candidate resolution, public-field repairs must be recorded as `Can
 5. DOM selector / heuristics
 6. LLM-adjudicated evidence only when the user enabled LLM
 
-**Exception for structured object fields:** `variants`, `variant_axes`, `selected_variant` use `finalize_candidate_value` across ALL source candidates, not just the winner's. This is intentional — do not change it to winner-only.
+Variant and offer facts remain entity-scoped. Parent offer/range/availability values may be derived from resolved variant facts only when the derivation has explicit lineage. A variant ID may be derived from one accepted unique SKU only when the derivation is recorded. No hidden post-materialization mutation is allowed.
+
+Extraction results expose `transport_outcome`, `data_integrity`, and per-field evidence states: `captured_and_resolved`, `captured_but_rejected`, `captured_conflicting`, `source_unavailable`, or `not_present_in_captured_sources`. Transport success never implies clean data integrity. Proven product-data-source failure must be represented as honest source unavailability rather than an extraction defect.
 
 ---
 

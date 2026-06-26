@@ -47,8 +47,10 @@ from app.extraction.pipeline import (
 )
 from app.extraction.resolution import resolve as resolve_ecommerce_detail
 from app.extraction.result_building import (
+    data_integrity_status as _data_integrity_status,
     decisions as _decisions,
     entity_graph as _entity_graph,
+    field_evidence_states as _field_evidence_states,
     is_shell_record as _is_shell_record,
     metrics as _metrics,
     retry_request as _retry_request,
@@ -151,6 +153,7 @@ def extract(request: ExtractionRequest) -> ExtractionResult:
         ExtractionVerdict, runtime.assess(records, resolution, findings, request, spec)
     )
     decisions = _decisions(resolution)
+    field_states = _field_evidence_states(records, normalized, decisions, request)
     graph = _entity_graph(graph_state, normalized, spec)
     return ExtractionResult(
         surface=spec.surface,
@@ -160,6 +163,9 @@ def extract(request: ExtractionRequest) -> ExtractionResult:
         target=target,
         findings=findings,
         decisions=decisions,
+        field_states=field_states,
+        transport_outcome=request.capture.acquisition_outcome,
+        data_integrity=_data_integrity_status(verdict, field_states),
         records=records if verdict in {"success", "partial", "review"} else (),
         verdict=verdict,
         retry_request=_retry_request(verdict, records, request, normalized),
@@ -207,6 +213,9 @@ def _blocked_extraction_result(
         target=target,
         findings=findings,
         decisions=(),
+        field_states=(),
+        transport_outcome=request.capture.acquisition_outcome,
+        data_integrity="blocked",
         records=(),
         verdict="blocked",
         retry_request=None,

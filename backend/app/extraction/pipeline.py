@@ -6,7 +6,11 @@ import json
 from typing import Any
 from urllib.parse import urljoin, urlsplit
 
-from app.extraction.collectors.dom import DomCollector, collect_requested_fields, css_recipe_evidence
+from app.extraction.collectors.dom import (
+    DomCollector,
+    collect_requested_fields,
+    css_recipe_evidence,
+)
 from app.extraction.collectors.jsonld import JsonLdCollector
 from app.extraction.collectors.js_state import JsStateCollector
 from app.extraction.collectors.metadata import (
@@ -64,10 +68,8 @@ from app.extraction.contracts import (
     ArtifactReader,
     CaptureBundle,
     CommerceDetailRecord,
-    EntityHint,
     Evidence,
     FACT_TYPES,
-    SourceLocator,
 )
 from app.extraction.ids import stable_id
 from app.extraction.materialization import materialize

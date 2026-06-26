@@ -4,6 +4,10 @@ import json
 from pathlib import Path
 from typing import Any
 
+from app.extraction import Surface, extract
+from app.extraction.contracts import ExtractionResult
+from app.extraction.replay import fixture_request_from_inputs
+
 EMPTY_VALUES: tuple[object, ...] = (None, "", [], {}, ())
 OFFER_FIELDS = frozenset({"price", "currency", "availability"})
 __all__ = [
@@ -115,10 +119,8 @@ def _audit_case(case: dict[str, Any], *, root: Path) -> dict[str, Any]:
     if missing_artifacts:
         raise ValueError(f"{case_id} missing artifacts: {', '.join(missing_artifacts)}")
 
-    records = _read_json(result_root / "records.json")
-    summary = _read_json(result_root / "summary.json")
-    debug = _read_json(result_root / "debug.json")
-    field_states = _field_states(records, summary, debug)
+    result = _replay_case(case, result_root=result_root)
+    field_states = {row.field: row.state for row in result.field_states}
     expected_states = {
         str(field): str(state)
         for field, state in (case.get("expected_field_states") or {}).items()
@@ -132,150 +134,211 @@ def _audit_case(case: dict[str, Any], *, root: Path) -> dict[str, Any]:
         for field, expected in expected_states.items()
         if field_states.get(field, "not_requested") != expected
     )
-    signals = _case_signals(case, records=records, debug=debug)
+    signals = _case_signals(case, result=result)
+    integrity_failure = bool(
+        signals["cross_entity_lineage"]
+        or signals["enum_leaks"]
+        or signals["identifier_conflicts"]
+        or signals["public_evidence_divergence"]
+        or signals["selected_product_title_matches"] is False
+        or mismatches
+    )
+    source_unavailable = bool(signals["source_unavailable"])
     unresolved = tuple(
-        str(value)
-        for value in case.get("issue_ids") or ()
-        if signals.get("integrity_failure")
+        str(value) for value in case.get("issue_ids") or () if integrity_failure
     )
     classification = (
         "integrity_failure"
-        if signals.get("integrity_failure")
+        if integrity_failure
         else "source_unavailable"
-        if signals.get("source_unavailable")
+        if source_unavailable
         else "artifact_consistent"
     )
     return {
         "case_id": case_id,
         "url_result_id": int(case.get("url_result_id") or 0),
         "classification": classification,
+        "verdict": result.verdict,
+        "data_integrity": result.data_integrity,
         "field_states": field_states,
         "field_state_mismatches": mismatches,
         "signals": signals,
+        "findings": tuple(finding.rule_id for finding in result.findings),
         "unresolved_issue_ids": unresolved,
         "artifact_paths": tuple(str(result_root / name) for name in artifact_files),
     }
 
 
-def _field_states(
-    records: dict[str, Any], summary: dict[str, Any], debug: dict[str, Any]
-) -> dict[str, str]:
-    public = _first_mapping(records.get("records"))
-    provenance = _first_mapping(records.get("provenance"))
-    raw = provenance.get("raw_data") if isinstance(provenance, dict) else {}
-    raw = raw if isinstance(raw, dict) else {}
-    discovered = (
-        provenance.get("discovered_data") if isinstance(provenance, dict) else {}
+def _replay_case(case: dict[str, Any], *, result_root: Path) -> ExtractionResult:
+    debug = _read_json(result_root / "debug.json")
+    acquisition = debug.get("acquisition")
+    acquisition = acquisition if isinstance(acquisition, dict) else {}
+    html = (result_root / "page.html").read_text(encoding="utf-8")
+    source_url = str(case.get("source_url") or "")
+    expected_states_value = case.get("expected_field_states")
+    expected_states = (
+        expected_states_value if isinstance(expected_states_value, dict) else {}
     )
-    rejected = (
-        discovered.get("rejected_public_fields") if isinstance(discovered, dict) else {}
+    requested_fields = tuple(str(field) for field in expected_states)
+    request = fixture_request_from_inputs(
+        Surface.ECOMMERCE_DETAIL,
+        html,
+        source_url,
+        requested_fields=requested_fields,
+        network_payloads=list(acquisition.get("network_payloads") or []),
     )
-    rejected = rejected if isinstance(rejected, dict) else {}
-    decisions = _decisions_by_field(summary)
-    source_unavailable = _has_blocked_product_source(debug)
-
-    fields = set(public) | set(raw) | set(rejected) | set(decisions)
-    states: dict[str, str] = {}
-    for field in fields:
-        if field.startswith("_") or field in {
-            "variants",
-            "variant_count",
-            "additional_images",
-        }:
-            continue
-        if field in rejected:
-            states[field] = "captured_but_rejected"
-            continue
-        if public.get(field) not in EMPTY_VALUES:
-            states[field] = "captured_and_resolved"
-            continue
-        decision = decisions.get(field)
-        if decision and decision.get("status") == "unresolved":
-            states[field] = (
-                "captured_conflicting"
-                if decision.get("accepted_evidence_ids")
-                else "captured_but_rejected"
-            )
-            continue
-        if raw.get(field) not in EMPTY_VALUES:
-            states[field] = "captured_but_rejected"
-            continue
-        if source_unavailable and field in OFFER_FIELDS:
-            states[field] = "source_unavailable"
-            continue
-        states[field] = "not_present_in_captured_sources"
-    for field in OFFER_FIELDS:
-        if field not in states and source_unavailable:
-            states[field] = "source_unavailable"
-    return states
-
-
-def _decisions_by_field(summary: dict[str, Any]) -> dict[str, dict[str, Any]]:
-    extraction = summary.get("extraction")
-    decisions = extraction.get("decisions") if isinstance(extraction, dict) else []
-    output: dict[str, dict[str, Any]] = {}
-    for row in decisions if isinstance(decisions, list) else []:
-        if not isinstance(row, dict):
-            continue
-        fact_type = str(row.get("fact_type") or "")
-        if not fact_type.startswith("product.") and not fact_type.startswith("offer."):
-            continue
-        field = fact_type.rsplit(".", 1)[-1]
-        current = output.get(field)
-        if current is None or row.get("status") == "unresolved":
-            output[field] = row
-    return output
-
-
-def _case_signals(
-    case: dict[str, Any], *, records: dict[str, Any], debug: dict[str, Any]
-) -> dict[str, Any]:
-    invariants_value = case.get("expected_invariants")
-    invariants: dict[str, Any] = (
-        invariants_value if isinstance(invariants_value, dict) else {}
-    )
-    public = _first_mapping(records.get("records"))
-    provenance = _first_mapping(records.get("provenance"))
-    raw = provenance.get("raw_data") if isinstance(provenance, dict) else {}
-    raw = raw if isinstance(raw, dict) else {}
-    variants_value = raw.get("variants")
-    variants: list[Any] = variants_value if isinstance(variants_value, list) else []
-    variant_skus = {
-        str(row.get("sku"))
-        for row in variants
-        if isinstance(row, dict) and row.get("sku") not in EMPTY_VALUES
-    }
-    cross_product_values = invariants.get("cross_product_variant_skus")
-    expected_cross_product = {
-        str(value)
-        for value in (
-            cross_product_values
-            if isinstance(cross_product_values, (list, tuple))
-            else ()
-        )
-    }
-    leaked_skus = tuple(sorted(variant_skus & expected_cross_product))
-    raw_availability = str(raw.get("availability") or "")
-    availability_prefix = str(invariants.get("raw_availability_prefix") or "")
+    diagnostics = dict(acquisition.get("acquisition_diagnostics") or {})
+    invariants = case.get("expected_invariants")
+    invariants = invariants if isinstance(invariants, dict) else {}
     blocked_source = _has_blocked_product_source(
         debug,
         expected_status=invariants.get("blocked_product_api_status"),
         marker=invariants.get("blocked_product_api_marker"),
     )
-    expected_title = invariants.get("selected_product_title")
-    title_matches = public.get("title") == expected_title
-    integrity_failure = (
-        bool(expected_title is not None and not title_matches)
-        or bool(leaked_skus)
-        or bool(availability_prefix and raw_availability.startswith(availability_prefix))
+    if blocked_source:
+        diagnostics["source_capabilities"] = {
+            "product_data_source_unavailable": True,
+            "affected_field_families": (
+                "price",
+                "currency",
+                "availability",
+                "variants",
+            ),
+        }
+    request = request.model_copy(
+        update={
+            "capture": request.capture.model_copy(
+                update={
+                    "acquisition_diagnostics": diagnostics,
+                    "browser_attempted": bool(
+                        (acquisition.get("browser_diagnostics") or {}).get(
+                            "browser_attempted"
+                        )
+                    ),
+                }
+            )
+        }
     )
+    return extract(request)
+
+
+def _case_signals(case: dict[str, Any], *, result: ExtractionResult) -> dict[str, Any]:
+    invariants_value = case.get("expected_invariants")
+    invariants: dict[str, Any] = (
+        invariants_value if isinstance(invariants_value, dict) else {}
+    )
+    public = (
+        result.records[0].model_dump(mode="python", exclude_none=True)
+        if result.records
+        else {}
+    )
+    variants_value = public.get("variants")
+    variants = list(variants_value) if isinstance(variants_value, (list, tuple)) else []
+    variant_skus = {
+        str(row.get("sku"))
+        for row in variants
+        if isinstance(row, dict) and row.get("sku") not in EMPTY_VALUES
+    }
+    expected_cross_product = {
+        str(value) for value in invariants.get("cross_product_variant_skus", ())
+    }
+    leaked_skus = tuple(sorted(variant_skus & expected_cross_product))
+    expected_title = invariants.get("selected_product_title")
+    title_matches = (
+        public.get("title") == expected_title if expected_title is not None else None
+    )
+    field_states = {row.field: row.state for row in result.field_states}
+    source_unavailable = any(
+        state == "source_unavailable" for state in field_states.values()
+    )
+    enum_leaks = _enum_leaks(public)
+    identifier_conflicts = _identifier_conflicts(public)
+    divergence = _public_evidence_divergence(result, public)
     return {
         "selected_product_title_matches": title_matches,
         "cross_product_variant_skus": leaked_skus,
-        "raw_availability": raw_availability or None,
-        "source_unavailable": blocked_source,
-        "integrity_failure": integrity_failure,
+        "cross_entity_lineage": leaked_skus,
+        "enum_leaks": enum_leaks,
+        "identifier_conflicts": identifier_conflicts,
+        "public_evidence_divergence": divergence,
+        "source_unavailable": source_unavailable,
     }
+
+
+def _enum_leaks(public: dict[str, Any]) -> tuple[str, ...]:
+    allowed = {
+        "in_stock",
+        "out_of_stock",
+        "limited_stock",
+        "preorder",
+        "backorder",
+        "discontinued",
+    }
+    leaks: list[str] = []
+    availability = public.get("availability")
+    if availability not in EMPTY_VALUES and availability not in allowed:
+        leaks.append("availability")
+    variants = public.get("variants")
+    for index, row in enumerate(
+        variants if isinstance(variants, (list, tuple)) else ()
+    ):
+        if not isinstance(row, dict):
+            continue
+        value = row.get("availability")
+        if value not in EMPTY_VALUES and value not in allowed:
+            leaks.append(f"variants[{index}].availability")
+    return tuple(leaks)
+
+
+def _identifier_conflicts(public: dict[str, Any]) -> tuple[str, ...]:
+    conflicts: list[str] = []
+    parent_sku = str(public.get("sku") or "").strip()
+    variants = public.get("variants")
+    for index, row in enumerate(
+        variants if isinstance(variants, (list, tuple)) else ()
+    ):
+        if not isinstance(row, dict):
+            continue
+        variant_id = str(row.get("variant_id") or "").strip()
+        sku = str(row.get("sku") or "").strip()
+        if variant_id and sku and variant_id != sku and parent_sku == variant_id:
+            conflicts.append(f"variants[{index}].sku")
+    return tuple(conflicts)
+
+
+def _public_evidence_divergence(
+    result: ExtractionResult, public: dict[str, Any]
+) -> tuple[str, ...]:
+    evidence_ids = {row.evidence_id for row in result.evidence}
+    lineage = public.get("_lineage")
+    lineage = lineage if isinstance(lineage, dict) else {}
+    divergent: list[str] = []
+    for field, value in public.items():
+        if (
+            field.startswith("_")
+            or value in EMPTY_VALUES
+            or field
+            in {
+                "variant_count",
+                "variants",
+                "additional_images",
+            }
+        ):
+            continue
+        if field == "url" and field not in lineage:
+            continue
+        raw = lineage.get(field)
+        if not isinstance(raw, dict):
+            divergent.append(field)
+            continue
+        ids = raw.get("evidence_ids")
+        if not isinstance(ids, list):
+            divergent.append(field)
+            continue
+        missing = [str(value) for value in ids if str(value) not in evidence_ids]
+        if missing:
+            divergent.append(field)
+    return tuple(divergent)
 
 
 def _has_blocked_product_source(

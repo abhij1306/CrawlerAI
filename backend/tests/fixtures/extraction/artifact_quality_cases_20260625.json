@@ -9,11 +9,11 @@
       "issue_ids": ["QD-05", "QD-09", "QD-11", "QD-12", "QD-13"],
       "expected_field_states": {
         "title": "captured_and_resolved",
-        "brand": "captured_but_rejected",
+        "brand": "captured_and_resolved",
         "description": "captured_but_rejected",
         "price": "captured_and_resolved",
         "currency": "captured_and_resolved",
-        "availability": "captured_but_rejected"
+        "availability": "captured_and_resolved"
       },
       "expected_invariants": {
         "selected_product_title": "47 NY Yankees Clean Up Cap",
@@ -29,7 +29,7 @@
       "issue_ids": ["QD-03", "QD-09", "QD-11", "QD-12", "QD-13"],
       "expected_field_states": {
         "title": "captured_and_resolved",
-        "brand": "captured_but_rejected",
+        "brand": "captured_and_resolved",
         "description": "captured_but_rejected",
         "price": "source_unavailable",
         "currency": "source_unavailable",

@@ -462,6 +462,7 @@ def _variant_value(value: str, *, axis: str) -> str | None:
         return None
     return normalized
 
+
 def css_recipe_evidence(bundle, reader) -> tuple[Evidence, ...]:
     rules_ref = next(
         (ref for ref in bundle.artifacts if ref.artifact_id == "css_field_rules"), None
