@@ -313,6 +313,11 @@ DETAIL_TITLE_STYLE_ONLY_TOKENS = frozenset(
         "regular",
         "petite",
         "tall",
+        "small",
+        "medium",
+        "large",
+        "x-large",
+        "xx-large",
     }
 )
 DETAIL_TITLE_STYLE_ONLY_MAX_WORDS = 2

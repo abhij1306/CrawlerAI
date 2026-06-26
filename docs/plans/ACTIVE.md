@@ -3,7 +3,7 @@
 **Current:** `docs/plans/upstream-extraction-integrity-plan.md`
 **Status:** IN PROGRESS
 **Started:** 2026-06-25
-**Current slice:** Slice 15 — Documentation, Offline Validation, and User-Owned Live Gate
+**Current slice:** Slice 15 — Final offline validation complete; awaiting user-owned live gate
 
 ## Current Work
 

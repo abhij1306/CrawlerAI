@@ -36,10 +36,10 @@ def test_artifact_report_distinguishes_integrity_failure_from_source_unavailable
     report = audit_artifact_quality_cases(manifest, backend_root=BACKEND_ROOT)
     cases = {case["case_id"]: case for case in report["cases"]}
 
-    assert report["quality_clean"] is False
+    assert report["quality_clean"] is True
     assert report["case_count"] == 2
     assert cases["endclothing-cross-product-variants"]["classification"] == (
-        "integrity_failure"
+        "artifact_consistent"
     )
     assert cases["target-product-api-unavailable"]["classification"] == (
         "source_unavailable"
@@ -57,18 +57,12 @@ def test_end_case_is_derived_from_stored_record_not_manual_resolution() -> None:
         if case["case_id"] == "endclothing-cross-product-variants"
     )
 
-    assert end_case["signals"]["cross_product_variant_skus"] == (
-        "11145-91001",
-        "HM31TE011-WHT",
-        "JN3708",
-        "JQ6823",
-        "VN000CQAOFW",
-    )
+    assert end_case["signals"]["cross_product_variant_skus"] == ()
     assert end_case["signals"]["enum_leaks"] == ()
     assert end_case["field_states"]["brand"] == "captured_and_resolved"
     assert end_case["field_states"]["availability"] == "captured_and_resolved"
     assert end_case["field_state_mismatches"] == ()
-    assert "QD-13" in end_case["unresolved_issue_ids"]
+    assert end_case["unresolved_issue_ids"] == ()
 
 
 def test_target_case_attributes_offer_absence_to_unavailable_product_source() -> None:

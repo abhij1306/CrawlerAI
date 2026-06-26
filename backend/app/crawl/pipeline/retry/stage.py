@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from dataclasses import replace
 import time
 
@@ -159,7 +160,9 @@ async def _acquire_browser_retry_result(
         acquire_impl = getattr(extraction_loop, "acquire", acquire)
         context.browser_escalation_count += 1
         return await acquire_impl(request)
-    except (RuntimeError, ValueError, TypeError, OSError) as exc:
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:
         _merge_browser_diagnostics(
             acquisition_result,
             build_failed_browser_diagnostics(
@@ -174,6 +177,9 @@ async def _acquire_browser_retry_result(
         await _log_pipeline_event(
             context,
             "warning",
-            f"Browser retry failed for {context.url}: {type(exc).__name__}: {exc}",
+            (
+                f"Browser retry failed for {context.url}: "
+                f"{type(exc).__name__}: {exc}; using the original HTTP payload"
+            ),
         )
-        raise
+        return None

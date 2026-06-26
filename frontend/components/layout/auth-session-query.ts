@@ -10,7 +10,7 @@ export function isAuthRoute(pathname: string | null) {
 export function getAuthSessionQueryOptions(pathname?: string | null) {
   return {
     queryKey: AUTH_SESSION_QUERY_KEY,
-    queryFn: api.me,
+    queryFn: ({ signal }: { signal: AbortSignal }) => api.me({ signal }),
     enabled: pathname === undefined ? true : !isAuthRoute(pathname),
     retry: false,
     refetchOnWindowFocus: false,

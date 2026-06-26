@@ -167,6 +167,23 @@ def test_navigation_and_label_only_image_urls_are_rejected() -> None:
     assert is_utility_image_url("https://cdn.test/products/pants/Front%20view")
 
 
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "filename",
+    [
+        "amex.svg",
+        "mastercard.svg",
+        "affirm.svg",
+        "visa-card.svg",
+        "applepay.svg",
+        "apple-pay.svg",
+        "apple_pay.svg",
+    ],
+)
+def test_payment_provider_svg_urls_are_rejected(filename: str) -> None:
+    assert is_utility_image_url(f"https://cdn.test/assets/{filename}")
+
+
 def test_single_low_resolution_primary_candidate_is_rejected() -> None:
     image = "https://cdn.test/product.jpg?sw=71"
     assert low_resolution_asset_urls((image,)) == frozenset({image})
@@ -185,3 +202,12 @@ def test_identity_token_does_not_singularize_double_s_words() -> None:
     assert identity_token("dress") == "dress"
     assert identity_token("glass") == "glass"
     assert identity_token("shoes") == "shoe"
+
+
+def test_public_asset_delivery_url_repairs_nested_single_slash_https_url() -> None:
+    from app.core.shared.url_utils import public_asset_delivery_url
+
+    value = "https://shop.test/w_1024/https:/images.ctfassets.net/path/image.png"
+    assert public_asset_delivery_url(value) == (
+        "https://images.ctfassets.net/path/image.png"
+    )

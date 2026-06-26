@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import binascii
 from collections.abc import Iterable
 from typing import Any
 
@@ -90,6 +92,21 @@ def selected_product_root_paths(
     return tuple(sorted(product_roots, key=lambda value: (len(value), value)))
 
 
+def _normalized_cache_item_id(path_part: str) -> str | None:
+    prefix, separator, encoded = str(path_part).partition(":")
+    if separator != ":" or prefix.casefold() != "item" or not encoded:
+        return None
+    try:
+        padded = encoded + "=" * (-len(encoded) % 4)
+        decoded = base64.b64decode(padded, validate=True).decode("utf-8")
+    except (binascii.Error, UnicodeDecodeError, ValueError):
+        return None
+    entity, separator, item_id = decoded.partition(":")
+    if separator != ":" or entity.casefold() != "item" or not item_id.isdigit():
+        return None
+    return item_id
+
+
 def path_product_identity_conflicts(page_url: str, path: str) -> bool:
     parent_codes = set(detail_identity_codes_from_url(page_url))
     if not parent_codes:
@@ -99,6 +116,13 @@ def path_product_identity_conflicts(page_url: str, path: str) -> bool:
         for part in str(path).replace("[", "/").replace("]", "/").split("/")
         if part
     )
+    normalized_item_ids = {
+        item_id
+        for part in parts
+        if (item_id := _normalized_cache_item_id(part)) is not None
+    }
+    if any(item_id not in parent_codes for item_id in normalized_item_ids):
+        return True
     for index, part in enumerate(parts[:-1]):
         if part.casefold() not in variant_policy.VARIANT_PRODUCT_MAP_PATH_TOKENS:
             continue

@@ -191,4 +191,5 @@ def test_supported_availability_states_share_canonical_semantics(
 
     assert item.raw_value == raw
     assert item.value == expected
-    assert public_availability(raw) == expected
+    assert public_availability(item.value) == expected
+    assert public_availability(raw) == ""

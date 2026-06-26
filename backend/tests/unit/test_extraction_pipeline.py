@@ -1720,7 +1720,9 @@ def test_identifier_placeholder_and_filename_titles_do_not_materialize(
     assert result.verdict in {"partial", "review"}
 
 
-@pytest.mark.parametrize("bad_title", ("Black", "Refurbished", "& More", "Shipping"))
+@pytest.mark.parametrize(
+    "bad_title", ("Black", "Refurbished", "& More", "Shipping", "TALL LARGE")
+)
 def test_option_condition_navigation_and_shipping_titles_are_rejected_at_admission(
     bad_title: str,
 ) -> None:
@@ -1746,6 +1748,31 @@ def test_option_condition_navigation_and_shipping_titles_are_rejected_at_admissi
         for evidence_id in decision.accepted_evidence_ids
     }
     assert not accepted_ids.intersection(row.evidence_id for row in bad_rows)
+
+
+def test_brand_boilerplate_values_are_rejected_at_admission() -> None:
+    for bad_brand in (
+        "Refurbished",
+        "Womens",
+        "the",
+        "green",
+        "Black",
+        "Fragrance",
+        "Register",
+        "at",
+        "India | The",
+    ):
+        result = _extract(
+            "ecommerce_detail",
+            f"""
+            <head><meta property="product:brand" content="{bad_brand}"></head>
+            <main><h1>Real Product Name</h1></main>
+            """,
+            "https://shop.test/products/real-product-name",
+        )
+
+        assert result.records
+        assert result.records[0].brand is None
 
 
 def test_unavailable_product_source_produces_precise_partial_field_states() -> None:
@@ -3438,6 +3465,7 @@ def test_embedded_product_json_in_recommendation_scope_is_ignored() -> None:
           }
           </script>
           <section class="pairs-well-with product-recommendations">
+            <img src="https://cdn.shop.test/PL_PS25_FTW_0044.jpg" alt="#color_ant-white">
             <script type="application/json" class="pww-product-json">
             {
               "title": "Ruched Handkerchief Dress",
@@ -3477,6 +3505,7 @@ def test_embedded_product_json_in_recommendation_scope_is_ignored() -> None:
             "size": "O/S",
         },
     ]
+    assert "PL_PS25_FTW_0044" not in str(record)
     assert all(
         "dress" not in str(row.value).casefold()
         and "ruched" not in str(row.value).casefold()

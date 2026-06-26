@@ -136,9 +136,21 @@ def normalize_ecommerce_detail(
         )
         if row is not None
     )
+    normalized_derived = tuple(
+        normalize_evidence(row, page_url=page_url) for row in derived
+    )
     page_brand = _brand_from_page_identity(normalized, page_url=page_url)
-    combined = normalized + derived + ((page_brand,) if page_brand else ())
-    return _dedupe_equivalent(_flag_brand_conflicts(combined, page_brand=page_brand))
+    normalized_page_brand = (
+        normalize_evidence(page_brand, page_url=page_url) if page_brand else None
+    )
+    combined = (
+        normalized
+        + normalized_derived
+        + ((normalized_page_brand,) if normalized_page_brand else ())
+    )
+    return _dedupe_equivalent(
+        _flag_brand_conflicts(combined, page_brand=normalized_page_brand)
+    )
 
 
 def _flag_brand_conflicts(

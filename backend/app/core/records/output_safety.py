@@ -1,6 +1,19 @@
 from __future__ import annotations
 
+import re
 
+from app.core.config.field_mappings import (
+    AVAILABILITY_FIELD,
+    BARCODE_FIELD,
+    CURRENCY_FIELD,
+    IMAGE_URL_FIELD,
+    PRICE_FIELD,
+    SKU_FIELD,
+    STOCK_QUANTITY_FIELD,
+    URL_FIELD,
+)
+from app.core.config.variant_policy import PUBLIC_VARIANT_AXIS_FIELDS
+from app.core.records.url_identity import conflicting_product_asset_urls
 from app.core.shared.url_utils import public_asset_delivery_url
 from app.extraction.contracts import (
     AssetDecision,
@@ -31,6 +44,38 @@ def materialize_product_assets(
     selected = [
         item for item in asset_decisions if item.url and item.accepted_evidence_ids
     ]
+    product_identity_values = tuple(
+        record.get(field)
+        for field in (
+            "url",
+            "canonical_url",
+            "title",
+            "sku",
+            "product_id",
+            "part_number",
+        )
+        if record.get(field) not in (None, "", [], {}, ())
+    )
+    conflicting_urls = conflicting_product_asset_urls(
+        product_identity_values, tuple(str(item.url) for item in selected if item.url)
+    )
+    style_conflicting_urls = {
+        str(item.url)
+        for item in selected
+        if _asset_style_code_conflicts(product_identity_values, str(item.url))
+    }
+    filtered = [
+        item
+        for item in selected
+        if str(item.url) not in conflicting_urls
+        and str(item.url) not in style_conflicting_urls
+    ]
+    if filtered:
+        selected = filtered
+    elif style_conflicting_urls:
+        selected = [
+            item for item in selected if str(item.url) not in style_conflicting_urls
+        ]
     primary = next((item for item in selected if item.role == "primary"), None)
     if primary is None:
         return
@@ -58,7 +103,25 @@ def materialize_product_assets(
         lineages["additional_images"] = additional_lineage
 
 
-
+def _asset_style_code_conflicts(
+    product_values: tuple[object, ...], asset_url: str
+) -> bool:
+    product_codes = {
+        match.casefold()
+        for value in product_values
+        for match in re.findall(r"[A-Za-z]{1,8}\d{3,}-\d{2,4}", str(value or ""))
+    }
+    asset_codes = {
+        match.casefold()
+        for match in re.findall(r"[A-Za-z]{1,8}\d{3,}-\d{2,4}", asset_url)
+    }
+    if not product_codes or not asset_codes:
+        return False
+    product_bases = {code.rsplit("-", 1)[0] for code in product_codes}
+    return any(
+        code.rsplit("-", 1)[0] in product_bases and code not in product_codes
+        for code in asset_codes
+    )
 
 
 def _asset_lineage(decision: AssetDecision) -> dict[str, object]:
@@ -95,7 +158,7 @@ def sanitize_materialized_record(
         }
         if "availability" in row and not public_availability(row.get("availability")):
             row.pop("availability", None)
-        if not row:
+        if not _variant_row_is_actionable(row):
             continue
         rows.append(row)
         lineage = lineage_rows[index] if index < len(lineage_rows) else {}
@@ -113,6 +176,28 @@ def sanitize_materialized_record(
     record.pop("variants", None)
     record.pop("variant_count", None)
     lineages.pop("variants", None)
+
+
+def _variant_row_is_actionable(row: dict[str, object]) -> bool:
+    transport_fields = {
+        "variant_id",
+        SKU_FIELD,
+        BARCODE_FIELD,
+        URL_FIELD,
+        PRICE_FIELD,
+        CURRENCY_FIELD,
+        IMAGE_URL_FIELD,
+        AVAILABILITY_FIELD,
+        STOCK_QUANTITY_FIELD,
+    }
+    if any(row.get(field) not in (None, "", [], {}, ()) for field in transport_fields):
+        return True
+    axes = {
+        key
+        for key, value in row.items()
+        if key in PUBLIC_VARIANT_AXIS_FIELDS and value not in (None, "", [], {}, ())
+    }
+    return len(axes) >= 2
 
 
 def public_availability(value: object) -> str:

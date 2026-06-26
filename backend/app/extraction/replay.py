@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from typing import Any
 
 from app.core.config.extraction_recipes import (
@@ -231,6 +232,9 @@ def request_from_acquisition_result(
         "challenge_page",
         "low_content_shell",
     }
+    raw_acquisition_diagnostics = getattr(
+        acquisition_result, "acquisition_diagnostics", {}
+    )
     bundle, reader = _bundle_from_runtime_inputs(
         html,
         final_url,
@@ -241,8 +245,10 @@ def request_from_acquisition_result(
         blocked=blocked,
         network_payloads=network_payloads,
         artifacts=artifacts,
-        acquisition_diagnostics=dict(
-            getattr(acquisition_result, "acquisition_diagnostics", {}) or {}
+        acquisition_diagnostics=(
+            dict(raw_acquisition_diagnostics)
+            if isinstance(raw_acquisition_diagnostics, Mapping)
+            else {}
         ),
         html_document=html_document
         if isinstance(html_document, HtmlDocument)

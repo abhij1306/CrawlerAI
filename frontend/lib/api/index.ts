@@ -91,8 +91,8 @@ export const api = {
     }
     return response;
   },
-  me: async () => {
-    const res = await apiClient.get<User>('/api/auth/me');
+  me: async (options?: ApiRequestOptions) => {
+    const res = await apiClient.get<User>('/api/auth/me', options);
     return strictValidate(userSchema, res, 'me');
   },
   dashboard: () => apiClient.get<Dashboard>('/api/dashboard'),

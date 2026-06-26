@@ -106,10 +106,10 @@ def materialize(
                 "selector_source": accepted.collector_id,
                 "sample_value": accepted.value,
             }
-    materialize_product_assets(record, lineages, resolution.asset_decisions)
     if not record.get("url"):
         record["url"] = canonical_url
         lineages["url"] = {"rule_id": "canonical_capture_url", "evidence_ids": []}
+    materialize_product_assets(record, lineages, resolution.asset_decisions)
     variants, variant_lineage = _variants(
         entities,
         resolution,
@@ -170,6 +170,15 @@ def _cohere_parent_offer(
     variant_lineage: list[dict[str, object]],
 ) -> None:
     variants, variant_lineage = _leaf_variant_rows(variants, variant_lineage)
+    _drop_conflicting_variant_prices(record, variants, variant_lineage)
+    variant_skus = {
+        str(row.get("sku"))
+        for row in variants
+        if row.get("sku") not in (None, "", [], {}, ())
+    }
+    if len(variant_skus) > 1 and str(record.get("sku") or "") in variant_skus:
+        record.pop("sku", None)
+        lineages.pop("sku", None)
     for field in ("price", "currency", "original_price", "sku"):
         values = [row.get(field) for row in variants]
         if (
@@ -227,6 +236,33 @@ def _cohere_parent_offer(
             continue
         record[field] = aggregate_value
         lineages[field] = lineage_value
+
+
+def _drop_conflicting_variant_prices(
+    record: dict[str, object],
+    variants: list[dict[str, object]],
+    variant_lineage: list[dict[str, object]],
+) -> None:
+    parent_price = record.get("price")
+    parent_currency = str(record.get("currency") or "")
+    if parent_price in (None, "", [], {}, ()) or not parent_currency:
+        return
+    try:
+        parent_amount = Decimal(str(parent_price))
+    except (InvalidOperation, TypeError, ValueError):
+        return
+    for row, lineage_row in zip(variants, variant_lineage):
+        if str(row.get("currency") or "") != parent_currency:
+            continue
+        try:
+            variant_amount = Decimal(str(row.get("price")))
+        except (InvalidOperation, TypeError, ValueError):
+            continue
+        smaller = min(abs(parent_amount), abs(variant_amount))
+        larger = max(abs(parent_amount), abs(variant_amount))
+        if smaller and larger / smaller >= Decimal("20"):
+            row.pop("price", None)
+            lineage_row.pop("price", None)
 
 
 def _reconcile_near_equal_price(

@@ -153,7 +153,16 @@ def extract(request: ExtractionRequest) -> ExtractionResult:
         ExtractionVerdict, runtime.assess(records, resolution, findings, request, spec)
     )
     decisions = _decisions(resolution)
-    field_states = _field_evidence_states(records, normalized, decisions, request)
+    field_states = _field_evidence_states(
+        records,
+        normalized,
+        decisions,
+        request,
+        primary_product_entity_id=getattr(
+            resolution, "primary_product_entity_id", None
+        ),
+        primary_offer_entity_id=getattr(resolution, "primary_offer_entity_id", None),
+    )
     graph = _entity_graph(graph_state, normalized, spec)
     return ExtractionResult(
         surface=spec.surface,

@@ -38,6 +38,9 @@ def field_evidence_states(
     evidence: tuple[Evidence, ...],
     decision_rows: tuple[Decision, ...],
     request: ExtractionRequest,
+    *,
+    primary_product_entity_id: str | None = None,
+    primary_offer_entity_id: str | None = None,
 ) -> tuple[FieldEvidenceState, ...]:
     record = records[0] if records else None
     public_to_fact = {
@@ -67,15 +70,29 @@ def field_evidence_states(
         for fact in set(public_to_fact.values())
     }
     decisions_by_fact = {
-        row.fact_type: row
-        for row in decision_rows
-        if row.fact_type in set(public_to_fact.values())
+        fact: tuple(row for row in decision_rows if row.fact_type == fact)
+        for fact in set(public_to_fact.values())
     }
     states: list[FieldEvidenceState] = []
     for field in fields:
         fact = public_to_fact.get(field)
         rows = by_fact.get(fact, ()) if fact else ()
-        decision = decisions_by_fact.get(fact) if fact else None
+        candidate_decisions = decisions_by_fact.get(fact, ()) if fact else ()
+        target_entity_id = (
+            primary_offer_entity_id
+            if fact
+            in {
+                field_mappings.OFFER_PRICE_FACT_TYPE,
+                field_mappings.OFFER_CURRENCY_FACT_TYPE,
+                field_mappings.OFFER_AVAILABILITY_FACT_TYPE,
+            }
+            else primary_product_entity_id
+        )
+        relevant_decisions = tuple(
+            row
+            for row in candidate_decisions
+            if target_entity_id is None or row.entity_id == target_entity_id
+        )
         present = bool(record and record.get(field) not in (None, "", [], {}, ()))
         state: typing.Literal[
             "captured_and_resolved",
@@ -90,9 +107,18 @@ def field_evidence_states(
         elif field in affected or (field == "image_url" and "images" in affected):
             state = "source_unavailable"
             reasons = ("product_data_source_unavailable",)
-        elif decision and decision.status == "conflicted":
+        elif any(row.status == "conflicted" for row in relevant_decisions):
             state = "captured_conflicting"
-            reasons = tuple(sorted({item.reason for item in decision.rejected}))
+            reasons = tuple(
+                sorted(
+                    {
+                        item.reason
+                        for row in relevant_decisions
+                        if row.status == "conflicted"
+                        for item in row.rejected
+                    }
+                )
+            )
         elif rows:
             state = "captured_but_rejected"
             reasons = tuple(sorted({flag for row in rows for flag in row.flags}))

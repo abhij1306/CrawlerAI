@@ -168,8 +168,9 @@ def public_asset_delivery_url(value: object) -> str | None:
     if not raw:
         return None
     decoded = unquote(raw)
+    decoded = re.sub(r"https?:/(?!/)", lambda match: f"{match.group(0)}/", decoded)
     nested_start = max(decoded.rfind("http://"), decoded.rfind("https://"))
-    candidate = decoded[nested_start:] if nested_start > 0 else raw
+    candidate = decoded[nested_start:] if nested_start > 0 else decoded
     normalized = asset_url_identity(candidate)
     if normalized is None:
         return None

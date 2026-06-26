@@ -100,6 +100,21 @@ describe('apiClient', () => {
     expect(new Headers(init.headers).get('X-Request-ID')).toBe('request-test');
   });
 
+  it('forwards a generated fallback request identifier', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } }),
+      );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { apiClient } = await import('./client');
+    await apiClient.get('/api/ping');
+
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    expect(new Headers(init.headers).get('X-Request-ID')).toBeTruthy();
+  });
+
   it('httpErrorStatus reads status from ApiError and duck-typed errors', async () => {
     const { ApiError, httpErrorStatus } = await import('./client');
     const apiErr = new ApiError('x', 403, '{}');

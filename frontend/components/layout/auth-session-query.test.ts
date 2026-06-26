@@ -1,6 +1,4 @@
 import { describe, expect, it } from 'vitest';
-
-import { api } from '../../lib/api';
 import {
   AUTH_SESSION_QUERY_KEY,
   getAuthSessionQueryOptions,
@@ -19,7 +17,7 @@ describe('auth session query contract', () => {
     const options = getAuthSessionQueryOptions('/dashboard');
 
     expect(options.queryKey).toEqual(AUTH_SESSION_QUERY_KEY);
-    expect(options.queryFn).toBe(api.me);
+    expect(options.queryFn).toEqual(expect.any(Function));
     expect(options.enabled).toBe(true);
     expect(options.retry).toBe(false);
     expect(options.refetchOnWindowFocus).toBe(false);

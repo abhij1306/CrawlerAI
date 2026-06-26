@@ -295,10 +295,26 @@ Public firewall
 **Notes:** The compact artifact gate now replays each stored `page.html` and captured network payload set through the real extraction pipeline. Case status is calculated from replayed field states, public records, lineage, findings, enum validity, identifier coherence, and expected product-boundary invariants. The END case remains an automatically detected integrity failure because unrelated variant SKUs survive replay. The Target case is classified as honest `source_unavailable` because the captured blocked product API is proven from debug payloads; missing offer fields are not treated as extraction defects. No manual fixed-status field is used. Focused replay, catalog-quality, and extraction suites passed: `228 passed`. Ruff app and replay-harness checks passed.
 
 ### Slice 15 — Documentation, Offline Validation, and User-Owned Live Gate
-**Status:** TODO  
+**Status:** IN PROGRESS — OFFLINE VERIFIED; AWAITING USER-OWNED LIVE GATE  
 **Files:** canonical architecture, business-logic, invariant docs, and this plan.  
 **What:** Document final ownership, run focused then full offline validation, inspect the final diff for downstream or site-specific patches, and provide one final multi-site acceptance command for the user to run.  
 **Verify:** All offline suites and architecture gates pass; the user-run live gate has zero unresolved integrity blockers, with genuine source absence represented honestly.
+
+
+### Reopened Latest-Output Verification — 2026-06-26
+
+The latest stored results (including IDs 1834–1918) still reproduce failures that overlap slices previously marked verified. Those slice notes are provisional until the latest artifacts are replayed through the current code and the generated output passes.
+
+Confirmed in this pass:
+- Brand boilerplate values (`Refurbished`, `Womens`, `the`, `green`, `Black`, `Fragrance`, `Register`, `at`, `India | The`) are rejected by the current extraction pipeline; generic regressions now cover the exact reported values.
+- `TALL LARGE` was not covered as a size/style-only title. Size-only title tokens were extended and the focused regression now passes.
+- END cross-product variants were traced to network search-response paths (`/results/.../hits/...`) being treated as PDP variant objects. Search-result `hits` are now rejected at collector admission; latest artifact 1834 replays without the unrelated SKUs.
+- The artifact quality manifest now references latest result IDs 1834 and 1838 instead of removed/stale IDs 1736 and 1740. The latest END case is `artifact_consistent`; the Target case remains honestly `source_unavailable`.
+- The availability-contract failures were stale test expectations. Canonicalization already occurs when evidence is created; `output_safety.public_availability` intentionally validates canonical enums only and does not normalize raw source values. Tests now assert raw rejection and canonical acceptance for `limited_stock`, `preorder`, `backorder`, and `discontinued`.
+- Asset replay verification completed for latest artifacts: Shoe Palace/Jordan 1832 now removes unrelated shirt recommendations, Luna 1847 rejects `pairs-well-with` DOM imagery, and KitchenAid 1875 rejects bare payment-provider SVG filenames (`amex`, `mastercard`, `affirm`, `visa-card`).
+- Peloton 1872 no longer resolves the media asset label as title in current replay; it resolves `Cross Training Tread Ultimate Package`.
+- Wellness 1918 was traced to normalized Apollo cache objects and recommendation listings being admitted as primary product evidence. Encoded `Item:<base64>` cache keys are now checked against the numeric detail URL identity, while `listings` and `iconography` paths are treated as structured noise. Replay now resolves the Wild Game 18-lb title and matching Wild Game description.
+- Final offline validation passed: `1075 passed, 159 deselected` with `tests/e2e` intentionally excluded. Unit-only validation also passed `488 passed, 9 deselected`. Diff review found no hostname-specific branches and no downstream semantic repair; the only `output_safety` change was removed before final validation.
 
 ## Execution Order and Stop Rules
 
