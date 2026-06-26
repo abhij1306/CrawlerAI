@@ -226,7 +226,10 @@ def semantic_detail_identity_tokens(url: str) -> tuple[str, ...]:
     return semantic_identity_tokens(detail_title_from_url(url))
 
 
-def _identity_token_sets_overlap(left: set[str], right: set[str]) -> bool:
+def _identity_token_sets_overlap(
+    left: set[str] | frozenset[str],
+    right: set[str] | frozenset[str],
+) -> bool:
     return any(
         first == second
         or (min(len(first), len(second)) >= 6 and first.endswith(second))

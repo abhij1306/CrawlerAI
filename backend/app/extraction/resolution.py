@@ -574,7 +574,7 @@ def _asset_rank(
     int,
     int,
     int,
-    tuple[int, int, int, float, str],
+    tuple[object, ...],
     str,
 ]:
     if accepted is None:
