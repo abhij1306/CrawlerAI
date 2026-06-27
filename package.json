@@ -1,13 +1,56 @@
 {
   "name": "crawlerai",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "scripts": {
-    "prepare": "vp config"
+    "prepare": "vp config",
+    "dev": "vp dev",
+    "build": "vp build",
+    "preview": "vp preview",
+    "check:policy": "node frontend/scripts/check-token-escapes.mjs && node frontend/scripts/check-crawl-architecture.mjs",
+    "test": "vp test",
+    "test:watch": "vp test watch",
+    "test:coverage": "vp test --coverage",
+    "test:e2e": "playwright test --config frontend/playwright.config.ts",
+    "test:e2e:headed": "playwright test --config frontend/playwright.config.ts --headed",
+    "test:e2e:ui": "playwright test --config frontend/playwright.config.ts --ui"
+  },
+  "dependencies": {
+    "@fontsource-variable/geist": "^5.2.9",
+    "@fontsource-variable/geist-mono": "^5.2.8",
+    "@hookform/resolvers": "^5.4.0",
+    "@radix-ui/react-dialog": "^1.1.16",
+    "@radix-ui/react-slot": "^1.2.5",
+    "@tanstack/react-query": "^5.100.14",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "lucide-react": "^1.16.0",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "react-hook-form": "^7.78.0",
+    "react-router-dom": "^7.10.1",
+    "tailwind-merge": "^3.6.0",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@playwright/test": "^1.60.0",
+    "@tailwindcss/postcss": "^4.3.1",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@types/node": "^25.9.3",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.1.9",
     "@vitejs/plugin-react": "^5.2.0",
+    "@vitest/coverage-v8": "^4.1.9",
+    "jsdom": "^29.1.1",
+    "msw": "^2.14.6",
+    "tailwindcss": "^4.3.1",
+    "typescript": "^6.0.3",
     "vite-plus": "latest"
+  },
+  "engines": {
+    "node": ">=20.19"
   },
   "packageManager": "pnpm@11.9.0"
 }

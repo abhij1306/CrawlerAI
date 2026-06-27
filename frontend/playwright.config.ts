@@ -8,7 +8,7 @@ export default defineConfig({
     trace: 'on-first-retry',
   },
   webServer: {
-    command: 'vp dev ..',
+    command: 'vp dev --config ../vite.config.ts',
     url: 'http://127.0.0.1:3000',
     reuseExistingServer: true,
     env: {
