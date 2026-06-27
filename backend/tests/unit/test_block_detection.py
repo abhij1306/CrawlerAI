@@ -5,6 +5,7 @@ from copy import deepcopy
 import pytest
 
 from app.acquisition.runtime import classify_blocked_page
+from app.acquisition.browser_readiness import classify_browser_outcome
 from app.acquisition.fetch.fetch_context import is_blocked_html
 
 
@@ -133,6 +134,28 @@ def test_classify_blocked_page_keeps_perimeterx_evidence_on_403() -> None:
     assert "perimeterx" in classification.provider_hits
     assert "px-captcha" in classification.provider_hits
     assert "px-captcha" in classification.active_provider_hits
+
+
+@pytest.mark.unit
+def test_active_perimeterx_shell_without_ready_probe_is_not_usable_content() -> None:
+    html = """
+    <html>
+      <head><meta name="description" content="px-captcha"></head>
+      <body><script src="https://captcha.perimeterx.net/app/captcha.js"></script></body>
+    </html>
+    """
+    classification = classify_blocked_page(html, 307)
+
+    outcome = classify_browser_outcome(
+        html=html,
+        html_bytes=len(html.encode()),
+        blocked=classification.blocked,
+        block_classification=classification,
+        readiness_probes=[{"is_ready": False, "detail_like": False}],
+    )
+
+    assert classification.active_provider_hits == ["px-captcha"]
+    assert outcome == "challenge_page"
 
 
 @pytest.mark.unit

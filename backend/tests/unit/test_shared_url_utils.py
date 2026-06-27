@@ -211,3 +211,23 @@ def test_public_asset_delivery_url_repairs_nested_single_slash_https_url() -> No
     assert public_asset_delivery_url(value) == (
         "https://images.ctfassets.net/path/image.png"
     )
+
+
+def test_public_asset_delivery_url_repairs_duplicated_delivery_host_path() -> None:
+    from app.core.shared.url_utils import public_asset_delivery_url
+
+    value = (
+        "https://www.brooklinen.com//www.brooklinen.com/cdn/shop/files/"
+        "BK7885_1.jpg?v=1775832414&width=1200"
+    )
+
+    assert public_asset_delivery_url(value) == (
+        "https://www.brooklinen.com/cdn/shop/files/"
+        "BK7885_1.jpg?v=1775832414&width=1200"
+    )
+
+
+def test_utility_image_rejects_generic_default_asset() -> None:
+    assert is_utility_image_url(
+        "https://shop.test/resources/images/canon-image-default.webp"
+    )

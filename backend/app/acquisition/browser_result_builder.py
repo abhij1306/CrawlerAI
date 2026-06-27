@@ -215,7 +215,15 @@ class BrowserAcquisitionResultBuilder:
             block_classification=classification,
             traversal_result=payload.traversal_result,
             analysis=payload.html_analysis,
+            readiness_probes=payload.readiness_probes,
         )
+        if outcome == "challenge_page" and not blocked:
+            blocked = True
+            classification = replace(
+                classification,
+                blocked=True,
+                outcome=outcome,
+            )
         if location_present:
             blocked, outcome, low_content = (
                 True,

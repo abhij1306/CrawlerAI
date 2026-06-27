@@ -382,16 +382,19 @@ async def handle_planned_http_result(
                 "browser_escalation_skipped": BROWSER_ESCALATION_SKIPPED_INSUFFICIENT_BUDGET,
             }
             return result, bool(vendor)
-        return (
-            await _escalate_http_result_to_browser(
-                context,
-                result=result,
-                proxy=proxy,
-                vendor=vendor,
-                deps=deps,
-            ),
-            bool(vendor),
+        browser_result = await _escalate_http_result_to_browser(
+            context,
+            result=result,
+            proxy=proxy,
+            vendor=vendor,
+            deps=deps,
         )
+        unresolved_vendor_block = bool(vendor) and not _browser_result_is_ready(
+            browser_result
+        )
+        if unresolved_vendor_block:
+            browser_result.blocked = True
+        return browser_result, unresolved_vendor_block
     if is_non_retryable_http_status(result.status_code):
         logger.info(
             "Returning non-retryable HTTP status %s for %s without browser fallback",
@@ -637,6 +640,16 @@ def _page_attempt_outcome(
     if not str(result.html or "").strip() and not list(result.network_payloads or []):
         return "empty"
     return "success"
+
+
+def _browser_result_is_ready(result: PageFetchResult) -> bool:
+    diagnostics = dict(result.browser_diagnostics or {})
+    if str(diagnostics.get("browser_outcome") or "").strip().lower() != "usable_content":
+        return False
+    probes = diagnostics.get("readiness_probes")
+    return isinstance(probes, list) and any(
+        isinstance(probe, dict) and bool(probe.get("is_ready")) for probe in probes
+    )
 
 
 def _acquisition_outcome(

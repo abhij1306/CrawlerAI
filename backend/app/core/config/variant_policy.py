@@ -244,7 +244,8 @@ VARIANT_URL_VALUE_KEYS = ("url", "productUrl", "product_url", "pdpUrl", "pdp_url
 VARIANT_IMAGE_DIMENSION_MIN_PX = 100
 EMBEDDED_STATE_SCRIPT_SELECTOR = (
     'script[type="application/json"], '
-    "script#__NEXT_DATA__, script#__NUXT_DATA__, script#__NG_STATE__"
+    "script#__NEXT_DATA__, script#__NUXT_DATA__, script#__NG_STATE__, "
+    'script[id^="ProductJson"]'
 )
 EMBEDDED_STATE_GLOBAL_KEYS = (
     "__INITIAL_STATE__",

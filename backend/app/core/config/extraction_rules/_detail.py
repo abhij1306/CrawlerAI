@@ -55,6 +55,7 @@ DETAIL_BRAND_BOILERPLATE_VALUES = frozenset(
         "register",
         "the",
         "unisex",
+        "utility",
         "womens",
         "we",
         "white",
@@ -132,6 +133,7 @@ DETAIL_DESCRIPTION_PROMOTIONAL_PATTERNS = (
     r"\b(?:buy now|free shipping|lowest prices?|exclusive offers?|fast delivery)\b",
     r"^\s*(?:shop|buy|find|browse)\b.{0,220}\b(?:online|sale|shipping|delivery|price|today|shop\s+now|more\s+items?)\b",
     r"^\s*searching\s+for\b.{0,220}\b(?:we(?:'|’)ve\s+got|shop|discover)\b",
+    r"^\s*discover\b.{0,220}\bavailable\s+to\s+buy\s+online\b.{0,220}\b(?:delivery|returns?|shop\s+now)\b",
     r"\b(?:search results?|product directory|shopping directory|compare prices?)\b",
     r"\bget\s+your\s+pair\s+of\b.{0,120}\bnow\b",
     r"^\s*buy\b.{0,180}\bat\b.{0,80}\b(?:us|uk|online|store)\b",
@@ -328,6 +330,10 @@ DETAIL_TITLE_TRAILING_CODE_PATTERN = r"(?:^|[\s_-])\d{4,}$"
 DETAIL_TITLE_URL_TOKEN_MIN_OVERLAP = 2
 DETAIL_TITLE_SEO_PREFIXES = ("buy ", "shop ")
 DETAIL_TITLE_SEO_PREFIX_MIN_WORDS = 8
+DETAIL_TITLE_MARKETPLACE_PREFIX_PATTERN = (
+    r"^\s*[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+\s*:\s*"
+)
+DETAIL_TITLE_MARKETPLACE_CATEGORY_SUFFIX_PATTERN = r"\s*:\s*[^:]{2,80}\s*$"
 DETAIL_TITLE_SHORT_NAVIGATION_PATTERN = r"^(?:shop|browse|view)\s+(?:graphic\s+)?(?:t-?shirts?|shirts?|tops?|pants?|jeans?|dresses?|shoes?|sneakers?|accessories?)$"
 DETAIL_TITLE_UI_INSTRUCTION_TOKENS = frozenset(
     {"assembly", "delivery", "faq", "faqs", "fee", "variation"}

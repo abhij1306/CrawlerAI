@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from decimal import Decimal, InvalidOperation
+import re
 from urllib.parse import urlparse
 
 from app.extraction.contracts import (
@@ -611,4 +612,9 @@ def _variant_asset_field(row, lineage_row, asset, decisions, by_id) -> None:
 def _size_sort_key(value: object) -> tuple[int, str]:
     text = str(value or "").strip().casefold()
     order = {"xxs": 1, "xs": 2, "s": 3, "m": 4, "l": 5, "xl": 6, "xxl": 7}
-    return order.get(text, 100), text
+    if text in order:
+        return order[text], text
+    numeric = re.fullmatch(r"\d+(?:\.\d+)?", text)
+    if numeric:
+        return 50, f"{Decimal(text):020.6f}"
+    return 100, text

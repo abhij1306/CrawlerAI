@@ -1188,6 +1188,59 @@ async def test_handle_http_result_retries_browser_after_browser_first_failure_an
 
 @pytest.mark.asyncio
 @pytest.mark.component
+async def test_vendor_block_remains_blocked_when_browser_never_becomes_ready(
+    monkeypatch: pytest.MonkeyPatch,
+    patch_settings,
+) -> None:
+    patch_settings(browser_retry_min_remaining_seconds=0.0)
+    context = _default_fetch_context()
+    context.fetch_mode = "auto"
+
+    async def _fake_browser(*_args, **_kwargs):
+        return PageFetchResult(
+            url=context.url,
+            final_url=context.url,
+            html="<html><body>challenge shell</body></html>",
+            status_code=200,
+            method="browser",
+            blocked=False,
+            browser_diagnostics={
+                "browser_outcome": "usable_content",
+                "readiness_probes": [{"is_ready": False, "detail_like": False}],
+            },
+        )
+
+    monkeypatch.setattr(planned_http, "vendor_confirmed_block", lambda _result: "akamai")
+    monkeypatch.setattr(planned_http, "browser_escalation_allowed", lambda **_kwargs: True)
+    monkeypatch.setattr(crawl_fetch_runtime, "run_browser_attempts", _fake_browser)
+    monkeypatch.setattr(crawl_fetch_runtime, "apply_protected_host_backoff", AsyncMock())
+    monkeypatch.setattr(crawl_fetch_runtime, "note_host_hard_block", AsyncMock())
+    monkeypatch.setattr(
+        crawl_fetch_runtime,
+        "load_host_protection_policy",
+        AsyncMock(return_value=HostProtectionPolicy(host="example.com")),
+    )
+    monkeypatch.setattr(crawl_fetch_runtime, "_update_host_result_memory", AsyncMock())
+
+    result, vendor_block_confirmed = await crawl_fetch_runtime._handle_http_result(
+        context,
+        result=PageFetchResult(
+            url=context.url,
+            final_url=context.url,
+            html="blocked",
+            status_code=200,
+            method="curl_cffi",
+        ),
+        proxy=None,
+    )
+
+    assert isinstance(result, PageFetchResult)
+    assert result.blocked is True
+    assert vendor_block_confirmed is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
 async def test_fetch_page_browser_only_skips_http_fetchers(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

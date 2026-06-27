@@ -14,7 +14,7 @@ from app.core.config.field_mappings import (
 )
 from app.core.config.variant_policy import PUBLIC_VARIANT_AXIS_FIELDS
 from app.core.records.url_identity import conflicting_product_asset_urls
-from app.core.shared.url_utils import public_asset_delivery_url
+from app.core.shared.url_utils import is_utility_image_url, public_asset_delivery_url
 from app.extraction.contracts import (
     AssetDecision,
     CommerceDetailRecord,
@@ -42,7 +42,11 @@ def materialize_product_assets(
     asset_decisions: tuple[AssetDecision, ...],
 ) -> None:
     selected = [
-        item for item in asset_decisions if item.url and item.accepted_evidence_ids
+        item
+        for item in asset_decisions
+        if item.url
+        and item.accepted_evidence_ids
+        and not is_utility_image_url(item.url)
     ]
     product_identity_values = tuple(
         record.get(field)

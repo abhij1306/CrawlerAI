@@ -69,6 +69,14 @@ def test_full_product_description_outranks_boundary_meta_excerpt() -> None:
     assert result.records[0]["description"] == full
 
 
+def test_legitimate_camelcase_and_model_tokens_are_not_split() -> None:
+    description = "Works with iPhone, eBay, PowerShot, PlayStation, and Canon Log3."
+
+    result = _extract(_product_html(description=description))
+
+    assert result.records[0]["description"] == description
+
+
 def test_promotional_search_copy_cannot_become_product_description() -> None:
     promotional = (
         "Shop this product online today with free shipping, lowest prices, "
@@ -91,6 +99,10 @@ def test_promotional_search_copy_cannot_become_product_description() -> None:
         "Buy Arizona Birko-Flor at Birkenstock US.",
         "Web PDP Default Layout, Mix and Match Carousel on Home Categories",
         "Find Velcro Strap Set-up Blazer / Pants and more items on grailed.com",
+        (
+            "Discover Cotton Utility Button Detail Barrel Leg Trouser available "
+            "to buy online with quick delivery and easy return options. Shop now!"
+        ),
     ],
 )
 def test_generic_ui_and_retailer_copy_cannot_become_description(

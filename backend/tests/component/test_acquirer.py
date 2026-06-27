@@ -407,6 +407,65 @@ async def test_acquire_uses_internal_api_replay_before_page_fetch(
 
 @pytest.mark.asyncio
 @pytest.mark.component
+async def test_browser_only_retry_bypasses_availability_api_replay(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[str] = []
+
+    async def _fake_replay(**_kwargs):
+        calls.append("replay")
+        return {"url": "https://example.com/api/product/1/availability", "body": {}}
+
+    async def _fake_fetch_page(url: str, *args, **kwargs):
+        del args
+        calls.append("browser")
+        assert kwargs["fetch_mode"] == "browser_only"
+        return type(
+            "FetchResult",
+            (),
+            {
+                "final_url": url,
+                "html": "<html><body><h1>Full Product</h1></body></html>",
+                "method": "browser",
+                "status_code": 200,
+                "content_type": "text/html",
+                "blocked": False,
+                "headers": {},
+                "network_payloads": [],
+                "browser_diagnostics": {"browser_attempted": True},
+                "artifacts": {},
+                "acquisition_diagnostics": {},
+                "html_document": None,
+            },
+        )()
+
+    monkeypatch.setattr(
+        "app.acquisition.acquirer.replay_internal_api_endpoints", _fake_replay
+    )
+    monkeypatch.setattr("app.acquisition.acquirer.fetch_page", _fake_fetch_page)
+
+    result = await acquire(
+        AcquisitionRequest(
+            run_id=2029,
+            url="https://example.com/products/full-product",
+            plan=AcquisitionIntent(surface="ecommerce_detail"),
+            acquisition_profile={
+                "fetch_mode": "browser_only",
+                "prefer_browser": True,
+                "retry_reason": "dynamic_content_missing",
+                "internal_api_endpoints": [
+                    {"url": "https://example.com/api/product/1/availability"}
+                ],
+            },
+        )
+    )
+
+    assert result.method == "browser"
+    assert calls == ["browser"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
 async def test_internal_api_replay_rejects_non_https_and_private_ip() -> None:
     assert (
         await _is_safe_replay_url(

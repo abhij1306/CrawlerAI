@@ -50,6 +50,8 @@ from app.core.config.extraction_rules import (
     DETAIL_TITLE_REJECTION_FLAGS,
     DETAIL_TITLE_REJECT_SUFFIXES,
     DETAIL_TITLE_REJECT_VALUES,
+    DETAIL_TITLE_MARKETPLACE_CATEGORY_SUFFIX_PATTERN,
+    DETAIL_TITLE_MARKETPLACE_PREFIX_PATTERN,
     DETAIL_TITLE_SEO_POLLUTION_PATTERN,
     DETAIL_TITLE_SEO_PREFIXES,
     DETAIL_TITLE_SEO_PREFIX_MIN_WORDS,
@@ -644,6 +646,7 @@ def normalize_evidence(evidence: Evidence, *, page_url: str) -> Evidence:
     if evidence.fact_type == field_mappings.PRODUCT_TITLE_FACT_TYPE and isinstance(
         value, str
     ):
+        value = _normalize_marketplace_title(value)
         title_locator = str(evidence.locator.value or "").casefold()
         if any(
             token in title_locator for token in DETAIL_TITLE_NON_PRODUCT_LOCATOR_TOKENS
@@ -674,6 +677,22 @@ def _normalize_brand_value(value: str, flags: set[str]) -> str:
     if re.fullmatch(DETAIL_BRAND_CATEGORY_PATTERN, normalized, re.IGNORECASE):
         flags.add("category_as_brand")
     return normalized
+
+
+def _normalize_marketplace_title(value: str) -> str:
+    normalized = re.sub(
+        DETAIL_TITLE_MARKETPLACE_PREFIX_PATTERN,
+        "",
+        value,
+        flags=re.IGNORECASE,
+    )
+    normalized = re.sub(
+        DETAIL_TITLE_MARKETPLACE_CATEGORY_SUFFIX_PATTERN,
+        "",
+        normalized,
+        flags=re.IGNORECASE,
+    )
+    return normalized.strip()
 
 
 def _flag_description_value(evidence: Evidence, value: str, flags: set[str]) -> None:

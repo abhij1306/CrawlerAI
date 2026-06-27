@@ -1072,6 +1072,44 @@ def test_runtime_capture_bundle_uses_acquisition_metadata() -> None:
     )
 
 
+def test_active_provider_shell_is_blocked_when_building_runtime_capture() -> None:
+    url = "https://shop.test/products/challenge-shell"
+    acquisition = PageAcquisitionResult(
+        request=AcquisitionRequest(
+            run_id=44,
+            url=url,
+            plan=AcquisitionIntent(surface="ecommerce_detail"),
+        ),
+        final_url=url,
+        html="<html><body><div id='px-captcha'>px-captcha</div></body></html>",
+        method="browser",
+        status_code=307,
+        blocked=False,
+        browser_diagnostics={
+            "browser_attempted": True,
+            "browser_outcome": "usable_content",
+            "challenge_evidence": [
+                "provider:perimeterx",
+                "provider:px-captcha",
+                "active_provider:px-captcha",
+            ],
+            "challenge_provider_hits": ["perimeterx", "px-captcha"],
+            "readiness_probes": [{"is_ready": False}],
+        },
+    )
+    request = request_from_acquisition_result(
+        Surface.ECOMMERCE_DETAIL,
+        acquisition,
+        requested_url=url,
+        max_records=1,
+    )
+    result = extract(request)
+
+    assert request.capture.blocked is True
+    assert result.records == ()
+    assert result.verdict == "blocked"
+
+
 def test_not_found_detail_does_not_publish_url_only_fallback_record() -> None:
     url = "https://shop.test/p/poppi-prebiotic-soda/-/A-88886187"
     acquisition = PageAcquisitionResult(
@@ -4073,6 +4111,51 @@ def test_js_state_later_product_object_backfills_missing_variant_rows() -> None:
             "color": "Black",
             "size": "M",
         },
+    ]
+
+
+def test_legacy_shopify_product_json_supplies_linked_images_and_variants() -> None:
+    html = """
+    <html><body>
+      <script id="ProductJson--product-template" hidden>
+        {
+          "id": 7685845516494,
+          "title": "40th Anniversary Graphic Womens Short Sleeve Shirt (Black/Red)",
+          "handle": "jordan-hj0139-045-40th-anniversary-graphic-womens-short-sleeve-shirt-black-red-1",
+          "vendor": "JORDAN",
+          "images": [
+            "//shop.test/cdn/shop/files/47b157b3d5f17c0ca8657919596ebdd7.jpg"
+          ],
+          "variants": [
+            {"id": 43468991627470, "title": "XS", "option1": "XS", "sku": "20959706", "price": 1998, "available": true},
+            {"id": 43468991660238, "title": "S", "option1": "S", "sku": "20959704", "price": 1998, "available": false}
+          ],
+          "options": ["Size"]
+        }
+      </script>
+    </body></html>
+    """
+    url = (
+        "https://shop.test/products/"
+        "jordan-hj0139-045-40th-anniversary-graphic-womens-short-sleeve-shirt-black-red-1"
+    )
+
+    result = extract(
+        fixture_request_from_inputs(
+            Surface.ECOMMERCE_DETAIL,
+            html,
+            url,
+            max_records=1,
+        )
+    )
+
+    record = result.records[0]
+    assert record["image_url"] == (
+        "https://shop.test/cdn/shop/files/47b157b3d5f17c0ca8657919596ebdd7.jpg"
+    )
+    assert [(row["sku"], row["size"]) for row in record["variants"]] == [
+        ("20959706", "XS"),
+        ("20959704", "S"),
     ]
 
 

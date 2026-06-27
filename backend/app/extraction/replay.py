@@ -4,6 +4,7 @@ import json
 from collections.abc import Mapping
 from typing import Any
 
+from app.acquisition.acquirer import PageEvidence
 from app.core.config.extraction_recipes import (
     ECOMMERCE_LISTING_FRAGMENT_ARTIFACT_ID,
     ECOMMERCE_LISTING_VISUAL_HTML_ARTIFACT_ID,
@@ -226,12 +227,7 @@ def request_from_acquisition_result(
         )
         or ""
     )
-    blocked = bool(
-        getattr(acquisition_result, "blocked", False)
-    ) or browser_outcome in {
-        "challenge_page",
-        "low_content_shell",
-    }
+    blocked = PageEvidence.from_acquisition_result(acquisition_result).indicates_block
     raw_acquisition_diagnostics = getattr(
         acquisition_result, "acquisition_diagnostics", {}
     )

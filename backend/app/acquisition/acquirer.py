@@ -235,12 +235,14 @@ async def acquire(request: AcquisitionRequest) -> PageAcquisitionResult:
     profile_endpoints = request.acquisition_profile.get(
         INTERNAL_API_ENDPOINTS_PROFILE_KEY
     )
-    acquisition_result = await _acquire_from_internal_api_replay(
-        request,
-        effective_url=effective_url,
-        platform_family=runtime_policy.get("family"),
-        profile_endpoints=profile_endpoints,
-    )
+    acquisition_result = None
+    if acquisition_policy.fetch_mode != "browser_only":
+        acquisition_result = await _acquire_from_internal_api_replay(
+            request,
+            effective_url=effective_url,
+            platform_family=runtime_policy.get("family"),
+            profile_endpoints=profile_endpoints,
+        )
     if acquisition_result is not None:
         attach_source_capability_diagnostics(acquisition_result)
         await policy_middleware.after_fetch(acquisition_result)

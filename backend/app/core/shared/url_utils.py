@@ -171,6 +171,20 @@ def public_asset_delivery_url(value: object) -> str | None:
     decoded = re.sub(r"https?:/(?!/)", lambda match: f"{match.group(0)}/", decoded)
     nested_start = max(decoded.rfind("http://"), decoded.rfind("https://"))
     candidate = decoded[nested_start:] if nested_start > 0 else decoded
+    parsed_candidate = urlsplit(candidate)
+    duplicated_host_prefix = f"//{parsed_candidate.netloc}/"
+    if parsed_candidate.netloc and parsed_candidate.path.startswith(
+        duplicated_host_prefix
+    ):
+        candidate = urlunsplit(
+            (
+                parsed_candidate.scheme,
+                parsed_candidate.netloc,
+                parsed_candidate.path[len(duplicated_host_prefix) - 1 :],
+                parsed_candidate.query,
+                "",
+            )
+        )
     normalized = asset_url_identity(candidate)
     if normalized is None:
         return None
