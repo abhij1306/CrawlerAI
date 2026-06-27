@@ -6,7 +6,7 @@ import { cn } from '../../lib/utils';
 import { formatCellDisplay, humanizeFieldName, stringifyCell } from '../../lib/crawl/format';
 import { readRecordValue } from '../../lib/crawl/record-utils';
 import { TableBody, TableCell, TableRow } from '../ui/table';
-import { RecordThumbnail } from './record-thumbnail';
+import { isLikelyThumbnailUrl, RecordThumbnail } from './record-thumbnail';
 import { isSafeHttpUrl } from '../../lib/format/domain';
 
 const IMAGE_KEYS = new Set(['image_url', 'image', 'thumbnail', 'img']);
@@ -305,7 +305,7 @@ export const RecordsTable = memo(function RecordsTable({
                       className="bg-panel !px-2 text-center"
                       style={stickyBodyStyle(IMAGE_COLUMN_WIDTH, SELECT_COLUMN_WIDTH)}
                     >
-                      {imageSrc ? (
+                      {imageSrc && isLikelyThumbnailUrl(imageSrc) ? (
                         <RecordThumbnail src={imageSrc} />
                       ) : (
                         <span className="text-muted/40 type-body">--</span>

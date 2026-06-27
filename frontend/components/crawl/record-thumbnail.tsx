@@ -41,6 +41,27 @@ function thumbnailHost(src: string): string {
   }
 }
 
+const IMAGE_EXTENSION_PATTERN = /\.(?:avif|bmp|gif|jpe?g|png|svg|webp)(?:$|[?#])/i;
+const IMAGE_FORMAT_PATTERN = /(?:^|[?&])(?:format|fm|auto)=([^&#]*\b(?:avif|gif|jpe?g|png|webp)\b[^&#]*)/i;
+const IMAGE_HOST_PATTERN = /(?:^|[.-])(?:assets?|cdn|images?|img|media|photos?|pictures?|static)(?:[.-]|$)/i;
+const IMAGE_PATH_PATTERN = /\/(?:assets?|cdn|images?|img|media|photos?|pictures?|static)\//i;
+
+export function isLikelyThumbnailUrl(src: string) {
+  try {
+    const parsed = new URL(src);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false;
+    const href = parsed.href;
+    return (
+      IMAGE_EXTENSION_PATTERN.test(href) ||
+      IMAGE_FORMAT_PATTERN.test(parsed.search) ||
+      IMAGE_HOST_PATTERN.test(parsed.hostname) ||
+      IMAGE_PATH_PATTERN.test(parsed.pathname)
+    );
+  } catch {
+    return false;
+  }
+}
+
 export function RecordThumbnail({ src }: Readonly<{ src: string }>) {
   const host = thumbnailHost(src);
   const initiallyBroken =
