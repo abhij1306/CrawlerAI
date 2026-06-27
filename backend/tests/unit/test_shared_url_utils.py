@@ -222,8 +222,7 @@ def test_public_asset_delivery_url_repairs_duplicated_delivery_host_path() -> No
     )
 
     assert public_asset_delivery_url(value) == (
-        "https://www.brooklinen.com/cdn/shop/files/"
-        "BK7885_1.jpg?v=1775832414&width=1200"
+        "https://www.brooklinen.com/cdn/shop/files/BK7885_1.jpg?v=1775832414&width=1200"
     )
 
 

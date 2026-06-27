@@ -229,7 +229,9 @@ def _bounded_debug_value(value: object, *, depth: int = 0) -> object:
             for item in items[:_DEBUG_MAX_LIST_ITEMS]
         ]
         if len(items) > _DEBUG_MAX_LIST_ITEMS:
-            bounded_items.append({"_truncated_items": len(items) - _DEBUG_MAX_LIST_ITEMS})
+            bounded_items.append(
+                {"_truncated_items": len(items) - _DEBUG_MAX_LIST_ITEMS}
+            )
         return bounded_items
     if isinstance(value, (bytes, bytearray)):
         return {"_omitted_bytes": len(value)}

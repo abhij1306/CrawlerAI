@@ -1210,10 +1210,16 @@ async def test_vendor_block_remains_blocked_when_browser_never_becomes_ready(
             },
         )
 
-    monkeypatch.setattr(planned_http, "vendor_confirmed_block", lambda _result: "akamai")
-    monkeypatch.setattr(planned_http, "browser_escalation_allowed", lambda **_kwargs: True)
+    monkeypatch.setattr(
+        planned_http, "vendor_confirmed_block", lambda _result: "akamai"
+    )
+    monkeypatch.setattr(
+        planned_http, "browser_escalation_allowed", lambda **_kwargs: True
+    )
     monkeypatch.setattr(crawl_fetch_runtime, "run_browser_attempts", _fake_browser)
-    monkeypatch.setattr(crawl_fetch_runtime, "apply_protected_host_backoff", AsyncMock())
+    monkeypatch.setattr(
+        crawl_fetch_runtime, "apply_protected_host_backoff", AsyncMock()
+    )
     monkeypatch.setattr(crawl_fetch_runtime, "note_host_hard_block", AsyncMock())
     monkeypatch.setattr(
         crawl_fetch_runtime,

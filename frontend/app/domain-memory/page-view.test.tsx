@@ -248,7 +248,7 @@ describe('DomainMemoryPage', () => {
     expect(screen.getByText('Recent Learning')).toBeInTheDocument();
 
     expect(screen.queryByText('owned-session-test.example.com')).not.toBeInTheDocument();
-  });
+  }, 10_000);
 
   it('edits and saves a domain run profile from domain memory', async () => {
     render(

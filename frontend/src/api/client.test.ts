@@ -100,7 +100,7 @@ describe('apiClient', () => {
     expect(new Headers(init.headers).get('X-Request-ID')).toBe('request-test');
   });
 
-  it('forwards a generated fallback request identifier', async () => {
+  it('keeps ordinary GET requests simple to avoid a CORS preflight', async () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValue(
@@ -110,6 +110,21 @@ describe('apiClient', () => {
 
     const { apiClient } = await import('./client');
     await apiClient.get('/api/ping');
+
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    expect(new Headers(init.headers).get('X-Request-ID')).toBeNull();
+  });
+
+  it('keeps generated request identifiers on mutations', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } }),
+      );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { apiClient } = await import('./client');
+    await apiClient.post('/api/crawls', { url: 'https://example.com' });
 
     const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
     expect(new Headers(init.headers).get('X-Request-ID')).toBeTruthy();

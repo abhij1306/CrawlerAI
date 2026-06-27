@@ -127,8 +127,7 @@ def _asset_identity_match_score(
     }
     normalized_url = re.sub(r"[^a-z0-9]+", "", asset_url.casefold())
     exact_matches = sum(
-        re.sub(r"[^a-z0-9]+", "", code) in normalized_url
-        for code in product_codes
+        re.sub(r"[^a-z0-9]+", "", code) in normalized_url for code in product_codes
     )
     return exact_matches, -len(asset_url)
 

@@ -40,6 +40,5 @@ def test_amazon_search_title_markup_is_removed() -> None:
     )
 
     assert result.records[0]["title"] == (
-        "Poppi Prebiotic Soda, Sparkling Water & Fruit Juice, Punch Pop, "
-        "12 Oz, 12 Pack"
+        "Poppi Prebiotic Soda, Sparkling Water & Fruit Juice, Punch Pop, 12 Oz, 12 Pack"
     )

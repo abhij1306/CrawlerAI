@@ -353,6 +353,22 @@ describe('CrawlRunScreen', () => {
     apiMock.deleteSelector.mockResolvedValue(undefined);
   });
 
+  it('loads run history only after the history drawer opens', async () => {
+    renderRunScreen();
+
+    await screen.findByRole('button', { name: /Table \(2\)/ });
+    expect(apiMock.listCrawls).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'History' }));
+
+    await waitFor(() => {
+      expect(apiMock.listCrawls).toHaveBeenCalledWith(
+        { limit: 20 },
+        { signal: expect.any(AbortSignal) },
+      );
+    });
+  });
+
   it('prefills Product Intelligence from selected listing records', async () => {
     apiMock.getCrawl.mockResolvedValue({
       ...terminalRun(101),
@@ -965,11 +981,10 @@ describe('CrawlRunScreen', () => {
   });
 
   it('does not reopen the log websocket when incoming messages advance the log cursor', async () => {
+    apiMock.getCrawl.mockResolvedValue(runningRun(101));
     apiMock.getCrawlLogs.mockResolvedValue([makeLog(1, 'First log line')]);
 
     renderRunScreen();
-
-    fireEvent.click(await screen.findByRole('button', { name: 'Logs' }));
 
     await waitFor(() => {
       expect(MockWebSocket.instances).toHaveLength(1);

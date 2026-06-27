@@ -123,7 +123,7 @@ function CrawlRunWorkspace({ runId }: Readonly<CrawlRunScreenProps>) {
     runId,
     refreshQueries: [runQuery, logsQuery, tableRecordsQuery, jsonRecordsQuery],
   });
-  const { items: historyItems, prepareRun: prepareHistoryRun } = useRunHistory();
+  const { items: historyItems, prepareRun: prepareHistoryRun } = useRunHistory(historyOpen);
 
   const elapsedLabel = useMemo(() => {
     const elapsedMs = Math.max(0, localNow - effectiveStartMs);

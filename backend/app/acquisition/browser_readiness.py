@@ -622,9 +622,8 @@ def classify_browser_outcome(
 ) -> str:
     if blocked or bool(getattr(block_classification, "blocked", False)):
         return "challenge_page"
-    if (
-        bool(getattr(block_classification, "active_provider_hits", ()))
-        and not any(bool(probe.get("is_ready")) for probe in readiness_probes or [])
+    if bool(getattr(block_classification, "active_provider_hits", ())) and not any(
+        bool(probe.get("is_ready")) for probe in readiness_probes or []
     ):
         return "challenge_page"
     low_content_shell = looks_like_low_content_shell(

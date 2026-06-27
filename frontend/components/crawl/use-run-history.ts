@@ -9,11 +9,12 @@ import type { HistoryItem } from '../ui/history-drawer';
 
 const HISTORY_LIMIT = 20;
 
-export function useRunHistory() {
+export function useRunHistory(enabled = true) {
   const queryClient = useQueryClient();
   const { data: queryData } = useQuery({
     queryKey: queryKeys.runs.list({ limit: HISTORY_LIMIT }),
     queryFn: ({ signal }) => api.listCrawls({ limit: HISTORY_LIMIT }, { signal }),
+    enabled,
   });
 
   const items: HistoryItem[] = useMemo(

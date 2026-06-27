@@ -72,7 +72,9 @@ function createRequestId() {
 
 function buildHeaders(options: InternalRequestOptions, requestId: string) {
   const headers = new Headers(options.headers);
-  headers.set('X-Request-ID', requestId);
+  if (options.method !== 'GET' || options.requestId) {
+    headers.set('X-Request-ID', requestId);
+  }
   if (options.idempotencyKey) headers.set('Idempotency-Key', options.idempotencyKey);
   if (options.body && !(options.body instanceof FormData) && !headers.has('Content-Type')) {
     headers.set('Content-Type', 'application/json');
