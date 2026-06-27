@@ -49,7 +49,7 @@ export function SettingsDrawer({
   return (
     <>
       <div className="fixed inset-0 z-40 bg-black/20" onClick={onClose} aria-hidden="true" />
-      <div className="border-divider bg-background-elevated animate-in slide-in-from-right-4 fixed top-0 right-0 z-50 h-full w-[380px] max-w-full overflow-y-auto border-l p-5 shadow-xl duration-200">
+      <div className="animate-in slide-in-from-right-4 fixed top-0 right-0 z-50 h-full w-[380px] max-w-full overflow-y-auto border-l border-divider bg-background-elevated p-5 shadow-xl duration-200">
         <div className="flex items-center justify-between">
           <h2 className="type-subheading">Configuration</h2>
           <Button
@@ -128,7 +128,7 @@ export function SettingsDrawer({
           </Field>
           <Field label="LLM Cleanup">
             <div className="surface-muted flex h-[var(--control-height)] items-center justify-between rounded-md px-3 shadow-sm">
-              <span className="text-muted text-xs font-normal">Enable Enrichment</span>
+              <span className="text-xs font-normal text-muted">Enable Enrichment</span>
               <input
                 type="checkbox"
                 aria-label="Enable LLM enrichment"
@@ -136,7 +136,7 @@ export function SettingsDrawer({
                 onChange={(event) =>
                   onOptionsChange({ llm_enrichment_enabled: event.target.checked })
                 }
-                className="border-divider text-accent focus:ring-accent size-3.5 rounded"
+                className="size-3.5 rounded border-divider text-accent focus:ring-accent"
               />
             </div>
           </Field>

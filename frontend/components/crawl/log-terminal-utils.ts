@@ -232,23 +232,14 @@ function hasSameStablePathIdentity(left: string, right: string) {
     }
 
     const lastSegment = (url: URL) =>
-      decodeURIComponent(url.pathname)
-        .split('/')
-        .filter(Boolean)
-        .at(-1)
-        ?.trim()
-        .toLowerCase() ?? '';
+      decodeURIComponent(url.pathname).split('/').filter(Boolean).at(-1)?.trim().toLowerCase() ??
+      '';
     const leftId = lastSegment(leftUrl);
     const rightId = lastSegment(rightUrl);
 
     // Retail canonical redirects often rewrite the product slug while keeping
     // the trailing product/SKU identifier stable.
-    return (
-      leftId.length >= 5 &&
-      rightId.length >= 5 &&
-      /\d/.test(leftId) &&
-      leftId === rightId
-    );
+    return leftId.length >= 5 && rightId.length >= 5 && /\d/.test(leftId) && leftId === rightId;
   } catch {
     return false;
   }

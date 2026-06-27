@@ -64,7 +64,7 @@ start "Invoro Backend" /MIN /D "%ROOT%backend" cmd /k .venv\Scripts\python.exe r
 
 REM --- Frontend ------------------------------------------------------
 echo [Invoro] Starting frontend...
-start "Invoro Frontend" /MIN /D "%ROOT%frontend" cmd /k npm.cmd run dev
+start "Invoro Frontend" /MIN /D "%ROOT%frontend" cmd /k vp dev ..
 
 REM --- Celery workers ------------------------------------------------
 if /I "%CELERY_DISPATCH_ENABLED%"=="true" (

@@ -45,7 +45,7 @@ export function CrawlFieldConfigCard({
 }: Readonly<CrawlFieldConfigCardProps>) {
   return (
     <Card className="section-card overflow-hidden p-0 xl:col-span-2">
-      <header className="border-border flex h-10 items-center justify-between border-b bg-[color-mix(in_srgb,var(--bg-alt)_40%,var(--bg-panel))] px-6">
+      <header className="flex h-10 items-center justify-between border-b border-border bg-[color-mix(in_srgb,var(--bg-alt)_40%,var(--bg-panel))] px-6">
         <span className="type-heading-3">Field Configuration</span>
         <div className="flex items-center gap-2">
           <Button
@@ -74,7 +74,7 @@ export function CrawlFieldConfigCard({
         </div>
       </header>
       <div className="space-y-4 px-6 pt-6 pb-6">
-        {message ? <p className="text-success type-body leading-relaxed">{message}</p> : null}
+        {message ? <p className="type-body leading-relaxed text-success">{message}</p> : null}
         {error ? <InlineAlert message={error} /> : null}
         <div className="flex flex-col gap-2">
           {fieldRows.length ? (
@@ -109,7 +109,7 @@ export function CrawlFieldConfigCard({
               ))}
             </>
           ) : (
-            <div className="surface-muted text-secondary type-body rounded-md border-dashed px-4 py-6 leading-relaxed">
+            <div className="surface-muted type-body rounded-md border-dashed px-4 py-6 leading-relaxed text-secondary">
               No selector rows yet.
             </div>
           )}

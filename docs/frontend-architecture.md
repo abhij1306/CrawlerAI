@@ -6,7 +6,7 @@ This document describes the live frontend structure, what it actually calls in t
 
 ## 1. Stack and Role
 
-Frontend is a React + Vite UI for:
+Frontend is a React + Vite+ UI for:
 
 - auth/session handling
 - crawl configuration and launch
@@ -23,7 +23,7 @@ Key client libraries:
 
 Runtime notes:
 
-- Vite boots the app through `src/main.tsx`.
+- Vite+ boots the app through `src/main.tsx`.
 - `src/app/app.tsx` owns the React Router data router, nested access guards, and redirect shims.
 - `src/app/route-registry.ts` owns lazy route modules, access policy, page metadata, and navigation metadata.
 - Legacy routing, dynamic-import, link, and image compatibility wrappers have been removed.

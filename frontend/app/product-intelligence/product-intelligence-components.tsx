@@ -48,8 +48,8 @@ export function JsonModal({
   return (
     <>
       <div className="fixed inset-0 z-50 bg-black/40" onClick={onClose} aria-hidden="true" />
-      <div className="border-border bg-background-elevated fixed top-1/2 left-1/2 z-50 flex max-h-[80vh] w-[640px] max-w-[90vw] -translate-x-1/2 -translate-y-1/2 flex-col rounded-md border shadow-xl">
-        <div className="border-divider flex items-center justify-between border-b px-4 py-3">
+      <div className="fixed top-1/2 left-1/2 z-50 flex max-h-[80vh] w-[640px] max-w-[90vw] -translate-x-1/2 -translate-y-1/2 flex-col rounded-md border border-border bg-background-elevated shadow-xl">
+        <div className="flex items-center justify-between border-b border-divider px-4 py-3">
           <h3 className="type-subheading">Raw JSON</h3>
           <Button type="button" variant="quiet" size="icon" onClick={onClose} aria-label="Close">
             <X className="size-3.5" />
@@ -60,7 +60,7 @@ export function JsonModal({
             {syntaxHighlightJsonNodes(text)}
           </pre>
         </div>
-        <div className="border-divider flex items-center justify-end gap-2 border-t px-4 py-3">
+        <div className="flex items-center justify-end gap-2 border-t border-divider px-4 py-3">
           <Button
             type="button"
             variant="quiet"
@@ -102,11 +102,11 @@ export function DiscoveryStatus({
 }>) {
   const providerLabel = searchProviderLabel(provider);
   return (
-    <div className="border-accent/30 bg-accent-subtle text-foreground flex flex-wrap items-center gap-3 rounded-md border px-4 py-3 text-xs">
-      <Loader2 className="text-accent size-4 animate-spin" aria-hidden="true" />
+    <div className="flex flex-wrap items-center gap-3 rounded-md border border-accent/30 bg-accent-subtle px-4 py-3 text-xs text-foreground">
+      <Loader2 className="size-4 animate-spin text-accent" aria-hidden="true" />
       <div className="min-w-[180px] flex-1">
         <div className="font-medium">{providerLabel} discovery running</div>
-        <div className="text-muted mt-0.5">
+        <div className="mt-0.5 text-muted">
           Searching {sourceCount} source product{sourceCount === 1 ? '' : 's'}, filtering source
           domains, ranking brand sites before aggregators.
         </div>
@@ -128,17 +128,17 @@ export function DiscoveryTableLoading({ provider }: Readonly<{ provider: string 
   return (
     <div className="flex min-h-[220px] flex-col items-center justify-center gap-4 px-6 py-10 text-center">
       <div className="relative">
-        <div className="border-accent/25 bg-accent-subtle size-12 rounded-full border" />
+        <div className="size-12 rounded-full border border-accent/25 bg-accent-subtle" />
         <Loader2
-          className="text-accent absolute top-1/2 left-1/2 size-5 -translate-x-1/2 -translate-y-1/2 animate-spin"
+          className="absolute top-1/2 left-1/2 size-5 -translate-x-1/2 -translate-y-1/2 animate-spin text-accent"
           aria-hidden="true"
         />
       </div>
       <div>
-        <div className="text-foreground text-sm font-medium">
+        <div className="text-sm font-medium text-foreground">
           {providerLabel} is searching product candidates
         </div>
-        <div className="text-muted mt-1 max-w-[520px] text-xs leading-5">
+        <div className="mt-1 max-w-[520px] text-xs leading-5 text-muted">
           Querying Shopping, store links, and organic fallback, removing blocked/source domains,
           classifying domains, and scoring each result from title, brand, identifiers, price, and
           source authority.
@@ -155,12 +155,12 @@ export function DiscoveryTableLoading({ provider }: Readonly<{ provider: string 
 
 function DiscoveryLoadingStep({ label, detail }: Readonly<{ label: string; detail: string }>) {
   return (
-    <div className="border-divider bg-background-alt rounded-md border px-3 py-2">
-      <div className="text-foreground flex items-center gap-2 text-xs font-medium">
-        <span className="bg-accent size-1.5 rounded-full" />
+    <div className="rounded-md border border-divider bg-background-alt px-3 py-2">
+      <div className="flex items-center gap-2 text-xs font-medium text-foreground">
+        <span className="size-1.5 rounded-full bg-accent" />
         {label}
       </div>
-      <div className="text-muted mt-1 text-xs">{detail}</div>
+      <div className="mt-1 text-xs text-muted">{detail}</div>
     </div>
   );
 }

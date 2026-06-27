@@ -95,7 +95,7 @@ export default function JobsPage() {
         ) : isJobsError ? (
           <DataRegionError message="Failed to load jobs." />
         ) : jobs.length ? (
-          <div className="border-border overflow-x-auto rounded-md border">
+          <div className="overflow-x-auto rounded-md border border-border">
             <Table
               // 260px accounts for page header, navigation, filters, and padding.
               wrapperClassName="max-h-[max(200px,calc(100vh-260px))]"
@@ -132,7 +132,7 @@ export default function JobsPage() {
                     <TableCell>
                       <ProgressBar percent={job.progress} />
                     </TableCell>
-                    <TableCell className="text-secondary text-sm">
+                    <TableCell className="text-sm text-secondary">
                       {formatTimestamp(job.started_at)}
                     </TableCell>
                     <TableCell style={{ overflow: 'visible', textOverflow: 'clip' }}>

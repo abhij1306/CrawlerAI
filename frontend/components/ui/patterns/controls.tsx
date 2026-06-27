@@ -116,7 +116,7 @@ function tabBarOptionContent<T extends string>(option: TabBarOption<T>, gapClass
 export function ProgressBar({ percent }: Readonly<{ percent: number }>) {
   return (
     <div className="space-y-1">
-      <div className="bg-border h-1 overflow-hidden rounded-full">
+      <div className="h-1 overflow-hidden rounded-full bg-border">
         <div
           className={cn(
             'bg-accent h-full rounded-full transition-[width] duration-500',

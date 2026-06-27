@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 
 import type { CrawlRecord } from '../../lib/api/types';
 import {
@@ -235,7 +235,10 @@ describe('buildLogSiteGroups', () => {
       }),
     ];
     const logs = [
-      makeLog(1, 'Starting crawl run for https://www.nordstrom.com/s/old-product-name/7507996 (1/1)'),
+      makeLog(
+        1,
+        'Starting crawl run for https://www.nordstrom.com/s/old-product-name/7507996 (1/1)',
+      ),
       makeLog(2, 'Persisted 1 record(s) for https://www.nordstrom.com/s/old-product-name/7507996'),
     ];
 

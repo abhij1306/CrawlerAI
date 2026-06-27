@@ -9,11 +9,11 @@ export function Title({
   return (
     <div className={cn('space-y-1', className)}>
       {kicker ? <p className="type-label m-0 mb-1.5">{kicker}</p> : null}
-      <h1 className="text-foreground type-heading-1 m-0">{children}</h1>
+      <h1 className="type-heading-1 m-0 text-foreground">{children}</h1>
     </div>
   );
 }
 
 export function Subtitle({ children }: Readonly<{ children: ReactNode }>) {
-  return <p className="type-caption text-secondary mt-1.5 max-w-2xl leading-relaxed">{children}</p>;
+  return <p className="type-caption mt-1.5 max-w-2xl leading-relaxed text-secondary">{children}</p>;
 }

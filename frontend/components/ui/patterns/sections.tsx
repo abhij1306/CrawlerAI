@@ -20,7 +20,7 @@ export function SectionHeader({
     <div className="flex items-center justify-between gap-4">
       <div className="min-w-0 flex-1 space-y-1.5">
         <div className="flex items-center gap-2">
-          {Icon && <Icon className="text-muted size-3.5 shrink-0" />}
+          {Icon && <Icon className="size-3.5 shrink-0 text-muted" />}
           <h2 className="type-heading-3 m-0">{title}</h2>
         </div>
         {description ? <div className="type-body-sm">{description}</div> : null}
@@ -35,7 +35,7 @@ export function EmptyPanel({
   description,
 }: Readonly<{ title: string; description: string }>) {
   return (
-    <div className="border-border-strong bg-subtle-panel grid min-h-32 place-items-center rounded-lg border border-dashed px-6 py-8 text-center">
+    <div className="grid min-h-32 place-items-center rounded-lg border border-dashed border-border-strong bg-subtle-panel px-6 py-8 text-center">
       <div className="space-y-1">
         <p className="type-subheading m-0">{title}</p>
         <p className="type-body m-0">{description}</p>
@@ -91,7 +91,7 @@ export function SurfaceSection({
 }>) {
   return (
     <SurfacePanel className={className}>
-      <div className="border-divider border-b px-5 py-4">
+      <div className="border-b border-divider px-5 py-4">
         <SectionHeader title={title} description={description} icon={Icon} action={action} />
       </div>
       <div className={cn('p-5', bodyClassName)}>{children}</div>

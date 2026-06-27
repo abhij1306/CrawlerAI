@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 
 import type { ProductIntelligenceJobDetail } from '../../lib/api/types';
 import { candidateConfidence, detailToDiscovery } from './product-intelligence-utils';

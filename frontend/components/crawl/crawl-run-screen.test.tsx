@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 
 import { queryKeys } from '@/api/query-keys';
 import type { CrawlLog, CrawlRecord, CrawlRun, DomainRecipe } from '../../lib/api/types';
@@ -934,9 +934,9 @@ describe('CrawlRunScreen', () => {
     fireEvent.click(jsonButtons.at(-1)!);
 
     await waitFor(() => {
-      expect(
-        screen.getAllByText(/https:\/\/www\.shop\.ving\.run\/product\/สีดำ/),
-      ).not.toHaveLength(0);
+      expect(screen.getAllByText(/https:\/\/www\.shop\.ving\.run\/product\/สีดำ/)).not.toHaveLength(
+        0,
+      );
     });
 
     expect(screen.queryByText(/%E0%B8%AA%E0%B8%B5%E0%B8%94%E0%B8%B3/)).not.toBeInTheDocument();

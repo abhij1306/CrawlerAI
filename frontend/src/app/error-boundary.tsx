@@ -19,7 +19,7 @@ export function RouteErrorBoundary() {
   return (
     <main className="app-page-frame" role="alert">
       <div className="app-page-inner grid min-h-[50vh] place-items-center">
-        <div className="border-border card-gradient max-w-lg space-y-4 rounded-lg border p-6 text-center">
+        <div className="card-gradient max-w-lg space-y-4 rounded-lg border border-border p-6 text-center">
           <div>
             <p className="type-subheading m-0">This screen could not be rendered</p>
             <p className="type-body mt-2">{errorMessage(error)}</p>

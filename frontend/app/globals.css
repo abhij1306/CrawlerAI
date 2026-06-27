@@ -4,7 +4,7 @@
    Fonts: Geist · Geist Mono
 ═══════════════════════════════════════════════════════════════════════ */
 
-@import 'tailwindcss';
+@import 'tailwindcss' source('../');
 
 /* ─── TAILWIND v4 TOKEN BRIDGE ─────────────────────────────────────── */
 @theme inline {

@@ -494,11 +494,11 @@ function ActiveConfigsCard({ configs, onDelete }: Readonly<ActiveConfigsCardProp
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0 space-y-1">
                   <div className="flex items-center gap-2">
-                    <span className="type-control text-foreground truncate !font-normal">
+                    <span className="type-control truncate !font-normal text-foreground">
                       {config.task_type}
                     </span>
                     {config.is_active ? (
-                      <span className="bg-success-bg text-success inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs leading-none font-normal">
+                      <span className="inline-flex items-center gap-1 rounded-full bg-success-bg px-2 py-0.5 text-xs leading-none font-normal text-success">
                         <CheckCircle2 className="size-3" aria-hidden="true" />
                         active
                       </span>
@@ -573,32 +573,32 @@ function CostLogCard({ costLog, nowMs }: Readonly<CostLogCardProps>) {
                         <TableCell className="py-3">
                           <div className="flex flex-col">
                             <div className="flex items-baseline gap-1.5">
-                              <span className="text-foreground type-caption-mono font-medium tabular-nums">
+                              <span className="type-caption-mono font-medium text-foreground tabular-nums">
                                 {totalTokens.toLocaleString()}
                               </span>
                               <span className="type-caption">tokens</span>
                             </div>
-                            <span className="text-accent type-label-mono mt-1 font-medium">
+                            <span className="type-label-mono mt-1 font-medium text-accent">
                               ${cost > 0 && cost < 0.0001 ? cost.toFixed(6) : cost.toFixed(4)}
                             </span>
                           </div>
                         </TableCell>
 
                         <TableCell className="py-3">
-                          <span className="type-control text-foreground block max-w-[150px] !font-normal whitespace-normal">
+                          <span className="type-control block max-w-[150px] !font-normal whitespace-normal text-foreground">
                             {entry.task_type.replace(/_/g, ' ')}
                           </span>
                         </TableCell>
 
                         <TableCell className="py-3" title={entry.domain || `Run #${entry.run_id}`}>
-                          <span className="text-foreground/80 block truncate">
+                          <span className="block truncate text-foreground/80">
                             {entry.domain || (entry.run_id ? `Run #${entry.run_id}` : 'system')}
                           </span>
                         </TableCell>
 
                         <TableCell className="py-3">
                           <div className="flex flex-col overflow-hidden">
-                            <span className="type-control text-foreground truncate !font-normal">
+                            <span className="type-control truncate !font-normal text-foreground">
                               {entry.provider}
                             </span>
                             <span className="type-caption truncate" title={entry.model}>
@@ -608,7 +608,7 @@ function CostLogCard({ costLog, nowMs }: Readonly<CostLogCardProps>) {
                         </TableCell>
 
                         <TableCell className="py-3 text-right">
-                          <span className="type-caption-mono group-hover:text-foreground transition-colors">
+                          <span className="type-caption-mono transition-colors group-hover:text-foreground">
                             {(() => {
                               const d = new Date(entry.created_at);
                               const dStr = d.toDateString();

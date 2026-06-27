@@ -101,7 +101,7 @@ function RecordCell({ col, record }: Readonly<{ col: string; record: CrawlRecord
   if (PRICE_KEYS.has(colKey)) {
     return (
       <span
-        className="text-foreground font-bold tabular-nums"
+        className="font-bold text-foreground tabular-nums"
         style={{ fontSize: 'var(--table-font-size)' }}
       >
         {raw}
@@ -126,7 +126,7 @@ function RecordCell({ col, record }: Readonly<{ col: string; record: CrawlRecord
   }
   return (
     <span
-      className="text-secondary block max-w-[260px] truncate"
+      className="block max-w-[260px] truncate text-secondary"
       style={{ fontSize: 'var(--table-font-size)' }}
     >
       {raw}
@@ -194,14 +194,14 @@ export const RecordsTable = memo(function RecordsTable({
   }, [containerNode]);
 
   return (
-    <div className="surface-muted shadow-card relative isolate z-0 max-h-[calc(100vh-272px)] overflow-hidden rounded-lg border">
+    <div className="surface-muted relative isolate z-0 max-h-[calc(100vh-272px)] overflow-hidden rounded-lg border shadow-card">
       <div
         ref={setContainerRef}
         onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
         className="scrollbar-stable relative max-h-[calc(100vh-276px)] w-full overflow-auto"
       >
         <div
-          className="border-border-strong sticky top-0 z-[100] flex border-b"
+          className="sticky top-0 z-[100] flex border-b border-border-strong"
           style={{
             minWidth: totalTableWidth,
             height: HEADER_HEIGHT,
@@ -251,7 +251,7 @@ export const RecordsTable = memo(function RecordsTable({
           })}
         </div>
         <table
-          className="bg-panel w-full table-fixed caption-bottom border-collapse border-spacing-0"
+          className="w-full table-fixed caption-bottom border-collapse border-spacing-0 bg-panel"
           style={{ width: '100%', minWidth: totalTableWidth, fontSize: 'var(--table-font-size)' }}
         >
           <colgroup>
@@ -308,7 +308,7 @@ export const RecordsTable = memo(function RecordsTable({
                       {imageSrc && isLikelyThumbnailUrl(imageSrc) ? (
                         <RecordThumbnail src={imageSrc} />
                       ) : (
-                        <span className="text-muted/40 type-body">--</span>
+                        <span className="type-body text-muted/40">--</span>
                       )}
                     </TableCell>
                   ) : null}

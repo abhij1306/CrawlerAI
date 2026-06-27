@@ -27,12 +27,12 @@ export function CrawlAdvancedSettingsCard({
 }: Readonly<Props>) {
   return (
     <Card className="section-card overflow-visible p-0 xl:col-span-2">
-      <header className="border-border flex h-10 items-center justify-between border-b bg-[color-mix(in_srgb,var(--bg-alt)_40%,var(--bg-panel))] px-6">
+      <header className="flex h-10 items-center justify-between border-b border-border bg-[color-mix(in_srgb,var(--bg-alt)_40%,var(--bg-panel))] px-6">
         <span className="type-heading-3 flex items-center gap-1.5">
           <SlidersHorizontal className="size-3.5" /> Advanced Settings
         </span>
         <Tooltip content="Fine-tune fetch, limits, locality, and diagnostics for this exploratory run.">
-          <Info className="text-muted hover:text-secondary size-3.5 cursor-help transition-colors" />
+          <Info className="size-3.5 cursor-help text-muted transition-colors hover:text-secondary" />
         </Tooltip>
       </header>
       <div className="grid gap-0 p-6 xl:grid-cols-3 xl:divide-x xl:divide-[var(--border)]">

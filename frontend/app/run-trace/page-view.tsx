@@ -149,16 +149,16 @@ function FlagCard({ flag }: Readonly<{ flag: RunAuditFlag }>) {
         <span className="font-mono text-sm">{flag.code}</span>
         <Badge tone={severityTone(flag.severity)}>{flag.severity}</Badge>
       </div>
-      <p className="text-muted text-sm">{flag.symptom}</p>
-      {flag.invariant ? <p className="text-muted text-xs">Invariant: {flag.invariant}</p> : null}
+      <p className="text-sm text-muted">{flag.symptom}</p>
+      {flag.invariant ? <p className="text-xs text-muted">Invariant: {flag.invariant}</p> : null}
       {flag.owner ? (
         <p className="text-xs">
           Owner: <span className="font-mono">{flag.owner}</span>
         </p>
       ) : null}
-      {flag.url ? <p className="text-muted text-xs break-all">{flag.url}</p> : null}
+      {flag.url ? <p className="text-xs break-all text-muted">{flag.url}</p> : null}
       {flag.evidence ? (
-        <pre className="bg-background-alt overflow-x-auto rounded p-2 text-xs">
+        <pre className="overflow-x-auto rounded bg-background-alt p-2 text-xs">
           {JSON.stringify(flag.evidence, null, 2)}
         </pre>
       ) : null}
@@ -183,7 +183,7 @@ function TraceCard({ trace }: Readonly<{ trace: RunTraceArtifact }>) {
           {trace.verdict || 'no verdict'}
         </Badge>
         <Badge tone="neutral">tier: {trace.tier}</Badge>
-        <span className="text-muted text-xs break-all">{trace.url}</span>
+        <span className="text-xs break-all text-muted">{trace.url}</span>
       </div>
 
       <div>
@@ -192,7 +192,7 @@ function TraceCard({ trace }: Readonly<{ trace: RunTraceArtifact }>) {
           {hasTimeline ? (
             timeline.map((event) => (
               <li key={event.key} className="flex flex-wrap items-center gap-2 text-xs">
-                <span className="text-muted font-mono">{event.sequence}.</span>
+                <span className="font-mono text-muted">{event.sequence}.</span>
                 <span className="font-medium">{event.label}</span>
                 {event.duration_ms != null ? (
                   <span className="text-muted">{event.duration_ms}ms</span>
@@ -201,7 +201,7 @@ function TraceCard({ trace }: Readonly<{ trace: RunTraceArtifact }>) {
               </li>
             ))
           ) : (
-            <li className="text-muted text-xs">No acquire events recorded.</li>
+            <li className="text-xs text-muted">No acquire events recorded.</li>
           )}
         </ol>
       </div>

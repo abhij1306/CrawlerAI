@@ -81,7 +81,7 @@ export function CrawlTargetCard({
 
   return (
     <Card className="section-card overflow-hidden p-0">
-      <header className="border-border flex h-10 items-center justify-between border-b bg-[color-mix(in_srgb,var(--bg-alt)_40%,var(--bg-panel))] px-6">
+      <header className="flex h-10 items-center justify-between border-b border-border bg-[color-mix(in_srgb,var(--bg-alt)_40%,var(--bg-panel))] px-6">
         <span className="type-heading-3">Target URL</span>
         <Badge tone="accent" className="h-5 px-1.5 text-xs font-medium">
           {activeTabLabel}
@@ -134,7 +134,7 @@ export function CrawlTargetCard({
                 aria-label="Bulk URLs input"
               />
               {bulkUrls.trim() ? (
-                <div className="bg-background/80 text-foreground type-caption absolute right-2 bottom-2 rounded-sm px-2 py-1 backdrop-blur-sm">
+                <div className="type-caption absolute right-2 bottom-2 rounded-sm bg-background/80 px-2 py-1 text-foreground backdrop-blur-sm">
                   {parseLines(bulkUrls).length} URLs
                 </div>
               ) : null}
@@ -162,7 +162,7 @@ export function CrawlTargetCard({
         )}
 
         {savedProfileMessage ? (
-          <div className="border-subtle-panel-border bg-subtle-panel text-secondary type-body rounded-md border px-3 py-2 leading-relaxed">
+          <div className="type-body rounded-md border border-subtle-panel-border bg-subtle-panel px-3 py-2 leading-relaxed text-secondary">
             {savedProfileMessage}
           </div>
         ) : null}

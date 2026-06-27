@@ -40,7 +40,7 @@ export function RunTerminalShell({
                 {run.url}
               </a>
             ) : (
-              <p className="text-muted type-body">Waiting for completed run data.</p>
+              <p className="type-body text-muted">Waiting for completed run data.</p>
             )
           }
           actions={actions}

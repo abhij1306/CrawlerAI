@@ -1,11 +1,19 @@
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 
-const scriptPath = join(process.cwd(), 'scripts', 'check-crawl-architecture.mjs');
+const scriptName = 'check-crawl-architecture.mjs';
+const scriptPath = [
+  join(process.cwd(), 'scripts', scriptName),
+  join(process.cwd(), 'frontend', 'scripts', scriptName),
+].find(existsSync);
+
+if (!scriptPath) {
+  throw new Error(`Could not locate ${scriptName} from ${process.cwd()}`);
+}
 
 const requiredOwnerFiles = [
   'use-crawl-field-actions.ts',

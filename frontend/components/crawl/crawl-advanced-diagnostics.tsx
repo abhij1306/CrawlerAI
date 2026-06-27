@@ -36,12 +36,12 @@ export function CrawlAdvancedDiagnostics({
       <div className={ADVANCED_SECTION_TITLE_CLASS}>
         <h3>Output &amp; Diagnostics</h3>
         <Tooltip content="Choose what evidence and artifacts stay attached to this run.">
-          <Info className="text-muted hover:text-secondary size-3 cursor-help transition-colors" />
+          <Info className="size-3 cursor-help text-muted transition-colors hover:text-secondary" />
         </Tooltip>
       </div>
       <div className={ADVANCED_SUBSECTION_CLASS}>
         <div className={ADVANCED_CONTROL_ROW_CLASS}>
-          <div className="type-body-sm text-foreground font-semibold">Diagnostics</div>
+          <div className="type-body-sm font-semibold text-foreground">Diagnostics</div>
           <Dropdown<DiagnosticsPreset>
             ariaLabel="Diagnostics preset"
             value={diagnosticsPreset}
@@ -58,7 +58,7 @@ export function CrawlAdvancedDiagnostics({
           />
         </div>
         <div className={ADVANCED_CONTROL_ROW_CLASS}>
-          <div className="type-body-sm text-foreground font-semibold">Network Capture</div>
+          <div className="type-body-sm font-semibold text-foreground">Network Capture</div>
           <Dropdown<CaptureNetworkMode>
             ariaLabel="Network capture"
             value={runProfile.diagnostics_profile.capture_network}

@@ -42,7 +42,7 @@ export function AppShell({ children }: Readonly<{ children?: ReactNode }>) {
       <div className="app-shell-root">
         <a
           href="#main-content"
-          className="ui-on-accent-surface focus:bg-accent sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 focus:z-50 focus:rounded-md focus:px-3 focus:py-2 focus:text-sm"
+          className="ui-on-accent-surface sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 focus:z-50 focus:rounded-md focus:bg-accent focus:px-3 focus:py-2 focus:text-sm"
         >
           Skip to main content
         </a>

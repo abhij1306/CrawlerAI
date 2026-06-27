@@ -65,7 +65,7 @@ export function RunLoadError({ onNewCrawl }: Readonly<{ error: unknown; onNewCra
           title="Unable to Load Crawl"
           description="The run workspace could not be restored."
         />
-        <div className="text-danger type-body">
+        <div className="type-body text-danger">
           Unable to load this crawl. Retry or start a new crawl.
         </div>
       </Card>
@@ -80,7 +80,7 @@ export function RunLoadingState({ runId }: Readonly<{ runId: number }>) {
         title="Loading Crawl"
         description="Fetching run details and restoring the workspace."
       />
-      <div className="text-muted type-body leading-relaxed">Run #{runId} is loading.</div>
+      <div className="type-body leading-relaxed text-muted">Run #{runId} is loading.</div>
     </Card>
   );
 }

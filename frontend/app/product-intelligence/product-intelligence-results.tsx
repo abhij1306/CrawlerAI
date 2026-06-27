@@ -17,7 +17,7 @@ export function ProductIntelligenceResults({ controller }: ProductIntelligenceRe
   return (
     <div>
       <div className="space-y-4">
-        <section className="border-border bg-panel shadow-card overflow-hidden rounded-xl border">
+        <section className="overflow-hidden rounded-xl border border-border bg-panel shadow-card">
           <ResultsToolbar controller={controller} />
           {controller.discovery?.candidates.length ? (
             <ResultsSummary controller={controller} />
@@ -39,12 +39,12 @@ function ResultsToolbar({ controller }: ProductIntelligenceResultsProps) {
       controller.selectedUrls.includes(candidate.url),
     );
   return (
-    <header className="border-divider flex flex-wrap items-center gap-4 border-b px-4 py-3">
+    <header className="flex flex-wrap items-center gap-4 border-b border-divider px-4 py-3">
       <div className="flex shrink-0 items-center gap-3">
         {controller.discovery?.candidates.length ? (
           <input
             type="checkbox"
-            className="focus-ring accent-accent border-border-strong size-3.5 cursor-pointer rounded bg-transparent"
+            className="focus-ring size-3.5 cursor-pointer rounded border-border-strong bg-transparent accent-accent"
             checked={allFilteredSelected}
             onChange={controller.toggleAllUrls}
             aria-label="Select all filtered URLs"
@@ -61,7 +61,7 @@ function ResultsToolbar({ controller }: ProductIntelligenceResultsProps) {
 
 function ResultsSummary({ controller }: ProductIntelligenceResultsProps) {
   return (
-    <div className="border-divider bg-background-alt/50 grid gap-3 border-b px-4 py-3 sm:grid-cols-4">
+    <div className="grid gap-3 border-b border-divider bg-background-alt/50 px-4 py-3 sm:grid-cols-4">
       <SummaryMetric label="Sources" value={controller.discovery?.source_count ?? 0} />
       <SummaryMetric label="Candidates" value={controller.discovery?.candidate_count ?? 0} />
       <SummaryMetric label="High confidence" value={controller.confidenceDistribution.high} />
@@ -83,13 +83,13 @@ function ResultsFilters({ controller }: ProductIntelligenceResultsProps) {
   return (
     <div className="flex flex-1 items-center gap-2">
       <div className="relative min-w-[200px] flex-1">
-        <Search className="text-muted absolute top-1/2 left-2.5 size-3 -translate-y-1/2" />
+        <Search className="absolute top-1/2 left-2.5 size-3 -translate-y-1/2 text-muted" />
         <Input
           type="text"
           value={controller.searchText}
           onChange={(event) => controller.setSearchText(event.target.value)}
           placeholder="Filter by title, domain, or brand..."
-          className="bg-background-alt focus:bg-panel focus:border-accent type-body-sm h-8 border-transparent pl-8"
+          className="type-body-sm h-8 border-transparent bg-background-alt pl-8 focus:border-accent focus:bg-panel"
         />
       </div>
       <Dropdown
@@ -115,12 +115,12 @@ function ToolbarActions({ controller }: ProductIntelligenceResultsProps) {
     <div className="flex items-center gap-2">
       {controller.selectedDomainSummary ? (
         <>
-          <div className="bg-accent border-accent flex items-center gap-2 rounded border px-2 py-1">
+          <div className="flex items-center gap-2 rounded border border-accent bg-accent px-2 py-1">
             <span className="type-label font-normal !text-white">
               {controller.selectedDomainSummary.count} selected
             </span>
           </div>
-          <div className="bg-divider mx-1 h-4 w-px" />
+          <div className="mx-1 h-4 w-px bg-divider" />
         </>
       ) : null}
       <IconAction onClick={() => controller.setConfigOpen(true)} label="Settings">
@@ -200,11 +200,11 @@ function SourceRecordsPreview({ controller }: ProductIntelligenceResultsProps) {
         return (
           <div
             key={String(rowKey)}
-            className="hover:bg-background-alt flex items-center gap-3 px-3 py-2.5"
+            className="flex items-center gap-3 px-3 py-2.5 hover:bg-background-alt"
           >
             <span className="type-caption-mono w-6 shrink-0">{index + 1}</span>
             <div className="min-w-0 flex-1">
-              <div className="text-foreground type-body-sm truncate font-medium" title={title}>
+              <div className="type-body-sm truncate font-medium text-foreground" title={title}>
                 {title}
               </div>
               <div className="type-caption flex items-center gap-2">
@@ -236,12 +236,12 @@ function SourceRecordsPreview({ controller }: ProductIntelligenceResultsProps) {
 function BulkActionBar({ controller }: ProductIntelligenceResultsProps) {
   return (
     <div className="animate-fade-in sticky bottom-4 z-20">
-      <div className="border-border bg-panel flex items-center gap-3 rounded-xl border px-4 py-2.5 shadow-lg">
-        <Layers className="text-accent size-4 shrink-0" />
-        <span className="text-foreground type-body-sm font-semibold">
+      <div className="flex items-center gap-3 rounded-xl border border-border bg-panel px-4 py-2.5 shadow-lg">
+        <Layers className="size-4 shrink-0 text-accent" />
+        <span className="type-body-sm font-semibold text-foreground">
           {controller.uniqueSelectedUrls.length} URLs selected
         </span>
-        <span className="text-muted type-body-sm">
+        <span className="type-body-sm text-muted">
           from {controller.selectedDomainSummary?.domains.length ?? 0} domain
           {(controller.selectedDomainSummary?.domains.length ?? 0) !== 1 ? 's' : ''}
         </span>

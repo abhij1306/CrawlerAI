@@ -1,5 +1,5 @@
 import { render, waitFor } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vite-plus/test';
 
 import type { CrawlRun } from '../../lib/api/types';
 import { useTerminalSync } from './use-run-polling';

@@ -17,7 +17,7 @@ export function CookiesTab({ selectedWorkspace }: CookiesTabProps) {
             <KVTile label="Cookies" value={selectedWorkspace.cookieMemory.cookie_count} />
             <KVTile label="Origins" value={selectedWorkspace.cookieMemory.origin_count} />
           </div>
-          <div className="text-muted mt-3 text-xs">
+          <div className="mt-3 text-xs text-muted">
             Updated {formatTimestamp(selectedWorkspace.cookieMemory.updated_at)}
           </div>
         </DetailRow>

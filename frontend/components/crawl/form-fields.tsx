@@ -75,9 +75,9 @@ export function SettingSection({
               {renderedIcon}
             </div>
           ) : null}
-          <div className="type-body-sm text-foreground min-w-0 font-semibold">{label}</div>
+          <div className="type-body-sm min-w-0 font-semibold text-foreground">{label}</div>
           <Tooltip content={description}>
-            <Info className="text-muted hover:text-secondary size-3.5 cursor-help transition-colors" />
+            <Info className="size-3.5 cursor-help text-muted transition-colors hover:text-secondary" />
           </Tooltip>
         </div>
         <div className="flex justify-start">
@@ -132,17 +132,17 @@ export function SliderRow({
       className={cn('grid w-full gap-2.5 md:grid-cols-[160px_minmax(0,1fr)_100px] md:items-center')}
     >
       <div className="flex min-w-0 items-center gap-1.5">
-        <span className="type-body-sm text-foreground font-semibold">{label}</span>
+        <span className="type-body-sm font-semibold text-foreground">{label}</span>
         {description ? (
           <Tooltip content={description}>
-            <Info className="text-muted hover:text-secondary size-3.5 cursor-help transition-colors" />
+            <Info className="size-3.5 cursor-help text-muted transition-colors hover:text-secondary" />
           </Tooltip>
         ) : null}
         <button
           type="button"
           onClick={onReset}
           aria-label={`Reset ${label}`}
-          className="text-muted hover:text-primary transition-colors"
+          className="hover:text-primary text-muted transition-colors"
         >
           <RotateCcw className="size-3" aria-hidden="true" />
         </button>
@@ -219,7 +219,7 @@ export function AdditionalFieldInput({
 
   return (
     <label htmlFor="additional-fields-input" className="grid gap-1.5">
-      <span className="type-body-sm text-foreground font-semibold">Additional Fields</span>
+      <span className="type-body-sm font-semibold text-foreground">Additional Fields</span>
       <Input
         id="additional-fields-input"
         value={value}
@@ -228,7 +228,7 @@ export function AdditionalFieldInput({
         placeholder="price, sku, Features & Benefits, Product Story"
         className="font-mono"
       />
-      {validationHint ? <p className="text-danger type-caption">{validationHint}</p> : null}
+      {validationHint ? <p className="type-caption text-danger">{validationHint}</p> : null}
       {chips.length ? (
         <div className="flex flex-wrap gap-1.5">
           {chips.map((field) => (
@@ -237,7 +237,7 @@ export function AdditionalFieldInput({
               type="button"
               onClick={() => onRemove(field)}
               aria-label={`Remove ${field}`}
-              className="border-subtle-panel-border bg-subtle-panel text-secondary type-body-sm inline-flex items-center gap-1 rounded-sm border px-2 py-1"
+              className="type-body-sm inline-flex items-center gap-1 rounded-sm border border-subtle-panel-border bg-subtle-panel px-2 py-1 text-secondary"
             >
               <X className="size-3.5 shrink-0" aria-hidden="true" />
               <span className="truncate">{field}</span>
@@ -283,7 +283,7 @@ export function SitemapConfigFields({
         <span className="type-control flex items-center gap-1.5 font-medium">
           Collection Filter
           <Tooltip content="Only child sitemaps whose filename contains this keyword will be crawled. For Shopify use collections. For WooCommerce or Magento use category.">
-            <Info className="text-muted size-3.5 cursor-help" />
+            <Info className="size-3.5 cursor-help text-muted" />
           </Tooltip>
         </span>
         <Input
@@ -300,7 +300,7 @@ export function SitemapConfigFields({
         <span className="type-control flex items-center gap-1.5 font-medium">
           Max Category URLs
           <Tooltip content="Maximum number of category URLs to crawl from the sitemap.">
-            <Info className="text-muted size-3.5 cursor-help" />
+            <Info className="size-3.5 cursor-help text-muted" />
           </Tooltip>
         </span>
         <Input
@@ -375,11 +375,11 @@ export function CsvFileField({
         />
         <label
           htmlFor="csv-file-input"
-          className="ui-on-accent-surface bg-accent hover:bg-accent-hover type-control cursor-pointer rounded-md px-3 py-1.5 transition-colors"
+          className="ui-on-accent-surface type-control cursor-pointer rounded-md bg-accent px-3 py-1.5 transition-colors hover:bg-accent-hover"
         >
           Choose file
         </label>
-        <span className="text-muted type-body">{file ? file.name : 'No file chosen'}</span>
+        <span className="type-body text-muted">{file ? file.name : 'No file chosen'}</span>
       </div>
     </label>
   );
@@ -408,9 +408,9 @@ export function ManualFieldEditor({
 }>) {
   const fieldNameId = useId();
   return (
-    <div className="border-border card-gradient space-y-1.5 rounded-md border p-2.5">
+    <div className="card-gradient space-y-1.5 rounded-md border border-border p-2.5">
       <div className="grid gap-2 xl:grid-cols-[24px_minmax(140px,0.8fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,0.8fr)_auto]">
-        <div className="text-muted/50 hidden items-center justify-center xl:flex">
+        <div className="hidden items-center justify-center text-muted/50 xl:flex">
           <GripVertical className="size-3.5" />
         </div>
         <label htmlFor={fieldNameId} className="grid gap-1">
@@ -469,7 +469,7 @@ export function ManualFieldEditor({
               type="button"
               onClick={onDelete}
               aria-label={`Delete ${row.fieldName || 'manual field'}`}
-              className="surface-muted text-danger/70 hover:bg-danger/10 hover:text-danger inline-flex size-8 items-center justify-center rounded-md"
+              className="surface-muted inline-flex size-8 items-center justify-center rounded-md text-danger/70 hover:bg-danger/10 hover:text-danger"
             >
               <Trash2 className="size-3.5" />
             </button>
@@ -546,10 +546,10 @@ function ValidatedField({
           className="type-body-sm h-8 pr-9"
         />
         <div className="pointer-events-none absolute inset-y-0 right-2.5 flex items-center">
-          {state === 'valid' ? <CheckCircle2 className="text-success/80 size-3.5" /> : null}
+          {state === 'valid' ? <CheckCircle2 className="size-3.5 text-success/80" /> : null}
           {state === 'invalid' ? (
             <CircleAlert
-              className="text-danger/80 size-3.5"
+              className="size-3.5 text-danger/80"
               aria-label={`${label} selector is invalid`}
               role="img"
             />
@@ -557,7 +557,7 @@ function ValidatedField({
         </div>
       </div>
       {state === 'invalid' ? (
-        <p id={errorId} className="text-danger type-caption mt-0.5" role="alert">
+        <p id={errorId} className="type-caption mt-0.5 text-danger" role="alert">
           Invalid {label.toLowerCase()}
         </p>
       ) : null}

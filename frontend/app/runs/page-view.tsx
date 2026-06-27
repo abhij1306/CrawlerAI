@@ -149,7 +149,7 @@ function RunRow({
                   e.stopPropagation();
                   void navigator.clipboard.writeText(run.url);
                 }}
-                className="text-muted hover:text-accent inline-flex min-h-6 min-w-6 items-center justify-center transition-colors"
+                className="inline-flex min-h-6 min-w-6 items-center justify-center text-muted transition-colors hover:text-accent"
                 title="Copy URL"
                 aria-label="Copy URL"
               >
@@ -159,7 +159,7 @@ function RunRow({
                 href={run.url}
                 target="_blank"
                 rel="noreferrer"
-                className="text-muted hover:text-accent inline-flex min-h-6 min-w-6 items-center justify-center transition-colors"
+                className="inline-flex min-h-6 min-w-6 items-center justify-center text-muted transition-colors hover:text-accent"
                 title="Open original URL"
                 aria-label="Open original URL"
               >
@@ -172,7 +172,7 @@ function RunRow({
 
       {/* Mode */}
       <TableCell>
-        <span className="bg-background-elevated text-muted rounded-sm px-1.5 py-0.5">
+        <span className="rounded-sm bg-background-elevated px-1.5 py-0.5 text-muted">
           {formatRunType(run.run_type)}
         </span>
       </TableCell>

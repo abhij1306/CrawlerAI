@@ -34,7 +34,7 @@ export function CrawlAdvancedLimits({
       <div className={ADVANCED_SECTION_TITLE_CLASS}>
         <h3>Limits &amp; Locales</h3>
         <Tooltip content="Set repeat-run bounds and regional hints before dispatch.">
-          <Info className="text-muted hover:text-secondary size-3 cursor-help transition-colors" />
+          <Info className="size-3 cursor-help text-muted transition-colors hover:text-secondary" />
         </Tooltip>
       </div>
       <div className={ADVANCED_SUBSECTION_CLASS}>
@@ -81,11 +81,11 @@ export function CrawlAdvancedLimits({
         />
         <div className={ADVANCED_CONTROL_ROW_CLASS}>
           <div className="flex items-center gap-2">
-            <div className="type-body-sm text-foreground font-semibold">Host Memory TTL</div>
+            <div className="type-body-sm font-semibold text-foreground">Host Memory TTL</div>
             <Tooltip
               content={`Blank uses default ${CRAWL_DEFAULTS.HOST_MEMORY_TTL_SECONDS}s. Lower TTL forgets host block and pacing memory sooner.`}
             >
-              <Info className="text-muted hover:text-secondary size-3 cursor-help transition-colors" />
+              <Info className="size-3 cursor-help text-muted transition-colors hover:text-secondary" />
             </Tooltip>
           </div>
           <Input
@@ -113,7 +113,7 @@ export function CrawlAdvancedLimits({
       </div>
       <div className={ADVANCED_SUBSECTION_CLASS}>
         <div className={ADVANCED_CONTROL_ROW_CLASS}>
-          <div className="type-body-sm text-foreground font-semibold">Geo Country</div>
+          <div className="type-body-sm font-semibold text-foreground">Geo Country</div>
           <Input
             value={runProfile.locality_profile.geo_country}
             onChange={(event) =>
@@ -129,7 +129,7 @@ export function CrawlAdvancedLimits({
           />
         </div>
         <div className={ADVANCED_CONTROL_ROW_CLASS}>
-          <div className="type-body-sm text-foreground font-semibold">Language Hint</div>
+          <div className="type-body-sm font-semibold text-foreground">Language Hint</div>
           <Input
             value={runProfile.locality_profile.language_hint ?? ''}
             onChange={(event) =>
@@ -145,7 +145,7 @@ export function CrawlAdvancedLimits({
           />
         </div>
         <div className={ADVANCED_CONTROL_ROW_CLASS}>
-          <div className="type-body-sm text-foreground font-semibold">Currency Hint</div>
+          <div className="type-body-sm font-semibold text-foreground">Currency Hint</div>
           <Input
             value={runProfile.locality_profile.currency_hint ?? ''}
             onChange={(event) =>

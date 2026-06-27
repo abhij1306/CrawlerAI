@@ -3,11 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CrawlLog, CrawlRecord } from '../../lib/api/types';
 import { parseApiDate } from '../../lib/crawl/format';
 import { cleanRecordForDisplay } from '../../lib/crawl/record-utils';
-import {
-  buildLogSiteGroups,
-  sanitizeLogMessage,
-  siteDomId,
-} from './log-terminal-utils';
+import { buildLogSiteGroups, sanitizeLogMessage, siteDomId } from './log-terminal-utils';
 import type { LogSiteGroup } from './log-terminal-utils';
 
 const URL_TERMINAL_MESSAGE_PATTERN =

@@ -55,7 +55,7 @@ export function RunLearningPanel({
           description={`Review extraction evidence for ${recipe.domain} on ${recipe.surface}. Keep what should compound, reject what should not.`}
         />
         <div className="grid gap-3 md:grid-cols-2">
-          <div className="surface-muted text-secondary type-body rounded-md px-6 py-3 leading-relaxed">
+          <div className="surface-muted type-body rounded-md px-6 py-3 leading-relaxed text-secondary">
             <div className="field-label mb-1">Requested Coverage</div>
             Requested: {recipe.requested_field_coverage.requested.join(', ') || 'None'}
             <br />
@@ -63,7 +63,7 @@ export function RunLearningPanel({
             <br />
             Missing: {recipe.requested_field_coverage.missing.join(', ') || 'None'}
           </div>
-          <div className="surface-muted text-secondary type-body rounded-md px-6 py-3 leading-relaxed">
+          <div className="surface-muted type-body rounded-md px-6 py-3 leading-relaxed text-secondary">
             <div className="field-label mb-1">Acquisition Evidence</div>
             Method: {recipe.acquisition_evidence.actual_fetch_method || '—'}
             <br />
@@ -83,7 +83,7 @@ export function RunLearningPanel({
         <div className="space-y-3">
           <div>
             <div className="field-label mb-0">Field Learning</div>
-            <p className="text-secondary type-body mt-1">
+            <p className="type-body mt-1 text-secondary">
               Keep accepted field evidence or reject bad field evidence for future runs on this
               domain and surface.
             </p>
@@ -117,7 +117,7 @@ export function RunLearningPanel({
                           {item.source_labels.join(', ') || '—'}
                         </div>
                         {item.selector_value ? (
-                          <code className="type-caption-mono text-secondary mt-2 block truncate">
+                          <code className="type-caption-mono mt-2 block truncate text-secondary">
                             {item.selector_value}
                           </code>
                         ) : null}
@@ -165,7 +165,7 @@ export function RunLearningPanel({
             </div>
           ) : (
             <div className="surface-muted rounded-lg border border-dashed px-6 py-3">
-              <p className="type-body text-secondary m-0">
+              <p className="type-body m-0 text-secondary">
                 No field learning signals were captured for this run.
               </p>
             </div>

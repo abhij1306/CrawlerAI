@@ -42,8 +42,10 @@ function thumbnailHost(src: string): string {
 }
 
 const IMAGE_EXTENSION_PATTERN = /\.(?:avif|bmp|gif|jpe?g|png|svg|webp)(?:$|[?#])/i;
-const IMAGE_FORMAT_PATTERN = /(?:^|[?&])(?:format|fm|auto)=([^&#]*\b(?:avif|gif|jpe?g|png|webp)\b[^&#]*)/i;
-const IMAGE_HOST_PATTERN = /(?:^|[.-])(?:assets?|cdn|images?|img|media|photos?|pictures?|static)(?:[.-]|$)/i;
+const IMAGE_FORMAT_PATTERN =
+  /(?:^|[?&])(?:format|fm|auto)=([^&#]*\b(?:avif|gif|jpe?g|png|webp)\b[^&#]*)/i;
+const IMAGE_HOST_PATTERN =
+  /(?:^|[.-])(?:assets?|cdn|images?|img|media|photos?|pictures?|static)(?:[.-]|$)/i;
 const IMAGE_PATH_PATTERN = /\/(?:assets?|cdn|images?|img|media|photos?|pictures?|static)\//i;
 
 export function isLikelyThumbnailUrl(src: string) {
@@ -68,10 +70,10 @@ export function RecordThumbnail({ src }: Readonly<{ src: string }>) {
     BROKEN_THUMBNAIL_URLS.has(src) || (host !== '' && BROKEN_THUMBNAIL_HOSTS.has(host));
   const [broken, setBroken] = useState(initiallyBroken);
   if (broken) {
-    return <span className="text-muted text-xs">--</span>;
+    return <span className="text-xs text-muted">--</span>;
   }
   return (
-    <div className="border-border from-background-elevated/60 to-background-alt group-hover:border-accent/38 relative flex h-[46px] w-[46px] items-center justify-center overflow-hidden rounded-sm border bg-gradient-to-br shadow-[inset_0_0_0_1px_rgba(255,255,255,0.05)] transition-all duration-180 hover:-translate-y-px">
+    <div className="relative flex h-[46px] w-[46px] items-center justify-center overflow-hidden rounded-sm border border-border bg-gradient-to-br from-background-elevated/60 to-background-alt shadow-[inset_0_0_0_1px_rgba(255,255,255,0.05)] transition-all duration-180 group-hover:border-accent/38 hover:-translate-y-px">
       <img
         src={src}
         alt=""

@@ -97,7 +97,7 @@ export function Tooltip({
             >
               {content}
               <div
-                className="border-border-strong bg-panel absolute -bottom-[6px] size-2.5 border-r border-b"
+                className="absolute -bottom-[6px] size-2.5 border-r border-b border-border-strong bg-panel"
                 style={{
                   left: align === 'start' ? '12px' : '50%',
                   transform: align === 'start' ? 'rotate(45deg)' : 'translateX(-50%) rotate(45deg)',

@@ -18,7 +18,7 @@ export function DomainSidebar({
     <SurfacePanel className="flex max-h-[calc(100vh-180px)] flex-col gap-3 p-3">
       <div className="flex shrink-0 items-center justify-between px-1">
         <h3 className="type-label">Domains</h3>
-        <span className="text-muted text-xs">{groupedWorkspaces.length}</span>
+        <span className="text-xs text-muted">{groupedWorkspaces.length}</span>
       </div>
       <div className="-mr-1 min-h-0 overflow-y-auto pr-1">
         <NavList
@@ -38,7 +38,7 @@ export function DomainSidebar({
             ]
               .filter(Boolean)
               .join(' · ');
-            return meta ? <span className="text-muted text-xs">{meta}</span> : null;
+            return meta ? <span className="text-xs text-muted">{meta}</span> : null;
           }}
           getBadge={(ws) =>
             ws.cookieMemory ? <Badge tone="accent">{ws.cookieMemory.cookie_count}</Badge> : null

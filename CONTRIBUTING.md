@@ -29,8 +29,8 @@ $env:PYTHONPATH='.'
 For frontend changes:
 
 ```powershell
-cd frontend
-npm ci
-npm run lint
-npm run build
+vp install
+vp check
+vp test
+vp build
 ```

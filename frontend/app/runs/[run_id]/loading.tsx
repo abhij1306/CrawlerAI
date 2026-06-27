@@ -8,17 +8,17 @@ export default function LoadingRunDetailPage() {
         Loading content
       </div>
       <div className="space-y-2" aria-hidden="true">
-        <div className="bg-panel h-8 w-56 animate-pulse rounded-md" />
-        <div className="bg-panel h-4 w-80 animate-pulse rounded-md" />
+        <div className="h-8 w-56 animate-pulse rounded-md bg-panel" />
+        <div className="h-4 w-80 animate-pulse rounded-md bg-panel" />
       </div>
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {['summary', 'records', 'status', 'timing'].map((slot) => (
-          <Card key={slot} className="bg-panel h-20 animate-pulse" aria-hidden="true">
+          <Card key={slot} className="h-20 animate-pulse bg-panel" aria-hidden="true">
             <div />
           </Card>
         ))}
       </div>
-      <Card className="bg-panel h-80 animate-pulse" aria-hidden="true">
+      <Card className="h-80 animate-pulse bg-panel" aria-hidden="true">
         <div />
       </Card>
     </div>

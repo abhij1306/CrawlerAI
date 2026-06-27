@@ -43,12 +43,12 @@ export function CrawlAdvancedExecution({
       <div className={ADVANCED_SECTION_TITLE_CLASS}>
         <h3>Execution</h3>
         <Tooltip content="Control how the crawler fetches, renders, and traverses the target.">
-          <Info className="text-muted hover:text-secondary size-3 cursor-help transition-colors" />
+          <Info className="size-3 cursor-help text-muted transition-colors hover:text-secondary" />
         </Tooltip>
       </div>
       <div className={ADVANCED_SUBSECTION_CLASS}>
         <div className={ADVANCED_CONTROL_ROW_CLASS}>
-          <div className="type-body-sm text-foreground font-semibold">Fetch Mode</div>
+          <div className="type-body-sm font-semibold text-foreground">Fetch Mode</div>
           <Dropdown<FetchMode>
             ariaLabel="Fetch mode"
             value={runProfile.fetch_profile.fetch_mode}
@@ -82,7 +82,7 @@ export function CrawlAdvancedExecution({
           />
         </div>
         <div className={ADVANCED_CONTROL_ROW_CLASS}>
-          <div className="type-body-sm text-foreground font-semibold">Browser Engine</div>
+          <div className="type-body-sm font-semibold text-foreground">Browser Engine</div>
           <Dropdown<BrowserEngine>
             ariaLabel="Browser engine"
             value={runProfile.acquisition_contract.preferred_browser_engine}
@@ -107,7 +107,7 @@ export function CrawlAdvancedExecution({
           />
         </div>
         <div className={ADVANCED_CONTROL_ROW_CLASS}>
-          <div className="type-body-sm text-foreground font-semibold">Extraction</div>
+          <div className="type-body-sm font-semibold text-foreground">Extraction</div>
           <Dropdown<ExtractionSource>
             ariaLabel="Extraction source"
             value={runProfile.fetch_profile.extraction_source}
@@ -127,7 +127,7 @@ export function CrawlAdvancedExecution({
           />
         </div>
         <div className={ADVANCED_CONTROL_ROW_CLASS}>
-          <div className="type-body-sm text-foreground font-semibold">JS Mode</div>
+          <div className="type-body-sm font-semibold text-foreground">JS Mode</div>
           <Dropdown<JsMode>
             ariaLabel="JavaScript mode"
             value={runProfile.fetch_profile.js_mode}
@@ -146,7 +146,7 @@ export function CrawlAdvancedExecution({
           />
         </div>
         <div className={ADVANCED_CONTROL_ROW_CLASS}>
-          <div className="type-body-sm text-foreground font-semibold">Traversal</div>
+          <div className="type-body-sm font-semibold text-foreground">Traversal</div>
           <Dropdown<TraversalDropdownValue>
             ariaLabel="Traversal mode"
             value={runProfile.fetch_profile.traversal_mode ?? 'off'}

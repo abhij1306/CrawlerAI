@@ -18,14 +18,14 @@ export function RunWorkspaceShell({
 }>) {
   return (
     <div className="page-stack">
-      <div className="border-border card-gradient flex flex-wrap items-center justify-between gap-3 rounded-lg border px-6 py-4">
+      <div className="card-gradient flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border px-6 py-4">
         <div className="min-w-0 flex-1">{header}</div>
         {actions ? (
           <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div>
         ) : null}
       </div>
       <div className="page-stack">
-        <div className="border-divider flex flex-wrap items-stretch justify-between gap-3 border-b">
+        <div className="flex flex-wrap items-stretch justify-between gap-3 border-b border-divider">
           <div className="flex items-end">{tabs}</div>
           {summary ? <div className="self-center py-2">{summary}</div> : null}
         </div>
@@ -73,7 +73,7 @@ export function RunSummaryChips({
         return (
           <div
             key={chip.key}
-            className="border-border bg-background-alt inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1"
+            className="inline-flex items-center gap-1.5 rounded-md border border-border bg-background-alt px-2.5 py-1"
           >
             <Icon className={cn('size-3.5 shrink-0', chip.tone)} aria-hidden="true" />
             <span className={cn('type-body-sm tabular-nums', chip.tone)}>{chip.value}</span>

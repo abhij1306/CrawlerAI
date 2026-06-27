@@ -197,7 +197,7 @@ export default function DataEnrichmentPage() {
                 onChange={(event) =>
                   dispatch({ type: 'llmChanged', enabled: event.target.checked })
                 }
-                className="border-divider text-accent focus:ring-accent size-3 cursor-pointer rounded"
+                className="size-3 cursor-pointer rounded border-divider text-accent focus:ring-accent"
               />
               LLM Enrichment
             </label>
@@ -232,7 +232,7 @@ export default function DataEnrichmentPage() {
 
       {/* ── Main Results ── */}
       <TableSurface className="mb-8" contentClassName="flex flex-col">
-        <header className="border-divider flex flex-wrap items-center justify-between gap-4 border-b px-4 py-3">
+        <header className="flex flex-wrap items-center justify-between gap-4 border-b border-divider px-4 py-3">
           <div className="flex items-center gap-3">
             <h2 className="type-label-mono">
               {products.length > 0 ? 'ENRICHED OUTPUT' : 'SELECTED RECORDS'}
@@ -267,7 +267,7 @@ export default function DataEnrichmentPage() {
         ) : isDetailLoading && !isRunning ? (
           <DataRegionLoading count={8} className="px-0" />
         ) : products.length ? (
-          <div className="divide-divider flex h-[600px] flex-col divide-y lg:flex-row lg:divide-x lg:divide-y-0">
+          <div className="flex h-[600px] flex-col divide-y divide-divider lg:flex-row lg:divide-x lg:divide-y-0">
             <EnrichedProductSidebar
               products={products}
               resolvedProductId={resolvedProductId}
@@ -336,8 +336,8 @@ function EnrichedProductSidebar({
   onSelect,
 }: Readonly<EnrichedProductSidebarProps>) {
   return (
-    <div className="bg-background-alt/10 flex min-h-0 w-full shrink-0 flex-col lg:w-80">
-      <div className="border-divider bg-subtle-panel/30 border-b p-3">
+    <div className="flex min-h-0 w-full shrink-0 flex-col bg-background-alt/10 lg:w-80">
+      <div className="border-b border-divider bg-subtle-panel/30 p-3">
         <span className="type-caption-mono uppercase">Record Selector ({products.length})</span>
       </div>
       <div className="flex-1 space-y-1 overflow-y-auto p-2">
@@ -365,13 +365,13 @@ function EnrichedProductSidebar({
                 </Badge>
                 {isProcessing ? (
                   <div className="flex items-center gap-1 opacity-60">
-                    <Loader2 className="text-accent size-3 animate-spin" />
+                    <Loader2 className="size-3 animate-spin text-accent" />
                     <span className="type-caption-mono">Processing</span>
                   </div>
                 ) : null}
               </div>
               <div
-                className="type-body-sm text-foreground w-full truncate font-medium"
+                className="type-body-sm w-full truncate font-medium text-foreground"
                 title={product.source_url}
               >
                 {title}
@@ -391,9 +391,9 @@ interface EnrichedProductDetailProps {
 function EnrichedProductDetail({ product }: Readonly<EnrichedProductDetailProps>) {
   if (!product) {
     return (
-      <div className="bg-background flex min-h-0 min-w-0 flex-1 flex-col">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-background">
         <div className="grid flex-1 place-items-center p-6 text-center">
-          <div className="text-muted type-body">
+          <div className="type-body text-muted">
             Select a record from the list to view full enrichment details.
           </div>
         </div>
@@ -401,9 +401,9 @@ function EnrichedProductDetail({ product }: Readonly<EnrichedProductDetailProps>
     );
   }
   return (
-    <div className="bg-background flex min-h-0 min-w-0 flex-1 flex-col">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-background">
       <div className="flex-1 space-y-6 overflow-y-auto p-6">
-        <div className="border-divider border-b pb-4">
+        <div className="border-b border-divider pb-4">
           <div className="flex items-center gap-2">
             <span className="type-heading-3">Enriched Record Details</span>
             <Badge tone="neutral" className="font-mono text-xs">
@@ -415,7 +415,7 @@ function EnrichedProductDetail({ product }: Readonly<EnrichedProductDetailProps>
               href={product.source_url}
               target="_blank"
               rel="noreferrer"
-              className="text-accent type-body-sm mt-1 flex items-center gap-1 truncate hover:underline"
+              className="type-body-sm mt-1 flex items-center gap-1 truncate text-accent hover:underline"
             >
               {product.source_url}
               <ExternalLink className="size-3 shrink-0" />
@@ -424,9 +424,9 @@ function EnrichedProductDetail({ product }: Readonly<EnrichedProductDetailProps>
         </div>
 
         <div className="space-y-6">
-          <div className="border-border bg-subtle-panel/20 space-y-4 rounded-lg border p-4">
+          <div className="space-y-4 rounded-lg border border-border bg-subtle-panel/20 p-4">
             <h3 className="type-label-mono flex items-center gap-1.5 uppercase">
-              <span className="bg-accent size-1.5 rounded-full" />
+              <span className="size-1.5 rounded-full bg-accent" />
               Core Attributes
             </h3>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
@@ -446,9 +446,9 @@ function EnrichedProductDetail({ product }: Readonly<EnrichedProductDetailProps>
             </div>
           </div>
 
-          <div className="border-border bg-subtle-panel/20 space-y-4 rounded-lg border p-4">
+          <div className="space-y-4 rounded-lg border border-border bg-subtle-panel/20 p-4">
             <h3 className="type-label-mono flex items-center gap-1.5 uppercase">
-              <span className="bg-info size-1.5 rounded-full" />
+              <span className="size-1.5 rounded-full bg-info" />
               Taxonomy &amp; Context
             </h3>
             <div className="grid grid-cols-1 gap-4">
@@ -457,9 +457,9 @@ function EnrichedProductDetail({ product }: Readonly<EnrichedProductDetailProps>
             </div>
           </div>
 
-          <div className="border-border bg-subtle-panel/20 space-y-4 rounded-lg border p-4">
+          <div className="space-y-4 rounded-lg border border-border bg-subtle-panel/20 p-4">
             <h3 className="type-label-mono flex items-center gap-1.5 uppercase">
-              <span className="bg-success size-1.5 rounded-full" />
+              <span className="size-1.5 rounded-full bg-success" />
               AI &amp; Semantic Enrichment
             </h3>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-4">
@@ -537,7 +537,7 @@ function EnrichedProductDetail({ product }: Readonly<EnrichedProductDetailProps>
                       {product.seo_keywords.map((kw) => (
                         <span
                           key={kw}
-                          className="bg-background-elevated border-border text-secondary rounded-full border px-2 py-0.5 text-xs"
+                          className="rounded-full border border-border bg-background-elevated px-2 py-0.5 text-xs text-secondary"
                         >
                           {kw}
                         </span>
@@ -562,15 +562,15 @@ interface SourceRecordListProps {
 
 function SourceRecordList({ records }: Readonly<SourceRecordListProps>) {
   return (
-    <div className="divide-divider divide-y overflow-auto">
+    <div className="divide-y divide-divider overflow-auto">
       {records.map((record, index) => {
         const badgeValue = record.id ?? record.source_url;
         return (
           <div
             key={record.id ?? record.source_url ?? index}
-            className="hover:bg-accent/[0.04] flex items-center gap-3 px-4 py-2.5 transition-colors"
+            className="flex items-center gap-3 px-4 py-2.5 transition-colors hover:bg-accent/[0.04]"
           >
-            <span className="text-muted w-6 shrink-0 font-mono text-xs">{index + 1}</span>
+            <span className="w-6 shrink-0 font-mono text-xs text-muted">{index + 1}</span>
             <div className="min-w-0 flex-1">
               <div className="type-body-sm truncate font-medium">{recordTitle(record)}</div>
               <div className="type-caption flex items-center gap-2">
@@ -579,7 +579,7 @@ function SourceRecordList({ records }: Readonly<SourceRecordListProps>) {
                     href={record.source_url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-accent truncate opacity-80 hover:underline"
+                    className="truncate text-accent opacity-80 hover:underline"
                     title={record.source_url}
                   >
                     {record.source_url}

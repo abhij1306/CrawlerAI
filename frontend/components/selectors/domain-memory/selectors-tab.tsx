@@ -51,14 +51,14 @@ export function SelectorsTab({
         selectedWorkspace.surfaces.map((surfaceWorkspace) => (
           <div
             key={`${selectedWorkspace.domain}:${surfaceWorkspace.surface}`}
-            className="border-subtle-panel-border bg-subtle-panel space-y-3 rounded-xl border p-4"
+            className="space-y-3 rounded-xl border border-subtle-panel-border bg-subtle-panel p-4"
           >
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
-                <div className="text-foreground text-sm font-medium">
+                <div className="text-sm font-medium text-foreground">
                   {surfaceLabel(surfaceWorkspace.surface)}
                 </div>
-                <div className="text-muted text-xs">
+                <div className="text-xs text-muted">
                   {surfaceWorkspace.selectorCount} selector
                   {surfaceWorkspace.selectorCount === 1 ? '' : 's'}
                 </div>
@@ -133,19 +133,19 @@ function SelectorRow({
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-3">
-              <span className="text-foreground font-medium">{record.field_name}</span>
+              <span className="font-medium text-foreground">{record.field_name}</span>
               <Toggle
                 checked={record.is_active}
                 onChange={() => void toggleActive(record)}
                 ariaLabel={record.is_active ? 'Disable selector' : 'Enable selector'}
               />
-              <span className="text-muted text-xs">{titleCaseToken(record.source)}</span>
+              <span className="text-xs text-muted">{titleCaseToken(record.source)}</span>
             </div>
-            <code className="text-secondary mt-2 block text-xs break-all">
+            <code className="mt-2 block text-xs break-all text-secondary">
               {selectorValue(record)}
             </code>
             {record.sample_value ? (
-              <div className="text-muted mt-2 text-xs">Sample: {record.sample_value}</div>
+              <div className="mt-2 text-xs text-muted">Sample: {record.sample_value}</div>
             ) : null}
           </div>
           <div className="flex items-center gap-1">
@@ -222,7 +222,7 @@ function SelectorEditForm({
               current ? { ...current, kind: event.target.value as EditDraft['kind'] } : current,
             )
           }
-          className="border-divider bg-background rounded-md border px-3 py-2 text-sm"
+          className="rounded-md border border-divider bg-background px-3 py-2 text-sm"
         >
           <option value="css_selector">CSS Selector</option>
           <option value="xpath">XPath</option>
@@ -239,7 +239,7 @@ function SelectorEditForm({
           }
         />
       </Field>
-      <label className="text-secondary flex items-center gap-2 text-sm">
+      <label className="flex items-center gap-2 text-sm text-secondary">
         <input
           type="checkbox"
           checked={draft.is_active}

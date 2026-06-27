@@ -45,10 +45,10 @@ export function ConfirmDialog({
         >
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
-              <DialogPrimitive.Title className="text-foreground m-0 text-base leading-snug font-semibold">
+              <DialogPrimitive.Title className="m-0 text-base leading-snug font-semibold text-foreground">
                 {title}
               </DialogPrimitive.Title>
-              <DialogPrimitive.Description className="text-secondary mt-2 text-sm leading-relaxed">
+              <DialogPrimitive.Description className="mt-2 text-sm leading-relaxed text-secondary">
                 {description}
               </DialogPrimitive.Description>
             </div>
@@ -67,7 +67,7 @@ export function ConfirmDialog({
           {error ? (
             <div
               role="alert"
-              className="border-danger/20 bg-danger/10 text-danger mt-4 rounded-md border px-3 py-2 text-sm leading-normal"
+              className="mt-4 rounded-md border border-danger/20 bg-danger/10 px-3 py-2 text-sm leading-normal text-danger"
             >
               {error}
             </div>

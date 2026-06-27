@@ -53,10 +53,10 @@ export function HistoryDrawer({
   return (
     <>
       <div className="fixed inset-0 z-40 bg-black/20" onClick={onClose} aria-hidden="true" />
-      <div className="border-divider bg-background-elevated animate-in slide-in-from-right-4 fixed top-0 right-0 z-50 flex h-full w-[380px] max-w-full flex-col overflow-y-auto border-l p-0 shadow-xl duration-200">
-        <div className="border-divider flex items-center justify-between border-b px-4 py-3">
+      <div className="animate-in slide-in-from-right-4 fixed top-0 right-0 z-50 flex h-full w-[380px] max-w-full flex-col overflow-y-auto border-l border-divider bg-background-elevated p-0 shadow-xl duration-200">
+        <div className="flex items-center justify-between border-b border-divider px-4 py-3">
           <div className="flex items-center gap-2">
-            <History className="text-muted size-4" />
+            <History className="size-4 text-muted" />
             <h2 className="type-subheading">{title}</h2>
           </div>
           <Button
@@ -71,12 +71,12 @@ export function HistoryDrawer({
         </div>
         <div className="flex-1 overflow-auto">
           {items.length === 0 ? (
-            <div className="text-muted flex h-full flex-col items-center justify-center p-8 text-center">
+            <div className="flex h-full flex-col items-center justify-center p-8 text-center text-muted">
               <History className="mb-3 size-8 opacity-20" />
               <p className="text-xs">No history found.</p>
             </div>
           ) : (
-            <div className="divide-divider divide-y">
+            <div className="divide-y divide-divider">
               {items.map((item) => (
                 <button
                   key={item.id}
@@ -107,7 +107,7 @@ export function HistoryDrawer({
                     </Badge>
                   </div>
                   {item.label && (
-                    <div className="text-foreground type-body max-w-[300px] truncate font-semibold">
+                    <div className="type-body max-w-[300px] truncate font-semibold text-foreground">
                       {item.label}
                     </div>
                   )}

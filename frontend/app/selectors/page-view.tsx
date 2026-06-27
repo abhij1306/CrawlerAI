@@ -5,7 +5,6 @@ import { cn } from '../../lib/utils';
 import { type RowState, type SelectorKind, type SelectorRow } from './selector-page-utils';
 import { type RowMessage, useSelectorsWorkspace } from './use-selectors-workspace';
 
-
 // skipcq: JS-0067
 export default function SelectorsPage() {
   const {
@@ -163,19 +162,19 @@ function PagePreviewCard({
         ) : null
       }
     >
-      <div className="bg-panel shadow-card overflow-hidden rounded-none p-0 backdrop-blur-md">
+      <div className="overflow-hidden rounded-none bg-panel p-0 shadow-card backdrop-blur-md">
         {previewHtml ? (
           <iframe
             key={loadedUrl}
             srcDoc={previewHtml}
             title="Selector page preview"
-            className="bg-panel h-[760px] w-full"
+            className="h-[760px] w-full bg-panel"
             loading="lazy"
             referrerPolicy="no-referrer"
             sandbox="allow-same-origin"
           />
         ) : (
-          <div className="text-muted grid h-[760px] place-items-center text-sm leading-relaxed">
+          <div className="grid h-[760px] place-items-center text-sm leading-relaxed text-muted">
             {loadedUrl ? 'Preview fetch failed.' : 'No page loaded.'}
           </div>
         )}
@@ -248,7 +247,7 @@ function FieldRowsCard({
         />
       )}
 
-      <div className="border-border flex justify-end border-t pt-4">
+      <div className="flex justify-end border-t border-border pt-4">
         <Button
           type="button"
           variant="action"
@@ -318,7 +317,7 @@ function SelectorFieldRow({
 }: Readonly<SelectorFieldRowProps>) {
   const selectorInputId = `selector-value-${row.key}`;
   return (
-    <div className="border-border bg-background-elevated rounded-lg border p-5">
+    <div className="rounded-lg border border-border bg-background-elevated p-5">
       <div className="grid gap-4">
         <div className="grid gap-4 xl:grid-cols-[160px_130px_minmax(0,1fr)_auto] xl:items-end">
           <Field label="Field Name">
@@ -364,9 +363,9 @@ function SelectorFieldRow({
               />
               <div className="pointer-events-none absolute inset-y-0 right-3 flex items-center">
                 {row.selectorValue.trim() ? (
-                  <CheckCircle2 className="text-success size-4" />
+                  <CheckCircle2 className="size-4 text-success" />
                 ) : (
-                  <AlertCircle className="text-muted size-4" />
+                  <AlertCircle className="size-4 text-muted" />
                 )}
               </div>
             </div>

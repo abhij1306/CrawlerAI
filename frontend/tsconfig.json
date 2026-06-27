@@ -9,11 +9,10 @@
     "esModuleInterop": true,
     "module": "esnext",
     "moduleResolution": "bundler",
-    "types": ["vite/client", "node"],
+    "types": ["vite-plus/client", "node"],
     "ignoreDeprecations": "6.0",
-    "baseUrl": ".",
     "paths": {
-      "@/*": ["src/*"]
+      "@/*": ["./src/*"]
     },
     "resolveJsonModule": true,
     "isolatedModules": true,
@@ -30,8 +29,6 @@
     "lib/**/*.ts",
     "lib/**/*.tsx",
     "scripts/**/*.mjs",
-    "vite.config.ts",
-    "vitest.config.ts",
     "vitest.setup.ts",
     "playwright.config.ts"
   ],

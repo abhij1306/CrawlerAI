@@ -9,7 +9,7 @@ import { SessionProvider, useSession } from './session';
 function SessionLoading() {
   return (
     <div className="app-shell-feedback" aria-busy="true" aria-live="polite">
-      <div className="border-border card-gradient w-full max-w-sm space-y-3 rounded-lg border p-6">
+      <div className="card-gradient w-full max-w-sm space-y-3 rounded-lg border border-border p-6">
         <div className="skeleton h-5 w-36" />
         <div className="skeleton h-3 w-full" />
       </div>
@@ -28,9 +28,9 @@ export function RequireSession() {
   if (error || !data) {
     return (
       <div className="app-shell-feedback" role="alert">
-        <div className="border-border card-gradient max-w-sm rounded-lg border p-6 text-center">
+        <div className="card-gradient max-w-sm rounded-lg border border-border p-6 text-center">
           <p className="type-subheading">Unable to load session</p>
-          <p className="text-secondary mt-1.5 text-sm leading-relaxed">
+          <p className="mt-1.5 text-sm leading-relaxed text-secondary">
             Refresh to retry, or sign in again if the session expired.
           </p>
           <div className="mt-4 flex justify-center">

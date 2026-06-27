@@ -73,8 +73,7 @@ export function useRunRecords({
     refetchOnMount: 'always',
   });
 
-  const jsonRecordsSource =
-    jsonRecordsData ?? tableRecordsData;
+  const jsonRecordsSource = jsonRecordsData ?? tableRecordsData;
   const records = useMemo(() => jsonRecordsSource?.items ?? [], [jsonRecordsSource?.items]);
   const tableRecords = useMemo(() => tableRecordsData?.items ?? [], [tableRecordsData?.items]);
   const tableTotal = tableRecordsData?.meta?.total ?? tableRecords.length;

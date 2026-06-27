@@ -5,6 +5,10 @@ on:
     paths:
       - "backend/**"
       - "frontend/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - "vite.config.ts"
       - ".github/workflows/frontend-playwright-smoke.yml"
   workflow_dispatch:
 
@@ -36,28 +40,24 @@ jobs:
       REDIS_STATE_ENABLED: false
       CELERY_DISPATCH_ENABLED: false
       BOOTSTRAP_ADMIN_ONCE: false
-    defaults:
-      run:
-        working-directory: frontend
     steps:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Setup Node
-        uses: actions/setup-node@v6
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@v1
         with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
+          node-version: 24
+          cache: true
 
       - name: Install dependencies
-        run: npm ci
+        run: vp install
 
       - name: Dependency vulnerability scan
-        run: npm audit --audit-level=high
+        run: vp pm audit --audit-level=high
 
       - name: Install Playwright browser
-        run: npx playwright install --with-deps chromium
+        run: vp exec playwright install --with-deps chromium
 
       - name: Setup Python
         uses: actions/setup-python@v6
@@ -96,9 +96,9 @@ jobs:
 
       - name: Start frontend dev server
         env:
-          NEXT_PUBLIC_API_BASE_URL: http://127.0.0.1:8000
+          VITE_API_BASE_URL: http://127.0.0.1:8000
         run: |
-          nohup npm run dev > /tmp/frontend.log 2>&1 &
+          nohup vp dev > /tmp/frontend.log 2>&1 &
 
       - name: Wait for frontend root URL
         run: |
@@ -115,5 +115,5 @@ jobs:
       - name: Run Playwright smoke suite
         env:
           CI: true
-          NEXT_PUBLIC_API_BASE_URL: http://127.0.0.1:8000
-        run: npm run test:e2e -- smoke.spec.ts
+          VITE_API_BASE_URL: http://127.0.0.1:8000
+        run: vp exec playwright test --config frontend/playwright.config.ts smoke.spec.ts

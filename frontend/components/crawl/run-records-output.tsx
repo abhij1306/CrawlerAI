@@ -133,7 +133,7 @@ export function RunJsonOutput({
         <span aria-hidden="true">{syntaxHighlightJsonNodes(recordsJson)}</span>
       </pre>
       {hasMore ? (
-        <div className="surface-muted text-muted type-body mt-2 flex items-center justify-between rounded-md px-6 py-2">
+        <div className="surface-muted type-body mt-2 flex items-center justify-between rounded-md px-6 py-2 text-muted">
           <span>
             JSON previewing {visibleCount} of {total} records
           </span>

@@ -34,24 +34,24 @@ export function RunLiveWorkspace({
 }: Readonly<RunLiveWorkspaceProps>) {
   return (
     <Card className="section-card overflow-hidden">
-      <header className="border-border flex h-10 items-center justify-between border-b bg-[color-mix(in_srgb,var(--bg-alt)_40%,var(--bg-panel))] px-4">
-        <span className="type-label-mono text-secondary flex items-center gap-2">
+      <header className="flex h-10 items-center justify-between border-b border-border bg-[color-mix(in_srgb,var(--bg-alt)_40%,var(--bg-panel))] px-4">
+        <span className="type-label-mono flex items-center gap-2 text-secondary">
           Live Log Stream
           {socketOnline ? (
             <span
-              className="bg-success inline-block size-1.5 animate-pulse rounded-full"
+              className="inline-block size-1.5 animate-pulse rounded-full bg-success"
               aria-label="Connected"
             />
           ) : (
             <span
-              className="bg-muted inline-block size-1.5 rounded-full"
+              className="inline-block size-1.5 rounded-full bg-muted"
               aria-label="Disconnected"
             />
           )}
         </span>
         <div className="flex items-center gap-3">
           {run ? (
-            <span className="border-divider bg-background-elevated text-foreground type-body inline-flex h-8 items-center gap-1.5 rounded-sm border px-3 tabular-nums">
+            <span className="type-body inline-flex h-8 items-center gap-1.5 rounded-sm border border-divider bg-background-elevated px-3 text-foreground tabular-nums">
               <Clock className="size-3.5" />
               {elapsedLabel}
             </span>
@@ -61,7 +61,7 @@ export function RunLiveWorkspace({
             <button
               type="button"
               onClick={onJumpToLatest}
-              className="bg-background-alt shadow-card type-control inline-flex items-center gap-1 rounded-md px-2.5 py-1.5"
+              className="type-control inline-flex items-center gap-1 rounded-md bg-background-alt px-2.5 py-1.5 shadow-card"
             >
               <ChevronsDown className="size-3.5" aria-hidden="true" />
               Jump to Latest
