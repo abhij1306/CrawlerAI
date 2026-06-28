@@ -31,7 +31,6 @@ from app.acquisition.runtime import (
     copy_headers,
 )
 from app.core.config.browser_fingerprint_profiles import (
-    WARMUP_ELIGIBLE_BROWSER_REASONS,
     WARMUP_VENDOR_BLOCK_PREFIX,
 )
 from app.core.config.runtime_settings import (
@@ -472,34 +471,24 @@ def _eligible_warmup_url(
     surface: str,
     browser_engine: str,
     browser_reason: str | None,
-    host_policy_snapshot: dict[str, object] | None,
     proxy_profile: dict[str, object] | None,
     skip_for_reusable_domain_state: bool,
 ) -> str | None:
     if "detail" not in str(surface or "").strip().lower():
+        return None
+    # Real Chrome warms on its single active page, which serializes a second
+    # navigation (and challenge fight) onto the critical path before the product
+    # URL is even requested. Origin warmup is sibling-page only.
+    if normalize_browser_engine(browser_engine) == REAL_CHROME_BROWSER_ENGINE:
         return None
     if proxy_rotation_mode(proxy_profile) == "rotating":
         return None
     if skip_for_reusable_domain_state:
         return None
     reason = str(browser_reason or "").strip().lower()
-    if reason in {
-        "detail-shell retry",
-        "challenge-shell retry",
-        "low-quality-extraction retry",
-    }:
-        return None
-    if not (
-        reason in WARMUP_ELIGIBLE_BROWSER_REASONS
-        or reason.startswith(WARMUP_VENDOR_BLOCK_PREFIX)
-    ):
-        return None
-    host_policy = dict(host_policy_snapshot or {})
-    if (
-        normalize_browser_engine(browser_engine) != REAL_CHROME_BROWSER_ENGINE
-        and bool(host_policy.get("prefer_browser"))
-        and str(host_policy.get("last_block_vendor") or "").strip()
-    ):
+    # Only warm when a bot wall was actually detected: pre-seeding clearance
+    # cookies at the origin root only pays off against vendor challenges.
+    if not reason.startswith(WARMUP_VENDOR_BLOCK_PREFIX):
         return None
     parsed = urlparse(url)
     if not parsed.scheme or not parsed.netloc:
@@ -521,12 +510,7 @@ def _warmup_budget_ms(timeout_seconds: float) -> int:
     )
 
 
-async def _open_warmup_page(request: _WarmupRequest) -> tuple[Any | None, bool]:
-    use_active_page = (
-        normalize_browser_engine(request.browser_engine) == REAL_CHROME_BROWSER_ENGINE
-    )
-    if use_active_page:
-        return request.page, True
+async def _open_warmup_page(request: _WarmupRequest) -> Any | None:
     context = getattr(request.page, "context", None)
     if callable(context):
         with suppress(Exception):
@@ -537,8 +521,8 @@ async def _open_warmup_page(request: _WarmupRequest) -> tuple[Any | None, bool]:
             "Skipping origin warmup for %s because page context cannot spawn a sibling page",
             request.url,
         )
-        return None, False
-    return await new_page(), False
+        return None
+    return await new_page()
 
 
 def _copy_challenge_timings(
@@ -554,10 +538,9 @@ def _copy_challenge_timings(
 async def _run_warmup(request: _WarmupRequest, *, budget_ms: int) -> bool:
     started_at = time.perf_counter()
     warm_page = None
-    active_page = False
     succeeded = False
     try:
-        warm_page, active_page = await _open_warmup_page(request)
+        warm_page = await _open_warmup_page(request)
         if warm_page is None:
             return False
         response = await warm_page.goto(
@@ -598,7 +581,7 @@ async def _run_warmup(request: _WarmupRequest, *, budget_ms: int) -> bool:
     except Exception:
         logger.debug("Origin warmup failed for %s", request.url, exc_info=True)
     finally:
-        if warm_page is not None and not active_page:
+        if warm_page is not None:
             close_page = getattr(warm_page, "close", None)
             if callable(close_page):
                 with suppress(Exception):
@@ -614,7 +597,6 @@ async def maybe_warm_origin_before_navigation(
     surface: str,
     browser_engine: str = CHROMIUM_BROWSER_ENGINE,
     browser_reason: str | None,
-    host_policy_snapshot: dict[str, object] | None,
     proxy: str | None = None,
     proxy_profile: dict[str, object] | None,
     skip_for_reusable_domain_state: bool = False,
@@ -627,12 +609,19 @@ async def maybe_warm_origin_before_navigation(
     )
     if warm_pause_ms <= 0:
         return
+    # Never let warmup consume the product navigation's budget: only warm when
+    # there is enough headroom for the real navigation to keep a full
+    # domcontentloaded window after the warmup spends its share.
+    nav_floor_ms = int(
+        crawler_runtime_settings.browser_navigation_domcontentloaded_timeout_ms
+    )
+    if int(max(0.0, timeout_seconds) * 1000) <= nav_floor_ms:
+        return
     warm_url = _eligible_warmup_url(
         url=url,
         surface=surface,
         browser_engine=browser_engine,
         browser_reason=browser_reason,
-        host_policy_snapshot=host_policy_snapshot,
         proxy_profile=proxy_profile,
         skip_for_reusable_domain_state=skip_for_reusable_domain_state,
     )

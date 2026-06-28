@@ -201,7 +201,7 @@ class CrawlerRuntimeSettings(BaseSettings):
     surface_readiness_max_wait_ms: int | None = 6000
     surface_readiness_poll_ms: int = 250
     origin_warm_pause_ms: int | None = 500
-    origin_warmup_max_budget_ratio: float = 0.4
+    origin_warmup_max_budget_ratio: float = 0.25
     origin_warmup_dedupe_ttl_seconds: float = 60.0
     browser_error_retry_attempts: int = 1
     browser_error_retry_delay_ms: int = 1000

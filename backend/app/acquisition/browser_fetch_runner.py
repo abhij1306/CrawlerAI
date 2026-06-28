@@ -292,7 +292,6 @@ async def _configure_page(
         surface=state.normalized_surface,
         browser_engine=state.runtime_engine,
         browser_reason=request.browser_reason,
-        host_policy_snapshot=request.host_policy_snapshot,
         proxy=request.proxy,
         proxy_profile=request.proxy_profile,
         skip_for_reusable_domain_state=state.skip_origin_warmup,

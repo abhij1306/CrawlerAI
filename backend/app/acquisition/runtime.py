@@ -160,8 +160,10 @@ def _content_aware_http_blocked(
     headers: Any,
     html: str,
     status_code: int,
+    *,
+    analysis: HtmlAnalysis | None = None,
 ) -> bool:
-    analysis = analyze_html(html)
+    analysis = analysis or analyze_html(html)
     blocked_page = classify_blocked_page(
         html,
         status_code,
@@ -309,6 +311,7 @@ async def http_fetch(
     response = await client.get(url, timeout=timeout_seconds)
     html = response.text or ""
     headers = copy_headers(response.headers)
+    analysis = analyze_html(html)
     blocked_result = blocked_html_checker(html, response.status_code)
     if inspect.isawaitable(blocked_result):
         blocked_result = await blocked_result
@@ -316,6 +319,7 @@ async def http_fetch(
         headers,
         html,
         response.status_code,
+        analysis=analysis,
     )
     runtime_policy = resolve_platform_runtime_policy(str(response.url), html)
     return PageFetchResult(
@@ -328,6 +332,7 @@ async def http_fetch(
         blocked=blocked,
         platform_family=runtime_policy.get("family"),
         headers=headers,
+        html_document=analysis.document,
     )
 
 
@@ -386,10 +391,12 @@ def _curl_fetch_sync(
     )
     html = response.text or ""
     response_headers = copy_headers(response.headers)
+    analysis = analyze_html(html)
     blocked = _content_aware_http_blocked(
         response_headers,
         html,
         response.status_code,
+        analysis=analysis,
     )
     runtime_policy = resolve_platform_runtime_policy(str(response.url), html)
     return PageFetchResult(
@@ -402,6 +409,7 @@ def _curl_fetch_sync(
         blocked=blocked,
         platform_family=runtime_policy.get("family"),
         headers=response_headers,
+        html_document=analysis.document,
     )
 
 

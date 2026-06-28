@@ -645,7 +645,19 @@ def _page_attempt_outcome(
 def _browser_result_is_ready(result: PageFetchResult) -> bool:
     diagnostics = dict(result.browser_diagnostics or {})
     outcome = str(diagnostics.get("browser_outcome") or "").strip().casefold()
-    return not result.blocked and outcome == "usable_content"
+    if result.blocked or outcome != "usable_content":
+        return False
+    # A usable_content verdict that ships readiness probes none of which are
+    # ready means the browser never actually settled on extractable content
+    # (e.g. a vendor challenge shell that scored as usable). Mirror the
+    # has-ready-probe invariant the acquirer applies so an unresolved vendor
+    # block stays blocked. Absent probes, trust the usable_content verdict.
+    probes = diagnostics.get("readiness_probes")
+    if isinstance(probes, list) and probes:
+        return any(
+            isinstance(probe, dict) and bool(probe.get("is_ready")) for probe in probes
+        )
+    return True
 
 
 def _acquisition_outcome(

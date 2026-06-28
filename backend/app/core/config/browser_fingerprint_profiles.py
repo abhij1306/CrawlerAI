@@ -45,16 +45,6 @@ DEHEADLESS_HOST_OS_FALLBACK: str = "linux"
 
 CHROME_CLIENT_HINT_GREASE_BRAND: str = "Not:A-Brand"
 CHROME_CLIENT_HINT_GREASE_VERSION: str = "99"
-WARMUP_ELIGIBLE_BROWSER_REASONS: frozenset[str] = frozenset(
-    {
-        "host-preference",
-        "http-escalation",
-        "platform-required",
-        "traversal-required",
-        "empty-extraction retry",
-        "thin-listing retry",
-    }
-)
 RETRY_REASON_BROWSER_LABELS: dict[str, str] = {
     "post_extraction_detail_shell": "detail-shell retry",
     "post_extraction_challenge_shell": "challenge-shell retry",
@@ -88,6 +78,5 @@ __all__ = [
     "NATIVE_REAL_CHROME_CONTEXT_OPTIONS",
     "REAL_CHROME_IGNORE_DEFAULT_ARGS",
     "RETRY_REASON_BROWSER_LABELS",
-    "WARMUP_ELIGIBLE_BROWSER_REASONS",
     "WARMUP_VENDOR_BLOCK_PREFIX",
 ]
