@@ -10,7 +10,9 @@ from app.acquisition.browser_block_detection import classify_blocked_page
 from app.acquisition.browser_listing_visual import listing_visual_elements_html
 from app.acquisition.browser_result_builder import build_browser_artifacts
 from app.acquisition.runtime_plan import AcquisitionIntent
+from app.acquisition.source_capabilities import build_source_capability_diagnostics
 from app.extraction import Surface, extract
+from app.extraction.pipeline import _only_slug_identity
 from app.extraction.contracts import CommerceDetailRecord, ExtractionRequest
 from app.extraction.contracts import Evidence
 from app.extraction.replay import (
@@ -671,6 +673,25 @@ def test_ecommerce_detail_homepage_does_not_materialize_promotional_product() ->
     assert result.records == ()
 
 
+def test_apostrophe_prefixed_numeric_brand_is_normalized_before_resolution() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <script type="application/ld+json">
+        {
+          "@type": "Product",
+          "name": "47 NY Yankees Clean Up Cap",
+          "brand": {"@type": "Brand", "name": "'47"},
+          "url": "https://retailer.test/products/47-yankees-clean-up-cap"
+        }
+        </script>
+        """,
+        "https://retailer.test/products/47-yankees-clean-up-cap",
+    )
+
+    assert result.records[0]["brand"] == "47"
+
+
 def test_ecommerce_detail_locale_root_does_not_materialize_embedded_products() -> None:
     result = _extract(
         "ecommerce_detail",
@@ -1108,6 +1129,36 @@ def test_active_provider_shell_is_blocked_when_building_runtime_capture() -> Non
     assert request.capture.blocked is True
     assert result.records == ()
     assert result.verdict == "blocked"
+
+
+def test_low_content_browser_shell_is_blocked_when_building_runtime_capture() -> None:
+    url = "https://shop.test/products/low-content-shell"
+    acquisition = PageAcquisitionResult(
+        request=AcquisitionRequest(
+            run_id=45,
+            url=url,
+            plan=AcquisitionIntent(surface="ecommerce_detail"),
+        ),
+        final_url=url,
+        html="<html><body><div>Loading...</div></body></html>",
+        method="browser",
+        status_code=200,
+        blocked=False,
+        browser_diagnostics={
+            "browser_attempted": True,
+            "browser_outcome": "low_content_shell",
+        },
+    )
+
+    request = request_from_acquisition_result(
+        Surface.ECOMMERCE_DETAIL,
+        acquisition,
+        requested_url=url,
+        max_records=1,
+    )
+
+    assert request.capture.blocked is True
+    assert extract(request).records == ()
 
 
 def test_not_found_detail_does_not_publish_url_only_fallback_record() -> None:
@@ -5408,6 +5459,31 @@ def test_lazy_dom_product_images_are_collected_from_data_src_and_srcset() -> Non
     ]
 
 
+def test_srcset_parser_preserves_commas_inside_cdn_image_urls() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <script type="application/ld+json">
+        {
+          "@type": "Product",
+          "name": "Trail Shoe",
+          "url": "https://shop.test/products/trail-shoe"
+        }
+        </script>
+        <main>
+          <section class="product-gallery">
+            <source srcset="https://cdn.shop.test/trail-shoe_SR1840,1472.webp 1840w, https://cdn.shop.test/trail-shoe_SR920,736.webp 920w">
+          </section>
+        </main>
+        """,
+        "https://shop.test/products/trail-shoe",
+    )
+
+    assert result.records[0]["image_url"] == (
+        "https://cdn.shop.test/trail-shoe_SR1840%2C1472.webp"
+    )
+
+
 def test_single_admissible_main_image_remains_a_dom_fallback() -> None:
     result = _extract(
         "ecommerce_detail",
@@ -5777,3 +5853,125 @@ def test_missing_requested_variants_without_dom_cues_requests_browser() -> None:
     assert not result.records[0].get("variants")
     assert result.retry_request is not None
     assert result.retry_request.reason == "explicit_variants_missing"
+
+
+def test_ingredient_style_percentages_do_not_trigger_missing_separator() -> None:
+    description = (
+        "A brightening C15% complex, A2% serum, and niacinamide10% complex "
+        "for daily use."
+    )
+    result = _extract(
+        "ecommerce_detail",
+        f"""
+        <script type="application/ld+json">
+        {{
+          "@context": "https://schema.org",
+          "@type": "Product",
+          "name": "Daily Brightening Serum",
+          "brand": "Example Labs",
+          "description": {json.dumps(description)},
+          "image": "https://shop.test/images/serum.jpg",
+          "url": "https://shop.test/products/daily-brightening-serum"
+        }}
+        </script>
+        """,
+        "https://shop.test/products/daily-brightening-serum",
+        requested_fields=("description",),
+    )
+
+    assert result.records[0]["description"] == description
+    assert all(
+        "description_missing_separator" not in evidence.flags
+        for evidence in result.evidence
+        if evidence.fact_type == "product.description"
+    )
+
+
+def test_compacted_description_still_triggers_missing_separator() -> None:
+    description = "Crewneck100% CottonHeavyweight 14ozScreen printed logoPre-shrunk"
+    result = _extract(
+        "ecommerce_detail",
+        f"""
+        <script type="application/ld+json">
+        {{
+          "@context": "https://schema.org",
+          "@type": "Product",
+          "name": "Heavyweight Crewneck",
+          "brand": "Example",
+          "description": {json.dumps(description)},
+          "image": "https://shop.test/images/crewneck.jpg",
+          "url": "https://shop.test/products/heavyweight-crewneck"
+        }}
+        </script>
+        """,
+        "https://shop.test/products/heavyweight-crewneck",
+        requested_fields=("description",),
+    )
+
+    assert any(
+        "description_missing_separator" in evidence.flags
+        for evidence in result.evidence
+        if evidence.fact_type == "product.description"
+    )
+    assert result.records[0].get("description") is None
+
+
+def test_direct_brand_evidence_outranks_url_derived_brand() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "Product",
+          "name": "Trail Shoe",
+          "brand": {"@type": "Brand", "name": "Direct Brand"},
+          "description": "A durable trail shoe for daily training.",
+          "image": "https://shop.test/images/trail-shoe.jpg",
+          "url": "https://shop.test/products/url-brand-trail-shoe"
+        }
+        </script>
+        """,
+        "https://shop.test/products/url-brand-trail-shoe",
+    )
+
+    assert result.records[0]["brand"] == "Direct Brand"
+
+
+def test_404_detail_with_direct_identity_reaches_not_found_handling() -> None:
+    url = "https://shop.test/products/trail-shoe"
+    request = fixture_request_from_inputs(
+        Surface.ECOMMERCE_DETAIL,
+        HTML,
+        url,
+    )
+    source_capabilities = build_source_capability_diagnostics(
+        html=HTML,
+        network_payloads=[],
+        status_code=404,
+        browser_outcome="usable_content",
+    )
+    capture = request.capture.model_copy(
+        update={
+            "http_status": 404,
+            "acquisition_diagnostics": {
+                "source_capabilities": source_capabilities,
+            },
+        }
+    )
+
+    result = extract(request.model_copy(update={"capture": capture}))
+
+    assert source_capabilities["terminal_shell"] is False
+    assert result.records
+    assert result.records[0]["title"] == "Trail Shoe"
+
+
+def test_nonzero_variant_count_prevents_slug_only_classification() -> None:
+    base = {
+        "title": "Widget",
+        "url": "https://shop.test/products/widget",
+    }
+
+    assert _only_slug_identity({**base, "variant_count": 0}) is True
+    assert _only_slug_identity({**base, "variant_count": 2}) is False

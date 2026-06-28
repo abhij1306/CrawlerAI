@@ -374,6 +374,7 @@ class CrawlerRuntimeSettings(BaseSettings):
     acquisition_artifact_ttl_seconds: int = 86400
     acquisition_artifact_cleanup_interval_seconds: int = 300
     llm_confidence_threshold: float = 0.55
+    browser_attempt_min_runtime_seconds: float = 0.001
     browser_retry_min_remaining_seconds: float = 20.0
     acquisition_contract_stale_failure_threshold: int = 2
     detail_max_variant_axes: int = 3
@@ -464,6 +465,7 @@ class CrawlerRuntimeSettings(BaseSettings):
             "browser_artifact_capture_timeout_ms",
             "browser_launch_timeout_seconds",
             "browser_context_slot_timeout_seconds",
+            "browser_attempt_min_runtime_seconds",
             "platform_detection_html_search_limit",
             "browser_runtime_context_capacity",
             "browser_runtime_pool_max_entries",
@@ -573,7 +575,7 @@ class CrawlerRuntimeSettings(BaseSettings):
         if acquisition_timeout <= 0:
             return timeout
         return min(
-            max(timeout, acquisition_timeout + buffer_seconds),
+            timeout + acquisition_timeout + buffer_seconds,
             float(self.max_url_process_timeout_seconds),
         )
 

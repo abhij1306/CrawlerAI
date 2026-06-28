@@ -6,6 +6,7 @@ import re
 from urllib.parse import urlparse
 
 from app.core.config.extraction_rules import (
+    DETAIL_BRAND_PREFIX_STOP_TOKENS,
     BARE_HOST_URL_RE,
     DETAIL_TITLE_INTERNAL_SYSTEM_PATTERN,
     LISTING_BRAND_MAX_WORDS,
@@ -16,6 +17,7 @@ from app.core.config.public_record_policy import (
     PUBLIC_RECORD_GENDER_REJECT_TOKENS,
     PUBLIC_RECORD_GENDER_TAXONOMY,
     PUBLIC_RECORD_IDENTITY_INTERNAL_TOKENS,
+    PUBLIC_RECORD_NUMERIC_BRAND_PATTERN,
     PUBLIC_RECORD_SKU_DRAFT_PREFIX_PATTERN,
 )
 from app.core.shared.text_coerce import clean_text, coerce_text, slug_tokens
@@ -217,7 +219,8 @@ def infer_brand_from_page_identity(
 
 
 def infer_brand_from_product_url(*, url: str, title: object) -> str | None:
-    title_parts = slug_tokens(title)
+    text = clean_text(title)
+    title_parts = slug_tokens(text)
     if len(title_parts) < 2:
         return None
     path_parts = [
@@ -225,6 +228,38 @@ def infer_brand_from_product_url(*, url: str, title: object) -> str | None:
         for part in (urlparse(str(url or "")).path or "").split("/")
         if part
     ]
+    title_segments = text.split(" - ", 1) if text else []
+    leading_segment = title_segments[0].strip(" |-–—") if title_segments else ""
+    trailing_segment = (
+        title_segments[1].strip(" |-–—") if len(title_segments) == 2 else ""
+    )
+    leading_tokens = slug_tokens(leading_segment)
+    first_token = title_parts[0] if title_parts else ""
+    if (
+        " - " in text
+        and leading_segment[:1].isupper()
+        and first_token
+        and first_token not in DETAIL_BRAND_PREFIX_STOP_TOKENS
+    ):
+        matching_path_part = any(
+            (tokens := slug_tokens(part))
+            and len(tokens) >= len(leading_tokens)
+            and tokens[: len(leading_tokens)] == leading_tokens
+            for part in path_parts
+        )
+        if matching_path_part:
+            host = urlparse(str(url or "")).hostname or ""
+            host_labels = {
+                "".join(slug_tokens(label))
+                for label in host.split(".")
+                if label.casefold()
+                not in {"", "www", "shop", "store", "com", "co", "net", "org"}
+            }
+            trailing_compact = "".join(slug_tokens(trailing_segment))
+            if trailing_compact and trailing_compact in host_labels:
+                return leading_segment.split(" ", 1)[0].strip(" |-–—") or None
+            if len(leading_tokens) <= LISTING_BRAND_MAX_WORDS:
+                return leading_segment
     for path_part in reversed(path_parts):
         path_tokens = slug_tokens(path_part)
         if len(path_tokens) <= len(title_parts):
@@ -274,8 +309,8 @@ def coerce_brand_text(value: object) -> str | None:
     if not text:
         return None
     text = re.sub(r"^\s*\d+\s+(?=[A-Za-z])", "", text).strip()
-    if re.fullmatch(r"\d{2,3}", text):
-        return text
+    if numeric_brand := re.fullmatch(PUBLIC_RECORD_NUMERIC_BRAND_PATTERN, text):
+        return str(numeric_brand.group("brand"))
     if not text or not re.search(r"[A-Za-z]", text):
         return None
     parsed = urlparse(text)

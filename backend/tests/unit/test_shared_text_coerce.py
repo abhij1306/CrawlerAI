@@ -103,6 +103,7 @@ def test_coerce_brand_text_strips_marketing_tagline() -> None:
     assert coerce_brand_text("Tommy Hilfiger") == "Tommy Hilfiger"
     assert coerce_brand_text("Nike Inc.") == "Nike Inc."
     assert coerce_brand_text("Levi's") == "Levi's"
+    assert coerce_brand_text("'47") == "47"
     # A single-word suffix is not assumed to be a tagline (could be a
     # legitimate brand-line marker); leave the value alone.
     assert coerce_brand_text("Gymshark | Single") == "Gymshark | Single"

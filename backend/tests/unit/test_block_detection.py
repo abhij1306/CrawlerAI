@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from types import SimpleNamespace
 
 import pytest
 
@@ -156,6 +157,28 @@ def test_active_perimeterx_shell_without_ready_probe_is_not_usable_content() -> 
 
     assert classification.active_provider_hits == ["px-captcha"]
     assert outcome == "challenge_page"
+
+
+@pytest.mark.unit
+def test_active_provider_metadata_without_probe_does_not_override_usable_page() -> None:
+    html = """
+    <html><head><script type="application/ld+json">
+    {"@type":"Product","name":"Trail Shoe","offers":{"price":"120"}}
+    </script></head><body><main><h1>Trail Shoe</h1>
+    <p>Technical running shoe with durable cushioning for daily training.</p>
+    </main></body></html>
+    """
+    classification = SimpleNamespace(blocked=False, active_provider_hits=["akamai"])
+
+    outcome = classify_browser_outcome(
+        html=html,
+        html_bytes=len(html.encode()),
+        blocked=False,
+        block_classification=classification,
+        readiness_probes=None,
+    )
+
+    assert outcome == "usable_content"
 
 
 @pytest.mark.unit

@@ -150,7 +150,10 @@ class PageEvidence:
 
     @property
     def indicates_block(self) -> bool:
-        if self.blocked or self.browser_outcome == "challenge_page":
+        if self.blocked or self.browser_outcome in {
+            "challenge_page",
+            "low_content_shell",
+        }:
             return True
         if any(
             item.startswith(("title:", "strong:")) for item in self.challenge_evidence

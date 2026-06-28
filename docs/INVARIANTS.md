@@ -62,6 +62,8 @@ Variant and offer facts remain entity-scoped. Parent offer/range/availability va
 
 Extraction results expose `transport_outcome`, `data_integrity`, and per-field evidence states: `captured_and_resolved`, `captured_but_rejected`, `captured_conflicting`, `source_unavailable`, or `not_present_in_captured_sources`. Transport success never implies clean data integrity. Proven product-data-source failure must be represented as honest source unavailability rather than an extraction defect.
 
+Terminal shell acquisitions, including HTTP error bodies, challenge pages, browser low-content shells, redirect-only shells, and URL/title-only placeholders, are not successful product observations. They must mark affected detail fields as `source_unavailable` and suppress public `ecommerce_detail` materialization when the only surviving public values are the requested URL and a URL-derived title.
+
 ---
 
 **Active known bugs:** none. Keep this section for active extraction bugs only. Do not document already-fixed bugs here.
@@ -81,11 +83,17 @@ For ecommerce detail, missing high-value fields such as `price`, `title`, and `i
 
 Ecommerce detail candidate admission must reject semantic artifacts before ranking. BreadcrumbList JSON-LD is not a detail category source. DOM breadcrumbs may provide category only after UI/root labels and product-title suffixes are removed. Price repair may correct 100x cent/magnitude drift only when visible DOM, same-product variant evidence, or an explicit host/currency conflict corroborates the smaller value; host name alone must not divide integral prices by 100. Installment/payment-plan prices, promo variant values, hex-only color values, system SKUs, structural IDs, placeholder product types, raw list-string text, related-product variants, and whole-value non-product guide/glossary text must not win as canonical fields.
 
-Public ecommerce detail output has a flat variant contract. Persisted/exported `variants` rows may contain only public transport fields (`sku`, `price`, `currency`, `url`, `image_url`, `availability`, `stock_quantity`) plus configured public variant axes from `app/core/config/field_mappings.py` (`PUBLIC_VARIANT_AXIS_FIELDS`), plus top-level `variant_count`. Public output must not expose `selected_variant`, `variant_axes`, `available_sizes`, `option_*`, variant `title`, nested `option_values`, or variant-only identity helpers. If legacy rows are still present internally, the public boundary must flatten and strip them before persistence/export.
+Public ecommerce detail output has a flat variant contract. Persisted/exported `variants` rows may contain row-level `variant_id`, public transport fields (`sku`, `price`, `currency`, `url`, `image_url`, `availability`, `stock_quantity`), and configured public variant axes from `app/core/config/field_mappings.py` (`PUBLIC_VARIANT_AXIS_FIELDS`); `variant_count` is top-level only. Public output must not expose `selected_variant`, `variant_axes`, `available_sizes`, `option_*`, variant `title`, nested `option_values`, or other variant-only identity helpers. Public row-level `variant_id` values must be unique within one product record; duplicate ids are an upstream identity/linking failure, not a downstream export cleanup task. If legacy rows are still present internally, the public boundary must flatten and strip them before persistence/export.
 
 Complete variant offers are semantic data, not transport duplication. Public-contract shaping must not delete inherited `price`, `currency`, or `availability` after the resolver makes them explicit. Product/variant consensus and offer inheritance belong to `extract/detail/resolution.py`; findings belong to `extract/detail/validation.py`.
 
 Asset dedupe uses canonical asset identity, not delivery URL equality. Storefront-host and CDN-host Shopify URLs for the same file, and transformed Nike URLs for the same asset ID, are one asset. Keep the strongest delivery URL.
+
+Image candidate parsing must preserve delivery-URL syntax before normalization. In particular, a comma inside a `srcset` URL is part of that URL; only the candidate grammar may separate source-set entries. A malformed relative fragment created by source-set parsing is not admissible image evidence.
+
+Network and embedded JSON admission is same-product evidence only. Ad/feed/analytics/recommendation payload roots, sibling products, and selected-color conflicts must be rejected or diagnosed before entity assembly unless an explicit URL, product id, SKU, or selected-root relationship ties the payload to the requested PDP. File extensions are not required for image evidence when the asset URL, response metadata, or product-scoped lineage proves the URL is an image.
+
+Retailer/site identity and product manufacturer identity are separate facts. When a title suffix is corroborated as host identity and a distinct title/path prefix supplies the product brand, host-derived brand evidence must be rejected during normalization rather than repaired after materialization.
 
 Public-field identity validators are single-owner rules at the public boundary (`field_value_core.py` / `FieldCoercion`):
 

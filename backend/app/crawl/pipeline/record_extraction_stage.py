@@ -116,21 +116,18 @@ async def _run_record_extraction(
         "extract_records_for_acquisition_result",
         extract_records_for_acquisition_result,
     )
+    adapter_artifacts = mapping_or_empty(
+        getattr(acquisition_result, "artifacts", {})
+    ).get("adapter_artifacts")
+    adapter_artifact_count = (
+        len(adapter_artifacts) if isinstance(adapter_artifacts, list) else 0
+    )
     with logfire_span(
         "extract.record_thread",
         run_id=context.run.id,
         domain=normalize_domain(acquisition_result.final_url),
         surface=context.surface,
-        adapter_artifact_count=len(
-            value
-            if isinstance(
-                value := mapping_or_empty(
-                    getattr(acquisition_result, "artifacts", {})
-                ).get("adapter_artifacts"),
-                list,
-            )
-            else []
-        ),
+        adapter_artifact_count=adapter_artifact_count,
         network_payload_count=len(acquisition_result.network_payloads or []),
         selector_rule_count=len(selector_rules or []),
     ) as span:

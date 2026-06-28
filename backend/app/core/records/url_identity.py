@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from urllib.parse import unquote, urlparse
+from urllib.parse import parse_qsl, unquote, urlparse
 
 from app.core.config.extraction_rules import (
     DETAIL_IMAGE_IDENTITY_ALNUM_MIN_LENGTH,
@@ -9,6 +9,8 @@ from app.core.config.extraction_rules import (
     DETAIL_IMAGE_SHORT_STYLE_CODE_MAX_LENGTH,
     DETAIL_IMAGE_SHORT_STYLE_CODE_MIN_LENGTH,
     DETAIL_IMAGE_OPAQUE_HEX_MIN_LENGTH,
+    DETAIL_IDENTITY_CODE_MAX_LENGTH,
+    DETAIL_IDENTITY_CODE_MIN_LENGTH,
     DETAIL_TITLE_ENDPOINT_FILENAME_PATTERN,
     DETAIL_TITLE_PATH_EXTENSION_PATTERN,
     DETAIL_TITLE_STYLE_ONLY_MAX_WORDS,
@@ -68,6 +70,7 @@ def detail_identity_codes_from_url(url: str) -> tuple[str, ...]:
     parsed = urlparse(str(url or ""))
     values = [
         parsed.path.rstrip("/").rsplit("/", 1)[-1],
+        *_path_identity_codes(parsed.path),
         *[part for part in parsed.query.split("&")],
     ]
     out: list[str] = []
@@ -144,12 +147,26 @@ def detail_title_from_url(url: str) -> str:
     return ""
 
 
-def detail_urls_conflict(parent_url: str, candidate_url: str) -> bool:
+def detail_urls_conflict(
+    parent_url: str,
+    candidate_url: str,
+    *,
+    strict_terminal_code: bool = True,
+) -> bool:
     parent_codes = set(detail_identity_codes_from_url(parent_url))
     candidate_codes = set(detail_identity_codes_from_url(candidate_url))
     if not parent_codes or not candidate_codes:
         return False
-    if any(
+    parent_terminal_codes = set(_terminal_path_identity_codes(parent_url))
+    candidate_terminal_codes = set(_terminal_path_identity_codes(candidate_url))
+    distinct_terminal_codes = bool(
+        parent_terminal_codes
+        and candidate_terminal_codes
+        and parent_terminal_codes.isdisjoint(candidate_terminal_codes)
+    )
+    if distinct_terminal_codes and strict_terminal_code:
+        return True
+    if not distinct_terminal_codes and any(
         left == right or left in right or right in left
         for left in parent_codes
         for right in candidate_codes
@@ -163,6 +180,24 @@ def detail_urls_conflict(parent_url: str, candidate_url: str) -> bool:
         parent_tokens | candidate_tokens
     )
     return overlap <= VARIANT_CROSS_PRODUCT_URL_MAX_TOKEN_OVERLAP_RATIO
+
+
+def _terminal_path_identity_codes(url: str) -> tuple[str, ...]:
+    path = urlparse(str(url or "")).path.rstrip("/")
+    terminal = path.rsplit("/", 1)[-1]
+    return _path_identity_codes(terminal)
+
+
+def _path_identity_codes(path: str) -> tuple[str, ...]:
+    return tuple(
+        token.upper()
+        for token in re.findall(r"[A-Za-z0-9]+", unquote(path))
+        if DETAIL_IDENTITY_CODE_MIN_LENGTH
+        <= len(token)
+        <= DETAIL_IDENTITY_CODE_MAX_LENGTH
+        and any(char.isalpha() for char in token)
+        and any(char.isdigit() for char in token)
+    )
 
 
 def detail_url_resource_identity(url: str) -> str:
@@ -277,7 +312,47 @@ def conflicting_product_asset_urls(
         code_conflicts
         | _semantic_product_asset_conflicts(product_values, asset_urls)
         | _short_numeric_product_asset_conflicts(product_values, asset_urls)
+        | _color_product_asset_conflicts(product_values, asset_urls)
     )
+
+
+def _color_product_asset_conflicts(
+    product_values: tuple[object, ...], asset_urls: tuple[str, ...]
+) -> frozenset[str]:
+    product_color_ids = {
+        color_id for value in product_values for color_id in _url_color_ids(value)
+    }
+    if not product_color_ids:
+        return frozenset()
+    asset_color_ids = {url: set(_url_color_ids(url)) for url in asset_urls}
+    if not any(
+        color_ids and not color_ids.isdisjoint(product_color_ids)
+        for color_ids in asset_color_ids.values()
+    ):
+        return frozenset()
+    return frozenset(
+        url
+        for url, color_ids in asset_color_ids.items()
+        if color_ids and color_ids.isdisjoint(product_color_ids)
+    )
+
+
+def _url_color_ids(value: object) -> tuple[str, ...]:
+    parsed = urlparse(str(value or ""))
+    ids = [
+        match.group("id")
+        for match in re.finditer(
+            r"(?:^|/)colors?/(?P<id>\d{2,})(?=[_./?#]|$)",
+            parsed.path,
+            flags=re.IGNORECASE,
+        )
+    ]
+    ids.extend(
+        raw_value
+        for key, raw_value in parse_qsl(parsed.query, keep_blank_values=False)
+        if key.casefold() in {"color", "colour"} and raw_value.isdigit()
+    )
+    return tuple(dict.fromkeys(ids))
 
 
 def _short_numeric_product_asset_conflicts(

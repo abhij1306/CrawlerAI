@@ -8,7 +8,10 @@ from app.core.config.extraction_rules import (
     DETAIL_NOT_FOUND_HTTP_STATUS_CODES,
     DETAIL_SHELL_FINDING_RULE_ID,
 )
-from app.core.records.url_identity import detail_url_is_locale_root
+from app.core.records.url_identity import (
+    detail_url_is_locale_root,
+    detail_urls_conflict,
+)
 from app.extraction.contracts import (
     Decision,
     EntityGraph,
@@ -214,6 +217,7 @@ def _blocked_extraction_result(
     graph = EntityGraph()
     target = TargetSelection(status="missing")
     findings = (finding,)
+    field_states = _field_evidence_states((), evidence, (), request)
     return ExtractionResult(
         surface=request.surface,
         bundle_id=request.capture.bundle_id,
@@ -222,7 +226,7 @@ def _blocked_extraction_result(
         target=target,
         findings=findings,
         decisions=(),
-        field_states=(),
+        field_states=field_states,
         transport_outcome=request.capture.acquisition_outcome,
         data_integrity="blocked",
         records=(),
@@ -397,6 +401,15 @@ def _materialize_detail(
 ) -> tuple[PublicRecord, ...]:
     del findings, spec
     canonical_url = request.capture.final_url or request.capture.requested_url
+    source_capabilities = dict(request.capture.acquisition_diagnostics or {}).get(
+        "source_capabilities"
+    )
+    if isinstance(source_capabilities, dict) and source_capabilities.get(
+        "terminal_shell"
+    ):
+        return ()
+    if detail_urls_conflict(request.capture.requested_url, canonical_url):
+        return ()
     if urlsplit(canonical_url).path in {"", "/"} or detail_url_is_locale_root(
         canonical_url
     ):

@@ -31,6 +31,7 @@ def _artifact_captures_available() -> bool:
 
 
 pytestmark = [
+    pytest.mark.unit,
     pytest.mark.regression,
     pytest.mark.skipif(
         not _artifact_captures_available(),

@@ -25,9 +25,29 @@ pytestmark = pytest.mark.unit
             "Velcro Strap Set-up Blazer / Pants",
             "Peter Do",
         ),
+        (
+            "https://shop.test/products/dr-martens-1460-smooth-leather-boots",
+            "Dr. Martens - 1460 Smooth Leather Boots",
+            "Dr. Martens",
+        ),
+        (
+            "https://amsterdamvintagewatches.test/shop/rolex-day-date-18038-champagne",
+            "Rolex Day-Date 18038 - Amsterdam Vintage Watches",
+            "Rolex",
+        ),
     ],
 )
 def test_product_url_prefix_recovers_brand_before_title_anchor(
     url: str, title: str, expected: str
 ) -> None:
     assert infer_brand_from_product_url(url=url, title=title) == expected
+
+
+def test_product_url_brand_prefix_requires_the_full_leading_segment() -> None:
+    assert (
+        infer_brand_from_product_url(
+            url="https://shop.test/products/nike-running-shoe",
+            title="Nike Trail - Running Shoe",
+        )
+        is None
+    )

@@ -220,13 +220,6 @@ def request_from_acquisition_result(
     html_document = getattr(acquisition_result, "html_document", None)
     if selector_rules:
         artifacts["css_field_rules"] = list(selector_rules)
-    browser_outcome = str(
-        getattr(acquisition_result, "browser_outcome", "")
-        or dict(getattr(acquisition_result, "browser_diagnostics", {}) or {}).get(
-            "browser_outcome"
-        )
-        or ""
-    )
     blocked = PageEvidence.from_acquisition_result(acquisition_result).indicates_block
     raw_acquisition_diagnostics = getattr(
         acquisition_result, "acquisition_diagnostics", {}

@@ -644,15 +644,8 @@ def _page_attempt_outcome(
 
 def _browser_result_is_ready(result: PageFetchResult) -> bool:
     diagnostics = dict(result.browser_diagnostics or {})
-    if (
-        str(diagnostics.get("browser_outcome") or "").strip().lower()
-        != "usable_content"
-    ):
-        return False
-    probes = diagnostics.get("readiness_probes")
-    return isinstance(probes, list) and any(
-        isinstance(probe, dict) and bool(probe.get("is_ready")) for probe in probes
-    )
+    outcome = str(diagnostics.get("browser_outcome") or "").strip().casefold()
+    return not result.blocked and outcome == "usable_content"
 
 
 def _acquisition_outcome(

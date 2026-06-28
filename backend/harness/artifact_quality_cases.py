@@ -4,6 +4,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+from app.acquisition.acquirer import PageEvidence
+from app.acquisition.source_capabilities import build_source_capability_diagnostics
 from app.extraction import Surface, extract
 from app.extraction.contracts import ExtractionResult
 from app.extraction.replay import fixture_request_from_inputs
@@ -50,7 +52,10 @@ def audit_artifact_quality_cases(
         unresolved_issue_ids.update(audited["unresolved_issue_ids"])
 
     return {
-        "quality_clean": not unresolved_issue_ids,
+        "quality_clean": not unresolved_issue_ids
+        and all(
+            case["classification"] != "integrity_failure" for case in audited_cases
+        ),
         "case_count": len(audited_cases),
         "unresolved_issue_ids": tuple(sorted(unresolved_issue_ids)),
         "cases": tuple(audited_cases),
@@ -106,6 +111,8 @@ def validate_artifact_quality_cases(
                     f"{mismatch['field']} expected={mismatch['expected']} "
                     f"actual={mismatch['actual']}"
                 )
+            for invariant in case["invariant_failures"]:
+                errors.append(f"{case['case_id']} invariant failure: {invariant}")
     return errors
 
 
@@ -135,12 +142,14 @@ def _audit_case(case: dict[str, Any], *, root: Path) -> dict[str, Any]:
         if field_states.get(field, "not_requested") != expected
     )
     signals = _case_signals(case, result=result)
+    invariant_failures = _invariant_failures(signals)
     integrity_failure = bool(
         signals["cross_entity_lineage"]
         or signals["enum_leaks"]
         or signals["identifier_conflicts"]
         or signals["public_evidence_divergence"]
         or signals["selected_product_title_matches"] is False
+        or invariant_failures
         or mismatches
     )
     source_unavailable = bool(signals["source_unavailable"])
@@ -163,6 +172,7 @@ def _audit_case(case: dict[str, Any], *, root: Path) -> dict[str, Any]:
         "field_states": field_states,
         "field_state_mismatches": mismatches,
         "signals": signals,
+        "invariant_failures": invariant_failures,
         "findings": tuple(finding.rule_id for finding in result.findings),
         "unresolved_issue_ids": unresolved,
         "artifact_paths": tuple(str(result_root / name) for name in artifact_files),
@@ -170,11 +180,20 @@ def _audit_case(case: dict[str, Any], *, root: Path) -> dict[str, Any]:
 
 
 def _replay_case(case: dict[str, Any], *, result_root: Path) -> ExtractionResult:
-    debug = _read_json(result_root / "debug.json")
-    acquisition = debug.get("acquisition")
-    acquisition = acquisition if isinstance(acquisition, dict) else {}
+    summary = _read_json(result_root / "summary.json")
+    debug_path = result_root / "debug.json"
+    debug = _read_json(debug_path) if debug_path.is_file() else summary
+    summary_acquisition = summary.get("acquisition")
+    debug_acquisition = debug.get("acquisition")
+    acquisition = _deep_merge_mappings(
+        summary_acquisition if isinstance(summary_acquisition, dict) else {},
+        debug_acquisition if isinstance(debug_acquisition, dict) else {},
+    )
     html = (result_root / "page.html").read_text(encoding="utf-8")
-    source_url = str(case.get("source_url") or "")
+    source_url = str(case.get("source_url") or "") or str(
+        (debug.get("acquisition") or {}).get("final_url") or ""
+    )
+    final_url = str(acquisition.get("final_url") or "") or source_url
     expected_states_value = case.get("expected_field_states")
     expected_states = (
         expected_states_value if isinstance(expected_states_value, dict) else {}
@@ -183,11 +202,22 @@ def _replay_case(case: dict[str, Any], *, result_root: Path) -> ExtractionResult
     request = fixture_request_from_inputs(
         Surface.ECOMMERCE_DETAIL,
         html,
-        source_url,
+        final_url,
+        requested_url=source_url,
         requested_fields=requested_fields,
         network_payloads=list(acquisition.get("network_payloads") or []),
     )
     diagnostics = dict(acquisition.get("acquisition_diagnostics") or {})
+    blocked = _acquisition_blocked(acquisition)
+    source_capabilities = build_source_capability_diagnostics(
+        html=html,
+        network_payloads=list(acquisition.get("network_payloads") or []),
+        browser_diagnostics=dict(acquisition.get("browser_diagnostics") or {}),
+        status_code=_acquisition_status_code(acquisition),
+        browser_outcome=_browser_outcome(acquisition),
+        blocked=blocked,
+    )
+    diagnostics["source_capabilities"] = source_capabilities
     invariants = case.get("expected_invariants")
     invariants = invariants if isinstance(invariants, dict) else {}
     blocked_source = _has_blocked_product_source(
@@ -196,20 +226,35 @@ def _replay_case(case: dict[str, Any], *, result_root: Path) -> ExtractionResult
         marker=invariants.get("blocked_product_api_marker"),
     )
     if blocked_source:
+        current_capabilities = dict(diagnostics.get("source_capabilities") or {})
+        affected = tuple(
+            dict.fromkeys(
+                (
+                    *tuple(current_capabilities.get("affected_field_families", ())),
+                    "price",
+                    "currency",
+                    "availability",
+                    "variants",
+                )
+            )
+        )
         diagnostics["source_capabilities"] = {
+            **current_capabilities,
             "product_data_source_unavailable": True,
-            "affected_field_families": (
-                "price",
-                "currency",
-                "availability",
-                "variants",
-            ),
+            "affected_field_families": affected,
         }
     request = request.model_copy(
         update={
             "capture": request.capture.model_copy(
                 update={
                     "acquisition_diagnostics": diagnostics,
+                    "http_status": _acquisition_status_code(acquisition),
+                    "acquisition_outcome": "blocked"
+                    if blocked
+                    else "error"
+                    if bool(source_capabilities.get("terminal_shell"))
+                    else request.capture.acquisition_outcome,
+                    "blocked": blocked,
                     "browser_attempted": bool(
                         (acquisition.get("browser_diagnostics") or {}).get(
                             "browser_attempted"
@@ -254,15 +299,159 @@ def _case_signals(case: dict[str, Any], *, result: ExtractionResult) -> dict[str
     enum_leaks = _enum_leaks(public)
     identifier_conflicts = _identifier_conflicts(public)
     divergence = _public_evidence_divergence(result, public)
+    duplicate_variant_ids = _duplicate_variant_ids(variants)
+    forbidden_variant_materials = _forbidden_variant_field(
+        variants,
+        "material",
+        invariants.get("forbidden_variant_materials", ()),
+    )
+    forbidden_variant_ids = _forbidden_variant_field(
+        variants,
+        "variant_id",
+        invariants.get("forbidden_variant_ids", ()),
+    )
+    forbidden_variant_fragments = _forbidden_variant_fragments(
+        variants, invariants.get("forbidden_variant_fragments", ())
+    )
+    forbidden_image_fragments = _forbidden_fragments(
+        public.get("image_url"), invariants.get("forbidden_image_fragments", ())
+    )
+    description_forbidden_fragments = _forbidden_fragments(
+        public.get("description"),
+        invariants.get("forbidden_description_fragments", ()),
+    )
+    required_description_fragments_missing = _missing_required_fragments(
+        public.get("description"),
+        invariants.get("required_description_fragments", ()),
+    )
+    expected_brand = invariants.get("expected_brand")
+    brand_matches = (
+        public.get("brand") == expected_brand if expected_brand is not None else None
+    )
+    expected_currency = invariants.get("expected_currency")
+    currency_matches = (
+        public.get("currency") == expected_currency
+        if expected_currency is not None
+        else None
+    )
+    no_public_record_expected = bool(invariants.get("no_public_record"))
+    sparse_public_record = bool(
+        no_public_record_expected
+        and public
+        and {
+            key
+            for key, value in public.items()
+            if not key.startswith("_") and value not in EMPTY_VALUES
+        }
+        <= {"title", "url"}
+    )
     return {
         "selected_product_title_matches": title_matches,
         "cross_product_variant_skus": leaked_skus,
         "cross_entity_lineage": leaked_skus,
         "enum_leaks": enum_leaks,
         "identifier_conflicts": identifier_conflicts,
+        "duplicate_variant_ids": duplicate_variant_ids,
+        "forbidden_variant_materials": forbidden_variant_materials,
+        "forbidden_variant_ids": forbidden_variant_ids,
+        "forbidden_variant_fragments": forbidden_variant_fragments,
+        "forbidden_image_fragments": forbidden_image_fragments,
+        "description_forbidden_fragments": description_forbidden_fragments,
+        "required_description_fragments_missing": required_description_fragments_missing,
+        "brand_matches": brand_matches,
+        "currency_matches": currency_matches,
+        "sparse_public_record": sparse_public_record,
         "public_evidence_divergence": divergence,
         "source_unavailable": source_unavailable,
     }
+
+
+def _invariant_failures(signals: dict[str, Any]) -> tuple[str, ...]:
+    failures: list[str] = []
+    for key in (
+        "duplicate_variant_ids",
+        "forbidden_variant_materials",
+        "forbidden_variant_ids",
+        "forbidden_variant_fragments",
+        "forbidden_image_fragments",
+        "description_forbidden_fragments",
+        "required_description_fragments_missing",
+    ):
+        if signals.get(key):
+            failures.append(key)
+    if signals.get("brand_matches") is False:
+        failures.append("brand_matches")
+    if signals.get("currency_matches") is False:
+        failures.append("currency_matches")
+    if signals.get("sparse_public_record") is True:
+        failures.append("sparse_public_record")
+    return tuple(failures)
+
+
+def _duplicate_variant_ids(variants: list[object]) -> tuple[str, ...]:
+    seen: set[str] = set()
+    duplicates: set[str] = set()
+    for row in variants:
+        if not isinstance(row, dict):
+            continue
+        variant_id = str(row.get("variant_id") or "").strip()
+        if not variant_id:
+            continue
+        if variant_id in seen:
+            duplicates.add(variant_id)
+        seen.add(variant_id)
+    return tuple(sorted(duplicates))
+
+
+def _forbidden_variant_field(
+    variants: list[object], field: str, forbidden: object
+) -> tuple[str, ...]:
+    forbidden_values = set(_string_sequence(forbidden))
+    found: set[str] = set()
+    for row in variants:
+        if isinstance(row, dict) and str(row.get(field) or "") in forbidden_values:
+            found.add(str(row.get(field)))
+    return tuple(sorted(found))
+
+
+def _forbidden_variant_fragments(
+    variants: list[object], forbidden: object
+) -> tuple[str, ...]:
+    fragments = set(_string_sequence(forbidden))
+    found: set[str] = set()
+    for row in variants:
+        if not isinstance(row, dict):
+            continue
+        for value in row.values():
+            text = str(value or "")
+            for fragment in fragments:
+                if fragment and fragment in text:
+                    found.add(fragment)
+    return tuple(sorted(found))
+
+
+def _forbidden_fragments(value: object, forbidden: object) -> tuple[str, ...]:
+    text = str(value or "")
+    return tuple(
+        fragment for fragment in _string_sequence(forbidden) if fragment in text
+    )
+
+
+def _missing_required_fragments(value: object, required: object) -> tuple[str, ...]:
+    text = str(value or "")
+    return tuple(
+        fragment for fragment in _string_sequence(required) if fragment not in text
+    )
+
+
+def _string_sequence(value: object) -> tuple[str, ...]:
+    if isinstance(value, (set, frozenset)):
+        return tuple(sorted(str(item) for item in value))
+    if isinstance(value, (list, tuple)):
+        return tuple(str(item) for item in value)
+    if value in EMPTY_VALUES:
+        return ()
+    return (str(value),)
 
 
 def _enum_leaks(public: dict[str, Any]) -> tuple[str, ...]:
@@ -375,6 +564,86 @@ def _has_blocked_product_source(
             continue
         return True
     return False
+
+
+def _acquisition_blocked(acquisition: dict[str, Any]) -> bool:
+    return _page_evidence(acquisition).indicates_block
+
+
+def _acquisition_status_code(acquisition: dict[str, Any]) -> int | None:
+    status = acquisition.get("status_code")
+    if isinstance(status, int):
+        return status
+    diagnostics = acquisition.get("acquisition_diagnostics")
+    if not isinstance(diagnostics, dict):
+        return None
+    result = diagnostics.get("result")
+    if not isinstance(result, dict):
+        return None
+    attempts = result.get("attempts")
+    if not isinstance(attempts, list):
+        return None
+    selected = str(result.get("selected_attempt_id") or "")
+    fallback_status: int | None = None
+    first_status: int | None = None
+    selected_status: int | None = None
+    selected_found = False
+    for attempt in attempts:
+        if not isinstance(attempt, dict):
+            continue
+        attempt_status = attempt.get("status_code")
+        attempt_id = str(attempt.get("attempt_id") or "")
+        if first_status is None and isinstance(attempt_status, int):
+            first_status = attempt_status
+        if selected and attempt_id == selected:
+            selected_found = True
+            selected_status = (
+                attempt_status if isinstance(attempt_status, int) else None
+            )
+        if selected:
+            attempt_diagnostics = attempt.get("diagnostics")
+            details = (
+                attempt_diagnostics if isinstance(attempt_diagnostics, dict) else {}
+            )
+            transport = str(details.get("transport") or "").strip().casefold()
+            if transport in {"curl", "curl_cffi", "httpx"} and isinstance(
+                attempt_status, int
+            ):
+                fallback_status = attempt_status
+            continue
+    if selected_found:
+        return selected_status if selected_status is not None else fallback_status
+    return fallback_status if fallback_status is not None else first_status
+
+
+def _browser_outcome(acquisition: dict[str, Any]) -> str | None:
+    outcome = acquisition.get("browser_outcome")
+    if isinstance(outcome, str) and outcome:
+        return outcome
+    return _page_evidence(acquisition).browser_outcome or None
+
+
+def _page_evidence(acquisition: dict[str, Any]) -> PageEvidence:
+    browser = acquisition.get("browser_diagnostics")
+    return PageEvidence(
+        blocked=bool(acquisition.get("blocked")),
+        method=str(acquisition.get("method") or ""),
+        diagnostics=dict(browser or {}) if isinstance(browser, dict) else {},
+    )
+
+
+def _deep_merge_mappings(
+    base: dict[str, Any], override: dict[str, Any]
+) -> dict[str, Any]:
+    merged = dict(base)
+    for key, value in override.items():
+        current = merged.get(key)
+        merged[key] = (
+            _deep_merge_mappings(current, value)
+            if isinstance(current, dict) and isinstance(value, dict)
+            else value
+        )
+    return merged
 
 
 def _first_mapping(value: object) -> dict[str, Any]:

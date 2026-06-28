@@ -1838,10 +1838,11 @@ async def test_run_browser_attempts_bounds_browser_runtime_wall_clock(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     attempted_engines: list[str] = []
+    attempted_proxies: list[str | None] = []
     context = crawl_fetch_runtime._FetchRuntimeContext(
         url="https://example.com/products/widget",
-        resolved_timeout=0.01,
-        deadline_monotonic=time.perf_counter() + 0.01,
+        resolved_timeout=0.03,
+        deadline_monotonic=time.perf_counter() + 0.03,
         run_id=None,
         surface="ecommerce_detail",
         traversal_mode=None,
@@ -1852,7 +1853,7 @@ async def test_run_browser_attempts_bounds_browser_runtime_wall_clock(
         browser_reason=None,
         requested_fields=[],
         listing_recovery_mode=None,
-        proxies=[None],
+        proxies=["http://proxy-one.test", "http://proxy-two.test"],
         proxy_profile={},
         traversal_required=False,
         fetch_mode="browser_only",
@@ -1863,8 +1864,9 @@ async def test_run_browser_attempts_bounds_browser_runtime_wall_clock(
         del url, stage_budget
         browser_engine = str(kwargs.get("browser_engine"))
         attempted_engines.append(browser_engine)
+        attempted_proxies.append(kwargs.get("proxy"))
         if browser_engine == "patchright":
-            await asyncio.sleep(0.05)
+            await asyncio.sleep(0.08)
         return PageFetchResult(
             url="https://example.com/products/widget",
             final_url="https://example.com/products/widget",
@@ -1890,8 +1892,23 @@ async def test_run_browser_attempts_bounds_browser_runtime_wall_clock(
         )
 
     assert attempted_engines == ["patchright"]
+    assert attempted_proxies == ["http://proxy-one.test"]
     assert context.last_browser_attempt_diagnostics["browser_engine"] == "patchright"
     assert context.last_browser_attempt_diagnostics["failure_stage"] == "attempt"
+
+
+def test_usable_browser_result_without_readiness_probes_is_ready() -> None:
+    result = PageFetchResult(
+        url="https://example.com/products/widget",
+        final_url="https://example.com/products/widget",
+        html="<html><body><h1>Widget</h1></body></html>",
+        status_code=200,
+        method="browser",
+        blocked=False,
+        browser_diagnostics={"browser_outcome": "usable_content"},
+    )
+
+    assert planned_http._browser_result_is_ready(result) is True
 
 
 @pytest.mark.asyncio

@@ -115,6 +115,8 @@ The canonical ecommerce-detail path is evidence ledger → normalization → ent
 
 Artifact regressions must replay stored HTML and captured network payloads through the real pipeline. A gate based only on old `records.json`, manually assigned fixed status, or fixture-specific expected output is not sufficient.
 
+Generic network payloads are untrusted until linked to the selected product. Ad, feed, recommendation, analytics, and sibling-product roots must not create canonical product fields, variants, offers, or assets without same-product URL, id, SKU, or selected-root evidence.
+
 ### AP-13: Config proliferation ← SECOND MOST COMMON
 Creating a new `constants.py`, `config.py`, or inline dict inside a bucket folder
 because "there was no obvious place" to put a constant.

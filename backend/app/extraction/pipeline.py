@@ -31,6 +31,7 @@ from app.core.config.extraction_rules import (
     DETAIL_BRAND_CATEGORY_PATTERN,
     DETAIL_DESCRIPTION_HARD_BOUNDARY_LENGTHS,
     DETAIL_DESCRIPTION_INCOMPLETE_ENDING_PATTERN,
+    DETAIL_DESCRIPTION_MISSING_SEPARATOR_PATTERN,
     DETAIL_DESCRIPTION_NON_PRODUCT_LOCATOR_TOKENS,
     DETAIL_DESCRIPTION_PROMOTIONAL_PATTERNS,
     DETAIL_DESCRIPTION_UI_PATTERNS,
@@ -213,6 +214,12 @@ def _flag_brand_conflicts(
         if row.collector_id in {"adapter", "jsonld", "js_state", "network"}
         and str(row.value).strip()
     }
+    product_url_brands = tuple(
+        str(row.value).strip().casefold()
+        for row in brand_rows
+        if row.metadata.get("derived_by") == "brand_from_product_url"
+        and str(row.value).strip()
+    )
     subject_titles = {
         (
             row.subject_id,
@@ -258,6 +265,31 @@ def _flag_brand_conflicts(
         if row.fact_type != field_mappings.PRODUCT_BRAND_FACT_TYPE:
             return None
         normalized = " ".join(re.findall(DETAIL_LOWER_ALNUM_TOKEN_PATTERN, value))
+        compact = re.sub(DETAIL_NON_LOWER_ALNUM_PATTERN, "", value)
+        host_identity_conflict = bool(
+            product_url_brands
+            and row.metadata.get("derived_by")
+            in {"brand_from_title_host", "page_identity"}
+            and any(
+                compact
+                == re.sub(
+                    DETAIL_NON_LOWER_ALNUM_PATTERN,
+                    "",
+                    title.rsplit(" - ", 1)[-1].casefold(),
+                )
+                and any(
+                    re.sub(
+                        DETAIL_NON_LOWER_ALNUM_PATTERN, "", title.casefold()
+                    ).startswith(re.sub(DETAIL_NON_LOWER_ALNUM_PATTERN, "", candidate))
+                    for candidate in product_url_brands
+                )
+                for item in evidence
+                if item.fact_type == field_mappings.PRODUCT_TITLE_FACT_TYPE
+                and " - " in (title := str(item.value).strip())
+            )
+        )
+        if host_identity_conflict:
+            return "brand_identity_conflict"
         partial_page_brand = bool(
             page_value
             and value != page_value
@@ -548,7 +580,7 @@ def _only_slug_identity(record: dict[str, object]) -> bool:
         "description",
         "variants",
     }
-    if any(
+    if bool(record.get("variant_count")) or any(
         record.get(field) not in (None, "", [], {}, ()) for field in commerce_fields
     ):
         return False
@@ -668,7 +700,10 @@ def _normalize_availability_value(value: Any, flags: set[str]) -> Any:
 
 
 def _normalize_brand_value(value: str, flags: set[str]) -> str:
-    normalized = coerce_brand_text(_normalize_brand_hierarchy(value)) or value
+    coerced = coerce_brand_text(_normalize_brand_hierarchy(value))
+    normalized = coerced or value
+    if coerced is None:
+        flags.add("invalid_brand_scalar")
     parsed_brand = urlsplit(normalized)
     if parsed_brand.scheme.casefold() in {"http", "https"} and parsed_brand.netloc:
         flags.add("brand_url")
@@ -711,6 +746,8 @@ def _flag_description_value(evidence: Evidence, value: str, flags: set[str]) -> 
         DETAIL_DESCRIPTION_INCOMPLETE_ENDING_PATTERN, value, re.IGNORECASE
     ):
         flags.add("description_incomplete_ending")
+    if re.search(DETAIL_DESCRIPTION_MISSING_SEPARATOR_PATTERN, value):
+        flags.add("description_missing_separator")
     if re.search(r",\s*[a-z]{2,5}$", tail, re.IGNORECASE):
         flags.add("description_truncated_fragment")
     if any(

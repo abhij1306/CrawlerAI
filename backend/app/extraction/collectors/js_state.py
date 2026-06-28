@@ -330,7 +330,14 @@ def network_row(
 
 def _variant_url_conflicts(page_url: str, obj: dict) -> bool:
     candidate = _url_value(obj)
-    return bool(candidate and detail_urls_conflict(page_url, candidate))
+    return bool(
+        candidate
+        and detail_urls_conflict(
+            page_url,
+            candidate,
+            strict_terminal_code=False,
+        )
+    )
 
 
 def _variant_title_conflicts(page_url: str, obj: dict) -> bool:
@@ -349,7 +356,14 @@ def _variant_title_conflicts(page_url: str, obj: dict) -> bool:
 
 def _product_url_conflicts(page_url: str, obj: dict) -> bool:
     candidate = _url_value(obj)
-    return bool(candidate and detail_urls_conflict(page_url, candidate))
+    return bool(
+        candidate
+        and detail_urls_conflict(
+            page_url,
+            candidate,
+            strict_terminal_code=False,
+        )
+    )
 
 
 def _url_value(obj: dict) -> str:

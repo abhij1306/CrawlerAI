@@ -1,14 +1,28 @@
 from __future__ import annotations
 
-from typing import Protocol
+from typing import Any, Protocol
 
 PRODUCT_DATA_ENDPOINT_TYPES = frozenset({"product_api", "graphql"})
 OFFER_FIELD_FAMILIES = ("price", "currency", "availability")
 VARIANT_FIELD_FAMILIES = ("variants",)
+DETAIL_FIELD_FAMILIES = (
+    "title",
+    "brand",
+    "description",
+    "sku",
+    "price",
+    "currency",
+    "availability",
+    "image_url",
+    "images",
+    "variants",
+)
 
 
 class AcquisitionResultLike(Protocol):
     html: str
+    status_code: int
+    blocked: bool
     network_payloads: list[dict[str, object]]
     browser_diagnostics: dict[str, object]
     acquisition_diagnostics: dict[str, object]
@@ -19,6 +33,9 @@ def build_source_capability_diagnostics(
     html: str,
     network_payloads: list[dict[str, object]],
     browser_diagnostics: dict[str, object] | None = None,
+    status_code: int | None = None,
+    browser_outcome: str | None = None,
+    blocked: bool = False,
 ) -> dict[str, object]:
     text = str(html or "")
     lower = text.casefold()
@@ -52,7 +69,14 @@ def build_source_capability_diagnostics(
         elif isinstance(status, int) and status >= 400:
             failed.append(row)
 
-    product_source_unavailable = bool(observed and failed and not succeeded)
+    shell_outcome = str(browser_outcome or "").strip().casefold()
+    http_error = isinstance(status_code, int) and status_code >= 400
+    terminal_shell = bool(
+        blocked or shell_outcome in {"challenge_page", "low_content_shell"}
+    )
+    product_source_unavailable = bool(
+        http_error or (observed and failed and not succeeded) or terminal_shell
+    )
     browser = browser_diagnostics or {}
     interaction_present = bool(
         browser.get("detail_expansion_attempted")
@@ -61,7 +85,9 @@ def build_source_capability_diagnostics(
     )
 
     affected_fields: list[str] = []
-    if product_source_unavailable:
+    if terminal_shell:
+        affected_fields.extend(DETAIL_FIELD_FAMILIES)
+    elif product_source_unavailable:
         affected_fields.extend(OFFER_FIELD_FAMILIES)
         affected_fields.extend(VARIANT_FIELD_FAMILIES)
 
@@ -71,6 +97,9 @@ def build_source_capability_diagnostics(
         "product_data_source_observed": bool(observed),
         "product_data_source_succeeded": bool(succeeded),
         "product_data_source_unavailable": product_source_unavailable,
+        "terminal_shell": terminal_shell,
+        "status_code": status_code,
+        "browser_outcome": shell_outcome or None,
         "interaction_controls_present": interaction_present,
         "affected_field_families": tuple(dict.fromkeys(affected_fields)),
         "observed_product_sources": tuple(observed),
@@ -78,11 +107,15 @@ def build_source_capability_diagnostics(
     }
 
 
-def attach_source_capability_diagnostics(result: AcquisitionResultLike) -> None:
+def attach_source_capability_diagnostics(result: AcquisitionResultLike | Any) -> None:
     diagnostics = dict(result.acquisition_diagnostics or {})
+    browser_diagnostics = dict(result.browser_diagnostics or {})
     diagnostics["source_capabilities"] = build_source_capability_diagnostics(
         html=str(result.html or ""),
         network_payloads=list(result.network_payloads or []),
-        browser_diagnostics=dict(result.browser_diagnostics or {}),
+        browser_diagnostics=browser_diagnostics,
+        status_code=getattr(result, "status_code", None),
+        browser_outcome=browser_diagnostics.get("browser_outcome"),
+        blocked=bool(getattr(result, "blocked", False)),
     )
     result.acquisition_diagnostics = diagnostics

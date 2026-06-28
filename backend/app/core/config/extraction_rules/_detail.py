@@ -129,6 +129,7 @@ DETAIL_DESCRIPTION_HARD_BOUNDARY_LENGTHS = frozenset({320})
 DETAIL_DESCRIPTION_INCOMPLETE_ENDING_PATTERN = (
     r"\b(?:and|or|with|for|to|the|a|an|of|in|on|at|by)\s*$"
 )
+DETAIL_DESCRIPTION_MISSING_SEPARATOR_PATTERN = r"\d{1,3}%(?=[A-Z])|\d{1,2}oz(?=[A-Z])"
 DETAIL_DESCRIPTION_PROMOTIONAL_PATTERNS = (
     r"\b(?:buy now|free shipping|lowest prices?|exclusive offers?|fast delivery)\b",
     r"^\s*(?:shop|buy|find|browse)\b.{0,220}\b(?:online|sale|shipping|delivery|price|today|shop\s+now|more\s+items?)\b",

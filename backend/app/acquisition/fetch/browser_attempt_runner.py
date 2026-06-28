@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from collections.abc import Awaitable, Callable, Coroutine
+from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from typing import Any
-from dataclasses import dataclass, field
 
 from app.acquisition.browser_proxy_config import display_proxy, proxy_scheme
 from app.acquisition.browser_runtime import build_failed_browser_diagnostics
@@ -35,6 +36,7 @@ from app.acquisition.host_protection_memory import (
 )
 from app.acquisition.runtime import PageFetchResult
 from app.core.config.runtime_settings import (
+    crawler_runtime_settings,
     proxy_rotation_mode,
 )
 
@@ -98,6 +100,7 @@ class BrowserAttemptRunner:
     attempt_specs: list[AttemptSpec] = field(default_factory=list)
     attempt_results: list[AttemptResult] = field(default_factory=list)
     latest_page_result: PageFetchResult | None = None
+    retry_budget_exhausted: bool = False
 
     async def run(self) -> PageFetchResult:
         self._start_plan()
@@ -106,6 +109,8 @@ class BrowserAttemptRunner:
         for proxy_index, proxy in enumerate(
             list(self.proxies or self.context.proxies), start=1
         ):
+            if self.retry_budget_exhausted:
+                break
             result = await self._run_proxy_attempt(proxy_index, proxy)
             if result is not None:
                 return result
@@ -131,6 +136,8 @@ class BrowserAttemptRunner:
         proxy_index: int,
         proxy: str | None,
     ) -> PageFetchResult | None:
+        if self.retry_budget_exhausted:
+            return None
         engine_attempts = self._engine_attempts(proxy)
         escalation_lane = browser_escalation_lane(
             context=self.context,
@@ -152,6 +159,8 @@ class BrowserAttemptRunner:
             )
             if result is not None:
                 return result
+            if self.retry_budget_exhausted or not self._has_attempt_budget():
+                break
             engine_attempts = self._engine_attempts_after_failure_or_block(
                 engine_attempts,
                 attempted_engine=engine,
@@ -163,7 +172,7 @@ class BrowserAttemptRunner:
         self.plan_started_at = datetime.now(UTC)
         remaining = max(
             0.001,
-            float(self.context.deadline_monotonic - asyncio.get_running_loop().time()),
+            float(self.context.deadline_monotonic - time.perf_counter()),
         )
         self.plan_deadline = self.plan_started_at + timedelta(seconds=remaining)
         plan_key = f"{self.context.url}|browser|{self.plan_started_at.isoformat()}"
@@ -189,6 +198,10 @@ class BrowserAttemptRunner:
         engine_attempts: list[str],
         escalation_lane: str,
     ) -> PageFetchResult | None:
+        remaining_before_spec = max(
+            0.0,
+            self.context.deadline_monotonic - time.perf_counter(),
+        )
         spec = self._attempt_spec(
             proxy=proxy,
             engine=engine,
@@ -213,6 +226,12 @@ class BrowserAttemptRunner:
             deadline=self._plan_deadline(),
         )
         self.attempt_results.append(attempt_result)
+        if self._attempt_consumed_remaining_budget(
+            attempt_result,
+            spec=spec,
+            remaining_before_spec=remaining_before_spec,
+        ):
+            self.retry_budget_exhausted = True
         if attempt_result.outcome == "success" and self.latest_page_result is not None:
             self._attach_acquisition_diagnostics(
                 self.latest_page_result,
@@ -237,6 +256,22 @@ class BrowserAttemptRunner:
                 escalation_lane=escalation_lane,
             )
         return None
+
+    def _attempt_consumed_remaining_budget(
+        self,
+        result: AttemptResult,
+        *,
+        spec: AttemptSpec,
+        remaining_before_spec: float,
+    ) -> bool:
+        error = str(result.error or "")
+        timed_out = error == "attempt_deadline_exhausted" or error.startswith(
+            "TimeoutError: Browser "
+        )
+        return timed_out and (
+            spec.timeout_seconds + self._minimum_attempt_budget()
+            >= remaining_before_spec
+        )
 
     def _record_executor_attempt_error(
         self,
@@ -407,11 +442,22 @@ class BrowserAttemptRunner:
             engine_attempts=engine_attempts,
             host_policy=self._active_host_policy(),
         )
-        if remaining <= 0:
+        if remaining < self._minimum_attempt_budget():
             raise TimeoutError(
                 "Acquisition browser retry budget exhausted before "
                 f"{engine} could {phase}"
             )
+
+    def _has_attempt_budget(self) -> bool:
+        remaining = self.context.deadline_monotonic - time.perf_counter()
+        return remaining >= self._minimum_attempt_budget()
+
+    @staticmethod
+    def _minimum_attempt_budget() -> float:
+        return max(
+            0.0,
+            float(crawler_runtime_settings.browser_attempt_min_runtime_seconds),
+        )
 
     async def _browser_fetch_result(
         self,

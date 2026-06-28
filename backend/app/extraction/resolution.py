@@ -2,8 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from decimal import Decimal, InvalidOperation
-from typing import TypedDict
-from urllib.parse import parse_qsl, urlparse, urlsplit
+from urllib.parse import parse_qsl, urlsplit
 
 from app.extraction.contracts import (
     AssetDecision,
@@ -33,7 +32,6 @@ from app.core.config.variant_policy import (
 )
 from app.core.records.url_identity import (
     conflicting_product_asset_urls,
-    semantic_identity_tokens,
 )
 from app.core.shared.url_utils import (
     asset_url_identity,
@@ -61,93 +59,6 @@ def inherit_variant_id_from_sku(
     lineage_row["variant_id"] = {
         **(dict(sku_lineage) if isinstance(sku_lineage, Mapping) else {}),
         "rule_id": "variant_id_from_unique_sku",
-    }
-
-
-class _BrandCandidate(TypedDict):
-    value: str
-    evidence_ids: list[str]
-    decision_id: str | None
-    support: int
-
-
-def recover_non_retailer_brand(
-    record: dict[str, object],
-    lineages: dict[str, object],
-    resolution: ResolutionResult,
-    evidence_by_id: dict[str, Evidence],
-    canonical_url: str,
-) -> None:
-    current = str(record.get("brand") or "").strip()
-    host = (urlparse(str(record.get("url") or canonical_url)).hostname or "").casefold()
-    host_tokens = {
-        token
-        for label in host.split(".")
-        for token in semantic_identity_tokens(label)
-        if token not in {"www", "shop", "store", "com", "co", "net", "org", "in"}
-    }
-    current_tokens = set(semantic_identity_tokens(current))
-    if current and (not current_tokens or not current_tokens <= host_tokens):
-        return
-
-    support_token_sets = tuple(
-        set(semantic_identity_tokens(str(evidence.value or "")))
-        for evidence in evidence_by_id.values()
-        if evidence.fact_type != field_mappings.PRODUCT_BRAND_FACT_TYPE
-        and not _invalid(evidence)
-    )
-    grouped: dict[tuple[str, ...], _BrandCandidate] = {}
-    for evidence in evidence_by_id.values():
-        if evidence.fact_type != field_mappings.PRODUCT_BRAND_FACT_TYPE or _invalid(
-            evidence
-        ):
-            continue
-        value = str(evidence.value or "").strip()
-        tokens = tuple(semantic_identity_tokens(value))
-        token_set = set(tokens)
-        if not value or not tokens or token_set <= host_tokens:
-            continue
-        row = grouped.setdefault(
-            tokens,
-            {"value": value, "evidence_ids": [], "decision_id": None, "support": 0},
-        )
-        row["evidence_ids"].append(evidence.evidence_id)
-        row["support"] = max(
-            int(row["support"]),
-            sum(token_set <= support for support in support_token_sets),
-        )
-        if row["decision_id"] is None:
-            row["decision_id"] = next(
-                (
-                    decision.decision_id
-                    for decision in resolution.decisions
-                    if decision.fact_type == field_mappings.PRODUCT_BRAND_FACT_TYPE
-                    and evidence.evidence_id in decision.accepted_evidence_ids
-                ),
-                None,
-            )
-    if not grouped:
-        return
-    ranked = sorted(
-        grouped.values(),
-        key=lambda row: (
-            -int(row["support"]),
-            -len(row["evidence_ids"]),
-            len(semantic_identity_tokens(str(row["value"]))),
-            str(row["value"]).casefold(),
-        ),
-    )
-    if len(ranked) > 1 and (
-        int(ranked[0]["support"]),
-        len(ranked[0]["evidence_ids"]),
-    ) == (int(ranked[1]["support"]), len(ranked[1]["evidence_ids"])):
-        return
-    winner = ranked[0]
-    record["brand"] = winner["value"]
-    lineages["brand"] = {
-        "decision_id": winner["decision_id"],
-        "evidence_ids": list(dict.fromkeys(winner["evidence_ids"])),
-        "rule_id": "non_retailer_brand_recovery",
     }
 
 
@@ -749,10 +660,12 @@ def _invalid(ev: Evidence) -> bool:
             "brand_url",
             "category_as_brand",
             "description_incomplete_ending",
+            "description_missing_separator",
             "description_promotional_copy",
             "description_ui_pollution",
             "invalid_decimal",
             "invalid_currency",
+            "invalid_brand_scalar",
             INVALID_AVAILABILITY_EVIDENCE_FLAG,
             INVALID_SCALAR_TYPE_EVIDENCE_FLAG,
             "invalid_gtin",
@@ -815,6 +728,20 @@ def _rank(ev: Evidence) -> tuple[object, ...]:
             inferred_from_symbol,
             directness,
             reliability,
+            -float(ev.confidence),
+            ev.evidence_id,
+        )
+    if ev.fact_type == field_mappings.PRODUCT_BRAND_FACT_TYPE:
+        derived_rank = {
+            "brand_from_product_url": 0,
+            "brand_from_title_marker": 1,
+            "page_identity": 2,
+            "brand_from_title_host": 3,
+        }.get(str(ev.metadata.get("derived_by") or ""), 1)
+        return (
+            directness,
+            reliability,
+            derived_rank,
             -float(ev.confidence),
             ev.evidence_id,
         )

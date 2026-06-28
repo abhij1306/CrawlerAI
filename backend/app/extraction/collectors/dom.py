@@ -220,19 +220,44 @@ def _image_node_url(node: HtmlNode) -> str:
 
 def _largest_srcset_url(value: str) -> str:
     ranked: list[tuple[float, int, str]] = []
-    for index, raw_candidate in enumerate(str(value or "").split(",")):
-        parts = raw_candidate.strip().rsplit(None, 1)
-        if not parts or not parts[0]:
-            continue
-        url = parts[0]
+    for index, (url, descriptor) in enumerate(_srcset_candidates(value)):
         rank = float(index)
-        if len(parts) == 2 and parts[1][-1:].casefold() in {"w", "x"}:
+        if descriptor[-1:].casefold() in {"w", "x"}:
             try:
-                rank = float(parts[1][:-1])
+                rank = float(descriptor[:-1])
             except ValueError:
                 pass
         ranked.append((rank, index, url))
     return max(ranked, default=(0.0, 0, ""))[2]
+
+
+def _srcset_candidates(value: str) -> tuple[tuple[str, str], ...]:
+    """Parse srcset candidates without treating commas inside URLs as separators."""
+    source = str(value or "")
+    candidates: list[tuple[str, str]] = []
+    position = 0
+    while position < len(source):
+        while position < len(source) and (
+            source[position].isspace() or source[position] == ","
+        ):
+            position += 1
+        start = position
+        while position < len(source) and not source[position].isspace():
+            position += 1
+        url = source[start:position]
+        if not url:
+            continue
+        if url.endswith(","):
+            candidates.append((url.rstrip(","), ""))
+            continue
+        while position < len(source) and source[position].isspace():
+            position += 1
+        descriptor_start = position
+        while position < len(source) and source[position] != ",":
+            position += 1
+        descriptor = source[descriptor_start:position].strip().split(" ", 1)[0]
+        candidates.append((url, descriptor))
+    return tuple(candidates)
 
 
 def _image_scope_context(node: HtmlNode) -> str:
