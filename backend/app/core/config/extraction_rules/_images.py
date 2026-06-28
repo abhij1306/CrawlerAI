@@ -183,7 +183,7 @@ PRODUCT_ASSET_GENERIC_PATH_TOKENS = frozenset(
     }
 )
 PRODUCT_ASSET_REJECT_URL_PATTERNS = (
-    r"(?:^|[/_.-])(?:image[_-]?)?default(?:[/_.-]|$)",
+    r"(?:^|[/_.-])(?:image[_-]?)?default(?=[/_.-]|$)(?![^?#]*\.(?:avif|jpe?g|png|webp)(?:$|[?#]))",
     r"(?:^|[/_.-])(?:att|tmobile|verizon)(?:[/_.-]|$)",
     r"(?:^|[/_.-])(?:left|right)[_-]?arrow(?:[/_.-]|$)",
     r"/(?:front|back|side|rear|detail)(?:%20|\s)+(?:view|image)(?:$|[?#])",

@@ -14,7 +14,6 @@ class AttemptSpec(FrozenModel):
     attempt_id: str = Field(min_length=1)
     transport: Literal["curl", "httpx", "patchright", "real_chrome"]
     proxy: str | None = None
-    warmup: bool = False
     interaction: bool = False
     traversal_mode: str | None = None
     required_artifacts: tuple[str, ...] = ()

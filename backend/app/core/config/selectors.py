@@ -147,6 +147,12 @@ LOCATION_INTERSTITIAL_TEXT_TOKENS = (
     "store location",
 )
 
+CLOUDFLARE_TURNSTILE_SELECTORS = (
+    'iframe[src*="challenges.cloudflare.com"]',
+    "div.cf-turnstile",
+    "#cf-turnstile",
+)
+
 LISTING_CAPTURE_STRUCTURAL_ANCESTOR_SELECTORS = (
     "header",
     "footer",
@@ -213,6 +219,7 @@ LISTING_FIELD_SELECTORS: dict[str, tuple[str, ...]] = {
 __all__ = [
     "ANCHOR_SELECTOR",
     "CARD_SELECTORS",
+    "CLOUDFLARE_TURNSTILE_SELECTORS",
     "COOKIE_CONSENT_SELECTORS",
     "ECOMMERCE_READY_CARD_SELECTORS",
     "LISTING_CAPTURE_STRUCTURAL_ANCESTOR_SELECTORS",

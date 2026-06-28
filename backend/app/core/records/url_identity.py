@@ -12,9 +12,14 @@ from app.core.config.extraction_rules import (
     DETAIL_IDENTITY_CODE_MAX_LENGTH,
     DETAIL_IDENTITY_CODE_MIN_LENGTH,
     DETAIL_TITLE_ENDPOINT_FILENAME_PATTERN,
+    DETAIL_TITLE_MARKETPLACE_CATEGORY_SUFFIX_PATTERN,
+    DETAIL_TITLE_MARKETPLACE_PREFIX_PATTERN,
     DETAIL_TITLE_PATH_EXTENSION_PATTERN,
     DETAIL_TITLE_STYLE_ONLY_MAX_WORDS,
     DETAIL_TITLE_STYLE_ONLY_TOKENS,
+    DETAIL_TITLE_SEO_POLLUTION_PATTERN,
+    DETAIL_TITLE_SEO_PREFIXES,
+    DETAIL_TITLE_SEO_PREFIX_MIN_WORDS,
     PRODUCT_ASSET_SEMANTIC_MIN_ANCHORED_ASSETS,
     PRODUCT_ASSET_SEMANTIC_MIN_DESCRIPTIVE_TOKENS,
     PRODUCT_ASSET_SEMANTIC_MIN_MATCH_TOKENS,
@@ -79,6 +84,76 @@ def detail_identity_codes_from_url(url: str) -> tuple[str, ...]:
         if len(normalized) >= 4 and normalized not in out:
             out.append(normalized)
     return tuple(out)
+
+
+def detail_style_code_from_url(url: str) -> str:
+    haystack = unquote(str(url or "")).upper()
+    candidates = re.findall(r"\b[A-Z]{1,8}\d{3,7}-\d{2,5}\b", haystack)
+    return candidates[-1] if candidates else ""
+
+
+def detail_title_is_url_corroborated_style_code(value: str, url: str) -> bool:
+    title = value.strip()
+    if not title:
+        return False
+    # Normalize both sides to alphanumeric-only casefolded keys so style codes
+    # with different separators or URL encoding still corroborate (e.g. title
+    # "ABC-123" inside URL path "/abc_123" or "/abc%2D123").
+    title_key = re.sub(r"[^A-Za-z0-9]+", "", title).casefold()
+    if not title_key:
+        return False
+    url_key = re.sub(r"[^A-Za-z0-9]+", "", unquote(str(url or ""))).casefold()
+    if title_key not in url_key:
+        return False
+    return bool(
+        re.search(r"[A-Za-z]{2,}[^A-Za-z0-9]+\d|\d[^A-Za-z0-9]+[A-Za-z]{2,}", title)
+    )
+
+
+def detail_title_has_seo_pollution(
+    value: str, raw_value: str, words: list[str]
+) -> bool:
+    return bool(
+        re.search(DETAIL_TITLE_SEO_POLLUTION_PATTERN, value, re.IGNORECASE)
+        or re.search(DETAIL_TITLE_SEO_POLLUTION_PATTERN, raw_value, re.IGNORECASE)
+        or (
+            len(words) >= DETAIL_TITLE_SEO_PREFIX_MIN_WORDS
+            and value.casefold().startswith(DETAIL_TITLE_SEO_PREFIXES)
+        )
+    )
+
+
+def normalize_detail_marketplace_title(value: str) -> str:
+    normalized = re.sub(
+        DETAIL_TITLE_MARKETPLACE_PREFIX_PATTERN, "", value, flags=re.IGNORECASE
+    )
+    normalized = re.sub(r"^\s*\+\s+", "", normalized)
+    pipe_parts = [part.strip() for part in normalized.split("|") if part.strip()]
+    if len(pipe_parts) >= 3:
+        # Three or more pipe segments are almost always a breadcrumb-style
+        # title ("Product | Category | Site"). The first segment is the
+        # canonical product name; the rest are taxonomy/site context.
+        normalized = pipe_parts[0]
+    elif len(pipe_parts) == 2:
+        # Two pipe segments can be either "Title | Site" or a stylistic
+        # separator within the title itself ("Foo | Limited Edition"). Only
+        # strip the trailing segment when it looks like a short site/brand
+        # suffix: ≤2 words AND shorter (in chars) than the leading segment.
+        trailing = pipe_parts[-1]
+        trailing_words = len(re.findall(r"\w+", trailing))
+        if trailing_words <= 2 and len(trailing) < len(pipe_parts[0]):
+            normalized = pipe_parts[0]
+    normalized = re.sub(
+        r"\s+-\s+[A-Z][A-Za-z0-9&'.\-\s]{2,40}(?:Watches|India|USA|US|UK|Official Site)\s*$",
+        "",
+        normalized,
+    )
+    return re.sub(
+        DETAIL_TITLE_MARKETPLACE_CATEGORY_SUFFIX_PATTERN,
+        "",
+        normalized,
+        flags=re.IGNORECASE,
+    ).strip()
 
 
 def _detail_url_title_segment_is_code(value: str) -> bool:

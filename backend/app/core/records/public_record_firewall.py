@@ -9,12 +9,14 @@ from app.core.config.field_mappings import (
     AVAILABILITY_FIELD,
     BARCODE_FIELD,
     CANONICAL_SCHEMAS,
+    COLOR_FIELD,
     CURRENCY_FIELD,
     IMAGE_URL_FIELD,
     NAVIGATION_URL_FIELDS,
     OPEN_FIELD_SURFACES,
     PRICE_FIELD,
     ROUTE_BARCODE_TO_SKU,
+    SIZE_FIELD,
     SKU_FIELD,
     STOCK_QUANTITY_FIELD,
     URL_FIELD,
@@ -275,7 +277,14 @@ def _public_variant_row_is_sellable(row: dict[str, object]) -> bool:
         for key, value in row.items()
         if str(key) in PUBLIC_VARIANT_AXIS_FIELDS and value not in (None, "", [], {})
     }
-    return len(axes) >= 2
+    if len(axes) >= 2:
+        return True
+    # Single-axis rows are kept only when the axis is one of the canonical
+    # retail variant axes (size / color) — the dominant Shopify/PDP shape
+    # that previously had its entire variant array dropped. Other novel
+    # single-axis rows (e.g. "type", "material" alone with no transport
+    # field) stay rejected so product metadata isn't surfaced as variants.
+    return bool(axes & {SIZE_FIELD, COLOR_FIELD})
 
 
 def _variant_row_is_image_dimension_artifact(row: dict[str, object]) -> bool:

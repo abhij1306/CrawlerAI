@@ -1031,6 +1031,51 @@ def test_jsonld_aggregate_offer_low_price_materializes() -> None:
     assert record["currency"] == "USD"
 
 
+def test_jsonld_aggregate_offer_child_availability_materializes() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "Product",
+          "name": "Bambino Plus",
+          "url": "https://shop.test/products/bambino-plus",
+          "image": "https://shop.test/bambino.jpg",
+          "offers": {
+            "@type": "AggregateOffer",
+            "lowPrice": "499.95",
+            "highPrice": "499.95",
+            "priceCurrency": "USD",
+            "offers": [
+              {
+                "@type": "Offer",
+                "price": "499.95",
+                "priceCurrency": "USD",
+                "availability": "https://schema.org/InStock",
+                "sku": "1437371"
+              },
+              {
+                "@type": "Offer",
+                "price": "499.95",
+                "priceCurrency": "USD",
+                "availability": "https://schema.org/InStock",
+                "sku": "3302893"
+              }
+            ]
+          }
+        }
+        </script>
+        """,
+        "https://shop.test/products/bambino-plus",
+    )
+
+    record = result.records[0]
+    assert record["price"] == "499.95"
+    assert record["currency"] == "USD"
+    assert record["availability"] == "in_stock"
+
+
 def test_extraction_request_has_no_artifact_payloads_field() -> None:
     assert "artifact_payloads" not in ExtractionRequest.model_fields
 
@@ -1206,6 +1251,20 @@ def test_offer_price_without_currency_is_not_published() -> None:
     assert "price" not in public
     assert "currency" not in public
     assert "PRICE_WITHOUT_CURRENCY" in {finding.rule_id for finding in result.findings}
+
+
+def test_offer_price_inherits_currency_from_page_url_host_hint() -> None:
+    html = HTML.replace('"priceCurrency": "usd",', "").replace(
+        "https://shop.test/products/trail-shoe",
+        "https://firstcry.com/products/trail-shoe",
+    )
+    result = _extract(
+        "ecommerce_detail", html, "https://firstcry.com/products/trail-shoe"
+    )
+    assert result.records
+    public = result.records[0].model_dump(mode="json", exclude_none=True)
+    assert public.get("price") == "129.00"
+    assert public.get("currency") == "INR"
 
 
 def test_uncorroborated_cent_magnitude_price_is_not_silently_repaired() -> None:
@@ -5936,6 +5995,187 @@ def test_direct_brand_evidence_outranks_url_derived_brand() -> None:
     )
 
     assert result.records[0]["brand"] == "Direct Brand"
+
+
+def test_product_scoped_demandware_and_nike_images_are_valid_assets() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <html>
+          <head>
+            <meta property="og:image" content="https://www.converse.com/dw/image/v2/BCZC_PRD/on/demandware.static/-/Sites-cnv-master-catalog/default/dw85fac320/images/a_107/A16914C_A_107X1.jpg?sw=406&amp;strip=false">
+            <script type="application/ld+json">
+            {
+              "@context": "https://schema.org",
+              "@type": "Product",
+              "name": "Chuck Taylor All Star Retro Embroidery",
+              "url": "https://www.converse.com/shop/p/chuck-taylor-all-star-retro-embroidery-womens-high-top-shoe/A16914F.html"
+            }
+            </script>
+            <script>
+            window.__STATE__ = {"recommendations":[{"name":"Nike Air Force 1 '07","url":"https://www.nike.com/t/air-force-1-07-mens-shoes","image":"https://static.nike.com/a/images/t_default/u_9ddf04c7-2a9a-4d76-add1-d15af8f0263d,c_scale,fl_relative,w_1.0,h_1.0,fl_layer_apply/b7d9211c-26e7-431a-ac24-b0540fb3c00f/AIR+FORCE+1+%2707.png"}]};
+            </script>
+          </head>
+        </html>
+        """,
+        "https://www.converse.com/shop/p/chuck-taylor-all-star-retro-embroidery-womens-high-top-shoe/A16914F.html",
+    )
+
+    record = result.records[0]
+    assert record["image_url"].startswith("https://www.converse.com/dw/image/")
+    assert all("nike.com" not in url for url in record["additional_images"])
+
+
+def test_jsonld_brand_beats_dom_category_noise() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <html>
+          <head>
+            <script type="application/ld+json">
+            {
+              "@context": "https://schema.org",
+              "@type": "Product",
+              "name": "EOS R5 Body",
+              "brand": {"@type": "Brand", "name": "Canon"},
+              "url": "https://www.usa.canon.com/shop/p/eos-r5",
+              "image": "https://s7d1.scene7.com/is/image/canon/4147C002_eos-r5-body_primary?fmt=webp-alpha",
+              "offers": {"price": "2599", "priceCurrency": "USD"}
+            }
+            </script>
+          </head>
+          <body><main><span class="product-brand">Webcam</span></main></body>
+        </html>
+        """,
+        "https://www.usa.canon.com/shop/p/eos-r5",
+    )
+
+    assert result.records[0]["brand"] == "Canon"
+
+
+def test_structured_vendor_beats_site_identity_brand() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <script type="application/ld+json">
+        {"@context":"https://schema.org","@type":"Product","name":"40th Anniversary Graphic Womens Short Sleeve Shirt - Shoe Palace","url":"https://www.shoepalace.com/products/jordan-hj0139-045-40th-anniversary-graphic-womens-short-sleeve-shirt-black-red-1"}
+        </script>
+        <script id="ProductJson--product-template" type="application/json">
+        {"title":"40th Anniversary Graphic Womens Short Sleeve Shirt (Black/Red)","vendor":"JORDAN","handle":"jordan-hj0139-045-40th-anniversary-graphic-womens-short-sleeve-shirt-black-red-1"}
+        </script>
+        """,
+        "https://www.shoepalace.com/products/jordan-hj0139-045-40th-anniversary-graphic-womens-short-sleeve-shirt-black-red-1",
+    )
+
+    assert result.records[0]["brand"] == "JORDAN"
+
+
+def test_structured_brand_beats_technology_marker_brand() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <script>
+        window.__PRELOADED_STATE__ = {
+          "product": {
+            "name": "Women's Chill River Midi Dress",
+            "brand": "Columbia",
+            "c_overview": [{"options": {"name": "Omni-Freeze™"}}]
+          }
+        };
+        </script>
+        <main><h1>Women's Chill River Midi Dress</h1></main>
+        """,
+        "https://www.columbia.com/p/womens-chill-river-midi-dress-1933601.html",
+    )
+
+    assert result.records[0]["brand"] == "Columbia"
+
+
+def test_uppercase_title_token_brand_can_be_derived_from_url() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <meta property="og:title" content="Women's HOKA Bondi 9">
+        <main><h1>HOKA Bondi 9 Women's</h1></main>
+        """,
+        "https://www.zappos.com/p/womens-hoka-bondi-9-alabaster-birch/product/9984296/color/1108576",
+    )
+
+    assert result.records[0]["brand"] == "HOKA"
+
+
+def test_master_sku_does_not_publish_variant_id_when_style_code_exists() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <script>
+        var meta = {"product":{"id":8659664797930,"title":"Jordan Air Jordan 5 Retro White Metallic","handle":"jordan-air-jordan-5-retro-white-metallic-mf-white-hq7978-103","tags":["#HQ7978-103","stylenumber_HQ7978-103"],"variants":[{"id":45993954607338,"title":"11","option1":"11","sku":"19468100031","price":21500}]}};
+        </script>
+        <main><h1>Air Jordan 5 Retro White Metallic</h1></main>
+        """,
+        "https://www.dtlr.com/products/jordan-air-jordan-5-retro-white-metallic-mf-white-hq7978-103",
+    )
+
+    record = result.records[0]
+    assert record.get("sku") == "HQ7978-103"
+    assert record.get("sku") != "45993954607338"
+
+
+def test_opengraph_price_currency_pair_survives_product_page() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <meta property="og:title" content="Technics SL-1200MK7">
+        <meta property="og:price:amount" content="186,000.00">
+        <meta property="og:price:currency" content="INR">
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "Product",
+          "name": "Technics SL-1200MK7",
+          "url": "https://www.therevolverclub.com/products/technics-sl-1200mk7",
+          "image": "https://www.therevolverclub.com/cdn/shop/files/technics-sl-1200mk7-silver.jpg",
+          "offers": {"price": 186000.0, "priceCurrency": "INR"}
+        }
+        </script>
+        """,
+        "https://www.therevolverclub.com/products/technics-sl-1200mk7",
+    )
+
+    record = result.records[0]
+    assert record["price"] == "186000.00"
+    assert record["currency"] == "INR"
+
+
+def test_product_title_cleanup_prefers_clean_name_over_site_suffix() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <title>ILCE-9M3 | Interchangeable-lens Cameras | Sony India</title>
+        <meta property="og:title" content="ILCE-9M3 | Interchangeable-lens Cameras | Sony India">
+        <script>
+        window.aemConfig = {"productName": "ILCE-9M3", "productCode": "ILCE-9M3"};
+        </script>
+        """,
+        "https://www.sony.co.in/interchangeable-lens-cameras/products/ilce-9m3?sku=ilce-9m3-in5",
+    )
+
+    assert result.records[0]["title"] == "ILCE-9M3"
+
+
+def test_leading_symbol_title_is_cleaned_when_url_has_clean_title() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <meta property="og:title" content="+ Bulgari Vintage 1980s Doppio Cuore bracelet - gold - One Size">
+        <script type="application/ld+json">
+        {"@context":"https://schema.org","@type":"Product","name":"+ Bulgari Vintage 1980s Doppio Cuore bracelet - gold - One Size","brand":"Eleuteri","url":"https://www.net-a-porter.com/en-us/shop/product/eleuteri/jewelry-and-watches/vintage-bracelets/plus-bulgari-vintage-1980s-doppio-cuore-bracelet/46376663163120086","image":"https://www.net-a-porter.com/variants/images/46376663163120086/in/w2000_q60.jpg"}
+        </script>
+        """,
+        "https://www.net-a-porter.com/en-us/shop/product/eleuteri/jewelry-and-watches/vintage-bracelets/plus-bulgari-vintage-1980s-doppio-cuore-bracelet/46376663163120086",
+    )
+
+    assert result.records[0]["title"].startswith("Bulgari Vintage")
 
 
 def test_404_detail_with_direct_identity_reaches_not_found_handling() -> None:

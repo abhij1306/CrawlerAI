@@ -243,6 +243,7 @@ def _candidate_is_admitted(
     class_name = str(snapshot.get("class_name") or "").strip().lower()
     tag_name = str(snapshot.get("tag_name") or "").strip().lower()
     href = str(snapshot.get("href") or "").strip().lower()
+    target = str(snapshot.get("target") or "").strip().lower()
     keyword_probe = " ".join(
         part for part in (label, probe, data_action, class_name) if part
     )
@@ -264,11 +265,19 @@ def _candidate_is_admitted(
         and label in BROWSER_REQUESTED_DETAIL_GENERIC_TOGGLE_LABELS
     )
     generic_match = any(word in keyword_probe for word in keywords)
+    # An anchor that would open a new browsing context — target=_blank/_new or a
+    # real http(s) destination — is treated as navigational (blocked) even when it
+    # carries aria-controls. This stops detail-expansion from clicking links that
+    # spawn the "flash open then close" tabs the popup guard would otherwise reap,
+    # while genuine in-page toggles (#, javascript:, aria-controls-only buttons)
+    # stay admitted.
+    opens_new_context = target in {"_blank", "_new"}
+    real_link = bool(href) and not href.startswith(
+        ("#", "javascript:", "mailto:", "tel:")
+    )
     navigational = (
         tag_name == "a"
-        and bool(href)
-        and not href.startswith(("#", "javascript:", "mailto:", "tel:"))
-        and not aria_controls
+        and (opens_new_context or real_link)
         and not size_toggle
     )
     blocked = (
@@ -630,6 +639,7 @@ async def interactive_candidate_snapshot(handle: Any) -> dict[str, object]:
         "aria_label": aria_label,
         "title": title,
         "href": await _interactive_handle_attr(handle, "href"),
+        "target": await _interactive_handle_attr(handle, "target"),
         "aria_controls": await _interactive_handle_attr(handle, "aria-controls"),
         "aria_expanded": await _interactive_handle_attr(handle, "aria-expanded"),
         "data_qa_action": data_action,

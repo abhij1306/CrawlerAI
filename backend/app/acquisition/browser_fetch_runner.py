@@ -8,7 +8,6 @@ from contextlib import suppress
 from dataclasses import dataclass
 from typing import Any
 
-from app.acquisition import cookie_store
 from app.acquisition.browser_capture import (
     BrowserNetworkCapture,
     capture_browser_screenshot,
@@ -34,9 +33,9 @@ from app.acquisition.browser_fetch_support import (
     dismiss_browser_interstitial,
     emit_page_loaded_event,
     install_popup_guard,
-    maybe_warm_origin_before_navigation,
     new_browser_fetch_state,
     remove_popup_guard,
+    suppress_new_context_openers,
 )
 from app.acquisition.browser_page_flow import (
     append_readiness_probe,
@@ -186,13 +185,6 @@ async def _prepare_launch_context(
     state.runtime_bridge_used = state.runtime_bridge_used or bool(
         bridge_flag() if callable(bridge_flag) else False
     )
-    if state.allow_storage_state and state.normalized_domain:
-        state.skip_origin_warmup = bool(
-            await cookie_store.load_storage_state_for_domain(
-                state.normalized_domain,
-                browser_engine=runtime_engine,
-            )
-        )
     await _emit_browser_event(
         request.on_event,
         "info",
@@ -202,12 +194,6 @@ async def _prepare_launch_context(
             f"proxy: {display_proxy(request.proxy)}, binary: {state.runtime_binary})"
         ),
     )
-    if state.proxy_rotation == "rotating":
-        await _emit_browser_event(
-            request.on_event,
-            "info",
-            "Rotating proxy profile detected; skipping origin warmup",
-        )
 
 
 def _build_payload_capture(surface: str) -> BrowserNetworkCapture:
@@ -266,8 +252,6 @@ async def _run_behavior_realism(
 async def _configure_page(
     page: Any,
     state: BrowserFetchState,
-    *,
-    remaining,
 ) -> tuple[BrowserNetworkCapture, bool, dict[str, object], dict[str, object] | None]:
     request = state.request
     payload_capture = _build_payload_capture(state.normalized_surface)
@@ -286,18 +270,6 @@ async def _configure_page(
     pause_ms = max(0, int(crawler_runtime_settings.browser_first_nav_pause_ms))
     if pause_ms > 0 and state.normalized_surface.startswith("ecommerce_"):
         await page.wait_for_timeout(pause_ms)
-    await maybe_warm_origin_before_navigation(
-        page,
-        url=request.url,
-        surface=state.normalized_surface,
-        browser_engine=state.runtime_engine,
-        browser_reason=request.browser_reason,
-        proxy=request.proxy,
-        proxy_profile=request.proxy_profile,
-        skip_for_reusable_domain_state=state.skip_origin_warmup,
-        timeout_seconds=remaining(),
-        phase_timings_ms=state.phase_timings_ms,
-    )
     return payload_capture, traversal_active, readiness_policy, readiness_override
 
 
@@ -608,12 +580,12 @@ async def _execute_browser_fetch(state: BrowserFetchState) -> PageFetchResult:
             payload_capture, traversal_active, policy, override = await _configure_page(
                 page,
                 state,
-                remaining=remaining,
             )
             popup_registrations = install_popup_guard(
                 page,
                 on_event=request.on_event,
             )
+            await suppress_new_context_openers(page)
             return await _run_page_lifecycle(
                 page,
                 state,

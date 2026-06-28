@@ -295,9 +295,11 @@ Current live behavior:
 - acquisition identity now repairs malformed browser client-hint headers before Playwright contexts are created, and the shared HTTP default headers advertise the same Chrome client-hint family (`sec-ch-ua*`, `Upgrade-Insecure-Requests`) when the configured UA is Chrome-like instead of sending a partial browser header set
 - tracked detail URLs are normalized upstream before reuse: extracted and user-entered commerce/job targets now drop low-signal click/search context params (`utm_*`, `click_*`, `content_source`, `pf_from`, `sr_prefetch`, `qs`, and similar short replay flags) while preserving functional params such as `variant`, `q`, and `id`
 - hosts with repeated hard blocks can temporarily prefer browser-first acquisition within the pacing TTL, but one successful browser recovery clears that host memory so random PDP challenges do not taint the whole host
-- risky detail browser navigations can spend the configured `origin_warm_pause_ms` budget warming the site origin before the direct PDP navigation, but real Chrome only does that on the first engine/domain run without reusable domain state
-- once sanitized engine-scoped `real_chrome` domain state exists, later real-Chrome fetches skip origin warmup and go straight to the target URL
-- real Chrome is not challenge-exempt: if warmup or the direct PDP nav lands on a challenge shell, acquisition runs the same bounded challenge wait/activity/retry loop before returning a blocked verdict
+- origin warmup has been removed on every engine: both Patchright and real Chrome navigate straight to the target URL, and a blocked product URL is recovered in place by the challenge loop rather than by pre-seeding cookies from the origin root — the critical path no longer carries a speculative warmup navigation
+- sanitized engine-scoped `real_chrome` domain state, when it exists, is still applied to the browser context, but it no longer gates a warmup step (there is none)
+- real Chrome is not challenge-exempt: if the direct PDP nav lands on a challenge shell, acquisition runs the same bounded challenge wait/activity/retry loop before returning a blocked verdict
+- Cloudflare "Just a moment" managed challenges are solved in place: the engine-agnostic recovery loop treats a Cloudflare interactive interstitial as solvable (not a terminal hard block) so it keeps polling until the Turnstile widget renders, then issues a humanized coordinate click on the checkbox (`CLOUDFLARE_TURNSTILE_SELECTORS`) on both Patchright and real Chrome; Akamai/DataDome "Access Denied" still fails fast as terminal
+- crawl pages can never open a second browsing context: `suppress_new_context_openers` neutralizes `window.open` and rewrites anchor `target=_blank` to `_self` (init script + live-document evaluate, sentinel-guarded), so detail expansion reveals collapsed content without flashing new tabs; the reactive popup guard remains only as a backstop
 - browser contexts accept a per-fetch `proxy` for rotated-proxy traversal; `temporary_browser_page` is a thin wrapper over `SharedBrowserRuntime.page(proxy=...)`
 - `browser_identity` is host-OS-coherent: the de-headlessified UA OS token, the `sec-ch-ua-platform` header, and the engine's native `navigator.platform` all agree, keyed off the host OS the browser runs on (Windows dev box vs Linux Docker in prod). There is no synthetic fingerprint generation and no UA-vs-OS regeneration loop; the engine is genuinely Chrome, so only the headless token is normalized.
 - browser acquisition no longer injects custom init scripts into Patchright contexts; identity shaping is limited to context options, headers, locale/timezone alignment, and engine-native behavior so we do not reintroduce script-surface blockers. Real Chrome (headful, native context) is exempt from de-headlessification because it already reports a clean UA.
@@ -569,7 +571,20 @@ Still worth treating as active engineering concerns:
 - frontend/backend client-surface drift where unused client methods outlive removed routes
 - selector tool and Crawl Studio now share selector memory semantics, so future selector changes need tests in both surfaces instead of assuming one page is authoritative
 
-## 11. Operational References
+## 11. Known Issues
+
+### Celery concurrent crawl can stall after browser page load
+
+The production URL timeout bounds this failure, but the root cause is not yet proven. The two saved worker logs favor browser lifecycle/resource blockage inside a long-running Celery task over Redis lock contention:
+
+- Across `celery-worker-1.log` and `celery-worker-2.log`, there are six browser storage-state capture timeouts, four context-close timeouts, two browser capture queue-join timeouts, one page-open timeout, and one runtime-close timeout. Nearby errors include Patchright `TargetClosedError`, driver connection loss, and a destroyed pending route task.
+- Workers repeatedly miss peer heartbeats while `crawl.process_run` executes. The subsequent Celery clock-drift value closely matches the task wall time, including 446 seconds for the 2026-06-28 run. This is consistent with a `MainProcess`/solo worker being unable to service heartbeats while the crawl owns its execution thread.
+- Redis connections succeed. Neither log contains a Redis lock, semaphore, lease-contention, or exhaustion message. Current evidence therefore does not support Redis as the primary blocker.
+- The latest 96-URL run log records the run boundary and selected HTTP/network events, but not per-URL browser admission and stage transitions. It cannot identify the reported five URLs or prove whether they waited before page/context admission, during post-load capture, or during context shutdown.
+
+Keep the URL timeout guard. For the next reproduction, log bounded per-URL browser admission wait, runtime/context/page identity, stage entry/exit, runtime snapshot, and cleanup duration. This is needed to distinguish runtime semaphore starvation from a Patchright context/driver close race. Do not add a Redis concurrency workaround without lock-wait evidence.
+
+## 12. Operational References
 
 Useful local commands:
 

@@ -323,7 +323,6 @@ class BrowserAttemptRunner:
             attempt_id=f"{self.plan_id}-{len(self.attempt_specs) + 1}-{engine}",
             transport=engine,  # type: ignore[arg-type]
             proxy=proxy,
-            warmup=True,
             interaction=bool(self.requested_fields or self.context.requested_fields),
             traversal_mode=self.context.traversal_mode,
             required_artifacts=("html",),

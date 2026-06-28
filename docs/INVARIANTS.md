@@ -66,7 +66,16 @@ Terminal shell acquisitions, including HTTP error bodies, challenge pages, brows
 
 ---
 
-**Active known bugs:** none. Keep this section for active extraction bugs only. Do not document already-fixed bugs here.
+**Active known bugs:** DOM-only variant axes can remain unresolved when the captured sources contain no product-scoped variant matrix. Details below. Keep this section for active extraction bugs only. Do not document already-fixed bugs here.
+
+### Known Extraction Gaps
+
+Run 1 artifact sampling on 2026-06-28 established these source/collector boundaries:
+
+- Availability: Nike Air Force 1 (`url_result_id=2393`) and Apple iPhone 16 (`url_result_id=2407`) contain no product-scoped availability value in captured HTML. Nike's `sold out` text is translation copy, not selected-product state; Apple's availability wording is generic purchase-flow copy. Missing availability is expected for these captures.
+- Availability: Williams-Sonoma Bambino Plus (`url_result_id=2429`) contains six `Offer` rows with `availability=https://schema.org/InStock` nested under `Product.offers` as an `AggregateOffer.offers` list. The JSON-LD collector previously read only the aggregate row. It now recursively collects nested offers; artifact replay resolves `availability=in_stock`.
+- Variants: ColourPop Going Coconuts (`url_result_id=2388`) exposes one Shopify `Default Title` row. Sibling-product swatches are separate products, not variants of the selected product. Omitting public variants is expected.
+- Variants: Bombas ankle socks (`url_result_id=2389`) exposes four color controls and three size controls in DOM, but no captured product-scoped variant matrix connecting combinations to SKU, offer, or availability. The extractor reports `EXPECTED_VARIANT_AXIS_MISSING` with zero materialized variants. This remains an upstream collector gap. Do not synthesize the color/size cross-product from DOM axes alone; recover the product-state or network variant matrix with same-product evidence.
 
 **Visible detail prices are extraction-owned. Owner: `detail_extractor.py` + `config/extraction_rules.py`.**
 
@@ -171,9 +180,11 @@ Ecommerce detail must not call missing-field value generation. LLM may later cho
 Browser acquisition may use Patchright or real Chrome to produce better observations: rendered HTML, network payloads, visible text, accessibility text, readiness probes, and screenshots when enabled. It may also produce explicit detail-expansion artifacts (HTML/JSON from clicked size/color variant controls, expanded accordion sections, etc.). These are observation artifacts and are allowed inputs to extraction and LLM repair.
 Browser acquisition must not fabricate fields. It must not run hidden page scripts that directly assign `price`, `brand`, `variants`, or other logical fields outside the normal extraction/repair provenance path.
 
+A crawl page must never open a second browsing context. As soon as the page is created, `suppress_new_context_openers` installs an idempotent guard (init script for every navigation plus an immediate `evaluate` for the live document) that neutralizes both new-tab vectors: `window.open` is overridden to return null, and a capture-phase click listener rewrites any anchor `target` to `_self`. Detail expansion deliberately keeps clicking accordions/tabs/"show more"; suppression is what makes those clicks safe so collapsed content is still revealed without a tab flashing open. The reactive popup guard (`install_popup_guard`) stays as the backstop for anything JS contrives that attribute/`window.open` rewriting can't catch — it is the safety net, not the primary defense. Detail admission (`_candidate_is_admitted`) is the third layer: navigational anchors (a real http(s) `href` or `target=_blank`/`_new`) are never clicked even when they also carry `aria-controls`, so only genuine in-page toggles are exercised.
 
 
-Challenge recovery is part of acquisition, not extraction. Direct browser navigation and origin warmup must both run the bounded challenge wait/activity/retry loop. A provider-marked low-content shell may not be accepted as final just because the blocked-page classifier is not yet `blocked=True`; it must be re-polled until it becomes usable content or the configured challenge budget is exhausted.
+
+Challenge recovery is part of acquisition, not extraction. Direct browser navigation must run the bounded challenge wait/activity/retry loop. A provider-marked low-content shell may not be accepted as final just because the blocked-page classifier is not yet `blocked=True`; it must be re-polled until it becomes usable content or the configured challenge budget is exhausted.
 
 Browser retry is allowed only when policy and diagnostics justify it, and only when enough URL-local budget remains to complete a meaningful browser attempt. If an HTTP result indicates a block/shell but the remaining budget is below `browser_retry_min_remaining_seconds`, acquisition returns the observed HTTP result with `browser_escalation_skipped=insufficient_budget` instead of starting a doomed browser navigation/settle stage.
 
@@ -192,9 +203,10 @@ Browser close operations are bounded but not cancellation-owned by timeout wrapp
 - Engine is `patchright` headless bundled Chromium (`--headless=new`), not Patchright's headful `channel="chrome"` mode. Headless leaks a `HeadlessChrome` UA token with no `sec-ch-ua` hints, which PX/Akamai/DataDome block on sight.
 - `build_playwright_context_spec` MUST rewrite the UA to plain `Chrome` with coherent `sec-ch-ua` headers. UA OS token, `sec-ch-ua-platform`, and native `navigator.platform` MUST agree, keyed off host OS. Real Chrome (headful, native context) is exempt.
 - No `browserforge`, no JS init-script shaping. Patchright's "no fingerprint injection" guidance applies only to headful `channel="chrome"` and never justifies dropping the mask while headless.
-- Origin warmup is non-fatal and budget-capped (`origin_warmup_max_budget_ratio`): a blocked/challenge-shell origin MUST NOT raise or abort; the main navigation owns the blocked verdict.
+- There is no origin warmup. Acquisition navigates directly to the target URL on every engine (Patchright and real Chrome); a blocked product URL is recovered in place by the challenge loop, never by pre-seeding cookies from the origin root. The critical path carries no speculative warmup navigation.
 - Challenge recovery re-checks for clear immediately after challenge activity (activity is ~2s; providers often clear during it) to avoid a needless engine escalation on an already-usable page.
-- A terminal hard block (title/strong "Access Denied" evidence, no active challenge or challenge-element markers) never clears by waiting; the recovery loop exits early and skips the retry-goto so real-Chrome escalation is not delayed by the full challenge budget.
+- A terminal hard block (title/strong "Access Denied" evidence, no active challenge or challenge-element markers) never clears by waiting; the recovery loop exits early and skips the retry-goto so real-Chrome escalation is not delayed by the full challenge budget. **Cloudflare interactive interstitials are the explicit exception:** a "Just a moment…" / "Checking your browser" shell (Cloudflare provider + interstitial marker, even before the Turnstile iframe paints) is solvable, not terminal. `_is_solvable_interactive_challenge` must classify it as non-terminal so the recovery loop keeps polling long enough for the Turnstile widget to render and be clicked instead of failing fast. Akamai/DataDome "Access Denied" stays terminal.
+- Cloudflare Turnstile checkboxes are solved by a real coordinate click, on both engines. The recovery loop is engine-agnostic (`recover_browser_challenge` drops the engine), so when a Turnstile widget is present (`CLOUDFLARE_TURNSTILE_SELECTORS` match) `_maybe_click_turnstile` moves the mouse into the widget and clicks the checkbox hit point, latched so it fires once and re-fires only after a short poll cooldown. The click is best-effort and gated on an actual Turnstile match: non-Cloudflare challenges are never clicked.
 - Challenge recovery MUST re-read and re-classify the live DOM on every poll. It may not gate the clear-check on a provider cookie (e.g. Akamai `_abck`): a provider shell (Akamai/DataDome/PerimeterX) clears by swapping in real content, so the re-read HTML is the source of truth. Gating the re-check on a cookie that never appears in-page makes Patchright miss an already-usable page and wastes the whole challenge budget before a needless real-Chrome escalation. A missing provider cookie is at most a hint, never a reason to skip the DOM re-check.
 
 **Usable content beats provider noise. This is a hard contract.**
@@ -224,7 +236,8 @@ is a crawler bug, not stricter security detection.
 - Serial URL processing reuses the run-orchestration SQLAlchemy session for extraction/persistence work
 - `CELERY_DISPATCH_ENABLED=false` still allows `url_batch_concurrency > 1`
 - A static product-not-found or homepage-shell detail page retries browser only to rediscover the same non-product page
-- Direct navigation challenge recovery runs only during origin warmup, or provider-marked low-content shells skip the bounded recovery loop
+- Provider-marked low-content shells skip the bounded recovery loop, or a Cloudflare "Just a moment" interstitial is treated as a terminal hard block and fails fast before the Turnstile widget can render and be clicked
+- A crawl page opens a second browsing context (new tab/window) — `window.open` or a `target=_blank` anchor is left un-neutralized so a tab flashes open during navigation or detail expansion
 - Browser escalation triggers for a URL that returned 200 with complete requested/default high-value fields
 - Browser-side code writes logical extraction fields directly into the record instead of returning observation artifacts
 - Browser acquisition captures a screenshot when `capture_screenshot=False`
@@ -274,8 +287,8 @@ Detail extraction must also reject collection/category URLs that expose product-
 - Run-scoped and domain-scoped browser storage must stay engine-scoped; `chromium`, `patchright`, and `real_chrome` state must not bleed across engines.
 - Browser-to-HTTP handoff may only reuse sanitized engine-scoped session state on the same proxy identity. If proxy affinity cannot be proven, skip handoff and stay browser-first.
 - Host browser-first memory is for repeated hard blocks, not one noisy challenge hit.
-- When launching real-Chrome for detail fetches and no reusable engine-scoped `real_chrome` domain state exists, acquisition may warm the site origin before direct PDP navigation; once reusable `real_chrome` domain state exists, later fetches skip warmup.
-- Real Chrome is not challenge-exempt. If warmup or the direct PDP nav lands on a challenge shell, acquisition must still run the bounded challenge wait/activity/retry loop (defined in `app/core/config/acquisition_policy.py`) before declaring the page blocked.
+- Real Chrome navigates directly to the detail URL; there is no origin warmup on any engine. Reusable engine-scoped `real_chrome` domain state, when it exists, is still applied to the context, but it does not gate a warmup step because none exists.
+- Real Chrome is not challenge-exempt. If the direct PDP nav lands on a challenge shell, acquisition must still run the bounded challenge wait/activity/retry loop (defined in `app/core/config/acquisition_policy.py`) before declaring the page blocked.
 - Learned acquisition contracts live in editable `DomainRunProfile` memory scoped by normalized `(domain, surface)`. They own durable engine choice and handoff eligibility; explicit run settings always override them.
 - Future crawls must reuse the successful acquisition/data-extraction path and learned selectors for the domain/surface without fresh experimentation unless the user explicitly changes settings, enables experimentation, resets learned memory, or the contract becomes stale.
 - Only contracts with `handoff_eligible=true` may trigger curl handoff. Browser success alone is not enough; rendered extraction (DOM-tier fields used), traversal (link discovery from rendered page), or network-payload dependence (intercepted XHR/fetch bodies) must disable handoff.

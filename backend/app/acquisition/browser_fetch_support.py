@@ -9,29 +9,19 @@ from collections.abc import Mapping
 from contextlib import suppress
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable
-from urllib.parse import urlparse
-from weakref import WeakKeyDictionary
 
 from app.acquisition.browser_background_tasks import register_popup_guard_task
 from app.acquisition.browser_diagnostics import (
     CHROMIUM_BROWSER_ENGINE,
-    REAL_CHROME_BROWSER_ENGINE,
     build_browser_diagnostics_contract,
     build_failed_browser_diagnostics,
     normalize_browser_engine,
 )
 from app.acquisition.browser_page_helpers import dismiss_safe_location_interstitial
 from app.acquisition.browser_pool import get_browser_runtime
-from app.acquisition.browser_readiness import looks_like_low_content_shell
-from app.acquisition.browser_recovery import recover_browser_challenge
-from app.acquisition.dom_runtime import get_page_html
 from app.acquisition.runtime import (
     PageFetchResult,
-    classify_blocked_page_async,
     copy_headers,
-)
-from app.core.config.browser_fingerprint_profiles import (
-    WARMUP_VENDOR_BLOCK_PREFIX,
 )
 from app.core.config.runtime_settings import (
     crawler_runtime_settings,
@@ -82,7 +72,6 @@ class BrowserFetchState:
     runtime_engine: str = ""
     runtime_binary: str = ""
     runtime_bridge_used: bool = False
-    skip_origin_warmup: bool = False
 
 
 def new_browser_fetch_state(request: BrowserFetchRequest) -> BrowserFetchState:
@@ -373,283 +362,106 @@ def remove_popup_guard(registrations: list[tuple[Any, str, Any]]) -> None:
                 off(event_name, callback)
 
 
-WarmupKey = tuple[str, str, str, str]
-_ORIGIN_WARMUP_STATE_LOCKS: WeakKeyDictionary[
-    asyncio.AbstractEventLoop, asyncio.Lock
-] = WeakKeyDictionary()
-_ORIGIN_WARMUP_IN_FLIGHT: set[WarmupKey] = set()
-_ORIGIN_WARMUP_RECENT: dict[WarmupKey, float] = {}
-_ORIGIN_WARMUP_RECENT_MAX_ENTRIES = 512
+# Neutralizes the three ways a page spawns a new tab/window during crawling:
+# direct window.open() calls, anchors with target=_blank/_new, and form
+# submissions with target=_blank. Runs once per document (sentinel-guarded)
+# so init-script + live-document application don't double-bind.
+#
+# Coverage:
+#  * window.open neutralized at script time.
+#  * Existing a[target] / form[target] rewritten to _self immediately.
+#  * A MutationObserver rewrites future a[target]/form[target] (added nodes
+#    and target-attribute mutations) so SPA-injected anchors are also caught.
+#  * A capture-phase click listener stays as a final backstop for anything that
+#    slips past attribute rewriting (e.g. shadow-DOM anchors).
+_NEW_CONTEXT_SUPPRESS_SCRIPT = """(() => {
+    if (window.__crawlerNoNewContext) { return; }
+    window.__crawlerNoNewContext = true;
+    try {
+        window.open = function () { return null; };
+    } catch (err) { /* read-only window.open: best effort */ }
+    const rewriteTarget = (node) => {
+        if (!node || node.nodeType !== 1) { return; }
+        const tag = node.tagName;
+        if ((tag === 'A' || tag === 'FORM') && node.target && node.target !== '_self') {
+            try { node.target = '_self'; } catch (err) { /* readonly target */ }
+        }
+    };
+    const rewriteTree = (root) => {
+        if (!root) { return; }
+        try {
+            rewriteTarget(root);
+            if (root.querySelectorAll) {
+                root.querySelectorAll('a[target], form[target]').forEach(rewriteTarget);
+            }
+        } catch (err) { /* best effort */ }
+    };
+    const installObserver = () => {
+        if (window.__crawlerNoNewContextObserver) { return; }
+        const observerRoot = document.documentElement || document.body;
+        if (!observerRoot) { return; }
+        try {
+            const observer = new MutationObserver((mutations) => {
+                for (const mutation of mutations) {
+                    if (mutation.type === 'attributes') {
+                        rewriteTarget(mutation.target);
+                    } else if (mutation.type === 'childList') {
+                        mutation.addedNodes.forEach(rewriteTree);
+                    }
+                }
+            });
+            observer.observe(observerRoot, {
+                subtree: true,
+                childList: true,
+                attributes: true,
+                attributeFilter: ['target'],
+            });
+            window.__crawlerNoNewContextObserver = observer;
+        } catch (err) { /* MutationObserver unavailable: backstop handles it */ }
+    };
+    try {
+        rewriteTree(document);
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', () => {
+                rewriteTree(document);
+                installObserver();
+            }, { once: true });
+        } else {
+            installObserver();
+        }
+    } catch (err) { /* no document yet: init script re-runs per navigation */ }
+    try {
+        document.addEventListener('click', function (event) {
+            let node = event.target;
+            while (node && node !== document) {
+                if ((node.tagName === 'A' || node.tagName === 'FORM')
+                    && node.target && node.target !== '_self') {
+                    node.target = '_self';
+                    break;
+                }
+                node = node.parentNode;
+            }
+        }, true);
+    } catch (err) { /* no document yet: init script re-runs per navigation */ }
+})()"""
 
 
-@dataclass(frozen=True, slots=True)
-class _WarmupRequest:
-    page: Any
-    url: str
-    warm_url: str
-    browser_engine: str
-    warm_pause_ms: int
-    phase_timings_ms: dict[str, int]
+async def suppress_new_context_openers(page: Any) -> None:
+    """Stop the page from ever spawning a new tab/window.
 
-
-def origin_warmup_state_lock() -> asyncio.Lock:
-    loop = asyncio.get_running_loop()
-    lock = _ORIGIN_WARMUP_STATE_LOCKS.get(loop)
-    if lock is None:
-        lock = asyncio.Lock()
-        _ORIGIN_WARMUP_STATE_LOCKS[loop] = lock
-    return lock
-
-
-def _warmup_elapsed_ms(started_at: float) -> int:
-    return max(0, int((time.perf_counter() - started_at) * 1000))
-
-
-def _warmup_key(
-    *,
-    url: str,
-    browser_engine: str,
-    proxy: str | None,
-    proxy_profile: dict[str, object] | None,
-) -> WarmupKey:
-    parsed = urlparse(url)
-    return (
-        normalize_browser_engine(browser_engine),
-        str(parsed.scheme or "").lower(),
-        str(parsed.netloc or "").lower(),
-        str(proxy or proxy_rotation_mode(proxy_profile) or "direct").lower(),
-    )
-
-
-def _prune_recent_warmups(*, now: float, ttl_seconds: float) -> None:
-    if ttl_seconds <= 0:
-        _ORIGIN_WARMUP_RECENT.clear()
-        return
-    for key, completed_at in list(_ORIGIN_WARMUP_RECENT.items()):
-        if now - completed_at >= ttl_seconds:
-            _ORIGIN_WARMUP_RECENT.pop(key, None)
-    if len(_ORIGIN_WARMUP_RECENT) <= _ORIGIN_WARMUP_RECENT_MAX_ENTRIES:
-        return
-    keep_count = _ORIGIN_WARMUP_RECENT_MAX_ENTRIES // 2
-    excess = len(_ORIGIN_WARMUP_RECENT) - keep_count
-    for key in list(_ORIGIN_WARMUP_RECENT)[:excess]:
-        _ORIGIN_WARMUP_RECENT.pop(key, None)
-
-
-async def _begin_warmup(key: WarmupKey) -> bool:
-    now = time.monotonic()
-    ttl_seconds = max(
-        0.0,
-        float(crawler_runtime_settings.origin_warmup_dedupe_ttl_seconds),
-    )
-    async with origin_warmup_state_lock():
-        _prune_recent_warmups(now=now, ttl_seconds=ttl_seconds)
-        if key in _ORIGIN_WARMUP_IN_FLIGHT:
-            return False
-        completed_at = _ORIGIN_WARMUP_RECENT.get(key)
-        if ttl_seconds > 0 and completed_at is not None:
-            if now - completed_at < ttl_seconds:
-                return False
-        _ORIGIN_WARMUP_IN_FLIGHT.add(key)
-        return True
-
-
-async def _finish_warmup(key: WarmupKey, *, succeeded: bool = False) -> None:
-    async with origin_warmup_state_lock():
-        _ORIGIN_WARMUP_IN_FLIGHT.discard(key)
-        ttl_seconds = max(
-            0.0,
-            float(crawler_runtime_settings.origin_warmup_dedupe_ttl_seconds),
-        )
-        if succeeded and ttl_seconds > 0:
-            _ORIGIN_WARMUP_RECENT[key] = time.monotonic()
-
-
-def _eligible_warmup_url(
-    *,
-    url: str,
-    surface: str,
-    browser_engine: str,
-    browser_reason: str | None,
-    proxy_profile: dict[str, object] | None,
-    skip_for_reusable_domain_state: bool,
-) -> str | None:
-    if "detail" not in str(surface or "").strip().lower():
-        return None
-    # Real Chrome warms on its single active page, which serializes a second
-    # navigation (and challenge fight) onto the critical path before the product
-    # URL is even requested. Origin warmup is sibling-page only.
-    if normalize_browser_engine(browser_engine) == REAL_CHROME_BROWSER_ENGINE:
-        return None
-    if proxy_rotation_mode(proxy_profile) == "rotating":
-        return None
-    if skip_for_reusable_domain_state:
-        return None
-    reason = str(browser_reason or "").strip().lower()
-    # Only warm when a bot wall was actually detected: pre-seeding clearance
-    # cookies at the origin root only pays off against vendor challenges.
-    if not reason.startswith(WARMUP_VENDOR_BLOCK_PREFIX):
-        return None
-    parsed = urlparse(url)
-    if not parsed.scheme or not parsed.netloc:
-        return None
-    warm_url = f"{parsed.scheme}://{parsed.netloc}/"
-    if warm_url.rstrip("/") == str(url or "").strip().rstrip("/"):
-        return None
-    return warm_url
-
-
-def _warmup_budget_ms(timeout_seconds: float) -> int:
-    ratio = max(
-        0.0,
-        float(crawler_runtime_settings.origin_warmup_max_budget_ratio),
-    )
-    return min(
-        max(750, int(max(0.1, float(timeout_seconds)) * 1000 * ratio)),
-        int(crawler_runtime_settings.browser_navigation_domcontentloaded_timeout_ms),
-    )
-
-
-async def _open_warmup_page(request: _WarmupRequest) -> Any | None:
-    context = getattr(request.page, "context", None)
-    if callable(context):
+    Detail-expansion clicks fragment anchors and toggles; some carry
+    target=_blank or invoke window.open, which flash open a new tab the popup
+    guard then reaps. Neutralizing window.open and rewriting anchor targets to
+    _self at the DOM level prevents the tab from opening at all. Best-effort:
+    an init script covers every navigation, and an immediate evaluate covers the
+    already-loaded document. The reactive popup guard stays as the backstop for
+    anything JS contrives that attribute/open rewriting can't catch.
+    """
+    add_init_script = getattr(page, "add_init_script", None)
+    if callable(add_init_script):
         with suppress(Exception):
-            context = context()
-    new_page = getattr(context, "new_page", None)
-    if not callable(new_page):
-        logger.debug(
-            "Skipping origin warmup for %s because page context cannot spawn a sibling page",
-            request.url,
-        )
-        return None
-    return await new_page()
-
-
-def _copy_challenge_timings(
-    target: dict[str, int],
-    source: dict[str, int],
-) -> None:
-    for key in ("challenge_wait", "challenge_retry"):
-        value = source.get(key)
-        if value:
-            target[f"origin_warmup_{key}"] = int(value)
-
-
-async def _run_warmup(request: _WarmupRequest, *, budget_ms: int) -> bool:
-    started_at = time.perf_counter()
-    warm_page = None
-    succeeded = False
-    try:
-        warm_page = await _open_warmup_page(request)
-        if warm_page is None:
-            return False
-        response = await warm_page.goto(
-            request.warm_url,
-            wait_until="domcontentloaded",
-            timeout=budget_ms,
-        )
-        remaining_ms = max(750, budget_ms - _warmup_elapsed_ms(started_at))
-        challenge_timings: dict[str, int] = {}
-        await recover_browser_challenge(
-            warm_page,
-            url=request.warm_url,
-            response=response,
-            browser_engine=request.browser_engine,
-            timeout_seconds=max(1.0, remaining_ms / 1000),
-            phase_timings_ms=challenge_timings,
-            challenge_wait_max_seconds=min(
-                max(
-                    0.0,
-                    float(crawler_runtime_settings.challenge_wait_max_seconds or 0),
-                ),
-                max(1.0, remaining_ms / 1000),
-            ),
-            challenge_poll_interval_ms=int(
-                crawler_runtime_settings.challenge_poll_interval_ms
-            ),
-            navigation_timeout_ms=remaining_ms,
-            elapsed_ms=_warmup_elapsed_ms,
-            classify_blocked_page=classify_blocked_page_async,
-            get_page_html=get_page_html,
-            looks_like_low_content_shell=looks_like_low_content_shell,
-        )
-        request.phase_timings_ms["origin_warmup_behavior"] = 0
-        remaining_ms = max(0, budget_ms - _warmup_elapsed_ms(started_at))
-        await warm_page.wait_for_timeout(min(request.warm_pause_ms, remaining_ms))
-        _copy_challenge_timings(request.phase_timings_ms, challenge_timings)
-        succeeded = True
-    except Exception:
-        logger.debug("Origin warmup failed for %s", request.url, exc_info=True)
-    finally:
-        if warm_page is not None:
-            close_page = getattr(warm_page, "close", None)
-            if callable(close_page):
-                with suppress(Exception):
-                    await close_page()
-        request.phase_timings_ms["origin_warmup"] = _warmup_elapsed_ms(started_at)
-    return succeeded
-
-
-async def maybe_warm_origin_before_navigation(
-    page: Any,
-    *,
-    url: str,
-    surface: str,
-    browser_engine: str = CHROMIUM_BROWSER_ENGINE,
-    browser_reason: str | None,
-    proxy: str | None = None,
-    proxy_profile: dict[str, object] | None,
-    skip_for_reusable_domain_state: bool = False,
-    timeout_seconds: float,
-    phase_timings_ms: dict[str, int],
-) -> None:
-    warm_pause_ms = max(
-        0,
-        int(crawler_runtime_settings.origin_warm_pause_ms or 0),
-    )
-    if warm_pause_ms <= 0:
-        return
-    # Never let warmup consume the product navigation's budget: only warm when
-    # there is enough headroom for the real navigation to keep a full
-    # domcontentloaded window after the warmup spends its share.
-    nav_floor_ms = int(
-        crawler_runtime_settings.browser_navigation_domcontentloaded_timeout_ms
-    )
-    if int(max(0.0, timeout_seconds) * 1000) <= nav_floor_ms:
-        return
-    warm_url = _eligible_warmup_url(
-        url=url,
-        surface=surface,
-        browser_engine=browser_engine,
-        browser_reason=browser_reason,
-        proxy_profile=proxy_profile,
-        skip_for_reusable_domain_state=skip_for_reusable_domain_state,
-    )
-    if warm_url is None:
-        return
-    key = _warmup_key(
-        url=url,
-        browser_engine=browser_engine,
-        proxy=proxy,
-        proxy_profile=proxy_profile,
-    )
-    if not await _begin_warmup(key):
-        phase_timings_ms["origin_warmup"] = 0
-        return
-    budget_ms = _warmup_budget_ms(timeout_seconds)
-    succeeded = False
-    try:
-        if budget_ms >= 750:
-            succeeded = await _run_warmup(
-                _WarmupRequest(
-                    page=page,
-                    url=url,
-                    warm_url=warm_url,
-                    browser_engine=browser_engine,
-                    warm_pause_ms=warm_pause_ms,
-                    phase_timings_ms=phase_timings_ms,
-                ),
-                budget_ms=budget_ms,
-            )
-    finally:
-        await asyncio.shield(_finish_warmup(key, succeeded=succeeded))
+            await add_init_script(_NEW_CONTEXT_SUPPRESS_SCRIPT)
+    evaluate = getattr(page, "evaluate", None)
+    if callable(evaluate):
+        with suppress(Exception):
+            await evaluate(_NEW_CONTEXT_SUPPRESS_SCRIPT)

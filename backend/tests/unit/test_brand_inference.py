@@ -51,3 +51,39 @@ def test_product_url_brand_prefix_requires_the_full_leading_segment() -> None:
         )
         is None
     )
+
+
+@pytest.mark.parametrize(
+    ("url", "title", "expected"),
+    [
+        (
+            "https://www.firstcry.com/babyhug/babyhug-denim-woven-sleeveless-top-and-pant-set/22346676",
+            "Babyhug Denim Woven Sleeveless Top and Pant Set With Floral Print",
+            "Babyhug",
+        ),
+        (
+            "https://www.chewy.com/wellness-core-rawrev-grain-free-wild/dp/141791",
+            "Wellness CORE+ with Freeze-Dried Pieces Adult Grain-Free High Protein",
+            "Wellness",
+        ),
+        (
+            "https://stockx.com/nike-dunk-low-retro-white-black-2021",
+            "Nike Dunk Low Retro White Black Panda",
+            "Nike",
+        ),
+    ],
+)
+def test_marketplace_long_slug_recovers_manufacturer_brand_from_title_leading(
+    url: str, title: str, expected: str
+) -> None:
+    assert infer_brand_from_product_url(url=url, title=title) == expected
+
+
+def test_short_brand_host_slug_does_not_steal_descriptor_as_brand() -> None:
+    assert (
+        infer_brand_from_product_url(
+            url="https://www.calvinklein.us/bags/structured-commuter-bag.html",
+            title="Structured Commuter Bag",
+        )
+        is None
+    )

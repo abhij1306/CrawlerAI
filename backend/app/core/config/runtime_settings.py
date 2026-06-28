@@ -24,26 +24,22 @@ PERFORMANCE_PROFILES: dict[str, dict[str, int]] = {
     "ULTRA_FAST": {
         "browser_fallback_visible_text_min": 1000,
         "challenge_wait_max_seconds": 3,
-        "origin_warm_pause_ms": 0,
         "surface_readiness_max_wait_ms": 3000,
     },
     "BALANCED": {
         "browser_fallback_visible_text_min": 500,
         "challenge_wait_max_seconds": 15,
-        "origin_warm_pause_ms": 500,
         "surface_readiness_max_wait_ms": 6000,
     },
     "STEALTH": {
         "browser_fallback_visible_text_min": 200,
         "challenge_wait_max_seconds": 15,
-        "origin_warm_pause_ms": 2000,
         "surface_readiness_max_wait_ms": 15000,
     },
 }
 _PROFILE_CONTROLLED_FIELDS = (
     "browser_fallback_visible_text_min",
     "challenge_wait_max_seconds",
-    "origin_warm_pause_ms",
     "surface_readiness_max_wait_ms",
 )
 _DEFAULT_CHROME_MAJOR_VERSION = 131
@@ -200,9 +196,6 @@ class CrawlerRuntimeSettings(BaseSettings):
     browser_behavior_typing_jitter_ms: int = 95
     surface_readiness_max_wait_ms: int | None = 6000
     surface_readiness_poll_ms: int = 250
-    origin_warm_pause_ms: int | None = 500
-    origin_warmup_max_budget_ratio: float = 0.25
-    origin_warmup_dedupe_ttl_seconds: float = 60.0
     browser_error_retry_attempts: int = 1
     browser_error_retry_delay_ms: int = 1000
     browser_post_block_cooldown_ms: int = 500
@@ -478,7 +471,6 @@ class CrawlerRuntimeSettings(BaseSettings):
         for field_name in (
             "browser_post_block_cooldown_ms",
             "browser_first_nav_pause_ms",
-            "origin_warmup_dedupe_ttl_seconds",
             "browser_accessibility_snapshot_timeout_seconds",
             "browser_retry_min_remaining_seconds",
             "browser_runtime_pool_idle_ttl_seconds",
@@ -507,7 +499,6 @@ class CrawlerRuntimeSettings(BaseSettings):
             )
         for field_name in (
             "browser_navigation_networkidle_primary_budget_ratio",
-            "origin_warmup_max_budget_ratio",
         ):
             _require_open_unit_interval(field_name, getattr(self, field_name))
 

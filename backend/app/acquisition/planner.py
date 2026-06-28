@@ -23,7 +23,6 @@ class PlanningRequest(BaseModel):
     force_httpx: bool = False
     required_artifacts: tuple[str, ...] = ()
     traversal_mode: str | None = None
-    warmup: bool = False
     interaction: bool = False
 
 
@@ -45,7 +44,6 @@ class AcquisitionPlanner:
                 attempt_id=f"{plan_id}-{index}-{transport}",
                 transport=transport,
                 proxy=proxy,
-                warmup=request.warmup and transport in {"patchright", "real_chrome"},
                 interaction=request.interaction
                 and transport in {"patchright", "real_chrome"},
                 traversal_mode=request.traversal_mode,

@@ -42,6 +42,71 @@ def test_ecommerce_public_variants_drop_width_only_artifacts_and_selected() -> N
     assert record["variant_count"] == 1
 
 
+def test_ecommerce_public_variants_keep_size_only_rows() -> None:
+    record, rejected = public_record_data_for_surface(
+        {
+            "title": "Classic Tee",
+            "url": "https://shop.test/products/classic-tee",
+            "variants": [
+                {"size": "S"},
+                {"size": "M"},
+                {"size": "L"},
+            ],
+        },
+        surface="ecommerce_detail",
+        page_url="https://shop.test/products/classic-tee",
+    )
+
+    assert rejected == {}
+    assert record["variants"] == [
+        {"size": "S"},
+        {"size": "M"},
+        {"size": "L"},
+    ]
+    assert record["variant_count"] == 3
+
+
+def test_ecommerce_public_variants_keep_color_only_rows() -> None:
+    record, rejected = public_record_data_for_surface(
+        {
+            "title": "Plain Mug",
+            "url": "https://shop.test/products/plain-mug",
+            "variants": [
+                {"color": "Red"},
+                {"color": "Blue"},
+            ],
+        },
+        surface="ecommerce_detail",
+        page_url="https://shop.test/products/plain-mug",
+    )
+
+    assert rejected == {}
+    assert record["variants"] == [
+        {"color": "Red"},
+        {"color": "Blue"},
+    ]
+    assert record["variant_count"] == 2
+
+
+def test_ecommerce_public_variants_drop_single_non_canonical_axis_rows() -> None:
+    record, rejected = public_record_data_for_surface(
+        {
+            "title": "Display Item",
+            "url": "https://shop.test/products/display",
+            "variants": [
+                {"material": "Cotton"},
+                {"type": "Premium"},
+            ],
+        },
+        surface="ecommerce_detail",
+        page_url="https://shop.test/products/display",
+    )
+
+    assert rejected == {"variants": "empty_after_coercion"}
+    assert "variants" not in record
+    assert "variant_count" not in record
+
+
 def test_ecommerce_detail_url_drops_revision_and_variant_query_keys() -> None:
     record, rejected = public_record_data_for_surface(
         {

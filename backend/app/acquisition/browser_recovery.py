@@ -12,10 +12,17 @@ from app.core.config.runtime_settings import crawler_runtime_settings
 from app.core.config.selectors import (
     ANCHOR_SELECTOR,
     CARD_SELECTORS,
+    CLOUDFLARE_TURNSTILE_SELECTORS,
     LISTING_CAPTURE_STRUCTURAL_ANCESTOR_SELECTORS,
 )
 
 logger = logging.getLogger(__name__)
+
+# Re-click the Turnstile checkbox at most once every N polls while the
+# challenge remains unsolved. Managed challenges sometimes re-render the
+# widget; a single click can land before the iframe is interactive, so we
+# retry on a cooldown rather than spamming a click every poll.
+_TURNSTILE_RECLICK_COOLDOWN_POLLS = 3
 
 
 @dataclass(slots=True)
@@ -29,6 +36,8 @@ class _ChallengeRecoveryContext:
     classify_blocked_page: Any
     get_page_html: Any
     looks_like_low_content_shell: Any
+    clicked_turnstile: bool = False
+    polls_since_turnstile_click: int = 0
 
 
 async def _run_before_deadline(
@@ -93,6 +102,10 @@ async def _poll_challenge(
             recovered, terminal_hard_block = state
             if recovered is not None or terminal_hard_block:
                 break
+        await _run_before_deadline(
+            lambda: _maybe_click_turnstile(context),
+            deadline=deadline,
+        )
         await _run_before_deadline(
             lambda: _emit_challenge_activity(context.page),
             deadline=deadline,
@@ -245,6 +258,59 @@ def _challenge_has_cleared(
     return False
 
 
+# Interstitial copy that marks an interactive (solvable) "wait while we check
+# you" challenge — Cloudflare's "Just a moment..." / "Checking your browser..."
+# managed challenge. These phrases are unique to interactive interstitials;
+# terminal denials say "Access Denied" / "you have been blocked" instead. The
+# Turnstile widget renders a beat after this shell paints, so on the first poll
+# the only signal present is this copy — without recognizing it as solvable the
+# recovery loop mistakes the page for a terminal hard block and bails before the
+# widget can be clicked.
+_INTERACTIVE_CHALLENGE_MARKERS = (
+    "just a moment",
+    "checking your browser",
+    "checking if the site connection",
+)
+
+
+def _is_solvable_interactive_challenge(classification: Any) -> bool:
+    """An interactive "wait while we verify you" challenge is solvable, not terminal.
+
+    Kept narrow on purpose (the user's "only for particular pages, not all
+    blocked pages"): it fires on the Cloudflare interstitial copy, or on a
+    Cloudflare-branded challenge whose Turnstile element is already present, so
+    genuine terminal denials (Akamai/PerimeterX "Access Denied") still fail fast.
+    """
+    strong = {
+        str(item).strip().lower()
+        for item in getattr(classification, "strong_hits", None) or []
+    }
+    title_blob = " ".join(
+        str(item).strip().lower()
+        for item in getattr(classification, "title_matches", None) or []
+    )
+    marker_blob = " ".join(sorted(strong)) + " " + title_blob
+    if any(marker in marker_blob for marker in _INTERACTIVE_CHALLENGE_MARKERS):
+        return True
+    # Fallback: the interstitial copy may not have painted (or may be localized),
+    # but a Cloudflare-branded managed challenge whose Turnstile iframe/stage is
+    # already in the DOM is still solvable.
+    providers = {
+        str(item).strip().lower()
+        for item in getattr(classification, "provider_hits", None) or []
+    } | {
+        str(item).strip().lower()
+        for item in getattr(classification, "active_provider_hits", None) or []
+    }
+    is_cloudflare = bool(
+        {"cloudflare", "cf-challenge", "cf-browser-verification"} & providers
+    )
+    has_challenge_element = bool(
+        getattr(classification, "challenge_element_hits", None)
+    )
+    return is_cloudflare and has_challenge_element
+
+
 def _is_terminal_hard_block(classification: Any) -> bool:
     """A terminal hard block is a final denial page, not a solvable challenge.
 
@@ -254,6 +320,11 @@ def _is_terminal_hard_block(classification: Any) -> bool:
     burning the full challenge budget on a page that will never change.
     """
     if not bool(getattr(classification, "blocked", False)):
+        return False
+    # A Cloudflare interactive challenge looks terminal on the first poll (title
+    # marker, no rendered widget yet) but is solvable — keep waiting so the
+    # Turnstile renders and gets clicked.
+    if _is_solvable_interactive_challenge(classification):
         return False
     has_terminal_evidence = bool(
         getattr(classification, "title_matches", None)
@@ -426,6 +497,124 @@ async def _emit_challenge_activity(page: Any) -> None:
             await wheel(0, settings.scroll_px)
     except Exception:
         return
+
+
+async def _find_turnstile_box(page: Any) -> dict[str, float] | None:
+    """Return the bounding box of the first visible Cloudflare Turnstile widget.
+
+    Cross-origin Turnstile renders inside a ``challenges.cloudflare.com`` iframe;
+    we cannot reach into it, but the element handle's bounding box gives us the
+    on-page coordinates so a real mouse click can land on the checkbox.
+    """
+    query = getattr(page, "query_selector", None)
+    if not callable(query):
+        return None
+    for selector in CLOUDFLARE_TURNSTILE_SELECTORS:
+        try:
+            handle = await query(selector)
+        except Exception:
+            continue
+        if handle is None:
+            continue
+        try:
+            box = await handle.bounding_box()
+        except Exception:
+            box = None
+        if (
+            isinstance(box, dict)
+            and float(box.get("width") or 0) > 0
+            and float(box.get("height") or 0) > 0
+        ):
+            return {
+                "x": float(box.get("x") or 0),
+                "y": float(box.get("y") or 0),
+                "width": float(box["width"]),
+                "height": float(box["height"]),
+            }
+    return None
+
+
+async def _move_mouse_toward(
+    page: Any, mouse: Any, target_x: float, target_y: float
+) -> None:
+    move = getattr(mouse, "move", None)
+    if not callable(move):
+        return
+    settings = _challenge_activity_settings()
+    steps = max(2, settings.steps)
+    viewport = await _challenge_viewport(page)
+    if viewport is not None:
+        width, height = viewport
+        pad = settings.edge_padding
+
+        def clamp_x(value: float) -> int:
+            return _clamp_mouse_coordinate(int(value), width, pad)
+
+        def clamp_y(value: float) -> int:
+            return _clamp_mouse_coordinate(int(value), height, pad)
+    else:
+
+        def clamp_x(value: float) -> int:
+            return max(0, int(value))
+
+        def clamp_y(value: float) -> int:
+            return max(0, int(value))
+
+    start_x = clamp_x(target_x - 120 + secrets.randbelow(60))
+    start_y = clamp_y(target_y - 90 + secrets.randbelow(60))
+    await move(start_x, start_y)
+    _mark_mouse_move(mouse)
+    for step_index in range(1, steps + 1):
+        progress = step_index / steps
+        x = clamp_x(start_x + (target_x - start_x) * progress + secrets.randbelow(5) - 2)
+        y = clamp_y(start_y + (target_y - start_y) * progress + secrets.randbelow(5) - 2)
+        await move(x, y)
+        _mark_mouse_move(mouse)
+        await page.wait_for_timeout(secrets.randbelow(20) + 8)
+
+
+async def _attempt_turnstile_click(page: Any) -> bool:
+    """Best-effort click on the Cloudflare Turnstile checkbox.
+
+    Turnstile renders its checkbox at the left of the widget, vertically
+    centered, so we aim just inside the left edge. Fully guarded — any failure
+    (no widget, no mouse, navigation mid-click) is swallowed and reported as
+    "no click issued" so the polling loop simply continues waiting.
+    """
+    box = await _find_turnstile_box(page)
+    if box is None:
+        return False
+    mouse = getattr(page, "mouse", None)
+    click = getattr(mouse, "click", None)
+    if not callable(click):
+        return False
+    target_x = box["x"] + min(30.0, box["width"] / 2)
+    target_y = box["y"] + box["height"] / 2
+    try:
+        await _move_mouse_toward(page, mouse, target_x, target_y)
+        await click(target_x, target_y)
+        _mark_mouse_move(mouse)
+    except Exception:
+        logger.debug("Turnstile click attempt failed", exc_info=True)
+        return False
+    return True
+
+
+async def _maybe_click_turnstile(context: _ChallengeRecoveryContext) -> None:
+    if context.clicked_turnstile:
+        if context.polls_since_turnstile_click < _TURNSTILE_RECLICK_COOLDOWN_POLLS:
+            context.polls_since_turnstile_click += 1
+            return
+        # Cooldown elapsed: attempt one reclick and reset regardless of outcome
+        # so a failed reclick waits another full cooldown window instead of
+        # spamming attempts every poll.
+        await _attempt_turnstile_click(context.page)
+        context.polls_since_turnstile_click = 0
+        return
+    clicked = await _attempt_turnstile_click(context.page)
+    if clicked:
+        context.clicked_turnstile = True
+        context.polls_since_turnstile_click = 0
 
 
 async def emit_browser_behavior_activity(page: Any) -> dict[str, object]:

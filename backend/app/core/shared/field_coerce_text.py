@@ -290,6 +290,41 @@ def infer_brand_from_product_url(*, url: str, title: object) -> str | None:
                 and all(re.search(r"[a-z]", token) for token in brand_tokens)
             ):
                 return " ".join(token.capitalize() for token in brand_tokens)
+    path_token_set = {token for part in path_parts for token in slug_tokens(part)}
+    words = text.split()
+    # Marketplace fallback: when the title's first two slug tokens are also the
+    # leading two tokens of a long product-slug path segment (>=5 tokens), treat
+    # the title's first stop-free word as the brand. The 5-token floor avoids
+    # firing on short brand-host slugs like calvinklein.us/bags/structured-
+    # commuter-bag.html (3 tokens), where the title leads with a product
+    # descriptor and the host carries the brand. Long marketplace product slugs
+    # (StockX/Nike, Firstcry/Babyhug, Chewy/Wellness) clear the floor. Runs
+    # before the all-caps fallback so "Wellness CORE+" returns "Wellness", not
+    # the all-caps product-line token "CORE+".
+    leading_word = words[0].strip(" |-–—'") if words else ""
+    title_anchor = title_parts[:2]
+    if (
+        len(title_anchor) == 2
+        and first_token not in DETAIL_BRAND_PREFIX_STOP_TOKENS
+        and leading_word
+        and leading_word[:1].isupper()
+        and any(
+            len(tokens := slug_tokens(part)) >= 5 and tokens[:2] == title_anchor
+            for part in path_parts
+        )
+    ):
+        return leading_word
+    for index, original in enumerate(words):
+        token = "".join(slug_tokens(original))
+        next_token = "".join(slug_tokens(words[index + 1])) if index + 1 < len(words) else ""
+        if (
+            len(token) >= 3
+            and token in path_token_set
+            and token not in DETAIL_BRAND_PREFIX_STOP_TOKENS
+            and original.strip("'-").isupper()
+            and not re.fullmatch(r"[A-Za-z]{1,3}\d{1,4}[A-Za-z0-9]*", next_token)
+        ):
+            return original.strip(" |-–—'")
     return None
 
 

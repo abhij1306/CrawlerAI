@@ -160,7 +160,8 @@ def _offers(
     for index, row in enumerate(rows):
         if not isinstance(row, dict):
             continue
-        group = f"offer:{artifact_id}:{path}/offers/{index}"
+        offer_path = f"{path}/offers/{index}"
+        group = f"offer:{artifact_id}:{offer_path}"
         subject_id = group
         for key, fact in ECOMMERCE_JSONLD_OFFER_FACT_TYPES.items():
             value = text_value(row.get(key))
@@ -173,7 +174,7 @@ def _offers(
                         fact,
                         value,
                         SourceLocator(
-                            kind="json_pointer", value=f"{path}/offers/{index}/{key}"
+                            kind="json_pointer", value=f"{offer_path}/{key}"
                         ),
                         group_id=group,
                         hint=hint,
@@ -184,6 +185,17 @@ def _offers(
                         parent_scope=parent_scope,
                     )
                 )
+        out.extend(
+            _offers(
+                bundle,
+                artifact_id,
+                row.get("offers"),
+                offer_path,
+                hint,
+                parent_subject_id,
+                parent_scope,
+            )
+        )
     return out
 
 

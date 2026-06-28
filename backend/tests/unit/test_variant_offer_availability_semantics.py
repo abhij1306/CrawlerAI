@@ -98,6 +98,90 @@ def test_real_variant_with_sku_remains_variant() -> None:
     assert entities.variants[0].identity_key == "sku:SKU-S"
 
 
+def test_size_only_variant_identity_merges_with_single_color_size_counterpart() -> None:
+    bundle = _bundle()
+    rows = (
+        _product(bundle),
+        evidence(
+            bundle,
+            "artifact-1",
+            "js_state",
+            "variant.id",
+            "id-6",
+            SourceLocator(kind="json_pointer", value="/skus/0/id"),
+            hint=EntityHint(entity_type="variant", variant_id="id-6"),
+            subject_id="variant-size-6",
+            parent_subject_id="product-1",
+        ),
+        evidence(
+            bundle,
+            "artifact-1",
+            "js_state",
+            "variant.sku",
+            "sku-6",
+            SourceLocator(kind="json_pointer", value="/skus/0/sku"),
+            hint=EntityHint(entity_type="variant", sku="sku-6"),
+            subject_id="variant-size-6",
+            parent_subject_id="product-1",
+        ),
+        evidence(
+            bundle,
+            "artifact-1",
+            "js_state",
+            "variant.option.size",
+            "6",
+            SourceLocator(kind="json_pointer", value="/skus/0/size"),
+            hint=EntityHint(entity_type="variant", variant_id="id-6"),
+            subject_id="variant-size-6",
+            parent_subject_id="product-1",
+        ),
+        evidence(
+            bundle,
+            "artifact-1",
+            "js_state",
+            "variant.gtin",
+            "00194500874886",
+            SourceLocator(kind="json_pointer", value="/availability/0/gtin"),
+            hint=EntityHint(entity_type="variant"),
+            subject_id="variant-white-6",
+            parent_subject_id="product-1",
+        ),
+        evidence(
+            bundle,
+            "artifact-1",
+            "js_state",
+            "variant.option.color",
+            "White/White",
+            SourceLocator(kind="json_pointer", value="/availability/0/color"),
+            hint=EntityHint(entity_type="variant"),
+            subject_id="variant-white-6",
+            parent_subject_id="product-1",
+        ),
+        evidence(
+            bundle,
+            "artifact-1",
+            "js_state",
+            "variant.option.size",
+            "6",
+            SourceLocator(kind="json_pointer", value="/availability/0/size"),
+            hint=EntityHint(entity_type="variant"),
+            subject_id="variant-white-6",
+            parent_subject_id="product-1",
+        ),
+    )
+
+    entities = build_entities(bundle, rows)
+
+    assert len(entities.variants) == 1
+    variant = entities.variants[0]
+    assert variant.option_values == {"color": "White/White", "size": "6"}
+    assert set(variant.attribute_evidence) >= {
+        "variant.id",
+        "variant.sku",
+        "variant.gtin",
+    }
+
+
 def test_mixed_product_and_variant_offer_ownership_is_rejected() -> None:
     bundle = _bundle()
     rows = (

@@ -51,11 +51,6 @@ from app.core.config.extraction_rules import (
     DETAIL_TITLE_REJECTION_FLAGS,
     DETAIL_TITLE_REJECT_SUFFIXES,
     DETAIL_TITLE_REJECT_VALUES,
-    DETAIL_TITLE_MARKETPLACE_CATEGORY_SUFFIX_PATTERN,
-    DETAIL_TITLE_MARKETPLACE_PREFIX_PATTERN,
-    DETAIL_TITLE_SEO_POLLUTION_PATTERN,
-    DETAIL_TITLE_SEO_PREFIXES,
-    DETAIL_TITLE_SEO_PREFIX_MIN_WORDS,
     DETAIL_TITLE_SHORT_NAVIGATION_PATTERN,
     DETAIL_TITLE_STYLE_ONLY_MAX_WORDS,
     DETAIL_TITLE_STYLE_ONLY_TOKENS,
@@ -78,10 +73,14 @@ from app.extraction.ids import stable_id
 from app.extraction.materialization import materialize
 from app.core.records.url_identity import (
     detail_title_from_url,
+    detail_title_has_seo_pollution,
+    detail_title_is_url_corroborated_style_code,
     detail_url_looks_like_product,
+    normalize_detail_marketplace_title,
     semantic_detail_identity_tokens,
     semantic_identity_tokens,
 )
+from app.core.shared.currency_hints import currency_hint_from_page_url
 from app.core.shared.field_coerce_price import repair_price_unit
 from app.core.shared.field_coerce_text import (
     coerce_brand_text,
@@ -90,7 +89,7 @@ from app.core.shared.field_coerce_text import (
     infer_brand_from_title_host,
     infer_brand_from_title_marker,
 )
-from app.extraction.entities import EntitySet
+from app.extraction.entities import EntitySet, style_sku_from_product_url
 
 
 def collect_ecommerce_detail(
@@ -131,10 +130,11 @@ def normalize_ecommerce_detail(
         row
         for ev in normalized
         for row in (
-            _currency_from_price_symbol(ev),
+            _currency_from_price_symbol(ev, page_url=page_url),
             _brand_from_title_host(ev, page_url=page_url),
             _brand_from_product_url(ev, page_url=page_url),
             _brand_from_title_marker(ev),
+            style_sku_from_product_url(ev, page_url=page_url),
             _availability_from_stock_quantity(ev),
         )
         if row is not None
@@ -678,7 +678,7 @@ def normalize_evidence(evidence: Evidence, *, page_url: str) -> Evidence:
     if evidence.fact_type == field_mappings.PRODUCT_TITLE_FACT_TYPE and isinstance(
         value, str
     ):
-        value = _normalize_marketplace_title(value)
+        value = normalize_detail_marketplace_title(value)
         title_locator = str(evidence.locator.value or "").casefold()
         if any(
             token in title_locator for token in DETAIL_TITLE_NON_PRODUCT_LOCATOR_TOKENS
@@ -712,22 +712,6 @@ def _normalize_brand_value(value: str, flags: set[str]) -> str:
     if re.fullmatch(DETAIL_BRAND_CATEGORY_PATTERN, normalized, re.IGNORECASE):
         flags.add("category_as_brand")
     return normalized
-
-
-def _normalize_marketplace_title(value: str) -> str:
-    normalized = re.sub(
-        DETAIL_TITLE_MARKETPLACE_PREFIX_PATTERN,
-        "",
-        value,
-        flags=re.IGNORECASE,
-    )
-    normalized = re.sub(
-        DETAIL_TITLE_MARKETPLACE_CATEGORY_SUFFIX_PATTERN,
-        "",
-        normalized,
-        flags=re.IGNORECASE,
-    )
-    return normalized.strip()
 
 
 def _flag_description_value(evidence: Evidence, value: str, flags: set[str]) -> None:
@@ -799,12 +783,16 @@ def _title_flags(evidence: Evidence, *, value: str, page_url: str) -> set[str]:
         DETAIL_TITLE_ENDPOINT_FILENAME_PATTERN, value.strip(), re.IGNORECASE
     ):
         flags.add("filename_title")
+    url_contains_title_code = detail_title_is_url_corroborated_style_code(value, page_url)
     if (
-        re.fullmatch(DETAIL_TITLE_CODE_ONLY_PATTERN, value.strip())
-        or re.fullmatch(DETAIL_TITLE_IDENTIFIER_ONLY_PATTERN, value.strip())
-        or re.fullmatch(
-            DETAIL_TITLE_INTERNAL_SYSTEM_PATTERN, value.strip(), re.IGNORECASE
+        (
+            re.fullmatch(DETAIL_TITLE_CODE_ONLY_PATTERN, value.strip())
+            or re.fullmatch(DETAIL_TITLE_IDENTIFIER_ONLY_PATTERN, value.strip())
+            or re.fullmatch(
+                DETAIL_TITLE_INTERNAL_SYSTEM_PATTERN, value.strip(), re.IGNORECASE
+            )
         )
+        and not url_contains_title_code
     ):
         flags.add("code_only_title")
     if re.fullmatch(DETAIL_TITLE_MEASUREMENT_PATTERN, value.strip(), re.IGNORECASE):
@@ -833,10 +821,7 @@ def _title_flags(evidence: Evidence, *, value: str, page_url: str) -> set[str]:
         DETAIL_TITLE_SHORT_NAVIGATION_PATTERN, value.strip(), re.IGNORECASE
     ):
         flags.add("generic_title")
-    if re.search(DETAIL_TITLE_SEO_POLLUTION_PATTERN, value, re.IGNORECASE) or (
-        len(words) >= DETAIL_TITLE_SEO_PREFIX_MIN_WORDS
-        and value.casefold().startswith(DETAIL_TITLE_SEO_PREFIXES)
-    ):
+    if detail_title_has_seo_pollution(value, str(evidence.raw_value or ""), words):
         flags.add("seo_title_pollution")
     if (
         len(set(words) & DETAIL_TITLE_UI_INSTRUCTION_TOKENS)
@@ -855,7 +840,9 @@ def _title_flags(evidence: Evidence, *, value: str, page_url: str) -> set[str]:
             len(title_tokens),
         )
         flags.add(
-            "title_url_match" if overlap >= required_overlap else "title_url_mismatch"
+            "title_url_match"
+            if overlap >= required_overlap or url_contains_title_code
+            else "title_url_mismatch"
         )
     return flags
 
@@ -999,35 +986,43 @@ def _brand_from_title_marker(evidence: Evidence) -> Evidence | None:
     )
 
 
-def _currency_from_price_symbol(evidence: Evidence) -> Evidence | None:
-    if evidence.fact_type != field_mappings.OFFER_PRICE_FACT_TYPE or not isinstance(
-        evidence.raw_value, str
-    ):
+def _currency_from_price_symbol(
+    evidence: Evidence, *, page_url: str = ""
+) -> Evidence | None:
+    if evidence.fact_type != field_mappings.OFFER_PRICE_FACT_TYPE:
         return None
-    currencies = {
-        str(currency)
-        for symbol, currency in CURRENCY_SYMBOL_MAP.items()
-        if str(symbol) in evidence.raw_value
-    }
-    if len(currencies) != 1:
+    raw = evidence.raw_value if isinstance(evidence.raw_value, str) else ""
+    symbols = {str(c) for s, c in CURRENCY_SYMBOL_MAP.items() if str(s) in raw}
+    if len(symbols) == 1:
+        currency, derived_by, confidence, extra = (
+            symbols.pop(),
+            "currency_from_price_symbol",
+            min(float(evidence.confidence), 0.85),
+            {},
+        )
+    elif (host_currency := currency_hint_from_page_url(page_url)):
+        # Host hint (firstcry.com → INR); outranked by explicit currency via tiebreakers.
+        currency, derived_by, confidence, extra = (
+            host_currency,
+            "currency_from_page_url_hint",
+            min(float(evidence.confidence), 0.5),
+            {"directness": "inferred", "collector_id": "url"},
+        )
+    else:
         return None
-    currency = currencies.pop()
     return evidence.model_copy(
         update={
             "evidence_id": stable_id(
-                "ev",
-                evidence.bundle_id,
-                evidence.evidence_id,
-                "currency_from_price_symbol",
-                currency,
+                "ev", evidence.bundle_id, evidence.evidence_id, derived_by, currency
             ),
             "fact_type": field_mappings.OFFER_CURRENCY_FACT_TYPE,
             "raw_value": currency,
             "value": currency,
-            "confidence": min(float(evidence.confidence), 0.85),
+            "confidence": confidence,
+            **extra,
             "metadata": {
                 **dict(evidence.metadata),
-                "derived_by": "currency_from_price_symbol",
+                "derived_by": derived_by,
                 "input_evidence_id": evidence.evidence_id,
             },
         }

@@ -120,6 +120,7 @@ BLOCK_SIGNATURES = {
     "challenge_elements": {
         "iframe_src_markers": {
             "captcha-delivery.com": "captcha_delivery_iframe",
+            "challenges.cloudflare.com": "cloudflare_turnstile_iframe",
         },
         "iframe_title_markers": {
             "captcha": "captcha_titled_iframe",

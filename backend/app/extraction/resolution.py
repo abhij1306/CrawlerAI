@@ -178,23 +178,15 @@ def _resolve_offer(
     evidence_by_id: dict[str, Evidence],
     findings: tuple[Finding, ...],
 ) -> tuple[Decision, ...]:
-    incomplete_parent = offer.variant_entity_id is None and not (
-        offer.fact_evidence.get(field_mappings.OFFER_PRICE_FACT_TYPE)
-        and offer.fact_evidence.get(field_mappings.OFFER_CURRENCY_FACT_TYPE)
-    )
-    blocked = (
-        {
-            field_mappings.OFFER_PRICE_FACT_TYPE,
-            field_mappings.OFFER_CURRENCY_FACT_TYPE,
-            field_mappings.OFFER_ORIGINAL_PRICE_FACT_TYPE,
-        }
-        if incomplete_parent
-        else set()
-    )
+    # Each offer fact resolves independently. A previous guard blocked
+    # price + currency + original_price together when a parent offer was
+    # missing either price or currency evidence; that all-or-nothing gate
+    # silently dropped real prices whenever currency evidence (often only
+    # implicit via host/locale) wasn't collected. Currency inference from
+    # the page URL happens downstream in the enrichment layer.
     return tuple(
         _resolve_scalar(offer.entity_id, fact, ids, evidence_by_id, findings)
         for fact, ids in sorted(offer.fact_evidence.items())
-        if fact not in blocked
     )
 
 
@@ -314,11 +306,22 @@ def _resolve_asset(
     evidence_by_id: dict[str, Evidence],
     findings: tuple[Finding, ...],
 ) -> Decision:
-    if any(
-        _invalid_primary_asset_url(evidence_by_id[eid].value)
+    # Dangling evidence IDs (referenced by the asset but absent from
+    # evidence_by_id) are treated as invalid so the primary-asset rejection
+    # path triggers correctly when no usable evidence remains.
+    invalid_ids = tuple(
+        eid
+        for eid in asset.url_evidence_ids
+        if eid not in evidence_by_id
+        or _invalid_primary_asset_url(evidence_by_id[eid].value)
+    )
+    valid_ids = tuple(
+        eid
         for eid in asset.url_evidence_ids
         if eid in evidence_by_id
-    ):
+        and not _invalid_primary_asset_url(evidence_by_id[eid].value)
+    )
+    if invalid_ids and not valid_ids:
         return Decision(
             decision_id=stable_id(
                 "decision",
@@ -340,7 +343,7 @@ def _resolve_asset(
     return _resolve_scalar(
         asset.entity_id,
         field_mappings.ASSET_IMAGE_URL_FACT_TYPE,
-        asset.url_evidence_ids,
+        valid_ids,
         evidence_by_id,
         findings,
     )
@@ -361,7 +364,7 @@ def _resolve_product_assets(
         for asset in assets
         if asset.variant_entity_id is None
         for accepted in [_accepted_asset_evidence(asset, evidence_by_id)]
-        for rank in [_asset_rank(asset, accepted, evidence_by_id)]
+        for rank in [_asset_rank(asset, accepted)]
     ]
     valid = [
         (rank, asset, accepted)
@@ -458,6 +461,7 @@ def _accepted_asset_evidence(
     return min(
         candidates,
         key=lambda row: (
+            int(_invalid_primary_asset_url(row.value)),
             int(urlsplit(str(row.value)).scheme.casefold() != "https"),
             -_asset_requested_dimension(row.value),
             _rank(row),
@@ -480,8 +484,8 @@ def _asset_requested_dimension(value: object) -> int:
 def _asset_rank(
     asset: AssetEntity,
     accepted: Evidence | None,
-    evidence_by_id: dict[str, Evidence],
 ) -> tuple[
+    int,
     int,
     int,
     int,
@@ -489,26 +493,16 @@ def _asset_rank(
     str,
 ]:
     if accepted is None:
-        return (99, 99, 99, (99, 99, 99, 0.0, ""), asset.entity_id)
+        return (99, 99, 99, 99, (99, 99, 99, 0.0, ""), asset.entity_id)
+    # Rank using only the accepted evidence so an asset's global ordering
+    # reflects the quality of its chosen URL, not the best of any (possibly
+    # rejected) evidence collected for that asset.
     role = _asset_role_rank(str(accepted.value))
-    source_order = min(
-        (
-            _asset_source_order(evidence_by_id[eid])
-            for eid in asset.url_evidence_ids
-            if eid in evidence_by_id
-        ),
-        default=99,
-    )
-    source_rank = min(
-        (
-            _rank(evidence_by_id[eid])
-            for eid in asset.url_evidence_ids
-            if eid in evidence_by_id
-        ),
-        default=_rank(accepted),
-    )
+    collector_rank = _asset_collector_rank(accepted)
+    source_order = _asset_source_order(accepted)
+    source_rank = _rank(accepted)
     insecure_scheme = int(urlsplit(str(accepted.value)).scheme.casefold() != "https")
-    return role, source_order, insecure_scheme, source_rank, asset.entity_id
+    return role, collector_rank, source_order, insecure_scheme, source_rank, asset.entity_id
 
 
 def _asset_role_rank(url: str) -> int:
@@ -527,6 +521,19 @@ def _asset_source_order(ev: Evidence) -> int:
         if token.isdigit():
             return int(token)
     return 99
+
+
+def _asset_collector_rank(ev: Evidence) -> int:
+    return {
+        "jsonld": 0,
+        "opengraph": 1,
+        "microdata": 2,
+        "dom": 3,
+        "css_recipe": 3,
+        "js_state": 4,
+        "network": 5,
+        "url": 6,
+    }.get(ev.collector_id, 9)
 
 
 def _resolve_scalar(
@@ -732,6 +739,7 @@ def _rank(ev: Evidence) -> tuple[object, ...]:
             ev.evidence_id,
         )
     if ev.fact_type == field_mappings.PRODUCT_BRAND_FACT_TYPE:
+        derived_penalty = int(bool(ev.metadata.get("derived_by")))
         derived_rank = {
             "brand_from_product_url": 0,
             "brand_from_title_marker": 1,
@@ -739,8 +747,9 @@ def _rank(ev: Evidence) -> tuple[object, ...]:
             "brand_from_title_host": 3,
         }.get(str(ev.metadata.get("derived_by") or ""), 1)
         return (
-            directness,
+            derived_penalty,
             reliability,
+            directness,
             derived_rank,
             -float(ev.confidence),
             ev.evidence_id,

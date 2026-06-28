@@ -5,9 +5,11 @@ import re
 from app.core.config.field_mappings import (
     AVAILABILITY_FIELD,
     BARCODE_FIELD,
+    COLOR_FIELD,
     CURRENCY_FIELD,
     IMAGE_URL_FIELD,
     PRICE_FIELD,
+    SIZE_FIELD,
     SKU_FIELD,
     STOCK_QUANTITY_FIELD,
     URL_FIELD,
@@ -169,6 +171,7 @@ def sanitize_materialized_record(
     if "availability" in record and not public_availability(record.get("availability")):
         record.pop("availability", None)
         lineages.pop("availability", None)
+    _enforce_atomic_price_currency(record, lineages)
 
     variants = record.get("variants")
     if not isinstance(variants, list):
@@ -207,6 +210,26 @@ def sanitize_materialized_record(
     lineages.pop("variants", None)
 
 
+def _enforce_atomic_price_currency(
+    record: dict[str, object], lineages: dict[str, object]
+) -> None:
+    # Atomic price+currency contract: a bare price without currency is
+    # ambiguous, and an orphan currency without price has nothing to anchor
+    # to. Resolution surfaces each fact independently; the atomic guarantee
+    # is enforced here so upstream currency inference (symbol derivation,
+    # host hint) has a chance to fill the gap before this guard fires.
+    has_price = record.get("price") not in (None, "", [], {}, ())
+    has_currency = record.get("currency") not in (None, "", [], {}, ())
+    if has_price and not has_currency:
+        for field in ("price", "original_price", "price_min", "price_max"):
+            record.pop(field, None)
+            lineages.pop(field, None)
+        return
+    if has_currency and not has_price:
+        record.pop("currency", None)
+        lineages.pop("currency", None)
+
+
 def _variant_row_is_actionable(row: dict[str, object]) -> bool:
     transport_fields = {
         "variant_id",
@@ -226,7 +249,13 @@ def _variant_row_is_actionable(row: dict[str, object]) -> bool:
         for key, value in row.items()
         if key in PUBLIC_VARIANT_AXIS_FIELDS and value not in (None, "", [], {}, ())
     }
-    return len(axes) >= 2
+    if len(axes) >= 2:
+        return True
+    # Single-axis rows survive when the axis is one of the canonical retail
+    # variant axes (size / color) — the dominant Shopify/PDP shape. Aligns
+    # with the public firewall's sellability rule so size-only / color-only
+    # variants aren't silently dropped before they reach the firewall.
+    return bool(axes & {SIZE_FIELD, COLOR_FIELD})
 
 
 def public_availability(value: object) -> str:
