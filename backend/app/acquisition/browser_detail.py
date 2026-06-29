@@ -276,9 +276,7 @@ def _candidate_is_admitted(
         ("#", "javascript:", "mailto:", "tel:")
     )
     navigational = (
-        tag_name == "a"
-        and (opens_new_context or real_link)
-        and not size_toggle
+        tag_name == "a" and (opens_new_context or real_link) and not size_toggle
     )
     blocked = (
         any(token in keyword_probe for token in DETAIL_BLOCKED_TOKENS)

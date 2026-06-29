@@ -81,12 +81,19 @@ def style_sku_from_product_url(evidence: Evidence, *, page_url: str) -> Evidence
         return None
     metadata = dict(evidence.metadata)
     metadata.update(
-        {"derived_by": "sku_from_url_style_code", "input_evidence_id": evidence.evidence_id}
+        {
+            "derived_by": "sku_from_url_style_code",
+            "input_evidence_id": evidence.evidence_id,
+        }
     )
     return evidence.model_copy(
         update={
             "evidence_id": stable_id(
-                "ev", evidence.bundle_id, evidence.evidence_id, "sku_from_url_style_code", code
+                "ev",
+                evidence.bundle_id,
+                evidence.evidence_id,
+                "sku_from_url_style_code",
+                code,
             ),
             "fact_type": field_mappings.PRODUCT_SKU_FACT_TYPE,
             "raw_value": code,

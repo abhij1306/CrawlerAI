@@ -23,6 +23,8 @@ from app.extraction.contracts import (
     CommerceVariantRecord,
 )
 
+_PRICE_FACT_FIELDS = (PRICE_FIELD, "original_price", "price_min", "price_max")
+
 
 def typed_detail_record(record: dict[str, object]) -> CommerceDetailRecord:
     cleaned = {
@@ -218,10 +220,12 @@ def _enforce_atomic_price_currency(
     # to. Resolution surfaces each fact independently; the atomic guarantee
     # is enforced here so upstream currency inference (symbol derivation,
     # host hint) has a chance to fill the gap before this guard fires.
-    has_price = record.get("price") not in (None, "", [], {}, ())
+    has_price = any(
+        record.get(field) not in (None, "", [], {}, ()) for field in _PRICE_FACT_FIELDS
+    )
     has_currency = record.get("currency") not in (None, "", [], {}, ())
     if has_price and not has_currency:
-        for field in ("price", "original_price", "price_min", "price_max"):
+        for field in _PRICE_FACT_FIELDS:
             record.pop(field, None)
             lineages.pop(field, None)
         return

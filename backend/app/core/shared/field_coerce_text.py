@@ -303,20 +303,37 @@ def infer_brand_from_product_url(*, url: str, title: object) -> str | None:
     # the all-caps product-line token "CORE+".
     leading_word = words[0].strip(" |-–—'") if words else ""
     title_anchor = title_parts[:2]
+    matching_title_anchor_index = next(
+        (
+            index
+            for index, part in enumerate(path_parts)
+            if len(tokens := slug_tokens(part)) >= 5 and tokens[:2] == title_anchor
+        ),
+        -1,
+    )
+    leading_word_token = "".join(slug_tokens(leading_word))
+    has_product_id_signal = any(re.search(r"\d", part) for part in path_parts)
+    has_brand_route_signal = (
+        matching_title_anchor_index == 0 and has_product_id_signal
+    ) or (
+        matching_title_anchor_index > 0
+        and slug_tokens(path_parts[matching_title_anchor_index - 1])
+        == [leading_word_token]
+    )
     if (
         len(title_anchor) == 2
         and first_token not in DETAIL_BRAND_PREFIX_STOP_TOKENS
         and leading_word
         and leading_word[:1].isupper()
-        and any(
-            len(tokens := slug_tokens(part)) >= 5 and tokens[:2] == title_anchor
-            for part in path_parts
-        )
+        and leading_word_token
+        and has_brand_route_signal
     ):
         return leading_word
     for index, original in enumerate(words):
         token = "".join(slug_tokens(original))
-        next_token = "".join(slug_tokens(words[index + 1])) if index + 1 < len(words) else ""
+        next_token = (
+            "".join(slug_tokens(words[index + 1])) if index + 1 < len(words) else ""
+        )
         if (
             len(token) >= 3
             and token in path_token_set

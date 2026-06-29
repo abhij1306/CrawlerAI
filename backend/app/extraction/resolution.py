@@ -502,7 +502,14 @@ def _asset_rank(
     source_order = _asset_source_order(accepted)
     source_rank = _rank(accepted)
     insecure_scheme = int(urlsplit(str(accepted.value)).scheme.casefold() != "https")
-    return role, collector_rank, source_order, insecure_scheme, source_rank, asset.entity_id
+    return (
+        role,
+        collector_rank,
+        source_order,
+        insecure_scheme,
+        source_rank,
+        asset.entity_id,
+    )
 
 
 def _asset_role_rank(url: str) -> int:

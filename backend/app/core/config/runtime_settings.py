@@ -497,9 +497,7 @@ class CrawlerRuntimeSettings(BaseSettings):
             raise ValueError(
                 "browser_behavior_scroll_max_px must be >= browser_behavior_scroll_min_px"
             )
-        for field_name in (
-            "browser_navigation_networkidle_primary_budget_ratio",
-        ):
+        for field_name in ("browser_navigation_networkidle_primary_budget_ratio",):
             _require_open_unit_interval(field_name, getattr(self, field_name))
 
     def _validate_proxy_settings(self) -> None:

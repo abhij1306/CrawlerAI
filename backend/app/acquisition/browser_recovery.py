@@ -566,8 +566,12 @@ async def _move_mouse_toward(
     _mark_mouse_move(mouse)
     for step_index in range(1, steps + 1):
         progress = step_index / steps
-        x = clamp_x(start_x + (target_x - start_x) * progress + secrets.randbelow(5) - 2)
-        y = clamp_y(start_y + (target_y - start_y) * progress + secrets.randbelow(5) - 2)
+        x = clamp_x(
+            start_x + (target_x - start_x) * progress + secrets.randbelow(5) - 2
+        )
+        y = clamp_y(
+            start_y + (target_y - start_y) * progress + secrets.randbelow(5) - 2
+        )
         await move(x, y)
         _mark_mouse_move(mouse)
         await page.wait_for_timeout(secrets.randbelow(20) + 8)

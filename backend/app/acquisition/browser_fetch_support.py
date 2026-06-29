@@ -24,7 +24,6 @@ from app.acquisition.runtime import (
     copy_headers,
 )
 from app.core.config.runtime_settings import (
-    crawler_runtime_settings,
     proxy_rotation_mode,
 )
 from app.core.domain_utils import normalize_domain

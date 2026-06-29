@@ -783,17 +783,16 @@ def _title_flags(evidence: Evidence, *, value: str, page_url: str) -> set[str]:
         DETAIL_TITLE_ENDPOINT_FILENAME_PATTERN, value.strip(), re.IGNORECASE
     ):
         flags.add("filename_title")
-    url_contains_title_code = detail_title_is_url_corroborated_style_code(value, page_url)
+    url_contains_title_code = detail_title_is_url_corroborated_style_code(
+        value, page_url
+    )
     if (
-        (
-            re.fullmatch(DETAIL_TITLE_CODE_ONLY_PATTERN, value.strip())
-            or re.fullmatch(DETAIL_TITLE_IDENTIFIER_ONLY_PATTERN, value.strip())
-            or re.fullmatch(
-                DETAIL_TITLE_INTERNAL_SYSTEM_PATTERN, value.strip(), re.IGNORECASE
-            )
+        re.fullmatch(DETAIL_TITLE_CODE_ONLY_PATTERN, value.strip())
+        or re.fullmatch(DETAIL_TITLE_IDENTIFIER_ONLY_PATTERN, value.strip())
+        or re.fullmatch(
+            DETAIL_TITLE_INTERNAL_SYSTEM_PATTERN, value.strip(), re.IGNORECASE
         )
-        and not url_contains_title_code
-    ):
+    ) and not url_contains_title_code:
         flags.add("code_only_title")
     if re.fullmatch(DETAIL_TITLE_MEASUREMENT_PATTERN, value.strip(), re.IGNORECASE):
         flags.add(DETAIL_TITLE_MEASUREMENT_FLAG)
@@ -1000,7 +999,7 @@ def _currency_from_price_symbol(
             min(float(evidence.confidence), 0.85),
             {},
         )
-    elif (host_currency := currency_hint_from_page_url(page_url)):
+    elif host_currency := currency_hint_from_page_url(page_url):
         # Host hint (firstcry.com → INR); outranked by explicit currency via tiebreakers.
         currency, derived_by, confidence, extra = (
             host_currency,

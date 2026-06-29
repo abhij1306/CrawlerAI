@@ -173,9 +173,7 @@ def _offers(
                         "jsonld",
                         fact,
                         value,
-                        SourceLocator(
-                            kind="json_pointer", value=f"{offer_path}/{key}"
-                        ),
+                        SourceLocator(kind="json_pointer", value=f"{offer_path}/{key}"),
                         group_id=group,
                         hint=hint,
                         directness="embedded",

@@ -1,9 +1,13 @@
+import pytest
+
 from app.core.records.output_safety import (
     materialize_product_assets,
     public_availability,
     sanitize_materialized_record,
 )
 from app.extraction.contracts import AssetDecision
+
+pytestmark = pytest.mark.unit
 
 
 def test_public_availability_only_accepts_canonical_enum_values() -> None:
@@ -105,7 +109,7 @@ def test_sanitize_record_enforces_enum_empty_values_and_lineage_shape_only() -> 
     ]
 
 
-def test_sanitize_record_drops_non_actionable_single_axis_variant_rows() -> None:
+def test_sanitize_record_keeps_actionable_retail_single_axis_variant_rows() -> None:
     record = {
         "variants": [
             {"size": "Small"},
@@ -119,10 +123,51 @@ def test_sanitize_record_drops_non_actionable_single_axis_variant_rows() -> None
     sanitize_materialized_record(record, lineages)
 
     assert record["variants"] == [
+        {"size": "Small"},
         {"size": "Small", "color": "Black"},
         {"sku": "SKU-1"},
     ]
-    assert record["variant_count"] == 2
+    assert record["variant_count"] == 3
+
+
+def test_sanitize_record_keeps_currency_when_any_price_fact_exists() -> None:
+    record = {
+        "original_price": "29.99",
+        "price_min": "19.99",
+        "currency": "USD",
+    }
+    lineages = {
+        "original_price": {"evidence_ids": ["original_price"]},
+        "price_min": {"evidence_ids": ["price_min"]},
+        "currency": {"evidence_ids": ["currency"]},
+    }
+
+    sanitize_materialized_record(record, lineages)
+
+    assert record == {
+        "original_price": "29.99",
+        "price_min": "19.99",
+        "currency": "USD",
+    }
+    assert "currency" in lineages
+
+
+def test_sanitize_record_drops_all_price_facts_without_currency() -> None:
+    record = {
+        "original_price": "29.99",
+        "price_min": "19.99",
+        "price_max": "39.99",
+    }
+    lineages = {
+        "original_price": {"evidence_ids": ["original_price"]},
+        "price_min": {"evidence_ids": ["price_min"]},
+        "price_max": {"evidence_ids": ["price_max"]},
+    }
+
+    sanitize_materialized_record(record, lineages)
+
+    assert record == {}
+    assert lineages == {}
 
 
 def test_materialize_product_assets_rejects_conflicting_product_images() -> None:

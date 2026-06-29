@@ -87,3 +87,17 @@ def test_short_brand_host_slug_does_not_steal_descriptor_as_brand() -> None:
         )
         is None
     )
+
+
+def test_long_generic_product_slug_does_not_steal_descriptor_as_brand() -> None:
+    for url in (
+        "https://shop.test/products/structured-commuter-bag-black-leather",
+        "https://market.test/structured-commuter-bag-black-leather",
+    ):
+        assert (
+            infer_brand_from_product_url(
+                url=url,
+                title="Structured Commuter Bag",
+            )
+            is None
+        )
