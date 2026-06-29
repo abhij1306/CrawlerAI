@@ -11,8 +11,24 @@ function routeObject(route: AppRoute): RouteObject {
   return {
     path: route.path,
     lazy: async () => ({ Component: (await route.lazy()).default }),
+    HydrateFallback: AppHydrateFallback,
     errorElement: <RouteErrorBoundary />,
   };
+}
+
+// Rendered by the data router during initial hydration while the matched route's
+// lazy chunk is still loading. Without it React Router renders `null` (a blank
+// screen) on first load / refresh and logs the "No `HydrateFallback` element
+// provided" warning. On the heavy lazy routes that blank window reads as a hang.
+function AppHydrateFallback() {
+  return (
+    <div className="app-shell-feedback" aria-busy="true" aria-live="polite">
+      <div className="card-gradient w-full max-w-sm space-y-3 rounded-lg border border-border p-6">
+        <div className="skeleton h-5 w-36" />
+        <div className="skeleton h-3 w-full" />
+      </div>
+    </div>
+  );
 }
 
 function RunDetailRedirect() {

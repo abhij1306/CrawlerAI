@@ -5,10 +5,6 @@ on:
     paths:
       - "backend/**"
       - "frontend/**"
-      - "package.json"
-      - "pnpm-lock.yaml"
-      - "pnpm-workspace.yaml"
-      - "vite.config.ts"
       - ".github/workflows/frontend-playwright-smoke.yml"
   workflow_dispatch:
 
@@ -51,12 +47,15 @@ jobs:
           cache: true
 
       - name: Install dependencies
+        working-directory: frontend
         run: vp install
 
       - name: Dependency vulnerability scan
+        working-directory: frontend
         run: vp pm audit --audit-level=high
 
       - name: Install Playwright browser
+        working-directory: frontend
         run: vp exec playwright install --with-deps chromium
 
       - name: Setup Python
@@ -95,6 +94,7 @@ jobs:
           exit 1
 
       - name: Start frontend dev server
+        working-directory: frontend
         env:
           VITE_API_BASE_URL: http://127.0.0.1:8000
         run: |
@@ -113,7 +113,8 @@ jobs:
           exit 1
 
       - name: Run Playwright smoke suite
+        working-directory: frontend
         env:
           CI: true
           VITE_API_BASE_URL: http://127.0.0.1:8000
-        run: vp exec playwright test --config frontend/playwright.config.ts smoke.spec.ts
+        run: vp exec playwright test --config playwright.config.ts smoke.spec.ts

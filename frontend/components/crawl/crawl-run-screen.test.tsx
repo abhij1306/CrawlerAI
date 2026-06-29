@@ -749,6 +749,44 @@ describe('CrawlRunScreen', () => {
     });
   });
 
+  it('does not start terminal record sync while the initial table fetch is in flight', async () => {
+    let resolveRecords!: (records: {
+      items: CrawlRecord[];
+      meta: { page: number; limit: number; total: number };
+    }) => void;
+    apiMock.getCrawl.mockResolvedValue({
+      ...terminalRun(101),
+      result_summary: {
+        extraction_verdict: 'success',
+        record_count: 2,
+      },
+    });
+    apiMock.getRecords.mockReturnValue(
+      new Promise((resolve) => {
+        resolveRecords = resolve;
+      }),
+    );
+
+    renderRunScreen();
+
+    await waitFor(() => {
+      expect(apiMock.getRecords).toHaveBeenCalledTimes(1);
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(apiMock.getRecords).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      resolveRecords({ items: [], meta: { page: 1, limit: 100, total: 0 } });
+    });
+
+    await waitFor(() => {
+      expect(apiMock.getRecords.mock.calls.length).toBeGreaterThanOrEqual(2);
+    });
+  });
+
   it('keeps cached latest-run table rows visible when reopening from history', async () => {
     const queryClient = new QueryClient({
       defaultOptions: {

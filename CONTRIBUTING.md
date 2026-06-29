@@ -29,6 +29,7 @@ $env:PYTHONPATH='.'
 For frontend changes:
 
 ```powershell
+cd frontend
 vp install
 vp check
 vp test

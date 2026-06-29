@@ -95,6 +95,7 @@ In the `abhij1306/crawlerai` Live view, filter by
 ### Frontend
 
 ```powershell
+cd frontend
 vp install
 vp dev
 ```
@@ -163,9 +164,10 @@ $env:PYTHONPATH='.'
 Frontend checks:
 
 ```powershell
+cd frontend
 vp check
 vp test
-vp exec playwright test --config frontend/playwright.config.ts
+vp exec playwright test --config playwright.config.ts
 ```
 
 Use the smallest relevant check for local slices. Run broader smoke or acceptance checks when changing shared acquisition, extraction, persistence, or API behavior.

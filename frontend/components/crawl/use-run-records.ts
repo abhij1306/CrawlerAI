@@ -97,8 +97,16 @@ export function useRunRecords({
   const knownTableRecordsTotal = Math.max(tableTotal, tableRecordsData?.meta?.total ?? 0);
   const terminalRecordsExpected =
     terminal && (summaryRecordsFromRun > 0 || verdict === 'success' || verdict === 'partial');
+  // Only sync AFTER the initial table fetch has resolved. Before it returns,
+  // `tableRecordsData` is undefined and `knownTableRecordsTotal` is 0, which would
+  // otherwise look like "records are missing" and fire a redundant refetch of the
+  // same query while the initial request is still in flight: the cause of the
+  // triple `/records` burst (initial + immediate sync + interval tick) on first load.
+  const tableRecordsSettled = tableRecordsData !== undefined;
   const terminalRecordsNeedSync =
-    terminalRecordsExpected && knownTableRecordsTotal < Math.max(1, summaryRecordsFromRun);
+    tableRecordsSettled &&
+    terminalRecordsExpected &&
+    knownTableRecordsTotal < Math.max(1, summaryRecordsFromRun);
 
   useTerminalRecordSync({
     enabled: terminalRecordsNeedSync,

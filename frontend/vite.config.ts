@@ -3,8 +3,7 @@ import react from '@vitejs/plugin-react';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const workspaceRoot = path.dirname(fileURLToPath(import.meta.url));
-const frontendRoot = path.join(workspaceRoot, 'frontend');
+const frontendRoot = path.dirname(fileURLToPath(import.meta.url));
 const isProduction = process.env.NODE_ENV === 'production';
 
 export default defineConfig({
@@ -78,7 +77,7 @@ export default defineConfig({
     '*': 'vp check --fix',
   },
   lint: {
-    ignorePatterns: ['backend/**', 'frontend/dist/**', 'frontend/node_modules/**'],
+    ignorePatterns: ['dist/**', 'node_modules/**', 'coverage/**', 'test-results/**'],
     plugins: ['eslint', 'typescript', 'react', 'jsx-a11y'],
     options: {
       typeAware: true,
@@ -105,7 +104,7 @@ export default defineConfig({
     },
     overrides: [
       {
-        files: ['frontend/src/routing/image.tsx'],
+        files: ['src/routing/image.tsx'],
         rules: {
           'jsx-a11y/alt-text': 'off',
         },
@@ -114,21 +113,21 @@ export default defineConfig({
   },
   fmt: {
     ignorePatterns: [
-      'backend/**',
-      'docs/**',
-      'agent_debug/**',
-      '.github/**',
-      '.serena/**',
+      '../backend/**',
+      '../docs/**',
+      '../agent_debug/**',
+      '../.github/**',
+      '../.serena/**',
       '*.md',
       '*.toml',
       '*.yml',
       '*.yaml',
-      'frontend/dist/**',
-      'frontend/coverage/**',
-      'frontend/node_modules/**',
-      'frontend/playwright-report/**',
-      'frontend/test-results/**',
-      'TEST_SITES.md',
+      'dist/**',
+      'coverage/**',
+      'node_modules/**',
+      'playwright-report/**',
+      'test-results/**',
+      '../TEST_SITES.md',
     ],
     semi: true,
     singleQuote: true,
@@ -137,7 +136,7 @@ export default defineConfig({
     printWidth: 100,
     endOfLine: 'lf',
     sortTailwindcss: {
-      stylesheet: './frontend/app/globals.css',
+      stylesheet: './app/globals.css',
     },
   },
 });
