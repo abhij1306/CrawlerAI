@@ -29,6 +29,11 @@ import type {
   FieldCommitResponse,
   LlmConfigCreatePayload,
   LoginResponse,
+  KnowledgeContract,
+  KnowledgeContractSelectionPayload,
+  KnowledgeGraphResponse,
+  KnowledgeSelectorContractPayload,
+  KnowledgeSiteRecord,
   Paginated,
   ProductIntelligenceJob,
   ProductIntelligenceDiscoveryPayload,
@@ -376,6 +381,31 @@ export const api = {
     `${getApiBaseUrl()}/api/selectors/preview-html?url=${encodeURIComponent(url)}`,
   getPreviewHtml: (url: string) =>
     apiClient.getText(`/api/selectors/preview-html?url=${encodeURIComponent(url)}`),
+  listKnowledgeSites: () => apiClient.get<{ sites: KnowledgeSiteRecord[] }>('/api/knowledge/sites'),
+  getKnowledgeGraph: (params?: {
+    domain?: string;
+    root_entity_id?: string;
+    depth?: number;
+    limit?: number;
+  }) => {
+    const query = new URLSearchParams();
+    if (params?.domain) query.set('domain', params.domain);
+    if (params?.root_entity_id) query.set('root_entity_id', params.root_entity_id);
+    if (params?.depth !== undefined) query.set('depth', String(params.depth));
+    if (params?.limit !== undefined) query.set('limit', String(params.limit));
+    return apiClient.get<KnowledgeGraphResponse>(withQuery('/api/knowledge/graph', query));
+  },
+  listKnowledgeContracts: (templateId: string) =>
+    apiClient.get<{ contracts: KnowledgeContract[] }>(
+      `/api/knowledge/contracts/${encodeURIComponent(templateId)}`,
+    ),
+  selectKnowledgeContractSource: (contractId: string, payload: KnowledgeContractSelectionPayload) =>
+    apiClient.put<{ contract: KnowledgeContract }>(
+      `/api/knowledge/contracts/${encodeURIComponent(contractId)}/selection`,
+      payload,
+    ),
+  upsertKnowledgeSelectorContract: (payload: KnowledgeSelectorContractPayload) =>
+    apiClient.post<{ contract: KnowledgeContract }>('/api/knowledge/contracts/selector', payload),
   listLlmProviders: () => apiClient.get<LlmProviderCatalogItem[]>('/api/llm/providers'),
   listLlmConfigs: (params?: { include_unsupported?: boolean }) => {
     const query = new URLSearchParams();

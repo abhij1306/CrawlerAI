@@ -18,7 +18,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
-from sqlalchemy import delete, func, select, text
+from sqlalchemy import case, delete, func, select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -80,6 +80,7 @@ class ClaimInput:
     entity_id: uuid.UUID
     fact_type: str
     value: object
+    value_hash: str | None = None
     confidence: float = 1.0
     selection_origin: str = "generic"
     status: str = "active"
@@ -97,6 +98,7 @@ class ContractInput:
     resolver_rule: str = ""
     selected_source: str = ""
     selection_origin: str = "generic"
+    selection_history: Sequence[object] = field(default_factory=tuple)
     status: str = "active"
 
 
@@ -209,7 +211,7 @@ async def upsert_claims(
     """Batch-upsert claims on (entity_id, fact_type, value_hash)."""
     rows_by_key: dict[tuple[uuid.UUID, str, str], dict[str, object]] = {}
     for claim in claims:
-        value_hash = compute_value_hash(claim.value)
+        value_hash = claim.value_hash or compute_value_hash(claim.value)
         rows_by_key[(claim.entity_id, claim.fact_type, value_hash)] = {
             "id": uuid.uuid4(),
             "entity_id": claim.entity_id,
@@ -290,6 +292,7 @@ async def upsert_contracts(
             "resolver_rule": contract.resolver_rule,
             "selected_source": contract.selected_source,
             "selection_origin": contract.selection_origin,
+            "selection_history": list(contract.selection_history),
             "status": contract.status,
         }
         for contract in contracts
@@ -309,8 +312,41 @@ async def upsert_contracts(
             "success_count": insert_stmt.excluded.success_count,
             "rejection_count": insert_stmt.excluded.rejection_count,
             "resolver_rule": insert_stmt.excluded.resolver_rule,
-            "selected_source": insert_stmt.excluded.selected_source,
-            "selection_origin": insert_stmt.excluded.selection_origin,
+            "selected_source": case(
+                (
+                    insert_stmt.excluded.selection_origin == "operator",
+                    insert_stmt.excluded.selected_source,
+                ),
+                (
+                    KGExtractionContract.selection_origin == "operator",
+                    KGExtractionContract.selected_source,
+                ),
+                else_=insert_stmt.excluded.selected_source,
+            ),
+            "selection_origin": case(
+                (
+                    insert_stmt.excluded.selection_origin == "operator",
+                    insert_stmt.excluded.selection_origin,
+                ),
+                (
+                    KGExtractionContract.selection_origin == "operator",
+                    KGExtractionContract.selection_origin,
+                ),
+                else_=insert_stmt.excluded.selection_origin,
+            ),
+            "selection_history": case(
+                (
+                    insert_stmt.excluded.selection_origin == "operator",
+                    KGExtractionContract.selection_history.op("||")(
+                        insert_stmt.excluded.selection_history
+                    ),
+                ),
+                (
+                    KGExtractionContract.selection_origin == "operator",
+                    KGExtractionContract.selection_history,
+                ),
+                else_=insert_stmt.excluded.selection_history,
+            ),
             "status": insert_stmt.excluded.status,
             "updated_at": func.now(),
         },
@@ -474,6 +510,11 @@ async def load_runtime_snapshot(
         templates.append(
             {
                 "fingerprint": fingerprint,
+                "route_pattern": (
+                    str(props.get("route_pattern", ""))
+                    if isinstance(props, Mapping)
+                    else ""
+                ),
                 "template_key": meta["key"],
                 "contracts": contracts_by_template.get(tid, []),
             }

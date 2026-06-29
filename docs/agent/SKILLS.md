@@ -120,6 +120,31 @@ If review-save behavior changes, verify later loads still read the persisted sna
 
 ---
 
+## Diagnose a URL Result
+
+1. Open the run-level `report.json` and follow the URL's direct diagnosis link.
+2. Read only that result's `diagnose.json` first.
+3. Check collector/stage outcomes, each field's winner and rejected candidates, firewall action, and the variant-drop ledger.
+4. Use the existing `FieldEvidenceState` and rejection reason to identify the owning extraction stage.
+5. Treat any diagnosis that requires source-code or `page.html` inspection to explain a missing/wrong field as a diagnostics defect. Fix the publisher or evidence flow before debugging around it.
+
+`page.html` is the captured input for replay. It is not the primary diagnosis index.
+
+---
+
+## Refine a Knowledge Graph Contract
+
+1. Resolve the normalized domain with `GET /api/knowledge/sites`.
+2. Read the bounded graph and template contracts. Do not perform unbounded graph scans.
+3. Select only a retained source candidate with `PUT /api/knowledge/contracts/{id}/selection`, including template, surface, canonical field, and `expected_version`.
+4. On a version conflict, refresh site/graph/contracts before retrying. Never overwrite against stale state.
+5. For an AI-generated field, use Crawl Studio's existing Generate + Save to Memory flow. The accepted CSS selector is then synced as an operator contract; generation alone does not activate it.
+6. Verify the next matching run records `hit`, `fallback`, `stale_source`, or `override_miss`. Historical records remain unchanged.
+
+Extraction runtime consumes frozen contracts and never calls an LLM.
+
+---
+
 ## Update Docs After Implementation
 
 | Change | Doc |

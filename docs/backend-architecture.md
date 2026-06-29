@@ -42,6 +42,7 @@ Routers registered in `backend/app/main.py`:
 - `/api/jobs`
 - `/api/review`
 - `/api/selectors`
+- `/api/knowledge`
 - `/api/llm`
 - `/api/data-enrichment`
 - `/api/product-intelligence`
@@ -56,6 +57,7 @@ Important route groups:
 - `api/records.py`: records list plus JSON/CSV/artifacts/discoverist exports and provenance
 - `api/review.py`: review payload, artifact HTML, save review mapping
 - `api/selectors.py`: selector CRUD, cross-surface listing by domain, suggestion, test, preview HTML
+- `api/knowledge.py`: authenticated graph/site/entity/contract reads, operator source selection, admin rebuild, purge, and per-site delete
 - `api/llm.py`: provider catalog, config CRUD, connection test, cost log
 - `api/data_enrichment.py`: on-demand ecommerce detail enrichment jobs and enriched product row lookup
 - `api/product_intelligence.py`: product discovery, candidate crawl jobs, match scoring, and review
@@ -515,14 +517,16 @@ Responsibilities and current behavior:
 Primary files:
 
 - `core/config/knowledge_graph.py` — data-only vocabulary/bounds owner: node/edge types, entity/projection statuses, contract selection origins, contract outcomes, the deterministic identity ladder, read-API bounds, and projection tunables.
-- `models/knowledge_graph.py` — 6 ORM models: `KGSiteVersion`, `KGEntity`, `KGRelationship`, `KGClaim`, `KGAssertionEvidence`, `KGExtractionContract`.
+- `models/knowledge_graph.py` — 6 ORM models: `KGSiteVersion`, `KGEntity`, `KGRelationship`, `KGClaim`, `KGAssertionEvidence`, `KGExtractionContract` (including append-only operator selection history).
 - `persistence/knowledge_graph.py` — repository: `lock_site_version`, `upsert_entities/relationships/claims/contracts`, `add_evidence`, `fetch_neighborhood`, `count_graph_rows`, `purge_graph`, `load_runtime_snapshot`.
-- `persistence/projection.py` — run-complete projector (`project_extraction_result`): fingerprints page templates, upserts structural graph entities and relationships (site → template → route, page → template, site → technology), projects `Evidence` tuples into product/offer/brand/category claims and assertion evidence, writes extraction contracts from decisions.
+- `persistence/projection.py` — projector (`project_extraction_result`): fingerprints page templates, upserts structural graph entities and relationships (site → template → route, page → template, site → technology), projects `Evidence` tuples into canonical product/offer/brand/category/seller/asset entities, claims, relationships, deterministic identity links, and assertion evidence, writes extraction contracts from decisions.
 - `core/knowledge_graph/templates.py` — `normalize_route`, `fingerprint_from_parts`, `fingerprint_template`, `extract_tech_signals`.
 - `core/knowledge_graph/contract_runtime.py` — frozen contract execution (pure, storage-free): `match_template` and `apply_contracts` re-point decisions to preferred sources and emit `ContractOutcome` per field.
+- `api/knowledge.py` — bounded read/refine API for site versions, graph neighborhoods, entities, contracts, source selection, rebuild, purge, and site deletion.
 - `alembic/versions/20260629_0002_knowledge_graph.py` — migration creating all 6 KG tables.
+- `alembic/versions/20260629_0003_kg_contract_selection_history.py` — migration adding operator selection history to extraction contracts.
 
-The Knowledge Graph is extraction-owned and PostgreSQL-authoritative (no Neo4j/AGE). It stays separate from acquisition-owned Domain Memory and resets independently. At run creation, `load_runtime_snapshot` freezes the current graph state into `CrawlRun.extraction_runtime_snapshot`; each extraction request receives this frozen snapshot so concurrent graph updates never destabilize an in-flight run. The engine fingerprints each page (via `fingerprint_from_parts`), matches against frozen templates, and applies saved source preferences via `apply_contracts`. Extraction emits observations only and must never import graph storage (ratcheted in `tests/unit/test_extraction_architecture.py`). The `/api/knowledge/*` read/refine endpoints and the cold-start LLM proposer arrive in later slices. See `docs/INVARIANTS.md` §17.
+The Knowledge Graph is extraction-owned and PostgreSQL-authoritative (no Neo4j/AGE). It stays separate from acquisition-owned Domain Memory and resets independently. At run creation, `load_runtime_snapshot` freezes the current graph state into `CrawlRun.extraction_runtime_snapshot`; each extraction request receives this frozen snapshot so concurrent graph updates never destabilize an in-flight run. The engine fingerprints each page (via `fingerprint_from_parts`), matches against frozen templates, and applies saved source preferences via `apply_contracts`. Extraction emits observations only and must never import graph storage (ratcheted in `tests/unit/test_extraction_architecture.py`). The URL pipeline projects the graph after URL result persistence in a savepoint; projection failure is logged and marked on the site version without changing crawl verdicts. `/api/knowledge/*` exposes bounded graph reads and operator source refinement; rebuild/purge/delete operations are admin-only. The cold-start LLM proposer arrives in a later slice. See `docs/INVARIANTS.md` §17.
 
 ## 7. Persistence Model
 

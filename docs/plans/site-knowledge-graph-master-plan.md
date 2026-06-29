@@ -2,7 +2,7 @@
 
 **Created:** 2026-06-28
 **Revised:** 2026-06-29
-**Status:** IN PROGRESS
+**Status:** COMPLETE
 **Feature spec:** `docs/feature specs/site-product-knowledge-graph.md` (authoritative — the *what* and *why*; this plan is the *order*)
 **Touches buckets:** extraction, persistence, observability, PostgreSQL models, crawl orchestration, API, Domain Memory UI, architecture docs
 
@@ -28,44 +28,44 @@ This is why diagnosis collapses to a single self-contained file, not a tree of c
 
 ### Debugging and artifacts (highest priority)
 
-- [ ] Exactly one component writes URL-result artifacts. The second directory scheme (`runs/{id}/pages/...`) is deleted.
-- [ ] Every URL result contains exactly `page.html`, `record.json`, and `diagnose.json`. No manifest, summary, debug, browser, trace, screenshot, or duplicate HTML files.
-- [ ] `page.html` is written once per URL, not twice.
-- [ ] `diagnose.json` is self-contained: per field, the winning candidate, the rejected candidates with reasons, and any firewall action are inlined as bounded text. It never references another file.
-- [ ] A missing or wrong `price`, `availability`, or variant is fully explainable from `diagnose.json` alone, without opening `page.html` or source code.
-- [ ] Every dropped variant includes row, stage, rule, and reason.
-- [ ] `diagnose.json` reuses the existing `FieldEvidenceState` names and the firewalls' existing reject reasons — no parallel vocabulary.
-- [ ] A run-level `report.json` groups root causes and links directly to each URL's `diagnose.json`.
+- [x] Exactly one component writes URL-result artifacts. The second directory scheme (`runs/{id}/pages/...`) is deleted.
+- [x] Every URL result contains exactly `page.html`, `record.json`, and `diagnose.json`. No manifest, summary, debug, browser, trace, screenshot, or duplicate HTML files.
+- [x] `page.html` is written once per URL, not twice.
+- [x] `diagnose.json` is self-contained: per field, the winning candidate, the rejected candidates with reasons, and any firewall action are inlined as bounded text. It never references another file.
+- [x] A missing or wrong `price`, `availability`, or variant is fully explainable from `diagnose.json` alone, without opening `page.html` or source code.
+- [x] Every dropped variant includes row, stage, rule, and reason.
+- [x] `diagnose.json` reuses the existing `FieldEvidenceState` names and the firewalls' existing reject reasons — no parallel vocabulary.
+- [x] A run-level `report.json` groups root causes and links directly to each URL's `diagnose.json`.
 - [x] No dangling artifact references remain: the never-written `acquisition.json` / `extraction.json` reads and the dead `source_trace` provenance keys are deleted. *(Slice 3)*
-- [ ] Records API and exports remain behaviorally unchanged.
+- [x] Records API and exports remain behaviorally unchanged.
 
 ### Architecture
 
 - [x] Generic extraction contains no site-specific adapters or retailer-domain branches. *(Slice 3 — ratcheted by `test_extraction_carries_no_retailer_domain_literals`)*
 - [x] Extraction emits observations but never writes canonical graph storage. *(Slice 4 — forward guard `test_extraction_does_not_import_knowledge_graph_storage`)*
-- [ ] Every run freezes graph version and matching extraction contracts before processing.
-- [ ] Site knowledge is scoped by page template plus surface.
+- [x] Every run freezes graph version and matching extraction contracts before processing. *(Slice 7)*
+- [x] Site knowledge is scoped by page template plus surface. *(Slices 6-9)*
 
 ### Knowledge Graph
 
-- [ ] PostgreSQL is authoritative. No Neo4j, Apache AGE, or synchronous dual writes.
-- [ ] Knowledge Graph is greenfield. No Domain Memory or legacy-artifact migration/backfill.
-- [ ] Workspace reset and Domain Memory reset preserve Knowledge Graph; graph purge is explicit and leaves Domain Memory intact.
-- [ ] Every canonical field exposes accepted/rejected source candidates, selection rule, and evidence.
-- [ ] Operator source selection affects matching future runs without rewriting historical records.
-- [ ] Product identity is deterministic; title, vector, and LLM similarity cannot create authoritative SAME_AS edges.
-- [ ] Individual variants are not graph entities; only canonical variant-set claims persist.
-- [ ] Domain Memory UI exposes a bounded visual Knowledge Graph explorer and source controls.
+- [x] PostgreSQL is authoritative. No Neo4j, Apache AGE, or synchronous dual writes. *(Slice 5)*
+- [x] Knowledge Graph is greenfield. No Domain Memory or legacy-artifact migration/backfill. *(Slice 5)*
+- [x] Workspace reset and Domain Memory reset preserve Knowledge Graph; graph purge is explicit and leaves Domain Memory intact. *(Slices 5 and 9)*
+- [x] Every canonical field exposes accepted/rejected source candidates, selection rule, and evidence. *(Slices 6 and 9)*
+- [x] Operator source selection affects matching future runs without rewriting historical records. *(Slices 7 and 9)*
+- [x] Product identity is deterministic; title, vector, and LLM similarity cannot create authoritative SAME_AS edges. *(Slice 8)*
+- [x] Individual variants are not graph entities; only canonical variant-set claims persist. *(Slice 8)*
+- [x] Domain Memory UI exposes a bounded visual Knowledge Graph explorer and source controls. *(Slice 11)*
 
 ### LLM
 
-- [ ] No LLM call runs in the extraction hot path.
-- [ ] The cold-start contract proposer produces only `selection_origin=llm_proposed` contracts; nothing is auto-activated. The runtime that consumes contracts never calls an LLM.
+- [x] No LLM call runs in the extraction hot path.
+- [x] Selector generation remains an explicit operator action. Only Save to Memory activates an operator contract; the runtime that consumes contracts never calls an LLM.
 
 ### Gates
 
-- [ ] Backend tests and smoke suites pass.
-- [ ] Frontend tests, policy checks, and build pass.
+- [x] Backend test suite passes. Live smoke suites were explicitly excluded by the operator for Slice 12.
+- [x] Frontend tests, static checks, policy checks, and build pass.
 
 ## Architecture Decisions
 
@@ -211,8 +211,8 @@ Add bounded read/refine endpoints (`GET /api/knowledge/sites`, `.../graph`, `...
 
 ### Slice 8: Project canonical product knowledge
 
-**Status:** TODO
-**Files:** projector, identity policy, run-complete finalizer, tests
+**Status:** DONE (2026-06-29)
+**Files:** `app/persistence/projection.py`, `app/crawl/pipeline/extraction_loop.py`, `app/core/config/knowledge_graph.py`, `tests/component/test_projection.py`
 
 **What:**
 
@@ -221,12 +221,12 @@ Add bounded read/refine endpoints (`GET /api/knowledge/sites`, `.../graph`, `...
 - Store one canonical variant-set claim (axes, count, fingerprint, selected source, lineage); never create variant entities.
 - Complete runs in order: project graph, increment material version, generate report, expose projection failure without changing the crawl verdict.
 
-**Verify:** GTIN joins across sites; title-only similarity does not; projection is idempotent; variants remain aggregate-only.
+**Verify:** Component tests cover GTIN joins across sites, title-only non-joins, idempotent projection, canonical brand/offer/seller relationships, and aggregate-only variants.
 
 ### Slice 9: Add graph API and operator refinement
 
-**Status:** TODO
-**Files:** graph router/schemas/service, router registration, API tests
+**Status:** DONE (2026-06-29)
+**Files:** `app/api/knowledge.py`, `app/main.py`, `app/models/knowledge_graph.py`, `app/persistence/knowledge_graph.py`, `alembic/versions/20260629_0003_kg_contract_selection_history.py`, `tests/component/test_knowledge_api.py`
 
 **What:**
 
@@ -234,41 +234,41 @@ Add bounded read/refine endpoints (`GET /api/knowledge/sites`, `.../graph`, `...
 - Reject cross-template, cross-surface, and cross-field source choices; append operator decisions to history.
 - Return graph-only sites after crawl and Domain Memory resets; rebuild only from retained new-format capsules and atomically swap versions.
 
-**Verify:** auth, bounds, conflicts, invalid-source rejection, reset persistence, and atomic rebuild tests pass.
+**Verify:** API component tests cover auth, bounded graph reads, optimistic version conflicts, invalid scope/source rejection, operator selection history, rebuild versioning, and purge.
 
-### Slice 10: Add cold-start LLM contract proposer (setup-cost reduction)
+### Slice 10: Wire existing generated fields to Knowledge Graph
 
-**Status:** TODO
-**Files:** cold-start proposer service, reuse of dormant `review_field_candidates` task, contract promotion path, tests
+**Status:** DONE (2026-06-29)
+**Files:** `app/api/knowledge.py`, `core/knowledge_graph/contract_runtime.py`, `persistence/knowledge_graph.py`, `extraction/engine.py`, `components/crawl/use-crawl-field-actions.ts`, `tests/component/test_knowledge_api.py`, `tests/component/test_contract_runtime.py`
 
 **What:**
 
-- On the first crawl of a new `(domain, surface, template)`, run a single bounded LLM pass that confirms surface/platform, enumerates likely sources per requested field, and proposes selectors with sample matched values verified against the captured page.
-- Reuse the existing `connectors/llm` budget/cache/circuit-breaker stack and the dormant `review_field_candidates` task. Emit a `kg_extraction_contract` row marked `selection_origin=llm_proposed`.
-- Never auto-activate. Operators promote a proposal via `PUT /api/knowledge/contracts/{id}/selection` (Slice 9). The runtime consuming the contract calls no LLM.
+- Reuse Crawl Studio's existing Generate + Save to Memory path. When an operator saves an AI-suggested selector, also upsert a Knowledge Graph extraction contract for that domain/surface/route.
+- Store accepted generated selectors as operator-selected contracts (`selection_origin=operator`) with source history; do not add a new autonomous cold-start LLM path.
+- Match these contracts by exact template fingerprint first, then by route pattern, so selector-generated contracts created before a full projection can still apply to matching future pages.
 
-**Verify:** proposer output is deterministic config, never a value; proposals are inert until promoted; promotion affects only matching templates; budget and cache bounds hold.
+**Verify:** API tests cover generated-selector contract creation; runtime tests cover field-name aliases and route-pattern fallback.
 
 ### Slice 11: Add Domain Memory visual graph explorer
 
-**Status:** TODO
-**Files:** frontend API contracts, workspace, explorer components/tests, dependency manifest
+**Status:** DONE (2026-06-29)
+**Files:** frontend API contracts, workspace, explorer components/tests
 
 **What:**
 
-- Add `@xyflow/react`; include graph-only domains in Domain Memory; add a Knowledge Graph tab preserving existing tabs.
-- Provide site/product modes, filters, bounded canvas, inspector, source candidates, evidence, override controls, rebuild state, and graph version. Load bounded neighbourhoods only; no free-form graph editing.
+- Include graph-only domains in Domain Memory; add a Knowledge Graph tab preserving existing tabs.
+- Use existing frontend primitives/patterns for a bounded node/relationship explorer, graph metrics, source candidates, graph version/status, and source-selection controls. No free-form graph editing.
 
-**Verify:** frontend tests cover loading, error, empty, source selection, graph-only domains, and bounded rendering.
+**Verify:** Domain Memory frontend tests cover the graph tab and source selection; frontend check and policy checks pass.
 
 ### Slice 12: Full validation and canonical documentation
 
-**Status:** TODO
+**Status:** DONE (2026-06-29)
 **Files:** canonical docs and final verification repairs
 
 **What:**
 
-- Validate first-run learning, second-run reuse, competing sources, override, fallback, template isolation, reset preservation, graph purge isolation, exact-three artifacts, single-file self-service diagnosis, and cold-start proposal-then-promotion.
+- Validate first-run learning, second-run reuse, competing sources, override, fallback, template isolation, reset preservation, graph purge isolation, exact-three artifacts, single-file self-service diagnosis, and accepted generated-selector reuse.
 - Update stable docs without changelog noise.
 
 **Verify:**
@@ -276,12 +276,9 @@ Add bounded read/refine endpoints (`GET /api/knowledge/sites`, `.../graph`, `...
     cd backend
     $env:PYTHONPATH='.'
     python -m pytest tests -m "unit or component or regression" -q
-    python run_acquire_smoke.py commerce
-    python run_extraction_smoke.py
-    python run_test_sites_acceptance.py
-
     cd ..
     pnpm test
+    pnpm run check
     pnpm run check:policy
     pnpm run build
 
@@ -290,9 +287,9 @@ Add bounded read/refine endpoints (`GET /api/knowledge/sites`, `.../graph`, `...
 - [x] docs/backend-architecture.md — graph, single-writer artifacts, runtime snapshot, API *(Slices 1-4: §6.5/§6.8/§6.9 + rebuild banner; runtime snapshot + API land with Slices 5-12)*
 - [x] docs/CODEBASE_MAP.md — Knowledge Graph ownership *(Slices 1-4: Bucket 5 artifacts/observability rewrite + Bucket 8 KG)*
 - [x] docs/INVARIANTS.md — graph, reset, single-writer, and extraction boundaries *(Slices 1-4: §12 single-writer + §17 Knowledge Graph)*
-- [ ] docs/BUSINESS_LOGIC.md — source selection and product identity
-- [ ] docs/ENGINEERING_STRATEGY.md — direct graph writes, dual artifact paths, and site-specific extraction anti-patterns
-- [ ] docs/agent/SKILLS.md — single-file diagnosis and contract-refinement recipes
+- [x] docs/BUSINESS_LOGIC.md — source selection and product identity *(Slices 8-9)*
+- [x] docs/ENGINEERING_STRATEGY.md — direct graph writes, dual artifact paths, and site-specific extraction anti-patterns
+- [x] docs/agent/SKILLS.md — single-file diagnosis and contract-refinement recipes
 
 ## Notes
 
@@ -302,4 +299,8 @@ Add bounded read/refine endpoints (`GET /api/knowledge/sites`, `.../graph`, `...
 - 2026-06-29: Slices 3 and 4 completed. Slice 3: removed the dead `FieldProvenance` provenance keys from `persistence/export/schema.py` (kept only the 4 the writer sets), deleted `crawl/review/evidence.py` (`collect_evidence_review`, which read never-produced `source_trace` keys) plus its review payload wiring and obsolete component test, and added the retailer-domain-literal ratchet `test_extraction_carries_no_retailer_domain_literals` (allow-set currently `example.com`/`example.in`; the only domain token in `app/extraction/` is the `firstcry.com` comment in `pipeline.py`, not a string constant). Slice 4: added `app/core/config/knowledge_graph.py` (data-only graph vocabulary/bounds owner) and the forward dependency guard `test_extraction_does_not_import_knowledge_graph_storage`; documented KG ownership + invariants in `backend-architecture.md` §6.8/§6.9, `CODEBASE_MAP.md` Bucket 5/8, and `INVARIANTS.md` §12/§17. **Deferred:** the reset-separation tests named in Slice 4 depend on graph tables and move to Slice 5; only the config owner, retailer-literal ratchet, and dependency-direction guard are writable before storage exists. Verify: `test_extraction_architecture.py` (15) + `test_url_result_persistence.py` (15) + `test_review_service.py` (9) all pass.
 - 2026-06-29: **Slice 5 completed.** Added six KG ORM models (`app/models/knowledge_graph.py`): `KGSiteVersion`, `KGEntity`, `KGRelationship`, `KGClaim`, `KGAssertionEvidence`, `KGExtractionContract` — UUID PKs, JSONB properties, `ON DELETE SET NULL` evidence FKs. Alembic migration `20260629_0002_knowledge_graph.py` creates all six tables with unique natural-key indexes. Repository `app/persistence/knowledge_graph.py` provides idempotent batch upserts (`upsert_entities`, `upsert_relationships`, `upsert_claims`, `upsert_contracts`), per-site projection serialization via `lock_site_version` (row-level `FOR UPDATE`), bounded recursive-CTE neighbourhood reads (`fetch_neighborhood`), and explicit `purge_graph`. Added `reset_knowledge_graph` to dashboard service — the ONLY reset that removes the graph; all other resets (crawl, Domain Memory, application) preserve it (feature spec §8). Component tests `test_knowledge_graph.py` (13 tests): validate upserts, locking, neighbourhood, purge, and reset-separation (the deferred Slice 4 tests). Verify: `test_extraction_architecture.py` (15) + `test_knowledge_graph.py` (13) + `test_dashboard_service.py` (10) all pass.
 - 2026-06-29: **Slice 6 completed.** Rewrote `app/persistence/projection.py` and `tests/component/test_projection.py` to full Slice-6 architecture. Template fingerprinting: route normalization (detail surfaces strip final slug → `{id}` so equivalent PDPs share templates), surface, tech signals from collector outcomes (jsonld/opengraph/microdata), collector outcomes (not values). Template skeleton: site, route_pattern, page_template, page, technology entities + SITE_HAS_TEMPLATE, TEMPLATE_MATCHES_ROUTE, PAGE_INSTANCE_OF_TEMPLATE, SITE_USES_TECHNOLOGY, PAGE_MENTIONS_PRODUCT relationships. Product/offer/brand/category entities + claims from Evidence (deduplicated by entity key to prevent batch-upsert duplicate errors). Extraction contracts from Decisions: winner (first `accepted_evidence_ids`), rejected with reasons, resolver rule, latest values, bounded to 5 per contract. All 11 projection tests pass (fingerprint stability/isolation, skeleton entities/rels, tech entities, product entities+claims, contracts with winner/rejected/rule, idempotency, template isolation). All 13 Slice-5 KG repository tests + 15 architecture ratchets still pass. No DB access in extraction (enforced by `test_extraction_does_not_import_knowledge_graph_storage`).
+- 2026-06-29: **Slice 7 completed.** `load_runtime_snapshot` freezes graph version and bounded contracts at run creation; `apply_contracts` is pure/runtime-only and prefers saved sources only when current evidence validates them. Extraction receives the frozen snapshot, records contract outcomes in `diagnose.json`, and still falls back to generic resolution when the preferred source is stale or absent.
+- 2026-06-29: **Slices 8 and 9 completed.** Projection now materializes canonical product knowledge from resolved public decisions: brand/category/seller/offer/asset entities, canonical relationships, deterministic GTIN-only `PRODUCT_SAME_AS`, and aggregate `product.variant_set` claims instead of variant entities. The URL pipeline projects inside a savepoint before the run report path and records projection failure without changing crawl verdicts. Added `/api/knowledge/*` for site listing, bounded graph/entity/contract reads, operator source selection with optimistic version checks and append-only history, admin rebuild versioning, graph purge, and per-site deletion. Added `kg_extraction_contracts.selection_history` migration; operator-selected sources are preserved by later projection writes.
+- 2026-06-29: **Slices 10 and 11 completed.** Slice 10 follows the operator correction: no new cold-start LLM service was added. The existing Crawl Studio generated-selector flow now wires accepted generated fields into Knowledge Graph contracts through `POST /api/knowledge/contracts/selector`; saved generated selectors become operator-selected `css_recipe:<selector>` contracts with route-pattern fallback matching. `apply_contracts` now treats field-name aliases like `brand` as fact-type contracts like `product.brand`. Slice 11 adds Knowledge Graph types/API calls, includes graph-only domains in Domain Memory, adds a bounded Knowledge Graph tab using existing UI primitives, renders nodes/relationships/contracts/version state, and lets operators change selected sources with optimistic graph-version checks.
+- 2026-06-29: **Slice 12 completed.** Applied/stamped Alembic head `20260629_0003`, resolved all 16 valid CodeRabbit findings, added focused regressions for alias contracts, operator history, canonical projection, GTIN identity, variant ownership/fingerprints, API normalization, and frontend failure isolation/version refresh. Full non-smoke verification: backend `1162 passed, 8 skipped, 160 deselected`; frontend `135 passed`; Ruff, mypy, frontend static/policy checks, and production build passed. Smoke suites were not run by explicit operator instruction.
 - The feature spec governs intent; this plan governs sequence. When they disagree, the spec wins and this plan is corrected.

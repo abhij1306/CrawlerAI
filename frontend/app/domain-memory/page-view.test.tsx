@@ -11,6 +11,10 @@ const apiMock = vi.hoisted(() => ({
   listDomainRunProfiles: vi.fn(),
   listDomainCookieMemory: vi.fn(),
   listDomainFieldFeedback: vi.fn(),
+  listKnowledgeSites: vi.fn(),
+  getKnowledgeGraph: vi.fn(),
+  listKnowledgeContracts: vi.fn(),
+  selectKnowledgeContractSource: vi.fn(),
   listCrawls: vi.fn(),
   resetDomainMemory: vi.fn(),
   saveDomainRunProfile: vi.fn(),
@@ -126,6 +130,89 @@ describe('DomainMemoryPage', () => {
         created_at: new Date('2026-04-08T10:06:00Z').toISOString(),
       },
     ]);
+    apiMock.listKnowledgeSites.mockResolvedValue({
+      sites: [
+        {
+          id: 'site-1',
+          domain: 'example.com',
+          current_version: 4,
+          projection_status: 'projected',
+          last_projected_run_id: 101,
+          last_projected_at: new Date('2026-04-08T10:11:00Z').toISOString(),
+        },
+      ],
+    });
+    apiMock.getKnowledgeGraph.mockResolvedValue({
+      bounds: { depth: 2, limit: 200 },
+      nodes: [
+        {
+          id: 'template-1',
+          entity_type: 'page_template',
+          canonical_key: 'example.com:ecommerce_detail:fp',
+          canonical_name: 'Product template',
+          properties: { route_pattern: '/products/{id}' },
+          status: 'active',
+        },
+        {
+          id: 'product-1',
+          entity_type: 'product',
+          canonical_key: 'example.com:product:sku-1',
+          canonical_name: 'Widget',
+          properties: {},
+          status: 'active',
+        },
+      ],
+      relationships: [
+        {
+          id: 'rel-1',
+          source_entity_id: 'template-1',
+          target_entity_id: 'product-1',
+          relationship_type: 'PAGE_MENTIONS_PRODUCT',
+          properties: {},
+          confidence: 1,
+          status: 'active',
+        },
+      ],
+    });
+    apiMock.listKnowledgeContracts.mockResolvedValue({
+      contracts: [
+        {
+          id: 'contract-1',
+          template_id: 'template-1',
+          surface: 'ecommerce_detail',
+          canonical_field: 'product.brand',
+          candidates: [{ source: 'jsonld:/brand' }, { source: 'css_recipe:.brand' }],
+          latest_values: [],
+          success_count: 3,
+          rejection_count: 1,
+          resolver_rule: 'operator_selector',
+          selected_source: 'jsonld:/brand',
+          selection_origin: 'generic',
+          selection_history: [],
+          status: 'active',
+        },
+      ],
+    });
+    apiMock.selectKnowledgeContractSource.mockImplementation(
+      (_contractId: string, payload: Record<string, unknown>) =>
+        Promise.resolve({
+          contract: {
+            id: 'contract-1',
+            template_id: 'template-1',
+            surface: 'ecommerce_detail',
+            canonical_field: 'product.brand',
+            candidates: [{ source: 'jsonld:/brand' }, { source: 'css_recipe:.brand' }],
+            latest_values: [],
+            success_count: 3,
+            rejection_count: 1,
+            resolver_rule: 'operator_selector',
+            selected_source: String(payload.selected_source),
+            selection_origin: 'operator',
+            selection_history: [{ selected_source: String(payload.selected_source) }],
+            status: 'active',
+          },
+        }),
+    );
     apiMock.listCrawls.mockResolvedValue({
       items: [
         {
@@ -237,6 +324,7 @@ describe('DomainMemoryPage', () => {
     expect(screen.getByRole('button', { name: 'Profiles (1)' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Cookies (3)' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Learning (1)' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Knowledge v4' })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Profiles (1)' }));
     expect(screen.getByText('Run Profile Defaults')).toBeInTheDocument();
@@ -249,6 +337,70 @@ describe('DomainMemoryPage', () => {
 
     expect(screen.queryByText('owned-session-test.example.com')).not.toBeInTheDocument();
   }, 10_000);
+
+  it('renders Knowledge Graph tab and updates source selection', async () => {
+    render(
+      <MemoryRouter>
+        <TopBarProvider>
+          <DomainMemoryPage />
+        </TopBarProvider>
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Knowledge v4' }));
+
+    expect(await screen.findByText('Knowledge Graph')).toBeInTheDocument();
+    expect(screen.getByText('Widget')).toBeInTheDocument();
+    expect(screen.getByText('PAGE_MENTIONS_PRODUCT')).toBeInTheDocument();
+    expect(screen.getByText('product.brand')).toBeInTheDocument();
+
+    apiMock.listKnowledgeSites.mockResolvedValueOnce({
+      sites: [
+        {
+          id: 'site-1',
+          domain: 'example.com',
+          current_version: 5,
+          projection_status: 'pending',
+          last_projected_run_id: 101,
+          last_projected_at: new Date('2026-04-08T10:11:00Z').toISOString(),
+        },
+      ],
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+    await waitFor(() => {
+      expect(apiMock.getKnowledgeGraph).toHaveBeenCalledTimes(2);
+      expect(screen.getByText('Pending')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('combobox', { name: 'Source for product.brand' }));
+    fireEvent.click(await screen.findByRole('option', { name: 'css_recipe:.brand' }));
+
+    await waitFor(() => {
+      expect(apiMock.selectKnowledgeContractSource).toHaveBeenCalledWith('contract-1', {
+        selected_source: 'css_recipe:.brand',
+        expected_version: 5,
+        template_id: 'template-1',
+        surface: 'ecommerce_detail',
+        canonical_field: 'product.brand',
+      });
+    });
+  }, 10_000);
+
+  it('keeps domain memory usable when Knowledge Graph site loading fails', async () => {
+    apiMock.listKnowledgeSites.mockRejectedValue(new Error('Knowledge Graph unavailable'));
+
+    render(
+      <MemoryRouter>
+        <TopBarProvider>
+          <DomainMemoryPage />
+        </TopBarProvider>
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText('Selector Memory')).toBeInTheDocument();
+    expect(screen.getAllByText('price').length).toBeGreaterThan(0);
+    expect(screen.queryByText('Knowledge Graph unavailable')).not.toBeInTheDocument();
+  });
 
   it('edits and saves a domain run profile from domain memory', async () => {
     render(
@@ -352,6 +504,7 @@ describe('DomainMemoryPage', () => {
     apiMock.listDomainRunProfiles.mockResolvedValueOnce([]);
     apiMock.listDomainCookieMemory.mockResolvedValueOnce([]);
     apiMock.listDomainFieldFeedback.mockResolvedValueOnce([]);
+    apiMock.listKnowledgeSites.mockResolvedValueOnce({ sites: [] });
     apiMock.listCrawls.mockResolvedValueOnce({
       items: [],
       meta: { page: 1, limit: 200, total: 0 },

@@ -140,6 +140,7 @@ Current UI settings behavior reflects the backend contract:
 - additional fields
 - additional fields are dispatched as the operator typed them (trimmed/deduped only); the UI no longer rewrites labels like `Features & Benefits` into snake_case before the backend sees them
 - Surface tabs adapt by domain. Forum Thread renders one tab and hides the mode picker.
+- Crawl Studio's Generate + Save to Memory flow also wires accepted generated selectors into the Knowledge Graph as operator-selected extraction contracts; this reuses the existing selector suggestion UI rather than adding a separate cold-start LLM workflow.
 
 ### 3.4 Run workspace
 
@@ -220,6 +221,7 @@ The frontend currently uses live backend routes for:
 - logs + websocket: `/api/crawls/{id}/logs`, `/api/crawls/{id}/logs/ws`
 - review: `/api/review/{id}`, `/api/review/{id}/artifact-html`, `/api/review/{id}/save`
 - selectors: `/api/selectors`, `/api/selectors/suggest`, `/api/selectors/test`, `/api/selectors/preview-html`
+- Knowledge Graph: `/api/knowledge/sites`, `/api/knowledge/graph`, `/api/knowledge/contracts/{template_id}`, `/api/knowledge/contracts/{contract_id}/selection`, `/api/knowledge/contracts/selector`
 - users: `/api/users`
 - llm: `/api/llm/providers`, `/api/llm/configs`, `/api/llm/test-connection`, `/api/llm/cost-log`
 - jobs: `/api/jobs/active`
@@ -273,6 +275,8 @@ The selectors UI is built on:
 - preview HTML loaded into a same-origin iframe so the selector tool can compute XPath directly from the loaded DOM
 - manual test response with count and matched value
 - optional LLM suggestion flow from Crawl Studio field configuration, not from the selector tool page
+
+Domain Memory also includes a Knowledge Graph tab. It loads graph-only domains from `/api/knowledge/sites`, renders bounded graph neighborhoods from `/api/knowledge/graph`, fetches page-template contracts, and lets operators choose retained source candidates with graph-version conflict checks. It uses the existing UI primitives and pattern components; it does not add a separate graph canvas dependency.
 - a dedicated `/domain-memory` surface for edit/delete/toggle operations
 
 ### LLM Admin

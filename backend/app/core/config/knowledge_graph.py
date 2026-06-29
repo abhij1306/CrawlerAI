@@ -54,6 +54,29 @@ KG_EDGE_TYPES: Final = frozenset(
     }
 )
 
+KG_PRODUCT_IDENTITY_FACTS: Final = (
+    "product.gtin",
+    "product.mpn",
+    "product.sku",
+    "product.url",
+)
+KG_PRODUCT_GTIN_FACT: Final = "product.gtin"
+KG_PRODUCT_MPN_FACT: Final = "product.mpn"
+KG_PRODUCT_SKU_FACT: Final = "product.sku"
+KG_PRODUCT_URL_FACT: Final = "product.url"
+KG_PRODUCT_BRAND_FACT: Final = "product.brand"
+KG_PRODUCT_CATEGORY_FACT: Final = "product.category"
+KG_OFFER_SELLER_FACT: Final = "offer.seller"
+KG_ASSET_URL_FACT: Final = "asset.image_url"
+KG_VARIANT_SET_FACT: Final = "product.variant_set"
+
+KG_PRODUCT_BRAND_RELATIONSHIP: Final = "PRODUCT_MADE_BY"
+KG_PRODUCT_CATEGORY_RELATIONSHIP: Final = "PRODUCT_IN_CATEGORY"
+KG_PRODUCT_OFFER_RELATIONSHIP: Final = "PRODUCT_HAS_OFFER"
+KG_OFFER_SELLER_RELATIONSHIP: Final = "OFFER_SOLD_BY"
+KG_PRODUCT_ASSET_RELATIONSHIP: Final = "PRODUCT_HAS_ASSET"
+KG_PRODUCT_SAME_AS_RELATIONSHIP: Final = "PRODUCT_SAME_AS"
+
 # --- Statuses ----------------------------------------------------------------
 
 # Entity / relationship / claim lifecycle. A new observation supersedes the
@@ -117,6 +140,22 @@ __all__ = [
     "KG_EDGE_TYPES",
     "KG_ENTITY_STATUSES",
     "KG_IDENTITY_LADDER",
+    "KG_ASSET_URL_FACT",
+    "KG_OFFER_SELLER_FACT",
+    "KG_OFFER_SELLER_RELATIONSHIP",
+    "KG_PRODUCT_ASSET_RELATIONSHIP",
+    "KG_PRODUCT_BRAND_FACT",
+    "KG_PRODUCT_BRAND_RELATIONSHIP",
+    "KG_PRODUCT_CATEGORY_FACT",
+    "KG_PRODUCT_CATEGORY_RELATIONSHIP",
+    "KG_PRODUCT_GTIN_FACT",
+    "KG_PRODUCT_IDENTITY_FACTS",
+    "KG_PRODUCT_MPN_FACT",
+    "KG_PRODUCT_OFFER_RELATIONSHIP",
+    "KG_PRODUCT_SAME_AS_RELATIONSHIP",
+    "KG_PRODUCT_SKU_FACT",
+    "KG_PRODUCT_URL_FACT",
+    "KG_VARIANT_SET_FACT",
     "KG_MAX_GRAPH_DEPTH",
     "KG_MAX_NODE_LIMIT",
     "KG_NODE_TYPES",

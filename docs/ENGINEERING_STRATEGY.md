@@ -35,6 +35,7 @@ Engineering constraints for CrawlerAI. Defines how code should be shaped and how
 | 6 | Review + Selectors + Domain Memory | `app/crawl/review/*`, `app/core/records/selectors_runtime.py`, `app/crawl/domain_memory_service.py` |
 | 7 | LLM Admin + Runtime | `app/connectors/llm/*` |
 | 8 | Data Enrichment | `app/api/data_enrichment.py`, `app/enrichment/*`, `app/models/data_enrichment.py` |
+| 9 | Knowledge Graph | `app/persistence/projection.py`, `app/persistence/knowledge_graph.py`, `app/api/knowledge.py`, `app/models/knowledge_graph.py` |
 
 Config tunables for all buckets → `app/core/config/*`
 
@@ -198,6 +199,30 @@ Binary assets in the repository root become mystery blobs and make README/docs c
 **Violation looks like:** `image.png` or another binary image committed at repo root with no descriptive path.
 
 **Fix:** Move assets under `docs/assets/` or the owning frontend/static asset folder with a descriptive filename, then update references.
+
+### AP-24: Direct canonical graph writes
+
+Writing Knowledge Graph entities, claims, relationships, or contracts from extraction collectors or the extraction engine couples deterministic extraction to mutable storage.
+
+**Violation looks like:** `app/extraction/*` imports graph models or `app/persistence/knowledge_graph.py`, or a collector updates a contract while resolving the current page.
+
+**Fix:** Extraction emits immutable evidence, decisions, and contract outcomes. `app/persistence/projection.py` is the canonical graph writer after extraction; `app/api/knowledge.py` owns explicit operator refinement.
+
+### AP-25: Parallel artifact layouts
+
+Writing URL diagnostics through more than one publisher creates conflicting forensic records and stale readers.
+
+**Violation looks like:** both `runs/{id}/pages/...` and `runs/{id}/results/{url_result_id}/...`, duplicate HTML writes, manifests that point to files no writer emits, or a second diagnostic vocabulary.
+
+**Fix:** The URL-result publisher writes exactly `page.html`, `record.json`, and self-contained `diagnose.json` under the result root. Run reporting reads those diagnoses and writes only `report.json`.
+
+### AP-26: Retailer branches in generic extraction
+
+Host or retailer names inside generic extraction turn shared fixes into site-specific behavior and hide missing evidence rules.
+
+**Violation looks like:** `if host == "retailer.example"` in `app/extraction/*`, domain-specific selector fallbacks, or retailer adapters that bypass normal evidence and resolution.
+
+**Fix:** Improve generic collectors, field mappings, or evidence resolution. Keep protocol collectors generic and enforce the domain-literal architecture ratchet.
 
 ---
 

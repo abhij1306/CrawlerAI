@@ -7,6 +7,7 @@ import type {
   DomainFieldFeedbackRecord,
   DomainRunProfile,
   DomainRunProfileRecord,
+  KnowledgeSiteRecord,
   SelectorDomainSummary,
   SelectorRecord,
 } from '../../../lib/api/types';
@@ -43,6 +44,7 @@ export function useDomainMemoryWorkspace() {
   const [profiles, setProfiles] = useState<DomainRunProfileRecord[]>([]);
   const [cookies, setCookies] = useState<DomainCookieMemoryRecord[]>([]);
   const [feedback, setFeedback] = useState<DomainFieldFeedbackRecord[]>([]);
+  const [knowledgeSites, setKnowledgeSites] = useState<KnowledgeSiteRecord[]>([]);
   const [completedRuns, setCompletedRuns] = useState<CrawlRun[]>([]);
   const [loading, setLoading] = useState(false);
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
@@ -65,19 +67,29 @@ export function useDomainMemoryWorkspace() {
     if (showLoading) setLoading(true);
     setError('');
     try {
-      const [selectorSummaryData, profileData, cookieData, feedbackData, crawlData] =
-        await Promise.all([
-          api.listSelectorSummaries(),
-          api.listDomainRunProfiles(),
-          api.listDomainCookieMemory(),
-          api.listDomainFieldFeedback({ limit: 100 }),
-          api.listCrawls({ status: 'completed', limit: 100 }),
-        ]);
+      const knowledgeSiteRequest = api.listKnowledgeSites().catch(() => null);
+      const [
+        selectorSummaryData,
+        profileData,
+        cookieData,
+        feedbackData,
+        crawlData,
+        knowledgeSiteData,
+      ] = await Promise.all([
+        api.listSelectorSummaries(),
+        api.listDomainRunProfiles(),
+        api.listDomainCookieMemory(),
+        api.listDomainFieldFeedback({ limit: 100 }),
+        api.listCrawls({ status: 'completed', limit: 100 }),
+        knowledgeSiteRequest,
+      ]);
+      const sites = knowledgeSiteData?.sites ?? knowledgeSites;
       const loadedDomains = [
         ...selectorSummaryData.map((row) => row.domain),
         ...profileData.map((row) => row.domain),
         ...cookieData.map((row) => row.domain),
         ...feedbackData.map((row) => row.domain),
+        ...sites.map((row) => row.domain),
         ...crawlData.items.map(
           (run) => String(run.result_summary?.domain || '').trim() || getNormalizedDomain(run.url),
         ),
@@ -93,6 +105,7 @@ export function useDomainMemoryWorkspace() {
       setProfiles(profileData);
       setCookies(cookieData);
       setFeedback(feedbackData);
+      if (knowledgeSiteData) setKnowledgeSites(sites);
       setCompletedRuns(crawlData.items);
       setSelectedDomain(preferredDomain);
       setRecords(toLocalRecords(selectorData));
@@ -133,6 +146,7 @@ export function useDomainMemoryWorkspace() {
         completedRuns,
         cookies,
         feedback,
+        knowledgeSites,
         profiles,
         records,
         selectorSummaries,
@@ -144,6 +158,7 @@ export function useDomainMemoryWorkspace() {
       cookies,
       deferredSearchQuery,
       feedback,
+      knowledgeSites,
       profiles,
       records,
       selectorSummaries,
@@ -278,6 +293,7 @@ export function useDomainMemoryWorkspace() {
     loadedSelectorDomain,
     loading,
     loadWorkspace,
+    knowledgeSites,
     profileDraftFor,
     profileSaveKey,
     resetDialogOpen,

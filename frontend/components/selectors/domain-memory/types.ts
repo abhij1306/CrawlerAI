@@ -3,6 +3,7 @@ import type {
   DomainCookieMemoryRecord,
   DomainFieldFeedbackRecord,
   DomainRunProfileRecord,
+  KnowledgeSiteRecord,
   SelectorRecord,
 } from '../../../lib/api/types';
 
@@ -29,6 +30,7 @@ export type DomainWorkspace = {
   domain: string;
   surfaces: SurfaceWorkspace[];
   cookieMemory: DomainCookieMemoryRecord | null;
+  knowledgeSite: KnowledgeSiteRecord | null;
   learning: DomainFieldFeedbackRecord[];
   completedRunCount: number;
   latestCompletedAt: string | null;

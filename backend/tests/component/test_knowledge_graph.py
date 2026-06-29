@@ -309,6 +309,76 @@ async def test_upsert_contracts_idempotent_on_scope(
 
 @pytest.mark.asyncio
 @pytest.mark.component
+async def test_upsert_contracts_preserves_history_when_promoted_to_operator(
+    db_session: AsyncSession,
+) -> None:
+    template_id = uuid.uuid4()
+    db_session.add(
+        KGEntity(
+            id=template_id,
+            entity_type="page_template",
+            canonical_key="operator-promotion-template",
+            canonical_name="Operator promotion",
+        )
+    )
+    await db_session.flush()
+    await upsert_contracts(
+        db_session,
+        [
+            ContractInput(
+                template_id=template_id,
+                surface="ecommerce_detail",
+                canonical_field="product.brand",
+                selected_source="jsonld:/brand",
+                selection_origin="generic",
+            )
+        ],
+    )
+    history = ({"selected_source": "css_recipe:.brand"},)
+    await upsert_contracts(
+        db_session,
+        [
+            ContractInput(
+                template_id=template_id,
+                surface="ecommerce_detail",
+                canonical_field="product.brand",
+                selected_source="css_recipe:.brand",
+                selection_origin="operator",
+                selection_history=history,
+            )
+        ],
+    )
+    await db_session.commit()
+
+    contract = (
+        await db_session.execute(select(KGExtractionContract))
+    ).scalar_one()
+    assert contract.selected_source == "css_recipe:.brand"
+    assert contract.selection_origin == "operator"
+    assert contract.selection_history == list(history)
+
+    second_history = ({"selected_source": "css_recipe:.product-brand"},)
+    await upsert_contracts(
+        db_session,
+        [
+            ContractInput(
+                template_id=template_id,
+                surface="ecommerce_detail",
+                canonical_field="product.brand",
+                selected_source="css_recipe:.product-brand",
+                selection_origin="operator",
+                selection_history=second_history,
+            )
+        ],
+    )
+    await db_session.commit()
+    await db_session.refresh(contract)
+    assert contract.selected_source == "css_recipe:.product-brand"
+    assert contract.selection_history == [*history, *second_history]
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
 async def test_fetch_neighborhood_bounded_recursive_cte(
     db_session: AsyncSession,
 ) -> None:

@@ -91,13 +91,19 @@ def _resolution(*decisions: Decision) -> ResolutionResult:
     )
 
 
-def _snapshot(fingerprint: str, surface: str, contracts: list[dict]) -> dict:
+def _snapshot(
+    fingerprint: str,
+    surface: str,
+    contracts: list[dict],
+    route_pattern: str = "",
+) -> dict:
     return {
         "surface": surface,
         "graph_version": 1,
         "templates": [
             {
                 "fingerprint": fingerprint,
+                "route_pattern": route_pattern,
                 "template_key": f"example.com:{surface}:{fingerprint}",
                 "contracts": contracts,
             }
@@ -128,6 +134,65 @@ def test_match_template_returns_none_on_wrong_fingerprint() -> None:
 def test_match_template_returns_none_on_wrong_surface() -> None:
     snapshot = _snapshot("fp-abc", "ecommerce_detail", [])
     assert match_template(snapshot, "fp-abc", "ecommerce_listing") is None
+
+
+@pytest.mark.unit
+def test_match_template_falls_back_to_route_pattern() -> None:
+    snapshot = _snapshot(
+        "fp-empty",
+        "ecommerce_detail",
+        [],
+        route_pattern="/products/{id}",
+    )
+    result = match_template(
+        snapshot,
+        "fp-runtime",
+        "ecommerce_detail",
+        url="https://example.com/products/widget-1",
+    )
+    assert result is not None
+    assert result["fingerprint"] == "fp-empty"
+
+
+@pytest.mark.unit
+def test_match_template_merges_operator_route_contract_into_exact_template() -> None:
+    snapshot = {
+        "surface": "ecommerce_detail",
+        "templates": [
+            {
+                "fingerprint": "fp-runtime",
+                "route_pattern": "/products/{id}",
+                "contracts": [
+                    {
+                        "canonical_field": "product.brand",
+                        "selected_source": "jsonld:/brand",
+                        "selection_origin": "generic",
+                    }
+                ],
+            },
+            {
+                "fingerprint": "fp-generated",
+                "route_pattern": "/products/{id}",
+                "contracts": [
+                    {
+                        "canonical_field": "product.brand",
+                        "selected_source": "css_recipe:.brand",
+                        "selection_origin": "operator",
+                    }
+                ],
+            },
+        ],
+    }
+
+    result = match_template(
+        snapshot,
+        "fp-runtime",
+        "ecommerce_detail",
+        url="https://example.com/products/widget-1",
+    )
+
+    assert result is not None
+    assert result["contracts"][0]["selected_source"] == "css_recipe:.brand"
 
 
 @pytest.mark.unit
@@ -176,6 +241,42 @@ def test_apply_contracts_hit_repoints_decision_to_preferred_source() -> None:
     # Decision re-pointed to the same evidence (it was already preferred)
     updated = {d.fact_type: d for d in new_resolution.decisions}
     assert updated["product.title"].accepted_evidence_ids == ("ev-1",)
+
+
+@pytest.mark.unit
+def test_apply_contracts_treats_requested_field_alias_as_fact_type() -> None:
+    selector = ".product-detail-primary-brand-value-that-is-longer-than-eighty-characters-1234567890"
+    evidence = (
+        _evidence("ev-1", "jsonld", "/brand", "product.brand", "Generic"),
+        _evidence("ev-2", "css_recipe", selector, "product.brand", "ACME"),
+    )
+    resolution = _resolution(_decision("product.brand", ("ev-1",)))
+    snapshot = _snapshot(
+        "fp-abc",
+        "ecommerce_detail",
+        [
+            {
+                "canonical_field": "brand",
+                "selected_source": f"css_recipe:{selector}",
+                "selection_origin": "operator",
+                "resolver_rule": "operator_selector",
+            }
+        ],
+    )
+
+    new_resolution, outcomes = apply_contracts(
+        snapshot=snapshot,
+        fingerprint="fp-abc",
+        surface="ecommerce_detail",
+        evidence=evidence,
+        resolution=resolution,
+        requested_fields=frozenset({"brand"}),
+        user_controlled_fields=frozenset(),
+    )
+
+    assert new_resolution.decisions[0].accepted_evidence_ids == ("ev-2",)
+    assert outcomes[0].outcome == "hit"
+    assert outcomes[0].field == "product.brand"
 
 
 @pytest.mark.unit

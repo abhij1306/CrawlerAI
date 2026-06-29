@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 from collections.abc import Mapping
 from datetime import UTC, datetime
+from hashlib import sha256
 from typing import TYPE_CHECKING
 
 from sqlalchemy import select
@@ -23,6 +24,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config.knowledge_graph import (
     KG_CLAIM_VALUE_PREVIEW_LIMIT,
     KG_CONTRACT_RETAINED_VALUE_LIMIT,
+    KG_ASSET_URL_FACT,
+    KG_OFFER_SELLER_FACT,
+    KG_OFFER_SELLER_RELATIONSHIP,
+    KG_PRODUCT_ASSET_RELATIONSHIP,
+    KG_PRODUCT_BRAND_FACT,
+    KG_PRODUCT_BRAND_RELATIONSHIP,
+    KG_PRODUCT_CATEGORY_FACT,
+    KG_PRODUCT_CATEGORY_RELATIONSHIP,
+    KG_PRODUCT_GTIN_FACT,
+    KG_PRODUCT_OFFER_RELATIONSHIP,
+    KG_PRODUCT_SAME_AS_RELATIONSHIP,
+    KG_VARIANT_SET_FACT,
 )
 from app.core.domain_utils import normalize_domain
 from app.core.knowledge_graph.templates import (
@@ -31,6 +44,7 @@ from app.core.knowledge_graph.templates import (
     normalize_route,
 )
 from app.extraction.contracts import Decision, Evidence, ExtractionResult
+from app.extraction.surfaces import Surface
 from app.models.crawl_run import CrawlRun
 from app.models.knowledge_graph import KGClaim
 from app.persistence.knowledge_graph import (
@@ -217,25 +231,48 @@ async def project_extraction_result(
                     seen_products.add(entity_id)
 
                 claim_value = {"raw": evidence.raw_value, "processed": evidence.value}
+                claim_value_hash = _claim_value_hash(evidence.fact_type, claim_value)
                 claim_inputs.append(
                     ClaimInput(
                         entity_id=entity_id,
                         fact_type=evidence.fact_type,
                         value=claim_value,
+                        value_hash=claim_value_hash,
                         confidence=evidence.confidence,
                     )
                 )
                 claim_key = (
                     entity_id,
                     evidence.fact_type,
-                    compute_value_hash(claim_value),
+                    claim_value_hash,
                 )
                 claim_evidence_by_key.setdefault(claim_key, []).append(
                     (evidence, rejected_by_evidence_id.get(evidence.evidence_id))
                 )
 
+    while True:
+        canonical_entities, canonical_rels, canonical_claims = _canonical_projection(
+            domain=domain,
+            page_url=url,
+            result=result,
+            entity_map=entity_map,
+        )
+        if not canonical_entities:
+            break
+        entity_map.update(await upsert_entities(session, canonical_entities))
+    relationships.extend(canonical_rels)
+    claim_inputs.extend(canonical_claims)
+
     await upsert_relationships(session, relationships)
     claim_ids = await upsert_claims(session, claim_inputs) if claim_inputs else []
+    same_as_relationships = await _same_as_relationships(
+        session,
+        domain=domain,
+        entity_map=entity_map,
+        result=result,
+    )
+    if same_as_relationships:
+        await upsert_relationships(session, same_as_relationships)
     if claim_evidence_by_key:
         claim_id_by_key = await _claim_ids_by_key(session, claim_evidence_by_key)
         for key, evidence_rows in claim_evidence_by_key.items():
@@ -286,9 +323,13 @@ async def _project_contracts(
     """Project decisions into extraction contracts."""
     evidence_by_id = {e.evidence_id: e for e in evidence}
     contracts: list[ContractInput] = []
+    seen_fields: set[str] = set()
 
     for decision in decisions:
         canonical_field = decision.fact_type
+        if canonical_field in seen_fields:
+            continue
+        seen_fields.add(canonical_field)
 
         # Winner (first accepted evidence)
         winner = None
@@ -349,6 +390,314 @@ async def _project_contracts(
     return contracts
 
 
+def _canonical_projection(
+    *,
+    domain: str,
+    page_url: str,
+    result: ExtractionResult,
+    entity_map: dict[tuple[str, str], uuid.UUID],
+) -> tuple[list[EntityInput], list[RelationshipInput], list[ClaimInput]]:
+    evidence_by_id = {e.evidence_id: e for e in result.evidence}
+    entities: dict[tuple[str, str], EntityInput] = {}
+    relationships: list[RelationshipInput] = []
+    claims: list[ClaimInput] = []
+    product_ids: dict[str, uuid.UUID] = {}
+    offer_ids: dict[str, uuid.UUID] = {}
+
+    for decision in result.decisions:
+        if (
+            decision.status != "resolved"
+            or not decision.accepted_evidence_ids
+            or not decision.fact_type.startswith(("product.", "offer.", "asset."))
+        ):
+            continue
+        evidence = evidence_by_id.get(decision.accepted_evidence_ids[0])
+        if evidence is None:
+            continue
+        product_subject = _product_subject_for_decision(decision, evidence)
+        product_id = _entity_id(
+            "product",
+            _scoped_key(domain, product_subject),
+            entity_map,
+            entities,
+        )
+        if product_id is not None:
+            product_ids[product_subject] = product_id
+        value = evidence.value
+        if product_id is not None:
+            claim_value = {"raw": evidence.raw_value, "processed": value}
+            claims.append(
+                ClaimInput(
+                    entity_id=product_id,
+                    fact_type=decision.fact_type,
+                    value=claim_value,
+                    value_hash=_claim_value_hash(decision.fact_type, claim_value),
+                    confidence=evidence.confidence,
+                )
+            )
+
+        if product_id is None:
+            continue
+        if decision.fact_type == KG_PRODUCT_BRAND_FACT and _has_text(value):
+            brand_id = _entity_id(
+                "brand",
+                _value_key(domain, "brand", value),
+                entity_map,
+                entities,
+                canonical_name=str(value),
+            )
+            if brand_id:
+                relationships.append(
+                    RelationshipInput(
+                        source_entity_id=product_id,
+                        target_entity_id=brand_id,
+                        relationship_type=KG_PRODUCT_BRAND_RELATIONSHIP,
+                        properties={"field": decision.fact_type},
+                        confidence=evidence.confidence,
+                    )
+                )
+        elif decision.fact_type == KG_PRODUCT_CATEGORY_FACT and _has_text(value):
+            category_id = _entity_id(
+                "category",
+                _value_key(domain, "category", value),
+                entity_map,
+                entities,
+                canonical_name=str(value),
+            )
+            if category_id:
+                relationships.append(
+                    RelationshipInput(
+                        source_entity_id=product_id,
+                        target_entity_id=category_id,
+                        relationship_type=KG_PRODUCT_CATEGORY_RELATIONSHIP,
+                        properties={"field": decision.fact_type},
+                        confidence=evidence.confidence,
+                    )
+                )
+        elif decision.fact_type.startswith("offer."):
+            offer_subject = decision.entity_id or evidence.subject_id
+            offer_id = _entity_id(
+                "offer",
+                _scoped_key(domain, offer_subject),
+                entity_map,
+                entities,
+            )
+            if offer_id:
+                offer_ids[offer_subject] = offer_id
+                relationships.append(
+                    RelationshipInput(
+                        source_entity_id=product_id,
+                        target_entity_id=offer_id,
+                        relationship_type=KG_PRODUCT_OFFER_RELATIONSHIP,
+                    )
+                )
+                if decision.fact_type == KG_OFFER_SELLER_FACT and _has_text(value):
+                    seller_id = _entity_id(
+                        "seller",
+                        _value_key(domain, "seller", value),
+                        entity_map,
+                        entities,
+                        canonical_name=str(value),
+                    )
+                    if seller_id:
+                        relationships.append(
+                            RelationshipInput(
+                                source_entity_id=offer_id,
+                                target_entity_id=seller_id,
+                                relationship_type=KG_OFFER_SELLER_RELATIONSHIP,
+                                properties={"field": decision.fact_type},
+                                confidence=evidence.confidence,
+                            )
+                        )
+        elif decision.fact_type == KG_ASSET_URL_FACT and _has_text(value):
+            asset_id = _entity_id(
+                "asset",
+                _value_key(domain, "asset", value),
+                entity_map,
+                entities,
+                canonical_name=str(value),
+            )
+            if asset_id:
+                relationships.append(
+                    RelationshipInput(
+                        source_entity_id=product_id,
+                        target_entity_id=asset_id,
+                        relationship_type=KG_PRODUCT_ASSET_RELATIONSHIP,
+                        properties={"field": decision.fact_type},
+                        confidence=evidence.confidence,
+                    )
+                )
+
+    primary_product_id = next(iter(product_ids.values()), None)
+    if (
+        result.surface == Surface.ECOMMERCE_DETAIL
+        and len(product_ids) == 1
+        and primary_product_id is not None
+    ):
+        variant_claim = _variant_set_claim(primary_product_id, result)
+        if variant_claim is not None:
+            claims.append(variant_claim)
+    return list(entities.values()), relationships, claims
+
+
+def _product_subject_for_decision(decision: Decision, evidence: Evidence) -> str:
+    if evidence.subject_scope == "product":
+        return evidence.subject_id
+    if evidence.parent_subject_id:
+        return evidence.parent_subject_id
+    if decision.entity_id.startswith("product:"):
+        return decision.entity_id.split(":", 1)[1]
+    return evidence.subject_id or decision.entity_id
+
+
+def _entity_id(
+    entity_type: str,
+    canonical_key: str,
+    entity_map: dict[tuple[str, str], uuid.UUID],
+    pending: dict[tuple[str, str], EntityInput],
+    *,
+    canonical_name: str = "",
+) -> uuid.UUID | None:
+    key = (entity_type, canonical_key)
+    existing = entity_map.get(key)
+    if existing is not None:
+        return existing
+    pending.setdefault(
+        key,
+        EntityInput(
+            entity_type=entity_type,
+            canonical_key=canonical_key,
+            canonical_name=canonical_name,
+            properties={},
+        ),
+    )
+    return None
+
+
+def _scoped_key(domain: str, value: object) -> str:
+    return f"{domain}:{str(value or '').strip()}"
+
+
+def _value_key(domain: str, entity_type: str, value: object) -> str:
+    return f"{domain}:{entity_type}:{str(value or '').strip().casefold()}"
+
+
+def _has_text(value: object) -> bool:
+    return bool(str(value or "").strip())
+
+
+def _variant_set_claim(
+    product_id: uuid.UUID,
+    result: ExtractionResult,
+) -> ClaimInput | None:
+    rows: list[dict[str, object]] = []
+    for record in result.records:
+        dumped = record.model_dump(mode="json", exclude_none=True)
+        variants = dumped.get("variants")
+        if isinstance(variants, list):
+            rows.extend(row for row in variants if isinstance(row, dict))
+    if not rows:
+        return None
+    transport_fields = {
+        "variant_id",
+        "sku",
+        "gtin",
+        "price",
+        "currency",
+        "url",
+        "image_url",
+        "availability",
+        "stock_quantity",
+    }
+    axes = sorted(
+        {
+            str(key)
+            for row in rows
+            for key, value in row.items()
+            if key not in transport_fields and value not in (None, "", [], {})
+        }
+    )
+    payload = {
+        "axes": axes,
+        "count": len(rows),
+        "fingerprint": _variant_fingerprint(rows, axes),
+        "lineage": {},
+    }
+    return ClaimInput(
+        entity_id=product_id,
+        fact_type=KG_VARIANT_SET_FACT,
+        value=payload,
+        confidence=1.0,
+    )
+
+
+def _variant_fingerprint(rows: list[dict[str, object]], axes: list[str]) -> str:
+    material = [
+        {
+            axis: row.get(axis)
+            for axis in axes
+            if row.get(axis) not in (None, "", [], {})
+        }
+        for row in rows
+    ]
+    material.sort(
+        key=lambda row: json.dumps(
+            row, sort_keys=True, separators=(",", ":"), default=str
+        )
+    )
+    encoded = json.dumps(material, sort_keys=True, separators=(",", ":"), default=str)
+    return sha256(encoded.encode("utf-8")).hexdigest()
+
+
+async def _same_as_relationships(
+    session: AsyncSession,
+    *,
+    domain: str,
+    entity_map: dict[tuple[str, str], uuid.UUID],
+    result: ExtractionResult,
+) -> list[RelationshipInput]:
+    evidence_by_id = {e.evidence_id: e for e in result.evidence}
+    relationships: list[RelationshipInput] = []
+    for decision in result.decisions:
+        if (
+            decision.status != "resolved"
+            or decision.fact_type != KG_PRODUCT_GTIN_FACT
+            or not decision.accepted_evidence_ids
+        ):
+            continue
+        evidence = evidence_by_id.get(decision.accepted_evidence_ids[0])
+        if evidence is None:
+            continue
+        product_id = entity_map.get(
+            ("product", _scoped_key(domain, _product_subject_for_decision(decision, evidence)))
+        )
+        if product_id is None:
+            continue
+        canonical_gtin = _canonical_gtin(evidence.value)
+        if not canonical_gtin:
+            continue
+        value_hash = compute_value_hash(canonical_gtin)
+        rows = (
+            await session.execute(
+                select(KGClaim.entity_id)
+                .where(KGClaim.fact_type == KG_PRODUCT_GTIN_FACT)
+                .where(KGClaim.value_hash == value_hash)
+                .where(KGClaim.entity_id != product_id)
+            )
+        ).all()
+        for (other_id,) in rows:
+            source_id, target_id = sorted((product_id, other_id), key=lambda item: str(item))
+            relationships.append(
+                RelationshipInput(
+                    source_entity_id=source_id,
+                    target_entity_id=target_id,
+                    relationship_type=KG_PRODUCT_SAME_AS_RELATIONSHIP,
+                    properties={"basis": KG_PRODUCT_GTIN_FACT},
+                )
+            )
+    return relationships
+
+
 async def _existing_run_id(session: AsyncSession, run_id: int) -> int | None:
     return (
         await session.execute(select(CrawlRun.id).where(CrawlRun.id == int(run_id)))
@@ -396,5 +745,15 @@ def _source_descriptor(evidence: Evidence) -> str:
     """Build human-readable source descriptor from evidence."""
     parts = [evidence.collector_id]
     if evidence.locator:
-        parts.append(evidence.locator.value[:80])
+        parts.append(evidence.locator.value)
     return ":".join(parts)
+
+
+def _claim_value_hash(fact_type: str, value: object) -> str:
+    if fact_type == KG_PRODUCT_GTIN_FACT and isinstance(value, Mapping):
+        return compute_value_hash(_canonical_gtin(value.get("processed")))
+    return compute_value_hash(value)
+
+
+def _canonical_gtin(value: object) -> str:
+    return "".join(character for character in str(value or "") if character.isdigit())

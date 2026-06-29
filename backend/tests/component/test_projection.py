@@ -13,6 +13,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.crawl.crud import create_crawl_run
 from app.extraction.contracts import (
     CollectorOutcome,
+    CommerceDetailRecord,
+    CommerceVariantRecord,
     Decision,
     Evidence,
     ExtractionResult,
@@ -605,3 +607,462 @@ async def test_template_isolation_different_templates_separate_contracts(
 
     assert "opengraph" in detail_contract.selected_source
     assert "jsonld" in listing_contract.selected_source
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_projection_creates_canonical_relationships_from_resolved_decisions(
+    db_session: AsyncSession,
+) -> None:
+    brand_ev = Evidence(
+        evidence_id="brand-1",
+        bundle_id="bundle-1",
+        artifact_id="art1",
+        collector_id="jsonld",
+        collector_version="1.0",
+        fact_type="product.brand",
+        raw_value="ACME",
+        value="ACME",
+        locator=SourceLocator(kind="json_pointer", value="/brand/name"),
+        directness="direct",
+        confidence=0.95,
+        subject_id="prod-1",
+        subject_scope="product",
+    )
+    seller_ev = Evidence(
+        evidence_id="seller-1",
+        bundle_id="bundle-1",
+        artifact_id="art1",
+        collector_id="jsonld",
+        collector_version="1.0",
+        fact_type="offer.seller",
+        raw_value="ACME Store",
+        value="ACME Store",
+        locator=SourceLocator(kind="json_pointer", value="/offers/seller/name"),
+        directness="direct",
+        confidence=0.9,
+        subject_id="offer-1",
+        parent_subject_id="prod-1",
+        subject_scope="offer",
+    )
+    result = ExtractionResult(
+        surface=Surface.ECOMMERCE_DETAIL,
+        bundle_id="bundle-1",
+        records=(),
+        evidence=(brand_ev, seller_ev),
+        decisions=(
+            Decision(
+                decision_id="d-brand",
+                entity_id="prod-1",
+                fact_type="product.brand",
+                accepted_evidence_ids=("brand-1",),
+                rejected=(),
+                finding_ids=(),
+                rule_id="first_available",
+                status="resolved",
+            ),
+            Decision(
+                decision_id="d-seller",
+                entity_id="offer-1",
+                fact_type="offer.seller",
+                accepted_evidence_ids=("seller-1",),
+                rejected=(),
+                finding_ids=(),
+                rule_id="first_available",
+                status="resolved",
+            ),
+        ),
+        verdict="success",
+    )
+
+    await project_extraction_result(
+        db_session,
+        run_id=1,
+        url="https://example.com/products/widget",
+        result=result,
+    )
+    await db_session.commit()
+
+    entities = (await db_session.execute(select(KGEntity))).scalars().all()
+    assert {entity.entity_type for entity in entities} >= {"product", "brand", "offer", "seller"}
+    rel_types = {
+        rel.relationship_type
+        for rel in (await db_session.execute(select(KGRelationship))).scalars().all()
+    }
+    assert "PRODUCT_MADE_BY" in rel_types
+    assert "PRODUCT_HAS_OFFER" in rel_types
+    assert "OFFER_SOLD_BY" in rel_types
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_projection_repeats_until_deferred_canonical_relationships_resolve(
+    db_session: AsyncSession,
+) -> None:
+    evidence = Evidence(
+        evidence_id="deferred-brand",
+        bundle_id="bundle",
+        artifact_id="artifact",
+        collector_id="jsonld",
+        collector_version="1.0",
+        fact_type="product.brand",
+        raw_value="ACME",
+        value="ACME",
+        locator=SourceLocator(kind="json_pointer", value="/brand"),
+        directness="direct",
+        confidence=0.9,
+        subject_id="page-1",
+        subject_scope="unknown",
+    )
+    result = ExtractionResult(
+        surface=Surface.ECOMMERCE_DETAIL,
+        bundle_id="bundle",
+        records=(),
+        evidence=(evidence,),
+        decisions=(
+            Decision(
+                decision_id="deferred-brand-decision",
+                entity_id="product:prod-deferred",
+                fact_type="product.brand",
+                accepted_evidence_ids=(evidence.evidence_id,),
+                rejected=(),
+                finding_ids=(),
+                rule_id="first_available",
+                status="resolved",
+            ),
+        ),
+        verdict="success",
+    )
+
+    await project_extraction_result(
+        db_session,
+        run_id=1,
+        url="https://example.com/products/deferred",
+        result=result,
+    )
+    await db_session.commit()
+
+    relationship_types = set(
+        (
+            await db_session.execute(select(KGRelationship.relationship_type))
+        ).scalars()
+    )
+    assert "PRODUCT_MADE_BY" in relationship_types
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_projection_excludes_unrelated_resolved_decisions_from_product_claims(
+    db_session: AsyncSession,
+) -> None:
+    evidence = Evidence(
+        evidence_id="page-meta",
+        bundle_id="bundle",
+        artifact_id="artifact",
+        collector_id="opengraph",
+        collector_version="1.0",
+        fact_type="page.meta_description",
+        raw_value="Page metadata",
+        value="Page metadata",
+        locator=SourceLocator(
+            kind="css_selector", value="meta[name='description']"
+        ),
+        directness="direct",
+        confidence=0.9,
+        subject_id="page-1",
+        subject_scope="document",
+    )
+    result = ExtractionResult(
+        surface=Surface.ECOMMERCE_DETAIL,
+        bundle_id="bundle",
+        records=(),
+        evidence=(evidence,),
+        decisions=(
+            Decision(
+                decision_id="page-meta-decision",
+                entity_id="product:prod-1",
+                fact_type=evidence.fact_type,
+                accepted_evidence_ids=(evidence.evidence_id,),
+                rejected=(),
+                finding_ids=(),
+                rule_id="first_available",
+                status="resolved",
+            ),
+        ),
+        verdict="success",
+    )
+
+    await project_extraction_result(
+        db_session,
+        run_id=1,
+        url="https://example.com/products/widget",
+        result=result,
+    )
+    await db_session.commit()
+
+    unrelated_claims = (
+        await db_session.execute(
+            select(KGClaim).where(KGClaim.fact_type == "page.meta_description")
+        )
+    ).scalars().all()
+    assert unrelated_claims == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_projection_creates_same_as_only_for_deterministic_gtin(
+    db_session: AsyncSession,
+) -> None:
+    def _result(product_id: str, title: str, gtin: str | None) -> ExtractionResult:
+        evidence = [
+            Evidence(
+                evidence_id=f"title-{product_id}",
+                bundle_id="bundle",
+                artifact_id="art",
+                collector_id="jsonld",
+                collector_version="1.0",
+                fact_type="product.title",
+                raw_value=title,
+                value=title,
+                locator=SourceLocator(kind="json_pointer", value="/name"),
+                directness="direct",
+                confidence=0.9,
+                subject_id=product_id,
+                subject_scope="product",
+            )
+        ]
+        decisions = [
+            Decision(
+                decision_id=f"d-title-{product_id}",
+                entity_id=product_id,
+                fact_type="product.title",
+                accepted_evidence_ids=(f"title-{product_id}",),
+                rejected=(),
+                finding_ids=(),
+                rule_id="first_available",
+                status="resolved",
+            )
+        ]
+        if gtin:
+            evidence.append(
+                Evidence(
+                    evidence_id=f"gtin-{product_id}",
+                    bundle_id="bundle",
+                    artifact_id="art",
+                    collector_id="jsonld",
+                    collector_version="1.0",
+                    fact_type="product.gtin",
+                    raw_value=gtin,
+                    value=gtin,
+                    locator=SourceLocator(kind="json_pointer", value="/gtin"),
+                    directness="direct",
+                    confidence=0.98,
+                    subject_id=product_id,
+                    subject_scope="product",
+                )
+            )
+            decisions.append(
+                Decision(
+                    decision_id=f"d-gtin-{product_id}",
+                    entity_id=product_id,
+                    fact_type="product.gtin",
+                    accepted_evidence_ids=(f"gtin-{product_id}",),
+                    rejected=(),
+                    finding_ids=(),
+                    rule_id="first_available",
+                    status="resolved",
+                )
+            )
+        return ExtractionResult(
+            surface=Surface.ECOMMERCE_DETAIL,
+            bundle_id="bundle",
+            records=(),
+            evidence=tuple(evidence),
+            decisions=tuple(decisions),
+            verdict="success",
+        )
+
+    await project_extraction_result(
+        db_session,
+        run_id=1,
+        url="https://site-a.example/products/widget",
+        result=_result("a", "Shared Widget", "00012345678905"),
+    )
+    await project_extraction_result(
+        db_session,
+        run_id=2,
+        url="https://site-b.example/products/widget",
+        result=_result("b", "Shared Widget", "0001 2345-678905"),
+    )
+    await project_extraction_result(
+        db_session,
+        run_id=3,
+        url="https://site-c.example/products/widget",
+        result=_result("c", "Shared Widget", None),
+    )
+    await db_session.commit()
+
+    rels = (await db_session.execute(select(KGRelationship))).scalars().all()
+    same_as = [rel for rel in rels if rel.relationship_type == "PRODUCT_SAME_AS"]
+    assert len(same_as) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_projection_stores_variants_as_aggregate_claim_only(
+    db_session: AsyncSession,
+) -> None:
+    evidence = Evidence(
+        evidence_id="title-1",
+        bundle_id="bundle",
+        artifact_id="art",
+        collector_id="jsonld",
+        collector_version="1.0",
+        fact_type="product.title",
+        raw_value="Variant Widget",
+        value="Variant Widget",
+        locator=SourceLocator(kind="json_pointer", value="/name"),
+        directness="direct",
+        confidence=0.9,
+        subject_id="prod-1",
+        subject_scope="product",
+    )
+    result = ExtractionResult(
+        surface=Surface.ECOMMERCE_DETAIL,
+        bundle_id="bundle",
+        records=(
+            CommerceDetailRecord(
+                url="https://example.com/products/widget",
+                title="Variant Widget",
+                variants=(
+                    CommerceVariantRecord(
+                        variant_id="red-s",
+                        sku="RS",
+                        color="Red",
+                        size="S",
+                    ),
+                    CommerceVariantRecord(
+                        variant_id="blue-m",
+                        sku="BM",
+                        color="Blue",
+                        size="M",
+                    ),
+                ),
+            ),
+        ),
+        evidence=(evidence,),
+        decisions=(
+            Decision(
+                decision_id="d-title",
+                entity_id="prod-1",
+                fact_type="product.title",
+                accepted_evidence_ids=("title-1",),
+                rejected=(),
+                finding_ids=(),
+                rule_id="first_available",
+                status="resolved",
+            ),
+        ),
+        verdict="success",
+    )
+
+    await project_extraction_result(
+        db_session,
+        run_id=1,
+        url="https://example.com/products/widget",
+        result=result,
+    )
+    record = result.records[0]
+    reversed_result = result.model_copy(
+        update={
+            "records": (
+                record.model_copy(update={"variants": tuple(reversed(record.variants))}),
+            )
+        }
+    )
+    await project_extraction_result(
+        db_session,
+        run_id=2,
+        url="https://example.com/products/widget",
+        result=reversed_result,
+    )
+    await db_session.commit()
+
+    variant_entities = (
+        await db_session.execute(select(KGEntity).where(KGEntity.entity_type == "variant"))
+    ).scalars().all()
+    assert variant_entities == []
+    claim = (
+        await db_session.execute(
+            select(KGClaim).where(KGClaim.fact_type == "product.variant_set")
+        )
+    ).scalar_one()
+    assert claim.value["count"] == 2
+    assert claim.value["axes"] == ["color", "size"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_projection_skips_variant_set_for_multi_product_result(
+    db_session: AsyncSession,
+) -> None:
+    evidence = tuple(
+        Evidence(
+            evidence_id=f"title-{product_id}",
+            bundle_id="bundle",
+            artifact_id="artifact",
+            collector_id="jsonld",
+            collector_version="1.0",
+            fact_type="product.title",
+            raw_value=title,
+            value=title,
+            locator=SourceLocator(kind="json_pointer", value="/name"),
+            directness="direct",
+            confidence=0.9,
+            subject_id=product_id,
+            subject_scope="product",
+        )
+        for product_id, title in (("prod-1", "One"), ("prod-2", "Two"))
+    )
+    decisions = tuple(
+        Decision(
+            decision_id=f"decision-{row.subject_id}",
+            entity_id=row.subject_id,
+            fact_type=row.fact_type,
+            accepted_evidence_ids=(row.evidence_id,),
+            rejected=(),
+            finding_ids=(),
+            rule_id="first_available",
+            status="resolved",
+        )
+        for row in evidence
+    )
+    result = ExtractionResult(
+        surface=Surface.ECOMMERCE_DETAIL,
+        bundle_id="bundle",
+        records=(
+            CommerceDetailRecord(
+                url="https://example.com/products/mixed",
+                title="Mixed",
+                variants=(CommerceVariantRecord(variant_id="red", color="Red"),),
+            ),
+        ),
+        evidence=evidence,
+        decisions=decisions,
+        verdict="success",
+    )
+
+    await project_extraction_result(
+        db_session,
+        run_id=1,
+        url="https://example.com/products/mixed",
+        result=result,
+    )
+    await db_session.commit()
+
+    variant_claims = (
+        await db_session.execute(
+            select(KGClaim).where(KGClaim.fact_type == "product.variant_set")
+        )
+    ).scalars().all()
+    assert variant_claims == []

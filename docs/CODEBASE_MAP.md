@@ -25,6 +25,7 @@ If a file is not listed, assume it is a helper under a listed owner.
 | `records.py` | Record listing, exports, provenance |
 | `review.py` | Review payloads and approved mapping save |
 | `selectors.py` | Selector CRUD, suggest, test, preview |
+| `knowledge.py` | Knowledge Graph site/entity/graph/contract reads, operator source selection, admin rebuild/purge/delete |
 | `llm.py` | LLM provider catalog, config, connection test, cost log |
 | `product_intelligence.py` | Product matching jobs, source products, candidates, match review |
 | `data_enrichment.py` | On-demand ecommerce detail enrichment jobs and enriched product rows |
@@ -318,14 +319,16 @@ All selector memory is scoped by normalized `(domain, surface)`.
 | File | Purpose |
 |---|---|
 | `core/config/knowledge_graph.py` | Data-only vocabulary/bounds owner: node/edge types, statuses, selection origins, contract outcomes, identity ladder, read bounds, projection tunables |
-| `models/knowledge_graph.py` | 6 ORM models: `KGSiteVersion`, `KGEntity`, `KGRelationship`, `KGClaim`, `KGAssertionEvidence`, `KGExtractionContract` |
+| `models/knowledge_graph.py` | 6 ORM models: `KGSiteVersion`, `KGEntity`, `KGRelationship`, `KGClaim`, `KGAssertionEvidence`, `KGExtractionContract` with source-selection history |
 | `persistence/knowledge_graph.py` | Repository: `lock_site_version`, `upsert_entities/relationships/claims/contracts`, `add_evidence`, `fetch_neighborhood`, `count_graph_rows`, `purge_graph`, `load_runtime_snapshot` |
-| `persistence/projection.py` | Run-complete projector: `project_extraction_result` — fingerprints templates, upserts structural entities/relationships, projects Evidence into product/offer/brand/category claims and extraction contracts |
+| `persistence/projection.py` | Projector: `project_extraction_result` — fingerprints templates, upserts structural entities/relationships, projects Evidence into canonical product/offer/brand/category/seller/asset claims, relationships, identity links, variant-set claims, and extraction contracts |
 | `core/knowledge_graph/templates.py` | Template helpers: `normalize_route`, `fingerprint_from_parts`, `fingerprint_template`, `extract_tech_signals` |
 | `core/knowledge_graph/contract_runtime.py` | Frozen contract execution (pure, storage-free): `match_template`, `apply_contracts` — re-points decisions to preferred sources, emits `ContractOutcome` per field |
+| `api/knowledge.py` | Bounded graph API: site versions, graph neighborhoods, entity/contract reads, operator source selection, admin rebuild/purge/delete |
 | `alembic/versions/20260629_0002_knowledge_graph.py` | Migration creating all 6 KG tables |
+| `alembic/versions/20260629_0003_kg_contract_selection_history.py` | Migration adding `selection_history` for operator source decisions |
 
-The Knowledge Graph owns site templates, canonical-field source candidates, source decisions, extraction contracts, product claims, and cross-crawl relationships. It is separate from acquisition-owned Domain Memory (Bucket 6) and resets independently. At run creation `load_runtime_snapshot` freezes the current graph state into `CrawlRun.extraction_runtime_snapshot`; the extraction engine matches page fingerprints against this frozen snapshot and applies saved source preferences via `apply_contracts`. Extraction emits observations only and must never import graph storage (ratcheted in `tests/unit/test_extraction_architecture.py`). The `/api/knowledge/*` read/refine endpoints and cold-start LLM proposer arrive in later slices. See `docs/INVARIANTS.md` §17.
+The Knowledge Graph owns site templates, canonical-field source candidates, source decisions, extraction contracts, product claims, and cross-crawl relationships. It is separate from acquisition-owned Domain Memory (Bucket 6) and resets independently. At run creation `load_runtime_snapshot` freezes the current graph state into `CrawlRun.extraction_runtime_snapshot`; the extraction engine matches page fingerprints against this frozen snapshot and applies saved source preferences via `apply_contracts`. Extraction emits observations only and must never import graph storage (ratcheted in `tests/unit/test_extraction_architecture.py`). The URL pipeline projects graph updates through persistence, while `/api/knowledge/*` exposes bounded reads and operator refinement. The cold-start LLM proposer arrives in a later slice. See `docs/INVARIANTS.md` §17.
 
 ---
 
@@ -343,6 +346,7 @@ The Knowledge Graph owns site templates, canonical-field source candidates, sour
 | `components/ui/patterns.tsx` | shared operator-page UI patterns |
 | `components/ui/table.module.css` | compact and commerce table styling |
 | `components/crawl/crawl-config-screen.tsx` | Crawl Studio form and dispatch |
+| `components/crawl/use-crawl-field-actions.ts` | Generate/test/save selector rows; saved generated selectors also create Knowledge Graph contracts |
 | `components/crawl/crawl-run-screen.tsx` | Run workspace and Domain Recipe workflow |
 | `components/crawl/form-fields.tsx` | Crawl form field controls and manual selector editor |
 | `components/crawl/log-terminal.tsx` | Crawl run log terminal grouping and rendering |
@@ -358,6 +362,7 @@ The Knowledge Graph owns site templates, canonical-field source candidates, sour
 | `lib/api/client.ts` | auth-aware fetch wrapper |
 | `lib/api/index.ts` | only frontend backend-access layer |
 | `lib/api/types.ts` | frontend API types |
+| `components/selectors/domain-memory/knowledge-graph-tab.tsx` | Domain Memory Knowledge Graph tab: bounded graph, relationships, contracts, source controls |
 | `scripts/check-token-escapes.mjs` | frontend guard against new raw CSS-var Tailwind token escapes |
 
 ---

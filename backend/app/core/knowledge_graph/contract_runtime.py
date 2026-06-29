@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from app.core.config import field_mappings
+from app.core.knowledge_graph.templates import normalize_route
 from app.extraction.contracts import ContractOutcome, Decision, ResolutionResult
 
 if TYPE_CHECKING:
@@ -16,7 +18,7 @@ if TYPE_CHECKING:
 
 
 def match_template(
-    snapshot: dict[str, Any], fingerprint: str, surface: str
+    snapshot: dict[str, Any], fingerprint: str, surface: str, url: str = ""
 ) -> dict[str, Any] | None:
     """Match page fingerprint against frozen templates in snapshot.
 
@@ -25,11 +27,29 @@ def match_template(
     if not snapshot or snapshot.get("surface") != surface:
         return None
 
-    for template in snapshot.get("templates", []):
-        if template.get("fingerprint") == fingerprint:
-            return template
+    templates = snapshot.get("templates", [])
+    exact_match = next(
+        (
+            template
+            for template in templates
+            if template.get("fingerprint") == fingerprint
+        ),
+        None,
+    )
 
-    return None
+    route_pattern = normalize_route(url, surface) if url else ""
+    if route_pattern:
+        route_matches = [
+            template
+            for template in templates
+            if template.get("route_pattern") == route_pattern
+        ]
+        if exact_match is not None and route_matches:
+            return _merge_template_contracts(exact_match, route_matches)
+        if route_matches:
+            return route_matches[0]
+
+    return exact_match
 
 
 def apply_contracts(
@@ -40,6 +60,7 @@ def apply_contracts(
     resolution: ResolutionResult,
     requested_fields: frozenset[str],
     user_controlled_fields: frozenset[str],
+    url: str = "",
 ) -> tuple[ResolutionResult, tuple[ContractOutcome, ...]]:
     """Apply frozen extraction contracts to resolution, preferring saved sources.
 
@@ -49,7 +70,7 @@ def apply_contracts(
 
     Fields in user_controlled_fields are skipped (never override explicit rules).
     """
-    template = match_template(snapshot, fingerprint, surface)
+    template = match_template(snapshot, fingerprint, surface, url)
     if not template:
         return resolution, ()
 
@@ -63,19 +84,24 @@ def apply_contracts(
     modified_decisions: dict[str, Decision] = {}
 
     for field, contract in contracts.items():
-        if field not in requested_fields or field in user_controlled_fields:
+        decision_field = _decision_field(field, decisions_by_field)
+        requested_aliases = _requested_aliases(decision_field)
+        if (
+            not requested_fields.intersection(requested_aliases)
+            or user_controlled_fields.intersection(requested_aliases)
+        ):
             continue
 
         selected_source = contract.get("selected_source", "")
         selection_origin = contract.get("selection_origin", "generic")
-        decision = decisions_by_field.get(field)
+        decision = decisions_by_field.get(decision_field)
 
         if not decision:
             outcome_code = "miss"
             detail = "field unresolved"
             outcomes.append(
                 ContractOutcome(
-                    field=field,
+                    field=decision_field,
                     outcome=outcome_code,
                     selected_source=selected_source,
                     selection_origin=selection_origin,
@@ -93,7 +119,7 @@ def apply_contracts(
         stale_evidence = None
 
         for ev in evidence:
-            if ev.fact_type != field:
+            if ev.fact_type != decision_field:
                 continue
             source_desc = _source_descriptor(ev)
             if source_desc == selected_source:
@@ -117,10 +143,10 @@ def apply_contracts(
                 rule_id=contract.get("resolver_rule", decision.rule_id),
                 status="resolved",
             )
-            modified_decisions[field] = new_decision
+            modified_decisions[decision_field] = new_decision
             outcomes.append(
                 ContractOutcome(
-                    field=field,
+                    field=decision_field,
                     outcome="hit",
                     selected_source=selected_source,
                     selection_origin=selection_origin,
@@ -131,7 +157,7 @@ def apply_contracts(
         elif stale_evidence:
             outcomes.append(
                 ContractOutcome(
-                    field=field,
+                    field=decision_field,
                     outcome="stale_source",
                     selected_source=selected_source,
                     selection_origin=selection_origin,
@@ -146,7 +172,7 @@ def apply_contracts(
             )
             outcomes.append(
                 ContractOutcome(
-                    field=field,
+                    field=decision_field,
                     outcome=outcome_code,
                     selected_source=selected_source,
                     selection_origin=selection_origin,
@@ -157,7 +183,7 @@ def apply_contracts(
         else:
             outcomes.append(
                 ContractOutcome(
-                    field=field,
+                    field=decision_field,
                     outcome="miss",
                     selected_source=selected_source,
                     selection_origin=selection_origin,
@@ -214,5 +240,42 @@ def _source_descriptor(evidence: Evidence) -> str:
     """Build source descriptor matching projection format."""
     parts = [evidence.collector_id]
     if evidence.locator:
-        parts.append(evidence.locator.value[:80])
+        parts.append(evidence.locator.value)
     return ":".join(parts)
+
+
+def _merge_template_contracts(
+    exact_match: dict[str, Any], route_matches: list[dict[str, Any]]
+) -> dict[str, Any]:
+    contracts_by_field: dict[str, dict[str, Any]] = {}
+    for template in [exact_match, *route_matches]:
+        for contract in template.get("contracts", []):
+            field = str(contract.get("canonical_field") or "")
+            current = contracts_by_field.get(field)
+            if current is None or _selection_priority(contract) > _selection_priority(
+                current
+            ):
+                contracts_by_field[field] = contract
+    merged = dict(exact_match)
+    merged["contracts"] = list(contracts_by_field.values())
+    return merged
+
+
+def _selection_priority(contract: dict[str, Any]) -> int:
+    return {"llm_proposed": 0, "generic": 1, "operator": 2}.get(
+        str(contract.get("selection_origin") or "generic"), 1
+    )
+
+
+def _decision_field(field: str, decisions_by_field: dict[str, Decision]) -> str:
+    if field in decisions_by_field:
+        return field
+    return field_mappings.ECOMMERCE_DETAIL_FIELD_FACT_TYPES.get(field, field)
+
+
+def _requested_aliases(field: str) -> frozenset[str]:
+    aliases = {field}
+    for requested_field, fact_type in field_mappings.ECOMMERCE_DETAIL_FIELD_FACT_TYPES.items():
+        if fact_type == field:
+            aliases.add(requested_field)
+    return frozenset(aliases)

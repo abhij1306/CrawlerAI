@@ -29,6 +29,7 @@ from app.api.crawls import router as crawls_router
 from app.api.data_enrichment import router as data_enrichment_router
 from app.api.dashboard import router as dashboard_router
 from app.api.jobs import router as jobs_router
+from app.api.knowledge import router as knowledge_router
 from app.api.llm import router as llm_router
 from app.api.product_intelligence import router as product_intelligence_router
 from app.api.records import router as records_router
@@ -595,6 +596,7 @@ for router in [
     jobs_router,
     review_router,
     selectors_router,
+    knowledge_router,
     llm_router,
     product_intelligence_router,
     public_extract_router,

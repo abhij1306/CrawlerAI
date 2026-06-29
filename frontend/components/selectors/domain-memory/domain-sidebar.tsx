@@ -33,6 +33,7 @@ export function DomainSidebar({
             const meta = [
               selectorCount ? `${selectorCount} selectors` : null,
               profileCount ? `${profileCount} profiles` : null,
+              ws.knowledgeSite ? `graph v${ws.knowledgeSite.current_version}` : null,
               ws.learning.length ? `${ws.learning.length} learned` : null,
               ws.completedRunCount ? `${ws.completedRunCount} runs` : null,
             ]

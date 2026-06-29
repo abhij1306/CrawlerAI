@@ -202,6 +202,7 @@ def extract(request: ExtractionRequest) -> ExtractionResult:
             snapshot=cast(dict[str, Any], request.runtime_snapshot),
             fingerprint=fp,
             surface=spec.surface.value,
+            url=request.capture.final_url or request.capture.requested_url,
             evidence=normalized,
             resolution=resolution,
             requested_fields=frozenset(request.requested_fields),

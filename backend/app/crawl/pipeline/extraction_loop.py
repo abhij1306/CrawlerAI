@@ -34,6 +34,8 @@ from .retry import build_acquisition_request, retry_extraction_request_with_brow
 from .persistence import persist_extracted_records
 from app.persistence.url_results import upsert_url_result
 from app.persistence.url_result_artifacts import publish_url_result_artifacts
+from app.persistence.projection import project_extraction_result
+from app.persistence.knowledge_graph import lock_site_version
 from .record_extraction_stage import (
     extract_records_for_acquisition,
     update_acquisition_contract_memory,
@@ -459,6 +461,7 @@ async def _run_persistence_stage(
         persisted_count=persisted_count,
         verdict=verdict,
     )
+    await _project_knowledge_graph(context, extracted)
     return URLProcessingResult(
         records=extracted_records,
         verdict=verdict,
@@ -494,6 +497,39 @@ async def _publish_url_result_artifacts(
     url_result.bundle_id = published.bundle_id
     url_result.verdict = verdict
     await context.session.flush()
+
+
+async def _project_knowledge_graph(
+    context: _URLProcessingContext,
+    extracted: _ExtractedURLStage,
+) -> None:
+    projection_url = str(
+        getattr(extracted.fetched.acquisition_result, "final_url", "") or context.url
+    )
+    try:
+        async with context.session.begin_nested():
+            await project_extraction_result(
+                context.session,
+                run_id=context.run.id,
+                url=projection_url,
+                result=extracted.result,
+            )
+    except Exception as exc:
+        try:
+            async with context.session.begin_nested():
+                site_version = await lock_site_version(
+                    context.session,
+                    normalize_domain(projection_url),
+                )
+                site_version.projection_status = "failed"
+        except Exception:
+            logger.debug("Failed to mark Knowledge Graph projection failure", exc_info=True)
+        await _log_pipeline_event(
+            context,
+            "error",
+            f"Knowledge Graph projection failed without changing crawl verdict: {type(exc).__name__}: {exc}",
+            commit=False,
+        )
 
 
 URLProcessingContext = _URLProcessingContext

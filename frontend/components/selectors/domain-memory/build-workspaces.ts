@@ -3,6 +3,7 @@ import type {
   DomainCookieMemoryRecord,
   DomainFieldFeedbackRecord,
   DomainRunProfileRecord,
+  KnowledgeSiteRecord,
   SelectorDomainSummary,
 } from '../../../lib/api/types';
 import { getNormalizedDomain, isSpecialUseDomain } from '../../../lib/format/domain';
@@ -18,6 +19,7 @@ type BuildDomainWorkspacesInput = {
   completedRuns: CrawlRun[];
   cookies: DomainCookieMemoryRecord[];
   feedback: DomainFieldFeedbackRecord[];
+  knowledgeSites: KnowledgeSiteRecord[];
   profiles: DomainRunProfileRecord[];
   records: LocalRecord[];
   selectorSummaries: SelectorDomainSummary[];
@@ -29,6 +31,7 @@ export function buildDomainWorkspaces({
   completedRuns,
   cookies,
   feedback,
+  knowledgeSites,
   profiles,
   records,
   selectorSummaries,
@@ -38,6 +41,7 @@ export function buildDomainWorkspaces({
   const query = searchQuery.trim().toLowerCase();
   const byDomain = new Map<string, Map<string, SurfaceWorkspace>>();
   const cookiesByDomain = new Map(cookies.map((row) => [row.domain, row] as const));
+  const knowledgeSitesByDomain = new Map(knowledgeSites.map((row) => [row.domain, row] as const));
   const runsByDomain = new Map<string, Map<string, CrawlRun[]>>();
 
   function ensureSurfaceWorkspace(domain: string, surface: string): SurfaceWorkspace {
@@ -132,6 +136,11 @@ export function buildDomainWorkspaces({
   const visibleDomains = new Set<string>([
     ...byDomain.keys(),
     ...runsByDomain.keys(),
+    ...knowledgeSites.flatMap((row) =>
+      surfaceFilter === 'all' && (!query || row.domain.toLowerCase().includes(query))
+        ? [row.domain]
+        : [],
+    ),
     ...cookies.flatMap((row) =>
       surfaceFilter === 'all' && (!query || row.domain.toLowerCase().includes(query))
         ? [row.domain]
@@ -152,6 +161,7 @@ export function buildDomainWorkspaces({
     );
     const latestCompletedAt = latestCompletedAtFor(surfaces);
     const cookieMemory = cookiesByDomain.get(domain) ?? null;
+    const knowledgeSite = knowledgeSitesByDomain.get(domain) ?? null;
     const learning = surfaces.flatMap((surface) => surface.learning);
     if (
       isInternalDomainMemoryArtifact(
@@ -164,11 +174,12 @@ export function buildDomainWorkspaces({
     ) {
       continue;
     }
-    if (!surfaces.length && !cookieMemory) continue;
+    if (!surfaces.length && !cookieMemory && !knowledgeSite) continue;
     workspaces.push({
       domain,
       surfaces,
       cookieMemory,
+      knowledgeSite,
       learning,
       completedRunCount,
       latestCompletedAt,

@@ -233,4 +233,5 @@ class KGExtractionContract(UpdatedAtMixin, Base):
     resolver_rule: Mapped[str] = mapped_column(Text, default="")
     selected_source: Mapped[str] = mapped_column(Text, default="")
     selection_origin: Mapped[str] = mapped_column(String(20), default="generic")
+    selection_history: Mapped[list] = mapped_column(JSONB, default=list)
     status: Mapped[str] = mapped_column(String(20), default="active")

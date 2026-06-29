@@ -6,6 +6,7 @@ import { Button, Dropdown, Input } from '../../ui/primitives';
 import type { DomainMemoryWorkspaceController } from './use-domain-memory-workspace';
 import { CookiesTab } from './cookies-tab';
 import { DomainSidebar } from './domain-sidebar';
+import { KnowledgeGraphTab } from './knowledge-graph-tab';
 import { LearningTab } from './learning-tab';
 import { ProfilesTab } from './profiles-tab';
 import { SelectorsTab } from './selectors-tab';
@@ -152,6 +153,9 @@ function DomainDetail({ controller }: DomainMemoryContentProps) {
       {controller.activeTab === 'learning' ? (
         <LearningTab selectedWorkspace={selectedWorkspace} />
       ) : null}
+      {controller.activeTab === 'knowledge' ? (
+        <KnowledgeGraphTab selectedWorkspace={selectedWorkspace} />
+      ) : null}
     </>
   );
 }
@@ -173,5 +177,11 @@ function tabOptions(
       label: `Cookies${selectedWorkspace.cookieMemory ? ` (${selectedWorkspace.cookieMemory.cookie_count})` : ''}`,
     },
     { value: 'learning', label: `Learning (${selectedWorkspace.learning.length})` },
+    {
+      value: 'knowledge',
+      label: selectedWorkspace.knowledgeSite
+        ? `Knowledge v${selectedWorkspace.knowledgeSite.current_version}`
+        : 'Knowledge',
+    },
   ];
 }

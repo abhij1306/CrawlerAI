@@ -158,9 +158,21 @@ export function useCrawlFieldActions({
           const existing = existingByField.get(fieldName);
           if (existing) {
             await api.updateSelector(existing.id, payload);
-            return;
+          } else {
+            await api.createSelector({ domain, surface, ...payload });
           }
-          await api.createSelector({ domain, surface, ...payload });
+          if (row.id.startsWith('generated-') && row.cssSelector.trim()) {
+            await api
+              .upsertKnowledgeSelectorContract({
+                domain,
+                url: target,
+                surface,
+                field_name: fieldName,
+                css_selector: row.cssSelector.trim(),
+                source: 'selector_suggestion',
+              })
+              .catch(() => undefined);
+          }
         }),
       );
       const failedCount = settled.filter((result) => result.status === 'rejected').length;
