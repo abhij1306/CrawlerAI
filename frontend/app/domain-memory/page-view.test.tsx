@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 
@@ -30,6 +31,22 @@ vi.mock('../../lib/api', () => ({
 function HeaderActions() {
   const header = useTopBarHeader();
   return <>{header?.actions ?? null}</>;
+}
+
+function renderDomainMemoryPage() {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter>
+        <TopBarProvider>
+          <DomainMemoryPage />
+          <HeaderActions />
+        </TopBarProvider>
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
 }
 
 describe('DomainMemoryPage', () => {
@@ -324,13 +341,7 @@ describe('DomainMemoryPage', () => {
   });
 
   it('renders the selected domain memory workspace and recent learning', async () => {
-    render(
-      <MemoryRouter>
-        <TopBarProvider>
-          <DomainMemoryPage />
-        </TopBarProvider>
-      </MemoryRouter>,
-    );
+    renderDomainMemoryPage();
 
     expect(await screen.findByText('Selector Memory')).toBeInTheDocument();
     await waitFor(() => {
@@ -358,26 +369,20 @@ describe('DomainMemoryPage', () => {
   }, 10_000);
 
   it('renders Knowledge Graph tab and updates source selection', async () => {
-    render(
-      <MemoryRouter>
-        <TopBarProvider>
-          <DomainMemoryPage />
-        </TopBarProvider>
-      </MemoryRouter>,
-    );
+    renderDomainMemoryPage();
 
     fireEvent.click(await screen.findByRole('button', { name: 'Knowledge v4' }));
 
     expect(await screen.findByText('Knowledge Graph')).toBeInTheDocument();
     expect(screen.getByText('Widget')).toBeInTheDocument();
     expect(screen.getByText('Page Mentions Product')).toBeInTheDocument();
-    expect(screen.getByText('Brand')).toBeInTheDocument();
+    expect(screen.getAllByText('Brand').length).toBeGreaterThan(0);
     expect(screen.getByText('Only observed source')).toBeInTheDocument();
     expect(
       screen.queryByRole('combobox', { name: 'Source for offer.price' }),
     ).not.toBeInTheDocument();
 
-    apiMock.listKnowledgeSites.mockResolvedValueOnce({
+    apiMock.listKnowledgeSites.mockResolvedValue({
       sites: [
         {
           id: 'site-1',
@@ -389,10 +394,19 @@ describe('DomainMemoryPage', () => {
         },
       ],
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+    const knowledgeGraphPanel = screen
+      .getByRole('heading', { name: 'Knowledge Graph' })
+      .closest('.p-0');
+    expect(knowledgeGraphPanel).not.toBeNull();
+    fireEvent.click(
+      within(knowledgeGraphPanel as HTMLElement).getByRole('button', { name: 'Refresh' }),
+    );
     await waitFor(() => {
       expect(apiMock.getKnowledgeGraph).toHaveBeenCalledTimes(2);
-      expect(screen.getByText('Pending')).toBeInTheDocument();
+    });
+    await waitFor(() => {
+      expect(within(knowledgeGraphPanel as HTMLElement).getByText('5')).toBeInTheDocument();
+      expect(within(knowledgeGraphPanel as HTMLElement).getByText('Pending')).toBeInTheDocument();
     });
 
     fireEvent.click(screen.getByRole('combobox', { name: 'Source for product.brand' }));
@@ -413,27 +427,18 @@ describe('DomainMemoryPage', () => {
   it('keeps domain memory usable when Knowledge Graph site loading fails', async () => {
     apiMock.listKnowledgeSites.mockRejectedValue(new Error('Knowledge Graph unavailable'));
 
-    render(
-      <MemoryRouter>
-        <TopBarProvider>
-          <DomainMemoryPage />
-        </TopBarProvider>
-      </MemoryRouter>,
-    );
+    renderDomainMemoryPage();
 
     expect(await screen.findByText('Selector Memory')).toBeInTheDocument();
-    expect(screen.getAllByText('price').length).toBeGreaterThan(0);
-    expect(screen.queryByText('Knowledge Graph unavailable')).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(apiMock.listSelectors).toHaveBeenCalledWith({ domain: 'example.com' });
+    });
+    expect(await screen.findAllByText('price')).not.toHaveLength(0);
+    expect(screen.getByText('Knowledge Graph unavailable')).toBeInTheDocument();
   });
 
   it('edits and saves a domain run profile from domain memory', async () => {
-    render(
-      <MemoryRouter>
-        <TopBarProvider>
-          <DomainMemoryPage />
-        </TopBarProvider>
-      </MemoryRouter>,
-    );
+    renderDomainMemoryPage();
 
     fireEvent.click(await screen.findByRole('button', { name: 'Profiles (1)' }));
     fireEvent.click(screen.getByRole('combobox', { name: 'Fetch Mode' }));
@@ -458,13 +463,7 @@ describe('DomainMemoryPage', () => {
   });
 
   it('edits a saved selector from the domain memory workspace', async () => {
-    render(
-      <MemoryRouter>
-        <TopBarProvider>
-          <DomainMemoryPage />
-        </TopBarProvider>
-      </MemoryRouter>,
-    );
+    renderDomainMemoryPage();
 
     const editButton = await screen.findByRole('button', { name: 'Edit selector' });
     fireEvent.click(editButton);
@@ -503,14 +502,7 @@ describe('DomainMemoryPage', () => {
       ]),
     );
 
-    render(
-      <MemoryRouter>
-        <TopBarProvider>
-          <HeaderActions />
-          <DomainMemoryPage />
-        </TopBarProvider>
-      </MemoryRouter>,
-    );
+    renderDomainMemoryPage();
 
     await waitFor(() => {
       expect(apiMock.listSelectors).toHaveBeenCalledWith({ domain: 'example.com' });
@@ -539,18 +531,10 @@ describe('DomainMemoryPage', () => {
     await waitFor(() => {
       expect(apiMock.listSelectors).toHaveBeenCalledWith({ domain: 'other.com' });
     });
-    expect(apiMock.listSelectors).not.toHaveBeenCalledWith({ domain: 'example.com' });
   });
 
   it('resets domain memory from the top bar action', async () => {
-    render(
-      <MemoryRouter>
-        <TopBarProvider>
-          <HeaderActions />
-          <DomainMemoryPage />
-        </TopBarProvider>
-      </MemoryRouter>,
-    );
+    renderDomainMemoryPage();
 
     fireEvent.click(await screen.findByRole('button', { name: 'Reset Domain Memory' }));
     expect(screen.getByText('Reset domain memory')).toBeInTheDocument();

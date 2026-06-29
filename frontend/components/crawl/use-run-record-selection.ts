@@ -1,4 +1,5 @@
-import { useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
+import type { Dispatch, SetStateAction } from 'react';
 
 import type { CrawlRecord } from '../../lib/api/types';
 import type { OutputTabKey } from './shared';
@@ -8,6 +9,7 @@ type UseRunRecordSelectionOptions = {
   records: CrawlRecord[];
   tableRecords: CrawlRecord[];
   selectedIds: number[];
+  setSelectedIds: Dispatch<SetStateAction<number[]>>;
 };
 
 export function useRunRecordSelection({
@@ -15,6 +17,7 @@ export function useRunRecordSelection({
   records,
   tableRecords,
   selectedIds,
+  setSelectedIds,
 }: Readonly<UseRunRecordSelectionOptions>) {
   const visibleColumns = useMemo(() => {
     const columns = new Set<string>();
@@ -58,6 +61,20 @@ export function useRunRecordSelection({
     [visibleRecords, visibleSelectedIds],
   );
   const batchSourceRecords = tableRecords.length ? tableRecords : records;
+  const selectAllVisibleTableRecords = useCallback(
+    (checked: boolean) => {
+      setSelectedIds(checked ? tableRecords.map((record) => record.id) : []);
+    },
+    [setSelectedIds, tableRecords],
+  );
+  const toggleSelectedRecord = useCallback(
+    (id: number, checked: boolean) => {
+      setSelectedIds((current) =>
+        checked ? Array.from(new Set([...current, id])) : current.filter((value) => value !== id),
+      );
+    },
+    [setSelectedIds],
+  );
 
   return {
     visibleColumns,
@@ -65,5 +82,7 @@ export function useRunRecordSelection({
     visibleSelectedIds,
     selectedRecords,
     batchSourceRecords,
+    selectAllVisibleTableRecords,
+    toggleSelectedRecord,
   };
 }

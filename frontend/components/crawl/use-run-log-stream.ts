@@ -7,7 +7,7 @@ import { api } from '../../lib/api';
 import type { CrawlLog } from '../../lib/api/types';
 import { CRAWL_DEFAULTS } from '../../lib/constants/crawl-defaults';
 import { POLLING_INTERVALS } from '../../lib/constants/timing';
-import { mergeLogs, scrollViewportToBottom } from './shared';
+import { appendLiveLog, mergeLogs, scrollViewportToBottom } from './shared';
 
 type UseRunLogStreamOptions = {
   runId: number;
@@ -91,7 +91,7 @@ export function useRunLogStream({
           return;
         }
         cursorRef.current = parsed.id;
-        setSocketLogItems((current) => mergeLogs(current, [parsed]));
+        setSocketLogItems((current) => appendLiveLog(current, parsed));
       } catch {
         // Polling remains the fallback for malformed websocket payloads.
       }

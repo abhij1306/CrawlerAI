@@ -1,5 +1,6 @@
 import { Code2, Download, History, Layers, Search, Settings } from 'lucide-react';
 import type { ReactNode } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { DataRegionEmpty } from '../../components/ui/patterns';
 import { Badge, Button, Dropdown, Input } from '../../components/ui/primitives';
@@ -36,7 +37,7 @@ function ResultsToolbar({ controller }: ProductIntelligenceResultsProps) {
   const allFilteredSelected =
     controller.filteredCandidates.length > 0 &&
     controller.filteredCandidates.every((candidate) =>
-      controller.selectedUrls.includes(candidate.url),
+      controller.selectedUrlSet.has(candidate.url),
     );
   return (
     <header className="flex flex-wrap items-center gap-4 border-b border-divider px-4 py-3">
@@ -156,18 +157,42 @@ function ToolbarActions({ controller }: ProductIntelligenceResultsProps) {
 }
 
 function ResultsBody({ controller }: ProductIntelligenceResultsProps) {
-  if (controller.pending) {
+  const [expandedGroupKeys, setExpandedGroupKeys] = useState<Set<number>>(() => new Set([0]));
+  const groupKeySig = useMemo(
+    () => controller.groupedCandidates.map((group) => group.sourceIndex).join('|'),
+    [controller.groupedCandidates],
+  );
+  const firstGroupKey = controller.groupedCandidates[0]?.sourceIndex;
+
+  useEffect(() => {
+    setExpandedGroupKeys(firstGroupKey === undefined ? new Set() : new Set([firstGroupKey]));
+  }, [groupKeySig, firstGroupKey]);
+
+  if (controller.loadingDiscovery) {
     return <DiscoveryTableLoading provider={controller.effectiveOptions.search_provider} />;
   }
   if (controller.groupedCandidates.length) {
     return (
       <div className="divide-y divide-[var(--divider)]">
-        {controller.groupedCandidates.map((group, groupIndex) => (
+        {controller.groupedCandidates.map((group) => (
           <CandidateGroupSection
             key={group.sourceIndex}
             group={group}
-            groupIndex={groupIndex}
-            controller={controller}
+            expanded={expandedGroupKeys.has(group.sourceIndex)}
+            selectedUrlSet={controller.selectedUrlSet}
+            onToggleExpanded={() => {
+              setExpandedGroupKeys((current) => {
+                const next = new Set(current);
+                if (next.has(group.sourceIndex)) {
+                  next.delete(group.sourceIndex);
+                } else {
+                  next.add(group.sourceIndex);
+                }
+                return next;
+              });
+            }}
+            onToggleUrl={controller.toggleUrl}
+            onOpenJson={controller.setJsonModalCandidate}
           />
         ))}
       </div>

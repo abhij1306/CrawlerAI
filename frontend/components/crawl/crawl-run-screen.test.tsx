@@ -633,7 +633,7 @@ describe('CrawlRunScreen', () => {
     await waitFor(() => {
       expect(apiMock.getRecords).toHaveBeenCalledWith(
         101,
-        { page: 1, limit: 200 },
+        { page: 2, limit: 100 },
         { signal: expect.any(AbortSignal) },
       );
     });
@@ -706,7 +706,7 @@ describe('CrawlRunScreen', () => {
     await waitFor(() => {
       expect(apiMock.getRecords).toHaveBeenCalledWith(
         101,
-        { limit: 50 },
+        { page: 1, limit: 25 },
         { signal: expect.any(AbortSignal) },
       );
     });
@@ -725,8 +725,8 @@ describe('CrawlRunScreen', () => {
 
     queryClient.setQueryData(queryKeys.runs.detail(101), terminalRun(101));
     queryClient.setQueryData(queryKeys.runs.tableRecords(101, 100), {
-      items: [],
-      meta: { page: 1, limit: 100, total: 0 },
+      pages: [{ items: [], meta: { page: 1, limit: 100, total: 0 } }],
+      pageParams: [1],
     });
 
     apiMock.getRecords.mockResolvedValue({
@@ -831,7 +831,10 @@ describe('CrawlRunScreen', () => {
     };
 
     queryClient.setQueryData(queryKeys.runs.detail(101), terminalRun(101));
-    queryClient.setQueryData(queryKeys.runs.tableRecords(101, 100), cachedRows);
+    queryClient.setQueryData(queryKeys.runs.tableRecords(101, 100), {
+      pages: [cachedRows],
+      pageParams: [1],
+    });
 
     apiMock.getRecords.mockResolvedValue(cachedRows);
 

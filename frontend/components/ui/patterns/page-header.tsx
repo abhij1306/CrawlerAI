@@ -63,10 +63,10 @@ export function PageHeader({
   const { pathname } = useLocation();
   const signature = `${stableNodeSignature(title)}::${description ?? ''}::${stableNodeSignature(actions)}`;
   const syncHeader = useEffectEvent(() => {
-    setHeader({ pathKey: pathname, title, description, actions });
+    setHeader({ pathKey: pathname, signature, title, description, actions });
   });
   useLayoutEffect(() => {
     syncHeader();
-  }, [pathname, signature, actions]);
+  }, [actions, pathname, signature, title]);
   return null;
 }

@@ -257,7 +257,7 @@
   justify-content: space-between;
   gap: 10px;
   background: var(--surface-header);
-  backdrop-filter: blur(14px);
+  backdrop-filter: none;
   border-bottom: 1px solid var(--border-subtle);
   flex-shrink: 0;
   z-index: 30;

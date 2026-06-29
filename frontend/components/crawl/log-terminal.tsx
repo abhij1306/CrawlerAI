@@ -628,7 +628,6 @@ export const LogTerminal = memo(function LogTerminal({
             const summaryLog =
               [...group.logs].reverse().find((log) => !isPersistenceSummaryLog(log.message)) ??
               lastLog;
-            const expandedRows = buildExpandedRows(group, coverage, confidence, durationMs);
             return (
               <section key={group.key} id={siteDomId(group.key)} className="overflow-hidden">
                 <div
@@ -784,57 +783,65 @@ export const LogTerminal = memo(function LogTerminal({
                 {expanded ? (
                   <div className="bg-[color-mix(in_srgb,var(--bg-alt)_60%,transparent)]">
                     <div className="overflow-hidden">
-                      {expandedRows.length ? (
-                        expandedRows.map((row, expandedIndex) => {
-                          const IconComponent = getLogIcon(row.level, row.message);
-                          const iconStyle = getLogIconStyle(row.level, row.message);
-                          return (
-                            <div
-                              key={row.key}
-                              className={cn(
-                                'grid grid-cols-[64px_24px_105px_minmax(0,1fr)_auto] items-center gap-4 px-6 py-0.5 text-xs',
-                                expandedIndex % 2 === 0
-                                  ? 'bg-[color-mix(in_srgb,var(--bg-alt)_35%,transparent)]'
-                                  : 'bg-transparent',
-                              )}
-                            >
-                              <span className="font-mono text-xs font-normal text-muted tabular-nums">
-                                {row.createdAt ? formatTimeHms(row.createdAt) : '--'}
-                              </span>
-                              <div className="flex justify-center">
-                                <IconComponent className={cn('size-3.5', iconStyle.iconCls)} />
+                      {(() => {
+                        const expandedRows = buildExpandedRows(
+                          group,
+                          coverage,
+                          confidence,
+                          durationMs,
+                        );
+                        return expandedRows.length ? (
+                          expandedRows.map((row, expandedIndex) => {
+                            const IconComponent = getLogIcon(row.level, row.message);
+                            const iconStyle = getLogIconStyle(row.level, row.message);
+                            return (
+                              <div
+                                key={row.key}
+                                className={cn(
+                                  'grid grid-cols-[64px_24px_105px_minmax(0,1fr)_auto] items-center gap-4 px-6 py-0.5 text-xs',
+                                  expandedIndex % 2 === 0
+                                    ? 'bg-[color-mix(in_srgb,var(--bg-alt)_35%,transparent)]'
+                                    : 'bg-transparent',
+                                )}
+                              >
+                                <span className="font-mono text-xs font-normal text-muted tabular-nums">
+                                  {row.createdAt ? formatTimeHms(row.createdAt) : '--'}
+                                </span>
+                                <div className="flex justify-center">
+                                  <IconComponent className={cn('size-3.5', iconStyle.iconCls)} />
+                                </div>
+                                <div className="flex">
+                                  <StageChip stage={row.stage} showIcon={false} />
+                                </div>
+                                <span className="min-w-0 text-xs font-medium break-words text-secondary">
+                                  {!row.createdAt
+                                    ? row.message
+                                    : renderLogContent(row.message, row.stage === 'system')}
+                                </span>
+                                <span className="flex items-center gap-2">
+                                  {row.payloadAction ? (
+                                    <Button
+                                      type="button"
+                                      variant="quiet"
+                                      size="sm"
+                                      onClick={() => {
+                                        setPeekedGroupKey(group.key);
+                                        setPeekedRecordIndex(0);
+                                      }}
+                                    >
+                                      Peek payload
+                                    </Button>
+                                  ) : null}
+                                </span>
                               </div>
-                              <div className="flex">
-                                <StageChip stage={row.stage} showIcon={false} />
-                              </div>
-                              <span className="min-w-0 text-xs font-medium break-words text-secondary">
-                                {!row.createdAt
-                                  ? row.message
-                                  : renderLogContent(row.message, row.stage === 'system')}
-                              </span>
-                              <span className="flex items-center gap-2">
-                                {row.payloadAction ? (
-                                  <Button
-                                    type="button"
-                                    variant="quiet"
-                                    size="sm"
-                                    onClick={() => {
-                                      setPeekedGroupKey(group.key);
-                                      setPeekedRecordIndex(0);
-                                    }}
-                                  >
-                                    Peek payload
-                                  </Button>
-                                ) : null}
-                              </span>
-                            </div>
-                          );
-                        })
-                      ) : (
-                        <div className="px-3 py-2 text-xs opacity-40">
-                          {TERMINAL_STRINGS.NO_LOGS}
-                        </div>
-                      )}
+                            );
+                          })
+                        ) : (
+                          <div className="px-3 py-2 text-xs opacity-40">
+                            {TERMINAL_STRINGS.NO_LOGS}
+                          </div>
+                        );
+                      })()}
                     </div>
                   </div>
                 ) : null}

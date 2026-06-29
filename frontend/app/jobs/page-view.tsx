@@ -95,10 +95,10 @@ export default function JobsPage() {
         ) : isJobsError ? (
           <DataRegionError message="Failed to load jobs." />
         ) : jobs.length ? (
-          <div className="overflow-x-auto rounded-md border border-border">
+          <>
             <Table
               // 260px accounts for page header, navigation, filters, and padding.
-              wrapperClassName="max-h-[max(200px,calc(100vh-260px))]"
+              wrapperClassName="max-h-[max(200px,calc(100vh-260px))] rounded-md border border-border"
               className="compact-data-table min-w-[960px] table-fixed"
             >
               <colgroup>
@@ -163,7 +163,7 @@ export default function JobsPage() {
               <span>Showing {jobs.length} active jobs</span>
               <span>Last refresh {lastRefreshed}</span>
             </div>
-          </div>
+          </>
         ) : (
           <DataRegionEmpty
             title="No active jobs"

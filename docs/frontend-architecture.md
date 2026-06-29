@@ -26,6 +26,7 @@ Runtime notes:
 - Vite+ boots the app through `src/main.tsx`.
 - `src/app/app.tsx` owns the React Router data router, nested access guards, and redirect shims.
 - `src/app/route-registry.ts` owns lazy route modules, access policy, page metadata, and navigation metadata.
+- `src/app/route-registry.ts` is the sole route authority. Files under `app/` are imported explicitly by this registry; Next App Router-only files such as `loading.tsx`, `layout.tsx`, and bracket route folders are dead code and blocked by the crawl architecture check.
 - Legacy routing, dynamic-import, link, and image compatibility wrappers have been removed.
 - `VITE_API_BASE_URL` is the frontend API base URL.
 - Production security headers and CSP are owned by the static hosting boundary, not frontend service code.

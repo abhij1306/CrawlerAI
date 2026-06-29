@@ -1,9 +1,9 @@
 import { useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useInfiniteQuery } from '@tanstack/react-query';
 
 import { queryKeys } from '@/api/query-keys';
 import { api } from '../../lib/api';
-import type { CrawlRun } from '../../lib/api/types';
+import type { CrawlRecord, CrawlRun, Paginated } from '../../lib/api/types';
 import { CRAWL_DEFAULTS } from '../../lib/constants/crawl-defaults';
 import { POLLING_INTERVALS, RETRY_LIMITS } from '../../lib/constants/timing';
 import { cleanRecordForDisplay, type OutputTabKey } from './shared';
@@ -15,10 +15,12 @@ type UseRunRecordsOptions = {
   live: boolean;
   terminal: boolean;
   outputTab: OutputTabKey;
-  tablePage: number;
   jsonVisibleCount: number;
   verdict: string;
 };
+
+const EMPTY_RECORD_PAGES: Paginated<CrawlRecord>[] = [];
+const EMPTY_RECORDS: CrawlRecord[] = [];
 
 export function useRunRecords({
   runId,
@@ -26,7 +28,6 @@ export function useRunRecords({
   live,
   terminal,
   outputTab,
-  tablePage,
   jsonVisibleCount,
   verdict,
 }: Readonly<UseRunRecordsOptions>) {
@@ -35,28 +36,32 @@ export function useRunRecords({
   // table records query active whenever that terminal is visible.
   const shouldFetchTableRecords = live || outputTab === 'table' || outputTab === 'logs';
   const shouldFetchJsonRecords = outputTab === 'json';
-  const recordsFetchLimit = Math.min(
-    800,
-    Math.max(CRAWL_DEFAULTS.TABLE_PAGE_SIZE * 2, jsonVisibleCount),
-  );
-  const tableRecordsLimit = CRAWL_DEFAULTS.TABLE_PAGE_SIZE * 4 * tablePage;
+  const tablePageSize = CRAWL_DEFAULTS.TABLE_PAGE_SIZE * 4;
+  const jsonPageSize = CRAWL_DEFAULTS.TABLE_PAGE_SIZE;
 
   const {
     data: tableRecordsData,
     error: tableRecordsError,
     isFetched: tableRecordsFetched,
     isLoading: isTableRecordsLoading,
+    isFetchingNextPage: isFetchingNextTablePage,
+    fetchNextPage: fetchNextTablePage,
     refetch: refetchTableRecords,
-  } = useQuery({
-    queryKey: queryKeys.runs.tableRecords(runId, tableRecordsLimit),
-    queryFn: ({ signal }) =>
-      api.getRecords(runId, { page: 1, limit: tableRecordsLimit }, { signal }),
+  } = useInfiniteQuery({
+    queryKey: queryKeys.runs.tableRecords(runId, tablePageSize),
+    queryFn: ({ pageParam, signal }) =>
+      api.getRecords(runId, { page: pageParam, limit: tablePageSize }, { signal }),
+    initialPageParam: 1,
+    getNextPageParam: (lastPage) => {
+      const { page, limit, total } = lastPage.meta;
+      return page * limit < total ? page + 1 : undefined;
+    },
     enabled: shouldFetchTableRecords,
     refetchInterval: live && shouldFetchTableRecords ? POLLING_INTERVALS.ACTIVE_JOB_MS : false,
     refetchIntervalInBackground: false,
     refetchOnMount: (query) => {
-      const cachedPage = query.state.data as { items?: unknown[] } | undefined;
-      return live || !cachedPage?.items?.length ? 'always' : false;
+      const cachedPage = query.state.data as { pages?: { items?: unknown[] }[] } | undefined;
+      return live || !cachedPage?.pages?.some((page) => page.items?.length) ? 'always' : false;
     },
   });
 
@@ -64,26 +69,45 @@ export function useRunRecords({
     data: jsonRecordsData,
     error: jsonRecordsError,
     isLoading: isJsonRecordsLoading,
+    isFetchingNextPage: isFetchingNextJsonPage,
+    fetchNextPage: fetchNextJsonPage,
     refetch: refetchJsonRecords,
-  } = useQuery({
-    queryKey: queryKeys.runs.jsonRecords(runId, recordsFetchLimit),
-    queryFn: ({ signal }) => api.getRecords(runId, { limit: recordsFetchLimit }, { signal }),
+  } = useInfiniteQuery({
+    queryKey: queryKeys.runs.jsonRecords(runId, jsonPageSize),
+    queryFn: ({ pageParam, signal }) =>
+      api.getRecords(runId, { page: pageParam, limit: jsonPageSize }, { signal }),
+    initialPageParam: 1,
+    getNextPageParam: (lastPage) => {
+      const { page, limit, total } = lastPage.meta;
+      return page * limit < total && page * limit < 800 ? page + 1 : undefined;
+    },
     enabled: Boolean(run) && shouldFetchJsonRecords,
     refetchInterval: live && shouldFetchJsonRecords ? POLLING_INTERVALS.ACTIVE_JOB_MS : false,
     refetchIntervalInBackground: false,
     refetchOnMount: 'always',
   });
 
-  const jsonRecordsSource = jsonRecordsData ?? tableRecordsData;
-  const records = useMemo(() => jsonRecordsSource?.items ?? [], [jsonRecordsSource?.items]);
-  const tableRecords = useMemo(() => tableRecordsData?.items ?? [], [tableRecordsData?.items]);
-  const tableTotal = tableRecordsData?.meta?.total ?? tableRecords.length;
-  const recordsTotal = jsonRecordsSource?.meta?.total ?? records.length;
+  const tablePages = tableRecordsData?.pages ?? EMPTY_RECORD_PAGES;
+  const jsonPages = jsonRecordsData?.pages ?? EMPTY_RECORD_PAGES;
+  const flattenedTableRecords = useMemo(
+    () => tablePages.flatMap((page) => page.items),
+    [tablePages],
+  );
+  const flattenedJsonRecords = useMemo(() => jsonPages.flatMap((page) => page.items), [jsonPages]);
+  const latestTablePage = tablePages.at(-1);
+  const latestJsonPage = jsonPages.at(-1);
+  const records = shouldFetchJsonRecords
+    ? flattenedJsonRecords
+    : (latestTablePage?.items ?? EMPTY_RECORDS);
+  const tableRecords = flattenedTableRecords;
+  const tableTotal = latestTablePage?.meta?.total ?? tableRecords.length;
+  const recordsTotal =
+    latestJsonPage?.meta?.total ?? latestTablePage?.meta?.total ?? records.length;
   const jsonRecords = useMemo(
     () => records.slice(0, Math.min(records.length, jsonVisibleCount)),
     [jsonVisibleCount, records],
   );
-  const recordsFetchCapReached = records.length >= recordsFetchLimit && recordsFetchLimit >= 800;
+  const recordsFetchCapReached = records.length >= 800;
   const hasMoreTableRecords = tableRecords.length < tableTotal;
   const hasMoreJsonRecords =
     jsonRecords.length < records.length ||
@@ -95,7 +119,7 @@ export function useRunRecords({
   );
 
   const summaryRecordsFromRun = Number(run?.result_summary?.record_count ?? 0) || 0;
-  const knownTableRecordsTotal = Math.max(tableTotal, tableRecordsData?.meta?.total ?? 0);
+  const knownTableRecordsTotal = Math.max(tableTotal, latestTablePage?.meta?.total ?? 0);
   const terminalRecordsExpected =
     terminal && (summaryRecordsFromRun > 0 || verdict === 'success' || verdict === 'partial');
   // Only sync AFTER the initial table fetch has settled. Before it returns,
@@ -115,7 +139,7 @@ export function useRunRecords({
     retryLimit: RETRY_LIMITS.TERMINAL_RECORDS_RETRY_LIMIT,
     runId,
     summaryRecordsFromRun,
-    tableRecordsLimit,
+    tableRecordsLimit: tablePageSize,
     updatedAt: run?.updated_at ?? null,
     refetchTableRecords,
   });
@@ -128,7 +152,7 @@ export function useRunRecords({
     },
     jsonRecordsQuery: {
       error: jsonRecordsError,
-      isLoading: isJsonRecordsLoading && !jsonRecordsSource,
+      isLoading: isJsonRecordsLoading && !records.length,
       refetch: refetchJsonRecords,
     },
     records,
@@ -137,11 +161,15 @@ export function useRunRecords({
     recordsTotal,
     jsonRecords,
     hasMoreTableRecords,
+    fetchNextTablePage,
+    fetchNextJsonPage,
+    isFetchingNextTablePage,
+    isFetchingNextJsonPage,
     hasMoreJsonRecords,
     recordsJson,
-    recordsFetchLimit,
+    recordsFetchLimit: jsonPageSize,
     recordsFetchCapReached,
-    tableRecordsLimit,
+    tableRecordsLimit: tablePageSize,
     summaryRecordsFromRun,
   };
 }

@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 
 import { queryKeys } from '@/api/query-keys';
 import type { HistoryItem } from '../../components/ui/history-drawer';
@@ -41,14 +41,22 @@ export function useProductIntelligence() {
   const [confidenceFilter, setConfidenceFilter] = useState<'all' | 'high' | 'medium' | 'low'>(
     'all',
   );
-  const { data: jobsData, refetch: refetchJobs } = useQuery({
+  const {
+    data: jobsData,
+    isLoading: jobsLoading,
+    refetch: refetchJobs,
+  } = useQuery({
     queryKey: queryKeys.productIntelligence.jobs(),
     queryFn: () => api.listProductIntelligenceJobs({ limit: 20 }),
   });
-  const sourceRecords = prefill.records ?? [];
+  const sourceRecords = useMemo(() => prefill.records ?? [], [prefill.records]);
   const defaultJobId = sourceRecords.length ? null : (jobsData?.[0]?.id ?? null);
   const resolvedActiveJobId = activeJobId ?? defaultJobId;
-  const { data: detailData } = useQuery({
+  const {
+    data: detailData,
+    isLoading: detailLoading,
+    isFetching: detailFetching,
+  } = useQuery({
     queryKey: queryKeys.productIntelligence.detail(resolvedActiveJobId ?? 0),
     queryFn: () => api.getProductIntelligenceJob(resolvedActiveJobId ?? 0),
     enabled: resolvedActiveJobId !== null,
@@ -68,7 +76,11 @@ export function useProductIntelligence() {
     () => (detailData ? detailOptions(detailData.job.options) : DEFAULT_OPTIONS),
     [detailData],
   );
-  const discovery = discoveryOverride ?? (detailData ? detailToDiscovery(detailData) : null);
+  const detailDiscovery = useMemo(
+    () => (detailData ? detailToDiscovery(detailData) : null),
+    [detailData],
+  );
+  const discovery = discoveryOverride ?? detailDiscovery;
   const effectiveOptions = optionsEdited || !detailData ? options : detailHydratedOptions;
   const effectiveAllowedDomainsText = optionsEdited
     ? allowedDomainsText
@@ -76,16 +88,20 @@ export function useProductIntelligence() {
   const effectiveExcludedDomainsText = optionsEdited
     ? excludedDomainsText
     : detailHydratedOptions.excluded_domains.join('\n');
-  const visibleSourceRecords = sourceRecords.length
-    ? sourceRecords
-    : detailData
-      ? detailData.source_products.map((source) => ({
-          id: source.source_record_id,
-          run_id: source.source_run_id,
-          source_url: source.source_url,
-          data: source.payload,
-        }))
-      : [];
+  const visibleSourceRecords = useMemo(
+    () =>
+      sourceRecords.length
+        ? sourceRecords
+        : detailData
+          ? detailData.source_products.map((source) => ({
+              id: source.source_record_id,
+              run_id: source.source_run_id,
+              source_url: source.source_url,
+              data: source.payload,
+            }))
+          : [],
+    [detailData, sourceRecords],
+  );
   const activeSourceRunId = sourceRecords.length
     ? (prefill.source_run_id ??
       sourceRecords.find((record) => typeof record.run_id === 'number')?.run_id ??
@@ -101,6 +117,7 @@ export function useProductIntelligence() {
       ),
     [discovery, selectedUrls],
   );
+  const selectedUrlSet = useMemo(() => new Set(uniqueSelectedUrls), [uniqueSelectedUrls]);
   const filteredCandidates = useMemo(() => {
     const all = discovery?.candidates ?? [];
     return all.filter((candidate) => candidateVisible(candidate, searchText, confidenceFilter));
@@ -146,87 +163,112 @@ export function useProductIntelligence() {
     );
     return { count: uniqueSelectedUrls.length, domains };
   }, [discovery, uniqueSelectedUrls]);
-  async function discover() {
-    if (!visibleSourceRecords.length) return;
-    setPending(true);
-    setError('');
-    setDiscoveryOverride(null);
-    setSelectedUrls([]);
-    try {
-      const sourceRecordIds = visibleSourceRecords
-        .map((record) => record.id)
-        .filter((value): value is number => typeof value === 'number');
-      const canUseRecordIds = sourceRecordIds.length === visibleSourceRecords.length;
-      const submittedOptions = {
-        ...effectiveOptions,
-        search_provider: searchProvider(effectiveOptions.search_provider),
-        allowed_domains: parseDomainLines(effectiveAllowedDomainsText),
-        excluded_domains: parseDomainLines(effectiveExcludedDomainsText),
-      };
-      const response = await api.discoverProductIntelligence({
-        source_run_id: activeSourceRunId,
-        source_record_ids: canUseRecordIds ? sourceRecordIds : [],
-        source_records: canUseRecordIds ? [] : visibleSourceRecords,
-        options: submittedOptions,
-      });
-      const echoedProvider = searchProvider(
-        response.search_provider ?? response.options?.search_provider,
-      );
-      if (echoedProvider !== submittedOptions.search_provider) {
-        setError(
-          `Provider mismatch: submitted ${searchProviderLabel(submittedOptions.search_provider)}, backend used ${searchProviderLabel(echoedProvider)}.`,
+  const discover = useCallback(
+    async function discover() {
+      if (!visibleSourceRecords.length) return;
+      setPending(true);
+      setError('');
+      setDiscoveryOverride(null);
+      setSelectedUrls([]);
+      try {
+        const sourceRecordIds = visibleSourceRecords
+          .map((record) => record.id)
+          .filter((value): value is number => typeof value === 'number');
+        const canUseRecordIds = sourceRecordIds.length === visibleSourceRecords.length;
+        const submittedOptions = {
+          ...effectiveOptions,
+          search_provider: searchProvider(effectiveOptions.search_provider),
+          allowed_domains: parseDomainLines(effectiveAllowedDomainsText),
+          excluded_domains: parseDomainLines(effectiveExcludedDomainsText),
+        };
+        const response = await api.discoverProductIntelligence({
+          source_run_id: activeSourceRunId,
+          source_record_ids: canUseRecordIds ? sourceRecordIds : [],
+          source_records: canUseRecordIds ? [] : visibleSourceRecords,
+          options: submittedOptions,
+        });
+        const echoedProvider = searchProvider(
+          response.search_provider ?? response.options?.search_provider,
         );
+        if (echoedProvider !== submittedOptions.search_provider) {
+          setError(
+            `Provider mismatch: submitted ${searchProviderLabel(submittedOptions.search_provider)}, backend used ${searchProviderLabel(echoedProvider)}.`,
+          );
+        }
+        setDiscoveryOverride(response);
+        setActiveJobId(response.job_id);
+        const nextOptions = detailOptions(response.options);
+        setOptions(nextOptions);
+        setAllowedDomainsText(nextOptions.allowed_domains.join('\n'));
+        setExcludedDomainsText(nextOptions.excluded_domains.join('\n'));
+        setOptionsEdited(false);
+        await refetchJobs();
+      } catch (caught) {
+        setError(caught instanceof Error ? caught.message : 'Unable to discover candidates.');
+      } finally {
+        setPending(false);
       }
-      setDiscoveryOverride(response);
-      setActiveJobId(response.job_id);
-      const nextOptions = detailOptions(response.options);
-      setOptions(nextOptions);
-      setAllowedDomainsText(nextOptions.allowed_domains.join('\n'));
-      setExcludedDomainsText(nextOptions.excluded_domains.join('\n'));
-      setOptionsEdited(false);
-      await refetchJobs();
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'Unable to discover candidates.');
-    } finally {
-      setPending(false);
-    }
-  }
+    },
+    [
+      activeSourceRunId,
+      effectiveAllowedDomainsText,
+      effectiveExcludedDomainsText,
+      effectiveOptions,
+      refetchJobs,
+      visibleSourceRecords,
+    ],
+  );
 
-  function toggleUrl(url: string) {
+  const toggleUrl = useCallback(function toggleUrl(url: string) {
     setSelectedUrls((current) =>
       current.includes(url) ? current.filter((item) => item !== url) : [...current, url],
     );
-  }
+  }, []);
 
-  function sendSelectedToBatchCrawl() {
-    if (!uniqueSelectedUrls.length) return;
-    window.sessionStorage.setItem(
-      STORAGE_KEYS.BULK_PREFILL,
-      JSON.stringify({ domain: 'commerce', urls: uniqueSelectedUrls }),
-    );
-    navigate('/crawl?module=pdp&mode=batch', { replace: true });
-  }
+  const sendSelectedToBatchCrawl = useCallback(
+    function sendSelectedToBatchCrawl() {
+      if (!uniqueSelectedUrls.length) return;
+      window.sessionStorage.setItem(
+        STORAGE_KEYS.BULK_PREFILL,
+        JSON.stringify({ domain: 'commerce', urls: uniqueSelectedUrls }),
+      );
+      navigate('/crawl?module=pdp&mode=batch', { replace: true });
+    },
+    [navigate, uniqueSelectedUrls],
+  );
 
-  function toggleAllUrls() {
-    const filteredUrls = filteredCandidates.flatMap((candidate) =>
-      candidate.url ? [candidate.url] : [],
-    );
-    const selectedUrlSet = new Set(selectedUrls);
-    const allFilteredSelected = filteredUrls.every((url) => selectedUrlSet.has(url));
-    if (allFilteredSelected && filteredUrls.length > 0) {
-      const filteredUrlSet = new Set(filteredUrls);
-      setSelectedUrls((current) => current.filter((url) => !filteredUrlSet.has(url)));
-    } else {
-      setSelectedUrls((current) => Array.from(new Set([...current, ...filteredUrls])));
-    }
-  }
+  const toggleAllUrls = useCallback(
+    function toggleAllUrls() {
+      const filteredUrls = filteredCandidates.flatMap((candidate) =>
+        candidate.url ? [candidate.url] : [],
+      );
+      const selectedUrlSet = new Set(selectedUrls);
+      const allFilteredSelected = filteredUrls.every((url) => selectedUrlSet.has(url));
+      if (allFilteredSelected && filteredUrls.length > 0) {
+        const filteredUrlSet = new Set(filteredUrls);
+        setSelectedUrls((current) => current.filter((url) => !filteredUrlSet.has(url)));
+      } else {
+        setSelectedUrls((current) => Array.from(new Set([...current, ...filteredUrls])));
+      }
+    },
+    [filteredCandidates, selectedUrls],
+  );
 
-  function openJob(jobId: number) {
+  const openJob = useCallback(function openJob(jobId: number) {
     setActiveJobId(jobId);
     setDiscoveryOverride(null);
     setSelectedUrls([]);
     setOptionsEdited(false);
-  }
+  }, []);
+
+  const resolvingLatestJob =
+    !sourceRecords.length && !discoveryOverride && !jobsData && jobsLoading;
+  const resolvingDetail =
+    resolvedActiveJobId !== null &&
+    !discoveryOverride &&
+    !detailData &&
+    (detailLoading || detailFetching);
+  const loadingDiscovery = pending || resolvingLatestJob || resolvingDetail;
 
   return {
     confidenceDistribution,
@@ -243,12 +285,14 @@ export function useProductIntelligence() {
     historyItems,
     historyOpen,
     jsonModalCandidate,
+    loadingDiscovery,
     openJob,
     pending,
     resolvedActiveJobId,
     searchText,
     selectedDomainSummary,
     selectedUrls,
+    selectedUrlSet,
     sendSelectedToBatchCrawl,
     setAllowedDomainsText,
     setConfigOpen,

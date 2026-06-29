@@ -54,8 +54,6 @@ function CrawlRunWorkspace({ runId }: Readonly<CrawlRunScreenProps>) {
     setOutputTab,
     selectedIds,
     setSelectedIds,
-    tablePage,
-    setTablePage,
     jsonVisibleCount,
     setJsonVisibleCount,
     historyOpen,
@@ -79,6 +77,10 @@ function CrawlRunWorkspace({ runId }: Readonly<CrawlRunScreenProps>) {
     hasMoreJsonRecords,
     recordsJson,
     recordsFetchCapReached,
+    fetchNextTablePage,
+    fetchNextJsonPage,
+    isFetchingNextTablePage,
+    isFetchingNextJsonPage,
     summaryRecordsFromRun,
   } = useRunRecords({
     runId,
@@ -86,7 +88,6 @@ function CrawlRunWorkspace({ runId }: Readonly<CrawlRunScreenProps>) {
     live,
     terminal,
     outputTab,
-    tablePage,
     jsonVisibleCount,
     verdict,
   });
@@ -152,11 +153,14 @@ function CrawlRunWorkspace({ runId }: Readonly<CrawlRunScreenProps>) {
     visibleSelectedIds,
     selectedRecords,
     batchSourceRecords,
+    selectAllVisibleTableRecords,
+    toggleSelectedRecord,
   } = useRunRecordSelection({
     outputTab,
     records,
     tableRecords,
     selectedIds,
+    setSelectedIds,
   });
   const {
     listingRun,
@@ -303,23 +307,27 @@ function CrawlRunWorkspace({ runId }: Readonly<CrawlRunScreenProps>) {
         >
           <CrawlTerminalTabContent
             outputTab={outputTab}
-            tableRecordsLoading={tableRecordsQuery.isLoading}
-            jsonRecordsLoading={jsonRecordsQuery.isLoading}
+            tableRecordsLoading={tableRecordsQuery.isLoading || isFetchingNextTablePage}
+            jsonRecordsLoading={jsonRecordsQuery.isLoading || isFetchingNextJsonPage}
             filteredTableRecords={filteredTableRecords}
             visibleColumns={visibleColumns}
             visibleSelectedIds={visibleSelectedIds}
             tableTotal={tableTotal}
             hasMoreTableRecords={hasMoreTableRecords}
             emptyRecordsState={emptyRecordsState}
-            setSelectedIds={setSelectedIds}
-            setTablePage={setTablePage}
+            onSelectAllRecords={selectAllVisibleTableRecords}
+            onToggleRecord={toggleSelectedRecord}
+            onLoadMoreTableRecords={() => void fetchNextTablePage()}
             records={records}
             recordsJson={recordsJson}
             jsonRecordsLength={jsonRecords.length}
             recordsTotal={recordsTotal}
             hasMoreJsonRecords={hasMoreJsonRecords}
             recordsFetchCapReached={recordsFetchCapReached}
-            setJsonVisibleCount={setJsonVisibleCount}
+            setJsonVisibleCount={(updater) => {
+              setJsonVisibleCount(updater);
+              void fetchNextJsonPage();
+            }}
             logs={logs}
             batchSourceRecords={batchSourceRecords}
             requestedFields={run?.requested_fields ?? []}

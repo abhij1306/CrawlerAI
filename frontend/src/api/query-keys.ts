@@ -16,10 +16,10 @@ export const queryKeys = {
     list: (filters: RunListFilters = {}) => ['runs', 'list', filters] as const,
     detail: (runId: number) => ['runs', 'detail', runId] as const,
     records: (runId: number) => ['runs', 'records', runId] as const,
-    tableRecords: (runId: number, limit: number) =>
-      ['runs', 'records', runId, 'table', limit] as const,
-    jsonRecords: (runId: number, limit: number) =>
-      ['runs', 'records', runId, 'json', limit] as const,
+    tableRecords: (runId: number, pageSize: number) =>
+      ['runs', 'records', runId, 'table-pages', pageSize] as const,
+    jsonRecords: (runId: number, pageSize: number) =>
+      ['runs', 'records', runId, 'json-pages', pageSize] as const,
     logs: (runId: number) => ['runs', 'logs', runId] as const,
     recipe: (runId: number) => ['runs', 'recipe', runId] as const,
     terminalRecordSync: (syncKey: string | null) =>

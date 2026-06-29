@@ -23,6 +23,7 @@ export default function SelectorsPage() {
     url,
     loadedUrl,
     previewHtml,
+    previewOpen,
     resolvedSurface,
     iframePromoted,
     expectedColumns,
@@ -55,6 +56,8 @@ export default function SelectorsPage() {
           resolvedSurface={resolvedSurface}
           iframePromoted={iframePromoted}
           previewHtml={previewHtml}
+          previewOpen={previewOpen}
+          onOpenPreview={() => dispatch({ type: 'previewOpened' })}
         />
 
         <FieldRowsCard
@@ -141,6 +144,8 @@ interface PagePreviewCardProps {
   resolvedSurface: string;
   iframePromoted: boolean;
   previewHtml: string;
+  previewOpen: boolean;
+  onOpenPreview: () => void;
 }
 
 function PagePreviewCard({
@@ -148,6 +153,8 @@ function PagePreviewCard({
   resolvedSurface,
   iframePromoted,
   previewHtml,
+  previewOpen,
+  onOpenPreview,
 }: Readonly<PagePreviewCardProps>) {
   return (
     <SectionCard
@@ -163,7 +170,7 @@ function PagePreviewCard({
       }
     >
       <div className="overflow-hidden rounded-none bg-panel p-0 shadow-card backdrop-blur-md">
-        {previewHtml ? (
+        {previewHtml && previewOpen ? (
           <iframe
             key={loadedUrl}
             srcDoc={previewHtml}
@@ -173,6 +180,12 @@ function PagePreviewCard({
             referrerPolicy="no-referrer"
             sandbox="allow-same-origin"
           />
+        ) : previewHtml ? (
+          <div className="grid h-[760px] place-items-center text-center text-sm leading-relaxed text-muted">
+            <Button type="button" variant="neutral" onClick={onOpenPreview}>
+              Open preview
+            </Button>
+          </div>
         ) : (
           <div className="grid h-[760px] place-items-center text-sm leading-relaxed text-muted">
             {loadedUrl ? 'Preview fetch failed.' : 'No page loaded.'}

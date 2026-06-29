@@ -1,4 +1,4 @@
-import { defineConfig, type PluginOption } from 'vite-plus';
+import { defineConfig, lazyPlugins, type PluginOption } from 'vite-plus';
 import react from '@vitejs/plugin-react';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -8,7 +8,7 @@ const isProduction = process.env.NODE_ENV === 'production';
 
 export default defineConfig({
   root: frontendRoot,
-  plugins: react() as unknown as PluginOption[],
+  plugins: lazyPlugins(() => react() as PluginOption[]),
   resolve: {
     alias: {
       '@': path.join(frontendRoot, 'src'),
@@ -26,7 +26,7 @@ export default defineConfig({
     target: 'esnext',
     sourcemap: !isProduction,
     cssCodeSplit: true,
-    chunkSizeWarningLimit: 500,
+    chunkSizeWarningLimit: 350,
     rollupOptions: {
       output: {
         manualChunks(id) {
@@ -41,19 +41,12 @@ export default defineConfig({
             return 'router';
           }
           if (
-            moduleId.includes('/node_modules/@radix-ui/') ||
-            moduleId.includes('/node_modules/lucide-react/')
-          ) {
-            return 'ui';
-          }
-          if (
             moduleId.includes('/node_modules/react/') ||
             moduleId.includes('/node_modules/react-dom/') ||
             moduleId.includes('/node_modules/scheduler/')
           ) {
             return 'vendor';
           }
-          return 'vendor-other';
         },
       },
     },

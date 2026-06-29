@@ -30,13 +30,13 @@ function writeRequiredOwners(workspace: string) {
   }
 }
 
-function writeLazyCrawlPage(workspace: string) {
+function writeCrawlPage(workspace: string) {
   writeFileSync(
     join(workspace, 'app', 'crawl', 'page-view.tsx'),
     [
-      "const ConfigScreen = lazy(() => import('../../components/crawl/crawl-config-screen'));",
-      "const RunScreen = lazy(() => import('../../components/crawl/crawl-run-screen'));",
-      'export default function Page() { return <><ConfigScreen /><RunScreen /></>; }',
+      "import { CrawlConfigScreen } from '../../components/crawl/crawl-config-screen';",
+      "import { CrawlRunScreen } from '../../components/crawl/crawl-run-screen';",
+      'export default function Page() { return <><CrawlConfigScreen /><CrawlRunScreen /></>; }',
     ].join('\n'),
     'utf8',
   );
@@ -65,7 +65,7 @@ describe('check-crawl-architecture', () => {
         'utf8',
       );
       writeRequiredOwners(workspace);
-      writeLazyCrawlPage(workspace);
+      writeCrawlPage(workspace);
 
       expect(() => {
         execFileSync(process.execPath, [scriptPath], {
@@ -100,7 +100,7 @@ describe('check-crawl-architecture', () => {
         'utf8',
       );
       writeRequiredOwners(workspace);
-      writeLazyCrawlPage(workspace);
+      writeCrawlPage(workspace);
 
       expect(() => {
         execFileSync(process.execPath, [scriptPath], {
@@ -134,7 +134,7 @@ describe('check-crawl-architecture', () => {
         "window.history.replaceState(null, '', '/crawl');\n",
         'utf8',
       );
-      writeLazyCrawlPage(workspace);
+      writeCrawlPage(workspace);
 
       expect(() => {
         execFileSync(process.execPath, [scriptPath], {

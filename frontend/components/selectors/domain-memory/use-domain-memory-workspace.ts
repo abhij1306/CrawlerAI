@@ -1,5 +1,7 @@
-import { useDeferredValue, useEffect, useEffectEvent, useMemo, useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useDeferredValue, useEffect, useMemo, useState } from 'react';
 
+import { queryKeys } from '@/api/query-keys';
 import { api } from '../../../lib/api';
 import type {
   CrawlRun,
@@ -18,6 +20,12 @@ import { useSelectorRecordActions } from './use-selector-record-actions';
 import { cloneDomainRunProfile, firstUsableDomain, profileDraftKey } from './utils';
 
 let localUidCounter = 0;
+const EMPTY_SELECTOR_SUMMARIES: SelectorDomainSummary[] = [];
+const EMPTY_PROFILES: DomainRunProfileRecord[] = [];
+const EMPTY_COOKIES: DomainCookieMemoryRecord[] = [];
+const EMPTY_FEEDBACK: DomainFieldFeedbackRecord[] = [];
+const EMPTY_KNOWLEDGE_SITES: KnowledgeSiteRecord[] = [];
+const EMPTY_RUNS: CrawlRun[] = [];
 
 function latestCompletedRunIdFor(surfaceWorkspace: SurfaceWorkspace): number | null {
   let latestId: number | null = null;
@@ -40,18 +48,8 @@ function toLocalRecords(selectorData: SelectorRecord[]) {
 }
 export function useDomainMemoryWorkspace() {
   const [records, setRecords] = useState<LocalRecord[]>([]);
-  const [selectorSummaries, setSelectorSummaries] = useState<SelectorDomainSummary[]>([]);
-  const [profiles, setProfiles] = useState<DomainRunProfileRecord[]>([]);
-  const [cookies, setCookies] = useState<DomainCookieMemoryRecord[]>([]);
-  const [feedback, setFeedback] = useState<DomainFieldFeedbackRecord[]>([]);
-  const [knowledgeSites, setKnowledgeSites] = useState<KnowledgeSiteRecord[]>([]);
-  const [completedRuns, setCompletedRuns] = useState<CrawlRun[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
-  const [selectorLoading, setSelectorLoading] = useState(false);
   const [error, setError] = useState('');
   const [selectedDomain, setSelectedDomain] = useState('');
-  const [loadedSelectorDomain, setLoadedSelectorDomain] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState<EditDraft | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -63,68 +61,72 @@ export function useDomainMemoryWorkspace() {
   const [resetPending, setResetPending] = useState(false);
   const [resetError, setResetError] = useState('');
   const deferredSearchQuery = useDeferredValue(searchQuery);
-  async function loadWorkspace(showLoading = true) {
-    if (showLoading) setLoading(true);
+  const queryClient = useQueryClient();
+  const selectorSummaryQuery = useQuery({
+    queryKey: queryKeys.domainMemory.domains(),
+    queryFn: () => api.listSelectorSummaries(),
+  });
+  const profilesQuery = useQuery({
+    queryKey: queryKeys.domainRunProfiles.all,
+    queryFn: () => api.listDomainRunProfiles(),
+  });
+  const cookiesQuery = useQuery({
+    queryKey: ['domain-cookie-memory'] as const,
+    queryFn: () => api.listDomainCookieMemory(),
+  });
+  const feedbackQuery = useQuery({
+    queryKey: ['domain-field-feedback', 100] as const,
+    queryFn: () => api.listDomainFieldFeedback({ limit: 100 }),
+  });
+  const completedRunsQuery = useQuery({
+    queryKey: queryKeys.runs.list({ status: 'completed', limit: 100 }),
+    queryFn: () => api.listCrawls({ status: 'completed', limit: 100 }),
+  });
+  const knowledgeSitesQuery = useQuery({
+    queryKey: ['knowledge-sites'] as const,
+    queryFn: () => api.listKnowledgeSites(),
+  });
+  const workspaceQueries = [
+    selectorSummaryQuery,
+    profilesQuery,
+    cookiesQuery,
+    feedbackQuery,
+    completedRunsQuery,
+    knowledgeSitesQuery,
+  ] as const;
+  const queryError = workspaceQueries.map((query) => query.error).find(Boolean);
+  const queryErrorMessage =
+    queryError instanceof Error
+      ? queryError.message
+      : queryError
+        ? 'Unable to load domain memory.'
+        : '';
+
+  const selectorSummaries = selectorSummaryQuery.data ?? EMPTY_SELECTOR_SUMMARIES;
+  const profiles = profilesQuery.data ?? EMPTY_PROFILES;
+  const cookies = cookiesQuery.data ?? EMPTY_COOKIES;
+  const feedback = feedbackQuery.data ?? EMPTY_FEEDBACK;
+  const knowledgeSites = knowledgeSitesQuery.data?.sites ?? EMPTY_KNOWLEDGE_SITES;
+  const completedRuns = completedRunsQuery.data?.items ?? EMPTY_RUNS;
+  const loading = workspaceQueries.some((query) => query.isLoading || query.isFetching);
+  const hasLoadedOnce = workspaceQueries.every((query) => query.isFetched || query.isError);
+
+  async function loadWorkspace() {
     setError('');
     try {
-      const knowledgeSiteRequest = api.listKnowledgeSites().catch(() => null);
-      const [
-        selectorSummaryData,
-        profileData,
-        cookieData,
-        feedbackData,
-        crawlData,
-        knowledgeSiteData,
-      ] = await Promise.all([
-        api.listSelectorSummaries(),
-        api.listDomainRunProfiles(),
-        api.listDomainCookieMemory(),
-        api.listDomainFieldFeedback({ limit: 100 }),
-        api.listCrawls({ status: 'completed', limit: 100 }),
-        knowledgeSiteRequest,
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.domainMemory.domains() }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.domainRunProfiles.all }),
+        queryClient.invalidateQueries({ queryKey: ['domain-cookie-memory'] }),
+        queryClient.invalidateQueries({ queryKey: ['domain-field-feedback'] }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.runs.all }),
+        queryClient.invalidateQueries({ queryKey: ['knowledge-sites'] }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.selectors.all }),
       ]);
-      const sites = knowledgeSiteData?.sites ?? knowledgeSites;
-      const loadedDomains = [
-        ...selectorSummaryData.map((row) => row.domain),
-        ...profileData.map((row) => row.domain),
-        ...cookieData.map((row) => row.domain),
-        ...feedbackData.map((row) => row.domain),
-        ...sites.map((row) => row.domain),
-        ...crawlData.items.map(
-          (run) => String(run.result_summary?.domain || '').trim() || getNormalizedDomain(run.url),
-        ),
-      ];
-      const currentDomainStillAvailable = loadedDomains.includes(selectedDomain)
-        ? selectedDomain
-        : '';
-      const preferredDomain = firstUsableDomain([currentDomainStillAvailable, ...loadedDomains]);
-      const selectorData = preferredDomain
-        ? await api.listSelectors({ domain: preferredDomain })
-        : [];
-      setSelectorSummaries(selectorSummaryData);
-      setProfiles(profileData);
-      setCookies(cookieData);
-      setFeedback(feedbackData);
-      if (knowledgeSiteData) setKnowledgeSites(sites);
-      setCompletedRuns(crawlData.items);
-      setSelectedDomain(preferredDomain);
-      setRecords(toLocalRecords(selectorData));
-      setLoadedSelectorDomain(preferredDomain);
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : 'Unable to load domain memory.');
-    } finally {
-      setLoading(false);
-      setHasLoadedOnce(true);
     }
   }
-  const loadWorkspaceOnMount = useEffectEvent(() => {
-    void loadWorkspace(false);
-  });
-
-  useEffect(() => {
-    const timeoutId = window.setTimeout(() => loadWorkspaceOnMount(), 0);
-    return () => window.clearTimeout(timeoutId);
-  }, []);
 
   const availableSurfaces = useMemo(
     () =>
@@ -175,28 +177,44 @@ export function useDomainMemoryWorkspace() {
     groupedWorkspaces[0] ??
     null;
 
+  const selectorRecordsQuery = useQuery({
+    queryKey: queryKeys.selectors.list({ domain: resolvedSelectedDomain }),
+    queryFn: () => api.listSelectors({ domain: resolvedSelectedDomain }),
+    enabled: Boolean(resolvedSelectedDomain),
+  });
+  const selectorLoading = selectorRecordsQuery.isLoading || selectorRecordsQuery.isFetching;
+
   useEffect(() => {
-    if (!resolvedSelectedDomain || loadedSelectorDomain === resolvedSelectedDomain) return;
-    let cancelled = false;
-    async function loadSelectedDomainSelectors() {
-      setSelectorLoading(true);
-      try {
-        const selectorData = await api.listSelectors({ domain: resolvedSelectedDomain });
-        if (cancelled) return;
-        setRecords(toLocalRecords(selectorData));
-        setLoadedSelectorDomain(resolvedSelectedDomain);
-      } catch (nextError) {
-        if (!cancelled)
-          setError(nextError instanceof Error ? nextError.message : 'Unable to load selectors.');
-      } finally {
-        if (!cancelled) setSelectorLoading(false);
-      }
+    setRecords(toLocalRecords(selectorRecordsQuery.data ?? []));
+  }, [selectorRecordsQuery.data]);
+
+  useEffect(() => {
+    const loadedDomains = [
+      ...selectorSummaries.map((row) => row.domain),
+      ...profiles.map((row) => row.domain),
+      ...cookies.map((row) => row.domain),
+      ...feedback.map((row) => row.domain),
+      ...knowledgeSites.map((row) => row.domain),
+      ...completedRuns.map(
+        (run) => String(run.result_summary?.domain || '').trim() || getNormalizedDomain(run.url),
+      ),
+    ];
+    const currentDomainStillAvailable = loadedDomains.includes(selectedDomain)
+      ? selectedDomain
+      : '';
+    const preferredDomain = firstUsableDomain([currentDomainStillAvailable, ...loadedDomains]);
+    if (preferredDomain && preferredDomain !== selectedDomain) {
+      setSelectedDomain(preferredDomain);
     }
-    void loadSelectedDomainSelectors();
-    return () => {
-      cancelled = true;
-    };
-  }, [loadedSelectorDomain, resolvedSelectedDomain]);
+  }, [
+    completedRuns,
+    cookies,
+    feedback,
+    knowledgeSites,
+    profiles,
+    selectedDomain,
+    selectorSummaries,
+  ]);
 
   function cancelEdit() {
     setEditingId(null);
@@ -212,7 +230,15 @@ export function useDomainMemoryWorkspace() {
       setEditingId,
       setError,
       setRecords,
-      setSelectorSummaries,
+      invalidateSelectorData: async (domain, surface) => {
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: queryKeys.domainMemory.domains() }),
+          queryClient.invalidateQueries({
+            queryKey: queryKeys.selectors.list({ domain: domain ?? '', surface: surface ?? '' }),
+          }),
+          queryClient.invalidateQueries({ queryKey: queryKeys.selectors.all }),
+        ]);
+      },
     });
 
   function profileDraftFor(domain: string, surfaceWorkspace: SurfaceWorkspace) {
@@ -251,7 +277,7 @@ export function useDomainMemoryWorkspace() {
         delete next[saveKey];
         return next;
       });
-      await loadWorkspace(false);
+      await queryClient.invalidateQueries({ queryKey: queryKeys.domainRunProfiles.all });
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : 'Unable to save run profile.');
     } finally {
@@ -286,11 +312,11 @@ export function useDomainMemoryWorkspace() {
     deleteRecord,
     draft,
     editingId,
-    error,
+    error: error || queryErrorMessage,
     groupedWorkspaces,
     hasLoadedOnce,
     latestCompletedRunId: latestCompletedRunIdFor,
-    loadedSelectorDomain,
+    loadedSelectorDomain: selectorRecordsQuery.data ? resolvedSelectedDomain : '',
     loading,
     loadWorkspace,
     knowledgeSites,

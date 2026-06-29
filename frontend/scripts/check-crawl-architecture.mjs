@@ -81,7 +81,33 @@ function dynamicallyImportsHeavyCrawlScreens(content) {
   }
 
   visit(source);
-  return [...requiredImports].every((modulePath) => discoveredImports.has(modulePath));
+  return [...requiredImports].some((modulePath) => discoveredImports.has(modulePath));
+}
+
+function findNextRouterArtifacts() {
+  const appRoot = path.join(root, 'app');
+  const artifacts = [];
+  if (!fs.existsSync(appRoot)) {
+    return artifacts;
+  }
+  function walk(directory) {
+    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+      const fullPath = path.join(directory, entry.name);
+      const relativePath = path.relative(root, fullPath).replaceAll('\\', '/');
+      if (entry.isDirectory()) {
+        if (/^\[.+\]$/.test(entry.name)) {
+          artifacts.push(relativePath);
+        }
+        walk(fullPath);
+        continue;
+      }
+      if (entry.isFile() && /^(loading|layout|error|not-found)\.tsx?$/.test(entry.name)) {
+        artifacts.push(relativePath);
+      }
+    }
+  }
+  walk(appRoot);
+  return artifacts;
 }
 
 function hasManualDateNowFieldId(content) {
@@ -247,9 +273,16 @@ if (
 }
 
 const crawlPage = read('app/crawl/page-view.tsx');
-if (crawlPage !== null && !dynamicallyImportsHeavyCrawlScreens(crawlPage)) {
+if (crawlPage !== null && dynamicallyImportsHeavyCrawlScreens(crawlPage)) {
   failures.push(
-    'app/crawl/page-view.tsx must dynamic-import both crawl-config-screen and crawl-run-screen.',
+    'app/crawl/page-view.tsx must not add a second lazy boundary around crawl-config-screen or crawl-run-screen.',
+  );
+}
+
+const nextRouterArtifacts = findNextRouterArtifacts();
+if (nextRouterArtifacts.length) {
+  failures.push(
+    `React Router owns routes; remove Next App Router-only artifacts: ${nextRouterArtifacts.join(', ')}.`,
   );
 }
 

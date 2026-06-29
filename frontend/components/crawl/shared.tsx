@@ -89,6 +89,22 @@ export function mergeLogs(current: CrawlLog[], incoming: CrawlLog[]) {
     .slice(-CRAWL_DEFAULTS.MAX_LIVE_LOGS);
 }
 
+export function appendLiveLog(current: CrawlLog[], incoming: CrawlLog) {
+  const existingIndex = current.findIndex((row) => row.id === incoming.id);
+  if (existingIndex >= 0) {
+    const next = [...current];
+    next[existingIndex] = incoming;
+    return next;
+  }
+  if (!current.length || current[current.length - 1].id < incoming.id) {
+    return [...current, incoming].slice(-CRAWL_DEFAULTS.MAX_LIVE_LOGS);
+  }
+  const insertionIndex = current.findIndex((row) => row.id > incoming.id);
+  const next = [...current];
+  next.splice(insertionIndex === -1 ? next.length : insertionIndex, 0, incoming);
+  return next.slice(-CRAWL_DEFAULTS.MAX_LIVE_LOGS);
+}
+
 export function parseRequestedCrawlTab(value: string | null): CrawlTab | null {
   return value === 'category' || value === 'pdp' ? value : null;
 }

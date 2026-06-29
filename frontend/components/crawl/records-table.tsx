@@ -5,7 +5,6 @@ import type { CrawlRecord } from '../../lib/api/types';
 import { cn } from '../../lib/utils';
 import { formatCellDisplay, humanizeFieldName, stringifyCell } from '../../lib/crawl/format';
 import { readRecordValue } from '../../lib/crawl/record-utils';
-import { TableBody, TableCell, TableRow } from '../ui/table';
 import { isLikelyThumbnailUrl, RecordThumbnail } from './record-thumbnail';
 import { isSafeHttpUrl } from '../../lib/format/domain';
 
@@ -150,8 +149,16 @@ export const RecordsTable = memo(function RecordsTable({
   const imageCol = visibleColumns.find((col) => IMAGE_KEYS.has(col.toLowerCase()));
   const dataColumns = visibleColumns.filter((col) => !IMAGE_KEYS.has(col.toLowerCase()));
   const hasImageCol = !!imageCol;
-  const totalCols = dataColumns.length + (hasImageCol ? 1 : 0) + 1;
   const pinnedDataLeft = SELECT_COLUMN_WIDTH + (hasImageCol ? IMAGE_COLUMN_WIDTH : 0);
+  const gridTemplateColumns = [
+    `${SELECT_COLUMN_WIDTH}px`,
+    ...(hasImageCol ? [`${IMAGE_COLUMN_WIDTH}px`] : []),
+    ...dataColumns.map((col, index) =>
+      index === dataColumns.length - 1
+        ? `minmax(${getDataColumnWidth(col)}px, 1fr)`
+        : `${getDataColumnWidth(col)}px`,
+    ),
+  ].join(' ');
   const totalTableWidth =
     SELECT_COLUMN_WIDTH +
     (hasImageCol ? IMAGE_COLUMN_WIDTH : 0) +
@@ -199,17 +206,25 @@ export const RecordsTable = memo(function RecordsTable({
         ref={setContainerRef}
         onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
         className="scrollbar-stable relative max-h-[calc(100vh-276px)] w-full overflow-auto"
+        role="table"
+        aria-rowcount={records.length + 1}
+        aria-colcount={1 + (hasImageCol ? 1 : 0) + dataColumns.length}
       >
         <div
-          className="sticky top-0 z-[100] flex border-b border-border-strong"
+          role="row"
+          aria-rowindex={1}
+          className="sticky top-0 z-[100] grid border-b border-border-strong"
           style={{
             minWidth: totalTableWidth,
             height: HEADER_HEIGHT,
+            gridTemplateColumns,
             background:
               'linear-gradient(180deg, color-mix(in srgb, var(--bg-elevated) 60%, var(--bg-panel)), var(--bg-alt))',
           }}
         >
           <div
+            role="columnheader"
+            aria-colindex={1}
             className="flex shrink-0 items-center justify-center px-3"
             style={headerCellStyle(SELECT_COLUMN_WIDTH, 0)}
           >
@@ -222,6 +237,8 @@ export const RecordsTable = memo(function RecordsTable({
           </div>
           {hasImageCol ? (
             <div
+              role="columnheader"
+              aria-colindex={2}
               className="flex shrink-0 items-center justify-center px-2"
               style={headerCellStyle(IMAGE_COLUMN_WIDTH, SELECT_COLUMN_WIDTH)}
             >
@@ -235,6 +252,8 @@ export const RecordsTable = memo(function RecordsTable({
             return (
               <div
                 key={col}
+                role="columnheader"
+                aria-colindex={1 + (hasImageCol ? 1 : 0) + idx + 1}
                 className={cn(
                   'flex shrink-0 items-center px-5 whitespace-nowrap',
                   PRICE_KEYS.has(colKey) && 'justify-end text-right',
@@ -250,102 +269,90 @@ export const RecordsTable = memo(function RecordsTable({
             );
           })}
         </div>
-        <table
-          className="w-full table-fixed caption-bottom border-collapse border-spacing-0 bg-panel"
-          style={{ width: '100%', minWidth: totalTableWidth, fontSize: 'var(--table-font-size)' }}
+        <div
+          className="bg-panel"
+          style={{ minWidth: totalTableWidth, fontSize: 'var(--table-font-size)' }}
+          role="rowgroup"
         >
-          <colgroup>
-            <col style={{ width: SELECT_COLUMN_WIDTH }} />
-            {hasImageCol ? <col style={{ width: IMAGE_COLUMN_WIDTH }} /> : null}
-            {dataColumns.map((col, idx) => {
-              const isLast = idx === dataColumns.length - 1;
-              return (
-                <col
-                  key={col}
-                  style={
-                    isLast
-                      ? { minWidth: getDataColumnWidth(col) }
-                      : { width: getDataColumnWidth(col) }
-                  }
-                />
-              );
-            })}
-          </colgroup>
-          <TableBody>
-            {topSpacerPx > 0 ? (
-              <TableRow aria-hidden className="pointer-events-none hover:bg-transparent">
-                <TableCell colSpan={totalCols} style={{ height: topSpacerPx, padding: 0 }} />
-              </TableRow>
-            ) : null}
-            {windowedRecords.map((record) => {
-              const isSelected = selectedIds.includes(record.id);
-              const imageSrc = imageCol ? stringifyCell(readRecordValue(record, imageCol)) : '';
+          {topSpacerPx > 0 ? (
+            <div aria-hidden className="pointer-events-none" style={{ height: topSpacerPx }} />
+          ) : null}
+          {windowedRecords.map((record, windowIndex) => {
+            const isSelected = selectedIds.includes(record.id);
+            const imageSrc = imageCol ? stringifyCell(readRecordValue(record, imageCol)) : '';
 
-              return (
-                <TableRow
-                  key={record.id}
-                  className={cn(
-                    'group hover:bg-accent-subtle/45 hover:shadow-[inset_3px_0_0_var(--accent)]',
-                    isSelected && 'bg-accent/[0.04]',
-                  )}
+            return (
+              <div
+                key={record.id}
+                role="row"
+                aria-rowindex={startIndex + windowIndex + 2}
+                className={cn(
+                  'group grid h-[var(--table-row-height)] border-b border-divider bg-panel transition-colors hover:bg-accent-subtle/45 hover:shadow-[inset_3px_0_0_var(--accent)]',
+                  isSelected && 'bg-accent/[0.04]',
+                )}
+                style={{ gridTemplateColumns }}
+              >
+                <div
+                  role="cell"
+                  aria-colindex={1}
+                  className="flex items-center justify-center bg-panel px-0 text-center"
+                  style={stickyBodyStyle(SELECT_COLUMN_WIDTH, 0)}
                 >
-                  <TableCell
-                    className="bg-panel !px-0 text-center"
-                    style={stickyBodyStyle(SELECT_COLUMN_WIDTH, 0)}
+                  <input
+                    type="checkbox"
+                    aria-label={`Select record ${record.id}`}
+                    checked={isSelected}
+                    onChange={(event) => onToggleRow(record.id, event.target.checked)}
+                  />
+                </div>
+                {hasImageCol ? (
+                  <div
+                    role="cell"
+                    aria-colindex={2}
+                    className="flex items-center justify-center bg-panel px-2 text-center"
+                    style={stickyBodyStyle(IMAGE_COLUMN_WIDTH, SELECT_COLUMN_WIDTH)}
                   >
-                    <input
-                      type="checkbox"
-                      aria-label={`Select record ${record.id}`}
-                      checked={isSelected}
-                      onChange={(event) => onToggleRow(record.id, event.target.checked)}
-                    />
-                  </TableCell>
-                  {hasImageCol ? (
-                    <TableCell
-                      className="bg-panel !px-2 text-center"
-                      style={stickyBodyStyle(IMAGE_COLUMN_WIDTH, SELECT_COLUMN_WIDTH)}
-                    >
-                      {imageSrc && isLikelyThumbnailUrl(imageSrc) ? (
-                        <RecordThumbnail src={imageSrc} />
-                      ) : (
-                        <span className="type-body text-muted/40">--</span>
+                    {imageSrc && isLikelyThumbnailUrl(imageSrc) ? (
+                      <RecordThumbnail src={imageSrc} />
+                    ) : (
+                      <span className="type-body text-muted/40">--</span>
+                    )}
+                  </div>
+                ) : null}
+                {dataColumns.map((col, idx) => {
+                  const colKey = col.toLowerCase();
+                  const isFirstData = idx === 0;
+                  const isLastData = idx === dataColumns.length - 1;
+                  const width = getDataColumnWidth(col);
+                  return (
+                    <div
+                      key={col}
+                      role="cell"
+                      aria-colindex={1 + (hasImageCol ? 1 : 0) + idx + 1}
+                      style={
+                        isFirstData
+                          ? stickyBodyStyle(width, pinnedDataLeft)
+                          : isLastData
+                            ? { minWidth: width }
+                            : fixedColumnStyle(width)
+                      }
+                      className={cn(
+                        'flex items-center px-5 tabular-nums',
+                        PRICE_KEYS.has(colKey) && 'text-right',
+                        isFirstData && 'bg-panel',
                       )}
-                    </TableCell>
-                  ) : null}
-                  {dataColumns.map((col, idx) => {
-                    const colKey = col.toLowerCase();
-                    const isFirstData = idx === 0;
-                    const isLastData = idx === dataColumns.length - 1;
-                    const width = getDataColumnWidth(col);
-                    return (
-                      <TableCell
-                        key={col}
-                        style={
-                          isFirstData
-                            ? stickyBodyStyle(width, pinnedDataLeft)
-                            : isLastData
-                              ? { minWidth: width }
-                              : fixedColumnStyle(width)
-                        }
-                        className={cn(
-                          PRICE_KEYS.has(colKey) && 'text-right',
-                          isFirstData && 'bg-panel',
-                        )}
-                      >
-                        <RecordCell col={col} record={record} />
-                      </TableCell>
-                    );
-                  })}
-                </TableRow>
-              );
-            })}
-            {bottomSpacerPx > 0 ? (
-              <TableRow aria-hidden className="pointer-events-none hover:bg-transparent">
-                <TableCell colSpan={totalCols} style={{ height: bottomSpacerPx, padding: 0 }} />
-              </TableRow>
-            ) : null}
-          </TableBody>
-        </table>
+                    >
+                      <RecordCell col={col} record={record} />
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })}
+          {bottomSpacerPx > 0 ? (
+            <div aria-hidden className="pointer-events-none" style={{ height: bottomSpacerPx }} />
+          ) : null}
+        </div>
       </div>
     </div>
   );

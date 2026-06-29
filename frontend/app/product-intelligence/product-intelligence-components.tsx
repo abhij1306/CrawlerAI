@@ -1,6 +1,7 @@
-import { Copy, Download, Loader2, X } from 'lucide-react';
+import { Copy, Download, Loader2 } from 'lucide-react';
 import React from 'react';
 
+import { AppDialog } from '../../components/ui/dialog';
 import { Badge, Button } from '../../components/ui/primitives';
 import type { ProductIntelligenceDiscoveryResponse } from '../../lib/api/types';
 import { decodeUrlsForDisplay } from '../../lib/crawl/format';
@@ -24,6 +25,8 @@ export function ExternalCandidateImage({
     <img
       src={src}
       alt={alt}
+      loading="lazy"
+      decoding="async"
       className={`absolute inset-0 ${className}`}
       onError={hideBrokenImage}
     />
@@ -46,21 +49,14 @@ export function JsonModal({
   );
 
   return (
-    <>
-      <div className="fixed inset-0 z-50 bg-black/40" onClick={onClose} aria-hidden="true" />
-      <div className="fixed top-1/2 left-1/2 z-50 flex max-h-[80vh] w-[640px] max-w-[90vw] -translate-x-1/2 -translate-y-1/2 flex-col rounded-md border border-border bg-background-elevated shadow-xl">
-        <div className="flex items-center justify-between border-b border-divider px-4 py-3">
-          <h3 className="type-subheading">Raw JSON</h3>
-          <Button type="button" variant="quiet" size="icon" onClick={onClose} aria-label="Close">
-            <X className="size-3.5" />
-          </Button>
-        </div>
-        <div className="flex-1 overflow-auto p-4">
-          <pre className="crawl-terminal crawl-terminal-json text-xs leading-relaxed">
-            {syntaxHighlightJsonNodes(text)}
-          </pre>
-        </div>
-        <div className="flex items-center justify-end gap-2 border-t border-divider px-4 py-3">
+    <AppDialog
+      open
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen) onClose();
+      }}
+      title="Raw JSON"
+      footer={
+        <>
           <Button
             type="button"
             variant="quiet"
@@ -85,9 +81,15 @@ export function JsonModal({
           >
             <Download className="mr-1 size-3" /> Download
           </Button>
-        </div>
+        </>
+      }
+    >
+      <div className="p-4">
+        <pre className="crawl-terminal crawl-terminal-json text-xs leading-relaxed">
+          {syntaxHighlightJsonNodes(text)}
+        </pre>
       </div>
-    </>
+    </AppDialog>
   );
 }
 

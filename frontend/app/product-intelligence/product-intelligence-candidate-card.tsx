@@ -11,7 +11,6 @@ import {
 import { Badge } from '../../components/ui/primitives';
 import { cn } from '../../lib/utils';
 import { ExternalCandidateImage } from './product-intelligence-components';
-import type { ProductIntelligenceController } from './use-product-intelligence';
 import {
   candidateConfidence,
   formatPrice,
@@ -22,17 +21,33 @@ import type { CandidateGroup, ProductIntelligenceCandidate } from './product-int
 
 export function CandidateGroupSection({
   group,
-  groupIndex,
-  controller,
+  expanded,
+  selectedUrlSet,
+  onToggleExpanded,
+  onToggleUrl,
+  onOpenJson,
 }: {
   group: CandidateGroup;
-  groupIndex: number;
-  controller: ProductIntelligenceController;
+  expanded: boolean;
+  selectedUrlSet: Set<string>;
+  onToggleExpanded: () => void;
+  onToggleUrl: (url: string) => void;
+  onOpenJson: (candidate: ProductIntelligenceCandidate) => void;
 }) {
   return (
-    <details className="group" open={groupIndex === 0}>
-      <summary className="flex cursor-pointer list-none items-center gap-4 px-4 py-3 transition-colors select-none hover:bg-background-alt/50">
-        <div className="type-caption-mono flex size-6 shrink-0 items-center justify-center rounded-full border border-divider bg-background text-muted group-open:border-accent group-open:bg-accent group-open:!text-white">
+    <section className="group">
+      <button
+        type="button"
+        onClick={onToggleExpanded}
+        aria-expanded={expanded}
+        className="flex w-full cursor-pointer list-none items-center gap-4 px-4 py-3 text-left transition-colors select-none hover:bg-background-alt/50"
+      >
+        <div
+          className={cn(
+            'type-caption-mono flex size-6 shrink-0 items-center justify-center rounded-full border border-divider bg-background text-muted',
+            expanded && 'border-accent bg-accent !text-white',
+          )}
+        >
           {group.candidates.length}
         </div>
         <div className="min-w-0 flex-1">
@@ -75,25 +90,41 @@ export function CandidateGroupSection({
             ) : null}
           </div>
         </div>
-        <ChevronDown className="size-4 shrink-0 text-muted transition-transform group-open:rotate-180" />
-      </summary>
-      <div className="grid grid-cols-1 gap-4 border-t border-divider bg-background-alt/30 p-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
-        {group.candidates.map((candidate) => (
-          <CandidateCard key={candidate.url} candidate={candidate} controller={controller} />
-        ))}
-      </div>
-    </details>
+        <ChevronDown
+          className={cn(
+            'size-4 shrink-0 text-muted transition-transform',
+            expanded && 'rotate-180',
+          )}
+        />
+      </button>
+      {expanded ? (
+        <div className="grid grid-cols-1 gap-4 border-t border-divider bg-background-alt/30 p-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
+          {group.candidates.map((candidate) => (
+            <CandidateCard
+              key={candidate.url}
+              candidate={candidate}
+              selected={selectedUrlSet.has(candidate.url)}
+              onToggleUrl={onToggleUrl}
+              onOpenJson={onOpenJson}
+            />
+          ))}
+        </div>
+      ) : null}
+    </section>
   );
 }
 
 function CandidateCard({
   candidate,
-  controller,
+  selected,
+  onToggleUrl,
+  onOpenJson,
 }: {
   candidate: ProductIntelligenceCandidate;
-  controller: ProductIntelligenceController;
+  selected: boolean;
+  onToggleUrl: (url: string) => void;
+  onOpenJson: (candidate: ProductIntelligenceCandidate) => void;
 }) {
-  const selected = controller.uniqueSelectedUrls.includes(candidate.url);
   const score = candidateConfidence(candidate);
   const intelligence = isRecord(candidate.intelligence) ? candidate.intelligence : {};
   const record = isRecord(intelligence.canonical_record) ? intelligence.canonical_record : {};
@@ -117,7 +148,7 @@ function CandidateCard({
                 checked={selected}
                 onChange={(event) => {
                   event.stopPropagation();
-                  if (candidate.url) controller.toggleUrl(candidate.url);
+                  if (candidate.url) onToggleUrl(candidate.url);
                 }}
                 aria-label={`Select product: ${title}`}
                 className="sr-only"
@@ -162,7 +193,7 @@ function CandidateCard({
         <button
           type="button"
           className="focus-ring type-label inline-flex h-5 items-center gap-1 rounded-xs px-1 text-secondary transition-colors hover:text-foreground"
-          onClick={() => controller.setJsonModalCandidate(candidate)}
+          onClick={() => onOpenJson(candidate)}
         >
           <Code2 className="mr-1 size-3" />
           Raw JSON

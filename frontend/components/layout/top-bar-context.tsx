@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 
 export type TopBarState = {
   pathKey?: string;
+  signature?: string;
   title?: ReactNode;
   description?: string;
   actions?: ReactNode;
@@ -31,6 +32,21 @@ export function TopBarProvider({ children }: Readonly<{ children: ReactNode }>) 
         };
       },
       setHeader: (value) => {
+        const current = headerRef.current;
+        if (
+          current?.signature &&
+          value?.signature &&
+          current.signature === value.signature &&
+          current.pathKey === value.pathKey &&
+          current.title === value.title &&
+          current.description === value.description &&
+          current.actions === value.actions
+        ) {
+          return;
+        }
+        if (current === null && value === null) {
+          return;
+        }
         headerRef.current = value;
         for (const listener of listenersRef.current) {
           listener();

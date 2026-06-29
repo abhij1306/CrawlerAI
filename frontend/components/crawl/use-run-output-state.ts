@@ -30,7 +30,6 @@ export function useRunOutputState({
 }: Readonly<UseRunOutputStateOptions>) {
   const [searchParams, setSearchParams] = useSearchParams();
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
-  const [tablePage, setTablePage] = useState(1);
   const [jsonVisibleCount, setJsonVisibleCount] = useState<number>(CRAWL_DEFAULTS.TABLE_PAGE_SIZE);
   const [historyOpen, setHistoryOpen] = useState(false);
   const requestedOutputTab = parseOutputTab(searchParams.get('output'));
@@ -61,8 +60,6 @@ export function useRunOutputState({
     setOutputTab,
     selectedIds,
     setSelectedIds,
-    tablePage,
-    setTablePage,
     jsonVisibleCount,
     setJsonVisibleCount,
     historyOpen,

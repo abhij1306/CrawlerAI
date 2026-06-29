@@ -15,8 +15,9 @@ export interface CrawlTerminalTabContentProps {
   tableTotal: number;
   hasMoreTableRecords: boolean;
   emptyRecordsState: { title: string; description: string };
-  setSelectedIds: React.Dispatch<React.SetStateAction<number[]>>;
-  setTablePage: React.Dispatch<React.SetStateAction<number>>;
+  onSelectAllRecords: (checked: boolean) => void;
+  onToggleRecord: (id: number, checked: boolean) => void;
+  onLoadMoreTableRecords: () => void;
   records: CrawlRecord[];
   recordsJson: string;
   jsonRecordsLength: number;
@@ -51,8 +52,9 @@ export function CrawlTerminalTabContent({
   tableTotal,
   hasMoreTableRecords,
   emptyRecordsState,
-  setSelectedIds,
-  setTablePage,
+  onSelectAllRecords,
+  onToggleRecord,
+  onLoadMoreTableRecords,
   records,
   recordsJson,
   jsonRecordsLength,
@@ -80,17 +82,9 @@ export function CrawlTerminalTabContent({
         total={tableTotal}
         hasMore={hasMoreTableRecords}
         emptyState={emptyRecordsState}
-        onSelectAll={(checked) =>
-          setSelectedIds(checked ? filteredTableRecords.map((record) => record.id) : [])
-        }
-        onToggleRow={(id, checked) =>
-          setSelectedIds((current) =>
-            checked
-              ? Array.from(new Set([...current, id]))
-              : current.filter((value) => value !== id),
-          )
-        }
-        onLoadMore={() => setTablePage((current) => current + 1)}
+        onSelectAll={onSelectAllRecords}
+        onToggleRow={onToggleRecord}
+        onLoadMore={onLoadMoreTableRecords}
       />
     );
   }

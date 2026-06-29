@@ -1,6 +1,8 @@
+import { useQueryClient } from '@tanstack/react-query';
 import { useReducer } from 'react';
 
 import { httpErrorStatus } from '@/api/client';
+import { queryKeys } from '@/api/query-keys';
 import { api } from '../../lib/api';
 import type {
   SelectorCreatePayload,
@@ -28,6 +30,7 @@ type SelectorsPageState = {
   url: string;
   loadedUrl: string;
   previewHtml: string;
+  previewOpen: boolean;
   resolvedSurface: string;
   iframePromoted: boolean;
   expectedColumns: string;
@@ -56,6 +59,7 @@ export type SelectorsPageAction =
   | { type: 'suggestionsFinished' }
   | { type: 'rowPatched'; key: string; patch: Partial<SelectorRow> }
   | { type: 'rowAdded' }
+  | { type: 'previewOpened' }
   | { type: 'rowRemoved'; key: string }
   | { type: 'rowMessageSet'; key: string; message: RowMessage }
   | { type: 'detectStarted'; key: string }
@@ -75,6 +79,7 @@ const INITIAL_SELECTORS_PAGE_STATE: SelectorsPageState = {
   url: '',
   loadedUrl: '',
   previewHtml: '',
+  previewOpen: false,
   resolvedSurface: 'generic',
   iframePromoted: false,
   expectedColumns: '',
@@ -123,6 +128,7 @@ function selectorsPageReducer(
         ...state,
         loadedUrl: action.loadedUrl,
         previewHtml: action.previewHtml,
+        previewOpen: false,
         resolvedSurface: action.resolvedSurface,
         iframePromoted: action.iframePromoted,
         rows: action.rows,
@@ -137,6 +143,8 @@ function selectorsPageReducer(
       };
     case 'rowAdded':
       return { ...state, rows: [...state.rows, createEmptyRow()] };
+    case 'previewOpened':
+      return { ...state, previewOpen: true };
     case 'rowRemoved': {
       const rowMessages = { ...state.rowMessages };
       delete rowMessages[action.key];
@@ -183,6 +191,15 @@ function selectorsPageReducer(
       };
     }
   }
+}
+
+const PREVIEW_HTML_MAX_CHARS = 500_000;
+
+function capPreviewHtml(value: string) {
+  if (value.length <= PREVIEW_HTML_MAX_CHARS) {
+    return value;
+  }
+  return `${value.slice(0, PREVIEW_HTML_MAX_CHARS)}\n<!-- Preview truncated by CrawlerAI. Open source page for full document. -->`;
 }
 
 function parseExpectedColumns(value: string) {
@@ -326,6 +343,7 @@ async function saveSelectorRow(
 
 // skipcq: JS-0067
 export function useSelectorsWorkspace() {
+  const queryClient = useQueryClient();
   const [state, dispatch] = useReducer(selectorsPageReducer, INITIAL_SELECTORS_PAGE_STATE);
   const { url, loadedUrl, resolvedSurface, expectedColumns, rows } = state;
   const parsedColumns = parseExpectedColumns(expectedColumns);
@@ -355,10 +373,13 @@ export function useSelectorsWorkspace() {
         selectorDomain
           ? api.listSelectors({ domain: selectorDomain, surface: nextSurface })
           : Promise.resolve([]),
-        api.getPreviewHtml(previewTargetUrl).catch((error) => {
-          console.error('Failed to load preview HTML:', error);
-          return '';
-        }),
+        api
+          .getPreviewHtml(previewTargetUrl)
+          .then(capPreviewHtml)
+          .catch((error) => {
+            console.error('Failed to load preview HTML:', error);
+            return '';
+          }),
       ]);
       const savedRows = selectRelevantSelectorRecords(savedRecords, nextSurface).map(
         buildRowFromSelectorRecord,
@@ -519,6 +540,12 @@ export function useSelectorsWorkspace() {
         };
       });
       dispatch({ type: 'rowsSaved', savedRows, resolvedSurface, nextMessages });
+      if (savedRows.size) {
+        void queryClient.invalidateQueries({
+          queryKey: queryKeys.selectors.list({ domain, surface: resolvedSurface }),
+        });
+        void queryClient.invalidateQueries({ queryKey: queryKeys.selectors.all });
+      }
     } finally {
       dispatch({ type: 'saveFinished' });
     }

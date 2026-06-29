@@ -47,7 +47,11 @@ const INITIAL_STATE: GraphState = {
 export function KnowledgeGraphTab({ selectedWorkspace }: KnowledgeGraphTabProps) {
   const [state, setState] = useState<GraphState>(INITIAL_STATE);
   const requestIdRef = useRef(0);
-  const currentSite = state.site ?? selectedWorkspace.knowledgeSite ?? null;
+  const currentSite = latestKnowledgeSite(
+    state.site,
+    selectedWorkspace.knowledgeSite,
+    selectedWorkspace.domain,
+  );
   const graphVersion = currentSite?.current_version ?? null;
 
   const loadGraph = useCallback(async () => {
@@ -432,4 +436,18 @@ function badgeTone(type: string): 'neutral' | 'success' | 'warning' | 'danger' |
   if (type === 'offer') return 'warning';
   if (type === 'brand') return 'info';
   return 'neutral';
+}
+
+function latestKnowledgeSite(
+  stateSite: KnowledgeSiteRecord | null,
+  workspaceSite: KnowledgeSiteRecord | null,
+  domain: string,
+) {
+  const scopedStateSite = stateSite?.domain === domain ? stateSite : null;
+  const scopedWorkspaceSite = workspaceSite?.domain === domain ? workspaceSite : null;
+  if (!scopedStateSite) return scopedWorkspaceSite ?? null;
+  if (!scopedWorkspaceSite) return scopedStateSite;
+  return scopedWorkspaceSite.current_version > scopedStateSite.current_version
+    ? scopedWorkspaceSite
+    : scopedStateSite;
 }

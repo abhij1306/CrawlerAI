@@ -1,7 +1,7 @@
-import { History, X } from 'lucide-react';
-import React, { useEffect, useEffectEvent } from 'react';
+import { History } from 'lucide-react';
 
-import { Badge, Button } from './primitives';
+import { AppDrawer } from './dialog';
+import { Badge } from './primitives';
 import { cn } from '../../lib/utils';
 
 export type HistoryItem = {
@@ -37,91 +37,67 @@ export function HistoryDrawer({
   onSelect: (id: number) => void;
   title?: string;
 }>) {
-  const onCloseEvent = useEffectEvent(onClose);
-
-  useEffect(() => {
-    if (!open) return;
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onCloseEvent();
-    };
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [open]);
-
-  if (!open) return null;
-
   return (
-    <>
-      <div className="fixed inset-0 z-40 bg-black/20" onClick={onClose} aria-hidden="true" />
-      <div className="animate-in slide-in-from-right-4 fixed top-0 right-0 z-50 flex h-full w-[380px] max-w-full flex-col overflow-y-auto border-l border-divider bg-background-elevated p-0 shadow-xl duration-200">
-        <div className="flex items-center justify-between border-b border-divider px-4 py-3">
-          <div className="flex items-center gap-2">
-            <History className="size-4 text-muted" />
-            <h2 className="type-subheading">{title}</h2>
+    <AppDrawer
+      open={open}
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen) onClose();
+      }}
+      title={title}
+      icon={<History className="size-4 shrink-0 text-muted" />}
+    >
+      <div className="flex-1 overflow-auto">
+        {items.length === 0 ? (
+          <div className="flex h-full flex-col items-center justify-center p-8 text-center text-muted">
+            <History className="mb-3 size-8 opacity-20" />
+            <p className="text-xs">No history found.</p>
           </div>
-          <Button
-            type="button"
-            variant="quiet"
-            size="icon"
-            onClick={onClose}
-            aria-label="Close history"
-          >
-            <X className="size-3.5" />
-          </Button>
-        </div>
-        <div className="flex-1 overflow-auto">
-          {items.length === 0 ? (
-            <div className="flex h-full flex-col items-center justify-center p-8 text-center text-muted">
-              <History className="mb-3 size-8 opacity-20" />
-              <p className="text-xs">No history found.</p>
-            </div>
-          ) : (
-            <div className="divide-y divide-divider">
-              {items.map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  className={cn(
-                    'hover:bg-background-alt flex w-full flex-col gap-1.5 p-3.5 text-left transition-colors',
-                    activeId === item.id && 'bg-background-alt',
-                  )}
-                  onClick={() => {
-                    onSelect(item.id);
-                    onClose();
-                  }}
-                >
-                  <div className="type-caption flex w-full items-center justify-between">
-                    <span
-                      className={cn(
-                        'text-accent type-label-mono font-medium',
-                        activeId === item.id && 'font-bold',
-                      )}
-                    >
-                      #{item.id}
-                    </span>
-                    <Badge
-                      tone={STATUS_TONE_MAP[(item.status ?? '').toLowerCase()] ?? 'neutral'}
-                      className="origin-right scale-90"
-                    >
-                      {item.status}
-                    </Badge>
+        ) : (
+          <div className="divide-y divide-divider">
+            {items.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                className={cn(
+                  'hover:bg-background-alt flex w-full flex-col gap-1.5 p-3.5 text-left transition-colors',
+                  activeId === item.id && 'bg-background-alt',
+                )}
+                onClick={() => {
+                  onSelect(item.id);
+                  onClose();
+                }}
+              >
+                <div className="type-caption flex w-full items-center justify-between">
+                  <span
+                    className={cn(
+                      'text-accent type-label-mono font-medium',
+                      activeId === item.id && 'font-bold',
+                    )}
+                  >
+                    #{item.id}
+                  </span>
+                  <Badge
+                    tone={STATUS_TONE_MAP[(item.status ?? '').toLowerCase()] ?? 'neutral'}
+                    className="origin-right scale-90"
+                  >
+                    {item.status}
+                  </Badge>
+                </div>
+                {item.label && (
+                  <div className="type-body max-w-[300px] truncate font-semibold text-foreground">
+                    {item.label}
                   </div>
-                  {item.label && (
-                    <div className="type-body max-w-[300px] truncate font-semibold text-foreground">
-                      {item.label}
-                    </div>
-                  )}
-                  <div className="flex w-full items-center justify-between">
-                    <span>{item.meta ?? 'No details'}</span>
-                    <span className="type-caption-mono">{formatShortDate(item.created_at)}</span>
-                  </div>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
+                )}
+                <div className="flex w-full items-center justify-between">
+                  <span>{item.meta ?? 'No details'}</span>
+                  <span className="type-caption-mono">{formatShortDate(item.created_at)}</span>
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
       </div>
-    </>
+    </AppDrawer>
   );
 }
 

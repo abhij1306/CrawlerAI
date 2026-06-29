@@ -1,7 +1,7 @@
 import type { Dispatch, SetStateAction } from 'react';
 
 import { api } from '../../../lib/api';
-import type { SelectorDomainSummary, SelectorUpdatePayload } from '../../../lib/api/types';
+import type { SelectorUpdatePayload } from '../../../lib/api/types';
 import type { EditDraft, LocalRecord } from './types';
 
 type SelectorRecordActionsInput = {
@@ -12,7 +12,7 @@ type SelectorRecordActionsInput = {
   setEditingId: Dispatch<SetStateAction<string | null>>;
   setError: Dispatch<SetStateAction<string>>;
   setRecords: Dispatch<SetStateAction<LocalRecord[]>>;
-  setSelectorSummaries: Dispatch<SetStateAction<SelectorDomainSummary[]>>;
+  invalidateSelectorData: (domain?: string, surface?: string) => Promise<void>;
 };
 
 export function useSelectorRecordActions({
@@ -23,7 +23,7 @@ export function useSelectorRecordActions({
   setEditingId,
   setError,
   setRecords,
-  setSelectorSummaries,
+  invalidateSelectorData,
 }: SelectorRecordActionsInput) {
   function startEdit(record: LocalRecord) {
     const selectorFields = [
@@ -64,6 +64,7 @@ export function useSelectorRecordActions({
           entry._uid === record._uid ? { ...updated, _uid: record._uid } : entry,
         ),
       );
+      await invalidateSelectorData(record.domain, record.surface);
       cancelEdit();
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : 'Unable to save selector.');
@@ -78,6 +79,7 @@ export function useSelectorRecordActions({
           entry._uid === record._uid ? { ...updated, _uid: record._uid } : entry,
         ),
       );
+      await invalidateSelectorData(record.domain, record.surface);
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : 'Unable to update selector state.');
     }
@@ -87,13 +89,7 @@ export function useSelectorRecordActions({
     try {
       await api.deleteSelector(record.id);
       setRecords((current) => current.filter((entry) => entry._uid !== record._uid));
-      setSelectorSummaries((current) =>
-        current.map((entry) =>
-          entry.domain === record.domain && entry.surface === record.surface
-            ? { ...entry, selector_count: Math.max(0, entry.selector_count - 1) }
-            : entry,
-        ),
-      );
+      await invalidateSelectorData(record.domain, record.surface);
       if (editingId === record._uid) cancelEdit();
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : 'Unable to delete selector.');
@@ -111,7 +107,7 @@ export function useSelectorRecordActions({
         return current.filter((entry) => entry.domain !== domain);
       });
       if (removedEditingRecord) cancelEdit();
-      setSelectorSummaries((current) => current.filter((entry) => entry.domain !== domain));
+      await invalidateSelectorData(domain);
     } catch (nextError) {
       setError(
         nextError instanceof Error ? nextError.message : 'Unable to clear domain selectors.',

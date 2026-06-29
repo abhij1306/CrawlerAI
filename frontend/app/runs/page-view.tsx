@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { useEffect, useReducer, useRef } from 'react';
+import { useEffect, useReducer } from 'react';
 
 import { queryKeys } from '@/api/query-keys';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -65,13 +65,6 @@ const initialRunsPageState: RunsPageState = {
   actionError: '',
   deleteTarget: null,
 };
-
-function preloadCrawlRunRoute() {
-  return Promise.all([
-    import('../crawl/page-view'),
-    import('../../components/crawl/crawl-run-screen'),
-  ]);
-}
 
 function runsPageReducer(state: RunsPageState, action: RunsPageAction): RunsPageState {
   switch (action.type) {
@@ -227,7 +220,6 @@ function RunRow({
 /* ─── Page ───────────────────────────────────────────────────────────────── */
 export default function RunsPage() {
   const queryClient = useQueryClient();
-  const crawlRunRoutePreloadStatusRef = useRef<'idle' | 'pending' | 'complete'>('idle');
   const [state, dispatch] = useReducer(runsPageReducer, initialRunsPageState);
   const {
     domainFilter,
@@ -265,17 +257,6 @@ export default function RunsPage() {
       queryClient.setQueryData<CrawlRun>(
         queryKeys.runs.detail(run.id),
         (current) => current ?? run,
-      );
-    }
-    if (crawlRunRoutePreloadStatusRef.current === 'idle') {
-      crawlRunRoutePreloadStatusRef.current = 'pending';
-      void preloadCrawlRunRoute().then(
-        () => {
-          crawlRunRoutePreloadStatusRef.current = 'complete';
-        },
-        () => {
-          crawlRunRoutePreloadStatusRef.current = 'idle';
-        },
       );
     }
   }, [queryClient, queryData?.items]);

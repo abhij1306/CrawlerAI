@@ -73,10 +73,12 @@ export function RecordThumbnail({ src }: Readonly<{ src: string }>) {
     return <span className="text-xs text-muted">--</span>;
   }
   return (
-    <div className="relative flex h-[46px] w-[46px] items-center justify-center overflow-hidden rounded-sm border border-border bg-gradient-to-br from-background-elevated/60 to-background-alt shadow-[inset_0_0_0_1px_rgba(255,255,255,0.05)] transition-all duration-180 group-hover:border-accent/38 hover:-translate-y-px">
+    <div className="relative mx-auto flex size-8 items-center justify-center overflow-hidden rounded-sm border border-border bg-gradient-to-br from-background-elevated/60 to-background-alt shadow-[inset_0_0_0_1px_rgba(255,255,255,0.05)] transition-colors duration-180 group-hover:border-accent/38">
       <img
         src={src}
         alt=""
+        loading="lazy"
+        decoding="async"
         referrerPolicy="no-referrer"
         className="absolute inset-0 h-full w-full object-contain"
         onError={() => {

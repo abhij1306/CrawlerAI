@@ -1,7 +1,5 @@
-import { X } from 'lucide-react';
-import { useEffect, useRef } from 'react';
-
-import { Button, Dropdown, Field, Input, Textarea } from '../../components/ui/primitives';
+import { AppDrawer } from '../../components/ui/dialog';
+import { Dropdown, Field, Input, Textarea } from '../../components/ui/primitives';
 import type { ProductIntelligenceOptions } from '../../lib/api/types';
 import { cn } from '../../lib/utils';
 import { SEARCH_PROVIDER_OPTIONS } from './product-intelligence-utils';
@@ -31,134 +29,110 @@ export function SettingsDrawer({
   maxCandidatesPerProductLimit: number;
   defaultOptions: ProductIntelligenceOptions;
 }>) {
-  const onCloseRef = useRef(onClose);
-
-  useEffect(() => {
-    onCloseRef.current = onClose;
-  }, [onClose]);
-
-  useEffect(() => {
-    if (!open) return;
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onCloseRef.current();
-    };
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [open]);
-  if (!open) return null;
   return (
-    <>
-      <div className="fixed inset-0 z-40 bg-black/20" onClick={onClose} aria-hidden="true" />
-      <div className="animate-in slide-in-from-right-4 fixed top-0 right-0 z-50 h-full w-[380px] max-w-full overflow-y-auto border-l border-divider bg-background-elevated p-5 shadow-xl duration-200">
-        <div className="flex items-center justify-between">
-          <h2 className="type-subheading">Configuration</h2>
-          <Button
-            type="button"
-            variant="quiet"
-            size="icon"
-            onClick={onClose}
-            aria-label="Close settings"
-          >
-            <X className="size-3.5" />
-          </Button>
-        </div>
-        <div className="mt-4 space-y-4">
-          <ProviderField options={options} onOptionsChange={onOptionsChange} />
-          <Field label="Max Sources">
-            <Input
-              type="number"
-              min={1}
-              max={maxSourceProductsLimit}
-              value={options.max_source_products}
+    <AppDrawer
+      open={open}
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen) onClose();
+      }}
+      title="Configuration"
+    >
+      <div className="space-y-4 p-5">
+        <ProviderField options={options} onOptionsChange={onOptionsChange} />
+        <Field label="Max Sources">
+          <Input
+            type="number"
+            min={1}
+            max={maxSourceProductsLimit}
+            value={options.max_source_products}
+            onChange={(event) =>
+              onOptionsChange({
+                max_source_products: Number(event.target.value),
+              })
+            }
+            onBlur={(event) =>
+              onOptionsChange({
+                max_source_products: clampInt(
+                  event.target.value,
+                  1,
+                  maxSourceProductsLimit,
+                  defaultOptions.max_source_products,
+                ),
+              })
+            }
+          />
+        </Field>
+        <Field label="Max URLs">
+          <Input
+            type="number"
+            min={1}
+            max={maxCandidatesPerProductLimit}
+            value={options.max_candidates_per_product}
+            onChange={(event) =>
+              onOptionsChange({
+                max_candidates_per_product: Number(event.target.value),
+              })
+            }
+            onBlur={(event) =>
+              onOptionsChange({
+                max_candidates_per_product: clampInt(
+                  event.target.value,
+                  1,
+                  maxCandidatesPerProductLimit,
+                  defaultOptions.max_candidates_per_product,
+                ),
+              })
+            }
+          />
+        </Field>
+        <Field label="Private Label">
+          <Dropdown
+            ariaLabel="Private Label"
+            value={options.private_label_mode}
+            onChange={(value) =>
+              onOptionsChange({
+                private_label_mode: value as ProductIntelligenceOptions['private_label_mode'],
+              })
+            }
+            options={[
+              { value: 'flag', label: 'Flag' },
+              { value: 'exclude', label: 'Exclude' },
+              { value: 'include', label: 'Include' },
+            ]}
+          />
+        </Field>
+        <Field label="LLM Cleanup">
+          <div className="surface-muted flex h-[var(--control-height)] items-center justify-between rounded-md px-3 shadow-sm">
+            <span className="text-xs font-normal text-muted">Enable Enrichment</span>
+            <input
+              type="checkbox"
+              aria-label="Enable LLM enrichment"
+              checked={options.llm_enrichment_enabled}
               onChange={(event) =>
-                onOptionsChange({
-                  max_source_products: event.target.value as unknown as number,
-                })
+                onOptionsChange({ llm_enrichment_enabled: event.target.checked })
               }
-              onBlur={(event) =>
-                onOptionsChange({
-                  max_source_products: clampInt(
-                    event.target.value,
-                    1,
-                    maxSourceProductsLimit,
-                    defaultOptions.max_source_products,
-                  ),
-                })
-              }
+              className="size-3.5 rounded border-divider text-accent focus:ring-accent"
             />
-          </Field>
-          <Field label="Max URLs">
-            <Input
-              type="number"
-              min={1}
-              max={maxCandidatesPerProductLimit}
-              value={options.max_candidates_per_product}
-              onChange={(event) =>
-                onOptionsChange({
-                  max_candidates_per_product: event.target.value as unknown as number,
-                })
-              }
-              onBlur={(event) =>
-                onOptionsChange({
-                  max_candidates_per_product: clampInt(
-                    event.target.value,
-                    1,
-                    maxCandidatesPerProductLimit,
-                    defaultOptions.max_candidates_per_product,
-                  ),
-                })
-              }
-            />
-          </Field>
-          <Field label="Private Label">
-            <Dropdown
-              ariaLabel="Private Label"
-              value={options.private_label_mode}
-              onChange={(value) =>
-                onOptionsChange({
-                  private_label_mode: value as ProductIntelligenceOptions['private_label_mode'],
-                })
-              }
-              options={[
-                { value: 'flag', label: 'Flag' },
-                { value: 'exclude', label: 'Exclude' },
-                { value: 'include', label: 'Include' },
-              ]}
-            />
-          </Field>
-          <Field label="LLM Cleanup">
-            <div className="surface-muted flex h-[var(--control-height)] items-center justify-between rounded-md px-3 shadow-sm">
-              <span className="text-xs font-normal text-muted">Enable Enrichment</span>
-              <input
-                type="checkbox"
-                aria-label="Enable LLM enrichment"
-                checked={options.llm_enrichment_enabled}
-                onChange={(event) =>
-                  onOptionsChange({ llm_enrichment_enabled: event.target.checked })
-                }
-                className="size-3.5 rounded border-divider text-accent focus:ring-accent"
-              />
-            </div>
-          </Field>
-          <Field label="Allowed Domains">
-            <Textarea
-              value={allowedDomainsText}
-              onChange={(event) => onAllowedDomainsTextChange(event.target.value)}
-              className="min-h-[76px] text-xs"
-              placeholder="ralphlauren.com"
-            />
-          </Field>
-          <Field label="Excluded Domains">
-            <Textarea
-              value={excludedDomainsText}
-              onChange={(event) => onExcludedDomainsTextChange(event.target.value)}
-              className="min-h-[76px] text-xs"
-              placeholder="amazon.com"
-            />
-          </Field>
-        </div>
+          </div>
+        </Field>
+        <Field label="Allowed Domains">
+          <Textarea
+            value={allowedDomainsText}
+            onChange={(event) => onAllowedDomainsTextChange(event.target.value)}
+            className="min-h-[76px] text-xs"
+            placeholder="ralphlauren.com"
+          />
+        </Field>
+        <Field label="Excluded Domains">
+          <Textarea
+            value={excludedDomainsText}
+            onChange={(event) => onExcludedDomainsTextChange(event.target.value)}
+            className="min-h-[76px] text-xs"
+            placeholder="amazon.com"
+          />
+        </Field>
       </div>
-    </>
+    </AppDrawer>
   );
 }
 

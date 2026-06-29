@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ExternalLink, History, Loader2, Play, RefreshCcw } from 'lucide-react';
-import { useMemo, useReducer, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
+import type { Ref } from 'react';
 
 import { queryKeys } from '@/api/query-keys';
 import { HistoryDrawer, type HistoryItem } from '../../components/ui/history-drawer';
@@ -22,6 +23,8 @@ import type { DataEnrichmentSourceRecordInput, EnrichedProduct } from '../../lib
 import { STORAGE_KEYS } from '../../lib/constants/storage-keys';
 import { cn } from '../../lib/utils';
 
+const EMPTY_ENRICHED_PRODUCTS: EnrichedProduct[] = [];
+
 type PrefillPayload = {
   source_run_id?: number | null;
   records?: DataEnrichmentSourceRecordInput[];
@@ -41,7 +44,8 @@ type DataEnrichmentAction =
   | { type: 'failed'; message: string }
   | { type: 'historyChanged'; open: boolean }
   | { type: 'productSelected'; productId: number | null }
-  | { type: 'historyJobSelected'; jobId: number };
+  | { type: 'historyJobSelected'; jobId: number }
+  | { type: 'initialJobResolved'; jobId: number };
 
 const INITIAL_DATA_ENRICHMENT_STATE: DataEnrichmentState = {
   llmEnabled: false,
@@ -59,7 +63,7 @@ function dataEnrichmentReducer(
     case 'llmChanged':
       return { ...state, llmEnabled: action.enabled };
     case 'jobCreated':
-      return { ...state, error: '', activeJobId: action.jobId };
+      return { ...state, error: '', activeJobId: action.jobId, selectedProductId: null };
     case 'failed':
       return { ...state, error: action.message };
     case 'historyChanged':
@@ -67,7 +71,11 @@ function dataEnrichmentReducer(
     case 'productSelected':
       return { ...state, selectedProductId: action.productId };
     case 'historyJobSelected':
-      return { ...state, activeJobId: action.jobId };
+      return { ...state, activeJobId: action.jobId, selectedProductId: null };
+    case 'initialJobResolved':
+      return state.activeJobId === null
+        ? { ...state, activeJobId: action.jobId, selectedProductId: null }
+        : state;
   }
 }
 
@@ -102,7 +110,13 @@ export default function DataEnrichmentPage() {
   const { data: jobsData } = useQuery({
     queryKey: queryKeys.dataEnrichment.jobs(),
     queryFn: () => api.listDataEnrichmentJobs({ limit: 20 }),
-    refetchInterval: 4000,
+    refetchInterval: (query) => {
+      const jobs = query.state.data ?? [];
+      const hasRunningJob = jobs.some(
+        (job) => job.status === 'pending' || job.status === 'running',
+      );
+      return historyOpen || hasRunningJob ? 4000 : false;
+    },
   });
 
   const historyItems: HistoryItem[] = useMemo(() => {
@@ -115,8 +129,14 @@ export default function DataEnrichmentPage() {
     }));
   }, [jobsData]);
 
-  const defaultJobId = sourceRecords.length ? null : (jobsData?.[0]?.id ?? null);
-  const resolvedJobId = activeJobId ?? defaultJobId;
+  useEffect(() => {
+    const initialJobId = sourceRecords.length ? null : (jobsData?.[0]?.id ?? null);
+    if (initialJobId !== null) {
+      dispatch({ type: 'initialJobResolved', jobId: initialJobId });
+    }
+  }, [jobsData, sourceRecords.length]);
+
+  const resolvedJobId = activeJobId;
   const {
     data: detailData,
     isLoading: isDetailLoading,
@@ -134,14 +154,19 @@ export default function DataEnrichmentPage() {
   const activeJob = detailData?.job ?? jobsData?.find((job) => job.id === resolvedJobId) ?? null;
   const isRunning = activeJob?.status === 'pending' || activeJob?.status === 'running';
 
-  const products = detailData?.enriched_products ?? [];
-  const selectedProductExists = products.some((product) => product.id === selectedProductId);
-  const resolvedProductId = selectedProductExists ? selectedProductId : (products[0]?.id ?? null);
-  const selectedProduct = products.find((p) => p.id === resolvedProductId) ?? null;
-  const completedCount = products.filter((product) => product.status === 'enriched').length;
-  const semanticCount = products.filter((product) =>
-    Boolean(product.intent_attributes?.length),
-  ).length;
+  const products = detailData?.enriched_products ?? EMPTY_ENRICHED_PRODUCTS;
+  const productSummary = useMemo(() => {
+    const selectedProductExists = products.some((product) => product.id === selectedProductId);
+    const resolvedProductId = selectedProductExists ? selectedProductId : (products[0]?.id ?? null);
+    return {
+      resolvedProductId,
+      selectedProduct: products.find((p) => p.id === resolvedProductId) ?? null,
+      completedCount: products.filter((product) => product.status === 'enriched').length,
+      semanticCount: products.filter((product) => Boolean(product.intent_attributes?.length))
+        .length,
+    };
+  }, [products, selectedProductId]);
+  const { resolvedProductId, selectedProduct, completedCount, semanticCount } = productSummary;
 
   const createMutation = useMutation({
     mutationFn: () =>
@@ -269,6 +294,7 @@ export default function DataEnrichmentPage() {
         ) : products.length ? (
           <div className="flex h-[600px] flex-col divide-y divide-divider lg:flex-row lg:divide-x lg:divide-y-0">
             <EnrichedProductSidebar
+              key={resolvedJobId ?? 'source-records'}
               products={products}
               resolvedProductId={resolvedProductId}
               onSelect={(id) => dispatch({ type: 'productSelected', productId: id })}
@@ -335,54 +361,154 @@ function EnrichedProductSidebar({
   resolvedProductId,
   onSelect,
 }: Readonly<EnrichedProductSidebarProps>) {
+  const rowGapPx = 4;
+  const [rowHeightPx, setRowHeightPx] = useState(92);
+  const [scrollTop, setScrollTop] = useState(0);
+  const [viewportHeight, setViewportHeight] = useState(520);
+  const [scrollContainer, setScrollContainer] = useState<HTMLDivElement | null>(null);
+  const firstRowRef = useRef<HTMLButtonElement | null>(null);
+  const shouldVirtualize = products.length > 80;
+  const virtualRowHeightPx = rowHeightPx + rowGapPx;
+  const productWindowKey = `${products.length}:${products[0]?.id ?? ''}:${products.at(-1)?.id ?? ''}`;
+  const visibleRange = useMemo(() => {
+    if (!shouldVirtualize) {
+      return { start: 0, end: products.length, topSpacer: 0, bottomSpacer: 0 };
+    }
+    const overscan = 6;
+    const start = Math.max(0, Math.floor(scrollTop / virtualRowHeightPx) - overscan);
+    const visibleCount = Math.ceil(viewportHeight / virtualRowHeightPx) + overscan * 2;
+    const end = Math.min(products.length, start + visibleCount);
+    return {
+      start,
+      end,
+      topSpacer: start * virtualRowHeightPx,
+      bottomSpacer: Math.max(0, (products.length - end) * virtualRowHeightPx),
+    };
+  }, [products.length, scrollTop, shouldVirtualize, viewportHeight, virtualRowHeightPx]);
+  const visibleProducts = shouldVirtualize
+    ? products.slice(visibleRange.start, visibleRange.end)
+    : products;
+  const setScrollContainerRef = useCallback((node: HTMLDivElement | null) => {
+    setScrollContainer(node);
+    if (node) {
+      setViewportHeight(node.clientHeight || 520);
+    }
+  }, []);
+
+  useEffect(() => {
+    setScrollTop(0);
+    scrollContainer?.scrollTo({ top: 0 });
+  }, [productWindowKey, scrollContainer]);
+
+  useEffect(() => {
+    if (!scrollContainer || typeof ResizeObserver === 'undefined') {
+      return;
+    }
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (entry) {
+        setViewportHeight(entry.contentRect.height || 520);
+      }
+    });
+    observer.observe(scrollContainer);
+    return () => observer.disconnect();
+  }, [scrollContainer]);
+
+  useEffect(() => {
+    const node = firstRowRef.current;
+    if (!node) {
+      return;
+    }
+    const updateRowHeight = () => setRowHeightPx(node.getBoundingClientRect().height || 92);
+    updateRowHeight();
+    if (typeof ResizeObserver === 'undefined') {
+      return;
+    }
+    const observer = new ResizeObserver(updateRowHeight);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [visibleProducts]);
+
   return (
     <div className="flex min-h-0 w-full shrink-0 flex-col bg-background-alt/10 lg:w-80">
       <div className="border-b border-divider bg-subtle-panel/30 p-3">
         <span className="type-caption-mono uppercase">Record Selector ({products.length})</span>
       </div>
-      <div className="flex-1 space-y-1 overflow-y-auto p-2">
-        {products.map((product) => {
-          const isActive = product.id === resolvedProductId;
-          const isProcessing = product.status === 'pending' || product.status === 'running';
-          const title = product.source_url
-            ? product.source_url.replace(/^https?:\/\/(www\.)?/, '')
-            : `Record #${product.source_record_id}`;
-          return (
-            <button
+      <div
+        ref={setScrollContainerRef}
+        className="flex-1 overflow-y-auto p-2"
+        onScroll={(event) => {
+          if (shouldVirtualize) {
+            setScrollTop(event.currentTarget.scrollTop);
+            setViewportHeight(event.currentTarget.clientHeight);
+          }
+        }}
+      >
+        {visibleRange.topSpacer ? <div style={{ height: visibleRange.topSpacer }} /> : null}
+        <div className="space-y-1">
+          {visibleProducts.map((product) => (
+            <EnrichedProductSidebarRow
               key={product.id}
-              type="button"
-              onClick={() => onSelect(product.id)}
-              className={cn(
-                'flex w-full flex-col gap-1.5 rounded-md border p-3 text-left transition-colors',
-                isActive
-                  ? 'border-accent bg-accent-subtle/50'
-                  : 'border-border bg-background hover:bg-background-elevated',
-              )}
-            >
-              <div className="flex items-center justify-between gap-2">
-                <Badge tone="neutral" className="h-5 shrink-0 px-1.5 font-mono text-xs opacity-75">
-                  #{product.source_record_id}
-                </Badge>
-                {isProcessing ? (
-                  <div className="flex items-center gap-1 opacity-60">
-                    <Loader2 className="size-3 animate-spin text-accent" />
-                    <span className="type-caption-mono">Processing</span>
-                  </div>
-                ) : null}
-              </div>
-              <div
-                className="type-body-sm w-full truncate font-medium text-foreground"
-                title={product.source_url}
-              >
-                {title}
-              </div>
-            </button>
-          );
-        })}
+              measureRef={product.id === visibleProducts[0]?.id ? firstRowRef : undefined}
+              product={product}
+              active={product.id === resolvedProductId}
+              onSelect={onSelect}
+            />
+          ))}
+        </div>
+        {visibleRange.bottomSpacer ? <div style={{ height: visibleRange.bottomSpacer }} /> : null}
       </div>
     </div>
   );
 }
+
+const EnrichedProductSidebarRow = memo(function EnrichedProductSidebarRow({
+  measureRef,
+  product,
+  active,
+  onSelect,
+}: Readonly<{
+  measureRef?: Ref<HTMLButtonElement>;
+  product: EnrichedProduct;
+  active: boolean;
+  onSelect: (id: number) => void;
+}>) {
+  const isProcessing = product.status === 'pending' || product.status === 'running';
+  const title = product.source_url
+    ? product.source_url.replace(/^https?:\/\/(www\.)?/, '')
+    : `Record #${product.source_record_id}`;
+  return (
+    <button
+      ref={measureRef}
+      type="button"
+      onClick={() => onSelect(product.id)}
+      className={cn(
+        'flex w-full flex-col gap-1.5 rounded-md border p-3 text-left transition-colors',
+        active
+          ? 'border-accent bg-accent-subtle/50'
+          : 'border-border bg-background hover:bg-background-elevated',
+      )}
+    >
+      <div className="flex items-center justify-between gap-2">
+        <Badge tone="neutral" className="h-5 shrink-0 px-1.5 font-mono text-xs opacity-75">
+          #{product.source_record_id}
+        </Badge>
+        {isProcessing ? (
+          <div className="flex items-center gap-1 opacity-60">
+            <Loader2 className="size-3 animate-spin text-accent" />
+            <span className="type-caption-mono">Processing</span>
+          </div>
+        ) : null}
+      </div>
+      <div
+        className="type-body-sm w-full truncate font-medium text-foreground"
+        title={product.source_url}
+      >
+        {title}
+      </div>
+    </button>
+  );
+});
 
 interface EnrichedProductDetailProps {
   product: EnrichedProduct | null;
