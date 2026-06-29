@@ -1138,6 +1138,42 @@ def test_runtime_capture_bundle_uses_acquisition_metadata() -> None:
     )
 
 
+def test_runtime_request_marks_active_selector_fields_as_user_controlled() -> None:
+    url = "https://shop.test/products/trail-shoe"
+    acquisition = PageAcquisitionResult(
+        request=AcquisitionRequest(
+            run_id=42,
+            url=url,
+            plan=AcquisitionIntent(surface="ecommerce_detail"),
+        ),
+        final_url=url,
+        html=HTML,
+        method="browser",
+        status_code=200,
+        artifacts={},
+    )
+    request = request_from_acquisition_result(
+        Surface.ECOMMERCE_DETAIL,
+        acquisition,
+        requested_url=url,
+        max_records=1,
+        selector_rules=[
+            {
+                "field_name": "Product.Title",
+                "css_selector": "h1",
+                "is_active": True,
+            },
+            {
+                "field_name": "price",
+                "css_selector": ".price",
+                "is_active": False,
+            },
+        ],
+    )
+
+    assert request.user_controlled_fields == ("product.title",)
+
+
 def test_active_provider_shell_is_blocked_when_building_runtime_capture() -> None:
     url = "https://shop.test/products/challenge-shell"
     acquisition = PageAcquisitionResult(

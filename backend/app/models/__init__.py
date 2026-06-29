@@ -12,6 +12,14 @@ from app.models.domain_memory import (
     DomainRunProfile,
     HostProtectionMemory,
 )
+from app.models.knowledge_graph import (
+    KGAssertionEvidence,
+    KGClaim,
+    KGEntity,
+    KGExtractionContract,
+    KGRelationship,
+    KGSiteVersion,
+)
 from app.models.llm import LLMConfig, LLMCostLog
 from app.models.product_intelligence import (
     ProductIntelligenceCandidate,
@@ -43,4 +51,10 @@ __all__ = [
     "LLMConfig",
     "LLMCostLog",
     "ReviewPromotion",
+    "KGSiteVersion",
+    "KGEntity",
+    "KGRelationship",
+    "KGClaim",
+    "KGAssertionEvidence",
+    "KGExtractionContract",
 ]

@@ -28,7 +28,6 @@ from app.persistence.publish import (
 )
 from app.persistence.record_artifacts import RecordArtifacts, load_record_artifacts
 from app.core.records.schema_service import load_resolved_schema
-from app.crawl.review.evidence import collect_evidence_review
 from app.crawl.review.domain_recipe_support import (
     collect_selector_candidates,
     derive_acquisition_info,
@@ -311,8 +310,6 @@ async def build_domain_recipe_payload(
     return _assemble_recipe_payload(
         run=run,
         domain=domain,
-        records=records,
-        artifacts_by_id=artifacts_by_id,
         requested_fields=requested_fields,
         found_fields=found_fields,
         acquisition_info=acquisition_info,
@@ -374,8 +371,6 @@ def _assemble_recipe_payload(
     *,
     run: CrawlRun,
     domain: str,
-    records: list[CrawlRecord],
-    artifacts_by_id: dict[int, RecordArtifacts],
     requested_fields: list[str],
     found_fields: list[str],
     acquisition_info: dict[str, object],
@@ -419,9 +414,6 @@ def _assemble_recipe_payload(
             ),
         ),
         "affordance_candidates": acquisition_info["affordance_candidates"],
-        "evidence_review": collect_evidence_review(
-            records, artifacts_by_id=artifacts_by_id
-        ),
         "saved_selectors": saved_selectors,
         "saved_run_profile": (
             dict(saved_profile_record.profile or {})

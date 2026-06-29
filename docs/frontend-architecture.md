@@ -284,13 +284,6 @@ The admin LLM UI is built on:
 - connection tests
 - cost log listing
 
-
-
-- persisted audit jobs with status, domain, options, and summary
-- one detail payload containing page results and the final report
-- report dimension scores and findings rendered without recomputing compliance client-side
-- direct JSON and Markdown export URLs from the API layer
-
 ## 7. Testing Surface
 
 Frontend tests currently cover:

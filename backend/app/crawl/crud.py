@@ -28,6 +28,7 @@ from app.crawl.utils import (
 from app.core.db_utils import escape_like_pattern
 from app.core.records.field_policy import normalize_field_key, preserve_requested_fields
 from app.connectors.llm.config_service import snapshot_active_configs
+from app.persistence.knowledge_graph import load_runtime_snapshot
 from app.core.records.normalizers import normalize_value
 from app.core.url_safety import ensure_public_crawl_targets
 from sqlalchemy import and_, func, select
@@ -91,7 +92,11 @@ async def create_crawl_run(
     settings = settings_view.with_updates(
         requested_fields=requested_fields,
         llm_config_snapshot=await snapshot_active_configs(session),
-        extraction_runtime_snapshot={},
+        extraction_runtime_snapshot=await load_runtime_snapshot(
+            session,
+            domain=normalize_domain(primary_url),
+            surface=normalized_surface,
+        ),
     ).as_dict()
     run = CrawlRun(
         user_id=user_id,

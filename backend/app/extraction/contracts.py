@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Literal, Protocol, runtime_checkable
+from typing import Any, Literal, Mapping, Protocol, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict, Field, SerializeAsAny
 
@@ -426,6 +426,8 @@ class ExtractionRequest(FrozenModel):
     artifact_reader: ArtifactReader = Field(exclude=True)
     requested_fields: tuple[str, ...] = ()
     max_records: int = 1
+    runtime_snapshot: Mapping[str, Any] = Field(default_factory=dict)
+    user_controlled_fields: tuple[str, ...] = ()
 
 
 CollectorOutcomeStatus = Literal[
@@ -461,6 +463,22 @@ class StageOutcome(FrozenModel):
     stage: str
     outcome: CollectorOutcomeStatus
     detail: str | None = None
+
+
+class ContractOutcome(FrozenModel):
+    """Per-field outcome when frozen extraction contracts are applied (Slice 7).
+
+    Records whether a contract's preferred source was used (hit), fell back to
+    generic resolution (fallback), or encountered other states. Emitted into
+    diagnose.json to support debugging learned extractions.
+    """
+
+    field: str
+    outcome: str
+    selected_source: str
+    selection_origin: str
+    applied: bool
+    detail: str
 
 
 class VariantDrop(FrozenModel):
@@ -507,3 +525,4 @@ class ExtractionResult(FrozenModel):
     collector_outcomes: tuple[CollectorOutcome, ...] = ()
     stage_outcomes: tuple[StageOutcome, ...] = ()
     variant_drops: tuple[VariantDrop, ...] = ()
+    contract_outcomes: tuple[ContractOutcome, ...] = ()

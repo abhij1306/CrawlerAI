@@ -8,7 +8,6 @@ from app.models.review import ReviewPromotion
 from app.crawl.domain_memory_service import load_domain_memory, save_domain_memory
 from app.crawl.review import (
     apply_domain_recipe_field_action,
-    build_domain_recipe_payload,
     list_domain_field_feedback,
     promote_domain_recipe_selectors,
     save_review,
@@ -17,62 +16,6 @@ from app.core.records.schema_service import ResolvedSchema
 from app.core.records.schema_service import load_resolved_schema
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-
-
-@pytest.mark.asyncio
-@pytest.mark.component
-async def test_domain_recipe_exposes_confusing_evidence_without_internal_graph(
-    db_session: AsyncSession,
-    test_user,
-    create_test_run,
-) -> None:
-    run = await create_test_run(
-        url="https://example.com/products/widget",
-        surface="ecommerce_detail",
-    )
-    db_session.add(
-        CrawlRecord(
-            run_id=run.id,
-            source_url=run.url,
-            data={"title": "Widget"},
-            raw_data={},
-            discovered_data={},
-            source_trace={
-                "field_discovery": {
-                    "title": {
-                        "status": "found",
-                        "winning_evidence_ids": ["ev_000001"],
-                        "candidate_count": 2,
-                        "rejected_candidate_count": 1,
-                        "conflict_count": 0,
-                        "validation_finding_ids": [],
-                        "resolver_rule": "source_priority",
-                        "llm_used": False,
-                    }
-                },
-                "extraction": {
-                    "validation_findings": [
-                        {
-                            "finding_id": "currency_contradiction:0",
-                            "suggested_action": "review_request_context",
-                        }
-                    ]
-                },
-            },
-        )
-    )
-    await db_session.commit()
-
-    recipe = await build_domain_recipe_payload(db_session, run=run)
-
-    assert recipe["evidence_review"]["fields"][0]["winning_evidence_ids"] == [
-        "ev_000001"
-    ]
-    assert (
-        recipe["evidence_review"]["validation_findings"][0]["suggested_action"]
-        == "review_request_context"
-    )
-    assert "_evidence_graph" not in recipe["evidence_review"]
 
 
 @pytest.mark.asyncio

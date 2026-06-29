@@ -13,17 +13,13 @@ EXPORT_RECORD_VERSION = "1"
 
 
 class FieldProvenance(BaseModel):
+    # Only the keys the writer (`_source_trace_for_record`) actually produces.
+    # The former candidate/conflict/resolver/llm provenance keys were never set
+    # and were removed with the dead `collect_evidence_review` view.
     status: str = "found"
     value: Any = None
     sources: list[str] = Field(default_factory=list)
     selector_trace: dict[str, Any] | None = None
-    winning_evidence_ids: list[str] = Field(default_factory=list)
-    candidate_count: int = 0
-    rejected_candidate_count: int = 0
-    conflict_count: int = 0
-    validation_finding_ids: list[str] = Field(default_factory=list)
-    resolver_rule: str | None = None
-    llm_used: bool = False
 
     @field_validator("sources", mode="before")
     @classmethod

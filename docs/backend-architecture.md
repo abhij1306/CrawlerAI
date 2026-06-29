@@ -1,8 +1,10 @@
 # Backend Architecture
 
-> Last updated: 2026-05-07
+> Last updated: 2026-06-29
 >
 > Canonical detailed backend reference. This is the merged replacement for the older split architecture docs.
+>
+> **Rebuild in progress.** The Site & Product Knowledge Graph rebuild (`docs/plans/site-knowledge-graph-master-plan.md`) is reshaping extraction, artifacts, and observability. Slices 1-4 are landed (single-writer artifacts, self-contained `diagnose.json`/`report.json`, deleted observability/audit modules, the `app/core/config/knowledge_graph.py` vocabulary owner, and architecture ratchets). The extraction file inventory in §6.4 below predates the `app/extraction/` package consolidation and is being superseded; treat `docs/INVARIANTS.md` §3, §12, §17 and `tests/unit/test_extraction_architecture.py` as authoritative for current extraction/artifact boundaries.
 
 ## 1. Scope
 
@@ -407,7 +409,8 @@ Primary files:
 - `publish/verdict.py`
 - `publish/metrics.py`
 - `publish/metadata.py`
-- `artifact_store.py`
+- `persistence/url_result_artifacts.py` (the single per-URL artifact writer)
+- `persistence/artifacts.py` (`ArtifactRepository` byte store)
 - `pipeline/core.py`
 - `pipeline/persistence.py`
 
@@ -416,8 +419,7 @@ Responsibilities:
 - compute per-URL verdicts
 - compute acquisition and URL metrics
 - build/persist field-discovery metadata
-- persist HTML artifacts plus browser diagnostics/screenshot sidecars when a browser attempt occurred
-- keep artifact I/O and `CrawlRecord` persistence out of the orchestration hot path in `pipeline/core.py`
+- write per-URL artifacts through the single writer (see §6.8); keep artifact I/O and `CrawlRecord` persistence out of the orchestration hot path in `pipeline/core.py`
 - write `CrawlRecord` rows and update run summaries
 - skip already-persisted `(run_id, url_identity_key)` identities on rerun/re-entry so detail/listing retries stay idempotent instead of failing the run on a duplicate-key insert
 
@@ -492,6 +494,35 @@ Current crawl/runtime usage:
 - optional missing-field extraction in the pipeline
 - selector suggestion and review cleanup support
 - config snapshots prevent mid-run drift
+
+### 6.8 Observability — single-file diagnosis
+
+Primary files:
+
+- `persistence/url_result_artifacts.py`
+- `observability/diagnose.py`
+- `observability/run_report.py`
+
+Responsibilities and current behavior:
+
+- `publish_url_result_artifacts` is the **sole** per-URL artifact writer. It emits exactly three files under `runs/{run_id}/results/{url_result_id}/`: `page.html` (written once), `record.json` (public record view, matching the records API), and `diagnose.json`.
+- `diagnose.json` is self-contained and bounded: per field it inlines the `FieldEvidenceState` status, the winning candidate, rejected candidates with reasons (≤120-char value previews), and any public-firewall action; each dropped variant carries `(row, stage, rule, reason)`. It references no other file and invents no reason vocabulary — it reuses existing `FieldEvidenceState` names and firewall reject reasons. `ExtractionResult` now carries `collector_outcomes`, `stage_outcomes`, and `variant_drops` to feed it.
+- `run_report.py` registers as a run-complete callback (via `pipeline/run_complete_callbacks.py`) and folds every `diagnose.json` into a deterministic run-level `report.json` that groups root causes with direct links to each URL's diagnosis. Like all of `app/observability/`, it is observe-only: it must never mutate extraction output, verdicts, selector memory, or domain contracts, and must not grow monitor-style diffing/retention/webhook behavior.
+- The legacy second artifact scheme (`runs/{id}/pages/...`), `manifest.json`/`summary.json`/`records.json`/`debug.json`/`browser.json`/`trace.json`/screenshots, the never-written `acquisition.json`/`extraction.json` readers, the dead `source_trace` provenance keys, and the observe-only LLM diagnosis flow are all deleted. Deleted modules include `observability/{artifact_reader,baseline,browser_artifact,run_audit,run_llm_diagnosis,run_trace}.py`, `persistence/artifact_store.py`, `persistence/storage/`, `api/observability.py`, and `config/{audit_rules,observability}.py`. See `docs/INVARIANTS.md` §12.
+
+### 6.9 Knowledge Graph
+
+Primary files:
+
+- `core/config/knowledge_graph.py` — data-only vocabulary/bounds owner: node/edge types, entity/projection statuses, contract selection origins, contract outcomes, the deterministic identity ladder, read-API bounds, and projection tunables.
+- `models/knowledge_graph.py` — 6 ORM models: `KGSiteVersion`, `KGEntity`, `KGRelationship`, `KGClaim`, `KGAssertionEvidence`, `KGExtractionContract`.
+- `persistence/knowledge_graph.py` — repository: `lock_site_version`, `upsert_entities/relationships/claims/contracts`, `add_evidence`, `fetch_neighborhood`, `count_graph_rows`, `purge_graph`, `load_runtime_snapshot`.
+- `persistence/projection.py` — run-complete projector (`project_extraction_result`): fingerprints page templates, upserts structural graph entities and relationships (site → template → route, page → template, site → technology), projects `Evidence` tuples into product/offer/brand/category claims and assertion evidence, writes extraction contracts from decisions.
+- `core/knowledge_graph/templates.py` — `normalize_route`, `fingerprint_from_parts`, `fingerprint_template`, `extract_tech_signals`.
+- `core/knowledge_graph/contract_runtime.py` — frozen contract execution (pure, storage-free): `match_template` and `apply_contracts` re-point decisions to preferred sources and emit `ContractOutcome` per field.
+- `alembic/versions/20260629_0002_knowledge_graph.py` — migration creating all 6 KG tables.
+
+The Knowledge Graph is extraction-owned and PostgreSQL-authoritative (no Neo4j/AGE). It stays separate from acquisition-owned Domain Memory and resets independently. At run creation, `load_runtime_snapshot` freezes the current graph state into `CrawlRun.extraction_runtime_snapshot`; each extraction request receives this frozen snapshot so concurrent graph updates never destabilize an in-flight run. The engine fingerprints each page (via `fingerprint_from_parts`), matches against frozen templates, and applies saved source preferences via `apply_contracts`. Extraction emits observations only and must never import graph storage (ratcheted in `tests/unit/test_extraction_architecture.py`). The `/api/knowledge/*` read/refine endpoints and the cold-start LLM proposer arrive in later slices. See `docs/INVARIANTS.md` §17.
 
 ## 7. Persistence Model
 

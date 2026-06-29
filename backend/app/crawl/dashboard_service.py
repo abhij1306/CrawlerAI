@@ -27,6 +27,7 @@ from app.models.product_intelligence import (
 )
 from app.models.review import ReviewPromotion
 from app.models.llm import LLMCostLog
+from app.persistence.knowledge_graph import purge_graph
 from app.acquisition.cookie_store import clear_cookie_store_cache
 from app.acquisition.rate_limiter import reset_pacing_state
 from app.acquisition.fetch.fetch_context import reset_fetch_runtime_state
@@ -144,6 +145,17 @@ async def reset_product_intelligence(session: AsyncSession) -> dict:
 async def reset_data_enrichment(session: AsyncSession) -> dict:
     async with _session_transaction(session):
         return await _reset_data_enrichment_db(session)
+
+
+async def reset_knowledge_graph(session: AsyncSession) -> dict:
+    """Explicit Knowledge Graph purge.
+
+    The graph is preserved by every other reset (crawl, Domain Memory,
+    application). This is the only path that removes it, and it leaves Domain
+    Memory and crawl data untouched (feature spec §8).
+    """
+    async with _session_transaction(session):
+        return await purge_graph(session)
 
 
 async def _reset_crawl_data_db(session: AsyncSession) -> dict:

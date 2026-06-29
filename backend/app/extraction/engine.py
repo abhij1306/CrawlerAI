@@ -14,6 +14,7 @@ from app.core.records.url_identity import (
 )
 from app.extraction.contracts import (
     CollectorOutcome,
+    ContractOutcome,
     Decision,
     EntityGraph,
     Evidence,
@@ -186,6 +187,26 @@ def extract(request: ExtractionRequest) -> ExtractionResult:
         normalized = normalize_ecommerce_price_units(normalized, step_graph)
     findings = runtime.validate(step_graph, target, normalized, request, spec)
     resolution = runtime.resolve(step_graph, normalized, findings, request, spec)
+    contract_outcomes: tuple[ContractOutcome, ...] = ()
+    if spec.surface == Surface.ECOMMERCE_DETAIL and request.runtime_snapshot:
+        from app.core.knowledge_graph.contract_runtime import apply_contracts
+        from app.core.knowledge_graph.templates import fingerprint_from_parts
+
+        fp = fingerprint_from_parts(
+            request.capture.final_url or request.capture.requested_url,
+            spec.surface.value,
+            normalized,
+            collector_outcomes,
+        )
+        resolution, contract_outcomes = apply_contracts(
+            snapshot=cast(dict[str, Any], request.runtime_snapshot),
+            fingerprint=fp,
+            surface=spec.surface.value,
+            evidence=normalized,
+            resolution=resolution,
+            requested_fields=frozenset(request.requested_fields),
+            user_controlled_fields=frozenset(request.user_controlled_fields),
+        )
     records = runtime.materialize(
         step_graph, resolution, normalized, findings, request, spec
     )
@@ -241,6 +262,7 @@ def extract(request: ExtractionRequest) -> ExtractionResult:
         ),
         collector_outcomes=collector_outcomes,
         stage_outcomes=tuple(stage_outcomes),
+        contract_outcomes=contract_outcomes,
     )
 
 

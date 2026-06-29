@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import re
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -193,6 +194,73 @@ def test_extraction_package_stays_within_architecture_limits() -> None:
         for node in ast.walk(tree):
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 assert _canonical_line_count(node) <= 60, (path, node.name)
+
+
+# Domains that may legitimately appear as string constants in extraction
+# (test/example hosts, never a real retailer). Keep this set as small as
+# possible — a growing allow-set means site-specific logic is creeping back in.
+_ALLOWED_DOMAIN_LITERALS = frozenset({"example.com", "example.in"})
+
+# Hostname-like literal ending in a commercial TLD. `.org` is intentionally
+# excluded so schema.org / w3.org vocabulary URLs never trip the ratchet.
+_RETAILER_DOMAIN_RE = re.compile(
+    r"\b[a-z0-9][a-z0-9-]*\.(?:com|in|net|io|shop|store|co)\b"
+)
+
+
+def test_extraction_carries_no_retailer_domain_literals() -> None:
+    """Extraction must stay site-agnostic: no hardcoded retailer hostnames.
+
+    Site-specific behaviour belongs in operator-promoted extraction contracts
+    (feature spec §5/§6.1), never in `if host == "somestore.com"` branches.
+    This scans *string constants only* — comments (e.g. the `firstcry.com →
+    INR` note in pipeline.py) describe intent and are allowed.
+    """
+    offenders: list[tuple[Path, int, str]] = []
+    for path in _python_files(EXTRACTION_ROOT):
+        tree = _parse_module(path)
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Constant) or not isinstance(node.value, str):
+                continue
+            for match in _RETAILER_DOMAIN_RE.findall(node.value.lower()):
+                if match not in _ALLOWED_DOMAIN_LITERALS:
+                    offenders.append((path, node.lineno, match))
+    assert not offenders, offenders
+
+
+def test_extraction_does_not_import_knowledge_graph_storage() -> None:
+    """Dependency direction: extraction produces evidence, it never reads the graph.
+
+    The Knowledge Graph is projected *downstream* of extraction (Slices 5-8).
+    Extraction may import the vocabulary config (`app.core.config.knowledge_graph`,
+    data only) but must not import graph tables, the repository, or the projector
+    — that would invert the dependency arrow and let graph state leak into a
+    single page's extraction.
+    """
+    forbidden_prefixes = (
+        "app.persistence.knowledge_graph",
+        "app.persistence.graph",
+        "app.knowledge_graph",
+        "app.models.knowledge_graph",
+        "app.models.kg",
+    )
+    offenders: list[tuple[Path, str]] = []
+    for path in _python_files(EXTRACTION_ROOT):
+        tree = _parse_module(path)
+        modules: set[str] = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                modules.update(alias.name for alias in node.names)
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                modules.add(node.module)
+                modules.update(f"{node.module}.{alias.name}" for alias in node.names)
+        for module in modules:
+            if any(
+                module == prefix or module.startswith(prefix + ".")
+                for prefix in forbidden_prefixes
+            ):
+                offenders.append((path, module))
+    assert not offenders, offenders
 
 
 def test_obsolete_pipeline_semantic_owners_are_deleted() -> None:

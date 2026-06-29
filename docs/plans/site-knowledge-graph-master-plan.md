@@ -36,13 +36,13 @@ This is why diagnosis collapses to a single self-contained file, not a tree of c
 - [ ] Every dropped variant includes row, stage, rule, and reason.
 - [ ] `diagnose.json` reuses the existing `FieldEvidenceState` names and the firewalls' existing reject reasons — no parallel vocabulary.
 - [ ] A run-level `report.json` groups root causes and links directly to each URL's `diagnose.json`.
-- [ ] No dangling artifact references remain: the never-written `acquisition.json` / `extraction.json` reads and the dead `source_trace` provenance keys are deleted.
+- [x] No dangling artifact references remain: the never-written `acquisition.json` / `extraction.json` reads and the dead `source_trace` provenance keys are deleted. *(Slice 3)*
 - [ ] Records API and exports remain behaviorally unchanged.
 
 ### Architecture
 
-- [ ] Generic extraction contains no site-specific adapters or retailer-domain branches.
-- [ ] Extraction emits observations but never writes canonical graph storage.
+- [x] Generic extraction contains no site-specific adapters or retailer-domain branches. *(Slice 3 — ratcheted by `test_extraction_carries_no_retailer_domain_literals`)*
+- [x] Extraction emits observations but never writes canonical graph storage. *(Slice 4 — forward guard `test_extraction_does_not_import_knowledge_graph_storage`)*
 - [ ] Every run freezes graph version and matching extraction contracts before processing.
 - [ ] Site knowledge is scoped by page template plus surface.
 
@@ -140,7 +140,7 @@ Add bounded read/refine endpoints (`GET /api/knowledge/sites`, `.../graph`, `...
 
 ### Slice 3: Delete site-specific extraction debt
 
-**Status:** TODO
+**Status:** DONE (2026-06-29)
 **Files:** extraction/resolver config, structure tests, obsolete artifact/observability code
 
 **What:**
@@ -154,7 +154,7 @@ Add bounded read/refine endpoints (`GET /api/knowledge/sites`, `.../graph`, `...
 
 ### Slice 4: Ratchet architecture boundaries
 
-**Status:** TODO
+**Status:** DONE (2026-06-29)
 **Files:** canonical architecture docs, architecture tests, graph config owner
 
 **What:**
@@ -167,7 +167,7 @@ Add bounded read/refine endpoints (`GET /api/knowledge/sites`, `.../graph`, `...
 
 ### Slice 5: Add PostgreSQL graph foundation
 
-**Status:** TODO
+**Status:** DONE (2026-06-29)
 **Files:** graph models/repository/service, Alembic revision, reset service, component tests
 
 **What:**
@@ -181,22 +181,25 @@ Add bounded read/refine endpoints (`GET /api/knowledge/sites`, `.../graph`, `...
 
 ### Slice 6: Build deterministic site-template and source projection
 
-**Status:** TODO
-**Files:** projection contracts/service, extraction projection seam, template tests
+**Status:** DONE (2026-06-29)
+**Files:** `app/persistence/projection.py`, `tests/component/test_projection.py`
 
 **What:**
 
-- Fingerprint templates from normalized route shape, surface, technology signals, stable DOM structure, and source inventory; exclude volatile content, product values, timestamps, IDs, and counts.
-- Convert evidence, decisions, findings, records, and the new diagnostics into graph observations with no DB access inside extraction.
-- Project canonical-field sources, winner, rejected alternatives, rules, locators, and validation outcomes.
-- Add site, technology, template, route, field, and source relationships.
+- Fingerprint templates from normalized route shape (detail surfaces strip final slug to `{id}` so equivalent PDPs share templates), surface, technology signals (from collector outcomes), stable DOM structure (collector outcomes), and source inventory; exclude volatile content, product values, timestamps, IDs, and counts.
+- Project template skeleton entities: site, route_pattern, page_template, page, technology (from collector IDs: jsonld/opengraph/microdata).
+- Project template skeleton relationships: SITE_HAS_TEMPLATE, TEMPLATE_MATCHES_ROUTE, PAGE_INSTANCE_OF_TEMPLATE, SITE_USES_TECHNOLOGY, PAGE_MENTIONS_PRODUCT.
+- Project product/offer/brand/category entities from Evidence (subject_scope), deduplicated by (entity_type, canonical_key) to prevent duplicate-key errors in batch upserts.
+- Project claims from Evidence with raw+processed values and confidence.
+- Project extraction contracts from Decisions: winner (first accepted_evidence_ids), rejected candidates with reasons, resolver rule, latest values, success/rejection counts, bounded to KG_CONTRACT_RETAINED_VALUE_LIMIT (5).
+- No DB access inside extraction (enforced by architecture ratchet `test_extraction_does_not_import_knowledge_graph_storage`).
 
-**Verify:** equivalent PDPs share templates; listing/detail stay separate; unrelated templates cannot share overrides.
+**Verify:** 11 component tests pass — equivalent PDPs share templates (slug-normalized routes), listing/detail stay separate (surface in fingerprint), different routes differ, template skeleton entities+relationships created, technology entities from collector outcomes, product entities+claims from evidence, extraction contracts with winner/rejected/rule, idempotency (entities reused, page updated), template isolation (different templates have separate contracts). All Slice 5 KG repository tests (13) and architecture ratchets (15) still pass.
 
 ### Slice 7: Freeze and execute graph extraction contracts
 
-**Status:** TODO
-**Files:** crawl snapshot, URL context, extraction request/resolver, diagnosis tests
+**Status:** DONE (2026-06-29)
+**Files:** `app/persistence/knowledge_graph.py` (`load_runtime_snapshot`), `app/crawl/crud.py` (freeze at run creation), `app/core/knowledge_graph/contract_runtime.py` (`match_template`, `apply_contracts`), `app/core/knowledge_graph/templates.py` (`fingerprint_from_parts`), `app/extraction/engine.py` (apply after resolve for ecommerce_detail), `app/crawl/pipeline/record_extraction_stage.py` + `app/extraction/replay.py` (thread `runtime_snapshot`), `tests/component/test_contract_runtime.py` (17 tests)
 
 **What:**
 
@@ -284,9 +287,9 @@ Add bounded read/refine endpoints (`GET /api/knowledge/sites`, `.../graph`, `...
 
 ## Doc Updates Required
 
-- [ ] docs/backend-architecture.md — graph, single-writer artifacts, runtime snapshot, API
-- [ ] docs/CODEBASE_MAP.md — Knowledge Graph ownership
-- [ ] docs/INVARIANTS.md — graph, reset, single-writer, and extraction boundaries
+- [x] docs/backend-architecture.md — graph, single-writer artifacts, runtime snapshot, API *(Slices 1-4: §6.5/§6.8/§6.9 + rebuild banner; runtime snapshot + API land with Slices 5-12)*
+- [x] docs/CODEBASE_MAP.md — Knowledge Graph ownership *(Slices 1-4: Bucket 5 artifacts/observability rewrite + Bucket 8 KG)*
+- [x] docs/INVARIANTS.md — graph, reset, single-writer, and extraction boundaries *(Slices 1-4: §12 single-writer + §17 Knowledge Graph)*
 - [ ] docs/BUSINESS_LOGIC.md — source selection and product identity
 - [ ] docs/ENGINEERING_STRATEGY.md — direct graph writes, dual artifact paths, and site-specific extraction anti-patterns
 - [ ] docs/agent/SKILLS.md — single-file diagnosis and contract-refinement recipes
@@ -296,4 +299,7 @@ Add bounded read/refine endpoints (`GET /api/knowledge/sites`, `.../graph`, `...
 - 2026-06-28: Plan approved by user. Slice 1 (original) completed.
 - 2026-06-29: Operator audit. Priority reset to debugging-first. Plan revised: Slice 2 is now the single-writer + self-contained `diagnose.json` collapse (was Slice 3); site-specific debt deletion pulled forward (Slice 3); cold-start LLM contract proposer added (Slice 10). The design conversation was rewritten into `docs/feature specs/site-product-knowledge-graph.md` and is now the authoritative spec.
 - 2026-06-29: Slice 2 completed. One writer (`publish_url_result_artifacts`) emits `page.html` / `record.json` / `diagnose.json` under `runs/{id}/results/{url_result_id}/`. `ExtractionResult` carries `collector_outcomes`, `stage_outcomes`, and `variant_drops`; `diagnose.json` inlines per-field winner/rejected/firewall and the variant-drop ledger. `app/observability/run_report.py` registers as a run-complete callback and folds every diagnose into `report.json`. Dead modules deleted: `observability/{artifact_reader,baseline,browser_artifact,run_audit,run_llm_diagnosis,run_trace}.py`, `persistence/artifact_store.py`, `persistence/storage/`, `api/observability.py`, `config/{audit_rules,observability}.py`, `data/prompts/run_diagnosis.*.txt`, and the frontend Run Trace surfaces. Regression: 1092 passed / 8 expected skips across unit + component + services.
+- 2026-06-29: Slices 3 and 4 completed. Slice 3: removed the dead `FieldProvenance` provenance keys from `persistence/export/schema.py` (kept only the 4 the writer sets), deleted `crawl/review/evidence.py` (`collect_evidence_review`, which read never-produced `source_trace` keys) plus its review payload wiring and obsolete component test, and added the retailer-domain-literal ratchet `test_extraction_carries_no_retailer_domain_literals` (allow-set currently `example.com`/`example.in`; the only domain token in `app/extraction/` is the `firstcry.com` comment in `pipeline.py`, not a string constant). Slice 4: added `app/core/config/knowledge_graph.py` (data-only graph vocabulary/bounds owner) and the forward dependency guard `test_extraction_does_not_import_knowledge_graph_storage`; documented KG ownership + invariants in `backend-architecture.md` §6.8/§6.9, `CODEBASE_MAP.md` Bucket 5/8, and `INVARIANTS.md` §12/§17. **Deferred:** the reset-separation tests named in Slice 4 depend on graph tables and move to Slice 5; only the config owner, retailer-literal ratchet, and dependency-direction guard are writable before storage exists. Verify: `test_extraction_architecture.py` (15) + `test_url_result_persistence.py` (15) + `test_review_service.py` (9) all pass.
+- 2026-06-29: **Slice 5 completed.** Added six KG ORM models (`app/models/knowledge_graph.py`): `KGSiteVersion`, `KGEntity`, `KGRelationship`, `KGClaim`, `KGAssertionEvidence`, `KGExtractionContract` — UUID PKs, JSONB properties, `ON DELETE SET NULL` evidence FKs. Alembic migration `20260629_0002_knowledge_graph.py` creates all six tables with unique natural-key indexes. Repository `app/persistence/knowledge_graph.py` provides idempotent batch upserts (`upsert_entities`, `upsert_relationships`, `upsert_claims`, `upsert_contracts`), per-site projection serialization via `lock_site_version` (row-level `FOR UPDATE`), bounded recursive-CTE neighbourhood reads (`fetch_neighborhood`), and explicit `purge_graph`. Added `reset_knowledge_graph` to dashboard service — the ONLY reset that removes the graph; all other resets (crawl, Domain Memory, application) preserve it (feature spec §8). Component tests `test_knowledge_graph.py` (13 tests): validate upserts, locking, neighbourhood, purge, and reset-separation (the deferred Slice 4 tests). Verify: `test_extraction_architecture.py` (15) + `test_knowledge_graph.py` (13) + `test_dashboard_service.py` (10) all pass.
+- 2026-06-29: **Slice 6 completed.** Rewrote `app/persistence/projection.py` and `tests/component/test_projection.py` to full Slice-6 architecture. Template fingerprinting: route normalization (detail surfaces strip final slug → `{id}` so equivalent PDPs share templates), surface, tech signals from collector outcomes (jsonld/opengraph/microdata), collector outcomes (not values). Template skeleton: site, route_pattern, page_template, page, technology entities + SITE_HAS_TEMPLATE, TEMPLATE_MATCHES_ROUTE, PAGE_INSTANCE_OF_TEMPLATE, SITE_USES_TECHNOLOGY, PAGE_MENTIONS_PRODUCT relationships. Product/offer/brand/category entities + claims from Evidence (deduplicated by entity key to prevent batch-upsert duplicate errors). Extraction contracts from Decisions: winner (first `accepted_evidence_ids`), rejected with reasons, resolver rule, latest values, bounded to 5 per contract. All 11 projection tests pass (fingerprint stability/isolation, skeleton entities/rels, tech entities, product entities+claims, contracts with winner/rejected/rule, idempotency, template isolation). All 13 Slice-5 KG repository tests + 15 architecture ratchets still pass. No DB access in extraction (enforced by `test_extraction_does_not_import_knowledge_graph_storage`).
 - The feature spec governs intent; this plan governs sequence. When they disagree, the spec wins and this plan is corrected.

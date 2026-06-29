@@ -16,6 +16,7 @@ from app.extraction.contracts import (
     ExtractionRequest,
     RequestContext,
 )
+from app.core.records.field_policy import normalize_field_key
 from app.extraction.documents import DocumentStore, HtmlDocument
 from app.extraction.ids import content_sha256, stable_id
 from app.extraction.surfaces import Surface
@@ -209,6 +210,7 @@ def request_from_acquisition_result(
     max_records: int,
     requested_fields: tuple[str, ...] = (),
     selector_rules: list[dict[str, object]] | None = None,
+    runtime_snapshot: dict[str, object] | None = None,
 ) -> ExtractionRequest:
     html = str(getattr(acquisition_result, "html", "") or "")
     final_url = str(getattr(acquisition_result, "final_url", "") or requested_url)
@@ -249,7 +251,24 @@ def request_from_acquisition_result(
         artifact_reader=reader,
         requested_fields=requested_fields,
         max_records=max_records,
+        runtime_snapshot=runtime_snapshot or {},
+        user_controlled_fields=_selector_controlled_fields(selector_rules),
     )
+
+
+def _selector_controlled_fields(
+    selector_rules: list[dict[str, object]] | None,
+) -> tuple[str, ...]:
+    fields: set[str] = set()
+    for row in selector_rules or []:
+        if not isinstance(row, dict) or not bool(row.get("is_active", True)):
+            continue
+        if not str(row.get("css_selector") or "").strip():
+            continue
+        field = normalize_field_key(str(row.get("field_name") or ""))
+        if field:
+            fields.add(field)
+    return tuple(sorted(fields))
 
 
 def _bundle_from_runtime_inputs(

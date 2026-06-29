@@ -250,6 +250,7 @@ Canonical config owners:
 | `core/config/network_payload_specs.py` | payload specs and endpoint tokens |
 | `core/config/data_enrichment.py` | data enrichment statuses, limits, and taxonomy file path |
 | `core/config/public_api.py` | public API key prefixes, envelopes, error codes, rate limits, extraction caps, MCP env names, and static capabilities |
+| `core/config/knowledge_graph.py` | data-only Knowledge Graph vocabulary owner: node/edge types, statuses, selection origins, contract outcomes, identity ladder, read bounds, projection tunables |
 
 ### `mcp_server/` — hosted MCP wrapper
 
@@ -266,8 +267,13 @@ Canonical config owners:
 | `publish/verdict.py` | URL verdicts |
 | `publish/metrics.py` | acquisition and URL metrics |
 | `publish/metadata.py` | field-discovery metadata |
-| `artifact_store.py` | HTML artifact I/O |
+| `persistence/url_result_artifacts.py` | **Single** per-URL artifact writer: `page.html` + `record.json` + `diagnose.json` under `runs/{run_id}/results/{url_result_id}/` |
+| `persistence/artifacts.py` | `ArtifactRepository` byte store backing the writer |
+| `observability/diagnose.py` | Builds the self-contained, bounded per-URL `diagnose.json` |
+| `observability/run_report.py` | Run-complete callback folding diagnoses into deterministic `report.json` |
 | `pipeline/persistence.py` | persistence owner shared with Bucket 2 |
+
+Observability is observe-only (never mutates extraction/verdicts/memory). The legacy `artifact_store.py`, `persistence/storage/`, `api/observability.py`, and the `observability/{artifact_reader,baseline,browser_artifact,run_audit,run_llm_diagnosis,run_trace}.py` modules are deleted. See `docs/INVARIANTS.md` §12.
 
 Verdict set:
 `success`, `partial`, `blocked`, `listing_detection_failed`, `empty`
@@ -304,6 +310,22 @@ All selector memory is scoped by normalized `(domain, surface)`.
 | `llm/circuit_breaker.py` | Error classification and cost protection |
 | `llm/budget.py` | Per-run LLM call budget guard |
 | `llm/types.py` | LLM-internal types |
+
+---
+
+## Bucket 8: Knowledge Graph (extraction-owned, PostgreSQL-authoritative)
+
+| File | Purpose |
+|---|---|
+| `core/config/knowledge_graph.py` | Data-only vocabulary/bounds owner: node/edge types, statuses, selection origins, contract outcomes, identity ladder, read bounds, projection tunables |
+| `models/knowledge_graph.py` | 6 ORM models: `KGSiteVersion`, `KGEntity`, `KGRelationship`, `KGClaim`, `KGAssertionEvidence`, `KGExtractionContract` |
+| `persistence/knowledge_graph.py` | Repository: `lock_site_version`, `upsert_entities/relationships/claims/contracts`, `add_evidence`, `fetch_neighborhood`, `count_graph_rows`, `purge_graph`, `load_runtime_snapshot` |
+| `persistence/projection.py` | Run-complete projector: `project_extraction_result` — fingerprints templates, upserts structural entities/relationships, projects Evidence into product/offer/brand/category claims and extraction contracts |
+| `core/knowledge_graph/templates.py` | Template helpers: `normalize_route`, `fingerprint_from_parts`, `fingerprint_template`, `extract_tech_signals` |
+| `core/knowledge_graph/contract_runtime.py` | Frozen contract execution (pure, storage-free): `match_template`, `apply_contracts` — re-points decisions to preferred sources, emits `ContractOutcome` per field |
+| `alembic/versions/20260629_0002_knowledge_graph.py` | Migration creating all 6 KG tables |
+
+The Knowledge Graph owns site templates, canonical-field source candidates, source decisions, extraction contracts, product claims, and cross-crawl relationships. It is separate from acquisition-owned Domain Memory (Bucket 6) and resets independently. At run creation `load_runtime_snapshot` freezes the current graph state into `CrawlRun.extraction_runtime_snapshot`; the extraction engine matches page fingerprints against this frozen snapshot and applies saved source preferences via `apply_contracts`. Extraction emits observations only and must never import graph storage (ratcheted in `tests/unit/test_extraction_architecture.py`). The `/api/knowledge/*` read/refine endpoints and cold-start LLM proposer arrive in later slices. See `docs/INVARIANTS.md` §17.
 
 ---
 

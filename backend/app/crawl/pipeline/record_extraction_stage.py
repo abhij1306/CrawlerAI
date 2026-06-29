@@ -42,6 +42,7 @@ def extract_records_for_acquisition_result(
     requested_page_url: str,
     requested_fields: list[str] | None = None,
     selector_rules: list[dict[str, object]] | None = None,
+    runtime_snapshot: dict[str, object] | None = None,
 ) -> ExtractionResult:
     request = request_from_acquisition_result(
         parse_surface(surface),
@@ -50,6 +51,7 @@ def extract_records_for_acquisition_result(
         max_records=max_records,
         requested_fields=tuple(str(field) for field in requested_fields or ()),
         selector_rules=selector_rules,
+        runtime_snapshot=runtime_snapshot or {},
     )
     return extract(request)
 
@@ -139,6 +141,7 @@ async def _run_record_extraction(
             requested_page_url=context.url,
             requested_fields=list(context.requested_fields),
             selector_rules=selector_rules,
+            runtime_snapshot=context.run.settings_view.extraction_runtime_snapshot(),
         )
         set_logfire_attributes(
             span,
@@ -182,6 +185,7 @@ async def _extract_records_from_preserved_browser_html(
             requested_page_url=context.url,
             requested_fields=list(context.requested_fields),
             selector_rules=selector_rules,
+            runtime_snapshot=context.run.settings_view.extraction_runtime_snapshot(),
         )
     finally:
         acquisition_result.html = original_html

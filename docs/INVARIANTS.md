@@ -333,10 +333,23 @@ The run-complete callback remains a generic observability extension point. It mu
 
 ---
 
+## 12. Single-Writer URL-Result Artifacts
 
+**Rule:** Exactly one component writes per-URL artifacts: `publish_url_result_artifacts` in `persistence/url_result_artifacts.py`. It writes exactly three files per URL result under `runs/{run_id}/results/{url_result_id}/`:
 
+- `page.html` — the acquired HTML, written **once**.
+- `record.json` — the public record(s); shape matches the records API.
+- `diagnose.json` — a **self-contained, bounded** root-cause artifact built by `app/observability/diagnose.py`.
+
+`diagnose.json` is the single-file debugging contract: a missing or wrong `price`, `currency`, `availability`, or dropped variant must be fully explainable from `diagnose.json` alone, without opening `page.html` or source. Per field it inlines status (existing `FieldEvidenceState` names), the winning candidate, rejected candidates with reasons (≤120-char value previews), and any firewall action; each dropped variant carries `(row, stage, rule, reason)`. It reuses existing vocabulary — no parallel reason names — and references no other file. The deterministic run-level `report.json` (`app/observability/run_report.py`, a run-complete callback) groups root causes and links to each URL's `diagnose.json`.
 
 **VIOLATION signatures:**
+- A second writer or a second directory scheme (`runs/{id}/pages/...`) emits URL artifacts.
+- Any file other than the three above is written per URL result — `manifest.json`, `summary.json`, `records.json`, `debug.json`, `browser.json`, `trace.json`, `screenshot.*`, `llm_diagnosis.json`, or a duplicate copy of the HTML.
+- `page.html` is written twice.
+- `diagnose.json` references another file instead of inlining bounded provenance, or invents reason vocabulary instead of reusing `FieldEvidenceState` / firewall reasons.
+- A reader opens the never-written `acquisition.json` / `extraction.json`, or reads the deleted `source_trace` candidate/conflict/resolver/llm provenance keys.
+- `run_report.py` (or any run-complete callback) grows monitor-style diffing, retention, webhook, or notification behavior (see Rule 11).
 
 ---
 
@@ -421,3 +434,34 @@ apply to every branded ecommerce target. Raw internal retailer identifiers (a co
 - A single listing at multiple sizes consuming multiple per-product candidate slots (missing canonical dedupe).
 - Re-introducing image/pHash matching for recall (audited NO-GO: rejects same-model colorways).
 - Adding an LLM call to the deterministic discovery/matching path.
+
+---
+
+## 17. Knowledge Graph — Extraction-Owned, PostgreSQL-Authoritative
+
+**Rule:** The Knowledge Graph is the extraction-owned, durable, cross-crawl record of site templates, canonical-field source candidates, source decisions, extraction contracts, product claims, and relationships. Domain Memory remains acquisition-owned (engines, cookies, saved selectors, run profiles, host protection). The two never migrate into each other and reset independently. PostgreSQL is authoritative — no Neo4j, no Apache AGE, no synchronous dual writes.
+
+The graph vocabulary and bounds have a single owner: `app/core/config/knowledge_graph.py` (node/edge types, statuses, projection statuses, selection origins, contract outcomes, the identity ladder, read bounds, projection tunables). This module is data only — config-level ratchets and later projection/API slices import it; nothing redefines these constants.
+
+These contracts hold across all graph slices:
+
+- **Dependency direction is one-way.** Extraction emits observations; it never reads or writes canonical graph storage. `app/extraction/` must not import graph tables, repository, or projector (enforced by `tests/unit/test_extraction_architecture.py::test_extraction_does_not_import_knowledge_graph_storage`). Importing the config vocabulary is allowed.
+- **No site-specific extraction.** Generic extraction carries no retailer-domain literals or per-site branches; site knowledge lives in operator-approved extraction contracts, not code (enforced by `test_extraction_carries_no_retailer_domain_literals`; see Rules 1 and 13).
+- **Frozen versions.** Every run freezes graph version and matching extraction contracts into `extraction_runtime_snapshot` at run creation; concurrent graph updates never destabilize an in-flight run.
+- **Greenfield, no backfill.** The graph is built forward from new-format capsules only; there is no Domain Memory or legacy-artifact migration.
+- **Reset preservation.** Workspace reset and Domain Memory reset preserve the graph; graph purge is explicit and leaves Domain Memory intact.
+- **Deterministic product identity.** `PRODUCT_SAME_AS` is created only from the deterministic ladder (GTIN → manufacturer+MPN → site product ID → site SKU → canonical URL) or explicit operator approval. Title, vector, and LLM similarity may seed candidate edges only, never authoritative identity.
+- **Variants are aggregate-only.** Individual variants are never graph entities; only one canonical variant-set claim (axes, count, fingerprint, selected source, lineage) persists per product.
+- **Operator source choices are precedence, not forced values.** A preferred source is validated on each page and falls back deterministically; choices affect only matching future runs and never rewrite historical records.
+- **No LLM in the hot path.** The runtime that consumes contracts calls no LLM. The cold-start proposer produces only `selection_origin=llm_proposed` contracts; nothing is auto-activated — operators promote proposals.
+
+**VIOLATION signatures:**
+- `app/extraction/` imports graph storage/models/projector, or any code path writes graph rows from inside extraction.
+- A retailer-domain string literal or `if host == "...store.com"` branch appears in generic extraction.
+- Graph node/edge/status/bound constants are redefined outside `app/core/config/knowledge_graph.py`.
+- A run reads live graph state instead of its frozen `extraction_runtime_snapshot`.
+- A workspace or Domain Memory reset deletes graph tables, or a graph purge wipes Domain Memory.
+- A `PRODUCT_SAME_AS` edge is created from title/vector/LLM similarity alone.
+- An individual variant is persisted as a graph entity.
+- An operator source change rewrites historical record values, or applies to non-matching templates.
+- An LLM call runs in the contract-consuming extraction runtime, or an `llm_proposed` contract is auto-activated without operator promotion.
