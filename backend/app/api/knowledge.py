@@ -71,8 +71,14 @@ async def knowledge_sites(
     _: Annotated[User, Depends(get_current_user)],
 ) -> dict[str, Any]:
     rows = (
-        await session.execute(select(KGSiteVersion).order_by(KGSiteVersion.domain.asc()))
-    ).scalars().all()
+        (
+            await session.execute(
+                select(KGSiteVersion).order_by(KGSiteVersion.domain.asc())
+            )
+        )
+        .scalars()
+        .all()
+    )
     return {"sites": [_site_payload(row) for row in rows]}
 
 
@@ -132,12 +138,20 @@ async def knowledge_entity(
 ) -> dict[str, Any]:
     entity = await session.get(KGEntity, entity_id)
     if entity is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Entity not found")
-    claims = (
-        await session.execute(
-            select(KGClaim).where(KGClaim.entity_id == entity_id).order_by(KGClaim.created_at.desc())
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Entity not found"
         )
-    ).scalars().all()
+    claims = (
+        (
+            await session.execute(
+                select(KGClaim)
+                .where(KGClaim.entity_id == entity_id)
+                .order_by(KGClaim.created_at.desc())
+            )
+        )
+        .scalars()
+        .all()
+    )
     return {
         "entity": _entity_payload(entity),
         "claims": [_claim_payload(row) for row in claims],
@@ -151,12 +165,16 @@ async def knowledge_contracts(
     _: Annotated[User, Depends(get_current_user)],
 ) -> dict[str, Any]:
     contracts = (
-        await session.execute(
-            select(KGExtractionContract)
-            .where(KGExtractionContract.template_id == template_id)
-            .order_by(KGExtractionContract.canonical_field.asc())
+        (
+            await session.execute(
+                select(KGExtractionContract)
+                .where(KGExtractionContract.template_id == template_id)
+                .order_by(KGExtractionContract.canonical_field.asc())
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     return {"contracts": [_contract_payload(row) for row in contracts]}
 
 
@@ -260,9 +278,13 @@ async def knowledge_contract_selection(
 ) -> dict[str, Any]:
     contract = await session.get(KGExtractionContract, contract_id)
     if contract is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Contract not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Contract not found"
+        )
     _validate_contract_scope(contract, payload)
-    await _check_expected_version(session, contract.template_id, payload.expected_version)
+    await _check_expected_version(
+        session, contract.template_id, payload.expected_version
+    )
     selected_source = payload.selected_source.strip()
     if not _source_in_candidates(selected_source, contract.candidates):
         raise HTTPException(
@@ -343,7 +365,9 @@ async def knowledge_delete_site(
     entity_ids = [row[0] for row in keys]
     if entity_ids:
         await session.execute(delete(KGEntity).where(KGEntity.id.in_(entity_ids)))
-    await session.execute(delete(KGSiteVersion).where(KGSiteVersion.domain == normalized))
+    await session.execute(
+        delete(KGSiteVersion).where(KGSiteVersion.domain == normalized)
+    )
     await session.commit()
     return {"domain": normalized, "entities_deleted": len(entity_ids)}
 
@@ -354,9 +378,9 @@ async def _entities_by_id(
     if not entity_ids:
         return []
     return list(
-        (
-            await session.execute(select(KGEntity).where(KGEntity.id.in_(entity_ids)))
-        ).scalars().all()
+        (await session.execute(select(KGEntity).where(KGEntity.id.in_(entity_ids))))
+        .scalars()
+        .all()
     )
 
 
@@ -372,7 +396,9 @@ async def _relationships_between(
                 .where(KGRelationship.source_entity_id.in_(entity_ids))
                 .where(KGRelationship.target_entity_id.in_(entity_ids))
             )
-        ).scalars().all()
+        )
+        .scalars()
+        .all()
     )
 
 
@@ -459,7 +485,9 @@ def _site_payload(row: KGSiteVersion) -> dict[str, Any]:
         "current_version": row.current_version,
         "projection_status": row.projection_status,
         "last_projected_run_id": row.last_projected_run_id,
-        "last_projected_at": row.last_projected_at.isoformat() if row.last_projected_at else None,
+        "last_projected_at": row.last_projected_at.isoformat()
+        if row.last_projected_at
+        else None,
     }
 
 

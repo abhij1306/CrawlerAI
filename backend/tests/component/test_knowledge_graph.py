@@ -158,6 +158,46 @@ async def test_upsert_relationships_idempotent_on_triple(
 
 @pytest.mark.asyncio
 @pytest.mark.component
+async def test_upsert_relationships_deduplicates_triples_within_one_batch(
+    db_session: AsyncSession,
+) -> None:
+    source_id = uuid.uuid4()
+    target_id = uuid.uuid4()
+    db_session.add_all(
+        [
+            KGEntity(
+                id=source_id,
+                entity_type="product",
+                canonical_key="duplicate-edge-product",
+            ),
+            KGEntity(
+                id=target_id,
+                entity_type="offer",
+                canonical_key="duplicate-edge-offer",
+            ),
+        ]
+    )
+    await db_session.flush()
+    relationships = [
+        RelationshipInput(
+            source_entity_id=source_id,
+            target_entity_id=target_id,
+            relationship_type="PRODUCT_HAS_OFFER",
+            properties={"field": field},
+        )
+        for field in ("offer.price", "offer.currency", "offer.availability")
+    ]
+
+    count = await upsert_relationships(db_session, relationships)
+    await db_session.commit()
+
+    assert count == 1
+    saved = (await db_session.execute(select(KGRelationship))).scalar_one()
+    assert saved.relationship_type == "PRODUCT_HAS_OFFER"
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
 async def test_upsert_claims_and_compute_value_hash(
     db_session: AsyncSession,
 ) -> None:
@@ -350,9 +390,7 @@ async def test_upsert_contracts_preserves_history_when_promoted_to_operator(
     )
     await db_session.commit()
 
-    contract = (
-        await db_session.execute(select(KGExtractionContract))
-    ).scalar_one()
+    contract = (await db_session.execute(select(KGExtractionContract))).scalar_one()
     assert contract.selected_source == "css_recipe:.brand"
     assert contract.selection_origin == "operator"
     assert contract.selection_history == list(history)

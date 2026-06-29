@@ -10,7 +10,11 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from app.core.config import field_mappings
-from app.core.knowledge_graph.templates import normalize_route
+from app.core.knowledge_graph.templates import (
+    normalize_route,
+    normalize_source_pattern,
+    source_pattern,
+)
 from app.extraction.contracts import ContractOutcome, Decision, ResolutionResult
 
 if TYPE_CHECKING:
@@ -86,13 +90,13 @@ def apply_contracts(
     for field, contract in contracts.items():
         decision_field = _decision_field(field, decisions_by_field)
         requested_aliases = _requested_aliases(decision_field)
-        if (
-            not requested_fields.intersection(requested_aliases)
-            or user_controlled_fields.intersection(requested_aliases)
-        ):
+        if not requested_fields.intersection(
+            requested_aliases
+        ) or user_controlled_fields.intersection(requested_aliases):
             continue
 
         selected_source = contract.get("selected_source", "")
+        selected_source_pattern = normalize_source_pattern(selected_source)
         selection_origin = contract.get("selection_origin", "generic")
         decision = decisions_by_field.get(decision_field)
 
@@ -122,7 +126,7 @@ def apply_contracts(
             if ev.fact_type != decision_field:
                 continue
             source_desc = _source_descriptor(ev)
-            if source_desc == selected_source:
+            if source_desc == selected_source_pattern:
                 # Check if this evidence was rejected in current resolution
                 rejected_ids = {r.evidence_id for r in decision.rejected}
                 if ev.evidence_id in rejected_ids:
@@ -238,10 +242,10 @@ def apply_contracts(
 
 def _source_descriptor(evidence: Evidence) -> str:
     """Build source descriptor matching projection format."""
-    parts = [evidence.collector_id]
-    if evidence.locator:
-        parts.append(evidence.locator.value)
-    return ":".join(parts)
+    return source_pattern(
+        evidence.collector_id,
+        evidence.locator.value if evidence.locator else "",
+    )
 
 
 def _merge_template_contracts(
@@ -275,7 +279,10 @@ def _decision_field(field: str, decisions_by_field: dict[str, Decision]) -> str:
 
 def _requested_aliases(field: str) -> frozenset[str]:
     aliases = {field}
-    for requested_field, fact_type in field_mappings.ECOMMERCE_DETAIL_FIELD_FACT_TYPES.items():
+    for (
+        requested_field,
+        fact_type,
+    ) in field_mappings.ECOMMERCE_DETAIL_FIELD_FACT_TYPES.items():
         if fact_type == field:
             aliases.add(requested_field)
     return frozenset(aliases)

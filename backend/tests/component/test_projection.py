@@ -376,11 +376,17 @@ async def test_project_creates_extraction_contracts_from_decisions(
         fact_type="product.title",
         raw_value="Widget",
         value="Widget",
-        locator=SourceLocator(kind="json_pointer", value="/name"),
+        locator=SourceLocator(kind="json_pointer", value="/items/0/name"),
         directness="direct",
         confidence=0.7,
         subject_id="prod-1",
         subject_scope="product",
+    )
+    evidence_rejected_duplicate = evidence_rejected.model_copy(
+        update={
+            "evidence_id": "e3",
+            "locator": SourceLocator(kind="json_pointer", value="/items/1/name"),
+        }
     )
 
     decision = Decision(
@@ -388,7 +394,10 @@ async def test_project_creates_extraction_contracts_from_decisions(
         entity_id="prod-1",
         fact_type="product.title",
         accepted_evidence_ids=("e1",),
-        rejected=(RejectedEvidence(evidence_id="e2", reason="lower_confidence"),),
+        rejected=(
+            RejectedEvidence(evidence_id="e2", reason="lower_confidence"),
+            RejectedEvidence(evidence_id="e3", reason="lower_confidence"),
+        ),
         finding_ids=(),
         rule_id="confidence_first",
         status="resolved",
@@ -398,7 +407,7 @@ async def test_project_creates_extraction_contracts_from_decisions(
         surface=Surface.ECOMMERCE_DETAIL,
         bundle_id="bundle-1",
         records=(),
-        evidence=(evidence_winner, evidence_rejected),
+        evidence=(evidence_winner, evidence_rejected, evidence_rejected_duplicate),
         decisions=(decision,),
         collector_outcomes=(),
         verdict="success",
@@ -422,14 +431,16 @@ async def test_project_creates_extraction_contracts_from_decisions(
     assert contract.canonical_field == "product.title"
     assert contract.resolver_rule == "confidence_first"
     assert contract.success_count == 1
-    assert contract.rejection_count == 1
     assert "opengraph" in contract.selected_source
 
-    # Candidates: winner + rejected
+    # Candidates are source patterns, not duplicate observations.
     assert len(contract.candidates) == 2
     assert contract.candidates[0]["rejected"] is False
+    assert contract.candidates[0]["value_preview"] == "Widget Blue"
     assert contract.candidates[1]["rejected"] is True
     assert contract.candidates[1]["reason"] == "lower_confidence"
+    assert contract.candidates[1]["value_preview"] == "Widget"
+    assert contract.rejection_count == 1
 
 
 @pytest.mark.asyncio
@@ -645,11 +656,27 @@ async def test_projection_creates_canonical_relationships_from_resolved_decision
         parent_subject_id="prod-1",
         subject_scope="offer",
     )
+    price_ev = Evidence(
+        evidence_id="price-1",
+        bundle_id="bundle-1",
+        artifact_id="art1",
+        collector_id="jsonld",
+        collector_version="1.0",
+        fact_type="offer.price",
+        raw_value="99.00",
+        value=99.0,
+        locator=SourceLocator(kind="json_pointer", value="/offers/price"),
+        directness="direct",
+        confidence=0.95,
+        subject_id="offer-1",
+        parent_subject_id="prod-1",
+        subject_scope="offer",
+    )
     result = ExtractionResult(
         surface=Surface.ECOMMERCE_DETAIL,
         bundle_id="bundle-1",
         records=(),
-        evidence=(brand_ev, seller_ev),
+        evidence=(brand_ev, seller_ev, price_ev),
         decisions=(
             Decision(
                 decision_id="d-brand",
@@ -671,6 +698,16 @@ async def test_projection_creates_canonical_relationships_from_resolved_decision
                 rule_id="first_available",
                 status="resolved",
             ),
+            Decision(
+                decision_id="d-price",
+                entity_id="offer-1",
+                fact_type="offer.price",
+                accepted_evidence_ids=("price-1",),
+                rejected=(),
+                finding_ids=(),
+                rule_id="first_available",
+                status="resolved",
+            ),
         ),
         verdict="success",
     )
@@ -684,14 +721,18 @@ async def test_projection_creates_canonical_relationships_from_resolved_decision
     await db_session.commit()
 
     entities = (await db_session.execute(select(KGEntity))).scalars().all()
-    assert {entity.entity_type for entity in entities} >= {"product", "brand", "offer", "seller"}
-    rel_types = {
-        rel.relationship_type
-        for rel in (await db_session.execute(select(KGRelationship))).scalars().all()
+    assert {entity.entity_type for entity in entities} >= {
+        "product",
+        "brand",
+        "offer",
+        "seller",
     }
+    rels = (await db_session.execute(select(KGRelationship))).scalars().all()
+    rel_types = {rel.relationship_type for rel in rels}
     assert "PRODUCT_MADE_BY" in rel_types
     assert "PRODUCT_HAS_OFFER" in rel_types
     assert "OFFER_SOLD_BY" in rel_types
+    assert sum(rel.relationship_type == "PRODUCT_HAS_OFFER" for rel in rels) == 1
 
 
 @pytest.mark.asyncio
@@ -743,9 +784,7 @@ async def test_projection_repeats_until_deferred_canonical_relationships_resolve
     await db_session.commit()
 
     relationship_types = set(
-        (
-            await db_session.execute(select(KGRelationship.relationship_type))
-        ).scalars()
+        (await db_session.execute(select(KGRelationship.relationship_type))).scalars()
     )
     assert "PRODUCT_MADE_BY" in relationship_types
 
@@ -764,9 +803,7 @@ async def test_projection_excludes_unrelated_resolved_decisions_from_product_cla
         fact_type="page.meta_description",
         raw_value="Page metadata",
         value="Page metadata",
-        locator=SourceLocator(
-            kind="css_selector", value="meta[name='description']"
-        ),
+        locator=SourceLocator(kind="css_selector", value="meta[name='description']"),
         directness="direct",
         confidence=0.9,
         subject_id="page-1",
@@ -801,10 +838,14 @@ async def test_projection_excludes_unrelated_resolved_decisions_from_product_cla
     await db_session.commit()
 
     unrelated_claims = (
-        await db_session.execute(
-            select(KGClaim).where(KGClaim.fact_type == "page.meta_description")
+        (
+            await db_session.execute(
+                select(KGClaim).where(KGClaim.fact_type == "page.meta_description")
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     assert unrelated_claims == []
 
 
@@ -976,7 +1017,9 @@ async def test_projection_stores_variants_as_aggregate_claim_only(
     reversed_result = result.model_copy(
         update={
             "records": (
-                record.model_copy(update={"variants": tuple(reversed(record.variants))}),
+                record.model_copy(
+                    update={"variants": tuple(reversed(record.variants))}
+                ),
             )
         }
     )
@@ -989,8 +1032,14 @@ async def test_projection_stores_variants_as_aggregate_claim_only(
     await db_session.commit()
 
     variant_entities = (
-        await db_session.execute(select(KGEntity).where(KGEntity.entity_type == "variant"))
-    ).scalars().all()
+        (
+            await db_session.execute(
+                select(KGEntity).where(KGEntity.entity_type == "variant")
+            )
+        )
+        .scalars()
+        .all()
+    )
     assert variant_entities == []
     claim = (
         await db_session.execute(
@@ -1061,8 +1110,12 @@ async def test_projection_skips_variant_set_for_multi_product_result(
     await db_session.commit()
 
     variant_claims = (
-        await db_session.execute(
-            select(KGClaim).where(KGClaim.fact_type == "product.variant_set")
+        (
+            await db_session.execute(
+                select(KGClaim).where(KGClaim.fact_type == "product.variant_set")
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     assert variant_claims == []

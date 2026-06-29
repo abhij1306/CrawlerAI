@@ -10,11 +10,16 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
 if TYPE_CHECKING:
     from app.extraction.contracts import CollectorOutcome, Evidence, ExtractionResult
+
+
+_SOURCE_INDEX_SEGMENT = re.compile(r"/\d+(?=/|$)")
+_SOURCE_ENTITY_SEGMENT = re.compile(r"/([A-Za-z_][A-Za-z0-9_]*):[^/]+")
 
 
 def normalize_route(url: str, surface: str) -> str:
@@ -30,6 +35,23 @@ def normalize_route(url: str, surface: str) -> str:
         path_parts[-1] = "{id}"
 
     return "/" + "/".join(path_parts) if path_parts else "/"
+
+
+def source_pattern(collector_id: str, locator: str = "") -> str:
+    """Build a reusable source pattern without volatile payload identifiers."""
+    normalized_locator = _SOURCE_ENTITY_SEGMENT.sub(r"/\1:{id}", locator.strip())
+    normalized_locator = _SOURCE_INDEX_SEGMENT.sub("/{index}", normalized_locator)
+    return (
+        f"{collector_id}:{normalized_locator}" if normalized_locator else collector_id
+    )
+
+
+def normalize_source_pattern(value: str) -> str:
+    """Normalize a stored descriptor, including descriptors from older runs."""
+    collector_id, separator, locator = value.strip().partition(":")
+    if not separator:
+        return collector_id
+    return source_pattern(collector_id, locator)
 
 
 def extract_tech_signals(result: ExtractionResult) -> list[str]:

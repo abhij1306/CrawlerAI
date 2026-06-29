@@ -173,8 +173,11 @@ async def upsert_relationships(
     relationships: Iterable[RelationshipInput],
 ) -> int:
     """Batch-upsert edges on (source, target, type); return row count."""
-    rows = [
-        {
+    rows_by_key: dict[tuple[uuid.UUID, uuid.UUID, str], dict[str, object]] = {}
+    for rel in relationships:
+        rows_by_key[
+            (rel.source_entity_id, rel.target_entity_id, rel.relationship_type)
+        ] = {
             "id": uuid.uuid4(),
             "source_entity_id": rel.source_entity_id,
             "target_entity_id": rel.target_entity_id,
@@ -183,8 +186,7 @@ async def upsert_relationships(
             "confidence": rel.confidence,
             "status": rel.status,
         }
-        for rel in relationships
-    ]
+    rows = list(rows_by_key.values())
     if not rows:
         return 0
     insert_stmt = pg_insert(KGRelationship).values(rows)

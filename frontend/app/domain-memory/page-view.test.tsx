@@ -191,6 +191,25 @@ describe('DomainMemoryPage', () => {
           selection_history: [],
           status: 'active',
         },
+        {
+          id: 'contract-price',
+          template_id: 'template-1',
+          surface: 'ecommerce_detail',
+          canonical_field: 'offer.price',
+          candidates: [
+            { source: 'dom:[data-price]' },
+            { source: 'dom:[data-price]' },
+            { source: 'dom:[data-price]' },
+          ],
+          latest_values: [],
+          success_count: 1,
+          rejection_count: 2,
+          resolver_rule: 'price_resolution',
+          selected_source: 'dom:[data-price]',
+          selection_origin: 'generic',
+          selection_history: [],
+          status: 'active',
+        },
       ],
     });
     apiMock.selectKnowledgeContractSource.mockImplementation(
@@ -351,8 +370,12 @@ describe('DomainMemoryPage', () => {
 
     expect(await screen.findByText('Knowledge Graph')).toBeInTheDocument();
     expect(screen.getByText('Widget')).toBeInTheDocument();
-    expect(screen.getByText('PAGE_MENTIONS_PRODUCT')).toBeInTheDocument();
-    expect(screen.getByText('product.brand')).toBeInTheDocument();
+    expect(screen.getByText('Page Mentions Product')).toBeInTheDocument();
+    expect(screen.getByText('Brand')).toBeInTheDocument();
+    expect(screen.getByText('Only observed source')).toBeInTheDocument();
+    expect(
+      screen.queryByRole('combobox', { name: 'Source for offer.price' }),
+    ).not.toBeInTheDocument();
 
     apiMock.listKnowledgeSites.mockResolvedValueOnce({
       sites: [
@@ -373,7 +396,7 @@ describe('DomainMemoryPage', () => {
     });
 
     fireEvent.click(screen.getByRole('combobox', { name: 'Source for product.brand' }));
-    fireEvent.click(await screen.findByRole('option', { name: 'css_recipe:.brand' }));
+    fireEvent.click(await screen.findByRole('option', { name: 'Saved selector · .brand' }));
 
     await waitFor(() => {
       expect(apiMock.selectKnowledgeContractSource).toHaveBeenCalledWith('contract-1', {
@@ -384,6 +407,7 @@ describe('DomainMemoryPage', () => {
         canonical_field: 'product.brand',
       });
     });
+    expect(screen.getByText('Saved')).toBeInTheDocument();
   }, 10_000);
 
   it('keeps domain memory usable when Knowledge Graph site loading fails', async () => {

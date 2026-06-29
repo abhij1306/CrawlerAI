@@ -42,6 +42,7 @@ from app.core.knowledge_graph.templates import (
     extract_tech_signals,
     fingerprint_template,
     normalize_route,
+    source_pattern,
 )
 from app.extraction.contracts import Decision, Evidence, ExtractionResult
 from app.extraction.surfaces import Surface
@@ -348,6 +349,7 @@ async def _project_contracts(
                         "rejected": True,
                         "reason": rej.reason,
                         "confidence": rej_evidence.confidence,
+                        "value_preview": _value_preview(rej_evidence.value),
                     }
                 )
 
@@ -359,8 +361,10 @@ async def _project_contracts(
                     "rejected": False,
                     "reason": "",
                     "confidence": winner.confidence,
+                    "value_preview": _value_preview(winner.value),
                 },
             )
+        candidates = _distinct_candidates(candidates)
 
         # Latest values
         latest_values = []
@@ -369,6 +373,7 @@ async def _project_contracts(
                 {
                     "value": winner.value,
                     "raw": winner.raw_value,
+                    "source": selected_source,
                 }
             )
 
@@ -380,7 +385,9 @@ async def _project_contracts(
                 candidates=candidates[:KG_CONTRACT_RETAINED_VALUE_LIMIT],
                 latest_values=latest_values[:KG_CONTRACT_RETAINED_VALUE_LIMIT],
                 success_count=1 if decision.status == "resolved" else 0,
-                rejection_count=len(decision.rejected),
+                rejection_count=sum(
+                    1 for candidate in candidates if candidate.get("rejected") is True
+                ),
                 resolver_rule=decision.rule_id,
                 selected_source=selected_source,
                 selection_origin="generic",
@@ -669,7 +676,10 @@ async def _same_as_relationships(
         if evidence is None:
             continue
         product_id = entity_map.get(
-            ("product", _scoped_key(domain, _product_subject_for_decision(decision, evidence)))
+            (
+                "product",
+                _scoped_key(domain, _product_subject_for_decision(decision, evidence)),
+            )
         )
         if product_id is None:
             continue
@@ -686,7 +696,9 @@ async def _same_as_relationships(
             )
         ).all()
         for (other_id,) in rows:
-            source_id, target_id = sorted((product_id, other_id), key=lambda item: str(item))
+            source_id, target_id = sorted(
+                (product_id, other_id), key=lambda item: str(item)
+            )
             relationships.append(
                 RelationshipInput(
                     source_entity_id=source_id,
@@ -743,10 +755,19 @@ def _value_preview(value: object) -> str:
 
 def _source_descriptor(evidence: Evidence) -> str:
     """Build human-readable source descriptor from evidence."""
-    parts = [evidence.collector_id]
-    if evidence.locator:
-        parts.append(evidence.locator.value)
-    return ":".join(parts)
+    return source_pattern(
+        evidence.collector_id,
+        evidence.locator.value if evidence.locator else "",
+    )
+
+
+def _distinct_candidates(candidates: list[dict]) -> list[dict]:
+    distinct: dict[str, dict] = {}
+    for candidate in candidates:
+        source = str(candidate.get("source") or "")
+        if source and source not in distinct:
+            distinct[source] = candidate
+    return list(distinct.values())
 
 
 def _claim_value_hash(fact_type: str, value: object) -> str:

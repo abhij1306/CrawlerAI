@@ -280,6 +280,47 @@ def test_apply_contracts_treats_requested_field_alias_as_fact_type() -> None:
 
 
 @pytest.mark.unit
+def test_apply_contracts_matches_volatile_json_locator_as_source_pattern() -> None:
+    evidence = (
+        _evidence("generic", "opengraph", 'meta[property="og:title"]', "product.title"),
+        _evidence(
+            "preferred",
+            "js_state",
+            "/embedded/__NEXT_DATA__/1/props/pageProps/__APOLLO_STATE__/Product:new-id/name",
+            "product.title",
+        ),
+    )
+    snapshot = _snapshot(
+        "fp-1",
+        "ecommerce_detail",
+        [
+            {
+                "canonical_field": "product.title",
+                "selected_source": (
+                    "js_state:/embedded/__NEXT_DATA__/0/props/pageProps/"
+                    "__APOLLO_STATE__/Product:old-id/name"
+                ),
+                "selection_origin": "operator",
+                "resolver_rule": "operator_source",
+            }
+        ],
+    )
+
+    updated, outcomes = apply_contracts(
+        snapshot=snapshot,
+        fingerprint="fp-1",
+        surface="ecommerce_detail",
+        evidence=evidence,
+        resolution=_resolution(_decision("product.title", ("generic",))),
+        requested_fields=frozenset({"product.title"}),
+        user_controlled_fields=frozenset(),
+    )
+
+    assert updated.decisions[0].accepted_evidence_ids == ("preferred",)
+    assert outcomes[0].outcome == "hit"
+
+
+@pytest.mark.unit
 def test_apply_contracts_hit_repoints_when_alternative_preferred() -> None:
     """Contract prefers jsonld but generic chose microdata; engine re-points."""
     ev_jsonld = _evidence("ev-jsonld", "jsonld", "/name", "product.title", "Widget")

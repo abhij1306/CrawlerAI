@@ -523,7 +523,9 @@ async def _project_knowledge_graph(
                 )
                 site_version.projection_status = "failed"
         except Exception:
-            logger.debug("Failed to mark Knowledge Graph projection failure", exc_info=True)
+            logger.debug(
+                "Failed to mark Knowledge Graph projection failure", exc_info=True
+            )
         await _log_pipeline_event(
             context,
             "error",

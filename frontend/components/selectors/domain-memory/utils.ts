@@ -2,6 +2,7 @@ import type {
   DomainFieldFeedbackRecord,
   DomainRunProfile,
   DomainRunProfileRecord,
+  KnowledgeContract,
   SelectorRecord,
 } from '../../../lib/api/types';
 import { isSpecialUseDomain } from '../../../lib/format/domain';
@@ -21,6 +22,141 @@ export function titleCaseToken(value: string | null | undefined) {
     .filter(Boolean)
     .map((token) => token.charAt(0).toUpperCase() + token.slice(1))
     .join(' ');
+}
+
+export type KnowledgeSourceOption = {
+  value: string;
+  label: string;
+  kind: string;
+  locator: string;
+};
+
+export function knowledgeSourceOptions(contract: KnowledgeContract): KnowledgeSourceOption[] {
+  const candidates = contract.candidates.map((candidate) => ({
+    source: String(candidate.source ?? '').trim(),
+    value: candidate.value_preview ?? candidate.value,
+  }));
+  const selectedCandidate = candidates.find(
+    (candidate) =>
+      normalizeKnowledgeSourcePattern(candidate.source) ===
+      normalizeKnowledgeSourcePattern(contract.selected_source),
+  );
+  const selectedValue =
+    selectedCandidate?.value ?? contract.latest_values.find((row) => row.value != null)?.value;
+  const observations = [
+    { source: contract.selected_source, value: selectedValue },
+    ...candidates,
+  ].filter((candidate) => candidate.source);
+  const distinct = new Map<string, { source: string; value: unknown }>();
+  for (const observation of observations) {
+    const source = observation.source;
+    const pattern = normalizeKnowledgeSourcePattern(source);
+    if (!distinct.has(pattern)) distinct.set(pattern, observation);
+  }
+  return Array.from(distinct.values()).map((observation) =>
+    knowledgeSourceOption(observation.source, observation.value),
+  );
+}
+
+export function knowledgeFieldLabel(field: string) {
+  const [group = '', ...nameParts] = field.split('.');
+  const name = nameParts.join('.') || group;
+  return {
+    group: titleCaseToken(group),
+    label: titleCaseToken(name.replaceAll('.', ' ')),
+  };
+}
+
+function normalizeKnowledgeSourcePattern(source: string) {
+  const separator = source.indexOf(':');
+  if (separator < 0) return source;
+  const collector = source.slice(0, separator);
+  const locator = source
+    .slice(separator + 1)
+    .replace(/\/([A-Za-z_][A-Za-z0-9_]*):[^/]+/g, '/$1:{id}')
+    .replace(/\/\d+(?=\/|$)/g, '/{index}');
+  return `${collector}:${locator}`;
+}
+
+export function knowledgeValueLabel(value: unknown) {
+  if (value == null) return '';
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return '';
+    if (/^https?:\/\//i.test(trimmed)) {
+      try {
+        const parsed = new URL(trimmed);
+        const filename = parsed.pathname.split('/').filter(Boolean).at(-1);
+        return filename ? `${parsed.hostname} / ${filename}` : parsed.hostname;
+      } catch {
+        return trimmed.slice(0, 80);
+      }
+    }
+    if (/^[a-z]+(?:_[a-z]+)+$/.test(trimmed)) return titleCaseToken(trimmed);
+    return trimmed.length > 80 ? `${trimmed.slice(0, 77)}...` : trimmed;
+  }
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  const encoded = JSON.stringify(value);
+  return encoded.length > 80 ? `${encoded.slice(0, 77)}...` : encoded;
+}
+
+function knowledgeSourceOption(source: string, value: unknown): KnowledgeSourceOption {
+  const separator = source.indexOf(':');
+  const collector = separator < 0 ? source : source.slice(0, separator);
+  const locator = separator < 0 ? '' : source.slice(separator + 1);
+  const kind =
+    {
+      adapter: 'Platform connector',
+      css_recipe: 'Saved selector',
+      dom: 'Page element',
+      jsonld: 'Structured data',
+      js_state: 'Page data',
+      microdata: 'Microdata',
+      network: 'Network response',
+      opengraph: 'Page metadata',
+      url: 'Page URL',
+    }[collector] ?? titleCaseToken(collector);
+  const locatorLabel = knowledgeLocatorLabel(collector, locator);
+  const valueLabel = knowledgeValueLabel(value);
+  return {
+    value: source,
+    label: valueLabel
+      ? `${valueLabel} · ${kind}`
+      : locatorLabel
+        ? `${kind} · ${locatorLabel}`
+        : kind,
+    kind,
+    locator: locatorLabel || locator,
+  };
+}
+
+function knowledgeLocatorLabel(collector: string, locator: string) {
+  if (!locator) return '';
+  if (collector === 'dom' || collector === 'css_recipe') return locator;
+  if (collector === 'url') return 'Canonical URL';
+  if (collector === 'opengraph') {
+    const metadataName = locator.match(/(?:property|name)=["']([^"']+)/)?.[1] ?? locator;
+    return titleCaseToken(metadataName.replace(/^(?:og|twitter):/, ''));
+  }
+  const parts = normalizeKnowledgeSourcePattern(`${collector}:${locator}`)
+    .slice(collector.length + 1)
+    .split('/')
+    .filter(
+      (part) =>
+        part &&
+        ![
+          'embedded',
+          '__NEXT_DATA__',
+          'props',
+          'pageProps',
+          '__APOLLO_STATE__',
+          'data',
+          'rows',
+        ].includes(part) &&
+        part !== '{index}',
+    )
+    .map((part) => titleCaseToken(part.replace(':{id}', '').replace(/([a-z])([A-Z])/g, '$1 $2')));
+  return parts.slice(-3).join(' › ');
 }
 
 export function selectorValue(record: Pick<SelectorRecord, 'xpath' | 'css_selector' | 'regex'>) {
