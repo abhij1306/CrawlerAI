@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import Literal
-
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
@@ -24,22 +22,3 @@ class ArtifactReference(FrozenModel):
         ):
             raise ValueError("sha256 must be 64 hexadecimal characters")
         return normalized
-
-
-class AttemptArtifactSet(FrozenModel):
-    attempt_id: str = Field(min_length=1)
-    artifacts: tuple[ArtifactReference, ...] = ()
-
-
-class ExtractionArtifactSet(FrozenModel):
-    artifacts: tuple[ArtifactReference, ...] = ()
-
-
-class ArtifactManifest(FrozenModel):
-    schema_version: Literal["artifact-manifest.v1"] = "artifact-manifest.v1"
-    run_id: int
-    url_result_id: int
-    bundle_id: str = Field(min_length=1)
-    attempts: tuple[AttemptArtifactSet, ...] = ()
-    extraction: ExtractionArtifactSet
-    redaction_policy_version: str = "1"

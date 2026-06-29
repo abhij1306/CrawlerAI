@@ -4,7 +4,6 @@ import pytest
 
 from app.extraction import Surface, extract
 from app.extraction.replay import fixture_request_from_inputs
-from app.crawl.pipeline.persistence import build_extraction_decision_payload
 
 
 pytestmark = pytest.mark.unit
@@ -33,14 +32,10 @@ def test_extraction_result_is_the_canonical_persistence_payload() -> None:
         )
     )
 
-    payload = build_extraction_decision_payload(
-        result=result,
-        persisted_count=1,
-    )
+    payload = result.model_dump(mode="json", exclude_none=True)
 
     assert payload["verdict"] == result.verdict
     assert payload["records"]
     assert payload["evidence"]
     assert payload["decisions"]
-    assert payload["persisted_count"] == 1
     assert "replay" not in payload

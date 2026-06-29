@@ -418,10 +418,10 @@ def _assemble_recipe_payload(
                 str(row.get("selector_value") or ""),
             ),
         ),
+        "affordance_candidates": acquisition_info["affordance_candidates"],
         "evidence_review": collect_evidence_review(
             records, artifacts_by_id=artifacts_by_id
         ),
-        "affordance_candidates": acquisition_info["affordance_candidates"],
         "saved_selectors": saved_selectors,
         "saved_run_profile": (
             dict(saved_profile_record.profile or {})

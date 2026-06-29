@@ -117,7 +117,7 @@ Add bounded read/refine endpoints (`GET /api/knowledge/sites`, `.../graph`, `...
 
 ### Slice 2: Collapse to one artifact writer and a self-contained diagnose.json (PRIMARY)
 
-**Status:** TODO
+**Status:** DONE (2026-06-29)
 **Files:** URL-result publisher, crawl persistence, observability readers/writers, artifact tests
 
 **What:**
@@ -295,4 +295,5 @@ Add bounded read/refine endpoints (`GET /api/knowledge/sites`, `.../graph`, `...
 
 - 2026-06-28: Plan approved by user. Slice 1 (original) completed.
 - 2026-06-29: Operator audit. Priority reset to debugging-first. Plan revised: Slice 2 is now the single-writer + self-contained `diagnose.json` collapse (was Slice 3); site-specific debt deletion pulled forward (Slice 3); cold-start LLM contract proposer added (Slice 10). The design conversation was rewritten into `docs/feature specs/site-product-knowledge-graph.md` and is now the authoritative spec.
+- 2026-06-29: Slice 2 completed. One writer (`publish_url_result_artifacts`) emits `page.html` / `record.json` / `diagnose.json` under `runs/{id}/results/{url_result_id}/`. `ExtractionResult` carries `collector_outcomes`, `stage_outcomes`, and `variant_drops`; `diagnose.json` inlines per-field winner/rejected/firewall and the variant-drop ledger. `app/observability/run_report.py` registers as a run-complete callback and folds every diagnose into `report.json`. Dead modules deleted: `observability/{artifact_reader,baseline,browser_artifact,run_audit,run_llm_diagnosis,run_trace}.py`, `persistence/artifact_store.py`, `persistence/storage/`, `api/observability.py`, `config/{audit_rules,observability}.py`, `data/prompts/run_diagnosis.*.txt`, and the frontend Run Trace surfaces. Regression: 1092 passed / 8 expected skips across unit + component + services.
 - The feature spec governs intent; this plan governs sequence. When they disagree, the spec wins and this plan is corrected.

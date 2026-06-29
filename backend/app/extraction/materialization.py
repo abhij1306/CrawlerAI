@@ -29,6 +29,7 @@ from app.core.records.output_safety import (
     sanitize_materialized_record,
     typed_detail_record,
 )
+from app.core.records.variant_drops import VARIANT_DROPS_KEY, VariantDropRecorder
 from app.extraction.resolution import inherit_variant_id_from_sku
 
 PUBLIC_MAP = {
@@ -111,17 +112,19 @@ def materialize(
         record["url"] = canonical_url
         lineages["url"] = {"rule_id": "canonical_capture_url", "evidence_ids": []}
     materialize_product_assets(record, lineages, resolution.asset_decisions)
+    drops = VariantDropRecorder()
     variants, variant_lineage = _variants(
         entities,
         resolution,
         by_id,
         product_url=str(record.get("url") or canonical_url),
+        drops=drops,
     )
     if variants:
         record["variant_count"] = len(variants)
         record["variants"] = variants
         lineages["variants"] = variant_lineage
-        _cohere_parent_offer(record, lineages, variants, variant_lineage)
+        _cohere_parent_offer(record, lineages, variants, variant_lineage, drops=drops)
         _cohere_parent_availability(
             record,
             lineages,
@@ -129,7 +132,9 @@ def materialize(
             variant_lineage,
             expected_variant_count=len(entities.variants),
         )
-    sanitize_materialized_record(record, lineages)
+    sanitize_materialized_record(record, lineages, drops=drops)
+    if drops.drops:
+        record[VARIANT_DROPS_KEY] = [drop.model_dump() for drop in drops.drops]
     field_sources = _field_sources_from_lineage(lineages, by_id)
     if field_sources:
         record["_field_sources"] = field_sources
@@ -169,9 +174,11 @@ def _cohere_parent_offer(
     lineages: dict[str, object],
     variants: list[dict[str, object]],
     variant_lineage: list[dict[str, object]],
+    *,
+    drops: VariantDropRecorder,
 ) -> None:
     variants, variant_lineage = _leaf_variant_rows(variants, variant_lineage)
-    _drop_conflicting_variant_prices(record, variants, variant_lineage)
+    _drop_conflicting_variant_prices(record, variants, variant_lineage, drops=drops)
     variant_skus = {
         str(row.get("sku"))
         for row in variants
@@ -243,6 +250,8 @@ def _drop_conflicting_variant_prices(
     record: dict[str, object],
     variants: list[dict[str, object]],
     variant_lineage: list[dict[str, object]],
+    *,
+    drops: VariantDropRecorder,
 ) -> None:
     parent_price = record.get("price")
     parent_currency = str(record.get("currency") or "")
@@ -262,6 +271,12 @@ def _drop_conflicting_variant_prices(
         smaller = min(abs(parent_amount), abs(variant_amount))
         larger = max(abs(parent_amount), abs(variant_amount))
         if smaller and larger / smaller >= Decimal("20"):
+            drops.record(
+                row,
+                stage="materialize",
+                rule="variant_price_conflicts_parent",
+                reason=f"variant price diverges ≥20x from parent {parent_price}",
+            )
             row.pop("price", None)
             lineage_row.pop("price", None)
 
@@ -308,6 +323,9 @@ def _leaf_variant_rows(
     variants: list[dict[str, object]],
     lineage: list[dict[str, object]],
 ) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
+    # Aggregation-scope filter only: callers use the returned subset to compute
+    # parent-offer coherence, not to mutate the published variant list, so no
+    # drop is recorded here (the rows still ship in ``record["variants"]``).
     option_fields = ("color", "size", "style", "material", "gender")
     depths = [
         sum(row.get(field) not in (None, "", [], {}, ()) for field in option_fields)
@@ -373,6 +391,7 @@ def _variants(
     by_id: dict[str, Evidence],
     *,
     product_url: str,
+    drops: VariantDropRecorder,
 ) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
     decisions = {
         (d.entity_id, d.fact_type): d
@@ -407,19 +426,38 @@ def _variants(
             offer_by_variant.get(variant.entity_id),
             asset_by_variant.get(variant.entity_id),
         )
-        if _publishable_variant_row(variant, row) and not _variant_url_conflicts(
-            product_url, str(row.get("url") or ""), row
-        ):
-            rows.append(row)
-            lineage_rows.append(lineage_row)
+        if not _publishable_variant_row(variant, row):
+            drops.record(
+                row,
+                stage="materialize",
+                rule="variant_not_publishable",
+                reason="no option axis or identity+commercial fact",
+            )
+            continue
+        if _variant_url_conflicts(product_url, str(row.get("url") or ""), row):
+            drops.record(
+                row,
+                stage="materialize",
+                rule="variant_url_conflicts_product",
+                reason="variant url resolves to a different product",
+            )
+            continue
+        rows.append(row)
+        lineage_rows.append(lineage_row)
     if len(rows) > 1:
-        filtered = [
-            (row, lineage_row)
-            for row, lineage_row in zip(rows, lineage_rows)
-            if _has_variant_option(row)
-        ]
-        rows = [row for row, _lineage_row in filtered]
-        lineage_rows = [lineage_row for _row, lineage_row in filtered]
+        kept: list[tuple[dict[str, object], dict[str, object]]] = []
+        for row, lineage_row in zip(rows, lineage_rows):
+            if _has_variant_option(row):
+                kept.append((row, lineage_row))
+            else:
+                drops.record(
+                    row,
+                    stage="materialize",
+                    rule="optionless_variant_among_options",
+                    reason="row has no option axis while siblings do",
+                )
+        rows = [row for row, _lineage_row in kept]
+        lineage_rows = [lineage_row for _row, lineage_row in kept]
     ordered = sorted(
         zip(rows, lineage_rows),
         key=lambda item: (

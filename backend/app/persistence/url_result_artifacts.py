@@ -1,3 +1,19 @@
+"""The single per-URL artifact writer.
+
+One writer, exactly three files per URL result under
+``runs/{run_id}/results/{url_result_id}/``:
+
+- ``page.html`` — the acquired HTML, written once.
+- ``record.json`` — the public record(s) (shape unchanged from the records API).
+- ``diagnose.json`` — self-contained, bounded root-cause artifact (see
+  :mod:`app.observability.diagnose`).
+
+The result-root relative path *is* the contract: the reader opens these three
+files by fixed name. No ``manifest.json`` indirection, no second copy of the
+HTML, no ``records.json``/``summary.json``/``debug.json`` (record provenance is
+authoritative in the DB; root-cause lives in ``diagnose.json``).
+"""
+
 from __future__ import annotations
 
 import json
@@ -7,18 +23,14 @@ from pathlib import Path
 from typing import Any
 
 from app.core.config import settings
+from app.observability.diagnose import build_diagnosis
 from app.persistence.artifacts import ArtifactRepository
-from app.persistence.contracts import (
-    ArtifactManifest,
-    ArtifactReference,
-    ExtractionArtifactSet,
-)
 
 
 @dataclass(frozen=True, slots=True)
 class PublishedUrlArtifacts:
-    manifest: ArtifactManifest
-    reference: ArtifactReference
+    result_root: str
+    bundle_id: str
 
 
 def publish_url_result_artifacts(
@@ -32,210 +44,108 @@ def publish_url_result_artifacts(
     root_dir: Path | None = None,
 ) -> PublishedUrlArtifacts:
     repository = ArtifactRepository(root_dir=root_dir or settings.artifacts_dir)
-    extraction = extraction_result.model_dump(mode="json", exclude_none=True)
-    extraction["record_count"] = int(record_count or 0)
 
-    references: list[ArtifactReference] = []
     html = str(getattr(acquisition_result, "html", "") or "")
-    if html:
-        references.append(
-            _persist_text(
-                repository,
-                run_id=run_id,
-                url_result_id=url_result_id,
-                name="page.html",
-                content=html,
-            )
-        )
-
-    screenshot = _screenshot_bytes(
-        _mapping(getattr(acquisition_result, "artifacts", {})),
-        root_dir=repository.root_dir,
-    )
-    if screenshot:
-        references.append(
-            repository.persist_bytes(
-                run_id=run_id,
-                url_result_id=url_result_id,
-                name="screenshot.png",
-                content=screenshot,
-            )
-        )
-
-    references.append(
-        _persist_json(
-            repository,
-            run_id=run_id,
-            url_result_id=url_result_id,
-            name="summary.json",
-            payload=_summary_payload(
-                acquisition_result=acquisition_result,
-                extraction=extraction,
-            ),
-        )
-    )
-    references.append(
-        _persist_json(
-            repository,
-            run_id=run_id,
-            url_result_id=url_result_id,
-            name="records.json",
-            payload={
-                "records": extraction.get("records", []),
-                "provenance": list(record_provenance),
-            },
-        )
+    _persist_text(
+        repository,
+        run_id=run_id,
+        url_result_id=url_result_id,
+        name="page.html",
+        content=html,
     )
 
-    if str(extraction.get("verdict") or "").strip().lower() != "success":
-        references.append(
-            _persist_json(
-                repository,
-                run_id=run_id,
-                url_result_id=url_result_id,
-                name="debug.json",
-                payload=_debug_payload(
-                    acquisition_result=acquisition_result,
-                    extraction=extraction,
-                ),
-            )
-        )
+    records = _records_for_record_json(record_provenance, extraction_result)
+    _persist_json(
+        repository,
+        run_id=run_id,
+        url_result_id=url_result_id,
+        name="record.json",
+        payload={"records": records, "record_count": int(record_count or 0)},
+    )
+
+    rejected_public_fields = _merged_rejected_public_fields(record_provenance)
+    variant_drops = _collected_variant_drops(record_provenance)
+    _persist_json(
+        repository,
+        run_id=run_id,
+        url_result_id=url_result_id,
+        name="diagnose.json",
+        payload=build_diagnosis(
+            acquisition_result=acquisition_result,
+            extraction_result=extraction_result,
+            rejected_public_fields=rejected_public_fields,
+            variant_drops=variant_drops,
+        ),
+    )
 
     bundle_id = str(getattr(extraction_result, "bundle_id", "") or "").strip()
     if not bundle_id:
         bundle_id = f"run-{max(int(run_id or 0), 0)}-result-{int(url_result_id)}"
-    manifest = ArtifactManifest(
-        run_id=run_id,
-        url_result_id=url_result_id,
+    return PublishedUrlArtifacts(
+        result_root=_result_root(run_id, url_result_id),
         bundle_id=bundle_id,
-        extraction=ExtractionArtifactSet(artifacts=tuple(references)),
     )
-    reference = repository.persist_manifest(manifest)
-    return PublishedUrlArtifacts(manifest=manifest, reference=reference)
 
 
-def _summary_payload(
-    *,
-    acquisition_result: Any,
-    extraction: Mapping[str, object],
+def _result_root(run_id: int, url_result_id: int) -> str:
+    return (
+        Path("runs")
+        / str(max(int(run_id or 0), 0))
+        / "results"
+        / str(int(url_result_id))
+    ).as_posix()
+
+
+def _merged_rejected_public_fields(
+    record_provenance: Sequence[Mapping[str, object]],
 ) -> dict[str, object]:
-    acquisition_diagnostics = _mapping(
-        getattr(acquisition_result, "acquisition_diagnostics", {})
-    )
-    acquisition_result_diagnostics = _mapping(acquisition_diagnostics.get("result"))
-    browser_diagnostics = _mapping(
-        getattr(acquisition_result, "browser_diagnostics", {})
-    )
-    decisions = _object_list(extraction.get("decisions"))
-    return {
-        "schema_version": "url-diagnostics.v2",
-        "acquisition": {
-            "final_url": str(getattr(acquisition_result, "final_url", "") or ""),
-            "method": str(getattr(acquisition_result, "method", "") or ""),
-            "status_code": getattr(acquisition_result, "status_code", None),
-            "content_type": str(getattr(acquisition_result, "content_type", "") or ""),
-            "blocked": bool(getattr(acquisition_result, "blocked", False)),
-            "platform_family": getattr(acquisition_result, "platform_family", None),
-            "adapter_name": getattr(acquisition_result, "adapter_name", None),
-            "selected_attempt_id": acquisition_result_diagnostics.get(
-                "selected_attempt_id"
-            ),
-            "attempts": acquisition_result_diagnostics.get("attempts", []),
-            "browser_outcome": browser_diagnostics.get("browser_outcome"),
-            "failure_reason": browser_diagnostics.get("failure_reason")
-            or acquisition_result_diagnostics.get("failure_reason"),
-        },
-        "extraction": {
-            "bundle_id": extraction.get("bundle_id"),
-            "target": extraction.get("target", {}),
-            "findings": extraction.get("findings", []),
-            "decisions": decisions,
-            "verdict": extraction.get("verdict"),
-            "retry_request": extraction.get("retry_request"),
-            "metrics": extraction.get("metrics", {}),
-            "record_count": extraction.get("record_count", 0),
-        },
-    }
+    # Page-level diagnose: the first non-empty firewall reason per field wins.
+    merged: dict[str, object] = {}
+    for row in record_provenance:
+        discovered = _mapping(row.get("discovered_data"))
+        rejected = _mapping(discovered.get("rejected_public_fields"))
+        for field_name, reason in rejected.items():
+            if reason in (None, "", [], {}):
+                continue
+            merged.setdefault(str(field_name), reason)
+    return merged
 
 
-def _debug_payload(
-    *,
-    acquisition_result: Any,
-    extraction: Mapping[str, object],
-) -> dict[str, object]:
-    return {
-        "schema_version": "url-debug.v2",
-        "acquisition": {
-            "browser_diagnostics": _mapping(
-                getattr(acquisition_result, "browser_diagnostics", {})
-            ),
-            "acquisition_diagnostics": _mapping(
-                getattr(acquisition_result, "acquisition_diagnostics", {})
-            ),
-            "response": _bounded_debug_value(
-                getattr(acquisition_result, "json_data", None)
-            ),
-            "network_payloads": _bounded_debug_value(
-                list(getattr(acquisition_result, "network_payloads", []) or [])
-            ),
-            "runtime_artifacts": {
-                key: value
-                for key, value in _mapping(
-                    getattr(acquisition_result, "artifacts", {})
-                ).items()
-                if not isinstance(value, bytes)
-            },
-        },
-        "extraction": _bounded_debug_value(
-            {
-                key: value
-                for key, value in extraction.items()
-                if key not in {"records", "evidence", "graph"}
-            }
-        ),
-    }
+def _records_for_record_json(
+    record_provenance: Sequence[Mapping[str, object]],
+    extraction_result: Any,
+) -> list[dict[str, object]]:
+    # Prefer the persisted public DB view (record_provenance[*]["data"]) so
+    # record.json never drifts from the canonical records API. Fall back to
+    # extraction_result only when nothing was persisted.
+    persisted = [
+        dict(data)
+        for row in record_provenance
+        for data in (_mapping(row.get("data")),)
+        if data
+    ]
+    if persisted:
+        return persisted
+    return [
+        dict(row)
+        for row in (extraction_result.model_dump(mode="json").get("records") or [])
+        if isinstance(row, Mapping)
+    ]
 
 
-_DEBUG_MAX_STRING_CHARS = 4000
-_DEBUG_MAX_LIST_ITEMS = 20
-_DEBUG_MAX_MAPPING_ITEMS = 50
-_DEBUG_MAX_DEPTH = 6
-
-
-def _bounded_debug_value(value: object, *, depth: int = 0) -> object:
-    if depth >= _DEBUG_MAX_DEPTH:
-        return {"_truncated": True, "reason": "max_depth"}
-    if isinstance(value, str):
-        if len(value) <= _DEBUG_MAX_STRING_CHARS:
-            return value
-        return {
-            "_truncated": True,
-            "original_chars": len(value),
-            "preview": value[:_DEBUG_MAX_STRING_CHARS],
-        }
-    if isinstance(value, Mapping):
-        items = list(value.items())
-        bounded = {
-            str(key): _bounded_debug_value(item, depth=depth + 1)
-            for key, item in items[:_DEBUG_MAX_MAPPING_ITEMS]
-        }
-        if len(items) > _DEBUG_MAX_MAPPING_ITEMS:
-            bounded["_truncated_items"] = len(items) - _DEBUG_MAX_MAPPING_ITEMS
-        return bounded
-    if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
-        items = list(value)
-        bounded_items = [
-            _bounded_debug_value(item, depth=depth + 1)
-            for item in items[:_DEBUG_MAX_LIST_ITEMS]
-        ]
-        if len(items) > _DEBUG_MAX_LIST_ITEMS:
-            bounded_items.append(
-                {"_truncated_items": len(items) - _DEBUG_MAX_LIST_ITEMS}
-            )
-        return bounded_items
-    if isinstance(value, (bytes, bytearray)):
-        return {"_omitted_bytes": len(value)}
-    return value
+def _collected_variant_drops(
+    record_provenance: Sequence[Mapping[str, object]],
+) -> list[Mapping[str, object]]:
+    drops: list[Mapping[str, object]] = []
+    for row in record_provenance:
+        source_trace = _mapping(row.get("source_trace"))
+        raw_drops = source_trace.get("variant_drops")
+        if not isinstance(raw_drops, (list, tuple)):
+            continue
+        for drop in raw_drops:
+            if isinstance(drop, Mapping):
+                drops.append(dict(drop))
+    return drops
 
 
 def _persist_text(
@@ -245,8 +155,8 @@ def _persist_text(
     url_result_id: int,
     name: str,
     content: str,
-) -> ArtifactReference:
-    return repository.persist_bytes(
+) -> None:
+    repository.persist_bytes(
         run_id=run_id,
         url_result_id=url_result_id,
         name=name,
@@ -261,14 +171,14 @@ def _persist_json(
     url_result_id: int,
     name: str,
     payload: object,
-) -> ArtifactReference:
+) -> None:
     content = json.dumps(
         _json_safe(payload),
         ensure_ascii=True,
         indent=2,
         sort_keys=True,
     ).encode("utf-8")
-    return repository.persist_bytes(
+    repository.persist_bytes(
         run_id=run_id,
         url_result_id=url_result_id,
         name=name,
@@ -276,43 +186,8 @@ def _persist_json(
     )
 
 
-def _screenshot_bytes(
-    artifacts: Mapping[str, object],
-    *,
-    root_dir: Path,
-) -> bytes:
-    raw_bytes = artifacts.get("browser_screenshot_png")
-    if isinstance(raw_bytes, (bytes, bytearray)):
-        return bytes(raw_bytes)
-    raw_path = str(artifacts.get("browser_screenshot_path") or "").strip()
-    if not raw_path:
-        return b""
-    try:
-        root = Path(root_dir).resolve()
-        source_path = Path(raw_path)
-        path = (
-            source_path.resolve()
-            if source_path.is_absolute()
-            else (root / source_path).resolve()
-        )
-    except OSError:
-        return b""
-    if not path.is_relative_to(root) or not path.is_file():
-        return b""
-    try:
-        return path.read_bytes()
-    except OSError:
-        return b""
-
-
 def _mapping(value: object) -> Mapping[str, object]:
     return value if isinstance(value, Mapping) else {}
-
-
-def _object_list(value: object) -> list[dict[str, object]]:
-    if not isinstance(value, (list, tuple)):
-        return []
-    return [dict(item) for item in value if isinstance(item, Mapping)]
 
 
 def _json_safe(value: object) -> object:

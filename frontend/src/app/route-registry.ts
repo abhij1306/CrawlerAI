@@ -7,7 +7,6 @@ import {
   DatabaseZap,
   FileChartColumn,
   Grid2x2,
-  Network,
   SearchCheck,
   Settings2,
   ShieldCheck,
@@ -25,7 +24,7 @@ export type AppRoute = {
   lazy: () => Promise<RouteModule>;
   metadata: { title: string; description?: string };
   nav?: {
-    group: 'Primary' | 'Operations' | 'Intelligence' | 'Memory' | 'Admin';
+    group: 'Primary' | 'Intelligence' | 'Memory' | 'Admin';
     label: string;
     icon: LucideIcon;
     exact?: boolean;
@@ -89,17 +88,6 @@ export const appRoutes: readonly AppRoute[] = [
     nav: { group: 'Primary', label: 'Jobs', icon: BriefcaseBusiness },
   },
   {
-    id: 'run-trace',
-    path: '/run-trace',
-    access: 'authenticated',
-    lazy: () => import('../../app/run-trace/page-view'),
-    metadata: {
-      title: 'Run Trace',
-      description: 'Inspect acquire timeline, extraction tiers, and auto-flagged bugs for a run.',
-    },
-    nav: { group: 'Operations', label: 'Run Trace', icon: Network },
-  },
-  {
     id: 'data-enrichment',
     path: '/data-enrichment',
     access: 'authenticated',
@@ -161,7 +149,7 @@ export const appRoutes: readonly AppRoute[] = [
   },
 ];
 
-const groupOrder = ['Primary', 'Operations', 'Intelligence', 'Memory', 'Admin'] as const;
+const groupOrder = ['Primary', 'Intelligence', 'Memory', 'Admin'] as const;
 
 export const navGroups = groupOrder.map((label) => ({
   label,

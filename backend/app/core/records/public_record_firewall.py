@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import Counter
 from collections.abc import Mapping
 from typing import Any
 from urllib.parse import urlparse
@@ -53,6 +54,7 @@ from app.core.records.field_url_normalization import (
     canonical_public_record_url,
     is_concatenated_url,
 )
+from app.core.records.variant_drops import VariantDropRecorder
 
 _SKIP_FIELD = object()
 
@@ -63,6 +65,7 @@ def public_record_data_for_surface(
     surface: str,
     page_url: str,
     requested_fields: list[str] | None = None,
+    variant_drops: VariantDropRecorder | None = None,
 ) -> tuple[dict[str, Any], dict[str, str]]:
     normalized_surface = str(surface or "").strip().lower()
     allowed_fields, explicit_fields, open_field_passthrough = _public_field_policy(
@@ -111,9 +114,73 @@ def public_record_data_for_surface(
             rejected[str(raw_field_name)] = rejection
             continue
         data[field_name] = canonical_value
+    variants_passed_field_policy = (
+        VARIANTS_FIELD in data or VARIANTS_FIELD not in rejected
+    )
     if normalized_surface.startswith("ecommerce_") and VARIANTS_FIELD in data:
         enforce_flat_variant_public_contract(data, page_url=page_url)
+    if (
+        variant_drops is not None
+        and normalized_surface.startswith("ecommerce_")
+        and variants_passed_field_policy
+    ):
+        # Only record sellability/flatness drops when variants actually reached
+        # the firewall — variants killed earlier by field policy are not
+        # sellability rejections and shouldn't be reported as such.
+        _record_firewall_variant_drops(
+            raw_variants=record.get(VARIANTS_FIELD),
+            kept_variants=data.get(VARIANTS_FIELD),
+            drops=variant_drops,
+        )
     return finalize_record(data, surface=surface), rejected
+
+
+def _record_firewall_variant_drops(
+    *,
+    raw_variants: object,
+    kept_variants: object,
+    drops: VariantDropRecorder,
+) -> None:
+    """Record variants the public firewall dropped (not sellable / not flat).
+
+    Match raw against kept rows by identity *with multiplicity* — using a set
+    would let one kept row absorb every raw duplicate sharing the same key,
+    hiding genuine duplicate-drop events. A Counter consumes each kept row
+    exactly once so any surplus raw rows still trigger a recorded drop.
+    """
+
+    if not isinstance(raw_variants, (list, tuple)):
+        return
+    kept = kept_variants if isinstance(kept_variants, (list, tuple)) else []
+    remaining_kept = Counter(
+        _variant_identity_key(row) for row in kept if isinstance(row, dict)
+    )
+    for row in raw_variants:
+        if not isinstance(row, dict):
+            continue
+        key = _variant_identity_key(row)
+        if remaining_kept[key] > 0:
+            remaining_kept[key] -= 1
+            continue
+        drops.record(
+            row,
+            stage="public_firewall",
+            rule="variant_not_publicly_sellable",
+            reason="dropped by public variant sellability/flatness contract",
+        )
+
+
+def _variant_identity_key(row: dict[str, object]) -> tuple[object, ...]:
+    # Identity covers transport ids *and* every public variant axis so that
+    # variants differing only by style/material/etc. are not collapsed.
+    transport = (
+        row.get("variant_id"),
+        row.get(SKU_FIELD),
+        row.get(BARCODE_FIELD),
+        row.get(URL_FIELD),
+    )
+    axes = tuple(row.get(axis) for axis in PUBLIC_VARIANT_AXIS_FIELDS)
+    return transport + axes
 
 
 def _public_field_policy(

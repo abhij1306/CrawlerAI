@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import hashlib
 import json
 from collections.abc import Mapping
@@ -11,22 +10,14 @@ from typing import Any, cast
 from app.models.crawl_run import CrawlRecord, CrawlRun
 from app.core.records.confidence import score_record_confidence
 from app.core.records.field_url_normalization import canonical_public_record_url
-from app.extraction.contracts import ExtractionResult
+from app.extraction.contracts import VariantDrop
 from app.core.db_utils import mapping_or_empty
 from app.core.records.public_record_firewall import (
     flatten_variants_for_public_output,
     public_record_data_for_surface,
 )
+from app.core.records.variant_drops import VariantDropRecorder, drops_from_record
 from app.core.shared.field_coerce import object_list as _object_list
-from app.observability.browser_artifact import shape_browser_artifact
-from app.observability.run_trace import RunTrace
-from app.core.config import observability as obs_config
-from app.persistence.artifact_store import (
-    persist_html_artifact,
-    persist_json_artifact,
-    persist_png_artifact,
-    persist_png_artifact_from_file,
-)
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -53,15 +44,6 @@ class _RecordPersistenceState:
     changed_count: int = 0
     records: list[CrawlRecord] = field(default_factory=list)
     provenance: list[Mapping[str, object]] = field(default_factory=list)
-
-
-def _merge_browser_diagnostics(
-    acquisition_result,
-    diagnostics: dict[str, object],
-) -> None:
-    merged = mapping_or_empty(getattr(acquisition_result, "browser_diagnostics", {}))
-    merged.update(dict(diagnostics or {}))
-    acquisition_result.browser_diagnostics = merged
 
 
 def _record_identity_key(source_url: str, *, surface: str | None = None) -> str | None:
@@ -117,12 +99,20 @@ def _stored_record_matches(
     url_result_id: int | None,
     source_url: str,
     data: dict[str, object],
+    raw_data: dict[str, object],
+    discovered_data: dict[str, object],
     content_fingerprint: str | None,
 ) -> bool:
+    # source_trace is intentionally excluded: it carries volatile acquisition
+    # diagnostics (phase timings, status codes, browser_diagnostics) that
+    # would otherwise inflate changed_count on every refresh even when the
+    # public record and its discovered_data are unchanged.
     return (
         row.url_result_id == url_result_id
         and row.source_url == source_url
         and row.data == data
+        and row.raw_data == raw_data
+        and row.discovered_data == discovered_data
         and row.content_fingerprint == content_fingerprint
     )
 
@@ -133,140 +123,18 @@ def _update_stored_record(
     url_result_id: int | None,
     source_url: str,
     data: dict[str, object],
+    raw_data: dict[str, object],
+    discovered_data: dict[str, object],
+    source_trace: dict[str, object],
     content_fingerprint: str | None,
 ) -> None:
     row.url_result_id = url_result_id
     row.source_url = source_url
     row.data = data
+    row.raw_data = raw_data
+    row.discovered_data = discovered_data
+    row.source_trace = source_trace
     row.content_fingerprint = content_fingerprint
-
-
-async def persist_run_trace(
-    *,
-    run_id: int,
-    source_url: str,
-    trace: RunTrace,
-    flagged: bool = False,
-) -> str:
-    """Persist the per-URL RunTrace as a JSON artifact (observe-only).
-
-    Written next to the page's other artifacts as ``<hash>.trace.json``. No-op
-    when tracing is disabled (NullRunTrace serializes an empty timeline) or when
-    the run id is missing.
-    """
-    if not obs_config.RUN_TRACE_ENABLED:
-        return ""
-    payload = trace.to_dict(flagged=flagged)
-    return await asyncio.to_thread(
-        persist_json_artifact,
-        run_id=run_id,
-        source_url=source_url,
-        suffix="trace",
-        payload=payload,
-    )
-
-
-def build_extraction_decision_payload(
-    *,
-    result: ExtractionResult,
-    persisted_count: int,
-) -> dict[str, Any]:
-    payload = result.model_dump(mode="json", exclude_none=True)
-    payload["persisted_count"] = int(persisted_count or 0)
-    return payload
-
-
-async def persist_acquisition_artifacts(
-    *,
-    run_id: int,
-    acquisition_result,
-    browser_attempted: bool,
-    screenshot_required: bool,
-    surface: str | None = None,
-    blocked: bool = False,
-) -> str:
-    raw_html_path = await asyncio.to_thread(
-        persist_html_artifact,
-        run_id=run_id,
-        source_url=acquisition_result.final_url,
-        html=acquisition_result.html,
-    )
-    if browser_attempted:
-        await _persist_browser_artifacts(
-            run_id=run_id,
-            acquisition_result=acquisition_result,
-            screenshot_required=screenshot_required,
-            raw_html_path=raw_html_path,
-            surface=surface,
-            blocked=blocked,
-        )
-    return raw_html_path
-
-
-async def _persist_browser_artifacts(
-    *,
-    run_id: int,
-    acquisition_result,
-    screenshot_required: bool,
-    raw_html_path: str,
-    surface: str | None = None,
-    blocked: bool = False,
-) -> None:
-    diagnostics = mapping_or_empty(
-        getattr(acquisition_result, "browser_diagnostics", {})
-    )
-    artifacts = dict(mapping_or_empty(getattr(acquisition_result, "artifacts", {})))
-    screenshot_path_source = str(
-        artifacts.pop("browser_screenshot_path", "") or ""
-    ).strip()
-    screenshot_bytes = artifacts.pop("browser_screenshot_png", b"")
-    screenshot_path = ""
-    if screenshot_required:
-        if screenshot_path_source:
-            screenshot_path = await asyncio.to_thread(
-                persist_png_artifact_from_file,
-                run_id=run_id,
-                source_url=acquisition_result.final_url,
-                suffix="browser",
-                file_path=screenshot_path_source,
-            )
-        elif isinstance(screenshot_bytes, (bytes, bytearray)):
-            screenshot_path = await asyncio.to_thread(
-                persist_png_artifact,
-                run_id=run_id,
-                source_url=acquisition_result.final_url,
-                suffix="browser",
-                content=bytes(screenshot_bytes),
-            )
-
-    # Shape only the *saved* artifact (honest + lean). The in-memory diagnostics
-    # dict is left untouched for downstream runtime consumers.
-    diagnostics_payload = shape_browser_artifact(
-        diagnostics,
-        surface=surface,
-        blocked=blocked,
-    )
-    diagnostics_payload["artifact_paths"] = {
-        "html": raw_html_path or None,
-        "screenshot": screenshot_path or None,
-    }
-    diagnostics_path = await asyncio.to_thread(
-        persist_json_artifact,
-        run_id=run_id,
-        source_url=acquisition_result.final_url,
-        suffix="browser",
-        payload=diagnostics_payload,
-    )
-    _merge_browser_diagnostics(
-        acquisition_result,
-        {
-            "artifact_paths": {
-                "html": raw_html_path or None,
-                "diagnostics": diagnostics_path or None,
-                "screenshot": screenshot_path or None,
-            }
-        },
-    )
 
 
 async def persist_extracted_records(
@@ -311,7 +179,7 @@ async def _persist_extracted_record(
     preliminary_source_url = str(
         raw_record.get("source_url") or acquisition_result.final_url
     )
-    data, rejected_public_fields = _public_data_for_record(
+    data, rejected_public_fields, variant_drops = _public_data_for_record(
         raw_record,
         run=state.run,
         acquisition_result=acquisition_result,
@@ -346,6 +214,7 @@ async def _persist_extracted_record(
         data=data,
         acquisition_result=acquisition_result,
         lineage=lineage,
+        variant_drops=variant_drops,
     )
     existing_record = state.existing_by_identity.get(identity_key or "")
     if identity_key and identity_key in state.seen_identities:
@@ -369,6 +238,9 @@ async def _persist_extracted_record(
         url_identity_key=identity_key,
         content_fingerprint=content_fingerprint,
         data=data,
+        raw_data=dict(raw_record),
+        discovered_data=dict(discovered_data),
+        source_trace=dict(source_trace),
     )
     state.session.add(crawl_record)
     await state.session.flush()
@@ -397,22 +269,32 @@ async def _update_existing_record(
 ) -> None:
     if existing_record is None:
         return
-    if not _stored_record_matches(
+    public_changed = not _stored_record_matches(
         existing_record,
         url_result_id=state.url_result_id,
         source_url=source_url,
         data=data,
+        raw_data=raw_data,
+        discovered_data=discovered_data,
         content_fingerprint=content_fingerprint,
-    ):
+    )
+    if public_changed:
         _update_stored_record(
             existing_record,
             url_result_id=state.url_result_id,
             source_url=source_url,
             data=data,
+            raw_data=raw_data,
+            discovered_data=discovered_data,
+            source_trace=source_trace,
             content_fingerprint=content_fingerprint,
         )
         await state.session.flush()
         state.changed_count += 1
+    elif existing_record.source_trace != source_trace:
+        # Refresh the volatile diagnostic trace without bumping changed_count.
+        existing_record.source_trace = source_trace
+        await state.session.flush()
     state.records.append(existing_record)
     state.provenance.append(
         _record_provenance_payload(
@@ -498,22 +380,29 @@ def _public_data_for_record(
     run: CrawlRun,
     acquisition_result,
     preliminary_source_url: str,
-) -> tuple[dict[str, object], dict[str, object]]:
+) -> tuple[dict[str, object], dict[str, object], tuple[VariantDrop, ...]]:
     unfiltered_data = {
         str(key): value
         for key, value in raw_record.items()
         if not str(key).startswith("_") and value not in (None, "", [], {})
     }
-    return cast(
-        tuple[dict[str, object], dict[str, object]],
-        public_record_data_for_surface(
-            unfiltered_data,
-            surface=str(run.surface or ""),
-            page_url=str(
-                getattr(acquisition_result, "final_url", "") or preliminary_source_url
-            ),
-            requested_fields=list(run.requested_fields or []),
+    drops = VariantDropRecorder()
+    # Materialization + output-safety drops ride the raw record; the firewall
+    # appends its own as the public contract is enforced. One merged trail.
+    drops.extend(drops_from_record(raw_record))
+    data, rejected = public_record_data_for_surface(
+        unfiltered_data,
+        surface=str(run.surface or ""),
+        page_url=str(
+            getattr(acquisition_result, "final_url", "") or preliminary_source_url
         ),
+        requested_fields=list(run.requested_fields or []),
+        variant_drops=drops,
+    )
+    return (
+        cast(dict[str, object], data),
+        cast(dict[str, object], rejected),
+        drops.drops,
     )
 
 
@@ -549,9 +438,10 @@ def _source_trace_for_record(
     data: dict[str, object],
     acquisition_result,
     lineage: dict[str, object],
+    variant_drops: tuple[VariantDrop, ...] = (),
 ) -> dict[str, object]:
     selector_traces = mapping_or_empty(raw_record.get("_selector_traces"))
-    return {
+    trace: dict[str, object] = {
         "acquisition": {
             "method": str(getattr(acquisition_result, "method", "") or ""),
             "final_url": str(getattr(acquisition_result, "final_url", "") or ""),
@@ -580,6 +470,9 @@ def _source_trace_for_record(
             for field_name, value in data.items()
         },
     }
+    if variant_drops:
+        trace["variant_drops"] = [drop.model_dump() for drop in variant_drops]
+    return trace
 
 
 def _record_lineage(

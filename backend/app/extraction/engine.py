@@ -13,6 +13,7 @@ from app.core.records.url_identity import (
     detail_urls_conflict,
 )
 from app.extraction.contracts import (
+    CollectorOutcome,
     Decision,
     EntityGraph,
     Evidence,
@@ -21,6 +22,7 @@ from app.extraction.contracts import (
     Finding,
     PublicRecord,
     ResolutionResult,
+    StageOutcome,
     TargetSelection,
 )
 from app.extraction.entities import EntitySet, build_entities
@@ -128,16 +130,58 @@ class SurfaceRuntime:
     ]
 
 
+def _stage_outcome(stage: str, produced: int) -> StageOutcome:
+    """Record a pipeline stage's outcome from how much it produced.
+
+    A stage that ran clean but produced nothing is ``no_match`` (e.g. no
+    findings, no target, no records); otherwise ``produced_evidence``.
+    """
+
+    return StageOutcome(
+        stage=stage,
+        outcome="produced_evidence" if produced else "no_match",
+    )
+
+
+def _collector_outcomes_from_evidence(
+    evidence: tuple[Evidence, ...],
+) -> tuple[CollectorOutcome, ...]:
+    """Derive collector outcomes for surfaces without per-collector capture.
+
+    Honest fallback: only collectors that appear in the collected evidence are
+    reported, each as ``produced_evidence`` with its row count.
+    """
+
+    counts: dict[str, int] = {}
+    for row in evidence:
+        counts[row.collector_id] = counts.get(row.collector_id, 0) + 1
+    return tuple(
+        CollectorOutcome(
+            collector_id=collector_id,
+            outcome="produced_evidence",
+            evidence_count=count,
+        )
+        for collector_id, count in counts.items()
+    )
+
+
 def extract(request: ExtractionRequest) -> ExtractionResult:
     spec = surface_spec(request.surface)
     runtime = _SURFACE_RUNTIMES[spec.surface]
+    stage_outcomes: list[StageOutcome] = []
     evidence = runtime.collect(request, spec)
+    collector_outcomes = _collector_outcomes_from_evidence(evidence)
+    stage_outcomes.append(_stage_outcome("collect", len(evidence)))
     normalized = runtime.normalize(evidence, request, spec)
+    stage_outcomes.append(_stage_outcome("normalize", len(normalized)))
     if request.capture.blocked:
-        return _blocked_extraction_result(request, normalized)
+        return _blocked_extraction_result(
+            request, normalized, collector_outcomes, tuple(stage_outcomes)
+        )
     graph_state = runtime.build_graph(normalized, request, spec)
     target = runtime.select_target(graph_state, normalized, request, spec)
     step_graph = _scoped_graph_for_steps(graph_state, target)
+    stage_outcomes.append(_stage_outcome("select_target", len(target.root_entity_ids)))
     if spec.surface == Surface.ECOMMERCE_DETAIL:
         normalized = normalize_ecommerce_price_units(normalized, step_graph)
     findings = runtime.validate(step_graph, target, normalized, request, spec)
@@ -145,6 +189,7 @@ def extract(request: ExtractionRequest) -> ExtractionResult:
     records = runtime.materialize(
         step_graph, resolution, normalized, findings, request, spec
     )
+    stage_outcomes.append(_stage_outcome("materialize", len(records)))
     if spec.surface == Surface.ECOMMERCE_DETAIL:
         findings = (
             *findings,
@@ -152,6 +197,9 @@ def extract(request: ExtractionRequest) -> ExtractionResult:
                 records, request.requested_fields, normalized
             ),
         )
+    # Validate outcome is recorded AFTER any post-materialize contract-level
+    # findings are folded in, so the stage count reflects the final tally.
+    stage_outcomes.append(_stage_outcome("validate", len(findings)))
     verdict = cast(
         ExtractionVerdict, runtime.assess(records, resolution, findings, request, spec)
     )
@@ -182,14 +230,25 @@ def extract(request: ExtractionRequest) -> ExtractionResult:
         verdict=verdict,
         retry_request=_retry_request(verdict, records, request, normalized),
         metrics=_metrics(
-            normalized, graph, target, findings, decisions, records, verdict
+            normalized,
+            graph,
+            target,
+            findings,
+            decisions,
+            records,
+            verdict,
+            collector_count=len(collector_outcomes),
         ),
+        collector_outcomes=collector_outcomes,
+        stage_outcomes=tuple(stage_outcomes),
     )
 
 
 def _blocked_extraction_result(
     request: ExtractionRequest,
     evidence: tuple[Evidence, ...],
+    collector_outcomes: tuple[CollectorOutcome, ...] = (),
+    stage_outcomes: tuple[StageOutcome, ...] = (),
 ) -> ExtractionResult:
     finding = Finding(
         finding_id=stable_id(
@@ -240,7 +299,10 @@ def _blocked_extraction_result(
             (),
             (),
             "blocked",
+            collector_count=len(collector_outcomes),
         ),
+        collector_outcomes=collector_outcomes,
+        stage_outcomes=stage_outcomes,
     )
 
 

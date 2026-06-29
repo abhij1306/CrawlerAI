@@ -52,9 +52,9 @@ def _crawl_task_time_limits() -> dict[str, int]:
 
 @worker_process_init.connect
 def _worker_process_init(**_kwargs) -> None:
-    from app.observability.run_audit import ensure_run_audit_registered
+    from app.observability.run_report import ensure_run_report_registered
 
-    ensure_run_audit_registered()
+    ensure_run_report_registered()
 
 
 @worker_process_shutdown.connect

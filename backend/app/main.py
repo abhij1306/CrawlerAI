@@ -30,7 +30,6 @@ from app.api.data_enrichment import router as data_enrichment_router
 from app.api.dashboard import router as dashboard_router
 from app.api.jobs import router as jobs_router
 from app.api.llm import router as llm_router
-from app.api.observability import router as observability_router
 from app.api.product_intelligence import router as product_intelligence_router
 from app.api.records import router as records_router
 from app.api.review import router as review_router
@@ -85,7 +84,7 @@ from app.core.config.public_api import (
     PUBLIC_API_ERROR_INVALID_API_KEY,
     PUBLIC_API_ERROR_RATE_LIMITED,
 )
-from app.observability.run_audit import ensure_run_audit_registered
+from app.observability.run_report import ensure_run_report_registered
 
 logger = logging.getLogger("app")
 _PUBLIC_API_PREFIX = "/api/v1"
@@ -126,7 +125,7 @@ async def lifespan(_fastapi_app: FastAPI):
                 "Recovered %s stale local crawl run(s) after backend restart",
                 recovered,
             )
-    ensure_run_audit_registered()
+    ensure_run_report_registered()
     try:
         yield
     finally:
@@ -601,6 +600,5 @@ for router in [
     public_extract_router,
     public_domains_router,
     public_capabilities_router,
-    observability_router,
 ]:
     app.include_router(router)

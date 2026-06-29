@@ -229,7 +229,7 @@ async def test_lifespan_creates_schema_before_bootstrap(monkeypatch) -> None:
     monkeypatch.setattr("app.main.bootstrap_admin_user", _bootstrap)
     monkeypatch.setattr("app.main.recover_stale_local_runs", _recover)
     monkeypatch.setattr(
-        "app.main.ensure_run_audit_registered", lambda: calls.append("audit")
+        "app.main.ensure_run_report_registered", lambda: calls.append("report")
     )
     monkeypatch.setattr("app.main.shutdown_run_dispatchers", _noop_async)
     monkeypatch.setattr("app.main.shutdown_browser_runtime", _noop_async)
@@ -241,5 +241,5 @@ async def test_lifespan_creates_schema_before_bootstrap(monkeypatch) -> None:
     async with lifespan(None):
         calls.append("yield")
 
-    assert calls[:5] == ["schema", "session", "bootstrap", "recover", "audit"]
+    assert calls[:5] == ["schema", "session", "bootstrap", "recover", "report"]
     assert "yield" in calls

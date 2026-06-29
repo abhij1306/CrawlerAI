@@ -428,6 +428,55 @@ class ExtractionRequest(FrozenModel):
     max_records: int = 1
 
 
+CollectorOutcomeStatus = Literal[
+    "ran",
+    "skipped",
+    "no_match",
+    "produced_evidence",
+    "failed",
+    "timed_out",
+]
+
+
+class CollectorOutcome(FrozenModel):
+    """Per-collector outcome captured during the collect stage.
+
+    Self-contained and bounded for ``diagnose.json``: identifies the collector,
+    what happened (``CollectorOutcomeStatus``), and how much evidence it yielded.
+    """
+
+    collector_id: str
+    outcome: CollectorOutcomeStatus
+    evidence_count: int = 0
+    detail: str | None = None
+
+
+class StageOutcome(FrozenModel):
+    """Per-stage outcome of the deterministic extraction pipeline.
+
+    ``stage`` is the pipeline step (collect, normalize, build_graph, ...);
+    ``outcome`` reuses the collector vocabulary so diagnose readers learn one set.
+    """
+
+    stage: str
+    outcome: CollectorOutcomeStatus
+    detail: str | None = None
+
+
+class VariantDrop(FrozenModel):
+    """One dropped variant row, recorded with full root-cause identity.
+
+    Spec §6 requires every dropped variant to record ``row, stage, rule, reason``
+    so a missing/incorrect variant is explainable from ``diagnose.json`` alone.
+    ``row`` is a bounded identity preview (sku/url/price), never the full payload.
+    """
+
+    row: str
+    stage: str
+    rule: str
+    reason: str
+
+
 class ExtractionResult(FrozenModel):
     schema_version: Literal["extraction.v1"] = "extraction.v1"
     surface: Surface
@@ -455,3 +504,6 @@ class ExtractionResult(FrozenModel):
     ]
     retry_request: RetryRequest | None = None
     metrics: ExtractionMetrics = Field(default_factory=ExtractionMetrics)
+    collector_outcomes: tuple[CollectorOutcome, ...] = ()
+    stage_outcomes: tuple[StageOutcome, ...] = ()
+    variant_drops: tuple[VariantDrop, ...] = ()

@@ -13,11 +13,7 @@ from app.acquisition.contracts import (
 )
 from app.crawl.contracts import RunSummary, UrlResult
 from app.extraction.contracts import CapabilityRequest
-from app.persistence.contracts import (
-    ArtifactManifest,
-    AttemptArtifactSet,
-    ExtractionArtifactSet,
-)
+from app.persistence.contracts import ArtifactReference
 
 pytestmark = pytest.mark.unit
 
@@ -82,26 +78,13 @@ def test_url_result_exposes_extraction_verdict_without_independent_field() -> No
     assert "verdict" not in result.model_fields_set
 
 
-def test_manifest_requires_sha256_artifact_references() -> None:
+def test_artifact_reference_requires_sha256() -> None:
     with pytest.raises(ValidationError, match="sha256"):
-        ArtifactManifest(
-            run_id=7,
-            url_result_id=9,
-            bundle_id="bundle-1",
-            attempts=(
-                AttemptArtifactSet(
-                    attempt_id="http-1",
-                    artifacts=(
-                        {
-                            "name": "page.html",
-                            "uri": "runs/7/pages/page.html",
-                            "sha256": "bad",
-                            "size_bytes": 12,
-                        },
-                    ),
-                ),
-            ),
-            extraction=ExtractionArtifactSet(),
+        ArtifactReference(
+            name="page.html",
+            uri="runs/7/results/9/page.html",
+            sha256="bad",
+            size_bytes=12,
         )
 
 

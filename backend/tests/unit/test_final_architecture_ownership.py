@@ -14,6 +14,7 @@ LONG_FUNCTION_DEBT: set[tuple[str, str]] = set()
 
 LEGACY_RECORD_FIELD_COMPATIBILITY_OWNERS = {
     "core response shaping": "schemas/crawl.py",
+    "canonical persistence": "crawl/pipeline/persistence.py",
 }
 
 
@@ -121,8 +122,6 @@ def test_legacy_record_columns_have_no_new_direct_consumers() -> None:
         ("api/records.py", "load_canonical_record_views"),
         ("connectors/public_api/extraction_service.py", "load_record_artifacts"),
         ("crawl/review/__init__.py", "load_record_artifacts"),
-        ("observability/run_audit.py", "load_canonical_record_views"),
-        ("observability/run_llm_diagnosis.py", "load_record_artifacts"),
         ("persistence/record_export_service.py", "load_record_artifacts"),
     ),
 )
@@ -208,8 +207,15 @@ def test_crawl_and_workers_are_owned_by_top_level_packages() -> None:
 
 
 def test_observability_is_owned_by_top_level_package() -> None:
-    assert (APP_ROOT / "observability" / "run_trace.py").is_file()
+    assert (APP_ROOT / "observability" / "diagnose.py").is_file()
+    assert (APP_ROOT / "observability" / "run_report.py").is_file()
     assert not (APP_ROOT / "services" / "observability").exists()
+    # The self-healing trace/audit/baseline layer was collapsed into the
+    # self-contained diagnose.json + deterministic report.json pair.
+    assert not (APP_ROOT / "observability" / "run_trace.py").exists()
+    assert not (APP_ROOT / "observability" / "run_audit.py").exists()
+    assert not (APP_ROOT / "observability" / "baseline.py").exists()
+    assert not (APP_ROOT / "observability" / "artifact_reader.py").exists()
 
 
 def test_intelligence_and_enrichment_are_top_level_packages() -> None:
@@ -228,12 +234,15 @@ def test_connectors_are_owned_by_top_level_package() -> None:
 
 
 def test_persistence_support_packages_are_top_level() -> None:
-    assert (APP_ROOT / "persistence" / "storage" / "local.py").is_file()
+    assert (APP_ROOT / "persistence" / "url_result_artifacts.py").is_file()
     assert (APP_ROOT / "persistence" / "export" / "schema.py").is_file()
     assert (APP_ROOT / "persistence" / "publish" / "verdict.py").is_file()
     assert not (APP_ROOT / "services" / "storage").exists()
     assert not (APP_ROOT / "services" / "export").exists()
     assert not (APP_ROOT / "services" / "publish").exists()
+    # Pages-scheme artifact storage collapsed into the single URL-result writer.
+    assert not (APP_ROOT / "persistence" / "storage").exists()
+    assert not (APP_ROOT / "persistence" / "artifact_store.py").exists()
 
 
 def test_legacy_services_package_is_deleted() -> None:
@@ -285,7 +294,6 @@ def test_dead_checkpoint_parameters_are_retired() -> None:
         ("CapabilityRequest", {"extraction/contracts.py"}),
         ("UrlResult", {"crawl/contracts.py"}),
         ("RunSummary", {"crawl/contracts.py"}),
-        ("ArtifactManifest", {"persistence/contracts.py"}),
     ),
 )
 def test_canonical_contract_owner_allowlist(

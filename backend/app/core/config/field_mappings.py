@@ -253,11 +253,6 @@ PROMPT_REGISTRY = {
         "system_file": "missing_field_extraction.system.txt",
         "user_file": "missing_field_extraction.user.txt",
     },
-    "run_diagnosis": {
-        "response_type": "object",
-        "system_file": "run_diagnosis.system.txt",
-        "user_file": "run_diagnosis.user.txt",
-    },
 }
 
 NAVIGATION_URL_FIELDS = frozenset({URL_FIELD, APPLY_URL_FIELD, CANONICAL_URL_FIELD})

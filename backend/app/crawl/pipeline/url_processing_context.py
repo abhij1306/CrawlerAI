@@ -10,7 +10,6 @@ from app.acquisition.acquirer import PageAcquisitionResult
 from app.acquisition.runtime_plan import AcquisitionIntent
 from app.core.config.runtime_settings import crawler_runtime_settings
 from app.extraction.contracts import ExtractionResult
-from app.observability.run_trace import RunTrace, new_run_trace
 from app.crawl.pipeline.types import URLProcessingConfig
 
 
@@ -25,16 +24,6 @@ class URLProcessingContext:
     requested_fields: list[str] = field(default_factory=list)
     surface: str = ""
     browser_escalation_count: int = 0
-    trace: RunTrace | None = field(default=None)
-
-    def __post_init__(self) -> None:
-        if self.trace is None:
-            self.trace = new_run_trace(
-                run_id=getattr(self.run, "id", 0) or 0,
-                url=self.url,
-                surface=self.surface,
-                requested_fields=list(self.requested_fields),
-            )
 
 
 @dataclass(slots=True)

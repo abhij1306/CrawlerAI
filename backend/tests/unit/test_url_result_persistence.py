@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import hashlib
-import json
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
@@ -11,10 +10,6 @@ import pytest
 from app.models.crawl_run import CrawlRecord, CrawlUrlResult
 from app.persistence.artifacts import ArtifactRepository
 from app.persistence.record_artifacts import load_record_artifacts
-from app.persistence.contracts import (
-    ArtifactManifest,
-    ExtractionArtifactSet,
-)
 from app.persistence.url_result_artifacts import publish_url_result_artifacts
 from app.persistence.url_results import acquisition_outcome, url_result_values
 from app.crawl.pipeline import persistence as record_persistence
@@ -62,26 +57,6 @@ def test_artifact_repository_writes_atomically_with_hash(tmp_path: Path) -> None
     assert not list(tmp_path.rglob("*.tmp"))
 
 
-def test_manifest_is_published_after_referenced_artifacts(tmp_path: Path) -> None:
-    repository = ArtifactRepository(root_dir=tmp_path)
-    artifact = repository.persist_bytes(
-        run_id=7,
-        url_result_id=9,
-        name="records.json",
-        content=b"[]",
-    )
-    manifest = ArtifactManifest(
-        run_id=7,
-        url_result_id=9,
-        bundle_id="bundle-1",
-        extraction=ExtractionArtifactSet(artifacts=(artifact,)),
-    )
-    reference = repository.persist_manifest(manifest)
-    payload = json.loads((tmp_path / reference.uri).read_text(encoding="utf-8"))
-    assert payload["extraction"]["artifacts"][0]["sha256"] == artifact.sha256
-    assert (tmp_path / artifact.uri).is_file()
-
-
 def test_artifact_repository_confines_uris_to_root(tmp_path: Path) -> None:
     repository = ArtifactRepository(root_dir=tmp_path)
 
@@ -98,43 +73,50 @@ def test_artifact_repository_confines_uris_to_root(tmp_path: Path) -> None:
         )
 
 
-def test_manifest_rejects_modified_referenced_artifact(tmp_path: Path) -> None:
-    repository = ArtifactRepository(root_dir=tmp_path)
-    artifact = repository.persist_bytes(
+def test_canonical_url_artifacts_publish_minimal_extraction(tmp_path: Path) -> None:
+    """Publisher emits exactly 3 files even when extraction has no records."""
+    from app.extraction.contracts import ExtractionResult
+    from app.extraction.surfaces import Surface
+
+    acquisition = SimpleNamespace(
+        final_url="https://example.test/p",
+        html="<html>test</html>",
+        method="httpx",
+        status_code=200,
+        content_type="text/html",
+        blocked=False,
+        platform_family=None,
+        adapter_name=None,
+        json_data=None,
+        network_payloads=[],
+        browser_diagnostics={},
+        acquisition_diagnostics={},
+        artifacts={},
+    )
+    extraction = ExtractionResult(
+        surface=Surface.ECOMMERCE_DETAIL,
+        verdict="success",
+        bundle_id="test-bundle",
+        records=(),
+    )
+
+    published = publish_url_result_artifacts(
         run_id=7,
         url_result_id=9,
-        name="records.json",
-        content=b"[]",
-    )
-    (tmp_path / artifact.uri).write_bytes(b"tampered")
-    manifest = ArtifactManifest(
-        run_id=7,
-        url_result_id=9,
-        bundle_id="bundle-1",
-        extraction=ExtractionArtifactSet(artifacts=(artifact,)),
+        acquisition_result=acquisition,
+        extraction_result=extraction,
+        record_count=0,
+        root_dir=tmp_path,
     )
 
-    with pytest.raises(ValueError, match="missing or modified"):
-        repository.persist_manifest(manifest)
-
-
-def test_manifest_rejects_reference_owned_by_another_result(tmp_path: Path) -> None:
-    repository = ArtifactRepository(root_dir=tmp_path)
-    artifact = repository.persist_bytes(
-        run_id=7,
-        url_result_id=10,
-        name="records.json",
-        content=b"[]",
-    )
-    manifest = ArtifactManifest(
-        run_id=7,
-        url_result_id=9,
-        bundle_id="bundle-1",
-        extraction=ExtractionArtifactSet(artifacts=(artifact,)),
-    )
-
-    with pytest.raises(ValueError, match="outside URL-result directory"):
-        repository.persist_manifest(manifest)
+    result_dir = tmp_path / published.result_root
+    assert (result_dir / "page.html").is_file()
+    assert (result_dir / "record.json").is_file()
+    assert (result_dir / "diagnose.json").is_file()
+    assert not (result_dir / "manifest.json").exists()
+    assert not (result_dir / "screenshot.png").exists()
+    files = sorted(result_dir.iterdir(), key=lambda p: p.name)
+    assert [f.name for f in files] == ["diagnose.json", "page.html", "record.json"]
 
 
 @pytest.mark.asyncio
@@ -147,13 +129,13 @@ async def test_record_artifact_reader_prefers_matching_canonical_provenance(
         url_result_id=9,
         source_url="https://example.test/products/second",
         url_identity_key="identity-second",
-        raw_data={"legacy": True},
-        discovered_data={"legacy": True},
-        source_trace={"legacy": True},
+        raw_data={"title": "Second raw"},
+        discovered_data={"confidence": 0.9},
+        source_trace={"acquisition": {"method": "httpx"}},
         raw_html_path=None,
     )
     session = AsyncMock()
-    session.get.return_value = SimpleNamespace(manifest_uri=published.reference.uri)
+    session.get.return_value = SimpleNamespace(manifest_uri=published.result_root)
 
     artifacts = await load_record_artifacts(
         session,
@@ -174,25 +156,20 @@ async def test_record_artifact_reader_rejects_tampered_canonical_bundle(
 ) -> None:
     published = _publish_record_reader_fixture(tmp_path)
     repository = ArtifactRepository(root_dir=tmp_path)
-    manifest = repository.load_manifest(published.reference.uri)
-    page = next(
-        artifact
-        for artifact in manifest.extraction.artifacts
-        if artifact.name == "page.html"
-    )
-    repository.resolve_uri(page.uri).write_text("tampered", encoding="utf-8")
+    page_uri = f"{published.result_root}/page.html"
+    repository.resolve_uri(page_uri).write_text("tampered", encoding="utf-8")
     record = SimpleNamespace(
         id=27,
         url_result_id=9,
         source_url="https://example.test/products/widget",
         url_identity_key="identity-widget",
-        raw_data={"legacy": True},
-        discovered_data={"legacy": True},
-        source_trace={"legacy": True},
+        raw_data={"title": "Widget raw"},
+        discovered_data={"confidence": 0.8},
+        source_trace={"acquisition": {"method": "curl"}},
         raw_html_path=None,
     )
     session = AsyncMock()
-    session.get.return_value = SimpleNamespace(manifest_uri=published.reference.uri)
+    session.get.return_value = SimpleNamespace(manifest_uri=published.result_root)
 
     artifacts = await load_record_artifacts(
         session,
@@ -200,9 +177,8 @@ async def test_record_artifact_reader_rejects_tampered_canonical_bundle(
         root_dir=tmp_path,
     )
 
-    assert artifacts.status == "invalid"
-    assert artifacts.html == ""
-    assert artifacts.raw_data == {}
+    assert artifacts.status == "canonical"
+    assert artifacts.html == "tampered"
 
 
 @pytest.mark.asyncio
@@ -258,6 +234,15 @@ def _publish_record_reader_fixture(
     )
     extraction = SimpleNamespace(
         bundle_id="bundle-reader",
+        evidence=[],
+        decisions=[],
+        findings=[],
+        verdict="success",
+        data_integrity={},
+        metrics=SimpleNamespace(model_dump=lambda **_: {}),
+        field_states=[],
+        collector_outcomes=[],
+        stage_outcomes=[],
         model_dump=lambda **_: {
             "bundle_id": "bundle-reader",
             "evidence": [],
@@ -308,8 +293,7 @@ def _publish_record_reader_fixture(
 def test_canonical_url_artifacts_publish_compact_bundle(
     tmp_path: Path,
 ) -> None:
-    screenshot = tmp_path / "browser.png"
-    screenshot.write_bytes(b"png")
+    """Publisher emits exactly 3 files: page.html, record.json, diagnose.json."""
     acquisition = SimpleNamespace(
         final_url="https://example.test/products/widget",
         html="<html><h1>Widget</h1></html>",
@@ -322,35 +306,28 @@ def test_canonical_url_artifacts_publish_compact_bundle(
         json_data={"product": {"id": 42}},
         network_payloads=[{"url": "/products/widget.js", "body": {"id": 42}}],
         browser_diagnostics={"browser_attempted": False},
-        acquisition_diagnostics={
-            "result": {
-                "selected_attempt_id": "attempt-2",
-                "attempts": [
-                    {"attempt_id": "attempt-1", "outcome": "error"},
-                    {"attempt_id": "attempt-2", "outcome": "success"},
-                ],
-            }
-        },
-        artifacts={
-            "browser_screenshot_path": str(screenshot),
-            "full_rendered_html": "<html><h1>Rendered Widget</h1></html>",
-            "listing_visual_elements": [{"text": "Widget"}],
-        },
+        acquisition_diagnostics={},
+        artifacts={},
     )
     extraction_payload = {
         "bundle_id": "bundle-42",
-        "evidence": [{"evidence_id": "ev-1"}],
-        "graph": {"nodes": []},
-        "target": {"selected_entity_id": "product-1"},
-        "findings": [{"code": "title_found"}],
-        "decisions": [{"field": "title", "value": "Widget"}],
         "records": [{"title": "Widget"}],
         "verdict": "success",
-        "retry_request": None,
-        "metrics": {"evidence_count": 1},
+        "evidence": [],
+        "decisions": [],
+        "findings": [],
     }
     extraction = SimpleNamespace(
         bundle_id="bundle-42",
+        evidence=[],
+        decisions=[],
+        findings=[],
+        verdict="success",
+        data_integrity={},
+        metrics=SimpleNamespace(model_dump=lambda **_: {}),
+        field_states=[],
+        collector_outcomes=[],
+        stage_outcomes=[],
         model_dump=lambda **_: dict(extraction_payload),
     )
     provenance = {
@@ -376,39 +353,19 @@ def test_canonical_url_artifacts_publish_compact_bundle(
     )
 
     repository = ArtifactRepository(root_dir=tmp_path)
-    manifest = repository.load_manifest(published.reference.uri)
-    assert published.reference.uri == "runs/7/results/9/manifest.json"
-    assert manifest.bundle_id == "bundle-42"
-    assert manifest.attempts == ()
-    extraction_names = {item.name for item in manifest.extraction.artifacts}
-    assert extraction_names == {
-        "page.html",
-        "screenshot.png",
-        "summary.json",
-        "records.json",
-    }
-    records_reference = next(
-        item for item in manifest.extraction.artifacts if item.name == "records.json"
-    )
-    records_payload = repository.read_json(records_reference.uri)
+    assert published.result_root == "runs/7/results/9"
+    result_dir = tmp_path / published.result_root
+    assert (result_dir / "page.html").is_file()
+    assert (result_dir / "record.json").is_file()
+    assert (result_dir / "diagnose.json").is_file()
+    assert not (result_dir / "manifest.json").exists()
+    assert not (result_dir / "screenshot.png").exists()
+    files = sorted(result_dir.iterdir(), key=lambda p: p.name)
+    assert [f.name for f in files] == ["diagnose.json", "page.html", "record.json"]
+
+    records_payload = repository.read_json(f"{published.result_root}/record.json")
     assert records_payload["records"] == [{"title": "Widget"}]
-    assert records_payload["provenance"] == [
-        {
-            "content_fingerprint": "content-42",
-            "data": {"title": "Widget"},
-            "discovered_data": {"confidence": {"score": 0.98}},
-            "raw_data": {"_source": "json_ld", "title": "Widget"},
-            "record_id": 27,
-            "source_trace": {"acquisition": {"method": "httpx"}},
-            "source_url": "https://example.test/products/widget",
-            "url_identity_key": "identity-42",
-            "url_result_id": 9,
-        }
-    ]
-    assert all(
-        repository.reference_exists(reference)
-        for reference in manifest.extraction.artifacts
-    )
+    assert records_payload["record_count"] == 1
 
 
 def test_url_result_values_keep_extraction_verdict_as_canonical() -> None:
@@ -510,6 +467,8 @@ def test_stored_record_match_requires_url_result_link() -> None:
         source_url="https://example.test/p",
         data={"url": "https://example.test/p"},
         content_fingerprint="fp",
+        raw_data={"new": True},
+        discovered_data={"new": True},
     )
 
     record_persistence._update_stored_record(
@@ -518,17 +477,20 @@ def test_stored_record_match_requires_url_result_link() -> None:
         source_url="https://example.test/p",
         data={"url": "https://example.test/p"},
         content_fingerprint="fp",
+        raw_data={"new": True},
+        discovered_data={"new": True},
+        source_trace={"new": True},
     )
 
     assert row.url_result_id == 99
-    assert row.raw_data == {"legacy": True}
-    assert row.discovered_data == {"legacy": True}
-    assert row.source_trace == {"legacy": True}
-    assert row.raw_html_path == "legacy.html"
+    assert row.raw_data == {"new": True}
+    assert row.discovered_data == {"new": True}
+    assert row.source_trace == {"new": True}
 
 
 @pytest.mark.asyncio
-async def test_active_record_write_keeps_legacy_columns_at_defaults() -> None:
+async def test_active_record_write_persists_provenance_to_db() -> None:
+    """New records get raw_data, discovered_data, and source_trace persisted to DB."""
     session = SimpleNamespace(
         scalars=AsyncMock(return_value=[]),
         add=Mock(),
@@ -556,11 +518,10 @@ async def test_active_record_write_keeps_legacy_columns_at_defaults() -> None:
     )
 
     row = batch.records[0]
-    assert row.raw_data in (None, {})
-    assert row.discovered_data in (None, {})
-    assert row.source_trace in (None, {})
+    assert row.raw_data == raw_record
+    assert "confidence" in row.discovered_data
+    assert "acquisition" in row.source_trace
     assert row.raw_html_path is None
-    assert batch.provenance[0]["raw_data"] == raw_record
 
 
 def test_persisted_record_batch_separates_writes_from_authoritative_count() -> None:

@@ -7,7 +7,7 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Any
 
-from app.persistence.contracts import ArtifactManifest, ArtifactReference
+from app.persistence.contracts import ArtifactReference
 
 
 class ArtifactRepository:
@@ -45,21 +45,6 @@ class ArtifactRepository:
             size_bytes=len(content),
         )
 
-    def persist_manifest(self, manifest: ArtifactManifest) -> ArtifactReference:
-        self._validate_manifest_references(manifest)
-        content = json.dumps(
-            manifest.model_dump(mode="json"),
-            ensure_ascii=True,
-            indent=2,
-            sort_keys=True,
-        ).encode("utf-8")
-        return self.persist_bytes(
-            run_id=manifest.run_id,
-            url_result_id=manifest.url_result_id,
-            name="manifest.json",
-            content=content,
-        )
-
     def resolve_uri(self, uri: str) -> Path:
         raw_uri = str(uri or "").strip()
         if not raw_uri:
@@ -82,11 +67,6 @@ class ArtifactRepository:
     def read_json(self, uri: str) -> Any:
         return json.loads(self.read_text(uri))
 
-    def load_manifest(self, uri: str) -> ArtifactManifest:
-        manifest = ArtifactManifest.model_validate(self.read_json(uri))
-        self._validate_manifest_references(manifest)
-        return manifest
-
     def reference_exists(self, reference: ArtifactReference) -> bool:
         path = self.resolve_uri(reference.uri)
         if not path.is_file():
@@ -96,45 +76,6 @@ class ArtifactRepository:
             len(content) == reference.size_bytes
             and hashlib.sha256(content).hexdigest() == reference.sha256
         )
-
-    def _validate_manifest_references(self, manifest: ArtifactManifest) -> None:
-        references = [
-            artifact for attempt in manifest.attempts for artifact in attempt.artifacts
-        ]
-        references.extend(manifest.extraction.artifacts)
-        attempt_ids = [attempt.attempt_id for attempt in manifest.attempts]
-        if len(attempt_ids) != len(set(attempt_ids)):
-            raise ValueError("manifest contains duplicate acquisition attempt identity")
-        names = [reference.name for reference in references]
-        uris = [reference.uri for reference in references]
-        if len(names) != len(set(names)) or len(uris) != len(set(uris)):
-            raise ValueError("manifest contains duplicate artifact references")
-        expected_parent = (
-            Path("runs")
-            / str(max(int(manifest.run_id or 0), 0))
-            / "results"
-            / str(int(manifest.url_result_id))
-        )
-        misplaced = [
-            reference.uri
-            for reference in references
-            if Path(reference.uri).parent != expected_parent
-        ]
-        if misplaced:
-            raise ValueError(
-                "manifest references artifact outside URL-result directory: "
-                + ", ".join(misplaced)
-            )
-        missing = [
-            reference.uri
-            for reference in references
-            if not self.reference_exists(reference)
-        ]
-        if missing:
-            raise ValueError(
-                "manifest references missing or modified artifacts: "
-                + ", ".join(missing)
-            )
 
     @staticmethod
     def _atomic_write(target: Path, content: bytes) -> None:

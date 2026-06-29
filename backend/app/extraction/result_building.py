@@ -316,6 +316,8 @@ def metrics(
     decision_rows: tuple[Decision, ...],
     records: tuple[PublicRecord, ...],
     verdict: str,
+    *,
+    collector_count: int = 0,
 ) -> ExtractionMetrics:
     lineage_fields = sum(len(dict(record.get("_lineage") or {})) for record in records)
     public_fields = sum(
@@ -331,6 +333,7 @@ def metrics(
         0.0,
     )
     return ExtractionMetrics(
+        collector_count=collector_count,
         evidence_count=len(evidence),
         entity_counts=graph.entity_counts,
         finding_counts_by_severity=dict(

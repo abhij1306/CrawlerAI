@@ -7,8 +7,6 @@ from app.models.crawl_run import CrawlRecord
 from app.core.config.public_record_policy import (
     PUBLIC_RECORD_FALLBACK_INTERNAL_FIELDS,
 )
-from app.core.db_utils import mapping_or_empty
-from app.core.shared.field_coerce import object_list as _object_list
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 EXPORT_RECORD_VERSION = "1"
@@ -90,91 +88,6 @@ class ExportRecord(BaseModel):
             raise ValueError("record url must be an absolute http(s) URL")
 
 
-def _completed_tiers_list(value: object) -> list[str]:
-    if not isinstance(value, dict):
-        return []
-    completed = value.get("completed")
-    if not isinstance(completed, list):
-        return []
-    return [str(item) for item in completed if str(item or "").strip()]
-
-
-def build_source_trace(
-    acquisition_result,
-    record: dict[str, object],
-    *,
-    data: dict[str, object],
-) -> dict[str, object]:
-    field_discovery: dict[str, object] = {}
-    field_sources = mapping_or_empty(record.get("_field_sources"))
-    selector_traces = mapping_or_empty(record.get("_selector_traces"))
-    rejected_public_fields = mapping_or_empty(record.get("_rejected_public_fields"))
-    field_evidence = mapping_or_empty(record.get("_field_evidence"))
-    evidence_graph = mapping_or_empty(record.get("_evidence_graph"))
-    for key, value in record.items():
-        if str(key).startswith("_"):
-            continue
-        discovery: dict[str, object] = {
-            "status": "found",
-            "value": value,
-            "sources": _string_list(
-                field_sources.get(
-                    str(key), [str(record.get("_source") or "extraction")]
-                )
-            ),
-        }
-        selector_trace = selector_traces.get(str(key))
-        if isinstance(selector_trace, dict):
-            discovery["selector_trace"] = {
-                **dict(selector_trace),
-                "survived_to_final_record": True,
-            }
-        evidence_summary = field_evidence.get(str(key))
-        if isinstance(evidence_summary, dict):
-            discovery.update(dict(evidence_summary))
-        field_discovery[str(key)] = discovery
-    trace: dict[str, object] = {
-        "acquisition": {
-            "method": acquisition_result.method,
-            "status_code": acquisition_result.status_code,
-            "final_url": acquisition_result.final_url,
-            "blocked": acquisition_result.blocked,
-            "adapter_name": acquisition_result.adapter_name,
-            "adapter_source_type": acquisition_result.adapter_source_type,
-            "network_payload_count": len(
-                list(acquisition_result.network_payloads or [])
-            ),
-            "browser_diagnostics": mapping_or_empty(
-                acquisition_result.browser_diagnostics
-            ),
-        },
-        "extraction": {
-            "source": str(record.get("_source") or "extraction"),
-            "confidence": mapping_or_empty(record.get("_confidence")),
-            "self_heal": mapping_or_empty(record.get("_self_heal")),
-            "field_repair": mapping_or_empty(record.get("_field_repair")),
-            "manifest_trace": mapping_or_empty(record.get("_manifest_trace")),
-            "review_bucket": _object_list(record.get("_review_bucket")),
-            "semantic": mapping_or_empty(record.get("_semantic")),
-            "rejected_public_fields": rejected_public_fields,
-            "dom_skip": mapping_or_empty(record.get("_dom_skip_decision")),
-            "completed_tiers": _completed_tiers_list(record.get("_extraction_tiers")),
-            "validation_findings": _object_list(record.get("_validation_findings")),
-            "transforms": _object_list(record.get("_transforms"))
-            or _object_list(evidence_graph.get("field_transforms")),
-        },
-        "field_discovery": field_discovery,
-    }
-    ExportRecord.model_validate(
-        {
-            "source_url": str(record.get("source_url") or acquisition_result.final_url),
-            "data": clean_export_data(data),
-            **trace,
-        }
-    )
-    return trace
-
-
 def export_record_from_row(
     row: CrawlRecord,
     *,
@@ -203,9 +116,3 @@ def clean_export_data(data: dict) -> dict:
             and str(k).strip().lower() not in PUBLIC_RECORD_FALLBACK_INTERNAL_FIELDS
         )
     }
-
-
-def _string_list(value: object) -> list[str]:
-    if not isinstance(value, list):
-        return []
-    return [str(item) for item in value]

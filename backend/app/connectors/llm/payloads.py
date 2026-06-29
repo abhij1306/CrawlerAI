@@ -144,23 +144,6 @@ class _DataEnrichmentSemanticPayload(BaseModel):
     suggested_bundles: list[str] | None = None
 
 
-class _RunDiagnosisFieldPayload(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    field: str = ""
-    source: str = ""
-    note: str = ""
-
-
-class _RunDiagnosisPayload(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    summary: str = ""
-    field_provenance: list[_RunDiagnosisFieldPayload] = Field(default_factory=list)
-    likely_root_cause: str = ""
-    missing_field_reasons: list[_RunDiagnosisFieldPayload] = Field(default_factory=list)
-
-
 _PAYLOAD_ADAPTERS: dict[str, TypeAdapter[Any]] = {
     "direct_record_extraction": TypeAdapter(list[dict[_FieldKey, Any]]),
     "missing_field_extraction": TypeAdapter(dict[_FieldKey, Any]),
@@ -174,7 +157,6 @@ _PAYLOAD_ADAPTERS: dict[str, TypeAdapter[Any]] = {
         _ProductIntelligenceBrandInferencePayload
     ),
     "data_enrichment_semantic": TypeAdapter(_DataEnrichmentSemanticPayload),
-    "run_diagnosis": TypeAdapter(_RunDiagnosisPayload),
 }
 SUPPORTED_TASK_TYPES = tuple(_PAYLOAD_ADAPTERS.keys())
 

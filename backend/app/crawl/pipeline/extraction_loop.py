@@ -11,17 +11,13 @@ from app.acquisition.acquirer import acquire as _acquire
 from app.acquisition.browser_fetch_support import browser_page_load_elapsed_ms
 from app.acquisition.browser_runtime import real_chrome_browser_available
 from app.acquisition.host_protection_memory import note_host_hard_block
-from app.core.config import observability as obs_config
 from app.core.db_utils import mapping_or_empty
-from app.core.shared.number_coerce import as_int
-from app.core.shared.field_coerce import object_list as _object_list
 from app.crawl.domain_memory_service import load_domain_selector_rules
 from app.core.domain_utils import normalize_domain
 from app.acquisition.platform_policy import detect_platform_family
 from app.persistence.publish import (
     VERDICT_BLOCKED,
     VERDICT_EMPTY,
-    VERDICT_ERROR,
     VERDICT_LISTING_FAILED,
     build_url_metrics,
     compute_verdict,
@@ -35,11 +31,7 @@ from app.crawl.robots_policy import (
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .retry import build_acquisition_request, retry_extraction_request_with_browser
-from .persistence import (
-    persist_acquisition_artifacts,
-    persist_extracted_records,
-    persist_run_trace,
-)
+from .persistence import persist_extracted_records
 from app.persistence.url_results import upsert_url_result
 from app.persistence.url_result_artifacts import publish_url_result_artifacts
 from .record_extraction_stage import (
@@ -57,7 +49,6 @@ from .runtime_helpers import (
     effective_blocked as _effective_blocked,
     mark_run_failed,
     record_detail_expansion_extraction_outcome as _record_detail_expansion_extraction_outcome,
-    screenshot_required as _screenshot_required,
     suppress_empty_downstream_record_logs as _suppress_empty_downstream_record_logs,
     log_pipeline_event as _log_pipeline_event,
     set_stage,
@@ -135,82 +126,46 @@ async def process_single_url(
         update_run_state=update_run_state,
         persist_logs=persist_logs,
     )
-    try:
-        with logfire_span(
-            "pipeline.url.process",
-            run_id=run.id,
-            domain=normalize_domain(url),
-            surface=run.surface,
-            llm_enabled=settings_view.llm_enabled(),
-            traversal_mode=context.config.traversal_mode or "",
-            max_records=context.config.max_records,
-        ) as span:
-            await _enter_stage(context, STAGE_ACQUIRE)
-            robots_result = await _run_robots_gate(context)
-            if robots_result is not None:
-                set_logfire_attributes(
-                    span,
-                    verdict=robots_result.verdict,
-                    blocked=True,
-                    stage="robots",
-                )
-                return robots_result
-            fetched = await _run_acquisition_stage(
-                context,
-                prefetched_acquisition=prefetched_acquisition,
-            )
-            if context.config.prefetch_only:
-                result = _build_prefetch_only_result(context, fetched)
-                set_logfire_attributes(span, verdict=result.verdict, prefetch_only=True)
-                return result
-            await _enter_stage(context, STAGE_EXTRACT)
-            extracted = await _run_extraction_stage(context, fetched)
-            await _enter_stage(context, STAGE_NORMALIZE)
-            result = await _run_persistence_stage(context, extracted)
-            result_metrics = mapping_or_empty(result.url_metrics)
+    with logfire_span(
+        "pipeline.url.process",
+        run_id=run.id,
+        domain=normalize_domain(url),
+        surface=run.surface,
+        llm_enabled=settings_view.llm_enabled(),
+        traversal_mode=context.config.traversal_mode or "",
+        max_records=context.config.max_records,
+    ) as span:
+        await _enter_stage(context, STAGE_ACQUIRE)
+        robots_result = await _run_robots_gate(context)
+        if robots_result is not None:
             set_logfire_attributes(
                 span,
-                verdict=result.verdict,
-                record_count=result_metrics.get("record_count"),
-                method=result_metrics.get("method"),
-                blocked=result_metrics.get("blocked"),
+                verdict=robots_result.verdict,
+                blocked=True,
+                stage="robots",
             )
-            return result
-    except asyncio.CancelledError as exc:
-        await _persist_terminal_failure_trace(context, exc)
-        raise
-    except Exception as exc:
-        await _persist_terminal_failure_trace(context, exc)
-        raise
-
-
-async def _persist_terminal_failure_trace(
-    context: _URLProcessingContext,
-    exc: BaseException,
-) -> None:
-    trace = context.trace
-    if trace is None:
-        return
-    diagnostics = mapping_or_empty(getattr(exc, "browser_diagnostics", {}))
-    trace.record_acquire_event(
-        obs_config.ACQUIRE_EVENT_TERMINAL_FAILURE,
-        detail={
-            "error_type": type(exc).__name__,
-            "message": str(exc),
-            "browser_outcome": diagnostics.get("browser_outcome"),
-            "failure_reason": diagnostics.get("failure_reason"),
-        },
-    )
-    trace.record_verdict(VERDICT_ERROR)
-    try:
-        await persist_run_trace(
-            run_id=context.run.id,
-            source_url=context.url,
-            trace=trace,
-            flagged=True,
+            return robots_result
+        fetched = await _run_acquisition_stage(
+            context,
+            prefetched_acquisition=prefetched_acquisition,
         )
-    except Exception:
-        logger.warning("Failed to persist terminal failure trace", exc_info=True)
+        if context.config.prefetch_only:
+            result = _build_prefetch_only_result(context, fetched)
+            set_logfire_attributes(span, verdict=result.verdict, prefetch_only=True)
+            return result
+        await _enter_stage(context, STAGE_EXTRACT)
+        extracted = await _run_extraction_stage(context, fetched)
+        await _enter_stage(context, STAGE_NORMALIZE)
+        result = await _run_persistence_stage(context, extracted)
+        result_metrics = mapping_or_empty(result.url_metrics)
+        set_logfire_attributes(
+            span,
+            verdict=result.verdict,
+            record_count=result_metrics.get("record_count"),
+            method=result_metrics.get("method"),
+            blocked=result_metrics.get("blocked"),
+        )
+        return result
 
 
 async def _enter_stage(
@@ -349,8 +304,6 @@ async def _run_acquisition_stage(
             f"Acquisition detected rate limiting or bot protection for {context.url}",
         )
 
-    _record_acquire_timeline(context, acquisition_result)
-
     return _FetchedURLStage(
         context=context,
         acquisition_result=acquisition_result,
@@ -358,119 +311,6 @@ async def _run_acquisition_stage(
             acquisition_result,
             requested_fields=list(context.requested_fields),
         ),
-    )
-
-
-def _record_acquire_timeline(
-    context: _URLProcessingContext,
-    acquisition_result,
-) -> None:
-    """Project acquisition diagnostics into the ordered RunTrace acquire timeline.
-
-    Closes the launch -> rendered blackhole: navigation strategy, each readiness
-    probe, interstitial action, policy decisions, and escalation become ordered
-    events instead of only summed phase timings. No-op when tracing is disabled.
-    """
-    trace = context.trace
-    if trace is None:
-        return
-    method = str(getattr(acquisition_result, "method", "") or "")
-    diagnostics = mapping_or_empty(
-        getattr(acquisition_result, "browser_diagnostics", {})
-    )
-    timings = mapping_or_empty(diagnostics.get("phase_timings_ms"))
-
-    for decision in _object_list(diagnostics.get("policy_decisions")):
-        if isinstance(decision, dict):
-            trace.record_acquire_event(
-                obs_config.ACQUIRE_EVENT_POLICY_DECISION,
-                detail={
-                    "action": decision.get("action"),
-                    "reason": decision.get("reason"),
-                    "stage": decision.get("stage"),
-                },
-            )
-
-    host_outcome = mapping_or_empty(diagnostics.get("host_outcome"))
-    if host_outcome:
-        trace.record_host_outcome(host_outcome)
-
-    if method != "browser" and _record_planned_acquisition_attempts(
-        trace, acquisition_result
-    ):
-        return
-    if method != "browser":
-        trace.record_acquire_event(
-            obs_config.ACQUIRE_EVENT_HTTP_FETCH,
-            detail={
-                "method": method,
-                "status_code": getattr(acquisition_result, "status_code", None),
-                "blocked": bool(getattr(acquisition_result, "blocked", False)),
-            },
-        )
-        return
-
-    if method == "browser":
-        trace.record_acquire_event(
-            obs_config.ACQUIRE_EVENT_NAVIGATION,
-            detail={
-                "engine": diagnostics.get("browser_engine"),
-                "strategy": diagnostics.get("navigation_strategy"),
-                "reason": diagnostics.get("browser_reason"),
-            },
-            duration_ms=as_int(timings.get("navigation")),
-        )
-        for probe in _object_list(diagnostics.get("readiness_probes")):
-            if isinstance(probe, dict):
-                trace.record_acquire_event(
-                    obs_config.ACQUIRE_EVENT_READINESS_PROBE,
-                    detail={
-                        "stage": probe.get("stage"),
-                        "is_ready": probe.get("is_ready"),
-                        "visible_text_length": probe.get("visible_text_length"),
-                        "detail_like": probe.get("detail_like"),
-                        "listing_card_count": probe.get("listing_card_count"),
-                    },
-                )
-        interstitial = mapping_or_empty(diagnostics.get("interstitial"))
-        if interstitial:
-            interstitial_status = str(interstitial.get("status") or "").strip().lower()
-            interstitial_timing_key = (
-                obs_config.INTERSTITIAL_DISMISSAL_TIMING_KEY
-                if interstitial_status == "dismissed"
-                else obs_config.INTERSTITIAL_PROBE_TIMING_KEY
-            )
-            trace.record_acquire_event(
-                obs_config.ACQUIRE_EVENT_INTERSTITIAL,
-                detail={"status": interstitial.get("status")},
-                duration_ms=as_int(timings.get(interstitial_timing_key)),
-            )
-        challenge_wait = as_int(timings.get("challenge_wait"))
-        if challenge_wait:
-            trace.record_acquire_event(
-                obs_config.ACQUIRE_EVENT_CHALLENGE,
-                detail={"outcome": diagnostics.get("browser_outcome")},
-                duration_ms=challenge_wait,
-            )
-        escalation_lane = diagnostics.get("escalation_lane")
-        if escalation_lane:
-            trace.record_acquire_event(
-                obs_config.ACQUIRE_EVENT_ESCALATION,
-                detail={
-                    "lane": escalation_lane,
-                    "engine": diagnostics.get("browser_engine"),
-                },
-            )
-
-
-def _record_planned_acquisition_attempts(trace, acquisition_result) -> bool:
-    acquisition_diagnostics = mapping_or_empty(
-        getattr(acquisition_result, "acquisition_diagnostics", {})
-    )
-    canonical_result = mapping_or_empty(acquisition_diagnostics.get("result"))
-    return trace.record_acquisition_attempts(
-        _object_list(canonical_result.get("attempts")),
-        selected_attempt_id=canonical_result.get("selected_attempt_id"),
     )
 
 
@@ -532,7 +372,6 @@ async def _run_extraction_stage_observed(
         fetched,
         result=result,
     )
-    _record_extraction_trace(context, result)
     set_logfire_attributes(
         span,
         final_record_count=len(result.records),
@@ -545,31 +384,6 @@ def _public_record_payload(record, surface: str) -> dict[str, object]:
     return record.model_dump(
         mode="json",
         exclude_none=surface != "ecommerce_detail",
-    )
-
-
-def _record_extraction_trace(
-    context: _URLProcessingContext,
-    result,
-) -> None:
-    trace = getattr(context, "trace", None)
-    if trace is None:
-        return
-    trace.record_evidence_summary(
-        {
-            "candidate_count": result.metrics.evidence_count,
-            "field_decision_count": len(result.decisions),
-            "conflict_count": result.metrics.decision_counts_by_status.get(
-                "conflicted", 0
-            ),
-            "rejected_candidate_count": sum(
-                len(decision.rejected) for decision in result.decisions
-            ),
-            "validation_finding_count": len(result.findings),
-            "review_candidate_count": result.metrics.finding_counts_by_severity.get(
-                "high", 0
-            ),
-        }
     )
 
 
@@ -591,16 +405,6 @@ async def _run_persistence_stage(
         surface=context.surface,
         input_record_count=len(extracted_records),
     ) as span:
-        raw_html_path = await persist_acquisition_artifacts(
-            run_id=context.run.id,
-            acquisition_result=acquisition_result,
-            browser_attempted=_browser_attempted(acquisition_result),
-            screenshot_required=_screenshot_required(
-                _browser_outcome(acquisition_result)
-            ),
-            surface=context.surface,
-            blocked=_effective_blocked(acquisition_result),
-        )
         await _enter_stage(context, STAGE_PERSIST)
         url_result = await upsert_url_result(
             context.session,
@@ -622,7 +426,6 @@ async def _run_persistence_stage(
         set_logfire_attributes(
             span,
             persisted_count=persisted_count,
-            artifact_path=str(raw_html_path or ""),
         )
     verdict = cast(UrlVerdict, extraction_result.verdict)
     if not _suppress_empty_downstream_record_logs(
@@ -685,26 +488,12 @@ async def _publish_url_result_artifacts(
         record_count=record_count,
         record_provenance=record_provenance,
     )
-    url_result.manifest_uri = published.reference.uri
-    url_result.bundle_id = published.manifest.bundle_id
+    # The result-root path *is* the artifact contract: the reader opens
+    # page.html / record.json / diagnose.json by fixed name beneath it.
+    url_result.manifest_uri = published.result_root
+    url_result.bundle_id = published.bundle_id
     url_result.verdict = verdict
     await context.session.flush()
-    if context.trace is None:
-        return
-    diagnostics = mapping_or_empty(
-        getattr(acquisition_result, "browser_diagnostics", {})
-    )
-    failure_reason = mapping_or_empty(extracted.fetched.url_metrics).get(
-        "failure_reason"
-    ) or diagnostics.get("failure_reason")
-    context.trace.record_extraction_rejection(str(failure_reason or "").strip() or None)
-    context.trace.record_verdict(verdict)
-    await persist_run_trace(
-        run_id=context.run.id,
-        source_url=acquisition_result.final_url,
-        trace=context.trace,
-        flagged=verdict not in obs_config.TRACE_SUCCESS_VERDICTS,
-    )
 
 
 URLProcessingContext = _URLProcessingContext

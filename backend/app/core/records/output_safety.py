@@ -16,6 +16,7 @@ from app.core.config.field_mappings import (
 )
 from app.core.config.variant_policy import PUBLIC_VARIANT_AXIS_FIELDS
 from app.core.records.url_identity import conflicting_product_asset_urls
+from app.core.records.variant_drops import VariantDropRecorder
 from app.core.shared.url_utils import is_utility_image_url, public_asset_delivery_url
 from app.extraction.contracts import (
     AssetDecision,
@@ -168,7 +169,10 @@ def _asset_lineage(decision: AssetDecision) -> dict[str, object]:
 
 
 def sanitize_materialized_record(
-    record: dict[str, object], lineages: dict[str, object]
+    record: dict[str, object],
+    lineages: dict[str, object],
+    *,
+    drops: VariantDropRecorder | None = None,
 ) -> None:
     if "availability" in record and not public_availability(record.get("availability")):
         record.pop("availability", None)
@@ -193,6 +197,13 @@ def sanitize_materialized_record(
         if "availability" in row and not public_availability(row.get("availability")):
             row.pop("availability", None)
         if not _variant_row_is_actionable(row):
+            if drops is not None:
+                drops.record(
+                    row,
+                    stage="output_safety",
+                    rule="variant_not_actionable",
+                    reason="no transport field or canonical option axis",
+                )
             continue
         rows.append(row)
         lineage = lineage_rows[index] if index < len(lineage_rows) else {}

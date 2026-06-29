@@ -9,7 +9,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.models.crawl_run import CrawlRecord, CrawlUrlResult
 from app.persistence.artifacts import ArtifactRepository
-from app.persistence.contracts import ArtifactManifest, ArtifactReference
 
 
 @dataclass(frozen=True, slots=True)
@@ -21,8 +20,6 @@ class RecordArtifacts:
     raw_data: Mapping[str, object] = field(default_factory=dict)
     discovered_data: Mapping[str, object] = field(default_factory=dict)
     source_trace: Mapping[str, object] = field(default_factory=dict)
-    acquisition: Mapping[str, object] = field(default_factory=dict)
-    extraction: Mapping[str, object] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
@@ -62,50 +59,31 @@ async def load_record_artifacts(
     *,
     root_dir: Path | None = None,
 ) -> RecordArtifacts:
+    """Resolve a record's data + provenance + page HTML.
+
+    Record provenance (``data``/``raw_data``/``discovered_data``/``source_trace``)
+    is authoritative in the DB columns. The canonical branch reads them straight
+    off the row and loads ``page.html`` by fixed name from the result-root path
+    stored in ``CrawlUrlResult.manifest_uri``. Records without a URL result fall
+    back to the legacy on-disk HTML path.
+    """
+
     repository = ArtifactRepository(root_dir=root_dir or settings.artifacts_dir)
     url_result_id = getattr(record, "url_result_id", None)
     if url_result_id is None:
         return _legacy_record_artifacts(record, repository=repository)
     url_result = await session.get(CrawlUrlResult, int(url_result_id))
-    manifest_uri = str(getattr(url_result, "manifest_uri", "") or "").strip()
-    if not manifest_uri:
+    result_root = str(getattr(url_result, "manifest_uri", "") or "").strip()
+    if not result_root:
         return _legacy_record_artifacts(record, repository=repository)
-    try:
-        manifest = repository.load_manifest(manifest_uri)
-        if manifest.url_result_id != int(url_result_id):
-            raise ValueError("artifact manifest URL-result identity mismatch")
-        references = _references_by_name(manifest)
-        summary = _read_json_mapping(repository, references.get("summary.json"))
-        provenance = _read_compact_provenance(
-            repository,
-            references.get("records.json"),
-        )
-        if not provenance:
-            provenance = _read_json_list(
-                repository,
-                references.get("record-provenance.json"),
-            )
-        row = _match_provenance_row(record, provenance)
-        acquisition = {
-            **_read_json_mapping(repository, references.get("acquisition.json")),
-            **_mapping(summary.get("acquisition")),
-        }
-        extraction = {
-            **_read_json_mapping(repository, references.get("extraction.json")),
-            **_mapping(summary.get("extraction")),
-        }
-        return RecordArtifacts(
-            status="canonical",
-            html=_read_text(repository, references.get("page.html")),
-            data=_mapping(row.get("data")),
-            raw_data=_mapping(row.get("raw_data")),
-            discovered_data=_mapping(row.get("discovered_data")),
-            source_trace=_mapping(row.get("source_trace")),
-            acquisition=acquisition,
-            extraction=extraction,
-        )
-    except (OSError, TypeError, ValueError):
-        return RecordArtifacts(status="invalid")
+    return RecordArtifacts(
+        status="canonical",
+        html=_read_result_html(repository, result_root),
+        data=_mapping(getattr(record, "data", {})),
+        raw_data=_mapping(getattr(record, "raw_data", {})),
+        discovered_data=_mapping(getattr(record, "discovered_data", {})),
+        source_trace=_mapping(getattr(record, "source_trace", {})),
+    )
 
 
 async def load_canonical_record_views(
@@ -127,39 +105,12 @@ async def load_canonical_record_views(
     ]
 
 
-def _references_by_name(
-    manifest: ArtifactManifest,
-) -> dict[str, ArtifactReference]:
-    references = [
-        artifact for attempt in manifest.attempts for artifact in attempt.artifacts
-    ]
-    references.extend(manifest.extraction.artifacts)
-    by_name: dict[str, ArtifactReference] = {}
-    for reference in references:
-        if reference.name in by_name:
-            raise ValueError(f"duplicate artifact name: {reference.name}")
-        by_name[reference.name] = reference
-    return by_name
-
-
-def _match_provenance_row(
-    record: CrawlRecord,
-    rows: list[Mapping[str, object]],
-) -> Mapping[str, object]:
-    match_keys = (
-        ("record_id", getattr(record, "id", None)),
-        ("url_identity_key", getattr(record, "url_identity_key", None)),
-        ("source_url", getattr(record, "source_url", None)),
-    )
-    for key, expected in match_keys:
-        if expected in (None, ""):
-            continue
-        matches = [row for row in rows if row.get(key) == expected]
-        if len(matches) == 1:
-            return matches[0]
-        if len(matches) > 1:
-            raise ValueError(f"ambiguous record provenance match: {key}")
-    return {}
+def _read_result_html(repository: ArtifactRepository, result_root: str) -> str:
+    uri = (Path(result_root) / "page.html").as_posix()
+    try:
+        return repository.read_text(uri)
+    except (OSError, ValueError):
+        return ""
 
 
 def _legacy_record_artifacts(
@@ -195,52 +146,6 @@ def _read_legacy_html(
         return resolved.read_text(encoding="utf-8", errors="ignore")
     except OSError:
         return ""
-
-
-def _read_text(
-    repository: ArtifactRepository,
-    reference: ArtifactReference | None,
-) -> str:
-    return repository.read_text(reference.uri) if reference is not None else ""
-
-
-def _read_compact_provenance(
-    repository: ArtifactRepository,
-    reference: ArtifactReference | None,
-) -> list[Mapping[str, object]]:
-    if reference is None:
-        return []
-    payload = repository.read_json(reference.uri)
-    if not isinstance(payload, Mapping):
-        return []
-    rows = payload.get("provenance", [])
-    if not isinstance(rows, list):
-        raise ValueError("compact records provenance must be a list")
-    return [item for item in rows if isinstance(item, Mapping)]
-
-
-def _read_json_list(
-    repository: ArtifactRepository,
-    reference: ArtifactReference | None,
-) -> list[Mapping[str, object]]:
-    if reference is None:
-        return []
-    payload = repository.read_json(reference.uri)
-    if not isinstance(payload, list):
-        raise ValueError("artifact payload must be a list")
-    return [item for item in payload if isinstance(item, Mapping)]
-
-
-def _read_json_mapping(
-    repository: ArtifactRepository,
-    reference: ArtifactReference | None,
-) -> Mapping[str, object]:
-    if reference is None:
-        return {}
-    payload = repository.read_json(reference.uri)
-    if not isinstance(payload, Mapping):
-        raise ValueError("artifact payload must be an object")
-    return payload
 
 
 def _mapping(value: object) -> Mapping[str, object]:
