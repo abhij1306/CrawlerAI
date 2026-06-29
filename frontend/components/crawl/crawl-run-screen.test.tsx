@@ -787,6 +787,34 @@ describe('CrawlRunScreen', () => {
     });
   });
 
+  it('starts terminal record sync after a failed initial table fetch', async () => {
+    apiMock.getCrawl.mockResolvedValue({
+      ...terminalRun(101),
+      result_summary: {
+        extraction_verdict: 'success',
+        record_count: 2,
+      },
+    });
+    apiMock.getRecords
+      .mockRejectedValueOnce(new Error('records temporarily unavailable'))
+      .mockResolvedValue({
+        items: [makeRecord(1), makeRecord(2)],
+        meta: { page: 1, limit: 100, total: 2 },
+      });
+
+    renderRunScreen();
+
+    await waitFor(() => {
+      expect(apiMock.getRecords).toHaveBeenCalledTimes(1);
+    });
+
+    await waitFor(() => {
+      expect(apiMock.getRecords.mock.calls.length).toBeGreaterThanOrEqual(2);
+    });
+
+    expect(await screen.findByText('Item 1')).toBeInTheDocument();
+  });
+
   it('keeps cached latest-run table rows visible when reopening from history', async () => {
     const queryClient = new QueryClient({
       defaultOptions: {
