@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from typing import Any, Literal
+from typing import Literal
 from urllib.parse import urljoin, urlparse
 
 from app.core.config.extraction_recipes import (
@@ -29,7 +29,6 @@ from app.extraction.collectors._helpers import evidence
 from app.extraction.contracts import (
     ArtifactReader,
     CaptureBundle,
-    CommerceListingRecord,
     Decision,
     EntityHint,
     Evidence,
@@ -37,8 +36,7 @@ from app.extraction.contracts import (
     SourceLocator,
 )
 from app.extraction.documents import HtmlDocument, HtmlNode
-from app.extraction.ids import stable_id
-from app.extraction.materialization import lineage
+from app.core.shared.ids import stable_id
 from app.extraction.surfaces import Surface
 from app.core.records.field_url_normalization import same_site
 from app.core.records.url_identity import (
@@ -62,15 +60,6 @@ def collect_ecommerce_listing(
 
 def resolve_ecommerce_listing(evidence_rows: list[Evidence]) -> list[Decision]:
     return _resolve_listing_decisions(evidence_rows)
-
-
-def materialize_ecommerce_listing(
-    evidence_rows: list[Evidence], decisions: list[Decision], *, max_records: int
-) -> list[CommerceListingRecord]:
-    rows = _materialize_listing_records(
-        evidence_rows, decisions, max_records=max_records
-    )
-    return [CommerceListingRecord.model_validate(row) for row in rows]
 
 
 def _collect_listing_evidence(
@@ -107,10 +96,7 @@ def _collect_listing_evidence(
                     card_selector=selector,
                     card_index=index,
                 )
-                if {"product.title", "product.url"} <= {
-                    row.fact_type for row in card_rows
-                }:
-                    rows.extend(card_rows)
+                rows.extend(card_rows)
     return rows
 
 
@@ -289,47 +275,6 @@ def _resolve_listing_decisions(evidence_rows: list[Evidence]) -> list[Decision]:
                 )
             )
     return decisions
-
-
-def _materialize_listing_records(
-    evidence_rows: list[Evidence],
-    decisions: list[Decision],
-    *,
-    max_records: int,
-) -> list[dict[str, Any]]:
-    by_id = {row.evidence_id: row for row in evidence_rows}
-    rows_by_subject: dict[str, dict[str, Any]] = {}
-    lineage_by_subject: dict[str, dict[str, object]] = {}
-    field_map = {
-        "product.title": "title",
-        "product.url": "url",
-        "offer.price": "price",
-        "asset.image_url": "image_url",
-    }
-    for decision in decisions:
-        field = field_map.get(decision.fact_type)
-        if not field or not decision.accepted_evidence_ids:
-            continue
-        accepted = by_id[decision.accepted_evidence_ids[0]]
-        subject_id = accepted.subject_id or decision.entity_id
-        rows_by_subject.setdefault(subject_id, {})[field] = accepted.value
-        lineage_by_subject.setdefault(subject_id, {})[field] = lineage(
-            decision=decision
-        )
-    materialized = []
-    seen_urls: set[str] = set()
-    for subject_id, row in rows_by_subject.items():
-        if not row.get("title") or not row.get("url"):
-            continue
-        url = str(row["url"])
-        if url in seen_urls:
-            continue
-        seen_urls.add(url)
-        row["_lineage"] = lineage_by_subject.get(subject_id, {})
-        row["_subject_id"] = subject_id
-        materialized.append(row)
-    materialized.sort(key=lambda row: str(row.get("url") or ""))
-    return materialized[:max_records]
 
 
 def _listing_product_title(card: HtmlNode, product_link: HtmlNode | None) -> str | None:

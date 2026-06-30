@@ -1,11 +1,9 @@
 # Active Plan
 
-**Current:** CrawlerAI Site and Product Knowledge Graph Rebuild → docs/plans/site-knowledge-graph-master-plan.md
-**Spec:** docs/feature specs/site-product-knowledge-graph.md (authoritative)
-**Status:** COMPLETE
-**Started:** 2026-06-28
-**Completed:** 2026-06-29
-**Last slice completed:** Slice 12 — Full validation and canonical documentation (2026-06-29)
+**Current:** Extraction Ownership and Accuracy → `docs/plans/extraction-accuracy-guarantee-plan.md`
+**Status:** IN PROGRESS
+**Started:** 2026-06-30
+**Last slice completed:** Code for Slices 1-4, 6, and 8 has landed; local corpus/smoke gates are pending
 
 ## Queue
 

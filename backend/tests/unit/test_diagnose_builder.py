@@ -12,6 +12,7 @@ from app.extraction.contracts import (
     ExtractionMetrics,
     ExtractionResult,
     FieldEvidenceState,
+    Finding,
     RejectedEvidence,
     SourceLocator,
     StageOutcome,
@@ -86,6 +87,27 @@ def test_build_diagnosis_emits_schema_and_top_level_sections() -> None:
     assert diagnosis["variants"] == {"dropped": []}
 
 
+def test_diagnosis_persists_publication_divergence_findings() -> None:
+    finding = Finding(
+        finding_id="finding:divergence",
+        rule_id="PUBLIC_RESOLUTION_DIVERGENCE",
+        severity="medium",
+        scope="selected_public_value",
+        entity_ids=("product:1",),
+        evidence_ids=("evidence:sku",),
+        message="Serialized SKU differs from the authorized projection.",
+        blocking=False,
+        metadata={"path": "record.sku", "reason": "semantic_value_mismatch"},
+    )
+
+    diagnosis = build_diagnosis(
+        acquisition_result=_acquisition(),
+        extraction_result=_result(findings=(finding,)),
+    )
+
+    assert diagnosis["findings"] == [finding.model_dump(mode="json")]
+
+
 def test_acquisition_section_summarizes_transport() -> None:
     diagnosis = build_diagnosis(
         acquisition_result=_acquisition(),
@@ -139,7 +161,7 @@ def test_field_section_carries_winner_and_rejected_with_evidence() -> None:
     assert field["rejected"][0]["collector_id"] == "regex"
 
 
-def test_field_section_includes_firewall_reason_and_reason_codes() -> None:
+def test_field_section_includes_publication_policy_reason_and_reason_codes() -> None:
     result = _result(
         field_states=(
             FieldEvidenceState(
@@ -158,7 +180,7 @@ def test_field_section_includes_firewall_reason_and_reason_codes() -> None:
 
     field = diagnosis["fields"][0]
     assert field["reason_codes"] == ["ambiguous_currency"]
-    assert field["firewall"] == "FAILED_ISO_4217"
+    assert field["publication_policy"] == "FAILED_ISO_4217"
     assert "winner" not in field
 
 
@@ -215,7 +237,12 @@ def test_variant_drops_and_outcomes_passed_through() -> None:
         acquisition_result=_acquisition(),
         extraction_result=result,
         variant_drops=[
-            {"row": "SKU-1", "stage": "firewall", "rule": "PRICE", "reason": "no_price"}
+            {
+                "row": "SKU-1",
+                "stage": "publication",
+                "rule": "PRICE",
+                "reason": "no_price",
+            }
         ],
     )
 

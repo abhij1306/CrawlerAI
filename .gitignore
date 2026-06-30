@@ -77,5 +77,20 @@ zyte/**/*.json
 zyte/**/*.md
 zyte/**/__pycache__/
 
+# Local extraction accuracy corpus/debug partitions (never track)
+local_corpus/
+corpus/
+**/local_corpus/
+**/extraction-corpus/
+**/extraction_corpus/
+**/90-site-corpus/
+**/90_site_corpus/
+**/audit-corpus/
+**/replay-baseline/
+**/replay-output/
+**/diagnose-baseline/
+**/capture-bundles/
+**/capture_bundle*/
+
 # Agent scratch files (commit messages, etc.)
 .git_commit_msg.tmp

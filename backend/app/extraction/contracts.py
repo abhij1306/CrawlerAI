@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Literal, Mapping, Protocol, runtime_checkable
 
-from pydantic import BaseModel, ConfigDict, Field, SerializeAsAny
+from pydantic import BaseModel, ConfigDict, Field, SerializeAsAny, model_validator
 
 from app.core.config.variant_policy import PUBLIC_VARIANT_AXIS_FIELDS
 from app.extraction.surfaces import Surface
@@ -200,7 +200,118 @@ class DerivedFact(FrozenModel):
     fact_type: str
     value: JsonValue
     input_evidence_ids: tuple[str, ...]
+    input_selected_fact_ids: tuple[str, ...] = ()
+    input_derived_fact_ids: tuple[str, ...] = ()
     rule_id: str
+
+
+class SelectedFact(FrozenModel):
+    """Resolved direct truth selected from admitted evidence."""
+
+    selected_fact_id: str
+    decision_id: str
+    entity_id: str
+    fact_type: str
+    value: JsonValue
+    evidence_ids: tuple[str, ...]
+    rule_id: str
+
+
+class EvidenceDisposition(FrozenModel):
+    """Terminal accounting state for one harvested Evidence row."""
+
+    evidence_id: str
+    entity_id: str | None = None
+    status: Literal[
+        "accepted",
+        "rejected_invalid",
+        "rejected_lower_rank",
+        "conflicted",
+        "unowned",
+        "outside_selected_target",
+        "duplicate",
+        "diagnostic_only",
+    ]
+    reason_code: str
+    decision_id: str | None = None
+    selected_fact_id: str | None = None
+    derived_fact_id: str | None = None
+    related_evidence_id: str | None = None
+
+
+class CanonicalizationTrace(FrozenModel):
+    """Versioned representation-only transformation applied for publication."""
+
+    raw_value: JsonValue
+    canonical_value: JsonValue
+    canonicalizer_id: str
+    canonicalizer_version: str
+
+
+class PublicationEntry(FrozenModel):
+    """One atom in the authorized public projection."""
+
+    path: str
+    entity_id: str
+    parent_entity_id: str | None = None
+    value: JsonValue | None = None
+    disposition: Literal["publish", "suppress", "review"] = "publish"
+    reason_code: str | None = None
+    selected_fact_id: str | None = None
+    derived_fact_id: str | None = None
+    rule_id: str | None = None
+    evidence_ids: tuple[str, ...] = ()
+    collector_ids: tuple[str, ...] = ()
+    canonicalization: CanonicalizationTrace | None = None
+
+    @model_validator(mode="after")
+    def _source_is_unambiguous(self) -> "PublicationEntry":
+        source_count = sum(
+            value is not None for value in (self.selected_fact_id, self.derived_fact_id)
+        )
+        if source_count > 1:
+            raise ValueError("publication entry has multiple fact sources")
+        if self.value is not None and source_count != 1:
+            raise ValueError(
+                "publication values require exactly one selected or derived fact"
+            )
+        return self
+
+
+class CommerceDetailProjection(FrozenModel):
+    surface: Literal[Surface.ECOMMERCE_DETAIL] = Surface.ECOMMERCE_DETAIL
+    record_entity_id: str
+    entries: tuple[PublicationEntry, ...] = ()
+    variant_entity_ids: tuple[str, ...] = ()
+    asset_entity_ids: tuple[str, ...] = ()
+    primary_asset_entity_id: str | None = None
+    ordered_additional_asset_ids: tuple[str, ...] | None = None
+
+
+class CommerceListingProjection(FrozenModel):
+    surface: Literal[Surface.ECOMMERCE_LISTING] = Surface.ECOMMERCE_LISTING
+    record_entity_ids: tuple[str, ...] = ()
+    entries: tuple[PublicationEntry, ...] = ()
+
+
+class JobDetailProjection(FrozenModel):
+    surface: Literal[Surface.JOB_DETAIL] = Surface.JOB_DETAIL
+    record_entity_id: str
+    entries: tuple[PublicationEntry, ...] = ()
+
+
+class JobListingProjection(FrozenModel):
+    surface: Literal[Surface.JOB_LISTING] = Surface.JOB_LISTING
+    record_entity_ids: tuple[str, ...] = ()
+    entries: tuple[PublicationEntry, ...] = ()
+
+
+PublicationProjection = (
+    CommerceDetailProjection
+    | CommerceListingProjection
+    | JobDetailProjection
+    | JobListingProjection
+)
 
 
 class Finding(FrozenModel):
@@ -254,6 +365,16 @@ class AssetDecision(FrozenModel):
     rejection_reasons: tuple[str, ...] = ()
 
 
+class VariantDecision(FrozenModel):
+    """Resolver-owned variant eligibility and authorized public row."""
+
+    variant_entity_id: str
+    status: Literal["eligible", "rejected"]
+    reason_code: str
+    values: dict[str, JsonValue] = Field(default_factory=dict)
+    lineage: dict[str, JsonValue] = Field(default_factory=dict)
+
+
 class OptionValue(FrozenModel):
     value: str
     evidence_ids: tuple[str, ...] = ()
@@ -275,6 +396,7 @@ class ResolutionResult(FrozenModel):
     primary_offer_entity_id: str | None = None
     decisions: tuple[Decision, ...]
     asset_decisions: tuple[AssetDecision, ...] = ()
+    variant_decisions: tuple[VariantDecision, ...] = ()
     derived_facts: tuple[DerivedFact, ...]
     unresolved_fact_types: tuple[str, ...]
     blocking_finding_ids: tuple[str, ...]
@@ -312,6 +434,7 @@ RetryRequest = CapabilityRequest
 
 
 class FieldEvidenceState(FrozenModel):
+    entity_id: str | None = None
     field: str
     state: Literal[
         "captured_and_resolved",
@@ -319,6 +442,12 @@ class FieldEvidenceState(FrozenModel):
         "captured_conflicting",
         "source_unavailable",
         "not_present_in_captured_sources",
+        "not_captured",
+        "captured_published",
+        "captured_suppressed",
+        "captured_unowned",
+        "not_present_in_source",
+        "not_requested",
     ]
     evidence_ids: tuple[str, ...] = ()
     reason_codes: tuple[str, ...] = ()
@@ -334,6 +463,8 @@ class ExtractionMetrics(FrozenModel):
     variant_count: int = 0
     public_lineage_coverage: float = 0.0
     completeness_score: float = 0.0
+    resolve_duration_ms: float = 0.0
+    publish_duration_ms: float = 0.0
     verdict: str | None = None
 
 
@@ -435,6 +566,7 @@ CollectorOutcomeStatus = Literal[
     "skipped",
     "no_match",
     "produced_evidence",
+    "budget_limited",
     "failed",
     "timed_out",
 ]
@@ -481,6 +613,40 @@ class ContractOutcome(FrozenModel):
     detail: str
 
 
+class HarvestResult(FrozenModel):
+    """Output of syntactic admission before semantic ownership."""
+
+    surface: Surface
+    evidence: tuple[Evidence, ...] = ()
+    collector_outcomes: tuple[CollectorOutcome, ...] = ()
+    admitted_source_objects: int = 0
+    filtered_source_objects: dict[str, int] = Field(default_factory=dict)
+    budget_outcomes: dict[str, int] = Field(default_factory=dict)
+
+
+class ResolutionEnvelope(FrozenModel):
+    """Common Resolve envelope with a surface-specific public projection."""
+
+    surface: Surface
+    graph: EntityGraph = Field(default_factory=EntityGraph)
+    target: TargetSelection = Field(default_factory=TargetSelection)
+    decisions: tuple[Decision, ...] = ()
+    selected_facts: tuple[SelectedFact, ...] = ()
+    derived_facts: tuple[DerivedFact, ...] = ()
+    evidence_dispositions: tuple[EvidenceDisposition, ...] = ()
+    findings: tuple[Finding, ...] = ()
+    field_states: tuple[FieldEvidenceState, ...] = ()
+    publication: PublicationProjection
+    contract_outcomes: tuple[ContractOutcome, ...] = ()
+
+
+class PublicationResult(FrozenModel):
+    """Serialized records plus publication-integrity findings."""
+
+    records: tuple[SerializeAsAny[PublicRecord], ...] = ()
+    findings: tuple[Finding, ...] = ()
+
+
 class VariantDrop(FrozenModel):
     """One dropped variant row, recorded with full root-cause identity.
 
@@ -496,7 +662,7 @@ class VariantDrop(FrozenModel):
 
 
 class ExtractionResult(FrozenModel):
-    schema_version: Literal["extraction.v1"] = "extraction.v1"
+    schema_version: Literal["extraction.v1", "extraction.v2"] = "extraction.v2"
     surface: Surface
     bundle_id: str = ""
     records: tuple[SerializeAsAny[PublicRecord], ...]
@@ -505,11 +671,19 @@ class ExtractionResult(FrozenModel):
     target: TargetSelection = Field(default_factory=TargetSelection)
     findings: tuple[Finding, ...] = ()
     decisions: tuple[Decision, ...] = ()
+    selected_facts: tuple[SelectedFact, ...] = ()
+    derived_facts: tuple[DerivedFact, ...] = ()
+    evidence_dispositions: tuple[EvidenceDisposition, ...] = ()
     field_states: tuple[FieldEvidenceState, ...] = ()
     transport_outcome: str = "unknown"
-    data_integrity: Literal["clean", "partial", "defect", "blocked", "unknown"] = (
-        "unknown"
-    )
+    data_integrity: Literal[
+        "clean",
+        "partial",
+        "defect",
+        "blocked",
+        "unknown",
+        "divergent",
+    ] = "unknown"
     verdict: Literal[
         "success",
         "partial",

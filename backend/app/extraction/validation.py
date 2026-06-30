@@ -15,7 +15,7 @@ from app.core.config.field_mappings import (
 )
 from app.extraction.contracts import Evidence, Finding, PublicRecord
 from app.extraction.entities import EntitySet
-from app.extraction.ids import stable_id
+from app.core.shared.ids import stable_id
 
 
 def validate(
@@ -355,8 +355,7 @@ def _validate_expected_variant_axes(entities: EntitySet) -> tuple[Finding, ...]:
 
 def _validate_variant_availability(entities: EntitySet) -> tuple[Finding, ...]:
     parent_has_availability = any(
-        offer.variant_entity_id is None
-        and bool(offer.fact_evidence.get("offer.availability"))
+        offer.variant_entity_id is None and _offer_has_availability_signal(offer)
         for offer in entities.offers
     )
     findings: list[Finding] = []
@@ -372,7 +371,7 @@ def _validate_variant_availability(entities: EntitySet) -> tuple[Finding, ...]:
             for offer in offers
         )
         has_availability = any(
-            offer.fact_evidence.get("offer.availability") for offer in offers
+            _offer_has_availability_signal(offer) for offer in offers
         )
         if not sellable or has_availability or parent_has_availability:
             continue
@@ -392,6 +391,13 @@ def _validate_variant_availability(entities: EntitySet) -> tuple[Finding, ...]:
             )
         )
     return tuple(findings)
+
+
+def _offer_has_availability_signal(offer) -> bool:
+    return bool(
+        offer.fact_evidence.get("offer.availability")
+        or offer.fact_evidence.get("offer.stock_quantity")
+    )
 
 
 def _publishable_variant(variant, entities: EntitySet) -> bool:

@@ -15,7 +15,7 @@ from app.acquisition.browser_readiness import analyze_html
 from app.acquisition.dom_runtime import get_page_html
 from app.core.config.selectors import CARD_SELECTORS
 from app.extraction.documents import HtmlAnalysis
-from app.extraction.ids import content_sha256
+from app.core.shared.ids import content_sha256
 
 
 @dataclass(slots=True)

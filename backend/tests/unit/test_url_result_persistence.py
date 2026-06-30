@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
@@ -10,6 +11,7 @@ import pytest
 from app.models.crawl_run import CrawlRecord, CrawlUrlResult
 from app.persistence.artifacts import ArtifactRepository
 from app.persistence.record_artifacts import load_record_artifacts
+from app.persistence import url_result_artifacts
 from app.persistence.url_result_artifacts import publish_url_result_artifacts
 from app.persistence.url_results import acquisition_outcome, url_result_values
 from app.crawl.pipeline import persistence as record_persistence
@@ -117,6 +119,66 @@ def test_canonical_url_artifacts_publish_minimal_extraction(tmp_path: Path) -> N
     assert not (result_dir / "screenshot.png").exists()
     files = sorted(result_dir.iterdir(), key=lambda p: p.name)
     assert [f.name for f in files] == ["diagnose.json", "page.html", "record.json"]
+
+
+def test_diagnose_artifact_is_capped(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(url_result_artifacts, "MAX_DIAGNOSE_ARTIFACT_BYTES", 2_000)
+    acquisition = SimpleNamespace(
+        final_url="https://example.test/products/widget",
+        html="<html>canonical</html>",
+        method="httpx",
+        status_code=200,
+        blocked=False,
+        platform_family=None,
+        browser_diagnostics={},
+        acquisition_diagnostics={},
+    )
+    extraction = SimpleNamespace(
+        bundle_id="bundle-reader",
+        evidence=[],
+        decisions=[],
+        findings=[],
+        verdict="partial",
+        data_integrity="partial",
+        metrics=SimpleNamespace(model_dump=lambda **_: {}),
+        field_states=[],
+        collector_outcomes=[],
+        stage_outcomes=[],
+        contract_outcomes=[],
+        model_dump=lambda **_: {"records": []},
+    )
+    provenance = (
+        {
+            "data": {},
+            "discovered_data": {},
+            "source_trace": {
+                "variant_drops": [
+                    {
+                        "row": "x" * 500,
+                        "stage": "resolve",
+                        "rule": "noisy",
+                        "reason": "x" * 500,
+                    }
+                    for _ in range(100)
+                ]
+            },
+        },
+    )
+
+    published = publish_url_result_artifacts(
+        run_id=7,
+        url_result_id=9,
+        acquisition_result=acquisition,
+        extraction_result=extraction,
+        record_count=0,
+        record_provenance=provenance,
+        root_dir=tmp_path,
+    )
+
+    diagnose_path = tmp_path / published.result_root / "diagnose.json"
+    payload = json.loads(diagnose_path.read_text(encoding="utf-8"))
+    assert diagnose_path.stat().st_size <= 2_000
+    assert "artifact_size" in payload["truncated"]
 
 
 @pytest.mark.asyncio

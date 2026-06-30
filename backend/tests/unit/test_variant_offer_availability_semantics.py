@@ -311,7 +311,7 @@ def test_pipeline_availability_flags_non_enum_values(raw: str) -> None:
     flags: set[str] = set()
     normalized = _normalize_availability_value(raw, flags)
     # Raw text is preserved for the diagnose artifact, but the value is flagged
-    # so resolution ranks it below enum-valid candidates and the firewall drops
+    # so resolution ranks it below enum-valid candidates and publication drops
     # it — never a silent free-text passthrough into the public record.
     assert normalized not in AVAILABILITY_CANONICAL_ENUM
     assert INVALID_AVAILABILITY_EVIDENCE_FLAG in flags

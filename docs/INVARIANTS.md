@@ -46,9 +46,9 @@ If it exists, extend it. If a similar version exists, consolidate — do not cre
 ## 3. Extraction Model — Field Quality and Repair
 
 **How ecommerce-detail extraction works:**
-All collectors write immutable `Evidence` rows into one ledger. Normalization may add flags or derived facts, but it must not erase rejected or contradictory evidence. Entity assembly groups evidence into product, offer, variant, and asset entities. Target selection chooses the primary product before canonical field resolution. The resolver owns accepted/rejected evidence IDs and conflict status for each fact. Materialization may only project resolved decisions, explicit derived facts, accepted asset decisions, and canonical capture URL fallback.
+All collectors write immutable `Evidence` rows into one ledger. Normalization is representation-only: it may preserve raw values and canonicalize value shape, but it must not add evidence, assign ownership, rank, or infer semantics. Entity assembly groups evidence into product, offer, variant, and asset entities. Target selection chooses the primary product before canonical field resolution. Resolve owns accepted/rejected evidence IDs, conflicts, selected facts, derived facts, variant eligibility, asset selection, and publication policy. Publish serializes only the surface-specific publication projection and compares the serialized record back to that projection.
 
-The public firewall is not a semantic repair stage. It may enforce allowed keys, types, canonical enums, empty-value removal, and lineage shape only. Title cleanup, brand rejection, SKU repair, variant-family filtering, image choice, availability normalization, and cross-product rejection belong upstream in collector admission, entity linking, target selection, resolution, or asset decisions.
+There is no downstream semantic repair stage. Title cleanup, brand rejection, SKU repair, variant-family filtering, image choice, availability normalization, and cross-product rejection belong upstream in collector admission, entity linking, target selection, resolution, or asset decisions. Persistence writes the authorized public record and performs no extraction repair.
 
 **Source priority is a resolver tiebreaker, not a source discard rule:**
 1. Platform adapter
@@ -58,11 +58,11 @@ The public firewall is not a semantic repair stage. It may enforce allowed keys,
 5. DOM selector / heuristics
 6. LLM-adjudicated evidence only when the user enabled LLM
 
-Variant and offer facts remain entity-scoped. Parent offer/range/availability values may be derived from resolved variant facts only when the derivation has explicit lineage. A variant ID may be derived from one accepted unique SKU only when the derivation is recorded. No hidden post-materialization mutation is allowed.
+Variant and offer facts remain entity-scoped. Parent offer/range/availability values may be derived from resolved variant facts only when the derivation has explicit lineage. A variant ID may be derived from one accepted unique SKU only when the derivation is recorded. No hidden post-resolution mutation is allowed.
 
-Extraction results expose `transport_outcome`, `data_integrity`, and per-field evidence states: `captured_and_resolved`, `captured_but_rejected`, `captured_conflicting`, `source_unavailable`, or `not_present_in_captured_sources`. Transport success never implies clean data integrity. Proven product-data-source failure must be represented as honest source unavailability rather than an extraction defect.
+Extraction results expose `transport_outcome`, `data_integrity`, per-field evidence states, and terminal evidence dispositions. Field states include legacy states plus v2 states such as `captured_published`, `captured_suppressed`, `captured_conflicting`, `captured_unowned`, `source_unavailable`, and `not_requested`. Transport success never implies clean data integrity. Proven product-data-source failure must be represented as honest source unavailability rather than an extraction defect.
 
-Terminal shell acquisitions, including HTTP error bodies, challenge pages, browser low-content shells, redirect-only shells, and URL/title-only placeholders, are not successful product observations. They must mark affected detail fields as `source_unavailable` and suppress public `ecommerce_detail` materialization when the only surviving public values are the requested URL and a URL-derived title.
+Terminal shell acquisitions, including HTTP error bodies, challenge pages, browser low-content shells, redirect-only shells, and URL/title-only placeholders, are not successful product observations. They must mark affected detail fields as `source_unavailable` and suppress public `ecommerce_detail` records when the only surviving public values are the requested URL and a URL-derived title.
 
 ---
 
@@ -102,7 +102,7 @@ Image candidate parsing must preserve delivery-URL syntax before normalization. 
 
 Network and embedded JSON admission is same-product evidence only. Ad/feed/analytics/recommendation payload roots, sibling products, and selected-color conflicts must be rejected or diagnosed before entity assembly unless an explicit URL, product id, SKU, or selected-root relationship ties the payload to the requested PDP. File extensions are not required for image evidence when the asset URL, response metadata, or product-scoped lineage proves the URL is an image.
 
-Retailer/site identity and product manufacturer identity are separate facts. When a title suffix is corroborated as host identity and a distinct title/path prefix supplies the product brand, host-derived brand evidence must be rejected during normalization rather than repaired after materialization.
+Retailer/site identity and product manufacturer identity are separate facts. When a title suffix is corroborated as host identity and a distinct title/path prefix supplies the product brand, host-derived brand evidence must be rejected during Resolve rather than repaired after publication.
 
 Public-field identity validators are single-owner rules at the public boundary (`field_value_core.py` / `FieldCoercion`):
 
@@ -341,13 +341,13 @@ The run-complete callback remains a generic observability extension point. It mu
 - `record.json` — the public record(s); shape matches the records API.
 - `diagnose.json` — a **self-contained, bounded** root-cause artifact built by `app/observability/diagnose.py`.
 
-`diagnose.json` is the single-file debugging contract: a missing or wrong `price`, `currency`, `availability`, or dropped variant must be fully explainable from `diagnose.json` alone, without opening `page.html` or source. Per field it inlines status (existing `FieldEvidenceState` names), the winning candidate, rejected candidates with reasons (≤120-char value previews), and any firewall action; each dropped variant carries `(row, stage, rule, reason)`. It reuses existing vocabulary — no parallel reason names — and references no other file. The deterministic run-level `report.json` (`app/observability/run_report.py`, a run-complete callback) groups root causes and links to each URL's `diagnose.json`.
+`diagnose.json` is the single-file debugging contract: a missing or wrong `price`, `currency`, `availability`, or dropped variant must be fully explainable from `diagnose.json` alone, without opening `page.html` or source. Per field it inlines status (existing `FieldEvidenceState` names), evidence disposition summaries, the winning candidate, rejected candidates with reasons (≤120-char value previews), and any publication-policy action. It reuses existing resolver/publication/disposition vocabulary — no parallel reason names — and references no other file. The deterministic run-level `report.json` (`app/observability/run_report.py`, a run-complete callback) groups root causes and links to each URL's `diagnose.json`.
 
 **VIOLATION signatures:**
 - A second writer or a second directory scheme (`runs/{id}/pages/...`) emits URL artifacts.
 - Any file other than the three above is written per URL result — `manifest.json`, `summary.json`, `records.json`, `debug.json`, `browser.json`, `trace.json`, `screenshot.*`, `llm_diagnosis.json`, or a duplicate copy of the HTML.
 - `page.html` is written twice.
-- `diagnose.json` references another file instead of inlining bounded provenance, or invents reason vocabulary instead of reusing `FieldEvidenceState` / firewall reasons.
+- `diagnose.json` references another file instead of inlining bounded provenance, or invents reason vocabulary instead of reusing `FieldEvidenceState`, evidence disposition, and publication-policy reasons.
 - A reader opens the never-written `acquisition.json` / `extraction.json`, or reads the deleted `source_trace` candidate/conflict/resolver/llm provenance keys.
 - `run_report.py` (or any run-complete callback) grows monitor-style diffing, retention, webhook, or notification behavior (see Rule 11).
 

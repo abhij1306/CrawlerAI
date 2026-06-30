@@ -347,7 +347,7 @@ describe('DomainMemoryPage', () => {
       root_causes: [],
     });
     apiMock.getResultDiagnosis.mockResolvedValue({
-      schema_version: 'diagnose.v1',
+      schema_version: 'diagnose.v2',
       verdict: 'partial',
       fields: [],
     });
@@ -452,13 +452,19 @@ describe('DomainMemoryPage', () => {
       ],
     });
     apiMock.getResultDiagnosis.mockResolvedValue({
-      schema_version: 'diagnose.v1',
+      schema_version: 'diagnose.v2',
       verdict: 'partial',
+      data_integrity: 'divergent',
+      evidence_dispositions: {
+        total: 3,
+        by_status: { accepted: 1, rejected_invalid: 1, unowned: 1 },
+        examples: [],
+      },
       fields: [
         {
           field: 'price',
           status: 'captured_but_rejected',
-          firewall: 'price_out_of_band',
+          publication_policy: 'price_out_of_band',
           rejected: [{ reason: 'currency_mismatch' }],
         },
       ],
@@ -475,7 +481,9 @@ describe('DomainMemoryPage', () => {
       expect(apiMock.getResultDiagnosis).toHaveBeenCalledWith(101, 7);
     });
     expect(await screen.findByText('Captured But Rejected')).toBeInTheDocument();
-    expect(screen.getByText('Firewall')).toBeInTheDocument();
+    expect(await screen.findByText('Evidence accounting: 3')).toBeInTheDocument();
+    expect(screen.getByText('Accepted 1')).toBeInTheDocument();
+    expect(screen.getByText('Publication policy')).toBeInTheDocument();
   }, 10_000);
 
   it('keeps domain memory usable when Knowledge Graph site loading fails', async () => {

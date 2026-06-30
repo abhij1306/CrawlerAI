@@ -60,7 +60,7 @@ def test_resolved_fields_are_not_root_causes(artifacts_root: Path) -> None:
         payload={
             "fields": [
                 {"field": "price", "status": "captured_and_resolved"},
-                {"field": "currency", "status": "captured_and_resolved"},
+                {"field": "currency", "status": "captured_published"},
             ],
             "variants": {"dropped": []},
         },
@@ -91,7 +91,7 @@ def test_unresolved_field_status_becomes_root_cause(artifacts_root: Path) -> Non
     ]
 
 
-def test_firewall_reason_becomes_root_cause(artifacts_root: Path) -> None:
+def test_publication_policy_reason_becomes_root_cause(artifacts_root: Path) -> None:
     _write_diagnose(
         artifacts_root,
         run_id=2,
@@ -101,13 +101,16 @@ def test_firewall_reason_becomes_root_cause(artifacts_root: Path) -> None:
                 {
                     "field": "currency",
                     "status": "captured_and_resolved",
-                    "firewall": "FAILED_ISO_4217",
+                    "publication_policy": "FAILED_ISO_4217",
                 }
             ]
         },
     )
     report = build_run_report(2)
-    assert report["root_causes"][0]["root_cause"] == "firewall:currency:FAILED_ISO_4217"
+    assert (
+        report["root_causes"][0]["root_cause"]
+        == "publication_policy:currency:FAILED_ISO_4217"
+    )
 
 
 def test_variant_drop_becomes_root_cause(artifacts_root: Path) -> None:
@@ -121,7 +124,7 @@ def test_variant_drop_becomes_root_cause(artifacts_root: Path) -> None:
                 "dropped": [
                     {
                         "row": "SKU-1",
-                        "stage": "firewall",
+                        "stage": "publication",
                         "rule": "PRICE",
                         "reason": "no_price",
                     }
@@ -130,13 +133,16 @@ def test_variant_drop_becomes_root_cause(artifacts_root: Path) -> None:
         },
     )
     report = build_run_report(3)
-    assert report["root_causes"][0]["root_cause"] == "variant_dropped:firewall:PRICE"
+    assert (
+        report["root_causes"][0]["root_cause"]
+        == "variant_dropped:publication:PRICE"
+    )
 
 
 def test_groups_same_cause_across_urls_and_sorts_by_count(
     artifacts_root: Path,
 ) -> None:
-    # Two URLs share firewall:price:NEGATIVE; one URL has a unique field issue.
+    # Two URLs share publication_policy:price:NEGATIVE; one URL has a unique field issue.
     for url_result_id in (10, 11):
         _write_diagnose(
             artifacts_root,
@@ -147,7 +153,7 @@ def test_groups_same_cause_across_urls_and_sorts_by_count(
                     {
                         "field": "price",
                         "status": "captured_and_resolved",
-                        "firewall": "NEGATIVE",
+                        "publication_policy": "NEGATIVE",
                     }
                 ]
             },
@@ -164,7 +170,7 @@ def test_groups_same_cause_across_urls_and_sorts_by_count(
     report = build_run_report(4)
 
     assert [cause["root_cause"] for cause in report["root_causes"]] == [
-        "firewall:price:NEGATIVE",
+        "publication_policy:price:NEGATIVE",
         "field:currency:source_unavailable",
     ]
     assert report["root_causes"][0]["count"] == 2
@@ -191,7 +197,7 @@ def test_malformed_diagnose_files_are_skipped(artifacts_root: Path) -> None:
     assert report["root_causes"][0]["root_cause"] == "field:x:source_unavailable"
 
 
-def test_firewall_mapping_value_uses_reason_key(artifacts_root: Path) -> None:
+def test_publication_policy_mapping_value_uses_reason_key(artifacts_root: Path) -> None:
     _write_diagnose(
         artifacts_root,
         run_id=6,
@@ -201,14 +207,18 @@ def test_firewall_mapping_value_uses_reason_key(artifacts_root: Path) -> None:
                 {
                     "field": "currency",
                     "status": "captured_and_resolved",
-                    "firewall": {"reason": "MIXED_CURRENCIES", "code": 42},
+                    "publication_policy": {
+                        "reason": "MIXED_CURRENCIES",
+                        "code": 42,
+                    },
                 }
             ]
         },
     )
     report = build_run_report(6)
     assert (
-        report["root_causes"][0]["root_cause"] == "firewall:currency:MIXED_CURRENCIES"
+        report["root_causes"][0]["root_cause"]
+        == "publication_policy:currency:MIXED_CURRENCIES"
     )
 
 

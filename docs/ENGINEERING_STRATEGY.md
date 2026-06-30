@@ -108,11 +108,11 @@ The same endpoint tokens, thresholds, or classifier hints defined in two differe
 
 ### AP-12: Repairing resolved data after the evidence graph
 
-The canonical ecommerce-detail path is evidence ledger → normalization → entity graph → target selection → resolution → materialization → findings/verdict. Each concern has one owner.
+The canonical ecommerce-detail path is Harvest → representation-only normalization → entity graph → target selection → Resolve → Publish → verdict. Each concern has one owner.
 
-**Violation looks like:** output safety rewrites titles, drops brands, repairs SKUs, filters cross-product variants, normalizes raw availability tokens, or chooses replacement assets after resolution. Materialization searches unrelated entities for a value that the resolver did not select. HTTP success is reported as clean data despite unresolved identity, offer, asset, or variant conflicts.
+**Violation looks like:** publication, persistence, or export rewrites titles, drops brands, repairs SKUs, filters cross-product variants, normalizes raw availability tokens, or chooses replacement assets after resolution. Publish searches unrelated entities for a value that the resolver did not select. HTTP success is reported as clean data despite unresolved identity, offer, asset, or variant conflicts.
 
-**Fix:** reject or flag bad evidence during normalization; correct product/offer/variant/asset links in entity construction; select the primary product before resolution; record accepted/rejected evidence in resolver decisions; create explicit derived facts with lineage; let the public firewall enforce only keys, types, enums, empty values, and lineage shape. Keep `transport_outcome`, `data_integrity`, and field evidence states separate.
+**Fix:** keep normalization representation-only; reject or flag bad evidence during Resolve; correct product/offer/variant/asset links in entity construction; select the primary product before resolution; record accepted/rejected evidence in resolver decisions; create explicit selected/derived facts with lineage; let Publish serialize only authorized projection entries and fail closed on projection divergence. Keep `transport_outcome`, `data_integrity`, and field evidence states separate.
 
 Artifact regressions must replay stored HTML and captured network payloads through the real pipeline. A gate based only on old `records.json`, manually assigned fixed status, or fixture-specific expected output is not sufficient.
 

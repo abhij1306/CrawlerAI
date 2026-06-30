@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 import re
 from typing import Literal
 from app.core.config.field_mappings import (
@@ -11,6 +12,9 @@ from app.core.config.field_mappings import (
 from app.core.config.extraction_rules import (
     ECOMMERCE_CONTEXT_NOISE_PATH_TOKENS,
     ECOMMERCE_EMBEDDED_STATE_NOISE_SCOPE_TOKENS,
+    MAX_DIAGNOSTIC_EXAMPLES_PER_REASON,
+    MAX_EVIDENCE_PER_SOURCE_OBJECT,
+    MAX_SOURCE_OBJECTS_PER_ARTIFACT,
     VARIANT_JS_STATE_NON_VARIANT_TYPENAME_TOKENS,
 )
 from app.core.config import variant_policy
@@ -33,8 +37,20 @@ from app.core.shared.field_coerce import (
 )
 from app.core.shared.url_utils import extract_urls
 from app.extraction.collectors._helpers import evidence, html_doc, json_objects
-from app.extraction.contracts import CaptureBundle, EntityHint, Evidence, SourceLocator
-from app.extraction.ids import stable_id
+from app.extraction.contracts import (
+    CaptureBundle,
+    CollectorOutcome,
+    EntityHint,
+    Evidence,
+    SourceLocator,
+)
+from app.core.shared.ids import stable_id
+
+
+@dataclass(frozen=True)
+class JsStateHarvestResult:
+    evidence: tuple[Evidence, ...]
+    outcomes: tuple[CollectorOutcome, ...]
 
 
 class JsStateCollector:
@@ -42,7 +58,11 @@ class JsStateCollector:
     collector_version = "1"
 
     def collect(self, bundle: CaptureBundle, artifacts) -> tuple[Evidence, ...]:
+        return self.harvest(bundle, artifacts).evidence
+
+    def harvest(self, bundle: CaptureBundle, artifacts) -> JsStateHarvestResult:
         out: list[Evidence] = []
+        outcomes: list[CollectorOutcome] = []
         for artifact_id, root_path, data in _state_payloads(bundle, artifacts):
             objects = tuple(
                 json_objects(data)
@@ -54,6 +74,18 @@ class JsStateCollector:
                     max_list_items=variant_policy.EMBEDDED_STATE_MAX_LIST_ITEMS,
                 )
             )
+            if len(objects) > MAX_SOURCE_OBJECTS_PER_ARTIFACT:
+                outcomes.append(
+                    _budget_outcome(
+                        "source_object_budget_exhausted",
+                        artifact_id=artifact_id,
+                        root_path=root_path,
+                        count=len(objects),
+                        limit=MAX_SOURCE_OBJECTS_PER_ARTIFACT,
+                        examples=tuple(path for path, _ in objects),
+                    )
+                )
+                objects = objects[:MAX_SOURCE_OBJECTS_PER_ARTIFACT]
             axis_hints = _variant_axis_hints(objects)
             selection = select_product_roots(objects, bundle.final_url)
             for path, obj in objects:
@@ -61,15 +93,52 @@ class JsStateCollector:
                     continue
                 if isinstance(obj, dict):
                     enriched = _with_parent_variant_axes(obj, axis_hints.get(path, ()))
-                    out.extend(
-                        network_row(
-                            bundle,
-                            artifact_id,
-                            f"{root_path}{path}",
-                            enriched,
-                        )
+                    rows = network_row(
+                        bundle,
+                        artifact_id,
+                        f"{root_path}{path}",
+                        enriched,
                     )
-        return tuple(out)
+                    if len(rows) > MAX_EVIDENCE_PER_SOURCE_OBJECT:
+                        outcomes.append(
+                            _budget_outcome(
+                                "evidence_per_source_object_budget_exhausted",
+                                artifact_id=artifact_id,
+                                root_path=f"{root_path}{path}",
+                                count=len(rows),
+                                limit=MAX_EVIDENCE_PER_SOURCE_OBJECT,
+                                examples=tuple(row.locator.value for row in rows),
+                            )
+                        )
+                        rows = rows[:MAX_EVIDENCE_PER_SOURCE_OBJECT]
+                    out.extend(rows)
+        produced = CollectorOutcome(
+            collector_id=self.collector_id,
+            outcome="produced_evidence" if out else "no_match",
+            evidence_count=len(out),
+        )
+        return JsStateHarvestResult(evidence=tuple(out), outcomes=(*outcomes, produced))
+
+
+def _budget_outcome(
+    reason: str,
+    *,
+    artifact_id: str,
+    root_path: str,
+    count: int,
+    limit: int,
+    examples: tuple[str, ...],
+) -> CollectorOutcome:
+    bounded_examples = tuple(examples[:MAX_DIAGNOSTIC_EXAMPLES_PER_REASON])
+    return CollectorOutcome(
+        collector_id=JsStateCollector.collector_id,
+        outcome="budget_limited",
+        evidence_count=0,
+        detail=(
+            f"{reason}; artifact_id={artifact_id}; root_path={root_path or '/'}; "
+            f"count={count}; limit={limit}; examples={list(bounded_examples)!r}"
+        ),
+    )
 
 
 def _state_payloads(bundle: CaptureBundle, artifacts):

@@ -46,6 +46,15 @@ def select_subject_targets(
     spec: SurfaceSpec,
 ) -> TargetSelection:
     del evidence
+    if spec.cardinality == "one" and len(graph) > 1:
+        return TargetSelection(
+            status="ambiguous",
+            root_entity_ids=tuple(graph),
+            rejected_roots=tuple(
+                RejectedEntity(entity_id=entity_id, reason="competing_detail_root")
+                for entity_id in graph
+            ),
+        )
     roots = graph[: request.max_records] if spec.cardinality == "many" else graph[:1]
     return TargetSelection(
         status="resolved" if roots else "missing",
@@ -57,6 +66,9 @@ def select_subject_targets(
 
 
 def scoped_graph(graph_state: Any, target: TargetSelection) -> Any:
+    if isinstance(graph_state, tuple):
+        selected = set(target.root_entity_ids)
+        return tuple(item for item in graph_state if item in selected)
     if not isinstance(graph_state, EntitySet):
         return graph_state
     selected = target.selected_root_entity_id

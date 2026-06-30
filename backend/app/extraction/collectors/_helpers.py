@@ -11,7 +11,7 @@ from app.extraction.contracts import (
     Evidence,
     SourceLocator,
 )
-from app.extraction.ids import stable_id
+from app.core.shared.ids import stable_id
 
 
 def first_artifact(bundle: CaptureBundle, artifact_type: str):

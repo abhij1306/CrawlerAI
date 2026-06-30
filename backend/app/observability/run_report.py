@@ -25,8 +25,8 @@ logger = logging.getLogger(__name__)
 SCHEMA_VERSION = "run-report.v1"
 _CALLBACK_KEY = "observability_run_report"
 
-# A resolved field is not a root cause; every other state is.
-_RESOLVED_FIELD_STATE = "captured_and_resolved"
+# Published/resolved fields are not root causes; every other state is.
+_CLEAN_FIELD_STATES = frozenset({"captured_and_resolved", "captured_published"})
 
 
 def ensure_run_report_registered() -> None:
@@ -95,11 +95,13 @@ def _root_causes(diagnosis: Mapping[str, object]) -> list[str]:
     causes: set[str] = set()
     for field in _object_list(diagnosis.get("fields")):
         field_name = str(field.get("field") or "").strip() or "?"
-        firewall = field.get("firewall")
-        if firewall not in (None, "", [], {}):
-            causes.add(f"firewall:{field_name}:{_scalar(firewall)}")
+        publication_policy = field.get("publication_policy")
+        if publication_policy not in (None, "", [], {}):
+            causes.add(
+                f"publication_policy:{field_name}:{_scalar(publication_policy)}"
+            )
         status = str(field.get("status") or "").strip()
-        if status and status != _RESOLVED_FIELD_STATE:
+        if status and status not in _CLEAN_FIELD_STATES:
             causes.add(f"field:{field_name}:{status}")
     for drop in _object_list(_mapping(diagnosis.get("variants")).get("dropped")):
         stage = str(drop.get("stage") or "?").strip()

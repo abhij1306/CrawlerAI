@@ -31,7 +31,7 @@ from app.extraction.contracts import (
     SourceLocator,
 )
 from app.extraction.documents import HtmlDocument, HtmlNode
-from app.extraction.ids import stable_id
+from app.core.shared.ids import stable_id
 from app.extraction.surfaces import Surface
 
 
@@ -58,10 +58,16 @@ def wrong_surface_findings_for_job_detail(
 
 def collect_job_detail(bundle: CaptureBundle, reader: ArtifactReader) -> list[Evidence]:
     doc = reader.document_store.html("html")
-    return [
-        *_collect_jsonld_job_evidence(bundle, doc, page_url=bundle.final_url),
-        *_collect_dom_job_evidence(bundle, doc, page_url=bundle.final_url),
-    ]
+    structured = _collect_jsonld_job_evidence(bundle, doc, page_url=bundle.final_url)
+    dom = _collect_dom_job_evidence(bundle, doc, page_url=bundle.final_url)
+    structured_subjects = {row.subject_id for row in structured}
+    if len(structured_subjects) == 1:
+        subject_id = next(iter(structured_subjects))
+        dom = [
+            row.model_copy(update={"subject_id": subject_id, "group_id": subject_id})
+            for row in dom
+        ]
+    return [*structured, *dom]
 
 
 def collect_job_listing(
@@ -96,9 +102,7 @@ def _collect_job_listing_evidence(
                 card_selector=selector,
                 card_index=index,
             )
-            facts = {row.fact_type for row in card_rows}
-            if "job.title" in facts and "job.url" in facts:
-                rows.extend(card_rows)
+            rows.extend(card_rows)
     return rows
 
 
@@ -153,12 +157,19 @@ def _collect_jsonld_job_evidence(
     page_url: str,
 ) -> list[Evidence]:
     rows: list[Evidence] = []
-    subject_id = stable_id("subject", bundle.bundle_id, "job", page_url)
     for script_index, tag in enumerate(doc.css('script[type*="ld+json"]')):
         data = loads_jsonish(tag.text(separator=" ", strip=True))
         for path, item in json_objects(data):
             if not isinstance(item, dict) or not _is_job_posting(item):
                 continue
+            subject_id = stable_id(
+                "subject",
+                bundle.bundle_id,
+                "job",
+                script_index,
+                path,
+                item.get("identifier") or item.get("url") or item.get("title"),
+            )
             rows.extend(
                 _jsonld_job_item_evidence(
                     bundle,

@@ -18,7 +18,7 @@ from app.extraction.contracts import (
 )
 from app.core.records.field_policy import normalize_field_key
 from app.extraction.documents import DocumentStore, HtmlDocument
-from app.extraction.ids import content_sha256, stable_id
+from app.core.shared.ids import content_sha256, stable_id
 from app.extraction.surfaces import Surface
 
 

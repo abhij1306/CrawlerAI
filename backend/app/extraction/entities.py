@@ -3,9 +3,7 @@ from __future__ import annotations
 from collections import defaultdict
 
 from pydantic import Field
-from app.core.config import field_mappings
 from app.core.records.url_identity import detail_url_resource_identity
-from app.core.records.url_identity import detail_style_code_from_url
 from app.core.shared.url_utils import asset_url_identity
 from app.extraction.contracts import (
     CaptureBundle,
@@ -15,7 +13,7 @@ from app.extraction.contracts import (
     OptionValue,
     ProductOptionCatalog,
 )
-from app.extraction.ids import stable_id
+from app.core.shared.ids import stable_id
 
 
 class ProductEntity(FrozenModel):
@@ -65,44 +63,6 @@ class EntitySet(FrozenModel):
     assets: tuple[AssetEntity, ...] = ()
     product_option_metadata: dict[str, tuple[str, ...]] = Field(default_factory=dict)
     option_catalogs: tuple[ProductOptionCatalog, ...] = ()
-
-
-def style_sku_from_product_url(evidence: Evidence, *, page_url: str) -> Evidence | None:
-    if evidence.fact_type != field_mappings.PRODUCT_URL_FACT_TYPE:
-        return None
-    # Derive the style code only from the evidence's own URL, falling back to
-    # page_url only when the evidence value is missing. Previously the code
-    # silently inherited the page_url's style code whenever the evidence URL
-    # lacked one, attaching false SKU evidence to cross-sell / related-product
-    # links that share the page but have no matching style code.
-    evidence_url = str(evidence.value or page_url)
-    code = detail_style_code_from_url(evidence_url)
-    if not code:
-        return None
-    metadata = dict(evidence.metadata)
-    metadata.update(
-        {
-            "derived_by": "sku_from_url_style_code",
-            "input_evidence_id": evidence.evidence_id,
-        }
-    )
-    return evidence.model_copy(
-        update={
-            "evidence_id": stable_id(
-                "ev",
-                evidence.bundle_id,
-                evidence.evidence_id,
-                "sku_from_url_style_code",
-                code,
-            ),
-            "fact_type": field_mappings.PRODUCT_SKU_FACT_TYPE,
-            "raw_value": code,
-            "value": code,
-            "confidence": min(float(evidence.confidence) + 0.05, 0.86),
-            "directness": "inferred",
-            "metadata": metadata,
-        }
-    )
 
 
 def build_entities(bundle: CaptureBundle, evidence: tuple[Evidence, ...]) -> EntitySet:

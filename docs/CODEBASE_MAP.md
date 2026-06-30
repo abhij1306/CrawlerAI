@@ -187,7 +187,7 @@ Canonical config owner:
 | `dom/xpath_service.py` | XPath syntax validation, conversion, absolute XPath building, and selector value extraction |
 | `dom/image_extraction.py` | DOM image URL scoring, dedupe, low-resolution upgrade, and page image extraction |
 | `dom/section_extraction.py` | DOM label/value pairs, semantic heading sections, materials sections, and feature rows |
-| `public_record_firewall.py` | Final public persisted-data schema/value firewall |
+| `app/extraction/publication.py` | Resolver-authorized publication projections and deterministic serializers |
 | `field_value_*.py` | Per-field normalization helpers |
 | `field_policy.py` | Field eligibility by surface |
 | `extract/listing_card_fragments.py` | Canonical listing-fragment discovery, scoring, and listing-card heuristics shared by traversal, browser artifact capture, and listing extraction |
@@ -204,7 +204,7 @@ Canonical config owner:
 | `extract/detail/variants/dom_extraction.py` | DOM variant row extraction, expansion, and backfill |
 | `extract/detail/identity/structured_pruning.py` | Structured detail payload relevance and variant-leaf pruning |
 | `extract/detail/assembly/dom_completion.py` | DOM completion gates and DOM variant collection decisions |
-| `extract/detail/images/materialize.py` | Detail image candidate materialization before final cleanup |
+| `app/extraction/publication.py` | Projection-authorized record serialization and URL canonicalization |
 | `extract/detail/assembly/record_assembly.py` | Detail record build/extract orchestration and detail rejection/failure reasons |
 | `extract/detail/variants/dom_options.py` | DOM variant option availability, URL, image, and selected-state helpers |
 | `extract/detail/images/dedupe.py` | Primary/additional detail image merge and dedupe helper |
@@ -323,12 +323,12 @@ All selector memory is scoped by normalized `(domain, surface)`.
 | `persistence/knowledge_graph.py` | Repository: `lock_site_version`, `upsert_entities/relationships/claims/contracts`, `add_evidence`, `fetch_neighborhood`, `count_graph_rows`, `purge_graph`, `load_runtime_snapshot` |
 | `persistence/projection.py` | Projector: `project_extraction_result` — fingerprints templates, upserts structural entities/relationships, projects Evidence into canonical product/offer/brand/category/seller/asset claims, relationships, identity links, variant-set claims, and extraction contracts |
 | `core/knowledge_graph/templates.py` | Template helpers: `normalize_route`, `fingerprint_from_parts`, `fingerprint_template`, `extract_tech_signals` |
-| `core/knowledge_graph/contract_runtime.py` | Frozen contract execution (pure, storage-free): `match_template`, `apply_contracts` — re-points decisions to preferred sources, emits `ContractOutcome` per field |
+| `core/knowledge_graph/contract_runtime.py` | Frozen contract preference lookup (pure, storage-free): `match_template`, `contract_preferences`, `resolved_contract_outcomes`; Resolve owns final eligibility and ranking |
 | `api/knowledge.py` | Bounded graph API: site versions, graph neighborhoods, entity/contract reads, operator source selection, admin rebuild/purge/delete |
 | `alembic/versions/20260629_0002_knowledge_graph.py` | Migration creating all 6 KG tables |
 | `alembic/versions/20260629_0003_kg_contract_selection_history.py` | Migration adding `selection_history` for operator source decisions |
 
-The Knowledge Graph owns site templates, canonical-field source candidates, source decisions, extraction contracts, product claims, and cross-crawl relationships. It is separate from acquisition-owned Domain Memory (Bucket 6) and resets independently. At run creation `load_runtime_snapshot` freezes the current graph state into `CrawlRun.extraction_runtime_snapshot`; the extraction engine matches page fingerprints against this frozen snapshot and applies saved source preferences via `apply_contracts`. Extraction emits observations only and must never import graph storage (ratcheted in `tests/unit/test_extraction_architecture.py`). The URL pipeline projects graph updates through persistence, while `/api/knowledge/*` exposes bounded reads and operator refinement. The cold-start LLM proposer arrives in a later slice. See `docs/INVARIANTS.md` §17.
+The Knowledge Graph owns site templates, canonical-field source candidates, source decisions, extraction contracts, product claims, and cross-crawl relationships. It is separate from acquisition-owned Domain Memory (Bucket 6) and resets independently. At run creation `load_runtime_snapshot` freezes the current graph state into `CrawlRun.extraction_runtime_snapshot`; the extraction engine matches page fingerprints against this frozen snapshot and passes saved source preferences into Resolve. Contracts may rank already eligible evidence only; they cannot create ownership, move evidence across entities, or resurrect rejected evidence. Extraction emits observations only and must never import graph storage (ratcheted in `tests/unit/test_extraction_architecture.py`). The URL pipeline projects graph updates through persistence, while `/api/knowledge/*` exposes bounded reads and operator refinement. The cold-start LLM proposer arrives in a later slice. See `docs/INVARIANTS.md` §17.
 
 ---
 

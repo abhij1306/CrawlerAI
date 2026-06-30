@@ -15,6 +15,7 @@ from app.extraction import Surface, extract
 from app.extraction.pipeline import _only_slug_identity
 from app.extraction.contracts import CommerceDetailRecord, ExtractionRequest
 from app.extraction.contracts import Evidence
+from app.core.config.extraction_rules import MAX_EVIDENCE_PER_SOURCE_OBJECT
 from app.extraction.replay import (
     fixture_request_from_inputs,
     request_from_acquisition_result,
@@ -76,6 +77,14 @@ def _extract(
     )
 
 
+def _price_repair_facts(result, rule_id: str):
+    return tuple(
+        fact
+        for fact in result.derived_facts
+        if fact.fact_type == "offer.price" and fact.rule_id == rule_id
+    )
+
+
 def test_active_provider_shell_without_product_identity_is_blocked() -> None:
     marker = "px-captcha"
     classification = classify_blocked_page(
@@ -86,6 +95,72 @@ def test_active_provider_shell_without_product_identity_is_blocked() -> None:
     assert classification.blocked is True
     assert classification.outcome == "challenge_page"
     assert marker in classification.active_provider_hits
+
+
+def test_js_state_source_object_evidence_budget_is_reported() -> None:
+    image_urls = [
+        f"https://cdn.shop.test/images/trail-shoe-{index}.jpg"
+        for index in range(MAX_EVIDENCE_PER_SOURCE_OBJECT + 25)
+    ]
+    result = extract(
+        fixture_request_from_inputs(
+            Surface.ECOMMERCE_DETAIL,
+            "<html><body><h1>Trail Shoe</h1></body></html>",
+            "https://shop.test/products/trail-shoe",
+            artifacts={
+                "js_state_objects": {
+                    "name": "Trail Shoe",
+                    "sku": "TS-1",
+                    "url": "https://shop.test/products/trail-shoe",
+                    "images": image_urls,
+                }
+            },
+        )
+    )
+
+    budget_outcomes = [
+        row
+        for row in result.collector_outcomes
+        if row.collector_id == "js_state" and row.outcome == "budget_limited"
+    ]
+    assert budget_outcomes
+    assert "evidence_per_source_object_budget_exhausted" in str(
+        budget_outcomes[0].detail
+    )
+    assert (
+        sum(1 for row in result.evidence if row.collector_id == "js_state")
+        <= MAX_EVIDENCE_PER_SOURCE_OBJECT
+    )
+
+
+def test_js_state_source_object_budget_is_reported(monkeypatch) -> None:
+    from app.extraction.collectors import js_state
+
+    monkeypatch.setattr(js_state, "MAX_SOURCE_OBJECTS_PER_ARTIFACT", 2)
+    result = extract(
+        fixture_request_from_inputs(
+            Surface.ECOMMERCE_DETAIL,
+            "<html><body><h1>Trail Shoe</h1></body></html>",
+            "https://shop.test/products/trail-shoe",
+            artifacts={
+                "js_state_objects": {
+                    "products": [
+                        {"name": "Trail Shoe", "sku": "TS-1"},
+                        {"name": "Trail Shoe Blue", "sku": "TS-2"},
+                        {"name": "Trail Shoe Red", "sku": "TS-3"},
+                    ]
+                }
+            },
+        )
+    )
+
+    budget_outcomes = [
+        row
+        for row in result.collector_outcomes
+        if row.collector_id == "js_state" and row.outcome == "budget_limited"
+    ]
+    assert budget_outcomes
+    assert "source_object_budget_exhausted" in str(budget_outcomes[0].detail)
 
 
 def test_active_provider_marker_does_not_hide_product_identity() -> None:
@@ -119,7 +194,12 @@ def test_blocked_capture_does_not_publish_public_records() -> None:
     marker = "px-captcha"
     request = fixture_request_from_inputs(
         Surface.ECOMMERCE_DETAIL,
-        f"<html><body><div data-description='{marker}'>{marker}</div></body></html>",
+        f"""
+        <script type="application/ld+json">
+        {{"@context":"https://schema.org","@type":"Product","name":"Blocked Widget","url":"https://shop.test/products/challenge-shell"}}
+        </script>
+        <html><body><div data-description='{marker}'>{marker}</div></body></html>
+        """,
         "https://shop.test/products/challenge-shell",
     )
     blocked_capture = request.capture.model_copy(
@@ -134,6 +214,8 @@ def test_blocked_capture_does_not_publish_public_records() -> None:
 
     assert result.verdict == "blocked"
     assert result.records == ()
+    assert result.evidence
+    assert len(result.evidence_dispositions) == len(result.evidence)
     assert any(
         finding.rule_id == "ACQUISITION_BLOCKED" and finding.blocking
         for finding in result.findings
@@ -618,11 +700,16 @@ def test_registered_title_marker_recovers_product_brand() -> None:
     )
 
     assert result.records[0]["brand"] == "Acme®"
+    assert not any(
+        row.fact_type == "product.brand"
+        and row.metadata.get("derived_by") == "brand_from_title_marker"
+        for row in result.evidence
+    )
     assert any(
         row.fact_type == "product.brand"
         and row.value == "Acme®"
-        and row.metadata.get("derived_by") == "brand_from_title_marker"
-        for row in result.evidence
+        and row.rule_id == "brand_from_title_marker"
+        for row in result.derived_facts
     )
 
 
@@ -1301,6 +1388,16 @@ def test_offer_price_inherits_currency_from_locale_path_segment() -> None:
     public = result.records[0].model_dump(mode="json", exclude_none=True)
     assert public.get("price") == "129.00"
     assert public.get("currency") == "INR"
+    assert not any(
+        row.metadata.get("derived_by") == "currency_from_page_url_hint"
+        for row in result.evidence
+    )
+    assert any(
+        row.fact_type == "offer.currency"
+        and row.value == "INR"
+        and row.rule_id == "currency_from_page_url_hint"
+        for row in result.derived_facts
+    )
 
 
 def test_offer_price_inherits_currency_from_cctld() -> None:
@@ -1357,10 +1454,10 @@ def test_explicit_usd_minor_unit_price_is_converted_to_major_units() -> None:
     )
 
     assert result.records[0]["price"] == "138.75"
+    facts = _price_repair_facts(result, "explicit_minor_unit_price")
+    assert any(fact.value == "138.75" for fact in facts)
     assert any(
-        item.fact_type == "offer.price"
-        and item.raw_value == 13875
-        and "explicit_minor_unit_price" in item.flags
+        item.fact_type == "offer.price" and item.raw_value == 13875 and not item.flags
         for item in result.evidence
     )
 
@@ -1390,10 +1487,10 @@ def test_explicit_inr_minor_unit_variant_price_is_converted_to_major_units() -> 
     )
 
     assert result.records[0]["variants"][0]["price"] == "28200.00"
+    facts = _price_repair_facts(result, "explicit_minor_unit_price")
+    assert any(fact.value == "28200.00" for fact in facts)
     assert any(
-        item.fact_type == "offer.price"
-        and item.raw_value == 2820000
-        and "explicit_minor_unit_price" in item.flags
+        item.fact_type == "offer.price" and item.raw_value == 2820000 and not item.flags
         for item in result.evidence
     )
 
@@ -1425,11 +1522,13 @@ def test_nested_variant_minor_unit_price_is_converted_to_major_units() -> None:
     )
 
     assert result.records[0]["variants"][0]["price"] == "138.75"
+    facts = _price_repair_facts(result, "explicit_minor_unit_price")
+    assert any(fact.value == "138.75" for fact in facts)
     assert any(
         item.fact_type == "offer.price"
         and item.raw_value == 13875
         and item.locator.value.endswith("/priceInCents")
-        and "explicit_minor_unit_price" in item.flags
+        and not item.flags
         for item in result.evidence
     )
 
@@ -1454,11 +1553,7 @@ def test_zero_decimal_currency_explicit_minor_key_is_not_divided() -> None:
     )
 
     assert result.records[0]["price"] == "13875.00"
-    assert not any(
-        "explicit_minor_unit_price" in item.flags
-        for item in result.evidence
-        if item.fact_type == "offer.price"
-    )
+    assert not _price_repair_facts(result, "explicit_minor_unit_price")
 
 
 def test_decimal_major_unit_price_remains_unchanged() -> None:
@@ -1481,12 +1576,8 @@ def test_decimal_major_unit_price_remains_unchanged() -> None:
     )
 
     assert result.records[0]["price"] == "28200.50"
-    assert not any(
-        "explicit_minor_unit_price" in item.flags
-        or "corroborated_price_scale" in item.flags
-        for item in result.evidence
-        if item.fact_type == "offer.price"
-    )
+    assert not _price_repair_facts(result, "explicit_minor_unit_price")
+    assert not _price_repair_facts(result, "corroborated_price_scale")
 
 
 def test_independent_parent_price_corroborates_variant_minor_unit_scale() -> None:
@@ -1525,10 +1616,10 @@ def test_independent_parent_price_corroborates_variant_minor_unit_scale() -> Non
 
     assert result.records[0]["price"] == "138.75"
     assert result.records[0]["variants"][0]["price"] == "138.75"
+    facts = _price_repair_facts(result, "corroborated_price_scale")
+    assert any(fact.value == "138.75" for fact in facts)
     assert any(
-        item.fact_type == "offer.price"
-        and item.raw_value == 13875
-        and "corroborated_price_scale" in item.flags
+        item.fact_type == "offer.price" and item.raw_value == 13875 and not item.flags
         for item in result.evidence
     )
 
@@ -1587,10 +1678,15 @@ def test_parent_price_band_corroborates_different_variant_minor_unit_prices() ->
         "M": "52500.00",
         "L": "59400.00",
     }
+    repaired_evidence_ids = {
+        evidence_id
+        for fact in _price_repair_facts(result, "corroborated_price_scale")
+        for evidence_id in fact.input_evidence_ids
+    }
     assert {
         item.raw_value
         for item in result.evidence
-        if item.fact_type == "offer.price" and "corroborated_price_scale" in item.flags
+        if item.evidence_id in repaired_evidence_ids
     } >= {4170000, 5250000, 5940000}
 
 
@@ -1763,10 +1859,10 @@ def test_same_offer_formatted_price_corroborates_raw_minor_unit_price() -> None:
 
     assert result.records[0]["price"] == "215.00"
     assert {row["price"] for row in result.records[0]["variants"]} == {"215.00"}
+    facts = _price_repair_facts(result, "corroborated_price_scale")
+    assert any(fact.value == "215.00" for fact in facts)
     assert any(
-        item.fact_type == "offer.price"
-        and item.raw_value == 21500
-        and "corroborated_price_scale" in item.flags
+        item.fact_type == "offer.price" and item.raw_value == 21500 and not item.flags
         for item in result.evidence
     )
 
@@ -1832,9 +1928,9 @@ def test_parent_current_price_does_not_scale_variant_original_price() -> None:
     assert variant["price"] == "150.00"
     assert variant["original_price"] == "13875.00"
     assert not any(
-        "corroborated_price_scale" in item.flags
-        for item in result.evidence
-        if item.fact_type == "offer.original_price"
+        fact.rule_id == "corroborated_price_scale"
+        for fact in result.derived_facts
+        if fact.fact_type == "offer.original_price"
     )
 
 
@@ -4407,7 +4503,7 @@ def test_mixed_numeric_and_string_identity_values_do_not_crash() -> None:
     assert record["sku"] in {123, "123"}
 
 
-def test_boolean_product_title_is_rejected_before_typed_materialization() -> None:
+def test_boolean_product_title_is_rejected_before_typed_publication() -> None:
     result = _extract(
         "ecommerce_detail",
         "<html><body></body></html>",
@@ -4434,7 +4530,7 @@ def test_boolean_product_title_is_rejected_before_typed_materialization() -> Non
     )
 
 
-def test_integer_variant_url_is_rejected_before_typed_materialization() -> None:
+def test_integer_variant_url_is_rejected_before_typed_publication() -> None:
     result = _extract(
         "ecommerce_detail",
         "<main><h1>Old Skool Shoe</h1></main>",
@@ -5945,6 +6041,44 @@ def test_variant_stock_quantity_derives_availability() -> None:
     assert not any(
         item.rule_id == "VARIANT_AVAILABILITY_MISSING" for item in result.findings
     )
+    assert not any(
+        row.metadata.get("derived_by") == "availability_from_stock_quantity"
+        for row in result.evidence
+    )
+    assert any(
+        row.rule_id == "availability_from_stock_quantity"
+        for row in result.derived_facts
+    )
+
+
+def test_price_symbol_currency_is_resolve_derived_not_normalized_evidence() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <script type="application/ld+json">
+        {
+          "@type": "Product",
+          "name": "Trail Shoe",
+          "url": "https://shop.test/products/trail-shoe",
+          "offers": {"price": "$42.95"}
+        }
+        </script>
+        """,
+        "https://shop.test/products/trail-shoe",
+    )
+
+    record = result.records[0]
+    assert record["price"] == "42.95"
+    assert record["currency"] == "USD"
+    assert not any(
+        row.metadata.get("derived_by") == "currency_from_price_symbol"
+        for row in result.evidence
+    )
+    assert any(
+        row.fact_type == "offer.currency"
+        and row.rule_id == "currency_from_price_symbol"
+        for row in result.derived_facts
+    )
 
 
 def test_jsonld_variant_name_recovers_explicit_size_segment() -> None:
@@ -6187,6 +6321,12 @@ def test_uppercase_title_token_brand_can_be_derived_from_url() -> None:
     )
 
     assert result.records[0]["brand"] == "HOKA"
+    assert any(
+        row.fact_type == "product.brand"
+        and row.value == "HOKA"
+        and row.rule_id == "brand_from_product_url"
+        for row in result.derived_facts
+    )
 
 
 def test_master_sku_does_not_publish_variant_id_when_style_code_exists() -> None:
@@ -6204,6 +6344,16 @@ def test_master_sku_does_not_publish_variant_id_when_style_code_exists() -> None
     record = result.records[0]
     assert record.get("sku") == "HQ7978-103"
     assert record.get("sku") != "45993954607338"
+    assert not any(
+        row.metadata.get("derived_by") == "sku_from_url_style_code"
+        for row in result.evidence
+    )
+    assert any(
+        row.fact_type == "product.sku"
+        and row.value == "HQ7978-103"
+        and row.rule_id == "sku_from_url_style_code"
+        for row in result.derived_facts
+    )
 
 
 def test_opengraph_price_currency_pair_survives_product_page() -> None:

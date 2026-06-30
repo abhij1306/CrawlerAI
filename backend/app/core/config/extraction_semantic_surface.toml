@@ -1,0 +1,20 @@
+[extraction_semantic_surface]
+paths = [
+  "app/extraction",
+  "app/core/records/divergence.py",
+  "app/core/records/output_safety.py",
+  "app/core/shared/field_coerce*.py",
+  "app/core/config/extraction_rules",
+  "app/core/config/extraction_price_rules.py",
+  "app/core/config/variant_policy.py",
+]
+
+[ratchets]
+semantic_derivation_owner = "app/extraction/resolution.py"
+variant_eligibility_owner = "app/extraction/resolution.py"
+asset_selection_owner = "app/extraction/resolution.py"
+publication_owner = "app/extraction/publication.py"
+post_resolution_mutation_allowed = false
+contracts_bypass_ownership_allowed = false
+persistence_extraction_repair_allowed = false
+publish_receives_evidence_or_entity_graph = false

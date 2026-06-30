@@ -1,9 +1,4 @@
-"""Frozen contract execution for extraction (Slice 7).
-
-Pure, storage-free runtime that matches pages against frozen templates and
-applies saved extraction contracts to prefer learned sources when current
-evidence validates them. No DB access; called by the extraction engine.
-"""
+"""Frozen contract preferences for resolver-owned extraction ranking."""
 
 from __future__ import annotations
 
@@ -15,7 +10,7 @@ from app.core.knowledge_graph.templates import (
     normalize_source_pattern,
     source_pattern,
 )
-from app.extraction.contracts import ContractOutcome, Decision, ResolutionResult
+from app.extraction.contracts import ContractOutcome, ResolutionResult
 
 if TYPE_CHECKING:
     from app.extraction.contracts import Evidence
@@ -24,39 +19,63 @@ if TYPE_CHECKING:
 def match_template(
     snapshot: dict[str, Any], fingerprint: str, surface: str, url: str = ""
 ) -> dict[str, Any] | None:
-    """Match page fingerprint against frozen templates in snapshot.
-
-    Returns the matched template dict or None if no match found.
-    """
     if not snapshot or snapshot.get("surface") != surface:
         return None
-
     templates = snapshot.get("templates", [])
-    exact_match = next(
-        (
-            template
-            for template in templates
-            if template.get("fingerprint") == fingerprint
-        ),
-        None,
+    exact = next(
+        (row for row in templates if row.get("fingerprint") == fingerprint), None
     )
-
-    route_pattern = normalize_route(url, surface) if url else ""
-    if route_pattern:
-        route_matches = [
-            template
-            for template in templates
-            if template.get("route_pattern") == route_pattern
-        ]
-        if exact_match is not None and route_matches:
-            return _merge_template_contracts(exact_match, route_matches)
-        if route_matches:
-            return route_matches[0]
-
-    return exact_match
+    route = normalize_route(url, surface) if url else ""
+    if not route:
+        return exact
+    route_matches = [row for row in templates if row.get("route_pattern") == route]
+    if exact is not None and route_matches:
+        return _merge_template_contracts(exact, route_matches)
+    if route_matches:
+        return route_matches[0]
+    return exact
 
 
-def apply_contracts(
+def contract_preferences(
+    snapshot: dict[str, Any],
+    fingerprint: str,
+    surface: str,
+    evidence: tuple[Evidence, ...],
+    requested_fields: frozenset[str],
+    user_controlled_fields: frozenset[str],
+    *,
+    url: str = "",
+) -> dict[str, tuple[str, ...]]:
+    """Return source-matching IDs; Resolve still owns eligibility and ranking."""
+
+    template = match_template(snapshot, fingerprint, surface, url)
+    if not template:
+        return {}
+    preferences: dict[str, tuple[str, ...]] = {}
+    for contract in template.get("contracts", []):
+        fact_type = _contract_fact_type(contract)
+        if not _contract_applies(
+            fact_type,
+            requested_fields=requested_fields,
+            user_controlled_fields=user_controlled_fields,
+        ):
+            continue
+        selected_source = normalize_source_pattern(
+            str(contract.get("selected_source") or "")
+        )
+        if not selected_source:
+            continue
+        matches = tuple(
+            row.evidence_id
+            for row in evidence
+            if row.fact_type == fact_type and _source_descriptor(row) == selected_source
+        )
+        if matches:
+            preferences[fact_type] = matches
+    return preferences
+
+
+def resolved_contract_outcomes(
     snapshot: dict[str, Any],
     fingerprint: str,
     surface: str,
@@ -64,184 +83,91 @@ def apply_contracts(
     resolution: ResolutionResult,
     requested_fields: frozenset[str],
     user_controlled_fields: frozenset[str],
+    *,
     url: str = "",
-) -> tuple[ResolutionResult, tuple[ContractOutcome, ...]]:
-    """Apply frozen extraction contracts to resolution, preferring saved sources.
+) -> tuple[ContractOutcome, ...]:
+    """Report in-resolver contract ranking. Never mutate resolved truth."""
 
-    Re-points decisions to preferred sources when current evidence validates them;
-    falls back to generic resolution otherwise. Returns updated ResolutionResult
-    with regenerated derived_facts for price fields, plus contract outcomes.
-
-    Fields in user_controlled_fields are skipped (never override explicit rules).
-    """
     template = match_template(snapshot, fingerprint, surface, url)
     if not template:
-        return resolution, ()
-
-    contracts = {c["canonical_field"]: c for c in template.get("contracts", [])}
-    if not contracts:
-        return resolution, ()
-
-    evidence_by_id = {e.evidence_id: e for e in evidence}
-    decisions_by_field = {d.fact_type: d for d in resolution.decisions}
+        return ()
+    evidence_by_id = {row.evidence_id: row for row in evidence}
+    target_ids = {
+        value
+        for value in (
+            resolution.primary_product_entity_id,
+            resolution.primary_offer_entity_id,
+        )
+        if value
+    }
+    decisions = {
+        row.fact_type: row
+        for row in resolution.decisions
+        if row.entity_id in target_ids
+    }
     outcomes: list[ContractOutcome] = []
-    modified_decisions: dict[str, Decision] = {}
-
-    for field, contract in contracts.items():
-        decision_field = _decision_field(field, decisions_by_field)
-        requested_aliases = _requested_aliases(decision_field)
-        if not requested_fields.intersection(
-            requested_aliases
-        ) or user_controlled_fields.intersection(requested_aliases):
+    for contract in template.get("contracts", []):
+        fact_type = _contract_fact_type(contract)
+        if not _contract_applies(
+            fact_type,
+            requested_fields=requested_fields,
+            user_controlled_fields=user_controlled_fields,
+        ):
             continue
-
-        selected_source = contract.get("selected_source", "")
-        selected_source_pattern = normalize_source_pattern(selected_source)
-        selection_origin = contract.get("selection_origin", "generic")
-        decision = decisions_by_field.get(decision_field)
-
-        if not decision:
-            outcome_code = "miss"
-            detail = "field unresolved"
-            outcomes.append(
-                ContractOutcome(
-                    field=decision_field,
-                    outcome=outcome_code,
-                    selected_source=selected_source,
-                    selection_origin=selection_origin,
-                    applied=False,
-                    detail=detail,
-                )
-            )
-            continue
-
+        selected_source = normalize_source_pattern(
+            str(contract.get("selected_source") or "")
+        )
         if not selected_source:
             continue
-
-        # Find matching non-rejected evidence for preferred source
-        preferred_evidence = None
-        stale_evidence = None
-
-        for ev in evidence:
-            if ev.fact_type != decision_field:
-                continue
-            source_desc = _source_descriptor(ev)
-            if source_desc == selected_source_pattern:
-                # Check if this evidence was rejected in current resolution
-                rejected_ids = {r.evidence_id for r in decision.rejected}
-                if ev.evidence_id in rejected_ids:
-                    stale_evidence = ev
-                else:
-                    preferred_evidence = ev
-                    break
-
-        if preferred_evidence:
-            # Re-point decision to preferred source
-            new_decision = Decision(
-                decision_id=decision.decision_id,
-                entity_id=decision.entity_id,
-                fact_type=decision.fact_type,
-                accepted_evidence_ids=(preferred_evidence.evidence_id,),
-                rejected=decision.rejected,
-                finding_ids=decision.finding_ids,
-                rule_id=contract.get("resolver_rule", decision.rule_id),
-                status="resolved",
+        decision = decisions.get(fact_type)
+        selected = (
+            evidence_by_id.get(decision.accepted_evidence_ids[0])
+            if decision and decision.accepted_evidence_ids
+            else None
+        )
+        applied = bool(
+            selected
+            and _source_descriptor(selected) == selected_source
+            and decision
+            and decision.rule_id == "CONTRACT_PREFERRED_SOURCE"
+        )
+        outcomes.append(
+            ContractOutcome(
+                field=fact_type,
+                outcome="hit" if applied else "fallback" if decision else "miss",
+                selected_source=str(contract.get("selected_source") or ""),
+                selection_origin=str(contract.get("selection_origin") or "generic"),
+                applied=applied,
+                detail=(
+                    "selected inside resolver-owned candidate set"
+                    if applied
+                    else "preferred source unavailable or inadmissible; used generic ranking"
+                    if decision
+                    else "field unresolved"
+                ),
             )
-            modified_decisions[decision_field] = new_decision
-            outcomes.append(
-                ContractOutcome(
-                    field=decision_field,
-                    outcome="hit",
-                    selected_source=selected_source,
-                    selection_origin=selection_origin,
-                    applied=True,
-                    detail=f"re-pointed to {selected_source}",
-                )
-            )
-        elif stale_evidence:
-            outcomes.append(
-                ContractOutcome(
-                    field=decision_field,
-                    outcome="stale_source",
-                    selected_source=selected_source,
-                    selection_origin=selection_origin,
-                    applied=False,
-                    detail="preferred source present but rejected",
-                )
-            )
-        elif decision.status == "resolved":
-            # Preferred absent but generic resolved
-            outcome_code = (
-                "override_miss" if selection_origin == "operator" else "fallback"
-            )
-            outcomes.append(
-                ContractOutcome(
-                    field=decision_field,
-                    outcome=outcome_code,
-                    selected_source=selected_source,
-                    selection_origin=selection_origin,
-                    applied=False,
-                    detail="preferred source absent, used generic",
-                )
-            )
-        else:
-            outcomes.append(
-                ContractOutcome(
-                    field=decision_field,
-                    outcome="miss",
-                    selected_source=selected_source,
-                    selection_origin=selection_origin,
-                    applied=False,
-                    detail="field unresolved",
-                )
-            )
+        )
+    return tuple(outcomes)
 
-    if not modified_decisions:
-        return resolution, tuple(outcomes)
 
-    # Build updated decisions tuple
-    updated_decisions = tuple(
-        modified_decisions.get(d.fact_type, d) for d in resolution.decisions
-    )
+def _contract_fact_type(contract: dict[str, Any]) -> str:
+    field = str(contract.get("canonical_field") or "")
+    return field_mappings.ECOMMERCE_DETAIL_FIELD_FACT_TYPES.get(field, field)
 
-    # Regenerate derived_facts for price fields
-    from app.extraction.resolution import _derived
 
-    updated_derived = _derived(list(updated_decisions), evidence_by_id)
-    updated_unresolved = tuple(
-        field
-        for field in resolution.unresolved_fact_types
-        if decisions_by_field.get(field) is None
-        or modified_decisions.get(field, decisions_by_field[field]).status != "resolved"
-    )
-    resolved_finding_ids = {
-        finding_id
-        for decision in modified_decisions.values()
-        if decision.status == "resolved"
-        for finding_id in decision.finding_ids
-    }
-    updated_blocking = tuple(
-        finding_id
-        for finding_id in resolution.blocking_finding_ids
-        if finding_id not in resolved_finding_ids
-    )
-
-    return (
-        ResolutionResult(
-            primary_product_entity_id=resolution.primary_product_entity_id,
-            primary_offer_entity_id=resolution.primary_offer_entity_id,
-            decisions=updated_decisions,
-            asset_decisions=resolution.asset_decisions,
-            derived_facts=updated_derived,
-            unresolved_fact_types=updated_unresolved,
-            blocking_finding_ids=updated_blocking,
-        ),
-        tuple(outcomes),
+def _contract_applies(
+    fact_type: str,
+    *,
+    requested_fields: frozenset[str],
+    user_controlled_fields: frozenset[str],
+) -> bool:
+    aliases = _requested_aliases(fact_type)
+    return bool(requested_fields.intersection(aliases)) and not bool(
+        user_controlled_fields.intersection(aliases)
     )
 
 
 def _source_descriptor(evidence: Evidence) -> str:
-    """Build source descriptor matching projection format."""
     return source_pattern(
         evidence.collector_id,
         evidence.locator.value if evidence.locator else "",
@@ -249,10 +175,10 @@ def _source_descriptor(evidence: Evidence) -> str:
 
 
 def _merge_template_contracts(
-    exact_match: dict[str, Any], route_matches: list[dict[str, Any]]
+    exact: dict[str, Any], route_matches: list[dict[str, Any]]
 ) -> dict[str, Any]:
     contracts_by_field: dict[str, dict[str, Any]] = {}
-    for template in [exact_match, *route_matches]:
+    for template in [exact, *route_matches]:
         for contract in template.get("contracts", []):
             field = str(contract.get("canonical_field") or "")
             current = contracts_by_field.get(field)
@@ -260,7 +186,7 @@ def _merge_template_contracts(
                 current
             ):
                 contracts_by_field[field] = contract
-    merged = dict(exact_match)
+    merged = dict(exact)
     merged["contracts"] = list(contracts_by_field.values())
     return merged
 
@@ -271,18 +197,12 @@ def _selection_priority(contract: dict[str, Any]) -> int:
     )
 
 
-def _decision_field(field: str, decisions_by_field: dict[str, Decision]) -> str:
-    if field in decisions_by_field:
-        return field
-    return field_mappings.ECOMMERCE_DETAIL_FIELD_FACT_TYPES.get(field, field)
-
-
-def _requested_aliases(field: str) -> frozenset[str]:
-    aliases = {field}
+def _requested_aliases(fact_type: str) -> frozenset[str]:
+    aliases = {fact_type}
     for (
         requested_field,
-        fact_type,
+        mapped_fact_type,
     ) in field_mappings.ECOMMERCE_DETAIL_FIELD_FACT_TYPES.items():
-        if fact_type == field:
+        if mapped_fact_type == fact_type:
             aliases.add(requested_field)
     return frozenset(aliases)

@@ -1,16 +1,11 @@
 from __future__ import annotations
 
-from typing import Any
-
 from app.extraction.contracts import (
     Decision,
     Evidence,
-    JobDetailRecord,
-    JobListingRecord,
     RejectedEvidence,
 )
-from app.extraction.ids import stable_id
-from app.extraction.materialization import lineage
+from app.core.shared.ids import stable_id
 
 
 def resolve_job_detail(evidence_rows: list[Evidence]) -> list[Decision]:
@@ -34,66 +29,6 @@ def resolve_job_listing(evidence_rows: list[Evidence]) -> list[Decision]:
                 )
             )
     return decisions
-
-
-def materialize_job_detail(
-    evidence_rows: list[Evidence],
-    decisions: list[Decision],
-) -> list[JobDetailRecord]:
-    by_id = {row.evidence_id: row for row in evidence_rows}
-    field_map = {
-        "job.title": "title",
-        "job.id": "job_id",
-        "job.company": "company",
-        "job.location": "location",
-        "job.type": "job_type",
-        "job.posted_date": "posted_date",
-        "job.url": "url",
-        "job.apply_url": "apply_url",
-        "job.description": "description",
-    }
-    row, lineages = _materialized_fields(by_id, decisions, field_map)
-    if not row.get("title"):
-        return []
-    if lineages:
-        row["_lineage"] = lineages
-    return [JobDetailRecord.model_validate(row)]
-
-
-def materialize_job_listing(
-    evidence_rows: list[Evidence],
-    decisions: list[Decision],
-    *,
-    max_records: int,
-) -> list[JobListingRecord]:
-    by_id = {row.evidence_id: row for row in evidence_rows}
-    field_map = {
-        "job.title": "title",
-        "job.url": "url",
-        "job.company": "company",
-        "job.location": "location",
-    }
-    rows_by_subject: dict[str, dict[str, Any]] = {}
-    lineage_by_subject: dict[str, dict[str, object]] = {}
-    for decision in decisions:
-        field = field_map.get(decision.fact_type)
-        if not field or not decision.accepted_evidence_ids:
-            continue
-        evidence_row = by_id[decision.accepted_evidence_ids[0]]
-        subject_id = evidence_row.subject_id or decision.entity_id
-        rows_by_subject.setdefault(subject_id, {})[field] = evidence_row.value
-        lineage_by_subject.setdefault(subject_id, {})[field] = lineage(
-            decision=decision
-        )
-    materialized = []
-    for subject_id, row in rows_by_subject.items():
-        if not row.get("title") or not row.get("url"):
-            continue
-        row["_lineage"] = lineage_by_subject.get(subject_id, {})
-        row["_subject_id"] = subject_id
-        materialized.append(JobListingRecord.model_validate(row))
-    materialized.sort(key=lambda row: str(row.url))
-    return materialized[:max_records]
 
 
 def _resolve_by_fact(evidence_rows: list[Evidence]) -> list[Decision]:
@@ -136,20 +71,3 @@ def _decision(
         rule_id=rule_id,
         status="resolved",
     )
-
-
-def _materialized_fields(
-    by_id: dict[str, Evidence],
-    decisions: list[Decision],
-    field_map: dict[str, str],
-) -> tuple[dict[str, Any], dict[str, object]]:
-    row: dict[str, Any] = {}
-    lineages: dict[str, object] = {}
-    for decision in decisions:
-        field = field_map.get(decision.fact_type)
-        if not field or not decision.accepted_evidence_ids:
-            continue
-        evidence_row = by_id[decision.accepted_evidence_ids[0]]
-        row[field] = evidence_row.value
-        lineages[field] = lineage(decision=decision)
-    return row, lineages

@@ -9,7 +9,7 @@ from app.crawl.utils import normalize_target_url
 from app.models.crawl_run import CrawlRun, CrawlUrlResult
 
 
-DEFAULT_EXTRACTION_VERSION = "extraction.v1"
+DEFAULT_EXTRACTION_VERSION = "extraction.v2"
 
 
 def normalized_result_url(url: str) -> str:

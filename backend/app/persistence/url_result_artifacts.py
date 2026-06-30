@@ -22,6 +22,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from app.core.config.extraction_rules import MAX_DIAGNOSE_ARTIFACT_BYTES
 from app.core.config import settings
 from app.observability.diagnose import build_diagnosis
 from app.persistence.artifacts import ArtifactRepository
@@ -99,7 +100,8 @@ def _result_root(run_id: int, url_result_id: int) -> str:
 def _merged_rejected_public_fields(
     record_provenance: Sequence[Mapping[str, object]],
 ) -> dict[str, object]:
-    # Page-level diagnose: the first non-empty firewall reason per field wins.
+    # Page-level diagnose: the first non-empty publication-policy reason per
+    # field wins.
     merged: dict[str, object] = {}
     for row in record_provenance:
         discovered = _mapping(row.get("discovered_data"))
@@ -172,18 +174,96 @@ def _persist_json(
     name: str,
     payload: object,
 ) -> None:
-    content = json.dumps(
-        _json_safe(payload),
-        ensure_ascii=True,
-        indent=2,
-        sort_keys=True,
-    ).encode("utf-8")
+    safe_payload = _json_safe(payload)
+    content = _json_bytes(safe_payload)
+    if name == "diagnose.json" and len(content) > MAX_DIAGNOSE_ARTIFACT_BYTES:
+        safe_payload = _shrink_diagnose_payload(
+            safe_payload,
+            original_bytes=len(content),
+            limit=MAX_DIAGNOSE_ARTIFACT_BYTES,
+        )
+        content = _json_bytes(safe_payload)
     repository.persist_bytes(
         run_id=run_id,
         url_result_id=url_result_id,
         name=name,
         content=content,
     )
+
+
+def _json_bytes(payload: object) -> bytes:
+    return json.dumps(
+        payload,
+        ensure_ascii=True,
+        indent=2,
+        sort_keys=True,
+    ).encode("utf-8")
+
+
+def _shrink_diagnose_payload(
+    payload: object,
+    *,
+    original_bytes: int,
+    limit: int,
+) -> object:
+    if not isinstance(payload, Mapping):
+        return payload
+    shrunk: dict[str, object] = dict(payload)
+    truncated = dict(_mapping(shrunk.get("truncated")))
+    truncated["artifact_size"] = {
+        "original_bytes": original_bytes,
+        "limit_bytes": limit,
+    }
+    shrunk["truncated"] = truncated
+    shrink_steps = (
+        lambda row: _truncate_nested(row, "evidence_dispositions", "examples", 50),
+        lambda row: _truncate_list(row, "findings", 50),
+        lambda row: _truncate_list(row, "fields", 50),
+        lambda row: _truncate_nested(row, "variants", "dropped", 50),
+        lambda row: _truncate_nested(row, "evidence_dispositions", "examples", 10),
+        lambda row: _truncate_list(row, "findings", 10),
+        lambda row: _truncate_list(row, "fields", 10),
+        lambda row: _truncate_nested(row, "variants", "dropped", 10),
+        lambda row: _truncate_nested(row, "evidence_dispositions", "examples", 0),
+        lambda row: _truncate_list(row, "findings", 0),
+        lambda row: _truncate_list(row, "fields", 0),
+        lambda row: _truncate_nested(row, "variants", "dropped", 0),
+    )
+    for step in shrink_steps:
+        if len(_json_bytes(shrunk)) <= limit:
+            return shrunk
+        step(shrunk)
+    if len(_json_bytes(shrunk)) <= limit:
+        return shrunk
+    return {
+        "schema_version": shrunk.get("schema_version"),
+        "verdict": shrunk.get("verdict"),
+        "data_integrity": shrunk.get("data_integrity"),
+        "metrics": shrunk.get("metrics"),
+        "truncated": truncated,
+    }
+
+
+def _truncate_list(payload: dict[str, object], key: str, limit: int) -> None:
+    value = payload.get(key)
+    if isinstance(value, list):
+        payload[key] = value[:limit]
+
+
+def _truncate_nested(
+    payload: dict[str, object],
+    parent_key: str,
+    child_key: str,
+    limit: int,
+) -> None:
+    parent = payload.get(parent_key)
+    if not isinstance(parent, Mapping):
+        return
+    copied = dict(parent)
+    value = copied.get(child_key)
+    if isinstance(value, list):
+        copied[child_key] = value[:limit]
+    payload[parent_key] = copied
 
 
 def _mapping(value: object) -> Mapping[str, object]:

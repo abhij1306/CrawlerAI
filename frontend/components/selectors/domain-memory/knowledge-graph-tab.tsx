@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react';
 
 import type {
   DiagnoseField,
+  ResultDiagnosis,
   KnowledgeContract,
   KnowledgeGraphResponse,
   KnowledgeSiteRecord,
@@ -431,6 +432,7 @@ function RootCauseDetail({
       <div className="text-2xs tracking-wide text-muted uppercase">
         {diagnosis.data.verdict ? `Verdict: ${titleCaseToken(diagnosis.data.verdict)}` : 'Fields'}
       </div>
+      <EvidenceDispositionSummary diagnosis={diagnosis.data} />
       {fields.length ? (
         fields.map((field) => <DiagnoseFieldRow key={field.field} field={field} />)
       ) : (
@@ -440,14 +442,37 @@ function RootCauseDetail({
   );
 }
 
+function EvidenceDispositionSummary({ diagnosis }: { diagnosis: ResultDiagnosis }) {
+  const summary = diagnosis.evidence_dispositions;
+  if (!summary || !summary.total) return null;
+  const rows = Object.entries(summary.by_status ?? {})
+    .filter(([, count]) => Number(count) > 0)
+    .sort(([left], [right]) => left.localeCompare(right));
+  if (!rows.length) return null;
+  return (
+    <div className="text-2xs rounded-md border border-border bg-muted/20 px-3 py-2 text-muted">
+      <div className="font-semibold text-foreground">Evidence accounting: {summary.total}</div>
+      <div className="mt-1 flex flex-wrap gap-1">
+        {rows.map(([status, count]) => (
+          <Badge key={status} tone={dispositionTone(status)}>
+            {titleCaseToken(status)} {count}
+          </Badge>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function DiagnoseFieldRow({ field }: { field: DiagnoseField }) {
-  const firewall = field.firewall;
+  const publicationPolicy = field.publication_policy;
   return (
     <div className="rounded-md border border-border bg-panel px-3 py-2">
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-xs font-semibold text-foreground">{titleCaseToken(field.field)}</span>
         <Badge tone={fieldTone(field.status)}>{titleCaseToken(field.status)}</Badge>
-        {firewall != null && firewall !== '' ? <Badge tone="danger">Firewall</Badge> : null}
+        {publicationPolicy != null && publicationPolicy !== '' ? (
+          <Badge tone="danger">Publication policy</Badge>
+        ) : null}
       </div>
       {field.winner?.value != null ? (
         <div
@@ -508,14 +533,29 @@ function originDescriptor(origin: string): OriginDescriptor {
 }
 
 function isProblemField(field: DiagnoseField) {
-  if (field.firewall != null && field.firewall !== '') return true;
-  return Boolean(field.status) && field.status !== 'captured_and_resolved';
+  if (field.publication_policy != null && field.publication_policy !== '') return true;
+  return (
+    Boolean(field.status) &&
+    !['captured_and_resolved', 'captured_published', 'not_requested'].includes(field.status)
+  );
 }
 
 function fieldTone(status: string): 'success' | 'warning' | 'danger' | 'neutral' {
-  if (status === 'captured_and_resolved') return 'success';
-  if (status.includes('rejected') || status.includes('missing')) return 'danger';
-  if (status === 'not_found') return 'neutral';
+  if (status === 'captured_and_resolved' || status === 'captured_published') return 'success';
+  if (
+    status.includes('rejected') ||
+    status.includes('missing') ||
+    status === 'captured_conflicting'
+  )
+    return 'danger';
+  if (status === 'not_found' || status === 'not_present_in_source') return 'neutral';
+  return 'warning';
+}
+
+function dispositionTone(status: string): 'success' | 'warning' | 'danger' | 'neutral' {
+  if (status === 'accepted') return 'success';
+  if (status === 'rejected_invalid' || status === 'conflicted') return 'danger';
+  if (status === 'rejected_lower_rank' || status === 'duplicate') return 'neutral';
   return 'warning';
 }
 

@@ -466,9 +466,9 @@ def public_variant_row_is_sellable(row: dict[str, object]) -> bool:
     Sellable iff the row carries any transport field (identifier / commercial
     fact / image), OR exposes >=2 option axes, OR a single axis that is one of
     the canonical retail axes (size / color — the dominant Shopify/PDP shape).
-    Materialization, output-safety, and the public firewall all defer here so a
-    size-only / pre-order / color-only variant cannot be admitted by one stage
-    and silently dropped by another.
+    Resolve and publication both defer here so a size-only / pre-order /
+    color-only variant cannot be admitted by one stage and silently dropped by
+    another.
     """
     if not row or variant_row_is_image_dimension_artifact(row):
         return False

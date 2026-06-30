@@ -470,10 +470,10 @@ VARIANT_OPTION_VALUE_SUFFIX_NOISE_PATTERNS = tuple(
 )
 INVALID_AVAILABILITY_EVIDENCE_FLAG = "invalid_availability"
 # Single source of truth for the public availability enum. Every downstream
-# stage (normalizers, field coercion, the public firewall) derives its accepted
+# stage (normalizers, field coercion, publication policy) derives its accepted
 # set from this tuple so the canonical vocabulary cannot silently diverge — a
 # schema.org PreOrder/BackOrder offer must survive end-to-end, not be dropped by
-# the firewall because an intermediate map emitted a non-enum token.
+# publication because an intermediate map emitted a non-enum token.
 AVAILABILITY_CANONICAL_ENUM = (
     "in_stock",
     "out_of_stock",

@@ -9,21 +9,26 @@ from app.core.config.extraction_rules._detail import (
     DETAIL_SHELL_TITLE_KEYS,
 )
 from app.core.config import field_mappings
+from app.core.config.variant_policy import DETAIL_PARENT_OFFER_INHERITANCE_RULE_ID
 from app.core.shared.text_coerce import slug_tokens
 from app.extraction.contracts import (
     Decision,
+    EvidenceDisposition,
     EntityGraph,
     Evidence,
     ExtractionMetrics,
     ExtractionRequest,
     FieldEvidenceState,
     Finding,
+    PublicationProjection,
     PublicRecord,
     ResolutionResult,
     RetryRequest,
+    SelectedFact,
     TargetSelection,
 )
 from app.extraction.entities import EntitySet
+from app.core.shared.ids import stable_id
 from app.extraction.surfaces import SurfaceSpec
 
 
@@ -31,6 +36,151 @@ def decisions(resolution: Any) -> tuple[Decision, ...]:
     if isinstance(resolution, ResolutionResult):
         return resolution.decisions
     return tuple(resolution or ())
+
+
+def selected_facts(
+    decision_rows: tuple[Decision, ...], evidence: tuple[Evidence, ...]
+) -> tuple[SelectedFact, ...]:
+    """Build direct resolved truth. Inheritance remains derived truth."""
+
+    evidence_by_id = {row.evidence_id: row for row in evidence}
+    facts: list[SelectedFact] = []
+    for decision in decision_rows:
+        if (
+            decision.status != "resolved"
+            or len(decision.accepted_evidence_ids) != 1
+            or decision.rule_id == DETAIL_PARENT_OFFER_INHERITANCE_RULE_ID
+        ):
+            continue
+        accepted = evidence_by_id.get(decision.accepted_evidence_ids[0])
+        if accepted is None:
+            continue
+        facts.append(
+            SelectedFact(
+                selected_fact_id=stable_id("selected", decision.decision_id),
+                decision_id=decision.decision_id,
+                entity_id=decision.entity_id,
+                fact_type=decision.fact_type,
+                value=accepted.value,
+                evidence_ids=decision.accepted_evidence_ids,
+                rule_id=decision.rule_id,
+            )
+        )
+    return tuple(facts)
+
+
+def assert_resolution_accounting(
+    evidence: tuple[Evidence, ...],
+    decisions: tuple[Decision, ...],
+    selected_rows: tuple[SelectedFact, ...],
+    dispositions: tuple[EvidenceDisposition, ...],
+) -> None:
+    """Fail closed when resolution accounting stops being exact."""
+
+    evidence_ids = [row.evidence_id for row in evidence]
+    disposition_ids = [row.evidence_id for row in dispositions]
+    if Counter(evidence_ids) != Counter(disposition_ids):
+        raise RuntimeError("every evidence row must have exactly one disposition")
+    evidence_by_id = {row.evidence_id: row for row in evidence}
+    decisions_by_id = {row.decision_id: row for row in decisions}
+    for selected in selected_rows:
+        decision = decisions_by_id.get(selected.decision_id)
+        if decision is None:
+            raise RuntimeError("selected fact references a missing decision")
+        if selected.evidence_ids != decision.accepted_evidence_ids:
+            raise RuntimeError("selected fact evidence does not match accepted evidence")
+        if len(selected.evidence_ids) != 1:
+            raise RuntimeError("selected facts must represent one direct evidence value")
+        accepted = evidence_by_id.get(selected.evidence_ids[0])
+        if accepted is None:
+            raise RuntimeError("selected fact references missing evidence")
+        if selected.value != accepted.value:
+            raise RuntimeError("selected fact value diverges from accepted evidence")
+
+
+def evidence_dispositions(
+    evidence: tuple[Evidence, ...],
+    decision_rows: tuple[Decision, ...],
+    selected_rows: tuple[SelectedFact, ...],
+    target: TargetSelection | None = None,
+) -> tuple[EvidenceDisposition, ...]:
+    """Assign exactly one terminal accounting state to every evidence row."""
+
+    selected_by_evidence = {
+        evidence_id: row for row in selected_rows for evidence_id in row.evidence_ids
+    }
+    accepted_by_evidence: dict[str, Decision] = {}
+    rejected_by_evidence: dict[str, tuple[Decision, str]] = {}
+    for decision in decision_rows:
+        for evidence_id in decision.accepted_evidence_ids:
+            accepted_by_evidence.setdefault(evidence_id, decision)
+        for rejected in decision.rejected:
+            rejected_by_evidence.setdefault(
+                rejected.evidence_id, (decision, rejected.reason)
+            )
+    return tuple(
+        _evidence_disposition(
+            row,
+            accepted_by_evidence.get(row.evidence_id),
+            rejected_by_evidence.get(row.evidence_id),
+            selected_by_evidence.get(row.evidence_id),
+            target,
+        )
+        for row in evidence
+    )
+
+
+def _evidence_disposition(
+    evidence: Evidence,
+    accepted: Decision | None,
+    rejected: tuple[Decision, str] | None,
+    selected: SelectedFact | None,
+    target: TargetSelection | None,
+) -> EvidenceDisposition:
+    if accepted is not None:
+        return EvidenceDisposition(
+            evidence_id=evidence.evidence_id,
+            entity_id=accepted.entity_id,
+            status="conflicted" if accepted.status == "conflicted" else "accepted",
+            reason_code=accepted.rule_id,
+            decision_id=accepted.decision_id,
+            selected_fact_id=selected.selected_fact_id if selected else None,
+        )
+    if rejected is not None:
+        decision, reason = rejected
+        invalid = reason not in {"lower_confidence", "stable_tiebreak"}
+        return EvidenceDisposition(
+            evidence_id=evidence.evidence_id,
+            entity_id=decision.entity_id,
+            status="rejected_invalid" if invalid else "rejected_lower_rank",
+            reason_code=reason,
+            decision_id=decision.decision_id,
+        )
+    if target is not None and target.status in {"ambiguous", "missing"}:
+        return EvidenceDisposition(
+            evidence_id=evidence.evidence_id,
+            entity_id=evidence.subject_id,
+            status="unowned",
+            reason_code=f"target_{target.status}",
+        )
+    if (
+        target is not None
+        and target.status == "resolved"
+        and target.root_entity_ids
+        and evidence.subject_id
+        and evidence.subject_id not in set(target.root_entity_ids)
+    ):
+        return EvidenceDisposition(
+            evidence_id=evidence.evidence_id,
+            entity_id=evidence.subject_id,
+            status="outside_selected_target",
+            reason_code="outside_selected_target",
+        )
+    return EvidenceDisposition(
+        evidence_id=evidence.evidence_id,
+        status="diagnostic_only",
+        reason_code="not_considered_by_current_resolver",
+    )
 
 
 def field_evidence_states(
@@ -94,6 +244,10 @@ def field_evidence_states(
             if target_entity_id is None or row.entity_id == target_entity_id
         )
         present = bool(record and record.get(field) not in (None, "", [], {}, ()))
+        resolved_decision = any(
+            row.status == "resolved" and row.accepted_evidence_ids
+            for row in relevant_decisions
+        )
         state: typing.Literal[
             "captured_and_resolved",
             "captured_but_rejected",
@@ -119,6 +273,12 @@ def field_evidence_states(
                     }
                 )
             )
+        elif resolved_decision:
+            # Resolution accepted a value for this field, but publication policy
+            # suppressed it. Authoritative state comes from the decision graph,
+            # so this is a rejection with a reason, never a silent miss.
+            state = "captured_but_rejected"
+            reasons = ("withheld_after_resolution",)
         elif rows:
             state = "captured_but_rejected"
             row_ids = {row.evidence_id for row in rows}
@@ -147,9 +307,87 @@ def field_evidence_states(
     return tuple(states)
 
 
+def projection_field_states(
+    projection: PublicationProjection,
+    evidence: tuple[Evidence, ...],
+    dispositions: tuple[EvidenceDisposition, ...],
+    request: ExtractionRequest,
+) -> tuple[FieldEvidenceState, ...]:
+    """Derive field state from evidence and publication policy, never records."""
+
+    entries_by_field: dict[str, list] = {}
+    for entry in projection.entries:
+        field = entry.path.rsplit(".", 1)[-1]
+        entries_by_field.setdefault(field, []).append(entry)
+    requested = {
+        "image_url" if field == "image" else field for field in request.requested_fields
+    }
+    fields = tuple(sorted(entries_by_field.keys() | requested))
+    disposition_by_id = {row.evidence_id: row for row in dispositions}
+    fact_by_field = {
+        **field_mappings.ECOMMERCE_DETAIL_FIELD_FACT_TYPES,
+        "title": "job.title"
+        if request.surface.value.startswith("job_")
+        else "product.title",
+        "url": "job.url" if request.surface.value.startswith("job_") else "product.url",
+        "company": "job.company",
+        "location": "job.location",
+        "apply_url": "job.apply_url",
+        "job_id": "job.id",
+        "job_type": "job.type",
+        "posted_date": "job.posted_date",
+        "image_url": "asset.image_url",
+    }
+    states: list[FieldEvidenceState] = []
+    for field in fields:
+        entries = entries_by_field.get(field, [])
+        evidence_ids = tuple(
+            dict.fromkeys(
+                evidence_id for entry in entries for evidence_id in entry.evidence_ids
+            )
+        )
+        if any(entry.disposition == "publish" for entry in entries):
+            state = "captured_published"
+        elif any(entry.disposition == "suppress" for entry in entries):
+            state = "captured_suppressed"
+        elif any(entry.disposition == "review" for entry in entries):
+            state = "captured_conflicting"
+        else:
+            fact_type = fact_by_field.get(field, field)
+            candidates = tuple(row for row in evidence if row.fact_type == fact_type)
+            evidence_ids = tuple(row.evidence_id for row in candidates)
+            if any(
+                disposition_by_id.get(row.evidence_id)
+                and disposition_by_id[row.evidence_id].status == "unowned"
+                for row in candidates
+            ):
+                state = "captured_unowned"
+            elif candidates:
+                state = "not_captured"
+            else:
+                state = "not_present_in_source"
+        states.append(
+            FieldEvidenceState(
+                field=field,
+                state=state,
+                evidence_ids=evidence_ids,
+                reason_codes=tuple(
+                    dict.fromkeys(
+                        entry.reason_code for entry in entries if entry.reason_code
+                    )
+                ),
+            )
+        )
+    return tuple(states)
+
+
 def data_integrity_status(
-    verdict: str, field_states: tuple[FieldEvidenceState, ...]
-) -> typing.Literal["clean", "partial", "defect", "blocked", "unknown"]:
+    verdict: str,
+    field_states: tuple[FieldEvidenceState, ...],
+    findings: tuple[Finding, ...] = (),
+) -> typing.Literal["clean", "partial", "defect", "blocked", "unknown", "divergent"]:
+    if any(row.rule_id == "PUBLIC_RESOLUTION_DIVERGENCE" for row in findings):
+        return "divergent"
     if verdict == "blocked":
         return "blocked"
     if any(row.state == "captured_conflicting" for row in field_states):
@@ -329,6 +567,8 @@ def metrics(
     verdict: str,
     *,
     collector_count: int = 0,
+    resolve_duration_ms: float = 0.0,
+    publish_duration_ms: float = 0.0,
 ) -> ExtractionMetrics:
     lineage_fields = sum(len(dict(record.get("_lineage") or {})) for record in records)
     public_fields = sum(
@@ -360,4 +600,6 @@ def metrics(
         ),
         completeness_score=completeness_score,
         verdict=verdict,
+        resolve_duration_ms=resolve_duration_ms,
+        publish_duration_ms=publish_duration_ms,
     )

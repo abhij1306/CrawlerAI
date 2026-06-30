@@ -3,17 +3,20 @@
 Operator priority #1: a wrong or missing field (price, currency, availability,
 a dropped variant) is root-caused from this single artifact alone — never from
 raw HTML or source. The payload is therefore self-referential: every field
-carries its winning evidence, the rejected candidates with reasons, the public
-firewall verdict, and the collector/stage outcomes that produced it.
+carries its winning evidence, the rejected candidates with reasons, the
+publication-policy disposition, and the collector/stage outcomes that produced
+it.
 
 It reuses the existing extraction vocabulary only — ``FieldEvidenceState.state``,
-``Decision`` / ``RejectedEvidence``, ``SourceLocator``, public-firewall reason
-codes, and the collector/stage outcome enum — so there is one set of terms to
-learn. Values are length-bounded so the artifact stays small.
+``Decision`` / ``RejectedEvidence``, ``SourceLocator``, publication reason
+codes, evidence disposition statuses, and the collector/stage outcome enum — so
+there is one set of terms to learn. Values are length-bounded so the artifact
+stays small.
 """
 
 from __future__ import annotations
 
+from collections import Counter
 from collections.abc import Mapping, Sequence
 from typing import Any
 
@@ -41,7 +44,7 @@ _PUBLIC_FIELD_FACT_TYPES = {
     "image_url": field_mappings.ASSET_IMAGE_URL_FACT_TYPE,
 }
 
-SCHEMA_VERSION = "diagnose.v1"
+SCHEMA_VERSION = "diagnose.v2"
 _PREVIEW_LIMIT = 120
 _FIELDS_LIMIT = 100
 _REJECTED_PER_FIELD_LIMIT = 10
@@ -49,6 +52,8 @@ _VARIANT_DROPS_LIMIT = 200
 _COLLECTORS_LIMIT = 50
 _STAGES_LIMIT = 50
 _CONTRACTS_LIMIT = 100
+_FINDINGS_LIMIT = 100
+_EVIDENCE_DISPOSITIONS_LIMIT = 500
 
 
 def build_diagnosis(
@@ -84,6 +89,18 @@ def build_diagnosis(
     contract_section, contracts_truncated = _bounded(
         extraction_result.contract_outcomes, _CONTRACTS_LIMIT
     )
+    findings_total = len(extraction_result.findings)
+    findings_section, findings_truncated = _bounded(
+        extraction_result.findings, _FINDINGS_LIMIT
+    )
+    evidence_dispositions = tuple(
+        getattr(extraction_result, "evidence_dispositions", ()) or ()
+    )
+    dispositions_total = len(evidence_dispositions)
+    dispositions_section, dispositions_truncated = _bounded(
+        evidence_dispositions,
+        _EVIDENCE_DISPOSITIONS_LIMIT,
+    )
 
     truncated: dict[str, dict[str, int]] = {}
     if fields_truncated:
@@ -105,6 +122,16 @@ def build_diagnosis(
             "included": len(contract_section),
             "total": contracts_total,
         }
+    if findings_truncated:
+        truncated["findings"] = {
+            "included": len(findings_section),
+            "total": findings_total,
+        }
+    if dispositions_truncated:
+        truncated["evidence_dispositions"] = {
+            "included": len(dispositions_section),
+            "total": dispositions_total,
+        }
 
     payload: dict[str, object] = {
         "schema_version": SCHEMA_VERSION,
@@ -117,7 +144,7 @@ def build_diagnosis(
                 state,
                 decision=decision_by_field.get(state.field),
                 evidence_by_id=evidence_by_id,
-                firewall_reason=rejected_public.get(state.field),
+                publication_policy=rejected_public.get(state.field),
             )
             for state in fields_section
         ],
@@ -128,6 +155,12 @@ def build_diagnosis(
             outcome.model_dump(mode="json") for outcome in collectors_section
         ],
         "stages": [outcome.model_dump(mode="json") for outcome in stages_section],
+        "findings": [finding.model_dump(mode="json") for finding in findings_section],
+        "evidence_dispositions": {
+            "total": dispositions_total,
+            "by_status": dict(Counter(row.status for row in evidence_dispositions)),
+            "examples": [row.model_dump(mode="json") for row in dispositions_section],
+        },
         # Per-field record of which frozen contract (if any) selected the winning
         # source, so a learned extraction is explainable from diagnose.json alone.
         # ``None`` when no contracts were applied keeps the "not applicable" signal
@@ -170,7 +203,7 @@ def _field_section(
     *,
     decision: Decision | None,
     evidence_by_id: Mapping[str, Evidence],
-    firewall_reason: object,
+    publication_policy: object,
 ) -> dict[str, object]:
     section: dict[str, object] = {
         "field": state.field,
@@ -184,8 +217,8 @@ def _field_section(
     rejected = _rejected(decision, evidence_by_id)
     if rejected:
         section["rejected"] = rejected
-    if firewall_reason not in (None, "", [], {}):
-        section["firewall"] = firewall_reason
+    if publication_policy not in (None, "", [], {}):
+        section["publication_policy"] = publication_policy
     return section
 
 

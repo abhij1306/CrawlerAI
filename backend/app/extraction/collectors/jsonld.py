@@ -24,7 +24,7 @@ from app.extraction.collectors.js_state import (
     select_product_roots,
 )
 from app.extraction.contracts import CaptureBundle, EntityHint, Evidence, SourceLocator
-from app.extraction.ids import stable_id
+from app.core.shared.ids import stable_id
 
 
 _IS_VARIANT_OF_KEY = "is" + "VariantOf"

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import re
 from decimal import Decimal, InvalidOperation
-import json
 from typing import Any
 from urllib.parse import urljoin, urlsplit
 
@@ -20,14 +19,9 @@ from app.extraction.collectors.metadata import (
 )
 from app.extraction.collectors.url import UrlCollector
 from app.core.config import field_mappings
-from app.core.config.extraction_price_rules import (
-    DETAIL_PRICE_CURRENCY_COLLECTOR_PRIORITY,
-    DETAIL_PRICE_PAGE_CORROBORATION_COLLECTORS,
-)
 from app.core.config.extraction_rules import (
     AVAILABILITY_CANONICAL_ENUM,
     AVAILABILITY_URL_MAP,
-    CURRENCY_SYMBOL_MAP,
     DETAIL_BRAND_BOILERPLATE_VALUES,
     DETAIL_BRAND_CATEGORY_PATTERN,
     DETAIL_DESCRIPTION_HARD_BOUNDARY_LENGTHS,
@@ -66,12 +60,12 @@ from app.core.config.extraction_rules import (
 from app.extraction.contracts import (
     ArtifactReader,
     CaptureBundle,
-    CommerceDetailRecord,
+    CollectorOutcome,
     Evidence,
     FACT_TYPES,
+    HarvestResult,
 )
-from app.extraction.ids import stable_id
-from app.extraction.materialization import materialize
+from app.extraction.surfaces import Surface
 from app.core.records.url_identity import (
     detail_title_from_url,
     detail_title_has_seo_pollution,
@@ -81,16 +75,9 @@ from app.core.records.url_identity import (
     semantic_detail_identity_tokens,
     semantic_identity_tokens,
 )
-from app.core.shared.currency_hints import currency_hint_from_page_url
-from app.core.shared.field_coerce_price import repair_price_unit
 from app.core.shared.field_coerce_text import (
     coerce_brand_text,
-    infer_brand_from_page_identity,
-    infer_brand_from_product_url,
-    infer_brand_from_title_host,
-    infer_brand_from_title_marker,
 )
-from app.extraction.entities import EntitySet, style_sku_from_product_url
 
 
 def collect_ecommerce_detail(
@@ -99,15 +86,67 @@ def collect_ecommerce_detail(
     *,
     requested_fields: tuple[str, ...] = (),
 ) -> tuple[Evidence, ...]:
-    return (
-        tuple(
-            ev
-            for collector in default_collectors()
-            for ev in collector.collect(bundle, reader)
-            if ev.fact_type in FACT_TYPES
+    return harvest_ecommerce_detail(
+        bundle,
+        reader,
+        requested_fields=requested_fields,
+    ).evidence
+
+
+def harvest_ecommerce_detail(
+    bundle: CaptureBundle,
+    reader: ArtifactReader,
+    *,
+    requested_fields: tuple[str, ...] = (),
+) -> HarvestResult:
+    rows: list[Evidence] = []
+    outcomes: list[CollectorOutcome] = []
+    for collector in default_collectors():
+        if isinstance(collector, JsStateCollector):
+            harvest = collector.harvest(bundle, reader)
+            collector_rows = tuple(
+                ev for ev in harvest.evidence if ev.fact_type in FACT_TYPES
+            )
+            rows.extend(collector_rows)
+            outcomes.extend(harvest.outcomes)
+            continue
+        before = len(rows)
+        rows.extend(
+            ev for ev in collector.collect(bundle, reader) if ev.fact_type in FACT_TYPES
         )
-        + tuple(css_recipe_evidence(bundle, reader))
-        + collect_requested_fields(bundle, reader, requested_fields)
+        produced = len(rows) - before
+        outcomes.append(
+            CollectorOutcome(
+                collector_id=collector.collector_id,
+                outcome="produced_evidence" if produced else "no_match",
+                evidence_count=produced,
+            )
+        )
+    recipe_rows = tuple(css_recipe_evidence(bundle, reader))
+    requested_rows = collect_requested_fields(bundle, reader, requested_fields)
+    rows.extend(recipe_rows)
+    rows.extend(requested_rows)
+    if recipe_rows:
+        outcomes.append(
+            CollectorOutcome(
+                collector_id="css_recipe",
+                outcome="produced_evidence",
+                evidence_count=len(recipe_rows),
+            )
+        )
+    if requested_rows:
+        outcomes.append(
+            CollectorOutcome(
+                collector_id="requested_fields",
+                outcome="produced_evidence",
+                evidence_count=len(requested_rows),
+            )
+        )
+    return HarvestResult(
+        surface=Surface.ECOMMERCE_DETAIL,
+        evidence=tuple(rows),
+        collector_outcomes=tuple(outcomes),
+        admitted_source_objects=len(rows),
     )
 
 
@@ -127,35 +166,8 @@ def normalize_ecommerce_detail(
     evidence: tuple[Evidence, ...], *, page_url: str
 ) -> tuple[Evidence, ...]:
     normalized = tuple(normalize_evidence(ev, page_url=page_url) for ev in evidence)
-    derived = tuple(
-        row
-        for ev in normalized
-        for row in (
-            _currency_from_price_symbol(ev, page_url=page_url),
-            _brand_from_title_host(ev, page_url=page_url),
-            _brand_from_product_url(ev, page_url=page_url),
-            _brand_from_title_marker(ev),
-            style_sku_from_product_url(ev, page_url=page_url),
-            _availability_from_stock_quantity(ev),
-        )
-        if row is not None
-    )
-    normalized_derived = tuple(
-        normalize_evidence(row, page_url=page_url) for row in derived
-    )
-    page_brand = _brand_from_page_identity(normalized, page_url=page_url)
-    normalized_page_brand = (
-        normalize_evidence(page_brand, page_url=page_url) if page_brand else None
-    )
-    combined = (
-        normalized
-        + normalized_derived
-        + ((normalized_page_brand,) if normalized_page_brand else ())
-    )
-    return _dedupe_equivalent(
-        _flag_ambiguous_dom_prices(
-            _flag_brand_conflicts(combined, page_brand=normalized_page_brand)
-        )
+    return _flag_ambiguous_dom_prices(
+        _flag_brand_conflicts(normalized, page_brand=None)
     )
 
 
@@ -334,201 +346,6 @@ def _flag_brand_conflicts(
     )
 
 
-def _brand_from_page_identity(
-    evidence: tuple[Evidence, ...], *, page_url: str
-) -> Evidence | None:
-    title = next(
-        (
-            row
-            for row in evidence
-            if row.fact_type == field_mappings.PRODUCT_TITLE_FACT_TYPE
-        ),
-        None,
-    )
-    if title is None:
-        return None
-    brand = infer_brand_from_page_identity(
-        url=page_url,
-        title=title.value,
-        evidence_values=tuple(
-            row.value
-            for row in evidence
-            if row.fact_type
-            not in {
-                field_mappings.PRODUCT_TITLE_FACT_TYPE,
-                field_mappings.PRODUCT_URL_FACT_TYPE,
-                "variant.url",
-            }
-        ),
-        existing_brands=tuple(
-            row.value
-            for row in evidence
-            if row.fact_type == field_mappings.PRODUCT_BRAND_FACT_TYPE
-        ),
-    )
-    if not brand:
-        return None
-    return title.model_copy(
-        update={
-            "evidence_id": stable_id("ev", title.evidence_id, "page_brand", brand),
-            "fact_type": field_mappings.PRODUCT_BRAND_FACT_TYPE,
-            "raw_value": brand,
-            "value": brand,
-            "confidence": min(float(title.confidence), 0.82),
-            "directness": "inferred",
-            "metadata": {**dict(title.metadata), "derived_by": "page_identity"},
-        }
-    )
-
-
-def _preferred_price_currency(rows: tuple[Evidence, ...]) -> str | None:
-    priority = {
-        collector_id: index
-        for index, collector_id in enumerate(DETAIL_PRICE_CURRENCY_COLLECTOR_PRIORITY)
-    }
-    valid = tuple(
-        row
-        for row in rows
-        if str(row.value or "").strip() and "invalid_currency" not in row.flags
-    )
-    if not valid:
-        return None
-    best_rank = min(priority.get(row.collector_id, len(priority)) for row in valid)
-    values = {
-        str(row.value).strip().upper()
-        for row in valid
-        if priority.get(row.collector_id, len(priority)) == best_rank
-    }
-    return next(iter(values)) if len(values) == 1 else None
-
-
-def normalize_ecommerce_price_units(
-    evidence: tuple[Evidence, ...], entities: EntitySet
-) -> tuple[Evidence, ...]:
-    by_id = {row.evidence_id: row for row in evidence}
-    offer_by_evidence = {
-        eid: offer
-        for offer in entities.offers
-        for ids in offer.fact_evidence.values()
-        for eid in ids
-    }
-    currency_rows_by_offer = {
-        offer.entity_id: tuple(
-            by_id[eid]
-            for eid in offer.fact_evidence.get(
-                field_mappings.OFFER_CURRENCY_FACT_TYPE, ()
-            )
-            if eid in by_id and "invalid_currency" not in by_id[eid].flags
-        )
-        for offer in entities.offers
-    }
-    product_currency_rows = {
-        product.entity_id: tuple(
-            row
-            for offer in entities.offers
-            if offer.product_entity_id == product.entity_id
-            for row in currency_rows_by_offer.get(offer.entity_id, ())
-        )
-        for product in entities.products
-    }
-    price_rows = tuple(
-        row
-        for row in evidence
-        if row.fact_type
-        in {
-            field_mappings.OFFER_PRICE_FACT_TYPE,
-            field_mappings.OFFER_ORIGINAL_PRICE_FACT_TYPE,
-        }
-    )
-    currency_by_evidence: dict[str, str] = {}
-    for row in price_rows:
-        offer = offer_by_evidence.get(row.evidence_id)
-        if offer is None:
-            continue
-        currency = _preferred_price_currency(
-            currency_rows_by_offer.get(offer.entity_id, ())
-        ) or _preferred_price_currency(
-            product_currency_rows.get(offer.product_entity_id, ())
-        )
-        if currency:
-            currency_by_evidence[row.evidence_id] = currency
-    peer_values: dict[str, object] = {}
-    for row in price_rows:
-        repaired = repair_price_unit(
-            row.value,
-            source_key=row.locator.value,
-            currency=currency_by_evidence.get(row.evidence_id, ""),
-        )
-        peer_values[row.evidence_id] = repaired[0] if repaired else row.value
-    repaired_rows: list[Evidence] = []
-    for row in evidence:
-        offer = offer_by_evidence.get(row.evidence_id)
-        currency = currency_by_evidence.get(row.evidence_id)
-        if (
-            offer is None
-            or currency is None
-            or row.fact_type
-            not in {
-                field_mappings.OFFER_PRICE_FACT_TYPE,
-                field_mappings.OFFER_ORIGINAL_PRICE_FACT_TYPE,
-            }
-        ):
-            repaired_rows.append(row)
-            continue
-        peers = tuple(
-            peer_values[other.evidence_id]
-            for other in price_rows
-            if other.evidence_id != row.evidence_id
-            and other.fact_type == row.fact_type
-            and (
-                (
-                    (other_offer := offer_by_evidence.get(other.evidence_id))
-                    is not None
-                    and other_offer.product_entity_id == offer.product_entity_id
-                    and (
-                        other.collector_id != row.collector_id
-                        or other_offer.entity_id == offer.entity_id
-                    )
-                )
-                or (
-                    offer_by_evidence.get(other.evidence_id) is None
-                    and other.collector_id in DETAIL_PRICE_PAGE_CORROBORATION_COLLECTORS
-                    and "invalid_decimal" not in other.flags
-                )
-            )
-        )
-        repaired = repair_price_unit(
-            row.value,
-            source_key=row.locator.value,
-            currency=currency,
-            corroborating_values=peers,
-        )
-        if repaired is None:
-            repaired_rows.append(row)
-            continue
-        value, rule_id = repaired
-        repaired_rows.append(
-            row.model_copy(
-                update={
-                    "value": value,
-                    "flags": tuple(sorted(set(row.flags) | {rule_id})),
-                    "metadata": {
-                        **dict(row.metadata),
-                        "price_unit_rule": rule_id,
-                        "price_unit_source_key": row.locator.value,
-                    },
-                }
-            )
-        )
-    return tuple(repaired_rows)
-
-
-def materialize_ecommerce_detail(
-    entities, resolution, evidence: tuple[Evidence, ...], *, canonical_url: str
-) -> CommerceDetailRecord:
-    return materialize(entities, resolution, evidence, canonical_url=canonical_url)
-
-
 def assess_ecommerce_detail_quality(
     record: dict[str, object],
     resolution,
@@ -697,7 +514,7 @@ def _normalize_availability_value(value: Any, flags: set[str]) -> Any:
     if isinstance(value, str):
         # Enforce the canonical enum: a value that does not resolve to a public
         # availability state is flagged (raw text preserved for diagnose.json)
-        # so resolution ranks it below enum-valid candidates and the firewall
+        # so resolution ranks it below enum-valid candidates and publication
         # drops it with a recorded reason — never a free-text passthrough.
         normalized = _availability(value)
         if normalized not in AVAILABILITY_CANONICAL_ENUM:
@@ -876,191 +693,3 @@ def _money(value: Any, flags: set[str]) -> str:
     except (InvalidOperation, ValueError):
         flags.add("invalid_decimal")
         return str(value or "")
-
-
-def _availability_from_stock_quantity(evidence: Evidence) -> Evidence | None:
-    if evidence.fact_type != "offer.stock_quantity":
-        return None
-    try:
-        quantity = Decimal(str(evidence.value).strip())
-    except (InvalidOperation, ValueError):
-        return None
-    availability = "in_stock" if quantity > 0 else "out_of_stock"
-    return evidence.model_copy(
-        update={
-            "evidence_id": stable_id(
-                "ev",
-                evidence.bundle_id,
-                evidence.evidence_id,
-                "availability_from_stock_quantity",
-                availability,
-            ),
-            "fact_type": "offer.availability",
-            "raw_value": availability,
-            "value": availability,
-            "confidence": min(float(evidence.confidence), 0.85),
-            "metadata": {
-                **dict(evidence.metadata),
-                "derived_by": "availability_from_stock_quantity",
-                "input_evidence_id": evidence.evidence_id,
-            },
-        }
-    )
-
-
-def _brand_from_title_host(evidence: Evidence, *, page_url: str) -> Evidence | None:
-    if evidence.fact_type != field_mappings.PRODUCT_TITLE_FACT_TYPE:
-        return None
-    brand = infer_brand_from_title_host(title=evidence.value, url=page_url)
-    if not brand:
-        return None
-    return evidence.model_copy(
-        update={
-            "evidence_id": stable_id(
-                "ev",
-                evidence.bundle_id,
-                evidence.evidence_id,
-                "brand_from_title_host",
-                brand,
-            ),
-            "fact_type": field_mappings.PRODUCT_BRAND_FACT_TYPE,
-            "raw_value": brand,
-            "value": brand,
-            "confidence": min(float(evidence.confidence), 0.78),
-            "metadata": {
-                **dict(evidence.metadata),
-                "derived_by": "brand_from_title_host",
-                "input_evidence_id": evidence.evidence_id,
-            },
-        }
-    )
-
-
-def _brand_from_product_url(evidence: Evidence, *, page_url: str) -> Evidence | None:
-    if evidence.fact_type != field_mappings.PRODUCT_TITLE_FACT_TYPE:
-        return None
-    if not (brand := infer_brand_from_product_url(url=page_url, title=evidence.value)):
-        return None
-    return evidence.model_copy(
-        update={
-            "evidence_id": stable_id(
-                "ev",
-                evidence.bundle_id,
-                evidence.evidence_id,
-                "brand_from_product_url",
-                brand,
-            ),
-            "fact_type": field_mappings.PRODUCT_BRAND_FACT_TYPE,
-            "raw_value": brand,
-            "value": brand,
-            "confidence": min(float(evidence.confidence), 0.74),
-            "directness": "inferred",
-            "metadata": {
-                **dict(evidence.metadata),
-                "derived_by": "brand_from_product_url",
-                "input_evidence_id": evidence.evidence_id,
-            },
-        }
-    )
-
-
-def _brand_from_title_marker(evidence: Evidence) -> Evidence | None:
-    if evidence.fact_type != field_mappings.PRODUCT_TITLE_FACT_TYPE:
-        return None
-    brand = infer_brand_from_title_marker(evidence.value)
-    if not brand:
-        return None
-    return evidence.model_copy(
-        update={
-            "evidence_id": stable_id(
-                "ev",
-                evidence.bundle_id,
-                evidence.evidence_id,
-                "brand_from_title_marker",
-                brand,
-            ),
-            "fact_type": field_mappings.PRODUCT_BRAND_FACT_TYPE,
-            "raw_value": brand,
-            "value": brand,
-            "confidence": min(float(evidence.confidence), 0.8),
-            "metadata": {
-                **dict(evidence.metadata),
-                "derived_by": "brand_from_title_marker",
-                "input_evidence_id": evidence.evidence_id,
-            },
-        }
-    )
-
-
-def _currency_from_price_symbol(
-    evidence: Evidence, *, page_url: str = ""
-) -> Evidence | None:
-    if evidence.fact_type != field_mappings.OFFER_PRICE_FACT_TYPE:
-        return None
-    raw = evidence.raw_value if isinstance(evidence.raw_value, str) else ""
-    symbols = {str(c) for s, c in CURRENCY_SYMBOL_MAP.items() if str(s) in raw}
-    if len(symbols) == 1:
-        currency, derived_by, confidence, extra = (
-            symbols.pop(),
-            "currency_from_price_symbol",
-            min(float(evidence.confidence), 0.85),
-            {},
-        )
-    elif host_currency := currency_hint_from_page_url(page_url):
-        # Generic locale hint (ccTLD / locale segment, e.g. .co.in or /en-in/ →
-        # INR); outranked by explicit currency via tiebreakers.
-        currency, derived_by, confidence, extra = (
-            host_currency,
-            "currency_from_page_url_hint",
-            min(float(evidence.confidence), 0.5),
-            {"directness": "inferred", "collector_id": "url"},
-        )
-    else:
-        return None
-    return evidence.model_copy(
-        update={
-            "evidence_id": stable_id(
-                "ev", evidence.bundle_id, evidence.evidence_id, derived_by, currency
-            ),
-            "fact_type": field_mappings.OFFER_CURRENCY_FACT_TYPE,
-            "raw_value": currency,
-            "value": currency,
-            "confidence": confidence,
-            **extra,
-            "metadata": {
-                **dict(evidence.metadata),
-                "derived_by": derived_by,
-                "input_evidence_id": evidence.evidence_id,
-            },
-        }
-    )
-
-
-def _dedupe_equivalent(evidence: tuple[Evidence, ...]) -> tuple[Evidence, ...]:
-    seen: set[tuple[object, ...]] = set()
-    out: list[Evidence] = []
-    for ev in evidence:
-        hint = ev.entity_hint.model_dump(mode="json") if ev.entity_hint else None
-        key = (
-            ev.fact_type,
-            _freeze(ev.value),
-            ev.collector_id,
-            ev.directness,
-            str(hint),
-            ev.locator.kind,
-            ev.locator.value,
-        )
-        if key in seen:
-            continue
-        seen.add(key)
-        out.append(ev)
-    return tuple(out)
-
-
-def _freeze(value: Any) -> object:
-    if isinstance(value, (str, int, float, bool, type(None))):
-        return value
-    try:
-        return json.dumps(value, sort_keys=True, default=str, separators=(",", ":"))
-    except (TypeError, ValueError):
-        return str(value)

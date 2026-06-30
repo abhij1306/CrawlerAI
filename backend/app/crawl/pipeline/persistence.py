@@ -5,18 +5,13 @@ import json
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from types import MappingProxyType
-from typing import Any, cast
+from typing import Any
 
 from app.models.crawl_run import CrawlRecord, CrawlRun
 from app.core.records.confidence import score_record_confidence
 from app.core.records.field_url_normalization import canonical_public_record_url
 from app.extraction.contracts import VariantDrop
 from app.core.db_utils import mapping_or_empty
-from app.core.records.public_record_firewall import (
-    flatten_variants_for_public_output,
-    public_record_data_for_surface,
-)
-from app.core.records.variant_drops import VariantDropRecorder, drops_from_record
 from app.core.shared.field_coerce import object_list as _object_list
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -386,24 +381,7 @@ def _public_data_for_record(
         for key, value in raw_record.items()
         if not str(key).startswith("_") and value not in (None, "", [], {})
     }
-    drops = VariantDropRecorder()
-    # Materialization + output-safety drops ride the raw record; the firewall
-    # appends its own as the public contract is enforced. One merged trail.
-    drops.extend(drops_from_record(raw_record))
-    data, rejected = public_record_data_for_surface(
-        unfiltered_data,
-        surface=str(run.surface or ""),
-        page_url=str(
-            getattr(acquisition_result, "final_url", "") or preliminary_source_url
-        ),
-        requested_fields=list(run.requested_fields or []),
-        variant_drops=drops,
-    )
-    return (
-        cast(dict[str, object], data),
-        cast(dict[str, object], rejected),
-        drops.drops,
-    )
+    return unfiltered_data, {}, ()
 
 
 def _discovered_data_for_record(
@@ -482,40 +460,5 @@ def _record_lineage(
     acquisition_result,
     preliminary_source_url: str,
 ) -> dict[str, object]:
-    return _public_lineage_for_data(
-        mapping_or_empty(raw_record.get("_lineage")),
-        raw_record=raw_record,
-        public_data=data,
-        page_url=str(
-            getattr(acquisition_result, "final_url", "") or preliminary_source_url
-        ),
-    )
-
-
-def _public_lineage_for_data(
-    lineage: dict[str, object],
-    *,
-    raw_record: dict[str, object],
-    public_data: dict[str, object],
-    page_url: str,
-) -> dict[str, object]:
-    if "variants" not in lineage:
-        return lineage
-    cleaned = dict(lineage)
-    if "variants" not in public_data:
-        cleaned.pop("variants", None)
-        return cleaned
-    raw_variants = _object_list(raw_record.get("variants"))
-    raw_variant_lineage = _object_list(lineage.get("variants"))
-    kept_lineage = [
-        raw_variant_lineage[index]
-        for index, row in enumerate(raw_variants)
-        if index < len(raw_variant_lineage)
-        and isinstance(row, dict)
-        and flatten_variants_for_public_output([row], page_url=page_url)
-    ]
-    if kept_lineage:
-        cleaned["variants"] = kept_lineage
-    else:
-        cleaned.pop("variants", None)
-    return cleaned
+    del data, acquisition_result, preliminary_source_url
+    return mapping_or_empty(raw_record.get("_lineage"))

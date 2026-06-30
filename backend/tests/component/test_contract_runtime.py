@@ -1,16 +1,15 @@
-"""Slice 7 tests: frozen contract execution and runtime snapshot loading.
-
-Covers match_template, apply_contracts (hit/miss/fallback/stale_source/
-override_miss), load_runtime_snapshot DB query, and fingerprint_from_parts
-consistency with fingerprint_template.
-"""
+"""Frozen contract preference and runtime snapshot loading."""
 
 from __future__ import annotations
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.knowledge_graph.contract_runtime import apply_contracts, match_template
+from app.core.knowledge_graph.contract_runtime import (
+    contract_preferences,
+    match_template,
+    resolved_contract_outcomes,
+)
 from app.core.knowledge_graph.templates import (
     fingerprint_from_parts,
     fingerprint_template,
@@ -35,17 +34,14 @@ from app.persistence.knowledge_graph import (
 )
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
 def _evidence(
     evidence_id: str,
     collector_id: str,
     locator_value: str,
     fact_type: str,
     value: object = "test-value",
+    *,
+    subject_id: str = "entity-1",
 ) -> Evidence:
     return Evidence(
         evidence_id=evidence_id,
@@ -59,24 +55,27 @@ def _evidence(
         locator=SourceLocator(kind="json_pointer", value=locator_value),
         directness="direct",
         confidence=0.9,
-        subject_id="prod-1",
+        subject_id=subject_id,
     )
 
 
 def _decision(
     fact_type: str,
     accepted_ids: tuple[str, ...],
+    *,
+    rule_id: str = "FIRST_BY_PRIORITY",
     rejected: tuple[RejectedEvidence, ...] = (),
     status: str = "resolved",
+    entity_id: str = "entity-1",
 ) -> Decision:
     return Decision(
         decision_id=f"dec-{fact_type}",
-        entity_id="entity-1",
+        entity_id=entity_id,
         fact_type=fact_type,
         accepted_evidence_ids=accepted_ids,
         rejected=rejected,
         finding_ids=(),
-        rule_id="FIRST_BY_PRIORITY",
+        rule_id=rule_id,
         status=status,  # type: ignore[arg-type]
     )
 
@@ -84,6 +83,7 @@ def _decision(
 def _resolution(*decisions: Decision) -> ResolutionResult:
     return ResolutionResult(
         primary_product_entity_id="entity-1",
+        primary_offer_entity_id=None,
         decisions=decisions,
         derived_facts=(),
         unresolved_fact_types=(),
@@ -109,11 +109,6 @@ def _snapshot(
             }
         ],
     }
-
-
-# ---------------------------------------------------------------------------
-# match_template
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -200,87 +195,8 @@ def test_match_template_returns_none_on_empty_snapshot() -> None:
     assert match_template({}, "fp-abc", "ecommerce_detail") is None
 
 
-# ---------------------------------------------------------------------------
-# apply_contracts — hit
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
-def test_apply_contracts_hit_repoints_decision_to_preferred_source() -> None:
-    ev = _evidence("ev-1", "jsonld", "/name", "product.title", "Widget")
-    decision = _decision("product.title", ("ev-1",))
-    resolution = _resolution(decision)
-    source = "jsonld:/name"
-    snapshot = _snapshot(
-        "fp-1",
-        "ecommerce_detail",
-        [
-            {
-                "canonical_field": "product.title",
-                "selected_source": source,
-                "selection_origin": "generic",
-                "resolver_rule": "FIRST_BY_PRIORITY",
-            }
-        ],
-    )
-
-    new_resolution, outcomes = apply_contracts(
-        snapshot=snapshot,
-        fingerprint="fp-1",
-        surface="ecommerce_detail",
-        evidence=(ev,),
-        resolution=resolution,
-        requested_fields=frozenset(["product.title"]),
-        user_controlled_fields=frozenset(),
-    )
-
-    assert len(outcomes) == 1
-    assert outcomes[0].outcome == "hit"
-    assert outcomes[0].applied is True
-    assert outcomes[0].field == "product.title"
-    # Decision re-pointed to the same evidence (it was already preferred)
-    updated = {d.fact_type: d for d in new_resolution.decisions}
-    assert updated["product.title"].accepted_evidence_ids == ("ev-1",)
-
-
-@pytest.mark.unit
-def test_apply_contracts_treats_requested_field_alias_as_fact_type() -> None:
-    selector = ".product-detail-primary-brand-value-that-is-longer-than-eighty-characters-1234567890"
-    evidence = (
-        _evidence("ev-1", "jsonld", "/brand", "product.brand", "Generic"),
-        _evidence("ev-2", "css_recipe", selector, "product.brand", "ACME"),
-    )
-    resolution = _resolution(_decision("product.brand", ("ev-1",)))
-    snapshot = _snapshot(
-        "fp-abc",
-        "ecommerce_detail",
-        [
-            {
-                "canonical_field": "brand",
-                "selected_source": f"css_recipe:{selector}",
-                "selection_origin": "operator",
-                "resolver_rule": "operator_selector",
-            }
-        ],
-    )
-
-    new_resolution, outcomes = apply_contracts(
-        snapshot=snapshot,
-        fingerprint="fp-abc",
-        surface="ecommerce_detail",
-        evidence=evidence,
-        resolution=resolution,
-        requested_fields=frozenset({"brand"}),
-        user_controlled_fields=frozenset(),
-    )
-
-    assert new_resolution.decisions[0].accepted_evidence_ids == ("ev-2",)
-    assert outcomes[0].outcome == "hit"
-    assert outcomes[0].field == "product.brand"
-
-
-@pytest.mark.unit
-def test_apply_contracts_matches_volatile_json_locator_as_source_pattern() -> None:
+def test_contract_preferences_return_source_matching_ids_only() -> None:
     evidence = (
         _evidence("generic", "opengraph", 'meta[property="og:title"]', "product.title"),
         _evidence(
@@ -301,73 +217,25 @@ def test_apply_contracts_matches_volatile_json_locator_as_source_pattern() -> No
                     "__APOLLO_STATE__/Product:old-id/name"
                 ),
                 "selection_origin": "operator",
-                "resolver_rule": "operator_source",
             }
         ],
     )
 
-    updated, outcomes = apply_contracts(
-        snapshot=snapshot,
-        fingerprint="fp-1",
-        surface="ecommerce_detail",
-        evidence=evidence,
-        resolution=_resolution(_decision("product.title", ("generic",))),
-        requested_fields=frozenset({"product.title"}),
-        user_controlled_fields=frozenset(),
-    )
-
-    assert updated.decisions[0].accepted_evidence_ids == ("preferred",)
-    assert outcomes[0].outcome == "hit"
-
-
-@pytest.mark.unit
-def test_apply_contracts_hit_repoints_when_alternative_preferred() -> None:
-    """Contract prefers jsonld but generic chose microdata; engine re-points."""
-    ev_jsonld = _evidence("ev-jsonld", "jsonld", "/name", "product.title", "Widget")
-    ev_micro = _evidence("ev-micro", "microdata", "/name", "product.title", "Widget")
-    # Generic resolution accepted microdata
-    decision = _decision("product.title", ("ev-micro",))
-    resolution = _resolution(decision)
-    source = "jsonld:/name"
-    snapshot = _snapshot(
+    preferences = contract_preferences(
+        snapshot,
         "fp-1",
         "ecommerce_detail",
-        [
-            {
-                "canonical_field": "product.title",
-                "selected_source": source,
-                "selection_origin": "operator",
-                "resolver_rule": "PREFERRED",
-            }
-        ],
+        evidence,
+        frozenset({"product.title"}),
+        frozenset(),
     )
 
-    new_resolution, outcomes = apply_contracts(
-        snapshot=snapshot,
-        fingerprint="fp-1",
-        surface="ecommerce_detail",
-        evidence=(ev_jsonld, ev_micro),
-        resolution=resolution,
-        requested_fields=frozenset(["product.title"]),
-        user_controlled_fields=frozenset(),
-    )
-
-    assert outcomes[0].outcome == "hit"
-    assert outcomes[0].applied is True
-    updated = {d.fact_type: d for d in new_resolution.decisions}
-    assert updated["product.title"].accepted_evidence_ids == ("ev-jsonld",)
-
-
-# ---------------------------------------------------------------------------
-# apply_contracts — miss (field unresolved)
-# ---------------------------------------------------------------------------
+    assert preferences == {"product.title": ("preferred",)}
 
 
 @pytest.mark.unit
-def test_apply_contracts_miss_when_field_has_no_decision() -> None:
+def test_contract_preferences_skip_user_controlled_fields() -> None:
     ev = _evidence("ev-1", "jsonld", "/name", "product.title")
-    # Resolution has no decision for product.title
-    resolution = _resolution()
     snapshot = _snapshot(
         "fp-1",
         "ecommerce_detail",
@@ -376,220 +244,128 @@ def test_apply_contracts_miss_when_field_has_no_decision() -> None:
                 "canonical_field": "product.title",
                 "selected_source": "jsonld:/name",
                 "selection_origin": "generic",
-                "resolver_rule": "FIRST",
             }
         ],
     )
 
-    _, outcomes = apply_contracts(
-        snapshot=snapshot,
-        fingerprint="fp-1",
-        surface="ecommerce_detail",
-        evidence=(ev,),
-        resolution=resolution,
-        requested_fields=frozenset(["product.title"]),
-        user_controlled_fields=frozenset(),
+    assert (
+        contract_preferences(
+            snapshot,
+            "fp-1",
+            "ecommerce_detail",
+            (ev,),
+            frozenset({"product.title"}),
+            frozenset({"product.title"}),
+        )
+        == {}
+    )
+
+
+@pytest.mark.unit
+def test_contract_outcome_hit_requires_resolver_selected_preferred_candidate() -> None:
+    ev = _evidence("ev-1", "jsonld", "/name", "product.title", "Widget")
+    snapshot = _snapshot(
+        "fp-1",
+        "ecommerce_detail",
+        [
+            {
+                "canonical_field": "product.title",
+                "selected_source": "jsonld:/name",
+                "selection_origin": "generic",
+            }
+        ],
+    )
+
+    outcomes = resolved_contract_outcomes(
+        snapshot,
+        "fp-1",
+        "ecommerce_detail",
+        (ev,),
+        _resolution(
+            _decision(
+                "product.title",
+                ("ev-1",),
+                rule_id="CONTRACT_PREFERRED_SOURCE",
+            )
+        ),
+        frozenset({"product.title"}),
+        frozenset(),
+    )
+
+    assert len(outcomes) == 1
+    assert outcomes[0].outcome == "hit"
+    assert outcomes[0].applied is True
+
+
+@pytest.mark.unit
+def test_contract_outcome_fallback_when_preferred_unavailable_or_inadmissible() -> None:
+    selected = _evidence("selected", "microdata", "/name", "product.title", "Widget")
+    recommendation = _evidence(
+        "recommendation",
+        "jsonld",
+        "/recommendations/0/name",
+        "product.title",
+        "Other Widget",
+        subject_id="other-product",
+    )
+    snapshot = _snapshot(
+        "fp-1",
+        "ecommerce_detail",
+        [
+            {
+                "canonical_field": "product.title",
+                "selected_source": "jsonld:/recommendations/0/name",
+                "selection_origin": "operator",
+            }
+        ],
+    )
+
+    outcomes = resolved_contract_outcomes(
+        snapshot,
+        "fp-1",
+        "ecommerce_detail",
+        (selected, recommendation),
+        _resolution(_decision("product.title", ("selected",))),
+        frozenset({"product.title"}),
+        frozenset(),
+    )
+
+    assert len(outcomes) == 1
+    assert outcomes[0].outcome == "fallback"
+    assert outcomes[0].applied is False
+
+
+@pytest.mark.unit
+def test_contract_outcome_miss_when_field_unresolved() -> None:
+    ev = _evidence("ev-1", "jsonld", "/name", "product.title")
+    snapshot = _snapshot(
+        "fp-1",
+        "ecommerce_detail",
+        [
+            {
+                "canonical_field": "product.title",
+                "selected_source": "jsonld:/name",
+                "selection_origin": "generic",
+            }
+        ],
+    )
+
+    outcomes = resolved_contract_outcomes(
+        snapshot,
+        "fp-1",
+        "ecommerce_detail",
+        (ev,),
+        _resolution(),
+        frozenset({"product.title"}),
+        frozenset(),
     )
 
     assert outcomes[0].outcome == "miss"
     assert outcomes[0].applied is False
 
 
-# ---------------------------------------------------------------------------
-# apply_contracts — fallback
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.unit
-def test_apply_contracts_fallback_when_preferred_source_absent() -> None:
-    """Preferred source not present in evidence; generic resolution is kept."""
-    ev = _evidence("ev-micro", "microdata", "/name", "product.title", "Widget")
-    decision = _decision("product.title", ("ev-micro",))
-    resolution = _resolution(decision)
-    snapshot = _snapshot(
-        "fp-1",
-        "ecommerce_detail",
-        [
-            {
-                "canonical_field": "product.title",
-                "selected_source": "jsonld:/name",
-                "selection_origin": "generic",
-                "resolver_rule": "FIRST",
-            }
-        ],
-    )
-
-    _, outcomes = apply_contracts(
-        snapshot=snapshot,
-        fingerprint="fp-1",
-        surface="ecommerce_detail",
-        evidence=(ev,),
-        resolution=resolution,
-        requested_fields=frozenset(["product.title"]),
-        user_controlled_fields=frozenset(),
-    )
-
-    assert outcomes[0].outcome == "fallback"
-    assert outcomes[0].applied is False
-
-
-# ---------------------------------------------------------------------------
-# apply_contracts — override_miss (operator source absent)
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.unit
-def test_apply_contracts_override_miss_for_operator_source_absent() -> None:
-    ev = _evidence("ev-micro", "microdata", "/name", "product.title", "Widget")
-    decision = _decision("product.title", ("ev-micro",))
-    resolution = _resolution(decision)
-    snapshot = _snapshot(
-        "fp-1",
-        "ecommerce_detail",
-        [
-            {
-                "canonical_field": "product.title",
-                "selected_source": "jsonld:/name",
-                "selection_origin": "operator",
-                "resolver_rule": "PREFERRED",
-            }
-        ],
-    )
-
-    _, outcomes = apply_contracts(
-        snapshot=snapshot,
-        fingerprint="fp-1",
-        surface="ecommerce_detail",
-        evidence=(ev,),
-        resolution=resolution,
-        requested_fields=frozenset(["product.title"]),
-        user_controlled_fields=frozenset(),
-    )
-
-    assert outcomes[0].outcome == "override_miss"
-    assert outcomes[0].applied is False
-
-
-# ---------------------------------------------------------------------------
-# apply_contracts — stale_source
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.unit
-def test_apply_contracts_stale_source_when_preferred_is_rejected() -> None:
-    """Preferred source is in evidence but was rejected by the resolver."""
-    ev_jsonld = _evidence("ev-jsonld", "jsonld", "/name", "product.title", "Widget")
-    ev_micro = _evidence("ev-micro", "microdata", "/name", "product.title", "Widget")
-    decision = Decision(
-        decision_id="dec-title",
-        entity_id="entity-1",
-        fact_type="product.title",
-        accepted_evidence_ids=("ev-micro",),
-        rejected=(RejectedEvidence(evidence_id="ev-jsonld", reason="low_confidence"),),
-        finding_ids=(),
-        rule_id="FIRST_BY_PRIORITY",
-        status="resolved",
-    )
-    resolution = _resolution(decision)
-    snapshot = _snapshot(
-        "fp-1",
-        "ecommerce_detail",
-        [
-            {
-                "canonical_field": "product.title",
-                "selected_source": "jsonld:/name",
-                "selection_origin": "generic",
-                "resolver_rule": "FIRST",
-            }
-        ],
-    )
-
-    _, outcomes = apply_contracts(
-        snapshot=snapshot,
-        fingerprint="fp-1",
-        surface="ecommerce_detail",
-        evidence=(ev_jsonld, ev_micro),
-        resolution=resolution,
-        requested_fields=frozenset(["product.title"]),
-        user_controlled_fields=frozenset(),
-    )
-
-    assert outcomes[0].outcome == "stale_source"
-    assert outcomes[0].applied is False
-
-
-# ---------------------------------------------------------------------------
-# apply_contracts — user_controlled_fields skipped
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.unit
-def test_apply_contracts_skips_user_controlled_fields() -> None:
-    ev = _evidence("ev-1", "jsonld", "/name", "product.title", "Widget")
-    decision = _decision("product.title", ("ev-1",))
-    resolution = _resolution(decision)
-    snapshot = _snapshot(
-        "fp-1",
-        "ecommerce_detail",
-        [
-            {
-                "canonical_field": "product.title",
-                "selected_source": "microdata:/name",
-                "selection_origin": "generic",
-                "resolver_rule": "FIRST",
-            }
-        ],
-    )
-
-    new_resolution, outcomes = apply_contracts(
-        snapshot=snapshot,
-        fingerprint="fp-1",
-        surface="ecommerce_detail",
-        evidence=(ev,),
-        resolution=resolution,
-        requested_fields=frozenset(["product.title"]),
-        user_controlled_fields=frozenset(["product.title"]),
-    )
-
-    # No outcomes emitted, resolution unchanged
-    assert outcomes == ()
-    assert new_resolution is resolution
-
-
-# ---------------------------------------------------------------------------
-# apply_contracts — no matching template
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.unit
-def test_apply_contracts_noop_on_fingerprint_miss() -> None:
-    ev = _evidence("ev-1", "jsonld", "/name", "product.title")
-    decision = _decision("product.title", ("ev-1",))
-    resolution = _resolution(decision)
-    snapshot = _snapshot("fp-OTHER", "ecommerce_detail", [])
-
-    new_resolution, outcomes = apply_contracts(
-        snapshot=snapshot,
-        fingerprint="fp-NOMATCH",
-        surface="ecommerce_detail",
-        evidence=(ev,),
-        resolution=resolution,
-        requested_fields=frozenset(["product.title"]),
-        user_controlled_fields=frozenset(),
-    )
-
-    assert outcomes == ()
-    assert new_resolution is resolution
-
-
-# ---------------------------------------------------------------------------
-# fingerprint_from_parts consistency
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 def test_fingerprint_from_parts_matches_fingerprint_template() -> None:
-    """fingerprint_from_parts and fingerprint_template produce identical hashes."""
     collector_outcomes = (
         CollectorOutcome(
             collector_id="jsonld", outcome="produced_evidence", evidence_count=2
@@ -617,11 +393,6 @@ def test_fingerprint_from_parts_matches_fingerprint_template() -> None:
     fp_result = fingerprint_template(url, surface, result)
 
     assert fp_parts == fp_result
-
-
-# ---------------------------------------------------------------------------
-# load_runtime_snapshot — DB component tests
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -693,12 +464,8 @@ async def test_load_runtime_snapshot_returns_templates_and_contracts(
     templates = snapshot["templates"]
     assert len(templates) == 1
     assert templates[0]["fingerprint"] == fingerprint
-
     contracts = {c["canonical_field"]: c for c in templates[0]["contracts"]}
-    assert "product.title" in contracts
     assert contracts["product.title"]["selected_source"] == "jsonld:/name"
-    assert contracts["product.title"]["selection_origin"] == "generic"
-    assert "product.price" in contracts
     assert contracts["product.price"]["selection_origin"] == "operator"
 
 
@@ -737,14 +504,11 @@ async def test_load_runtime_snapshot_ignores_wrong_surface(
             ),
         ],
     )
-    template_id = entity_map[("page_template", detail_key)]
-    listing_id = entity_map[("page_template", listing_key)]
-
     await upsert_contracts(
         db_session,
         [
             ContractInput(
-                template_id=template_id,
+                template_id=entity_map[("page_template", detail_key)],
                 surface="ecommerce_detail",
                 canonical_field="product.title",
                 selected_source="jsonld:/name",
@@ -752,7 +516,7 @@ async def test_load_runtime_snapshot_ignores_wrong_surface(
                 resolver_rule="FIRST",
             ),
             ContractInput(
-                template_id=listing_id,
+                template_id=entity_map[("page_template", listing_key)],
                 surface="ecommerce_listing",
                 canonical_field="product.title",
                 selected_source="css:h2",
@@ -763,15 +527,14 @@ async def test_load_runtime_snapshot_ignores_wrong_surface(
     )
     await db_session.flush()
 
-    # Request detail surface — listing template contracts must not appear
     snapshot = await load_runtime_snapshot(
         db_session, domain=domain, surface="ecommerce_detail"
     )
+
     templates = snapshot["templates"]
     assert len(templates) == 1
     assert templates[0]["fingerprint"] == "fp-d1"
-    for contract in templates[0]["contracts"]:
-        assert contract["selected_source"] != "css:h2"
+    assert all(c["selected_source"] != "css:h2" for c in templates[0]["contracts"])
 
 
 @pytest.mark.asyncio
@@ -779,7 +542,6 @@ async def test_load_runtime_snapshot_ignores_wrong_surface(
 async def test_load_runtime_snapshot_idempotent(
     db_session: AsyncSession,
 ) -> None:
-    """Calling load_runtime_snapshot twice on same data returns identical result."""
     domain = "idempotent-snap.com"
     surface = "ecommerce_detail"
     fingerprint = "fp-idem"

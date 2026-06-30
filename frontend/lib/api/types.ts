@@ -620,7 +620,7 @@ export type KnowledgeGraphResponse = {
 };
 
 // --- Diagnostics artifacts (diagnose.json / report.json) --------------------
-// Mirrors backend `diagnose.v1` (app/observability/diagnose.py) and
+// Mirrors backend `diagnose.v2` (app/observability/diagnose.py) and
 // `run-report.v1` (app/observability/run_report.py). Bounded, self-contained
 // root-cause artifacts surfaced read-only by the KG diagnostics drill-down.
 
@@ -647,11 +647,22 @@ export type DiagnoseFieldRejected = {
 
 export type DiagnoseField = {
   field: string;
-  status: string;
+  status:
+    | 'captured_and_resolved'
+    | 'captured_published'
+    | 'captured_suppressed'
+    | 'captured_conflicting'
+    | 'captured_unowned'
+    | 'captured_but_rejected'
+    | 'not_captured'
+    | 'not_present_in_captured_sources'
+    | 'not_present_in_source'
+    | 'source_unavailable'
+    | string;
   reason_codes?: string[];
   winner?: DiagnoseFieldWinner;
   rejected?: DiagnoseFieldRejected[];
-  firewall?: unknown;
+  publication_policy?: unknown;
 };
 
 export type DiagnoseContractOutcome = {
@@ -663,16 +674,43 @@ export type DiagnoseContractOutcome = {
   detail?: string | null;
 };
 
+export type DiagnoseEvidenceDispositionStatus =
+  | 'accepted'
+  | 'rejected_invalid'
+  | 'rejected_lower_rank'
+  | 'conflicted'
+  | 'unowned'
+  | 'outside_selected_target'
+  | 'duplicate'
+  | 'diagnostic_only'
+  | string;
+
+export type DiagnoseEvidenceDisposition = {
+  evidence_id: string;
+  entity_id?: string | null;
+  status: DiagnoseEvidenceDispositionStatus;
+  reason_code: string;
+  decision_id?: string | null;
+  selected_fact_id?: string | null;
+  derived_fact_id?: string | null;
+};
+
 export type ResultDiagnosis = {
   schema_version: string;
   verdict?: string;
-  data_integrity?: string;
+  data_integrity?: 'clean' | 'partial' | 'defect' | 'blocked' | 'unknown' | 'divergent' | string;
   acquisition?: Record<string, unknown>;
   metrics?: Record<string, unknown>;
   fields: DiagnoseField[];
   variants?: { dropped: Array<Record<string, unknown>> };
   collectors?: Array<Record<string, unknown>>;
   stages?: Array<Record<string, unknown>>;
+  findings?: Array<Record<string, unknown>>;
+  evidence_dispositions?: {
+    total: number;
+    by_status: Partial<Record<DiagnoseEvidenceDispositionStatus, number>>;
+    examples: DiagnoseEvidenceDisposition[];
+  };
   contract_outcomes?: DiagnoseContractOutcome[] | null;
   truncated?: Record<string, { included: number; total: number }>;
 };

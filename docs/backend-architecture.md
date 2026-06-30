@@ -339,7 +339,7 @@ Primary files:
 - `network_payload_mapper.py`
 - `field_value_*`
 - `field_url_normalization.py`
-- `public_record_firewall.py`
+- `app/extraction/publication.py`
 - `extract/variant_normalization/`
 - `extract/*`
 
@@ -363,7 +363,7 @@ Important implemented features:
 - platform registry config in `config/platforms.json` owns platform metadata, network signatures, JS-state mappings, and listing-readiness selectors/waits
 - ecommerce detail title selection now ranks structured sources ahead of raw DOM headings, rejects noisy DOM `<h1>/<title>` values such as promo or generic-results text, and only promotes fallback titles when the replacement source is materially stronger
 - ecommerce detail extraction now drops low-signal site-shell records when the surviving title still resolves to site-brand chrome and no real product anchors survive, preventing stale SPA/detail misses from being persisted as false product successes
-- ecommerce-detail extraction now threads the originally requested PDP URL through materialization so same-site utility redirects can either preserve the requested product identity when the product metadata still matches or drop the row entirely when the utility page is carrying mismatched stale product data
+- ecommerce-detail extraction now threads the originally requested PDP URL through Resolve and the authorized publication projection so same-site utility redirects can either preserve the requested product identity when the product metadata still matches or drop the row entirely when the utility page is carrying mismatched stale product data
 - detail tier execution lives in `extract/detail/assembly/tiers.py`; all detail insertion paths write through one sourced-candidate boundary into `CandidateSet`, which owns source, tier, index, and evidence ID; the tier executor owns authoritative -> structured -> JS state -> DOM sequencing, DOM skip decisions, and finalization transitions
 - detail materializes once before the DOM skip decision and once after DOM collection; parallel candidate-source/evidence arrays and their alignment repair pass are deleted
 - incomplete variant offers and parent/variant currency contradictions remain visible as validation findings instead of silent rewrites; public `record.data` stays flat while evidence summaries live in source trace/review
@@ -400,8 +400,8 @@ Important implemented features:
 - latest commerce artifact replay lives in the unit harness as a manifest-backed gate over stored HTML/network artifacts; it checks sparse shell suppression, field-state diagnostics, variant identity, offer evidence, brand coercion, description boundaries, and product-scoped image selection through the real extraction pipeline
 - the artifact gate fails on field-state or semantic invariant violations even when a case has no external issue id; issue metadata is reporting context, not the pass/fail authority
 - output schema validation now applies to listing surfaces as well as detail surfaces before persistence, so type mismatches on listing records are nullified instead of silently bypassing validation
-- persistence now applies a final public-record firewall before `CrawlRecord.data`: unknown/internal fields, empty fields, invalid scalar/list/object shapes, non-navigation URLs, API/event/tracking URLs, and overlong opaque URLs are rejected into `source_trace.extraction.rejected_public_fields` instead of public data
-- the final persisted-data firewall is owned by `public_record_firewall.py`, not `pipeline/persistence.py`; persistence calls it before writing `CrawlRecord.data`
+- final public shaping is owned by `app/extraction/publication.py`: projection entries authorize each atomic field, collection entity, and URL canonicalization trace before serialization
+- persistence writes the already-authorized record and performs no extraction repair
 - pipeline post-processing keeps selector self-heal for detail pages. Ecommerce detail is guarded from `extract_missing_fields()` and direct-record value generation; non-detail LLM fallback remains explicitly gated
 
 ### 6.5 Publish and persistence
@@ -508,7 +508,7 @@ Primary files:
 Responsibilities and current behavior:
 
 - `publish_url_result_artifacts` is the **sole** per-URL artifact writer. It emits exactly three files under `runs/{run_id}/results/{url_result_id}/`: `page.html` (written once), `record.json` (public record view, matching the records API), and `diagnose.json`.
-- `diagnose.json` is self-contained and bounded: per field it inlines the `FieldEvidenceState` status, the winning candidate, rejected candidates with reasons (≤120-char value previews), and any public-firewall action; each dropped variant carries `(row, stage, rule, reason)`. It references no other file and invents no reason vocabulary — it reuses existing `FieldEvidenceState` names and firewall reject reasons. `ExtractionResult` now carries `collector_outcomes`, `stage_outcomes`, and `variant_drops` to feed it.
+- `diagnose.json` is self-contained and bounded: per field it inlines the `FieldEvidenceState` status, evidence disposition summary, winning candidate, rejected candidates with reasons (≤120-char value previews), and any publication-policy suppression. It references no other file and invents no reason vocabulary — it reuses resolver, publication, and evidence-disposition reason codes. `ExtractionResult` carries `collector_outcomes`, `stage_outcomes`, and `evidence_dispositions` to feed it.
 - `run_report.py` registers as a run-complete callback (via `pipeline/run_complete_callbacks.py`) and folds every `diagnose.json` into a deterministic run-level `report.json` that groups root causes with direct links to each URL's diagnosis. Like all of `app/observability/`, it is observe-only: it must never mutate extraction output, verdicts, selector memory, or domain contracts, and must not grow monitor-style diffing/retention/webhook behavior.
 - The legacy second artifact scheme (`runs/{id}/pages/...`), `manifest.json`/`summary.json`/`records.json`/`debug.json`/`browser.json`/`trace.json`/screenshots, the never-written `acquisition.json`/`extraction.json` readers, the dead `source_trace` provenance keys, and the observe-only LLM diagnosis flow are all deleted. Deleted modules include `observability/{artifact_reader,baseline,browser_artifact,run_audit,run_llm_diagnosis,run_trace}.py`, `persistence/artifact_store.py`, `persistence/storage/`, `api/observability.py`, and `config/{audit_rules,observability}.py`. See `docs/INVARIANTS.md` §12.
 
@@ -521,12 +521,12 @@ Primary files:
 - `persistence/knowledge_graph.py` — repository: `lock_site_version`, `upsert_entities/relationships/claims/contracts`, `add_evidence`, `fetch_neighborhood`, `count_graph_rows`, `purge_graph`, `load_runtime_snapshot`.
 - `persistence/projection.py` — projector (`project_extraction_result`): fingerprints page templates, upserts structural graph entities and relationships (site → template → route, page → template, site → technology), projects `Evidence` tuples into canonical product/offer/brand/category/seller/asset entities, claims, relationships, deterministic identity links, and assertion evidence, writes extraction contracts from decisions.
 - `core/knowledge_graph/templates.py` — `normalize_route`, `fingerprint_from_parts`, `fingerprint_template`, `extract_tech_signals`.
-- `core/knowledge_graph/contract_runtime.py` — frozen contract execution (pure, storage-free): `match_template` and `apply_contracts` re-point decisions to preferred sources and emit `ContractOutcome` per field.
+- `core/knowledge_graph/contract_runtime.py` — frozen contract preference lookup (pure, storage-free): `match_template`, `contract_preferences`, and `resolved_contract_outcomes`; Resolve owns final eligibility and ranking.
 - `api/knowledge.py` — bounded read/refine API for site versions, graph neighborhoods, entities, contracts, source selection, rebuild, purge, and site deletion.
 - `alembic/versions/20260629_0002_knowledge_graph.py` — migration creating all 6 KG tables.
 - `alembic/versions/20260629_0003_kg_contract_selection_history.py` — migration adding operator selection history to extraction contracts.
 
-The Knowledge Graph is extraction-owned and PostgreSQL-authoritative (no Neo4j/AGE). It stays separate from acquisition-owned Domain Memory and resets independently. At run creation, `load_runtime_snapshot` freezes the current graph state into `CrawlRun.extraction_runtime_snapshot`; each extraction request receives this frozen snapshot so concurrent graph updates never destabilize an in-flight run. The engine fingerprints each page (via `fingerprint_from_parts`), matches against frozen templates, and applies saved source preferences via `apply_contracts`. Extraction emits observations only and must never import graph storage (ratcheted in `tests/unit/test_extraction_architecture.py`). The URL pipeline projects the graph after URL result persistence in a savepoint; projection failure is logged and marked on the site version without changing crawl verdicts. `/api/knowledge/*` exposes bounded graph reads and operator source refinement; rebuild/purge/delete operations are admin-only. The cold-start LLM proposer arrives in a later slice. See `docs/INVARIANTS.md` §17.
+The Knowledge Graph is extraction-owned and PostgreSQL-authoritative (no Neo4j/AGE). It stays separate from acquisition-owned Domain Memory and resets independently. At run creation, `load_runtime_snapshot` freezes the current graph state into `CrawlRun.extraction_runtime_snapshot`; each extraction request receives this frozen snapshot so concurrent graph updates never destabilize an in-flight run. The engine fingerprints each page (via `fingerprint_from_parts`), matches against frozen templates, and passes saved source preferences into Resolve. Contracts may rank already eligible evidence only; they cannot create ownership, move evidence across entities, or resurrect rejected evidence. Extraction emits observations only and must never import graph storage (ratcheted in `tests/unit/test_extraction_architecture.py`). The URL pipeline projects the graph after URL result persistence in a savepoint; projection failure is logged and marked on the site version without changing crawl verdicts. `/api/knowledge/*` exposes bounded graph reads and operator source refinement; rebuild/purge/delete operations are admin-only. The cold-start LLM proposer arrives in a later slice. See `docs/INVARIANTS.md` §17.
 
 ## 7. Persistence Model
 

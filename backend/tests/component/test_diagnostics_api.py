@@ -70,7 +70,7 @@ async def test_result_diagnosis_endpoint_returns_persisted_artifact(
     await db_session.commit()
     await db_session.refresh(url_result)
 
-    diagnosis = {"schema_version": "diagnose.v1", "verdict": "partial", "fields": []}
+    diagnosis = {"schema_version": "diagnose.v2", "verdict": "partial", "fields": []}
     _write_json(
         tmp_path
         / "runs"
@@ -188,7 +188,7 @@ async def test_run_report_endpoint_builds_on_demand_when_unwritten(
     _write_json(
         tmp_path / "runs" / str(run.id) / "results" / "1" / "diagnose.json",
         {
-            "schema_version": "diagnose.v1",
+            "schema_version": "diagnose.v2",
             "fields": [{"field": "price", "status": "captured_but_rejected"}],
             "variants": {"dropped": []},
         },

@@ -167,7 +167,7 @@ class CrawlUrlResult(UpdatedAtMixin, CompletedAtMixin, Base):
     generation: Mapped[int] = mapped_column(Integer, default=1)
     acquisition_outcome: Mapped[str] = mapped_column(String(24), default="empty")
     verdict: Mapped[str] = mapped_column(String(24), default="empty", index=True)
-    extraction_version: Mapped[str] = mapped_column(String(32), default="extraction.v1")
+    extraction_version: Mapped[str] = mapped_column(String(32), default="extraction.v2")
     bundle_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     manifest_uri: Mapped[str | None] = mapped_column(Text, nullable=True)
     record_count: Mapped[int] = mapped_column(Integer, default=0)

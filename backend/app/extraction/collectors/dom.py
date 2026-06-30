@@ -25,7 +25,7 @@ from app.core.config.field_mappings import (
 )
 from app.extraction.contracts import CaptureBundle, EntityHint, Evidence, SourceLocator
 from app.extraction.documents import HtmlNode
-from app.extraction.ids import stable_id
+from app.core.shared.ids import stable_id
 from app.core.records.field_policy import normalize_field_key, normalize_requested_field
 from app.core.shared.url_utils import is_utility_image_url
 
