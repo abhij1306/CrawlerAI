@@ -370,10 +370,16 @@ def coerce_brand_text(value: object) -> str | None:
         return str(numeric_brand.group("brand"))
     if not text or not re.search(r"[A-Za-z]", text):
         return None
+    lowered = text.casefold()
     parsed = urlparse(text)
-    if parsed.scheme in {"http", "https", "ftp", "mailto"} or parsed.netloc:
+    has_explicit_url_shape = any(
+        token in lowered for token in ("://", "/", "?", "#", "@")
+    )
+    if has_explicit_url_shape and (
+        parsed.scheme in {"http", "https", "ftp", "mailto"} or parsed.netloc
+    ):
         return None
-    if _BARE_HOST_URL_RE.fullmatch(text):
+    if _BARE_HOST_URL_RE.fullmatch(text) and " " in text:
         return None
     cleaned = _BRAND_REGION_SUFFIX_RE.sub("", text).strip()
     cleaned = _strip_brand_marketing_tagline(cleaned) or cleaned

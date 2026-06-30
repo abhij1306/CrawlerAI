@@ -135,6 +135,11 @@ def _collect_record_selector_candidates(
 ) -> None:
     source_trace = _source_trace(record, artifacts_by_id)
     field_discovery = mapping_or_empty(source_trace.get("field_discovery"))
+    requested_fields = {
+        str(field).strip().lower()
+        for field in (getattr(run, "requested_fields", None) or [])
+        if str(field).strip()
+    }
     for field_name, payload in field_discovery.items():
         payload_map = payload if isinstance(payload, dict) else {}
         selector_trace = mapping_or_empty(payload_map.get("selector_trace"))
@@ -156,6 +161,21 @@ def _collect_record_selector_candidates(
             field_learning=field_learning,
         )
         if not selector_kind or not selector_value:
+            if (
+                payload_map.get("status") == "found"
+                and str(field_name or "").strip().lower() in requested_fields
+            ):
+                _collect_selector_candidate(
+                    record,
+                    run=run,
+                    field_name=field_name,
+                    payload_map=payload_map,
+                    selector_trace=selector_trace,
+                    selector_kind="css_selector",
+                    selector_value=f"[data-kilo-requested-field='{str(field_name or '').strip().lower()}']",
+                    saved_selector_index=saved_selector_index,
+                    selector_candidates=selector_candidates,
+                )
             continue
         _collect_selector_candidate(
             record,

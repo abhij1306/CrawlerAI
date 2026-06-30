@@ -1939,6 +1939,8 @@ def _brand_from_title(
     evidence_values: tuple[object, ...] = (),
     existing_brands: tuple[object, ...] = (),
 ) -> tuple[str, str] | None:
+    if existing_brands:
+        return None
     page_identity = infer_brand_from_page_identity(
         url=page_url,
         title=title,

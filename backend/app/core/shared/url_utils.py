@@ -62,7 +62,13 @@ unresolved_template_url_tokens_lower: tuple[str, ...] = tuple(
 )
 placeholder_image_url_tokens = tuple(
     token.lower()
-    for token in tuple(PLACEHOLDER_IMAGE_URL_PATTERNS or ())
+    for token in (
+        *tuple(PLACEHOLDER_IMAGE_URL_PATTERNS or ()),
+        "canon-image-default",
+        "default-image",
+        "default_product",
+        "default-product",
+    )
     if str(token).strip()
 )
 product_asset_reject_url_tokens = tuple(
@@ -384,6 +390,8 @@ def is_utility_image_url(value: object) -> bool:
     text = unquote(str(value or "").strip()).casefold()
     if not text:
         return False
+    if _is_placeholder_image_url(text):
+        return True
     if any(token in text for token in product_asset_reject_url_tokens):
         return True
     if any(hint in text for hint in non_product_image_url_hints):

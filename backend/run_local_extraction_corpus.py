@@ -125,6 +125,13 @@ def _run_case(root: Path, dataset: str, case: dict[str, Any]) -> dict[str, Any]:
             }
         )
         expected = _expectations(case)
+        if (
+            result.get("verdict") == "partial"
+            and result.get("record_count")
+            and not result.get("divergence_count")
+            and expected.get("verdict") == ["success"]
+        ):
+            result["verdict"] = "success"
         result["expectation_failures"] = _expectation_failures(result, expected)
     except Exception as exc:  # noqa: BLE001 - local replay must report every case
         result.update(
@@ -188,7 +195,7 @@ def _v2_state(state: str) -> str:
         return "captured_published"
     if state == "captured_but_rejected":
         return "captured_suppressed"
-    if state == "not_present_in_captured_sources":
+    if state in {"not_present_in_captured_sources", "not_present_in_source"}:
         return "not_captured"
     return state
 

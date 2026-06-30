@@ -128,8 +128,7 @@ def _assess(
         return cast(Verdict, request.capture.acquisition_outcome)
     if any(row.rule_id == "PUBLIC_RESOLUTION_DIVERGENCE" for row in findings):
         return "invalid"
-    if any(row.rule_id == "WRONG_SURFACE_CONTENT" for row in findings):
-        return "wrong_surface"
+    wrong_surface = any(row.rule_id == "WRONG_SURFACE_CONTENT" for row in findings)
     if request.surface == Surface.ECOMMERCE_DETAIL:
         record = records[0] if records else None
         thin_not_found = (
@@ -155,8 +154,10 @@ def _assess(
             or thin_not_found
         ):
             return "error"
-    if any(row.blocking for row in findings):
+    if any(row.blocking for row in findings if row.rule_id != "WRONG_SURFACE_CONTENT"):
         return "invalid"
+    if wrong_surface:
+        return "empty" if not records else "review"
     if target.status == "ambiguous":
         return "invalid" if request.surface == Surface.JOB_DETAIL else "review"
     if not records:

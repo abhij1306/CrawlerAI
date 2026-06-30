@@ -28,6 +28,7 @@ from app.extraction.contracts import (
     PublicationResult,
     PublicRecord,
     ResolutionEnvelope,
+    TargetSelection,
 )
 from app.extraction.entities import EntitySet, build_entities
 from app.core.shared.ids import stable_id
@@ -236,6 +237,14 @@ def _resolve_job_detail_adapter(
     findings = wrong_surface_findings_for_job_detail(
         request.capture, request.artifact_reader
     )
+    if findings:
+        return ResolutionEnvelope(
+            surface=request.surface,
+            graph=entity_graph(EntitySet(), harvest.evidence, spec),
+            target=TargetSelection(status="wrong_surface"),
+            findings=findings,
+            publication=JobDetailProjection(record_entity_id=""),
+        )
     if target.status == "ambiguous":
         findings = (
             *findings,

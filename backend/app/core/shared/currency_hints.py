@@ -133,6 +133,9 @@ def _currency_hint_from_page_url(page_url: object) -> tuple[str | None, bool]:
         return currency, False
     if currency := _currency_from_token_map(hostname, path_segments):
         return currency, False
+    host_labels = {label for label in hostname.split(".") if label}
+    if "firstcry" in host_labels:
+        return "INR", True
     # ccTLD is a host-level signal.
     if currency := _currency_from_tld(hostname):
         return currency, True

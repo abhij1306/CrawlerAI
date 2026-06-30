@@ -148,6 +148,10 @@ def commerce_detail_projection(
         )
         derived = derived_by_key.get((decision.entity_id, decision.fact_type))
         if derived is not None:
+            selected = selected_by_decision.get(decision.decision_id)
+            if selected is not None and selected.value == derived.value:
+                derived = None
+        if derived is not None:
             entries.append(
                 PublicationEntry(
                     path=f"record.{field}",

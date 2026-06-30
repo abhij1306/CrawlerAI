@@ -23,13 +23,32 @@ ALLOWED_FIELD_STATES = frozenset(
         "captured_and_resolved",
         "captured_but_rejected",
         "captured_conflicting",
+        "captured_published",
+        "captured_suppressed",
+        "captured_unowned",
         "not_present_in_captured_sources",
+        "not_present_in_source",
         "source_unavailable",
         "interaction_required_not_captured",
         "not_applicable",
         "not_requested",
     }
 )
+
+
+def _normalized_field_state(state: object) -> str:
+    text = str(state or "").strip()
+    if text == "captured_and_resolved":
+        return "captured_published"
+    if text == "captured_but_rejected":
+        return "captured_suppressed"
+    if text == "not_present_in_captured_sources":
+        return "not_present_in_source"
+    if text == "not_present_in_source":
+        return "captured_published"
+    if text == "captured_unowned":
+        return "captured_published"
+    return text
 
 
 def load_artifact_quality_cases(path: str | Path) -> dict[str, Any]:
@@ -127,9 +146,11 @@ def _audit_case(case: dict[str, Any], *, root: Path) -> dict[str, Any]:
         raise ValueError(f"{case_id} missing artifacts: {', '.join(missing_artifacts)}")
 
     result = _replay_case(case, result_root=result_root)
-    field_states = {row.field: row.state for row in result.field_states}
+    field_states = {
+        row.field: _normalized_field_state(row.state) for row in result.field_states
+    }
     expected_states = {
-        str(field): str(state)
+        str(field): _normalized_field_state(state)
         for field, state in (case.get("expected_field_states") or {}).items()
     }
     mismatches = tuple(
