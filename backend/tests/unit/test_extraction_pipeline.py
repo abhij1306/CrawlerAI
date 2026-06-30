@@ -2595,6 +2595,37 @@ def test_ecommerce_detail_result_is_replayable() -> None:
     assert payload["decisions"]
 
 
+def test_ecommerce_detail_product_endpoint_query_url_publishes_dom_product() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <html>
+          <head>
+            <title>Linen-Cotton Relaxed Taper Easy Pants</title>
+            <meta property="description" content="Soft linen cotton pants.">
+          </head>
+          <body>
+            <main>
+              <h1>Linen-Cotton Relaxed Taper Easy Pants</h1>
+              <picture>
+                <source srcset="https://cdn.shop.test/pants.png?width=737">
+              </picture>
+              <button>Add to bag</button>
+            </main>
+          </body>
+        </html>
+        """,
+        "https://www.gap.com/browse/product.do?pid=887835012&vid=1",
+    )
+
+    assert result.verdict in {"success", "partial"}
+    assert result.records[0]["title"] == "Linen-Cotton Relaxed Taper Easy Pants"
+    assert result.records[0]["url"] == (
+        "https://www.gap.com/browse/product.do?pid=887835012&vid=1"
+    )
+    assert result.records[0]["_lineage"]["url"]
+
+
 def test_ecommerce_listing_cutover_materializes_with_lineage() -> None:
     html = """
     <main>

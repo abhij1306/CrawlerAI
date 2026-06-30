@@ -291,6 +291,11 @@ def _block_policy_matches(evidence: _BlockEvidence) -> bool:
         or (elements and (providers or active))
         or (active and strong and not evidence.has_extractable_content)
         or (titles and elements)
+        or (
+            titles
+            and not evidence.has_extractable_content
+            and not evidence.has_product_identity
+        )
         or (hard and evidence.weak_hits and providers)
         or (
             "captcha" in strong

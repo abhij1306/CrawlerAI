@@ -188,7 +188,17 @@ def _touch_run_heartbeat(run: CrawlRun) -> None:
 def _url_timeout_seconds(settings_view) -> float:
     configured_timeout = settings_view.get("url_timeout_seconds")
     if configured_timeout not in (None, ""):
-        return settings_view.url_timeout_seconds()
+        base_timeout = settings_view.url_timeout_seconds()
+        acquisition_timeout = max(
+            0.0, float(crawler_runtime_settings.acquisition_attempt_timeout_seconds)
+        )
+        buffer_seconds = max(
+            0.0, float(crawler_runtime_settings.url_process_timeout_buffer_seconds)
+        )
+        return min(
+            base_timeout + acquisition_timeout + buffer_seconds,
+            float(crawler_runtime_settings.max_url_process_timeout_seconds),
+        )
     base_timeout = crawler_runtime_settings.default_url_process_timeout_seconds()
     # Extend timeout when traversal is active — pagination/scroll can take
     # significantly longer than a single-page fetch+extract cycle.

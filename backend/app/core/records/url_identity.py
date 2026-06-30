@@ -24,6 +24,7 @@ from app.core.config.extraction_rules import (
     PRODUCT_ASSET_SEMANTIC_MIN_DESCRIPTIVE_TOKENS,
     PRODUCT_ASSET_SEMANTIC_MIN_MATCH_TOKENS,
     PRODUCT_ASSET_SEMANTIC_NOISE_TOKENS,
+    TRACKING_PRESERVED_SHORT_QUERY_KEYS,
     VARIANT_CROSS_PRODUCT_URL_MAX_TOKEN_OVERLAP_RATIO,
     DETAIL_URL_TITLE_CODE_PATTERN,
     DETAIL_URL_TITLE_FALLBACK_MIN_TOKENS,
@@ -286,10 +287,17 @@ def detail_url_resource_identity(url: str) -> str:
 
 
 def detail_url_looks_like_product(url: str) -> bool:
-    path = urlparse(str(url or "").lower()).path
+    parsed = urlparse(str(url or "").lower())
+    path = parsed.path
     if any(marker in path for marker in _DETAIL_MARKERS):
         return True
     segment = unquote(path.rstrip("/").rsplit("/", 1)[-1])
+    if segment.startswith("product.") and any(
+        key.casefold() in TRACKING_PRESERVED_SHORT_QUERY_KEYS
+        for key, value in parse_qsl(parsed.query, keep_blank_values=False)
+        if value.strip()
+    ):
+        return True
     if not segment.endswith((".html", ".htm")):
         return False
     title = re.sub(

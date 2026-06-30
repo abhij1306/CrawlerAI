@@ -1939,14 +1939,22 @@ def _brand_from_title(
     evidence_values: tuple[object, ...] = (),
     existing_brands: tuple[object, ...] = (),
 ) -> tuple[str, str] | None:
-    if existing_brands:
-        return None
     page_identity = infer_brand_from_page_identity(
         url=page_url,
         title=title,
         evidence_values=evidence_values,
         existing_brands=existing_brands,
     )
+    if existing_brands and page_identity:
+        existing = str(existing_brands[0] or "").strip()
+        page_text = str(page_identity or "").strip()
+        existing_folded = existing.casefold()
+        page_folded = page_text.casefold()
+        expands_existing = page_folded.startswith(f"{existing_folded} ")
+        trims_product_suffix = existing_folded.startswith(f"{page_folded} ")
+        if expands_existing or trims_product_suffix:
+            return page_identity, "page_identity"
+        return None
     if page_identity and all(
         str(page_identity).casefold() != str(value).casefold()
         for value in existing_brands

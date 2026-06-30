@@ -1834,6 +1834,95 @@ async def test_run_browser_attempts_replans_to_real_chrome_after_same_proxy_patc
 
 @pytest.mark.asyncio
 @pytest.mark.component
+async def test_vendor_block_unready_patchright_usable_content_replans_to_real_chrome(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    attempted_engines: list[str] = []
+    context = crawl_fetch_runtime._FetchRuntimeContext(
+        url="https://example.com/products/widget",
+        resolved_timeout=5.0,
+        deadline_monotonic=time.perf_counter() + 5.0,
+        run_id=None,
+        surface="ecommerce_detail",
+        traversal_mode=None,
+        max_pages=1,
+        max_scrolls=1,
+        max_records=None,
+        on_event=None,
+        browser_reason=None,
+        requested_fields=[],
+        listing_recovery_mode=None,
+        proxies=[None],
+        proxy_profile={},
+        traversal_required=False,
+        fetch_mode="auto",
+        runtime_policy={},
+    )
+
+    @_as_async
+    def _fake_browser_fetch(url: str, timeout: float, **kwargs):
+        del timeout
+        browser_engine = str(kwargs.get("browser_engine"))
+        attempted_engines.append(browser_engine)
+        if browser_engine == "patchright":
+            return PageFetchResult(
+                url=url,
+                final_url=url,
+                html="<html><body><h1>Loading</h1></body></html>",
+                status_code=200,
+                method="browser",
+                blocked=False,
+                browser_diagnostics={
+                    "browser_engine": browser_engine,
+                    "browser_outcome": "usable_content",
+                    "readiness_probes": [{"is_ready": False}],
+                },
+            )
+        return PageFetchResult(
+            url=url,
+            final_url=url,
+            html="<html><body><h1>Rendered product</h1></body></html>",
+            status_code=200,
+            method="browser",
+            blocked=False,
+            browser_diagnostics={
+                "browser_engine": browser_engine,
+                "browser_outcome": "usable_content",
+                "readiness_probes": [{"is_ready": True}],
+            },
+        )
+
+    monkeypatch.setattr(crawl_fetch_runtime, "_browser_fetch", _fake_browser_fetch)
+    monkeypatch.setattr(
+        crawl_fetch_runtime.crawler_runtime_settings,
+        "browser_real_chrome_enabled",
+        True,
+    )
+    monkeypatch.setattr(
+        crawl_fetch_runtime,
+        "real_chrome_browser_available",
+        lambda: True,
+    )
+    monkeypatch.setattr(crawl_fetch_runtime, "wait_for_host_slot", AsyncMock())
+    monkeypatch.setattr(crawl_fetch_runtime, "_update_host_result_memory", AsyncMock())
+    monkeypatch.setattr(
+        crawl_fetch_runtime,
+        "_browser_engine_attempts",
+        lambda **_kwargs: ["patchright", "real_chrome"],
+    )
+
+    result = await crawl_fetch_runtime.run_browser_attempts(
+        context,
+        reason="vendor-block:akamai",
+        host_policy=HostProtectionPolicy(host="example.com"),
+    )
+
+    assert attempted_engines == ["patchright", "real_chrome"]
+    assert result.browser_diagnostics["browser_engine"] == "real_chrome"
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
 async def test_run_browser_attempts_bounds_browser_runtime_wall_clock(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

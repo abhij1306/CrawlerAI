@@ -169,7 +169,7 @@ def test_acceptance_replay_site_output_and_traceability(
     assert len(result.records) == expected["record_count"]
 
     if expected.get("wrong_surface"):
-        assert result.verdict in {"empty", "error", "review"}
+        assert result.verdict in {"empty", "error", "review", "wrong_surface"}
         assert not result.records
         assert all(evidence.surface == site["surface"] for evidence in result.evidence)
         return

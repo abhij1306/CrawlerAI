@@ -201,6 +201,29 @@ def test_classify_blocked_page_detects_access_forbidden_title() -> None:
 
 
 @pytest.mark.unit
+@pytest.mark.parametrize(
+    "title",
+    [
+        "Site Maintenance",
+        "Oops! Something went wrong",
+    ],
+)
+def test_classify_blocked_page_detects_terminal_error_titles(title: str) -> None:
+    html = f"""
+    <html>
+      <head><title>{title}</title></head>
+      <body><main>{title}</main></body>
+    </html>
+    """
+
+    classification = classify_blocked_page(html, 200)
+
+    assert classification.blocked is True
+    assert classification.outcome == "challenge_page"
+    assert bool(classification.title_matches) is True
+
+
+@pytest.mark.unit
 def test_classify_blocked_page_uses_configured_challenge_element_markers(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

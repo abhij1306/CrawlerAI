@@ -370,6 +370,8 @@ class BrowserAttemptRunner:
             )
             self._stamp_attempt_diagnostics(result, proxy, proxy_index, engine_index)
             self.latest_page_result = result
+            if self._vendor_block_result_unready(result):
+                result.blocked = True
             if bool(result.blocked):
                 await self._record_blocked_result(result)
                 return self._attempt_result(
@@ -510,6 +512,23 @@ class BrowserAttemptRunner:
             "engine_attempt_index": engine_index,
             "proxy_rotation_mode": proxy_rotation_mode(self.context.proxy_profile),
         }
+
+    def _vendor_block_result_unready(self, result: PageFetchResult) -> bool:
+        if not is_vendor_block_reason(self.reason):
+            return False
+        diagnostics = dict(result.browser_diagnostics or {})
+        outcome = str(diagnostics.get("browser_outcome") or "").strip().casefold()
+        if not outcome:
+            return bool(result.blocked)
+        if bool(result.blocked) or outcome != "usable_content":
+            return True
+        probes = diagnostics.get("readiness_probes")
+        if isinstance(probes, list) and probes:
+            return not any(
+                isinstance(probe, dict) and bool(probe.get("is_ready"))
+                for probe in probes
+            )
+        return False
 
     async def _record_blocked_result(self, result: PageFetchResult) -> None:
         self.last_blocked_result = result

@@ -116,6 +116,9 @@ BLOCK_SIGNATURES = {
         r"pardon\s+our\s+interruption",
         r"unusual\s+traffic",
         r"hang\s+tight!?\s+routing\s+to\s+checkout",
+        r"site\s+maintenance",
+        r"oops!?\s+something\s+went\s+wrong",
+        r"something\s+went\s+wrong",
     ],
     "challenge_elements": {
         "iframe_src_markers": {

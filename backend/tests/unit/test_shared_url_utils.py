@@ -5,6 +5,7 @@ import pytest
 from app.core.records.url_identity import (
     conflicting_product_asset_urls,
     detail_title_from_url,
+    detail_url_looks_like_product,
     detail_url_resource_identity,
 )
 from app.core.shared.url_utils import (
@@ -47,6 +48,14 @@ def test_descriptive_html_detail_url_has_resource_identity() -> None:
     assert detail_url_resource_identity(url) == (
         "www.endclothing.com/us/47-ny-yankees-clean-up-cap-b-rgw17gws-vn.html"
     )
+
+
+def test_product_endpoint_with_identity_query_has_resource_identity() -> None:
+    url = "https://shop.test/browse/product.do?pid=887835012&vid=1"
+
+    assert detail_title_from_url(url) == ""
+    assert detail_url_looks_like_product(url) is True
+    assert detail_url_resource_identity(url) == "shop.test/browse/product.do"
 
 
 def test_absolute_url_repairs_relative_and_bare_host_values() -> None:

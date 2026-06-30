@@ -157,7 +157,7 @@ def _assess(
     if any(row.blocking for row in findings if row.rule_id != "WRONG_SURFACE_CONTENT"):
         return "invalid"
     if wrong_surface:
-        return "empty" if not records else "review"
+        return "wrong_surface"
     if target.status == "ambiguous":
         return "invalid" if request.surface == Surface.JOB_DETAIL else "review"
     if not records:
