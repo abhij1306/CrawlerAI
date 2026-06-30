@@ -619,6 +619,77 @@ export type KnowledgeGraphResponse = {
   relationships: KnowledgeRelationship[];
 };
 
+// --- Diagnostics artifacts (diagnose.json / report.json) --------------------
+// Mirrors backend `diagnose.v1` (app/observability/diagnose.py) and
+// `run-report.v1` (app/observability/run_report.py). Bounded, self-contained
+// root-cause artifacts surfaced read-only by the KG diagnostics drill-down.
+
+export type DiagnoseEvidenceLocator = {
+  kind: string;
+  value: unknown;
+  preview?: unknown;
+};
+
+export type DiagnoseFieldWinner = {
+  collector_id?: string;
+  locator?: DiagnoseEvidenceLocator;
+  value?: unknown;
+  rule_id?: string;
+};
+
+export type DiagnoseFieldRejected = {
+  reason: string;
+  collector_id?: string;
+  locator?: DiagnoseEvidenceLocator;
+  value_preview?: unknown;
+  omitted?: number;
+};
+
+export type DiagnoseField = {
+  field: string;
+  status: string;
+  reason_codes?: string[];
+  winner?: DiagnoseFieldWinner;
+  rejected?: DiagnoseFieldRejected[];
+  firewall?: unknown;
+};
+
+export type DiagnoseContractOutcome = {
+  field: string;
+  outcome: string;
+  selected_source?: string | null;
+  selection_origin?: string | null;
+  applied: boolean;
+  detail?: string | null;
+};
+
+export type ResultDiagnosis = {
+  schema_version: string;
+  verdict?: string;
+  data_integrity?: string;
+  acquisition?: Record<string, unknown>;
+  metrics?: Record<string, unknown>;
+  fields: DiagnoseField[];
+  variants?: { dropped: Array<Record<string, unknown>> };
+  collectors?: Array<Record<string, unknown>>;
+  stages?: Array<Record<string, unknown>>;
+  contract_outcomes?: DiagnoseContractOutcome[] | null;
+  truncated?: Record<string, { included: number; total: number }>;
+};
+
+export type RunReportRootCause = {
+  root_cause: string;
+  count: number;
+  diagnose_links: string[];
+};
+
+export type RunReport = {
+  schema_version: string;
+  run_id: number;
+  root_cause_count: number;
+  root_causes: RunReportRootCause[];
+};
+
 export type KnowledgeContract = {
   id: string;
   template_id: string;

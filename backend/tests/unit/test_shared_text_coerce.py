@@ -107,3 +107,22 @@ def test_coerce_brand_text_strips_marketing_tagline() -> None:
     # A single-word suffix is not assumed to be a tagline (could be a
     # legitimate brand-line marker); leave the value alone.
     assert coerce_brand_text("Gymshark | Single") == "Gymshark | Single"
+
+
+def test_coerce_brand_text_normalizes_trailing_punctuation_and_spacing() -> None:
+    """A single-token brand ending in a stray sentence mark (``"Target."``) is a
+    scraping artefact; the trailing punctuation is dropped. Internal punctuation
+    and space-separated abbreviations are preserved.
+    """
+    from app.core.shared.field_coerce_text import coerce_brand_text
+
+    # Stray trailing sentence marks on a single token are stripped.
+    assert coerce_brand_text("Target.") == "Target"
+    assert coerce_brand_text("Sony,") == "Sony"
+    # Runaway internal whitespace collapses to a single space.
+    assert coerce_brand_text("The  North   Face") == "The North Face"
+    # Internal punctuation and domain-style brands are untouched.
+    assert coerce_brand_text("J.Crew") == "J.Crew"
+    assert coerce_brand_text("Amazon.com") == "Amazon.com"
+    # A legitimate abbreviation after a space keeps its period.
+    assert coerce_brand_text("Nike Inc.") == "Nike Inc."

@@ -7,19 +7,12 @@ from urllib.parse import urlparse
 
 from app.core.config.field_mappings import (
     ADDITIONAL_IMAGES_FIELD,
-    AVAILABILITY_FIELD,
     BARCODE_FIELD,
     CANONICAL_SCHEMAS,
-    COLOR_FIELD,
-    CURRENCY_FIELD,
-    IMAGE_URL_FIELD,
     NAVIGATION_URL_FIELDS,
     OPEN_FIELD_SURFACES,
-    PRICE_FIELD,
     ROUTE_BARCODE_TO_SKU,
-    SIZE_FIELD,
     SKU_FIELD,
-    STOCK_QUANTITY_FIELD,
     URL_FIELD,
     VARIANTS_FIELD,
 )
@@ -33,7 +26,7 @@ from app.core.config.public_record_policy import (
 from app.core.config.variant_policy import (
     PUBLIC_FLAT_VARIANT_FIELDS,
     PUBLIC_VARIANT_AXIS_FIELDS,
-    VARIANT_IMAGE_DIMENSION_MIN_PX,
+    public_variant_row_is_sellable,
 )
 from app.core.records.field_policy import (
     canonical_requested_fields,
@@ -318,47 +311,9 @@ def flatten_variants_for_public_output(
                 and str(key).strip() in PUBLIC_FLAT_VARIANT_FIELDS
             )
         }
-        if _public_variant_row_is_sellable(row):
+        if public_variant_row_is_sellable(row):
             rows.append(row)
     return rows or None
-
-
-def _public_variant_row_is_sellable(row: dict[str, object]) -> bool:
-    if not row or _variant_row_is_image_dimension_artifact(row):
-        return False
-    transport_fields = {
-        "variant_id",
-        SKU_FIELD,
-        BARCODE_FIELD,
-        URL_FIELD,
-        PRICE_FIELD,
-        CURRENCY_FIELD,
-        IMAGE_URL_FIELD,
-        AVAILABILITY_FIELD,
-        STOCK_QUANTITY_FIELD,
-    }
-    if any(row.get(field) not in (None, "", [], {}) for field in transport_fields):
-        return True
-    axes = {
-        str(key)
-        for key, value in row.items()
-        if str(key) in PUBLIC_VARIANT_AXIS_FIELDS and value not in (None, "", [], {})
-    }
-    if len(axes) >= 2:
-        return True
-    # Single-axis rows are kept only when the axis is one of the canonical
-    # retail variant axes (size / color) — the dominant Shopify/PDP shape
-    # that previously had its entire variant array dropped. Other novel
-    # single-axis rows (e.g. "type", "material" alone with no transport
-    # field) stay rejected so product metadata isn't surfaced as variants.
-    return bool(axes & {SIZE_FIELD, COLOR_FIELD})
-
-
-def _variant_row_is_image_dimension_artifact(row: dict[str, object]) -> bool:
-    if set(row) - {"variant_id", "width"}:
-        return False
-    width = str(row.get("width") or "").strip()
-    return width.isdigit() and int(width) >= VARIANT_IMAGE_DIMENSION_MIN_PX
 
 
 def enforce_flat_variant_public_contract(

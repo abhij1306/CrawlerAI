@@ -203,7 +203,13 @@ def _product_image_nodes(doc) -> tuple[tuple[HtmlNode, float], ...]:
     ]
     if scoped:
         return tuple((node, 0.58) for node in scoped)
-    return tuple((node, 0.5) for node, _ in candidates)
+    # Fail closed on galleries: a single admissible main image is a trustworthy
+    # fallback, but several un-scoped candidates are almost always a gallery or
+    # recommendation grid, so admitting them all leaks non-product imagery
+    # (AUD-03). Defer those to structured/positively-scoped evidence instead.
+    if len(candidates) == 1:
+        return tuple((node, 0.5) for node, _ in candidates)
+    return ()
 
 
 def _image_node_url(node: HtmlNode) -> str:

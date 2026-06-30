@@ -35,6 +35,8 @@ import type {
   KnowledgeSelectorContractPayload,
   KnowledgeSiteRecord,
   Paginated,
+  ResultDiagnosis,
+  RunReport,
   ProductIntelligenceJob,
   ProductIntelligenceDiscoveryPayload,
   ProductIntelligenceDiscoveryResponse,
@@ -395,6 +397,9 @@ export const api = {
     if (params?.limit !== undefined) query.set('limit', String(params.limit));
     return apiClient.get<KnowledgeGraphResponse>(withQuery('/api/knowledge/graph', query));
   },
+  getRunReport: (runId: number) => apiClient.get<RunReport>(`/api/crawls/${runId}/report.json`),
+  getResultDiagnosis: (runId: number, urlResultId: number) =>
+    apiClient.get<ResultDiagnosis>(`/api/crawls/${runId}/results/${urlResultId}/diagnose.json`),
   listKnowledgeContracts: (templateId: string) =>
     apiClient.get<{ contracts: KnowledgeContract[] }>(
       `/api/knowledge/contracts/${encodeURIComponent(templateId)}`,

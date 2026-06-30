@@ -20,8 +20,8 @@ from app.extraction.collectors._helpers import (
     text_value,
 )
 from app.extraction.collectors.js_state import (
-    path_is_within_selected_root,
-    selected_product_root_paths,
+    root_admits_path,
+    select_product_roots,
 )
 from app.extraction.contracts import CaptureBundle, EntityHint, Evidence, SourceLocator
 from app.extraction.ids import stable_id
@@ -41,11 +41,11 @@ class JsonLdCollector:
         for index, tag in enumerate(doc.css('script[type*="ld+json"]')):
             data = loads_jsonish(tag.text())
             objects = tuple(json_objects(data))
-            selected_roots = selected_product_root_paths(objects, bundle.final_url)
+            selection = select_product_roots(objects, bundle.final_url)
             for path, obj in objects:
-                if not path_is_within_selected_root(
-                    path, selected_roots
-                ) and not _is_standalone_variant(obj):
+                if not root_admits_path(selection, path) and not _is_standalone_variant(
+                    obj
+                ):
                     continue
                 if not isinstance(obj, dict) or not _is_product(obj):
                     continue

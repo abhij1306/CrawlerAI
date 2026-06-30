@@ -1289,13 +1289,27 @@ def test_offer_price_without_currency_is_not_published() -> None:
     assert "PRICE_WITHOUT_CURRENCY" in {finding.rule_id for finding in result.findings}
 
 
-def test_offer_price_inherits_currency_from_page_url_host_hint() -> None:
+def test_offer_price_inherits_currency_from_locale_path_segment() -> None:
     html = HTML.replace('"priceCurrency": "usd",', "").replace(
         "https://shop.test/products/trail-shoe",
-        "https://firstcry.com/products/trail-shoe",
+        "https://shop.test/en-in/products/trail-shoe",
     )
     result = _extract(
-        "ecommerce_detail", html, "https://firstcry.com/products/trail-shoe"
+        "ecommerce_detail", html, "https://shop.test/en-in/products/trail-shoe"
+    )
+    assert result.records
+    public = result.records[0].model_dump(mode="json", exclude_none=True)
+    assert public.get("price") == "129.00"
+    assert public.get("currency") == "INR"
+
+
+def test_offer_price_inherits_currency_from_cctld() -> None:
+    html = HTML.replace('"priceCurrency": "usd",', "").replace(
+        "https://shop.test/products/trail-shoe",
+        "https://shop.co.in/products/trail-shoe",
+    )
+    result = _extract(
+        "ecommerce_detail", html, "https://shop.co.in/products/trail-shoe"
     )
     assert result.records
     public = result.records[0].model_dump(mode="json", exclude_none=True)
@@ -5600,6 +5614,41 @@ def test_single_admissible_main_image_remains_a_dom_fallback() -> None:
         result.records[0]["image_url"]
         == "https://cdn.shop.test/products/trail-shoe-main.jpg"
     )
+
+
+def test_unscoped_main_image_gallery_does_not_leak_as_product_images() -> None:
+    # Several un-scoped <img> in <main> with no positive product-image scope is
+    # almost always a gallery/recommendation grid. None of them should be
+    # admitted as the product image (AUD-03); the single-image fallback only
+    # fires when there is exactly one admissible candidate.
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <script type="application/ld+json">
+        {
+          "@type": "Product",
+          "name": "Trail Shoe",
+          "url": "https://shop.test/products/trail-shoe",
+          "offers": {"price": "10", "priceCurrency": "USD"}
+        }
+        </script>
+        <main>
+          <img src="https://cdn.shop.test/recommended/alpha.jpg">
+          <img src="https://cdn.shop.test/recommended/bravo.jpg">
+          <img src="https://cdn.shop.test/recommended/charlie.jpg">
+        </main>
+        """,
+        "https://shop.test/products/trail-shoe",
+    )
+
+    record = result.records[0]
+    leaked = {
+        "https://cdn.shop.test/recommended/alpha.jpg",
+        "https://cdn.shop.test/recommended/bravo.jpg",
+        "https://cdn.shop.test/recommended/charlie.jpg",
+    }
+    assert record.get("image_url", "") not in leaked
+    assert not (set(record.get("additional_images", [])) & leaked)
 
 
 def test_asset_urls_are_normalized_and_deduped_without_dropping_variant_params() -> (

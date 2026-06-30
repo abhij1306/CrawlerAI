@@ -2,19 +2,9 @@ from __future__ import annotations
 
 import re
 
-from app.core.config.field_mappings import (
-    AVAILABILITY_FIELD,
-    BARCODE_FIELD,
-    COLOR_FIELD,
-    CURRENCY_FIELD,
-    IMAGE_URL_FIELD,
-    PRICE_FIELD,
-    SIZE_FIELD,
-    SKU_FIELD,
-    STOCK_QUANTITY_FIELD,
-    URL_FIELD,
-)
-from app.core.config.variant_policy import PUBLIC_VARIANT_AXIS_FIELDS
+from app.core.config.field_mappings import PRICE_FIELD
+from app.core.config.extraction_rules import AVAILABILITY_CANONICAL_ENUM
+from app.core.config.variant_policy import public_variant_row_is_sellable
 from app.core.records.url_identity import conflicting_product_asset_urls
 from app.core.records.variant_drops import VariantDropRecorder
 from app.core.shared.url_utils import is_utility_image_url, public_asset_delivery_url
@@ -246,42 +236,17 @@ def _enforce_atomic_price_currency(
 
 
 def _variant_row_is_actionable(row: dict[str, object]) -> bool:
-    transport_fields = {
-        "variant_id",
-        SKU_FIELD,
-        BARCODE_FIELD,
-        URL_FIELD,
-        PRICE_FIELD,
-        CURRENCY_FIELD,
-        IMAGE_URL_FIELD,
-        AVAILABILITY_FIELD,
-        STOCK_QUANTITY_FIELD,
-    }
-    if any(row.get(field) not in (None, "", [], {}, ()) for field in transport_fields):
-        return True
-    axes = {
-        key
-        for key, value in row.items()
-        if key in PUBLIC_VARIANT_AXIS_FIELDS and value not in (None, "", [], {}, ())
-    }
-    if len(axes) >= 2:
-        return True
-    # Single-axis rows survive when the axis is one of the canonical retail
-    # variant axes (size / color) — the dominant Shopify/PDP shape. Aligns
-    # with the public firewall's sellability rule so size-only / color-only
-    # variants aren't silently dropped before they reach the firewall.
-    return bool(axes & {SIZE_FIELD, COLOR_FIELD})
+    # Output-safety pre-gate shares the public firewall's sellability rule so a
+    # row that survives here is never silently dropped downstream (and vice
+    # versa). Single source of truth lives in variant_policy.
+    return public_variant_row_is_sellable(row)
 
 
 def public_availability(value: object) -> str:
     text = str(value or "").strip()
-    if text in {
-        "in_stock",
-        "out_of_stock",
-        "limited_stock",
-        "preorder",
-        "backorder",
-        "discontinued",
-    }:
+    if text in _PUBLIC_AVAILABILITY_ENUM:
         return text
     return ""
+
+
+_PUBLIC_AVAILABILITY_ENUM = frozenset(AVAILABILITY_CANONICAL_ENUM)

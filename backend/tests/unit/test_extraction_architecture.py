@@ -228,6 +228,55 @@ def test_extraction_carries_no_retailer_domain_literals() -> None:
     assert not offenders, offenders
 
 
+# Distinctive proper nouns from the 90-URL accuracy audit sample (brands,
+# retailers, product codes). Rule tables are tuned on *evidence shape*, never on
+# the audit corpus — so none of these may appear as a string constant in the
+# extraction rule tables. Tokens are deliberately distinctive (not common web
+# vocabulary like "target"/"image") so a whole-word match cannot false-positive
+# on structural attribute names. A failure means matrix-tuned, site-specific
+# vocabulary has leaked into the generic rules.
+_MATRIX_TUNED_TOKENS = frozenset(
+    {
+        "rolex",
+        "brooklinen",
+        "backmarket",
+        "shoepalace",
+        "playstation",
+        "nordstrom",
+        "firstcry",
+        "ilce",
+    }
+)
+_MATRIX_TUNED_RE = re.compile(
+    r"\b(?:" + "|".join(sorted(_MATRIX_TUNED_TOKENS)) + r")\b"
+)
+_EXTRACTION_RULES_ROOT = APP_ROOT / "core" / "config" / "extraction_rules"
+_EXTRACTION_PRICE_RULES = APP_ROOT / "core" / "config" / "extraction_price_rules.py"
+
+
+def test_extraction_rules_have_no_matrix_tuned_constants() -> None:
+    """Generic rule tables must not encode audit-sample-specific vocabulary.
+
+    The extraction rules key on structural signals only (schema.org enums, ISO
+    currencies, generic UI tokens). This ratchet scans *string constants* in the
+    rule-table modules for distinctive brand/retailer/product proper nouns from
+    the accuracy-audit corpus; any hit means a rule was tuned to the sample
+    rather than to evidence shape. Comments (intent notes) are not scanned.
+    """
+    rule_files = list(_python_files(_EXTRACTION_RULES_ROOT))
+    if _EXTRACTION_PRICE_RULES.exists():
+        rule_files.append(_EXTRACTION_PRICE_RULES)
+    offenders: list[tuple[Path, int, str]] = []
+    for path in rule_files:
+        tree = _parse_module(path)
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Constant) or not isinstance(node.value, str):
+                continue
+            for match in _MATRIX_TUNED_RE.findall(node.value.lower()):
+                offenders.append((path, node.lineno, match))
+    assert not offenders, offenders
+
+
 def test_extraction_does_not_import_knowledge_graph_storage() -> None:
     """Dependency direction: extraction produces evidence, it never reads the graph.
 

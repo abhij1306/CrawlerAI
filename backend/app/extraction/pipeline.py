@@ -25,6 +25,7 @@ from app.core.config.extraction_price_rules import (
     DETAIL_PRICE_PAGE_CORROBORATION_COLLECTORS,
 )
 from app.core.config.extraction_rules import (
+    AVAILABILITY_CANONICAL_ENUM,
     AVAILABILITY_URL_MAP,
     CURRENCY_SYMBOL_MAP,
     DETAIL_BRAND_BOILERPLATE_VALUES,
@@ -694,7 +695,14 @@ def _normalize_availability_value(value: Any, flags: set[str]) -> Any:
     if isinstance(value, (int, float)) and value in {0, 1}:
         return "in_stock" if value == 1 else "out_of_stock"
     if isinstance(value, str):
-        return _availability(value)
+        # Enforce the canonical enum: a value that does not resolve to a public
+        # availability state is flagged (raw text preserved for diagnose.json)
+        # so resolution ranks it below enum-valid candidates and the firewall
+        # drops it with a recorded reason — never a free-text passthrough.
+        normalized = _availability(value)
+        if normalized not in AVAILABILITY_CANONICAL_ENUM:
+            flags.add(INVALID_AVAILABILITY_EVIDENCE_FLAG)
+        return normalized
     flags.add(INVALID_AVAILABILITY_EVIDENCE_FLAG)
     return value
 
@@ -849,8 +857,7 @@ def _title_flags(evidence: Evidence, *, value: str, page_url: str) -> set[str]:
 def _availability(value: str) -> str:
     text = re.sub(r"\s+", " ", value).strip()
     key = text.casefold()
-    mapped = AVAILABILITY_URL_MAP.get(key)
-    if mapped:
+    if mapped := AVAILABILITY_URL_MAP.get(key):
         return mapped
     normalized = re.sub(DETAIL_NON_LOWER_ALNUM_PATTERN, " ", key).strip()
     for public_value, tokens in NORMALIZER_AVAILABILITY_TOKENS.items():
@@ -1000,7 +1007,8 @@ def _currency_from_price_symbol(
             {},
         )
     elif host_currency := currency_hint_from_page_url(page_url):
-        # Host hint (firstcry.com → INR); outranked by explicit currency via tiebreakers.
+        # Generic locale hint (ccTLD / locale segment, e.g. .co.in or /en-in/ →
+        # INR); outranked by explicit currency via tiebreakers.
         currency, derived_by, confidence, extra = (
             host_currency,
             "currency_from_page_url_hint",

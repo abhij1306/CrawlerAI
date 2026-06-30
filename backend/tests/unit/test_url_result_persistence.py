@@ -243,6 +243,7 @@ def _publish_record_reader_fixture(
         field_states=[],
         collector_outcomes=[],
         stage_outcomes=[],
+        contract_outcomes=[],
         model_dump=lambda **_: {
             "bundle_id": "bundle-reader",
             "evidence": [],
@@ -328,6 +329,7 @@ def test_canonical_url_artifacts_publish_compact_bundle(
         field_states=[],
         collector_outcomes=[],
         stage_outcomes=[],
+        contract_outcomes=[],
         model_dump=lambda **_: dict(extraction_payload),
     )
     provenance = {

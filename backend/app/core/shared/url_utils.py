@@ -185,6 +185,11 @@ def public_asset_delivery_url(value: object) -> str | None:
                 "",
             )
         )
+    # A second literal "?" is malformed concatenation (e.g. two query strings
+    # spliced together); a standalone "?" inside a query value would be
+    # percent-encoded. Reject rather than publish a broken delivery URL.
+    if candidate.count("?") > 1:
+        return None
     normalized = asset_url_identity(candidate)
     if normalized is None:
         return None

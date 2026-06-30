@@ -6,6 +6,7 @@ import pytest
 
 from app.extraction.contracts import (
     CollectorOutcome,
+    ContractOutcome,
     Decision,
     Evidence,
     ExtractionMetrics,
@@ -222,6 +223,87 @@ def test_variant_drops_and_outcomes_passed_through() -> None:
     assert diagnosis["collectors"][0]["collector_id"] == "jsonld"
     assert diagnosis["collectors"][0]["evidence_count"] == 3
     assert diagnosis["stages"][0]["stage"] == "collect"
+
+
+def test_contract_outcomes_are_emitted_when_present() -> None:
+    result = _result(
+        contract_outcomes=(
+            ContractOutcome(
+                field="offer.price",
+                outcome="hit",
+                selected_source="jsonld",
+                selection_origin="frozen_contract",
+                applied=True,
+                detail="preferred source used",
+            ),
+        ),
+    )
+
+    diagnosis = build_diagnosis(
+        acquisition_result=_acquisition(),
+        extraction_result=result,
+    )
+
+    outcomes = diagnosis["contract_outcomes"]
+    assert isinstance(outcomes, list)
+    assert outcomes[0]["field"] == "offer.price"
+    assert outcomes[0]["outcome"] == "hit"
+    assert outcomes[0]["applied"] is True
+
+
+def test_variant_sku_decision_does_not_masquerade_as_product_sku() -> None:
+    # A resolved variant.sku decision must NOT fill the product-level "sku" field
+    # winner; only the (here unresolved) product.sku decision owns it.
+    variant_winner = Evidence(
+        evidence_id="ev-variant-sku",
+        bundle_id="bundle-1",
+        artifact_id="artifact-1",
+        collector_id="jsonld",
+        collector_version="1",
+        fact_type="variant.sku",
+        raw_value="VAR-123",
+        value="VAR-123",
+        locator=SourceLocator(kind="json_pointer", value="/variants/0/sku"),
+        directness="direct",
+        confidence=0.9,
+        subject_id="variant-1",
+    )
+    variant_sku = Decision(
+        decision_id="d-variant-sku",
+        entity_id="variant-1",
+        fact_type="variant.sku",
+        accepted_evidence_ids=("ev-variant-sku",),
+        rejected=(),
+        finding_ids=(),
+        rule_id="VARIANT_SKU",
+        status="resolved",
+    )
+    product_sku = Decision(
+        decision_id="d-product-sku",
+        entity_id="product-1",
+        fact_type="product.sku",
+        accepted_evidence_ids=(),
+        rejected=(),
+        finding_ids=(),
+        rule_id="PRODUCT_SKU",
+        status="unresolved",
+    )
+    result = _result(
+        evidence=(variant_winner,),
+        decisions=(variant_sku, product_sku),
+        field_states=(
+            FieldEvidenceState(field="sku", state="not_present_in_captured_sources"),
+        ),
+    )
+
+    diagnosis = build_diagnosis(
+        acquisition_result=_acquisition(),
+        extraction_result=result,
+    )
+
+    sku_field = diagnosis["fields"][0]
+    assert sku_field["field"] == "sku"
+    assert "winner" not in sku_field
 
 
 def test_long_values_are_preview_truncated() -> None:

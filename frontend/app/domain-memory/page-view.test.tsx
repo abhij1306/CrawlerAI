@@ -16,6 +16,8 @@ const apiMock = vi.hoisted(() => ({
   getKnowledgeGraph: vi.fn(),
   listKnowledgeContracts: vi.fn(),
   selectKnowledgeContractSource: vi.fn(),
+  getRunReport: vi.fn(),
+  getResultDiagnosis: vi.fn(),
   listCrawls: vi.fn(),
   resetDomainMemory: vi.fn(),
   saveDomainRunProfile: vi.fn(),
@@ -338,6 +340,17 @@ describe('DomainMemoryPage', () => {
     });
     apiMock.deleteSelector.mockResolvedValue(undefined);
     apiMock.deleteSelectorsByDomain.mockResolvedValue({ deleted: 1 });
+    apiMock.getRunReport.mockResolvedValue({
+      schema_version: 'run-report.v1',
+      run_id: 101,
+      root_cause_count: 0,
+      root_causes: [],
+    });
+    apiMock.getResultDiagnosis.mockResolvedValue({
+      schema_version: 'diagnose.v1',
+      verdict: 'partial',
+      fields: [],
+    });
   });
 
   it('renders the selected domain memory workspace and recent learning', async () => {
@@ -374,9 +387,10 @@ describe('DomainMemoryPage', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Knowledge v4' }));
 
     expect(await screen.findByText('Knowledge Graph')).toBeInTheDocument();
-    expect(screen.getByText('Widget')).toBeInTheDocument();
-    expect(screen.getByText('Page Mentions Product')).toBeInTheDocument();
+    expect(await screen.findByText('Source reliability')).toBeInTheDocument();
+    expect(screen.getByText('Run diagnostics')).toBeInTheDocument();
     expect(screen.getAllByText('Brand').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Automatic').length).toBeGreaterThan(0);
     expect(screen.getByText('Only observed source')).toBeInTheDocument();
     expect(
       screen.queryByRole('combobox', { name: 'Source for offer.price' }),
@@ -422,6 +436,46 @@ describe('DomainMemoryPage', () => {
       });
     });
     expect(screen.getByText('Saved')).toBeInTheDocument();
+  }, 10_000);
+
+  it('drills into a run diagnostics root cause', async () => {
+    apiMock.getRunReport.mockResolvedValue({
+      schema_version: 'run-report.v1',
+      run_id: 101,
+      root_cause_count: 1,
+      root_causes: [
+        {
+          root_cause: 'field:price:captured_but_rejected',
+          count: 2,
+          diagnose_links: ['runs/101/results/7/diagnose.json'],
+        },
+      ],
+    });
+    apiMock.getResultDiagnosis.mockResolvedValue({
+      schema_version: 'diagnose.v1',
+      verdict: 'partial',
+      fields: [
+        {
+          field: 'price',
+          status: 'captured_but_rejected',
+          firewall: 'price_out_of_band',
+          rejected: [{ reason: 'currency_mismatch' }],
+        },
+      ],
+    });
+
+    renderDomainMemoryPage();
+    fireEvent.click(await screen.findByRole('button', { name: 'Knowledge v4' }));
+    expect(await screen.findByText('Run diagnostics')).toBeInTheDocument();
+
+    const causeButton = await screen.findByText('field:price:captured_but_rejected');
+    fireEvent.click(causeButton);
+
+    await waitFor(() => {
+      expect(apiMock.getResultDiagnosis).toHaveBeenCalledWith(101, 7);
+    });
+    expect(await screen.findByText('Captured But Rejected')).toBeInTheDocument();
+    expect(screen.getByText('Firewall')).toBeInTheDocument();
   }, 10_000);
 
   it('keeps domain memory usable when Knowledge Graph site loading fails', async () => {

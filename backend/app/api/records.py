@@ -31,6 +31,11 @@ from app.persistence.record_export_service import (
     export_record_provenance,
 )
 from app.persistence.record_artifacts import load_canonical_record_views
+from app.persistence.diagnostics_artifacts import (
+    load_result_diagnosis,
+    load_run_report,
+)
+from app.models.crawl_run import CrawlUrlResult
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -179,3 +184,44 @@ async def export_discoverist(
 ) -> StreamingResponse:
     await _require_run_access(session, run_id=run_id, user=current_user)
     return await build_discoverist_export_response(session, run_id=run_id)
+
+
+@router.get(
+    "/api/crawls/{run_id}/report.json",
+    responses=_route_responses(RUN_NOT_FOUND_RESPONSE),
+)
+async def run_report(
+    run_id: int,
+    session: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> dict[str, object]:
+    """Run-level root-cause report (``runs/{run_id}/report.json``).
+
+    Reads the persisted artifact, recomputing the deterministic fold on-demand
+    when the run-complete callback has not yet written it.
+    """
+    await _require_run_access(session, run_id=run_id, user=current_user)
+    return await asyncio.to_thread(load_run_report, run_id=run_id)
+
+
+@router.get(
+    "/api/crawls/{run_id}/results/{url_result_id}/diagnose.json",
+    responses=_route_responses(RUN_NOT_FOUND_RESPONSE),
+)
+async def result_diagnosis(
+    run_id: int,
+    url_result_id: int,
+    session: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> dict[str, object]:
+    """Self-contained per-URL root-cause artifact (``diagnose.json``)."""
+    await _require_run_access(session, run_id=run_id, user=current_user)
+    url_result = await session.get(CrawlUrlResult, url_result_id)
+    if url_result is None or url_result.run_id != run_id:
+        raise HTTPException(status_code=404, detail="URL result not found")
+    diagnosis = await asyncio.to_thread(
+        load_result_diagnosis, run_id=run_id, url_result_id=url_result_id
+    )
+    if diagnosis is None:
+        raise HTTPException(status_code=404, detail="Diagnose artifact not found")
+    return diagnosis

@@ -2,8 +2,13 @@ from __future__ import annotations
 
 import pytest
 
+from app.core.config.extraction_rules import (
+    AVAILABILITY_CANONICAL_ENUM,
+    INVALID_AVAILABILITY_EVIDENCE_FLAG,
+)
 from app.core.records.output_safety import public_availability
 from app.extraction.collectors._helpers import evidence
+from app.extraction.pipeline import _normalize_availability_value
 from app.extraction.contracts import (
     CaptureBundle,
     EntityHint,
@@ -277,3 +282,37 @@ def test_supported_availability_states_share_canonical_semantics(
     assert item.value == expected
     assert public_availability(item.value) == expected
     assert public_availability(raw) == ""
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    (
+        ("https://schema.org/InStock", "in_stock"),
+        ("PreOrder", "preorder"),
+        ("BackOrder", "backorder"),
+        ("Discontinued", "discontinued"),
+        ("SoldOut", "out_of_stock"),
+    ),
+)
+def test_pipeline_availability_normalizes_to_enum_without_flag(
+    raw: str, expected: str
+) -> None:
+    flags: set[str] = set()
+    assert _normalize_availability_value(raw, flags) == expected
+    assert expected in AVAILABILITY_CANONICAL_ENUM
+    assert INVALID_AVAILABILITY_EVIDENCE_FLAG not in flags
+
+
+@pytest.mark.parametrize(
+    "raw",
+    ("ships in 3 weeks", "call for availability", "see store", "??"),
+)
+def test_pipeline_availability_flags_non_enum_values(raw: str) -> None:
+    flags: set[str] = set()
+    normalized = _normalize_availability_value(raw, flags)
+    # Raw text is preserved for the diagnose artifact, but the value is flagged
+    # so resolution ranks it below enum-valid candidates and the firewall drops
+    # it — never a silent free-text passthrough into the public record.
+    assert normalized not in AVAILABILITY_CANONICAL_ENUM
+    assert INVALID_AVAILABILITY_EVIDENCE_FLAG in flags
+    assert public_availability(normalized) == ""

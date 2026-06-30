@@ -2,13 +2,17 @@ from __future__ import annotations
 
 import pytest
 
-from app.extraction.collectors.js_state import path_is_within_selected_root
-from app.extraction.collectors.js_state import selected_product_root_paths
-
 from app.extraction.collectors.js_state import network_row
 from app.extraction.contracts import CaptureBundle, RequestContext
 
-from app.core.records.js_state_scope import path_product_identity_conflicts
+from app.core.records.js_state_scope import (
+    RootSelection,
+    path_is_within_selected_root,
+    path_product_identity_conflicts,
+    root_admits_path,
+    select_product_roots,
+    selected_product_root_paths,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -34,13 +38,51 @@ def test_exact_url_selects_matching_root() -> None:
     assert not path_is_within_selected_root("/products/1/variants/0", selected)
 
 
-def test_missing_exact_root_keeps_fallback_behavior() -> None:
-    objects = (("/product", {"title": "No URL"}),)
-    selected = selected_product_root_paths(
-        objects, "https://shop.test/products/primary"
+def test_single_product_context_selects_without_url_match() -> None:
+    # Exactly one product-context object on the page selects, even with no URL
+    # agreement — there is no competing root, so admitting it is unambiguous.
+    objects = (("/product", {"type": "Product", "title": "No URL"}),)
+    selection = select_product_roots(objects, "https://shop.test/products/primary")
+    assert selection == RootSelection("selected", ("/product",))
+    assert root_admits_path(selection, "/product")
+
+
+def test_no_product_root_defers_to_per_row_guards() -> None:
+    # No product-context object at all (e.g. a bare config/variant payload whose
+    # identity is the page itself). The gate stays open and the collector's own
+    # per-row conflict guards decide — strict scoping here would discard the only
+    # payload on the page.
+    objects = (("/config/flags", {"featureEnabled": True}),)
+    selection = select_product_roots(objects, "https://shop.test/products/primary")
+    assert selection == RootSelection("unresolved", ())
+    assert root_admits_path(selection, "/config/flags")
+    # An empty root set never matches via the strict containment helper itself.
+    assert not path_is_within_selected_root("/config/flags", selection.roots)
+
+
+def test_competing_product_roots_are_ambiguous_and_admit_nothing() -> None:
+    # Two unrelated top-level product contexts and neither matches the page URL:
+    # selecting either would be a guess, so admit nothing.
+    objects = (
+        ("/productA", {"type": "Product", "title": "Alpha"}),
+        ("/productB", {"type": "Product", "title": "Bravo"}),
     )
-    assert selected == ()
-    assert path_is_within_selected_root("/product", selected)
+    selection = select_product_roots(objects, "https://shop.test/products/primary")
+    assert selection.status == "ambiguous"
+    assert selection.roots == ()
+    assert not root_admits_path(selection, "/productA")
+
+
+def test_recommendation_carousel_does_not_create_ambiguity() -> None:
+    # A real product plus a recommendation carousel under a noise path: the
+    # carousel is excluded from root counting so the real product still selects.
+    objects = (
+        ("/product", {"type": "Product", "title": "Primary"}),
+        ("/recommendations/0", {"type": "Product", "title": "Suggested"}),
+    )
+    selection = select_product_roots(objects, "https://shop.test/products/primary")
+    assert selection == RootSelection("selected", ("/product",))
+    assert not root_admits_path(selection, "/recommendations/0")
 
 
 def test_metadata_url_match_is_not_selected_as_product_root() -> None:
@@ -55,9 +97,11 @@ def test_metadata_url_match_is_not_selected_as_product_root() -> None:
         ),
     )
 
-    assert (
-        selected_product_root_paths(objects, "https://shop.test/products/primary") == ()
-    )
+    # The SEO object matches the page URL but carries no product context, so it
+    # is never promoted to a root; the real product context is what selects.
+    selection = select_product_roots(objects, "https://shop.test/products/primary")
+    assert selection == RootSelection("selected", ("/product",))
+    assert not root_admits_path(selection, "/seo")
 
 
 def test_nested_variant_url_promotes_to_product_ancestor() -> None:

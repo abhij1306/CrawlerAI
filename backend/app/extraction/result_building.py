@@ -121,7 +121,18 @@ def field_evidence_states(
             )
         elif rows:
             state = "captured_but_rejected"
-            reasons = tuple(sorted({flag for row in rows for flag in row.flags}))
+            row_ids = {row.evidence_id for row in rows}
+            # Carry the resolver's rejection reasons (RejectedEvidence.reason)
+            # for these captured rows so diagnose.json explains *why* a captured
+            # sku/availability/price was not published — not just its flags.
+            rejection_reasons = {
+                item.reason
+                for decision in relevant_decisions
+                for item in decision.rejected
+                if item.evidence_id in row_ids and item.reason
+            }
+            flag_reasons = {flag for row in rows for flag in row.flags}
+            reasons = tuple(sorted(rejection_reasons | flag_reasons))
         else:
             state = "not_present_in_captured_sources"
             reasons = ()

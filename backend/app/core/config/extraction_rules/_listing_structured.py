@@ -394,17 +394,13 @@ DETAIL_NON_PRODUCT_IMAGE_URL_HINTS = (
     "-nav.",
     "dropdown",
 )
-PAGE_URL_CURRENCY_HINTS_RAW = {
+# Currency is inferred generically from ccTLD / locale path segment (see
+# ``app.core.shared.currency_hints``). Retailer-host literals were removed: they
+# were site-specific matrix tuning, not structural signal. This table now holds
+# only generic locale path tokens (``/en-gb/`` style, prefixed with ``/``); it is
+# intentionally empty today.
+PAGE_URL_CURRENCY_HINTS_RAW: dict[str, str] = {
     **dict(_STATIC_EXPORTS.get("PAGE_URL_CURRENCY_HINTS_RAW", {})),
-    "firstcry.com/": "INR",
-    "converse.com/": "USD",
-    "gymshark.com/": "USD",
-    "myntra.com/": "INR",
-    "notre-shop.com/": "USD",
-    "onepeloton.com/": "USD",
-    "patagonia.com/": "USD",
-    "phase-eight.com/": "GBP",
-    "yeti.com/": "USD",
 }
 VARIANT_AXIS_ALIASES = {
     **dict(_STATIC_EXPORTS.get("VARIANT_AXIS_ALIASES", {})),
@@ -473,23 +469,36 @@ VARIANT_OPTION_VALUE_SUFFIX_NOISE_PATTERNS = tuple(
     )
 )
 INVALID_AVAILABILITY_EVIDENCE_FLAG = "invalid_availability"
-AVAILABILITY_URL_MAP = {
-    "https://schema.org/instock": "in_stock",
-    "http://schema.org/instock": "in_stock",
-    "schema.org/instock": "in_stock",
+# Single source of truth for the public availability enum. Every downstream
+# stage (normalizers, field coercion, the public firewall) derives its accepted
+# set from this tuple so the canonical vocabulary cannot silently diverge — a
+# schema.org PreOrder/BackOrder offer must survive end-to-end, not be dropped by
+# the firewall because an intermediate map emitted a non-enum token.
+AVAILABILITY_CANONICAL_ENUM = (
+    "in_stock",
+    "out_of_stock",
+    "limited_stock",
+    "preorder",
+    "backorder",
+    "discontinued",
+)
+# schema.org availability terms → canonical enum. Built across the bare,
+# scheme-less, and both-scheme spellings so itemprop URLs match regardless of
+# how a page writes them.
+_AVAILABILITY_SCHEMA_TERMS = {
     "instock": "in_stock",
-    "https://schema.org/outofstock": "out_of_stock",
-    "http://schema.org/outofstock": "out_of_stock",
-    "schema.org/outofstock": "out_of_stock",
     "outofstock": "out_of_stock",
-    "https://schema.org/limitedavailability": "limited_stock",
-    "http://schema.org/limitedavailability": "limited_stock",
-    "schema.org/limitedavailability": "limited_stock",
+    "soldout": "out_of_stock",
     "limitedavailability": "limited_stock",
-    "https://schema.org/preorder": "pre_order",
-    "http://schema.org/preorder": "pre_order",
-    "schema.org/preorder": "pre_order",
-    "preorder": "pre_order",
+    "preorder": "preorder",
+    "presale": "preorder",
+    "backorder": "backorder",
+    "discontinued": "discontinued",
+}
+AVAILABILITY_URL_MAP = {
+    f"{prefix}{term}": canonical
+    for term, canonical in _AVAILABILITY_SCHEMA_TERMS.items()
+    for prefix in ("https://schema.org/", "http://schema.org/", "schema.org/", "")
 }
 NORMALIZER_AVAILABILITY_TOKENS = {
     "in_stock": ("in stock", "instock", "available", "ready to ship"),
@@ -502,7 +511,9 @@ NORMALIZER_AVAILABILITY_TOKENS = {
         "left in stock",
     ),
     "out_of_stock": ("out of stock", "outofstock", "oos", "sold out", "unavailable"),
-    "pre_order": ("pre-order", "preorder", "backorder", "back-order"),
+    "preorder": ("pre-order", "preorder", "pre order", "pre sale", "presale"),
+    "backorder": ("backorder", "back-order", "back order"),
+    "discontinued": ("discontinued", "no longer available"),
 }
 VARIANT_OPTION_TEXT_FIELDS = frozenset(PUBLIC_VARIANT_AXIS_FIELDS)
 VARIANT_AXIS_ALLOWED_SINGLE_TOKENS = frozenset(

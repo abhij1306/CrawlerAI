@@ -32,7 +32,6 @@ KG_NODE_TYPES: Final = frozenset(
         "brand",
         "category",
         "seller",
-        "asset",
     }
 )
 
@@ -49,7 +48,6 @@ KG_EDGE_TYPES: Final = frozenset(
         "PRODUCT_MADE_BY",
         "PRODUCT_IN_CATEGORY",
         "OFFER_SOLD_BY",
-        "PRODUCT_HAS_ASSET",
         "PRODUCT_SAME_AS",
     }
 )
@@ -74,7 +72,6 @@ KG_PRODUCT_BRAND_RELATIONSHIP: Final = "PRODUCT_MADE_BY"
 KG_PRODUCT_CATEGORY_RELATIONSHIP: Final = "PRODUCT_IN_CATEGORY"
 KG_PRODUCT_OFFER_RELATIONSHIP: Final = "PRODUCT_HAS_OFFER"
 KG_OFFER_SELLER_RELATIONSHIP: Final = "OFFER_SOLD_BY"
-KG_PRODUCT_ASSET_RELATIONSHIP: Final = "PRODUCT_HAS_ASSET"
 KG_PRODUCT_SAME_AS_RELATIONSHIP: Final = "PRODUCT_SAME_AS"
 
 # --- Statuses ----------------------------------------------------------------
@@ -143,7 +140,6 @@ __all__ = [
     "KG_ASSET_URL_FACT",
     "KG_OFFER_SELLER_FACT",
     "KG_OFFER_SELLER_RELATIONSHIP",
-    "KG_PRODUCT_ASSET_RELATIONSHIP",
     "KG_PRODUCT_BRAND_FACT",
     "KG_PRODUCT_BRAND_RELATIONSHIP",
     "KG_PRODUCT_CATEGORY_FACT",

@@ -17,6 +17,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from typing import Any
 
+from app.core.config import field_mappings
 from app.extraction.contracts import (
     Decision,
     Evidence,
@@ -25,6 +26,21 @@ from app.extraction.contracts import (
     SourceLocator,
 )
 
+# Public field name → the dotted fact_type the resolver decides on. Mirrors the
+# mapping in ``result_building.field_evidence_states`` so diagnose attributes the
+# right decision to each public field. Keyed by full fact_type — NOT the trailing
+# segment — so ``product.sku`` and ``variant.sku`` never collide into one "sku".
+_PUBLIC_FIELD_FACT_TYPES = {
+    "title": field_mappings.PRODUCT_TITLE_FACT_TYPE,
+    "brand": field_mappings.PRODUCT_BRAND_FACT_TYPE,
+    "description": field_mappings.PRODUCT_DESCRIPTION_FACT_TYPE,
+    "sku": field_mappings.PRODUCT_SKU_FACT_TYPE,
+    "price": field_mappings.OFFER_PRICE_FACT_TYPE,
+    "currency": field_mappings.OFFER_CURRENCY_FACT_TYPE,
+    "availability": field_mappings.OFFER_AVAILABILITY_FACT_TYPE,
+    "image_url": field_mappings.ASSET_IMAGE_URL_FACT_TYPE,
+}
+
 SCHEMA_VERSION = "diagnose.v1"
 _PREVIEW_LIMIT = 120
 _FIELDS_LIMIT = 100
@@ -32,6 +48,7 @@ _REJECTED_PER_FIELD_LIMIT = 10
 _VARIANT_DROPS_LIMIT = 200
 _COLLECTORS_LIMIT = 50
 _STAGES_LIMIT = 50
+_CONTRACTS_LIMIT = 100
 
 
 def build_diagnosis(
@@ -63,6 +80,10 @@ def build_diagnosis(
     stages_section, stages_truncated = _bounded(
         extraction_result.stage_outcomes, _STAGES_LIMIT
     )
+    contracts_total = len(extraction_result.contract_outcomes)
+    contract_section, contracts_truncated = _bounded(
+        extraction_result.contract_outcomes, _CONTRACTS_LIMIT
+    )
 
     truncated: dict[str, dict[str, int]] = {}
     if fields_truncated:
@@ -79,6 +100,11 @@ def build_diagnosis(
         }
     if stages_truncated:
         truncated["stages"] = {"included": len(stages_section), "total": stages_total}
+    if contracts_truncated:
+        truncated["contract_outcomes"] = {
+            "included": len(contract_section),
+            "total": contracts_total,
+        }
 
     payload: dict[str, object] = {
         "schema_version": SCHEMA_VERSION,
@@ -102,7 +128,15 @@ def build_diagnosis(
             outcome.model_dump(mode="json") for outcome in collectors_section
         ],
         "stages": [outcome.model_dump(mode="json") for outcome in stages_section],
-        "contract_outcomes": None,  # populated in Slice 7
+        # Per-field record of which frozen contract (if any) selected the winning
+        # source, so a learned extraction is explainable from diagnose.json alone.
+        # ``None`` when no contracts were applied keeps the "not applicable" signal
+        # distinct from "applied, but every field fell back".
+        "contract_outcomes": (
+            [outcome.model_dump(mode="json") for outcome in contract_section]
+            if extraction_result.contract_outcomes
+            else None
+        ),
     }
     if truncated:
         payload["truncated"] = truncated
@@ -208,12 +242,17 @@ def _locator(locator: SourceLocator) -> dict[str, object]:
 def _decisions_by_public_field(
     decisions: Sequence[Decision],
 ) -> dict[str, Decision]:
-    # Field-state fields are public field names (price, currency, ...); decision
-    # fact_types are dotted (offer.price). Map by the trailing segment, keeping
-    # the first resolved decision per field so the winner is deterministic.
+    # Field-state fields are public field names (price, currency, sku, ...);
+    # decision fact_types are dotted (offer.price, product.sku). Map by the EXACT
+    # fact_type behind each public field — never the trailing segment — so a
+    # ``variant.sku`` decision can't masquerade as the product-level ``sku``
+    # winner. Keep the first resolved decision per field for determinism.
+    fact_to_field = {fact: field for field, fact in _PUBLIC_FIELD_FACT_TYPES.items()}
     by_field: dict[str, Decision] = {}
     for decision in decisions:
-        field = decision.fact_type.rsplit(".", 1)[-1]
+        field = fact_to_field.get(decision.fact_type)
+        if field is None:
+            continue
         existing = by_field.get(field)
         if existing is None or (
             existing.status != "resolved" and decision.status == "resolved"

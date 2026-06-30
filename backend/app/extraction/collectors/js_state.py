@@ -19,7 +19,8 @@ from app.core.records.js_state_scope import (
     has_product_context as _has_product_context,
     path_product_identity_conflicts as _path_product_identity_conflicts,
     path_tokens as _path_tokens,
-    selected_product_root_paths,
+    root_admits_path,
+    select_product_roots,
 )
 from app.core.records.url_identity import (
     detail_title_from_url,
@@ -54,9 +55,9 @@ class JsStateCollector:
                 )
             )
             axis_hints = _variant_axis_hints(objects)
-            selected_roots = selected_product_root_paths(objects, bundle.final_url)
+            selection = select_product_roots(objects, bundle.final_url)
             for path, obj in objects:
-                if not path_is_within_selected_root(path, selected_roots):
+                if not root_admits_path(selection, path):
                     continue
                 if isinstance(obj, dict):
                     enriched = _with_parent_variant_axes(obj, axis_hints.get(path, ()))
@@ -219,16 +220,6 @@ def _with_parent_variant_axes(obj: dict, axes: tuple[str, ...]) -> dict:
         if value not in (None, "", [], {}) and not isinstance(value, dict)
     ]
     return {**obj, "selectedOptions": selected} if selected else obj
-
-
-def path_is_within_selected_root(path: str, selected_roots: tuple[str, ...]) -> bool:
-    if not selected_roots:
-        return True
-    normalized = path.rstrip("/")
-    return any(
-        normalized == root.rstrip("/") or normalized.startswith(root.rstrip("/") + "/")
-        for root in selected_roots
-    )
 
 
 def network_row(

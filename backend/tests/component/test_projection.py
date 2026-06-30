@@ -15,6 +15,7 @@ from app.extraction.contracts import (
     CollectorOutcome,
     CommerceDetailRecord,
     CommerceVariantRecord,
+    ContractOutcome,
     Decision,
     Evidence,
     ExtractionResult,
@@ -787,6 +788,167 @@ async def test_projection_repeats_until_deferred_canonical_relationships_resolve
         (await db_session.execute(select(KGRelationship.relationship_type))).scalars()
     )
     assert "PRODUCT_MADE_BY" in relationship_types
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_projection_carries_applied_contract_selection_origin(
+    db_session: AsyncSession,
+) -> None:
+    """An applied non-generic contract origin survives re-projection.
+
+    When a frozen contract was applied this run with ``selection_origin`` of
+    ``operator`` (or ``llm_proposed``), the projected contract must record that
+    origin rather than flattening every field back to ``generic``.
+    """
+    price_ev = Evidence(
+        evidence_id="price-1",
+        bundle_id="bundle-1",
+        artifact_id="art1",
+        collector_id="jsonld",
+        collector_version="1.0",
+        fact_type="offer.price",
+        raw_value="99.00",
+        value=99.0,
+        locator=SourceLocator(kind="json_pointer", value="/offers/price"),
+        directness="direct",
+        confidence=0.95,
+        subject_id="offer-1",
+        parent_subject_id="prod-1",
+        subject_scope="offer",
+    )
+    result = ExtractionResult(
+        surface=Surface.ECOMMERCE_DETAIL,
+        bundle_id="bundle-1",
+        records=(),
+        evidence=(price_ev,),
+        decisions=(
+            Decision(
+                decision_id="d-price",
+                entity_id="offer-1",
+                fact_type="offer.price",
+                accepted_evidence_ids=("price-1",),
+                rejected=(),
+                finding_ids=(),
+                rule_id="first_available",
+                status="resolved",
+            ),
+        ),
+        contract_outcomes=(
+            ContractOutcome(
+                field="offer.price",
+                outcome="hit",
+                selected_source="jsonld:/offers/price",
+                selection_origin="operator",
+                applied=True,
+                detail="re-pointed",
+            ),
+        ),
+        verdict="success",
+    )
+
+    await project_extraction_result(
+        db_session,
+        run_id=1,
+        url="https://example.com/products/widget",
+        result=result,
+    )
+    await db_session.commit()
+
+    contracts = (
+        (
+            await db_session.execute(
+                select(KGExtractionContract).where(
+                    KGExtractionContract.canonical_field == "offer.price"
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert contracts
+    assert contracts[0].selection_origin == "operator"
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_projection_records_assets_as_claims_not_nodes(
+    db_session: AsyncSession,
+) -> None:
+    """Gallery images must not explode the graph with one node+edge per image.
+
+    The image URL is retained as an ``asset.image_url`` claim on the product;
+    no standalone ``asset`` entity and no ``PRODUCT_HAS_ASSET`` edge is created.
+    """
+    image_evidence = tuple(
+        Evidence(
+            evidence_id=f"asset-{index}",
+            bundle_id="bundle-1",
+            artifact_id="art1",
+            collector_id="jsonld",
+            collector_version="1.0",
+            fact_type="asset.image_url",
+            raw_value=f"https://cdn.example.com/p/{index}.jpg",
+            value=f"https://cdn.example.com/p/{index}.jpg",
+            locator=SourceLocator(kind="json_pointer", value=f"/images/{index}"),
+            directness="direct",
+            confidence=0.9,
+            subject_id=f"asset-{index}",
+            parent_subject_id="prod-1",
+            subject_scope="asset",
+        )
+        for index in range(3)
+    )
+    decisions = tuple(
+        Decision(
+            decision_id=f"d-asset-{index}",
+            entity_id="prod-1",
+            fact_type="asset.image_url",
+            accepted_evidence_ids=(f"asset-{index}",),
+            rejected=(),
+            finding_ids=(),
+            rule_id="first_available",
+            status="resolved",
+        )
+        for index in range(3)
+    )
+    result = ExtractionResult(
+        surface=Surface.ECOMMERCE_DETAIL,
+        bundle_id="bundle-1",
+        records=(),
+        evidence=image_evidence,
+        decisions=decisions,
+        verdict="success",
+    )
+
+    await project_extraction_result(
+        db_session,
+        run_id=1,
+        url="https://example.com/products/widget",
+        result=result,
+    )
+    await db_session.commit()
+
+    entity_types = set(
+        (await db_session.execute(select(KGEntity.entity_type))).scalars()
+    )
+    assert "asset" not in entity_types
+
+    relationship_types = set(
+        (await db_session.execute(select(KGRelationship.relationship_type))).scalars()
+    )
+    assert "PRODUCT_HAS_ASSET" not in relationship_types
+
+    asset_claims = (
+        (
+            await db_session.execute(
+                select(KGClaim).where(KGClaim.fact_type == "asset.image_url")
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert len(asset_claims) == 3
 
 
 @pytest.mark.asyncio

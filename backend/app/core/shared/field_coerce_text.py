@@ -372,7 +372,25 @@ def coerce_brand_text(value: object) -> str | None:
         return None
     cleaned = _BRAND_REGION_SUFFIX_RE.sub("", text).strip()
     cleaned = _strip_brand_marketing_tagline(cleaned) or cleaned
-    return cleaned or text
+    return _normalize_brand_punctuation(cleaned) or cleaned or text
+
+
+def _normalize_brand_punctuation(text: str) -> str | None:
+    """Collapse runaway whitespace and strip a stray trailing sentence mark.
+
+    Generic only — no brand vocabulary. A single-token brand ending in a
+    sentence mark (``"Target."``) is a scraping artefact, so the trailing
+    ``.,;:`` is dropped; multi-token values are left intact so legitimate
+    abbreviations after a space (``"Acme Co."``) and internal punctuation
+    (``"J.Crew"``, ``"Amazon.com"``) survive.
+    """
+
+    collapsed = re.sub(r"\s+", " ", str(text)).strip()
+    if not collapsed:
+        return None
+    if " " not in collapsed:
+        collapsed = collapsed.rstrip(".,;:")
+    return collapsed or None
 
 
 def _strip_brand_marketing_tagline(text: str) -> str | None:

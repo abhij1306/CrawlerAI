@@ -24,10 +24,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config.knowledge_graph import (
     KG_CLAIM_VALUE_PREVIEW_LIMIT,
     KG_CONTRACT_RETAINED_VALUE_LIMIT,
-    KG_ASSET_URL_FACT,
     KG_OFFER_SELLER_FACT,
     KG_OFFER_SELLER_RELATIONSHIP,
-    KG_PRODUCT_ASSET_RELATIONSHIP,
     KG_PRODUCT_BRAND_FACT,
     KG_PRODUCT_BRAND_RELATIONSHIP,
     KG_PRODUCT_CATEGORY_FACT,
@@ -35,6 +33,7 @@ from app.core.config.knowledge_graph import (
     KG_PRODUCT_GTIN_FACT,
     KG_PRODUCT_OFFER_RELATIONSHIP,
     KG_PRODUCT_SAME_AS_RELATIONSHIP,
+    KG_SELECTION_ORIGINS,
     KG_VARIANT_SET_FACT,
 )
 from app.core.domain_utils import normalize_domain
@@ -44,7 +43,12 @@ from app.core.knowledge_graph.templates import (
     normalize_route,
     source_pattern,
 )
-from app.extraction.contracts import Decision, Evidence, ExtractionResult
+from app.extraction.contracts import (
+    ContractOutcome,
+    Decision,
+    Evidence,
+    ExtractionResult,
+)
 from app.extraction.surfaces import Surface
 from app.models.crawl_run import CrawlRun
 from app.models.knowledge_graph import KGClaim
@@ -297,7 +301,12 @@ async def project_extraction_result(
 
     # Project extraction contracts from decisions
     contract_inputs = await _project_contracts(
-        session, template_id, result.surface.value, result.decisions, result.evidence
+        session,
+        template_id,
+        result.surface.value,
+        result.decisions,
+        result.evidence,
+        result.contract_outcomes,
     )
     await upsert_contracts(session, contract_inputs)
     site_version.current_version = int(site_version.current_version or 0) + 1
@@ -320,9 +329,21 @@ async def _project_contracts(
     surface: str,
     decisions: tuple[Decision, ...],
     evidence: tuple[Evidence, ...],
+    contract_outcomes: tuple[ContractOutcome, ...] = (),
 ) -> list[ContractInput]:
-    """Project decisions into extraction contracts."""
+    """Project decisions into extraction contracts.
+
+    When a frozen contract was applied this run (``contract_outcomes``), the
+    winning decision's ``selection_origin`` (``operator`` / ``llm_proposed``) is
+    carried back into the projected contract so a promoted or proposed origin
+    survives re-projection rather than being flattened to ``generic``.
+    """
     evidence_by_id = {e.evidence_id: e for e in evidence}
+    origin_by_field = {
+        outcome.field: outcome.selection_origin
+        for outcome in contract_outcomes
+        if outcome.applied and outcome.selection_origin in KG_SELECTION_ORIGINS
+    }
     contracts: list[ContractInput] = []
     seen_fields: set[str] = set()
 
@@ -390,7 +411,7 @@ async def _project_contracts(
                 ),
                 resolver_rule=decision.rule_id,
                 selected_source=selected_source,
-                selection_origin="generic",
+                selection_origin=origin_by_field.get(canonical_field, "generic"),
             )
         )
 
@@ -516,24 +537,11 @@ def _canonical_projection(
                                 confidence=evidence.confidence,
                             )
                         )
-        elif decision.fact_type == KG_ASSET_URL_FACT and _has_text(value):
-            asset_id = _entity_id(
-                "asset",
-                _value_key(domain, "asset", value),
-                entity_map,
-                entities,
-                canonical_name=str(value),
-            )
-            if asset_id:
-                relationships.append(
-                    RelationshipInput(
-                        source_entity_id=product_id,
-                        target_entity_id=asset_id,
-                        relationship_type=KG_PRODUCT_ASSET_RELATIONSHIP,
-                        properties={"field": decision.fact_type},
-                        confidence=evidence.confidence,
-                    )
-                )
+        # Assets (asset.image_url) are intentionally NOT projected as standalone
+        # nodes + PRODUCT_HAS_ASSET edges: a product gallery would explode the
+        # graph with one noise node + edge per image. The image URL is retained
+        # as an ``asset.image_url`` claim on the product above, which is the
+        # attribute representation operators actually query.
 
     primary_product_id = next(iter(product_ids.values()), None)
     if (

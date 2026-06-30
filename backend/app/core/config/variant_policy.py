@@ -435,6 +435,59 @@ FLAT_VARIANT_KEYS: tuple[str, ...] = (
 PUBLIC_FLAT_VARIANT_FIELDS = frozenset(
     (*PUBLIC_VARIANT_AXIS_FIELDS, *FLAT_VARIANT_KEYS)
 )
+VARIANT_TRANSPORT_FIELDS = frozenset(
+    {
+        "variant_id",
+        SKU_FIELD,
+        BARCODE_FIELD,
+        URL_FIELD,
+        PRICE_FIELD,
+        CURRENCY_FIELD,
+        IMAGE_URL_FIELD,
+        AVAILABILITY_FIELD,
+        STOCK_QUANTITY_FIELD,
+    }
+)
+_VARIANT_ROW_EMPTY_VALUES = (None, "", [], {}, ())
+
+
+def variant_row_is_image_dimension_artifact(row: dict[str, object]) -> bool:
+    """A row that is only ``variant_id`` + a large ``width`` is an image
+    dimension echo, not a sellable variant."""
+    if set(row) - {"variant_id", "width"}:
+        return False
+    width = str(row.get("width") or "").strip()
+    return width.isdigit() and int(width) >= VARIANT_IMAGE_DIMENSION_MIN_PX
+
+
+def public_variant_row_is_sellable(row: dict[str, object]) -> bool:
+    """The single publish gate for a flattened variant row.
+
+    Sellable iff the row carries any transport field (identifier / commercial
+    fact / image), OR exposes >=2 option axes, OR a single axis that is one of
+    the canonical retail axes (size / color — the dominant Shopify/PDP shape).
+    Materialization, output-safety, and the public firewall all defer here so a
+    size-only / pre-order / color-only variant cannot be admitted by one stage
+    and silently dropped by another.
+    """
+    if not row or variant_row_is_image_dimension_artifact(row):
+        return False
+    if any(
+        row.get(field) not in _VARIANT_ROW_EMPTY_VALUES
+        for field in VARIANT_TRANSPORT_FIELDS
+    ):
+        return True
+    axes = {
+        str(key)
+        for key, value in row.items()
+        if str(key) in PUBLIC_VARIANT_AXIS_FIELDS
+        and value not in _VARIANT_ROW_EMPTY_VALUES
+    }
+    if len(axes) >= 2:
+        return True
+    return bool(axes & {SIZE_FIELD, COLOR_FIELD})
+
+
 SCENT_DOMINANT_URL_TOKENS = frozenset({"body-mist"})
 DETAIL_VARIANT_SIZE_MIN_FOR_NUMERIC_PARENT_DROP = 2
 VARIANT_PARENT_SHARED_FIELDS: tuple[str, ...] = (

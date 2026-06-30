@@ -9,8 +9,8 @@ from app.core.config.field_mappings import (
 from app.extraction.collectors._helpers import evidence, html_doc, json_objects
 from app.extraction.collectors.js_state import (
     network_row,
-    path_is_within_selected_root,
-    selected_product_root_paths,
+    root_admits_path,
+    select_product_roots,
 )
 from app.extraction.contracts import CaptureBundle, EntityHint, Evidence, SourceLocator
 
@@ -75,9 +75,9 @@ class NetworkCollector:
             if ref.artifact_type != "network_json":
                 continue
             objects = tuple(json_objects(artifacts.read_json(ref)))
-            selected_roots = selected_product_root_paths(objects, bundle.final_url)
+            selection = select_product_roots(objects, bundle.final_url)
             for path, obj in objects:
-                if not path_is_within_selected_root(path, selected_roots):
+                if not root_admits_path(selection, path):
                     continue
                 if isinstance(obj, dict):
                     out.extend(

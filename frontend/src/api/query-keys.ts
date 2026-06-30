@@ -44,6 +44,16 @@ export const queryKeys = {
     domains: () => ['domain-memory', 'domains'] as const,
     workspace: (domain: string) => ['domain-memory', 'workspace', domain] as const,
   },
+  knowledgeGraph: {
+    all: ['knowledge-graph'] as const,
+    domain: (domain: string) => ['knowledge-graph', 'domain', domain] as const,
+  },
+  diagnostics: {
+    all: ['diagnostics'] as const,
+    report: (runId: number) => ['diagnostics', 'report', runId] as const,
+    result: (runId: number, urlResultId: number) =>
+      ['diagnostics', 'result', runId, urlResultId] as const,
+  },
   productIntelligence: {
     all: ['product-intelligence'] as const,
     jobs: () => ['product-intelligence', 'jobs'] as const,

@@ -226,6 +226,20 @@ def test_public_asset_delivery_url_repairs_duplicated_delivery_host_path() -> No
     )
 
 
+def test_public_asset_delivery_url_rejects_doubled_query_string() -> None:
+    from app.core.shared.url_utils import public_asset_delivery_url
+
+    # Two literal "?" is malformed concatenation of two query strings; a real
+    # query value would percent-encode an embedded "?".
+    value = "https://cdn.shop.test/files/image.jpg?width=800?v=12345"
+    assert public_asset_delivery_url(value) is None
+    # A single, well-formed query string is preserved unchanged.
+    assert (
+        public_asset_delivery_url("https://cdn.shop.test/files/image.jpg?width=800")
+        == "https://cdn.shop.test/files/image.jpg?width=800"
+    )
+
+
 def test_utility_image_rejects_generic_default_asset() -> None:
     assert is_utility_image_url(
         "https://shop.test/resources/images/canon-image-default.webp"
