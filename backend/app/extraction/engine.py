@@ -5,7 +5,10 @@ from __future__ import annotations
 from time import perf_counter
 from typing import Literal, cast
 
-from app.core.config.extraction_rules import DETAIL_SHELL_FINDING_RULE_ID
+from app.core.config.extraction_rules import (
+    DETAIL_NOT_FOUND_HTTP_STATUS_CODES,
+    DETAIL_SHELL_FINDING_RULE_ID,
+)
 from app.extraction.adapters import adapter_for
 from app.extraction.contracts import (
     EntityGraph,
@@ -28,6 +31,7 @@ from app.extraction.result_building import (
     retry_request,
 )
 from app.extraction.surfaces import Surface
+from app.extraction.validation import validate_selected_contract_fields
 
 Verdict = Literal[
     "success",
@@ -42,11 +46,11 @@ Verdict = Literal[
 
 
 def extract(request: ExtractionRequest) -> ExtractionResult:
+    if request.capture.blocked:
+        return _blocked_result(request, (), ())
     adapter = adapter_for(request.surface)
     harvest = adapter.harvest(request)
     stage_outcomes = [_stage_outcome("harvest", len(harvest.evidence))]
-    if request.capture.blocked:
-        return _blocked_result(request, harvest.evidence, harvest.collector_outcomes)
 
     resolve_started = perf_counter()
     resolution = adapter.resolve(request, harvest)
@@ -58,7 +62,20 @@ def extract(request: ExtractionRequest) -> ExtractionResult:
     publish_duration_ms = (perf_counter() - publish_started) * 1_000
     stage_outcomes.append(_stage_outcome("publish", len(publication.records)))
 
-    findings = (*resolution.findings, *publication.findings)
+    publication_validation = (
+        validate_selected_contract_fields(
+            publication.records,
+            request.requested_fields,
+            harvest.evidence,
+        )
+        if request.surface == Surface.ECOMMERCE_DETAIL
+        else ()
+    )
+    findings = (
+        *resolution.findings,
+        *publication.findings,
+        *publication_validation,
+    )
     verdict = _assess(request, resolution.target, publication.records, findings)
     records = publication.records if verdict in {"success", "partial", "review"} else ()
     stage_outcomes.append(_stage_outcome("validate", len(findings)))
@@ -113,6 +130,31 @@ def _assess(
         return "invalid"
     if any(row.rule_id == "WRONG_SURFACE_CONTENT" for row in findings):
         return "wrong_surface"
+    if request.surface == Surface.ECOMMERCE_DETAIL:
+        record = records[0] if records else None
+        thin_not_found = (
+            request.capture.http_status in DETAIL_NOT_FOUND_HTTP_STATUS_CODES
+            and (
+                record is None
+                or not any(
+                    record.get(field) not in (None, "", [], {}, ())
+                    for field in (
+                        "brand",
+                        "description",
+                        "image_url",
+                        "price",
+                        "sku",
+                        "variants",
+                    )
+                )
+            )
+        )
+        if (
+            (record is not None and is_shell_record(record))
+            or any(row.rule_id == DETAIL_SHELL_FINDING_RULE_ID for row in findings)
+            or thin_not_found
+        ):
+            return "error"
     if any(row.blocking for row in findings):
         return "invalid"
     if target.status == "ambiguous":
@@ -121,10 +163,6 @@ def _assess(
         return "empty"
     if request.surface == Surface.ECOMMERCE_DETAIL:
         record = records[0]
-        if is_shell_record(record) or any(
-            row.rule_id == DETAIL_SHELL_FINDING_RULE_ID for row in findings
-        ):
-            return "error"
         missing_requested = {
             "image_url" if field == "image" else field
             for field in request.requested_fields

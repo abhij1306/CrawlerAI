@@ -448,7 +448,7 @@ VARIANT_TRANSPORT_FIELDS = frozenset(
         STOCK_QUANTITY_FIELD,
     }
 )
-_VARIANT_ROW_EMPTY_VALUES = (None, "", [], {}, ())
+_VARIANT_ROW_EMPTY_VALUES: tuple[object, ...] = (None, "", [], {}, ())
 
 
 def variant_row_is_image_dimension_artifact(row: dict[str, object]) -> bool:

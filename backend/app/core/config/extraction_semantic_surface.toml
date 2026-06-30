@@ -3,6 +3,7 @@ paths = [
   "app/extraction",
   "app/core/records/divergence.py",
   "app/core/records/output_safety.py",
+  "app/core/knowledge_graph/contract_runtime.py",
   "app/core/shared/field_coerce*.py",
   "app/core/config/extraction_rules",
   "app/core/config/extraction_price_rules.py",

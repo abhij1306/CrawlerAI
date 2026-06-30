@@ -133,10 +133,7 @@ def test_variant_drop_becomes_root_cause(artifacts_root: Path) -> None:
         },
     )
     report = build_run_report(3)
-    assert (
-        report["root_causes"][0]["root_cause"]
-        == "variant_dropped:publication:PRICE"
-    )
+    assert report["root_causes"][0]["root_cause"] == "variant_dropped:publication:PRICE"
 
 
 def test_groups_same_cause_across_urls_and_sorts_by_count(

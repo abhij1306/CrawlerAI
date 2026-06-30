@@ -27,6 +27,9 @@ pytestmark = pytest.mark.unit
 
 
 def test_publication_value_requires_one_fact_source() -> None:
+    with pytest.raises(ValidationError, match="published entries require"):
+        PublicationEntry(path="record.price", entity_id="product:1")
+
     with pytest.raises(ValidationError, match="exactly one"):
         PublicationEntry(
             path="record.price",
@@ -89,12 +92,16 @@ def test_evidence_disposition_is_terminal_and_typed() -> None:
     )
 
     assert disposition.status == "accepted"
-    with pytest.raises(ValidationError):
+    with pytest.raises(ValidationError, match="Input should be") as exc_info:
         EvidenceDisposition(
             evidence_id="evidence:price",
+            entity_id="offer:1",
             status="dropped",  # type: ignore[arg-type]
             reason_code="unknown",
+            decision_id="decision:price",
+            selected_fact_id="selected:price",
         )
+    assert exc_info.value.errors()[0]["loc"] == ("status",)
 
 
 def test_current_resolution_adapter_conserves_every_evidence_row() -> None:

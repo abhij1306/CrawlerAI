@@ -239,9 +239,6 @@ $env:PYTHONPATH='.'
 .\.venv\Scripts\python.exe run_local_extraction_corpus.py --manifest <ignored-local-manifest> --dataset <partition>
 .\.venv\Scripts\python.exe -m pytest tests -q
 .\.venv\Scripts\python.exe -m ruff check .
-.\.venv\Scripts\python.exe run_acquire_smoke.py commerce
-.\.venv\Scripts\python.exe run_extraction_smoke.py
-.\.venv\Scripts\python.exe run_test_sites_acceptance.py
 ```
 
 Run frontend type, policy, and test commands after diagnostic contract changes.

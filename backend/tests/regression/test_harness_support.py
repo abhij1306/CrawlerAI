@@ -7,13 +7,13 @@ import pytest
 from sqlalchemy import select
 
 import harness_support
-import run_test_sites_acceptance
 from app.core.security import hash_password, verify_password
 from app.acquisition.runtime_plan import AcquisitionIntent
 from harness_support import (
     build_explicit_sites,
     classify_failure_mode,
     evaluate_quality,
+    expectation_met,
     load_site_set,
     parse_test_sites_markdown,
     require_explicit_surface,
@@ -397,7 +397,7 @@ def test_acceptance_runner_requires_unbucketed_runs_to_succeed() -> None:
         "failure_mode": "listing_extraction_empty",
     }
 
-    assert run_test_sites_acceptance._expectation_met(site, result) is False
+    assert expectation_met(site, result) is False
 
 
 @pytest.mark.regression
@@ -960,7 +960,7 @@ def test_acceptance_runner_uses_quality_verdict_for_curated_sites() -> None:
         "quality_verdict": "usable_with_gaps",
     }
 
-    assert run_test_sites_acceptance._expectation_met(site, result) is False
+    assert expectation_met(site, result) is False
 
 
 @pytest.mark.regression
@@ -976,7 +976,7 @@ def test_acceptance_runner_allows_bucketed_expected_failure_modes() -> None:
         "failure_mode": "listing_extraction_empty",
     }
 
-    assert run_test_sites_acceptance._expectation_met(site, result) is True
+    assert expectation_met(site, result) is True
 
 
 @pytest.mark.regression

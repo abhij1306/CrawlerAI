@@ -32,7 +32,7 @@ def match_template(
     if exact is not None and route_matches:
         return _merge_template_contracts(exact, route_matches)
     if route_matches:
-        return route_matches[0]
+        return _merge_template_contracts(route_matches[0], route_matches[1:])
     return exact
 
 
@@ -121,15 +121,20 @@ def resolved_contract_outcomes(
             continue
         decision = decisions.get(fact_type)
         selected = (
-            evidence_by_id.get(decision.accepted_evidence_ids[0])
-            if decision and decision.accepted_evidence_ids
+            next(
+                (
+                    row
+                    for evidence_id in decision.accepted_evidence_ids
+                    if (row := evidence_by_id.get(evidence_id)) is not None
+                    and _source_descriptor(row) == selected_source
+                ),
+                None,
+            )
+            if decision
             else None
         )
         applied = bool(
-            selected
-            and _source_descriptor(selected) == selected_source
-            and decision
-            and decision.rule_id == "CONTRACT_PREFERRED_SOURCE"
+            selected and decision and decision.rule_id == "CONTRACT_PREFERRED_SOURCE"
         )
         outcomes.append(
             ContractOutcome(

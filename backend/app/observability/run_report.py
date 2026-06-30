@@ -26,7 +26,9 @@ SCHEMA_VERSION = "run-report.v1"
 _CALLBACK_KEY = "observability_run_report"
 
 # Published/resolved fields are not root causes; every other state is.
-_CLEAN_FIELD_STATES = frozenset({"captured_and_resolved", "captured_published"})
+_CLEAN_FIELD_STATES = frozenset(
+    {"captured_and_resolved", "captured_published", "not_requested"}
+)
 
 
 def ensure_run_report_registered() -> None:
@@ -97,9 +99,7 @@ def _root_causes(diagnosis: Mapping[str, object]) -> list[str]:
         field_name = str(field.get("field") or "").strip() or "?"
         publication_policy = field.get("publication_policy")
         if publication_policy not in (None, "", [], {}):
-            causes.add(
-                f"publication_policy:{field_name}:{_scalar(publication_policy)}"
-            )
+            causes.add(f"publication_policy:{field_name}:{_scalar(publication_policy)}")
         status = str(field.get("status") or "").strip()
         if status and status not in _CLEAN_FIELD_STATES:
             causes.add(f"field:{field_name}:{status}")

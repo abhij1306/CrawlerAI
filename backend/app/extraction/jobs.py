@@ -162,13 +162,11 @@ def _collect_jsonld_job_evidence(
         for path, item in json_objects(data):
             if not isinstance(item, dict) or not _is_job_posting(item):
                 continue
-            subject_id = stable_id(
-                "subject",
-                bundle.bundle_id,
-                "job",
-                script_index,
-                path,
-                item.get("identifier") or item.get("url") or item.get("title"),
+            subject_id = _job_subject_id(
+                bundle,
+                item,
+                page_url=page_url,
+                fallback=(script_index, path),
             )
             rows.extend(
                 _jsonld_job_item_evidence(
@@ -285,6 +283,24 @@ def _collect_dom_job_evidence(
             )
         )
     return rows
+
+
+def _job_subject_id(
+    bundle: CaptureBundle,
+    item: dict[str, Any],
+    *,
+    page_url: str,
+    fallback: tuple[object, ...],
+) -> str:
+    """Prefer stable schema identity; use source position only as a last resort."""
+
+    canonical_identity = (
+        _jsonld_value(item.get("identifier"), page_url=page_url, fact_type="job.id")
+        or _jsonld_value(item.get("url"), page_url=page_url, fact_type="job.url")
+        or _jsonld_value(item.get("title"), page_url=page_url, fact_type="job.title")
+    )
+    identity = (canonical_identity,) if canonical_identity else fallback
+    return stable_id("subject", bundle.bundle_id, "job", *identity)
 
 
 def _job_evidence(

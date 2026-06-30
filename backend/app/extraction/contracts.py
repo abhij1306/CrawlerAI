@@ -271,6 +271,10 @@ class PublicationEntry(FrozenModel):
         )
         if source_count > 1:
             raise ValueError("publication entry has multiple fact sources")
+        if self.disposition == "publish" and (self.value is None or source_count != 1):
+            raise ValueError(
+                "published entries require a value and exactly one selected or derived fact"
+            )
         if self.value is not None and source_count != 1:
             raise ValueError(
                 "publication values require exactly one selected or derived fact"

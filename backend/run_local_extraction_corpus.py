@@ -19,7 +19,7 @@ from app.extraction.replay import fixture_request_from_inputs
 from app.extraction.surfaces import parse_surface
 
 DEFAULT_OUTPUT_DIR = Path("artifacts/local_extraction_corpus")
-_EMPTY = (None, "", [], {}, ())
+_EMPTY: tuple[object, ...] = (None, "", [], {}, ())
 
 
 def main(argv: list[str]) -> int:
@@ -119,7 +119,9 @@ def _run_case(root: Path, dataset: str, case: dict[str, Any]) -> dict[str, Any]:
                     for finding in extraction.findings
                     if finding.rule_id == "PUBLIC_RESOLUTION_DIVERGENCE"
                 ),
-                "field_classifications": _field_classifications(case, extraction, record),
+                "field_classifications": _field_classifications(
+                    case, extraction, record
+                ),
             }
         )
         expected = _expectations(case)
@@ -196,7 +198,9 @@ def _expectations(case: dict[str, Any]) -> dict[str, Any]:
     return expected if isinstance(expected, dict) else {}
 
 
-def _expectation_failures(result: dict[str, Any], expected: dict[str, Any]) -> list[str]:
+def _expectation_failures(
+    result: dict[str, Any], expected: dict[str, Any]
+) -> list[str]:
     failures: list[str] = []
     if result.get("skipped"):
         failures.append("skipped")
@@ -223,9 +227,7 @@ def _summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
     skipped = [row for row in rows if row.get("skipped")]
     divergences = sum(int(row.get("divergence_count") or 0) for row in rows)
     evidence_counts = [
-        int(row.get("evidence_count") or 0)
-        for row in rows
-        if not row.get("skipped")
+        int(row.get("evidence_count") or 0) for row in rows if not row.get("skipped")
     ]
     resolve_durations = [
         float(row.get("resolve_duration_ms") or 0.0)

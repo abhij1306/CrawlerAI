@@ -66,9 +66,11 @@ def select_subject_targets(
 
 
 def scoped_graph(graph_state: Any, target: TargetSelection) -> Any:
-    if isinstance(graph_state, tuple):
-        selected = set(target.root_entity_ids)
-        return tuple(item for item in graph_state if item in selected)
+    if isinstance(graph_state, tuple) and all(
+        isinstance(item, str) for item in graph_state
+    ):
+        selected_ids = set(target.root_entity_ids)
+        return tuple(item for item in graph_state if item in selected_ids)
     if not isinstance(graph_state, EntitySet):
         return graph_state
     selected = target.selected_root_entity_id

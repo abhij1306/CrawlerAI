@@ -11,7 +11,6 @@ If a file is not listed, assume it is a helper under a listed owner.
 
 | File | Purpose |
 |---|---|
-| `run_test_sites_acceptance.py` | Acceptance runner for curated test-site batches |
 | `harness_support.py` | Acceptance helpers, `TEST_SITES.md` parsing, explicit-surface handling, audit shaping |
 | `test_site_sets/commerce_browser_heavy.json` | Commerce acceptance manifest and quality expectations |
 | `browser_surface_probe/core.py`, `browser_surface_probe/report_rendering.py` | Browser-surface diagnostic harness and report rendering |

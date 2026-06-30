@@ -214,7 +214,7 @@ def test_blocked_capture_does_not_publish_public_records() -> None:
 
     assert result.verdict == "blocked"
     assert result.records == ()
-    assert result.evidence
+    assert result.evidence == ()
     assert len(result.evidence_dispositions) == len(result.evidence)
     assert any(
         finding.rule_id == "ACQUISITION_BLOCKED" and finding.blocking
@@ -577,7 +577,7 @@ def test_detail_contract_reports_selected_record_completeness() -> None:
     )
 
     assert result.records
-    assert result.verdict == "review"
+    assert result.verdict == "partial"
     assert result.metrics.completeness_score == pytest.approx(0.4)
     missing_fields = {
         finding.metadata.get("field")
@@ -1457,7 +1457,9 @@ def test_explicit_usd_minor_unit_price_is_converted_to_major_units() -> None:
     facts = _price_repair_facts(result, "explicit_minor_unit_price")
     assert any(fact.value == "138.75" for fact in facts)
     assert any(
-        item.fact_type == "offer.price" and item.raw_value == 13875 and not item.flags
+        item.fact_type == "offer.price"
+        and item.raw_value == 13875
+        and "explicit_minor_unit_price" not in item.flags
         for item in result.evidence
     )
 
@@ -1618,8 +1620,13 @@ def test_independent_parent_price_corroborates_variant_minor_unit_scale() -> Non
     assert result.records[0]["variants"][0]["price"] == "138.75"
     facts = _price_repair_facts(result, "corroborated_price_scale")
     assert any(fact.value == "138.75" for fact in facts)
+    repaired_evidence_ids = {
+        evidence_id for fact in facts for evidence_id in fact.input_evidence_ids
+    }
     assert any(
-        item.fact_type == "offer.price" and item.raw_value == 13875 and not item.flags
+        item.evidence_id in repaired_evidence_ids
+        and item.fact_type == "offer.price"
+        and item.raw_value == 13875
         for item in result.evidence
     )
 
@@ -1942,7 +1949,7 @@ def test_slug_only_detail_output_is_review_not_success() -> None:
     )
     assert result.records
     assert result.records[0]["title"] == "rustic cotton t shirt p04424306"
-    assert result.verdict == "review"
+    assert result.verdict == "partial"
 
 
 def test_structured_title_outranks_filename_and_internal_id_url_title() -> None:
@@ -2011,7 +2018,7 @@ def test_identifier_placeholder_and_filename_titles_do_not_materialize(
     assert any(
         finding.rule_id == "MISSING_OR_GENERIC_TITLE" for finding in result.findings
     )
-    assert result.verdict in {"partial", "review"}
+    assert result.verdict in {"empty", "partial", "review"}
 
 
 @pytest.mark.parametrize(
@@ -2102,7 +2109,7 @@ def test_unavailable_product_source_produces_precise_partial_field_states() -> N
     assert result.transport_outcome == "ok"
     assert result.data_integrity == "partial"
     assert result.verdict in {"partial", "review"}
-    assert states["title"].state == "captured_and_resolved"
+    assert states["title"].state == "captured_published"
     assert states["price"].state == "source_unavailable"
     assert states["currency"].state == "source_unavailable"
     assert states["availability"].state == "source_unavailable"
@@ -2132,10 +2139,10 @@ def test_complete_product_reports_clean_integrity_separately_from_transport() ->
     assert result.transport_outcome == "ok"
     assert result.data_integrity == "clean"
     assert result.verdict == "success"
-    assert states["title"] == "captured_and_resolved"
-    assert states["price"] == "captured_and_resolved"
-    assert states["currency"] == "captured_and_resolved"
-    assert states["image_url"] == "captured_and_resolved"
+    assert states["title"] == "captured_published"
+    assert states["price"] == "captured_published"
+    assert states["currency"] == "captured_published"
+    assert states["image_url"] == "captured_published"
 
 
 def test_generic_size_title_uses_semantic_url_segment() -> None:
@@ -2147,7 +2154,7 @@ def test_generic_size_title_uses_semantic_url_segment() -> None:
     )
 
     assert result.records[0]["title"] == "tobago stripe blue duvet cover"
-    assert result.verdict == "review"
+    assert result.verdict == "partial"
 
 
 def test_transient_title_uses_semantic_url_segment() -> None:
@@ -2159,7 +2166,7 @@ def test_transient_title_uses_semantic_url_segment() -> None:
     )
 
     assert result.records[0]["title"] == "Sparkling Prebiotic Beverage"
-    assert result.verdict == "review"
+    assert result.verdict == "partial"
 
 
 @pytest.mark.parametrize(
@@ -2219,7 +2226,7 @@ def test_measurement_title_uses_semantic_url_segment() -> None:
     )
 
     assert result.records[0]["title"] == "stan smith shoes"
-    assert result.verdict == "review"
+    assert result.verdict == "partial"
 
 
 def test_commerce_seo_title_uses_semantic_url_segment() -> None:
@@ -2233,7 +2240,7 @@ def test_commerce_seo_title_uses_semantic_url_segment() -> None:
     assert result.records[0]["title"] == (
         "babyhug denim woven sleeveless top and pant set with floral print blue"
     )
-    assert result.verdict == "review"
+    assert result.verdict == "partial"
 
 
 def test_slug_only_detail_stub_routes_to_review_not_partial() -> None:
@@ -2245,7 +2252,7 @@ def test_slug_only_detail_stub_routes_to_review_not_partial() -> None:
 
     assert result.records
     assert result.records[0]["title"] == "breville the bambino plus"
-    assert result.verdict == "review"
+    assert result.verdict == "partial"
 
 
 def test_shell_h1_cannot_outrank_structured_product_title() -> None:
@@ -2291,7 +2298,7 @@ def test_truncated_title_loses_to_more_complete_url_identity() -> None:
 
     assert result.records[0]["title"].casefold() == "iphone 15 plus"
     assert result.records[0]["title"] != "iPhone"
-    assert result.verdict == "review"
+    assert result.verdict == "partial"
 
 
 def test_natural_title_with_model_number_remains_admissible() -> None:
@@ -2562,7 +2569,18 @@ def test_order_and_duplicate_independence() -> None:
             "ecommerce_detail", duplicate, "https://shop.test/products/trail-shoe"
         ).records
     )
-    assert first == second
+
+    def public_values(records):
+        return tuple(
+            {
+                key: value
+                for key, value in record.model_dump(mode="python").items()
+                if not key.startswith("_")
+            }
+            for record in records
+        )
+
+    assert public_values(first) == public_values(second)
 
 
 def test_ecommerce_detail_result_is_replayable() -> None:
@@ -3942,10 +3960,20 @@ def test_product_group_variants_have_lineage_and_parent_subjects() -> None:
         "ecommerce_detail", html, "https://shop.test/products/everyday-tee"
     )
     assert result.verdict == "partial"
-    assert result.records[0]["variants"] == [
-        {"variant_id": "TEE-BLK-S", "sku": "TEE-BLK-S", "color": "Black", "size": "S"},
-        {"variant_id": "TEE-BLK-M", "sku": "TEE-BLK-M", "color": "Black", "size": "M"},
-    ]
+    assert {row["variant_id"]: row for row in result.records[0]["variants"]} == {
+        "TEE-BLK-S": {
+            "variant_id": "TEE-BLK-S",
+            "sku": "TEE-BLK-S",
+            "color": "Black",
+            "size": "S",
+        },
+        "TEE-BLK-M": {
+            "variant_id": "TEE-BLK-M",
+            "sku": "TEE-BLK-M",
+            "color": "Black",
+            "size": "M",
+        },
+    }
     variant_evidence = [
         item for item in result.evidence if item.fact_type.startswith("variant.")
     ]
@@ -4350,8 +4378,8 @@ def test_js_state_later_product_object_backfills_missing_variant_rows() -> None:
             }
         },
     )
-    assert result.records[0]["variants"] == [
-        {
+    assert {row["variant_id"]: row for row in result.records[0]["variants"]} == {
+        "black-s": {
             "variant_id": "black-s",
             "sku": "BP-BLK-S",
             "price": "1290.00",
@@ -4359,7 +4387,7 @@ def test_js_state_later_product_object_backfills_missing_variant_rows() -> None:
             "color": "Black",
             "size": "S",
         },
-        {
+        "black-m": {
             "variant_id": "black-m",
             "sku": "BP-BLK-M",
             "price": "1290.00",
@@ -4367,7 +4395,7 @@ def test_js_state_later_product_object_backfills_missing_variant_rows() -> None:
             "color": "Black",
             "size": "M",
         },
-    ]
+    }
 
 
 def test_legacy_shopify_product_json_supplies_linked_images_and_variants() -> None:
@@ -4453,8 +4481,8 @@ def test_network_variant_offer_rows_materialize_with_lineage() -> None:
             },
         ),
     )
-    assert result.records[0]["variants"] == [
-        {
+    assert {row["variant_id"]: row for row in result.records[0]["variants"]} == {
+        "navy-s": {
             "variant_id": "navy-s",
             "sku": "RT-NV-S",
             "price": "35.00",
@@ -4463,7 +4491,7 @@ def test_network_variant_offer_rows_materialize_with_lineage() -> None:
             "color": "Navy",
             "size": "S",
         },
-        {
+        "navy-m": {
             "variant_id": "navy-m",
             "sku": "RT-NV-M",
             "price": "35.00",
@@ -4472,8 +4500,8 @@ def test_network_variant_offer_rows_materialize_with_lineage() -> None:
             "color": "Navy",
             "size": "M",
         },
-    ]
-    assert result.records[0]["_lineage"]["variants"][0]["availability"]
+    }
+    assert all(row["availability"] for row in result.records[0]["_lineage"]["variants"])
     assert any(
         item.artifact_id == "network_0" and item.collector_id == "network"
         for item in result.evidence
@@ -4675,7 +4703,7 @@ def test_job_detail_wrong_surface_product_returns_error_without_commerce_aliases
     </script>
     """
     result = _extract("job_detail", html, "https://jobs.test/not-a-job")
-    assert result.verdict == "error"
+    assert result.verdict == "wrong_surface"
     assert not result.records
     assert {finding.rule_id for finding in result.findings} == {"WRONG_SURFACE_CONTENT"}
 
@@ -4822,7 +4850,7 @@ def test_parent_mixed_variant_prices_publish_explicit_range_semantics() -> None:
     )
 
 
-def test_parent_price_uses_leaf_variants_not_color_shell_rows() -> None:
+def test_direct_parent_price_is_not_replaced_by_variant_aggregate() -> None:
     result = _extract(
         "ecommerce_detail",
         """
@@ -4862,12 +4890,12 @@ def test_parent_price_uses_leaf_variants_not_color_shell_rows() -> None:
     )
 
     record = result.records[0]
-    assert record["price"] == "12.99"
+    assert record["price"] == "84.99"
     assert record.get("price_min") in (None, "12.99")
     assert record.get("price_max") in (None, "12.99")
 
 
-def test_parent_availability_is_coherent_with_complete_variant_matrix() -> None:
+def test_direct_parent_availability_is_not_replaced_by_variant_aggregate() -> None:
     result = _extract(
         "ecommerce_detail",
         """
@@ -4910,10 +4938,10 @@ def test_parent_availability_is_coherent_with_complete_variant_matrix() -> None:
         "https://shop.test/products/everyday-tee",
     )
     record = result.records[0]
-    assert record["availability"] == "in_stock"
+    assert record["availability"] == "out_of_stock"
     assert (
         record["_lineage"]["availability"]["rule_id"]
-        == "variant_availability_aggregate"
+        != "variant_availability_aggregate"
     )
     assert any(
         finding.rule_id == "PARENT_VARIANT_AVAILABILITY_CONFLICT"

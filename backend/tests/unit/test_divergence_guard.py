@@ -105,6 +105,37 @@ def test_projection_comparator_can_report_unauthorized_extra_field() -> None:
     assert findings[0].metadata["reason"] == "unauthorized_public_field"
 
 
+def test_projection_comparator_rejects_variant_without_entity_lineage() -> None:
+    findings = compare_public_record_to_projection(
+        {"variants": [{"sku": "UNAUTHORIZED"}], "_lineage": {"variants": []}},
+        _projection(),
+        blocking=True,
+        detect_extras=True,
+    )
+
+    assert any(
+        row.metadata["reason"] == "variant_without_authorized_entity"
+        for row in findings
+    )
+
+
+def test_projection_comparator_rejects_assets_without_entity_lineage() -> None:
+    findings = compare_public_record_to_projection(
+        {
+            "image_url": "https://cdn.test/primary.jpg",
+            "additional_images": ["https://cdn.test/extra.jpg"],
+            "_lineage": {},
+        },
+        _projection(),
+        blocking=True,
+        detect_extras=True,
+    )
+
+    assert [row.metadata["reason"] for row in findings].count(
+        "asset_without_authorized_entity"
+    ) == 2
+
+
 def test_projection_suppresses_parent_sku_copied_from_multiple_variants() -> None:
     evidence = (
         _fact_evidence("product-sku", "SKU-S", "product.sku"),

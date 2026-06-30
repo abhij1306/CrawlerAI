@@ -15,4 +15,4 @@ Write-Host "Backend environment is bootstrapped." -ForegroundColor Green
 Write-Host "Recommended verification commands:" -ForegroundColor Cyan
 Write-Host "  cd $repoRoot"
 Write-Host "  .\backend\.venv\Scripts\python.exe -m pytest backend\tests --ignore=backend/tests/e2e -q"
-Write-Host "  .\backend\.venv\Scripts\python.exe -m mypy backend\app backend\harness_support.py backend\run_acquire_smoke.py backend\run_browser_surface_probe.py backend\run_extraction_smoke.py backend\run_test_sites_acceptance.py"
+Write-Host "  .\backend\.venv\Scripts\python.exe -m mypy backend\app backend\harness_support.py backend\run_browser_surface_probe.py"

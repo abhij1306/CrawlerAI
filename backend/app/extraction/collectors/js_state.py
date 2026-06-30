@@ -51,6 +51,7 @@ from app.core.shared.ids import stable_id
 class JsStateHarvestResult:
     evidence: tuple[Evidence, ...]
     outcomes: tuple[CollectorOutcome, ...]
+    admitted_source_objects: int
 
 
 class JsStateCollector:
@@ -63,6 +64,7 @@ class JsStateCollector:
     def harvest(self, bundle: CaptureBundle, artifacts) -> JsStateHarvestResult:
         out: list[Evidence] = []
         outcomes: list[CollectorOutcome] = []
+        admitted_source_objects = 0
         for artifact_id, root_path, data in _state_payloads(bundle, artifacts):
             objects = tuple(
                 json_objects(data)
@@ -92,6 +94,7 @@ class JsStateCollector:
                 if not root_admits_path(selection, path):
                     continue
                 if isinstance(obj, dict):
+                    admitted_source_objects += 1
                     enriched = _with_parent_variant_axes(obj, axis_hints.get(path, ()))
                     rows = network_row(
                         bundle,
@@ -117,7 +120,11 @@ class JsStateCollector:
             outcome="produced_evidence" if out else "no_match",
             evidence_count=len(out),
         )
-        return JsStateHarvestResult(evidence=tuple(out), outcomes=(*outcomes, produced))
+        return JsStateHarvestResult(
+            evidence=tuple(out),
+            outcomes=(*outcomes, produced),
+            admitted_source_objects=admitted_source_objects,
+        )
 
 
 def _budget_outcome(

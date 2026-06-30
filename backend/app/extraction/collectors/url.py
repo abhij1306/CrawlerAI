@@ -3,7 +3,10 @@ from __future__ import annotations
 from urllib.parse import parse_qsl, urlsplit
 
 from app.core.config.extraction_rules._variants import VARIANT_URL_AXIS_PARAMS
-from app.core.records.url_identity import detail_title_from_url
+from app.core.records.url_identity import (
+    detail_title_from_url,
+    detail_url_looks_like_product,
+)
 from app.extraction.collectors._helpers import evidence
 from app.extraction.contracts import CaptureBundle, EntityHint, Evidence, SourceLocator
 
@@ -16,7 +19,9 @@ class UrlCollector:
         del artifacts
         parsed = urlsplit(bundle.final_url or bundle.requested_url)
         title = detail_title_from_url(bundle.final_url or bundle.requested_url)
-        if not title:
+        if not title and not detail_url_looks_like_product(
+            bundle.final_url or bundle.requested_url
+        ):
             return ()
         product_hint = EntityHint(entity_type="product", url=bundle.final_url)
         product_url = evidence(
@@ -30,21 +35,22 @@ class UrlCollector:
             directness="inferred",
             confidence=0.55,
         )
-        rows = [
-            product_url,
-            evidence(
-                bundle,
-                "url",
-                "url",
-                "product.title",
-                title,
-                SourceLocator(kind="url_component", value="path"),
-                hint=product_hint,
-                directness="inferred",
-                confidence=0.35,
-                subject_id=product_url.subject_id,
-            ),
-        ]
+        rows = [product_url]
+        if title:
+            rows.append(
+                evidence(
+                    bundle,
+                    "url",
+                    "url",
+                    "product.title",
+                    title,
+                    SourceLocator(kind="url_component", value="path"),
+                    hint=product_hint,
+                    directness="inferred",
+                    confidence=0.35,
+                    subject_id=product_url.subject_id,
+                )
+            )
         rows.extend(
             _selected_variant_from_query(bundle, parsed.query, product_url.subject_id)
         )

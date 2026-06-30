@@ -22,7 +22,7 @@ from app.extraction.contracts import (
 )
 from app.core.shared.ids import stable_id
 
-_EMPTY = (None, "", [], {}, ())
+_EMPTY: tuple[object, ...] = (None, "", [], {}, ())
 
 
 def compare_public_record_to_projection(
@@ -86,8 +86,16 @@ def compare_public_record_to_projection(
                     blocking=blocking,
                 )
             )
-    findings.extend(_compare_variants(record, projection, blocking=blocking))
-    findings.extend(_compare_assets(record, projection, blocking=blocking))
+    findings.extend(
+        _compare_variants(
+            record, projection, blocking=blocking, detect_extras=detect_extras
+        )
+    )
+    findings.extend(
+        _compare_assets(
+            record, projection, blocking=blocking, detect_extras=detect_extras
+        )
+    )
     return tuple(findings)
 
 
@@ -185,6 +193,7 @@ def _compare_variants(
     projection: CommerceDetailProjection,
     *,
     blocking: bool,
+    detect_extras: bool,
 ) -> tuple[Finding, ...]:
     raw_rows = record.get("variants")
     rows = tuple(raw_rows) if isinstance(raw_rows, (list, tuple)) else ()
@@ -201,6 +210,22 @@ def _compare_variants(
     expected_ids = set(projection.variant_entity_ids)
     actual_ids = set(actual_by_id)
     findings: list[Finding] = []
+    if detect_extras:
+        for index, row in enumerate(rows):
+            lineage_row = lineage_rows[index] if index < len(lineage_rows) else None
+            if isinstance(row, Mapping) and not (
+                isinstance(lineage_row, Mapping)
+                and lineage_row.get("variant_entity_id")
+            ):
+                findings.append(
+                    _projection_divergence_finding(
+                        path=f"record.variants[{index}]",
+                        reason="variant_without_authorized_entity",
+                        expected=None,
+                        actual=row,
+                        blocking=blocking,
+                    )
+                )
     for entity_id in sorted(expected_ids - actual_ids):
         findings.append(
             _projection_divergence_finding(
@@ -255,6 +280,7 @@ def _compare_assets(
     projection: CommerceDetailProjection,
     *,
     blocking: bool,
+    detect_extras: bool,
 ) -> tuple[Finding, ...]:
     raw_lineage = record.get("_lineage")
     lineages = raw_lineage if isinstance(raw_lineage, Mapping) else {}
@@ -279,6 +305,47 @@ def _compare_assets(
     expected_ids = set(projection.asset_entity_ids)
     actual_ids = set(actual_by_id)
     findings: list[Finding] = []
+    if (
+        detect_extras
+        and record.get("image_url") not in _EMPTY
+        and not (
+            isinstance(primary_lineage, Mapping)
+            and primary_lineage.get("asset_entity_id")
+        )
+    ):
+        findings.append(
+            _projection_divergence_finding(
+                path="record.image_url",
+                reason="asset_without_authorized_entity",
+                expected=None,
+                actual=record.get("image_url"),
+                blocking=blocking,
+            )
+        )
+    if detect_extras and isinstance(additional_urls, (list, tuple)):
+        additional_lineage_rows = (
+            tuple(additional_lineage)
+            if isinstance(additional_lineage, (list, tuple))
+            else ()
+        )
+        for index, url in enumerate(additional_urls):
+            lineage_row = (
+                additional_lineage_rows[index]
+                if index < len(additional_lineage_rows)
+                else None
+            )
+            if url not in _EMPTY and not (
+                isinstance(lineage_row, Mapping) and lineage_row.get("asset_entity_id")
+            ):
+                findings.append(
+                    _projection_divergence_finding(
+                        path=f"record.additional_images[{index}]",
+                        reason="asset_without_authorized_entity",
+                        expected=None,
+                        actual=url,
+                        blocking=blocking,
+                    )
+                )
     for entity_id in sorted(expected_ids - actual_ids):
         findings.append(
             _projection_divergence_finding(

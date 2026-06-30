@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from collections import defaultdict
 from collections.abc import Sequence
+from typing import Literal, TypedDict
 
 from app.core.config import field_mappings
 from app.core.records.output_safety import typed_detail_record
@@ -43,7 +44,7 @@ PUBLIC_FACT_TO_FIELD = {
     field_mappings.OFFER_AVAILABILITY_FACT_TYPE: "availability",
 }
 
-_EMPTY = (None, "", [], {}, ())
+_EMPTY: tuple[object, ...] = (None, "", [], {}, ())
 _PRICE_FACTS = {
     field_mappings.OFFER_PRICE_FACT_TYPE,
     field_mappings.OFFER_ORIGINAL_PRICE_FACT_TYPE,
@@ -230,41 +231,69 @@ def commerce_detail_projection(
                 )
             )
 
+    asset_entries, emitted_asset_ids, primary_asset_entity_id = _asset_entries(
+        resolution, selected_by_entity_fact, evidence_by_id
+    )
+    entries.extend(asset_entries)
+    return (
+        CommerceDetailProjection(
+            record_entity_id=resolution.primary_product_entity_id or "unresolved",
+            entries=tuple(entries),
+            variant_entity_ids=tuple(
+                row.variant_entity_id
+                for row in resolution.variant_decisions
+                if row.status == "eligible"
+            ),
+            asset_entity_ids=tuple(emitted_asset_ids),
+            primary_asset_entity_id=primary_asset_entity_id,
+        ),
+        selected_facts,
+    )
+
+
+def _asset_entries(
+    resolution: ResolutionResult,
+    selected_by_entity_fact: dict[tuple[str, str], SelectedFact],
+    evidence_by_id: dict[str, Evidence],
+) -> tuple[tuple[PublicationEntry, ...], tuple[str, ...], str | None]:
     derived_by_entity_fact = {
         (row.entity_id, row.fact_type): row for row in resolution.derived_facts
     }
+    entries: list[PublicationEntry] = []
+    emitted_asset_ids: list[str] = []
+    primary_asset_entity_id: str | None = None
     for asset in resolution.asset_decisions:
-        if (
-            not asset.asset_entity_id
-            or not asset.url
-            or not asset.accepted_evidence_ids
-        ):
+        if not (asset.asset_entity_id and asset.url and asset.accepted_evidence_ids):
             continue
         selected = selected_by_entity_fact.get(
             (asset.asset_entity_id, field_mappings.ASSET_IMAGE_URL_FACT_TYPE)
         )
         delivery_url = public_asset_delivery_url(asset.url)
-        if selected is not None and delivery_url is not None:
-            entries.append(
-                PublicationEntry(
-                    path=f"asset[{asset.asset_entity_id}].url",
-                    entity_id=asset.asset_entity_id,
-                    parent_entity_id=resolution.primary_product_entity_id,
-                    value=selected.value,
-                    selected_fact_id=selected.selected_fact_id,
-                    rule_id=asset.rule_id,
-                    evidence_ids=asset.accepted_evidence_ids,
-                    collector_ids=_collector_ids(
-                        asset.accepted_evidence_ids, evidence_by_id
-                    ),
-                    canonicalization=CanonicalizationTrace(
-                        raw_value=selected.value,
-                        canonical_value=delivery_url,
-                        canonicalizer_id="image_delivery_url",
-                        canonicalizer_version="1",
-                    ),
-                )
+        if selected is None or delivery_url is None:
+            continue
+        entries.append(
+            PublicationEntry(
+                path=f"asset[{asset.asset_entity_id}].url",
+                entity_id=asset.asset_entity_id,
+                parent_entity_id=resolution.primary_product_entity_id,
+                value=selected.value,
+                selected_fact_id=selected.selected_fact_id,
+                rule_id=asset.rule_id,
+                evidence_ids=asset.accepted_evidence_ids,
+                collector_ids=_collector_ids(
+                    asset.accepted_evidence_ids, evidence_by_id
+                ),
+                canonicalization=CanonicalizationTrace(
+                    raw_value=selected.value,
+                    canonical_value=delivery_url,
+                    canonicalizer_id="image_delivery_url",
+                    canonicalizer_version="1",
+                ),
             )
+        )
+        emitted_asset_ids.append(asset.asset_entity_id)
+        if asset.role == "primary":
+            primary_asset_entity_id = asset.asset_entity_id
         role = derived_by_entity_fact.get((asset.asset_entity_id, "asset.role"))
         if role is not None:
             entries.append(
@@ -281,34 +310,7 @@ def commerce_detail_projection(
                     ),
                 )
             )
-    return (
-        CommerceDetailProjection(
-            record_entity_id=resolution.primary_product_entity_id or "unresolved",
-            entries=tuple(entries),
-            variant_entity_ids=tuple(
-                row.variant_entity_id
-                for row in resolution.variant_decisions
-                if row.status == "eligible"
-            ),
-            asset_entity_ids=tuple(
-                row.asset_entity_id
-                for row in resolution.asset_decisions
-                if row.asset_entity_id and row.url and row.accepted_evidence_ids
-            ),
-            primary_asset_entity_id=next(
-                (
-                    row.asset_entity_id
-                    for row in resolution.asset_decisions
-                    if row.role == "primary"
-                    and row.asset_entity_id
-                    and row.url
-                    and row.accepted_evidence_ids
-                ),
-                None,
-            ),
-        ),
-        selected_facts,
-    )
+    return tuple(entries), tuple(emitted_asset_ids), primary_asset_entity_id
 
 
 def commerce_listing_projection(
@@ -419,13 +421,20 @@ def _many_record_projection(
     return projection_type(record_entity_ids=entity_ids, entries=entries), selected
 
 
-def _publication_source(lineage: object) -> dict[str, object] | None:
+class _PublicationSource(TypedDict, total=False):
+    selected_fact_id: str
+    derived_fact_id: str
+    rule_id: str
+    evidence_ids: tuple[str, ...]
+
+
+def _publication_source(lineage: object) -> _PublicationSource | None:
     if not isinstance(lineage, dict):
         return None
     if selected_fact_id := lineage.get("selected_fact_id"):
-        source = {"selected_fact_id": str(selected_fact_id)}
+        source = _PublicationSource(selected_fact_id=str(selected_fact_id))
     elif derived_fact_id := lineage.get("derived_fact_id"):
-        source = {"derived_fact_id": str(derived_fact_id)}
+        source = _PublicationSource(derived_fact_id=str(derived_fact_id))
     else:
         return None
     if rule_id := lineage.get("rule_id"):
@@ -456,7 +465,7 @@ def _publication_disposition(
     has_primary_price: bool,
     has_child_price: bool,
     has_primary_currency: bool,
-) -> tuple[str, str | None]:
+) -> tuple[Literal["publish", "suppress", "review"], str | None]:
     if (
         fact_type == field_mappings.PRODUCT_SKU_FACT_TYPE
         and len(variant_skus) > 1
@@ -482,9 +491,9 @@ def serialize_commerce_detail_projection(
     record: dict[str, object] = {}
     lineages: dict[str, object] = {}
     variants: dict[str, dict[str, object]] = defaultdict(dict)
-    variant_lineages: dict[str, dict[str, object]] = defaultdict(dict)
+    variant_lineages: dict[str, dict[str, dict[str, object]]] = defaultdict(dict)
     assets: dict[str, dict[str, object]] = defaultdict(dict)
-    asset_lineages: dict[str, dict[str, object]] = defaultdict(dict)
+    asset_lineages: dict[str, dict[str, dict[str, object]]] = defaultdict(dict)
     field_sources: dict[str, list[str]] = {}
 
     for entry in projection.entries:

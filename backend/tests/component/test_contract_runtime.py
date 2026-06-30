@@ -191,6 +191,47 @@ def test_match_template_merges_operator_route_contract_into_exact_template() -> 
 
 
 @pytest.mark.unit
+def test_match_template_merges_all_route_only_operator_contracts() -> None:
+    snapshot = {
+        "surface": "ecommerce_detail",
+        "templates": [
+            {
+                "fingerprint": "generic",
+                "route_pattern": "/products/{id}",
+                "contracts": [
+                    {
+                        "canonical_field": "product.brand",
+                        "selected_source": "jsonld:/brand",
+                        "selection_origin": "generic",
+                    }
+                ],
+            },
+            {
+                "fingerprint": "operator",
+                "route_pattern": "/products/{id}",
+                "contracts": [
+                    {
+                        "canonical_field": "product.brand",
+                        "selected_source": "css_recipe:.brand",
+                        "selection_origin": "operator",
+                    }
+                ],
+            },
+        ],
+    }
+
+    result = match_template(
+        snapshot,
+        "no-exact-match",
+        "ecommerce_detail",
+        url="https://example.com/products/widget-1",
+    )
+
+    assert result is not None
+    assert result["contracts"][0]["selected_source"] == "css_recipe:.brand"
+
+
+@pytest.mark.unit
 def test_match_template_returns_none_on_empty_snapshot() -> None:
     assert match_template({}, "fp-abc", "ecommerce_detail") is None
 
@@ -293,6 +334,42 @@ def test_contract_outcome_hit_requires_resolver_selected_preferred_candidate() -
     )
 
     assert len(outcomes) == 1
+    assert outcomes[0].outcome == "hit"
+    assert outcomes[0].applied is True
+
+
+@pytest.mark.unit
+def test_contract_outcome_checks_every_accepted_evidence_id() -> None:
+    generic = _evidence("generic", "microdata", "/name", "product.title", "Widget")
+    preferred = _evidence("preferred", "jsonld", "/name", "product.title", "Widget")
+    snapshot = _snapshot(
+        "fp-1",
+        "ecommerce_detail",
+        [
+            {
+                "canonical_field": "product.title",
+                "selected_source": "jsonld:/name",
+                "selection_origin": "operator",
+            }
+        ],
+    )
+
+    outcomes = resolved_contract_outcomes(
+        snapshot,
+        "fp-1",
+        "ecommerce_detail",
+        (generic, preferred),
+        _resolution(
+            _decision(
+                "product.title",
+                ("generic", "preferred"),
+                rule_id="CONTRACT_PREFERRED_SOURCE",
+            )
+        ),
+        frozenset({"product.title"}),
+        frozenset(),
+    )
+
     assert outcomes[0].outcome == "hit"
     assert outcomes[0].applied is True
 

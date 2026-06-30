@@ -1514,6 +1514,85 @@ def _object_dict(value: object) -> dict[str, object]:
     return dict(value) if isinstance(value, dict) else {}
 
 
+_MISSING_NESTED_VALUE = object()
+
+
+def expectation_met(site: dict[str, object], result: dict[str, object]) -> bool:
+    """Evaluate one curated acceptance result without running a live smoke job."""
+
+    expected = _object_dict(site.get("expected"))
+    if expected:
+        return _expected_contract_met(site, result, expected=expected)
+    if site.get("quality_expectations"):
+        bucket = str(site.get("bucket") or "").strip().lower()
+        expected_verdict = "blocked" if bucket == "known_blocked" else "good"
+        return (
+            str(result.get("quality_verdict") or "").strip().lower() == expected_verdict
+        )
+    failure_mode = str(result.get("failure_mode") or "").strip().lower()
+    bucket = str(site.get("bucket") or "").strip().lower()
+    expected_failure_modes = {
+        str(value or "").strip().lower()
+        for value in _object_list(site.get("expected_failure_modes"))
+        if str(value or "").strip()
+    }
+    if expected_failure_modes:
+        return failure_mode in expected_failure_modes
+    if bucket == "known_blocked":
+        return failure_mode == "blocked"
+    return failure_mode == "success"
+
+
+def _expected_contract_met(
+    site: dict[str, object],
+    result: dict[str, object],
+    *,
+    expected: dict[str, object],
+) -> bool:
+    if _safe_int(result.get("records")) < _safe_int(expected.get("min_record_count")):
+        return False
+    sample_record = _object_dict(result.get("sample_record_data"))
+    for field_name in _object_list(expected.get("fields_must_be_present")):
+        if _nested_value(sample_record, str(field_name)) is _MISSING_NESTED_VALUE:
+            return False
+    for field_name in _object_list(expected.get("fields_must_not_be_null")):
+        if _nested_value(sample_record, str(field_name)) in (None, "", [], {}):
+            return False
+    min_variant_count = _safe_int(expected.get("min_variant_count"))
+    if (
+        min_variant_count > 0
+        and _safe_int(_object_dict(result.get("sample_semantics")).get("variant_count"))
+        < min_variant_count
+    ):
+        return False
+    if bool(expected.get("price_must_be_numeric")):
+        surface = str(site.get("surface") or result.get("surface") or "").lower()
+        if surface.endswith("_listing"):
+            if (
+                _safe_int(
+                    _object_dict(result.get("listing_contract")).get(
+                        "price_numeric_count"
+                    )
+                )
+                <= 0
+            ):
+                return False
+        elif not _looks_numeric_price(_nested_value(sample_record, "price")):
+            return False
+    return not bool(expected.get("detail_urls_must_be_present")) or bool(
+        _object_dict(result.get("listing_contract")).get("detail_urls_present")
+    )
+
+
+def _nested_value(payload: dict[str, object], dotted_key: str) -> object:
+    current: object = payload
+    for segment in filter(None, str(dotted_key or "").split(".")):
+        if not isinstance(current, dict) or segment not in current:
+            return _MISSING_NESTED_VALUE
+        current = current.get(segment)
+    return current
+
+
 def _looks_numeric_price(value: object) -> bool:
     text = str(value or "").strip()
     if not text:

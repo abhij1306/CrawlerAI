@@ -712,7 +712,10 @@ export type ResultDiagnosis = {
     examples: DiagnoseEvidenceDisposition[];
   };
   contract_outcomes?: DiagnoseContractOutcome[] | null;
-  truncated?: Record<string, { included: number; total: number }>;
+  truncated?: Record<
+    string,
+    { included: number; total: number } | { original_bytes: number; limit_bytes: number }
+  >;
 };
 
 export type RunReportRootCause = {

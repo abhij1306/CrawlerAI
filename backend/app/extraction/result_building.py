@@ -88,9 +88,13 @@ def assert_resolution_accounting(
         if decision is None:
             raise RuntimeError("selected fact references a missing decision")
         if selected.evidence_ids != decision.accepted_evidence_ids:
-            raise RuntimeError("selected fact evidence does not match accepted evidence")
+            raise RuntimeError(
+                "selected fact evidence does not match accepted evidence"
+            )
         if len(selected.evidence_ids) != 1:
-            raise RuntimeError("selected facts must represent one direct evidence value")
+            raise RuntimeError(
+                "selected facts must represent one direct evidence value"
+            )
         accepted = evidence_by_id.get(selected.evidence_ids[0])
         if accepted is None:
             raise RuntimeError("selected fact references missing evidence")
@@ -317,13 +321,25 @@ def projection_field_states(
 
     entries_by_field: dict[str, list] = {}
     for entry in projection.entries:
-        field = entry.path.rsplit(".", 1)[-1]
+        field = (
+            "image_url"
+            if entry.path.startswith("asset[") and entry.path.endswith(".url")
+            else entry.path.rsplit(".", 1)[-1]
+        )
         entries_by_field.setdefault(field, []).append(entry)
     requested = {
         "image_url" if field == "image" else field for field in request.requested_fields
     }
     fields = tuple(sorted(entries_by_field.keys() | requested))
     disposition_by_id = {row.evidence_id: row for row in dispositions}
+    source_capabilities = dict(request.capture.acquisition_diagnostics or {}).get(
+        "source_capabilities"
+    )
+    unavailable_families = set(
+        source_capabilities.get("affected_field_families", ())
+        if isinstance(source_capabilities, dict)
+        else ()
+    )
     fact_by_field = {
         **field_mappings.ECOMMERCE_DETAIL_FIELD_FACT_TYPES,
         "title": "job.title"
@@ -340,6 +356,19 @@ def projection_field_states(
     }
     states: list[FieldEvidenceState] = []
     for field in fields:
+        state: typing.Literal[
+            "captured_and_resolved",
+            "captured_but_rejected",
+            "captured_conflicting",
+            "source_unavailable",
+            "not_present_in_captured_sources",
+            "not_captured",
+            "captured_published",
+            "captured_suppressed",
+            "captured_unowned",
+            "not_present_in_source",
+            "not_requested",
+        ]
         entries = entries_by_field.get(field, [])
         evidence_ids = tuple(
             dict.fromkeys(
@@ -356,16 +385,32 @@ def projection_field_states(
             fact_type = fact_by_field.get(field, field)
             candidates = tuple(row for row in evidence if row.fact_type == fact_type)
             evidence_ids = tuple(row.evidence_id for row in candidates)
-            if any(
-                disposition_by_id.get(row.evidence_id)
-                and disposition_by_id[row.evidence_id].status == "unowned"
+            candidate_dispositions = tuple(
+                disposition_by_id[row.evidence_id]
                 for row in candidates
-            ):
+                if row.evidence_id in disposition_by_id
+            )
+            if any(row.status == "unowned" for row in candidate_dispositions):
                 state = "captured_unowned"
+            elif field in unavailable_families or (
+                field == "image_url" and "images" in unavailable_families
+            ):
+                state = "source_unavailable"
             elif candidates:
-                state = "not_captured"
+                state = "captured_but_rejected"
             else:
                 state = "not_present_in_source"
+        disposition_reason_codes = tuple(
+            row.reason_code
+            for evidence_id in evidence_ids
+            if (row := disposition_by_id.get(evidence_id)) is not None
+            and row.reason_code
+        )
+        state_reason_codes = (
+            ("product_data_source_unavailable",)
+            if state == "source_unavailable"
+            else ()
+        )
         states.append(
             FieldEvidenceState(
                 field=field,
@@ -373,7 +418,15 @@ def projection_field_states(
                 evidence_ids=evidence_ids,
                 reason_codes=tuple(
                     dict.fromkeys(
-                        entry.reason_code for entry in entries if entry.reason_code
+                        (
+                            *(
+                                entry.reason_code
+                                for entry in entries
+                                if entry.reason_code
+                            ),
+                            *(code for code in disposition_reason_codes if code),
+                            *state_reason_codes,
+                        )
                     )
                 ),
             )

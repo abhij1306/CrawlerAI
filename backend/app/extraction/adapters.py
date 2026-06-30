@@ -26,6 +26,7 @@ from app.extraction.contracts import (
     JobDetailProjection,
     JobListingProjection,
     PublicationResult,
+    PublicRecord,
     ResolutionEnvelope,
 )
 from app.extraction.entities import EntitySet, build_entities
@@ -338,17 +339,22 @@ def _envelope(
 
 def _publish(envelope: ResolutionEnvelope) -> PublicationResult:
     projection = envelope.publication
+    records: tuple[PublicRecord, ...]
     if isinstance(projection, CommerceDetailProjection):
         has_url = any(
             row.path == "record.url" and row.disposition == "publish"
             for row in projection.entries
         )
         records = (serialize_commerce_detail_projection(projection),) if has_url else ()
-        candidate = (
-            records[0].model_dump(mode="python", exclude_none=True) if records else {}
-        )
-        findings = compare_public_record_to_projection(
-            candidate, projection, blocking=True, detect_extras=True
+        findings = (
+            compare_public_record_to_projection(
+                records[0].model_dump(mode="python", exclude_none=True),
+                projection,
+                blocking=True,
+                detect_extras=True,
+            )
+            if records
+            else ()
         )
         return PublicationResult(records=records, findings=findings)
     if isinstance(projection, CommerceListingProjection):

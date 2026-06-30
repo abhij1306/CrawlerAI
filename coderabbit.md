@@ -95,3 +95,123 @@ In @backend/app/extraction/publication.py around lines 246 - 267, Keep asset IDs
 - Verify each finding against current code. Fix only still-valid issues, skip the rest with a brief reason, keep changes minimal, and validate.
 
 In @backend/tests/unit/test_resolution_contracts.py around lines 88 - 93, The EvidenceDisposition validation test is too broad because it only asserts any ValidationError and omits required fields, so it would still pass if the status enum changes. Update the test in test_resolution_contracts.py to construct EvidenceDisposition with all required fields and use the status-specific validation path, then assert the exact enum-related failure from the EvidenceDisposition model so the contract stays locked to invalid status values.
+
+[{
+	"resource": "/c:/Projects/CrawlerAI/backend/app/crawl/pipeline/persistence.py",
+	"owner": "sonarlint",
+	"code": "python:S1172",
+	"severity": 4,
+	"message": "Remove the unused function parameter \"run\".",
+	"source": "sonarqube",
+	"startLineNumber": 375,
+	"startColumn": 5,
+	"endLineNumber": 375,
+	"endColumn": 18,
+	"modelVersionId": 1,
+	"origin": "extHost1"
+},{
+	"resource": "/c:/Projects/CrawlerAI/backend/app/crawl/pipeline/persistence.py",
+	"owner": "sonarlint",
+	"code": "python:S1172",
+	"severity": 4,
+	"message": "Remove the unused function parameter \"acquisition_result\".",
+	"source": "sonarqube",
+	"startLineNumber": 376,
+	"startColumn": 5,
+	"endLineNumber": 376,
+	"endColumn": 23,
+	"modelVersionId": 1,
+	"origin": "extHost1"
+},{
+	"resource": "/c:/Projects/CrawlerAI/backend/app/crawl/pipeline/persistence.py",
+	"owner": "sonarlint",
+	"code": "python:S1172",
+	"severity": 4,
+	"message": "Remove the unused function parameter \"preliminary_source_url\".",
+	"source": "sonarqube",
+	"startLineNumber": 377,
+	"startColumn": 5,
+	"endLineNumber": 377,
+	"endColumn": 32,
+	"modelVersionId": 1,
+	"origin": "extHost1"
+}]
+[{
+	"resource": "/c:/Projects/CrawlerAI/backend/app/core/config/extraction_rules/_listing_structured.py",
+	"owner": "sonarlint",
+	"code": "python:S2208",
+	"severity": 4,
+	"message": "Import only needed names or import the module and then use its members.",
+	"source": "sonarqube",
+	"startLineNumber": 5,
+	"startColumn": 1,
+	"endLineNumber": 5,
+	"endColumn": 23,
+	"modelVersionId": 1,
+	"origin": "extHost1"
+},{
+	"resource": "/c:/Projects/CrawlerAI/backend/app/core/config/extraction_rules/_listing_structured.py",
+	"owner": "sonarlint",
+	"code": "python:S2208",
+	"severity": 4,
+	"message": "Import only needed names or import the module and then use its members.",
+	"source": "sonarqube",
+	"startLineNumber": 6,
+	"startColumn": 1,
+	"endLineNumber": 6,
+	"endColumn": 23,
+	"modelVersionId": 1,
+	"origin": "extHost1"
+},{
+	"resource": "/c:/Projects/CrawlerAI/backend/app/core/config/extraction_rules/_listing_structured.py",
+	"owner": "sonarlint",
+	"code": "python:S2208",
+	"severity": 4,
+	"message": "Import only needed names or import the module and then use its members.",
+	"source": "sonarqube",
+	"startLineNumber": 7,
+	"startColumn": 1,
+	"endLineNumber": 7,
+	"endColumn": 23,
+	"modelVersionId": 1,
+	"origin": "extHost1"
+},{
+	"resource": "/c:/Projects/CrawlerAI/backend/app/core/config/extraction_rules/_listing_structured.py",
+	"owner": "sonarlint",
+	"code": "python:S2208",
+	"severity": 4,
+	"message": "Import only needed names or import the module and then use its members.",
+	"source": "sonarqube",
+	"startLineNumber": 8,
+	"startColumn": 1,
+	"endLineNumber": 8,
+	"endColumn": 32,
+	"modelVersionId": 1,
+	"origin": "extHost1"
+},{
+	"resource": "/c:/Projects/CrawlerAI/backend/app/core/config/extraction_rules/_listing_structured.py",
+	"owner": "sonarlint",
+	"code": "python:S2208",
+	"severity": 4,
+	"message": "Import only needed names or import the module and then use its members.",
+	"source": "sonarqube",
+	"startLineNumber": 9,
+	"startColumn": 1,
+	"endLineNumber": 9,
+	"endColumn": 25,
+	"modelVersionId": 1,
+	"origin": "extHost1"
+},{
+	"resource": "/c:/Projects/CrawlerAI/backend/app/core/config/extraction_rules/_listing_structured.py",
+	"owner": "sonarlint",
+	"code": "python:S1192",
+	"severity": 4,
+	"message": "Define a constant instead of duplicating this literal \"/category/\" 3 times. [+2 locations]",
+	"source": "sonarqube",
+	"startLineNumber": 272,
+	"startColumn": 5,
+	"endLineNumber": 272,
+	"endColumn": 17,
+	"modelVersionId": 1,
+	"origin": "extHost1"
+}]

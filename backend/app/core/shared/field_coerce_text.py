@@ -188,7 +188,12 @@ def infer_brand_from_page_identity(
     )
     if existing and title_words:
         first = "".join(slug_tokens(existing[0]))
-        if first == compact_core and len(title_words) >= 2 and title_words[1].isupper():
+        if (
+            first == compact_core
+            and len(title_words) >= 2
+            and title_tokens[0] in slug_tokens(existing[0])
+            and title_words[1].isupper()
+        ):
             return " ".join(title_words[:2])
     for size in range(min(LISTING_BRAND_MAX_WORDS, len(corpus_words)), 0, -1):
         for start in range(len(corpus_words) - size + 1):

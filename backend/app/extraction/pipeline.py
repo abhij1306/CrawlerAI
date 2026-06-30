@@ -101,6 +101,7 @@ def harvest_ecommerce_detail(
 ) -> HarvestResult:
     rows: list[Evidence] = []
     outcomes: list[CollectorOutcome] = []
+    admitted_source_objects = 0
     for collector in default_collectors():
         if isinstance(collector, JsStateCollector):
             harvest = collector.harvest(bundle, reader)
@@ -108,13 +109,26 @@ def harvest_ecommerce_detail(
                 ev for ev in harvest.evidence if ev.fact_type in FACT_TYPES
             )
             rows.extend(collector_rows)
-            outcomes.extend(harvest.outcomes)
+            admitted_source_objects += harvest.admitted_source_objects
+            outcomes.extend(
+                row for row in harvest.outcomes if row.outcome == "budget_limited"
+            )
+            outcomes.append(
+                CollectorOutcome(
+                    collector_id=collector.collector_id,
+                    outcome="produced_evidence" if collector_rows else "no_match",
+                    evidence_count=len(collector_rows),
+                )
+            )
             continue
         before = len(rows)
         rows.extend(
             ev for ev in collector.collect(bundle, reader) if ev.fact_type in FACT_TYPES
         )
         produced = len(rows) - before
+        admitted_source_objects += len(
+            {(row.artifact_id, row.subject_id) for row in rows[before:]}
+        )
         outcomes.append(
             CollectorOutcome(
                 collector_id=collector.collector_id,
@@ -126,6 +140,12 @@ def harvest_ecommerce_detail(
     requested_rows = collect_requested_fields(bundle, reader, requested_fields)
     rows.extend(recipe_rows)
     rows.extend(requested_rows)
+    admitted_source_objects += len(
+        {
+            (row.collector_id, row.artifact_id, row.subject_id)
+            for row in (*recipe_rows, *requested_rows)
+        }
+    )
     if recipe_rows:
         outcomes.append(
             CollectorOutcome(
@@ -146,7 +166,7 @@ def harvest_ecommerce_detail(
         surface=Surface.ECOMMERCE_DETAIL,
         evidence=tuple(rows),
         collector_outcomes=tuple(outcomes),
-        admitted_source_objects=len(rows),
+        admitted_source_objects=admitted_source_objects,
     )
 
 

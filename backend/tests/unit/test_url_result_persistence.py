@@ -179,6 +179,8 @@ def test_diagnose_artifact_is_capped(tmp_path: Path, monkeypatch) -> None:
     payload = json.loads(diagnose_path.read_text(encoding="utf-8"))
     assert diagnose_path.stat().st_size <= 2_000
     assert "artifact_size" in payload["truncated"]
+    assert "variants.dropped" in payload["truncated"]
+    assert payload["truncated"]["variants.dropped"]["total"] == 100
 
 
 @pytest.mark.asyncio

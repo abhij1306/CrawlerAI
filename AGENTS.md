@@ -127,9 +127,8 @@ Fix those in place before adding browser interaction or downstream fallbacks.
 cd backend
 $env:PYTHONPATH='.'
 .\.venv\Scripts\python.exe -m pytest tests -q
-.\.venv\Scripts\python.exe run_acquire_smoke.py commerce
-.\.venv\Scripts\python.exe run_extraction_smoke.py
-.\.venv\Scripts\python.exe run_test_sites_acceptance.py
+.\.venv\Scripts\python.exe -m ruff check .
 ```
 
-Run the smallest relevant verify step for the slice, then run broader verification when the change affects shared behavior.
+All deterministic backend verification lives under pytest. Do not run separate smoke scripts.
+Run the smallest relevant test file first, then the complete suite for shared changes.

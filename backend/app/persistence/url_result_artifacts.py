@@ -216,23 +216,23 @@ def _shrink_diagnose_payload(
     }
     shrunk["truncated"] = truncated
     shrink_steps = (
-        lambda row: _truncate_nested(row, "evidence_dispositions", "examples", 50),
-        lambda row: _truncate_list(row, "findings", 50),
-        lambda row: _truncate_list(row, "fields", 50),
-        lambda row: _truncate_nested(row, "variants", "dropped", 50),
-        lambda row: _truncate_nested(row, "evidence_dispositions", "examples", 10),
-        lambda row: _truncate_list(row, "findings", 10),
-        lambda row: _truncate_list(row, "fields", 10),
-        lambda row: _truncate_nested(row, "variants", "dropped", 10),
-        lambda row: _truncate_nested(row, "evidence_dispositions", "examples", 0),
-        lambda row: _truncate_list(row, "findings", 0),
-        lambda row: _truncate_list(row, "fields", 0),
-        lambda row: _truncate_nested(row, "variants", "dropped", 0),
+        ("evidence_dispositions.examples", 50),
+        ("findings", 50),
+        ("fields", 50),
+        ("variants.dropped", 50),
+        ("evidence_dispositions.examples", 10),
+        ("findings", 10),
+        ("fields", 10),
+        ("variants.dropped", 10),
+        ("evidence_dispositions.examples", 0),
+        ("findings", 0),
+        ("fields", 0),
+        ("variants.dropped", 0),
     )
-    for step in shrink_steps:
+    for path, item_limit in shrink_steps:
         if len(_json_bytes(shrunk)) <= limit:
             return shrunk
-        step(shrunk)
+        _truncate_diagnose_list(shrunk, truncated, path=path, limit=item_limit)
     if len(_json_bytes(shrunk)) <= limit:
         return shrunk
     return {
@@ -244,26 +244,32 @@ def _shrink_diagnose_payload(
     }
 
 
-def _truncate_list(payload: dict[str, object], key: str, limit: int) -> None:
-    value = payload.get(key)
-    if isinstance(value, list):
-        payload[key] = value[:limit]
-
-
-def _truncate_nested(
+def _truncate_diagnose_list(
     payload: dict[str, object],
-    parent_key: str,
-    child_key: str,
+    truncated: dict[str, object],
+    *,
+    path: str,
     limit: int,
 ) -> None:
-    parent = payload.get(parent_key)
-    if not isinstance(parent, Mapping):
+    segments = path.split(".")
+    owner = payload
+    for segment in segments[:-1]:
+        nested = owner.get(segment)
+        if not isinstance(nested, Mapping):
+            return
+        copied = dict(nested)
+        owner[segment] = copied
+        owner = copied
+    key = segments[-1]
+    value = owner.get(key)
+    if not isinstance(value, list) or len(value) <= limit:
         return
-    copied = dict(parent)
-    value = copied.get(child_key)
-    if isinstance(value, list):
-        copied[child_key] = value[:limit]
-    payload[parent_key] = copied
+    previous = _mapping(truncated.get(path))
+    previous_total = previous.get("total")
+    total = previous_total if isinstance(previous_total, int) else len(value)
+    truncated_value = value[:limit]
+    owner[key] = truncated_value
+    truncated[path] = {"included": len(truncated_value), "total": total}
 
 
 def _mapping(value: object) -> Mapping[str, object]:

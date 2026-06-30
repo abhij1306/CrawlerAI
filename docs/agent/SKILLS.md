@@ -17,12 +17,10 @@ $env:PYTHONPATH='.'
 .\.venv\Scripts\python.exe -m pytest tests/unit/test_final_architecture_ownership.py -q
 .\.venv\Scripts\python.exe -m pytest tests/test_harness_support.py -q
 
-.\.venv\Scripts\python.exe run_acquire_smoke.py commerce
-.\.venv\Scripts\python.exe run_extraction_smoke.py
-.\.venv\Scripts\python.exe run_test_sites_acceptance.py
+.\.venv\Scripts\python.exe -m ruff check .
 ```
 
-Use the smallest relevant verify step first, then broaden if shared behavior changed.
+Use the smallest relevant pytest file first, then the complete suite if shared behavior changed.
 
 ---
 

@@ -343,6 +343,7 @@ def test_extraction_semantic_surface_manifest_is_current() -> None:
         "app/extraction",
         "app/core/records/divergence.py",
         "app/core/records/output_safety.py",
+        "app/core/knowledge_graph/contract_runtime.py",
         "app/core/shared/field_coerce*.py",
         "app/core/config/extraction_rules",
         "app/core/config/extraction_price_rules.py",
@@ -363,25 +364,40 @@ def test_extraction_semantic_surface_manifest_is_current() -> None:
 
 
 def test_publish_surface_does_not_receive_raw_evidence_or_entity_graph() -> None:
-    publication = _parse_module(EXTRACTION_ROOT / "publication.py")
-    forbidden_annotations = {"Evidence", "EntitySet"}
+    modules = {
+        "adapters": _parse_module(EXTRACTION_ROOT / "adapters.py"),
+        "publication": _parse_module(EXTRACTION_ROOT / "publication.py"),
+    }
+    publish_functions = {"_publish"}
+    for tree in modules.values():
+        for node in ast.walk(tree):
+            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            if node.name in publish_functions or node.name.startswith("serialize_"):
+                publish_functions.update(
+                    call.func.id
+                    for call in ast.walk(node)
+                    if isinstance(call, ast.Call) and isinstance(call.func, ast.Name)
+                )
     offenders: list[tuple[str, str]] = []
-    for node in ast.walk(publication):
-        if not isinstance(node, ast.FunctionDef) or not node.name.startswith(
-            "serialize_"
-        ):
-            continue
-        for arg in node.args.args:
-            annotation = ast.unparse(arg.annotation) if arg.annotation else ""
-            if any(name in annotation for name in forbidden_annotations):
-                offenders.append((node.name, annotation))
+    for tree in modules.values():
+        for node in ast.walk(tree):
+            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            if node.name not in publish_functions:
+                continue
+            for arg in (*node.args.posonlyargs, *node.args.args, *node.args.kwonlyargs):
+                annotation = ast.unparse(arg.annotation) if arg.annotation else ""
+                parameter = f"{arg.arg}:{annotation}"
+                if arg.arg.lower() in {"evidence", "entity_set", "entity_graph"} or any(
+                    name in annotation for name in {"Evidence", "EntitySet"}
+                ):
+                    offenders.append((node.name, parameter))
     assert not offenders
 
 
 def test_persistence_performs_no_extraction_repair() -> None:
-    persistence = (APP_ROOT / "crawl" / "pipeline" / "persistence.py").read_text(
-        encoding="utf-8"
-    )
+    persistence = _parse_module(APP_ROOT / "crawl" / "pipeline" / "persistence.py")
     forbidden = {
         "public_record_firewall",
         "sanitize_materialized_record",
@@ -390,4 +406,16 @@ def test_persistence_performs_no_extraction_repair() -> None:
         "variant_not_publicly_sellable",
         "variant_not_actionable",
     }
-    assert not {term for term in forbidden if term in persistence}
+    referenced = {
+        node.id for node in ast.walk(persistence) if isinstance(node, ast.Name)
+    }
+    referenced.update(
+        node.attr for node in ast.walk(persistence) if isinstance(node, ast.Attribute)
+    )
+    referenced.update(
+        alias.name.rsplit(".", 1)[-1]
+        for node in ast.walk(persistence)
+        if isinstance(node, (ast.Import, ast.ImportFrom))
+        for alias in node.names
+    )
+    assert not forbidden.intersection(referenced)

@@ -49,6 +49,7 @@ from app.core.shared.field_coerce import sanitize_option_scalar
 from app.core.shared.field_coerce_price import repair_price_unit
 from app.core.shared.currency_hints import currency_hint_from_page_url
 from app.core.shared.field_coerce_text import (
+    infer_brand_from_page_identity,
     infer_brand_from_product_url,
     infer_brand_from_title_host,
     infer_brand_from_title_marker,
@@ -201,9 +202,17 @@ def resolve(
             variant_decisions=variant_decisions,
             expected_variant_count=len(entities.variants),
             existing_fact_keys=frozenset(
-                (row.entity_id, row.fact_type)
-                for row in (*decisions, *derived_facts, *reconciliation_facts)
-                if not isinstance(row, Decision) or row.status == "resolved"
+                (
+                    *(
+                        (row.entity_id, row.fact_type)
+                        for row in decisions
+                        if row.status == "resolved"
+                    ),
+                    *(
+                        (row.entity_id, row.fact_type)
+                        for row in (*derived_facts, *reconciliation_facts)
+                    ),
+                )
             ),
         ),
     )
@@ -654,6 +663,7 @@ def _parent_derived_from_variants(
             primary_offer_entity_id,
             variants,
             expected_variant_count=expected_variant_count,
+            existing_fact_keys=existing_fact_keys,
         )
     )
     if (
@@ -750,7 +760,7 @@ def _aggregate_variant_field(
         )
     if len(unique_values) != 1:
         return ()
-    if len(variants) < 2 and (entity_id, fact_type) in existing_fact_keys:
+    if (entity_id, fact_type) in existing_fact_keys:
         return ()
     return (
         _aggregate_fact(
@@ -770,7 +780,10 @@ def _aggregate_variant_availability(
     variants: tuple[VariantDecision, ...],
     *,
     expected_variant_count: int,
+    existing_fact_keys: frozenset[tuple[str, str]],
 ) -> tuple[DerivedFact, ...]:
+    if (entity_id, "offer.availability") in existing_fact_keys:
+        return ()
     lineages = tuple(row.lineage.get("availability") for row in variants)
     if len(variants) != expected_variant_count or _has_parent_inherited_lineage(
         lineages
@@ -1032,12 +1045,12 @@ def _put_variant_offer(
         )
         if derived_fact is None and evidence is None:
             continue
-        values[field] = derived_fact.value if derived_fact else evidence.value
-        lineage[field] = (
-            _derived_lineage(derived_fact)
-            if derived_fact
-            else _decision_lineage(decision)
-        )
+        if derived_fact is not None:
+            values[field] = derived_fact.value
+            lineage[field] = _derived_lineage(derived_fact)
+        elif evidence is not None and decision is not None:
+            values[field] = evidence.value
+            lineage[field] = _decision_lineage(decision)
     if values.get("price") not in (None, "", [], {}, ()) and values.get("currency") in (
         None,
         "",
@@ -1663,7 +1676,11 @@ def _resolve_scalar(
         reason = _invalidity_reason(ev)
         if reason is not None:
             return reason
-        return "stable_tiebreak" if _rank(ev) == _rank(winner) else "lower_confidence"
+        return (
+            "stable_tiebreak"
+            if _rank(ev)[:-1] == _rank(winner)[:-1]
+            else "lower_confidence"
+        )
 
     return Decision(
         decision_id=stable_id("decision", entity_id, fact_type, winner.evidence_id),
@@ -1696,7 +1713,16 @@ def _derived(
         for decision in decisions
         if decision.status == "resolved"
     }
-    direct_selected_ids = {
+    resolved_values = {
+        (decision.entity_id, decision.fact_type): by_id[
+            decision.accepted_evidence_ids[0]
+        ].value
+        for decision in decisions
+        if decision.status == "resolved"
+        and decision.accepted_evidence_ids
+        and decision.accepted_evidence_ids[0] in by_id
+    }
+    direct_selected_ids: dict[tuple[str, tuple[str, ...]], str] = {
         (decision.fact_type, decision.accepted_evidence_ids): stable_id(
             "selected", decision.decision_id
         )
@@ -1713,6 +1739,7 @@ def _derived(
                 page_url=page_url,
                 direct_selected_ids=direct_selected_ids,
                 resolved_fact_keys=resolved_fact_keys,
+                resolved_values=resolved_values,
             )
         )
         if (
@@ -1766,18 +1793,28 @@ def _semantic_derived_facts(
     page_url: str,
     direct_selected_ids: dict[tuple[str, tuple[str, ...]], str],
     resolved_fact_keys: set[tuple[str, str]],
+    resolved_values: dict[tuple[str, str], object],
 ) -> tuple[DerivedFact, ...]:
     if decision.status != "resolved" or not decision.accepted_evidence_ids:
         return ()
     evidence = by_id.get(decision.accepted_evidence_ids[0])
     if evidence is None:
         return ()
-    if (
-        decision.fact_type == field_mappings.PRODUCT_TITLE_FACT_TYPE
-        and (decision.entity_id, field_mappings.PRODUCT_BRAND_FACT_TYPE)
-        not in resolved_fact_keys
-    ):
-        brand = _brand_from_title(evidence.value, page_url=page_url)
+    if decision.fact_type == field_mappings.PRODUCT_TITLE_FACT_TYPE:
+        existing_brand = resolved_values.get(
+            (decision.entity_id, field_mappings.PRODUCT_BRAND_FACT_TYPE)
+        )
+        existing_brands = (existing_brand,) if existing_brand else ()
+        brand = _brand_from_title(
+            evidence.value,
+            page_url=page_url,
+            evidence_values=tuple(
+                row.value
+                for row in by_id.values()
+                if row.fact_type != field_mappings.PRODUCT_URL_FACT_TYPE
+            ),
+            existing_brands=existing_brands,
+        )
         if brand:
             return (
                 _derived_fact(
@@ -1895,7 +1932,32 @@ def _availability_from_stock_quantity(evidence: Evidence) -> str | None:
     return "in_stock" if quantity > 0 else "out_of_stock"
 
 
-def _brand_from_title(title: object, *, page_url: str) -> tuple[str, str] | None:
+def _brand_from_title(
+    title: object,
+    *,
+    page_url: str,
+    evidence_values: tuple[object, ...] = (),
+    existing_brands: tuple[object, ...] = (),
+) -> tuple[str, str] | None:
+    page_identity = infer_brand_from_page_identity(
+        url=page_url,
+        title=title,
+        evidence_values=evidence_values,
+        existing_brands=existing_brands,
+    )
+    if page_identity and all(
+        str(page_identity).casefold() != str(value).casefold()
+        for value in existing_brands
+    ):
+        existing = str(existing_brands[0]) if existing_brands else ""
+        expands_existing = (
+            str(page_identity).casefold().startswith(f"{existing.casefold()} ")
+        )
+        if existing.isupper() and not expands_existing:
+            return None
+        return page_identity, "page_identity"
+    if existing_brands:
+        return None
     for rule_id, value in (
         ("brand_from_title_marker", infer_brand_from_title_marker(title)),
         (
