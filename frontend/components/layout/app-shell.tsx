@@ -26,7 +26,7 @@ function isNavItemActive(pathname: string, item: (typeof navGroups)[number]['ite
 const resetDialogCopy = {
   title: 'Reset workspace data',
   description:
-    'Delete crawl runs, records, logs, artifacts, runtime cookie files, learned domain memory, saved cookie memory, field feedback, host protection memory, Product Intelligence data, and Data Enrichment data.',
+    'Delete crawl runs, records, logs, artifacts, runtime cookie files, learned domain memory, extraction preferences, saved cookie memory, field feedback, host protection memory, Product Intelligence data, and Data Enrichment data.',
   confirmLabel: 'Reset Workspace Data',
 } as const;
 

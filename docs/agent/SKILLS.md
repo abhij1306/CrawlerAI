@@ -11,16 +11,26 @@ If paths moved, update this file after confirming ownership in `docs/CODEBASE_MA
 cd backend
 $env:PYTHONPATH='.'
 
-.\.venv\Scripts\python.exe -m pytest tests -q
 .\.venv\Scripts\python.exe -m pytest tests/unit/test_extraction_pipeline.py -q
 .\.venv\Scripts\python.exe -m pytest tests/unit/test_extraction_architecture.py -q
 .\.venv\Scripts\python.exe -m pytest tests/unit/test_final_architecture_ownership.py -q
-.\.venv\Scripts\python.exe -m pytest tests/test_harness_support.py -q
 
 .\.venv\Scripts\python.exe -m ruff check .
+
+cd ..\frontend
+vp test app/domain-memory/page-view.test.tsx
+vp check --fix
+vp build
 ```
 
-Use the smallest relevant pytest file first, then the complete suite if shared behavior changed.
+Use the smallest relevant backend pytest file. Do not run broad `pytest tests -q`
+unless the user explicitly asks for a full-suite sweep.
+
+Frontend uses VitePlus. Use direct `vp` commands: `vp test <test-path>`,
+`vp check --fix`, and `vp build`. Do not use npm wrappers or Jest flags.
+
+Do not run smoke scripts. Do not add or run fixture/corpus replay gates unless
+the user explicitly asks for corpus, replay, or smoke work.
 
 ---
 
@@ -37,7 +47,7 @@ Use the smallest relevant pytest file first, then the complete suite if shared b
    - normalization: `core/records/*` coercion owners
 3. Fix it there. Do not patch downstream.
 4. Run the smallest matching extraction unit/replay test.
-5. Run `pytest tests -q`
+5. Run ruff on touched Python.
 6. Update the active plan slice if one exists.
 
 Never fix extraction bugs in `pipeline/core.py`, `publish/verdict.py`, or `publish/metrics.py`.
@@ -66,7 +76,7 @@ Never fix extraction bugs in `pipeline/core.py`, `publish/verdict.py`, or `publi
 2. Create a provider module under `connectors/` only when it produces artifacts from documented/public platform APIs.
 3. Route product-detail URLs through normal acquisition and extraction; connectors must not publish public records or set verdicts.
 4. Add payload specs in `core/config/network_payload_specs.py` if needed.
-5. Add focused offline tests and replay fixtures. Live smoke remains the final user-run gate for this architecture plan.
+5. Add focused inline tests. Do not add replay fixtures or smoke gates unless explicitly requested.
 
 Do not hardcode platform names in generic runtime paths.
 
@@ -88,7 +98,7 @@ Do not hardcode platform names in generic runtime paths.
 1. Grep all callers.
 2. Delete the dead symbol or file.
 3. Delete tests that only verify that dead private implementation.
-4. Run `pytest tests -q`
+4. Run focused tests for touched owners.
 5. Remove stale doc references.
 6. Do not leave re-export stubs.
 

@@ -23,7 +23,7 @@ from app.models.product_intelligence import (
     ProductIntelligenceMatch,
     ProductIntelligenceSourceProduct,
 )
-from app.models.crawl_run import CrawlLog, CrawlRecord, CrawlRun
+from app.models.crawl_run import CrawlLog, CrawlRecord, CrawlRun, CrawlUrlResult
 from app.models.review import ReviewPromotion
 from app.models.llm import LLMCostLog
 from app.models.user import User
@@ -106,8 +106,17 @@ async def test_dashboard_reset_data_route_commits_after_auth_reads_same_session(
             "surface": "ecommerce_detail",
         },
     )
+    url_result = CrawlUrlResult(
+        run_id=run.id,
+        requested_url=run.url,
+        normalized_url=run.url,
+        surface=run.surface,
+    )
+    db_session.add(url_result)
+    await db_session.flush()
     db_session.add(
         CrawlRecord(
+            url_result_id=url_result.id,
             run_id=run.id,
             source_url=run.url,
             data={"title": "Widget"},
@@ -164,8 +173,17 @@ async def test_split_reset_crawl_data_and_domain_memory_preserve_the_other_scope
             "surface": "ecommerce_detail",
         },
     )
+    url_result = CrawlUrlResult(
+        run_id=run.id,
+        requested_url=run.url,
+        normalized_url=run.url,
+        surface=run.surface,
+    )
+    db_session.add(url_result)
+    await db_session.flush()
     db_session.add(
         CrawlRecord(
+            url_result_id=url_result.id,
             run_id=run.id,
             source_url=run.url,
             data={"title": "Widget"},
@@ -243,6 +261,7 @@ async def test_split_reset_crawl_data_and_domain_memory_preserve_the_other_scope
     result = await reset_crawl_data(db_session)
 
     assert result["crawl_runs_deleted"] == 1
+    assert result["crawl_url_results_deleted"] == 1
     assert result["crawl_records_deleted"] == 1
     assert result["crawl_logs_deleted"] == 1
     assert result["review_promotions_deleted"] == 1
@@ -250,7 +269,7 @@ async def test_split_reset_crawl_data_and_domain_memory_preserve_the_other_scope
     assert list(artifacts_dir.iterdir()) == []
     assert list(cookies_dir.iterdir()) == []
 
-    for model in (CrawlRecord, CrawlLog, ReviewPromotion, LLMCostLog):
+    for model in (CrawlRecord, CrawlUrlResult, CrawlLog, ReviewPromotion, LLMCostLog):
         remaining = (await db_session.execute(select(model))).scalars().all()
         assert remaining == []
     assert (await db_session.execute(select(DomainMemory))).scalars().all() != []
@@ -271,8 +290,7 @@ async def test_split_reset_crawl_data_and_domain_memory_preserve_the_other_scope
     )
     (cookies_dir / "memory-reset.json").write_text("cookie", encoding="utf-8")
 
-    assert next_run.id is not None
-    assert next_run.id > 0
+    assert next_run.id == 1
 
     memory_reset = await reset_domain_memory(db_session)
 

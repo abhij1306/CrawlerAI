@@ -9,7 +9,9 @@ from app.core.config.field_mappings import (
     ECOMMERCE_IMAGE_SOURCE_KEYS,
     ECOMMERCE_OFFER_CONTEXT_PATH_TOKENS,
     ECOMMERCE_PRODUCT_IDENTITY_SOURCE_KEYS,
+    ECOMMERCE_STRUCTURED_CONTAINER_SOURCE_KEYS,
     ECOMMERCE_STRUCTURED_SOURCE_FACT_TYPES,
+    ECOMMERCE_STRUCTURED_SOURCE_VALUE_PATH_FACT_TYPES,
     VARIANT_GTIN_FACT_TYPE,
 )
 from app.core.config.extraction_rules import (
@@ -406,10 +408,17 @@ def network_row(
         ):
             return out
         return _variant_row(bundle, artifact_id, path, obj, collector_id=collector_id)
-    mapped_keys = tuple(
-        key for key in ECOMMERCE_STRUCTURED_SOURCE_FACT_TYPES if key in obj
+    direct_keys = tuple(
+        key
+        for key in ECOMMERCE_STRUCTURED_SOURCE_FACT_TYPES
+        if key in obj
+        and not (
+            isinstance(obj.get(key), dict)
+            and key in ECOMMERCE_STRUCTURED_CONTAINER_SOURCE_KEYS
+        )
     )
-    if not mapped_keys:
+    path_rows = _configured_value_path_rows(obj)
+    if not direct_keys and not path_rows:
         return out
     if _product_url_conflicts(bundle.final_url, obj):
         return out
@@ -429,57 +438,83 @@ def network_row(
         directness="inferred",
         confidence=0.0,
     ).subject_id
-    for key in mapped_keys:
-        fact = ECOMMERCE_STRUCTURED_SOURCE_FACT_TYPES[key]
+    source_rows = [
+        (key, fact, value, suffix)
+        for key in direct_keys
+        for fact in (ECOMMERCE_STRUCTURED_SOURCE_FACT_TYPES[key],)
+        for index, value in enumerate(_source_values(key, obj.get(key)))
+        for suffix in (f"/{index}" if key in ECOMMERCE_IMAGE_SOURCE_KEYS else "",)
+    ]
+    source_rows.extend(path_rows)
+    for key, fact, value, suffix in source_rows:
         if fact.startswith("product.") and not product_context:
             continue
         if fact.startswith("offer.") and not offer_context:
             continue
-        for index, value in enumerate(_source_values(key, obj.get(key))):
-            if value in (None, "", [], {}):
-                continue
-            entity_type: Literal["offer", "asset", "product"] = (
-                "offer"
-                if fact.startswith("offer.")
-                else "asset"
-                if fact.startswith("asset.")
-                else "product"
+        if value in (None, "", [], {}):
+            continue
+        entity_type: Literal["offer", "asset", "product"] = (
+            "offer"
+            if fact.startswith("offer.")
+            else "asset"
+            if fact.startswith("asset.")
+            else "product"
+        )
+        product_identity = next(
+            (
+                str(obj.get(identity_key) or "").strip()
+                for identity_key in ECOMMERCE_PRODUCT_IDENTITY_SOURCE_KEYS
+                if str(obj.get(identity_key) or "").strip()
+            ),
+            None,
+        )
+        hint = EntityHint(
+            entity_type=entity_type,
+            product_id=product_identity if entity_type == "product" else None,
+            sku=str(obj.get("sku") or "").strip() or None,
+        )
+        out.append(
+            evidence(
+                bundle,
+                artifact_id,
+                collector_id,
+                fact,
+                value,
+                SourceLocator(kind="script_path", value=f"{path}/{key}{suffix}"),
+                group_id=group if fact.startswith("offer.") else None,
+                hint=hint,
+                directness="embedded",
+                confidence=0.8,
+                parent_subject_id=product_subject
+                if fact.startswith(("offer.", "asset."))
+                else None,
+                parent_scope="product"
+                if fact.startswith(("offer.", "asset."))
+                else None,
             )
-            product_identity = next(
-                (
-                    str(obj.get(identity_key) or "").strip()
-                    for identity_key in ECOMMERCE_PRODUCT_IDENTITY_SOURCE_KEYS
-                    if str(obj.get(identity_key) or "").strip()
-                ),
-                None,
-            )
-            hint = EntityHint(
-                entity_type=entity_type,
-                product_id=product_identity if entity_type == "product" else None,
-                sku=str(obj.get("sku") or "").strip() or None,
-            )
-            suffix = f"/{index}" if key in ECOMMERCE_IMAGE_SOURCE_KEYS else ""
-            out.append(
-                evidence(
-                    bundle,
-                    artifact_id,
-                    collector_id,
-                    fact,
-                    value,
-                    SourceLocator(kind="script_path", value=f"{path}/{key}{suffix}"),
-                    group_id=group if fact.startswith("offer.") else None,
-                    hint=hint,
-                    directness="embedded",
-                    confidence=0.8,
-                    parent_subject_id=product_subject
-                    if fact.startswith(("offer.", "asset."))
-                    else None,
-                    parent_scope="product"
-                    if fact.startswith(("offer.", "asset."))
-                    else None,
-                )
-            )
+        )
     return out
+
+
+def _configured_value_path_rows(obj: dict) -> list[tuple[str, str, object, str]]:
+    rows: list[tuple[str, str, object, str]] = []
+    for key_path, fact in ECOMMERCE_STRUCTURED_SOURCE_VALUE_PATH_FACT_TYPES.items():
+        value = _value_at_path(obj, key_path)
+        if value in (None, "", [], {}):
+            continue
+        key = key_path[0]
+        suffix = "".join(f"/{part}" for part in key_path[1:])
+        rows.append((key, fact, _scalar_value(value), suffix))
+    return rows
+
+
+def _value_at_path(obj: dict, key_path: tuple[str, ...]) -> object:
+    current: object = obj
+    for key in key_path:
+        if not isinstance(current, dict):
+            return None
+        current = current.get(key)
+    return current
 
 
 def _variant_url_conflicts(page_url: str, obj: dict) -> bool:

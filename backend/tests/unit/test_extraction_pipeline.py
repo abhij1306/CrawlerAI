@@ -982,7 +982,9 @@ def test_jsonld_productgroup_id_links_standalone_variant_offers() -> None:
             "availability": "in_stock",
         }
     ]
-    assert not any(finding.rule_id == "CHILD_JOIN_FAILED" for finding in result.findings)
+    assert not any(
+        finding.rule_id == "CHILD_JOIN_FAILED" for finding in result.findings
+    )
 
 
 def test_jsonld_one_axis_variants_with_child_offers_materialize() -> None:
@@ -1241,9 +1243,7 @@ def test_jsonld_offer_price_specification_materializes_atomically() -> None:
     assert record["price"] == "1795.00"
     assert record["currency"] == "USD"
     assert record["availability"] == "in_stock"
-    price_evidence = [
-        row for row in result.evidence if row.fact_type == "offer.price"
-    ]
+    price_evidence = [row for row in result.evidence if row.fact_type == "offer.price"]
     currency_evidence = [
         row for row in result.evidence if row.fact_type == "offer.currency"
     ]
@@ -4751,6 +4751,36 @@ def test_nested_variant_options_money_inventory_and_sku_aliases_materialize() ->
             "size": "0.1 oz",
         }
     ]
+
+
+def test_js_state_parent_price_object_preserves_nested_currency_path() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        "<main><h1>Studio Tread</h1></main>",
+        "https://shop.test/products/studio-tread",
+        artifacts={
+            "js_state_objects": {
+                "product": {
+                    "productName": "Studio Tread",
+                    "url": "https://shop.test/products/studio-tread",
+                    "brand": {"name": "Peloton"},
+                    "currentPrice": {"amount": "3295.00", "currencyCode": "USD"},
+                    "availability": "IN_STOCK",
+                }
+            }
+        },
+    )
+
+    record = result.records[0]
+    assert record["brand"] == "Peloton"
+    assert record["price"] == "3295.00"
+    assert record["currency"] == "USD"
+    assert record["availability"] == "in_stock"
+    assert any(
+        row.fact_type == "offer.currency"
+        and row.locator.value.endswith("/currentPrice/currencyCode")
+        for row in result.evidence
+    )
 
 
 def test_variant_offer_inherits_parent_commercial_facts_but_keeps_child_availability() -> (

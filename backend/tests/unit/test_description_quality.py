@@ -69,7 +69,9 @@ def test_full_product_description_outranks_boundary_meta_excerpt() -> None:
     assert result.records[0]["description"] == full
 
 
-def test_clean_product_description_suppresses_candidate_only_promotional_finding() -> None:
+def test_clean_product_description_suppresses_candidate_only_promotional_finding() -> (
+    None
+):
     promotional = (
         "Shop this product online today with free shipping, lowest prices, "
         "exclusive offers and fast delivery. Buy now."

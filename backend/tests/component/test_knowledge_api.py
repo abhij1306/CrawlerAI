@@ -248,7 +248,6 @@ async def test_knowledge_contract_selection_validates_scope_and_candidate(
     assert contract["selection_history"][0]["selected_source"] == "dom:h1"
 
 
-
 @pytest.mark.asyncio
 @pytest.mark.component
 async def test_domain_contract_listing_and_selection_are_surface_scoped(

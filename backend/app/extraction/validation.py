@@ -263,7 +263,7 @@ def _validate_descriptions(
     has_clean_description = any(
         "description_promotional_copy" not in row.flags for row in descriptions
     )
-    promotional_ids = ()
+    promotional_ids: tuple[str, ...] = ()
     if not has_clean_description:
         promotional_ids = tuple(
             row.evidence_id
@@ -551,7 +551,9 @@ def _validate_child_join_failures(
     entities: EntitySet,
 ) -> tuple[Finding, ...]:
     linked_group_ids = {
-        offer.group_id for offer in entities.offers if offer.variant_entity_id is not None
+        offer.group_id
+        for offer in entities.offers
+        if offer.variant_entity_id is not None
     }
     variant_subjects = {
         subject_id: variant.entity_id

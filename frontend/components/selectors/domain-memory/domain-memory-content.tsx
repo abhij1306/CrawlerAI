@@ -76,7 +76,7 @@ export function DomainMemoryContent({ controller }: DomainMemoryContentProps) {
           }
         }}
         title="Reset domain memory"
-        description="Delete saved selectors, run profiles, field feedback, saved cookies, host protection memory, and runtime cookie files for a fresh start."
+        description="Delete saved selectors, extraction preferences, run profiles, field feedback, saved cookies, host protection memory, and runtime cookie files for a fresh start."
         confirmLabel="Reset Domain Memory"
         pending={controller.resetPending}
         danger

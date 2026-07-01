@@ -126,9 +126,21 @@ Fix those in place before adding browser interaction or downstream fallbacks.
 ```powershell
 cd backend
 $env:PYTHONPATH='.'
-.\.venv\Scripts\python.exe -m pytest tests -q
+.\.venv\Scripts\python.exe -m pytest tests\path\to\relevant_test.py -q
 .\.venv\Scripts\python.exe -m ruff check .
+
+cd ..\frontend
+vp test app/domain-memory/page-view.test.tsx
+vp check --fix
+vp build
 ```
 
-All deterministic backend verification lives under pytest. Do not run separate smoke scripts.
-Run the smallest relevant test file first, then the complete suite for shared changes.
+Backend verification uses focused pytest files only. Do not run broad `pytest tests -q`
+unless the user explicitly asks for a full backend sweep.
+
+Frontend tooling is VitePlus. Use direct `vp` commands:
+`vp test <path>`, `vp check --fix`, and `vp build`.
+Do not use npm wrappers. Do not use Jest flags such as `--runTestsByPath` or `--runInBand`.
+
+Do not run smoke scripts. Do not add or run fixture/corpus replay gates unless the
+user explicitly asks for corpus work.

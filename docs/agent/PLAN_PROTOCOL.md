@@ -35,7 +35,7 @@ One paragraph. What problem does this solve and what does done look like?
 
 - [ ] Specific, testable outcome 1
 - [ ] Specific, testable outcome 2
-- [ ] `python -m pytest tests -q` exits 0
+- [ ] Focused backend pytest or VitePlus frontend verification exits 0
 
 ## Do Not Touch
 
@@ -82,9 +82,12 @@ Running notes as execution proceeds: blockers, decisions made, things discovered
 Before marking a plan `DONE`:
 
 1. All acceptance criteria are checked off.
-2. `python -m pytest tests -q` passes.
+2. The focused verify commands named in the plan pass.
 3. All "Doc Updates Required" items are completed.
 4. Update `docs/plans/ACTIVE.md` to reflect completion (or point to next plan).
+
+Do not require broad `pytest tests -q` as a default close gate. Use it only when
+the user explicitly asks for full-suite verification.
 
 ---
 

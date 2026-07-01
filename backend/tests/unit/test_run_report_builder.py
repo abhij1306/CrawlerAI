@@ -152,7 +152,6 @@ def test_findings_become_root_causes(artifacts_root: Path) -> None:
     ]
 
 
-
 def test_record_completeness_metric_is_not_a_root_cause(artifacts_root: Path) -> None:
     _write_diagnose(
         artifacts_root,

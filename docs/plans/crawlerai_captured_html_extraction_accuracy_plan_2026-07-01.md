@@ -3,7 +3,7 @@
 **Date:** 1 July 2026  
 **Repository audited:** `C:\Projects\CrawlerAI`  
 **Artifact inputs:** `1.zip` and `2.zip`  
-**Mode:** Static artifact analysis only — no crawl replay, no network recapture, and no code changes  
+**Mode:** Code fixes from captured HTML findings. No crawl replay, no smoke scripts, and no committed fixture/corpus gates unless explicitly requested.  
 **Primary target:** Ecommerce detail extraction
 
 ## 1. Objective
@@ -275,55 +275,50 @@ The following must not be “fixed” by inventing or rewriting values:
 
 ## 6. Implementation plan
 
-### Slice 0 — Create a static HTML-to-output acceptance manifest
+### Current implementation status
 
-**Priority:** P0  
-**Purpose:** Preserve the evidence basis without replaying crawls.
+**Completed bug work**
 
-Build a deterministic corpus analyzer that reads the existing triples:
+- Active plan moved to this captured-HTML accuracy plan and previous active plan queued.
+- JSON-LD `priceSpecification` now emits atomic price/currency facts in one offer group.
+- Schema.org `OnlineOnly` and related availability tokens are config-owned and canonicalized.
+- JSON-LD `@id` / `productGroupID` aliases now help ProductGroup and standalone variant joins.
+- Parent-only offers no longer emit false `CHILD_JOIN_FAILED`.
+- `AggregateOffer.highPrice` is treated as `price_max`, not fake `original_price`.
+- Primary offer ranking prefers complete price/currency/availability when candidates tie.
+- Domain-surface contract selection updates only templates whose retained candidates contain the selected source.
+- Knowledge Graph UI merged source options across grouped templates to avoid hiding valid saved sources.
+- Embedded-state parent price objects now keep nested `amount` and `currencyCode` together with source-path locators.
+- Mypy issues from the P0 changes are fixed:
+  - `validation.py` promotional description evidence tuple is typed.
+  - `knowledge.py` contract query result is materialized as a mutable list before sorting.
 
-```text
-page.html
-record.json
-diagnose.json
-```
+**Verification already run**
 
-For every URL and field, store one disposition:
+- Backend focused: `tests/component/test_knowledge_api.py`, `tests/unit/test_extraction_pipeline.py`, `tests/unit/test_variant_offer_availability_semantics.py`, `tests/unit/test_conflict_aware_product_linking.py` passed.
+- Slice 3 focused: `tests/unit/test_extraction_pipeline.py -k "js_state_parent_price_object or nested_variant_options_money or shopify_vendor"` passed.
+- Backend ruff passed for touched Python.
+- `mypy .` passed for 342 backend source files.
+- Frontend lint passed.
 
-- `must_publish`
-- `must_publish_as_parent_derived`
-- `must_publish_on_variant`
-- `must_reject_invalid`
-- `must_reject_unrelated`
-- `source_unavailable`
-- `not_present`
-- `manual_schema_decision`
+**Removed from this plan**
 
-Each `must_publish` row must contain:
+- Static/corpus acceptance manifest work.
+- Committed fixture-based regression cases.
+- Smoke scripts and replay gates.
 
-- result ID and URL;
-- public field and entity scope;
-- source type;
-- exact source locator or stable text/JSON path;
-- raw source value;
-- expected canonical value;
-- current output;
-- current field state/finding;
-- owning pipeline stage.
+Future verification must use focused owner tests only unless the user explicitly asks for full-suite, fixture, corpus, replay, or smoke work.
 
-**Suggested location**
+**Next handoff**
 
-- ignored full-corpus manifest under `backend/artifacts/`;
-- compact, sanitized regression cases under `backend/tests/fixtures/extraction/`.
+Continue Slice 3. Remaining work is to broaden typed embedded-state paths beyond the
+completed parent `currentPrice.amount/currencyCode` case:
 
-**Acceptance**
-
-- all 96 unique URLs classified;
-- no empty field is automatically labelled a defect;
-- every confirmed item in Section 4 has a source locator;
-- blocked and invalid-source cases are excluded from parser-recall metrics.
-
----
+- support configured structural paths for `sellingPrice`, `basePrice`, and product/vendor brand containers where missing;
+- preserve atomic offer grouping for same-object price/currency/availability;
+- keep minor-unit conversion evidence-driven only;
+- add focused inline structural tests in `backend/tests/unit/test_extraction_pipeline.py`;
+- verify with focused pytest, ruff, and mypy for touched files.
 
 ### Slice 1 — Make diagnostics projection- and entity-aware
 
@@ -882,7 +877,10 @@ A field must never be silently omitted. It must end as:
 
 ## 7. Test strategy
 
-Do not add site-specific production code. Use minimized fixtures derived from the exact structural shapes in the uploaded HTML.
+Do not add site-specific production code. Do not add committed corpus fixtures,
+fixture replay suites, smoke scripts, or manifest gates unless the user explicitly asks for corpus/replay work.
+
+Use focused inline structural tests in the canonical owner files. Tests should model generic source shapes, not site names.
 
 ### Extend existing canonical test owners
 
@@ -891,9 +889,9 @@ Do not add site-specific production code. Use minimized fixtures derived from th
 - `backend/tests/unit/test_brand_inference.py`
 - resolver/entity/publication tests already owning those contracts
 
-### Required fixture cases
+### Required structural cases
 
-| Artifact | Required assertion |
+| Signal | Required assertion |
 |---:|---|
 | 2733 | nested `priceSpecification` publishes `1795.00 USD` and availability |
 | 2734 | nested `priceSpecification` publishes `22500.00 USD` and availability |
@@ -922,7 +920,6 @@ Do not add site-specific production code. Use minimized fixtures derived from th
 
 ### Field recall
 
-- **Zero confirmed `must_publish` misses** in the static acceptance manifest.
 - No valid supported JSON-LD Offer or ProductGroup value is marked `not_present_in_captured_sources`.
 - No selected-product structured brand/image is marked `outside_selected_target`.
 - No explicit supported child relation ends in `CHILD_JOIN_FAILED`.
@@ -945,7 +942,7 @@ Do not add site-specific production code. Use minimized fixtures derived from th
 
 ### Regression safety
 
-- All 40 currently successful unique URLs retain their valid public fields unless the manifest identifies a current quality error.
+- Existing successful structural cases retain their valid public fields unless a focused test documents a current quality error.
 - Blocked captures remain blocked/source-unavailable.
 - Existing cross-product contamination and no-Cartesian-variant tests remain green.
 - No hostname-specific extraction rule is added.
@@ -954,11 +951,10 @@ Do not add site-specific production code. Use minimized fixtures derived from th
 
 ### P0 — Data currently present but structurally unreachable
 
-1. Slice 0: static acceptance manifest
-2. Slice 1: projection-aware diagnostic truth
-3. Slice 2: JSON-LD offer completeness
-4. Slice 3: embedded-state typed paths and atomic offers
-5. Slice 4: explicit child ownership and joins
+1. Slice 1: projection-aware diagnostic truth
+2. Slice 2: JSON-LD offer completeness
+3. Slice 3: embedded-state typed paths and atomic offers
+4. Slice 4: explicit child ownership and joins
 
 **Checkpoint:** MR PORTER, NET-A-PORTER, Decathlon, DTLR, Nike, Farfetch, H&M, Gap, Sony, and J.Crew pass minimized structural fixtures.
 
@@ -975,7 +971,7 @@ Do not add site-specific production code. Use minimized fixtures derived from th
 ### P2 — Production contract and release gate
 
 11. Slice 10: complete-PDP profile
-12. Run the static source/output audit and deterministic minimized extraction tests
+12. Run focused owner tests and lint for touched code
 13. Produce a final residual ledger containing only:
     - source unavailable;
     - not present;

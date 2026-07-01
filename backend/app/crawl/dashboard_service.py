@@ -11,7 +11,7 @@ from app.models.data_enrichment import (
     DataEnrichmentJob,
     EnrichedProduct,
 )
-from app.models.crawl_run import CrawlLog, CrawlRecord, CrawlRun
+from app.models.crawl_run import CrawlLog, CrawlRecord, CrawlRun, CrawlUrlResult
 from app.models.domain_memory import (
     DomainCookieMemory,
     DomainFieldFeedback,
@@ -108,12 +108,14 @@ async def reset_application_data(session: AsyncSession) -> dict:
     async with _session_transaction(session):
         crawl_reset = await _reset_crawl_data_db(session)
         memory_reset = await _reset_domain_memory_db(session)
+        graph_reset = await purge_graph(session)
         intelligence_reset = await _reset_product_intelligence_db(session)
         enrichment_reset = await _reset_data_enrichment_db(session)
     return {
         **crawl_reset,
         **await _reset_crawl_runtime_state(),
         **memory_reset,
+        **graph_reset,
         **intelligence_reset,
         **enrichment_reset,
     }
@@ -131,8 +133,10 @@ async def reset_crawl_data(session: AsyncSession) -> dict:
 async def reset_domain_memory(session: AsyncSession) -> dict:
     async with _session_transaction(session):
         counts = await _reset_domain_memory_db(session)
+        graph_counts = await purge_graph(session)
     return {
         **counts,
+        **graph_counts,
         **await _reset_domain_memory_runtime_state(),
     }
 
@@ -150,9 +154,8 @@ async def reset_data_enrichment(session: AsyncSession) -> dict:
 async def reset_knowledge_graph(session: AsyncSession) -> dict:
     """Explicit Knowledge Graph purge.
 
-    The graph is preserved by every other reset (crawl, Domain Memory,
-    application). This is the only path that removes it, and it leaves Domain
-    Memory and crawl data untouched (feature spec §8).
+    This path removes only the graph. Domain Memory and application resets also
+    remove it as part of their wider forget-everything semantics.
     """
     async with _session_transaction(session):
         return await purge_graph(session)
@@ -163,6 +166,7 @@ async def _reset_crawl_data_db(session: AsyncSession) -> dict:
         session,
         [
             ("crawl_runs_deleted", CrawlRun),
+            ("crawl_url_results_deleted", CrawlUrlResult),
             ("crawl_records_deleted", CrawlRecord),
             ("crawl_logs_deleted", CrawlLog),
             ("review_promotions_deleted", ReviewPromotion),
@@ -286,9 +290,10 @@ async def _reset_bucket_db(
 async def _reset_crawl_data_tables(session: AsyncSession) -> None:
     await _reset_bucket_tables(
         session,
-        [CrawlLog, CrawlRecord, ReviewPromotion, LLMCostLog, CrawlRun],
+        [CrawlLog, CrawlRecord, CrawlUrlResult, ReviewPromotion, LLMCostLog, CrawlRun],
         "crawl_logs",
         "crawl_records",
+        "crawl_url_results",
         "review_promotions",
         "llm_cost_log",
         "crawl_runs",

@@ -27,9 +27,7 @@ def match_template(
     )
     route = normalize_route(url, surface) if url else ""
     route_matches = (
-        [row for row in templates if row.get("route_pattern") == route]
-        if route
-        else []
+        [row for row in templates if row.get("route_pattern") == route] if route else []
     )
 
     matched: dict[str, Any] | None = exact

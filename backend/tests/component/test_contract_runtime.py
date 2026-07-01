@@ -231,7 +231,6 @@ def test_match_template_merges_all_route_only_operator_contracts() -> None:
     assert result["contracts"][0]["selected_source"] == "css_recipe:.brand"
 
 
-
 def test_match_template_applies_operator_preference_across_routes() -> None:
     snapshot = {
         "surface": "ecommerce_detail",

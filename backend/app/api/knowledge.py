@@ -184,7 +184,7 @@ async def knowledge_domain_contracts(
     normalized_surface = str(surface or "").strip()
     if normalized_surface:
         statement = statement.where(KGExtractionContract.surface == normalized_surface)
-    contracts = (
+    contracts = list(
         (
             await session.execute(
                 statement.order_by(
@@ -354,9 +354,7 @@ async def knowledge_contract_selection(
                     select(KGEntity.id)
                     .where(KGEntity.entity_type == "page_template")
                     .where(
-                        KGEntity.canonical_key.like(
-                            f"{domain}:{contract.surface}:%"
-                        )
+                        KGEntity.canonical_key.like(f"{domain}:{contract.surface}:%")
                     )
                 )
             ).scalars()
@@ -370,10 +368,7 @@ async def knowledge_contract_selection(
                 select(KGExtractionContract)
                 .where(KGExtractionContract.template_id.in_(template_ids))
                 .where(KGExtractionContract.surface == contract.surface)
-                .where(
-                    KGExtractionContract.canonical_field
-                    == contract.canonical_field
-                )
+                .where(KGExtractionContract.canonical_field == contract.canonical_field)
                 .where(KGExtractionContract.status == "active")
             )
         ).scalars()

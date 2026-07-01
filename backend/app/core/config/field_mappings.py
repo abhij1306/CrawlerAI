@@ -428,6 +428,25 @@ ECOMMERCE_STRUCTURED_SOURCE_FACT_TYPES = {
     "title": PRODUCT_TITLE_FACT_TYPE,
     "url": PRODUCT_URL_FACT_TYPE,
 }
+ECOMMERCE_STRUCTURED_SOURCE_VALUE_PATH_FACT_TYPES = {
+    ("brand", "name"): PRODUCT_BRAND_FACT_TYPE,
+    ("vendor", "name"): PRODUCT_BRAND_FACT_TYPE,
+    ("price", "amount"): OFFER_PRICE_FACT_TYPE,
+    ("price", "currencyCode"): OFFER_CURRENCY_FACT_TYPE,
+    ("currentPrice", "amount"): OFFER_PRICE_FACT_TYPE,
+    ("currentPrice", "currencyCode"): OFFER_CURRENCY_FACT_TYPE,
+    ("current_price", "amount"): OFFER_PRICE_FACT_TYPE,
+    ("current_price", "currencyCode"): OFFER_CURRENCY_FACT_TYPE,
+    ("sellingPrice", "amount"): OFFER_PRICE_FACT_TYPE,
+    ("sellingPrice", "currencyCode"): OFFER_CURRENCY_FACT_TYPE,
+    ("salePrice", "amount"): OFFER_PRICE_FACT_TYPE,
+    ("salePrice", "currencyCode"): OFFER_CURRENCY_FACT_TYPE,
+    ("basePrice", "amount"): OFFER_PRICE_FACT_TYPE,
+    ("basePrice", "currencyCode"): OFFER_CURRENCY_FACT_TYPE,
+}
+ECOMMERCE_STRUCTURED_CONTAINER_SOURCE_KEYS = frozenset(
+    key_path[0] for key_path in ECOMMERCE_STRUCTURED_SOURCE_VALUE_PATH_FACT_TYPES
+)
 ECOMMERCE_PRODUCT_IDENTITY_SOURCE_KEYS = (
     "productId",
     "productID",

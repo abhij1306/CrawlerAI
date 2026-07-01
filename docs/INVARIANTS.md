@@ -368,10 +368,17 @@ The run-complete callback remains a generic observability extension point. It mu
 
 ## 14. Plans Must Be Verified, Not Just Written
 
-**Rule:** A plan slice is not done until its verify step passes. A plan is not closed until `pytest tests -q` passes. Plans that are not verified are not done — they are abandoned, and their changes must be treated as untrusted.
+**Rule:** A plan slice is not done until its focused verify step passes. Plans that are not verified are not done — they are abandoned, and their changes must be treated as untrusted.
+
+Backend verify steps use the smallest relevant pytest target plus ruff for touched Python. Do not run broad `pytest tests -q` unless the user explicitly asks for a full-suite sweep.
+
+Frontend verify steps use direct VitePlus commands: `vp test <test-path>`,
+`vp check --fix`, and `vp build`. Do not use npm wrappers or Jest-only flags.
+
+Smoke scripts and fixture/corpus replay gates are not default verification. Do not add or run them unless the user explicitly asks for corpus, replay, or smoke work.
 
 **VIOLATION signatures:**
-- A slice is marked DONE without running the verify command
+- A slice is marked DONE without running the focused verify command
 - A plan doc exists with status IN PROGRESS but no corresponding test run in the last session
 - A second plan is created to fix the same issue as a previous plan that was never verified
 

@@ -8,9 +8,9 @@ them. The vocabulary and bounds they consume live in
 
 Identity is UUID throughout (entities are globally typed nodes; §4.2). Evidence
 references the originating crawl run via `ON DELETE SET NULL` so bounded
-provenance survives a crawl reset while the graph itself is preserved across the
-application and Domain Memory resets and removed only by an explicit graph purge
-(feature spec §8).
+provenance survives a crawl-only reset. Domain Memory and full workspace resets
+remove the graph so extraction preferences are forgotten with selector/cookie
+memory.
 """
 
 from __future__ import annotations

@@ -603,10 +603,10 @@ async def test_reset_crawl_data_preserves_knowledge_graph(
 
 @pytest.mark.asyncio
 @pytest.mark.component
-async def test_reset_domain_memory_preserves_knowledge_graph(
+async def test_reset_domain_memory_deletes_knowledge_graph(
     db_session: AsyncSession,
 ) -> None:
-    """reset_domain_memory wipes Domain Memory but leaves the graph intact."""
+    """reset_domain_memory wipes Domain Memory and extraction memory."""
     db_session.add(
         DomainMemory(
             domain="example.com",
@@ -628,22 +628,22 @@ async def test_reset_domain_memory_preserves_knowledge_graph(
     reset_result = await reset_domain_memory(db_session)
     await db_session.commit()
     assert reset_result["domain_memory_deleted"] == 1
+    assert reset_result["kg_entities_deleted"] == 1
 
     memory = (await db_session.execute(select(DomainMemory))).scalars().all()
     assert len(memory) == 0
 
     entities = (await db_session.execute(select(KGEntity))).scalars().all()
-    assert len(entities) == 1
-    assert entities[0].canonical_key == "widget"
+    assert entities == []
 
 
 @pytest.mark.asyncio
 @pytest.mark.component
-async def test_reset_application_data_preserves_knowledge_graph(
+async def test_reset_application_data_deletes_knowledge_graph(
     db_session: AsyncSession,
     test_user,
 ) -> None:
-    """reset_application_data wipes all buckets but leaves the graph intact."""
+    """reset_application_data wipes all workspace buckets, including extraction memory."""
     await create_crawl_run(
         db_session,
         test_user.id,
@@ -675,6 +675,7 @@ async def test_reset_application_data_preserves_knowledge_graph(
     await db_session.commit()
     assert reset_result["crawl_runs_deleted"] == 1
     assert reset_result["domain_memory_deleted"] == 1
+    assert reset_result["kg_entities_deleted"] == 1
 
     runs = (await db_session.execute(select(CrawlRun))).scalars().all()
     memory = (await db_session.execute(select(DomainMemory))).scalars().all()
@@ -682,8 +683,7 @@ async def test_reset_application_data_preserves_knowledge_graph(
     assert len(memory) == 0
 
     entities = (await db_session.execute(select(KGEntity))).scalars().all()
-    assert len(entities) == 1
-    assert entities[0].canonical_key == "widget"
+    assert entities == []
 
 
 @pytest.mark.asyncio

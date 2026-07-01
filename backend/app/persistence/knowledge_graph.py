@@ -1,9 +1,10 @@
 """Knowledge Graph repository — the only storage seam for the graph (Slice 5).
 
 Transactional batch upserts, per-site projection serialization via site-version
-row locking, bounded recursive-CTE neighbourhood reads, and the explicit graph
-purge. The run-complete projector (Slices 6-8) drives these; extraction never
-imports this module (enforced by the architecture ratchet).
+row locking, bounded recursive-CTE neighbourhood reads, and graph purge support
+used by explicit graph, Domain Memory, and full workspace resets. The
+run-complete projector (Slices 6-8) drives writes; extraction never imports this
+module (enforced by the architecture ratchet).
 
 All upserts are idempotent on their natural keys, so re-projecting a run can
 never duplicate nodes, edges, claims, or contracts.

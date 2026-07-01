@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 
+import { crawlRecordSchema, strictValidate } from '../../lib/api/schemas';
+
 const originalViteApiBaseUrl = import.meta.env.VITE_API_BASE_URL;
 
 describe('apiClient', () => {
@@ -139,7 +141,6 @@ describe('apiClient', () => {
   });
 
   it('preserves review bucket evidence metadata during validation', async () => {
-    const { crawlRecordSchema, strictValidate } = await import('../../lib/api/schemas');
     const parsed = strictValidate(
       crawlRecordSchema,
       {
