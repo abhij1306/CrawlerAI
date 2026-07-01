@@ -1,9 +1,10 @@
 # Active Plan
 
 **Current:** CrawlerAI Captured-HTML Extraction Accuracy Plan → `docs/plans/crawlerai_captured_html_extraction_accuracy_plan_2026-07-01.md`
-**Status:** IN PROGRESS
+**Status:** COMPLETE
 **Started:** 2026-07-01
-**Last slice completed:** Slice 7 — typed brand roles and conservative fallback implemented with focused backend verification. Continue remaining plan slices from the queue order as directed.
+**Completed:** 2026-07-01
+**Last slice completed:** Slice 9 — asset fallback/delivery handling and explicit variant completeness implemented. Slice 10 removed by explicit user direction. Focused extraction tests, ruff, and mypy passed.
 
 ## Queue
 

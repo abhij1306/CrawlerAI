@@ -99,9 +99,7 @@ class JsStateCollector:
                         limit=MAX_SOURCE_OBJECTS_PER_ARTIFACT,
                         examples=tuple(
                             path
-                            for path, _ in objects[
-                                :MAX_DIAGNOSTIC_EXAMPLES_PER_REASON
-                            ]
+                            for path, _ in objects[:MAX_DIAGNOSTIC_EXAMPLES_PER_REASON]
                         ),
                     )
                 )
@@ -1097,15 +1095,7 @@ def _option_rows_from_value(
 
 def _canonical_axis(value: object) -> str | None:
     text = str(_scalar_value(value) or "").strip()
-    if not text:
-        return None
-    normalized = "_".join(text.lower().replace("&", " ").replace("-", " ").split())
-    axis = variant_policy.AXIS_NAME_ALIASES.get(normalized, normalized)
-    if axis in {"colour"}:
-        return "color"
-    if axis in variant_policy.PUBLIC_VARIANT_AXIS_FIELDS:
-        return axis
-    return None
+    return variant_policy.canonical_variant_axis(text)
 
 
 def _dedupe_options(

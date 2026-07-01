@@ -694,7 +694,11 @@ def _link_assets(
     assets: list[AssetEntity] = []
     for identity_key, asset_rows in sorted(groups.items()):
         rows = [ev for ev, _url in asset_rows]
-        variant_id = _variant_for(rows, variants)
+        variant_id = (
+            None
+            if any(row.relation_type == "product_asset" for row in rows)
+            else _variant_for(rows, variants)
+        )
         product_id = _product_for_child(rows, product_by_subject, variants, variant_id)
         if product_id is None:
             continue

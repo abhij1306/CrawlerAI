@@ -14,6 +14,8 @@ from app.models.crawl_run import (
     UpdatedAtMixin,
 )
 
+DOMAIN_RUN_PROFILE_UNIQUE_CONSTRAINT = "uq_domain_run_profiles_domain_surface"
+
 
 class DomainMemory(UpdatedAtMixin, Base):
     __tablename__ = "domain_memory"
@@ -29,7 +31,7 @@ class DomainRunProfile(UpdatedAtMixin, Base):
     __tablename__ = "domain_run_profiles"
     __table_args__ = (
         Index(
-            "uq_domain_run_profiles_domain_surface",
+            DOMAIN_RUN_PROFILE_UNIQUE_CONSTRAINT,
             "domain",
             "surface",
             unique=True,

@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from sqlalchemy import inspect, select
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.domain_memory import DomainRunProfile
@@ -95,12 +96,30 @@ async def save_domain_run_profile(
         saved_at=saved_at,
     )
     if existing is None:
-        existing = DomainRunProfile(
-            domain=normalized_domain,
-            surface=normalized_surface,
-            profile=normalized_profile,
+        statement = (
+            insert(DomainRunProfile)
+            .values(
+                domain=normalized_domain,
+                surface=normalized_surface,
+                profile=normalized_profile,
+            )
+            .on_conflict_do_update(
+                index_elements=(
+                    DomainRunProfile.domain,
+                    DomainRunProfile.surface,
+                ),
+                set_={
+                    "profile": normalized_profile,
+                    "updated_at": datetime.now(UTC),
+                },
+            )
+            .returning(DomainRunProfile.id)
         )
-        session.add(existing)
+        profile_id = (await session.execute(statement)).scalar_one()
+        existing = await session.get(DomainRunProfile, profile_id)
+        if existing is None:
+            raise RuntimeError("domain run profile upsert returned no record")
+        existing.profile = normalized_profile
     else:
         existing.profile = normalized_profile
     if commit:

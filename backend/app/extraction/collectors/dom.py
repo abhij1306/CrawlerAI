@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import json
 import re
+from html import unescape
+from urllib.parse import parse_qsl, urljoin, urlsplit
 
 from app.extraction.collectors._helpers import evidence, html_doc
 from app.core.config.extraction_rules import (
@@ -28,11 +31,16 @@ from app.core.config.extraction_rules import (
     DETAIL_IMAGE_URL_ATTRS,
     DETAIL_TEXT_SCOPE_EXCLUDE_TOKENS,
     VARIANT_DOM_MAX_LABEL_LENGTH,
+    VARIANT_DOM_ATTRIBUTE_CONTROL_SELECTOR,
+    VARIANT_DOM_ATTRIBUTE_JSON_ATTRIBUTE,
+    VARIANT_DOM_ATTRIBUTE_URL_ATTRIBUTES,
     VARIANT_DOM_NOISE_PHRASES,
     VARIANT_DOM_SIZE_LABEL_PATTERN,
+    VARIANT_DOM_URL_AXIS_PARAM_PATTERN,
     VARIANT_OPTION_VALUE_EXACT_NOISE_TOKENS,
     VARIANT_PLACEHOLDER_PREFIXES,
     VARIANT_PLACEHOLDER_VALUES,
+    VARIANT_URL_AXIS_PARAMS,
 )
 from app.core.config import field_mappings
 from app.core.config.field_mappings import (
@@ -734,6 +742,7 @@ def _variant_controls(
     bundle: CaptureBundle, doc, product_subject: str
 ) -> list[Evidence]:
     out: list[Evidence] = []
+    out.extend(_attribute_variant_controls(bundle, doc, product_subject))
     for axis, selectors in {
         "size": (
             'select[name*="size" i] option',
@@ -782,6 +791,218 @@ def _variant_controls(
                     )
                 )
     return out
+
+
+def _attribute_variant_controls(
+    bundle: CaptureBundle, doc, product_subject: str
+) -> list[Evidence]:
+    rows: list[Evidence] = []
+    option_seen: set[tuple[str, str]] = set()
+    variant_seen: set[str] = set()
+    for node in doc.css(VARIANT_DOM_ATTRIBUTE_CONTROL_SELECTOR):
+        axis = _attribute_control_axis(node)
+        if axis is None:
+            continue
+        value = _attribute_control_value(node, axis=axis)
+        if value is None:
+            continue
+        control_url = _attribute_control_url(bundle, node)
+        url_options = _variant_options_from_url(control_url) if control_url else {}
+        options = {**url_options, axis: value}
+        if {"color", "size"} <= set(options) and control_url:
+            if control_url in variant_seen:
+                continue
+            variant_seen.add(control_url)
+            rows.extend(
+                _attribute_control_variant_rows(
+                    bundle,
+                    node,
+                    product_subject,
+                    control_url=control_url,
+                    options=options,
+                )
+            )
+            continue
+        option_key = (axis, value.casefold())
+        if option_key in option_seen:
+            continue
+        option_seen.add(option_key)
+        rows.append(
+            evidence(
+                bundle,
+                "dom",
+                "dom",
+                f"option.{axis}",
+                value,
+                SourceLocator(
+                    kind="css_selector",
+                    value=node.stable_locator(),
+                    preview=value[:120],
+                ),
+                group_id=f"option:dom:{axis}",
+                hint=EntityHint(entity_type="product", option_values={axis: value}),
+                confidence=0.62,
+                subject_id=product_subject,
+                parent_subject_id=None,
+            )
+        )
+    return rows
+
+
+def _attribute_control_variant_rows(
+    bundle: CaptureBundle,
+    node: HtmlNode,
+    product_subject: str,
+    *,
+    control_url: str,
+    options: dict[str, str],
+) -> list[Evidence]:
+    variant_subject = stable_id(
+        "subject", bundle.bundle_id, "dom", "variant", control_url
+    )
+    variant_group = f"variant:dom:{control_url}"
+    hint = EntityHint(
+        entity_type="variant",
+        url=control_url,
+        option_values=options,
+        selected=_attribute_control_selected(node),
+    )
+    locator = SourceLocator(
+        kind="css_selector", value=node.stable_locator(), preview=control_url[:120]
+    )
+    rows: list[Evidence] = []
+    variant_fields: list[tuple[str, object]] = [
+        ("variant.url", control_url),
+        *((f"variant.option.{axis}", value) for axis, value in sorted(options.items())),
+    ]
+    selected = _attribute_control_selected(node)
+    if selected is not None:
+        variant_fields.append(("variant.selected", selected))
+    for fact_type, value in variant_fields:
+        rows.append(
+            evidence(
+                bundle,
+                "dom",
+                "dom",
+                fact_type,
+                value,
+                locator,
+                group_id=variant_group,
+                hint=hint,
+                confidence=0.74,
+                subject_id=variant_subject,
+                parent_subject_id=product_subject,
+                parent_scope="product",
+            )
+        )
+    availability = _attribute_control_availability(node)
+    if availability:
+        rows.append(
+            evidence(
+                bundle,
+                "dom",
+                "dom",
+                "offer.availability",
+                availability,
+                locator,
+                group_id=f"offer:dom:{control_url}",
+                hint=hint,
+                confidence=0.7,
+                subject_id=stable_id(
+                    "subject", bundle.bundle_id, "dom", "offer", control_url
+                ),
+                parent_subject_id=variant_subject,
+                parent_scope="variant",
+            )
+        )
+    return rows
+
+
+def _attribute_control_axis(node: HtmlNode) -> str | None:
+    raw_axis = str(node.attribute("data-attr-id") or "").strip().casefold()
+    return VARIANT_URL_AXIS_PARAMS.get(raw_axis)
+
+
+def _attribute_control_value(node: HtmlNode, *, axis: str) -> str | None:
+    data = _attribute_control_json(node)
+    raw = (
+        str(node.attribute("data-attr-value") or "").strip()
+        or str(node.attribute("data-dvalue") or "").strip()
+        or str(data.get("displayValue") or "").strip()
+        or str(data.get("value") or "").strip()
+        or str(node.attribute("data-id") or "").strip()
+        or " ".join(node.text().split()).strip()
+    )
+    return _variant_value(raw, axis=axis)
+
+
+def _attribute_control_url(bundle: CaptureBundle, node: HtmlNode) -> str | None:
+    data = _attribute_control_json(node)
+    raw_url = (
+        next(
+            (
+                str(node.attribute(attribute) or "").strip()
+                for attribute in VARIANT_DOM_ATTRIBUTE_URL_ATTRIBUTES
+                if str(node.attribute(attribute) or "").strip()
+            ),
+            "",
+        )
+        or str(data.get("url") or "").strip()
+    )
+    if not raw_url:
+        return None
+    return urljoin(bundle.final_url or bundle.requested_url, unescape(raw_url))
+
+
+def _attribute_control_json(node: HtmlNode) -> dict[str, object]:
+    raw = str(node.attribute(VARIANT_DOM_ATTRIBUTE_JSON_ATTRIBUTE) or "").strip()
+    if not raw:
+        return {}
+    try:
+        parsed = json.loads(unescape(raw))
+    except json.JSONDecodeError:
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _json_flag_bool(value: object) -> bool:
+    if isinstance(value, str):
+        return value.strip().casefold() not in {"", "0", "false", "no", "off"}
+    return bool(value)
+
+
+def _attribute_control_selected(node: HtmlNode) -> bool | None:
+    data = _attribute_control_json(node)
+    if "selected" in data:
+        return _json_flag_bool(data["selected"])
+    classes = {part.casefold() for part in str(node.attribute("class") or "").split()}
+    if classes & {"selected", "active", "is-selected"}:
+        return True
+    return None
+
+
+def _attribute_control_availability(node: HtmlNode) -> str | None:
+    data = _attribute_control_json(node)
+    if "selectable" in data:
+        return "in_stock" if _json_flag_bool(data["selectable"]) else "out_of_stock"
+    if node.attribute("disabled") is not None:
+        return "out_of_stock"
+    return None
+
+
+def _variant_options_from_url(url: str) -> dict[str, str]:
+    options: dict[str, str] = {}
+    for key, value in parse_qsl(urlsplit(url).query, keep_blank_values=False):
+        axis_match = re.match(VARIANT_DOM_URL_AXIS_PARAM_PATTERN, key, flags=re.I)
+        if not axis_match:
+            continue
+        axis = VARIANT_URL_AXIS_PARAMS.get(axis_match.group("axis").casefold())
+        if not axis:
+            continue
+        parsed_value = _variant_value(value, axis=axis)
+        if parsed_value:
+            options[axis] = parsed_value
+    return options
 
 
 def _variant_value(value: str, *, axis: str) -> str | None:

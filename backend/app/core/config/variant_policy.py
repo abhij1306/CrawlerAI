@@ -229,6 +229,19 @@ AXIS_NAME_ALIASES = {
     )
     if normalized_alias and normalized_canonical
 }
+
+
+def canonical_variant_axis(value: object) -> str | None:
+    text = str(value or "").strip()
+    if re.match(r"^[a-z][a-z0-9+.-]*:", text, flags=re.I):
+        text = text.rstrip("/#").rsplit("/", 1)[-1].rsplit("#", 1)[-1]
+    if not text:
+        return None
+    normalized = _normalized_variant_axis_alias_key(text)
+    axis = AXIS_NAME_ALIASES.get(normalized, normalized)
+    return axis if axis in PUBLIC_VARIANT_AXIS_FIELDS else None
+
+
 OPTION_SCALAR_FIELDS = frozenset(PUBLIC_VARIANT_AXIS_FIELDS)
 VARIANT_SKU_VALUE_KEYS = (
     "sku",

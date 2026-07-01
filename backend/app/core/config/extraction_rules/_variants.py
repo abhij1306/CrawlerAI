@@ -155,6 +155,15 @@ VARIANT_OPAQUE_NUMERIC_OPTION_MIN_DIGITS = 4
 VARIANT_CROSS_PRODUCT_URL_MAX_TOKEN_OVERLAP_RATIO = 0.25
 VARIANT_DOM_MAX_LABEL_LENGTH = 80
 VARIANT_DOM_SIZE_LABEL_PATTERN = r"^size\s+(?P<value>[a-z0-9][a-z0-9 .+/-]{0,12})\s*:"
+VARIANT_DOM_ATTRIBUTE_CONTROL_SELECTOR = (
+    "[data-attr-id][data-attr-value], [data-attr-id][data-dvalue]"
+)
+VARIANT_DOM_ATTRIBUTE_URL_ATTRIBUTES = ("value", "data-url", "data-href", "href")
+VARIANT_DOM_ATTRIBUTE_JSON_ATTRIBUTE = "data-json"
+VARIANT_DOM_URL_AXIS_PARAM_PATTERN = (
+    r"^(?:dwvar_.+_|attribute_)?(?P<axis>color|colour|size|width|style)$"
+)
+VARIANT_URL_OPTION_ENDPOINT_PATH_TOKENS = frozenset({"variant", "variation"})
 VARIANT_DOM_NOISE_PHRASES = (
     "expand color swatches",
     "view larger image",

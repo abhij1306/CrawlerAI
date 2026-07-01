@@ -1,6 +1,7 @@
 # CrawlerAI Captured-HTML Extraction Accuracy Plan
 
 **Date:** 1 July 2026  
+**Status:** COMPLETE
 **Repository audited:** `C:\Projects\CrawlerAI`  
 **Artifact inputs:** `1.zip` and `2.zip`  
 **Mode:** Code fixes from captured HTML findings. No crawl replay, no smoke scripts, and no committed fixture/corpus gates unless explicitly requested.  
@@ -290,6 +291,8 @@ The following must not be “fixed” by inventing or rewriting values:
 - Knowledge Graph UI merged source options across grouped templates to avoid hiding valid saved sources.
 - Embedded-state parent price objects now keep nested `amount` and `currencyCode` together with source-path locators.
 - Slice 7 brand role metadata now distinguishes manufacturer/designer/private-label/vendor from retailer/seller/marketplace/site identity, ranks public brand candidates by role, and rejects non-manufacturer identity evidence before publication.
+- Slice 8 now rejects malformed delivery URLs before role assignment, selects the next eligible asset, accepts structurally proven extensionless product images without admitting known utility assets, deduplicates by canonical identity, and derives strict selected/single-variant parent image fallback with lineage.
+- Slice 9 now shares canonical variant-axis mapping across JSON-LD and embedded state, preserves `flavor`, collects JSON-LD child images, retains explicit partially complete children with stable identity and direct commercial evidence, and keeps optionless package/noise rows rejected.
 - Mypy issues from the P0 changes are fixed:
   - `validation.py` promotional description evidence tuple is typed.
   - `knowledge.py` contract query result is materialized as a mutable list before sorting.
@@ -299,6 +302,7 @@ The following must not be “fixed” by inventing or rewriting values:
 - Backend focused: `tests/component/test_knowledge_api.py`, `tests/unit/test_extraction_pipeline.py`, `tests/unit/test_variant_offer_availability_semantics.py`, `tests/unit/test_conflict_aware_product_linking.py` passed.
 - Slice 3 focused: `tests/unit/test_extraction_pipeline.py -k "js_state_parent_price_object or nested_variant_options_money or shopify_vendor"` passed.
 - Slice 7 focused: `tests/unit/test_extraction_pipeline.py -k "brand or vendor or retailer or title_token"`, `tests/unit/test_brand_inference.py`, ruff on touched Python files, and mypy on touched backend modules passed.
+- Slices 8-9 focused: all 282 tests in `tests/unit/test_extraction_pipeline.py` passed; ruff passed on touched Python; mypy passed on the nine touched backend source files.
 - Backend ruff passed for touched Python.
 - `mypy .` passed for 342 backend source files.
 - Frontend lint passed.
@@ -308,19 +312,14 @@ The following must not be “fixed” by inventing or rewriting values:
 - Static/corpus acceptance manifest work.
 - Committed fixture-based regression cases.
 - Smoke scripts and replay gates.
+- Slice 10 complete-PDP profile expansion, removed by explicit user direction because it broadens default runtime/retry behavior without being required for the captured-HTML accuracy fixes.
 
 Future verification must use focused owner tests only unless the user explicitly asks for full-suite, fixture, corpus, replay, or smoke work.
 
 **Next handoff**
 
-Continue Slice 3. Remaining work is to broaden typed embedded-state paths beyond the
-completed parent `currentPrice.amount/currencyCode` case:
-
-- support configured structural paths for `sellingPrice`, `basePrice`, and product/vendor brand containers where missing;
-- preserve atomic offer grouping for same-object price/currency/availability;
-- keep minor-unit conversion evidence-driven only;
-- add focused inline structural tests in `backend/tests/unit/test_extraction_pipeline.py`;
-- verify with focused pytest, ruff, and mypy for touched files.
+No implementation slices remain. Corpus replay, smoke scripts, and fixture gates remain
+out of scope unless explicitly requested.
 
 ### Slice 1 — Make diagnostics projection- and entity-aware
 
@@ -735,7 +734,7 @@ explicit source relation
 
 ---
 
-### Slice 8 — Repair asset ownership, fallback, and parent projection
+### Slice 8 — Repair asset ownership, fallback, and parent projection — DONE
 
 **Priority:** P1  
 **Owners:**
@@ -784,7 +783,7 @@ explicit source relation
 
 ---
 
-### Slice 9 — Complete variant matrices without synthesizing them
+### Slice 9 — Complete variant matrices without synthesizing them — DONE
 
 **Priority:** P1  
 **Owners:**
@@ -832,7 +831,11 @@ explicit source relation
 
 ---
 
-### Slice 10 — Define a complete-PDP extraction profile
+### Slice 10 — Define a complete-PDP extraction profile — REMOVED
+
+Removed by explicit user direction on 1 July 2026. The profile expansion was not
+required for the captured-HTML extraction accuracy fixes and would broaden default
+runtime and retry behavior.
 
 **Priority:** P2  
 **Owners:**

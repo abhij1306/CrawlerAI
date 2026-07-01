@@ -182,6 +182,9 @@ PRODUCT_ASSET_GENERIC_PATH_TOKENS = frozenset(
         "view",
     }
 )
+PRODUCT_ASSET_EXTENSIONLESS_PATH_PATTERN = (
+    r"/(?:collections/[^/?#]+/)?products/[^/?#.]+(?:$|[?#])"
+)
 PRODUCT_ASSET_REJECT_URL_PATTERNS = (
     r"(?:^|[/_.-])(?:image[_-]?)?default(?=[/_.-]|$)(?![^?#]*\.(?:avif|jpe?g|png|webp)(?:$|[?#]))",
     r"(?:^|[/_.-])(?:att|tmobile|verizon)(?:[/_.-]|$)",
@@ -215,7 +218,7 @@ PRODUCT_ASSET_REJECT_URL_PATTERNS = (
     r"(?:^|/)pin\.png(?:$|[?#])",
     r"/alias/[a-z]{2}\.gif(?:$|[?#])",
     r"/(?:ambiance|worn)(?:%20|\s)+(?:view|image)(?:$|[?#])",
-    r"/(?:collections/[^/?#]+/)?products/[^/?#.]+(?:$|[?#])",
+    PRODUCT_ASSET_EXTENSIONLESS_PATH_PATTERN,
     r"/(?:format|quality|width|height)(?:%26|&)[a-z0-9_%=&.-]+(?:$|[?#])",
     r"__[a-z][a-z0-9_]*__",
     r"\{[a-z_][a-z0-9_]*\}",
@@ -290,6 +293,7 @@ _LOCAL_EXPORTS = (
     "LOW_RES_SWATCH_IMAGE_PATH_PATTERN",
     "PRIMARY_IMAGE_REJECT_URL_TOKENS",
     "PRODUCT_ASSET_CROSS_PRODUCT_PATH_PATTERNS",
+    "PRODUCT_ASSET_EXTENSIONLESS_PATH_PATTERN",
     "PRODUCT_ASSET_GENERIC_PATH_TOKENS",
     "PRODUCT_ASSET_REJECT_URL_PATTERNS",
     "PRODUCT_ASSET_HIGH_RES_QUERY_MIN_DIMENSION",

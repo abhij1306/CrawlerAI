@@ -22,6 +22,7 @@ from app.core.config.extraction_rules import (
     VARIANT_JSONLD_NAME_OPTION_SEPARATOR,
     VARIANT_SHADE_URL_QUERY_KEYS,
 )
+from app.core.config.variant_policy import canonical_variant_axis
 from app.extraction.collectors._helpers import (
     evidence,
     html_doc,
@@ -205,6 +206,7 @@ def _product(
             text_value(obj.get("brand")),
             product_subject,
             variant_subject_ids,
+            declared_axes=_declared_variant_axes(obj.get("variesBy")),
         )
     )
     return out
@@ -429,6 +431,8 @@ def _variants(
     product_brand: str,
     product_subject: str,
     variant_subject_ids: frozenset[str],
+    *,
+    declared_axes: tuple[str, ...] = (),
 ) -> list[Evidence]:
     rows = variants if isinstance(variants, list) else [variants]
     out: list[Evidence] = []
@@ -443,6 +447,7 @@ def _variants(
                     product_subject,
                     product_brand=product_brand,
                     variant_subject_ids=variant_subject_ids,
+                    declared_axes=declared_axes,
                 )
             )
     return out
@@ -457,6 +462,7 @@ def _variant(
     *,
     product_brand: str = "",
     variant_subject_ids: frozenset[str] = frozenset(),
+    declared_axes: tuple[str, ...] = (),
 ) -> list[Evidence]:
     sku = text_value(row.get("sku"))
     variant_identity = _jsonld_identity(row) or path
@@ -471,6 +477,7 @@ def _variant(
     subject_id = group
     source_subject_ids = _source_subject_ids(bundle, row, include_sku=True)
     out: list[Evidence] = []
+    emitted_axes: set[str] = set()
     for key, fact in ECOMMERCE_JSONLD_VARIANT_FACT_TYPES.items():
         value = (
             _variant_color(row, product_brand=product_brand)
@@ -480,6 +487,8 @@ def _variant(
             else text_value(row.get(key))
         )
         if value:
+            if fact.startswith("variant.option."):
+                emitted_axes.add(fact.rsplit(".", 1)[-1])
             out.append(
                 evidence(
                     bundle,
@@ -500,6 +509,51 @@ def _variant(
                     source_subject_ids=source_subject_ids,
                 )
             )
+    for locator_key, axis, value in _jsonld_variant_options(row, declared_axes):
+        if axis in emitted_axes:
+            continue
+        emitted_axes.add(axis)
+        out.append(
+            evidence(
+                bundle,
+                artifact_id,
+                "jsonld",
+                f"variant.option.{axis}",
+                value,
+                SourceLocator(kind="json_pointer", value=f"{path}/{locator_key}"),
+                group_id=group,
+                hint=hint,
+                directness="embedded",
+                confidence=0.88,
+                subject_id=subject_id,
+                subject_scope="variant",
+                parent_subject_id=product_subject,
+                parent_scope="product",
+                relation_type="product_variant",
+                source_subject_ids=source_subject_ids,
+            )
+        )
+    raw_image = row.get("image")
+    images = raw_image if isinstance(raw_image, list) else [raw_image]
+    for index, url in enumerate(
+        text_value(item) for item in images if text_value(item)
+    ):
+        out.append(
+            evidence(
+                bundle,
+                artifact_id,
+                "jsonld",
+                "asset.image_url",
+                url,
+                SourceLocator(kind="json_pointer", value=f"{path}/image/{index}"),
+                hint=EntityHint(entity_type="asset", sku=sku or None),
+                directness="embedded",
+                confidence=0.85,
+                parent_subject_id=subject_id,
+                parent_scope="variant",
+                relation_type="variant_asset",
+            )
+        )
     out.extend(
         _offers(
             bundle,
@@ -513,6 +567,43 @@ def _variant(
         )
     )
     return out
+
+
+def _declared_variant_axes(value: Any) -> tuple[str, ...]:
+    rows = value if isinstance(value, list) else [value]
+    return tuple(
+        dict.fromkeys(
+            axis
+            for item in rows
+            if (axis := canonical_variant_axis(text_value(item))) is not None
+        )
+    )
+
+
+def _jsonld_variant_options(
+    row: dict[str, Any], declared_axes: tuple[str, ...]
+) -> list[tuple[str, str, str]]:
+    options: list[tuple[str, str, str]] = []
+    declared = set(declared_axes)
+    for key, raw_value in row.items():
+        if not declared or str(key).startswith("@"):
+            continue
+        axis = canonical_variant_axis(key)
+        value = text_value(raw_value)
+        if axis and value and axis in declared:
+            options.append((key, axis, value))
+    properties = row.get("additionalProperty")
+    property_rows = properties if isinstance(properties, list) else [properties]
+    for index, item in enumerate(property_rows):
+        if not isinstance(item, dict):
+            continue
+        axis = canonical_variant_axis(
+            item.get("name") or item.get("propertyID") or item.get("propertyId")
+        )
+        value = text_value(item.get("value"))
+        if axis and value and (not declared or axis in declared):
+            options.append((f"additionalProperty/{index}/value", axis, value))
+    return options
 
 
 def _variant_size(row: dict[str, Any]) -> str:

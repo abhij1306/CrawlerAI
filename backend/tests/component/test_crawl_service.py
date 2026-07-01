@@ -10,6 +10,7 @@ from app.core import database as database_module
 from app.core import dependencies as dependencies_module
 from app.core.config import settings
 from app.models.crawl_run import CrawlRecord, CrawlRun
+from app.models.domain_memory import DomainRunProfile
 from app.models.review import ReviewPromotion
 from app.models.crawl_domain import CONTROL_REQUEST_KILL, CONTROL_REQUEST_PAUSE
 from app.models.crawl_settings import normalize_crawl_settings
@@ -34,8 +35,9 @@ from app.crawl.profile import (
 )
 from app.core.exceptions import CrawlerConfigurationError
 from app.crawl.state import get_control_request, update_run_status
+from sqlalchemy import select
 from sqlalchemy.exc import ProgrammingError
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 
 @pytest.mark.component
@@ -881,6 +883,66 @@ async def test_save_domain_run_profile_commit_persists_changes(
     )
     assert loaded is not None
     assert dict(loaded.profile or {})["fetch_profile"]["fetch_mode"] == "browser_only"
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_save_domain_run_profile_recovers_from_concurrent_create(
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.crawl.profile import repository
+
+    original_load = repository.load_domain_run_profile
+    first_reads = 0
+    both_read_missing = asyncio.Event()
+
+    async def _synchronized_load(*args, **kwargs):
+        nonlocal first_reads
+        existing = await original_load(*args, **kwargs)
+        if existing is not None or first_reads >= 2:
+            return existing
+        first_reads += 1
+        if first_reads == 2:
+            both_read_missing.set()
+        await both_read_missing.wait()
+        return None
+
+    monkeypatch.setattr(repository, "load_domain_run_profile", _synchronized_load)
+    session_factory = async_sessionmaker(
+        db_session.bind,
+        expire_on_commit=False,
+        class_=AsyncSession,
+    )
+
+    async def _save(source_run_id: int) -> dict[str, object]:
+        async with session_factory() as session:
+            return await save_domain_run_profile(
+                session,
+                domain="victoriassecret.in",
+                surface="ecommerce_detail",
+                profile={"fetch_profile": {"fetch_mode": "auto"}},
+                source_run_id=source_run_id,
+                commit=True,
+            )
+
+    saved = await asyncio.gather(_save(91), _save(92))
+
+    assert len(saved) == 2
+    async with session_factory() as verification_session:
+        profiles = (
+            (
+                await verification_session.execute(
+                    select(DomainRunProfile).where(
+                        DomainRunProfile.domain == "victoriassecret.in",
+                        DomainRunProfile.surface == "ecommerce_detail",
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert len(profiles) == 1
 
 
 @pytest.mark.asyncio

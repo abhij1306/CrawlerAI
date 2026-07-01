@@ -23,6 +23,7 @@ from app.core.config.extraction_rules import (
     GIF_BASE64_PREFIX,
     PLACEHOLDER_IMAGE_URL_PATTERNS,
     PRIMARY_IMAGE_REJECT_URL_TOKENS,
+    PRODUCT_ASSET_EXTENSIONLESS_PATH_PATTERN,
     PRODUCT_ASSET_LOW_RES_QUERY_MAX_DIMENSION,
     PRODUCT_ASSET_REJECT_URL_PATTERNS,
     UNRESOLVED_TEMPLATE_URL_TOKENS,
@@ -48,6 +49,7 @@ __all__ = [
     "variant_url_with_param",
     "ensure_scheme",
     "is_placeholder_image_url",
+    "structured_extensionless_image_url",
     "is_utility_image_url",
     "_ensure_scheme",
     "_is_placeholder_image_url",
@@ -399,6 +401,27 @@ def is_utility_image_url(value: object) -> bool:
         return True
     return any(
         re.search(pattern, text, flags=re.IGNORECASE)
+        for pattern in product_asset_reject_url_patterns
+    )
+
+
+def structured_extensionless_image_url(value: object) -> bool:
+    """Allow only the extensionless product-path rejection to be overridden."""
+    text = unquote(str(value or "").strip()).casefold()
+    parsed = urlsplit(text)
+    if not text or not re.search(PRODUCT_ASSET_EXTENSIONLESS_PATH_PATTERN, parsed.path):
+        return False
+    if "/collections/" in parsed.path:
+        return False
+    if _is_placeholder_image_url(text):
+        return False
+    if any(token in text for token in product_asset_reject_url_tokens):
+        return False
+    if any(hint in text for hint in non_product_image_url_hints):
+        return False
+    return not any(
+        pattern != PRODUCT_ASSET_EXTENSIONLESS_PATH_PATTERN
+        and re.search(pattern, text, flags=re.IGNORECASE)
         for pattern in product_asset_reject_url_patterns
     )
 

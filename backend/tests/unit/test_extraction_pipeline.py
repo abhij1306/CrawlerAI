@@ -12,6 +12,8 @@ from app.acquisition.browser_listing_visual import listing_visual_elements_html
 from app.acquisition.browser_result_builder import build_browser_artifacts
 from app.acquisition.runtime_plan import AcquisitionIntent
 from app.acquisition.source_capabilities import build_source_capability_diagnostics
+from app.core.config.variant_policy import canonical_variant_axis
+from app.core.shared.url_utils import structured_extensionless_image_url
 from app.extraction import Surface, extract
 from app.extraction.collectors._helpers import evidence
 from app.extraction.engine import _assess, _blocked_result
@@ -29,6 +31,7 @@ from app.extraction.contracts import Evidence
 from app.core.config.extraction_rules import (
     MAX_DIAGNOSTIC_EXAMPLES_PER_REASON,
     MAX_EVIDENCE_PER_SOURCE_OBJECT,
+    PRODUCT_ASSET_EXTENSIONLESS_PATH_PATTERN,
 )
 from app.extraction.replay import (
     fixture_request_from_inputs,
@@ -3385,6 +3388,40 @@ def test_ecommerce_listing_cutover_materializes_with_lineage() -> None:
     assert all(item.surface.value == "ecommerce_listing" for item in result.evidence)
 
 
+def test_ecommerce_listing_reads_hyphenated_data_test_id_product_cards() -> None:
+    result = _extract(
+        "ecommerce_listing",
+        """
+        <main>
+          <div data-test-id="product-card">
+            <a href="/en-gb/p/men-10029/classic-boat-loafer-TB0A447GW01">
+              <img
+                src="/images/classic-boat-loafer.jpg"
+                alt="Classic Boat Loafer for Men"
+              >
+              <span>Classic Boat Loafer for Men</span>
+            </a>
+            <span>£70.00</span>
+          </div>
+          <div data-test-id="product-card">
+            <a href="/en-gb/p/men-10029/field-trekker-low-TB0A2A58015">
+              <img src="/images/field-trekker.jpg" alt="Field Trekker Low">
+              <span>Field Trekker Low</span>
+            </a>
+            <span>£65.00</span>
+          </div>
+        </main>
+        """,
+        "https://www.timberland.com/en-gb/c/sales/mens-sale-10185",
+        max_records=5,
+    )
+
+    assert [row["title"] for row in result.records] == [
+        "Classic Boat Loafer for Men",
+        "Field Trekker Low",
+    ]
+
+
 def test_ecommerce_listing_result_is_replayable() -> None:
     result = _extract(
         "ecommerce_listing",
@@ -3920,6 +3957,37 @@ def test_same_product_variant_url_remains_materialized() -> None:
     assert result.records[0]["variants"][0]["sku"] == "RT-NAVY-S"
     assert result.records[0]["variants"][0]["color"] == "Navy"
     assert result.records[0]["variants"][0]["size"] == "S"
+
+
+def test_variant_option_endpoint_query_must_match_own_axis() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        "<main><h1>Runner Tee</h1></main>",
+        "https://shop.test/products/runner-tee",
+        network_payloads=(
+            {
+                "body": {
+                    "product": {
+                        "name": "Runner Tee",
+                        "url": "https://shop.test/products/runner-tee",
+                        "variants": [
+                            {
+                                "variantId": "blue-m",
+                                "sku": "RT-BLUE-M",
+                                "url": "https://shop.test/on/demandware.store/Sites-shop-Site/default/Product-Variation?dwvar_1_size=Blue",
+                                "color": "Blue",
+                                "size": "M",
+                                "price": "35",
+                                "currency": "USD",
+                            }
+                        ],
+                    }
+                }
+            },
+        ),
+    )
+
+    assert not result.records[0].get("variants")
 
 
 def test_shopify_numeric_option1_materializes_as_size() -> None:
@@ -5097,6 +5165,70 @@ def test_dom_option_controls_do_not_materialize_sellable_variants() -> None:
     ]
     assert option_evidence
     assert result.graph.entity_counts["option"] == 3
+
+
+def test_demandware_dom_variation_buttons_materialize_selected_color_sizes() -> None:
+    html = """
+    <main>
+      <h1>Rib Racerback Tank</h1>
+      <button data-attr-id="color" data-dvalue="Medium Heather Grey"
+              aria-label="Select Color Medium Heather Grey"
+              data-url="/on/demandware.store/Sites-shop-Site/default/Product-Variation?dwvar_112768921NG0_color=&pid=112768921NG0&quantity=1">
+        Medium Heather Grey
+      </button>
+      <button class="select-size" data-attr-id="size" data-attr-value="XS"
+              value="/on/demandware.store/Sites-shop-Site/default/Product-Variation?dwvar_112768921NG0_color=Medium%20Heather%20Grey&dwvar_112768921NG0_size=XS&pid=112768921NG0&quantity=1"
+              data-json='{"displayValue":"XS","selectable":true,"selected":false}'>
+        XS
+      </button>
+      <button class="select-size" data-attr-id="size" data-attr-value="S"
+              value="/on/demandware.store/Sites-shop-Site/default/Product-Variation?dwvar_112768921NG0_color=Medium%20Heather%20Grey&dwvar_112768921NG0_size=S&pid=112768921NG0&quantity=1"
+              data-json='{"displayValue":"S","selectable":false,"selected":false}'>
+        S
+      </button>
+    </main>
+    """
+
+    result = _extract(
+        "ecommerce_detail",
+        html,
+        "https://www.example.test/p/tank/112768921NG0.html",
+    )
+
+    variants = result.records[0]["variants"]
+    assert [(row["color"], row["size"], row["availability"]) for row in variants] == [
+        ("Medium Heather Grey", "S", "out_of_stock"),
+        ("Medium Heather Grey", "XS", "in_stock"),
+    ]
+    assert all("variant_id" not in row and "sku" not in row for row in variants)
+
+
+def test_demandware_attribute_json_string_flags_use_boolean_semantics() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <main>
+          <h1>Rib Racerback Tank</h1>
+          <button data-attr-id="color" data-dvalue="Medium Heather Grey"
+                  data-url="/on/demandware.store/Sites-shop-Site/default/Product-Variation?dwvar_1_color=&pid=1">
+            Medium Heather Grey
+          </button>
+          <button class="select-size" data-attr-id="size" data-attr-value="XS"
+                  value="/on/demandware.store/Sites-shop-Site/default/Product-Variation?dwvar_1_color=Medium%20Heather%20Grey&dwvar_1_size=XS"
+                  data-json='{"displayValue":"XS","selectable":"0","selected":"false"}'>
+            XS
+          </button>
+        </main>
+        """,
+        "https://www.example.test/p/tank/112768921NG0.html",
+    )
+
+    variants = result.records[0]["variants"]
+    assert len(variants) == 1
+    assert variants[0]["availability"] == "out_of_stock"
+    assert variants[0]["color"] == "Medium Heather Grey"
+    assert variants[0]["size"] == "XS"
+    assert all("selected" not in row for row in variants)
 
 
 def test_variant_identity_merges_sources_and_materializes_child_offer() -> None:
@@ -6844,6 +6976,194 @@ def test_https_asset_wins_over_equivalent_http_url() -> None:
     assert record["additional_images"] == [
         "https://cdn.shop.test/products/pavlova-boots-02.jpg?width=1800"
     ]
+
+
+def test_invalid_top_ranked_asset_falls_back_to_next_delivery_url() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <script type="application/ld+json">
+        {
+          "@type": "Product",
+          "name": "Trail Shoe",
+          "url": "https://shop.test/products/trail-shoe",
+          "image": [
+            "https://cdn.shop.test/products/trail-shoe-main?width=1200?format=webp",
+            "https://cdn.shop.test/products/trail-shoe-side?width=1200"
+          ],
+          "offers": {"price": "95", "priceCurrency": "USD"}
+        }
+        </script>
+        """,
+        "https://shop.test/products/trail-shoe",
+    )
+
+    assert result.records[0]["image_url"] == (
+        "https://cdn.shop.test/products/trail-shoe-side?width=1200"
+    )
+
+
+def test_single_same_product_variant_image_derives_parent_primary_image() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "ProductGroup",
+          "name": "Solitaire Ring",
+          "url": "https://shop.test/products/solitaire-ring",
+          "hasVariant": [{
+            "@type": "Product",
+            "sku": "RING-7",
+            "size": "7",
+            "image": "https://cdn.shop.test/products/solitaire-ring-size-7",
+            "offers": {
+              "price": "1299",
+              "priceCurrency": "USD",
+              "availability": "https://schema.org/InStock"
+            }
+          }]
+        }
+        </script>
+        """,
+        "https://shop.test/products/solitaire-ring",
+    )
+
+    record = result.records[0]
+    assert record["image_url"] == (
+        "https://cdn.shop.test/products/solitaire-ring-size-7"
+    )
+    assert record["variants"][0]["image_url"] == record["image_url"]
+    assert record["_lineage"]["image_url"]["rule_id"] == (
+        "VARIANT_ASSET_PARENT_FALLBACK"
+    )
+
+
+def test_variant_parent_asset_fallback_uses_only_usable_variant_assets() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "ProductGroup",
+          "name": "Solitaire Ring",
+          "url": "https://shop.test/products/solitaire-ring",
+          "hasVariant": [
+            {
+              "@type": "Product",
+              "sku": "RING-7",
+              "size": "7",
+              "image": "https://cdn.shop.test/products/solitaire-ring-size-7",
+              "offers": {"price": "1299", "priceCurrency": "USD"}
+            },
+            {
+              "@type": "Product",
+              "sku": "RING-8",
+              "size": "8",
+              "image": "https://cdn.shop.test/products/solitaire-ring-size-8?placeholder=true",
+              "offers": {"price": "1299", "priceCurrency": "USD"}
+            }
+          ]
+        }
+        </script>
+        """,
+        "https://shop.test/products/solitaire-ring",
+    )
+
+    record = result.records[0]
+    assert record["image_url"] == (
+        "https://cdn.shop.test/products/solitaire-ring-size-7"
+    )
+    assert record["_lineage"]["image_url"]["rule_id"] == (
+        "VARIANT_ASSET_PARENT_FALLBACK"
+    )
+
+
+def test_jsonld_variant_axes_are_canonicalized_without_rewriting_flavor() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "ProductGroup",
+          "name": "Protein Mix",
+          "url": "https://shop.test/products/protein-mix",
+          "variesBy": ["https://schema.org/flavor", "Colour"],
+          "hasVariant": [{
+            "@type": "Product",
+            "sku": "MIX-VANILLA",
+            "colour": "Cream",
+            "additionalProperty": {
+              "@type": "PropertyValue",
+              "name": "Flavour",
+              "value": "Vanilla"
+            },
+            "offers": {"price": "30", "priceCurrency": "USD"}
+          }]
+        }
+        </script>
+        """,
+        "https://shop.test/products/protein-mix",
+    )
+
+    variant = result.records[0]["variants"][0]
+    assert variant["flavor"] == "Vanilla"
+    assert variant["color"] == "Cream"
+    assert variant.get("flavor") != variant.get("color")
+
+
+def test_variant_axis_uri_trimming_does_not_accept_plain_slash_labels() -> None:
+    assert canonical_variant_axis("https://schema.org/color") == "color"
+    assert canonical_variant_axis("color/size") is None
+    assert canonical_variant_axis("fit/style") is None
+
+
+def test_extensionless_image_url_pattern_matches_path_only() -> None:
+    assert PRODUCT_ASSET_EXTENSIONLESS_PATH_PATTERN
+    assert structured_extensionless_image_url(
+        "https://cdn.shop.test/products/solitaire-ring-size-7"
+    )
+    assert not structured_extensionless_image_url(
+        "https://cdn.shop.test/api/render?next=/products/solitaire-ring-size-7"
+    )
+
+
+def test_explicit_optionless_child_with_identity_and_offer_is_not_dropped() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "ProductGroup",
+          "name": "Cotton Tee",
+          "url": "https://shop.test/products/cotton-tee",
+          "hasVariant": [
+            {
+              "@type": "Product",
+              "sku": "TEE-UNKNOWN",
+              "offers": {"price": "20", "priceCurrency": "USD"}
+            },
+            {
+              "@type": "Product",
+              "sku": "TEE-M",
+              "size": "M",
+              "offers": {"price": "20", "priceCurrency": "USD"}
+            }
+          ]
+        }
+        </script>
+        """,
+        "https://shop.test/products/cotton-tee",
+    )
+
+    variants = result.records[0]["variants"]
+    assert {row["sku"] for row in variants} == {"TEE-UNKNOWN", "TEE-M"}
+    unknown = next(row for row in variants if row["sku"] == "TEE-UNKNOWN")
+    assert "size" not in unknown
 
 
 def test_variant_price_range_materializes_lowest_price_and_bounds() -> None:

@@ -6,6 +6,7 @@ ECOMMERCE_LISTING_CARD_SELECTORS: tuple[str, ...] = (
     "[data-cnstrc-item-name]",
     "[data-tile-type='product' i]",
     "[data-testid*='product' i]",
+    "[data-test-id='product-card' i]",
     "[class~='product']",
     "[class*='product-card' i]",
     "[class*='product-tile' i]",

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
 from decimal import Decimal, InvalidOperation
 from urllib.parse import parse_qsl, urlsplit
@@ -27,6 +28,9 @@ from app.core.config.extraction_rules import (
     PRODUCT_ASSET_IDENTITY_FACT_TYPES,
     VARIANT_COLOR_BRAND_CONFLICT_FLAG,
     VARIANT_CROSS_PRODUCT_URL_MAX_TOKEN_OVERLAP_RATIO,
+    VARIANT_DOM_URL_AXIS_PARAM_PATTERN,
+    VARIANT_URL_AXIS_PARAMS,
+    VARIANT_URL_OPTION_ENDPOINT_PATH_TOKENS,
 )
 from app.core.config.extraction_rules._images import PRODUCT_ASSET_MAX_COUNT
 from app.core.config import field_mappings
@@ -47,6 +51,7 @@ from app.core.shared.url_utils import (
     is_utility_image_url,
     low_resolution_asset_urls,
     public_asset_delivery_url,
+    structured_extensionless_image_url,
 )
 from app.core.shared.field_coerce import sanitize_option_scalar
 from app.core.shared.field_coerce_price import repair_price_unit
@@ -223,6 +228,8 @@ def resolve(
         by_id,
         conflicting_urls,
         low_resolution_urls,
+        variants=entities.variants,
+        variant_decisions=variant_decisions,
     )
     derived_facts = (
         *derived_facts,
@@ -905,9 +912,21 @@ def _resolve_variants(
         current = offer_by_variant.get(offer.variant_entity_id)
         if current is None or _offer_rank(offer) > _offer_rank(current):
             offer_by_variant[offer.variant_entity_id] = offer
-    asset_by_variant = {
-        row.variant_entity_id: row for row in entities.assets if row.variant_entity_id
-    }
+    asset_by_variant: dict[str, AssetEntity] = {}
+    for asset in entities.assets:
+        if not asset.variant_entity_id:
+            continue
+        accepted = _accepted_asset_evidence(asset, evidence_by_id)
+        current_asset = asset_by_variant.get(asset.variant_entity_id)
+        current_accepted = (
+            _accepted_asset_evidence(current_asset, evidence_by_id)
+            if current_asset
+            else None
+        )
+        if current_asset is None or _asset_rank(asset, accepted) < _asset_rank(
+            current_asset, current_accepted
+        ):
+            asset_by_variant[asset.variant_entity_id] = asset
     product_url = _resolved_product_url(decision_rows, evidence_by_id)
     candidates: list[tuple[VariantEntity, dict[str, object], dict[str, object]]] = []
     rejected: list[VariantDecision] = []
@@ -929,7 +948,13 @@ def _resolve_variants(
             candidates.append((variant, values, lineage))
     eligible: list[VariantDecision] = []
     for variant, values, lineage in candidates:
-        if len(candidates) > 1 and not _has_variant_option(values):
+        if (
+            len(candidates) > 1
+            and not _has_variant_option(values)
+            and not _explicit_partial_child_is_publishable(
+                variant, values, lineage, evidence_by_id
+            )
+        ):
             rejected.append(
                 _variant_decision(
                     variant.entity_id,
@@ -983,8 +1008,11 @@ def _resolved_variant_row(
         decisions.get((asset.entity_id, "asset.image_url")) if asset else None
     )
     if asset and asset_decision and asset_decision.accepted_evidence_ids:
-        values["image_url"] = asset.url
-        lineage["image_url"] = _decision_lineage(asset_decision)
+        evidence = evidence_by_id.get(asset_decision.accepted_evidence_ids[0])
+        delivery_url = public_asset_delivery_url(evidence.value) if evidence else None
+        if delivery_url:
+            values["image_url"] = delivery_url
+            lineage["image_url"] = _decision_lineage(asset_decision)
     return values, lineage
 
 
@@ -1080,7 +1108,7 @@ def _variant_rejection_reason(
         return DEFAULT_VARIANT_DIAGNOSTIC_REASON
     explicit_identity = any(
         values.get(field) not in (None, "", [], {}, ())
-        for field in ("variant_id", "sku", "gtin", "url")
+        for field in ("variant_id", "sku", "gtin")
     )
     commercial = any(
         values.get(field) not in (None, "", [], {}, ())
@@ -1095,8 +1123,42 @@ def _variant_rejection_reason(
     return None
 
 
+def _explicit_partial_child_is_publishable(
+    variant: VariantEntity,
+    values: dict[str, object],
+    lineage: dict[str, object],
+    evidence_by_id: dict[str, Evidence],
+) -> bool:
+    has_structured_child_identity = any(
+        (row := evidence_by_id.get(evidence_id)) is not None
+        and row.collector_id == "jsonld"
+        and row.relation_type == "product_variant"
+        and row.fact_type in {"variant.id", "variant.sku", "variant.gtin"}
+        for evidence_id in variant.identity_evidence_ids
+    )
+    has_direct_commercial_fact = False
+    for field in ("price", "availability", "stock_quantity"):
+        field_lineage = lineage.get(field)
+        if (
+            isinstance(field_lineage, dict)
+            and field_lineage.get("rule_id") != DETAIL_PARENT_OFFER_INHERITANCE_RULE_ID
+        ):
+            has_direct_commercial_fact = True
+            break
+    return (
+        has_structured_child_identity
+        and has_direct_commercial_fact
+        and any(
+            values.get(field) not in (None, "", [], {}, ())
+            for field in ("variant_id", "sku", "gtin")
+        )
+    )
+
+
 def _variant_url_conflicts(product_url: str, variant_url: str, values) -> bool:
     if not product_url or not variant_url or product_url == variant_url:
+        return False
+    if _variant_url_is_option_endpoint(product_url, variant_url, values):
         return False
     product_tokens = set(semantic_identity_tokens(detail_title_from_url(product_url)))
     variant_tokens = set(semantic_identity_tokens(detail_title_from_url(variant_url)))
@@ -1115,6 +1177,31 @@ def _variant_url_conflicts(product_url: str, variant_url: str, values) -> bool:
         for token in semantic_identity_tokens(str(values.get(field) or ""))
     }
     return bool((variant_tokens - product_tokens) - option_tokens)
+
+
+def _variant_url_is_option_endpoint(
+    product_url: str, variant_url: str, values: Mapping[str, object]
+) -> bool:
+    product_host = urlsplit(product_url).netloc.casefold()
+    variant_parts = urlsplit(variant_url)
+    if product_host and variant_parts.netloc and product_host != variant_parts.netloc.casefold():
+        return False
+    path_tokens = set(semantic_identity_tokens(detail_title_from_url(variant_url)))
+    if not (path_tokens & VARIANT_URL_OPTION_ENDPOINT_PATH_TOKENS):
+        return False
+    matched_axis = False
+    for key, value in parse_qsl(variant_parts.query, keep_blank_values=False):
+        axis_match = re.match(VARIANT_DOM_URL_AXIS_PARAM_PATTERN, key, flags=re.I)
+        if not axis_match:
+            continue
+        axis = VARIANT_URL_AXIS_PARAMS.get(axis_match.group("axis").casefold())
+        if not axis or values.get(axis) in (None, "", [], {}, ()):
+            continue
+        query_tokens = set(semantic_identity_tokens(value))
+        axis_value_tokens = set(semantic_identity_tokens(str(values.get(axis) or "")))
+        if query_tokens and query_tokens <= axis_value_tokens:
+            matched_axis = True
+    return matched_axis
 
 
 def _has_variant_option(values) -> bool:
@@ -1505,13 +1592,13 @@ def _resolve_asset(
         eid
         for eid in asset.url_evidence_ids
         if eid not in evidence_by_id
-        or _invalid_primary_asset_url(evidence_by_id[eid].value)
+        or _invalid_primary_asset_evidence(evidence_by_id[eid])
     )
     valid_ids = tuple(
         eid
         for eid in asset.url_evidence_ids
         if eid in evidence_by_id
-        and not _invalid_primary_asset_url(evidence_by_id[eid].value)
+        and not _invalid_primary_asset_evidence(evidence_by_id[eid])
     )
     if invalid_ids and not valid_ids:
         return Decision(
@@ -1545,11 +1632,30 @@ def _invalid_primary_asset_url(value: object) -> bool:
     return is_utility_image_url(value)
 
 
+def _invalid_primary_asset_evidence(evidence: Evidence) -> bool:
+    if not _invalid_primary_asset_url(evidence.value):
+        return False
+    path = urlsplit(str(evidence.value or "")).path.rsplit("/", 1)[-1]
+    structured_image_relationship = (
+        evidence.collector_id in {"jsonld", "opengraph", "microdata"}
+        and evidence.relation_type in {"product_asset", "variant_asset"}
+        and "image" in evidence.locator.value.casefold()
+    )
+    return not (
+        structured_image_relationship
+        and "." not in path
+        and structured_extensionless_image_url(evidence.value)
+    )
+
+
 def _resolve_product_assets(
     assets: tuple[AssetEntity, ...],
     evidence_by_id: dict[str, Evidence],
     conflicting_urls: frozenset[str],
     low_resolution_urls: frozenset[str],
+    *,
+    variants: tuple[VariantEntity, ...] = (),
+    variant_decisions: tuple[VariantDecision, ...] = (),
 ) -> tuple[AssetDecision, ...]:
     ranked = [
         (rank, asset, accepted)
@@ -1564,6 +1670,7 @@ def _resolve_product_assets(
         if accepted
         and not _asset_rejection_reasons(
             _resolved_asset_url(accepted),
+            evidence=accepted,
             conflicting_urls=conflicting_urls,
             low_resolution_urls=low_resolution_urls,
         )
@@ -1605,6 +1712,7 @@ def _resolve_product_assets(
             rule_id="PRODUCT_ASSET_REJECT",
             rejection_reasons=_asset_rejection_reasons(
                 _resolved_asset_url(accepted),
+                evidence=accepted,
                 conflicting_urls=conflicting_urls,
                 low_resolution_urls=low_resolution_urls,
             ),
@@ -1613,25 +1721,102 @@ def _resolve_product_assets(
         if accepted
         and _asset_rejection_reasons(
             _resolved_asset_url(accepted),
+            evidence=accepted,
             conflicting_urls=conflicting_urls,
             low_resolution_urls=low_resolution_urls,
         )
     ]
-    return tuple(decisions + rejected)
+    if decisions:
+        return tuple(decisions + rejected)
+    fallback = _variant_parent_asset_fallback(
+        assets,
+        variants,
+        variant_decisions,
+        evidence_by_id,
+        conflicting_urls=conflicting_urls,
+        low_resolution_urls=low_resolution_urls,
+    )
+    return tuple((*fallback, *rejected))
+
+
+def _variant_parent_asset_fallback(
+    assets: tuple[AssetEntity, ...],
+    variants: tuple[VariantEntity, ...],
+    variant_decisions: tuple[VariantDecision, ...],
+    evidence_by_id: dict[str, Evidence],
+    *,
+    conflicting_urls: frozenset[str],
+    low_resolution_urls: frozenset[str],
+) -> tuple[AssetDecision, ...]:
+    eligible_ids = {
+        row.variant_entity_id for row in variant_decisions if row.status == "eligible"
+    }
+    selected_ids = {
+        row.entity_id
+        for row in variants
+        if row.selected and row.entity_id in eligible_ids
+    }
+    candidates = [
+        (_asset_rank(asset, accepted), asset, accepted)
+        for asset in assets
+        if asset.variant_entity_id in eligible_ids
+        for accepted in [_accepted_asset_evidence(asset, evidence_by_id)]
+        if accepted is not None
+        and not _asset_rejection_reasons(
+            _resolved_asset_url(accepted),
+            evidence=accepted,
+            conflicting_urls=conflicting_urls,
+            low_resolution_urls=low_resolution_urls,
+        )
+    ]
+    owners_with_usable_assets = {
+        asset.variant_entity_id for _rank, asset, _accepted in candidates
+    }
+    if len(selected_ids) == 1:
+        allowed_ids = selected_ids
+    elif len(owners_with_usable_assets) == 1:
+        allowed_ids = owners_with_usable_assets
+    else:
+        return ()
+    candidates = [
+        (rank, asset, accepted)
+        for rank, asset, accepted in candidates
+        if asset.variant_entity_id in allowed_ids
+    ]
+    if not candidates:
+        return ()
+    _rank_value, asset, accepted = min(candidates, key=lambda item: item[0])
+    return (
+        AssetDecision(
+            asset_entity_id=asset.entity_id,
+            url=_resolved_asset_url(accepted),
+            accepted_evidence_ids=(accepted.evidence_id,),
+            role="primary",
+            rank=0,
+            rule_id="VARIANT_ASSET_PARENT_FALLBACK",
+        ),
+    )
 
 
 def _asset_rejection_reasons(
     url: str,
     *,
+    evidence: Evidence | None = None,
     conflicting_urls: frozenset[str],
     low_resolution_urls: frozenset[str],
 ) -> tuple[str, ...]:
     reasons: list[str] = []
+    if not url:
+        reasons.append("invalid_asset_delivery_url")
     if url in conflicting_urls:
         reasons.append("product_identity_conflict")
     if url in low_resolution_urls:
         reasons.append("low_resolution_transform")
-    if _invalid_primary_asset_url(url):
+    if (
+        _invalid_primary_asset_evidence(evidence)
+        if evidence is not None
+        else _invalid_primary_asset_url(url)
+    ):
         reasons.append("invalid_primary_asset")
     return tuple(reasons)
 
@@ -1642,9 +1827,7 @@ def _normalized_asset_url(value: object) -> str:
 
 
 def _resolved_asset_url(evidence: Evidence) -> str:
-    return public_asset_delivery_url(evidence.value) or _normalized_asset_url(
-        evidence.value
-    )
+    return public_asset_delivery_url(evidence.value) or ""
 
 
 def _asset_delivery_identity(value: object) -> str:
@@ -1664,7 +1847,8 @@ def _accepted_asset_evidence(
     return min(
         candidates,
         key=lambda row: (
-            int(_invalid_primary_asset_url(row.value)),
+            int(_invalid_primary_asset_evidence(row)),
+            int(public_asset_delivery_url(row.value) is None),
             int(urlsplit(str(row.value)).scheme.casefold() != "https"),
             -_asset_requested_dimension(row.value),
             _rank(row),
