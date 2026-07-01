@@ -289,6 +289,7 @@ The following must not be “fixed” by inventing or rewriting values:
 - Domain-surface contract selection updates only templates whose retained candidates contain the selected source.
 - Knowledge Graph UI merged source options across grouped templates to avoid hiding valid saved sources.
 - Embedded-state parent price objects now keep nested `amount` and `currencyCode` together with source-path locators.
+- Slice 7 brand role metadata now distinguishes manufacturer/designer/private-label/vendor from retailer/seller/marketplace/site identity, ranks public brand candidates by role, and rejects non-manufacturer identity evidence before publication.
 - Mypy issues from the P0 changes are fixed:
   - `validation.py` promotional description evidence tuple is typed.
   - `knowledge.py` contract query result is materialized as a mutable list before sorting.
@@ -297,6 +298,7 @@ The following must not be “fixed” by inventing or rewriting values:
 
 - Backend focused: `tests/component/test_knowledge_api.py`, `tests/unit/test_extraction_pipeline.py`, `tests/unit/test_variant_offer_availability_semantics.py`, `tests/unit/test_conflict_aware_product_linking.py` passed.
 - Slice 3 focused: `tests/unit/test_extraction_pipeline.py -k "js_state_parent_price_object or nested_variant_options_money or shopify_vendor"` passed.
+- Slice 7 focused: `tests/unit/test_extraction_pipeline.py -k "brand or vendor or retailer or title_token"`, `tests/unit/test_brand_inference.py`, ruff on touched Python files, and mypy on touched backend modules passed.
 - Backend ruff passed for touched Python.
 - `mypy .` passed for 342 backend source files.
 - Frontend lint passed.

@@ -3,7 +3,7 @@
 **Current:** CrawlerAI Captured-HTML Extraction Accuracy Plan → `docs/plans/crawlerai_captured_html_extraction_accuracy_plan_2026-07-01.md`
 **Status:** IN PROGRESS
 **Started:** 2026-07-01
-**Last slice completed:** P0 bug fixes landed for JSON-LD offer harvesting, child-join diagnostics, AggregateOffer range semantics, candidate-safe Knowledge Graph source selection, Slice 3 embedded-state nested price/currency paths, and backend mypy cleanup. Continue remaining Slice 3 structural path coverage.
+**Last slice completed:** Slice 7 — typed brand roles and conservative fallback implemented with focused backend verification. Continue remaining plan slices from the queue order as directed.
 
 ## Queue
 

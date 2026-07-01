@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 import json
 
 import pytest
@@ -12,10 +13,23 @@ from app.acquisition.browser_result_builder import build_browser_artifacts
 from app.acquisition.runtime_plan import AcquisitionIntent
 from app.acquisition.source_capabilities import build_source_capability_diagnostics
 from app.extraction import Surface, extract
+from app.extraction.collectors._helpers import evidence
+from app.extraction.engine import _assess, _blocked_result
 from app.extraction.pipeline import _only_slug_identity
-from app.extraction.contracts import CommerceDetailRecord, ExtractionRequest
+from app.extraction.contracts import (
+    CommerceDetailRecord,
+    EntityHint,
+    ExtractionRequest,
+    Finding,
+    PublicRecord,
+    SourceLocator,
+    TargetSelection,
+)
 from app.extraction.contracts import Evidence
-from app.core.config.extraction_rules import MAX_EVIDENCE_PER_SOURCE_OBJECT
+from app.core.config.extraction_rules import (
+    MAX_DIAGNOSTIC_EXAMPLES_PER_REASON,
+    MAX_EVIDENCE_PER_SOURCE_OBJECT,
+)
 from app.extraction.replay import (
     fixture_request_from_inputs,
     request_from_acquisition_result,
@@ -60,7 +74,7 @@ def _extract(
     page_url: str,
     *,
     max_records: int = 1,
-    artifacts: dict[str, object] | None = None,
+    artifacts: Mapping[str, object] | None = None,
     network_payloads: tuple[dict[str, object], ...] = (),
     requested_fields: tuple[str, ...] = (),
 ):
@@ -70,8 +84,8 @@ def _extract(
             html,
             page_url,
             max_records=max_records,
-            artifacts=artifacts,
-            network_payloads=network_payloads,
+            artifacts=dict(artifacts) if artifacts is not None else None,
+            network_payloads=list(network_payloads),
             requested_fields=requested_fields,
         )
     )
@@ -85,6 +99,13 @@ def _price_repair_facts(result, rule_id: str):
     )
 
 
+def _group_facts_by_group_id(rows: list[Evidence]) -> dict[str, set[str]]:
+    return {
+        group_id: {row.fact_type for row in rows if row.group_id == group_id}
+        for group_id in {row.group_id for row in rows if row.group_id}
+    }
+
+
 def test_active_provider_shell_without_product_identity_is_blocked() -> None:
     marker = "px-captcha"
     classification = classify_blocked_page(
@@ -95,6 +116,53 @@ def test_active_provider_shell_without_product_identity_is_blocked() -> None:
     assert classification.blocked is True
     assert classification.outcome == "challenge_page"
     assert marker in classification.active_provider_hits
+
+
+def test_job_detail_blocking_finding_keeps_error_verdict() -> None:
+    request = fixture_request_from_inputs(
+        Surface.JOB_DETAIL,
+        "<main><h1>Engineer</h1></main>",
+        "https://jobs.test/engineer",
+    )
+    finding = Finding(
+        finding_id="blocking-job-finding",
+        rule_id="JOB_REQUIRED_FIELD_MISSING",
+        severity="high",
+        entity_ids=(),
+        evidence_ids=(),
+        message="Required job field is missing.",
+        blocking=True,
+    )
+
+    verdict = _assess(
+        request,
+        TargetSelection(status="resolved"),
+        (PublicRecord(title="Engineer"),),
+        (finding,),
+    )
+
+    assert verdict == "error"
+
+
+def test_blocked_result_finding_retains_supplied_evidence_ids() -> None:
+    request = fixture_request_from_inputs(
+        Surface.ECOMMERCE_DETAIL,
+        "<main><h1>Challenge</h1></main>",
+        "https://shop.test/products/challenge",
+    )
+    row = evidence(
+        request.capture,
+        "html",
+        "dom",
+        "product.title",
+        "Challenge",
+        SourceLocator(kind="css_selector", value="h1"),
+        hint=EntityHint(entity_type="product"),
+    )
+
+    result = _blocked_result(request, (row,), ())
+
+    assert result.findings[0].evidence_ids == (row.evidence_id,)
 
 
 def test_js_state_source_object_evidence_budget_is_reported() -> None:
@@ -129,6 +197,10 @@ def test_js_state_source_object_evidence_budget_is_reported() -> None:
     )
     assert "assets" in budget_outcomes[0].dropped_fact_families
     assert budget_outcomes[0].dropped_source_paths
+    assert (
+        len(budget_outcomes[0].dropped_source_paths)
+        <= MAX_DIAGNOSTIC_EXAMPLES_PER_REASON
+    )
     assert (
         sum(1 for row in result.evidence if row.collector_id == "js_state")
         <= MAX_EVIDENCE_PER_SOURCE_OBJECT
@@ -687,6 +759,60 @@ def test_jsonld_manufacturer_name_alias_recovers_nested_brand() -> None:
     )
 
     assert result.records[0]["brand"] == "Sony"
+    assert any(
+        row.fact_type == "product.brand"
+        and row.value == "Sony"
+        and row.brand_role == "manufacturer"
+        for row in result.evidence
+    )
+
+
+def test_structured_manufacturer_beats_retailer_identity_brand() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "Product",
+          "name": "Day-Date 18038 Champagne",
+          "manufacturer": {"@type": "Brand", "name": "Rolex"},
+          "url": "https://amsterdamvintagewatches.test/shop/rolex-day-date-18038-champagne",
+          "offers": {"seller": {"@type": "Organization", "name": "Amsterdam Vintage Watches"}}
+        }
+        </script>
+        <main><span class="product-brand retailer-name">Amsterdam Vintage Watches</span></main>
+        """,
+        "https://amsterdamvintagewatches.test/shop/rolex-day-date-18038-champagne",
+    )
+
+    assert result.records[0]["brand"] == "Rolex"
+    assert any(
+        row.fact_type == "product.brand"
+        and row.value == "Amsterdam Vintage Watches"
+        and row.brand_role == "retailer"
+        and "non_manufacturer_brand_role" in row.flags
+        for row in result.evidence
+    )
+
+
+def test_js_state_store_container_does_not_reclassify_product_brand() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <script id="__NEXT_DATA__" type="application/json">
+        {"props":{"store":{"product":{
+          "name":"Studio Monitor",
+          "url":"https://shop.test/products/studio-monitor",
+          "brand":{"name":"Audio Guild"}
+        }}}}
+        </script>
+        <main><h1>Studio Monitor</h1></main>
+        """,
+        "https://shop.test/products/studio-monitor",
+    )
+
+    assert result.records[0]["brand"] == "Audio Guild"
 
 
 def test_registered_title_marker_recovers_product_brand() -> None:
@@ -982,6 +1108,83 @@ def test_jsonld_productgroup_id_links_standalone_variant_offers() -> None:
             "availability": "in_stock",
         }
     ]
+    assert not any(
+        finding.rule_id == "CHILD_JOIN_FAILED" for finding in result.findings
+    )
+
+
+def test_jsonld_item_offered_offer_links_to_explicit_variant_subject() -> None:
+    html = """
+    <script type="application/ld+json">
+    [
+      {
+        "@type": "ProductGroup",
+        "@id": "https://shop.test/schema/group/shirt",
+        "name": "Linen Shirt",
+        "url": "https://shop.test/products/linen-shirt",
+        "offers": {
+          "@type": "Offer",
+          "itemOffered": {"@type": "Product", "@id": "https://shop.test/schema/variant/shirt-m"},
+          "price": "40.00",
+          "priceCurrency": "USD",
+          "availability": "https://schema.org/InStock"
+        }
+      },
+      {
+        "@type": "Product",
+        "@id": "https://shop.test/schema/variant/shirt-m",
+        "isVariantOf": {"@id": "https://shop.test/schema/group/shirt"},
+        "sku": "SHIRT-M",
+        "size": "M"
+      }
+    ]
+    </script>
+    """
+    result = _extract(
+        "ecommerce_detail", html, "https://shop.test/products/linen-shirt"
+    )
+
+    assert result.records[0]["variants"] == [
+        {
+            "variant_id": "SHIRT-M",
+            "sku": "SHIRT-M",
+            "price": "40.00",
+            "currency": "USD",
+            "availability": "in_stock",
+            "size": "M",
+        }
+    ]
+    assert not any(
+        finding.rule_id == "CHILD_JOIN_FAILED" for finding in result.findings
+    )
+
+
+def test_jsonld_product_item_offered_preserves_product_offer_scope() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <script type="application/ld+json">
+        {
+          "@type": "Product",
+          "@id": "https://shop.test/schema/product/desk",
+          "name": "Writing Desk",
+          "url": "https://shop.test/products/writing-desk",
+          "offers": {
+            "@type": "Offer",
+            "itemOffered": {
+              "@type": "Product",
+              "@id": "https://shop.test/schema/product/desk"
+            },
+            "price": "250.00",
+            "priceCurrency": "USD"
+          }
+        }
+        </script>
+        """,
+        "https://shop.test/products/writing-desk",
+    )
+
+    assert result.records[0]["price"] == "250.00"
     assert not any(
         finding.rule_id == "CHILD_JOIN_FAILED" for finding in result.findings
     )
@@ -1290,7 +1493,7 @@ def test_extraction_request_has_no_artifact_payloads_field() -> None:
 
 def test_listing_visual_capture_builds_extractable_html_artifact() -> None:
     product_url = "https://shop.test/p/classic-pants/SKU123.html"
-    rows = [
+    rows: list[dict[str, object]] = [
         {"href": product_url, "ariaLabel": "View product"},
         {
             "href": product_url,
@@ -2456,6 +2659,122 @@ def test_hidden_requested_product_panel_content_is_collected() -> None:
     assert result.records[0]["description"] == "Hidden product composition."
     assert rows
     assert rows[0].metadata["component_role"] == "product_panel"
+
+
+def test_product_panel_description_is_collected_without_requested_field() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <main>
+          <h1>Canvas Field Jacket</h1>
+          <section class="product-details">
+            <div class="product-description">
+              Durable cotton canvas jacket with reinforced seams and soft lining.
+            </div>
+          </section>
+        </main>
+        """,
+        "https://shop.test/products/canvas-field-jacket",
+    )
+
+    assert result.records[0]["description"].startswith("Durable cotton canvas jacket")
+    assert any(
+        row.fact_type == "product.description"
+        and row.collector_id == "dom"
+        and row.metadata.get("component_role") == "product_panel"
+        for row in result.evidence
+    )
+
+
+def test_product_panel_description_beats_hard_boundary_meta_excerpt() -> None:
+    excerpt = "A" * 320
+    result = _extract(
+        "ecommerce_detail",
+        f"""
+        <html>
+          <head><meta name="description" content="{excerpt}"></head>
+          <body>
+            <main>
+              <h1>Trail Fleece</h1>
+              <section class="product-description">
+                Warm trail fleece with a brushed interior, secure pockets, and a relaxed fit for layering.
+              </section>
+            </main>
+          </body>
+        </html>
+        """,
+        "https://shop.test/products/trail-fleece",
+    )
+
+    assert result.records[0]["description"].startswith("Warm trail fleece")
+
+
+def test_visible_product_offer_block_emits_atomic_dom_offer() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <main>
+          <h1>Wide Leg Chino</h1>
+          <section class="product-purchase-panel">
+            <div class="current-price">$47.00</div>
+            <p class="stock-message">In stock</p>
+          </section>
+        </main>
+        """,
+        "https://shop.test/products/wide-leg-chino",
+    )
+    offer_rows = [
+        row for row in result.evidence if row.collector_id == "dom" and row.group_id
+    ]
+    groups = _group_facts_by_group_id(offer_rows)
+
+    assert result.records[0]["price"] == "47.00"
+    assert result.records[0]["currency"] == "USD"
+    assert result.records[0]["availability"] == "in_stock"
+    assert any(
+        {"offer.price", "offer.currency", "offer.availability"} <= facts
+        for facts in groups.values()
+    )
+
+
+@pytest.mark.parametrize(
+    ("price_text", "expected"),
+    (
+        ("€1.299,00", "1299.00"),
+        ("$1,299.00", "1299.00"),
+        ("₹1,86,000", "186000.00"),
+    ),
+)
+def test_visible_dom_offer_normalizes_locale_price_grouping(
+    price_text: str, expected: str
+) -> None:
+    result = _extract(
+        "ecommerce_detail",
+        f"<main><h1>Locale Product</h1><div class='current-price'>{price_text}</div></main>",
+        "https://shop.test/products/locale-product",
+    )
+
+    assert result.records[0]["price"] == expected
+
+
+def test_related_product_dom_offer_is_not_attached_to_selected_product() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <main>
+          <h1>Selected Boot</h1>
+          <section class="product-purchase-panel">
+            <div class="current-price">$120.00</div>
+          </section>
+          <section class="recommendations">
+            <div class="current-price">$15.00</div>
+          </section>
+        </main>
+        """,
+        "https://shop.test/products/selected-boot",
+    )
+
+    assert result.records[0]["price"] == "120.00"
 
 
 def test_hidden_recommendation_content_is_rejected() -> None:
@@ -4235,6 +4554,151 @@ def test_embedded_preloaded_state_variant_aliases_materialize() -> None:
     ]
 
 
+def test_js_state_parent_selling_price_and_vendor_brand_paths_publish() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <html><head><script id="__NEXT_DATA__" type="application/json">
+        {
+          "props": {"pageProps": {"product": {
+            "name": "Studio Bike",
+            "url": "https://shop.test/products/studio-bike",
+            "vendor": [{"name": "Invoro Fitness"}],
+            "sellingPrice": {
+              "amount": "3295.00",
+              "currencyCode": "USD",
+              "availability": "IN_STOCK"
+            }
+          }}}
+        }
+        </script></head><body><h1>Studio Bike</h1></body></html>
+        """,
+        "https://shop.test/products/studio-bike",
+    )
+
+    record = result.records[0]
+    assert record["brand"] == "Invoro Fitness"
+    assert record["price"] == "3295.00"
+    assert record["currency"] == "USD"
+    assert record["availability"] == "in_stock"
+    offer_rows = [
+        row
+        for row in result.evidence
+        if row.fact_type.startswith("offer.") and "/sellingPrice/" in row.locator.value
+    ]
+    grouped_facts = _group_facts_by_group_id(offer_rows)
+    assert any(
+        facts >= {"offer.price", "offer.currency", "offer.availability"}
+        for facts in grouped_facts.values()
+    )
+    assert any(row.locator.value.endswith("/sellingPrice/amount") for row in offer_rows)
+
+
+def test_js_state_value_path_checks_complete_suffix_across_list_items() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <script id="__NEXT_DATA__" type="application/json">
+        {"props":{"pageProps":{"product":{
+          "name":"List Price Product",
+          "url":"https://shop.test/products/list-price-product",
+          "sellingPrice":[
+            {"amount":""},
+            {"amount":"89.50","currencyCode":"USD"}
+          ]
+        }}}}
+        </script>
+        """,
+        "https://shop.test/products/list-price-product",
+    )
+
+    assert result.records[0]["price"] == "89.50"
+    assert result.records[0]["currency"] == "USD"
+
+
+def test_js_state_base_price_keeps_integer_major_units_without_evidence() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <html><head><script id="__NEXT_DATA__" type="application/json">
+        {
+          "props": {"pageProps": {"product": {
+            "name": "Reference Turntable",
+            "url": "https://shop.test/products/reference-turntable",
+            "brand": {"displayName": "Audio Guild"},
+            "basePrice": {"amount": 186000, "currencyCode": "INR"}
+          }}}
+        }
+        </script></head><body><h1>Reference Turntable</h1></body></html>
+        """,
+        "https://shop.test/products/reference-turntable",
+    )
+
+    record = result.records[0]
+    assert record["brand"] == "Audio Guild"
+    assert record["price"] == "186000.00"
+    assert record["currency"] == "INR"
+    assert not _price_repair_facts(result, "explicit_minor_unit_price")
+    assert not _price_repair_facts(result, "corroborated_price_scale")
+
+
+def test_js_state_variant_selling_price_container_is_atomic() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <html><head><script id="__NEXT_DATA__" type="application/json">
+        {
+          "props": {"pageProps": {"product": {
+            "name": "Road Hoodie",
+            "url": "https://shop.test/products/road-hoodie",
+            "variants": [
+              {
+                "variantId": "road-black-m",
+                "sku": "ROAD-BLK-M",
+                "size": "M",
+                "sellingPrice": {
+                  "amount": 215,
+                  "currencyCode": "USD",
+                  "availability": true
+                }
+              }
+            ]
+          }}}
+        }
+        </script></head><body><h1>Road Hoodie</h1></body></html>
+        """,
+        "https://shop.test/products/road-hoodie",
+    )
+
+    assert result.records[0]["variants"] == [
+        {
+            "variant_id": "road-black-m",
+            "sku": "ROAD-BLK-M",
+            "price": "215.00",
+            "currency": "USD",
+            "availability": "in_stock",
+            "size": "M",
+        }
+    ]
+    rows: list[Evidence] = [
+        row
+        for row in result.evidence
+        if row.entity_hint
+        and row.entity_hint.entity_type == "variant"
+        and row.fact_type.startswith("offer.")
+    ]
+    assert {row.fact_type for row in rows} >= {
+        "offer.price",
+        "offer.currency",
+        "offer.availability",
+    }
+    grouped_facts = _group_facts_by_group_id(rows)
+    assert any(
+        facts >= {"offer.price", "offer.currency", "offer.availability"}
+        for facts in grouped_facts.values()
+    )
+
+
 def test_unrelated_application_json_does_not_create_variant() -> None:
     result = _extract(
         "ecommerce_detail",
@@ -5408,7 +5872,7 @@ def test_direct_parent_price_is_not_replaced_by_variant_aggregate() -> None:
     assert record.get("price_max") in (None, "12.99")
 
 
-def test_direct_parent_availability_is_not_replaced_by_variant_aggregate() -> None:
+def test_complete_variant_matrix_derives_parent_family_availability() -> None:
     result = _extract(
         "ecommerce_detail",
         """
@@ -5451,12 +5915,12 @@ def test_direct_parent_availability_is_not_replaced_by_variant_aggregate() -> No
         "https://shop.test/products/everyday-tee",
     )
     record = result.records[0]
-    assert record["availability"] == "out_of_stock"
+    assert record["availability"] == "in_stock"
     assert (
         record["_lineage"]["availability"]["rule_id"]
-        != "variant_availability_aggregate"
+        == "variant_availability_aggregate"
     )
-    assert any(
+    assert not any(
         finding.rule_id == "PARENT_VARIANT_AVAILABILITY_CONFLICT"
         for finding in result.findings
     )

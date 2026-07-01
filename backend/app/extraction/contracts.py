@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Literal, Mapping, Protocol, runtime_checkable
+from typing import Any, Literal, Mapping, Protocol, get_args, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict, Field, SerializeAsAny, model_validator
 
@@ -8,6 +8,18 @@ from app.core.config.variant_policy import PUBLIC_VARIANT_AXIS_FIELDS
 from app.extraction.surfaces import Surface
 
 JsonValue = Any
+BrandRole = Literal[
+    "manufacturer",
+    "designer",
+    "private_label",
+    "vendor",
+    "retailer",
+    "seller",
+    "marketplace",
+    "site_identity",
+    "unknown",
+]
+BRAND_ROLES = frozenset(get_args(BrandRole))
 
 PRODUCT_FACTS = frozenset(
     f"product.{field}"
@@ -179,9 +191,13 @@ class Evidence(FrozenModel):
     confidence: float
     flags: tuple[str, ...] = ()
     metadata: dict[str, JsonValue] = Field(default_factory=dict)
+    brand_role: BrandRole | None = None
     surface: Surface = Surface.ECOMMERCE_DETAIL
     subject_id: str
+    source_subject_ids: tuple[str, ...] = ()
     parent_subject_id: str | None = None
+    parent_source_subject_ids: tuple[str, ...] = ()
+    relation_evidence_ids: tuple[str, ...] = ()
     subject_scope: Literal[
         "document",
         "product",

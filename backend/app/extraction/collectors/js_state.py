@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 import re
 from typing import Literal
@@ -96,7 +97,12 @@ class JsStateCollector:
                         root_path=root_path,
                         count=len(objects),
                         limit=MAX_SOURCE_OBJECTS_PER_ARTIFACT,
-                        examples=tuple(path for path, _ in objects),
+                        examples=tuple(
+                            path
+                            for path, _ in objects[
+                                :MAX_DIAGNOSTIC_EXAMPLES_PER_REASON
+                            ]
+                        ),
                     )
                 )
                 objects = objects[:MAX_SOURCE_OBJECTS_PER_ARTIFACT]
@@ -153,9 +159,8 @@ def budget_outcome(
     examples: tuple[str, ...] = (),
     dropped: tuple[Evidence, ...] = (),
 ) -> CollectorOutcome:
-    dropped_paths = tuple(dict.fromkeys(row.locator.value for row in dropped))
-    bounded_examples = tuple(
-        (examples or dropped_paths)[:MAX_DIAGNOSTIC_EXAMPLES_PER_REASON]
+    bounded_examples = _bounded_unique_examples(
+        examples or (row.locator.value for row in dropped)
     )
     dropped_families = tuple(
         dict.fromkeys(_evidence_fact_family(row) for row in dropped)
@@ -172,6 +177,20 @@ def budget_outcome(
         dropped_fact_families=dropped_families,
         dropped_source_paths=bounded_examples,
     )
+
+
+def _bounded_unique_examples(examples: Iterable[str]) -> tuple[str, ...]:
+    bounded: list[str] = []
+    seen: set[str] = set()
+    for example in examples:
+        value = str(example)
+        if value in seen:
+            continue
+        seen.add(value)
+        bounded.append(value)
+        if len(bounded) >= MAX_DIAGNOSTIC_EXAMPLES_PER_REASON:
+            break
+    return tuple(bounded)
 
 
 def prioritize_evidence_rows(
@@ -438,6 +457,7 @@ def network_row(
         directness="inferred",
         confidence=0.0,
     ).subject_id
+    product_source_subject_ids = _structured_source_subject_ids(bundle, obj)
     source_rows = [
         (key, fact, value, suffix)
         for key in direct_keys
@@ -491,6 +511,9 @@ def network_row(
                 parent_scope="product"
                 if fact.startswith(("offer.", "asset."))
                 else None,
+                source_subject_ids=product_source_subject_ids
+                if fact.startswith("product.")
+                else (),
             )
         )
     return out
@@ -509,12 +532,21 @@ def _configured_value_path_rows(obj: dict) -> list[tuple[str, str, object, str]]
 
 
 def _value_at_path(obj: dict, key_path: tuple[str, ...]) -> object:
-    current: object = obj
-    for key in key_path:
-        if not isinstance(current, dict):
-            return None
-        current = current.get(key)
-    return current
+    return _value_at_path_suffix(obj, key_path)
+
+
+def _value_at_path_suffix(current: object, key_path: tuple[str, ...]) -> object:
+    if not key_path:
+        return current
+    if isinstance(current, list):
+        for item in current:
+            value = _value_at_path_suffix(item, key_path)
+            if value not in (None, "", [], {}):
+                return value
+        return None
+    if not isinstance(current, dict):
+        return None
+    return _value_at_path_suffix(current.get(key_path[0]), key_path[1:])
 
 
 def _variant_url_conflicts(page_url: str, obj: dict) -> bool:
@@ -615,6 +647,7 @@ def _variant_row(
         directness="inferred",
         confidence=0.0,
     ).subject_id
+    variant_source_subject_ids = _variant_source_subject_ids(bundle, obj)
     fields = _variant_fields(obj)
     flags = (
         (variant_policy.DEFAULT_VARIANT_PLACEHOLDER_FLAG,)
@@ -636,6 +669,7 @@ def _variant_row(
             subject_id=subject_id,
             parent_subject_id=product_subject,
             parent_scope="product",
+            source_subject_ids=variant_source_subject_ids,
             flags=flags,
         )
         for name, fact, value in fields
@@ -755,6 +789,7 @@ def _variant_assets(
 ) -> list[Evidence]:
     rows: list[Evidence] = []
     seen: set[str] = set()
+    source_subject_ids = _variant_source_subject_ids(bundle, obj)
     for key in ECOMMERCE_IMAGE_SOURCE_KEYS:
         if key not in obj:
             continue
@@ -777,6 +812,7 @@ def _variant_assets(
                     confidence=0.8,
                     parent_subject_id=variant_subject_id,
                     parent_scope="variant",
+                    source_subject_ids=source_subject_ids,
                 )
             )
     return rows
@@ -793,6 +829,7 @@ def _variant_offer(
     collector_id: str,
 ) -> list[Evidence]:
     group = f"offer:{artifact_id}:{path}"
+    source_subject_ids = _variant_source_subject_ids(bundle, obj)
     rows = [
         (
             _first_key(obj, *variant_policy.VARIANT_OFFER_PRICE_KEYS) or "price",
@@ -842,10 +879,48 @@ def _variant_offer(
             confidence=0.82,
             parent_subject_id=variant_subject_id,
             parent_scope="variant",
+            source_subject_ids=source_subject_ids,
         )
         for name, fact, value in rows
         if _scalar_value(value) not in (None, "", [], {})
     ]
+
+
+def _structured_source_subject_ids(bundle: CaptureBundle, obj: dict) -> tuple[str, ...]:
+    values = [bundle.final_url]
+    values.extend(
+        str(obj.get(key) or "").strip()
+        for key in ECOMMERCE_PRODUCT_IDENTITY_SOURCE_KEYS
+        if str(obj.get(key) or "").strip()
+    )
+    values.extend(
+        str(_scalar_value(_first(obj, *keys)) or "").strip()
+        for keys in (
+            variant_policy.VARIANT_SKU_VALUE_KEYS,
+            variant_policy.VARIANT_URL_VALUE_KEYS,
+        )
+        if str(_scalar_value(_first(obj, *keys)) or "").strip()
+    )
+    return _source_subject_ids(bundle, values)
+
+
+def _variant_source_subject_ids(bundle: CaptureBundle, obj: dict) -> tuple[str, ...]:
+    values = (
+        _variant_identity_value(obj),
+        _scalar_value(_first(obj, *variant_policy.VARIANT_SKU_VALUE_KEYS)),
+        _url_value(obj),
+    )
+    return _source_subject_ids(bundle, values)
+
+
+def _source_subject_ids(bundle: CaptureBundle, values) -> tuple[str, ...]:
+    return tuple(
+        stable_id("subject", bundle.bundle_id, "product", normalized)
+        for normalized in dict.fromkeys(
+            str(value).strip() for value in values if value not in (None, "", [], {})
+        )
+        if normalized
+    )
 
 
 def _scalar_value(value):

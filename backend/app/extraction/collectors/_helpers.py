@@ -7,6 +7,8 @@ from typing import Any
 from app.core.config.extraction_rules import AVAILABILITY_URL_MAP
 from app.extraction.documents import DocumentStore, HtmlDocument
 from app.extraction.contracts import (
+    BRAND_ROLES,
+    BrandRole,
     CaptureBundle,
     EntityHint,
     Evidence,
@@ -68,6 +70,7 @@ def evidence(
         parent_subject_id=parent_subject_id,
         parent_scope=kwargs.get("parent_scope"),
     )
+    explicit_brand_role = _validated_brand_role(kwargs.get("brand_role"))
     return Evidence(
         evidence_id=eid,
         bundle_id=bundle.bundle_id,
@@ -84,11 +87,58 @@ def evidence(
         confidence=confidence,
         flags=tuple(kwargs.get("flags") or ()),
         metadata=dict(kwargs.get("metadata") or {}),
+        brand_role=explicit_brand_role
+        or _brand_role(fact_type, locator.value, kwargs.get("metadata")),
         subject_id=subject_id,
+        source_subject_ids=_normalized_ids(kwargs.get("source_subject_ids")),
         parent_subject_id=str(parent_subject_id) if parent_subject_id else None,
+        parent_source_subject_ids=_normalized_ids(
+            kwargs.get("parent_source_subject_ids")
+        ),
+        relation_evidence_ids=_normalized_ids(kwargs.get("relation_evidence_ids")),
         subject_scope=subject_scope,  # type: ignore[arg-type]
         relation_type=str(relation_type) if relation_type else None,  # type: ignore[arg-type]
     )
+
+
+def _validated_brand_role(value: object) -> BrandRole | None:
+    normalized = str(value or "").strip().casefold()
+    return normalized if normalized in BRAND_ROLES else None  # type: ignore[return-value]
+
+
+def _normalized_ids(value: object) -> tuple[str, ...]:
+    if not isinstance(value, (list, tuple, set, frozenset)):
+        return ()
+    return tuple(text for item in value if (text := str(item).strip()))
+
+
+def _brand_role(
+    fact_type: str, locator_value: str, metadata: object
+) -> BrandRole | None:
+    if fact_type != "product.brand":
+        return None
+    if isinstance(metadata, dict):
+        role = str(metadata.get("brand_role") or "").strip().casefold()
+        if role in BRAND_ROLES:
+            return role  # type: ignore[return-value]
+    locator = str(locator_value or "").casefold()
+    if any(token in locator for token in ("manufacturer", "manufacturername")):
+        return "manufacturer"
+    if "designer" in locator or "designed" in locator:
+        return "designer"
+    if "private_label" in locator or "private-label" in locator:
+        return "private_label"
+    if "vendor" in locator:
+        return "vendor"
+    if "seller" in locator:
+        return "seller"
+    if any(token in locator for token in ("retailer", "merchant")):
+        return "retailer"
+    if "marketplace" in locator:
+        return "marketplace"
+    if any(token in locator for token in ("host", "site", "page_identity")):
+        return "site_identity"
+    return "manufacturer"
 
 
 def _subject_scope(fact_type: str, hint: EntityHint | None) -> str:

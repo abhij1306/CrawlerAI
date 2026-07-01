@@ -368,6 +368,8 @@ VARIANT_OFFER_PRICE_KEYS = (
     "price",
     "currentPrice",
     "current_price",
+    "sellingPrice",
+    "basePrice",
     "salePrice",
     "sale_price",
     *DETAIL_EXPLICIT_MINOR_UNIT_PRICE_FIELDS,

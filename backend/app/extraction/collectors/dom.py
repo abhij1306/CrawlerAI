@@ -4,15 +4,29 @@ import re
 
 from app.extraction.collectors._helpers import evidence, html_doc
 from app.core.config.extraction_rules import (
+    CURRENCY_SYMBOL_MAP,
     DETAIL_BRAND_DOM_SELECTORS,
     DETAIL_BRAND_DOM_VALUE_ATTRIBUTES,
     DETAIL_BRAND_VISIBLE_LABEL_PATTERN,
+    DETAIL_CROSS_PRODUCT_CONTAINER_TOKENS,
+    DETAIL_DOM_AVAILABILITY_TEXT_PATTERNS,
+    DETAIL_DOM_CURRENCY_CODE_PATTERN,
+    DETAIL_DOM_CURRENCY_CONTEXT_PATTERN,
+    DETAIL_DOM_DESCRIPTION_MIN_CHARS,
+    DETAIL_DOM_DESCRIPTION_SELECTORS,
     DETAIL_DOM_IMAGE_NEGATIVE_SCOPE_TOKENS,
     DETAIL_DOM_IMAGE_POSITIVE_SCOPE_TOKENS,
+    DETAIL_DOM_OFFER_CONTEXT_ANCESTOR_LIMIT,
+    DETAIL_DOM_OFFER_MAX_CANDIDATES,
+    DETAIL_DOM_OFFER_SELECTORS,
+    DETAIL_DOM_PRICE_TEXT_PATTERN,
+    DETAIL_DOM_PRODUCT_ROOT_POSITIVE_SELECTORS,
+    DETAIL_DOM_PRODUCT_ROOT_SELECTORS,
     DETAIL_HIDDEN_PRODUCT_CONTENT_NEGATIVE_TOKENS,
     DETAIL_HIDDEN_PRODUCT_CONTENT_POSITIVE_TOKENS,
     DETAIL_IMAGE_SRCSET_ATTRS,
     DETAIL_IMAGE_URL_ATTRS,
+    DETAIL_TEXT_SCOPE_EXCLUDE_TOKENS,
     VARIANT_DOM_MAX_LABEL_LENGTH,
     VARIANT_DOM_NOISE_PHRASES,
     VARIANT_DOM_SIZE_LABEL_PATTERN,
@@ -99,6 +113,11 @@ class DomCollector:
                     )
                 )
         out.extend(_product_brand_evidence(bundle, doc, product_subject))
+        product_roots = _product_root_nodes(doc)
+        out.extend(
+            _product_description_evidence(bundle, product_roots, product_subject)
+        )
+        out.extend(_product_offer_evidence(bundle, product_roots, product_subject))
         for img, confidence in _product_image_nodes(doc):
             src = _image_node_url(img)
             locator = SourceLocator(
@@ -137,6 +156,7 @@ def _product_brand_evidence(
             if not value or key in seen:
                 continue
             seen.add(key)
+            role = _brand_node_role(node)
             rows.append(
                 evidence(
                     bundle,
@@ -152,10 +172,32 @@ def _product_brand_evidence(
                     hint=EntityHint(entity_type="product"),
                     confidence=0.72,
                     subject_id=product_subject,
-                    metadata={"brand_evidence_kind": "explicit_product_label"},
+                    metadata={
+                        "brand_evidence_kind": "explicit_product_label",
+                        "brand_role": role,
+                    },
+                    brand_role=role,
                 )
             )
     return tuple(rows)
+
+
+def _brand_node_role(node: HtmlNode) -> str:
+    context = " ".join(
+        str(node.attribute(attribute) or "").casefold()
+        for attribute in ("class", "id", "data-testid", "itemprop")
+    )
+    if "designer" in context or "designed" in context:
+        return "designer"
+    if "manufacturer" in context:
+        return "manufacturer"
+    if "vendor" in context:
+        return "vendor"
+    if "seller" in context:
+        return "seller"
+    if "retailer" in context:
+        return "retailer"
+    return "manufacturer"
 
 
 def _brand_node_value(node: HtmlNode) -> str:
@@ -176,6 +218,222 @@ def _brand_node_value(node: HtmlNode) -> str:
     ):
         return text if 0 < len(text) <= 80 else ""
     return ""
+
+
+def _product_root_nodes(doc) -> tuple[HtmlNode, ...]:
+    roots: list[HtmlNode] = []
+    seen: set[int] = set()
+    for selector in DETAIL_DOM_PRODUCT_ROOT_SELECTORS:
+        for node in doc.safe_css(selector):
+            identity = node.identity()
+            if identity in seen or _node_context_excluded(node):
+                continue
+            score = sum(
+                1
+                for positive in DETAIL_DOM_PRODUCT_ROOT_POSITIVE_SELECTORS
+                if node.safe_css(positive)
+            )
+            if score <= 0:
+                continue
+            roots.append(node)
+            seen.add(identity)
+    return tuple(roots)
+
+
+def _product_description_evidence(
+    bundle: CaptureBundle, roots: tuple[HtmlNode, ...], product_subject: str
+) -> tuple[Evidence, ...]:
+    rows: list[Evidence] = []
+    seen: set[str] = set()
+    for root in roots:
+        for selector in DETAIL_DOM_DESCRIPTION_SELECTORS:
+            for node in root.safe_css(selector):
+                hidden = node.is_hidden()
+                if _node_context_excluded(node) or (
+                    hidden and not _hidden_product_content_allowed(node)
+                ):
+                    continue
+                value = _description_node_value(node)
+                key = value.casefold()
+                if (
+                    not value
+                    or len(value) < DETAIL_DOM_DESCRIPTION_MIN_CHARS
+                    or key in seen
+                ):
+                    continue
+                seen.add(key)
+                rows.append(
+                    evidence(
+                        bundle,
+                        "dom",
+                        "dom",
+                        "product.description",
+                        value,
+                        SourceLocator(
+                            kind="css_selector",
+                            value=node.stable_locator(),
+                            preview=value[:120],
+                        ),
+                        hint=EntityHint(entity_type="product"),
+                        confidence=0.66 if hidden else 0.74,
+                        flags=("hidden_product_content",) if hidden else (),
+                        subject_id=product_subject,
+                        metadata=(
+                            {"visibility": "hidden", "component_role": "product_panel"}
+                            if hidden
+                            else {"component_role": "product_panel"}
+                        ),
+                    )
+                )
+    return tuple(rows)
+
+
+def _description_node_value(node: HtmlNode) -> str:
+    for attribute in ("data-description", "content", "value", "title", "aria-label"):
+        value = str(node.attribute(attribute) or "").strip()
+        if value:
+            return " ".join(value.split())
+    return " ".join(node.text(separator=" ", strip=True).split())
+
+
+def _product_offer_evidence(
+    bundle: CaptureBundle, roots: tuple[HtmlNode, ...], product_subject: str
+) -> tuple[Evidence, ...]:
+    rows: list[Evidence] = []
+    seen: set[tuple[str, str, str]] = set()
+    for root in roots:
+        for selector in DETAIL_DOM_OFFER_SELECTORS:
+            for node in root.safe_css(selector)[:DETAIL_DOM_OFFER_MAX_CANDIDATES]:
+                if (
+                    node.is_hidden()
+                    or _node_context_excluded(node)
+                    or _is_commercial_variant_control(node)
+                ):
+                    continue
+                offer = _visible_offer_values(node)
+                if offer is None:
+                    continue
+                price, currency, availability = offer
+                key = (price, currency, availability)
+                if key in seen:
+                    continue
+                seen.add(key)
+                group = f"offer:dom:{node.identity()}"
+                subject_id = stable_id("subject", bundle.bundle_id, group)
+                locator = SourceLocator(
+                    kind="css_selector",
+                    value=node.stable_locator(),
+                    preview=price[:120],
+                )
+                for fact_type, value in (
+                    ("offer.price", price),
+                    ("offer.currency", currency),
+                    ("offer.availability", availability),
+                ):
+                    if not value:
+                        continue
+                    rows.append(
+                        evidence(
+                            bundle,
+                            "dom",
+                            "dom",
+                            fact_type,
+                            value,
+                            locator,
+                            group_id=group,
+                            hint=EntityHint(entity_type="offer"),
+                            confidence=0.7,
+                            subject_id=subject_id,
+                            parent_subject_id=product_subject,
+                            parent_scope="product",
+                            metadata={"component_role": "product_offer"},
+                        )
+                    )
+    return tuple(rows)
+
+
+def _visible_offer_values(node: HtmlNode) -> tuple[str, str, str] | None:
+    price_text = _offer_price_text(node)
+    match = re.search(DETAIL_DOM_PRICE_TEXT_PATTERN, price_text, re.IGNORECASE)
+    if match is None:
+        return None
+    amount = _normalize_dom_price_amount(str(match.group("amount") or ""))
+    if not amount:
+        return None
+    currency = _offer_currency(node, match)
+    availability = _offer_availability(node)
+    return amount, currency, availability
+
+
+def _normalize_dom_price_amount(value: str) -> str:
+    amount = value.strip()
+    separators = [index for index, char in enumerate(amount) if char in ",."]
+    if not separators:
+        return amount
+    decimal_index = separators[-1]
+    trailing_digits = len(amount) - decimal_index - 1
+    decimal_separator = amount[decimal_index] if trailing_digits in {1, 2} else ""
+    normalized = "".join(char for char in amount if char not in ",.")
+    if not decimal_separator:
+        return normalized
+    return f"{normalized[:-trailing_digits]}.{normalized[-trailing_digits:]}"
+
+
+def _offer_price_text(node: HtmlNode) -> str:
+    for attribute in ("data-price", "content", "value", "aria-label", "title"):
+        value = str(node.attribute(attribute) or "").strip()
+        if value:
+            return value
+    return " ".join(node.text(separator=" ", strip=True).split())
+
+
+def _offer_currency(node: HtmlNode, price_match: re.Match[str]) -> str:
+    for current in (node, *node.ancestors()[:DETAIL_DOM_OFFER_CONTEXT_ANCESTOR_LIMIT]):
+        for attribute in ("data-currency", "content", "aria-label", "title"):
+            value = str(current.attribute(attribute) or "").strip().upper()
+            if re.fullmatch(DETAIL_DOM_CURRENCY_CODE_PATTERN, value):
+                return value
+    code = str(price_match.group("code") or "").strip().upper()
+    if code:
+        return code
+    symbol = str(price_match.group("symbol") or "").strip()
+    if symbol:
+        return CURRENCY_SYMBOL_MAP.get(symbol, "")
+    context = _offer_context_text(node).upper()
+    code_match = re.search(DETAIL_DOM_CURRENCY_CONTEXT_PATTERN, context)
+    return code_match.group(1) if code_match else ""
+
+
+def _offer_availability(node: HtmlNode) -> str:
+    context = _offer_context_text(node)
+    for canonical, patterns in DETAIL_DOM_AVAILABILITY_TEXT_PATTERNS.items():
+        if any(re.search(pattern, context, re.IGNORECASE) for pattern in patterns):
+            return canonical
+    return ""
+
+
+def _offer_context_text(node: HtmlNode) -> str:
+    parts = [node.text(separator=" ", strip=True)]
+    parts.extend(
+        ancestor.text(separator=" ", strip=True)
+        for ancestor in node.ancestors()[:DETAIL_DOM_OFFER_CONTEXT_ANCESTOR_LIMIT]
+    )
+    return " ".join(" ".join(parts).split())
+
+
+def _node_context_excluded(node: HtmlNode) -> bool:
+    context = " ".join(
+        str(current.attribute(attribute) or "").casefold()
+        for current in (node, *node.ancestors()[:8])
+        for attribute in _IMAGE_SCOPE_ATTRIBUTES
+    )
+    return any(
+        token in context
+        for token in (
+            *DETAIL_TEXT_SCOPE_EXCLUDE_TOKENS,
+            *DETAIL_CROSS_PRODUCT_CONTAINER_TOKENS,
+        )
+    )
 
 
 def _product_image_nodes(doc) -> tuple[tuple[HtmlNode, float], ...]:

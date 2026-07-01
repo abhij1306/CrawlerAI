@@ -430,8 +430,14 @@ ECOMMERCE_STRUCTURED_SOURCE_FACT_TYPES = {
 }
 ECOMMERCE_STRUCTURED_SOURCE_VALUE_PATH_FACT_TYPES = {
     ("brand", "name"): PRODUCT_BRAND_FACT_TYPE,
+    ("brand", "displayName"): PRODUCT_BRAND_FACT_TYPE,
+    ("brand", "label"): PRODUCT_BRAND_FACT_TYPE,
     ("vendor", "name"): PRODUCT_BRAND_FACT_TYPE,
+    ("vendor", "brand", "name"): PRODUCT_BRAND_FACT_TYPE,
+    ("vendor", "displayName"): PRODUCT_BRAND_FACT_TYPE,
+    ("vendor", "label"): PRODUCT_BRAND_FACT_TYPE,
     ("price", "amount"): OFFER_PRICE_FACT_TYPE,
+    ("price", "value"): OFFER_PRICE_FACT_TYPE,
     ("price", "currencyCode"): OFFER_CURRENCY_FACT_TYPE,
     ("currentPrice", "amount"): OFFER_PRICE_FACT_TYPE,
     ("currentPrice", "currencyCode"): OFFER_CURRENCY_FACT_TYPE,
@@ -439,10 +445,14 @@ ECOMMERCE_STRUCTURED_SOURCE_VALUE_PATH_FACT_TYPES = {
     ("current_price", "currencyCode"): OFFER_CURRENCY_FACT_TYPE,
     ("sellingPrice", "amount"): OFFER_PRICE_FACT_TYPE,
     ("sellingPrice", "currencyCode"): OFFER_CURRENCY_FACT_TYPE,
+    ("sellingPrice", "availability"): OFFER_AVAILABILITY_FACT_TYPE,
     ("salePrice", "amount"): OFFER_PRICE_FACT_TYPE,
     ("salePrice", "currencyCode"): OFFER_CURRENCY_FACT_TYPE,
     ("basePrice", "amount"): OFFER_PRICE_FACT_TYPE,
     ("basePrice", "currencyCode"): OFFER_CURRENCY_FACT_TYPE,
+    ("basePrice", "availability"): OFFER_AVAILABILITY_FACT_TYPE,
+    ("inventory", "availability"): OFFER_AVAILABILITY_FACT_TYPE,
+    ("inventory", "status"): OFFER_AVAILABILITY_FACT_TYPE,
 }
 ECOMMERCE_STRUCTURED_CONTAINER_SOURCE_KEYS = frozenset(
     key_path[0] for key_path in ECOMMERCE_STRUCTURED_SOURCE_VALUE_PATH_FACT_TYPES

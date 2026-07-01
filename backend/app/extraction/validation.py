@@ -667,11 +667,19 @@ def _validate_availability_consistency(
         return ()
     aggregate = "in_stock" if "in_stock" in child_values else "out_of_stock"
     parent_ids = parent_offers[0].fact_evidence.get("offer.availability", ())
-    if (
-        not parent_ids
-        or parent_ids[0] not in by_id
-        or str(by_id[parent_ids[0]].value) == aggregate
-    ):
+    if not parent_ids or parent_ids[0] not in by_id:
+        return ()
+    parent_value = str(by_id[parent_ids[0]].value)
+    if parent_value == aggregate:
+        return ()
+    # Complete child matrices define product-family availability in Resolve. A
+    # differing parent value is selected-configuration evidence, not a data error.
+    covered_variant_ids = {
+        offer.variant_entity_id
+        for offer in variant_offers
+        if offer.variant_entity_id is not None
+    }
+    if covered_variant_ids == {variant.entity_id for variant in entities.variants}:
         return ()
     evidence_ids = tuple(parent_ids) + tuple(eid for ids in child_ids for eid in ids)
     return (
@@ -679,7 +687,7 @@ def _validate_availability_consistency(
             "PARENT_VARIANT_AVAILABILITY_CONFLICT",
             (parent_offers[0].entity_id,),
             evidence_ids,
-            "Parent availability conflicts with the complete variant matrix.",
+            "Parent availability conflicts with captured variant availability.",
             False,
         ),
     )

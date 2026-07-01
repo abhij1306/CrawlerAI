@@ -147,3 +147,89 @@ def test_owner_product_id_rejects_conflicting_parent_products() -> None:
     )
 
     assert owner is None
+
+
+def test_explicit_parent_source_subject_alias_links_variant_without_parent_subject() -> (
+    None
+):
+    bundle = _bundle()
+    rows = (
+        _row(
+            bundle, "product-source", "product.url", "https://shop.test/products/item"
+        ),
+        evidence(
+            bundle,
+            "artifact-1",
+            "jsonld",
+            "variant.sku",
+            "SKU-1",
+            SourceLocator(kind="json_pointer", value="/hasVariant/0/sku"),
+            hint=EntityHint(entity_type="variant", sku="SKU-1"),
+            subject_id="variant-1",
+            parent_source_subject_ids=("product-source",),
+        ),
+        evidence(
+            bundle,
+            "artifact-1",
+            "jsonld",
+            "variant.option.size",
+            "M",
+            SourceLocator(kind="json_pointer", value="/hasVariant/0/size"),
+            hint=EntityHint(entity_type="variant", sku="SKU-1"),
+            subject_id="variant-1",
+            parent_source_subject_ids=("product-source",),
+        ),
+    )
+
+    entities = build_entities(bundle, rows)
+
+    assert len(entities.variants) == 1
+    assert entities.variants[0].product_entity_id == entities.products[0].entity_id
+
+
+def test_evidence_normalizes_ids_and_falls_back_from_invalid_explicit_brand_role() -> (
+    None
+):
+    bundle = _bundle()
+    row = evidence(
+        bundle,
+        "artifact-1",
+        "js_state",
+        "product.brand",
+        "Acme",
+        SourceLocator(kind="script_path", value="/product/brand"),
+        brand_role="not-a-role",
+        metadata={"brand_role": "vendor"},
+        source_subject_ids=(" source-a ",),
+        parent_source_subject_ids=(" parent-a ",),
+        relation_evidence_ids=(" relation-a ",),
+    )
+
+    assert row.brand_role == "vendor"
+    assert row.source_subject_ids == ("source-a",)
+    assert row.parent_source_subject_ids == ("parent-a",)
+    assert row.relation_evidence_ids == ("relation-a",)
+
+
+def test_metadata_parent_alias_is_trimmed_before_linking() -> None:
+    bundle = _bundle()
+    rows = (
+        _row(
+            bundle, "product-source", "product.url", "https://shop.test/products/item"
+        ),
+        evidence(
+            bundle,
+            "artifact-1",
+            "legacy",
+            "variant.sku",
+            "SKU-1",
+            SourceLocator(kind="json_pointer", value="/variant/sku"),
+            hint=EntityHint(entity_type="variant", sku="SKU-1"),
+            subject_id="variant-1",
+            metadata={"parent_source_subject_ids": [" product-source "]},
+        ),
+    )
+
+    entities = build_entities(bundle, rows)
+
+    assert len(entities.variants) == 1

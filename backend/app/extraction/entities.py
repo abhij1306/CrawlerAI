@@ -354,10 +354,26 @@ def _product_by_subject(
 
 
 def _source_subject_aliases(ev: Evidence) -> tuple[str, ...]:
-    aliases = ev.metadata.get("source_subject_ids")
+    if ev.source_subject_ids:
+        return ev.source_subject_ids
+    return _metadata_subject_aliases(ev, "source_subject_ids")
+
+
+def _parent_subject_aliases(ev: Evidence) -> tuple[str, ...]:
+    aliases = list(
+        ev.parent_source_subject_ids
+        or _metadata_subject_aliases(ev, "parent_source_subject_ids")
+    )
+    if ev.parent_subject_id:
+        aliases.append(ev.parent_subject_id)
+    return tuple(dict.fromkeys(alias for alias in aliases if alias))
+
+
+def _metadata_subject_aliases(ev: Evidence, key: str) -> tuple[str, ...]:
+    aliases = ev.metadata.get(key)
     if not isinstance(aliases, (list, tuple)):
         return ()
-    return tuple(str(alias) for alias in aliases if str(alias or "").strip())
+    return tuple(text for alias in aliases if (text := str(alias or "").strip()))
 
 
 def _link_variants(
@@ -456,12 +472,30 @@ def _variant_groups(
         if matched is None:
             groups.append(list(rows))
             group_keys.append(set(keys))
-            subjects.append({subject_id})
+            subjects.append(
+                {
+                    subject_id,
+                    *(
+                        _alias
+                        for row in rows
+                        for _alias in _source_subject_aliases(row)
+                    ),
+                }
+            )
             product_ids.append(product_id)
         else:
             groups[matched].extend(rows)
             group_keys[matched].update(keys)
-            subjects[matched].add(subject_id)
+            subjects[matched].update(
+                {
+                    subject_id,
+                    *(
+                        _alias
+                        for row in rows
+                        for _alias in _source_subject_aliases(row)
+                    ),
+                }
+            )
     return sorted(
         zip(product_ids, group_keys, groups, subjects),
         key=lambda item: (item[0], sorted(item[1])),
@@ -612,9 +646,11 @@ def _link_offers(
 def _variant_for(
     rows: list[Evidence], variants: tuple[VariantEntity, ...]
 ) -> str | None:
-    parent_subjects = {ev.parent_subject_id for ev in rows if ev.parent_subject_id}
+    source_subjects = {
+        subject_id for ev in rows for subject_id in _parent_subject_aliases(ev)
+    }
     for variant in variants:
-        if parent_subjects & set(variant.source_subject_ids):
+        if source_subjects & set(variant.source_subject_ids):
             return variant.entity_id
     skus = {
         str(ev.entity_hint.sku) for ev in rows if ev.entity_hint and ev.entity_hint.sku
@@ -683,15 +719,17 @@ def _owner_product_id(
 ) -> str | None:
     product_ids: set[str] = set()
     for ev in rows:
-        if not ev.parent_subject_id or ev.parent_subject_id not in product_by_subject:
-            continue
+        subject_ids = _parent_subject_aliases(ev)
         if allowed_relations is not None:
             relation = ev.relation_type
             if relation is None and ev.subject_scope != "unknown":
                 continue
             if relation is not None and relation not in allowed_relations:
                 continue
-        product_ids.add(product_by_subject[ev.parent_subject_id])
+        for subject_id in subject_ids:
+            product_id = product_by_subject.get(subject_id)
+            if product_id is not None:
+                product_ids.add(product_id)
     if len(product_ids) != 1:
         return None
     return next(iter(product_ids))

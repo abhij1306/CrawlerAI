@@ -784,8 +784,6 @@ def _aggregate_variant_availability(
     expected_variant_count: int,
     existing_fact_keys: frozenset[tuple[str, str]],
 ) -> tuple[DerivedFact, ...]:
-    if (entity_id, "offer.availability") in existing_fact_keys:
-        return ()
     lineages = tuple(row.lineage.get("availability") for row in variants)
     if len(variants) != expected_variant_count or _has_parent_inherited_lineage(
         lineages
@@ -2093,6 +2091,11 @@ def _brand_from_title(
     existing_brands: tuple[object, ...] = (),
     allow_page_identity_replacement: bool = False,
 ) -> tuple[str, str] | None:
+    has_independent_product_signal = any(
+        text and text.casefold() != str(title or "").strip().casefold()
+        for value in evidence_values
+        for text in (str(value or "").strip(),)
+    )
     page_identity = infer_brand_from_page_identity(
         url=page_url,
         title=title,
@@ -2125,7 +2128,7 @@ def _brand_from_title(
             infer_brand_from_product_url(url=page_url, title=title),
         ),
     ):
-        if value:
+        if value and has_independent_product_signal:
             return value, rule_id
     return None
 
@@ -2144,6 +2147,7 @@ _GENERIC_INVALIDITY_FLAGS = frozenset(
         "invalid_decimal",
         "invalid_currency",
         "invalid_brand_scalar",
+        "non_manufacturer_brand_role",
         INVALID_AVAILABILITY_EVIDENCE_FLAG,
         INVALID_SCALAR_TYPE_EVIDENCE_FLAG,
         "invalid_gtin",
@@ -2321,6 +2325,17 @@ def _rank(ev: Evidence) -> tuple[object, ...]:
         )
     if ev.fact_type == field_mappings.PRODUCT_BRAND_FACT_TYPE:
         derived_penalty = int(bool(ev.metadata.get("derived_by")))
+        role_rank = {
+            "manufacturer": 0,
+            "designer": 0,
+            "private_label": 0,
+            "vendor": 1,
+            "unknown": 2,
+            "seller": 5,
+            "retailer": 5,
+            "marketplace": 5,
+            "site_identity": 5,
+        }.get(ev.brand_role or "manufacturer", 2)
         derived_rank = {
             "brand_from_product_url": 0,
             "brand_from_title_marker": 1,
@@ -2329,6 +2344,7 @@ def _rank(ev: Evidence) -> tuple[object, ...]:
         }.get(str(ev.metadata.get("derived_by") or ""), 1)
         return (
             quality,
+            role_rank,
             derived_penalty,
             reliability,
             directness,

@@ -155,7 +155,7 @@ def _assess(
         ):
             return "error"
     if any(row.blocking for row in findings if row.rule_id != "WRONG_SURFACE_CONTENT"):
-        return "invalid"
+        return "error" if request.surface == Surface.JOB_DETAIL else "invalid"
     if wrong_surface:
         return "wrong_surface"
     if target.status == "ambiguous":
@@ -201,7 +201,7 @@ def _blocked_result(
         severity="critical",
         scope="artifact",
         entity_ids=(),
-        evidence_ids=(),
+        evidence_ids=tuple(row.evidence_id for row in evidence),
         message="Acquisition was blocked before extraction.",
         blocking=True,
     )

@@ -348,3 +348,61 @@ def test_pipeline_availability_flags_non_enum_values(raw: str) -> None:
     assert normalized not in AVAILABILITY_CANONICAL_ENUM
     assert INVALID_AVAILABILITY_EVIDENCE_FLAG in flags
     assert public_availability(normalized) == ""
+
+
+def test_duplicate_offers_for_one_variant_do_not_fake_complete_coverage() -> None:
+    bundle = _bundle()
+    rows = [
+        _product(bundle),
+        *(
+            evidence(
+                bundle,
+                "artifact-1",
+                "jsonld",
+                "variant.sku",
+                sku,
+                SourceLocator(kind="json_pointer", value=f"/variants/{sku}"),
+                hint=EntityHint(entity_type="variant", sku=sku),
+                subject_id=subject_id,
+                parent_subject_id="product-1",
+                parent_scope="product",
+            )
+            for sku, subject_id in (("SKU-S", "variant-s"), ("SKU-M", "variant-m"))
+        ),
+        evidence(
+            bundle,
+            "artifact-1",
+            "jsonld",
+            "offer.availability",
+            "out_of_stock",
+            SourceLocator(kind="json_pointer", value="/offers/availability"),
+            hint=EntityHint(entity_type="offer"),
+            group_id="parent-offer",
+            parent_subject_id="product-1",
+            parent_scope="product",
+        ),
+        *(
+            evidence(
+                bundle,
+                "artifact-1",
+                "jsonld",
+                "offer.availability",
+                "in_stock",
+                SourceLocator(kind="json_pointer", value=f"/offers/{index}"),
+                hint=EntityHint(entity_type="offer", sku="SKU-S"),
+                group_id=f"variant-offer-{index}",
+                parent_subject_id="variant-s",
+                parent_scope="variant",
+            )
+            for index in range(2)
+        ),
+    ]
+
+    entities = build_entities(bundle, tuple(rows))
+    findings = validate(tuple(rows), entities)
+
+    assert len(entities.variants) == 2
+    assert any(
+        finding.rule_id == "PARENT_VARIANT_AVAILABILITY_CONFLICT"
+        for finding in findings
+    )

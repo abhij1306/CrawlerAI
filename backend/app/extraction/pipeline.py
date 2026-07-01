@@ -234,25 +234,26 @@ def _flag_ambiguous_dom_prices(evidence: tuple[Evidence, ...]) -> tuple[Evidence
 def _flag_brand_conflicts(
     evidence: tuple[Evidence, ...], *, page_brand: Evidence | None
 ) -> tuple[Evidence, ...]:
-    brand_rows = tuple(
+    public_brand_rows = tuple(
         row
         for row in evidence
         if row.fact_type == field_mappings.PRODUCT_BRAND_FACT_TYPE
+        and _brand_role_can_publish(row)
     )
     brands = {
         str(row.value).strip().casefold()
-        for row in brand_rows
+        for row in public_brand_rows
         if str(row.value).strip()
     }
     structured_brands = {
         str(row.value).strip().casefold()
-        for row in brand_rows
+        for row in public_brand_rows
         if row.collector_id in {"adapter", "jsonld", "js_state", "network"}
         and str(row.value).strip()
     }
     product_url_brands = tuple(
         str(row.value).strip().casefold()
-        for row in brand_rows
+        for row in public_brand_rows
         if row.metadata.get("derived_by") == "brand_from_product_url"
         and str(row.value).strip()
     )
@@ -300,6 +301,8 @@ def _flag_brand_conflicts(
             )
         if row.fact_type != field_mappings.PRODUCT_BRAND_FACT_TYPE:
             return None
+        if not _brand_role_can_publish(row):
+            return "non_manufacturer_brand_role"
         normalized = " ".join(re.findall(DETAIL_LOWER_ALNUM_TOKEN_PATTERN, value))
         compact = re.sub(DETAIL_NON_LOWER_ALNUM_PATTERN, "", value)
         host_identity_conflict = bool(
@@ -367,6 +370,16 @@ def _flag_brand_conflicts(
         else row
         for row in evidence
     )
+
+
+def _brand_role_can_publish(row: Evidence) -> bool:
+    return (row.brand_role or "manufacturer") in {
+        "manufacturer",
+        "designer",
+        "private_label",
+        "vendor",
+        "unknown",
+    }
 
 
 def assess_ecommerce_detail_quality(
