@@ -8,6 +8,7 @@ from app.core.config.extraction_rules import (
     DETAIL_SHELL_TITLE_FLAG,
     DETAIL_TITLE_REJECTION_FLAGS,
 )
+from app.core.config.variant_policy import CHILD_JOIN_FAILED_RULE_ID
 from app.core.config.field_mappings import (
     ECOMMERCE_DETAIL_DEFAULT_CONTRACT_FIELDS,
     ECOMMERCE_DETAIL_EXPOSED_AVAILABILITY_FIELD,
@@ -30,6 +31,7 @@ def validate(
         *_validate_variants(entities),
         *_validate_offers(evidence, entities),
         *_validate_offer_relation_conflicts(evidence),
+        *_validate_child_join_failures(evidence, entities),
         *_validate_availability_consistency(evidence, entities),
         *_validate_output(entities),
     )
@@ -421,28 +423,18 @@ def _validate_offers(
 ) -> tuple[Finding, ...]:
     by_id = {ev.evidence_id: ev for ev in evidence}
     out: list[Finding] = []
+    price_without_currency: list[tuple[str, tuple[str, ...]]] = []
+    currency_without_price: list[tuple[str, tuple[str, ...]]] = []
     for offer in entities.offers:
         has_price = bool(offer.fact_evidence.get("offer.price"))
         has_currency = bool(offer.fact_evidence.get("offer.currency"))
         if has_price and not has_currency:
-            out.append(
-                _finding(
-                    "PRICE_WITHOUT_CURRENCY",
-                    (offer.entity_id,),
-                    offer.fact_evidence.get("offer.price", ()),
-                    "Offer price lacks currency.",
-                    False,
-                )
+            price_without_currency.append(
+                (offer.entity_id, offer.fact_evidence.get("offer.price", ()))
             )
         if has_currency and not has_price:
-            out.append(
-                _finding(
-                    "CURRENCY_WITHOUT_PRICE",
-                    (offer.entity_id,),
-                    offer.fact_evidence.get("offer.currency", ()),
-                    "Offer currency lacks price.",
-                    False,
-                )
+            currency_without_price.append(
+                (offer.entity_id, offer.fact_evidence.get("offer.currency", ()))
             )
         current = _decimal(offer.fact_evidence.get("offer.price", ()), by_id)
         original = _decimal(offer.fact_evidence.get("offer.original_price", ()), by_id)
@@ -466,7 +458,48 @@ def _validate_offers(
                     True,
                 )
             )
+    out.extend(
+        _grouped_offer_completeness_findings(
+            rule="PRICE_WITHOUT_CURRENCY",
+            rows=price_without_currency,
+            message="Offer price lacks currency.",
+        )
+    )
+    out.extend(
+        _grouped_offer_completeness_findings(
+            rule="CURRENCY_WITHOUT_PRICE",
+            rows=currency_without_price,
+            message="Offer currency lacks price.",
+        )
+    )
     return tuple(out)
+
+
+def _grouped_offer_completeness_findings(
+    *, rule: str, rows: list[tuple[str, tuple[str, ...]]], message: str
+) -> tuple[Finding, ...]:
+    if not rows:
+        return ()
+    if len(rows) == 1:
+        entity_id, evidence_ids = rows[0]
+        return (_finding(rule, (entity_id,), evidence_ids, message, False),)
+    evidence_ids = tuple(
+        dict.fromkeys(evidence_id for _entity_id, ids in rows for evidence_id in ids)
+    )
+    examples = tuple(entity_id for entity_id, _ids in rows[:5])
+    return (
+        _finding(
+            rule,
+            (),
+            evidence_ids[:20],
+            f"{len(rows)} candidate offers have incomplete price/currency pairs.",
+            False,
+            metadata={
+                "candidate_offer_count": len(rows),
+                "example_offer_entity_ids": examples,
+            },
+        ),
+    )
 
 
 def _validate_offer_relation_conflicts(
@@ -502,6 +535,94 @@ def _validate_offer_relation_conflicts(
                 metadata={
                     "group_id": group_id,
                     "relation_types": tuple(sorted(relations)),
+                },
+            )
+        )
+    return tuple(findings)
+
+
+def _validate_child_join_failures(
+    evidence: tuple[Evidence, ...],
+    entities: EntitySet,
+) -> tuple[Finding, ...]:
+    linked_group_ids = {offer.group_id for offer in entities.offers}
+    variant_subjects = {
+        subject_id: variant.entity_id
+        for variant in entities.variants
+        for subject_id in variant.source_subject_ids
+    }
+    variants_by_sku = {
+        variant.identity_key.split(":", 1)[1]: variant.entity_id
+        for variant in entities.variants
+        if variant.identity_key.startswith("sku:")
+    }
+    groups: dict[str, list[Evidence]] = {}
+    for row in evidence:
+        if row.fact_type.startswith("offer."):
+            groups.setdefault(
+                row.group_id or f"ungrouped:{row.evidence_id}", []
+            ).append(row)
+
+    findings: list[Finding] = []
+    for group_id, rows in sorted(groups.items()):
+        if group_id in linked_group_ids:
+            continue
+        relations = {row.relation_type for row in rows if row.relation_type}
+        candidate_parent_ids = tuple(
+            sorted(
+                {
+                    candidate_id
+                    for row in rows
+                    for candidate_id in (
+                        variant_subjects.get(row.parent_subject_id or ""),
+                        variants_by_sku.get(
+                            str(row.entity_hint.sku)
+                            if row.entity_hint and row.entity_hint.sku
+                            else ""
+                        ),
+                    )
+                    if candidate_id
+                }
+            )
+        )
+        missing_keys = tuple(
+            key
+            for key, present in (
+                ("parent_subject_id", any(row.parent_subject_id for row in rows)),
+                (
+                    "entity_hint.sku",
+                    any(row.entity_hint and row.entity_hint.sku for row in rows),
+                ),
+            )
+            if not present
+        )
+        conflicting_keys = tuple(
+            key
+            for key, conflicted in (
+                ("relation_type", len(relations) > 1),
+                ("candidate_parent_id", len(candidate_parent_ids) > 1),
+            )
+            if conflicted
+        )
+        findings.append(
+            _finding(
+                CHILD_JOIN_FAILED_RULE_ID,
+                candidate_parent_ids,
+                tuple(sorted(row.evidence_id for row in rows)),
+                "Captured child evidence could not be attached to one parent entity.",
+                False,
+                metadata={
+                    "group_id": group_id,
+                    "candidate_parent_ids": candidate_parent_ids,
+                    "missing_relation_keys": missing_keys,
+                    "conflicting_relation_keys": conflicting_keys,
+                    "source_paths": tuple(
+                        dict.fromkeys(
+                            f"{row.artifact_id}:{row.locator.value}" for row in rows
+                        )
+                    ),
+                    "budget_removed_required_key": False,
+                    "child_fact_types": tuple(sorted({row.fact_type for row in rows})),
                 },
             )
         )

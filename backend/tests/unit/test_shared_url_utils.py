@@ -14,6 +14,7 @@ from app.core.shared.url_utils import (
     is_placeholder_image_url,
     is_utility_image_url,
     low_resolution_asset_urls,
+    public_asset_delivery_url,
     absolute_url,
     asset_url_identity,
     extract_urls,
@@ -98,6 +99,26 @@ def test_asset_url_identity_encodes_paths_and_keeps_meaningful_params() -> None:
     ) == (
         "https://cdn.test/i/Trail%20Shoe.jpg?color=red&width=800",
         "https://cdn.test/i/Trail%20Shoe.jpg?color=red",
+    )
+
+
+@pytest.mark.unit
+def test_asset_url_identity_decodes_html_entities_before_parsing() -> None:
+    assert asset_url_identity(
+        "https://cdn.shop.test/image.jpg?wid=800&amp;fmt=webp&amp;product=shoe"
+    ) == (
+        "https://cdn.shop.test/image.jpg?wid=800&fmt=webp&product=shoe",
+        "https://cdn.shop.test/image.jpg?product=shoe",
+    )
+
+
+@pytest.mark.unit
+def test_public_asset_delivery_url_decodes_html_entities_before_parsing() -> None:
+    assert (
+        public_asset_delivery_url(
+            "https://cdn.shop.test/image.jpg?wid=800&amp;fmt=webp&amp;product=shoe"
+        )
+        == "https://cdn.shop.test/image.jpg?wid=800&fmt=webp&product=shoe"
     )
 
 

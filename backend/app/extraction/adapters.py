@@ -339,7 +339,7 @@ def _envelope(
         evidence_dispositions=dispositions,
         findings=findings,
         field_states=projection_field_states(
-            projection, harvest.evidence, dispositions, request
+            projection, harvest.evidence, dispositions, request, findings
         ),
         publication=projection,
         contract_outcomes=contract_outcomes,

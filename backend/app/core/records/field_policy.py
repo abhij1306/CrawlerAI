@@ -232,6 +232,8 @@ def _requested_field_exact_match(text: str) -> tuple[str, str]:
     if text.startswith("sections."):
         text = text.split(".", 1)[1]
     for candidate in _requested_field_candidates(text):
+        if candidate in _ALL_CANONICAL_FIELDS:
+            return text, candidate
         canonical = _ALIAS_TO_CANONICAL.get(candidate)
         if canonical:
             return text, canonical

@@ -236,6 +236,38 @@ def test_mixed_product_and_variant_offer_ownership_is_rejected() -> None:
     assert any(item.rule_id == "OFFER_RELATION_CONFLICT" for item in findings)
 
 
+def test_unattached_variant_offer_emits_explicit_join_diagnostics() -> None:
+    bundle = _bundle()
+    rows = (
+        _product(bundle),
+        evidence(
+            bundle,
+            "artifact-1",
+            "network",
+            "offer.price",
+            "10.00",
+            SourceLocator(kind="network_json_pointer", value="/variants/0/price"),
+            hint=EntityHint(entity_type="offer"),
+            group_id="orphan-offer",
+            subject_id="orphan-offer",
+            parent_subject_id="missing-variant",
+            parent_scope="variant",
+        ),
+    )
+
+    entities = build_entities(bundle, rows)
+    finding = next(
+        item for item in validate(rows, entities) if item.rule_id == "CHILD_JOIN_FAILED"
+    )
+
+    assert finding.evidence_ids == (rows[1].evidence_id,)
+    assert finding.metadata["candidate_parent_ids"] == ()
+    assert finding.metadata["missing_relation_keys"] == ("entity_hint.sku",)
+    assert finding.metadata["conflicting_relation_keys"] == ()
+    assert finding.metadata["source_paths"] == ("artifact-1:/variants/0/price",)
+    assert finding.metadata["budget_removed_required_key"] is False
+
+
 def test_availability_is_canonicalized_with_raw_provenance_retained() -> None:
     bundle = _bundle()
     item = evidence(

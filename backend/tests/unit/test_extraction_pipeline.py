@@ -127,6 +127,8 @@ def test_js_state_source_object_evidence_budget_is_reported() -> None:
     assert "evidence_per_source_object_budget_exhausted" in str(
         budget_outcomes[0].detail
     )
+    assert "assets" in budget_outcomes[0].dropped_fact_families
+    assert budget_outcomes[0].dropped_source_paths
     assert (
         sum(1 for row in result.evidence if row.collector_id == "js_state")
         <= MAX_EVIDENCE_PER_SOURCE_OBJECT
@@ -2145,6 +2147,296 @@ def test_complete_product_reports_clean_integrity_separately_from_transport() ->
     assert states["image_url"] == "captured_published"
 
 
+def test_ecommerce_detail_field_states_cover_surface_and_contract_fields() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <script type="application/ld+json">
+        {
+          "@type": "Product",
+          "name": "Minimal Product",
+          "url": "https://shop.test/products/minimal-product"
+        }
+        </script>
+        """,
+        "https://shop.test/products/minimal-product",
+    )
+    states = {row.field: row for row in result.field_states}
+
+    for field in (
+        "title",
+        "url",
+        "brand",
+        "description",
+        "image_url",
+        "price",
+        "currency",
+        "availability",
+        "variants",
+        "variant_count",
+    ):
+        assert field in states
+    assert states["title"].state == "captured_published"
+    assert states["brand"].state == "not_present_in_captured_sources"
+    assert states["price"].state == "not_present_in_captured_sources"
+    assert states["variants"].state == "not_requested"
+
+
+def test_js_state_budget_keeps_identity_and_requested_offer_group(monkeypatch) -> None:
+    from app.extraction.collectors import js_state
+
+    monkeypatch.setattr(js_state, "MAX_EVIDENCE_PER_SOURCE_OBJECT", 3)
+    result = _extract(
+        "ecommerce_detail",
+        "<main><h1>Trail Shoe</h1></main>",
+        "https://shop.test/products/trail-shoe",
+        artifacts={
+            "js_state_objects": {
+                "product": {
+                    "name": "Trail Shoe",
+                    "url": "https://shop.test/products/trail-shoe",
+                    "price": "129",
+                    "currency": "USD",
+                    "sku": "TS-1",
+                    "images": [
+                        "https://cdn.shop.test/trail-1.jpg",
+                        "https://cdn.shop.test/trail-2.jpg",
+                    ],
+                }
+            }
+        },
+        requested_fields=("price",),
+    )
+
+    kept_facts = {
+        row.fact_type for row in result.evidence if row.collector_id == "js_state"
+    }
+    assert {"product.url", "offer.price", "offer.currency"} <= kept_facts
+    outcome = next(
+        row
+        for row in result.collector_outcomes
+        if row.collector_id == "js_state" and row.outcome == "budget_limited"
+    )
+    assert "assets" in outcome.dropped_fact_families
+
+
+def test_network_budget_reports_dropped_fact_families(monkeypatch) -> None:
+    from app.extraction.collectors import metadata
+
+    monkeypatch.setattr(metadata, "MAX_EVIDENCE_PER_SOURCE_OBJECT", 3)
+    result = _extract(
+        "ecommerce_detail",
+        "<main><h1>Trail Shoe</h1></main>",
+        "https://shop.test/products/trail-shoe",
+        network_payloads=(
+            {
+                "body": {
+                    "product": {
+                        "name": "Trail Shoe",
+                        "url": "https://shop.test/products/trail-shoe",
+                        "price": "129",
+                        "currency": "USD",
+                        "images": [
+                            "https://cdn.shop.test/trail-1.jpg",
+                            "https://cdn.shop.test/trail-2.jpg",
+                        ],
+                    }
+                },
+            },
+        ),
+        requested_fields=("price",),
+    )
+
+    outcome = next(
+        row
+        for row in result.collector_outcomes
+        if row.collector_id == "network" and row.outcome == "budget_limited"
+    )
+    assert "assets" in outcome.dropped_fact_families
+    assert outcome.source_path
+
+
+def test_multiple_incomplete_candidate_offers_are_grouped() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <script type="application/ld+json">
+        {
+          "@type": "Product",
+          "name": "Grouped Offer Product",
+          "url": "https://shop.test/products/grouped-offer-product",
+          "hasVariant": [
+            {"@type": "Product", "sku": "GO-1", "offers": {"price": "10"}},
+            {"@type": "Product", "sku": "GO-2", "offers": {"price": "12"}},
+            {"@type": "Product", "sku": "GO-3", "offers": {"price": "14"}}
+          ]
+        }
+        </script>
+        """,
+        "https://shop.test/products/grouped-offer-product",
+        requested_fields=("variants",),
+    )
+
+    findings = [
+        row for row in result.findings if row.rule_id == "PRICE_WITHOUT_CURRENCY"
+    ]
+
+    assert len(findings) == 1
+    assert findings[0].metadata["candidate_offer_count"] == 3
+    assert len(findings[0].metadata["example_offer_entity_ids"]) == 3
+
+
+def test_detail_text_fields_are_canonicalized_before_publication() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <script type="application/ld+json">
+        {
+          "@type": "Product",
+          "name": "Trail &amp; Road Shoe",
+          "brand": "Acme&nbsp;Run",
+          "description": "<p>Fast &amp; light</p><ul><li>Mesh upper</li></ul>",
+          "url": "https://shop.test/products/trail-road-shoe",
+          "image": "https://cdn.shop.test/trail.jpg",
+          "offers": {"price": "90", "priceCurrency": "USD"}
+        }
+        </script>
+        """,
+        "https://shop.test/products/trail-road-shoe",
+    )
+    record = result.records[0]
+
+    assert record["title"] == "Trail & Road Shoe"
+    assert record["brand"] == "Acme Run"
+    assert "Fast & light" in record["description"]
+    assert "<" not in record["description"]
+    assert "&amp;" not in record["description"]
+
+
+def test_hidden_requested_product_panel_content_is_collected() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <main>
+          <h1>Panel Product</h1>
+          <section class="product-accordion">
+            <div hidden data-field="description">Hidden product composition.</div>
+          </section>
+        </main>
+        """,
+        "https://shop.test/products/panel-product",
+        requested_fields=("description",),
+    )
+    rows = [
+        row
+        for row in result.evidence
+        if row.fact_type == "product.description"
+        and "hidden_product_content" in row.flags
+    ]
+
+    assert result.records[0]["description"] == "Hidden product composition."
+    assert rows
+    assert rows[0].metadata["component_role"] == "product_panel"
+
+
+def test_hidden_recommendation_content_is_rejected() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <main>
+          <h1>Panel Product</h1>
+          <section class="recommendations">
+            <div hidden data-field="description">Other product copy.</div>
+          </section>
+        </main>
+        """,
+        "https://shop.test/products/panel-product",
+        requested_fields=("description",),
+    )
+
+    assert result.records[0].get("description") is None
+    assert not [
+        row
+        for row in result.evidence
+        if row.fact_type == "product.description"
+        and str(row.value) == "Other product copy."
+    ]
+
+
+def test_host_title_brand_is_not_manufacturer_truth() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <script type="application/ld+json">
+        {
+          "@type": "Product",
+          "name": "Marketplace Store Premium Blender",
+          "url": "https://marketplacestore.test/products/premium-blender",
+          "image": "https://cdn.marketplacestore.test/blender.jpg",
+          "offers": {"price": "20", "priceCurrency": "USD"}
+        }
+        </script>
+        """,
+        "https://marketplacestore.test/products/premium-blender",
+    )
+
+    assert result.records[0].get("brand") is None
+    assert not [
+        row
+        for row in result.derived_facts
+        if row.fact_type == "product.brand" and row.rule_id == "brand_from_title_host"
+    ]
+
+
+def test_asset_publication_dedupes_delivery_identity_after_entity_decode() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <script type="application/ld+json">
+        {
+          "@type": "Product",
+          "name": "Image Product",
+          "brand": "Acme",
+          "url": "https://shop.test/products/image-product",
+          "image": [
+            "https://cdn.shop.test/product.jpg?wid=400&amp;fmt=webp",
+            "https://cdn.shop.test/product.jpg?wid=800&fmt=jpg"
+          ],
+          "offers": {"price": "20", "priceCurrency": "USD"}
+        }
+        </script>
+        """,
+        "https://shop.test/products/image-product",
+    )
+    record = result.records[0]
+
+    assert record["image_url"] == "https://cdn.shop.test/product.jpg?wid=800&fmt=jpg"
+    assert "&amp;" not in record["image_url"]
+    assert record.additional_images == ()
+
+
+def test_offer_price_currency_shared_dom_group_publishes_as_atomic_pair() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <main>
+          <h1>Atomic Offer Product</h1>
+          <div data-price="10"></div>
+          <div data-currency="USD"></div>
+        </main>
+        """,
+        "https://shop.test/products/atomic-offer-product",
+    )
+
+    assert result.records[0].get("price") == "10.00"
+    assert result.records[0].get("currency") == "USD"
+    assert {
+        decision.fact_type: decision.status
+        for decision in result.decisions
+        if decision.fact_type in {"offer.price", "offer.currency"}
+    } == {"offer.currency": "resolved", "offer.price": "resolved"}
+
+
 def test_generic_size_title_uses_semantic_url_segment() -> None:
     result = _extract(
         "ecommerce_detail",
@@ -3565,7 +3857,49 @@ def test_js_state_numeric_availability_flags_materialize_as_stock_states() -> No
     ]
 
 
-def test_shopify_meta_assignment_materializes_default_variant() -> None:
+def test_js_state_variant_assets_and_gtin_keep_variant_ownership() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        "<main><h1>Trail Shoe</h1></main>",
+        "https://shop.test/products/trail-shoe",
+        artifacts={
+            "js_state_objects": {
+                "product": {
+                    "name": "Trail Shoe",
+                    "url": "https://shop.test/products/trail-shoe",
+                    "variants": [
+                        {
+                            "variantId": "trail-9",
+                            "sku": "TRAIL-9",
+                            "gtin13": "1234567890123",
+                            "size": "9",
+                            "image": "https://cdn.shop.test/trail-9.jpg",
+                        }
+                    ],
+                }
+            }
+        },
+    )
+
+    assert result.records[0]["variants"] == [
+        {
+            "variant_id": "trail-9",
+            "sku": "TRAIL-9",
+            "image_url": "https://cdn.shop.test/trail-9.jpg",
+            "size": "9",
+        }
+    ]
+    gtin = next(row for row in result.evidence if row.fact_type == "variant.gtin")
+    image = next(
+        row
+        for row in result.evidence
+        if row.fact_type == "asset.image_url" and row.collector_id == "js_state"
+    )
+    assert gtin.subject_id == image.parent_subject_id
+    assert image.relation_type == "variant_asset"
+
+
+def test_shopify_meta_assignment_keeps_default_variant_diagnostic_only() -> None:
     result = _extract(
         "ecommerce_detail",
         """
@@ -3579,14 +3913,13 @@ def test_shopify_meta_assignment_materializes_default_variant() -> None:
         "https://shop.test/products/black-bracelet",
     )
 
-    assert result.records[0]["variants"] == [
-        {
-            "variant_id": "412",
-            "sku": "BRACELET-BLK",
-            "price": "8.00",
-            "currency": "USD",
-        }
-    ]
+    assert result.records[0]["price"] == "8.00"
+    assert not result.records[0].get("variants")
+    assert any(
+        "default_variant_placeholder" in row.flags
+        for row in result.evidence
+        if row.fact_type == "variant.id"
+    )
 
 
 def test_shopify_vendor_and_public_title_materialize_brand_and_size() -> None:

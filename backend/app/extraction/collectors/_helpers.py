@@ -81,6 +81,8 @@ def evidence(
         group_id=group_id,
         directness=directness,  # type: ignore[arg-type]
         confidence=confidence,
+        flags=tuple(kwargs.get("flags") or ()),
+        metadata=dict(kwargs.get("metadata") or {}),
         subject_id=subject_id,
         parent_subject_id=str(parent_subject_id) if parent_subject_id else None,
         subject_scope=subject_scope,  # type: ignore[arg-type]

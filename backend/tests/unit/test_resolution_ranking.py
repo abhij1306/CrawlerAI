@@ -14,7 +14,8 @@ import pytest
 
 from app.core.config import field_mappings
 from app.extraction.contracts import Evidence, SourceLocator
-from app.extraction.resolution import _rank, _resolve_scalar
+from app.extraction.entities import OfferEntity
+from app.extraction.resolution import _rank, _resolve_offer, _resolve_scalar
 
 pytestmark = pytest.mark.unit
 
@@ -29,6 +30,9 @@ def _evidence(
     confidence: float = 0.9,
     flags: tuple[str, ...] = (),
     metadata: dict[str, object] | None = None,
+    group_id: str | None = None,
+    subject_id: str = "subject-1",
+    parent_subject_id: str | None = None,
 ) -> Evidence:
     return Evidence(
         evidence_id=evidence_id,
@@ -44,7 +48,10 @@ def _evidence(
         confidence=confidence,
         flags=flags,
         metadata=metadata or {},
-        subject_id="subject-1",
+        group_id=group_id,
+        subject_id=subject_id,
+        parent_subject_id=parent_subject_id,
+        relation_type="product_offer" if parent_subject_id else None,
     )
 
 
@@ -80,6 +87,54 @@ def test_jsonld_offer_outranks_phantom_dom_price() -> None:
     )
     assert _rank(jsonld) < _rank(phantom_dom)
     assert _winner(jsonld, phantom_dom) == "ev-jsonld"
+
+
+def test_offer_price_currency_atomicity_rejects_incompatible_lineage() -> None:
+    price = _evidence(
+        "ev-price",
+        fact_type=field_mappings.OFFER_PRICE_FACT_TYPE,
+        value="10",
+        collector_id="jsonld",
+        directness="embedded",
+        group_id="offer:one",
+        subject_id="offer:one",
+        parent_subject_id="product:1",
+    )
+    currency = _evidence(
+        "ev-currency",
+        fact_type=field_mappings.OFFER_CURRENCY_FACT_TYPE,
+        value="USD",
+        collector_id="jsonld",
+        directness="embedded",
+        group_id="offer:two",
+        subject_id="offer:two",
+        parent_subject_id="product:2",
+    )
+    offer = OfferEntity(
+        entity_id="offer:1",
+        product_entity_id="product:entity",
+        variant_entity_id=None,
+        group_id="merged-test-offer",
+        request_context_id="ctx:1",
+        fact_evidence={
+            field_mappings.OFFER_PRICE_FACT_TYPE: (price.evidence_id,),
+            field_mappings.OFFER_CURRENCY_FACT_TYPE: (currency.evidence_id,),
+        },
+    )
+
+    decisions = _resolve_offer(
+        offer,
+        {price.evidence_id: price, currency.evidence_id: currency},
+        (),
+    )
+
+    assert {row.fact_type: row.status for row in decisions} == {
+        field_mappings.OFFER_CURRENCY_FACT_TYPE: "unresolved",
+        field_mappings.OFFER_PRICE_FACT_TYPE: "unresolved",
+    }
+    assert {
+        rejected.reason for decision in decisions for rejected in decision.rejected
+    } == {"offer_atomic_group_incompatible"}
 
 
 def test_enum_invalid_availability_loses_to_enum_valid() -> None:

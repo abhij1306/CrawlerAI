@@ -91,6 +91,67 @@ def test_unresolved_field_status_becomes_root_cause(artifacts_root: Path) -> Non
     ]
 
 
+def test_field_reason_codes_become_bounded_root_causes(artifacts_root: Path) -> None:
+    _write_diagnose(
+        artifacts_root,
+        run_id=1,
+        url_result_id=10,
+        payload={
+            "fields": [
+                {
+                    "field": "price",
+                    "status": "captured_suppressed",
+                    "reason_codes": ["invalid_decimal"],
+                },
+            ],
+        },
+    )
+
+    report = build_run_report(1)
+
+    causes = {row["root_cause"]: row for row in report["root_causes"]}
+    assert "field:price:captured_suppressed" in causes
+    assert "field_reason:price:captured_suppressed:invalid_decimal" in causes
+    assert causes["field:price:captured_suppressed"]["examples"] == [
+        {
+            "field": "price",
+            "reason_codes": ["invalid_decimal"],
+            "status": "captured_suppressed",
+        }
+    ]
+
+
+def test_findings_become_root_causes(artifacts_root: Path) -> None:
+    _write_diagnose(
+        artifacts_root,
+        run_id=1,
+        url_result_id=10,
+        payload={
+            "findings": [
+                {
+                    "rule_id": "PRICE_WITHOUT_CURRENCY",
+                    "severity": "medium",
+                    "blocking": False,
+                    "scope": "selected_entity",
+                },
+                {
+                    "rule_id": "PUBLIC_RESOLUTION_DIVERGENCE",
+                    "severity": "critical",
+                    "blocking": True,
+                    "scope": "page",
+                },
+            ],
+        },
+    )
+
+    report = build_run_report(1)
+
+    assert [row["root_cause"] for row in report["root_causes"]] == [
+        "blocking_finding:PUBLIC_RESOLUTION_DIVERGENCE",
+        "finding:PRICE_WITHOUT_CURRENCY",
+    ]
+
+
 def test_publication_policy_reason_becomes_root_cause(artifacts_root: Path) -> None:
     _write_diagnose(
         artifacts_root,

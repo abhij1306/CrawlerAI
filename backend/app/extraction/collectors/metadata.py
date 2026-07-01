@@ -2,17 +2,28 @@ from __future__ import annotations
 
 from typing import Literal
 
+from app.core.config import variant_policy
 from app.core.config.field_mappings import (
     ECOMMERCE_MICRODATA_FACT_TYPES,
     ECOMMERCE_OPENGRAPH_FACT_TYPES,
 )
 from app.extraction.collectors._helpers import evidence, html_doc, json_objects
 from app.extraction.collectors.js_state import (
+    StructuredHarvestResult,
+    budget_outcome,
     network_row,
+    prioritize_evidence_rows,
     root_admits_path,
     select_product_roots,
 )
-from app.extraction.contracts import CaptureBundle, EntityHint, Evidence, SourceLocator
+from app.core.config.extraction_rules import MAX_EVIDENCE_PER_SOURCE_OBJECT
+from app.extraction.contracts import (
+    CaptureBundle,
+    CollectorOutcome,
+    EntityHint,
+    Evidence,
+    SourceLocator,
+)
 
 
 class MicrodataCollector:
@@ -70,7 +81,18 @@ class NetworkCollector:
     collector_version = "1"
 
     def collect(self, bundle: CaptureBundle, artifacts) -> tuple[Evidence, ...]:
+        return self.harvest(bundle, artifacts).evidence
+
+    def harvest(
+        self,
+        bundle: CaptureBundle,
+        artifacts,
+        *,
+        requested_fields: tuple[str, ...] = (),
+    ) -> StructuredHarvestResult:
         out: list[Evidence] = []
+        outcomes: list[CollectorOutcome] = []
+        admitted_source_objects = 0
         for ref in bundle.artifacts:
             if ref.artifact_type != "network_json":
                 continue
@@ -80,16 +102,38 @@ class NetworkCollector:
                 if not root_admits_path(selection, path):
                     continue
                 if isinstance(obj, dict):
-                    out.extend(
+                    admitted_source_objects += 1
+                    rows, dropped = prioritize_evidence_rows(
                         network_row(
-                            bundle,
-                            ref.artifact_id,
-                            path,
-                            obj,
-                            collector_id="network",
-                        )
+                            bundle, ref.artifact_id, path, obj, collector_id="network"
+                        ),
+                        requested_fields=requested_fields,
+                        limit=MAX_EVIDENCE_PER_SOURCE_OBJECT,
                     )
-        return tuple(out)
+                    if dropped:
+                        outcomes.append(
+                            budget_outcome(
+                                variant_policy.STRUCTURED_EVIDENCE_BUDGET_REASON,
+                                artifact_id=ref.artifact_id,
+                                root_path=path,
+                                count=len(rows) + len(dropped),
+                                limit=MAX_EVIDENCE_PER_SOURCE_OBJECT,
+                                dropped=dropped,
+                            ).model_copy(update={"collector_id": self.collector_id})
+                        )
+                    out.extend(rows)
+        outcomes.append(
+            CollectorOutcome(
+                collector_id=self.collector_id,
+                outcome="produced_evidence" if out else "no_match",
+                evidence_count=len(out),
+            )
+        )
+        return StructuredHarvestResult(
+            evidence=tuple(out),
+            outcomes=tuple(outcomes),
+            admitted_source_objects=admitted_source_objects,
+        )
 
 
 def _metadata_evidence(

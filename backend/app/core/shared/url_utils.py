@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from html import unescape as html_unescape
 from urllib.parse import (
     parse_qsl,
     quote,
@@ -123,7 +124,7 @@ def variant_url_with_param(page_url: str, variant_id: str) -> str:
 
 
 def asset_url_identity(value: object) -> tuple[str, str] | None:
-    parsed = urlsplit(str(value or "").strip())
+    parsed = urlsplit(html_unescape(str(value or "").strip()))
     if parsed.scheme.casefold() not in {"http", "https"} or not parsed.netloc:
         return None
     path = quote(unquote(parsed.path), safe="/:@")
@@ -170,7 +171,7 @@ def asset_url_identity(value: object) -> tuple[str, str] | None:
 
 def public_asset_delivery_url(value: object) -> str | None:
     """Return a safe HTTPS asset URL while preserving encoded path/query data."""
-    raw = str(value or "").strip()
+    raw = html_unescape(str(value or "").strip())
     if not raw:
         return None
     decoded = unquote(raw)

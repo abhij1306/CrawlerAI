@@ -28,6 +28,12 @@ def test_normalize_requested_field_uses_token_subset_alias_match() -> None:
 
 
 @pytest.mark.unit
+def test_normalize_requested_field_preserves_direct_canonical_fields() -> None:
+    assert normalize_requested_field("description") == "description"
+    assert exact_requested_field_key("description") == "description"
+
+
+@pytest.mark.unit
 def test_exact_requested_field_key_keeps_non_alias_composite_labels_stable() -> None:
     assert exact_requested_field_key("Features & Benefits") == "features_benefits"
     assert exact_requested_field_key("care instructions") == "care"

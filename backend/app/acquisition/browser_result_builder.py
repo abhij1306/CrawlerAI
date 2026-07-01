@@ -293,6 +293,9 @@ class BrowserAcquisitionResultBuilder:
             listing_visual_element_count=counts["listing_visual_elements"],
             extractable_listing_evidence=counts,
         )
+        completeness = getattr(payload.page, "_crawlerai_capture_completeness", None)
+        if isinstance(completeness, dict):
+            diagnostics["capture_completeness"] = dict(completeness)
         return diagnostics
 
     def _build_final_artifacts(

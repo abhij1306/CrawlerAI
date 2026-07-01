@@ -8,24 +8,46 @@ from app.core.config.runtime_settings import crawler_runtime_settings
 logger = logging.getLogger(__name__)
 
 _SHADOW_DOM_FLATTENER_SCRIPT = """
-() => {
-  let flattenedRoots = 0;
+({ maxHosts, markerAttr, rootAttr, version }) => {
+  const result = {
+    shadow_roots_detected: 0,
+    shadow_roots_flattened: 0,
+    closed_shadow_roots_detected: 0,
+    hidden_panel_dom_present: Boolean(document.querySelector('[hidden], [aria-hidden="true"], details:not([open])')),
+    serialization_method_version: version,
+    max_hosts: maxHosts,
+    errors: []
+  };
+  const hosts = [];
   for (const el of document.querySelectorAll('*')) {
     if (!(el instanceof Element) || !el.shadowRoot) {
       continue;
     }
+    hosts.push(el);
+  }
+  result.shadow_roots_detected = hosts.length;
+  for (const el of hosts.slice(0, Math.max(0, maxHosts))) {
     try {
-      const fragment = document.createDocumentFragment();
-      for (const node of el.shadowRoot.childNodes) {
-        fragment.appendChild(node.cloneNode(true));
+      if (el.hasAttribute(markerAttr)) {
+        continue;
       }
-      el.appendChild(fragment);
-      flattenedRoots += 1;
+      const container = document.createElement('crawlerai-shadow-root');
+      container.setAttribute(rootAttr, 'open');
+      container.setAttribute('data-crawlerai-shadow-version', version);
+      for (const node of el.shadowRoot.childNodes) {
+        container.appendChild(node.cloneNode(true));
+      }
+      el.setAttribute(markerAttr, version);
+      el.appendChild(container);
+      result.shadow_roots_flattened += 1;
     } catch (error) {
-      continue;
+      result.errors.push(String(error && error.message ? error.message : error));
     }
   }
-  return flattenedRoots;
+  if (hosts.length > maxHosts) {
+    result.errors.push('shadow_host_limit_reached');
+  }
+  return result;
 }
 """
 
@@ -73,7 +95,14 @@ _MUTATION_SETTLE_SCRIPT = """
 
 async def get_page_html(page, *, flatten_shadow: bool = True) -> str:
     if flatten_shadow:
-        await flatten_shadow_dom(page)
+        completeness = await flatten_shadow_dom(page)
+        setattr(page, "_crawlerai_capture_completeness", completeness)
+        if completeness.get("shadow_roots_flattened"):
+            await wait_for_dom_mutation_settle(
+                page,
+                quiet_window_ms=100,
+                timeout_ms=500,
+            )
     retry_budget = max(
         0, int(crawler_runtime_settings.browser_error_retry_attempts or 0)
     )
@@ -109,13 +138,49 @@ async def get_page_html(page, *, flatten_shadow: bool = True) -> str:
     return ""
 
 
-async def flatten_shadow_dom(page) -> None:
-    if getattr(crawler_runtime_settings, "shadow_dom_flatten_max_hosts", 100) <= 0:
-        return
+async def flatten_shadow_dom(page) -> dict[str, object]:
+    max_hosts = int(
+        getattr(crawler_runtime_settings, "shadow_dom_flatten_max_hosts", 100) or 0
+    )
+    version = "shadow-flatten.v2"
+    result: dict[str, object] = {
+        "shadow_roots_detected": 0,
+        "shadow_roots_flattened": 0,
+        "closed_shadow_roots_detected": 0,
+        "hidden_panel_dom_present": False,
+        "serialization_method_version": version,
+    }
+    if max_hosts <= 0:
+        return result
     try:
-        await page.evaluate(_SHADOW_DOM_FLATTENER_SCRIPT)
+        raw = await page.evaluate(
+            _SHADOW_DOM_FLATTENER_SCRIPT,
+            {
+                "maxHosts": max_hosts,
+                "markerAttr": "data-crawlerai-shadow-host",
+                "rootAttr": "data-crawlerai-shadow-root",
+                "version": version,
+            },
+        )
     except Exception:
         logger.debug("Shadow DOM flattening failed", exc_info=True)
+        return {**result, "errors": ("shadow_flatten_failed",)}
+    if not isinstance(raw, dict):
+        return result
+    return {
+        **result,
+        "shadow_roots_detected": int(raw.get("shadow_roots_detected") or 0),
+        "shadow_roots_flattened": int(raw.get("shadow_roots_flattened") or 0),
+        "closed_shadow_roots_detected": int(
+            raw.get("closed_shadow_roots_detected") or 0
+        ),
+        "hidden_panel_dom_present": bool(raw.get("hidden_panel_dom_present")),
+        "max_hosts": int(raw.get("max_hosts") or max_hosts),
+        "errors": tuple(str(item) for item in raw.get("errors") or ()),
+        "serialization_method_version": str(
+            raw.get("serialization_method_version") or version
+        ),
+    }
 
 
 async def _outer_html_fallback(page) -> str:

@@ -4,10 +4,13 @@ from dataclasses import dataclass
 import re
 from typing import Literal
 from app.core.config.field_mappings import (
+    ASSET_IMAGE_URL_FACT_TYPE,
+    ECOMMERCE_DETAIL_FIELD_FACT_TYPES,
     ECOMMERCE_IMAGE_SOURCE_KEYS,
     ECOMMERCE_OFFER_CONTEXT_PATH_TOKENS,
     ECOMMERCE_PRODUCT_IDENTITY_SOURCE_KEYS,
     ECOMMERCE_STRUCTURED_SOURCE_FACT_TYPES,
+    VARIANT_GTIN_FACT_TYPE,
 )
 from app.core.config.extraction_rules import (
     ECOMMERCE_CONTEXT_NOISE_PATH_TOKENS,
@@ -15,6 +18,7 @@ from app.core.config.extraction_rules import (
     MAX_DIAGNOSTIC_EXAMPLES_PER_REASON,
     MAX_EVIDENCE_PER_SOURCE_OBJECT,
     MAX_SOURCE_OBJECTS_PER_ARTIFACT,
+    VARIANT_PLACEHOLDER_VALUES,
     VARIANT_JS_STATE_NON_VARIANT_TYPENAME_TOKENS,
 )
 from app.core.config import variant_policy
@@ -48,7 +52,7 @@ from app.core.shared.ids import stable_id
 
 
 @dataclass(frozen=True)
-class JsStateHarvestResult:
+class StructuredHarvestResult:
     evidence: tuple[Evidence, ...]
     outcomes: tuple[CollectorOutcome, ...]
     admitted_source_objects: int
@@ -61,7 +65,13 @@ class JsStateCollector:
     def collect(self, bundle: CaptureBundle, artifacts) -> tuple[Evidence, ...]:
         return self.harvest(bundle, artifacts).evidence
 
-    def harvest(self, bundle: CaptureBundle, artifacts) -> JsStateHarvestResult:
+    def harvest(
+        self,
+        bundle: CaptureBundle,
+        artifacts,
+        *,
+        requested_fields: tuple[str, ...] = (),
+    ) -> StructuredHarvestResult:
         out: list[Evidence] = []
         outcomes: list[CollectorOutcome] = []
         admitted_source_objects = 0
@@ -78,8 +88,8 @@ class JsStateCollector:
             )
             if len(objects) > MAX_SOURCE_OBJECTS_PER_ARTIFACT:
                 outcomes.append(
-                    _budget_outcome(
-                        "source_object_budget_exhausted",
+                    budget_outcome(
+                        variant_policy.STRUCTURED_SOURCE_OBJECT_BUDGET_REASON,
                         artifact_id=artifact_id,
                         root_path=root_path,
                         count=len(objects),
@@ -102,41 +112,52 @@ class JsStateCollector:
                         f"{root_path}{path}",
                         enriched,
                     )
-                    if len(rows) > MAX_EVIDENCE_PER_SOURCE_OBJECT:
+                    rows, dropped = prioritize_evidence_rows(
+                        rows,
+                        requested_fields=requested_fields,
+                        limit=MAX_EVIDENCE_PER_SOURCE_OBJECT,
+                    )
+                    if dropped:
                         outcomes.append(
-                            _budget_outcome(
-                                "evidence_per_source_object_budget_exhausted",
+                            budget_outcome(
+                                variant_policy.STRUCTURED_EVIDENCE_BUDGET_REASON,
                                 artifact_id=artifact_id,
                                 root_path=f"{root_path}{path}",
-                                count=len(rows),
+                                count=len(rows) + len(dropped),
                                 limit=MAX_EVIDENCE_PER_SOURCE_OBJECT,
-                                examples=tuple(row.locator.value for row in rows),
+                                dropped=dropped,
                             )
                         )
-                        rows = rows[:MAX_EVIDENCE_PER_SOURCE_OBJECT]
                     out.extend(rows)
         produced = CollectorOutcome(
             collector_id=self.collector_id,
             outcome="produced_evidence" if out else "no_match",
             evidence_count=len(out),
         )
-        return JsStateHarvestResult(
+        return StructuredHarvestResult(
             evidence=tuple(out),
             outcomes=(*outcomes, produced),
             admitted_source_objects=admitted_source_objects,
         )
 
 
-def _budget_outcome(
+def budget_outcome(
     reason: str,
     *,
     artifact_id: str,
     root_path: str,
     count: int,
     limit: int,
-    examples: tuple[str, ...],
+    examples: tuple[str, ...] = (),
+    dropped: tuple[Evidence, ...] = (),
 ) -> CollectorOutcome:
-    bounded_examples = tuple(examples[:MAX_DIAGNOSTIC_EXAMPLES_PER_REASON])
+    dropped_paths = tuple(dict.fromkeys(row.locator.value for row in dropped))
+    bounded_examples = tuple(
+        (examples or dropped_paths)[:MAX_DIAGNOSTIC_EXAMPLES_PER_REASON]
+    )
+    dropped_families = tuple(
+        dict.fromkeys(_evidence_fact_family(row) for row in dropped)
+    )
     return CollectorOutcome(
         collector_id=JsStateCollector.collector_id,
         outcome="budget_limited",
@@ -145,7 +166,73 @@ def _budget_outcome(
             f"{reason}; artifact_id={artifact_id}; root_path={root_path or '/'}; "
             f"count={count}; limit={limit}; examples={list(bounded_examples)!r}"
         ),
+        source_path=root_path or "/",
+        dropped_fact_families=dropped_families,
+        dropped_source_paths=bounded_examples,
     )
+
+
+def prioritize_evidence_rows(
+    rows: list[Evidence],
+    *,
+    requested_fields: tuple[str, ...],
+    limit: int,
+) -> tuple[list[Evidence], tuple[Evidence, ...]]:
+    """Keep structural and requested facts before descriptive bulk evidence."""
+
+    requested_facts = {
+        fact
+        for field in requested_fields
+        if (fact := ECOMMERCE_DETAIL_FIELD_FACT_TYPES.get(field))
+    }
+    if requested_facts & variant_policy.STRUCTURED_EVIDENCE_ATOMIC_OFFER_FACTS:
+        requested_facts.update(variant_policy.STRUCTURED_EVIDENCE_ATOMIC_OFFER_FACTS)
+    ranked = sorted(
+        enumerate(rows),
+        key=lambda item: (_evidence_priority(item[1], requested_facts), item[0]),
+    )
+    kept = [row for _index, row in ranked[: max(0, limit)]]
+    dropped = tuple(row for _index, row in ranked[max(0, limit) :])
+    return kept, dropped
+
+
+def _evidence_priority(row: Evidence, requested_facts: set[str]) -> int:
+    fact = row.fact_type
+    ranks = variant_policy.STRUCTURED_EVIDENCE_PRIORITY_RANKS
+    if fact in variant_policy.STRUCTURED_EVIDENCE_IDENTITY_FACTS:
+        return ranks["identity"]
+    if fact in requested_facts:
+        return ranks["requested"]
+    if fact.startswith("variant.option."):
+        return ranks["options"]
+    if fact in variant_policy.STRUCTURED_EVIDENCE_ATOMIC_OFFER_FACTS:
+        return ranks["offer"]
+    if fact in variant_policy.STRUCTURED_EVIDENCE_IDENTIFIER_FACTS:
+        return ranks["identifiers"]
+    if fact == "variant.url" or row.relation_type == "variant_asset":
+        return ranks["variant_assets"]
+    if fact in variant_policy.STRUCTURED_EVIDENCE_DESCRIPTIVE_FACTS:
+        return ranks["descriptive"]
+    return ranks["identifiers"]
+
+
+def _evidence_fact_family(row: Evidence) -> str:
+    fact = row.fact_type
+    prefixes = variant_policy.STRUCTURED_EVIDENCE_FACT_PREFIXES
+    families = variant_policy.STRUCTURED_EVIDENCE_FACT_FAMILIES
+    if fact.startswith(prefixes["variant_options"]):
+        return families["variant_options"]
+    if fact.startswith(prefixes["variant_identity"]):
+        return families["variant_identity"]
+    if fact.startswith(prefixes["offer"]):
+        return families["offer"]
+    if fact.startswith(prefixes["assets"]):
+        return (
+            families["variant_assets"]
+            if row.relation_type == "variant_asset"
+            else families["assets"]
+        )
+    return fact.split(".", 1)[0]
 
 
 def _state_payloads(bundle: CaptureBundle, artifacts):
@@ -494,6 +581,11 @@ def _variant_row(
         confidence=0.0,
     ).subject_id
     fields = _variant_fields(obj)
+    flags = (
+        (variant_policy.DEFAULT_VARIANT_PLACEHOLDER_FLAG,)
+        if _is_default_variant(obj)
+        else ()
+    )
     out = [
         evidence(
             bundle,
@@ -509,6 +601,7 @@ def _variant_row(
             subject_id=subject_id,
             parent_subject_id=product_subject,
             parent_scope="product",
+            flags=flags,
         )
         for name, fact, value in fields
         if value not in (None, "", [], {})
@@ -518,7 +611,17 @@ def _variant_row(
             bundle, artifact_id, path, obj, hint, subject_id, collector_id=collector_id
         )
     )
+    out.extend(
+        _variant_assets(
+            bundle, artifact_id, path, obj, hint, subject_id, collector_id=collector_id
+        )
+    )
     return out
+
+
+def _is_default_variant(obj: dict) -> bool:
+    title = str(_scalar_value(obj.get("title")) or "").strip().casefold()
+    return title in VARIANT_PLACEHOLDER_VALUES
 
 
 def _looks_like_variant(obj: dict, *, path: str = "") -> bool:
@@ -587,6 +690,11 @@ def _variant_fields(obj: dict) -> list[tuple[str, str, object]]:
         ("id", "variant.id", _variant_identity_value(obj)),
         ("sku", "variant.sku", _first(obj, *variant_policy.VARIANT_SKU_VALUE_KEYS)),
         (
+            "gtin",
+            VARIANT_GTIN_FACT_TYPE,
+            _first(obj, *variant_policy.VARIANT_GTIN_VALUE_KEYS),
+        ),
+        (
             "url",
             "variant.url",
             _first(obj, *variant_policy.VARIANT_URL_VALUE_KEYS),
@@ -598,6 +706,45 @@ def _variant_fields(obj: dict) -> list[tuple[str, str, object]]:
         for name, axis, value in _variant_options(obj)
     )
     return [(name, fact, _scalar_value(value)) for name, fact, value in raw]
+
+
+def _variant_assets(
+    bundle: CaptureBundle,
+    artifact_id: str,
+    path: str,
+    obj: dict,
+    hint: EntityHint,
+    variant_subject_id: str,
+    *,
+    collector_id: str,
+) -> list[Evidence]:
+    rows: list[Evidence] = []
+    seen: set[str] = set()
+    for key in ECOMMERCE_IMAGE_SOURCE_KEYS:
+        if key not in obj:
+            continue
+        for index, url in enumerate(_source_values(key, obj.get(key))):
+            normalized = str(url or "").strip()
+            if not normalized or normalized in seen:
+                continue
+            seen.add(normalized)
+            rows.append(
+                evidence(
+                    bundle,
+                    artifact_id,
+                    collector_id,
+                    ASSET_IMAGE_URL_FACT_TYPE,
+                    normalized,
+                    SourceLocator(kind="script_path", value=f"{path}/{key}/{index}"),
+                    group_id=f"variant_asset:{artifact_id}:{path}:{index}",
+                    hint=EntityHint(entity_type="asset", sku=hint.sku),
+                    directness="embedded",
+                    confidence=0.8,
+                    parent_subject_id=variant_subject_id,
+                    parent_scope="variant",
+                )
+            )
+    return rows
 
 
 def _variant_offer(

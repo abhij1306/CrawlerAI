@@ -78,6 +78,7 @@ from app.core.records.url_identity import (
 from app.core.shared.field_coerce_text import (
     coerce_brand_text,
 )
+from app.core.shared.text_coerce import coerce_long_text, coerce_text
 
 
 def collect_ecommerce_detail(
@@ -103,8 +104,10 @@ def harvest_ecommerce_detail(
     outcomes: list[CollectorOutcome] = []
     admitted_source_objects = 0
     for collector in default_collectors():
-        if isinstance(collector, JsStateCollector):
-            harvest = collector.harvest(bundle, reader)
+        if isinstance(collector, (JsStateCollector, NetworkCollector)):
+            harvest = collector.harvest(
+                bundle, reader, requested_fields=requested_fields
+            )
             collector_rows = tuple(
                 ev for ev in harvest.evidence if ev.fact_type in FACT_TYPES
             )
@@ -456,6 +459,16 @@ def normalize_evidence(evidence: Evidence, *, page_url: str) -> Evidence:
     flags = set(evidence.flags)
     if isinstance(value, str):
         value = re.sub(r"\s+", " ", value).strip()
+    if evidence.fact_type in {
+        field_mappings.PRODUCT_TITLE_FACT_TYPE,
+        field_mappings.PRODUCT_BRAND_FACT_TYPE,
+    } and isinstance(value, str):
+        value = coerce_text(value) or value
+    if (
+        evidence.fact_type == field_mappings.PRODUCT_DESCRIPTION_FACT_TYPE
+        and isinstance(value, str)
+    ):
+        value = coerce_long_text(value) or value
     if evidence.fact_type == field_mappings.ASSET_IMAGE_URL_FACT_TYPE and isinstance(
         value, str
     ):

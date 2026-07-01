@@ -405,6 +405,68 @@ VARIANT_OFFER_STOCK_KEYS = (
     "inventory",
     "inventoryQuantity",
 )
+VARIANT_GTIN_VALUE_KEYS = (
+    "gtin",
+    "gtin8",
+    "gtin12",
+    "gtin13",
+    "gtin14",
+    "barcode",
+    "upc",
+    "ean",
+)
+
+STRUCTURED_EVIDENCE_PRIORITY_RANKS = {
+    "identity": 1,
+    "requested": 2,
+    "options": 3,
+    "offer": 4,
+    "identifiers": 5,
+    "variant_assets": 6,
+    "descriptive": 7,
+}
+STRUCTURED_EVIDENCE_IDENTITY_FACTS = frozenset(
+    {"product.id", "product.url", "variant.id"}
+)
+STRUCTURED_EVIDENCE_ATOMIC_OFFER_FACTS = frozenset(
+    {
+        "offer.price",
+        "offer.currency",
+        "offer.availability",
+        "offer.original_price",
+        "offer.stock_quantity",
+    }
+)
+STRUCTURED_EVIDENCE_IDENTIFIER_FACTS = frozenset(
+    {
+        "product.sku",
+        "product.mpn",
+        "product.gtin",
+        "variant.sku",
+        "variant.gtin",
+    }
+)
+STRUCTURED_EVIDENCE_DESCRIPTIVE_FACTS = frozenset(
+    {"product.description", "asset.image_url"}
+)
+STRUCTURED_SOURCE_OBJECT_BUDGET_REASON = "source_object_budget_exhausted"
+STRUCTURED_EVIDENCE_BUDGET_REASON = "evidence_per_source_object_budget_exhausted"
+CHILD_JOIN_FAILED_RULE_ID = "CHILD_JOIN_FAILED"
+DEFAULT_VARIANT_DIAGNOSTIC_REASON = "default_variant_diagnostic_only"
+DEFAULT_VARIANT_PLACEHOLDER_FLAG = "default_variant_placeholder"
+STRUCTURED_EVIDENCE_FACT_PREFIXES = {
+    "variant_options": "variant.option.",
+    "variant_identity": "variant.",
+    "offer": "offer.",
+    "assets": "asset.",
+}
+STRUCTURED_EVIDENCE_FACT_FAMILIES = {
+    "variant_options": "variant_options",
+    "variant_identity": "variant_identity",
+    "offer": "offer",
+    "variant_assets": "variant_assets",
+    "assets": "assets",
+}
 
 
 def variant_state_values_are_geographic(values: object) -> bool:
@@ -435,6 +497,7 @@ FLAT_VARIANT_KEYS: tuple[str, ...] = (
 PUBLIC_FLAT_VARIANT_FIELDS = frozenset(
     (*PUBLIC_VARIANT_AXIS_FIELDS, *FLAT_VARIANT_KEYS)
 )
+NON_PUBLIC_VARIANT_IDENTITY_FIELDS = frozenset({"gtin"})
 VARIANT_TRANSPORT_FIELDS = frozenset(
     {
         "variant_id",

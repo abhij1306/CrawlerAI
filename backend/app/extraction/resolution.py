@@ -32,6 +32,8 @@ from app.core.config.extraction_rules._images import PRODUCT_ASSET_MAX_COUNT
 from app.core.config import field_mappings
 from app.core.config.field_mappings import INVALID_SCALAR_TYPE_EVIDENCE_FLAG
 from app.core.config.variant_policy import (
+    DEFAULT_VARIANT_DIAGNOSTIC_REASON,
+    DEFAULT_VARIANT_PLACEHOLDER_FLAG,
     DETAIL_PARENT_INHERITED_OFFER_FIELDS,
     DETAIL_PARENT_OFFER_INHERITANCE_RULE_ID,
     DETAIL_PARENT_VARIANT_PRICE_DRIFT_MAX_RATIO,
@@ -44,6 +46,7 @@ from app.core.shared.url_utils import (
     asset_url_identity,
     is_utility_image_url,
     low_resolution_asset_urls,
+    public_asset_delivery_url,
 )
 from app.core.shared.field_coerce import sanitize_option_scalar
 from app.core.shared.field_coerce_price import repair_price_unit
@@ -51,7 +54,6 @@ from app.core.shared.currency_hints import currency_hint_from_page_url
 from app.core.shared.field_coerce_text import (
     infer_brand_from_page_identity,
     infer_brand_from_product_url,
-    infer_brand_from_title_host,
     infer_brand_from_title_marker,
 )
 from app.core.records.url_identity import (
@@ -920,7 +922,7 @@ def _resolve_variants(
             derived,
             evidence_by_id,
         )
-        reason = _variant_rejection_reason(variant, values, product_url)
+        reason = _variant_rejection_reason(variant, values, product_url, evidence_by_id)
         if reason:
             rejected.append(
                 _variant_decision(variant.entity_id, values, lineage, reason)
@@ -1064,9 +1066,20 @@ def _put_variant_offer(
         lineage.pop("original_price", None)
 
 
-def _variant_rejection_reason(variant, values, product_url: str) -> str | None:
+def _variant_rejection_reason(
+    variant,
+    values,
+    product_url: str,
+    evidence_by_id: dict[str, Evidence],
+) -> str | None:
     if not variant.identity_key:
         return "variant_missing_identity"
+    if not _has_variant_option(values) and any(
+        DEFAULT_VARIANT_PLACEHOLDER_FLAG in evidence_by_id[evidence_id].flags
+        for evidence_id in variant.identity_evidence_ids
+        if evidence_id in evidence_by_id
+    ):
+        return DEFAULT_VARIANT_DIAGNOSTIC_REASON
     explicit_identity = any(
         values.get(field) not in (None, "", [], {}, ())
         for field in ("variant_id", "sku", "gtin", "url")
@@ -1219,12 +1232,29 @@ def _resolve_offer(
     *,
     preferred_evidence_ids: Mapping[str, tuple[str, ...]] | None = None,
 ) -> tuple[Decision, ...]:
-    # Each offer fact resolves independently. A previous guard blocked
-    # price + currency + original_price together when a parent offer was
-    # missing either price or currency evidence; that all-or-nothing gate
-    # silently dropped real prices whenever currency evidence (often only
-    # implicit via host/locale) wasn't collected. Currency inference from
-    # the page URL happens downstream in the enrichment layer.
+    preferences = dict(preferred_evidence_ids or {})
+    atomic = _offer_atomic_price_currency_preferences(offer, evidence_by_id, findings)
+    if atomic is None:
+        blocked = {
+            field_mappings.OFFER_PRICE_FACT_TYPE,
+            field_mappings.OFFER_CURRENCY_FACT_TYPE,
+        }
+        return tuple(
+            _offer_atomic_unresolved_decision(
+                offer, fact, ids, evidence_by_id, findings
+            )
+            if fact in blocked
+            else _resolve_scalar(
+                offer.entity_id,
+                fact,
+                ids,
+                evidence_by_id,
+                findings,
+                preferred_evidence_ids=preferences.get(fact, ()),
+            )
+            for fact, ids in sorted(offer.fact_evidence.items())
+        )
+    preferences.update(atomic)
     return tuple(
         _resolve_scalar(
             offer.entity_id,
@@ -1232,9 +1262,103 @@ def _resolve_offer(
             ids,
             evidence_by_id,
             findings,
-            preferred_evidence_ids=(preferred_evidence_ids or {}).get(fact, ()),
+            preferred_evidence_ids=preferences.get(fact, ()),
         )
         for fact, ids in sorted(offer.fact_evidence.items())
+    )
+
+
+def _offer_atomic_price_currency_preferences(
+    offer: OfferEntity,
+    evidence_by_id: dict[str, Evidence],
+    findings: tuple[Finding, ...],
+) -> dict[str, tuple[str, ...]] | None:
+    price_fact = field_mappings.OFFER_PRICE_FACT_TYPE
+    currency_fact = field_mappings.OFFER_CURRENCY_FACT_TYPE
+    if (
+        price_fact not in offer.fact_evidence
+        or currency_fact not in offer.fact_evidence
+    ):
+        return {}
+    blocking = {
+        eid for finding in findings if finding.blocking for eid in finding.evidence_ids
+    }
+    prices = tuple(
+        row
+        for row in (
+            evidence_by_id[eid]
+            for eid in offer.fact_evidence.get(price_fact, ())
+            if eid in evidence_by_id
+        )
+        if row.evidence_id not in blocking and _invalidity_reason(row) is None
+    )
+    currencies = tuple(
+        row
+        for row in (
+            evidence_by_id[eid]
+            for eid in offer.fact_evidence.get(currency_fact, ())
+            if eid in evidence_by_id
+        )
+        if row.evidence_id not in blocking and _invalidity_reason(row) is None
+    )
+    if not prices or not currencies:
+        return {}
+    pairs = [
+        (price, currency)
+        for price in prices
+        for currency in currencies
+        if _offer_evidence_compatible(price, currency)
+    ]
+    if not pairs:
+        return None
+    price, currency = min(pairs, key=lambda pair: (_rank(pair[0]), _rank(pair[1])))
+    return {
+        price_fact: (price.evidence_id,),
+        currency_fact: (currency.evidence_id,),
+    }
+
+
+def _offer_evidence_compatible(price: Evidence, currency: Evidence) -> bool:
+    if price.group_id and price.group_id == currency.group_id:
+        return True
+    if (
+        price.parent_subject_id
+        and price.parent_subject_id == currency.parent_subject_id
+        and price.relation_type == currency.relation_type
+    ):
+        return True
+    return (
+        price.artifact_id == currency.artifact_id
+        and price.collector_id == currency.collector_id
+        and price.subject_id == currency.subject_id
+    )
+
+
+def _offer_atomic_unresolved_decision(
+    offer: OfferEntity,
+    fact_type: str,
+    ids: tuple[str, ...],
+    evidence_by_id: dict[str, Evidence],
+    findings: tuple[Finding, ...],
+) -> Decision:
+    candidates = tuple(evidence_by_id[eid] for eid in ids if eid in evidence_by_id)
+    return Decision(
+        decision_id=stable_id("decision", offer.entity_id, fact_type, "atomic_group"),
+        entity_id=offer.entity_id,
+        fact_type=fact_type,
+        accepted_evidence_ids=(),
+        rejected=tuple(
+            RejectedEvidence(
+                evidence_id=row.evidence_id,
+                reason="offer_atomic_group_incompatible",
+            )
+            for row in candidates
+        ),
+        finding_ids=tuple(
+            f.finding_id for f in findings if set(f.evidence_ids) & set(ids)
+        ),
+        rule_id="OFFER_ATOMIC_PRICE_CURRENCY",
+        status="unresolved",
     )
 
 
@@ -1444,17 +1568,21 @@ def _resolve_product_assets(
     ]
     valid.sort(key=lambda item: item[0])
     decisions: list[AssetDecision] = []
-    seen: set[str] = set()
+    seen_identity: set[str] = set()
+    seen_delivery: set[str] = set()
     for index, (_rank_value, asset, accepted) in enumerate(valid):
         if len(decisions) >= PRODUCT_ASSET_MAX_COUNT:
             break
-        if asset.identity_key in seen:
+        delivery_url = _resolved_asset_url(accepted)
+        delivery_identity = _asset_delivery_identity(delivery_url)
+        if asset.identity_key in seen_identity or delivery_identity in seen_delivery:
             continue
-        seen.add(asset.identity_key)
+        seen_identity.add(asset.identity_key)
+        seen_delivery.add(delivery_identity)
         decisions.append(
             AssetDecision(
                 asset_entity_id=asset.entity_id,
-                url=_resolved_asset_url(accepted),
+                url=delivery_url,
                 accepted_evidence_ids=(accepted.evidence_id,),
                 role="primary" if not decisions else "additional",
                 rank=index,
@@ -1512,7 +1640,14 @@ def _normalized_asset_url(value: object) -> str:
 
 
 def _resolved_asset_url(evidence: Evidence) -> str:
-    return _normalized_asset_url(evidence.value)
+    return public_asset_delivery_url(evidence.value) or _normalized_asset_url(
+        evidence.value
+    )
+
+
+def _asset_delivery_identity(value: object) -> str:
+    normalized = asset_url_identity(value)
+    return normalized[1] if normalized else str(value)
 
 
 def _accepted_asset_evidence(
@@ -1804,7 +1939,17 @@ def _semantic_derived_facts(
         existing_brand = resolved_values.get(
             (decision.entity_id, field_mappings.PRODUCT_BRAND_FACT_TYPE)
         )
-        existing_brands = (existing_brand,) if existing_brand else ()
+        brand_candidates = tuple(
+            row
+            for row in by_id.values()
+            if row.fact_type == field_mappings.PRODUCT_BRAND_FACT_TYPE
+            and row.subject_id == evidence.subject_id
+        )
+        existing_brands = (
+            (existing_brand,)
+            if existing_brand
+            else tuple(row.value for row in brand_candidates)
+        )
         brand = _brand_from_title(
             evidence.value,
             page_url=page_url,
@@ -1814,6 +1959,9 @@ def _semantic_derived_facts(
                 if row.fact_type != field_mappings.PRODUCT_URL_FACT_TYPE
             ),
             existing_brands=existing_brands,
+            allow_page_identity_replacement=any(
+                _invalidity_reason(row) is not None for row in brand_candidates
+            ),
         )
         if brand:
             return (
@@ -1938,6 +2086,7 @@ def _brand_from_title(
     page_url: str,
     evidence_values: tuple[object, ...] = (),
     existing_brands: tuple[object, ...] = (),
+    allow_page_identity_replacement: bool = False,
 ) -> tuple[str, str] | None:
     page_identity = infer_brand_from_page_identity(
         url=page_url,
@@ -1945,6 +2094,13 @@ def _brand_from_title(
         evidence_values=evidence_values,
         existing_brands=existing_brands,
     )
+    if page_identity is None and allow_page_identity_replacement:
+        page_identity = infer_brand_from_page_identity(
+            url=page_url,
+            title=title,
+            evidence_values=evidence_values,
+            existing_brands=(),
+        )
     if existing_brands and page_identity:
         existing = str(existing_brands[0] or "").strip()
         page_text = str(page_identity or "").strip()
@@ -1952,28 +2108,13 @@ def _brand_from_title(
         page_folded = page_text.casefold()
         expands_existing = page_folded.startswith(f"{existing_folded} ")
         trims_product_suffix = existing_folded.startswith(f"{page_folded} ")
-        if expands_existing or trims_product_suffix:
+        if expands_existing or trims_product_suffix or allow_page_identity_replacement:
             return page_identity, "page_identity"
         return None
-    if page_identity and all(
-        str(page_identity).casefold() != str(value).casefold()
-        for value in existing_brands
-    ):
-        existing = str(existing_brands[0]) if existing_brands else ""
-        expands_existing = (
-            str(page_identity).casefold().startswith(f"{existing.casefold()} ")
-        )
-        if existing.isupper() and not expands_existing:
-            return None
-        return page_identity, "page_identity"
     if existing_brands:
         return None
     for rule_id, value in (
         ("brand_from_title_marker", infer_brand_from_title_marker(title)),
-        (
-            "brand_from_title_host",
-            infer_brand_from_title_host(title=title, url=page_url),
-        ),
         (
             "brand_from_product_url",
             infer_brand_from_product_url(url=page_url, title=title),

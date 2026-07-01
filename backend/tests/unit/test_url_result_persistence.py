@@ -15,8 +15,30 @@ from app.persistence import url_result_artifacts
 from app.persistence.url_result_artifacts import publish_url_result_artifacts
 from app.persistence.url_results import acquisition_outcome, url_result_values
 from app.crawl.pipeline import persistence as record_persistence
+from app.crawl.pipeline.extraction_loop import _public_record_payload
+from app.extraction.contracts import CommerceDetailRecord, CommerceVariantRecord
 
 pytestmark = pytest.mark.unit
+
+
+def test_ecommerce_detail_public_payload_omits_null_variant_fields() -> None:
+    record = CommerceDetailRecord(
+        url="https://shop.test/products/shoe",
+        variants=(
+            CommerceVariantRecord(
+                price="90.00",
+                currency="USD",
+                color="Black",
+            ),
+        ),
+        variant_count=1,
+    )
+
+    payload = _public_record_payload(record, "ecommerce_detail")
+
+    assert payload["variants"] == [
+        {"price": "90.00", "currency": "USD", "color": "Black"}
+    ]
 
 
 def test_url_result_schema_owns_canonical_result_fields() -> None:

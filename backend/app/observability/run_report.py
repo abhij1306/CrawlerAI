@@ -29,6 +29,7 @@ _CALLBACK_KEY = "observability_run_report"
 _CLEAN_FIELD_STATES = frozenset(
     {"captured_and_resolved", "captured_published", "not_requested"}
 )
+_EXAMPLE_LIMIT = 5
 
 
 def ensure_run_report_registered() -> None:
@@ -61,8 +62,10 @@ def build_run_report(run_id: int) -> dict[str, Any]:
         if not isinstance(diagnosis, Mapping):
             continue
         link = _diagnose_link(run_id, diagnose_path)
-        for root_cause in _root_causes(diagnosis):
-            groups.setdefault(root_cause, _RootCauseGroup(root_cause)).add(link)
+        for root_cause, example in _root_causes(diagnosis):
+            groups.setdefault(root_cause, _RootCauseGroup(root_cause)).add(
+                link, example
+            )
     root_causes = [group.as_dict() for group in groups.values()]
     root_causes.sort(key=lambda item: (-int(item["count"]), str(item["root_cause"])))
     return {
@@ -74,40 +77,91 @@ def build_run_report(run_id: int) -> dict[str, Any]:
 
 
 class _RootCauseGroup:
-    __slots__ = ("root_cause", "_links")
+    __slots__ = ("root_cause", "_links", "_examples")
 
     def __init__(self, root_cause: str) -> None:
         self.root_cause = root_cause
         self._links: list[str] = []
+        self._examples: list[dict[str, object]] = []
 
-    def add(self, link: str) -> None:
+    def add(self, link: str, example: Mapping[str, object] | None = None) -> None:
         if link not in self._links:
             self._links.append(link)
+        if example and len(self._examples) < _EXAMPLE_LIMIT:
+            self._examples.append(dict(example))
 
     def as_dict(self) -> dict[str, Any]:
-        return {
+        payload: dict[str, Any] = {
             "root_cause": self.root_cause,
             "count": len(self._links),
             "diagnose_links": sorted(self._links),
         }
+        if self._examples:
+            payload["examples"] = self._examples
+        return payload
 
 
-def _root_causes(diagnosis: Mapping[str, object]) -> list[str]:
+def _root_causes(
+    diagnosis: Mapping[str, object],
+) -> list[tuple[str, dict[str, object]]]:
     """Group keys for one diagnose.json. Empty when nothing went wrong."""
-    causes: set[str] = set()
+    causes: dict[str, dict[str, object]] = {}
     for field in _object_list(diagnosis.get("fields")):
         field_name = str(field.get("field") or "").strip() or "?"
         publication_policy = field.get("publication_policy")
         if publication_policy not in (None, "", [], {}):
-            causes.add(f"publication_policy:{field_name}:{_scalar(publication_policy)}")
+            cause = f"publication_policy:{field_name}:{_scalar(publication_policy)}"
+            causes.setdefault(cause, {"field": field_name})
         status = str(field.get("status") or "").strip()
         if status and status not in _CLEAN_FIELD_STATES:
-            causes.add(f"field:{field_name}:{status}")
+            causes.setdefault(
+                f"field:{field_name}:{status}",
+                {
+                    "field": field_name,
+                    "status": status,
+                    "reason_codes": list(_string_list(field.get("reason_codes"))),
+                },
+            )
+            for reason in _string_list(field.get("reason_codes")):
+                causes.setdefault(
+                    f"field_reason:{field_name}:{status}:{reason}",
+                    {"field": field_name, "status": status, "reason": reason},
+                )
     for drop in _object_list(_mapping(diagnosis.get("variants")).get("dropped")):
         stage = str(drop.get("stage") or "?").strip()
         rule = str(drop.get("rule") or "?").strip()
-        causes.add(f"variant_dropped:{stage}:{rule}")
-    return sorted(causes)
+        causes.setdefault(
+            f"variant_dropped:{stage}:{rule}",
+            {"stage": stage, "rule": rule, "reason": str(drop.get("reason") or "")},
+        )
+    for finding in _object_list(diagnosis.get("findings")):
+        rule_id = str(finding.get("rule_id") or "").strip()
+        if not rule_id:
+            continue
+        severity = str(finding.get("severity") or "").strip() or "unknown"
+        blocking = bool(finding.get("blocking"))
+        prefix = "blocking_finding" if blocking else "finding"
+        causes.setdefault(
+            f"{prefix}:{rule_id}",
+            {
+                "rule_id": rule_id,
+                "severity": severity,
+                "blocking": blocking,
+                "scope": str(finding.get("scope") or ""),
+            },
+        )
+    acquisition = _mapping(diagnosis.get("acquisition"))
+    if bool(acquisition.get("blocked")):
+        causes.setdefault(
+            "capture_assessment:blocked",
+            {"status_code": acquisition.get("status_code")},
+        )
+    if acquisition.get("failure_reason") not in (None, ""):
+        causes.setdefault(
+            f"capture_failure:{_scalar(acquisition.get('failure_reason'))}",
+            {"failure_reason": _scalar(acquisition.get("failure_reason"))},
+        )
+    return sorted(causes.items())
 
 
 def _mapping(value: object) -> Mapping[str, object]:
@@ -156,6 +210,12 @@ def _object_list(value: object) -> list[Mapping[str, object]]:
     if not isinstance(value, (list, tuple)):
         return []
     return [item for item in value if isinstance(item, Mapping)]
+
+
+def _string_list(value: object) -> tuple[str, ...]:
+    if not isinstance(value, (list, tuple)):
+        return ()
+    return tuple(str(item) for item in value if str(item or "").strip())
 
 
 def _scalar(value: object) -> str:

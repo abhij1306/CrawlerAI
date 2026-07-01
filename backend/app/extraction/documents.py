@@ -47,8 +47,10 @@ class HtmlNode:
         return HtmlNode(self.artifact_id, parent) if parent is not None else None
 
     def attribute(self, name: str) -> str | None:
+        if name not in self.node.attributes:
+            return None
         value = self.node.attributes.get(name)
-        return str(value) if value is not None else None
+        return "" if value is None else str(value)
 
     def attributes(self) -> Mapping[str, str]:
         return {str(key): str(value) for key, value in self.node.attributes.items()}

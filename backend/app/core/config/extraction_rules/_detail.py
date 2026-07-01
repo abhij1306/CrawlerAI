@@ -737,6 +737,33 @@ DETAIL_VARIANT_CONTEXT_NOISE_TOKENS = (
     "results",
     "report",
 )
+DETAIL_HIDDEN_PRODUCT_CONTENT_POSITIVE_TOKENS = (
+    "accordion",
+    "collapsible",
+    "description",
+    "detail",
+    "disclosure",
+    "feature",
+    "panel",
+    "pdp",
+    "product",
+    "specification",
+    "tab",
+)
+DETAIL_HIDDEN_PRODUCT_CONTENT_NEGATIVE_TOKENS = (
+    "cart",
+    "carousel",
+    "footer",
+    "header",
+    "modal",
+    "newsletter",
+    "promo",
+    "recommend",
+    "related",
+    "search",
+    "sponsored",
+    "upsell",
+)
 VARIANT_CONTEXT_NOISE_ANCESTOR_DEPTH = 6
 VARIANT_CONTEXT_NOISE_ANCESTOR_DEPTH_FALLBACK = 3
 VARIANT_CONTEXT_NOISE_ANCESTOR_DEPTH_DEFAULT = (

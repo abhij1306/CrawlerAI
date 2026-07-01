@@ -99,6 +99,45 @@ class CaptureBundle(FrozenModel):
     captured_at: str | None = None
 
 
+class CaptureCompletenessSignal(FrozenModel):
+    shadow_roots_detected: int = 0
+    shadow_roots_flattened: int = 0
+    closed_shadow_roots_detected: int = 0
+    hidden_panel_dom_present: bool = False
+    serialization_method_version: str
+
+
+class CaptureAssessment(FrozenModel):
+    status: Literal[
+        "usable",
+        "blocked",
+        "captcha",
+        "status_error",
+        "empty",
+        "partial_shell",
+        "wrong_content_type",
+        "redirect_mismatch",
+    ]
+    reasons: tuple[str, ...] = ()
+    retry_capabilities: tuple[str, ...] = ()
+    completeness: CaptureCompletenessSignal | None = None
+
+
+class ResultAssessment(FrozenModel):
+    outcome: Literal[
+        "accept",
+        "retry_with_rendered_capture",
+        "request_interaction",
+        "request_contract",
+        "request_human_review",
+        "reject_wrong_surface",
+        "reject_ambiguous_target",
+        "reject_source_unavailable",
+    ]
+    reasons: tuple[str, ...] = ()
+    unresolved_fields: tuple[str, ...] = ()
+
+
 class SourceLocator(FrozenModel):
     kind: Literal[
         "json_pointer",
@@ -444,8 +483,13 @@ class FieldEvidenceState(FrozenModel):
         "captured_and_resolved",
         "captured_but_rejected",
         "captured_conflicting",
+        "capture_incomplete",
+        "collector_missed",
+        "join_failed",
+        "interaction_required",
         "source_unavailable",
         "not_present_in_captured_sources",
+        "output_divergent",
         "not_captured",
         "captured_published",
         "captured_suppressed",
@@ -587,6 +631,9 @@ class CollectorOutcome(FrozenModel):
     outcome: CollectorOutcomeStatus
     evidence_count: int = 0
     detail: str | None = None
+    source_path: str | None = None
+    dropped_fact_families: tuple[str, ...] = ()
+    dropped_source_paths: tuple[str, ...] = ()
 
 
 class StageOutcome(FrozenModel):

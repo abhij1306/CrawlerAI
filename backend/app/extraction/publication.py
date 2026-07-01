@@ -8,6 +8,7 @@ from collections.abc import Sequence
 from typing import Literal, TypedDict
 
 from app.core.config import field_mappings
+from app.core.config.variant_policy import NON_PUBLIC_VARIANT_IDENTITY_FIELDS
 from app.core.records.output_safety import typed_detail_record
 from app.extraction.contracts import (
     CanonicalizationTrace,
@@ -219,6 +220,8 @@ def commerce_detail_projection(
         if variant.status != "eligible":
             continue
         for field, value in variant.values.items():
+            if field in NON_PUBLIC_VARIANT_IDENTITY_FIELDS:
+                continue
             source = _publication_source(variant.lineage.get(field))
             if source is None:
                 continue

@@ -3,7 +3,7 @@
 **Date:** 30 June 2026  
 **Basis:** latest 96-result crawl, previous 96-result crawl, original 90-page/144-issue HTML audit, current backend static audit after Plan 1  
 **Primary surface:** ecommerce detail  
-**Status:** proposed  
+**Status:** IN PROGRESS
 
 ## 1. Decision
 
@@ -56,13 +56,17 @@ The implementation must preserve the 20 genuine improvements while recovering lo
 
 ## Slice 0 — Lock the two-run baseline and residual ledger
 
+**Status:** SKIPPED
+
+**Note:** Skipped by user direction on 1 July 2026. Use the latest ChatGPT analysis in `agent_debug/` as the baseline and proceed with diagnostic/extraction implementation against the latest 96-run artifacts.
+
 **Goal:** establish a reproducible target before changing code.
 
 ### Work
 
 Create an ignored local acceptance harness that:
 
-- replays all 96 latest captures and all 96 previous captures;
+- references the latest 96-run analysis already present in `agent_debug/`;
 - maps captures by canonical URL/path identity, not result ID;
 - imports the original 144 issue rows;
 - writes one residual-ledger row per issue with:
@@ -71,7 +75,7 @@ Create an ignored local acceptance harness that:
   - `still_reproducible`;
   - `capture_failure`;
   - `ground_truth_review_required`;
-- stores the 22 original clean-control URLs as a named partition;
+- uses the clean-control and issue dispositions already recorded by the analysis package;
 - records commit, dirty-tree fingerprint, runtime config and corpus hashes;
 - compares public records, field states, evidence counts, findings and diagnostic size.
 
@@ -92,6 +96,10 @@ Create an ignored local acceptance harness that:
 ---
 
 ## Slice 1 — Make diagnostic truth complete before fixing extraction
+
+**Status:** IMPLEMENTED - TARGETED VERIFIED
+
+**Implementation note (2026-07-01):** Added typed capture/result assessment contracts, completed ecommerce-detail field-state accounting, grouped repeated incomplete-offer findings, and expanded run-report root-cause aggregation. Targeted backend tests pass. Corpus-wide 96-capture acceptance remains pending because the user directed work to proceed from `agent_debug/` analysis rather than re-crawling.
 
 **Goal:** make every missing or suppressed canonical field explainable at the actual failing stage.
 
@@ -200,6 +208,10 @@ Move unselected-candidate incompleteness into one grouped diagnostic with counts
 
 ## Slice 2 — Complete and harden capture serialization
 
+**Status:** IMPLEMENTED - TARGETED VERIFIED
+
+**Implementation note (2026-07-01):** Hardened the existing shadow serializer in `app/acquisition/dom_runtime.py` with versioned provenance, max-host diagnostics, structured completeness counts, mutation settling after successful flattening, and diagnostic failure reporting. Persisted capture completeness into browser acquisition diagnostics. Recovered product-scoped hidden requested-field content in Harvest with lowered confidence and evidence provenance, while rejecting hidden recommendation content. Targeted unit coverage added. Corpus recapture/adjudication acceptance remains pending.
+
 **Goal:** distinguish CSS-hidden, open-shadow, closed-shadow and interaction-fetched content before enrichment.
 
 ### 2.1 Harden the existing shadow flattener
@@ -263,6 +275,10 @@ Add direct tests for:
 ---
 
 ## Slice 3 — Close deterministic scalar, text and asset defects
+
+**Status:** IMPLEMENTED - TARGETED VERIFIED
+
+**Implementation note (2026-07-01):** Implemented deterministic canonicalization for product title/brand/description before publication, HTML-entity decoding for asset URL identity and public delivery URLs, direct canonical requested-field precedence for `description`, and evidence helper preservation of flags/metadata. Completed targeted brand-role guardrails so hostname/title-host evidence cannot create manufacturer truth without a weak existing brand candidate, kept valid structured vendor/brand evidence ahead of site identity, added Resolve-level asset delivery identity/fallback dedupe, and enforced offer price/currency atomic compatibility. Targeted backend tests pass. Corpus-wide duplicate/image/brand/offer acceptance remains pending without a recrawl.
 
 **Goal:** fix representation and role errors before adding adaptive behavior.
 
@@ -335,6 +351,10 @@ Resolve current price and currency as one offer-level atomic group. A currency f
 ---
 
 ## Slice 4 — Make variant evidence budgeting and joins deterministic
+
+**Status:** IMPLEMENTED - BACKEND VERIFIED
+
+**Implementation note (2026-07-01):** Replaced positional JS evidence truncation with shared fact-priority budgeting used by JS-state and network collectors, including requested atomic offer-group precedence and structured dropped-family/source-path diagnostics. Added explicit child join-failure findings with relation-key and candidate-parent context, mapped affected public field states to `join_failed`, preserved stable partial children, kept multiple optionless children conflicted, and made placeholder default variants diagnostic-only without synthesizing combinations. Variant assets now retain variant ownership and GTIN namespaces remain internal identity evidence rather than leaking into the public flat variant schema. The complete backend suite passed after functional changes (1,403 passed, 8 local-artifact skips). After config-only token centralization, the final full run had 1 unrelated 60 ms timing failure with 1,402 passing and 8 skipped; that timing test passed immediately in isolation. Ruff and diff checks pass. Corpus recrawl/adjudication acceptance remains pending.
 
 **Goal:** close the dominant remaining structural defects without site adapters.
 
@@ -582,7 +602,7 @@ Re-baseline after Slice 1, then require:
 
 ## 4. Recommended first implementation pull request
 
-The first PR should contain **only Slice 1**:
+The first implementation work should contain **only Slice 1**:
 
 1. typed capture/result assessment skeletons;
 2. complete canonical field-state universe;

@@ -9,6 +9,8 @@ from app.core.config.extraction_rules import (
     DETAIL_BRAND_VISIBLE_LABEL_PATTERN,
     DETAIL_DOM_IMAGE_NEGATIVE_SCOPE_TOKENS,
     DETAIL_DOM_IMAGE_POSITIVE_SCOPE_TOKENS,
+    DETAIL_HIDDEN_PRODUCT_CONTENT_NEGATIVE_TOKENS,
+    DETAIL_HIDDEN_PRODUCT_CONTENT_POSITIVE_TOKENS,
     DETAIL_IMAGE_SRCSET_ATTRS,
     DETAIL_IMAGE_URL_ATTRS,
     VARIANT_DOM_MAX_LABEL_LENGTH,
@@ -297,7 +299,8 @@ def collect_requested_fields(
         )
         for selector in selectors:
             for node in doc.css(selector):
-                if node.is_hidden():
+                hidden = node.is_hidden()
+                if hidden and not _hidden_product_content_allowed(node):
                     continue
                 value = _requested_node_value(node, fact_type)
                 key = (fact_type, value.casefold())
@@ -317,11 +320,38 @@ def collect_requested_fields(
                             preview=value[:120],
                         ),
                         hint=EntityHint(entity_type="product"),
-                        confidence=0.62,
+                        confidence=0.5 if hidden else 0.62,
+                        flags=("hidden_product_content",) if hidden else (),
                         subject_id=product_subject,
+                        metadata=(
+                            {"visibility": "hidden", "component_role": "product_panel"}
+                            if hidden
+                            else {}
+                        ),
                     )
                 )
     return tuple(rows)
+
+
+def _hidden_product_content_allowed(node: HtmlNode) -> bool:
+    context = " ".join(
+        str(current.attribute(attribute) or "").casefold()
+        for current in (node, *node.ancestors()[:8])
+        for attribute in (
+            "id",
+            "class",
+            "data-testid",
+            "data-component",
+            "data-section",
+            "aria-label",
+            "role",
+        )
+    )
+    if any(token in context for token in DETAIL_HIDDEN_PRODUCT_CONTENT_NEGATIVE_TOKENS):
+        return False
+    return any(
+        token in context for token in DETAIL_HIDDEN_PRODUCT_CONTENT_POSITIVE_TOKENS
+    )
 
 
 def _requested_node_value(node, fact_type: str) -> str:

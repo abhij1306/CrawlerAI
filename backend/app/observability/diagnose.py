@@ -29,21 +29,6 @@ from app.extraction.contracts import (
     SourceLocator,
 )
 
-# Public field name → the dotted fact_type the resolver decides on. Mirrors the
-# mapping in ``result_building.field_evidence_states`` so diagnose attributes the
-# right decision to each public field. Keyed by full fact_type — NOT the trailing
-# segment — so ``product.sku`` and ``variant.sku`` never collide into one "sku".
-_PUBLIC_FIELD_FACT_TYPES = {
-    "title": field_mappings.PRODUCT_TITLE_FACT_TYPE,
-    "brand": field_mappings.PRODUCT_BRAND_FACT_TYPE,
-    "description": field_mappings.PRODUCT_DESCRIPTION_FACT_TYPE,
-    "sku": field_mappings.PRODUCT_SKU_FACT_TYPE,
-    "price": field_mappings.OFFER_PRICE_FACT_TYPE,
-    "currency": field_mappings.OFFER_CURRENCY_FACT_TYPE,
-    "availability": field_mappings.OFFER_AVAILABILITY_FACT_TYPE,
-    "image_url": field_mappings.ASSET_IMAGE_URL_FACT_TYPE,
-}
-
 SCHEMA_VERSION = "diagnose.v2"
 _PREVIEW_LIMIT = 120
 _FIELDS_LIMIT = 100
@@ -280,7 +265,10 @@ def _decisions_by_public_field(
     # fact_type behind each public field — never the trailing segment — so a
     # ``variant.sku`` decision can't masquerade as the product-level ``sku``
     # winner. Keep the first resolved decision per field for determinism.
-    fact_to_field = {fact: field for field, fact in _PUBLIC_FIELD_FACT_TYPES.items()}
+    fact_to_field = {
+        fact: field
+        for field, fact in field_mappings.ECOMMERCE_PUBLIC_FIELD_FACT_TYPES.items()
+    }
     by_field: dict[str, Decision] = {}
     for decision in decisions:
         field = fact_to_field.get(decision.fact_type)

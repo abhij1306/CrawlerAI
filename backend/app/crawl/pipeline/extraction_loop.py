@@ -382,11 +382,8 @@ async def _run_extraction_stage_observed(
     return _ExtractedURLStage(fetched=fetched, result=result)
 
 
-def _public_record_payload(record, surface: str) -> dict[str, object]:
-    return record.model_dump(
-        mode="json",
-        exclude_none=surface != "ecommerce_detail",
-    )
+def _public_record_payload(record, _surface: str) -> dict[str, object]:
+    return record.model_dump(mode="json", exclude_none=True)
 
 
 # skipcq: PY-R1000
