@@ -260,11 +260,16 @@ def _validate_descriptions(
                 False,
             )
         )
-    promotional_ids = tuple(
-        row.evidence_id
-        for row in descriptions
-        if "description_promotional_copy" in row.flags
+    has_clean_description = any(
+        "description_promotional_copy" not in row.flags for row in descriptions
     )
+    promotional_ids = ()
+    if not has_clean_description:
+        promotional_ids = tuple(
+            row.evidence_id
+            for row in descriptions
+            if "description_promotional_copy" in row.flags
+        )
     if promotional_ids:
         findings.append(
             _finding(
@@ -545,7 +550,9 @@ def _validate_child_join_failures(
     evidence: tuple[Evidence, ...],
     entities: EntitySet,
 ) -> tuple[Finding, ...]:
-    linked_group_ids = {offer.group_id for offer in entities.offers}
+    linked_group_ids = {
+        offer.group_id for offer in entities.offers if offer.variant_entity_id is not None
+    }
     variant_subjects = {
         subject_id: variant.entity_id
         for variant in entities.variants
@@ -566,6 +573,8 @@ def _validate_child_join_failures(
     findings: list[Finding] = []
     for group_id, rows in sorted(groups.items()):
         if group_id in linked_group_ids:
+            continue
+        if not any(row.relation_type == "variant_offer" for row in rows):
             continue
         relations = {row.relation_type for row in rows if row.relation_type}
         candidate_parent_ids = tuple(

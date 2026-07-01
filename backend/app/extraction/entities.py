@@ -342,11 +342,22 @@ def _product_by_subject(
         + product.attribute_evidence.get("product.url", ())
         + product.identity_evidence_ids
     }
-    return {
-        ev.subject_id: by_evidence[ev.evidence_id]
-        for ev in evidence
-        if ev.evidence_id in by_evidence
-    }
+    subjects: dict[str, str] = {}
+    for ev in evidence:
+        product_id = by_evidence.get(ev.evidence_id)
+        if product_id is None:
+            continue
+        subjects[ev.subject_id] = product_id
+        for subject_id in _source_subject_aliases(ev):
+            subjects.setdefault(subject_id, product_id)
+    return subjects
+
+
+def _source_subject_aliases(ev: Evidence) -> tuple[str, ...]:
+    aliases = ev.metadata.get("source_subject_ids")
+    if not isinstance(aliases, (list, tuple)):
+        return ()
+    return tuple(str(alias) for alias in aliases if str(alias or "").strip())
 
 
 def _link_variants(

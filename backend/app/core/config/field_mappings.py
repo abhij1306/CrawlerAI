@@ -502,6 +502,7 @@ ECOMMERCE_JSONLD_PRODUCT_FACT_TYPES = {
 }
 ECOMMERCE_JSONLD_OFFER_FACT_TYPES = {
     "availability": OFFER_AVAILABILITY_FACT_TYPE,
+    "highPrice": "offer.price_max",
     "lowPrice": OFFER_PRICE_FACT_TYPE,
     "price": OFFER_PRICE_FACT_TYPE,
     "priceCurrency": OFFER_CURRENCY_FACT_TYPE,

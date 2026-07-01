@@ -14,6 +14,7 @@ const apiMock = vi.hoisted(() => ({
   listDomainFieldFeedback: vi.fn(),
   listKnowledgeSites: vi.fn(),
   getKnowledgeGraph: vi.fn(),
+  listKnowledgeContractsByDomain: vi.fn(),
   listKnowledgeContracts: vi.fn(),
   selectKnowledgeContractSource: vi.fn(),
   getRunReport: vi.fn(),
@@ -193,7 +194,8 @@ describe('DomainMemoryPage', () => {
         },
       ],
     });
-    apiMock.listKnowledgeContracts.mockResolvedValue({
+    apiMock.listKnowledgeContractsByDomain.mockResolvedValue({
+      domain: 'example.com',
       contracts: [
         {
           id: 'contract-1',
@@ -205,6 +207,21 @@ describe('DomainMemoryPage', () => {
           success_count: 3,
           rejection_count: 1,
           resolver_rule: 'operator_selector',
+          selected_source: 'jsonld:/brand',
+          selection_origin: 'generic',
+          selection_history: [],
+          status: 'active',
+        },
+        {
+          id: 'contract-brand-second-template',
+          template_id: 'template-2',
+          surface: 'ecommerce_detail',
+          canonical_field: 'product.brand',
+          candidates: [{ source: 'jsonld:/brand' }, { source: 'css_recipe:.brand' }],
+          latest_values: [],
+          success_count: 2,
+          rejection_count: 0,
+          resolver_rule: 'brand_resolution',
           selected_source: 'jsonld:/brand',
           selection_origin: 'generic',
           selection_history: [],
@@ -367,7 +384,7 @@ describe('DomainMemoryPage', () => {
     expect(screen.getByRole('button', { name: 'Profiles (1)' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Cookies (3)' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Learning (1)' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Knowledge v4' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Extraction' })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Profiles (1)' }));
     expect(screen.getByText('Run Profile Defaults')).toBeInTheDocument();
@@ -384,12 +401,14 @@ describe('DomainMemoryPage', () => {
   it('renders Knowledge Graph tab and updates source selection', async () => {
     renderDomainMemoryPage();
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Knowledge v4' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Extraction' }));
 
-    expect(await screen.findByText('Knowledge Graph')).toBeInTheDocument();
-    expect(await screen.findByText('Source reliability')).toBeInTheDocument();
-    expect(screen.getByText('Run diagnostics')).toBeInTheDocument();
-    expect(screen.getAllByText('Brand').length).toBeGreaterThan(0);
+    expect(await screen.findByText('Extraction preferences')).toBeInTheDocument();
+    expect(screen.getByText('Field defaults')).toBeInTheDocument();
+    expect(screen.getByText('example.com')).toBeInTheDocument();
+    expect(screen.queryByText('Run diagnostics')).not.toBeInTheDocument();
+    expect(screen.getAllByText('Brand')).toHaveLength(1);
+    expect(screen.getAllByRole('combobox', { name: 'Source for product.brand' })).toHaveLength(1);
     expect(screen.getAllByText('Automatic').length).toBeGreaterThan(0);
     expect(screen.getByText('Only observed source')).toBeInTheDocument();
     expect(
@@ -408,20 +427,17 @@ describe('DomainMemoryPage', () => {
         },
       ],
     });
-    const knowledgeGraphPanel = screen
-      .getByRole('heading', { name: 'Knowledge Graph' })
+    const extractionPanel = screen
+      .getByRole('heading', { name: 'Extraction preferences' })
       .closest('.p-0');
-    expect(knowledgeGraphPanel).not.toBeNull();
+    expect(extractionPanel).not.toBeNull();
     fireEvent.click(
-      within(knowledgeGraphPanel as HTMLElement).getByRole('button', { name: 'Refresh' }),
+      within(extractionPanel as HTMLElement).getByRole('button', { name: 'Refresh' }),
     );
     await waitFor(() => {
-      expect(apiMock.getKnowledgeGraph).toHaveBeenCalledTimes(2);
+      expect(apiMock.listKnowledgeContractsByDomain).toHaveBeenCalledTimes(2);
     });
-    await waitFor(() => {
-      expect(within(knowledgeGraphPanel as HTMLElement).getByText('5')).toBeInTheDocument();
-      expect(within(knowledgeGraphPanel as HTMLElement).getByText('Pending')).toBeInTheDocument();
-    });
+    expect(await screen.findByText('Version 5')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('combobox', { name: 'Source for product.brand' }));
     fireEvent.click(await screen.findByRole('option', { name: 'Saved selector · .brand' }));
@@ -435,55 +451,7 @@ describe('DomainMemoryPage', () => {
         canonical_field: 'product.brand',
       });
     });
-    expect(screen.getByText('Saved')).toBeInTheDocument();
-  }, 10_000);
-
-  it('drills into a run diagnostics root cause', async () => {
-    apiMock.getRunReport.mockResolvedValue({
-      schema_version: 'run-report.v1',
-      run_id: 101,
-      root_cause_count: 1,
-      root_causes: [
-        {
-          root_cause: 'field:price:captured_but_rejected',
-          count: 2,
-          diagnose_links: ['runs/101/results/7/diagnose.json'],
-        },
-      ],
-    });
-    apiMock.getResultDiagnosis.mockResolvedValue({
-      schema_version: 'diagnose.v2',
-      verdict: 'partial',
-      data_integrity: 'divergent',
-      evidence_dispositions: {
-        total: 3,
-        by_status: { accepted: 1, rejected_invalid: 1, unowned: 1 },
-        examples: [],
-      },
-      fields: [
-        {
-          field: 'price',
-          status: 'captured_but_rejected',
-          publication_policy: 'price_out_of_band',
-          rejected: [{ reason: 'currency_mismatch' }],
-        },
-      ],
-    });
-
-    renderDomainMemoryPage();
-    fireEvent.click(await screen.findByRole('button', { name: 'Knowledge v4' }));
-    expect(await screen.findByText('Run diagnostics')).toBeInTheDocument();
-
-    const causeButton = await screen.findByText('field:price:captured_but_rejected');
-    fireEvent.click(causeButton);
-
-    await waitFor(() => {
-      expect(apiMock.getResultDiagnosis).toHaveBeenCalledWith(101, 7);
-    });
-    expect(await screen.findByText('Captured But Rejected')).toBeInTheDocument();
-    expect(await screen.findByText('Evidence accounting: 3')).toBeInTheDocument();
-    expect(screen.getByText('Accepted 1')).toBeInTheDocument();
-    expect(screen.getByText('Publication policy')).toBeInTheDocument();
+    expect(screen.getByText('Saved for this surface')).toBeInTheDocument();
   }, 10_000);
 
   it('keeps domain memory usable when Knowledge Graph site loading fails', async () => {

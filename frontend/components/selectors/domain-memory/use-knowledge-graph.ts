@@ -2,15 +2,10 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { queryKeys } from '@/api/query-keys';
 import { api } from '../../../lib/api';
-import type {
-  KnowledgeContract,
-  KnowledgeGraphResponse,
-  KnowledgeSiteRecord,
-} from '../../../lib/api/types';
+import type { KnowledgeContract, KnowledgeSiteRecord } from '../../../lib/api/types';
 import type { DomainWorkspace } from './types';
 
 export type KnowledgeGraphData = {
-  graph: KnowledgeGraphResponse;
   site: KnowledgeSiteRecord | null;
   contracts: KnowledgeContract[];
 };
@@ -21,10 +16,8 @@ type SelectSourceVariables = {
   expectedVersion: number | null;
 };
 
-// Single orchestrated fetch keyed by domain: the bounded graph, the site record,
-// and every page_template's source contracts. Contracts depend on the graph's
-// template nodes, so they are resolved inside one queryFn rather than fanned out
-// across N dynamic hooks.
+// One domain-scoped request returns all observed contracts. The UI folds the
+// per-template provenance rows into one preference per surface and field.
 export function useKnowledgeGraph(workspace: DomainWorkspace) {
   const queryClient = useQueryClient();
   const domain = workspace.domain;
@@ -32,25 +25,15 @@ export function useKnowledgeGraph(workspace: DomainWorkspace) {
   const query = useQuery<KnowledgeGraphData>({
     queryKey: queryKeys.knowledgeGraph.domain(domain),
     queryFn: async () => {
-      const [graph, siteResponse] = await Promise.all([
-        api.getKnowledgeGraph({ domain, depth: 2, limit: 200 }),
+      const [contractsResponse, siteResponse] = await Promise.all([
+        api.listKnowledgeContractsByDomain(domain),
         api.listKnowledgeSites().catch(() => null),
       ]);
-      const templateIds = graph.nodes
-        .filter((node) => node.entity_type === 'page_template')
-        .map((node) => node.id);
-      const contractResponses = await Promise.all(
-        templateIds.map((templateId) => api.listKnowledgeContracts(templateId)),
-      );
       const site =
         siteResponse?.sites.find((entry) => entry.domain === domain) ??
         workspace.knowledgeSite ??
         null;
-      return {
-        graph,
-        site,
-        contracts: contractResponses.flatMap((response) => response.contracts),
-      };
+      return { site, contracts: contractsResponse.contracts };
     },
     enabled: Boolean(domain),
     staleTime: 30_000,
@@ -65,7 +48,7 @@ export function useKnowledgeGraph(workspace: DomainWorkspace) {
         surface: contract.surface,
         canonical_field: contract.canonical_field,
       }),
-    onSuccess: (response, { contract }) => {
+    onSuccess: (response, { contract, selectedSource }) => {
       queryClient.setQueryData<KnowledgeGraphData>(
         queryKeys.knowledgeGraph.domain(domain),
         (previous) =>
@@ -73,7 +56,18 @@ export function useKnowledgeGraph(workspace: DomainWorkspace) {
             ? {
                 ...previous,
                 contracts: previous.contracts.map((entry) =>
-                  entry.id === contract.id ? response.contract : entry,
+                  entry.surface === contract.surface &&
+                  entry.canonical_field === contract.canonical_field
+                    ? {
+                        ...entry,
+                        selected_source: selectedSource,
+                        selection_origin: 'operator',
+                        selection_history:
+                          entry.id === response.contract.id
+                            ? response.contract.selection_history
+                            : entry.selection_history,
+                      }
+                    : entry,
                 ),
               }
             : previous,

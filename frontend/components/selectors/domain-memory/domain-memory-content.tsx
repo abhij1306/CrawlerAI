@@ -179,9 +179,7 @@ function tabOptions(
     { value: 'learning', label: `Learning (${selectedWorkspace.learning.length})` },
     {
       value: 'knowledge',
-      label: selectedWorkspace.knowledgeSite
-        ? `Knowledge v${selectedWorkspace.knowledgeSite.current_version}`
-        : 'Knowledge',
+      label: 'Extraction',
     },
   ];
 }

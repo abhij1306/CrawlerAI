@@ -334,8 +334,8 @@ def collect_requested_fields(
 
 
 def _hidden_product_content_allowed(node: HtmlNode) -> bool:
-    context = " ".join(
-        str(current.attribute(attribute) or "").casefold()
+    raw_parts = [
+        str(current.attribute(attribute) or "")
         for current in (node, *node.ancestors()[:8])
         for attribute in (
             "id",
@@ -346,12 +346,34 @@ def _hidden_product_content_allowed(node: HtmlNode) -> bool:
             "aria-label",
             "role",
         )
-    )
-    if any(token in context for token in DETAIL_HIDDEN_PRODUCT_CONTENT_NEGATIVE_TOKENS):
+    ]
+    tokens = {
+        token
+        for part in raw_parts
+        for token in re.split(r"[^a-z0-9]+", part.casefold())
+        if token
+    }
+    phrases = {" ".join(part.casefold().split()) for part in raw_parts if part.strip()}
+    if any(
+        _hidden_product_context_matches(token, tokens=tokens, phrases=phrases)
+        for token in DETAIL_HIDDEN_PRODUCT_CONTENT_NEGATIVE_TOKENS
+    ):
         return False
     return any(
-        token in context for token in DETAIL_HIDDEN_PRODUCT_CONTENT_POSITIVE_TOKENS
+        _hidden_product_context_matches(token, tokens=tokens, phrases=phrases)
+        for token in DETAIL_HIDDEN_PRODUCT_CONTENT_POSITIVE_TOKENS
     )
+
+
+def _hidden_product_context_matches(
+    token: str, *, tokens: set[str], phrases: set[str]
+) -> bool:
+    normalized = " ".join(str(token or "").casefold().split())
+    if not normalized:
+        return False
+    if " " in normalized:
+        return normalized in phrases
+    return normalized in tokens
 
 
 def _requested_node_value(node, fact_type: str) -> str:

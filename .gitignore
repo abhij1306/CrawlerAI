@@ -94,3 +94,4 @@ corpus/
 
 # Agent scratch files (commit messages, etc.)
 .git_commit_msg.tmp
+.aider*

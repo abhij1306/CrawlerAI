@@ -941,6 +941,50 @@ def test_jsonld_sibling_products_linked_to_group_materialize_as_variants() -> No
     ]
 
 
+def test_jsonld_productgroup_id_links_standalone_variant_offers() -> None:
+    html = """
+    <script type="application/ld+json">
+    [
+      {
+        "@type": "ProductGroup",
+        "@id": "https://shop.test/schema/group/sony-a9",
+        "productGroupID": "ILCE-9M3",
+        "name": "Sony Alpha 9 III",
+        "brand": {"@type": "Brand", "name": "SONY"}
+      },
+      {
+        "@type": "Product",
+        "isVariantOf": {"@id": "https://shop.test/schema/group/sony-a9"},
+        "sku": "ILCE-9M3-BODY",
+        "offers": {
+          "@type": "Offer",
+          "price": "5999.99",
+          "priceCurrency": "USD",
+          "availability": "https://schema.org/InStock"
+        }
+      }
+    ]
+    </script>
+    """
+    result = _extract("ecommerce_detail", html, "https://shop.test/products/sony-a9")
+
+    record = result.records[0]
+    assert record["brand"] == "SONY"
+    assert record["price"] == "5999.99"
+    assert record["currency"] == "USD"
+    assert record["availability"] == "in_stock"
+    assert record["variants"] == [
+        {
+            "variant_id": "ILCE-9M3-BODY",
+            "sku": "ILCE-9M3-BODY",
+            "price": "5999.99",
+            "currency": "USD",
+            "availability": "in_stock",
+        }
+    ]
+    assert not any(finding.rule_id == "CHILD_JOIN_FAILED" for finding in result.findings)
+
+
 def test_jsonld_one_axis_variants_with_child_offers_materialize() -> None:
     html = """
     <script type="application/ld+json">
@@ -1117,6 +1161,8 @@ def test_jsonld_aggregate_offer_low_price_materializes() -> None:
     record = result.records[0] if result.records else None
     assert record is not None
     assert record["price"] == "9.99"
+    assert record["price_max"] == "19.99"
+    assert record.get("original_price") is None
     assert record["currency"] == "USD"
 
 
@@ -1163,6 +1209,79 @@ def test_jsonld_aggregate_offer_child_availability_materializes() -> None:
     assert record["price"] == "499.95"
     assert record["currency"] == "USD"
     assert record["availability"] == "in_stock"
+
+
+def test_jsonld_offer_price_specification_materializes_atomically() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "Product",
+          "name": "Cartier Sunglasses",
+          "url": "https://shop.test/products/cartier-sunglasses",
+          "image": "https://shop.test/cartier.jpg",
+          "offers": {
+            "@type": "Offer",
+            "availability": "https://schema.org/InStock",
+            "priceSpecification": {
+              "@type": "UnitPriceSpecification",
+              "price": "1795.00",
+              "priceCurrency": "USD"
+            }
+          }
+        }
+        </script>
+        """,
+        "https://shop.test/products/cartier-sunglasses",
+    )
+
+    record = result.records[0]
+    assert record["price"] == "1795.00"
+    assert record["currency"] == "USD"
+    assert record["availability"] == "in_stock"
+    price_evidence = [
+        row for row in result.evidence if row.fact_type == "offer.price"
+    ]
+    currency_evidence = [
+        row for row in result.evidence if row.fact_type == "offer.currency"
+    ]
+    assert price_evidence and currency_evidence
+    assert price_evidence[0].group_id == currency_evidence[0].group_id
+
+
+def test_jsonld_schema_online_only_availability_is_sellable() -> None:
+    result = _extract(
+        "ecommerce_detail",
+        """
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "Product",
+          "name": "Padel Balls",
+          "url": "https://shop.test/products/padel-balls",
+          "image": "https://shop.test/padel.jpg",
+          "offers": {
+            "@type": "Offer",
+            "price": "10.99",
+            "priceCurrency": "GBP",
+            "availability": "https://schema.org/OnlineOnly"
+          }
+        }
+        </script>
+        """,
+        "https://shop.test/products/padel-balls",
+    )
+
+    record = result.records[0]
+    assert record["price"] == "10.99"
+    assert record["currency"] == "GBP"
+    assert record["availability"] == "in_stock"
+    assert not any(
+        row.fact_type == "offer.availability" and "invalid_availability" in row.flags
+        for row in result.evidence
+    )
 
 
 def test_extraction_request_has_no_artifact_payloads_field() -> None:

@@ -26,14 +26,43 @@ def match_template(
         (row for row in templates if row.get("fingerprint") == fingerprint), None
     )
     route = normalize_route(url, surface) if url else ""
-    if not route:
-        return exact
-    route_matches = [row for row in templates if row.get("route_pattern") == route]
+    route_matches = (
+        [row for row in templates if row.get("route_pattern") == route]
+        if route
+        else []
+    )
+
+    matched: dict[str, Any] | None = exact
     if exact is not None and route_matches:
-        return _merge_template_contracts(exact, route_matches)
-    if route_matches:
-        return _merge_template_contracts(route_matches[0], route_matches[1:])
-    return exact
+        matched = _merge_template_contracts(exact, route_matches)
+    elif route_matches:
+        matched = _merge_template_contracts(route_matches[0], route_matches[1:])
+
+    # Manual extraction preferences are domain + surface defaults. Templates
+    # remain in the snapshot for provenance and automatic route matching, but an
+    # operator choice must apply to every future URL on the same surface.
+    operator_templates: list[dict[str, Any]] = []
+    for template in templates:
+        operator_contracts = [
+            contract
+            for contract in template.get("contracts", [])
+            if contract.get("selection_origin") == "operator"
+        ]
+        if operator_contracts:
+            operator_template = dict(template)
+            operator_template["contracts"] = operator_contracts
+            operator_templates.append(operator_template)
+
+    if not operator_templates:
+        return matched
+    if matched is None:
+        matched = {
+            "fingerprint": fingerprint,
+            "route_pattern": route,
+            "template_key": "domain-surface-preferences",
+            "contracts": [],
+        }
+    return _merge_template_contracts(matched, operator_templates)
 
 
 def contract_preferences(
@@ -187,7 +216,7 @@ def _merge_template_contracts(
         for contract in template.get("contracts", []):
             field = str(contract.get("canonical_field") or "")
             current = contracts_by_field.get(field)
-            if current is None or _selection_priority(contract) > _selection_priority(
+            if current is None or selection_priority(contract) > selection_priority(
                 current
             ):
                 contracts_by_field[field] = contract
@@ -196,7 +225,7 @@ def _merge_template_contracts(
     return merged
 
 
-def _selection_priority(contract: dict[str, Any]) -> int:
+def selection_priority(contract: dict[str, Any]) -> int:
     return {"llm_proposed": 0, "generic": 1, "operator": 2}.get(
         str(contract.get("selection_origin") or "generic"), 1
     )

@@ -19,6 +19,7 @@ from app.core.config.knowledge_graph import (
 )
 from app.core.dependencies import get_current_user, get_db, require_admin
 from app.core.domain_utils import normalize_domain
+from app.core.knowledge_graph.contract_runtime import selection_priority
 from app.core.knowledge_graph.templates import fingerprint_from_parts, normalize_route
 from app.core.records.field_policy import normalize_field_key
 from app.models.knowledge_graph import (
@@ -158,6 +159,57 @@ async def knowledge_entity(
     }
 
 
+@router.get("/contracts")
+async def knowledge_domain_contracts(
+    domain: Annotated[str, Query(min_length=1)],
+    session: Annotated[AsyncSession, Depends(get_db)],
+    _: Annotated[User, Depends(get_current_user)],
+    surface: Annotated[str | None, Query()] = None,
+) -> dict[str, Any]:
+    """Return extraction contracts for one domain, optionally one surface.
+
+    Contracts are stored per observed page template for runtime provenance, but
+    operator preferences are domain-and-surface scoped. This endpoint is the UI
+    boundary: it avoids one request per template and lets the client present one
+    preference per (surface, canonical field).
+    """
+    normalized = normalize_domain(domain)
+    statement = (
+        select(KGExtractionContract)
+        .join(KGEntity, KGEntity.id == KGExtractionContract.template_id)
+        .where(KGEntity.entity_type == "page_template")
+        .where(KGEntity.canonical_key.like(f"{normalized}:%"))
+        .where(KGExtractionContract.status == "active")
+    )
+    normalized_surface = str(surface or "").strip()
+    if normalized_surface:
+        statement = statement.where(KGExtractionContract.surface == normalized_surface)
+    contracts = (
+        (
+            await session.execute(
+                statement.order_by(
+                    KGExtractionContract.surface.asc(),
+                    KGExtractionContract.canonical_field.asc(),
+                    KGExtractionContract.updated_at.desc(),
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    contracts.sort(
+        key=lambda row: (
+            row.surface,
+            row.canonical_field,
+            -selection_priority({"selection_origin": row.selection_origin}),
+        )
+    )
+    return {
+        "domain": normalized,
+        "contracts": [_contract_payload(row) for row in contracts],
+    }
+
+
 @router.get("/contracts/{template_id}")
 async def knowledge_contracts(
     template_id: uuid.UUID,
@@ -291,21 +343,69 @@ async def knowledge_contract_selection(
             status_code=422,
             detail="selected_source is not a retained candidate for this contract",
         )
-    history = list(contract.selection_history or [])
-    history.append(
-        {
-            "selected_source": selected_source,
-            "selection_origin": "operator",
-            "user_id": user.id,
-            "selected_at": datetime.now(UTC).isoformat(),
-        }
+
+    template = await session.get(KGEntity, contract.template_id)
+    domain = _domain_from_template(template)
+    template_ids: list[uuid.UUID] = [contract.template_id]
+    if domain:
+        template_ids = list(
+            (
+                await session.execute(
+                    select(KGEntity.id)
+                    .where(KGEntity.entity_type == "page_template")
+                    .where(
+                        KGEntity.canonical_key.like(
+                            f"{domain}:{contract.surface}:%"
+                        )
+                    )
+                )
+            ).scalars()
+        )
+        if not template_ids:
+            template_ids = [contract.template_id]
+
+    scoped_contracts = list(
+        (
+            await session.execute(
+                select(KGExtractionContract)
+                .where(KGExtractionContract.template_id.in_(template_ids))
+                .where(KGExtractionContract.surface == contract.surface)
+                .where(
+                    KGExtractionContract.canonical_field
+                    == contract.canonical_field
+                )
+                .where(KGExtractionContract.status == "active")
+            )
+        ).scalars()
     )
-    contract.selected_source = selected_source
-    contract.selection_origin = "operator"
-    contract.selection_history = history
+    selected_at = datetime.now(UTC).isoformat()
+    updated_contracts: list[KGExtractionContract] = []
+    for scoped_contract in scoped_contracts:
+        if not _source_in_candidates(selected_source, scoped_contract.candidates):
+            continue
+        history = list(scoped_contract.selection_history or [])
+        history.append(
+            {
+                "selected_source": selected_source,
+                "selection_origin": "operator",
+                "scope": "domain_surface",
+                "domain": domain,
+                "surface": contract.surface,
+                "user_id": user.id,
+                "selected_at": selected_at,
+            }
+        )
+        scoped_contract.selected_source = selected_source
+        scoped_contract.selection_origin = "operator"
+        scoped_contract.selection_history = history
+        updated_contracts.append(scoped_contract)
+
     await session.commit()
     await session.refresh(contract)
-    return {"contract": _contract_payload(contract)}
+    return {
+        "contract": _contract_payload(contract),
+        "updated_contract_count": len(updated_contracts),
+    }
 
 
 @router.post("/rebuild")

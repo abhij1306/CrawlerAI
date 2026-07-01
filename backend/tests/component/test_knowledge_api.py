@@ -248,6 +248,135 @@ async def test_knowledge_contract_selection_validates_scope_and_candidate(
     assert contract["selection_history"][0]["selected_source"] == "dom:h1"
 
 
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_domain_contract_listing_and_selection_are_surface_scoped(
+    db_session: AsyncSession,
+    knowledge_api_client: AsyncClient,
+) -> None:
+    db_session.add(KGSiteVersion(domain="example.com", current_version=1))
+    template_ids = [uuid.uuid4(), uuid.uuid4()]
+    contract_ids = [uuid.uuid4(), uuid.uuid4()]
+    for index, (template_id, contract_id) in enumerate(zip(template_ids, contract_ids)):
+        db_session.add(
+            KGEntity(
+                id=template_id,
+                entity_type="page_template",
+                canonical_key=f"example.com:ecommerce_detail:template-{index}",
+                canonical_name=f"Template {index}",
+                properties={"domain": "example.com", "surface": "ecommerce_detail"},
+            )
+        )
+        db_session.add(
+            KGExtractionContract(
+                id=contract_id,
+                template_id=template_id,
+                surface="ecommerce_detail",
+                canonical_field="product.brand",
+                candidates=[
+                    {"source": "jsonld:/brand"},
+                    {"source": "css_recipe:.brand"},
+                ],
+                selected_source=(
+                    "css_recipe:.brand" if index == 1 else "jsonld:/brand"
+                ),
+                selection_origin="operator" if index == 1 else "generic",
+            )
+        )
+    await db_session.commit()
+
+    listed = await knowledge_api_client.get(
+        "/api/knowledge/contracts", params={"domain": "Example.COM"}
+    )
+    assert listed.status_code == 200
+    assert len(listed.json()["contracts"]) == 2
+    assert listed.json()["contracts"][0]["selection_origin"] == "operator"
+
+    selected = await knowledge_api_client.put(
+        f"/api/knowledge/contracts/{contract_ids[0]}/selection",
+        json={
+            "selected_source": "css_recipe:.brand",
+            "template_id": str(template_ids[0]),
+            "surface": "ecommerce_detail",
+            "canonical_field": "product.brand",
+            "expected_version": 1,
+        },
+    )
+    assert selected.status_code == 200
+    assert selected.json()["updated_contract_count"] == 2
+
+    for contract_id in contract_ids:
+        contract = await db_session.get(KGExtractionContract, contract_id)
+        assert contract is not None
+        await db_session.refresh(contract)
+        assert contract.selected_source == "css_recipe:.brand"
+        assert contract.selection_origin == "operator"
+        assert contract.selection_history[-1]["scope"] == "domain_surface"
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_domain_contract_selection_skips_templates_missing_candidate(
+    db_session: AsyncSession,
+    knowledge_api_client: AsyncClient,
+) -> None:
+    db_session.add(KGSiteVersion(domain="example.com", current_version=1))
+    template_ids = [uuid.uuid4(), uuid.uuid4()]
+    contract_ids = [uuid.uuid4(), uuid.uuid4()]
+    candidate_sets = [
+        [{"source": "jsonld:/brand"}, {"source": "css_recipe:.brand"}],
+        [{"source": "jsonld:/brand"}, {"source": "dom:.pdp-brand"}],
+    ]
+    for index, (template_id, contract_id) in enumerate(zip(template_ids, contract_ids)):
+        db_session.add(
+            KGEntity(
+                id=template_id,
+                entity_type="page_template",
+                canonical_key=f"example.com:ecommerce_detail:template-diverge-{index}",
+                canonical_name=f"Template {index}",
+                properties={"domain": "example.com", "surface": "ecommerce_detail"},
+            )
+        )
+        db_session.add(
+            KGExtractionContract(
+                id=contract_id,
+                template_id=template_id,
+                surface="ecommerce_detail",
+                canonical_field="product.brand",
+                candidates=candidate_sets[index],
+                selected_source="jsonld:/brand",
+                selection_origin="generic",
+            )
+        )
+    await db_session.commit()
+
+    selected = await knowledge_api_client.put(
+        f"/api/knowledge/contracts/{contract_ids[0]}/selection",
+        json={
+            "selected_source": "css_recipe:.brand",
+            "template_id": str(template_ids[0]),
+            "surface": "ecommerce_detail",
+            "canonical_field": "product.brand",
+            "expected_version": 1,
+        },
+    )
+
+    assert selected.status_code == 200
+    assert selected.json()["updated_contract_count"] == 1
+    first = await db_session.get(KGExtractionContract, contract_ids[0])
+    second = await db_session.get(KGExtractionContract, contract_ids[1])
+    assert first is not None
+    assert second is not None
+    await db_session.refresh(first)
+    await db_session.refresh(second)
+    assert first.selected_source == "css_recipe:.brand"
+    assert first.selection_origin == "operator"
+    assert second.selected_source == "jsonld:/brand"
+    assert second.selection_origin == "generic"
+    assert second.selection_history == []
+
+
 @pytest.mark.asyncio
 @pytest.mark.component
 async def test_knowledge_rebuild_conflict_and_purge(

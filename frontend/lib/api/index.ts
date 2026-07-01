@@ -400,6 +400,13 @@ export const api = {
   getRunReport: (runId: number) => apiClient.get<RunReport>(`/api/crawls/${runId}/report.json`),
   getResultDiagnosis: (runId: number, urlResultId: number) =>
     apiClient.get<ResultDiagnosis>(`/api/crawls/${runId}/results/${urlResultId}/diagnose.json`),
+  listKnowledgeContractsByDomain: (domain: string, surface?: string) => {
+    const query = new URLSearchParams({ domain });
+    if (surface) query.set('surface', surface);
+    return apiClient.get<{ domain: string; contracts: KnowledgeContract[] }>(
+      withQuery('/api/knowledge/contracts', query),
+    );
+  },
   listKnowledgeContracts: (templateId: string) =>
     apiClient.get<{ contracts: KnowledgeContract[] }>(
       `/api/knowledge/contracts/${encodeURIComponent(templateId)}`,

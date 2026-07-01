@@ -7,6 +7,15 @@ from app.core.config.field_mappings import (
     ECOMMERCE_JSONLD_OFFER_FACT_TYPES,
     ECOMMERCE_JSONLD_PRODUCT_FACT_TYPES,
     ECOMMERCE_JSONLD_VARIANT_FACT_TYPES,
+    OFFER_CURRENCY_FACT_TYPE,
+    OFFER_ORIGINAL_PRICE_FACT_TYPE,
+    OFFER_PRICE_FACT_TYPE,
+)
+from app.core.config.extraction_price_rules import (
+    DETAIL_JSONLD_CURRENCY_FIELDS,
+    DETAIL_JSONLD_ORIGINAL_PRICE_FIELDS,
+    DETAIL_JSONLD_PRICE_FIELDS,
+    DETAIL_JSONLD_PRICE_SPECIFICATION_FIELDS,
 )
 from app.core.config.extraction_rules import (
     VARIANT_JSONLD_NAME_OPTION_SEPARATOR,
@@ -88,13 +97,19 @@ def _standalone_variant(
 def _product(
     bundle: CaptureBundle, artifact_id: str, obj: dict[str, Any], path: str
 ) -> list[Evidence]:
+    product_identity = _jsonld_identity(obj)
+    source_subject_ids = _source_subject_ids(bundle, obj)
     hint = EntityHint(
         entity_type="product",
+        product_id=text_value(obj.get("productGroupID")) or None,
         sku=text_value(obj.get("sku")) or None,
         url=text_value(obj.get("url")) or None,
     )
     product_subject = stable_id(
-        "subject", bundle.bundle_id, "product", hint.url or bundle.final_url
+        "subject",
+        bundle.bundle_id,
+        "product",
+        hint.url or bundle.final_url or product_identity,
     )
     out = [
         evidence(
@@ -108,6 +123,8 @@ def _product(
             directness="embedded",
             confidence=0.9,
             subject_id=product_subject,
+            subject_scope="product",
+            metadata={"source_subject_ids": source_subject_ids},
         )
         for key, fact in ECOMMERCE_JSONLD_PRODUCT_FACT_TYPES.items()
         if text_value(obj.get(key))
@@ -128,6 +145,7 @@ def _product(
                 confidence=0.85,
                 parent_subject_id=product_subject,
                 parent_scope="product",
+                relation_type="product_asset",
             )
         )
     out.extend(
@@ -161,28 +179,36 @@ def _offers(
         if not isinstance(row, dict):
             continue
         offer_path = f"{path}/offers/{index}"
-        group = f"offer:{artifact_id}:{offer_path}"
+        offer_identity = _jsonld_identity(row) or offer_path
+        group = f"offer:{artifact_id}:{offer_identity}"
         subject_id = group
-        for key, fact in ECOMMERCE_JSONLD_OFFER_FACT_TYPES.items():
-            value = text_value(row.get(key))
-            if value:
-                out.append(
-                    evidence(
-                        bundle,
-                        artifact_id,
-                        "jsonld",
-                        fact,
-                        value,
-                        SourceLocator(kind="json_pointer", value=f"{offer_path}/{key}"),
-                        group_id=group,
-                        hint=hint,
-                        directness="embedded",
-                        confidence=0.9,
-                        subject_id=subject_id,
-                        parent_subject_id=parent_subject_id,
-                        parent_scope=parent_scope,
-                    )
+        out.extend(
+            _offer_facts(
+                bundle,
+                artifact_id,
+                row,
+                offer_path,
+                group,
+                subject_id,
+                hint,
+                parent_subject_id,
+                parent_scope,
+            )
+        )
+        for spec_key in DETAIL_JSONLD_PRICE_SPECIFICATION_FIELDS:
+            out.extend(
+                _price_specification_facts(
+                    bundle,
+                    artifact_id,
+                    row.get(spec_key),
+                    f"{offer_path}/{spec_key}",
+                    group,
+                    subject_id,
+                    hint,
+                    parent_subject_id,
+                    parent_scope,
                 )
+            )
         out.extend(
             _offers(
                 bundle,
@@ -195,6 +221,139 @@ def _offers(
             )
         )
     return out
+
+
+def _offer_facts(
+    bundle: CaptureBundle,
+    artifact_id: str,
+    row: dict[str, Any],
+    offer_path: str,
+    group: str,
+    subject_id: str,
+    hint: EntityHint,
+    parent_subject_id: str | None,
+    parent_scope: str,
+) -> list[Evidence]:
+    out: list[Evidence] = []
+    for key, fact in ECOMMERCE_JSONLD_OFFER_FACT_TYPES.items():
+        value = text_value(row.get(key))
+        if value:
+            out.append(
+                _offer_evidence(
+                    bundle,
+                    artifact_id,
+                    fact,
+                    value,
+                    f"{offer_path}/{key}",
+                    group,
+                    subject_id,
+                    hint,
+                    parent_subject_id,
+                    parent_scope,
+                )
+            )
+    return out
+
+
+def _price_specification_facts(
+    bundle: CaptureBundle,
+    artifact_id: str,
+    specs: Any,
+    path: str,
+    group: str,
+    subject_id: str,
+    hint: EntityHint,
+    parent_subject_id: str | None,
+    parent_scope: str,
+) -> list[Evidence]:
+    rows = specs if isinstance(specs, list) else [specs]
+    out: list[Evidence] = []
+    for index, row in enumerate(rows):
+        if not isinstance(row, dict):
+            continue
+        spec_path = f"{path}/{index}"
+        for key in DETAIL_JSONLD_PRICE_FIELDS:
+            value = text_value(row.get(key))
+            if value:
+                out.append(
+                    _offer_evidence(
+                        bundle,
+                        artifact_id,
+                        OFFER_PRICE_FACT_TYPE,
+                        value,
+                        f"{spec_path}/{key}",
+                        group,
+                        subject_id,
+                        hint,
+                        parent_subject_id,
+                        parent_scope,
+                    )
+                )
+        for key in DETAIL_JSONLD_ORIGINAL_PRICE_FIELDS:
+            value = text_value(row.get(key))
+            if value:
+                out.append(
+                    _offer_evidence(
+                        bundle,
+                        artifact_id,
+                        OFFER_ORIGINAL_PRICE_FACT_TYPE,
+                        value,
+                        f"{spec_path}/{key}",
+                        group,
+                        subject_id,
+                        hint,
+                        parent_subject_id,
+                        parent_scope,
+                    )
+                )
+        for key in DETAIL_JSONLD_CURRENCY_FIELDS:
+            value = text_value(row.get(key))
+            if value:
+                out.append(
+                    _offer_evidence(
+                        bundle,
+                        artifact_id,
+                        OFFER_CURRENCY_FACT_TYPE,
+                        value,
+                        f"{spec_path}/{key}",
+                        group,
+                        subject_id,
+                        hint,
+                        parent_subject_id,
+                        parent_scope,
+                    )
+                )
+    return out
+
+
+def _offer_evidence(
+    bundle: CaptureBundle,
+    artifact_id: str,
+    fact: str,
+    value: str,
+    locator: str,
+    group: str,
+    subject_id: str,
+    hint: EntityHint,
+    parent_subject_id: str | None,
+    parent_scope: str,
+) -> Evidence:
+    return evidence(
+        bundle,
+        artifact_id,
+        "jsonld",
+        fact,
+        value,
+        SourceLocator(kind="json_pointer", value=locator),
+        group_id=group,
+        hint=hint,
+        directness="embedded",
+        confidence=0.9,
+        subject_id=subject_id,
+        subject_scope="offer",
+        parent_subject_id=parent_subject_id,
+        parent_scope=parent_scope,
+    )
 
 
 def _variants(
@@ -232,12 +391,15 @@ def _variant(
     product_brand: str = "",
 ) -> list[Evidence]:
     sku = text_value(row.get("sku"))
+    variant_identity = _jsonld_identity(row) or path
     hint = EntityHint(
         entity_type="variant",
+        product_id=text_value(row.get("productGroupID")) or None,
+        variant_id=text_value(row.get(_JSONLD_ID_KEY)) or None,
         sku=sku or None,
         url=text_value(row.get("url")) or None,
     )
-    group = f"variant:{artifact_id}:{path}"
+    group = f"variant:{artifact_id}:{variant_identity}"
     subject_id = group
     out: list[Evidence] = []
     for key, fact in ECOMMERCE_JSONLD_VARIANT_FACT_TYPES.items():
@@ -262,8 +424,10 @@ def _variant(
                     directness="embedded",
                     confidence=0.88,
                     subject_id=subject_id,
+                    subject_scope="variant",
                     parent_subject_id=product_subject,
                     parent_scope="product",
+                    relation_type="product_variant",
                 )
             )
     out.extend(
@@ -304,6 +468,32 @@ def _variant_color(row: dict[str, Any], *, product_brand: str = "") -> str:
     if color and product_brand and color.casefold() == product_brand.casefold():
         return ""
     return color
+
+
+def _jsonld_identity(row: dict[str, Any]) -> str:
+    return (
+        text_value(row.get(_JSONLD_ID_KEY))
+        or text_value(row.get("url"))
+        or text_value(row.get("sku"))
+        or text_value(row.get("productGroupID"))
+    )
+
+
+def _source_subject_ids(bundle: CaptureBundle, row: dict[str, Any]) -> tuple[str, ...]:
+    values = tuple(
+        dict.fromkeys(
+            value
+            for value in (
+                text_value(row.get(_JSONLD_ID_KEY)),
+                text_value(row.get("url")),
+                text_value(row.get("productGroupID")),
+            )
+            if value
+        )
+    )
+    return tuple(
+        stable_id("subject", bundle.bundle_id, "product", value) for value in values
+    )
 
 
 def _shade_from_offer_url(offers: Any) -> str:

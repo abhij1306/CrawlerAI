@@ -36,6 +36,8 @@ OFFER_FACTS = frozenset(
     f"offer.{field}"
     for field in (
         "price",
+        "price_min",
+        "price_max",
         "currency",
         "original_price",
         "availability",

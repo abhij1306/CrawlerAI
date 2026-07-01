@@ -31,7 +31,28 @@ from app.acquisition.runtime import (
 from app.core.config.pipeline_reasons import (
     BROWSER_ESCALATION_SKIPPED_INSUFFICIENT_BUDGET,
 )
-from tests.fixtures.http_mocks import FakeBodyResponse
+
+
+class FakeBodyResponse:
+    def __init__(
+        self,
+        body: bytes | None = None,
+        *,
+        error: Exception | None = None,
+        url: str = "https://example.com/api/data.json",
+        headers: dict[str, str] | None = None,
+    ) -> None:
+        self._body = body
+        self._error = error
+        self.url = url
+        self.body_calls = 0
+        self.headers = headers or {}
+
+    async def body(self) -> bytes:
+        self.body_calls += 1
+        if self._error is not None:
+            raise self._error
+        return self._body or b""
 
 
 def _default_fetch_context(

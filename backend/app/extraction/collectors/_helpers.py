@@ -4,6 +4,7 @@ import json
 from collections.abc import Iterable
 from typing import Any
 
+from app.core.config.extraction_rules import AVAILABILITY_URL_MAP
 from app.extraction.documents import DocumentStore, HtmlDocument
 from app.extraction.contracts import (
     CaptureBundle,
@@ -136,30 +137,7 @@ def _canonical_evidence_value(fact_type: str, value: Any) -> Any:
     text = str(value or "").strip()
     token = text.casefold().rstrip("/").rsplit("/", 1)[-1]
     normalized = "".join(ch for ch in token if ch.isalnum() or ch == "_")
-    mapping = {
-        "instock": "in_stock",
-        "in_stock": "in_stock",
-        "available": "in_stock",
-        "availableforsale": "in_stock",
-        "true": "in_stock",
-        "1": "in_stock",
-        "outofstock": "out_of_stock",
-        "out_of_stock": "out_of_stock",
-        "soldout": "out_of_stock",
-        "unavailable": "out_of_stock",
-        "false": "out_of_stock",
-        "0": "out_of_stock",
-        "limitedavailability": "limited_stock",
-        "limitedstock": "limited_stock",
-        "lowstock": "limited_stock",
-        "low_stock": "limited_stock",
-        "preorder": "preorder",
-        "pre_order": "preorder",
-        "backorder": "backorder",
-        "back_order": "backorder",
-        "discontinued": "discontinued",
-    }
-    return mapping.get(normalized, text)
+    return AVAILABILITY_URL_MAP.get(normalized, text)
 
 
 def _subject_id(

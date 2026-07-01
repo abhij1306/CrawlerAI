@@ -152,6 +152,56 @@ def test_findings_become_root_causes(artifacts_root: Path) -> None:
     ]
 
 
+
+def test_record_completeness_metric_is_not_a_root_cause(artifacts_root: Path) -> None:
+    _write_diagnose(
+        artifacts_root,
+        run_id=1,
+        url_result_id=10,
+        payload={
+            "findings": [
+                {
+                    "rule_id": "RECORD_COMPLETENESS",
+                    "severity": "medium",
+                    "blocking": False,
+                    "scope": "page",
+                    "metadata": {"score": 0.5, "missing_fields": ["brand"]},
+                }
+            ]
+        },
+    )
+
+    assert build_run_report(1)["root_causes"] == []
+
+
+def test_missing_contract_fields_are_grouped_by_field(artifacts_root: Path) -> None:
+    for url_result_id, field in ((10, "brand"), (11, "brand"), (12, "availability")):
+        _write_diagnose(
+            artifacts_root,
+            run_id=1,
+            url_result_id=url_result_id,
+            payload={
+                "findings": [
+                    {
+                        "rule_id": "MISSING_CONTRACT_FIELD",
+                        "severity": "medium",
+                        "blocking": False,
+                        "scope": "page",
+                        "metadata": {"field": field},
+                    }
+                ]
+            },
+        )
+
+    report = build_run_report(1)
+
+    assert [row["root_cause"] for row in report["root_causes"]] == [
+        "finding:MISSING_CONTRACT_FIELD:brand",
+        "finding:MISSING_CONTRACT_FIELD:availability",
+    ]
+    assert [row["count"] for row in report["root_causes"]] == [2, 1]
+
+
 def test_publication_policy_reason_becomes_root_cause(artifacts_root: Path) -> None:
     _write_diagnose(
         artifacts_root,

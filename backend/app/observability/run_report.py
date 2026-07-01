@@ -29,6 +29,9 @@ _CALLBACK_KEY = "observability_run_report"
 _CLEAN_FIELD_STATES = frozenset(
     {"captured_and_resolved", "captured_published", "not_requested"}
 )
+# These findings are metrics emitted for every result, not failures. They remain
+# available in diagnose.json but must never inflate the run-level root-cause list.
+_INFORMATIONAL_FINDING_RULES = frozenset({"RECORD_COMPLETENESS"})
 _EXAMPLE_LIMIT = 5
 
 
@@ -136,18 +139,24 @@ def _root_causes(
         )
     for finding in _object_list(diagnosis.get("findings")):
         rule_id = str(finding.get("rule_id") or "").strip()
-        if not rule_id:
+        if not rule_id or rule_id in _INFORMATIONAL_FINDING_RULES:
             continue
         severity = str(finding.get("severity") or "").strip() or "unknown"
         blocking = bool(finding.get("blocking"))
         prefix = "blocking_finding" if blocking else "finding"
+        metadata = _mapping(finding.get("metadata"))
+        field_name = str(metadata.get("field") or "").strip()
+        cause = f"{prefix}:{rule_id}"
+        if rule_id == "MISSING_CONTRACT_FIELD" and field_name:
+            cause = f"{cause}:{field_name}"
         causes.setdefault(
-            f"{prefix}:{rule_id}",
+            cause,
             {
                 "rule_id": rule_id,
                 "severity": severity,
                 "blocking": blocking,
                 "scope": str(finding.get("scope") or ""),
+                **({"field": field_name} if field_name else {}),
             },
         )
     acquisition = _mapping(diagnosis.get("acquisition"))
@@ -215,7 +224,7 @@ def _object_list(value: object) -> list[Mapping[str, object]]:
 def _string_list(value: object) -> tuple[str, ...]:
     if not isinstance(value, (list, tuple)):
         return ()
-    return tuple(str(item) for item in value if str(item or "").strip())
+    return tuple(text for item in value if (text := str(item)).strip())
 
 
 def _scalar(value: object) -> str:

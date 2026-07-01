@@ -69,6 +69,24 @@ def test_full_product_description_outranks_boundary_meta_excerpt() -> None:
     assert result.records[0]["description"] == full
 
 
+def test_clean_product_description_suppresses_candidate_only_promotional_finding() -> None:
+    promotional = (
+        "Shop this product online today with free shipping, lowest prices, "
+        "exclusive offers and fast delivery. Buy now."
+    )
+    clean = (
+        "Tailored barrel pants in structured cotton twill with a fixed waist, "
+        "front pleats, side pockets, and a tapered ankle-length leg."
+    )
+
+    result = _extract(_product_html(description=clean, meta_description=promotional))
+
+    assert result.records[0]["description"] == clean
+    assert not any(
+        finding.rule_id == "DESCRIPTION_PROMOTIONAL_COPY" for finding in result.findings
+    )
+
+
 def test_legitimate_camelcase_and_model_tokens_are_not_split() -> None:
     description = "Works with iPhone, eBay, PowerShot, PlayStation, and Canon Log3."
 

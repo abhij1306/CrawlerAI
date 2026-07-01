@@ -1377,10 +1377,13 @@ def _preferred_parent_offer_id(
         for index, collector_id in enumerate(DETAIL_PRICE_CURRENCY_COLLECTOR_PRIORITY)
     }
 
-    def score(offer: OfferEntity) -> tuple[int, int, int, int, str]:
+    def score(offer: OfferEntity) -> tuple[int, int, int, int, int, str]:
         price = resolved.get((offer.entity_id, field_mappings.OFFER_PRICE_FACT_TYPE))
         currency = resolved.get(
             (offer.entity_id, field_mappings.OFFER_CURRENCY_FACT_TYPE)
+        )
+        availability = resolved.get(
+            (offer.entity_id, field_mappings.OFFER_AVAILABILITY_FACT_TYPE)
         )
         pair = tuple(
             evidence_by_id[decision.accepted_evidence_ids[0]]
@@ -1405,6 +1408,7 @@ def _preferred_parent_offer_id(
             0 if complete else 1,
             0 if len(collectors) == 1 and pair else 1,
             source_rank,
+            0 if availability is not None else 1,
             -resolved_fact_count,
             offer.entity_id,
         )
@@ -1959,8 +1963,9 @@ def _semantic_derived_facts(
                 if row.fact_type != field_mappings.PRODUCT_URL_FACT_TYPE
             ),
             existing_brands=existing_brands,
-            allow_page_identity_replacement=any(
-                _invalidity_reason(row) is not None for row in brand_candidates
+            allow_page_identity_replacement=(
+                not existing_brand
+                and any(_invalidity_reason(row) is not None for row in brand_candidates)
             ),
         )
         if brand:

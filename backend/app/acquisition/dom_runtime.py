@@ -144,6 +144,8 @@ async def flatten_shadow_dom(page) -> dict[str, object]:
     )
     version = "shadow-flatten.v2"
     result: dict[str, object] = {
+        "max_hosts": max_hosts,
+        "errors": (),
         "shadow_roots_detected": 0,
         "shadow_roots_flattened": 0,
         "closed_shadow_roots_detected": 0,

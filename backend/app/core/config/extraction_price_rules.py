@@ -137,7 +137,7 @@ DETAIL_JSONLD_ORIGINAL_PRICE_FIELDS = tuple(
     str(field).strip()
     for field in _static_export_tuple(
         "DETAIL_JSONLD_ORIGINAL_PRICE_FIELDS",
-        ("highPrice",),
+        ("originalPrice", "listPrice", "compareAtPrice"),
     )
     if str(field).strip()
 )

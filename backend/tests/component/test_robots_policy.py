@@ -6,7 +6,26 @@ import httpx
 import pytest
 
 from app.crawl import robots_policy
-from tests.fixtures.http_mocks import FakeAsyncClient, FakeTextResponse
+
+
+class FakeTextResponse:
+    def __init__(self, status_code: int, text: str = "") -> None:
+        self.status_code = status_code
+        self.text = text
+
+
+class FakeAsyncClient:
+    def __init__(self, response_factory) -> None:
+        self._response_factory = response_factory
+
+    async def __aenter__(self) -> "FakeAsyncClient":
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb) -> bool:
+        return False
+
+    async def get(self, url: str):
+        return await self._response_factory(url)
 
 
 def _patch_client(

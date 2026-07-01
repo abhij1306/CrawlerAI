@@ -487,13 +487,27 @@ AVAILABILITY_CANONICAL_ENUM = (
 # how a page writes them.
 _AVAILABILITY_SCHEMA_TERMS = {
     "instock": "in_stock",
+    "in_stock": "in_stock",
+    "onlineonly": "in_stock",
+    "available": "in_stock",
+    "availableforsale": "in_stock",
+    "true": "in_stock",
+    "1": "in_stock",
     "outofstock": "out_of_stock",
+    "out_of_stock": "out_of_stock",
     "soldout": "out_of_stock",
     "limitedavailability": "limited_stock",
+    "limitedstock": "limited_stock",
+    "lowstock": "limited_stock",
+    "low_stock": "limited_stock",
     "preorder": "preorder",
+    "pre_order": "preorder",
     "presale": "preorder",
     "backorder": "backorder",
+    "back_order": "backorder",
     "discontinued": "discontinued",
+    "false": "out_of_stock",
+    "0": "out_of_stock",
 }
 AVAILABILITY_URL_MAP = {
     f"{prefix}{term}": canonical

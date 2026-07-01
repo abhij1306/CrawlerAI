@@ -736,7 +736,7 @@ def _variant_assets(
                     ASSET_IMAGE_URL_FACT_TYPE,
                     normalized,
                     SourceLocator(kind="script_path", value=f"{path}/{key}/{index}"),
-                    group_id=f"variant_asset:{artifact_id}:{path}:{index}",
+                    group_id=f"variant_asset:{artifact_id}:{path}:{key}:{index}",
                     hint=EntityHint(entity_type="asset", sku=hint.sku),
                     directness="embedded",
                     confidence=0.8,

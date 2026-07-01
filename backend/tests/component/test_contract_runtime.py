@@ -231,6 +231,47 @@ def test_match_template_merges_all_route_only_operator_contracts() -> None:
     assert result["contracts"][0]["selected_source"] == "css_recipe:.brand"
 
 
+
+def test_match_template_applies_operator_preference_across_routes() -> None:
+    snapshot = {
+        "surface": "ecommerce_detail",
+        "templates": [
+            {
+                "fingerprint": "products-template",
+                "route_pattern": "/products/{id}",
+                "contracts": [
+                    {
+                        "canonical_field": "product.brand",
+                        "selected_source": "css_recipe:.brand",
+                        "selection_origin": "operator",
+                    }
+                ],
+            },
+            {
+                "fingerprint": "shop-template",
+                "route_pattern": "/shop/{id}",
+                "contracts": [
+                    {
+                        "canonical_field": "product.brand",
+                        "selected_source": "jsonld:/brand",
+                        "selection_origin": "generic",
+                    }
+                ],
+            },
+        ],
+    }
+
+    result = match_template(
+        snapshot,
+        "shop-template",
+        "ecommerce_detail",
+        url="https://example.com/shop/widget-1",
+    )
+
+    assert result is not None
+    assert result["contracts"][0]["selected_source"] == "css_recipe:.brand"
+
+
 @pytest.mark.unit
 def test_match_template_returns_none_on_empty_snapshot() -> None:
     assert match_template({}, "fp-abc", "ecommerce_detail") is None
