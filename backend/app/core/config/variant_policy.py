@@ -254,6 +254,12 @@ VARIANT_SKU_VALUE_KEYS = (
     "stockKeepingUnit",
 )
 VARIANT_URL_VALUE_KEYS = ("url", "productUrl", "product_url", "pdpUrl", "pdp_url")
+SFCC_VARIANT_ENDPOINT_PATH_TOKEN = "Product-Variation"
+SFCC_VARIANT_ENDPOINT_MAX_URLS = 8
+SFCC_VARIANT_ENDPOINT_TIMEOUT_SECONDS = 4.0
+SFCC_VARIANT_ENDPOINT_MAX_BYTES = 1_000_000
+SFCC_VARIANT_ENDPOINT_FAMILY = "sfcc_demandware"
+SFCC_VARIANT_ENDPOINT_TYPE = "variant_endpoint"
 VARIANT_IMAGE_DIMENSION_MIN_PX = 100
 EMBEDDED_STATE_SCRIPT_SELECTOR = (
     'script[type="application/json"], '
@@ -278,6 +284,18 @@ EMBEDDED_STATE_MAX_SCRIPT_CHARS = 10_000_000
 EMBEDDED_STATE_MAX_DEPTH = 24
 EMBEDDED_STATE_MAX_NODES = 100_000
 EMBEDDED_STATE_MAX_LIST_ITEMS = 5_000
+NUXT_DEVALUE_WRAPPER_TAGS = frozenset(
+    {
+        "Reactive",
+        "ShallowReactive",
+        "Ref",
+        "ShallowRef",
+        "Readonly",
+        "ShallowReadonly",
+    }
+)
+NUXT_PRODUCT_ROOT_KEY_PREFIXES = ("productDetails-",)
+NUXT_DEVALUE_DECODE_MAX_NODES = 25_000
 VARIANT_MERCH_SKU_ID_KEYS = ("merchSkuId", "merch_sku_id")
 VARIANT_MERCH_SKU_SIZE_KEYS = ("label", "localizedLabel")
 VARIANT_CHILD_COLLECTION_KEYS = (
@@ -289,6 +307,7 @@ VARIANT_CHILD_COLLECTION_KEYS = (
     "sku_data",
 )
 VARIANT_PARENT_OPTION_CHILD_KEYS = ("variants", "variations")
+VARIANT_PARENT_OPTION_VALUE_CHILD_KEYS = ("values",)
 VARIANT_PRODUCT_MAP_PATH_TOKENS = frozenset({"products"})
 VARIANT_PRODUCT_MAP_KEY_MIN_LENGTH = 4
 VARIANT_NESTED_URL_VALUE_KEYS = ("url", "canonicalUrl", "canonical_url", "path")
@@ -407,12 +426,14 @@ VARIANT_OFFER_AVAILABILITY_KEYS = (
     "inStock",
     "isAvailable",
     "isInStock",
+    "productInventoryState",
     "inventoryStatus",
     "purchasable",
     "isPurchasable",
     "availableForSale",
     "sellable",
     "isSellable",
+    "selectable",
 )
 VARIANT_OFFER_STOCK_KEYS = (
     "stock_quantity",

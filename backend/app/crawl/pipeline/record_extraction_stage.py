@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 
 from app.acquisition.acquirer import PageAcquisitionResult
 from app.core.logfire_integration import logfire_span, set_logfire_attributes
@@ -21,6 +22,7 @@ from app.crawl.pipeline.runtime_helpers import (
     merge_browser_diagnostics as _merge_browser_diagnostics,
 )
 from app.acquisition.platform_policy import detect_platform_family
+from app.acquisition.variant_endpoint_expansion import expand_sfcc_variant_endpoints
 from app.persistence.publish import build_url_metrics
 
 from .url_processing_context import (
@@ -32,6 +34,8 @@ __all__ = (
     "extract_records_for_acquisition",
     "update_acquisition_contract_memory",
 )
+
+logger = logging.getLogger(__name__)
 
 
 def extract_records_for_acquisition_result(
@@ -113,6 +117,7 @@ async def _run_record_extraction(
 ) -> ExtractionResult:
     from app.crawl.pipeline import extraction_loop
 
+    await _expand_variant_endpoint_payloads(context, acquisition_result)
     extract_records_impl = getattr(
         extraction_loop,
         "extract_records_for_acquisition_result",
@@ -149,6 +154,56 @@ async def _run_record_extraction(
             verdict=result.verdict,
         )
         return result
+
+
+async def _expand_variant_endpoint_payloads(
+    context: _URLProcessingContext,
+    acquisition_result: PageAcquisitionResult,
+) -> None:
+    if str(context.surface or "").strip().lower() != "ecommerce_detail":
+        return
+    html_text = str(getattr(acquisition_result, "html", "") or "")
+    page_url = str(getattr(acquisition_result, "final_url", "") or context.url)
+    payloads = list(getattr(acquisition_result, "network_payloads", []) or [])
+    request = getattr(acquisition_result, "request", None)
+    proxy_list = list(
+        getattr(request, "proxy_list", None)
+        or getattr(context.config, "proxy_list", None)
+        or []
+    )
+    proxy = str(proxy_list[0] or "").strip() if proxy_list else None
+    try:
+        extra = await expand_sfcc_variant_endpoints(
+            page_url=page_url,
+            html_text=html_text,
+            existing_payloads=payloads,
+            proxy=proxy,
+        )
+    except Exception as exc:
+        diagnostics = dict(
+            getattr(acquisition_result, "acquisition_diagnostics", {}) or {}
+        )
+        diagnostics["sfcc_variant_endpoint_expansion_error"] = type(exc).__name__
+        acquisition_result.acquisition_diagnostics = diagnostics
+        logger.warning("SFCC variant endpoint expansion failed", exc_info=True)
+        try:
+            await _log_pipeline_event(
+                context,
+                "warning",
+                "SFCC variant endpoint expansion failed; continuing deterministic extraction",
+            )
+        except Exception:
+            logger.warning(
+                "Failed to persist SFCC variant endpoint expansion diagnostic",
+                exc_info=True,
+            )
+        return
+    if not extra:
+        return
+    acquisition_result.network_payloads = [*payloads, *extra]
+    diagnostics = dict(getattr(acquisition_result, "acquisition_diagnostics", {}) or {})
+    diagnostics["sfcc_variant_endpoint_payload_count"] = len(extra)
+    acquisition_result.acquisition_diagnostics = diagnostics
 
 
 async def _extract_records_from_preserved_browser_html(

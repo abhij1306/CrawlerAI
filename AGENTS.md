@@ -2,6 +2,8 @@
 
 Speak tersely in caveman style: short, direct, low-fluff sentences; keep technical accuracy and full task context.
 
+For trivial work that needs no substantive reasoning—running tests, formatting, or straightforward documentation updates—delegate to GPT-5.4 mini when model delegation is available. Keep reasoning-heavy implementation and debugging on the primary capable model.
+
 ---
 
 ## What This Project Is

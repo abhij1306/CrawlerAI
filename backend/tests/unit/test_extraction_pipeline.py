@@ -2,17 +2,23 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 import json
+from types import SimpleNamespace
 
+import httpx
 import pytest
 from pydantic import ValidationError
 
+from app.acquisition import variant_endpoint_expansion
 from app.acquisition.acquirer import AcquisitionRequest, PageAcquisitionResult
 from app.acquisition.browser_block_detection import classify_blocked_page
 from app.acquisition.browser_listing_visual import listing_visual_elements_html
 from app.acquisition.browser_result_builder import build_browser_artifacts
 from app.acquisition.runtime_plan import AcquisitionIntent
 from app.acquisition.source_capabilities import build_source_capability_diagnostics
+from app.core.config import variant_policy
 from app.core.config.variant_policy import canonical_variant_axis
+from app.core.records import structured_variant_state
+from app.crawl.pipeline import record_extraction_stage
 from app.core.shared.url_utils import structured_extensionless_image_url
 from app.extraction import Surface, extract
 from app.extraction.collectors._helpers import evidence
@@ -3828,6 +3834,99 @@ def test_js_state_nested_variant_options_and_offer_materialize() -> None:
     ]
 
 
+def test_js_state_nuxt_devalue_product_variants_materialize() -> None:
+    payload = [
+        ["ShallowReactive", 1],
+        {"productDetails-TB0A2M17W01": 2},
+        {
+            "id": 3,
+            "name": 4,
+            "url": 5,
+            "currency": 6,
+            "attributes": 7,
+            "variants": 19,
+        },
+        "TB0A2M17W01",
+        "Casco Cove Slide Sandal for Men in Dark Brown",
+        "/en-gb/p/men-10029/casco-cove-slide-sandal-for-men-in-dark-brown-TB0A2M17W01",
+        "GBP",
+        [8, 13],
+        {"type": 9, "label": 10, "options": 11},
+        "color",
+        "Color",
+        [12],
+        {"label": 14, "value": 15},
+        {"type": 16, "label": 17, "options": 18},
+        "Brown",
+        "TB0A2M17W01 - BROWN",
+        "size",
+        "Size",
+        [28, 31],
+        [20, 24],
+        {
+            "id": 21,
+            "productInventoryState": 22,
+            "price": 23,
+            "attributes": 27,
+            "upc": 34,
+        },
+        "TB:0A2M17:W01:070:M:1:",
+        "InStock",
+        {"current": 35, "original": 36},
+        {
+            "id": 25,
+            "productInventoryState": 26,
+            "price": 23,
+            "attributes": 30,
+            "upc": 37,
+        },
+        "TB:0A2M17:W01:060:M:1:",
+        "OutOfStock",
+        {"color": 15, "size": 29},
+        {"label": 38, "value": 29},
+        "070",
+        {"color": 15, "size": 32},
+        {"label": 33, "value": 32},
+        "060",
+        "5.5",
+        "198268059622",
+        72,
+        90,
+        "198268059509",
+        "6.5",
+    ]
+    html = f"""
+    <main><h1>Casco Cove Slide Sandal for Men in Dark Brown</h1></main>
+    <script id="__NUXT_DATA__" type="application/json">{json.dumps(payload)}</script>
+    """
+
+    result = _extract(
+        "ecommerce_detail",
+        html,
+        "https://www.timberland.com/en-gb/p/men-10029/casco-cove-slide-sandal-for-men-in-dark-brown-TB0A2M17W01",
+    )
+
+    variants = result.records[0]["variants"]
+    assert variants == [
+        {
+            "variant_id": "TB:0A2M17:W01:060:M:1:",
+            "price": "72.00",
+            "currency": "GBP",
+            "availability": "out_of_stock",
+            "color": "Brown",
+            "size": "5.5",
+        },
+        {
+            "variant_id": "TB:0A2M17:W01:070:M:1:",
+            "price": "72.00",
+            "currency": "GBP",
+            "availability": "in_stock",
+            "color": "Brown",
+            "size": "6.5",
+        },
+    ]
+
+
 def test_cross_product_variant_url_does_not_materialize() -> None:
     result = _extract(
         "ecommerce_detail",
@@ -5229,6 +5328,289 @@ def test_demandware_attribute_json_string_flags_use_boolean_semantics() -> None:
     assert variants[0]["color"] == "Medium Heather Grey"
     assert variants[0]["size"] == "XS"
     assert all("selected" not in row for row in variants)
+
+
+def test_sfcc_product_variation_endpoint_values_materialize_confirmed_matrix() -> None:
+    html = """
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "Product",
+        "name": "VS Iconic Rib Racerback Tank Top",
+        "sku": "112768921NG0",
+        "offers": {
+          "@type": "Offer",
+          "price": "2104",
+          "priceCurrency": "INR"
+        }
+      }
+    </script>
+    <main>
+      <h1>VS Iconic Rib Racerback Tank Top</h1>
+      <button data-attr-id="color"
+              data-url="/on/demandware.store/Sites-vsfa-Site/default/Product-Variation?dwvar_112768921NG0_color=Pure%20Black&pid=112768921NG0">
+        Pure Black
+      </button>
+      <button data-attr-id="color"
+              data-url="/on/demandware.store/Sites-vsfa-Site/default/Product-Variation?dwvar_112768921NG0_color=Medium%20Heather%20Grey&pid=112768921NG0">
+        Medium Heather Grey
+      </button>
+    </main>
+    """
+    payload = {
+        "product": {
+            "id": "112768921NG0",
+            "name": "VS Iconic Rib Racerback Tank Top",
+            "url": "https://www.victoriassecret.in/p/vs-iconic-rib-racerback-tank-top/112768921NG0.html",
+            "price": {"sales": {"value": 2104, "currency": "INR"}},
+            "variationAttributes": [
+                {
+                    "attributeId": "color",
+                    "values": [
+                        {
+                            "id": "Pure Black",
+                            "displayValue": "Pure Black",
+                            "selectable": True,
+                            "url": "/on/demandware.store/Sites-vsfa-Site/default/Product-Variation?dwvar_112768921NG0_color=Pure%20Black&pid=112768921NG0",
+                        }
+                    ],
+                },
+                {
+                    "attributeId": "size",
+                    "values": [
+                        {
+                            "id": "XS",
+                            "displayValue": "XS",
+                            "selectable": True,
+                            "url": "/on/demandware.store/Sites-vsfa-Site/default/Product-Variation?dwvar_112768921NG0_color=Pure%20Black&dwvar_112768921NG0_size=XS&pid=112768921NG0",
+                        },
+                        {
+                            "id": "S",
+                            "displayValue": "S",
+                            "selectable": False,
+                            "url": "/on/demandware.store/Sites-vsfa-Site/default/Product-Variation?dwvar_112768921NG0_color=Pure%20Black&dwvar_112768921NG0_size=S&pid=112768921NG0",
+                        },
+                    ],
+                },
+            ],
+        }
+    }
+
+    result = _extract(
+        "ecommerce_detail",
+        html,
+        "https://www.victoriassecret.in/p/vs-iconic-rib-racerback-tank-top/112768921NG0.html",
+        network_payloads=({"body": payload},),
+    )
+
+    variants = result.records[0]["variants"]
+    assert [(row["color"], row["size"], row["availability"]) for row in variants] == [
+        ("Pure Black", "S", "out_of_stock"),
+        ("Pure Black", "XS", "in_stock"),
+    ]
+    assert all(
+        row["price"] == "2104.00" and row["currency"] == "INR" for row in variants
+    )
+    assert not any(row.get("color") == "Medium Heather Grey" for row in variants)
+
+
+@pytest.mark.asyncio
+async def test_sfcc_variant_endpoint_expansion_discovers_same_origin_urls(
+    monkeypatch,
+) -> None:
+    page_url = "https://www.victoriassecret.in/p/tank/112768921NG0.html"
+    html = """
+    <button data-url="/on/demandware.store/Sites-vsfa-Site/default/Product-Variation?dwvar_112768921NG0_color=Pure%20Black&pid=112768921NG0"></button>
+    <button value="https://evil.test/on/demandware.store/Sites-vsfa-Site/default/Product-Variation?dwvar_112768921NG0_color=Blue&pid=112768921NG0"></button>
+    """
+    fetched: list[str] = []
+
+    async def safe_url(_url: str) -> bool:
+        return True
+
+    async def fake_fetch(url: str) -> dict[str, object]:
+        fetched.append(url)
+        return {"url": url, "method": "GET", "body": {"product": {"id": "p"}}}
+
+    monkeypatch.setattr(variant_endpoint_expansion, "_safe_public_url", safe_url)
+
+    payloads = await variant_endpoint_expansion.expand_sfcc_variant_endpoints(
+        page_url=page_url,
+        html_text=html,
+        fetch_endpoint=fake_fetch,
+    )
+
+    assert fetched == [
+        "https://www.victoriassecret.in/on/demandware.store/Sites-vsfa-Site/default/Product-Variation?dwvar_112768921NG0_color=Pure%20Black&pid=112768921NG0"
+    ]
+    assert payloads == [
+        {
+            "url": fetched[0],
+            "method": "GET",
+            "body": {"product": {"id": "p"}},
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_sfcc_variant_endpoint_expansion_failure_is_best_effort(
+    monkeypatch,
+) -> None:
+    expansion_kwargs: dict[str, object] = {}
+
+    async def fail_expansion(**kwargs) -> list[dict[str, object]]:
+        expansion_kwargs.update(kwargs)
+        raise RuntimeError("endpoint unavailable")
+
+    events: list[tuple[str, str]] = []
+
+    async def record_event(_context, level: str, message: str) -> None:
+        events.append((level, message))
+
+    monkeypatch.setattr(
+        record_extraction_stage,
+        "expand_sfcc_variant_endpoints",
+        fail_expansion,
+    )
+    monkeypatch.setattr(record_extraction_stage, "_log_pipeline_event", record_event)
+    context = SimpleNamespace(
+        surface="ecommerce_detail",
+        url="https://shop.test/products/ABC123",
+        config=SimpleNamespace(proxy_list=["http://fallback-proxy.test:8080"]),
+    )
+    acquisition_result = SimpleNamespace(
+        final_url=context.url,
+        html="<main></main>",
+        network_payloads=[],
+        acquisition_diagnostics={},
+        request=SimpleNamespace(proxy_list=["http://run-proxy.test:8080"]),
+    )
+
+    await record_extraction_stage._expand_variant_endpoint_payloads(
+        context,
+        acquisition_result,
+    )
+
+    assert acquisition_result.network_payloads == []
+    assert (
+        acquisition_result.acquisition_diagnostics[
+            "sfcc_variant_endpoint_expansion_error"
+        ]
+        == "RuntimeError"
+    )
+    assert expansion_kwargs["proxy"] == "http://run-proxy.test:8080"
+    assert events and events[0][0] == "warning"
+
+
+@pytest.mark.asyncio
+async def test_sfcc_variant_endpoint_fetch_threads_proxy_to_fallback(
+    monkeypatch,
+) -> None:
+    seen: list[tuple[str, str | None]] = []
+
+    async def get_client(*, proxy: str | None = None):
+        seen.append(("httpx", proxy))
+        return object()
+
+    async def request_json(_client, _url: str):
+        raise httpx.ConnectError("network failure")
+
+    async def curl_fetch(_url: str, _timeout: float, *, proxy=None):
+        seen.append(("curl", proxy))
+        return SimpleNamespace(
+            html='{"product": {"id": "ABC123"}}',
+            status_code=200,
+            content_type="application/json",
+        )
+
+    monkeypatch.setattr(
+        variant_endpoint_expansion, "get_shared_http_client", get_client
+    )
+    monkeypatch.setattr(variant_endpoint_expansion, "_request_json", request_json)
+    monkeypatch.setattr(variant_endpoint_expansion, "curl_fetch", curl_fetch)
+
+    payload = await variant_endpoint_expansion._fetch_variant_endpoint(
+        "https://shop.test/Product-Variation?pid=ABC123",
+        proxy="http://proxy.test:8080",
+    )
+
+    assert payload is not None
+    assert seen == [
+        ("httpx", "http://proxy.test:8080"),
+        ("curl", "http://proxy.test:8080"),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_sfcc_variant_endpoint_policy_value_error_does_not_fallback(
+    monkeypatch,
+) -> None:
+    async def get_client(*, proxy: str | None = None):
+        return object()
+
+    async def request_json(_client, _url: str):
+        raise ValueError("variant endpoint redirects are not allowed")
+
+    async def unexpected_curl(*_args, **_kwargs):
+        raise AssertionError("curl fallback must not run")
+
+    monkeypatch.setattr(
+        variant_endpoint_expansion, "get_shared_http_client", get_client
+    )
+    monkeypatch.setattr(variant_endpoint_expansion, "_request_json", request_json)
+    monkeypatch.setattr(variant_endpoint_expansion, "curl_fetch", unexpected_curl)
+
+    with pytest.raises(ValueError, match="redirects are not allowed"):
+        await variant_endpoint_expansion._fetch_variant_endpoint(
+            "https://shop.test/Product-Variation?pid=ABC123"
+        )
+
+
+@pytest.mark.asyncio
+async def test_sfcc_variant_endpoint_error_status_does_not_fallback(
+    monkeypatch,
+) -> None:
+    async def get_client(*, proxy: str | None = None):
+        return object()
+
+    async def request_json(_client, url: str):
+        return httpx.Response(503, request=httpx.Request("GET", url))
+
+    async def unexpected_curl(*_args, **_kwargs):
+        raise AssertionError("curl fallback must not run")
+
+    monkeypatch.setattr(
+        variant_endpoint_expansion, "get_shared_http_client", get_client
+    )
+    monkeypatch.setattr(variant_endpoint_expansion, "_request_json", request_json)
+    monkeypatch.setattr(variant_endpoint_expansion, "curl_fetch", unexpected_curl)
+
+    assert (
+        await variant_endpoint_expansion._fetch_variant_endpoint(
+            "https://shop.test/Product-Variation?pid=ABC123"
+        )
+        is None
+    )
+
+
+def test_sfcc_candidate_rejects_foreign_dwvar_product_code() -> None:
+    assert not variant_endpoint_expansion._candidate_matches_page_product(
+        "https://shop.test/Product-Variation?dwvar_XYZ999_color=Blue",
+        page_codes=frozenset({"abc123"}),
+    )
+    assert variant_endpoint_expansion._candidate_matches_page_product(
+        "https://shop.test/Product-Variation?dwvar_ABC123_color=Blue",
+        page_codes=frozenset({"abc123"}),
+    )
+
+
+def test_nuxt_devalue_inline_containers_respect_depth_limit(monkeypatch) -> None:
+    monkeypatch.setattr(variant_policy, "EMBEDDED_STATE_MAX_DEPTH", 2)
+    data = [{"level_1": {"level_2": {"too_deep": "value"}}}]
+
+    assert structured_variant_state.decode_nuxt_devalue(data, 0) == {
+        "level_1": {"level_2": None}
+    }
 
 
 def test_variant_identity_merges_sources_and_materializes_child_offer() -> None:

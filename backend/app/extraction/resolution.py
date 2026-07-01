@@ -1184,7 +1184,11 @@ def _variant_url_is_option_endpoint(
 ) -> bool:
     product_host = urlsplit(product_url).netloc.casefold()
     variant_parts = urlsplit(variant_url)
-    if product_host and variant_parts.netloc and product_host != variant_parts.netloc.casefold():
+    if (
+        product_host
+        and variant_parts.netloc
+        and product_host != variant_parts.netloc.casefold()
+    ):
         return False
     path_tokens = set(semantic_identity_tokens(detail_title_from_url(variant_url)))
     if not (path_tokens & VARIANT_URL_OPTION_ENDPOINT_PATH_TOKENS):
@@ -1770,7 +1774,9 @@ def _variant_parent_asset_fallback(
         )
     ]
     owners_with_usable_assets = {
-        asset.variant_entity_id for _rank, asset, _accepted in candidates
+        asset.variant_entity_id
+        for _rank, asset, _accepted in candidates
+        if asset.variant_entity_id is not None
     }
     if len(selected_ids) == 1:
         allowed_ids = selected_ids

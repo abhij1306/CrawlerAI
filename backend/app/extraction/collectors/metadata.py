@@ -16,6 +16,10 @@ from app.extraction.collectors.js_state import (
     root_admits_path,
     select_product_roots,
 )
+from app.core.records.structured_variant_state import (
+    variant_axis_hints,
+    with_parent_variant_axes,
+)
 from app.core.config.extraction_rules import MAX_EVIDENCE_PER_SOURCE_OBJECT
 from app.extraction.contracts import (
     CaptureBundle,
@@ -97,15 +101,24 @@ class NetworkCollector:
             if ref.artifact_type != "network_json":
                 continue
             objects = tuple(json_objects(artifacts.read_json(ref)))
+            axis_hints = variant_axis_hints(objects)
             selection = select_product_roots(objects, bundle.final_url)
             for path, obj in objects:
                 if not root_admits_path(selection, path):
                     continue
                 if isinstance(obj, dict):
                     admitted_source_objects += 1
+                    enriched = with_parent_variant_axes(
+                        obj,
+                        axis_hints.get(path, ()),
+                    )
                     rows, dropped = prioritize_evidence_rows(
                         network_row(
-                            bundle, ref.artifact_id, path, obj, collector_id="network"
+                            bundle,
+                            ref.artifact_id,
+                            path,
+                            enriched,
+                            collector_id="network",
                         ),
                         requested_fields=requested_fields,
                         limit=MAX_EVIDENCE_PER_SOURCE_OBJECT,
