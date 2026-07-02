@@ -62,6 +62,8 @@ Variant and offer facts remain entity-scoped. Parent offer/range/availability va
 
 Extraction results expose `transport_outcome`, `data_integrity`, per-field evidence states, and terminal evidence dispositions. Field states include legacy states plus v2 states such as `captured_published`, `captured_suppressed`, `captured_conflicting`, `captured_unowned`, `source_unavailable`, and `not_requested`. Transport success never implies clean data integrity. Proven product-data-source failure must be represented as honest source unavailability rather than an extraction defect.
 
+Every zero-record extraction result must carry one or more typed failure classifications using the extraction taxonomy (`wrong_surface`, `insufficient_input_bundle`, `template_mismatch`, `recipe_drift`, `discovery`, `record_boundary`, `entity_binding`, `semantic_resolution`, `canonicalization`, `locale_normalization`, `validation`, `unsupported_representation`, `model_service_failure`, `internal_error`). `diagnose.json` must expose those classifications plus the stable diagnostic summary and manifest context when available.
+
 Terminal shell acquisitions, including HTTP error bodies, challenge pages, browser low-content shells, redirect-only shells, and URL/title-only placeholders, are not successful product observations. They must mark affected detail fields as `source_unavailable` and suppress public `ecommerce_detail` records when the only surviving public values are the requested URL and a URL-derived title.
 
 ---

@@ -13,6 +13,7 @@ from app.core.config.extraction_recipes import (
 from app.extraction.contracts import (
     ArtifactRef,
     CaptureBundle,
+    ExecutionManifestContext,
     ExtractionRequest,
     RequestContext,
 )
@@ -253,6 +254,7 @@ def request_from_acquisition_result(
         max_records=max_records,
         runtime_snapshot=runtime_snapshot or {},
         user_controlled_fields=_selector_controlled_fields(selector_rules),
+        manifest_context=_manifest_context(runtime_snapshot or {}),
     )
 
 
@@ -326,3 +328,16 @@ def _bundle_from_runtime_inputs(
 
 def _is_error_status(status_code: object) -> bool:
     return isinstance(status_code, int) and status_code >= 500
+
+
+def _manifest_context(snapshot: dict[str, object]) -> ExecutionManifestContext:
+    return ExecutionManifestContext(
+        release_snapshot_id=_optional_text(snapshot.get("_release_snapshot_id")),
+        manifest_version=_optional_text(snapshot.get("_manifest_version")),
+        locale_policy_ref=_optional_text(snapshot.get("_locale_policy_ref")),
+    )
+
+
+def _optional_text(value: object) -> str | None:
+    text = str(value or "").strip()
+    return text or None

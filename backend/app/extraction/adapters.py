@@ -30,6 +30,8 @@ from app.extraction.contracts import (
     ResolutionEnvelope,
     TargetSelection,
 )
+from app.extraction.collectors.dom import css_recipe_evidence
+from app.extraction.collectors.url import UrlCollector
 from app.extraction.entities import EntitySet, build_entities
 from app.core.shared.ids import stable_id
 from app.extraction.job_resolution import resolve_job_detail, resolve_job_listing
@@ -94,6 +96,39 @@ def _harvest_detail(request: ExtractionRequest) -> HarvestResult:
     )
     _assert_representation_only(harvested.evidence, normalized)
     return harvested.model_copy(update={"evidence": normalized})
+
+
+def harvest_compiled_recipe(request: ExtractionRequest) -> HarvestResult:
+    """Known-template recipe fast path: recipe evidence plus URL identity only."""
+
+    recipe_rows = tuple(css_recipe_evidence(request.capture, request.artifact_reader))
+    url_rows = tuple(UrlCollector().collect(request.capture, request.artifact_reader))
+    rows = normalize_ecommerce_detail(
+        (*recipe_rows, *url_rows),
+        page_url=request.capture.final_url or request.capture.requested_url,
+    )
+    outcomes: list[CollectorOutcome] = []
+    if recipe_rows:
+        outcomes.append(
+            CollectorOutcome(
+                collector_id="css_recipe",
+                outcome="produced_evidence",
+                evidence_count=len(recipe_rows),
+            )
+        )
+    outcomes.append(
+        CollectorOutcome(
+            collector_id="url",
+            outcome="produced_evidence" if url_rows else "no_match",
+            evidence_count=len(url_rows),
+        )
+    )
+    return HarvestResult(
+        surface=request.surface,
+        evidence=rows,
+        collector_outcomes=tuple(outcomes),
+        admitted_source_objects=len({row.subject_id for row in rows if row.subject_id}),
+    )
 
 
 def _harvest_listing(request: ExtractionRequest) -> HarvestResult:

@@ -8,9 +8,12 @@ from app.extraction.contracts import (
     CollectorOutcome,
     ContractOutcome,
     Decision,
+    DiagnosticSummary,
     Evidence,
+    ExecutionManifestContext,
     ExtractionMetrics,
     ExtractionResult,
+    FailureClassification,
     FieldEvidenceState,
     Finding,
     RejectedEvidence,
@@ -85,6 +88,45 @@ def test_build_diagnosis_emits_schema_and_top_level_sections() -> None:
     assert diagnosis["metrics"]["evidence_count"] == 2
     assert diagnosis["contract_outcomes"] is None
     assert diagnosis["variants"] == {"dropped": []}
+
+
+def test_build_diagnosis_emits_manifest_failure_and_summary_contracts() -> None:
+    result = _result(
+        verdict="empty",
+        manifest_context=ExecutionManifestContext(
+            release_snapshot_id="release-1",
+            execution_manifest_id="manifest-1",
+            template_id="template-1",
+            manifest_version="manifest.v1",
+        ),
+        failure_classifications=(
+            FailureClassification(
+                code="discovery",
+                message="No publishable records were discovered.",
+            ),
+        ),
+        diagnostics=DiagnosticSummary(
+            decision_path=("harvest", "resolve", "publish", "validate"),
+            trust_state="rejected",
+            failure_codes=("discovery",),
+            evidence_count=0,
+        ),
+    )
+
+    diagnosis = build_diagnosis(
+        acquisition_result=_acquisition(),
+        extraction_result=result,
+    )
+
+    assert diagnosis["manifest"]["release_snapshot_id"] == "release-1"
+    assert diagnosis["manifest"]["execution_manifest_id"] == "manifest-1"
+    assert diagnosis["failure_classifications"][0]["code"] == "discovery"
+    assert diagnosis["diagnostics"]["decision_path"] == [
+        "harvest",
+        "resolve",
+        "publish",
+        "validate",
+    ]
 
 
 def test_diagnosis_persists_publication_divergence_findings() -> None:

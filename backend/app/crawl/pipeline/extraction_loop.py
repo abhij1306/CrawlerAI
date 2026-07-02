@@ -30,6 +30,7 @@ from app.crawl.robots_policy import (
 )
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.extraction.contracts import ExtractionResult
 from .retry import build_acquisition_request, retry_extraction_request_with_browser
 from .persistence import persist_extracted_records
 from app.persistence.url_results import upsert_url_result
@@ -442,6 +443,10 @@ async def _run_persistence_stage(
         and persisted_count == 0
     ):
         verdict = cast(UrlVerdict, VERDICT_LISTING_FAILED)
+    extraction_result = await _record_extraction_memory(
+        context, extracted, url_result_id=url_result.id
+    )
+    extracted.result = extraction_result
     await _publish_url_result_artifacts(
         context,
         extracted,
@@ -457,7 +462,6 @@ async def _run_persistence_stage(
         persisted_count=persisted_count,
         verdict=verdict,
     )
-    await _record_extraction_memory(context, extracted, url_result_id=url_result.id)
     return URLProcessingResult(
         records=extracted_records,
         verdict=verdict,
@@ -500,7 +504,7 @@ async def _record_extraction_memory(
     extracted: _ExtractedURLStage,
     *,
     url_result_id: int,
-) -> None:
+) -> ExtractionResult:
     observed_url = str(
         getattr(extracted.fetched.acquisition_result, "final_url", "") or context.url
     )
@@ -518,6 +522,20 @@ async def _record_extraction_memory(
             url_result = await context.session.get(CrawlUrlResult, url_result_id)
             if url_result is not None:
                 url_result.extraction_manifest_id = manifest.id
+            return extracted.result.model_copy(
+                update={
+                    "manifest_context": extracted.result.manifest_context.model_copy(
+                        update={
+                            "execution_manifest_id": str(manifest.id),
+                            "template_id": str(manifest.template_id)
+                            if manifest.template_id is not None
+                            else None,
+                            "manifest_version": manifest.manifest_version,
+                            "locale_policy_ref": manifest.locale_policy_ref,
+                        }
+                    )
+                }
+            )
     except Exception as exc:
         await _log_pipeline_event(
             context,
@@ -525,6 +543,7 @@ async def _record_extraction_memory(
             f"Extraction-memory observation failed without changing crawl verdict: {type(exc).__name__}: {exc}",
             commit=False,
         )
+    return extracted.result
 
 
 URLProcessingContext = _URLProcessingContext

@@ -125,6 +125,11 @@ async def _run_record_extraction(
     runtime_snapshot = await load_release_payload(
         context.session, context.run.extraction_release_snapshot_id
     )
+    runtime_snapshot["_release_snapshot_id"] = (
+        str(context.run.extraction_release_snapshot_id)
+        if context.run.extraction_release_snapshot_id is not None
+        else None
+    )
     extract_records_impl = getattr(
         extraction_loop,
         "extract_records_for_acquisition_result",
@@ -240,6 +245,11 @@ async def _extract_records_from_preserved_browser_html(
     acquisition_result.html = rendered_html
     runtime_snapshot = await load_release_payload(
         context.session, context.run.extraction_release_snapshot_id
+    )
+    runtime_snapshot["_release_snapshot_id"] = (
+        str(context.run.extraction_release_snapshot_id)
+        if context.run.extraction_release_snapshot_id is not None
+        else None
     )
     try:
         fallback_result = await asyncio.to_thread(

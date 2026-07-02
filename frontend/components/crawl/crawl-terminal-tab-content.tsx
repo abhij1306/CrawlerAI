@@ -1,5 +1,10 @@
 import React from 'react';
-import type { CrawlRecord, CrawlLog, DomainRecipe } from '../../lib/api/types';
+import type {
+  CrawlRecord,
+  CrawlLog,
+  DomainRecipe,
+  DomainRecipeFieldLearningItem,
+} from '../../lib/api/types';
 import { JSON_PREVIEW_INCREMENT, RunJsonOutput, RunTableOutput } from './run-records-output';
 import { RunLogsOutput } from './run-logs-output';
 import { RunLearningPanel } from './run-learning-panel';
@@ -33,13 +38,7 @@ export interface CrawlTerminalTabContentProps {
   domainRecipe: DomainRecipe | undefined;
   recipeActionPending: RecipeActionPendingKey | null;
   recipeActionError: string;
-  applyFieldAction: (
-    fieldName: string,
-    action: 'keep' | 'reject',
-    selectorKind?: string | null,
-    selectorValue?: string | null,
-    sourceRecordIds?: number[],
-  ) => Promise<void>;
+  activateGroundedCorrection: (item: DomainRecipeFieldLearningItem) => Promise<void>;
 }
 
 export function CrawlTerminalTabContent({
@@ -70,7 +69,7 @@ export function CrawlTerminalTabContent({
   domainRecipe,
   recipeActionPending,
   recipeActionError,
-  applyFieldAction,
+  activateGroundedCorrection,
 }: Readonly<CrawlTerminalTabContentProps>) {
   if (outputTab === 'table') {
     return (
@@ -124,7 +123,7 @@ export function CrawlTerminalTabContent({
           recipe={domainRecipe}
           pendingKey={recipeActionPending}
           error={recipeActionError}
-          onFieldAction={applyFieldAction}
+          onActivateCorrection={(item) => void activateGroundedCorrection(item)}
         />
       </div>
     );

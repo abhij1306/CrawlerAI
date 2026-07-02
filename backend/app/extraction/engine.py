@@ -9,12 +9,16 @@ from app.core.config.extraction_rules import (
     DETAIL_NOT_FOUND_HTTP_STATUS_CODES,
     DETAIL_SHELL_FINDING_RULE_ID,
 )
-from app.extraction.adapters import adapter_for
+from app.core.extraction_memory.contract_runtime import match_template
+from app.extraction.adapters import adapter_for, harvest_compiled_recipe
 from app.extraction.contracts import (
+    DiagnosticSummary,
     EntityGraph,
     Evidence,
+    ExecutionManifestContext,
     ExtractionRequest,
     ExtractionResult,
+    FailureClassification,
     Finding,
     PublicRecord,
     StageOutcome,
@@ -49,7 +53,16 @@ def extract(request: ExtractionRequest) -> ExtractionResult:
     if request.capture.blocked:
         return _blocked_result(request, (), ())
     adapter = adapter_for(request.surface)
-    harvest = adapter.harvest(request)
+    compiled_template = _compiled_recipe_template(request)
+    extractor_tier: Literal["deterministic", "recipe"] = "deterministic"
+    if compiled_template is not None:
+        harvest = harvest_compiled_recipe(request)
+        if any(row.collector_id == "css_recipe" for row in harvest.evidence):
+            extractor_tier = "recipe"
+        else:
+            harvest = adapter.harvest(request)
+    else:
+        harvest = adapter.harvest(request)
     stage_outcomes = [_stage_outcome("harvest", len(harvest.evidence))]
 
     resolve_started = perf_counter()
@@ -79,6 +92,15 @@ def extract(request: ExtractionRequest) -> ExtractionResult:
     verdict = _assess(request, resolution.target, publication.records, findings)
     records = publication.records if verdict in {"success", "partial", "review"} else ()
     stage_outcomes.append(_stage_outcome("validate", len(findings)))
+    failures = _failure_classifications(
+        request,
+        verdict=verdict,
+        records=records,
+        target=resolution.target,
+        findings=findings,
+        evidence=harvest.evidence,
+    )
+    field_states = resolution.field_states
     return ExtractionResult(
         surface=request.surface,
         bundle_id=request.capture.bundle_id,
@@ -90,11 +112,9 @@ def extract(request: ExtractionRequest) -> ExtractionResult:
         selected_facts=resolution.selected_facts,
         derived_facts=resolution.derived_facts,
         evidence_dispositions=resolution.evidence_dispositions,
-        field_states=resolution.field_states,
+        field_states=field_states,
         transport_outcome=request.capture.acquisition_outcome,
-        data_integrity=data_integrity_status(
-            verdict, resolution.field_states, findings
-        ),
+        data_integrity=data_integrity_status(verdict, field_states, findings),
         records=records,
         verdict=verdict,
         retry_request=retry_request(
@@ -115,7 +135,51 @@ def extract(request: ExtractionRequest) -> ExtractionResult:
         collector_outcomes=harvest.collector_outcomes,
         stage_outcomes=tuple(stage_outcomes),
         contract_outcomes=resolution.contract_outcomes,
+        manifest_context=_manifest_context(request, compiled_template),
+        failure_classifications=failures,
+        diagnostics=_diagnostic_summary(
+            verdict=verdict,
+            records=records,
+            evidence=harvest.evidence,
+            stage_outcomes=tuple(stage_outcomes),
+            field_states=field_states,
+            failures=failures,
+            extractor_tier=extractor_tier,
+        ),
     )
+
+
+def _compiled_recipe_template(request: ExtractionRequest) -> dict[str, object] | None:
+    if request.surface != Surface.ECOMMERCE_DETAIL or request.runtime_snapshot is None:
+        return None
+    if not request.artifact_reader.exists("css_field_rules"):
+        return None
+    template = match_template(
+        dict(request.runtime_snapshot),
+        "",
+        request.surface.value,
+        url=request.capture.final_url or request.capture.requested_url,
+    )
+    if not template:
+        return None
+    compiled_recipe = template.get("compiled_recipe")
+    if not isinstance(compiled_recipe, dict):
+        return None
+    selector_rules = compiled_recipe.get("selector_rules")
+    if not isinstance(selector_rules, list) or not selector_rules:
+        return None
+    return template
+
+
+def _manifest_context(
+    request: ExtractionRequest, template: dict[str, object] | None
+) -> ExecutionManifestContext:
+    if template is None:
+        return request.manifest_context
+    template_id = str(template.get("template_id") or "").strip()
+    if not template_id:
+        return request.manifest_context
+    return request.manifest_context.model_copy(update={"template_id": template_id})
 
 
 def _assess(
@@ -209,6 +273,14 @@ def _blocked_result(
     dispositions = evidence_dispositions(evidence, (), (), target)
     assert_resolution_accounting(evidence, (), (), dispositions)
     states = field_evidence_states((), evidence, (), request)
+    failures = _failure_classifications(
+        request,
+        verdict="blocked",
+        records=(),
+        target=target,
+        findings=(finding,),
+        evidence=evidence,
+    )
     return ExtractionResult(
         surface=request.surface,
         bundle_id=request.capture.bundle_id,
@@ -238,6 +310,16 @@ def _blocked_result(
         ),
         collector_outcomes=tuple(collector_outcomes),
         stage_outcomes=(_stage_outcome("harvest", len(evidence)),),
+        manifest_context=request.manifest_context,
+        failure_classifications=failures,
+        diagnostics=_diagnostic_summary(
+            verdict="blocked",
+            records=(),
+            evidence=evidence,
+            stage_outcomes=(_stage_outcome("harvest", len(evidence)),),
+            field_states=states,
+            failures=failures,
+        ),
     )
 
 
@@ -245,4 +327,138 @@ def _stage_outcome(stage: str, produced: int) -> StageOutcome:
     return StageOutcome(
         stage=stage,
         outcome="produced_evidence" if produced else "no_match",
+    )
+
+
+def _failure_classifications(
+    request: ExtractionRequest,
+    *,
+    verdict: Verdict,
+    records: tuple[PublicRecord, ...],
+    target: TargetSelection,
+    findings: tuple[Finding, ...],
+    evidence: tuple[Evidence, ...],
+) -> tuple[FailureClassification, ...]:
+    if records:
+        return ()
+    if (
+        request.capture.acquisition_outcome in {"blocked", "error"}
+        or request.capture.blocked
+    ):
+        return (
+            _failure(
+                "insufficient_input_bundle",
+                "Input bundle could not supply usable extraction content.",
+                findings,
+                evidence,
+            ),
+        )
+    if verdict == "wrong_surface" or target.status == "wrong_surface":
+        return (
+            _failure(
+                "wrong_surface",
+                "Input content does not match the requested surface.",
+                findings,
+                evidence,
+            ),
+        )
+    if any(row.blocking for row in findings):
+        return (
+            _failure(
+                "validation",
+                "Critical validation blocked publication.",
+                findings,
+                evidence,
+            ),
+        )
+    if target.status == "ambiguous":
+        return (
+            _failure(
+                "entity_binding",
+                "Primary entity could not be selected safely.",
+                findings,
+                evidence,
+            ),
+        )
+    if target.status == "missing":
+        code = "discovery" if evidence else "insufficient_input_bundle"
+        return (
+            _failure(
+                code, "No publishable record boundary was found.", findings, evidence
+            ),
+        )
+    if verdict in {"invalid", "error"}:
+        return (
+            _failure(
+                "semantic_resolution",
+                "Resolved evidence could not pass publication trust gates.",
+                findings,
+                evidence,
+            ),
+        )
+    return (
+        _failure(
+            "discovery", "No publishable records were discovered.", findings, evidence
+        ),
+    )
+
+
+def _failure(
+    code,
+    message: str,
+    findings: tuple[Finding, ...],
+    evidence: tuple[Evidence, ...],
+) -> FailureClassification:
+    return FailureClassification(
+        code=code,
+        message=message,
+        finding_ids=tuple(row.finding_id for row in findings),
+        evidence_ids=tuple(row.evidence_id for row in evidence),
+    )
+
+
+def _diagnostic_summary(
+    *,
+    verdict: Verdict,
+    records: tuple[PublicRecord, ...],
+    evidence: tuple[Evidence, ...],
+    stage_outcomes: tuple[StageOutcome, ...],
+    field_states,
+    failures: tuple[FailureClassification, ...],
+    extractor_tier: Literal["deterministic", "recipe"] = "deterministic",
+) -> DiagnosticSummary:
+    missing = tuple(
+        row.field
+        for row in field_states
+        if row.state in {"not_present_in_captured_sources", "source_unavailable"}
+    )
+    trust_state = cast(
+        Literal[
+            "verified",
+            "partial",
+            "needs_review",
+            "rejected",
+            "blocked",
+            "unknown",
+        ],
+        "verified"
+        if verdict == "success"
+        else "partial"
+        if verdict == "partial"
+        else "needs_review"
+        if verdict == "review"
+        else "blocked"
+        if verdict == "blocked"
+        else "rejected"
+        if verdict in {"invalid", "error", "wrong_surface", "empty"} or not records
+        else "unknown",
+    )
+    return DiagnosticSummary(
+        decision_path=tuple(row.stage for row in stage_outcomes),
+        extractor_tier="blocked" if verdict == "blocked" else extractor_tier,
+        trust_state=trust_state,
+        missing_critical_fields=missing,
+        failure_codes=tuple(row.code for row in failures),
+        evidence_count=len(evidence),
+        review_required=verdict == "review",
     )

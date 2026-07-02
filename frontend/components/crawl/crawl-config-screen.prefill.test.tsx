@@ -13,14 +13,12 @@ const {
   createCrawlMock,
   getDomainRunProfileMock,
   listSelectorsMock,
-  updateSelectorMock,
 } = vi.hoisted(() => ({
   replaceMock: vi.fn(),
   createCsvCrawlMock: vi.fn(),
   createCrawlMock: vi.fn(),
   getDomainRunProfileMock: vi.fn(),
   listSelectorsMock: vi.fn(),
-  updateSelectorMock: vi.fn(),
 }));
 
 vi.mock('react-router-dom', async (importOriginal) => {
@@ -38,7 +36,6 @@ vi.mock('../../lib/api', () => ({
     createCrawl: createCrawlMock,
     getDomainRunProfile: getDomainRunProfileMock,
     listSelectors: listSelectorsMock,
-    updateSelector: updateSelectorMock,
   },
 }));
 
@@ -127,7 +124,6 @@ describe('CrawlConfigScreen bulk prefill', () => {
     });
     listSelectorsMock.mockResolvedValue([]);
     createCrawlMock.mockResolvedValue({ run_id: 321 });
-    updateSelectorMock.mockResolvedValue({});
   });
   it('restores the jobs domain from batch prefill storage', async () => {
     globalThis.sessionStorage.setItem(
@@ -281,34 +277,6 @@ describe('CrawlConfigScreen bulk prefill', () => {
     await waitFor(() => {
       expect(screen.getByLabelText('Host memory TTL seconds')).toHaveValue(600);
     });
-  });
-
-  it('invalidates and refetches the active selector query after saving', async () => {
-    listSelectorsMock.mockResolvedValue([
-      {
-        id: 7,
-        domain: 'example.com',
-        surface: 'ecommerce_listing',
-        field_name: 'price',
-        css_selector: '.product-price',
-        xpath: null,
-        regex: null,
-        status: 'validated',
-        source: 'domain_memory',
-        is_active: true,
-        created_at: '2026-04-23T00:00:00Z',
-        updated_at: '2026-04-23T00:00:00Z',
-      },
-    ]);
-
-    renderConfigScreen();
-    enterTargetUrl('https://example.com/collections/chairs');
-    fireEvent.click(screen.getByRole('button', { name: 'Advanced' }));
-    expect(await screen.findByDisplayValue('price')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Save to Memory' }));
-
-    await waitFor(() => expect(updateSelectorMock).toHaveBeenCalledWith(7, expect.any(Object)));
-    await waitFor(() => expect(listSelectorsMock.mock.calls.length).toBeGreaterThanOrEqual(3));
   });
 
   it('refreshes the route after launching a crawl so the new run screen loads immediately', async () => {

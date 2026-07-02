@@ -4,6 +4,7 @@ from typing import Any, Literal, Mapping, Protocol, get_args, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict, Field, SerializeAsAny, model_validator
 
+from app.core.config import field_mappings
 from app.core.config.variant_policy import PUBLIC_VARIANT_AXIS_FIELDS
 from app.extraction.surfaces import Surface
 
@@ -73,8 +74,15 @@ class RequestContext(FrozenModel):
     country: str | None = None
     currency_hint: str | None = None
     timezone: str | None = None
+    tax_display: Literal["included", "excluded", "unknown"] = "unknown"
+    unit_system: Literal["metric", "imperial", "unknown"] = "unknown"
+    supplied_fields: tuple[str, ...] = ()
+    inferred_fields: tuple[str, ...] = ()
     browser_profile_id: str | None = None
     session_fingerprint: str | None = None
+
+
+ExecutionContext = RequestContext
 
 
 class ArtifactRef(FrozenModel):
@@ -113,43 +121,23 @@ class CaptureBundle(FrozenModel):
     captured_at: str | None = None
 
 
+ExtractionInputBundle = CaptureBundle
+
+
+class ExecutionManifestContext(FrozenModel):
+    release_snapshot_id: str | None = None
+    execution_manifest_id: str | None = None
+    template_id: str | None = None
+    manifest_version: str | None = None
+    locale_policy_ref: str | None = None
+
+
 class CaptureCompletenessSignal(FrozenModel):
     shadow_roots_detected: int = 0
     shadow_roots_flattened: int = 0
     closed_shadow_roots_detected: int = 0
     hidden_panel_dom_present: bool = False
     serialization_method_version: str
-
-
-class CaptureAssessment(FrozenModel):
-    status: Literal[
-        "usable",
-        "blocked",
-        "captcha",
-        "status_error",
-        "empty",
-        "partial_shell",
-        "wrong_content_type",
-        "redirect_mismatch",
-    ]
-    reasons: tuple[str, ...] = ()
-    retry_capabilities: tuple[str, ...] = ()
-    completeness: CaptureCompletenessSignal | None = None
-
-
-class ResultAssessment(FrozenModel):
-    outcome: Literal[
-        "accept",
-        "retry_with_rendered_capture",
-        "request_interaction",
-        "request_contract",
-        "request_human_review",
-        "reject_wrong_surface",
-        "reject_ambiguous_target",
-        "reject_source_unavailable",
-    ]
-    reasons: tuple[str, ...] = ()
-    unresolved_fields: tuple[str, ...] = ()
 
 
 class SourceLocator(FrozenModel):
@@ -494,6 +482,144 @@ class CapabilityRequest(FrozenModel):
 RetryRequest = CapabilityRequest
 
 
+FailureTaxonomy = Literal[
+    "wrong_surface",
+    "insufficient_input_bundle",
+    "template_mismatch",
+    "recipe_drift",
+    "discovery",
+    "record_boundary",
+    "entity_binding",
+    "semantic_resolution",
+    "canonicalization",
+    "locale_normalization",
+    "validation",
+    "unsupported_representation",
+    "model_service_failure",
+    "internal_error",
+]
+
+
+class FailureClassification(FrozenModel):
+    code: FailureTaxonomy
+    message: str
+    field: str | None = None
+    finding_ids: tuple[str, ...] = ()
+    evidence_ids: tuple[str, ...] = ()
+
+
+class DiagnosticSummary(FrozenModel):
+    decision_path: tuple[str, ...] = ()
+    extractor_tier: Literal["blocked", "deterministic", "recipe", "ml", "llm"] = (
+        "deterministic"
+    )
+    trust_state: Literal[
+        "verified",
+        "partial",
+        "needs_review",
+        "rejected",
+        "blocked",
+        "unknown",
+    ] = "unknown"
+    missing_critical_fields: tuple[str, ...] = ()
+    failure_codes: tuple[FailureTaxonomy, ...] = ()
+    evidence_count: int = 0
+    review_required: bool = False
+
+
+FieldValueType = Literal[
+    "string",
+    "string_list",
+    "number",
+    "money",
+    "date",
+    "boolean",
+    "enum",
+    "key_value",
+    "structured_object",
+]
+
+
+class FieldContract(FrozenModel):
+    field: str
+    value_type: FieldValueType = "string"
+    semantic_role: str = "standard"
+    entity_scope: Literal["product", "variant", "offer", "asset", "job", "record"]
+    cardinality: Literal["one", "many"] = "one"
+    required: bool = False
+    criticality: Literal["critical", "important", "optional"] = "optional"
+    output_name: str | None = None
+    validators: tuple[str, ...] = ()
+    publish_behavior: Literal["block", "omit", "review"] = "omit"
+
+
+class LocalePolicy(FrozenModel):
+    locale: str | None = None
+    market: str | None = None
+    currency: str | None = None
+    timezone: str | None = None
+    tax_display: Literal["included", "excluded", "unknown"] = "unknown"
+    unit_system: Literal["metric", "imperial", "unknown"] = "unknown"
+    supplied_fields: tuple[str, ...] = ()
+    inferred_fields: tuple[str, ...] = ()
+
+
+def field_contracts_for_surface(surface: Surface) -> tuple[FieldContract, ...]:
+    surface_key = surface.value
+    defaults = set(field_mappings.SURFACE_FIELD_REPAIR_TARGETS.get(surface_key, ()))
+    contracts: list[FieldContract] = []
+    for field in field_mappings.CANONICAL_SCHEMAS.get(surface_key, ()):
+        contracts.append(
+            FieldContract(
+                field=field,
+                entity_scope=_field_entity_scope(field),
+                value_type=_field_value_type(field),
+                cardinality="many"
+                if field in {"additional_images", "variants", "tables"}
+                else "one",
+                required=field in defaults,
+                criticality="critical" if field in defaults else "optional",
+                output_name=field,
+                publish_behavior="block" if field in defaults else "omit",
+            )
+        )
+    return tuple(contracts)
+
+
+def _field_entity_scope(
+    field: str,
+) -> Literal["product", "variant", "offer", "asset", "job", "record"]:
+    if field in {
+        "price",
+        "currency",
+        "original_price",
+        "availability",
+        "stock_quantity",
+    }:
+        return "offer"
+    if field in {"image_url", "additional_images"}:
+        return "asset"
+    if field in {"variants", "variant_count", "color", "size"}:
+        return "variant"
+    if field in {"company", "location", "apply_url", "job_id", "job_type"}:
+        return "job"
+    return "product"
+
+
+def _field_value_type(field: str) -> FieldValueType:
+    if field in field_mappings.NORMALIZER_DECIMAL_FIELDS:
+        return "money" if "price" in field else "number"
+    if field in field_mappings.NORMALIZER_INTEGER_FIELDS:
+        return "number"
+    if field in field_mappings.NORMALIZER_BOOLEAN_FIELDS:
+        return "boolean"
+    if field in {"additional_images", "features", "tags"}:
+        return "string_list"
+    if field in {"variants", "tables"}:
+        return "structured_object"
+    return "string"
+
+
 class FieldEvidenceState(FrozenModel):
     entity_id: str | None = None
     field: str
@@ -625,6 +751,9 @@ class ExtractionRequest(FrozenModel):
     max_records: int = 1
     runtime_snapshot: Mapping[str, Any] = Field(default_factory=dict)
     user_controlled_fields: tuple[str, ...] = ()
+    manifest_context: ExecutionManifestContext = Field(
+        default_factory=ExecutionManifestContext
+    )
 
 
 CollectorOutcomeStatus = Literal[
@@ -769,3 +898,8 @@ class ExtractionResult(FrozenModel):
     stage_outcomes: tuple[StageOutcome, ...] = ()
     variant_drops: tuple[VariantDrop, ...] = ()
     contract_outcomes: tuple[ContractOutcome, ...] = ()
+    manifest_context: ExecutionManifestContext = Field(
+        default_factory=ExecutionManifestContext
+    )
+    failure_classifications: tuple[FailureClassification, ...] = ()
+    diagnostics: DiagnosticSummary = Field(default_factory=DiagnosticSummary)

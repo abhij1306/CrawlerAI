@@ -230,6 +230,7 @@ def _collect_field_learning(
             "selector_kind": selector_kind or None,
             "selector_value": selector_value or None,
             "source_record_ids": [],
+            "representative_url_result_ids": [],
             "feedback": (
                 _serialize_feedback_row(feedback_row)
                 if feedback_row is not None
@@ -243,6 +244,16 @@ def _collect_field_learning(
             for value in [
                 *_object_list(learning_entry.get("source_record_ids")),
                 record.id,
+            ]
+            if (parsed := _safe_int(value)) is not None
+        }
+    )
+    learning_entry["representative_url_result_ids"] = sorted(
+        {
+            parsed
+            for value in [
+                *_object_list(learning_entry.get("representative_url_result_ids")),
+                record.url_result_id,
             ]
             if (parsed := _safe_int(value)) is not None
         }

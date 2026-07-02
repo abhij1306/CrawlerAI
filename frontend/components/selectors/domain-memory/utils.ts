@@ -3,7 +3,6 @@ import type {
   DomainRunProfile,
   DomainRunProfileRecord,
   KnowledgeContract,
-  SelectorRecord,
 } from '../../../lib/api/types';
 import { isSpecialUseDomain } from '../../../lib/format/domain';
 import type { SurfaceWorkspace } from './types';
@@ -157,14 +156,6 @@ function knowledgeLocatorLabel(collector: string, locator: string) {
     )
     .map((part) => titleCaseToken(part.replace(':{id}', '').replace(/([a-z])([A-Z])/g, '$1 $2')));
   return parts.slice(-3).join(' › ');
-}
-
-export function selectorValue(record: Pick<SelectorRecord, 'xpath' | 'css_selector' | 'regex'>) {
-  return record.xpath ?? record.css_selector ?? record.regex ?? '';
-}
-
-export function getTotalSelectorCount(surfaces: SurfaceWorkspace[]) {
-  return surfaces.reduce((count, surface) => count + surface.selectorCount, 0);
 }
 
 export function getProfileCount(surfaces: SurfaceWorkspace[]) {

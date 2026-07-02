@@ -9,26 +9,20 @@ import httpx
 from app.core.dependencies import get_current_user, get_db
 from app.models.user import User
 from app.schemas.selectors import (
-    SelectorCreateRequest,
     SelectorDomainSummaryResponse,
     SelectorRecordResponse,
     SelectorSuggestRequest,
     SelectorSuggestResponse,
     SelectorTestRequest,
     SelectorTestResponse,
-    SelectorUpdateRequest,
 )
 from app.core.records.selectors_runtime import (
     build_preview_html,
-    create_selector_record,
-    delete_domain_selector_records,
-    delete_selector_record,
     fetch_selector_document,
     list_selector_domain_summaries,
     list_selector_records,
     suggest_selectors,
     test_selector,
-    update_selector_record,
 )
 from app.core.url_safety import SecurityError, validate_public_target
 from app.acquisition.browser_capture import (
@@ -36,7 +30,7 @@ from app.acquisition.browser_capture import (
     PlaywrightTimeoutError,
     is_recoverable_playwright_error,
 )
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import HTMLResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -106,69 +100,6 @@ async def selectors_list(
             surface=surface,
         )
     ]
-
-
-@router.post("")
-async def selectors_create(
-    payload: SelectorCreateRequest,
-    session: Annotated[AsyncSession, Depends(get_db)],
-    _: Annotated[User, Depends(get_current_user)],
-) -> SelectorRecordResponse:
-    record = await create_selector_record(
-        session,
-        domain=payload.domain,
-        surface=payload.surface,
-        payload=payload.model_dump(),
-    )
-    return SelectorRecordResponse.model_validate(record)
-
-
-@router.put("/{selector_id}")
-async def selectors_update(
-    selector_id: int,
-    payload: SelectorUpdateRequest,
-    session: Annotated[AsyncSession, Depends(get_db)],
-    _: Annotated[User, Depends(get_current_user)],
-) -> SelectorRecordResponse:
-    record = await update_selector_record(
-        session,
-        selector_id=selector_id,
-        payload=payload.model_dump(exclude_none=True),
-    )
-    if record is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Selector not found"
-        )
-    return SelectorRecordResponse.model_validate(record)
-
-
-@router.delete("/{selector_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def selectors_delete(
-    selector_id: int,
-    session: Annotated[AsyncSession, Depends(get_db)],
-    _: Annotated[User, Depends(get_current_user)],
-) -> Response:
-    deleted = await delete_selector_record(session, selector_id=selector_id)
-    if not deleted:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Selector not found"
-        )
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
-
-
-@router.delete("/domain/{domain}")
-async def selectors_delete_domain(
-    domain: str,
-    session: Annotated[AsyncSession, Depends(get_db)],
-    _: Annotated[User, Depends(get_current_user)],
-    surface: str | None = None,
-) -> dict[str, int]:
-    deleted = await delete_domain_selector_records(
-        session,
-        domain=domain,
-        surface=surface,
-    )
-    return {"deleted": deleted}
 
 
 @router.post("/suggest")

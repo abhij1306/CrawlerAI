@@ -2,17 +2,23 @@ from __future__ import annotations
 
 import pytest
 
-from app.models.crawl_run import CrawlRecord
-from app.models.extraction_memory import ExtractionOperatorLabel
-from app.crawl.domain_memory_service import load_domain_memory, save_domain_memory
+from app.core.config import settings
+from app.models.crawl_run import CrawlRecord, CrawlUrlResult
+from app.models.extraction_memory import (
+    ExtractionManifest,
+    ExtractionOperatorLabel,
+    ExtractionRecipe,
+    ExtractionReleaseSnapshot,
+    ExtractionTemplate,
+)
 from app.crawl.review import (
-    apply_domain_recipe_field_action,
     list_domain_field_feedback,
-    promote_domain_recipe_selectors,
+    save_grounded_correction,
     save_review,
 )
 from app.core.records.schema_service import ResolvedSchema
 from app.core.records.schema_service import load_resolved_schema
+from app.persistence.artifacts import ArtifactRepository
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -240,228 +246,6 @@ async def test_save_review_excludes_falsy_normalized_new_fields(
 
 @pytest.mark.asyncio
 @pytest.mark.component
-async def test_promote_domain_recipe_selectors_matches_existing_selectors_by_kind(
-    db_session: AsyncSession,
-    test_user,
-    monkeypatch: pytest.MonkeyPatch,
-    create_test_run,
-) -> None:
-    run = await create_test_run(
-        url="https://example.com/products/widget",
-        surface="ecommerce_detail",
-    )
-
-    update_calls: list[dict[str, object]] = []
-    create_calls: list[dict[str, object]] = []
-
-    async def _fake_list_selector_records(*args, **kwargs):
-        del args, kwargs
-        return [
-            {
-                "id": 11,
-                "field_name": "price",
-                "regex": ".price",
-            }
-        ]
-
-    async def _fake_update_selector_record(*args, **kwargs):
-        update_calls.append(dict(kwargs))
-        return {"id": 11}
-
-    async def _fake_create_selector_record(*args, **kwargs):
-        create_calls.append(dict(kwargs))
-        return {"id": 12, **dict(kwargs.get("payload") or {})}
-
-    monkeypatch.setattr(
-        "app.crawl.review.list_selector_records", _fake_list_selector_records
-    )
-    monkeypatch.setattr(
-        "app.crawl.review.update_selector_record", _fake_update_selector_record
-    )
-    monkeypatch.setattr(
-        "app.crawl.review.create_selector_record", _fake_create_selector_record
-    )
-
-    rows = await promote_domain_recipe_selectors(
-        db_session,
-        run=run,
-        selectors=[
-            {
-                "field_name": "price",
-                "selector_kind": "css_selector",
-                "selector_value": ".price",
-                "sample_value": "$19.99",
-            }
-        ],
-    )
-
-    assert update_calls == []
-    assert len(create_calls) == 1
-    assert rows[0]["id"] == 12
-
-
-@pytest.mark.asyncio
-@pytest.mark.component
-async def test_promote_domain_recipe_selectors_skips_invalid_existing_selector_ids(
-    db_session: AsyncSession,
-    test_user,
-    monkeypatch: pytest.MonkeyPatch,
-    create_test_run,
-) -> None:
-    run = await create_test_run(
-        url="https://example.com/products/widget",
-        surface="ecommerce_detail",
-    )
-
-    update_calls: list[dict[str, object]] = []
-    create_calls: list[dict[str, object]] = []
-
-    async def _fake_list_selector_records(*args, **kwargs):
-        del args, kwargs
-        return [
-            {
-                "id": None,
-                "field_name": "price",
-                "css_selector": ".price",
-            }
-        ]
-
-    async def _fake_update_selector_record(*args, **kwargs):
-        update_calls.append(dict(kwargs))
-        return {"id": 11}
-
-    async def _fake_create_selector_record(*args, **kwargs):
-        create_calls.append(dict(kwargs))
-        return {"id": 12, **dict(kwargs.get("payload") or {})}
-
-    monkeypatch.setattr(
-        "app.crawl.review.list_selector_records", _fake_list_selector_records
-    )
-    monkeypatch.setattr(
-        "app.crawl.review.update_selector_record", _fake_update_selector_record
-    )
-    monkeypatch.setattr(
-        "app.crawl.review.create_selector_record", _fake_create_selector_record
-    )
-
-    rows = await promote_domain_recipe_selectors(
-        db_session,
-        run=run,
-        selectors=[
-            {
-                "field_name": "price",
-                "selector_kind": "css_selector",
-                "selector_value": ".price",
-                "sample_value": "$19.99",
-            }
-        ],
-    )
-
-    assert update_calls == []
-    assert len(create_calls) == 1
-    assert rows[0]["id"] == 12
-
-
-@pytest.mark.asyncio
-@pytest.mark.component
-async def test_apply_domain_recipe_field_action_reject_deactivates_saved_selector_and_records_feedback(
-    db_session: AsyncSession,
-    test_user,
-    create_test_run,
-) -> None:
-    run = await create_test_run(
-        url="https://example.com/products/widget",
-        surface="ecommerce_detail",
-    )
-    await save_domain_memory(
-        db_session,
-        domain="example.com",
-        surface="ecommerce_detail",
-        selectors={
-            "rules": [
-                {
-                    "id": 1,
-                    "field_name": "price",
-                    "css_selector": ".price",
-                    "status": "validated",
-                    "source": "domain_recipe",
-                    "is_active": True,
-                }
-            ]
-        },
-    )
-    await db_session.commit()
-
-    result = await apply_domain_recipe_field_action(
-        db_session,
-        run=run,
-        action={
-            "field_name": "price",
-            "action": "reject",
-            "selector_kind": "css_selector",
-            "selector_value": ".price",
-            "source_record_ids": [11],
-        },
-    )
-
-    feedback_rows = list(
-        (
-            await db_session.execute(
-                select(DomainFieldFeedback).order_by(DomainFieldFeedback.id.asc())
-            )
-        )
-        .scalars()
-        .all()
-    )
-    memory = await load_domain_memory(
-        db_session,
-        domain="example.com",
-        surface="ecommerce_detail",
-    )
-
-    assert result["action"] == "reject"
-    assert len(feedback_rows) == 1
-    assert feedback_rows[0].field_name == "price"
-    assert feedback_rows[0].source_value == ".price"
-    assert memory is not None
-    assert memory.selectors["rules"][0]["is_active"] is False
-
-
-@pytest.mark.asyncio
-@pytest.mark.component
-async def test_apply_domain_recipe_field_action_skips_invalid_source_record_ids(
-    db_session: AsyncSession,
-    test_user,
-    create_test_run,
-) -> None:
-    run = await create_test_run(
-        url="https://example.com/products/widget",
-        surface="ecommerce_detail",
-    )
-
-    await apply_domain_recipe_field_action(
-        db_session,
-        run=run,
-        action={
-            "field_name": "price",
-            "action": "keep",
-            "selector_kind": None,
-            "selector_value": None,
-            "source_record_ids": ["11", "bad", -3, "", None],
-        },
-    )
-
-    feedback_row = (
-        await db_session.execute(
-            select(DomainFieldFeedback).order_by(DomainFieldFeedback.id.desc()).limit(1)
-        )
-    ).scalar_one()
-
-    assert feedback_row.payload["source_record_ids"] == [11, -3]
-
-
-@pytest.mark.asyncio
-@pytest.mark.component
 async def test_list_domain_field_feedback_skips_invalid_serialized_source_record_ids(
     db_session: AsyncSession,
     test_user,
@@ -499,10 +283,9 @@ async def test_list_domain_field_feedback_skips_invalid_serialized_source_record
 
 @pytest.mark.asyncio
 @pytest.mark.component
-async def test_apply_domain_recipe_field_action_rolls_back_staged_mutations_on_error(
+async def test_grounded_correction_rejects_text_only_field_label(
     db_session: AsyncSession,
     test_user,
-    monkeypatch: pytest.MonkeyPatch,
     create_test_run,
 ) -> None:
     run = await create_test_run(
@@ -510,56 +293,171 @@ async def test_apply_domain_recipe_field_action_rolls_back_staged_mutations_on_e
         surface="ecommerce_detail",
     )
 
-    async def _failing_promote(session, *, run, selectors, commit=True):
-        del run, selectors, commit
-        await save_domain_memory(
-            session,
-            domain="example.com",
-            surface="ecommerce_detail",
-            selectors={
-                "rules": [
-                    {
-                        "id": 1,
-                        "field_name": "price",
-                        "css_selector": ".price",
-                        "is_active": True,
-                    }
-                ]
-            },
-        )
-        raise ValueError("selector promotion failed")
-
-    monkeypatch.setattr(
-        "app.crawl.review.promote_domain_recipe_selectors", _failing_promote
-    )
-
-    with pytest.raises(ValueError, match="selector promotion failed"):
-        await apply_domain_recipe_field_action(
+    with pytest.raises(ValueError, match="Every label requires a grounding reference"):
+        await save_grounded_correction(
             db_session,
             run=run,
-            action={
-                "field_name": "price",
-                "action": "keep",
-                "selector_kind": "css_selector",
-                "selector_value": ".price",
-                "source_record_ids": [11],
-            },
+            labels=[
+                {
+                    "target_kind": "field",
+                    "subject_id": "product:1",
+                    "field_name": "price",
+                    "canonical_value": "19.99",
+                    "semantic_role": "primary_price",
+                    "locale_interpretation": "USD",
+                    "grounding": [],
+                }
+            ],
         )
 
-    memory = await load_domain_memory(
-        db_session,
-        domain="example.com",
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_grounded_correction_requires_representative_replay_before_activation(
+    db_session: AsyncSession,
+    test_user,
+    create_test_run,
+) -> None:
+    run = await create_test_run(
+        url="https://example.com/products/widget",
         surface="ecommerce_detail",
     )
-    feedback_rows = list(
-        (
-            await db_session.execute(
-                select(DomainFieldFeedback).order_by(DomainFieldFeedback.id.asc())
-            )
-        )
-        .scalars()
-        .all()
+
+    result = await save_grounded_correction(
+        db_session,
+        run=run,
+        activate=True,
+        labels=[
+            {
+                "target_kind": "field",
+                "subject_id": "product:1",
+                "field_name": "price",
+                "canonical_value": "19.99",
+                "semantic_role": "primary_price",
+                "locale_interpretation": "USD",
+                "grounding": [
+                    {
+                        "kind": "node",
+                        "artifact_id": "url-result:1:html",
+                        "locator": "css:.price",
+                    }
+                ],
+            }
+        ],
+        representative_url_result_ids=[],
     )
 
-    assert memory is None
-    assert feedback_rows == []
+    label = (
+        await db_session.execute(
+            select(ExtractionOperatorLabel)
+            .where(ExtractionOperatorLabel.id == result["correction_id"])
+            .limit(1)
+        )
+    ).scalar_one()
+
+    assert result["activation_status"] == "replay_failed"
+    assert result["replay"]["passed"] is False
+    assert label.payload["activation_requested"] is True
+    assert label.payload["activation_status"] == "replay_failed"
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_grounded_correction_replays_and_activates_immutable_release(
+    db_session: AsyncSession,
+    test_user,
+    create_test_run,
+) -> None:
+    run = await create_test_run(
+        url="https://example.com/products/widget",
+        surface="ecommerce_detail",
+    )
+    url_result = CrawlUrlResult(
+        run_id=run.id,
+        requested_url=run.url,
+        normalized_url=run.url,
+        final_url=run.url,
+        surface=run.surface,
+        acquisition_outcome="success",
+        verdict="success",
+        record_count=1,
+    )
+    template = ExtractionTemplate(
+        domain="example.com",
+        surface=run.surface,
+        fingerprint="price-template-v1",
+        route_pattern="/products/*",
+        last_seen_run_id=run.id,
+    )
+    db_session.add_all([url_result, template])
+    await db_session.flush()
+    db_session.add(
+        ExtractionManifest(
+            run_id=run.id,
+            url_result_id=url_result.id,
+            template_id=template.id,
+            manifest_version="extraction-manifest.v1",
+            payload={},
+        )
+    )
+    await db_session.flush()
+    ArtifactRepository(root_dir=settings.artifacts_dir).persist_bytes(
+        run_id=run.id,
+        url_result_id=url_result.id,
+        name="page.html",
+        content=b'<html><body><span class="price">19.99</span></body></html>',
+    )
+    await db_session.commit()
+
+    result = await save_grounded_correction(
+        db_session,
+        run=run,
+        activate=True,
+        labels=[
+            {
+                "target_kind": "field",
+                "subject_id": "product:1",
+                "field_name": "price",
+                "canonical_value": "19.99",
+                "semantic_role": "primary_price",
+                "locale_interpretation": "USD",
+                "grounding": [
+                    {
+                        "kind": "node",
+                        "artifact_id": f"url-result:{url_result.id}:page.html",
+                        "locator": "css:.price",
+                    }
+                ],
+            }
+        ],
+        representative_url_result_ids=[url_result.id],
+    )
+
+    await db_session.refresh(run)
+    label = await db_session.get(ExtractionOperatorLabel, result["correction_id"])
+    recipe = (
+        await db_session.execute(
+            select(ExtractionRecipe).where(
+                ExtractionRecipe.template_id == template.id,
+                ExtractionRecipe.kind == "selectors",
+            )
+        )
+    ).scalar_one()
+    release = (
+        await db_session.execute(
+            select(ExtractionReleaseSnapshot).where(
+                ExtractionReleaseSnapshot.run_id == run.id
+            )
+        )
+    ).scalar_one()
+
+    assert result["activation_status"] == "activated"
+    assert result["replay"]["passed"] is True
+    assert result["replay"]["template_id"] == str(template.id)
+    assert label is not None
+    assert label.template_id == template.id
+    assert label.payload["labels"][0]["authority"] == "human_verified"
+    assert recipe.payload["rules"][0]["field_name"] == "price"
+    assert recipe.payload["rules"][0]["css_selector"] == ".price"
+    assert run.extraction_release_snapshot_id == release.id
+    assert release.payload["templates"][0]["selector_rules"][0]["field_name"] == "price"

@@ -3,15 +3,15 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from app.models.domain_memory import (
-    DomainCookieMemory,
-    DomainRunProfile,
-)
+from app.models.domain_memory import DomainCookieMemory, DomainRunProfile
 from app.models.crawl_run import CrawlRecord, CrawlRun
 from app.models.extraction_memory import ExtractionOperatorLabel
 from app.core.config.extraction_memory import (
     EXTRACTION_LABEL_KIND_FIELD_FEEDBACK,
     EXTRACTION_LABEL_KIND_REVIEW_PROMOTION,
+)
+from app.evaluation.grounded_corrections import (
+    save_grounded_correction as save_grounded_correction,
 )
 
 from app.core.config.extraction_rules import EXTRACTION_RULES, REVIEW_CONTAINER_KEYS
@@ -22,10 +22,7 @@ from app.crawl.profile import (
 )
 from app.core.domain_utils import normalize_domain
 from app.core.records.field_policy import normalize_field_key, normalize_review_target
-from app.core.shared.field_coerce import (
-    object_list as _object_list,
-    safe_int as _safe_int,
-)
+from app.core.shared.field_coerce import safe_int as _safe_int
 from app.core.records.normalizers import normalize_value
 from app.persistence.publish import (
     load_domain_field_mapping,
@@ -35,14 +32,8 @@ from app.core.records.schema_service import load_resolved_schema
 from app.crawl.review.domain_recipe_support import (
     collect_selector_candidates,
     derive_acquisition_info,
-    saved_selector_signature,
-    selector_signature,
 )
-from app.core.records.selectors_runtime import (
-    create_selector_record,
-    list_selector_records,
-    update_selector_record,
-)
+from app.core.records.selectors_runtime import list_selector_records
 from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -430,71 +421,6 @@ def _assemble_recipe_payload(
     }
 
 
-async def promote_domain_recipe_selectors(
-    session: AsyncSession,
-    *,
-    run: CrawlRun,
-    selectors: list[dict[str, object]],
-    commit: bool = True,
-) -> list[dict[str, object]]:
-    domain = normalize_domain(run.url)
-    existing = await list_selector_records(
-        session,
-        domain=domain,
-        surface=run.surface,
-    )
-    by_signature = {saved_selector_signature(row): row for row in existing}
-    saved_rows: list[dict[str, object]] = []
-    for row in selectors:
-        selector_kind = str(row.get("selector_kind") or "").strip()
-        selector_value = str(row.get("selector_value") or "").strip()
-        field_name = normalize_field_key(str(row.get("field_name") or ""))
-        if not field_name or selector_kind != "css_selector" or not selector_value:
-            continue
-        payload = {
-            "field_name": field_name,
-            "css_selector": selector_value,
-            "sample_value": row.get("sample_value"),
-            "source": "domain_recipe",
-            "source_run_id": run.id,
-            "status": "validated",
-            "is_active": True,
-        }
-        signature = selector_signature(
-            field_name=field_name,
-            selector_kind=selector_kind,
-            selector_value=selector_value,
-        )
-        existing_row = by_signature.get(signature)
-        if (
-            isinstance(existing_row, dict)
-            and "id" in existing_row
-            and existing_row["id"] is not None
-        ):
-            selector_id = _safe_int(existing_row.get("id"))
-            if selector_id is None:
-                continue
-            updated_row = await update_selector_record(
-                session,
-                selector_id=selector_id,
-                payload=payload,
-                commit=commit,
-            )
-            if updated_row is not None:
-                saved_rows.append(updated_row)
-            continue
-        created_row = await create_selector_record(
-            session,
-            domain=domain,
-            surface=run.surface,
-            payload=payload,
-            commit=commit,
-        )
-        if created_row is not None:
-            saved_rows.append(created_row)
-    return [row for row in saved_rows if isinstance(row, dict)]
-
-
 async def save_domain_recipe_run_profile(
     session: AsyncSession,
     *,
@@ -509,93 +435,6 @@ async def save_domain_recipe_run_profile(
         source_run_id=run.id,
         commit=True,
     )
-
-
-async def apply_domain_recipe_field_action(
-    session: AsyncSession,
-    *,
-    run: CrawlRun,
-    action: dict[str, object],
-) -> dict[str, object]:
-    domain = normalize_domain(run.url)
-    field_name = normalize_field_key(str(action.get("field_name") or ""))
-    action_name = str(action.get("action") or "").strip().lower()
-    selector_kind = str(action.get("selector_kind") or "").strip().lower()
-    selector_value = str(action.get("selector_value") or "").strip()
-    if not field_name or action_name not in {"keep", "reject"}:
-        raise ValueError("Invalid domain recipe field action.")
-    if selector_kind and selector_kind != "css_selector":
-        raise ValueError("Only css_selector domain recipe actions are supported.")
-
-    source_kind = "selector" if selector_kind and selector_value else "field_source"
-    source_value = selector_value or None
-    try:
-        if action_name == "keep" and selector_kind and selector_value:
-            await promote_domain_recipe_selectors(
-                session,
-                run=run,
-                selectors=[
-                    {
-                        "field_name": field_name,
-                        "selector_kind": selector_kind,
-                        "selector_value": selector_value,
-                    }
-                ],
-                commit=False,
-            )
-        if action_name == "reject" and selector_kind and selector_value:
-            existing = await list_selector_records(
-                session,
-                domain=domain,
-                surface=run.surface,
-            )
-            for row in existing:
-                matched_value = row.get("css_selector")
-                if (
-                    normalize_field_key(str(row.get("field_name") or "")) == field_name
-                    and str(matched_value or "").strip() == selector_value
-                    and row.get("id") is not None
-                ):
-                    selector_id = _safe_int(row.get("id"))
-                    if selector_id is None:
-                        continue
-                    await update_selector_record(
-                        session,
-                        selector_id=selector_id,
-                        payload={"is_active": False},
-                        commit=False,
-                    )
-                    break
-
-        feedback = DomainFieldFeedback(
-            label_kind=EXTRACTION_LABEL_KIND_FIELD_FEEDBACK,
-            domain=domain,
-            surface=run.surface,
-            field_name=field_name,
-            action=action_name,
-            source_kind=source_kind,
-            source_value=source_value,
-            source_run_id=run.id,
-            payload={
-                "selector_kind": selector_kind or None,
-                "selector_value": selector_value or None,
-                "source_record_ids": [
-                    parsed
-                    for parsed in (
-                        _safe_int(value)
-                        for value in _object_list(action.get("source_record_ids"))
-                    )
-                    if parsed is not None
-                ],
-            },
-        )
-        session.add(feedback)
-        await session.commit()
-        await session.refresh(feedback)
-        return _serialize_feedback_row(feedback)
-    except Exception:
-        await session.rollback()
-        raise
 
 
 async def list_domain_field_feedback(

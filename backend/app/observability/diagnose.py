@@ -23,8 +23,11 @@ from typing import Any
 from app.core.config import field_mappings
 from app.extraction.contracts import (
     Decision,
+    DiagnosticSummary,
     Evidence,
+    ExecutionManifestContext,
     ExtractionResult,
+    FailureClassification,
     FieldEvidenceState,
     SourceLocator,
 )
@@ -122,6 +125,12 @@ def build_diagnosis(
         "schema_version": SCHEMA_VERSION,
         "verdict": extraction_result.verdict,
         "data_integrity": extraction_result.data_integrity,
+        "manifest": _manifest_context(extraction_result).model_dump(mode="json"),
+        "diagnostics": _diagnostic_summary(extraction_result).model_dump(mode="json"),
+        "failure_classifications": [
+            row.model_dump(mode="json")
+            for row in _failure_classifications(extraction_result)
+        ],
         "acquisition": _acquisition_section(acquisition_result),
         "metrics": extraction_result.metrics.model_dump(mode="json"),
         "fields": [
@@ -166,6 +175,27 @@ def _bounded(items: Sequence[Any], limit: int) -> tuple[list[Any], bool]:
     if len(rows) <= limit:
         return rows, False
     return rows[:limit], True
+
+
+def _manifest_context(extraction_result: object) -> ExecutionManifestContext:
+    value = getattr(extraction_result, "manifest_context", None)
+    return (
+        value
+        if isinstance(value, ExecutionManifestContext)
+        else ExecutionManifestContext()
+    )
+
+
+def _diagnostic_summary(extraction_result: object) -> DiagnosticSummary:
+    value = getattr(extraction_result, "diagnostics", None)
+    return value if isinstance(value, DiagnosticSummary) else DiagnosticSummary()
+
+
+def _failure_classifications(
+    extraction_result: object,
+) -> tuple[FailureClassification, ...]:
+    value = getattr(extraction_result, "failure_classifications", ())
+    return tuple(row for row in value or () if isinstance(row, FailureClassification))
 
 
 def _acquisition_section(acquisition_result: Any) -> dict[str, object]:

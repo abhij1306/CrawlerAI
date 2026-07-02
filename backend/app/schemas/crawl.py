@@ -201,6 +201,7 @@ class DomainRecipeFieldLearningItem(BaseModel):
     selector_kind: str | None = None
     selector_value: str | None = None
     source_record_ids: list[int] = Field(default_factory=list)
+    representative_url_result_ids: list[int] = Field(default_factory=list)
     feedback: DomainRecipeFieldFeedback | None = None
 
 
@@ -413,28 +414,51 @@ class DomainCookieMemoryRecordResponse(BaseModel):
     updated_at: datetime
 
 
-class DomainRecipeSelectorPromotionItem(BaseModel):
-    candidate_key: str
-    field_name: str
-    selector_kind: str
-    selector_value: str
-    sample_value: str | None = None
-
-
-class DomainRecipePromoteSelectorsRequest(BaseModel):
-    selectors: list[DomainRecipeSelectorPromotionItem] = Field(default_factory=list)
-
-
 class DomainRecipeSaveRunProfileRequest(BaseModel):
     profile: DomainRunProfilePayload
 
 
-class DomainRecipeFieldActionRequest(BaseModel):
-    field_name: str
-    action: Literal["keep", "reject"]
-    selector_kind: str | None = None
-    selector_value: str | None = None
-    source_record_ids: list[int] = Field(default_factory=list)
+class GroundingReferencePayload(BaseModel):
+    kind: Literal["node", "path", "region", "absence_assertion"]
+    artifact_id: str
+    locator: str
+    bounding_box: dict[str, float] | None = None
+
+
+class GroundedCorrectionLabelPayload(BaseModel):
+    target_kind: Literal[
+        "page_region",
+        "record_boundary",
+        "field",
+        "entity_relationship",
+        "explicit_absence",
+    ]
+    subject_id: str | None = None
+    record_id: str | None = None
+    field_name: str | None = None
+    canonical_value: Any = None
+    semantic_role: str | None = None
+    locale_interpretation: str | None = None
+    region_role: (
+        Literal["primary", "recommendation", "boilerplate", "unrelated"] | None
+    ) = None
+    relationship: dict[str, str] | None = None
+    grounding: list[GroundingReferencePayload] = Field(default_factory=list)
+
+
+class GroundedCorrectionRequest(BaseModel):
+    labels: list[GroundedCorrectionLabelPayload] = Field(default_factory=list)
+    activate: bool = False
+    representative_url_result_ids: list[int] = Field(default_factory=list)
+
+
+class GroundedCorrectionResponse(BaseModel):
+    correction_id: int
+    domain: str
+    surface: str
+    label_count: int
+    activation_status: str
+    replay: dict[str, object]
 
 
 class UnverifiedAttribute(BaseModel):

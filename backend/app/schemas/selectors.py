@@ -27,34 +27,6 @@ class SelectorRecordResponse(BaseModel):
     updated_at: datetime | None = None
 
 
-class SelectorCreateRequest(BaseModel):
-    domain: str
-    surface: str = "generic"
-    field_name: str
-    css_selector: str | None = None
-    status: str | None = None
-    sample_value: str | None = None
-    source: str | None = None
-    source_run_id: int | None = None
-    is_active: bool = True
-
-    @model_validator(mode="after")
-    def _require_selector(self) -> "SelectorCreateRequest":
-        if not str(self.css_selector or "").strip():
-            raise ValueError("css_selector is required")
-        return self
-
-
-class SelectorUpdateRequest(BaseModel):
-    field_name: str | None = None
-    css_selector: str | None = None
-    status: str | None = None
-    sample_value: str | None = None
-    source: str | None = None
-    source_run_id: int | None = None
-    is_active: bool | None = None
-
-
 class SelectorTestRequest(BaseModel):
     url: HttpUrl | str
     css_selector: str | None = None

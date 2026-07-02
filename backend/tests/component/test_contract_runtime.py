@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import uuid
+
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -26,12 +28,21 @@ from app.extraction.contracts import (
 from app.extraction.surfaces import Surface
 from app.core.config.extraction_memory import (
     EXTRACTION_RECIPE_KIND_CONTRACTS,
+    EXTRACTION_RECIPE_KIND_SELECTORS,
+    EXTRACTION_RECIPE_LAYER_DOMAIN,
     EXTRACTION_RECIPE_LAYER_TEMPLATE,
 )
-from app.models.extraction_memory import CompiledExtractionRecipe
+from app.models.crawl_run import CrawlRun
+from app.models.extraction_memory import CompiledExtractionRecipe, ExtractionRecipe
 from app.persistence.extraction_memory import (
+    RecipeCompileError,
+    activate_release_snapshot_for_run,
+    active_release_snapshot_for_run,
     build_release_payload,
+    compile_recipe_layers,
+    create_candidate_release_snapshot,
     ensure_template,
+    rollback_release_snapshot_for_run,
     selector_rules_from_release,
     upsert_recipe,
 )
@@ -515,8 +526,93 @@ def test_fingerprint_from_parts_matches_fingerprint_template() -> None:
     assert fp_parts == fp_result
 
 
-@pytest.mark.asyncio
-@pytest.mark.component
+@pytest.mark.unit
+def test_fingerprint_ignores_values_but_changes_with_source_shape() -> None:
+    outcomes = (
+        CollectorOutcome(
+            collector_id="jsonld", outcome="produced_evidence", evidence_count=1
+        ),
+    )
+
+    original = fingerprint_from_parts(
+        "https://example.com/products/widget-123",
+        "ecommerce_detail",
+        (_evidence("ev-1", "jsonld", "/name", "product.title", "Widget"),),
+        outcomes,
+    )
+    changed_value = fingerprint_from_parts(
+        "https://example.com/products/widget-123",
+        "ecommerce_detail",
+        (_evidence("ev-2", "jsonld", "/name", "product.title", "Different"),),
+        outcomes,
+    )
+    changed_source = fingerprint_from_parts(
+        "https://example.com/products/widget-123",
+        "ecommerce_detail",
+        (_evidence("ev-3", "jsonld", "/product/name", "product.title", "Widget"),),
+        outcomes,
+    )
+
+    assert changed_value == original
+    assert changed_source != original
+
+
+def _recipe(layer: str, kind: str, payload: dict) -> ExtractionRecipe:
+    return ExtractionRecipe(
+        id=uuid.uuid4(),
+        template_id=uuid.uuid4(),
+        layer=layer,
+        kind=kind,
+        payload=payload,
+        version=1,
+    )
+
+
+@pytest.mark.unit
+def test_compile_recipe_layers_allows_higher_layer_override_without_mutating_parent() -> (
+    None
+):
+    parent_rule = {"field_name": "title", "css_selector": "h1"}
+    compiled = compile_recipe_layers(
+        [
+            _recipe(
+                EXTRACTION_RECIPE_LAYER_DOMAIN,
+                EXTRACTION_RECIPE_KIND_SELECTORS,
+                {"rules": [parent_rule]},
+            ),
+            _recipe(
+                EXTRACTION_RECIPE_LAYER_TEMPLATE,
+                EXTRACTION_RECIPE_KIND_SELECTORS,
+                {"rules": [{"field_name": "title", "css_selector": ".pdp-title"}]},
+            ),
+        ]
+    )
+
+    assert compiled["selector_rules"] == [
+        {"field_name": "title", "css_selector": ".pdp-title"}
+    ]
+    assert parent_rule == {"field_name": "title", "css_selector": "h1"}
+
+
+@pytest.mark.unit
+def test_compile_recipe_layers_fails_ambiguous_same_layer_override() -> None:
+    with pytest.raises(RecipeCompileError):
+        compile_recipe_layers(
+            [
+                _recipe(
+                    EXTRACTION_RECIPE_LAYER_TEMPLATE,
+                    EXTRACTION_RECIPE_KIND_SELECTORS,
+                    {"rules": [{"field_name": "title", "css_selector": "h1"}]},
+                ),
+                _recipe(
+                    EXTRACTION_RECIPE_LAYER_TEMPLATE,
+                    EXTRACTION_RECIPE_KIND_SELECTORS,
+                    {"rules": [{"field_name": "title", "css_selector": "h2"}]},
+                ),
+            ]
+        )
+
+
 @pytest.mark.asyncio
 @pytest.mark.component
 async def test_release_payload_returns_empty_templates_for_unknown_domain(
@@ -607,3 +703,91 @@ async def test_release_payload_freezes_selector_recipes(
         ]
         == "h1"
     )
+    assert frozen["templates"][0]["compiled_recipe"]["selector_rules"] == [
+        {"field_name": "title", "css_selector": "h1"}
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_release_snapshot_activation_and_rollback_are_atomic(
+    db_session: AsyncSession, test_user
+) -> None:
+    db_session.add(
+        CrawlRun(
+            id=901,
+            user_id=test_user.id,
+            run_type="crawl",
+            url="https://example.com/products/widget",
+            status="running",
+            surface="ecommerce_detail",
+        )
+    )
+    await db_session.flush()
+
+    baseline_template = await ensure_template(
+        db_session,
+        domain="example.com",
+        surface="ecommerce_detail",
+        fingerprint="baseline",
+    )
+    await upsert_recipe(
+        db_session,
+        template=baseline_template,
+        layer=EXTRACTION_RECIPE_LAYER_TEMPLATE,
+        kind=EXTRACTION_RECIPE_KIND_SELECTORS,
+        payload={"rules": [{"field_name": "title", "css_selector": "h1"}]},
+    )
+    baseline = await create_candidate_release_snapshot(
+        db_session, domain="example.com", surface="ecommerce_detail"
+    )
+    await activate_release_snapshot_for_run(
+        db_session, run_id=901, release_snapshot_id=baseline.id
+    )
+
+    candidate_template = await ensure_template(
+        db_session,
+        domain="example.com",
+        surface="ecommerce_detail",
+        fingerprint="candidate",
+    )
+    await upsert_recipe(
+        db_session,
+        template=candidate_template,
+        layer=EXTRACTION_RECIPE_LAYER_TEMPLATE,
+        kind=EXTRACTION_RECIPE_KIND_SELECTORS,
+        payload={"rules": [{"field_name": "title", "css_selector": ".pdp-title"}]},
+    )
+    candidate = await create_candidate_release_snapshot(
+        db_session, domain="example.com", surface="ecommerce_detail"
+    )
+    await activate_release_snapshot_for_run(
+        db_session, run_id=901, release_snapshot_id=candidate.id
+    )
+
+    active = await active_release_snapshot_for_run(db_session, run_id=901)
+    assert active is not None
+    assert active.id == candidate.id
+    assert baseline.run_id is None
+    assert baseline.payload["templates"][0]["fingerprint"] == "baseline"
+
+    with pytest.raises(ValueError):
+        await activate_release_snapshot_for_run(
+            db_session,
+            run_id=901,
+            release_snapshot_id=uuid.UUID("00000000-0000-0000-0000-000000000099"),
+        )
+    active_after_failed_activation = await active_release_snapshot_for_run(
+        db_session, run_id=901
+    )
+    assert active_after_failed_activation is not None
+    assert active_after_failed_activation.id == candidate.id
+
+    await rollback_release_snapshot_for_run(
+        db_session, run_id=901, target_release_snapshot_id=baseline.id
+    )
+
+    rolled_back = await active_release_snapshot_for_run(db_session, run_id=901)
+    assert rolled_back is not None
+    assert rolled_back.id == baseline.id
+    assert candidate.run_id is None

@@ -65,6 +65,25 @@ def test_ecommerce_listing_reads_hyphenated_data_test_id_product_cards() -> None
     ]
 
 
+def test_ecommerce_listing_reads_drifted_test_data_product_card_attrs() -> None:
+    for attr_name in ("test-data-id", "test-dataid"):
+        result = _extract(
+            "ecommerce_listing",
+            f"""
+            <main>
+              <div {attr_name}="product-card">
+                <a href="/p/trail-shoe" title="Trail Shoe">Trail Shoe</a>
+                <span data-price="$99.00"></span>
+              </div>
+            </main>
+            """,
+            "https://shop.test/category/shoes",
+            max_records=5,
+        )
+
+        assert [row["title"] for row in result.records] == ["Trail Shoe"]
+
+
 def test_ecommerce_listing_result_is_replayable() -> None:
     result = _extract(
         "ecommerce_listing",

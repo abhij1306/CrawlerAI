@@ -14,15 +14,12 @@ type CrawlFieldConfigCardProps = {
   targetUrl: string;
   activeFieldTestId: string | null;
   generatingSelectors: boolean;
-  savingDomainMemory: boolean;
-  canSaveDomainMemory: boolean;
   message: string;
   error: string;
   setFieldRows: SetFieldRows;
   clearFieldMessage: (rowId: string) => void;
   onGenerate: () => void;
   onAddField: () => void;
-  onSave: () => void;
   onTest: (row: FieldRow) => void;
 };
 
@@ -32,15 +29,12 @@ export function CrawlFieldConfigCard({
   targetUrl,
   activeFieldTestId,
   generatingSelectors,
-  savingDomainMemory,
-  canSaveDomainMemory,
   message,
   error,
   setFieldRows,
   clearFieldMessage,
   onGenerate,
   onAddField,
-  onSave,
   onTest,
 }: Readonly<CrawlFieldConfigCardProps>) {
   return (
@@ -61,15 +55,6 @@ export function CrawlFieldConfigCard({
           <Button variant="quiet" type="button" size="sm" onClick={onAddField}>
             <Plus className="size-3" />
             New Field
-          </Button>
-          <Button
-            variant="action"
-            type="button"
-            size="sm"
-            onClick={onSave}
-            disabled={savingDomainMemory || !canSaveDomainMemory}
-          >
-            {savingDomainMemory ? 'Saving...' : 'Save to Memory'}
           </Button>
         </div>
       </header>

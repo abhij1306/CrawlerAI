@@ -10,17 +10,12 @@ import type {
   DomainRunProfile,
   DomainRunProfileRecord,
   KnowledgeSiteRecord,
-  SelectorDomainSummary,
-  SelectorRecord,
 } from '../../../lib/api/types';
 import { getNormalizedDomain } from '../../../lib/format/domain';
 import { buildDomainWorkspaces } from './build-workspaces';
-import type { EditDraft, LocalRecord, SurfaceWorkspace } from './types';
-import { useSelectorRecordActions } from './use-selector-record-actions';
+import type { SurfaceWorkspace } from './types';
 import { cloneDomainRunProfile, firstUsableDomain, profileDraftKey } from './utils';
 
-let localUidCounter = 0;
-const EMPTY_SELECTOR_SUMMARIES: SelectorDomainSummary[] = [];
 const EMPTY_PROFILES: DomainRunProfileRecord[] = [];
 const EMPTY_COOKIES: DomainCookieMemoryRecord[] = [];
 const EMPTY_FEEDBACK: DomainFieldFeedbackRecord[] = [];
@@ -40,21 +35,12 @@ function latestCompletedRunIdFor(surfaceWorkspace: SurfaceWorkspace): number | n
   return latestId;
 }
 
-function toLocalRecords(selectorData: SelectorRecord[]) {
-  return selectorData.map((record, index) => ({
-    ...record,
-    _uid: `${record.id}-${index}-${(localUidCounter += 1)}`,
-  }));
-}
 export function useDomainMemoryWorkspace() {
-  const [records, setRecords] = useState<LocalRecord[]>([]);
   const [error, setError] = useState('');
   const [selectedDomain, setSelectedDomain] = useState('');
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [draft, setDraft] = useState<EditDraft | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [surfaceFilter, setSurfaceFilter] = useState('all');
-  const [activeTab, setActiveTab] = useState('selectors');
+  const [activeTab, setActiveTab] = useState('profiles');
   const [profileDrafts, setProfileDrafts] = useState<Record<string, DomainRunProfile>>({});
   const [profileSaveKey, setProfileSaveKey] = useState('');
   const [resetDialogOpen, setResetDialogOpen] = useState(false);
@@ -62,10 +48,6 @@ export function useDomainMemoryWorkspace() {
   const [resetError, setResetError] = useState('');
   const deferredSearchQuery = useDeferredValue(searchQuery);
   const queryClient = useQueryClient();
-  const selectorSummaryQuery = useQuery({
-    queryKey: queryKeys.domainMemory.domains(),
-    queryFn: () => api.listSelectorSummaries(),
-  });
   const profilesQuery = useQuery({
     queryKey: queryKeys.domainRunProfiles.all,
     queryFn: () => api.listDomainRunProfiles(),
@@ -87,7 +69,6 @@ export function useDomainMemoryWorkspace() {
     queryFn: () => api.listKnowledgeSites(),
   });
   const workspaceQueries = [
-    selectorSummaryQuery,
     profilesQuery,
     cookiesQuery,
     feedbackQuery,
@@ -102,7 +83,6 @@ export function useDomainMemoryWorkspace() {
         ? 'Unable to load domain memory.'
         : '';
 
-  const selectorSummaries = selectorSummaryQuery.data ?? EMPTY_SELECTOR_SUMMARIES;
   const profiles = profilesQuery.data ?? EMPTY_PROFILES;
   const cookies = cookiesQuery.data ?? EMPTY_COOKIES;
   const feedback = feedbackQuery.data ?? EMPTY_FEEDBACK;
@@ -115,13 +95,11 @@ export function useDomainMemoryWorkspace() {
     setError('');
     try {
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: queryKeys.domainMemory.domains() }),
         queryClient.invalidateQueries({ queryKey: queryKeys.domainRunProfiles.all }),
         queryClient.invalidateQueries({ queryKey: ['domain-cookie-memory'] }),
         queryClient.invalidateQueries({ queryKey: ['domain-field-feedback'] }),
         queryClient.invalidateQueries({ queryKey: queryKeys.runs.all }),
         queryClient.invalidateQueries({ queryKey: ['knowledge-sites'] }),
-        queryClient.invalidateQueries({ queryKey: queryKeys.selectors.all }),
       ]);
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : 'Unable to load domain memory.');
@@ -132,14 +110,12 @@ export function useDomainMemoryWorkspace() {
     () =>
       Array.from(
         new Set([
-          ...selectorSummaries.map((summary) => summary.surface),
-          ...records.map((record) => record.surface),
           ...profiles.map((profile) => profile.surface),
           ...feedback.map((entry) => entry.surface),
           ...completedRuns.map((run) => run.surface),
         ]),
       ).sort((left, right) => left.localeCompare(right)),
-    [completedRuns, feedback, profiles, records, selectorSummaries],
+    [completedRuns, feedback, profiles],
   );
 
   const groupedWorkspaces = useMemo(
@@ -150,8 +126,6 @@ export function useDomainMemoryWorkspace() {
         feedback,
         knowledgeSites,
         profiles,
-        records,
-        selectorSummaries,
         searchQuery: deferredSearchQuery,
         surfaceFilter,
       }),
@@ -162,8 +136,6 @@ export function useDomainMemoryWorkspace() {
       feedback,
       knowledgeSites,
       profiles,
-      records,
-      selectorSummaries,
       surfaceFilter,
     ],
   );
@@ -177,20 +149,8 @@ export function useDomainMemoryWorkspace() {
     groupedWorkspaces[0] ??
     null;
 
-  const selectorRecordsQuery = useQuery({
-    queryKey: queryKeys.selectors.list({ domain: resolvedSelectedDomain }),
-    queryFn: () => api.listSelectors({ domain: resolvedSelectedDomain }),
-    enabled: Boolean(resolvedSelectedDomain),
-  });
-  const selectorLoading = selectorRecordsQuery.isLoading || selectorRecordsQuery.isFetching;
-
-  useEffect(() => {
-    setRecords(toLocalRecords(selectorRecordsQuery.data ?? []));
-  }, [selectorRecordsQuery.data]);
-
   useEffect(() => {
     const loadedDomains = [
-      ...selectorSummaries.map((row) => row.domain),
       ...profiles.map((row) => row.domain),
       ...cookies.map((row) => row.domain),
       ...feedback.map((row) => row.domain),
@@ -206,40 +166,7 @@ export function useDomainMemoryWorkspace() {
     if (preferredDomain && preferredDomain !== selectedDomain) {
       setSelectedDomain(preferredDomain);
     }
-  }, [
-    completedRuns,
-    cookies,
-    feedback,
-    knowledgeSites,
-    profiles,
-    selectedDomain,
-    selectorSummaries,
-  ]);
-
-  function cancelEdit() {
-    setEditingId(null);
-    setDraft(null);
-  }
-
-  const { deleteDomainSelectors, deleteRecord, saveEdit, startEdit, toggleActive } =
-    useSelectorRecordActions({
-      cancelEdit,
-      draft,
-      editingId,
-      setDraft,
-      setEditingId,
-      setError,
-      setRecords,
-      invalidateSelectorData: async (domain, surface) => {
-        await Promise.all([
-          queryClient.invalidateQueries({ queryKey: queryKeys.domainMemory.domains() }),
-          queryClient.invalidateQueries({
-            queryKey: queryKeys.selectors.list({ domain: domain ?? '', surface: surface ?? '' }),
-          }),
-          queryClient.invalidateQueries({ queryKey: queryKeys.selectors.all }),
-        ]);
-      },
-    });
+  }, [completedRuns, cookies, feedback, knowledgeSites, profiles, selectedDomain]);
 
   function profileDraftFor(domain: string, surfaceWorkspace: SurfaceWorkspace) {
     const key = profileDraftKey(domain, surfaceWorkspace.surface);
@@ -292,7 +219,6 @@ export function useDomainMemoryWorkspace() {
     try {
       await api.resetDomainMemory();
       setProfileDrafts({});
-      cancelEdit();
       await loadWorkspace();
       setResetDialogOpen(false);
     } catch (nextError) {
@@ -307,16 +233,10 @@ export function useDomainMemoryWorkspace() {
   return {
     activeTab,
     availableSurfaces,
-    cancelEdit,
-    deleteDomainSelectors,
-    deleteRecord,
-    draft,
-    editingId,
     error: error || queryErrorMessage,
     groupedWorkspaces,
     hasLoadedOnce,
     latestCompletedRunId: latestCompletedRunIdFor,
-    loadedSelectorDomain: selectorRecordsQuery.data ? resolvedSelectedDomain : '',
     loading,
     loadWorkspace,
     knowledgeSites,
@@ -327,21 +247,16 @@ export function useDomainMemoryWorkspace() {
     resetError,
     resetPending,
     resolvedSelectedDomain,
-    saveEdit,
     saveProfile,
     searchQuery,
     selectedWorkspace,
-    selectorLoading,
     setActiveTab,
-    setDraft,
     setResetDialogOpen,
     setResetError,
     setSearchQuery,
     setSelectedDomain,
     setSurfaceFilter,
-    startEdit,
     surfaceFilter,
-    toggleActive,
     updateProfileDraft,
   };
 }

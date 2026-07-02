@@ -64,7 +64,6 @@ export function CrawlConfigScreen({
     additionalDraft,
     additionalFields,
     generatingSelectors,
-    savingDomainMemory,
     fieldConfigMessage,
     fieldConfigError,
     fieldRowMessages,
@@ -151,13 +150,7 @@ export function CrawlConfigScreen({
     maxRecords,
     setConfigError: localDispatch.setConfigError,
   });
-  const {
-    addManualField,
-    generateFieldSelectors,
-    testFieldRow,
-    saveToDomainMemory,
-    canSaveDomainMemory,
-  } = useCrawlFieldActions({
+  const { addManualField, generateFieldSelectors, testFieldRow } = useCrawlFieldActions({
     targetUrl,
     surface,
     fieldRows,
@@ -246,8 +239,6 @@ export function CrawlConfigScreen({
             targetUrl={targetUrl}
             activeFieldTestId={activeFieldTestId}
             generatingSelectors={generatingSelectors}
-            savingDomainMemory={savingDomainMemory}
-            canSaveDomainMemory={canSaveDomainMemory}
             message={fieldConfigMessage}
             error={fieldConfigError}
             setFieldRows={setFieldRows}
@@ -261,7 +252,6 @@ export function CrawlConfigScreen({
             }
             onGenerate={() => void generateFieldSelectors()}
             onAddField={addManualField}
-            onSave={() => void saveToDomainMemory()}
             onTest={(row) => void testFieldRow(row)}
           />
         ) : null}

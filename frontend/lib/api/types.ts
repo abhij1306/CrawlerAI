@@ -452,6 +452,23 @@ export type DomainRecipeSelectorCandidate = {
   final_field_source?: string | null;
 };
 
+export type DomainRecipeFieldLearningItem = {
+  field_name: string;
+  value: unknown;
+  source_labels: string[];
+  selector_kind: string | null;
+  selector_value: string | null;
+  source_record_ids: number[];
+  representative_url_result_ids: number[];
+  feedback: {
+    action: string;
+    source_kind: string;
+    source_value: string | null;
+    source_run_id: number | null;
+    created_at: string;
+  } | null;
+};
+
 export type DomainRecipe = {
   run_id: number;
   domain: string;
@@ -468,21 +485,7 @@ export type DomainRecipe = {
     acquisition_summary: Record<string, unknown>;
     cookie_memory_available: boolean;
   };
-  field_learning: Array<{
-    field_name: string;
-    value: unknown;
-    source_labels: string[];
-    selector_kind: string | null;
-    selector_value: string | null;
-    source_record_ids: number[];
-    feedback: {
-      action: string;
-      source_kind: string;
-      source_value: string | null;
-      source_run_id: number | null;
-      created_at: string;
-    } | null;
-  }>;
+  field_learning: DomainRecipeFieldLearningItem[];
   selector_candidates: DomainRecipeSelectorCandidate[];
   affordance_candidates: {
     accordions: string[];
@@ -547,21 +550,41 @@ export type FieldCommitResponse = {
   updated_fields: number;
 };
 
-export type SelectorCreatePayload = {
-  domain: string;
-  surface?: string | null;
-  field_name: string;
-  css_selector?: string | null;
-  xpath?: string | null;
-  regex?: string | null;
-  status?: string | null;
-  sample_value?: string | null;
-  source?: string | null;
-  source_run_id?: number | null;
-  is_active?: boolean;
+export type GroundedCorrectionPayload = {
+  labels: Array<{
+    target_kind:
+      | 'page_region'
+      | 'record_boundary'
+      | 'field'
+      | 'entity_relationship'
+      | 'explicit_absence';
+    subject_id?: string | null;
+    record_id?: string | null;
+    field_name?: string | null;
+    canonical_value?: unknown;
+    semantic_role?: string | null;
+    locale_interpretation?: string | null;
+    region_role?: 'primary' | 'recommendation' | 'boilerplate' | 'unrelated' | null;
+    relationship?: Record<string, string> | null;
+    grounding: Array<{
+      kind: 'node' | 'path' | 'region' | 'absence_assertion';
+      artifact_id: string;
+      locator: string;
+      bounding_box?: Record<string, number> | null;
+    }>;
+  }>;
+  activate: boolean;
+  representative_url_result_ids: number[];
 };
 
-export type SelectorUpdatePayload = Partial<SelectorCreatePayload>;
+export type GroundedCorrectionResponse = {
+  correction_id: number;
+  domain: string;
+  surface: string;
+  label_count: number;
+  activation_status: string;
+  replay: Record<string, unknown>;
+};
 
 export type SelectorTestResponse = {
   matched_value: string | null;

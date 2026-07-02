@@ -9,8 +9,7 @@ import { DomainSidebar } from './domain-sidebar';
 import { KnowledgeGraphTab } from './knowledge-graph-tab';
 import { LearningTab } from './learning-tab';
 import { ProfilesTab } from './profiles-tab';
-import { SelectorsTab } from './selectors-tab';
-import { getProfileCount, getTotalSelectorCount, surfaceLabel } from './utils';
+import { getProfileCount, surfaceLabel } from './utils';
 
 type DomainMemoryContentProps = { controller: DomainMemoryWorkspaceController };
 
@@ -20,7 +19,7 @@ export function DomainMemoryContent({ controller }: DomainMemoryContentProps) {
     <div className="page-stack-lg">
       <PageHeader
         title="Domain Memory"
-        description="Manage learned selectors, run profiles, cookies, and recent learning by domain."
+        description="Inspect run profiles, cookies, grounded learning, and extraction contracts by domain."
         actions={domainMemoryActions(controller)}
       />
       <div className="flex flex-wrap items-end gap-3">
@@ -28,7 +27,7 @@ export function DomainMemoryContent({ controller }: DomainMemoryContentProps) {
           <Input
             value={controller.searchQuery}
             onChange={(event) => controller.setSearchQuery(event.target.value)}
-            placeholder="Search domain, field, selector text, fetch mode, or feedback"
+            placeholder="Search domain, fetch mode, feedback, or completed run"
           />
         </div>
         <Dropdown<string>
@@ -48,12 +47,12 @@ export function DomainMemoryContent({ controller }: DomainMemoryContentProps) {
       {!controller.hasLoadedOnce ? (
         <MutedPanelMessage
           title="Loading domain memory"
-          description="Fetching saved selectors, run profiles, cookies, and recent learning."
+          description="Fetching run profiles, cookies, grounded learning, and extraction contracts."
         />
       ) : !controller.groupedWorkspaces.length ? (
         <EmptyPanel
           title="No domain memory found"
-          description="Run a crawl, save selectors, or keep learning signals to populate this workspace."
+          description="Complete a crawl or activate a grounded correction to populate this workspace."
         />
       ) : selectedWorkspace ? (
         <div className="grid gap-4 xl:grid-cols-[260px_minmax(0,1fr)]">
@@ -76,7 +75,7 @@ export function DomainMemoryContent({ controller }: DomainMemoryContentProps) {
           }
         }}
         title="Reset domain memory"
-        description="Delete saved selectors, extraction preferences, run profiles, field feedback, saved cookies, host protection memory, and runtime cookie files for a fresh start."
+        description="Delete extraction recipes, run profiles, field feedback, saved cookies, host protection memory, and runtime cookie files for a fresh start."
         confirmLabel="Reset Domain Memory"
         pending={controller.resetPending}
         danger
@@ -122,28 +121,12 @@ function DomainDetail({ controller }: DomainMemoryContentProps) {
   if (!selectedWorkspace) return null;
   return (
     <>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="type-heading-3 truncate">{selectedWorkspace.domain}</h2>
-        {selectedWorkspace.surfaces.some((surface) => surface.selectorCount) ? (
-          <Button
-            type="button"
-            variant="destructive"
-            size="sm"
-            onClick={() => void controller.deleteDomainSelectors(selectedWorkspace.domain)}
-          >
-            <Trash2 className="size-3.5" />
-            Clear Selectors
-          </Button>
-        ) : null}
-      </div>
+      <h2 className="type-heading-3 truncate">{selectedWorkspace.domain}</h2>
       <TabBar
         value={controller.activeTab}
         onChange={controller.setActiveTab}
         options={tabOptions(selectedWorkspace)}
       />
-      {controller.activeTab === 'selectors' ? (
-        <SelectorsTab {...controller} selectedWorkspace={selectedWorkspace} />
-      ) : null}
       {controller.activeTab === 'profiles' ? (
         <ProfilesTab {...controller} selectedWorkspace={selectedWorkspace} />
       ) : null}
@@ -165,10 +148,6 @@ function tabOptions(
 ) {
   return [
     {
-      value: 'selectors',
-      label: `Selectors (${getTotalSelectorCount(selectedWorkspace.surfaces)})`,
-    },
-    {
       value: 'profiles',
       label: `Profiles (${getProfileCount(selectedWorkspace.surfaces)})`,
     },
@@ -177,9 +156,6 @@ function tabOptions(
       label: `Cookies${selectedWorkspace.cookieMemory ? ` (${selectedWorkspace.cookieMemory.cookie_count})` : ''}`,
     },
     { value: 'learning', label: `Learning (${selectedWorkspace.learning.length})` },
-    {
-      value: 'knowledge',
-      label: 'Extraction',
-    },
+    { value: 'knowledge', label: 'Extraction' },
   ];
 }

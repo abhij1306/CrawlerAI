@@ -16,6 +16,7 @@ OVERSIZED_MODULE_DEBT = {
     "core/config/extraction_rules/_detail.py": 981,
     "extraction/collectors/dom.py": 1024,
     "extraction/collectors/js_state.py": 908,
+    "extraction/contracts.py": 741,
     "extraction/entities.py": 712,
     "extraction/resolution.py": 2386,
     "extraction/validation.py": 706,
@@ -43,7 +44,6 @@ COMPLEX_FUNCTION_DEBT = {
     ("core/records/normalizers/__init__.py", "normalize_decimal_price"): 26,
     ("core/records/normalizers/__init__.py", "normalize_value"): 27,
     ("core/records/schema_service.py", "_snapshot_to_resolved"): 29,
-    ("core/records/selectors_runtime.py", "update_selector_record"): 22,
     ("core/records/structured_variant_state.py", "with_parent_variant_axes"): 21,
     ("core/records/url_identity.py", "_short_numeric_product_asset_conflicts"): 28,
     ("core/shared/field_coerce.py", "sanitize_option_scalar"): 32,
@@ -55,7 +55,6 @@ COMPLEX_FUNCTION_DEBT = {
     ("core/extraction_memory/contract_runtime.py", "resolved_contract_outcomes"): 23,
     ("crawl/crud.py", "create_crawl_run"): 23,
     ("crawl/profile/acquisition_contract.py", "build_success_acquisition_contract"): 22,
-    ("crawl/review/__init__.py", "apply_domain_recipe_field_action"): 31,
     ("crawl/sitemap_nav.py", "_looks_like_category_url"): 21,
     ("crawl/site_link_discovery.py", "discover_rendered_category_links"): 23,
     ("extraction/collectors/_helpers.py", "_subject_id"): 23,
@@ -85,7 +84,7 @@ COMPLEX_FUNCTION_DEBT = {
     ("intelligence/discovery.py", "_parse_serpapi_immersive_results"): 33,
     ("intelligence/matching.py", "_apply_identity_floor"): 21,
     ("intelligence/matching.py", "extract_search_result_snapshot"): 22,
-    ("observability/diagnose.py", "build_diagnosis"): 24,
+    ("observability/diagnose.py", "build_diagnosis"): 25,
     ("observability/run_report.py", "_root_causes"): 27,
     ("persistence/publish/metrics.py", "build_url_metrics"): 30,
 }
@@ -133,14 +132,14 @@ def _function_parameter_names(relative_path: str, function_name: str) -> set[str
 
 PACKAGE_LOC_BUDGETS = {
     "acquisition": 16_873,
-    "crawl": 8_673,
-    "core": 17_204,
+    "crawl": 8_702,
+    "core": 17_226,
     "enrichment": 2_021,
     "connectors": 2_467,
     "intelligence": 3_216,
-    "extraction": 11_873,
+    "extraction": 12_236,
 }
-TOTAL_APP_LOC_BUDGET = 71_204
+TOTAL_APP_LOC_BUDGET = 71_792
 
 
 def test_production_package_loc_budgets() -> None:

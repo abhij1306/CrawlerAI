@@ -54,9 +54,7 @@ const apiMock = vi.hoisted(() => ({
   getCrawlLogs: vi.fn(),
   killCrawl: vi.fn(),
   getDomainRecipe: vi.fn(),
-  promoteDomainRecipeSelectors: vi.fn(),
-  applyDomainRecipeFieldAction: vi.fn(),
-  deleteSelector: vi.fn(),
+  saveGroundedCorrection: vi.fn(),
   exportCsv: vi.fn(() => '/export.csv'),
   exportJson: vi.fn(() => '/export.json'),
 }));
@@ -172,9 +170,10 @@ function makeDomainRecipe(): DomainRecipe {
         field_name: 'price',
         value: 'Rs. 999',
         source_labels: ['dom_selector'],
-        selector_kind: 'xpath',
-        selector_value: "//span[@class='price']/text()",
+        selector_kind: 'css_selector',
+        selector_value: '.price',
         source_record_ids: [1],
+        representative_url_result_ids: [11],
         feedback: null,
       },
     ],
@@ -348,9 +347,14 @@ describe('CrawlRunScreen', () => {
     apiMock.getCrawlLogs.mockResolvedValue([]);
     apiMock.killCrawl.mockResolvedValue({ run_id: 101, status: 'killed' });
     apiMock.getDomainRecipe.mockResolvedValue(makeDomainRecipe());
-    apiMock.promoteDomainRecipeSelectors.mockResolvedValue([]);
-    apiMock.applyDomainRecipeFieldAction.mockResolvedValue({});
-    apiMock.deleteSelector.mockResolvedValue(undefined);
+    apiMock.saveGroundedCorrection.mockResolvedValue({
+      correction_id: 1,
+      domain: 'example.com',
+      surface: 'ecommerce_detail',
+      label_count: 1,
+      activation_status: 'activated',
+      replay: { passed: true },
+    });
   });
 
   it('loads run history only after the history drawer opens', async () => {
@@ -1267,7 +1271,9 @@ describe('CrawlRunScreen', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Learning' }));
     expect(await screen.findByRole('heading', { name: 'Run Learning' })).toBeInTheDocument();
-    expect((await screen.findAllByRole('button', { name: 'Keep' })).length).toBeGreaterThan(0);
+    expect(
+      (await screen.findAllByRole('button', { name: 'Activate correction' })).length,
+    ).toBeGreaterThan(0);
   });
 
   it('renders learning as XPath winners without extracted values', async () => {
@@ -1281,6 +1287,7 @@ describe('CrawlRunScreen', () => {
           selector_kind: 'xpath',
           selector_value: "//select[@name='size']",
           source_record_ids: [1],
+          representative_url_result_ids: [],
           feedback: null,
         },
       ],
@@ -1293,33 +1300,35 @@ describe('CrawlRunScreen', () => {
     expect(screen.queryByText(/Value:/)).not.toBeInTheDocument();
   });
 
-  it('applies keep and reject field learning actions from the completed-run panel', async () => {
+  it('activates a grounded field correction from the completed-run panel', async () => {
     renderRunScreen();
 
     fireEvent.click(await screen.findByRole('button', { name: 'Learning' }));
     expect(await screen.findByRole('heading', { name: 'Run Learning' })).toBeInTheDocument();
-    const keepButtons = await screen.findAllByRole('button', { name: 'Keep' });
+    fireEvent.click(await screen.findByRole('button', { name: 'Activate correction' }));
 
-    fireEvent.click(keepButtons[0]);
     await waitFor(() => {
-      expect(apiMock.applyDomainRecipeFieldAction).toHaveBeenCalledWith(101, {
-        field_name: 'price',
-        action: 'keep',
-        selector_kind: 'xpath',
-        selector_value: "//span[@class='price']/text()",
-        source_record_ids: [1],
-      });
-    });
-
-    const rejectButtons = await screen.findAllByRole('button', { name: 'Reject' });
-    fireEvent.click(rejectButtons[0]);
-    await waitFor(() => {
-      expect(apiMock.applyDomainRecipeFieldAction).toHaveBeenCalledWith(101, {
-        field_name: 'price',
-        action: 'reject',
-        selector_kind: 'xpath',
-        selector_value: "//span[@class='price']/text()",
-        source_record_ids: [1],
+      expect(apiMock.saveGroundedCorrection).toHaveBeenCalledWith(101, {
+        activate: true,
+        representative_url_result_ids: [11],
+        labels: [
+          {
+            target_kind: 'field',
+            subject_id: 'run:101:field:price',
+            record_id: '1',
+            field_name: 'price',
+            canonical_value: 'Rs. 999',
+            semantic_role: 'observed_field_value',
+            locale_interpretation: 'as_rendered',
+            grounding: [
+              {
+                kind: 'node',
+                artifact_id: 'url-result:11:page.html',
+                locator: 'css:.price',
+              },
+            ],
+          },
+        ],
       });
     });
   });

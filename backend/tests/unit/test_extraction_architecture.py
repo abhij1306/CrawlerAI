@@ -73,6 +73,12 @@ def test_extraction_result_owns_typed_records_without_parallel_replay() -> None:
     assert issubclass(CommerceDetailRecord, PublicRecord)
 
 
+def test_extraction_result_exposes_phase1_contract_diagnostics() -> None:
+    assert "manifest_context" in ExtractionResult.model_fields
+    assert "failure_classifications" in ExtractionResult.model_fields
+    assert "diagnostics" in ExtractionResult.model_fields
+
+
 def test_new_extraction_imports_forbidden_parser_stack_only_in_document_store() -> None:
     forbidden = {"bs4", "lxml", "extruct", "glom", "jmespath"}
     for path in _python_files(EXTRACTION_ROOT):

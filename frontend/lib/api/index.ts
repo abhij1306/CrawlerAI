@@ -25,6 +25,8 @@ import type {
   DomainRunProfileLookup,
   DomainRunProfileRecord,
   DomainRunProfile,
+  GroundedCorrectionPayload,
+  GroundedCorrectionResponse,
   FieldCommitPayload,
   FieldCommitResponse,
   LlmConfigCreatePayload,
@@ -44,12 +46,9 @@ import type {
   ProductIntelligenceJobDetail,
   ReviewPayload,
   ReviewSelection,
-  SelectorCreatePayload,
-  SelectorDomainSummary,
   SelectorRecord,
   SelectorSuggestResponse,
   SelectorTestResponse,
-  SelectorUpdatePayload,
   User,
   LlmConfigRecord,
   LlmConfigUpdatePayload,
@@ -306,22 +305,6 @@ export const api = {
   },
   getDomainRecipe: (runId: number, options?: ApiRequestOptions) =>
     apiClient.get<DomainRecipe>(`/api/crawls/${runId}/domain-recipe`, options),
-  promoteDomainRecipeSelectors: (
-    runId: number,
-    payload: {
-      selectors: Array<{
-        candidate_key: string;
-        field_name: string;
-        selector_kind: string;
-        selector_value: string;
-        sample_value?: string | null;
-      }>;
-    },
-  ) =>
-    apiClient.post<SelectorRecord[]>(
-      `/api/crawls/${runId}/domain-recipe/promote-selectors`,
-      payload,
-    ),
   saveDomainRunProfile: async (runId: number, payload: { profile: DomainRunProfile }) => {
     const res = await apiClient.post<DomainRunProfile>(
       `/api/crawls/${runId}/domain-recipe/save-run-profile`,
@@ -329,20 +312,8 @@ export const api = {
     );
     return strictValidate(domainRunProfileSchema, res, `saveDomainRunProfile(${runId})`);
   },
-  applyDomainRecipeFieldAction: (
-    runId: number,
-    payload: {
-      field_name: string;
-      action: 'keep' | 'reject';
-      selector_kind?: string | null;
-      selector_value?: string | null;
-      source_record_ids?: number[];
-    },
-  ) =>
-    apiClient.post<Record<string, unknown>>(
-      `/api/crawls/${runId}/domain-recipe/field-action`,
-      payload,
-    ),
+  saveGroundedCorrection: (runId: number, payload: GroundedCorrectionPayload) =>
+    apiClient.post<GroundedCorrectionResponse>(`/api/crawls/${runId}/corrections`, payload),
   listUsers: async (params?: { search?: string; is_active?: boolean }) => {
     const query = new URLSearchParams();
     if (params?.search) query.set('search', params.search);
@@ -363,16 +334,8 @@ export const api = {
     if (params?.surface) query.set('surface', params.surface);
     return apiClient.get<SelectorRecord[]>(withQuery('/api/selectors', query), options);
   },
-  listSelectorSummaries: () => apiClient.get<SelectorDomainSummary[]>('/api/selectors/summary'),
   suggestSelectors: (payload: { url: string; expected_columns: string[]; surface?: string }) =>
     apiClient.post<SelectorSuggestResponse>('/api/selectors/suggest', payload),
-  createSelector: (payload: SelectorCreatePayload) =>
-    apiClient.post<SelectorRecord>('/api/selectors', payload),
-  updateSelector: (selectorId: number, payload: SelectorUpdatePayload) =>
-    apiClient.put<SelectorRecord>(`/api/selectors/${selectorId}`, payload),
-  deleteSelector: (selectorId: number) => apiClient.delete<void>(`/api/selectors/${selectorId}`),
-  deleteSelectorsByDomain: (domain: string) =>
-    apiClient.delete<{ deleted: number }>(`/api/selectors/domain/${encodeURIComponent(domain)}`),
   testSelector: (payload: {
     url: string;
     css_selector?: string | null;

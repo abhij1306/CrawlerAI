@@ -1,4 +1,4 @@
-import type { DomainRecipe } from '../../lib/api/types';
+import type { DomainRecipe, DomainRecipeFieldLearningItem } from '../../lib/api/types';
 import { DataRegionEmpty, DetailRow, InlineAlert, SectionHeader } from '../ui/patterns';
 import { Badge, Button, Card } from '../ui/primitives';
 import type { RecipeActionPendingKey } from './use-run-recipe-actions';
@@ -9,13 +9,7 @@ type RunLearningPanelProps = {
   recipe: DomainRecipe | undefined;
   pendingKey: RecipeActionPendingKey | null;
   error: string;
-  onFieldAction: (
-    fieldName: string,
-    action: 'keep' | 'reject',
-    selectorKind?: string | null,
-    selectorValue?: string | null,
-    sourceRecordIds?: number[],
-  ) => void;
+  onActivateCorrection: (item: DomainRecipeFieldLearningItem) => void;
 };
 
 export function RunLearningPanel({
@@ -23,14 +17,14 @@ export function RunLearningPanel({
   recipe,
   pendingKey,
   error,
-  onFieldAction,
+  onActivateCorrection,
 }: Readonly<RunLearningPanelProps>) {
   if (loading) {
     return (
       <Card className="section-card">
         <SectionHeader
           title="Run Learning"
-          description="Loading keep and reject recommendations for this run."
+          description="Loading grounded extraction evidence for this run."
         />
       </Card>
     );
@@ -52,7 +46,7 @@ export function RunLearningPanel({
       <Card className="section-card space-y-4">
         <SectionHeader
           title="Run Learning"
-          description={`Review extraction evidence for ${recipe.domain} on ${recipe.surface}. Keep what should compound, reject what should not.`}
+          description={`Review grounded extraction evidence for ${recipe.domain} on ${recipe.surface}. Activation is allowed only after representative replay passes.`}
         />
         <div className="grid gap-3 md:grid-cols-2">
           <div className="surface-muted type-body rounded-md px-6 py-3 leading-relaxed text-secondary">
@@ -82,17 +76,20 @@ export function RunLearningPanel({
 
         <div className="space-y-3">
           <div>
-            <div className="field-label mb-0">Field Learning</div>
+            <div className="field-label mb-0">Grounded Field Corrections</div>
             <p className="type-body mt-1 text-secondary">
-              Keep accepted field evidence or reject bad field evidence for future runs on this
-              domain and surface.
+              Activate only evidence backed by persisted HTML and representative results from the
+              same template cohort.
             </p>
           </div>
           {recipe.field_learning.length ? (
             <div className="space-y-2">
               {recipe.field_learning.map((item) => {
-                const keepPending = pendingKey === `field:${item.field_name}:keep`;
-                const rejectPending = pendingKey === `field:${item.field_name}:reject`;
+                const pending = pendingKey === `field:${item.field_name}:activate`;
+                const canActivate =
+                  item.selector_kind === 'css_selector' &&
+                  Boolean(item.selector_value?.trim()) &&
+                  item.representative_url_result_ids.length > 0;
                 return (
                   <DetailRow
                     key={`${item.field_name}:${item.selector_kind ?? 'source'}:${item.selector_value ?? item.source_labels.join(',')}`}
@@ -106,11 +103,11 @@ export function RunLearningPanel({
                           ) : (
                             <Badge tone="neutral">non-selector</Badge>
                           )}
-                          {item.feedback ? (
-                            <Badge tone={item.feedback.action === 'reject' ? 'warning' : 'success'}>
-                              {item.feedback.action}
-                            </Badge>
-                          ) : null}
+                          <Badge tone={canActivate ? 'success' : 'warning'}>
+                            {canActivate
+                              ? `${item.representative_url_result_ids.length} replay result${item.representative_url_result_ids.length === 1 ? '' : 's'}`
+                              : 'not activatable'}
+                          </Badge>
                         </div>
                         <div className="type-caption mt-1">
                           {selectorWinnerLabel(item.selector_kind)} · Sources:{' '}
@@ -122,42 +119,15 @@ export function RunLearningPanel({
                           </code>
                         ) : null}
                       </div>
-                      <div className="flex flex-wrap gap-2">
-                        <Button
-                          variant="neutral"
-                          type="button"
-                          size="sm"
-                          disabled={pendingKey !== null}
-                          onClick={() =>
-                            onFieldAction(
-                              item.field_name,
-                              'keep',
-                              item.selector_kind,
-                              item.selector_value,
-                              item.source_record_ids,
-                            )
-                          }
-                        >
-                          {keepPending ? 'Keeping…' : 'Keep'}
-                        </Button>
-                        <Button
-                          variant="quiet"
-                          type="button"
-                          size="sm"
-                          disabled={pendingKey !== null}
-                          onClick={() =>
-                            onFieldAction(
-                              item.field_name,
-                              'reject',
-                              item.selector_kind,
-                              item.selector_value,
-                              item.source_record_ids,
-                            )
-                          }
-                        >
-                          {rejectPending ? 'Rejecting…' : 'Reject'}
-                        </Button>
-                      </div>
+                      <Button
+                        variant="neutral"
+                        type="button"
+                        size="sm"
+                        disabled={pendingKey !== null || !canActivate}
+                        onClick={() => onActivateCorrection(item)}
+                      >
+                        {pending ? 'Replaying…' : 'Activate correction'}
+                      </Button>
                     </div>
                   </DetailRow>
                 );
@@ -166,7 +136,7 @@ export function RunLearningPanel({
           ) : (
             <div className="surface-muted rounded-lg border border-dashed px-6 py-3">
               <p className="type-body m-0 text-secondary">
-                No field learning signals were captured for this run.
+                No grounded field-learning signals were captured for this run.
               </p>
             </div>
           )}

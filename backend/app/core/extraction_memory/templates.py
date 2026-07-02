@@ -99,6 +99,15 @@ def fingerprint_from_parts(
         },
         "tech_signals": tech_signals,
         "collectors": sorted(set(e.collector_id for e in evidence)),
+        "source_patterns": sorted(
+            {
+                source_pattern(
+                    row.collector_id,
+                    row.locator.value if row.locator else "",
+                )
+                for row in evidence
+            }
+        ),
         "outcomes": {co.collector_id: co.outcome for co in collector_outcomes},
     }
     canonical = json.dumps(fingerprint_data, sort_keys=True)

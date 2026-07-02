@@ -1,5 +1,6 @@
 # ruff: noqa: F403, F405
 from tests.unit.extraction_pipeline_test_support import *
+from app.extraction.contracts import field_contracts_for_surface
 
 
 def test_extraction_request_has_no_artifact_payloads_field() -> None:
@@ -64,6 +65,32 @@ def test_runtime_capture_bundle_uses_acquisition_metadata() -> None:
     )
 
 
+def test_runtime_request_carries_release_manifest_context() -> None:
+    url = "https://shop.test/products/trail-shoe"
+    acquisition = PageAcquisitionResult(
+        request=AcquisitionRequest(
+            run_id=42,
+            url=url,
+            plan=AcquisitionIntent(surface="ecommerce_detail"),
+        ),
+        final_url=url,
+        html=HTML,
+        method="browser",
+        status_code=200,
+        artifacts={},
+    )
+
+    request = request_from_acquisition_result(
+        Surface.ECOMMERCE_DETAIL,
+        acquisition,
+        requested_url=url,
+        max_records=1,
+        runtime_snapshot={"_release_snapshot_id": "release-1"},
+    )
+
+    assert request.manifest_context.release_snapshot_id == "release-1"
+
+
 def test_runtime_request_marks_active_selector_fields_as_user_controlled() -> None:
     url = "https://shop.test/products/trail-shoe"
     acquisition = PageAcquisitionResult(
@@ -98,6 +125,69 @@ def test_runtime_request_marks_active_selector_fields_as_user_controlled() -> No
     )
 
     assert request.user_controlled_fields == ("product.title",)
+
+
+def test_known_template_recipe_fast_path_skips_generic_collectors() -> None:
+    url = "https://shop.test/products/recipe-shoe"
+    selector_rules = [
+        {"field_name": "title", "css_selector": ".recipe-title", "is_active": True},
+        {"field_name": "price", "css_selector": ".recipe-price", "is_active": True},
+        {
+            "field_name": "currency",
+            "css_selector": ".recipe-currency",
+            "is_active": True,
+        },
+        {"field_name": "image", "css_selector": ".recipe-image", "is_active": True},
+    ]
+    acquisition = PageAcquisitionResult(
+        request=AcquisitionRequest(
+            run_id=42,
+            url=url,
+            plan=AcquisitionIntent(surface="ecommerce_detail"),
+        ),
+        final_url=url,
+        html="""
+        <main>
+          <h1 class="recipe-title">Recipe Shoe</h1>
+          <span class="recipe-price">$10.00</span>
+          <span class="recipe-currency">USD</span>
+          <img class="recipe-image" src="/shoe.jpg">
+        </main>
+        """,
+        method="browser",
+        status_code=200,
+        artifacts={},
+    )
+    request = request_from_acquisition_result(
+        Surface.ECOMMERCE_DETAIL,
+        acquisition,
+        requested_url=url,
+        max_records=1,
+        selector_rules=selector_rules,
+        runtime_snapshot={
+            "surface": "ecommerce_detail",
+            "templates": [
+                {
+                    "template_id": "00000000-0000-0000-0000-000000000001",
+                    "fingerprint": "known-template",
+                    "route_pattern": "/products/{id}",
+                    "contracts": [],
+                    "compiled_recipe": {
+                        "selector_rules": selector_rules,
+                        "contracts": [],
+                        "provenance": [],
+                    },
+                }
+            ],
+        },
+    )
+
+    result = extract(request)
+
+    assert result.records[0]["title"] == "Recipe Shoe"
+    assert {row.collector_id for row in result.evidence} == {"css_recipe", "url"}
+    assert result.diagnostics.extractor_tier == "recipe"
+    assert result.manifest_context.template_id == "00000000-0000-0000-0000-000000000001"
 
 
 def test_active_provider_shell_is_blocked_when_building_runtime_capture() -> None:
@@ -136,6 +226,8 @@ def test_active_provider_shell_is_blocked_when_building_runtime_capture() -> Non
     assert request.capture.blocked is True
     assert result.records == ()
     assert result.verdict == "blocked"
+    assert result.failure_classifications[0].code == "insufficient_input_bundle"
+    assert result.diagnostics.trust_state == "blocked"
 
 
 def test_low_content_browser_shell_is_blocked_when_building_runtime_capture() -> None:
@@ -192,6 +284,44 @@ def test_not_found_detail_does_not_publish_url_only_fallback_record() -> None:
     result = extract(request)
 
     assert result.records == ()
+
+
+def test_zero_record_result_has_failure_taxonomy_and_diagnostics() -> None:
+    result = _extract(
+        "ecommerce_listing",
+        "<main><h1>Privacy Policy</h1><p>Account and shipping help.</p></main>",
+        "https://shop.test/privacy",
+        max_records=10,
+    )
+
+    assert result.records == ()
+    assert result.failure_classifications
+    assert result.failure_classifications[0].code in {
+        "discovery",
+        "insufficient_input_bundle",
+        "validation",
+        "semantic_resolution",
+    }
+    assert result.diagnostics.failure_codes
+    assert result.diagnostics.decision_path == (
+        "harvest",
+        "resolve",
+        "publish",
+        "validate",
+    )
+    assert result.diagnostics.trust_state == "rejected"
+
+
+def test_field_contract_registry_marks_default_detail_fields_critical() -> None:
+    contracts = {
+        row.field: row for row in field_contracts_for_surface(Surface.ECOMMERCE_DETAIL)
+    }
+
+    assert contracts["title"].required is True
+    assert contracts["title"].criticality == "critical"
+    assert contracts["price"].entity_scope == "offer"
+    assert contracts["image_url"].entity_scope == "asset"
+    assert contracts["variants"].cardinality == "many"
 
 
 def test_evidence_is_immutable() -> None:

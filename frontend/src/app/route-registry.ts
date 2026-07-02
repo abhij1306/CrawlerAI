@@ -7,7 +7,6 @@ import {
   DatabaseZap,
   FileChartColumn,
   Grid2x2,
-  SearchCheck,
   Settings2,
   ShieldCheck,
   WandSparkles,
@@ -110,24 +109,13 @@ export const appRoutes: readonly AppRoute[] = [
     nav: { group: 'Intelligence', label: 'Product Intelligence', icon: BrainCircuit },
   },
   {
-    id: 'selectors',
-    path: '/selectors',
-    access: 'authenticated',
-    lazy: () => import('../../app/selectors/page-view'),
-    metadata: {
-      title: 'Selector Tool',
-      description: 'Suggest, test, and validate field selectors.',
-    },
-    nav: { group: 'Memory', label: 'Selector Tool', icon: SearchCheck, exact: true },
-  },
-  {
     id: 'domain-memory',
     path: '/domain-memory',
     access: 'authenticated',
     lazy: () => import('../../app/domain-memory/page-view'),
     metadata: {
       title: 'Domain Memory',
-      description: 'Inspect learned selectors and saved run profiles by domain and surface.',
+      description: 'Inspect run profiles, grounded learning, and extraction contracts by domain.',
     },
     nav: { group: 'Memory', label: 'Domain Memory', icon: DatabaseZap },
   },

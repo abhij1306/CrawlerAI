@@ -110,7 +110,7 @@ function CrawlRunWorkspace({ runId }: Readonly<CrawlRunScreenProps>) {
   const {
     pendingKey: recipeActionPending,
     error: recipeActionError,
-    applyFieldAction,
+    activateGroundedCorrection,
   } = useRunRecipeActions({
     runId,
     refetchRecipe: refetchDomainRecipeQuery,
@@ -336,7 +336,7 @@ function CrawlRunWorkspace({ runId }: Readonly<CrawlRunScreenProps>) {
             domainRecipe={domainRecipe}
             recipeActionPending={recipeActionPending}
             recipeActionError={recipeActionError}
-            applyFieldAction={applyFieldAction}
+            activateGroundedCorrection={activateGroundedCorrection}
           />
         </RunTerminalShell>
       ) : null}

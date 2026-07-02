@@ -373,14 +373,9 @@ describe('DomainMemoryPage', () => {
   it('renders the selected domain memory workspace and recent learning', async () => {
     renderDomainMemoryPage();
 
-    expect(await screen.findByText('Selector Memory')).toBeInTheDocument();
-    await waitFor(() => {
-      expect(apiMock.listSelectors).toHaveBeenCalledWith({ domain: 'example.com' });
-    });
+    expect(await screen.findByRole('button', { name: 'Profiles (1)' })).toBeInTheDocument();
     expect(screen.getAllByText('example.com').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('price').length).toBeGreaterThan(0);
 
-    expect(screen.getByRole('button', { name: 'Selectors (1)' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Profiles (1)' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Cookies (3)' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Learning (1)' })).toBeInTheDocument();
@@ -459,11 +454,7 @@ describe('DomainMemoryPage', () => {
 
     renderDomainMemoryPage();
 
-    expect(await screen.findByText('Selector Memory')).toBeInTheDocument();
-    await waitFor(() => {
-      expect(apiMock.listSelectors).toHaveBeenCalledWith({ domain: 'example.com' });
-    });
-    expect(await screen.findAllByText('price')).not.toHaveLength(0);
+    expect(await screen.findByRole('button', { name: 'Profiles (1)' })).toBeInTheDocument();
     expect(screen.getByText('Knowledge Graph unavailable')).toBeInTheDocument();
   });
 
@@ -489,77 +480,6 @@ describe('DomainMemoryPage', () => {
           }),
         }),
       });
-    });
-  });
-
-  it('edits a saved selector from the domain memory workspace', async () => {
-    renderDomainMemoryPage();
-
-    const editButton = await screen.findByRole('button', { name: 'Edit selector' });
-    fireEvent.click(editButton);
-    fireEvent.change(screen.getByDisplayValue('.price'), { target: { value: '.sale-price' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
-
-    await waitFor(() => {
-      expect(apiMock.updateSelector).toHaveBeenCalledWith(
-        11,
-        expect.objectContaining({
-          css_selector: '.sale-price',
-        }),
-      );
-    });
-  });
-
-  it('reloads selectors for the resolved domain after workspace refresh', async () => {
-    apiMock.listSelectors.mockImplementation(({ domain }: { domain?: string }) =>
-      Promise.resolve([
-        {
-          id: domain === 'other.com' ? 22 : 11,
-          domain: domain ?? 'example.com',
-          surface: 'ecommerce_detail',
-          field_name: 'price',
-          css_selector: domain === 'other.com' ? '.other-price' : '.price',
-          xpath: null,
-          regex: null,
-          status: 'validated',
-          sample_value: '$19.99',
-          source: 'domain_recipe',
-          source_run_id: 101,
-          is_active: true,
-          created_at: new Date('2026-04-08T10:00:00Z').toISOString(),
-          updated_at: new Date('2026-04-08T10:00:00Z').toISOString(),
-        },
-      ]),
-    );
-
-    renderDomainMemoryPage();
-
-    await waitFor(() => {
-      expect(apiMock.listSelectors).toHaveBeenCalledWith({ domain: 'example.com' });
-    });
-
-    apiMock.listSelectors.mockClear();
-    apiMock.listSelectorSummaries.mockResolvedValueOnce([
-      {
-        domain: 'other.com',
-        surface: 'ecommerce_detail',
-        selector_count: 1,
-        updated_at: new Date('2026-04-08T10:00:00Z').toISOString(),
-      },
-    ]);
-    apiMock.listDomainRunProfiles.mockResolvedValueOnce([]);
-    apiMock.listDomainCookieMemory.mockResolvedValueOnce([]);
-    apiMock.listDomainFieldFeedback.mockResolvedValueOnce([]);
-    apiMock.listKnowledgeSites.mockResolvedValueOnce({ sites: [] });
-    apiMock.listCrawls.mockResolvedValueOnce({
-      items: [],
-      meta: { page: 1, limit: 200, total: 0 },
-    });
-
-    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
-
-    await waitFor(() => {
-      expect(apiMock.listSelectors).toHaveBeenCalledWith({ domain: 'other.com' });
     });
   });
 

@@ -4,16 +4,10 @@ import type {
   DomainFieldFeedbackRecord,
   DomainRunProfileRecord,
   KnowledgeSiteRecord,
-  SelectorDomainSummary,
 } from '../../../lib/api/types';
 import { getNormalizedDomain, isSpecialUseDomain } from '../../../lib/format/domain';
-import type { DomainWorkspace, LocalRecord, SurfaceWorkspace } from './types';
-import {
-  feedbackSearchText,
-  isInternalDomainMemoryArtifact,
-  profileSearchText,
-  selectorValue,
-} from './utils';
+import type { DomainWorkspace, SurfaceWorkspace } from './types';
+import { feedbackSearchText, isInternalDomainMemoryArtifact, profileSearchText } from './utils';
 
 type BuildDomainWorkspacesInput = {
   completedRuns: CrawlRun[];
@@ -21,8 +15,6 @@ type BuildDomainWorkspacesInput = {
   feedback: DomainFieldFeedbackRecord[];
   knowledgeSites: KnowledgeSiteRecord[];
   profiles: DomainRunProfileRecord[];
-  records: LocalRecord[];
-  selectorSummaries: SelectorDomainSummary[];
   searchQuery: string;
   surfaceFilter: string;
 };
@@ -33,8 +25,6 @@ export function buildDomainWorkspaces({
   feedback,
   knowledgeSites,
   profiles,
-  records,
-  selectorSummaries,
   searchQuery,
   surfaceFilter,
 }: BuildDomainWorkspacesInput): DomainWorkspace[] {
@@ -42,7 +32,6 @@ export function buildDomainWorkspaces({
   const byDomain = new Map<string, Map<string, SurfaceWorkspace>>();
   const cookiesByDomain = new Map(cookies.map((row) => [row.domain, row] as const));
   const knowledgeSitesByDomain = new Map(knowledgeSites.map((row) => [row.domain, row] as const));
-  const runsByDomain = new Map<string, Map<string, CrawlRun[]>>();
 
   function ensureSurfaceWorkspace(domain: string, surface: string): SurfaceWorkspace {
     const domainEntry = byDomain.get(domain) ?? new Map<string, SurfaceWorkspace>();
@@ -51,52 +40,12 @@ export function buildDomainWorkspaces({
     if (existing) return existing;
     const created: SurfaceWorkspace = {
       surface,
-      selectorCount: 0,
-      selectors: [],
       profile: null,
       learning: [],
       completedRuns: [],
     };
     domainEntry.set(surface, created);
     return created;
-  }
-
-  function ensureDomainRuns(domain: string, surface: string) {
-    const domainEntry = runsByDomain.get(domain) ?? new Map<string, CrawlRun[]>();
-    if (!runsByDomain.has(domain)) runsByDomain.set(domain, domainEntry);
-    const existing = domainEntry.get(surface);
-    if (existing) return existing;
-    const created: CrawlRun[] = [];
-    domainEntry.set(surface, created);
-    return created;
-  }
-
-  for (const summary of selectorSummaries) {
-    if (surfaceFilter !== 'all' && summary.surface !== surfaceFilter) continue;
-    const searchable = [summary.domain, summary.surface].join(' ').toLowerCase();
-    if (query && !searchable.includes(query)) {
-      continue;
-    }
-    ensureSurfaceWorkspace(summary.domain, summary.surface).selectorCount = summary.selector_count;
-  }
-
-  for (const record of records) {
-    if (surfaceFilter !== 'all' && record.surface !== surfaceFilter) continue;
-    const searchable = [
-      record.domain,
-      record.surface,
-      record.field_name,
-      record.source,
-      selectorValue(record),
-    ]
-      .join(' ')
-      .toLowerCase();
-    if (query && !searchable.includes(query)) {
-      continue;
-    }
-    const workspace = ensureSurfaceWorkspace(record.domain, record.surface);
-    workspace.selectors.push(record);
-    workspace.selectorCount = Math.max(workspace.selectorCount, workspace.selectors.length);
   }
 
   for (const profile of profiles) {
@@ -129,13 +78,11 @@ export function buildDomainWorkspaces({
     if (surfaceFilter !== 'all' && run.surface !== surfaceFilter) continue;
     const searchable = [domain, run.surface, run.url, run.status].join(' ').toLowerCase();
     if (query && !searchable.includes(query)) continue;
-    ensureDomainRuns(domain, run.surface).push(run);
     ensureSurfaceWorkspace(domain, run.surface).completedRuns.push(run);
   }
 
   const visibleDomains = new Set<string>([
     ...byDomain.keys(),
-    ...runsByDomain.keys(),
     ...knowledgeSites.flatMap((row) =>
       surfaceFilter === 'all' && (!query || row.domain.toLowerCase().includes(query))
         ? [row.domain]
@@ -220,9 +167,9 @@ function compareDomainWorkspaces(left: DomainWorkspace, right: DomainWorkspace) 
 
 function memoryScore(workspace: DomainWorkspace) {
   return (
-    workspace.surfaces.reduce((count, surface) => count + surface.selectorCount, 0) +
     workspace.surfaces.filter((surface) => surface.profile).length +
     workspace.learning.length +
-    (workspace.cookieMemory ? 1 : 0)
+    (workspace.cookieMemory ? 1 : 0) +
+    (workspace.knowledgeSite ? 1 : 0)
   );
 }

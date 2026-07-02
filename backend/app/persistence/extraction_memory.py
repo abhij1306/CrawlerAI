@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import uuid
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,6 +12,10 @@ from app.core.config.extraction_memory import (
     EXTRACTION_COMPILER_VERSION,
     EXTRACTION_MANIFEST_VERSION,
     EXTRACTION_MEMORY_STATUS_ACTIVE,
+    EXTRACTION_MEMORY_STATUS_TRUSTED,
+    EXTRACTION_RECIPE_KIND_CONTRACTS,
+    EXTRACTION_RECIPE_KIND_SELECTORS,
+    EXTRACTION_RECIPE_LAYER_ORDER,
     EXTRACTION_RELEASE_VERSION,
 )
 from app.core.domain_utils import normalize_domain
@@ -21,6 +25,7 @@ from app.core.extraction_memory.templates import (
     fingerprint_template,
     normalize_route,
 )
+from app.models.crawl_run import CrawlRun
 from app.models.extraction_memory import (
     CompiledExtractionRecipe,
     ExtractionManifest,
@@ -37,6 +42,111 @@ if TYPE_CHECKING:
 def _checksum(payload: dict) -> str:
     canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(canonical.encode()).hexdigest()
+
+
+class RecipeCompileError(ValueError):
+    """Recipe layers cannot be merged into one bounded runtime recipe."""
+
+
+def compile_recipe_layers(recipes: list[ExtractionRecipe]) -> dict[str, object]:
+    """Flatten scoped recipe layers into one bounded payload.
+
+    Higher layers may override lower layers. Two recipes at the same layer/kind
+    that define different rules for the same field are ambiguous and fail
+    closed.
+    """
+
+    ordered = sorted(
+        recipes,
+        key=lambda row: (
+            _layer_rank(row.layer),
+            row.kind,
+            row.version,
+            str(row.id),
+        ),
+    )
+    selectors: dict[str, dict[str, object]] = {}
+    contracts: dict[str, dict[str, object]] = {}
+    provenance: list[dict[str, object]] = []
+    layer_signatures: set[tuple[str, str, str, str]] = set()
+    for recipe in ordered:
+        payload = dict(recipe.payload or {})
+        provenance.append(
+            {
+                "recipe_id": str(recipe.id),
+                "layer": recipe.layer,
+                "kind": recipe.kind,
+                "version": recipe.version,
+            }
+        )
+        if recipe.kind == EXTRACTION_RECIPE_KIND_SELECTORS:
+            for row in list(payload.get("rules") or []):
+                if not isinstance(row, dict):
+                    continue
+                field = str(row.get("field_name") or row.get("canonical_field") or "")
+                selector = str(row.get("css_selector") or "")
+                _merge_layer_rule(
+                    selectors,
+                    layer_signatures,
+                    recipe=recipe,
+                    field=field,
+                    value=selector,
+                    payload=dict(row),
+                )
+        elif recipe.kind == EXTRACTION_RECIPE_KIND_CONTRACTS:
+            for row in list(payload.get("contracts") or []):
+                if not isinstance(row, dict):
+                    continue
+                field = str(row.get("canonical_field") or row.get("field_name") or "")
+                selected = str(row.get("selected_source") or "")
+                _merge_layer_rule(
+                    contracts,
+                    layer_signatures,
+                    recipe=recipe,
+                    field=field,
+                    value=selected,
+                    payload=dict(row),
+                )
+    return {
+        "compiler_version": EXTRACTION_COMPILER_VERSION,
+        "selector_rules": list(selectors.values()),
+        "contracts": list(contracts.values()),
+        "provenance": provenance,
+    }
+
+
+def _merge_layer_rule(
+    target: dict[str, dict[str, object]],
+    layer_signatures: set[tuple[str, str, str, str]],
+    *,
+    recipe: ExtractionRecipe,
+    field: str,
+    value: str,
+    payload: dict[str, object],
+) -> None:
+    field_key = field.strip().lower()
+    value_key = value.strip()
+    if not field_key or not value_key:
+        return
+    layer_key = (recipe.layer, recipe.kind, field_key, value_key)
+    ambiguous = {
+        item
+        for item in layer_signatures
+        if item[0] == recipe.layer and item[1] == recipe.kind and item[2] == field_key
+    }
+    if ambiguous and layer_key not in ambiguous:
+        raise RecipeCompileError(
+            f"ambiguous {recipe.kind} override for {field_key} at {recipe.layer}"
+        )
+    layer_signatures.add(layer_key)
+    target[field_key] = dict(payload)
+
+
+def _layer_rank(layer: str) -> int:
+    try:
+        return EXTRACTION_RECIPE_LAYER_ORDER.index(layer)
+    except ValueError:
+        return len(EXTRACTION_RECIPE_LAYER_ORDER)
 
 
 async def ensure_template(
@@ -140,7 +250,12 @@ async def build_release_payload(
                 select(ExtractionTemplate).where(
                     ExtractionTemplate.domain == str(domain or "").strip().lower(),
                     ExtractionTemplate.surface.in_((surface, DEFAULT_FALLBACK_SURFACE)),
-                    ExtractionTemplate.status == EXTRACTION_MEMORY_STATUS_ACTIVE,
+                    ExtractionTemplate.status.in_(
+                        (
+                            EXTRACTION_MEMORY_STATUS_ACTIVE,
+                            EXTRACTION_MEMORY_STATUS_TRUSTED,
+                        )
+                    ),
                 )
             )
         )
@@ -161,21 +276,19 @@ async def build_release_payload(
             .scalars()
             .all()
         )
-        contracts: list[dict] = []
-        selector_rules: list[dict] = []
-        for recipe in recipes:
-            if recipe.kind == "contracts":
-                contracts.extend(list(recipe.payload.get("contracts") or []))
-            elif recipe.kind == "selectors":
-                selector_rules.extend(list(recipe.payload.get("rules") or []))
+        compiled_recipe = compile_recipe_layers(recipes)
+        contracts = list(cast(list[dict], compiled_recipe["contracts"]))
+        selector_rules = list(cast(list[dict], compiled_recipe["selector_rules"]))
         template_rows.append(
             {
                 "template_id": str(template.id),
                 "fingerprint": template.fingerprint,
                 "surface": template.surface,
                 "route_pattern": template.route_pattern,
+                "status": template.status,
                 "contracts": contracts,
                 "selector_rules": selector_rules,
+                "compiled_recipe": compiled_recipe,
             }
         )
     return {"domain": domain, "surface": surface, "templates": template_rows}
@@ -222,6 +335,68 @@ async def create_release_snapshot(
     session.add(row)
     await session.flush()
     return row
+
+
+async def create_candidate_release_snapshot(
+    session: AsyncSession, *, domain: str, surface: str
+) -> ExtractionReleaseSnapshot:
+    """Create an immutable candidate release without making it active for a run."""
+
+    row = ExtractionReleaseSnapshot(
+        run_id=None,
+        domain=domain,
+        surface=surface,
+        release_version=EXTRACTION_RELEASE_VERSION,
+        payload=await build_release_payload(session, domain=domain, surface=surface),
+    )
+    session.add(row)
+    await session.flush()
+    return row
+
+
+async def active_release_snapshot_for_run(
+    session: AsyncSession, *, run_id: int
+) -> ExtractionReleaseSnapshot | None:
+    return (
+        await session.execute(
+            select(ExtractionReleaseSnapshot).where(
+                ExtractionReleaseSnapshot.run_id == run_id
+            )
+        )
+    ).scalar_one_or_none()
+
+
+async def activate_release_snapshot_for_run(
+    session: AsyncSession, *, run_id: int, release_snapshot_id: uuid.UUID
+) -> ExtractionReleaseSnapshot:
+    """Atomically point a run at an existing immutable release snapshot."""
+
+    run = await session.get(CrawlRun, run_id)
+    if run is None:
+        raise ValueError(f"unknown crawl run: {run_id}")
+    target = await session.get(ExtractionReleaseSnapshot, release_snapshot_id)
+    if target is None:
+        raise ValueError(f"unknown release snapshot: {release_snapshot_id}")
+    current = await active_release_snapshot_for_run(session, run_id=run_id)
+    if current is not None and current.id != target.id:
+        current.run_id = None
+        await session.flush()
+    target.run_id = run_id
+    run.extraction_release_snapshot_id = target.id
+    await session.flush()
+    return target
+
+
+async def rollback_release_snapshot_for_run(
+    session: AsyncSession, *, run_id: int, target_release_snapshot_id: uuid.UUID
+) -> ExtractionReleaseSnapshot:
+    """Rollback by re-pointing the run; release payload history stays immutable."""
+
+    return await activate_release_snapshot_for_run(
+        session,
+        run_id=run_id,
+        release_snapshot_id=target_release_snapshot_id,
+    )
 
 
 async def load_release_payload(

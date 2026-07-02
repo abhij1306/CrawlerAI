@@ -5,6 +5,7 @@ import httpx
 from httpx import ASGITransport, AsyncClient
 
 from app.core.dependencies import get_current_user, get_db
+from app.crawl.domain_memory_service import save_domain_memory
 from app.main import app
 from app.core.url_safety import SecurityError
 
@@ -29,44 +30,29 @@ async def selector_api_client(db_session, test_user):
 
 @pytest.mark.asyncio
 @pytest.mark.component
-async def test_selectors_api_crud_round_trip(selector_api_client: AsyncClient) -> None:
-    create_response = await selector_api_client.post(
-        "/api/selectors",
-        json={
-            "domain": "example.com",
-            "surface": "ecommerce_detail",
-            "field_name": "title",
-            "css_selector": ".custom-title",
-            "source": "manual",
-        },
-    )
-    assert create_response.status_code == 200
-    created = create_response.json()
-    selector_id = created["id"]
+async def test_selectors_api_disables_direct_mutation(
+    selector_api_client: AsyncClient,
+) -> None:
+    payload = {
+        "domain": "example.com",
+        "surface": "ecommerce_detail",
+        "field_name": "title",
+        "css_selector": ".custom-title",
+    }
 
-    list_response = await selector_api_client.get(
-        "/api/selectors",
-        params={"domain": "example.com", "surface": "ecommerce_detail"},
-    )
-    assert list_response.status_code == 200
-    assert [row["field_name"] for row in list_response.json()] == ["title"]
-
+    create_response = await selector_api_client.post("/api/selectors", json=payload)
     update_response = await selector_api_client.put(
-        f"/api/selectors/{selector_id}",
-        json={"sample_value": "Widget Prime"},
+        "/api/selectors/1", json={"sample_value": "Widget Prime"}
     )
-    assert update_response.status_code == 200
-    assert update_response.json()["sample_value"] == "Widget Prime"
-
-    delete_response = await selector_api_client.delete(f"/api/selectors/{selector_id}")
-    assert delete_response.status_code == 204
-
-    final_list = await selector_api_client.get(
-        "/api/selectors",
-        params={"domain": "example.com", "surface": "ecommerce_detail"},
+    delete_response = await selector_api_client.delete("/api/selectors/1")
+    clear_response = await selector_api_client.delete(
+        "/api/selectors/domain/example.com"
     )
-    assert final_list.status_code == 200
-    assert final_list.json() == []
+
+    assert create_response.status_code == 405
+    assert update_response.status_code == 404
+    assert delete_response.status_code == 404
+    assert clear_response.status_code == 404
 
 
 @pytest.mark.asyncio
@@ -139,28 +125,23 @@ async def test_selectors_api_preview_test_and_suggest(
 @pytest.mark.component
 async def test_selectors_api_lists_all_domain_records_when_surface_is_omitted(
     selector_api_client: AsyncClient,
+    db_session,
 ) -> None:
-    first_response = await selector_api_client.post(
-        "/api/selectors",
-        json={
-            "domain": "example.com",
-            "surface": "ecommerce_detail",
-            "field_name": "price",
-            "css_selector": ".detail-price",
+    await save_domain_memory(
+        db_session,
+        domain="example.com",
+        surface="ecommerce_detail",
+        selectors={
+            "rules": [{"id": 1, "field_name": "price", "css_selector": ".detail-price"}]
         },
     )
-    second_response = await selector_api_client.post(
-        "/api/selectors",
-        json={
-            "domain": "example.com",
-            "surface": "job_detail",
-            "field_name": "title",
-            "css_selector": "h1",
-        },
+    await save_domain_memory(
+        db_session,
+        domain="example.com",
+        surface="job_detail",
+        selectors={"rules": [{"id": 2, "field_name": "title", "css_selector": "h1"}]},
     )
-
-    assert first_response.status_code == 200
-    assert second_response.status_code == 200
+    await db_session.commit()
 
     list_response = await selector_api_client.get(
         "/api/selectors",
@@ -178,37 +159,28 @@ async def test_selectors_api_lists_all_domain_records_when_surface_is_omitted(
 @pytest.mark.component
 async def test_selectors_api_summary_returns_per_surface_counts(
     selector_api_client: AsyncClient,
+    db_session,
 ) -> None:
-    first_response = await selector_api_client.post(
-        "/api/selectors",
-        json={
-            "domain": "example.com",
-            "surface": "ecommerce_detail",
-            "field_name": "price",
-            "css_selector": ".detail-price",
+    await save_domain_memory(
+        db_session,
+        domain="example.com",
+        surface="ecommerce_detail",
+        selectors={
+            "rules": [
+                {"id": 1, "field_name": "price", "css_selector": ".detail-price"},
+                {"id": 2, "field_name": "title", "css_selector": "h1"},
+            ]
         },
     )
-    second_response = await selector_api_client.post(
-        "/api/selectors",
-        json={
-            "domain": "example.com",
-            "surface": "ecommerce_detail",
-            "field_name": "title",
-            "css_selector": "h1",
+    await save_domain_memory(
+        db_session,
+        domain="example.com",
+        surface="job_detail",
+        selectors={
+            "rules": [{"id": 3, "field_name": "brand", "css_selector": ".brand"}]
         },
     )
-    third_response = await selector_api_client.post(
-        "/api/selectors",
-        json={
-            "domain": "example.com",
-            "surface": "job_detail",
-            "field_name": "brand",
-            "css_selector": ".brand",
-        },
-    )
-    assert first_response.status_code == 200
-    assert second_response.status_code == 200
-    assert third_response.status_code == 200
+    await db_session.commit()
 
     summary_response = await selector_api_client.get("/api/selectors/summary")
     filtered_response = await selector_api_client.get(

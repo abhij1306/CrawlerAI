@@ -16,10 +16,10 @@ from app.models.user import User
 from app.schemas.crawl import (
     DomainCookieMemoryRecordResponse,
     DomainFieldFeedbackRecordResponse,
-    DomainRecipeFieldActionRequest,
-    DomainRecipePromoteSelectorsRequest,
     DomainRecipeResponse,
     DomainRecipeSaveRunProfileRequest,
+    GroundedCorrectionRequest,
+    GroundedCorrectionResponse,
     DomainRunProfileLookupResponse,
     DomainRunProfilePayload,
     DomainRunProfileRecordResponse,
@@ -34,10 +34,9 @@ from app.crawl.profile import (
 )
 from app.core.domain_utils import normalize_domain
 from app.crawl.review import (
-    apply_domain_recipe_field_action,
     build_domain_recipe_payload,
     list_domain_field_feedback,
-    promote_domain_recipe_selectors,
+    save_grounded_correction,
     save_domain_recipe_run_profile,
 )
 
@@ -169,23 +168,6 @@ async def crawls_domain_recipe(
 
 
 @router.post(
-    "/{run_id:int}/domain-recipe/promote-selectors", responses=RUN_NOT_FOUND_RESPONSE
-)
-async def crawls_promote_domain_recipe_selectors(
-    run_id: int,
-    payload: DomainRecipePromoteSelectorsRequest,
-    session: Annotated[AsyncSession, Depends(get_db)],
-    user: Annotated[User, Depends(get_current_user)],
-) -> list[dict[str, object]]:
-    run = await _get_accessible_run_or_404(session, run_id=run_id, user=user)
-    return await promote_domain_recipe_selectors(
-        session,
-        run=run,
-        selectors=[item.model_dump() for item in payload.selectors],
-    )
-
-
-@router.post(
     "/{run_id:int}/domain-recipe/save-run-profile", responses=RUN_NOT_FOUND_RESPONSE
 )
 async def crawls_save_domain_run_profile(
@@ -202,21 +184,21 @@ async def crawls_save_domain_run_profile(
     )
 
 
-@router.post(
-    "/{run_id:int}/domain-recipe/field-action", responses=RUN_NOT_FOUND_RESPONSE
-)
-async def crawls_domain_recipe_field_action(
+@router.post("/{run_id:int}/corrections", responses=RUN_NOT_FOUND_RESPONSE)
+async def crawls_save_grounded_correction(
     run_id: int,
-    payload: DomainRecipeFieldActionRequest,
+    payload: GroundedCorrectionRequest,
     session: Annotated[AsyncSession, Depends(get_db)],
     user: Annotated[User, Depends(get_current_user)],
-) -> dict[str, object]:
+) -> GroundedCorrectionResponse:
     run = await _get_accessible_run_or_404(session, run_id=run_id, user=user)
     try:
-        return await apply_domain_recipe_field_action(
+        result = await save_grounded_correction(
             session,
             run=run,
-            action=payload.model_dump(),
+            labels=[item.model_dump() for item in payload.labels],
+            activate=payload.activate,
+            representative_url_result_ids=payload.representative_url_result_ids,
         )
     except ValueError as exc:
         await session.rollback()
@@ -224,3 +206,4 @@ async def crawls_domain_recipe_field_action(
             status_code=status.HTTP_400_BAD_REQUEST,
             exc=exc,
         )
+    return GroundedCorrectionResponse.model_validate(result)

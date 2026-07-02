@@ -1,7 +1,7 @@
 import { Badge } from '../../ui/primitives';
 import { NavList, SurfacePanel } from '../../ui/patterns';
 import type { DomainWorkspace } from './types';
-import { getProfileCount, getTotalSelectorCount } from './utils';
+import { getProfileCount } from './utils';
 
 type DomainSidebarProps = {
   groupedWorkspaces: DomainWorkspace[];
@@ -28,10 +28,8 @@ export function DomainSidebar({
           getKey={(ws) => ws.domain}
           getLabel={(ws) => ws.domain}
           getMeta={(ws) => {
-            const selectorCount = getTotalSelectorCount(ws.surfaces);
             const profileCount = getProfileCount(ws.surfaces);
             const meta = [
-              selectorCount ? `${selectorCount} selectors` : null,
               profileCount ? `${profileCount} profiles` : null,
               ws.knowledgeSite ? `graph v${ws.knowledgeSite.current_version}` : null,
               ws.learning.length ? `${ws.learning.length} learned` : null,

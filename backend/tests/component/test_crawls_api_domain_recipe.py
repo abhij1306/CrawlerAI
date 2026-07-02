@@ -275,27 +275,6 @@ async def test_crawls_domain_recipe_routes_round_trip(
     assert normalized_profiles_response.status_code == 200
     assert len(normalized_profiles_response.json()) == 1
 
-    promote_response = await crawls_api_client.post(
-        f"/api/crawls/{run.id}/domain-recipe/promote-selectors",
-        json={
-            "selectors": [
-                {
-                    "candidate_key": "price|css_selector|.run-price",
-                    "field_name": "price",
-                    "selector_kind": "css_selector",
-                    "selector_value": ".run-price",
-                    "sample_value": "$19.99",
-                }
-            ]
-        },
-    )
-    assert promote_response.status_code == 200
-    promoted = promote_response.json()
-    assert len(promoted) == 1
-    assert promoted[0]["field_name"] == "price"
-    assert promoted[0]["source"] == "domain_recipe"
-    assert promoted[0]["source_run_id"] == run.id
-
     recipe_after_save = await crawls_api_client.get(
         f"/api/crawls/{run.id}/domain-recipe"
     )
@@ -306,32 +285,6 @@ async def test_crawls_domain_recipe_routes_round_trip(
         == "http_then_browser"
     )
     assert "proxy_profile" not in saved_recipe["saved_run_profile"]
-    assert any(row["field_name"] == "price" for row in saved_recipe["saved_selectors"])
-    promoted_candidate = None
-    for row in saved_recipe["selector_candidates"]:
-        if row["field_name"] == "price":
-            promoted_candidate = row
-            break
-    assert promoted_candidate is not None
-    assert promoted_candidate["already_saved"] is True
-    assert promoted_candidate["saved_selector_id"] == promoted[0]["id"]
-
-    field_action_response = await crawls_api_client.post(
-        f"/api/crawls/{run.id}/domain-recipe/field-action",
-        json={
-            "field_name": "price",
-            "action": "reject",
-            "selector_kind": "css_selector",
-            "selector_value": ".run-price",
-            "source_record_ids": [1],
-        },
-    )
-    assert field_action_response.status_code == 200
-    assert field_action_response.json()["action"] == "reject"
-    feedback_rows = list(
-        (await db_session.execute(select(DomainFieldFeedback))).scalars().all()
-    )
-    assert len(feedback_rows) == 1
 
     await persist_storage_state_for_domain(
         "domain-recipe.example.invalid",
@@ -364,22 +317,66 @@ async def test_crawls_domain_recipe_routes_round_trip(
         },
     )
     assert feedback_response.status_code == 200
-    feedback_payload = feedback_response.json()
-    assert len(feedback_payload) == 1
-    assert feedback_payload[0] == {
-        **feedback_payload[0],
-        "id": feedback_rows[0].id,
-        "domain": "domain-recipe.example.invalid",
-        "surface": "ecommerce_detail",
-        "field_name": "price",
-        "action": "reject",
-        "source_kind": "selector",
-        "source_value": ".run-price",
-        "source_run_id": run.id,
-        "selector_kind": "css_selector",
-        "selector_value": ".run-price",
-        "source_record_ids": [1],
-    }
+    assert feedback_response.json() == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_crawls_grounded_correction_route_enforces_replay_gate(
+    crawls_api_client: AsyncClient,
+    db_session,
+    test_user,
+) -> None:
+    run = await create_crawl_run(
+        db_session,
+        test_user.id,
+        {
+            "run_type": "crawl",
+            "url": "https://domain-recipe.example.invalid/products/correction-widget",
+            "surface": "ecommerce_detail",
+        },
+    )
+    run_id = run.id
+
+    accepted_response = await crawls_api_client.post(
+        f"/api/crawls/{run_id}/corrections",
+        json={
+            "activate": True,
+            "representative_url_result_ids": [101],
+            "labels": [
+                {
+                    "target_kind": "field",
+                    "subject_id": "product:1",
+                    "field_name": "price",
+                    "canonical_value": "19.99",
+                    "semantic_role": "primary_price",
+                    "locale_interpretation": "USD",
+                    "grounding": [
+                        {
+                            "kind": "node",
+                            "artifact_id": "url-result:1:html",
+                            "locator": "css:.price",
+                        }
+                    ],
+                }
+            ],
+        },
+    )
+
+    assert accepted_response.status_code == 200
+    payload = accepted_response.json()
+    assert payload["activation_status"] == "replay_failed"
+    assert payload["replay"]["passed"] is False
+    assert payload["replay"]["reason"] == "representative_results_not_owned_by_run"
+    label = (
+        await db_session.execute(
+            select(DomainFieldFeedback)
+            .where(DomainFieldFeedback.id == payload["correction_id"])
+            .limit(1)
+        )
+    ).scalar_one()
+    assert label.label_kind == "grounded_correction"
+    assert label.payload["labels"][0]["grounding"][0]["locator"] == "css:.price"
 
 
 @pytest.mark.asyncio

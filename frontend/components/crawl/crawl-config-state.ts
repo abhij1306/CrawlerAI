@@ -46,7 +46,6 @@ export type CrawlConfigLocalState = {
   additionalDraft: string;
   additionalFields: string[];
   generatingSelectors: boolean;
-  savingDomainMemory: boolean;
   fieldConfigMessage: string;
   fieldConfigError: string;
   fieldRowMessages: Record<string, { tone: FieldRowMessageTone; message: string }>;
@@ -82,7 +81,6 @@ export function buildInitialLocalState(): CrawlConfigLocalState {
     additionalDraft: '',
     additionalFields: [],
     generatingSelectors: false,
-    savingDomainMemory: false,
     fieldConfigMessage: '',
     fieldConfigError: '',
     fieldRowMessages: {},
@@ -157,8 +155,6 @@ export function bindCrawlConfigLocalDispatch(dispatchLocal: Dispatch<CrawlConfig
     setAdditionalFields,
     setGeneratingSelectors: (generatingSelectors: boolean) =>
       dispatchLocal({ type: 'patch', patch: { generatingSelectors } }),
-    setSavingDomainMemory: (savingDomainMemory: boolean) =>
-      dispatchLocal({ type: 'patch', patch: { savingDomainMemory } }),
     setFieldConfigMessage: (fieldConfigMessage: string) =>
       dispatchLocal({ type: 'patch', patch: { fieldConfigMessage } }),
     setFieldConfigError: (fieldConfigError: string) =>
