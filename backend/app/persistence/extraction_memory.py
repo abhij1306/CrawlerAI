@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 import hashlib
 import json
 import uuid
@@ -427,7 +428,7 @@ async def load_release_payload(
     row = await session.get(ExtractionReleaseSnapshot, release_snapshot_id)
     if row is None:
         return {}
-    payload = dict(row.payload)
+    payload = deepcopy(row.payload)
     await _overlay_suspended_templates(session, payload)
     return payload
 
@@ -501,6 +502,9 @@ async def record_extraction_result(
         session,
         run_id=run_id,
         url_result_id=url_result_id,
+        current_domain=template.domain,
+        current_surface=template.surface,
+        current_route_pattern=template.route_pattern,
         result=result,
     )
     manifest = (
@@ -537,10 +541,20 @@ async def _record_sentinel_observations(
     *,
     run_id: int,
     url_result_id: int,
+    current_domain: str,
+    current_surface: str,
+    current_route_pattern: str,
     result: ExtractionResult,
 ) -> None:
     for observation in result.sentinel_observations:
-        template_id = _uuid_or_none(observation.template_id)
+        claimed_template_id = _uuid_or_none(observation.template_id)
+        template_id = await _sentinel_template_in_scope(
+            session,
+            template_id=claimed_template_id,
+            domain=current_domain,
+            surface=current_surface,
+            route_pattern=current_route_pattern,
+        )
         session.add(
             ExtractionObservation(
                 template_id=template_id,
@@ -562,6 +576,28 @@ async def _record_sentinel_observations(
             )
 
 
+async def _sentinel_template_in_scope(
+    session: AsyncSession,
+    *,
+    template_id: uuid.UUID | None,
+    domain: str,
+    surface: str,
+    route_pattern: str,
+) -> uuid.UUID | None:
+    if template_id is None:
+        return None
+    return (
+        await session.execute(
+            select(ExtractionTemplate.id).where(
+                ExtractionTemplate.id == template_id,
+                ExtractionTemplate.domain == domain,
+                ExtractionTemplate.surface == surface,
+                ExtractionTemplate.route_pattern == route_pattern,
+            )
+        )
+    ).scalar_one_or_none()
+
+
 async def _suspend_confirmed_critical_drift_template(
     session: AsyncSession,
     *,
@@ -569,26 +605,29 @@ async def _suspend_confirmed_critical_drift_template(
     run_id: int,
     url_result_id: int,
 ) -> None:
-    template = await session.get(ExtractionTemplate, template_id)
+    with session.no_autoflush:
+        template = (
+            await session.execute(
+                select(ExtractionTemplate)
+                .where(ExtractionTemplate.id == template_id)
+                .with_for_update()
+            )
+        ).scalar_one_or_none()
     if template is None or template.status == EXTRACTION_MEMORY_STATUS_SUSPENDED:
         return
-    rows = (
-        (
-            await session.execute(
-                select(ExtractionObservation).where(
-                    ExtractionObservation.template_id == template_id,
-                    ExtractionObservation.verdict == "critical_drift",
-                )
+    await session.flush()
+    confirmed_count = (
+        await session.execute(
+            select(func.count())
+            .select_from(ExtractionObservation)
+            .where(
+                ExtractionObservation.template_id == template_id,
+                ExtractionObservation.verdict == "critical_drift",
+                ExtractionObservation.payload["kind"].as_string()
+                == SENTINEL_OBSERVATION_KIND,
             )
         )
-        .scalars()
-        .all()
-    )
-    confirmed_count = sum(
-        1
-        for row in rows
-        if dict(row.payload or {}).get("kind") == SENTINEL_OBSERVATION_KIND
-    )
+    ).scalar_one()
     if confirmed_count < SENTINEL_CRITICAL_DRIFT_CONFIRMATION_THRESHOLD:
         return
     template.status = EXTRACTION_MEMORY_STATUS_SUSPENDED

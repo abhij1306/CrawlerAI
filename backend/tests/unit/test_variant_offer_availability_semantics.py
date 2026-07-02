@@ -368,6 +368,10 @@ def test_decimal_availability_flags_normalize_to_stock_states() -> None:
     assert normalize_availability_value(Fraction(0, 1)) == "out_of_stock"
 
 
+def test_complex_availability_value_is_not_treated_as_stock_number() -> None:
+    assert normalize_availability_value(complex(1, 0)) == "(1+0j)"
+
+
 def test_duplicate_offers_for_one_variant_do_not_fake_complete_coverage() -> None:
     bundle = _bundle()
     rows = [

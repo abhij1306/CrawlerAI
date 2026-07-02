@@ -3,6 +3,10 @@ from tests.unit.extraction_pipeline_test_support import *
 from app.extraction import adapters
 from app.extraction.contracts import field_contracts_for_surface
 from app.extraction.contracts import RequestContext
+from app.extraction.contracts import SentinelObservation
+from app.extraction.engine import _has_suspended_runtime_template
+from app.extraction.sentinel import _disagreement_classes, _normalized
+from pydantic import ValidationError
 
 
 def test_extraction_request_has_no_artifact_payloads_field() -> None:
@@ -23,6 +27,81 @@ def test_currency_hint_is_not_used_as_locale_hint() -> None:
     )
 
     assert adapters._request_locale_hint(request) is None
+
+
+def test_sentinel_matches_reordered_records_by_identity() -> None:
+    recipe = (
+        {"sku": "A", "title": "Alpha", "price": "19.90"},
+        {"sku": "B", "title": "Beta", "price": 3},
+    )
+    challenger = (
+        {"sku": "B", "title": "Beta", "price": 3.0},
+        {"sku": "A", "title": "Alpha", "price": "19.9"},
+    )
+
+    assert _disagreement_classes(recipe, challenger) == ()
+
+
+def test_sentinel_matches_partially_populated_identity() -> None:
+    recipe = ({"sku": "A", "title": "Old title"},)
+    challenger = ({"sku": "A"},)
+
+    assert _disagreement_classes(recipe, challenger) == ("critical_field:title",)
+
+
+def test_sentinel_ignores_identified_pagination_count_difference() -> None:
+    recipe = ({"sku": "A", "title": "Alpha"},)
+    challenger = (
+        {"sku": "A", "title": "Alpha"},
+        {"sku": "B", "title": "Beta"},
+    )
+
+    assert _disagreement_classes(recipe, challenger) == ()
+
+
+def test_sentinel_marks_one_sided_empty_results_as_record_count_drift() -> None:
+    assert _disagreement_classes(({"sku": "A"},), ()) == ("record_count",)
+
+
+def test_sentinel_normalizes_equivalent_numeric_shapes() -> None:
+    assert _normalized("19.90") == _normalized(19.9)
+    assert _normalized(3) == _normalized(3.0)
+
+
+def test_sentinel_rejects_invalid_verdicts() -> None:
+    with pytest.raises(ValidationError):
+        SentinelObservation(
+            challenger="deterministic",
+            state="concordant",
+            recipe_verdict="typo",
+            challenger_verdict="success",
+            recipe_record_count=1,
+            challenger_record_count=1,
+            diagnostic="invalid verdict probe",
+            next_action="continue_recipe",
+        )
+
+
+def test_suspended_template_check_is_route_scoped() -> None:
+    request = fixture_request_from_inputs(
+        Surface.ECOMMERCE_DETAIL,
+        HTML,
+        "https://shop.test/products/trail-shoe",
+    )
+    snapshot = {
+        "templates": [
+            {
+                "surface": "ecommerce_detail",
+                "route_pattern": "/collections/{id}",
+                "sentinel_suspended": True,
+            }
+        ]
+    }
+    request = request.model_copy(update={"runtime_snapshot": snapshot})
+
+    assert _has_suspended_runtime_template(request) is False
+    snapshot["templates"][0]["route_pattern"] = "/products/{id}"
+    assert _has_suspended_runtime_template(request) is True
 
 
 def test_listing_visual_capture_builds_extractable_html_artifact() -> None:

@@ -25,6 +25,7 @@ from app.core.config.evaluation import (
     GROUNDED_REPAIR_CUSTOM_FIELD_CARDINALITIES,
     GROUNDED_REPAIR_CUSTOM_FIELD_TYPES,
     GROUNDED_REPAIR_LLM_TASK,
+    GROUNDED_REPAIR_NO_PROPOSALS_STATUS,
     GROUNDED_REPAIR_PUBLISH_POLICIES,
 )
 from app.core.domain_utils import normalize_domain
@@ -104,7 +105,7 @@ class GroundedRepairProposal(BaseModel):
 class GroundedRepairBatch(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    proposals: tuple[GroundedRepairProposal, ...] = Field(min_length=1)
+    proposals: tuple[GroundedRepairProposal, ...] = ()
 
 
 def _is_css_reference(reference: RepairGrounding) -> bool:
@@ -124,6 +125,12 @@ def _label_payload(proposal: GroundedRepairProposal) -> dict[str, object]:
         "canonical_value": proposal.canonical_value,
         "semantic_role": proposal.semantic_role,
         "locale_interpretation": proposal.locale_interpretation,
+        "uncertainty_reason": proposal.uncertainty_reason,
+        "custom_field": (
+            proposal.custom_field.model_dump(mode="json")
+            if proposal.custom_field is not None
+            else None
+        ),
         "grounding": [
             {"kind": ref.kind, "artifact_id": ref.artifact_id, "locator": ref.locator}
             for ref in proposal.grounding
@@ -161,6 +168,15 @@ async def apply_grounded_repair(
     operator can review before approving.
     """
     _reject_undeclared_custom_fields(batch, surface=run.surface)
+    if not batch.proposals:
+        return {
+            "correction_id": None,
+            "domain": normalize_domain(run.url),
+            "surface": run.surface,
+            "label_count": 0,
+            "activation_status": GROUNDED_REPAIR_NO_PROPOSALS_STATUS,
+            "replay": None,
+        }
     return await save_grounded_correction(
         session,
         run=run,

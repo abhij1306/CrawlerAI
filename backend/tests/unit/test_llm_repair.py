@@ -10,6 +10,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
+from app.connectors.llm.payloads import SUPPORTED_TASK_TYPES
 from app.evaluation.llm_repair import (
     CustomFieldDeclaration,
     GroundedRepairBatch,
@@ -18,6 +19,7 @@ from app.evaluation.llm_repair import (
     _label_payload,
     _reject_undeclared_custom_fields,
 )
+from app.evaluation.schema import GroundedLabel
 
 
 def _grounding(locator: str = "css:.price", kind: str = "node") -> dict[str, str]:
@@ -44,6 +46,8 @@ def test_valid_grounded_proposal_round_trips() -> None:
     payload = _label_payload(proposal)
     assert payload["target_kind"] == "field"
     assert payload["grounding"][0]["locator"] == "css:.price"
+    assert payload["uncertainty_reason"] == proposal.uncertainty_reason
+    assert payload["custom_field"] is None
 
 
 def test_proposal_without_grounding_is_rejected() -> None:
@@ -68,9 +72,13 @@ def test_proposal_without_a_value_cannot_publish() -> None:
         GroundedRepairProposal.model_validate(_proposal(canonical_value=None))
 
 
-def test_batch_requires_at_least_one_proposal() -> None:
-    with pytest.raises(ValidationError):
-        GroundedRepairBatch.model_validate({"proposals": []})
+def test_empty_batch_is_valid_when_nothing_is_grounded() -> None:
+    batch = GroundedRepairBatch.model_validate({"proposals": []})
+    assert batch.proposals == ()
+
+
+def test_grounded_repair_is_a_supported_llm_task() -> None:
+    assert "grounded_extraction_repair" in SUPPORTED_TASK_TYPES
 
 
 def test_undeclared_custom_field_is_rejected() -> None:
@@ -98,6 +106,22 @@ def test_declared_custom_field_is_accepted() -> None:
         }
     )
     _reject_undeclared_custom_fields(batch, surface="ecommerce_detail")
+    payload = _label_payload(batch.proposals[0])
+    assert payload["custom_field"] == {
+        "value_type": "string",
+        "cardinality": "single",
+        "validation": "non-empty text",
+        "publish_policy": "retain_only",
+    }
+    label = GroundedLabel.model_validate(
+        {
+            **payload,
+            "label_id": "model-label-1",
+            "authority": "unverified_model",
+        }
+    )
+    assert label.custom_field == payload["custom_field"]
+    assert label.uncertainty_reason == batch.proposals[0].uncertainty_reason
 
 
 def test_standard_field_needs_no_declaration() -> None:

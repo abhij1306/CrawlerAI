@@ -39,6 +39,7 @@ from app.models.crawl_run import CrawlRun, CrawlUrlResult
 from app.models.extraction_memory import CompiledExtractionRecipe, ExtractionRecipe
 from app.persistence.extraction_memory import (
     RecipeCompileError,
+    _sentinel_template_in_scope,
     activate_release_snapshot_for_run,
     active_release_snapshot_for_run,
     build_release_payload,
@@ -900,4 +901,30 @@ async def test_confirmed_critical_sentinel_drift_suspends_template_and_fallback(
 
     assert template.status == EXTRACTION_MEMORY_STATUS_SUSPENDED
     assert frozen["templates"][0]["sentinel_suspended"] is True
+    assert not release.payload["templates"][0].get("sentinel_suspended", False)
     assert selector_rules_from_release(frozen, surface="ecommerce_detail") == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_sentinel_template_scope_rejects_unrelated_route(
+    db_session: AsyncSession,
+) -> None:
+    template = await ensure_template(
+        db_session,
+        domain="example.com",
+        surface="ecommerce_detail",
+        fingerprint="unrelated-template",
+        route_pattern="/categories/{id}",
+    )
+
+    assert (
+        await _sentinel_template_in_scope(
+            db_session,
+            template_id=template.id,
+            domain="example.com",
+            surface="ecommerce_detail",
+            route_pattern="/products/{id}",
+        )
+        is None
+    )

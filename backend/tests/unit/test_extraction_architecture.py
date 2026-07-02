@@ -51,6 +51,16 @@ def _parse_module(path: Path) -> ast.Module:
     return ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
 
 
+def _absolute_import_from(path: Path, node: ast.ImportFrom) -> str:
+    if node.level == 0:
+        return node.module or ""
+    module_parts = list(path.relative_to(ROOT).with_suffix("").parts)
+    package_parts = module_parts if path.name == "__init__.py" else module_parts[:-1]
+    keep = max(0, len(package_parts) - (node.level - 1))
+    suffix = tuple(node.module.split(".")) if node.module else ()
+    return ".".join((*package_parts[:keep], *suffix))
+
+
 def test_surface_enum_is_exact_contract() -> None:
     assert {surface.value for surface in Surface} == {
         "ecommerce_listing",
@@ -326,9 +336,10 @@ def test_extraction_hot_path_never_imports_grounded_llm_repair() -> None:
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):
                 modules.update(alias.name for alias in node.names)
-            elif isinstance(node, ast.ImportFrom) and node.module:
-                modules.add(node.module)
-                modules.update(f"{node.module}.{alias.name}" for alias in node.names)
+            elif isinstance(node, ast.ImportFrom):
+                module = _absolute_import_from(path, node)
+                modules.add(module)
+                modules.update(f"{module}.{alias.name}" for alias in node.names)
         for module in modules:
             if any(
                 module == prefix or module.startswith(prefix + ".")
@@ -336,6 +347,12 @@ def test_extraction_hot_path_never_imports_grounded_llm_repair() -> None:
             ):
                 offenders.append((path, module))
     assert not offenders, offenders
+
+
+def test_relative_import_resolution_uses_extraction_package_context() -> None:
+    node = ast.parse("from ..connectors import llm").body[0]
+    assert isinstance(node, ast.ImportFrom)
+    assert _absolute_import_from(EXTRACTION_ROOT / "probe.py", node) == "app.connectors"
 
 
 def test_extraction_does_not_import_extraction_memory_storage() -> None:

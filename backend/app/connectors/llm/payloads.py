@@ -12,6 +12,8 @@ from pydantic import (
     field_validator,
 )
 
+from app.core.config.evaluation import GROUNDED_REPAIR_LLM_TASK
+
 
 class _ProductIntelligenceEnrichmentPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -83,7 +85,7 @@ _PAYLOAD_ADAPTERS: dict[str, TypeAdapter[Any]] = {
     ),
     "data_enrichment_semantic": TypeAdapter(_DataEnrichmentSemanticPayload),
 }
-SUPPORTED_TASK_TYPES = tuple(_PAYLOAD_ADAPTERS.keys())
+SUPPORTED_TASK_TYPES = (*_PAYLOAD_ADAPTERS.keys(), GROUNDED_REPAIR_LLM_TASK)
 
 
 def parse_payload(raw_text: str, *, response_type: str) -> dict | list | None:

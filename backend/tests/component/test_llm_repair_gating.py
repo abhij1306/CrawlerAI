@@ -140,6 +140,44 @@ async def test_grounded_repair_passes_replay_but_never_activates(
     assert label is not None
     assert label.payload["activation_requested"] is False
     assert label.payload["labels"][0]["authority"] == "unverified_model"
+    assert (
+        label.payload["labels"][0]["uncertainty_reason"]
+        == "current value picked the compare-at price"
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_empty_grounded_repair_batch_is_a_noop(
+    db_session: AsyncSession,
+    test_user,
+    create_test_run,
+) -> None:
+    run = await create_test_run(
+        url="https://example.com/products/widget",
+        surface="ecommerce_detail",
+    )
+
+    result = await apply_grounded_repair(
+        db_session,
+        run=run,
+        batch=GroundedRepairBatch.model_validate({"proposals": []}),
+    )
+
+    assert result["activation_status"] == "no_grounded_repairs"
+    assert result["label_count"] == 0
+    labels = (
+        (
+            await db_session.execute(
+                select(ExtractionOperatorLabel).where(
+                    ExtractionOperatorLabel.source_run_id == run.id
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert labels == []
 
 
 @pytest.mark.asyncio

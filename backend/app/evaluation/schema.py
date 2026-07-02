@@ -135,6 +135,8 @@ class GroundedLabel(EvaluationSchemaModel):
     canonical_value: JsonValue = None
     semantic_role: NonEmptyText | None = None
     locale_interpretation: NonEmptyText | None = None
+    uncertainty_reason: NonEmptyText | None = None
+    custom_field: dict[str, JsonValue] | None = None
     region_role: RegionSemanticRole | None = None
     relationship: EntityRelationship | None = None
     grounding: tuple[GroundingReference, ...]

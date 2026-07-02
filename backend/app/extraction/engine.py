@@ -12,6 +12,7 @@ from app.core.config.extraction_rules import (
 )
 from app.core.config.extraction_memory import EXTRACTION_MEMORY_STATUS_SUSPENDED
 from app.core.extraction_memory.contract_runtime import match_template
+from app.core.extraction_memory.templates import normalize_route
 from app.core.shared.ids import stable_id
 from app.extraction.adapters import SurfaceAdapter, adapter_for, harvest_compiled_recipe
 from app.extraction.contracts import (
@@ -31,6 +32,7 @@ from app.extraction.contracts import (
     SentinelObservation,
     StageOutcome,
     TargetSelection,
+    Verdict,
 )
 from app.extraction.model_runtime import (
     ModelFallbackResult,
@@ -54,17 +56,6 @@ from app.extraction.result_building import (
 )
 from app.extraction.surfaces import Surface
 from app.extraction.validation import validate_selected_contract_fields
-
-Verdict = Literal[
-    "success",
-    "partial",
-    "review",
-    "invalid",
-    "empty",
-    "blocked",
-    "error",
-    "wrong_surface",
-]
 
 
 @dataclass(frozen=True)
@@ -378,9 +369,14 @@ def _has_suspended_runtime_template(request: ExtractionRequest) -> bool:
         if request.runtime_snapshot
         else ()
     )
+    route = normalize_route(
+        request.capture.final_url or request.capture.requested_url,
+        request.surface.value,
+    )
     return any(
         isinstance(row, dict)
         and str(row.get("surface") or "") == request.surface.value
+        and str(row.get("route_pattern") or "") == route
         and (
             str(row.get("status") or "").strip().lower()
             == EXTRACTION_MEMORY_STATUS_SUSPENDED

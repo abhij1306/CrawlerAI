@@ -63,6 +63,7 @@ TRUST_OUTCOMES = frozenset({"trusted", "review", "rejected", "blocked"})
 # propose grounded repairs; these route through the same compile/replay/activation
 # gates as operator corrections but are never release-eligible and never self-activate.
 GROUNDED_REPAIR_LLM_TASK: Final[str] = "grounded_extraction_repair"
+GROUNDED_REPAIR_NO_PROPOSALS_STATUS: Final[str] = "no_grounded_repairs"
 GROUNDED_REPAIR_CUSTOM_FIELD_TYPES = frozenset(
     {
         "string",

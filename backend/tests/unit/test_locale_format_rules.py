@@ -5,7 +5,9 @@ from decimal import Decimal
 import pytest
 
 from app.core.config.locale_format_rules import (
+    _currency_from_host_hint,
     currency_hint_from_page_url,
+    currency_hint_from_page_url_with_scope,
     locale_hint_from_page_url,
     money_has_ambiguous_decimal,
     parse_money,
@@ -48,3 +50,20 @@ def test_generic_url_locale_and_currency_inference() -> None:
     assert currency_hint_from_page_url("https://shop.test/en-gb/p/item") == "GBP"
     assert locale_hint_from_page_url("https://shop.test/fr-fr/p/item") == "fr-fr"
     assert currency_hint_from_page_url("https://shop.com/products/item") is None
+
+
+@pytest.mark.parametrize("hostname", ("firstcry.com", "www.firstcry.com"))
+def test_host_currency_hint_matches_exact_host_and_subdomain(hostname: str) -> None:
+    assert _currency_from_host_hint(hostname) == "INR"
+    assert currency_hint_from_page_url_with_scope(f"https://{hostname}/p/item") == (
+        "INR",
+        True,
+    )
+
+
+def test_host_currency_hint_rejects_suffix_without_label_boundary() -> None:
+    assert _currency_from_host_hint("notfirstcry.com") is None
+    assert currency_hint_from_page_url_with_scope("https://notfirstcry.com/p/item") == (
+        None,
+        False,
+    )

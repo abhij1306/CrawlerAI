@@ -9,6 +9,17 @@ from app.core.config.variant_policy import PUBLIC_VARIANT_AXIS_FIELDS
 from app.extraction.surfaces import Surface
 
 JsonValue = Any
+Verdict = Literal[
+    "success",
+    "partial",
+    "review",
+    "invalid",
+    "empty",
+    "blocked",
+    "error",
+    "wrong_surface",
+]
+ChallengerKind = Literal["deterministic", "ml"]
 BrandRole = Literal[
     "manufacturer",
     "designer",
@@ -973,13 +984,13 @@ class VariantDrop(FrozenModel):
 class SentinelObservation(FrozenModel):
     """Bounded challenger comparison. Challenger never overrides records."""
 
-    challenger: Literal["deterministic", "ml"]
+    challenger: ChallengerKind
     state: SentinelDriftState
     template_id: str | None = None
     release_snapshot_id: str | None = None
     sample_rate: float = 0.0
-    recipe_verdict: str
-    challenger_verdict: str
+    recipe_verdict: Verdict
+    challenger_verdict: Verdict
     recipe_record_count: int
     challenger_record_count: int
     disagreement_classes: tuple[str, ...] = ()
@@ -1012,16 +1023,7 @@ class ExtractionResult(FrozenModel):
         "unknown",
         "divergent",
     ] = "unknown"
-    verdict: Literal[
-        "success",
-        "partial",
-        "review",
-        "invalid",
-        "empty",
-        "blocked",
-        "error",
-        "wrong_surface",
-    ]
+    verdict: Verdict
     retry_request: RetryRequest | None = None
     metrics: ExtractionMetrics = Field(default_factory=ExtractionMetrics)
     collector_outcomes: tuple[CollectorOutcome, ...] = ()

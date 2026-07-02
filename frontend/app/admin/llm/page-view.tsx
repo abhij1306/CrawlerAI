@@ -29,6 +29,7 @@ const CUSTOM_MODEL_OPTION = '__custom__';
 const TASK_TYPES = [
   'general',
   'data_enrichment_semantic',
+  'grounded_extraction_repair',
   'product_intelligence_enrichment',
   'product_intelligence_brand_inference',
 ];
