@@ -173,8 +173,10 @@ Canonical config owner:
 | `structured_sources.py` | JSON-LD, microdata, OG, Nuxt, harvested JS state |
 | `extract/field_candidates/*` | Field candidate collection, structured payload traversal, structured variant row assembly, finalization, and scoring |
 | `extract/contracts.py` | Typed extraction contracts and the detail `CandidateSet` evidence ledger |
-| `extract/detail/resolution.py` | Single owner for product/variant consensus, inherited offers, and traceable semantic transforms |
-| `extract/detail/validation.py` | Single owner for missing evidence, incomplete offers, and currency-contradiction findings |
+| `app/extraction/resolution/` | Single owner package for product/variant consensus, inherited offers, ranking, price-unit derivation, assets, and traceable semantic transforms |
+| `app/extraction/validation.py` | Single owner for missing evidence, incomplete offers, and currency-contradiction findings |
+| `app/core/config/locale_format_rules.py` | Locale/market normalization policy: money separators, generic URL currency inference, currency symbols, and GTIN check digits |
+| `app/core/config/extraction_rules/` | Availability enum/token policy and generic extraction rule tables |
 | `extract/detail/images/dedupe.py`, `dom/image_extraction.py` | Product asset collection and canonical asset-identity dedupe |
 | `js_state/state_normalizer/` | JS state facade plus focused ecommerce payload, variant, identity, and product mapping modules |
 | `js_state/job_mapper.py` | Configured job-detail JS-state mapping and reusable state-path traversal |

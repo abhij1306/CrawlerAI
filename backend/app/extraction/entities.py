@@ -29,6 +29,7 @@ class VariantEntity(FrozenModel):
     entity_id: str
     product_entity_id: str
     identity_key: str
+    identity_keys: tuple[str, ...] = ()
     source_subject_ids: tuple[str, ...] = ()
     identity_evidence_ids: tuple[str, ...]
     option_values: dict[str, str]
@@ -199,7 +200,7 @@ def _link_products(evidence: tuple[Evidence, ...]) -> tuple[ProductEntity, ...]:
     _merge_exact_title_groups(groups, group_identities)
     products: list[ProductEntity] = []
     for identities, rows in sorted(
-        zip(group_identities, groups), key=lambda item: str(sorted(item[0]))
+        zip(group_identities, groups), key=lambda item: tuple(sorted(item[0]))
     ):
         attributes: dict[str, list[str]] = {}
         identity_rows = [
@@ -231,20 +232,21 @@ def _merge_exact_title_groups(
     groups: list[list[Evidence]],
     group_identities: list[set[tuple[str, str]]],
 ) -> None:
-    identified = [
-        index
-        for index, identities in enumerate(group_identities)
-        if any(kind != "subject" for kind, _value in identities)
-    ]
+    def _identified_indices() -> list[int]:
+        return [
+            index
+            for index, identities in enumerate(group_identities)
+            if any(kind != "subject" for kind, _value in identities)
+        ]
+
     for index in reversed(range(len(groups))):
         titles = _normalized_product_titles(groups[index])
         if not titles:
             continue
         matches = [
             target
-            for target in identified
+            for target in _identified_indices()
             if target != index
-            and target < len(groups)
             and _product_identity_sets_compatible(
                 group_identities[target], group_identities[index]
             )
@@ -255,9 +257,6 @@ def _merge_exact_title_groups(
         target = matches[0]
         groups[target].extend(groups.pop(index))
         group_identities[target].update(group_identities.pop(index))
-        identified = [
-            item - 1 if item > index else item for item in identified if item != index
-        ]
 
 
 def _normalized_product_titles(rows: list[Evidence]) -> set[str]:
@@ -519,6 +518,7 @@ def _variant_entity(
         entity_id=stable_id("variant", product_id, _preferred_variant_key(keys)),
         product_entity_id=product_id,
         identity_key=_preferred_variant_key(keys),
+        identity_keys=tuple(sorted(keys)),
         source_subject_ids=tuple(sorted(source_subjects)),
         identity_evidence_ids=identity_ids
         or tuple(sorted(ev.evidence_id for ev in rows)),
@@ -656,7 +656,12 @@ def _variant_for(
         str(ev.entity_hint.sku) for ev in rows if ev.entity_hint and ev.entity_hint.sku
     }
     for variant in variants:
-        if any(str(item).split(":", 1)[-1] in skus for item in (variant.identity_key,)):
+        candidate_keys = variant.identity_keys or (variant.identity_key,)
+        if any(
+            str(item).split(":", 1)[-1] in skus
+            for item in candidate_keys
+            if str(item).startswith("sku:")
+        ):
             return variant.entity_id
     return None
 

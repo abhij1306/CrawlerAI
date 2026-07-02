@@ -6,11 +6,10 @@ from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from app.core.config.extraction_rules import (
-    AVAILABILITY_URL_MAP,
     CURRENCY_CODES,
-    NORMALIZER_AVAILABILITY_TOKENS,
     REMOTE_BOOLEAN_FALSE_TOKENS,
     REMOTE_BOOLEAN_TRUE_TOKENS,
+    normalize_availability_value as normalize_config_availability_value,
 )
 from app.core.config.field_mappings import (
     NORMALIZER_BOOLEAN_FIELDS,
@@ -36,16 +35,6 @@ _CURRENCY_CONTEXT_RE = re.compile(
         rf"{_CURRENCY_CODE_CONTEXT_PATTERN}|rs\.?)\b"
     ),
     re.I,
-)
-_AVAILABILITY_TOKENS = dict(NORMALIZER_AVAILABILITY_TOKENS or {})
-_sorted_availability_tokens = sorted(
-    [
-        (token, normalized)
-        for normalized, tokens in _AVAILABILITY_TOKENS.items()
-        for token in tuple(tokens or ())
-    ],
-    key=lambda item: len(item[0]),
-    reverse=True,
 )
 
 
@@ -201,24 +190,7 @@ def _normalize_int(value: object) -> int | str:
 
 
 def _normalize_availability(value: object) -> str:
-    if isinstance(value, bool):
-        return "in_stock" if value else "out_of_stock"
-    text = _normalize_text(value)
-    lowered = text.lower()
-    mapped = (AVAILABILITY_URL_MAP or {}).get(lowered.rstrip("/"))
-    if mapped is not None:
-        return str(mapped)
-    normalized_enum = lowered.replace("-", "_").replace(" ", "_")
-    if normalized_enum in _AVAILABILITY_TOKENS:
-        return normalized_enum
-    if lowered in {"true", "1", "yes"}:
-        return "in_stock"
-    if lowered in {"false", "0", "no"}:
-        return "out_of_stock"
-    for token, normalized in _sorted_availability_tokens:
-        if token in lowered:
-            return normalized
-    return text
+    return normalize_config_availability_value(value)
 
 
 def normalize_value(field_name: str, value: object) -> object:

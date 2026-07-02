@@ -6,12 +6,14 @@ from sqlalchemy import select
 
 from app.core.dependencies import get_current_user, get_db
 from app.main import app
+from app.api import crawl_domain as crawl_domain_api
 from app.models.extraction_memory import ExtractionOperatorLabel as DomainFieldFeedback
 from app.crawl.batch_runtime import process_run
 from app.acquisition.cookie_store import persist_storage_state_for_domain
 from app.acquisition.acquirer import PageAcquisitionResult
 from app.crawl.crud import create_crawl_run
 from app.crawl.domain_memory_service import save_domain_memory
+from app.evaluation.grounded_corrections import GroundedCorrectionScopeMismatch
 
 
 def _authenticated_proxy_url() -> str:
@@ -377,6 +379,61 @@ async def test_crawls_grounded_correction_route_enforces_replay_gate(
     ).scalar_one()
     assert label.label_kind == "grounded_correction"
     assert label.payload["labels"][0]["grounding"][0]["locator"] == "css:.price"
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_crawls_grounded_correction_route_maps_scope_mismatch_to_conflict(
+    crawls_api_client: AsyncClient,
+    db_session,
+    test_user,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run = await create_crawl_run(
+        db_session,
+        test_user.id,
+        {
+            "run_type": "crawl",
+            "url": "https://domain-recipe.example.invalid/products/correction-widget",
+            "surface": "ecommerce_detail",
+        },
+    )
+
+    async def _raise_scope_mismatch(*args, **kwargs):
+        raise GroundedCorrectionScopeMismatch("template scope mismatch")
+
+    monkeypatch.setattr(
+        crawl_domain_api,
+        "save_grounded_correction",
+        _raise_scope_mismatch,
+    )
+    response = await crawls_api_client.post(
+        f"/api/crawls/{run.id}/corrections",
+        json={
+            "activate": True,
+            "representative_url_result_ids": [1],
+            "labels": [
+                {
+                    "target_kind": "field",
+                    "subject_id": "product:1",
+                    "field_name": "price",
+                    "canonical_value": "19.99",
+                    "semantic_role": "primary_price",
+                    "locale_interpretation": "USD",
+                    "grounding": [
+                        {
+                            "kind": "node",
+                            "artifact_id": "url-result:1:html",
+                            "locator": "css:.price",
+                        }
+                    ],
+                }
+            ],
+        },
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "template scope mismatch"
 
 
 @pytest.mark.asyncio

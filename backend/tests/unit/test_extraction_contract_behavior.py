@@ -133,6 +133,196 @@ def test_js_state_source_object_budget_is_reported(monkeypatch) -> None:
     assert "source_object_budget_exhausted" in str(budget_outcomes[0].detail)
 
 
+def test_harvest_forwards_budget_limited_outcomes_from_any_harvest_collector(
+    monkeypatch,
+) -> None:
+    from app.extraction import pipeline as extraction_pipeline
+    from app.extraction.contracts import CollectorOutcome
+
+    class BudgetedCollector:
+        collector_id = "custom_harvest"
+
+        def harvest(self, bundle, artifacts, *, requested_fields=()):
+            return SimpleNamespace(
+                evidence=(),
+                outcomes=(
+                    CollectorOutcome(
+                        collector_id=self.collector_id,
+                        outcome="budget_limited",
+                        detail="custom budget",
+                    ),
+                ),
+                admitted_source_objects=0,
+            )
+
+    request = fixture_request_from_inputs(
+        Surface.ECOMMERCE_DETAIL,
+        "<html><body></body></html>",
+        "https://shop.test/products/widget",
+    )
+    monkeypatch.setattr(
+        extraction_pipeline,
+        "default_collectors",
+        lambda: (BudgetedCollector(),),
+    )
+
+    result = extraction_pipeline.harvest_ecommerce_detail(
+        request.capture,
+        request.artifact_reader,
+    )
+
+    assert result.collector_outcomes[0].collector_id == "custom_harvest"
+    assert result.collector_outcomes[0].outcome == "budget_limited"
+
+
+def test_admitted_source_object_count_keys_by_collector_artifact_and_subject(
+    monkeypatch,
+) -> None:
+    from app.extraction import pipeline as extraction_pipeline
+
+    request = fixture_request_from_inputs(
+        Surface.ECOMMERCE_DETAIL,
+        "<html><body></body></html>",
+        "https://shop.test/products/widget",
+    )
+    subject_id = "subject:product"
+
+    class CollectorA:
+        collector_id = "collector_a"
+
+        def collect(self, bundle, artifacts):
+            return (
+                evidence(
+                    bundle,
+                    "html",
+                    self.collector_id,
+                    "product.title",
+                    "Widget",
+                    SourceLocator(kind="css_selector", value="h1"),
+                    hint=EntityHint(entity_type="product"),
+                    subject_id=subject_id,
+                ),
+            )
+
+    class CollectorB(CollectorA):
+        collector_id = "collector_b"
+
+    monkeypatch.setattr(
+        extraction_pipeline,
+        "default_collectors",
+        lambda: (CollectorA(), CollectorB()),
+    )
+
+    result = extraction_pipeline.harvest_ecommerce_detail(
+        request.capture,
+        request.artifact_reader,
+    )
+
+    assert result.admitted_source_objects == 2
+
+
+def test_ambiguous_dom_price_threshold_is_configurable(monkeypatch) -> None:
+    from app.extraction import pipeline as extraction_pipeline
+
+    request = fixture_request_from_inputs(
+        Surface.ECOMMERCE_DETAIL,
+        "<html><body></body></html>",
+        "https://shop.test/products/widget",
+    )
+    subject_id = "offer:dom:product"
+    prices = tuple(
+        evidence(
+            request.capture,
+            "html",
+            "dom",
+            "offer.price",
+            str(value),
+            SourceLocator(kind="css_selector", value=f".price-{value}"),
+            hint=EntityHint(entity_type="offer"),
+            subject_id=subject_id,
+        )
+        for value in (10, 11, 12, 13)
+    )
+
+    monkeypatch.setattr(
+        extraction_pipeline,
+        "DETAIL_AMBIGUOUS_DOM_PRICE_VALUE_THRESHOLD",
+        5,
+    )
+
+    flagged = extraction_pipeline.normalize_ecommerce_detail(
+        prices,
+        page_url="https://shop.test/products/widget",
+    )
+
+    assert not any("ambiguous_page_price" in row.flags for row in flagged)
+
+
+def test_gtin_normalization_rejects_bad_check_digit() -> None:
+    from app.extraction import pipeline as extraction_pipeline
+
+    request = fixture_request_from_inputs(
+        Surface.ECOMMERCE_DETAIL,
+        "<html><body></body></html>",
+        "https://shop.test/products/widget",
+    )
+    gtin = evidence(
+        request.capture,
+        "html",
+        "jsonld",
+        "product.gtin",
+        "4006381333932",
+        SourceLocator(kind="json_pointer", value="/gtin13"),
+        hint=EntityHint(entity_type="product"),
+    )
+
+    normalized = extraction_pipeline.normalize_ecommerce_detail(
+        (gtin,),
+        page_url="https://shop.test/products/widget",
+    )
+
+    assert normalized[0].value == "4006381333932"
+    assert "invalid_gtin" in normalized[0].flags
+
+
+def test_page_identity_brand_flags_partial_page_brand_candidate() -> None:
+    from app.extraction import pipeline as extraction_pipeline
+
+    request = fixture_request_from_inputs(
+        Surface.ECOMMERCE_DETAIL,
+        "<html><body></body></html>",
+        "https://shop.test/products/widget",
+    )
+    public_brand = evidence(
+        request.capture,
+        "html",
+        "jsonld",
+        "product.brand",
+        "Example",
+        SourceLocator(kind="json_pointer", value="/brand/name"),
+        hint=EntityHint(entity_type="product"),
+        subject_id="subject:product",
+    )
+    page_brand = evidence(
+        request.capture,
+        "html",
+        "opengraph",
+        "product.brand",
+        "Example Store",
+        SourceLocator(kind="css_selector", value="meta[property='og:site_name']"),
+        hint=EntityHint(entity_type="product"),
+        subject_id="subject:product",
+        brand_role="site_identity",
+    )
+
+    flagged = extraction_pipeline.normalize_ecommerce_detail(
+        (public_brand, page_brand),
+        page_url="https://shop.test/products/widget",
+    )
+
+    assert "product_name_as_brand" in flagged[0].flags
+
+
 def test_active_provider_marker_does_not_hide_product_identity() -> None:
     marker = "px-captcha"
     classification = classify_blocked_page(

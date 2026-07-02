@@ -317,6 +317,7 @@ def test_offline_model_harness_emits_evidence_only_predictions() -> None:
         html="<html><body><h1>Trail Shoe</h1></body></html>", artifact_id="html"
     )
 
+    title_path = next(node.path for node in page.nodes if node.text == "Trail Shoe")
     adapter_result = ModelAdapterResult(
         adapter_id="fake-universal",
         model_family="deterministic-fixture",
@@ -329,7 +330,7 @@ def test_offline_model_harness_emits_evidence_only_predictions() -> None:
                 field_name="title",
                 value="Trail Shoe",
                 confidence=0.99,
-                grounding=(_path(),),
+                grounding=(_path(title_path),),
             ),
         ),
         latency_ms=3.0,
@@ -344,7 +345,7 @@ def test_offline_model_harness_emits_evidence_only_predictions() -> None:
 
     assert result.adapter_id == "fake-universal"
     assert result.public_records == ()
-    assert result.predictions[0].grounding[0].locator == "/html[1]/body[1]/h1[1]"
+    assert result.predictions[0].grounding[0].locator == title_path
 
 
 def test_offline_harness_rejects_adapter_identity_mismatch() -> None:

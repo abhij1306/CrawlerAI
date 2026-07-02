@@ -16,6 +16,7 @@ from app.crawl.review import (
     save_grounded_correction,
     save_review,
 )
+from app.evaluation.grounded_corrections import GroundedCorrectionScopeMismatch
 from app.core.records.schema_service import ResolvedSchema
 from app.core.records.schema_service import load_resolved_schema
 from app.persistence.artifacts import ArtifactRepository
@@ -363,6 +364,77 @@ async def test_grounded_correction_requires_representative_replay_before_activat
 
 @pytest.mark.asyncio
 @pytest.mark.component
+async def test_grounded_correction_proposal_keeps_all_field_selectors_and_metadata(
+    db_session: AsyncSession,
+    test_user,
+    create_test_run,
+) -> None:
+    run = await create_test_run(
+        url="https://example.com/products/widget",
+        surface="ecommerce_detail",
+    )
+
+    result = await save_grounded_correction(
+        db_session,
+        run=run,
+        labels=[
+            {
+                "target_kind": "field",
+                "subject_id": "product:1",
+                "field_name": "price",
+                "canonical_value": "19.99",
+                "semantic_role": "primary_price",
+                "locale_interpretation": "USD",
+                "grounding": [
+                    {
+                        "kind": "node",
+                        "artifact_id": "url-result:1:html",
+                        "locator": "css:.sale-price",
+                    }
+                ],
+            },
+            {
+                "target_kind": "field",
+                "subject_id": "product:1",
+                "field_name": "price",
+                "canonical_value": "19.99",
+                "semantic_role": "display_price",
+                "locale_interpretation": "en-US",
+                "grounding": [
+                    {
+                        "kind": "node",
+                        "artifact_id": "url-result:1:html",
+                        "locator": "css:[itemprop='price']",
+                    }
+                ],
+            },
+        ],
+        representative_url_result_ids=[],
+    )
+
+    label = await db_session.get(ExtractionOperatorLabel, result["correction_id"])
+    assert label is not None
+    rules = sorted(
+        label.payload["proposal"]["selector_rules"],
+        key=lambda row: row["css_selector"],
+    )
+    assert [
+        (row["css_selector"], row["semantic_role"], row["locale_interpretation"])
+        for row in rules
+    ] == [
+        (".sale-price", "primary_price", "USD"),
+        ("[itemprop='price']", "display_price", "en-US"),
+    ]
+    assert label.payload["proposal"]["conflicts"] == [
+        {
+            "field_name": "price",
+            "selectors": [".sale-price", "[itemprop='price']"],
+        }
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
 async def test_grounded_correction_replays_and_activates_immutable_release(
     db_session: AsyncSession,
     test_user,
@@ -461,3 +533,77 @@ async def test_grounded_correction_replays_and_activates_immutable_release(
     assert recipe.payload["rules"][0]["css_selector"] == ".price"
     assert run.extraction_release_snapshot_id == release.id
     assert release.payload["templates"][0]["selector_rules"][0]["field_name"] == "price"
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_grounded_correction_activation_rejects_template_scope_mismatch(
+    db_session: AsyncSession,
+    test_user,
+    create_test_run,
+) -> None:
+    run = await create_test_run(
+        url="https://example.com/products/widget",
+        surface="ecommerce_detail",
+    )
+    url_result = CrawlUrlResult(
+        run_id=run.id,
+        requested_url=run.url,
+        normalized_url=run.url,
+        final_url=run.url,
+        surface=run.surface,
+        acquisition_outcome="success",
+        verdict="success",
+        record_count=1,
+    )
+    template = ExtractionTemplate(
+        domain="other.example.com",
+        surface=run.surface,
+        fingerprint="wrong-domain-template-v1",
+        route_pattern="/products/*",
+        last_seen_run_id=run.id,
+    )
+    db_session.add_all([url_result, template])
+    await db_session.flush()
+    db_session.add(
+        ExtractionManifest(
+            run_id=run.id,
+            url_result_id=url_result.id,
+            template_id=template.id,
+            manifest_version="extraction-manifest.v1",
+            payload={},
+        )
+    )
+    await db_session.flush()
+    ArtifactRepository(root_dir=settings.artifacts_dir).persist_bytes(
+        run_id=run.id,
+        url_result_id=url_result.id,
+        name="page.html",
+        content=b'<html><body><span class="price">19.99</span></body></html>',
+    )
+    await db_session.commit()
+
+    with pytest.raises(GroundedCorrectionScopeMismatch):
+        await save_grounded_correction(
+            db_session,
+            run=run,
+            activate=True,
+            labels=[
+                {
+                    "target_kind": "field",
+                    "subject_id": "product:1",
+                    "field_name": "price",
+                    "canonical_value": "19.99",
+                    "semantic_role": "primary_price",
+                    "locale_interpretation": "USD",
+                    "grounding": [
+                        {
+                            "kind": "node",
+                            "artifact_id": f"url-result:{url_result.id}:page.html",
+                            "locator": "css:.price",
+                        }
+                    ],
+                }
+            ],
+            representative_url_result_ids=[url_result.id],
+        )

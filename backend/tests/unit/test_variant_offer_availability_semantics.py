@@ -5,7 +5,9 @@ import pytest
 from app.core.config.extraction_rules import (
     AVAILABILITY_CANONICAL_ENUM,
     INVALID_AVAILABILITY_EVIDENCE_FLAG,
+    normalize_availability_value,
 )
+from app.core.records.normalizers import normalize_value
 from app.core.records.output_safety import public_availability
 from app.extraction.collectors._helpers import evidence
 from app.extraction.pipeline import _normalize_availability_value
@@ -348,6 +350,14 @@ def test_pipeline_availability_flags_non_enum_values(raw: str) -> None:
     assert normalized not in AVAILABILITY_CANONICAL_ENUM
     assert INVALID_AVAILABILITY_EVIDENCE_FLAG in flags
     assert public_availability(normalized) == ""
+
+
+def test_availability_normalizers_share_config_authority() -> None:
+    assert normalize_availability_value("https://schema.org/PreOrder") == "preorder"
+    assert normalize_value("availability", "pre order") == "preorder"
+    flags: set[str] = set()
+    assert _normalize_availability_value("pre order", flags) == "preorder"
+    assert INVALID_AVAILABILITY_EVIDENCE_FLAG not in flags
 
 
 def test_duplicate_offers_for_one_variant_do_not_fake_complete_coverage() -> None:

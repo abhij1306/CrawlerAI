@@ -294,6 +294,21 @@ ECOMMERCE_DETAIL_DEFAULT_CONTRACT_FIELDS = (
 )
 ECOMMERCE_DETAIL_SELLABLE_OFFER_FIELDS = ("price", "currency")
 ECOMMERCE_DETAIL_EXPOSED_AVAILABILITY_FIELD = "availability"
+ECOMMERCE_DETAIL_REQUESTED_CORE_FIELDS = frozenset(
+    {
+        "title",
+        "brand",
+        "description",
+        "price",
+        "currency",
+        "image",
+        "image_url",
+        "additional_images",
+        "sku",
+        ECOMMERCE_DETAIL_EXPOSED_AVAILABILITY_FIELD,
+    }
+)
+ECOMMERCE_DETAIL_DYNAMIC_RETRY_CORE_FIELDS = ("title", "price", "currency", "image_url")
 SURFACE_BROWSER_RETRY_TARGETS = {
     "ecommerce_detail": ("price", "currency", "title", "image_url")
 }

@@ -12,7 +12,7 @@ from app.acquisition.contracts import (
     AttemptSpec,
 )
 from app.crawl.contracts import RunSummary, UrlResult
-from app.extraction.contracts import CapabilityRequest
+from app.extraction.contracts import CapabilityRequest, FailureTaxonomy
 from app.persistence.contracts import ArtifactReference
 
 pytestmark = pytest.mark.unit
@@ -62,6 +62,11 @@ def test_capability_request_is_bounded_to_one_escalation() -> None:
             required_artifacts=("rendered_html",),
             max_attempts=2,
         )
+
+
+def test_failure_taxonomy_has_no_unemitted_template_or_recipe_drift_codes() -> None:
+    assert "template_mismatch" not in FailureTaxonomy.__args__
+    assert "recipe_drift" not in FailureTaxonomy.__args__
 
 
 def test_url_result_exposes_extraction_verdict_without_independent_field() -> None:

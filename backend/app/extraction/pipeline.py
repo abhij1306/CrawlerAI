@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import re
-from decimal import Decimal, InvalidOperation
 from typing import Any
 from urllib.parse import urljoin, urlsplit
 
@@ -19,9 +18,17 @@ from app.extraction.collectors.metadata import (
 )
 from app.extraction.collectors.url import UrlCollector
 from app.core.config import field_mappings
+from app.core.config.extraction_price_rules import (
+    DETAIL_AMBIGUOUS_DOM_PRICE_VALUE_THRESHOLD,
+)
+from app.core.config.locale_format_rules import (
+    locale_hint_from_page_url,
+    money_has_ambiguous_decimal,
+    parse_money,
+    validate_gtin,
+)
 from app.core.config.extraction_rules import (
     AVAILABILITY_CANONICAL_ENUM,
-    AVAILABILITY_URL_MAP,
     DETAIL_BRAND_BOILERPLATE_VALUES,
     DETAIL_BRAND_CATEGORY_PATTERN,
     DETAIL_DESCRIPTION_HARD_BOUNDARY_LENGTHS,
@@ -54,7 +61,7 @@ from app.core.config.extraction_rules import (
     DETAIL_TITLE_UI_INSTRUCTION_TOKENS,
     DETAIL_TITLE_URL_TOKEN_MIN_OVERLAP,
     INVALID_AVAILABILITY_EVIDENCE_FLAG,
-    NORMALIZER_AVAILABILITY_TOKENS,
+    normalize_availability_value,
     VARIANT_COLOR_BRAND_CONFLICT_FLAG,
 )
 from app.extraction.contracts import (
@@ -104,7 +111,8 @@ def harvest_ecommerce_detail(
     outcomes: list[CollectorOutcome] = []
     admitted_source_objects = 0
     for collector in default_collectors():
-        if isinstance(collector, (JsStateCollector, NetworkCollector)):
+        harvest_method = getattr(collector, "harvest", None)
+        if callable(harvest_method):
             harvest = collector.harvest(
                 bundle, reader, requested_fields=requested_fields
             )
@@ -130,7 +138,10 @@ def harvest_ecommerce_detail(
         )
         produced = len(rows) - before
         admitted_source_objects += len(
-            {(row.artifact_id, row.subject_id) for row in rows[before:]}
+            {
+                (row.collector_id, row.artifact_id, row.subject_id)
+                for row in rows[before:]
+            }
         )
         outcomes.append(
             CollectorOutcome(
@@ -186,11 +197,15 @@ def default_collectors():
 
 
 def normalize_ecommerce_detail(
-    evidence: tuple[Evidence, ...], *, page_url: str
+    evidence: tuple[Evidence, ...], *, page_url: str, locale_hint: str | None = None
 ) -> tuple[Evidence, ...]:
-    normalized = tuple(normalize_evidence(ev, page_url=page_url) for ev in evidence)
+    effective_locale_hint = locale_hint or locale_hint_from_page_url(page_url)
+    normalized = tuple(
+        normalize_evidence(ev, page_url=page_url, locale_hint=effective_locale_hint)
+        for ev in evidence
+    )
     return _flag_ambiguous_dom_prices(
-        _flag_brand_conflicts(normalized, page_brand=None)
+        _flag_brand_conflicts(normalized, page_brand=_page_brand(normalized))
     )
 
 
@@ -215,7 +230,7 @@ def _flag_ambiguous_dom_prices(evidence: tuple[Evidence, ...]) -> tuple[Evidence
     ambiguous_subjects = {
         subject_id
         for subject_id, values in dom_prices_by_subject.items()
-        if len(values) >= 4
+        if len(values) >= DETAIL_AMBIGUOUS_DOM_PRICE_VALUE_THRESHOLD
     }
     if not ambiguous_subjects:
         return evidence
@@ -372,6 +387,21 @@ def _flag_brand_conflicts(
     )
 
 
+def _page_brand(evidence: tuple[Evidence, ...]) -> Evidence | None:
+    return next(
+        (
+            row
+            for row in evidence
+            if row.fact_type == field_mappings.PRODUCT_BRAND_FACT_TYPE
+            and (
+                row.brand_role == "site_identity"
+                or row.metadata.get("derived_by") == "page_identity"
+            )
+        ),
+        None,
+    )
+
+
 def _brand_role_can_publish(row: Evidence) -> bool:
     return (row.brand_role or "manufacturer") in {
         "manufacturer",
@@ -467,7 +497,9 @@ def _title_is_review_only(resolution) -> bool:
     )
 
 
-def normalize_evidence(evidence: Evidence, *, page_url: str) -> Evidence:
+def normalize_evidence(
+    evidence: Evidence, *, page_url: str, locale_hint: str | None = None
+) -> Evidence:
     value = evidence.value
     flags = set(evidence.flags)
     if isinstance(value, str):
@@ -509,7 +541,7 @@ def normalize_evidence(evidence: Evidence, *, page_url: str) -> Evidence:
         field_mappings.OFFER_PRICE_FACT_TYPE,
         field_mappings.OFFER_ORIGINAL_PRICE_FACT_TYPE,
     }:
-        value = _money(value, flags)
+        value = _money(value, flags, locale_hint=locale_hint)
     if evidence.fact_type == field_mappings.OFFER_AVAILABILITY_FACT_TYPE:
         value = _normalize_availability_value(value, flags)
     if (
@@ -535,7 +567,7 @@ def normalize_evidence(evidence: Evidence, *, page_url: str) -> Evidence:
         value, str
     ):
         value = re.sub(r"\D+", "", value)
-        if value and len(value) not in {8, 12, 13, 14}:
+        if value and not validate_gtin(value):
             flags.add("invalid_gtin")
     if isinstance(value, str) and value.lower() in {"n/a", "none", "null", "undefined"}:
         flags.add("placeholder_text")
@@ -553,21 +585,10 @@ def normalize_evidence(evidence: Evidence, *, page_url: str) -> Evidence:
 
 
 def _normalize_availability_value(value: Any, flags: set[str]) -> Any:
-    if isinstance(value, bool):
-        return "in_stock" if value else "out_of_stock"
-    if isinstance(value, (int, float)) and value in {0, 1}:
-        return "in_stock" if value == 1 else "out_of_stock"
-    if isinstance(value, str):
-        # Enforce the canonical enum: a value that does not resolve to a public
-        # availability state is flagged (raw text preserved for diagnose.json)
-        # so resolution ranks it below enum-valid candidates and publication
-        # drops it with a recorded reason — never a free-text passthrough.
-        normalized = _availability(value)
-        if normalized not in AVAILABILITY_CANONICAL_ENUM:
-            flags.add(INVALID_AVAILABILITY_EVIDENCE_FLAG)
-        return normalized
-    flags.add(INVALID_AVAILABILITY_EVIDENCE_FLAG)
-    return value
+    normalized = normalize_availability_value(value)
+    if normalized not in AVAILABILITY_CANONICAL_ENUM:
+        flags.add(INVALID_AVAILABILITY_EVIDENCE_FLAG)
+    return normalized
 
 
 def _normalize_brand_value(value: str, flags: set[str]) -> str:
@@ -717,25 +738,11 @@ def _title_flags(evidence: Evidence, *, value: str, page_url: str) -> set[str]:
     return flags
 
 
-def _availability(value: str) -> str:
-    text = re.sub(r"\s+", " ", value).strip()
-    key = text.casefold()
-    if mapped := AVAILABILITY_URL_MAP.get(key):
-        return mapped
-    normalized = re.sub(DETAIL_NON_LOWER_ALNUM_PATTERN, " ", key).strip()
-    for public_value, tokens in NORMALIZER_AVAILABILITY_TOKENS.items():
-        if normalized in {
-            re.sub(DETAIL_NON_LOWER_ALNUM_PATTERN, " ", token).strip()
-            for token in tokens
-        }:
-            return public_value
-    return text
-
-
-def _money(value: Any, flags: set[str]) -> str:
-    text = re.sub(r"[^0-9.,-]", "", str(value or "")).replace(",", "")
-    try:
-        return str(Decimal(text))
-    except (InvalidOperation, ValueError):
+def _money(value: Any, flags: set[str], *, locale_hint: str | None = None) -> str:
+    parsed = parse_money(value, locale_hint=locale_hint)
+    if parsed is None:
         flags.add("invalid_decimal")
         return str(value or "")
+    if money_has_ambiguous_decimal(value, locale_hint=locale_hint):
+        flags.add("ambiguous_decimal")
+    return str(parsed)

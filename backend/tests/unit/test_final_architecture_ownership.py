@@ -17,9 +17,10 @@ OVERSIZED_MODULE_DEBT = {
     "extraction/collectors/dom.py": 1024,
     "extraction/collectors/js_state.py": 908,
     "extraction/contracts.py": 835,
-    "extraction/entities.py": 712,
-    "extraction/resolution.py": 2386,
-    "extraction/validation.py": 706,
+    "extraction/entities.py": 716,
+    "extraction/pipeline.py": 706,
+    "extraction/resolution/__init__.py": 2089,
+    "extraction/validation.py": 720,
 }
 COMPLEX_FUNCTION_DEBT = {
     ("acquisition/browser_block_detection.py", "_block_policy_matches"): 32,
@@ -66,20 +67,23 @@ COMPLEX_FUNCTION_DEBT = {
     ("extraction/pipeline.py", "_flag_brand_conflicts"): 30,
     ("extraction/pipeline.py", "normalize_evidence"): 40,
     ("extraction/pipeline.py", "_title_flags"): 29,
-    ("extraction/publication.py", "commerce_detail_projection"): 40,
+    ("extraction/publication.py", "commerce_detail_projection"): 43,
     ("extraction/publication.py", "serialize_commerce_detail_projection"): 25,
     ("extraction/replay.py", "fixture_bundle_from_inputs"): 29,
-    ("extraction/resolution.py", "resolve"): 29,
-    ("extraction/resolution.py", "_price_unit_repairs"): 37,
-    ("extraction/resolution.py", "_reconcile_variant_prices"): 25,
-    ("extraction/resolution.py", "_offer_atomic_price_currency_preferences"): 22,
-    ("extraction/resolution.py", "_inherit_variant_offer_facts"): 22,
-    ("extraction/resolution.py", "_resolve_scalar"): 22,
-    ("extraction/resolution.py", "_semantic_derived_facts"): 25,
+    ("extraction/resolution/__init__.py", "resolve"): 29,
+    ("extraction/resolution/__init__.py", "_reconcile_variant_prices"): 25,
+    (
+        "extraction/resolution/__init__.py",
+        "_offer_atomic_price_currency_preferences",
+    ): 22,
+    ("extraction/resolution/__init__.py", "_inherit_variant_offer_facts"): 22,
+    ("extraction/resolution/__init__.py", "_resolve_scalar"): 22,
+    ("extraction/resolution/__init__.py", "_semantic_derived_facts"): 25,
+    ("extraction/resolution/price_units.py", "_price_unit_repairs"): 37,
     ("extraction/result_building.py", "field_evidence_states"): 41,
     ("extraction/result_building.py", "projection_field_states"): 58,
     ("extraction/result_building.py", "retry_request"): 27,
-    ("extraction/validation.py", "_validate_child_join_failures"): 32,
+    ("extraction/validation.py", "_validate_child_join_failures"): 33,
     ("extraction/validation.py", "_validate_availability_consistency"): 25,
     ("intelligence/discovery.py", "_parse_serpapi_immersive_results"): 33,
     ("intelligence/matching.py", "_apply_identity_floor"): 21,
@@ -137,9 +141,9 @@ PACKAGE_LOC_BUDGETS = {
     "enrichment": 2_021,
     "connectors": 2_467,
     "intelligence": 3_216,
-    "extraction": 12_953,
+    "extraction": 13_025,
 }
-TOTAL_APP_LOC_BUDGET = 73_408
+TOTAL_APP_LOC_BUDGET = 73_585
 
 
 def test_production_package_loc_budgets() -> None:

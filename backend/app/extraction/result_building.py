@@ -30,6 +30,7 @@ from app.extraction.contracts import (
     TargetSelection,
 )
 from app.extraction.entities import EntitySet
+from app.extraction.field_states import FieldStateName, field_state
 from app.core.shared.ids import stable_id
 from app.extraction.surfaces import SurfaceSpec
 
@@ -245,13 +246,7 @@ def field_evidence_states(
             row.status == "resolved" and row.accepted_evidence_ids
             for row in relevant_decisions
         )
-        state: typing.Literal[
-            "captured_and_resolved",
-            "captured_but_rejected",
-            "captured_conflicting",
-            "source_unavailable",
-            "not_present_in_captured_sources",
-        ]
+        state: FieldStateName
         if present:
             state = "captured_and_resolved"
             reasons: tuple[str, ...] = ()
@@ -294,10 +289,10 @@ def field_evidence_states(
             state = "not_present_in_captured_sources"
             reasons = ()
         states.append(
-            FieldEvidenceState(
+            field_state(
                 field=field,
                 state=state,
-                evidence_ids=tuple(row.evidence_id for row in rows),
+                evidence_ids=(row.evidence_id for row in rows),
                 reason_codes=reasons,
             )
         )
@@ -382,24 +377,7 @@ def projection_field_states(
     )
     states: list[FieldEvidenceState] = []
     for field in fields:
-        state: typing.Literal[
-            "captured_and_resolved",
-            "captured_but_rejected",
-            "captured_conflicting",
-            "capture_incomplete",
-            "collector_missed",
-            "join_failed",
-            "interaction_required",
-            "source_unavailable",
-            "not_present_in_captured_sources",
-            "output_divergent",
-            "not_captured",
-            "captured_published",
-            "captured_suppressed",
-            "captured_unowned",
-            "not_present_in_source",
-            "not_requested",
-        ]
+        state: FieldStateName
         entries = entries_by_field.get(field, [])
         variant_entity_ids = tuple(getattr(projection, "variant_entity_ids", ()) or ())
         evidence_ids = tuple(
@@ -452,22 +430,14 @@ def projection_field_states(
             else ()
         )
         states.append(
-            FieldEvidenceState(
+            field_state(
                 field=field,
                 state=state,
                 evidence_ids=evidence_ids,
-                reason_codes=tuple(
-                    dict.fromkeys(
-                        (
-                            *(
-                                entry.reason_code
-                                for entry in entries
-                                if entry.reason_code
-                            ),
-                            *(code for code in disposition_reason_codes if code),
-                            *state_reason_codes,
-                        )
-                    )
+                reason_codes=(
+                    *(entry.reason_code for entry in entries if entry.reason_code),
+                    *(code for code in disposition_reason_codes if code),
+                    *state_reason_codes,
                 ),
             )
         )
@@ -530,19 +500,7 @@ def retry_request(
     requested_core_fields = {
         "image_url" if field == "image" else field
         for field in request.requested_fields
-        if field
-        in {
-            "title",
-            "brand",
-            "description",
-            "price",
-            "currency",
-            "image",
-            "image_url",
-            "additional_images",
-            "sku",
-            "availability",
-        }
+        if field in field_mappings.ECOMMERCE_DETAIL_REQUESTED_CORE_FIELDS
     }
     if (
         ecommerce_detail
@@ -551,12 +509,9 @@ def retry_request(
         and (not request.requested_fields or requested_core_fields or not records)
     ):
         record = records[0] if records else PublicRecord()
-        target_core_fields = requested_core_fields or {
-            "title",
-            "price",
-            "currency",
-            "image_url",
-        }
+        target_core_fields = requested_core_fields or set(
+            field_mappings.ECOMMERCE_DETAIL_DYNAMIC_RETRY_CORE_FIELDS
+        )
         missing_core_fields = tuple(
             field
             for field in target_core_fields

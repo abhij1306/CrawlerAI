@@ -95,10 +95,21 @@ def extract(
 
     if extractor_tier == "recipe" and not attempt.records:
         generic_harvest = adapter.harvest(request)
+        generic_collector_ids = {
+            row.collector_id for row in generic_harvest.collector_outcomes
+        }
+        # Keep only the recipe-specific outcomes (e.g. css_recipe) that the
+        # generic collectors don't already report — prepending the full recipe
+        # outcome set would double-count shared collectors (url) in metrics().
+        recipe_only_outcomes = tuple(
+            row
+            for row in harvest.collector_outcomes
+            if row.collector_id not in generic_collector_ids
+        )
         generic_harvest = generic_harvest.model_copy(
             update={
                 "collector_outcomes": (
-                    *harvest.collector_outcomes,
+                    *recipe_only_outcomes,
                     *generic_harvest.collector_outcomes,
                 )
             }
@@ -286,7 +297,10 @@ def _execute_attempt(
 
 
 def _needs_contract_fallback(verdict: Verdict) -> bool:
-    return verdict in {"empty", "partial", "review"}
+    # "review" means extraction produced a usable record that merely needs
+    # human confirmation — it is a success outcome and must not trigger the
+    # expensive model fallback. Only truly deficient results fall back.
+    return verdict in {"empty", "partial"}
 
 
 def _model_collector_outcome(result: ModelFallbackResult) -> CollectorOutcome:

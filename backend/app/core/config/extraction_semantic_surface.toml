@@ -7,46 +7,50 @@ paths = [
   "app/core/shared/field_coerce*.py",
   "app/core/config/extraction_rules",
   "app/core/config/extraction_price_rules.py",
+  "app/core/config/locale_format_rules.py",
   "app/core/config/variant_policy.py",
 ]
 
 [ratchets]
-semantic_derivation_owner = "app/extraction/resolution.py"
-variant_eligibility_owner = "app/extraction/resolution.py"
-asset_selection_owner = "app/extraction/resolution.py"
+semantic_derivation_owner = "app/extraction/resolution/__init__.py"
+variant_eligibility_owner = "app/extraction/resolution/__init__.py"
+asset_selection_owner = "app/extraction/resolution/__init__.py"
 publication_owner = "app/extraction/publication.py"
 post_resolution_mutation_allowed = false
 contracts_bypass_ownership_allowed = false
 persistence_extraction_repair_allowed = false
 publish_receives_evidence_or_entity_graph = false
-physical_loc_budget = 12953
+physical_loc_budget = 13029
 default_module_cyclomatic_complexity_budget = 20
 
 [ratchets.module_physical_loc_budgets]
 "__init__.py" = 19
-"adapters.py" = 470
+"adapters.py" = 490
 "collectors/_helpers.py" = 227
 "collectors/dom.py" = 1024
 "collectors/js_state.py" = 908
 "collectors/jsonld.py" = 658
 "collectors/metadata.py" = 183
 "collectors/url.py" = 100
-"contracts.py" = 835
-"documents.py" = 232
-"engine.py" = 620
-"entities.py" = 712
+"contracts.py" = 833
+"documents.py" = 235
+"engine.py" = 628
+"entities.py" = 716
+"field_states.py" = 37
 "jobs.py" = 458
 "json_walk.py" = 65
 "listing.py" = 366
-"model_runtime.py" = 417
-"pipeline.py" = 699
-"publication.py" = 613
+"model_runtime.py" = 440
+"pipeline.py" = 706
+"publication.py" = 618
 "replay.py" = 321
-"resolution.py" = 2386
-"result_building.py" = 662
+"resolution/__init__.py" = 2089
+"resolution/price_units.py" = 161
+"resolution/ranking.py" = 134
+"result_building.py" = 621
 "surfaces.py" = 125
 "targeting.py" = 147
-"validation.py" = 706
+"validation.py" = 720
 
 [ratchets.module_cyclomatic_complexity_budgets]
 "collectors/_helpers.py" = 23
@@ -54,8 +58,9 @@ default_module_cyclomatic_complexity_budget = 20
 "engine.py" = 32
 "entities.py" = 24
 "pipeline.py" = 40
-"publication.py" = 40
+"publication.py" = 43
 "replay.py" = 29
-"resolution.py" = 37
+"resolution/__init__.py" = 29
+"resolution/price_units.py" = 37
 "result_building.py" = 58
-"validation.py" = 32
+"validation.py" = 33

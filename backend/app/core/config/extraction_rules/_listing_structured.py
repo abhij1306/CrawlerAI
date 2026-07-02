@@ -529,6 +529,29 @@ NORMALIZER_AVAILABILITY_TOKENS = {
     "backorder": ("backorder", "back-order", "back order"),
     "discontinued": ("discontinued", "no longer available"),
 }
+
+
+def normalize_availability_value(value: object) -> str:
+    if isinstance(value, bool):
+        return "in_stock" if value else "out_of_stock"
+    if isinstance(value, (int, float)) and value in {0, 1}:
+        return "in_stock" if value == 1 else "out_of_stock"
+    text = re.sub(r"\s+", " ", str(value or "")).strip()
+    key = text.casefold()
+    if mapped := AVAILABILITY_URL_MAP.get(key.rstrip("/")):
+        return mapped
+    normalized = re.sub(r"[^a-z0-9]+", " ", key).strip()
+    normalized_enum = normalized.replace(" ", "_")
+    if normalized_enum in AVAILABILITY_CANONICAL_ENUM:
+        return normalized_enum
+    for public_value, tokens in NORMALIZER_AVAILABILITY_TOKENS.items():
+        if normalized in {
+            re.sub(r"[^a-z0-9]+", " ", token.casefold()).strip() for token in tokens
+        }:
+            return public_value
+    return text
+
+
 VARIANT_OPTION_TEXT_FIELDS = frozenset(PUBLIC_VARIANT_AXIS_FIELDS)
 VARIANT_AXIS_ALLOWED_SINGLE_TOKENS = frozenset(
     {
@@ -643,4 +666,6 @@ VARIANT_OPTION_TEXT_CHILD_DROP_PATTERNS = (
     r"\b(?:popular|sale|discount|off|sold out|unavailable|left in stock)\b",
 )
 
-__all__ = sorted(name for name in globals() if name.isupper())
+__all__ = sorted(
+    [name for name in globals() if name.isupper()] + ["normalize_availability_value"]
+)

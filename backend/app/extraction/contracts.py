@@ -486,8 +486,6 @@ RetryRequest = CapabilityRequest
 FailureTaxonomy = Literal[
     "wrong_surface",
     "insufficient_input_bundle",
-    "template_mismatch",
-    "recipe_drift",
     "discovery",
     "record_boundary",
     "entity_binding",

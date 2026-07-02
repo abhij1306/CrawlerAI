@@ -30,7 +30,7 @@ from app.extraction.contracts import (
     ResolutionEnvelope,
     TargetSelection,
 )
-from app.extraction.collectors.dom import css_recipe_evidence
+from app.extraction.collectors.dom import collect_requested_fields, css_recipe_evidence
 from app.extraction.collectors.url import UrlCollector
 from app.extraction.entities import EntitySet, build_entities
 from app.core.shared.ids import stable_id
@@ -94,6 +94,9 @@ def _harvest_detail(request: ExtractionRequest) -> HarvestResult:
     normalized = normalize_ecommerce_detail(
         harvested.evidence,
         page_url=request.capture.final_url or request.capture.requested_url,
+        locale_hint=request.capture.request_context.locale
+        or request.capture.request_context.country
+        or request.capture.request_context.currency_hint,
     )
     _assert_representation_only(harvested.evidence, normalized)
     return harvested.model_copy(update={"evidence": normalized})
@@ -103,10 +106,18 @@ def harvest_compiled_recipe(request: ExtractionRequest) -> HarvestResult:
     """Known-template recipe fast path: recipe evidence plus URL identity only."""
 
     recipe_rows = tuple(css_recipe_evidence(request.capture, request.artifact_reader))
+    requested_rows = tuple(
+        collect_requested_fields(
+            request.capture, request.artifact_reader, request.requested_fields
+        )
+    )
     url_rows = tuple(UrlCollector().collect(request.capture, request.artifact_reader))
     rows = normalize_ecommerce_detail(
-        (*recipe_rows, *url_rows),
+        (*recipe_rows, *requested_rows, *url_rows),
         page_url=request.capture.final_url or request.capture.requested_url,
+        locale_hint=request.capture.request_context.locale
+        or request.capture.request_context.country
+        or request.capture.request_context.currency_hint,
     )
     outcomes: list[CollectorOutcome] = []
     if recipe_rows:
@@ -115,6 +126,14 @@ def harvest_compiled_recipe(request: ExtractionRequest) -> HarvestResult:
                 collector_id="css_recipe",
                 outcome="produced_evidence",
                 evidence_count=len(recipe_rows),
+            )
+        )
+    if requested_rows:
+        outcomes.append(
+            CollectorOutcome(
+                collector_id="requested_fields",
+                outcome="produced_evidence",
+                evidence_count=len(requested_rows),
             )
         )
     outcomes.append(

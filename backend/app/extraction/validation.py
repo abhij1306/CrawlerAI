@@ -24,14 +24,22 @@ def validate(
     entities: EntitySet,
     requested_fields: tuple[str, ...] = (),
 ) -> tuple[Finding, ...]:
+    relation_conflicts = _validate_offer_relation_conflicts(evidence)
+    conflicted_group_ids = {
+        str(finding.metadata.get("group_id"))
+        for finding in relation_conflicts
+        if finding.metadata.get("group_id") is not None
+    }
     return (
         *_validate_identity(evidence, entities),
         *_validate_shell_title(evidence, entities),
         *_validate_descriptions(evidence, entities),
         *_validate_variants(entities),
         *_validate_offers(evidence, entities),
-        *_validate_offer_relation_conflicts(evidence),
-        *_validate_child_join_failures(evidence, entities),
+        *relation_conflicts,
+        *_validate_child_join_failures(
+            evidence, entities, skip_group_ids=conflicted_group_ids
+        ),
         *_validate_availability_consistency(evidence, entities),
         *_validate_output(entities),
     )
@@ -549,6 +557,8 @@ def _validate_offer_relation_conflicts(
 def _validate_child_join_failures(
     evidence: tuple[Evidence, ...],
     entities: EntitySet,
+    *,
+    skip_group_ids: frozenset[str] | set[str] = frozenset(),
 ) -> tuple[Finding, ...]:
     linked_group_ids = {
         offer.group_id
@@ -574,7 +584,7 @@ def _validate_child_join_failures(
 
     findings: list[Finding] = []
     for group_id, rows in sorted(groups.items()):
-        if group_id in linked_group_ids:
+        if group_id in linked_group_ids or group_id in skip_group_ids:
             continue
         if not any(row.relation_type == "variant_offer" for row in rows):
             continue
@@ -723,10 +733,14 @@ def _validate_output(entities: EntitySet) -> tuple[Finding, ...]:
 def _decimal(ids: tuple[str, ...] | None, by_id: dict[str, Evidence]) -> Decimal | None:
     if not ids:
         return None
-    try:
-        return Decimal(str(by_id[ids[0]].value))
-    except (KeyError, InvalidOperation, ValueError):
-        return None
+    # Return the first parseable value: an unparseable leading evidence id must
+    # not mask a valid Decimal later in the tuple.
+    for evidence_id in ids:
+        try:
+            return Decimal(str(by_id[evidence_id].value))
+        except (KeyError, InvalidOperation, ValueError):
+            continue
+    return None
 
 
 def _finding(

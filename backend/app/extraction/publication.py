@@ -120,6 +120,9 @@ def commerce_detail_projection(
     has_child_price = any(
         fact_type in _PRICE_FACTS and entity_id != resolution.primary_offer_entity_id
         for entity_id, fact_type in resolved_keys
+    ) or any(
+        row.status == "eligible" and row.values.get("price") not in _EMPTY
+        for row in resolution.variant_decisions
     )
     has_primary_currency = (
         resolution.primary_offer_entity_id,
@@ -540,7 +543,9 @@ def serialize_commerce_detail_projection(
         )
     if variant_rows:
         record["variants"] = variant_rows
-        record["variant_count"] = len(variant_rows)
+        # Count resolved variants, not published rows: a variant whose fields
+        # are all suppressed still counts toward the resolved total.
+        record["variant_count"] = len(projection.variant_entity_ids)
         lineages["variants"] = variant_sources
 
     primary_id = projection.primary_asset_entity_id

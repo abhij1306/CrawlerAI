@@ -39,6 +39,7 @@ from app.crawl.review import (
     save_grounded_correction,
     save_domain_recipe_run_profile,
 )
+from app.evaluation.grounded_corrections import GroundedCorrectionScopeMismatch
 
 
 router = APIRouter(prefix="/api/crawls", tags=["crawls"])
@@ -199,6 +200,12 @@ async def crawls_save_grounded_correction(
             labels=[item.model_dump() for item in payload.labels],
             activate=payload.activate,
             representative_url_result_ids=payload.representative_url_result_ids,
+        )
+    except GroundedCorrectionScopeMismatch as exc:
+        await session.rollback()
+        _raise_http_from_exception(
+            status_code=status.HTTP_409_CONFLICT,
+            exc=exc,
         )
     except ValueError as exc:
         await session.rollback()

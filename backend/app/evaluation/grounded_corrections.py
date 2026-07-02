@@ -37,6 +37,10 @@ from app.persistence.extraction_memory import (
 )
 
 
+class GroundedCorrectionScopeMismatch(ValueError):
+    """Grounded correction replay passed for a template outside the run scope."""
+
+
 async def save_grounded_correction(
     session: AsyncSession,
     *,
@@ -320,7 +324,9 @@ async def _activate_grounded_correction(
         await session.get(ExtractionTemplate, template_id) if template_id else None
     )
     if template is None or template.domain != domain or template.surface != run.surface:
-        raise ValueError("Representative replay template does not match the run scope.")
+        raise GroundedCorrectionScopeMismatch(
+            "Representative replay template does not match the run scope."
+        )
     existing_recipe = (
         await session.execute(
             select(ExtractionRecipe).where(
@@ -386,7 +392,7 @@ def _replay_summary(
 def _candidate_recipe_proposal(
     labels: list[GroundedLabel], *, source_run_id: int
 ) -> dict[str, object]:
-    rules_by_field: dict[str, dict[str, object]] = {}
+    rules_by_selector: dict[tuple[str, str], dict[str, object]] = {}
     selectors_by_field: dict[str, set[str]] = {}
     for label in labels:
         if label.target_kind != "field" or not label.field_name:
@@ -400,9 +406,10 @@ def _candidate_recipe_proposal(
             if not selector:
                 continue
             selectors_by_field.setdefault(field_name, set()).add(selector)
-            rules_by_field.setdefault(
-                field_name,
-                {
+            key = (field_name, selector)
+            rule = rules_by_selector.get(key)
+            if rule is None:
+                rules_by_selector[key] = {
                     "field_name": field_name,
                     "css_selector": selector,
                     "source": "grounded_correction",
@@ -411,15 +418,22 @@ def _candidate_recipe_proposal(
                     "is_active": True,
                     "semantic_role": label.semantic_role,
                     "locale_interpretation": label.locale_interpretation,
-                },
-            )
+                }
+                continue
+            if rule.get("semantic_role") is None and label.semantic_role is not None:
+                rule["semantic_role"] = label.semantic_role
+            if (
+                rule.get("locale_interpretation") is None
+                and label.locale_interpretation is not None
+            ):
+                rule["locale_interpretation"] = label.locale_interpretation
     conflicts = [
         {"field_name": field_name, "selectors": sorted(selectors)}
         for field_name, selectors in selectors_by_field.items()
         if len(selectors) > 1
     ]
     return {
-        "selector_rules": list(rules_by_field.values()),
+        "selector_rules": list(rules_by_selector.values()),
         "conflicts": conflicts,
         "label_count": len(labels),
     }

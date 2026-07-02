@@ -249,7 +249,10 @@ def _predict_with_timeout(
     page: RuntimeCompactPage,
     artifact: UniversalModelArtifact,
 ) -> UniversalModelResult:
-    responses: Queue[UniversalModelResult | Exception] = Queue(maxsize=1)
+    # Unbounded so a timed-out prediction can still deposit its (now-ignored)
+    # result and let the worker thread terminate; a bounded queue would block
+    # the put forever once the consumer has abandoned it, leaking the thread.
+    responses: Queue[UniversalModelResult | Exception] = Queue()
 
     def invoke() -> None:
         try:
@@ -259,7 +262,7 @@ def _predict_with_timeout(
         except Exception as exc:
             responses.put(exc)
 
-    Thread(target=invoke, daemon=True).start()
+    Thread(target=invoke, daemon=True, name="universal-model-predict").start()
     try:
         response = responses.get(timeout=artifact.timeout_ms / 1_000)
     except Empty as exc:
@@ -410,10 +413,25 @@ def _value_is_grounded(value: object, node: RuntimeCompactNode) -> bool:
         return False
     sources = (node.text, *node.attributes.values())
     return any(
-        needle == normalized or needle in normalized
+        needle == normalized or _contains_on_token_boundary(normalized, needle)
         for source in sources
         if (normalized := _normalize_source_value(source))
     )
+
+
+def _contains_on_token_boundary(haystack: str, needle: str) -> bool:
+    # Substring grounding must align on whitespace/word boundaries so a short
+    # value (e.g. a size "s" or price fragment "12") cannot ground against an
+    # unrelated node that merely happens to contain those characters.
+    start = haystack.find(needle)
+    while start != -1:
+        end = start + len(needle)
+        before_ok = start == 0 or not haystack[start - 1].isalnum()
+        after_ok = end == len(haystack) or not haystack[end].isalnum()
+        if before_ok and after_ok:
+            return True
+        start = haystack.find(needle, start + 1)
+    return False
 
 
 def _canonical_value_is_grounded(

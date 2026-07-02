@@ -17,11 +17,8 @@ from app.extraction.contracts import (
 )
 from app.core.config.extraction_price_rules import (
     DETAIL_PRICE_CURRENCY_COLLECTOR_PRIORITY,
-    DETAIL_PRICE_PAGE_CORROBORATION_COLLECTORS,
 )
 from app.core.config.extraction_rules import (
-    AVAILABILITY_CANONICAL_ENUM,
-    CURRENCY_SYMBOL_MAP,
     DETAIL_TITLE_MEASUREMENT_FLAG,
     DETAIL_TITLE_REJECTION_FLAGS,
     INVALID_AVAILABILITY_EVIDENCE_FLAG,
@@ -32,6 +29,10 @@ from app.core.config.extraction_rules import (
     VARIANT_URL_AXIS_PARAMS,
     VARIANT_URL_OPTION_ENDPOINT_PATH_TOKENS,
 )
+from app.core.config.locale_format_rules import (
+    CURRENCY_SYMBOL_TO_ISO,
+    currency_hint_from_page_url,
+)
 from app.core.config.extraction_rules._images import PRODUCT_ASSET_MAX_COUNT
 from app.core.config import field_mappings
 from app.core.config.field_mappings import INVALID_SCALAR_TYPE_EVIDENCE_FLAG
@@ -41,6 +42,7 @@ from app.core.config.variant_policy import (
     DETAIL_PARENT_INHERITED_OFFER_FIELDS,
     DETAIL_PARENT_OFFER_INHERITANCE_RULE_ID,
     DETAIL_PARENT_VARIANT_PRICE_DRIFT_MAX_RATIO,
+    PUBLIC_VARIANT_AXIS_FIELDS,
     public_variant_row_is_sellable,
 )
 from app.core.records.url_identity import (
@@ -54,8 +56,6 @@ from app.core.shared.url_utils import (
     structured_extensionless_image_url,
 )
 from app.core.shared.field_coerce import sanitize_option_scalar
-from app.core.shared.field_coerce_price import repair_price_unit
-from app.core.shared.currency_hints import currency_hint_from_page_url
 from app.core.shared.field_coerce_text import (
     infer_brand_from_page_identity,
     infer_brand_from_product_url,
@@ -67,6 +67,11 @@ from app.core.records.url_identity import (
     semantic_identity_tokens,
 )
 from app.extraction.entities import AssetEntity, EntitySet, OfferEntity, VariantEntity
+from app.extraction.resolution.price_units import (
+    _price_unit_derived_facts,
+    _price_unit_repairs,
+)
+from app.extraction.resolution.ranking import _non_positive_money, _rank
 from app.core.shared.ids import stable_id
 
 
@@ -247,163 +252,6 @@ def resolve(
             sorted(f.finding_id for f in findings if f.blocking)
         ),
     )
-
-
-def _price_unit_repairs(
-    evidence: tuple[Evidence, ...], entities: EntitySet
-) -> dict[str, tuple[object, str, tuple[str, ...]]]:
-    by_id = {row.evidence_id: row for row in evidence}
-    offer_by_evidence = {
-        evidence_id: offer
-        for offer in entities.offers
-        for ids in offer.fact_evidence.values()
-        for evidence_id in ids
-    }
-    currency_rows_by_offer = {
-        offer.entity_id: tuple(
-            by_id[evidence_id]
-            for evidence_id in offer.fact_evidence.get(
-                field_mappings.OFFER_CURRENCY_FACT_TYPE, ()
-            )
-            if evidence_id in by_id
-            and "invalid_currency" not in by_id[evidence_id].flags
-        )
-        for offer in entities.offers
-    }
-    product_currency_rows = {
-        product.entity_id: tuple(
-            row
-            for offer in entities.offers
-            if offer.product_entity_id == product.entity_id
-            for row in currency_rows_by_offer.get(offer.entity_id, ())
-        )
-        for product in entities.products
-    }
-    price_rows = tuple(
-        row
-        for row in evidence
-        if row.fact_type
-        in {
-            field_mappings.OFFER_PRICE_FACT_TYPE,
-            field_mappings.OFFER_ORIGINAL_PRICE_FACT_TYPE,
-        }
-    )
-    currency_by_evidence: dict[str, str] = {}
-    for row in price_rows:
-        offer = offer_by_evidence.get(row.evidence_id)
-        if offer is None:
-            continue
-        currency = _preferred_price_currency(
-            currency_rows_by_offer.get(offer.entity_id, ())
-        ) or _preferred_price_currency(
-            product_currency_rows.get(offer.product_entity_id, ())
-        )
-        if currency:
-            currency_by_evidence[row.evidence_id] = currency
-    peer_values: dict[str, object] = {}
-    for row in price_rows:
-        repaired = repair_price_unit(
-            row.value,
-            source_key=row.locator.value,
-            currency=currency_by_evidence.get(row.evidence_id, ""),
-        )
-        peer_values[row.evidence_id] = repaired[0] if repaired else row.value
-    repairs: dict[str, tuple[object, str, tuple[str, ...]]] = {}
-    for row in price_rows:
-        offer = offer_by_evidence.get(row.evidence_id)
-        currency = currency_by_evidence.get(row.evidence_id)
-        if offer is None or currency is None:
-            continue
-        peers = tuple(
-            other
-            for other in price_rows
-            if other.evidence_id != row.evidence_id
-            and other.fact_type == row.fact_type
-            and (
-                (
-                    (other_offer := offer_by_evidence.get(other.evidence_id))
-                    is not None
-                    and other_offer.product_entity_id == offer.product_entity_id
-                    and (
-                        other.collector_id != row.collector_id
-                        or other_offer.entity_id == offer.entity_id
-                    )
-                )
-                or (
-                    offer_by_evidence.get(other.evidence_id) is None
-                    and other.collector_id in DETAIL_PRICE_PAGE_CORROBORATION_COLLECTORS
-                    and "invalid_decimal" not in other.flags
-                )
-            )
-        )
-        repaired = repair_price_unit(
-            row.value,
-            source_key=row.locator.value,
-            currency=currency,
-            corroborating_values=tuple(
-                peer_values[other.evidence_id] for other in peers
-            ),
-        )
-        if repaired is not None:
-            value, rule_id = repaired
-            repairs[row.evidence_id] = (
-                value,
-                rule_id,
-                tuple(other.evidence_id for other in peers),
-            )
-    return repairs
-
-
-def _price_unit_derived_facts(
-    decisions: tuple[Decision, ...],
-    evidence_by_id: dict[str, Evidence],
-    repairs: dict[str, tuple[object, str, tuple[str, ...]]],
-) -> tuple[DerivedFact, ...]:
-    facts: list[DerivedFact] = []
-    for decision in decisions:
-        if not decision.accepted_evidence_ids:
-            continue
-        evidence_id = decision.accepted_evidence_ids[0]
-        repaired = repairs.get(evidence_id)
-        evidence = evidence_by_id.get(evidence_id)
-        if repaired is None or evidence is None or repaired[0] == evidence.value:
-            continue
-        value, rule_id, peer_ids = repaired
-        facts.append(
-            DerivedFact(
-                derived_fact_id=stable_id(
-                    "derived", rule_id, decision.entity_id, decision.fact_type, value
-                ),
-                entity_id=decision.entity_id,
-                fact_type=decision.fact_type,
-                value=value,
-                input_evidence_ids=tuple(dict.fromkeys((evidence_id, *peer_ids))),
-                input_selected_fact_ids=(stable_id("selected", decision.decision_id),),
-                rule_id=rule_id,
-            )
-        )
-    return tuple(facts)
-
-
-def _preferred_price_currency(rows: tuple[Evidence, ...]) -> str | None:
-    priority = {
-        collector_id: index
-        for index, collector_id in enumerate(DETAIL_PRICE_CURRENCY_COLLECTOR_PRIORITY)
-    }
-    valid = tuple(
-        row
-        for row in rows
-        if str(row.value or "").strip() and "invalid_currency" not in row.flags
-    )
-    if not valid:
-        return None
-    best_rank = min(priority.get(row.collector_id, len(priority)) for row in valid)
-    values = {
-        str(row.value).strip().upper()
-        for row in valid
-        if priority.get(row.collector_id, len(priority)) == best_rank
-    }
-    return next(iter(values)) if len(values) == 1 else None
 
 
 def _asset_publication_facts(
@@ -690,11 +538,10 @@ def _parent_derived_from_variants(
 def _leaf_variant_decisions(
     variants: tuple[VariantDecision, ...],
 ) -> tuple[VariantDecision, ...]:
-    option_fields = ("color", "size", "style", "material", "gender")
     depths = tuple(
         sum(
             row.values.get(field) not in (None, "", [], {}, ())
-            for field in option_fields
+            for field in PUBLIC_VARIANT_AXIS_FIELDS
         )
         for row in variants
     )
@@ -762,7 +609,7 @@ def _aggregate_variant_field(
                 "offer.price_max",
                 maximum,
                 evidence_ids,
-                "minimum_variant_price_aggregate",
+                "maximum_variant_price_aggregate",
                 input_selected_fact_ids=selected_fact_ids,
                 input_derived_fact_ids=derived_fact_ids,
             ),
@@ -2255,7 +2102,7 @@ def _currency_for_price(evidence: Evidence, *, page_url: str) -> tuple[str, str]
     raw = evidence.raw_value if isinstance(evidence.raw_value, str) else ""
     symbols = {
         str(currency)
-        for symbol, currency in CURRENCY_SYMBOL_MAP.items()
+        for symbol, currency in CURRENCY_SYMBOL_TO_ISO.items()
         if str(symbol) in raw
     }
     if len(symbols) == 1:
@@ -2379,173 +2226,3 @@ def _invalidity_reason(ev: Evidence) -> str | None:
     if generic:
         return min(generic)
     return None
-
-
-def _non_positive_money(value: object) -> bool:
-    try:
-        return Decimal(str(value)) <= 0
-    except (InvalidOperation, ValueError):
-        return False
-
-
-_PRICE_FACT_TYPES = frozenset(
-    {
-        field_mappings.OFFER_PRICE_FACT_TYPE,
-        field_mappings.OFFER_ORIGINAL_PRICE_FACT_TYPE,
-    }
-)
-_GTIN_FACT_TYPES = frozenset(
-    {field_mappings.PRODUCT_GTIN_FACT_TYPE, field_mappings.VARIANT_GTIN_FACT_TYPE}
-)
-_URL_FACT_TYPES = frozenset(
-    {field_mappings.PRODUCT_URL_FACT_TYPE, field_mappings.ASSET_IMAGE_URL_FACT_TYPE}
-)
-
-
-def _value_quality(ev: Evidence) -> int:
-    """Shape-only quality of a candidate value (lower = better).
-
-    A generic safety net keyed on the value's *intrinsic shape* — never on site
-    identity. A value that fails its field's basic format/enum check (malformed
-    price, non-ISO-4217 currency, off-enum availability, bad GTIN check digit,
-    non-absolute URL) ranks below one that passes, so a clean embedded offer
-    outranks a malformed-but-unflagged direct DOM scrape. Among well-formed
-    candidates this is a constant ``0`` prefix, so it never perturbs the
-    reliability/directness spine; it only breaks shape-quality ties that the
-    flag-based admissibility filter did not already catch.
-    """
-
-    fact_type = ev.fact_type
-    if fact_type in _PRICE_FACT_TYPES:
-        return 1 if _non_positive_money(ev.value) or not _parses_money(ev.value) else 0
-    if fact_type == field_mappings.OFFER_CURRENCY_FACT_TYPE:
-        return 0 if _is_iso4217_shape(ev.value) else 1
-    if fact_type == field_mappings.OFFER_AVAILABILITY_FACT_TYPE:
-        return 0 if _is_canonical_availability(ev.value) else 1
-    if fact_type in _GTIN_FACT_TYPES:
-        return 0 if _is_valid_gtin(ev.value) else 1
-    if fact_type in _URL_FACT_TYPES:
-        return 0 if _is_absolute_url(ev.value) else 1
-    return 0
-
-
-def _parses_money(value: object) -> bool:
-    try:
-        Decimal(str(value).replace(",", ""))
-    except (InvalidOperation, ValueError):
-        return False
-    return True
-
-
-def _is_iso4217_shape(value: object) -> bool:
-    text = str(value or "").strip()
-    return len(text) == 3 and text.isalpha()
-
-
-def _is_canonical_availability(value: object) -> bool:
-    text = str(value or "").strip().casefold().replace(" ", "_")
-    return text in AVAILABILITY_CANONICAL_ENUM
-
-
-def _is_absolute_url(value: object) -> bool:
-    parts = urlsplit(str(value or "").strip())
-    return parts.scheme in {"http", "https"} and bool(parts.netloc)
-
-
-def _is_valid_gtin(value: object) -> bool:
-    digits = str(value or "").strip()
-    if len(digits) not in {8, 12, 13, 14} or not digits.isdigit():
-        return False
-    body, check = digits[:-1], int(digits[-1])
-    total = 0
-    for index, char in enumerate(reversed(body)):
-        weight = 3 if index % 2 == 0 else 1
-        total += int(char) * weight
-    return (10 - total % 10) % 10 == check
-
-
-def _rank(ev: Evidence) -> tuple[object, ...]:
-    quality = _value_quality(ev)
-    directness = {"direct": 0, "embedded": 1, "inferred": 2}.get(ev.directness, 3)
-    reliability = {
-        "jsonld": 0,
-        "microdata": 1,
-        "js_state": 2,
-        "network": 3,
-        "opengraph": 4,
-        "dom": 5,
-        "css_recipe": 5,
-        "url": 6,
-    }.get(ev.collector_id, 7)
-    if ev.fact_type == field_mappings.PRODUCT_TITLE_FACT_TYPE:
-        pollution = int(
-            "seo_title_pollution" in ev.flags or "truncated_title" in ev.flags
-        )
-        url_disagreement = int("title_url_mismatch" in ev.flags)
-        return (
-            quality,
-            pollution,
-            url_disagreement,
-            reliability,
-            -float(ev.confidence),
-            -len(str(ev.value or "")),
-            ev.evidence_id,
-        )
-    if ev.fact_type == "product.description":
-        boundary_excerpt = int("description_hard_boundary" in ev.flags)
-        return (
-            quality,
-            boundary_excerpt,
-            reliability,
-            directness,
-            -float(ev.confidence),
-            ev.evidence_id,
-        )
-    if ev.fact_type == field_mappings.OFFER_CURRENCY_FACT_TYPE:
-        inferred_from_symbol = int(
-            str(ev.metadata.get("derived_by") or "") == "currency_from_price_symbol"
-        )
-        return (
-            quality,
-            inferred_from_symbol,
-            reliability,
-            directness,
-            -float(ev.confidence),
-            ev.evidence_id,
-        )
-    if ev.fact_type == field_mappings.PRODUCT_BRAND_FACT_TYPE:
-        derived_penalty = int(bool(ev.metadata.get("derived_by")))
-        role_rank = {
-            "manufacturer": 0,
-            "designer": 0,
-            "private_label": 0,
-            "vendor": 1,
-            "unknown": 2,
-            "seller": 5,
-            "retailer": 5,
-            "marketplace": 5,
-            "site_identity": 5,
-        }.get(ev.brand_role or "manufacturer", 2)
-        derived_rank = {
-            "brand_from_product_url": 0,
-            "brand_from_title_marker": 1,
-            "page_identity": 2,
-            "brand_from_title_host": 3,
-        }.get(str(ev.metadata.get("derived_by") or ""), 1)
-        return (
-            quality,
-            role_rank,
-            derived_penalty,
-            reliability,
-            directness,
-            derived_rank,
-            -float(ev.confidence),
-            ev.evidence_id,
-        )
-    return (
-        quality,
-        reliability,
-        directness,
-        -float(ev.confidence),
-        ev.evidence_id,
-    )
