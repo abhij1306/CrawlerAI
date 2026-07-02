@@ -43,8 +43,6 @@ class AcquisitionTrace(BaseModel):
 class ExtractionTrace(BaseModel):
     source: str = "extraction"
     confidence: dict[str, Any] = Field(default_factory=dict)
-    self_heal: dict[str, Any] = Field(default_factory=dict)
-    field_repair: dict[str, Any] = Field(default_factory=dict)
     manifest_trace: dict[str, Any] = Field(default_factory=dict)
     review_bucket: list[dict[str, Any]] = Field(default_factory=list)
     semantic: dict[str, Any] = Field(default_factory=dict)

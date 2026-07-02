@@ -40,7 +40,8 @@ from app.main import (
 )
 from app.models.api_key import ApiKey
 from app.models.crawl_run import CrawlRecord
-from app.models.domain_memory import DomainMemory, DomainRunProfile
+from app.models.domain_memory import DomainRunProfile
+from app.crawl.domain_memory_service import save_domain_memory
 from app.models.user import User
 from app.core.auth_service import create_user
 from app.core.config import auth_security
@@ -814,21 +815,20 @@ async def test_public_domain_info_reads_domain_memory(db_session, test_user) -> 
             is_active=True,
         )
     )
-    db_session.add(
-        DomainMemory(
-            domain="example.com",
-            surface="ecommerce_detail",
-            selectors={
-                "rules": [
-                    {
-                        "id": 1,
-                        "field_name": "title",
-                        "css_selector": "h1",
-                        "is_active": True,
-                    }
-                ]
-            },
-        )
+    await save_domain_memory(
+        db_session,
+        domain="example.com",
+        surface="ecommerce_detail",
+        selectors={
+            "rules": [
+                {
+                    "id": 1,
+                    "field_name": "title",
+                    "css_selector": "h1",
+                    "is_active": True,
+                }
+            ]
+        },
     )
     db_session.add(
         DomainRunProfile(

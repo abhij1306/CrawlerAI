@@ -7,6 +7,7 @@ import os
 import re
 import sys
 import tempfile
+import uuid
 from fnmatch import fnmatch
 from pathlib import Path
 
@@ -29,6 +30,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 _TMP_COUNTER = itertools.count()
+_TEST_RUN_ID = uuid.uuid4().hex[:12]
 _WORKSPACE_TMP_ROOT = _BACKEND_ROOT / ".pytest-tmp"
 _UNSET = object()
 TEST_DATABASE_URL = os.environ.get(
@@ -209,7 +211,9 @@ async def db_session(monkeypatch: pytest.MonkeyPatch):
     """Create a PostgreSQL database schema for each test."""
     worker_id = os.environ.get("PYTEST_XDIST_WORKER", "gw0")
     schema_suffix = re.sub(
-        r"[^a-zA-Z0-9_]", "_", f"{worker_id}_{_TMP_COUNTER.__next__()}"
+        r"[^a-zA-Z0-9_]",
+        "_",
+        f"{worker_id}_{_TEST_RUN_ID}_{_TMP_COUNTER.__next__()}",
     )
     schema_name = f"test_{schema_suffix}"
     quoted_schema_name = f'"{schema_name}"'
@@ -228,14 +232,15 @@ async def db_session(monkeypatch: pytest.MonkeyPatch):
     from app.crawl import batch_runtime
 
     monkeypatch.setattr(batch_runtime, "SessionLocal", session_factory)
-    async with session_factory() as session:
-        yield session
-    async with scoped_engine.begin() as conn:
-        await conn.execute(text(f"SET search_path TO {quoted_schema_name}"))
-        await conn.run_sync(Base.metadata.drop_all)
-    async with engine.begin() as conn:
-        await conn.execute(text(f"DROP SCHEMA IF EXISTS {quoted_schema_name} CASCADE"))
-    await engine.dispose()
+    try:
+        async with session_factory() as session:
+            yield session
+    finally:
+        async with engine.begin() as conn:
+            await conn.execute(
+                text(f"DROP SCHEMA IF EXISTS {quoted_schema_name} CASCADE")
+            )
+        await engine.dispose()
 
 
 @pytest_asyncio.fixture

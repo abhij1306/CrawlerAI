@@ -1,11 +1,31 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
+from datetime import datetime
+import uuid
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.domain_memory import DomainMemory
+from app.core.config.extraction_memory import (
+    EXTRACTION_RECIPE_KIND_SELECTORS,
+    EXTRACTION_RECIPE_LAYER_DOMAIN,
+)
+from app.models.extraction_memory import ExtractionRecipe, ExtractionTemplate
+from app.persistence.extraction_memory import ensure_template, upsert_recipe
 from app.core.config.domain_profiles import DEFAULT_FALLBACK_SURFACE
 from app.core.shared.field_coerce import safe_int as _safe_int
+
+
+@dataclass(frozen=True)
+class SelectorMemory:
+    id: uuid.UUID
+    domain: str
+    surface: str
+    platform: str | None
+    selectors: dict
+    created_at: datetime
+    updated_at: datetime
 
 
 def _normalized_selector_rule(row: dict[str, object]) -> dict[str, object]:
@@ -34,17 +54,33 @@ async def load_domain_memory(
     *,
     domain: str,
     surface: str,
-) -> DomainMemory | None:
+) -> SelectorMemory | None:
     result = await session.execute(
-        select(DomainMemory)
+        select(ExtractionTemplate, ExtractionRecipe)
+        .join(ExtractionRecipe, ExtractionRecipe.template_id == ExtractionTemplate.id)
         .where(
-            DomainMemory.domain == str(domain or "").strip().lower(),
-            DomainMemory.surface == str(surface or "").strip().lower(),
+            ExtractionTemplate.domain == str(domain or "").strip().lower(),
+            ExtractionTemplate.surface == str(surface or "").strip().lower(),
+            ExtractionTemplate.fingerprint == "domain-default",
+            ExtractionRecipe.kind == EXTRACTION_RECIPE_KIND_SELECTORS,
         )
-        .order_by(DomainMemory.updated_at.desc(), DomainMemory.id.desc())
+        .order_by(ExtractionRecipe.updated_at.desc())
         .limit(1)
     )
-    return result.scalar_one_or_none()
+    row = result.one_or_none()
+    if row is None:
+        return None
+    template, recipe = row
+    platforms = list(template.tech_signals or [])
+    return SelectorMemory(
+        id=recipe.id,
+        domain=template.domain,
+        surface=template.surface,
+        platform=str(platforms[0]) if platforms else None,
+        selectors=dict(recipe.payload),
+        created_at=recipe.created_at,
+        updated_at=recipe.updated_at,
+    )
 
 
 async def save_domain_memory(
@@ -54,30 +90,35 @@ async def save_domain_memory(
     surface: str,
     selectors: dict[str, object],
     platform: str | None = None,
-) -> DomainMemory:
+) -> SelectorMemory:
     normalized_domain = str(domain or "").strip().lower()
     normalized_surface = str(surface or "").strip().lower()
-    existing = await load_domain_memory(
+    template = await ensure_template(
         session,
         domain=normalized_domain,
         surface=normalized_surface,
+        fingerprint="domain-default",
+        route_pattern="/",
+        tech_signals=[str(platform).strip().lower()] if platform else [],
     )
-    if existing is None:
-        existing = DomainMemory(
-            domain=normalized_domain,
-            surface=normalized_surface,
-            platform=str(platform or "").strip().lower() or None,
-            selectors=dict(selectors or {}),
-        )
-        session.add(existing)
-    else:
-        existing.platform = str(platform or "").strip().lower() or existing.platform
-        existing.selectors = dict(selectors or {})
-    await session.flush()
-    return existing
+    await upsert_recipe(
+        session,
+        template=template,
+        layer=EXTRACTION_RECIPE_LAYER_DOMAIN,
+        kind=EXTRACTION_RECIPE_KIND_SELECTORS,
+        payload=dict(selectors or {}),
+    )
+    memory = await load_domain_memory(
+        session, domain=normalized_domain, surface=normalized_surface
+    )
+    if memory is None:
+        raise RuntimeError("Selector recipe was not persisted")
+    return memory
 
 
-def selector_rules_from_memory(memory: DomainMemory | None) -> list[dict[str, object]]:
+def selector_rules_from_memory(
+    memory: SelectorMemory | None,
+) -> list[dict[str, object]]:
     if memory is None or not isinstance(memory.selectors, dict):
         return []
     selectors = dict(memory.selectors or {})
@@ -110,6 +151,28 @@ def selector_rules_from_memory(memory: DomainMemory | None) -> list[dict[str, ob
         )
         next_id += 1
     return fallback_rules
+
+
+async def list_selector_memories(session: AsyncSession) -> list[SelectorMemory]:
+    rows = (
+        await session.execute(
+            select(ExtractionTemplate.domain, ExtractionTemplate.surface)
+            .join(
+                ExtractionRecipe, ExtractionRecipe.template_id == ExtractionTemplate.id
+            )
+            .where(
+                ExtractionTemplate.fingerprint == "domain-default",
+                ExtractionRecipe.kind == EXTRACTION_RECIPE_KIND_SELECTORS,
+            )
+            .order_by(ExtractionTemplate.domain, ExtractionTemplate.surface)
+        )
+    ).all()
+    memories: list[SelectorMemory] = []
+    for domain, surface in rows:
+        memory = await load_domain_memory(session, domain=domain, surface=surface)
+        if memory is not None:
+            memories.append(memory)
+    return memories
 
 
 def selector_payload_from_rules(rules: list[dict[str, object]]) -> dict[str, object]:

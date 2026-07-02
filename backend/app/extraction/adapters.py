@@ -5,11 +5,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Callable, cast
 
-from app.core.knowledge_graph.contract_runtime import (
+from app.core.extraction_memory.contract_runtime import (
     contract_preferences,
     resolved_contract_outcomes,
 )
-from app.core.knowledge_graph.templates import fingerprint_from_parts
+from app.core.extraction_memory.templates import fingerprint_from_parts
 from app.core.records.divergence import (
     compare_public_record_to_projection,
     compare_records_to_projection,

@@ -12,11 +12,11 @@ from app.main import app
 from app.crawl import dashboard_service
 from app.models.domain_memory import (
     DomainCookieMemory,
-    DomainFieldFeedback,
-    DomainMemory,
     DomainRunProfile,
     HostProtectionMemory,
 )
+from app.models.extraction_memory import ExtractionOperatorLabel, ExtractionTemplate
+from app.crawl.domain_memory_service import save_domain_memory
 from app.models.product_intelligence import (
     ProductIntelligenceCandidate,
     ProductIntelligenceJob,
@@ -24,7 +24,6 @@ from app.models.product_intelligence import (
     ProductIntelligenceSourceProduct,
 )
 from app.models.crawl_run import CrawlLog, CrawlRecord, CrawlRun, CrawlUrlResult
-from app.models.review import ReviewPromotion
 from app.models.llm import LLMCostLog
 from app.models.user import User
 from app.acquisition.host_protection_memory import (
@@ -42,8 +41,11 @@ from app.crawl.dashboard_service import (
     session_transaction,
 )
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import async_sessionmaker
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+DomainMemory = ExtractionTemplate
+DomainFieldFeedback = ExtractionOperatorLabel
+ReviewPromotion = ExtractionOperatorLabel
 
 
 @pytest.mark.asyncio
@@ -195,7 +197,8 @@ async def test_split_reset_crawl_data_and_domain_memory_preserve_the_other_scope
     db_session.add(CrawlLog(run_id=run.id, level="info", message="hello"))
     db_session.add(
         ReviewPromotion(
-            run_id=run.id,
+            label_kind="review_promotion",
+            source_run_id=run.id,
             domain="example.com",
             surface="ecommerce_detail",
             approved_schema={"fields": ["title"]},
@@ -214,12 +217,11 @@ async def test_split_reset_crawl_data_and_domain_memory_preserve_the_other_scope
             domain="example.com",
         )
     )
-    db_session.add(
-        DomainMemory(
-            domain="example.com",
-            surface="ecommerce_detail",
-            selectors={"rules": [{"id": 1, "field_name": "title"}]},
-        )
+    await save_domain_memory(
+        db_session,
+        domain="example.com",
+        surface="ecommerce_detail",
+        selectors={"rules": [{"id": 1, "field_name": "title"}]},
     )
     db_session.add(
         DomainRunProfile(
@@ -240,6 +242,7 @@ async def test_split_reset_crawl_data_and_domain_memory_preserve_the_other_scope
     )
     db_session.add(
         DomainFieldFeedback(
+            label_kind="field_feedback",
             domain="example.com",
             surface="ecommerce_detail",
             field_name="price",
@@ -269,9 +272,21 @@ async def test_split_reset_crawl_data_and_domain_memory_preserve_the_other_scope
     assert list(artifacts_dir.iterdir()) == []
     assert list(cookies_dir.iterdir()) == []
 
-    for model in (CrawlRecord, CrawlUrlResult, CrawlLog, ReviewPromotion, LLMCostLog):
+    for model in (CrawlRecord, CrawlUrlResult, CrawlLog, LLMCostLog):
         remaining = (await db_session.execute(select(model))).scalars().all()
         assert remaining == []
+    promotions = (
+        (
+            await db_session.execute(
+                select(ReviewPromotion).where(
+                    ReviewPromotion.label_kind == "review_promotion"
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert promotions == []
     assert (await db_session.execute(select(DomainMemory))).scalars().all() != []
     assert (await db_session.execute(select(DomainRunProfile))).scalars().all() != []
     assert (await db_session.execute(select(DomainCookieMemory))).scalars().all() != []
@@ -380,12 +395,11 @@ async def test_reset_application_data_rolls_back_when_domain_memory_reset_fails(
             source_trace={},
         )
     )
-    db_session.add(
-        DomainMemory(
-            domain="example.com",
-            surface="ecommerce_detail",
-            selectors={"rules": [{"id": 1, "field_name": "title"}]},
-        )
+    await save_domain_memory(
+        db_session,
+        domain="example.com",
+        surface="ecommerce_detail",
+        selectors={"rules": [{"id": 1, "field_name": "title"}]},
     )
     await db_session.commit()
 
@@ -452,8 +466,11 @@ async def test_reset_product_intelligence_preserves_crawl_and_domain_memory(
             "surface": "ecommerce_detail",
         },
     )
-    db_session.add(
-        DomainMemory(domain="example.com", surface="ecommerce_detail", selectors={})
+    await save_domain_memory(
+        db_session,
+        domain="example.com",
+        surface="ecommerce_detail",
+        selectors={},
     )
     job = ProductIntelligenceJob(user_id=test_user.id, options={}, summary={})
     db_session.add(job)

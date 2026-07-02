@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from app.models.review import ReviewPromotion
+from app.models.extraction_memory import ExtractionOperatorLabel
+from app.core.config.extraction_memory import EXTRACTION_LABEL_KIND_REVIEW_PROMOTION
 from app.core.domain_utils import normalize_domain
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -34,12 +35,17 @@ async def load_domain_field_mapping(
     surface: str,
 ) -> dict[str, str]:
     result = await session.execute(
-        select(ReviewPromotion.field_mapping)
+        select(ExtractionOperatorLabel.field_mapping)
         .where(
-            ReviewPromotion.domain == domain,
-            ReviewPromotion.surface == surface,
+            ExtractionOperatorLabel.label_kind
+            == EXTRACTION_LABEL_KIND_REVIEW_PROMOTION,
+            ExtractionOperatorLabel.domain == domain,
+            ExtractionOperatorLabel.surface == surface,
         )
-        .order_by(ReviewPromotion.created_at.desc(), ReviewPromotion.id.desc())
+        .order_by(
+            ExtractionOperatorLabel.created_at.desc(),
+            ExtractionOperatorLabel.id.desc(),
+        )
         .limit(1)
     )
     mapping = result.scalar_one_or_none()

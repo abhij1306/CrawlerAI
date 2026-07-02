@@ -5,12 +5,12 @@ from __future__ import annotations
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.knowledge_graph.contract_runtime import (
+from app.core.extraction_memory.contract_runtime import (
     contract_preferences,
     match_template,
     resolved_contract_outcomes,
 )
-from app.core.knowledge_graph.templates import (
+from app.core.extraction_memory.templates import (
     fingerprint_from_parts,
     fingerprint_template,
 )
@@ -24,13 +24,16 @@ from app.extraction.contracts import (
     SourceLocator,
 )
 from app.extraction.surfaces import Surface
-from app.persistence.knowledge_graph import (
-    ContractInput,
-    EntityInput,
-    load_runtime_snapshot,
-    lock_site_version,
-    upsert_contracts,
-    upsert_entities,
+from app.core.config.extraction_memory import (
+    EXTRACTION_RECIPE_KIND_CONTRACTS,
+    EXTRACTION_RECIPE_LAYER_TEMPLATE,
+)
+from app.models.extraction_memory import CompiledExtractionRecipe
+from app.persistence.extraction_memory import (
+    build_release_payload,
+    ensure_template,
+    selector_rules_from_release,
+    upsert_recipe,
 )
 
 
@@ -514,187 +517,93 @@ def test_fingerprint_from_parts_matches_fingerprint_template() -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.component
-async def test_load_runtime_snapshot_returns_empty_for_unknown_domain(
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_release_payload_returns_empty_templates_for_unknown_domain(
     db_session: AsyncSession,
 ) -> None:
-    snapshot = await load_runtime_snapshot(
-        db_session, domain="no-such-domain.com", surface="ecommerce_detail"
+    snapshot = await build_release_payload(
+        db_session, domain="unknown.example", surface="ecommerce_detail"
     )
-    assert snapshot == {}
+    assert snapshot == {
+        "domain": "unknown.example",
+        "surface": "ecommerce_detail",
+        "templates": [],
+    }
 
 
 @pytest.mark.asyncio
 @pytest.mark.component
-async def test_load_runtime_snapshot_returns_templates_and_contracts(
+async def test_release_payload_contains_compiled_contract_recipe(
     db_session: AsyncSession,
 ) -> None:
-    domain = "snapshot-test.com"
-    surface = "ecommerce_detail"
-    fingerprint = "fp-snap-1"
-    template_key = f"{domain}:{surface}:{fingerprint}"
-
-    await lock_site_version(db_session, domain)
-    entity_map = await upsert_entities(
+    template = await ensure_template(
         db_session,
-        [
-            EntityInput(
-                entity_type="page_template",
-                canonical_key=template_key,
-                canonical_name=f"{domain} {surface}",
-                properties={
-                    "domain": domain,
-                    "surface": surface,
-                    "fingerprint": fingerprint,
-                },
-            )
-        ],
+        domain="example.com",
+        surface="ecommerce_detail",
+        fingerprint="fp-runtime",
+        route_pattern="/products/{id}",
     )
-    template_id = entity_map[("page_template", template_key)]
-
-    await upsert_contracts(
+    _, compiled = await upsert_recipe(
         db_session,
-        [
-            ContractInput(
-                template_id=template_id,
-                surface=surface,
-                canonical_field="product.title",
-                selected_source="jsonld:/name",
-                selection_origin="generic",
-                resolver_rule="FIRST_BY_PRIORITY",
-            ),
-            ContractInput(
-                template_id=template_id,
-                surface=surface,
-                canonical_field="product.price",
-                selected_source="microdata:/price",
-                selection_origin="operator",
-                resolver_rule="PRICE_RULE",
-            ),
-        ],
+        template=template,
+        layer=EXTRACTION_RECIPE_LAYER_TEMPLATE,
+        kind=EXTRACTION_RECIPE_KIND_CONTRACTS,
+        payload={
+            "contracts": [
+                {
+                    "canonical_field": "product.brand",
+                    "selected_source": "jsonld:/brand",
+                    "selection_origin": "operator",
+                }
+            ]
+        },
     )
-    await db_session.flush()
+    await db_session.commit()
 
-    snapshot = await load_runtime_snapshot(db_session, domain=domain, surface=surface)
+    snapshot = await build_release_payload(
+        db_session, domain="example.com", surface="ecommerce_detail"
+    )
 
-    assert snapshot["surface"] == surface
-    assert isinstance(snapshot["graph_version"], int)
-    templates = snapshot["templates"]
-    assert len(templates) == 1
-    assert templates[0]["fingerprint"] == fingerprint
-    contracts = {c["canonical_field"]: c for c in templates[0]["contracts"]}
-    assert contracts["product.title"]["selected_source"] == "jsonld:/name"
-    assert contracts["product.price"]["selection_origin"] == "operator"
+    assert snapshot["templates"][0]["fingerprint"] == "fp-runtime"
+    assert (
+        snapshot["templates"][0]["contracts"][0]["selected_source"] == "jsonld:/brand"
+    )
+    assert await db_session.get(CompiledExtractionRecipe, compiled.id) is not None
 
 
 @pytest.mark.asyncio
 @pytest.mark.component
-async def test_load_runtime_snapshot_ignores_wrong_surface(
+async def test_release_payload_freezes_selector_recipes(
     db_session: AsyncSession,
 ) -> None:
-    domain = "surface-filter.com"
-    detail_key = f"{domain}:ecommerce_detail:fp-d1"
-    listing_key = f"{domain}:ecommerce_listing:fp-l1"
-
-    await lock_site_version(db_session, domain)
-    entity_map = await upsert_entities(
+    template = await ensure_template(
         db_session,
-        [
-            EntityInput(
-                entity_type="page_template",
-                canonical_key=detail_key,
-                canonical_name="detail template",
-                properties={
-                    "domain": domain,
-                    "surface": "ecommerce_detail",
-                    "fingerprint": "fp-d1",
-                },
-            ),
-            EntityInput(
-                entity_type="page_template",
-                canonical_key=listing_key,
-                canonical_name="listing template",
-                properties={
-                    "domain": domain,
-                    "surface": "ecommerce_listing",
-                    "fingerprint": "fp-l1",
-                },
-            ),
-        ],
+        domain="example.com",
+        surface="ecommerce_detail",
+        fingerprint="domain-default",
     )
-    await upsert_contracts(
+    await upsert_recipe(
         db_session,
-        [
-            ContractInput(
-                template_id=entity_map[("page_template", detail_key)],
-                surface="ecommerce_detail",
-                canonical_field="product.title",
-                selected_source="jsonld:/name",
-                selection_origin="generic",
-                resolver_rule="FIRST",
-            ),
-            ContractInput(
-                template_id=entity_map[("page_template", listing_key)],
-                surface="ecommerce_listing",
-                canonical_field="product.title",
-                selected_source="css:h2",
-                selection_origin="generic",
-                resolver_rule="FIRST",
-            ),
-        ],
+        template=template,
+        layer="domain",
+        kind="selectors",
+        payload={"rules": [{"field_name": "title", "css_selector": "h1"}]},
     )
-    await db_session.flush()
-
-    snapshot = await load_runtime_snapshot(
-        db_session, domain=domain, surface="ecommerce_detail"
+    frozen = await build_release_payload(
+        db_session, domain="example.com", surface="ecommerce_detail"
     )
-
-    templates = snapshot["templates"]
-    assert len(templates) == 1
-    assert templates[0]["fingerprint"] == "fp-d1"
-    assert all(c["selected_source"] != "css:h2" for c in templates[0]["contracts"])
-
-
-@pytest.mark.asyncio
-@pytest.mark.component
-async def test_load_runtime_snapshot_idempotent(
-    db_session: AsyncSession,
-) -> None:
-    domain = "idempotent-snap.com"
-    surface = "ecommerce_detail"
-    fingerprint = "fp-idem"
-    template_key = f"{domain}:{surface}:{fingerprint}"
-
-    await lock_site_version(db_session, domain)
-    entity_map = await upsert_entities(
+    await upsert_recipe(
         db_session,
-        [
-            EntityInput(
-                entity_type="page_template",
-                canonical_key=template_key,
-                canonical_name="template",
-                properties={
-                    "domain": domain,
-                    "surface": surface,
-                    "fingerprint": fingerprint,
-                },
-            )
-        ],
+        template=template,
+        layer="domain",
+        kind="selectors",
+        payload={"rules": [{"field_name": "title", "css_selector": "h2"}]},
     )
-    await upsert_contracts(
-        db_session,
-        [
-            ContractInput(
-                template_id=entity_map[("page_template", template_key)],
-                surface=surface,
-                canonical_field="product.title",
-                selected_source="jsonld:/name",
-                selection_origin="generic",
-                resolver_rule="FIRST",
-            )
-        ],
-    )
-    await db_session.flush()
 
-    snap1 = await load_runtime_snapshot(db_session, domain=domain, surface=surface)
-    snap2 = await load_runtime_snapshot(db_session, domain=domain, surface=surface)
-    assert snap1 == snap2
+    assert (
+        selector_rules_from_release(frozen, surface="ecommerce_detail")[0][
+            "css_selector"
+        ]
+        == "h1"
+    )

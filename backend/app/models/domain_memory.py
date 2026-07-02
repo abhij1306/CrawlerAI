@@ -2,29 +2,14 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import DateTime, Index, Integer, String
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
-from app.models.crawl_run import (
-    CRAWL_RUN_FK,
-    SET_NULL,
-    CreatedAtMixin,
-    UpdatedAtMixin,
-)
+from app.models.crawl_run import UpdatedAtMixin
 
 DOMAIN_RUN_PROFILE_UNIQUE_CONSTRAINT = "uq_domain_run_profiles_domain_surface"
-
-
-class DomainMemory(UpdatedAtMixin, Base):
-    __tablename__ = "domain_memory"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    domain: Mapped[str] = mapped_column(String(255), index=True)
-    surface: Mapped[str] = mapped_column(String(40), index=True)
-    platform: Mapped[str | None] = mapped_column(String(40), nullable=True)
-    selectors: Mapped[dict] = mapped_column(JSONB, default=dict)
 
 
 class DomainRunProfile(UpdatedAtMixin, Base):
@@ -58,31 +43,6 @@ class DomainCookieMemory(UpdatedAtMixin, Base):
     domain: Mapped[str] = mapped_column(String(255))
     storage_state: Mapped[dict] = mapped_column(JSONB, default=dict)
     state_fingerprint: Mapped[str] = mapped_column(String(128), default="")
-
-
-class DomainFieldFeedback(CreatedAtMixin, Base):
-    __tablename__ = "domain_field_feedback"
-    __table_args__ = (
-        Index(
-            "ix_domain_field_feedback_domain_surface",
-            "domain",
-            "surface",
-        ),
-    )
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    domain: Mapped[str] = mapped_column(String(255))
-    surface: Mapped[str] = mapped_column(String(40), index=True)
-    field_name: Mapped[str] = mapped_column(String(128), index=True)
-    action: Mapped[str] = mapped_column(String(32))
-    source_kind: Mapped[str] = mapped_column(String(32))
-    source_value: Mapped[str | None] = mapped_column(Text, nullable=True)
-    source_run_id: Mapped[int | None] = mapped_column(
-        ForeignKey(CRAWL_RUN_FK, ondelete=SET_NULL),
-        nullable=True,
-        index=True,
-    )
-    payload: Mapped[dict] = mapped_column(JSONB, default=dict)
 
 
 class HostProtectionMemory(UpdatedAtMixin, Base):

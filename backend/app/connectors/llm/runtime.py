@@ -6,12 +6,7 @@ from app.connectors.llm.circuit_breaker import circuit_breaker_snapshot
 from app.connectors.llm.config_service import llm_provider_catalog
 from app.connectors.llm.errors import ERROR_PREFIX, LLMErrorCategory, classify_error
 from app.connectors.llm.provider_client import test_provider_connection
-from app.connectors.llm.tasks import (
-    extract_records_directly,
-    extract_missing_fields,
-    review_field_candidates,
-    run_prompt_task,
-)
+from app.connectors.llm.tasks import run_prompt_task
 from app.connectors.llm.types import LLMTaskResult
 
 __all__ = [
@@ -20,10 +15,7 @@ __all__ = [
     "LLMTaskResult",
     "classify_error",
     "circuit_breaker_snapshot",
-    "extract_records_directly",
-    "extract_missing_fields",
     "llm_provider_catalog",
-    "review_field_candidates",
     "run_prompt_task",
     "test_provider_connection",
 ]

@@ -129,7 +129,7 @@ async def test_run_prompt_task_returns_validated_payload(
         return {"provider": "groq", "model": "llama", "api_key_encrypted": ""}
 
     def fake_get_prompt_task(task_type: str):
-        assert task_type == "missing_field_extraction"
+        assert task_type == "generic_runtime_probe"
         return {
             "system_file": "system.txt",
             "user_file": "user.txt",
@@ -175,7 +175,7 @@ async def test_run_prompt_task_returns_validated_payload(
 
     result = await llm_runtime.run_prompt_task(
         db_session,
-        task_type="missing_field_extraction",
+        task_type="generic_runtime_probe",
         run_id=None,
         domain="example.com",
         variables={"missing_fields_json": "[]"},
@@ -190,7 +190,7 @@ async def test_run_prompt_task_returns_validated_payload(
     assert result.payload == {"materials": "Cotton blend"}
     assert result.error_message == ""
     assert len(cost_logs) == 1
-    assert cost_logs[0].task_type == "missing_field_extraction"
+    assert cost_logs[0].task_type == "generic_runtime_probe"
     assert stored_keys
 
 
@@ -207,7 +207,7 @@ async def test_run_prompt_task_returns_typed_provider_failure(
         return {"provider": "groq", "model": "llama", "api_key_encrypted": ""}
 
     def fake_get_prompt_task(task_type: str):
-        assert task_type == "missing_field_extraction"
+        assert task_type == "generic_runtime_probe"
         return {
             "system_file": "system.txt",
             "user_file": "user.txt",
@@ -250,7 +250,7 @@ async def test_run_prompt_task_returns_typed_provider_failure(
 
     result = await llm_runtime.run_prompt_task(
         db_session,
-        task_type="missing_field_extraction",
+        task_type="generic_runtime_probe",
         run_id=None,
         domain="example.com",
         variables={"missing_fields_json": "[]"},
@@ -334,14 +334,14 @@ async def test_run_prompt_task_blocks_uncached_provider_calls_over_run_cap(
 
     first = await llm_runtime.run_prompt_task(
         db_session,
-        task_type="missing_field_extraction",
+        task_type="generic_runtime_probe",
         run_id=run.id,
         domain="example.com",
         variables={"field": "materials"},
     )
     second = await llm_runtime.run_prompt_task(
         db_session,
-        task_type="missing_field_extraction",
+        task_type="generic_runtime_probe",
         run_id=run.id,
         domain="example.com",
         variables={"field": "care"},
@@ -416,7 +416,7 @@ async def test_run_prompt_task_budget_scope_is_independent_from_run_cap(
 
     first = await llm_runtime.run_prompt_task(
         db_session,
-        task_type="missing_field_extraction",
+        task_type="generic_runtime_probe",
         run_id=run.id,
         domain="example.com",
         budget_scope="data_enrichment:1",
@@ -424,7 +424,7 @@ async def test_run_prompt_task_budget_scope_is_independent_from_run_cap(
     )
     second = await llm_runtime.run_prompt_task(
         db_session,
-        task_type="missing_field_extraction",
+        task_type="generic_runtime_probe",
         run_id=run.id,
         domain="example.com",
         budget_scope="data_enrichment:2",
@@ -432,7 +432,7 @@ async def test_run_prompt_task_budget_scope_is_independent_from_run_cap(
     )
     third = await llm_runtime.run_prompt_task(
         db_session,
-        task_type="missing_field_extraction",
+        task_type="generic_runtime_probe",
         run_id=run.id,
         domain="example.com",
         budget_scope="data_enrichment:1",
@@ -492,7 +492,7 @@ async def test_run_prompt_task_returns_timeout_when_provider_exceeds_call_timeou
 
     result = await llm_runtime.run_prompt_task(
         db_session,
-        task_type="missing_field_extraction",
+        task_type="generic_runtime_probe",
         run_id=None,
         domain="example.com",
         variables={"field": "materials"},
@@ -515,7 +515,7 @@ async def test_run_prompt_task_returns_timeout_when_provider_exceeds_call_timeou
 
 @pytest.mark.asyncio
 @pytest.mark.regression
-async def test_run_prompt_task_validates_direct_record_extraction_array_payload(
+async def test_run_prompt_task_returns_array_response_payload(
     db_session: AsyncSession,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -526,7 +526,7 @@ async def test_run_prompt_task_validates_direct_record_extraction_array_payload(
         return {"provider": "groq", "model": "llama", "api_key_encrypted": ""}
 
     def fake_get_prompt_task(task_type: str):
-        assert task_type == "direct_record_extraction"
+        assert task_type == "generic_runtime_probe_array"
         return {
             "system_file": "system.txt",
             "user_file": "user.txt",
@@ -573,7 +573,7 @@ async def test_run_prompt_task_validates_direct_record_extraction_array_payload(
 
     result = await llm_runtime.run_prompt_task(
         db_session,
-        task_type="direct_record_extraction",
+        task_type="generic_runtime_probe_array",
         run_id=None,
         domain="example.com",
         variables={"html_snippet": "Widget Prime"},

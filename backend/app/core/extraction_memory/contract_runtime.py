@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from app.core.config import field_mappings
-from app.core.knowledge_graph.templates import (
+from app.core.extraction_memory.templates import (
     normalize_route,
     normalize_source_pattern,
     source_pattern,

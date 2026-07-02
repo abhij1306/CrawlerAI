@@ -5,12 +5,90 @@ import re
 from pathlib import Path
 
 import pytest
+from radon.complexity import cc_visit
 
 pytestmark = pytest.mark.unit
 
 APP_ROOT = Path(__file__).resolve().parents[2] / "app"
-OVERSIZED_MODULE_DEBT: set[str] = {"extraction/resolution.py"}
-LONG_FUNCTION_DEBT: set[tuple[str, str]] = set()
+OVERSIZED_MODULE_DEBT = {
+    "acquisition/browser_recovery.py": 746,
+    "acquisition/browser_result_builder.py": 714,
+    "core/config/extraction_rules/_detail.py": 981,
+    "extraction/collectors/dom.py": 1024,
+    "extraction/collectors/js_state.py": 908,
+    "extraction/entities.py": 712,
+    "extraction/resolution.py": 2386,
+    "extraction/validation.py": 706,
+}
+COMPLEX_FUNCTION_DEBT = {
+    ("acquisition/browser_block_detection.py", "_block_policy_matches"): 32,
+    ("acquisition/browser_capture.py", "_repair_truncated_json_prefix"): 30,
+    ("acquisition/browser_detail.py", "_candidate_is_admitted"): 56,
+    ("acquisition/browser_identity.py", "build_playwright_context_spec"): 22,
+    ("acquisition/browser_listing_visual.py", "listing_visual_elements_html"): 22,
+    ("acquisition/browser_page_helpers.py", "_select_primary_browser_html"): 22,
+    ("acquisition/browser_readiness.py", "analyze_extractable_content"): 35,
+    ("acquisition/browser_readiness.py", "_has_detail_dom_signals"): 22,
+    ("acquisition/browser_readiness.py", "probe_browser_readiness"): 30,
+    ("acquisition/browser_readiness.py", "_ecommerce_node_has_product_evidence"): 23,
+    ("acquisition/platform_policy.py", "detect_platform_family"): 24,
+    ("acquisition/source_capabilities.py", "build_source_capability_diagnostics"): 24,
+    ("acquisition/traversal_card_counting.py", "count_listing_cards"): 30,
+    ("core/records/confidence.py", "_field_penalties"): 23,
+    ("core/records/divergence.py", "compare_records_to_projection"): 21,
+    ("core/records/divergence.py", "_compare_variants"): 23,
+    ("core/records/divergence.py", "_compare_assets"): 35,
+    ("core/records/field_url_normalization.py", "canonical_public_record_url"): 30,
+    ("core/records/js_state_scope.py", "path_product_identity_conflicts"): 21,
+    ("core/records/normalizers/__init__.py", "normalize_decimal_price"): 26,
+    ("core/records/normalizers/__init__.py", "normalize_value"): 27,
+    ("core/records/schema_service.py", "_snapshot_to_resolved"): 29,
+    ("core/records/selectors_runtime.py", "update_selector_record"): 22,
+    ("core/records/structured_variant_state.py", "with_parent_variant_axes"): 21,
+    ("core/records/url_identity.py", "_short_numeric_product_asset_conflicts"): 28,
+    ("core/shared/field_coerce.py", "sanitize_option_scalar"): 32,
+    ("core/shared/field_coerce_dispatch.py", "coerce_field_value"): 54,
+    ("core/shared/field_coerce_text.py", "infer_brand_from_page_identity"): 38,
+    ("core/shared/field_coerce_text.py", "infer_brand_from_product_url"): 69,
+    ("core/shared/text_coerce.py", "is_title_noise"): 22,
+    ("core/shared/url_utils.py", "extract_urls"): 25,
+    ("core/extraction_memory/contract_runtime.py", "resolved_contract_outcomes"): 23,
+    ("crawl/crud.py", "create_crawl_run"): 23,
+    ("crawl/profile/acquisition_contract.py", "build_success_acquisition_contract"): 22,
+    ("crawl/review/__init__.py", "apply_domain_recipe_field_action"): 31,
+    ("crawl/sitemap_nav.py", "_looks_like_category_url"): 21,
+    ("crawl/site_link_discovery.py", "discover_rendered_category_links"): 23,
+    ("extraction/collectors/_helpers.py", "_subject_id"): 23,
+    ("extraction/collectors/js_state.py", "network_row"): 41,
+    ("extraction/collectors/js_state.py", "_looks_like_variant"): 23,
+    ("extraction/engine.py", "_assess"): 32,
+    ("extraction/entities.py", "_variant_groups"): 21,
+    ("extraction/entities.py", "_variant_identity_keys"): 24,
+    ("extraction/pipeline.py", "_flag_brand_conflicts"): 30,
+    ("extraction/pipeline.py", "normalize_evidence"): 40,
+    ("extraction/pipeline.py", "_title_flags"): 29,
+    ("extraction/publication.py", "commerce_detail_projection"): 40,
+    ("extraction/publication.py", "serialize_commerce_detail_projection"): 25,
+    ("extraction/replay.py", "fixture_bundle_from_inputs"): 29,
+    ("extraction/resolution.py", "resolve"): 29,
+    ("extraction/resolution.py", "_price_unit_repairs"): 37,
+    ("extraction/resolution.py", "_reconcile_variant_prices"): 25,
+    ("extraction/resolution.py", "_offer_atomic_price_currency_preferences"): 22,
+    ("extraction/resolution.py", "_inherit_variant_offer_facts"): 22,
+    ("extraction/resolution.py", "_resolve_scalar"): 22,
+    ("extraction/resolution.py", "_semantic_derived_facts"): 25,
+    ("extraction/result_building.py", "field_evidence_states"): 41,
+    ("extraction/result_building.py", "projection_field_states"): 58,
+    ("extraction/result_building.py", "retry_request"): 27,
+    ("extraction/validation.py", "_validate_child_join_failures"): 32,
+    ("extraction/validation.py", "_validate_availability_consistency"): 25,
+    ("intelligence/discovery.py", "_parse_serpapi_immersive_results"): 33,
+    ("intelligence/matching.py", "_apply_identity_floor"): 21,
+    ("intelligence/matching.py", "extract_search_result_snapshot"): 22,
+    ("observability/diagnose.py", "build_diagnosis"): 24,
+    ("observability/run_report.py", "_root_causes"): 27,
+    ("persistence/publish/metrics.py", "build_url_metrics"): 30,
+}
 
 LEGACY_RECORD_FIELD_COMPATIBILITY_OWNERS = {
     "core response shaping": "schemas/crawl.py",
@@ -30,8 +108,10 @@ def _class_owners(class_name: str) -> set[str]:
     return owners
 
 
-def _canonical_line_count(node: ast.AST) -> int:
-    return len(ast.unparse(node).splitlines())
+def _physical_line_count(path: Path) -> int:
+    return sum(
+        bool(line.strip()) for line in path.read_text(encoding="utf-8").splitlines()
+    )
 
 
 def _parse_module(path: Path) -> ast.Module:
@@ -52,32 +132,27 @@ def _function_parameter_names(relative_path: str, function_name: str) -> set[str
 
 
 PACKAGE_LOC_BUDGETS = {
-    "acquisition": 15_400,
-    "crawl": 9_250,
-    "core": 14_500,
-    "enrichment": 2_150,
-    "connectors": 2_700,
-    "intelligence": 3_250,
-    "extraction": 5_500,
+    "acquisition": 16_873,
+    "crawl": 8_673,
+    "core": 17_204,
+    "enrichment": 2_021,
+    "connectors": 2_467,
+    "intelligence": 3_216,
+    "extraction": 11_873,
 }
-TOTAL_APP_LOC_BUDGET = 62_600
+TOTAL_APP_LOC_BUDGET = 71_204
 
 
 def test_production_package_loc_budgets() -> None:
-    app_trees = {
-        path: _parse_module(path)
-        for path in APP_ROOT.rglob("*.py")
-        if "__pycache__" not in path.parts
-    }
-    assert (
-        sum(_canonical_line_count(tree) for tree in app_trees.values())
-        <= TOTAL_APP_LOC_BUDGET
-    )
+    app_files = [
+        path for path in APP_ROOT.rglob("*.py") if "__pycache__" not in path.parts
+    ]
+    assert sum(_physical_line_count(path) for path in app_files) <= TOTAL_APP_LOC_BUDGET
     for package, budget in PACKAGE_LOC_BUDGETS.items():
         package_root = APP_ROOT / package
         package_total = sum(
-            _canonical_line_count(tree)
-            for path, tree in app_trees.items()
+            _physical_line_count(path)
+            for path in app_files
             if package_root in path.parents
         )
         assert package_total <= budget, (package, package_total, budget)
@@ -85,23 +160,28 @@ def test_production_package_loc_budgets() -> None:
 
 def test_no_new_oversized_modules() -> None:
     oversized = {
-        path.relative_to(APP_ROOT).as_posix()
+        path.relative_to(APP_ROOT).as_posix(): _physical_line_count(path)
         for path in APP_ROOT.rglob("*.py")
-        if _canonical_line_count(_parse_module(path)) > 700
+        if _physical_line_count(path) > 700
     }
-    assert oversized <= OVERSIZED_MODULE_DEBT
+    assert oversized.keys() == OVERSIZED_MODULE_DEBT.keys()
+    assert all(
+        lines <= OVERSIZED_MODULE_DEBT[path] for path, lines in oversized.items()
+    )
 
 
-def test_no_new_long_functions() -> None:
-    long_functions: set[tuple[str, str]] = set()
+def test_no_new_complex_functions() -> None:
+    complex_functions: dict[tuple[str, str], int] = {}
     for path in APP_ROOT.rglob("*.py"):
-        tree = _parse_module(path)
-        for node in ast.walk(tree):
-            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                continue
-            if _canonical_line_count(node) > 100:
-                long_functions.add((path.relative_to(APP_ROOT).as_posix(), node.name))
-    assert long_functions <= LONG_FUNCTION_DEBT
+        relative_path = path.relative_to(APP_ROOT).as_posix()
+        for block in cc_visit(path.read_text(encoding="utf-8")):
+            if block.complexity > 20:
+                complex_functions[(relative_path, block.name)] = block.complexity
+    assert complex_functions.keys() == COMPLEX_FUNCTION_DEBT.keys()
+    assert all(
+        complexity <= COMPLEX_FUNCTION_DEBT[key]
+        for key, complexity in complex_functions.items()
+    )
 
 
 def test_legacy_record_columns_have_no_new_direct_consumers() -> None:

@@ -7,13 +7,17 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.crawl_run import CrawlRun
-from app.models.domain_memory import DomainMemory, DomainRunProfile
+from app.models.domain_memory import DomainRunProfile
 from app.schemas.public_api import PublicDomainInfo
 from app.core.config.public_api import (
     PUBLIC_API_INTERNAL_ECOMMERCE_SURFACE,
     PUBLIC_API_SURFACE_ECOMMERCE,
 )
-from app.crawl.domain_memory_service import selector_rules_from_memory
+from app.crawl.domain_memory_service import (
+    SelectorMemory,
+    load_domain_memory,
+    selector_rules_from_memory,
+)
 from app.core.domain_utils import normalize_domain
 
 
@@ -33,15 +37,9 @@ async def public_domain_info(session: AsyncSession, *, domain: str) -> PublicDom
     )
 
 
-async def _load_memory(session: AsyncSession, domain: str) -> DomainMemory | None:
-    return await session.scalar(
-        select(DomainMemory)
-        .where(
-            DomainMemory.domain == domain,
-            DomainMemory.surface == PUBLIC_API_INTERNAL_ECOMMERCE_SURFACE,
-        )
-        .order_by(DomainMemory.updated_at.desc(), DomainMemory.id.desc())
-        .limit(1)
+async def _load_memory(session: AsyncSession, domain: str) -> SelectorMemory | None:
+    return await load_domain_memory(
+        session, domain=domain, surface=PUBLIC_API_INTERNAL_ECOMMERCE_SURFACE
     )
 
 
@@ -72,7 +70,7 @@ async def _last_crawled_at(session: AsyncSession, domain: str) -> datetime | Non
     return completed_at or created_at
 
 
-def _has_active_selectors(memory: DomainMemory | None) -> bool:
+def _has_active_selectors(memory: SelectorMemory | None) -> bool:
     return any(
         bool(row.get("is_active", True)) for row in selector_rules_from_memory(memory)
     )

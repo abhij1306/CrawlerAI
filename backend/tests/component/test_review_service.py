@@ -3,8 +3,7 @@ from __future__ import annotations
 import pytest
 
 from app.models.crawl_run import CrawlRecord
-from app.models.domain_memory import DomainFieldFeedback
-from app.models.review import ReviewPromotion
+from app.models.extraction_memory import ExtractionOperatorLabel
 from app.crawl.domain_memory_service import load_domain_memory, save_domain_memory
 from app.crawl.review import (
     apply_domain_recipe_field_action,
@@ -16,6 +15,9 @@ from app.core.records.schema_service import ResolvedSchema
 from app.core.records.schema_service import load_resolved_schema
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+DomainFieldFeedback = ExtractionOperatorLabel
+ReviewPromotion = ExtractionOperatorLabel
 
 
 @pytest.mark.asyncio
@@ -65,7 +67,7 @@ async def test_save_review_persists_mapping_and_promotes_values(
     promotion = (
         await db_session.execute(
             select(ReviewPromotion)
-            .where(ReviewPromotion.run_id == run.id)
+            .where(ReviewPromotion.source_run_id == run.id)
             .order_by(ReviewPromotion.id.desc())
             .limit(1)
         )
@@ -94,7 +96,8 @@ async def test_load_resolved_schema_reads_latest_review_promotion_snapshot(
     db_session.add_all(
         [
             ReviewPromotion(
-                run_id=run.id,
+                label_kind="review_promotion",
+                source_run_id=run.id,
                 domain="example.com",
                 surface="ecommerce_detail",
                 approved_schema={
@@ -108,7 +111,8 @@ async def test_load_resolved_schema_reads_latest_review_promotion_snapshot(
                 field_mapping={"material_notes": "materials"},
             ),
             ReviewPromotion(
-                run_id=run.id,
+                label_kind="review_promotion",
+                source_run_id=run.id,
                 domain="example.com",
                 surface="ecommerce_detail",
                 approved_schema={
@@ -224,7 +228,7 @@ async def test_save_review_excludes_falsy_normalized_new_fields(
     promotion = (
         await db_session.execute(
             select(ReviewPromotion)
-            .where(ReviewPromotion.run_id == run.id)
+            .where(ReviewPromotion.source_run_id == run.id)
             .order_by(ReviewPromotion.id.desc())
             .limit(1)
         )
@@ -469,6 +473,7 @@ async def test_list_domain_field_feedback_skips_invalid_serialized_source_record
     )
     db_session.add(
         DomainFieldFeedback(
+            label_kind="field_feedback",
             domain="example.com",
             surface="ecommerce_detail",
             field_name="price",

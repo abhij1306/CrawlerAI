@@ -7,6 +7,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from radon.complexity import cc_visit
 
 from app.schemas.crawl import CrawlCreate
 from app.connectors.public_api.extraction_service import _internal_surface
@@ -35,8 +36,15 @@ def _python_files(root: Path) -> list[Path]:
     return [path for path in root.rglob("*.py") if "__pycache__" not in path.parts]
 
 
-def _canonical_line_count(node: ast.AST) -> int:
-    return len(ast.unparse(node).splitlines())
+def _physical_line_count(path: Path) -> int:
+    return sum(
+        bool(line.strip()) for line in path.read_text(encoding="utf-8").splitlines()
+    )
+
+
+def _max_cyclomatic_complexity(path: Path) -> int:
+    blocks = cc_visit(path.read_text(encoding="utf-8"))
+    return max((block.complexity for block in blocks), default=1)
 
 
 def _parse_module(path: Path) -> ast.Module:
@@ -190,13 +198,25 @@ def test_surface_inference_modules_are_deleted() -> None:
 
 def test_extraction_package_stays_within_architecture_limits() -> None:
     files = _python_files(EXTRACTION_ROOT)
-    trees = {path: _parse_module(path) for path in files}
+    manifest = tomllib.loads(SEMANTIC_SURFACE_MANIFEST.read_text(encoding="utf-8"))
+    ratchets = manifest["ratchets"]
+    module_loc_budgets = ratchets["module_physical_loc_budgets"]
+    complexity_budgets = ratchets["module_cyclomatic_complexity_budgets"]
+    default_complexity_budget = ratchets["default_module_cyclomatic_complexity_budget"]
+
     assert len(files) <= 24
-    assert sum(_canonical_line_count(tree) for tree in trees.values()) <= 5500
-    for path, tree in trees.items():
-        for node in ast.walk(tree):
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                assert _canonical_line_count(node) <= 60, (path, node.name)
+    assert (
+        sum(_physical_line_count(path) for path in files)
+        <= ratchets["physical_loc_budget"]
+    )
+    relative_paths = {path.relative_to(EXTRACTION_ROOT).as_posix() for path in files}
+    assert relative_paths == set(module_loc_budgets)
+    for path in files:
+        relative_path = path.relative_to(EXTRACTION_ROOT).as_posix()
+        assert _physical_line_count(path) <= module_loc_budgets[relative_path], path
+        assert _max_cyclomatic_complexity(path) <= complexity_budgets.get(
+            relative_path, default_complexity_budget
+        ), path
 
 
 # Domains that may legitimately appear as string constants in extraction
@@ -280,21 +300,11 @@ def test_extraction_rules_have_no_matrix_tuned_constants() -> None:
     assert not offenders, offenders
 
 
-def test_extraction_does_not_import_knowledge_graph_storage() -> None:
-    """Dependency direction: extraction produces evidence, it never reads the graph.
-
-    The Knowledge Graph is projected *downstream* of extraction (Slices 5-8).
-    Extraction may import the vocabulary config (`app.core.config.knowledge_graph`,
-    data only) but must not import graph tables, the repository, or the projector
-    — that would invert the dependency arrow and let graph state leak into a
-    single page's extraction.
-    """
+def test_extraction_does_not_import_extraction_memory_storage() -> None:
+    """Extraction reads frozen pure contracts, never mutable memory storage."""
     forbidden_prefixes = (
-        "app.persistence.knowledge_graph",
-        "app.persistence.graph",
-        "app.knowledge_graph",
-        "app.models.knowledge_graph",
-        "app.models.kg",
+        "app.persistence.extraction_memory",
+        "app.models.extraction_memory",
     )
     offenders: list[tuple[Path, str]] = []
     for path in _python_files(EXTRACTION_ROOT):
@@ -343,7 +353,7 @@ def test_extraction_semantic_surface_manifest_is_current() -> None:
         "app/extraction",
         "app/core/records/divergence.py",
         "app/core/records/output_safety.py",
-        "app/core/knowledge_graph/contract_runtime.py",
+        "app/core/extraction_memory/contract_runtime.py",
         "app/core/shared/field_coerce*.py",
         "app/core/config/extraction_rules",
         "app/core/config/extraction_price_rules.py",
@@ -361,6 +371,9 @@ def test_extraction_semantic_surface_manifest_is_current() -> None:
     assert ratchets["contracts_bypass_ownership_allowed"] is False
     assert ratchets["persistence_extraction_repair_allowed"] is False
     assert ratchets["publish_receives_evidence_or_entity_graph"] is False
+    assert ratchets["physical_loc_budget"] >= sum(
+        ratchets["module_physical_loc_budgets"].values()
+    )
 
 
 def test_publish_surface_does_not_receive_raw_evidence_or_entity_graph() -> None:
@@ -419,3 +432,19 @@ def test_persistence_performs_no_extraction_repair() -> None:
         for alias in node.names
     )
     assert not forbidden.intersection(referenced)
+
+
+def test_no_post_resolution_repair_scaffolding_remains() -> None:
+    # The post-extraction repair era left `field_repair`/`self_heal` conduits in
+    # persistence + the export projection with no producer anywhere. They were
+    # deleted in Phase 0 / Slice 0.4; this proves they cannot silently return.
+    # `resolution.py`'s legitimate in-authority price repair uses the distinct
+    # `repair_price_unit` / `_price_unit_repairs` names, which do not match.
+    forbidden_tokens = ("field_repair", "self_heal")
+    offenders = {
+        path.relative_to(APP_ROOT).as_posix()
+        for path in APP_ROOT.rglob("*.py")
+        if "__pycache__" not in path.parts
+        and any(token in path.read_text(encoding="utf-8") for token in forbidden_tokens)
+    }
+    assert not offenders

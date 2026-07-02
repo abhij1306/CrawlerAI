@@ -32,10 +32,10 @@ Engineering constraints for CrawlerAI. Defines how code should be shaped and how
 | 3 | Acquisition + Browser Runtime | `app/acquisition/*`, `app/core/url_safety.py` |
 | 4 | Extraction | `app/extraction/*`, `app/core/records/*` |
 | 5 | Publish + Persistence | `app/persistence/*`, `app/crawl/pipeline/persistence.py` |
-| 6 | Review + Selectors + Domain Memory | `app/crawl/review/*`, `app/core/records/selectors_runtime.py`, `app/crawl/domain_memory_service.py` |
+| 6 | Review + Selectors | `app/crawl/review/*`, `app/core/records/selectors_runtime.py`, `app/crawl/domain_memory_service.py` |
 | 7 | LLM Admin + Runtime | `app/connectors/llm/*` |
 | 8 | Data Enrichment | `app/api/data_enrichment.py`, `app/enrichment/*`, `app/models/data_enrichment.py` |
-| 9 | Knowledge Graph | `app/persistence/projection.py`, `app/persistence/knowledge_graph.py`, `app/api/knowledge.py`, `app/models/knowledge_graph.py` |
+| 9 | Extraction Memory | `app/persistence/extraction_memory.py`, `app/api/knowledge.py`, `app/models/extraction_memory.py` |
 
 Config tunables for all buckets → `app/core/config/*`
 
@@ -200,13 +200,31 @@ Binary assets in the repository root become mystery blobs and make README/docs c
 
 **Fix:** Move assets under `docs/assets/` or the owning frontend/static asset folder with a descriptive filename, then update references.
 
-### AP-24: Direct canonical graph writes
+### AP-24: Direct extraction-memory writes
 
-Writing Knowledge Graph entities, claims, relationships, or contracts from extraction collectors or the extraction engine couples deterministic extraction to mutable storage.
+Writing templates, recipes, manifests, labels, or observations from extraction collectors or the extraction engine couples deterministic extraction to mutable storage.
 
-**Violation looks like:** `app/extraction/*` imports graph models or `app/persistence/knowledge_graph.py`, or a collector updates a contract while resolving the current page.
+**Violation looks like:** `app/extraction/*` imports extraction-memory models/repository, or a collector updates a recipe while resolving the current page.
 
-**Fix:** Extraction emits immutable evidence, decisions, and contract outcomes. `app/persistence/projection.py` is the canonical graph writer after extraction; `app/api/knowledge.py` owns explicit operator refinement.
+**Fix:** Extraction emits immutable evidence, decisions, and contract outcomes. `app/persistence/extraction_memory.py` records observations after extraction; `app/api/knowledge.py` owns explicit operator refinement.
+
+### AP-27: Parallel learned-state stores
+
+Selectors, contract choices, review promotions, feedback, and run manifests in separate stores drift and produce conflicting runtime truth.
+
+**Fix:** Persist all learned structural state through `models/extraction_memory.py`. Acquisition-only run profiles, cookies, and host protection stay separate.
+
+### AP-28: Normalized-AST LOC ratchets
+
+`ast.unparse()` line counts hide physical module size and can report less than half the maintained source surface.
+
+**Fix:** Count nonblank physical lines and pair the budget with explicit Radon cyclomatic-complexity debt.
+
+### AP-29: Mega test modules
+
+Multi-thousand-line suites obscure ownership and make focused verification impossible.
+
+**Fix:** Split by public behavior owner. Shared fixture vocabulary may live in a non-test support module; preserve collected behavior count during the split.
 
 ### AP-25: Parallel artifact layouts
 

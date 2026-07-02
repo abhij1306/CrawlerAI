@@ -444,31 +444,20 @@ apply to every branded ecommerce target. Raw internal retailer identifiers (a co
 
 ---
 
-## 17. Knowledge Graph — Extraction-Owned, PostgreSQL-Authoritative
+## 17. Extraction Memory — Single PostgreSQL Owner
 
-**Rule:** The Knowledge Graph is the extraction-owned, durable, cross-crawl record of site templates, canonical-field source candidates, source decisions, extraction contracts, product claims, and relationships. Domain Memory remains acquisition-owned (engines, cookies, saved selectors, run profiles, host protection). The two never migrate into each other and reset independently. PostgreSQL is authoritative — no Neo4j, no Apache AGE, no synchronous dual writes.
+**Supersession (2026-07-02, D4):** This rule replaces the former Knowledge Graph greenfield/no-backfill/reset-separation contract. The generic entity/relationship/claim graph and the parallel selector, review-promotion, field-feedback, and run-JSON stores were intentionally consolidated.
 
-The graph vocabulary and bounds have a single owner: `app/core/config/knowledge_graph.py` (node/edge types, statuses, projection statuses, selection origins, contract outcomes, the identity ladder, read bounds, projection tunables). This module is data only — config-level ratchets and later projection/API slices import it; nothing redefines these constants.
+**Rule:** `app/models/extraction_memory.py` is the only durable owner for structural templates, recipe layers, compiled recipes, locale-policy references, immutable run releases, per-URL manifests, operator labels, and extraction observations. PostgreSQL is authoritative.
 
-These contracts hold across all graph slices:
+- **Frozen releases.** Run creation writes one immutable `ExtractionReleaseSnapshot`; workers load it through `CrawlRun.extraction_release_snapshot_id`. Live recipe changes cannot affect an in-flight run.
+- **Per-URL identity.** Every persisted URL result receives an `ExtractionManifest` and exposes its ID through `CrawlUrlResult.extraction_manifest_id`.
+- **Selectors are recipes.** `(domain, surface)` selector memory is the `domain-default` template's `selectors` recipe. `DomainMemory.selectors` must not return.
+- **Labels are unified.** Review promotions and field feedback are typed rows in `ExtractionOperatorLabel`, distinguished by `label_kind`.
+- **Extraction stays storage-free.** `app/extraction/` may import pure helpers from `app/core/extraction_memory/`; it must not import `app/models/extraction_memory.py` or `app/persistence/extraction_memory.py`.
+- **Resolve remains authority.** Saved contracts rank already-admissible evidence only. They cannot create ownership, resurrect rejected evidence, or publish values directly.
+- **Models remain evaluated fallback.** ML/LLM output is evidence only, is lazy off the deterministic success path, and cannot enter release evaluation unless qualified by the evaluation schema.
+- **Challengers cannot override.** A Sentinel/challenger may diagnose or suspend a recipe under an approved policy; it cannot directly replace resolved truth.
+- **Grounded publication.** No learned or LLM-produced value reaches publication without a source locator and resolver acceptance.
 
-- **Dependency direction is one-way.** Extraction emits observations; it never reads or writes canonical graph storage. `app/extraction/` must not import graph tables, repository, or projector (enforced by `tests/unit/test_extraction_architecture.py::test_extraction_does_not_import_knowledge_graph_storage`). Importing the config vocabulary is allowed.
-- **No site-specific extraction.** Generic extraction carries no retailer-domain literals or per-site branches; site knowledge lives in operator-approved extraction contracts, not code (enforced by `test_extraction_carries_no_retailer_domain_literals`; see Rules 1 and 13).
-- **Frozen versions.** Every run freezes graph version and matching extraction contracts into `extraction_runtime_snapshot` at run creation; concurrent graph updates never destabilize an in-flight run.
-- **Greenfield, no backfill.** The graph is built forward from new-format capsules only; there is no Domain Memory or legacy-artifact migration.
-- **Reset preservation.** Workspace reset and Domain Memory reset preserve the graph; graph purge is explicit and leaves Domain Memory intact.
-- **Deterministic product identity.** `PRODUCT_SAME_AS` is created only from the deterministic ladder (GTIN → manufacturer+MPN → site product ID → site SKU → canonical URL) or explicit operator approval. Title, vector, and LLM similarity may seed candidate edges only, never authoritative identity.
-- **Variants are aggregate-only.** Individual variants are never graph entities; only one canonical variant-set claim (axes, count, fingerprint, selected source, lineage) persists per product.
-- **Operator source choices are precedence, not forced values.** A preferred source is validated on each page and falls back deterministically; choices affect only matching future runs and never rewrite historical records.
-- **No LLM in the hot path.** The runtime that consumes contracts calls no LLM. The cold-start proposer produces only `selection_origin=llm_proposed` contracts; nothing is auto-activated — operators promote proposals.
-
-**VIOLATION signatures:**
-- `app/extraction/` imports graph storage/models/projector, or any code path writes graph rows from inside extraction.
-- A retailer-domain string literal or `if host == "...store.com"` branch appears in generic extraction.
-- Graph node/edge/status/bound constants are redefined outside `app/core/config/knowledge_graph.py`.
-- A run reads live graph state instead of its frozen `extraction_runtime_snapshot`.
-- A workspace or Domain Memory reset deletes graph tables, or a graph purge wipes Domain Memory.
-- A `PRODUCT_SAME_AS` edge is created from title/vector/LLM similarity alone.
-- An individual variant is persisted as a graph entity.
-- An operator source change rewrites historical record values, or applies to non-matching templates.
-- An LLM call runs in the contract-consuming extraction runtime, or an `llm_proposed` contract is auto-activated without operator promotion.
+**VIOLATION signatures:** parallel selector/review/feedback stores; `extraction_runtime_snapshot` in run settings; generic KG entity/edge/claim tables; extraction importing mutable memory; ungrounded learned values; challenger output directly changing records.

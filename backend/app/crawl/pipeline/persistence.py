@@ -400,7 +400,6 @@ def _discovered_data_for_record(
         key: value
         for key, value in {
             "confidence": confidence,
-            "field_repair": mapping_or_empty(raw_record.get("_field_repair")),
             "manifest_trace": mapping_or_empty(raw_record.get("_manifest_trace")),
             "semantic": mapping_or_empty(raw_record.get("_semantic")),
             "review_bucket": _object_list(raw_record.get("_review_bucket")),

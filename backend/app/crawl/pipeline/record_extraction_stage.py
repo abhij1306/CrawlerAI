@@ -24,6 +24,10 @@ from app.crawl.pipeline.runtime_helpers import (
 from app.acquisition.platform_policy import detect_platform_family
 from app.acquisition.variant_endpoint_expansion import expand_sfcc_variant_endpoints
 from app.persistence.publish import build_url_metrics
+from app.persistence.extraction_memory import (
+    load_release_payload,
+    selector_rules_from_release,
+)
 
 from .url_processing_context import (
     FetchedURLStage as _FetchedURLStage,
@@ -118,6 +122,9 @@ async def _run_record_extraction(
     from app.crawl.pipeline import extraction_loop
 
     await _expand_variant_endpoint_payloads(context, acquisition_result)
+    runtime_snapshot = await load_release_payload(
+        context.session, context.run.extraction_release_snapshot_id
+    )
     extract_records_impl = getattr(
         extraction_loop,
         "extract_records_for_acquisition_result",
@@ -146,7 +153,7 @@ async def _run_record_extraction(
             requested_page_url=context.url,
             requested_fields=list(context.requested_fields),
             selector_rules=selector_rules,
-            runtime_snapshot=context.run.settings_view.extraction_runtime_snapshot(),
+            runtime_snapshot=runtime_snapshot,
         )
         set_logfire_attributes(
             span,
@@ -231,6 +238,9 @@ async def _extract_records_from_preserved_browser_html(
     )
     original_html = acquisition_result.html
     acquisition_result.html = rendered_html
+    runtime_snapshot = await load_release_payload(
+        context.session, context.run.extraction_release_snapshot_id
+    )
     try:
         fallback_result = await asyncio.to_thread(
             extract_impl,
@@ -240,7 +250,7 @@ async def _extract_records_from_preserved_browser_html(
             requested_page_url=context.url,
             requested_fields=list(context.requested_fields),
             selector_rules=selector_rules,
-            runtime_snapshot=context.run.settings_view.extraction_runtime_snapshot(),
+            runtime_snapshot=runtime_snapshot,
         )
     finally:
         acquisition_result.html = original_html
@@ -290,18 +300,24 @@ async def _load_selector_rules(
     context: _URLProcessingContext,
     page_url: str,
 ) -> list[dict[str, object]]:
-    from app.crawl.pipeline import extraction_loop
+    if context.run.extraction_release_snapshot_id is not None:
+        release = await load_release_payload(
+            context.session, context.run.extraction_release_snapshot_id
+        )
+        saved_rules = selector_rules_from_release(release, surface=context.surface)
+    else:
+        from app.crawl.pipeline import extraction_loop
 
-    load_rules = getattr(
-        extraction_loop,
-        "load_domain_selector_rules",
-        load_domain_selector_rules,
-    )
-    saved_rules = await load_rules(
-        context.session,
-        domain=normalize_domain(page_url),
-        surface=context.surface,
-    )
+        load_rules = getattr(
+            extraction_loop,
+            "load_domain_selector_rules",
+            load_domain_selector_rules,
+        )
+        saved_rules = await load_rules(
+            context.session,
+            domain=normalize_domain(page_url),
+            surface=context.surface,
+        )
     return compose_runtime_selector_rules(
         saved_rules,
         context.run.settings_view.extraction_contract(),

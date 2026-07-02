@@ -3,9 +3,11 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from datetime import UTC, datetime
+import uuid
 
 from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text, text
 from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -72,6 +74,11 @@ class CrawlRun(UpdatedAtMixin, CompletedAtMixin, Base):
         DateTime(timezone=True), nullable=True
     )
     claim_count: Mapped[int] = mapped_column(Integer, default=0)
+    extraction_release_snapshot_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        nullable=True,
+        index=True,
+    )
     last_claimed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
@@ -170,6 +177,9 @@ class CrawlUrlResult(UpdatedAtMixin, CompletedAtMixin, Base):
     extraction_version: Mapped[str] = mapped_column(String(32), default="extraction.v2")
     bundle_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     manifest_uri: Mapped[str | None] = mapped_column(Text, nullable=True)
+    extraction_manifest_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True, index=True
+    )
     record_count: Mapped[int] = mapped_column(Integer, default=0)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
 

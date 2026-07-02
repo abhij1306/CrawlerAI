@@ -5,7 +5,7 @@ import logging
 from typing import Literal, cast
 
 from app.core.logfire_integration import logfire_span, set_logfire_attributes
-from app.models.crawl_run import CrawlRun
+from app.models.crawl_run import CrawlRun, CrawlUrlResult
 from app.acquisition.acquirer import PageAcquisitionResult
 from app.acquisition.acquirer import acquire as _acquire
 from app.acquisition.browser_fetch_support import browser_page_load_elapsed_ms
@@ -34,8 +34,7 @@ from .retry import build_acquisition_request, retry_extraction_request_with_brow
 from .persistence import persist_extracted_records
 from app.persistence.url_results import upsert_url_result
 from app.persistence.url_result_artifacts import publish_url_result_artifacts
-from app.persistence.projection import project_extraction_result
-from app.persistence.knowledge_graph import lock_site_version
+from app.persistence.extraction_memory import record_extraction_result
 from .record_extraction_stage import (
     extract_records_for_acquisition,
     update_acquisition_contract_memory,
@@ -458,7 +457,7 @@ async def _run_persistence_stage(
         persisted_count=persisted_count,
         verdict=verdict,
     )
-    await _project_knowledge_graph(context, extracted)
+    await _record_extraction_memory(context, extracted, url_result_id=url_result.id)
     return URLProcessingResult(
         records=extracted_records,
         verdict=verdict,
@@ -496,37 +495,34 @@ async def _publish_url_result_artifacts(
     await context.session.flush()
 
 
-async def _project_knowledge_graph(
+async def _record_extraction_memory(
     context: _URLProcessingContext,
     extracted: _ExtractedURLStage,
+    *,
+    url_result_id: int,
 ) -> None:
-    projection_url = str(
+    observed_url = str(
         getattr(extracted.fetched.acquisition_result, "final_url", "") or context.url
     )
     try:
         async with context.session.begin_nested():
-            await project_extraction_result(
+            manifest = await record_extraction_result(
                 context.session,
                 run_id=context.run.id,
-                url=projection_url,
+                url_result_id=url_result_id,
+                release_snapshot_id=context.run.extraction_release_snapshot_id,
+                url=observed_url,
+                surface=context.surface,
                 result=extracted.result,
             )
+            url_result = await context.session.get(CrawlUrlResult, url_result_id)
+            if url_result is not None:
+                url_result.extraction_manifest_id = manifest.id
     except Exception as exc:
-        try:
-            async with context.session.begin_nested():
-                site_version = await lock_site_version(
-                    context.session,
-                    normalize_domain(projection_url),
-                )
-                site_version.projection_status = "failed"
-        except Exception:
-            logger.debug(
-                "Failed to mark Knowledge Graph projection failure", exc_info=True
-            )
         await _log_pipeline_event(
             context,
             "error",
-            f"Knowledge Graph projection failed without changing crawl verdict: {type(exc).__name__}: {exc}",
+            f"Extraction-memory observation failed without changing crawl verdict: {type(exc).__name__}: {exc}",
             commit=False,
         )
 

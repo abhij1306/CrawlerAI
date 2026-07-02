@@ -716,57 +716,6 @@ def test_evaluate_quality_flags_cross_cutting_detail_invariants() -> None:
 
 
 @pytest.mark.regression
-def test_evaluate_quality_flags_missing_repair_diagnostics() -> None:
-    site = {
-        "surface": "ecommerce_detail",
-        "quality_expectations": {"require_repair_diagnostics": True},
-    }
-    result = {
-        "surface": "ecommerce_detail",
-        "requested_url": "https://example.com/products/widget",
-        "sample_title": "Widget",
-        "sample_record_data": {"title": "Widget"},
-        "sample_source_trace": {"extraction": {}},
-        "sample_semantics": {"price_present": False},
-        "failure_mode": "success",
-    }
-
-    quality = evaluate_quality(site, result)
-
-    assert quality["quality_verdict"] == "bad_output"
-    assert quality["observed_failure_mode"] == "repair_diagnostic_missing"
-    assert quality["quality_checks"]["repair_diagnostics_ok"] is False
-
-
-@pytest.mark.regression
-def test_evaluate_quality_accepts_visible_repair_diagnostics() -> None:
-    site = {
-        "surface": "ecommerce_detail",
-        "quality_expectations": {"require_repair_diagnostics": True},
-    }
-    result = {
-        "surface": "ecommerce_detail",
-        "requested_url": "https://example.com/products/widget",
-        "sample_title": "Widget",
-        "sample_record_data": {"title": "Widget"},
-        "sample_source_trace": {
-            "extraction": {
-                "field_repair": {
-                    "action": "skipped",
-                    "reason": "llm_disabled",
-                }
-            }
-        },
-        "sample_semantics": {"price_present": False},
-        "failure_mode": "success",
-    }
-
-    quality = evaluate_quality(site, result)
-
-    assert quality["quality_checks"]["repair_diagnostics_ok"] is True
-
-
-@pytest.mark.regression
 def test_evaluate_quality_flags_listing_chrome_noise() -> None:
     site = {
         "url": "https://www.customink.com/products/sweatshirts/hoodies/71",

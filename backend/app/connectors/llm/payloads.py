@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from typing import Annotated, Any, Literal, NotRequired, TypedDict
+from typing import Annotated, Any, Literal, TypedDict
 
 from app.core.config.llm_runtime import llm_runtime_settings
 from pydantic import (
@@ -15,26 +15,6 @@ from pydantic import (
 )
 
 
-def _require_present_value(value: Any) -> Any:
-    if value in (None, "", [], {}):
-        raise ValueError("must not be empty")
-    return value
-
-
-def _require_non_empty_text(value: str) -> str:
-    normalized = str(value or "").strip()
-    if not normalized:
-        raise ValueError("must not be empty")
-    return normalized
-
-
-def _require_payload_key(value: object) -> str:
-    normalized = str(value or "").strip()
-    if not normalized or normalized.startswith("_"):
-        raise ValueError("must be a non-empty field key")
-    return normalized
-
-
 def _require_schema_field_name(value: str) -> str:
     normalized = str(value or "").strip()
     if not normalized or not _is_valid_schema_field_name(normalized):
@@ -42,32 +22,7 @@ def _require_schema_field_name(value: str) -> str:
     return normalized
 
 
-_FieldKey = Annotated[str, AfterValidator(_require_payload_key)]
-_NonEmptyText = Annotated[str, AfterValidator(_require_non_empty_text)]
-_PresentValue = Annotated[Any, AfterValidator(_require_present_value)]
 _SchemaFieldName = Annotated[str, AfterValidator(_require_schema_field_name)]
-
-
-class _EvidenceDecision(TypedDict):
-    action: Literal["choose", "reject", "abstain"]
-    winning_evidence_ids: NotRequired[list[_NonEmptyText]]
-    rejected_evidence_ids: NotRequired[list[_NonEmptyText]]
-    note: NotRequired[str]
-
-
-class _EvidenceRecipeSuggestion(TypedDict):
-    field_name: _NonEmptyText
-    css_selector: NotRequired[str]
-    json_path: NotRequired[str]
-    endpoint_family: NotRequired[str]
-    source_ref: NotRequired[str]
-
-
-class _FieldCleanupReviewPayload(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    decisions: dict[_FieldKey, _EvidenceDecision] = Field(default_factory=dict)
-    recipe_suggestions: list[_EvidenceRecipeSuggestion] = Field(default_factory=list)
 
 
 class _PageClassificationPayload(TypedDict):
@@ -145,9 +100,6 @@ class _DataEnrichmentSemanticPayload(BaseModel):
 
 
 _PAYLOAD_ADAPTERS: dict[str, TypeAdapter[Any]] = {
-    "direct_record_extraction": TypeAdapter(list[dict[_FieldKey, Any]]),
-    "missing_field_extraction": TypeAdapter(dict[_FieldKey, Any]),
-    "field_cleanup_review": TypeAdapter(_FieldCleanupReviewPayload),
     "page_classification": TypeAdapter(_PageClassificationPayload),
     "schema_inference": TypeAdapter(_SchemaInferencePayload),
     "product_intelligence_enrichment": TypeAdapter(

@@ -805,9 +805,6 @@ def evaluate_quality(
         "system_artifacts_ok": _quality_system_artifacts_ok(
             result, expectations=expectations
         ),
-        "repair_diagnostics_ok": _quality_repair_diagnostics_ok(
-            result, expectations=expectations
-        ),
     }
     observed_failure_mode = _observed_quality_failure_mode(
         site,
@@ -847,7 +844,6 @@ def _quality_expectations(
         "require_identifier_shapes": surface == "ecommerce_detail",
         "require_title_not_internal_token": surface == "ecommerce_detail",
         "require_variant_currency_parity": surface == "ecommerce_detail",
-        "require_repair_diagnostics": False,
         "expect_variants": False,
         "require_semantic_variant_labels": False,
         "require_variant_price": False,
@@ -1159,35 +1155,6 @@ def _quality_system_artifacts_ok(
     return not (sku.startswith("copy-") or product_type in {"default", "tag", "inline"})
 
 
-def _quality_repair_diagnostics_ok(
-    result: dict[str, object],
-    *,
-    expectations: dict[str, bool],
-) -> bool:
-    if not expectations.get("require_repair_diagnostics"):
-        return True
-    record = _object_dict(result.get("sample_record_data"))
-    missing = [
-        field_name
-        for field_name in ("price", "title", "image_url")
-        if record.get(field_name) in (None, "", [], {})
-    ]
-    if not missing:
-        return True
-    trace = _object_dict(result.get("sample_source_trace"))
-    extraction = _object_dict(trace.get("extraction"))
-    field_repair = _object_dict(
-        extraction.get("field_repair") or trace.get("field_repair")
-    )
-    self_heal = _object_dict(extraction.get("self_heal") or trace.get("self_heal"))
-    return bool(
-        field_repair.get("reason")
-        or field_repair.get("action")
-        or self_heal.get("error")
-        or "triggered" in self_heal
-    )
-
-
 def _price_requirement_failed(
     result: dict[str, object],
     *,
@@ -1267,11 +1234,6 @@ def _observed_quality_failure_mode(
         and not checks["system_artifacts_ok"]
     ):
         return "system_artifact_pollution"
-    if (
-        expectations.get("require_repair_diagnostics")
-        and not checks["repair_diagnostics_ok"]
-    ):
-        return "repair_diagnostic_missing"
     if _price_requirement_failed(result, expectations=expectations):
         return "thin_detail"
     seeded_failure_mode = str(site.get("seed_failure_mode") or "").strip().lower()
@@ -1306,7 +1268,6 @@ def _quality_verdict(
         "identifier_shape_pollution",
         "title_internal_token",
         "system_artifact_pollution",
-        "repair_diagnostic_missing",
     }:
         return "bad_output"
     if _price_requirement_failed(result, expectations=expectations):

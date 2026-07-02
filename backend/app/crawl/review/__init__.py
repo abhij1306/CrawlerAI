@@ -5,11 +5,15 @@ from datetime import UTC, datetime
 
 from app.models.domain_memory import (
     DomainCookieMemory,
-    DomainFieldFeedback,
     DomainRunProfile,
 )
 from app.models.crawl_run import CrawlRecord, CrawlRun
-from app.models.review import ReviewPromotion
+from app.models.extraction_memory import ExtractionOperatorLabel
+from app.core.config.extraction_memory import (
+    EXTRACTION_LABEL_KIND_FIELD_FEEDBACK,
+    EXTRACTION_LABEL_KIND_REVIEW_PROMOTION,
+)
+
 from app.core.config.extraction_rules import EXTRACTION_RULES, REVIEW_CONTAINER_KEYS
 from app.core.db_utils import mapping_or_empty
 from app.crawl.profile import (
@@ -41,6 +45,8 @@ from app.core.records.selectors_runtime import (
 )
 from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+DomainFieldFeedback = ExtractionOperatorLabel
 
 
 async def build_review_payload(session: AsyncSession, run_id: int) -> dict | None:
@@ -185,8 +191,9 @@ async def save_review(
     if db_run is None:
         raise RuntimeError(f"CrawlRun not found for review save: run_id={run.id}")
     saved_at = datetime.now(UTC).isoformat()
-    promotion = ReviewPromotion(
-        run_id=db_run.id,
+    promotion = ExtractionOperatorLabel(
+        label_kind=EXTRACTION_LABEL_KIND_REVIEW_PROMOTION,
+        source_run_id=db_run.id,
         domain=domain,
         surface=db_run.surface,
         approved_schema={
@@ -561,6 +568,7 @@ async def apply_domain_recipe_field_action(
                     break
 
         feedback = DomainFieldFeedback(
+            label_kind=EXTRACTION_LABEL_KIND_FIELD_FEEDBACK,
             domain=domain,
             surface=run.surface,
             field_name=field_name,
@@ -597,9 +605,13 @@ async def list_domain_field_feedback(
     surface: str = "",
     limit: int = 50,
 ) -> list[dict[str, object]]:
-    statement = select(DomainFieldFeedback).order_by(
-        desc(DomainFieldFeedback.created_at),
-        desc(DomainFieldFeedback.id),
+    statement = (
+        select(DomainFieldFeedback)
+        .where(DomainFieldFeedback.label_kind == EXTRACTION_LABEL_KIND_FIELD_FEEDBACK)
+        .order_by(
+            desc(DomainFieldFeedback.created_at),
+            desc(DomainFieldFeedback.id),
+        )
     )
     if domain:
         statement = statement.where(DomainFieldFeedback.domain == domain)
@@ -633,6 +645,8 @@ async def _latest_field_feedback_index(
             await session.execute(
                 select(DomainFieldFeedback)
                 .where(
+                    DomainFieldFeedback.label_kind
+                    == EXTRACTION_LABEL_KIND_FIELD_FEEDBACK,
                     DomainFieldFeedback.domain == domain,
                     DomainFieldFeedback.surface == surface,
                 )

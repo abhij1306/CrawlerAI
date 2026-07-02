@@ -24,7 +24,7 @@ If a file is not listed, assume it is a helper under a listed owner.
 | `records.py` | Record listing, exports, provenance |
 | `review.py` | Review payloads and approved mapping save |
 | `selectors.py` | Selector CRUD, suggest, test, preview |
-| `knowledge.py` | Knowledge Graph site/entity/graph/contract reads, operator source selection, admin rebuild/purge/delete |
+| `knowledge.py` | Compatibility routes for extraction-memory template/recipe reads and operator source selection |
 | `llm.py` | LLM provider catalog, config, connection test, cost log |
 | `product_intelligence.py` | Product matching jobs, source products, candidates, match review |
 | `data_enrichment.py` | On-demand ecommerce detail enrichment jobs and enriched product rows |
@@ -56,12 +56,10 @@ If a file is not listed, assume it is a helper under a listed owner.
 | `CrawlUrlResult` | `crawl_run.py` | canonical per-URL acquisition/extraction verdict, manifest pointer, and record count |
 | `CrawlRecord` | `crawl_run.py` | extracted record payload and URL-result-linked provenance |
 | `CrawlLog` | `crawl_run.py` | run logs |
-| `DomainMemory` | `domain_memory.py` | selector memory scoped by `(domain, surface)` |
 | `DomainRunProfile` | `domain_memory.py` | reusable execution defaults scoped by `(domain, surface)` |
 | `DomainCookieMemory` | `domain_memory.py` | reusable browser state scoped by domain |
-| `DomainFieldFeedback` | `domain_memory.py` | per-field keep/reject learning history |
 | `HostProtectionMemory` | `domain_memory.py` | per-host block/success tracking |
-| `ReviewPromotion` | `review.py` | approved review schema snapshot |
+| `ExtractionTemplate`, `ExtractionRecipe`, `CompiledExtractionRecipe`, `ExtractionReleaseSnapshot`, `ExtractionManifest`, `ExtractionOperatorLabel`, `ExtractionObservation` | `extraction_memory.py` | single extraction-memory hierarchy |
 | `ProductIntelligenceJob`, `ProductIntelligenceSourceProduct`, `ProductIntelligenceCandidate`, `ProductIntelligenceMatch` | `product_intelligence.py` | web product matching and price comparison jobs |
 | `DataEnrichmentJob`, `EnrichedProduct` | `data_enrichment.py` | on-demand ecommerce detail enrichment jobs and derived enriched product rows |
 | `LLMConfig`, `LLMCostLog` | `llm.py` | LLM config and cost tracking |
@@ -161,6 +159,8 @@ Canonical config owner:
 
 | File | Purpose |
 |---|---|
+| `evaluation/baseline.py` | deterministic offline baseline reduction and stable artifact generation |
+| `evaluation/schema.py` | versioned evaluation cases and grounded-label release-truth contracts |
 | `crawl_engine.py` | Extraction facade and routing |
 | `detail_extractor.py` | Detail-page preparation and field candidate arbitration |
 | `listing_extractor.py` | Listing-page extraction |
@@ -250,7 +250,7 @@ Canonical config owners:
 | `core/config/network_payload_specs.py` | payload specs and endpoint tokens |
 | `core/config/data_enrichment.py` | data enrichment statuses, limits, and taxonomy file path |
 | `core/config/public_api.py` | public API key prefixes, envelopes, error codes, rate limits, extraction caps, MCP env names, and static capabilities |
-| `core/config/knowledge_graph.py` | data-only Knowledge Graph vocabulary owner: node/edge types, statuses, selection origins, contract outcomes, identity ladder, read bounds, projection tunables |
+| `core/config/extraction_memory.py` | extraction-memory statuses, recipe/label kinds, and manifest/compiler versions |
 
 ### `mcp_server/` — hosted MCP wrapper
 
@@ -285,13 +285,13 @@ Verdict set:
 | File | Purpose |
 |---|---|
 | `review/__init__.py` | Review payloads and approved field mapping persistence |
-| `selectors_runtime.py` | Selector CRUD and runtime lookup |
-| `selector_auto_learn.py` | Strict DOM-observed selector auto-save into domain memory |
-| `selector_suggestions.py` | Selector suggestion assembly from domain memory, deterministic DOM patterns, listing cards, and LLM candidates |
+| `selectors_runtime.py` | Selector CRUD and runtime lookup over extraction-memory recipes |
+| `selector_auto_learn.py` | Strict DOM-observed selector auto-save into extraction memory |
+| `selector_suggestions.py` | Selector suggestion assembly from extraction memory, deterministic DOM patterns, listing cards, and LLM candidates |
 | `selector_self_heal.py` | Selector synthesis and validation |
-| `domain_memory_service.py` | Domain memory load/save |
+| `domain_memory_service.py` | Compatibility service over domain-scoped selector recipes |
 
-All selector memory is scoped by normalized `(domain, surface)`.
+All selector recipes are scoped by normalized `(domain, surface)`.
 
 ---
 
@@ -313,21 +313,19 @@ All selector memory is scoped by normalized `(domain, surface)`.
 
 ---
 
-## Bucket 8: Knowledge Graph (extraction-owned, PostgreSQL-authoritative)
+## Bucket 8: Extraction Memory (PostgreSQL-authoritative)
 
 | File | Purpose |
 |---|---|
-| `core/config/knowledge_graph.py` | Data-only vocabulary/bounds owner: node/edge types, statuses, selection origins, contract outcomes, identity ladder, read bounds, projection tunables |
-| `models/knowledge_graph.py` | 6 ORM models: `KGSiteVersion`, `KGEntity`, `KGRelationship`, `KGClaim`, `KGAssertionEvidence`, `KGExtractionContract` with source-selection history |
-| `persistence/knowledge_graph.py` | Repository: `lock_site_version`, `upsert_entities/relationships/claims/contracts`, `add_evidence`, `fetch_neighborhood`, `count_graph_rows`, `purge_graph`, `load_runtime_snapshot` |
-| `persistence/projection.py` | Projector: `project_extraction_result` — fingerprints templates, upserts structural entities/relationships, projects Evidence into canonical product/offer/brand/category/seller/asset claims, relationships, identity links, variant-set claims, and extraction contracts |
-| `core/knowledge_graph/templates.py` | Template helpers: `normalize_route`, `fingerprint_from_parts`, `fingerprint_template`, `extract_tech_signals` |
-| `core/knowledge_graph/contract_runtime.py` | Frozen contract preference lookup (pure, storage-free): `match_template`, `contract_preferences`, `resolved_contract_outcomes`; Resolve owns final eligibility and ranking |
-| `api/knowledge.py` | Bounded graph API: site versions, graph neighborhoods, entity/contract reads, operator source selection, admin rebuild/purge/delete |
-| `alembic/versions/20260629_0002_knowledge_graph.py` | Migration creating all 6 KG tables |
-| `alembic/versions/20260629_0003_kg_contract_selection_history.py` | Migration adding `selection_history` for operator source decisions |
+| `core/config/extraction_memory.py` | Stable store vocabulary and versions |
+| `models/extraction_memory.py` | Purpose-built template, recipe, compiled recipe, release, manifest, label, and observation tables |
+| `persistence/extraction_memory.py` | Template/recipe upsert, compilation, release freezing, per-URL observation, and purge |
+| `core/extraction_memory/templates.py` | Pure route normalization and structural fingerprinting |
+| `core/extraction_memory/contract_runtime.py` | Pure frozen-release preference lookup; Resolve owns eligibility and ranking |
+| `api/knowledge.py` | Compatibility route surface backed only by extraction memory |
+| `alembic/versions/20260702_0004_extraction_memory.py` | Migrates five prior stores, then removes generic graph tables |
 
-The Knowledge Graph owns site templates, canonical-field source candidates, source decisions, extraction contracts, product claims, and cross-crawl relationships. It is separate from acquisition-owned Domain Memory (Bucket 6) and resets independently. At run creation `load_runtime_snapshot` freezes the current graph state into `CrawlRun.extraction_runtime_snapshot`; the extraction engine matches page fingerprints against this frozen snapshot and passes saved source preferences into Resolve. Contracts may rank already eligible evidence only; they cannot create ownership, move evidence across entities, or resurrect rejected evidence. Extraction emits observations only and must never import graph storage (ratcheted in `tests/unit/test_extraction_architecture.py`). The URL pipeline projects graph updates through persistence, while `/api/knowledge/*` exposes bounded reads and operator refinement. The cold-start LLM proposer arrives in a later slice. See `docs/INVARIANTS.md` §17.
+Extraction memory is the single owner for learned structural state. Run releases and URL manifests are relational rows, not payloads embedded in run settings. See `docs/INVARIANTS.md` §17.
 
 ---
 

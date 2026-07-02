@@ -14,8 +14,6 @@ from app.models.data_enrichment import (
 from app.models.crawl_run import CrawlLog, CrawlRecord, CrawlRun, CrawlUrlResult
 from app.models.domain_memory import (
     DomainCookieMemory,
-    DomainFieldFeedback,
-    DomainMemory,
     DomainRunProfile,
     HostProtectionMemory,
 )
@@ -25,9 +23,13 @@ from app.models.product_intelligence import (
     ProductIntelligenceMatch,
     ProductIntelligenceSourceProduct,
 )
-from app.models.review import ReviewPromotion
+from app.models.extraction_memory import ExtractionOperatorLabel, ExtractionTemplate
+from app.core.config.extraction_memory import (
+    EXTRACTION_LABEL_KIND_FIELD_FEEDBACK,
+    EXTRACTION_LABEL_KIND_REVIEW_PROMOTION,
+)
 from app.models.llm import LLMCostLog
-from app.persistence.knowledge_graph import purge_graph
+from app.persistence.extraction_memory import purge_extraction_memory
 from app.acquisition.cookie_store import clear_cookie_store_cache
 from app.acquisition.rate_limiter import reset_pacing_state
 from app.acquisition.fetch.fetch_context import reset_fetch_runtime_state
@@ -108,7 +110,7 @@ async def reset_application_data(session: AsyncSession) -> dict:
     async with _session_transaction(session):
         crawl_reset = await _reset_crawl_data_db(session)
         memory_reset = await _reset_domain_memory_db(session)
-        graph_reset = await purge_graph(session)
+        graph_reset = await purge_extraction_memory(session)
         intelligence_reset = await _reset_product_intelligence_db(session)
         enrichment_reset = await _reset_data_enrichment_db(session)
     return {
@@ -133,7 +135,7 @@ async def reset_crawl_data(session: AsyncSession) -> dict:
 async def reset_domain_memory(session: AsyncSession) -> dict:
     async with _session_transaction(session):
         counts = await _reset_domain_memory_db(session)
-        graph_counts = await purge_graph(session)
+        graph_counts = await purge_extraction_memory(session)
     return {
         **counts,
         **graph_counts,
@@ -152,13 +154,13 @@ async def reset_data_enrichment(session: AsyncSession) -> dict:
 
 
 async def reset_knowledge_graph(session: AsyncSession) -> dict:
-    """Explicit Knowledge Graph purge.
+    """Compatibility endpoint for explicitly purging extraction memory.
 
     This path removes only the graph. Domain Memory and application resets also
     remove it as part of their wider forget-everything semantics.
     """
     async with _session_transaction(session):
-        return await purge_graph(session)
+        return await purge_extraction_memory(session)
 
 
 async def _reset_crawl_data_db(session: AsyncSession) -> dict:
@@ -169,9 +171,11 @@ async def _reset_crawl_data_db(session: AsyncSession) -> dict:
             ("crawl_url_results_deleted", CrawlUrlResult),
             ("crawl_records_deleted", CrawlRecord),
             ("crawl_logs_deleted", CrawlLog),
-            ("review_promotions_deleted", ReviewPromotion),
             ("llm_cost_logs_deleted", LLMCostLog),
         ],
+    )
+    counts["review_promotions_deleted"] = await _count_labels(
+        session, EXTRACTION_LABEL_KIND_REVIEW_PROMOTION
     )
     await _reset_crawl_data_tables(session)
     return counts
@@ -181,12 +185,21 @@ async def _reset_domain_memory_db(session: AsyncSession) -> dict:
     counts = await _reset_bucket_db(
         session,
         [
-            ("domain_memory_deleted", DomainMemory),
             ("domain_run_profiles_deleted", DomainRunProfile),
             ("domain_cookie_memory_deleted", DomainCookieMemory),
-            ("domain_field_feedback_deleted", DomainFieldFeedback),
             ("host_protection_memory_deleted", HostProtectionMemory),
         ],
+    )
+    counts["domain_field_feedback_deleted"] = await _count_labels(
+        session, EXTRACTION_LABEL_KIND_FIELD_FEEDBACK
+    )
+    counts["domain_memory_deleted"] = int(
+        await session.scalar(
+            select(func.count())
+            .select_from(ExtractionTemplate)
+            .where(ExtractionTemplate.fingerprint == "domain-default")
+        )
+        or 0
     )
     await _reset_domain_memory_tables(session)
     return counts
@@ -271,6 +284,17 @@ async def _count_rows(session: AsyncSession, model: type) -> int:
     )
 
 
+async def _count_labels(session: AsyncSession, label_kind: str) -> int:
+    return int(
+        await session.scalar(
+            select(func.count())
+            .select_from(ExtractionOperatorLabel)
+            .where(ExtractionOperatorLabel.label_kind == label_kind)
+        )
+        or 0
+    )
+
+
 async def _reset_bucket_db(
     session: AsyncSession,
     deleted: list[tuple[str, type]],
@@ -288,33 +312,44 @@ async def _reset_bucket_db(
 
 
 async def _reset_crawl_data_tables(session: AsyncSession) -> None:
+    await session.execute(
+        delete(ExtractionOperatorLabel).where(
+            ExtractionOperatorLabel.label_kind == EXTRACTION_LABEL_KIND_REVIEW_PROMOTION
+        )
+    )
     await _reset_bucket_tables(
         session,
-        [CrawlLog, CrawlRecord, CrawlUrlResult, ReviewPromotion, LLMCostLog, CrawlRun],
+        [
+            CrawlLog,
+            CrawlRecord,
+            CrawlUrlResult,
+            LLMCostLog,
+            CrawlRun,
+        ],
         "crawl_logs",
         "crawl_records",
         "crawl_url_results",
-        "review_promotions",
         "llm_cost_log",
         "crawl_runs",
     )
 
 
 async def _reset_domain_memory_tables(session: AsyncSession) -> None:
+    await session.execute(
+        delete(ExtractionOperatorLabel).where(
+            ExtractionOperatorLabel.label_kind == EXTRACTION_LABEL_KIND_FIELD_FEEDBACK
+        )
+    )
     await _reset_bucket_tables(
         session,
         [
-            DomainFieldFeedback,
             DomainCookieMemory,
             HostProtectionMemory,
             DomainRunProfile,
-            DomainMemory,
         ],
-        "domain_field_feedback",
         "domain_cookie_memory",
         "host_protection_memory",
         "domain_run_profiles",
-        "domain_memory",
     )
 
 

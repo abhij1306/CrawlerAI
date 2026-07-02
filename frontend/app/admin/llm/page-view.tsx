@@ -29,8 +29,6 @@ const CUSTOM_MODEL_OPTION = '__custom__';
 const TASK_TYPES = [
   'general',
   'xpath_discovery',
-  'missing_field_extraction',
-  'field_cleanup_review',
   'page_classification',
   'schema_inference',
   'data_enrichment_semantic',

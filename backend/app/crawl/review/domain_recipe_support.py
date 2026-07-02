@@ -5,7 +5,7 @@ from app.core.db_utils import mapping_or_empty
 from app.core.shared.field_coerce import object_list as _object_list
 from app.core.shared.field_coerce import safe_int as _safe_int
 from app.models.crawl_run import CrawlRecord, CrawlRun
-from app.models.domain_memory import DomainFieldFeedback
+from app.models.extraction_memory import ExtractionOperatorLabel as DomainFieldFeedback
 from app.persistence.record_artifacts import RecordArtifacts
 
 

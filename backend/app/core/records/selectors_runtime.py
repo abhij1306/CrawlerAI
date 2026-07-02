@@ -13,6 +13,7 @@ from app.core.config.extraction_rules import (
 from app.core.config.runtime_settings import crawler_runtime_settings
 from app.crawl.domain_memory_service import (
     load_domain_memory,
+    list_selector_memories,
     save_domain_memory,
     selector_payload_from_rules,
     selector_rules_from_memory,
@@ -27,7 +28,7 @@ from app.core.shared.field_coerce import coerce_int as _coerce_int
 from app.core.url_safety import ensure_public_crawl_targets
 
 if TYPE_CHECKING:
-    from app.models.domain_memory import DomainMemory
+    from app.crawl.domain_memory_service import SelectorMemory
 
 coerce_int = _coerce_int
 
@@ -107,7 +108,7 @@ async def list_selector_records(
 def _selector_record_from_memory(
     row: dict[str, object],
     *,
-    memory: DomainMemory | None,
+    memory: SelectorMemory | None,
     domain: str | None = None,
     surface: str | None = None,
 ) -> dict[str, object]:
@@ -136,22 +137,16 @@ async def list_selector_domain_summaries(
     limit: int | None = None,
     offset: int = 0,
 ) -> list[dict[str, object]]:
-    from sqlalchemy import select
-
-    from app.models.domain_memory import DomainMemory
-
     normalized_domain = str(domain or "").strip().lower()
     normalized_surface = str(surface or "").strip().lower()
-    query = select(DomainMemory).order_by(DomainMemory.id.asc())
-    if normalized_domain:
-        query = query.where(DomainMemory.domain == normalized_domain)
-    if normalized_surface:
-        query = query.where(DomainMemory.surface == normalized_surface)
-    if offset > 0:
-        query = query.offset(int(offset))
-    if limit is not None:
-        query = query.limit(int(limit))
-    result = await session.execute(query)
+    memories = await list_selector_memories(session)
+    memories = [
+        memory
+        for memory in memories
+        if (not normalized_domain or memory.domain == normalized_domain)
+        and (not normalized_surface or memory.surface == normalized_surface)
+    ]
+    end = None if limit is None else offset + int(limit)
     return [
         {
             "domain": memory.domain,
@@ -159,7 +154,7 @@ async def list_selector_domain_summaries(
             "selector_count": _selector_rule_count(memory.selectors),
             "updated_at": memory.updated_at,
         }
-        for memory in result.scalars().all()
+        for memory in memories[offset:end]
     ]
 
 
@@ -414,13 +409,8 @@ async def test_selector(
     }
 
 
-async def _all_domain_memories(session: AsyncSession) -> list[DomainMemory]:
-    from sqlalchemy import select
-
-    from app.models.domain_memory import DomainMemory
-
-    result = await session.execute(select(DomainMemory).order_by(DomainMemory.id.asc()))
-    return list(result.scalars().all())
+async def _all_domain_memories(session: AsyncSession) -> list[SelectorMemory]:
+    return await list_selector_memories(session)
 
 
 async def _next_selector_id(session: AsyncSession) -> int:

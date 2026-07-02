@@ -7,18 +7,17 @@ from app.models.crawl_run import CrawlLog, CrawlRecord, CrawlRun, CrawlUrlResult
 from app.models.data_enrichment import DataEnrichmentJob, EnrichedProduct
 from app.models.domain_memory import (
     DomainCookieMemory,
-    DomainFieldFeedback,
-    DomainMemory,
     DomainRunProfile,
     HostProtectionMemory,
 )
-from app.models.knowledge_graph import (
-    KGAssertionEvidence,
-    KGClaim,
-    KGEntity,
-    KGExtractionContract,
-    KGRelationship,
-    KGSiteVersion,
+from app.models.extraction_memory import (
+    CompiledExtractionRecipe,
+    ExtractionManifest,
+    ExtractionObservation,
+    ExtractionOperatorLabel,
+    ExtractionRecipe,
+    ExtractionReleaseSnapshot,
+    ExtractionTemplate,
 )
 from app.models.llm import LLMConfig, LLMCostLog
 from app.models.product_intelligence import (
@@ -27,7 +26,6 @@ from app.models.product_intelligence import (
     ProductIntelligenceMatch,
     ProductIntelligenceSourceProduct,
 )
-from app.models.review import ReviewPromotion
 
 __all__ = [
     "Base",
@@ -39,8 +37,6 @@ __all__ = [
     "CrawlLog",
     "DataEnrichmentJob",
     "DomainCookieMemory",
-    "DomainFieldFeedback",
-    "DomainMemory",
     "DomainRunProfile",
     "EnrichedProduct",
     "HostProtectionMemory",
@@ -50,11 +46,11 @@ __all__ = [
     "ProductIntelligenceMatch",
     "LLMConfig",
     "LLMCostLog",
-    "ReviewPromotion",
-    "KGSiteVersion",
-    "KGEntity",
-    "KGRelationship",
-    "KGClaim",
-    "KGAssertionEvidence",
-    "KGExtractionContract",
+    "ExtractionTemplate",
+    "ExtractionRecipe",
+    "CompiledExtractionRecipe",
+    "ExtractionReleaseSnapshot",
+    "ExtractionManifest",
+    "ExtractionOperatorLabel",
+    "ExtractionObservation",
 ]

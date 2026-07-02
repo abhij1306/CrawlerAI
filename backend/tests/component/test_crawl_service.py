@@ -11,7 +11,7 @@ from app.core import dependencies as dependencies_module
 from app.core.config import settings
 from app.models.crawl_run import CrawlRecord, CrawlRun
 from app.models.domain_memory import DomainRunProfile
-from app.models.review import ReviewPromotion
+from app.models.extraction_memory import ExtractionOperatorLabel as ReviewPromotion
 from app.models.crawl_domain import CONTROL_REQUEST_KILL, CONTROL_REQUEST_PAUSE
 from app.models.crawl_settings import normalize_crawl_settings
 from app.crawl import service as crawl_service
@@ -121,7 +121,8 @@ async def test_create_crawl_run_preserves_raw_additional_fields_and_keeps_domain
     )
     db_session.add(
         ReviewPromotion(
-            run_id=seed_run.id,
+            label_kind="review_promotion",
+            source_run_id=seed_run.id,
             domain="example.com",
             surface="ecommerce_detail",
             approved_schema={"fields": ["title", "materials"]},

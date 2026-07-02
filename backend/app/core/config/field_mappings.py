@@ -237,23 +237,10 @@ CANONICAL_SCHEMAS: dict[str, list[str]] = {
     ],
 }
 
-PROMPT_REGISTRY = {
-    "direct_record_extraction": {
-        "response_type": "array",
-        "system_file": "direct_record_extraction.system.txt",
-        "user_file": "direct_record_extraction.user.txt",
-    },
-    "field_cleanup_review": {
-        "response_type": "object",
-        "system_file": "field_cleanup_review.system.txt",
-        "user_file": "field_cleanup_review.user.txt",
-    },
-    "missing_field_extraction": {
-        "response_type": "object",
-        "system_file": "missing_field_extraction.system.txt",
-        "user_file": "missing_field_extraction.user.txt",
-    },
-}
+# Extraction-time LLM prompt tasks were removed with the deterministic
+# extraction overhaul; task registration now lives in the domain-specific
+# registries (e.g. DATA_ENRICHMENT_PROMPT_REGISTRY, product intelligence).
+PROMPT_REGISTRY: dict[str, dict[str, str]] = {}
 
 NAVIGATION_URL_FIELDS = frozenset({URL_FIELD, APPLY_URL_FIELD, CANONICAL_URL_FIELD})
 BRAND_LIKE_FIELDS = frozenset({"brand", "company", "dealer_name", "vendor"})

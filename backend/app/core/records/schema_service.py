@@ -4,7 +4,8 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
-from app.models.review import ReviewPromotion
+from app.models.extraction_memory import ExtractionOperatorLabel
+from app.core.config.extraction_memory import EXTRACTION_LABEL_KIND_REVIEW_PROMOTION
 from app.core.config.runtime_settings import crawler_runtime_settings
 from app.core.domain_utils import normalize_domain
 from app.core.records.field_policy import (
@@ -159,12 +160,17 @@ async def load_resolved_schema(
             stale=False,
         )
     result = await session.execute(
-        select(ReviewPromotion.approved_schema)
+        select(ExtractionOperatorLabel.approved_schema)
         .where(
-            ReviewPromotion.domain == normalized_domain,
-            ReviewPromotion.surface == surface,
+            ExtractionOperatorLabel.label_kind
+            == EXTRACTION_LABEL_KIND_REVIEW_PROMOTION,
+            ExtractionOperatorLabel.domain == normalized_domain,
+            ExtractionOperatorLabel.surface == surface,
         )
-        .order_by(ReviewPromotion.created_at.desc(), ReviewPromotion.id.desc())
+        .order_by(
+            ExtractionOperatorLabel.created_at.desc(),
+            ExtractionOperatorLabel.id.desc(),
+        )
         .limit(1)
     )
     snapshot = result.scalar_one_or_none()

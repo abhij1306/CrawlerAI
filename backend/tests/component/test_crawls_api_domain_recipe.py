@@ -6,7 +6,7 @@ from sqlalchemy import select
 
 from app.core.dependencies import get_current_user, get_db
 from app.main import app
-from app.models.domain_memory import DomainFieldFeedback
+from app.models.extraction_memory import ExtractionOperatorLabel as DomainFieldFeedback
 from app.crawl.batch_runtime import process_run
 from app.acquisition.cookie_store import persist_storage_state_for_domain
 from app.acquisition.acquirer import PageAcquisitionResult

@@ -457,7 +457,7 @@ Current storage/runtime model:
 
 - selector/domain memory is stored by normalized `(domain, surface)`
 - selectors are persisted inside `DomainMemory`
-- reusable run defaults and learned acquisition contracts are persisted separately in `DomainRunProfile`, keyed by the same normalized `(domain, surface)` scope but never mixed into selector rows or `DomainMemory.selectors`
+- reusable run defaults and learned acquisition contracts are persisted separately in `DomainRunProfile`, keyed by the same normalized `(domain, surface)` scope but never mixed into extraction-memory selector recipes
 - successful DOM-only extraction can auto-save revalidated final-field selectors as `dom_observed` rules; structured, adapter, network, and JS-state winners are intentionally not promoted to selector memory
 - ecommerce-detail setup repair uses the union of explicit user fields and limited defaults (`price`, `title`, `image_url`) for selector self-heal, LLM gap fill, and acquisition field-coverage metadata. Missing default fields no longer trigger low-quality HTTP-to-browser retry by themselves; browser retry is reserved for empty extraction with retryable evidence, blocked/shell evidence, explicit browser mode, traversal/listing recovery, and listing-integrity escalation. Static not-found pages and static homepage/category shells that do not match the requested detail slug are terminal HTTP observations, not browser retries. Optional deep fields are not forced unless requested
 - reusable browser cookie/local-storage state is persisted separately in `DomainCookieMemory`, keyed by normalized domain only, because acquisition reuse is host-level rather than surface-level
@@ -512,21 +512,19 @@ Responsibilities and current behavior:
 - `run_report.py` registers as a run-complete callback (via `pipeline/run_complete_callbacks.py`) and folds every `diagnose.json` into a deterministic run-level `report.json` that groups root causes with direct links to each URL's diagnosis. Like all of `app/observability/`, it is observe-only: it must never mutate extraction output, verdicts, selector memory, or domain contracts, and must not grow monitor-style diffing/retention/webhook behavior.
 - The legacy second artifact scheme (`runs/{id}/pages/...`), `manifest.json`/`summary.json`/`records.json`/`debug.json`/`browser.json`/`trace.json`/screenshots, the never-written `acquisition.json`/`extraction.json` readers, the dead `source_trace` provenance keys, and the observe-only LLM diagnosis flow are all deleted. Deleted modules include `observability/{artifact_reader,baseline,browser_artifact,run_audit,run_llm_diagnosis,run_trace}.py`, `persistence/artifact_store.py`, `persistence/storage/`, `api/observability.py`, and `config/{audit_rules,observability}.py`. See `docs/INVARIANTS.md` §12.
 
-### 6.9 Knowledge Graph
+### 6.9 Extraction Memory
 
 Primary files:
 
-- `core/config/knowledge_graph.py` — data-only vocabulary/bounds owner: node/edge types, entity/projection statuses, contract selection origins, contract outcomes, the deterministic identity ladder, read-API bounds, and projection tunables.
-- `models/knowledge_graph.py` — 6 ORM models: `KGSiteVersion`, `KGEntity`, `KGRelationship`, `KGClaim`, `KGAssertionEvidence`, `KGExtractionContract` (including append-only operator selection history).
-- `persistence/knowledge_graph.py` — repository: `lock_site_version`, `upsert_entities/relationships/claims/contracts`, `add_evidence`, `fetch_neighborhood`, `count_graph_rows`, `purge_graph`, `load_runtime_snapshot`.
-- `persistence/projection.py` — projector (`project_extraction_result`): fingerprints page templates, upserts structural graph entities and relationships (site → template → route, page → template, site → technology), projects `Evidence` tuples into canonical product/offer/brand/category/seller/asset entities, claims, relationships, deterministic identity links, and assertion evidence, writes extraction contracts from decisions.
-- `core/knowledge_graph/templates.py` — `normalize_route`, `fingerprint_from_parts`, `fingerprint_template`, `extract_tech_signals`.
-- `core/knowledge_graph/contract_runtime.py` — frozen contract preference lookup (pure, storage-free): `match_template`, `contract_preferences`, and `resolved_contract_outcomes`; Resolve owns final eligibility and ranking.
-- `api/knowledge.py` — bounded read/refine API for site versions, graph neighborhoods, entities, contracts, source selection, rebuild, purge, and site deletion.
-- `alembic/versions/20260629_0002_knowledge_graph.py` — migration creating all 6 KG tables.
-- `alembic/versions/20260629_0003_kg_contract_selection_history.py` — migration adding operator selection history to extraction contracts.
+- `core/config/extraction_memory.py` — store vocabulary and release/compiler/manifest versions.
+- `models/extraction_memory.py` — templates, recipe layers, compiled recipes, run releases, URL manifests, operator labels, and observations.
+- `persistence/extraction_memory.py` — recipe compilation, release freezing, observation/manifest writes, and purge.
+- `core/extraction_memory/templates.py` — `normalize_route`, `fingerprint_from_parts`, `fingerprint_template`, `extract_tech_signals`.
+- `core/extraction_memory/contract_runtime.py` — frozen-release preference lookup; Resolve owns final eligibility and ranking.
+- `api/knowledge.py` — compatibility read/refine API backed only by extraction memory.
+- `alembic/versions/20260702_0004_extraction_memory.py` — migrates the prior stores and deletes generic graph tables.
 
-The Knowledge Graph is extraction-owned and PostgreSQL-authoritative (no Neo4j/AGE). It stays separate from acquisition-owned Domain Memory and resets independently. At run creation, `load_runtime_snapshot` freezes the current graph state into `CrawlRun.extraction_runtime_snapshot`; each extraction request receives this frozen snapshot so concurrent graph updates never destabilize an in-flight run. The engine fingerprints each page (via `fingerprint_from_parts`), matches against frozen templates, and passes saved source preferences into Resolve. Contracts may rank already eligible evidence only; they cannot create ownership, move evidence across entities, or resurrect rejected evidence. Extraction emits observations only and must never import graph storage (ratcheted in `tests/unit/test_extraction_architecture.py`). The URL pipeline projects the graph after URL result persistence in a savepoint; projection failure is logged and marked on the site version without changing crawl verdicts. `/api/knowledge/*` exposes bounded graph reads and operator source refinement; rebuild/purge/delete operations are admin-only. The cold-start LLM proposer arrives in a later slice. See `docs/INVARIANTS.md` §17.
+Extraction memory is PostgreSQL-authoritative. Run creation freezes one relational release and each URL result gets a relational execution manifest. Contracts rank eligible evidence only; extraction never imports mutable memory storage. Observation failure is logged without changing crawl verdicts. See `docs/INVARIANTS.md` §17.
 
 ## 7. Persistence Model
 
@@ -538,7 +536,7 @@ Primary models:
 - `CrawlLog`
 - `DomainRunProfile`
 - `DomainCookieMemory`
-- `DomainFieldFeedback`
+- `ExtractionOperatorLabel`
 - `ReviewPromotion`
 - `DataEnrichmentJob`
 - `EnrichedProduct`

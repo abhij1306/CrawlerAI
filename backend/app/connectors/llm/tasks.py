@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import time
 from string import Template
 from typing import Any
@@ -28,10 +27,7 @@ from app.connectors.llm.errors import ERROR_PREFIX, LLMErrorCategory, classify_e
 from app.connectors.llm.payloads import parse_payload, validate_task_payload
 from app.connectors.llm.prompt_rendering import (
     enforce_token_limit,
-    safe_truncate_for_prompt,
     stringify_prompt_value,
-    truncate_html,
-    truncate_json_literal,
 )
 from app.connectors.llm.provider_client import call_provider_with_retry
 from app.connectors.llm.types import LLMTaskResult
@@ -387,125 +383,3 @@ async def _parse_and_validate_payload(
             error_category=LLMErrorCategory.VALIDATION_FAILURE,
         )
     return payload
-
-
-async def extract_records_directly(
-    session: AsyncSession,
-    *,
-    run_id: int,
-    domain: str,
-    url: str,
-    surface: str,
-    html_text: str,
-    requested_fields: list[str] | None,
-    existing_records: list[dict[str, object]] | None,
-) -> tuple[list[dict[str, object]], str | None]:
-    result = await run_prompt_task(
-        session,
-        task_type="direct_record_extraction",
-        run_id=run_id,
-        domain=domain,
-        variables={
-            "url": url,
-            "surface": surface,
-            "requested_fields_json": json.dumps(list(requested_fields or [])),
-            "existing_records_json": truncate_json_literal(
-                safe_truncate_for_prompt(list(existing_records or [])),
-                llm_runtime_settings.candidate_evidence_max_chars,
-            ),
-            "html_snippet": truncate_html(
-                html_text,
-                llm_runtime_settings.html_snippet_max_chars,
-                anchors=list(requested_fields or []),
-            ),
-        },
-    )
-    payload = result.payload
-    return (payload if isinstance(payload, list) else []), (
-        result.error_message or None
-    )
-
-
-async def extract_missing_fields(
-    session: AsyncSession,
-    *,
-    run_id: int,
-    domain: str,
-    url: str,
-    html_text: str,
-    missing_fields: list[str],
-    existing_values: dict[str, object],
-) -> tuple[dict[str, object], str | None]:
-    result = await run_prompt_task(
-        session,
-        task_type="missing_field_extraction",
-        run_id=run_id,
-        domain=domain,
-        variables={
-            "url": url,
-            "missing_fields_json": json.dumps(missing_fields),
-            "existing_values_json": truncate_json_literal(
-                existing_values,
-                llm_runtime_settings.existing_values_max_chars,
-            ),
-            "html_snippet": truncate_html(
-                html_text,
-                llm_runtime_settings.html_snippet_max_chars,
-                anchors=missing_fields,
-            ),
-        },
-    )
-    payload = result.payload
-    return (payload if isinstance(payload, dict) else {}), (
-        result.error_message or None
-    )
-
-
-async def review_field_candidates(
-    session: AsyncSession,
-    *,
-    run_id: int,
-    domain: str,
-    url: str,
-    html_text: str,
-    canonical_fields: list[str],
-    target_fields: list[str],
-    existing_values: dict[str, object],
-    candidate_evidence: dict[str, list[dict]],
-    discovered_sources: dict[str, object],
-) -> tuple[dict[str, object], str | None]:
-    result = await run_prompt_task(
-        session,
-        task_type="field_cleanup_review",
-        run_id=run_id,
-        domain=domain,
-        variables={
-            "url": url,
-            "canonical_fields_json": json.dumps(canonical_fields),
-            "target_fields_json": json.dumps(target_fields),
-            "existing_values_json": truncate_json_literal(
-                {field: existing_values.get(field) for field in target_fields},
-                llm_runtime_settings.existing_values_max_chars,
-            ),
-            "candidate_evidence_json": truncate_json_literal(
-                safe_truncate_for_prompt(candidate_evidence),
-                llm_runtime_settings.candidate_evidence_max_chars,
-            ),
-            "discovered_sources_json": truncate_json_literal(
-                discovered_sources,
-                llm_runtime_settings.discovered_sources_max_chars,
-            ),
-            "html_snippet": truncate_html(
-                html_text,
-                llm_runtime_settings.html_snippet_max_chars,
-                anchors=[
-                    *target_fields,
-                    *[str(existing_values.get(field) or "") for field in target_fields],
-                ],
-            ),
-        },
-    )
-    payload = result.payload
-    return (payload if isinstance(payload, dict) else {}), (
-        result.error_message or None
-    )

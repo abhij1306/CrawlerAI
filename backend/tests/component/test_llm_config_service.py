@@ -33,17 +33,15 @@ async def test_resolve_active_config_prefers_task_then_general(db_session) -> No
                 provider="groq",
                 model="task-model",
                 api_key_encrypted="enc-task",
-                task_type="missing_field_extraction",
+                task_type="data_enrichment_semantic",
                 is_active=True,
             ),
         ]
     )
     await db_session.commit()
 
-    task_config = await resolve_active_config(db_session, "missing_field_extraction")
-    fallback_config = await resolve_active_config(
-        db_session, "direct_record_extraction"
-    )
+    task_config = await resolve_active_config(db_session, "data_enrichment_semantic")
+    fallback_config = await resolve_active_config(db_session, "page_classification")
 
     assert task_config is not None
     assert task_config.model == "task-model"

@@ -1,4 +1,4 @@
-"""Template fingerprinting for Knowledge Graph matching (Slice 7).
+"""Template fingerprinting for extraction-memory matching.
 
 Pure, deterministic functions for normalizing routes and generating stable
 template fingerprints. Shared by the persistence projector (Slice 6) and the
