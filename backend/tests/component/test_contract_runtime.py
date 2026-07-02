@@ -17,22 +17,25 @@ from app.core.extraction_memory.templates import (
     fingerprint_template,
 )
 from app.extraction.contracts import (
+    CommerceDetailRecord,
     CollectorOutcome,
     Decision,
     Evidence,
     ExtractionResult,
     RejectedEvidence,
     ResolutionResult,
+    SentinelObservation,
     SourceLocator,
 )
 from app.extraction.surfaces import Surface
 from app.core.config.extraction_memory import (
+    EXTRACTION_MEMORY_STATUS_SUSPENDED,
     EXTRACTION_RECIPE_KIND_CONTRACTS,
     EXTRACTION_RECIPE_KIND_SELECTORS,
     EXTRACTION_RECIPE_LAYER_DOMAIN,
     EXTRACTION_RECIPE_LAYER_TEMPLATE,
 )
-from app.models.crawl_run import CrawlRun
+from app.models.crawl_run import CrawlRun, CrawlUrlResult
 from app.models.extraction_memory import CompiledExtractionRecipe, ExtractionRecipe
 from app.persistence.extraction_memory import (
     RecipeCompileError,
@@ -42,6 +45,8 @@ from app.persistence.extraction_memory import (
     compile_recipe_layers,
     create_candidate_release_snapshot,
     ensure_template,
+    load_release_payload,
+    record_extraction_result,
     rollback_release_snapshot_for_run,
     selector_rules_from_release,
     upsert_recipe,
@@ -804,3 +809,95 @@ async def test_release_snapshot_activation_and_rollback_are_atomic(
     assert rolled_back is not None
     assert rolled_back.id == baseline.id
     assert candidate.run_id is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.component
+async def test_confirmed_critical_sentinel_drift_suspends_template_and_fallback(
+    db_session: AsyncSession, test_user
+) -> None:
+    run = CrawlRun(
+        id=902,
+        user_id=test_user.id,
+        run_type="crawl",
+        url="https://example.com/products/widget",
+        status="running",
+        surface="ecommerce_detail",
+    )
+    db_session.add(run)
+    await db_session.flush()
+
+    template = await ensure_template(
+        db_session,
+        domain="example.com",
+        surface="ecommerce_detail",
+        fingerprint="known-template",
+        route_pattern="/products/{id}",
+    )
+    await upsert_recipe(
+        db_session,
+        template=template,
+        layer=EXTRACTION_RECIPE_LAYER_TEMPLATE,
+        kind=EXTRACTION_RECIPE_KIND_SELECTORS,
+        payload={"rules": [{"field_name": "title", "css_selector": ".recipe-title"}]},
+    )
+    release = await create_candidate_release_snapshot(
+        db_session, domain="example.com", surface="ecommerce_detail"
+    )
+    await db_session.flush()
+
+    for index in range(2):
+        url_result = CrawlUrlResult(
+            run_id=run.id,
+            requested_url=f"https://example.com/products/widget-{index}",
+            normalized_url=f"https://example.com/products/widget-{index}",
+            final_url=f"https://example.com/products/widget-{index}",
+            surface="ecommerce_detail",
+            generation=1,
+        )
+        db_session.add(url_result)
+        await db_session.flush()
+        result = ExtractionResult(
+            surface=Surface.ECOMMERCE_DETAIL,
+            records=(
+                CommerceDetailRecord(
+                    title="Recipe Widget",
+                    url="https://example.com/products/widget",
+                ),
+            ),
+            verdict="success",
+            sentinel_observations=(
+                SentinelObservation(
+                    challenger="deterministic",
+                    state="critical_drift",
+                    template_id=str(template.id),
+                    release_snapshot_id=str(release.id),
+                    sample_rate=1.0,
+                    recipe_verdict="success",
+                    challenger_verdict="success",
+                    recipe_record_count=1,
+                    challenger_record_count=0,
+                    disagreement_classes=("record_count",),
+                    evidence_ids=("e1", "e2"),
+                    diagnostic="Sentinel deterministic challenger is critical_drift.",
+                    next_action="confirm_drift_before_suspending_template",
+                ),
+            ),
+        )
+        await record_extraction_result(
+            db_session,
+            run_id=run.id,
+            url_result_id=url_result.id,
+            release_snapshot_id=release.id,
+            url=url_result.final_url,
+            surface="ecommerce_detail",
+            result=result,
+        )
+
+    await db_session.flush()
+    await db_session.refresh(template)
+    frozen = await load_release_payload(db_session, release.id)
+
+    assert template.status == EXTRACTION_MEMORY_STATUS_SUSPENDED
+    assert frozen["templates"][0]["sentinel_suspended"] is True
+    assert selector_rules_from_release(frozen, surface="ecommerce_detail") == []

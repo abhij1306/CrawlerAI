@@ -39,13 +39,13 @@ def _node(
 
 
 def _path(
-    locator: str = "/html[1]/body[1]/h1[1]",
+    locator: str = "/#document[1]/html[1]/body[1]/h1[1]",
 ) -> GroundingReference:
     return GroundingReference(kind="path", artifact_id="html", locator=locator)
 
 
 def _region(
-    locator: str = "/html[1]/body[1]/h1[1]",
+    locator: str = "/#document[1]/html[1]/body[1]/h1[1]",
 ) -> GroundingReference:
     return GroundingReference(
         kind="region",

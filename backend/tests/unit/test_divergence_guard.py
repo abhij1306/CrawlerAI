@@ -270,6 +270,36 @@ def test_publication_serializes_only_projection_authorized_variants() -> None:
     assert dumped["variant_count"] == 1
 
 
+def test_publication_counts_resolved_variants_when_rows_suppressed() -> None:
+    record = serialize_commerce_detail_projection(
+        CommerceDetailProjection(
+            record_entity_id="product:1",
+            variant_entity_ids=("variant:suppressed",),
+            entries=(
+                PublicationEntry(
+                    path="record.url",
+                    entity_id="product:1",
+                    value="https://example.test/product",
+                    selected_fact_id="selected:url",
+                ),
+                PublicationEntry(
+                    path="variant[variant:suppressed].sku",
+                    entity_id="variant:suppressed",
+                    parent_entity_id="product:1",
+                    value="SKU-1",
+                    disposition="suppress",
+                    reason_code="variant_not_publishable",
+                    selected_fact_id="selected:sku",
+                ),
+            ),
+        )
+    )
+
+    dumped = record.model_dump(exclude_none=True)
+    assert dumped["variants"] == ()
+    assert dumped["variant_count"] == 1
+
+
 def test_projection_suppresses_resolved_price_when_currency_is_unresolved() -> None:
     evidence = (_fact_evidence("price", "19.99", "offer.price"),)
     projection, _ = commerce_detail_projection(

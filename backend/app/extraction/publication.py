@@ -541,11 +541,10 @@ def serialize_commerce_detail_projection(
         variant_sources.append(
             {"variant_entity_id": entity_id, **variant_lineages[entity_id]}
         )
+    if projection.variant_entity_ids:
+        record["variant_count"] = len(projection.variant_entity_ids)
     if variant_rows:
         record["variants"] = variant_rows
-        # Count resolved variants, not published rows: a variant whose fields
-        # are all suppressed still counts toward the resolved total.
-        record["variant_count"] = len(projection.variant_entity_ids)
         lineages["variants"] = variant_sources
 
     primary_id = projection.primary_asset_entity_id

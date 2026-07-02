@@ -1,10 +1,28 @@
 # ruff: noqa: F403, F405
 from tests.unit.extraction_pipeline_test_support import *
+from app.extraction import adapters
 from app.extraction.contracts import field_contracts_for_surface
+from app.extraction.contracts import RequestContext
 
 
 def test_extraction_request_has_no_artifact_payloads_field() -> None:
     assert "artifact_payloads" not in ExtractionRequest.model_fields
+
+
+def test_currency_hint_is_not_used_as_locale_hint() -> None:
+    request = fixture_request_from_inputs(
+        Surface.ECOMMERCE_DETAIL,
+        HTML,
+        "https://shop.test/products/trail-shoe",
+    )
+    context = RequestContext(context_id="ctx-locale", currency_hint="EUR")
+    request = request.model_copy(
+        update={
+            "capture": request.capture.model_copy(update={"request_context": context})
+        }
+    )
+
+    assert adapters._request_locale_hint(request) is None
 
 
 def test_listing_visual_capture_builds_extractable_html_artifact() -> None:
@@ -188,6 +206,146 @@ def test_known_template_recipe_fast_path_skips_generic_collectors() -> None:
     assert {row.collector_id for row in result.evidence} == {"css_recipe", "url"}
     assert result.diagnostics.extractor_tier == "recipe"
     assert result.manifest_context.template_id == "00000000-0000-0000-0000-000000000001"
+
+
+def test_sampled_recipe_success_records_sentinel_without_override() -> None:
+    url = "https://shop.test/products/recipe-shoe"
+    selector_rules = [
+        {"field_name": "title", "css_selector": ".recipe-title", "is_active": True},
+        {"field_name": "price", "css_selector": ".recipe-price", "is_active": True},
+        {
+            "field_name": "currency",
+            "css_selector": ".recipe-currency",
+            "is_active": True,
+        },
+    ]
+    acquisition = PageAcquisitionResult(
+        request=AcquisitionRequest(
+            run_id=42,
+            url=url,
+            plan=AcquisitionIntent(surface="ecommerce_detail"),
+        ),
+        final_url=url,
+        html="""
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "Product",
+          "name": "Generic Shoe",
+          "sku": "GENERIC-1",
+          "offers": {"@type": "Offer", "price": "10", "priceCurrency": "USD"}
+        }
+        </script>
+        <main>
+          <span class="recipe-title">Recipe Shoe</span>
+          <span class="recipe-price">$10.00</span>
+          <span class="recipe-currency">USD</span>
+        </main>
+        """,
+        method="browser",
+        status_code=200,
+        artifacts={},
+    )
+    request = request_from_acquisition_result(
+        Surface.ECOMMERCE_DETAIL,
+        acquisition,
+        requested_url=url,
+        max_records=1,
+        selector_rules=selector_rules,
+        runtime_snapshot={
+            "surface": "ecommerce_detail",
+            "sentinel": {"sample_rate": 1.0},
+            "_release_snapshot_id": "release-1",
+            "templates": [
+                {
+                    "template_id": "00000000-0000-0000-0000-000000000001",
+                    "fingerprint": "known-template",
+                    "route_pattern": "/products/{id}",
+                    "status": "active",
+                    "contracts": [],
+                    "compiled_recipe": {
+                        "selector_rules": selector_rules,
+                        "contracts": [],
+                        "provenance": [],
+                    },
+                }
+            ],
+        },
+    )
+
+    result = extract(request)
+
+    assert result.records[0]["title"] == "Recipe Shoe"
+    assert result.sentinel_observations
+    observation = result.sentinel_observations[0]
+    assert observation.challenger == "deterministic"
+    assert observation.state in {"suspected_drift", "critical_drift"}
+    assert "sentinel_deterministic_challenger" in result.diagnostics.decision_path
+    assert result.diagnostics.sentinel_state == observation.state
+
+
+def test_suspended_runtime_template_routes_to_generic_without_css_recipe() -> None:
+    url = "https://shop.test/products/generic-shoe"
+    selector_rules = [
+        {"field_name": "title", "css_selector": ".recipe-title", "is_active": True},
+        {"field_name": "price", "css_selector": ".recipe-price", "is_active": True},
+        {
+            "field_name": "currency",
+            "css_selector": ".recipe-currency",
+            "is_active": True,
+        },
+    ]
+    acquisition = PageAcquisitionResult(
+        request=AcquisitionRequest(
+            run_id=42,
+            url=url,
+            plan=AcquisitionIntent(surface="ecommerce_detail"),
+        ),
+        final_url=url,
+        html="""
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "Product",
+          "name": "Generic Shoe",
+          "offers": {"@type": "Offer", "price": "10", "priceCurrency": "USD"}
+        }
+        </script>
+        <main><h1>Generic Shoe</h1></main>
+        """,
+        method="browser",
+        status_code=200,
+        artifacts={},
+    )
+    request = request_from_acquisition_result(
+        Surface.ECOMMERCE_DETAIL,
+        acquisition,
+        requested_url=url,
+        max_records=1,
+        runtime_snapshot={
+            "surface": "ecommerce_detail",
+            "templates": [
+                {
+                    "template_id": "00000000-0000-0000-0000-000000000001",
+                    "fingerprint": "known-template",
+                    "route_pattern": "/products/{id}",
+                    "status": "suspended",
+                    "contracts": [],
+                    "compiled_recipe": {
+                        "selector_rules": selector_rules,
+                        "contracts": [],
+                        "provenance": [],
+                    },
+                }
+            ],
+        },
+    )
+
+    result = extract(request)
+
+    assert result.records[0]["title"].casefold() == "generic shoe"
+    assert result.diagnostics.extractor_tier == "deterministic"
+    assert "css_recipe" not in {row.collector_id for row in result.evidence}
 
 
 def test_active_provider_shell_is_blocked_when_building_runtime_capture() -> None:

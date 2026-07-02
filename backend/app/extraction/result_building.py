@@ -510,7 +510,7 @@ def retry_request(
     ):
         record = records[0] if records else PublicRecord()
         target_core_fields = requested_core_fields or set(
-            field_mappings.ECOMMERCE_DETAIL_DYNAMIC_RETRY_CORE_FIELDS
+            field_mappings.SURFACE_BROWSER_RETRY_TARGETS.get("ecommerce_detail", ())
         )
         missing_core_fields = tuple(
             field

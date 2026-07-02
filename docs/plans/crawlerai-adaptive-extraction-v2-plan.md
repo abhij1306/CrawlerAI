@@ -361,41 +361,41 @@ Detailed slices are written for every phase below. They remain gated: do not sta
 > Rationale: Sentinel is a challenger, not ground truth. Start with deterministic challenger behavior because Phase 2 provides a real recipe fast path; add ML challenger only after Phase 5 is safe.
 
 ### Slice 6.1 — Add deterministic challenger sampling
-**Status:** TODO
+**Status:** DONE — sampled known-template recipe success now invokes the generic deterministic challenger after recipe publication capture and stores bounded Sentinel observations without overriding recipe records.
 **Delete target:** recipe trust assumptions with no independent comparison path.
 **Files:** `app/extraction/engine.py`, `app/models/extraction_memory.py`, `app/persistence/extraction_memory.py`, `app/core/config/*`, focused Sentinel tests
 **What:** For sampled known-template executions, compare compiled recipe output against the full generic deterministic path. Store observations with manifest/template IDs, recipe result, challenger result, and evidence references.
 **Verify:** tests prove sampled recipe success invokes challenger after publication decision capture without letting challenger override the recipe.
 
 ### Slice 6.2 — Implement semantic comparison and drift states
-**Status:** TODO
+**Status:** DONE — `app/extraction/sentinel.py` compares record count, identity, normalized critical fields, benign fields, and variant binding into `concordant`, `benign_difference`, `needs_review`, `suspected_drift`, or `critical_drift`.
 **Delete target:** raw value-diff drift alerts that ignore semantic role/entity ownership.
 **Files:** Sentinel comparison module, `app/models/extraction_memory.py`, `app/observability/diagnose.py`, focused comparison tests
 **What:** Compare record count, identity, field value, normalized value, semantic role, entity ownership, locale interpretation, variant binding, and recommendation contamination. Classify observations as concordant, benign difference, needs review, suspected drift, or critical drift.
 **Verify:** tests prove recommendation-price vs primary-price disagreement is critical even if value parses; harmless formatting-only differences are not critical.
 
 ### Slice 6.3 — Add cautious suspension and fallback routing
-**Status:** TODO
+**Status:** DONE — confirmed critical drift persists audit observations, marks the scoped template suspended, overlays frozen snapshots with suspension state, and filters suspended selector rules so future traffic falls back.
 **Delete target:** silent recipe continuation after confirmed critical drift.
 **Files:** `app/persistence/extraction_memory.py`, `app/extraction/engine.py`, `app/core/config/*`, focused suspension tests
 **What:** After configured confirmed critical drift, suspend the affected scoped manifest/template and route future traffic to generic/fallback extraction. Suspension must be reversible and auditable. Sentinel still cannot replace individual values silently.
 **Verify:** tests prove confirmed critical drift suspends to fallback; unconfirmed challenger disagreement creates review/observation only; rollback restores prior manifest state when approved.
 
 ### Slice 6.4 — Add ML challenger after Phase 5
-**Status:** TODO
+**Status:** DONE — optional ML challenger reuses the Phase 5 evidence-only model fallback and feeds the same Sentinel comparison path; model challenger evidence cannot override recipe publication.
 **Delete target:** duplicate challenger code paths for deterministic and ML challengers.
 **Files:** model fallback adapter from Phase 5, Sentinel comparison module, config, focused challenger tests
 **What:** Reuse the evidence-only ML fallback as an optional challenger on sampled known-template traffic. Feed the same semantic comparator and observation store.
 **Verify:** tests prove deterministic and ML challengers share comparison/suspension policy; ML challenger output cannot override recipe values.
 
 ### Slice 6.5 — Emit drift diagnostics for deferred product plane
-**Status:** TODO
+**Status:** DONE — `SentinelObservation` and `DiagnosticSummary` carry business-readable template/release, sample-rate, disagreement, suspension, and next-action diagnostics; no dashboard was added.
 **Delete target:** product-facing drift blobs that require reading internal extractor traces.
 **Files:** `app/observability/diagnose.py`, API/export serializers as needed, focused diagnostic tests
 **What:** Emit business-readable drift diagnostics: affected template/market, sample rate, concordance trend, critical disagreement class, publication impact, suspension state, and next action. Do not build the full product dashboard in this plan.
 **Verify:** focused API/diagnostic tests prove stable fields for future product/ops UI.
 
-**Phase 6 exit gate:** Challenger cannot silently override recipes; confirmed critical drift auto-suspends scoped recipe to fallback; observations and diagnostics are persisted and business-readable.
+**Phase 6 exit gate:** MET — challenger observations never replace recipe output, confirmed critical drift auto-suspends scoped recipes to fallback, and observations/diagnostics are persisted in extraction memory with business-readable next actions.
 
 ---
 

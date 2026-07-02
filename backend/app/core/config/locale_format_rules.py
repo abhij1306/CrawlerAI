@@ -61,6 +61,9 @@ COUNTRY_CURRENCY: dict[str, str] = {
 
 COUNTRY_ALIASES = {"uk": "gb"}
 GENERIC_TLDS = frozenset({"com", "net", "org", "io", "shop", "store", "co", "app"})
+HOST_CURRENCY_HINTS: dict[str, str] = {
+    "firstcry.com": "INR",
+}
 COMMA_DECIMAL_COUNTRIES = frozenset(
     {
         "at",
@@ -112,7 +115,7 @@ def money_has_ambiguous_decimal(
     text = _money_text(value)
     return bool(
         text
-        and not locale_hint
+        and not _locale_resolves_decimal_ambiguity(locale_hint)
         and "," in text
         and "." in text
         and _last_group_length(
@@ -149,6 +152,8 @@ def currency_hint_from_page_url_with_scope(page_url: object) -> tuple[str | None
     ]
     if currency := _currency_from_locale_segments(segments):
         return currency, False
+    if currency := _currency_from_host_hint(hostname):
+        return currency, True
     if currency := _currency_from_tld(hostname):
         return currency, True
     return None, False
@@ -186,6 +191,17 @@ def _currency_from_tld(hostname: str) -> str | None:
     return _country_currency(labels[-1])
 
 
+def _currency_from_host_hint(hostname: str) -> str | None:
+    return next(
+        (
+            currency
+            for host, currency in HOST_CURRENCY_HINTS.items()
+            if hostname == host or hostname.endswith(f".{host}")
+        ),
+        None,
+    )
+
+
 def _money_text(value: object) -> str:
     return re.sub(r"[^0-9.,-]", "", str(value or "")).strip()
 
@@ -199,21 +215,15 @@ def _decimal_separator(text: str, *, locale_hint: str | None) -> str | None:
             return "."
         return "," if text.rfind(",") > text.rfind(".") else "."
     if "," in text:
-        return "," if _separator_is_decimal(text, ",", country=country) else None
+        return "," if _separator_is_decimal(text, ",") else None
     if "." in text:
-        return "." if _separator_is_decimal(text, ".", country=country) else None
+        return "." if _separator_is_decimal(text, ".") else None
     return None
 
 
-def _separator_is_decimal(text: str, separator: str, *, country: str | None) -> bool:
+def _separator_is_decimal(text: str, separator: str) -> bool:
     final_group_length = _last_group_length(text, separator)
-    if final_group_length not in {1, 2}:
-        return False
-    if separator == ",":
-        return (
-            country in COMMA_DECIMAL_COUNTRIES or country not in DOT_DECIMAL_COUNTRIES
-        )
-    return country not in COMMA_DECIMAL_COUNTRIES
+    return final_group_length in {1, 2}
 
 
 def _last_group_length(text: str, separator: str) -> int:
@@ -226,3 +236,8 @@ def _country_from_locale_hint(locale_hint: str | None) -> str | None:
         return None
     parts = [part for part in normalized.split("-") if part]
     return COUNTRY_ALIASES.get(parts[-1], parts[-1]) if parts else None
+
+
+def _locale_resolves_decimal_ambiguity(locale_hint: str | None) -> bool:
+    country = _country_from_locale_hint(locale_hint)
+    return country in COMMA_DECIMAL_COUNTRIES or country in DOT_DECIMAL_COUNTRIES

@@ -499,6 +499,15 @@ FailureTaxonomy = Literal[
 ]
 
 
+SentinelDriftState = Literal[
+    "concordant",
+    "benign_difference",
+    "needs_review",
+    "suspected_drift",
+    "critical_drift",
+]
+
+
 class FailureClassification(FrozenModel):
     code: FailureTaxonomy
     message: str
@@ -536,6 +545,8 @@ class DiagnosticSummary(FrozenModel):
         "timed_out",
         "budget_limited",
     ] = "not_considered"
+    sentinel_state: SentinelDriftState | None = None
+    sentinel_diagnostic: str | None = None
 
 
 FieldValueType = Literal[
@@ -959,6 +970,25 @@ class VariantDrop(FrozenModel):
     reason: str
 
 
+class SentinelObservation(FrozenModel):
+    """Bounded challenger comparison. Challenger never overrides records."""
+
+    challenger: Literal["deterministic", "ml"]
+    state: SentinelDriftState
+    template_id: str | None = None
+    release_snapshot_id: str | None = None
+    sample_rate: float = 0.0
+    recipe_verdict: str
+    challenger_verdict: str
+    recipe_record_count: int
+    challenger_record_count: int
+    disagreement_classes: tuple[str, ...] = ()
+    evidence_ids: tuple[str, ...] = ()
+    diagnostic: str
+    next_action: str
+    suspended: bool = False
+
+
 class ExtractionResult(FrozenModel):
     schema_version: Literal["extraction.v1", "extraction.v2"] = "extraction.v2"
     surface: Surface
@@ -998,6 +1028,7 @@ class ExtractionResult(FrozenModel):
     stage_outcomes: tuple[StageOutcome, ...] = ()
     variant_drops: tuple[VariantDrop, ...] = ()
     contract_outcomes: tuple[ContractOutcome, ...] = ()
+    sentinel_observations: tuple[SentinelObservation, ...] = ()
     manifest_context: ExecutionManifestContext = Field(
         default_factory=ExecutionManifestContext
     )

@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from app.core.config import field_mappings
+from app.core.config.extraction_memory import EXTRACTION_MEMORY_STATUS_SUSPENDED
 from app.core.extraction_memory.templates import (
     normalize_route,
     normalize_source_pattern,
@@ -21,7 +22,14 @@ def match_template(
 ) -> dict[str, Any] | None:
     if not snapshot or snapshot.get("surface") != surface:
         return None
-    templates = snapshot.get("templates", [])
+    templates = [
+        row
+        for row in snapshot.get("templates", [])
+        if isinstance(row, dict)
+        and str(row.get("status") or "").strip().lower()
+        != EXTRACTION_MEMORY_STATUS_SUSPENDED
+        and not bool(row.get("sentinel_suspended"))
+    ]
     exact = next(
         (row for row in templates if row.get("fingerprint") == fingerprint), None
     )

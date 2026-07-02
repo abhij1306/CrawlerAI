@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from decimal import Decimal
+from fractions import Fraction
+
 import pytest
 
 from app.core.config.extraction_rules import (
@@ -358,6 +361,11 @@ def test_availability_normalizers_share_config_authority() -> None:
     flags: set[str] = set()
     assert _normalize_availability_value("pre order", flags) == "preorder"
     assert INVALID_AVAILABILITY_EVIDENCE_FLAG not in flags
+
+
+def test_decimal_availability_flags_normalize_to_stock_states() -> None:
+    assert normalize_availability_value(Decimal("1")) == "in_stock"
+    assert normalize_availability_value(Fraction(0, 1)) == "out_of_stock"
 
 
 def test_duplicate_offers_for_one_variant_do_not_fake_complete_coverage() -> None:

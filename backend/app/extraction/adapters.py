@@ -94,9 +94,7 @@ def _harvest_detail(request: ExtractionRequest) -> HarvestResult:
     normalized = normalize_ecommerce_detail(
         harvested.evidence,
         page_url=request.capture.final_url or request.capture.requested_url,
-        locale_hint=request.capture.request_context.locale
-        or request.capture.request_context.country
-        or request.capture.request_context.currency_hint,
+        locale_hint=_request_locale_hint(request),
     )
     _assert_representation_only(harvested.evidence, normalized)
     return harvested.model_copy(update={"evidence": normalized})
@@ -115,9 +113,7 @@ def harvest_compiled_recipe(request: ExtractionRequest) -> HarvestResult:
     rows = normalize_ecommerce_detail(
         (*recipe_rows, *requested_rows, *url_rows),
         page_url=request.capture.final_url or request.capture.requested_url,
-        locale_hint=request.capture.request_context.locale
-        or request.capture.request_context.country
-        or request.capture.request_context.currency_hint,
+        locale_hint=_request_locale_hint(request),
     )
     outcomes: list[CollectorOutcome] = []
     if recipe_rows:
@@ -149,6 +145,11 @@ def harvest_compiled_recipe(request: ExtractionRequest) -> HarvestResult:
         collector_outcomes=tuple(outcomes),
         admitted_source_objects=len({row.subject_id for row in rows if row.subject_id}),
     )
+
+
+def _request_locale_hint(request: ExtractionRequest) -> str | None:
+    context = request.capture.request_context
+    return context.locale or context.country
 
 
 def _harvest_listing(request: ExtractionRequest) -> HarvestResult:

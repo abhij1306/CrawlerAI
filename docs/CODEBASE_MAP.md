@@ -162,6 +162,7 @@ Canonical config owner:
 | `evaluation/baseline.py` | deterministic offline baseline reduction and stable artifact generation |
 | `evaluation/schema.py` | grounded-label truth plus evaluation partition, surface, scenario, and metric contracts |
 | `extraction/model_runtime.py` | Lazy evaluation-gated universal-model fallback, shared bounded runtime representation, source-grounding enforcement, and Evidence conversion |
+| `extraction/sentinel.py` | Known-template challenger comparison, drift-state classification, and business-readable Sentinel diagnostics |
 | `evaluation/compact_representation.py` | Offline truth-label decoration over the shared runtime `compact_page.v2` representation |
 | `evaluation/partitions.py` | fail-closed release coverage gates by partition, extraction surface, and critical scenario |
 | `evaluation/model_harness.py` | offline evidence-only candidate adapter with model/deployment/artifact identity; cannot emit public records |

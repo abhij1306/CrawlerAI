@@ -10,11 +10,13 @@ from app.core.config.extraction_rules import (
     DETAIL_NOT_FOUND_HTTP_STATUS_CODES,
     DETAIL_SHELL_FINDING_RULE_ID,
 )
+from app.core.config.extraction_memory import EXTRACTION_MEMORY_STATUS_SUSPENDED
 from app.core.extraction_memory.contract_runtime import match_template
+from app.core.shared.ids import stable_id
 from app.extraction.adapters import SurfaceAdapter, adapter_for, harvest_compiled_recipe
 from app.extraction.contracts import (
-    DiagnosticSummary,
     CollectorOutcome,
+    DiagnosticSummary,
     EntityGraph,
     Evidence,
     ExecutionManifestContext,
@@ -26,6 +28,7 @@ from app.extraction.contracts import (
     PublicationResult,
     PublicRecord,
     ResolutionEnvelope,
+    SentinelObservation,
     StageOutcome,
     TargetSelection,
 )
@@ -34,7 +37,12 @@ from app.extraction.model_runtime import (
     RuntimeModelAdapter,
     run_model_fallback,
 )
-from app.core.shared.ids import stable_id
+from app.extraction.sentinel import (
+    compare_challenger,
+    sentinel_enabled,
+    sentinel_sample_rate,
+    should_sample_sentinel,
+)
 from app.extraction.result_building import (
     assert_resolution_accounting,
     data_integrity_status,
@@ -89,12 +97,17 @@ def extract(
         else:
             harvest = adapter.harvest(request)
     else:
-        harvest = adapter.harvest(request)
+        harvest = (
+            _generic_harvest(request, adapter)
+            if _has_suspended_runtime_template(request)
+            else adapter.harvest(request)
+        )
     attempt = _execute_attempt(request, adapter, harvest)
     stage_outcomes = list(attempt.stage_outcomes)
+    sentinel_observations = ()
 
     if extractor_tier == "recipe" and not attempt.records:
-        generic_harvest = adapter.harvest(request)
+        generic_harvest = _generic_harvest(request, adapter)
         generic_collector_ids = {
             row.collector_id for row in generic_harvest.collector_outcomes
         }
@@ -121,6 +134,22 @@ def extract(
         extractor_tier = "deterministic"
 
     model_fallback: ModelFallbackResult | None = None
+    if extractor_tier == "recipe" and attempt.records:
+        sentinel_observations = _sentinel_observations(
+            request,
+            adapter,
+            recipe_attempt=attempt,
+            compiled_template=compiled_template,
+            model_adapter=model_adapter,
+        )
+        for observation in sentinel_observations:
+            stage_outcomes.append(
+                StageOutcome(
+                    stage=f"sentinel_{observation.challenger}_challenger",
+                    outcome="produced_evidence",
+                    detail=observation.state,
+                )
+            )
     if _needs_contract_fallback(attempt.verdict):
         model_fallback = run_model_fallback(request, model_adapter)
         model_outcome = _model_collector_outcome(model_fallback)
@@ -231,6 +260,7 @@ def extract(
         collector_outcomes=harvest.collector_outcomes,
         stage_outcomes=tuple(stage_outcomes),
         contract_outcomes=resolution.contract_outcomes,
+        sentinel_observations=sentinel_observations,
         manifest_context=_manifest_context(request, compiled_template),
         failure_classifications=failures,
         diagnostics=_diagnostic_summary(
@@ -242,6 +272,7 @@ def extract(
             failures=failures,
             extractor_tier=extractor_tier,
             model_fallback=model_fallback,
+            sentinel_observations=sentinel_observations,
         ),
     )
 
@@ -325,6 +356,13 @@ def _compiled_recipe_template(request: ExtractionRequest) -> dict[str, object] |
     )
     if not template:
         return None
+    if (
+        str(template.get("status") or "").strip().lower()
+        == EXTRACTION_MEMORY_STATUS_SUSPENDED
+    ):
+        return None
+    if bool(template.get("sentinel_suspended")):
+        return None
     compiled_recipe = template.get("compiled_recipe")
     if not isinstance(compiled_recipe, dict):
         return None
@@ -332,6 +370,126 @@ def _compiled_recipe_template(request: ExtractionRequest) -> dict[str, object] |
     if not isinstance(selector_rules, list) or not selector_rules:
         return None
     return template
+
+
+def _has_suspended_runtime_template(request: ExtractionRequest) -> bool:
+    templates = (
+        request.runtime_snapshot.get("templates", [])
+        if request.runtime_snapshot
+        else ()
+    )
+    return any(
+        isinstance(row, dict)
+        and str(row.get("surface") or "") == request.surface.value
+        and (
+            str(row.get("status") or "").strip().lower()
+            == EXTRACTION_MEMORY_STATUS_SUSPENDED
+            or bool(row.get("sentinel_suspended"))
+        )
+        for row in templates
+    )
+
+
+def _sentinel_observations(
+    request: ExtractionRequest,
+    adapter: SurfaceAdapter,
+    *,
+    recipe_attempt: _ExtractionAttempt,
+    compiled_template: dict[str, object] | None,
+    model_adapter: RuntimeModelAdapter | None,
+) -> tuple[SentinelObservation, ...]:
+    if compiled_template is None or not request.runtime_snapshot:
+        return ()
+    manifest_context = _manifest_context(request, compiled_template)
+    sample_rate = sentinel_sample_rate(request.runtime_snapshot)
+    if not should_sample_sentinel(
+        bundle_id=request.capture.bundle_id,
+        template_id=manifest_context.template_id,
+        sample_rate=sample_rate,
+    ):
+        return ()
+    observations = []
+    if sentinel_enabled(request.runtime_snapshot, "deterministic_challenger_enabled"):
+        generic_attempt = _execute_attempt(
+            request,
+            adapter,
+            _generic_harvest(request, adapter),
+            stage_prefix="sentinel_generic_",
+        )
+        observations.append(
+            compare_challenger(
+                challenger="deterministic",
+                manifest_context=manifest_context,
+                sample_rate=sample_rate,
+                recipe_verdict=recipe_attempt.verdict,
+                challenger_verdict=generic_attempt.verdict,
+                recipe_records=recipe_attempt.records,
+                challenger_records=generic_attempt.records,
+                evidence_ids=(
+                    *(row.evidence_id for row in recipe_attempt.harvest.evidence),
+                    *(row.evidence_id for row in generic_attempt.harvest.evidence),
+                ),
+            )
+        )
+    if sentinel_enabled(request.runtime_snapshot, "ml_challenger_enabled"):
+        model_result = run_model_fallback(request, model_adapter)
+        model_harvest = recipe_attempt.harvest.model_copy(
+            update={
+                "evidence": model_result.evidence,
+                "collector_outcomes": (_model_collector_outcome(model_result),),
+            }
+        )
+        model_attempt = (
+            _execute_attempt(
+                request,
+                adapter,
+                model_harvest,
+                stage_prefix="sentinel_model_",
+            )
+            if model_result.evidence
+            else replace(
+                recipe_attempt,
+                harvest=model_harvest,
+                records=(),
+                verdict="empty",
+            )
+        )
+        observations.append(
+            compare_challenger(
+                challenger="ml",
+                manifest_context=manifest_context,
+                sample_rate=sample_rate,
+                recipe_verdict=recipe_attempt.verdict,
+                challenger_verdict=model_attempt.verdict,
+                recipe_records=recipe_attempt.records,
+                challenger_records=model_attempt.records,
+                evidence_ids=(
+                    *(row.evidence_id for row in recipe_attempt.harvest.evidence),
+                    *(row.evidence_id for row in model_result.evidence),
+                ),
+            )
+        )
+    return tuple(observations)
+
+
+def _generic_harvest(
+    request: ExtractionRequest, adapter: SurfaceAdapter
+) -> HarvestResult:
+    harvest = adapter.harvest(request)
+    if request.surface != Surface.ECOMMERCE_DETAIL:
+        return harvest
+    return harvest.model_copy(
+        update={
+            "evidence": tuple(
+                row for row in harvest.evidence if row.collector_id != "css_recipe"
+            ),
+            "collector_outcomes": tuple(
+                row
+                for row in harvest.collector_outcomes
+                if row.collector_id != "css_recipe"
+            ),
+        }
+    )
 
 
 def _manifest_context(
@@ -609,6 +767,7 @@ def _diagnostic_summary(
     failures: tuple[FailureClassification, ...],
     extractor_tier: Literal["deterministic", "recipe", "ml"] = "deterministic",
     model_fallback: ModelFallbackResult | None = None,
+    sentinel_observations=(),
 ) -> DiagnosticSummary:
     missing = tuple(
         row.field
@@ -658,4 +817,10 @@ def _diagnostic_summary(
         model_outcome=(
             model_fallback.outcome if model_fallback is not None else "not_considered"
         ),
+        sentinel_state=sentinel_observations[0].state
+        if sentinel_observations
+        else None,
+        sentinel_diagnostic=sentinel_observations[0].diagnostic
+        if sentinel_observations
+        else None,
     )

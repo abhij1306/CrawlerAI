@@ -27,6 +27,16 @@ def test_ambiguous_money_without_locale_uses_last_separator_and_flags() -> None:
     assert money_has_ambiguous_decimal("1.299,99", locale_hint=None) is True
 
 
+def test_unknown_locale_hint_does_not_suppress_ambiguous_money_flag() -> None:
+    assert money_has_ambiguous_decimal("1.299,99", locale_hint="xx-ZZ") is True
+    assert money_has_ambiguous_decimal("1.299,99", locale_hint="de-DE") is False
+
+
+def test_lone_decimal_separator_keeps_machine_price_shape_across_locales() -> None:
+    assert parse_money("12.50", locale_hint="de-DE") == Decimal("12.50")
+    assert parse_money("12,50", locale_hint="en-US") == Decimal("12.50")
+
+
 def test_gtin_check_digit_validation() -> None:
     assert validate_gtin("4006381333931") is True
     assert validate_gtin("4006381333932") is False

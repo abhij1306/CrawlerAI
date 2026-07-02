@@ -308,7 +308,6 @@ ECOMMERCE_DETAIL_REQUESTED_CORE_FIELDS = frozenset(
         ECOMMERCE_DETAIL_EXPOSED_AVAILABILITY_FIELD,
     }
 )
-ECOMMERCE_DETAIL_DYNAMIC_RETRY_CORE_FIELDS = ("title", "price", "currency", "image_url")
 SURFACE_BROWSER_RETRY_TARGETS = {
     "ecommerce_detail": ("price", "currency", "title", "image_url")
 }

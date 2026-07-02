@@ -2,6 +2,8 @@ from __future__ import annotations
 # ruff: noqa: F401,F403,F405
 # pylint: disable=wildcard-import,unused-wildcard-import
 
+from numbers import Number
+
 from ._common import *
 from ._images import *
 from ._detail import *
@@ -534,8 +536,8 @@ NORMALIZER_AVAILABILITY_TOKENS = {
 def normalize_availability_value(value: object) -> str:
     if isinstance(value, bool):
         return "in_stock" if value else "out_of_stock"
-    if isinstance(value, (int, float)) and value in {0, 1}:
-        return "in_stock" if value == 1 else "out_of_stock"
+    if isinstance(value, Number) and not isinstance(value, complex) and value in {0, 1}:
+        return "in_stock" if int(value) == 1 else "out_of_stock"
     text = re.sub(r"\s+", " ", str(value or "")).strip()
     key = text.casefold()
     if mapped := AVAILABILITY_URL_MAP.get(key.rstrip("/")):

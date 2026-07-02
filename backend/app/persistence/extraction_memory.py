@@ -12,11 +12,15 @@ from app.core.config.extraction_memory import (
     EXTRACTION_COMPILER_VERSION,
     EXTRACTION_MANIFEST_VERSION,
     EXTRACTION_MEMORY_STATUS_ACTIVE,
+    EXTRACTION_MEMORY_STATUS_SUSPENDED,
     EXTRACTION_MEMORY_STATUS_TRUSTED,
     EXTRACTION_RECIPE_KIND_CONTRACTS,
     EXTRACTION_RECIPE_KIND_SELECTORS,
     EXTRACTION_RECIPE_LAYER_ORDER,
     EXTRACTION_RELEASE_VERSION,
+    SENTINEL_CRITICAL_DRIFT_CONFIRMATION_THRESHOLD,
+    SENTINEL_OBSERVATION_KIND,
+    SENTINEL_SUSPENSION_KIND,
 )
 from app.core.domain_utils import normalize_domain
 from app.core.config.domain_profiles import DEFAULT_FALLBACK_SURFACE
@@ -304,6 +308,12 @@ def selector_rules_from_release(
                 continue
             if str(template.get("surface") or "") != candidate_surface:
                 continue
+            if str(
+                template.get("status") or ""
+            ).strip().lower() == EXTRACTION_MEMORY_STATUS_SUSPENDED or bool(
+                template.get("sentinel_suspended")
+            ):
+                continue
             for row in list(template.get("selector_rules") or []):
                 if not isinstance(row, dict):
                     continue
@@ -415,7 +425,44 @@ async def load_release_payload(
     if release_snapshot_id is None:
         return {}
     row = await session.get(ExtractionReleaseSnapshot, release_snapshot_id)
-    return dict(row.payload) if row is not None else {}
+    if row is None:
+        return {}
+    payload = dict(row.payload)
+    await _overlay_suspended_templates(session, payload)
+    return payload
+
+
+async def _overlay_suspended_templates(
+    session: AsyncSession, payload: dict[str, object]
+) -> None:
+    templates = payload.get("templates")
+    if not isinstance(templates, list):
+        return
+    ids = [
+        uuid.UUID(str(row.get("template_id")))
+        for row in templates
+        if isinstance(row, dict) and _uuid_or_none(row.get("template_id")) is not None
+    ]
+    if not ids:
+        return
+    statuses = dict(
+        (
+            await session.execute(
+                select(ExtractionTemplate.id, ExtractionTemplate.status).where(
+                    ExtractionTemplate.id.in_(ids)
+                )
+            )
+        ).all()
+    )
+    for row in templates:
+        if not isinstance(row, dict):
+            continue
+        template_id = _uuid_or_none(row.get("template_id"))
+        if template_id is None:
+            continue
+        if statuses.get(template_id) == EXTRACTION_MEMORY_STATUS_SUSPENDED:
+            row["status"] = EXTRACTION_MEMORY_STATUS_SUSPENDED
+            row["sentinel_suspended"] = True
 
 
 async def record_extraction_result(
@@ -451,6 +498,12 @@ async def record_extraction_result(
         },
     )
     session.add(observation)
+    await _record_sentinel_observations(
+        session,
+        run_id=run_id,
+        url_result_id=url_result_id,
+        result=result,
+    )
     manifest = (
         await session.execute(
             select(ExtractionManifest).where(
@@ -478,6 +531,89 @@ async def record_extraction_result(
         manifest.payload = manifest_payload
     await session.flush()
     return manifest
+
+
+async def _record_sentinel_observations(
+    session: AsyncSession,
+    *,
+    run_id: int,
+    url_result_id: int,
+    result: ExtractionResult,
+) -> None:
+    for observation in result.sentinel_observations:
+        template_id = _uuid_or_none(observation.template_id)
+        session.add(
+            ExtractionObservation(
+                template_id=template_id,
+                run_id=run_id,
+                url_result_id=url_result_id,
+                verdict=observation.state,
+                payload={
+                    "kind": SENTINEL_OBSERVATION_KIND,
+                    **observation.model_dump(mode="json"),
+                },
+            )
+        )
+        if observation.state == "critical_drift" and template_id is not None:
+            await _suspend_confirmed_critical_drift_template(
+                session,
+                template_id=template_id,
+                run_id=run_id,
+                url_result_id=url_result_id,
+            )
+
+
+async def _suspend_confirmed_critical_drift_template(
+    session: AsyncSession,
+    *,
+    template_id: uuid.UUID,
+    run_id: int,
+    url_result_id: int,
+) -> None:
+    template = await session.get(ExtractionTemplate, template_id)
+    if template is None or template.status == EXTRACTION_MEMORY_STATUS_SUSPENDED:
+        return
+    rows = (
+        (
+            await session.execute(
+                select(ExtractionObservation).where(
+                    ExtractionObservation.template_id == template_id,
+                    ExtractionObservation.verdict == "critical_drift",
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    confirmed_count = sum(
+        1
+        for row in rows
+        if dict(row.payload or {}).get("kind") == SENTINEL_OBSERVATION_KIND
+    )
+    if confirmed_count < SENTINEL_CRITICAL_DRIFT_CONFIRMATION_THRESHOLD:
+        return
+    template.status = EXTRACTION_MEMORY_STATUS_SUSPENDED
+    session.add(
+        ExtractionObservation(
+            template_id=template_id,
+            run_id=run_id,
+            url_result_id=url_result_id,
+            verdict=EXTRACTION_MEMORY_STATUS_SUSPENDED,
+            payload={
+                "kind": SENTINEL_SUSPENSION_KIND,
+                "template_id": str(template_id),
+                "confirmed_critical_drift_count": confirmed_count,
+                "next_action": "route_future_traffic_to_generic_until_recipe_is_restored",
+            },
+        )
+    )
+
+
+def _uuid_or_none(value: object) -> uuid.UUID | None:
+    try:
+        return uuid.UUID(str(value))
+    except (TypeError, ValueError, AttributeError):
+        return None
 
 
 async def purge_extraction_memory(session: AsyncSession) -> dict[str, int]:

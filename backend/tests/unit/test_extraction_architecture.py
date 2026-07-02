@@ -210,9 +210,10 @@ def test_extraction_package_stays_within_architecture_limits() -> None:
     complexity_budgets = ratchets["module_cyclomatic_complexity_budgets"]
     default_complexity_budget = ratchets["default_module_cyclomatic_complexity_budget"]
 
-    # Re-architecture exception: resolution is now a package and field-state
-    # construction has its own module so locale/authority work can stay honest.
-    assert len(files) <= 27
+    # Re-architecture exception: resolution is now a package, field-state
+    # construction and Sentinel comparison have their own modules so semantic
+    # ownership can stay honest.
+    assert len(files) <= 28
     assert (
         sum(_physical_line_count(path) for path in files)
         <= ratchets["physical_loc_budget"]
@@ -486,16 +487,12 @@ def test_extraction_semantic_surface_manifest_is_current() -> None:
         assert matches, raw_path
     ratchets = manifest["ratchets"]
     assert (
-        ratchets["semantic_derivation_owner"]
-        == "app/extraction/resolution/__init__.py"
+        ratchets["semantic_derivation_owner"] == "app/extraction/resolution/__init__.py"
     )
     assert (
-        ratchets["variant_eligibility_owner"]
-        == "app/extraction/resolution/__init__.py"
+        ratchets["variant_eligibility_owner"] == "app/extraction/resolution/__init__.py"
     )
-    assert (
-        ratchets["asset_selection_owner"] == "app/extraction/resolution/__init__.py"
-    )
+    assert ratchets["asset_selection_owner"] == "app/extraction/resolution/__init__.py"
     assert ratchets["publication_owner"] == "app/extraction/publication.py"
     assert ratchets["post_resolution_mutation_allowed"] is False
     assert ratchets["contracts_bypass_ownership_allowed"] is False
