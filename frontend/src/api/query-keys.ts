@@ -43,6 +43,7 @@ export const queryKeys = {
     all: ['domain-memory'] as const,
     domains: () => ['domain-memory', 'domains'] as const,
     workspace: (domain: string) => ['domain-memory', 'workspace', domain] as const,
+    extraction: (domain: string) => ['domain-memory', 'extraction', domain] as const,
   },
   knowledgeGraph: {
     all: ['knowledge-graph'] as const,

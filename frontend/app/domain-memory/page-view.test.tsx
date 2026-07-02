@@ -16,6 +16,7 @@ const apiMock = vi.hoisted(() => ({
   getKnowledgeGraph: vi.fn(),
   listKnowledgeContractsByDomain: vi.fn(),
   listKnowledgeContracts: vi.fn(),
+  getExtractionMemory: vi.fn(),
   selectKnowledgeContractSource: vi.fn(),
   getRunReport: vi.fn(),
   getResultDiagnosis: vi.fn(),
@@ -248,6 +249,73 @@ describe('DomainMemoryPage', () => {
         },
       ],
     });
+    apiMock.getExtractionMemory.mockResolvedValue({
+      domain: 'example.com',
+      summary: {
+        template_count: 1,
+        recipe_count: 1,
+        selector_count: 1,
+        contract_count: 0,
+        observation_count: 3,
+        manifest_count: 3,
+        release_count: 1,
+      },
+      templates: [
+        {
+          id: 'template-1',
+          surface: 'ecommerce_detail',
+          fingerprint: 'domain-default',
+          route_pattern: '/',
+          tech_signals: ['shopify'],
+          status: 'active',
+          last_seen_run_id: 101,
+          updated_at: new Date('2026-04-08T10:11:00Z').toISOString(),
+          observation_count: 3,
+          observation_verdicts: { success: 2, partial: 1 },
+          manifest_count: 3,
+          last_observed_at: new Date('2026-04-08T10:11:00Z').toISOString(),
+          recipes: [
+            {
+              id: 'recipe-1',
+              layer: 'domain',
+              kind: 'selectors',
+              version: 2,
+              status: 'active',
+              locale_policy_ref: null,
+              rule_count: 1,
+              contract_count: 0,
+              rules: [
+                {
+                  id: 11,
+                  field_name: 'price',
+                  css_selector: '.price',
+                  sample_value: '$19.99',
+                  source: 'grounded_correction',
+                  status: 'validated',
+                  is_active: true,
+                  source_run_id: 101,
+                },
+              ],
+              updated_at: new Date('2026-04-08T10:11:00Z').toISOString(),
+              compiled: {
+                id: 'compiled-1',
+                compiler_version: 'recipe.v1',
+                checksum: 'abc123',
+                status: 'active',
+                created_at: new Date('2026-04-08T10:11:00Z').toISOString(),
+              },
+            },
+          ],
+        },
+      ],
+      releases: [
+        {
+          surface: 'ecommerce_detail',
+          count: 1,
+          latest_created_at: new Date('2026-04-08T10:11:00Z').toISOString(),
+        },
+      ],
+    });
     apiMock.selectKnowledgeContractSource.mockImplementation(
       (_contractId: string, payload: Record<string, unknown>) =>
         Promise.resolve({
@@ -379,6 +447,7 @@ describe('DomainMemoryPage', () => {
     expect(screen.getByRole('button', { name: 'Profiles (1)' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Cookies (3)' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Learning (1)' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Selectors' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Extraction' })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Profiles (1)' }));
@@ -392,6 +461,24 @@ describe('DomainMemoryPage', () => {
 
     expect(screen.queryByText('owned-session-test.example.com')).not.toBeInTheDocument();
   }, 10_000);
+
+  it('reads saved selectors and extraction recipes from relational domain memory', async () => {
+    apiMock.listKnowledgeContractsByDomain.mockResolvedValue({
+      domain: 'example.com',
+      contracts: [],
+    });
+    renderDomainMemoryPage();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Selectors' }));
+    expect(await screen.findByText('.price')).toBeInTheDocument();
+    expect(apiMock.getExtractionMemory).toHaveBeenCalledWith('example.com');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Extraction' }));
+    expect(await screen.findByText('Extraction runtime')).toBeInTheDocument();
+    expect(await screen.findByText('Selector recipe')).toBeInTheDocument();
+    expect(await screen.findByText('No extraction preferences yet')).toBeInTheDocument();
+    expect(apiMock.getExtractionMemory).toHaveBeenCalledWith('example.com');
+  });
 
   it('renders Knowledge Graph tab and updates source selection', async () => {
     renderDomainMemoryPage();

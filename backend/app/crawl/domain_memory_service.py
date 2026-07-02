@@ -121,7 +121,13 @@ def selector_rules_from_memory(
 ) -> list[dict[str, object]]:
     if memory is None or not isinstance(memory.selectors, dict):
         return []
-    selectors = dict(memory.selectors or {})
+    return selector_rules_from_payload(memory.selectors)
+
+
+def selector_rules_from_payload(value: object) -> list[dict[str, object]]:
+    if not isinstance(value, dict):
+        return []
+    selectors = dict(value)
     rules = selectors.get("rules")
     if isinstance(rules, list):
         normalized: list[dict[str, object]] = []
@@ -151,6 +157,14 @@ def selector_rules_from_memory(
         )
         next_id += 1
     return fallback_rules
+
+
+def selector_rule_count(value: object) -> int:
+    return sum(
+        1
+        for row in selector_rules_from_payload(value)
+        if str(row.get("css_selector") or "").strip()
+    )
 
 
 async def list_selector_memories(session: AsyncSession) -> list[SelectorMemory]:

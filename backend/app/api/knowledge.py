@@ -4,19 +4,31 @@ import uuid
 from typing import Annotated, Any
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import field_mappings
 from app.core.config.extraction_memory import (
     EXTRACTION_RECIPE_KIND_CONTRACTS,
+    EXTRACTION_RECIPE_KIND_SELECTORS,
     EXTRACTION_RECIPE_LAYER_TEMPLATE,
 )
 from app.core.dependencies import get_current_user, get_db, require_admin
 from app.core.domain_utils import normalize_domain
 from app.core.extraction_memory.templates import fingerprint_from_parts, normalize_route
 from app.core.records.field_policy import normalize_field_key
-from app.models.extraction_memory import ExtractionRecipe, ExtractionTemplate
+from app.crawl.domain_memory_service import (
+    selector_rule_count,
+    selector_rules_from_payload,
+)
+from app.models.extraction_memory import (
+    CompiledExtractionRecipe,
+    ExtractionManifest,
+    ExtractionObservation,
+    ExtractionRecipe,
+    ExtractionReleaseSnapshot,
+    ExtractionTemplate,
+)
 from app.models.user import User
 from app.persistence.extraction_memory import (
     ensure_template,
@@ -101,6 +113,172 @@ async def knowledge_graph(
         "bounds": {"depth": bounded_depth, "limit": bounded_limit},
         "nodes": [_template_node(row) for row in rows],
         "relationships": [],
+    }
+
+
+@router.get("/memory")
+async def knowledge_memory(
+    session: Annotated[AsyncSession, Depends(get_db)],
+    _: Annotated[User, Depends(get_current_user)],
+    _admin: Annotated[User, Depends(require_admin)],
+    domain: str = "",
+) -> dict[str, Any]:
+    """Read-only relational extraction-memory projection for operator UI."""
+    normalized_domain = normalize_domain(domain)
+    templates = list(
+        (
+            await session.execute(
+                select(ExtractionTemplate)
+                .where(ExtractionTemplate.domain == normalized_domain)
+                .order_by(
+                    ExtractionTemplate.surface, ExtractionTemplate.updated_at.desc()
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    template_ids = [row.id for row in templates]
+    recipes = (
+        list(
+            (
+                await session.execute(
+                    select(ExtractionRecipe)
+                    .where(ExtractionRecipe.template_id.in_(template_ids))
+                    .order_by(ExtractionRecipe.layer, ExtractionRecipe.kind)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        if template_ids
+        else []
+    )
+    recipe_ids = [row.id for row in recipes]
+    compiled_rows = (
+        list(
+            (
+                await session.execute(
+                    select(CompiledExtractionRecipe)
+                    .where(CompiledExtractionRecipe.recipe_id.in_(recipe_ids))
+                    .order_by(CompiledExtractionRecipe.created_at.desc())
+                )
+            )
+            .scalars()
+            .all()
+        )
+        if recipe_ids
+        else []
+    )
+    latest_compiled = {}
+    for row in compiled_rows:
+        latest_compiled.setdefault(row.recipe_id, row)
+
+    observation_rows = (
+        (
+            await session.execute(
+                select(
+                    ExtractionObservation.template_id,
+                    ExtractionObservation.verdict,
+                    func.count(ExtractionObservation.id),
+                    func.max(ExtractionObservation.created_at),
+                )
+                .where(ExtractionObservation.template_id.in_(template_ids))
+                .group_by(
+                    ExtractionObservation.template_id, ExtractionObservation.verdict
+                )
+            )
+        ).all()
+        if template_ids
+        else []
+    )
+    manifest_rows = (
+        (
+            await session.execute(
+                select(
+                    ExtractionManifest.template_id, func.count(ExtractionManifest.id)
+                )
+                .where(ExtractionManifest.template_id.in_(template_ids))
+                .group_by(ExtractionManifest.template_id)
+            )
+        ).all()
+        if template_ids
+        else []
+    )
+    release_rows = (
+        await session.execute(
+            select(
+                ExtractionReleaseSnapshot.surface,
+                func.count(ExtractionReleaseSnapshot.id),
+                func.max(ExtractionReleaseSnapshot.created_at),
+            )
+            .where(ExtractionReleaseSnapshot.domain == normalized_domain)
+            .group_by(ExtractionReleaseSnapshot.surface)
+            .order_by(ExtractionReleaseSnapshot.surface)
+        )
+    ).all()
+
+    recipes_by_template: dict[uuid.UUID, list[ExtractionRecipe]] = {}
+    for recipe in recipes:
+        recipes_by_template.setdefault(recipe.template_id, []).append(recipe)
+    verdicts_by_template: dict[uuid.UUID, dict[str, int]] = {}
+    observed_at_by_template: dict[uuid.UUID, Any] = {}
+    for template_id, verdict, count, observed_at in observation_rows:
+        if template_id is None:
+            continue
+        verdicts_by_template.setdefault(template_id, {})[str(verdict)] = int(count)
+        current = observed_at_by_template.get(template_id)
+        if current is None or (observed_at is not None and observed_at > current):
+            observed_at_by_template[template_id] = observed_at
+    manifests_by_template = {
+        template_id: int(count)
+        for template_id, count in manifest_rows
+        if template_id is not None
+    }
+
+    selector_count = sum(
+        selector_rule_count(recipe.payload)
+        for recipe in recipes
+        if recipe.kind == EXTRACTION_RECIPE_KIND_SELECTORS
+    )
+    contract_count = sum(
+        len(list((recipe.payload or {}).get("contracts") or []))
+        for recipe in recipes
+        if recipe.kind == EXTRACTION_RECIPE_KIND_CONTRACTS
+    )
+    template_payloads = [
+        _memory_template(
+            template,
+            recipes=recipes_by_template.get(template.id, []),
+            latest_compiled=latest_compiled,
+            verdicts=verdicts_by_template.get(template.id, {}),
+            manifest_count=manifests_by_template.get(template.id, 0),
+            last_observed_at=observed_at_by_template.get(template.id),
+        )
+        for template in templates
+    ]
+    return {
+        "domain": normalized_domain,
+        "summary": {
+            "template_count": len(templates),
+            "recipe_count": len(recipes),
+            "selector_count": selector_count,
+            "contract_count": contract_count,
+            "observation_count": sum(
+                sum(row.values()) for row in verdicts_by_template.values()
+            ),
+            "manifest_count": sum(manifests_by_template.values()),
+            "release_count": sum(int(count) for _, count, _ in release_rows),
+        },
+        "templates": template_payloads,
+        "releases": [
+            {
+                "surface": surface,
+                "count": int(count),
+                "latest_created_at": latest_created_at,
+            }
+            for surface, count, latest_created_at in release_rows
+        ],
     }
 
 
@@ -378,4 +556,70 @@ def _template_node(row: ExtractionTemplate) -> dict[str, Any]:
             "route_pattern": row.route_pattern,
         },
         "status": row.status,
+    }
+
+
+def _memory_template(
+    template: ExtractionTemplate,
+    *,
+    recipes: list[ExtractionRecipe],
+    latest_compiled: dict[uuid.UUID, CompiledExtractionRecipe],
+    verdicts: dict[str, int],
+    manifest_count: int,
+    last_observed_at: Any,
+) -> dict[str, Any]:
+    recipe_payloads = []
+    for recipe in recipes:
+        compiled = latest_compiled.get(recipe.id)
+        recipe_payloads.append(
+            {
+                "id": str(recipe.id),
+                "layer": recipe.layer,
+                "kind": recipe.kind,
+                "version": recipe.version,
+                "status": recipe.status,
+                "locale_policy_ref": recipe.locale_policy_ref,
+                "rule_count": (
+                    selector_rule_count(recipe.payload)
+                    if recipe.kind == EXTRACTION_RECIPE_KIND_SELECTORS
+                    else 0
+                ),
+                "rules": (
+                    selector_rules_from_payload(recipe.payload)
+                    if recipe.kind == EXTRACTION_RECIPE_KIND_SELECTORS
+                    else []
+                ),
+                "contract_count": (
+                    len(list((recipe.payload or {}).get("contracts") or []))
+                    if recipe.kind == EXTRACTION_RECIPE_KIND_CONTRACTS
+                    else 0
+                ),
+                "updated_at": recipe.updated_at,
+                "compiled": (
+                    {
+                        "id": str(compiled.id),
+                        "compiler_version": compiled.compiler_version,
+                        "checksum": compiled.checksum,
+                        "status": compiled.status,
+                        "created_at": compiled.created_at,
+                    }
+                    if compiled is not None
+                    else None
+                ),
+            }
+        )
+    return {
+        "id": str(template.id),
+        "surface": template.surface,
+        "fingerprint": template.fingerprint,
+        "route_pattern": template.route_pattern,
+        "tech_signals": list(template.tech_signals or []),
+        "status": template.status,
+        "last_seen_run_id": template.last_seen_run_id,
+        "updated_at": template.updated_at,
+        "observation_count": sum(verdicts.values()),
+        "observation_verdicts": verdicts,
+        "manifest_count": manifest_count,
+        "last_observed_at": last_observed_at,
+        "recipes": recipe_payloads,
     }

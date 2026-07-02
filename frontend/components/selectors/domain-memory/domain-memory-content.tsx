@@ -6,9 +6,10 @@ import { Button, Dropdown, Input } from '../../ui/primitives';
 import type { DomainMemoryWorkspaceController } from './use-domain-memory-workspace';
 import { CookiesTab } from './cookies-tab';
 import { DomainSidebar } from './domain-sidebar';
-import { KnowledgeGraphTab } from './knowledge-graph-tab';
+import { ExtractionMemoryTab } from './extraction-memory-tab';
 import { LearningTab } from './learning-tab';
 import { ProfilesTab } from './profiles-tab';
+import { SelectorsTab } from './selectors-tab';
 import { getProfileCount, surfaceLabel } from './utils';
 
 type DomainMemoryContentProps = { controller: DomainMemoryWorkspaceController };
@@ -136,8 +137,11 @@ function DomainDetail({ controller }: DomainMemoryContentProps) {
       {controller.activeTab === 'learning' ? (
         <LearningTab selectedWorkspace={selectedWorkspace} />
       ) : null}
+      {controller.activeTab === 'selectors' ? (
+        <SelectorsTab domain={selectedWorkspace.domain} />
+      ) : null}
       {controller.activeTab === 'knowledge' ? (
-        <KnowledgeGraphTab selectedWorkspace={selectedWorkspace} />
+        <ExtractionMemoryTab selectedWorkspace={selectedWorkspace} />
       ) : null}
     </>
   );
@@ -156,6 +160,7 @@ function tabOptions(
       label: `Cookies${selectedWorkspace.cookieMemory ? ` (${selectedWorkspace.cookieMemory.cookie_count})` : ''}`,
     },
     { value: 'learning', label: `Learning (${selectedWorkspace.learning.length})` },
+    { value: 'selectors', label: 'Selectors' },
     { value: 'knowledge', label: 'Extraction' },
   ];
 }

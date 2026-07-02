@@ -617,6 +617,72 @@ export type KnowledgeSiteRecord = {
   last_projected_at?: string | null;
 };
 
+export type ExtractionMemoryCompiledRecipe = {
+  id: string;
+  compiler_version: string;
+  checksum: string;
+  status: string;
+  created_at: string;
+};
+
+export type ExtractionMemoryRecipe = {
+  id: string;
+  layer: string;
+  kind: string;
+  version: number;
+  status: string;
+  locale_policy_ref: string | null;
+  rule_count: number;
+  contract_count: number;
+  rules: Array<{
+    id: number;
+    field_name: string;
+    css_selector: string | null;
+    sample_value: string | null;
+    source: string;
+    status: string;
+    is_active: boolean;
+    source_run_id: number | null;
+  }>;
+  updated_at: string;
+  compiled: ExtractionMemoryCompiledRecipe | null;
+};
+
+export type ExtractionMemoryTemplate = {
+  id: string;
+  surface: string;
+  fingerprint: string;
+  route_pattern: string;
+  tech_signals: string[];
+  status: string;
+  last_seen_run_id: number | null;
+  updated_at: string;
+  observation_count: number;
+  observation_verdicts: Record<string, number>;
+  manifest_count: number;
+  last_observed_at: string | null;
+  recipes: ExtractionMemoryRecipe[];
+};
+
+export type ExtractionMemoryResponse = {
+  domain: string;
+  summary: {
+    template_count: number;
+    recipe_count: number;
+    selector_count: number;
+    contract_count: number;
+    observation_count: number;
+    manifest_count: number;
+    release_count: number;
+  };
+  templates: ExtractionMemoryTemplate[];
+  releases: Array<{
+    surface: string;
+    count: number;
+    latest_created_at: string | null;
+  }>;
+};
+
 export type KnowledgeEntity = {
   id: string;
   entity_type: string;

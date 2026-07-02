@@ -14,6 +14,7 @@ from app.core.config.runtime_settings import crawler_runtime_settings
 from app.crawl.domain_memory_service import (
     load_domain_memory,
     list_selector_memories,
+    selector_rule_count,
     selector_rules_from_memory,
 )
 from app.core.domain_utils import normalize_domain
@@ -147,7 +148,7 @@ async def list_selector_domain_summaries(
         {
             "domain": memory.domain,
             "surface": memory.surface,
-            "selector_count": _selector_rule_count(memory.selectors),
+            "selector_count": selector_rule_count(memory.selectors),
             "updated_at": memory.updated_at,
         }
         for memory in memories[offset:end]
@@ -215,25 +216,6 @@ async def test_selector(
 
 async def _all_domain_memories(session: AsyncSession) -> list[SelectorMemory]:
     return await list_selector_memories(session)
-
-
-def _selector_rule_count(value: object) -> int:
-    if not isinstance(value, dict):
-        return 0
-    rules = value.get("rules")
-    if isinstance(rules, list):
-        return sum(
-            1
-            for row in rules
-            if isinstance(row, dict) and str(row.get("css_selector") or "").strip()
-        )
-    return sum(
-        1
-        for field_name, payload in value.items()
-        if not str(field_name).startswith("_")
-        and isinstance(payload, dict)
-        and str(payload.get("css_selector") or payload.get("css") or "").strip()
-    )
 
 
 def _primary_iframe_candidate(page_url: str, html: str) -> str:
